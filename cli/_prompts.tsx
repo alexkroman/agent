@@ -63,6 +63,7 @@ export async function askSelect(message: string, choices: SelectChoice[]): Promi
         <Text>{message}</Text>
         <Select
           options={choices}
+          visibleOptionCount={choices.length}
           onChange={(value) => {
             resolve(value);
             app.unmount();

@@ -129,7 +129,10 @@ export function CommandRunner({
   const [spinning, setSpinning] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
+  const started = useRef(false);
   React.useEffect(() => {
+    if (started.current) return;
+    started.current = true;
     (async () => {
       try {
         await run(log);
@@ -141,7 +144,7 @@ export function CommandRunner({
       setSpinning(false);
       exit();
     })();
-  }, [exit, log, onError, run]);
+  });
 
   return (
     <>
