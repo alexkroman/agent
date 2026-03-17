@@ -33,7 +33,6 @@
   },
   "scripts": {
     "setup": "git config core.hooksPath .githooks",
-    "build:cli": "node scripts/build-cli.mjs",
     "prepublishOnly": "node scripts/build-cli.mjs",
     "test": "vitest run",
     "lint": "biome check sdk/ ui/ cli/",
