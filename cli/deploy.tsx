@@ -1,3 +1,4 @@
+/** @jsxImportSource react */
 // Copyright 2025 the AAI authors. MIT license.
 
 import path from "node:path";
@@ -14,8 +15,9 @@ import {
 } from "./_discover.ts";
 import type { SubcommandDef } from "./_help.ts";
 import { subcommandHelp } from "./_help.ts";
+import { runWithInk } from "./_ink.tsx";
 import { runBuild } from "./build.ts";
-import { runNewCommand } from "./new.ts";
+import { runNewCommand } from "./new.tsx";
 
 /** CLI definition for the `aai deploy` subcommand, including name, description, and options. */
 const deployCommandDef: SubcommandDef = {
@@ -23,7 +25,11 @@ const deployCommandDef: SubcommandDef = {
   description: "Bundle and deploy to production",
   options: [
     { flags: "-s, --server <url>", description: "Server URL" },
-    { flags: "--local [url]", description: "Use local server", hidden: true },
+    {
+      flags: "--local [url]",
+      description: "Use local server",
+      hidden: true,
+    },
     {
       flags: "--dry-run",
       description: "Validate and bundle without deploying",
@@ -56,7 +62,7 @@ export async function runDeployCommand(args: string[], version: string): Promise
 
   const cwd = process.env.INIT_CWD || process.cwd();
 
-  // If no agent.ts exists, scaffold first
+  // If no agent.ts exists, scaffold first (may prompt for template)
   if (!(await fileExists(path.join(cwd, "agent.ts")))) {
     await runNewCommand(parsed.yes ? ["-y"] : [], version);
   }
@@ -70,6 +76,8 @@ export async function runDeployCommand(args: string[], version: string): Promise
       : parsed.server || (isDevMode() ? "http://localhost:3100" : DEFAULT_SERVER);
 
   const dryRun = parsed["dry-run"] ?? false;
+
+  // Pre-resolve API key (may prompt) before Ink render
   const apiKey = dryRun ? "" : await getApiKey();
 
   // Read project-local config (.aai/project.json)
@@ -78,19 +86,21 @@ export async function runDeployCommand(args: string[], version: string): Promise
   // Slug: from project config, or generate a new human-readable one
   const slug = projectConfig?.slug ?? generateSlug();
 
-  const result = await runBuild({ agentDir: cwd });
-  const deployed = await runDeploy({
-    url: serverUrl,
-    bundle: result.bundle,
-    env: dryRun ? {} : { ASSEMBLYAI_API_KEY: apiKey },
-    slug,
-    dryRun,
-    apiKey,
-  });
+  await runWithInk("Deploying...", async () => {
+    const result = await runBuild({ agentDir: cwd });
+    const deployed = await runDeploy({
+      url: serverUrl,
+      bundle: result.bundle,
+      env: dryRun ? {} : { ASSEMBLYAI_API_KEY: apiKey },
+      slug,
+      dryRun,
+      apiKey,
+    });
 
-  // Save to .aai/project.json (like .vercel/project.json)
-  await writeProjectConfig(cwd, {
-    slug: deployed.slug,
-    serverUrl,
+    // Save to .aai/project.json (like .vercel/project.json)
+    await writeProjectConfig(cwd, {
+      slug: deployed.slug,
+      serverUrl,
+    });
   });
 }

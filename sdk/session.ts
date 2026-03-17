@@ -3,8 +3,8 @@
  * S2S session — relays audio between the client and AssemblyAI's
  * Speech-to-Speech API, intercepting only tool calls for local execution.
  *
- * Cross-runtime: accepts Logger, Metrics, and a WebSocket factory instead of
- * importing Deno-specific modules.
+ * Cross-runtime: accepts Logger, Metrics, and a WebSocket factory via
+ * dependency injection.
  *
  * @module
  */

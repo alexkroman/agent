@@ -2,7 +2,7 @@
 import chalk from "chalk";
 import { error as errorColor, interactive, primary, warning } from "./_colors.ts";
 
-// Deno-style right-aligned action prefix width
+// Right-aligned action prefix width
 const PAD = 9;
 
 function fmt(action: string, color: (s: string) => string, msg: string): string {

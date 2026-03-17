@@ -3,7 +3,7 @@
  * Direct tool execution for self-hosted mode.
  *
  * In self-hosted mode, agent code is trusted (you're running your own code).
- * No Deno Worker sandbox, no RPC — tools execute directly in-process.
+ * Tools execute directly in-process — no sandbox, no RPC.
  *
  * @module
  */
@@ -20,7 +20,8 @@ import { executeToolCall } from "./worker_entry.ts";
 export type DirectExecutorOptions = {
   agent: AgentDef;
   env: Record<string, string>;
-  kv?: Kv;
+  kv?: Kv | undefined;
+  vectorSearch?: ((query: string, topK: number) => Promise<string>) | undefined;
 };
 
 export type DirectExecutor = {
@@ -31,10 +32,13 @@ export type DirectExecutor = {
 
 /** Create a direct (in-process) tool executor and hook invoker for an agent. */
 export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecutor {
-  const { agent, env, kv = createMemoryKv() } = opts;
+  const { agent, env, kv = createMemoryKv(), vectorSearch } = opts;
 
   // Merge custom + builtin tool definitions
-  const builtinDefs = getBuiltinToolDefs(agent.builtinTools ?? []);
+  const builtinDefs = getBuiltinToolDefs(
+    agent.builtinTools ?? [],
+    vectorSearch ? { vectorSearch } : undefined,
+  );
   const allTools: Record<string, AgentDef["tools"][string]> = {
     ...builtinDefs,
     ...agent.tools,
@@ -92,8 +96,8 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
     async onTurn(sessionId, text) {
       await agent.onTurn?.(text, makeHookContext(sessionId));
     },
-    onError(sessionId, error) {
-      agent.onError?.(new Error(error.message), makeHookContext(sessionId));
+    async onError(sessionId, error) {
+      await agent.onError?.(new Error(error.message), makeHookContext(sessionId));
     },
     async onStep(sessionId, step: StepInfo) {
       await agent.onStep?.(step, makeHookContext(sessionId));

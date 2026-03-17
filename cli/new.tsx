@@ -1,15 +1,17 @@
+/** @jsxImportSource react */
 // Copyright 2025 the AAI authors. MIT license.
 
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import chalk from "chalk";
 import minimist from "minimist";
-import { interactive, primary } from "./_colors.ts";
+import { interactive } from "./_colors.ts";
 import { ensureClaudeMd, ensureDependencies, fileExists, isDevMode } from "./_discover.ts";
 import type { SubcommandDef } from "./_help.ts";
 import { subcommandHelp } from "./_help.ts";
+import { runWithInk } from "./_ink.tsx";
 import { listTemplates } from "./_new.ts";
+import { askSelect } from "./_prompts.tsx";
 
 /** CLI definition for the `aai new` subcommand, including name, description, arguments, and options. */
 const newCommandDef: SubcommandDef = {
@@ -17,7 +19,10 @@ const newCommandDef: SubcommandDef = {
   description: "Scaffold a new agent project",
   args: [{ name: "dir", optional: true }],
   options: [
-    { flags: "-t, --template <template>", description: "Template to use" },
+    {
+      flags: "-t, --template <template>",
+      description: "Template to use",
+    },
     { flags: "-f, --force", description: "Overwrite existing agent.ts" },
     { flags: "-y, --yes", description: "Accept defaults (no prompts)" },
   ],
@@ -46,20 +51,14 @@ const TEMPLATE_DESCRIPTIONS: Record<string, string> = {
  * "simple" is listed first as the default.
  */
 async function selectTemplate(available: string[]): Promise<string> {
-  // Put "simple" first since it's the default
   const sorted = ["simple", ...available.filter((t) => t !== "simple")];
   const maxLen = Math.max(...sorted.map((t) => t.length));
   const choices = sorted.map((name) => ({
-    name: `${primary(name.padEnd(maxLen + 2))}${chalk.dim(TEMPLATE_DESCRIPTIONS[name] ?? "")}`,
+    label: `${name.padEnd(maxLen + 2)}${TEMPLATE_DESCRIPTIONS[name] ?? ""}`,
     value: name,
   }));
 
-  const { select } = await import("@inquirer/prompts");
-  const selected = await select({
-    message: "Which template?",
-    choices,
-  });
-  return selected ?? "simple";
+  return await askSelect("Which template?", choices);
 }
 
 /**
@@ -100,32 +99,35 @@ export async function runNewCommand(args: string[], version: string): Promise<st
   const available = await listTemplates(templatesDir);
   const template = parsed.template || (parsed.yes ? "simple" : await selectTemplate(available));
 
-  await runNew({
-    targetDir: cwd,
-    template,
-    templatesDir,
-  });
+  // Run scaffolding with Ink spinner
+  await runWithInk("Scaffolding...", async () => {
+    await runNew({
+      targetDir: cwd,
+      template,
+      templatesDir,
+    });
 
-  // In dev mode (running via node/tsx), rewrite @aai dependencies
-  // to point at the local monorepo source so builds use latest code.
-  if (isDevMode()) {
-    const monorepoRoot = path.join(cliDir, "..");
-    const pkgJsonPath = path.join(cwd, "package.json");
-    const pkgJson = JSON.parse(await fs.readFile(pkgJsonPath, "utf-8"));
+    // In dev mode (running via node/tsx), rewrite @aai dependencies
+    // to point at the local monorepo source so builds use latest code.
+    if (isDevMode()) {
+      const monorepoRoot = path.join(cliDir, "..");
+      const pkgJsonPath = path.join(cwd, "package.json");
+      const pkgJson = JSON.parse(await fs.readFile(pkgJsonPath, "utf-8"));
 
-    // Point @aai packages at local monorepo directories via file: links
-    for (const pkg of ["sdk", "ui"]) {
-      const localPkgPath = path.join(monorepoRoot, pkg, "package.json");
-      const localPkg = JSON.parse(await fs.readFile(localPkgPath, "utf-8"));
-      const pkgName = localPkg.name as string; // e.g. "@aai/sdk"
-      pkgJson.dependencies[pkgName] = `file:${path.join(monorepoRoot, pkg)}`;
+      // Point @aai packages at local monorepo directories via file: links
+      for (const pkg of ["sdk", "ui"]) {
+        const localPkgPath = path.join(monorepoRoot, pkg, "package.json");
+        const localPkg = JSON.parse(await fs.readFile(localPkgPath, "utf-8"));
+        const pkgName = localPkg.name as string; // e.g. "@aai/sdk"
+        pkgJson.dependencies[pkgName] = `file:${path.join(monorepoRoot, pkg)}`;
+      }
+
+      await fs.writeFile(pkgJsonPath, `${JSON.stringify(pkgJson, null, 2)}\n`);
     }
 
-    await fs.writeFile(pkgJsonPath, `${JSON.stringify(pkgJson, null, 2)}\n`);
-  }
-
-  await ensureClaudeMd(cwd);
-  await ensureDependencies(cwd);
+    await ensureClaudeMd(cwd);
+    await ensureDependencies(cwd);
+  });
 
   return cwd;
 }

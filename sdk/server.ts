@@ -3,7 +3,7 @@
  * Self-hostable agent server.
  *
  * `createServer()` takes an `AgentDef` and returns a WinterCG-compatible
- * server that can run anywhere (Node, Deno, Bun, Docker).
+ * server that can run on Node.js or Docker.
  *
  * @module
  */
@@ -151,7 +151,6 @@ export function createServer(options: ServerOptions): AgentServer {
     mode: "s2s" as const,
   };
 
-  // Deno server handle for cleanup
   let serverHandle: { shutdown(): Promise<void> } | null = null;
 
   async function handleRequest(request: Request): Promise<Response> {
@@ -170,20 +169,8 @@ export function createServer(options: ServerOptions): AgentServer {
       await getWsFactory();
       const resume = url.searchParams.has("resume");
 
-      // Deno runtime WebSocket upgrade
-      if (typeof Deno !== "undefined") {
-        const { socket, response } = Deno.upgradeWebSocket(request);
-        wireSessionSocket(socket, {
-          sessions,
-          createSession: (sid, client) => createSessionForWs(sid, client, resume),
-          readyConfig,
-          logger,
-        });
-        return response;
-      }
-
-      // For Node.js, WebSocket upgrade is handled in listen() via the
-      // HTTP server's "upgrade" event. Return 426 if called via fetch().
+      // WebSocket upgrade is handled in listen() via the HTTP server's
+      // "upgrade" event. Return 426 if called via fetch().
       return new Response("Use WebSocket upgrade", { status: 426 });
     }
 
@@ -212,14 +199,6 @@ export function createServer(options: ServerOptions): AgentServer {
       // Ensure WS factory is loaded before starting
       await getWsFactory();
 
-      // Deno runtime
-      if (typeof Deno !== "undefined") {
-        serverHandle = Deno.serve({ port }, handleRequest);
-        logger.info(`Agent "${agent.name}" listening on http://localhost:${port}`);
-        return;
-      }
-
-      // Node.js runtime — use http + ws for WebSocket upgrade
       const http = await import("node:http");
 
       const nodeServer = http.createServer(async (req, res) => {

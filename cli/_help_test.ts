@@ -14,7 +14,6 @@ describe("rootHelp", () => {
     expect(output).toContain("deploy");
     expect(output).toContain("env");
     expect(output).toContain("rag");
-    expect(output).toContain("upgrade");
   });
 
   test('includes "Voice agent development kit"', () => {

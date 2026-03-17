@@ -23,7 +23,7 @@ export class BundleError extends Error {
 
 /** Output artifacts produced by {@linkcode bundleAgent}. */
 export type BundleOutput = {
-  /** Minified ESM JavaScript for the server-side Deno Worker. */
+  /** Minified ESM JavaScript for the server-side worker. */
   worker: string;
   /** Single-file HTML page with inlined client JS and CSS. */
   html: string;
@@ -51,11 +51,7 @@ function workerEntryPlugin(agentDir: string): Plugin {
     load(source) {
       if (source === resolved) {
         const agentPath = path.resolve(agentDir, "agent.ts");
-        return [
-          `import agent from "${agentPath}";`,
-          `import { initWorker } from "aai/worker-shim";`,
-          `initWorker(agent);`,
-        ].join("\n");
+        return [`import agent from "${agentPath}";`, `export default agent;`].join("\n");
       }
     },
   };

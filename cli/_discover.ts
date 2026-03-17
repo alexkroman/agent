@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { humanId } from "human-id";
 import { execFileAsync } from "./_exec.ts";
 import { step } from "./_output.ts";
+import { askPassword } from "./_prompts.tsx";
 
 /**
  * Whether the CLI is running from the dev monorepo (via tsx/node)
@@ -61,10 +62,9 @@ export async function getApiKey(): Promise<string> {
   step("Setup", "AssemblyAI API key required for speech-to-text");
   console.log("Get one at https://www.assemblyai.com/dashboard/signup\n");
 
-  const { password } = await import("@inquirer/prompts");
   let key: string | undefined;
   while (!key) {
-    key = await password({ message: "ASSEMBLYAI_API_KEY" });
+    key = await askPassword("ASSEMBLYAI_API_KEY");
   }
 
   config.assemblyai_api_key = key;

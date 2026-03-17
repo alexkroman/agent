@@ -1,18 +1,24 @@
+/** @jsxImportSource react */
 // Copyright 2025 the AAI authors. MIT license.
 
 import path from "node:path";
 import minimist from "minimist";
 import { _startDevServer } from "./_dev.ts";
-import { fileExists } from "./_discover.ts";
+import { fileExists, getApiKey } from "./_discover.ts";
 import type { SubcommandDef } from "./_help.ts";
 import { subcommandHelp } from "./_help.ts";
-import { step } from "./_output.ts";
-import { runNewCommand } from "./new.ts";
+import { runWithInk, Step } from "./_ink.tsx";
+import { runNewCommand } from "./new.tsx";
 
 const devCommandDef: SubcommandDef = {
   name: "dev",
   description: "Start a local development server",
-  options: [{ flags: "-p, --port <number>", description: "Port to listen on (default: 3000)" }],
+  options: [
+    {
+      flags: "-p, --port <number>",
+      description: "Port to listen on (default: 3000)",
+    },
+  ],
 };
 
 /**
@@ -32,13 +38,18 @@ export async function runDevCommand(args: string[], version: string): Promise<vo
   }
 
   const cwd = process.env.INIT_CWD || process.cwd();
-  const port = parseInt(parsed.port ?? "3000", 10);
+  const port = Number.parseInt(parsed.port ?? "3000", 10);
 
-  // If no agent.ts exists, scaffold first
+  // If no agent.ts exists, scaffold first (may prompt for template)
   if (!(await fileExists(path.join(cwd, "agent.ts")))) {
     await runNewCommand([], version);
   }
 
-  step("Dev", `starting on port ${port}`);
-  await _startDevServer(cwd, port);
+  // Pre-resolve API key (may prompt) before Ink render
+  await getApiKey();
+
+  await runWithInk("Bundling...", async (log) => {
+    log(<Step action="Dev" msg={`starting on port ${port}`} />);
+    await _startDevServer(cwd, port);
+  });
 }

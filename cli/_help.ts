@@ -54,7 +54,6 @@ export function rootHelp(version: string): string {
     ["start", "", "Start production server from build"],
     ["env", "<cmd>", "Manage environment variables"],
     ["rag", "<url>", "Ingest a site into the vector store"],
-    ["upgrade", "", "Update @aai packages to latest"],
   ];
 
   for (const [name, args, desc] of cmds) {
