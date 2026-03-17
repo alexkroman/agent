@@ -48,11 +48,11 @@ export function rootHelp(version: string): string {
   lines.push("");
 
   const cmds: [string, string, string][] = [
-    ["new", "[dir]", "Scaffold a new agent project"],
+    ["init", "[dir]", "Scaffold a new agent project"],
     ["dev", "", "Start a local development server"],
     ["deploy", "", "Bundle and deploy to production"],
     ["start", "", "Start production server from build"],
-    ["env", "<cmd>", "Manage environment variables"],
+    ["secret", "<cmd>", "Manage secrets"],
     ["rag", "<url>", "Ingest a site into the vector store"],
   ];
 
@@ -79,7 +79,7 @@ export function rootHelp(version: string): string {
   lines.push(`  ${chalk.bold(interactive("Getting started"))}`);
   lines.push("");
   lines.push(
-    `    ${chalk.dim("$")} ${primary("aai new")} ${interactive("my-agent")}    ${chalk.dim(
+    `    ${chalk.dim("$")} ${primary("aai init")} ${interactive("my-agent")}    ${chalk.dim(
       "Create a new agent",
     )}`,
   );

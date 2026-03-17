@@ -10,9 +10,9 @@ describe("rootHelp", () => {
   });
 
   test("includes command names", () => {
-    expect(output).toContain("new");
+    expect(output).toContain("init");
     expect(output).toContain("deploy");
-    expect(output).toContain("env");
+    expect(output).toContain("secret");
     expect(output).toContain("rag");
   });
 

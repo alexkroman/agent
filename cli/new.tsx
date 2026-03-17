@@ -15,7 +15,7 @@ import { askSelect } from "./_prompts.tsx";
 
 /** CLI definition for the `aai new` subcommand, including name, description, arguments, and options. */
 const newCommandDef: SubcommandDef = {
-  name: "new",
+  name: "init",
   description: "Scaffold a new agent project",
   args: [{ name: "dir", optional: true }],
   options: [

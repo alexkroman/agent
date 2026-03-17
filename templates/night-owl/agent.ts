@@ -1,4 +1,4 @@
-import { defineAgent } from "aai";
+import { defineAgent } from "@alexkroman1/aai";
 import { z } from "zod";
 
 const PICKS: Record<string, Record<string, string[]>> = {

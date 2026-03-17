@@ -1,4 +1,4 @@
-import { defineAgent } from "aai";
+import { defineAgent } from "@alexkroman1/aai";
 
 export default defineAgent({
   name: "Coda",

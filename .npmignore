@@ -1,0 +1,28 @@
+node_modules/
+.aai/
+.env
+.env.*
+.DS_Store
+.claude
+__pycache__/
+*.pyc
+
+# Source / dev files not needed in published package
+cli/
+scripts/
+.githooks/
+.markdownlint.yaml
+biome.json
+tsconfig.json
+vitest.config.ts
+CLAUDE.md
+
+# Test files
+*.test.ts
+*_test.ts
+*_test.tsx
+ui/_test_utils.ts
+ui/_dom_shim.ts
+
+# Previous tarballs
+*.tgz
