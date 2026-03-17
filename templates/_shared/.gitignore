@@ -1,0 +1,20 @@
+# dependencies
+node_modules/
+
+# build output (managed by CLI)
+.aai/
+
+# env files
+.env
+.env.*
+!.env.example
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+
+# typescript
+*.tsbuildinfo

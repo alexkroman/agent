@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.aai/
+.env
+.env.*
+.DS_Store
+.claude
+__pycache__/
+*.pyc

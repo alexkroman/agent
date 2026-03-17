@@ -1,0 +1,17 @@
+{
+  "type": "module",
+  "scripts": {
+    "dev": "aai dev",
+    "build": "aai deploy --dry-run",
+    "deploy": "aai deploy"
+  },
+  "dependencies": {
+    "aai": "^0.3",
+    "preact": "^10",
+    "@preact/signals": "^2",
+    "zod": "^4"
+  },
+  "devDependencies": {
+    "typescript": "^5"
+  }
+}

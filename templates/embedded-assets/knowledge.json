@@ -1,0 +1,20 @@
+{
+  "faqs": [
+    {
+      "question": "What is AAI?",
+      "answer": "AAI is a framework for building voice-powered AI agents that run on Deno."
+    },
+    {
+      "question": "How do agents handle tools?",
+      "answer": "Agents define tools with a schema and handler function. The LLM decides when to call them based on the conversation."
+    },
+    {
+      "question": "What speech providers are supported?",
+      "answer": "AAI supports AssemblyAI for speech-to-text and text-to-speech."
+    },
+    {
+      "question": "Can agents access the internet?",
+      "answer": "Yes, agents run with network access and can make HTTP requests via the fetch API or built-in tools like web_search."
+    }
+  ]
+}

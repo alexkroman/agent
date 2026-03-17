@@ -1,0 +1,76 @@
+{
+  "name": "aai",
+  "version": "0.3.0",
+  "type": "module",
+  "bin": {
+    "aai": "./cli/cli.ts"
+  },
+  "exports": {
+    ".": "./sdk/mod.ts",
+    "./types": "./sdk/types.ts",
+    "./define-agent": "./sdk/define_agent.ts",
+    "./kv": "./sdk/kv.ts",
+    "./vector": "./sdk/vector.ts",
+    "./testing": "./sdk/_mock_ws.ts",
+    "./server": "./sdk/server.ts",
+    "./runtime": "./sdk/runtime.ts",
+    "./ui": "./ui/mod.ts",
+    "./ui/session": "./ui/session_mod.ts",
+    "./ui/components": "./ui/components_mod.ts",
+    "./internal-types": "./sdk/_internal_types.ts",
+    "./protocol": "./sdk/protocol.ts",
+    "./worker-entry": "./sdk/worker_entry.ts",
+    "./worker-shim": "./sdk/_worker_shim.ts",
+    "./timeout": "./sdk/_timeout.ts",
+    "./capnweb-transport": "./sdk/_capnweb_transport.ts",
+    "./builtin-tools": "./sdk/builtin_tools.ts",
+    "./s2s": "./sdk/s2s.ts",
+    "./session": "./sdk/session.ts",
+    "./system-prompt": "./sdk/system_prompt.ts",
+    "./ws-handler": "./sdk/ws_handler.ts",
+    "./direct-executor": "./sdk/direct_executor.ts"
+  },
+  "scripts": {
+    "setup": "git config core.hooksPath .githooks",
+    "test": "vitest run",
+    "lint": "biome check sdk/ ui/ cli/",
+    "lint:fix": "biome check --write sdk/ ui/ cli/",
+    "check": "biome check sdk/ ui/ cli/ && vitest run"
+  },
+  "dependencies": {
+    "@types/json-schema": "^7.0.15",
+    "capnweb": "^0.1",
+    "p-timeout": "^7.0.1",
+    "zod": "^4.3.6",
+    "preact": "^10.29.0",
+    "@preact/signals": "^2.8.2",
+    "@chonkiejs/core": "^0",
+    "@inquirer/prompts": "^7",
+    "@preact/preset-vite": "~2.9",
+    "@tailwindcss/vite": "^4",
+    "chalk": "^5.4",
+    "fast-glob": "^3.3",
+    "fs-extra": "^11.3",
+    "human-id": "^4.1",
+    "minimist": "^1.2",
+    "p-limit": "^7.3.0",
+    "semver": "^7.7",
+    "ts-morph": "^25",
+    "vite": "^6",
+    "vite-plugin-singlefile": "^2"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.7",
+    "@types/node": "^22",
+    "@types/fs-extra": "^11",
+    "@types/minimist": "^1.2",
+    "@types/semver": "^7",
+    "linkedom": "^0.18.10",
+    "typescript": "^5.7",
+    "vitest": "^3.1"
+  },
+  "packageManager": "pnpm@9.15.4",
+  "engines": {
+    "node": ">=20"
+  }
+}
