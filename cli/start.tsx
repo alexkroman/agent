@@ -17,6 +17,7 @@ const startCommandDef: SubcommandDef = {
       flags: "-p, --port <number>",
       description: "Port to listen on (default: 3000)",
     },
+    { flags: "-y, --yes", description: "Accept defaults (no prompts)" },
   ],
 };
 
@@ -27,8 +28,8 @@ const startCommandDef: SubcommandDef = {
 export async function runStartCommand(args: string[], version: string): Promise<void> {
   const parsed = minimist(args, {
     string: ["port"],
-    boolean: ["help"],
-    alias: { p: "port", h: "help" },
+    boolean: ["help", "yes"],
+    alias: { p: "port", h: "help", y: "yes" },
   });
 
   if (parsed.help) {

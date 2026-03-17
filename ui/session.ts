@@ -1,8 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { batch, type Signal, signal } from "@preact/signals";
-import type { ClientEvent, ClientMessage, ReadyConfig, ServerMessage } from "aai/protocol";
-import { PROTOCOL_VERSION } from "aai/protocol";
+import type { ClientEvent, ClientMessage, ReadyConfig, ServerMessage } from "../sdk/protocol.ts";
+import { PROTOCOL_VERSION } from "../sdk/protocol.ts";
 
 const SUPPORTED_PROTOCOL_VERSION = PROTOCOL_VERSION;
 

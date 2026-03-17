@@ -1,4 +1,4 @@
-import { defineAgent } from "aai";
+import { defineAgent } from "@alexkroman1/aai";
 import { z } from "zod";
 import knowledge from "./knowledge.json" with { type: "json" };
 

@@ -10,8 +10,6 @@
 
 import fs from "node:fs/promises";
 import type { JSONSchema7 } from "@types/json-schema";
-import type { AgentConfig, ToolSchema } from "aai/internal-types";
-import { DEFAULT_GREETING, DEFAULT_INSTRUCTIONS } from "aai/types";
 import {
   type CallExpression,
   type Expression,
@@ -22,6 +20,8 @@ import {
   type SpreadAssignment,
   SyntaxKind,
 } from "ts-morph";
+import type { AgentConfig, ToolSchema } from "../sdk/_internal_types.ts";
+import { DEFAULT_GREETING, DEFAULT_INSTRUCTIONS } from "../sdk/types.ts";
 import { BundleError } from "./_bundler.ts";
 
 /** Result of static config extraction. */

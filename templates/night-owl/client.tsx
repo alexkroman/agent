@@ -1,4 +1,4 @@
-import { ChatView, mount, useSession } from "aai/ui";
+import { ChatView, mount, useSession } from "@alexkroman1/aai/ui";
 
 function NightOwl() {
   const { started, start } = useSession();
