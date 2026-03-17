@@ -15,8 +15,6 @@ import pTimeout from "p-timeout";
  * unchanged.
  */
 export function withTimeout<T>(promise: Promise<T>, timeoutMs?: number): Promise<T> {
-  // Wrap in Promise.resolve to normalize capnweb RpcPromise proxies
-  // into real Promises that work with Promise.race.
   const normalized = Promise.resolve(promise);
   if (!timeoutMs) return normalized;
   return pTimeout(normalized, {

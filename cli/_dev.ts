@@ -1,10 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import fs from "node:fs/promises";
-import path from "node:path";
 import { BundleError, bundleAgent } from "./_bundler.ts";
-import { getApiKey, loadAgent } from "./_discover.ts";
+import { loadAgent } from "./_discover.ts";
 import { error as logError, step } from "./_output.ts";
+import { bootServer, loadAgentDef, resolveServerEnv } from "./_server_common.ts";
 
 /**
  * Start a local development server.
@@ -33,39 +32,8 @@ export async function _startDevServer(cwd: string, port: number): Promise<void> 
     throw err;
   }
 
-  // Write client.js to .aai/ for local serving
-  const aaiDir = path.join(cwd, ".aai");
-  await fs.mkdir(aaiDir, { recursive: true });
-
-  // Dynamically import the agent module to get the AgentDef
   step("Load", "agent.ts");
-  const agentPath = path.resolve(cwd, "agent.ts");
-  const agentModule = await import(agentPath);
-  const agentDef = agentModule.default;
-
-  if (!agentDef || typeof agentDef !== "object" || !agentDef.name) {
-    throw new Error("agent.ts must export a default agent definition (from defineAgent())");
-  }
-
-  // Load env vars — try to get AssemblyAI API key
-  const env: Record<string, string> = { ...process.env } as Record<string, string>;
-  if (!env.ASSEMBLYAI_API_KEY) {
-    try {
-      env.ASSEMBLYAI_API_KEY = await getApiKey();
-    } catch {
-      logError("ASSEMBLYAI_API_KEY not set. Set it in your environment or run `aai env add`.");
-    }
-  }
-
-  // Create and start the server
-  step("Start", `http://localhost:${port}`);
-  const { createServer } = await import("aai/server");
-  const server = createServer({
-    agent: agentDef,
-    clientHtml: html,
-    env,
-  });
-
-  step("Ready", `http://localhost:${port}`);
-  await server.listen(port);
+  const agentDef = await loadAgentDef(cwd);
+  const env = await resolveServerEnv();
+  await bootServer(agentDef, html, env, port);
 }

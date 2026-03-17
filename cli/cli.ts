@@ -6,26 +6,18 @@ import { fileURLToPath } from "node:url";
 import minimist from "minimist";
 import { rootHelp } from "./_help.ts";
 import { error } from "./_output.ts";
-import { promptUpgradeIfAvailable } from "./_update.ts";
-import { runDeployCommand } from "./deploy.ts";
-import { runDevCommand } from "./dev.ts";
-import { runEnvCommand } from "./env.ts";
-import { runNewCommand } from "./new.ts";
-import { runRagCommand } from "./rag.ts";
-import { runStartCommand } from "./start.ts";
-import { runUpgradeCommand } from "./upgrade.ts";
+import { runDeployCommand } from "./deploy.tsx";
+import { runDevCommand } from "./dev.tsx";
+import { runEnvCommand } from "./env.tsx";
+import { runNewCommand } from "./new.tsx";
+import { runRagCommand } from "./rag.tsx";
+import { runStartCommand } from "./start.tsx";
 
 const cliDir = path.dirname(fileURLToPath(import.meta.url));
 // Read version from root package.json (single-package repo)
 const pkgJsonPath = path.join(cliDir, "..", "package.json");
 const pkgJson = JSON.parse(readFileSync(pkgJsonPath, "utf-8"));
 const VERSION: string = pkgJson.version;
-
-// Skip update check when running via `node` (dev mode) — only check for compiled binary
-const isCompiled = path.basename(process.argv[0] ?? "") === "aai";
-if (isCompiled) {
-  await promptUpgradeIfAvailable(VERSION);
-}
 
 async function main(args: string[]): Promise<void> {
   const parsed = minimist(args, {
@@ -65,9 +57,6 @@ async function main(args: string[]): Promise<void> {
       return;
     case "rag":
       await runRagCommand(subArgs, VERSION);
-      return;
-    case "upgrade":
-      await runUpgradeCommand(subArgs, VERSION);
       return;
     case "help":
       console.log(rootHelp(VERSION));

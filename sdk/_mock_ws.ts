@@ -16,13 +16,13 @@
  * ```
  */
 export class MockWebSocket extends EventTarget {
-  // deno-lint-ignore deno-style-guide/naming-convention -- mirrors the WebSocket API
+  // mirrors the WebSocket API
   static readonly CONNECTING = 0;
-  // deno-lint-ignore deno-style-guide/naming-convention -- mirrors the WebSocket API
+  // mirrors the WebSocket API
   static readonly OPEN = 1;
-  // deno-lint-ignore deno-style-guide/naming-convention -- mirrors the WebSocket API
+  // mirrors the WebSocket API
   static readonly CLOSING = 2;
-  // deno-lint-ignore deno-style-guide/naming-convention -- mirrors the WebSocket API
+  // mirrors the WebSocket API
   static readonly CLOSED = 3;
 
   readyState = MockWebSocket.CONNECTING;

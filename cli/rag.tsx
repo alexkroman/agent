@@ -1,10 +1,15 @@
+/** @jsxImportSource react */
 // Copyright 2025 the AAI authors. MIT license.
+
+import { render, Text, useApp } from "ink";
 import minimist from "minimist";
 import pLimit from "p-limit";
+import type React from "react";
+import { useEffect, useState } from "react";
 import { DEFAULT_SERVER, getApiKey, isDevMode, readProjectConfig } from "./_discover.ts";
 import type { SubcommandDef } from "./_help.ts";
 import { subcommandHelp } from "./_help.ts";
-import { detail, info, step, warn } from "./_output.ts";
+import { Detail, ErrorLine, Info, Step, StepLog, useStepLog, Warn } from "./_ink.tsx";
 
 /** CLI definition for the `aai rag` subcommand. */
 const ragCommandDef: SubcommandDef = {
@@ -21,6 +26,184 @@ const ragCommandDef: SubcommandDef = {
 };
 
 const FETCH_TIMEOUT_MS = 60_000;
+const PAD = 9;
+
+type RagUIProps = {
+  url: string;
+  apiKey: string;
+  serverUrl: string;
+  slug: string;
+  chunkSize: number;
+  onError?: (err: Error) => void;
+};
+
+function RagUI({ url, apiKey, serverUrl, slug, chunkSize, onError }: RagUIProps) {
+  const { exit } = useApp();
+  const { items, log } = useStepLog();
+  const [progress, setProgress] = useState<{
+    completed: number;
+    total: number;
+  } | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        await runRag({
+          url,
+          apiKey,
+          serverUrl,
+          slug,
+          chunkSize,
+          log,
+          setProgress,
+        });
+      } catch (e: unknown) {
+        const error = e instanceof Error ? e : new Error(String(e));
+        setErr(error.message);
+        onError?.(error);
+      }
+      setProgress(null);
+      exit();
+    })();
+  }, [apiKey, chunkSize, exit, log, onError, serverUrl, slug, url]);
+
+  return (
+    <>
+      <StepLog items={items} />
+      {err && <ErrorLine msg={err} />}
+      {progress && (
+        <Text>
+          {" ".repeat(PAD + 1)}Upsert {progress.completed}/{progress.total} (
+          {Math.round((progress.completed / progress.total) * 100)}
+          %)
+        </Text>
+      )}
+    </>
+  );
+}
+
+type VectorChunk = {
+  id: string;
+  data: string;
+  metadata: Record<string, unknown>;
+};
+
+async function runRag(opts: {
+  url: string;
+  apiKey: string;
+  serverUrl: string;
+  slug: string;
+  chunkSize: number;
+  log: (node: React.ReactNode) => void;
+  setProgress: (p: { completed: number; total: number } | null) => void;
+}) {
+  const { url, apiKey, serverUrl, slug, chunkSize, log, setProgress } = opts;
+
+  // Fetch
+  log(<Step action="Fetch" msg={url} />);
+  const resp = await fetch(url, {
+    headers: { "User-Agent": "aai-cli/1.0" },
+    redirect: "follow",
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  });
+
+  if (!resp.ok) {
+    throw new Error(`Failed to fetch: ${resp.status} ${resp.statusText}`);
+  }
+
+  const content = await resp.text();
+  if (content.length === 0) {
+    log(<Warn msg="File is empty" />);
+    return;
+  }
+  log(<Info msg={`${(content.length / 1024).toFixed(0)} KB`} />);
+
+  // Split into pages, then chunk each page
+  const origin = new URL(url).origin;
+  const pages = splitPages(content);
+  log(<Step action="Parsed" msg={`${pages.length} pages`} />);
+
+  const { RecursiveChunker } = await import("@chonkiejs/core");
+  const chunker = await RecursiveChunker.create({ chunkSize });
+
+  const allChunks: VectorChunk[] = [];
+  const siteSlug = slugify(origin);
+
+  for (const page of pages) {
+    page.body = stripNoise(page.body);
+    if (!page.body) continue;
+    const raw = await chunker.chunk(page.body);
+    for (let i = 0; i < raw.length; i++) {
+      const c = raw[i]!;
+      const data = page.title ? `${page.title}\n\n${c.text}` : c.text;
+      const id = `${siteSlug}:${slugify(page.title || "page")}:${i}`;
+      allChunks.push({
+        id,
+        data,
+        metadata: {
+          source: origin,
+          ...(page.title ? { title: page.title } : {}),
+          tokenCount: c.tokenCount,
+        },
+      });
+    }
+  }
+
+  log(<Step action="Chunked" msg={`${allChunks.length} chunks`} />);
+
+  // Upsert (concurrent with pool)
+  const vectorUrl = `${serverUrl}/${slug}/vector`;
+  log(<Info msg={`target: ${vectorUrl}`} />);
+  const total = allChunks.length;
+  let completed = 0;
+  let upserted = 0;
+  let errors = 0;
+  let lastError = "";
+
+  setProgress({ completed: 0, total });
+
+  const limit = pLimit(5);
+  await Promise.all(
+    allChunks.map((chunk) =>
+      limit(async () => {
+        try {
+          const r = await fetch(vectorUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify({
+              op: "upsert",
+              id: chunk.id,
+              data: chunk.data,
+              metadata: chunk.metadata,
+            }),
+          });
+          if (!r.ok) {
+            lastError = await r.text();
+            errors++;
+          } else {
+            upserted++;
+          }
+        } catch (err: unknown) {
+          lastError = err instanceof Error ? err.message : String(err);
+          errors++;
+        }
+        completed++;
+        setProgress({ completed, total });
+      }),
+    ),
+  );
+
+  log(<Step action="Done" msg={`${upserted} chunks upserted`} />);
+  if (errors > 0) {
+    log(<Warn msg={`${errors} failed`} />);
+    if (lastError) log(<Info msg={`last error: ${lastError}`} />);
+  }
+  log(<Detail msg={`Agent: ${slug}`} />);
+}
 
 /**
  * Runs the `aai rag <url>` subcommand.
@@ -63,130 +246,28 @@ export async function runRagCommand(args: string[], version: string): Promise<vo
     throw new Error("No .aai/project.json found — deploy first with `aai deploy`");
   }
 
+  // Pre-resolve API key (may prompt) before Ink render
   const apiKey = await getApiKey();
   const serverUrl =
     parsed.server || config.serverUrl || (isDevMode() ? "http://localhost:3100" : DEFAULT_SERVER);
   const slug = config.slug;
-  const chunkSize = parseInt(parsed["chunk-size"] ?? "512", 10);
+  const chunkSize = Number.parseInt(parsed["chunk-size"] ?? "512", 10);
 
-  // Fetch
-  step("Fetch", url);
-  const resp = await fetch(url, {
-    headers: { "User-Agent": "aai-cli/1.0" },
-    redirect: "follow",
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-  });
-
-  if (!resp.ok) {
-    throw new Error(`Failed to fetch: ${resp.status} ${resp.statusText}`);
-  }
-
-  const content = await resp.text();
-  if (content.length === 0) {
-    warn("File is empty");
-    return;
-  }
-  info(`${(content.length / 1024).toFixed(0)} KB`);
-
-  // Split into pages, then chunk each page
-  const origin = new URL(url).origin;
-  const pages = splitPages(content);
-  step("Parsed", `${pages.length} pages`);
-
-  const { RecursiveChunker } = await import("@chonkiejs/core");
-  const chunker = await RecursiveChunker.create({ chunkSize });
-
-  type VectorChunk = {
-    id: string;
-    data: string;
-    metadata: Record<string, unknown>;
-  };
-  const allChunks: VectorChunk[] = [];
-  const siteSlug = slugify(origin);
-
-  for (const page of pages) {
-    page.body = stripNoise(page.body);
-    if (!page.body) continue;
-    const raw = await chunker.chunk(page.body);
-    for (let i = 0; i < raw.length; i++) {
-      const c = raw[i]!;
-      // Prepend page title for retrieval context
-      const data = page.title ? `${page.title}\n\n${c.text}` : c.text;
-      const id = `${siteSlug}:${slugify(page.title || "page")}:${i}`;
-      allChunks.push({
-        id,
-        data,
-        metadata: {
-          source: origin,
-          ...(page.title ? { title: page.title } : {}),
-          tokenCount: c.tokenCount,
-        },
-      });
-    }
-  }
-
-  step("Chunked", `${allChunks.length} chunks`);
-
-  // Upsert (concurrent with pool)
-  const vectorUrl = `${serverUrl}/${slug}/vector`;
-  info(`target: ${vectorUrl}`);
-  const total = allChunks.length;
-  let completed = 0;
-  let upserted = 0;
-  let errors = 0;
-  let lastError = "";
-
-  const isTty = process.stdout.isTTY ?? false;
-
-  function showProgress() {
-    if (!isTty) return;
-    const pct = Math.round((completed / total) * 100);
-    process.stdout.write(`\r${" ".repeat(10)}Upsert ${completed}/${total} (${pct}%)`);
-  }
-
-  const limit = pLimit(5);
-  await Promise.all(
-    allChunks.map((chunk) =>
-      limit(async () => {
-        try {
-          const r = await fetch(vectorUrl, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${apiKey}`,
-            },
-            body: JSON.stringify({
-              op: "upsert",
-              id: chunk.id,
-              data: chunk.data,
-              metadata: chunk.metadata,
-            }),
-          });
-          if (!r.ok) {
-            lastError = await r.text();
-            errors++;
-          } else {
-            upserted++;
-          }
-        } catch (err: unknown) {
-          lastError = err instanceof Error ? err.message : String(err);
-          errors++;
-        }
-        completed++;
-        showProgress();
-      }),
-    ),
+  let thrownError: Error | undefined;
+  const app = render(
+    <RagUI
+      url={url}
+      apiKey={apiKey}
+      serverUrl={serverUrl}
+      slug={slug}
+      chunkSize={chunkSize}
+      onError={(e) => {
+        thrownError = e;
+      }}
+    />,
   );
-  if (isTty) {
-    process.stdout.write("\r\x1b[K");
-  }
-
-  step("Done", `${upserted} chunks upserted`);
-  if (errors > 0) {
-    warn(`${errors} failed`);
-    if (lastError) info(`last error: ${lastError}`);
-  }
-  detail(`Agent: ${slug}`);
+  await app.waitUntilExit();
+  if (thrownError) throw thrownError;
 }
 
 // ─── Page splitting ───────────────────────────────────────────────────────────
