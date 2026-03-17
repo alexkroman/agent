@@ -19,5 +19,5 @@ export async function _startProductionServer(cwd: string, port: number): Promise
   step("Load", "agent");
   const agentDef = await loadAgentDef(cwd);
   const env = await resolveServerEnv();
-  await bootServer(agentDef, html, env, port);
+  await bootServer(agentDef, html, env, port, cwd);
 }

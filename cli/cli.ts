@@ -70,15 +70,11 @@ async function main(args: string[]): Promise<void> {
   }
 }
 
-// Detect if this is the main module
-const isMain = process.argv[1] === fileURLToPath(import.meta.url);
-if (isMain) {
-  try {
-    await main(process.argv.slice(2));
-  } catch (err: unknown) {
-    error(err instanceof Error ? err.message : String(err));
-    process.exit(1);
-  }
+try {
+  await main(process.argv.slice(2));
+} catch (err: unknown) {
+  error(err instanceof Error ? err.message : String(err));
+  process.exit(1);
 }
 
 /**

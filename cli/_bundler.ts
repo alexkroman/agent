@@ -67,6 +67,7 @@ const DEFAULT_STYLES_CSS = `\
 @import "tailwindcss";
 @source "./";
 @source "./components/";
+@source "./node_modules/@alexkroman1/aai/ui/";
 
 @theme {
   --color-aai-bg: #101010;
@@ -147,7 +148,7 @@ const INDEX_HTML = `\
       content="width=device-width, initial-scale=1.0, viewport-fit=cover"
     />
     <title>aai</title>
-    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="data:," />
     <link rel="stylesheet" href="../styles.css" />
   </head>
   <body>

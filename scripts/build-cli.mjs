@@ -1,5 +1,5 @@
 import * as esbuild from "esbuild";
-import { chmodSync, readFileSync } from "node:fs";
+import { chmodSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -43,3 +43,13 @@ await esbuild.build({
 });
 
 chmodSync("dist/cli.js", 0o755);
+
+// Wrapper that sets FORCE_COLOR before chalk initializes
+writeFileSync(
+  resolve(agentRoot, "dist/aai.js"),
+  `#!/usr/bin/env node
+if(!process.env.FORCE_COLOR&&!process.env.NO_COLOR&&process.stdout.isTTY)process.env.FORCE_COLOR='1';
+await import("./cli.js");
+`,
+);
+chmodSync(resolve(agentRoot, "dist/aai.js"), 0o755);

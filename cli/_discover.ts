@@ -12,7 +12,10 @@ import { askPassword } from "./_prompts.tsx";
  * vs a compiled binary.
  */
 export function isDevMode(): boolean {
-  return path.basename(process.argv[0] ?? "") !== "aai";
+  // When installed via npm, argv[1] is the dist/cli.js bundle.
+  // Dev mode is only true when running raw TS source (e.g. via tsx).
+  const script = process.argv[1] ?? "";
+  return script.endsWith(".ts") || script.endsWith(".tsx");
 }
 
 /**

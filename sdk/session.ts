@@ -250,12 +250,12 @@ export function createS2sSession(opts: SessionOptions): Session {
         });
         handle.resumeSession(s2sSessionId);
       }
-      // Send config without greeting first — greeting is deferred until
-      // the client's audio is ready (onAudioReady) to avoid a race where
-      // greeting audio arrives before the browser can play it.
+      // Send config with greeting on initial connect.
+      // Audio may arrive before the client is ready — the client buffers it.
       handle.updateSession({
         system_prompt: systemPrompt,
         tools: s2sTools,
+        ...(agentConfig.greeting ? { greeting: agentConfig.greeting } : {}),
       });
 
       handle.addEventListener("ready", ((e: CustomEvent<{ session_id: string }>) => {
@@ -400,14 +400,7 @@ export function createS2sSession(opts: SessionOptions): Session {
     onAudioReady(): void {
       if (audioReady) return;
       audioReady = true;
-      // Now that the client can play audio, send greeting via session.update.
-      if (agentConfig.greeting && s2s) {
-        s2s.updateSession({
-          system_prompt: systemPrompt,
-          tools: s2sTools,
-          greeting: agentConfig.greeting,
-        });
-      }
+      // Greeting audio + transcript come from S2S automatically.
     },
 
     onCancel(): void {

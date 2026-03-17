@@ -100,7 +100,7 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
 
   let session: Session | null = null;
 
-  ws.addEventListener("open", () => {
+  function onOpen(): void {
     opts.onOpen?.();
     log.info("Session connected", { ...ctx, sid });
 
@@ -113,16 +113,23 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
 
     void session.start();
     log.info("Session ready", { ...ctx, sid });
-  });
+  }
+
+  // readyState 1 = OPEN — socket already open (e.g. from ws handleUpgrade)
+  if (ws.readyState === 1) {
+    onOpen();
+  } else {
+    ws.addEventListener("open", onOpen);
+  }
 
   ws.addEventListener("message", (event: Event) => {
     if (!session) return;
     const msgEvent = event as MessageEvent;
     const { data } = msgEvent;
 
-    // Binary frame → raw PCM16 audio
-    if (data instanceof ArrayBuffer) {
-      const chunk = new Uint8Array(data);
+    // Binary frame → raw PCM16 audio (ws package delivers Buffer)
+    if (Buffer.isBuffer(data)) {
+      const chunk = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
       if (!isValidAudioChunk(chunk)) {
         log.warn("Invalid audio chunk, dropping", {
           ...ctx,

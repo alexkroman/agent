@@ -8,12 +8,6 @@ Voice agent development kit. Define agents in TypeScript, deploy anywhere.
 npm install -g @alexkroman1/aai
 ```
 
-Or run directly with npx:
-
-```sh
-npx @alexkroman1/aai
-```
-
 ## Quick start
 
 ```sh

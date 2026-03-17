@@ -3,7 +3,7 @@
   "version": "0.4.0",
   "type": "module",
   "bin": {
-    "aai": "dist/cli.js"
+    "aai": "dist/aai.js"
   },
   "exports": {
     ".": "./sdk/mod.ts",
