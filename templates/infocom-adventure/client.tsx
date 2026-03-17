@@ -1,5 +1,5 @@
-import { mount, useSession } from "aai/ui";
-import type { Message } from "aai/ui";
+import { mount, useSession } from "@alexkroman1/aai/ui";
+import type { Message } from "@alexkroman1/aai/ui";
 import { useEffect, useRef } from "preact/hooks";
 
 const CSS = `

@@ -8,9 +8,9 @@ import { rootHelp } from "./_help.ts";
 import { error } from "./_output.ts";
 import { runDeployCommand } from "./deploy.tsx";
 import { runDevCommand } from "./dev.tsx";
-import { runEnvCommand } from "./env.tsx";
 import { runNewCommand } from "./new.tsx";
 import { runRagCommand } from "./rag.tsx";
+import { runSecretCommand } from "./secret.tsx";
 import { runStartCommand } from "./start.tsx";
 
 const cliDir = path.dirname(fileURLToPath(import.meta.url));
@@ -40,6 +40,7 @@ async function main(args: string[]): Promise<void> {
   const subArgs = rest.map(String);
 
   switch (subcommand) {
+    case "init":
     case "new":
       await runNewCommand(subArgs, VERSION);
       return;
@@ -52,18 +53,15 @@ async function main(args: string[]): Promise<void> {
     case "start":
       await runStartCommand(subArgs, VERSION);
       return;
-    case "env":
-      await runEnvCommand(subArgs, VERSION);
+    case "secret":
+      await runSecretCommand(subArgs, VERSION);
       return;
     case "rag":
       await runRagCommand(subArgs, VERSION);
       return;
     case "help":
-      console.log(rootHelp(VERSION));
-      return;
     case undefined:
-      // Default: scaffold (if needed) + deploy
-      await runDeployCommand(args, VERSION);
+      console.log(rootHelp(VERSION));
       return;
     default:
       error(`Unknown command: ${subcommand}`);
@@ -85,7 +83,7 @@ if (isMain) {
 
 /**
  * Entry point for the `aai` CLI. Parses top-level arguments and dispatches
- * to the appropriate subcommand (`new`, `deploy`, or `help`).
+ * to the appropriate subcommand (`init`, `deploy`, `secret`, etc.).
  *
  * @param args Command-line arguments (typically `process.argv.slice(2)`).
  * @returns Resolves when the subcommand completes.

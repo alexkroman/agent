@@ -51,7 +51,11 @@ function workerEntryPlugin(agentDir: string): Plugin {
     load(source) {
       if (source === resolved) {
         const agentPath = path.resolve(agentDir, "agent.ts");
-        return [`import agent from "${agentPath}";`, `export default agent;`].join("\n");
+        return [
+          `import agent from "${agentPath}";`,
+          `import { initWorker } from "@alexkroman1/aai/worker-shim";`,
+          `initWorker(agent);`,
+        ].join("\n");
       }
     },
   };

@@ -18,6 +18,7 @@ const devCommandDef: SubcommandDef = {
       flags: "-p, --port <number>",
       description: "Port to listen on (default: 3000)",
     },
+    { flags: "-y, --yes", description: "Accept defaults (no prompts)" },
   ],
 };
 
@@ -28,8 +29,8 @@ const devCommandDef: SubcommandDef = {
 export async function runDevCommand(args: string[], version: string): Promise<void> {
   const parsed = minimist(args, {
     string: ["port"],
-    boolean: ["help"],
-    alias: { p: "port", h: "help" },
+    boolean: ["help", "yes"],
+    alias: { p: "port", h: "help", y: "yes" },
   });
 
   if (parsed.help) {
@@ -42,7 +43,7 @@ export async function runDevCommand(args: string[], version: string): Promise<vo
 
   // If no agent.ts exists, scaffold first (may prompt for template)
   if (!(await fileExists(path.join(cwd, "agent.ts")))) {
-    await runNewCommand([], version);
+    await runNewCommand(parsed.yes ? ["-y"] : [], version);
   }
 
   // Pre-resolve API key (may prompt) before Ink render

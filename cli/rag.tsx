@@ -22,6 +22,7 @@ const ragCommandDef: SubcommandDef = {
       flags: "--chunk-size <n>",
       description: "Max chunk size in tokens (default: 512)",
     },
+    { flags: "-y, --yes", description: "Accept defaults (no prompts)" },
   ],
 };
 
@@ -217,8 +218,8 @@ async function runRag(opts: {
 export async function runRagCommand(args: string[], version: string): Promise<void> {
   const parsed = minimist(args, {
     string: ["server", "chunk-size"],
-    boolean: ["help"],
-    alias: { s: "server", h: "help" },
+    boolean: ["help", "yes"],
+    alias: { s: "server", h: "help", y: "yes" },
     stopEarly: true,
   });
 

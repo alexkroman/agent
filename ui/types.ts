@@ -31,7 +31,7 @@ export type ToolCallInfo = {
   afterMessageIndex: number;
 };
 
-import type { SessionErrorCode } from "aai/protocol";
+import type { SessionErrorCode } from "../sdk/protocol.ts";
 
 export type { SessionErrorCode };
 

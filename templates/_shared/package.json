@@ -6,7 +6,7 @@
     "deploy": "aai deploy"
   },
   "dependencies": {
-    "aai": "^0.3",
+    "@alexkroman1/aai": "^0.3",
     "preact": "^10",
     "@preact/signals": "^2",
     "zod": "^4"

@@ -1,9 +1,9 @@
 {
-  "name": "aai",
+  "name": "@alexkroman1/aai",
   "version": "0.3.0",
   "type": "module",
   "bin": {
-    "aai": "./cli/cli.ts"
+    "aai": "dist/cli.js"
   },
   "exports": {
     ".": "./sdk/mod.ts",
@@ -26,10 +26,15 @@
     "./session": "./sdk/session.ts",
     "./system-prompt": "./sdk/system_prompt.ts",
     "./ws-handler": "./sdk/ws_handler.ts",
-    "./direct-executor": "./sdk/direct_executor.ts"
+    "./direct-executor": "./sdk/direct_executor.ts",
+    "./capnweb": "./sdk/capnweb.ts",
+    "./winterc-server": "./sdk/winterc_server.ts",
+    "./worker-shim": "./sdk/worker_shim.ts"
   },
   "scripts": {
     "setup": "git config core.hooksPath .githooks",
+    "build:cli": "node scripts/build-cli.mjs",
+    "prepublishOnly": "npm run build:cli",
     "test": "vitest run",
     "lint": "biome check sdk/ ui/ cli/",
     "lint:fix": "biome check --write sdk/ ui/ cli/",

@@ -14,6 +14,18 @@ import type { Logger } from "./runtime.ts";
 import { consoleLogger } from "./runtime.ts";
 import type { Session } from "./session.ts";
 
+/**
+ * Minimal WebSocket interface accepted by {@linkcode wireSessionSocket}.
+ *
+ * Satisfied by the standard `WebSocket`, `BridgedWebSocket` (capnweb),
+ * and the `ws` npm package's WebSocket.
+ */
+export type SessionWebSocket = {
+  readonly readyState: number;
+  send(data: string | ArrayBuffer | Uint8Array): void;
+  addEventListener(type: string, listener: EventListenerOrEventListenerObject): void;
+};
+
 /** Max size for a single audio chunk from the browser (1 MB). */
 const MAX_AUDIO_CHUNK_BYTES = 1_048_576;
 
@@ -48,23 +60,23 @@ export type WsSessionOptions = {
  * Text events are sent as JSON text frames; audio chunks are sent as
  * binary frames (zero-copy).
  */
-function createClientSink(ws: WebSocket): ClientSink {
+function createClientSink(ws: SessionWebSocket): ClientSink {
   return {
     get open() {
-      return ws.readyState === WebSocket.OPEN;
+      return ws.readyState === 1;
     },
     event(e) {
-      if (ws.readyState === WebSocket.OPEN) {
+      if (ws.readyState === 1) {
         ws.send(JSON.stringify(e));
       }
     },
     playAudioChunk(chunk) {
-      if (ws.readyState === WebSocket.OPEN) {
+      if (ws.readyState === 1) {
         ws.send(chunk);
       }
     },
     playAudioDone() {
-      if (ws.readyState === WebSocket.OPEN) {
+      if (ws.readyState === 1) {
         ws.send(JSON.stringify({ type: "audio_done" }));
       }
     },
@@ -80,7 +92,7 @@ function createClientSink(ws: WebSocket): ClientSink {
  * 2. Client sets up audio → sends `{ type: "audio_ready" }`
  * 3. If reconnecting → client sends `{ type: "history", messages: [...] }`
  */
-export function wireSessionSocket(ws: WebSocket, opts: WsSessionOptions): void {
+export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions): void {
   const { sessions, logger: log = consoleLogger } = opts;
   const sessionId = crypto.randomUUID();
   const sid = sessionId.slice(0, 8);
