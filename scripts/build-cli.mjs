@@ -9,7 +9,7 @@ const agentRoot = resolve(__dirname, "..");
 
 // 1. Compile SDK + UI to dist/ with tsc
 console.log("Compiling SDK + UI...");
-execSync("npx tsc -p tsconfig.build.json", { cwd: agentRoot, stdio: "inherit" });
+execSync("tsc -p tsconfig.build.json", { cwd: agentRoot, stdio: "inherit" });
 
 // 2. Read exports map from package.json to resolve aai/* self-references
 const pkg = JSON.parse(readFileSync(resolve(agentRoot, "package.json"), "utf-8"));
