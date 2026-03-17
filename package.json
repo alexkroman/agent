@@ -5,31 +5,106 @@
   "bin": {
     "aai": "dist/aai.js"
   },
+  "files": [
+    "dist"
+  ],
   "exports": {
-    ".": "./sdk/mod.ts",
-    "./types": "./sdk/types.ts",
-    "./define-agent": "./sdk/define_agent.ts",
-    "./kv": "./sdk/kv.ts",
-    "./vector": "./sdk/vector.ts",
-    "./testing": "./sdk/_mock_ws.ts",
-    "./server": "./sdk/server.ts",
-    "./runtime": "./sdk/runtime.ts",
-    "./ui": "./ui/mod.ts",
-    "./ui/session": "./ui/session_mod.ts",
-    "./ui/components": "./ui/components_mod.ts",
-    "./internal-types": "./sdk/_internal_types.ts",
-    "./protocol": "./sdk/protocol.ts",
-    "./worker-entry": "./sdk/worker_entry.ts",
-    "./timeout": "./sdk/_timeout.ts",
-    "./builtin-tools": "./sdk/builtin_tools.ts",
-    "./s2s": "./sdk/s2s.ts",
-    "./session": "./sdk/session.ts",
-    "./system-prompt": "./sdk/system_prompt.ts",
-    "./ws-handler": "./sdk/ws_handler.ts",
-    "./direct-executor": "./sdk/direct_executor.ts",
-    "./capnweb": "./sdk/capnweb.ts",
-    "./winterc-server": "./sdk/winterc_server.ts",
-    "./worker-shim": "./sdk/worker_shim.ts"
+    ".": {
+      "types": "./dist/sdk/mod.d.ts",
+      "default": "./dist/sdk/mod.js"
+    },
+    "./types": {
+      "types": "./dist/sdk/types.d.ts",
+      "default": "./dist/sdk/types.js"
+    },
+    "./define-agent": {
+      "types": "./dist/sdk/define_agent.d.ts",
+      "default": "./dist/sdk/define_agent.js"
+    },
+    "./kv": {
+      "types": "./dist/sdk/kv.d.ts",
+      "default": "./dist/sdk/kv.js"
+    },
+    "./vector": {
+      "types": "./dist/sdk/vector.d.ts",
+      "default": "./dist/sdk/vector.js"
+    },
+    "./testing": {
+      "types": "./dist/sdk/_mock_ws.d.ts",
+      "default": "./dist/sdk/_mock_ws.js"
+    },
+    "./server": {
+      "types": "./dist/sdk/server.d.ts",
+      "default": "./dist/sdk/server.js"
+    },
+    "./runtime": {
+      "types": "./dist/sdk/runtime.d.ts",
+      "default": "./dist/sdk/runtime.js"
+    },
+    "./ui": {
+      "types": "./dist/ui/mod.d.ts",
+      "default": "./dist/ui/mod.js"
+    },
+    "./ui/session": {
+      "types": "./dist/ui/session_mod.d.ts",
+      "default": "./dist/ui/session_mod.js"
+    },
+    "./ui/components": {
+      "types": "./dist/ui/components_mod.d.ts",
+      "default": "./dist/ui/components_mod.js"
+    },
+    "./internal-types": {
+      "types": "./dist/sdk/_internal_types.d.ts",
+      "default": "./dist/sdk/_internal_types.js"
+    },
+    "./protocol": {
+      "types": "./dist/sdk/protocol.d.ts",
+      "default": "./dist/sdk/protocol.js"
+    },
+    "./worker-entry": {
+      "types": "./dist/sdk/worker_entry.d.ts",
+      "default": "./dist/sdk/worker_entry.js"
+    },
+    "./timeout": {
+      "types": "./dist/sdk/_timeout.d.ts",
+      "default": "./dist/sdk/_timeout.js"
+    },
+    "./builtin-tools": {
+      "types": "./dist/sdk/builtin_tools.d.ts",
+      "default": "./dist/sdk/builtin_tools.js"
+    },
+    "./s2s": {
+      "types": "./dist/sdk/s2s.d.ts",
+      "default": "./dist/sdk/s2s.js"
+    },
+    "./session": {
+      "types": "./dist/sdk/session.d.ts",
+      "default": "./dist/sdk/session.js"
+    },
+    "./system-prompt": {
+      "types": "./dist/sdk/system_prompt.d.ts",
+      "default": "./dist/sdk/system_prompt.js"
+    },
+    "./ws-handler": {
+      "types": "./dist/sdk/ws_handler.d.ts",
+      "default": "./dist/sdk/ws_handler.js"
+    },
+    "./direct-executor": {
+      "types": "./dist/sdk/direct_executor.d.ts",
+      "default": "./dist/sdk/direct_executor.js"
+    },
+    "./capnweb": {
+      "types": "./dist/sdk/capnweb.d.ts",
+      "default": "./dist/sdk/capnweb.js"
+    },
+    "./winterc-server": {
+      "types": "./dist/sdk/winterc_server.d.ts",
+      "default": "./dist/sdk/winterc_server.js"
+    },
+    "./worker-shim": {
+      "types": "./dist/sdk/worker_shim.d.ts",
+      "default": "./dist/sdk/worker_shim.js"
+    }
   },
   "scripts": {
     "setup": "git config core.hooksPath .githooks",
@@ -37,7 +112,7 @@
     "test": "vitest run",
     "lint": "biome check sdk/ ui/ cli/",
     "lint:fix": "biome check --write sdk/ ui/ cli/",
-    "check": "biome check sdk/ ui/ cli/ && vitest run"
+    "check": "tsc -p tsconfig.build.json --noEmit && biome check sdk/ ui/ cli/ && vitest run"
   },
   "dependencies": {
     "@chonkiejs/core": "^0",
@@ -67,6 +142,7 @@
     "@types/minimist": "^1.2",
     "@types/node": "^22",
     "@types/react": "^18",
+    "@types/ws": "^8.18.1",
     "ink-testing-library": "^4",
     "linkedom": "^0.18.10",
     "typescript": "^5.7",

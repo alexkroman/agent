@@ -127,9 +127,22 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
     const msgEvent = event as MessageEvent;
     const { data } = msgEvent;
 
-    // Binary frame → raw PCM16 audio (ws package delivers Buffer)
-    if (Buffer.isBuffer(data)) {
-      const chunk = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+    // Binary frame → raw PCM16 audio
+    // Node's ws package delivers Buffer; Deno/browsers deliver ArrayBuffer
+    // deno-lint-ignore no-explicit-any
+    const isBinary =
+      (globalThis as any).Buffer?.isBuffer(data) ||
+      data instanceof ArrayBuffer ||
+      data instanceof Uint8Array;
+    if (isBinary) {
+      const chunk =
+        data instanceof Uint8Array
+          ? data
+          : new Uint8Array(
+              data.buffer ?? data,
+              data.byteOffset ?? 0,
+              data.byteLength ?? data.byteLength,
+            );
       if (!isValidAudioChunk(chunk)) {
         log.warn("Invalid audio chunk, dropping", {
           ...ctx,
