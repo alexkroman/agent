@@ -164,7 +164,7 @@ export function wireSessionSocket(ws: WebSocket, opts: WsSessionOptions): void {
   ws.addEventListener("close", () => {
     log.info("Session disconnected", { ...ctx, sid });
     if (session) {
-      void session.stop().then(() => {
+      void session.stop().finally(() => {
         sessions.delete(sessionId);
       });
     }

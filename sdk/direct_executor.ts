@@ -47,6 +47,7 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
 
   // Per-session mutable state
   const sessionState = new Map<string, unknown>();
+  const frozenEnv = Object.freeze({ ...env });
 
   function getState(sessionId: string): unknown {
     if (!sessionState.has(sessionId) && agent.state) {
@@ -56,13 +57,12 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
   }
 
   function makeHookContext(sessionId: string): HookContext {
-    const proxyKv = kv;
     return {
       sessionId,
-      env: { ...env },
+      env: frozenEnv,
       state: getState(sessionId) as Record<string, unknown>,
       get kv() {
-        return proxyKv;
+        return kv;
       },
     };
   }
@@ -73,7 +73,7 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
 
     return executeToolCall(name, args, {
       tool,
-      env,
+      env: frozenEnv,
       sessionId,
       state: getState(sessionId ?? ""),
       kv,
@@ -92,7 +92,7 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
     async onTurn(sessionId, text) {
       await agent.onTurn?.(text, makeHookContext(sessionId));
     },
-    async onError(sessionId, error) {
+    onError(sessionId, error) {
       agent.onError?.(new Error(error.message), makeHookContext(sessionId));
     },
     async onStep(sessionId, step: StepInfo) {

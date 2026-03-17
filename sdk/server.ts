@@ -76,21 +76,11 @@ async function loadWsFactory(): Promise<CreateS2sWebSocket> {
   }
 }
 
-/** Resolve environment from agent.env list + provided env record. */
-function resolveEnv(
-  agent: AgentDef,
-  env: Record<string, string | undefined>,
-): Record<string, string> {
+/** Filter env to only defined string values. */
+function resolveEnv(env: Record<string, string | undefined>): Record<string, string> {
   const resolved: Record<string, string> = {};
-  for (const key of agent.env) {
-    const value = env[key];
-    if (value !== undefined) resolved[key] = value;
-  }
-  // Also include any extra env vars that may be needed by tools
   for (const [key, value] of Object.entries(env)) {
-    if (value !== undefined && !(key in resolved)) {
-      resolved[key] = value;
-    }
+    if (value !== undefined) resolved[key] = value;
   }
   return resolved;
 }
@@ -112,7 +102,6 @@ export function createServer(options: ServerOptions): AgentServer {
   const { agent, kv, clientHtml, logger = consoleLogger, s2sConfig = DEFAULT_S2S_CONFIG } = options;
 
   const env = resolveEnv(
-    agent,
     options.env ?? (typeof process !== "undefined" ? (process.env as Record<string, string>) : {}),
   );
 
@@ -163,7 +152,7 @@ export function createServer(options: ServerOptions): AgentServer {
   };
 
   // Deno server handle for cleanup
-  let denoServer: { shutdown(): Promise<void> } | null = null;
+  let serverHandle: { shutdown(): Promise<void> } | null = null;
 
   async function handleRequest(request: Request): Promise<Response> {
     const url = new URL(request.url);
@@ -225,7 +214,7 @@ export function createServer(options: ServerOptions): AgentServer {
 
       // Deno runtime
       if (typeof Deno !== "undefined") {
-        denoServer = Deno.serve({ port }, handleRequest);
+        serverHandle = Deno.serve({ port }, handleRequest);
         logger.info(`Agent "${agent.name}" listening on http://localhost:${port}`);
         return;
       }
@@ -268,7 +257,11 @@ export function createServer(options: ServerOptions): AgentServer {
               socket as Parameters<typeof wss.handleUpgrade>[1],
               head as Parameters<typeof wss.handleUpgrade>[2],
               (ws: WebSocket) => {
-                const resume = (req as { url?: string }).url?.includes("resume") ?? false;
+                const reqUrl = new URL(
+                  (req as { url?: string }).url ?? "/",
+                  `http://localhost:${port}`,
+                );
+                const resume = reqUrl.searchParams.has("resume");
                 wireSessionSocket(ws, {
                   sessions,
                   createSession: (sid, client) => createSessionForWs(sid, client, resume),
@@ -290,7 +283,7 @@ export function createServer(options: ServerOptions): AgentServer {
         });
       });
 
-      denoServer = {
+      serverHandle = {
         async shutdown() {
           await new Promise<void>((resolve, reject) => {
             nodeServer.close((err) => (err ? reject(err) : resolve()));
@@ -305,7 +298,7 @@ export function createServer(options: ServerOptions): AgentServer {
         await session.stop();
       }
       sessions.clear();
-      await denoServer?.shutdown();
+      await serverHandle?.shutdown();
     },
   };
 }
