@@ -14,6 +14,7 @@ import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime.ts";
 import type { CreateS2sWebSocket, S2sWebSocket } from "./s2s.ts";
 import type { AgentDef } from "./types.ts";
 import { createWintercServer, type WintercServer } from "./winterc_server.ts";
+import type { SessionWebSocket } from "./ws_handler.ts";
 
 export type ServerOptions = {
   /** The agent definition returned by `defineAgent()`. */
@@ -104,7 +105,7 @@ export function createServer(options: ServerOptions): AgentServer {
         env,
         ...(kv ? { kv } : {}),
         createWebSocket: wsFactory!,
-        clientHtml,
+        ...(clientHtml !== undefined ? { clientHtml } : {}),
         logger,
         s2sConfig,
       });
@@ -151,7 +152,7 @@ export function createServer(options: ServerOptions): AgentServer {
       // WebSocket upgrade via ws package
       try {
         const wsMod = await import("ws");
-        const WSServer = wsMod.WebSocketServer ?? wsMod.default?.Server;
+        const WSServer = wsMod.WebSocketServer;
         if (WSServer) {
           const wss = new WSServer({ noServer: true });
           nodeServer.on("upgrade", (req: unknown, socket: unknown, head: unknown) => {
@@ -159,13 +160,15 @@ export function createServer(options: ServerOptions): AgentServer {
               req as Parameters<typeof wss.handleUpgrade>[0],
               socket as Parameters<typeof wss.handleUpgrade>[1],
               head as Parameters<typeof wss.handleUpgrade>[2],
-              (ws: WebSocket) => {
+              (ws) => {
                 const reqUrl = new URL(
                   (req as { url?: string }).url ?? "/",
                   `http://localhost:${port}`,
                 );
                 const resume = reqUrl.searchParams.has("resume");
-                getWinterc().handleWebSocket(ws, { skipGreeting: resume });
+                getWinterc().handleWebSocket(ws as unknown as SessionWebSocket, {
+                  skipGreeting: resume,
+                });
               },
             );
           });

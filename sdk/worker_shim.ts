@@ -126,7 +126,7 @@ export function initWorker(agent: AgentDef): void {
       kv,
       vectorSearch,
       createWebSocket,
-      clientHtml,
+      ...(clientHtml !== undefined ? { clientHtml } : {}),
     });
 
     return "ok";
@@ -164,7 +164,7 @@ export function initWorker(agent: AgentDef): void {
     if (!port) throw new Error("No port transferred");
 
     const ws = new BridgedWebSocket(port);
-    wintercServer.handleWebSocket(ws, { skipGreeting });
+    wintercServer.handleWebSocket(ws, { skipGreeting: skipGreeting ?? false });
     return "ok";
   });
 }

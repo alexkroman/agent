@@ -1,15 +1,21 @@
 import * as esbuild from "esbuild";
 import { chmodSync, readFileSync, writeFileSync } from "node:fs";
+import { execSync } from "node:child_process";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const agentRoot = resolve(__dirname, "..");
 
-// Read exports map from package.json to resolve aai/* self-references
+// 1. Compile SDK + UI to dist/ with tsc
+console.log("Compiling SDK + UI...");
+execSync("npx tsc -p tsconfig.build.json", { cwd: agentRoot, stdio: "inherit" });
+
+// 2. Read exports map from package.json to resolve aai/* self-references
 const pkg = JSON.parse(readFileSync(resolve(agentRoot, "package.json"), "utf-8"));
 const exportsMap = new Map();
-for (const [subpath, target] of Object.entries(pkg.exports)) {
+for (const [subpath, entry] of Object.entries(pkg.exports)) {
+  const target = typeof entry === "string" ? entry : entry.default;
   const specifier = subpath === "." ? pkg.name : `${pkg.name}/${subpath.slice(2)}`;
   exportsMap.set(specifier, resolve(agentRoot, target));
   // Also map the old unscoped name for backwards compat

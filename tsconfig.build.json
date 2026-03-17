@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rewriteRelativeImportExtensions": true
+  },
+  "include": ["sdk/**/*.ts", "ui/**/*.ts", "ui/**/*.tsx"],
+  "exclude": ["node_modules", "dist", "**/*_test.ts", "**/*_test.tsx", "**/_test_utils.ts"]
+}
