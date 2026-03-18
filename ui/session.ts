@@ -292,8 +292,8 @@ export function createVoiceSession(options: SessionOptions): VoiceSession {
       }
       const [{ createVoiceIO }, captureWorklet, playbackWorklet] = await Promise.all([
         import("./audio.ts"),
-        import("./worklets/capture-processor.js").then((m) => m.default as unknown as string),
-        import("./worklets/playback-processor.js").then((m) => m.default as unknown as string),
+        import("./worklets/capture-processor.ts").then((m) => m.default),
+        import("./worklets/playback-processor.ts").then((m) => m.default),
       ]);
       const io = await createVoiceIO({
         sttSampleRate: msg.sampleRate,
