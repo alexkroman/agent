@@ -9,7 +9,7 @@
  */
 
 import fs from "node:fs/promises";
-import type { JSONSchema7 } from "@types/json-schema";
+import type { JSONSchema7 } from "json-schema";
 import {
   type CallExpression,
   type Expression,
@@ -133,19 +133,20 @@ function extractConfig(obj: ObjectLiteralExpression, fileName: string): AgentCon
   // transport
   const transportProp = getProperty(obj, "transport");
   if (transportProp) {
-    const init = getInit(transportProp);
-    if (init.isKind(SyntaxKind.StringLiteral)) {
-      config.transport = [init.getLiteralValue()] as AgentConfig["transport"];
-    } else if (init.isKind(SyntaxKind.ArrayLiteralExpression)) {
-      config.transport = evalStringArray(init, "transport", fileName) as AgentConfig["transport"];
-    } else {
-      throw new BundleError(
-        `${fileName}: \`transport\` must be a string literal or array of strings.`,
-      );
-    }
+    config.transport = extractTransport(getInit(transportProp), fileName);
   }
 
   return config;
+}
+
+function extractTransport(init: Expression, fileName: string): AgentConfig["transport"] {
+  if (init.isKind(SyntaxKind.StringLiteral)) {
+    return [init.getLiteralValue()] as AgentConfig["transport"];
+  }
+  if (init.isKind(SyntaxKind.ArrayLiteralExpression)) {
+    return evalStringArray(init, "transport", fileName) as AgentConfig["transport"];
+  }
+  throw new BundleError(`${fileName}: \`transport\` must be a string literal or array of strings.`);
 }
 
 // ── Tool schema extraction ────────────────────────────────────────────────────
@@ -269,28 +270,8 @@ function parseZodBase(
     case "boolean":
       return { schema: { type: "boolean" }, optional: false };
 
-    case "enum": {
-      const args = call.getArguments();
-      const arg = args[0];
-      if (!arg?.isKind(SyntaxKind.ArrayLiteralExpression)) {
-        throw new BundleError(
-          `${fileName}: Tool \`${toolName}\`: z.enum() requires an array literal argument.`,
-        );
-      }
-      const arr = arg.asKindOrThrow(SyntaxKind.ArrayLiteralExpression);
-      const values = arr.getElements().map((el) => {
-        if (!el.isKind(SyntaxKind.StringLiteral)) {
-          throw new BundleError(
-            `${fileName}: Tool \`${toolName}\`: z.enum() values must be string literals.`,
-          );
-        }
-        return el.asKindOrThrow(SyntaxKind.StringLiteral).getLiteralValue();
-      });
-      return {
-        schema: { type: "string", enum: values },
-        optional: false,
-      };
-    }
+    case "enum":
+      return parseZodEnum(call, toolName, fileName);
 
     case "array": {
       const args = call.getArguments();
@@ -305,46 +286,8 @@ function parseZodBase(
       };
     }
 
-    case "object": {
-      const args = call.getArguments();
-      const arg = args[0];
-      if (!arg?.isKind(SyntaxKind.ObjectLiteralExpression)) {
-        return {
-          schema: {
-            type: "object",
-            properties: {},
-            additionalProperties: false,
-          },
-          optional: false,
-        };
-      }
-
-      const objLit = arg.asKindOrThrow(SyntaxKind.ObjectLiteralExpression);
-      const properties: Record<string, JSONSchema7> = {};
-      const required: string[] = [];
-
-      for (const member of objLit.getProperties()) {
-        if (!member.isKind(SyntaxKind.PropertyAssignment)) continue;
-        const prop = member as PropertyAssignment;
-        const propName = prop.getName();
-
-        const result = parseZodExpr(getInit(prop), toolName, fileName);
-        properties[propName] = result.schema;
-        if (!result.optional) {
-          required.push(propName);
-        }
-      }
-
-      const schema: JSONSchema7 = {
-        type: "object",
-        properties,
-        additionalProperties: false,
-      };
-      if (required.length > 0) {
-        schema.required = required;
-      }
-      return { schema, optional: false };
-    }
+    case "object":
+      return parseZodObject(call, toolName, fileName);
 
     default:
       throw new BundleError(
@@ -353,6 +296,70 @@ function parseZodBase(
           "z.array(...), z.object({...}).",
       );
   }
+}
+
+function parseZodEnum(call: CallExpression, toolName: string, fileName: string): ZodResult {
+  const args = call.getArguments();
+  const arg = args[0];
+  if (!arg?.isKind(SyntaxKind.ArrayLiteralExpression)) {
+    throw new BundleError(
+      `${fileName}: Tool \`${toolName}\`: z.enum() requires an array literal argument.`,
+    );
+  }
+  const arr = arg.asKindOrThrow(SyntaxKind.ArrayLiteralExpression);
+  const values = arr.getElements().map((el) => {
+    if (!el.isKind(SyntaxKind.StringLiteral)) {
+      throw new BundleError(
+        `${fileName}: Tool \`${toolName}\`: z.enum() values must be string literals.`,
+      );
+    }
+    return el.asKindOrThrow(SyntaxKind.StringLiteral).getLiteralValue();
+  });
+  return {
+    schema: { type: "string", enum: values },
+    optional: false,
+  };
+}
+
+function parseZodObject(call: CallExpression, toolName: string, fileName: string): ZodResult {
+  const args = call.getArguments();
+  const arg = args[0];
+  if (!arg?.isKind(SyntaxKind.ObjectLiteralExpression)) {
+    return {
+      schema: {
+        type: "object",
+        properties: {},
+        additionalProperties: false,
+      },
+      optional: false,
+    };
+  }
+
+  const objLit = arg.asKindOrThrow(SyntaxKind.ObjectLiteralExpression);
+  const properties: Record<string, JSONSchema7> = {};
+  const required: string[] = [];
+
+  for (const member of objLit.getProperties()) {
+    if (!member.isKind(SyntaxKind.PropertyAssignment)) continue;
+    const prop = member as PropertyAssignment;
+    const propName = prop.getName();
+
+    const result = parseZodExpr(getInit(prop), toolName, fileName);
+    properties[propName] = result.schema;
+    if (!result.optional) {
+      required.push(propName);
+    }
+  }
+
+  const schema: JSONSchema7 = {
+    type: "object",
+    properties,
+    additionalProperties: false,
+  };
+  if (required.length > 0) {
+    schema.required = required;
+  }
+  return { schema, optional: false };
 }
 
 function zodError(node: Expression, toolName: string, fileName: string): BundleError {

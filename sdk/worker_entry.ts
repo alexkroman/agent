@@ -34,6 +34,25 @@ export type ExecuteTool = (
   messages?: readonly Message[],
 ) => Promise<string>;
 
+function buildToolContext(opts: ExecuteToolCallOptions): ToolContext {
+  const { env, sessionId, state, kv, vector, messages } = opts;
+  return {
+    sessionId: sessionId ?? "",
+    env: { ...env },
+    abortSignal: AbortSignal.timeout(TOOL_HANDLER_TIMEOUT),
+    state: state ?? {},
+    get kv(): Kv {
+      if (!kv) throw new Error("KV not available");
+      return kv;
+    },
+    get vector(): VectorStore {
+      if (!vector) throw new Error("Vector store not available");
+      return vector;
+    },
+    messages: messages ?? [],
+  };
+}
+
 /** Options for {@linkcode executeToolCall}. */
 export type ExecuteToolCallOptions = {
   tool: ToolDef;
@@ -63,7 +82,7 @@ export async function executeToolCall(
   args: Readonly<Record<string, unknown>>,
   options: ExecuteToolCallOptions,
 ): Promise<string> {
-  const { tool, env, sessionId, state, kv, vector, messages } = options;
+  const { tool } = options;
   const schema = tool.parameters ?? z.object({});
   const parsed = schema.safeParse(args);
   if (!parsed.success) {
@@ -74,23 +93,7 @@ export async function executeToolCall(
   }
 
   try {
-    const abortSignal = AbortSignal.timeout(TOOL_HANDLER_TIMEOUT);
-    const envCopy = { ...env };
-    const ctx: ToolContext = {
-      sessionId: sessionId ?? "",
-      env: envCopy,
-      abortSignal,
-      state: state ?? {},
-      get kv(): Kv {
-        if (!kv) throw new Error("KV not available");
-        return kv;
-      },
-      get vector(): VectorStore {
-        if (!vector) throw new Error("Vector store not available");
-        return vector;
-      },
-      messages: messages ?? [],
-    };
+    const ctx = buildToolContext(options);
     const result = await Promise.resolve(tool.execute(parsed.data, ctx));
     if (result == null) return "null";
     return typeof result === "string" ? result : JSON.stringify(result);
