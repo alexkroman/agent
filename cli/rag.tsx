@@ -369,6 +369,9 @@ function stripNoise(text: string): string {
   );
 }
 
+/** Internal helpers exposed for testing. Not part of the public API. */
+export const _internals = { splitPages, parsePage, stripNoise, slugify };
+
 function slugify(s: string): string {
   return s
     .replace(/^https?:\/\//, "")

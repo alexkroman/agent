@@ -20,9 +20,10 @@ export function buildSystemPrompt(
   opts: { hasTools: boolean; voice?: boolean },
 ): string {
   const { hasTools } = opts;
-  const agentInstructions = config.instructions
-    ? `\n\nAgent-Specific Instructions:\n${config.instructions}`
-    : "";
+  const agentInstructions =
+    config.instructions && config.instructions !== DEFAULT_INSTRUCTIONS
+      ? `\n\nAgent-Specific Instructions:\n${config.instructions}`
+      : "";
 
   const toolPreamble = hasTools
     ? "\n\nWhen you decide to use a tool, ALWAYS say a brief natural phrase BEFORE the tool call " +
