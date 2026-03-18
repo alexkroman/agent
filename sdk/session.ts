@@ -254,20 +254,20 @@ export function createS2sSession(opts: SessionOptions): Session {
         logger: log,
       });
 
-      // Send session.update immediately on connect — before session.ready.
       if (s2sSessionId) {
+        // Reconnect: resume existing session — server already has config.
         log.info("Attempting S2S session resume", {
           session_id: s2sSessionId,
         });
         handle.resumeSession(s2sSessionId);
+      } else {
+        // Initial connect: send config with greeting.
+        handle.updateSession({
+          system_prompt: systemPrompt,
+          tools: s2sTools,
+          ...(agentConfig.greeting ? { greeting: agentConfig.greeting } : {}),
+        });
       }
-      // Send config with greeting on initial connect.
-      // Audio may arrive before the client is ready — the client buffers it.
-      handle.updateSession({
-        system_prompt: systemPrompt,
-        tools: s2sTools,
-        ...(agentConfig.greeting ? { greeting: agentConfig.greeting } : {}),
-      });
 
       on<{ session_id: string }>(handle, "ready", (e) => {
         s2sSessionId = e.detail.session_id;

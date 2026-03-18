@@ -37,4 +37,18 @@ describe("cli main", () => {
     await expect(main(["nonexistent-command"])).rejects.toThrow("exit");
     expect(exitSpy).toHaveBeenCalledWith(1);
   });
+
+  test("'help' subcommand prints help", async () => {
+    await main(["help"]);
+    expect(logSpy).toHaveBeenCalled();
+    const output = logSpy.mock.calls[0][0];
+    expect(output).toContain("Voice agent development kit");
+  });
+
+  test("no args prints help", async () => {
+    await main([]);
+    expect(logSpy).toHaveBeenCalled();
+    const output = logSpy.mock.calls[0][0];
+    expect(output).toContain("Voice agent development kit");
+  });
 });

@@ -111,4 +111,75 @@ describe("runDeploy", () => {
       fetchStub.mockRestore();
     }
   });
+
+  test("throws on non-403 error response", async () => {
+    const fetchStub = vi
+      .spyOn(_internals, "fetch")
+      .mockImplementation(() => Promise.resolve(new Response("server error", { status: 500 })));
+    try {
+      await expect(
+        runDeploy({
+          url: "http://localhost:3000",
+          bundle: makeBundle(),
+          env: {},
+          slug: "cool-cats-jump",
+          dryRun: false,
+          apiKey: "test-key",
+        }),
+      ).rejects.toThrow("deploy failed (500)");
+    } finally {
+      fetchStub.mockRestore();
+    }
+  });
+
+  test("warns when health check fails", async () => {
+    const fetchStub = vi
+      .spyOn(_internals, "fetch")
+      .mockImplementation((input: string | URL | Request) => {
+        const url = String(input);
+        if (url.endsWith("/health")) {
+          return Promise.resolve(new Response("bad", { status: 500 }));
+        }
+        return Promise.resolve(deployOk());
+      });
+    try {
+      const result = await runDeploy({
+        url: "http://localhost:3000",
+        bundle: makeBundle(),
+        env: {},
+        slug: "test-slug",
+        dryRun: false,
+        apiKey: "test-key",
+      });
+      expect(result.slug).toBe("test-slug");
+    } finally {
+      fetchStub.mockRestore();
+    }
+  });
+
+  test("handles health check network error gracefully", async () => {
+    const fetchStub = vi
+      .spyOn(_internals, "fetch")
+      .mockImplementation((input: string | URL | Request) => {
+        const url = String(input);
+        if (url.endsWith("/health")) {
+          return Promise.reject(new Error("network error"));
+        }
+        return Promise.resolve(deployOk());
+      });
+    try {
+      const result = await runDeploy({
+        url: "http://localhost:3000",
+        bundle: makeBundle(),
+        env: {},
+        slug: "test-slug",
+        dryRun: false,
+        apiKey: "test-key",
+      });
+      // Should still succeed — health check is best-effort
+      expect(result.slug).toBe("test-slug");
+    } finally {
+      fetchStub.mockRestore();
+    }
+  });
 });

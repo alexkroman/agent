@@ -1,6 +1,6 @@
 {
   "name": "@alexkroman1/aai",
-  "version": "0.7.2",
+  "version": "0.7.3",
   "type": "module",
   "bin": {
     "aai": "dist/aai.js"
@@ -137,6 +137,7 @@
     "@types/node": "^25.5.0",
     "@types/react": "^19.2.14",
     "@types/ws": "^8.18.1",
+    "@vitest/coverage-v8": "^4.1.0",
     "ink-testing-library": "^4.0.0",
     "linkedom": "^0.18.12",
     "typescript": "^5.9.3",

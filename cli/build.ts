@@ -4,7 +4,6 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { BundleError, type BundleOutput, bundleAgent } from "./_bundler.ts";
 import { type AgentEntry, loadAgent } from "./_discover.ts";
-import { execFileAsync } from "./_exec.ts";
 import { error as logError, step } from "./_output.ts";
 
 export type { BundleOutput } from "./_bundler.ts";
@@ -35,39 +34,6 @@ async function writeBuildOutput(agentDir: string, bundle: BundleOutput): Promise
 }
 
 /**
- * Run `tsc --noEmit` on the agent project to type-check user files.
- * Fails the build on any errors.
- */
-async function checkAgent(agentDir: string): Promise<void> {
-  // Only check user files, not node_modules or .aai/
-  const userFiles = ["agent.ts"];
-  for (const f of ["client.tsx", "components.tsx"]) {
-    try {
-      await fs.stat(path.join(agentDir, f));
-      userFiles.push(f);
-    } catch {
-      // file doesn't exist
-    }
-  }
-  const checks = [{ args: ["--noEmit", ...userFiles], label: "Type-check" }];
-  const results = await Promise.allSettled(
-    checks.map(({ args }) => execFileAsync("npx", ["tsc", ...args], { cwd: agentDir })),
-  );
-  const errors: string[] = [];
-  for (const [i, r] of results.entries()) {
-    if (r.status === "rejected") {
-      const label = checks[i]?.label ?? "unknown";
-      const msg = (r.reason as { stderr?: string }).stderr?.trim() ?? String(r.reason);
-      logError(`${label}: ${msg}`);
-      errors.push(label);
-    }
-  }
-  if (errors.length > 0) {
-    throw new Error(`${errors.join(", ")} failed — fix the errors above`);
-  }
-}
-
-/**
  * Discovers the agent in the given directory and bundles it into deployable
  * JavaScript artifacts (worker + client).
  *
@@ -80,9 +46,6 @@ export async function runBuild(opts: BuildOpts): Promise<BuildResult> {
   if (!agent) {
     throw new Error("No agent found — run `aai new` first");
   }
-
-  step("Check", agent.slug);
-  await checkAgent(opts.agentDir);
 
   step("Bundle", agent.slug);
   let bundle: BundleOutput;

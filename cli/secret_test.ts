@@ -1,0 +1,29 @@
+// Copyright 2025 the AAI authors. MIT license.
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { runSecretCommand } from "./secret.tsx";
+
+describe("runSecretCommand", () => {
+  let logSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  test("--help prints help and returns", async () => {
+    await runSecretCommand(["--help"], "1.0.0");
+    expect(logSpy).toHaveBeenCalled();
+    const output = logSpy.mock.calls[0]?.[0];
+    expect(output).toContain("secret");
+  });
+
+  test("no args prints help", async () => {
+    await runSecretCommand([], "1.0.0");
+    expect(logSpy).toHaveBeenCalled();
+    const output = logSpy.mock.calls[0]?.[0];
+    expect(output).toContain("secret");
+  });
+});
