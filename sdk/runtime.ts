@@ -7,12 +7,15 @@
 
 import { DEFAULT_TTS_SAMPLE_RATE } from "./protocol.ts";
 
+/** Structured context attached to log messages. */
+export type LogContext = Record<string, unknown>;
+
 /** Runtime-agnostic structured logger. */
 export type Logger = {
-  info(msg: string, ctx?: Record<string, unknown>): void;
-  warn(msg: string, ctx?: Record<string, unknown>): void;
-  error(msg: string, ctx?: Record<string, unknown>): void;
-  debug(msg: string, ctx?: Record<string, unknown>): void;
+  info(msg: string, ctx?: LogContext): void;
+  warn(msg: string, ctx?: LogContext): void;
+  error(msg: string, ctx?: LogContext): void;
+  debug(msg: string, ctx?: LogContext): void;
 };
 
 /** Runtime-agnostic session metrics. */

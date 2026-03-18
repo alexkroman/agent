@@ -45,6 +45,15 @@ const VectorEntrySchema = z.object({
 
 const WorkerInitArgsSchema = z.tuple([z.record(z.string(), z.string()), z.string().optional()]);
 
+const WorkerFetchArgsSchema = z.tuple([
+  z.string(),
+  z.string(),
+  z.record(z.string(), z.string()),
+  z.string().optional(),
+]);
+
+const WorkerWsArgsSchema = z.tuple([z.boolean().optional()]);
+
 declare const self: {
   postMessage(msg: unknown, transfer?: Transferable[]): void;
   onmessage: ((ev: MessageEvent) => void) | null;
@@ -187,12 +196,7 @@ export function initWorker(agent: AgentDef): void {
   // Handle HTTP request forwarding
   endpoint.handle("worker.fetch", async (args) => {
     if (!wintercServer) throw new Error("Worker not initialized");
-    const [url, method, headers, body] = args as [
-      string,
-      string,
-      Record<string, string>,
-      string | undefined,
-    ];
+    const [url, method, headers, body] = WorkerFetchArgsSchema.parse(args);
 
     const request = new Request(url, {
       method,
@@ -211,7 +215,7 @@ export function initWorker(agent: AgentDef): void {
   // Handle new WebSocket client connection — port transferred from host
   endpoint.handle("worker.handleWebSocket", (_args, ports) => {
     if (!wintercServer) throw new Error("Worker not initialized");
-    const [skipGreeting] = _args as [boolean | undefined];
+    const [skipGreeting] = WorkerWsArgsSchema.parse(_args);
     const port = ports[0];
     if (!port) throw new Error("No port transferred");
 

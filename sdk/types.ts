@@ -13,30 +13,6 @@ import type { VectorStore } from "./vector.ts";
 export type BeforeStepResult = { activeTools?: string[] } | undefined;
 
 /**
- * Transport protocol for client-server communication.
- *
- * - `"websocket"` — Browser-based WebSocket connection (default).
- */
-export type Transport = "websocket";
-
-/**
- * Voice pipeline mode.
- *
- * `"s2s"` — AssemblyAI Speech-to-Speech API. Single WebSocket handles
- * STT, LLM, and TTS with the lowest latency.
- */
-export type PipelineMode = "s2s";
-
-/** @internal Normalize a transport value to an array of transports. */
-export function normalizeTransport(
-  value: Transport | readonly Transport[] | undefined,
-): readonly Transport[] {
-  if (value === undefined) return ["websocket"];
-  if (typeof value === "string") return [value];
-  return value;
-}
-
-/**
  * Identifier for a built-in server-side tool.
  *
  * Built-in tools run on the host process (not inside the sandboxed worker)
@@ -122,24 +98,16 @@ export type ToolContext<S = Record<string, unknown>> = {
 /**
  * Context passed to lifecycle hooks (`onConnect`, `onTurn`, etc.).
  *
- * Similar to {@linkcode ToolContext} but without `messages` or `abortSignal`,
+ * Same as {@linkcode ToolContext} but without `messages` or `abortSignal`,
  * since hooks run outside the tool execution flow.
  *
  * @typeParam S The shape of per-session state created by the agent's
  *   `state` factory. Defaults to `Record<string, unknown>`.
  */
-export type HookContext<S = Record<string, unknown>> = {
-  /** Unique identifier for the current session. */
-  sessionId: string;
-  /** Environment variables declared in the agent config. */
-  env: Readonly<Record<string, string>>;
-  /** Mutable per-session state created by the agent's `state` factory. */
-  state: S;
-  /** Key-value store scoped to this agent deployment. */
-  kv: Kv;
-  /** Vector store scoped to this agent deployment. */
-  vector: VectorStore;
-};
+export type HookContext<S = Record<string, unknown>> = Omit<
+  ToolContext<S>,
+  "abortSignal" | "messages"
+>;
 
 /**
  * Definition of a custom tool that the agent can invoke.
@@ -278,24 +246,6 @@ export type StepInfo = {
 export type AgentOptions<S = Record<string, unknown>> = {
   /** Display name for the agent. */
   name: string;
-  /**
-   * Environment variable names the agent requires at deploy time.
-   *
-   * @default {["ASSEMBLYAI_API_KEY"]}
-   */
-  env?: readonly string[];
-  /**
-   * Transport(s) the agent supports.
-   *
-   * @default {"websocket"}
-   */
-  transport?: Transport | readonly Transport[];
-  /**
-   * Voice pipeline mode.
-   *
-   * @default {"s2s"}
-   */
-  mode?: PipelineMode;
   /** System prompt for the LLM. Defaults to a built-in voice-optimized prompt. */
   instructions?: string;
   /** Initial spoken greeting when a session starts. */
@@ -386,9 +336,6 @@ export const DEFAULT_GREETING: string =
  */
 export type AgentDef = {
   name: string;
-  env: readonly string[];
-  transport: readonly Transport[];
-  mode?: PipelineMode | undefined;
   instructions: string;
   greeting: string;
   voice: string;

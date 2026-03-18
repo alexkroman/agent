@@ -5,7 +5,8 @@
  * @module
  */
 
-import { z } from "zod";
+import type { z } from "zod";
+import { EMPTY_PARAMS } from "./_internal_types.ts";
 import type { Kv } from "./kv.ts";
 import type { Message, ToolContext, ToolDef } from "./types.ts";
 import type { VectorStore } from "./vector.ts";
@@ -83,7 +84,7 @@ export async function executeToolCall(
   options: ExecuteToolCallOptions,
 ): Promise<string> {
   const { tool } = options;
-  const schema = tool.parameters ?? z.object({});
+  const schema = tool.parameters ?? EMPTY_PARAMS;
   const parsed = schema.safeParse(args);
   if (!parsed.success) {
     const issues = (parsed.error?.issues ?? [])

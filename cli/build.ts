@@ -30,7 +30,6 @@ async function writeBuildOutput(agentDir: string, bundle: BundleOutput): Promise
   await fs.mkdir(buildDir, { recursive: true });
   await Promise.all([
     fs.writeFile(path.join(buildDir, "worker.js"), bundle.worker),
-    fs.writeFile(path.join(buildDir, "manifest.json"), bundle.manifest),
     fs.writeFile(path.join(buildDir, "index.html"), bundle.html),
   ]);
 }

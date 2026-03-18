@@ -91,11 +91,14 @@ function isBinaryData(data: unknown): boolean {
   );
 }
 
+/** Shape shared by Node.js Buffer and ArrayBuffer views (TypedArray). */
+type BufferLike = { buffer?: ArrayBuffer; byteOffset?: number; byteLength: number };
+
 function toUint8Array(data: unknown): Uint8Array {
   if (data instanceof Uint8Array) return data;
   if (data instanceof ArrayBuffer) return new Uint8Array(data);
   // Node.js Buffer or ArrayBuffer-like
-  const buf = data as { buffer?: ArrayBuffer; byteOffset?: number; byteLength: number };
+  const buf = data as BufferLike;
   return new Uint8Array(buf.buffer ?? (data as ArrayBuffer), buf.byteOffset ?? 0, buf.byteLength);
 }
 

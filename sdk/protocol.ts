@@ -8,7 +8,6 @@
  */
 
 import { z } from "zod";
-import type { WorkerConfig } from "./_internal_types.ts";
 import type { Message, StepInfo } from "./types.ts";
 
 /**
@@ -79,7 +78,7 @@ export type KvRequest =
     };
 
 /** Zod schema for {@linkcode KvRequest}. */
-export const KvRequestBaseSchema: z.ZodType<KvRequest> = z.discriminatedUnion("op", [
+export const KvRequestBaseSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("get"), key: z.string().min(1) }),
   z.object({
     op: z.literal("set"),
@@ -118,7 +117,7 @@ export type SessionErrorCode =
   | "internal";
 
 /** Zod schema for {@linkcode SessionErrorCode}. */
-export const SessionErrorCodeSchema: z.ZodType<SessionErrorCode> = z.enum([
+export const SessionErrorCodeSchema = z.enum([
   "stt",
   "llm",
   "tts",
@@ -169,7 +168,7 @@ const TranscriptEventSchema = z.object({
 });
 
 /** Zod schema for {@linkcode ClientEvent}. */
-export const ClientEventSchema: z.ZodType<ClientEvent> = z.discriminatedUnion("type", [
+export const ClientEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("speech_started") }),
   z.object({ type: z.literal("speech_stopped") }),
   TranscriptEventSchema,
@@ -227,7 +226,6 @@ export type ReadyConfig = {
   audioFormat: AudioFormatId;
   sampleRate: number;
   ttsSampleRate: number;
-  mode?: "s2s";
 };
 
 /** Client→server text messages (binary frames carry raw PCM16 audio). */
@@ -247,7 +245,7 @@ export type ServerMessage =
   | ClientEvent;
 
 /** Zod schema for {@linkcode ClientMessage}. */
-export const ClientMessageSchema: z.ZodType<ClientMessage> = z.discriminatedUnion("type", [
+export const ClientMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("audio_ready") }),
   z.object({ type: z.literal("cancel") }),
   z.object({ type: z.literal("reset") }),
@@ -297,7 +295,6 @@ export type TurnConfig = {
 /** Worker-side RPC target interface (host calls these methods). */
 export interface WorkerRpcApi {
   withEnv(env: Record<string, string>): WorkerRpcApi;
-  getConfig(): Promise<WorkerConfig>;
   executeTool(
     name: string,
     args: Readonly<Record<string, unknown>>,

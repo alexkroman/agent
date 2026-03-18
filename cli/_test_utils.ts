@@ -34,7 +34,6 @@ export function makeBundle(overrides?: Partial<BundleOutput>): BundleOutput {
   return {
     worker: "// worker",
     html: "<html>{{NAME}}{{BASE_PATH}}</html>",
-    manifest: JSON.stringify({ transport: ["websocket"] }),
     workerBytes: 9,
     ...overrides,
   };

@@ -22,22 +22,26 @@ type RpcResult = { $: 1; id: number; v?: unknown; e?: string };
 /** Discriminated union of all RPC wire messages. */
 type RpcMsg = RpcCall | RpcResult;
 
+/** Type guard: narrows unknown data to {@linkcode RpcCall}. */
+function isRpcCall(obj: Record<string, unknown>): obj is RpcCall {
+  return (
+    obj.$ === 0 && typeof obj.id === "number" && typeof obj.m === "string" && Array.isArray(obj.a)
+  );
+}
+
+/** Type guard: narrows unknown data to {@linkcode RpcResult}. */
+function isRpcResult(obj: Record<string, unknown>): obj is RpcResult {
+  return (
+    obj.$ === 1 && typeof obj.id === "number" && (obj.e === undefined || typeof obj.e === "string")
+  );
+}
+
 /** Narrow an unknown `ev.data` to {@linkcode RpcMsg}, or return `undefined`. */
 function parseRpcMsg(data: unknown): RpcMsg | undefined {
   if (typeof data !== "object" || data === null || !("$" in data)) return undefined;
   const obj = data as Record<string, unknown>;
-  if (obj.$ === 0) {
-    if (typeof obj.id === "number" && typeof obj.m === "string" && Array.isArray(obj.a)) {
-      return obj as unknown as RpcCall;
-    }
-    return undefined;
-  }
-  if (obj.$ === 1) {
-    if (typeof obj.id === "number" && (obj.e === undefined || typeof obj.e === "string")) {
-      return obj as unknown as RpcResult;
-    }
-    return undefined;
-  }
+  if (isRpcCall(obj)) return obj;
+  if (isRpcResult(obj)) return obj;
   return undefined;
 }
 

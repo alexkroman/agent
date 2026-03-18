@@ -119,8 +119,6 @@ defineAgent({
   maxSteps?: number | ((ctx: HookContext) => number);
 
   // Environment
-  env?: string[];            // Required env var names (default: ["ASSEMBLYAI_API_KEY"])
-  transport?: Transport[];   // "websocket" (default: ["websocket"])
 
   // State
   state?: () => S;           // Factory for per-session state

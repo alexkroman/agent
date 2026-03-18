@@ -7,7 +7,6 @@ import tailwindcss from "@tailwindcss/vite";
 import { build, type Plugin } from "vite";
 import { viteSingleFile } from "vite-plugin-singlefile";
 import type { AgentEntry } from "./_discover.ts";
-import { extractStaticConfig } from "./_static_config.ts";
 
 /**
  * Error thrown when bundling fails.
@@ -27,8 +26,6 @@ export type BundleOutput = {
   worker: string;
   /** Single-file HTML page with inlined client JS and CSS. */
   html: string;
-  /** JSON manifest containing transport, config, and tool schemas. */
-  manifest: string;
   /** Size of the worker bundle in bytes. */
   workerBytes: number;
 };
@@ -178,9 +175,6 @@ export async function bundleAgent(
   const buildDir = path.join(aaiDir, "build");
   await fs.mkdir(aaiDir, { recursive: true });
 
-  // Extract agent config and tool schemas via static AST analysis (no eval)
-  const { config: agentConfig, toolSchemas } = await extractStaticConfig(agent.entryPoint);
-
   await fs.writeFile(path.join(aaiDir, "index.html"), INDEX_HTML);
 
   // Generate default Tailwind entry point if missing
@@ -242,20 +236,9 @@ export async function bundleAgent(
   const htmlPath = skipClient ? path.join(aaiDir, "index.html") : path.join(buildDir, "index.html");
   const html = await fs.readFile(htmlPath, "utf-8");
 
-  const manifest = JSON.stringify(
-    {
-      transport: agentConfig.transport ?? agent.transport,
-      config: agentConfig,
-      toolSchemas,
-    },
-    null,
-    2,
-  );
-
   return {
     worker,
     html,
-    manifest,
     workerBytes: Buffer.byteLength(worker),
   };
 }

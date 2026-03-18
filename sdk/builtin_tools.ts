@@ -9,10 +9,8 @@
  */
 
 import { z } from "zod";
-import type { ToolSchema } from "./_internal_types.ts";
+import { EMPTY_PARAMS, type ToolSchema } from "./_internal_types.ts";
 import type { ToolDef } from "./types.ts";
-
-const EMPTY_PARAMS = z.object({});
 
 // ─── HTML to text ──────────────────────────────────────────────────────────
 
@@ -248,11 +246,14 @@ export type BuiltinToolOptions = {
  * @param opts - Options including RPC callbacks for host-proxied tools.
  * @returns A record of tool name → ToolDef.
  */
+/** A record of tool name → ToolDef with any Zod object parameters. */
+type ToolDefRecord = Record<string, ToolDef<z.ZodObject<z.ZodRawShape>>>;
+
 export function getBuiltinToolDefs(
   names: readonly string[],
   opts?: BuiltinToolOptions,
-): Record<string, ToolDef<z.ZodObject<z.ZodRawShape>>> {
-  const defs: Record<string, ToolDef<z.ZodObject<z.ZodRawShape>>> = {};
+): ToolDefRecord {
+  const defs: ToolDefRecord = {};
   for (const name of names) {
     switch (name) {
       case "web_search":
