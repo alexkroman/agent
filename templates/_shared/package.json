@@ -9,6 +9,7 @@
     "@alexkroman1/aai": "*",
     "preact": "^10",
     "@preact/signals": "^2",
+    "tailwindcss": "^4",
     "zod": "^4"
   },
   "devDependencies": {
