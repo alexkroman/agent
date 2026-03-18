@@ -4,8 +4,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import chalk from "chalk";
 import minimist from "minimist";
-import { interactive } from "./_colors.ts";
+import { interactive, primary } from "./_colors.ts";
 import { ensureClaudeMd, ensureDependencies, fileExists, isDevMode } from "./_discover.ts";
 import type { SubcommandDef } from "./_help.ts";
 import { subcommandHelp } from "./_help.ts";
@@ -69,7 +70,11 @@ async function selectTemplate(available: string[]): Promise<string> {
  * @param version Current CLI version string, used in help output.
  * @returns The target directory where the agent was scaffolded.
  */
-export async function runNewCommand(args: string[], version: string): Promise<string> {
+export async function runNewCommand(
+  args: string[],
+  version: string,
+  opts?: { quiet?: boolean },
+): Promise<string> {
   const parsed = minimist(args, {
     string: ["template"],
     boolean: ["force", "help", "yes"],
@@ -128,6 +133,21 @@ export async function runNewCommand(args: string[], version: string): Promise<st
     await ensureClaudeMd(cwd);
     await ensureDependencies(cwd);
   });
+
+  if (!opts?.quiet) {
+    const cdNeeded = dir != null;
+    console.log();
+    console.log(chalk.bold("Next steps:"));
+    if (cdNeeded) {
+      console.log(`  ${chalk.dim("$")} ${primary(`cd ${path.relative(process.cwd(), cwd)}`)}`);
+    }
+    console.log(
+      `  ${chalk.dim("$")} ${primary("aai dev")}          ${chalk.dim("Start local dev server")}`,
+    );
+    console.log(
+      `  ${chalk.dim("$")} ${primary("aai deploy")}       ${chalk.dim("Deploy to production")}`,
+    );
+  }
 
   return cwd;
 }
