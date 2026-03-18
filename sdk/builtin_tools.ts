@@ -58,7 +58,7 @@ const BraveSearchResponseSchema = z.object({
     .optional(),
 });
 
-function createWebSearch(): ToolDef {
+function createWebSearch(): ToolDef<typeof webSearchParams> {
   return {
     description:
       "Search the web for current information, facts, news, or answers to questions. Returns a list of results with title, URL, and description. Use this when the user asks about something you don't know, need up-to-date information, or want to verify facts.",
@@ -100,7 +100,7 @@ const visitWebpageParams = z.object({
   url: z.string().describe("The full URL to fetch (e.g., 'https://example.com/page')"),
 });
 
-function createVisitWebpage(): ToolDef {
+function createVisitWebpage(): ToolDef<typeof visitWebpageParams> {
   return {
     description:
       "Fetch a webpage and return its content as clean text. Use this to read the full content of a URL found via web_search, or any link the user shares. Good for reading articles, documentation, blog posts, or product pages.",
@@ -144,7 +144,7 @@ const fetchJsonParams = z.object({
     .optional(),
 });
 
-function createFetchJson(): ToolDef {
+function createFetchJson(): ToolDef<typeof fetchJsonParams> {
   return {
     description:
       "Call a REST API endpoint via HTTP GET and return the JSON response. Use this to fetch structured data from APIs — for example, weather data, stock prices, exchange rates, or any public JSON API. Supports custom headers for authenticated APIs.",
@@ -173,7 +173,7 @@ const runCodeParams = z.object({
   code: z.string().describe("JavaScript code to execute. Use console.log() for output."),
 });
 
-function createRunCode(): ToolDef {
+function createRunCode(): ToolDef<typeof runCodeParams> {
   return {
     description:
       "Execute JavaScript code in a secure sandbox and return the output. Use this for calculations, data transformations, string manipulation, or any task that benefits from running code. Output is captured from console.log(). No network or filesystem access.",
@@ -221,7 +221,7 @@ const vectorSearchParams = z.object({
 /** Callback for proxying vector search through the host RPC. */
 export type VectorSearchFn = (query: string, topK: number) => Promise<string>;
 
-function createVectorSearch(vectorSearchFn: VectorSearchFn): ToolDef {
+function createVectorSearch(vectorSearchFn: VectorSearchFn): ToolDef<typeof vectorSearchParams> {
   return {
     description:
       "Search the agent's knowledge base for relevant information. Use this when the user asks a question that might be answered by previously ingested documents or data. Returns the most relevant matches ranked by similarity.",
@@ -251,8 +251,8 @@ export type BuiltinToolOptions = {
 export function getBuiltinToolDefs(
   names: readonly string[],
   opts?: BuiltinToolOptions,
-): Record<string, ToolDef> {
-  const defs: Record<string, ToolDef> = {};
+): Record<string, ToolDef<z.ZodObject<z.ZodRawShape>>> {
+  const defs: Record<string, ToolDef<z.ZodObject<z.ZodRawShape>>> = {};
   for (const name of names) {
     switch (name) {
       case "web_search":

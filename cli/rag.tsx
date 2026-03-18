@@ -135,8 +135,7 @@ async function runRag(opts: {
     page.body = stripNoise(page.body);
     if (!page.body) continue;
     const raw = await chunker.chunk(page.body);
-    for (let i = 0; i < raw.length; i++) {
-      const c = raw[i]!;
+    for (const [i, c] of raw.entries()) {
       const data = page.title ? `${page.title}\n\n${c.text}` : c.text;
       const id = `${siteSlug}:${slugify(page.title || "page")}:${i}`;
       allChunks.push({
@@ -293,7 +292,7 @@ function splitPages(content: string): { title: string; body: string }[] {
 
       const titleMatch = frontmatter.match(/^title:\s*(.+)$/m);
       if (titleMatch) {
-        title = titleMatch[1]!.trim();
+        title = titleMatch[1]?.trim();
       }
     }
 
@@ -301,12 +300,12 @@ function splitPages(content: string): { title: string; body: string }[] {
     if (!title) {
       const titleLineMatch = body.match(/^#{1,2}\s+title:\s*(.+)$/m);
       if (titleLineMatch) {
-        title = titleLineMatch[1]!.trim();
+        title = titleLineMatch[1]?.trim();
         body = body.replace(/^#{1,2}\s+title:\s*.+\n?/m, "").trim();
       } else {
         const headingMatch = body.match(/^(#{1,3})\s+(.+)$/m);
         if (headingMatch) {
-          title = headingMatch[2]!.trim();
+          title = headingMatch[2]?.trim();
         }
       }
     }

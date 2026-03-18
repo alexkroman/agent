@@ -111,7 +111,7 @@ describe("createMemoryKv", () => {
       vi.advanceTimersByTime(6_000);
       const entries = await kv.list("");
       expect(entries.length).toBe(1);
-      expect(entries[0]!.key).toBe("alive");
+      expect(entries[0]?.key).toBe("alive");
     } finally {
       vi.useRealTimers();
     }
@@ -144,7 +144,7 @@ describe("createMemoryKv", () => {
     await kv.set("item:1", { title: "first" });
     await kv.set("item:2", { title: "second" });
     const entries = await kv.list<{ title: string }>("item:");
-    expect(entries[0]!.value.title).toBe("first");
-    expect(entries[1]!.value.title).toBe("second");
+    expect(entries[0]?.value.title).toBe("first");
+    expect(entries[1]?.value.title).toBe("second");
   });
 });

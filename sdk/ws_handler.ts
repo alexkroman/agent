@@ -129,9 +129,8 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
 
     // Binary frame → raw PCM16 audio
     // Node's ws package delivers Buffer; Deno/browsers deliver ArrayBuffer
-    // deno-lint-ignore no-explicit-any
     const isBinary =
-      (globalThis as any).Buffer?.isBuffer(data) ||
+      (globalThis as { Buffer?: { isBuffer(v: unknown): boolean } }).Buffer?.isBuffer(data) ||
       data instanceof ArrayBuffer ||
       data instanceof Uint8Array;
     if (isBinary) {

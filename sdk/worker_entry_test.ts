@@ -102,10 +102,10 @@ describe("executeToolCall", () => {
     expect(result).toBe("Error: boom");
   });
 
-  test("returns error for non-Error throw", async () => {
+  test("returns error string when tool throws", async () => {
     const tool = makeTool({
       execute: () => {
-        throw "string error";
+        throw new Error("string error");
       },
     });
     const result = await executeToolCall(

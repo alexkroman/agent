@@ -65,7 +65,7 @@ export async function runSecretCommand(args: string[], version: string): Promise
 
   switch (sub) {
     case "put":
-      await secretPut(cwd, String(parsed._[1] ?? ""), secretValue!);
+      await secretPut(cwd, String(parsed._[1] ?? ""), secretValue ?? "");
       break;
     case "delete":
       await secretDelete(cwd, String(parsed._[1] ?? ""));

@@ -95,7 +95,7 @@ ATMOSPHERE:
       parameters: z.object({
         value: z.string().describe("Room name to move to"),
       }),
-      execute: ({ value }, ctx) => {
+      execute: ({ value }: { value: string }, ctx) => {
         const g = s(ctx);
         g.currentRoom = value;
         g.moves++;
@@ -107,7 +107,7 @@ ATMOSPHERE:
       parameters: z.object({
         value: z.string().describe("Item name to take"),
       }),
-      execute: ({ value }, ctx) => {
+      execute: ({ value }: { value: string }, ctx) => {
         const g = s(ctx);
         if (!g.inventory.includes(value)) g.inventory.push(value);
         return { inventory: g.inventory };
@@ -118,7 +118,7 @@ ATMOSPHERE:
       parameters: z.object({
         value: z.string().describe("Item name to drop"),
       }),
-      execute: ({ value }, ctx) => {
+      execute: ({ value }: { value: string }, ctx) => {
         const g = s(ctx);
         g.inventory = g.inventory.filter((i) => i !== value);
         return { inventory: g.inventory };
@@ -129,7 +129,7 @@ ATMOSPHERE:
       parameters: z.object({
         value: z.number().describe("Points to add"),
       }),
-      execute: ({ value }, ctx) => {
+      execute: ({ value }: { value: number }, ctx) => {
         const g = s(ctx);
         g.score += value;
         return { score: g.score };
@@ -141,7 +141,7 @@ ATMOSPHERE:
       parameters: z.object({
         value: z.string().describe("Flag name to set"),
       }),
-      execute: ({ value }, ctx) => {
+      execute: ({ value }: { value: string }, ctx) => {
         const g = s(ctx);
         g.flags[value] = true;
         return { flags: g.flags };
@@ -153,7 +153,7 @@ ATMOSPHERE:
       parameters: z.object({
         value: z.string().describe("Command text to log"),
       }),
-      execute: ({ value }, ctx) => {
+      execute: ({ value }: { value: string }, ctx) => {
         const g = s(ctx);
         g.history.push(value);
         g.moves++;

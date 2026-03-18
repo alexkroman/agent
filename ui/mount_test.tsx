@@ -27,8 +27,9 @@ describe("mount()", () => {
       }
       mount(App, { platformUrl: "http://localhost:3000" });
 
-      const el = globalThis.document.querySelector("#app")!;
-      expect(el.textContent!).toContain("Hello Mount");
+      const el = globalThis.document.querySelector("#app");
+      if (!el) throw new Error("Expected #app element to exist");
+      expect(el.textContent ?? "").toContain("Hello Mount");
     }),
   );
 
@@ -54,8 +55,9 @@ describe("mount()", () => {
       }
       const handle = mount(App, { platformUrl: "http://localhost:3000" });
 
-      const el = globalThis.document.querySelector("#app")!;
-      expect(el.textContent!).toContain("content");
+      const el = globalThis.document.querySelector("#app");
+      if (!el) throw new Error("Expected #app element to exist");
+      expect(el.textContent ?? "").toContain("content");
 
       handle.dispose();
       expect(el.textContent).toBe("");
@@ -75,7 +77,8 @@ describe("mount()", () => {
       const handle = mount(App);
       handle.session.connect();
       await delay(0);
-      const ws = mock.lastWs!;
+      const ws = mock.lastWs;
+      if (!ws) throw new Error("Expected WebSocket to be created");
       expect(ws.url.toString()).toBe("wss://aai-agent.fly.dev/alex/ai-takes/websocket");
       handle.dispose();
     }),

@@ -16,7 +16,7 @@ import type { S2sWebSocket } from "./s2s.ts";
 /** Minimal port interface for CapnwebEndpoint. Works with Worker, MessagePort, or worker self. */
 export type CapnwebPort = {
   postMessage(msg: unknown, transfer?: Transferable[]): void;
-  onmessage: ((ev: MessageEvent) => any) | null; // eslint-disable-line @typescript-eslint/no-explicit-any -- varies across Worker/MessagePort/self
+  onmessage: ((ev: MessageEvent) => void) | null;
 };
 
 /** RPC handler function. Receives call arguments and any transferred ports. */
@@ -246,7 +246,7 @@ export function createBridgedS2sWebSocket(port: MessagePort): S2sWebSocket {
     },
     on(event: string, handler: (...args: unknown[]) => void): void {
       if (!handlers.has(event)) handlers.set(event, []);
-      handlers.get(event)!.push(handler);
+      handlers.get(event)?.push(handler);
     },
   };
 }

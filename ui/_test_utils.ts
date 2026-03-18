@@ -22,13 +22,16 @@ const g = globalThis as unknown as Record<string, unknown>;
 
 export function setupDOM() {
   installDomShim();
-  const doc = new DOMParser().parseFromString(HTML, "text/html")!;
+  const doc = new DOMParser().parseFromString(HTML, "text/html");
+  if (!doc) throw new Error("Failed to parse HTML document");
   g.document = doc;
   return doc;
 }
 
 export function getContainer(): Element {
-  return globalThis.document.querySelector("#app")!;
+  const el = globalThis.document.querySelector("#app");
+  if (!el) throw new Error("Expected #app element to exist in document");
+  return el;
 }
 
 // Ensure document exists at import time for modules that need DOM globals.
@@ -172,8 +175,10 @@ export function withAudioMocks(
       }
     };
 
-    if (!nav!.mediaDevices) nav!.mediaDevices = {};
-    nav!.mediaDevices!.getUserMedia = () => Promise.resolve(new MockMediaStream());
+    if (nav && !nav.mediaDevices) nav.mediaDevices = {};
+    if (nav?.mediaDevices) {
+      nav.mediaDevices.getUserMedia = () => Promise.resolve(new MockMediaStream());
+    }
 
     try {
       await fn({
@@ -183,8 +188,8 @@ export function withAudioMocks(
     } finally {
       globalThis.AudioContext = origAudioContext;
       globalThis.AudioWorkletNode = origAudioWorkletNode;
-      if (origGetUserMedia) {
-        nav!.mediaDevices!.getUserMedia = origGetUserMedia;
+      if (origGetUserMedia && nav?.mediaDevices) {
+        nav.mediaDevices.getUserMedia = origGetUserMedia;
       }
     }
   };
@@ -266,7 +271,7 @@ export function withSignalsEnv(
           await flush();
         },
         send(msg) {
-          mock.lastWs!.simulateMessage(JSON.stringify(msg));
+          mock.lastWs?.simulateMessage(JSON.stringify(msg));
         },
       });
     } finally {

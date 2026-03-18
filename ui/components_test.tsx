@@ -26,7 +26,7 @@ describe("StateIndicator", () => {
     "renders the state label",
     withDOM((container) => {
       render(<StateIndicator state={signal<AgentState>("listening")} />, container);
-      expect(container.textContent!).toContain("listening");
+      expect(container.textContent ?? "").toContain("listening");
     }),
   );
 });
@@ -44,7 +44,7 @@ describe("ErrorBanner", () => {
         />,
         container,
       );
-      expect(container.textContent!).toContain("Connection lost");
+      expect(container.textContent ?? "").toContain("Connection lost");
     }),
   );
 
@@ -63,7 +63,7 @@ describe("MessageBubble", () => {
     withDOM((container) => {
       const msg: Message = { role: "user", text: "Hello there" };
       render(<MessageBubble message={msg} />, container);
-      expect(container.textContent!).toContain("Hello there");
+      expect(container.textContent ?? "").toContain("Hello there");
     }),
   );
 
@@ -82,7 +82,7 @@ describe("Transcript", () => {
     "renders transcript text",
     withDOM((container) => {
       render(<Transcript userUtterance={signal<string | null>("hello wor")} />, container);
-      expect(container.textContent!).toContain("hello wor");
+      expect(container.textContent ?? "").toContain("hello wor");
     }),
   );
 
@@ -110,7 +110,7 @@ describe("App", () => {
     withDOM((container) => {
       const signals = createMockSignals({ started: false });
       renderWithProvider(container, <App />, signals);
-      expect(container.querySelector("button")!.textContent).toBe("Start");
+      expect(container.querySelector("button")?.textContent).toBe("Start");
     }),
   );
 
@@ -123,8 +123,8 @@ describe("App", () => {
         running: true,
       });
       renderWithProvider(container, <App />, signals);
-      expect(container.textContent!).toContain("listening");
-      expect(container.textContent!).toContain("Stop");
+      expect(container.textContent ?? "").toContain("listening");
+      expect(container.textContent ?? "").toContain("Stop");
     }),
   );
 
@@ -133,14 +133,14 @@ describe("App", () => {
     withDOM((container) => {
       const signals = createMockSignals({ started: false });
       renderWithProvider(container, <App />, signals);
-      expect(container.querySelector("button")!.textContent).toBe("Start");
+      expect(container.querySelector("button")?.textContent).toBe("Start");
 
       signals.started.value = true;
       signals.session.state.value = "listening";
       renderWithProvider(container, <App />, signals);
 
-      expect(container.textContent!).toContain("listening");
-      expect(!container.textContent!.includes("Start")).toBe(true);
+      expect(container.textContent ?? "").toContain("listening");
+      expect(!container.textContent?.includes("Start")).toBe(true);
     }),
   );
 });
@@ -160,9 +160,9 @@ describe("ChatView", () => {
       });
       renderWithProvider(container, <ChatView />, signals);
 
-      expect(container.textContent!).toContain("thinking");
-      expect(container.textContent!).toContain("What is AI?");
-      expect(container.textContent!).toContain("AI stands for...");
+      expect(container.textContent ?? "").toContain("thinking");
+      expect(container.textContent ?? "").toContain("What is AI?");
+      expect(container.textContent ?? "").toContain("AI stands for...");
     }),
   );
 
@@ -178,8 +178,8 @@ describe("ChatView", () => {
       });
       renderWithProvider(container, <ChatView />, signals);
 
-      expect(container.textContent!).toContain("hello wor");
-      expect(container.textContent!).toContain("Connection failed");
+      expect(container.textContent ?? "").toContain("hello wor");
+      expect(container.textContent ?? "").toContain("Connection failed");
     }),
   );
 
@@ -193,7 +193,7 @@ describe("ChatView", () => {
       });
       renderWithProvider(container, <ChatView />, signals);
 
-      const text = () => container.textContent!;
+      const text = () => container.textContent ?? "";
 
       expect(text()).toContain("Stop");
       expect(text()).toContain("New Conversation");
@@ -219,7 +219,7 @@ describe("ChatView", () => {
       });
       renderWithProvider(container, <ChatView />, signals);
 
-      const text = container.textContent!;
+      const text = container.textContent ?? "";
       expect(text.indexOf("First") < text.indexOf("Second")).toBe(true);
       expect(text.indexOf("Second") < text.indexOf("Third")).toBe(true);
     }),

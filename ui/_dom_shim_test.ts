@@ -18,6 +18,6 @@ describe("_dom_shim", () => {
     expect(doc).toBeDefined();
     const p = doc.querySelector("p");
     expect(p).toBeDefined();
-    expect(p!.textContent).toBe("hello");
+    expect(p?.textContent).toBe("hello");
   });
 });

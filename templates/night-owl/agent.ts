@@ -86,7 +86,7 @@ Use run_code for sleep calculations:
         category: z.enum(["movie", "music", "book"]),
         mood: z.enum(["chill", "intense", "cozy", "spooky", "funny"]),
       }),
-      execute: ({ category, mood }) => {
+      execute: ({ category, mood }: { category: string; mood: string }) => {
         return {
           category,
           mood,

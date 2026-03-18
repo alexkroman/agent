@@ -144,7 +144,7 @@ Use run_code for health calculations:
           "Medication name (generic or brand, e.g. 'ibuprofen' or 'Advil')",
         ),
       }),
-      execute: ({ name }) => lookupDrug(name),
+      execute: ({ name }: { name: string }) => lookupDrug(name),
     },
     check_drug_interaction: {
       description:
@@ -154,7 +154,7 @@ Use run_code for health calculations:
           "Comma-separated medication names (e.g. 'ibuprofen, warfarin')",
         ),
       }),
-      execute: ({ drugs }) => checkInteractions(drugs),
+      execute: ({ drugs }: { drugs: string }) => checkInteractions(drugs),
     },
   },
 });

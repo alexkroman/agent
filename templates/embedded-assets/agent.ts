@@ -30,7 +30,7 @@ Rules:
       parameters: z.object({
         query: z.string().describe("The user's question to search for"),
       }),
-      execute: ({ query }) => {
+      execute: ({ query }: { query: string }) => {
         const q = query.toLowerCase();
         const match = faqs.find((f) =>
           f.question.toLowerCase().includes(q) ||

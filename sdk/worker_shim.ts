@@ -24,7 +24,7 @@ import { createWintercServer, type WintercServer } from "./winterc_server.ts";
 
 declare const self: {
   postMessage(msg: unknown, transfer?: Transferable[]): void;
-  onmessage: ((ev: MessageEvent) => any) | null; // eslint-disable-line @typescript-eslint/no-explicit-any
+  onmessage: ((ev: MessageEvent) => void) | null;
 };
 
 /**

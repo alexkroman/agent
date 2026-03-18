@@ -330,17 +330,15 @@ export function createS2sSession(opts: SessionOptions): Session {
           // Discard pending tool results on interruption.
           pendingTools = [];
           client.event({ type: "cancelled" });
-        } else {
+        } else if (pendingTools.length > 0) {
           // Send all accumulated tool results after reply.done.
-          if (pendingTools.length > 0) {
-            for (const tool of pendingTools) {
-              s2s?.sendToolResult(tool.call_id, tool.result);
-            }
-            pendingTools = [];
-          } else {
-            client.playAudioDone();
-            client.event({ type: "tts_done" });
+          for (const tool of pendingTools) {
+            s2s?.sendToolResult(tool.call_id, tool.result);
           }
+          pendingTools = [];
+        } else {
+          client.playAudioDone();
+          client.event({ type: "tts_done" });
         }
       }) as EventListener);
 

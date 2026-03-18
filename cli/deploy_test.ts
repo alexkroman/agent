@@ -37,7 +37,7 @@ describe("runDeploy", () => {
       });
       // deploy call + health check = 2
       expect(fetchSpy).toHaveBeenCalledTimes(2);
-      const deployCall = fetchSpy.mock.calls[0]!;
+      const deployCall = fetchSpy.mock.calls[0] ?? [];
       expect(String(deployCall[0])).toBe("http://localhost:3000/cool-cats-jump/deploy");
       expect((deployCall[1]?.headers as Record<string, string>)?.Authorization).toBe(
         "Bearer test-key",
@@ -81,9 +81,9 @@ describe("runDeploy", () => {
       // 2 failed deploy attempts + 1 success + 1 health = 4
       expect(fetchStub).toHaveBeenCalledTimes(4);
       // First attempt uses original slug
-      expect(String(fetchStub.mock.calls[0]![0])).toContain("/cool-cats-jump/");
+      expect(String(fetchStub.mock.calls[0]?.[0])).toContain("/cool-cats-jump/");
       // Subsequent attempts use new generated slugs (not the original)
-      const secondUrl = String(fetchStub.mock.calls[1]![0]);
+      const secondUrl = String(fetchStub.mock.calls[1]?.[0]);
       expect(secondUrl).toContain("/deploy");
       // Result slug should be whatever the last attempt used (a generated slug)
       expect(typeof result.slug).toBe("string");

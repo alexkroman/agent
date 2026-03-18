@@ -50,7 +50,7 @@ describe("defineAgent", () => {
     };
     const agent = defineAgent({ name: "Test", tools });
     expect(Object.keys(agent.tools)).toEqual(["greet"]);
-    expect(agent.tools.greet!.description).toBe("Say hello");
+    expect(agent.tools.greet?.description).toBe("Say hello");
   });
 
   test("preserves lifecycle hooks", () => {

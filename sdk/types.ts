@@ -172,8 +172,7 @@ export type HookContext<S = Record<string, unknown>> = {
  * ```
  */
 export type ToolDef<
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  P extends z.ZodObject<z.ZodRawShape> = any,
+  P extends z.ZodObject<z.ZodRawShape> = z.ZodObject<z.ZodRawShape>,
   S = Record<string, unknown>,
 > = {
   /** Human-readable description shown to the LLM. */
@@ -276,8 +275,7 @@ export type StepInfo = {
  * });
  * ```
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type AgentOptions<S = any> = {
+export type AgentOptions<S = Record<string, unknown>> = {
   /** Display name for the agent. */
   name: string;
   /**
@@ -328,8 +326,7 @@ export type AgentOptions<S = any> = {
    */
   activeTools?: readonly string[];
   /** Custom tools the agent can invoke. */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  tools?: Readonly<Record<string, ToolDef<any, NoInfer<S>>>>;
+  tools?: Readonly<Record<string, ToolDef<z.ZodObject<z.ZodRawShape>, NoInfer<S>>>>;
   /** Factory that creates fresh per-session state. Called once per connection. */
   state?: () => S;
   /** Called when a new session connects. */

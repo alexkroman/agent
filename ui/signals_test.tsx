@@ -64,11 +64,11 @@ describe("createSessionControls", () => {
     withSignalsEnv(async ({ mock, signals, connect, session }) => {
       await connect();
 
-      const before = mock.lastWs!.sent.length;
+      const before = mock.lastWs?.sent.length;
       signals.reset();
 
-      const sent = mock
-        .lastWs!.sent.slice(before)
+      const sent = mock.lastWs?.sent
+        .slice(before)
         .filter((d): d is string => typeof d === "string");
       expect(sent.some((s) => JSON.parse(s).type === "reset")).toBe(true);
       session.disconnect();
@@ -94,7 +94,7 @@ describe("useSession", () => {
     }
 
     expect(caught).not.toBe(null);
-    expect(caught!.message).toContain("Hook useSession() requires a SessionProvider");
+    expect(caught?.message).toContain("Hook useSession() requires a SessionProvider");
 
     render(null, container);
     await delay(0);

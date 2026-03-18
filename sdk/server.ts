@@ -104,7 +104,11 @@ export function createServer(options: ServerOptions): AgentServer {
         agent,
         env,
         ...(kv ? { kv } : {}),
-        createWebSocket: wsFactory!,
+        createWebSocket:
+          wsFactory ??
+          (() => {
+            throw new Error("WebSocket factory not loaded");
+          }),
         ...(clientHtml !== undefined ? { clientHtml } : {}),
         logger,
         s2sConfig,
@@ -133,7 +137,7 @@ export function createServer(options: ServerOptions): AgentServer {
           const url = new URL(req.url ?? "/", `${protocol}://${host}`);
           const headers = new Headers();
           for (const [key, val] of Object.entries(req.headers)) {
-            if (val) headers.set(key, Array.isArray(val) ? val[0]! : val);
+            if (val) headers.set(key, Array.isArray(val) ? (val[0] ?? "") : val);
           }
           const request = new Request(url, {
             method: req.method ?? "GET",

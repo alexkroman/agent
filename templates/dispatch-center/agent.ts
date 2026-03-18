@@ -644,6 +644,13 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
           callerPhone,
           estimatedCasualties,
           hazards,
+        }: {
+          location: string;
+          description: string;
+          callerName?: string;
+          callerPhone?: string;
+          estimatedCasualties?: number;
+          hazards?: string[];
         },
         ctx,
       ) => {
@@ -750,6 +757,13 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
           additionalHazards,
           casualtyUpdate,
           notes,
+        }: {
+          incidentId: string;
+          severity?: "critical" | "urgent" | "moderate" | "minor";
+          type?: "medical" | "fire" | "hazmat" | "traffic" | "crime" | "natural_disaster" | "utility" | "other";
+          additionalHazards?: string[];
+          casualtyUpdate?: number;
+          notes?: string;
         },
         ctx,
       ) => {
@@ -824,7 +838,12 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
         }).describe("Updated casualty numbers").optional(),
       }),
       execute: async (
-        { incidentId, status, notes, casualtyUpdate },
+        { incidentId, status, notes, casualtyUpdate }: {
+          incidentId: string;
+          status: "en_route" | "on_scene" | "resolved" | "escalated";
+          notes?: string;
+          casualtyUpdate?: { confirmed?: number; treated?: number };
+        },
         ctx,
       ) => {
         const state = ctx.state;
@@ -903,7 +922,12 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
         ).optional(),
       }),
       execute: async (
-        { incidentId, reason, requestMutualAid, newSeverity },
+        { incidentId, reason, requestMutualAid, newSeverity }: {
+          incidentId: string;
+          reason: string;
+          requestMutualAid?: boolean;
+          newSeverity?: "critical" | "urgent";
+        },
         ctx,
       ) => {
         const state = ctx.state;
@@ -989,7 +1013,7 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
       parameters: z.object({
         incidentId: z.string().describe("The incident ID"),
       }),
-      execute: ({ incidentId }, ctx) => {
+      execute: ({ incidentId }: { incidentId: string }, ctx) => {
         const state = ctx.state;
         const inc = state.incidents[incidentId];
         if (!inc) return { error: `Incident ${incidentId} not found` };
@@ -1032,7 +1056,7 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
           "Who reported this — unit callsign or caller",
         ).optional(),
       }),
-      execute: async ({ incidentId, note, source }, ctx) => {
+      execute: async ({ incidentId, note, source }: { incidentId: string; note: string; source?: string }, ctx) => {
         const state = ctx.state;
         const inc = state.incidents[incidentId];
         if (!inc) return { error: `Incident ${incidentId} not found` };
@@ -1067,7 +1091,12 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
         ).optional(),
       }),
       execute: async (
-        { incidentId, callsigns, autoDispatch, priority },
+        { incidentId, callsigns, autoDispatch, priority }: {
+          incidentId: string;
+          callsigns?: string[];
+          autoDispatch?: boolean;
+          priority?: "routine" | "priority" | "emergency";
+        },
         ctx,
       ) => {
         const state = ctx.state;
@@ -1169,7 +1198,7 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
           "all",
         ]).describe("Filter by resource type, or 'all'").optional(),
       }),
-      execute: ({ type }, ctx) => {
+      execute: ({ type }: { type?: "ambulance" | "fire_engine" | "police" | "hazmat_team" | "helicopter" | "k9_unit" | "swat" | "ems_supervisor" | "all" }, ctx) => {
         const state = ctx.state;
         let resources = state.resources;
         if (type && type !== "all") {
@@ -1209,7 +1238,7 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
         ]).describe("New status"),
         notes: z.string().describe("Status notes").optional(),
       }),
-      execute: async ({ callsign, status, notes }, ctx) => {
+      execute: async ({ callsign, status, notes }: { callsign: string; status: "available" | "dispatched" | "en_route" | "on_scene" | "returning"; notes?: string }, ctx) => {
         const state = ctx.state;
         const resource = state.resources.find((r) =>
           r.callsign.toLowerCase() === callsign.toLowerCase()
@@ -1331,7 +1360,7 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
         severity: z.enum(["critical", "urgent", "moderate", "minor"])
           .describe("Severity level"),
       }),
-      execute: ({ incidentType, severity }) => {
+      execute: ({ incidentType, severity }: { incidentType: IncidentType; severity: Severity }) => {
         const protocols = getApplicableProtocols(
           incidentType,
           severity,
@@ -1365,7 +1394,7 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
           "highway_pileup",
         ]).describe("Scenario type to simulate"),
       }),
-      execute: async ({ scenario }, ctx) => {
+      execute: async ({ scenario }: { scenario: string }, ctx) => {
         const state = ctx.state;
         const scenarios: Record<
           string,

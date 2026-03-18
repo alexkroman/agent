@@ -160,7 +160,7 @@ export function installMockWebSocket(): {
   return {
     created,
     get lastWs() {
-      return created.length > 0 ? created[created.length - 1]! : null;
+      return created.at(-1) ?? null;
     },
     restore() {
       globalThis.WebSocket = saved;

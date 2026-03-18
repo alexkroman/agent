@@ -54,7 +54,7 @@ function extractStaticConfigFromSource(source: string, fileName = "agent.ts"): E
 
   const args = call.getArguments();
   const arg = args[0];
-  if (!arg || !arg.isKind(SyntaxKind.ObjectLiteralExpression)) {
+  if (!arg?.isKind(SyntaxKind.ObjectLiteralExpression)) {
     throw new BundleError("The argument to defineAgent() must be an inline object literal");
   }
 
@@ -97,7 +97,7 @@ function extractConfig(obj: ObjectLiteralExpression, fileName: string): AgentCon
   // maxSteps: only extract if numeric literal (skip functions)
   const maxStepsProp = getProperty(obj, "maxSteps");
   if (maxStepsProp) {
-    const init = maxStepsProp.getInitializer()!;
+    const init = getInit(maxStepsProp);
     if (init.isKind(SyntaxKind.NumericLiteral)) {
       config.maxSteps = Number(init.getLiteralValue());
     }
@@ -108,7 +108,7 @@ function extractConfig(obj: ObjectLiteralExpression, fileName: string): AgentCon
   const toolChoiceProp = getProperty(obj, "toolChoice");
   if (toolChoiceProp) {
     config.toolChoice = evalLiteral(
-      toolChoiceProp.getInitializer()!,
+      getInit(toolChoiceProp),
       "toolChoice",
       fileName,
     ) as AgentConfig["toolChoice"];
@@ -118,7 +118,7 @@ function extractConfig(obj: ObjectLiteralExpression, fileName: string): AgentCon
   const builtinToolsProp = getProperty(obj, "builtinTools");
   if (builtinToolsProp) {
     config.builtinTools = evalStringArray(
-      builtinToolsProp.getInitializer()!,
+      getInit(builtinToolsProp),
       "builtinTools",
       fileName,
     ) as AgentConfig["builtinTools"];
@@ -127,17 +127,13 @@ function extractConfig(obj: ObjectLiteralExpression, fileName: string): AgentCon
   // activeTools
   const activeToolsProp = getProperty(obj, "activeTools");
   if (activeToolsProp) {
-    config.activeTools = evalStringArray(
-      activeToolsProp.getInitializer()!,
-      "activeTools",
-      fileName,
-    );
+    config.activeTools = evalStringArray(getInit(activeToolsProp), "activeTools", fileName);
   }
 
   // transport
   const transportProp = getProperty(obj, "transport");
   if (transportProp) {
-    const init = transportProp.getInitializer()!;
+    const init = getInit(transportProp);
     if (init.isKind(SyntaxKind.StringLiteral)) {
       config.transport = [init.getLiteralValue()] as AgentConfig["transport"];
     } else if (init.isKind(SyntaxKind.ArrayLiteralExpression)) {
@@ -158,7 +154,7 @@ function extractToolSchemas(obj: ObjectLiteralExpression, fileName: string): Too
   const toolsProp = getProperty(obj, "tools");
   if (!toolsProp) return [];
 
-  const init = toolsProp.getInitializer()!;
+  const init = getInit(toolsProp);
   if (!init.isKind(SyntaxKind.ObjectLiteralExpression)) {
     throw new BundleError(`${fileName}: \`tools\` must be an inline object literal.`);
   }
@@ -180,7 +176,7 @@ function extractToolSchemas(obj: ObjectLiteralExpression, fileName: string): Too
     const prop = member as PropertyAssignment;
     const toolName = prop.getName();
 
-    const toolInit = prop.getInitializer()!;
+    const toolInit = getInit(prop);
     if (!toolInit.isKind(SyntaxKind.ObjectLiteralExpression)) {
       throw new BundleError(`${fileName}: Tool \`${toolName}\` must be an inline object literal.`);
     }
@@ -190,11 +186,11 @@ function extractToolSchemas(obj: ObjectLiteralExpression, fileName: string): Too
     if (!descProp) {
       throw new BundleError(`${fileName}: Tool \`${toolName}\` is missing a \`description\`.`);
     }
-    const description = evalStringLiteral(descProp.getInitializer()!, toolName, fileName);
+    const description = evalStringLiteral(getInit(descProp), toolName, fileName);
 
     const paramsProp = getProperty(toolObj, "parameters");
     const parameters: JSONSchema7 = paramsProp
-      ? zodAstToJsonSchema(paramsProp.getInitializer()!, toolName, fileName)
+      ? zodAstToJsonSchema(getInit(paramsProp), toolName, fileName)
       : { type: "object", properties: {}, additionalProperties: false };
 
     schemas.push({ name: toolName, description, parameters });
@@ -276,7 +272,7 @@ function parseZodBase(
     case "enum": {
       const args = call.getArguments();
       const arg = args[0];
-      if (!arg || !arg.isKind(SyntaxKind.ArrayLiteralExpression)) {
+      if (!arg?.isKind(SyntaxKind.ArrayLiteralExpression)) {
         throw new BundleError(
           `${fileName}: Tool \`${toolName}\`: z.enum() requires an array literal argument.`,
         );
@@ -312,7 +308,7 @@ function parseZodBase(
     case "object": {
       const args = call.getArguments();
       const arg = args[0];
-      if (!arg || !arg.isKind(SyntaxKind.ObjectLiteralExpression)) {
+      if (!arg?.isKind(SyntaxKind.ObjectLiteralExpression)) {
         return {
           schema: {
             type: "object",
@@ -332,7 +328,7 @@ function parseZodBase(
         const prop = member as PropertyAssignment;
         const propName = prop.getName();
 
-        const result = parseZodExpr(prop.getInitializer()! as Expression, toolName, fileName);
+        const result = parseZodExpr(getInit(prop), toolName, fileName);
         properties[propName] = result.schema;
         if (!result.optional) {
           required.push(propName);
@@ -370,6 +366,13 @@ function zodError(node: Expression, toolName: string, fileName: string): BundleE
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+/** Narrow `getInitializer()` from `Expression | undefined` to `Expression`. */
+function getInit(prop: PropertyAssignment): Expression {
+  const init = prop.getInitializer();
+  if (!init) throw new BundleError(`Missing initializer for ${prop.getName()}`);
+  return init;
+}
+
 /** Get a PropertyAssignment by name from an object literal. */
 function getProperty(obj: ObjectLiteralExpression, name: string): PropertyAssignment | undefined {
   const prop = obj.getProperty(name);
@@ -384,7 +387,7 @@ function requireString(obj: ObjectLiteralExpression, field: string, fileName: st
   if (!prop) {
     throw new BundleError(`${fileName}: The \`${field}\` field is required in defineAgent({...}).`);
   }
-  return evalStringLiteral(prop.getInitializer()!, field, fileName);
+  return evalStringLiteral(getInit(prop), field, fileName);
 }
 
 /** Get an optional string property. */
@@ -395,7 +398,7 @@ function optionalString(
 ): string | undefined {
   const prop = getProperty(obj, field);
   if (!prop) return undefined;
-  return evalStringLiteral(prop.getInitializer()!, field, fileName);
+  return evalStringLiteral(getInit(prop), field, fileName);
 }
 
 /** Evaluate a node as a string literal or template literal. */
@@ -454,11 +457,7 @@ function evalLiteral(node: Expression, context: string, fileName: string): unkno
     for (const member of obj.getProperties()) {
       if (member.isKind(SyntaxKind.PropertyAssignment)) {
         const prop = member as PropertyAssignment;
-        result[prop.getName()] = evalLiteral(
-          prop.getInitializer()! as Expression,
-          context,
-          fileName,
-        );
+        result[prop.getName()] = evalLiteral(getInit(prop), context, fileName);
       }
     }
     return result;

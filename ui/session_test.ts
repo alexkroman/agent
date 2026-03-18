@@ -163,7 +163,7 @@ describe("ClientHandler event handling", () => {
       "internal",
     ] as const) {
       target.event({ type: "error", code, message: `${code} error` });
-      expect(error.value!.code).toBe(code);
+      expect(error.value?.code).toBe(code);
     }
   });
 
