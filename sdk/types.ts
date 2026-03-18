@@ -7,6 +7,7 @@
 
 import type { z } from "zod";
 import type { Kv } from "./kv.ts";
+import type { VectorStore } from "./vector.ts";
 
 /** Result of the {@linkcode AgentOptions.onBeforeStep} hook. */
 export type BeforeStepResult = { activeTools?: string[] } | undefined;
@@ -112,6 +113,8 @@ export type ToolContext<S = Record<string, unknown>> = {
   state: S;
   /** Key-value store scoped to this agent deployment. */
   kv: Kv;
+  /** Vector store scoped to this agent deployment. */
+  vector: VectorStore;
   /** Read-only snapshot of conversation messages so far. */
   messages: readonly Message[];
 };
@@ -134,6 +137,8 @@ export type HookContext<S = Record<string, unknown>> = {
   state: S;
   /** Key-value store scoped to this agent deployment. */
   kv: Kv;
+  /** Vector store scoped to this agent deployment. */
+  vector: VectorStore;
 };
 
 /**

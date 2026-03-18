@@ -18,6 +18,8 @@ import { consoleLogger, DEFAULT_S2S_CONFIG, noopMetrics } from "./runtime.ts";
 import type { CreateS2sWebSocket } from "./s2s.ts";
 import type { Session } from "./session.ts";
 import type { AgentDef } from "./types.ts";
+import type { VectorStore } from "./vector.ts";
+import { createMemoryVectorStore } from "./vector.ts";
 import { type SessionWebSocket, wireSessionSocket } from "./ws_handler.ts";
 
 export type WintercServerOptions = {
@@ -27,7 +29,9 @@ export type WintercServerOptions = {
   env: Record<string, string>;
   /** KV store. Defaults to in-memory. */
   kv?: Kv;
-  /** Vector search function. */
+  /** Vector store. Defaults to in-memory. */
+  vector?: VectorStore;
+  /** Vector search function (legacy, used by builtin tool). */
   vectorSearch?: ((query: string, topK: number) => Promise<string>) | undefined;
   /** WebSocket factory for S2S connections. */
   createWebSocket: CreateS2sWebSocket;
@@ -62,6 +66,7 @@ export function createWintercServer(options: WintercServerOptions): WintercServe
     agent,
     env,
     kv = createMemoryKv(),
+    vector = createMemoryVectorStore(),
     vectorSearch,
     clientHtml,
     logger = consoleLogger,
@@ -73,6 +78,7 @@ export function createWintercServer(options: WintercServerOptions): WintercServe
     agent,
     env,
     kv,
+    vector,
     ...(vectorSearch ? { vectorSearch } : {}),
     createWebSocket: options.createWebSocket,
     logger,
