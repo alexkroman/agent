@@ -6,7 +6,8 @@
     "aai": "dist/aai.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "templates"
   ],
   "exports": {
     ".": {
