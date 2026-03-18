@@ -8,6 +8,7 @@
 import { z } from "zod";
 import type { Kv } from "./kv.ts";
 import type { Message, ToolContext, ToolDef } from "./types.ts";
+import type { VectorStore } from "./vector.ts";
 
 /**
  * Maximum time in milliseconds a tool handler may run before being aborted.
@@ -40,6 +41,7 @@ export type ExecuteToolCallOptions = {
   sessionId?: string | undefined;
   state?: unknown;
   kv?: Kv | undefined;
+  vector?: VectorStore | undefined;
   messages?: readonly Message[] | undefined;
 };
 
@@ -61,7 +63,7 @@ export async function executeToolCall(
   args: Readonly<Record<string, unknown>>,
   options: ExecuteToolCallOptions,
 ): Promise<string> {
-  const { tool, env, sessionId, state, kv, messages } = options;
+  const { tool, env, sessionId, state, kv, vector, messages } = options;
   const schema = tool.parameters ?? z.object({});
   const parsed = schema.safeParse(args);
   if (!parsed.success) {
@@ -82,6 +84,10 @@ export async function executeToolCall(
       get kv(): Kv {
         if (!kv) throw new Error("KV not available");
         return kv;
+      },
+      get vector(): VectorStore {
+        if (!vector) throw new Error("Vector store not available");
+        return vector;
       },
       messages: messages ?? [],
     };

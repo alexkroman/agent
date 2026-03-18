@@ -19,6 +19,7 @@ import {
 import type { Kv } from "./kv.ts";
 import type { CreateS2sWebSocket } from "./s2s.ts";
 import type { AgentDef } from "./types.ts";
+import type { VectorEntry, VectorStore } from "./vector.ts";
 import { createWintercServer, type WintercServer } from "./winterc_server.ts";
 
 declare const self: {
@@ -100,9 +101,34 @@ export function initWorker(agent: AgentDef): void {
     },
   };
 
-  // ─── Capnweb-backed vector search ──────────────────────────────────────
+  // ─── Capnweb-backed vector store ───────────────────────────────────────
+  const vector: VectorStore = {
+    async upsert(id: string, data: string, metadata?: Record<string, unknown>): Promise<void> {
+      await endpoint.call("host.vector", ["upsert", id, data, metadata]);
+    },
+    async query(
+      text: string,
+      options?: { topK?: number; filter?: string },
+    ): Promise<VectorEntry[]> {
+      return (await endpoint.call("host.vector", [
+        "query",
+        text,
+        options?.topK,
+        options?.filter,
+      ])) as VectorEntry[];
+    },
+    async remove(ids: string | string[]): Promise<void> {
+      const idArray = Array.isArray(ids) ? ids : [ids];
+      await endpoint.call("host.vector", ["remove", idArray]);
+    },
+  };
+
   const vectorSearch = async (query: string, topK: number): Promise<string> => {
-    return (await endpoint.call("host.vectorSearch", [query, topK])) as string;
+    const results = await vector.query(query, { topK });
+    if (results.length === 0) return "No relevant results found.";
+    return JSON.stringify(
+      results.map((r) => ({ score: r.score, text: r.data, metadata: r.metadata })),
+    );
   };
 
   // ─── Capnweb-backed S2S WebSocket factory ──────────────────────────────
@@ -124,6 +150,7 @@ export function initWorker(agent: AgentDef): void {
       agent,
       env,
       kv,
+      vector,
       vectorSearch,
       createWebSocket,
       ...(clientHtml !== undefined ? { clientHtml } : {}),

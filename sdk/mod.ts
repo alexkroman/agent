@@ -33,3 +33,4 @@ export type {
   ToolContext,
   ToolDef,
 } from "./types.ts";
+export type { VectorEntry, VectorStore } from "./vector.ts";

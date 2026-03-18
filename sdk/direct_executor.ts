@@ -18,6 +18,8 @@ import { consoleLogger, DEFAULT_S2S_CONFIG, noopMetrics } from "./runtime.ts";
 import type { CreateS2sWebSocket } from "./s2s.ts";
 import { createS2sSession, type HookInvoker, type Session } from "./session.ts";
 import type { AgentDef, HookContext, StepInfo } from "./types.ts";
+import type { VectorStore } from "./vector.ts";
+import { createMemoryVectorStore } from "./vector.ts";
 import type { ExecuteTool } from "./worker_entry.ts";
 import { executeToolCall } from "./worker_entry.ts";
 
@@ -25,6 +27,7 @@ export type DirectExecutorOptions = {
   agent: AgentDef;
   env: Record<string, string>;
   kv?: Kv | undefined;
+  vector?: VectorStore | undefined;
   vectorSearch?: ((query: string, topK: number) => Promise<string>) | undefined;
   createWebSocket?: CreateS2sWebSocket | undefined;
   logger?: Logger | undefined;
@@ -66,6 +69,7 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
     agent,
     env,
     kv = createMemoryKv(),
+    vector = createMemoryVectorStore(),
     vectorSearch,
     createWebSocket,
     logger = consoleLogger,
@@ -108,6 +112,9 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
       get kv() {
         return kv;
       },
+      get vector() {
+        return vector;
+      },
     };
   }
 
@@ -121,6 +128,7 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
       sessionId,
       state: getState(sessionId ?? ""),
       kv,
+      vector,
       messages,
     });
   };
