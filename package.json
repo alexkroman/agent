@@ -1,6 +1,6 @@
 {
   "name": "@alexkroman1/aai",
-  "version": "0.7.0",
+  "version": "0.7.2",
   "type": "module",
   "bin": {
     "aai": "dist/aai.js"
@@ -65,10 +65,6 @@
       "types": "./dist/sdk/worker_entry.d.ts",
       "default": "./dist/sdk/worker_entry.js"
     },
-    "./timeout": {
-      "types": "./dist/sdk/_timeout.d.ts",
-      "default": "./dist/sdk/_timeout.js"
-    },
     "./builtin-tools": {
       "types": "./dist/sdk/builtin_tools.d.ts",
       "default": "./dist/sdk/builtin_tools.js"
@@ -112,7 +108,7 @@
     "test": "vitest run",
     "lint": "biome check sdk/ ui/ cli/",
     "lint:fix": "biome check --write sdk/ ui/ cli/",
-    "check": "tsc -p tsconfig.build.json --noEmit && biome check sdk/ ui/ cli/ && vitest run"
+    "check": "tsc -p tsconfig.build.json --noEmit && tsc -p tsconfig.templates.json && biome check sdk/ ui/ cli/ && vitest run"
   },
   "dependencies": {
     "@chonkiejs/core": "^0.0.8",
@@ -128,11 +124,9 @@
     "ink": "^6.8.0",
     "minimist": "^1.2.8",
     "p-limit": "^7.3.0",
-    "p-timeout": "^7.0.1",
     "preact": "^10.29.0",
     "react": "^19.2.4",
-    "ts-morph": "^27.0.2",
-    "vite": "^8.0.0",
+    "vite": "^7.3.1",
     "vite-plugin-singlefile": "^2.3.2",
     "zod": "^4.3.6"
   },

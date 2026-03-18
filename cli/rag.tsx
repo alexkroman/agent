@@ -128,15 +128,37 @@ async function runRag(opts: {
   const { RecursiveChunker } = await import("@chonkiejs/core");
   const chunker = await RecursiveChunker.create({ chunkSize });
 
-  const allChunks: VectorChunk[] = [];
   const siteSlug = slugify(origin);
+  const allChunks = await chunkPages(pages, chunker, origin, siteSlug);
 
+  log(<Step action="Chunked" msg={`${allChunks.length} chunks`} />);
+
+  // Upsert (concurrent with pool)
+  const vectorUrl = `${serverUrl}/${slug}/vector`;
+  log(<Info msg={`target: ${vectorUrl}`} />);
+
+  const result = await upsertChunks(allChunks, vectorUrl, apiKey, setProgress);
+
+  log(<Step action="Done" msg={`${result.upserted} chunks upserted`} />);
+  if (result.errors > 0) {
+    log(<Warn msg={`${result.errors} failed`} />);
+    if (result.lastError) log(<Info msg={`last error: ${result.lastError}`} />);
+  }
+  log(<Detail msg={`Agent: ${slug}`} />);
+}
+
+async function chunkPages(
+  pages: { title: string; body: string }[],
+  chunker: { chunk: (text: string) => Promise<{ text: string; tokenCount: number }[]> },
+  origin: string,
+  siteSlug: string,
+): Promise<VectorChunk[]> {
+  const allChunks: VectorChunk[] = [];
   for (const page of pages) {
     page.body = stripNoise(page.body);
     if (!page.body) continue;
     const raw = await chunker.chunk(page.body);
-    for (let i = 0; i < raw.length; i++) {
-      const c = raw[i]!;
+    for (const [i, c] of raw.entries()) {
       const data = page.title ? `${page.title}\n\n${c.text}` : c.text;
       const id = `${siteSlug}:${slugify(page.title || "page")}:${i}`;
       allChunks.push({
@@ -150,13 +172,16 @@ async function runRag(opts: {
       });
     }
   }
+  return allChunks;
+}
 
-  log(<Step action="Chunked" msg={`${allChunks.length} chunks`} />);
-
-  // Upsert (concurrent with pool)
-  const vectorUrl = `${serverUrl}/${slug}/vector`;
-  log(<Info msg={`target: ${vectorUrl}`} />);
-  const total = allChunks.length;
+async function upsertChunks(
+  chunks: VectorChunk[],
+  vectorUrl: string,
+  apiKey: string,
+  setProgress: (p: { completed: number; total: number } | null) => void,
+): Promise<{ upserted: number; errors: number; lastError: string }> {
+  const total = chunks.length;
   let completed = 0;
   let upserted = 0;
   let errors = 0;
@@ -166,7 +191,7 @@ async function runRag(opts: {
 
   const limit = pLimit(5);
   await Promise.all(
-    allChunks.map((chunk) =>
+    chunks.map((chunk) =>
       limit(async () => {
         try {
           const r = await fetch(vectorUrl, {
@@ -198,12 +223,7 @@ async function runRag(opts: {
     ),
   );
 
-  log(<Step action="Done" msg={`${upserted} chunks upserted`} />);
-  if (errors > 0) {
-    log(<Warn msg={`${errors} failed`} />);
-    if (lastError) log(<Info msg={`last error: ${lastError}`} />);
-  }
-  log(<Detail msg={`Agent: ${slug}`} />);
+  return { upserted, errors, lastError };
 }
 
 /**
@@ -282,41 +302,47 @@ function splitPages(content: string): { title: string; body: string }[] {
     const trimmed = section.trim();
     if (!trimmed) continue;
 
-    let title = "";
-    let body = trimmed;
-
-    // Format A: YAML frontmatter ending with a line of dashes
-    const dashIndex = trimmed.search(/^-{3,}$/m);
-    if (dashIndex !== -1) {
-      const frontmatter = trimmed.slice(0, dashIndex);
-      body = trimmed.slice(dashIndex).replace(/^-+$/m, "").trim();
-
-      const titleMatch = frontmatter.match(/^title:\s*(.+)$/m);
-      if (titleMatch) {
-        title = titleMatch[1]!.trim();
-      }
-    }
-
-    // Format B: title embedded as a heading (e.g. "## title: X")
-    if (!title) {
-      const titleLineMatch = body.match(/^#{1,2}\s+title:\s*(.+)$/m);
-      if (titleLineMatch) {
-        title = titleLineMatch[1]!.trim();
-        body = body.replace(/^#{1,2}\s+title:\s*.+\n?/m, "").trim();
-      } else {
-        const headingMatch = body.match(/^(#{1,3})\s+(.+)$/m);
-        if (headingMatch) {
-          title = headingMatch[2]!.trim();
-        }
-      }
-    }
-
-    if (body.length > 0) {
-      pages.push({ title, body });
+    const page = parsePage(trimmed);
+    if (page.body.length > 0) {
+      pages.push(page);
     }
   }
 
   return pages;
+}
+
+/** Extract title and body from a single page section. */
+function parsePage(trimmed: string): { title: string; body: string } {
+  let title = "";
+  let body = trimmed;
+
+  // Format A: YAML frontmatter ending with a line of dashes
+  const dashIndex = trimmed.search(/^-{3,}$/m);
+  if (dashIndex !== -1) {
+    const frontmatter = trimmed.slice(0, dashIndex);
+    body = trimmed.slice(dashIndex).replace(/^-+$/m, "").trim();
+
+    const titleMatch = frontmatter.match(/^title:\s*(.+)$/m);
+    if (titleMatch) {
+      title = titleMatch[1]?.trim() ?? "";
+    }
+  }
+
+  // Format B: title embedded as a heading (e.g. "## title: X")
+  if (!title) {
+    const titleLineMatch = body.match(/^#{1,2}\s+title:\s*(.+)$/m);
+    if (titleLineMatch) {
+      title = titleLineMatch[1]?.trim() ?? "";
+      body = body.replace(/^#{1,2}\s+title:\s*.+\n?/m, "").trim();
+    } else {
+      const headingMatch = body.match(/^(#{1,3})\s+(.+)$/m);
+      if (headingMatch) {
+        title = headingMatch[2]?.trim() ?? "";
+      }
+    }
+  }
+
+  return { title, body };
 }
 
 /** Strip code blocks, HTML/JSX tags, and collapse whitespace from markdown. */

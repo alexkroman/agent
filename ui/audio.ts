@@ -146,7 +146,7 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
       if (!playNode) return Promise.resolve();
       return new Promise<void>((resolve) => {
         onPlaybackStop = resolve;
-        playNode!.port.postMessage({ event: "done" });
+        playNode?.port.postMessage({ event: "done" });
       });
     },
 

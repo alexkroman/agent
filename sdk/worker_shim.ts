@@ -10,6 +10,7 @@
  * @module
  */
 
+import { z } from "zod";
 import {
   BridgedWebSocket,
   CapnwebEndpoint,
@@ -22,9 +23,40 @@ import type { AgentDef } from "./types.ts";
 import type { VectorEntry, VectorStore } from "./vector.ts";
 import { createWintercServer, type WintercServer } from "./winterc_server.ts";
 
+// ─── Zod schemas for RPC results ────────────────────────────────────────────
+
+const FetchResultSchema = z.object({
+  status: z.number(),
+  headers: z.record(z.string(), z.string()),
+  body: z.string(),
+});
+
+const KvEntrySchema = z.object({
+  key: z.string(),
+  value: z.unknown(),
+});
+
+const VectorEntrySchema = z.object({
+  id: z.string(),
+  score: z.number(),
+  data: z.string().optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+});
+
+const WorkerInitArgsSchema = z.tuple([z.record(z.string(), z.string()), z.string().optional()]);
+
+const WorkerFetchArgsSchema = z.tuple([
+  z.string(),
+  z.string(),
+  z.record(z.string(), z.string()),
+  z.string().optional(),
+]);
+
+const WorkerWsArgsSchema = z.tuple([z.boolean().optional()]);
+
 declare const self: {
   postMessage(msg: unknown, transfer?: Transferable[]): void;
-  onmessage: ((ev: MessageEvent) => any) | null; // eslint-disable-line @typescript-eslint/no-explicit-any
+  onmessage: ((ev: MessageEvent) => void) | null;
 };
 
 /**
@@ -65,11 +97,8 @@ export function initWorker(agent: AgentDef): void {
       body = typeof init.body === "string" ? init.body : String(init.body);
     }
 
-    const result = (await endpoint.call("host.fetch", [url, method, headers, body])) as {
-      status: number;
-      headers: Record<string, string>;
-      body: string;
-    };
+    const raw = await endpoint.call("host.fetch", [url, method, headers, body]);
+    const result = FetchResultSchema.parse(raw);
 
     return new Response(result.body, {
       status: result.status,
@@ -80,7 +109,9 @@ export function initWorker(agent: AgentDef): void {
   // ─── Capnweb-backed KV ─────────────────────────────────────────────────
   const kv: Kv = {
     async get<T = unknown>(key: string): Promise<T | null> {
-      return (await endpoint.call("host.kv", ["get", key])) as T | null;
+      const raw = await endpoint.call("host.kv", ["get", key]);
+      if (raw === null || raw === undefined) return null;
+      return raw as T;
     },
     async set(key: string, value: unknown, options?: { expireIn?: number }): Promise<void> {
       await endpoint.call("host.kv", ["set", key, value, options?.expireIn]);
@@ -92,12 +123,14 @@ export function initWorker(agent: AgentDef): void {
       prefix: string,
       options?: { limit?: number; reverse?: boolean },
     ): Promise<{ key: string; value: T }[]> {
-      return (await endpoint.call("host.kv", [
+      const raw = await endpoint.call("host.kv", [
         "list",
         prefix,
         options?.limit,
         options?.reverse,
-      ])) as { key: string; value: T }[];
+      ]);
+      const entries = z.array(KvEntrySchema).parse(raw);
+      return entries as { key: string; value: T }[];
     },
   };
 
@@ -110,12 +143,13 @@ export function initWorker(agent: AgentDef): void {
       text: string,
       options?: { topK?: number; filter?: string },
     ): Promise<VectorEntry[]> {
-      return (await endpoint.call("host.vector", [
+      const raw = await endpoint.call("host.vector", [
         "query",
         text,
         options?.topK,
         options?.filter,
-      ])) as VectorEntry[];
+      ]);
+      return z.array(VectorEntrySchema).parse(raw);
     },
     async remove(ids: string | string[]): Promise<void> {
       const idArray = Array.isArray(ids) ? ids : [ids];
@@ -144,7 +178,7 @@ export function initWorker(agent: AgentDef): void {
 
   // Handle init from host — creates the WinterTC server
   endpoint.handle("worker.init", (args) => {
-    const [env, clientHtml] = args as [Record<string, string>, string | undefined];
+    const [env, clientHtml] = WorkerInitArgsSchema.parse(args);
 
     wintercServer = createWintercServer({
       agent,
@@ -162,12 +196,7 @@ export function initWorker(agent: AgentDef): void {
   // Handle HTTP request forwarding
   endpoint.handle("worker.fetch", async (args) => {
     if (!wintercServer) throw new Error("Worker not initialized");
-    const [url, method, headers, body] = args as [
-      string,
-      string,
-      Record<string, string>,
-      string | undefined,
-    ];
+    const [url, method, headers, body] = WorkerFetchArgsSchema.parse(args);
 
     const request = new Request(url, {
       method,
@@ -186,7 +215,7 @@ export function initWorker(agent: AgentDef): void {
   // Handle new WebSocket client connection — port transferred from host
   endpoint.handle("worker.handleWebSocket", (_args, ports) => {
     if (!wintercServer) throw new Error("Worker not initialized");
-    const [skipGreeting] = _args as [boolean | undefined];
+    const [skipGreeting] = WorkerWsArgsSchema.parse(_args);
     const port = ports[0];
     if (!port) throw new Error("No port transferred");
 

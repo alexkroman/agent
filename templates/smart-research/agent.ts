@@ -94,7 +94,7 @@ Always search first, then analyze, then answer. Be thorough but concise.`,
         url: z.string().describe("The source URL"),
         title: z.string().describe("Brief title or description"),
       }),
-      execute: (args, ctx) => {
+      execute: (args: { url: string; title: string }, ctx) => {
         const state = ctx.state;
         state.sources.push(`${args.title}: ${args.url}`);
         return { saved: true, totalSources: state.sources.length };
@@ -132,7 +132,7 @@ Always search first, then analyze, then answer. Be thorough but concise.`,
       parameters: z.object({
         focus: z.string().describe("What aspect to focus the analysis on"),
       }),
-      execute: (args, ctx) => {
+      execute: (args: { focus: string }, ctx) => {
         const state = ctx.state;
         // Use ctx.messages to see what's been discussed
         const userMessages = ctx.messages.filter((m) => m.role === "user");

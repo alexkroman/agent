@@ -28,7 +28,9 @@ export async function loadAgentDef(cwd: string): Promise<{ name: string }> {
 
 /** Build an env record from process.env, ensuring ASSEMBLYAI_API_KEY is set. */
 export async function resolveServerEnv(): Promise<Record<string, string>> {
-  const env: Record<string, string> = { ...process.env } as Record<string, string>;
+  const env: Record<string, string> = Object.fromEntries(
+    Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined),
+  );
   if (!env.ASSEMBLYAI_API_KEY) {
     try {
       env.ASSEMBLYAI_API_KEY = await getApiKey();

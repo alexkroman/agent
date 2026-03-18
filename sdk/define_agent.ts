@@ -10,7 +10,6 @@ import {
   type AgentOptions,
   DEFAULT_GREETING,
   DEFAULT_INSTRUCTIONS,
-  normalizeTransport,
 } from "./types.ts";
 
 /**
@@ -20,7 +19,7 @@ import {
  * {@linkcode AgentDef} is consumed by the AAI server at deploy time.
  *
  * @param options Configuration for the agent including name, instructions,
- *   tools, hooks, and transport settings.
+ *   tools, hooks, and other settings.
  * @returns A fully resolved agent definition with all defaults applied.
  *
  * @example Basic agent with a custom tool
@@ -45,26 +44,37 @@ export function defineAgent<S>(options: AgentOptions<S>): AgentDef {
   // AgentDef erases the S generic (it's a runtime artifact consumed by the
   // server which doesn't need the compile-time state type). The cast is safe
   // because AgentDef's hooks/tools use the same shapes with `any`/`unknown`.
-  return {
+  const def: AgentDef = {
     name: options.name,
-    env: options.env ?? ["ASSEMBLYAI_API_KEY"],
-    transport: normalizeTransport(options.transport),
-    mode: options.mode ?? "s2s",
     instructions: options.instructions ?? DEFAULT_INSTRUCTIONS,
     greeting: options.greeting ?? DEFAULT_GREETING,
     voice: options.voice ?? "",
-    ...(options.sttPrompt !== undefined && { sttPrompt: options.sttPrompt }),
     maxSteps: options.maxSteps ?? 5,
-    ...(options.toolChoice !== undefined && { toolChoice: options.toolChoice }),
-    ...(options.builtinTools !== undefined && { builtinTools: options.builtinTools }),
-    ...(options.activeTools !== undefined && { activeTools: options.activeTools }),
     tools: options.tools ?? {},
-    ...(options.state !== undefined && { state: options.state }),
-    ...(options.onConnect !== undefined && { onConnect: options.onConnect }),
-    ...(options.onDisconnect !== undefined && { onDisconnect: options.onDisconnect }),
-    ...(options.onError !== undefined && { onError: options.onError }),
-    ...(options.onTurn !== undefined && { onTurn: options.onTurn }),
-    ...(options.onStep !== undefined && { onStep: options.onStep }),
-    ...(options.onBeforeStep !== undefined && { onBeforeStep: options.onBeforeStep }),
   } as AgentDef;
+  copyOptionalFields(options, def);
+  return def;
+}
+
+const OPTIONAL_KEYS = [
+  "sttPrompt",
+  "toolChoice",
+  "builtinTools",
+  "activeTools",
+  "state",
+  "onConnect",
+  "onDisconnect",
+  "onError",
+  "onTurn",
+  "onStep",
+  "onBeforeStep",
+] as const;
+
+function copyOptionalFields<S>(src: AgentOptions<S>, dst: AgentDef): void {
+  for (const key of OPTIONAL_KEYS) {
+    const val = src[key];
+    if (val !== undefined) {
+      (dst as Record<string, unknown>)[key] = val;
+    }
+  }
 }

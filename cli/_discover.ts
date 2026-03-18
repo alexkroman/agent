@@ -117,12 +117,8 @@ export type AgentEntry = {
   dir: string;
   /** Absolute path to the `agent.ts` entry point. */
   entryPoint: string;
-  /** Environment variables loaded from `.env` (includes `ASSEMBLYAI_API_KEY`). */
-  env: Record<string, string>;
   /** Absolute path to the client entry point (`client.ts` or empty). */
   clientEntry: string;
-  /** Transport protocols the agent supports. */
-  transport: readonly "websocket"[];
 };
 
 /** Default production server URL for agent deployments. */
@@ -159,9 +155,7 @@ export async function loadAgent(dir: string): Promise<AgentEntry | null> {
     slug,
     dir,
     entryPoint: path.join(dir, "agent.ts"),
-    env: {},
     clientEntry,
-    transport: ["websocket"],
   };
 }
 

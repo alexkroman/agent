@@ -1,23 +1,48 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.4.7/schema.json",
   "files": {
-    "includes": ["sdk/**", "ui/**", "cli/**"],
-    "experimentalScannerIgnores": ["node_modules", "dist", ".aai", "**/__snapshots__"]
+    "includes": [
+      "sdk/**",
+      "ui/**",
+      "cli/**",
+      "!**/node_modules",
+      "!**/dist",
+      "!**/.aai",
+      "!**/__snapshots__"
+    ]
   },
   "linter": {
     "enabled": true,
     "rules": {
       "recommended": true,
       "correctness": {
-        "noUnusedImports": "warn",
-        "noUnusedVariables": "warn"
+        "noUnusedImports": "error",
+        "noUnusedVariables": "error"
       },
       "style": {
-        "noNonNullAssertion": "off",
-        "useNodejsImportProtocol": "off"
+        "noNonNullAssertion": "error",
+        "useNodejsImportProtocol": "off",
+        "useConsistentBuiltinInstantiation": "error",
+        "useCollapsedElseIf": "error",
+        "useExplicitLengthCheck": "error",
+        "useForOf": "error",
+        "useThrowNewError": "error",
+        "useThrowOnlyError": "error"
       },
       "suspicious": {
-        "noExplicitAny": "off"
+        "noExplicitAny": "error",
+        "noConsole": "off",
+        "noEmptyBlockStatements": "off",
+        "useErrorMessage": "error"
+      },
+      "complexity": {
+        "noExcessiveCognitiveComplexity": "warn",
+        "noStaticOnlyClass": "error",
+        "useDateNow": "error",
+        "useSimplifiedLogicExpression": "error"
+      },
+      "performance": {
+        "useTopLevelRegex": "off"
       },
       "a11y": {
         "recommended": false

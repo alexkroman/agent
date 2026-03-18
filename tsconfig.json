@@ -16,9 +16,11 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
     "jsx": "react-jsx",
     "jsxImportSource": "preact",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"]
+    "lib": ["ESNext", "DOM", "DOM.Iterable"]
   },
   "include": ["sdk/**/*.ts", "cli/**/*.ts", "cli/**/*.tsx", "ui/**/*.ts", "ui/**/*.tsx"],
   "exclude": ["node_modules", "dist", "**/dist", "**/__snapshots__"]

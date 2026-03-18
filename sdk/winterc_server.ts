@@ -93,7 +93,6 @@ export function createWintercServer(options: WintercServerOptions): WintercServe
     audioFormat: AUDIO_FORMAT,
     sampleRate: s2sConfig.inputSampleRate,
     ttsSampleRate: s2sConfig.outputSampleRate,
-    mode: "s2s" as const,
   };
 
   return {

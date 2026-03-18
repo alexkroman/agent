@@ -83,6 +83,86 @@ function createClientSink(ws: SessionWebSocket): ClientSink {
   };
 }
 
+function isBinaryData(data: unknown): boolean {
+  return (
+    (globalThis as { Buffer?: { isBuffer(v: unknown): boolean } }).Buffer?.isBuffer(data) ||
+    data instanceof ArrayBuffer ||
+    data instanceof Uint8Array
+  );
+}
+
+/** Shape shared by Node.js Buffer and ArrayBuffer views (TypedArray). */
+type BufferLike = { buffer?: ArrayBuffer; byteOffset?: number; byteLength: number };
+
+function toUint8Array(data: unknown): Uint8Array {
+  if (data instanceof Uint8Array) return data;
+  if (data instanceof ArrayBuffer) return new Uint8Array(data);
+  // Node.js Buffer or ArrayBuffer-like
+  const buf = data as BufferLike;
+  return new Uint8Array(buf.buffer ?? (data as ArrayBuffer), buf.byteOffset ?? 0, buf.byteLength);
+}
+
+function handleBinaryAudio(
+  data: unknown,
+  session: Session,
+  log: Logger,
+  ctx: Record<string, string>,
+  sid: string,
+): boolean {
+  if (!isBinaryData(data)) return false;
+  const chunk = toUint8Array(data);
+  if (!isValidAudioChunk(chunk)) {
+    log.warn("Invalid audio chunk, dropping", {
+      ...ctx,
+      sid,
+      bytes: chunk.byteLength,
+      aligned: chunk.byteLength % 2 === 0,
+    });
+    return true;
+  }
+  session.onAudio(chunk);
+  return true;
+}
+
+function handleTextMessage(
+  data: unknown,
+  session: Session,
+  log: Logger,
+  ctx: Record<string, string>,
+  sid: string,
+): void {
+  if (typeof data !== "string") return;
+  let json: unknown;
+  try {
+    json = JSON.parse(data);
+  } catch {
+    log.warn("Invalid JSON from client", { ...ctx, sid });
+    return;
+  }
+
+  const parsed = ClientMessageSchema.safeParse(json);
+  if (!parsed.success) {
+    log.warn("Invalid client message", { ...ctx, sid, error: parsed.error.message });
+    return;
+  }
+
+  const msg: ClientMessage = parsed.data;
+  switch (msg.type) {
+    case "audio_ready":
+      session.onAudioReady();
+      break;
+    case "cancel":
+      session.onCancel();
+      break;
+    case "reset":
+      session.onReset();
+      break;
+    case "history":
+      session.onHistory(msg.messages);
+      break;
+  }
+}
+
 /**
  * Attaches session lifecycle handlers to a native WebSocket using
  * plain JSON text frames and binary audio frames.
@@ -124,73 +204,10 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
 
   ws.addEventListener("message", (event: Event) => {
     if (!session) return;
-    const msgEvent = event as MessageEvent;
-    const { data } = msgEvent;
+    const { data } = event as MessageEvent;
 
-    // Binary frame → raw PCM16 audio
-    // Node's ws package delivers Buffer; Deno/browsers deliver ArrayBuffer
-    // deno-lint-ignore no-explicit-any
-    const isBinary =
-      (globalThis as any).Buffer?.isBuffer(data) ||
-      data instanceof ArrayBuffer ||
-      data instanceof Uint8Array;
-    if (isBinary) {
-      const chunk =
-        data instanceof Uint8Array
-          ? data
-          : new Uint8Array(
-              data.buffer ?? data,
-              data.byteOffset ?? 0,
-              data.byteLength ?? data.byteLength,
-            );
-      if (!isValidAudioChunk(chunk)) {
-        log.warn("Invalid audio chunk, dropping", {
-          ...ctx,
-          sid,
-          bytes: chunk.byteLength,
-          aligned: chunk.byteLength % 2 === 0,
-        });
-        return;
-      }
-      session.onAudio(chunk);
-      return;
-    }
-
-    // Text frame → JSON message
-    if (typeof data !== "string") return;
-    let json: unknown;
-    try {
-      json = JSON.parse(data);
-    } catch {
-      log.warn("Invalid JSON from client", { ...ctx, sid });
-      return;
-    }
-
-    const parsed = ClientMessageSchema.safeParse(json);
-    if (!parsed.success) {
-      log.warn("Invalid client message", {
-        ...ctx,
-        sid,
-        error: parsed.error.message,
-      });
-      return;
-    }
-
-    const msg: ClientMessage = parsed.data;
-    switch (msg.type) {
-      case "audio_ready":
-        session.onAudioReady();
-        break;
-      case "cancel":
-        session.onCancel();
-        break;
-      case "reset":
-        session.onReset();
-        break;
-      case "history":
-        session.onHistory(msg.messages);
-        break;
-    }
+    if (handleBinaryAudio(data, session, log, ctx, sid)) return;
+    handleTextMessage(data, session, log, ctx, sid);
   });
 
   ws.addEventListener("close", () => {

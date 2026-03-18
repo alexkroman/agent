@@ -35,17 +35,21 @@ export function MessageList() {
   // Render each message followed by its tool calls.
   const items: VNode[] = [];
   let tci = 0;
-  for (let i = 0; i < messages.length; i++) {
-    items.push(<MessageBubble key={`msg-${i}`} message={messages[i]!} />);
-    while (tci < toolCalls.length && toolCalls[tci]!.afterMessageIndex <= i) {
-      items.push(<ToolCallBlock key={toolCalls[tci]!.toolCallId} toolCall={toolCalls[tci]!} />);
+  for (const [i, msg] of messages.entries()) {
+    items.push(<MessageBubble key={`msg-${i}`} message={msg} />);
+    let tc = toolCalls[tci];
+    while (tc && tc.afterMessageIndex <= i) {
+      items.push(<ToolCallBlock key={tc.toolCallId} toolCall={tc} />);
       tci++;
+      tc = toolCalls[tci];
     }
   }
   // Any remaining tool calls (still pending, no following message yet).
-  while (tci < toolCalls.length) {
-    items.push(<ToolCallBlock key={toolCalls[tci]!.toolCallId} toolCall={toolCalls[tci]!} />);
+  let tc = toolCalls[tci];
+  while (tc) {
+    items.push(<ToolCallBlock key={tc.toolCallId} toolCall={tc} />);
     tci++;
+    tc = toolCalls[tci];
   }
 
   return (

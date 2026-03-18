@@ -104,7 +104,11 @@ export function createServer(options: ServerOptions): AgentServer {
         agent,
         env,
         ...(kv ? { kv } : {}),
-        createWebSocket: wsFactory!,
+        createWebSocket:
+          wsFactory ??
+          (() => {
+            throw new Error("WebSocket factory not loaded");
+          }),
         ...(clientHtml !== undefined ? { clientHtml } : {}),
         logger,
         s2sConfig,
@@ -127,55 +131,10 @@ export function createServer(options: ServerOptions): AgentServer {
       const http = await import("node:http");
 
       const nodeServer = http.createServer(async (req, res) => {
-        try {
-          const protocol = (req.socket as { encrypted?: boolean }).encrypted ? "https" : "http";
-          const host = req.headers.host ?? `localhost:${port}`;
-          const url = new URL(req.url ?? "/", `${protocol}://${host}`);
-          const headers = new Headers();
-          for (const [key, val] of Object.entries(req.headers)) {
-            if (val) headers.set(key, Array.isArray(val) ? val[0]! : val);
-          }
-          const request = new Request(url, {
-            method: req.method ?? "GET",
-            headers,
-          });
-          const response = await getWinterc().fetch(request);
-          res.writeHead(response.status, Object.fromEntries(response.headers));
-          const body = await response.text();
-          res.end(body);
-        } catch (err: unknown) {
-          res.writeHead(500);
-          res.end(err instanceof Error ? err.message : "Internal Server Error");
-        }
+        await nodeHttpHandler(req, res, port, getWinterc);
       });
 
-      // WebSocket upgrade via ws package
-      try {
-        const wsMod = await import("ws");
-        const WSServer = wsMod.WebSocketServer;
-        if (WSServer) {
-          const wss = new WSServer({ noServer: true });
-          nodeServer.on("upgrade", (req: unknown, socket: unknown, head: unknown) => {
-            wss.handleUpgrade(
-              req as Parameters<typeof wss.handleUpgrade>[0],
-              socket as Parameters<typeof wss.handleUpgrade>[1],
-              head as Parameters<typeof wss.handleUpgrade>[2],
-              (ws) => {
-                const reqUrl = new URL(
-                  (req as { url?: string }).url ?? "/",
-                  `http://localhost:${port}`,
-                );
-                const resume = reqUrl.searchParams.has("resume");
-                getWinterc().handleWebSocket(ws as unknown as SessionWebSocket, {
-                  skipGreeting: resume,
-                });
-              },
-            );
-          });
-        }
-      } catch {
-        logger.warn("ws package not available for Node.js WebSocket upgrade");
-      }
+      attachWsUpgrade(nodeServer, port, getWinterc, logger);
 
       await new Promise<void>((resolve) => {
         nodeServer.listen(port, () => {
@@ -198,4 +157,71 @@ export function createServer(options: ServerOptions): AgentServer {
       await serverHandle?.shutdown();
     },
   };
+}
+
+// ─── Node.js HTTP/WS helpers ─────────────────────────────────────────────────
+
+async function nodeHttpHandler(
+  req: {
+    socket: unknown;
+    headers: Record<string, string | string[] | undefined>;
+    url?: string | undefined;
+    method?: string | undefined;
+  },
+  res: {
+    writeHead(status: number, headers?: Record<string, string>): void;
+    end(body?: string): void;
+  },
+  port: number,
+  getWinterc: () => WintercServer,
+): Promise<void> {
+  try {
+    const protocol = (req.socket as { encrypted?: boolean }).encrypted ? "https" : "http";
+    const host = req.headers.host ?? `localhost:${port}`;
+    const url = new URL(req.url ?? "/", `${protocol}://${host}`);
+    const headers = new Headers();
+    for (const [key, val] of Object.entries(req.headers)) {
+      if (val) headers.set(key, Array.isArray(val) ? (val[0] ?? "") : val);
+    }
+    const request = new Request(url, { method: req.method ?? "GET", headers });
+    const response = await getWinterc().fetch(request);
+    res.writeHead(response.status, Object.fromEntries(response.headers));
+    res.end(await response.text());
+  } catch (err: unknown) {
+    res.writeHead(500);
+    res.end(err instanceof Error ? err.message : "Internal Server Error");
+  }
+}
+
+function attachWsUpgrade(
+  nodeServer: { on(event: string, handler: (...args: unknown[]) => void): void },
+  port: number,
+  getWinterc: () => WintercServer,
+  logger: Logger,
+): void {
+  import("ws")
+    .then((wsMod) => {
+      const WSServer = wsMod.WebSocketServer;
+      if (!WSServer) return;
+      const wss = new WSServer({ noServer: true });
+      nodeServer.on("upgrade", (req: unknown, socket: unknown, head: unknown) => {
+        wss.handleUpgrade(
+          req as Parameters<typeof wss.handleUpgrade>[0],
+          socket as Parameters<typeof wss.handleUpgrade>[1],
+          head as Parameters<typeof wss.handleUpgrade>[2],
+          (ws) => {
+            const reqUrl = new URL(
+              (req as { url?: string }).url ?? "/",
+              `http://localhost:${port}`,
+            );
+            getWinterc().handleWebSocket(ws as unknown as SessionWebSocket, {
+              skipGreeting: reqUrl.searchParams.has("resume"),
+            });
+          },
+        );
+      });
+    })
+    .catch(() => {
+      logger.warn("ws package not available for Node.js WebSocket upgrade");
+    });
 }

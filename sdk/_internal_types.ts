@@ -9,7 +9,7 @@
 
 import type { JSONSchema7 } from "json-schema";
 import { z } from "zod";
-import type { BuiltinTool, ToolChoice, ToolDef, Transport } from "./types.ts";
+import type { BuiltinTool, ToolChoice, ToolDef } from "./types.ts";
 
 /**
  * Serializable agent configuration sent over the wire.
@@ -22,11 +22,9 @@ export type AgentConfig = {
   instructions: string;
   greeting: string;
   voice: string;
-  mode?: "s2s" | undefined;
   sttPrompt?: string | undefined;
   maxSteps?: number | undefined;
   toolChoice?: ToolChoice | undefined;
-  transport?: readonly Transport[] | undefined;
   builtinTools?: readonly BuiltinTool[] | undefined;
   /** Default set of active tools. Can be overridden per-turn via `onBeforeStep`. */
   activeTools?: readonly string[] | undefined;
@@ -53,26 +51,10 @@ export type DeployBody = {
   env?: Readonly<Record<string, string>> | undefined;
   worker: string;
   html: string;
-  transport?: readonly Transport[] | undefined;
-  /** Agent configuration extracted at build time. */
-  config: AgentConfig;
-  /** Tool schemas extracted at build time. */
-  toolSchemas: ToolSchema[];
 };
 
-/** Environment variables required by the agent runtime. */
-export type AgentEnv = {
-  ASSEMBLYAI_API_KEY: string;
-  [key: string]: string | undefined;
-};
-
-/** Configuration + tool schemas bundle returned by the worker's getConfig RPC. */
-export type WorkerConfig = {
-  config: AgentConfig;
-  toolSchemas: ToolSchema[];
-};
-
-const EMPTY_PARAMS = z.object({});
+/** Empty Zod object schema used as default when tools have no parameters. */
+export const EMPTY_PARAMS = z.object({});
 
 /**
  * Convert agent tool definitions to JSON Schema format for wire transport.

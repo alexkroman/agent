@@ -100,8 +100,8 @@ describe("createVoiceIO", () => {
         capNode.port.simulateMessage({ event: "chunk", buffer: buf });
       }
 
-      expect(onMicData.mock.calls.length >= 1).toBe(true);
-      const pcm16 = new Int16Array(onMicData.mock.calls[0]![0]);
+      expect(onMicData.mock.calls.length > 0).toBe(true);
+      const pcm16 = new Int16Array(onMicData.mock.calls[0]?.[0]);
       expect(pcm16[0]).toBe(16384);
       await io.close();
     }),
@@ -196,7 +196,7 @@ describe("createVoiceIO", () => {
         caught = true;
       }
       expect(caught).toBe(true);
-      expect(_lastContext!.closed).toBe(true);
+      expect(_lastContext?.closed).toBe(true);
     }),
   );
 });

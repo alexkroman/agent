@@ -29,7 +29,6 @@ export type {
   BeforeStepResult,
   HookContext,
   Message,
-  PipelineMode,
   ToolContext,
   ToolDef,
 } from "./types.ts";

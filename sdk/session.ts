@@ -103,7 +103,7 @@ export function createS2sSession(opts: SessionOptions): Session {
     type: "function" as const,
     name: ts.name,
     description: ts.description,
-    parameters: ts.parameters as Record<string, unknown>,
+    parameters: ts.parameters,
   }));
   let s2s: S2sHandle | null = null;
   const sessionAbort = new AbortController();
@@ -129,12 +129,17 @@ export function createS2sSession(opts: SessionOptions): Session {
     }
   }
 
-  async function invokeHook(
+  function invokeHook(hook: "onConnect"): void;
+  function invokeHook(hook: "onDisconnect"): void;
+  function invokeHook(hook: "onTurn", text: string): void;
+  function invokeHook(hook: "onError", error: { message: string }): void;
+  function invokeHook(hook: "onStep", step: StepInfo): void;
+  function invokeHook(
     hook: "onConnect" | "onDisconnect" | "onTurn" | "onError" | "onStep",
-    ...args: unknown[]
-  ): Promise<void> {
+    arg?: string | { message: string } | StepInfo,
+  ): void {
     if (!hookInvoker) return;
-    try {
+    const run = async () => {
       switch (hook) {
         case "onConnect":
           await hookInvoker.onConnect(id, HOOK_TIMEOUT_MS);
@@ -143,20 +148,21 @@ export function createS2sSession(opts: SessionOptions): Session {
           await hookInvoker.onDisconnect(id, HOOK_TIMEOUT_MS);
           break;
         case "onTurn":
-          await hookInvoker.onTurn(id, args[0] as string, HOOK_TIMEOUT_MS);
+          await hookInvoker.onTurn(id, arg as string, HOOK_TIMEOUT_MS);
           break;
         case "onError":
-          await hookInvoker.onError(id, args[0] as { message: string }, HOOK_TIMEOUT_MS);
+          await hookInvoker.onError(id, arg as { message: string }, HOOK_TIMEOUT_MS);
           break;
         case "onStep":
-          await hookInvoker.onStep(id, args[0] as StepInfo, HOOK_TIMEOUT_MS);
+          await hookInvoker.onStep(id, arg as StepInfo, HOOK_TIMEOUT_MS);
           break;
       }
-    } catch (err: unknown) {
+    };
+    run().catch((err: unknown) => {
       log.warn(`${hook} hook failed`, {
         err: err instanceof Error ? err.message : String(err),
       });
-    }
+    });
   }
 
   async function handleToolCall(detail: S2sToolCall): Promise<void> {
@@ -234,6 +240,11 @@ export function createS2sSession(opts: SessionOptions): Session {
     client.event({ type: "tool_call_done", toolCallId: call_id, result });
   }
 
+  /** Register a typed CustomEvent listener, consolidating the EventListener cast. */
+  function on<T>(target: EventTarget, event: string, handler: (e: CustomEvent<T>) => void): void {
+    target.addEventListener(event, handler as EventListener);
+  }
+
   async function connectAndSetup(): Promise<void> {
     try {
       const handle = await _internals.connectS2s({
@@ -258,16 +269,16 @@ export function createS2sSession(opts: SessionOptions): Session {
         ...(agentConfig.greeting ? { greeting: agentConfig.greeting } : {}),
       });
 
-      handle.addEventListener("ready", ((e: CustomEvent<{ session_id: string }>) => {
+      on<{ session_id: string }>(handle, "ready", (e) => {
         s2sSessionId = e.detail.session_id;
         log.info("S2S session ready", { session_id: s2sSessionId });
-      }) as EventListener);
+      });
 
-      handle.addEventListener("session_expired", (() => {
+      on<undefined>(handle, "session_expired", () => {
         log.info("S2S session expired, reconnecting fresh");
         s2sSessionId = null;
         handle.close();
-      }) as EventListener);
+      });
 
       handle.addEventListener("speech_started", () => {
         client.event({ type: "speech_started" });
@@ -277,40 +288,38 @@ export function createS2sSession(opts: SessionOptions): Session {
         client.event({ type: "speech_stopped" });
       });
 
-      handle.addEventListener("user_transcript_delta", ((e: CustomEvent<{ text: string }>) => {
+      on<{ text: string }>(handle, "user_transcript_delta", (e) => {
         client.event({
           type: "transcript",
           text: e.detail.text,
           isFinal: false,
         });
-      }) as EventListener);
+      });
 
-      handle.addEventListener("user_transcript", ((
-        e: CustomEvent<{ item_id: string; text: string }>,
-      ) => {
+      on<{ item_id: string; text: string }>(handle, "user_transcript", (e) => {
         const { text } = e.detail;
         log.info("S2S user transcript", { text });
         client.event({ type: "transcript", text, isFinal: true });
         client.event({ type: "turn", text });
         conversationMessages.push({ role: "user", content: text });
         invokeHook("onTurn", text);
-      }) as EventListener);
+      });
 
       handle.addEventListener("reply_started", () => {
         toolCallCount = 0;
       });
 
-      handle.addEventListener("audio", ((e: CustomEvent<{ audio: Uint8Array }>) => {
+      on<{ audio: Uint8Array }>(handle, "audio", (e) => {
         client.playAudioChunk(e.detail.audio);
-      }) as EventListener);
+      });
 
-      handle.addEventListener("agent_transcript", ((e: CustomEvent<{ text: string }>) => {
+      on<{ text: string }>(handle, "agent_transcript", (e) => {
         const { text } = e.detail;
         client.event({ type: "chat", text });
         conversationMessages.push({ role: "assistant", content: text });
-      }) as EventListener);
+      });
 
-      handle.addEventListener("tool_call", ((e: CustomEvent<S2sToolCall>) => {
+      on<S2sToolCall>(handle, "tool_call", (e) => {
         const p = handleToolCall(e.detail).catch((err: unknown) => {
           log.error("Tool call handler failed", {
             err: err instanceof Error ? err.message : String(err),
@@ -322,29 +331,27 @@ export function createS2sSession(opts: SessionOptions): Session {
           .finally(() => {
             turnPromise = null;
           });
-      }) as EventListener);
+      });
 
-      handle.addEventListener("reply_done", ((e: CustomEvent<{ status?: string }>) => {
+      on<{ status?: string }>(handle, "reply_done", (e) => {
         if (e.detail.status === "interrupted") {
           log.info("S2S reply interrupted (barge-in)");
           // Discard pending tool results on interruption.
           pendingTools = [];
           client.event({ type: "cancelled" });
-        } else {
+        } else if (pendingTools.length > 0) {
           // Send all accumulated tool results after reply.done.
-          if (pendingTools.length > 0) {
-            for (const tool of pendingTools) {
-              s2s?.sendToolResult(tool.call_id, tool.result);
-            }
-            pendingTools = [];
-          } else {
-            client.playAudioDone();
-            client.event({ type: "tts_done" });
+          for (const tool of pendingTools) {
+            s2s?.sendToolResult(tool.call_id, tool.result);
           }
+          pendingTools = [];
+        } else {
+          client.playAudioDone();
+          client.event({ type: "tts_done" });
         }
-      }) as EventListener);
+      });
 
-      handle.addEventListener("error", ((e: CustomEvent<{ code: string; message: string }>) => {
+      on<{ code: string; message: string }>(handle, "error", (e) => {
         log.error("S2S error", {
           code: e.detail.code,
           message: e.detail.message,
@@ -354,7 +361,7 @@ export function createS2sSession(opts: SessionOptions): Session {
           code: "internal",
           message: e.detail.message,
         });
-      }) as EventListener);
+      });
 
       handle.addEventListener("close", () => {
         log.info("S2S closed");

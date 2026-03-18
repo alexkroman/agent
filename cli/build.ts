@@ -30,7 +30,6 @@ async function writeBuildOutput(agentDir: string, bundle: BundleOutput): Promise
   await fs.mkdir(buildDir, { recursive: true });
   await Promise.all([
     fs.writeFile(path.join(buildDir, "worker.js"), bundle.worker),
-    fs.writeFile(path.join(buildDir, "manifest.json"), bundle.manifest),
     fs.writeFile(path.join(buildDir, "index.html"), bundle.html),
   ]);
 }
@@ -55,12 +54,12 @@ async function checkAgent(agentDir: string): Promise<void> {
     checks.map(({ args }) => execFileAsync("npx", ["tsc", ...args], { cwd: agentDir })),
   );
   const errors: string[] = [];
-  for (let i = 0; i < results.length; i++) {
-    const r = results[i]!;
+  for (const [i, r] of results.entries()) {
     if (r.status === "rejected") {
+      const label = checks[i]?.label ?? "unknown";
       const msg = (r.reason as { stderr?: string }).stderr?.trim() ?? String(r.reason);
-      logError(`${checks[i]!.label}: ${msg}`);
-      errors.push(checks[i]!.label);
+      logError(`${label}: ${msg}`);
+      errors.push(label);
     }
   }
   if (errors.length > 0) {

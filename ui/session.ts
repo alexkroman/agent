@@ -127,7 +127,8 @@ export class ClientHandler {
         const idx = tcs.findIndex((tc) => tc.toolCallId === e.toolCallId);
         if (idx !== -1) {
           const updated = [...tcs];
-          updated[idx] = { ...updated[idx]!, status: "done", result: e.result };
+          const existing = updated[idx];
+          if (existing) updated[idx] = { ...existing, status: "done", result: e.result };
           this.#toolCalls.value = updated;
         }
         break;

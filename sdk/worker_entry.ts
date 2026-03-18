@@ -5,7 +5,8 @@
  * @module
  */
 
-import { z } from "zod";
+import type { z } from "zod";
+import { EMPTY_PARAMS } from "./_internal_types.ts";
 import type { Kv } from "./kv.ts";
 import type { Message, ToolContext, ToolDef } from "./types.ts";
 import type { VectorStore } from "./vector.ts";
@@ -34,12 +35,31 @@ export type ExecuteTool = (
   messages?: readonly Message[],
 ) => Promise<string>;
 
+function buildToolContext(opts: ExecuteToolCallOptions): ToolContext {
+  const { env, sessionId, state, kv, vector, messages } = opts;
+  return {
+    sessionId: sessionId ?? "",
+    env: { ...env },
+    abortSignal: AbortSignal.timeout(TOOL_HANDLER_TIMEOUT),
+    state: state ?? {},
+    get kv(): Kv {
+      if (!kv) throw new Error("KV not available");
+      return kv;
+    },
+    get vector(): VectorStore {
+      if (!vector) throw new Error("Vector store not available");
+      return vector;
+    },
+    messages: messages ?? [],
+  };
+}
+
 /** Options for {@linkcode executeToolCall}. */
 export type ExecuteToolCallOptions = {
   tool: ToolDef;
   env: Readonly<Record<string, string>>;
   sessionId?: string | undefined;
-  state?: unknown;
+  state?: Record<string, unknown>;
   kv?: Kv | undefined;
   vector?: VectorStore | undefined;
   messages?: readonly Message[] | undefined;
@@ -63,8 +83,8 @@ export async function executeToolCall(
   args: Readonly<Record<string, unknown>>,
   options: ExecuteToolCallOptions,
 ): Promise<string> {
-  const { tool, env, sessionId, state, kv, vector, messages } = options;
-  const schema = tool.parameters ?? z.object({});
+  const { tool } = options;
+  const schema = tool.parameters ?? EMPTY_PARAMS;
   const parsed = schema.safeParse(args);
   if (!parsed.success) {
     const issues = (parsed.error?.issues ?? [])
@@ -74,23 +94,7 @@ export async function executeToolCall(
   }
 
   try {
-    const abortSignal = AbortSignal.timeout(TOOL_HANDLER_TIMEOUT);
-    const envCopy = { ...env };
-    const ctx: ToolContext = {
-      sessionId: sessionId ?? "",
-      env: envCopy,
-      abortSignal,
-      state: (state ?? {}) as Record<string, unknown>,
-      get kv(): Kv {
-        if (!kv) throw new Error("KV not available");
-        return kv;
-      },
-      get vector(): VectorStore {
-        if (!vector) throw new Error("Vector store not available");
-        return vector;
-      },
-      messages: messages ?? [],
-    };
+    const ctx = buildToolContext(options);
     const result = await Promise.resolve(tool.execute(parsed.data, ctx));
     if (result == null) return "null";
     return typeof result === "string" ? result : JSON.stringify(result);

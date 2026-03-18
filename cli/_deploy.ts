@@ -27,11 +27,8 @@ async function attemptDeploy(
   slug: string,
   apiKey: string,
   env: Record<string, string>,
-  transport: string[],
   worker: string,
   html: string,
-  config: unknown,
-  toolSchemas: unknown,
 ): Promise<Response> {
   return await _internals.fetch(`${url}/${slug}/deploy`, {
     method: "POST",
@@ -43,9 +40,6 @@ async function attemptDeploy(
       env,
       worker,
       html,
-      transport,
-      config,
-      toolSchemas,
     }),
   });
 }
@@ -53,12 +47,8 @@ async function attemptDeploy(
 const MAX_RETRIES = 20;
 
 export async function runDeploy(opts: DeployOpts): Promise<DeployResult> {
-  const manifest = JSON.parse(opts.bundle.manifest);
   const worker = opts.bundle.worker;
   const html = opts.bundle.html;
-  const transport = manifest.transport ?? ["websocket"];
-  const config = manifest.config;
-  const toolSchemas = manifest.toolSchemas;
 
   let slug = opts.slug;
 
@@ -70,17 +60,7 @@ export async function runDeploy(opts: DeployOpts): Promise<DeployResult> {
 
   // Try deploying, generating a new slug on 403
   for (let i = 0; i < MAX_RETRIES; i++) {
-    const resp = await attemptDeploy(
-      opts.url,
-      slug,
-      opts.apiKey,
-      opts.env,
-      transport,
-      worker,
-      html,
-      config,
-      toolSchemas,
-    );
+    const resp = await attemptDeploy(opts.url, slug, opts.apiKey, opts.env, worker, html);
 
     if (resp.ok) {
       step("Deploy", `${slug} -> ${opts.url}/${slug}`);

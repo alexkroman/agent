@@ -24,7 +24,7 @@ test("agentToolsToSchemas - converts tool definitions to OpenAI schema", () => {
   };
   const schemas = agentToolsToSchemas(tools);
   expect(schemas.length).toBe(2);
-  expect(schemas[0]!.name).toBe("get_weather");
-  expect(schemas[0]!.description).toBe("Get weather");
-  expect(schemas[1]!.name).toBe("set_alarm");
+  expect(schemas[0]?.name).toBe("get_weather");
+  expect(schemas[0]?.description).toBe("Get weather");
+  expect(schemas[1]?.name).toBe("set_alarm");
 });

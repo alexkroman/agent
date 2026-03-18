@@ -94,12 +94,12 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
   const toolSchemas: ToolSchema[] = [...customSchemas, ...builtinSchemas];
 
   // Per-session mutable state
-  const sessionState = new Map<string, unknown>();
+  const sessionState = new Map<string, Record<string, unknown>>();
   const frozenEnv = Object.freeze({ ...env });
 
-  function getState(sessionId: string): unknown {
+  function getState(sessionId: string): Record<string, unknown> {
     if (!sessionState.has(sessionId) && agent.state) {
-      sessionState.set(sessionId, agent.state());
+      sessionState.set(sessionId, agent.state() as Record<string, unknown>);
     }
     return sessionState.get(sessionId) ?? {};
   }
@@ -108,7 +108,7 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
     return {
       sessionId,
       env: frozenEnv,
-      state: getState(sessionId) as Record<string, unknown>,
+      state: getState(sessionId),
       get kv() {
         return kv;
       },

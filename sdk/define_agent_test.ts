@@ -11,8 +11,6 @@ describe("defineAgent", () => {
     expect(agent.voice).toBe("");
     expect(agent.instructions).toBe(DEFAULT_INSTRUCTIONS);
     expect(agent.greeting).toBe(DEFAULT_GREETING);
-    expect(agent.transport).toEqual(["websocket"]);
-    expect(agent.env).toEqual(["ASSEMBLYAI_API_KEY"]);
     expect(agent.tools).toEqual({});
   });
 
@@ -22,22 +20,10 @@ describe("defineAgent", () => {
       voice: "a167e0f3-df7e-4d52-a9c3-f949145efdab",
       instructions: "Be a pirate",
       greeting: "Ahoy",
-      transport: "websocket",
-      env: ["MY_KEY"],
     });
     expect(agent.voice).toBe("a167e0f3-df7e-4d52-a9c3-f949145efdab");
     expect(agent.instructions).toBe("Be a pirate");
     expect(agent.greeting).toBe("Ahoy");
-    expect(agent.transport).toEqual(["websocket"]);
-    expect(agent.env).toEqual(["MY_KEY"]);
-  });
-
-  test("normalizes transport array", () => {
-    const agent = defineAgent({
-      name: "Multi",
-      transport: ["websocket"],
-    });
-    expect(agent.transport).toEqual(["websocket"]);
   });
 
   test("preserves tools", () => {
@@ -50,7 +36,7 @@ describe("defineAgent", () => {
     };
     const agent = defineAgent({ name: "Test", tools });
     expect(Object.keys(agent.tools)).toEqual(["greet"]);
-    expect(agent.tools.greet!.description).toBe("Say hello");
+    expect(agent.tools.greet?.description).toBe("Say hello");
   });
 
   test("preserves lifecycle hooks", () => {

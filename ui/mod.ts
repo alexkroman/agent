@@ -21,28 +21,28 @@
 export {
   App,
   ChatView,
-  createSessionControls,
   ErrorBanner,
   MessageBubble,
-  type MountConfig,
-  type MountHandle,
-  type MountOptions,
-  type MountTheme,
-  mount,
-  SessionProvider,
-  type SessionSignals,
   StateIndicator,
   ThinkingIndicator,
   Transcript,
-  useMountConfig,
-  useSession,
-} from "./components_mod.ts";
+} from "./components.ts";
+export type { MountHandle, MountOptions, MountTheme } from "./mount.tsx";
+export { mount } from "./mount.tsx";
+export type { MountConfig } from "./mount_context.ts";
+export { useMountConfig } from "./mount_context.ts";
+export type { VoiceSession } from "./session.ts";
+export { createVoiceSession } from "./session.ts";
+export type { SessionSignals } from "./signals.ts";
 export {
-  type AgentState,
-  createVoiceSession,
-  type Message,
-  type SessionError,
-  type SessionErrorCode,
-  type SessionOptions,
-  type VoiceSession,
-} from "./session_mod.ts";
+  createSessionControls,
+  SessionProvider,
+  useSession,
+} from "./signals.ts";
+export type {
+  AgentState,
+  Message,
+  SessionError,
+  SessionErrorCode,
+  SessionOptions,
+} from "./types.ts";
