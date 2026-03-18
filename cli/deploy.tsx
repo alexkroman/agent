@@ -64,7 +64,7 @@ export async function runDeployCommand(args: string[], version: string): Promise
 
   // If no agent.ts exists, scaffold first (may prompt for template)
   if (!(await fileExists(path.join(cwd, "agent.ts")))) {
-    await runNewCommand(parsed.yes ? ["-y"] : [], version);
+    await runNewCommand(parsed.yes ? ["-y"] : [], version, { quiet: true });
   }
 
   const local = parsed.local;

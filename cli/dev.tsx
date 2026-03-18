@@ -43,7 +43,7 @@ export async function runDevCommand(args: string[], version: string): Promise<vo
 
   // If no agent.ts exists, scaffold first (may prompt for template)
   if (!(await fileExists(path.join(cwd, "agent.ts")))) {
-    await runNewCommand(parsed.yes ? ["-y"] : [], version);
+    await runNewCommand(parsed.yes ? ["-y"] : [], version, { quiet: true });
   }
 
   // Pre-resolve API key (may prompt) before Ink render

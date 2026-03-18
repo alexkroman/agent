@@ -8,9 +8,9 @@ import React, { useRef, useState } from "react";
 const PAD = 9;
 
 const PRIMARY = "#fab283";
-const INTERACTIVE = "#9dbefe";
-const ERROR_COLOR = "#fc533a";
-const WARNING_COLOR = "#fcd53a";
+const INTERACTIVE = "#56b6c2";
+const ERROR_COLOR = "#e06c75";
+const WARNING_COLOR = "#f5a742";
 
 /** Primary step message with a right-aligned peach action label. */
 export function Step({ action, msg }: { action: string; msg: string }) {
