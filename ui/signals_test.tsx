@@ -67,9 +67,8 @@ describe("createSessionControls", () => {
       const before = mock.lastWs?.sent.length;
       signals.reset();
 
-      const sent = mock.lastWs?.sent
-        .slice(before)
-        .filter((d): d is string => typeof d === "string");
+      const sent =
+        mock.lastWs?.sent.slice(before).filter((d): d is string => typeof d === "string") ?? [];
       expect(sent.some((s) => JSON.parse(s).type === "reset")).toBe(true);
       session.disconnect();
     }),

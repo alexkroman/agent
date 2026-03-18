@@ -2,11 +2,12 @@
 
 import path from "node:path";
 import { createServer as createViteServer } from "vite";
+import type { AgentDef } from "../sdk/types.ts";
 import { getApiKey } from "./_discover.ts";
 import { error as logError, step } from "./_output.ts";
 
 /** Load an AgentDef by dynamically importing agent.ts via Vite SSR. */
-export async function loadAgentDef(cwd: string): Promise<{ name: string }> {
+export async function loadAgentDef(cwd: string): Promise<AgentDef> {
   const agentPath = path.resolve(cwd, "agent.ts");
   const vite = await createViteServer({
     root: cwd,
@@ -20,7 +21,7 @@ export async function loadAgentDef(cwd: string): Promise<{ name: string }> {
     if (!agentDef || typeof agentDef !== "object" || !agentDef.name) {
       throw new Error("agent.ts must export a default agent definition (from defineAgent())");
     }
-    return agentDef;
+    return agentDef as AgentDef;
   } finally {
     await vite.close();
   }
@@ -53,7 +54,7 @@ async function loadWsFromProject(cwd: string) {
 
 /** Create and start an agent server. */
 export async function bootServer(
-  agentDef: { name: string },
+  agentDef: AgentDef,
   html: string,
   env: Record<string, string>,
   port: number,

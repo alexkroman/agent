@@ -165,10 +165,12 @@ export function createMemoryKv(): Kv {
       return Promise.resolve();
     },
 
-    list<T = unknown>(prefix: string, options?: KvListOptions): Promise<KvEntry<T>[]> {
+    async list<T = unknown>(prefix: string, options?: KvListOptions): Promise<KvEntry<T>[]> {
       const now = Date.now();
       const entries: KvEntry<T>[] = [];
+      let i = 0;
       for (const [key, entry] of store) {
+        if (++i % 500 === 0) await new Promise<void>((r) => setTimeout(r, 0));
         if (entry.expiresAt && entry.expiresAt <= now) {
           store.delete(key);
           continue;
@@ -177,7 +179,7 @@ export function createMemoryKv(): Kv {
           entries.push({ key, value: JSON.parse(entry.raw) as T });
         }
       }
-      return Promise.resolve(sortAndPaginate(entries, options));
+      return sortAndPaginate(entries, options);
     },
   };
 }

@@ -11,6 +11,9 @@ import type { Kv } from "./kv.ts";
 import type { Message, ToolContext, ToolDef } from "./types.ts";
 import type { VectorStore } from "./vector.ts";
 
+/** Yield to the event loop so pending I/O (e.g. WebSocket frames) can be processed. */
+const yieldTick = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
+
 /**
  * Maximum time in milliseconds a tool handler may run before being aborted.
  *
@@ -95,7 +98,9 @@ export async function executeToolCall(
 
   try {
     const ctx = buildToolContext(options);
+    await yieldTick();
     const result = await Promise.resolve(tool.execute(parsed.data, ctx));
+    await yieldTick();
     if (result == null) return "null";
     return typeof result === "string" ? result : JSON.stringify(result);
   } catch (err: unknown) {

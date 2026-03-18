@@ -12,24 +12,15 @@ import { z } from "zod";
 import type { Logger, S2SConfig } from "./runtime.ts";
 import { consoleLogger } from "./runtime.ts";
 
-// ─── Cross-runtime base64 helpers ───────────────────────────────────────────
+// ─── Base64 helpers (native Buffer for C++-speed encode/decode) ─────────────
 
 function uint8ToBase64(bytes: Uint8Array): string {
-  const CHUNK = 0x8000; // 32KB chunks to avoid call stack limits
-  const parts: string[] = [];
-  for (let i = 0; i < bytes.length; i += CHUNK) {
-    parts.push(String.fromCharCode(...bytes.subarray(i, i + CHUNK)));
-  }
-  return btoa(parts.join(""));
+  return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString("base64");
 }
 
 function base64ToUint8(base64: string): Uint8Array {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return bytes;
+  const buf = Buffer.from(base64, "base64");
+  return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
 }
 
 // ─── WebSocket abstraction ──────────────────────────────────────────────────
@@ -38,6 +29,8 @@ function base64ToUint8(base64: string): Uint8Array {
 export type S2sWebSocket = {
   readonly readyState: number;
   send(data: string): void;
+  /** Send raw binary audio. When present, sendAudio uses this for zero-copy transfer. */
+  sendBinary?(data: ArrayBuffer): void;
   close(): void;
   on(event: string, handler: (...args: unknown[]) => void): void;
 };
@@ -65,7 +58,7 @@ const S2sServerMessageSchema = z.discriminatedUnion("type", [
     text: z.string(),
   }),
   z.object({ type: z.literal("reply.started"), reply_id: z.string() }),
-  z.object({ type: z.literal("reply.audio"), data: z.string() }),
+  // reply.audio is handled on the fast path before Zod — see message handler.
   z.object({ type: z.literal("transcript.agent"), text: z.string() }),
   z.object({
     type: z.literal("tool.call"),
@@ -80,6 +73,11 @@ const S2sServerMessageSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("session.error"),
     code: z.string(),
+    message: z.string(),
+  }),
+  // Connection-level error (bare "error" without "session." prefix).
+  z.object({
+    type: z.literal("error"),
     message: z.string(),
   }),
 ]);
@@ -129,11 +127,7 @@ function dispatchS2sMessage(target: EventTarget, msg: S2sServerMessage): void {
         }),
       );
       break;
-    case "reply.audio": {
-      const audioBytes = base64ToUint8(msg.data);
-      target.dispatchEvent(new CustomEvent("audio", { detail: { audio: audioBytes } }));
-      break;
-    }
+    // reply.audio handled on the fast path — never reaches dispatch.
     case "transcript.agent":
       target.dispatchEvent(
         new CustomEvent("agent_transcript", {
@@ -168,6 +162,14 @@ function dispatchS2sMessage(target: EventTarget, msg: S2sServerMessage): void {
       );
       break;
     }
+    case "error":
+      // Connection-level error — should trigger close/reconnect.
+      target.dispatchEvent(
+        new CustomEvent("error", {
+          detail: { code: "connection", message: msg.message },
+        }),
+      );
+      break;
   }
 }
 
@@ -233,15 +235,27 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
 
     function send(msg: { type: string; [key: string]: unknown }): void {
       if (ws.readyState !== WS_OPEN) return;
+      const json = JSON.stringify(msg);
       if (msg.type !== "input.audio") {
-        log.info(`S2S >> ${JSON.stringify(msg)}`);
+        log.debug(`S2S >> ${msg.type}`);
       }
-      ws.send(JSON.stringify(msg));
+      ws.send(json);
     }
 
     const handle: S2sHandle = Object.assign(target, {
       sendAudio(audio: Uint8Array): void {
-        send({ type: "input.audio", audio: uint8ToBase64(audio) });
+        if (ws.readyState !== WS_OPEN) return;
+        if (ws.sendBinary) {
+          // Bridged mode: send raw PCM, host does base64+JSON wrap.
+          const ab = (audio.buffer as ArrayBuffer).slice(
+            audio.byteOffset,
+            audio.byteOffset + audio.byteLength,
+          );
+          ws.sendBinary(ab);
+        } else {
+          // Direct mode: build JSON inline to avoid intermediate object allocation.
+          ws.send(`{"type":"input.audio","audio":"${uint8ToBase64(audio)}"}`);
+        }
       },
 
       sendToolResult(callId: string, result: string): void {
@@ -268,6 +282,12 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
       resolve(handle);
     });
 
+    // Bridged mode: host pre-decodes reply.audio and sends raw PCM as "audio" event.
+    ws.on("audio", (data: unknown) => {
+      const ab = data as ArrayBuffer;
+      target.dispatchEvent(new CustomEvent("audio", { detail: { audio: new Uint8Array(ab) } }));
+    });
+
     ws.on("message", (data: unknown) => {
       let raw: unknown;
       try {
@@ -276,16 +296,23 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
         return;
       }
 
+      // Fast path: reply.audio is ~95% of traffic — skip Zod, skip logging.
+      // Only reached in direct mode (self-hosted); bridged mode uses "audio" event above.
+      const obj = raw as { type?: unknown; data?: unknown };
+      if (obj.type === "reply.audio" && typeof obj.data === "string") {
+        const audioBytes = base64ToUint8(obj.data);
+        target.dispatchEvent(new CustomEvent("audio", { detail: { audio: audioBytes } }));
+        return;
+      }
+
       const parsed = S2sServerMessageSchema.safeParse(raw);
       if (!parsed.success) {
-        log.info(`S2S << unrecognised message: ${JSON.stringify(raw)}`);
+        log.debug("S2S << unrecognised message type");
         return;
       }
       const msg = parsed.data;
 
-      if (msg.type !== "reply.audio") {
-        log.info(`S2S << ${JSON.stringify(msg)}`);
-      }
+      log.debug(`S2S << ${msg.type}`);
 
       dispatchS2sMessage(target, msg);
     });

@@ -98,15 +98,19 @@ export function createMemoryVectorStore(): VectorStore {
       return Promise.resolve();
     },
 
-    query(text: string, options?: { topK?: number; filter?: string }): Promise<VectorEntry[]> {
+    async query(
+      text: string,
+      options?: { topK?: number; filter?: string },
+    ): Promise<VectorEntry[]> {
       const topK = options?.topK ?? 10;
       const query = text.toLowerCase();
+      const words = query.split(/\s+/).filter(Boolean);
       const results: VectorEntry[] = [];
 
+      let i = 0;
       for (const [id, entry] of store) {
+        if (++i % 500 === 0) await new Promise<void>((r) => setTimeout(r, 0));
         const data = entry.data.toLowerCase();
-        // Simple substring scoring: count how many query words appear in data
-        const words = query.split(/\s+/).filter(Boolean);
         const matches = words.filter((w) => data.includes(w)).length;
         if (matches > 0) {
           results.push({
@@ -119,7 +123,7 @@ export function createMemoryVectorStore(): VectorStore {
       }
 
       results.sort((a, b) => b.score - a.score);
-      return Promise.resolve(results.slice(0, topK));
+      return results.slice(0, topK);
     },
 
     remove(ids: string | string[]): Promise<void> {

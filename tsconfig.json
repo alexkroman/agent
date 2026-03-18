@@ -20,7 +20,10 @@
     "noEmit": true,
     "jsx": "react-jsx",
     "jsxImportSource": "preact",
-    "lib": ["ESNext", "DOM", "DOM.Iterable"]
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "paths": {
+      "aai/server": ["./sdk/server.ts"]
+    }
   },
   "include": ["sdk/**/*.ts", "cli/**/*.ts", "cli/**/*.tsx", "ui/**/*.ts", "ui/**/*.tsx"],
   "exclude": ["node_modules", "dist", "**/dist", "**/__snapshots__"]

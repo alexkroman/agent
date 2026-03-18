@@ -8,6 +8,7 @@
  * @module
  */
 
+import { convert } from "html-to-text";
 import { z } from "zod";
 import { EMPTY_PARAMS, type ToolSchema } from "./_internal_types.ts";
 import type { ToolDef } from "./types.ts";
@@ -15,22 +16,7 @@ import type { ToolDef } from "./types.ts";
 // ─── HTML to text ──────────────────────────────────────────────────────────
 
 function htmlToText(html: string): string {
-  return html
-    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
-    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
-    .replace(/<(br|hr)\s*\/?>/gi, "\n")
-    .replace(/<\/(p|div|li|h[1-6]|tr|blockquote)>/gi, "\n")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#0?39;/g, "'")
-    .replace(/[ \t]+/g, " ")
-    .replace(/\n /g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+  return convert(html, { wordwrap: false });
 }
 
 // ─── web_search ────────────────────────────────────────────────────────────
@@ -189,10 +175,16 @@ function createRunCode(): ToolDef<typeof runCodeParams> {
         error: capture,
         debug: capture,
       };
+      const RUN_CODE_TIMEOUT = 5_000;
       const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor;
       try {
         const fn = new AsyncFunction("console", code);
-        await fn(fakeConsole);
+        await Promise.race([
+          fn(fakeConsole),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("Code execution timed out")), RUN_CODE_TIMEOUT),
+          ),
+        ]);
         const result = output.join("\n").trim();
         return result || "Code ran successfully (no output)";
       } catch (err: unknown) {

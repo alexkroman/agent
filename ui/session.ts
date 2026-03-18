@@ -277,21 +277,19 @@ export function createVoiceSession(options: SessionOptions): VoiceSession {
 
   async function handleReady(msg: ReadyConfig): Promise<void> {
     if (audioSetupInFlight) return;
-
-    // Protocol version check
-    if (msg.protocolVersion !== SUPPORTED_PROTOCOL_VERSION) {
-      batch(() => {
-        error.value = {
-          code: "protocol",
-          message: `Server protocol v${msg.protocolVersion} is not compatible with client v${SUPPORTED_PROTOCOL_VERSION}. Please redeploy your agent.`,
-        };
-        state.value = "error";
-      });
-      return;
-    }
-
     audioSetupInFlight = true;
     try {
+      // Protocol version check
+      if (msg.protocolVersion !== SUPPORTED_PROTOCOL_VERSION) {
+        batch(() => {
+          error.value = {
+            code: "protocol",
+            message: `Server protocol v${msg.protocolVersion} is not compatible with client v${SUPPORTED_PROTOCOL_VERSION}. Please redeploy your agent.`,
+          };
+          state.value = "error";
+        });
+        return;
+      }
       const [{ createVoiceIO }, captureWorklet, playbackWorklet] = await Promise.all([
         import("./audio.ts"),
         import("./worklets/capture-processor.js").then((m) => m.default as unknown as string),
@@ -336,6 +334,9 @@ export function createVoiceSession(options: SessionOptions): VoiceSession {
     disconnected.value = null;
     state.value = "connecting";
     connectionController?.abort();
+    cleanupAudio();
+    ws?.close();
+    ws = null;
     const controller = new AbortController();
     connectionController = controller;
     const { signal: sig } = controller;

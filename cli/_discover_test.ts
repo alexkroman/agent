@@ -37,7 +37,7 @@ test("DEFAULT_SERVER", () => {
 
 describe("isDevMode", () => {
   test("returns true when argv[1] ends with .ts", () => {
-    const orig = process.argv[1];
+    const orig = process.argv[1] as string;
     process.argv[1] = "/path/to/script.ts";
     try {
       expect(isDevMode()).toBe(true);
@@ -47,7 +47,7 @@ describe("isDevMode", () => {
   });
 
   test("returns true when argv[1] ends with .tsx", () => {
-    const orig = process.argv[1];
+    const orig = process.argv[1] as string;
     process.argv[1] = "/path/to/script.tsx";
     try {
       expect(isDevMode()).toBe(true);
@@ -57,7 +57,7 @@ describe("isDevMode", () => {
   });
 
   test("returns false when argv[1] ends with .js", () => {
-    const orig = process.argv[1];
+    const orig = process.argv[1] as string;
     process.argv[1] = "/path/to/dist/cli.js";
     try {
       expect(isDevMode()).toBe(false);
