@@ -39,7 +39,7 @@ export type ExecuteToolCallOptions = {
   tool: ToolDef;
   env: Readonly<Record<string, string>>;
   sessionId?: string | undefined;
-  state?: unknown;
+  state?: Record<string, unknown>;
   kv?: Kv | undefined;
   vector?: VectorStore | undefined;
   messages?: readonly Message[] | undefined;
@@ -80,7 +80,7 @@ export async function executeToolCall(
       sessionId: sessionId ?? "",
       env: envCopy,
       abortSignal,
-      state: (state ?? {}) as Record<string, unknown>,
+      state: state ?? {},
       get kv(): Kv {
         if (!kv) throw new Error("KV not available");
         return kv;

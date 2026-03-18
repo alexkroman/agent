@@ -11,6 +11,36 @@
 
 import type { S2sWebSocket } from "./s2s.ts";
 
+// ─── RPC Wire Types ──────────────────────────────────────────────────────────
+
+/** RPC call message: `{$: 0, id, m, a}`. id = -1 for fire-and-forget. */
+type RpcCall = { $: 0; id: number; m: string; a: unknown[] };
+
+/** RPC result message: `{$: 1, id, v?, e?}`. */
+type RpcResult = { $: 1; id: number; v?: unknown; e?: string };
+
+/** Discriminated union of all RPC wire messages. */
+type RpcMsg = RpcCall | RpcResult;
+
+/** Narrow an unknown `ev.data` to {@linkcode RpcMsg}, or return `undefined`. */
+function parseRpcMsg(data: unknown): RpcMsg | undefined {
+  if (typeof data !== "object" || data === null || !("$" in data)) return undefined;
+  const obj = data as Record<string, unknown>;
+  if (obj.$ === 0) {
+    if (typeof obj.id === "number" && typeof obj.m === "string" && Array.isArray(obj.a)) {
+      return obj as unknown as RpcCall;
+    }
+    return undefined;
+  }
+  if (obj.$ === 1) {
+    if (typeof obj.id === "number" && (obj.e === undefined || typeof obj.e === "string")) {
+      return obj as unknown as RpcResult;
+    }
+    return undefined;
+  }
+  return undefined;
+}
+
 // ─── MessagePort RPC ─────────────────────────────────────────────────────────
 
 /** Minimal port interface for CapnwebEndpoint. Works with Worker, MessagePort, or worker self. */
@@ -77,12 +107,12 @@ export class CapnwebEndpoint {
   }
 
   private onMessage(ev: MessageEvent): void {
-    const msg = ev.data;
-    if (!msg || typeof msg !== "object" || !("$" in msg)) return;
+    const msg = parseRpcMsg(ev.data);
+    if (!msg) return;
 
     if (msg.$ === 0) {
       // Incoming call
-      const { id, m, a } = msg as { id: number; m: string; a: unknown[] };
+      const { id, m, a } = msg;
       const handler = this.handlers.get(m);
       if (!handler) {
         if (id >= 0) this.send({ $: 1, id, e: `No handler for ${m}` });
@@ -103,9 +133,9 @@ export class CapnwebEndpoint {
             });
           }
         });
-    } else if (msg.$ === 1) {
+    } else {
       // Incoming result
-      const { id, v, e } = msg as { id: number; v?: unknown; e?: string };
+      const { id, v, e } = msg;
       const pending = this.pending.get(id);
       if (!pending) return;
       this.pending.delete(id);
@@ -135,6 +165,16 @@ type BridgeMsg =
   | { k: 3 }
   | { k: 4; m: string };
 
+/** Type guard: narrows unknown data (e.g. from `ev.data`) to {@linkcode BridgeMsg}. */
+function isBridgeMsg(data: unknown): data is BridgeMsg {
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    "k" in data &&
+    typeof (data as { k: unknown }).k === "number"
+  );
+}
+
 // ─── BridgedWebSocket (standard EventTarget-based) ───────────────────────────
 
 /**
@@ -149,7 +189,8 @@ export class BridgedWebSocket extends EventTarget {
     super();
     this.port = port;
     port.onmessage = (ev: MessageEvent) => {
-      const msg = ev.data as BridgeMsg;
+      const msg = ev.data;
+      if (!isBridgeMsg(msg)) return;
       switch (msg.k) {
         case 0:
           this.dispatchEvent(new MessageEvent("message", { data: msg.d }));
@@ -212,7 +253,8 @@ export function createBridgedS2sWebSocket(port: MessagePort): S2sWebSocket {
   }
 
   port.onmessage = (ev: MessageEvent) => {
-    const msg = ev.data as BridgeMsg;
+    const msg = ev.data;
+    if (!isBridgeMsg(msg)) return;
     switch (msg.k) {
       case 0:
         emit("message", msg.d);
@@ -264,19 +306,18 @@ export function bridgeWebSocketToPort(ws: WebSocket, port: MessagePort): void {
     port.postMessage({ k: 3 });
   });
 
-  ws.addEventListener("message", (ev: Event) => {
-    const { data } = ev as MessageEvent;
+  ws.addEventListener("message", ((ev: MessageEvent) => {
+    const { data } = ev;
     if (typeof data === "string") {
       port.postMessage({ k: 0, d: data });
     } else if (data instanceof ArrayBuffer) {
       port.postMessage({ k: 1, d: data }, [data]);
     }
-  });
+  }) as EventListener);
 
-  ws.addEventListener("close", (ev: Event) => {
-    const e = ev as CloseEvent;
-    port.postMessage({ k: 2, code: e.code, reason: e.reason });
-  });
+  ws.addEventListener("close", ((ev: CloseEvent) => {
+    port.postMessage({ k: 2, code: ev.code, reason: ev.reason });
+  }) as EventListener);
 
   ws.addEventListener("error", (ev: Event) => {
     const msg = ev instanceof ErrorEvent ? ev.message : "WebSocket error";
@@ -285,7 +326,8 @@ export function bridgeWebSocketToPort(ws: WebSocket, port: MessagePort): void {
 
   // Messages from worker → real WebSocket
   port.onmessage = (ev: MessageEvent) => {
-    const msg = ev.data as BridgeMsg;
+    const msg = ev.data;
+    if (!isBridgeMsg(msg)) return;
     switch (msg.k) {
       case 0:
         if (ws.readyState === 1) ws.send(msg.d);
@@ -328,7 +370,8 @@ export function bridgeS2sWebSocketToPort(ws: S2sWebSocket, port: MessagePort): v
 
   // Messages from worker → real S2S WebSocket
   port.onmessage = (ev: MessageEvent) => {
-    const msg = ev.data as BridgeMsg;
+    const msg = ev.data;
+    if (!isBridgeMsg(msg)) return;
     switch (msg.k) {
       case 0:
         if (ws.readyState === 1) ws.send(msg.d);

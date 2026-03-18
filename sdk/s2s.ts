@@ -7,6 +7,8 @@
  *
  * @module
  */
+import type { JSONSchema7 } from "json-schema";
+import { z } from "zod";
 import type { Logger, S2SConfig } from "./runtime.ts";
 import { consoleLogger } from "./runtime.ts";
 
@@ -49,6 +51,126 @@ export type CreateS2sWebSocket = (
   opts: { headers: Record<string, string> },
 ) => S2sWebSocket;
 
+// ─── Incoming S2S message schema ─────────────────────────────────────────────
+
+const S2sServerMessageSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("session.ready"), session_id: z.string() }),
+  z.object({ type: z.literal("session.updated") }).passthrough(),
+  z.object({ type: z.literal("input.speech.started") }),
+  z.object({ type: z.literal("input.speech.stopped") }),
+  z.object({ type: z.literal("transcript.user.delta"), text: z.string() }),
+  z.object({
+    type: z.literal("transcript.user"),
+    item_id: z.string(),
+    text: z.string(),
+  }),
+  z.object({ type: z.literal("reply.started"), reply_id: z.string() }),
+  z.object({ type: z.literal("reply.audio"), data: z.string() }),
+  z.object({ type: z.literal("transcript.agent"), text: z.string() }),
+  z.object({
+    type: z.literal("tool.call"),
+    call_id: z.string(),
+    name: z.string(),
+    args: z.record(z.string(), z.unknown()).optional().default({}),
+  }),
+  z.object({
+    type: z.literal("reply.done"),
+    status: z.string().optional(),
+  }),
+  z.object({
+    type: z.literal("session.error"),
+    code: z.string(),
+    message: z.string(),
+  }),
+]);
+
+type S2sServerMessage = z.infer<typeof S2sServerMessageSchema>;
+
+/** Dispatch a parsed S2S server message to the EventTarget. */
+function dispatchS2sMessage(target: EventTarget, msg: S2sServerMessage): void {
+  switch (msg.type) {
+    case "session.ready":
+      target.dispatchEvent(
+        new CustomEvent("ready", {
+          detail: { session_id: msg.session_id },
+        }),
+      );
+      break;
+    case "session.updated":
+      target.dispatchEvent(new CustomEvent("session_updated", { detail: msg }));
+      break;
+    case "input.speech.started":
+      target.dispatchEvent(new CustomEvent("speech_started"));
+      break;
+    case "input.speech.stopped":
+      target.dispatchEvent(new CustomEvent("speech_stopped"));
+      break;
+    case "transcript.user.delta":
+      target.dispatchEvent(
+        new CustomEvent("user_transcript_delta", {
+          detail: { text: msg.text },
+        }),
+      );
+      break;
+    case "transcript.user":
+      target.dispatchEvent(
+        new CustomEvent("user_transcript", {
+          detail: {
+            item_id: msg.item_id,
+            text: msg.text,
+          },
+        }),
+      );
+      break;
+    case "reply.started":
+      target.dispatchEvent(
+        new CustomEvent("reply_started", {
+          detail: { reply_id: msg.reply_id },
+        }),
+      );
+      break;
+    case "reply.audio": {
+      const audioBytes = base64ToUint8(msg.data);
+      target.dispatchEvent(new CustomEvent("audio", { detail: { audio: audioBytes } }));
+      break;
+    }
+    case "transcript.agent":
+      target.dispatchEvent(
+        new CustomEvent("agent_transcript", {
+          detail: { text: msg.text },
+        }),
+      );
+      break;
+    case "tool.call":
+      target.dispatchEvent(
+        new CustomEvent("tool_call", {
+          detail: {
+            call_id: msg.call_id,
+            name: msg.name,
+            args: msg.args,
+          },
+        }),
+      );
+      break;
+    case "reply.done":
+      target.dispatchEvent(
+        new CustomEvent("reply_done", {
+          detail: { status: msg.status },
+        }),
+      );
+      break;
+    case "session.error": {
+      const isExpired = msg.code === "session_not_found" || msg.code === "session_forbidden";
+      target.dispatchEvent(
+        new CustomEvent(isExpired ? "session_expired" : "error", {
+          detail: { code: msg.code, message: msg.message },
+        }),
+      );
+      break;
+    }
+  }
+}
+
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 export type S2sSessionConfig = {
@@ -61,7 +183,7 @@ export type S2sToolSchema = {
   type: "function";
   name: string;
   description: string;
-  parameters: Record<string, unknown>;
+  parameters: JSONSchema7;
 };
 
 export type S2sToolCall = {
@@ -109,10 +231,9 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
     const target = new EventTarget();
     let opened = false;
 
-    function send(msg: Record<string, unknown>): void {
+    function send(msg: { type: string; [key: string]: unknown }): void {
       if (ws.readyState !== WS_OPEN) return;
-      const type = msg.type as string;
-      if (type !== "input.audio") {
+      if (msg.type !== "input.audio") {
         log.info(`S2S >> ${JSON.stringify(msg)}`);
       }
       ws.send(JSON.stringify(msg));
@@ -148,106 +269,30 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
     });
 
     ws.on("message", (data: unknown) => {
-      let msg: Record<string, unknown>;
+      let raw: unknown;
       try {
-        msg = JSON.parse(String(data));
+        raw = JSON.parse(String(data));
       } catch {
         return;
       }
 
-      const type = msg.type as string;
+      const parsed = S2sServerMessageSchema.safeParse(raw);
+      if (!parsed.success) {
+        log.info(`S2S << unrecognised message: ${JSON.stringify(raw)}`);
+        return;
+      }
+      const msg = parsed.data;
 
-      if (type !== "reply.audio") {
+      if (msg.type !== "reply.audio") {
         log.info(`S2S << ${JSON.stringify(msg)}`);
       }
 
-      switch (type) {
-        case "session.ready":
-          target.dispatchEvent(
-            new CustomEvent("ready", {
-              detail: { session_id: msg.session_id as string },
-            }),
-          );
-          break;
-        case "session.updated":
-          target.dispatchEvent(new CustomEvent("session_updated", { detail: msg }));
-          break;
-        case "input.speech.started":
-          target.dispatchEvent(new CustomEvent("speech_started"));
-          break;
-        case "input.speech.stopped":
-          target.dispatchEvent(new CustomEvent("speech_stopped"));
-          break;
-        case "transcript.user.delta":
-          target.dispatchEvent(
-            new CustomEvent("user_transcript_delta", {
-              detail: { text: msg.text as string },
-            }),
-          );
-          break;
-        case "transcript.user":
-          target.dispatchEvent(
-            new CustomEvent("user_transcript", {
-              detail: {
-                item_id: msg.item_id as string,
-                text: msg.text as string,
-              },
-            }),
-          );
-          break;
-        case "reply.started":
-          target.dispatchEvent(
-            new CustomEvent("reply_started", {
-              detail: { reply_id: msg.reply_id as string },
-            }),
-          );
-          break;
-        case "reply.audio": {
-          const audioBytes = base64ToUint8(msg.data as string);
-          target.dispatchEvent(new CustomEvent("audio", { detail: { audio: audioBytes } }));
-          break;
-        }
-        case "transcript.agent":
-          target.dispatchEvent(
-            new CustomEvent("agent_transcript", {
-              detail: { text: msg.text as string },
-            }),
-          );
-          break;
-        case "tool.call":
-          target.dispatchEvent(
-            new CustomEvent("tool_call", {
-              detail: {
-                call_id: msg.call_id as string,
-                name: msg.name as string,
-                args: (msg.args ?? {}) as Record<string, unknown>,
-              },
-            }),
-          );
-          break;
-        case "reply.done":
-          target.dispatchEvent(
-            new CustomEvent("reply_done", {
-              detail: { status: (msg.status as string) ?? undefined },
-            }),
-          );
-          break;
-        case "session.error": {
-          const code = msg.code as string;
-          const isExpired = code === "session_not_found" || code === "session_forbidden";
-          target.dispatchEvent(
-            new CustomEvent(isExpired ? "session_expired" : "error", {
-              detail: { code, message: msg.message as string },
-            }),
-          );
-          break;
-        }
-      }
+      dispatchS2sMessage(target, msg);
     });
 
     ws.on("close", (code: unknown, reason: unknown) => {
       log.info("S2S WebSocket closed", {
-        code: code as number,
+        code: typeof code === "number" ? code : 0,
         reason:
           reason instanceof Uint8Array ? new TextDecoder().decode(reason) : String(reason ?? ""),
       });
