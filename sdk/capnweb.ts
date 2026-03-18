@@ -263,6 +263,10 @@ export function createBridgedS2sWebSocket(port: MessagePort): S2sWebSocket {
       case 0:
         emit("message", msg.d);
         break;
+      case 1:
+        // Binary frame: pre-decoded audio from host — skip JSON/base64 entirely.
+        emit("audio", msg.d);
+        break;
       case 2:
         readyState = 3;
         emit("close", msg.code, msg.reason);
@@ -284,6 +288,10 @@ export function createBridgedS2sWebSocket(port: MessagePort): S2sWebSocket {
     send(data: string): void {
       if (readyState !== 1) return;
       port.postMessage({ k: 0, d: data });
+    },
+    sendBinary(data: ArrayBuffer): void {
+      if (readyState !== 1) return;
+      port.postMessage({ k: 1, d: data }, [data]);
     },
     close(): void {
       if (readyState >= 2) return;
@@ -349,6 +357,10 @@ export function bridgeWebSocketToPort(ws: WebSocket, port: MessagePort): void {
 /**
  * Bridges a ws-style {@linkcode S2sWebSocket} to a MessagePort.
  * Used on the host side for S2S connections to AssemblyAI.
+ *
+ * Audio is fast-pathed as binary transfers in both directions:
+ * - S2S → worker: reply.audio JSON is decoded on the host and sent as k:1 binary (zero-copy transfer).
+ * - Worker → host: raw PCM arrives as k:1 binary, host wraps it as input.audio JSON for the S2S API.
  */
 export function bridgeS2sWebSocketToPort(ws: S2sWebSocket, port: MessagePort): void {
   ws.on("open", () => {
@@ -356,7 +368,25 @@ export function bridgeS2sWebSocketToPort(ws: S2sWebSocket, port: MessagePort): v
   });
 
   ws.on("message", (data: unknown) => {
-    port.postMessage({ k: 0, d: String(data) });
+    const str = String(data);
+
+    // Fast path: decode reply.audio on host, transfer raw PCM as binary.
+    // Avoids structured-cloning the entire JSON+base64 string through the port.
+    if (str.length > 30 && str.startsWith('{"type":"reply.audio"')) {
+      try {
+        const msg = JSON.parse(str) as { type: string; data?: string };
+        if (msg.type === "reply.audio" && msg.data) {
+          const buf = Buffer.from(msg.data, "base64");
+          const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+          port.postMessage({ k: 1, d: ab }, [ab]);
+          return;
+        }
+      } catch {
+        // Fall through to text path on parse failure.
+      }
+    }
+
+    port.postMessage({ k: 0, d: str });
   });
 
   ws.on("close", (code: unknown, reason: unknown) => {
@@ -380,6 +410,14 @@ export function bridgeS2sWebSocketToPort(ws: S2sWebSocket, port: MessagePort): v
       case 0:
         if (ws.readyState === 1) ws.send(msg.d);
         break;
+      case 1: {
+        // Binary frame from worker: raw PCM audio → wrap as input.audio JSON for S2S API.
+        if (ws.readyState === 1) {
+          const b64 = Buffer.from(msg.d).toString("base64");
+          ws.send(`{"type":"input.audio","audio":"${b64}"}`);
+        }
+        break;
+      }
       case 2:
         ws.close();
         break;

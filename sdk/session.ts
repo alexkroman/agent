@@ -112,6 +112,11 @@ export function createS2sSession(opts: SessionOptions): Session {
   let turnPromise: Promise<void> | null = null;
   let conversationMessages: Message[] = [];
   let s2sSessionId: string | null = null;
+  /** Incremented on reset — in-flight tool calls compare against this to discard stale results. */
+  let resetEpoch = 0;
+  /** Prevents overlapping connectAndSetup() calls (e.g. close handler firing during reconnect). */
+  let connecting = false;
+  let pendingReconnect = false;
 
   // Accumulate tool results — send after reply.done per API docs.
   type PendingTool = { call_id: string; result: string };
@@ -165,7 +170,29 @@ export function createS2sSession(opts: SessionOptions): Session {
     });
   }
 
+  /** Check if a tool call should be refused due to turn config limits. Returns a result string to short-circuit, or null. */
+  function checkTurnLimits(
+    turnConfig: { maxSteps?: number; activeTools?: string[] } | null,
+    name: string,
+  ): string | null {
+    const maxSteps = turnConfig?.maxSteps ?? agentConfig.maxSteps;
+    toolCallCount++;
+
+    if (maxSteps !== undefined && toolCallCount > maxSteps) {
+      log.info("maxSteps exceeded, refusing tool call", { toolCallCount, maxSteps });
+      return "Maximum tool steps reached. Please respond to the user now.";
+    }
+
+    if (turnConfig?.activeTools && !turnConfig.activeTools.includes(name)) {
+      log.info("Tool filtered by activeTools", { name });
+      return JSON.stringify({ error: `Tool "${name}" is not available at this step.` });
+    }
+
+    return null;
+  }
+
   async function handleToolCall(detail: S2sToolCall): Promise<void> {
+    const epoch = resetEpoch;
     const { call_id, name, args: parsedArgs } = detail;
 
     // Emit tool_call_start to client
@@ -178,36 +205,12 @@ export function createS2sSession(opts: SessionOptions): Session {
 
     // Resolve turn config for maxSteps / activeTools
     const turnConfig = await resolveTurnConfig();
-    const maxSteps = turnConfig?.maxSteps ?? agentConfig.maxSteps;
+    if (epoch !== resetEpoch) return; // State was reset, discard
 
-    toolCallCount++;
-
-    // Check maxSteps
-    if (maxSteps !== undefined && toolCallCount > maxSteps) {
-      log.info("maxSteps exceeded, refusing tool call", {
-        toolCallCount,
-        maxSteps,
-      });
-      pendingTools.push({
-        call_id,
-        result: "Maximum tool steps reached. Please respond to the user now.",
-      });
-      client.event({ type: "tool_call_done", toolCallId: call_id, result: "" });
-      return;
-    }
-
-    // Check activeTools filter
-    if (turnConfig?.activeTools && !turnConfig.activeTools.includes(name)) {
-      log.info("Tool filtered by activeTools", { name });
-      const errResult = JSON.stringify({
-        error: `Tool "${name}" is not available at this step.`,
-      });
-      pendingTools.push({ call_id, result: errResult });
-      client.event({
-        type: "tool_call_done",
-        toolCallId: call_id,
-        result: errResult,
-      });
+    const refused = checkTurnLimits(turnConfig, name);
+    if (refused !== null) {
+      pendingTools.push({ call_id, result: refused });
+      client.event({ type: "tool_call_done", toolCallId: call_id, result: refused });
       return;
     }
 
@@ -230,6 +233,8 @@ export function createS2sSession(opts: SessionOptions): Session {
       result = JSON.stringify({ error: msg });
     }
 
+    if (epoch !== resetEpoch) return; // State was reset during execution, discard
+
     log.info("S2S tool result", {
       tool: name,
       call_id,
@@ -246,6 +251,11 @@ export function createS2sSession(opts: SessionOptions): Session {
   }
 
   async function connectAndSetup(): Promise<void> {
+    if (connecting) {
+      pendingReconnect = true;
+      return;
+    }
+    connecting = true;
     try {
       const handle = await _internals.connectS2s({
         apiKey,
@@ -325,12 +335,7 @@ export function createS2sSession(opts: SessionOptions): Session {
             err: err instanceof Error ? err.message : String(err),
           });
         });
-        const prev = turnPromise;
-        turnPromise = (prev ?? Promise.resolve())
-          .then(() => p)
-          .finally(() => {
-            turnPromise = null;
-          });
+        turnPromise = (turnPromise ?? Promise.resolve()).then(() => p);
       });
 
       on<{ status?: string }>(handle, "reply_done", (e) => {
@@ -380,6 +385,15 @@ export function createS2sSession(opts: SessionOptions): Session {
       const msg = err instanceof Error ? err.message : String(err);
       log.error("S2S connect failed", { error: msg });
       client.event({ type: "error", code: "internal", message: msg });
+    } finally {
+      connecting = false;
+      if (pendingReconnect && !sessionAbort.signal.aborted) {
+        pendingReconnect = false;
+        connectAndSetup().catch((err: unknown) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          log.error("S2S deferred reconnect failed", { error: msg });
+        });
+      }
     }
   }
 
@@ -416,8 +430,10 @@ export function createS2sSession(opts: SessionOptions): Session {
     },
 
     onReset(): void {
+      resetEpoch++;
       conversationMessages = [];
       toolCallCount = 0;
+      turnPromise = null;
       pendingTools = [];
       s2sSessionId = null;
       s2s?.close();

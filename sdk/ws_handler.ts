@@ -61,24 +61,26 @@ export type WsSessionOptions = {
  * binary frames (zero-copy).
  */
 function createClientSink(ws: SessionWebSocket): ClientSink {
+  /** Send data over ws, tolerating races where the socket closes between readyState check and send. */
+  function safeSend(data: string | ArrayBuffer | Uint8Array): void {
+    try {
+      if (ws.readyState === 1) ws.send(data);
+    } catch {
+      /* socket closed between check and send */
+    }
+  }
   return {
     get open() {
       return ws.readyState === 1;
     },
     event(e) {
-      if (ws.readyState === 1) {
-        ws.send(JSON.stringify(e));
-      }
+      safeSend(JSON.stringify(e));
     },
     playAudioChunk(chunk) {
-      if (ws.readyState === 1) {
-        ws.send(chunk);
-      }
+      safeSend(chunk);
     },
     playAudioDone() {
-      if (ws.readyState === 1) {
-        ws.send(JSON.stringify({ type: "audio_done" }));
-      }
+      safeSend(JSON.stringify({ type: "audio_done" }));
     },
   };
 }
