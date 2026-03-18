@@ -75,6 +75,11 @@ const S2sServerMessageSchema = z.discriminatedUnion("type", [
     code: z.string(),
     message: z.string(),
   }),
+  // Connection-level error (bare "error" without "session." prefix).
+  z.object({
+    type: z.literal("error"),
+    message: z.string(),
+  }),
 ]);
 
 type S2sServerMessage = z.infer<typeof S2sServerMessageSchema>;
@@ -157,6 +162,14 @@ function dispatchS2sMessage(target: EventTarget, msg: S2sServerMessage): void {
       );
       break;
     }
+    case "error":
+      // Connection-level error — should trigger close/reconnect.
+      target.dispatchEvent(
+        new CustomEvent("error", {
+          detail: { code: "connection", message: msg.message },
+        }),
+      );
+      break;
   }
 }
 
@@ -222,10 +235,11 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
 
     function send(msg: { type: string; [key: string]: unknown }): void {
       if (ws.readyState !== WS_OPEN) return;
+      const json = JSON.stringify(msg);
       if (msg.type !== "input.audio") {
-        log.info(`S2S >> ${JSON.stringify(msg)}`);
+        log.debug(`S2S >> ${msg.type}`);
       }
-      ws.send(JSON.stringify(msg));
+      ws.send(json);
     }
 
     const handle: S2sHandle = Object.assign(target, {
@@ -293,12 +307,12 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
 
       const parsed = S2sServerMessageSchema.safeParse(raw);
       if (!parsed.success) {
-        log.info(`S2S << unrecognised message: ${JSON.stringify(raw)}`);
+        log.debug("S2S << unrecognised message type");
         return;
       }
       const msg = parsed.data;
 
-      log.info(`S2S << ${JSON.stringify(msg)}`);
+      log.debug(`S2S << ${msg.type}`);
 
       dispatchS2sMessage(target, msg);
     });

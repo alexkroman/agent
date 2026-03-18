@@ -112,8 +112,6 @@ export function createS2sSession(opts: SessionOptions): Session {
   let turnPromise: Promise<void> | null = null;
   let conversationMessages: Message[] = [];
   let s2sSessionId: string | null = null;
-  /** Incremented on reset — in-flight tool calls compare against this to discard stale results. */
-  let resetEpoch = 0;
   /** Prevents overlapping connectAndSetup() calls (e.g. close handler firing during reconnect). */
   let connecting = false;
   let pendingReconnect = false;
@@ -192,7 +190,6 @@ export function createS2sSession(opts: SessionOptions): Session {
   }
 
   async function handleToolCall(detail: S2sToolCall): Promise<void> {
-    const epoch = resetEpoch;
     const { call_id, name, args: parsedArgs } = detail;
 
     // Emit tool_call_start to client
@@ -205,7 +202,6 @@ export function createS2sSession(opts: SessionOptions): Session {
 
     // Resolve turn config for maxSteps / activeTools
     const turnConfig = await resolveTurnConfig();
-    if (epoch !== resetEpoch) return; // State was reset, discard
 
     const refused = checkTurnLimits(turnConfig, name);
     if (refused !== null) {
@@ -232,8 +228,6 @@ export function createS2sSession(opts: SessionOptions): Session {
       log.error("Tool execution failed", { tool: name, error: msg });
       result = JSON.stringify({ error: msg });
     }
-
-    if (epoch !== resetEpoch) return; // State was reset during execution, discard
 
     log.info("S2S tool result", {
       tool: name,
@@ -264,21 +258,8 @@ export function createS2sSession(opts: SessionOptions): Session {
         logger: log,
       });
 
-      if (s2sSessionId) {
-        // Reconnect: resume existing session — server already has config.
-        log.info("Attempting S2S session resume", {
-          session_id: s2sSessionId,
-        });
-        handle.resumeSession(s2sSessionId);
-      } else {
-        // Initial connect: send config with greeting.
-        handle.updateSession({
-          system_prompt: systemPrompt,
-          tools: s2sTools,
-          ...(agentConfig.greeting ? { greeting: agentConfig.greeting } : {}),
-        });
-      }
-
+      // Register all event listeners BEFORE sending any messages to avoid
+      // a race where the server responds before listeners are attached.
       on<{ session_id: string }>(handle, "ready", (e) => {
         s2sSessionId = e.detail.session_id;
         log.info("S2S session ready", { session_id: s2sSessionId });
@@ -380,6 +361,22 @@ export function createS2sSession(opts: SessionOptions): Session {
         }
       });
 
+      // Now that all listeners are registered, send the initial message.
+      if (s2sSessionId) {
+        // Reconnect: resume existing session — server already has config.
+        log.info("Attempting S2S session resume", {
+          session_id: s2sSessionId,
+        });
+        handle.resumeSession(s2sSessionId);
+      } else {
+        // Initial connect: send config with greeting.
+        handle.updateSession({
+          system_prompt: systemPrompt,
+          tools: s2sTools,
+          ...(agentConfig.greeting ? { greeting: agentConfig.greeting } : {}),
+        });
+      }
+
       s2s = handle;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -430,7 +427,6 @@ export function createS2sSession(opts: SessionOptions): Session {
     },
 
     onReset(): void {
-      resetEpoch++;
       conversationMessages = [];
       toolCallCount = 0;
       turnPromise = null;

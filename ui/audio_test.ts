@@ -101,7 +101,8 @@ describe("createVoiceIO", () => {
       }
 
       expect(onMicData.mock.calls.length > 0).toBe(true);
-      const pcm16 = new Int16Array(onMicData.mock.calls[0]?.[0]);
+      const firstCall = onMicData.mock.calls[0] as [ArrayBuffer];
+      const pcm16 = new Int16Array(firstCall[0]);
       expect(pcm16[0]).toBe(16384);
       await io.close();
     }),
@@ -178,7 +179,7 @@ describe("createVoiceIO", () => {
   test(
     "cleans up on worklet load error",
     withAudioMocks(async () => {
-      let _lastContext: MockAudioContext;
+      let _lastContext!: MockAudioContext;
       // Override AudioContext to inject worklet failure
       const g = globalThis as unknown as Record<string, unknown>;
       g.AudioContext = class extends MockAudioContext {

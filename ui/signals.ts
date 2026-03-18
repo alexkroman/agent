@@ -93,7 +93,7 @@ export function SessionProvider({
   children,
 }: {
   value: SessionSignals;
-  children: ComponentChildren;
+  children?: ComponentChildren;
 }): preact.JSX.Element {
   return h(Ctx.Provider, { value }, children);
 }

@@ -25,7 +25,7 @@ export function setupDOM() {
   const doc = new DOMParser().parseFromString(HTML, "text/html");
   if (!doc) throw new Error("Failed to parse HTML document");
   g.document = doc;
-  return doc;
+  return doc as unknown as Document;
 }
 
 export function getContainer(): Element {
