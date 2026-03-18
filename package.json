@@ -108,7 +108,7 @@
     "test": "vitest run",
     "lint": "biome check sdk/ ui/ cli/",
     "lint:fix": "biome check --write sdk/ ui/ cli/",
-    "check": "tsc -p tsconfig.build.json --noEmit && biome check sdk/ ui/ cli/ && vitest run"
+    "check": "tsc -p tsconfig.build.json --noEmit && tsc -p tsconfig.templates.json && biome check sdk/ ui/ cli/ && vitest run"
   },
   "dependencies": {
     "@chonkiejs/core": "^0.0.8",

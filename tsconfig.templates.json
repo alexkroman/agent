@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "react-jsx",
+    "jsxImportSource": "preact",
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "paths": {
+      "@alexkroman1/aai": ["./sdk/mod.ts"],
+      "@alexkroman1/aai/types": ["./sdk/types.ts"],
+      "@alexkroman1/aai/ui": ["./ui/mod.ts"],
+      "@alexkroman1/aai/ui/components": ["./ui/components_mod.ts"],
+      "@alexkroman1/aai/ui/session": ["./ui/session_mod.ts"]
+    }
+  },
+  "include": ["templates/*/agent.ts", "templates/*/client.tsx"]
+}
