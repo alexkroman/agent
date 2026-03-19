@@ -1,11 +1,21 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import fs from "node:fs/promises";
 import path from "node:path";
 import React from "react";
 import { BundleError, bundleAgent } from "./_bundler.ts";
 import { loadAgent } from "./_discover.ts";
 import { Step } from "./_ink.tsx";
 import { bootServer, loadAgentDef, resolveServerEnv } from "./_server_common.ts";
+
+/** Write client files from the in-memory bundle to disk for static serving. */
+async function writeClientFiles(dir: string, files: Record<string, string>): Promise<void> {
+  for (const [relPath, content] of Object.entries(files)) {
+    const fullPath = path.join(dir, relPath);
+    await fs.mkdir(path.dirname(fullPath), { recursive: true });
+    await fs.writeFile(fullPath, content);
+  }
+}
 
 /**
  * Start a local development server.
@@ -25,10 +35,10 @@ export async function _startDevServer(
   }
 
   log(React.createElement(Step, { action: "Bundle", msg: agent.slug }));
-  let clientDir: string;
+  const clientDir = path.join(agent.dir, ".aai", "client");
   try {
-    await bundleAgent(agent);
-    clientDir = path.join(agent.dir, ".aai", "client");
+    const bundle = await bundleAgent(agent);
+    await writeClientFiles(clientDir, bundle.clientFiles);
   } catch (err) {
     if (err instanceof BundleError) {
       throw new Error(`Bundle failed: ${err.message}`);
