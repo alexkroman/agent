@@ -113,7 +113,9 @@ export class ClientHandler {
         });
         break;
       case "chat_delta":
-        this.#agentUtterance.value = (this.#agentUtterance.value ?? "") + e.text;
+        this.#agentUtterance.value = this.#agentUtterance.value
+          ? `${this.#agentUtterance.value} ${e.text}`
+          : e.text;
         break;
       case "chat":
         batch(() => {
