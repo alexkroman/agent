@@ -36,11 +36,11 @@ async function rewriteDevDeps(cwd: string, cliDir: string): Promise<void> {
   const pkgJsonPath = path.join(cwd, "package.json");
   const pkgJson = JSON.parse(await fs.readFile(pkgJsonPath, "utf-8"));
 
-  for (const pkg of ["sdk", "ui"]) {
-    const localPkgPath = path.join(monorepoRoot, pkg, "package.json");
-    const localPkg = JSON.parse(await fs.readFile(localPkgPath, "utf-8"));
-    const pkgName = localPkg.name as string;
-    pkgJson.dependencies[pkgName] = `file:${path.join(monorepoRoot, pkg)}`;
+  // Rewrite the main package to point at the local source
+  const rootPkg = JSON.parse(await fs.readFile(path.join(monorepoRoot, "package.json"), "utf-8"));
+  const rootPkgName = rootPkg.name as string;
+  if (pkgJson.dependencies[rootPkgName]) {
+    pkgJson.dependencies[rootPkgName] = `file:${monorepoRoot}`;
   }
 
   await fs.writeFile(pkgJsonPath, `${JSON.stringify(pkgJson, null, 2)}\n`);
