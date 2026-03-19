@@ -33,6 +33,7 @@ export function makeBundle(overrides?: Partial<BundleOutput>): BundleOutput {
   return {
     worker: "// worker",
     clientFiles: { "index.html": "<html></html>" },
+    clientDir: "/tmp/test-client",
     workerBytes: 9,
     ...overrides,
   };

@@ -1,6 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import fs from "node:fs/promises";
 import path from "node:path";
 import minimist from "minimist";
 import { BundleError, type BundleOutput, bundleAgent } from "./_bundler.ts";
@@ -35,18 +34,6 @@ const deployCommandDef: SubcommandDef = {
   ],
 };
 
-async function writeBuildOutput(agentDir: string, bundle: BundleOutput): Promise<void> {
-  const buildDir = path.join(agentDir, ".aai", "build");
-  await fs.mkdir(buildDir, { recursive: true });
-  const writes = [fs.writeFile(path.join(buildDir, "worker.js"), bundle.worker)];
-  for (const [relPath, content] of Object.entries(bundle.clientFiles)) {
-    const fullPath = path.join(buildDir, "client", relPath);
-    await fs.mkdir(path.dirname(fullPath), { recursive: true });
-    writes.push(fs.writeFile(fullPath, content));
-  }
-  await Promise.all(writes);
-}
-
 function resolveServerUrl(parsed: minimist.ParsedArgs): string {
   return parsed.server || (isDevMode() ? "http://localhost:3100" : DEFAULT_SERVER);
 }
@@ -68,7 +55,6 @@ async function buildAgent(cwd: string, log: (el: React.ReactNode) => void): Prom
     throw err;
   }
 
-  await writeBuildOutput(cwd, bundle);
   return bundle;
 }
 
@@ -86,11 +72,7 @@ async function deployBundle(opts: {
   log(<Step action="Deploy" msg={slug} />);
   const deployed = await runDeploy({
     url: serverUrl,
-    bundle: {
-      worker: bundle.worker,
-      clientFiles: bundle.clientFiles,
-      workerBytes: bundle.workerBytes,
-    },
+    bundle,
     env: { ASSEMBLYAI_API_KEY: apiKey },
     slug,
     dryRun: false,
