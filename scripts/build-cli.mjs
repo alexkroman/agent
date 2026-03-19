@@ -55,7 +55,7 @@ writeFileSync(
   resolve(agentRoot, "dist/aai.js"),
   `#!/usr/bin/env node
 if(!process.env.FORCE_COLOR&&!process.env.NO_COLOR&&process.stdout.isTTY)process.env.FORCE_COLOR='1';
-await import("./cli.js");
+import("./cli.js").catch(e=>{process.stderr.write(e?.message??"");process.exit(1)});
 `,
 );
 chmodSync(resolve(agentRoot, "dist/aai.js"), 0o755);

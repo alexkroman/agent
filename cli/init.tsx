@@ -97,6 +97,10 @@ export async function runInitCommand(
     return "";
   }
 
+  // Ensure API key is set before prompting for project name
+  const { getApiKey } = await import("./_discover.ts");
+  await getApiKey();
+
   let dir = parsed._[0] as string | undefined;
   if (!dir) {
     dir = await askText("What is your project named?", "my-voice-agent");
