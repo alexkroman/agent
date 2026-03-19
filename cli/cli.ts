@@ -5,7 +5,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import minimist from "minimist";
 import { rootHelp } from "./_help.ts";
-import { error } from "./_output.ts";
 import { runDeployCommand } from "./deploy.tsx";
 import { runDevCommand } from "./dev.tsx";
 import { runInitCommand } from "./init.tsx";
@@ -65,7 +64,7 @@ async function main(args: string[]): Promise<void> {
       await runInitCommand(subArgs, VERSION);
       return;
     default:
-      error(`Unknown command: ${subcommand}`);
+      console.error(`Unknown command: ${subcommand}`);
       console.log(rootHelp(VERSION));
       process.exit(1);
   }
@@ -76,7 +75,7 @@ if (process.env.VITEST !== "true") {
   try {
     await main(process.argv.slice(2));
   } catch (err: unknown) {
-    error(err instanceof Error ? err.message : String(err));
+    console.error(err instanceof Error ? err.message : String(err));
     process.exit(1);
   }
 }
@@ -84,9 +83,5 @@ if (process.env.VITEST !== "true") {
 /**
  * Entry point for the `aai` CLI. Parses top-level arguments and dispatches
  * to the appropriate subcommand (`init`, `deploy`, `secret`, etc.).
- *
- * @param args Command-line arguments (typically `process.argv.slice(2)`).
- * @returns Resolves when the subcommand completes.
- * @throws If an unknown subcommand is provided or the subcommand fails.
  */
 export { main };

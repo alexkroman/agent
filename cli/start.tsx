@@ -50,6 +50,6 @@ export async function runStartCommand(args: string[], version: string): Promise<
 
   await runWithInk(async (log) => {
     log(<Step action="Start" msg={`production server on port ${port}`} />);
-    await _startProductionServer(cwd, port);
+    await _startProductionServer(cwd, port, log);
   });
 }

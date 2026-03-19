@@ -5,16 +5,13 @@ import { Spinner } from "@inkjs/ui";
 import { Box, render, Static, Text, useApp } from "ink";
 import React, { useRef, useState } from "react";
 
-const PRIMARY = "#fab283";
-const INTERACTIVE = "#56b6c2";
-const ERROR_COLOR = "#e06c75";
-const WARNING_COLOR = "#f5a742";
+import { COLORS } from "./_colors.ts";
 
 /** Primary step message with a left-aligned peach action label. */
 export function Step({ action, msg }: { action: string; msg: string }) {
   return (
     <Text>
-      <Text bold color={PRIMARY}>
+      <Text bold color={COLORS.primary}>
         {action}
       </Text>
       <Text> {msg}</Text>
@@ -26,7 +23,7 @@ export function Step({ action, msg }: { action: string; msg: string }) {
 export function StepInfo({ action, msg }: { action: string; msg: string }) {
   return (
     <Text>
-      <Text bold color={INTERACTIVE}>
+      <Text bold color={COLORS.interactive}>
         {action}
       </Text>
       <Text> {msg}</Text>
@@ -48,7 +45,7 @@ export function Detail({ msg }: { msg: string }) {
 export function Warn({ msg }: { msg: string }) {
   return (
     <Text>
-      <Text bold color={WARNING_COLOR}>
+      <Text bold color={COLORS.warning}>
         warning
       </Text>
       <Text> {msg}</Text>
@@ -60,7 +57,7 @@ export function Warn({ msg }: { msg: string }) {
 export function ErrorLine({ msg }: { msg: string }) {
   return (
     <Text>
-      <Text bold color={ERROR_COLOR}>
+      <Text bold color={COLORS.error}>
         error
       </Text>
       <Text>: {msg}</Text>

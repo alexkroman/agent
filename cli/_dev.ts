@@ -1,9 +1,10 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import path from "node:path";
+import React from "react";
 import { BundleError, bundleAgent } from "./_bundler.ts";
 import { loadAgent } from "./_discover.ts";
-import { error as logError, step } from "./_output.ts";
+import { Step } from "./_ink.tsx";
 import { bootServer, loadAgentDef, resolveServerEnv } from "./_server_common.ts";
 
 /**
@@ -13,29 +14,33 @@ import { bootServer, loadAgentDef, resolveServerEnv } from "./_server_common.ts"
  * 2. Loads agent.ts via Vite SSR to get the AgentDef
  * 3. Boots a local server with createServer()
  */
-export async function _startDevServer(cwd: string, port: number): Promise<void> {
+export async function _startDevServer(
+  cwd: string,
+  port: number,
+  log: (node: React.ReactNode) => void,
+): Promise<void> {
   const agent = await loadAgent(cwd);
   if (!agent) {
     throw new Error("No agent found — run `aai init` first");
   }
 
-  // Bundle using the same pipeline as deploy
-  step("Bundle", agent.slug);
+  log(React.createElement(Step, { action: "Bundle", msg: agent.slug }));
   let clientDir: string;
   try {
     await bundleAgent(agent);
     clientDir = path.join(agent.dir, ".aai", "client");
   } catch (err) {
     if (err instanceof BundleError) {
-      logError(err.message);
-      throw new Error("Bundle failed — fix the errors above");
+      throw new Error(`Bundle failed: ${err.message}`);
     }
     throw err;
   }
 
-  // Load agent def via Vite SSR (handles .ts imports from node_modules)
-  step("Load", "agent.ts");
+  log(React.createElement(Step, { action: "Load", msg: "agent.ts" }));
   const agentDef = await loadAgentDef(cwd);
   const env = await resolveServerEnv();
+
+  log(React.createElement(Step, { action: "Start", msg: `http://localhost:${port}` }));
   await bootServer(agentDef, clientDir, env, port, cwd);
+  log(React.createElement(Step, { action: "Ready", msg: `http://localhost:${port}` }));
 }

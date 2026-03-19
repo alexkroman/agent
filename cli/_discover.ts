@@ -3,7 +3,6 @@ import { accessSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { humanId } from "human-id";
-import { step } from "./_output.ts";
 import { askPassword } from "./_prompts.tsx";
 
 /**
@@ -81,7 +80,6 @@ export async function getApiKey(): Promise<string> {
   config.assemblyai_api_key = key;
   process.env.ASSEMBLYAI_API_KEY = key;
   await writeAuthConfig(config);
-  step("Saved", CONFIG_FILE);
   return key;
 }
 

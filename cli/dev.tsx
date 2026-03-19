@@ -51,6 +51,6 @@ export async function runDevCommand(args: string[], version: string): Promise<vo
 
   await runWithInk(async (log) => {
     log(<Step action="Dev" msg={`starting on port ${port}`} />);
-    await _startDevServer(cwd, port);
+    await _startDevServer(cwd, port, log);
   });
 }
