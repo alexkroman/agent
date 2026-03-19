@@ -25,6 +25,7 @@ export function MessageList() {
     session.messages.value;
     session.toolCalls.value;
     session.userUtterance.value;
+    session.agentUtterance.value;
     session.state.value;
     scrollRef.current?.scrollIntoView({ behavior: "smooth" });
   });
@@ -56,6 +57,9 @@ export function MessageList() {
     <div role="log" class="flex-1 overflow-y-auto [scrollbar-width:none] bg-aai-surface">
       <div class="flex flex-col gap-4.5 p-4">
         {items}
+        {session.agentUtterance.value && (
+          <MessageBubble message={{ role: "assistant", text: session.agentUtterance.value }} />
+        )}
         <Transcript userUtterance={session.userUtterance} />
         {showThinking.value && <ThinkingIndicator />}
         <div ref={scrollRef} />
