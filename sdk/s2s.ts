@@ -310,7 +310,9 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
 
       const parsed = S2sServerMessageSchema.safeParse(raw);
       if (!parsed.success) {
-        log.debug("S2S << unrecognised message type");
+        log.debug(
+          `S2S << unrecognised message type: ${obj.type ?? JSON.stringify(raw).slice(0, 100)}`,
+        );
         return;
       }
       const msg = parsed.data;
