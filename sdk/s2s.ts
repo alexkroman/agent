@@ -59,7 +59,7 @@ const S2sServerMessageSchema = z.discriminatedUnion("type", [
   }),
   z.object({ type: z.literal("reply.started"), reply_id: z.string() }),
   // reply.audio is handled on the fast path before Zod — see message handler.
-  z.object({ type: z.literal("transcript.agent.delta"), text: z.string() }),
+  z.object({ type: z.literal("transcript.agent.delta"), delta: z.string() }).passthrough(),
   z.object({ type: z.literal("transcript.agent"), text: z.string() }),
   z.object({ type: z.literal("reply.content_part.started") }).passthrough(),
   z.object({ type: z.literal("reply.content_part.done") }).passthrough(),
@@ -134,7 +134,7 @@ function dispatchS2sMessage(target: EventTarget, msg: S2sServerMessage): void {
     case "transcript.agent.delta":
       target.dispatchEvent(
         new CustomEvent("agent_transcript_delta", {
-          detail: { text: msg.text },
+          detail: { text: msg.delta },
         }),
       );
       break;
