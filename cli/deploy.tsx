@@ -29,11 +29,6 @@ const deployCommandDef: SubcommandDef = {
   options: [
     { flags: "-s, --server <url>", description: "Server URL" },
     {
-      flags: "--local [url]",
-      description: "Use local server",
-      hidden: true,
-    },
-    {
       flags: "--dry-run",
       description: "Validate and bundle without deploying",
     },
@@ -54,10 +49,6 @@ async function writeBuildOutput(agentDir: string, bundle: BundleOutput): Promise
 }
 
 function resolveServerUrl(parsed: minimist.ParsedArgs): string {
-  const local = parsed.local;
-  if (local !== undefined) {
-    return typeof local === "string" && local !== "" ? local : "http://localhost:3100";
-  }
   return parsed.server || (isDevMode() ? "http://localhost:3100" : DEFAULT_SERVER);
 }
 
@@ -121,7 +112,7 @@ async function deployBundle(opts: {
  */
 export async function runDeployCommand(args: string[], version: string): Promise<void> {
   const parsed = minimist(args, {
-    string: ["server", "local"],
+    string: ["server"],
     boolean: ["dry-run", "help", "yes"],
     alias: { s: "server", h: "help", y: "yes" },
   });
