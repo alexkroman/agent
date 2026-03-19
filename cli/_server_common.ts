@@ -51,7 +51,7 @@ export async function bootServer(
     new WS(url, { headers: opts.headers });
   const clientHtml = await fs.readFile(path.join(clientDir, "index.html"), "utf-8");
 
-  const { createServer } = await import("aai/server");
+  const { createServer } = await import("../sdk/server.ts");
   const server = createServer({
     agent: agentDef,
     clientHtml,
