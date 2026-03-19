@@ -5,7 +5,6 @@ import path from "node:path";
 import { createServer as createViteServer } from "vite";
 import type { AgentDef } from "../sdk/types.ts";
 import { getApiKey } from "./_discover.ts";
-import { error as logError, step } from "./_output.ts";
 
 /** Load an AgentDef by dynamically importing agent.ts via Vite SSR. */
 export async function loadAgentDef(cwd: string): Promise<AgentDef> {
@@ -34,23 +33,9 @@ export async function resolveServerEnv(): Promise<Record<string, string>> {
     Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined),
   );
   if (!env.ASSEMBLYAI_API_KEY) {
-    try {
-      env.ASSEMBLYAI_API_KEY = await getApiKey();
-    } catch {
-      logError("ASSEMBLYAI_API_KEY not set. Set it in your environment or run `aai env add`.");
-      throw new Error("ASSEMBLYAI_API_KEY is required");
-    }
+    env.ASSEMBLYAI_API_KEY = await getApiKey();
   }
   return env;
-}
-
-/** Load the ws package from the user's project and build a createWebSocket factory. */
-async function loadWsFromProject(cwd: string) {
-  const wsPath = path.resolve(cwd, "node_modules", "ws", "index.js");
-  const mod = await import(wsPath);
-  const WS = mod.default ?? mod;
-  return (url: string, opts: { headers: Record<string, string> }) =>
-    new WS(url, { headers: opts.headers });
 }
 
 /** Create and start an agent server with static file serving. */
@@ -59,15 +44,14 @@ export async function bootServer(
   clientDir: string,
   env: Record<string, string>,
   port: number,
-  cwd: string,
 ): Promise<void> {
-  step("Start", `http://localhost:${port}`);
-  const createWebSocket = await loadWsFromProject(cwd);
-
-  // Read index.html from the client build directory
+  const wsMod = await import("ws");
+  const WS = wsMod.default ?? wsMod;
+  const createWebSocket = (url: string, opts: { headers: Record<string, string> }) =>
+    new WS(url, { headers: opts.headers });
   const clientHtml = await fs.readFile(path.join(clientDir, "index.html"), "utf-8");
 
-  const { createServer } = await import("aai/server");
+  const { createServer } = await import("../sdk/server.ts");
   const server = createServer({
     agent: agentDef,
     clientHtml,
@@ -76,5 +60,4 @@ export async function bootServer(
     createWebSocket,
   });
   await server.listen(port);
-  step("Ready", `http://localhost:${port}`);
 }

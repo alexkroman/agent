@@ -6,7 +6,7 @@ import { withTempDir } from "./_test_utils.ts";
 describe("_startDevServer", () => {
   test("throws when no agent found", async () => {
     await withTempDir(async (dir) => {
-      await expect(_startDevServer(dir, 3000)).rejects.toThrow("No agent found");
+      await expect(_startDevServer(dir, 3000, () => {})).rejects.toThrow("No agent found");
     });
   });
 });

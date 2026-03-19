@@ -3,7 +3,6 @@ import { accessSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { humanId } from "human-id";
-import { step } from "./_output.ts";
 import { askPassword } from "./_prompts.tsx";
 
 /**
@@ -73,9 +72,6 @@ export async function getApiKey(): Promise<string> {
     return config.assemblyai_api_key;
   }
 
-  step("Setup", "AssemblyAI API key required for speech-to-text");
-  console.log("Get one at https://www.assemblyai.com/dashboard/signup\n");
-
   let key: string | undefined;
   while (!key) {
     key = await askPassword("ASSEMBLYAI_API_KEY");
@@ -84,7 +80,6 @@ export async function getApiKey(): Promise<string> {
   config.assemblyai_api_key = key;
   process.env.ASSEMBLYAI_API_KEY = key;
   await writeAuthConfig(config);
-  step("Saved", CONFIG_FILE);
   return key;
 }
 

@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import preact from "@preact/preset-vite";
 import tailwindcss from "@tailwindcss/vite";
-import { build, type Rollup } from "vite";
+import { build } from "vite";
 import type { AgentEntry } from "./_discover.ts";
 
 /**
@@ -25,6 +25,8 @@ export type BundleOutput = {
   worker: string;
   /** All client build files keyed by relative path (e.g. "index.html", "assets/index-abc123.js"). */
   clientFiles: Record<string, string>;
+  /** Absolute path to the client build directory on disk. */
+  clientDir: string;
   /** Size of the worker bundle in bytes. */
   workerBytes: number;
 };
@@ -34,18 +36,24 @@ export const _internals = {
   BundleError,
 };
 
-/** Extract a file map from a Vite/Rollup build result. */
-function extractFiles(result: Rollup.RollupOutput | Rollup.RollupOutput[]): Record<string, string> {
-  const outputs = Array.isArray(result) ? result : [result];
+/** Recursively read all files in a directory as a map of relative paths to contents. */
+async function readDirRecursive(dir: string, base = dir): Promise<Record<string, string>> {
   const files: Record<string, string> = {};
-  for (const output of outputs) {
-    for (const chunk of output.output) {
-      if (chunk.type === "chunk") {
-        files[chunk.fileName] = chunk.code;
-      } else {
-        files[chunk.fileName] =
-          typeof chunk.source === "string" ? chunk.source : new TextDecoder().decode(chunk.source);
-      }
+  let names: string[];
+  try {
+    names = await fs.readdir(dir);
+  } catch {
+    return files;
+  }
+  for (const name of names) {
+    const full = path.join(dir, name);
+    const stat = await fs.stat(full);
+    const entry = { name, isDirectory: () => stat.isDirectory() };
+    if (entry.isDirectory()) {
+      Object.assign(files, await readDirRecursive(full, base));
+    } else {
+      const rel = path.relative(base, full);
+      files[rel] = await fs.readFile(full, "utf-8");
     }
   }
   return files;
@@ -54,22 +62,19 @@ function extractFiles(result: Rollup.RollupOutput | Rollup.RollupOutput[]): Reco
 /**
  * Bundles an agent project into deployable artifacts using Vite.
  *
- * Runs two Vite builds in-process:
- * 1. Worker build — generates a real entry file in .aai/ that imports
- *    agent.ts and wires it to the platform shim, then bundles into worker.js
- * 2. Client build — bundles client.tsx + Tailwind into standard multi-file
- *    output (index.html + assets/)
+ * Writes all output to `.aai/` on disk:
+ * - `.aai/build/worker.js` — the platform worker bundle
+ * - `.aai/client/` — standard Vite multi-file output (index.html + assets/)
  *
- * @param agent The discovered agent entry containing paths and configuration.
- * @param opts Optional settings. Set `skipClient` to omit the client bundle.
- * @returns The bundled worker code, client files map, and byte sizes.
- * @throws {BundleError} If Vite encounters a build error.
+ * Both `aai dev` and `aai deploy` use this function identically.
  */
 export async function bundleAgent(
   agent: AgentEntry,
   opts?: { skipClient?: boolean },
 ): Promise<BundleOutput> {
   const aaiDir = path.join(agent.dir, ".aai");
+  const buildDir = path.join(aaiDir, "build");
+  const clientDir = path.join(aaiDir, "client");
   await fs.mkdir(aaiDir, { recursive: true });
 
   // Generate the worker entry file — a real file in .aai/ that the user
@@ -85,14 +90,14 @@ export async function bundleAgent(
   );
 
   // 1. Worker build — bundles the entry into a single ESM file
-  let workerResult: Rollup.RollupOutput | Rollup.RollupOutput[];
   try {
-    workerResult = (await build({
+    await build({
       configFile: false,
       root: agent.dir,
       logLevel: "warn",
       build: {
-        write: false,
+        outDir: buildDir,
+        emptyOutDir: true,
         minify: true,
         target: "es2022",
         rollupOptions: {
@@ -104,42 +109,40 @@ export async function bundleAgent(
           },
         },
       },
-    })) as Rollup.RollupOutput | Rollup.RollupOutput[];
+    });
   } catch (err: unknown) {
     throw new BundleError(err instanceof Error ? err.message : String(err));
   }
 
-  const workerFiles = extractFiles(workerResult);
-  const worker = workerFiles["worker.js"] ?? "";
-
   // 2. Client build — standard Vite multi-file output (index.html + assets/)
   const skipClient = opts?.skipClient || !agent.clientEntry;
-  let clientFiles: Record<string, string> = {};
 
   if (!skipClient) {
-    let clientResult: Rollup.RollupOutput | Rollup.RollupOutput[];
     try {
-      clientResult = (await build({
+      await build({
         root: agent.dir,
         base: "./",
         logLevel: "warn",
         plugins: [preact(), tailwindcss()],
         build: {
-          write: false,
+          outDir: clientDir,
+          emptyOutDir: true,
           minify: true,
           target: "es2022",
         },
-      })) as Rollup.RollupOutput | Rollup.RollupOutput[];
+      });
     } catch (err: unknown) {
       throw new BundleError(err instanceof Error ? err.message : String(err));
     }
-
-    clientFiles = extractFiles(clientResult);
   }
+
+  const worker = await fs.readFile(path.join(buildDir, "worker.js"), "utf-8");
+  const clientFiles = await readDirRecursive(clientDir);
 
   return {
     worker,
     clientFiles,
+    clientDir,
     workerBytes: Buffer.byteLength(worker),
   };
 }

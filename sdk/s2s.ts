@@ -59,7 +59,10 @@ const S2sServerMessageSchema = z.discriminatedUnion("type", [
   }),
   z.object({ type: z.literal("reply.started"), reply_id: z.string() }),
   // reply.audio is handled on the fast path before Zod — see message handler.
+  z.object({ type: z.literal("transcript.agent.delta"), delta: z.string() }).passthrough(),
   z.object({ type: z.literal("transcript.agent"), text: z.string() }),
+  z.object({ type: z.literal("reply.content_part.started") }).passthrough(),
+  z.object({ type: z.literal("reply.content_part.done") }).passthrough(),
   z.object({
     type: z.literal("tool.call"),
     call_id: z.string(),
@@ -128,6 +131,13 @@ function dispatchS2sMessage(target: EventTarget, msg: S2sServerMessage): void {
       );
       break;
     // reply.audio handled on the fast path — never reaches dispatch.
+    case "transcript.agent.delta":
+      target.dispatchEvent(
+        new CustomEvent("agent_transcript_delta", {
+          detail: { text: msg.delta },
+        }),
+      );
+      break;
     case "transcript.agent":
       target.dispatchEvent(
         new CustomEvent("agent_transcript", {
@@ -162,6 +172,10 @@ function dispatchS2sMessage(target: EventTarget, msg: S2sServerMessage): void {
       );
       break;
     }
+    case "reply.content_part.started":
+    case "reply.content_part.done":
+      // Structural markers — no action needed.
+      break;
     case "error":
       // Connection-level error — should trigger close/reconnect.
       target.dispatchEvent(
@@ -310,7 +324,9 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
 
       const parsed = S2sServerMessageSchema.safeParse(raw);
       if (!parsed.success) {
-        log.debug("S2S << unrecognised message type");
+        log.debug(
+          `S2S << unrecognised message type: ${obj.type ?? JSON.stringify(raw).slice(0, 100)}`,
+        );
         return;
       }
       const msg = parsed.data;

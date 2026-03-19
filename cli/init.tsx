@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 // Copyright 2025 the AAI authors. MIT license.
 
 import { execFile } from "node:child_process";
@@ -96,6 +95,10 @@ export async function runInitCommand(
     console.log(subcommandHelp(initCommandDef, version));
     return "";
   }
+
+  // Ensure API key is set before prompting for project name
+  const { getApiKey } = await import("./_discover.ts");
+  await getApiKey();
 
   let dir = parsed._[0] as string | undefined;
   if (!dir) {

@@ -25,6 +25,6 @@
       "aai/server": ["./sdk/server.ts"]
     }
   },
-  "include": ["sdk/**/*.ts", "cli/**/*.ts", "cli/**/*.tsx", "ui/**/*.ts", "ui/**/*.tsx"],
+  "include": ["sdk/**/*.ts", "ui/**/*.ts", "ui/**/*.tsx"],
   "exclude": ["node_modules", "dist", "**/dist", "**/__snapshots__"]
 }

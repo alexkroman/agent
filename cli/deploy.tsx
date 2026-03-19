@@ -1,7 +1,5 @@
-/** @jsxImportSource react */
 // Copyright 2025 the AAI authors. MIT license.
 
-import fs from "node:fs/promises";
 import path from "node:path";
 import minimist from "minimist";
 import { BundleError, type BundleOutput, bundleAgent } from "./_bundler.ts";
@@ -19,7 +17,7 @@ import {
 import type { SubcommandDef } from "./_help.ts";
 import { subcommandHelp } from "./_help.ts";
 import { runWithInk, Step, StepInfo } from "./_ink.tsx";
-import { askConfirm } from "./_prompts.tsx";
+import { askEnter } from "./_prompts.tsx";
 import { runInitCommand } from "./init.tsx";
 
 /** CLI definition for the `aai deploy` subcommand, including name, description, and options. */
@@ -35,18 +33,6 @@ const deployCommandDef: SubcommandDef = {
     { flags: "-y, --yes", description: "Accept defaults (no prompts)" },
   ],
 };
-
-async function writeBuildOutput(agentDir: string, bundle: BundleOutput): Promise<void> {
-  const buildDir = path.join(agentDir, ".aai", "build");
-  await fs.mkdir(buildDir, { recursive: true });
-  const writes = [fs.writeFile(path.join(buildDir, "worker.js"), bundle.worker)];
-  for (const [relPath, content] of Object.entries(bundle.clientFiles)) {
-    const fullPath = path.join(buildDir, "client", relPath);
-    await fs.mkdir(path.dirname(fullPath), { recursive: true });
-    writes.push(fs.writeFile(fullPath, content));
-  }
-  await Promise.all(writes);
-}
 
 function resolveServerUrl(parsed: minimist.ParsedArgs): string {
   return parsed.server || (isDevMode() ? "http://localhost:3100" : DEFAULT_SERVER);
@@ -69,7 +55,6 @@ async function buildAgent(cwd: string, log: (el: React.ReactNode) => void): Prom
     throw err;
   }
 
-  await writeBuildOutput(cwd, bundle);
   return bundle;
 }
 
@@ -87,11 +72,7 @@ async function deployBundle(opts: {
   log(<Step action="Deploy" msg={slug} />);
   const deployed = await runDeploy({
     url: serverUrl,
-    bundle: {
-      worker: bundle.worker,
-      clientFiles: bundle.clientFiles,
-      workerBytes: bundle.workerBytes,
-    },
+    bundle,
     env: { ASSEMBLYAI_API_KEY: apiKey },
     slug,
     dryRun: false,
@@ -148,10 +129,8 @@ export async function runDeployCommand(args: string[], version: string): Promise
   });
 
   if (agentUrl && !dryRun) {
-    const open = await askConfirm("Open in browser?");
-    if (open) {
-      const { exec } = await import("node:child_process");
-      exec(`open "${agentUrl}"`);
-    }
+    await askEnter("Press enter to open in browser");
+    const { exec } = await import("node:child_process");
+    exec(`open "${agentUrl}"`);
   }
 }

@@ -1,8 +1,8 @@
-/** @jsxImportSource react */
 // Copyright 2025 the AAI authors. MIT license.
 
 import { ConfirmInput, PasswordInput, Select, TextInput } from "@inkjs/ui";
 import { Box, render, Text } from "ink";
+import { COLORS } from "./_colors.ts";
 
 /**
  * Renders a password prompt, waits for the user to submit, and returns the value.
@@ -57,11 +57,32 @@ export async function askText(message: string, defaultValue: string): Promise<st
   return new Promise((resolve) => {
     const app = render(
       <Box>
-        <Text color="#56b6c2">{message} › </Text>
+        <Text color={COLORS.interactive}>{message} › </Text>
         <TextInput
           placeholder={defaultValue}
           onSubmit={(value) => {
             resolve(value || defaultValue);
+            app.unmount();
+          }}
+        />
+      </Box>,
+    );
+  });
+}
+
+/**
+ * Renders a "press enter" prompt and resolves when the user presses enter.
+ * Creates and unmounts its own Ink instance.
+ */
+export async function askEnter(message: string): Promise<void> {
+  return new Promise((resolve) => {
+    const app = render(
+      <Box>
+        <Text color={COLORS.interactive}>{message}</Text>
+        <TextInput
+          placeholder=""
+          onSubmit={() => {
+            resolve();
             app.unmount();
           }}
         />

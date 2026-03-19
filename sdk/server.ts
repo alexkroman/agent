@@ -151,10 +151,7 @@ export function createServer(options: ServerOptions): AgentServer {
       attachWsUpgrade(nodeServer, port, getWinterc, logger);
 
       await new Promise<void>((resolve) => {
-        nodeServer.listen(port, () => {
-          logger.info(`Agent "${agent.name}" listening on http://localhost:${port}`);
-          resolve();
-        });
+        nodeServer.listen(port, () => resolve());
       });
 
       serverHandle = {

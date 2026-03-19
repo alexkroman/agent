@@ -1,44 +1,55 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 /**
- * Dark theme palette based on the opencode color system.
- * Uses chalk for 24-bit RGB color (truecolor).
+ * Dark theme palette. Raw hex values are exported as `COLORS` for use in
+ * both chalk (terminal) and Ink (React) contexts.
  * @module
  */
 
 import chalk from "chalk";
 
-/** Primary brand color — warm peach `#fab283`. */
+/** Raw hex color constants shared by chalk and Ink. */
+export const COLORS = {
+  primary: "#fab283",
+  interactive: "#56b6c2",
+  error: "#e06c75",
+  warning: "#f5a742",
+  success: "#7fd88f",
+  accent: "#9d7cd8",
+  muted: "#808080",
+} as const;
+
+/** Primary brand color — warm peach. */
 export function primary(s: string): string {
-  return chalk.hex("#fab283")(s);
+  return chalk.hex(COLORS.primary)(s);
 }
 
-/** Interactive/info color — cyan `#56b6c2`. */
+/** Interactive/info color — cyan. */
 export function interactive(s: string): string {
-  return chalk.hex("#56b6c2")(s);
+  return chalk.hex(COLORS.interactive)(s);
 }
 
-/** Error color — soft coral `#e06c75`. */
+/** Error color — soft coral. */
 export function error(s: string): string {
-  return chalk.hex("#e06c75")(s);
+  return chalk.hex(COLORS.error)(s);
 }
 
-/** Warning color — orange `#f5a742`. */
+/** Warning color — orange. */
 export function warning(s: string): string {
-  return chalk.hex("#f5a742")(s);
+  return chalk.hex(COLORS.warning)(s);
 }
 
-/** Success color — green `#7fd88f`. */
+/** Success color — green. */
 export function success(s: string): string {
-  return chalk.hex("#7fd88f")(s);
+  return chalk.hex(COLORS.success)(s);
 }
 
-/** Accent color — purple `#9d7cd8`. */
+/** Accent color — purple. */
 export function accent(s: string): string {
-  return chalk.hex("#9d7cd8")(s);
+  return chalk.hex(COLORS.accent)(s);
 }
 
-/** Muted text color — gray `#808080`. */
+/** Muted text color — gray. */
 export function muted(s: string): string {
-  return chalk.hex("#808080")(s);
+  return chalk.hex(COLORS.muted)(s);
 }

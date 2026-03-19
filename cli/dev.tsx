@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 // Copyright 2025 the AAI authors. MIT license.
 
 import path from "node:path";
@@ -7,7 +6,7 @@ import { _startDevServer } from "./_dev.ts";
 import { fileExists, getApiKey } from "./_discover.ts";
 import type { SubcommandDef } from "./_help.ts";
 import { subcommandHelp } from "./_help.ts";
-import { runWithInk, Step } from "./_ink.tsx";
+import { runWithInk } from "./_ink.tsx";
 import { runInitCommand } from "./init.tsx";
 
 const devCommandDef: SubcommandDef = {
@@ -50,7 +49,6 @@ export async function runDevCommand(args: string[], version: string): Promise<vo
   await getApiKey();
 
   await runWithInk(async (log) => {
-    log(<Step action="Dev" msg={`starting on port ${port}`} />);
-    await _startDevServer(cwd, port);
+    await _startDevServer(cwd, port, log);
   });
 }
