@@ -2,7 +2,6 @@
 
 import type { BundleOutput } from "./_bundler.ts";
 import { generateSlug } from "./_discover.ts";
-import { info, step, stepInfo, warn } from "./_output.ts";
 
 export const _internals = {
   fetch: globalThis.fetch.bind(globalThis),
@@ -28,7 +27,7 @@ async function attemptDeploy(
   apiKey: string,
   env: Record<string, string>,
   worker: string,
-  html: string,
+  clientFiles: Record<string, string>,
 ): Promise<Response> {
   return await _internals.fetch(`${url}/${slug}/deploy`, {
     method: "POST",
@@ -39,7 +38,7 @@ async function attemptDeploy(
     body: JSON.stringify({
       env,
       worker,
-      html,
+      clientFiles,
     }),
   });
 }
@@ -48,36 +47,19 @@ const MAX_RETRIES = 20;
 
 export async function runDeploy(opts: DeployOpts): Promise<DeployResult> {
   const worker = opts.bundle.worker;
-  const html = opts.bundle.html;
+  const clientFiles = opts.bundle.clientFiles;
 
   let slug = opts.slug;
 
   if (opts.dryRun) {
-    stepInfo("Dry run", "would deploy:");
-    info(`${slug} -> ${opts.url}/${slug}`);
     return { slug };
   }
 
   // Try deploying, generating a new slug on 403
   for (let i = 0; i < MAX_RETRIES; i++) {
-    const resp = await attemptDeploy(opts.url, slug, opts.apiKey, opts.env, worker, html);
+    const resp = await attemptDeploy(opts.url, slug, opts.apiKey, opts.env, worker, clientFiles);
 
     if (resp.ok) {
-      step("Deploy", `${slug} -> ${opts.url}/${slug}`);
-
-      // Health check: best-effort verification
-      try {
-        const healthResp = await _internals.fetch(`${opts.url}/${slug}/health`);
-        const ok = healthResp.ok && (await healthResp.json()).status === "ok";
-        if (ok) {
-          step("Ready", slug);
-        } else {
-          warn(`${slug} deployed but health check failed -- check for runtime errors`);
-        }
-      } catch {
-        // Health check is best-effort
-      }
-
       return { slug };
     }
 
@@ -85,9 +67,7 @@ export async function runDeploy(opts: DeployOpts): Promise<DeployResult> {
       const text = await resp.text();
       // Slug conflict — generate a new one and retry
       if (text.includes("Slug")) {
-        const next = generateSlug();
-        step("Retry", `slug "${slug}" taken, trying "${next}"`);
-        slug = next;
+        slug = generateSlug();
         continue;
       }
     }

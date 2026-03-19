@@ -43,7 +43,7 @@ const VectorEntrySchema = z.object({
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
-const WorkerInitArgsSchema = z.tuple([z.record(z.string(), z.string()), z.string().optional()]);
+const WorkerInitArgsSchema = z.tuple([z.record(z.string(), z.string())]);
 
 const WorkerFetchArgsSchema = z.tuple([
   z.string(),
@@ -178,7 +178,7 @@ export function initWorker(agent: AgentDef): void {
 
   // Handle init from host — creates the WinterTC server
   endpoint.handle("worker.init", (args) => {
-    const [env, clientHtml] = WorkerInitArgsSchema.parse(args);
+    const [env] = WorkerInitArgsSchema.parse(args);
 
     wintercServer = createWintercServer({
       agent,
@@ -187,7 +187,6 @@ export function initWorker(agent: AgentDef): void {
       vector,
       vectorSearch,
       createWebSocket,
-      ...(clientHtml !== undefined ? { clientHtml } : {}),
     });
 
     return "ok";

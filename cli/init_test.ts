@@ -3,7 +3,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
-import { listTemplates, runNew } from "./_new.ts";
+import { listTemplates, runInit } from "./_init.ts";
 import { silenceSteps, withTempDir } from "./_test_utils.ts";
 
 async function createFakeTemplates(dir: string): Promise<string> {
@@ -76,9 +76,9 @@ describe("listTemplates", () => {
   });
 });
 
-// --- runNew ---
+// --- runInit ---
 
-describe("runNew", () => {
+describe("runInit", () => {
   test("copies template and shared files to target", async () => {
     const s = silenceSteps();
     try {
@@ -86,7 +86,7 @@ describe("runNew", () => {
         const templatesDir = await createFakeTemplates(dir);
         const target = path.join(dir, "output");
 
-        await runNew({
+        await runInit({
           targetDir: target,
           template: "simple",
           templatesDir,
@@ -114,7 +114,7 @@ describe("runNew", () => {
         const templatesDir = await createFakeTemplates(dir);
         const target = path.join(dir, "output");
 
-        await runNew({
+        await runInit({
           targetDir: target,
           template: "simple",
           templatesDir,
@@ -137,7 +137,7 @@ describe("runNew", () => {
         const target = path.join(dir, "output");
 
         // with-env has its own .env.example that should NOT be overwritten by shared
-        await runNew({
+        await runInit({
           targetDir: target,
           template: "with-env",
           templatesDir,
@@ -162,7 +162,7 @@ describe("runNew", () => {
         const templatesDir = await createFakeTemplates(dir);
         const target = path.join(dir, "output");
 
-        await runNew({
+        await runInit({
           targetDir: target,
           template: "advanced",
           templatesDir,
@@ -184,7 +184,7 @@ describe("runNew", () => {
         const target = path.join(dir, "output");
 
         // simple doesn't have its own .env.example, so shared one is used
-        await runNew({
+        await runInit({
           targetDir: target,
           template: "simple",
           templatesDir,
@@ -207,7 +207,7 @@ describe("runNew", () => {
         const target = path.join(dir, "output");
 
         await expect(
-          runNew({
+          runInit({
             targetDir: target,
             template: "nonexistent",
             templatesDir,

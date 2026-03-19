@@ -4,7 +4,6 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { BundleOutput } from "./_bundler.ts";
-import { _internals } from "./_new.ts";
 
 /** Create a temp directory, run `fn`, then clean up. */
 export async function withTempDir(fn: (dir: string) => Promise<void>): Promise<void> {
@@ -16,15 +15,15 @@ export async function withTempDir(fn: (dir: string) => Promise<void>): Promise<v
   }
 }
 
-/** Stub _internals.step to suppress output in tests. */
+/** Stub console.log to suppress output in tests. */
 export function silenceSteps(): {
   restore: () => void;
 } {
-  const orig = _internals.step;
-  _internals.step = () => {};
+  const orig = console.log;
+  console.log = () => {};
   return {
     restore() {
-      _internals.step = orig;
+      console.log = orig;
     },
   };
 }
@@ -33,7 +32,7 @@ export function silenceSteps(): {
 export function makeBundle(overrides?: Partial<BundleOutput>): BundleOutput {
   return {
     worker: "// worker",
-    html: "<html>{{NAME}}{{BASE_PATH}}</html>",
+    clientFiles: { "index.html": "<html></html>" },
     workerBytes: 9,
     ...overrides,
   };

@@ -1,8 +1,10 @@
 /** @jsxImportSource react */
 // Copyright 2025 the AAI authors. MIT license.
 
+import fs from "node:fs/promises";
 import path from "node:path";
 import minimist from "minimist";
+import { BundleError, type BundleOutput, bundleAgent } from "./_bundler.ts";
 import { runDeploy } from "./_deploy.ts";
 import {
   DEFAULT_SERVER,
@@ -10,14 +12,15 @@ import {
   generateSlug,
   getApiKey,
   isDevMode,
+  loadAgent,
   readProjectConfig,
   writeProjectConfig,
 } from "./_discover.ts";
 import type { SubcommandDef } from "./_help.ts";
 import { subcommandHelp } from "./_help.ts";
-import { runWithInk } from "./_ink.tsx";
-import { runBuild } from "./build.ts";
-import { runNewCommand } from "./new.tsx";
+import { runWithInk, Step, StepInfo } from "./_ink.tsx";
+import { askConfirm } from "./_prompts.tsx";
+import { runInitCommand } from "./init.tsx";
 
 /** CLI definition for the `aai deploy` subcommand, including name, description, and options. */
 const deployCommandDef: SubcommandDef = {
@@ -38,11 +41,23 @@ const deployCommandDef: SubcommandDef = {
   ],
 };
 
+async function writeBuildOutput(agentDir: string, bundle: BundleOutput): Promise<void> {
+  const buildDir = path.join(agentDir, ".aai", "build");
+  await fs.mkdir(buildDir, { recursive: true });
+  const writes = [fs.writeFile(path.join(buildDir, "worker.js"), bundle.worker)];
+  for (const [relPath, content] of Object.entries(bundle.clientFiles)) {
+    const fullPath = path.join(buildDir, "client", relPath);
+    await fs.mkdir(path.dirname(fullPath), { recursive: true });
+    writes.push(fs.writeFile(fullPath, content));
+  }
+  await Promise.all(writes);
+}
+
 /**
  * Runs the `aai deploy` subcommand. If no `agent.ts` exists in the current
  * directory, scaffolds a new agent first. Then builds the agent bundle,
  * resolves the deploy target (slug), uploads to the server, and
- * prints endpoint URLs.
+ * shows a success message with the live URL.
  *
  * @param args Command-line arguments passed to the `deploy` subcommand.
  * @param version Current CLI version string, used in help output.
@@ -64,7 +79,7 @@ export async function runDeployCommand(args: string[], version: string): Promise
 
   // If no agent.ts exists, scaffold first (may prompt for template)
   if (!(await fileExists(path.join(cwd, "agent.ts")))) {
-    await runNewCommand(parsed.yes ? ["-y"] : [], version, { quiet: true });
+    await runInitCommand(parsed.yes ? ["-y"] : [], version, { quiet: true });
   }
 
   const local = parsed.local;
@@ -84,23 +99,67 @@ export async function runDeployCommand(args: string[], version: string): Promise
   const projectConfig = await readProjectConfig(cwd);
 
   // Slug: from project config, or generate a new human-readable one
-  const slug = projectConfig?.slug ?? generateSlug();
+  let slug = projectConfig?.slug ?? generateSlug();
 
-  await runWithInk("Deploying...", async () => {
-    const result = await runBuild({ agentDir: cwd });
+  let agentUrl = "";
+
+  await runWithInk(async (log) => {
+    // Build
+    log(<Step action="Build" msg="bundling agent" />);
+    const agent = await loadAgent(cwd);
+    if (!agent) {
+      throw new Error("No agent found — run `aai init` first");
+    }
+
+    let bundle: BundleOutput;
+    try {
+      bundle = await bundleAgent(agent);
+    } catch (err) {
+      if (err instanceof BundleError) {
+        throw new Error(`Bundle failed: ${err.message}`);
+      }
+      throw err;
+    }
+
+    await writeBuildOutput(cwd, bundle);
+
+    if (dryRun) {
+      log(<StepInfo action="Dry run" msg={`would deploy as ${slug}`} />);
+      return;
+    }
+
+    // Deploy
+    log(<Step action="Deploy" msg={slug} />);
     const deployed = await runDeploy({
       url: serverUrl,
-      bundle: result.bundle,
-      env: dryRun ? {} : { ASSEMBLYAI_API_KEY: apiKey },
+      bundle: {
+        worker: bundle.worker,
+        clientFiles: bundle.clientFiles,
+        workerBytes: bundle.workerBytes,
+      },
+      env: { ASSEMBLYAI_API_KEY: apiKey },
       slug,
-      dryRun,
+      dryRun: false,
       apiKey,
     });
+    slug = deployed.slug;
 
-    // Save to .aai/project.json (like .vercel/project.json)
+    // Save to .aai/project.json
     await writeProjectConfig(cwd, {
       slug: deployed.slug,
       serverUrl,
     });
+
+    agentUrl = `${serverUrl}/${slug}`;
+    log(<Step action="Ready" msg={agentUrl} />);
   });
+
+  // Prompt to open URL
+  if (agentUrl && !dryRun) {
+    const open = await askConfirm("Open in browser?");
+    if (open) {
+      const { exec } = await import("node:child_process");
+      exec(`open "${agentUrl}"`);
+    }
+  }
 }
