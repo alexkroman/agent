@@ -41,6 +41,6 @@ export async function _startDevServer(
   const env = await resolveServerEnv();
 
   log(React.createElement(Step, { action: "Start", msg: `http://localhost:${port}` }));
-  await bootServer(agentDef, clientDir, env, port, cwd);
+  await bootServer(agentDef, clientDir, env, port);
   log(React.createElement(Step, { action: "Ready", msg: `http://localhost:${port}` }));
 }

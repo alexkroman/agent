@@ -38,24 +38,17 @@ export async function resolveServerEnv(): Promise<Record<string, string>> {
   return env;
 }
 
-/** Load the ws package from the user's project and build a createWebSocket factory. */
-async function loadWsFromProject(cwd: string) {
-  const wsPath = path.resolve(cwd, "node_modules", "ws", "index.js");
-  const mod = await import(wsPath);
-  const WS = mod.default ?? mod;
-  return (url: string, opts: { headers: Record<string, string> }) =>
-    new WS(url, { headers: opts.headers });
-}
-
 /** Create and start an agent server with static file serving. */
 export async function bootServer(
   agentDef: AgentDef,
   clientDir: string,
   env: Record<string, string>,
   port: number,
-  cwd: string,
 ): Promise<void> {
-  const createWebSocket = await loadWsFromProject(cwd);
+  const wsMod = await import("ws");
+  const WS = wsMod.default ?? wsMod;
+  const createWebSocket = (url: string, opts: { headers: Record<string, string> }) =>
+    new WS(url, { headers: opts.headers });
   const clientHtml = await fs.readFile(path.join(clientDir, "index.html"), "utf-8");
 
   const { createServer } = await import("aai/server");
