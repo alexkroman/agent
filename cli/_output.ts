@@ -2,11 +2,8 @@
 import chalk from "chalk";
 import { error as errorColor, interactive, primary, warning } from "./_colors.ts";
 
-// Right-aligned action prefix width
-const PAD = 9;
-
 function fmt(action: string, color: (s: string) => string, msg: string): string {
-  return `${color(chalk.bold(action.padStart(PAD)))} ${msg}`;
+  return `${color(chalk.bold(action))} ${msg}`;
 }
 
 /**
@@ -35,12 +32,12 @@ export function stepInfo(action: string, msg: string): void {
  * @param msg The message to print.
  */
 export function info(msg: string): void {
-  console.log(chalk.dim(`${" ".repeat(PAD + 1)}${msg}`));
+  console.log(chalk.dim(msg));
 }
 
-/** Indented line (same alignment as step/stepInfo message text) without dimming. */
+/** Detail line without dimming. */
 export function detail(msg: string): void {
-  console.log(`${" ".repeat(PAD + 1)}${msg}`);
+  console.log(msg);
 }
 
 /**

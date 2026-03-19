@@ -87,7 +87,7 @@ async function getServerInfo(cwd: string) {
 }
 
 async function secretPut(cwd: string, name: string, value: string): Promise<void> {
-  await runWithInk("Setting...", async (log) => {
+  await runWithInk(async (log) => {
     const { serverUrl, slug, apiKey } = await getServerInfo(cwd);
 
     const resp = await fetch(`${serverUrl}/${slug}/secret`, {
@@ -111,7 +111,7 @@ async function secretPut(cwd: string, name: string, value: string): Promise<void
 async function secretDelete(cwd: string, name: string): Promise<void> {
   if (!name) throw new Error("Usage: aai secret delete <NAME>");
 
-  await runWithInk("Removing...", async (log) => {
+  await runWithInk(async (log) => {
     const { serverUrl, slug, apiKey } = await getServerInfo(cwd);
 
     const resp = await fetch(`${serverUrl}/${slug}/secret/${name}`, {
@@ -129,7 +129,7 @@ async function secretDelete(cwd: string, name: string): Promise<void> {
 }
 
 async function secretList(cwd: string): Promise<void> {
-  await runWithInk("Loading...", async (log) => {
+  await runWithInk(async (log) => {
     const { serverUrl, slug, apiKey } = await getServerInfo(cwd);
 
     const resp = await fetch(`${serverUrl}/${slug}/secret`, {

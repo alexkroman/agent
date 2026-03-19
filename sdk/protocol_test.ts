@@ -8,16 +8,11 @@ import {
   DEFAULT_TTS_SAMPLE_RATE,
   HOOK_TIMEOUT_MS,
   KvRequestBaseSchema,
-  PROTOCOL_VERSION,
   SessionErrorCodeSchema,
   TOOL_EXECUTION_TIMEOUT_MS,
 } from "./protocol.ts";
 
 describe("protocol constants", () => {
-  test("PROTOCOL_VERSION is 1", () => {
-    expect(PROTOCOL_VERSION).toBe(1);
-  });
-
   test("DEFAULT_STT_SAMPLE_RATE is 16000", () => {
     expect(DEFAULT_STT_SAMPLE_RATE).toBe(16000);
   });

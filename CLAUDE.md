@@ -96,9 +96,9 @@ Internal:
 - **Frameworks**: Preact (client UI), Tailwind CSS v4 (compiled at bundle time)
 - **Testing**: Vitest. Test files are co-located: `foo.ts` → `foo_test.ts`
 - **Linting**: Biome for sdk/, ui/, cli/
-- **Agent API docs**: `templates/_shared/CLAUDE.md` is copied into user agent
-  directories. When modifying the agent API surface (`sdk/types.ts`), update
-  it to match.
+- **Agent API docs**: `templates/_shared/CLAUDE.md` is the agent API reference
+  installed into user projects. When modifying the agent API surface
+  (`sdk/types.ts`), update it to match.
 - **Templates**: `templates/` contains agent scaffolding templates. Each
   template is self-contained with its own `agent.ts` and `client.tsx`.
   `templates/_shared/` has non-code files common to all templates.

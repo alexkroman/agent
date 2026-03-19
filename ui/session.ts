@@ -2,10 +2,6 @@
 
 import { batch, type Signal, signal } from "@preact/signals";
 import type { ClientEvent, ClientMessage, ReadyConfig, ServerMessage } from "../sdk/protocol.ts";
-import { PROTOCOL_VERSION } from "../sdk/protocol.ts";
-
-const SUPPORTED_PROTOCOL_VERSION = PROTOCOL_VERSION;
-
 import type { VoiceIO } from "./audio.ts";
 import type { AgentState, Message, SessionError, SessionOptions, ToolCallInfo } from "./types.ts";
 
@@ -279,17 +275,6 @@ export function createVoiceSession(options: SessionOptions): VoiceSession {
     if (audioSetupInFlight) return;
     audioSetupInFlight = true;
     try {
-      // Protocol version check
-      if (msg.protocolVersion !== SUPPORTED_PROTOCOL_VERSION) {
-        batch(() => {
-          error.value = {
-            code: "protocol",
-            message: `Server protocol v${msg.protocolVersion} is not compatible with client v${SUPPORTED_PROTOCOL_VERSION}. Please redeploy your agent.`,
-          };
-          state.value = "error";
-        });
-        return;
-      }
       const [{ createVoiceIO }, captureWorklet, playbackWorklet] = await Promise.all([
         import("./audio.ts"),
         import("./worklets/capture-processor.ts").then((m) => m.default),

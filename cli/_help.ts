@@ -53,7 +53,7 @@ export function rootHelp(version: string): string {
     ["deploy", "", "Bundle and deploy to production"],
     ["start", "", "Start production server from build"],
     ["secret", "<cmd>", "Manage secrets"],
-    ["rag", "<url>", "Ingest a site into the vector store"],
+    ["rag", "<url>", "Ingest a site's llms-full.txt into the vector store"],
   ];
 
   for (const [name, args, desc] of cmds) {

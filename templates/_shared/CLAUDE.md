@@ -1,7 +1,6 @@
-# Build a voice agent with `aai`
+# aai Voice Agent Project
 
-You are helping a user build a voice agent using the **aai** framework. Generate
-or update files based on the user's description in `$ARGUMENTS`.
+You are helping a user build a voice agent using the **aai** framework.
 
 ## Workflow
 
@@ -14,16 +13,24 @@ or update files based on the user's description in `$ARGUMENTS`.
 4. **Iterate** — Make small, focused changes. Verify each change works before
    moving on.
 
-## Getting started
+## Key rules
 
-### Use the `aai` CLI
+- Every agent lives in `agent.ts` and exports a default `defineAgent()` call
+- Custom UI goes in `client.tsx` alongside `agent.ts`
+- Optimize `instructions` for spoken conversation — short sentences, no visual
+  formatting, no exclamation points
+- Never hardcode secrets — use `aai env add` and access via `ctx.env`
+- Tool `execute` return values go into LLM context — filter and truncate large
+  API responses
+- Agent code runs in a sandboxed worker — use `fetch` (proxied) for HTTP,
+  `ctx.env` for secrets
 
-Always use the `aai` CLI to scaffold, deploy, and manage agents:
+## CLI commands
 
 ```sh
-aai                      # Scaffold (if needed) + deploy
-aai new                  # Scaffold a new agent (interactive)
-aai new -t <template>    # Scaffold from a specific template
+aai init                 # Scaffold a new agent (uses simple template)
+aai init -t <template>   # Scaffold from a specific template
+aai dev                  # Start local dev server
 aai deploy               # Bundle and deploy to production
 aai deploy -y            # Deploy without prompts
 aai deploy --dry-run     # Validate and bundle without deploying
@@ -33,29 +40,10 @@ aai env ls               # List environment variable names
 aai env pull             # Pull env var names into .env for local dev
 ```
 
-Install: `curl -fsSL https://aai-agent.fly.dev/install | sh`
+## Templates
 
-### Deploy a scaffolded project
-
-After scaffolding with `aai new`, deploy from the project directory:
-
-```sh
-cd my-agent
-aai deploy          # Bundle, check, and deploy
-aai deploy -y       # Skip confirmation prompts
-```
-
-The CLI auto-detects the server URL. When running via `aai-dev` (the local
-monorepo dev wrapper), it targets `http://localhost:3100` automatically.
-
-### Start from a template
-
-Before writing an agent from scratch, **choose the closest template** and
-scaffold with `aai new -t <template_name>`. Ask the user which template fits, or
-recommend one based on their description. Fall back to `simple` if nothing else
-fits.
-
-Templates are in `templates/` relative to the CLI source:
+Before writing an agent from scratch, choose the closest template and scaffold
+with `aai init -t <template_name>`.
 
 | Template            | Description                                                                        |
 | ------------------- | ---------------------------------------------------------------------------------- |
@@ -75,7 +63,7 @@ Templates are in `templates/` relative to the CLI source:
 | `support`           | RAG-powered support agent using vector_search (AssemblyAI docs example)            |
 | `terminal`          | STT-only mode for voice-driven kubectl commands                                    |
 
-### Minimal agent
+## Minimal agent
 
 Every agent lives in `agent.ts` and exports a default `defineAgent()` call:
 
@@ -104,9 +92,9 @@ import { z } from "zod"; // Tools with typed params (included in package.json)
 defineAgent({
   // Core
   name: string;              // Required: display name
-  instructions?: string;     // System prompt (voice-first default provided)
-  greeting?: string;         // Spoken on connect
-  voice?: Voice;             // Cartesia voice UUID (default: Sarah)
+  instructions?: string;     // System prompt (default: general voice assistant)
+  greeting?: string;         // Spoken on connect (default: "Hey, how can I help you?")
+  voice?: Voice;             // Cartesia voice UUID (default: Sarah 694f9389...)
 
   // Speech
   sttPrompt?: string;        // STT guidance for jargon, names, acronyms
@@ -117,8 +105,6 @@ defineAgent({
   toolChoice?: ToolChoice;   // "auto" | "required" | "none" | { type: "tool", toolName }
   activeTools?: string[];    // Default active tools per turn (subset of all tools)
   maxSteps?: number | ((ctx: HookContext) => number);
-
-  // Environment
 
   // State
   state?: () => S;           // Factory for per-session state
@@ -407,6 +393,42 @@ onBeforeStep: (stepNumber, ctx) => {
 },
 ```
 
+### Tool choice
+
+Control when the LLM uses tools:
+
+```ts
+toolChoice: "auto",     // Default — LLM decides when to use tools
+toolChoice: "required", // Force a tool call every step (useful for research pipelines)
+toolChoice: "none",     // Disable all tool use
+toolChoice: { type: "tool", toolName: "search" }, // Force a specific tool
+```
+
+### Phase-based tool filtering
+
+Combine `state`, `onBeforeStep`, and `activeTools` for multi-phase workflows:
+
+```ts
+state: () => ({ phase: "gather" as "gather" | "analyze" | "respond" }),
+onBeforeStep: (_step, ctx) => {
+  const state = ctx.state as { phase: string };
+  if (state.phase === "gather") return { activeTools: ["web_search", "advance"] };
+  if (state.phase === "analyze") return { activeTools: ["summarize", "advance"] };
+  return { activeTools: [] }; // respond phase — LLM speaks freely
+},
+tools: {
+  advance: {
+    description: "Move to the next phase",
+    execute: (_args, ctx) => {
+      const state = ctx.state as { phase: string };
+      if (state.phase === "gather") state.phase = "analyze";
+      else if (state.phase === "analyze") state.phase = "respond";
+      return { phase: state.phase };
+    },
+  },
+},
+```
+
 ### Static `activeTools`
 
 Restrict which tools the LLM can use by default, without writing a hook:
@@ -472,6 +494,7 @@ Add `client.tsx` alongside `agent.ts`. Define a Preact component and call
 `mount()` to render it. Use JSX syntax:
 
 ```tsx
+import "aai/ui/styles.css";
 import { mount, useSession } from "aai/ui";
 
 function App() {
@@ -497,6 +520,8 @@ mount(App);
 
 **Rules:**
 
+- Always import `"aai/ui/styles.css"` at the top — without it, default styles
+  won't load
 - Call `mount(YourComponent)` at the end of the file
 - Use `.tsx` file extension for JSX syntax
 - Import hooks from `preact/hooks` (`useEffect`, `useRef`, `useState`, etc.)
@@ -561,6 +586,7 @@ data lives on `session` (a `VoiceSession`); UI-only controls are top-level.
 ### Showing tool calls in custom UI
 
 ```tsx
+import "aai/ui/styles.css";
 import { mount, ToolCallBlock, useSession } from "aai/ui";
 
 function App() {
@@ -590,6 +616,7 @@ mount(App);
 ### Reacting to agent state
 
 ```tsx
+import "aai/ui/styles.css";
 import { useEffect } from "preact/hooks";
 import { mount, StateIndicator, useSession } from "aai/ui";
 
@@ -646,6 +673,92 @@ function App() {
 - `--color-aai-surface`, `--color-aai-border`
 - `--color-aai-state-{state}` — color for each `AgentState` value
 
+## Self-hosting with `createServer()`
+
+Agents can run anywhere (Node, Deno, Docker) without the managed platform:
+
+```ts
+import { defineAgent } from "aai";
+import { createServer } from "aai/server";
+
+const agent = defineAgent({
+  name: "My Agent",
+  instructions: "You are a helpful assistant.",
+});
+
+const server = createServer(agent, {
+  port: 3000,       // default: 3000
+  staticDir: "public", // optional: serve static files
+});
+
+server.listen();
+```
+
+Run with `node --experimental-strip-types server.ts` or bundle with your
+preferred tool. The server handles WebSocket connections, STT/TTS, and the
+agentic loop. Set `ASSEMBLYAI_API_KEY` as an environment variable.
+
+## Useful free API endpoints
+
+These public APIs require no auth and work well in voice agents:
+
+```text
+Weather (Open-Meteo):
+  Geocode: https://geocoding-api.open-meteo.com/v1/search?name={city}&count=1&language=en
+  Forecast: https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,weathercode&timezone=auto&forecast_days=7
+
+Currency (ExchangeRate):
+  Rates: https://open.er-api.com/v6/latest/{CODE}  →  { rates: { USD: 1.0, EUR: 0.85, ... } }
+
+Crypto (CoinGecko):
+  Price: https://api.coingecko.com/api/v3/simple/price?ids={coin}&vs_currencies={cur}&include_24hr_change=true
+
+Drug info (FDA):
+  Label: https://api.fda.gov/drug/label.json?search=openfda.generic_name:"{name}"&limit=1
+
+Drug interactions (RxNorm):
+  RxCUI: https://rxnav.nlm.nih.gov/REST/rxcui.json?name={name}
+  Interactions: https://rxnav.nlm.nih.gov/REST/interaction/list.json?rxcuis={id1}+{id2}
+```
+
+Use `fetch_json` builtin tool or `fetch` in custom tools to call these.
+
+## Partial custom UI with `ChatView`
+
+For a custom start screen that transitions to the default chat interface:
+
+```tsx
+import "aai/ui/styles.css";
+import { ChatView, mount, useSession } from "aai/ui";
+
+function MyAgent() {
+  const { started, start } = useSession();
+
+  if (!started.value) {
+    return (
+      <div class="flex items-center justify-center h-screen bg-aai-bg">
+        <div class="flex flex-col items-center gap-6">
+          <h1 class="text-xl text-aai-text">My Agent</h1>
+          <button
+            class="px-8 py-3 rounded-aai bg-aai-primary text-white border-none cursor-pointer"
+            onClick={start}
+          >
+            Start
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return <ChatView />;
+}
+
+mount(MyAgent);
+```
+
+This gives you full control over the start screen while reusing the built-in
+chat UI once the session begins.
+
 ## Project structure
 
 After scaffolding, your project directory looks like:
@@ -661,10 +774,51 @@ my-agent/
   .env              # Local dev secrets (gitignored)
   .gitignore        # Ignores node_modules/, .aai/, .env, etc.
   README.md         # Getting started guide
-  CLAUDE.md         # Agent API reference (auto-generated)
+  CLAUDE.md         # Agent API reference (always loaded by Claude Code)
   .aai/             # Build output (managed by CLI, gitignored)
     project.json    # Deploy target (slug, server URL)
     build/          # Bundle output
+```
+
+## Instructions patterns from templates
+
+Good instructions tell the LLM what it is, how to behave, and when to use each
+tool. Study these patterns:
+
+**Code execution agent** — force tool use for anything computational:
+```
+You MUST use the run_code tool for ANY question involving math, counting,
+string manipulation, or data processing. NEVER do mental math or estimate.
+Use console.log() to output intermediate steps.
+```
+
+**Research agent** — search before answering:
+```
+Search first. Never guess or rely on memory for factual questions.
+Use visit_webpage when search snippets aren't detailed enough.
+For complex questions, search multiple times with different queries.
+```
+
+**FAQ/support agent** — stay grounded in knowledge:
+```
+Always use vector_search to find relevant documentation before answering.
+Base your answers strictly on the retrieved documentation — don't guess.
+If search results aren't relevant, say the docs don't cover that topic.
+```
+
+**API-calling agent** — tell the LLM which endpoints to use:
+```
+API endpoints (use fetch_json):
+- Currency rates: https://open.er-api.com/v6/latest/{CODE}
+  Returns { rates: { USD: 1.0, EUR: 0.85, ... } }
+- Weather: https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}...
+```
+
+**Game/interactive agent** — establish world rules and voice style:
+```
+You ARE the game. Maintain world state, describe rooms, handle puzzles.
+Keep descriptions to two to four sentences. No visual formatting.
+Use directional words naturally: "To the north you see..." not "N: forest"
 ```
 
 ## Common pitfalls
