@@ -53,15 +53,71 @@ async function writeBuildOutput(agentDir: string, bundle: BundleOutput): Promise
   await Promise.all(writes);
 }
 
+function resolveServerUrl(parsed: minimist.ParsedArgs): string {
+  const local = parsed.local;
+  if (local !== undefined) {
+    return typeof local === "string" && local !== "" ? local : "http://localhost:3100";
+  }
+  return parsed.server || (isDevMode() ? "http://localhost:3100" : DEFAULT_SERVER);
+}
+
+async function buildAgent(cwd: string, log: (el: React.ReactNode) => void): Promise<BundleOutput> {
+  log(<Step action="Build" msg="bundling agent" />);
+  const agent = await loadAgent(cwd);
+  if (!agent) {
+    throw new Error("No agent found — run `aai init` first");
+  }
+
+  let bundle: BundleOutput;
+  try {
+    bundle = await bundleAgent(agent);
+  } catch (err) {
+    if (err instanceof BundleError) {
+      throw new Error(`Bundle failed: ${err.message}`);
+    }
+    throw err;
+  }
+
+  await writeBuildOutput(cwd, bundle);
+  return bundle;
+}
+
+async function deployBundle(opts: {
+  bundle: BundleOutput;
+  serverUrl: string;
+  apiKey: string;
+  slug: string;
+  cwd: string;
+  log: (el: React.ReactNode) => void;
+}): Promise<string> {
+  const { bundle, serverUrl, apiKey, cwd, log } = opts;
+  let { slug } = opts;
+
+  log(<Step action="Deploy" msg={slug} />);
+  const deployed = await runDeploy({
+    url: serverUrl,
+    bundle: {
+      worker: bundle.worker,
+      clientFiles: bundle.clientFiles,
+      workerBytes: bundle.workerBytes,
+    },
+    env: { ASSEMBLYAI_API_KEY: apiKey },
+    slug,
+    dryRun: false,
+    apiKey,
+  });
+  slug = deployed.slug;
+
+  await writeProjectConfig(cwd, { slug, serverUrl });
+
+  const agentUrl = `${serverUrl}/${slug}`;
+  log(<Step action="Ready" msg={agentUrl} />);
+  return agentUrl;
+}
+
 /**
- * Runs the `aai deploy` subcommand. If no `agent.ts` exists in the current
- * directory, scaffolds a new agent first. Then builds the agent bundle,
- * resolves the deploy target (slug), uploads to the server, and
- * shows a success message with the live URL.
- *
- * @param args Command-line arguments passed to the `deploy` subcommand.
- * @param version Current CLI version string, used in help output.
- * @throws If the build fails, API key is missing, or deployment fails.
+ * Runs the `aai deploy` subcommand. Builds the agent bundle, uploads to the
+ * server, and shows a success message with the live URL.
  */
 export async function runDeployCommand(args: string[], version: string): Promise<void> {
   const parsed = minimist(args, {
@@ -77,84 +133,29 @@ export async function runDeployCommand(args: string[], version: string): Promise
 
   const cwd = process.env.INIT_CWD || process.cwd();
 
-  // If no agent.ts exists, scaffold first (may prompt for template)
   if (!(await fileExists(path.join(cwd, "agent.ts")))) {
     await runInitCommand(parsed.yes ? ["-y"] : [], version, { quiet: true });
   }
 
-  const local = parsed.local;
-  const serverUrl =
-    local !== undefined
-      ? typeof local === "string" && local !== ""
-        ? local
-        : "http://localhost:3100"
-      : parsed.server || (isDevMode() ? "http://localhost:3100" : DEFAULT_SERVER);
-
+  const serverUrl = resolveServerUrl(parsed);
   const dryRun = parsed["dry-run"] ?? false;
-
-  // Pre-resolve API key (may prompt) before Ink render
   const apiKey = dryRun ? "" : await getApiKey();
-
-  // Read project-local config (.aai/project.json)
   const projectConfig = await readProjectConfig(cwd);
-
-  // Slug: from project config, or generate a new human-readable one
-  let slug = projectConfig?.slug ?? generateSlug();
+  const slug = projectConfig?.slug ?? generateSlug();
 
   let agentUrl = "";
 
   await runWithInk(async (log) => {
-    // Build
-    log(<Step action="Build" msg="bundling agent" />);
-    const agent = await loadAgent(cwd);
-    if (!agent) {
-      throw new Error("No agent found — run `aai init` first");
-    }
-
-    let bundle: BundleOutput;
-    try {
-      bundle = await bundleAgent(agent);
-    } catch (err) {
-      if (err instanceof BundleError) {
-        throw new Error(`Bundle failed: ${err.message}`);
-      }
-      throw err;
-    }
-
-    await writeBuildOutput(cwd, bundle);
+    const bundle = await buildAgent(cwd, log);
 
     if (dryRun) {
       log(<StepInfo action="Dry run" msg={`would deploy as ${slug}`} />);
       return;
     }
 
-    // Deploy
-    log(<Step action="Deploy" msg={slug} />);
-    const deployed = await runDeploy({
-      url: serverUrl,
-      bundle: {
-        worker: bundle.worker,
-        clientFiles: bundle.clientFiles,
-        workerBytes: bundle.workerBytes,
-      },
-      env: { ASSEMBLYAI_API_KEY: apiKey },
-      slug,
-      dryRun: false,
-      apiKey,
-    });
-    slug = deployed.slug;
-
-    // Save to .aai/project.json
-    await writeProjectConfig(cwd, {
-      slug: deployed.slug,
-      serverUrl,
-    });
-
-    agentUrl = `${serverUrl}/${slug}`;
-    log(<Step action="Ready" msg={agentUrl} />);
+    agentUrl = await deployBundle({ bundle, serverUrl, apiKey, slug, cwd, log });
   });
 
-  // Prompt to open URL
   if (agentUrl && !dryRun) {
     const open = await askConfirm("Open in browser?");
     if (open) {

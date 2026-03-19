@@ -30,6 +30,53 @@ const initCommandDef: SubcommandDef = {
   ],
 };
 
+/** Rewrite @aai deps to local monorepo paths for dev mode. */
+async function rewriteDevDeps(cwd: string, cliDir: string): Promise<void> {
+  const monorepoRoot = path.join(cliDir, "..");
+  const pkgJsonPath = path.join(cwd, "package.json");
+  const pkgJson = JSON.parse(await fs.readFile(pkgJsonPath, "utf-8"));
+
+  for (const pkg of ["sdk", "ui"]) {
+    const localPkgPath = path.join(monorepoRoot, pkg, "package.json");
+    const localPkg = JSON.parse(await fs.readFile(localPkgPath, "utf-8"));
+    const pkgName = localPkg.name as string;
+    pkgJson.dependencies[pkgName] = `file:${path.join(monorepoRoot, pkg)}`;
+  }
+
+  await fs.writeFile(pkgJsonPath, `${JSON.stringify(pkgJson, null, 2)}\n`);
+}
+
+/** Install npm dependencies, logging progress. */
+async function installDeps(cwd: string, log: (el: React.ReactNode) => void): Promise<void> {
+  if (await fileExists(path.join(cwd, "node_modules"))) return;
+
+  let pkgJson: {
+    dependencies?: Record<string, string>;
+    devDependencies?: Record<string, string>;
+  };
+  try {
+    pkgJson = JSON.parse(await fs.readFile(path.join(cwd, "package.json"), "utf-8"));
+  } catch {
+    pkgJson = {};
+  }
+
+  const deps = Object.keys(pkgJson.dependencies ?? {});
+  const devDeps = Object.keys(pkgJson.devDependencies ?? {});
+
+  if (deps.length > 0) {
+    log(<Step action="Install" msg={deps.join(", ")} />);
+  }
+  if (devDeps.length > 0) {
+    log(<Step action="Install" msg={`dev: ${devDeps.join(", ")}`} />);
+  }
+
+  try {
+    await execFileAsync("npm", ["install"], { cwd });
+  } catch {
+    log(<Step action="Skip" msg="npm install failed" />);
+  }
+}
+
 /**
  * Runs the `aai init` subcommand. Scaffolds a new agent project from a
  * template and installs dependencies.
@@ -66,68 +113,22 @@ export async function runInitCommand(
   const cliDir = path.dirname(fileURLToPath(import.meta.url));
   const templatesDir = path.join(cliDir, "..", "templates");
   const { runInit } = await import("./_init.ts");
-
   const template = parsed.template || "simple";
 
   await runWithInk(async (log) => {
     log(<Step action="Create" msg={dir} />);
-    await runInit({
-      targetDir: cwd,
-      template,
-      templatesDir,
-    });
+    await runInit({ targetDir: cwd, template, templatesDir });
 
-    // In dev mode (running via node/tsx), rewrite @aai dependencies
-    // to point at the local monorepo source so builds use latest code.
     if (isDevMode()) {
-      const monorepoRoot = path.join(cliDir, "..");
-      const pkgJsonPath = path.join(cwd, "package.json");
-      const pkgJson = JSON.parse(await fs.readFile(pkgJsonPath, "utf-8"));
-
-      for (const pkg of ["sdk", "ui"]) {
-        const localPkgPath = path.join(monorepoRoot, pkg, "package.json");
-        const localPkg = JSON.parse(await fs.readFile(localPkgPath, "utf-8"));
-        const pkgName = localPkg.name as string;
-        pkgJson.dependencies[pkgName] = `file:${path.join(monorepoRoot, pkg)}`;
-      }
-
-      await fs.writeFile(pkgJsonPath, `${JSON.stringify(pkgJson, null, 2)}\n`);
+      await rewriteDevDeps(cwd, cliDir);
     }
 
-    // Install dependencies
-    if (!(await fileExists(path.join(cwd, "node_modules")))) {
-      let pkgJson: {
-        dependencies?: Record<string, string>;
-        devDependencies?: Record<string, string>;
-      };
-      try {
-        pkgJson = JSON.parse(await fs.readFile(path.join(cwd, "package.json"), "utf-8"));
-      } catch {
-        pkgJson = {};
-      }
-
-      const deps = Object.keys(pkgJson.dependencies ?? {});
-      const devDeps = Object.keys(pkgJson.devDependencies ?? {});
-
-      if (deps.length > 0) {
-        log(<Step action="Install" msg={deps.join(", ")} />);
-      }
-      if (devDeps.length > 0) {
-        log(<Step action="Install" msg={`dev: ${devDeps.join(", ")}`} />);
-      }
-
-      try {
-        await execFileAsync("npm", ["install"], { cwd });
-      } catch {
-        log(<Step action="Skip" msg="npm install failed" />);
-      }
-    }
+    await installDeps(cwd, log);
   });
 
   process.chdir(cwd);
   delete process.env.INIT_CWD;
 
-  // Deploy the scaffolded agent (skip when called internally with quiet)
   if (!opts?.quiet) {
     const { runDeployCommand } = await import("./deploy.tsx");
     await runDeployCommand(["-y"], version);
