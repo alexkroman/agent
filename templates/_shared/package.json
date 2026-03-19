@@ -3,16 +3,21 @@
   "scripts": {
     "dev": "aai dev",
     "build": "aai deploy --dry-run",
-    "deploy": "aai deploy"
+    "deploy": "aai deploy",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write ."
   },
   "dependencies": {
     "@alexkroman1/aai": "*",
     "preact": "^10",
     "@preact/signals": "^2",
     "tailwindcss": "^4",
+    "ws": "^8",
     "zod": "^4"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2",
+    "@types/node": "^22",
     "typescript": "^5"
   }
 }
