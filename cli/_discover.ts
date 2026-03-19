@@ -73,9 +73,6 @@ export async function getApiKey(): Promise<string> {
     return config.assemblyai_api_key;
   }
 
-  step("Setup", "AssemblyAI API key required for speech-to-text");
-  console.log("Get one at https://www.assemblyai.com/dashboard/signup\n");
-
   let key: string | undefined;
   while (!key) {
     key = await askPassword("ASSEMBLYAI_API_KEY");
