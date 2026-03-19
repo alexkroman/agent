@@ -70,6 +70,27 @@ export async function askText(message: string, defaultValue: string): Promise<st
   });
 }
 
+/**
+ * Renders a "press enter" prompt and resolves when the user presses enter.
+ * Creates and unmounts its own Ink instance.
+ */
+export async function askEnter(message: string): Promise<void> {
+  return new Promise((resolve) => {
+    const app = render(
+      <Box>
+        <Text color={COLORS.interactive}>{message}</Text>
+        <TextInput
+          placeholder=""
+          onSubmit={() => {
+            resolve();
+            app.unmount();
+          }}
+        />
+      </Box>,
+    );
+  });
+}
+
 /** A choice for the `askSelect` prompt. */
 export type SelectChoice = { label: string; value: string };
 

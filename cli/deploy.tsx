@@ -18,7 +18,7 @@ import {
 import type { SubcommandDef } from "./_help.ts";
 import { subcommandHelp } from "./_help.ts";
 import { runWithInk, Step, StepInfo } from "./_ink.tsx";
-import { askConfirm } from "./_prompts.tsx";
+import { askEnter } from "./_prompts.tsx";
 import { runInitCommand } from "./init.tsx";
 
 /** CLI definition for the `aai deploy` subcommand, including name, description, and options. */
@@ -147,10 +147,8 @@ export async function runDeployCommand(args: string[], version: string): Promise
   });
 
   if (agentUrl && !dryRun) {
-    const open = await askConfirm("Open in browser?");
-    if (open) {
-      const { exec } = await import("node:child_process");
-      exec(`open "${agentUrl}"`);
-    }
+    await askEnter("Press enter to open in browser");
+    const { exec } = await import("node:child_process");
+    exec(`open "${agentUrl}"`);
   }
 }
