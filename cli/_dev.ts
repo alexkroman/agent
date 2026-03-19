@@ -21,7 +21,7 @@ export async function _startDevServer(
     throw new Error("No agent found — run `aai init` first");
   }
 
-  log(React.createElement(Step, { action: "Bundle", msg: agent.slug }));
+  log(React.createElement(Step, { action: "Build", msg: agent.slug }));
   let clientDir: string;
   try {
     const bundle = await bundleAgent(agent);
@@ -33,11 +33,8 @@ export async function _startDevServer(
     throw err;
   }
 
-  log(React.createElement(Step, { action: "Load", msg: "agent.ts" }));
   const agentDef = await loadAgentDef(cwd);
   const env = await resolveServerEnv();
-
-  log(React.createElement(Step, { action: "Start", msg: `http://localhost:${port}` }));
   await bootServer(agentDef, clientDir, env, port);
   log(React.createElement(Step, { action: "Ready", msg: `http://localhost:${port}` }));
 }
