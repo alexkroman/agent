@@ -1,4 +1,3 @@
-/** @jsxImportSource react */
 // Copyright 2025 the AAI authors. MIT license.
 
 import { render, Text, useApp } from "ink";
