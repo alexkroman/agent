@@ -121,6 +121,7 @@ export async function bundleAgent(
     try {
       clientResult = (await build({
         root: agent.dir,
+        base: "./",
         logLevel: "warn",
         plugins: [preact(), tailwindcss()],
         build: {
