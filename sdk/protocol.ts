@@ -11,13 +11,6 @@ import { z } from "zod";
 import type { Message, StepInfo } from "./types.ts";
 
 /**
- * Current protocol version for client-server compatibility checks.
- *
- * Increment this when making breaking changes to the wire protocol.
- */
-export const PROTOCOL_VERSION = 1;
-
-/**
  * Default sample rate for speech-to-text audio in Hz.
  *
  * This is the sample rate expected by the STT provider (AssemblyAI).
@@ -222,7 +215,6 @@ export type AudioFormatId = "pcm16";
 
 /** Protocol-level session config returned to the client on connect. */
 export type ReadyConfig = {
-  protocolVersion: number;
   audioFormat: AudioFormatId;
   sampleRate: number;
   ttsSampleRate: number;

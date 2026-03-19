@@ -1,3 +1,4 @@
+import "@alexkroman1/aai/ui/styles.css";
 import { ChatView, mount, useSession } from "@alexkroman1/aai/ui";
 
 function NightOwl() {

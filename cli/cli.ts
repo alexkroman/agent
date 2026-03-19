@@ -8,7 +8,7 @@ import { rootHelp } from "./_help.ts";
 import { error } from "./_output.ts";
 import { runDeployCommand } from "./deploy.tsx";
 import { runDevCommand } from "./dev.tsx";
-import { runNewCommand } from "./new.tsx";
+import { runInitCommand } from "./init.tsx";
 import { runRagCommand } from "./rag.tsx";
 import { runSecretCommand } from "./secret.tsx";
 import { runStartCommand } from "./start.tsx";
@@ -41,8 +41,7 @@ async function main(args: string[]): Promise<void> {
 
   switch (subcommand) {
     case "init":
-    case "new":
-      await runNewCommand(subArgs, VERSION);
+      await runInitCommand(subArgs, VERSION);
       return;
     case "deploy":
       await runDeployCommand(subArgs, VERSION);
@@ -60,8 +59,10 @@ async function main(args: string[]): Promise<void> {
       await runRagCommand(subArgs, VERSION);
       return;
     case "help":
-    case undefined:
       console.log(rootHelp(VERSION));
+      return;
+    case undefined:
+      await runInitCommand(subArgs, VERSION);
       return;
     default:
       error(`Unknown command: ${subcommand}`);
@@ -70,11 +71,14 @@ async function main(args: string[]): Promise<void> {
   }
 }
 
-try {
-  await main(process.argv.slice(2));
-} catch (err: unknown) {
-  error(err instanceof Error ? err.message : String(err));
-  process.exit(1);
+if (process.env.VITEST !== "true") {
+  process.on("SIGINT", () => process.exit(0));
+  try {
+    await main(process.argv.slice(2));
+  } catch (err: unknown) {
+    error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  }
 }
 
 /**

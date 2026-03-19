@@ -25,6 +25,8 @@ export type ServerOptions = {
   kv?: Kv;
   /** HTML to serve at `GET /`. */
   clientHtml?: string;
+  /** Directory containing built client files (index.html + assets/). */
+  clientDir?: string;
   /** Logger. Defaults to console. */
   logger?: Logger;
   /** S2S configuration. Defaults to AssemblyAI production. */
@@ -80,7 +82,14 @@ function resolveEnv(env: Record<string, string | undefined>): Record<string, str
  * ```
  */
 export function createServer(options: ServerOptions): AgentServer {
-  const { agent, kv, clientHtml, logger = consoleLogger, s2sConfig = DEFAULT_S2S_CONFIG } = options;
+  const {
+    agent,
+    kv,
+    clientHtml,
+    clientDir,
+    logger = consoleLogger,
+    s2sConfig = DEFAULT_S2S_CONFIG,
+  } = options;
 
   const env = resolveEnv(
     options.env ?? (typeof process !== "undefined" ? (process.env as Record<string, string>) : {}),
@@ -131,6 +140,11 @@ export function createServer(options: ServerOptions): AgentServer {
       const http = await import("node:http");
 
       const nodeServer = http.createServer(async (req, res) => {
+        // Serve static files from clientDir if available
+        if (clientDir && req.url) {
+          const served = await serveStaticFile(req.url, clientDir, res);
+          if (served) return;
+        }
         await nodeHttpHandler(req, res, port, getWinterc);
       });
 
@@ -157,6 +171,50 @@ export function createServer(options: ServerOptions): AgentServer {
       await serverHandle?.shutdown();
     },
   };
+}
+
+// ─── Static file serving ────────────────────────────────────────────────────
+
+const MIME_TYPES: Record<string, string> = {
+  ".html": "text/html",
+  ".js": "application/javascript",
+  ".css": "text/css",
+  ".json": "application/json",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".ico": "image/x-icon",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+};
+
+async function serveStaticFile(
+  reqUrl: string,
+  clientDir: string,
+  res: {
+    writeHead(status: number, headers?: Record<string, string>): void;
+    end(body?: string | Buffer): void;
+  },
+): Promise<boolean> {
+  const { readFile } = await import("node:fs/promises");
+  const { join, extname, normalize } = await import("node:path");
+
+  const urlPath = new URL(reqUrl, "http://localhost").pathname;
+  const relPath = urlPath === "/" ? "index.html" : urlPath.slice(1);
+  const filePath = normalize(join(clientDir, relPath));
+
+  // Prevent directory traversal
+  if (!filePath.startsWith(clientDir)) return false;
+
+  try {
+    const content = await readFile(filePath);
+    const ext = extname(filePath);
+    const contentType = MIME_TYPES[ext] ?? "application/octet-stream";
+    res.writeHead(200, { "Content-Type": contentType });
+    res.end(content);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 // ─── Node.js HTTP/WS helpers ─────────────────────────────────────────────────

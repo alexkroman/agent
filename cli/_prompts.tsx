@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 // Copyright 2025 the AAI authors. MIT license.
 
-import { ConfirmInput, PasswordInput, Select } from "@inkjs/ui";
+import { ConfirmInput, PasswordInput, Select, TextInput } from "@inkjs/ui";
 import { Box, render, Text } from "ink";
 
 /**
@@ -41,6 +41,27 @@ export async function askConfirm(message: string): Promise<boolean> {
           }}
           onCancel={() => {
             resolve(false);
+            app.unmount();
+          }}
+        />
+      </Box>,
+    );
+  });
+}
+
+/**
+ * Renders a text input prompt with a default value and returns the submitted value.
+ * Creates and unmounts its own Ink instance.
+ */
+export async function askText(message: string, defaultValue: string): Promise<string> {
+  return new Promise((resolve) => {
+    const app = render(
+      <Box>
+        <Text color="#56b6c2">{message} › </Text>
+        <TextInput
+          placeholder={defaultValue}
+          onSubmit={(value) => {
+            resolve(value || defaultValue);
             app.unmount();
           }}
         />

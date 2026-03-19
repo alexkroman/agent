@@ -1,5 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import fs from "node:fs/promises";
 import path from "node:path";
 import { createServer as createViteServer } from "vite";
 import type { AgentDef } from "../sdk/types.ts";
@@ -52,20 +53,25 @@ async function loadWsFromProject(cwd: string) {
     new WS(url, { headers: opts.headers });
 }
 
-/** Create and start an agent server. */
+/** Create and start an agent server with static file serving. */
 export async function bootServer(
   agentDef: AgentDef,
-  html: string,
+  clientDir: string,
   env: Record<string, string>,
   port: number,
   cwd: string,
 ): Promise<void> {
   step("Start", `http://localhost:${port}`);
   const createWebSocket = await loadWsFromProject(cwd);
+
+  // Read index.html from the client build directory
+  const clientHtml = await fs.readFile(path.join(clientDir, "index.html"), "utf-8");
+
   const { createServer } = await import("aai/server");
   const server = createServer({
     agent: agentDef,
-    clientHtml: html,
+    clientHtml,
+    clientDir,
     env,
     createWebSocket,
   });

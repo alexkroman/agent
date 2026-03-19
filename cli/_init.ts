@@ -3,13 +3,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import glob from "fast-glob";
 import fsExtra from "fs-extra";
-import { step } from "./_output.ts";
 
-export const _internals = {
-  step,
-};
-
-export type NewOptions = {
+export type InitOptions = {
   targetDir: string;
   template: string;
   templatesDir: string;
@@ -44,15 +39,13 @@ async function copyDirNoOverwrite(src: string, dest: string): Promise<void> {
   }
 }
 
-export async function runNew(opts: NewOptions): Promise<string> {
+export async function runInit(opts: InitOptions): Promise<string> {
   const { targetDir, template, templatesDir } = opts;
   const available = await listTemplates(templatesDir);
 
   if (!available.includes(template)) {
     throw new Error(`unknown template '${template}' -- available: ${available.join(", ")}`);
   }
-
-  _internals.step("Create", `from template '${template}'`);
 
   // 1. Copy template-specific files first
   await fsExtra.copy(path.join(templatesDir, template), targetDir, { overwrite: true });
@@ -104,6 +97,5 @@ See \`CLAUDE.md\` for the full agent API reference.
     await fs.writeFile(readmePath, readme);
   }
 
-  _internals.step("Done", targetDir);
   return targetDir;
 }

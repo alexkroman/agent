@@ -12,7 +12,7 @@
 import { createDirectExecutor } from "./direct_executor.ts";
 import type { Kv } from "./kv.ts";
 import { createMemoryKv } from "./kv.ts";
-import { AUDIO_FORMAT, PROTOCOL_VERSION } from "./protocol.ts";
+import { AUDIO_FORMAT } from "./protocol.ts";
 import type { Logger, Metrics, S2SConfig } from "./runtime.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG, noopMetrics } from "./runtime.ts";
 import type { CreateS2sWebSocket } from "./s2s.ts";
@@ -89,7 +89,6 @@ export function createWintercServer(options: WintercServerOptions): WintercServe
   const sessions = new Map<string, Session>();
 
   const readyConfig = {
-    protocolVersion: PROTOCOL_VERSION,
     audioFormat: AUDIO_FORMAT,
     sampleRate: s2sConfig.inputSampleRate,
     ttsSampleRate: s2sConfig.outputSampleRate,

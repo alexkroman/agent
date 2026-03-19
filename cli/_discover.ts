@@ -1,9 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
+import { accessSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { humanId } from "human-id";
-import { execFileAsync } from "./_exec.ts";
 import { step } from "./_output.ts";
 import { askPassword } from "./_prompts.tsx";
 
@@ -12,10 +11,22 @@ import { askPassword } from "./_prompts.tsx";
  * vs a compiled binary.
  */
 export function isDevMode(): boolean {
-  // When installed via npm, argv[1] is the dist/cli.js bundle.
-  // Dev mode is only true when running raw TS source (e.g. via tsx).
+  // Dev mode when running raw TS source (via tsx) OR when running the
+  // built dist/aai.js directly from the monorepo (e.g. via aai-dev alias).
   const script = process.argv[1] ?? "";
-  return script.endsWith(".ts") || script.endsWith(".tsx");
+  if (script.endsWith(".ts") || script.endsWith(".tsx")) return true;
+  // Check if running from the monorepo dist/ (not a global npm install)
+  if (script.includes("/dist/") && !script.includes("node_modules")) {
+    const dir = path.dirname(path.dirname(script));
+    try {
+      accessSync(path.join(dir, "sdk"));
+      accessSync(path.join(dir, "cli"));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  return false;
 }
 
 /**
@@ -157,40 +168,4 @@ export async function loadAgent(dir: string): Promise<AgentEntry | null> {
     entryPoint: path.join(dir, "agent.ts"),
     clientEntry,
   };
-}
-
-/**
- * Copies `templates/_shared/CLAUDE.md` into the agent directory as `CLAUDE.md`.
- * Creates the file if missing or updates it if the content has changed.
- */
-export async function ensureClaudeMd(targetDir: string): Promise<void> {
-  const claudePath = path.join(targetDir, "CLAUDE.md");
-  const cliDir = path.dirname(fileURLToPath(import.meta.url));
-  const srcPath = path.join(cliDir, "..", "templates", "_shared", "CLAUDE.md");
-  const srcContent = await fs.readFile(srcPath, "utf-8");
-  let existing = "";
-  try {
-    existing = await fs.readFile(claudePath, "utf-8");
-  } catch {
-    /* file doesn't exist */
-  }
-  if (existing !== srcContent) {
-    await fs.writeFile(claudePath, srcContent);
-    step(existing ? "Updated" : "Wrote", "CLAUDE.md — aai agent API reference");
-  }
-}
-
-/**
- * Install dependencies if `node_modules/` doesn't exist.
- * Uses `npm install` which reads package.json and installs from npm.
- */
-export async function ensureDependencies(targetDir: string): Promise<void> {
-  if (!(await fileExists(path.join(targetDir, "node_modules")))) {
-    step("Install", "dependencies");
-    try {
-      await execFileAsync("npm", ["install"], { cwd: targetDir });
-    } catch {
-      step("Skip", "npm install failed");
-    }
-  }
 }

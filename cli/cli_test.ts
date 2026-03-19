@@ -45,10 +45,16 @@ describe("cli main", () => {
     expect(output).toContain("Voice agent development kit");
   });
 
-  test("no args prints help", async () => {
-    await main([]);
-    expect(logSpy).toHaveBeenCalled();
-    const output = logSpy.mock.calls[0][0];
-    expect(output).toContain("Voice agent development kit");
+  test("no args runs init", async () => {
+    // With no args, main() dispatches to runInitCommand which tries to render
+    // an interactive prompt. In a test environment this throws, confirming
+    // that init (not help) was invoked.
+    await expect(main([])).rejects.toThrow();
+    // Help output should NOT have been printed
+    const helpPrinted = logSpy.mock.calls.some(
+      (call: unknown[]) =>
+        typeof call[0] === "string" && call[0].includes("Voice agent development kit"),
+    );
+    expect(helpPrinted).toBe(false);
   });
 });

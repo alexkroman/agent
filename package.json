@@ -1,13 +1,14 @@
 {
   "name": "@alexkroman1/aai",
-  "version": "0.7.8",
+  "version": "0.7.9",
   "type": "module",
   "bin": {
     "aai": "dist/aai.js"
   },
   "files": [
     "dist",
-    "templates"
+    "templates",
+    "ui/styles.css"
   ],
   "exports": {
     ".": {
@@ -46,6 +47,7 @@
       "types": "./dist/ui/mod.d.ts",
       "default": "./dist/ui/mod.js"
     },
+    "./ui/styles.css": "./ui/styles.css",
     "./ui/session": {
       "types": "./dist/ui/session_mod.d.ts",
       "default": "./dist/ui/session_mod.js"
@@ -129,7 +131,7 @@
     "preact": "^10.29.0",
     "react": "^19.2.4",
     "vite": "^7.3.1",
-    "vite-plugin-singlefile": "^2.3.2",
+    "ws": "^8.18.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {

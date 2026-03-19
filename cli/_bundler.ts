@@ -4,8 +4,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import preact from "@preact/preset-vite";
 import tailwindcss from "@tailwindcss/vite";
-import { build, type Plugin } from "vite";
-import { viteSingleFile } from "vite-plugin-singlefile";
+import { build, type Rollup } from "vite";
 import type { AgentEntry } from "./_discover.ts";
 
 /**
@@ -24,8 +23,8 @@ export class BundleError extends Error {
 export type BundleOutput = {
   /** Minified ESM JavaScript for the server-side worker. */
   worker: string;
-  /** Single-file HTML page with inlined client JS and CSS. */
-  html: string;
+  /** All client build files keyed by relative path (e.g. "index.html", "assets/index-abc123.js"). */
+  clientFiles: Record<string, string>;
   /** Size of the worker bundle in bytes. */
   workerBytes: number;
 };
@@ -35,136 +34,35 @@ export const _internals = {
   BundleError,
 };
 
-/** Virtual Vite plugin that generates the worker entry point. */
-function workerEntryPlugin(agentDir: string): Plugin {
-  const id = "virtual:worker-entry";
-  const resolved = `\0${id}`;
-  return {
-    name: "aai-worker-entry",
-    enforce: "pre",
-    resolveId(source) {
-      if (source === id) return resolved;
-    },
-    load(source) {
-      if (source === resolved) {
-        const agentPath = path.resolve(agentDir, "agent.ts");
-        return [
-          `import agent from "${agentPath}";`,
-          `import { initWorker } from "@alexkroman1/aai/worker-shim";`,
-          `initWorker(agent);`,
-        ].join("\n");
+/** Extract a file map from a Vite/Rollup build result. */
+function extractFiles(result: Rollup.RollupOutput | Rollup.RollupOutput[]): Record<string, string> {
+  const outputs = Array.isArray(result) ? result : [result];
+  const files: Record<string, string> = {};
+  for (const output of outputs) {
+    for (const chunk of output.output) {
+      if (chunk.type === "chunk") {
+        files[chunk.fileName] = chunk.code;
+      } else {
+        files[chunk.fileName] =
+          typeof chunk.source === "string" ? chunk.source : new TextDecoder().decode(chunk.source);
       }
-    },
-  };
-}
-
-/** Default Tailwind CSS entry point, generated when the project has no styles.css. */
-const DEFAULT_STYLES_CSS = `\
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap");
-@import "tailwindcss";
-@source "./";
-@source "./components/";
-@source "./node_modules/@alexkroman1/aai/ui/";
-
-@theme {
-  --color-aai-bg: #101010;
-  --color-aai-surface: #151515;
-  --color-aai-surface-faint: rgba(255, 255, 255, 0.031);
-  --color-aai-surface-hover: rgba(255, 255, 255, 0.059);
-  --color-aai-border: #282828;
-  --color-aai-primary: #fab283;
-  --color-aai-text: rgba(255, 255, 255, 0.936);
-  --color-aai-text-secondary: rgba(255, 255, 255, 0.618);
-  --color-aai-text-muted: rgba(255, 255, 255, 0.284);
-  --color-aai-text-dim: rgba(255, 255, 255, 0.422);
-  --color-aai-error: #e06c75;
-  --color-aai-ring: #56b6c2;
-  --color-aai-state-disconnected: rgba(255, 255, 255, 0.422);
-  --color-aai-state-connecting: rgba(255, 255, 255, 0.422);
-  --color-aai-state-ready: #7fd88f;
-  --color-aai-state-listening: #56b6c2;
-  --color-aai-state-thinking: #f5a742;
-  --color-aai-state-speaking: #e06c75;
-  --color-aai-state-error: #e06c75;
-  --radius-aai: 6px;
-  --font-aai: "Inter", system-ui, -apple-system, sans-serif;
-  --font-aai-mono: "IBM Plex Mono", monospace;
-}
-
-@layer base {
-  html, body {
-    margin: 0;
-    padding: 0;
-    background: var(--color-aai-bg);
+    }
   }
+  return files;
 }
-
-@keyframes aai-bounce {
-  0%, 80%, 100% {
-    opacity: 0.3;
-    transform: scale(0.8);
-  }
-  40% {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-@keyframes aai-shimmer {
-  0% {
-    background-position: -200% 0;
-  }
-  100% {
-    background-position: 200% 0;
-  }
-}
-
-.tool-shimmer {
-  background: linear-gradient(
-    90deg,
-    var(--color-aai-text) 25%,
-    var(--color-aai-text-dim) 50%,
-    var(--color-aai-text) 75%
-  );
-  background-size: 200% 100%;
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: aai-shimmer 2s ease-in-out infinite;
-}
-`;
-
-/** Fallback HTML shell generated when no client.tsx exists. */
-const INDEX_HTML = `\
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
-    />
-    <title>aai</title>
-    <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="../styles.css" />
-  </head>
-  <body>
-    <main id="app"></main>
-    <script type="module" src="../client.tsx"></script>
-  </body>
-</html>
-`;
 
 /**
  * Bundles an agent project into deployable artifacts using Vite.
  *
  * Runs two Vite builds in-process:
- * 1. Worker build — bundles agent.ts into a single worker.js ESM file
- * 2. Client build — bundles client.tsx + Tailwind into a single-file HTML
+ * 1. Worker build — generates a real entry file in .aai/ that imports
+ *    agent.ts and wires it to the platform shim, then bundles into worker.js
+ * 2. Client build — bundles client.tsx + Tailwind into standard multi-file
+ *    output (index.html + assets/)
  *
  * @param agent The discovered agent entry containing paths and configuration.
  * @param opts Optional settings. Set `skipClient` to omit the client bundle.
- * @returns The bundled worker code, single-file HTML, manifest, and byte sizes.
+ * @returns The bundled worker code, client files map, and byte sizes.
  * @throws {BundleError} If Vite encounters a build error.
  */
 export async function bundleAgent(
@@ -172,33 +70,33 @@ export async function bundleAgent(
   opts?: { skipClient?: boolean },
 ): Promise<BundleOutput> {
   const aaiDir = path.join(agent.dir, ".aai");
-  const buildDir = path.join(aaiDir, "build");
   await fs.mkdir(aaiDir, { recursive: true });
 
-  await fs.writeFile(path.join(aaiDir, "index.html"), INDEX_HTML);
+  // Generate the worker entry file — a real file in .aai/ that the user
+  // can inspect for debugging, like Next.js generates files in .next/.
+  const workerEntry = path.join(aaiDir, "_worker_entry.ts");
+  await fs.writeFile(
+    workerEntry,
+    [
+      `import agent from "../agent.ts";`,
+      `import { initWorker } from "@alexkroman1/aai/worker-shim";`,
+      `initWorker(agent);`,
+    ].join("\n"),
+  );
 
-  // Generate default Tailwind entry point if missing
-  const stylesPath = path.join(agent.dir, "styles.css");
+  // 1. Worker build — bundles the entry into a single ESM file
+  let workerResult: Rollup.RollupOutput | Rollup.RollupOutput[];
   try {
-    await fs.access(stylesPath);
-  } catch {
-    await fs.writeFile(stylesPath, DEFAULT_STYLES_CSS);
-  }
-
-  // 1. Worker build
-  try {
-    await build({
+    workerResult = (await build({
       configFile: false,
       root: agent.dir,
       logLevel: "warn",
-      plugins: [workerEntryPlugin(agent.dir)],
       build: {
-        outDir: buildDir,
-        emptyOutDir: true,
+        write: false,
         minify: true,
         target: "es2022",
         rollupOptions: {
-          input: "virtual:worker-entry",
+          input: workerEntry,
           output: {
             format: "es",
             entryFileNames: "worker.js",
@@ -206,39 +104,42 @@ export async function bundleAgent(
           },
         },
       },
-    });
+    })) as Rollup.RollupOutput | Rollup.RollupOutput[];
   } catch (err: unknown) {
     throw new BundleError(err instanceof Error ? err.message : String(err));
   }
 
-  // 2. Client build (if client.tsx exists)
+  const workerFiles = extractFiles(workerResult);
+  const worker = workerFiles["worker.js"] ?? "";
+
+  // 2. Client build — standard Vite multi-file output (index.html + assets/)
   const skipClient = opts?.skipClient || !agent.clientEntry;
+  let clientFiles: Record<string, string> = {};
+
   if (!skipClient) {
+    let clientResult: Rollup.RollupOutput | Rollup.RollupOutput[];
     try {
-      await build({
-        configFile: false,
-        root: aaiDir,
+      clientResult = (await build({
+        root: agent.dir,
+        base: "./",
         logLevel: "warn",
-        plugins: [preact(), tailwindcss(), viteSingleFile()],
+        plugins: [preact(), tailwindcss()],
         build: {
-          outDir: buildDir,
-          emptyOutDir: false,
+          write: false,
           minify: true,
           target: "es2022",
         },
-      });
+      })) as Rollup.RollupOutput | Rollup.RollupOutput[];
     } catch (err: unknown) {
       throw new BundleError(err instanceof Error ? err.message : String(err));
     }
-  }
 
-  const worker = await fs.readFile(path.join(buildDir, "worker.js"), "utf-8");
-  const htmlPath = skipClient ? path.join(aaiDir, "index.html") : path.join(buildDir, "index.html");
-  const html = await fs.readFile(htmlPath, "utf-8");
+    clientFiles = extractFiles(clientResult);
+  }
 
   return {
     worker,
-    html,
+    clientFiles,
     workerBytes: Buffer.byteLength(worker),
   };
 }

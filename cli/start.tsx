@@ -48,7 +48,7 @@ export async function runStartCommand(args: string[], version: string): Promise<
   // Pre-resolve API key (may prompt) before Ink render
   await getApiKey();
 
-  await runWithInk("Starting...", async (log) => {
+  await runWithInk(async (log) => {
     log(<Step action="Start" msg={`production server on port ${port}`} />);
     await _startProductionServer(cwd, port);
   });

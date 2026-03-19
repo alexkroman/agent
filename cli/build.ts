@@ -27,10 +27,13 @@ export type BuildOpts = {
 async function writeBuildOutput(agentDir: string, bundle: BundleOutput): Promise<void> {
   const buildDir = path.join(agentDir, ".aai", "build");
   await fs.mkdir(buildDir, { recursive: true });
-  await Promise.all([
-    fs.writeFile(path.join(buildDir, "worker.js"), bundle.worker),
-    fs.writeFile(path.join(buildDir, "index.html"), bundle.html),
-  ]);
+  const writes = [fs.writeFile(path.join(buildDir, "worker.js"), bundle.worker)];
+  for (const [relPath, content] of Object.entries(bundle.clientFiles)) {
+    const fullPath = path.join(buildDir, "client", relPath);
+    await fs.mkdir(path.dirname(fullPath), { recursive: true });
+    writes.push(fs.writeFile(fullPath, content));
+  }
+  await Promise.all(writes);
 }
 
 /**
@@ -44,7 +47,7 @@ async function writeBuildOutput(agentDir: string, bundle: BundleOutput): Promise
 export async function runBuild(opts: BuildOpts): Promise<BuildResult> {
   const agent = await loadAgent(opts.agentDir);
   if (!agent) {
-    throw new Error("No agent found — run `aai new` first");
+    throw new Error("No agent found — run `aai init` first");
   }
 
   step("Bundle", agent.slug);

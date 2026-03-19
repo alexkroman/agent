@@ -8,7 +8,7 @@ import { fileExists, getApiKey } from "./_discover.ts";
 import type { SubcommandDef } from "./_help.ts";
 import { subcommandHelp } from "./_help.ts";
 import { runWithInk, Step } from "./_ink.tsx";
-import { runNewCommand } from "./new.tsx";
+import { runInitCommand } from "./init.tsx";
 
 const devCommandDef: SubcommandDef = {
   name: "dev",
@@ -43,13 +43,13 @@ export async function runDevCommand(args: string[], version: string): Promise<vo
 
   // If no agent.ts exists, scaffold first (may prompt for template)
   if (!(await fileExists(path.join(cwd, "agent.ts")))) {
-    await runNewCommand(parsed.yes ? ["-y"] : [], version, { quiet: true });
+    await runInitCommand(parsed.yes ? ["-y"] : [], version, { quiet: true });
   }
 
   // Pre-resolve API key (may prompt) before Ink render
   await getApiKey();
 
-  await runWithInk("Bundling...", async (log) => {
+  await runWithInk(async (log) => {
     log(<Step action="Dev" msg={`starting on port ${port}`} />);
     await _startDevServer(cwd, port);
   });

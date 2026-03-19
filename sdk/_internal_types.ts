@@ -50,7 +50,8 @@ export type DeployBody = {
   /** Env vars are optional at deploy time — set separately via `aai env add`. */
   env?: Readonly<Record<string, string>> | undefined;
   worker: string;
-  html: string;
+  /** Client build files keyed by relative path (e.g. "index.html", "assets/index-abc.js"). */
+  clientFiles: Readonly<Record<string, string>>;
 };
 
 /** Empty Zod object schema used as default when tools have no parameters. */

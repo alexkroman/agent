@@ -4,8 +4,6 @@ import path from "node:path";
 import { describe, expect, test } from "vitest";
 import {
   DEFAULT_SERVER,
-  ensureClaudeMd,
-  ensureDependencies,
   fileExists,
   generateSlug,
   isDevMode,
@@ -13,7 +11,7 @@ import {
   readProjectConfig,
   writeProjectConfig,
 } from "./_discover.ts";
-import { silenceSteps, withTempDir } from "./_test_utils.ts";
+import { withTempDir } from "./_test_utils.ts";
 
 // --- generateSlug ---
 
@@ -163,74 +161,5 @@ describe("loadAgent", () => {
       const result = await loadAgent(dir);
       expect(result?.clientEntry).toBe("");
     });
-  });
-});
-
-// --- ensureClaudeMd ---
-
-describe("ensureClaudeMd", () => {
-  test("creates CLAUDE.md when it does not exist", async () => {
-    const s = silenceSteps();
-    try {
-      await withTempDir(async (dir) => {
-        await ensureClaudeMd(dir);
-        const content = await fs.readFile(path.join(dir, "CLAUDE.md"), "utf-8");
-        expect(content.length).toBeGreaterThan(0);
-      });
-    } finally {
-      s.restore();
-    }
-  });
-
-  test("does not overwrite when content matches", async () => {
-    const s = silenceSteps();
-    try {
-      await withTempDir(async (dir) => {
-        await ensureClaudeMd(dir);
-        const stat1 = await fs.stat(path.join(dir, "CLAUDE.md"));
-        await ensureClaudeMd(dir);
-        const stat2 = await fs.stat(path.join(dir, "CLAUDE.md"));
-        expect(stat2.size).toBe(stat1.size);
-      });
-    } finally {
-      s.restore();
-    }
-  });
-
-  test("updates CLAUDE.md when content differs", async () => {
-    const s = silenceSteps();
-    try {
-      await withTempDir(async (dir) => {
-        await fs.writeFile(path.join(dir, "CLAUDE.md"), "old content");
-        await ensureClaudeMd(dir);
-        const content = await fs.readFile(path.join(dir, "CLAUDE.md"), "utf-8");
-        expect(content).not.toBe("old content");
-      });
-    } finally {
-      s.restore();
-    }
-  });
-});
-
-// --- ensureDependencies ---
-
-describe("ensureDependencies", () => {
-  test("skips install when node_modules exists", async () => {
-    await withTempDir(async (dir) => {
-      await fs.mkdir(path.join(dir, "node_modules"));
-      await ensureDependencies(dir);
-    });
-  });
-
-  test("attempts npm install when node_modules missing", async () => {
-    const s = silenceSteps();
-    try {
-      await withTempDir(async (dir) => {
-        // No package.json so npm install will fail, but ensureDependencies catches it
-        await ensureDependencies(dir);
-      });
-    } finally {
-      s.restore();
-    }
   });
 });
