@@ -1,4 +1,4 @@
-import { defineAgent } from "@alexkroman1/aai";
+import { defineAgent, tool } from "@alexkroman1/aai";
 import { z } from "zod";
 
 function first(field: unknown): string | undefined {
@@ -136,7 +136,7 @@ Use run_code for health calculations:
     "Hey, I'm Dr. Sage. Try asking me something like, what are the side effects of ibuprofen, can I take aspirin and warfarin together, or calculate my BMI. Just remember, I'm not a real doctor, so always check with your healthcare provider.",
   builtinTools: ["web_search", "run_code"],
   tools: {
-    medication_lookup: {
+    medication_lookup: tool({
       description:
         "Look up detailed information about a single medication, including purpose, warnings, dosage, side effects, and manufacturer. Works with both generic and brand names.",
       parameters: z.object({
@@ -144,9 +144,9 @@ Use run_code for health calculations:
           "Medication name (generic or brand, e.g. 'ibuprofen' or 'Advil')",
         ),
       }),
-      execute: ({ name }: { name: string }) => lookupDrug(name),
-    },
-    check_drug_interaction: {
+      execute: ({ name }) => lookupDrug(name),
+    }),
+    check_drug_interaction: tool({
       description:
         "Check for known interactions between two or more medications. Resolves drug names via RxNorm and returns interaction details with severity levels.",
       parameters: z.object({
@@ -154,7 +154,7 @@ Use run_code for health calculations:
           "Comma-separated medication names (e.g. 'ibuprofen, warfarin')",
         ),
       }),
-      execute: ({ drugs }: { drugs: string }) => checkInteractions(drugs),
-    },
+      execute: ({ drugs }) => checkInteractions(drugs),
+    }),
   },
 });

@@ -351,6 +351,8 @@ export function createS2sSession(opts: SessionOptions): Session {
           code: "internal",
           message: e.detail.message,
         });
+        // Close the S2S connection on error to prevent repeated error floods.
+        handle.close();
       });
 
       handle.addEventListener("close", () => {

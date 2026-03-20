@@ -1,6 +1,6 @@
 import "@alexkroman1/aai/ui/styles.css";
 import { useState } from "preact/hooks";
-import { ChatView, mount, useSession, useToolResult } from "@alexkroman1/aai/ui";
+import { ChatView, SidebarLayout, StartScreen, mount, useSession, useToolResult } from "@alexkroman1/aai/ui";
 
 interface Pizza {
   id: number;
@@ -64,7 +64,7 @@ function PizzaIcon({ size }: { size: string }) {
       width={dim}
       height={dim}
       viewBox="0 0 100 100"
-      style={{ flexShrink: 0 }}
+      class="shrink-0"
     >
       <circle cx="50" cy="50" r="48" fill="#F4C542" stroke="#D4A017" stroke-width="3" />
       <circle cx="50" cy="50" r="42" fill="#E8A025" />
@@ -83,7 +83,7 @@ function OrderPanel({ order }: { order: OrderInfo }) {
   if (order.orderPlaced) {
     return (
       <div class="flex flex-col items-center gap-4 p-6 text-center">
-        <div style={{ fontSize: "48px" }}>&#10003;</div>
+        <div class="text-5xl">&#10003;</div>
         <h2 class="text-lg font-bold text-aai-text">Order Placed</h2>
         {order.orderNumber && (
           <p class="text-aai-text opacity-70">
@@ -119,8 +119,7 @@ function OrderPanel({ order }: { order: OrderInfo }) {
       {order.pizzas.map((p) => (
         <div
           key={p.id}
-          class="flex items-center gap-3 p-3 rounded-lg"
-          style={{ background: "var(--color-aai-surface)" }}
+          class="flex items-center gap-3 p-3 rounded-lg bg-aai-surface"
         >
           <PizzaIcon size={p.size} />
           <div class="flex-1 min-w-0">
@@ -140,10 +139,7 @@ function OrderPanel({ order }: { order: OrderInfo }) {
           </p>
         </div>
       ))}
-      <div
-        class="flex justify-between items-center pt-3 mt-1"
-        style={{ borderTop: "1px solid var(--color-aai-border)" }}
-      >
+      <div class="flex justify-between items-center pt-3 mt-1 border-t border-aai-border">
         <span class="text-aai-text font-bold">Total</span>
         <span class="text-aai-primary font-bold text-lg">{order.total}</span>
       </div>
@@ -152,7 +148,7 @@ function OrderPanel({ order }: { order: OrderInfo }) {
 }
 
 function PizzaAgent() {
-  const { started, running, start, toggle, reset } = useSession();
+  const { running, toggle, reset } = useSession();
   const [order, setOrder] = useState<OrderInfo>({
     pizzas: [],
     total: "$0.00",
@@ -214,101 +210,45 @@ function PizzaAgent() {
     }
   });
 
-  if (!started.value) {
-    return (
-      <div
-        class="flex items-center justify-center h-screen"
-        style={{ background: "var(--color-aai-bg)" }}
-      >
-        <style>
-          {`
-          @keyframes float {
-            0%, 100% { transform: translateY(0px); }
-            50% { transform: translateY(-10px); }
-          }
-          .pizza-float { animation: float 3s ease-in-out infinite; }
-          `}
-        </style>
-        <div class="flex flex-col items-center gap-6">
-          <div class="pizza-float">
-            <svg width="120" height="120" viewBox="0 0 100 100">
-              <circle cx="50" cy="50" r="48" fill="#F4C542" stroke="#D4A017" stroke-width="3" />
-              <circle cx="50" cy="50" r="42" fill="#E8A025" />
-              <circle cx="35" cy="35" r="7" fill="#C0392B" opacity="0.9" />
-              <circle cx="60" cy="30" r="6" fill="#C0392B" opacity="0.9" />
-              <circle cx="55" cy="55" r="7" fill="#C0392B" opacity="0.9" />
-              <circle cx="30" cy="58" r="6" fill="#C0392B" opacity="0.9" />
-              <circle cx="65" cy="65" r="5" fill="#C0392B" opacity="0.9" />
-              <circle cx="45" cy="68" r="4" fill="#27AE60" opacity="0.7" />
-              <circle cx="70" cy="42" r="4" fill="#27AE60" opacity="0.7" />
-            </svg>
-          </div>
-          <h1 class="text-2xl font-bold text-aai-text">Pizza Palace</h1>
-          <p class="text-aai-text opacity-60 text-sm">
-            Voice-powered pizza ordering
-          </p>
-          <button
-            class="px-8 py-3 rounded-full text-white border-none cursor-pointer font-medium text-base"
-            style={{ background: "var(--color-aai-primary)" }}
-            onClick={start}
-          >
-            Start Ordering
-          </button>
-        </div>
+  const sidebar = (
+    <>
+      <div class="p-4 flex items-center gap-3 border-b border-aai-border">
+        <PizzaIcon size="small" />
+        <h2 class="text-base font-bold text-aai-text">Pizza Palace</h2>
       </div>
-    );
-  }
+      <div class="flex-1">
+        <OrderPanel order={order} />
+      </div>
+      <div class="p-3 flex gap-2 border-t border-aai-border">
+        <button
+          class={`flex-1 py-2 rounded-lg text-sm border-none cursor-pointer text-white ${running.value ? "bg-aai-error" : "bg-aai-primary"}`}
+          onClick={toggle}
+        >
+          {running.value ? "Pause" : "Resume"}
+        </button>
+        <button
+          class="py-2 px-4 rounded-lg text-sm cursor-pointer text-aai-text bg-aai-surface border border-aai-border"
+          onClick={() => {
+            reset();
+            setOrder({
+              pizzas: [],
+              total: "$0.00",
+              orderPlaced: false,
+            });
+          }}
+        >
+          New Order
+        </button>
+      </div>
+    </>
+  );
 
   return (
-    <div class="flex h-screen" style={{ background: "var(--color-aai-bg)" }}>
-      <div
-        class="w-80 flex-shrink-0 flex flex-col overflow-y-auto"
-        style={{
-          borderRight: "1px solid var(--color-aai-border)",
-          background: "var(--color-aai-bg)",
-        }}
-      >
-        <div class="p-4 flex items-center gap-3" style={{ borderBottom: "1px solid var(--color-aai-border)" }}>
-          <PizzaIcon size="small" />
-          <h2 class="text-base font-bold text-aai-text">Pizza Palace</h2>
-        </div>
-        <div class="flex-1">
-          <OrderPanel order={order} />
-        </div>
-        <div
-          class="p-3 flex gap-2"
-          style={{ borderTop: "1px solid var(--color-aai-border)" }}
-        >
-          <button
-            class="flex-1 py-2 rounded-lg text-sm border-none cursor-pointer text-white"
-            style={{ background: running.value ? "#C0392B" : "var(--color-aai-primary)" }}
-            onClick={toggle}
-          >
-            {running.value ? "Pause" : "Resume"}
-          </button>
-          <button
-            class="py-2 px-4 rounded-lg text-sm cursor-pointer text-aai-text"
-            style={{
-              background: "var(--color-aai-surface)",
-              border: "1px solid var(--color-aai-border)",
-            }}
-            onClick={() => {
-              reset();
-              setOrder({
-                pizzas: [],
-                total: "$0.00",
-                orderPlaced: false,
-              });
-            }}
-          >
-            New Order
-          </button>
-        </div>
-      </div>
-      <div class="flex-1 min-w-0">
+    <StartScreen icon={<PizzaIcon size="large" />} title="Pizza Palace" subtitle="Voice-powered pizza ordering" buttonText="Start Ordering">
+      <SidebarLayout sidebar={sidebar}>
         <ChatView />
-      </div>
-    </div>
+      </SidebarLayout>
+    </StartScreen>
   );
 }
 

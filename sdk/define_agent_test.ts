@@ -8,7 +8,6 @@ describe("defineAgent", () => {
   test("applies defaults", () => {
     const agent = defineAgent({ name: "Test" });
     expect(agent.name).toBe("Test");
-    expect(agent.voice).toBe("");
     expect(agent.instructions).toBe(DEFAULT_INSTRUCTIONS);
     expect(agent.greeting).toBe(DEFAULT_GREETING);
     expect(agent.tools).toEqual({});
@@ -17,11 +16,9 @@ describe("defineAgent", () => {
   test("preserves custom values", () => {
     const agent = defineAgent({
       name: "Custom",
-      voice: "a167e0f3-df7e-4d52-a9c3-f949145efdab",
       instructions: "Be a pirate",
       greeting: "Ahoy",
     });
-    expect(agent.voice).toBe("a167e0f3-df7e-4d52-a9c3-f949145efdab");
     expect(agent.instructions).toBe("Be a pirate");
     expect(agent.greeting).toBe("Ahoy");
   });

@@ -1,4 +1,4 @@
-import { defineAgent } from "@alexkroman1/aai";
+import { defineAgent, tool } from "@alexkroman1/aai";
 import { z } from "zod";
 import type { HookContext, ToolContext } from "@alexkroman1/aai";
 
@@ -619,7 +619,7 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
   },
 
   tools: {
-    incident_create: {
+    incident_create: tool({
       description: "Create a new incident from an incoming emergency call.",
       parameters: z.object({
         location: z.string().describe("Address or location description"),
@@ -643,17 +643,10 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
           callerPhone,
           estimatedCasualties,
           hazards,
-        }: {
-          location: string;
-          description: string;
-          callerName?: string;
-          callerPhone?: string;
-          estimatedCasualties?: number;
-          hazards?: string[];
         },
         ctx,
       ) => {
-        const state = ctx.state;
+        const state = ctx.state as DispatchState;
         state.incidentCounter++;
         const id = `INC-${String(state.incidentCounter).padStart(4, "0")}`;
 
@@ -722,9 +715,9 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
             : `${id} created. Triage score ${triageScore}. ${recommended.length} resource(s) recommended.`,
         };
       },
-    },
+    }),
 
-    incident_triage: {
+    incident_triage: tool({
       description:
         "Triage an incident — confirm or override severity, type, hazards, and casualty count.",
       parameters: z.object({
@@ -756,17 +749,10 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
           additionalHazards,
           casualtyUpdate,
           notes,
-        }: {
-          incidentId: string;
-          severity?: "critical" | "urgent" | "moderate" | "minor";
-          type?: "medical" | "fire" | "hazmat" | "traffic" | "crime" | "natural_disaster" | "utility" | "other";
-          additionalHazards?: string[];
-          casualtyUpdate?: number;
-          notes?: string;
         },
         ctx,
       ) => {
-        const state = ctx.state;
+        const state = ctx.state as DispatchState;
         const inc = state.incidents[incidentId];
         if (!inc) return { error: `Incident ${incidentId} not found` };
 
@@ -821,9 +807,9 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
           systemAlertLevel: state.alertLevel,
         };
       },
-    },
+    }),
 
-    incident_update_status: {
+    incident_update_status: tool({
       description:
         "Update an incident's status (en_route, on_scene, resolved, escalated).",
       parameters: z.object({
@@ -837,15 +823,10 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
         }).describe("Updated casualty numbers").optional(),
       }),
       execute: async (
-        { incidentId, status, notes, casualtyUpdate }: {
-          incidentId: string;
-          status: "en_route" | "on_scene" | "resolved" | "escalated";
-          notes?: string;
-          casualtyUpdate?: { confirmed?: number; treated?: number };
-        },
+        { incidentId, status, notes, casualtyUpdate },
         ctx,
       ) => {
-        const state = ctx.state;
+        const state = ctx.state as DispatchState;
         const inc = state.incidents[incidentId];
         if (!inc) return { error: `Incident ${incidentId} not found` };
 
@@ -905,9 +886,9 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
           systemAlertLevel: state.alertLevel,
         };
       },
-    },
+    }),
 
-    incident_escalate: {
+    incident_escalate: tool({
       description:
         "Escalate an incident when it exceeds current capacity or severity increases.",
       parameters: z.object({
@@ -921,15 +902,10 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
         ).optional(),
       }),
       execute: async (
-        { incidentId, reason, requestMutualAid, newSeverity }: {
-          incidentId: string;
-          reason: string;
-          requestMutualAid?: boolean;
-          newSeverity?: "critical" | "urgent";
-        },
+        { incidentId, reason, requestMutualAid, newSeverity },
         ctx,
       ) => {
-        const state = ctx.state;
+        const state = ctx.state as DispatchState;
         const inc = state.incidents[incidentId];
         if (!inc) return { error: `Incident ${incidentId} not found` };
 
@@ -1004,16 +980,16 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
             `ESCALATION CONFIRMED — ${incidentId} now Level ${inc.escalationLevel}. ${additionalResources.length} additional resource(s) available for dispatch.`,
         };
       },
-    },
+    }),
 
-    incident_get: {
+    incident_get: tool({
       description:
         "Get full details on a specific incident including timeline and assigned resources.",
       parameters: z.object({
         incidentId: z.string().describe("The incident ID"),
       }),
-      execute: ({ incidentId }: { incidentId: string }, ctx) => {
-        const state = ctx.state;
+      execute: ({ incidentId }, ctx) => {
+        const state = ctx.state as DispatchState;
         const inc = state.incidents[incidentId];
         if (!inc) return { error: `Incident ${incidentId} not found` };
 
@@ -1044,9 +1020,9 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
             .map((p) => p.name),
         };
       },
-    },
+    }),
 
-    incident_add_note: {
+    incident_add_note: tool({
       description: "Add a situational update note to an incident.",
       parameters: z.object({
         incidentId: z.string().describe("The incident ID"),
@@ -1055,8 +1031,8 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
           "Who reported this — unit callsign or caller",
         ).optional(),
       }),
-      execute: async ({ incidentId, note, source }: { incidentId: string; note: string; source?: string }, ctx) => {
-        const state = ctx.state;
+      execute: async ({ incidentId, note, source }, ctx) => {
+        const state = ctx.state as DispatchState;
         const inc = state.incidents[incidentId];
         if (!inc) return { error: `Incident ${incidentId} not found` };
 
@@ -1072,9 +1048,9 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
           totalNotes: inc.notes.length,
         };
       },
-    },
+    }),
 
-    resources_dispatch: {
+    resources_dispatch: tool({
       description:
         "Dispatch units to an incident. Can auto-dispatch recommended resources or manually specify callsigns.",
       parameters: z.object({
@@ -1090,15 +1066,10 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
         ).optional(),
       }),
       execute: async (
-        { incidentId, callsigns, autoDispatch, priority }: {
-          incidentId: string;
-          callsigns?: string[];
-          autoDispatch?: boolean;
-          priority?: "routine" | "priority" | "emergency";
-        },
+        { incidentId, callsigns, autoDispatch, priority },
         ctx,
       ) => {
-        const state = ctx.state;
+        const state = ctx.state as DispatchState;
         const inc = state.incidents[incidentId];
         if (!inc) return { error: `Incident ${incidentId} not found` };
 
@@ -1180,9 +1151,9 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
             : undefined,
         };
       },
-    },
+    }),
 
-    resources_get_available: {
+    resources_get_available: tool({
       description: "List available resources, optionally filtered by type.",
       parameters: z.object({
         type: z.enum([
@@ -1197,8 +1168,8 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
           "all",
         ]).describe("Filter by resource type, or 'all'").optional(),
       }),
-      execute: ({ type }: { type?: "ambulance" | "fire_engine" | "police" | "hazmat_team" | "helicopter" | "k9_unit" | "swat" | "ems_supervisor" | "all" }, ctx) => {
-        const state = ctx.state;
+      execute: ({ type }, ctx) => {
+        const state = ctx.state as DispatchState;
         let resources = state.resources;
         if (type && type !== "all") {
           resources = resources.filter((r) => r.type === type);
@@ -1222,9 +1193,9 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
           },
         };
       },
-    },
+    }),
 
-    resources_update_status: {
+    resources_update_status: tool({
       description: "Update a resource unit's status when it radios in.",
       parameters: z.object({
         callsign: z.string().describe("The resource callsign"),
@@ -1237,8 +1208,8 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
         ]).describe("New status"),
         notes: z.string().describe("Status notes").optional(),
       }),
-      execute: async ({ callsign, status, notes }: { callsign: string; status: "available" | "dispatched" | "en_route" | "on_scene" | "returning"; notes?: string }, ctx) => {
-        const state = ctx.state;
+      execute: async ({ callsign, status, notes }, ctx) => {
+        const state = ctx.state as DispatchState;
         const resource = state.resources.find((r) =>
           r.callsign.toLowerCase() === callsign.toLowerCase()
         );
@@ -1279,13 +1250,13 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
           systemAlertLevel: state.alertLevel,
         };
       },
-    },
+    }),
 
     ops_dashboard: {
       description:
         "Get the full operational dashboard: alert level, resource utilization, active incidents, and available resources.",
       execute: (_args, ctx) => {
-        const state = ctx.state;
+        const state = ctx.state as DispatchState;
 
         const activeIncidents = Object.values(state.incidents)
           .filter((i) => i.status !== "resolved")
@@ -1342,7 +1313,7 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
       },
     },
 
-    ops_protocols: {
+    ops_protocols: tool({
       description:
         "Look up step-by-step response protocols for a given incident type and severity.",
       parameters: z.object({
@@ -1359,7 +1330,7 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
         severity: z.enum(["critical", "urgent", "moderate", "minor"])
           .describe("Severity level"),
       }),
-      execute: ({ incidentType, severity }: { incidentType: IncidentType; severity: Severity }) => {
+      execute: ({ incidentType, severity }) => {
         const protocols = getApplicableProtocols(
           incidentType,
           severity,
@@ -1379,9 +1350,9 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
           })),
         };
       },
-    },
+    }),
 
-    ops_run_scenario: {
+    ops_run_scenario: tool({
       description:
         "Run a training scenario that creates simulated incidents for dispatch practice.",
       parameters: z.object({
@@ -1393,8 +1364,8 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
           "highway_pileup",
         ]).describe("Scenario type to simulate"),
       }),
-      execute: async ({ scenario }: { scenario: string }, ctx) => {
-        const state = ctx.state;
+      execute: async ({ scenario }, ctx) => {
+        const state = ctx.state as DispatchState;
         const scenarios: Record<
           string,
           { incidents: Partial<Incident>[]; narrative: string }
@@ -1559,6 +1530,6 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
             `SCENARIO ACTIVE: ${s.narrative}. ${created.length} incidents created. Awaiting dispatch orders.`,
         };
       },
-    },
+    }),
   },
 });

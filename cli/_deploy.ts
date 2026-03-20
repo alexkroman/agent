@@ -29,18 +29,22 @@ async function attemptDeploy(
   worker: string,
   clientFiles: Record<string, string>,
 ): Promise<Response> {
-  return await _internals.fetch(`${url}/${slug}/deploy`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      env,
-      worker,
-      clientFiles,
-    }),
-  });
+  try {
+    return await _internals.fetch(`${url}/${slug}/deploy`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        env,
+        worker,
+        clientFiles,
+      }),
+    });
+  } catch {
+    throw new Error(`deployment failed: could not reach ${url}`);
+  }
 }
 
 const MAX_RETRIES = 20;

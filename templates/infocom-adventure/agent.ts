@@ -1,6 +1,6 @@
-import { defineAgent } from "@alexkroman1/aai";
-import { z } from "zod";
+import { defineAgent, tool } from "@alexkroman1/aai";
 import type { ToolContext } from "@alexkroman1/aai";
+import { z } from "zod";
 
 type GameState = {
   inventory: string[];
@@ -89,76 +89,76 @@ ATMOSPHERE:
         };
       },
     },
-    game_state_move: {
+    game_state_move: tool({
       description:
         "Move the player to a new room and increment the move counter.",
       parameters: z.object({
         value: z.string().describe("Room name to move to"),
       }),
-      execute: ({ value }: { value: string }, ctx) => {
+      execute: ({ value }, ctx) => {
         const g = s(ctx);
         g.currentRoom = value;
         g.moves++;
         return { currentRoom: g.currentRoom, moves: g.moves };
       },
-    },
-    game_state_take: {
+    }),
+    game_state_take: tool({
       description: "Add an item to the player's inventory.",
       parameters: z.object({
         value: z.string().describe("Item name to take"),
       }),
-      execute: ({ value }: { value: string }, ctx) => {
+      execute: ({ value }, ctx) => {
         const g = s(ctx);
         if (!g.inventory.includes(value)) g.inventory.push(value);
         return { inventory: g.inventory };
       },
-    },
-    game_state_drop: {
+    }),
+    game_state_drop: tool({
       description: "Remove an item from the player's inventory.",
       parameters: z.object({
         value: z.string().describe("Item name to drop"),
       }),
-      execute: ({ value }: { value: string }, ctx) => {
+      execute: ({ value }, ctx) => {
         const g = s(ctx);
         g.inventory = g.inventory.filter((i) => i !== value);
         return { inventory: g.inventory };
       },
-    },
-    game_state_score: {
+    }),
+    game_state_score: tool({
       description: "Add points to the player's score.",
       parameters: z.object({
         value: z.number().describe("Points to add"),
       }),
-      execute: ({ value }: { value: number }, ctx) => {
+      execute: ({ value }, ctx) => {
         const g = s(ctx);
         g.score += value;
         return { score: g.score };
       },
-    },
-    game_state_flag: {
+    }),
+    game_state_flag: tool({
       description:
         "Set a game flag to true, used for tracking puzzle and event state.",
       parameters: z.object({
         value: z.string().describe("Flag name to set"),
       }),
-      execute: ({ value }: { value: string }, ctx) => {
+      execute: ({ value }, ctx) => {
         const g = s(ctx);
         g.flags[value] = true;
         return { flags: g.flags };
       },
-    },
-    game_state_history: {
+    }),
+    game_state_history: tool({
       description:
         "Log a player command to the history and increment the move counter.",
       parameters: z.object({
         value: z.string().describe("Command text to log"),
       }),
-      execute: ({ value }: { value: string }, ctx) => {
+      execute: ({ value }, ctx) => {
         const g = s(ctx);
         g.history.push(value);
         g.moves++;
         return { moves: g.moves, recentHistory: g.history.slice(-5) };
       },
-    },
+    }),
   },
 });

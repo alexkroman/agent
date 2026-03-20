@@ -14,11 +14,16 @@
  * @module
  */
 
+export { useAutoScroll } from "./_hooks.ts";
 export {
   App,
   ChatView,
+  Controls,
   ErrorBanner,
   MessageBubble,
+  MessageList,
+  SidebarLayout,
+  StartScreen,
   StateIndicator,
   ThinkingIndicator,
   ToolCallBlock,

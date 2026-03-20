@@ -53,7 +53,6 @@ export function buildAgentConfig(agent: AgentDef): AgentConfig {
     name: agent.name,
     instructions: agent.instructions,
     greeting: agent.greeting,
-    voice: agent.voice,
   };
   if (agent.sttPrompt !== undefined) config.sttPrompt = agent.sttPrompt;
   if (typeof agent.maxSteps !== "function") config.maxSteps = agent.maxSteps;

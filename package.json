@@ -1,6 +1,6 @@
 {
   "name": "@alexkroman1/aai",
-  "version": "0.7.12",
+  "version": "0.8.0",
   "type": "module",
   "bin": {
     "aai": "dist/aai.js"
@@ -149,6 +149,16 @@
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.0"
+  },
+  "peerDependencies": {
+    "@preact/signals": "^2.8.2",
+    "preact": "^10.29.0",
+    "tailwindcss": "^4.2.1"
+  },
+  "peerDependenciesMeta": {
+    "@preact/signals": { "optional": true },
+    "preact": { "optional": true },
+    "tailwindcss": { "optional": true }
   },
   "engines": {
     "node": ">=20"

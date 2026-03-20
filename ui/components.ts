@@ -8,10 +8,15 @@
 
 import type { Signal } from "@preact/signals";
 import type * as preact from "preact";
+import type { ComponentChildren } from "preact";
 import { App as _App } from "./_components/app.tsx";
 import { ChatView as _ChatView } from "./_components/chat_view.tsx";
+import { Controls as _Controls } from "./_components/controls.tsx";
 import { ErrorBanner as _ErrorBanner } from "./_components/error_banner.tsx";
 import { MessageBubble as _MessageBubble } from "./_components/message_bubble.tsx";
+import { MessageList as _MessageList } from "./_components/message_list.tsx";
+import { SidebarLayout as _SidebarLayout } from "./_components/sidebar_layout.tsx";
+import { StartScreen as _StartScreen } from "./_components/start_screen.tsx";
 import { StateIndicator as _StateIndicator } from "./_components/state_indicator.tsx";
 import { ThinkingIndicator as _ThinkingIndicator } from "./_components/thinking_indicator.tsx";
 import { ToolCallBlock as _ToolCallBlock } from "./_components/tool_call_block.tsx";
@@ -47,3 +52,26 @@ export const ChatView: () => preact.JSX.Element = _ChatView;
 
 /** Default top-level app component with start screen and chat view. */
 export const App: () => preact.JSX.Element = _App;
+
+/** Session control buttons (Stop/Resume + New Conversation). */
+export const Controls: () => preact.JSX.Element = _Controls;
+
+/** Message list with auto-scroll, tool call blocks, transcript, and thinking indicator. */
+export const MessageList: () => preact.JSX.Element = _MessageList;
+
+/** Centered start screen that renders children once the session starts. */
+export const StartScreen: (props: {
+  children: ComponentChildren;
+  icon?: ComponentChildren | undefined;
+  title?: string | undefined;
+  subtitle?: string | undefined;
+  buttonText?: string | undefined;
+}) => preact.JSX.Element = _StartScreen;
+
+/** Two-column layout with a fixed-width sidebar and flexible main area. */
+export const SidebarLayout: (props: {
+  sidebar: ComponentChildren;
+  children: ComponentChildren;
+  width?: string | undefined;
+  side?: "left" | "right" | undefined;
+}) => preact.JSX.Element = _SidebarLayout;

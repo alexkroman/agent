@@ -8,7 +8,10 @@
     "lint:fix": "biome check --write ."
   },
   "dependencies": {
-    "@alexkroman1/aai": "*"
+    "@alexkroman1/aai": "*",
+    "@preact/signals": "^2.8.2",
+    "preact": "^10.29.0",
+    "tailwindcss": "^4.2.1"
   },
   "devDependencies": {
     "@biomejs/biome": "^2",

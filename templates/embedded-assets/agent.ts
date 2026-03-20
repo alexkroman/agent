@@ -1,4 +1,4 @@
-import { defineAgent } from "@alexkroman1/aai";
+import { defineAgent, tool } from "@alexkroman1/aai";
 import { z } from "zod";
 import knowledge from "./knowledge.json" with { type: "json" };
 
@@ -22,15 +22,14 @@ Rules:
 - Always be helpful and polite`,
   greeting:
     "Hi! I'm your FAQ assistant. Ask me anything about the AAI agent framework and I'll look it up in my knowledge base.",
-  voice: "156fb8d2-335b-4950-9cb3-a2d33befec77", // Helpful Woman
   tools: {
-    search_knowledge: {
+    search_knowledge: tool({
       description:
         "Search the embedded FAQ knowledge base for an answer matching the user's question.",
       parameters: z.object({
         query: z.string().describe("The user's question to search for"),
       }),
-      execute: ({ query }: { query: string }) => {
+      execute: ({ query }) => {
         const q = query.toLowerCase();
         const match = faqs.find((f) =>
           f.question.toLowerCase().includes(q) ||
@@ -39,7 +38,7 @@ Rules:
         );
         return match ?? { result: "No matching FAQ found." };
       },
-    },
+    }),
     list_topics: {
       description:
         "List all available topics in the embedded FAQ knowledge base.",

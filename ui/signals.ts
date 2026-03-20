@@ -65,8 +65,12 @@ export function createSessionControls(session: VoiceSession): SessionSignals {
       session.connect();
     },
     toggle() {
-      if (running.value) session.disconnect();
-      else session.connect();
+      if (running.value) {
+        session.cancel();
+        session.disconnect();
+      } else {
+        session.connect();
+      }
       running.value = !running.value;
     },
     reset() {

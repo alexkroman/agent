@@ -318,7 +318,11 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
       // Fast path: reply.audio is ~95% of traffic — skip Zod, skip logging.
       // Only reached in direct mode (self-hosted); bridged mode uses "audio" event above.
       const obj = raw as { type?: unknown; data?: unknown };
-      if (obj.type !== "reply.audio" && obj.type !== "input.audio") {
+      if (
+        obj.type !== "reply.audio" &&
+        obj.type !== "input.audio" &&
+        obj.type !== "transcript.agent.delta"
+      ) {
         log.info(`S2S << ${obj.type}`);
       }
       if (obj.type === "reply.audio" && typeof obj.data === "string") {

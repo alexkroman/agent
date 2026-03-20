@@ -1,4 +1,4 @@
-import { defineAgent } from "@alexkroman1/aai";
+import { defineAgent, tool } from "@alexkroman1/aai";
 import { z } from "zod";
 
 const PICKS: Record<string, Record<string, string[]>> = {
@@ -79,20 +79,20 @@ Use run_code for sleep calculations:
     "Hey there, night owl. Try asking me for a cozy movie recommendation, or tell me what time you need to wake up and I'll calculate the best time to fall asleep.",
   builtinTools: ["run_code"],
   tools: {
-    recommend: {
+    recommend: tool({
       description:
         "Get recommendations for movies, music, or books based on mood.",
       parameters: z.object({
         category: z.enum(["movie", "music", "book"]),
         mood: z.enum(["chill", "intense", "cozy", "spooky", "funny"]),
       }),
-      execute: ({ category, mood }: { category: string; mood: string }) => {
+      execute: ({ category, mood }) => {
         return {
           category,
           mood,
           picks: PICKS[category]?.[mood] ?? [],
         };
       },
-    },
+    }),
   },
 });

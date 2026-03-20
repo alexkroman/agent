@@ -21,7 +21,6 @@ export type AgentConfig = {
   name: string;
   instructions: string;
   greeting: string;
-  voice: string;
   sttPrompt?: string | undefined;
   maxSteps?: number | undefined;
   toolChoice?: ToolChoice | undefined;

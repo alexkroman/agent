@@ -23,13 +23,15 @@ export type BeforeStepResult = { activeTools?: string[] } | undefined;
  * - `"fetch_json"` — Call a REST API endpoint and return the JSON response.
  * - `"run_code"` — Execute JavaScript in a sandbox for calculations and data processing.
  * - `"vector_search"` — Search the agent's RAG knowledge base for relevant documents.
+ * - `"memory"` — Persistent KV memory: save_memory, recall_memory, list_memories, forget_memory.
  */
 export type BuiltinTool =
   | "web_search"
   | "visit_webpage"
   | "fetch_json"
   | "run_code"
-  | "vector_search";
+  | "vector_search"
+  | "memory";
 
 /**
  * How the LLM should select tools during a turn.
@@ -152,50 +154,36 @@ export type ToolDef<
 };
 
 /**
- * Available TTS voice identifiers (Cartesia voice UUIDs).
+ * Identity helper that preserves the Zod schema generic for type inference.
  *
- * Pass any Cartesia voice UUID as a string. The named constants below are
- * provided for convenience — the type also accepts arbitrary strings to
- * support custom or new voices without an SDK update.
+ * When tools are defined inline in `defineAgent({ tools: { ... } })`, the
+ * generic `P` gets widened to the base `ZodObject` type, so `args` in
+ * `execute` loses its specific shape. Wrapping a tool definition in `tool()`
+ * lets TypeScript infer `P` from `parameters` and type `args` correctly.
  *
- * Browse all voices at https://play.cartesia.ai
+ * @example
+ * ```ts
+ * import { defineAgent, tool } from "aai";
+ * import { z } from "zod";
  *
- * @default {"694f9389-aac1-45b6-b726-9d9369183238"} (Sarah)
+ * export default defineAgent({
+ *   name: "my-agent",
+ *   tools: {
+ *     greet: tool({
+ *       description: "Greet the user",
+ *       parameters: z.object({ name: z.string() }),
+ *       execute: ({ name }) => `Hello, ${name}!`, // name is string
+ *     }),
+ *   },
+ * });
+ * ```
  */
-export type Voice =
-  | "694f9389-aac1-45b6-b726-9d9369183238" // Sarah
-  | "a167e0f3-df7e-4d52-a9c3-f949145efdab" // Customer Support Man
-  | "829ccd10-f8b3-43cd-b8a0-4aeaa81f3b30" // Customer Support Lady
-  | "156fb8d2-335b-4950-9cb3-a2d33befec77" // Helpful Woman
-  | "248be419-c632-4f23-adf1-5324ed7dbf1d" // Professional Woman
-  | "e3827ec5-697a-4b7c-9704-1a23041bbc51" // Sweet Lady
-  | "79a125e8-cd45-4c13-8a67-188112f4dd22" // British Lady
-  | "00a77add-48d5-4ef6-8157-71e5437b282d" // Calm Lady
-  | "21b81c14-f85b-436d-aff5-43f2e788ecf8" // Laidback Woman
-  | "996a8b96-4804-46f0-8e05-3fd4ef1a87cd" // Storyteller Lady
-  | "bf991597-6c13-47e4-8411-91ec2de5c466" // Newslady
-  | "cd17ff2d-5ea4-4695-be8f-42193949b946" // Meditation Lady
-  | "15a9cd88-84b0-4a8b-95f2-5d583b54c72e" // Reading Lady
-  | "c2ac25f9-ecc4-4f56-9095-651354df60c0" // Commercial Lady
-  | "573e3144-a684-4e72-ac2b-9b2063a50b53" // Teacher Lady
-  | "34bde396-9fde-4ebf-ad03-e3a1d1155205" // New York Woman
-  | "b7d50908-b17c-442d-ad8d-810c63997ed9" // California Girl
-  | "043cfc81-d69f-4bee-ae1e-7862cb358650" // Australian Woman
-  | "a3520a8f-226a-428d-9fcd-b0a4711a6829" // Reflective Woman
-  | "d46abd1d-2d02-43e8-819f-51fb652c1c61" // Newsman
-  | "820a3788-2b37-4d21-847a-b65d8a68c99a" // Salesman
-  | "69267136-1bdc-412f-ad78-0caad210fb40" // Friendly Reading Man
-  | "f146dcec-e481-45be-8ad2-96e1e40e7f32" // Reading Man
-  | "34575e71-908f-4ab6-ab54-b08c95d6597d" // New York Man
-  | "ee7ea9f8-c0c1-498c-9279-764d6b56d189" // Polite Man
-  | "b043dea0-a007-4bbe-a708-769dc0d0c569" // Wise Man
-  | "63ff761f-c1e8-414b-b969-d1833d1c870c" // Confident British Man
-  | "95856005-0332-41b0-935f-352e296aa0df" // Classy British Man
-  | "bd9120b6-7761-47a6-a446-77ca49132781" // Tutorial Man
-  | "7360f116-6306-4e9a-b487-1235f35a0f21" // Commercial Man
-  | "5619d38c-cf51-4d8e-9575-48f61a280413" // Announcer Man
-  | "2ee87190-8f84-4925-97da-e52547f9462c" // Child
-  | (string & Record<never, never>);
+// biome-ignore lint/suspicious/noExplicitAny: S defaults to any so tool() works with any agent state type
+export function tool<P extends z.ZodObject<z.ZodRawShape>, S = any>(
+  def: ToolDef<P, S>,
+): ToolDef<P, S> {
+  return def;
+}
 
 /**
  * Information about a completed agentic step, passed to the `onStep` hook.
@@ -250,11 +238,6 @@ export type AgentOptions<S = Record<string, unknown>> = {
   instructions?: string;
   /** Initial spoken greeting when a session starts. */
   greeting?: string;
-  /**
-   * Cartesia voice UUID for TTS. Defaults to the server's configured voice
-   * (Sarah) when omitted. Browse voices at https://play.cartesia.ai.
-   */
-  voice?: Voice;
   /** Prompt hint for the STT model to improve transcription accuracy. */
   sttPrompt?: string;
   /**
@@ -338,7 +321,6 @@ export type AgentDef = {
   name: string;
   instructions: string;
   greeting: string;
-  voice: string;
   sttPrompt?: string;
   maxSteps: number | ((ctx: HookContext) => number);
   toolChoice?: ToolChoice;

@@ -50,6 +50,7 @@ export function rootHelp(version: string): string {
   const cmds: [string, string, string][] = [
     ["init", "[dir]", "Scaffold a new agent project"],
     ["dev", "", "Start a local development server"],
+    ["build", "", "Bundle and validate (no server or deploy)"],
     ["deploy", "", "Bundle and deploy to production"],
     ["start", "", "Start production server from build"],
     ["secret", "<cmd>", "Manage secrets"],

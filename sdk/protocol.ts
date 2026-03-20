@@ -20,7 +20,7 @@ export const DEFAULT_STT_SAMPLE_RATE = 16_000;
 /**
  * Default sample rate for text-to-speech audio in Hz.
  *
- * This is the sample rate produced by the TTS provider (Rime).
+ * This is the sample rate produced by the TTS provider.
  */
 export const DEFAULT_TTS_SAMPLE_RATE = 24_000;
 
