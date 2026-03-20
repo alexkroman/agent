@@ -2,7 +2,6 @@
 import type * as preact from "preact";
 import { useMountConfig } from "../mount_context.ts";
 import { useSession } from "../signals.ts";
-import { AaiLogo } from "./aai_logo.tsx";
 import { Controls } from "./controls.tsx";
 import { ErrorBanner } from "./error_banner.tsx";
 import { MessageList } from "./message_list.tsx";
@@ -16,11 +15,7 @@ export function ChatView(): preact.JSX.Element {
     <div class="flex flex-col h-screen max-w-130 mx-auto bg-aai-bg text-aai-text font-aai text-sm">
       {/* Header */}
       <div class="flex items-center gap-3 px-4 py-3 border-b border-aai-border shrink-0">
-        {title ? (
-          <span class="text-sm font-semibold text-aai-primary">{title}</span>
-        ) : (
-          <AaiLogo size={24} />
-        )}
+        <span class="text-sm font-semibold text-aai-primary">{title ?? "aai"}</span>
         <div class="ml-auto">
           <StateIndicator state={session.state} />
         </div>
