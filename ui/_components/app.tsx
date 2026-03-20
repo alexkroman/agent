@@ -4,13 +4,11 @@ import { useMountConfig } from "../mount_context.ts";
 import { ChatView } from "./chat_view.tsx";
 import { StartScreen } from "./start_screen.tsx";
 
-const AAI_LOGO = `▄▀█ ▄▀█ █\n█▀█ █▀█ █`;
-
-function AaiLogo() {
+function AnsiLogo() {
   return (
-    <span class="font-aai-mono text-lg leading-[1.1] font-bold text-aai-primary whitespace-pre">
-      {AAI_LOGO}
-    </span>
+    <pre class="font-aai-mono text-lg leading-[1.1] font-bold text-aai-primary m-0">
+      {"▄▀█ ▄▀█ █\n█▀█ █▀█ █"}
+    </pre>
   );
 }
 
@@ -18,7 +16,7 @@ export function App(): preact.JSX.Element {
   const { title } = useMountConfig();
 
   return (
-    <StartScreen icon={title ? undefined : <AaiLogo />} title={title}>
+    <StartScreen icon={title ? undefined : <AnsiLogo />} title={title}>
       <ChatView />
     </StartScreen>
   );

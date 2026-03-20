@@ -6,6 +6,7 @@ import preact from "@preact/preset-vite";
 import tailwindcss from "@tailwindcss/vite";
 import { build } from "vite";
 import type { AgentEntry } from "./_discover.ts";
+import { isDevMode } from "./_discover.ts";
 
 /**
  * Error thrown when bundling fails.
@@ -118,12 +119,23 @@ export async function bundleAgent(
   const skipClient = opts?.skipClient || !agent.clientEntry;
 
   if (!skipClient) {
+    // In dev mode, alias @alexkroman1/aai imports to the local monorepo source
+    // so that changes to UI components are reflected immediately without publishing.
+    const devAlias: Record<string, string> = {};
+    if (isDevMode()) {
+      const monorepoRoot = path.resolve(import.meta.dirname ?? __dirname, "..");
+      devAlias["@alexkroman1/aai/ui/styles.css"] = path.join(monorepoRoot, "ui/styles.css");
+      devAlias["@alexkroman1/aai/ui"] = path.join(monorepoRoot, "ui/mod.ts");
+      devAlias["@alexkroman1/aai"] = path.join(monorepoRoot, "sdk/mod.ts");
+    }
+
     try {
       await build({
         root: agent.dir,
         base: "./",
         logLevel: "warn",
         plugins: [preact(), tailwindcss()],
+        ...(Object.keys(devAlias).length > 0 && { resolve: { alias: devAlias } }),
         build: {
           outDir: clientDir,
           emptyOutDir: true,

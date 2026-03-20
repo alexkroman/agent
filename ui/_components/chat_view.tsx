@@ -7,8 +7,6 @@ import { ErrorBanner } from "./error_banner.tsx";
 import { MessageList } from "./message_list.tsx";
 import { StateIndicator } from "./state_indicator.tsx";
 
-const AAI_LOGO = `▄▀█ ▄▀█ █\n█▀█ █▀█ █`;
-
 export function ChatView(): preact.JSX.Element {
   const { session } = useSession();
   const { title } = useMountConfig();
@@ -20,9 +18,9 @@ export function ChatView(): preact.JSX.Element {
         {title ? (
           <span class="text-sm font-semibold text-aai-primary">{title}</span>
         ) : (
-          <span class="font-aai-mono text-[10px] leading-[1.1] font-bold text-aai-primary whitespace-pre">
-            {AAI_LOGO}
-          </span>
+          <pre class="font-aai-mono text-[10px] leading-[1.1] font-bold text-aai-primary m-0">
+            {"▄▀█ ▄▀█ █\n█▀█ █▀█ █"}
+          </pre>
         )}
         <div class="ml-auto">
           <StateIndicator state={session.state} />

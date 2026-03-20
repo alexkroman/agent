@@ -1,7 +1,20 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { createContext } from "preact";
 import { useContext } from "preact/hooks";
-import type { MountTheme } from "./mount.tsx";
+
+/** Theme overrides for the default UI. Applied as CSS custom properties. */
+export type MountTheme = {
+  /** Background color. Default: `#101010`. */
+  bg?: string;
+  /** Primary accent color. Default: `#fab283`. */
+  primary?: string;
+  /** Main text color. */
+  text?: string;
+  /** Surface/card color. */
+  surface?: string;
+  /** Border color. */
+  border?: string;
+};
 
 /** Resolved mount-level configuration available to default UI components. */
 export type MountConfig = {
