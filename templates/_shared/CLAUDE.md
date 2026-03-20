@@ -63,6 +63,7 @@ with `aai init -t <template_name>`.
 | `pizza-ordering`    | Pizza order-taker with dynamic cart sidebar. **Has custom UI.**                    |
 | `dispatch-center`   | 911 dispatch with incident triage and resource assignment. **Has custom UI.**      |
 | `infocom-adventure` | Zork-style text adventure with state, puzzles, inventory. **Has custom UI.**       |
+| `solo-rpg`          | Solo dark-fantasy RPG with dice, oaths, combat, save/load. **Has custom UI.**      |
 | `embedded-assets`   | FAQ bot using embedded JSON knowledge (no web search)                              |
 | `support`           | RAG-powered support agent using vector_search (AssemblyAI docs example)            |
 | `terminal`          | STT-only mode for voice-driven kubectl commands                                    |
