@@ -34,4 +34,5 @@ export {
   createSessionControls,
   SessionProvider,
   useSession,
+  useToolResult,
 } from "./signals.ts";

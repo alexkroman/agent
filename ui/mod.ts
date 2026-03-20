@@ -25,6 +25,7 @@ export {
   MessageBubble,
   StateIndicator,
   ThinkingIndicator,
+  ToolCallBlock,
   Transcript,
 } from "./components.ts";
 export type { MountHandle, MountOptions, MountTheme } from "./mount.tsx";
@@ -38,6 +39,7 @@ export {
   createSessionControls,
   SessionProvider,
   useSession,
+  useToolResult,
 } from "./signals.ts";
 export type {
   AgentState,
@@ -45,4 +47,5 @@ export type {
   SessionError,
   SessionErrorCode,
   SessionOptions,
+  ToolCallInfo,
 } from "./types.ts";

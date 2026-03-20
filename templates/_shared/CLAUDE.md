@@ -57,6 +57,7 @@ with `aai init -t <template_name>`.
 | `personal-finance`  | Currency conversion, crypto prices, loan calculations, savings projections         |
 | `travel-concierge`  | Trip planning, weather, flights, hotels, currency conversion                       |
 | `night-owl`         | Movie/music/book recs by mood, sleep calculator. **Has custom UI.**                |
+| `pizza-ordering`    | Pizza order-taker with dynamic cart sidebar via `useToolResult`. **Has custom UI.** |
 | `dispatch-center`   | 911 dispatch with incident triage and resource assignment. **Has custom UI.**      |
 | `infocom-adventure` | Zork-style text adventure with state, puzzles, inventory. **Has custom UI.**       |
 | `embedded-assets`   | FAQ bot using embedded JSON knowledge (no web search)                              |
@@ -583,6 +584,12 @@ data lives on `session` (a `VoiceSession`); UI-only controls are top-level.
 
 **Methods:** `start()`, `toggle()`, `reset()`, `dispose()`
 
+**Hooks:**
+
+| Hook                                         | Description                                                              |
+| -------------------------------------------- | ------------------------------------------------------------------------ |
+| `useToolResult((toolName, result, tc) => {})` | Fires once per completed tool call with parsed JSON result. Use for carts, scoreboards, etc. |
+
 ### Showing tool calls in custom UI
 
 ```tsx
@@ -612,6 +619,58 @@ function App() {
 
 mount(App);
 ```
+
+### Building dynamic UI from tool results
+
+Use `useToolResult` to update local state (carts, scoreboards, dashboards)
+whenever a tool completes. It fires exactly once per completed tool call with
+the parsed JSON result, handling deduplication internally.
+
+```tsx
+import "aai/ui/styles.css";
+import { useState } from "preact/hooks";
+import { ChatView, mount, useSession, useToolResult } from "aai/ui";
+
+interface CartItem { id: number; name: string; price: number }
+
+function ShopAgent() {
+  const { started, start } = useSession();
+  const [cart, setCart] = useState<CartItem[]>([]);
+
+  useToolResult((toolName, result: any) => {
+    switch (toolName) {
+      case "add_item":
+        setCart((prev) => [...prev, result.item]);
+        break;
+      case "remove_item":
+        setCart((prev) => prev.filter((i) => i.id !== result.removedId));
+        break;
+      case "clear_cart":
+        setCart([]);
+        break;
+    }
+  });
+
+  if (!started.value) return <button onClick={start}>Start</button>;
+
+  return (
+    <div class="flex h-screen">
+      <div class="w-64 p-4 border-r border-aai-border">
+        <h3>Cart ({cart.length})</h3>
+        {cart.map((i) => <p key={i.id}>{i.name} — ${i.price}</p>)}
+      </div>
+      <div class="flex-1"><ChatView /></div>
+    </div>
+  );
+}
+
+mount(ShopAgent);
+```
+
+**Do NOT use `useEffect` + `session.toolCalls.value` to build derived state.**
+That pattern re-processes every tool call on every signal change, causing
+duplicates (e.g. items added to the cart multiple times). `useToolResult`
+handles this correctly.
 
 ### Reacting to agent state
 
@@ -823,6 +882,11 @@ Use directional words naturally: "To the north you see..." not "N: forest"
 
 ## Common pitfalls
 
+- **Using `useEffect` to build state from tool calls** — Iterating
+  `session.toolCalls.value` in a `useEffect` re-processes every tool call on
+  every signal change, causing duplicates (e.g. cart items added multiple
+  times). Use the `useToolResult` hook instead — it fires exactly once per
+  completed tool call with proper deduplication.
 - **Writing `instructions` with visual formatting** — Bullets, bold, numbered
   lists sound terrible when spoken. Use natural transitions: "First", "Next",
   "Finally". Write instructions as if you're coaching a human phone operator.
