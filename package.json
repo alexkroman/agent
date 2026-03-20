@@ -111,7 +111,7 @@
     "test": "vitest run",
     "lint": "biome check sdk/ ui/ cli/",
     "lint:fix": "biome check --write sdk/ ui/ cli/",
-    "check": "tsc --noEmit && tsc -p cli/tsconfig.json --noEmit && tsc -p tsconfig.build.json --noEmit && tsc -p tsconfig.templates.json && biome check sdk/ ui/ cli/ && vitest run"
+    "check": "tsc --noEmit && tsc -p cli/tsconfig.json --noEmit && tsc -p tsconfig.build.json --noEmit && tsc -p tsconfig.templates.json && biome check sdk/ ui/ cli/ && markdownlint-cli2 '**/*.md' '#node_modules' '#.aai' && vitest run"
   },
   "dependencies": {
     "@chonkiejs/core": "^0.0.8",
