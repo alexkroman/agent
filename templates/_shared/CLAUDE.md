@@ -10,7 +10,9 @@ You are helping a user build a voice agent using the **aai** framework.
    does what the user needs before writing custom code.
 3. **Start minimal** — Scaffold from the closest template, then layer on
    customizations. Don't over-engineer the first version.
-4. **Iterate** — Make small, focused changes. Verify each change works before
+4. **Verify** — After every change, run `aai build` to validate the bundle and
+   catch errors. Fix all errors before presenting work to the user.
+5. **Iterate** — Make small, focused changes. Verify each change works before
    moving on.
 
 ## Key rules
