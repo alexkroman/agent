@@ -115,6 +115,8 @@
   },
   "dependencies": {
     "@chonkiejs/core": "^0.0.8",
+    "@hono/node-server": "^1.19.11",
+    "@hono/node-ws": "^1.3.0",
     "@inkjs/ui": "^2.0.0",
     "@preact/preset-vite": "^2.10.4",
     "@preact/signals": "^2.8.2",
@@ -123,6 +125,7 @@
     "chalk": "^5.6.2",
     "fast-glob": "^3.3.3",
     "fs-extra": "^11.3.4",
+    "hono": "^4.12.8",
     "html-to-text": "^9.0.5",
     "human-id": "^4.1.3",
     "ink": "^6.8.0",
@@ -156,9 +159,15 @@
     "tailwindcss": "^4.2.1"
   },
   "peerDependenciesMeta": {
-    "@preact/signals": { "optional": true },
-    "preact": { "optional": true },
-    "tailwindcss": { "optional": true }
+    "@preact/signals": {
+      "optional": true
+    },
+    "preact": {
+      "optional": true
+    },
+    "tailwindcss": {
+      "optional": true
+    }
   },
   "engines": {
     "node": ">=20"

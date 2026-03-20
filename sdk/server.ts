@@ -8,6 +8,9 @@
  * @module
  */
 
+import { serve } from "@hono/node-server";
+import { serveStatic } from "@hono/node-server/serve-static";
+import { Hono } from "hono";
 import type { Kv } from "./kv.ts";
 import type { Logger, S2SConfig } from "./runtime.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime.ts";
@@ -134,25 +137,41 @@ export function createServer(options: ServerOptions): AgentServer {
     },
 
     async listen(port = 3000) {
-      // Ensure WS factory is loaded before starting
       await getWsFactory();
+      const wintercServer = getWinterc();
 
-      const http = await import("node:http");
+      const app = new Hono();
 
-      const nodeServer = http.createServer(async (req, res) => {
-        // Serve static files from clientDir if available
-        if (clientDir && req.url) {
-          const served = await serveStaticFile(req.url, clientDir, res);
-          if (served) return;
-        }
-        await nodeHttpHandler(req, res, port, getWinterc);
-      });
+      if (clientDir) {
+        app.use("/*", serveStatic({ root: clientDir }));
+      }
 
-      attachWsUpgrade(nodeServer, port, getWinterc, logger);
+      // Delegate all remaining requests to the winterc server
+      app.all("/*", (c) => wintercServer.fetch(c.req.raw));
 
+      const nodeServer = serve({ fetch: app.fetch, port });
+
+      // Wait for server to be ready
       await new Promise<void>((resolve) => {
-        nodeServer.listen(port, () => resolve());
+        nodeServer.on("listening", resolve);
       });
+
+      // Attach WebSocket upgrade
+      try {
+        const wsMod = await import("ws");
+        const wss = new wsMod.WebSocketServer({ noServer: true });
+        nodeServer.on("upgrade", (req, socket, head) => {
+          wss.handleUpgrade(req, socket, head, (ws) => {
+            const reqUrl = new URL(req.url ?? "/", `http://localhost:${port}`);
+            wintercServer.handleWebSocket(ws as unknown as SessionWebSocket, {
+              skipGreeting: reqUrl.searchParams.has("resume"),
+              uid: reqUrl.searchParams.get("uid") ?? undefined,
+            });
+          });
+        });
+      } catch {
+        logger.warn("ws package not available for Node.js WebSocket upgrade");
+      }
 
       serverHandle = {
         async shutdown() {
@@ -168,116 +187,4 @@ export function createServer(options: ServerOptions): AgentServer {
       await serverHandle?.shutdown();
     },
   };
-}
-
-// ─── Static file serving ────────────────────────────────────────────────────
-
-const MIME_TYPES: Record<string, string> = {
-  ".html": "text/html",
-  ".js": "application/javascript",
-  ".css": "text/css",
-  ".json": "application/json",
-  ".svg": "image/svg+xml",
-  ".png": "image/png",
-  ".ico": "image/x-icon",
-  ".woff": "font/woff",
-  ".woff2": "font/woff2",
-};
-
-async function serveStaticFile(
-  reqUrl: string,
-  clientDir: string,
-  res: {
-    writeHead(status: number, headers?: Record<string, string>): void;
-    end(body?: string | Buffer): void;
-  },
-): Promise<boolean> {
-  const { readFile } = await import("node:fs/promises");
-  const { join, extname, normalize } = await import("node:path");
-
-  const urlPath = new URL(reqUrl, "http://localhost").pathname;
-  const relPath = urlPath === "/" ? "index.html" : urlPath.slice(1);
-  const filePath = normalize(join(clientDir, relPath));
-
-  // Prevent directory traversal
-  if (!filePath.startsWith(clientDir)) return false;
-
-  try {
-    const content = await readFile(filePath);
-    const ext = extname(filePath);
-    const contentType = MIME_TYPES[ext] ?? "application/octet-stream";
-    res.writeHead(200, { "Content-Type": contentType });
-    res.end(content);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-// ─── Node.js HTTP/WS helpers ─────────────────────────────────────────────────
-
-async function nodeHttpHandler(
-  req: {
-    socket: unknown;
-    headers: Record<string, string | string[] | undefined>;
-    url?: string | undefined;
-    method?: string | undefined;
-  },
-  res: {
-    writeHead(status: number, headers?: Record<string, string>): void;
-    end(body?: string): void;
-  },
-  port: number,
-  getWinterc: () => WintercServer,
-): Promise<void> {
-  try {
-    const protocol = (req.socket as { encrypted?: boolean }).encrypted ? "https" : "http";
-    const host = req.headers.host ?? `localhost:${port}`;
-    const url = new URL(req.url ?? "/", `${protocol}://${host}`);
-    const headers = new Headers();
-    for (const [key, val] of Object.entries(req.headers)) {
-      if (val) headers.set(key, Array.isArray(val) ? (val[0] ?? "") : val);
-    }
-    const request = new Request(url, { method: req.method ?? "GET", headers });
-    const response = await getWinterc().fetch(request);
-    res.writeHead(response.status, Object.fromEntries(response.headers));
-    res.end(await response.text());
-  } catch (err: unknown) {
-    res.writeHead(500);
-    res.end(err instanceof Error ? err.message : "Internal Server Error");
-  }
-}
-
-function attachWsUpgrade(
-  nodeServer: { on(event: string, handler: (...args: unknown[]) => void): void },
-  port: number,
-  getWinterc: () => WintercServer,
-  logger: Logger,
-): void {
-  import("ws")
-    .then((wsMod) => {
-      const WSServer = wsMod.WebSocketServer;
-      if (!WSServer) return;
-      const wss = new WSServer({ noServer: true });
-      nodeServer.on("upgrade", (req: unknown, socket: unknown, head: unknown) => {
-        wss.handleUpgrade(
-          req as Parameters<typeof wss.handleUpgrade>[0],
-          socket as Parameters<typeof wss.handleUpgrade>[1],
-          head as Parameters<typeof wss.handleUpgrade>[2],
-          (ws) => {
-            const reqUrl = new URL(
-              (req as { url?: string }).url ?? "/",
-              `http://localhost:${port}`,
-            );
-            getWinterc().handleWebSocket(ws as unknown as SessionWebSocket, {
-              skipGreeting: reqUrl.searchParams.has("resume"),
-              uid: reqUrl.searchParams.get("uid") ?? undefined,
-            });
-          },
-        );
-      });
-    })
-    .catch(() => {
-      logger.warn("ws package not available for Node.js WebSocket upgrade");
-    });
 }
