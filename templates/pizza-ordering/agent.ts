@@ -1,4 +1,4 @@
-import { defineAgent } from "@alexkroman1/aai";
+import { defineAgent, tool } from "@alexkroman1/aai";
 import { z } from "zod";
 
 interface Pizza {
@@ -85,7 +85,7 @@ Behavior:
   }),
 
   tools: {
-    add_pizza: {
+    add_pizza: tool({
       description:
         "Add a pizza to the order. Use when the customer has decided on a pizza.",
       parameters: z.object({
@@ -96,7 +96,7 @@ Behavior:
           .describe("List of topping names, e.g. ['pepperoni', 'mushrooms']"),
         quantity: z.number().default(1),
       }),
-      execute: (args: { size: Pizza["size"]; crust: Pizza["crust"]; toppings: string[]; quantity: number }, ctx) => {
+      execute: (args, ctx) => {
         const state = ctx.state as OrderState;
         const pizza: Pizza = {
           id: state.nextId++,
@@ -113,9 +113,9 @@ Behavior:
           itemCount: state.pizzas.length,
         };
       },
-    },
+    }),
 
-    remove_pizza: {
+    remove_pizza: tool({
       description: "Remove a pizza from the order by its ID.",
       parameters: z.object({
         pizza_id: z.number().describe("The pizza ID to remove"),
@@ -132,9 +132,9 @@ Behavior:
           itemCount: state.pizzas.length,
         };
       },
-    },
+    }),
 
-    update_pizza: {
+    update_pizza: tool({
       description:
         "Update an existing pizza in the order. Only provided fields are changed.",
       parameters: z.object({
@@ -144,7 +144,7 @@ Behavior:
         toppings: z.array(z.string()).optional(),
         quantity: z.number().optional(),
       }),
-      execute: (args: { pizza_id: number; size?: Pizza["size"]; crust?: Pizza["crust"]; toppings?: string[]; quantity?: number }, ctx) => {
+      execute: (args, ctx) => {
         const state = ctx.state as OrderState;
         const pizza = state.pizzas.find((p) => p.id === args.pizza_id);
         if (!pizza) return { error: "Pizza not found in the order." };
@@ -158,7 +158,7 @@ Behavior:
           orderTotal: `$${total.toFixed(2)}`,
         };
       },
-    },
+    }),
 
     view_order: {
       description:
@@ -182,15 +182,15 @@ Behavior:
       },
     },
 
-    set_customer_name: {
+    set_customer_name: tool({
       description: "Set the customer name for the order.",
       parameters: z.object({ name: z.string() }),
-      execute: (args: { name: string }, ctx) => {
+      execute: ({ name }, ctx) => {
         const state = ctx.state as OrderState;
-        state.customerName = args.name;
-        return { name: args.name };
+        state.customerName = name;
+        return { name };
       },
-    },
+    }),
 
     place_order: {
       description:

@@ -1,8 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import React from "react";
-import { BundleError, bundleAgent } from "./_bundler.ts";
-import { loadAgent } from "./_discover.ts";
+import { buildAgentBundle } from "./_build.ts";
 import { Step } from "./_ink.tsx";
 import { bootServer, loadAgentDef, resolveServerEnv } from "./_server_common.ts";
 
@@ -16,25 +15,10 @@ export async function _startDevServer(
   port: number,
   log: (node: React.ReactNode) => void,
 ): Promise<void> {
-  const agent = await loadAgent(cwd);
-  if (!agent) {
-    throw new Error("No agent found — run `aai init` first");
-  }
-
-  log(React.createElement(Step, { action: "Bundle", msg: agent.slug }));
-  let clientDir: string;
-  try {
-    const bundle = await bundleAgent(agent);
-    clientDir = bundle.clientDir;
-  } catch (err) {
-    if (err instanceof BundleError) {
-      throw new Error(`Bundle failed: ${err.message}`);
-    }
-    throw err;
-  }
+  const bundle = await buildAgentBundle(cwd, log);
 
   const agentDef = await loadAgentDef(cwd);
   const env = await resolveServerEnv();
-  await bootServer(agentDef, clientDir, env, port);
+  await bootServer(agentDef, bundle.clientDir, env, port);
   log(React.createElement(Step, { action: "Ready", msg: `http://localhost:${port}` }));
 }

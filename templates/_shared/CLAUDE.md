@@ -31,6 +31,7 @@ You are helping a user build a voice agent using the **aai** framework.
 aai init                 # Scaffold a new agent (uses simple template)
 aai init -t <template>   # Scaffold from a specific template
 aai dev                  # Start local dev server
+aai build                # Bundle and validate (no server or deploy)
 aai deploy               # Bundle and deploy to production
 aai deploy -y            # Deploy without prompts
 aai deploy --dry-run     # Validate and bundle without deploying
@@ -82,8 +83,8 @@ export default defineAgent({
 ### Imports
 
 ```ts
-import { defineAgent } from "aai"; // Always needed
-import type { BeforeStepResult, HookContext, ToolContext } from "aai"; // Type annotations
+import { defineAgent, memoryTools, tool } from "aai"; // defineAgent + helpers
+import type { BeforeStepResult, BuiltinTool, HookContext, StepInfo, ToolContext } from "aai";
 import { z } from "zod"; // Tools with typed params (included in package.json)
 ```
 
@@ -196,17 +197,6 @@ aai env pull
 aai env rm MY_API_KEY
 ```
 
-Declare required env vars in the agent config so the CLI validates them at
-deploy time:
-
-```ts
-export default defineAgent({
-  name: "API Agent",
-  env: ["ASSEMBLYAI_API_KEY", "MY_API_KEY"],
-  // ...
-});
-```
-
 Access secrets in tool code via `ctx.env`:
 
 ```ts
@@ -215,7 +205,6 @@ import { z } from "zod";
 
 export default defineAgent({
   name: "API Agent",
-  env: ["ASSEMBLYAI_API_KEY", "MY_API_KEY"],
   tools: {
     call_api: {
       description: "Call an external API",
@@ -239,26 +228,27 @@ Define tools as plain objects in the `tools` record. The `parameters` field
 takes a Zod schema for type-safe argument inference:
 
 ```ts
-import { defineAgent } from "aai";
+import { defineAgent, tool } from "aai";
 import { z } from "zod";
 
 export default defineAgent({
   name: "Weather Agent",
   tools: {
-    get_weather: {
+    get_weather: tool({
       description: "Get current weather for a city",
       parameters: z.object({
         city: z.string().describe("City name"),
       }),
-      execute: async (args, ctx) => {
+      execute: async ({ city }, ctx) => {
+        // city is typed as string (inferred from Zod schema)
         const data = await fetch(
-          `https://api.example.com/weather?q=${args.city}`,
+          `https://api.example.com/weather?q=${city}`,
         );
         return data.json();
       },
-    },
+    }),
 
-    // No-parameter tools — omit `parameters`
+    // No-parameter tools — omit `parameters` and `tool()` wrapper
     list_items: {
       description: "List all items",
       execute: () => items,
@@ -266,6 +256,9 @@ export default defineAgent({
   },
 });
 ```
+
+**Important:** Wrap tool definitions in `tool()` to get typed `args` inferred
+from the Zod `parameters` schema. Without `tool()`, args are untyped.
 
 Zod schema patterns:
 
@@ -289,6 +282,7 @@ Enable via `builtinTools`.
 | `fetch_json`    | HTTP GET a JSON API                            | `url`, `headers?`                   |
 | `run_code`      | Execute JS in sandbox (no net/fs, 30s timeout) | `code`                              |
 | `vector_search` | Search the agent's RAG knowledge base          | `query`, `topK?` (default 5)        |
+| `memory`        | Persistent KV memory (4 tools, see below)      | —                                   |
 
 The agentic loop runs up to `maxSteps` iterations (default 5) and stops when the
 LLM produces a text response.
@@ -303,10 +297,17 @@ ctx.env; // Record<string, string> — secrets from `aai env add`
 ctx.abortSignal; // AbortSignal — cancelled on interruption (tools only)
 ctx.state; // per-session state
 ctx.kv; // persistent KV store
+ctx.vector; // VectorStore — vector store for RAG (tools only)
 ctx.messages; // readonly Message[] — conversation history (tools only)
 ```
 
-Hooks get `HookContext` (same but without `abortSignal` and `messages`).
+Hooks get `HookContext` (same but without `abortSignal`, `vector`, and
+`messages`).
+
+**Timeouts:** Tool execution times out after **30 seconds** (`abortSignal`
+fires). Lifecycle hooks (`onConnect`, `onTurn`, etc.) time out after **5
+seconds**. Long-running tools should pass `ctx.abortSignal` to `fetch` and
+check `ctx.abortSignal.aborted` in loops.
 
 ### Fetching external APIs
 
@@ -368,6 +369,37 @@ Keys are strings; use colon-separated prefixes (`"user:123"`). Max value: 64 KB.
 
 `kv.list()` returns `KvEntry[]` where each entry has
 `{ key: string, value: T }`.
+
+### Memory tools (pre-built KV tools)
+
+Add `"memory"` to `builtinTools` to give the agent four persistent KV tools:
+`save_memory`, `recall_memory`, `list_memories`, and `forget_memory`.
+
+```ts
+import { defineAgent } from "aai";
+
+export default defineAgent({
+  name: "My Agent",
+  builtinTools: ["memory"],
+});
+```
+
+Keys use colon-separated prefixes (`"user:name"`, `"preference:color"`).
+
+You can also spread `memoryTools()` into `tools` if you want to combine them
+with custom tools or override individual tools:
+
+```ts
+import { defineAgent, memoryTools } from "aai";
+
+export default defineAgent({
+  name: "My Agent",
+  tools: {
+    ...memoryTools(),
+    // your other tools...
+  },
+});
+```
 
 ## Advanced patterns
 
@@ -552,18 +584,41 @@ mount(App, {
 
 Import from `aai/ui`:
 
-| Component           | Description                                        |
-| ------------------- | -------------------------------------------------- |
-| `App`               | Default full UI (start screen + ChatView)          |
-| `ChatView`          | Chat interface with header, messages, and controls |
-| `MessageBubble`     | Single message (user right-aligned, agent left)    |
-| `Transcript`        | Live STT text display                              |
-| `StateIndicator`    | Colored dot + agent state label                    |
-| `ErrorBanner`       | Red error box with message                         |
-| `ThinkingIndicator` | Animated dots during processing                    |
-| `ToolCallBlock`     | Collapsible tool call display (name, args, result) |
+**Layout components:**
 
-Use `useMountConfig()` to access the `title` and `theme` passed to `mount()`.
+| Component       | Description                                          |
+| --------------- | ---------------------------------------------------- |
+| `App`           | Default full UI (StartScreen + ChatView)             |
+| `StartScreen`   | Centered start card; renders children after start    |
+| `ChatView`      | Chat interface (header + messages + controls)        |
+| `SidebarLayout` | Two-column layout with sidebar + main area           |
+| `Controls`      | Stop/Resume + New Conversation buttons               |
+| `MessageList`   | Messages with auto-scroll, tool calls, transcript    |
+
+`StartScreen` props: `{ children, icon?, title?, subtitle?, buttonText? }`
+`SidebarLayout` props: `{ sidebar, children, width?, side? }`
+
+**Atomic components:**
+
+| Component           | Props                                   | Description                     |
+| ------------------- | --------------------------------------- | ------------------------------- |
+| `MessageBubble`     | `{ message: Message }`                  | Single message bubble           |
+| `Transcript`        | `{ userUtterance: Signal<str\|null> }`  | Live STT text display           |
+| `StateIndicator`    | `{ state: Signal<AgentState> }`         | Colored dot + state label       |
+| `ErrorBanner`       | `{ error: Signal<SessionError\|null> }` | Red error box with message      |
+| `ThinkingIndicator` | none                                    | Animated dots during processing |
+| `ToolCallBlock`     | `{ toolCall: ToolCallInfo }`            | Collapsible tool call display   |
+
+**Hooks:**
+
+- `useAutoScroll()` — returns a `RefObject<HTMLDivElement>` to attach to a
+  sentinel div. Auto-scrolls when messages or utterances change.
+- `useMountConfig()` — returns the `title` and `theme` passed to `mount()`.
+
+**Important:** Components that accept `Signal<T>` props (like `StateIndicator`,
+`Transcript`, `ErrorBanner`) expect the Signal object itself, NOT `.value`. Pass
+`session.state`, not `session.state.value`. Passing `.value` compiles but breaks
+reactivity silently.
 
 ### Session signals (`useSession()`)
 
@@ -571,16 +626,17 @@ Use `useMountConfig()` to access the `title` and `theme` passed to `mount()`.
 `{ session, started, running, start, toggle, reset, dispose }`. Reactive agent
 data lives on `session` (a `VoiceSession`); UI-only controls are top-level.
 
-| Signal / field                | Type                   | Description                                                                              |
-| ----------------------------- | ---------------------- | ---------------------------------------------------------------------------------------- |
-| `session.state.value`         | `AgentState`           | "disconnected", "connecting", "ready", "listening", "thinking", "speaking", "error"      |
-| `session.messages.value`      | `Message[]`            | `{ role, text }` objects                                                                 |
-| `session.toolCalls.value`     | `ToolCallInfo[]`       | `{ toolCallId, toolName, args, status, result?, afterMessageIndex }` — active tool calls |
-| `session.userUtterance.value` | `string \| null`       | `null` = not speaking, `""` = speech detected, string = transcript                       |
-| `session.error.value`         | `SessionError \| null` | `{ code, message }`                                                                      |
-| `session.disconnected.value`  | `object \| null`       | `{ intentional: boolean }` when disconnected, `null` when connected                      |
-| `started.value`               | `boolean`              | Whether session has started                                                              |
-| `running.value`               | `boolean`              | Whether session is active                                                                |
+| Signal / field                 | Type                   | Description                                                     |
+| ------------------------------ | ---------------------- | --------------------------------------------------------------- |
+| `session.state.value`          | `AgentState`           | "disconnected", "connecting", "ready", "listening", etc.        |
+| `session.messages.value`       | `Message[]`            | `{ role, text }` objects                                        |
+| `session.toolCalls.value`      | `ToolCallInfo[]`       | `{ toolCallId, toolName, args, status, result? }` — tool calls  |
+| `session.userUtterance.value`  | `string \| null`       | `null` = not speaking, `""` = speech detected, string = text    |
+| `session.agentUtterance.value` | `string \| null`       | `null` = not speaking, string = streaming agent response text   |
+| `session.error.value`          | `SessionError \| null` | `{ code, message }`                                             |
+| `session.disconnected.value`   | `object \| null`       | `{ intentional: boolean }` when disconnected, `null` otherwise  |
+| `started.value`                | `boolean`              | Whether session has been started                                |
+| `running.value`                | `boolean`              | Whether session is active                                       |
 
 **Methods:** `start()`, `toggle()`, `reset()`, `dispose()`
 
@@ -589,6 +645,20 @@ data lives on `session` (a `VoiceSession`); UI-only controls are top-level.
 | Hook                                          | Description                                                                                  |
 | --------------------------------------------- | -------------------------------------------------------------------------------------------- |
 | `useToolResult((toolName, result, tc) => {})` | Fires once per completed tool call with parsed JSON result. Use for carts, scoreboards, etc. |
+
+**Signal semantics for utterances:**
+
+- `userUtterance`: `null` = user is not speaking, `""` = speech detected but
+  no text yet (show "..."), non-empty string = partial/final transcript
+- `agentUtterance`: `null` = agent is not speaking, non-empty string =
+  streaming response text (cleared when final `chat` message arrives)
+- `disconnected`: `null` = connected, `{ intentional: true }` = user
+  disconnected, `{ intentional: false }` = unexpected disconnect (show
+  reconnect UI)
+
+**UI Message type:** `{ role: "user" | "assistant"; text: string }`. Note: UI
+messages use `text` (not `content`). The SDK `Message` type uses `content` — do
+not mix them up in custom UIs.
 
 ### Showing tool calls in custom UI
 
@@ -629,12 +699,11 @@ the parsed JSON result, handling deduplication internally.
 ```tsx
 import "aai/ui/styles.css";
 import { useState } from "preact/hooks";
-import { ChatView, mount, useSession, useToolResult } from "aai/ui";
+import { ChatView, SidebarLayout, StartScreen, mount, useToolResult } from "aai/ui";
 
 interface CartItem { id: number; name: string; price: number }
 
 function ShopAgent() {
-  const { started, start } = useSession();
   const [cart, setCart] = useState<CartItem[]>([]);
 
   useToolResult((toolName, result: any) => {
@@ -651,16 +720,19 @@ function ShopAgent() {
     }
   });
 
-  if (!started.value) return <button onClick={start}>Start</button>;
+  const sidebar = (
+    <div class="p-4">
+      <h3 class="text-aai-text font-bold">Cart ({cart.length})</h3>
+      {cart.map((i) => <p key={i.id} class="text-aai-text text-sm">{i.name} — ${i.price}</p>)}
+    </div>
+  );
 
   return (
-    <div class="flex h-screen">
-      <div class="w-64 p-4 border-r border-aai-border">
-        <h3>Cart ({cart.length})</h3>
-        {cart.map((i) => <p key={i.id}>{i.name} — ${i.price}</p>)}
-      </div>
-      <div class="flex-1"><ChatView /></div>
-    </div>
+    <StartScreen title="Shop" buttonText="Start Shopping">
+      <SidebarLayout sidebar={sidebar}>
+        <ChatView />
+      </SidebarLayout>
+    </StartScreen>
   );
 }
 
@@ -702,11 +774,15 @@ mount(App);
 
 ### Styling custom UIs
 
-The framework uses **Tailwind CSS v4** (compiled at bundle time). Three
-approaches:
+The framework uses **Tailwind CSS v4** (compiled at bundle time). Prefer
+Tailwind classes over inline styles — all design tokens work as classes:
+`bg-aai-surface` not `style={{ background: "var(--color-aai-surface)" }}`,
+`border-t border-aai-border` not `style={{ borderTop: "1px solid var(--)" }}`.
 
-1. **Tailwind classes** — `class="flex items-center gap-2 bg-gray-900"`
-2. **Inline styles** — `style={{ color: "red", padding: "1rem" }}`
+Three approaches:
+
+1. **Tailwind classes** — `class="flex items-center gap-2 bg-aai-surface"`
+2. **Inline styles** — only for dynamic values (`style={{ width: pixels }}`)
 3. **Injected `<style>` tags** — for keyframes, selectors, media queries:
 
 ```tsx
@@ -726,11 +802,65 @@ function App() {
 }
 ```
 
-**CSS custom properties** available from the theme:
+**Design tokens** — available as CSS custom properties and Tailwind classes
+(e.g. `bg-aai-bg`, `text-aai-text-muted`, `rounded-aai`, `font-aai`):
 
-- `--color-aai-bg`, `--color-aai-primary`, `--color-aai-text`
-- `--color-aai-surface`, `--color-aai-border`
-- `--color-aai-state-{state}` — color for each `AgentState` value
+| Token                        | Tailwind class            | Default                   |
+| ---------------------------- | ------------------------- | ------------------------- |
+| `--color-aai-bg`             | `bg-aai-bg`               | `#101010`                 |
+| `--color-aai-surface`        | `bg-aai-surface`          | `#151515`                 |
+| `--color-aai-surface-faint`  | `bg-aai-surface-faint`    | `rgba(255,255,255,0.031)` |
+| `--color-aai-surface-hover`  | `bg-aai-surface-hover`    | `rgba(255,255,255,0.059)` |
+| `--color-aai-border`         | `border-aai-border`       | `#282828`                 |
+| `--color-aai-primary`        | `text-aai-primary`        | `#fab283`                 |
+| `--color-aai-text`           | `text-aai-text`           | `rgba(255,255,255,0.936)` |
+| `--color-aai-text-secondary` | `text-aai-text-secondary` | `rgba(255,255,255,0.618)` |
+| `--color-aai-text-muted`     | `text-aai-text-muted`     | `rgba(255,255,255,0.284)` |
+| `--color-aai-text-dim`       | `text-aai-text-dim`       | `rgba(255,255,255,0.422)` |
+| `--color-aai-error`          | `text-aai-error`          | `#e06c75`                 |
+| `--color-aai-ring`           | `ring-aai-ring`           | `#56b6c2`                 |
+| `--color-aai-state-{state}`  | `text-aai-state-{state}`  | per-state colors          |
+| `--radius-aai`               | `rounded-aai`             | `6px`                     |
+| `--font-aai`                 | `font-aai`                | Inter, sans-serif         |
+| `--font-aai-mono`            | `font-aai-mono`           | IBM Plex Mono, mono       |
+
+The 5 core colors (`bg`, `primary`, `text`, `surface`, `border`) can be
+overridden via `mount()` theme options. All other tokens use fixed defaults.
+
+### Common UI patterns
+
+**Auto-scrolling messages** — use `useAutoScroll` for custom message lists:
+
+```tsx
+import { useAutoScroll, useSession } from "aai/ui";
+
+function MyChat() {
+  const { session } = useSession();
+  const bottomRef = useAutoScroll();
+
+  return (
+    <div class="overflow-y-auto">
+      {session.messages.value.map((m, i) => <p key={i}>{m.text}</p>)}
+      <div ref={bottomRef} />
+    </div>
+  );
+}
+```
+
+Note: `MessageList` and `ChatView` already include auto-scroll. Only use
+`useAutoScroll` when building a fully custom message list.
+
+**Reading signal values in render:** Extract `.value` once at the top of the
+component to avoid redundant signal subscriptions:
+
+```tsx
+function MyComponent() {
+  const { session } = useSession();
+  const state = session.state.value;
+  const msgs = session.messages.value;
+  // Use `state` and `msgs` as plain values throughout the render
+}
+```
 
 ## Self-hosting with `createServer()`
 
@@ -782,41 +912,65 @@ Drug interactions (RxNorm):
 
 Use `fetch_json` builtin tool or `fetch` in custom tools to call these.
 
-## Partial custom UI with `ChatView`
+## Custom start screen with `StartScreen`
 
-For a custom start screen that transitions to the default chat interface:
+Use `StartScreen` for a branded start card that transitions to `ChatView`:
 
 ```tsx
 import "aai/ui/styles.css";
-import { ChatView, mount, useSession } from "aai/ui";
+import { ChatView, StartScreen, mount } from "aai/ui";
 
 function MyAgent() {
-  const { started, start } = useSession();
-
-  if (!started.value) {
-    return (
-      <div class="flex items-center justify-center h-screen bg-aai-bg">
-        <div class="flex flex-col items-center gap-6">
-          <h1 class="text-xl text-aai-text">My Agent</h1>
-          <button
-            class="px-8 py-3 rounded-aai bg-aai-primary text-white border-none cursor-pointer"
-            onClick={start}
-          >
-            Start
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  return <ChatView />;
+  return (
+    <StartScreen icon={<span>&#x1F3A4;</span>} title="My Agent" subtitle="Ask me anything">
+      <ChatView />
+    </StartScreen>
+  );
 }
 
 mount(MyAgent);
 ```
 
-This gives you full control over the start screen while reusing the built-in
-chat UI once the session begins.
+`StartScreen` handles the started/not-started transition automatically. Pass
+`icon`, `title`, `subtitle`, and `buttonText` to customize the card.
+
+## Sidebar layout with `SidebarLayout`
+
+Use `SidebarLayout` for apps with a persistent side panel (cart, dashboard):
+
+```tsx
+import "aai/ui/styles.css";
+import { useState } from "preact/hooks";
+import { ChatView, SidebarLayout, StartScreen, mount, useToolResult } from "aai/ui";
+
+function ShopAgent() {
+  const [cart, setCart] = useState<{ id: number; name: string }[]>([]);
+
+  useToolResult((toolName, result: any) => {
+    if (toolName === "add_item") setCart((prev) => [...prev, result.item]);
+  });
+
+  const sidebar = (
+    <div class="p-4">
+      <h3 class="text-aai-text font-bold">Cart ({cart.length})</h3>
+      {cart.map((i) => <p key={i.id} class="text-aai-text text-sm">{i.name}</p>)}
+    </div>
+  );
+
+  return (
+    <StartScreen title="Shop" buttonText="Start Shopping">
+      <SidebarLayout sidebar={sidebar}>
+        <ChatView />
+      </SidebarLayout>
+    </StartScreen>
+  );
+}
+
+mount(ShopAgent);
+```
+
+`SidebarLayout` accepts `width` (default `"20rem"`) and `side` (`"left"` or
+`"right"`).
 
 ## Project structure
 
@@ -912,8 +1066,8 @@ Use directional words naturally: "To the north you see..." not "N: forest"
 - **Telling the agent to be verbose** — Voice responses should be 1-3 sentences.
   If your `instructions` say "provide detailed explanations", the agent will
   monologue. Instruct it to be brief and let the user ask follow-ups.
-- **Not declaring `env`** — If your agent needs custom env vars, list them in
-  the `env` array so the CLI validates they're set before deploying.
+- **Not setting env vars before deploying** — If your agent needs custom env
+  vars, set them with `aai env add MY_KEY` before deploying.
 - **Forgetting SSRF restrictions on `fetch`** — The host validates all proxied
   fetch URLs. Requests to private/internal IP addresses (localhost, 10.x,
   192.168.x, etc.) are blocked.

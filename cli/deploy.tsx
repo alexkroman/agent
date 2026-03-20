@@ -2,7 +2,8 @@
 
 import path from "node:path";
 import minimist from "minimist";
-import { BundleError, type BundleOutput, bundleAgent } from "./_bundler.ts";
+import { buildAgentBundle } from "./_build.ts";
+import type { BundleOutput } from "./_bundler.ts";
 import { runDeploy } from "./_deploy.ts";
 import {
   DEFAULT_SERVER,
@@ -10,7 +11,6 @@ import {
   generateSlug,
   getApiKey,
   isDevMode,
-  loadAgent,
   readProjectConfig,
   writeProjectConfig,
 } from "./_discover.ts";
@@ -36,26 +36,6 @@ const deployCommandDef: SubcommandDef = {
 
 function resolveServerUrl(parsed: minimist.ParsedArgs): string {
   return parsed.server || (isDevMode() ? "http://localhost:3100" : DEFAULT_SERVER);
-}
-
-async function buildAgent(cwd: string, log: (el: React.ReactNode) => void): Promise<BundleOutput> {
-  log(<Step action="Bundle" msg="agent" />);
-  const agent = await loadAgent(cwd);
-  if (!agent) {
-    throw new Error("No agent found — run `aai init` first");
-  }
-
-  let bundle: BundleOutput;
-  try {
-    bundle = await bundleAgent(agent);
-  } catch (err) {
-    if (err instanceof BundleError) {
-      throw new Error(`Bundle failed: ${err.message}`);
-    }
-    throw err;
-  }
-
-  return bundle;
 }
 
 async function deployBundle(opts: {
@@ -118,7 +98,7 @@ export async function runDeployCommand(args: string[], version: string): Promise
   let agentUrl = "";
 
   await runWithInk(async (log) => {
-    const bundle = await buildAgent(cwd, log);
+    const bundle = await buildAgentBundle(cwd, log);
 
     if (dryRun) {
       log(<StepInfo action="Dry run" msg={`would deploy as ${slug}`} />);

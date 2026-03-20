@@ -1,6 +1,6 @@
-import { defineAgent } from "@alexkroman1/aai";
+import { defineAgent, tool } from "@alexkroman1/aai";
+import type { HookContext, StepInfo } from "@alexkroman1/aai";
 import { z } from "zod";
-import type { HookContext, StepInfo } from "@alexkroman1/aai/types";
 
 /**
  * Smart Research Agent — demonstrates all 5 advanced features:
@@ -88,18 +88,18 @@ Always search first, then analyze, then answer. Be thorough but concise.`,
   },
 
   tools: {
-    save_source: {
+    save_source: tool({
       description: "Save a source URL found during research for later analysis",
       parameters: z.object({
         url: z.string().describe("The source URL"),
         title: z.string().describe("Brief title or description"),
       }),
-      execute: (args: { url: string; title: string }, ctx) => {
+      execute: ({ url, title }, ctx) => {
         const state = ctx.state;
-        state.sources.push(`${args.title}: ${args.url}`);
+        state.sources.push(`${title}: ${url}`);
         return { saved: true, totalSources: state.sources.length };
       },
-    },
+    }),
 
     mark_complex: {
       description:
@@ -126,25 +126,25 @@ Always search first, then analyze, then answer. Be thorough but concise.`,
     },
 
     // Feature 2: ctx.messages — access conversation history in tools
-    analyze: {
+    analyze: tool({
       description:
         "Analyze all gathered sources and conversation context to form a conclusion",
       parameters: z.object({
         focus: z.string().describe("What aspect to focus the analysis on"),
       }),
-      execute: (args: { focus: string }, ctx) => {
+      execute: ({ focus }, ctx) => {
         const state = ctx.state;
         // Use ctx.messages to see what's been discussed
         const userMessages = ctx.messages.filter((m) => m.role === "user");
         return {
-          focus: args.focus,
+          focus,
           sources: state.sources,
           conversationTurns: userMessages.length,
           totalMessages: ctx.messages.length,
           phase: state.phase,
         };
       },
-    },
+    }),
 
     conversation_summary: {
       description: "Get a summary of the conversation so far",

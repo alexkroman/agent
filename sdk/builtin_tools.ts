@@ -11,6 +11,7 @@
 import { convert } from "html-to-text";
 import { z } from "zod";
 import { EMPTY_PARAMS, type ToolSchema } from "./_internal_types.ts";
+import { memoryTools } from "./memory_tools.ts";
 import type { ToolDef } from "./types.ts";
 
 // ─── HTML to text ──────────────────────────────────────────────────────────
@@ -265,6 +266,13 @@ export function getBuiltinToolDefs(
           defs[name] = createVectorSearch(opts.vectorSearch);
         }
         break;
+      case "memory": {
+        const mt = memoryTools();
+        for (const [toolName, toolDef] of Object.entries(mt)) {
+          defs[toolName] = toolDef;
+        }
+        break;
+      }
     }
   }
   return defs;
@@ -280,6 +288,11 @@ const TOOL_CREATORS: Record<string, () => ToolDef> = {
   vector_search: () => createVectorSearch(async () => ""),
 };
 
+/** Builtin names that expand to multiple tools. */
+const MULTI_TOOL_BUILTINS: Record<string, () => Record<string, ToolDef>> = {
+  memory: memoryTools,
+};
+
 /**
  * Returns JSON tool schemas for the specified builtin tools.
  *
@@ -288,6 +301,15 @@ const TOOL_CREATORS: Record<string, () => ToolDef> = {
  */
 export function getBuiltinToolSchemas(names: readonly string[]): ToolSchema[] {
   return names.flatMap((name) => {
+    // Multi-tool builtins (e.g. "memory" → save_memory, recall_memory, etc.)
+    const multiCreator = MULTI_TOOL_BUILTINS[name];
+    if (multiCreator) {
+      return Object.entries(multiCreator()).map(([toolName, def]) => ({
+        name: toolName,
+        description: def.description,
+        parameters: z.toJSONSchema(def.parameters ?? EMPTY_PARAMS) as ToolSchema["parameters"],
+      }));
+    }
     const creator = TOOL_CREATORS[name];
     if (!creator) return [];
     const def = creator();

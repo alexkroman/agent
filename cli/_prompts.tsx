@@ -63,6 +63,7 @@ export async function askText(message: string, defaultValue: string): Promise<st
           onSubmit={(value) => {
             resolve(value || defaultValue);
             app.unmount();
+            app.clear();
           }}
         />
       </Box>,

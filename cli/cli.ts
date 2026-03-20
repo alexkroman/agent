@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import minimist from "minimist";
 import { rootHelp } from "./_help.ts";
+import { runBuildCommand } from "./build.tsx";
 import { runDeployCommand } from "./deploy.tsx";
 import { runDevCommand } from "./dev.tsx";
 import { runInitCommand } from "./init.tsx";
@@ -41,6 +42,9 @@ async function main(args: string[]): Promise<void> {
   switch (subcommand) {
     case "init":
       await runInitCommand(subArgs, VERSION);
+      return;
+    case "build":
+      await runBuildCommand(subArgs, VERSION);
       return;
     case "deploy":
       await runDeployCommand(subArgs, VERSION);

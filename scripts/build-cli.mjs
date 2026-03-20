@@ -54,7 +54,7 @@ chmodSync("dist/cli.js", 0o755);
 writeFileSync(
   resolve(agentRoot, "dist/aai.js"),
   `#!/usr/bin/env node
-if(!process.env.FORCE_COLOR&&!process.env.NO_COLOR&&process.stdout.isTTY)process.env.FORCE_COLOR='1';
+if(!process.env.FORCE_COLOR&&!process.env.NO_COLOR&&process.stdout.isTTY){const c=process.env.COLORTERM;process.env.FORCE_COLOR=(c==='truecolor'||c==='24bit')?'3':c?'2':'1';}
 import("./cli.js").catch(e=>{process.stderr.write(e?.message??"");process.exit(1)});
 `,
 );

@@ -23,13 +23,15 @@ export type BeforeStepResult = { activeTools?: string[] } | undefined;
  * - `"fetch_json"` — Call a REST API endpoint and return the JSON response.
  * - `"run_code"` — Execute JavaScript in a sandbox for calculations and data processing.
  * - `"vector_search"` — Search the agent's RAG knowledge base for relevant documents.
+ * - `"memory"` — Persistent KV memory: save_memory, recall_memory, list_memories, forget_memory.
  */
 export type BuiltinTool =
   | "web_search"
   | "visit_webpage"
   | "fetch_json"
   | "run_code"
-  | "vector_search";
+  | "vector_search"
+  | "memory";
 
 /**
  * How the LLM should select tools during a turn.
@@ -150,6 +152,38 @@ export type ToolDef<
   /** Function that executes the tool and returns a result. */
   execute(args: z.infer<P>, ctx: ToolContext<S>): Promise<unknown> | unknown;
 };
+
+/**
+ * Identity helper that preserves the Zod schema generic for type inference.
+ *
+ * When tools are defined inline in `defineAgent({ tools: { ... } })`, the
+ * generic `P` gets widened to the base `ZodObject` type, so `args` in
+ * `execute` loses its specific shape. Wrapping a tool definition in `tool()`
+ * lets TypeScript infer `P` from `parameters` and type `args` correctly.
+ *
+ * @example
+ * ```ts
+ * import { defineAgent, tool } from "aai";
+ * import { z } from "zod";
+ *
+ * export default defineAgent({
+ *   name: "my-agent",
+ *   tools: {
+ *     greet: tool({
+ *       description: "Greet the user",
+ *       parameters: z.object({ name: z.string() }),
+ *       execute: ({ name }) => `Hello, ${name}!`, // name is string
+ *     }),
+ *   },
+ * });
+ * ```
+ */
+// biome-ignore lint/suspicious/noExplicitAny: S defaults to any so tool() works with any agent state type
+export function tool<P extends z.ZodObject<z.ZodRawShape>, S = any>(
+  def: ToolDef<P, S>,
+): ToolDef<P, S> {
+  return def;
+}
 
 /**
  * Available TTS voice identifiers (Cartesia voice UUIDs).
