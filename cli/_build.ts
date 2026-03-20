@@ -36,12 +36,15 @@ export async function buildAgentBundle(
 
   if (agent.clientEntry) {
     try {
-      const { renderCheck } = await import("../sdk/_render_check.ts");
+      // Dynamic import with variable path prevents esbuild from bundling
+      // linkedom (a devDependency) into the production CLI dist.
+      const renderCheckPath = "../sdk/_render_check.ts";
+      const { renderCheck } = await import(/* @vite-ignore */ renderCheckPath);
       log(React.createElement(Step, { action: "Render", msg: "check" }));
       await renderCheck(agent.clientEntry, cwd);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes("linkedom")) return bundle;
+      if (msg.includes("linkedom") || msg.includes("_render_check")) return bundle;
       throw new Error(`Render check failed: ${msg}`);
     }
   }

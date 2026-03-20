@@ -1,15 +1,20 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { createServer as createViteServer } from "vite";
-import { DOMParser, installDomShim } from "../ui/_dom_shim.ts";
-import { installMockWebSocket } from "./_mock_ws.ts";
 
 /**
  * Smoke-test a client.tsx by loading it via Vite SSR in a DOM-shimmed
  * environment. The module's top-level `mount()` call executes as a side
  * effect; if it throws, the client code has a render-time bug.
+ *
+ * Imports linkedom dynamically so this module can be loaded even when
+ * linkedom is not installed (the caller catches and skips).
  */
 export async function renderCheck(clientEntry: string, cwd: string): Promise<void> {
+  // Dynamic imports so esbuild doesn't bundle linkedom into the CLI dist.
+  const { DOMParser, installDomShim } = await import("../ui/_dom_shim.ts");
+  const { installMockWebSocket } = await import("./_mock_ws.ts");
+
   installDomShim();
 
   const g = globalThis as unknown as Record<string, unknown>;
