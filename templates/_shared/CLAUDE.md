@@ -57,7 +57,7 @@ with `aai init -t <template_name>`.
 | `personal-finance`  | Currency conversion, crypto prices, loan calculations, savings projections         |
 | `travel-concierge`  | Trip planning, weather, flights, hotels, currency conversion                       |
 | `night-owl`         | Movie/music/book recs by mood, sleep calculator. **Has custom UI.**                |
-| `pizza-ordering`    | Pizza order-taker with dynamic cart sidebar via `useToolResult`. **Has custom UI.** |
+| `pizza-ordering`    | Pizza order-taker with dynamic cart sidebar. **Has custom UI.**                    |
 | `dispatch-center`   | 911 dispatch with incident triage and resource assignment. **Has custom UI.**      |
 | `infocom-adventure` | Zork-style text adventure with state, puzzles, inventory. **Has custom UI.**       |
 | `embedded-assets`   | FAQ bot using embedded JSON knowledge (no web search)                              |
@@ -586,8 +586,8 @@ data lives on `session` (a `VoiceSession`); UI-only controls are top-level.
 
 **Hooks:**
 
-| Hook                                         | Description                                                              |
-| -------------------------------------------- | ------------------------------------------------------------------------ |
+| Hook                                          | Description                                                                                  |
+| --------------------------------------------- | -------------------------------------------------------------------------------------------- |
 | `useToolResult((toolName, result, tc) => {})` | Fires once per completed tool call with parsed JSON result. Use for carts, scoreboards, etc. |
 
 ### Showing tool calls in custom UI
@@ -845,28 +845,32 @@ Good instructions tell the LLM what it is, how to behave, and when to use each
 tool. Study these patterns:
 
 **Code execution agent** — force tool use for anything computational:
-```
+
+```text
 You MUST use the run_code tool for ANY question involving math, counting,
 string manipulation, or data processing. NEVER do mental math or estimate.
 Use console.log() to output intermediate steps.
 ```
 
 **Research agent** — search before answering:
-```
+
+```text
 Search first. Never guess or rely on memory for factual questions.
 Use visit_webpage when search snippets aren't detailed enough.
 For complex questions, search multiple times with different queries.
 ```
 
 **FAQ/support agent** — stay grounded in knowledge:
-```
+
+```text
 Always use vector_search to find relevant documentation before answering.
 Base your answers strictly on the retrieved documentation — don't guess.
 If search results aren't relevant, say the docs don't cover that topic.
 ```
 
 **API-calling agent** — tell the LLM which endpoints to use:
-```
+
+```text
 API endpoints (use fetch_json):
 - Currency rates: https://open.er-api.com/v6/latest/{CODE}
   Returns { rates: { USD: 1.0, EUR: 0.85, ... } }
@@ -874,7 +878,8 @@ API endpoints (use fetch_json):
 ```
 
 **Game/interactive agent** — establish world rules and voice style:
-```
+
+```text
 You ARE the game. Maintain world state, describe rooms, handle puzzles.
 Keep descriptions to two to four sentences. No visual formatting.
 Use directional words naturally: "To the north you see..." not "N: forest"
