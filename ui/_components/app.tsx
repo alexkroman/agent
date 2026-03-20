@@ -4,12 +4,12 @@ import { useMountConfig } from "../mount_context.ts";
 import { ChatView } from "./chat_view.tsx";
 import { StartScreen } from "./start_screen.tsx";
 
-const AAI_LOGO = `▄▀█ ▄▀█ █\n█▀█ █▀█ █`;
-
 function AaiLogo() {
   return (
-    <span class="font-aai-mono text-lg leading-[1.1] font-bold text-aai-primary whitespace-pre">
-      {AAI_LOGO}
+    <span class="font-aai-mono text-lg leading-[1.1] font-bold text-aai-primary block text-center">
+      {"▄▀█ ▄▀█ █"}
+      <br />
+      {"█▀█ █▀█ █"}
     </span>
   );
 }
