@@ -8,6 +8,20 @@
 
 import chalk from "chalk";
 
+// chalk's bundled supports-color bails when !streamIsTTY before checking
+// COLORTERM/TERM. Running via tsx or npm scripts can break TTY detection,
+// so we fall back to env vars when chalk detects level 0.
+if (chalk.level === 0 && !process.env.NO_COLOR) {
+  const ct = process.env.COLORTERM;
+  if (ct === "truecolor" || ct === "24bit") {
+    chalk.level = 3;
+  } else if (ct || /-256(color)?$/i.test(process.env.TERM ?? "")) {
+    chalk.level = 2;
+  } else if (process.env.TERM_PROGRAM) {
+    chalk.level = 1;
+  }
+}
+
 /** Raw hex color constants shared by chalk and Ink. */
 export const COLORS = {
   primary: "#fab283",

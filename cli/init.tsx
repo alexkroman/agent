@@ -10,7 +10,7 @@ import { interactive } from "./_colors.ts";
 import { fileExists, isDevMode } from "./_discover.ts";
 import type { SubcommandDef } from "./_help.ts";
 import { subcommandHelp } from "./_help.ts";
-import { runWithInk, Step } from "./_ink.tsx";
+import { runWithInk, Step, Warn } from "./_ink.tsx";
 import { askText } from "./_prompts.tsx";
 
 const execFileAsync = promisify(execFile);
@@ -72,7 +72,7 @@ async function installDeps(cwd: string, log: (el: React.ReactNode) => void): Pro
   try {
     await execFileAsync("npm", ["install"], { cwd });
   } catch {
-    log(<Step action="Skip" msg="npm install failed" />);
+    log(<Warn msg="npm install failed" />);
   }
 }
 

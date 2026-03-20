@@ -1,6 +1,6 @@
 {
   "name": "@alexkroman1/aai",
-  "version": "0.7.11",
+  "version": "0.7.12",
   "type": "module",
   "bin": {
     "aai": "dist/aai.js"

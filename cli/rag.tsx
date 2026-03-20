@@ -26,7 +26,7 @@ const ragCommandDef: SubcommandDef = {
 };
 
 const FETCH_TIMEOUT_MS = 60_000;
-const PAD = 9;
+const PAD = 2;
 
 type RagUIProps = {
   url: string;
@@ -122,7 +122,7 @@ async function runRag(opts: {
   // Split into pages, then chunk each page
   const origin = new URL(url).origin;
   const pages = splitPages(content);
-  log(<Step action="Parsed" msg={`${pages.length} pages`} />);
+  log(<Step action="Parse" msg={`${pages.length} pages`} />);
 
   const { RecursiveChunker } = await import("@chonkiejs/core");
   const chunker = await RecursiveChunker.create({ chunkSize });
@@ -130,7 +130,7 @@ async function runRag(opts: {
   const siteSlug = slugify(origin);
   const allChunks = await chunkPages(pages, chunker, origin, siteSlug);
 
-  log(<Step action="Chunked" msg={`${allChunks.length} chunks`} />);
+  log(<Step action="Chunk" msg={`${allChunks.length} chunks`} />);
 
   // Upsert (concurrent with pool)
   const vectorUrl = `${serverUrl}/${slug}/vector`;

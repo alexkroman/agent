@@ -19,11 +19,10 @@ export async function _startProductionServer(
 ): Promise<void> {
   const clientDir = path.join(cwd, ".aai", "client");
 
-  log(React.createElement(Step, { action: "Load", msg: "agent" }));
+  log(React.createElement(Step, { action: "Start", msg: "loading agent" }));
   const agentDef = await loadAgentDef(cwd);
   const env = await resolveServerEnv();
 
-  log(React.createElement(Step, { action: "Start", msg: `http://localhost:${port}` }));
   await bootServer(agentDef, clientDir, env, port);
   log(React.createElement(Step, { action: "Ready", msg: `http://localhost:${port}` }));
 }
