@@ -41,7 +41,7 @@ export function StartScreen({
     <div class="flex items-center justify-center h-screen bg-aai-bg font-aai">
       <div class="flex flex-col items-center gap-6 bg-aai-surface border border-aai-border rounded-lg px-12 py-10">
         {icon}
-        {title && <h1 class="text-xl font-semibold text-aai-text m-0">{title}</h1>}
+        {title && <h1 class="text-3xl font-bold text-aai-primary m-0">{title}</h1>}
         {subtitle && <p class="text-sm text-aai-text-muted m-0">{subtitle}</p>}
         <button
           type="button"
