@@ -53,7 +53,6 @@ function calculateTotal(pizzas: Pizza[]): number {
 
 export default defineAgent({
   name: "Pizza Palace",
-  voice: "e3827ec5-697a-4b7c-9704-1a23041bbc51", // Sweet Lady
   greeting:
     "Welcome to Pizza Palace. I can help you build your perfect pizza. What would you like to order?",
   instructions: `You are a friendly pizza order-taker at Pizza Palace. Keep responses short and conversational, optimized for voice.

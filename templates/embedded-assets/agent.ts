@@ -22,7 +22,6 @@ Rules:
 - Always be helpful and polite`,
   greeting:
     "Hi! I'm your FAQ assistant. Ask me anything about the AAI agent framework and I'll look it up in my knowledge base.",
-  voice: "156fb8d2-335b-4950-9cb3-a2d33befec77", // Helpful Woman
   tools: {
     search_knowledge: tool({
       description:

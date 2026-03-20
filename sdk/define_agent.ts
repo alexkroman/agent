@@ -48,7 +48,6 @@ export function defineAgent<S>(options: AgentOptions<S>): AgentDef {
     name: options.name,
     instructions: options.instructions ?? DEFAULT_INSTRUCTIONS,
     greeting: options.greeting ?? DEFAULT_GREETING,
-    voice: options.voice ?? "",
     maxSteps: options.maxSteps ?? 5,
     tools: options.tools ?? {},
   } as AgentDef;

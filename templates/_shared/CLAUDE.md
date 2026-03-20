@@ -76,7 +76,6 @@ export default defineAgent({
   name: "My Agent",
   instructions: "You are a helpful assistant that...",
   greeting: "Hey there. What can I help you with?",
-  voice: "694f9389-aac1-45b6-b726-9d9369183238", // Sarah
 });
 ```
 
@@ -96,8 +95,6 @@ defineAgent({
   name: string;              // Required: display name
   instructions?: string;     // System prompt (default: general voice assistant)
   greeting?: string;         // Spoken on connect (default: "Hey, how can I help you?")
-  voice?: Voice;             // Cartesia voice UUID (default: Sarah 694f9389...)
-
   // Speech
   sttPrompt?: string;        // STT guidance for jargon, names, acronyms
 
@@ -122,42 +119,11 @@ defineAgent({
 });
 ```
 
-### Voices
-
-Voices use Cartesia voice UUIDs. Browse all voices at
-[play.cartesia.ai](https://play.cartesia.ai).
-
-Common voices:
-
-| Name                  | Voice ID                               |
-| --------------------- | -------------------------------------- |
-| Sarah (default)       | `694f9389-aac1-45b6-b726-9d9369183238` |
-| Customer Support Man  | `a167e0f3-df7e-4d52-a9c3-f949145efdab` |
-| Customer Support Lady | `829ccd10-f8b3-43cd-b8a0-4aeaa81f3b30` |
-| Helpful Woman         | `156fb8d2-335b-4950-9cb3-a2d33befec77` |
-| Professional Woman    | `248be419-c632-4f23-adf1-5324ed7dbf1d` |
-| Sweet Lady            | `e3827ec5-697a-4b7c-9704-1a23041bbc51` |
-| British Lady          | `79a125e8-cd45-4c13-8a67-188112f4dd22` |
-| Calm Lady             | `00a77add-48d5-4ef6-8157-71e5437b282d` |
-| Laidback Woman        | `21b81c14-f85b-436d-aff5-43f2e788ecf8` |
-| Storyteller Lady      | `996a8b96-4804-46f0-8e05-3fd4ef1a87cd` |
-| Newslady              | `bf991597-6c13-47e4-8411-91ec2de5c466` |
-| Friendly Reading Man  | `69267136-1bdc-412f-ad78-0caad210fb40` |
-| Confident British Man | `63ff761f-c1e8-414b-b969-d1833d1c870c` |
-| New York Man          | `34575e71-908f-4ab6-ab54-b08c95d6597d` |
-| California Girl       | `b7d50908-b17c-442d-ad8d-810c63997ed9` |
-| Newsman               | `d46abd1d-2d02-43e8-819f-51fb652c1c61` |
-| Salesman              | `820a3788-2b37-4d21-847a-b65d8a68c99a` |
-| Wise Man              | `b043dea0-a007-4bbe-a708-769dc0d0c569` |
-| Child                 | `2ee87190-8f84-4925-97da-e52547f9462c` |
-
-Any Cartesia voice UUID works — the list above is just a starting point.
-
 Use `sttPrompt` for domain-specific vocabulary:
 
 ```ts
 export default defineAgent({
-  voice: "a167e0f3-df7e-4d52-a9c3-f949145efdab", // Customer Support Man
+  name: "Tech Support",
   sttPrompt: "Transcribe technical terms: Kubernetes, gRPC, PostgreSQL",
 });
 ```
