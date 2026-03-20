@@ -609,6 +609,20 @@ VOICE:
 
   state: () => structuredClone(defaultState),
 
+  // Auto-load saved game on connect (uses persistent uid from browser localStorage).
+  onConnect: async (ctx) => {
+    const saved = await ctx.kv.get<GameState>(`save:${ctx.sessionId}`);
+    if (saved) Object.assign(ctx.state as GameState, saved);
+  },
+
+  // Auto-save after every turn so progress persists across browser refreshes.
+  onTurn: async (_text, ctx) => {
+    const state = ctx.state as GameState;
+    if (state.initialized) {
+      await ctx.kv.set(`save:${ctx.sessionId}`, state);
+    }
+  },
+
   // Force check_state as the first tool call on every turn after initialization.
   // This ensures the LLM always sees real state and never hallucinates HP, momentum, etc.
   onBeforeStep: (stepNumber: number, ctx: any) => {

@@ -321,6 +321,28 @@ export default defineAgent({
 });
 ```
 
+### Persisting state across reconnects
+
+`ctx.sessionId` is a persistent user ID stored in the browser's
+`localStorage`. It stays the same when a user closes and reopens the
+browser. Use it as a KV key to auto-save and auto-load state:
+
+```ts
+export default defineAgent({
+  state: () => ({ score: 0, initialized: false }),
+  onConnect: async (ctx) => {
+    const saved = await ctx.kv.get(`save:${ctx.sessionId}`);
+    if (saved) Object.assign(ctx.state, saved);
+  },
+  onTurn: async (_text, ctx) => {
+    await ctx.kv.set(`save:${ctx.sessionId}`, ctx.state);
+  },
+});
+```
+
+Each browser gets its own saved state. This works for games, workflows,
+or any agent where users expect to resume where they left off.
+
 ### Persistent storage (KV)
 
 `ctx.kv` is a persistent key-value store scoped per agent. Values are

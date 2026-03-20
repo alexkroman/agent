@@ -271,6 +271,7 @@ function attachWsUpgrade(
             );
             getWinterc().handleWebSocket(ws as unknown as SessionWebSocket, {
               skipGreeting: reqUrl.searchParams.has("resume"),
+              uid: reqUrl.searchParams.get("uid") ?? undefined,
             });
           },
         );
