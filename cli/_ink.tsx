@@ -178,5 +178,5 @@ export async function runWithInk(
     />,
   );
   await app.waitUntilExit();
-  if (thrownError) throw thrownError;
+  if (thrownError) process.exit(1);
 }
