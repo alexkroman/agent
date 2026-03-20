@@ -127,6 +127,13 @@ export async function bundleAgent(
       devAlias["@alexkroman1/aai/ui/styles.css"] = path.join(monorepoRoot, "ui/styles.css");
       devAlias["@alexkroman1/aai/ui"] = path.join(monorepoRoot, "ui/mod.ts");
       devAlias["@alexkroman1/aai"] = path.join(monorepoRoot, "sdk/mod.ts");
+      // Pin preact and signals to the monorepo copy so the local UI source
+      // and the user's client.tsx share a single Preact instance (avoids
+      // dual-copy hooks crash: "Cannot read properties of undefined __H").
+      const { createRequire } = await import("node:module");
+      const _require = createRequire(import.meta.url);
+      devAlias.preact = path.dirname(_require.resolve("preact/package.json"));
+      devAlias["@preact/signals"] = path.dirname(_require.resolve("@preact/signals/package.json"));
     }
 
     try {

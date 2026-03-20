@@ -15,7 +15,7 @@ export async function _startDevServer(
   port: number,
   log: (node: React.ReactNode) => void,
 ): Promise<void> {
-  const bundle = await buildAgentBundle(cwd, log);
+  const bundle = await buildAgentBundle(cwd, log, { skipRenderCheck: true });
 
   const agentDef = await loadAgentDef(cwd);
   const env = await resolveServerEnv();
