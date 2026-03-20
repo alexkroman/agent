@@ -1,5 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import preact from "@preact/preset-vite";
 import { createServer as createViteServer } from "vite";
 
 /**
@@ -31,6 +32,8 @@ export async function renderCheck(clientEntry: string, cwd: string): Promise<voi
   const vite = await createViteServer({
     root: cwd,
     logLevel: "silent",
+    plugins: [preact()],
+    resolve: { dedupe: ["preact", "@preact/signals"] },
     server: { middlewareMode: true },
   });
 
