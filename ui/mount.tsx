@@ -2,23 +2,9 @@
 
 import type { ComponentType } from "preact";
 import { render } from "preact";
-import { MountConfigProvider } from "./mount_context.ts";
+import { MountConfigProvider, type MountTheme } from "./mount_context.ts";
 import { createVoiceSession, type VoiceSession } from "./session.ts";
 import { createSessionControls, SessionProvider, type SessionSignals } from "./signals.ts";
-
-/** Theme overrides for the default UI. Applied as CSS custom properties. */
-export type MountTheme = {
-  /** Background color. Default: `#101010`. */
-  bg?: string;
-  /** Primary accent color. Default: `#fab283`. */
-  primary?: string;
-  /** Main text color. */
-  text?: string;
-  /** Surface/card color. */
-  surface?: string;
-  /** Border color. */
-  border?: string;
-};
 
 /** Options for {@linkcode mount}. */
 export type MountOptions = {

@@ -33,9 +33,9 @@ export {
   ToolCallBlock,
   Transcript,
 } from "./components.ts";
-export type { MountHandle, MountOptions, MountTheme } from "./mount.tsx";
+export type { MountHandle, MountOptions } from "./mount.tsx";
 export { mount } from "./mount.tsx";
-export type { MountConfig } from "./mount_context.ts";
+export type { MountConfig, MountTheme } from "./mount_context.ts";
 export { useMountConfig } from "./mount_context.ts";
 export type { VoiceSession } from "./session.ts";
 export { createVoiceSession } from "./session.ts";
