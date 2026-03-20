@@ -138,12 +138,9 @@ export async function bundleAgent(
       _require.resolve("@preact/signals"),
       "@preact/signals",
     );
-    const tailwindDir = path.dirname(_require.resolve("tailwindcss/package.json"));
-
     try {
       await build({
         root: agent.dir,
-        configFile: false,
         base: "./",
         logLevel: "warn",
         plugins: [preact(), tailwindcss()],
@@ -151,7 +148,6 @@ export async function bundleAgent(
           alias: {
             preact: preactDir,
             "@preact/signals": preactSignalsDir,
-            tailwindcss: tailwindDir,
           },
         },
         build: {
