@@ -2,6 +2,7 @@
 import type * as preact from "preact";
 import { useMountConfig } from "../mount_context.ts";
 import { useSession } from "../signals.ts";
+import { AaiLogo } from "./aai_logo.tsx";
 import { Controls } from "./controls.tsx";
 import { ErrorBanner } from "./error_banner.tsx";
 import { MessageList } from "./message_list.tsx";
@@ -18,11 +19,7 @@ export function ChatView(): preact.JSX.Element {
         {title ? (
           <span class="text-sm font-semibold text-aai-primary">{title}</span>
         ) : (
-          <span class="font-aai-mono text-[10px] leading-[1.1] font-bold text-aai-primary">
-            {"▄▀█ ▄▀█ █"}
-            <br />
-            {"█▀█ █▀█ █"}
-          </span>
+          <AaiLogo size={24} />
         )}
         <div class="ml-auto">
           <StateIndicator state={session.state} />
