@@ -296,6 +296,7 @@ export function createMockSignals(
     messages: signal<Message[]>(overrides?.messages ?? []),
     toolCalls: signal<ToolCallInfo[]>([]),
     userUtterance: signal<string | null>(overrides?.userUtterance ?? null),
+    agentUtterance: signal<string | null>(null),
     error: signal<SessionError | null>(overrides?.error ?? null),
     disconnected: signal<{ intentional: boolean } | null>(null),
     connect() {},

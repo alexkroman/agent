@@ -142,7 +142,7 @@ async function secretList(cwd: string): Promise<void> {
 
     const { vars } = await resp.json();
     if (vars.length === 0) {
-      log(<StepInfo action="Secrets" msg="No secrets set" />);
+      log(<StepInfo action="Secrets" msg="none set" />);
     } else {
       for (const name of vars) {
         log(<Detail msg={name} />);

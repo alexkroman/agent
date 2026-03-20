@@ -304,6 +304,10 @@ export function createS2sSession(opts: SessionOptions): Session {
         client.playAudioChunk(e.detail.audio);
       });
 
+      on<{ text: string }>(handle, "agent_transcript_delta", (e) => {
+        client.event({ type: "chat_delta", text: e.detail.text });
+      });
+
       on<{ text: string }>(handle, "agent_transcript", (e) => {
         const { text } = e.detail;
         client.event({ type: "chat", text });

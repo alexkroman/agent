@@ -21,7 +21,7 @@ export async function _startDevServer(
     throw new Error("No agent found — run `aai init` first");
   }
 
-  log(React.createElement(Step, { action: "Build", msg: agent.slug }));
+  log(React.createElement(Step, { action: "Bundle", msg: agent.slug }));
   let clientDir: string;
   try {
     const bundle = await bundleAgent(agent);

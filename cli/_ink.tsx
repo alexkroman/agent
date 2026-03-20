@@ -30,36 +30,46 @@ export function StepInfo({ action, msg }: { action: string; msg: string }) {
   );
 }
 
-/** Dimmed info line. */
+/** Dimmed info sub-line (indented to nest under a step). */
 export function Info({ msg }: { msg: string }) {
-  return <Text dimColor>{msg}</Text>;
+  return (
+    <Text dimColor>
+      {"  "}
+      {msg}
+    </Text>
+  );
 }
 
-/** Detail line without dimming. */
+/** Detail sub-line (indented to nest under a step). */
 export function Detail({ msg }: { msg: string }) {
-  return <Text>{msg}</Text>;
+  return (
+    <Text>
+      {"  "}
+      {msg}
+    </Text>
+  );
 }
 
-/** Yellow warning message. */
+/** Yellow warning with triangle symbol. */
 export function Warn({ msg }: { msg: string }) {
   return (
     <Text>
       <Text bold color={COLORS.warning}>
-        warning
+        {"\u25B2"}
       </Text>
       <Text> {msg}</Text>
     </Text>
   );
 }
 
-/** Red error message. */
+/** Red error with cross symbol. */
 export function ErrorLine({ msg }: { msg: string }) {
   return (
     <Text>
       <Text bold color={COLORS.error}>
-        error
+        {"\u2717"}
       </Text>
-      <Text>: {msg}</Text>
+      <Text> {msg}</Text>
     </Text>
   );
 }

@@ -25,7 +25,7 @@ aai deploy
 ## Commands
 
 | Command | Description |
-|---------|-------------|
+| ------- | ----------- |
 | `aai init [dir]` | Scaffold a new agent project |
 | `aai dev` | Start a local development server |
 | `aai deploy` | Bundle and deploy to production |

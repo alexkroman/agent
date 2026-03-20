@@ -140,6 +140,7 @@ export type ClientEvent =
     }
   | { type: "turn"; text: string; turnOrder?: number | undefined }
   | { type: "chat"; text: string }
+  | { type: "chat_delta"; text: string }
   | {
       type: "tool_call_start";
       toolCallId: string;
@@ -171,6 +172,7 @@ export const ClientEventSchema = z.discriminatedUnion("type", [
     turnOrder: z.number().int().nonnegative().optional(),
   }),
   z.object({ type: z.literal("chat"), text: z.string() }),
+  z.object({ type: z.literal("chat_delta"), text: z.string() }),
   z.object({
     type: z.literal("tool_call_start"),
     toolCallId: z.string(),

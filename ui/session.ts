@@ -27,6 +27,12 @@ export type VoiceSession = {
    * non-empty string = partial/final transcript text.
    */
   readonly userUtterance: Signal<string | null>;
+  /**
+   * Streaming agent response text.
+   * `null` = not speaking, non-empty string = accumulated delta text.
+   * Cleared when the final `chat` message arrives.
+   */
+  readonly agentUtterance: Signal<string | null>;
   /** Current session error, or `null` if no error. */
   readonly error: Signal<SessionError | null>;
   /** Disconnection info, or `null` if connected. */
@@ -60,6 +66,7 @@ export class ClientHandler {
   #messages: Signal<Message[]>;
   #toolCalls: Signal<ToolCallInfo[]>;
   #userUtterance: Signal<string | null>;
+  #agentUtterance: Signal<string | null>;
   #error: Signal<SessionError | null>;
   #voiceIO: () => VoiceIO | null;
   /** Incremented on each turn boundary — stale async callbacks compare against this. */
@@ -69,6 +76,7 @@ export class ClientHandler {
     messages: Signal<Message[]>;
     toolCalls: Signal<ToolCallInfo[]>;
     userUtterance: Signal<string | null>;
+    agentUtterance: Signal<string | null>;
     error: Signal<SessionError | null>;
     voiceIO: () => VoiceIO | null;
   }) {
@@ -76,6 +84,7 @@ export class ClientHandler {
     this.#messages = opts.messages;
     this.#toolCalls = opts.toolCalls;
     this.#userUtterance = opts.userUtterance;
+    this.#agentUtterance = opts.agentUtterance;
     this.#error = opts.error;
     this.#voiceIO = opts.voiceIO;
   }
@@ -103,8 +112,16 @@ export class ClientHandler {
           this.#state.value = "thinking";
         });
         break;
+      case "chat_delta":
+        this.#agentUtterance.value = this.#agentUtterance.value
+          ? `${this.#agentUtterance.value} ${e.text}`
+          : e.text;
+        break;
       case "chat":
-        this.#messages.value = [...this.#messages.value, { role: "assistant", text: e.text }];
+        batch(() => {
+          this.#agentUtterance.value = null;
+          this.#messages.value = [...this.#messages.value, { role: "assistant", text: e.text }];
+        });
         break;
       case "tool_call_start":
         this.#toolCalls.value = [
@@ -137,8 +154,11 @@ export class ClientHandler {
       case "cancelled":
         this.#generation++;
         this.#voiceIO()?.flush();
-        this.#userUtterance.value = null;
-        this.#state.value = "listening";
+        batch(() => {
+          this.#userUtterance.value = null;
+          this.#agentUtterance.value = null;
+          this.#state.value = "listening";
+        });
         break;
       case "reset": {
         this.#generation++;
@@ -147,6 +167,7 @@ export class ClientHandler {
           this.#messages.value = [];
           this.#toolCalls.value = [];
           this.#userUtterance.value = null;
+          this.#agentUtterance.value = null;
           this.#error.value = null;
           this.#state.value = "listening";
         });
@@ -236,6 +257,7 @@ export function createVoiceSession(options: SessionOptions): VoiceSession {
   const messages = signal<Message[]>([]);
   const toolCalls = signal<ToolCallInfo[]>([]);
   const userUtterance = signal<string | null>(null);
+  const agentUtterance = signal<string | null>(null);
   const error = signal<SessionError | null>(null);
   const disconnected = signal<{ intentional: boolean } | null>(null);
 
@@ -255,6 +277,7 @@ export function createVoiceSession(options: SessionOptions): VoiceSession {
       messages.value = [];
       toolCalls.value = [];
       userUtterance.value = null;
+      agentUtterance.value = null;
       error.value = null;
     });
   }
@@ -346,6 +369,7 @@ export function createVoiceSession(options: SessionOptions): VoiceSession {
       messages,
       toolCalls,
       userUtterance,
+      agentUtterance,
       error,
       voiceIO: () => voiceIO,
     });
@@ -429,6 +453,7 @@ export function createVoiceSession(options: SessionOptions): VoiceSession {
     messages,
     toolCalls,
     userUtterance,
+    agentUtterance,
     error,
     disconnected,
     connect,

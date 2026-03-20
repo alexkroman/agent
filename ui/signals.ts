@@ -4,8 +4,9 @@ import { batch, effect, type Signal, signal } from "@preact/signals";
 import type * as preact from "preact";
 import type { ComponentChildren } from "preact";
 import { createContext, h } from "preact";
-import { useContext } from "preact/hooks";
+import { useContext, useEffect, useRef } from "preact/hooks";
 import type { VoiceSession } from "./session.ts";
+import type { ToolCallInfo } from "./types.ts";
 
 /**
  * Reactive session controls wrapping a {@linkcode VoiceSession} with Preact signals.
@@ -108,4 +109,59 @@ export function useSession(): SessionSignals {
   const ctx = useContext(Ctx);
   if (!ctx) throw new Error("Hook useSession() requires a SessionProvider");
   return ctx;
+}
+
+function tryParseJSON(str: string): unknown {
+  try {
+    return JSON.parse(str);
+  } catch {
+    return str;
+  }
+}
+
+/**
+ * Hook that fires a callback exactly once for each newly completed tool call.
+ *
+ * Handles deduplication internally — safe to use with `useState` setters
+ * without worrying about duplicates. The `result` argument is the parsed
+ * JSON result from the tool (or the raw string if parsing fails).
+ *
+ * Automatically resets tracking when the session is reset (toolCalls cleared).
+ *
+ * @param callback - Called once per completed tool call with the tool name,
+ *   parsed result, and full {@linkcode ToolCallInfo}.
+ */
+export function useToolResult(
+  callback: (toolName: string, result: unknown, toolCall: ToolCallInfo) => void,
+): void {
+  const { session } = useSession();
+  const seenRef = useRef(new Set<string>());
+  const cbRef = useRef(callback);
+  cbRef.current = callback;
+  const disposeRef = useRef<(() => void) | null>(null);
+
+  if (!disposeRef.current) {
+    disposeRef.current = effect(() => {
+      const toolCalls = session.toolCalls.value;
+      if (toolCalls.length === 0) {
+        seenRef.current.clear();
+        return;
+      }
+      for (const tc of toolCalls) {
+        if (tc.status !== "done" || !tc.result) continue;
+        if (seenRef.current.has(tc.toolCallId)) continue;
+        seenRef.current.add(tc.toolCallId);
+        const parsed = tryParseJSON(tc.result);
+        cbRef.current(tc.toolName, parsed, tc);
+      }
+    });
+  }
+
+  useEffect(
+    () => () => {
+      disposeRef.current?.();
+      disposeRef.current = null;
+    },
+    [],
+  );
 }

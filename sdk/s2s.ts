@@ -276,7 +276,9 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
       },
 
       sendToolResult(callId: string, result: string): void {
-        send({ type: "tool.result", call_id: callId, result });
+        const msg = { type: "tool.result", call_id: callId, result };
+        log.debug("S2S >> tool.result", { call_id: callId, resultLength: result.length });
+        send(msg);
       },
 
       updateSession(sessionConfig: S2sSessionConfig): void {
@@ -316,6 +318,9 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
       // Fast path: reply.audio is ~95% of traffic — skip Zod, skip logging.
       // Only reached in direct mode (self-hosted); bridged mode uses "audio" event above.
       const obj = raw as { type?: unknown; data?: unknown };
+      if (obj.type !== "reply.audio" && obj.type !== "input.audio") {
+        log.info(`S2S << ${obj.type}`);
+      }
       if (obj.type === "reply.audio" && typeof obj.data === "string") {
         const audioBytes = base64ToUint8(obj.data);
         target.dispatchEvent(new CustomEvent("audio", { detail: { audio: audioBytes } }));
@@ -324,15 +329,12 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
 
       const parsed = S2sServerMessageSchema.safeParse(raw);
       if (!parsed.success) {
-        log.debug(
-          `S2S << unrecognised message type: ${obj.type ?? JSON.stringify(raw).slice(0, 100)}`,
+        log.warn(
+          `S2S << unrecognised message type: ${obj.type ?? JSON.stringify(raw).slice(0, 200)}`,
         );
         return;
       }
       const msg = parsed.data;
-
-      log.debug(`S2S << ${msg.type}`);
-
       dispatchS2sMessage(target, msg);
     });
 

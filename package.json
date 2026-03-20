@@ -1,6 +1,6 @@
 {
   "name": "@alexkroman1/aai",
-  "version": "0.7.11",
+  "version": "0.7.12",
   "type": "module",
   "bin": {
     "aai": "dist/aai.js"
@@ -111,7 +111,7 @@
     "test": "vitest run",
     "lint": "biome check sdk/ ui/ cli/",
     "lint:fix": "biome check --write sdk/ ui/ cli/",
-    "check": "tsc --noEmit && tsc -p cli/tsconfig.json --noEmit && tsc -p tsconfig.build.json --noEmit && tsc -p tsconfig.templates.json && biome check sdk/ ui/ cli/ && vitest run"
+    "check": "tsc --noEmit && tsc -p cli/tsconfig.json --noEmit && tsc -p tsconfig.build.json --noEmit && tsc -p tsconfig.templates.json && biome check sdk/ ui/ cli/ && markdownlint-cli2 '**/*.md' '#node_modules' '#.aai' && vitest run"
   },
   "dependencies": {
     "@chonkiejs/core": "^0.0.8",
@@ -145,6 +145,7 @@
     "@vitest/coverage-v8": "^4.1.0",
     "ink-testing-library": "^4.0.0",
     "linkedom": "^0.18.12",
+    "markdownlint-cli2": "^0.21.0",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.0"

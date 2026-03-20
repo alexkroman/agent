@@ -10,6 +10,7 @@ function createTarget() {
   const messages = signal<Message[]>([]);
   const toolCalls = signal<ToolCallInfo[]>([]);
   const userUtterance = signal<string | null>(null);
+  const agentUtterance = signal<string | null>(null);
   const error = signal<SessionError | null>(null);
   let flushed = false;
 
@@ -18,6 +19,7 @@ function createTarget() {
     messages,
     toolCalls,
     userUtterance,
+    agentUtterance,
     error,
     voiceIO: () => ({
       enqueue() {},
@@ -40,6 +42,7 @@ function createTarget() {
     messages,
     toolCalls,
     userUtterance,
+    agentUtterance,
     error,
     wasFlushed: () => flushed,
   };
@@ -177,6 +180,7 @@ describe("ClientHandler event handling", () => {
       messages: signal<Message[]>([]),
       toolCalls: signal<ToolCallInfo[]>([]),
       userUtterance: signal<string | null>(null),
+      agentUtterance: signal<string | null>(null),
       error: signal<SessionError | null>(null),
       voiceIO: () => ({
         enqueue(buf: ArrayBuffer) {
@@ -207,6 +211,7 @@ describe("ClientHandler event handling", () => {
       messages: signal<Message[]>([]),
       toolCalls: signal<ToolCallInfo[]>([]),
       userUtterance: signal<string | null>(null),
+      agentUtterance: signal<string | null>(null),
       error: signal<SessionError | null>(null),
       voiceIO: () => ({
         enqueue() {},

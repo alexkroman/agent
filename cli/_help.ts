@@ -53,7 +53,7 @@ export function rootHelp(version: string): string {
     ["deploy", "", "Bundle and deploy to production"],
     ["start", "", "Start production server from build"],
     ["secret", "<cmd>", "Manage secrets"],
-    ["rag", "<url>", "Ingest a site's llms-full.txt into the vector store"],
+    ["rag", "<url>", "Ingest a site into the vector store"],
   ];
 
   for (const [name, args, desc] of cmds) {
@@ -78,15 +78,9 @@ export function rootHelp(version: string): string {
   lines.push("");
   lines.push(`  ${chalk.bold(interactive("Getting started"))}`);
   lines.push("");
-  lines.push(
-    `    ${chalk.dim("$")} ${primary("aai init")} ${interactive("my-agent")}    ${chalk.dim(
-      "Create a new agent",
-    )}`,
-  );
-  lines.push(`    ${chalk.dim("$")} ${primary("cd my-agent")}`);
-  lines.push(
-    `    ${chalk.dim("$")} ${primary("aai deploy")}          ${chalk.dim("Deploy to production")}`,
-  );
+  lines.push(`    ${chalk.dim("$")} ${primary("aai init")} ${interactive("my-agent")}`);
+  lines.push(`    ${chalk.dim("$")} ${primary("cd")} ${interactive("my-agent")}`);
+  lines.push(`    ${chalk.dim("$")} ${primary("aai dev")}`);
   lines.push("");
 
   return lines.join("\n");

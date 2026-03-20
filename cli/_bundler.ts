@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import fs from "node:fs/promises";
+import { createRequire } from "node:module";
 import path from "node:path";
 import preact from "@preact/preset-vite";
 import tailwindcss from "@tailwindcss/vite";
@@ -57,6 +58,19 @@ async function readDirRecursive(dir: string, base = dir): Promise<Record<string,
     }
   }
   return files;
+}
+
+/** Walk up from a resolved entry to find the package root by matching package.json name. */
+async function findPackageDir(resolvedEntry: string, packageName: string): Promise<string> {
+  let dir = path.dirname(resolvedEntry);
+  while (dir !== path.dirname(dir)) {
+    try {
+      const pkg = JSON.parse(await fs.readFile(path.join(dir, "package.json"), "utf-8"));
+      if (pkg.name === packageName) return dir;
+    } catch {}
+    dir = path.dirname(dir);
+  }
+  return path.dirname(resolvedEntry);
 }
 
 /**
@@ -118,12 +132,24 @@ export async function bundleAgent(
   const skipClient = opts?.skipClient || !agent.clientEntry;
 
   if (!skipClient) {
+    const _require = createRequire(import.meta.url);
+    const preactDir = path.dirname(_require.resolve("preact/package.json"));
+    const preactSignalsDir = await findPackageDir(
+      _require.resolve("@preact/signals"),
+      "@preact/signals",
+    );
     try {
       await build({
         root: agent.dir,
         base: "./",
         logLevel: "warn",
         plugins: [preact(), tailwindcss()],
+        resolve: {
+          alias: {
+            preact: preactDir,
+            "@preact/signals": preactSignalsDir,
+          },
+        },
         build: {
           outDir: clientDir,
           emptyOutDir: true,

@@ -39,7 +39,7 @@ function resolveServerUrl(parsed: minimist.ParsedArgs): string {
 }
 
 async function buildAgent(cwd: string, log: (el: React.ReactNode) => void): Promise<BundleOutput> {
-  log(<Step action="Build" msg="bundling agent" />);
+  log(<Step action="Bundle" msg="agent" />);
   const agent = await loadAgent(cwd);
   if (!agent) {
     throw new Error("No agent found — run `aai init` first");
