@@ -10,6 +10,7 @@
  */
 
 import type { AgentConfig, ToolSchema } from "./_internal_types.ts";
+import { errorMessage } from "./_utils.ts";
 import type { ClientSink } from "./protocol.ts";
 import { HOOK_TIMEOUT_MS } from "./protocol.ts";
 import type { Logger, Metrics, S2SConfig } from "./runtime.ts";
@@ -131,12 +132,16 @@ export function createS2sSession(opts: SessionOptions): Session {
     }
   }
 
-  /** Fire-and-forget a hook invocation. Errors are logged, not thrown. */
-  function fireHook(fn: () => Promise<void>, name: string): void {
-    fn().catch((err: unknown) => {
-      log.warn(`${name} hook failed`, {
-        err: err instanceof Error ? err.message : String(err),
-      });
+  function invokeHook(hook: "onConnect" | "onDisconnect"): void;
+  function invokeHook(hook: "onTurn", text: string): void;
+  function invokeHook(hook: "onError", error: { message: string }): void;
+  function invokeHook(hook: "onStep", step: StepInfo): void;
+  function invokeHook(hook: string, arg?: unknown): void {
+    if (!hookInvoker) return;
+    // biome-ignore lint/complexity/noBannedTypes: dynamic hook dispatch
+    const h = hookInvoker[hook as keyof HookInvoker] as Function;
+    Promise.resolve(h.call(hookInvoker, id, arg, HOOK_TIMEOUT_MS)).catch((err: unknown) => {
+      log.warn(`${hook} hook failed`, { err: errorMessage(err) });
     });
   }
 
@@ -183,14 +188,11 @@ export function createS2sSession(opts: SessionOptions): Session {
     }
 
     // Fire onStep hook
-    if (hookInvoker) {
-      const step: StepInfo = {
-        stepNumber: toolCallCount - 1,
-        toolCalls: [{ toolName: name, args: parsedArgs }],
-        text: "",
-      };
-      fireHook(() => hookInvoker.onStep(id, step, HOOK_TIMEOUT_MS), "onStep");
-    }
+    invokeHook("onStep", {
+      stepNumber: toolCallCount - 1,
+      toolCalls: [{ toolName: name, args: parsedArgs }],
+      text: "",
+    });
 
     log.info("S2S tool call", { tool: name, call_id, args: parsedArgs, agent });
 
@@ -199,7 +201,7 @@ export function createS2sSession(opts: SessionOptions): Session {
     try {
       result = await executeTool(name, parsedArgs, id, conversationMessages);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errorMessage(err);
       log.error("Tool execution failed", { tool: name, error: msg });
       result = JSON.stringify({ error: msg });
     }
@@ -268,7 +270,7 @@ export function createS2sSession(opts: SessionOptions): Session {
         client.event({ type: "transcript", text, isFinal: true });
         client.event({ type: "turn", text });
         conversationMessages.push({ role: "user", content: text });
-        if (hookInvoker) fireHook(() => hookInvoker.onTurn(id, text, HOOK_TIMEOUT_MS), "onTurn");
+        invokeHook("onTurn", text);
       });
 
       handle.addEventListener("reply_started", () => {
@@ -291,9 +293,7 @@ export function createS2sSession(opts: SessionOptions): Session {
 
       on<S2sToolCall>(handle, "tool_call", (e) => {
         const p = handleToolCall(e.detail).catch((err: unknown) => {
-          log.error("Tool call handler failed", {
-            err: err instanceof Error ? err.message : String(err),
-          });
+          log.error("Tool call handler failed", { err: errorMessage(err) });
         });
         turnPromise = (turnPromise ?? Promise.resolve()).then(() => p);
       });
@@ -336,8 +336,7 @@ export function createS2sSession(opts: SessionOptions): Session {
         if (!sessionAbort.signal.aborted) {
           log.info("Attempting S2S reconnect");
           connectAndSetup().catch((err: unknown) => {
-            const msg = err instanceof Error ? err.message : String(err);
-            log.error("S2S reconnect failed", { error: msg });
+            log.error("S2S reconnect failed", { error: errorMessage(err) });
           });
         }
       });
@@ -360,7 +359,7 @@ export function createS2sSession(opts: SessionOptions): Session {
 
       s2s = handle;
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errorMessage(err);
       log.error("S2S connect failed", { error: msg });
       client.event({ type: "error", code: "internal", message: msg });
     } finally {
@@ -368,8 +367,7 @@ export function createS2sSession(opts: SessionOptions): Session {
       if (pendingReconnect && !sessionAbort.signal.aborted) {
         pendingReconnect = false;
         connectAndSetup().catch((err: unknown) => {
-          const msg = err instanceof Error ? err.message : String(err);
-          log.error("S2S deferred reconnect failed", { error: msg });
+          log.error("S2S deferred reconnect failed", { error: errorMessage(err) });
         });
       }
     }
@@ -379,7 +377,7 @@ export function createS2sSession(opts: SessionOptions): Session {
     async start(): Promise<void> {
       metrics.sessionsTotal.inc(agentLabel);
       metrics.sessionsActive.inc(agentLabel);
-      if (hookInvoker) fireHook(() => hookInvoker.onConnect(id, HOOK_TIMEOUT_MS), "onConnect");
+      invokeHook("onConnect");
       await connectAndSetup();
     },
 
@@ -389,8 +387,7 @@ export function createS2sSession(opts: SessionOptions): Session {
       metrics.sessionsActive.dec(agentLabel);
       if (turnPromise) await turnPromise;
       s2s?.close();
-      if (hookInvoker)
-        fireHook(() => hookInvoker.onDisconnect(id, HOOK_TIMEOUT_MS), "onDisconnect");
+      invokeHook("onDisconnect");
     },
 
     onAudio(data: Uint8Array): void {
