@@ -60,14 +60,11 @@ export function wrapOnStyleWebSocket(ws: OnStyleWebSocket): S2sWebSocket {
   const target = new EventTarget();
   ws.on("open", () => target.dispatchEvent(new Event("open")));
   ws.on("message", (data: unknown) => target.dispatchEvent(new MessageEvent("message", { data })));
-  ws.on("close", (code: unknown, reason: unknown) =>
-    target.dispatchEvent(
-      new CloseEvent("close", {
-        code: typeof code === "number" ? code : undefined,
-        reason: String(reason ?? ""),
-      }),
-    ),
-  );
+  ws.on("close", (code: unknown, reason: unknown) => {
+    const init: CloseEventInit = { reason: String(reason ?? "") };
+    if (typeof code === "number") init.code = code;
+    target.dispatchEvent(new CloseEvent("close", init));
+  });
   ws.on("error", (err: unknown) =>
     target.dispatchEvent(
       new ErrorEvent("error", {
