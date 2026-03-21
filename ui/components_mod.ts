@@ -14,9 +14,9 @@
  * @module
  */
 
-export { useAutoScroll } from "./_hooks.ts";
 export {
   App,
+  Button,
   ChatView,
   Controls,
   ErrorBanner,
@@ -37,6 +37,7 @@ export type { SessionSignals } from "./signals.ts";
 export {
   createSessionControls,
   SessionProvider,
+  useAutoScroll,
   useSession,
   useToolResult,
 } from "./signals.ts";

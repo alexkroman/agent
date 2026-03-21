@@ -52,7 +52,8 @@ function resolveContainer(target: string | HTMLElement = "#app"): HTMLElement {
  * @returns A {@linkcode MountHandle} for cleanup.
  * @throws {Error} If the target element is not found in the DOM.
  */
-export function mount(Component: ComponentType, options?: MountOptions): MountHandle {
+// biome-ignore lint/suspicious/noExplicitAny: mount accepts any component
+export function mount(Component: ComponentType<any>, options?: MountOptions): MountHandle {
   const container = resolveContainer(options?.target);
 
   const platformUrl =

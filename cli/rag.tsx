@@ -1,87 +1,12 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { render, Text, useApp } from "ink";
-import minimist from "minimist";
+import { Text } from "ink";
 import pLimit from "p-limit";
 import type React from "react";
-import { useEffect, useState } from "react";
 import { DEFAULT_SERVER, getApiKey, isDevMode, readProjectConfig } from "./_discover.ts";
-import type { SubcommandDef } from "./_help.ts";
-import { subcommandHelp } from "./_help.ts";
-import { Detail, ErrorLine, Info, Step, StepLog, useStepLog, Warn } from "./_ink.tsx";
-
-/** CLI definition for the `aai rag` subcommand. */
-const ragCommandDef: SubcommandDef = {
-  name: "rag",
-  description: "Ingest a site's llms-full.txt into the vector store",
-  args: [{ name: "url" }],
-  options: [
-    { flags: "-s, --server <url>", description: "Server URL" },
-    {
-      flags: "--chunk-size <n>",
-      description: "Max chunk size in tokens (default: 512)",
-    },
-    { flags: "-y, --yes", description: "Accept defaults (no prompts)" },
-  ],
-};
+import { Detail, Info, runWithInk, Step, Warn } from "./_ink.tsx";
 
 const FETCH_TIMEOUT_MS = 60_000;
-const PAD = 2;
-
-type RagUIProps = {
-  url: string;
-  apiKey: string;
-  serverUrl: string;
-  slug: string;
-  chunkSize: number;
-  onError?: (err: Error) => void;
-};
-
-function RagUI({ url, apiKey, serverUrl, slug, chunkSize, onError }: RagUIProps) {
-  const { exit } = useApp();
-  const { items, log } = useStepLog();
-  const [progress, setProgress] = useState<{
-    completed: number;
-    total: number;
-  } | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        await runRag({
-          url,
-          apiKey,
-          serverUrl,
-          slug,
-          chunkSize,
-          log,
-          setProgress,
-        });
-      } catch (e: unknown) {
-        const error = e instanceof Error ? e : new Error(String(e));
-        setErr(error.message);
-        onError?.(error);
-      }
-      setProgress(null);
-      exit();
-    })();
-  }, [apiKey, chunkSize, exit, log, onError, serverUrl, slug, url]);
-
-  return (
-    <>
-      <StepLog items={items} />
-      {err && <ErrorLine msg={err} />}
-      {progress && (
-        <Text>
-          {" ".repeat(PAD + 1)}Upsert {progress.completed}/{progress.total} (
-          {Math.round((progress.completed / progress.total) * 100)}
-          %)
-        </Text>
-      )}
-    </>
-  );
-}
 
 type VectorChunk = {
   id: string;
@@ -96,9 +21,9 @@ async function runRag(opts: {
   slug: string;
   chunkSize: number;
   log: (node: React.ReactNode) => void;
-  setProgress: (p: { completed: number; total: number } | null) => void;
+  setStatus: (node: React.ReactNode | null) => void;
 }) {
-  const { url, apiKey, serverUrl, slug, chunkSize, log, setProgress } = opts;
+  const { url, apiKey, serverUrl, slug, chunkSize, log, setStatus } = opts;
 
   // Fetch
   log(<Step action="Fetch" msg={url} />);
@@ -136,7 +61,7 @@ async function runRag(opts: {
   const vectorUrl = `${serverUrl}/${slug}/vector`;
   log(<Info msg={`target: ${vectorUrl}`} />);
 
-  const result = await upsertChunks(allChunks, vectorUrl, apiKey, setProgress);
+  const result = await upsertChunks(allChunks, vectorUrl, apiKey, setStatus);
 
   log(<Step action="Done" msg={`${result.upserted} chunks upserted`} />);
   if (result.errors > 0) {
@@ -178,7 +103,7 @@ async function upsertChunks(
   chunks: VectorChunk[],
   vectorUrl: string,
   apiKey: string,
-  setProgress: (p: { completed: number; total: number } | null) => void,
+  setStatus: (node: React.ReactNode | null) => void,
 ): Promise<{ upserted: number; errors: number; lastError: string }> {
   const total = chunks.length;
   let completed = 0;
@@ -186,7 +111,15 @@ async function upsertChunks(
   let errors = 0;
   let lastError = "";
 
-  setProgress({ completed: 0, total });
+  const updateStatus = () => {
+    const pct = Math.round((completed / total) * 100);
+    setStatus(
+      <Text>
+        {"   "}Upsert {completed}/{total} ({pct}%)
+      </Text>,
+    );
+  };
+  updateStatus();
 
   const limit = pLimit(5);
   await Promise.all(
@@ -217,42 +150,22 @@ async function upsertChunks(
           errors++;
         }
         completed++;
-        setProgress({ completed, total });
+        updateStatus();
       }),
     ),
   );
 
+  setStatus(null);
   return { upserted, errors, lastError };
 }
 
-/**
- * Runs the `aai rag <url>` subcommand.
- *
- * Fetches a site's `llms-full.txt`, chunks the markdown content
- * using chonkie's RecursiveChunker, and upserts chunks to the
- * vector store via POST /:slug/vector.
- *
- * Usage: aai rag https://example.com/docs/llms-full.txt
- */
-export async function runRagCommand(args: string[], version: string): Promise<void> {
-  const parsed = minimist(args, {
-    string: ["server", "chunk-size"],
-    boolean: ["help", "yes"],
-    alias: { s: "server", h: "help", y: "yes" },
-    stopEarly: true,
-  });
-
-  if (parsed.help) {
-    console.log(subcommandHelp(ragCommandDef, version));
-    return;
-  }
-
-  const url = String(parsed._[0] ?? "");
-  if (!url) {
-    throw new Error(
-      "Usage: aai rag <url>\n\n" + "Provide the full URL to a site's llms-full.txt file",
-    );
-  }
+export async function runRagCommand(opts: {
+  url: string;
+  cwd: string;
+  server?: string;
+  chunkSize?: string;
+}): Promise<void> {
+  const { url, cwd } = opts;
 
   try {
     new URL(url);
@@ -260,34 +173,20 @@ export async function runRagCommand(args: string[], version: string): Promise<vo
     throw new Error(`Invalid URL: ${url}`);
   }
 
-  const cwd = process.env.INIT_CWD || process.cwd();
   const config = await readProjectConfig(cwd);
   if (!config) {
     throw new Error("No .aai/project.json found — deploy first with `aai deploy`");
   }
 
-  // Pre-resolve API key (may prompt) before Ink render
   const apiKey = await getApiKey();
   const serverUrl =
-    parsed.server || config.serverUrl || (isDevMode() ? "http://localhost:3100" : DEFAULT_SERVER);
+    opts.server || config.serverUrl || (isDevMode() ? "http://localhost:3100" : DEFAULT_SERVER);
   const slug = config.slug;
-  const chunkSize = Number.parseInt(parsed["chunk-size"] ?? "512", 10);
+  const chunkSize = Number.parseInt(opts.chunkSize ?? "512", 10);
 
-  let thrownError: Error | undefined;
-  const app = render(
-    <RagUI
-      url={url}
-      apiKey={apiKey}
-      serverUrl={serverUrl}
-      slug={slug}
-      chunkSize={chunkSize}
-      onError={(e) => {
-        thrownError = e;
-      }}
-    />,
-  );
-  await app.waitUntilExit();
-  if (thrownError) throw thrownError;
+  await runWithInk(async ({ log, setStatus }) => {
+    await runRag({ url, apiKey, serverUrl, slug, chunkSize, log, setStatus });
+  });
 }
 
 // ─── Page splitting ───────────────────────────────────────────────────────────

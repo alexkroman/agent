@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
-import { _startProductionServer } from "./_start.ts";
 import { withTempDir } from "./_test_utils.ts";
+import { _startProductionServer } from "./start.tsx";
 
 describe("_startProductionServer", () => {
   test("throws when build directory is missing", async () => {

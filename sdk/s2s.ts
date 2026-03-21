@@ -87,104 +87,33 @@ const S2sServerMessageSchema = z.discriminatedUnion("type", [
 
 type S2sServerMessage = z.infer<typeof S2sServerMessageSchema>;
 
+// biome-ignore format: compact lookup table
+type Msg = Record<string, unknown>;
+const S2S_DISPATCH: Record<string, (m: Msg) => [string, unknown] | undefined> = {
+  "session.ready": (m) => ["ready", { session_id: m.session_id }],
+  "session.updated": (m) => ["session_updated", m],
+  "input.speech.started": () => ["speech_started", undefined],
+  "input.speech.stopped": () => ["speech_stopped", undefined],
+  "transcript.user.delta": (m) => ["user_transcript_delta", { text: m.text }],
+  "transcript.user": (m) => ["user_transcript", { item_id: m.item_id, text: m.text }],
+  "reply.started": (m) => ["reply_started", { reply_id: m.reply_id }],
+  "transcript.agent.delta": (m) => ["agent_transcript_delta", { text: m.delta }],
+  "transcript.agent": (m) => ["agent_transcript", { text: m.text }],
+  "tool.call": (m) => ["tool_call", { call_id: m.call_id, name: m.name, args: m.args }],
+  "reply.done": (m) => ["reply_done", { status: m.status }],
+  "session.error": (m) => [
+    m.code === "session_not_found" || m.code === "session_forbidden" ? "session_expired" : "error",
+    { code: m.code, message: m.message },
+  ],
+  error: (m) => ["error", { code: "connection", message: m.message }],
+  "reply.content_part.started": () => undefined,
+  "reply.content_part.done": () => undefined,
+};
+
 /** Dispatch a parsed S2S server message to the EventTarget. */
 function dispatchS2sMessage(target: EventTarget, msg: S2sServerMessage): void {
-  switch (msg.type) {
-    case "session.ready":
-      target.dispatchEvent(
-        new CustomEvent("ready", {
-          detail: { session_id: msg.session_id },
-        }),
-      );
-      break;
-    case "session.updated":
-      target.dispatchEvent(new CustomEvent("session_updated", { detail: msg }));
-      break;
-    case "input.speech.started":
-      target.dispatchEvent(new CustomEvent("speech_started"));
-      break;
-    case "input.speech.stopped":
-      target.dispatchEvent(new CustomEvent("speech_stopped"));
-      break;
-    case "transcript.user.delta":
-      target.dispatchEvent(
-        new CustomEvent("user_transcript_delta", {
-          detail: { text: msg.text },
-        }),
-      );
-      break;
-    case "transcript.user":
-      target.dispatchEvent(
-        new CustomEvent("user_transcript", {
-          detail: {
-            item_id: msg.item_id,
-            text: msg.text,
-          },
-        }),
-      );
-      break;
-    case "reply.started":
-      target.dispatchEvent(
-        new CustomEvent("reply_started", {
-          detail: { reply_id: msg.reply_id },
-        }),
-      );
-      break;
-    // reply.audio handled on the fast path — never reaches dispatch.
-    case "transcript.agent.delta":
-      target.dispatchEvent(
-        new CustomEvent("agent_transcript_delta", {
-          detail: { text: msg.delta },
-        }),
-      );
-      break;
-    case "transcript.agent":
-      target.dispatchEvent(
-        new CustomEvent("agent_transcript", {
-          detail: { text: msg.text },
-        }),
-      );
-      break;
-    case "tool.call":
-      target.dispatchEvent(
-        new CustomEvent("tool_call", {
-          detail: {
-            call_id: msg.call_id,
-            name: msg.name,
-            args: msg.args,
-          },
-        }),
-      );
-      break;
-    case "reply.done":
-      target.dispatchEvent(
-        new CustomEvent("reply_done", {
-          detail: { status: msg.status },
-        }),
-      );
-      break;
-    case "session.error": {
-      const isExpired = msg.code === "session_not_found" || msg.code === "session_forbidden";
-      target.dispatchEvent(
-        new CustomEvent(isExpired ? "session_expired" : "error", {
-          detail: { code: msg.code, message: msg.message },
-        }),
-      );
-      break;
-    }
-    case "reply.content_part.started":
-    case "reply.content_part.done":
-      // Structural markers — no action needed.
-      break;
-    case "error":
-      // Connection-level error — should trigger close/reconnect.
-      target.dispatchEvent(
-        new CustomEvent("error", {
-          detail: { code: "connection", message: msg.message },
-        }),
-      );
-      break;
-  }
+  const entry = S2S_DISPATCH[msg.type]?.(msg as Msg);
+  if (entry) target.dispatchEvent(new CustomEvent(entry[0], { detail: entry[1] }));
 }
 
 // ─── Types ──────────────────────────────────────────────────────────────────

@@ -1,10 +1,11 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import { readFileSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import preact from "@preact/preset-vite";
 import tailwindcss from "@tailwindcss/vite";
-import { build } from "vite";
+import { build, type Plugin } from "vite";
 import type { AgentEntry } from "./_discover.ts";
 import { isDevMode } from "./_discover.ts";
 
@@ -37,26 +38,75 @@ export const _internals = {
   BundleError,
 };
 
-/** Recursively read all files in a directory as a map of relative paths to contents. */
-async function readDirRecursive(dir: string, base = dir): Promise<Record<string, string>> {
-  const files: Record<string, string> = {};
-  let names: string[];
-  try {
-    names = await fs.readdir(dir);
-  } catch {
-    return files;
-  }
-  for (const name of names) {
-    const full = path.join(dir, name);
-    const stat = await fs.stat(full);
-    const entry = { name, isDirectory: () => stat.isDirectory() };
-    if (entry.isDirectory()) {
-      Object.assign(files, await readDirRecursive(full, base));
-    } else {
-      const rel = path.relative(base, full);
-      files[rel] = await fs.readFile(full, "utf-8");
+/**
+ * Vite plugin that resolves @alexkroman1/aai imports to monorepo source.
+ *
+ * Reads the "source" condition from the monorepo's package.json exports,
+ * so adding a new export automatically works in dev mode.
+ */
+function monorepoResolvePlugin(monorepoRoot: string): Plugin {
+  const pkg = JSON.parse(readFileSync(path.join(monorepoRoot, "package.json"), "utf-8"));
+  const sourceMap = new Map<string, string>();
+
+  for (const [subpath, entry] of Object.entries(pkg.exports as Record<string, unknown>)) {
+    if (typeof entry === "string") {
+      // Plain string export (e.g. "./ui/styles.css": "./ui/styles.css")
+      const specifier = `${pkg.name}/${subpath.slice(2)}`;
+      sourceMap.set(specifier, path.resolve(monorepoRoot, entry));
+    } else if (entry && typeof entry === "object" && "source" in entry) {
+      const source = (entry as Record<string, string>).source;
+      if (!source) continue;
+      const specifier = subpath === "." ? pkg.name : `${pkg.name}/${subpath.slice(2)}`;
+      sourceMap.set(specifier, path.resolve(monorepoRoot, source));
     }
   }
+
+  return {
+    name: "aai-monorepo-resolve",
+    resolveId(source) {
+      return sourceMap.get(source) ?? null;
+    },
+  };
+}
+
+/** Vite plugin that provides a virtual worker entry module (no file on disk). */
+function workerEntryPlugin(): Plugin {
+  const virtualId = "virtual:worker-entry";
+  const resolvedId = `\0${virtualId}`;
+  return {
+    name: "aai-worker-entry",
+    resolveId(source) {
+      return source === virtualId ? resolvedId : null;
+    },
+    load(id) {
+      if (id !== resolvedId) return null;
+      return [
+        `import agent from "./agent.ts";`,
+        `import { initWorker } from "@alexkroman1/aai/worker-shim";`,
+        `initWorker(agent);`,
+      ].join("\n");
+    },
+  };
+}
+
+/** Read all files in a directory as a map of relative paths to contents. */
+async function readDirFiles(dir: string): Promise<Record<string, string>> {
+  let entries: string[];
+  try {
+    entries = await fs.readdir(dir, { recursive: true });
+  } catch {
+    return {};
+  }
+  const files: Record<string, string> = {};
+  await Promise.all(
+    entries.map(async (rel) => {
+      const full = path.join(dir, rel);
+      const stat = await fs.stat(full);
+      if (stat.isFile()) {
+        files[rel] = await fs.readFile(full, "utf-8");
+      }
+    }),
+  );
   return files;
 }
 
@@ -76,39 +126,24 @@ export async function bundleAgent(
   const aaiDir = path.join(agent.dir, ".aai");
   const buildDir = path.join(aaiDir, "build");
   const clientDir = path.join(aaiDir, "client");
-  await fs.mkdir(aaiDir, { recursive: true });
 
-  // Generate the worker entry file — a real file in .aai/ that the user
-  // can inspect for debugging, like Next.js generates files in .next/.
-  const workerEntry = path.join(aaiDir, "_worker_entry.ts");
-  await fs.writeFile(
-    workerEntry,
-    [
-      `import agent from "../agent.ts";`,
-      `import { initWorker } from "@alexkroman1/aai/worker-shim";`,
-      `initWorker(agent);`,
-    ].join("\n"),
-  );
-
-  // 1. Worker build — bundles the entry into a single ESM file
+  // 1. Worker build — bundles agent.ts + worker shim into a single ESM file
   try {
     await build({
       configFile: false,
       root: agent.dir,
       logLevel: "warn",
+      plugins: [workerEntryPlugin()],
       build: {
+        lib: {
+          entry: "virtual:worker-entry",
+          formats: ["es"],
+          fileName: "worker",
+        },
         outDir: buildDir,
         emptyOutDir: true,
         minify: true,
         target: "es2022",
-        rollupOptions: {
-          input: workerEntry,
-          output: {
-            format: "es",
-            entryFileNames: "worker.js",
-            inlineDynamicImports: true,
-          },
-        },
       },
     });
   } catch (err: unknown) {
@@ -119,20 +154,11 @@ export async function bundleAgent(
   const skipClient = opts?.skipClient || !agent.clientEntry;
 
   if (!skipClient) {
-    // In dev mode, alias @alexkroman1/aai imports to the local monorepo source
-    // so that changes to UI components are reflected immediately without publishing.
-    const devAlias: Record<string, string> = {};
-    if (isDevMode()) {
+    const devMode = isDevMode();
+    const devPlugins: Plugin[] = [];
+    if (devMode) {
       const monorepoRoot = path.resolve(import.meta.dirname ?? __dirname, "..");
-      devAlias["@alexkroman1/aai/ui/styles.css"] = path.join(monorepoRoot, "ui/styles.css");
-      devAlias["@alexkroman1/aai/ui"] = path.join(monorepoRoot, "ui/mod.ts");
-      devAlias["@alexkroman1/aai"] = path.join(monorepoRoot, "sdk/mod.ts");
-      // Ensure preact resolves from the user's project (not the monorepo)
-      // so the aliased UI source and user code share a single Preact instance.
-      const userPreact = path.join(agent.dir, "node_modules/preact");
-      const userSignals = path.join(agent.dir, "node_modules/@preact/signals");
-      devAlias.preact = userPreact;
-      devAlias["@preact/signals"] = userSignals;
+      devPlugins.push(monorepoResolvePlugin(monorepoRoot));
     }
 
     try {
@@ -140,8 +166,10 @@ export async function bundleAgent(
         root: agent.dir,
         base: "./",
         logLevel: "warn",
-        plugins: [preact(), tailwindcss()],
-        ...(Object.keys(devAlias).length > 0 && { resolve: { alias: devAlias } }),
+        plugins: [preact(), tailwindcss(), ...devPlugins],
+        ...(devMode && {
+          resolve: { dedupe: ["preact", "@preact/signals"] },
+        }),
         build: {
           outDir: clientDir,
           emptyOutDir: true,
@@ -155,7 +183,7 @@ export async function bundleAgent(
   }
 
   const worker = await fs.readFile(path.join(buildDir, "worker.js"), "utf-8");
-  const clientFiles = await readDirRecursive(clientDir);
+  const clientFiles = await readDirFiles(clientDir);
 
   return {
     worker,

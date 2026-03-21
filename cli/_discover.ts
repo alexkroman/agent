@@ -5,6 +5,11 @@ import path from "node:path";
 import { humanId } from "human-id";
 import { askPassword } from "./_prompts.tsx";
 
+/** Resolve the working directory from INIT_CWD or process.cwd(). */
+export function resolveCwd(): string {
+  return process.env.INIT_CWD || process.cwd();
+}
+
 /**
  * Whether the CLI is running from the dev monorepo (via tsx/node)
  * vs a compiled binary.

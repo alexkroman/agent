@@ -11,8 +11,7 @@
 import { convert } from "html-to-text";
 import { z } from "zod";
 import { EMPTY_PARAMS, type ToolSchema } from "./_internal_types.ts";
-import { memoryTools } from "./memory_tools.ts";
-import type { ToolDef } from "./types.ts";
+import { type ToolDef, tool } from "./types.ts";
 
 // ─── HTML to text ──────────────────────────────────────────────────────────
 
@@ -232,59 +231,15 @@ export type BuiltinToolOptions = {
   vectorSearch?: VectorSearchFn;
 };
 
-/**
- * Create built-in tool definitions for the given tool names.
- *
- * @param names - Built-in tool names from the agent config.
- * @param opts - Options including RPC callbacks for host-proxied tools.
- * @returns A record of tool name → ToolDef.
- */
 /** A record of tool name → ToolDef with any Zod object parameters. */
 type ToolDefRecord = Record<string, ToolDef<z.ZodObject<z.ZodRawShape>>>;
 
-export function getBuiltinToolDefs(
-  names: readonly string[],
-  opts?: BuiltinToolOptions,
-): ToolDefRecord {
-  const defs: ToolDefRecord = {};
-  for (const name of names) {
-    switch (name) {
-      case "web_search":
-        defs[name] = createWebSearch();
-        break;
-      case "visit_webpage":
-        defs[name] = createVisitWebpage();
-        break;
-      case "fetch_json":
-        defs[name] = createFetchJson();
-        break;
-      case "run_code":
-        defs[name] = createRunCode();
-        break;
-      case "vector_search":
-        if (opts?.vectorSearch) {
-          defs[name] = createVectorSearch(opts.vectorSearch);
-        }
-        break;
-      case "memory": {
-        const mt = memoryTools();
-        for (const [toolName, toolDef] of Object.entries(mt)) {
-          defs[toolName] = toolDef;
-        }
-        break;
-      }
-    }
-  }
-  return defs;
-}
-
-/** All available tool creators, keyed by builtin tool name. */
+/** Single-tool creators keyed by builtin name. */
 const TOOL_CREATORS: Record<string, () => ToolDef> = {
   web_search: createWebSearch,
   visit_webpage: createVisitWebpage,
   fetch_json: createFetchJson,
   run_code: createRunCode,
-  // vector_search uses a stub for schema generation
   vector_search: () => createVectorSearch(async () => ""),
 };
 
@@ -294,31 +249,114 @@ const MULTI_TOOL_BUILTINS: Record<string, () => Record<string, ToolDef>> = {
 };
 
 /**
- * Returns JSON tool schemas for the specified builtin tools.
- *
- * Used by both the worker (to report schemas) and the server (to
- * assemble tool lists for the LLM).
+ * Create built-in tool definitions for the given tool names.
+ * For runtime use — vector_search requires opts.vectorSearch to be included.
  */
-export function getBuiltinToolSchemas(names: readonly string[]): ToolSchema[] {
-  return names.flatMap((name) => {
-    // Multi-tool builtins (e.g. "memory" → save_memory, recall_memory, etc.)
-    const multiCreator = MULTI_TOOL_BUILTINS[name];
-    if (multiCreator) {
-      return Object.entries(multiCreator()).map(([toolName, def]) => ({
-        name: toolName,
-        description: def.description,
-        parameters: z.toJSONSchema(def.parameters ?? EMPTY_PARAMS) as ToolSchema["parameters"],
-      }));
+export function getBuiltinToolDefs(
+  names: readonly string[],
+  opts?: BuiltinToolOptions,
+): ToolDefRecord {
+  const defs: ToolDefRecord = {};
+  for (const name of names) {
+    const multi = MULTI_TOOL_BUILTINS[name];
+    if (multi) {
+      Object.assign(defs, multi());
+      continue;
+    }
+    if (name === "vector_search") {
+      if (opts?.vectorSearch) defs[name] = createVectorSearch(opts.vectorSearch);
+      continue;
     }
     const creator = TOOL_CREATORS[name];
-    if (!creator) return [];
-    const def = creator();
-    return [
-      {
-        name,
-        description: def.description,
-        parameters: z.toJSONSchema(def.parameters ?? EMPTY_PARAMS) as ToolSchema["parameters"],
-      },
-    ];
+    if (creator) defs[name] = creator();
+  }
+  return defs;
+}
+
+/** Returns JSON tool schemas for the specified builtin tools. */
+export function getBuiltinToolSchemas(names: readonly string[]): ToolSchema[] {
+  const toSchema = (toolName: string, def: ToolDef): ToolSchema => ({
+    name: toolName,
+    description: def.description,
+    parameters: z.toJSONSchema(def.parameters ?? EMPTY_PARAMS) as ToolSchema["parameters"],
   });
+
+  return names.flatMap((name) => {
+    const multi = MULTI_TOOL_BUILTINS[name];
+    if (multi) return Object.entries(multi()).map(([n, d]) => toSchema(n, d));
+    const creator = TOOL_CREATORS[name];
+    if (!creator) return [];
+    return [toSchema(name, creator())];
+  });
+}
+
+// ─── Memory tools ──────────────────────────────────────────────────────────
+
+/**
+ * Returns a standard set of KV-backed memory tools: `save_memory`,
+ * `recall_memory`, `list_memories`, and `forget_memory`.
+ *
+ * Spread the result into your agent's `tools` record.
+ *
+ * @example
+ * ```ts
+ * import { defineAgent, memoryTools } from "aai";
+ *
+ * export default defineAgent({
+ *   name: "My Agent",
+ *   tools: { ...memoryTools() },
+ * });
+ * ```
+ */
+export function memoryTools() {
+  return {
+    save_memory: tool({
+      description:
+        "Save a piece of information to persistent memory. Use a descriptive key like 'user:name' or 'project:status'.",
+      parameters: z.object({
+        key: z
+          .string()
+          .describe("A descriptive key for this memory (e.g. 'user:name', 'preference:color')"),
+        value: z.string().describe("The information to remember"),
+      }),
+      execute: async ({ key, value }, ctx) => {
+        await ctx.kv.set(key, value);
+        return { saved: key };
+      },
+    }),
+    recall_memory: tool({
+      description: "Retrieve a previously saved memory by its key.",
+      parameters: z.object({
+        key: z.string().describe("The key to look up"),
+      }),
+      execute: async ({ key }, ctx) => {
+        const value = await ctx.kv.get(key);
+        if (value === null) return { found: false, key };
+        return { found: true, key, value };
+      },
+    }),
+    list_memories: tool({
+      description: "List all saved memory keys, optionally filtered by a prefix (e.g. 'user:').",
+      parameters: z.object({
+        prefix: z
+          .string()
+          .describe("Prefix to filter keys (e.g. 'user:'). Use empty string for all.")
+          .optional(),
+      }),
+      execute: async ({ prefix }, ctx) => {
+        const entries = await ctx.kv.list(prefix ?? "");
+        return { count: entries.length, keys: entries.map((e) => e.key) };
+      },
+    }),
+    forget_memory: tool({
+      description: "Delete a previously saved memory by its key.",
+      parameters: z.object({
+        key: z.string().describe("The key to delete"),
+      }),
+      execute: async ({ key }, ctx) => {
+        await ctx.kv.delete(key);
+        return { deleted: key };
+      },
+    }),
+  };
 }

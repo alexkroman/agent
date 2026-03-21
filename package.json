@@ -12,95 +12,108 @@
   ],
   "exports": {
     ".": {
+      "source": "./sdk/mod.ts",
       "types": "./dist/sdk/mod.d.ts",
       "default": "./dist/sdk/mod.js"
     },
     "./types": {
+      "source": "./sdk/types.ts",
       "types": "./dist/sdk/types.d.ts",
       "default": "./dist/sdk/types.js"
     },
-    "./define-agent": {
-      "types": "./dist/sdk/define_agent.d.ts",
-      "default": "./dist/sdk/define_agent.js"
-    },
     "./kv": {
+      "source": "./sdk/kv.ts",
       "types": "./dist/sdk/kv.d.ts",
       "default": "./dist/sdk/kv.js"
     },
     "./vector": {
+      "source": "./sdk/vector.ts",
       "types": "./dist/sdk/vector.d.ts",
       "default": "./dist/sdk/vector.js"
     },
     "./testing": {
+      "source": "./sdk/_mock_ws.ts",
       "types": "./dist/sdk/_mock_ws.d.ts",
       "default": "./dist/sdk/_mock_ws.js"
     },
     "./server": {
+      "source": "./sdk/server.ts",
       "types": "./dist/sdk/server.d.ts",
       "default": "./dist/sdk/server.js"
     },
     "./runtime": {
+      "source": "./sdk/runtime.ts",
       "types": "./dist/sdk/runtime.d.ts",
       "default": "./dist/sdk/runtime.js"
     },
     "./ui": {
+      "source": "./ui/mod.ts",
       "types": "./dist/ui/mod.d.ts",
       "default": "./dist/ui/mod.js"
     },
     "./ui/styles.css": "./ui/styles.css",
     "./ui/session": {
+      "source": "./ui/session_mod.ts",
       "types": "./dist/ui/session_mod.d.ts",
       "default": "./dist/ui/session_mod.js"
     },
     "./ui/components": {
+      "source": "./ui/components_mod.ts",
       "types": "./dist/ui/components_mod.d.ts",
       "default": "./dist/ui/components_mod.js"
     },
     "./internal-types": {
+      "source": "./sdk/_internal_types.ts",
       "types": "./dist/sdk/_internal_types.d.ts",
       "default": "./dist/sdk/_internal_types.js"
     },
     "./protocol": {
+      "source": "./sdk/protocol.ts",
       "types": "./dist/sdk/protocol.d.ts",
       "default": "./dist/sdk/protocol.js"
     },
     "./worker-entry": {
+      "source": "./sdk/worker_entry.ts",
       "types": "./dist/sdk/worker_entry.d.ts",
       "default": "./dist/sdk/worker_entry.js"
     },
     "./builtin-tools": {
+      "source": "./sdk/builtin_tools.ts",
       "types": "./dist/sdk/builtin_tools.d.ts",
       "default": "./dist/sdk/builtin_tools.js"
     },
     "./s2s": {
+      "source": "./sdk/s2s.ts",
       "types": "./dist/sdk/s2s.d.ts",
       "default": "./dist/sdk/s2s.js"
     },
     "./session": {
+      "source": "./sdk/session.ts",
       "types": "./dist/sdk/session.d.ts",
       "default": "./dist/sdk/session.js"
     },
-    "./system-prompt": {
-      "types": "./dist/sdk/system_prompt.d.ts",
-      "default": "./dist/sdk/system_prompt.js"
-    },
     "./ws-handler": {
+      "source": "./sdk/ws_handler.ts",
       "types": "./dist/sdk/ws_handler.d.ts",
       "default": "./dist/sdk/ws_handler.js"
     },
     "./direct-executor": {
+      "source": "./sdk/direct_executor.ts",
       "types": "./dist/sdk/direct_executor.d.ts",
       "default": "./dist/sdk/direct_executor.js"
     },
     "./capnweb": {
+      "source": "./sdk/capnweb.ts",
       "types": "./dist/sdk/capnweb.d.ts",
       "default": "./dist/sdk/capnweb.js"
     },
     "./winterc-server": {
+      "source": "./sdk/winterc_server.ts",
       "types": "./dist/sdk/winterc_server.d.ts",
       "default": "./dist/sdk/winterc_server.js"
     },
     "./worker-shim": {
+      "source": "./sdk/worker_shim.ts",
       "types": "./dist/sdk/worker_shim.d.ts",
       "default": "./dist/sdk/worker_shim.js"
     }
@@ -123,16 +136,17 @@
     "@tailwindcss/vite": "^4.2.1",
     "@types/json-schema": "^7.0.15",
     "chalk": "^5.6.2",
+    "commander": "^14.0.3",
     "fast-glob": "^3.3.3",
     "fs-extra": "^11.3.4",
     "hono": "^4.12.8",
     "html-to-text": "^9.0.5",
     "human-id": "^4.1.3",
     "ink": "^6.8.0",
-    "minimist": "^1.2.8",
     "p-limit": "^7.3.0",
     "preact": "^10.29.0",
     "react": "^19.2.4",
+    "tsx": "^4.21.0",
     "vite": "^7.3.1",
     "ws": "^8.18.0",
     "zod": "^4.3.6"
@@ -141,7 +155,6 @@
     "@biomejs/biome": "^2.4.7",
     "@types/fs-extra": "^11.0.4",
     "@types/html-to-text": "^9.0.4",
-    "@types/minimist": "^1.2.5",
     "@types/node": "^25.5.0",
     "@types/react": "^19.2.14",
     "@types/ws": "^8.18.1",
@@ -149,7 +162,6 @@
     "ink-testing-library": "^4.0.0",
     "linkedom": "^0.18.12",
     "markdownlint-cli2": "^0.21.0",
-    "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.0"
   },

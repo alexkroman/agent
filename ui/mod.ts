@@ -18,34 +18,9 @@
  * @module
  */
 
-export { useAutoScroll } from "./_hooks.ts";
-export {
-  App,
-  ChatView,
-  Controls,
-  ErrorBanner,
-  MessageBubble,
-  MessageList,
-  SidebarLayout,
-  StartScreen,
-  StateIndicator,
-  ThinkingIndicator,
-  ToolCallBlock,
-  Transcript,
-} from "./components.ts";
-export type { MountHandle, MountOptions } from "./mount.tsx";
-export { mount } from "./mount.tsx";
-export type { MountConfig, MountTheme } from "./mount_context.ts";
-export { useMountConfig } from "./mount_context.ts";
+export * from "./components_mod.ts";
 export type { VoiceSession } from "./session.ts";
 export { createVoiceSession } from "./session.ts";
-export type { SessionSignals } from "./signals.ts";
-export {
-  createSessionControls,
-  SessionProvider,
-  useSession,
-  useToolResult,
-} from "./signals.ts";
 export type {
   AgentState,
   Message,

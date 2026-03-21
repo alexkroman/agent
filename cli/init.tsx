@@ -5,29 +5,11 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import minimist from "minimist";
-import { interactive } from "./_colors.ts";
-import { fileExists, isDevMode } from "./_discover.ts";
-import type { SubcommandDef } from "./_help.ts";
-import { subcommandHelp } from "./_help.ts";
-import { runWithInk, Step, Warn } from "./_ink.tsx";
+import { fileExists, isDevMode, resolveCwd } from "./_discover.ts";
+import { interactive, runWithInk, Step, Warn } from "./_ink.tsx";
 import { askText } from "./_prompts.tsx";
 
 const execFileAsync = promisify(execFile);
-
-/** CLI definition for the `aai init` subcommand. */
-const initCommandDef: SubcommandDef = {
-  name: "init",
-  description: "Scaffold a new agent project",
-  args: [{ name: "dir", optional: true }],
-  options: [
-    {
-      flags: "-t, --template <template>",
-      description: "Template to use",
-    },
-    { flags: "-f, --force", description: "Overwrite existing agent.ts" },
-  ],
-};
 
 /** Rewrite @aai deps to local monorepo paths for dev mode. */
 async function rewriteDevDeps(cwd: string, cliDir: string): Promise<void> {
@@ -76,49 +58,37 @@ async function installDeps(cwd: string, log: (el: React.ReactNode) => void): Pro
   }
 }
 
-/**
- * Runs the `aai init` subcommand. Scaffolds a new agent project from a
- * template and installs dependencies.
- */
 export async function runInitCommand(
-  args: string[],
-  version: string,
-  opts?: { quiet?: boolean },
+  opts: {
+    dir?: string | undefined;
+    template?: string | undefined;
+    force?: boolean | undefined;
+    yes?: boolean | undefined;
+  },
+  extra?: { quiet?: boolean | undefined },
 ): Promise<string> {
-  const parsed = minimist(args, {
-    string: ["template"],
-    boolean: ["force", "help"],
-    alias: { t: "template", f: "force", h: "help" },
-  });
-
-  if (parsed.help) {
-    console.log(subcommandHelp(initCommandDef, version));
-    return "";
-  }
-
   // Ensure API key is set before prompting for project name
   const { getApiKey } = await import("./_discover.ts");
   await getApiKey();
 
-  let dir = parsed._[0] as string | undefined;
+  let dir = opts.dir;
   if (!dir) {
     dir = await askText("What is your project named?", "my-voice-agent");
   }
-  const cwd = path.resolve(process.env.INIT_CWD || process.cwd(), dir);
+  const cwd = path.resolve(resolveCwd(), dir);
 
-  if (!parsed.force && (await fileExists(path.join(cwd, "agent.ts")))) {
-    console.log(
+  if (!opts.force && (await fileExists(path.join(cwd, "agent.ts")))) {
+    throw new Error(
       `agent.ts already exists in this directory. Use ${interactive("--force")} to overwrite.`,
     );
-    process.exit(1);
   }
 
   const cliDir = path.dirname(fileURLToPath(import.meta.url));
   const templatesDir = path.join(cliDir, "..", "templates");
   const { runInit } = await import("./_init.ts");
-  const template = parsed.template || "simple";
+  const template = opts.template || "simple";
 
-  await runWithInk(async (log) => {
+  await runWithInk(async ({ log }) => {
     log(<Step action="Create" msg={dir} />);
     await runInit({ targetDir: cwd, template, templatesDir });
 
@@ -132,9 +102,9 @@ export async function runInitCommand(
   process.chdir(cwd);
   delete process.env.INIT_CWD;
 
-  if (!opts?.quiet) {
+  if (!extra?.quiet) {
     const { runDeployCommand } = await import("./deploy.tsx");
-    await runDeployCommand(["-y"], version);
+    await runDeployCommand({ cwd });
   }
 
   return cwd;

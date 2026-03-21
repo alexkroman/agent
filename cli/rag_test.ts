@@ -1,5 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
 import { _internals, runRagCommand } from "./rag.tsx";
 
 const { splitPages, parsePage, stripNoise, slugify } = _internals;
@@ -135,31 +135,10 @@ describe("splitPages", () => {
   });
 });
 
-// --- runRagCommand arg parsing ---
+// --- runRagCommand arg validation ---
 
 describe("runRagCommand", () => {
-  let logSpy: ReturnType<typeof vi.spyOn>;
-
-  beforeEach(() => {
-    logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-  });
-
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  test("--help prints help and returns", async () => {
-    await runRagCommand(["--help"], "1.0.0");
-    expect(logSpy).toHaveBeenCalled();
-    const output = logSpy.mock.calls[0]?.[0];
-    expect(output).toContain("rag");
-  });
-
-  test("missing URL throws", async () => {
-    await expect(runRagCommand([], "1.0.0")).rejects.toThrow("Usage: aai rag <url>");
-  });
-
   test("invalid URL throws", async () => {
-    await expect(runRagCommand(["not-a-url"], "1.0.0")).rejects.toThrow("Invalid URL");
+    await expect(runRagCommand({ url: "not-a-url", cwd: "." })).rejects.toThrow("Invalid URL");
   });
 });

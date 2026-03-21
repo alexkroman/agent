@@ -1,60 +1,78 @@
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { main } from "./cli.ts";
+import type { Command } from "commander";
+import { CommanderError } from "commander";
+import { describe, expect, test } from "vitest";
+import { createProgram } from "./cli.ts";
 
-describe("cli main", () => {
-  let logSpy: ReturnType<typeof vi.spyOn>;
-  let _errorSpy: ReturnType<typeof vi.spyOn>;
-  let exitSpy: ReturnType<typeof vi.spyOn>;
+/** Recursively apply exitOverride and configureOutput to all commands. */
+function applyTestOverrides(
+  cmd: Command,
+  output: { writeOut: (str: string) => void; writeErr: (str: string) => void },
+) {
+  cmd.exitOverride();
+  cmd.configureOutput(output);
+  for (const sub of cmd.commands) {
+    applyTestOverrides(sub, output);
+  }
+}
 
-  beforeEach(() => {
-    logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-    _errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    exitSpy = vi.spyOn(process, "exit").mockImplementation(() => {
-      throw new Error("exit");
-    });
+/** Create a program that captures output and throws instead of exiting. */
+function testProgram() {
+  let stdout = "";
+  let stderr = "";
+  const program = createProgram();
+  applyTestOverrides(program, {
+    writeOut: (str) => {
+      stdout += str;
+    },
+    writeErr: (str) => {
+      stderr += str;
+    },
+  });
+  return {
+    parse: (args: string[]) => program.parseAsync(args, { from: "user" }),
+    stdout: () => stdout,
+    stderr: () => stderr,
+  };
+}
+
+describe("cli", () => {
+  test("--version prints version", async () => {
+    const t = testProgram();
+    await expect(t.parse(["--version"])).rejects.toThrow(CommanderError);
+    expect(t.stdout()).toMatch(/\d+\.\d+/);
   });
 
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  test("--version prints version and returns", async () => {
-    await main(["--version"]);
-    expect(logSpy).toHaveBeenCalledTimes(1);
-    expect(typeof logSpy.mock.calls[0][0]).toBe("string");
-    // Version should be a semver-like string
-    expect(logSpy.mock.calls[0][0]).toMatch(/\d+\.\d+/);
-  });
-
-  test("--help prints help and returns", async () => {
-    await main(["--help"]);
-    expect(logSpy).toHaveBeenCalled();
-    const output = logSpy.mock.calls[0][0];
+  test("--help prints help with banner", async () => {
+    const t = testProgram();
+    await expect(t.parse(["--help"])).rejects.toThrow(CommanderError);
+    const output = t.stdout();
     expect(output).toContain("Voice agent development kit");
+    expect(output).toContain("init");
+    expect(output).toContain("deploy");
+    expect(output).toContain("Getting started");
   });
 
-  test("unknown command calls error and exits", async () => {
-    await expect(main(["nonexistent-command"])).rejects.toThrow("exit");
-    expect(exitSpy).toHaveBeenCalledWith(1);
+  test("unknown command prints error", async () => {
+    const t = testProgram();
+    await expect(t.parse(["nonexistent-command"])).rejects.toThrow(CommanderError);
+    expect(t.stderr()).toContain("unknown command");
   });
 
-  test("'help' subcommand prints help", async () => {
-    await main(["help"]);
-    expect(logSpy).toHaveBeenCalled();
-    const output = logSpy.mock.calls[0][0];
-    expect(output).toContain("Voice agent development kit");
+  test("subcommand --help works", async () => {
+    const t = testProgram();
+    await expect(t.parse(["deploy", "--help"])).rejects.toThrow(CommanderError);
+    const output = t.stdout();
+    expect(output).toContain("deploy");
+    expect(output).toContain("--dry-run");
+    expect(output).toContain("--server");
   });
 
-  test("no args runs init", async () => {
-    // With no args, main() dispatches to runInitCommand which tries to render
-    // an interactive prompt. In a test environment this throws, confirming
-    // that init (not help) was invoked.
-    await expect(main([])).rejects.toThrow();
-    // Help output should NOT have been printed
-    const helpPrinted = logSpy.mock.calls.some(
-      (call: unknown[]) =>
-        typeof call[0] === "string" && call[0].includes("Voice agent development kit"),
-    );
-    expect(helpPrinted).toBe(false);
+  test("secret --help lists subcommands", async () => {
+    const t = testProgram();
+    await expect(t.parse(["secret", "--help"])).rejects.toThrow(CommanderError);
+    const output = t.stdout();
+    expect(output).toContain("put");
+    expect(output).toContain("delete");
+    expect(output).toContain("list");
   });
 });

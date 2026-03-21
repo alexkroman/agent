@@ -335,3 +335,41 @@ export type AgentDef = {
   onStep?: AgentOptions["onStep"];
   onBeforeStep?: AgentOptions["onBeforeStep"];
 };
+
+/**
+ * Create an agent definition from the given options, applying sensible defaults.
+ *
+ * This is the main entry point for defining a voice agent. The returned
+ * {@linkcode AgentDef} is consumed by the AAI server at deploy time.
+ *
+ * @param options Configuration for the agent including name, instructions,
+ *   tools, hooks, and other settings.
+ * @returns A fully resolved agent definition with all defaults applied.
+ *
+ * @example Basic agent with a custom tool
+ * ```ts
+ * import { defineAgent } from "aai";
+ * import { z } from "zod";
+ *
+ * export default defineAgent({
+ *   name: "greeter",
+ *   instructions: "You greet people warmly.",
+ *   tools: {
+ *     greet: {
+ *       description: "Greet a user by name",
+ *       parameters: z.object({ name: z.string() }),
+ *       execute: ({ name }) => `Hello, ${name}!`,
+ *     },
+ *   },
+ * });
+ * ```
+ */
+export function defineAgent<S>(options: AgentOptions<S>): AgentDef {
+  return {
+    ...options,
+    instructions: options.instructions ?? DEFAULT_INSTRUCTIONS,
+    greeting: options.greeting ?? DEFAULT_GREETING,
+    maxSteps: options.maxSteps ?? 5,
+    tools: options.tools ?? {},
+  } as AgentDef;
+}
