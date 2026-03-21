@@ -360,6 +360,18 @@ export function createVoiceSession(options: SessionOptions): VoiceSession {
     wsUrl.protocol = wsUrl.protocol === "https:" ? "wss:" : "ws:";
     if (hasConnected) wsUrl.searchParams.set("resume", "1");
 
+    // Send a persistent user ID so the server can maintain state across reconnects.
+    try {
+      let uid = globalThis.localStorage?.getItem("aai-uid");
+      if (!uid) {
+        uid = crypto.randomUUID();
+        globalThis.localStorage?.setItem("aai-uid", uid);
+      }
+      wsUrl.searchParams.set("uid", uid);
+    } catch {
+      // localStorage unavailable (Node tests, SSR) — skip
+    }
+
     const socket = new WebSocket(wsUrl.toString());
     socket.binaryType = "arraybuffer";
     ws = socket;

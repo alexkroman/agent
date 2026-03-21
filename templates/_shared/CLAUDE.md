@@ -10,7 +10,9 @@ You are helping a user build a voice agent using the **aai** framework.
    does what the user needs before writing custom code.
 3. **Start minimal** — Scaffold from the closest template, then layer on
    customizations. Don't over-engineer the first version.
-4. **Iterate** — Make small, focused changes. Verify each change works before
+4. **Verify** — After every change, run `aai build` to validate the bundle and
+   catch errors. Fix all errors before presenting work to the user.
+5. **Iterate** — Make small, focused changes. Verify each change works before
    moving on.
 
 ## Key rules
@@ -19,7 +21,7 @@ You are helping a user build a voice agent using the **aai** framework.
 - Custom UI goes in `client.tsx` alongside `agent.ts`
 - Optimize `instructions` for spoken conversation — short sentences, no visual
   formatting, no exclamation points
-- Never hardcode secrets — use `aai env add` and access via `ctx.env`
+- Never hardcode secrets — use `aai secret put` and access via `ctx.env`
 - Tool `execute` return values go into LLM context — filter and truncate large
   API responses
 - Agent code runs in a sandboxed worker — use `fetch` (proxied) for HTTP,
@@ -35,10 +37,11 @@ aai build                # Bundle and validate (no server or deploy)
 aai deploy               # Bundle and deploy to production
 aai deploy -y            # Deploy without prompts
 aai deploy --dry-run     # Validate and bundle without deploying
-aai env add <NAME>       # Set an environment variable on the server
-aai env rm <NAME>        # Remove an environment variable
-aai env ls               # List environment variable names
-aai env pull             # Pull env var names into .env for local dev
+aai secret put <NAME>    # Set a secret on the server (prompts for value)
+aai secret delete <NAME> # Remove a secret
+aai secret list          # List secret names
+aai secret pull          # Pull secret names into .env for local dev
+aai rag <url>            # Ingest a site's llms-full.txt into the vector store
 ```
 
 ## Templates
@@ -61,9 +64,9 @@ with `aai init -t <template_name>`.
 | `pizza-ordering`    | Pizza order-taker with dynamic cart sidebar. **Has custom UI.**                    |
 | `dispatch-center`   | 911 dispatch with incident triage and resource assignment. **Has custom UI.**      |
 | `infocom-adventure` | Zork-style text adventure with state, puzzles, inventory. **Has custom UI.**       |
+| `solo-rpg`          | Solo dark-fantasy RPG with dice, oaths, combat, save/load. **Has custom UI.**      |
 | `embedded-assets`   | FAQ bot using embedded JSON knowledge (no web search)                              |
 | `support`           | RAG-powered support agent using vector_search (AssemblyAI docs example)            |
-| `terminal`          | STT-only mode for voice-driven kubectl commands                                    |
 
 ## Minimal agent
 
@@ -150,17 +153,17 @@ injected into agent workers at runtime and available as `ctx.env`. Secrets are
 
 ```sh
 # Set secrets on the server (prompts for value)
-aai env add ASSEMBLYAI_API_KEY
-aai env add MY_API_KEY
+aai secret put ASSEMBLYAI_API_KEY
+aai secret put MY_API_KEY
 
 # List what's set
-aai env ls
+aai secret list
 
-# Pull env var names into .env for local dev reference
-aai env pull
+# Pull secret names into .env for local dev reference
+aai secret pull
 
 # Remove a secret
-aai env rm MY_API_KEY
+aai secret delete MY_API_KEY
 ```
 
 Access secrets in tool code via `ctx.env`:
@@ -246,7 +249,7 @@ Enable via `builtinTools`.
 | `web_search`    | Search the web (Brave Search)                  | `query`, `max_results?` (default 5) |
 | `visit_webpage` | Fetch URL → Markdown                           | `url`                               |
 | `fetch_json`    | HTTP GET a JSON API                            | `url`, `headers?`                   |
-| `run_code`      | Execute JS in sandbox (no net/fs, 30s timeout) | `code`                              |
+| `run_code`      | Execute JS in sandbox (no net/fs, 5s timeout)  | `code`                              |
 | `vector_search` | Search the agent's RAG knowledge base          | `query`, `topK?` (default 5)        |
 | `memory`        | Persistent KV memory (4 tools, see below)      | —                                   |
 
@@ -259,7 +262,7 @@ Every `execute` function and lifecycle hook receives a context object:
 
 ```ts
 ctx.sessionId; // string — unique per connection
-ctx.env; // Record<string, string> — secrets from `aai env add`
+ctx.env; // Record<string, string> — secrets from `aai secret put`
 ctx.abortSignal; // AbortSignal — cancelled on interruption (tools only)
 ctx.state; // per-session state
 ctx.kv; // persistent KV store
@@ -267,8 +270,7 @@ ctx.vector; // VectorStore — vector store for RAG (tools only)
 ctx.messages; // readonly Message[] — conversation history (tools only)
 ```
 
-Hooks get `HookContext` (same but without `abortSignal`, `vector`, and
-`messages`).
+Hooks get `HookContext` (same but without `abortSignal` and `messages`).
 
 **Timeouts:** Tool execution times out after **30 seconds** (`abortSignal`
 fires). Lifecycle hooks (`onConnect`, `onTurn`, etc.) time out after **5
@@ -317,6 +319,28 @@ export default defineAgent({
   },
 });
 ```
+
+### Persisting state across reconnects
+
+`ctx.sessionId` is a persistent user ID stored in the browser's
+`localStorage`. It stays the same when a user closes and reopens the
+browser. Use it as a KV key to auto-save and auto-load state:
+
+```ts
+export default defineAgent({
+  state: () => ({ score: 0, initialized: false }),
+  onConnect: async (ctx) => {
+    const saved = await ctx.kv.get(`save:${ctx.sessionId}`);
+    if (saved) Object.assign(ctx.state, saved);
+  },
+  onTurn: async (_text, ctx) => {
+    await ctx.kv.set(`save:${ctx.sessionId}`, ctx.state);
+  },
+});
+```
+
+Each browser gets its own saved state. This works for games, workflows,
+or any agent where users expect to resume where they left off.
 
 ### Persistent storage (KV)
 
@@ -841,12 +865,12 @@ const agent = defineAgent({
   instructions: "You are a helpful assistant.",
 });
 
-const server = createServer(agent, {
-  port: 3000,       // default: 3000
-  staticDir: "public", // optional: serve static files
+const server = createServer({
+  agent,
+  clientDir: "public", // optional: serve static files
 });
 
-server.listen();
+await server.listen(3000);
 ```
 
 Run with `node --experimental-strip-types server.ts` or bundle with your
@@ -1018,22 +1042,21 @@ Use directional words naturally: "To the north you see..." not "N: forest"
 - **Returning huge payloads from tools** — Everything a tool returns goes into
   the LLM context. Filter, summarize, or truncate API responses before
   returning. Return only what the agent needs to formulate a spoken answer.
-- **Forgetting sandbox constraints** — Agent code runs in a Deno Worker with
-  _all permissions disabled_ (no net, no fs, no env). Use `fetch` (proxied
-  through the host) for HTTP. Use `ctx.env` for secrets. `Deno.readFile`,
-  `Deno.env.get`, and direct network access will fail silently or throw.
+- **Forgetting sandbox constraints** — Agent code runs in a sandboxed Worker
+  with no direct network or filesystem access. Use `fetch` (proxied through the
+  host) for HTTP. Use `ctx.env` for secrets. Direct network access will fail.
 - **Ignoring `ctx.abortSignal`** — When the user interrupts, in-flight tool
   calls are cancelled via `ctx.abortSignal`. Long-running tools (polling,
   multi-step fetches) should check `ctx.abortSignal.aborted` or pass the signal
   to `fetch`.
 - **Hardcoding secrets** — Never put API keys in `agent.ts`. Use
-  `aai env add MY_KEY` to store them on the server, then access via
+  `aai secret put MY_KEY` to store them on the server, then access via
   `ctx.env.MY_KEY`.
 - **Telling the agent to be verbose** — Voice responses should be 1-3 sentences.
   If your `instructions` say "provide detailed explanations", the agent will
   monologue. Instruct it to be brief and let the user ask follow-ups.
-- **Not setting env vars before deploying** — If your agent needs custom env
-  vars, set them with `aai env add MY_KEY` before deploying.
+- **Not setting secrets before deploying** — If your agent needs custom
+  secrets, set them with `aai secret put MY_KEY` before deploying.
 - **Forgetting SSRF restrictions on `fetch`** — The host validates all proxied
   fetch URLs. Requests to private/internal IP addresses (localhost, 10.x,
   192.168.x, etc.) are blocked.
@@ -1043,7 +1066,7 @@ Use directional words naturally: "To the north you see..." not "N: forest"
 - **"no agent found"** — Ensure `agent.ts` exists in the current directory
 - **"bundle failed"** — TypeScript syntax error — check imports, brackets
 - **"No .aai/project.json found"** — Run `aai deploy` first before using
-  `aai env`
+  `aai secret`
 - **Tool returns `undefined`** — Make sure `execute` returns a value. Even
   `return { ok: true }` is better than an implicit void return.
 - **Agent doesn't use a tool** — Check `description` is clear about when to use

@@ -52,6 +52,8 @@ export type WsSessionOptions = {
   onClose?: () => void;
   /** Logger instance. Defaults to console. */
   logger?: Logger;
+  /** Persistent user ID from the client (used as sessionId for cross-reconnect identity). */
+  uid?: string | undefined;
 };
 
 /**
@@ -176,7 +178,9 @@ function handleTextMessage(
  */
 export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions): void {
   const { sessions, logger: log = consoleLogger } = opts;
-  const sessionId = crypto.randomUUID();
+  // Use the client-provided uid for persistent identity across reconnects,
+  // falling back to a random UUID for clients that don't send one.
+  const sessionId = opts.uid ?? crypto.randomUUID();
   const sid = sessionId.slice(0, 8);
   const ctx = opts.logContext ?? {};
 

@@ -13,6 +13,7 @@ import { Info, Step } from "./_ink.tsx";
 export async function buildAgentBundle(
   cwd: string,
   log: (node: React.ReactNode) => void,
+  opts?: { skipRenderCheck?: boolean },
 ): Promise<BundleOutput> {
   const agent = await loadAgent(cwd);
   if (!agent) {
@@ -34,7 +35,7 @@ export async function buildAgentBundle(
   const clientCount = Object.keys(bundle.clientFiles).length;
   log(React.createElement(Info, { msg: `worker: ${kb} KB, client: ${clientCount} file(s)` }));
 
-  if (agent.clientEntry) {
+  if (agent.clientEntry && !opts?.skipRenderCheck) {
     try {
       // Dynamic import with variable path prevents esbuild from bundling
       // linkedom (a devDependency) into the production CLI dist.

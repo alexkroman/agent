@@ -9,6 +9,7 @@
  * @module
  */
 
+import { Hono } from "hono";
 import { createDirectExecutor } from "./direct_executor.ts";
 import type { Kv } from "./kv.ts";
 import { createMemoryKv } from "./kv.ts";
@@ -49,7 +50,10 @@ export type WintercServer = {
   /** Standard fetch handler for HTTP routes. */
   fetch(request: Request): Promise<Response>;
   /** Attach a WebSocket to a new session. */
-  handleWebSocket(ws: SessionWebSocket, opts?: { skipGreeting?: boolean }): void;
+  handleWebSocket(
+    ws: SessionWebSocket,
+    opts?: { skipGreeting?: boolean; uid?: string | undefined },
+  ): void;
   /** Stop all active sessions. */
   close(): Promise<void>;
 };
@@ -94,33 +98,25 @@ export function createWintercServer(options: WintercServerOptions): WintercServe
     ttsSampleRate: s2sConfig.outputSampleRate,
   };
 
+  const app = new Hono();
+
+  app.get("/health", (c) => c.json({ status: "ok", name: agent.name }));
+
+  app.get("/", (c) => {
+    if (clientHtml) {
+      return c.html(clientHtml);
+    }
+    return c.html(
+      `<!DOCTYPE html><html><body><h1>${agent.name}</h1><p>Agent server running.</p></body></html>`,
+    );
+  });
+
   return {
     async fetch(request: Request): Promise<Response> {
-      const url = new URL(request.url);
-
-      if (url.pathname === "/health") {
-        return new Response(JSON.stringify({ status: "ok", name: agent.name }), {
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-
-      if (url.pathname === "/" && clientHtml) {
-        return new Response(clientHtml, {
-          headers: { "Content-Type": "text/html" },
-        });
-      }
-
-      if (url.pathname === "/") {
-        return new Response(
-          `<!DOCTYPE html><html><body><h1>${agent.name}</h1><p>Agent server running.</p></body></html>`,
-          { headers: { "Content-Type": "text/html" } },
-        );
-      }
-
-      return new Response("Not Found", { status: 404 });
+      return app.fetch(request);
     },
 
-    handleWebSocket(ws: SessionWebSocket, wsOpts?: { skipGreeting?: boolean }): void {
+    handleWebSocket(ws: SessionWebSocket, wsOpts?: { skipGreeting?: boolean; uid?: string }): void {
       wireSessionSocket(ws, {
         sessions,
         createSession: (sid, client) =>
@@ -132,6 +128,7 @@ export function createWintercServer(options: WintercServerOptions): WintercServe
           }),
         readyConfig,
         logger,
+        uid: wsOpts?.uid,
       });
     },
 
