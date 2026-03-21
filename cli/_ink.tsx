@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { Spinner } from "@inkjs/ui";
+import { Spinner, StatusMessage } from "@inkjs/ui";
 import chalk from "chalk";
 import { Box, render, Static, Text, useApp } from "ink";
 import React, { useRef, useState } from "react";
@@ -84,28 +84,14 @@ export function Detail({ msg }: { msg: string }) {
   );
 }
 
-/** Yellow warning with triangle symbol. */
+/** Yellow warning via @inkjs/ui StatusMessage. */
 export function Warn({ msg }: { msg: string }) {
-  return (
-    <Text>
-      <Text bold color={COLORS.warning}>
-        {"\u25B2"}
-      </Text>
-      <Text> {msg}</Text>
-    </Text>
-  );
+  return <StatusMessage variant="warning">{msg}</StatusMessage>;
 }
 
-/** Red error with cross symbol. */
+/** Red error via @inkjs/ui StatusMessage. */
 export function ErrorLine({ msg }: { msg: string }) {
-  return (
-    <Text>
-      <Text bold color={COLORS.error}>
-        {"\u2717"}
-      </Text>
-      <Text> {msg}</Text>
-    </Text>
-  );
+  return <StatusMessage variant="error">{msg}</StatusMessage>;
 }
 
 /** An entry in a step log. */

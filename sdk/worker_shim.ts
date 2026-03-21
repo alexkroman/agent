@@ -11,7 +11,14 @@
  */
 
 import { z } from "zod";
-import { BridgedWebSocket, CapnwebEndpoint, type CapnwebPort } from "./capnweb.ts";
+import {
+  BridgedWebSocket,
+  CapnwebEndpoint,
+  type CapnwebPort,
+  deserializeResponse,
+  type SerializedResponse,
+  serializeResponse,
+} from "./capnweb.ts";
 import type { Kv } from "./kv.ts";
 import type { CreateS2sWebSocket } from "./s2s.ts";
 import type { AgentDef } from "./types.ts";
@@ -24,18 +31,6 @@ const FetchResultSchema = z.object({
   status: z.number(),
   headers: z.record(z.string(), z.string()),
   body: z.string(),
-});
-
-const KvEntrySchema = z.object({
-  key: z.string(),
-  value: z.unknown(),
-});
-
-const VectorEntrySchema = z.object({
-  id: z.string(),
-  score: z.number(),
-  data: z.string().optional(),
-  metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 const WorkerInitArgsSchema = z.tuple([z.record(z.string(), z.string())]);
@@ -93,62 +88,51 @@ export function initWorker(agent: AgentDef): void {
     }
 
     const raw = await endpoint.call("host.fetch", [url, method, headers, body]);
-    const result = FetchResultSchema.parse(raw);
-
-    return new Response(result.body, {
-      status: result.status,
-      headers: result.headers,
-    });
+    return deserializeResponse(FetchResultSchema.parse(raw) as SerializedResponse);
   };
 
   // ─── Capnweb-backed KV ─────────────────────────────────────────────────
   const kv: Kv = {
     async get<T = unknown>(key: string): Promise<T | null> {
-      const raw = await endpoint.call("host.kv", ["get", key]);
+      const raw = await endpoint.call("kv.get", [key]);
       if (raw === null || raw === undefined) return null;
       return raw as T;
     },
     async set(key: string, value: unknown, options?: { expireIn?: number }): Promise<void> {
-      await endpoint.call("host.kv", ["set", key, value, options?.expireIn]);
+      await endpoint.call("kv.set", [key, value, options?.expireIn]);
     },
     async delete(key: string): Promise<void> {
-      await endpoint.call("host.kv", ["del", key]);
+      await endpoint.call("kv.del", [key]);
     },
     async list<T = unknown>(
       prefix: string,
       options?: { limit?: number; reverse?: boolean },
     ): Promise<{ key: string; value: T }[]> {
-      const raw = await endpoint.call("host.kv", [
-        "list",
-        prefix,
-        options?.limit,
-        options?.reverse,
-      ]);
-      const entries = z.array(KvEntrySchema).parse(raw);
-      return entries as { key: string; value: T }[];
+      return (await endpoint.call("kv.list", [prefix, options?.limit, options?.reverse])) as {
+        key: string;
+        value: T;
+      }[];
     },
   };
 
   // ─── Capnweb-backed vector store ───────────────────────────────────────
   const vector: VectorStore = {
     async upsert(id: string, data: string, metadata?: Record<string, unknown>): Promise<void> {
-      await endpoint.call("host.vector", ["upsert", id, data, metadata]);
+      await endpoint.call("vec.upsert", [id, data, metadata]);
     },
     async query(
       text: string,
       options?: { topK?: number; filter?: string },
     ): Promise<VectorEntry[]> {
-      const raw = await endpoint.call("host.vector", [
-        "query",
+      return (await endpoint.call("vec.query", [
         text,
         options?.topK,
         options?.filter,
-      ]);
-      return z.array(VectorEntrySchema).parse(raw);
+      ])) as VectorEntry[];
     },
     async remove(ids: string | string[]): Promise<void> {
       const idArray = Array.isArray(ids) ? ids : [ids];
-      await endpoint.call("host.vector", ["remove", idArray]);
+      await endpoint.call("vec.remove", [idArray]);
     },
   };
 
@@ -198,12 +182,7 @@ export function initWorker(agent: AgentDef): void {
       ...(body ? { body } : {}),
     });
 
-    const response = await wintercServer.fetch(request);
-    return {
-      status: response.status,
-      headers: Object.fromEntries(response.headers),
-      body: await response.text(),
-    };
+    return await serializeResponse(await wintercServer.fetch(request));
   });
 
   // Handle new WebSocket client connection — port transferred from host

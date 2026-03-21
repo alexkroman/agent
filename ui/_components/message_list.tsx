@@ -1,9 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { computed, useSignalEffect } from "@preact/signals";
+import clsx from "clsx";
 import type { VNode } from "preact";
 import { useRef } from "preact/hooks";
-import { cn } from "../_cn.ts";
 import { useSession } from "../signals.ts";
 import { MessageBubble } from "./message_bubble.tsx";
 import { ThinkingIndicator } from "./thinking_indicator.tsx";
@@ -57,7 +57,7 @@ export function MessageList({ className }: { className?: string }) {
   return (
     <div
       role="log"
-      class={cn("flex-1 overflow-y-auto [scrollbar-width:none] bg-aai-surface", className)}
+      class={clsx("flex-1 overflow-y-auto [scrollbar-width:none] bg-aai-surface", className)}
     >
       <div class="flex flex-col gap-4.5 p-4">
         {items}

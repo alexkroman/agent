@@ -68,10 +68,11 @@ export type KvRequest =
       prefix: string;
       limit?: number | undefined;
       reverse?: boolean | undefined;
-    };
+    }
+  | { op: "keys"; pattern?: string | undefined };
 
 /** Zod schema for {@linkcode KvRequest}. */
-export const KvRequestBaseSchema = z.discriminatedUnion("op", [
+export const KvRequestSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("get"), key: z.string().min(1) }),
   z.object({
     op: z.literal("set"),
@@ -85,6 +86,51 @@ export const KvRequestBaseSchema = z.discriminatedUnion("op", [
     prefix: z.string(),
     limit: z.number().int().positive().optional(),
     reverse: z.boolean().optional(),
+  }),
+  z.object({ op: z.literal("keys"), pattern: z.string().optional() }),
+]);
+
+/** @deprecated Use {@linkcode KvRequestSchema}. */
+export const KvRequestBaseSchema = KvRequestSchema;
+
+// ─── Vector request types ───────────────────────────────────────────────────
+
+/**
+ * Vector operation request. Used by both the worker→host RPC and the
+ * HTTP `POST /:slug/vector` endpoint.
+ */
+export type VectorRequest =
+  | {
+      op: "upsert";
+      id: string;
+      data: string;
+      metadata?: Record<string, unknown> | undefined;
+    }
+  | {
+      op: "query";
+      text: string;
+      topK?: number | undefined;
+      filter?: string | undefined;
+    }
+  | { op: "remove"; ids: string[] };
+
+/** Zod schema for {@linkcode VectorRequest}. */
+export const VectorRequestSchema = z.discriminatedUnion("op", [
+  z.object({
+    op: z.literal("upsert"),
+    id: z.string().min(1),
+    data: z.string().min(1),
+    metadata: z.record(z.string(), z.unknown()).optional(),
+  }),
+  z.object({
+    op: z.literal("query"),
+    text: z.string().min(1),
+    topK: z.number().int().positive().max(100).optional(),
+    filter: z.string().optional(),
+  }),
+  z.object({
+    op: z.literal("remove"),
+    ids: z.array(z.string().min(1)).min(1),
   }),
 ]);
 

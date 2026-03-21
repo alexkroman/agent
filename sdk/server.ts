@@ -165,7 +165,6 @@ export function createServer(options: ServerOptions): AgentServer {
             const reqUrl = new URL(req.url ?? "/", `http://localhost:${port}`);
             wintercServer.handleWebSocket(ws as unknown as SessionWebSocket, {
               skipGreeting: reqUrl.searchParams.has("resume"),
-              uid: reqUrl.searchParams.get("uid") ?? undefined,
             });
           });
         });

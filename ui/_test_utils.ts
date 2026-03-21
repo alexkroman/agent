@@ -1,9 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { signal } from "@preact/signals";
-import { render } from "preact";
-import { vi } from "vitest";
-import { DOMParser, installDomShim } from "./_dom_shim.ts";
 import { createVoiceSession, type VoiceSession } from "./session.ts";
 import { createSessionControls, type SessionSignals } from "./signals.ts";
 import type { AgentState, Message, SessionError, ToolCallInfo } from "./types.ts";
@@ -16,30 +13,11 @@ export function delay(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-const HTML = `<!DOCTYPE html><html><head></head><body><div id="app"></div></body></html>`;
-
-const g = globalThis as unknown as Record<string, unknown>;
-
-export function setupDOM() {
-  installDomShim();
-  const doc = new DOMParser().parseFromString(HTML, "text/html");
-  if (!doc) throw new Error("Failed to parse HTML document");
-  g.document = doc;
-  return doc as unknown as Document;
-}
-
-export function getContainer(): Element {
-  const el = globalThis.document.querySelector("#app");
-  if (!el) throw new Error("Expected #app element to exist in document");
-  return el;
-}
-
-// Ensure document exists at import time for modules that need DOM globals.
-setupDOM();
-
 export function flush(): Promise<void> {
   return new Promise<void>((r) => queueMicrotask(r));
 }
+
+const g = globalThis as unknown as Record<string, unknown>;
 
 export function installMockLocation(origin = "http://localhost:3000") {
   const had = "location" in globalThis;
@@ -145,53 +123,44 @@ export type AudioMockContext = {
   workletNodes: () => MockAudioWorkletNode[];
 };
 
-/**
- * Install Web Audio API mocks on globalThis and run `fn`.
- * All mocks are restored after `fn` completes.
- */
-export function withAudioMocks(
-  fn: (ctx: AudioMockContext) => void | Promise<void>,
-): () => Promise<void> {
-  return async () => {
-    const origAudioContext = globalThis.AudioContext;
-    const origAudioWorkletNode = globalThis.AudioWorkletNode;
-    const nav = g.navigator as { mediaDevices?: { getUserMedia?: unknown } } | undefined;
-    const origGetUserMedia = nav?.mediaDevices?.getUserMedia;
+export function installAudioMocks(): AudioMockContext & { restore: () => void } {
+  const origAudioContext = globalThis.AudioContext;
+  const origAudioWorkletNode = globalThis.AudioWorkletNode;
+  const nav = g.navigator as { mediaDevices?: { getUserMedia?: unknown } } | undefined;
+  const origGetUserMedia = nav?.mediaDevices?.getUserMedia;
 
-    let _lastContext: MockAudioContext;
-    const _workletNodes: MockAudioWorkletNode[] = [];
+  let _lastContext: MockAudioContext;
+  const _workletNodes: MockAudioWorkletNode[] = [];
 
-    g.AudioContext = class extends MockAudioContext {
-      constructor(opts?: { sampleRate?: number }) {
-        super(opts);
-        _lastContext = this;
-      }
-    };
-
-    g.AudioWorkletNode = class extends MockAudioWorkletNode {
-      constructor(ctx: MockAudioContext, name: string, options?: unknown) {
-        super(ctx, name, options);
-        _workletNodes.push(this);
-      }
-    };
-
-    if (nav && !nav.mediaDevices) nav.mediaDevices = {};
-    if (nav?.mediaDevices) {
-      nav.mediaDevices.getUserMedia = () => Promise.resolve(new MockMediaStream());
+  g.AudioContext = class extends MockAudioContext {
+    constructor(opts?: { sampleRate?: number }) {
+      super(opts);
+      _lastContext = this;
     }
+  };
 
-    try {
-      await fn({
-        lastContext: () => _lastContext,
-        workletNodes: () => _workletNodes,
-      });
-    } finally {
+  g.AudioWorkletNode = class extends MockAudioWorkletNode {
+    constructor(ctx: MockAudioContext, name: string, options?: unknown) {
+      super(ctx, name, options);
+      _workletNodes.push(this);
+    }
+  };
+
+  if (nav && !nav.mediaDevices) nav.mediaDevices = {};
+  if (nav?.mediaDevices) {
+    nav.mediaDevices.getUserMedia = () => Promise.resolve(new MockMediaStream());
+  }
+
+  return {
+    lastContext: () => _lastContext,
+    workletNodes: () => _workletNodes,
+    restore() {
       globalThis.AudioContext = origAudioContext;
       globalThis.AudioWorkletNode = origAudioWorkletNode;
       if (origGetUserMedia && nav?.mediaDevices) {
         nav.mediaDevices.getUserMedia = origGetUserMedia;
       }
-    }
+    },
   };
 }
 
@@ -201,83 +170,29 @@ export function findWorkletNode(nodes: MockAudioWorkletNode[], name: string): Mo
   return node;
 }
 
-/**
- * Set up a DOM + FakeTime environment, run `fn`, then clean up.
- * Used by component tests that need a container and timer control.
- */
-export function withDOM(fn: (container: Element) => void | Promise<void>): () => Promise<void> {
-  return async () => {
-    vi.useFakeTimers();
-    setupDOM();
-    const container = getContainer();
-    try {
-      await fn(container);
-    } finally {
-      render(null, container);
-      await vi.advanceTimersByTimeAsync(100);
-      vi.useRealTimers();
-    }
-  };
-}
+export function setupSignalsEnv() {
+  const mock = installMockWebSocket();
+  const loc = installMockLocation();
+  const session = createVoiceSession({
+    platformUrl: "http://localhost:3000",
+  });
+  const signals = createSessionControls(session);
 
-/**
- * Set up DOM + mock WebSocket, run `fn`, then clean up.
- * Used by mount tests.
- */
-export function withMountEnv(
-  fn: (mock: ReturnType<typeof installMockWebSocket>) => void | Promise<void>,
-): () => Promise<void> {
-  return async () => {
-    setupDOM();
-    const mock = installMockWebSocket();
-    try {
-      await fn(mock);
-    } finally {
-      const app = globalThis.document.querySelector("#app");
-      if (app) render(null, app as Element);
-      await delay(0);
-      mock.restore();
-    }
-  };
-}
-
-/**
- * Set up mock WebSocket + location + session + signals, run `fn`, clean up.
- * Used by signals tests.
- */
-export function withSignalsEnv(
-  fn: (ctx: {
-    mock: ReturnType<typeof installMockWebSocket>;
-    session: VoiceSession;
-    signals: ReturnType<typeof createSessionControls>;
-    connect: () => Promise<void>;
-    send: (msg: Record<string, unknown>) => void;
-  }) => void | Promise<void>,
-): () => Promise<void> {
-  return async () => {
-    const mock = installMockWebSocket();
-    const loc = installMockLocation();
-    const session = createVoiceSession({
-      platformUrl: "http://localhost:3000",
-    });
-    const signals = createSessionControls(session);
-    try {
-      await fn({
-        mock,
-        session,
-        signals,
-        async connect() {
-          session.connect();
-          await flush();
-        },
-        send(msg) {
-          mock.lastWs?.simulateMessage(JSON.stringify(msg));
-        },
-      });
-    } finally {
+  return {
+    mock,
+    session,
+    signals,
+    async connect() {
+      session.connect();
+      await flush();
+    },
+    send(msg: Record<string, unknown>) {
+      mock.lastWs?.simulateMessage(JSON.stringify(msg));
+    },
+    restore() {
       mock.restore();
       loc.restore();
-    }
+    },
   };
 }
 

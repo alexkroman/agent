@@ -1,5 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createMemoryKv } from "./kv.ts";
 
 describe("createMemoryKv", () => {
@@ -87,26 +87,27 @@ describe("createMemoryKv", () => {
     expect(() => kv.set("big", big)).toThrow("exceeds max size");
   });
 
-  test("expireIn expires entries", async () => {
-    vi.useFakeTimers();
-    const kv = createMemoryKv();
-    await kv.set("temp", "val", { expireIn: 10_000 });
-    expect(await kv.get("temp")).toBe("val");
-    vi.advanceTimersByTime(11_000);
-    expect(await kv.get("temp")).toBe(null);
-    vi.useRealTimers();
-  });
+  describe("with fake timers", () => {
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
 
-  test("expired entries excluded from list", async () => {
-    vi.useFakeTimers();
-    const kv = createMemoryKv();
-    await kv.set("alive", "1");
-    await kv.set("dying", "2", { expireIn: 5_000 });
-    vi.advanceTimersByTime(6_000);
-    const entries = await kv.list("");
-    expect(entries.length).toBe(1);
-    expect(entries[0]?.key).toBe("alive");
-    vi.useRealTimers();
+    test("expireIn expires entries", async () => {
+      const kv = createMemoryKv();
+      await kv.set("temp", "val", { expireIn: 10_000 });
+      expect(await kv.get("temp")).toBe("val");
+      vi.advanceTimersByTime(11_000);
+      expect(await kv.get("temp")).toBe(null);
+    });
+
+    test("expired entries excluded from list", async () => {
+      const kv = createMemoryKv();
+      await kv.set("alive", "1");
+      await kv.set("dying", "2", { expireIn: 5_000 });
+      vi.advanceTimersByTime(6_000);
+      const entries = await kv.list("");
+      expect(entries.length).toBe(1);
+      expect(entries[0]?.key).toBe("alive");
+    });
   });
 
   test("overwrite replaces value", async () => {

@@ -1,7 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
+// @vitest-environment jsdom
 
 import { signal } from "@preact/signals";
-import { render } from "preact";
+import { render, screen } from "@testing-library/preact";
 import { describe, expect, test } from "vitest";
 import { App } from "./_components/app.tsx";
 import { ChatView } from "./_components/chat_view.tsx";
@@ -9,219 +10,184 @@ import { ErrorBanner } from "./_components/error_banner.tsx";
 import { MessageBubble } from "./_components/message_bubble.tsx";
 import { StateIndicator } from "./_components/state_indicator.tsx";
 import { Transcript } from "./_components/transcript.tsx";
-import { createMockSignals, withDOM } from "./_test_utils.ts";
+import { createMockSignals } from "./_test_utils.ts";
 import { SessionProvider, type SessionSignals } from "./signals.ts";
 import type { AgentState, Message } from "./types.ts";
 
-function renderWithProvider(
-  container: Element,
-  vnode: preact.ComponentChildren,
-  signals: SessionSignals,
-) {
-  render(<SessionProvider value={signals}>{vnode}</SessionProvider>, container);
+function renderWithProvider(vnode: preact.ComponentChildren, signals: SessionSignals) {
+  return render(<SessionProvider value={signals}>{vnode}</SessionProvider>);
 }
 
 describe("StateIndicator", () => {
-  test(
-    "renders the state label",
-    withDOM((container) => {
-      render(<StateIndicator state={signal<AgentState>("listening")} />, container);
-      expect(container.textContent ?? "").toContain("listening");
-    }),
-  );
+  test("renders the state label", () => {
+    render(<StateIndicator state={signal<AgentState>("listening")} />);
+    expect(screen.getByText("listening")).toBeDefined();
+  });
 });
 
 describe("ErrorBanner", () => {
-  test(
-    "renders error message",
-    withDOM((container) => {
-      render(
-        <ErrorBanner
-          error={signal({
-            code: "connection" as const,
-            message: "Connection lost",
-          })}
-        />,
-        container,
-      );
-      expect(container.textContent ?? "").toContain("Connection lost");
-    }),
-  );
+  test("renders error message", () => {
+    render(
+      <ErrorBanner
+        error={signal({
+          code: "connection" as const,
+          message: "Connection lost",
+        })}
+      />,
+    );
+    expect(screen.getByText("Connection lost")).toBeDefined();
+  });
 
-  test(
-    "renders nothing when null",
-    withDOM((container) => {
-      render(<ErrorBanner error={signal(null)} />, container);
-      expect(container.innerHTML).toBe("");
-    }),
-  );
+  test("renders nothing when null", () => {
+    const { container } = render(<ErrorBanner error={signal(null)} />);
+    expect(container.innerHTML).toBe("");
+  });
 });
 
 describe("MessageBubble", () => {
-  test(
-    "renders message text",
-    withDOM((container) => {
-      const msg: Message = { role: "user", text: "Hello there" };
-      render(<MessageBubble message={msg} />, container);
-      expect(container.textContent ?? "").toContain("Hello there");
-    }),
-  );
+  test("renders message text", () => {
+    const msg: Message = { role: "user", text: "Hello there" };
+    render(<MessageBubble message={msg} />);
+    expect(screen.getByText("Hello there")).toBeDefined();
+  });
 
-  test(
-    "renders assistant message text",
-    withDOM((container) => {
-      const msg: Message = { role: "assistant", text: "Simple reply" };
-      render(<MessageBubble message={msg} />, container);
-      expect(container.textContent).toBe("Simple reply");
-    }),
-  );
+  test("renders assistant message text", () => {
+    const msg: Message = { role: "assistant", text: "Simple reply" };
+    render(<MessageBubble message={msg} />);
+    expect(screen.getByText("Simple reply")).toBeDefined();
+  });
 });
 
 describe("Transcript", () => {
-  test(
-    "renders transcript text",
-    withDOM((container) => {
-      render(<Transcript userUtterance={signal<string | null>("hello wor")} />, container);
-      expect(container.textContent ?? "").toContain("hello wor");
-    }),
-  );
+  test("renders transcript text", () => {
+    render(<Transcript userUtterance={signal<string | null>("hello wor")} />);
+    expect(screen.getByText("hello wor")).toBeDefined();
+  });
 
-  test(
-    "renders nothing when null",
-    withDOM((container) => {
-      render(<Transcript userUtterance={signal<string | null>(null)} />, container);
-      expect(container.innerHTML).toBe("");
-    }),
-  );
+  test("renders nothing when null", () => {
+    const { container } = render(<Transcript userUtterance={signal<string | null>(null)} />);
+    expect(container.innerHTML).toBe("");
+  });
 
-  test(
-    "renders thinking indicator when empty string (speech detected)",
-    withDOM((container) => {
-      render(<Transcript userUtterance={signal<string | null>("")} />, container);
-      // Should render something (the ThinkingIndicator), not be empty
-      expect(container.innerHTML !== "").toBe(true);
-    }),
-  );
+  test("renders thinking indicator when empty string (speech detected)", () => {
+    const { container } = render(<Transcript userUtterance={signal<string | null>("")} />);
+    expect(container.innerHTML !== "").toBe(true);
+  });
 });
 
 describe("App", () => {
-  test(
-    "shows start button when not started",
-    withDOM((container) => {
-      const signals = createMockSignals({ started: false });
-      renderWithProvider(container, <App />, signals);
-      expect(container.querySelector("button")?.textContent).toBe("Start");
-    }),
-  );
+  test("shows start button when not started", () => {
+    const signals = createMockSignals({ started: false });
+    renderWithProvider(<App />, signals);
+    expect(screen.getByText("Start")).toBeDefined();
+  });
 
-  test(
-    "shows ChatView when started",
-    withDOM((container) => {
-      const signals = createMockSignals({
-        started: true,
-        state: "listening",
-        running: true,
-      });
-      renderWithProvider(container, <App />, signals);
-      expect(container.textContent ?? "").toContain("listening");
-      expect(container.textContent ?? "").toContain("Stop");
-    }),
-  );
+  test("shows ChatView when started", () => {
+    const signals = createMockSignals({
+      started: true,
+      state: "listening",
+      running: true,
+    });
+    renderWithProvider(<App />, signals);
+    expect(screen.getByText("listening")).toBeDefined();
+    expect(screen.getByText("Stop")).toBeDefined();
+  });
 
-  test(
-    "transitions from start screen to chat",
-    withDOM((container) => {
-      const signals = createMockSignals({ started: false });
-      renderWithProvider(container, <App />, signals);
-      expect(container.querySelector("button")?.textContent).toBe("Start");
+  test("transitions from start screen to chat", () => {
+    const signals = createMockSignals({ started: false });
+    const { rerender } = render(
+      <SessionProvider value={signals}>
+        <App />
+      </SessionProvider>,
+    );
+    expect(screen.getByText("Start")).toBeDefined();
 
-      signals.started.value = true;
-      signals.session.state.value = "listening";
-      renderWithProvider(container, <App />, signals);
+    signals.started.value = true;
+    signals.session.state.value = "listening";
+    rerender(
+      <SessionProvider value={signals}>
+        <App />
+      </SessionProvider>,
+    );
 
-      expect(container.textContent ?? "").toContain("listening");
-      expect(!container.textContent?.includes("Start")).toBe(true);
-    }),
-  );
+    expect(screen.getByText("listening")).toBeDefined();
+    expect(screen.queryByText("Start")).toBeNull();
+  });
 });
 
 describe("ChatView", () => {
-  test(
-    "renders state and messages",
-    withDOM((container) => {
-      const signals = createMockSignals({
-        started: true,
-        state: "thinking",
-        running: true,
-        messages: [
-          { role: "user", text: "What is AI?" },
-          { role: "assistant", text: "AI stands for..." },
-        ],
-      });
-      renderWithProvider(container, <ChatView />, signals);
+  test("renders state and messages", () => {
+    const signals = createMockSignals({
+      started: true,
+      state: "thinking",
+      running: true,
+      messages: [
+        { role: "user", text: "What is AI?" },
+        { role: "assistant", text: "AI stands for..." },
+      ],
+    });
+    renderWithProvider(<ChatView />, signals);
 
-      expect(container.textContent ?? "").toContain("thinking");
-      expect(container.textContent ?? "").toContain("What is AI?");
-      expect(container.textContent ?? "").toContain("AI stands for...");
-    }),
-  );
+    expect(screen.getByText("thinking")).toBeDefined();
+    expect(screen.getByText("What is AI?")).toBeDefined();
+    expect(screen.getByText("AI stands for...")).toBeDefined();
+  });
 
-  test(
-    "renders transcript and error",
-    withDOM((container) => {
-      const signals = createMockSignals({
-        started: true,
-        state: "error",
-        running: false,
-        userUtterance: "hello wor",
-        error: { code: "connection", message: "Connection failed" },
-      });
-      renderWithProvider(container, <ChatView />, signals);
+  test("renders transcript and error", () => {
+    const signals = createMockSignals({
+      started: true,
+      state: "error",
+      running: false,
+      userUtterance: "hello wor",
+      error: { code: "connection", message: "Connection failed" },
+    });
+    renderWithProvider(<ChatView />, signals);
 
-      expect(container.textContent ?? "").toContain("hello wor");
-      expect(container.textContent ?? "").toContain("Connection failed");
-    }),
-  );
+    expect(screen.getByText("hello wor")).toBeDefined();
+    expect(screen.getByText("Connection failed")).toBeDefined();
+  });
 
-  test(
-    "shows Stop when running, Resume when not",
-    withDOM((container) => {
-      const signals = createMockSignals({
-        started: true,
-        state: "listening",
-        running: true,
-      });
-      renderWithProvider(container, <ChatView />, signals);
+  test("shows Stop when running, Resume when not", () => {
+    const signals = createMockSignals({
+      started: true,
+      state: "listening",
+      running: true,
+    });
+    const { rerender } = render(
+      <SessionProvider value={signals}>
+        <ChatView />
+      </SessionProvider>,
+    );
 
-      const text = () => container.textContent ?? "";
+    expect(screen.getByText("Stop")).toBeDefined();
+    expect(screen.getByText("New Conversation")).toBeDefined();
 
-      expect(text()).toContain("Stop");
-      expect(text()).toContain("New Conversation");
+    signals.running.value = false;
+    rerender(
+      <SessionProvider value={signals}>
+        <ChatView />
+      </SessionProvider>,
+    );
+    expect(screen.getByText("Resume")).toBeDefined();
+  });
 
-      signals.running.value = false;
-      renderWithProvider(container, <ChatView />, signals);
-      expect(text()).toContain("Resume");
-    }),
-  );
+  test("renders messages in order", () => {
+    const signals = createMockSignals({
+      started: true,
+      state: "listening",
+      running: true,
+      messages: [
+        { role: "user", text: "First" },
+        { role: "assistant", text: "Second" },
+        { role: "user", text: "Third" },
+      ],
+    });
+    renderWithProvider(<ChatView />, signals);
 
-  test(
-    "renders messages in order",
-    withDOM((container) => {
-      const signals = createMockSignals({
-        started: true,
-        state: "listening",
-        running: true,
-        messages: [
-          { role: "user", text: "First" },
-          { role: "assistant", text: "Second" },
-          { role: "user", text: "Third" },
-        ],
-      });
-      renderWithProvider(container, <ChatView />, signals);
-
-      const text = container.textContent ?? "";
-      expect(text.indexOf("First") < text.indexOf("Second")).toBe(true);
-      expect(text.indexOf("Second") < text.indexOf("Third")).toBe(true);
-    }),
-  );
+    const first = screen.getByText("First");
+    const second = screen.getByText("Second");
+    const third = screen.getByText("Third");
+    expect(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(second.compareDocumentPosition(third) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
 });

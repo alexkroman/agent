@@ -8,6 +8,8 @@
  * @module
  */
 
+import { errorMessage } from "./_utils.ts";
+
 // ─── RPC Wire Types ──────────────────────────────────────────────────────────
 
 /** RPC call message: `{$: 0, id, m, a}`. id = -1 for fire-and-forget. */
@@ -130,7 +132,7 @@ export class CapnwebEndpoint {
             this.send({
               $: 1,
               id,
-              e: err instanceof Error ? err.message : String(err),
+              e: errorMessage(err),
             });
           }
         });
@@ -147,6 +149,55 @@ export class CapnwebEndpoint {
       }
     }
   }
+}
+
+// ─── Request/Response serialization ─────────────────────────────────────────
+
+/** Serialized HTTP request tuple for RPC transport. */
+export type SerializedRequest = [
+  url: string,
+  method: string,
+  headers: Record<string, string>,
+  body: string | undefined,
+];
+
+/** Serialized HTTP response object for RPC transport. */
+export type SerializedResponse = {
+  status: number;
+  headers: Record<string, string>;
+  body: string;
+};
+
+/** Serialize a Request for RPC transport. */
+export async function serializeRequest(request: Request): Promise<SerializedRequest> {
+  return [
+    request.url,
+    request.method,
+    Object.fromEntries(request.headers),
+    request.body ? await request.text() : undefined,
+  ];
+}
+
+/** Reconstruct a Request from its serialized form. */
+export function deserializeRequest([url, method, headers, body]: SerializedRequest): Request {
+  return new Request(url, { method, headers, ...(body ? { body } : {}) });
+}
+
+/** Serialize a Response for RPC transport. */
+export async function serializeResponse(response: Response): Promise<SerializedResponse> {
+  return {
+    status: response.status,
+    headers: Object.fromEntries(response.headers),
+    body: await response.text(),
+  };
+}
+
+/** Reconstruct a Response from its serialized form. */
+export function deserializeResponse(result: SerializedResponse): Response {
+  return new Response(result.body, {
+    status: result.status,
+    headers: result.headers,
+  });
 }
 
 // ─── WebSocket Bridge Protocol ───────────────────────────────────────────────
@@ -245,11 +296,21 @@ export type BridgeableWebSocket = {
   addEventListener(type: string, listener: EventListenerOrEventListenerObject): void;
 };
 
+/** Options for {@linkcode bridgeWebSocketToPort}. */
+export type BridgeOptions = {
+  /** Optional filter for incoming binary frames. Return `false` to drop. */
+  filterBinary?: (data: ArrayBuffer) => boolean;
+};
+
 /**
  * Bridges an EventTarget-based WebSocket to a MessagePort.
  * Used on the host side for both client and S2S connections.
  */
-export function bridgeWebSocketToPort(ws: BridgeableWebSocket, port: MessagePort): void {
+export function bridgeWebSocketToPort(
+  ws: BridgeableWebSocket,
+  port: MessagePort,
+  opts?: BridgeOptions,
+): void {
   if ("binaryType" in ws) ws.binaryType = "arraybuffer";
 
   ws.addEventListener("open", () => {
@@ -261,6 +322,7 @@ export function bridgeWebSocketToPort(ws: BridgeableWebSocket, port: MessagePort
     if (typeof data === "string") {
       port.postMessage({ k: 0, d: data });
     } else if (data instanceof ArrayBuffer) {
+      if (opts?.filterBinary && !opts.filterBinary(data)) return;
       port.postMessage({ k: 0, d: data }, [data]);
     }
   }) as EventListener);

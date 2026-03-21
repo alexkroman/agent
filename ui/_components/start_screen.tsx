@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import clsx from "clsx";
 import type { ComponentChildren } from "preact";
-import { cn } from "../_cn.ts";
 import { useSession } from "../signals.ts";
 import { Button } from "./button.tsx";
 
@@ -42,7 +42,7 @@ export function StartScreen({
   }
 
   return (
-    <div class={cn("flex items-center justify-center h-screen bg-aai-bg font-aai", className)}>
+    <div class={clsx("flex items-center justify-center h-screen bg-aai-bg font-aai", className)}>
       <div class="flex flex-col items-center gap-4 bg-aai-surface border border-aai-border rounded-lg px-12 py-10 max-w-sm text-center">
         {icon}
         {title && <h1 class="font-semibold text-aai-primary m-0">{title}</h1>}

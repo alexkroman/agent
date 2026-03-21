@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import clsx from "clsx";
 import type * as preact from "preact";
-import { cn } from "../_cn.ts";
 
 type ButtonVariant = "default" | "secondary" | "ghost";
 
@@ -25,7 +25,7 @@ export function Button({
   children?: preact.ComponentChildren;
 } & Omit<preact.JSX.HTMLAttributes<HTMLButtonElement>, "className">) {
   return (
-    <button type="button" class={cn(base, variants[variant], className)} {...rest}>
+    <button type="button" class={clsx(base, variants[variant], className)} {...rest}>
       {children}
     </button>
   );

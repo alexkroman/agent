@@ -105,7 +105,6 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
 
   function makeHookContext(sessionId: string): HookContext {
     return {
-      sessionId,
       env: frozenEnv,
       state: getState(sessionId),
       get kv() {
@@ -124,7 +123,6 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
     return executeToolCall(name, args, {
       tool,
       env: frozenEnv,
-      sessionId,
       state: getState(sessionId ?? ""),
       kv,
       vector,
