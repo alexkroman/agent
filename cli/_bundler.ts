@@ -135,10 +135,9 @@ export async function bundleAgent(
       logLevel: "warn",
       plugins: [workerEntryPlugin()],
       build: {
-        lib: {
-          entry: "virtual:worker-entry",
-          formats: ["es"],
-          fileName: "worker",
+        rollupOptions: {
+          input: "virtual:worker-entry",
+          output: { format: "es", entryFileNames: "worker.js" },
         },
         outDir: buildDir,
         emptyOutDir: true,
