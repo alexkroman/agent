@@ -153,15 +153,13 @@ export class CapnwebEndpoint {
 
 /**
  * Bridge message format for WebSocket-over-MessagePort:
- * - `{k:0, d:string}` — text frame
- * - `{k:1, d:ArrayBuffer}` — binary frame (transferred zero-copy)
+ * - `{k:0, d:string|ArrayBuffer}` — data frame (binary transferred zero-copy)
  * - `{k:2, code?, reason?}` — close
  * - `{k:3}` — open
  * - `{k:4, m:string}` — error
  */
 type BridgeMsg =
-  | { k: 0; d: string }
-  | { k: 1; d: ArrayBuffer }
+  | { k: 0; d: string | ArrayBuffer }
   | { k: 2; code?: number; reason?: string }
   | { k: 3 }
   | { k: 4; m: string };
@@ -196,9 +194,6 @@ export class BridgedWebSocket extends EventTarget {
         case 0:
           this.dispatchEvent(new MessageEvent("message", { data: msg.d }));
           break;
-        case 1:
-          this.dispatchEvent(new MessageEvent("message", { data: msg.d }));
-          break;
         case 2:
           this.readyState = 3;
           this.dispatchEvent(
@@ -228,7 +223,7 @@ export class BridgedWebSocket extends EventTarget {
         data instanceof ArrayBuffer
           ? data
           : data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
-      this.port.postMessage({ k: 1, d: ab }, [ab]);
+      this.port.postMessage({ k: 0, d: ab }, [ab]);
     }
   }
 
@@ -241,12 +236,21 @@ export class BridgedWebSocket extends EventTarget {
 
 // ─── Host-side bridges ───────────────────────────────────────────────────────
 
+/** Minimal EventTarget-based WebSocket accepted by {@linkcode bridgeWebSocketToPort}. */
+export type BridgeableWebSocket = {
+  readonly readyState: number;
+  binaryType?: string;
+  send(data: string | ArrayBuffer): void;
+  close(code?: number, reason?: string): void;
+  addEventListener(type: string, listener: EventListenerOrEventListenerObject): void;
+};
+
 /**
- * Bridges a standard WebSocket (e.g. from `Deno.upgradeWebSocket`) to a
- * MessagePort. Used on the host side for client connections.
+ * Bridges an EventTarget-based WebSocket to a MessagePort.
+ * Used on the host side for both client and S2S connections.
  */
-export function bridgeWebSocketToPort(ws: WebSocket, port: MessagePort): void {
-  ws.binaryType = "arraybuffer";
+export function bridgeWebSocketToPort(ws: BridgeableWebSocket, port: MessagePort): void {
+  if ("binaryType" in ws) ws.binaryType = "arraybuffer";
 
   ws.addEventListener("open", () => {
     port.postMessage({ k: 3 });
@@ -257,7 +261,7 @@ export function bridgeWebSocketToPort(ws: WebSocket, port: MessagePort): void {
     if (typeof data === "string") {
       port.postMessage({ k: 0, d: data });
     } else if (data instanceof ArrayBuffer) {
-      port.postMessage({ k: 1, d: data }, [data]);
+      port.postMessage({ k: 0, d: data }, [data]);
     }
   }) as EventListener);
 
@@ -276,9 +280,6 @@ export function bridgeWebSocketToPort(ws: WebSocket, port: MessagePort): void {
     if (!isBridgeMsg(msg)) return;
     switch (msg.k) {
       case 0:
-        if (ws.readyState === 1) ws.send(msg.d);
-        break;
-      case 1:
         if (ws.readyState === 1) ws.send(msg.d);
         break;
       case 2:
