@@ -1,36 +1,34 @@
 // Copyright 2025 the AAI authors. MIT license.
+// @vitest-environment jsdom
 
-import { h, render } from "preact";
+import { render, screen } from "@testing-library/preact";
 import { describe, expect, test } from "vitest";
-import { createMockSignals, withDOM } from "../_test_utils.ts";
+import { createMockSignals } from "../_test_utils.ts";
 import { SessionProvider } from "../signals.ts";
 import { Controls } from "./controls.tsx";
 
+function renderControls(overrides?: Parameters<typeof createMockSignals>[0]) {
+  const signals = createMockSignals(overrides);
+  return render(
+    <SessionProvider value={signals}>
+      <Controls />
+    </SessionProvider>,
+  );
+}
+
 describe("Controls", () => {
-  test(
-    "shows Stop when running",
-    withDOM((container) => {
-      const signals = createMockSignals({ running: true });
-      render(h(SessionProvider, { value: signals }, h(Controls, null)), container);
-      expect(container.innerHTML).toContain("Stop");
-    }),
-  );
+  test("shows Stop when running", () => {
+    renderControls({ running: true });
+    expect(screen.getByText("Stop")).toBeDefined();
+  });
 
-  test(
-    "shows Resume when not running",
-    withDOM((container) => {
-      const signals = createMockSignals({ running: false });
-      render(h(SessionProvider, { value: signals }, h(Controls, null)), container);
-      expect(container.innerHTML).toContain("Resume");
-    }),
-  );
+  test("shows Resume when not running", () => {
+    renderControls({ running: false });
+    expect(screen.getByText("Resume")).toBeDefined();
+  });
 
-  test(
-    "shows New Conversation button",
-    withDOM((container) => {
-      const signals = createMockSignals();
-      render(h(SessionProvider, { value: signals }, h(Controls, null)), container);
-      expect(container.innerHTML).toContain("New Conversation");
-    }),
-  );
+  test("shows New Conversation button", () => {
+    renderControls();
+    expect(screen.getByText("New Conversation")).toBeDefined();
+  });
 });

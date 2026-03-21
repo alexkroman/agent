@@ -1,7 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
+
+import clsx from "clsx";
 import type * as preact from "preact";
 import { useState } from "preact/hooks";
-import { cn } from "../_cn.ts";
 import type { ToolCallInfo } from "../types.ts";
 import {
   BoltIcon,
@@ -83,19 +84,19 @@ export function ToolCallBlock({
   const canExpand = !isPending && !!toolCall.result;
 
   return (
-    <div class={cn("flex flex-col", className)}>
+    <div class={clsx("flex flex-col", className)}>
       <button
         type="button"
         aria-expanded={canExpand ? isOpen : undefined}
         disabled={isPending}
-        class={cn(
+        class={clsx(
           "flex items-center gap-2 px-3 py-2 rounded-aai border border-aai-border bg-aai-surface-faint select-none text-left w-full",
           canExpand && "cursor-pointer",
         )}
         onClick={() => canExpand && setOpen(!isOpen)}
       >
         <config.Icon class="w-4 h-4 text-aai-text-dim shrink-0" />
-        <span class={cn("text-sm font-medium text-aai-text", isPending && "tool-shimmer")}>
+        <span class={clsx("text-sm font-medium text-aai-text", isPending && "tool-shimmer")}>
           {title}
         </span>
         <span class="text-sm text-aai-text-dim truncate flex-1 min-w-0">

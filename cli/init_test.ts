@@ -3,6 +3,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
+import { fileExists } from "./_discover.ts";
 import { listTemplates, runInit } from "./_init.ts";
 import { silenceSteps, withTempDir } from "./_test_utils.ts";
 
@@ -40,15 +41,6 @@ async function createFakeTemplates(dir: string): Promise<string> {
   await fs.writeFile(path.join(withEnv, ".env.example"), "CUSTOM_KEY=");
 
   return templatesDir;
-}
-
-async function fileExists(p: string): Promise<boolean> {
-  try {
-    await fs.access(p);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 function silenced<T>(fn: (dir: string) => Promise<T>) {

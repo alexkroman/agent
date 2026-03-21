@@ -609,9 +609,9 @@ VOICE:
 
   state: () => structuredClone(defaultState),
 
-  // Auto-load saved game on connect (uses persistent uid from browser localStorage).
+  // Auto-load saved game on connect.
   onConnect: async (ctx) => {
-    const saved = await ctx.kv.get<GameState>(`save:${ctx.sessionId}`);
+    const saved = await ctx.kv.get<GameState>("save:game");
     if (saved) Object.assign(ctx.state as GameState, saved);
   },
 
@@ -619,7 +619,7 @@ VOICE:
   onTurn: async (_text, ctx) => {
     const state = ctx.state as GameState;
     if (state.initialized) {
-      await ctx.kv.set(`save:${ctx.sessionId}`, state);
+      await ctx.kv.set("save:game", state);
     }
   },
 

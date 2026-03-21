@@ -81,8 +81,6 @@ export type Message = {
  * ```
  */
 export type ToolContext<S = Record<string, unknown>> = {
-  /** Unique identifier for the current session. */
-  sessionId: string;
   /** Environment variables declared in the agent config. */
   env: Readonly<Record<string, string>>;
   /** Signal that aborts when the tool execution times out. */

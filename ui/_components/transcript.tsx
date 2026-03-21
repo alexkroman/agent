@@ -1,8 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import type { Signal } from "@preact/signals";
+import clsx from "clsx";
 import type * as preact from "preact";
-import { cn } from "../_cn.ts";
 import { ThinkingIndicator } from "./thinking_indicator.tsx";
 
 export function Transcript({
@@ -14,7 +14,7 @@ export function Transcript({
 }): preact.JSX.Element | null {
   if (userUtterance.value === null) return null;
   return (
-    <div class={cn("flex flex-col items-end w-full", className)}>
+    <div class={clsx("flex flex-col items-end w-full", className)}>
       <div class="max-w-[min(82%,64ch)] whitespace-pre-wrap wrap-break-word text-sm leading-[150%] text-aai-text-muted bg-aai-surface-faint border border-aai-border px-3 py-2 rounded-aai ml-auto">
         {userUtterance.value || <ThinkingIndicator />}
       </div>

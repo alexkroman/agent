@@ -50,10 +50,7 @@ export type WintercServer = {
   /** Standard fetch handler for HTTP routes. */
   fetch(request: Request): Promise<Response>;
   /** Attach a WebSocket to a new session. */
-  handleWebSocket(
-    ws: SessionWebSocket,
-    opts?: { skipGreeting?: boolean; uid?: string | undefined },
-  ): void;
+  handleWebSocket(ws: SessionWebSocket, opts?: { skipGreeting?: boolean }): void;
   /** Stop all active sessions. */
   close(): Promise<void>;
 };
@@ -116,7 +113,7 @@ export function createWintercServer(options: WintercServerOptions): WintercServe
       return app.fetch(request);
     },
 
-    handleWebSocket(ws: SessionWebSocket, wsOpts?: { skipGreeting?: boolean; uid?: string }): void {
+    handleWebSocket(ws: SessionWebSocket, wsOpts?: { skipGreeting?: boolean }): void {
       wireSessionSocket(ws, {
         sessions,
         createSession: (sid, client) =>
@@ -128,7 +125,6 @@ export function createWintercServer(options: WintercServerOptions): WintercServe
           }),
         readyConfig,
         logger,
-        uid: wsOpts?.uid,
       });
     },
 

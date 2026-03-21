@@ -1,8 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 import fs from "node:fs/promises";
 import path from "node:path";
-import glob from "fast-glob";
-import fsExtra from "fs-extra";
 
 export type InitOptions = {
   targetDir: string;
@@ -26,15 +24,17 @@ export async function listTemplates(dir: string): Promise<string[]> {
  * in `dest` so that template-specific files take precedence over shared ones.
  */
 async function copyDirNoOverwrite(src: string, dest: string): Promise<void> {
-  const files = await glob("**/*", { cwd: src, dot: true, onlyFiles: true });
-  for (const file of files) {
-    const destPath = path.join(dest, file);
+  const entries = await fs.readdir(src, { recursive: true });
+  for (const rel of entries) {
+    const srcPath = path.join(src, rel);
+    const stat = await fs.stat(srcPath);
+    if (!stat.isFile()) continue;
+    const destPath = path.join(dest, rel);
     try {
       await fs.access(destPath);
-      // File exists, skip
     } catch {
       await fs.mkdir(path.dirname(destPath), { recursive: true });
-      await fs.copyFile(path.join(src, file), destPath);
+      await fs.copyFile(srcPath, destPath);
     }
   }
 }
@@ -48,7 +48,7 @@ export async function runInit(opts: InitOptions): Promise<string> {
   }
 
   // 1. Copy template-specific files first
-  await fsExtra.copy(path.join(templatesDir, template), targetDir, { overwrite: true });
+  await fs.cp(path.join(templatesDir, template), targetDir, { recursive: true, force: true });
 
   // 2. Layer shared files underneath (don't overwrite template files)
   await copyDirNoOverwrite(path.join(templatesDir, "_shared"), targetDir);

@@ -11,6 +11,7 @@
 import { convert } from "html-to-text";
 import { z } from "zod";
 import { EMPTY_PARAMS, type ToolSchema } from "./_internal_types.ts";
+import { errorMessage } from "./_utils.ts";
 import { type ToolDef, tool } from "./types.ts";
 
 // ─── HTML to text ──────────────────────────────────────────────────────────
@@ -188,7 +189,7 @@ function createRunCode(): ToolDef<typeof runCodeParams> {
         const result = output.join("\n").trim();
         return result || "Code ran successfully (no output)";
       } catch (err: unknown) {
-        return { error: err instanceof Error ? err.message : String(err) };
+        return { error: errorMessage(err) };
       }
     },
   };

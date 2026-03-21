@@ -3,7 +3,7 @@
  * WebSocket session lifecycle handler.
  *
  * Cross-runtime: accepts a Logger parameter instead of importing `@std/log`.
- * Audio validation is inlined (no dependency on server-side schemas).
+ * Audio validation is handled at the host transport layer (see host.ts).
  *
  * @module
  */
@@ -26,16 +26,6 @@ export type SessionWebSocket = {
   addEventListener(type: string, listener: EventListenerOrEventListenerObject): void;
 };
 
-/** Max size for a single audio chunk from the browser (1 MB). */
-const MAX_AUDIO_CHUNK_BYTES = 1_048_576;
-
-/** Validate a PCM16 audio chunk: non-empty, within size bounds, even byte length. */
-function isValidAudioChunk(data: Uint8Array): boolean {
-  return (
-    data.byteLength > 0 && data.byteLength <= MAX_AUDIO_CHUNK_BYTES && data.byteLength % 2 === 0
-  );
-}
-
 /** Options for wiring a WebSocket to a session. */
 export type WsSessionOptions = {
   /** Map of active sessions (session is added on open, removed on close). */
@@ -52,8 +42,6 @@ export type WsSessionOptions = {
   onClose?: () => void;
   /** Logger instance. Defaults to console. */
   logger?: Logger;
-  /** Persistent user ID from the client (used as sessionId for cross-reconnect identity). */
-  uid?: string | undefined;
 };
 
 /**
@@ -106,25 +94,9 @@ function toUint8Array(data: unknown): Uint8Array {
   return new Uint8Array(buf.buffer ?? (data as ArrayBuffer), buf.byteOffset ?? 0, buf.byteLength);
 }
 
-function handleBinaryAudio(
-  data: unknown,
-  session: Session,
-  log: Logger,
-  ctx: Record<string, string>,
-  sid: string,
-): boolean {
+function handleBinaryAudio(data: unknown, session: Session): boolean {
   if (!isBinaryData(data)) return false;
-  const chunk = toUint8Array(data);
-  if (!isValidAudioChunk(chunk)) {
-    log.warn("Invalid audio chunk, dropping", {
-      ...ctx,
-      sid,
-      bytes: chunk.byteLength,
-      aligned: chunk.byteLength % 2 === 0,
-    });
-    return true;
-  }
-  session.onAudio(chunk);
+  session.onAudio(toUint8Array(data));
   return true;
 }
 
@@ -178,9 +150,7 @@ function handleTextMessage(
  */
 export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions): void {
   const { sessions, logger: log = consoleLogger } = opts;
-  // Use the client-provided uid for persistent identity across reconnects,
-  // falling back to a random UUID for clients that don't send one.
-  const sessionId = opts.uid ?? crypto.randomUUID();
+  const sessionId = crypto.randomUUID();
   const sid = sessionId.slice(0, 8);
   const ctx = opts.logContext ?? {};
 
@@ -212,7 +182,7 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
     if (!session) return;
     const { data } = event as MessageEvent;
 
-    if (handleBinaryAudio(data, session, log, ctx, sid)) return;
+    if (handleBinaryAudio(data, session)) return;
     handleTextMessage(data, session, log, ctx, sid);
   });
 

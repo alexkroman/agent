@@ -1,8 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
+// @vitest-environment jsdom
 
-import { h, render } from "preact";
+import { render, screen } from "@testing-library/preact";
 import { describe, expect, test } from "vitest";
-import { withDOM } from "../_test_utils.ts";
 import type { ToolCallInfo } from "../types.ts";
 import { ToolCallBlock } from "./tool_call_block.tsx";
 
@@ -24,30 +24,19 @@ describe("ToolCallBlock", () => {
     afterMessageIndex: 0,
   };
 
-  test(
-    "renders tool name",
-    withDOM((container) => {
-      render(h(ToolCallBlock, { toolCall: pendingToolCall }), container);
-      expect(container.innerHTML).toContain("Web Search");
-    }),
-  );
+  test("renders tool name", () => {
+    render(<ToolCallBlock toolCall={pendingToolCall} />);
+    expect(screen.getByText("Web Search")).toBeDefined();
+  });
 
-  test(
-    "shows pending status indicator for pending tool calls",
-    withDOM((container) => {
-      render(h(ToolCallBlock, { toolCall: pendingToolCall }), container);
-      expect(container.innerHTML).toContain("tool-shimmer");
-    }),
-  );
+  test("shows pending status indicator for pending tool calls", () => {
+    const { container } = render(<ToolCallBlock toolCall={pendingToolCall} />);
+    expect(container.innerHTML).toContain("tool-shimmer");
+  });
 
-  test(
-    "shows result for completed tool calls",
-    withDOM((container) => {
-      render(h(ToolCallBlock, { toolCall: completedToolCall }), container);
-      // Completed tool calls should not have the shimmer class
-      expect(container.innerHTML).not.toContain("tool-shimmer");
-      // The tool name should be rendered
-      expect(container.innerHTML).toContain("Fetch JSON");
-    }),
-  );
+  test("shows result for completed tool calls", () => {
+    const { container } = render(<ToolCallBlock toolCall={completedToolCall} />);
+    expect(container.innerHTML).not.toContain("tool-shimmer");
+    expect(screen.getByText("Fetch JSON")).toBeDefined();
+  });
 });

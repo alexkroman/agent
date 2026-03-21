@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import React from "react";
+import type { ReactNode } from "react";
 import { BundleError, type BundleOutput, bundleAgent } from "./_bundler.ts";
 import { loadAgent } from "./_discover.ts";
 import { Info, Step } from "./_ink.tsx";
@@ -12,7 +12,7 @@ import { Info, Step } from "./_ink.tsx";
  */
 export async function buildAgentBundle(
   cwd: string,
-  log: (node: React.ReactNode) => void,
+  log: (node: ReactNode) => void,
   opts?: { skipRenderCheck?: boolean },
 ): Promise<BundleOutput> {
   const agent = await loadAgent(cwd);
@@ -20,7 +20,7 @@ export async function buildAgentBundle(
     throw new Error("No agent found — run `aai init` first");
   }
 
-  log(React.createElement(Step, { action: "Bundle", msg: agent.slug }));
+  log(<Step action="Bundle" msg={agent.slug} />);
   let bundle: BundleOutput;
   try {
     bundle = await bundleAgent(agent);
@@ -33,7 +33,7 @@ export async function buildAgentBundle(
 
   const kb = (bundle.workerBytes / 1024).toFixed(1);
   const clientCount = Object.keys(bundle.clientFiles).length;
-  log(React.createElement(Info, { msg: `worker: ${kb} KB, client: ${clientCount} file(s)` }));
+  log(<Info msg={`worker: ${kb} KB, client: ${clientCount} file(s)`} />);
 
   if (agent.clientEntry && !opts?.skipRenderCheck) {
     try {
@@ -41,7 +41,7 @@ export async function buildAgentBundle(
       // linkedom (a devDependency) into the production CLI dist.
       const renderCheckPath = "../sdk/_render_check.ts";
       const { renderCheck } = await import(/* @vite-ignore */ renderCheckPath);
-      log(React.createElement(Step, { action: "Render", msg: "check" }));
+      log(<Step action="Render" msg="check" />);
       await renderCheck(agent.clientEntry, cwd);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

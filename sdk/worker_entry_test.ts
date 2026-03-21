@@ -2,7 +2,7 @@
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import type { ToolDef } from "./types.ts";
-import { executeToolCall, TOOL_HANDLER_TIMEOUT } from "./worker_entry.ts";
+import { executeToolCall } from "./worker_entry.ts";
 
 function makeTool(overrides?: Partial<ToolDef>): ToolDef {
   return { description: "test tool", execute: () => "ok", ...overrides };
@@ -80,16 +80,6 @@ describe("executeToolCall", () => {
     expect(await run("test", {}, tool, { env: { API_KEY: "secret" } })).toBe("secret");
   });
 
-  test("passes sessionId to tool context", async () => {
-    const tool = makeTool({ execute: (_args, ctx) => ctx.sessionId });
-    expect(await run("test", {}, tool, { sessionId: "sess-123" })).toBe("sess-123");
-  });
-
-  test("defaults sessionId to empty string", async () => {
-    const tool = makeTool({ execute: (_args, ctx) => ctx.sessionId });
-    expect(await run("test", {}, tool)).toBe("");
-  });
-
   test("passes messages to tool context", async () => {
     const tool = makeTool({ execute: (_args, ctx) => String(ctx.messages.length) });
     expect(await run("test", {}, tool, { messages: [{ role: "user", content: "hi" }] })).toBe("1");
@@ -109,13 +99,6 @@ describe("executeToolCall", () => {
     expect(await run("test", {}, tool)).toBe("KV not available");
   });
 
-  test("provides abortSignal in context", async () => {
-    const tool = makeTool({
-      execute: (_args, ctx) => String(ctx.abortSignal instanceof AbortSignal),
-    });
-    expect(await run("test", {}, tool)).toBe("true");
-  });
-
   test("handles async tool execution", async () => {
     const tool = makeTool({
       execute: async () => {
@@ -124,9 +107,5 @@ describe("executeToolCall", () => {
       },
     });
     expect(await run("test", {}, tool)).toBe("async result");
-  });
-
-  test("TOOL_HANDLER_TIMEOUT is 30 seconds", () => {
-    expect(TOOL_HANDLER_TIMEOUT).toBe(30_000);
   });
 });

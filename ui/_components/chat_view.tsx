@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
+
+import clsx from "clsx";
 import type * as preact from "preact";
-import { cn } from "../_cn.ts";
 import { useMountConfig } from "../mount_context.ts";
 import { useSession } from "../signals.ts";
 import { Controls } from "./controls.tsx";
@@ -14,7 +15,7 @@ export function ChatView({ className }: { className?: string }): preact.JSX.Elem
 
   return (
     <div
-      class={cn(
+      class={clsx(
         "flex flex-col h-screen max-w-130 mx-auto bg-aai-bg text-aai-text font-aai text-sm",
         className,
       )}

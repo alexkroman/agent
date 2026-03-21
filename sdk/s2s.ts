@@ -9,6 +9,7 @@
  */
 import type { JSONSchema7 } from "json-schema";
 import { z } from "zod";
+import { errorMessage } from "./_utils.ts";
 import type { Logger, S2SConfig } from "./runtime.ts";
 import { consoleLogger } from "./runtime.ts";
 
@@ -68,7 +69,7 @@ export function wrapOnStyleWebSocket(ws: OnStyleWebSocket): S2sWebSocket {
   ws.on("error", (err: unknown) =>
     target.dispatchEvent(
       new ErrorEvent("error", {
-        message: err instanceof Error ? err.message : String(err),
+        message: errorMessage(err),
       }),
     ),
   );

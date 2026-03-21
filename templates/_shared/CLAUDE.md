@@ -261,7 +261,6 @@ LLM produces a text response.
 Every `execute` function and lifecycle hook receives a context object:
 
 ```ts
-ctx.sessionId; // string — unique per connection
 ctx.env; // Record<string, string> — secrets from `aai secret put`
 ctx.abortSignal; // AbortSignal — cancelled on interruption (tools only)
 ctx.state; // per-session state
@@ -322,24 +321,22 @@ export default defineAgent({
 
 ### Persisting state across reconnects
 
-`ctx.sessionId` is a persistent user ID stored in the browser's
-`localStorage`. It stays the same when a user closes and reopens the
-browser. Use it as a KV key to auto-save and auto-load state:
+Use the KV store to auto-save and auto-load state:
 
 ```ts
 export default defineAgent({
   state: () => ({ score: 0, initialized: false }),
   onConnect: async (ctx) => {
-    const saved = await ctx.kv.get(`save:${ctx.sessionId}`);
+    const saved = await ctx.kv.get("save:game");
     if (saved) Object.assign(ctx.state, saved);
   },
   onTurn: async (_text, ctx) => {
-    await ctx.kv.set(`save:${ctx.sessionId}`, ctx.state);
+    await ctx.kv.set("save:game", ctx.state);
   },
 });
 ```
 
-Each browser gets its own saved state. This works for games, workflows,
+This works for games, workflows,
 or any agent where users expect to resume where they left off.
 
 ### Persistent storage (KV)

@@ -7,20 +7,13 @@
 
 import type { z } from "zod";
 import { EMPTY_PARAMS } from "./_internal_types.ts";
+import { errorMessage } from "./_utils.ts";
 import type { Kv } from "./kv.ts";
 import type { Message, ToolContext, ToolDef } from "./types.ts";
 import type { VectorStore } from "./vector.ts";
 
 /** Yield to the event loop so pending I/O (e.g. WebSocket frames) can be processed. */
 const yieldTick = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
-
-/**
- * Maximum time in milliseconds a tool handler may run before being aborted.
- *
- * If a tool's `execute` function exceeds this duration, it is cancelled via
- * `AbortSignal.timeout` and an error message is returned to the LLM.
- */
-export const TOOL_HANDLER_TIMEOUT = 30_000;
 
 /**
  * Function signature for executing a tool by name.
@@ -39,11 +32,9 @@ export type ExecuteTool = (
 ) => Promise<string>;
 
 function buildToolContext(opts: ExecuteToolCallOptions): ToolContext {
-  const { env, sessionId, state, kv, vector, messages } = opts;
+  const { env, state, kv, vector, messages } = opts;
   return {
-    sessionId: sessionId ?? "",
     env: { ...env },
-    abortSignal: AbortSignal.timeout(TOOL_HANDLER_TIMEOUT),
     state: state ?? {},
     get kv(): Kv {
       if (!kv) throw new Error("KV not available");
@@ -61,7 +52,6 @@ function buildToolContext(opts: ExecuteToolCallOptions): ToolContext {
 export type ExecuteToolCallOptions = {
   tool: ToolDef;
   env: Readonly<Record<string, string>>;
-  sessionId?: string | undefined;
   state?: Record<string, unknown>;
   kv?: Kv | undefined;
   vector?: VectorStore | undefined;
@@ -69,12 +59,12 @@ export type ExecuteToolCallOptions = {
 };
 
 /**
- * Execute a tool call with argument validation, timeout, and error handling.
+ * Execute a tool call with argument validation and error handling.
  *
  * Validates the provided arguments against the tool's Zod parameter schema,
  * constructs a {@linkcode ToolContext}, invokes the tool's `execute` function,
- * and serializes the result to a string. Errors and timeouts are caught and
- * returned as `"Error: ..."` strings rather than thrown.
+ * and serializes the result to a string. Errors are caught and returned as
+ * `"Error: ..."` strings rather than thrown.
  *
  * @param name - The name of the tool being invoked.
  * @param args - Raw arguments from the LLM to validate and pass to the tool.
@@ -104,11 +94,7 @@ export async function executeToolCall(
     if (result == null) return "null";
     return typeof result === "string" ? result : JSON.stringify(result);
   } catch (err: unknown) {
-    if (err instanceof DOMException && err.name === "TimeoutError") {
-      console.warn(`[tool-executor] Tool execution timed out: ${name}`);
-      return `Error: Tool "${name}" timed out after ${TOOL_HANDLER_TIMEOUT}ms`;
-    }
     console.warn(`[tool-executor] Tool execution failed: ${name}`, err);
-    return `Error: ${err instanceof Error ? err.message : String(err)}`;
+    return `Error: ${errorMessage(err)}`;
   }
 }
