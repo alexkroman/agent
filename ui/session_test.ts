@@ -5,25 +5,17 @@ import { describe, expect, test } from "vitest";
 import { ClientHandler } from "./session.ts";
 import type { AgentState, Message, SessionError, ToolCallInfo } from "./types.ts";
 
-function createTarget() {
-  const state = signal<AgentState>("connecting");
-  const messages = signal<Message[]>([]);
-  const toolCalls = signal<ToolCallInfo[]>([]);
-  const userUtterance = signal<string | null>(null);
-  const agentUtterance = signal<string | null>(null);
-  const error = signal<SessionError | null>(null);
+function makeVoiceIO(overrides?: Partial<Record<string, (...args: never[]) => unknown>>) {
   let flushed = false;
-
-  const target = new ClientHandler({
-    state,
-    messages,
-    toolCalls,
-    userUtterance,
-    agentUtterance,
-    error,
-    voiceIO: () => ({
-      enqueue() {},
+  const chunks: ArrayBuffer[] = [];
+  let doneCalled = false;
+  return {
+    factory: () => ({
+      enqueue(buf: ArrayBuffer) {
+        chunks.push(buf);
+      },
       done() {
+        doneCalled = true;
         return Promise.resolve();
       },
       flush() {
@@ -33,19 +25,34 @@ function createTarget() {
         return Promise.resolve();
       },
       async [Symbol.asyncDispose]() {},
+      ...overrides,
     }),
-  });
+    wasFlushed: () => flushed,
+    chunks: () => chunks,
+    wasDone: () => doneCalled,
+  };
+}
 
-  return {
-    target,
+function createTarget(voiceOverrides?: Partial<Record<string, (...args: never[]) => unknown>>) {
+  const state = signal<AgentState>("connecting");
+  const messages = signal<Message[]>([]);
+  const toolCalls = signal<ToolCallInfo[]>([]);
+  const userUtterance = signal<string | null>(null);
+  const agentUtterance = signal<string | null>(null);
+  const error = signal<SessionError | null>(null);
+  const io = makeVoiceIO(voiceOverrides);
+
+  const target = new ClientHandler({
     state,
     messages,
     toolCalls,
     userUtterance,
     agentUtterance,
     error,
-    wasFlushed: () => flushed,
-  };
+    voiceIO: io.factory,
+  });
+
+  return { target, state, messages, toolCalls, userUtterance, agentUtterance, error, ...io };
 }
 
 describe("ClientHandler event handling", () => {
@@ -65,12 +72,7 @@ describe("ClientHandler event handling", () => {
 
   test("transcript final updates userUtterance signal", () => {
     const { target, userUtterance } = createTarget();
-    target.event({
-      type: "transcript",
-      text: "hello world",
-      isFinal: true,
-      turnOrder: 1,
-    });
+    target.event({ type: "transcript", text: "hello world", isFinal: true, turnOrder: 1 });
     expect(userUtterance.value).toBe("hello world");
   });
 
@@ -80,24 +82,14 @@ describe("ClientHandler event handling", () => {
     target.event({ type: "turn", text: "What is the weather?" });
     expect(state.value).toBe("thinking");
     expect(userUtterance.value).toBe(null);
-    expect(messages.value).toEqual([
-      {
-        role: "user",
-        text: "What is the weather?",
-      },
-    ]);
+    expect(messages.value).toEqual([{ role: "user", text: "What is the weather?" }]);
   });
 
   test("chat adds assistant message without changing state", () => {
     const { target, state, messages } = createTarget();
     target.event({ type: "chat", text: "It's sunny today" });
     expect(state.value).toBe("connecting");
-    expect(messages.value).toEqual([
-      {
-        role: "assistant",
-        text: "It's sunny today",
-      },
-    ]);
+    expect(messages.value).toEqual([{ role: "assistant", text: "It's sunny today" }]);
   });
 
   test("tts_done sets state to listening", () => {
@@ -119,7 +111,6 @@ describe("ClientHandler event handling", () => {
 
   test("reset clears all state and sets listening", () => {
     const { target, state, messages, userUtterance, error } = createTarget();
-    // Simulate a mid-conversation state
     state.value = "thinking";
     messages.value = [
       { role: "user", text: "Hi" },
@@ -127,9 +118,7 @@ describe("ClientHandler event handling", () => {
     ];
     userUtterance.value = "some partial";
     error.value = { code: "stt", message: "old error" };
-
     target.event({ type: "reset" });
-
     expect(state.value).toBe("listening");
     expect(messages.value).toEqual([]);
     expect(userUtterance.value).toBe(null);
@@ -171,65 +160,18 @@ describe("ClientHandler event handling", () => {
   });
 
   test("playAudioChunk delivers audio while speaking", () => {
-    const { state } = createTarget();
+    const { target, state, chunks } = createTarget();
     state.value = "speaking";
-
-    const chunks: ArrayBuffer[] = [];
-    const target = new ClientHandler({
-      state,
-      messages: signal<Message[]>([]),
-      toolCalls: signal<ToolCallInfo[]>([]),
-      userUtterance: signal<string | null>(null),
-      agentUtterance: signal<string | null>(null),
-      error: signal<SessionError | null>(null),
-      voiceIO: () => ({
-        enqueue(buf: ArrayBuffer) {
-          chunks.push(buf);
-        },
-        done() {
-          return Promise.resolve();
-        },
-        flush() {},
-        close() {
-          return Promise.resolve();
-        },
-        async [Symbol.asyncDispose]() {},
-      }),
-    });
-
     target.playAudioChunk(new Uint8Array([1, 2, 3, 4]));
-    expect(chunks.length).toBe(1);
+    expect(chunks().length).toBe(1);
   });
 
   test("playAudioDone transitions to listening after playback completes", async () => {
-    const { state } = createTarget();
+    const { target, state, wasDone } = createTarget();
     state.value = "speaking";
-
-    let doneCalled = false;
-    const target = new ClientHandler({
-      state,
-      messages: signal<Message[]>([]),
-      toolCalls: signal<ToolCallInfo[]>([]),
-      userUtterance: signal<string | null>(null),
-      agentUtterance: signal<string | null>(null),
-      error: signal<SessionError | null>(null),
-      voiceIO: () => ({
-        enqueue() {},
-        done() {
-          doneCalled = true;
-          return Promise.resolve();
-        },
-        flush() {},
-        close() {
-          return Promise.resolve();
-        },
-        async [Symbol.asyncDispose]() {},
-      }),
-    });
-
     target.playAudioDone();
     await new Promise((r) => setTimeout(r, 0));
-    expect(doneCalled).toBe(true);
+    expect(wasDone()).toBe(true);
     expect(state.value).toBe("listening");
   });
 });

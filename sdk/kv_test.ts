@@ -89,32 +89,24 @@ describe("createMemoryKv", () => {
 
   test("expireIn expires entries", async () => {
     vi.useFakeTimers();
-    try {
-      const kv = createMemoryKv();
-      await kv.set("temp", "val", { expireIn: 10_000 });
-      expect(await kv.get("temp")).toBe("val");
-
-      vi.advanceTimersByTime(11_000);
-      expect(await kv.get("temp")).toBe(null);
-    } finally {
-      vi.useRealTimers();
-    }
+    const kv = createMemoryKv();
+    await kv.set("temp", "val", { expireIn: 10_000 });
+    expect(await kv.get("temp")).toBe("val");
+    vi.advanceTimersByTime(11_000);
+    expect(await kv.get("temp")).toBe(null);
+    vi.useRealTimers();
   });
 
   test("expired entries excluded from list", async () => {
     vi.useFakeTimers();
-    try {
-      const kv = createMemoryKv();
-      await kv.set("alive", "1");
-      await kv.set("dying", "2", { expireIn: 5_000 });
-
-      vi.advanceTimersByTime(6_000);
-      const entries = await kv.list("");
-      expect(entries.length).toBe(1);
-      expect(entries[0]?.key).toBe("alive");
-    } finally {
-      vi.useRealTimers();
-    }
+    const kv = createMemoryKv();
+    await kv.set("alive", "1");
+    await kv.set("dying", "2", { expireIn: 5_000 });
+    vi.advanceTimersByTime(6_000);
+    const entries = await kv.list("");
+    expect(entries.length).toBe(1);
+    expect(entries[0]?.key).toBe("alive");
+    vi.useRealTimers();
   });
 
   test("overwrite replaces value", async () => {

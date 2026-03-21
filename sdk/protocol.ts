@@ -98,18 +98,7 @@ export const TOOL_EXECUTION_TIMEOUT_MS = 30_000;
 
 // ─── Error codes ───────────────────────────────────────────────────────────
 
-/** Error codes for categorizing session errors on the wire. */
-export type SessionErrorCode =
-  | "stt"
-  | "llm"
-  | "tts"
-  | "tool"
-  | "protocol"
-  | "connection"
-  | "audio"
-  | "internal";
-
-/** Zod schema for {@linkcode SessionErrorCode}. */
+/** Zod schema for session error codes. */
 export const SessionErrorCodeSchema = z.enum([
   "stt",
   "llm",
@@ -120,6 +109,9 @@ export const SessionErrorCodeSchema = z.enum([
   "audio",
   "internal",
 ]);
+
+/** Error codes for categorizing session errors on the wire. */
+export type SessionErrorCode = z.infer<typeof SessionErrorCodeSchema>;
 
 // ─── Client events ─────────────────────────────────────────────────────────
 
@@ -153,26 +145,21 @@ export type ClientEvent =
   | { type: "reset" }
   | { type: "error"; code: SessionErrorCode; message: string };
 
-/** Zod schema for a transcript event (partial or final). */
-const TranscriptEventSchema = z.object({
-  type: z.literal("transcript"),
-  text: z.string(),
-  isFinal: z.boolean(),
-  turnOrder: z.number().int().nonnegative().optional(),
-});
+/** Helper: simple event with only a type field. */
+const ev = <T extends string>(t: T) => z.object({ type: z.literal(t) });
+/** Helper: event with type + text. */
+const textEv = <T extends string>(t: T) => z.object({ type: z.literal(t), text: z.string() });
+
+const turnOrder = z.number().int().nonnegative().optional();
 
 /** Zod schema for {@linkcode ClientEvent}. */
 export const ClientEventSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("speech_started") }),
-  z.object({ type: z.literal("speech_stopped") }),
-  TranscriptEventSchema,
-  z.object({
-    type: z.literal("turn"),
-    text: z.string(),
-    turnOrder: z.number().int().nonnegative().optional(),
-  }),
-  z.object({ type: z.literal("chat"), text: z.string() }),
-  z.object({ type: z.literal("chat_delta"), text: z.string() }),
+  ev("speech_started"),
+  ev("speech_stopped"),
+  z.object({ type: z.literal("transcript"), text: z.string(), isFinal: z.boolean(), turnOrder }),
+  textEv("turn").extend({ turnOrder }),
+  textEv("chat"),
+  textEv("chat_delta"),
   z.object({
     type: z.literal("tool_call_start"),
     toolCallId: z.string(),
@@ -184,14 +171,10 @@ export const ClientEventSchema = z.discriminatedUnion("type", [
     toolCallId: z.string(),
     result: z.string().max(4000),
   }),
-  z.object({ type: z.literal("tts_done") }),
-  z.object({ type: z.literal("cancelled") }),
-  z.object({ type: z.literal("reset") }),
-  z.object({
-    type: z.literal("error"),
-    code: SessionErrorCodeSchema,
-    message: z.string(),
-  }),
+  ev("tts_done"),
+  ev("cancelled"),
+  ev("reset"),
+  z.object({ type: z.literal("error"), code: SessionErrorCodeSchema, message: z.string() }),
 ]);
 
 /**
@@ -240,18 +223,13 @@ export type ServerMessage =
 
 /** Zod schema for {@linkcode ClientMessage}. */
 export const ClientMessageSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("audio_ready") }),
-  z.object({ type: z.literal("cancel") }),
-  z.object({ type: z.literal("reset") }),
+  ev("audio_ready"),
+  ev("cancel"),
+  ev("reset"),
   z.object({
     type: z.literal("history"),
     messages: z
-      .array(
-        z.object({
-          role: z.enum(["user", "assistant"]),
-          text: z.string().max(100_000),
-        }),
-      )
+      .array(z.object({ role: z.enum(["user", "assistant"]), text: z.string().max(100_000) }))
       .max(200),
   }),
 ]);

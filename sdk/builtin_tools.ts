@@ -234,19 +234,27 @@ export type BuiltinToolOptions = {
 /** A record of tool name → ToolDef with any Zod object parameters. */
 type ToolDefRecord = Record<string, ToolDef<z.ZodObject<z.ZodRawShape>>>;
 
-/** Single-tool creators keyed by builtin name. */
-const TOOL_CREATORS: Record<string, () => ToolDef> = {
-  web_search: createWebSearch,
-  visit_webpage: createVisitWebpage,
-  fetch_json: createFetchJson,
-  run_code: createRunCode,
-  vector_search: () => createVectorSearch(async () => ""),
+/** Single-tool creators and multi-tool expanders in one registry. */
+const TOOL_REGISTRY: Record<
+  string,
+  { create: (opts?: BuiltinToolOptions) => ToolDef } | { multi: () => Record<string, ToolDef> }
+> = {
+  web_search: { create: createWebSearch },
+  visit_webpage: { create: createVisitWebpage },
+  fetch_json: { create: createFetchJson },
+  run_code: { create: createRunCode },
+  vector_search: { create: (opts) => createVectorSearch(opts?.vectorSearch ?? (async () => "")) },
+  memory: { multi: memoryTools },
 };
 
-/** Builtin names that expand to multiple tools. */
-const MULTI_TOOL_BUILTINS: Record<string, () => Record<string, ToolDef>> = {
-  memory: memoryTools,
-};
+/** Resolve a builtin name to an array of [toolName, ToolDef] pairs. */
+function resolveBuiltin(name: string, opts?: BuiltinToolOptions): [string, ToolDef][] {
+  const entry = TOOL_REGISTRY[name];
+  if (!entry) return [];
+  if ("multi" in entry) return Object.entries(entry.multi());
+  if (name === "vector_search" && !opts?.vectorSearch) return [];
+  return [[name, entry.create(opts)]];
+}
 
 /**
  * Create built-in tool definitions for the given tool names.
@@ -258,36 +266,20 @@ export function getBuiltinToolDefs(
 ): ToolDefRecord {
   const defs: ToolDefRecord = {};
   for (const name of names) {
-    const multi = MULTI_TOOL_BUILTINS[name];
-    if (multi) {
-      Object.assign(defs, multi());
-      continue;
-    }
-    if (name === "vector_search") {
-      if (opts?.vectorSearch) defs[name] = createVectorSearch(opts.vectorSearch);
-      continue;
-    }
-    const creator = TOOL_CREATORS[name];
-    if (creator) defs[name] = creator();
+    for (const [k, v] of resolveBuiltin(name, opts)) defs[k] = v;
   }
   return defs;
 }
 
 /** Returns JSON tool schemas for the specified builtin tools. */
 export function getBuiltinToolSchemas(names: readonly string[]): ToolSchema[] {
-  const toSchema = (toolName: string, def: ToolDef): ToolSchema => ({
-    name: toolName,
-    description: def.description,
-    parameters: z.toJSONSchema(def.parameters ?? EMPTY_PARAMS) as ToolSchema["parameters"],
-  });
-
-  return names.flatMap((name) => {
-    const multi = MULTI_TOOL_BUILTINS[name];
-    if (multi) return Object.entries(multi()).map(([n, d]) => toSchema(n, d));
-    const creator = TOOL_CREATORS[name];
-    if (!creator) return [];
-    return [toSchema(name, creator())];
-  });
+  return names.flatMap((name) =>
+    resolveBuiltin(name, { vectorSearch: async () => "" }).map(([toolName, def]) => ({
+      name: toolName,
+      description: def.description,
+      parameters: z.toJSONSchema(def.parameters ?? EMPTY_PARAMS) as ToolSchema["parameters"],
+    })),
+  );
 }
 
 // ─── Memory tools ──────────────────────────────────────────────────────────

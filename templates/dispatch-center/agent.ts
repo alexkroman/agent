@@ -82,117 +82,25 @@ function createState(): DispatchState {
   };
 }
 
+const RESOURCE_DEFS: [string, Resource["type"], string, string[]][] = [
+  ["R1", "ambulance", "Medic-1", ["als", "cardiac", "pediatric"]],
+  ["R2", "ambulance", "Medic-2", ["als", "trauma"]],
+  ["R3", "ambulance", "Medic-3", ["bls"]],
+  ["R4", "fire_engine", "Engine-7", ["structural", "rescue", "ems_first_response"]],
+  ["R5", "fire_engine", "Ladder-2", ["aerial", "rescue", "ventilation"]],
+  ["R6", "police", "Unit-12", ["patrol", "traffic_control"]],
+  ["R7", "police", "Unit-15", ["patrol", "investigation"]],
+  ["R8", "hazmat_team", "HazMat-1", ["chemical", "biological", "radiological", "decon"]],
+  ["R9", "helicopter", "LifeFlight-1", ["medevac", "search_rescue", "thermal_imaging"]],
+  ["R10", "ems_supervisor", "EMS-Sup-1", ["mass_casualty", "triage_lead", "command"]],
+  ["R11", "k9_unit", "K9-3", ["tracking", "narcotics", "explosives"]],
+  ["R12", "swat", "TAC-1", ["tactical", "hostage_rescue", "high_risk_warrant"]],
+];
+
 function generateResources(): Resource[] {
-  return [
-    {
-      id: "R1",
-      type: "ambulance",
-      callsign: "Medic-1",
-      status: "available",
-      assignedIncident: null,
-      eta: null,
-      capabilities: ["als", "cardiac", "pediatric"],
-    },
-    {
-      id: "R2",
-      type: "ambulance",
-      callsign: "Medic-2",
-      status: "available",
-      assignedIncident: null,
-      eta: null,
-      capabilities: ["als", "trauma"],
-    },
-    {
-      id: "R3",
-      type: "ambulance",
-      callsign: "Medic-3",
-      status: "available",
-      assignedIncident: null,
-      eta: null,
-      capabilities: ["bls"],
-    },
-    {
-      id: "R4",
-      type: "fire_engine",
-      callsign: "Engine-7",
-      status: "available",
-      assignedIncident: null,
-      eta: null,
-      capabilities: ["structural", "rescue", "ems_first_response"],
-    },
-    {
-      id: "R5",
-      type: "fire_engine",
-      callsign: "Ladder-2",
-      status: "available",
-      assignedIncident: null,
-      eta: null,
-      capabilities: ["aerial", "rescue", "ventilation"],
-    },
-    {
-      id: "R6",
-      type: "police",
-      callsign: "Unit-12",
-      status: "available",
-      assignedIncident: null,
-      eta: null,
-      capabilities: ["patrol", "traffic_control"],
-    },
-    {
-      id: "R7",
-      type: "police",
-      callsign: "Unit-15",
-      status: "available",
-      assignedIncident: null,
-      eta: null,
-      capabilities: ["patrol", "investigation"],
-    },
-    {
-      id: "R8",
-      type: "hazmat_team",
-      callsign: "HazMat-1",
-      status: "available",
-      assignedIncident: null,
-      eta: null,
-      capabilities: ["chemical", "biological", "radiological", "decon"],
-    },
-    {
-      id: "R9",
-      type: "helicopter",
-      callsign: "LifeFlight-1",
-      status: "available",
-      assignedIncident: null,
-      eta: null,
-      capabilities: ["medevac", "search_rescue", "thermal_imaging"],
-    },
-    {
-      id: "R10",
-      type: "ems_supervisor",
-      callsign: "EMS-Sup-1",
-      status: "available",
-      assignedIncident: null,
-      eta: null,
-      capabilities: ["mass_casualty", "triage_lead", "command"],
-    },
-    {
-      id: "R11",
-      type: "k9_unit",
-      callsign: "K9-3",
-      status: "available",
-      assignedIncident: null,
-      eta: null,
-      capabilities: ["tracking", "narcotics", "explosives"],
-    },
-    {
-      id: "R12",
-      type: "swat",
-      callsign: "TAC-1",
-      status: "available",
-      assignedIncident: null,
-      eta: null,
-      capabilities: ["tactical", "hostage_rescue", "high_risk_warrant"],
-    },
-  ];
+  return RESOURCE_DEFS.map(([id, type, callsign, capabilities]) => ({
+    id, type, callsign, capabilities, status: "available" as const, assignedIncident: null, eta: null,
+  }));
 }
 
 // ─── Triage & scoring ────────────────────────────────────────────────────────
@@ -227,118 +135,38 @@ function calculateTriageScore(
   return Math.round(Math.min(score, 250));
 }
 
+const SEVERITY_KEYWORDS: [Severity, string[]][] = [
+  ["critical", ["unconscious", "not breathing", "cardiac arrest", "trapped", "collapse", "explosion", "active shooter", "mass casualty"]],
+  ["urgent", ["bleeding", "chest pain", "difficulty breathing", "fire", "hazmat", "shooting", "stabbing", "multi-vehicle"]],
+  ["moderate", ["fall", "broken", "fracture", "smoke", "minor fire", "assault", "theft"]],
+];
+
 function recommendSeverity(description: string): Severity {
   const d = description.toLowerCase();
-  const criticalKeywords = [
-    "unconscious",
-    "not breathing",
-    "cardiac arrest",
-    "trapped",
-    "collapse",
-    "explosion",
-    "active shooter",
-    "mass casualty",
-  ];
-  const urgentKeywords = [
-    "bleeding",
-    "chest pain",
-    "difficulty breathing",
-    "fire",
-    "hazmat",
-    "shooting",
-    "stabbing",
-    "multi-vehicle",
-  ];
-  const moderateKeywords = [
-    "fall",
-    "broken",
-    "fracture",
-    "smoke",
-    "minor fire",
-    "assault",
-    "theft",
-  ];
-
-  if (criticalKeywords.some((k) => d.includes(k))) return "critical";
-  if (urgentKeywords.some((k) => d.includes(k))) return "urgent";
-  if (moderateKeywords.some((k) => d.includes(k))) return "moderate";
+  for (const [sev, kws] of SEVERITY_KEYWORDS) {
+    if (kws.some((k) => d.includes(k))) return sev;
+  }
   return "minor";
 }
 
+const TYPE_KEYWORDS: Record<IncidentType, string[]> = {
+  medical: ["chest pain", "breathing", "unconscious", "seizure", "allergic", "overdose", "cardiac", "stroke", "diabetic", "bleeding", "fall", "injury"],
+  fire: ["fire", "smoke", "flames", "burning", "arson"],
+  hazmat: ["chemical", "spill", "gas leak", "fumes", "radiation", "contamination", "hazmat"],
+  traffic: ["accident", "crash", "collision", "vehicle", "rollover", "pedestrian struck", "hit and run"],
+  crime: ["robbery", "assault", "shooting", "stabbing", "burglar", "theft", "domestic", "hostage", "active shooter"],
+  natural_disaster: ["earthquake", "flood", "tornado", "hurricane", "landslide", "wildfire", "tsunami"],
+  utility: ["power outage", "downed line", "water main", "gas main", "transformer"],
+  other: [],
+};
+
 function recommendType(description: string): IncidentType {
   const d = description.toLowerCase();
-  const typeKeywords: Record<IncidentType, string[]> = {
-    medical: [
-      "chest pain",
-      "breathing",
-      "unconscious",
-      "seizure",
-      "allergic",
-      "overdose",
-      "cardiac",
-      "stroke",
-      "diabetic",
-      "bleeding",
-      "fall",
-      "injury",
-    ],
-    fire: ["fire", "smoke", "flames", "burning", "arson"],
-    hazmat: [
-      "chemical",
-      "spill",
-      "gas leak",
-      "fumes",
-      "radiation",
-      "contamination",
-      "hazmat",
-    ],
-    traffic: [
-      "accident",
-      "crash",
-      "collision",
-      "vehicle",
-      "rollover",
-      "pedestrian struck",
-      "hit and run",
-    ],
-    crime: [
-      "robbery",
-      "assault",
-      "shooting",
-      "stabbing",
-      "burglar",
-      "theft",
-      "domestic",
-      "hostage",
-      "active shooter",
-    ],
-    "natural_disaster": [
-      "earthquake",
-      "flood",
-      "tornado",
-      "hurricane",
-      "landslide",
-      "wildfire",
-      "tsunami",
-    ],
-    utility: [
-      "power outage",
-      "downed line",
-      "water main",
-      "gas main",
-      "transformer",
-    ],
-    other: [],
-  };
-
   let best: IncidentType = "other";
   let bestCount = 0;
-  for (const [type, keywords] of Object.entries(typeKeywords)) {
+  for (const [type, keywords] of Object.entries(TYPE_KEYWORDS)) {
     const count = keywords.filter((k) => d.includes(k)).length;
-    if (count > bestCount) {
-      bestCount = count;
-      best = type as IncidentType;
-    }
+    if (count > bestCount) { bestCount = count; best = type as IncidentType; }
   }
   return best;
 }
@@ -353,90 +181,30 @@ interface Protocol {
 }
 
 const PROTOCOLS: Protocol[] = [
-  {
-    name: "Mass Casualty Incident (MCI)",
-    triggers: {
-      types: ["medical", "fire", "natural_disaster", "traffic"],
-      minSeverity: "critical",
-    },
-    steps: [
-      "Establish Incident Command",
-      "Request mutual aid if more than 10 casualties estimated",
-      "Set up triage area using START protocol: Immediate (red), Delayed (yellow), Minor (green), Deceased (black)",
-      "Assign triage lead (EMS supervisor)",
-      "Establish patient collection point and treatment area",
-      "Coordinate helicopter landing zone if needed",
-      "Notify receiving hospitals and activate surge protocols",
-    ],
-    requiredResources: ["ambulance", "ems_supervisor", "fire_engine"],
-  },
-  {
-    name: "Structure Fire - Working Fire",
+  { name: "Mass Casualty Incident (MCI)",
+    triggers: { types: ["medical", "fire", "natural_disaster", "traffic"], minSeverity: "critical" },
+    steps: ["Establish Incident Command", "Request mutual aid if >10 casualties", "Set up triage: Immediate (red), Delayed (yellow), Minor (green), Deceased (black)", "Assign triage lead (EMS supervisor)", "Establish patient collection point", "Coordinate helicopter landing zone if needed", "Notify receiving hospitals and activate surge protocols"],
+    requiredResources: ["ambulance", "ems_supervisor", "fire_engine"] },
+  { name: "Structure Fire - Working Fire",
     triggers: { types: ["fire"], minSeverity: "urgent" },
-    steps: [
-      "Dispatch minimum 2 engines and 1 ladder",
-      "Establish incident command and 360-degree size-up",
-      "Confirm water supply — nearest hydrant",
-      "Search and rescue primary sweep",
-      "Ventilation operations",
-      "Establish RIT (Rapid Intervention Team)",
-      "Request additional alarms if fire is not contained in 10 minutes",
-    ],
-    requiredResources: ["fire_engine"],
-  },
-  {
-    name: "Hazardous Materials Response",
+    steps: ["Dispatch minimum 2 engines and 1 ladder", "Establish incident command and 360-degree size-up", "Confirm water supply", "Search and rescue primary sweep", "Ventilation operations", "Establish RIT (Rapid Intervention Team)", "Request additional alarms if not contained in 10 min"],
+    requiredResources: ["fire_engine"] },
+  { name: "Hazardous Materials Response",
     triggers: { types: ["hazmat"], minSeverity: "moderate" },
-    steps: [
-      "Identify the substance using placard numbers or SDS if available",
-      "Establish hot, warm, and cold zones",
-      "Evacuate downwind at minimum 1000 feet for unknown substances",
-      "Deploy HazMat team in appropriate PPE level",
-      "Set up decontamination corridor",
-      "Monitor air quality and wind direction continuously",
-      "Coordinate with poison control and environmental agency",
-    ],
-    requiredResources: ["hazmat_team", "fire_engine", "ambulance"],
-  },
-  {
-    name: "Active Threat / Active Shooter",
+    steps: ["Identify substance via placard numbers or SDS", "Establish hot, warm, and cold zones", "Evacuate downwind 1000+ feet for unknowns", "Deploy HazMat team in appropriate PPE", "Set up decontamination corridor", "Monitor air quality and wind continuously", "Coordinate with poison control"],
+    requiredResources: ["hazmat_team", "fire_engine", "ambulance"] },
+  { name: "Active Threat / Active Shooter",
     triggers: { types: ["crime"], minSeverity: "critical" },
-    steps: [
-      "Dispatch SWAT and multiple patrol units",
-      "Establish inner and outer perimeters",
-      "Activate Rescue Task Force protocol — police escort for EMS into warm zone",
-      "Stage ambulances at casualty collection point outside hot zone",
-      "Request LifeFlight on standby",
-      "Coordinate with school/building security for floor plans",
-      "Establish family reunification point",
-    ],
-    requiredResources: ["swat", "police", "ambulance", "ems_supervisor"],
-  },
-  {
-    name: "Multi-Vehicle Accident",
+    steps: ["Dispatch SWAT and multiple patrol units", "Establish inner and outer perimeters", "Activate Rescue Task Force — police escort EMS into warm zone", "Stage ambulances outside hot zone", "Request LifeFlight on standby", "Get building floor plans", "Establish family reunification point"],
+    requiredResources: ["swat", "police", "ambulance", "ems_supervisor"] },
+  { name: "Multi-Vehicle Accident",
     triggers: { types: ["traffic"], minSeverity: "urgent" },
-    steps: [
-      "Dispatch engine company for extrication capability",
-      "Request traffic control units to shut down lanes",
-      "Triage patients using START protocol",
-      "Check for fuel or hazmat spills",
-      "Establish landing zone if helicopter transport needed",
-      "Coordinate with DOT for road closures and detours",
-    ],
-    requiredResources: ["fire_engine", "ambulance", "police"],
-  },
-  {
-    name: "Cardiac Arrest Protocol",
+    steps: ["Dispatch engine for extrication", "Request traffic control to shut lanes", "Triage using START protocol", "Check for fuel/hazmat spills", "Establish helicopter landing zone if needed", "Coordinate with DOT for road closures"],
+    requiredResources: ["fire_engine", "ambulance", "police"] },
+  { name: "Cardiac Arrest Protocol",
     triggers: { types: ["medical"], minSeverity: "critical" },
-    steps: [
-      "Instruct caller to begin CPR immediately — 30 compressions, 2 breaths",
-      "Dispatch closest ALS unit and fire engine for first response",
-      "Guide caller through AED use if available",
-      "Time from call to first defibrillation is critical — target under 8 minutes",
-      "Prepare for advanced airway management on arrival",
-    ],
-    requiredResources: ["ambulance", "fire_engine"],
-  },
+    steps: ["Instruct caller: CPR — 30 compressions, 2 breaths", "Dispatch closest ALS unit and fire engine", "Guide caller through AED use if available", "Target first defibrillation under 8 minutes", "Prepare for advanced airway management"],
+    requiredResources: ["ambulance", "fire_engine"] },
 ];
 
 function getApplicableProtocols(
@@ -1366,117 +1134,37 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
       }),
       execute: async ({ scenario }, ctx) => {
         const state = ctx.state as DispatchState;
-        const scenarios: Record<
-          string,
-          { incidents: Partial<Incident>[]; narrative: string }
-        > = {
-          "mass_casualty": {
-            narrative:
-              "Bus crash at Main and 5th. School bus vs delivery truck. Multiple pediatric patients. Fuel spill on roadway.",
+        type ScenarioDef = { narrative: string; incidents: Partial<Incident>[] };
+        const inc = (location: string, description: string, type: IncidentType, severity: Severity): Partial<Incident> =>
+          ({ location, description, type, severity });
+
+        const scenarios: Record<string, ScenarioDef> = {
+          mass_casualty: { narrative: "Bus crash at Main and 5th. School bus vs delivery truck. Multiple pediatric patients. Fuel spill.",
             incidents: [
-              {
-                location: "Main St and 5th Ave intersection",
-                description:
-                  "School bus collision with delivery truck, multiple children injured, bus on its side, fuel leaking",
-                type: "traffic",
-                severity: "critical",
-              },
-              {
-                location: "Main St and 5th Ave — fuel spill",
-                description:
-                  "Diesel fuel spill from delivery truck spreading toward storm drain, approximately 50 gallons",
-                type: "hazmat",
-                severity: "urgent",
-              },
-            ],
-          },
-          "multi_alarm_fire": {
-            narrative:
-              "Working structure fire at 200 Industrial Parkway. 3-story warehouse, heavy smoke showing. Reports of workers possibly trapped on upper floors.",
+              inc("Main St and 5th Ave intersection", "School bus collision with delivery truck, multiple children injured, bus on its side, fuel leaking", "traffic", "critical"),
+              inc("Main St and 5th Ave — fuel spill", "Diesel fuel spill from delivery truck spreading toward storm drain, ~50 gallons", "hazmat", "urgent"),
+            ] },
+          multi_alarm_fire: { narrative: "Working structure fire at 200 Industrial Parkway. 3-story warehouse, heavy smoke. Workers possibly trapped.",
             incidents: [
-              {
-                location: "200 Industrial Parkway",
-                description:
-                  "3-story warehouse fully involved, heavy fire showing from all floors, possible trapped occupants on 2nd and 3rd floor, exposure buildings within 50 feet",
-                type: "fire",
-                severity: "critical",
-              },
-              {
-                location: "200 Industrial Parkway — medical",
-                description:
-                  "2 workers with smoke inhalation evacuated from ground floor, one with burns to hands and arms",
-                type: "medical",
-                severity: "urgent",
-              },
-            ],
-          },
-          "active_shooter": {
-            narrative:
-              "Reports of active shooter at Riverside Mall. Multiple shots fired, crowds fleeing. At least 3 victims reported down in food court area.",
+              inc("200 Industrial Parkway", "3-story warehouse fully involved, possible trapped occupants on 2nd/3rd floor", "fire", "critical"),
+              inc("200 Industrial Parkway — medical", "2 workers with smoke inhalation, one with burns", "medical", "urgent"),
+            ] },
+          active_shooter: { narrative: "Active shooter at Riverside Mall. Multiple shots fired, crowds fleeing. At least 3 victims down in food court.",
             incidents: [
-              {
-                location: "Riverside Mall, 1500 River Road — food court",
-                description:
-                  "Active shooter in food court area, multiple shots fired, at least 3 victims down, shooter last seen moving toward west entrance",
-                type: "crime",
-                severity: "critical",
-              },
-              {
-                location: "Riverside Mall parking lot",
-                description:
-                  "Crowd crush injuries as people fled the building, several people trampled near east exit",
-                type: "medical",
-                severity: "urgent",
-              },
-            ],
-          },
-          "natural_disaster": {
-            narrative:
-              "EF-3 tornado touched down in residential area. Path of destruction along Oak Street corridor. Multiple structures collapsed. Power lines down.",
+              inc("Riverside Mall, 1500 River Road — food court", "Active shooter, multiple shots, at least 3 victims down, shooter moving toward west entrance", "crime", "critical"),
+              inc("Riverside Mall parking lot", "Crowd crush injuries, several trampled near east exit", "medical", "urgent"),
+            ] },
+          natural_disaster: { narrative: "EF-3 tornado in residential area. Oak Street corridor. Multiple structures collapsed. Power lines down.",
             incidents: [
-              {
-                location: "Oak Street between 10th and 15th",
-                description:
-                  "Tornado damage, multiple homes collapsed, people trapped in rubble, gas lines ruptured",
-                type: "natural_disaster",
-                severity: "critical",
-              },
-              {
-                location: "Oak Street Elementary School",
-                description:
-                  "School roof partially collapsed, staff sheltering students in interior rooms, requesting welfare check",
-                type: "natural_disaster",
-                severity: "critical",
-              },
-              {
-                location: "Oak Street and 12th — utility",
-                description:
-                  "Multiple downed power lines sparking, gas main rupture, area needs immediate isolation",
-                type: "utility",
-                severity: "urgent",
-              },
-            ],
-          },
-          "highway_pileup": {
-            narrative:
-              "20-plus vehicle pileup on Interstate 95 southbound near mile marker 42. Fog conditions. Multiple entrapments. Tanker truck involved.",
+              inc("Oak Street between 10th and 15th", "Tornado damage, homes collapsed, people trapped, gas lines ruptured", "natural_disaster", "critical"),
+              inc("Oak Street Elementary School", "School roof partially collapsed, staff sheltering students", "natural_disaster", "critical"),
+              inc("Oak Street and 12th — utility", "Downed power lines sparking, gas main rupture, area needs isolation", "utility", "urgent"),
+            ] },
+          highway_pileup: { narrative: "20+ vehicle pileup on I-95 southbound mile marker 42. Fog. Multiple entrapments. Tanker truck involved.",
             incidents: [
-              {
-                location: "I-95 southbound mile marker 42",
-                description:
-                  "Multi-vehicle pileup, 20-plus vehicles, multiple entrapments, tanker truck involved with unknown cargo, heavy fog limiting visibility",
-                type: "traffic",
-                severity: "critical",
-              },
-              {
-                location: "I-95 southbound — hazmat",
-                description:
-                  "Tanker truck leaking unknown liquid, placards not yet visible due to fog, setting up exclusion zone",
-                type: "hazmat",
-                severity: "critical",
-              },
-            ],
-          },
+              inc("I-95 southbound mile marker 42", "Multi-vehicle pileup, 20+ vehicles, multiple entrapments, tanker with unknown cargo, heavy fog", "traffic", "critical"),
+              inc("I-95 southbound — hazmat", "Tanker leaking unknown liquid, placards not visible, exclusion zone being set up", "hazmat", "critical"),
+            ] },
         };
 
         const s = scenarios[scenario];
