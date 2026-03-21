@@ -36,7 +36,7 @@ export async function bootServer(
   env: Record<string, string>,
   port: number,
 ): Promise<void> {
-  const { wrapOnStyleWebSocket } = await import("../sdk/capnweb.ts");
+  const { wrapOnStyleWebSocket } = await import("../sdk/s2s.ts");
   const wsMod = await import("ws");
   const WS = wsMod.default ?? wsMod;
   const createWebSocket = (url: string, opts: { headers: Record<string, string> }) =>

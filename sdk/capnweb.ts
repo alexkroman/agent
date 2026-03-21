@@ -2,14 +2,11 @@
 /**
  * MessagePort RPC + WebSocket bridge for capnweb sandbox communication.
  *
- * Provides bidirectional RPC over MessagePort/Worker, WebSocket
- * bridging over MessagePort, and an adapter for wrapping `.on()`-style
- * WebSockets (e.g. `ws` npm package) as EventTarget.
+ * Provides bidirectional RPC over MessagePort/Worker and WebSocket
+ * bridging over MessagePort for capnweb sandboxed workers.
  *
  * @module
  */
-
-import type { S2sWebSocket } from "./s2s.ts";
 
 // ─── RPC Wire Types ──────────────────────────────────────────────────────────
 
@@ -240,49 +237,6 @@ export class BridgedWebSocket extends EventTarget {
     this.readyState = 2;
     this.port.postMessage({ k: 2, code, reason });
   }
-}
-
-// ─── ws-package adapter ──────────────────────────────────────────────────────
-
-/** Minimal `.on()`-style WebSocket interface (matches the `ws` npm package). */
-type OnStyleWebSocket = {
-  readonly readyState: number;
-  send(data: string): void;
-  close(): void;
-  on(event: string, handler: (...args: unknown[]) => void): void;
-};
-
-/**
- * Wraps a `.on()`-style WebSocket (e.g. from the `ws` npm package) as an
- * EventTarget-based {@linkcode S2sWebSocket}. This lets the `ws` package
- * integrate with the same bridge and S2S code that uses `addEventListener`.
- */
-export function wrapOnStyleWebSocket(ws: OnStyleWebSocket): S2sWebSocket {
-  const target = new EventTarget();
-  ws.on("open", () => target.dispatchEvent(new Event("open")));
-  ws.on("message", (data: unknown) => target.dispatchEvent(new MessageEvent("message", { data })));
-  ws.on("close", (code: unknown, reason: unknown) =>
-    target.dispatchEvent(
-      new CloseEvent("close", {
-        code: typeof code === "number" ? code : undefined,
-        reason: String(reason ?? ""),
-      }),
-    ),
-  );
-  ws.on("error", (err: unknown) =>
-    target.dispatchEvent(
-      new ErrorEvent("error", {
-        message: err instanceof Error ? err.message : String(err),
-      }),
-    ),
-  );
-  return Object.assign(target, {
-    get readyState() {
-      return ws.readyState;
-    },
-    send: (data: string) => ws.send(data),
-    close: () => ws.close(),
-  }) as S2sWebSocket;
 }
 
 // ─── Host-side bridges ───────────────────────────────────────────────────────

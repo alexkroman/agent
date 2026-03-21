@@ -11,11 +11,10 @@
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
-import { wrapOnStyleWebSocket } from "./capnweb.ts";
 import type { Kv } from "./kv.ts";
 import type { Logger, S2SConfig } from "./runtime.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime.ts";
-import type { CreateS2sWebSocket } from "./s2s.ts";
+import { type CreateS2sWebSocket, wrapOnStyleWebSocket } from "./s2s.ts";
 import type { AgentDef } from "./types.ts";
 import { createWintercServer, type WintercServer } from "./winterc_server.ts";
 import type { SessionWebSocket } from "./ws_handler.ts";
