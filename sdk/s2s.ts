@@ -29,10 +29,8 @@ function base64ToUint8(base64: string): Uint8Array {
 export type S2sWebSocket = {
   readonly readyState: number;
   send(data: string): void;
-  /** Send raw binary audio. When present, sendAudio uses this for zero-copy transfer. */
-  sendBinary?(data: ArrayBuffer): void;
   close(): void;
-  on(event: string, handler: (...args: unknown[]) => void): void;
+  addEventListener(type: string, listener: EventListenerOrEventListenerObject): void;
 };
 
 /** WebSocket readyState constant for OPEN. */
@@ -58,7 +56,7 @@ const S2sServerMessageSchema = z.discriminatedUnion("type", [
     text: z.string(),
   }),
   z.object({ type: z.literal("reply.started"), reply_id: z.string() }),
-  // reply.audio is handled on the fast path before Zod — see message handler.
+  // reply.audio is handled on the fast path before Zod.
   z.object({ type: z.literal("transcript.agent.delta"), delta: z.string() }).passthrough(),
   z.object({ type: z.literal("transcript.agent"), text: z.string() }),
   z.object({ type: z.literal("reply.content_part.started") }).passthrough(),
@@ -191,17 +189,7 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
     const handle: S2sHandle = Object.assign(target, {
       sendAudio(audio: Uint8Array): void {
         if (ws.readyState !== WS_OPEN) return;
-        if (ws.sendBinary) {
-          // Bridged mode: send raw PCM, host does base64+JSON wrap.
-          const ab = (audio.buffer as ArrayBuffer).slice(
-            audio.byteOffset,
-            audio.byteOffset + audio.byteLength,
-          );
-          ws.sendBinary(ab);
-        } else {
-          // Direct mode: build JSON inline to avoid intermediate object allocation.
-          ws.send(`{"type":"input.audio","audio":"${uint8ToBase64(audio)}"}`);
-        }
+        ws.send(`{"type":"input.audio","audio":"${uint8ToBase64(audio)}"}`);
       },
 
       sendToolResult(callId: string, result: string): void {
@@ -224,19 +212,14 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
       },
     });
 
-    ws.on("open", () => {
+    ws.addEventListener("open", () => {
       opened = true;
       log.info("S2S WebSocket open");
       resolve(handle);
     });
 
-    // Bridged mode: host pre-decodes reply.audio and sends raw PCM as "audio" event.
-    ws.on("audio", (data: unknown) => {
-      const ab = data as ArrayBuffer;
-      target.dispatchEvent(new CustomEvent("audio", { detail: { audio: new Uint8Array(ab) } }));
-    });
-
-    ws.on("message", (data: unknown) => {
+    ws.addEventListener("message", ((ev: MessageEvent) => {
+      const data = ev.data;
       let raw: unknown;
       try {
         raw = JSON.parse(String(data));
@@ -245,7 +228,6 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
       }
 
       // Fast path: reply.audio is ~95% of traffic — skip Zod, skip logging.
-      // Only reached in direct mode (self-hosted); bridged mode uses "audio" event above.
       const obj = raw as { type?: unknown; data?: unknown };
       if (
         obj.type !== "reply.audio" &&
@@ -269,19 +251,19 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
       }
       const msg = parsed.data;
       dispatchS2sMessage(target, msg);
-    });
+    }) as EventListener);
 
-    ws.on("close", (code: unknown, reason: unknown) => {
+    ws.addEventListener("close", ((ev: CloseEvent) => {
       log.info("S2S WebSocket closed", {
-        code: typeof code === "number" ? code : 0,
-        reason:
-          reason instanceof Uint8Array ? new TextDecoder().decode(reason) : String(reason ?? ""),
+        code: ev.code ?? 0,
+        reason: ev.reason ?? "",
       });
       target.dispatchEvent(new CustomEvent("close"));
-    });
+    }) as EventListener);
 
-    ws.on("error", (err: unknown) => {
-      const errObj = err instanceof Error ? err : new Error(String(err));
+    ws.addEventListener("error", ((ev: Event) => {
+      const message = ev instanceof ErrorEvent ? ev.message : "WebSocket error";
+      const errObj = new Error(message);
       log.error("S2S WebSocket error", { error: errObj.message });
       if (!opened) {
         reject(errObj);
@@ -292,6 +274,6 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
           }),
         );
       }
-    });
+    }) as EventListener);
   });
 }

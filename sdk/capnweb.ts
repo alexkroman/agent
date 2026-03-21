@@ -2,9 +2,9 @@
 /**
  * MessagePort RPC + WebSocket bridge for capnweb sandbox communication.
  *
- * Provides bidirectional RPC over MessagePort/Worker and WebSocket
- * bridging for both standard WebSocket (client connections) and
- * S2sWebSocket (.on()-style API for S2S connections).
+ * Provides bidirectional RPC over MessagePort/Worker, WebSocket
+ * bridging over MessagePort, and an adapter for wrapping `.on()`-style
+ * WebSockets (e.g. `ws` npm package) as EventTarget.
  *
  * @module
  */
@@ -242,67 +242,47 @@ export class BridgedWebSocket extends EventTarget {
   }
 }
 
-// ─── BridgedS2sWebSocket (.on()-style API) ───────────────────────────────────
+// ─── ws-package adapter ──────────────────────────────────────────────────────
+
+/** Minimal `.on()`-style WebSocket interface (matches the `ws` npm package). */
+type OnStyleWebSocket = {
+  readonly readyState: number;
+  send(data: string): void;
+  close(): void;
+  on(event: string, handler: (...args: unknown[]) => void): void;
+};
 
 /**
- * Wraps a MessagePort as an {@linkcode S2sWebSocket} (.on() event API).
- * Used in the worker for S2S connections bridged from the host.
+ * Wraps a `.on()`-style WebSocket (e.g. from the `ws` npm package) as an
+ * EventTarget-based {@linkcode S2sWebSocket}. This lets the `ws` package
+ * integrate with the same bridge and S2S code that uses `addEventListener`.
  */
-export function createBridgedS2sWebSocket(port: MessagePort): S2sWebSocket {
-  let readyState = 0;
-  const handlers = new Map<string, ((...args: unknown[]) => void)[]>();
-
-  function emit(event: string, ...args: unknown[]): void {
-    for (const h of handlers.get(event) ?? []) h(...args);
-  }
-
-  port.onmessage = (ev: MessageEvent) => {
-    const msg = ev.data;
-    if (!isBridgeMsg(msg)) return;
-    switch (msg.k) {
-      case 0:
-        emit("message", msg.d);
-        break;
-      case 1:
-        // Binary frame: pre-decoded audio from host — skip JSON/base64 entirely.
-        emit("audio", msg.d);
-        break;
-      case 2:
-        readyState = 3;
-        emit("close", msg.code, msg.reason);
-        break;
-      case 3:
-        readyState = 1;
-        emit("open");
-        break;
-      case 4:
-        emit("error", new Error(msg.m));
-        break;
-    }
-  };
-
-  return {
+export function wrapOnStyleWebSocket(ws: OnStyleWebSocket): S2sWebSocket {
+  const target = new EventTarget();
+  ws.on("open", () => target.dispatchEvent(new Event("open")));
+  ws.on("message", (data: unknown) => target.dispatchEvent(new MessageEvent("message", { data })));
+  ws.on("close", (code: unknown, reason: unknown) =>
+    target.dispatchEvent(
+      new CloseEvent("close", {
+        code: typeof code === "number" ? code : undefined,
+        reason: String(reason ?? ""),
+      }),
+    ),
+  );
+  ws.on("error", (err: unknown) =>
+    target.dispatchEvent(
+      new ErrorEvent("error", {
+        message: err instanceof Error ? err.message : String(err),
+      }),
+    ),
+  );
+  return Object.assign(target, {
     get readyState() {
-      return readyState;
+      return ws.readyState;
     },
-    send(data: string): void {
-      if (readyState !== 1) return;
-      port.postMessage({ k: 0, d: data });
-    },
-    sendBinary(data: ArrayBuffer): void {
-      if (readyState !== 1) return;
-      port.postMessage({ k: 1, d: data }, [data]);
-    },
-    close(): void {
-      if (readyState >= 2) return;
-      readyState = 2;
-      port.postMessage({ k: 2 });
-    },
-    on(event: string, handler: (...args: unknown[]) => void): void {
-      if (!handlers.has(event)) handlers.set(event, []);
-      handlers.get(event)?.push(handler);
-    },
-  };
+    send: (data: string) => ws.send(data),
+    close: () => ws.close(),
+  }) as S2sWebSocket;
 }
 
 // ─── Host-side bridges ───────────────────────────────────────────────────────
@@ -349,77 +329,6 @@ export function bridgeWebSocketToPort(ws: WebSocket, port: MessagePort): void {
         break;
       case 2:
         ws.close(msg.code, msg.reason);
-        break;
-    }
-  };
-}
-
-/**
- * Bridges a ws-style {@linkcode S2sWebSocket} to a MessagePort.
- * Used on the host side for S2S connections to AssemblyAI.
- *
- * Audio is fast-pathed as binary transfers in both directions:
- * - S2S → worker: reply.audio JSON is decoded on the host and sent as k:1 binary (zero-copy transfer).
- * - Worker → host: raw PCM arrives as k:1 binary, host wraps it as input.audio JSON for the S2S API.
- */
-export function bridgeS2sWebSocketToPort(ws: S2sWebSocket, port: MessagePort): void {
-  ws.on("open", () => {
-    port.postMessage({ k: 3 });
-  });
-
-  ws.on("message", (data: unknown) => {
-    const str = String(data);
-
-    // Fast path: decode reply.audio on host, transfer raw PCM as binary.
-    // Avoids structured-cloning the entire JSON+base64 string through the port.
-    if (str.length > 30 && str.startsWith('{"type":"reply.audio"')) {
-      try {
-        const msg = JSON.parse(str) as { type: string; data?: string };
-        if (msg.type === "reply.audio" && msg.data) {
-          const buf = Buffer.from(msg.data, "base64");
-          const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
-          port.postMessage({ k: 1, d: ab }, [ab]);
-          return;
-        }
-      } catch {
-        // Fall through to text path on parse failure.
-      }
-    }
-
-    port.postMessage({ k: 0, d: str });
-  });
-
-  ws.on("close", (code: unknown, reason: unknown) => {
-    port.postMessage({
-      k: 2,
-      code: typeof code === "number" ? code : undefined,
-      reason: String(reason ?? ""),
-    });
-  });
-
-  ws.on("error", (err: unknown) => {
-    const msg = err instanceof Error ? err.message : String(err);
-    port.postMessage({ k: 4, m: msg });
-  });
-
-  // Messages from worker → real S2S WebSocket
-  port.onmessage = (ev: MessageEvent) => {
-    const msg = ev.data;
-    if (!isBridgeMsg(msg)) return;
-    switch (msg.k) {
-      case 0:
-        if (ws.readyState === 1) ws.send(msg.d);
-        break;
-      case 1: {
-        // Binary frame from worker: raw PCM audio → wrap as input.audio JSON for S2S API.
-        if (ws.readyState === 1) {
-          const b64 = Buffer.from(msg.d).toString("base64");
-          ws.send(`{"type":"input.audio","audio":"${b64}"}`);
-        }
-        break;
-      }
-      case 2:
-        ws.close();
         break;
     }
   };

@@ -11,12 +11,7 @@
  */
 
 import { z } from "zod";
-import {
-  BridgedWebSocket,
-  CapnwebEndpoint,
-  type CapnwebPort,
-  createBridgedS2sWebSocket,
-} from "./capnweb.ts";
+import { BridgedWebSocket, CapnwebEndpoint, type CapnwebPort } from "./capnweb.ts";
 import type { Kv } from "./kv.ts";
 import type { CreateS2sWebSocket } from "./s2s.ts";
 import type { AgentDef } from "./types.ts";
@@ -169,7 +164,7 @@ export function initWorker(agent: AgentDef): void {
   const createWebSocket: CreateS2sWebSocket = (url, opts) => {
     const { port1, port2 } = new MessageChannel();
     endpoint.notify("host.createWebSocket", [url, JSON.stringify(opts.headers)], [port2]);
-    return createBridgedS2sWebSocket(port1);
+    return new BridgedWebSocket(port1);
   };
 
   // ─── RPC handlers ──────────────────────────────────────────────────────

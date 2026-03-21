@@ -11,10 +11,11 @@
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
+import { wrapOnStyleWebSocket } from "./capnweb.ts";
 import type { Kv } from "./kv.ts";
 import type { Logger, S2SConfig } from "./runtime.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime.ts";
-import type { CreateS2sWebSocket, S2sWebSocket } from "./s2s.ts";
+import type { CreateS2sWebSocket } from "./s2s.ts";
 import type { AgentDef } from "./types.ts";
 import { createWintercServer, type WintercServer } from "./winterc_server.ts";
 import type { SessionWebSocket } from "./ws_handler.ts";
@@ -53,7 +54,7 @@ async function loadWsFactory(): Promise<CreateS2sWebSocket> {
     const mod = await import("ws");
     const WS = mod.default ?? mod;
     return (url: string, opts: { headers: Record<string, string> }) =>
-      new WS(url, { headers: opts.headers }) as unknown as S2sWebSocket;
+      wrapOnStyleWebSocket(new WS(url, { headers: opts.headers }));
   } catch {
     throw new Error(
       "WebSocket factory not provided and `ws` package not found. " +
