@@ -20,7 +20,7 @@ pnpm lint                # Run Biome linter
 pnpm check               # Lint + tests
 ```
 
-Run a single test file: `pnpm vitest run sdk/define_agent_test.ts`
+Run a single test file: `pnpm vitest run sdk/types_test.ts`
 
 ## Architecture
 
@@ -54,15 +54,13 @@ Internal:
 - `aai/s2s` — AssemblyAI S2S WebSocket client
 - `aai/session` — S2S session management
 - `aai/ws-handler` — WebSocket lifecycle handler
-- `aai/system-prompt` — system prompt builder
 - `aai/direct-executor` — in-process tool execution (self-hosted)
 - `aai/protocol` — wire-format types, Zod schemas, constants
 - `aai/internal-types` — `AgentConfig`, `ToolSchema`, `DeployBody`
 - `aai/worker-entry` — tool execution logic
 - `aai/worker-shim` — capnweb RPC wiring for Deno Workers
-- `aai/timeout` — promise timeout utility
-- `aai/capnweb-transport` — MessagePort adapter
-- `aai/builtin-tools` — built-in tool definitions
+- `aai/builtin-tools` — built-in tool definitions + memory tools
+- `aai/capnweb` — MessagePort RPC + WebSocket bridge
 
 ### Key Files
 

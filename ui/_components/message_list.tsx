@@ -3,13 +3,14 @@
 import { computed, useSignalEffect } from "@preact/signals";
 import type { VNode } from "preact";
 import { useRef } from "preact/hooks";
+import { cn } from "../_cn.ts";
 import { useSession } from "../signals.ts";
 import { MessageBubble } from "./message_bubble.tsx";
 import { ThinkingIndicator } from "./thinking_indicator.tsx";
 import { ToolCallBlock } from "./tool_call_block.tsx";
 import { Transcript } from "./transcript.tsx";
 
-export function MessageList() {
+export function MessageList({ className }: { className?: string }) {
   const { session } = useSession();
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -54,7 +55,10 @@ export function MessageList() {
   }
 
   return (
-    <div role="log" class="flex-1 overflow-y-auto [scrollbar-width:none] bg-aai-surface">
+    <div
+      role="log"
+      class={cn("flex-1 overflow-y-auto [scrollbar-width:none] bg-aai-surface", className)}
+    >
       <div class="flex flex-col gap-4.5 p-4">
         {items}
         {session.agentUtterance.value && (

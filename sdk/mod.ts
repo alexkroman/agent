@@ -23,17 +23,17 @@
  * @module
  */
 
-export { defineAgent } from "./define_agent.ts";
-export { memoryTools } from "./memory_tools.ts";
-export type {
-  AgentOptions,
-  BeforeStepResult,
-  BuiltinTool,
-  HookContext,
-  Message,
-  StepInfo,
-  ToolContext,
-  ToolDef,
+export { memoryTools } from "./builtin_tools.ts";
+export {
+  type AgentOptions,
+  type BeforeStepResult,
+  type BuiltinTool,
+  defineAgent,
+  type HookContext,
+  type Message,
+  type StepInfo,
+  type ToolContext,
+  type ToolDef,
+  tool,
 } from "./types.ts";
-export { tool } from "./types.ts";
 export type { VectorEntry, VectorStore } from "./vector.ts";

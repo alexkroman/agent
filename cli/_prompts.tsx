@@ -2,7 +2,7 @@
 
 import { ConfirmInput, PasswordInput, Select, TextInput } from "@inkjs/ui";
 import { Box, render, Text } from "ink";
-import { COLORS } from "./_colors.ts";
+import { COLORS } from "./_ink.tsx";
 
 /**
  * Renders a password prompt, waits for the user to submit, and returns the value.

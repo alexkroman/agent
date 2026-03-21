@@ -2,29 +2,20 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
-import { createServer as createViteServer } from "vite";
+import { tsImport } from "tsx/esm/api";
 import type { AgentDef } from "../sdk/types.ts";
 import { getApiKey } from "./_discover.ts";
 
-/** Load an AgentDef by dynamically importing agent.ts via Vite SSR. */
+/** Load an AgentDef by dynamically importing agent.ts via tsx. */
 export async function loadAgentDef(cwd: string): Promise<AgentDef> {
   const agentPath = path.resolve(cwd, "agent.ts");
-  const vite = await createViteServer({
-    root: cwd,
-    logLevel: "silent",
-    server: { middlewareMode: true },
-  });
-  try {
-    const agentModule = await vite.ssrLoadModule(agentPath);
-    const agentDef = agentModule.default;
+  const agentModule = await tsImport(agentPath, cwd);
+  const agentDef = agentModule.default;
 
-    if (!agentDef || typeof agentDef !== "object" || !agentDef.name) {
-      throw new Error("agent.ts must export a default agent definition (from defineAgent())");
-    }
-    return agentDef as AgentDef;
-  } finally {
-    await vite.close();
+  if (!agentDef || typeof agentDef !== "object" || !agentDef.name) {
+    throw new Error("agent.ts must export a default agent definition (from defineAgent())");
   }
+  return agentDef as AgentDef;
 }
 
 /** Build an env record from process.env, ensuring ASSEMBLYAI_API_KEY is set. */

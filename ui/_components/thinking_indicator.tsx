@@ -1,9 +1,12 @@
 // Copyright 2025 the AAI authors. MIT license.
 import type * as preact from "preact";
+import { cn } from "../_cn.ts";
 
-export function ThinkingIndicator(): preact.JSX.Element {
+export function ThinkingIndicator({ className }: { className?: string }): preact.JSX.Element {
   return (
-    <div class="flex items-center gap-2 text-aai-text-dim text-sm font-medium min-h-5">
+    <div
+      class={cn("flex items-center gap-2 text-aai-text-dim text-sm font-medium min-h-5", className)}
+    >
       {[0, 0.16, 0.32].map((delay) => (
         <div
           key={delay}

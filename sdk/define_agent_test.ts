@@ -1,8 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
-import { defineAgent } from "./define_agent.ts";
-import { DEFAULT_GREETING, DEFAULT_INSTRUCTIONS } from "./types.ts";
+import { DEFAULT_GREETING, DEFAULT_INSTRUCTIONS, defineAgent } from "./types.ts";
 
 describe("defineAgent", () => {
   test("applies defaults", () => {

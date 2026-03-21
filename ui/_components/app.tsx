@@ -12,11 +12,11 @@ function AnsiLogo() {
   );
 }
 
-export function App(): preact.JSX.Element {
+export function App({ className }: { className?: string }): preact.JSX.Element {
   const { title } = useMountConfig();
 
   return (
-    <StartScreen icon={title ? undefined : <AnsiLogo />} title={title}>
+    <StartScreen icon={title ? undefined : <AnsiLogo />} title={title} className={className}>
       <ChatView />
     </StartScreen>
   );

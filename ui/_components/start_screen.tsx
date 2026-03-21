@@ -1,7 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import type { ComponentChildren } from "preact";
+import { cn } from "../_cn.ts";
 import { useSession } from "../signals.ts";
+import { Button } from "./button.tsx";
 
 /**
  * A centered start screen with icon, title, subtitle, and a start button.
@@ -24,12 +26,14 @@ export function StartScreen({
   title,
   subtitle,
   buttonText = "Start",
+  className,
 }: {
   children: ComponentChildren;
   icon?: ComponentChildren | undefined;
   title?: string | undefined;
   subtitle?: string | undefined;
   buttonText?: string | undefined;
+  className?: string | undefined;
 }) {
   const { started, start } = useSession();
 
@@ -38,18 +42,14 @@ export function StartScreen({
   }
 
   return (
-    <div class="flex items-center justify-center h-screen bg-aai-bg font-aai">
+    <div class={cn("flex items-center justify-center h-screen bg-aai-bg font-aai", className)}>
       <div class="flex flex-col items-center gap-4 bg-aai-surface border border-aai-border rounded-lg px-12 py-10 max-w-sm text-center">
         {icon}
         {title && <h1 class="font-semibold text-aai-primary m-0">{title}</h1>}
         {subtitle && <p class="text-sm text-aai-text-muted m-0">{subtitle}</p>}
-        <button
-          type="button"
-          class="mt-2 px-8 py-3 rounded-aai text-sm font-medium cursor-pointer bg-aai-primary text-white border-none"
-          onClick={start}
-        >
+        <Button className="mt-2 px-8 py-3" onClick={start}>
           {buttonText}
-        </button>
+        </Button>
       </div>
     </div>
   );

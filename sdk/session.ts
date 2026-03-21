@@ -21,8 +21,7 @@ import {
   type S2sToolCall,
   type S2sToolSchema,
 } from "./s2s.ts";
-import { buildSystemPrompt } from "./system_prompt.ts";
-import type { Message, StepInfo } from "./types.ts";
+import { DEFAULT_INSTRUCTIONS, type Message, type StepInfo } from "./types.ts";
 import type { ExecuteTool } from "./worker_entry.ts";
 
 /** A voice session managing the S2S connection for one client. */
@@ -132,37 +131,10 @@ export function createS2sSession(opts: SessionOptions): Session {
     }
   }
 
-  function invokeHook(hook: "onConnect"): void;
-  function invokeHook(hook: "onDisconnect"): void;
-  function invokeHook(hook: "onTurn", text: string): void;
-  function invokeHook(hook: "onError", error: { message: string }): void;
-  function invokeHook(hook: "onStep", step: StepInfo): void;
-  function invokeHook(
-    hook: "onConnect" | "onDisconnect" | "onTurn" | "onError" | "onStep",
-    arg?: string | { message: string } | StepInfo,
-  ): void {
-    if (!hookInvoker) return;
-    const run = async () => {
-      switch (hook) {
-        case "onConnect":
-          await hookInvoker.onConnect(id, HOOK_TIMEOUT_MS);
-          break;
-        case "onDisconnect":
-          await hookInvoker.onDisconnect(id, HOOK_TIMEOUT_MS);
-          break;
-        case "onTurn":
-          await hookInvoker.onTurn(id, arg as string, HOOK_TIMEOUT_MS);
-          break;
-        case "onError":
-          await hookInvoker.onError(id, arg as { message: string }, HOOK_TIMEOUT_MS);
-          break;
-        case "onStep":
-          await hookInvoker.onStep(id, arg as StepInfo, HOOK_TIMEOUT_MS);
-          break;
-      }
-    };
-    run().catch((err: unknown) => {
-      log.warn(`${hook} hook failed`, {
+  /** Fire-and-forget a hook invocation. Errors are logged, not thrown. */
+  function fireHook(fn: () => Promise<void>, name: string): void {
+    fn().catch((err: unknown) => {
+      log.warn(`${name} hook failed`, {
         err: err instanceof Error ? err.message : String(err),
       });
     });
@@ -211,11 +183,14 @@ export function createS2sSession(opts: SessionOptions): Session {
     }
 
     // Fire onStep hook
-    invokeHook("onStep", {
-      stepNumber: toolCallCount - 1,
-      toolCalls: [{ toolName: name, args: parsedArgs }],
-      text: "",
-    });
+    if (hookInvoker) {
+      const step: StepInfo = {
+        stepNumber: toolCallCount - 1,
+        toolCalls: [{ toolName: name, args: parsedArgs }],
+        text: "",
+      };
+      fireHook(() => hookInvoker.onStep(id, step, HOOK_TIMEOUT_MS), "onStep");
+    }
 
     log.info("S2S tool call", { tool: name, call_id, args: parsedArgs, agent });
 
@@ -293,7 +268,7 @@ export function createS2sSession(opts: SessionOptions): Session {
         client.event({ type: "transcript", text, isFinal: true });
         client.event({ type: "turn", text });
         conversationMessages.push({ role: "user", content: text });
-        invokeHook("onTurn", text);
+        if (hookInvoker) fireHook(() => hookInvoker.onTurn(id, text, HOOK_TIMEOUT_MS), "onTurn");
       });
 
       handle.addEventListener("reply_started", () => {
@@ -404,7 +379,7 @@ export function createS2sSession(opts: SessionOptions): Session {
     async start(): Promise<void> {
       metrics.sessionsTotal.inc(agentLabel);
       metrics.sessionsActive.inc(agentLabel);
-      invokeHook("onConnect");
+      if (hookInvoker) fireHook(() => hookInvoker.onConnect(id, HOOK_TIMEOUT_MS), "onConnect");
       await connectAndSetup();
     },
 
@@ -414,7 +389,8 @@ export function createS2sSession(opts: SessionOptions): Session {
       metrics.sessionsActive.dec(agentLabel);
       if (turnPromise) await turnPromise;
       s2s?.close();
-      invokeHook("onDisconnect");
+      if (hookInvoker)
+        fireHook(() => hookInvoker.onDisconnect(id, HOOK_TIMEOUT_MS), "onDisconnect");
     },
 
     onAudio(data: Uint8Array): void {
@@ -453,4 +429,50 @@ export function createS2sSession(opts: SessionOptions): Session {
       return turnPromise ?? Promise.resolve();
     },
   };
+}
+
+// ─── System prompt builder (inlined from system_prompt.ts) ──────────────────
+
+const VOICE_RULES =
+  "\n\nCRITICAL OUTPUT RULES — you MUST follow these for EVERY response:\n" +
+  "Your response will be spoken aloud by a TTS system and displayed as plain text.\n" +
+  "- NEVER use markdown: no **, no *, no _, no #, no `, no [](), no ---\n" +
+  "- NEVER use bullet points (-, *, •) or numbered lists (1., 2.)\n" +
+  "- NEVER use code blocks or inline code\n" +
+  "- NEVER mention tools, search, APIs, or technical failures to the user. " +
+  "If a tool returns no results, just answer naturally without explaining why.\n" +
+  "- Write exactly as you would say it out loud to a friend\n" +
+  '- Use short conversational sentences. To list things, say "First," "Next," "Finally,"\n' +
+  "- Keep responses concise — 1 to 3 sentences max";
+
+export function buildSystemPrompt(
+  config: AgentConfig,
+  opts: { hasTools: boolean; voice?: boolean },
+): string {
+  const { hasTools } = opts;
+  const agentInstructions =
+    config.instructions && config.instructions !== DEFAULT_INSTRUCTIONS
+      ? `\n\nAgent-Specific Instructions:\n${config.instructions}`
+      : "";
+
+  const toolPreamble = hasTools
+    ? "\n\nWhen you decide to use a tool, ALWAYS say a brief natural phrase BEFORE the tool call " +
+      '(e.g. "Let me look that up" or "One moment while I check"). ' +
+      "This fills silence while the tool executes. Keep preambles to one short sentence."
+    : "";
+
+  const today = new Date().toLocaleDateString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+
+  return (
+    DEFAULT_INSTRUCTIONS +
+    `\n\nToday's date is ${today}.` +
+    agentInstructions +
+    toolPreamble +
+    (opts?.voice ? VOICE_RULES : "")
+  );
 }

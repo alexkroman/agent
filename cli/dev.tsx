@@ -1,54 +1,27 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import path from "node:path";
-import minimist from "minimist";
-import { _startDevServer } from "./_dev.ts";
-import { fileExists, getApiKey } from "./_discover.ts";
-import type { SubcommandDef } from "./_help.ts";
-import { subcommandHelp } from "./_help.ts";
-import { runWithInk } from "./_ink.tsx";
-import { runInitCommand } from "./init.tsx";
+import React from "react";
+import { buildAgentBundle } from "./_build.ts";
+import { runWithInk, Step } from "./_ink.tsx";
+import { bootServer, loadAgentDef, resolveServerEnv } from "./_server_common.ts";
 
-const devCommandDef: SubcommandDef = {
-  name: "dev",
-  description: "Start a local development server",
-  options: [
-    {
-      flags: "-p, --port <number>",
-      description: "Port to listen on (default: 3000)",
-    },
-    { flags: "-y, --yes", description: "Accept defaults (no prompts)" },
-  ],
-};
+export async function _startDevServer(
+  cwd: string,
+  port: number,
+  log: (node: React.ReactNode) => void,
+): Promise<void> {
+  const bundle = await buildAgentBundle(cwd, log, { skipRenderCheck: true });
 
-/**
- * Runs the `aai dev` subcommand. Starts a local development server
- * that imports the agent directly and serves the bundled client UI.
- */
-export async function runDevCommand(args: string[], version: string): Promise<void> {
-  const parsed = minimist(args, {
-    string: ["port"],
-    boolean: ["help", "yes"],
-    alias: { p: "port", h: "help", y: "yes" },
-  });
+  const agentDef = await loadAgentDef(cwd);
+  const env = await resolveServerEnv();
+  await bootServer(agentDef, bundle.clientDir, env, port);
+  log(React.createElement(Step, { action: "Ready", msg: `http://localhost:${port}` }));
+}
 
-  if (parsed.help) {
-    console.log(subcommandHelp(devCommandDef, version));
-    return;
-  }
+export async function runDevCommand(opts: { cwd: string; port: string }): Promise<void> {
+  const port = Number.parseInt(opts.port, 10);
 
-  const cwd = process.env.INIT_CWD || process.cwd();
-  const port = Number.parseInt(parsed.port ?? "3000", 10);
-
-  // If no agent.ts exists, scaffold first (may prompt for template)
-  if (!(await fileExists(path.join(cwd, "agent.ts")))) {
-    await runInitCommand(parsed.yes ? ["-y"] : [], version, { quiet: true });
-  }
-
-  // Pre-resolve API key (may prompt) before Ink render
-  await getApiKey();
-
-  await runWithInk(async (log) => {
-    await _startDevServer(cwd, port, log);
+  await runWithInk(async ({ log }) => {
+    await _startDevServer(opts.cwd, port, log);
   });
 }

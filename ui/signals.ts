@@ -1,8 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { batch, effect, type Signal, signal } from "@preact/signals";
+import { batch, effect, type Signal, signal, useSignalEffect } from "@preact/signals";
 import type * as preact from "preact";
-import type { ComponentChildren } from "preact";
+import type { ComponentChildren, RefObject } from "preact";
 import { createContext, h } from "preact";
 import { useContext, useEffect, useRef } from "preact/hooks";
 import type { VoiceSession } from "./session.ts";
@@ -168,4 +168,24 @@ export function useToolResult(
     },
     [],
   );
+}
+
+/**
+ * Auto-scroll a container to the bottom when messages, tool calls,
+ * or utterances change. Returns a ref to attach to a sentinel `<div>`
+ * at the bottom of the scrollable area.
+ */
+export function useAutoScroll(): RefObject<HTMLDivElement | null> {
+  const { session } = useSession();
+  const ref = useRef<HTMLDivElement | null>(null);
+
+  useSignalEffect(() => {
+    session.messages.value;
+    session.toolCalls.value;
+    session.userUtterance.value;
+    session.agentUtterance.value;
+    ref.current?.scrollIntoView({ behavior: "smooth" });
+  });
+
+  return ref;
 }
