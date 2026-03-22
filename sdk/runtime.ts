@@ -28,23 +28,14 @@ export type Metrics = {
 };
 
 /** Console-based logger that works in all runtimes. */
+const _log = (m: "log" | "warn" | "error" | "debug") => (msg: string, ctx?: LogContext) =>
+  console[m](msg, ...(ctx ? [ctx] : []));
+
 export const consoleLogger: Logger = {
-  info(msg, ctx) {
-    if (ctx) console.log(msg, ctx);
-    else console.log(msg);
-  },
-  warn(msg, ctx) {
-    if (ctx) console.warn(msg, ctx);
-    else console.warn(msg);
-  },
-  error(msg, ctx) {
-    if (ctx) console.error(msg, ctx);
-    else console.error(msg);
-  },
-  debug(msg, ctx) {
-    if (ctx) console.debug(msg, ctx);
-    else console.debug(msg);
-  },
+  info: _log("log"),
+  warn: _log("warn"),
+  error: _log("error"),
+  debug: _log("debug"),
 };
 
 /** No-op metrics implementation for environments without monitoring. */

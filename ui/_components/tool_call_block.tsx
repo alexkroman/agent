@@ -21,36 +21,24 @@ type ToolConfig = {
   subtitle: (args: Record<string, unknown>) => string;
 };
 
+const argField =
+  (key: string): ToolConfig["subtitle"] =>
+  (args) =>
+    String(args[key] ?? "");
+
 const TOOL_CONFIG: Record<string, ToolConfig> = {
-  web_search: {
-    Icon: SearchIcon,
-    title: "Web Search",
-    subtitle: (args) => String(args.query ?? ""),
-  },
-  visit_webpage: {
-    Icon: ExternalLinkIcon,
-    title: "Visit Page",
-    subtitle: (args) => String(args.url ?? ""),
-  },
+  web_search: { Icon: SearchIcon, title: "Web Search", subtitle: argField("query") },
+  visit_webpage: { Icon: ExternalLinkIcon, title: "Visit Page", subtitle: argField("url") },
   run_code: {
     Icon: TerminalIcon,
     title: "Run Code",
     subtitle: (args) => {
-      const code = String(args.code ?? "");
-      const firstLine = code.split("\n")[0] ?? "";
+      const firstLine = String(args.code ?? "").split("\n")[0] ?? "";
       return firstLine.length > 80 ? `${firstLine.slice(0, 80)}...` : firstLine;
     },
   },
-  fetch_json: {
-    Icon: DownloadIcon,
-    title: "Fetch JSON",
-    subtitle: (args) => String(args.url ?? ""),
-  },
-  user_input: {
-    Icon: ChatBubbleIcon,
-    title: "Asking User",
-    subtitle: (args) => String(args.question ?? ""),
-  },
+  fetch_json: { Icon: DownloadIcon, title: "Fetch JSON", subtitle: argField("url") },
+  user_input: { Icon: ChatBubbleIcon, title: "Asking User", subtitle: argField("question") },
 };
 
 const DEFAULT_CONFIG: ToolConfig = {

@@ -1,24 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { getApiKey, readProjectConfig, resolveServerUrl } from "./_discover.ts";
+import { getServerInfo } from "./_discover.ts";
 import { Detail, runWithInk, Step, StepInfo } from "./_ink.tsx";
 import { askPassword } from "./_prompts.tsx";
-
-async function requireProjectConfig(cwd: string) {
-  const config = await readProjectConfig(cwd);
-  if (!config) {
-    throw new Error("No .aai/project.json found — deploy first with `aai deploy`");
-  }
-  return config;
-}
-
-async function getServerInfo(cwd: string) {
-  const config = await requireProjectConfig(cwd);
-  const apiKey = await getApiKey();
-  const serverUrl = resolveServerUrl(undefined, config.serverUrl);
-  const slug = config.slug;
-  return { serverUrl, slug, apiKey };
-}
 
 async function apiFetch(
   cwd: string,

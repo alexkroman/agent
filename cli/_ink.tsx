@@ -40,11 +40,11 @@ export function interactive(s: string): string {
   return chalk.hex(COLORS.interactive)(s);
 }
 
-/** Primary step message with a left-aligned peach action label. */
-export function Step({ action, msg }: { action: string; msg: string }) {
+/** Colored step message with a left-aligned bold action label. */
+function StepBase({ action, msg, color }: { action: string; msg: string; color: string }) {
   return (
     <Text>
-      <Text bold color={COLORS.primary}>
+      <Text bold color={color}>
         {action}
       </Text>
       <Text> {msg}</Text>
@@ -52,16 +52,14 @@ export function Step({ action, msg }: { action: string; msg: string }) {
   );
 }
 
+/** Primary step message with a left-aligned peach action label. */
+export function Step({ action, msg }: { action: string; msg: string }) {
+  return <StepBase action={action} msg={msg} color={COLORS.primary} />;
+}
+
 /** Informational step message with a left-aligned blue action label. */
 export function StepInfo({ action, msg }: { action: string; msg: string }) {
-  return (
-    <Text>
-      <Text bold color={COLORS.interactive}>
-        {action}
-      </Text>
-      <Text> {msg}</Text>
-    </Text>
-  );
+  return <StepBase action={action} msg={msg} color={COLORS.interactive} />;
 }
 
 /** Dimmed info sub-line (indented to nest under a step). */

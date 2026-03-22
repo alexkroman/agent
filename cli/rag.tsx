@@ -4,7 +4,7 @@ import { Text } from "ink";
 import pLimit from "p-limit";
 import type React from "react";
 import { errorMessage } from "../sdk/_utils.ts";
-import { getApiKey, readProjectConfig, resolveServerUrl } from "./_discover.ts";
+import { getServerInfo } from "./_discover.ts";
 import { Detail, Info, runWithInk, Step, Warn } from "./_ink.tsx";
 
 const FETCH_TIMEOUT_MS = 60_000;
@@ -174,14 +174,7 @@ export async function runRagCommand(opts: {
     throw new Error(`Invalid URL: ${url}`);
   }
 
-  const config = await readProjectConfig(cwd);
-  if (!config) {
-    throw new Error("No .aai/project.json found — deploy first with `aai deploy`");
-  }
-
-  const apiKey = await getApiKey();
-  const serverUrl = resolveServerUrl(opts.server, config.serverUrl);
-  const slug = config.slug;
+  const { apiKey, serverUrl, slug } = await getServerInfo(cwd, opts.server);
   const chunkSize = Number.parseInt(opts.chunkSize ?? "512", 10);
 
   await runWithInk(async ({ log, setStatus }) => {

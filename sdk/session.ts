@@ -133,11 +133,7 @@ export function createS2sSession(opts: SessionOptions): Session {
     }
   }
 
-  function invokeHook(hook: "onConnect" | "onDisconnect"): void;
-  function invokeHook(hook: "onTurn", text: string): void;
-  function invokeHook(hook: "onError", error: { message: string }): void;
-  function invokeHook(hook: "onStep", step: StepInfo): void;
-  function invokeHook(hook: string, arg?: unknown): void {
+  function invokeHook(hook: keyof HookInvoker, arg?: unknown): void {
     if (!hookInvoker) return;
     // biome-ignore lint/complexity/noBannedTypes: dynamic hook dispatch
     const h = hookInvoker[hook as keyof HookInvoker] as Function;
