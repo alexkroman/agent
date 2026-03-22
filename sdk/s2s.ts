@@ -73,13 +73,12 @@ export function wrapOnStyleWebSocket(ws: OnStyleWebSocket): S2sWebSocket {
       }),
     ),
   );
-  return Object.assign(target, {
-    get readyState() {
-      return ws.readyState;
-    },
-    send: (data: string) => ws.send(data),
-    close: () => ws.close(),
-  }) as S2sWebSocket;
+  Object.defineProperties(target, {
+    readyState: { get: () => ws.readyState, enumerable: true },
+    send: { value: (data: string) => ws.send(data), enumerable: true },
+    close: { value: () => ws.close(), enumerable: true },
+  });
+  return target as unknown as S2sWebSocket;
 }
 
 // ─── Incoming S2S message schema ─────────────────────────────────────────────
@@ -205,7 +204,7 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
   const { apiKey, config, createWebSocket, logger: log = consoleLogger } = opts;
 
   return new Promise((resolve, reject) => {
-    log.debug("S2S connecting", { url: config.wssUrl });
+    log.info("S2S connecting", { url: config.wssUrl });
 
     const ws = createWebSocket(config.wssUrl, {
       headers: { Authorization: `Bearer ${apiKey}` },
@@ -218,7 +217,7 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
       if (ws.readyState !== WS_OPEN) return;
       const json = JSON.stringify(msg);
       if (msg.type !== "input.audio") {
-        log.debug(
+        log.info(
           `S2S >> ${msg.type}`,
           msg.type === "session.update" ? { payload: json } : undefined,
         );
@@ -234,7 +233,7 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
 
       sendToolResult(callId: string, result: string): void {
         const msg = { type: "tool.result", call_id: callId, result };
-        log.debug("S2S >> tool.result", { call_id: callId, resultLength: result.length });
+        log.info("S2S >> tool.result", { call_id: callId, resultLength: result.length });
         send(msg);
       },
 
@@ -247,7 +246,7 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
       },
 
       close(): void {
-        log.debug("S2S closing");
+        log.info("S2S closing");
         ws.close();
       },
     });
@@ -258,7 +257,7 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
       resolve(handle);
     });
 
-    ws.addEventListener("message", ((ev: MessageEvent) => {
+    function handleS2sMessage(ev: MessageEvent): void {
       const data = ev.data;
       let raw: unknown;
       try {
@@ -268,14 +267,13 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
         return;
       }
 
-      // Fast path: reply.audio is ~95% of traffic — skip Zod, skip logging.
-      const obj = raw as { type?: unknown; data?: unknown };
-      if (
-        obj.type !== "reply.audio" &&
-        obj.type !== "input.audio" &&
-        obj.type !== "transcript.agent.delta"
-      ) {
-        log.info(`S2S << ${obj.type}`);
+      // Fast path: reply.audio and input.audio are ~95% of traffic — skip logging.
+      const obj = raw as { type?: unknown; data?: unknown; delta?: unknown };
+      if (obj.type !== "reply.audio" && obj.type !== "input.audio") {
+        log.info(
+          `S2S << ${obj.type}`,
+          obj.type === "transcript.agent.delta" ? { delta: obj.delta } : undefined,
+        );
       }
       if (obj.type === "reply.audio" && typeof obj.data === "string") {
         const audioBytes = base64ToUint8(obj.data);
@@ -290,9 +288,10 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
         );
         return;
       }
-      const msg = parsed.data;
-      dispatchS2sMessage(target, msg);
-    }) as EventListener);
+      dispatchS2sMessage(target, parsed.data);
+    }
+
+    ws.addEventListener("message", handleS2sMessage as EventListener);
 
     ws.addEventListener("close", ((ev: CloseEvent) => {
       log.info("S2S WebSocket closed", {
