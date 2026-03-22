@@ -1,8 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { batch, effect, type Signal, signal, useSignalEffect } from "@preact/signals";
-import type * as preact from "preact";
-import type { ComponentChildren, RefObject } from "preact";
+import type { ComponentChildren, JSX, RefObject } from "preact";
 import { createContext, h } from "preact";
 import { useContext, useEffect, useRef } from "preact/hooks";
 import type { VoiceSession } from "./session.ts";
@@ -99,7 +98,7 @@ export function SessionProvider({
 }: {
   value: SessionSignals;
   children?: ComponentChildren;
-}): preact.JSX.Element {
+}): JSX.Element {
   return h(Ctx.Provider, { value }, children);
 }
 
@@ -142,10 +141,9 @@ export function useToolResult(
   const seenRef = useRef(new Set<string>());
   const cbRef = useRef(callback);
   cbRef.current = callback;
-  const disposeRef = useRef<(() => void) | null>(null);
 
-  if (!disposeRef.current) {
-    disposeRef.current = effect(() => {
+  useEffect(() => {
+    return effect(() => {
       const toolCalls = session.toolCalls.value;
       if (toolCalls.length === 0) {
         seenRef.current.clear();
@@ -155,19 +153,10 @@ export function useToolResult(
         if (tc.status !== "done" || !tc.result) continue;
         if (seenRef.current.has(tc.toolCallId)) continue;
         seenRef.current.add(tc.toolCallId);
-        const parsed = tryParseJSON(tc.result);
-        cbRef.current(tc.toolName, parsed, tc);
+        cbRef.current(tc.toolName, tryParseJSON(tc.result), tc);
       }
     });
-  }
-
-  useEffect(
-    () => () => {
-      disposeRef.current?.();
-      disposeRef.current = null;
-    },
-    [],
-  );
+  }, [session]);
 }
 
 /**
@@ -175,9 +164,9 @@ export function useToolResult(
  * or utterances change. Returns a ref to attach to a sentinel `<div>`
  * at the bottom of the scrollable area.
  */
-export function useAutoScroll(): RefObject<HTMLDivElement | null> {
+export function useAutoScroll(): RefObject<HTMLDivElement> {
   const { session } = useSession();
-  const ref = useRef<HTMLDivElement | null>(null);
+  const ref = useRef<HTMLDivElement>(null);
 
   useSignalEffect(() => {
     session.messages.value;

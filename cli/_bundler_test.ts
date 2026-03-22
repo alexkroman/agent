@@ -1,8 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { expect, test } from "vitest";
-import { _internals } from "./_bundler.ts";
-
-const { BundleError } = _internals;
+import { BundleError } from "./_bundler.ts";
 
 test("BundleError: creates error with BundleError name", () => {
   const err = new BundleError("something went wrong");

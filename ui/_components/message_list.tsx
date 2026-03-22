@@ -1,10 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { computed, useSignalEffect } from "@preact/signals";
+import { computed } from "@preact/signals";
 import clsx from "clsx";
 import type { VNode } from "preact";
-import { useRef } from "preact/hooks";
-import { useSession } from "../signals.ts";
+import { useAutoScroll, useSession } from "../signals.ts";
 import { MessageBubble } from "./message_bubble.tsx";
 import { ThinkingIndicator } from "./thinking_indicator.tsx";
 import { ToolCallBlock } from "./tool_call_block.tsx";
@@ -12,23 +11,14 @@ import { Transcript } from "./transcript.tsx";
 
 export function MessageList({ className }: { className?: string }) {
   const { session } = useSession();
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useAutoScroll();
 
   const showThinking = computed(() => {
     if (session.state.value !== "thinking") return false;
     const last = session.toolCalls.value.at(-1);
     if (last?.status === "pending") return false;
     const lastMsg = session.messages.value.at(-1);
-    return !lastMsg || lastMsg.role === "user" || !!last;
-  });
-
-  useSignalEffect(() => {
-    session.messages.value;
-    session.toolCalls.value;
-    session.userUtterance.value;
-    session.agentUtterance.value;
-    session.state.value;
-    scrollRef.current?.scrollIntoView({ behavior: "smooth" });
+    return !lastMsg || lastMsg.role === "user" || Boolean(last);
   });
 
   const messages = session.messages.value;

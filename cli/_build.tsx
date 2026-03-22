@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { errorMessage } from "../sdk/_utils.ts";
 import { BundleError, type BundleOutput, bundleAgent } from "./_bundler.ts";
 import { loadAgent } from "./_discover.ts";
-import { Info, Step } from "./_ink.tsx";
+import { Info, runWithInk, Step } from "./_ink.tsx";
 
 /**
  * Discover the agent entry and bundle both worker and client.
@@ -51,4 +51,12 @@ export async function buildAgentBundle(
   }
 
   return bundle;
+}
+
+/** Bundle the agent and report success. Used by `aai build`. */
+export async function runBuildCommand(cwd: string): Promise<void> {
+  await runWithInk(async ({ log }) => {
+    await buildAgentBundle(cwd, log);
+    log(<Step action="Build" msg="ok" />);
+  });
 }

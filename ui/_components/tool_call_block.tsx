@@ -2,7 +2,7 @@
 
 import clsx from "clsx";
 import type * as preact from "preact";
-import { useState } from "preact/hooks";
+import { useMemo, useState } from "preact/hooks";
 import type { ToolCallInfo } from "../types.ts";
 import {
   BoltIcon,
@@ -70,6 +70,10 @@ export function ToolCallBlock({
   const isPending = toolCall.status === "pending";
   const title = config.title || toolCall.toolName;
   const canExpand = !isPending && !!toolCall.result;
+  const formatted = useMemo(
+    () => (toolCall.result ? formatResult(toolCall.result) : ""),
+    [toolCall.result],
+  );
 
   return (
     <div class={clsx("flex flex-col", className)}>
@@ -101,10 +105,8 @@ export function ToolCallBlock({
               {String(toolCall.args.code)}
             </pre>
           )}
-          {toolCall.result && (
-            <pre class="text-xs text-aai-text-dim p-2 whitespace-pre-wrap">
-              {formatResult(toolCall.result)}
-            </pre>
+          {formatted && (
+            <pre class="text-xs text-aai-text-dim p-2 whitespace-pre-wrap">{formatted}</pre>
           )}
         </div>
       )}

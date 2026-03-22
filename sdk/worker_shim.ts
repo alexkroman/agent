@@ -15,8 +15,11 @@ import {
   BridgedWebSocket,
   CapnwebEndpoint,
   type CapnwebPort,
+  deserializeRequest,
   deserializeResponse,
   type SerializedResponse,
+  SerializedResponseSchema,
+  serializeRequest,
   serializeResponse,
 } from "./capnweb.ts";
 import type { Kv } from "./kv.ts";
@@ -26,12 +29,6 @@ import type { VectorEntry, VectorStore } from "./vector.ts";
 import { createWintercServer, type WintercServer } from "./winterc_server.ts";
 
 // ─── Zod schemas for RPC results ────────────────────────────────────────────
-
-const FetchResultSchema = z.object({
-  status: z.number(),
-  headers: z.record(z.string(), z.string()),
-  body: z.string(),
-});
 
 const WorkerInitArgsSchema = z.tuple([z.record(z.string(), z.string())]);
 
@@ -61,34 +58,9 @@ export function initWorker(agent: AgentDef): void {
 
   // ─── Monkeypatch fetch to proxy through host ────────────────────────────
   globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    let url: string;
-    let method = "GET";
-    let headers: Record<string, string> = {};
-    let body: string | undefined;
-
-    if (typeof input === "string") {
-      url = input;
-    } else if (input instanceof URL) {
-      url = input.toString();
-    } else {
-      url = input.url;
-      method = input.method;
-      headers = Object.fromEntries(input.headers);
-      if (input.body) {
-        body = await new Response(input.body).text();
-      }
-    }
-
-    if (init?.method) method = init.method;
-    if (init?.headers) {
-      headers = Object.fromEntries(new Headers(init.headers as HeadersInit));
-    }
-    if (init?.body !== undefined) {
-      body = typeof init.body === "string" ? init.body : String(init.body);
-    }
-
-    const raw = await endpoint.call("host.fetch", [url, method, headers, body]);
-    return deserializeResponse(FetchResultSchema.parse(raw) as SerializedResponse);
+    const serialized = await serializeRequest(new Request(input, init));
+    const raw = await endpoint.call("host.fetch", serialized);
+    return deserializeResponse(SerializedResponseSchema.parse(raw) as SerializedResponse);
   };
 
   // ─── Capnweb-backed KV ─────────────────────────────────────────────────
@@ -175,13 +147,7 @@ export function initWorker(agent: AgentDef): void {
   endpoint.handle("worker.fetch", async (args) => {
     if (!wintercServer) throw new Error("Worker not initialized");
     const [url, method, headers, body] = WorkerFetchArgsSchema.parse(args);
-
-    const request = new Request(url, {
-      method,
-      headers,
-      ...(body ? { body } : {}),
-    });
-
+    const request = deserializeRequest([url, method, headers, body]);
     return await serializeResponse(await wintercServer.fetch(request));
   });
 

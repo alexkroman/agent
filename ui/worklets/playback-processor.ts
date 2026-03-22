@@ -72,7 +72,7 @@ class PlaybackProcessor extends AudioWorkletProcessor {
       if (avail >= this.jitterSamples || this.isDone) {
         this.playing = true;
       } else {
-        for (let i = 0; i < out.length; i++) out[i] = 0;
+        out.fill(0);
         return true;
       }
     }
@@ -86,12 +86,12 @@ class PlaybackProcessor extends AudioWorkletProcessor {
         this.port.postMessage({ event: 'progress', readPos: this.readPos });
         this.samplesSinceProgress = 0;
       }
-      for (let i = n; i < out.length; i++) out[i] = 0;
+      out.fill(0, n);
       return true;
     }
 
     // No data: output silence, stop only when done
-    for (let i = 0; i < out.length; i++) out[i] = 0;
+    out.fill(0);
     if (this.isDone) {
       this.port.postMessage({ event: 'stop' });
       return false;

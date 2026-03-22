@@ -110,8 +110,8 @@ function createProgram(): Command {
         .description("Bundle and validate (no server or deploy)")
         .option("-y, --yes", "Accept defaults (no prompts)")
         .action(async (opts: { cwd: string }) => {
-          const { runBuildCommand } = await import("./build.tsx");
-          await runBuildCommand(opts);
+          const { runBuildCommand } = await import("./_build.tsx");
+          await runBuildCommand(opts.cwd);
         }),
     ),
   );

@@ -17,6 +17,9 @@ import { type ToolDef, tool } from "./types.ts";
 /** Per-fetch timeout for network tools — tighter than the overall tool timeout. */
 const FETCH_TIMEOUT_MS = 15_000;
 
+/** Timeout for sandboxed code execution. */
+const RUN_CODE_TIMEOUT = 5_000;
+
 /** Compose a per-fetch timeout with the tool's abort signal. */
 function fetchSignal(toolSignal: AbortSignal): AbortSignal {
   return AbortSignal.any([toolSignal, AbortSignal.timeout(FETCH_TIMEOUT_MS)]);
@@ -184,7 +187,6 @@ function createRunCode(): ToolDef<typeof runCodeParams> {
         error: capture,
         debug: capture,
       };
-      const RUN_CODE_TIMEOUT = 5_000;
       const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor;
       try {
         const fn = new AsyncFunction("console", code);

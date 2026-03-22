@@ -8,6 +8,7 @@
  * @module
  */
 
+import { z } from "zod";
 import { errorMessage } from "./_utils.ts";
 
 // ─── RPC Wire Types ──────────────────────────────────────────────────────────
@@ -102,11 +103,7 @@ export class CapnwebEndpoint {
   }
 
   private send(msg: unknown, transfer?: Transferable[]): void {
-    if (transfer && transfer.length > 0) {
-      this.port.postMessage(msg, transfer);
-    } else {
-      this.port.postMessage(msg);
-    }
+    this.port.postMessage(msg, transfer ?? []);
   }
 
   private onMessage(ev: MessageEvent): void {
@@ -161,12 +158,15 @@ export type SerializedRequest = [
   body: string | undefined,
 ];
 
+/** Zod schema for serialized HTTP responses over RPC. */
+export const SerializedResponseSchema = z.object({
+  status: z.number(),
+  headers: z.record(z.string(), z.string()),
+  body: z.string(),
+});
+
 /** Serialized HTTP response object for RPC transport. */
-export type SerializedResponse = {
-  status: number;
-  headers: Record<string, string>;
-  body: string;
-};
+export type SerializedResponse = z.infer<typeof SerializedResponseSchema>;
 
 /** Serialize a Request for RPC transport. */
 export async function serializeRequest(request: Request): Promise<SerializedRequest> {

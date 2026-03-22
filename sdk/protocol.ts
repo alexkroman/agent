@@ -8,7 +8,6 @@
  */
 
 import { z } from "zod";
-import type { Message, StepInfo } from "./types.ts";
 
 /**
  * Default sample rate for speech-to-text audio in Hz.
@@ -31,11 +30,6 @@ export const DEFAULT_TTS_SAMPLE_RATE = 24_000;
  */
 export const AUDIO_FORMAT = "pcm16" as const;
 
-/**
- * Binary audio frame specification. All audio exchanged over the WebSocket as
- * binary frames MUST conform to this spec. Any change here is a breaking
- * protocol change.
- */
 /** Specification for binary audio frames exchanged over WebSocket. */
 export const AudioFrameSpec = {
   format: AUDIO_FORMAT,
@@ -206,47 +200,8 @@ export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 
 // ─── Worker RPC interfaces ─────────────────────────────────────────────────
 
-/**
- * API shape the host process exposes to the sandboxed worker.
- *
- * Since workers run with all permissions denied, they use this interface
- * to proxy network requests and KV operations back to the host.
- */
-export type HostApi = {
-  fetch(req: {
-    url: string;
-    method: string;
-    headers: Readonly<Record<string, string>>;
-    body: string | null;
-  }): Promise<{
-    status: number;
-    statusText: string;
-    headers: Record<string, string>;
-    body: string;
-  }>;
-  kv(req: KvRequest): Promise<{ result: unknown }>;
-  vectorSearch(req: { query: string; topK: number }): Promise<string>;
-};
-
 /** Combined turn configuration resolved from the worker before a turn starts. */
 export type TurnConfig = {
   maxSteps?: number;
   activeTools?: string[];
 };
-
-/** Worker-side RPC target interface (host calls these methods). */
-export interface WorkerRpcApi {
-  withEnv(env: Record<string, string>): WorkerRpcApi;
-  executeTool(
-    name: string,
-    args: Readonly<Record<string, unknown>>,
-    sessionId: string | undefined,
-    messages: readonly Message[] | undefined,
-  ): Promise<string>;
-  onConnect(sessionId: string): Promise<void>;
-  onDisconnect(sessionId: string): Promise<void>;
-  onTurn(sessionId: string, text: string): Promise<void>;
-  onError(sessionId: string, error: string): void;
-  onStep(sessionId: string, step: StepInfo): Promise<void>;
-  resolveTurnConfig(sessionId: string): Promise<TurnConfig | null>;
-}

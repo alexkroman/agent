@@ -91,9 +91,6 @@ export class ClientHandler {
   }
 
   /** Single entry point for all server→client session events. */
-  /** Sentinel value indicating speech detected but no transcript yet. */
-  static readonly speechActive = "\x00";
-
   event(e: ClientEvent): void {
     switch (e.type) {
       case "speech_started":

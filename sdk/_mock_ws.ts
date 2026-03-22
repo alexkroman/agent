@@ -92,7 +92,7 @@ export class MockWebSocket extends EventTarget {
    * @param data - The message data to dispatch.
    */
   msg(data: string | ArrayBuffer) {
-    this.dispatchEvent(new MessageEvent("message", { data }));
+    this.simulateMessage(data);
   }
 
   /**
@@ -166,7 +166,7 @@ export function installMockWebSocket(): {
       globalThis.WebSocket = saved;
     },
     [Symbol.dispose]() {
-      globalThis.WebSocket = saved;
+      this.restore();
     },
   };
 }

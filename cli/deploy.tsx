@@ -30,7 +30,6 @@ async function deployBundle(opts: {
     bundle,
     env: { ASSEMBLYAI_API_KEY: apiKey },
     slug,
-    dryRun: false,
     apiKey,
   });
   slug = deployed.slug;
@@ -67,7 +66,7 @@ export async function runDeployCommand(opts: {
     agentUrl = await deployBundle({ bundle, serverUrl, apiKey, slug, cwd, log });
   });
 
-  if (agentUrl && !dryRun) {
+  if (agentUrl) {
     await askEnter("Press enter to open in browser");
     const { exec } = await import("node:child_process");
     exec(`open "${agentUrl}"`);

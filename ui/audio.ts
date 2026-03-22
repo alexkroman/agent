@@ -36,10 +36,6 @@ export type VoiceIO = AsyncDisposable & {
   close(): Promise<void>;
 };
 
-async function loadWorklet(ctx: AudioContext, source: string): Promise<void> {
-  await ctx.audioWorklet.addModule(source);
-}
-
 /**
  * Create a {@linkcode VoiceIO} instance that captures microphone audio and
  * plays back TTS audio using the Web Audio API.
@@ -74,7 +70,10 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
   });
 
   try {
-    await Promise.all([loadWorklet(ctx, captureWorkletSrc), loadWorklet(ctx, playbackWorkletSrc)]);
+    await Promise.all([
+      ctx.audioWorklet.addModule(captureWorkletSrc),
+      ctx.audioWorklet.addModule(playbackWorkletSrc),
+    ]);
   } catch (err: unknown) {
     for (const t of stream.getTracks()) t.stop();
     await ctx.close().catch(() => {});

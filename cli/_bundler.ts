@@ -34,11 +34,6 @@ export type BundleOutput = {
   workerBytes: number;
 };
 
-/** Internal helpers exposed for testing. Not part of the public API. */
-export const _internals = {
-  BundleError,
-};
-
 /**
  * Vite plugin that resolves @alexkroman1/aai imports to monorepo source.
  *
@@ -103,8 +98,8 @@ async function readDirFiles(dir: string): Promise<Record<string, string>> {
     entries
       .filter((e) => e.isFile())
       .map(async (e) => {
-        const rel = path.relative(dir, path.join(e.parentPath, e.name));
-        files[rel] = await fs.readFile(path.join(dir, rel), "utf-8");
+        const full = path.join(e.parentPath, e.name);
+        files[path.relative(dir, full)] = await fs.readFile(full, "utf-8");
       }),
   );
   return files;
