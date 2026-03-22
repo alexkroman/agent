@@ -9,8 +9,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { Command } from "commander";
 import { CommanderError } from "commander";
-import { afterEach, describe, expect, test, vi } from "vitest";
-import { _internals, runDeploy } from "./_deploy.ts";
+import { describe, expect, test, vi } from "vitest";
+import { runDeploy } from "./_deploy.ts";
 import { fileExists } from "./_discover.ts";
 import { listTemplates, runInit } from "./_init.ts";
 import { makeBundle, silenced, withTempDir } from "./_test_utils.ts";
@@ -142,28 +142,23 @@ describe("CLI integration: init creates working project", () => {
 // --- deploy integration ---
 
 describe("CLI integration: deploy flow", () => {
-  let fetchSpy: ReturnType<typeof vi.spyOn>;
-
-  afterEach(() => {
-    fetchSpy?.mockRestore();
-  });
-
-  const deployOpts = (overrides?: Record<string, unknown>) => ({
+  const deployOpts = (fetch: typeof globalThis.fetch, overrides?: Record<string, unknown>) => ({
     url: "http://localhost:3000",
     bundle: makeBundle(),
     env: {},
     slug: "my-agent",
     apiKey: "test-key",
+    fetch,
     ...overrides,
   });
 
   test("deploy sends bundle with correct auth headers", async () => {
-    fetchSpy = vi
-      .spyOn(_internals, "fetch")
+    const mockFetch = vi
+      .fn()
       .mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
-    const result = await runDeploy(deployOpts());
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchSpy.mock.calls[0] ?? [];
+    const result = await runDeploy(deployOpts(mockFetch));
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const [url, init] = mockFetch.mock.calls[0] ?? [];
     expect(String(url)).toContain("/my-agent/deploy");
     expect((init?.headers as Record<string, string>)?.Authorization).toBe("Bearer test-key");
     expect(result.slug).toBe("my-agent");
@@ -171,7 +166,7 @@ describe("CLI integration: deploy flow", () => {
 
   test("deploy retries with new slug on 403 ownership conflict", async () => {
     let attempt = 0;
-    fetchSpy = vi.spyOn(_internals, "fetch").mockImplementation(() => {
+    const mockFetch = vi.fn().mockImplementation(() => {
       attempt++;
       if (attempt === 1) {
         return Promise.resolve(
@@ -182,15 +177,13 @@ describe("CLI integration: deploy flow", () => {
       }
       return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200 }));
     });
-    const result = await runDeploy(deployOpts());
-    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    const result = await runDeploy(deployOpts(mockFetch));
+    expect(mockFetch).toHaveBeenCalledTimes(2);
     expect(typeof result.slug).toBe("string");
   });
 
   test("deploy throws on server errors", async () => {
-    fetchSpy = vi
-      .spyOn(_internals, "fetch")
-      .mockResolvedValue(new Response("boom", { status: 500 }));
-    await expect(runDeploy(deployOpts())).rejects.toThrow("deploy failed (500)");
+    const mockFetch = vi.fn().mockResolvedValue(new Response("boom", { status: 500 }));
+    await expect(runDeploy(deployOpts(mockFetch))).rejects.toThrow("deploy failed (500)");
   });
 });

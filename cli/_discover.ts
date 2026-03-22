@@ -13,11 +13,13 @@ export function resolveCwd(): string {
 /**
  * Whether the CLI is running from the dev monorepo (via tsx/node)
  * vs a compiled binary.
+ *
+ * @param script - Override the script path (defaults to process.argv[1]).
  */
-export function isDevMode(): boolean {
+export function isDevMode(script?: string): boolean {
   // Dev mode when running raw TS source (via tsx) OR when running the
   // built dist/aai.js directly from the monorepo (e.g. via aai-dev alias).
-  const script = process.argv[1] ?? "";
+  script ??= process.argv[1] ?? "";
   if (script.endsWith(".ts") || script.endsWith(".tsx")) return true;
   // Check if running from the monorepo dist/ (not a global npm install)
   if (script.includes("/dist/") && !script.includes("node_modules")) {

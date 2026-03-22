@@ -185,7 +185,7 @@ export async function runRagCommand(opts: {
 // ─── Page splitting ───────────────────────────────────────────────────────────
 
 /** Split llms-full.txt on `***` page separators and extract titles. */
-function splitPages(content: string): { title: string; body: string }[] {
+export function splitPages(content: string): { title: string; body: string }[] {
   const raw = content.split(/^\*{3,}$/m);
   const pages: { title: string; body: string }[] = [];
 
@@ -203,7 +203,7 @@ function splitPages(content: string): { title: string; body: string }[] {
 }
 
 /** Extract title and body from a single page section. */
-function parsePage(trimmed: string): { title: string; body: string } {
+export function parsePage(trimmed: string): { title: string; body: string } {
   let title = "";
   let body = trimmed;
 
@@ -237,7 +237,7 @@ function parsePage(trimmed: string): { title: string; body: string } {
 }
 
 /** Strip code blocks, HTML/JSX tags, and collapse whitespace from markdown. */
-function stripNoise(text: string): string {
+export function stripNoise(text: string): string {
   return (
     text
       // Fenced code blocks (``` or ~~~)
@@ -260,10 +260,7 @@ function stripNoise(text: string): string {
   );
 }
 
-/** Internal helpers exposed for testing. Not part of the public API. */
-export const _internals = { splitPages, parsePage, stripNoise, slugify };
-
-function slugify(s: string): string {
+export function slugify(s: string): string {
   return s
     .replace(/^https?:\/\//, "")
     .replace(/^#+\s*/, "")

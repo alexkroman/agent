@@ -3,10 +3,6 @@
 import type { BundleOutput } from "./_bundler.ts";
 import { generateSlug } from "./_discover.ts";
 
-export const _internals = {
-  fetch: globalThis.fetch.bind(globalThis),
-};
-
 export type DeployOpts = {
   url: string;
   bundle: BundleOutput;
@@ -14,6 +10,8 @@ export type DeployOpts = {
   env: Record<string, string>;
   slug: string;
   apiKey: string;
+  /** Optional fetch implementation for testing. Defaults to globalThis.fetch. */
+  fetch?: typeof globalThis.fetch;
 };
 
 export type DeployResult = {
@@ -21,6 +19,7 @@ export type DeployResult = {
 };
 
 async function attemptDeploy(
+  fetchFn: typeof globalThis.fetch,
   url: string,
   slug: string,
   apiKey: string,
@@ -29,7 +28,7 @@ async function attemptDeploy(
   clientFiles: Record<string, string>,
 ): Promise<Response> {
   try {
-    return await _internals.fetch(`${url}/${slug}/deploy`, {
+    return await fetchFn(`${url}/${slug}/deploy`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -50,11 +49,20 @@ const MAX_RETRIES = 20;
 
 export async function runDeploy(opts: DeployOpts): Promise<DeployResult> {
   const { worker, clientFiles } = opts.bundle;
+  const fetchFn = opts.fetch ?? globalThis.fetch.bind(globalThis);
   let slug = opts.slug;
 
   // Try deploying, generating a new slug on 403
   for (let i = 0; i < MAX_RETRIES; i++) {
-    const resp = await attemptDeploy(opts.url, slug, opts.apiKey, opts.env, worker, clientFiles);
+    const resp = await attemptDeploy(
+      fetchFn,
+      opts.url,
+      slug,
+      opts.apiKey,
+      opts.env,
+      worker,
+      clientFiles,
+    );
 
     if (resp.ok) {
       return { slug };

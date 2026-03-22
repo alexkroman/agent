@@ -1,8 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
-import { _internals, runRagCommand } from "./rag.tsx";
-
-const { splitPages, parsePage, stripNoise, slugify } = _internals;
+import { parsePage, runRagCommand, slugify, splitPages, stripNoise } from "./rag.tsx";
 
 // --- slugify ---
 
