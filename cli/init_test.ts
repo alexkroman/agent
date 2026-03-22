@@ -5,7 +5,7 @@ import path from "node:path";
 import { describe, expect, test } from "vitest";
 import { fileExists } from "./_discover.ts";
 import { listTemplates, runInit } from "./_init.ts";
-import { silenceSteps, withTempDir } from "./_test_utils.ts";
+import { silenced, withTempDir } from "./_test_utils.ts";
 
 async function createFakeTemplates(dir: string): Promise<string> {
   const templatesDir = path.join(dir, "templates");
@@ -41,17 +41,6 @@ async function createFakeTemplates(dir: string): Promise<string> {
   await fs.writeFile(path.join(withEnv, ".env.example"), "CUSTOM_KEY=");
 
   return templatesDir;
-}
-
-function silenced<T>(fn: (dir: string) => Promise<T>) {
-  return async (dir: string) => {
-    const s = silenceSteps();
-    try {
-      return await fn(dir);
-    } finally {
-      s.restore();
-    }
-  };
 }
 
 describe("listTemplates", () => {

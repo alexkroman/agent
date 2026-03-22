@@ -54,7 +54,7 @@ const BraveSearchResponseSchema = z.object({
     .optional(),
 });
 
-function createWebSearch(): ToolDef<typeof webSearchParams> {
+function createWebSearch(fetchFn = globalThis.fetch): ToolDef<typeof webSearchParams> {
   return {
     description:
       "Search the web for current information, facts, news, or answers to questions. Returns a list of results with title, URL, and description. Use this when the user asks about something you don't know, need up-to-date information, or want to verify facts.",
@@ -70,7 +70,7 @@ function createWebSearch(): ToolDef<typeof webSearchParams> {
         count: String(maxResults),
         text_decorations: "false",
       })}`;
-      const resp = await fetch(url, {
+      const resp = await fetchFn(url, {
         headers: { "X-Subscription-Token": apiKey },
         signal: fetchSignal(ctx.abortSignal),
       });
@@ -96,14 +96,14 @@ const visitWebpageParams = z.object({
   url: z.string().describe("The full URL to fetch (e.g., 'https://example.com/page')"),
 });
 
-function createVisitWebpage(): ToolDef<typeof visitWebpageParams> {
+function createVisitWebpage(fetchFn = globalThis.fetch): ToolDef<typeof visitWebpageParams> {
   return {
     description:
       "Fetch a webpage and return its content as clean text. Use this to read the full content of a URL found via web_search, or any link the user shares. Good for reading articles, documentation, blog posts, or product pages.",
     parameters: visitWebpageParams,
     async execute(args, ctx) {
       const { url } = args;
-      const resp = await fetch(url, {
+      const resp = await fetchFn(url, {
         headers: {
           "User-Agent":
             "Mozilla/5.0 (compatible; VoiceAgent/1.0; +https://github.com/AssemblyAI/aai)",
@@ -140,14 +140,14 @@ const fetchJsonParams = z.object({
     .optional(),
 });
 
-function createFetchJson(): ToolDef<typeof fetchJsonParams> {
+function createFetchJson(fetchFn = globalThis.fetch): ToolDef<typeof fetchJsonParams> {
   return {
     description:
       "Call a REST API endpoint via HTTP GET and return the JSON response. Use this to fetch structured data from APIs — for example, weather data, stock prices, exchange rates, or any public JSON API. Supports custom headers for authenticated APIs.",
     parameters: fetchJsonParams,
     async execute(args, ctx) {
       const { url, headers } = args;
-      const resp = await fetch(url, {
+      const resp = await fetchFn(url, {
         ...(headers && { headers }),
         signal: fetchSignal(ctx.abortSignal),
       });
@@ -240,6 +240,8 @@ function createVectorSearch(vectorSearchFn: VectorSearchFn): ToolDef<typeof vect
 export type BuiltinToolOptions = {
   /** RPC callback for vector_search (proxied through host). */
   vectorSearch?: VectorSearchFn;
+  /** Override fetch implementation (defaults to globalThis.fetch). For testing. */
+  fetch?: typeof globalThis.fetch;
 };
 
 type ToolDefRecord = Record<string, ToolDef<z.ZodObject<z.ZodRawShape>>>;
@@ -249,9 +251,9 @@ const TOOL_REGISTRY: Record<
   string,
   { create: (opts?: BuiltinToolOptions) => ToolDef } | { multi: () => Record<string, ToolDef> }
 > = {
-  web_search: { create: createWebSearch },
-  visit_webpage: { create: createVisitWebpage },
-  fetch_json: { create: createFetchJson },
+  web_search: { create: (opts) => createWebSearch(opts?.fetch) },
+  visit_webpage: { create: (opts) => createVisitWebpage(opts?.fetch) },
+  fetch_json: { create: (opts) => createFetchJson(opts?.fetch) },
   run_code: { create: createRunCode },
   vector_search: { create: (opts) => createVectorSearch(opts?.vectorSearch ?? (async () => "")) },
   memory: { multi: memoryTools },

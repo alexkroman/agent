@@ -28,6 +28,18 @@ export function silenceSteps(): {
   };
 }
 
+/** Run a function with console output silenced. */
+export function silenced<T>(fn: (dir: string) => Promise<T>) {
+  return async (dir: string) => {
+    const s = silenceSteps();
+    try {
+      return await fn(dir);
+    } finally {
+      s.restore();
+    }
+  };
+}
+
 /** Create a minimal BundleOutput for deploy tests. */
 export function makeBundle(overrides?: Partial<BundleOutput>): BundleOutput {
   return {

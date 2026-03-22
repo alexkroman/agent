@@ -9,9 +9,40 @@ import {
   isDevMode,
   loadAgent,
   readProjectConfig,
+  resolveCwd,
   writeProjectConfig,
 } from "./_discover.ts";
 import { withTempDir } from "./_test_utils.ts";
+
+// --- resolveCwd ---
+
+describe("resolveCwd", () => {
+  test("returns INIT_CWD when set", () => {
+    const orig = process.env.INIT_CWD;
+    process.env.INIT_CWD = "/custom/path";
+    try {
+      expect(resolveCwd()).toBe("/custom/path");
+    } finally {
+      if (orig !== undefined) {
+        process.env.INIT_CWD = orig;
+      } else {
+        delete process.env.INIT_CWD;
+      }
+    }
+  });
+
+  test("falls back to process.cwd() when INIT_CWD is not set", () => {
+    const orig = process.env.INIT_CWD;
+    delete process.env.INIT_CWD;
+    try {
+      expect(resolveCwd()).toBe(process.cwd());
+    } finally {
+      if (orig !== undefined) {
+        process.env.INIT_CWD = orig;
+      }
+    }
+  });
+});
 
 // --- generateSlug ---
 
@@ -34,34 +65,16 @@ test("DEFAULT_SERVER", () => {
 // --- isDevMode ---
 
 describe("isDevMode", () => {
-  test("returns true when argv[1] ends with .ts", () => {
-    const orig = process.argv[1] as string;
-    process.argv[1] = "/path/to/script.ts";
-    try {
-      expect(isDevMode()).toBe(true);
-    } finally {
-      process.argv[1] = orig;
-    }
+  test("returns true when script ends with .ts", () => {
+    expect(isDevMode("/path/to/script.ts")).toBe(true);
   });
 
-  test("returns true when argv[1] ends with .tsx", () => {
-    const orig = process.argv[1] as string;
-    process.argv[1] = "/path/to/script.tsx";
-    try {
-      expect(isDevMode()).toBe(true);
-    } finally {
-      process.argv[1] = orig;
-    }
+  test("returns true when script ends with .tsx", () => {
+    expect(isDevMode("/path/to/script.tsx")).toBe(true);
   });
 
-  test("returns false when argv[1] ends with .js", () => {
-    const orig = process.argv[1] as string;
-    process.argv[1] = "/path/to/dist/cli.js";
-    try {
-      expect(isDevMode()).toBe(false);
-    } finally {
-      process.argv[1] = orig;
-    }
+  test("returns false when script ends with .js", () => {
+    expect(isDevMode("/path/to/dist/cli.js")).toBe(false);
   });
 });
 

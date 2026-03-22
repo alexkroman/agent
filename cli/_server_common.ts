@@ -18,10 +18,16 @@ export async function loadAgentDef(cwd: string): Promise<AgentDef> {
   return agentDef as AgentDef;
 }
 
-/** Build an env record from process.env, ensuring ASSEMBLYAI_API_KEY is set. */
-export async function resolveServerEnv(): Promise<Record<string, string>> {
+/**
+ * Build an env record, ensuring ASSEMBLYAI_API_KEY is set.
+ *
+ * @param baseEnv - Override the base environment (defaults to process.env).
+ */
+export async function resolveServerEnv(
+  baseEnv?: Record<string, string | undefined>,
+): Promise<Record<string, string>> {
   const env: Record<string, string> = Object.fromEntries(
-    Object.entries(process.env).filter((e): e is [string, string] => e[1] !== undefined),
+    Object.entries(baseEnv ?? process.env).filter((e): e is [string, string] => e[1] !== undefined),
   );
   if (!env.ASSEMBLYAI_API_KEY) {
     env.ASSEMBLYAI_API_KEY = await getApiKey();

@@ -1,5 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
 import { createMockToolContext } from "./_test_utils.ts";
 import { getBuiltinToolDefs, getBuiltinToolSchemas } from "./builtin_tools.ts";
 
@@ -62,15 +62,13 @@ describe("getBuiltinToolDefs", () => {
 
   test("fetch_json fetches and returns JSON", async () => {
     const mockData = { name: "test", value: 42 };
-    vi.stubGlobal("fetch", () => Promise.resolve(new Response(JSON.stringify(mockData))));
-    try {
-      const defs = getBuiltinToolDefs(["fetch_json"]);
-      const ctx = createMockToolContext();
-      const result = await defs.fetch_json?.execute({ url: "https://api.example.com/data" }, ctx);
-      expect(result).toEqual(mockData);
-    } finally {
-      vi.unstubAllGlobals();
-    }
+    const mockFetch = () => Promise.resolve(new Response(JSON.stringify(mockData)));
+    const defs = getBuiltinToolDefs(["fetch_json"], {
+      fetch: mockFetch as typeof globalThis.fetch,
+    });
+    const ctx = createMockToolContext();
+    const result = await defs.fetch_json?.execute({ url: "https://api.example.com/data" }, ctx);
+    expect(result).toEqual(mockData);
   });
 
   test("vector_search requires callback", () => {
