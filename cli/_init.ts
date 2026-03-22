@@ -27,7 +27,7 @@ async function copyDirNoOverwrite(src: string, dest: string): Promise<void> {
   const entries = await fs.readdir(src, { recursive: true, withFileTypes: true });
   for (const entry of entries) {
     if (!entry.isFile()) continue;
-    const rel = path.join(entry.parentPath ?? entry.path, entry.name).slice(src.length + 1);
+    const rel = path.relative(src, path.join(entry.parentPath ?? entry.path, entry.name));
     const destPath = path.join(dest, rel);
     await fs.mkdir(path.dirname(destPath), { recursive: true });
     try {

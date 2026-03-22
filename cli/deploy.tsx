@@ -48,10 +48,10 @@ export async function runDeployCommand(opts: {
   dryRun?: boolean;
 }): Promise<void> {
   const { cwd } = opts;
-  const serverUrl = resolveServerUrl(opts.server);
   const dryRun = opts.dryRun ?? false;
   const apiKey = dryRun ? "" : await getApiKey();
   const projectConfig = await readProjectConfig(cwd);
+  const serverUrl = resolveServerUrl(opts.server, projectConfig?.serverUrl);
   const slug = projectConfig?.slug ?? generateSlug();
 
   let agentUrl = "";

@@ -103,7 +103,7 @@ async function readDirFiles(dir: string): Promise<Record<string, string>> {
     entries
       .filter((e) => e.isFile())
       .map(async (e) => {
-        const rel = path.join(e.parentPath ?? e.path, e.name).slice(dir.length + 1);
+        const rel = path.relative(dir, path.join(e.parentPath ?? e.path, e.name));
         files[rel] = await fs.readFile(path.join(dir, rel), "utf-8");
       }),
   );

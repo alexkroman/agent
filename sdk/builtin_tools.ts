@@ -14,6 +14,14 @@ import { EMPTY_PARAMS, type ToolSchema } from "./_internal_types.ts";
 import { errorMessage } from "./_utils.ts";
 import { type ToolDef, tool } from "./types.ts";
 
+/** Per-fetch timeout for network tools — tighter than the overall tool timeout. */
+const FETCH_TIMEOUT_MS = 15_000;
+
+/** Compose a per-fetch timeout with the tool's abort signal. */
+function fetchSignal(toolSignal: AbortSignal): AbortSignal {
+  return AbortSignal.any([toolSignal, AbortSignal.timeout(FETCH_TIMEOUT_MS)]);
+}
+
 // ─── HTML to text ──────────────────────────────────────────────────────────
 
 function htmlToText(html: string): string {
@@ -61,7 +69,7 @@ function createWebSearch(): ToolDef<typeof webSearchParams> {
       })}`;
       const resp = await fetch(url, {
         headers: { "X-Subscription-Token": apiKey },
-        signal: ctx.abortSignal,
+        signal: fetchSignal(ctx.abortSignal),
       });
       if (!resp.ok) return [];
       const raw = await resp.json();
@@ -99,7 +107,7 @@ function createVisitWebpage(): ToolDef<typeof visitWebpageParams> {
           Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         },
         redirect: "follow",
-        signal: ctx.abortSignal,
+        signal: fetchSignal(ctx.abortSignal),
       });
       if (!resp.ok) {
         return { error: `Failed to fetch: ${resp.status} ${resp.statusText}`, url };
@@ -138,7 +146,7 @@ function createFetchJson(): ToolDef<typeof fetchJsonParams> {
       const { url, headers } = args;
       const resp = await fetch(url, {
         ...(headers && { headers }),
-        signal: ctx.abortSignal,
+        signal: fetchSignal(ctx.abortSignal),
       });
       if (!resp.ok) {
         return { error: `HTTP ${resp.status} ${resp.statusText}`, url };
