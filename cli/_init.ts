@@ -24,17 +24,16 @@ export async function listTemplates(dir: string): Promise<string[]> {
  * in `dest` so that template-specific files take precedence over shared ones.
  */
 async function copyDirNoOverwrite(src: string, dest: string): Promise<void> {
-  const entries = await fs.readdir(src, { recursive: true });
-  for (const rel of entries) {
-    const srcPath = path.join(src, rel);
-    const stat = await fs.stat(srcPath);
-    if (!stat.isFile()) continue;
+  const entries = await fs.readdir(src, { recursive: true, withFileTypes: true });
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    const rel = path.relative(src, path.join(entry.parentPath, entry.name));
     const destPath = path.join(dest, rel);
+    await fs.mkdir(path.dirname(destPath), { recursive: true });
     try {
-      await fs.access(destPath);
-    } catch {
-      await fs.mkdir(path.dirname(destPath), { recursive: true });
-      await fs.copyFile(srcPath, destPath);
+      await fs.copyFile(path.join(src, rel), destPath, fs.constants.COPYFILE_EXCL);
+    } catch (err: unknown) {
+      if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
     }
   }
 }
@@ -61,11 +60,8 @@ export async function runInit(opts: InitOptions): Promise<string> {
 
   // Generate README.md with getting-started instructions (skip if template provides one)
   const readmePath = path.join(targetDir, "README.md");
-  try {
-    await fs.access(readmePath);
-  } catch {
-    const slug = path.basename(path.resolve(targetDir));
-    const readme = `# ${slug}
+  const slug = path.basename(path.resolve(targetDir));
+  const readme = `# ${slug}
 
 A voice agent built with [aai](https://github.com/anthropics/aai).
 
@@ -94,7 +90,10 @@ Access secrets in your agent via \`ctx.env.MY_KEY\`.
 
 See \`CLAUDE.md\` for the full agent API reference.
 `;
-    await fs.writeFile(readmePath, readme);
+  try {
+    await fs.writeFile(readmePath, readme, { flag: "wx" });
+  } catch (err: unknown) {
+    if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
   }
 
   return targetDir;

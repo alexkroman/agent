@@ -9,7 +9,11 @@ import { afterAll, describe, expect, test } from "vitest";
 const dir = import.meta.dirname ?? path.dirname(new URL(import.meta.url).pathname);
 const agentRoot = path.resolve(dir, "..");
 
-describe("aai build from tarball", () => {
+// This integration test requires `dist/` to exist (built via `node scripts/build-cli.mjs`).
+// Skip when dist hasn't been built to avoid false failures in dev.
+const hasDist = fs.existsSync(path.join(agentRoot, "dist", "aai.js"));
+
+describe.skipIf(!hasDist)("aai build from tarball", () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "aai-pack-test-"));
 
   afterAll(() => {

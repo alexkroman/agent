@@ -118,6 +118,20 @@ export async function writeProjectConfig(agentDir: string, data: ProjectConfig):
   await fs.writeFile(path.join(aaiDir, "project.json"), `${JSON.stringify(data, null, 2)}\n`);
 }
 
+/**
+ * Read project config (throws if missing), resolve API key and server URL.
+ * Shared by secret and rag commands.
+ */
+export async function getServerInfo(cwd: string, explicitServer?: string) {
+  const config = await readProjectConfig(cwd);
+  if (!config) {
+    throw new Error("No .aai/project.json found — deploy first with `aai deploy`");
+  }
+  const apiKey = await getApiKey();
+  const serverUrl = resolveServerUrl(explicitServer, config.serverUrl);
+  return { serverUrl, slug: config.slug, apiKey };
+}
+
 // --- Agent discovery ---
 
 /** Discovered agent metadata extracted from an agent directory. */
@@ -134,6 +148,11 @@ export type AgentEntry = {
 
 /** Default production server URL for agent deployments. */
 export const DEFAULT_SERVER = "https://aai-agent.fly.dev";
+
+/** Resolve the server URL from an explicit value, project config, or default. */
+export function resolveServerUrl(explicit?: string, configUrl?: string): string {
+  return explicit || configUrl || (isDevMode() ? "http://localhost:3100" : DEFAULT_SERVER);
+}
 
 export async function fileExists(p: string): Promise<boolean> {
   try {

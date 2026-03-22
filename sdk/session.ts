@@ -127,16 +127,13 @@ export function createS2sSession(opts: SessionOptions): Session {
     if (!hookInvoker) return null;
     try {
       return await hookInvoker.resolveTurnConfig(id, HOOK_TIMEOUT_MS);
-    } catch {
+    } catch (err: unknown) {
+      log.warn("resolveTurnConfig hook failed", { err: errorMessage(err) });
       return null;
     }
   }
 
-  function invokeHook(hook: "onConnect" | "onDisconnect"): void;
-  function invokeHook(hook: "onTurn", text: string): void;
-  function invokeHook(hook: "onError", error: { message: string }): void;
-  function invokeHook(hook: "onStep", step: StepInfo): void;
-  function invokeHook(hook: string, arg?: unknown): void {
+  function invokeHook(hook: keyof HookInvoker, arg?: unknown): void {
     if (!hookInvoker) return;
     // biome-ignore lint/complexity/noBannedTypes: dynamic hook dispatch
     const h = hookInvoker[hook as keyof HookInvoker] as Function;
@@ -428,7 +425,7 @@ export function createS2sSession(opts: SessionOptions): Session {
   };
 }
 
-// ─── System prompt builder (inlined from system_prompt.ts) ──────────────────
+// ─── System prompt builder ──────────────────────────────────────────────────
 
 const VOICE_RULES =
   "\n\nCRITICAL OUTPUT RULES — you MUST follow these for EVERY response:\n" +
@@ -470,6 +467,6 @@ export function buildSystemPrompt(
     `\n\nToday's date is ${today}.` +
     agentInstructions +
     toolPreamble +
-    (opts?.voice ? VOICE_RULES : "")
+    (opts.voice ? VOICE_RULES : "")
   );
 }

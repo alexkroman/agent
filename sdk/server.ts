@@ -64,11 +64,10 @@ async function loadWsFactory(): Promise<CreateS2sWebSocket> {
 
 /** Filter env to only defined string values. */
 function resolveEnv(env: Record<string, string | undefined>): Record<string, string> {
-  const resolved: Record<string, string> = {};
-  for (const [key, value] of Object.entries(env)) {
-    if (value !== undefined) resolved[key] = value;
-  }
-  return resolved;
+  return Object.fromEntries(Object.entries(env).filter(([, v]) => v !== undefined)) as Record<
+    string,
+    string
+  >;
 }
 
 /**

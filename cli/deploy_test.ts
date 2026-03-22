@@ -15,7 +15,6 @@ const deployOpts = (overrides?: Record<string, unknown>) => ({
   bundle: makeBundle(),
   env: {},
   slug: "cool-cats-jump",
-  dryRun: false,
   apiKey: "test-key",
   ...overrides,
 });
@@ -55,13 +54,6 @@ describe("runDeploy", () => {
     expect(fetchSpy).toHaveBeenCalledTimes(3);
     expect(String(fetchSpy.mock.calls[0]?.[0])).toContain("/cool-cats-jump/");
     expect(typeof result.slug).toBe("string");
-  });
-
-  test("dry run does not call fetch", async () => {
-    fetchSpy = vi.spyOn(_internals, "fetch").mockResolvedValue(new Response("ok"));
-    const result = await runDeploy(deployOpts({ dryRun: true }));
-    expect(fetchSpy).toHaveBeenCalledTimes(0);
-    expect(result.slug).toBe("cool-cats-jump");
   });
 
   test("throws on non-403 error response", async () => {

@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { batch, type Signal, signal } from "@preact/signals";
+import { errorMessage } from "../sdk/_utils.ts";
 import type { ClientEvent, ClientMessage, ReadyConfig, ServerMessage } from "../sdk/protocol.ts";
 import type { VoiceIO } from "./audio.ts";
 import type { AgentState, Message, SessionError, SessionOptions, ToolCallInfo } from "./types.ts";
@@ -90,9 +91,6 @@ export class ClientHandler {
   }
 
   /** Single entry point for all server→client session events. */
-  /** Sentinel value indicating speech detected but no transcript yet. */
-  static readonly speechActive = "\x00";
-
   event(e: ClientEvent): void {
     switch (e.type) {
       case "speech_started":
@@ -198,10 +196,13 @@ export class ClientHandler {
     const gen = this.#generation;
     const io = this.#voiceIO();
     if (io) {
-      void io.done().then(() => {
-        if (this.#generation !== gen) return;
-        this.#state.value = "listening";
-      });
+      void io
+        .done()
+        .then(() => {
+          if (this.#generation !== gen) return;
+          this.#state.value = "listening";
+        })
+        .catch(() => {});
     } else {
       this.#state.value = "listening";
     }
@@ -329,7 +330,7 @@ export function createVoiceSession(options: SessionOptions): VoiceSession {
       batch(() => {
         error.value = {
           code: "audio",
-          message: `Microphone access failed: ${err instanceof Error ? err.message : String(err)}`,
+          message: `Microphone access failed: ${errorMessage(err)}`,
         };
         state.value = "error";
       });
@@ -388,11 +389,12 @@ export function createVoiceSession(options: SessionOptions): VoiceSession {
         const msgEvent = event as MessageEvent;
         const config = handler.handleMessage(msgEvent.data);
         if (config) {
+          const isReconnect = hasConnected;
           hasConnected = true;
           void handleReady(config);
 
           // Send history if reconnecting
-          if (hasConnected && messages.value.length > 0) {
+          if (isReconnect && messages.value.length > 0) {
             send({
               type: "history",
               messages: messages.value.map((m) => ({

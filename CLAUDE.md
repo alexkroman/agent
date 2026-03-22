@@ -66,13 +66,16 @@ Internal:
 
 #### cli/
 
-- `cli.ts` — arg parsing, subcommands: new, dev, build, deploy, start
-- `new.ts` / `deploy.ts` / `dev.ts` / `start.ts` — subcommand definitions
-- `_new.ts` / `_deploy.ts` / `_dev.ts` / `_start.ts` — internal logic
+- `cli.ts` — arg parsing, subcommands: init, dev, build,
+  deploy, start, secret, rag
+- `init.tsx` / `dev.tsx` / `build.tsx` / `deploy.tsx` /
+  `start.tsx` — subcommand UI
+- `_init.ts` / `_deploy.ts` / `_bundler.ts` — internal logic
 - `_bundler.ts` — generates Vite config at build time, bundles
   `agent.ts`/`client.tsx` into `worker.js`/`index.html`
 - `_discover.ts` — agent discovery, auth config, project config
-- `_static_config.ts` — AST-based config extraction (ts-morph)
+- `secret.tsx` / `rag.tsx` — secret management and RAG ingestion commands
+- `_ink.tsx` / `_prompts.tsx` — shared Ink components and interactive prompts
 
 #### ui/
 

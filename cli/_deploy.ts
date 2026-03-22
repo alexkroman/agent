@@ -13,7 +13,6 @@ export type DeployOpts = {
   /** Env var values from .env to send to the server. */
   env: Record<string, string>;
   slug: string;
-  dryRun: boolean;
   apiKey: string;
 };
 
@@ -50,14 +49,8 @@ async function attemptDeploy(
 const MAX_RETRIES = 20;
 
 export async function runDeploy(opts: DeployOpts): Promise<DeployResult> {
-  const worker = opts.bundle.worker;
-  const clientFiles = opts.bundle.clientFiles;
-
+  const { worker, clientFiles } = opts.bundle;
   let slug = opts.slug;
-
-  if (opts.dryRun) {
-    return { slug };
-  }
 
   // Try deploying, generating a new slug on 403
   for (let i = 0; i < MAX_RETRIES; i++) {
@@ -67,16 +60,14 @@ export async function runDeploy(opts: DeployOpts): Promise<DeployResult> {
       return { slug };
     }
 
-    if (resp.status === 403) {
-      const text = await resp.text();
+    const text = await resp.text();
+
+    if (resp.status === 403 && text.includes("Slug")) {
       // Slug conflict — generate a new one and retry
-      if (text.includes("Slug")) {
-        slug = generateSlug();
-        continue;
-      }
+      slug = generateSlug();
+      continue;
     }
 
-    const text = await resp.text();
     throw new Error(`deploy failed (${resp.status}): ${text}`);
   }
 

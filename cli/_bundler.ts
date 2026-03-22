@@ -6,6 +6,7 @@ import path from "node:path";
 import preact from "@preact/preset-vite";
 import tailwindcss from "@tailwindcss/vite";
 import { build, type Plugin } from "vite";
+import { errorMessage } from "../sdk/_utils.ts";
 import type { AgentEntry } from "./_discover.ts";
 import { isDevMode } from "./_discover.ts";
 
@@ -31,11 +32,6 @@ export type BundleOutput = {
   clientDir: string;
   /** Size of the worker bundle in bytes. */
   workerBytes: number;
-};
-
-/** Internal helpers exposed for testing. Not part of the public API. */
-export const _internals = {
-  BundleError,
 };
 
 /**
@@ -91,21 +87,20 @@ function workerEntryPlugin(): Plugin {
 
 /** Read all files in a directory as a map of relative paths to contents. */
 async function readDirFiles(dir: string): Promise<Record<string, string>> {
-  let entries: string[];
+  let entries: import("node:fs").Dirent[];
   try {
-    entries = await fs.readdir(dir, { recursive: true });
+    entries = await fs.readdir(dir, { recursive: true, withFileTypes: true });
   } catch {
     return {};
   }
   const files: Record<string, string> = {};
   await Promise.all(
-    entries.map(async (rel) => {
-      const full = path.join(dir, rel);
-      const stat = await fs.stat(full);
-      if (stat.isFile()) {
-        files[rel] = await fs.readFile(full, "utf-8");
-      }
-    }),
+    entries
+      .filter((e) => e.isFile())
+      .map(async (e) => {
+        const full = path.join(e.parentPath, e.name);
+        files[path.relative(dir, full)] = await fs.readFile(full, "utf-8");
+      }),
   );
   return files;
 }
@@ -146,7 +141,7 @@ export async function bundleAgent(
       },
     });
   } catch (err: unknown) {
-    throw new BundleError(err instanceof Error ? err.message : String(err));
+    throw new BundleError(errorMessage(err));
   }
 
   // 2. Client build — standard Vite multi-file output (index.html + assets/)
@@ -177,7 +172,7 @@ export async function bundleAgent(
         },
       });
     } catch (err: unknown) {
-      throw new BundleError(err instanceof Error ? err.message : String(err));
+      throw new BundleError(errorMessage(err));
     }
   }
 

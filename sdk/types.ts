@@ -84,7 +84,7 @@ export type ToolContext<S = Record<string, unknown>> = {
   /** Environment variables declared in the agent config. */
   env: Readonly<Record<string, string>>;
   /** Signal that aborts when the tool execution times out. */
-  abortSignal?: AbortSignal;
+  abortSignal: AbortSignal;
   /** Mutable per-session state created by the agent's `state` factory. */
   state: S;
   /** Key-value store scoped to this agent deployment. */

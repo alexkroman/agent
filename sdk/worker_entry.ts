@@ -9,6 +9,7 @@ import type { z } from "zod";
 import { EMPTY_PARAMS } from "./_internal_types.ts";
 import { errorMessage } from "./_utils.ts";
 import type { Kv } from "./kv.ts";
+import { TOOL_EXECUTION_TIMEOUT_MS } from "./protocol.ts";
 import type { Message, ToolContext, ToolDef } from "./types.ts";
 import type { VectorStore } from "./vector.ts";
 
@@ -35,6 +36,7 @@ function buildToolContext(opts: ExecuteToolCallOptions): ToolContext {
   const { env, state, kv, vector, messages } = opts;
   return {
     env: { ...env },
+    abortSignal: AbortSignal.timeout(TOOL_EXECUTION_TIMEOUT_MS),
     state: state ?? {},
     get kv(): Kv {
       if (!kv) throw new Error("KV not available");

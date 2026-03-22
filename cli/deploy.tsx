@@ -4,19 +4,14 @@ import { buildAgentBundle } from "./_build.tsx";
 import type { BundleOutput } from "./_bundler.ts";
 import { runDeploy } from "./_deploy.ts";
 import {
-  DEFAULT_SERVER,
   generateSlug,
   getApiKey,
-  isDevMode,
   readProjectConfig,
+  resolveServerUrl,
   writeProjectConfig,
 } from "./_discover.ts";
 import { runWithInk, Step, StepInfo } from "./_ink.tsx";
 import { askEnter } from "./_prompts.tsx";
-
-function resolveServerUrl(server?: string): string {
-  return server || (isDevMode() ? "http://localhost:3100" : DEFAULT_SERVER);
-}
 
 async function deployBundle(opts: {
   bundle: BundleOutput;
@@ -35,7 +30,6 @@ async function deployBundle(opts: {
     bundle,
     env: { ASSEMBLYAI_API_KEY: apiKey },
     slug,
-    dryRun: false,
     apiKey,
   });
   slug = deployed.slug;
@@ -53,10 +47,10 @@ export async function runDeployCommand(opts: {
   dryRun?: boolean;
 }): Promise<void> {
   const { cwd } = opts;
-  const serverUrl = resolveServerUrl(opts.server);
   const dryRun = opts.dryRun ?? false;
   const apiKey = dryRun ? "" : await getApiKey();
   const projectConfig = await readProjectConfig(cwd);
+  const serverUrl = resolveServerUrl(opts.server, projectConfig?.serverUrl);
   const slug = projectConfig?.slug ?? generateSlug();
 
   let agentUrl = "";
@@ -72,7 +66,7 @@ export async function runDeployCommand(opts: {
     agentUrl = await deployBundle({ bundle, serverUrl, apiKey, slug, cwd, log });
   });
 
-  if (agentUrl && !dryRun) {
+  if (agentUrl) {
     await askEnter("Press enter to open in browser");
     const { exec } = await import("node:child_process");
     exec(`open "${agentUrl}"`);

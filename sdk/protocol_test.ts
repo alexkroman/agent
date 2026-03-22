@@ -7,7 +7,7 @@ import {
   DEFAULT_STT_SAMPLE_RATE,
   DEFAULT_TTS_SAMPLE_RATE,
   HOOK_TIMEOUT_MS,
-  KvRequestBaseSchema,
+  KvRequestSchema,
   SessionErrorCodeSchema,
   TOOL_EXECUTION_TIMEOUT_MS,
 } from "./protocol.ts";
@@ -40,9 +40,9 @@ describe("protocol constants", () => {
   });
 });
 
-describe("KvRequestBaseSchema", () => {
+describe("KvRequestSchema", () => {
   test("accepts valid get request", () => {
-    const result = KvRequestBaseSchema.safeParse({
+    const result = KvRequestSchema.safeParse({
       op: "get",
       key: "my-key",
     });
@@ -50,7 +50,7 @@ describe("KvRequestBaseSchema", () => {
   });
 
   test("accepts valid set request with ttl", () => {
-    const result = KvRequestBaseSchema.safeParse({
+    const result = KvRequestSchema.safeParse({
       op: "set",
       key: "my-key",
       value: "my-value",
@@ -60,7 +60,7 @@ describe("KvRequestBaseSchema", () => {
   });
 
   test("accepts valid list request", () => {
-    const result = KvRequestBaseSchema.safeParse({
+    const result = KvRequestSchema.safeParse({
       op: "list",
       prefix: "my-prefix",
     });
@@ -68,7 +68,7 @@ describe("KvRequestBaseSchema", () => {
   });
 
   test("rejects empty key on get", () => {
-    const result = KvRequestBaseSchema.safeParse({
+    const result = KvRequestSchema.safeParse({
       op: "get",
       key: "",
     });
