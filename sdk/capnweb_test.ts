@@ -48,7 +48,7 @@ function createMockChannel(): { port1: CapnwebPort; port2: CapnwebPort } {
           port2.onmessage?.({
             data: msg,
             ports: (transfer?.filter((t) => t instanceof MessagePort) ?? []) as MessagePort[],
-          } as MessageEvent),
+          } as unknown as MessageEvent),
         0,
       );
     },
@@ -61,7 +61,7 @@ function createMockChannel(): { port1: CapnwebPort; port2: CapnwebPort } {
           port1.onmessage?.({
             data: msg,
             ports: (transfer?.filter((t) => t instanceof MessagePort) ?? []) as MessagePort[],
-          } as MessageEvent),
+          } as unknown as MessageEvent),
         0,
       );
     },
@@ -242,7 +242,7 @@ describe("serializeResponse / deserializeResponse", () => {
 
 describe("BridgedWebSocket", () => {
   function createMockPort() {
-    const sent: { msg: unknown; transfer?: Transferable[] }[] = [];
+    const sent: { msg: unknown; transfer?: Transferable[] | undefined }[] = [];
     const port: MessagePort = {
       onmessage: null,
       postMessage(msg: unknown, transfer?: Transferable[]) {
@@ -281,7 +281,7 @@ describe("BridgedWebSocket", () => {
 
     deliver(port, { k: 0, d: "hello" });
     expect(onMessage).toHaveBeenCalledTimes(1);
-    expect(onMessage.mock.calls[0][0].data).toBe("hello");
+    expect(onMessage.mock.calls[0]?.[0].data).toBe("hello");
   });
 
   test("data bridge message dispatches message event with ArrayBuffer", () => {
@@ -294,7 +294,7 @@ describe("BridgedWebSocket", () => {
     const buf = new ArrayBuffer(4);
     deliver(port, { k: 0, d: buf });
     expect(onMessage).toHaveBeenCalledTimes(1);
-    expect(onMessage.mock.calls[0][0].data).toBe(buf);
+    expect(onMessage.mock.calls[0]?.[0].data).toBe(buf);
   });
 
   test("close bridge message sets readyState to 3 and dispatches close event", () => {
@@ -308,7 +308,7 @@ describe("BridgedWebSocket", () => {
     deliver(port, { k: 2, code: 1000, reason: "normal" });
     expect(ws.readyState).toBe(3);
     expect(onClose).toHaveBeenCalledTimes(1);
-    const ev = onClose.mock.calls[0][0] as CloseEvent;
+    const ev = onClose.mock.calls[0]?.[0] as CloseEvent;
     expect(ev.code).toBe(1000);
     expect(ev.reason).toBe("normal");
   });
@@ -322,7 +322,7 @@ describe("BridgedWebSocket", () => {
 
     deliver(port, { k: 4, m: "connection failed" });
     expect(onError).toHaveBeenCalledTimes(1);
-    const ev = onError.mock.calls[0][0] as ErrorEvent;
+    const ev = onError.mock.calls[0]?.[0] as ErrorEvent;
     expect(ev.message).toBe("connection failed");
   });
 
@@ -333,7 +333,7 @@ describe("BridgedWebSocket", () => {
 
     ws.send("test");
     expect(sent).toHaveLength(1);
-    expect(sent[0].msg).toEqual({ k: 0, d: "test" });
+    expect(sent[0]?.msg).toEqual({ k: 0, d: "test" });
   });
 
   test("send ArrayBuffer when open posts data with transfer", () => {
@@ -344,9 +344,9 @@ describe("BridgedWebSocket", () => {
     const buf = new ArrayBuffer(8);
     ws.send(buf);
     expect(sent).toHaveLength(1);
-    expect((sent[0].msg as { k: number }).k).toBe(0);
-    expect((sent[0].msg as { d: unknown }).d).toBeInstanceOf(ArrayBuffer);
-    expect(sent[0].transfer).toEqual([buf]);
+    expect((sent[0]?.msg as { k: number }).k).toBe(0);
+    expect((sent[0]?.msg as { d: unknown }).d).toBeInstanceOf(ArrayBuffer);
+    expect(sent[0]?.transfer).toEqual([buf]);
   });
 
   test("send Uint8Array when open posts sliced ArrayBuffer with transfer", () => {
@@ -357,9 +357,9 @@ describe("BridgedWebSocket", () => {
     const arr = new Uint8Array([1, 2, 3, 4]);
     ws.send(arr);
     expect(sent).toHaveLength(1);
-    expect((sent[0].msg as { k: number }).k).toBe(0);
-    expect((sent[0].msg as { d: unknown }).d).toBeInstanceOf(ArrayBuffer);
-    expect(sent[0].transfer).toHaveLength(1);
+    expect((sent[0]?.msg as { k: number }).k).toBe(0);
+    expect((sent[0]?.msg as { d: unknown }).d).toBeInstanceOf(ArrayBuffer);
+    expect(sent[0]?.transfer).toHaveLength(1);
   });
 
   test("send is ignored when readyState is not OPEN", () => {
@@ -379,7 +379,7 @@ describe("BridgedWebSocket", () => {
     ws.close(1000, "done");
     expect(ws.readyState).toBe(2);
     expect(sent).toHaveLength(1);
-    expect(sent[0].msg).toEqual({ k: 2, code: 1000, reason: "done" });
+    expect(sent[0]?.msg).toEqual({ k: 2, code: 1000, reason: "done" });
   });
 
   test("close is ignored when readyState >= 2", () => {

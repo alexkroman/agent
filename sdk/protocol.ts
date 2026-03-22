@@ -36,42 +36,16 @@ export const AUDIO_FORMAT = "pcm16" as const;
  * binary frames MUST conform to this spec. Any change here is a breaking
  * protocol change.
  */
-const _bitsPerSample = 16 as const;
-const _channels = 1 as const;
-
 /** Specification for binary audio frames exchanged over WebSocket. */
 export const AudioFrameSpec = {
-  /** Audio codec identifier sent in the `ready` message. */
   format: AUDIO_FORMAT,
-  /** Signed 16-bit integer samples. */
-  bitsPerSample: _bitsPerSample,
-  /** Little-endian byte order. */
-  endianness: "little" as const,
-  /** Mono audio. */
-  channels: _channels,
-  /** Bytes per sample — derived from bitsPerSample and channels. */
-  bytesPerSample: (_bitsPerSample / 8) * _channels,
+  bitsPerSample: 16,
+  endianness: "little",
+  channels: 1,
+  bytesPerSample: 2,
 } as const;
 
-/**
- * KV operation request sent from the worker to the host via postMessage RPC.
- *
- * This is a discriminated union on the `op` field, representing the four
- * key-value store operations available to sandboxed agent workers.
- */
-export type KvRequest =
-  | { op: "get"; key: string }
-  | { op: "set"; key: string; value: string; ttl?: number | undefined }
-  | { op: "del"; key: string }
-  | {
-      op: "list";
-      prefix: string;
-      limit?: number | undefined;
-      reverse?: boolean | undefined;
-    }
-  | { op: "keys"; pattern?: string | undefined };
-
-/** Zod schema for {@linkcode KvRequest}. */
+/** Zod schema for KV operation requests from the worker to the host. */
 export const KvRequestSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("get"), key: z.string().min(1) }),
   z.object({
@@ -90,28 +64,12 @@ export const KvRequestSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("keys"), pattern: z.string().optional() }),
 ]);
 
+/** KV operation request — discriminated union on the `op` field. */
+export type KvRequest = z.infer<typeof KvRequestSchema>;
+
 // ─── Vector request types ───────────────────────────────────────────────────
 
-/**
- * Vector operation request. Used by both the worker→host RPC and the
- * HTTP `POST /:slug/vector` endpoint.
- */
-export type VectorRequest =
-  | {
-      op: "upsert";
-      id: string;
-      data: string;
-      metadata?: Record<string, unknown> | undefined;
-    }
-  | {
-      op: "query";
-      text: string;
-      topK?: number | undefined;
-      filter?: string | undefined;
-    }
-  | { op: "remove"; ids: string[] };
-
-/** Zod schema for {@linkcode VectorRequest}. */
+/** Zod schema for vector operation requests. */
 export const VectorRequestSchema = z.discriminatedUnion("op", [
   z.object({
     op: z.literal("upsert"),
@@ -130,6 +88,9 @@ export const VectorRequestSchema = z.discriminatedUnion("op", [
     ids: z.array(z.string().min(1)).min(1),
   }),
 ]);
+
+/** Vector operation request — discriminated union on the `op` field. */
+export type VectorRequest = z.infer<typeof VectorRequestSchema>;
 
 // ─── Timeout constants ─────────────────────────────────────────────────────
 
@@ -157,36 +118,6 @@ export const SessionErrorCodeSchema = z.enum([
 export type SessionErrorCode = z.infer<typeof SessionErrorCodeSchema>;
 
 // ─── Client events ─────────────────────────────────────────────────────────
-
-/**
- * Discriminated union of all server→client session events.
- *
- * Sent via a single `event()` RPC method instead of one method per type.
- */
-export type ClientEvent =
-  | { type: "speech_started" }
-  | { type: "speech_stopped" }
-  | { type: "transcript"; text: string; isFinal: false }
-  | {
-      type: "transcript";
-      text: string;
-      isFinal: true;
-      turnOrder?: number | undefined;
-    }
-  | { type: "turn"; text: string; turnOrder?: number | undefined }
-  | { type: "chat"; text: string }
-  | { type: "chat_delta"; text: string }
-  | {
-      type: "tool_call_start";
-      toolCallId: string;
-      toolName: string;
-      args: Record<string, unknown>;
-    }
-  | { type: "tool_call_done"; toolCallId: string; result: string }
-  | { type: "tts_done" }
-  | { type: "cancelled" }
-  | { type: "reset" }
-  | { type: "error"; code: SessionErrorCode; message: string };
 
 /** Helper: simple event with only a type field. */
 const ev = <T extends string>(t: T) => z.object({ type: z.literal(t) });
@@ -220,6 +151,9 @@ export const ClientEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("error"), code: SessionErrorCodeSchema, message: z.string() }),
 ]);
 
+/** Discriminated union of all server→client session events. */
+export type ClientEvent = z.infer<typeof ClientEventSchema>;
+
 /**
  * Typed interface for pushing session events to a connected client.
  *
@@ -248,23 +182,13 @@ export type ReadyConfig = {
   ttsSampleRate: number;
 };
 
-/** Client→server text messages (binary frames carry raw PCM16 audio). */
-export type ClientMessage =
-  | { type: "audio_ready" }
-  | { type: "cancel" }
-  | { type: "reset" }
-  | {
-      type: "history";
-      messages: readonly { role: "user" | "assistant"; text: string }[];
-    };
-
 /** Server→client text messages (binary frames carry raw PCM16 audio). */
 export type ServerMessage =
   | ({ type: "config" } & ReadyConfig)
   | { type: "audio_done" }
   | ClientEvent;
 
-/** Zod schema for {@linkcode ClientMessage}. */
+/** Zod schema for client→server text messages. */
 export const ClientMessageSchema = z.discriminatedUnion("type", [
   ev("audio_ready"),
   ev("cancel"),
@@ -276,6 +200,9 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
       .max(200),
   }),
 ]);
+
+/** Client→server text messages (binary frames carry raw PCM16 audio). */
+export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 
 // ─── Worker RPC interfaces ─────────────────────────────────────────────────
 

@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { DEFAULT_SERVER, getApiKey, readProjectConfig } from "./_discover.ts";
+import { getApiKey, readProjectConfig, resolveServerUrl } from "./_discover.ts";
 import { Detail, runWithInk, Step, StepInfo } from "./_ink.tsx";
 import { askPassword } from "./_prompts.tsx";
 
@@ -15,7 +15,7 @@ async function requireProjectConfig(cwd: string) {
 async function getServerInfo(cwd: string) {
   const config = await requireProjectConfig(cwd);
   const apiKey = await getApiKey();
-  const serverUrl = config.serverUrl || DEFAULT_SERVER;
+  const serverUrl = resolveServerUrl(undefined, config.serverUrl);
   const slug = config.slug;
   return { serverUrl, slug, apiKey };
 }

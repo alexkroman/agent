@@ -8,6 +8,7 @@
  * @module
  */
 
+import { errorMessage } from "./_utils.ts";
 import type { ClientMessage, ClientSink, ReadyConfig } from "./protocol.ts";
 import { ClientMessageSchema } from "./protocol.ts";
 import type { Logger } from "./runtime.ts";
@@ -168,7 +169,7 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
     ws.send(JSON.stringify({ type: "config", ...opts.readyConfig }));
 
     void session.start().catch((err: unknown) => {
-      log.error("Session start failed", { ...ctx, sid, error: String(err) });
+      log.error("Session start failed", { ...ctx, sid, error: errorMessage(err) });
     });
     log.info("Session ready", { ...ctx, sid });
   }
