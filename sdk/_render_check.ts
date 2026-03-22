@@ -1,7 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import path from "node:path";
 import preact from "@preact/preset-vite";
-import { createServer as createViteServer } from "vite";
+import { createServer as createViteServer, type Plugin } from "vite";
 
 /**
  * Smoke-test a client.tsx by loading it via Vite SSR in a DOM-shimmed
@@ -28,12 +29,47 @@ export async function renderCheck(clientEntry: string, cwd: string): Promise<voi
   g.document = doc;
   g.location = { origin: "http://localhost:3000", pathname: "/", href: "http://localhost:3000/" };
 
+  // Build a map from package exports so templates can import
+  // `@<scope>/aai/ui` etc. and resolve to the local source files.
+  const pkgRoot = path.resolve(import.meta.dirname ?? __dirname, "..");
+  const pkg = JSON.parse(
+    await import("node:fs/promises").then((fs) =>
+      fs.readFile(path.join(pkgRoot, "package.json"), "utf-8"),
+    ),
+  );
+  const exportMap = new Map<string, string>();
+  for (const [key, val] of Object.entries(pkg.exports ?? {}) as [string, { source?: string }][]) {
+    if (val?.source) {
+      exportMap.set(`${pkg.name}${key.slice(1)}`, path.resolve(pkgRoot, val.source));
+    }
+  }
+  // Also handle plain string exports like "./ui/styles.css"
+  for (const [key, val] of Object.entries(pkg.exports ?? {})) {
+    if (typeof val === "string") {
+      exportMap.set(`${pkg.name}${key.slice(1)}`, path.resolve(pkgRoot, val));
+    }
+  }
+
+  const pkgResolverPlugin: Plugin = {
+    name: "resolve-local-pkg",
+    enforce: "pre",
+    resolveId(id) {
+      if (id.endsWith(".css")) return "\0css-noop";
+      const resolved = exportMap.get(id);
+      if (resolved) return resolved;
+    },
+    load(id) {
+      if (id === "\0css-noop") return "";
+    },
+  };
+
   const mock = installMockWebSocket();
   const vite = await createViteServer({
     root: cwd,
     logLevel: "silent",
-    plugins: [preact()],
+    plugins: [preact(), pkgResolverPlugin],
     resolve: { dedupe: ["preact", "@preact/signals"] },
+    ssr: { noExternal: [pkg.name as string] },
     server: { middlewareMode: true },
   });
 
