@@ -2,7 +2,7 @@
 
 import path from "node:path";
 import preact from "@preact/preset-vite";
-import { createServer as createViteServer, type Plugin } from "vite";
+import { type Alias, createServer as createViteServer, type Plugin } from "vite";
 
 /**
  * Smoke-test a client.tsx by loading it via Vite SSR in a DOM-shimmed
@@ -29,46 +29,39 @@ export async function renderCheck(clientEntry: string, cwd: string): Promise<voi
   g.document = doc;
   g.location = { origin: "http://localhost:3000", pathname: "/", href: "http://localhost:3000/" };
 
-  // Build a map from package exports so templates can import
-  // `@<scope>/aai/ui` etc. and resolve to the local source files.
+  // Build resolve.alias from package.json exports so templates can
+  // self-reference `@pkg/name/ui` and resolve to local .ts source.
+  // Vite's SSR loader doesn't support self-referencing exports (vitejs#9731),
+  // so resolve.alias is the standard workaround for monorepo-style setups.
   const pkgRoot = path.resolve(import.meta.dirname ?? __dirname, "..");
-  const pkg = JSON.parse(
-    await import("node:fs/promises").then((fs) =>
-      fs.readFile(path.join(pkgRoot, "package.json"), "utf-8"),
-    ),
-  );
-  const exportMap = new Map<string, string>();
-  for (const [key, val] of Object.entries(pkg.exports ?? {}) as [string, { source?: string }][]) {
-    if (val?.source) {
-      exportMap.set(`${pkg.name}${key.slice(1)}`, path.resolve(pkgRoot, val.source));
-    }
-  }
-  // Also handle plain string exports like "./ui/styles.css"
+  const fs = await import("node:fs/promises");
+  const pkg = JSON.parse(await fs.readFile(path.join(pkgRoot, "package.json"), "utf-8"));
+  const alias: Alias[] = [];
   for (const [key, val] of Object.entries(pkg.exports ?? {})) {
-    if (typeof val === "string") {
-      exportMap.set(`${pkg.name}${key.slice(1)}`, path.resolve(pkgRoot, val));
+    const source = typeof val === "object" && val !== null && "source" in val ? val.source : null;
+    if (typeof source === "string") {
+      alias.push({
+        find: `${pkg.name}${key.slice(1)}`,
+        replacement: path.resolve(pkgRoot, source),
+      });
     }
   }
 
-  const pkgResolverPlugin: Plugin = {
-    name: "resolve-local-pkg",
+  // Sort longest-first so `@pkg/name/ui` matches before `@pkg/name`.
+  alias.sort((a, b) => (b.find as string).length - (a.find as string).length);
+  const cssNoop: Plugin = {
+    name: "ssr-css-noop",
     enforce: "pre",
-    resolveId(id) {
-      if (id.endsWith(".css")) return "\0css-noop";
-      const resolved = exportMap.get(id);
-      if (resolved) return resolved;
-    },
-    load(id) {
-      if (id === "\0css-noop") return "";
-    },
+    resolveId: (id) => (id.endsWith(".css") ? "\0css-noop" : undefined),
+    load: (id) => (id === "\0css-noop" ? "" : undefined),
   };
 
   const mock = installMockWebSocket();
   const vite = await createViteServer({
     root: cwd,
     logLevel: "silent",
-    plugins: [preact(), pkgResolverPlugin],
-    resolve: { dedupe: ["preact", "@preact/signals"] },
+    plugins: [preact(), cssNoop],
+    resolve: { alias, dedupe: ["preact", "@preact/signals"] },
     ssr: { noExternal: [pkg.name as string] },
     server: { middlewareMode: true },
   });
