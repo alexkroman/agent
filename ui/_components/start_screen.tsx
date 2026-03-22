@@ -47,7 +47,7 @@ export function StartScreen({
         {icon}
         {title && <h1 class="font-semibold text-aai-primary m-0">{title}</h1>}
         {subtitle && <p class="text-sm text-aai-text-muted m-0">{subtitle}</p>}
-        <Button className="mt-2 px-8 py-3" onClick={start}>
+        <Button size="lg" className="mt-2 w-full" onClick={start}>
           {buttonText}
         </Button>
       </div>

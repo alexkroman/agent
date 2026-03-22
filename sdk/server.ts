@@ -141,6 +141,26 @@ export function createServer(options: ServerOptions): AgentServer {
 
       const app = new Hono();
 
+      app.onError((err, c) => {
+        logger.error(`${c.req.method} ${new URL(c.req.url).pathname} error: ${err.message}`);
+        return c.json({ error: "Internal Server Error" }, 500);
+      });
+
+      // Log HTTP requests and errors
+      app.use("/*", async (c, next) => {
+        const start = Date.now();
+        await next();
+        const ms = Date.now() - start;
+        const status = c.res.status;
+        const method = c.req.method;
+        const path = new URL(c.req.url).pathname;
+        if (status >= 400) {
+          logger.error(`${method} ${path} ${status} ${ms}ms`);
+        } else {
+          logger.info(`${method} ${path} ${status} ${ms}ms`);
+        }
+      });
+
       if (clientDir) {
         app.use("/*", serveStatic({ root: clientDir }));
       }
@@ -160,10 +180,12 @@ export function createServer(options: ServerOptions): AgentServer {
         const wsMod = await import("ws");
         const wss = new wsMod.WebSocketServer({ noServer: true });
         nodeServer.on("upgrade", (req, socket, head) => {
+          const reqUrl = new URL(req.url ?? "/", `http://localhost:${port}`);
+          const resume = reqUrl.searchParams.has("resume");
+          logger.info(`WS upgrade ${reqUrl.pathname}${resume ? " (resume)" : ""}`);
           wss.handleUpgrade(req, socket, head, (ws) => {
-            const reqUrl = new URL(req.url ?? "/", `http://localhost:${port}`);
             wintercServer.handleWebSocket(ws as unknown as SessionWebSocket, {
-              skipGreeting: reqUrl.searchParams.has("resume"),
+              skipGreeting: resume,
             });
           });
         });
