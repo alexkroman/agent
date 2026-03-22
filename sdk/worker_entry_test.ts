@@ -1,12 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
+import { makeTool } from "./_test_utils.ts";
 import type { ToolDef } from "./types.ts";
 import { executeToolCall } from "./worker_entry.ts";
-
-function makeTool(overrides?: Partial<ToolDef>): ToolDef {
-  return { description: "test tool", execute: () => "ok", ...overrides };
-}
 
 function run(
   name: string,

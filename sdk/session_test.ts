@@ -1,23 +1,12 @@
 import { describe, expect, test } from "vitest";
-import type { AgentConfig } from "./_internal_types.ts";
+import { makeConfig } from "./_test_utils.ts";
 import { buildSystemPrompt } from "./session.ts";
 import { DEFAULT_INSTRUCTIONS } from "./types.ts";
-
-function makeConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
-  return {
-    name: "test-agent",
-    instructions: DEFAULT_INSTRUCTIONS,
-    greeting: "Hello",
-    ...overrides,
-  };
-}
 
 describe("buildSystemPrompt", () => {
   test("starts with DEFAULT_INSTRUCTIONS when no custom instructions", () => {
     const result = buildSystemPrompt(makeConfig(), { hasTools: false });
-    expect(result).toMatch(
-      new RegExp(`^${DEFAULT_INSTRUCTIONS.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`),
-    );
+    expect(result.startsWith(DEFAULT_INSTRUCTIONS)).toBe(true);
   });
 
   test("does not include agent-specific instructions section for default instructions", () => {
@@ -67,5 +56,22 @@ describe("buildSystemPrompt", () => {
     });
     const result = buildSystemPrompt(makeConfig(), { hasTools: false });
     expect(result).toContain(`Today's date is ${today}.`);
+  });
+
+  test("voice + hasTools includes both voice rules and tool preamble", () => {
+    const result = buildSystemPrompt(makeConfig(), { hasTools: true, voice: true });
+    expect(result).toContain("CRITICAL OUTPUT RULES");
+    expect(result).toContain("ALWAYS say a brief natural phrase BEFORE the tool call");
+  });
+
+  test("custom instructions + voice + tools includes all sections", () => {
+    const result = buildSystemPrompt(makeConfig({ instructions: "Be concise." }), {
+      hasTools: true,
+      voice: true,
+    });
+    expect(result).toContain("Agent-Specific Instructions:");
+    expect(result).toContain("Be concise.");
+    expect(result).toContain("CRITICAL OUTPUT RULES");
+    expect(result).toContain("ALWAYS say a brief natural phrase BEFORE the tool call");
   });
 });

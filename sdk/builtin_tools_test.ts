@@ -63,14 +63,11 @@ describe("getBuiltinToolDefs", () => {
   test("fetch_json fetches and returns JSON", async () => {
     const mockData = { name: "test", value: 42 };
     vi.stubGlobal("fetch", () => Promise.resolve(new Response(JSON.stringify(mockData))));
-    try {
-      const defs = getBuiltinToolDefs(["fetch_json"]);
-      const ctx = createMockToolContext();
-      const result = await defs.fetch_json?.execute({ url: "https://api.example.com/data" }, ctx);
-      expect(result).toEqual(mockData);
-    } finally {
-      vi.unstubAllGlobals();
-    }
+    const defs = getBuiltinToolDefs(["fetch_json"]);
+    const ctx = createMockToolContext();
+    const result = await defs.fetch_json?.execute({ url: "https://api.example.com/data" }, ctx);
+    vi.unstubAllGlobals();
+    expect(result).toEqual(mockData);
   });
 
   test("vector_search requires callback", () => {

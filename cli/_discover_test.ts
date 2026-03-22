@@ -9,9 +9,40 @@ import {
   isDevMode,
   loadAgent,
   readProjectConfig,
+  resolveCwd,
   writeProjectConfig,
 } from "./_discover.ts";
 import { withTempDir } from "./_test_utils.ts";
+
+// --- resolveCwd ---
+
+describe("resolveCwd", () => {
+  test("returns INIT_CWD when set", () => {
+    const orig = process.env.INIT_CWD;
+    process.env.INIT_CWD = "/custom/path";
+    try {
+      expect(resolveCwd()).toBe("/custom/path");
+    } finally {
+      if (orig !== undefined) {
+        process.env.INIT_CWD = orig;
+      } else {
+        delete process.env.INIT_CWD;
+      }
+    }
+  });
+
+  test("falls back to process.cwd() when INIT_CWD is not set", () => {
+    const orig = process.env.INIT_CWD;
+    delete process.env.INIT_CWD;
+    try {
+      expect(resolveCwd()).toBe(process.cwd());
+    } finally {
+      if (orig !== undefined) {
+        process.env.INIT_CWD = orig;
+      }
+    }
+  });
+});
 
 // --- generateSlug ---
 

@@ -95,4 +95,23 @@ describe("createMemoryVectorStore", () => {
     expect(results.length).toBe(1);
     expect(results[0]?.id).toBe("a");
   });
+
+  test("query with empty string returns no results", async () => {
+    const v = createMemoryVectorStore();
+    await v.upsert("doc", "some content");
+    const results = await v.query("");
+    expect(results).toEqual([]);
+  });
+
+  test("remove non-existent id does not throw", async () => {
+    const v = createMemoryVectorStore();
+    await expect(v.remove("nonexistent")).resolves.toBeUndefined();
+  });
+
+  test("upsert without metadata results in undefined metadata", async () => {
+    const v = createMemoryVectorStore();
+    await v.upsert("doc", "text");
+    const results = await v.query("text");
+    expect(results[0]?.metadata).toBeUndefined();
+  });
 });
