@@ -3,7 +3,8 @@
 import { Text } from "ink";
 import pLimit from "p-limit";
 import type React from "react";
-import { DEFAULT_SERVER, getApiKey, isDevMode, readProjectConfig } from "./_discover.ts";
+import { errorMessage } from "../sdk/_utils.ts";
+import { getApiKey, readProjectConfig, resolveServerUrl } from "./_discover.ts";
 import { Detail, Info, runWithInk, Step, Warn } from "./_ink.tsx";
 
 const FETCH_TIMEOUT_MS = 60_000;
@@ -146,7 +147,7 @@ async function upsertChunks(
             upserted++;
           }
         } catch (err: unknown) {
-          lastError = err instanceof Error ? err.message : String(err);
+          lastError = errorMessage(err);
           errors++;
         }
         completed++;
@@ -179,8 +180,7 @@ export async function runRagCommand(opts: {
   }
 
   const apiKey = await getApiKey();
-  const serverUrl =
-    opts.server || config.serverUrl || (isDevMode() ? "http://localhost:3100" : DEFAULT_SERVER);
+  const serverUrl = resolveServerUrl(opts.server, config.serverUrl);
   const slug = config.slug;
   const chunkSize = Number.parseInt(opts.chunkSize ?? "512", 10);
 

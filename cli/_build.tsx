@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import type { ReactNode } from "react";
+import { errorMessage } from "../sdk/_utils.ts";
 import { BundleError, type BundleOutput, bundleAgent } from "./_bundler.ts";
 import { loadAgent } from "./_discover.ts";
 import { Info, Step } from "./_ink.tsx";
@@ -44,7 +45,7 @@ export async function buildAgentBundle(
       log(<Step action="Render" msg="check" />);
       await renderCheck(agent.clientEntry, cwd);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errorMessage(err);
       if (msg.includes("linkedom") || msg.includes("_render_check")) return bundle;
       throw new Error(`Render check failed: ${msg}`);
     }

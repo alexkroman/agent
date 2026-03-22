@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import chalk from "chalk";
 import { Command } from "commander";
+import { errorMessage } from "../sdk/_utils.ts";
 import { fileExists, getApiKey, resolveCwd } from "./_discover.ts";
 import { interactive, primary } from "./_ink.tsx";
 
@@ -213,7 +214,7 @@ async function main(args: string[]): Promise<void> {
 if (process.env.VITEST !== "true") {
   process.on("SIGINT", () => process.exit(0));
   main(process.argv.slice(2)).catch((err: unknown) => {
-    console.error(err instanceof Error ? err.message : String(err));
+    console.error(errorMessage(err));
     process.exit(1);
   });
 }

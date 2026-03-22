@@ -24,17 +24,16 @@ export async function listTemplates(dir: string): Promise<string[]> {
  * in `dest` so that template-specific files take precedence over shared ones.
  */
 async function copyDirNoOverwrite(src: string, dest: string): Promise<void> {
-  const entries = await fs.readdir(src, { recursive: true });
-  for (const rel of entries) {
-    const srcPath = path.join(src, rel);
-    const stat = await fs.stat(srcPath);
-    if (!stat.isFile()) continue;
+  const entries = await fs.readdir(src, { recursive: true, withFileTypes: true });
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    const rel = path.join(entry.parentPath ?? entry.path, entry.name).slice(src.length + 1);
     const destPath = path.join(dest, rel);
+    await fs.mkdir(path.dirname(destPath), { recursive: true });
     try {
-      await fs.access(destPath);
-    } catch {
-      await fs.mkdir(path.dirname(destPath), { recursive: true });
-      await fs.copyFile(srcPath, destPath);
+      await fs.copyFile(path.join(src, rel), destPath, fs.constants.COPYFILE_EXCL);
+    } catch (err: unknown) {
+      if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
     }
   }
 }

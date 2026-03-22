@@ -13,11 +13,14 @@ import {
   bridgeWebSocketToPort,
   CapnwebEndpoint,
   type CapnwebPort,
+  deserializeRequest,
   deserializeResponse,
   type SerializedRequest,
   type SerializedResponse,
   serializeRequest,
+  serializeResponse,
 } from "./capnweb.ts";
+import type { VectorEntry } from "./vector.ts";
 
 // ─── Audio validation (applied at the host transport layer) ─────────────────
 
@@ -30,8 +33,6 @@ function isValidAudioChunk(data: ArrayBuffer): boolean {
     data.byteLength > 0 && data.byteLength <= MAX_AUDIO_CHUNK_BYTES && data.byteLength % 2 === 0
   );
 }
-
-import type { VectorEntry } from "./vector.ts";
 
 // ─── Host-side operation interfaces ─────────────────────────────────────────
 
@@ -63,17 +64,8 @@ export type HostVectorOps = {
  * checks or other guards.
  */
 export async function defaultHostFetch(req: SerializedRequest): Promise<SerializedResponse> {
-  const [url, method, headers, body] = req;
-  const response = await fetch(url, {
-    method,
-    headers,
-    ...(body ? { body } : {}),
-  });
-  return {
-    status: response.status,
-    headers: Object.fromEntries(response.headers),
-    body: await response.text(),
-  };
+  const response = await fetch(deserializeRequest(req));
+  return serializeResponse(response);
 }
 
 // ─── Host endpoint factory ──────────────────────────────────────────────────

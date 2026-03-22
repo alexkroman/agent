@@ -31,10 +31,14 @@ export type ExecuteTool = (
   messages?: readonly Message[],
 ) => Promise<string>;
 
+/** Tool execution timeout in milliseconds (30 seconds). */
+const TOOL_TIMEOUT_MS = 30_000;
+
 function buildToolContext(opts: ExecuteToolCallOptions): ToolContext {
   const { env, state, kv, vector, messages } = opts;
   return {
     env: { ...env },
+    abortSignal: AbortSignal.timeout(TOOL_TIMEOUT_MS),
     state: state ?? {},
     get kv(): Kv {
       if (!kv) throw new Error("KV not available");

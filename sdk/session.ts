@@ -428,7 +428,7 @@ export function createS2sSession(opts: SessionOptions): Session {
   };
 }
 
-// ─── System prompt builder (inlined from system_prompt.ts) ──────────────────
+// ─── System prompt builder ──────────────────────────────────────────────────
 
 const VOICE_RULES =
   "\n\nCRITICAL OUTPUT RULES — you MUST follow these for EVERY response:\n" +

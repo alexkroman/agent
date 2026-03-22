@@ -135,6 +135,11 @@ export type AgentEntry = {
 /** Default production server URL for agent deployments. */
 export const DEFAULT_SERVER = "https://aai-agent.fly.dev";
 
+/** Resolve the server URL from an explicit value, project config, or default. */
+export function resolveServerUrl(explicit?: string, configUrl?: string): string {
+  return explicit || configUrl || (isDevMode() ? "http://localhost:3100" : DEFAULT_SERVER);
+}
+
 export async function fileExists(p: string): Promise<boolean> {
   try {
     await fs.access(p);

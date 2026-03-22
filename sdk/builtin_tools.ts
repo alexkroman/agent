@@ -61,7 +61,7 @@ function createWebSearch(): ToolDef<typeof webSearchParams> {
       })}`;
       const resp = await fetch(url, {
         headers: { "X-Subscription-Token": apiKey },
-        signal: ctx.abortSignal ?? AbortSignal.timeout(15_000),
+        signal: ctx.abortSignal,
       });
       if (!resp.ok) return [];
       const raw = await resp.json();
@@ -99,7 +99,7 @@ function createVisitWebpage(): ToolDef<typeof visitWebpageParams> {
           Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         },
         redirect: "follow",
-        signal: ctx.abortSignal ?? AbortSignal.timeout(15_000),
+        signal: ctx.abortSignal,
       });
       if (!resp.ok) {
         return { error: `Failed to fetch: ${resp.status} ${resp.statusText}`, url };
@@ -138,7 +138,7 @@ function createFetchJson(): ToolDef<typeof fetchJsonParams> {
       const { url, headers } = args;
       const resp = await fetch(url, {
         ...(headers && { headers }),
-        signal: ctx.abortSignal ?? AbortSignal.timeout(15_000),
+        signal: ctx.abortSignal,
       });
       if (!resp.ok) {
         return { error: `HTTP ${resp.status} ${resp.statusText}`, url };
@@ -232,7 +232,6 @@ export type BuiltinToolOptions = {
   vectorSearch?: VectorSearchFn;
 };
 
-/** A record of tool name → ToolDef with any Zod object parameters. */
 type ToolDefRecord = Record<string, ToolDef<z.ZodObject<z.ZodRawShape>>>;
 
 /** Single-tool creators and multi-tool expanders in one registry. */

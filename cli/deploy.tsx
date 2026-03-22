@@ -4,19 +4,14 @@ import { buildAgentBundle } from "./_build.tsx";
 import type { BundleOutput } from "./_bundler.ts";
 import { runDeploy } from "./_deploy.ts";
 import {
-  DEFAULT_SERVER,
   generateSlug,
   getApiKey,
-  isDevMode,
   readProjectConfig,
+  resolveServerUrl,
   writeProjectConfig,
 } from "./_discover.ts";
 import { runWithInk, Step, StepInfo } from "./_ink.tsx";
 import { askEnter } from "./_prompts.tsx";
-
-function resolveServerUrl(server?: string): string {
-  return server || (isDevMode() ? "http://localhost:3100" : DEFAULT_SERVER);
-}
 
 async function deployBundle(opts: {
   bundle: BundleOutput;

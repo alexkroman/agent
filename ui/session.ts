@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { batch, type Signal, signal } from "@preact/signals";
+import { errorMessage } from "../sdk/_utils.ts";
 import type { ClientEvent, ClientMessage, ReadyConfig, ServerMessage } from "../sdk/protocol.ts";
 import type { VoiceIO } from "./audio.ts";
 import type { AgentState, Message, SessionError, SessionOptions, ToolCallInfo } from "./types.ts";
@@ -329,7 +330,7 @@ export function createVoiceSession(options: SessionOptions): VoiceSession {
       batch(() => {
         error.value = {
           code: "audio",
-          message: `Microphone access failed: ${err instanceof Error ? err.message : String(err)}`,
+          message: `Microphone access failed: ${errorMessage(err)}`,
         };
         state.value = "error";
       });
