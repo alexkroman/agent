@@ -90,9 +90,6 @@ export const KvRequestSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("keys"), pattern: z.string().optional() }),
 ]);
 
-/** @deprecated Use {@linkcode KvRequestSchema}. */
-export const KvRequestBaseSchema = KvRequestSchema;
-
 // ─── Vector request types ───────────────────────────────────────────────────
 
 /**

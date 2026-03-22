@@ -199,10 +199,13 @@ export class ClientHandler {
     const gen = this.#generation;
     const io = this.#voiceIO();
     if (io) {
-      void io.done().then(() => {
-        if (this.#generation !== gen) return;
-        this.#state.value = "listening";
-      });
+      void io
+        .done()
+        .then(() => {
+          if (this.#generation !== gen) return;
+          this.#state.value = "listening";
+        })
+        .catch(() => {});
     } else {
       this.#state.value = "listening";
     }
@@ -389,11 +392,12 @@ export function createVoiceSession(options: SessionOptions): VoiceSession {
         const msgEvent = event as MessageEvent;
         const config = handler.handleMessage(msgEvent.data);
         if (config) {
+          const isReconnect = hasConnected;
           hasConnected = true;
           void handleReady(config);
 
           // Send history if reconnecting
-          if (hasConnected && messages.value.length > 0) {
+          if (isReconnect && messages.value.length > 0) {
             send({
               type: "history",
               messages: messages.value.map((m) => ({

@@ -127,7 +127,8 @@ export function createS2sSession(opts: SessionOptions): Session {
     if (!hookInvoker) return null;
     try {
       return await hookInvoker.resolveTurnConfig(id, HOOK_TIMEOUT_MS);
-    } catch {
+    } catch (err: unknown) {
+      log.warn("resolveTurnConfig hook failed", { err: errorMessage(err) });
       return null;
     }
   }
@@ -470,6 +471,6 @@ export function buildSystemPrompt(
     `\n\nToday's date is ${today}.` +
     agentInstructions +
     toolPreamble +
-    (opts?.voice ? VOICE_RULES : "")
+    (opts.voice ? VOICE_RULES : "")
   );
 }

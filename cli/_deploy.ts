@@ -67,16 +67,14 @@ export async function runDeploy(opts: DeployOpts): Promise<DeployResult> {
       return { slug };
     }
 
-    if (resp.status === 403) {
-      const text = await resp.text();
+    const text = await resp.text();
+
+    if (resp.status === 403 && text.includes("Slug")) {
       // Slug conflict — generate a new one and retry
-      if (text.includes("Slug")) {
-        slug = generateSlug();
-        continue;
-      }
+      slug = generateSlug();
+      continue;
     }
 
-    const text = await resp.text();
     throw new Error(`deploy failed (${resp.status}): ${text}`);
   }
 

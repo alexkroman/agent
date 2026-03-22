@@ -60,11 +60,8 @@ export async function runInit(opts: InitOptions): Promise<string> {
 
   // Generate README.md with getting-started instructions (skip if template provides one)
   const readmePath = path.join(targetDir, "README.md");
-  try {
-    await fs.access(readmePath);
-  } catch {
-    const slug = path.basename(path.resolve(targetDir));
-    const readme = `# ${slug}
+  const slug = path.basename(path.resolve(targetDir));
+  const readme = `# ${slug}
 
 A voice agent built with [aai](https://github.com/anthropics/aai).
 
@@ -93,7 +90,10 @@ Access secrets in your agent via \`ctx.env.MY_KEY\`.
 
 See \`CLAUDE.md\` for the full agent API reference.
 `;
-    await fs.writeFile(readmePath, readme);
+  try {
+    await fs.writeFile(readmePath, readme, { flag: "wx" });
+  } catch (err: unknown) {
+    if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
   }
 
   return targetDir;

@@ -264,6 +264,7 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
       try {
         raw = JSON.parse(String(data));
       } catch {
+        log.warn("S2S << invalid JSON", { data: String(data).slice(0, 200) });
         return;
       }
 
