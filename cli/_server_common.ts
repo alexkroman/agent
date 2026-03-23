@@ -10,7 +10,11 @@ import { getApiKey } from "./_discover.ts";
 export async function loadAgentDef(cwd: string): Promise<AgentDef> {
   const agentPath = path.resolve(cwd, "agent.ts");
   const agentModule = await tsImport(agentPath, cwd);
-  const agentDef = agentModule.default;
+  // tsImport may double-wrap: { __esModule: true, default: <actual> }
+  let agentDef = agentModule.default;
+  if (agentDef?.__esModule && agentDef.default) {
+    agentDef = agentDef.default;
+  }
 
   if (!agentDef || typeof agentDef !== "object" || !agentDef.name) {
     throw new Error("agent.ts must export a default agent definition (from defineAgent())");

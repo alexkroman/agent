@@ -6,10 +6,12 @@ import {
   DEFAULT_SERVER,
   fileExists,
   generateSlug,
+  getServerInfo,
   isDevMode,
   loadAgent,
   readProjectConfig,
   resolveCwd,
+  resolveServerUrl,
   writeProjectConfig,
 } from "./_discover.ts";
 import { withTempDir } from "./_test_utils.ts";
@@ -66,15 +68,42 @@ test("DEFAULT_SERVER", () => {
 
 describe("isDevMode", () => {
   test("returns true when script ends with .ts", () => {
-    expect(isDevMode("/path/to/script.ts")).toBe(true);
+    expect(isDevMode("/path/to/cli/cli.ts")).toBe(true);
   });
 
   test("returns true when script ends with .tsx", () => {
-    expect(isDevMode("/path/to/script.tsx")).toBe(true);
+    expect(isDevMode("/path/to/cli/cli.tsx")).toBe(true);
   });
 
-  test("returns false when script ends with .js", () => {
-    expect(isDevMode("/path/to/dist/cli.js")).toBe(false);
+  test("returns false for .js (published bin)", () => {
+    expect(isDevMode("/path/to/dist/aai.js")).toBe(false);
+  });
+
+  test("returns false for empty string", () => {
+    expect(isDevMode("")).toBe(false);
+  });
+
+  test("returns false for no extension", () => {
+    expect(isDevMode("/usr/local/bin/aai")).toBe(false);
+  });
+});
+
+// --- resolveServerUrl ---
+
+describe("resolveServerUrl", () => {
+  test("explicit URL takes priority", () => {
+    expect(resolveServerUrl("https://custom.com", "https://config.com")).toBe("https://custom.com");
+  });
+
+  test("falls back to config URL when no explicit", () => {
+    expect(resolveServerUrl(undefined, "https://config.com")).toBe("https://config.com");
+  });
+
+  test("falls back to default when no explicit or config", () => {
+    const result = resolveServerUrl(undefined, undefined);
+    // Either dev localhost or DEFAULT_SERVER depending on isDevMode
+    expect(typeof result).toBe("string");
+    expect(result.startsWith("http")).toBe(true);
   });
 });
 
@@ -125,6 +154,55 @@ describe("readProjectConfig / writeProjectConfig", () => {
       await writeProjectConfig(dir, config);
       const aaiDir = path.join(dir, ".aai");
       expect(await fileExists(aaiDir)).toBe(true);
+    });
+  });
+
+  test("overwrites existing config", async () => {
+    await withTempDir(async (dir) => {
+      await writeProjectConfig(dir, { slug: "old", serverUrl: "https://old.com" });
+      await writeProjectConfig(dir, { slug: "new", serverUrl: "https://new.com" });
+      const result = await readProjectConfig(dir);
+      expect(result?.slug).toBe("new");
+    });
+  });
+});
+
+// --- getServerInfo ---
+
+describe("getServerInfo", () => {
+  test("throws when no project config exists", async () => {
+    await withTempDir(async (dir) => {
+      await expect(getServerInfo(dir)).rejects.toThrow("No .aai/project.json found");
+    });
+  });
+
+  test("error message suggests aai deploy", async () => {
+    await withTempDir(async (dir) => {
+      await expect(getServerInfo(dir)).rejects.toThrow("aai deploy");
+    });
+  });
+
+  test("returns config with explicit api key (no prompt)", async () => {
+    await withTempDir(async (dir) => {
+      await writeProjectConfig(dir, {
+        slug: "my-agent",
+        serverUrl: "https://my-server.com",
+      });
+      const info = await getServerInfo(dir, undefined, "test-key-123");
+      expect(info.slug).toBe("my-agent");
+      expect(info.serverUrl).toBe("https://my-server.com");
+      expect(info.apiKey).toBe("test-key-123");
+    });
+  });
+
+  test("explicit server overrides config server", async () => {
+    await withTempDir(async (dir) => {
+      await writeProjectConfig(dir, {
+        slug: "agent",
+        serverUrl: "https://config-server.com",
+      });
+      const info = await getServerInfo(dir, "https://override.com", "key");
+      expect(info.serverUrl).toBe("https://override.com");
     });
   });
 });

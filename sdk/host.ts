@@ -11,16 +11,14 @@
 import {
   type BridgeableWebSocket,
   bridgeWebSocketToPort,
-  CapnwebEndpoint,
-  type CapnwebPort,
-  deserializeRequest,
-  deserializeResponse,
-  type SerializedRequest,
-  type SerializedResponse,
-  serializeRequest,
-  serializeResponse,
+  createRpcSession,
+  isTransferMessage,
+  RpcTarget,
+  sendTransfer,
+  type WorkerPort,
 } from "./capnweb.ts";
-import type { VectorEntry } from "./vector.ts";
+import type { Kv, KvListOptions } from "./kv.ts";
+import type { VectorStore } from "./vector.ts";
 
 // ─── Audio validation (applied at the host transport layer) ─────────────────
 
@@ -34,38 +32,108 @@ function isValidAudioChunk(data: ArrayBuffer): boolean {
   );
 }
 
-// ─── Host-side operation interfaces ─────────────────────────────────────────
+// ─── Shared types ───────────────────────────────────────────────────────────
 
-/** KV operations the host provides to sandboxed workers. */
-export type HostKvOps = {
-  get(key: string): Promise<unknown>;
-  set(key: string, value: unknown, expireIn?: number): Promise<void>;
-  del(key: string): Promise<void>;
-  list(
-    prefix: string,
-    limit?: number,
-    reverse?: boolean,
-  ): Promise<{ key: string; value: unknown }[]>;
-  keys?(pattern?: string): Promise<string[]>;
-};
+/** Serialized fetch response for RPC transport. */
+export type FetchResult = { status: number; headers: Record<string, string>; body: string };
 
-/** Vector operations the host provides to sandboxed workers. */
-export type HostVectorOps = {
-  upsert(id: string, data: string, metadata?: Record<string, unknown>): Promise<void>;
-  query(text: string, topK?: number, filter?: string): Promise<VectorEntry[]>;
-  remove(ids: string[]): Promise<void>;
-};
+/** Fetch function signature for host→worker RPC. */
+export type HostFetchFn = (
+  url: string,
+  method: string,
+  headers: Record<string, string>,
+  body?: string,
+) => Promise<FetchResult>;
+
+/** Kv with optional key-listing support. */
+export type KvWithKeys = Kv & { keys?(pattern?: string): Promise<string[]> };
 
 /**
- * Execute an HTTP fetch from a serialized request.
+ * Execute an HTTP fetch on behalf of the sandboxed worker.
  *
- * Default implementation for the `host.fetch` RPC — performs the fetch
+ * Default implementation for the host fetch RPC — performs the fetch
  * and returns a serialized response. Servers can wrap this to add SSRF
  * checks or other guards.
  */
-export async function defaultHostFetch(req: SerializedRequest): Promise<SerializedResponse> {
-  const response = await fetch(deserializeRequest(req));
-  return serializeResponse(response);
+export async function defaultHostFetch(
+  url: string,
+  method: string,
+  headers: Record<string, string>,
+  body?: string,
+): Promise<FetchResult> {
+  const response = await fetch(new Request(url, { method, headers, ...(body ? { body } : {}) }));
+  return {
+    status: response.status,
+    headers: Object.fromEntries(response.headers),
+    body: await response.text(),
+  };
+}
+
+// ─── Host RPC service ────────────────────────────────────────────────────────
+
+/** Convert a void promise to null (capnweb RPC requires a return value). */
+async function voidToNull(p: Promise<void>): Promise<null> {
+  await p;
+  return null;
+}
+
+/**
+ * RPC service exposed by the host to the sandboxed worker.
+ * Methods are callable via capnweb RPC stubs.
+ */
+class HostService extends RpcTarget {
+  #kv: KvWithKeys;
+  #vec: VectorStore | undefined;
+  #fetchFn: HostFetchFn;
+
+  constructor(kv: KvWithKeys, vec: VectorStore | undefined, fetchFn: HostFetchFn) {
+    super();
+    this.#kv = kv;
+    this.#vec = vec;
+    this.#fetchFn = fetchFn;
+  }
+
+  hostFetch(url: string, method: string, headers: Record<string, string>, body?: string) {
+    return this.#fetchFn(url, method, headers, body);
+  }
+
+  kvGet(key: string) {
+    return this.#kv.get(key);
+  }
+
+  kvSet(key: string, value: unknown, options?: { expireIn?: number }) {
+    return voidToNull(this.#kv.set(key, value, options));
+  }
+
+  kvDel(key: string) {
+    return voidToNull(this.#kv.delete(key));
+  }
+
+  kvList(prefix: string, options?: KvListOptions) {
+    return this.#kv.list(prefix, options);
+  }
+
+  kvKeys(pattern?: string) {
+    if (!this.#kv.keys) throw new Error("keys op not supported");
+    return this.#kv.keys(pattern);
+  }
+
+  #requireVec(): VectorStore {
+    if (!this.#vec) throw new Error("Vector store not configured");
+    return this.#vec;
+  }
+
+  vecUpsert(id: string, data: string, metadata?: Record<string, unknown>) {
+    return voidToNull(this.#requireVec().upsert(id, data, metadata));
+  }
+
+  vecQuery(text: string, options?: { topK?: number; filter?: string }) {
+    return this.#requireVec().query(text, options);
+  }
+
+  vecRemove(ids: string[]) {
+    return voidToNull(this.#requireVec().remove(ids));
+  }
 }
 
 // ─── Host endpoint factory ──────────────────────────────────────────────────
@@ -75,23 +143,17 @@ export type HostEndpointOptions = {
   /** Environment variables passed to the worker on init. */
   env: Record<string, string>;
   /** KV store operations. */
-  kv: HostKvOps;
+  kv: KvWithKeys;
   /** Vector store operations. Omit if not configured. */
-  vector?: HostVectorOps | undefined;
-  /**
-   * Fetch handler. Receives a serialized request, returns a serialized
-   * response. Use {@linkcode defaultHostFetch} as the base and wrap it
-   * to add SSRF checks or other guards.
-   */
-  fetch(req: SerializedRequest): Promise<SerializedResponse>;
+  vector?: VectorStore | undefined;
+  /** Fetch handler. Use {@linkcode defaultHostFetch} as the base. */
+  fetch: HostFetchFn;
   /** Called when the worker requests an S2S WebSocket connection. */
   createWebSocket(url: string, headers: Record<string, string>, port: MessagePort): void;
 };
 
 /** A host-side sandbox created by {@linkcode createHostEndpoint}. */
 export type HostSandbox = {
-  /** The underlying RPC endpoint (for advanced use). */
-  endpoint: CapnwebEndpoint;
   /** Bridge a WebSocket to a new worker session. */
   startSession(socket: BridgeableWebSocket, skipGreeting?: boolean): void;
   /** Forward an HTTP request to the worker. */
@@ -101,104 +163,53 @@ export type HostSandbox = {
 /**
  * Create a host endpoint for a sandboxed worker.
  *
- * Registers all standard RPC handlers (`host.fetch`, `host.kv`,
- * `host.vector`, `host.createWebSocket`), calls `worker.init`, and
- * returns a {@linkcode HostSandbox} with `startSession` and `fetch`.
+ * Sets up capnweb RPC with a {@linkcode HostService}, initializes the worker,
+ * and returns a {@linkcode HostSandbox} with `startSession` and `fetch`.
  */
 export async function createHostEndpoint(
-  port: CapnwebPort,
+  port: WorkerPort,
   opts: HostEndpointOptions,
 ): Promise<HostSandbox> {
-  const endpoint = new CapnwebEndpoint(port);
+  const hostService = new HostService(opts.kv, opts.vector, opts.fetch);
 
-  // Register host-side RPC handlers
-  endpoint.handle("host.fetch", (args) => opts.fetch(args as SerializedRequest));
-
-  // KV — flat per-method handlers
-  const { kv } = opts;
-  endpoint.handle("kv.get", (args) => kv.get(args[0] as string));
-  endpoint.handle("kv.set", async (args) => {
-    const [key, value, expireIn] = args as [string, unknown, number | undefined];
-    await kv.set(key, value, expireIn);
-    return null;
-  });
-  endpoint.handle("kv.del", async (args) => {
-    await kv.del(args[0] as string);
-    return null;
-  });
-  endpoint.handle("kv.list", (args) => {
-    const [prefix, limit, reverse] = args as [string, number | undefined, boolean | undefined];
-    return kv.list(prefix, limit, reverse);
-  });
-  endpoint.handle("kv.keys", (args) => {
-    if (!kv.keys) throw new Error("keys op not supported");
-    return kv.keys(args[0] as string | undefined);
-  });
-
-  // Vector — flat per-method handlers
-  const noVec = () => {
-    throw new Error("Vector store not configured");
-  };
-  const vec = opts.vector;
-  endpoint.handle(
-    "vec.upsert",
-    vec
-      ? async (args) => {
-          await vec.upsert(
-            args[0] as string,
-            args[1] as string,
-            args[2] as Record<string, unknown> | undefined,
-          );
-          return null;
-        }
-      : noVec,
-  );
-  endpoint.handle(
-    "vec.query",
-    vec
-      ? (args) =>
-          vec.query(args[0] as string, args[1] as number | undefined, args[2] as string | undefined)
-      : noVec,
-  );
-  endpoint.handle(
-    "vec.remove",
-    vec
-      ? async (args) => {
-          await vec.remove(args[0] as string[]);
-          return null;
-        }
-      : noVec,
-  );
-
-  endpoint.handle("host.createWebSocket", (_args, ports) => {
-    const [url, headersJson] = _args as [string, string];
-    const headers = JSON.parse(headersJson) as Record<string, string>;
-    const port = ports[0];
-    if (!port) throw new Error("No port transferred for WebSocket");
-    opts.createWebSocket(url, headers, port);
-    return null;
+  const workerStub = createRpcSession({
+    port,
+    localMain: hostService,
+    onTransfer(data, ports) {
+      if (!isTransferMessage(data)) return;
+      if (data._t === "createWs") {
+        const transferPort = ports[0];
+        if (!transferPort) throw new Error("No port transferred for WebSocket");
+        const headers = JSON.parse(data.headers) as Record<string, string>;
+        opts.createWebSocket(data.url, headers, transferPort);
+      }
+    },
   });
 
   // Initialize the worker
-  await endpoint.call("worker.init", [opts.env]);
+  await workerStub.init(opts.env);
 
   return {
-    endpoint,
-
     startSession(socket: BridgeableWebSocket, skipGreeting?: boolean): void {
       const { port1, port2 } = new MessageChannel();
       bridgeWebSocketToPort(socket, port1, {
         filterBinary: isValidAudioChunk,
       });
-      endpoint.notify("worker.handleWebSocket", [skipGreeting ?? false], [port2]);
+      sendTransfer(port, { _t: "handleWs", skipGreeting: skipGreeting ?? false }, [port2]);
     },
 
     async fetch(request: Request): Promise<Response> {
-      const result = (await endpoint.call(
-        "worker.fetch",
-        await serializeRequest(request),
-      )) as SerializedResponse;
-      return deserializeResponse(result);
+      const body = request.body ? await request.text() : undefined;
+      const result = await workerStub.workerFetch(
+        request.url,
+        request.method,
+        Object.fromEntries(request.headers),
+        body,
+      );
+      return new Response(result.body, {
+        status: result.status,
+        headers: result.headers,
+      });
     },
   };
 }

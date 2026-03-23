@@ -1,6 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { readFileSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import preact from "@preact/preset-vite";
@@ -33,37 +32,6 @@ export type BundleOutput = {
   /** Size of the worker bundle in bytes. */
   workerBytes: number;
 };
-
-/**
- * Vite plugin that resolves @alexkroman1/aai imports to monorepo source.
- *
- * Reads the "source" condition from the monorepo's package.json exports,
- * so adding a new export automatically works in dev mode.
- */
-function monorepoResolvePlugin(monorepoRoot: string): Plugin {
-  const pkg = JSON.parse(readFileSync(path.join(monorepoRoot, "package.json"), "utf-8"));
-  const sourceMap = new Map<string, string>();
-
-  for (const [subpath, entry] of Object.entries(pkg.exports as Record<string, unknown>)) {
-    if (typeof entry === "string") {
-      // Plain string export (e.g. "./ui/styles.css": "./ui/styles.css")
-      const specifier = `${pkg.name}/${subpath.slice(2)}`;
-      sourceMap.set(specifier, path.resolve(monorepoRoot, entry));
-    } else if (entry && typeof entry === "object" && "source" in entry) {
-      const source = (entry as Record<string, string>).source;
-      if (!source) continue;
-      const specifier = subpath === "." ? pkg.name : `${pkg.name}/${subpath.slice(2)}`;
-      sourceMap.set(specifier, path.resolve(monorepoRoot, source));
-    }
-  }
-
-  return {
-    name: "aai-monorepo-resolve",
-    resolveId(source) {
-      return sourceMap.get(source) ?? null;
-    },
-  };
-}
 
 /** Vite plugin that provides a virtual worker entry module (no file on disk). */
 function workerEntryPlugin(): Plugin {
@@ -122,6 +90,11 @@ export async function bundleAgent(
   const buildDir = path.join(aaiDir, "build");
   const clientDir = path.join(aaiDir, "client");
 
+  // In dev mode, resolve "source" condition from package.json exports
+  // so builds use monorepo .ts source instead of published dist.
+  const devMode = isDevMode();
+  const devResolve = devMode ? { conditions: ["source"] } : {};
+
   // 1. Worker build — bundles agent.ts + worker shim into a single ESM file
   try {
     await build({
@@ -129,6 +102,7 @@ export async function bundleAgent(
       root: agent.dir,
       logLevel: "warn",
       plugins: [workerEntryPlugin()],
+      resolve: devResolve,
       build: {
         rollupOptions: {
           input: "virtual:worker-entry",
@@ -148,22 +122,16 @@ export async function bundleAgent(
   const skipClient = opts?.skipClient || !agent.clientEntry;
 
   if (!skipClient) {
-    const devMode = isDevMode();
-    const devPlugins: Plugin[] = [];
-    if (devMode) {
-      const monorepoRoot = path.resolve(import.meta.dirname ?? __dirname, "..");
-      devPlugins.push(monorepoResolvePlugin(monorepoRoot));
-    }
-
     try {
       await build({
         root: agent.dir,
         base: "./",
         logLevel: "warn",
-        plugins: [preact(), tailwindcss(), ...devPlugins],
-        ...(devMode && {
-          resolve: { dedupe: ["preact", "@preact/signals"] },
-        }),
+        plugins: [preact(), tailwindcss()],
+        resolve: {
+          ...devResolve,
+          ...(devMode && { dedupe: ["preact", "@preact/signals"] }),
+        },
         build: {
           outDir: clientDir,
           emptyOutDir: true,

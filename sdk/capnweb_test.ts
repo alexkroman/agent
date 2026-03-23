@@ -1,12 +1,12 @@
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import {
   BridgedWebSocket,
-  CapnwebEndpoint,
-  type CapnwebPort,
-  deserializeRequest,
-  deserializeResponse,
-  serializeRequest,
-  serializeResponse,
+  createRpcSession,
+  isTransferMessage,
+  RpcTarget,
+  sendTransfer,
+  type WorkerPort,
+  WorkerPortTransport,
 } from "./capnweb.ts";
 
 // ─── Polyfills for Node (CloseEvent / ErrorEvent) ───────────────────────────
@@ -37,204 +37,203 @@ if (typeof globalThis.ErrorEvent === "undefined") {
   };
 }
 
-// ─── Mock MessagePort pair ──────────────────────────────────────────────────
+// ─── Mock WorkerPort pair ────────────────────────────────────────────────────
 
-function createMockChannel(): { port1: CapnwebPort; port2: CapnwebPort } {
-  const port1: CapnwebPort = {
-    onmessage: null,
+function createMockPortPair(): { port1: WorkerPort; port2: WorkerPort } {
+  type Listener = (ev: MessageEvent) => void;
+  const listeners1: Listener[] = [];
+  const listeners2: Listener[] = [];
+
+  const port1: WorkerPort = {
+    addEventListener(_type: string, listener: (ev: MessageEvent) => void) {
+      listeners1.push(listener);
+    },
     postMessage(msg: unknown, transfer?: Transferable[]) {
-      setTimeout(
-        () =>
-          port2.onmessage?.({
-            data: msg,
-            ports: (transfer?.filter((t) => t instanceof MessagePort) ?? []) as MessagePort[],
-          } as unknown as MessageEvent),
-        0,
-      );
+      const ports = (transfer?.filter((t) => "postMessage" in t) ?? []) as MessagePort[];
+      setTimeout(() => {
+        const ev = { data: msg, ports } as unknown as MessageEvent;
+        for (const l of listeners2) l(ev);
+      }, 0);
     },
   };
-  const port2: CapnwebPort = {
-    onmessage: null,
+
+  const port2: WorkerPort = {
+    addEventListener(_type: string, listener: (ev: MessageEvent) => void) {
+      listeners2.push(listener);
+    },
     postMessage(msg: unknown, transfer?: Transferable[]) {
-      setTimeout(
-        () =>
-          port1.onmessage?.({
-            data: msg,
-            ports: (transfer?.filter((t) => t instanceof MessagePort) ?? []) as MessagePort[],
-          } as unknown as MessageEvent),
-        0,
-      );
+      const ports = (transfer?.filter((t) => "postMessage" in t) ?? []) as MessagePort[];
+      setTimeout(() => {
+        const ev = { data: msg, ports } as unknown as MessageEvent;
+        for (const l of listeners1) l(ev);
+      }, 0);
     },
   };
+
   return { port1, port2 };
 }
 
-// ─── CapnwebEndpoint ────────────────────────────────────────────────────────
+// ─── WorkerPortTransport ────────────────────────────────────────────────────
 
-describe("CapnwebEndpoint", () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
+describe("WorkerPortTransport", () => {
+  test("sends and receives string messages", async () => {
+    const { port1, port2 } = createMockPortPair();
+    const t1 = new WorkerPortTransport(port1);
+    const t2 = new WorkerPortTransport(port2);
+
+    const receivePromise = t2.receive();
+    await t1.send("hello");
+    await vi.waitFor(async () => {
+      expect(await receivePromise).toBe("hello");
+    });
   });
-  afterEach(() => {
-    vi.useRealTimers();
+
+  test("queues messages received before receive() is called", async () => {
+    const { port1, port2 } = createMockPortPair();
+    const t1 = new WorkerPortTransport(port1);
+    const t2 = new WorkerPortTransport(port2);
+
+    await t1.send("first");
+    await t1.send("second");
+
+    // Wait for messages to be delivered
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(await t2.receive()).toBe("first");
+    expect(await t2.receive()).toBe("second");
   });
 
-  test("call/handle RPC round-trip", async () => {
-    const { port1, port2 } = createMockChannel();
-    const ep1 = new CapnwebEndpoint(port1);
-    const ep2 = new CapnwebEndpoint(port2);
+  test("forwards non-string messages to onNonRpc callback", async () => {
+    const { port1, port2 } = createMockPortPair();
+    const received: unknown[] = [];
+    new WorkerPortTransport(port1, (data) => received.push(data));
+    // Send an object directly (not through RPC)
+    port2.postMessage({ _t: "test", value: 42 });
 
-    ep2.handle("add", (args) => (args[0] as number) + (args[1] as number));
+    await new Promise((r) => setTimeout(r, 10));
+    expect(received).toEqual([{ _t: "test", value: 42 }]);
+  });
 
-    const promise = ep1.call("add", [3, 4]);
-    await vi.advanceTimersByTimeAsync(10);
-    const result = await promise;
+  test("null message causes receive to reject", async () => {
+    const { port1, port2 } = createMockPortPair();
+    const t1 = new WorkerPortTransport(port1);
+
+    const receivePromise = t1.receive();
+    port2.postMessage(null);
+
+    await expect(vi.waitFor(() => receivePromise)).rejects.toThrow("Peer closed connection.");
+  });
+});
+
+// ─── RPC Session with RpcTarget ─────────────────────────────────────────────
+
+describe("createRpcSession", () => {
+  test("call method on remote RpcTarget", async () => {
+    class Adder extends RpcTarget {
+      add(a: number, b: number) {
+        return a + b;
+      }
+    }
+
+    const { port1, port2 } = createMockPortPair();
+    createRpcSession({ port: port1, localMain: new Adder() });
+    // Port2 needs its own session to talk back
+    const stub2 = createRpcSession({ port: port2 });
+
+    // stub2 calls methods on Adder (which is localMain on port1's session)
+    const result = await stub2.add(3, 4);
     expect(result).toBe(7);
   });
 
-  test("call/handle with async handler", async () => {
-    const { port1, port2 } = createMockChannel();
-    const ep1 = new CapnwebEndpoint(port1);
-    const ep2 = new CapnwebEndpoint(port2);
+  test("bidirectional RPC", async () => {
+    class HostSvc extends RpcTarget {
+      greet(name: string) {
+        return `Hello, ${name}`;
+      }
+    }
 
-    ep2.handle("greet", async (args) => `Hello, ${args[0]}`);
+    class WorkerSvc extends RpcTarget {
+      echo(msg: string) {
+        return msg.toUpperCase();
+      }
+    }
 
-    const promise = ep1.call("greet", ["world"]);
-    await vi.advanceTimersByTimeAsync(10);
-    expect(await promise).toBe("Hello, world");
-  });
-
-  test("notify does not return a response", async () => {
-    const { port1, port2 } = createMockChannel();
-    const ep1 = new CapnwebEndpoint(port1);
-    const ep2 = new CapnwebEndpoint(port2);
-
-    const calls: unknown[][] = [];
-    ep2.handle("log", (args) => {
-      calls.push(args);
+    const { port1, port2 } = createMockPortPair();
+    const workerStub = createRpcSession({
+      port: port1,
+      localMain: new HostSvc(),
+    });
+    const hostStub = createRpcSession({
+      port: port2,
+      localMain: new WorkerSvc(),
     });
 
-    ep1.notify("log", ["info", "test message"]);
-    await vi.advanceTimersByTimeAsync(10);
-    expect(calls).toEqual([["info", "test message"]]);
+    expect(await workerStub.echo("hello")).toBe("HELLO");
+    expect(await hostStub.greet("world")).toBe("Hello, world");
   });
 
-  test("handler error rejects the caller", async () => {
-    const { port1, port2 } = createMockChannel();
-    const ep1 = new CapnwebEndpoint(port1);
-    const ep2 = new CapnwebEndpoint(port2);
+  test("async method on RpcTarget", async () => {
+    class AsyncService extends RpcTarget {
+      async delayedAdd(a: number, b: number) {
+        await new Promise((r) => setTimeout(r, 5));
+        return a + b;
+      }
+    }
 
-    ep2.handle("fail", () => {
-      throw new Error("boom");
-    });
+    const { port1, port2 } = createMockPortPair();
+    createRpcSession({ port: port1, localMain: new AsyncService() });
+    const stub = createRpcSession({ port: port2 });
 
-    const promise = ep1.call("fail", []).catch((e: unknown) => e);
-    await vi.advanceTimersByTimeAsync(10);
-    const err = await promise;
-    expect(err).toBeInstanceOf(Error);
-    expect((err as Error).message).toBe("boom");
+    expect(await stub.delayedAdd(10, 20)).toBe(30);
   });
 
-  test("unknown method rejects the caller", async () => {
-    const { port1, port2 } = createMockChannel();
-    const ep1 = new CapnwebEndpoint(port1);
-    new CapnwebEndpoint(port2); // ep2 with no handlers
+  test("error from remote method rejects the caller", async () => {
+    class FailService extends RpcTarget {
+      fail() {
+        throw new Error("boom");
+      }
+    }
 
-    const promise = ep1.call("missing", []).catch((e: unknown) => e);
-    await vi.advanceTimersByTimeAsync(10);
-    const err = await promise;
-    expect(err).toBeInstanceOf(Error);
-    expect((err as Error).message).toBe("No handler for missing");
-  });
+    const { port1, port2 } = createMockPortPair();
+    createRpcSession({ port: port1, localMain: new FailService() });
+    const stub = createRpcSession({ port: port2 });
 
-  test("non-RPC messages are ignored", async () => {
-    const { port1, port2 } = createMockChannel();
-    const ep1 = new CapnwebEndpoint(port1);
-    const ep2 = new CapnwebEndpoint(port2);
-
-    ep2.handle("echo", (args) => args[0]);
-
-    // Send garbage directly
-    port1.postMessage("not an rpc message");
-    port1.postMessage({ random: true });
-    port1.postMessage(null);
-
-    // Real call still works
-    const promise = ep1.call("echo", [42]);
-    await vi.advanceTimersByTimeAsync(10);
-    expect(await promise).toBe(42);
+    await expect(stub.fail()).rejects.toThrow();
   });
 });
 
-// ─── Serialization round-trips ──────────────────────────────────────────────
+// ─── TransferMessage ────────────────────────────────────────────────────────
 
-describe("serializeRequest / deserializeRequest", () => {
-  test("round-trip GET request without body", async () => {
-    const original = new Request("https://example.com/api", { method: "GET" });
-    const serialized = await serializeRequest(original);
-    const restored = deserializeRequest(serialized);
-
-    expect(restored.url).toBe("https://example.com/api");
-    expect(restored.method).toBe("GET");
-    expect(restored.body).toBeNull();
+describe("isTransferMessage", () => {
+  test("recognizes handleWs messages", () => {
+    expect(isTransferMessage({ _t: "handleWs", skipGreeting: false })).toBe(true);
   });
 
-  test("round-trip POST request with body and headers", async () => {
-    const original = new Request("https://example.com/data", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Custom": "value" },
-      body: JSON.stringify({ key: "value" }),
-    });
-    const serialized = await serializeRequest(original);
-    const restored = deserializeRequest(serialized);
-
-    expect(restored.url).toBe("https://example.com/data");
-    expect(restored.method).toBe("POST");
-    expect(restored.headers.get("content-type")).toBe("application/json");
-    expect(restored.headers.get("x-custom")).toBe("value");
-    expect(await restored.text()).toBe('{"key":"value"}');
+  test("recognizes createWs messages", () => {
+    expect(isTransferMessage({ _t: "createWs", url: "wss://x", headers: "{}" })).toBe(true);
   });
 
-  test("serialized form is a tuple of [url, method, headers, body]", async () => {
-    const req = new Request("https://test.com", { method: "PUT", body: "hello" });
-    const s = await serializeRequest(req);
-    expect(s).toHaveLength(4);
-    expect(s[0]).toBe("https://test.com/");
-    expect(s[1]).toBe("PUT");
-    expect(typeof s[2]).toBe("object");
-    expect(s[3]).toBe("hello");
+  test("rejects non-transfer objects", () => {
+    expect(isTransferMessage({ k: 0, d: "test" })).toBe(false);
+    expect(isTransferMessage("string")).toBe(false);
+    expect(isTransferMessage(null)).toBe(false);
+    expect(isTransferMessage(42)).toBe(false);
   });
 });
 
-describe("serializeResponse / deserializeResponse", () => {
-  test("round-trip 200 response with body", async () => {
-    const original = new Response("OK", {
-      status: 200,
-      headers: { "Content-Type": "text/plain" },
-    });
-    const serialized = await serializeResponse(original);
-    const restored = deserializeResponse(serialized);
+describe("sendTransfer", () => {
+  test("sends message with transfer list", () => {
+    const sent: { msg: unknown; transfer: Transferable[] }[] = [];
+    const port: WorkerPort = {
+      addEventListener() {},
+      postMessage(msg: unknown, transfer?: Transferable[]) {
+        sent.push({ msg, transfer: transfer ?? [] });
+      },
+    };
 
-    expect(restored.status).toBe(200);
-    expect(restored.headers.get("content-type")).toBe("text/plain");
-    expect(await restored.text()).toBe("OK");
-  });
-
-  test("round-trip 404 response", async () => {
-    const original = new Response("Not Found", { status: 404 });
-    const serialized = await serializeResponse(original);
-    const restored = deserializeResponse(serialized);
-
-    expect(restored.status).toBe(404);
-    expect(await restored.text()).toBe("Not Found");
-  });
-
-  test("serialized form has status, headers, body", async () => {
-    const resp = new Response("test", { status: 201, headers: { "X-Id": "1" } });
-    const s = await serializeResponse(resp);
-    expect(s.status).toBe(201);
-    expect(s.headers["x-id"]).toBe("1");
-    expect(s.body).toBe("test");
+    sendTransfer(port, { _t: "handleWs", skipGreeting: true }, []);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.msg).toEqual({ _t: "handleWs", skipGreeting: true });
   });
 });
 
@@ -242,11 +241,11 @@ describe("serializeResponse / deserializeResponse", () => {
 
 describe("BridgedWebSocket", () => {
   function createMockPort() {
-    const sent: { msg: unknown; transfer?: Transferable[] | undefined }[] = [];
+    const sent: { msg: unknown; transfer: Transferable[] }[] = [];
     const port: MessagePort = {
       onmessage: null,
       postMessage(msg: unknown, transfer?: Transferable[]) {
-        sent.push({ msg, transfer });
+        sent.push({ msg, transfer: transfer ?? [] });
       },
     } as unknown as MessagePort;
     return { port, sent };

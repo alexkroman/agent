@@ -9,4 +9,10 @@ describe("_startDevServer", () => {
       await expect(_startDevServer(dir, 3000, () => {})).rejects.toThrow("No agent found");
     });
   });
+
+  test("error message suggests aai init", async () => {
+    await withTempDir(async (dir) => {
+      await expect(_startDevServer(dir, 3000, () => {})).rejects.toThrow("aai init");
+    });
+  });
 });

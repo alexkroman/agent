@@ -168,10 +168,14 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
     // Send config immediately — zero RTT
     ws.send(JSON.stringify({ type: "config", ...opts.readyConfig }));
 
-    void session.start().catch((err: unknown) => {
-      log.error("Session start failed", { ...ctx, sid, error: errorMessage(err) });
-    });
-    log.info("Session ready", { ...ctx, sid });
+    session
+      .start()
+      .then(() => {
+        log.info("Session ready", { ...ctx, sid });
+      })
+      .catch((err: unknown) => {
+        log.error("Session start failed", { ...ctx, sid, error: errorMessage(err) });
+      });
   }
 
   // readyState 1 = OPEN — socket already open (e.g. from ws handleUpgrade)
