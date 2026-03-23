@@ -105,11 +105,10 @@ export function initWorker(agent: AgentDef): void {
   const kv: Kv = {
     async get<T = unknown>(key: string): Promise<T | null> {
       const raw = await hostStub.kvGet(key);
-      if (raw === null || raw === undefined) return null;
-      return raw as T;
+      return raw == null ? null : (raw as T);
     },
     async set(key: string, value: unknown, options?: { expireIn?: number }): Promise<void> {
-      await hostStub.kvSet(key, value, options?.expireIn);
+      await hostStub.kvSet(key, value, options);
     },
     async delete(key: string): Promise<void> {
       await hostStub.kvDel(key);
@@ -118,10 +117,7 @@ export function initWorker(agent: AgentDef): void {
       prefix: string,
       options?: { limit?: number; reverse?: boolean },
     ): Promise<{ key: string; value: T }[]> {
-      return (await hostStub.kvList(prefix, options?.limit, options?.reverse)) as {
-        key: string;
-        value: T;
-      }[];
+      return (await hostStub.kvList(prefix, options)) as { key: string; value: T }[];
     },
   };
 
@@ -134,11 +130,10 @@ export function initWorker(agent: AgentDef): void {
       text: string,
       options?: { topK?: number; filter?: string },
     ): Promise<VectorEntry[]> {
-      return (await hostStub.vecQuery(text, options?.topK, options?.filter)) as VectorEntry[];
+      return (await hostStub.vecQuery(text, options)) as VectorEntry[];
     },
     async remove(ids: string | string[]): Promise<void> {
-      const idArray = Array.isArray(ids) ? ids : [ids];
-      await hostStub.vecRemove(idArray);
+      await hostStub.vecRemove(Array.isArray(ids) ? ids : [ids]);
     },
   };
 

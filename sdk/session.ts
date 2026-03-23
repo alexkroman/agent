@@ -107,7 +107,6 @@ export function createS2sSession(opts: SessionOptions): Session {
   }));
   let s2s: S2sHandle | null = null;
   const sessionAbort = new AbortController();
-  let audioReady = false;
   let toolCallCount = 0;
   let turnPromise: Promise<void> | null = null;
   let conversationMessages: Message[] = [];
@@ -222,6 +221,94 @@ export function createS2sSession(opts: SessionOptions): Session {
     target.addEventListener(event, handler as EventListener);
   }
 
+  /** Wire all S2S events to the client sink, hooks, and session state. */
+  function setupListeners(handle: S2sHandle): void {
+    on<{ session_id: string }>(handle, "ready", (e) => {
+      s2sSessionId = e.detail.session_id;
+      log.info("S2S session ready", { session_id: s2sSessionId });
+    });
+
+    on<undefined>(handle, "session_expired", () => {
+      log.info("S2S session expired, reconnecting fresh");
+      s2sSessionId = null;
+      handle.close();
+    });
+
+    // Simple event forwarding
+    for (const type of ["speech_started", "speech_stopped"] as const) {
+      handle.addEventListener(type, () => client.event({ type }));
+    }
+
+    on<{ text: string }>(handle, "user_transcript_delta", (e) => {
+      client.event({ type: "transcript", text: e.detail.text, isFinal: false });
+    });
+
+    on<{ item_id: string; text: string }>(handle, "user_transcript", (e) => {
+      const { text } = e.detail;
+      log.info("S2S user transcript", { text });
+      client.event({ type: "transcript", text, isFinal: true });
+      client.event({ type: "turn", text });
+      conversationMessages.push({ role: "user", content: text });
+      invokeHook("onTurn", text);
+    });
+
+    handle.addEventListener("reply_started", () => {
+      toolCallCount = 0;
+    });
+
+    on<{ audio: Uint8Array }>(handle, "audio", (e) => {
+      client.playAudioChunk(e.detail.audio);
+    });
+
+    on<{ text: string }>(handle, "agent_transcript_delta", (e) => {
+      client.event({ type: "chat_delta", text: e.detail.text });
+    });
+
+    on<{ text: string }>(handle, "agent_transcript", (e) => {
+      const { text } = e.detail;
+      client.event({ type: "chat", text });
+      conversationMessages.push({ role: "assistant", content: text });
+    });
+
+    on<S2sToolCall>(handle, "tool_call", (e) => {
+      const p = handleToolCall(e.detail).catch((err: unknown) => {
+        log.error("Tool call handler failed", { err: errorMessage(err) });
+      });
+      turnPromise = (turnPromise ?? Promise.resolve()).then(() => p);
+    });
+
+    on<{ status?: string }>(handle, "reply_done", (e) => {
+      if (e.detail.status === "interrupted") {
+        log.info("S2S reply interrupted (barge-in)");
+        pendingTools = [];
+        client.event({ type: "cancelled" });
+      } else if (pendingTools.length > 0) {
+        for (const tool of pendingTools) s2s?.sendToolResult(tool.call_id, tool.result);
+        pendingTools = [];
+      } else {
+        client.playAudioDone();
+        client.event({ type: "tts_done" });
+      }
+    });
+
+    on<{ code: string; message: string }>(handle, "error", (e) => {
+      log.error("S2S error", { code: e.detail.code, message: e.detail.message });
+      client.event({ type: "error", code: "internal", message: e.detail.message });
+      handle.close();
+    });
+
+    handle.addEventListener("close", () => {
+      log.info("S2S closed");
+      s2s = null;
+      if (!sessionAbort.signal.aborted) {
+        log.info("Attempting S2S reconnect");
+        connectAndSetup().catch((err: unknown) => {
+          log.error("S2S reconnect failed", { error: errorMessage(err) });
+        });
+      }
+    });
+  }
+
   async function connectAndSetup(): Promise<void> {
     if (connecting) {
       pendingReconnect = true;
@@ -236,121 +323,13 @@ export function createS2sSession(opts: SessionOptions): Session {
         logger: log,
       });
 
-      // Register all event listeners BEFORE sending any messages to avoid
-      // a race where the server responds before listeners are attached.
-      on<{ session_id: string }>(handle, "ready", (e) => {
-        s2sSessionId = e.detail.session_id;
-        log.info("S2S session ready", { session_id: s2sSessionId });
-      });
+      // Register all listeners BEFORE sending messages to avoid races.
+      setupListeners(handle);
 
-      on<undefined>(handle, "session_expired", () => {
-        log.info("S2S session expired, reconnecting fresh");
-        s2sSessionId = null;
-        handle.close();
-      });
-
-      handle.addEventListener("speech_started", () => {
-        client.event({ type: "speech_started" });
-      });
-
-      handle.addEventListener("speech_stopped", () => {
-        client.event({ type: "speech_stopped" });
-      });
-
-      on<{ text: string }>(handle, "user_transcript_delta", (e) => {
-        client.event({
-          type: "transcript",
-          text: e.detail.text,
-          isFinal: false,
-        });
-      });
-
-      on<{ item_id: string; text: string }>(handle, "user_transcript", (e) => {
-        const { text } = e.detail;
-        log.info("S2S user transcript", { text });
-        client.event({ type: "transcript", text, isFinal: true });
-        client.event({ type: "turn", text });
-        conversationMessages.push({ role: "user", content: text });
-        invokeHook("onTurn", text);
-      });
-
-      handle.addEventListener("reply_started", () => {
-        toolCallCount = 0;
-      });
-
-      on<{ audio: Uint8Array }>(handle, "audio", (e) => {
-        client.playAudioChunk(e.detail.audio);
-      });
-
-      on<{ text: string }>(handle, "agent_transcript_delta", (e) => {
-        client.event({ type: "chat_delta", text: e.detail.text });
-      });
-
-      on<{ text: string }>(handle, "agent_transcript", (e) => {
-        const { text } = e.detail;
-        client.event({ type: "chat", text });
-        conversationMessages.push({ role: "assistant", content: text });
-      });
-
-      on<S2sToolCall>(handle, "tool_call", (e) => {
-        const p = handleToolCall(e.detail).catch((err: unknown) => {
-          log.error("Tool call handler failed", { err: errorMessage(err) });
-        });
-        turnPromise = (turnPromise ?? Promise.resolve()).then(() => p);
-      });
-
-      on<{ status?: string }>(handle, "reply_done", (e) => {
-        if (e.detail.status === "interrupted") {
-          log.info("S2S reply interrupted (barge-in)");
-          // Discard pending tool results on interruption.
-          pendingTools = [];
-          client.event({ type: "cancelled" });
-        } else if (pendingTools.length > 0) {
-          // Send all accumulated tool results after reply.done.
-          for (const tool of pendingTools) {
-            s2s?.sendToolResult(tool.call_id, tool.result);
-          }
-          pendingTools = [];
-        } else {
-          client.playAudioDone();
-          client.event({ type: "tts_done" });
-        }
-      });
-
-      on<{ code: string; message: string }>(handle, "error", (e) => {
-        log.error("S2S error", {
-          code: e.detail.code,
-          message: e.detail.message,
-        });
-        client.event({
-          type: "error",
-          code: "internal",
-          message: e.detail.message,
-        });
-        // Close the S2S connection on error to prevent repeated error floods.
-        handle.close();
-      });
-
-      handle.addEventListener("close", () => {
-        log.info("S2S closed");
-        s2s = null;
-        if (!sessionAbort.signal.aborted) {
-          log.info("Attempting S2S reconnect");
-          connectAndSetup().catch((err: unknown) => {
-            log.error("S2S reconnect failed", { error: errorMessage(err) });
-          });
-        }
-      });
-
-      // Now that all listeners are registered, send the initial message.
       if (s2sSessionId) {
-        // Reconnect: resume existing session — server already has config.
-        log.info("Attempting S2S session resume", {
-          session_id: s2sSessionId,
-        });
+        log.info("Attempting S2S session resume", { session_id: s2sSessionId });
         handle.resumeSession(s2sSessionId);
       } else {
-        // Initial connect: send config with greeting.
         handle.updateSession({
           system_prompt: systemPrompt,
           tools: s2sTools,
@@ -396,9 +375,7 @@ export function createS2sSession(opts: SessionOptions): Session {
     },
 
     onAudioReady(): void {
-      if (audioReady) return;
-      audioReady = true;
-      // Greeting audio + transcript come from S2S automatically.
+      // S2S mode: greeting audio comes from S2S automatically. No-op.
     },
 
     onCancel(): void {

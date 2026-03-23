@@ -17,7 +17,8 @@ import {
   sendTransfer,
   type WorkerPort,
 } from "./capnweb.ts";
-import type { VectorEntry } from "./vector.ts";
+import type { Kv, KvListOptions } from "./kv.ts";
+import type { VectorStore } from "./vector.ts";
 
 // ─── Audio validation (applied at the host transport layer) ─────────────────
 
@@ -31,27 +32,21 @@ function isValidAudioChunk(data: ArrayBuffer): boolean {
   );
 }
 
-// ─── Host-side operation interfaces ─────────────────────────────────────────
+// ─── Shared types ───────────────────────────────────────────────────────────
 
-/** KV operations the host provides to sandboxed workers. */
-export type HostKvOps = {
-  get(key: string): Promise<unknown>;
-  set(key: string, value: unknown, expireIn?: number): Promise<void>;
-  del(key: string): Promise<void>;
-  list(
-    prefix: string,
-    limit?: number,
-    reverse?: boolean,
-  ): Promise<{ key: string; value: unknown }[]>;
-  keys?(pattern?: string): Promise<string[]>;
-};
+/** Serialized fetch response for RPC transport. */
+export type FetchResult = { status: number; headers: Record<string, string>; body: string };
 
-/** Vector operations the host provides to sandboxed workers. */
-export type HostVectorOps = {
-  upsert(id: string, data: string, metadata?: Record<string, unknown>): Promise<void>;
-  query(text: string, topK?: number, filter?: string): Promise<VectorEntry[]>;
-  remove(ids: string[]): Promise<void>;
-};
+/** Fetch function signature for host→worker RPC. */
+export type HostFetchFn = (
+  url: string,
+  method: string,
+  headers: Record<string, string>,
+  body?: string,
+) => Promise<FetchResult>;
+
+/** Kv with optional key-listing support. */
+export type KvWithKeys = Kv & { keys?(pattern?: string): Promise<string[]> };
 
 /**
  * Execute an HTTP fetch on behalf of the sandboxed worker.
@@ -65,7 +60,7 @@ export async function defaultHostFetch(
   method: string,
   headers: Record<string, string>,
   body?: string,
-): Promise<{ status: number; headers: Record<string, string>; body: string }> {
+): Promise<FetchResult> {
   const response = await fetch(new Request(url, { method, headers, ...(body ? { body } : {}) }));
   return {
     status: response.status,
@@ -76,93 +71,68 @@ export async function defaultHostFetch(
 
 // ─── Host RPC service ────────────────────────────────────────────────────────
 
-/** Serialized fetch response for RPC transport. */
-export type FetchResult = { status: number; headers: Record<string, string>; body: string };
+/** Convert a void promise to null (capnweb RPC requires a return value). */
+async function voidToNull(p: Promise<void>): Promise<null> {
+  await p;
+  return null;
+}
 
 /**
  * RPC service exposed by the host to the sandboxed worker.
  * Methods are callable via capnweb RPC stubs.
  */
 class HostService extends RpcTarget {
-  #kv: HostKvOps;
-  #vec: HostVectorOps | undefined;
-  #fetchFn: (
-    url: string,
-    method: string,
-    headers: Record<string, string>,
-    body?: string,
-  ) => Promise<FetchResult>;
+  #kv: KvWithKeys;
+  #vec: VectorStore | undefined;
+  #fetchFn: HostFetchFn;
 
-  constructor(
-    kv: HostKvOps,
-    vec: HostVectorOps | undefined,
-    fetchFn: (
-      url: string,
-      method: string,
-      headers: Record<string, string>,
-      body?: string,
-    ) => Promise<FetchResult>,
-  ) {
+  constructor(kv: KvWithKeys, vec: VectorStore | undefined, fetchFn: HostFetchFn) {
     super();
     this.#kv = kv;
     this.#vec = vec;
     this.#fetchFn = fetchFn;
   }
 
-  // ─── Fetch ──────────────────────────────────────────────────────────────
-  hostFetch(
-    url: string,
-    method: string,
-    headers: Record<string, string>,
-    body?: string,
-  ): Promise<FetchResult> {
+  hostFetch(url: string, method: string, headers: Record<string, string>, body?: string) {
     return this.#fetchFn(url, method, headers, body);
   }
 
-  // ─── KV ─────────────────────────────────────────────────────────────────
-  kvGet(key: string): Promise<unknown> {
+  kvGet(key: string) {
     return this.#kv.get(key);
   }
 
-  async kvSet(key: string, value: unknown, expireIn?: number): Promise<null> {
-    await this.#kv.set(key, value, expireIn);
-    return null;
+  kvSet(key: string, value: unknown, options?: { expireIn?: number }) {
+    return voidToNull(this.#kv.set(key, value, options));
   }
 
-  async kvDel(key: string): Promise<null> {
-    await this.#kv.del(key);
-    return null;
+  kvDel(key: string) {
+    return voidToNull(this.#kv.delete(key));
   }
 
-  kvList(
-    prefix: string,
-    limit?: number,
-    reverse?: boolean,
-  ): Promise<{ key: string; value: unknown }[]> {
-    return this.#kv.list(prefix, limit, reverse);
+  kvList(prefix: string, options?: KvListOptions) {
+    return this.#kv.list(prefix, options);
   }
 
-  kvKeys(pattern?: string): Promise<string[]> {
+  kvKeys(pattern?: string) {
     if (!this.#kv.keys) throw new Error("keys op not supported");
     return this.#kv.keys(pattern);
   }
 
-  // ─── Vector ─────────────────────────────────────────────────────────────
-  async vecUpsert(id: string, data: string, metadata?: Record<string, unknown>): Promise<null> {
+  #requireVec(): VectorStore {
     if (!this.#vec) throw new Error("Vector store not configured");
-    await this.#vec.upsert(id, data, metadata);
-    return null;
+    return this.#vec;
   }
 
-  async vecQuery(text: string, topK?: number, filter?: string): Promise<VectorEntry[]> {
-    if (!this.#vec) throw new Error("Vector store not configured");
-    return this.#vec.query(text, topK, filter);
+  vecUpsert(id: string, data: string, metadata?: Record<string, unknown>) {
+    return voidToNull(this.#requireVec().upsert(id, data, metadata));
   }
 
-  async vecRemove(ids: string[]): Promise<null> {
-    if (!this.#vec) throw new Error("Vector store not configured");
-    await this.#vec.remove(ids);
-    return null;
+  vecQuery(text: string, options?: { topK?: number; filter?: string }) {
+    return this.#requireVec().query(text, options);
+  }
+
+  vecRemove(ids: string[]) {
+    return voidToNull(this.#requireVec().remove(ids));
   }
 }
 
@@ -173,20 +143,11 @@ export type HostEndpointOptions = {
   /** Environment variables passed to the worker on init. */
   env: Record<string, string>;
   /** KV store operations. */
-  kv: HostKvOps;
+  kv: KvWithKeys;
   /** Vector store operations. Omit if not configured. */
-  vector?: HostVectorOps | undefined;
-  /**
-   * Fetch handler. Receives request components, returns serialized response.
-   * Use {@linkcode defaultHostFetch} as the base and wrap it to add SSRF
-   * checks or other guards.
-   */
-  fetch(
-    url: string,
-    method: string,
-    headers: Record<string, string>,
-    body?: string,
-  ): Promise<FetchResult>;
+  vector?: VectorStore | undefined;
+  /** Fetch handler. Use {@linkcode defaultHostFetch} as the base. */
+  fetch: HostFetchFn;
   /** Called when the worker requests an S2S WebSocket connection. */
   createWebSocket(url: string, headers: Record<string, string>, port: MessagePort): void;
 };
