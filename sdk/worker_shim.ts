@@ -3,24 +3,20 @@
  * Sandboxed worker entry point for platform mode.
  *
  * Called from the bundled `worker.js` inside a Deno Worker with all
- * permissions false. Monkeypatches `globalThis.fetch` to proxy through
- * capnweb RPC, creates capnweb-backed KV/vector/WebSocket, and delegates
- * to a {@linkcode WintercServer} for session management.
+ * permissions false. Sets up capnweb RPC to proxy capabilities through
+ * the host, and delegates to a {@linkcode WintercServer} for session
+ * management.
  *
  * @module
  */
 
-import { z } from "zod";
 import {
   BridgedWebSocket,
-  CapnwebEndpoint,
-  type CapnwebPort,
-  deserializeRequest,
-  deserializeResponse,
-  type SerializedResponse,
-  SerializedResponseSchema,
-  serializeRequest,
-  serializeResponse,
+  createRpcSession,
+  isTransferMessage,
+  RpcTarget,
+  sendTransfer,
+  type WorkerPort,
 } from "./capnweb.ts";
 import type { Kv } from "./kv.ts";
 import type { CreateS2sWebSocket } from "./s2s.ts";
@@ -28,59 +24,101 @@ import type { AgentDef } from "./types.ts";
 import type { VectorEntry, VectorStore } from "./vector.ts";
 import { createWintercServer, type WintercServer } from "./winterc_server.ts";
 
-// ─── Zod schemas for RPC results ────────────────────────────────────────────
+declare const self: WorkerPort;
 
-const WorkerInitArgsSchema = z.tuple([z.record(z.string(), z.string())]);
+/**
+ * RPC service exposed by the worker to the host.
+ * Methods are callable via capnweb RPC stubs.
+ */
+class WorkerService extends RpcTarget {
+  #agent: AgentDef;
+  #kv: Kv;
+  #vector: VectorStore;
+  #vectorSearch: ((query: string, topK: number) => Promise<string>) | undefined;
+  #createWebSocket: CreateS2sWebSocket;
+  #wintercServer: WintercServer | null = null;
 
-const WorkerFetchArgsSchema = z.tuple([
-  z.string(),
-  z.string(),
-  z.record(z.string(), z.string()),
-  z.string().optional(),
-]);
+  constructor(
+    agent: AgentDef,
+    kv: Kv,
+    vector: VectorStore,
+    vectorSearch: ((query: string, topK: number) => Promise<string>) | undefined,
+    createWebSocket: CreateS2sWebSocket,
+  ) {
+    super();
+    this.#agent = agent;
+    this.#kv = kv;
+    this.#vector = vector;
+    this.#vectorSearch = vectorSearch;
+    this.#createWebSocket = createWebSocket;
+  }
 
-const WorkerWsArgsSchema = z.tuple([z.boolean().optional()]);
+  /** Initialize the worker with environment variables. Creates the WinterTC server. */
+  init(env: Record<string, string>): string {
+    this.#wintercServer = createWintercServer({
+      agent: this.#agent,
+      env,
+      kv: this.#kv,
+      vector: this.#vector,
+      vectorSearch: this.#vectorSearch,
+      createWebSocket: this.#createWebSocket,
+    });
+    return "ok";
+  }
 
-declare const self: {
-  postMessage(msg: unknown, transfer?: Transferable[]): void;
-  onmessage: ((ev: MessageEvent) => void) | null;
-};
+  /** Handle an HTTP request forwarded from the host. */
+  async workerFetch(
+    url: string,
+    method: string,
+    headers: Record<string, string>,
+    body?: string,
+  ): Promise<{ status: number; headers: Record<string, string>; body: string }> {
+    if (!this.#wintercServer) throw new Error("Worker not initialized");
+    const request = new Request(url, { method, headers, ...(body ? { body } : {}) });
+    const response = await this.#wintercServer.fetch(request);
+    return {
+      status: response.status,
+      headers: Object.fromEntries(response.headers),
+      body: await response.text(),
+    };
+  }
+
+  /** Handle a new WebSocket client connection (called via port transfer, not RPC). */
+  handleWebSocket(port: MessagePort, skipGreeting: boolean): void {
+    if (!this.#wintercServer) throw new Error("Worker not initialized");
+    const ws = new BridgedWebSocket(port);
+    this.#wintercServer.handleWebSocket(ws, { skipGreeting });
+  }
+}
 
 /**
  * Initialize a sandboxed worker with the given agent definition.
  *
- * Sets up capnweb RPC, monkeypatches fetch, creates capability stubs,
- * and waits for the host to send initialization data before creating
- * the WinterTC server.
+ * Sets up capnweb RPC, creates capability stubs backed by the host,
+ * and waits for initialization before creating the WinterTC server.
  */
 export function initWorker(agent: AgentDef): void {
-  const endpoint = new CapnwebEndpoint(self as CapnwebPort);
-
-  // ─── Monkeypatch fetch to proxy through host ────────────────────────────
-  globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    const serialized = await serializeRequest(new Request(input, init));
-    const raw = await endpoint.call("host.fetch", serialized);
-    return deserializeResponse(SerializedResponseSchema.parse(raw) as SerializedResponse);
-  };
+  // biome-ignore lint/suspicious/noExplicitAny: capnweb stubs are dynamically typed proxies
+  let hostStub: any;
 
   // ─── Capnweb-backed KV ─────────────────────────────────────────────────
   const kv: Kv = {
     async get<T = unknown>(key: string): Promise<T | null> {
-      const raw = await endpoint.call("kv.get", [key]);
+      const raw = await hostStub.kvGet(key);
       if (raw === null || raw === undefined) return null;
       return raw as T;
     },
     async set(key: string, value: unknown, options?: { expireIn?: number }): Promise<void> {
-      await endpoint.call("kv.set", [key, value, options?.expireIn]);
+      await hostStub.kvSet(key, value, options?.expireIn);
     },
     async delete(key: string): Promise<void> {
-      await endpoint.call("kv.del", [key]);
+      await hostStub.kvDel(key);
     },
     async list<T = unknown>(
       prefix: string,
       options?: { limit?: number; reverse?: boolean },
     ): Promise<{ key: string; value: T }[]> {
-      return (await endpoint.call("kv.list", [prefix, options?.limit, options?.reverse])) as {
+      return (await hostStub.kvList(prefix, options?.limit, options?.reverse)) as {
         key: string;
         value: T;
       }[];
@@ -90,21 +128,17 @@ export function initWorker(agent: AgentDef): void {
   // ─── Capnweb-backed vector store ───────────────────────────────────────
   const vector: VectorStore = {
     async upsert(id: string, data: string, metadata?: Record<string, unknown>): Promise<void> {
-      await endpoint.call("vec.upsert", [id, data, metadata]);
+      await hostStub.vecUpsert(id, data, metadata);
     },
     async query(
       text: string,
       options?: { topK?: number; filter?: string },
     ): Promise<VectorEntry[]> {
-      return (await endpoint.call("vec.query", [
-        text,
-        options?.topK,
-        options?.filter,
-      ])) as VectorEntry[];
+      return (await hostStub.vecQuery(text, options?.topK, options?.filter)) as VectorEntry[];
     },
     async remove(ids: string | string[]): Promise<void> {
       const idArray = Array.isArray(ids) ? ids : [ids];
-      await endpoint.call("vec.remove", [idArray]);
+      await hostStub.vecRemove(idArray);
     },
   };
 
@@ -119,47 +153,39 @@ export function initWorker(agent: AgentDef): void {
   // ─── Capnweb-backed S2S WebSocket factory ──────────────────────────────
   const createWebSocket: CreateS2sWebSocket = (url, opts) => {
     const { port1, port2 } = new MessageChannel();
-    endpoint.notify("host.createWebSocket", [url, JSON.stringify(opts.headers)], [port2]);
+    sendTransfer(self, { _t: "createWs", url, headers: JSON.stringify(opts.headers) }, [port2]);
     return new BridgedWebSocket(port1);
   };
 
-  // ─── RPC handlers ──────────────────────────────────────────────────────
-
-  let wintercServer: WintercServer | null = null;
-
-  // Handle init from host — creates the WinterTC server
-  endpoint.handle("worker.init", (args) => {
-    const [env] = WorkerInitArgsSchema.parse(args);
-
-    wintercServer = createWintercServer({
-      agent,
-      env,
-      kv,
-      vector,
-      vectorSearch,
-      createWebSocket,
+  // ─── Monkeypatch fetch to proxy through host ──────────────────────────
+  globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    const request = new Request(input, init);
+    const body = request.body ? await request.text() : undefined;
+    const result = await hostStub.hostFetch(
+      request.url,
+      request.method,
+      Object.fromEntries(request.headers),
+      body,
+    );
+    return new Response(result.body, {
+      status: result.status,
+      headers: result.headers,
     });
+  };
 
-    return "ok";
-  });
+  // ─── Create worker service and RPC session ────────────────────────────
+  const workerService = new WorkerService(agent, kv, vector, vectorSearch, createWebSocket);
 
-  // Handle HTTP request forwarding
-  endpoint.handle("worker.fetch", async (args) => {
-    if (!wintercServer) throw new Error("Worker not initialized");
-    const [url, method, headers, body] = WorkerFetchArgsSchema.parse(args);
-    const request = deserializeRequest([url, method, headers, body]);
-    return await serializeResponse(await wintercServer.fetch(request));
-  });
-
-  // Handle new WebSocket client connection — port transferred from host
-  endpoint.handle("worker.handleWebSocket", (_args, ports) => {
-    if (!wintercServer) throw new Error("Worker not initialized");
-    const [skipGreeting] = WorkerWsArgsSchema.parse(_args);
-    const port = ports[0];
-    if (!port) throw new Error("No port transferred");
-
-    const ws = new BridgedWebSocket(port);
-    wintercServer.handleWebSocket(ws, { skipGreeting: skipGreeting ?? false });
-    return "ok";
+  hostStub = createRpcSession({
+    port: self,
+    localMain: workerService,
+    onTransfer(data, ports) {
+      if (!isTransferMessage(data)) return;
+      if (data._t === "handleWs") {
+        const transferPort = ports[0];
+        if (!transferPort) throw new Error("No port transferred for WebSocket");
+        workerService.handleWebSocket(transferPort, data.skipGreeting);
+      }
+    },
   });
 }

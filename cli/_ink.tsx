@@ -205,5 +205,5 @@ export async function runWithInk(fn: (helpers: RunHelpers) => Promise<void>): Pr
     />,
   );
   await app.waitUntilExit();
-  if (thrownError) process.exit(1);
+  if (thrownError) throw thrownError;
 }

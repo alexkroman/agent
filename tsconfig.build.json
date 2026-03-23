@@ -3,6 +3,7 @@
   "compilerOptions": {
     "outDir": "dist",
     "noEmit": false,
+    "incremental": false,
     "rewriteRelativeImportExtensions": true
   },
   "include": ["sdk/**/*.ts", "ui/**/*.ts", "ui/**/*.tsx"],

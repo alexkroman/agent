@@ -1,5 +1,4 @@
 // Copyright 2025 the AAI authors. MIT license.
-import { accessSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { humanId } from "human-id";
@@ -17,22 +16,10 @@ export function resolveCwd(): string {
  * @param script - Override the script path (defaults to process.argv[1]).
  */
 export function isDevMode(script?: string): boolean {
-  // Dev mode when running raw TS source (via tsx) OR when running the
-  // built dist/aai.js directly from the monorepo (e.g. via aai-dev alias).
+  // Dev mode when running raw TS source via tsx (aai-dev alias).
+  // Published users run dist/aai.js via npm bin — that's not dev mode.
   script ??= process.argv[1] ?? "";
-  if (script.endsWith(".ts") || script.endsWith(".tsx")) return true;
-  // Check if running from the monorepo dist/ (not a global npm install)
-  if (script.includes("/dist/") && !script.includes("node_modules")) {
-    const dir = path.dirname(path.dirname(script));
-    try {
-      accessSync(path.join(dir, "sdk"));
-      accessSync(path.join(dir, "cli"));
-      return true;
-    } catch {
-      return false;
-    }
-  }
-  return false;
+  return script.endsWith(".ts") || script.endsWith(".tsx");
 }
 
 /**
@@ -124,12 +111,12 @@ export async function writeProjectConfig(agentDir: string, data: ProjectConfig):
  * Read project config (throws if missing), resolve API key and server URL.
  * Shared by secret and rag commands.
  */
-export async function getServerInfo(cwd: string, explicitServer?: string) {
+export async function getServerInfo(cwd: string, explicitServer?: string, explicitApiKey?: string) {
   const config = await readProjectConfig(cwd);
   if (!config) {
     throw new Error("No .aai/project.json found — deploy first with `aai deploy`");
   }
-  const apiKey = await getApiKey();
+  const apiKey = explicitApiKey ?? (await getApiKey());
   const serverUrl = resolveServerUrl(explicitServer, config.serverUrl);
   return { serverUrl, slug: config.slug, apiKey };
 }

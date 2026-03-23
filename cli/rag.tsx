@@ -72,7 +72,7 @@ async function runRag(opts: {
   log(<Detail msg={`Agent: ${slug}`} />);
 }
 
-async function chunkPages(
+export async function chunkPages(
   pages: { title: string; body: string }[],
   chunker: { chunk: (text: string) => Promise<{ text: string; tokenCount: number }[]> },
   origin: string,
@@ -100,11 +100,12 @@ async function chunkPages(
   return allChunks;
 }
 
-async function upsertChunks(
+export async function upsertChunks(
   chunks: VectorChunk[],
   vectorUrl: string,
   apiKey: string,
   setStatus: (node: React.ReactNode | null) => void,
+  fetchFn: typeof globalThis.fetch = globalThis.fetch,
 ): Promise<{ upserted: number; errors: number; lastError: string }> {
   const total = chunks.length;
   let completed = 0;
@@ -127,7 +128,7 @@ async function upsertChunks(
     chunks.map((chunk) =>
       limit(async () => {
         try {
-          const r = await fetch(vectorUrl, {
+          const r = await fetchFn(vectorUrl, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",

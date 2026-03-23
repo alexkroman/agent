@@ -135,11 +135,15 @@ export function createS2sSession(opts: SessionOptions): Session {
 
   function invokeHook(hook: keyof HookInvoker, arg?: unknown): void {
     if (!hookInvoker) return;
-    // biome-ignore lint/complexity/noBannedTypes: dynamic hook dispatch
-    const h = hookInvoker[hook as keyof HookInvoker] as Function;
-    Promise.resolve(h.call(hookInvoker, id, arg, HOOK_TIMEOUT_MS)).catch((err: unknown) => {
+    try {
+      // biome-ignore lint/complexity/noBannedTypes: dynamic hook dispatch
+      const h = hookInvoker[hook as keyof HookInvoker] as Function;
+      Promise.resolve(h.call(hookInvoker, id, arg, HOOK_TIMEOUT_MS)).catch((err: unknown) => {
+        log.warn(`${hook} hook failed`, { err: errorMessage(err) });
+      });
+    } catch (err: unknown) {
       log.warn(`${hook} hook failed`, { err: errorMessage(err) });
-    });
+    }
   }
 
   /** Check if a tool call should be refused due to turn config limits. Returns a result string to short-circuit, or null. */

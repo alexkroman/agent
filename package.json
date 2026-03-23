@@ -129,7 +129,9 @@
     "test": "vitest run",
     "lint": "biome check sdk/ ui/ cli/",
     "lint:fix": "biome check --write sdk/ ui/ cli/",
-    "check": "tsc --noEmit && tsc -p cli/tsconfig.json --noEmit && tsc -p tsconfig.build.json --noEmit && tsc -p tsconfig.templates.json && biome check sdk/ ui/ cli/ && markdownlint-cli2 '**/*.md' '#node_modules' '#.aai' && vitest run"
+    "exports": "node scripts/gen-exports.mjs --write",
+    "exports:check": "node scripts/gen-exports.mjs",
+    "check": "concurrently -g -n tsc,tsc:cli,tsc:build,tsc:tpl,biome,mdlint,exports,test \"tsc --noEmit\" \"tsc -p cli/tsconfig.json --noEmit\" \"tsc -p tsconfig.build.json --noEmit\" \"tsc -p tsconfig.templates.json\" \"biome check sdk/ ui/ cli/\" \"markdownlint-cli2 '**/*.md' '#node_modules' '#.aai'\" \"node scripts/gen-exports.mjs\" \"vitest run\""
   },
   "dependencies": {
     "@chonkiejs/core": "^0.0.8",
@@ -139,6 +141,7 @@
     "@preact/signals": "^2.8.2",
     "@tailwindcss/vite": "^4.2.1",
     "@types/json-schema": "^7.0.15",
+    "capnweb": "^0.6.1",
     "chalk": "^5.6.2",
     "clsx": "^2.1.1",
     "commander": "^14.0.3",
@@ -162,6 +165,7 @@
     "@types/react": "^19.2.14",
     "@types/ws": "^8.18.1",
     "@vitest/coverage-v8": "^4.1.0",
+    "concurrently": "^9.2.1",
     "ink-testing-library": "^4.0.0",
     "jsdom": "^29.0.1",
     "linkedom": "^0.18.12",

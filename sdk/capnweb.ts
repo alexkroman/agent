@@ -1,203 +1,160 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * MessagePort RPC + WebSocket bridge for capnweb sandbox communication.
+ * capnweb integration + WebSocket bridge for sandboxed worker communication.
  *
- * Provides bidirectional RPC over MessagePort/Worker and WebSocket
- * bridging over MessagePort for capnweb sandboxed workers.
+ * Provides a custom {@linkcode WorkerPortTransport} that allows capnweb RPC
+ * to share a Worker port with non-RPC messages (port transfers, bridge
+ * protocol), plus WebSocket bridging over MessagePort.
  *
  * @module
  */
 
-import { z } from "zod";
-import { errorMessage } from "./_utils.ts";
+import { RpcSession, type RpcSessionOptions, RpcTarget, type RpcTransport } from "capnweb";
 
-// ─── RPC Wire Types ──────────────────────────────────────────────────────────
+export { RpcSession, type RpcSessionOptions, RpcTarget, type RpcTransport };
 
-/** RPC call message: `{$: 0, id, m, a}`. id = -1 for fire-and-forget. */
-type RpcCall = { $: 0; id: number; m: string; a: unknown[] };
+// ─── Worker Port Transport ──────────────────────────────────────────────────
 
-/** RPC result message: `{$: 1, id, v?, e?}`. */
-type RpcResult = { $: 1; id: number; v?: unknown; e?: string };
-
-/** Discriminated union of all RPC wire messages. */
-type RpcMsg = RpcCall | RpcResult;
-
-/** Type guard: narrows unknown data to {@linkcode RpcCall}. */
-function isRpcCall(obj: Record<string, unknown>): obj is RpcCall {
-  return (
-    obj.$ === 0 && typeof obj.id === "number" && typeof obj.m === "string" && Array.isArray(obj.a)
-  );
-}
-
-/** Type guard: narrows unknown data to {@linkcode RpcResult}. */
-function isRpcResult(obj: Record<string, unknown>): obj is RpcResult {
-  return (
-    obj.$ === 1 && typeof obj.id === "number" && (obj.e === undefined || typeof obj.e === "string")
-  );
-}
-
-/** Narrow an unknown `ev.data` to {@linkcode RpcMsg}, or return `undefined`. */
-function parseRpcMsg(data: unknown): RpcMsg | undefined {
-  if (typeof data !== "object" || data === null || !("$" in data)) return undefined;
-  const obj = data as Record<string, unknown>;
-  if (isRpcCall(obj)) return obj;
-  if (isRpcResult(obj)) return obj;
-  return undefined;
-}
-
-// ─── MessagePort RPC ─────────────────────────────────────────────────────────
-
-/** Minimal port interface for CapnwebEndpoint. Works with Worker, MessagePort, or worker self. */
-export type CapnwebPort = {
+/** Minimal port interface for {@linkcode WorkerPortTransport}. Works with Worker, self, or MessagePort. */
+export type WorkerPort = {
   postMessage(msg: unknown, transfer?: Transferable[]): void;
-  onmessage: ((ev: MessageEvent) => void) | null;
+  addEventListener(type: string, listener: (ev: MessageEvent) => void): void;
 };
 
-/** RPC handler function. Receives call arguments and any transferred ports. */
-export type RpcHandler = (
-  args: unknown[],
-  ports: readonly MessagePort[],
-) => unknown | Promise<unknown>;
+/** Callback for non-RPC messages received on the port (e.g. port transfers). */
+export type NonRpcHandler = (data: unknown, ports: readonly MessagePort[]) => void;
 
 /**
- * Bidirectional RPC endpoint over MessagePort or Worker.
+ * Custom {@linkcode RpcTransport} for capnweb RPC over Worker-like ports.
  *
- * Both sides can send calls and handle incoming calls on the same channel.
+ * capnweb RPC uses string messages. This transport filters incoming messages:
+ * - Strings → queued for RPC
+ * - `null` → peer closed, treated as error
+ * - Anything else → forwarded to the optional `onNonRpc` callback
  *
- * Wire protocol:
- * - Call: `{$: 0, id: number, m: string, a: unknown[]}`
- * - Result: `{$: 1, id: number, v?: unknown, e?: string}`
- * - Notify (fire-and-forget): id = -1, no response sent
+ * This allows RPC and port-transfer messages to coexist on the same channel.
  */
-export class CapnwebEndpoint {
-  private nextId = 1;
-  private pending = new Map<
-    number,
-    { resolve: (v: unknown) => void; reject: (e: Error) => void }
-  >();
-  private handlers = new Map<string, RpcHandler>();
-  private port: CapnwebPort;
+export class WorkerPortTransport implements RpcTransport {
+  #port: WorkerPort;
+  #receiveQueue: string[] = [];
+  #receiveResolver: ((value: string) => void) | undefined;
+  #receiveRejecter: ((reason: Error) => void) | undefined;
+  #error?: Error;
 
-  constructor(port: CapnwebPort) {
-    this.port = port;
-    port.onmessage = (ev: MessageEvent) => this.onMessage(ev);
-  }
-
-  /** Register an RPC handler for incoming calls with the given method name. */
-  handle(method: string, handler: RpcHandler): void {
-    this.handlers.set(method, handler);
-  }
-
-  /** Call a remote method and wait for the result. */
-  call(method: string, args: unknown[], transfer?: Transferable[]): Promise<unknown> {
-    const id = this.nextId++;
-    return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
-      this.send({ $: 0, id, m: method, a: args }, transfer);
+  constructor(port: WorkerPort, onNonRpc?: NonRpcHandler) {
+    this.#port = port;
+    port.addEventListener("message", (ev: MessageEvent) => {
+      if (this.#error) return;
+      if (typeof ev.data === "string") {
+        if (this.#receiveResolver) {
+          this.#receiveResolver(ev.data);
+          this.#receiveResolver = undefined;
+          this.#receiveRejecter = undefined;
+        } else {
+          this.#receiveQueue.push(ev.data);
+        }
+      } else if (ev.data === null) {
+        this.#receivedError(new Error("Peer closed connection."));
+      } else {
+        onNonRpc?.(ev.data, [...(ev.ports ?? [])]);
+      }
     });
   }
 
-  /** Fire-and-forget: call a remote method without waiting for a response. */
-  notify(method: string, args: unknown[], transfer?: Transferable[]): void {
-    this.send({ $: 0, id: -1, m: method, a: args }, transfer);
+  async send(message: string): Promise<void> {
+    if (this.#error) throw this.#error;
+    this.#port.postMessage(message);
   }
 
-  private send(msg: unknown, transfer?: Transferable[]): void {
-    this.port.postMessage(msg, transfer ?? []);
+  async receive(): Promise<string> {
+    if (this.#receiveQueue.length > 0) {
+      // biome-ignore lint/style/noNonNullAssertion: length check above guarantees non-empty
+      return this.#receiveQueue.shift()!;
+    }
+    if (this.#error) throw this.#error;
+    return new Promise((resolve, reject) => {
+      this.#receiveResolver = resolve;
+      this.#receiveRejecter = reject;
+    });
   }
 
-  private onMessage(ev: MessageEvent): void {
-    const msg = parseRpcMsg(ev.data);
-    if (!msg) return;
+  abort(reason: unknown): void {
+    try {
+      this.#port.postMessage(null);
+    } catch {}
+    const err = reason instanceof Error ? reason : new Error(String(reason));
+    if (!this.#error) this.#error = err;
+  }
 
-    if (msg.$ === 0) {
-      // Incoming call
-      const { id, m, a } = msg;
-      const handler = this.handlers.get(m);
-      if (!handler) {
-        if (id >= 0) this.send({ $: 1, id, e: `No handler for ${m}` });
-        return;
-      }
-      const ports = [...ev.ports];
-      Promise.resolve()
-        .then(() => handler(a, ports))
-        .then((v) => {
-          if (id >= 0) this.send({ $: 1, id, v });
-        })
-        .catch((err: unknown) => {
-          if (id >= 0) {
-            this.send({
-              $: 1,
-              id,
-              e: errorMessage(err),
-            });
-          }
-        });
-    } else {
-      // Incoming result
-      const { id, v, e } = msg;
-      const pending = this.pending.get(id);
-      if (!pending) return;
-      this.pending.delete(id);
-      if (e !== undefined) {
-        pending.reject(new Error(e));
-      } else {
-        pending.resolve(v);
+  #receivedError(reason: Error): void {
+    if (!this.#error) {
+      this.#error = reason;
+      if (this.#receiveRejecter) {
+        this.#receiveRejecter(reason);
+        this.#receiveResolver = undefined;
+        this.#receiveRejecter = undefined;
       }
     }
   }
 }
 
-// ─── Request/Response serialization ─────────────────────────────────────────
+// ─── RPC Session Helper ─────────────────────────────────────────────────────
 
-/** Serialized HTTP request tuple for RPC transport. */
-export type SerializedRequest = [
-  url: string,
-  method: string,
-  headers: Record<string, string>,
-  body: string | undefined,
-];
+/** Options for {@linkcode createRpcSession}. */
+export type RpcSessionInit = {
+  /** The Worker-like port to communicate over. */
+  port: WorkerPort;
+  /** Local RPC target to expose to the peer. */
+  localMain?: RpcTarget;
+  /** Callback for non-RPC messages (port transfers). */
+  onTransfer?: NonRpcHandler;
+  /** capnweb session options. */
+  options?: RpcSessionOptions;
+};
 
-/** Zod schema for serialized HTTP responses over RPC. */
-export const SerializedResponseSchema = z.object({
-  status: z.number(),
-  headers: z.record(z.string(), z.string()),
-  body: z.string(),
-});
-
-/** Serialized HTTP response object for RPC transport. */
-export type SerializedResponse = z.infer<typeof SerializedResponseSchema>;
-
-/** Serialize a Request for RPC transport. */
-export async function serializeRequest(request: Request): Promise<SerializedRequest> {
-  return [
-    request.url,
-    request.method,
-    Object.fromEntries(request.headers),
-    request.body ? await request.text() : undefined,
-  ];
+/**
+ * Create a capnweb RPC session over a Worker-like port.
+ *
+ * Returns the remote stub for calling methods on the peer's `localMain`.
+ * Non-RPC messages (objects, not strings) are forwarded to `onTransfer`.
+ */
+// biome-ignore lint/suspicious/noExplicitAny: capnweb stubs are dynamically typed proxies
+export function createRpcSession(init: RpcSessionInit): any {
+  const transport = new WorkerPortTransport(init.port, init.onTransfer);
+  const session = new RpcSession(transport, init.localMain, init.options);
+  return session.getRemoteMain();
 }
 
-/** Reconstruct a Request from its serialized form. */
-export function deserializeRequest([url, method, headers, body]: SerializedRequest): Request {
-  return new Request(url, { method, headers, ...(body ? { body } : {}) });
+// ─── Port Transfer Protocol ─────────────────────────────────────────────────
+
+/**
+ * Transfer message format for port-transfer operations that can't go
+ * through capnweb RPC (which only supports string serialization):
+ *
+ * - `{_t: "handleWs", skipGreeting: boolean}` — host→worker: new client WebSocket
+ * - `{_t: "createWs", url: string, headers: string}` — worker→host: request S2S WebSocket
+ */
+export type TransferMessage =
+  | { _t: "handleWs"; skipGreeting: boolean }
+  | { _t: "createWs"; url: string; headers: string };
+
+/** Type guard for {@linkcode TransferMessage}. */
+export function isTransferMessage(data: unknown): data is TransferMessage {
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    "_t" in data &&
+    typeof (data as { _t: unknown })._t === "string"
+  );
 }
 
-/** Serialize a Response for RPC transport. */
-export async function serializeResponse(response: Response): Promise<SerializedResponse> {
-  return {
-    status: response.status,
-    headers: Object.fromEntries(response.headers),
-    body: await response.text(),
-  };
-}
-
-/** Reconstruct a Response from its serialized form. */
-export function deserializeResponse(result: SerializedResponse): Response {
-  return new Response(result.body, {
-    status: result.status,
-    headers: result.headers,
-  });
+/** Send a port-transfer message with transferred MessagePorts. */
+export function sendTransfer(
+  port: WorkerPort,
+  msg: TransferMessage,
+  transfer: Transferable[],
+): void {
+  port.postMessage(msg, transfer);
 }
 
 // ─── WebSocket Bridge Protocol ───────────────────────────────────────────────
