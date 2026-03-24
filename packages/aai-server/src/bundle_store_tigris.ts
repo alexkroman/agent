@@ -124,8 +124,10 @@ export function createBundleStore(
       return data;
     } catch (err: unknown) {
       const code = (err as { name?: string }).name;
+      const status = (err as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode;
       if (code === "NoSuchKey" || code === "NotFound") return null;
-      if (code === "304" || code === "NotModified") return cached?.data ?? null;
+      // AWS SDK v3 throws Unknown with status 304 for conditional GET responses
+      if (status === 304 || code === "NotModified") return cached?.data ?? null;
       throw err;
     }
   }
