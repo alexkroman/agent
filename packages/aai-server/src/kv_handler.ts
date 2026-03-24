@@ -1,12 +1,12 @@
 // Copyright 2025 the AAI authors. MIT license.
 import type { Context } from "hono";
-import { KvHttpRequestSchema } from "./_schemas.ts";
+import { KvRequestSchema } from "@alexkroman1/aai/protocol";
 import type { Env } from "./context.ts";
 
 export async function handleKv(c: Context<Env>): Promise<Response> {
   const { kvStore } = c.env;
   const scope = c.get("scope");
-  const msg = KvHttpRequestSchema.parse(await c.req.json());
+  const msg = KvRequestSchema.parse(await c.req.json());
 
   try {
     switch (msg.op) {

@@ -8,10 +8,10 @@
     "predev": "node -e \"const v = +process.versions.node.split('.')[0]; if (v < 22 || v >= 25) { console.error('Node 22 required (got ' + process.version + '). Run: fnm use 22'); process.exit(1); }\"",
     "dev": "tsx watch --env-file=.env src/index.ts",
     "start": "node dist/index.js",
-    "build": "tsc -p tsconfig.build.json && tsx build_harness.ts",
+    "build": "tsdown",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
-    "test:integration": "pnpm build && node dist/sandbox_integration.js"
+    "test:integration": "pnpm build && tsx src/sandbox_integration.ts"
   },
   "dependencies": {
     "@alexkroman1/aai": "workspace:*",
@@ -30,8 +30,9 @@
   "devDependencies": {
     "@types/mime-types": "^3.0.1",
     "@types/ws": "^8.18.1",
-    "tsx": "^4.19.4",
-    "vite": "^6.3.5"
+    "tsdown": "^0.21.4",
+    "tsdown": "^0.12.5",
+    "tsx": "^4.19.4"
   },
   "engines": {
     "node": ">=22 <25"

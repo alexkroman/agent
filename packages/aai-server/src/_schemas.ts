@@ -2,7 +2,6 @@
 // Zod schemas -- validate untrusted input at HTTP/WebSocket boundaries.
 
 import { posix } from "node:path";
-import { type KvRequest, KvRequestSchema } from "@alexkroman1/aai/protocol";
 import { z } from "zod";
 
 /**
@@ -33,21 +32,13 @@ export const EnvSchema = z
   })
   .catchall(z.string());
 
-export type AgentMetadata = {
-  slug: string;
-  env: Record<string, string>;
-  credential_hashes: string[];
-};
-
-export const AgentMetadataSchema: z.ZodType<AgentMetadata> = z.object({
+export const AgentMetadataSchema = z.object({
   slug: z.string(),
   env: z.record(z.string(), z.string()).default({}),
   credential_hashes: z.array(z.string()).default([]),
 });
 
-// KV
-export type KvHttpRequest = KvRequest;
-export const KvHttpRequestSchema: z.ZodType<KvHttpRequest> = KvRequestSchema;
+export type AgentMetadata = z.infer<typeof AgentMetadataSchema>;
 
 // Vector
 export const VectorRequestSchema = z.discriminatedUnion("op", [

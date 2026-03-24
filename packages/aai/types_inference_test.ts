@@ -21,7 +21,7 @@ describe("tool() type inference", () => {
     });
 
     // The execute function should receive typed args
-    type Args = Parameters<typeof t.execute>[0];
+    type Args = Parameters<typeof _t.execute>[0];
     expectTypeOf<Args>().toEqualTypeOf<{ name: string; count: number }>();
   });
 
@@ -31,7 +31,7 @@ describe("tool() type inference", () => {
       execute: (args) => args,
     };
 
-    type Args = Parameters<typeof t.execute>[0];
+    type Args = Parameters<typeof _t.execute>[0];
     // Without parameters, args is inferred from the base ZodObject
     expectTypeOf<Args>().toBeObject();
   });
@@ -43,7 +43,7 @@ describe("tool() type inference", () => {
       execute: (_args, ctx) => ctx,
     });
 
-    type Ctx = Parameters<typeof t.execute>[1];
+    type Ctx = Parameters<typeof _t.execute>[1];
     expectTypeOf<Ctx>().toMatchTypeOf<ToolContext>();
   });
 

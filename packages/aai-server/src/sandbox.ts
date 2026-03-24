@@ -19,7 +19,7 @@ import { AUDIO_FORMAT } from "@alexkroman1/aai/protocol";
 import { DEFAULT_S2S_CONFIG } from "@alexkroman1/aai/runtime";
 import { createS2sSession, type HookInvoker, type Session } from "@alexkroman1/aai/session";
 import type { ExecuteTool } from "@alexkroman1/aai/worker-entry";
-import { wireSessionSocket } from "@alexkroman1/aai/ws-handler";
+import { type SessionWebSocket, wireSessionSocket } from "@alexkroman1/aai/ws-handler";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import {
@@ -48,7 +48,7 @@ export type SandboxOptions = {
 };
 
 export type Sandbox = {
-  startSession(socket: WebSocket, skipGreeting?: boolean): void;
+  startSession(socket: SessionWebSocket, skipGreeting?: boolean): void;
   terminate(): void;
 };
 
@@ -98,6 +98,33 @@ function scopedVector(vectorStore: ServerVectorStore, scope: AgentScope) {
   };
 }
 
+// ── Sidecar request schemas (per-endpoint, loopback only) ───────────────
+
+const SidecarKvGetSchema = z.object({ key: z.string() });
+const SidecarKvSetSchema = z.object({
+  key: z.string(),
+  value: z.unknown(),
+  options: z.object({ expireIn: z.number().optional() }).optional(),
+});
+const SidecarKvDelSchema = z.object({ key: z.string() });
+const SidecarKvListSchema = z.object({
+  prefix: z.string(),
+  limit: z.number().optional(),
+  reverse: z.boolean().optional(),
+});
+const SidecarKvKeysSchema = z.object({ pattern: z.string().optional() });
+const SidecarVecUpsertSchema = z.object({
+  id: z.string(),
+  data: z.string(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+});
+const SidecarVecQuerySchema = z.object({
+  text: z.string(),
+  topK: z.number().optional(),
+  filter: z.string().optional(),
+});
+const SidecarVecRemoveSchema = z.object({ ids: z.union([z.string(), z.array(z.string())]) });
+
 // ── Sidecar server (per-sandbox, loopback, no auth) ─────────────────────
 
 function buildSidecarApp(
@@ -111,70 +138,46 @@ function buildSidecarApp(
     return vector;
   };
 
-  const kvGetSchema = z.object({ key: z.string() });
-  const kvSetSchema = z.object({
-    key: z.string(),
-    value: z.unknown(),
-    options: z.object({ expireIn: z.number().optional() }).optional(),
-  });
-  const kvDelSchema = z.object({ key: z.string() });
-  const kvListSchema = z.object({
-    prefix: z.string(),
-    limit: z.number().optional(),
-    reverse: z.boolean().optional(),
-  });
-  const kvKeysSchema = z.object({ pattern: z.string().optional() });
-  const vecUpsertSchema = z.object({
-    id: z.string(),
-    data: z.string(),
-    metadata: z.record(z.string(), z.unknown()).optional(),
-  });
-  const vecQuerySchema = z.object({
-    text: z.string(),
-    topK: z.number().optional(),
-    filter: z.string().optional(),
-  });
-  const vecRemoveSchema = z.object({ ids: z.union([z.string(), z.array(z.string())]) });
-
   app.post("/kv/get", async (c) => {
-    const { key } = kvGetSchema.parse(await c.req.json());
+    const { key } = SidecarKvGetSchema.parse(await c.req.json());
     return c.json((await kv.get(key)) ?? null);
   });
   app.post("/kv/set", async (c) => {
-    const { key, value, options } = kvSetSchema.parse(await c.req.json());
+    const { key, value, options } = SidecarKvSetSchema.parse(await c.req.json());
     await kv.set(key, value, options);
     return c.json(null);
   });
   app.post("/kv/del", async (c) => {
-    const { key } = kvDelSchema.parse(await c.req.json());
+    const { key } = SidecarKvDelSchema.parse(await c.req.json());
     await kv.delete(key);
     return c.json(null);
   });
   app.post("/kv/list", async (c) => {
-    const { prefix, limit, reverse } = kvListSchema.parse(await c.req.json());
+    const { prefix, limit, reverse } = SidecarKvListSchema.parse(await c.req.json());
     return c.json(await kv.list(prefix, { limit, reverse }));
   });
   app.post("/kv/keys", async (c) => {
-    const { pattern } = kvKeysSchema.parse(await c.req.json());
+    const { pattern } = SidecarKvKeysSchema.parse(await c.req.json());
     return c.json(await kv.keys(pattern));
   });
   app.post("/vec/upsert", async (c) => {
-    const { id, data, metadata } = vecUpsertSchema.parse(await c.req.json());
+    const { id, data, metadata } = SidecarVecUpsertSchema.parse(await c.req.json());
     await requireVec().upsert(id, data, metadata);
     return c.json(null);
   });
   app.post("/vec/query", async (c) => {
-    const { text, topK, filter } = vecQuerySchema.parse(await c.req.json());
+    const { text, topK, filter } = SidecarVecQuerySchema.parse(await c.req.json());
     return c.json(await requireVec().query(text, { topK, filter }));
   });
   app.post("/vec/remove", async (c) => {
-    const { ids } = vecRemoveSchema.parse(await c.req.json());
+    const { ids } = SidecarVecRemoveSchema.parse(await c.req.json());
     await requireVec().remove(ids);
     return c.json(null);
   });
 
   app.onError((err, c) => {
-    const status = ((err as { status?: number }).status ??
+    const isValidation = err.name === "ZodError";
+    const status = (isValidation ? 400 : (err as { status?: number }).status ??
       500) as import("hono/utils/http-status").ContentfulStatusCode;
     return c.json({ error: err.message }, status);
   });
@@ -304,6 +307,8 @@ async function startIsolate(
 }
 
 // ── Isolate response schemas (validated on the host, not in the isolate) ──
+// Annotated with z.ZodType<IsolateConfig> to enforce parity with the type
+// definition in _harness_protocol.ts at compile time.
 
 const ToolSchemaZ = z.object({
   name: z.string(),
@@ -311,7 +316,7 @@ const ToolSchemaZ = z.object({
   parameters: z.record(z.string(), z.unknown()),
 });
 
-const IsolateConfigSchema = z.object({
+const IsolateConfigSchema: z.ZodType<IsolateConfig> = z.object({
   name: z.string(),
   instructions: z.string(),
   greeting: z.string(),
@@ -357,7 +362,7 @@ async function getIsolateConfig(port: number): Promise<IsolateConfig> {
     signal: AbortSignal.timeout(CONFIG_TIMEOUT_MS),
   });
   if (!res.ok) throw new Error(`Isolate /config failed: ${res.status}`);
-  return IsolateConfigSchema.parse(await res.json()) as IsolateConfig;
+  return IsolateConfigSchema.parse(await res.json());
 }
 
 // ── Build executeTool + hookInvoker from isolate ─────────────────────────
@@ -470,8 +475,8 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
   console.info("Sandbox initialized", { slug: scope.slug, isolatePort });
 
   return {
-    startSession(socket: WebSocket, skipGreeting?: boolean): void {
-      wireSessionSocket(socket as unknown as Parameters<typeof wireSessionSocket>[0], {
+    startSession(socket: SessionWebSocket, skipGreeting?: boolean): void {
+      wireSessionSocket(socket, {
         sessions,
         createSession: (sid, client) =>
           createS2sSession({

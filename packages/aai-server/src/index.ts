@@ -8,8 +8,9 @@
  * @module
  */
 
+import type { SessionWebSocket } from "@alexkroman1/aai/ws-handler";
 import { serve } from "@hono/node-server";
-import { WebSocketServer } from "ws";
+import { WebSocketServer, type WebSocket as WsWebSocket } from "ws";
 import { createBundleStore, createS3Client } from "./bundle_store_tigris.ts";
 import { deriveCredentialKey } from "./credentials.ts";
 import { createKvStore } from "./kv.ts";
@@ -19,9 +20,12 @@ import { resolveSandbox } from "./sandbox.ts";
 import { importScopeKey } from "./scope_token.ts";
 import { createVectorStore } from "./vector.ts";
 
-type EnvVars = Record<string, string | undefined>;
+/** Adapt a ws-package WebSocket to SessionWebSocket (structurally compatible at runtime). */
+function toSessionWs(ws: WsWebSocket): SessionWebSocket {
+  return ws as unknown as SessionWebSocket;
+}
 
-function resolveVectorUrl(env: EnvVars): { url: string; token: string } | null {
+function resolveVectorUrl(env: NodeJS.ProcessEnv): { url: string; token: string } | null {
   let url = env.UPSTASH_VECTOR_REST_URL ?? env.VECTOR_ENDPOINT;
   const token = env.UPSTASH_VECTOR_REST_TOKEN ?? env.VECTOR_TOKEN;
   if (!(url && token)) return null;
@@ -29,7 +33,7 @@ function resolveVectorUrl(env: EnvVars): { url: string; token: string } | null {
   return { url, token };
 }
 
-async function buildOpts(env: EnvVars): Promise<OrchestratorOpts> {
+async function buildOpts(env: NodeJS.ProcessEnv): Promise<OrchestratorOpts> {
   const bucket = env.BUCKET_NAME;
   const kvSecret = env.KV_SCOPE_SECRET;
   if (!(bucket && kvSecret)) {
@@ -64,7 +68,7 @@ async function buildOpts(env: EnvVars): Promise<OrchestratorOpts> {
 const SLUG_WS_RE = /^\/([a-z0-9][a-z0-9_-]*[a-z0-9])\/websocket$/;
 
 async function main(): Promise<void> {
-  const env = process.env as EnvVars;
+  const env = process.env;
   const port = Number.parseInt(env.PORT ?? "8787", 10);
 
   const opts = await buildOpts(env);
@@ -101,7 +105,7 @@ async function main(): Promise<void> {
 
       const resume = url.searchParams.has("resume");
       wss.handleUpgrade(req, socket, head, (ws) => {
-        sandbox.startSession(ws as unknown as WebSocket, resume);
+        sandbox.startSession(toSessionWs(ws), resume);
       });
     } catch (err) {
       console.error("WebSocket upgrade error:", err);

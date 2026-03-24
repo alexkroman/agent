@@ -40,24 +40,13 @@ export type CreateS2sWebSocket = (
 /**
  * Adapt a `ws`-package WebSocket to the minimal S2sWebSocket interface.
  *
- * The `ws` WebSocket structurally satisfies S2sWebSocket at runtime, but
- * TypeScript can't prove it due to overloaded method signatures.
+ * At runtime, `ws.WebSocket` satisfies S2sWebSocket — both have the same
+ * `readyState`, `send`, `close`, and `addEventListener` methods. TypeScript
+ * can't prove structural compatibility due to overloaded signatures and
+ * ws-specific event types vs DOM event types.
  */
 function toS2sWebSocket(ws: WebSocket): S2sWebSocket {
-  return {
-    get readyState() {
-      return ws.readyState;
-    },
-    send(data: string) {
-      ws.send(data);
-    },
-    close() {
-      ws.close();
-    },
-    addEventListener(type: string, listener: EventListenerOrEventListenerObject) {
-      ws.addEventListener(type, listener);
-    },
-  };
+  return ws as unknown as S2sWebSocket;
 }
 
 /** Default S2S WebSocket factory using the `ws` package (Node-only). */

@@ -33,7 +33,7 @@ async function copyDirNoOverwrite(src: string, dest: string): Promise<void> {
     try {
       await fs.copyFile(path.join(src, rel), destPath, fs.constants.COPYFILE_EXCL);
     } catch (err: unknown) {
-      if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+      if (!(err instanceof Error && "code" in err && err.code === "EEXIST")) throw err;
     }
   }
 }

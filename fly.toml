@@ -1,0 +1,38 @@
+app = 'aai-agent'
+primary_region = 'sjc'
+
+[build]
+
+[env]
+  PORT = "8080"
+  NODE_ENV = "production"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = 'off'
+  auto_start_machines = false
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    interval = "10s"
+    timeout = "2s"
+    grace_period = "5s"
+    method = "GET"
+    path = "/health"
+
+[deploy]
+  strategy = "rolling"
+
+[metrics]
+  port = 8080
+  path = "/metrics"
+
+kill_signal = "SIGTERM"
+kill_timeout = "10s"
+
+[[vm]]
+  memory = '2gb'
+  cpu_kind = 'performance'
+  cpus = 1
+  scale = 5

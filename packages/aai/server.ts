@@ -22,19 +22,15 @@ import type { Session } from "./session.ts";
 import type { AgentDef } from "./types.ts";
 import { type SessionWebSocket, wireSessionSocket } from "./ws_handler.ts";
 
-/** Adapt a ws-package WebSocket to SessionWebSocket (runtime-compatible but not type-assignable due to overloads). */
+/**
+ * Adapt a ws-package WebSocket to SessionWebSocket.
+ *
+ * At runtime, `ws.WebSocket` satisfies SessionWebSocket — both have the same
+ * `readyState`, `send`, and `addEventListener` methods. TypeScript can't prove
+ * structural compatibility due to overloaded signatures and ws-specific event types.
+ */
 function toSessionWs(ws: WsWebSocket): SessionWebSocket {
-  return {
-    get readyState() {
-      return ws.readyState;
-    },
-    send(data: string | ArrayBuffer | Uint8Array) {
-      ws.send(data);
-    },
-    addEventListener(type: string, listener: EventListenerOrEventListenerObject) {
-      ws.addEventListener(type, listener);
-    },
-  };
+  return ws as unknown as SessionWebSocket;
 }
 
 export type ServerOptions = {

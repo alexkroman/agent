@@ -29,7 +29,9 @@ export async function getHarnessRuntimeJs(): Promise<string> {
   // In dev mode (running from src/), read from dist/
   // In production (running from dist/), read sibling file
   const candidates = [
+    path.join(__dirname, "_harness_runtime.cjs"),
     path.join(__dirname, "_harness_runtime.js"),
+    path.join(__dirname, "..", "dist", "_harness_runtime.cjs"),
     path.join(__dirname, "..", "dist", "_harness_runtime.js"),
   ];
 

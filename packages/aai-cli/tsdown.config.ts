@@ -1,4 +1,4 @@
-import { defineConfig } from "tsup";
+import { defineConfig } from "tsdown";
 
 export default defineConfig({
   entry: ["cli.ts"],
@@ -7,9 +7,5 @@ export default defineConfig({
   target: "node20",
   outDir: "dist",
   banner: { js: "#!/usr/bin/env node" },
-  bundle: true,
-  external: [/^[^./]/],
-  esbuildOptions(options) {
-    options.jsx = "automatic";
-  },
+  deps: { neverBundle: [/^[^./]/] },
 });
