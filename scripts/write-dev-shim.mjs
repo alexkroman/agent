@@ -18,10 +18,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, "..");
 
 try {
-  execFileSync("npx", ["tsx", resolve(root, "cli/cli.ts"), ...process.argv.slice(2)], {
+  execFileSync(resolve(root, "node_modules/.bin/tsx"), ["--tsconfig", resolve(root, "cli/tsconfig.json"), resolve(root, "cli/cli.ts"), ...process.argv.slice(2)], {
     stdio: "inherit",
     cwd: process.cwd(),
-    env: process.env,
   });
 } catch (e) {
   process.exit(e.status ?? 1);
