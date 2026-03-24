@@ -6,6 +6,7 @@ import type {
   ReadyConfig,
   ServerMessage,
 } from "@alexkroman1/aai/protocol";
+import { ServerMessageSchema } from "@alexkroman1/aai/protocol";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import { batch, type Signal, signal } from "@preact/signals";
 import type { VoiceIO } from "./audio.ts";
@@ -229,7 +230,9 @@ export class ClientHandler {
     // Text frame → JSON message
     let msg: ServerMessage;
     try {
-      msg = JSON.parse(data);
+      const parsed = ServerMessageSchema.safeParse(JSON.parse(data));
+      if (!parsed.success) return null;
+      msg = parsed.data;
     } catch {
       return null;
     }
@@ -245,7 +248,7 @@ export class ClientHandler {
     }
 
     // All other messages are ClientEvent
-    this.event(msg as ClientEvent);
+    this.event(msg);
     return null;
   }
 }

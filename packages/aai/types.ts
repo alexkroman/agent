@@ -5,7 +5,7 @@
  * @module
  */
 
-import type { z } from "zod";
+import { z } from "zod";
 import type { Kv } from "./kv.ts";
 import type { VectorStore } from "./vector.ts";
 
@@ -83,8 +83,6 @@ export type Message = {
 export type ToolContext<S = Record<string, unknown>> = {
   /** Environment variables declared in the agent config. */
   env: Readonly<Record<string, string>>;
-  /** Signal that aborts when the tool execution times out. */
-  abortSignal: AbortSignal;
   /** Mutable per-session state created by the agent's `state` factory. */
   state: S;
   /** Key-value store scoped to this agent deployment. */
@@ -98,16 +96,13 @@ export type ToolContext<S = Record<string, unknown>> = {
 /**
  * Context passed to lifecycle hooks (`onConnect`, `onTurn`, etc.).
  *
- * Same as {@linkcode ToolContext} but without `messages` or `abortSignal`,
- * since hooks run outside the tool execution flow.
+ * Same as {@linkcode ToolContext} but without `messages`, since hooks
+ * run outside the tool execution flow.
  *
  * @typeParam S The shape of per-session state created by the agent's
  *   `state` factory. Defaults to `Record<string, unknown>`.
  */
-export type HookContext<S = Record<string, unknown>> = Omit<
-  ToolContext<S>,
-  "abortSignal" | "messages"
->;
+export type HookContext<S = Record<string, unknown>> = Omit<ToolContext<S>, "messages">;
 
 /**
  * Definition of a custom tool that the agent can invoke.
@@ -362,7 +357,47 @@ export type AgentDef = {
  * });
  * ```
  */
+const BuiltinToolSchema = z.enum([
+  "web_search",
+  "visit_webpage",
+  "fetch_json",
+  "run_code",
+  "vector_search",
+  "memory",
+]);
+
+const ToolChoiceSchema = z.union([
+  z.enum(["auto", "required", "none"]),
+  z.object({ type: z.literal("tool"), toolName: z.string().min(1) }),
+]);
+
+const ToolDefSchema = z.object({
+  description: z.string().min(1, "Tool description must be non-empty"),
+  parameters: z.any().optional(),
+  execute: z.function(),
+});
+
+const AgentOptionsSchema = z.object({
+  name: z.string().min(1, "Agent name must be non-empty"),
+  instructions: z.string().optional(),
+  greeting: z.string().optional(),
+  sttPrompt: z.string().optional(),
+  maxSteps: z.union([z.number().int().positive(), z.function()]).optional(),
+  toolChoice: ToolChoiceSchema.optional(),
+  builtinTools: z.array(BuiltinToolSchema).optional(),
+  activeTools: z.array(z.string().min(1)).optional(),
+  tools: z.record(z.string(), ToolDefSchema).optional(),
+  state: z.function().optional(),
+  onConnect: z.function().optional(),
+  onDisconnect: z.function().optional(),
+  onError: z.function().optional(),
+  onTurn: z.function().optional(),
+  onStep: z.function().optional(),
+  onBeforeStep: z.function().optional(),
+});
+
 export function defineAgent<S>(options: AgentOptions<S>): AgentDef {
+  AgentOptionsSchema.parse(options);
   return {
     ...options,
     instructions: options.instructions ?? DEFAULT_INSTRUCTIONS,

@@ -8,5 +8,5 @@
     "declaration": true,
     "sourceMap": true
   },
-  "exclude": ["src/**/*_test.ts"]
+  "exclude": ["src/**/*_test.ts", "src/_harness_runtime.ts"]
 }

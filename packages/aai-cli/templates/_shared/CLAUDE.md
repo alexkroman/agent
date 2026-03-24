@@ -262,19 +262,16 @@ Every `execute` function and lifecycle hook receives a context object:
 
 ```ts
 ctx.env; // Record<string, string> — secrets from `aai secret put`
-ctx.abortSignal; // AbortSignal — cancelled on interruption (tools only)
 ctx.state; // per-session state
 ctx.kv; // persistent KV store
 ctx.vector; // VectorStore — vector store for RAG (tools only)
 ctx.messages; // readonly Message[] — conversation history (tools only)
 ```
 
-Hooks get `HookContext` (same but without `abortSignal` and `messages`).
+Hooks get `HookContext` (same but without `messages`).
 
-**Timeouts:** Tool execution times out after **30 seconds** (`abortSignal`
-fires). Lifecycle hooks (`onConnect`, `onTurn`, etc.) time out after **5
-seconds**. Long-running tools should pass `ctx.abortSignal` to `fetch` and
-check `ctx.abortSignal.aborted` in loops.
+**Timeouts:** Tool execution times out after **30 seconds**. Lifecycle hooks
+(`onConnect`, `onTurn`, etc.) time out after **5 seconds**.
 
 ### Fetching external APIs
 
@@ -284,7 +281,6 @@ Use `fetch` directly in tool execute functions:
 execute: async (args, ctx) => {
   const resp = await fetch(url, {
     headers: { Authorization: `Bearer ${ctx.env.API_KEY}` },
-    signal: ctx.abortSignal, // Respect interruptions
   });
   if (!resp.ok) return { error: `${resp.status} ${resp.statusText}` };
   return resp.json();
@@ -1027,10 +1023,6 @@ Use directional words naturally: "To the north you see..." not "N: forest"
 - **Forgetting sandbox constraints** — Agent code runs in a sandboxed Worker
   with no direct network or filesystem access. Use `fetch` (proxied through the
   host) for HTTP. Use `ctx.env` for secrets. Direct network access will fail.
-- **Ignoring `ctx.abortSignal`** — When the user interrupts, in-flight tool
-  calls are cancelled via `ctx.abortSignal`. Long-running tools (polling,
-  multi-step fetches) should check `ctx.abortSignal.aborted` or pass the signal
-  to `fetch`.
 - **Hardcoding secrets** — Never put API keys in `agent.ts`. Use
   `aai secret put MY_KEY` to store them on the server, then access via
   `ctx.env.MY_KEY`.

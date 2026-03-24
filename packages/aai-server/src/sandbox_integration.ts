@@ -7,9 +7,7 @@
  * (Requires build first: pnpm --filter @alexkroman1/aai-server build)
  *
  * Runs as a standalone script (not vitest) because isolated-vm's native
- * module doesn't survive vitest worker forking.
- *
- * Requires Node.js ≤ 22 (isolated-vm segfaults on Node 25+).
+ * module doesn't survive vitest worker forking. Must always pass in CI.
  */
 
 import type {
@@ -22,7 +20,7 @@ import type {
 import { _internals } from "./sandbox.ts";
 
 const AGENT_BUNDLE = `
-export default {
+module.exports = {
   name: "integration-test",
   instructions: "You are a test agent.",
   greeting: "Hello from the isolate",

@@ -9,6 +9,7 @@
  */
 
 import type { JSONSchema7 } from "json-schema";
+import { createNanoEvents, type Emitter, type Unsubscribe } from "nanoevents";
 import { WebSocket } from "ws";
 import { z } from "zod";
 import type { Logger, S2SConfig } from "./runtime.ts";
@@ -85,31 +86,41 @@ type S2sServerMessage = z.infer<typeof S2sServerMessageSchema>;
 
 // biome-ignore format: compact lookup table
 type Msg = Record<string, unknown>;
-const S2S_DISPATCH: Record<string, (m: Msg) => [string, unknown] | undefined> = {
-  "session.ready": (m) => ["ready", { session_id: m.session_id }],
-  "session.updated": (m) => ["session_updated", m],
-  "input.speech.started": () => ["speech_started", undefined],
-  "input.speech.stopped": () => ["speech_stopped", undefined],
-  "transcript.user.delta": (m) => ["user_transcript_delta", { text: m.text }],
-  "transcript.user": (m) => ["user_transcript", { item_id: m.item_id, text: m.text }],
-  "reply.started": (m) => ["reply_started", { reply_id: m.reply_id }],
-  "transcript.agent.delta": (m) => ["agent_transcript_delta", { text: m.delta }],
-  "transcript.agent": (m) => ["agent_transcript", { text: m.text }],
-  "tool.call": (m) => ["tool_call", { call_id: m.call_id, name: m.name, args: m.args }],
-  "reply.done": (m) => ["reply_done", { status: m.status }],
-  "session.error": (m) => [
-    m.code === "session_not_found" || m.code === "session_forbidden" ? "session_expired" : "error",
-    { code: m.code, message: m.message },
-  ],
-  error: (m) => ["error", { code: "connection", message: m.message }],
-  "reply.content_part.started": () => undefined,
-  "reply.content_part.done": () => undefined,
+type Dispatcher = (m: Msg, e: Emitter<S2sEvents>) => void;
+const S2S_DISPATCH: Record<string, Dispatcher | undefined> = {
+  "session.ready": (m, e) => e.emit("ready", { session_id: m.session_id as string }),
+  "session.updated": (m, e) => e.emit("session_updated", m),
+  "input.speech.started": (_m, e) => e.emit("speech_started"),
+  "input.speech.stopped": (_m, e) => e.emit("speech_stopped"),
+  "transcript.user.delta": (m, e) => e.emit("user_transcript_delta", { text: m.text as string }),
+  "transcript.user": (m, e) =>
+    e.emit("user_transcript", { item_id: m.item_id as string, text: m.text as string }),
+  "reply.started": (m, e) => e.emit("reply_started", { reply_id: m.reply_id as string }),
+  "transcript.agent.delta": (m, e) => e.emit("agent_transcript_delta", { text: m.delta as string }),
+  "transcript.agent": (m, e) => e.emit("agent_transcript", { text: m.text as string }),
+  "tool.call": (m, e) =>
+    e.emit("tool_call", {
+      call_id: m.call_id as string,
+      name: m.name as string,
+      args: m.args as Record<string, unknown>,
+    }),
+  "reply.done": (m, e) =>
+    e.emit("reply_done", { ...(typeof m.status === "string" ? { status: m.status } : {}) }),
+  "session.error": (m, e) => {
+    const code = m.code as string,
+      message = m.message as string;
+    if (code === "session_not_found" || code === "session_forbidden")
+      e.emit("session_expired", { code, message });
+    else e.emit("error", { code, message });
+  },
+  error: (m, e) => e.emit("error", { code: "connection", message: m.message as string }),
+  "reply.content_part.started": () => {},
+  "reply.content_part.done": () => {},
 };
 
-/** Dispatch a parsed S2S server message to the EventTarget. */
-function dispatchS2sMessage(target: EventTarget, msg: S2sServerMessage): void {
-  const entry = S2S_DISPATCH[msg.type]?.(msg as Msg);
-  if (entry) target.dispatchEvent(new CustomEvent(entry[0], { detail: entry[1] }));
+/** Dispatch a parsed S2S server message to the emitter. */
+function dispatchS2sMessage(emitter: Emitter<S2sEvents>, msg: S2sServerMessage): void {
+  S2S_DISPATCH[msg.type]?.(msg as Msg, emitter);
 }
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -133,7 +144,27 @@ export type S2sToolCall = {
   args: Record<string, unknown>;
 };
 
-export type S2sHandle = EventTarget & {
+/** Typed event map for S2S handle events. */
+export type S2sEvents = {
+  ready: (detail: { session_id: string }) => void;
+  session_updated: (detail: Record<string, unknown>) => void;
+  session_expired: (detail: { code: string; message: string }) => void;
+  speech_started: () => void;
+  speech_stopped: () => void;
+  user_transcript_delta: (detail: { text: string }) => void;
+  user_transcript: (detail: { item_id: string; text: string }) => void;
+  reply_started: (detail: { reply_id: string }) => void;
+  agent_transcript_delta: (detail: { text: string }) => void;
+  agent_transcript: (detail: { text: string }) => void;
+  tool_call: (detail: S2sToolCall) => void;
+  reply_done: (detail: { status?: string }) => void;
+  audio: (detail: { audio: Uint8Array }) => void;
+  error: (detail: { code: string; message: string }) => void;
+  close: () => void;
+};
+
+export type S2sHandle = {
+  on<K extends keyof S2sEvents>(event: K, cb: S2sEvents[K]): Unsubscribe;
   sendAudio(audio: Uint8Array): void;
   sendToolResult(callId: string, result: string): void;
   updateSession(config: S2sSessionConfig): void;
@@ -153,8 +184,8 @@ export type ConnectS2sOptions = {
 /**
  * Connect to AssemblyAI's Speech-to-Speech WebSocket API.
  *
- * Returns an {@linkcode S2sHandle} that extends EventTarget. Consumers
- * listen for events: `ready`, `speech_started`, `speech_stopped`,
+ * Returns an {@linkcode S2sHandle} with a typed `on()` method.
+ * Consumers listen for events: `ready`, `speech_started`, `speech_stopped`,
  * `user_transcript_delta`, `user_transcript`, `reply_started`,
  * `reply_done`, `audio`, `agent_transcript`, `tool_call`,
  * `session_expired`, `error`, `close`.
@@ -169,7 +200,7 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
       headers: { Authorization: `Bearer ${apiKey}` },
     });
 
-    const target = new EventTarget();
+    const emitter = createNanoEvents<S2sEvents>();
     let opened = false;
 
     function send(msg: { type: string; [key: string]: unknown }): void {
@@ -184,7 +215,9 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
       ws.send(json);
     }
 
-    const handle: S2sHandle = Object.assign(target, {
+    const handle: S2sHandle = {
+      on: emitter.on.bind(emitter),
+
       sendAudio(audio: Uint8Array): void {
         if (ws.readyState !== WS_OPEN) return;
         ws.send(`{"type":"input.audio","audio":"${uint8ToBase64(audio)}"}`);
@@ -208,7 +241,7 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
         log.info("S2S closing");
         ws.close();
       },
-    });
+    };
 
     ws.addEventListener("open", () => {
       opened = true;
@@ -228,7 +261,7 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
     function handleAudioFastPath(obj: { type?: unknown; data?: unknown }): boolean {
       if (obj.type === "reply.audio" && typeof obj.data === "string") {
         const audioBytes = base64ToUint8(obj.data);
-        target.dispatchEvent(new CustomEvent("audio", { detail: { audio: audioBytes } }));
+        emitter.emit("audio", { audio: audioBytes });
         return true;
       }
       return false;
@@ -258,17 +291,17 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
         );
         return;
       }
-      dispatchS2sMessage(target, parsed.data);
+      dispatchS2sMessage(emitter, parsed.data);
     }
 
     ws.addEventListener("message", handleS2sMessage as EventListener);
 
-    ws.addEventListener("close", ((ev: CloseEvent) => {
+    ws.addEventListener("close", ((ev: Event & { code?: number; reason?: string }) => {
       log.info("S2S WebSocket closed", {
         code: ev.code ?? 0,
         reason: ev.reason ?? "",
       });
-      target.dispatchEvent(new CustomEvent("close"));
+      emitter.emit("close");
     }) as EventListener);
 
     ws.addEventListener("error", ((ev: Event) => {
@@ -279,11 +312,7 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
       if (!opened) {
         reject(errObj);
       } else {
-        target.dispatchEvent(
-          new CustomEvent("error", {
-            detail: { code: "ws_error", message: errObj.message },
-          }),
-        );
+        emitter.emit("error", { code: "ws_error", message: errObj.message });
       }
     }) as EventListener);
   });

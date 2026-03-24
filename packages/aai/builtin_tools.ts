@@ -20,9 +20,9 @@ const FETCH_TIMEOUT_MS = 15_000;
 /** Timeout for sandboxed code execution. */
 const RUN_CODE_TIMEOUT = 5_000;
 
-/** Compose a per-fetch timeout with the tool's abort signal. */
-function fetchSignal(toolSignal: AbortSignal): AbortSignal {
-  return AbortSignal.any([toolSignal, AbortSignal.timeout(FETCH_TIMEOUT_MS)]);
+/** Create a fetch timeout signal. */
+function fetchSignal(): AbortSignal {
+  return AbortSignal.timeout(FETCH_TIMEOUT_MS);
 }
 
 // ─── HTML to text ──────────────────────────────────────────────────────────
@@ -72,7 +72,7 @@ function createWebSearch(fetchFn = globalThis.fetch): ToolDef<typeof webSearchPa
       })}`;
       const resp = await fetchFn(url, {
         headers: { "X-Subscription-Token": apiKey },
-        signal: fetchSignal(ctx.abortSignal),
+        signal: fetchSignal(),
       });
       if (!resp.ok) return [];
       const raw = await resp.json();
@@ -101,7 +101,7 @@ function createVisitWebpage(fetchFn = globalThis.fetch): ToolDef<typeof visitWeb
     description:
       "Fetch a webpage and return its content as clean text. Use this to read the full content of a URL found via web_search, or any link the user shares. Good for reading articles, documentation, blog posts, or product pages.",
     parameters: visitWebpageParams,
-    async execute(args, ctx) {
+    async execute(args, _ctx) {
       const { url } = args;
       const resp = await fetchFn(url, {
         headers: {
@@ -110,7 +110,7 @@ function createVisitWebpage(fetchFn = globalThis.fetch): ToolDef<typeof visitWeb
           Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         },
         redirect: "follow",
-        signal: fetchSignal(ctx.abortSignal),
+        signal: fetchSignal(),
       });
       if (!resp.ok) {
         return { error: `Failed to fetch: ${resp.status} ${resp.statusText}`, url };
@@ -145,11 +145,11 @@ function createFetchJson(fetchFn = globalThis.fetch): ToolDef<typeof fetchJsonPa
     description:
       "Call a REST API endpoint via HTTP GET and return the JSON response. Use this to fetch structured data from APIs — for example, weather data, stock prices, exchange rates, or any public JSON API. Supports custom headers for authenticated APIs.",
     parameters: fetchJsonParams,
-    async execute(args, ctx) {
+    async execute(args, _ctx) {
       const { url, headers } = args;
       const resp = await fetchFn(url, {
         ...(headers && { headers }),
-        signal: fetchSignal(ctx.abortSignal),
+        signal: fetchSignal(),
       });
       if (!resp.ok) {
         return { error: `HTTP ${resp.status} ${resp.statusText}`, url };

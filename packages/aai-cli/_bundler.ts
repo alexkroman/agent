@@ -86,7 +86,7 @@ export async function bundleAgent(
   const buildDir = path.join(aaiDir, "build");
   const clientDir = path.join(aaiDir, "client");
 
-  // 1. Worker build — bundles agent.ts + worker shim into a single ESM file
+  // 1. Worker build — bundles agent.ts into a single CJS file for V8 isolate execution
   try {
     await build({
       configFile: false,
@@ -96,7 +96,7 @@ export async function bundleAgent(
       build: {
         rollupOptions: {
           input: "virtual:worker-entry",
-          output: { format: "es", entryFileNames: "worker.js" },
+          output: { format: "cjs", entryFileNames: "worker.js", exports: "auto" },
         },
         outDir: buildDir,
         emptyOutDir: true,

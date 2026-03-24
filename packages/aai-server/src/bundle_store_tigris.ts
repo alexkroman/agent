@@ -8,9 +8,17 @@ import {
   PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
+import { z } from "zod";
 import type { AgentMetadata } from "./_schemas.ts";
 import { AgentMetadataSchema } from "./_schemas.ts";
 import { type CredentialKey, decryptEnv, encryptEnv } from "./credentials.ts";
+
+const ManifestSchema = z.object({
+  slug: z.string(),
+  env: z.string(),
+  credential_hashes: z.array(z.string()).optional(),
+  envEncrypted: z.boolean().optional(),
+});
 
 const MIME_TYPES: Record<string, string> = {
   html: "text/html",
@@ -139,10 +147,10 @@ export function createBundleStore(
     for (const k of keys) cache.delete(k);
   }
 
-  async function getRawManifest(slug: string): Promise<Record<string, unknown> | null> {
+  async function getRawManifest(slug: string): Promise<z.infer<typeof ManifestSchema> | null> {
     const data = await get(objectKey(slug, "manifest.json"));
     if (data === null) return null;
-    return JSON.parse(data);
+    return ManifestSchema.parse(JSON.parse(data));
   }
 
   const store: BundleStore = {
@@ -181,9 +189,12 @@ export function createBundleStore(
     async getManifest(slug) {
       const raw = await getRawManifest(slug);
       if (!raw) return null;
-      raw.env = await decryptEnv(credentialKey, { encrypted: raw.env as string, slug });
-      delete raw.envEncrypted;
-      const parsed = AgentMetadataSchema.safeParse(raw);
+      const env = await decryptEnv(credentialKey, { encrypted: raw.env, slug });
+      const parsed = AgentMetadataSchema.safeParse({
+        ...raw,
+        env,
+        envEncrypted: undefined,
+      });
       if (!parsed.success) return null;
       return parsed.data;
     },
@@ -201,15 +212,18 @@ export function createBundleStore(
     async getEnv(slug) {
       const raw = await getRawManifest(slug);
       if (!raw) return null;
-      return await decryptEnv(credentialKey, { encrypted: raw.env as string, slug });
+      return await decryptEnv(credentialKey, { encrypted: raw.env, slug });
     },
 
     async putEnv(slug, env) {
       const raw = await getRawManifest(slug);
       if (!raw) throw new Error(`Agent ${slug} not found`);
-      raw.env = await encryptEnv(credentialKey, { env, slug });
-      raw.envEncrypted = true;
-      await put(objectKey(slug, "manifest.json"), JSON.stringify(raw), "application/json");
+      const updated = {
+        ...raw,
+        env: await encryptEnv(credentialKey, { env, slug }),
+        envEncrypted: true,
+      };
+      await put(objectKey(slug, "manifest.json"), JSON.stringify(updated), "application/json");
     },
   };
 

@@ -151,11 +151,20 @@ export type ReadyConfig = {
   ttsSampleRate: number;
 };
 
+/** Zod schema for server→client text messages. */
+export const ServerMessageSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("config"),
+    audioFormat: z.string(),
+    sampleRate: z.number(),
+    ttsSampleRate: z.number(),
+  }),
+  ev("audio_done"),
+  ...ClientEventSchema.options,
+]);
+
 /** Server→client text messages (binary frames carry raw PCM16 audio). */
-export type ServerMessage =
-  | ({ type: "config" } & ReadyConfig)
-  | { type: "audio_done" }
-  | ClientEvent;
+export type ServerMessage = z.infer<typeof ServerMessageSchema>;
 
 /** Zod schema for client→server text messages. */
 export const ClientMessageSchema = z.discriminatedUnion("type", [

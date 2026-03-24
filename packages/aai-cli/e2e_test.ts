@@ -1,13 +1,14 @@
 // Copyright 2025 the AAI authors. MIT license.
-//
-// End-to-end test: builds CLI, then for every template:
-//   init → link → dev --check (builds, starts server, hits /health, exits)
-//
-// Run via: pnpm test:e2e
-
+/**
+ * End-to-end test: builds CLI, then for every template:
+ *   init -> link -> dev --check (builds, starts server, hits /health, exits)
+ *
+ * Run via: pnpm test:e2e
+ */
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { afterAll, beforeAll, describe, test } from "vitest";
 
 const dir = import.meta.dirname ?? path.dirname(new URL(import.meta.url).pathname);
 const templatesDir = path.join(dir, "templates");
@@ -17,9 +18,9 @@ const templates = fs
   .filter((d) => d.isDirectory() && d.name !== "_shared")
   .map((d) => d.name);
 
-// Build CLI once
-execFileSync("npx", ["tsup", "--silent"], { cwd: dir, stdio: "inherit" });
-const aaiBin = path.resolve(dir, "dist/cli.js");
+let aaiBin: string;
+let tmpDir: string;
+const BASE_PORT = 4567;
 
 function aai(args: string[], cwd: string, timeoutMs = 120_000): void {
   execFileSync(process.execPath, [aaiBin, ...args], {
@@ -35,35 +36,21 @@ function aai(args: string[], cwd: string, timeoutMs = 120_000): void {
   });
 }
 
-const tmpDir = fs.mkdtempSync("/tmp/aai-e2e-test-");
-const BASE_PORT = 4567;
+beforeAll(() => {
+  execFileSync("npx", ["tsup", "--silent"], { cwd: dir, stdio: "inherit" });
+  aaiBin = path.resolve(dir, "dist/cli.js");
+  tmpDir = fs.mkdtempSync("/tmp/aai-e2e-test-");
+});
 
-let passed = 0;
-const failed: string[] = [];
+afterAll(() => {
+  if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
+});
 
-try {
-  for (let i = 0; i < templates.length; i++) {
-    const template = templates[i] as string;
+describe("e2e: init -> link -> dev --check", () => {
+  test.each(templates.map((t, i) => [t, i] as const))("template %s", (template, i) => {
     const projectDir = path.join(tmpDir, template);
-    process.stdout.write(`${template}... `);
-    try {
-      aai(["init", projectDir, "-t", template, "--skip-api", "--skip-deploy"], tmpDir);
-      aai(["link"], projectDir);
-      aai(["dev", "--check", "--port", String(BASE_PORT + i)], projectDir);
-
-      console.log("ok");
-      passed++;
-    } catch {
-      console.log("FAILED");
-      failed.push(template);
-    }
-  }
-} finally {
-  fs.rmSync(tmpDir, { recursive: true, force: true });
-}
-
-console.log(`\n${passed}/${templates.length} passed`);
-if (failed.length > 0) {
-  console.error(`Failed: ${failed.join(", ")}`);
-  process.exit(1);
-}
+    aai(["init", projectDir, "-t", template, "--skip-api", "--skip-deploy"], tmpDir);
+    aai(["link"], projectDir);
+    aai(["dev", "--check", "--port", String(BASE_PORT + i)], projectDir);
+  });
+});

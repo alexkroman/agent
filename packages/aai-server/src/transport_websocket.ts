@@ -2,22 +2,9 @@
 
 import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
+import mime from "mime-types";
 import type { Env } from "./context.ts";
 import { resolveSandbox } from "./sandbox.ts";
-
-const MIME_TYPES: Record<string, string> = {
-  html: "text/html",
-  js: "application/javascript",
-  css: "text/css",
-  json: "application/json",
-  svg: "image/svg+xml",
-  png: "image/png",
-  jpg: "image/jpeg",
-  ico: "image/x-icon",
-  woff2: "font/woff2",
-  woff: "font/woff",
-  map: "application/json",
-};
 
 export const _internals = { resolveSandbox };
 
@@ -44,8 +31,7 @@ export async function handleClientAsset(c: Context<Env>): Promise<Response> {
   const content = await c.env.assetStore.getClientFile(slug, `assets/${assetPath}`);
   if (!content) throw new HTTPException(404, { message: "Asset not found" });
 
-  const ext = assetPath.split(".").pop() ?? "";
-  const contentType = MIME_TYPES[ext] ?? "application/octet-stream";
+  const contentType = mime.lookup(assetPath) || "application/octet-stream";
 
   return c.body(content, 200, {
     "Content-Type": contentType,

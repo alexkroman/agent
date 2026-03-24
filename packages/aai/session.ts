@@ -129,16 +129,14 @@ export function createS2sSession(opts: SessionOptions): Session {
     }
   }
 
-  function invokeHook(hook: keyof HookInvoker, arg?: unknown): void {
+  function fireHook(name: string, fn: (h: HookInvoker) => Promise<void>): void {
     if (!hookInvoker) return;
     try {
-      // biome-ignore lint/complexity/noBannedTypes: dynamic hook dispatch
-      const h = hookInvoker[hook as keyof HookInvoker] as Function;
-      Promise.resolve(h.call(hookInvoker, id, arg, HOOK_TIMEOUT_MS)).catch((err: unknown) => {
-        log.warn(`${hook} hook failed`, { err: errorMessage(err) });
+      fn(hookInvoker).catch((err: unknown) => {
+        log.warn(`${name} hook failed`, { err: errorMessage(err) });
       });
     } catch (err: unknown) {
-      log.warn(`${hook} hook failed`, { err: errorMessage(err) });
+      log.warn(`${name} hook failed`, { err: errorMessage(err) });
     }
   }
 
@@ -185,11 +183,17 @@ export function createS2sSession(opts: SessionOptions): Session {
     }
 
     // Fire onStep hook
-    invokeHook("onStep", {
-      stepNumber: toolCallCount - 1,
-      toolCalls: [{ toolName: name, args: parsedArgs }],
-      text: "",
-    });
+    fireHook("onStep", (h) =>
+      h.onStep(
+        id,
+        {
+          stepNumber: toolCallCount - 1,
+          toolCalls: [{ toolName: name, args: parsedArgs }],
+          text: "",
+        },
+        HOOK_TIMEOUT_MS,
+      ),
+    );
 
     log.info("S2S tool call", { tool: name, call_id, args: parsedArgs, agent });
 
@@ -213,67 +217,58 @@ export function createS2sSession(opts: SessionOptions): Session {
     client.event({ type: "tool_call_done", toolCallId: call_id, result });
   }
 
-  /** Register a typed CustomEvent listener, consolidating the EventListener cast. */
-  function on<T>(target: EventTarget, event: string, handler: (e: CustomEvent<T>) => void): void {
-    target.addEventListener(event, handler as EventListener);
-  }
-
   /** Wire all S2S events to the client sink, hooks, and session state. */
   function setupListeners(handle: S2sHandle): void {
-    on<{ session_id: string }>(handle, "ready", (e) => {
-      log.info("S2S session ready", { session_id: e.detail.session_id });
+    handle.on("ready", ({ session_id }) => {
+      log.info("S2S session ready", { session_id });
     });
 
-    on<undefined>(handle, "session_expired", () => {
+    handle.on("session_expired", () => {
       log.info("S2S session expired");
       handle.close();
     });
 
-    // Simple event forwarding
-    for (const type of ["speech_started", "speech_stopped"] as const) {
-      handle.addEventListener(type, () => client.event({ type }));
-    }
+    handle.on("speech_started", () => client.event({ type: "speech_started" }));
+    handle.on("speech_stopped", () => client.event({ type: "speech_stopped" }));
 
-    on<{ text: string }>(handle, "user_transcript_delta", (e) => {
-      client.event({ type: "transcript", text: e.detail.text, isFinal: false });
+    handle.on("user_transcript_delta", ({ text }) => {
+      client.event({ type: "transcript", text, isFinal: false });
     });
 
-    on<{ item_id: string; text: string }>(handle, "user_transcript", (e) => {
-      const { text } = e.detail;
+    handle.on("user_transcript", ({ text }) => {
       log.info("S2S user transcript", { text });
       client.event({ type: "transcript", text, isFinal: true });
       client.event({ type: "turn", text });
       conversationMessages.push({ role: "user", content: text });
-      invokeHook("onTurn", text);
+      fireHook("onTurn", (h) => h.onTurn(id, text, HOOK_TIMEOUT_MS));
     });
 
-    handle.addEventListener("reply_started", () => {
+    handle.on("reply_started", () => {
       toolCallCount = 0;
     });
 
-    on<{ audio: Uint8Array }>(handle, "audio", (e) => {
-      client.playAudioChunk(e.detail.audio);
+    handle.on("audio", ({ audio }) => {
+      client.playAudioChunk(audio);
     });
 
-    on<{ text: string }>(handle, "agent_transcript_delta", (e) => {
-      client.event({ type: "chat_delta", text: e.detail.text });
+    handle.on("agent_transcript_delta", ({ text }) => {
+      client.event({ type: "chat_delta", text });
     });
 
-    on<{ text: string }>(handle, "agent_transcript", (e) => {
-      const { text } = e.detail;
+    handle.on("agent_transcript", ({ text }) => {
       client.event({ type: "chat", text });
       conversationMessages.push({ role: "assistant", content: text });
     });
 
-    on<S2sToolCall>(handle, "tool_call", (e) => {
-      const p = handleToolCall(e.detail).catch((err: unknown) => {
+    handle.on("tool_call", (detail) => {
+      const p = handleToolCall(detail).catch((err: unknown) => {
         log.error("Tool call handler failed", { err: errorMessage(err) });
       });
       turnPromise = (turnPromise ?? Promise.resolve()).then(() => p);
     });
 
-    on<{ status?: string }>(handle, "reply_done", (e) => {
-      if (e.detail.status === "interrupted") {
+    handle.on("reply_done", ({ status }) => {
+      if (status === "interrupted") {
         log.info("S2S reply interrupted (barge-in)");
         pendingTools = [];
         client.event({ type: "cancelled" });
@@ -286,13 +281,13 @@ export function createS2sSession(opts: SessionOptions): Session {
       }
     });
 
-    on<{ code: string; message: string }>(handle, "error", (e) => {
-      log.error("S2S error", { code: e.detail.code, message: e.detail.message });
-      client.event({ type: "error", code: "internal", message: e.detail.message });
+    handle.on("error", ({ code, message }) => {
+      log.error("S2S error", { code, message });
+      client.event({ type: "error", code: "internal", message });
       handle.close();
     });
 
-    handle.addEventListener("close", () => {
+    handle.on("close", () => {
       log.info("S2S closed");
       s2s = null;
     });
@@ -328,7 +323,7 @@ export function createS2sSession(opts: SessionOptions): Session {
     async start(): Promise<void> {
       metrics.sessionsTotal.inc(agentLabel);
       metrics.sessionsActive.inc(agentLabel);
-      invokeHook("onConnect");
+      fireHook("onConnect", (h) => h.onConnect(id, HOOK_TIMEOUT_MS));
       await connectAndSetup();
     },
 
@@ -338,7 +333,7 @@ export function createS2sSession(opts: SessionOptions): Session {
       metrics.sessionsActive.dec(agentLabel);
       if (turnPromise) await turnPromise;
       s2s?.close();
-      invokeHook("onDisconnect");
+      fireHook("onDisconnect", (h) => h.onDisconnect(id, HOOK_TIMEOUT_MS));
     },
 
     onAudio(data: Uint8Array): void {

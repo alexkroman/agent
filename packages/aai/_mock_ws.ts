@@ -69,7 +69,9 @@ export class MockWebSocket extends EventTarget {
    */
   close(code?: number, _reason?: string) {
     this.readyState = MockWebSocket.CLOSED;
-    this.dispatchEvent(new CloseEvent("close", { code: code ?? 1000 }));
+    const ev = new Event("close") as Event & { code: number };
+    (ev as { code: number }).code = code ?? 1000;
+    this.dispatchEvent(ev);
   }
 
   /**
@@ -102,7 +104,9 @@ export class MockWebSocket extends EventTarget {
    * @param code - The close code (defaults to 1000).
    */
   disconnect(code = 1000) {
-    this.dispatchEvent(new CloseEvent("close", { code }));
+    const ev = new Event("close") as Event & { code: number };
+    (ev as { code: number }).code = code;
+    this.dispatchEvent(ev);
   }
 
   /** Dispatch an `"error"` event on this socket. */

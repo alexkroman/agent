@@ -1,7 +1,8 @@
+import { createNanoEvents } from "nanoevents";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { makeConfig } from "./_test_utils.ts";
 import { type ClientSink, HOOK_TIMEOUT_MS } from "./protocol.ts";
-import type { S2sHandle } from "./s2s.ts";
+import type { S2sEvents, S2sHandle } from "./s2s.ts";
 import { _internals, buildSystemPrompt, createS2sSession, type SessionOptions } from "./session.ts";
 import { DEFAULT_INSTRUCTIONS } from "./types.ts";
 
@@ -82,20 +83,22 @@ describe("buildSystemPrompt", () => {
 
 // ─── createS2sSession tests ─────────────────────────────────────────────────
 
-/** Create a mock S2sHandle backed by EventTarget. */
-function makeMockHandle(): S2sHandle & { _fire: (type: string, detail?: unknown) => void } {
-  const target = new EventTarget();
-  const handle = Object.assign(target, {
+/** Create a mock S2sHandle backed by nanoevents. */
+function makeMockHandle(): S2sHandle & {
+  _fire: <K extends keyof S2sEvents>(type: K, ...args: Parameters<S2sEvents[K]>) => void;
+} {
+  const emitter = createNanoEvents<S2sEvents>();
+  return {
+    on: emitter.on.bind(emitter),
     sendAudio: vi.fn(),
     sendToolResult: vi.fn(),
     updateSession: vi.fn(),
     resumeSession: vi.fn(),
     close: vi.fn(),
-    _fire(type: string, detail?: unknown) {
-      target.dispatchEvent(new CustomEvent(type, { detail }));
+    _fire<K extends keyof S2sEvents>(type: K, ...args: Parameters<S2sEvents[K]>) {
+      emitter.emit(type, ...args);
     },
-  });
-  return handle;
+  };
 }
 
 function makeClient(): ClientSink & {
@@ -183,7 +186,7 @@ describe("createS2sSession", () => {
 
     await session.start();
     expect(connectSpy).toHaveBeenCalledOnce();
-    expect(onConnect).toHaveBeenCalledWith("session-1", undefined, HOOK_TIMEOUT_MS);
+    expect(onConnect).toHaveBeenCalledWith("session-1", HOOK_TIMEOUT_MS);
   });
 
   test("start() sends updateSession with greeting on initial connect", async () => {
@@ -223,7 +226,7 @@ describe("createS2sSession", () => {
     const { session } = setup({ hookInvoker });
     await session.start();
     await session.stop();
-    expect(onDisconnect).toHaveBeenCalledWith("session-1", undefined, HOOK_TIMEOUT_MS);
+    expect(onDisconnect).toHaveBeenCalledWith("session-1", HOOK_TIMEOUT_MS);
   });
 
   test("stop() is idempotent", async () => {
@@ -357,8 +360,8 @@ describe("createS2sSession", () => {
     const { session, client, mockHandle } = setup();
     await session.start();
 
-    mockHandle.dispatchEvent(new Event("speech_started"));
-    mockHandle.dispatchEvent(new Event("speech_stopped"));
+    mockHandle._fire("speech_started");
+    mockHandle._fire("speech_stopped");
 
     expect(client.events).toContainEqual({ type: "speech_started" });
     expect(client.events).toContainEqual({ type: "speech_stopped" });
@@ -368,7 +371,7 @@ describe("createS2sSession", () => {
     const { session, mockHandle } = setup();
     await session.start();
 
-    mockHandle.dispatchEvent(new Event("reply_started"));
+    mockHandle._fire("reply_started", { reply_id: "r1" });
     // No error — internal counter reset
   });
 

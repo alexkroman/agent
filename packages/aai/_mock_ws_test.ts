@@ -78,7 +78,7 @@ describe("MockWebSocket", () => {
 
     expect(ws.readyState).toBe(MockWebSocket.CLOSED);
     expect(onClose).toHaveBeenCalledOnce();
-    const ev = onClose.mock.calls[0]?.[0] as CloseEvent;
+    const ev = onClose.mock.calls[0]?.[0] as Event & { code: number };
     expect(ev.code).toBe(1000);
   });
 
@@ -89,7 +89,7 @@ describe("MockWebSocket", () => {
 
     ws.close(4001);
 
-    const ev = onClose.mock.calls[0]?.[0] as CloseEvent;
+    const ev = onClose.mock.calls[0]?.[0] as Event & { code: number };
     expect(ev.code).toBe(4001);
   });
 
@@ -147,7 +147,7 @@ describe("MockWebSocket", () => {
     ws.disconnect(1001);
 
     expect(onClose).toHaveBeenCalledOnce();
-    const ev = onClose.mock.calls[0]?.[0] as CloseEvent;
+    const ev = onClose.mock.calls[0]?.[0] as Event & { code: number };
     expect(ev.code).toBe(1001);
   });
 
@@ -158,7 +158,7 @@ describe("MockWebSocket", () => {
 
     ws.disconnect();
 
-    const ev = onClose.mock.calls[0]?.[0] as CloseEvent;
+    const ev = onClose.mock.calls[0]?.[0] as Event & { code: number };
     expect(ev.code).toBe(1000);
   });
 

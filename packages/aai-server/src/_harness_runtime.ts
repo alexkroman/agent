@@ -14,7 +14,9 @@
  * @module
  */
 
-import http from "node:http";
+// V8 isolates run scripts (not modules) — use require(), not import.
+// Type imports are erased at compile time so they don't affect runtime.
+import type * as Http from "node:http";
 import type { ToolSchema } from "@alexkroman1/aai/internal-types";
 import type { Kv } from "@alexkroman1/aai/kv";
 import type { AgentDef, HookContext, Message, ToolContext } from "@alexkroman1/aai/types";
@@ -26,6 +28,9 @@ import type {
   ToolCallRequest,
   ToolCallResponse,
 } from "./_harness_protocol.ts";
+
+// CJS require — V8 isolates run scripts, not modules
+const http: typeof Http = require("node:http");
 
 const CAP_URL = process.env.CAP_URL ?? "";
 
@@ -127,7 +132,6 @@ async function executeTool(agent: AgentDef, req: ToolCallRequest): Promise<ToolC
 
   const ctx: ToolContext = {
     env: Object.freeze(req.env),
-    abortSignal: AbortSignal.timeout(30_000),
     state: getState(agent, req.sessionId),
     kv,
     vector,
@@ -148,56 +152,62 @@ async function executeTool(agent: AgentDef, req: ToolCallRequest): Promise<ToolC
 
 // ── Hook invocation ──────────────────────────────────────────────────────
 
-async function invokeHook(agent: AgentDef, req: HookRequest): Promise<HookResponse> {
-  const ctx: HookContext = {
+function makeHookCtx(agent: AgentDef, req: HookRequest): HookContext {
+  return {
     env: Object.freeze(req.env),
     state: getState(agent, req.sessionId),
     kv,
     vector,
   };
+}
 
+async function runResolveTurnConfig(
+  agent: AgentDef,
+  ctx: HookContext,
+): Promise<{ maxSteps?: number; activeTools?: string[] } | null> {
+  const config: { maxSteps?: number; activeTools?: string[] } = {};
+  if (typeof agent.maxSteps === "function") {
+    config.maxSteps = (await agent.maxSteps(ctx)) ?? undefined;
+  }
+  if (agent.onBeforeStep) {
+    const r = await agent.onBeforeStep(0, ctx);
+    if (r?.activeTools) config.activeTools = r.activeTools;
+  }
+  return config.maxSteps !== undefined || config.activeTools !== undefined ? config : null;
+}
+
+async function invokeHook(agent: AgentDef, req: HookRequest): Promise<HookResponse> {
+  const ctx = makeHookCtx(agent, req);
   let result: unknown;
 
-  switch (req.hook) {
-    case "onConnect":
-      await agent.onConnect?.(ctx);
-      break;
-    case "onDisconnect":
+  const handlers: Record<string, () => Promise<void> | void> = {
+    onConnect: () => agent.onConnect?.(ctx),
+    onDisconnect: async () => {
       await agent.onDisconnect?.(ctx);
       sessionStates.delete(req.sessionId);
-      break;
-    case "onTurn":
-      await agent.onTurn?.(req.text ?? "", ctx);
-      break;
-    case "onError":
-      agent.onError?.(new Error(req.error?.message ?? "Unknown error"), ctx);
-      break;
-    case "onStep":
-      if (req.step) await agent.onStep?.(req.step, ctx);
-      break;
-    case "onBeforeStep":
+    },
+    onTurn: () => agent.onTurn?.(req.text ?? "", ctx),
+    onError: () => agent.onError?.(new Error(req.error?.message ?? "Unknown error"), ctx),
+    onStep: () => {
+      if (req.step) return agent.onStep?.(req.step, ctx);
+    },
+    onBeforeStep: async () => {
       result = await agent.onBeforeStep?.(req.stepNumber ?? 0, ctx);
-      break;
-    case "resolveTurnConfig": {
-      const config: { maxSteps?: number; activeTools?: string[] } = {};
-      if (typeof agent.maxSteps === "function") {
-        config.maxSteps = (await agent.maxSteps(ctx)) ?? undefined;
-      }
-      if (agent.onBeforeStep) {
-        const r = await agent.onBeforeStep(0, ctx);
-        if (r?.activeTools) config.activeTools = r.activeTools;
-      }
-      result = config.maxSteps !== undefined || config.activeTools !== undefined ? config : null;
-      break;
-    }
-  }
+    },
+    resolveTurnConfig: async () => {
+      result = await runResolveTurnConfig(agent, ctx);
+    },
+  };
+
+  const handler = handlers[req.hook];
+  if (handler) await handler();
 
   return { state: ctx.state as Record<string, unknown>, result };
 }
 
 // ── HTTP server ──────────────────────────────────────────────────────────
 
-function readBody(req: http.IncomingMessage): Promise<string> {
+function readBody(req: Http.IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     req.on("data", (c: Buffer) => chunks.push(c));
@@ -206,10 +216,10 @@ function readBody(req: http.IncomingMessage): Promise<string> {
   });
 }
 
-async function startHarness(): Promise<void> {
-  // @ts-expect-error agent_bundle.js is written to the isolate's virtual filesystem at runtime
-  const mod = await import("./agent_bundle.js");
-  const agent = mod.default as AgentDef;
+function startHarness(): void {
+  // CJS require — agent bundle is written to the isolate's virtual filesystem
+  const mod = require("./agent_bundle.js") as { default?: unknown };
+  const agent = (mod.default ?? mod) as AgentDef;
 
   if (!agent || typeof agent !== "object" || !agent.name) {
     throw new Error("Agent bundle must export a default agent definition");

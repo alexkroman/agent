@@ -1,7 +1,10 @@
 // Copyright 2025 the AAI authors. MIT license.
 // Uses Web Crypto API (available in workerd) for AES-256-GCM + HKDF.
 
+import { z } from "zod";
 import { fromBase64Url, toBase64Url } from "./_base64url.ts";
+
+const EnvSchema = z.record(z.string(), z.string());
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
@@ -56,5 +59,5 @@ export async function decryptEnv(
     key,
     ciphertext,
   );
-  return JSON.parse(dec.decode(plaintext));
+  return EnvSchema.parse(JSON.parse(dec.decode(plaintext)));
 }

@@ -62,9 +62,7 @@ Internal:
 - `./protocol` — wire-format types, Zod schemas, constants
 - `./internal-types` — `AgentConfig`, `ToolSchema`, `DeployBody`
 - `./worker-entry` — tool execution logic
-- `./worker-shim` — capnweb RPC wiring for Deno Workers
 - `./builtin-tools` — built-in tool definitions + memory tools
-- `./capnweb` — MessagePort RPC + WebSocket bridge
 - `./utils` — shared utility functions
 
 #### `@alexkroman1/aai-ui` (UI)

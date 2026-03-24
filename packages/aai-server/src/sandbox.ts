@@ -13,7 +13,6 @@
  * @module
  */
 
-import http from "node:http";
 import type { AgentConfig } from "@alexkroman1/aai/internal-types";
 import type { KvEntry } from "@alexkroman1/aai/kv";
 import { AUDIO_FORMAT } from "@alexkroman1/aai/protocol";
@@ -21,12 +20,15 @@ import { DEFAULT_S2S_CONFIG } from "@alexkroman1/aai/runtime";
 import { createS2sSession, type HookInvoker, type Session } from "@alexkroman1/aai/session";
 import type { ExecuteTool } from "@alexkroman1/aai/worker-entry";
 import { wireSessionSocket } from "@alexkroman1/aai/ws-handler";
+import { serve } from "@hono/node-server";
+import { Hono } from "hono";
 import {
   createInMemoryFileSystem,
   createNodeDriver,
   createNodeRuntimeDriverFactory,
   NodeRuntime,
 } from "secure-exec";
+import { z } from "zod";
 import type { IsolateConfig } from "./_harness_protocol.ts";
 import type { AgentMetadata } from "./_schemas.ts";
 import type { DeployStore } from "./bundle_store_tigris.ts";
@@ -98,74 +100,97 @@ function scopedVector(vectorStore: ServerVectorStore, scope: AgentScope) {
 
 // ── Capability server (per-sandbox, loopback, no auth) ───────────────────
 
-function readBody(req: http.IncomingMessage): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    req.on("data", (c: Buffer) => chunks.push(c));
-    req.on("end", () => resolve(Buffer.concat(chunks).toString()));
-    req.on("error", reject);
-  });
-}
-
-// biome-ignore lint/suspicious/noExplicitAny: route handlers use parsed JSON bodies
-type CapRoute = (body: any) => Promise<unknown>;
-
-function buildCapRoutes(
+function buildCapApp(
   kv: ReturnType<typeof scopedKv>,
   vector: ReturnType<typeof scopedVector> | undefined,
-): Record<string, CapRoute> {
+): Hono {
+  const app = new Hono();
+
   const requireVec = () => {
     if (!vector) throw Object.assign(new Error("Vector store not configured"), { status: 503 });
     return vector;
   };
-  return {
-    "/kv/get": (b) => kv.get(b.key),
-    "/kv/set": async (b) => {
-      await kv.set(b.key, b.value, b.options);
-    },
-    "/kv/del": async (b) => {
-      await kv.delete(b.key);
-    },
-    "/kv/list": (b) => kv.list(b.prefix, { limit: b.limit, reverse: b.reverse }),
-    "/kv/keys": (b) => kv.keys(b.pattern),
-    "/vec/upsert": async (b) => {
-      await requireVec().upsert(b.id, b.data, b.metadata);
-    },
-    "/vec/query": (b) => requireVec().query(b.text, { topK: b.topK, filter: b.filter }),
-    "/vec/remove": async (b) => {
-      await requireVec().remove(b.ids);
-    },
-  };
+
+  const kvGetSchema = z.object({ key: z.string() });
+  const kvSetSchema = z.object({
+    key: z.string(),
+    value: z.unknown(),
+    options: z.object({ expireIn: z.number().optional() }).optional(),
+  });
+  const kvDelSchema = z.object({ key: z.string() });
+  const kvListSchema = z.object({
+    prefix: z.string(),
+    limit: z.number().optional(),
+    reverse: z.boolean().optional(),
+  });
+  const kvKeysSchema = z.object({ pattern: z.string().optional() });
+  const vecUpsertSchema = z.object({
+    id: z.string(),
+    data: z.string(),
+    metadata: z.record(z.string(), z.unknown()).optional(),
+  });
+  const vecQuerySchema = z.object({
+    text: z.string(),
+    topK: z.number().optional(),
+    filter: z.string().optional(),
+  });
+  const vecRemoveSchema = z.object({ ids: z.union([z.string(), z.array(z.string())]) });
+
+  app.post("/kv/get", async (c) => {
+    const { key } = kvGetSchema.parse(await c.req.json());
+    return c.json((await kv.get(key)) ?? null);
+  });
+  app.post("/kv/set", async (c) => {
+    const { key, value, options } = kvSetSchema.parse(await c.req.json());
+    await kv.set(key, value, options);
+    return c.json(null);
+  });
+  app.post("/kv/del", async (c) => {
+    const { key } = kvDelSchema.parse(await c.req.json());
+    await kv.delete(key);
+    return c.json(null);
+  });
+  app.post("/kv/list", async (c) => {
+    const { prefix, limit, reverse } = kvListSchema.parse(await c.req.json());
+    return c.json(await kv.list(prefix, { limit, reverse }));
+  });
+  app.post("/kv/keys", async (c) => {
+    const { pattern } = kvKeysSchema.parse(await c.req.json());
+    return c.json(await kv.keys(pattern));
+  });
+  app.post("/vec/upsert", async (c) => {
+    const { id, data, metadata } = vecUpsertSchema.parse(await c.req.json());
+    await requireVec().upsert(id, data, metadata);
+    return c.json(null);
+  });
+  app.post("/vec/query", async (c) => {
+    const { text, topK, filter } = vecQuerySchema.parse(await c.req.json());
+    return c.json(await requireVec().query(text, { topK, filter }));
+  });
+  app.post("/vec/remove", async (c) => {
+    const { ids } = vecRemoveSchema.parse(await c.req.json());
+    await requireVec().remove(ids);
+    return c.json(null);
+  });
+
+  app.onError((err, c) => {
+    const status = ((err as { status?: number }).status ??
+      500) as import("hono/utils/http-status").ContentfulStatusCode;
+    return c.json({ error: err.message }, status);
+  });
+
+  return app;
 }
 
 async function startCapabilityServer(
   kv: ReturnType<typeof scopedKv>,
   vector: ReturnType<typeof scopedVector> | undefined,
 ): Promise<{ url: string; close: () => void }> {
-  const routes = buildCapRoutes(kv, vector);
-
-  const server = http.createServer(async (req, res) => {
-    try {
-      const handler = routes[req.url ?? ""];
-      if (!handler) {
-        res.writeHead(404);
-        res.end("Not found");
-        return;
-      }
-      const body = JSON.parse(await readBody(req));
-      const result = await handler(body);
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify(result ?? null));
-    } catch (err: unknown) {
-      const status = (err as { status?: number }).status ?? 500;
-      const msg = err instanceof Error ? err.message : String(err);
-      res.writeHead(status, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: msg }));
-    }
-  });
+  const app = buildCapApp(kv, vector);
+  const server = serve({ fetch: app.fetch, port: 0, hostname: "127.0.0.1" });
 
   await new Promise<void>((resolve) => {
-    server.listen(0, "127.0.0.1", resolve);
+    server.on("listening", resolve);
   });
 
   const addr = server.address() as { port: number };
@@ -206,8 +231,8 @@ async function startIsolate(
     onStdio(event) {
       if (event.channel === "stdout") {
         try {
-          const data = JSON.parse(event.message);
-          if (data.port) resolvePort(data.port);
+          const parsed = z.object({ port: z.number() }).safeParse(JSON.parse(event.message));
+          if (parsed.success) resolvePort(parsed.data.port);
         } catch {
           // Not the port announcement, ignore
         }
@@ -215,16 +240,56 @@ async function startIsolate(
     },
   });
 
-  runtime.exec('import("/app/_harness_runtime.js")', { cwd: "/app" });
+  runtime.exec('require("/app/_harness_runtime.js")', { cwd: "/app" });
 
   const port = await portPromise;
   return { port, runtime };
 }
 
+// ── Isolate response schemas (validated on the host, not in the isolate) ──
+
+const ToolSchemaZ = z.object({
+  name: z.string(),
+  description: z.string(),
+  parameters: z.record(z.string(), z.unknown()),
+});
+
+const IsolateConfigSchema = z.object({
+  name: z.string(),
+  instructions: z.string(),
+  greeting: z.string(),
+  sttPrompt: z.string().optional(),
+  maxSteps: z.number().optional(),
+  toolChoice: z.string().optional(),
+  builtinTools: z.array(z.string()).optional(),
+  activeTools: z.array(z.string()).optional(),
+  toolSchemas: z.array(ToolSchemaZ),
+  hasState: z.boolean(),
+  hooks: z.object({
+    onConnect: z.boolean(),
+    onDisconnect: z.boolean(),
+    onError: z.boolean(),
+    onTurn: z.boolean(),
+    onStep: z.boolean(),
+    onBeforeStep: z.boolean(),
+    maxStepsIsFn: z.boolean(),
+  }),
+});
+
+const ToolResponseSchema = z.object({ result: z.string() });
+
+const HookResponseSchema = z.object({ result: z.unknown().optional() });
+
+const TurnConfigSchema = z
+  .object({ maxSteps: z.number().optional(), activeTools: z.array(z.string()).optional() })
+  .nullable();
+
+// ── Isolate config fetch ─────────────────────────────────────────────────
+
 async function getIsolateConfig(port: number): Promise<IsolateConfig> {
   const res = await fetch(`http://127.0.0.1:${port}/config`);
   if (!res.ok) throw new Error(`Isolate /config failed: ${res.status}`);
-  return (await res.json()) as IsolateConfig;
+  return IsolateConfigSchema.parse(await res.json()) as IsolateConfig;
 }
 
 // ── Build executeTool + hookInvoker from isolate ─────────────────────────
@@ -237,7 +302,7 @@ function buildExecuteTool(isolateUrl: string, env: Record<string, string>): Exec
       body: JSON.stringify({ name, args, sessionId, messages, env }),
     });
     if (!res.ok) throw new Error(`Tool ${name} failed: ${res.status}`);
-    return ((await res.json()) as { result: string }).result;
+    return ToolResponseSchema.parse(await res.json()).result;
   };
 }
 
@@ -249,7 +314,7 @@ function buildHookInvoker(isolateUrl: string, env: Record<string, string>): Hook
       body: JSON.stringify({ hook, env, ...extra }),
     });
     if (!res.ok) throw new Error(`Hook ${hook} failed: ${res.status}`);
-    return ((await res.json()) as { result: unknown }).result;
+    return HookResponseSchema.parse(await res.json()).result;
   }
 
   return {
@@ -270,7 +335,7 @@ function buildHookInvoker(isolateUrl: string, env: Record<string, string>): Hook
     },
     async resolveTurnConfig(sessionId) {
       const r = await callHook("resolveTurnConfig", { sessionId });
-      return r as { maxSteps?: number; activeTools?: string[] } | null;
+      return TurnConfigSchema.parse(r);
     },
   };
 }

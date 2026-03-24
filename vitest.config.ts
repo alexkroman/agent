@@ -43,7 +43,7 @@ export default defineConfig({
           root: "packages/aai-cli",
           globals: true,
           include: ["**/*_test.{ts,tsx}"],
-          exclude: ["pack_build_test.ts", "node_modules", "dist"],
+          exclude: ["pack_build_test.ts", "e2e_test.ts", "node_modules", "dist"],
         },
       },
       {

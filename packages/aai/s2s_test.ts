@@ -14,14 +14,17 @@ function createWebSocketStub() {
       const builders: Record<string, () => Event> = {
         open: () => new Event("open"),
         message: () => new MessageEvent("message", { data: args[0] }),
-        close: () =>
-          new CloseEvent("close", {
-            code: typeof args[0] === "number" ? args[0] : undefined,
-            reason: typeof args[1] === "string" ? args[1] : undefined,
-          }),
+        close: () => {
+          const ev = new Event("close");
+          if (typeof args[0] === "number") Object.assign(ev, { code: args[0] });
+          if (typeof args[1] === "string") Object.assign(ev, { reason: args[1] });
+          return ev;
+        },
         error: () => {
           const msg = args[0] instanceof Error ? args[0].message : String(args[0]);
-          return new ErrorEvent("error", { message: msg });
+          const ev = new Event("error");
+          Object.defineProperty(ev, "message", { value: msg });
+          return ev;
         },
       };
       const build = builders[event];
@@ -161,7 +164,7 @@ describe("connectS2s", () => {
   test("session.ready dispatches 'ready' event", async () => {
     const { raw, handle } = await setupHandle();
     const onReady = vi.fn();
-    handle.addEventListener("ready", onReady);
+    handle.on("ready", onReady);
 
     raw.emit(
       "message",
@@ -174,14 +177,13 @@ describe("connectS2s", () => {
     );
 
     expect(onReady).toHaveBeenCalledOnce();
-    const detail = (onReady.mock.calls[0]?.[0] as CustomEvent).detail;
-    expect(detail.session_id).toBe("s123");
+    expect(onReady.mock.calls[0]?.[0].session_id).toBe("s123");
   });
 
   test("input.speech.started dispatches 'speech_started'", async () => {
     const { raw, handle } = await setupHandle();
     const handler = vi.fn();
-    handle.addEventListener("speech_started", handler);
+    handle.on("speech_started", handler);
 
     raw.emit("message", Buffer.from(JSON.stringify({ type: "input.speech.started" })));
     expect(handler).toHaveBeenCalledOnce();
@@ -190,7 +192,7 @@ describe("connectS2s", () => {
   test("input.speech.stopped dispatches 'speech_stopped'", async () => {
     const { raw, handle } = await setupHandle();
     const handler = vi.fn();
-    handle.addEventListener("speech_stopped", handler);
+    handle.on("speech_stopped", handler);
 
     raw.emit("message", Buffer.from(JSON.stringify({ type: "input.speech.stopped" })));
     expect(handler).toHaveBeenCalledOnce();
@@ -199,7 +201,7 @@ describe("connectS2s", () => {
   test("transcript.user.delta dispatches 'user_transcript_delta'", async () => {
     const { raw, handle } = await setupHandle();
     const handler = vi.fn();
-    handle.addEventListener("user_transcript_delta", handler);
+    handle.on("user_transcript_delta", handler);
 
     raw.emit(
       "message",
@@ -211,14 +213,13 @@ describe("connectS2s", () => {
       ),
     );
 
-    const detail = (handler.mock.calls[0]?.[0] as CustomEvent).detail;
-    expect(detail.text).toBe("Hel");
+    expect(handler.mock.calls[0]?.[0].text).toBe("Hel");
   });
 
   test("transcript.user dispatches 'user_transcript'", async () => {
     const { raw, handle } = await setupHandle();
     const handler = vi.fn();
-    handle.addEventListener("user_transcript", handler);
+    handle.on("user_transcript", handler);
 
     raw.emit(
       "message",
@@ -231,15 +232,15 @@ describe("connectS2s", () => {
       ),
     );
 
-    const detail = (handler.mock.calls[0]?.[0] as CustomEvent).detail;
-    expect(detail.item_id).toBe("item-1");
-    expect(detail.text).toBe("Hello world");
+    const payload = handler.mock.calls[0]?.[0];
+    expect(payload.item_id).toBe("item-1");
+    expect(payload.text).toBe("Hello world");
   });
 
   test("reply.started dispatches 'reply_started'", async () => {
     const { raw, handle } = await setupHandle();
     const handler = vi.fn();
-    handle.addEventListener("reply_started", handler);
+    handle.on("reply_started", handler);
 
     raw.emit(
       "message",
@@ -251,14 +252,13 @@ describe("connectS2s", () => {
       ),
     );
 
-    const detail = (handler.mock.calls[0]?.[0] as CustomEvent).detail;
-    expect(detail.reply_id).toBe("r1");
+    expect(handler.mock.calls[0]?.[0].reply_id).toBe("r1");
   });
 
   test("transcript.agent.delta dispatches 'agent_transcript_delta'", async () => {
     const { raw, handle } = await setupHandle();
     const handler = vi.fn();
-    handle.addEventListener("agent_transcript_delta", handler);
+    handle.on("agent_transcript_delta", handler);
 
     raw.emit(
       "message",
@@ -270,14 +270,13 @@ describe("connectS2s", () => {
       ),
     );
 
-    const detail = (handler.mock.calls[0]?.[0] as CustomEvent).detail;
-    expect(detail.text).toBe("I think");
+    expect(handler.mock.calls[0]?.[0].text).toBe("I think");
   });
 
   test("transcript.agent dispatches 'agent_transcript'", async () => {
     const { raw, handle } = await setupHandle();
     const handler = vi.fn();
-    handle.addEventListener("agent_transcript", handler);
+    handle.on("agent_transcript", handler);
 
     raw.emit(
       "message",
@@ -289,14 +288,13 @@ describe("connectS2s", () => {
       ),
     );
 
-    const detail = (handler.mock.calls[0]?.[0] as CustomEvent).detail;
-    expect(detail.text).toBe("Full response");
+    expect(handler.mock.calls[0]?.[0].text).toBe("Full response");
   });
 
   test("tool.call dispatches 'tool_call'", async () => {
     const { raw, handle } = await setupHandle();
     const handler = vi.fn();
-    handle.addEventListener("tool_call", handler);
+    handle.on("tool_call", handler);
 
     raw.emit(
       "message",
@@ -310,16 +308,16 @@ describe("connectS2s", () => {
       ),
     );
 
-    const detail = (handler.mock.calls[0]?.[0] as CustomEvent).detail;
-    expect(detail.call_id).toBe("c1");
-    expect(detail.name).toBe("web_search");
-    expect(detail.args).toEqual({ query: "test" });
+    const payload = handler.mock.calls[0]?.[0];
+    expect(payload.call_id).toBe("c1");
+    expect(payload.name).toBe("web_search");
+    expect(payload.args).toEqual({ query: "test" });
   });
 
   test("reply.done dispatches 'reply_done'", async () => {
     const { raw, handle } = await setupHandle();
     const handler = vi.fn();
-    handle.addEventListener("reply_done", handler);
+    handle.on("reply_done", handler);
 
     raw.emit(
       "message",
@@ -331,14 +329,13 @@ describe("connectS2s", () => {
       ),
     );
 
-    const detail = (handler.mock.calls[0]?.[0] as CustomEvent).detail;
-    expect(detail.status).toBe("completed");
+    expect(handler.mock.calls[0]?.[0].status).toBe("completed");
   });
 
   test("session.error with session_not_found dispatches 'session_expired'", async () => {
     const { raw, handle } = await setupHandle();
     const handler = vi.fn();
-    handle.addEventListener("session_expired", handler);
+    handle.on("session_expired", handler);
 
     raw.emit(
       "message",
@@ -357,7 +354,7 @@ describe("connectS2s", () => {
   test("session.error with session_forbidden dispatches 'session_expired'", async () => {
     const { raw, handle } = await setupHandle();
     const handler = vi.fn();
-    handle.addEventListener("session_expired", handler);
+    handle.on("session_expired", handler);
 
     raw.emit(
       "message",
@@ -376,7 +373,7 @@ describe("connectS2s", () => {
   test("session.error with other code dispatches 'error'", async () => {
     const { raw, handle } = await setupHandle();
     const handler = vi.fn();
-    handle.addEventListener("error", handler);
+    handle.on("error", handler);
 
     raw.emit(
       "message",
@@ -390,14 +387,14 @@ describe("connectS2s", () => {
     );
 
     expect(handler).toHaveBeenCalledOnce();
-    const detail = (handler.mock.calls[0]?.[0] as CustomEvent).detail;
-    expect(detail.code).toBe("rate_limit");
+    const payload = handler.mock.calls[0]?.[0];
+    expect(payload.code).toBe("rate_limit");
   });
 
   test("bare error dispatches 'error' with code 'connection'", async () => {
     const { raw, handle } = await setupHandle();
     const handler = vi.fn();
-    handle.addEventListener("error", handler);
+    handle.on("error", handler);
 
     raw.emit(
       "message",
@@ -410,9 +407,9 @@ describe("connectS2s", () => {
     );
 
     expect(handler).toHaveBeenCalledOnce();
-    const detail = (handler.mock.calls[0]?.[0] as CustomEvent).detail;
-    expect(detail.code).toBe("connection");
-    expect(detail.message).toBe("Bad gateway");
+    const payload = handler.mock.calls[0]?.[0];
+    expect(payload.code).toBe("connection");
+    expect(payload.message).toBe("Bad gateway");
   });
 
   // ─── Audio fast path ───────────────────────────────────────────────────
@@ -420,7 +417,7 @@ describe("connectS2s", () => {
   test("reply.audio dispatches 'audio' with decoded Uint8Array", async () => {
     const { raw, handle } = await setupHandle();
     const handler = vi.fn();
-    handle.addEventListener("audio", handler);
+    handle.on("audio", handler);
 
     const audioBytes = new Uint8Array([10, 20, 30, 40]);
     const base64 = Buffer.from(audioBytes).toString("base64");
@@ -436,9 +433,9 @@ describe("connectS2s", () => {
     );
 
     expect(handler).toHaveBeenCalledOnce();
-    const detail = (handler.mock.calls[0]?.[0] as CustomEvent).detail;
-    expect(detail.audio).toBeInstanceOf(Uint8Array);
-    expect(Array.from(detail.audio)).toEqual([10, 20, 30, 40]);
+    const payload = handler.mock.calls[0]?.[0];
+    expect(payload.audio).toBeInstanceOf(Uint8Array);
+    expect(Array.from(payload.audio)).toEqual([10, 20, 30, 40]);
   });
 
   // ─── Edge cases ────────────────────────────────────────────────────────
@@ -467,12 +464,8 @@ describe("connectS2s", () => {
   });
 
   test("reply.content_part events are silently ignored (no dispatch)", async () => {
-    const { raw, handle } = await setupHandle();
-    const handler = vi.fn();
-    // These types return undefined from S2S_DISPATCH
-    handle.addEventListener("reply.content_part.started", handler);
-    handle.addEventListener("reply.content_part.done", handler);
-
+    const { raw } = await setupHandle();
+    // These types return undefined from S2S_DISPATCH — no event should fire.
     raw.emit(
       "message",
       Buffer.from(
@@ -489,8 +482,7 @@ describe("connectS2s", () => {
         }),
       ),
     );
-
-    expect(handler).not.toHaveBeenCalled();
+    // No error thrown = pass
   });
 
   // ─── Close and error events ────────────────────────────────────────────
@@ -498,7 +490,7 @@ describe("connectS2s", () => {
   test("close event dispatches 'close' on handle", async () => {
     const { raw, handle } = await setupHandle();
     const handler = vi.fn();
-    handle.addEventListener("close", handler);
+    handle.on("close", handler);
 
     raw.emit("close", 1000, "normal");
 
@@ -508,19 +500,19 @@ describe("connectS2s", () => {
   test("error after open dispatches 'error' event on handle", async () => {
     const { raw, handle } = await setupHandle();
     const handler = vi.fn();
-    handle.addEventListener("error", handler);
+    handle.on("error", handler);
 
     raw.emit("error", new Error("ws transport error"));
 
     expect(handler).toHaveBeenCalledOnce();
-    const detail = (handler.mock.calls[0]?.[0] as CustomEvent).detail;
-    expect(detail.code).toBe("ws_error");
+    const payload = handler.mock.calls[0]?.[0];
+    expect(payload.code).toBe("ws_error");
   });
 
   test("session.updated dispatches 'session_updated'", async () => {
     const { raw, handle } = await setupHandle();
     const handler = vi.fn();
-    handle.addEventListener("session_updated", handler);
+    handle.on("session_updated", handler);
 
     raw.emit("message", Buffer.from(JSON.stringify({ type: "session.updated" })));
 

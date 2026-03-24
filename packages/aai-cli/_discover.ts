@@ -2,7 +2,17 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { humanId } from "human-id";
+import { z } from "zod";
 import { askPassword } from "./_prompts.tsx";
+
+const AuthConfigSchema = z.object({
+  assemblyai_api_key: z.string().optional(),
+});
+
+const ProjectConfigSchema = z.object({
+  slug: z.string(),
+  serverUrl: z.string(),
+});
 
 /** Resolve the working directory from INIT_CWD or process.cwd(). */
 export function resolveCwd(): string {
@@ -22,13 +32,11 @@ export function generateSlug(): string {
 const CONFIG_DIR = path.join(process.env.HOME ?? process.env.USERPROFILE ?? ".", ".config", "aai");
 const CONFIG_FILE = path.join(CONFIG_DIR, "config.json");
 
-type AuthConfig = {
-  assemblyai_api_key?: string;
-};
+type AuthConfig = z.infer<typeof AuthConfigSchema>;
 
 async function readAuthConfig(): Promise<AuthConfig> {
   try {
-    return JSON.parse(await fs.readFile(CONFIG_FILE, "utf-8"));
+    return AuthConfigSchema.parse(JSON.parse(await fs.readFile(CONFIG_FILE, "utf-8")));
   } catch {
     return {};
   }
@@ -73,10 +81,7 @@ export async function getApiKey(): Promise<string> {
 // Like .vercel/project.json — stores slug, server URL
 
 /** Project-level deployment metadata stored in `.aai/project.json`. */
-export type ProjectConfig = {
-  slug: string;
-  serverUrl: string;
-};
+export type ProjectConfig = z.infer<typeof ProjectConfigSchema>;
 
 /**
  * Reads `.aai/project.json` from an agent directory.
@@ -84,7 +89,9 @@ export type ProjectConfig = {
  */
 export async function readProjectConfig(agentDir: string): Promise<ProjectConfig | null> {
   try {
-    return JSON.parse(await fs.readFile(path.join(agentDir, ".aai", "project.json"), "utf-8"));
+    return ProjectConfigSchema.parse(
+      JSON.parse(await fs.readFile(path.join(agentDir, ".aai", "project.json"), "utf-8")),
+    );
   } catch {
     return null;
   }
