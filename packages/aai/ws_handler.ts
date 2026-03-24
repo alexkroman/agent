@@ -204,7 +204,8 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
   });
 
   ws.addEventListener("error", (event) => {
-    const msg = event instanceof ErrorEvent ? event.message : "WebSocket error";
+    const msg =
+      "message" in event && typeof event.message === "string" ? event.message : "WebSocket error";
     log.error("WebSocket error", { ...ctx, sid, error: msg });
   });
 }

@@ -13,6 +13,34 @@ import { errorMessage } from "./_utils.ts";
 import type { Logger, S2SConfig } from "./runtime.ts";
 import { consoleLogger } from "./runtime.ts";
 
+/** Polyfill CloseEvent for Node.js environments. */
+const CloseEventImpl =
+  typeof globalThis.CloseEvent !== "undefined"
+    ? globalThis.CloseEvent
+    : class CloseEvent extends Event {
+        readonly code: number;
+        readonly reason: string;
+        readonly wasClean: boolean;
+        constructor(type: string, init?: { code?: number; reason?: string; wasClean?: boolean }) {
+          super(type);
+          this.code = init?.code ?? 1000;
+          this.reason = init?.reason ?? "";
+          this.wasClean = init?.wasClean ?? true;
+        }
+      };
+
+/** Polyfill ErrorEvent for Node.js environments. */
+const ErrorEventImpl =
+  typeof globalThis.ErrorEvent !== "undefined"
+    ? globalThis.ErrorEvent
+    : class ErrorEvent extends Event {
+        readonly message: string;
+        constructor(type: string, init?: { message?: string }) {
+          super(type);
+          this.message = init?.message ?? "";
+        }
+      };
+
 // ─── Base64 helpers (native Buffer for C++-speed encode/decode) ─────────────
 
 function uint8ToBase64(bytes: Uint8Array): string {
@@ -64,11 +92,11 @@ export function wrapOnStyleWebSocket(ws: OnStyleWebSocket): S2sWebSocket {
   ws.on("close", (code: unknown, reason: unknown) => {
     const init: CloseEventInit = { reason: String(reason ?? "") };
     if (typeof code === "number") init.code = code;
-    target.dispatchEvent(new CloseEvent("close", init));
+    target.dispatchEvent(new CloseEventImpl("close", init));
   });
   ws.on("error", (err: unknown) =>
     target.dispatchEvent(
-      new ErrorEvent("error", {
+      new ErrorEventImpl("error", {
         message: errorMessage(err),
       }),
     ),
@@ -313,7 +341,8 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
     }) as EventListener);
 
     ws.addEventListener("error", ((ev: Event) => {
-      const message = ev instanceof ErrorEvent ? ev.message : "WebSocket error";
+      const message =
+        "message" in ev && typeof ev.message === "string" ? ev.message : "WebSocket error";
       const errObj = new Error(message);
       log.error("S2S WebSocket error", { error: errObj.message });
       if (!opened) {

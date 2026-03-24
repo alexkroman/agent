@@ -433,7 +433,9 @@ describe("wireSessionSocket", () => {
       logger,
     });
 
-    ws.dispatchEvent(new ErrorEvent("error", { message: "test error" }));
+    const errEvent = new Event("error");
+    Object.defineProperty(errEvent, "message", { value: "test error" });
+    ws.dispatchEvent(errEvent);
 
     expect(logger.error).toHaveBeenCalledWith(
       "WebSocket error",

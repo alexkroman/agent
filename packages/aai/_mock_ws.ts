@@ -1,4 +1,21 @@
 // Copyright 2025 the AAI authors. MIT license.
+
+/** Polyfill CloseEvent for Node.js environments where it's not available. */
+const CloseEventImpl =
+  typeof globalThis.CloseEvent !== "undefined"
+    ? globalThis.CloseEvent
+    : class CloseEvent extends Event {
+        readonly code: number;
+        readonly reason: string;
+        readonly wasClean: boolean;
+        constructor(type: string, init?: { code?: number; reason?: string; wasClean?: boolean }) {
+          super(type);
+          this.code = init?.code ?? 1000;
+          this.reason = init?.reason ?? "";
+          this.wasClean = init?.wasClean ?? true;
+        }
+      };
+
 /**
  * A mock WebSocket implementation for testing.
  *
@@ -68,7 +85,7 @@ export class MockWebSocket extends EventTarget {
    */
   close(code?: number, _reason?: string) {
     this.readyState = MockWebSocket.CLOSED;
-    this.dispatchEvent(new CloseEvent("close", { code: code ?? 1000 }));
+    this.dispatchEvent(new CloseEventImpl("close", { code: code ?? 1000 }));
   }
 
   /**
@@ -101,7 +118,7 @@ export class MockWebSocket extends EventTarget {
    * @param code - The close code (defaults to 1000).
    */
   disconnect(code = 1000) {
-    this.dispatchEvent(new CloseEvent("close", { code }));
+    this.dispatchEvent(new CloseEventImpl("close", { code }));
   }
 
   /** Dispatch an `"error"` event on this socket. */
