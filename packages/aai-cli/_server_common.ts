@@ -2,6 +2,7 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
+import type { AgentServer } from "@alexkroman1/aai/server";
 import type { AgentDef } from "@alexkroman1/aai/types";
 import { tsImport } from "tsx/esm/api";
 import { getApiKey } from "./_discover.ts";
@@ -45,21 +46,10 @@ export async function bootServer(
   clientDir: string,
   env: Record<string, string>,
   port: number,
-): Promise<void> {
-  const { wrapOnStyleWebSocket } = await import("@alexkroman1/aai/s2s");
-  const wsMod = await import("ws");
-  const WS = wsMod.default ?? wsMod;
-  const createWebSocket = (url: string, opts: { headers: Record<string, string> }) =>
-    wrapOnStyleWebSocket(new WS(url, { headers: opts.headers }));
+): Promise<AgentServer> {
   const clientHtml = await fs.readFile(path.join(clientDir, "index.html"), "utf-8");
-
   const { createServer } = await import("@alexkroman1/aai/server");
-  const server = createServer({
-    agent: agentDef,
-    clientHtml,
-    clientDir,
-    env,
-    createWebSocket,
-  });
+  const server = createServer({ agent: agentDef, clientHtml, clientDir, env });
   await server.listen(port);
+  return server;
 }

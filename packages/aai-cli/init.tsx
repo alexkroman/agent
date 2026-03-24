@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -70,7 +71,10 @@ export async function runInitCommand(
   }
 
   const cliDir = path.dirname(fileURLToPath(import.meta.url));
-  const templatesDir = path.join(cliDir, "templates");
+  // When running from dist/, templates are one level up
+  const templatesDir = existsSync(path.join(cliDir, "templates"))
+    ? path.join(cliDir, "templates")
+    : path.join(cliDir, "..", "templates");
   const { runInit } = await import("./_init.ts");
   const template = opts.template || "simple";
 

@@ -14,7 +14,11 @@
     "./server": "./server.ts",
     "./protocol": "./protocol.ts",
     "./s2s": "./s2s.ts",
-    "./worker-shim": "./worker_shim.ts",
+    "./session": "./session.ts",
+    "./internal-types": "./_internal_types.ts",
+    "./runtime": "./runtime.ts",
+    "./worker-entry": "./worker_entry.ts",
+    "./ws-handler": "./ws_handler.ts",
     "./utils": "./_utils.ts"
   },
   "scripts": {
@@ -24,7 +28,6 @@
   },
   "dependencies": {
     "@hono/node-server": "^1.19.11",
-    "capnweb": "^0.6.1",
     "hono": "^4.12.8",
     "html-to-text": "^9.0.5",
     "ws": "^8.18.0",
@@ -36,6 +39,6 @@
     "@types/ws": "^8.18.1"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   }
 }

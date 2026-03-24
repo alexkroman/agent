@@ -46,6 +46,14 @@ export default defineConfig({
           exclude: ["pack_build_test.ts", "node_modules", "dist"],
         },
       },
+      {
+        test: {
+          name: "aai-server",
+          root: "packages/aai-server",
+          globals: true,
+          include: ["**/*_test.ts"],
+        },
+      },
     ],
   },
 });

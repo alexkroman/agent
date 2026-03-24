@@ -2,8 +2,9 @@
 /**
  * Self-hostable agent server.
  *
- * `createServer()` returns a server with a standard `fetch(Request): Response`
- * handler and a Node.js `listen()` method for HTTP + WebSocket.
+ * `createServer()` returns a server with `listen()` for HTTP + WebSocket.
+ * Calls `createDirectExecutor` + `wireSessionSocket` directly — no
+ * intermediate WintercServer layer.
  *
  * @module
  */
@@ -11,13 +12,15 @@
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
+import { WebSocketServer } from "ws";
+import { createDirectExecutor } from "./direct_executor.ts";
 import type { Kv } from "./kv.ts";
+import { AUDIO_FORMAT } from "./protocol.ts";
 import type { Logger, S2SConfig } from "./runtime.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime.ts";
-import { type CreateS2sWebSocket, wrapOnStyleWebSocket } from "./s2s.ts";
+import type { Session } from "./session.ts";
 import type { AgentDef } from "./types.ts";
-import { createWintercServer, type WintercServer } from "./winterc_server.ts";
-import type { SessionWebSocket } from "./ws_handler.ts";
+import { type SessionWebSocket, wireSessionSocket } from "./ws_handler.ts";
 
 export type ServerOptions = {
   /** The agent definition returned by `defineAgent()`. */
@@ -34,35 +37,15 @@ export type ServerOptions = {
   logger?: Logger;
   /** S2S configuration. Defaults to AssemblyAI production. */
   s2sConfig?: S2SConfig;
-  /** WebSocket factory for S2S connections. Auto-detected if not provided. */
-  createWebSocket?: CreateS2sWebSocket;
 };
 
 export type AgentServer = {
-  /** Standard fetch handler using web `Request`/`Response` types. */
-  fetch(request: Request): Promise<Response>;
   /** Start listening on the given port. */
   listen(port?: number): Promise<void>;
   /** Stop the server. */
   close(): Promise<void>;
 };
 
-/** Try to load the `ws` package for WebSocket connections. */
-async function loadWsFactory(): Promise<CreateS2sWebSocket> {
-  try {
-    const mod = await import("ws");
-    const WS = mod.default ?? mod;
-    return (url: string, opts: { headers: Record<string, string> }) =>
-      wrapOnStyleWebSocket(new WS(url, { headers: opts.headers }));
-  } catch {
-    throw new Error(
-      "WebSocket factory not provided and `ws` package not found. " +
-        "Install `ws` (`npm install ws`) or pass `createWebSocket` option.",
-    );
-  }
-}
-
-/** Filter env to only defined string values. */
 function resolveEnv(env: Record<string, string | undefined>): Record<string, string> {
   return Object.fromEntries(Object.entries(env).filter(([, v]) => v !== undefined)) as Record<
     string,
@@ -70,19 +53,6 @@ function resolveEnv(env: Record<string, string | undefined>): Record<string, str
   >;
 }
 
-/**
- * Create a self-hostable agent server.
- *
- * @example
- * ```ts
- * import { defineAgent } from "aai";
- * import { createServer } from "aai/server";
- *
- * const agent = defineAgent({ name: "my-agent" });
- * const server = createServer({ agent });
- * await server.listen(3000);
- * ```
- */
 export function createServer(options: ServerOptions): AgentServer {
   const {
     agent,
@@ -97,48 +67,28 @@ export function createServer(options: ServerOptions): AgentServer {
     options.env ?? (typeof process !== "undefined" ? (process.env as Record<string, string>) : {}),
   );
 
-  let wsFactory: CreateS2sWebSocket | null = options.createWebSocket ?? null;
+  const executor = createDirectExecutor({ agent, env, ...(kv ? { kv } : {}), logger, s2sConfig });
+  const sessions = new Map<string, Session>();
+  const readyConfig = {
+    audioFormat: AUDIO_FORMAT,
+    sampleRate: s2sConfig.inputSampleRate,
+    ttsSampleRate: s2sConfig.outputSampleRate,
+  };
 
-  async function getWsFactory(): Promise<CreateS2sWebSocket> {
-    if (!wsFactory) {
-      wsFactory = await loadWsFactory();
-    }
-    return wsFactory;
-  }
-
-  // WintercServer is created lazily after wsFactory is resolved
-  let winterc: WintercServer | null = null;
-
-  function getWinterc(): WintercServer {
-    if (!winterc) {
-      winterc = createWintercServer({
-        agent,
-        env,
-        ...(kv ? { kv } : {}),
-        createWebSocket:
-          wsFactory ??
-          (() => {
-            throw new Error("WebSocket factory not loaded");
-          }),
-        ...(clientHtml !== undefined ? { clientHtml } : {}),
-        logger,
-        s2sConfig,
-      });
-    }
-    return winterc;
+  function handleWs(ws: SessionWebSocket, skipGreeting: boolean): void {
+    wireSessionSocket(ws, {
+      sessions,
+      createSession: (sid, client) =>
+        executor.createSession({ id: sid, agent: agent.name, client, skipGreeting }),
+      readyConfig,
+      logger,
+    });
   }
 
   let serverHandle: { shutdown(): Promise<void> } | null = null;
 
   return {
-    fetch(request: Request) {
-      return getWinterc().fetch(request);
-    },
-
     async listen(port = 3000) {
-      await getWsFactory();
-      const wintercServer = getWinterc();
-
       const app = new Hono();
 
       app.onError((err, c) => {
@@ -146,12 +96,11 @@ export function createServer(options: ServerOptions): AgentServer {
         return c.json({ error: "Internal Server Error" }, 500);
       });
 
-      // Log HTTP requests and errors
       app.use("/*", async (c, next) => {
         const start = Date.now();
         await next();
         const ms = Date.now() - start;
-        const status = c.res.status;
+        const { status } = c.res;
         const method = c.req.method;
         const path = new URL(c.req.url).pathname;
         if (status >= 400) {
@@ -161,37 +110,34 @@ export function createServer(options: ServerOptions): AgentServer {
         }
       });
 
+      app.get("/health", (c) => c.json({ status: "ok", name: agent.name }));
+
       if (clientDir) {
         app.use("/*", serveStatic({ root: clientDir }));
       }
 
-      // Delegate all remaining requests to the winterc server
-      app.all("/*", (c) => wintercServer.fetch(c.req.raw));
+      app.get("/", (c) => {
+        if (clientHtml) return c.html(clientHtml);
+        return c.html(
+          `<!DOCTYPE html><html><body><h1>${agent.name}</h1><p>Agent server running.</p></body></html>`,
+        );
+      });
 
       const nodeServer = serve({ fetch: app.fetch, port });
 
-      // Wait for server to be ready
       await new Promise<void>((resolve) => {
         nodeServer.on("listening", resolve);
       });
 
-      // Attach WebSocket upgrade
-      try {
-        const wsMod = await import("ws");
-        const wss = new wsMod.WebSocketServer({ noServer: true });
-        nodeServer.on("upgrade", (req, socket, head) => {
-          const reqUrl = new URL(req.url ?? "/", `http://localhost:${port}`);
-          const resume = reqUrl.searchParams.has("resume");
-          logger.info(`WS upgrade ${reqUrl.pathname}${resume ? " (resume)" : ""}`);
-          wss.handleUpgrade(req, socket, head, (ws) => {
-            wintercServer.handleWebSocket(ws as unknown as SessionWebSocket, {
-              skipGreeting: resume,
-            });
-          });
+      const wss = new WebSocketServer({ noServer: true });
+      nodeServer.on("upgrade", (req, socket, head) => {
+        const reqUrl = new URL(req.url ?? "/", `http://localhost:${port}`);
+        const resume = reqUrl.searchParams.has("resume");
+        logger.info(`WS upgrade ${reqUrl.pathname}${resume ? " (resume)" : ""}`);
+        wss.handleUpgrade(req, socket, head, (ws) => {
+          handleWs(ws as unknown as SessionWebSocket, resume);
         });
-      } catch {
-        logger.warn("ws package not available for Node.js WebSocket upgrade");
-      }
+      });
 
       serverHandle = {
         async shutdown() {
@@ -203,7 +149,10 @@ export function createServer(options: ServerOptions): AgentServer {
     },
 
     async close() {
-      await winterc?.close();
+      for (const session of sessions.values()) {
+        await session.stop();
+      }
+      sessions.clear();
       await serverHandle?.shutdown();
     },
   };

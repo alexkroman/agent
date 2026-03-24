@@ -7,23 +7,15 @@
  *
  * @module
  */
+
 import type { JSONSchema7 } from "json-schema";
+import { WebSocket } from "ws";
 import { z } from "zod";
-import { CloseEventImpl, ErrorEventImpl } from "./_polyfills.ts";
-import { errorMessage } from "./_utils.ts";
 import type { Logger, S2SConfig } from "./runtime.ts";
 import { consoleLogger } from "./runtime.ts";
 
-// ─── Base64 helpers (native Buffer for C++-speed encode/decode) ─────────────
-
-function uint8ToBase64(bytes: Uint8Array): string {
-  return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString("base64");
-}
-
-function base64ToUint8(base64: string): Uint8Array {
-  const buf = Buffer.from(base64, "base64");
-  return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
-}
+const uint8ToBase64 = (bytes: Uint8Array): string => Buffer.from(bytes).toString("base64");
+const base64ToUint8 = (base64: string): Uint8Array => new Uint8Array(Buffer.from(base64, "base64"));
 
 // ─── WebSocket abstraction ──────────────────────────────────────────────────
 
@@ -44,43 +36,9 @@ export type CreateS2sWebSocket = (
   opts: { headers: Record<string, string> },
 ) => S2sWebSocket;
 
-// ─── ws-package adapter ──────────────────────────────────────────────────────
-
-/** Minimal `.on()`-style WebSocket interface (matches the `ws` npm package). */
-type OnStyleWebSocket = {
-  readonly readyState: number;
-  send(data: string): void;
-  close(): void;
-  on(event: string, handler: (...args: unknown[]) => void): void;
-};
-
-/**
- * Wraps a `.on()`-style WebSocket (e.g. from the `ws` npm package) as an
- * EventTarget-based {@linkcode S2sWebSocket}.
- */
-export function wrapOnStyleWebSocket(ws: OnStyleWebSocket): S2sWebSocket {
-  const target = new EventTarget();
-  ws.on("open", () => target.dispatchEvent(new Event("open")));
-  ws.on("message", (data: unknown) => target.dispatchEvent(new MessageEvent("message", { data })));
-  ws.on("close", (code: unknown, reason: unknown) => {
-    const init: CloseEventInit = { reason: String(reason ?? "") };
-    if (typeof code === "number") init.code = code;
-    target.dispatchEvent(new CloseEventImpl("close", init));
-  });
-  ws.on("error", (err: unknown) =>
-    target.dispatchEvent(
-      new ErrorEventImpl("error", {
-        message: errorMessage(err),
-      }),
-    ),
-  );
-  Object.defineProperties(target, {
-    readyState: { get: () => ws.readyState, enumerable: true },
-    send: { value: (data: string) => ws.send(data), enumerable: true },
-    close: { value: () => ws.close(), enumerable: true },
-  });
-  return target as unknown as S2sWebSocket;
-}
+/** Default S2S WebSocket factory using the `ws` package (Node-only). */
+export const defaultCreateS2sWebSocket: CreateS2sWebSocket = (url, opts) =>
+  new WebSocket(url, { headers: opts.headers }) as unknown as S2sWebSocket;
 
 // ─── Incoming S2S message schema ─────────────────────────────────────────────
 

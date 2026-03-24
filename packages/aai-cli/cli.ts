@@ -16,8 +16,15 @@ import { fileExists, getApiKey, resolveCwd } from "./_discover.ts";
 import { interactive, primary } from "./_ink.tsx";
 
 const cliDir = path.dirname(fileURLToPath(import.meta.url));
-const pkgJsonPath = path.join(cliDir, "package.json");
-const pkgJson = JSON.parse(readFileSync(pkgJsonPath, "utf-8"));
+// When running from dist/cli.js, package.json is one level up
+function findPkgJson(dir: string): string {
+  try {
+    return readFileSync(path.join(dir, "package.json"), "utf-8");
+  } catch {
+    return readFileSync(path.join(dir, "..", "package.json"), "utf-8");
+  }
+}
+const pkgJson = JSON.parse(findPkgJson(cliDir));
 const VERSION: string = pkgJson.version;
 
 const banner = [
@@ -107,8 +114,9 @@ function createProgram(): Command {
           .command("dev")
           .description("Start a local development server")
           .option("-p, --port <number>", "Port to listen on", "3000")
+          .option("--check", "Start server, verify health, then exit")
           .option("-y, --yes", "Accept defaults (no prompts)")
-          .action(async (opts: { cwd: string; port: string }) => {
+          .action(async (opts: { cwd: string; port: string; check?: boolean }) => {
             const { runDevCommand } = await import("./dev.tsx");
             await runDevCommand(opts);
           }),

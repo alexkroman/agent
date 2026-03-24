@@ -1,34 +1,46 @@
 import { describe, expect, test, vi } from "vitest";
-import { connectS2s, wrapOnStyleWebSocket } from "./s2s.ts";
+import type { S2sWebSocket } from "./s2s.ts";
+import { connectS2s } from "./s2s.ts";
 
-// Minimal on-style WebSocket stub (matches the `ws` npm package interface)
-function createOnStyleStub() {
-  const handlers: Record<string, ((...args: unknown[]) => void)[]> = {};
-  return {
+/** EventTarget-based WebSocket stub (standard API, no `.on()` adapter needed). */
+function createWebSocketStub() {
+  const target = new EventTarget();
+  return Object.assign(target, {
     readyState: 0,
     send: vi.fn(),
     close: vi.fn(),
-    on(event: string, handler: (...args: unknown[]) => void) {
-      if (!handlers[event]) handlers[event] = [];
-      handlers[event].push(handler);
-    },
+    /** Simulate a server-side event for testing. */
     emit(event: string, ...args: unknown[]) {
-      for (const h of handlers[event] ?? []) h(...args);
+      const builders: Record<string, () => Event> = {
+        open: () => new Event("open"),
+        message: () => new MessageEvent("message", { data: args[0] }),
+        close: () =>
+          new CloseEvent("close", {
+            code: typeof args[0] === "number" ? args[0] : undefined,
+            reason: typeof args[1] === "string" ? args[1] : undefined,
+          }),
+        error: () => {
+          const msg = args[0] instanceof Error ? args[0].message : String(args[0]);
+          return new ErrorEvent("error", { message: msg });
+        },
+      };
+      const build = builders[event];
+      if (build) target.dispatchEvent(build());
     },
-  };
+  });
 }
 
 const silentLogger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
 const s2sConfig = { wssUrl: "wss://fake", inputSampleRate: 16000, outputSampleRate: 16000 };
 
 function createTestS2s() {
-  const raw = createOnStyleStub();
+  const raw = createWebSocketStub();
   const createWebSocket = () => {
     setTimeout(() => {
       raw.readyState = 1;
       raw.emit("open");
     }, 0);
-    return wrapOnStyleWebSocket(raw);
+    return raw as unknown as S2sWebSocket;
   };
   return { raw, createWebSocket, logger: { ...silentLogger } };
 }
@@ -44,85 +56,6 @@ async function setupHandle() {
   return { raw, handle, logger };
 }
 
-describe("wrapOnStyleWebSocket", () => {
-  test("readyState reflects the underlying WebSocket state", () => {
-    const raw = createOnStyleStub();
-    raw.readyState = 0;
-    const wrapped = wrapOnStyleWebSocket(raw);
-
-    expect(wrapped.readyState).toBe(0);
-    raw.readyState = 1;
-    expect(wrapped.readyState).toBe(1);
-    raw.readyState = 3;
-    expect(wrapped.readyState).toBe(3);
-  });
-
-  test("dispatches open event", () => {
-    const raw = createOnStyleStub();
-    const wrapped = wrapOnStyleWebSocket(raw);
-    const onOpen = vi.fn();
-    wrapped.addEventListener("open", onOpen);
-
-    raw.emit("open");
-    expect(onOpen).toHaveBeenCalledOnce();
-  });
-
-  test("dispatches message event with data", () => {
-    const raw = createOnStyleStub();
-    const wrapped = wrapOnStyleWebSocket(raw);
-    const onMessage = vi.fn();
-    wrapped.addEventListener("message", onMessage);
-
-    const payload = Buffer.from('{"type":"session.updated"}');
-    raw.emit("message", payload);
-
-    expect(onMessage).toHaveBeenCalledOnce();
-    const ev = onMessage.mock.calls[0]?.[0] as MessageEvent;
-    expect(ev.data).toBe(payload);
-  });
-
-  test("dispatches close event with code and reason", () => {
-    const raw = createOnStyleStub();
-    const wrapped = wrapOnStyleWebSocket(raw);
-    const onClose = vi.fn();
-    wrapped.addEventListener("close", onClose);
-
-    raw.emit("close", 1001, "going away");
-
-    expect(onClose).toHaveBeenCalledOnce();
-    const ev = onClose.mock.calls[0]?.[0] as CloseEvent;
-    expect(ev.code).toBe(1001);
-    expect(ev.reason).toBe("going away");
-  });
-
-  test("dispatches error event with message", () => {
-    const raw = createOnStyleStub();
-    const wrapped = wrapOnStyleWebSocket(raw);
-    const onError = vi.fn();
-    wrapped.addEventListener("error", onError);
-
-    raw.emit("error", new Error("connection refused"));
-
-    expect(onError).toHaveBeenCalledOnce();
-    const ev = onError.mock.calls[0]?.[0] as ErrorEvent;
-    expect(ev.message).toBe("connection refused");
-  });
-
-  test("send delegates to underlying WebSocket", () => {
-    const raw = createOnStyleStub();
-    const wrapped = wrapOnStyleWebSocket(raw);
-    wrapped.send('{"type":"test"}');
-    expect(raw.send).toHaveBeenCalledWith('{"type":"test"}');
-  });
-
-  test("close delegates to underlying WebSocket", () => {
-    const raw = createOnStyleStub();
-    const wrapped = wrapOnStyleWebSocket(raw);
-    wrapped.close();
-    expect(raw.close).toHaveBeenCalledOnce();
-  });
-});
-
 describe("connectS2s", () => {
   test("resolves with handle after open", async () => {
     const { handle } = await setupHandle();
@@ -135,12 +68,12 @@ describe("connectS2s", () => {
   });
 
   test("rejects when error fires before open", async () => {
-    const raw = createOnStyleStub();
+    const raw = createWebSocketStub();
     const createWebSocket = () => {
       setTimeout(() => {
         raw.emit("error", new Error("connection refused"));
       }, 0);
-      return wrapOnStyleWebSocket(raw);
+      return raw as unknown as S2sWebSocket;
     };
 
     await expect(

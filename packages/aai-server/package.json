@@ -1,0 +1,29 @@
+{
+  "name": "@alexkroman1/aai-server",
+  "version": "0.8.8",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check ."
+  },
+  "dependencies": {
+    "@alexkroman1/aai": "workspace:*",
+    "@hono/node-server": "^1.19.11",
+    "aws4fetch": "^1.0.20",
+    "hono": "^4.12.8",
+    "secure-exec": "*",
+    "ws": "^8.18.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.1"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

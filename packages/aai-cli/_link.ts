@@ -9,7 +9,12 @@ const WORKSPACE_PKGS = ["aai", "aai-ui"];
 
 function getPackagesDir(): string {
   const cliDir = path.dirname(fileURLToPath(import.meta.url));
-  return path.resolve(cliDir, "..");
+  // From source: cliDir is packages/aai-cli/, parent is packages/
+  // From dist:   cliDir is packages/aai-cli/dist/, need grandparent
+  const parent = path.resolve(cliDir, "..");
+  return fs.existsSync(path.join(parent, "aai", "package.json"))
+    ? parent
+    : path.resolve(parent, "..");
 }
 
 type DepRewriter = (currentVersion: string, localPath: string) => string | null;

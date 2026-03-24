@@ -47,6 +47,11 @@ async function writeAuthConfig(config: AuthConfig): Promise<void> {
  * If not found, interactively prompts the user and persists it.
  */
 export async function getApiKey(): Promise<string> {
+  // Check env var first (allows CI/test usage without interactive prompt)
+  if (process.env.ASSEMBLYAI_API_KEY) {
+    return process.env.ASSEMBLYAI_API_KEY;
+  }
+
   const config = await readAuthConfig();
   if (config.assemblyai_api_key) {
     process.env.ASSEMBLYAI_API_KEY = config.assemblyai_api_key;

@@ -18,6 +18,7 @@ import { consoleLogger, noopMetrics } from "./runtime.ts";
 import {
   type CreateS2sWebSocket,
   connectS2s,
+  defaultCreateS2sWebSocket,
   type S2sHandle,
   type S2sToolCall,
   type S2sToolSchema,
@@ -60,7 +61,7 @@ export type SessionOptions = {
   apiKey: string;
   s2sConfig: S2SConfig;
   executeTool: ExecuteTool;
-  createWebSocket: CreateS2sWebSocket;
+  createWebSocket?: CreateS2sWebSocket;
   env?: Record<string, string | undefined>;
   hookInvoker?: HookInvoker;
   skipGreeting?: boolean;
@@ -82,7 +83,7 @@ export function createS2sSession(opts: SessionOptions): Session {
     apiKey,
     s2sConfig,
     executeTool,
-    createWebSocket,
+    createWebSocket = defaultCreateS2sWebSocket,
     hookInvoker,
     logger: log = consoleLogger,
     metrics = noopMetrics,

@@ -175,9 +175,6 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
     client: ClientSink;
     skipGreeting?: boolean;
   }): Session {
-    if (!createWebSocket) {
-      throw new Error("createWebSocket not provided — pass it in DirectExecutorOptions");
-    }
     const apiKey = frozenEnv.ASSEMBLYAI_API_KEY ?? "";
     return createS2sSession({
       id: sessionOpts.id,
@@ -188,7 +185,7 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
       apiKey,
       s2sConfig,
       executeTool,
-      createWebSocket,
+      ...(createWebSocket ? { createWebSocket } : {}),
       hookInvoker,
       skipGreeting: sessionOpts.skipGreeting ?? false,
       logger,

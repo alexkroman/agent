@@ -18,8 +18,7 @@ import type { Session } from "./session.ts";
 /**
  * Minimal WebSocket interface accepted by {@linkcode wireSessionSocket}.
  *
- * Satisfied by the standard `WebSocket`, `BridgedWebSocket` (capnweb),
- * and the `ws` npm package's WebSocket.
+ * Satisfied by the standard `WebSocket` and the `ws` npm package's WebSocket.
  */
 export type SessionWebSocket = {
   readonly readyState: number;

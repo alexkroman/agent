@@ -44,11 +44,7 @@ function workerEntryPlugin(agentDir: string): Plugin {
     },
     load(id) {
       if (id !== resolvedId) return null;
-      return [
-        `import agent from ${JSON.stringify(agentPath)};`,
-        `import { initWorker } from "@alexkroman1/aai/worker-shim";`,
-        `initWorker(agent);`,
-      ].join("\n");
+      return `export { default } from ${JSON.stringify(agentPath)};`;
     },
   };
 }
