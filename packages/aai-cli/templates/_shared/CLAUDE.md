@@ -85,7 +85,7 @@ export default defineAgent({
 ### Imports
 
 ```ts
-import { defineAgent, memoryTools, tool } from "aai"; // defineAgent + helpers
+import { defineAgent, tool } from "aai"; // defineAgent + helpers
 import type { BeforeStepResult, BuiltinTool, HookContext, StepInfo, ToolContext } from "aai";
 import { z } from "zod"; // Tools with typed params (included in package.json)
 ```
@@ -372,21 +372,6 @@ export default defineAgent({
 ```
 
 Keys use colon-separated prefixes (`"user:name"`, `"preference:color"`).
-
-You can also spread `memoryTools()` into `tools` if you want to combine them
-with custom tools or override individual tools:
-
-```ts
-import { defineAgent, memoryTools } from "aai";
-
-export default defineAgent({
-  name: "My Agent",
-  tools: {
-    ...memoryTools(),
-    // your other tools...
-  },
-});
-```
 
 ## Advanced patterns
 

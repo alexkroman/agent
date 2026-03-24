@@ -23,7 +23,6 @@
  * @module
  */
 
-export { memoryTools } from "./builtin_tools.ts";
 export {
   type AgentOptions,
   type BeforeStepResult,
