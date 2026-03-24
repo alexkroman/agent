@@ -61,31 +61,6 @@ export const KvRequestSchema = z.discriminatedUnion("op", [
 /** KV operation request — discriminated union on the `op` field. */
 export type KvRequest = z.infer<typeof KvRequestSchema>;
 
-// ─── Vector request types ───────────────────────────────────────────────────
-
-/** Zod schema for vector operation requests. */
-export const VectorRequestSchema = z.discriminatedUnion("op", [
-  z.object({
-    op: z.literal("upsert"),
-    id: z.string().min(1),
-    data: z.string().min(1),
-    metadata: z.record(z.string(), z.unknown()).optional(),
-  }),
-  z.object({
-    op: z.literal("query"),
-    text: z.string().min(1),
-    topK: z.number().int().positive().max(100).optional(),
-    filter: z.string().optional(),
-  }),
-  z.object({
-    op: z.literal("remove"),
-    ids: z.array(z.string().min(1)).min(1),
-  }),
-]);
-
-/** Vector operation request — discriminated union on the `op` field. */
-export type VectorRequest = z.infer<typeof VectorRequestSchema>;
-
 // ─── Timeout constants ─────────────────────────────────────────────────────
 
 /** Default timeout for agent lifecycle hooks (onConnect, onTurn, etc). */
