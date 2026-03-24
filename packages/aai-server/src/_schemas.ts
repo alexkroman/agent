@@ -1,13 +1,28 @@
 // Copyright 2025 the AAI authors. MIT license.
 // Zod schemas -- validate untrusted input at HTTP/WebSocket boundaries.
 
+import { posix } from "node:path";
 import { type KvRequest, KvRequestSchema } from "@alexkroman1/aai/protocol";
 import { z } from "zod";
+
+/**
+ * Zod schema for a safe relative file path.
+ * Normalizes with `path.posix.normalize` and rejects traversal (`..`),
+ * absolute paths, backslashes, and null bytes.
+ */
+export const SafePathSchema = z
+  .string()
+  .min(1)
+  .refine((p) => !p.includes("\0"), "Path must not contain null bytes")
+  .refine((p) => !p.includes("\\"), "Path must not contain backslashes")
+  .transform((p) => posix.normalize(p))
+  .refine((p) => !p.startsWith("/"), "Path must be relative")
+  .refine((p) => !p.startsWith(".."), "Path must not traverse above root");
 
 export const DeployBodySchema = z.object({
   env: z.record(z.string(), z.string()).optional(),
   worker: z.string().min(1).max(10_000_000),
-  clientFiles: z.record(z.string(), z.string()),
+  clientFiles: z.record(SafePathSchema, z.string()),
 });
 
 export type DeployBody = z.infer<typeof DeployBodySchema>;

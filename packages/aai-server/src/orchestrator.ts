@@ -41,7 +41,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Hono<Env> {
       "keyHash",
       await requireOwner(c.req.raw, {
         slug: c.get("slug"),
-        store: c.env.deployStore,
+        store: c.env.store,
       }),
     );
     await next();
@@ -108,8 +108,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Hono<Env> {
   // Bindings injected at serve time via app.fetch(req, bindings)
   const bindings = {
     slots: opts.slots,
-    deployStore: opts.store,
-    assetStore: opts.store,
+    store: opts.store,
     scopeKey: opts.scopeKey,
     kvStore: opts.kvStore,
     vectorStore: opts.vectorStore,

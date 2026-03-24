@@ -110,6 +110,21 @@ async function main(): Promise<void> {
   });
 
   console.info(`AAI server listening on http://localhost:${port}`);
+
+  function shutdown() {
+    console.info("Shutting down...");
+    wss.close();
+    for (const slot of opts.slots.values()) {
+      if (slot.idleTimer) clearTimeout(slot.idleTimer);
+      slot.sandbox?.terminate();
+    }
+    nodeServer.close(() => process.exit(0));
+    // Force exit if cleanup takes too long
+    setTimeout(() => process.exit(1), 3000).unref();
+  }
+
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
 }
 
 main().catch((err) => {

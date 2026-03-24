@@ -2,7 +2,7 @@
 import { HTTPException } from "hono/http-exception";
 import { isPrivateIp } from "./_net.ts";
 import { verifySlugOwner } from "./auth.ts";
-import type { DeployStore } from "./bundle_store_tigris.ts";
+import type { BundleStore } from "./bundle_store_tigris.ts";
 import { type AgentScope, type ScopeKey, verifyScopeToken } from "./scope_token.ts";
 
 const VALID_SLUG_REGEXP = /^[a-z0-9][a-z0-9_-]{0,62}[a-z0-9]$/;
@@ -22,7 +22,7 @@ export function validateSlug(slug: string): string {
 
 export async function requireOwner(
   req: Request,
-  opts: { slug: string; store: DeployStore },
+  opts: { slug: string; store: BundleStore },
 ): Promise<string> {
   const apiKey = bearerToken(req);
   if (!apiKey) {

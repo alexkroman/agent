@@ -3,7 +3,7 @@
  * S2S session — relays audio between the client and AssemblyAI's
  * Speech-to-Speech API, intercepting only tool calls for local execution.
  *
- * Cross-runtime: accepts Logger, Metrics, and a WebSocket factory via
+ * Cross-runtime: accepts Logger and a WebSocket factory via
  * dependency injection.
  *
  * @module
@@ -13,8 +13,8 @@ import type { AgentConfig, ToolSchema } from "./_internal_types.ts";
 import { errorMessage } from "./_utils.ts";
 import type { ClientSink } from "./protocol.ts";
 import { HOOK_TIMEOUT_MS } from "./protocol.ts";
-import type { Logger, Metrics, S2SConfig } from "./runtime.ts";
-import { consoleLogger, noopMetrics } from "./runtime.ts";
+import type { Logger, S2SConfig } from "./runtime.ts";
+import { consoleLogger } from "./runtime.ts";
 import {
   type CreateS2sWebSocket,
   connectS2s,
@@ -66,7 +66,6 @@ export type SessionOptions = {
   hookInvoker?: HookInvoker;
   skipGreeting?: boolean;
   logger?: Logger;
-  metrics?: Metrics;
 };
 
 export const _internals = {
@@ -86,10 +85,7 @@ export function createS2sSession(opts: SessionOptions): Session {
     createWebSocket = defaultCreateS2sWebSocket,
     hookInvoker,
     logger: log = consoleLogger,
-    metrics = noopMetrics,
   } = opts;
-
-  const agentLabel = { agent };
   const agentConfig = opts.skipGreeting ? { ...opts.agentConfig, greeting: "" } : opts.agentConfig;
 
   // Build system prompt
@@ -321,8 +317,6 @@ export function createS2sSession(opts: SessionOptions): Session {
 
   return {
     async start(): Promise<void> {
-      metrics.sessionsTotal.inc(agentLabel);
-      metrics.sessionsActive.inc(agentLabel);
       fireHook("onConnect", (h) => h.onConnect(id, HOOK_TIMEOUT_MS));
       await connectAndSetup();
     },
@@ -330,7 +324,7 @@ export function createS2sSession(opts: SessionOptions): Session {
     async stop(): Promise<void> {
       if (sessionAbort.signal.aborted) return;
       sessionAbort.abort();
-      metrics.sessionsActive.dec(agentLabel);
+
       if (turnPromise) await turnPromise;
       s2s?.close();
       fireHook("onDisconnect", (h) => h.onDisconnect(id, HOOK_TIMEOUT_MS));

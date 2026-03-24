@@ -1,11 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
 // KV store backed by @upstash/redis.
 
-import { MAX_VALUE_SIZE } from "@alexkroman1/aai/kv";
+import { type KvEntry, MAX_VALUE_SIZE } from "@alexkroman1/aai/kv";
 import { Redis } from "@upstash/redis";
 import type { AgentScope } from "./scope_token.ts";
-
-export type KvListEntry = { key: string; value: unknown };
 
 export type KvStore = {
   get(scope: AgentScope, key: string): Promise<string | null>;
@@ -16,7 +14,7 @@ export type KvStore = {
     scope: AgentScope,
     prefix: string,
     options?: { limit?: number; reverse?: boolean },
-  ): Promise<KvListEntry[]>;
+  ): Promise<KvEntry[]>;
 };
 
 function scopedKey(scope: AgentScope, key: string): string {
@@ -86,7 +84,7 @@ export function createKvStore(url: string, token: string): KvStore {
       }
       const values = await pipeline.exec<(string | null)[]>();
 
-      const entries: KvListEntry[] = [];
+      const entries: KvEntry[] = [];
       for (let i = 0; i < limited.length; i++) {
         const val = values[i];
         if (val === null || val === undefined) continue;

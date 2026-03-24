@@ -38,7 +38,7 @@ function mimeForExt(ext: string): string {
   return MIME_TYPES[ext] ?? "application/octet-stream";
 }
 
-export type DeployStore = {
+export type BundleStore = {
   putAgent(bundle: {
     slug: string;
     env: Record<string, string>;
@@ -48,16 +48,11 @@ export type DeployStore = {
   }): Promise<void>;
   getManifest(slug: string): Promise<AgentMetadata | null>;
   getWorkerCode(slug: string): Promise<string | null>;
+  getClientFile(slug: string, filePath: string): Promise<string | null>;
   deleteAgent(slug: string): Promise<void>;
   getEnv(slug: string): Promise<Record<string, string> | null>;
   putEnv(slug: string, env: Record<string, string>): Promise<void>;
 };
-
-export type AssetStore = {
-  getClientFile(slug: string, filePath: string): Promise<string | null>;
-};
-
-export type BundleStore = DeployStore & AssetStore;
 
 type CacheEntry = {
   data: string;

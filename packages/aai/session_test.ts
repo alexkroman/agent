@@ -548,23 +548,6 @@ describe("createS2sSession", () => {
     spy.mockRestore();
   });
 
-  // ─── Metrics ───────────────────────────────────────────────────────────
-
-  test("start() increments metrics, stop() decrements", async () => {
-    const metrics = {
-      sessionsTotal: { inc: vi.fn() },
-      sessionsActive: { inc: vi.fn(), dec: vi.fn() },
-    };
-    const { session } = setup({ metrics });
-    await session.start();
-
-    expect(metrics.sessionsTotal.inc).toHaveBeenCalledWith({ agent: "test-agent" });
-    expect(metrics.sessionsActive.inc).toHaveBeenCalledWith({ agent: "test-agent" });
-
-    await session.stop();
-    expect(metrics.sessionsActive.dec).toHaveBeenCalledWith({ agent: "test-agent" });
-  });
-
   // ─── Hook error handling ───────────────────────────────────────────────
 
   test("hook failure does not crash session", async () => {

@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import type { AssetStore, DeployStore } from "./bundle_store_tigris.ts";
+import type { BundleStore } from "./bundle_store_tigris.ts";
 import type { KvStore } from "./kv.ts";
 import type { AgentSlot } from "./sandbox.ts";
 import type { ScopeKey } from "./scope_token.ts";
@@ -9,8 +9,7 @@ import type { ServerVectorStore } from "./vector.ts";
 export type Env = {
   Bindings: {
     slots: Map<string, AgentSlot>;
-    deployStore: DeployStore;
-    assetStore: AssetStore;
+    store: BundleStore;
     scopeKey: ScopeKey;
     kvStore: KvStore;
     vectorStore?: ServerVectorStore | undefined;

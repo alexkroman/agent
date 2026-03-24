@@ -13,8 +13,8 @@ import { getBuiltinToolDefs, getBuiltinToolSchemas } from "./builtin_tools.ts";
 import type { Kv } from "./kv.ts";
 import { createMemoryKv } from "./kv.ts";
 import type { ClientSink } from "./protocol.ts";
-import type { Logger, Metrics, S2SConfig } from "./runtime.ts";
-import { consoleLogger, DEFAULT_S2S_CONFIG, noopMetrics } from "./runtime.ts";
+import type { Logger, S2SConfig } from "./runtime.ts";
+import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime.ts";
 import type { CreateS2sWebSocket } from "./s2s.ts";
 import { createS2sSession, type HookInvoker, type Session } from "./session.ts";
 import type { AgentDef, HookContext, StepInfo } from "./types.ts";
@@ -31,7 +31,6 @@ export type DirectExecutorOptions = {
   vectorSearch?: ((query: string, topK: number) => Promise<string>) | undefined;
   createWebSocket?: CreateS2sWebSocket | undefined;
   logger?: Logger | undefined;
-  metrics?: Metrics | undefined;
   s2sConfig?: S2SConfig | undefined;
 };
 
@@ -72,7 +71,6 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
     vectorSearch,
     createWebSocket,
     logger = consoleLogger,
-    metrics = noopMetrics,
     s2sConfig = DEFAULT_S2S_CONFIG,
   } = opts;
   const agentConfig = buildAgentConfig(agent);
@@ -189,7 +187,6 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
       hookInvoker,
       skipGreeting: sessionOpts.skipGreeting ?? false,
       logger,
-      metrics,
     });
   }
 

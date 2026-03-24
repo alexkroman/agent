@@ -1,16 +1,11 @@
 // Copyright 2025 the AAI authors. MIT license.
-/**
- * Pluggable interfaces for cross-runtime concerns.
- *
- * @module
- */
 
 import { DEFAULT_TTS_SAMPLE_RATE } from "./protocol.ts";
 
 /** Structured context attached to log messages. */
 export type LogContext = Record<string, unknown>;
 
-/** Runtime-agnostic structured logger. */
+/** Structured logger interface. Used by tests to suppress output. */
 export type Logger = {
   info(msg: string, ctx?: LogContext): void;
   warn(msg: string, ctx?: LogContext): void;
@@ -18,42 +13,18 @@ export type Logger = {
   debug(msg: string, ctx?: LogContext): void;
 };
 
-/** Runtime-agnostic session metrics. */
-export type Metrics = {
-  sessionsTotal: { inc(labels: Record<string, string>): void };
-  sessionsActive: {
-    inc(labels: Record<string, string>): void;
-    dec(labels: Record<string, string>): void;
-  };
-};
-
-/** Console-based logger that works in all runtimes. */
-const _log = (m: "log" | "warn" | "error" | "debug") => (msg: string, ctx?: LogContext) =>
-  console[m](msg, ...(ctx ? [ctx] : []));
-
 export const consoleLogger: Logger = {
-  info: _log("log"),
-  warn: _log("warn"),
-  error: _log("error"),
-  debug: _log("debug"),
+  info: (msg, ctx) => console.log(msg, ...(ctx ? [ctx] : [])),
+  warn: (msg, ctx) => console.warn(msg, ...(ctx ? [ctx] : [])),
+  error: (msg, ctx) => console.error(msg, ...(ctx ? [ctx] : [])),
+  debug: (msg, ctx) => console.debug(msg, ...(ctx ? [ctx] : [])),
 };
 
-/** No-op metrics implementation for environments without monitoring. */
-export const noopMetrics: Metrics = {
-  sessionsTotal: { inc() {} },
-  sessionsActive: { inc() {}, dec() {} },
-};
-
-/** Configuration for the AssemblyAI Speech-to-Speech connection. */
-export type S2SConfig = {
-  wssUrl: string;
-  inputSampleRate: number;
-  outputSampleRate: number;
-};
-
-/** Default S2S configuration pointing to AssemblyAI's production endpoint. */
-export const DEFAULT_S2S_CONFIG: S2SConfig = {
+/** Default S2S endpoint configuration. */
+export const DEFAULT_S2S_CONFIG = {
   wssUrl: "wss://speech-to-speech.us.assemblyai.com/v1/realtime",
   inputSampleRate: DEFAULT_TTS_SAMPLE_RATE,
   outputSampleRate: DEFAULT_TTS_SAMPLE_RATE,
-};
+} as const;
+
+export type S2SConfig = typeof DEFAULT_S2S_CONFIG;

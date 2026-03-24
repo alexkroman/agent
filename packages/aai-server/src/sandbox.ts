@@ -7,7 +7,7 @@
  * on loopback. The host calls `createS2sSession` + `wireSessionSocket`
  * directly — no WintercServer or proxy AgentDef needed.
  *
- * A per-sandbox "capability server" on the host provides scoped KV and
+ * A per-sandbox sidecar server on the host provides scoped KV and
  * vector access — the isolate calls it without authentication (loopback only).
  *
  * @module
@@ -31,7 +31,7 @@ import {
 import { z } from "zod";
 import type { IsolateConfig } from "./_harness_protocol.ts";
 import type { AgentMetadata } from "./_schemas.ts";
-import type { DeployStore } from "./bundle_store_tigris.ts";
+import type { BundleStore } from "./bundle_store_tigris.ts";
 import type { KvStore } from "./kv.ts";
 import { getHarnessRuntimeJs } from "./sandbox_harness.ts";
 import type { AgentScope } from "./scope_token.ts";
@@ -52,7 +52,7 @@ export type Sandbox = {
   terminate(): void;
 };
 
-// ── Scoped store adapters (for capability server) ────────────────────────
+// ── Scoped store adapters (for sidecar server) ──────────────────────────
 
 function scopedKv(kvStore: KvStore, scope: AgentScope) {
   return {
@@ -98,9 +98,9 @@ function scopedVector(vectorStore: ServerVectorStore, scope: AgentScope) {
   };
 }
 
-// ── Capability server (per-sandbox, loopback, no auth) ───────────────────
+// ── Sidecar server (per-sandbox, loopback, no auth) ─────────────────────
 
-function buildCapApp(
+function buildSidecarApp(
   kv: ReturnType<typeof scopedKv>,
   vector: ReturnType<typeof scopedVector> | undefined,
 ): Hono {
@@ -182,11 +182,11 @@ function buildCapApp(
   return app;
 }
 
-async function startCapabilityServer(
+async function startSidecarServer(
   kv: ReturnType<typeof scopedKv>,
   vector: ReturnType<typeof scopedVector> | undefined,
 ): Promise<{ url: string; close: () => void }> {
-  const app = buildCapApp(kv, vector);
+  const app = buildSidecarApp(kv, vector);
   const server = serve({ fetch: app.fetch, port: 0, hostname: "127.0.0.1" });
 
   await new Promise<void>((resolve) => {
@@ -200,11 +200,57 @@ async function startCapabilityServer(
   };
 }
 
+// ── Isolate network policy ────────────────────────────────────────────────
+
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
+
+const SidecarUrlSchema = z
+  .string()
+  .url()
+  .refine((u) => LOOPBACK_HOSTS.has(new URL(u).hostname), "Sidecar server must be on loopback");
+
+/**
+ * Build a network permission check that restricts the isolate to:
+ *   1. Listening on loopback (its own harness HTTP server)
+ *   2. DNS lookups for loopback hostnames only
+ *   3. fetch/http to the sidecar server URL only
+ *
+ * Everything else (cloud metadata, internal services, external hosts) is denied.
+ */
+function buildNetworkPolicy(sidecarUrl: string) {
+  const parsed = new URL(SidecarUrlSchema.parse(sidecarUrl));
+  const allowedHost = parsed.hostname;
+  const allowedPort = parsed.port;
+
+  const AllowedRequestSchema = z.object({
+    url: z
+      .string()
+      .url()
+      .refine((u) => {
+        const t = new URL(u);
+        return t.hostname === allowedHost && t.port === allowedPort;
+      }, "URL must target the sidecar server"),
+  });
+
+  return (req: { op: string; url?: string; hostname?: string }) => {
+    if (req.op === "listen") return { allow: true };
+    if (req.op === "dns") {
+      return LOOPBACK_HOSTS.has(req.hostname ?? "")
+        ? { allow: true }
+        : { allow: false, reason: "DNS lookups restricted to loopback" };
+    }
+    const result = AllowedRequestSchema.safeParse(req);
+    return result.success
+      ? { allow: true }
+      : { allow: false, reason: "Network restricted to sidecar server" };
+  };
+}
+
 // ── Isolate lifecycle ────────────────────────────────────────────────────
 
 async function startIsolate(
   workerCode: string,
-  capUrl: string,
+  sidecarUrl: string,
 ): Promise<{ port: number; runtime: NodeRuntime }> {
   const harnessJs = await getHarnessRuntimeJs();
   const fs = createInMemoryFileSystem();
@@ -220,11 +266,22 @@ async function startIsolate(
     systemDriver: createNodeDriver({
       filesystem: fs,
       permissions: {
-        fs: () => ({ allow: true }),
-        network: () => ({ allow: true }),
+        fs: (req) =>
+          req.op === "read" || req.op === "stat" || req.op === "readdir" || req.op === "exists"
+            ? { allow: true }
+            : { allow: false, reason: "Filesystem is read-only" },
+        network: buildNetworkPolicy(sidecarUrl),
+        childProcess: () => ({ allow: false, reason: "Subprocess spawning is disabled" }),
+        env: (req) =>
+          req.op === "read" && req.key === "SIDECAR_URL"
+            ? { allow: true }
+            : { allow: false, reason: "Env access restricted" },
       },
       useDefaultNetwork: true,
-      processConfig: { env: { CAP_URL: capUrl } },
+      processConfig: {
+        env: { SIDECAR_URL: sidecarUrl },
+        timingMitigation: "freeze",
+      },
     }),
     runtimeDriverFactory: createNodeRuntimeDriverFactory(),
     memoryLimit: 128,
@@ -284,10 +341,21 @@ const TurnConfigSchema = z
   .object({ maxSteps: z.number().optional(), activeTools: z.array(z.string()).optional() })
   .nullable();
 
+// ── Isolate RPC timeouts ─────────────────────────────────────────────────
+
+/** Timeout for initial config fetch (isolate boot). */
+const CONFIG_TIMEOUT_MS = 10_000;
+/** Timeout for tool execution calls. */
+const TOOL_TIMEOUT_MS = 30_000;
+/** Timeout for lifecycle hook calls. */
+const HOOK_TIMEOUT_MS = 10_000;
+
 // ── Isolate config fetch ─────────────────────────────────────────────────
 
 async function getIsolateConfig(port: number): Promise<IsolateConfig> {
-  const res = await fetch(`http://127.0.0.1:${port}/config`);
+  const res = await fetch(`http://127.0.0.1:${port}/config`, {
+    signal: AbortSignal.timeout(CONFIG_TIMEOUT_MS),
+  });
   if (!res.ok) throw new Error(`Isolate /config failed: ${res.status}`);
   return IsolateConfigSchema.parse(await res.json()) as IsolateConfig;
 }
@@ -300,6 +368,7 @@ function buildExecuteTool(isolateUrl: string, env: Record<string, string>): Exec
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name, args, sessionId, messages, env }),
+      signal: AbortSignal.timeout(TOOL_TIMEOUT_MS),
     });
     if (!res.ok) throw new Error(`Tool ${name} failed: ${res.status}`);
     return ToolResponseSchema.parse(await res.json()).result;
@@ -312,6 +381,7 @@ function buildHookInvoker(isolateUrl: string, env: Record<string, string>): Hook
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ hook, env, ...extra }),
+      signal: AbortSignal.timeout(HOOK_TIMEOUT_MS),
     });
     if (!res.ok) throw new Error(`Hook ${hook} failed: ${res.status}`);
     return HookResponseSchema.parse(await res.json()).result;
@@ -357,7 +427,12 @@ function toAgentConfig(config: IsolateConfig): AgentConfig {
 
 // ── Test internals ───────────────────────────────────────────────────────
 
-export const _internals = { startCapabilityServer, startIsolate, getIsolateConfig };
+export const _internals = {
+  startSidecarServer,
+  startIsolate,
+  getIsolateConfig,
+  buildNetworkPolicy,
+};
 
 // ── Public API ───────────────────────────────────────────────────────────
 
@@ -367,11 +442,11 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
   const kv = scopedKv(kvStore, scope);
   const vector = vectorStore ? scopedVector(vectorStore, scope) : undefined;
 
-  // 1. Start the per-sandbox capability server (KV/vector on loopback)
-  const cap = await startCapabilityServer(kv, vector);
+  // 1. Start the per-sandbox sidecar server (KV/vector on loopback)
+  const sidecar = await startSidecarServer(kv, vector);
 
   // 2. Start the isolate with the agent bundle
-  const { port: isolatePort, runtime } = await startIsolate(workerCode, cap.url);
+  const { port: isolatePort, runtime } = await startIsolate(workerCode, sidecar.url);
 
   // 3. Get the agent config from the isolate
   const config = await getIsolateConfig(isolatePort);
@@ -420,7 +495,7 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
       }
       sessions.clear();
       runtime.dispose();
-      cap.close();
+      sidecar.close();
     },
   };
 }
@@ -510,7 +585,7 @@ export async function resolveSandbox(
   slug: string,
   opts: {
     slots: Map<string, AgentSlot>;
-    store: DeployStore;
+    store: BundleStore;
     kvStore: KvStore;
     vectorStore?: ServerVectorStore | undefined;
   },

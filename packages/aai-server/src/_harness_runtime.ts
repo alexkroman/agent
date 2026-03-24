@@ -7,7 +7,7 @@
  * isolate's virtual filesystem and executed.
  *
  * Environment variables (set by host):
- * - CAP_URL: loopback URL for the per-sandbox capability server
+ * - SIDECAR_URL: loopback URL for the per-sandbox sidecar server
  *
  * The agent bundle is expected at "./agent_bundle.js" (default export).
  *
@@ -32,12 +32,12 @@ import type {
 // CJS require — V8 isolates run scripts, not modules
 const http: typeof Http = require("node:http");
 
-const CAP_URL = process.env.CAP_URL ?? "";
+const SIDECAR_URL = process.env.SIDECAR_URL ?? "";
 
-// ── Capability server proxy (KV / vector) ────────────────────────────────
+// ── Sidecar server proxy (KV / vector) ───────────────────────────────────
 
-async function capRpc<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(`${CAP_URL}${path}`, {
+async function sidecarRpc<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${SIDECAR_URL}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -49,28 +49,28 @@ async function capRpc<T>(path: string, body: unknown): Promise<T> {
 
 const kv: Kv = {
   get<T = unknown>(key: string) {
-    return capRpc<T | null>("/kv/get", { key });
+    return sidecarRpc<T | null>("/kv/get", { key });
   },
   set(key: string, value: unknown, options?: { expireIn?: number }) {
-    return capRpc<void>("/kv/set", { key, value, options });
+    return sidecarRpc<void>("/kv/set", { key, value, options });
   },
   delete(key: string) {
-    return capRpc<void>("/kv/del", { key });
+    return sidecarRpc<void>("/kv/del", { key });
   },
   list<T = unknown>(prefix: string, options?: { limit?: number; reverse?: boolean }) {
-    return capRpc<{ key: string; value: T }[]>("/kv/list", { prefix, ...options });
+    return sidecarRpc<{ key: string; value: T }[]>("/kv/list", { prefix, ...options });
   },
 };
 
 const vector: VectorStore = {
   upsert(id: string, data: string, metadata?: Record<string, unknown>) {
-    return capRpc<void>("/vec/upsert", { id, data, metadata });
+    return sidecarRpc<void>("/vec/upsert", { id, data, metadata });
   },
   query(text: string, options?: { topK?: number; filter?: string }) {
-    return capRpc("/vec/query", { text, ...options });
+    return sidecarRpc("/vec/query", { text, ...options });
   },
   remove(ids: string | string[]) {
-    return capRpc<void>("/vec/remove", { ids: Array.isArray(ids) ? ids : [ids] });
+    return sidecarRpc<void>("/vec/remove", { ids: Array.isArray(ids) ? ids : [ids] });
   },
 };
 

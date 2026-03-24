@@ -17,7 +17,7 @@ function restartSandbox(c: Context<Env>, slug: string, reason: string): void {
 
 export async function handleSecretList(c: Context<Env>): Promise<Response> {
   const slug = c.get("slug");
-  const env = await c.env.deployStore.getEnv(slug);
+  const env = await c.env.store.getEnv(slug);
   if (!env) {
     throw new HTTPException(404, { message: `Agent ${slug} not found` });
   }
@@ -34,9 +34,9 @@ export async function handleSecretSet(c: Context<Env>): Promise<Response> {
   }
   const updates = parsed.data;
 
-  const existing = (await c.env.deployStore.getEnv(slug)) ?? {};
+  const existing = (await c.env.store.getEnv(slug)) ?? {};
   const merged = { ...existing, ...updates };
-  await c.env.deployStore.putEnv(slug, merged);
+  await c.env.store.putEnv(slug, merged);
 
   restartSandbox(c, slug, "secret update");
   console.info("Secret updated", { slug, keys: Object.keys(updates) });
@@ -47,12 +47,12 @@ export async function handleSecretDelete(c: Context<Env>): Promise<Response> {
   const slug = c.get("slug");
   // biome-ignore lint/style/noNonNullAssertion: key param guaranteed by route
   const key = c.req.param("key")!;
-  const existing = await c.env.deployStore.getEnv(slug);
+  const existing = await c.env.store.getEnv(slug);
   if (!existing) {
     throw new HTTPException(404, { message: `Agent ${slug} not found` });
   }
   delete existing[key];
-  await c.env.deployStore.putEnv(slug, existing);
+  await c.env.store.putEnv(slug, existing);
   restartSandbox(c, slug, "secret delete");
   console.info("Secret deleted", { slug, key });
   return c.json({ ok: true });

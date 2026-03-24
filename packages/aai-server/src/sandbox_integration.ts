@@ -83,8 +83,8 @@ async function main() {
   console.log("starting isolate...");
 
   const kv = createMockKv();
-  const cap = await _internals.startCapabilityServer(kv, undefined);
-  const isolate = await _internals.startIsolate(AGENT_BUNDLE, cap.url);
+  const sidecar = await _internals.startSidecarServer(kv, undefined);
+  const isolate = await _internals.startIsolate(AGENT_BUNDLE, sidecar.url);
   const port = isolate.port;
 
   console.log(`isolate ready on port ${port}\n`);
@@ -192,7 +192,7 @@ async function main() {
     });
   } finally {
     isolate.runtime.dispose();
-    cap.close();
+    sidecar.close();
   }
 
   console.log(`\n${passed} passed, ${failed} failed`);

@@ -1,5 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
-import type { DeployStore } from "./bundle_store_tigris.ts";
+import type { BundleStore } from "./bundle_store_tigris.ts";
 
 export async function hashApiKey(apiKey: string): Promise<string> {
   const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(apiKey));
@@ -15,7 +15,7 @@ export type OwnerResult =
 
 export async function verifySlugOwner(
   apiKey: string,
-  opts: { slug: string; store: DeployStore },
+  opts: { slug: string; store: BundleStore },
 ): Promise<OwnerResult> {
   const { slug, store } = opts;
   const keyHash = await hashApiKey(apiKey);

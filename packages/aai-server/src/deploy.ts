@@ -14,7 +14,7 @@ export async function handleDeploy(c: Context<Env>): Promise<Response> {
     return c.json({ error: "Invalid deploy body" }, 400);
   }
 
-  const storedEnv = (await c.env.deployStore.getEnv(slug)) ?? {};
+  const storedEnv = (await c.env.store.getEnv(slug)) ?? {};
   const env = body.env ? { ...storedEnv, ...body.env } : storedEnv;
 
   const envParsed = EnvSchema.safeParse(env);
@@ -34,7 +34,7 @@ export async function handleDeploy(c: Context<Env>): Promise<Response> {
     delete existing.initializing;
   }
 
-  await c.env.deployStore.putAgent({
+  await c.env.store.putAgent({
     slug,
     env,
     worker: body.worker,
