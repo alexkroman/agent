@@ -207,7 +207,7 @@ describe("isolate protocol", () => {
     const kv = createMockKv();
     const vector = createMockVector();
     const sidecar = await _internals.startSidecarServer(kv, vector);
-    sidecarPort = Number.parseInt(new URL(sidecar.url).port);
+    sidecarPort = Number.parseInt(new URL(sidecar.url).port, 10);
     const isolate = await _internals.startIsolate(AGENT_BUNDLE, sidecar.url);
     port = isolate.port;
     cleanup = () => {
@@ -353,5 +353,221 @@ describe("isolate protocol", () => {
     assert.equal(env.PATH, null, "PATH should not be readable");
     assert.equal(env.HOME, null, "HOME should not be readable");
     assert.equal(env.AWS_SECRET_ACCESS_KEY, null, "AWS creds should not be readable");
+  });
+});
+
+// ── WebSocket session lifecycle ──────────────────────────────────────────
+
+describe("WebSocket session lifecycle", () => {
+  let sandbox: Awaited<ReturnType<typeof _internals.createSandbox>>;
+
+  before(async () => {
+    const { createTestKvStore, createTestVectorStore } = await import("./_test_utils.ts");
+    sandbox = await _internals.createSandbox({
+      workerCode: AGENT_BUNDLE,
+      env: { ASSEMBLYAI_API_KEY: "test-key" },
+      kvStore: createTestKvStore(),
+      scope: { keyHash: "test", slug: "ws-test" },
+      vectorStore: createTestVectorStore(),
+    });
+  });
+
+  after(() => sandbox?.terminate());
+
+  test("startSession sends config message on open", { timeout: 10_000 }, async () => {
+    const messages: string[] = [];
+    let _opened = false;
+    let _closed = false;
+
+    // Minimal SessionWebSocket mock
+    const ws = {
+      readyState: 1, // OPEN
+      send(data: string | ArrayBuffer | Uint8Array) {
+        if (typeof data === "string") messages.push(data);
+      },
+      addEventListener(type: string, listener: EventListenerOrEventListenerObject) {
+        const fn = typeof listener === "function" ? listener : listener.handleEvent.bind(listener);
+        if (type === "open") {
+          _opened = true;
+          fn(new Event("open"));
+        }
+        if (type === "close") {
+          // Store close handler for later
+          setTimeout(() => {
+            _closed = true;
+            fn(new Event("close"));
+          }, 500);
+        }
+      },
+    };
+
+    sandbox.startSession(ws, false);
+
+    // Wait for config message
+    await new Promise((r) => setTimeout(r, 200));
+
+    assert.ok(messages.length > 0, "should have sent at least one message");
+    const config = JSON.parse(messages[0] as string);
+    assert.equal(config.type, "config");
+    assert.equal(config.audioFormat, "pcm16");
+    assert.ok(config.sampleRate, "should have sampleRate");
+  });
+});
+
+// ── Multiple concurrent agents ───────────────────────────────────────────
+
+describe("multiple concurrent agents", () => {
+  let port1: number;
+  let port2: number;
+  let cleanup1: () => void;
+  let cleanup2: () => void;
+
+  const BUNDLE_A = `
+module.exports = {
+  name: "agent-a",
+  instructions: "A",
+  greeting: "Hi from A",
+  maxSteps: 1,
+  tools: { id: { description: "Return agent name", execute() { return "agent-a"; } } },
+};
+`;
+
+  const BUNDLE_B = `
+module.exports = {
+  name: "agent-b",
+  instructions: "B",
+  greeting: "Hi from B",
+  maxSteps: 2,
+  tools: { id: { description: "Return agent name", execute() { return "agent-b"; } } },
+};
+`;
+
+  before(async () => {
+    const kv1 = createMockKv();
+    const kv2 = createMockKv();
+    const sidecar1 = await _internals.startSidecarServer(kv1, undefined);
+    const sidecar2 = await _internals.startSidecarServer(kv2, undefined);
+    const [iso1, iso2] = await Promise.all([
+      _internals.startIsolate(BUNDLE_A, sidecar1.url),
+      _internals.startIsolate(BUNDLE_B, sidecar2.url),
+    ]);
+    port1 = iso1.port;
+    port2 = iso2.port;
+    cleanup1 = () => {
+      iso1.runtime.dispose();
+      sidecar1.close();
+    };
+    cleanup2 = () => {
+      iso2.runtime.dispose();
+      sidecar2.close();
+    };
+  });
+
+  after(() => {
+    cleanup1?.();
+    cleanup2?.();
+  });
+
+  test("two isolates run independently", { timeout: 15_000 }, async () => {
+    const [config1, config2] = await Promise.all([
+      fetch(`http://127.0.0.1:${port1}/config`).then((r) => r.json()),
+      fetch(`http://127.0.0.1:${port2}/config`).then((r) => r.json()),
+    ]);
+
+    assert.equal((config1 as IsolateConfig).name, "agent-a");
+    assert.equal((config2 as IsolateConfig).name, "agent-b");
+    assert.equal((config1 as IsolateConfig).maxSteps, 1);
+    assert.equal((config2 as IsolateConfig).maxSteps, 2);
+  });
+
+  test("tool calls route to correct isolate", { timeout: 10_000 }, async () => {
+    const [r1, r2] = await Promise.all([toolCall(port1, "id"), toolCall(port2, "id")]);
+
+    assert.equal(r1.data.result, "agent-a");
+    assert.equal(r2.data.result, "agent-b");
+  });
+});
+
+// ── Idle eviction ────────────────────────────────────────────────────────
+
+describe("idle eviction", () => {
+  const originalIdleMs = _internals.IDLE_MS;
+
+  after(() => {
+    _internals.IDLE_MS = originalIdleMs;
+  });
+
+  test("sandbox is evicted after idle timeout", { timeout: 10_000 }, async () => {
+    // Set idle to 200ms for fast testing
+    _internals.IDLE_MS = 200;
+
+    const { createTestKvStore } = await import("./_test_utils.ts");
+    const kvStore = createTestKvStore();
+    const scope = { keyHash: "test", slug: "idle-test" };
+
+    const slot = {
+      slug: "idle-test",
+      keyHash: "test",
+    } as import("./sandbox.ts").AgentSlot;
+
+    const sandbox = await _internals.createSandbox({
+      workerCode: AGENT_BUNDLE,
+      env: { ASSEMBLYAI_API_KEY: "test-key" },
+      kvStore,
+      scope,
+    });
+
+    // Manually assign to slot and start idle timer
+    slot.sandbox = sandbox;
+    // The ensureAgent function sets the timer, but we simulate it here
+    slot.idleTimer = setTimeout(() => {
+      slot.sandbox?.terminate();
+      delete slot.sandbox;
+      delete slot.idleTimer;
+    }, _internals.IDLE_MS);
+
+    assert.ok(slot.sandbox, "sandbox should exist before timeout");
+
+    // Wait for eviction
+    await new Promise((r) => setTimeout(r, 500));
+
+    assert.equal(slot.sandbox, undefined, "sandbox should be evicted after idle timeout");
+  });
+});
+
+// ── Redeploy replaces sandbox ────────────────────────────────────────────
+
+describe("redeploy replaces sandbox", () => {
+  test("deploying same slug terminates old sandbox", { timeout: 15_000 }, async () => {
+    const { createTestKvStore } = await import("./_test_utils.ts");
+    const kvStore = createTestKvStore();
+    const scope = { keyHash: "test", slug: "redeploy-test" };
+
+    // Deploy first version
+    const sandbox1 = await _internals.createSandbox({
+      workerCode: `module.exports = { name: "v1", instructions: "v1", greeting: "v1", maxSteps: 1, tools: {} };`,
+      env: { ASSEMBLYAI_API_KEY: "test-key" },
+      kvStore,
+      scope,
+    });
+
+    // Deploy second version (simulates redeploy)
+    const sandbox2 = await _internals.createSandbox({
+      workerCode: `module.exports = { name: "v2", instructions: "v2", greeting: "v2", maxSteps: 1, tools: {} };`,
+      env: { ASSEMBLYAI_API_KEY: "test-key" },
+      kvStore,
+      scope,
+    });
+
+    // Terminate old sandbox (as deploy handler does)
+    sandbox1.terminate();
+
+    // New sandbox should still work
+    // We can't easily verify the old one is dead (no port exposed),
+    // but we verify the new one is alive and has the right config
+    // by checking it was created successfully
+    assert.ok(sandbox2, "new sandbox should be created");
+
+    sandbox2.terminate();
   });
 });

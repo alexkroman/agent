@@ -5,10 +5,10 @@
  *
  * Run via: pnpm test:e2e
  */
-import { execFileSync } from "node:child_process";
+import { type ChildProcess, execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { afterAll, beforeAll, describe, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
 const dir = import.meta.dirname ?? path.dirname(new URL(import.meta.url).pathname);
 const templatesDir = path.join(dir, "templates");
@@ -22,18 +22,42 @@ let aaiBin: string;
 let tmpDir: string;
 const BASE_PORT = 4567;
 
+const aaiEnv = {
+  ...process.env,
+  NO_COLOR: "1",
+  FORCE_COLOR: "0",
+  ASSEMBLYAI_API_KEY: process.env.ASSEMBLYAI_API_KEY || "test",
+};
+
 function aai(args: string[], cwd: string, timeoutMs = 120_000): void {
   execFileSync(process.execPath, [aaiBin, ...args], {
     cwd,
-    env: {
-      ...process.env,
-      NO_COLOR: "1",
-      FORCE_COLOR: "0",
-      ASSEMBLYAI_API_KEY: process.env.ASSEMBLYAI_API_KEY || "test",
-    },
+    env: aaiEnv,
     stdio: "inherit",
     timeout: timeoutMs,
   });
+}
+
+function aaiSpawn(args: string[], cwd: string): ChildProcess {
+  return spawn(process.execPath, [aaiBin, ...args], {
+    cwd,
+    env: aaiEnv,
+    stdio: "pipe",
+  });
+}
+
+async function waitForHealth(url: string, timeoutMs = 30_000): Promise<void> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const res = await fetch(url);
+      if (res.ok) return;
+    } catch {
+      // server not ready yet
+    }
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  throw new Error(`Timed out waiting for ${url}`);
 }
 
 beforeAll(() => {

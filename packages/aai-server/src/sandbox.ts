@@ -481,6 +481,13 @@ export const _internals = {
   startIsolate,
   getIsolateConfig,
   buildNetworkPolicy,
+  createSandbox,
+  get IDLE_MS() {
+    return IDLE_MS;
+  },
+  set IDLE_MS(ms: number) {
+    IDLE_MS = ms;
+  },
 };
 
 // ── Public API ───────────────────────────────────────────────────────────
@@ -551,7 +558,7 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
 
 // ── Agent slot lifecycle ─────────────────────────────────────────────────
 
-const IDLE_MS = 5 * 60 * 1000;
+let IDLE_MS = 5 * 60 * 1000;
 
 export type AgentSlot = {
   slug: string;
