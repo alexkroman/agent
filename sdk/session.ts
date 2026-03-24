@@ -110,10 +110,6 @@ export function createS2sSession(opts: SessionOptions): Session {
   let toolCallCount = 0;
   let turnPromise: Promise<void> | null = null;
   let conversationMessages: Message[] = [];
-  let s2sSessionId: string | null = null;
-  /** Prevents overlapping connectAndSetup() calls (e.g. close handler firing during reconnect). */
-  let connecting = false;
-  let pendingReconnect = false;
 
   // Accumulate tool results — send after reply.done per API docs.
   type PendingTool = { call_id: string; result: string };
@@ -224,13 +220,11 @@ export function createS2sSession(opts: SessionOptions): Session {
   /** Wire all S2S events to the client sink, hooks, and session state. */
   function setupListeners(handle: S2sHandle): void {
     on<{ session_id: string }>(handle, "ready", (e) => {
-      s2sSessionId = e.detail.session_id;
-      log.info("S2S session ready", { session_id: s2sSessionId });
+      log.info("S2S session ready", { session_id: e.detail.session_id });
     });
 
     on<undefined>(handle, "session_expired", () => {
-      log.info("S2S session expired, reconnecting fresh");
-      s2sSessionId = null;
+      log.info("S2S session expired");
       handle.close();
     });
 
@@ -300,21 +294,10 @@ export function createS2sSession(opts: SessionOptions): Session {
     handle.addEventListener("close", () => {
       log.info("S2S closed");
       s2s = null;
-      if (!sessionAbort.signal.aborted) {
-        log.info("Attempting S2S reconnect");
-        connectAndSetup().catch((err: unknown) => {
-          log.error("S2S reconnect failed", { error: errorMessage(err) });
-        });
-      }
     });
   }
 
   async function connectAndSetup(): Promise<void> {
-    if (connecting) {
-      pendingReconnect = true;
-      return;
-    }
-    connecting = true;
     try {
       const handle = await _internals.connectS2s({
         apiKey,
@@ -326,30 +309,17 @@ export function createS2sSession(opts: SessionOptions): Session {
       // Register all listeners BEFORE sending messages to avoid races.
       setupListeners(handle);
 
-      if (s2sSessionId) {
-        log.info("Attempting S2S session resume", { session_id: s2sSessionId });
-        handle.resumeSession(s2sSessionId);
-      } else {
-        handle.updateSession({
-          system_prompt: systemPrompt,
-          tools: s2sTools,
-          ...(agentConfig.greeting ? { greeting: agentConfig.greeting } : {}),
-        });
-      }
+      handle.updateSession({
+        system_prompt: systemPrompt,
+        tools: s2sTools,
+        ...(agentConfig.greeting ? { greeting: agentConfig.greeting } : {}),
+      });
 
       s2s = handle;
     } catch (err: unknown) {
       const msg = errorMessage(err);
       log.error("S2S connect failed", { error: msg });
       client.event({ type: "error", code: "internal", message: msg });
-    } finally {
-      connecting = false;
-      if (pendingReconnect && !sessionAbort.signal.aborted) {
-        pendingReconnect = false;
-        connectAndSetup().catch((err: unknown) => {
-          log.error("S2S deferred reconnect failed", { error: errorMessage(err) });
-        });
-      }
     }
   }
 
@@ -388,10 +358,11 @@ export function createS2sSession(opts: SessionOptions): Session {
       toolCallCount = 0;
       turnPromise = null;
       pendingTools = [];
-      s2sSessionId = null;
       s2s?.close();
-      // Reconnect happens via the close handler.
       client.event({ type: "reset" });
+      connectAndSetup().catch((err: unknown) => {
+        log.error("S2S reset reconnect failed", { error: errorMessage(err) });
+      });
     },
 
     onHistory(incoming: readonly { role: "user" | "assistant"; text: string }[]): void {

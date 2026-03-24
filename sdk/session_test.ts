@@ -183,7 +183,7 @@ describe("createS2sSession", () => {
 
     await session.start();
     expect(connectSpy).toHaveBeenCalledOnce();
-    expect(onConnect).toHaveBeenCalledWith("session-1", undefined, 5000);
+    expect(onConnect).toHaveBeenCalledWith("session-1", undefined, 30000);
   });
 
   test("start() sends updateSession with greeting on initial connect", async () => {
@@ -223,7 +223,7 @@ describe("createS2sSession", () => {
     const { session } = setup({ hookInvoker });
     await session.start();
     await session.stop();
-    expect(onDisconnect).toHaveBeenCalledWith("session-1", undefined, 5000);
+    expect(onDisconnect).toHaveBeenCalledWith("session-1", undefined, 30000);
   });
 
   test("stop() is idempotent", async () => {
@@ -309,7 +309,7 @@ describe("createS2sSession", () => {
       isFinal: true,
     });
     expect(client.events).toContainEqual({ type: "turn", text: "Hello there" });
-    expect(onTurn).toHaveBeenCalledWith("session-1", "Hello there", 5000);
+    expect(onTurn).toHaveBeenCalledWith("session-1", "Hello there", 30000);
   });
 
   test("user_transcript_delta emits non-final transcript", async () => {
@@ -403,15 +403,6 @@ describe("createS2sSession", () => {
       message: "Something broke",
     });
     expect(mockHandle.close).toHaveBeenCalled();
-  });
-
-  test("ready event stores session_id", async () => {
-    const { session, mockHandle } = setup();
-    await session.start();
-
-    mockHandle._fire("ready", { session_id: "s2s-session-123" });
-    // No assertion needed — this is internal state. We verify indirectly
-    // by testing resumeSession is called on reconnect.
   });
 
   // ─── Tool call handling ────────────────────────────────────────────────
@@ -531,54 +522,6 @@ describe("createS2sSession", () => {
     }) as Record<string, unknown>;
     expect(doneEvent.result).toContain("not available");
     expect(executeTool).not.toHaveBeenCalled();
-  });
-
-  // ─── Reconnect logic ──────────────────────────────────────────────────
-
-  test("close event triggers reconnect when session not aborted", async () => {
-    const { session, mockHandle } = setup();
-    await session.start();
-
-    // First call was the initial connect
-    expect(connectSpy).toHaveBeenCalledTimes(1);
-
-    // Simulate close — should trigger reconnect
-    mockHandle._fire("close");
-
-    // Wait for reconnect
-    await vi.waitFor(() => {
-      expect(connectSpy).toHaveBeenCalledTimes(2);
-    });
-  });
-
-  test("close event does NOT reconnect after stop()", async () => {
-    const { session, mockHandle } = setup();
-    await session.start();
-    await session.stop();
-
-    connectSpy.mockClear();
-    mockHandle._fire("close");
-
-    // Give time for potential reconnect
-    await new Promise((r) => setTimeout(r, 50));
-    expect(connectSpy).not.toHaveBeenCalled();
-  });
-
-  test("session_expired event triggers fresh reconnect without session ID", async () => {
-    const { session, mockHandle: firstHandle } = setup();
-    await session.start();
-
-    // Simulate ready to set session ID
-    firstHandle._fire("ready", { session_id: "old-session" });
-
-    // Create second handle for reconnect
-    const secondHandle = makeMockHandle();
-    connectSpy.mockResolvedValueOnce(secondHandle);
-
-    // Simulate session_expired — this closes the handle, which triggers reconnect
-    firstHandle._fire("session_expired");
-
-    expect(firstHandle.close).toHaveBeenCalled();
   });
 
   // ─── connectS2s failure ────────────────────────────────────────────────
