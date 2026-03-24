@@ -37,8 +37,11 @@ function aai(args: string[], cwd: string, timeoutMs = 120_000): void {
 }
 
 beforeAll(() => {
-  execFileSync("npx", ["tsup", "--silent"], { cwd: dir, stdio: "inherit" });
-  aaiBin = path.resolve(dir, "dist/cli.js");
+  execFileSync("npx", ["tsdown"], { cwd: dir, stdio: "inherit" });
+  // tsdown outputs .mjs for ESM format
+  const mjs = path.resolve(dir, "dist/cli.mjs");
+  const js = path.resolve(dir, "dist/cli.js");
+  aaiBin = fs.existsSync(mjs) ? mjs : js;
   tmpDir = fs.mkdtempSync("/tmp/aai-e2e-test-");
 });
 

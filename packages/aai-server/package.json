@@ -11,7 +11,7 @@
     "build": "tsdown",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
-    "test:integration": "pnpm build && tsx src/sandbox_integration.ts"
+    "test:integration": "pnpm build && node --import tsx/esm --test src/sandbox_integration.ts"
   },
   "dependencies": {
     "@alexkroman1/aai": "workspace:*",

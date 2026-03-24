@@ -23,6 +23,7 @@ import { type SessionWebSocket, wireSessionSocket } from "@alexkroman1/aai/ws-ha
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import {
+  createDefaultNetworkAdapter,
   createInMemoryFileSystem,
   createNodeDriver,
   createNodeRuntimeDriverFactory,
@@ -177,8 +178,9 @@ function buildSidecarApp(
 
   app.onError((err, c) => {
     const isValidation = err.name === "ZodError";
-    const status = (isValidation ? 400 : (err as { status?: number }).status ??
-      500) as import("hono/utils/http-status").ContentfulStatusCode;
+    const status = (
+      isValidation ? 400 : ((err as { status?: number }).status ?? 500)
+    ) as import("hono/utils/http-status").ContentfulStatusCode;
     return c.json({ error: err.message }, status);
   });
 
@@ -249,6 +251,48 @@ function buildNetworkPolicy(sidecarUrl: string) {
   };
 }
 
+/**
+ * Build a network adapter that wraps the default but exempts the sidecar
+ * URL from SSRF checks. The default adapter blocks all private IPs (including
+ * 127.0.0.1), but the isolate needs to reach the sidecar on loopback.
+ */
+function buildNetworkAdapter(sidecarUrl: string) {
+  const defaultAdapter = createDefaultNetworkAdapter();
+  const sidecarOrigin = new URL(sidecarUrl).origin;
+
+  return {
+    ...defaultAdapter,
+    async fetch(
+      url: string,
+      options: { method?: string; headers?: Record<string, string>; body?: string | null },
+    ) {
+      // Sidecar calls bypass SSRF — they're our own capability server on loopback
+      if (url.startsWith(sidecarOrigin)) {
+        const res = await globalThis.fetch(url, {
+          method: options.method ?? "GET",
+          headers: options.headers,
+          body: options.body,
+        });
+        const headers: Record<string, string> = {};
+        res.headers.forEach((v, k) => {
+          headers[k] = v;
+        });
+        return {
+          ok: res.ok,
+          status: res.status,
+          statusText: res.statusText,
+          headers,
+          body: await res.text(),
+          url: res.url,
+          redirected: res.redirected,
+        };
+      }
+      // Everything else goes through the default adapter (with SSRF checks)
+      return defaultAdapter.fetch(url, options);
+    },
+  };
+}
+
 // ── Isolate lifecycle ────────────────────────────────────────────────────
 
 async function startIsolate(
@@ -280,7 +324,7 @@ async function startIsolate(
             ? { allow: true }
             : { allow: false, reason: "Env access restricted" },
       },
-      useDefaultNetwork: true,
+      networkAdapter: buildNetworkAdapter(sidecarUrl),
       processConfig: {
         env: { SIDECAR_URL: sidecarUrl },
         timingMitigation: "freeze",
