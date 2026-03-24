@@ -1,7 +1,13 @@
 // Copyright 2025 the AAI authors. MIT license.
-// Bundle store backed by S3-compatible storage (Tigris) via aws4fetch.
+// Bundle store backed by S3-compatible storage (Tigris) via @aws-sdk/client-s3.
 
-import { AwsClient } from "aws4fetch";
+import {
+  DeleteObjectsCommand,
+  GetObjectCommand,
+  ListObjectsV2Command,
+  PutObjectCommand,
+  S3Client,
+} from "@aws-sdk/client-s3";
 import type { AgentMetadata } from "./_schemas.ts";
 import { AgentMetadataSchema } from "./_schemas.ts";
 import { type CredentialKey, decryptEnv, encryptEnv } from "./credentials.ts";
@@ -54,43 +60,20 @@ function objectKey(slug: string, file: string): string {
   return `agents/${slug}/${file}`;
 }
 
-export type S3Client = AwsClient & { endpoint: string };
-
 export function createS3Client(env: {
   AWS_ENDPOINT_URL_S3?: string;
   AWS_ACCESS_KEY_ID: string;
   AWS_SECRET_ACCESS_KEY: string;
 }): S3Client {
-  const client = new AwsClient({
-    accessKeyId: env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
+  return new S3Client({
     region: "auto",
-    service: "s3",
+    endpoint: env.AWS_ENDPOINT_URL_S3,
+    credentials: {
+      accessKeyId: env.AWS_ACCESS_KEY_ID,
+      secretAccessKey: env.AWS_SECRET_ACCESS_KEY,
+    },
+    forcePathStyle: true,
   });
-  return Object.assign(client, {
-    endpoint: env.AWS_ENDPOINT_URL_S3 ?? "https://s3.amazonaws.com",
-  });
-}
-
-function s3Url(s3: S3Client, bucket: string, key: string): string {
-  return `${s3.endpoint}/${bucket}/${key}`;
-}
-
-// Simple XML helpers for S3 responses
-
-function extractXmlValues(xml: string, tag: string): string[] {
-  const results: string[] = [];
-  const regex = new RegExp(`<${tag}>([^<]*)</${tag}>`, "g");
-  for (const match of xml.matchAll(regex)) {
-    // biome-ignore lint/style/noNonNullAssertion: regex group 1 always present
-    results.push(match[1]!);
-  }
-  return results;
-}
-
-function buildDeleteXml(keys: string[]): string {
-  const objects = keys.map((k) => `<Object><Key>${k}</Key></Object>`).join("");
-  return `<?xml version="1.0" encoding="UTF-8"?><Delete>${objects}</Delete>`;
 }
 
 export function createBundleStore(
@@ -101,72 +84,57 @@ export function createBundleStore(
   const cache = new Map<string, CacheEntry>();
 
   async function put(key: string, body: string, contentType: string): Promise<void> {
-    const url = s3Url(s3, bucket, key);
-    const res = await s3.fetch(url, {
-      method: "PUT",
-      headers: { "Content-Type": contentType },
-      body,
-    });
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`S3 PUT ${key} failed: ${res.status} ${text}`);
-    }
-    const etag = res.headers.get("etag");
+    const res = await s3.send(
+      new PutObjectCommand({
+        Bucket: bucket,
+        Key: key,
+        Body: body,
+        ContentType: contentType,
+      }),
+    );
+    const etag = res.ETag;
     if (etag) {
       cache.set(key, { data: body, etag });
     }
   }
 
   async function get(key: string): Promise<string | null> {
-    const url = s3Url(s3, bucket, key);
     const cached = cache.get(key);
-    const headers: Record<string, string> = {};
-    if (cached) headers["If-None-Match"] = cached.etag;
-
-    const res = await s3.fetch(url, { headers });
-
-    if (res.status === 304 && cached) {
-      return cached.data;
+    try {
+      const res = await s3.send(
+        new GetObjectCommand({
+          Bucket: bucket,
+          Key: key,
+          ...(cached ? { IfNoneMatch: cached.etag } : {}),
+        }),
+      );
+      const data = (await res.Body?.transformToString()) ?? "";
+      const etag = res.ETag;
+      if (etag) {
+        cache.set(key, { data, etag });
+      }
+      return data;
+    } catch (err: unknown) {
+      const code = (err as { name?: string }).name;
+      if (code === "NoSuchKey" || code === "NotFound") return null;
+      if (code === "304" || code === "NotModified") return cached?.data ?? null;
+      throw err;
     }
-    if (res.status === 404) {
-      return null;
-    }
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`S3 GET ${key} failed: ${res.status} ${text}`);
-    }
-
-    const data = await res.text();
-    const etag = res.headers.get("etag");
-    if (etag) {
-      cache.set(key, { data, etag });
-    }
-    return data;
   }
 
   async function deleteAgent(slug: string): Promise<void> {
     const prefix = `agents/${slug}/`;
-    const listUrl = `${s3.endpoint}/${bucket}?list-type=2&prefix=${encodeURIComponent(prefix)}`;
-    const listRes = await s3.fetch(listUrl);
-    if (!listRes.ok) {
-      const text = await listRes.text();
-      throw new Error(`S3 LIST failed: ${listRes.status} ${text}`);
-    }
+    const listRes = await s3.send(new ListObjectsV2Command({ Bucket: bucket, Prefix: prefix }));
 
-    const xml = await listRes.text();
-    const keys = extractXmlValues(xml, "Key");
+    const keys = (listRes.Contents ?? []).map((obj) => obj.Key).filter(Boolean) as string[];
     if (keys.length === 0) return;
 
-    const deleteUrl = `${s3.endpoint}/${bucket}?delete`;
-    const deleteRes = await s3.fetch(deleteUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/xml" },
-      body: buildDeleteXml(keys),
-    });
-    if (!deleteRes.ok) {
-      const text = await deleteRes.text();
-      throw new Error(`S3 DELETE failed: ${deleteRes.status} ${text}`);
-    }
+    await s3.send(
+      new DeleteObjectsCommand({
+        Bucket: bucket,
+        Delete: { Objects: keys.map((Key) => ({ Key })) },
+      }),
+    );
 
     for (const k of keys) cache.delete(k);
   }

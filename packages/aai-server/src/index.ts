@@ -10,9 +10,6 @@
 
 import { serve } from "@hono/node-server";
 import { WebSocketServer } from "ws";
-import { createKvBinding } from "./bindings_kv.ts";
-import { createR2Binding } from "./bindings_r2.ts";
-import { createVectorizeBinding } from "./bindings_vectorize.ts";
 import { createBundleStore, createS3Client } from "./bundle_store_tigris.ts";
 import { deriveCredentialKey } from "./credentials.ts";
 import { createKvStore } from "./kv.ts";
@@ -55,27 +52,12 @@ async function buildOpts(env: EnvVars): Promise<OrchestratorOpts> {
   const vectorStore = vec ? createVectorStore(vec.url, vec.token) : undefined;
   const scopeKey = await importScopeKey(kvSecret);
 
-  const KV = createKvBinding({
-    url: env.UPSTASH_REDIS_REST_URL ?? "",
-    token: env.UPSTASH_REDIS_REST_TOKEN ?? "",
-  });
-  const BUCKET = createR2Binding({
-    endpoint: env.AWS_ENDPOINT_URL_S3 ?? "https://s3.amazonaws.com",
-    bucket,
-    accessKeyId: env.AWS_ACCESS_KEY_ID ?? "",
-    secretAccessKey: env.AWS_SECRET_ACCESS_KEY ?? "",
-  });
-  const VECTORIZE = vec ? createVectorizeBinding(vec) : undefined;
-
   return {
     slots: new Map<string, AgentSlot>(),
     store,
     kvStore,
     vectorStore,
     scopeKey,
-    KV,
-    BUCKET,
-    VECTORIZE,
   };
 }
 

@@ -5,7 +5,6 @@ import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
 import { secureHeaders } from "hono/secure-headers";
 import { z } from "zod";
-import type { AaiKvNamespace, AaiR2Bucket, AaiVectorizeIndex } from "./bindings.ts";
 import type { BundleStore } from "./bundle_store_tigris.ts";
 import type { Env } from "./context.ts";
 import { handleDeploy } from "./deploy.ts";
@@ -26,9 +25,6 @@ export type OrchestratorOpts = {
   kvStore: KvStore;
   vectorStore?: ServerVectorStore | undefined;
   scopeKey: ScopeKey;
-  KV?: AaiKvNamespace;
-  BUCKET?: AaiR2Bucket;
-  VECTORIZE?: AaiVectorizeIndex;
 };
 
 export function createOrchestrator(opts: OrchestratorOpts): Hono<Env> {
@@ -117,9 +113,6 @@ export function createOrchestrator(opts: OrchestratorOpts): Hono<Env> {
     scopeKey: opts.scopeKey,
     kvStore: opts.kvStore,
     vectorStore: opts.vectorStore,
-    ...(opts.KV ? { KV: opts.KV } : {}),
-    ...(opts.BUCKET ? { BUCKET: opts.BUCKET } : {}),
-    ...(opts.VECTORIZE ? { VECTORIZE: opts.VECTORIZE } : {}),
   };
 
   const original = app.fetch.bind(app);

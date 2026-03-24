@@ -290,6 +290,10 @@ function toAgentConfig(config: IsolateConfig): AgentConfig {
   };
 }
 
+// ── Test internals ───────────────────────────────────────────────────────
+
+export const _internals = { startCapabilityServer, startIsolate, getIsolateConfig };
+
 // ── Public API ───────────────────────────────────────────────────────────
 
 export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {

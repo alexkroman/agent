@@ -9,14 +9,15 @@
     "start": "node dist/index.js",
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
-    "lint": "biome check ."
+    "lint": "biome check .",
+    "test:integration": "pnpm build && node dist/sandbox_integration.js"
   },
   "dependencies": {
     "@alexkroman1/aai": "workspace:*",
+    "@aws-sdk/client-s3": "^3.1016.0",
     "@hono/node-server": "^1.19.11",
     "@upstash/redis": "^1.37.0",
     "@upstash/vector": "^1.2.3",
-    "aws4fetch": "^1.0.20",
     "hono": "^4.12.8",
     "secure-exec": "*",
     "ws": "^8.18.0",
