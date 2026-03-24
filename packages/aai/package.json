@@ -22,7 +22,6 @@
     "./ws-handler": "./ws_handler.ts",
     "./direct-executor": "./direct_executor.ts",
     "./capnweb": "./capnweb.ts",
-    "./host": "./host.ts",
     "./winterc-server": "./winterc_server.ts",
     "./worker-shim": "./worker_shim.ts",
     "./utils": "./_utils.ts"
