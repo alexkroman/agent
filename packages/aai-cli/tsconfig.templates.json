@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "jsxImportSource": "preact",
+    "noEmit": true,
+    "paths": {
+      "@alexkroman1/aai": ["../aai/mod.ts"],
+      "@alexkroman1/aai/types": ["../aai/types.ts"],
+      "@alexkroman1/aai-ui": ["../aai-ui/mod.ts"],
+      "@alexkroman1/aai-ui/components": ["../aai-ui/components_mod.ts"],
+      "@alexkroman1/aai-ui/session": ["../aai-ui/session_mod.ts"],
+      "@alexkroman1/aai-ui/styles.css": ["../aai-ui/styles.css"]
+    }
+  },
+  "include": ["templates/*/agent.ts", "templates/*/client.tsx"]
+}

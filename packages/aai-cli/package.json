@@ -13,6 +13,7 @@
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
     "test": "vitest run"
   },
   "dependencies": {
@@ -33,13 +34,10 @@
     "ws": "^8.18.0"
   },
   "devDependencies": {
-    "@types/node": "^25.5.0",
     "@types/react": "^19.2.14",
     "@types/ws": "^8.18.1",
     "ink-testing-library": "^4.0.0",
-    "tsup": "^8.5.1",
-    "typescript": "^5.9.3",
-    "vitest": "^4.1.0"
+    "tsup": "^8.5.1"
   },
   "engines": {
     "node": ">=20"

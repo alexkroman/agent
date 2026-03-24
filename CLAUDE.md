@@ -15,11 +15,13 @@ Two modes:
 
 ```sh
 pnpm install             # Install dependencies
-pnpm test                # Run Vitest tests
-pnpm lint                # Run Biome linter
-pnpm check               # Lint + tests
+pnpm test                # Run tests (via Turborepo)
+pnpm lint                # Run Biome linter (via Turborepo)
+pnpm typecheck           # Type check all packages
+pnpm check               # Typecheck + lint + tests
 ```
 
+Run a single package's tests: `pnpm --filter @alexkroman1/aai test`
 Run a single test file: `pnpm vitest run packages/aai/types_test.ts`
 
 ## Architecture
@@ -111,9 +113,9 @@ Internal:
 - **Frameworks**: Preact (client UI), Tailwind CSS v4 (compiled at bundle time)
 - **Testing**: Vitest. Test files are co-located: `foo.ts` → `foo_test.ts`
 - **Linting**: Biome for all packages
-- **Exports**: In dev mode, package.json exports point to `.ts` source.
-  Run `node scripts/gen-exports.mjs --write --dist` before publishing to
-  switch to compiled `.js` dist.
+- **Exports**: In dev mode, package.json exports point to `.ts` source
+  for seamless workspace resolution. Update to compiled `.js` dist paths
+  before publishing.
 - **Agent API docs**: `templates/_shared/CLAUDE.md` is the agent API reference
   installed into user projects. When modifying the agent API surface
   (`packages/aai/types.ts`), update it to match.

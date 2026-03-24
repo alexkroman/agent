@@ -5,9 +5,9 @@
     "build": "turbo build",
     "test": "turbo test",
     "typecheck": "turbo typecheck",
-    "lint": "biome check packages/",
+    "lint": "turbo lint",
     "lint:fix": "biome check --write packages/",
-    "check": "turbo typecheck test && biome check packages/ && tsc -p tsconfig.templates.json && markdownlint-cli2 '**/*.md' '#**/node_modules' '#.aai'",
+    "check": "turbo typecheck lint test && tsc -p packages/aai-cli/tsconfig.templates.json && markdownlint-cli2 '**/*.md' '#**/node_modules' '#.aai'",
     "link:global": "pnpm --filter @alexkroman1/aai-cli link --global",
     "prepare": "husky"
   },
