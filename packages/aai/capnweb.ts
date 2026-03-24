@@ -10,6 +10,7 @@
  */
 
 import { RpcSession, type RpcSessionOptions, RpcTarget, type RpcTransport } from "capnweb";
+import { CloseEventImpl, ErrorEventImpl } from "./_polyfills.ts";
 
 export { RpcSession, type RpcSessionOptions, RpcTarget, type RpcTransport };
 
@@ -205,7 +206,7 @@ export class BridgedWebSocket extends EventTarget {
         case 2:
           this.readyState = 3;
           this.dispatchEvent(
-            new CloseEvent("close", {
+            new CloseEventImpl("close", {
               ...(msg.code !== undefined ? { code: msg.code } : {}),
               ...(msg.reason !== undefined ? { reason: msg.reason } : {}),
             }),
@@ -216,7 +217,7 @@ export class BridgedWebSocket extends EventTarget {
           this.dispatchEvent(new Event("open"));
           break;
         case 4:
-          this.dispatchEvent(new ErrorEvent("error", { message: msg.m }));
+          this.dispatchEvent(new ErrorEventImpl("error", { message: msg.m }));
           break;
       }
     };
@@ -289,7 +290,7 @@ export function bridgeWebSocketToPort(
   }) as EventListener);
 
   ws.addEventListener("error", (ev: Event) => {
-    const msg = ev instanceof ErrorEvent ? ev.message : "WebSocket error";
+    const msg = "message" in ev && typeof ev.message === "string" ? ev.message : "WebSocket error";
     port.postMessage({ k: 4, m: msg });
   });
 

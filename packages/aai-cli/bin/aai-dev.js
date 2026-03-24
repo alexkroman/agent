@@ -9,11 +9,15 @@ import { fileURLToPath } from "node:url";
 
 const cliRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
+// Run tsx from the CLI package root so react/ink resolve correctly,
+// and pass the user's cwd via INIT_CWD for resolveCwd() to pick up.
+const env = { ...process.env, INIT_CWD: process.env.INIT_CWD ?? process.cwd() };
+
 try {
   execFileSync(
     resolve(cliRoot, "node_modules/.bin/tsx"),
     [resolve(cliRoot, "cli.ts"), ...process.argv.slice(2)],
-    { stdio: "inherit", cwd: process.cwd() },
+    { stdio: "inherit", cwd: cliRoot, env },
   );
 } catch (e) {
   process.exit(e.status ?? 1);

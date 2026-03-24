@@ -5,27 +5,11 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { fileExists, getApiKey, isDevMode, resolveCwd } from "./_discover.ts";
+import { fileExists, getApiKey, resolveCwd } from "./_discover.ts";
 import { interactive, runWithInk, Step, Warn } from "./_ink.tsx";
 import { askText } from "./_prompts.tsx";
 
 const execFileAsync = promisify(execFile);
-
-/** Rewrite @aai deps to local monorepo paths for dev mode. */
-async function rewriteDevDeps(cwd: string, cliDir: string): Promise<void> {
-  const monorepoRoot = path.join(cliDir, "..");
-  const pkgJsonPath = path.join(cwd, "package.json");
-  const pkgJson = JSON.parse(await fs.readFile(pkgJsonPath, "utf-8"));
-
-  // Rewrite the main package to point at the local source
-  const rootPkg = JSON.parse(await fs.readFile(path.join(monorepoRoot, "package.json"), "utf-8"));
-  const rootPkgName = rootPkg.name as string;
-  if (pkgJson.dependencies[rootPkgName]) {
-    pkgJson.dependencies[rootPkgName] = `file:${monorepoRoot}`;
-  }
-
-  await fs.writeFile(pkgJsonPath, `${JSON.stringify(pkgJson, null, 2)}\n`);
-}
 
 /** Install npm dependencies, logging progress. */
 async function installDeps(cwd: string, log: (el: React.ReactNode) => void): Promise<void> {
@@ -64,11 +48,14 @@ export async function runInitCommand(
     template?: string | undefined;
     force?: boolean | undefined;
     yes?: boolean | undefined;
+    skipApi?: boolean | undefined;
+    skipDeploy?: boolean | undefined;
   },
   extra?: { quiet?: boolean | undefined },
 ): Promise<string> {
-  // Ensure API key is set before prompting for project name
-  await getApiKey();
+  if (!opts.skipApi) {
+    await getApiKey();
+  }
 
   let dir = opts.dir;
   if (!dir) {
@@ -83,25 +70,20 @@ export async function runInitCommand(
   }
 
   const cliDir = path.dirname(fileURLToPath(import.meta.url));
-  const templatesDir = path.join(cliDir, "..", "templates");
+  const templatesDir = path.join(cliDir, "templates");
   const { runInit } = await import("./_init.ts");
   const template = opts.template || "simple";
 
   await runWithInk(async ({ log }) => {
     log(<Step action="Create" msg={dir} />);
     await runInit({ targetDir: cwd, template, templatesDir });
-
-    if (isDevMode()) {
-      await rewriteDevDeps(cwd, cliDir);
-    }
-
     await installDeps(cwd, log);
   });
 
   process.chdir(cwd);
   delete process.env.INIT_CWD;
 
-  if (!extra?.quiet) {
+  if (!(opts.skipDeploy || extra?.quiet)) {
     const { runDeployCommand } = await import("./deploy.tsx");
     await runDeployCommand({ cwd });
   }

@@ -34,9 +34,10 @@ export type BundleOutput = {
 };
 
 /** Vite plugin that provides a virtual worker entry module (no file on disk). */
-function workerEntryPlugin(): Plugin {
+function workerEntryPlugin(agentDir: string): Plugin {
   const virtualId = "virtual:worker-entry";
   const resolvedId = `\0${virtualId}`;
+  const agentPath = path.join(agentDir, "agent.ts");
   return {
     name: "aai-worker-entry",
     resolveId(source) {
@@ -45,7 +46,7 @@ function workerEntryPlugin(): Plugin {
     load(id) {
       if (id !== resolvedId) return null;
       return [
-        `import agent from "./agent.ts";`,
+        `import agent from ${JSON.stringify(agentPath)};`,
         `import { initWorker } from "@alexkroman1/aai/worker-shim";`,
         `initWorker(agent);`,
       ].join("\n");
@@ -101,7 +102,7 @@ export async function bundleAgent(
       configFile: false,
       root: agent.dir,
       logLevel: "warn",
-      plugins: [workerEntryPlugin()],
+      plugins: [workerEntryPlugin(agent.dir)],
       resolve: devResolve,
       build: {
         rollupOptions: {

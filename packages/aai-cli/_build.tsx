@@ -1,6 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { errorMessage } from "@alexkroman1/aai/utils";
 import type { ReactNode } from "react";
 import { BundleError, type BundleOutput, bundleAgent } from "./_bundler.ts";
 import { loadAgent } from "./_discover.ts";
@@ -14,7 +13,6 @@ import { Info, runWithInk, Step } from "./_ink.tsx";
 export async function buildAgentBundle(
   cwd: string,
   log: (node: ReactNode) => void,
-  opts?: { skipRenderCheck?: boolean },
 ): Promise<BundleOutput> {
   const agent = await loadAgent(cwd);
   if (!agent) {
@@ -35,19 +33,6 @@ export async function buildAgentBundle(
   const kb = (bundle.workerBytes / 1024).toFixed(1);
   const clientCount = Object.keys(bundle.clientFiles).length;
   log(<Info msg={`worker: ${kb} KB, client: ${clientCount} file(s)`} />);
-
-  if (agent.clientEntry && !opts?.skipRenderCheck) {
-    // Dynamic import: linkedom is a devDependency — skip render check if unavailable.
-    const mod = await import("@alexkroman1/aai-ui/_render_check").catch(() => null);
-    if (mod) {
-      log(<Step action="Render" msg="check" />);
-      try {
-        await mod.renderCheck(agent.clientEntry, cwd);
-      } catch (err) {
-        throw new Error(`Render check failed: ${errorMessage(err)}`);
-      }
-    }
-  }
 
   return bundle;
 }

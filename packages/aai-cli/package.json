@@ -14,7 +14,8 @@
     "build": "tsup",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:integration": "node --import tsx pack_build_test.ts"
   },
   "dependencies": {
     "@alexkroman1/aai": "workspace:*",

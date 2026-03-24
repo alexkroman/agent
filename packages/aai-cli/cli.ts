@@ -76,10 +76,18 @@ function createProgram(): Command {
     .option("-t, --template <template>", "Template to use")
     .option("-f, --force", "Overwrite existing agent.ts")
     .option("-y, --yes", "Accept defaults (no prompts)")
+    .option("--skip-api", "Skip API key check")
+    .option("--skip-deploy", "Skip post-init deploy")
     .action(
       async (
         dir: string | undefined,
-        opts: { template?: string; force?: boolean; yes?: boolean },
+        opts: {
+          template?: string;
+          force?: boolean;
+          yes?: boolean;
+          skipApi?: boolean;
+          skipDeploy?: boolean;
+        },
       ) => {
         const { runInitCommand } = await import("./init.tsx");
         await runInitCommand({ dir, ...opts });
@@ -194,6 +202,22 @@ function createProgram(): Command {
         }),
     ),
   );
+
+  program
+    .command("link")
+    .description("Link local workspace packages into the current project (dev only)")
+    .action(async () => {
+      const { runLinkCommand } = await import("./_link.ts");
+      runLinkCommand(resolveCwd());
+    });
+
+  program
+    .command("unlink")
+    .description("Restore published package versions (reverses aai link)")
+    .action(async () => {
+      const { runUnlinkCommand } = await import("./_link.ts");
+      runUnlinkCommand(resolveCwd());
+    });
 
   return program;
 }

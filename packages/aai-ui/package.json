@@ -10,8 +10,7 @@
     ".": "./mod.ts",
     "./styles.css": "./styles.css",
     "./session": "./session_mod.ts",
-    "./components": "./components_mod.ts",
-    "./_render_check": "./_render_check.ts"
+    "./components": "./components_mod.ts"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -40,11 +39,8 @@
     }
   },
   "devDependencies": {
-    "@preact/preset-vite": "^2.10.4",
     "@testing-library/preact": "^3.2.4",
-    "jsdom": "^29.0.1",
-    "linkedom": "^0.18.12",
-    "vite": "^7.3.1"
+    "jsdom": "^29.0.1"
   },
   "engines": {
     "node": ">=20"
