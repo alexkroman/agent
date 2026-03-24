@@ -44,7 +44,7 @@ function workerEntryPlugin(agentDir: string): Plugin {
     },
     load(id) {
       if (id !== resolvedId) return null;
-      return `export { default } from ${JSON.stringify(agentPath)};`;
+      return `import agent from ${JSON.stringify(agentPath)}; module.exports = agent;`;
     },
   };
 }
@@ -96,7 +96,7 @@ export async function bundleAgent(
       build: {
         rollupOptions: {
           input: "virtual:worker-entry",
-          output: { format: "cjs", entryFileNames: "worker.js", exports: "auto" },
+          output: { format: "cjs", entryFileNames: "worker.js", exports: "named" },
         },
         outDir: buildDir,
         emptyOutDir: true,
