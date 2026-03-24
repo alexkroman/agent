@@ -2,11 +2,12 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "pnpm -r build",
-    "test": "pnpm -r test",
+    "build": "turbo build",
+    "test": "turbo test",
+    "typecheck": "turbo typecheck",
     "lint": "biome check packages/",
     "lint:fix": "biome check --write packages/",
-    "check": "concurrently -g -n tsc:aai,tsc:ui,tsc:cli,tsc:tpl,biome,mdlint,test \"tsc -p packages/aai/tsconfig.json --noEmit\" \"tsc -p packages/aai-ui/tsconfig.json --noEmit\" \"tsc -p packages/aai-cli/tsconfig.json --noEmit\" \"tsc -p tsconfig.templates.json\" \"biome check packages/\" \"markdownlint-cli2 '**/*.md' '#**/node_modules' '#.aai'\" \"pnpm -r test\"",
+    "check": "turbo typecheck test && biome check packages/ && tsc -p tsconfig.templates.json && markdownlint-cli2 '**/*.md' '#**/node_modules' '#.aai'",
     "link:global": "node scripts/write-dev-shim.mjs && pnpm --filter @alexkroman1/aai-cli link --global",
     "prepare": "husky"
   },
@@ -14,11 +15,11 @@
     "@biomejs/biome": "^2.4.7",
     "@preact/signals": "^2.8.2",
     "@types/node": "^25.5.0",
-    "concurrently": "^9.2.1",
     "husky": "^9.1.7",
     "lint-staged": "^16.1.0",
     "markdownlint-cli2": "^0.21.0",
     "preact": "^10.29.0",
+    "turbo": "^2.8.20",
     "typescript": "^5.9.3",
     "vitest": "^4.1.0",
     "zod": "^4.3.6"
@@ -28,6 +29,7 @@
       "biome check --write"
     ]
   },
+  "packageManager": "pnpm@10.29.3",
   "engines": {
     "node": ">=20"
   }

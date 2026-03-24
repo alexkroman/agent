@@ -6,7 +6,7 @@ import { describe, expect, test } from "vitest";
 import { renderCheck } from "./_render_check.ts";
 
 const dir = import.meta.dirname ?? path.dirname(new URL(import.meta.url).pathname);
-const templatesDir = path.resolve(dir, "..", "..", "templates");
+const templatesDir = path.resolve(dir, "..", "aai-cli", "templates");
 
 const templates = fs
   .readdirSync(templatesDir, { withFileTypes: true })

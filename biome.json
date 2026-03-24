@@ -6,7 +6,8 @@
       "!**/node_modules",
       "!**/dist",
       "!**/.aai",
-      "!**/__snapshots__"
+      "!**/__snapshots__",
+      "!**/templates"
     ]
   },
   "linter": {

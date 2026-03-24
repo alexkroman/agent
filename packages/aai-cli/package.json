@@ -10,7 +10,8 @@
     "templates"
   ],
   "scripts": {
-    "build": "node scripts/build-cli.mjs",
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
@@ -32,10 +33,10 @@
   },
   "devDependencies": {
     "@types/node": "^25.5.0",
-    "@types/ws": "^8.18.1",
     "@types/react": "^19.2.14",
-    "esbuild": "^0.25.0",
+    "@types/ws": "^8.18.1",
     "ink-testing-library": "^4.0.0",
+    "tsup": "^8.5.1",
     "typescript": "^5.9.3",
     "vitest": "^4.1.0"
   },
