@@ -74,8 +74,9 @@ describe("resolveServerUrl", () => {
     expect(resolveServerUrl(undefined, "https://config.com")).toBe("https://config.com");
   });
 
-  test("falls back to DEFAULT_SERVER when no explicit or config", () => {
-    expect(resolveServerUrl(undefined, undefined)).toBe(DEFAULT_SERVER);
+  test("falls back to dev server in dev mode", () => {
+    // Tests run from the monorepo, so isDevMode() returns true
+    expect(resolveServerUrl(undefined, undefined)).toBe("http://localhost:8787");
   });
 });
 

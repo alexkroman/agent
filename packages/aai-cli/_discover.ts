@@ -1,6 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
+import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { humanId } from "human-id";
 import { z } from "zod";
 import { askPassword } from "./_prompts.tsx";
@@ -137,9 +139,23 @@ export type AgentEntry = {
 /** Default production server URL for agent deployments. */
 export const DEFAULT_SERVER = "https://aai-agent.fly.dev";
 
+/** Default local dev server URL. */
+export const DEFAULT_DEV_SERVER = "http://localhost:8787";
+
+/** Check if the CLI is running from the monorepo (dev mode). */
+export function isDevMode(): boolean {
+  const cliDir = path.dirname(fileURLToPath(import.meta.url));
+  const packagesDir = path.resolve(cliDir, "..");
+  const altPackagesDir = path.resolve(cliDir, "../..");
+  return (
+    existsSync(path.join(packagesDir, "aai", "package.json")) ||
+    existsSync(path.join(altPackagesDir, "aai", "package.json"))
+  );
+}
+
 /** Resolve the server URL from an explicit value, project config, or default. */
 export function resolveServerUrl(explicit?: string, configUrl?: string): string {
-  return explicit || configUrl || DEFAULT_SERVER;
+  return explicit || configUrl || (isDevMode() ? DEFAULT_DEV_SERVER : DEFAULT_SERVER);
 }
 
 export async function fileExists(p: string): Promise<boolean> {

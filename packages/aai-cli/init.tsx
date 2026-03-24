@@ -6,23 +6,11 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { fileExists, getApiKey, resolveCwd } from "./_discover.ts";
+import { fileExists, getApiKey, isDevMode, resolveCwd } from "./_discover.ts";
 import { interactive, runWithInk, Step, Warn } from "./_ink.tsx";
 import { askText } from "./_prompts.tsx";
 
 const execFileAsync = promisify(execFile);
-
-/** Check if the CLI is running from the monorepo (dev mode). */
-function isDevMode(): boolean {
-  const cliDir = path.dirname(fileURLToPath(import.meta.url));
-  // In dev mode, the sibling packages/aai/ directory exists
-  const packagesDir = path.resolve(cliDir, "..");
-  const altPackagesDir = path.resolve(cliDir, "../..");
-  return (
-    existsSync(path.join(packagesDir, "aai", "package.json")) ||
-    existsSync(path.join(altPackagesDir, "aai", "package.json"))
-  );
-}
 
 /** Install deps — uses `aai link` in dev mode, `npm install` otherwise. */
 async function installDeps(cwd: string, log: (el: React.ReactNode) => void): Promise<void> {
