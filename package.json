@@ -131,7 +131,8 @@
     "lint:fix": "biome check --write sdk/ ui/ cli/",
     "exports": "node scripts/gen-exports.mjs --write",
     "exports:check": "node scripts/gen-exports.mjs",
-    "check": "concurrently -g -n tsc,tsc:cli,tsc:build,tsc:tpl,biome,mdlint,exports,test \"tsc --noEmit\" \"tsc -p cli/tsconfig.json --noEmit\" \"tsc -p tsconfig.build.json --noEmit\" \"tsc -p tsconfig.templates.json\" \"biome check sdk/ ui/ cli/\" \"markdownlint-cli2 '**/*.md' '#node_modules' '#.aai'\" \"node scripts/gen-exports.mjs\" \"vitest run\""
+    "check": "concurrently -g -n tsc,tsc:cli,tsc:build,tsc:tpl,biome,mdlint,exports,test \"tsc --noEmit\" \"tsc -p cli/tsconfig.json --noEmit\" \"tsc -p tsconfig.build.json --noEmit\" \"tsc -p tsconfig.templates.json\" \"biome check sdk/ ui/ cli/\" \"markdownlint-cli2 '**/*.md' '#node_modules' '#.aai'\" \"node scripts/gen-exports.mjs\" \"vitest run\"",
+    "link:global": "pnpm run prepublishOnly && pnpm link --global"
   },
   "dependencies": {
     "@chonkiejs/core": "^0.0.8",
