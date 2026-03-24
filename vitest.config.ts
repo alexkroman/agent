@@ -11,6 +11,17 @@ export default defineConfig({
         "**/templates/**",
         "**/dist/**",
         "**/__snapshots__/**",
+        // Sandbox files run inside secure-exec isolates, not vitest.
+        // Covered by integration test (pnpm test:integration).
+        "**/sandbox.ts",
+        "**/sandbox_harness.ts",
+        "**/sandbox_integration.ts",
+        "**/build_harness.ts",
+        // Harness runtime is bundled by Vite into CJS for the isolate.
+        "**/_harness_runtime.ts",
+        // CLI entry point and interactive prompts can't be unit tested.
+        "**/cli.ts",
+        "**/_prompts.tsx",
       ],
       thresholds: {
         lines: 70,

@@ -86,12 +86,25 @@ function isBinaryData(data: unknown): boolean {
 /** Shape shared by Node.js Buffer and ArrayBuffer views (TypedArray). */
 type BufferLike = { buffer?: ArrayBuffer; byteOffset?: number; byteLength: number };
 
+function isBufferLike(data: unknown): data is BufferLike {
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    "byteLength" in data &&
+    typeof (data as BufferLike).byteLength === "number"
+  );
+}
+
 function toUint8Array(data: unknown): Uint8Array {
   if (data instanceof Uint8Array) return data;
   if (data instanceof ArrayBuffer) return new Uint8Array(data);
-  // Node.js Buffer or ArrayBuffer-like
-  const buf = data as BufferLike;
-  return new Uint8Array(buf.buffer ?? (data as ArrayBuffer), buf.byteOffset ?? 0, buf.byteLength);
+  if (!isBufferLike(data))
+    throw new TypeError("Expected binary data (Buffer, ArrayBuffer, or Uint8Array)");
+  return new Uint8Array(
+    data.buffer ?? (data as ArrayBuffer),
+    data.byteOffset ?? 0,
+    data.byteLength,
+  );
 }
 
 function handleBinaryAudio(data: unknown, session: Session): boolean {

@@ -1,4 +1,5 @@
-import { defineAgent, tool } from "@alexkroman1/aai";
+import { defineAgent, type ToolDef } from "@alexkroman1/aai";
+import type { HookContext } from "@alexkroman1/aai";
 import { z } from "zod";
 
 // ── Tuning Constants ─────────────────────────────────────────────────────────
@@ -288,6 +289,10 @@ const defaultState: GameState = {
   kidMode: false,
 };
 
+function gameTool<P extends z.ZodObject<z.ZodRawShape>>(def: ToolDef<P, GameState>): ToolDef<P, GameState> {
+  return def;
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function d(sides: number): number {
   return Math.floor(Math.random() * sides) + 1;
@@ -342,7 +347,7 @@ function checkChaosInterrupt(game: GameState): string | null {
 // ── Time Advancement (from engine engine.py) ──────────────────────────────
 function advanceTime(game: GameState, progression: string) {
   if (!game.timeOfDay || progression === "none" || progression === "short") return;
-  const idx = TIME_PHASES.indexOf(game.timeOfDay as any);
+  const idx = (TIME_PHASES as readonly string[]).indexOf(game.timeOfDay);
   if (idx === -1) return;
   const steps = progression === "moderate" ? 1 : progression === "long" ? 2 : 0;
   if (steps) {
@@ -610,24 +615,22 @@ VOICE:
   state: () => structuredClone(defaultState),
 
   // Auto-load saved game on connect.
-  onConnect: async (ctx) => {
+  onConnect: async (ctx: HookContext<GameState>) => {
     const saved = await ctx.kv.get<GameState>("save:game");
-    if (saved) Object.assign(ctx.state as GameState, saved);
+    if (saved) Object.assign(ctx.state, saved);
   },
 
   // Auto-save after every turn so progress persists across browser refreshes.
-  onTurn: async (_text, ctx) => {
-    const state = ctx.state as GameState;
-    if (state.initialized) {
-      await ctx.kv.set("save:game", state);
+  onTurn: async (_text: string, ctx: HookContext<GameState>) => {
+    if (ctx.state.initialized) {
+      await ctx.kv.set("save:game", ctx.state);
     }
   },
 
   // Force check_state as the first tool call on every turn after initialization.
   // This ensures the LLM always sees real state and never hallucinates HP, momentum, etc.
-  onBeforeStep: (stepNumber: number, ctx: any) => {
-    const s = (ctx as any).state as GameState;
-    if (stepNumber === 1 && s.initialized) {
+  onBeforeStep: (stepNumber: number, ctx: HookContext<GameState>) => {
+    if (stepNumber === 1 && ctx.state.initialized) {
       return { activeTools: ["check_state"] };
     }
     return {};
@@ -637,8 +640,8 @@ VOICE:
     check_state: {
       description:
         "Returns the full current game state. This is AUTOMATICALLY forced as the first tool call every turn. Use these numbers as ground truth — never guess or remember stats from previous turns.",
-      execute: (_args: unknown, ctx: any) => {
-        const s = ctx.state as GameState;
+      execute: (_args, ctx) => {
+        const s = ctx.state;
         return {
           initialized: s.initialized,
           phase: s.phase,
@@ -677,7 +680,7 @@ VOICE:
       },
     },
 
-    setup_character: tool({
+    setup_character: gameTool({
       description:
         "Set up the entire game in one call. Generates stats, initializes state, and marks the game as ready. After this returns, just narrate the opening scene. No need to call update_state — everything is already done.",
       parameters: z.object({
@@ -704,7 +707,7 @@ VOICE:
         kidMode: z.boolean().optional(),
       }),
       execute: (args, ctx) => {
-        const state = ctx.state as GameState;
+        const state = ctx.state;
 
         // Store creation choices
         state.settingGenre = args.genre;
@@ -827,7 +830,7 @@ VOICE:
       },
     }),
 
-    action_roll: tool({
+    action_roll: gameTool({
       description:
         "Core mechanic. Roll 2d6 + stat (capped at 10) vs 2d10 challenge dice. Also applies consequences (health/spirit/supply/momentum changes, clock advancement) based on move type, position, and result. Call for ANY risky action.",
       parameters: z.object({
@@ -839,7 +842,7 @@ VOICE:
         targetNpcId: z.string().optional().describe("Target NPC id for social moves"),
       }),
       execute: ({ move, stat, position, effect, purpose, targetNpcId }, ctx) => {
-        const state = ctx.state as GameState;
+        const state = ctx.state;
         const statValue = state[stat as keyof GameState] as number;
         const roll = rollAction(stat, statValue, move);
 
@@ -901,7 +904,7 @@ VOICE:
       },
     }),
 
-    burn_momentum: tool({
+    burn_momentum: gameTool({
       description:
         "Burn momentum to upgrade a roll result. Only valid when current momentum beats both challenge dice for the roll being upgraded. Resets momentum to +2.",
       parameters: z.object({
@@ -909,7 +912,7 @@ VOICE:
         c2: z.number().describe("Second challenge die from the roll"),
       }),
       execute: ({ c1, c2 }, ctx) => {
-        const state = ctx.state as GameState;
+        const state = ctx.state;
         const mom = state.momentum;
         if (mom <= 0) return { error: "Momentum is 0 or negative. Cannot burn." };
 
@@ -936,14 +939,14 @@ VOICE:
       },
     }),
 
-    oracle: tool({
+    oracle: gameTool({
       description:
         "Consult the oracle for narrative inspiration. Generates random prompts from thematic tables.",
       parameters: z.object({
         type: z.enum(["action_theme","npc_reaction","scene_twist","yes_no","chaos_check"]).describe("Type of oracle consultation"),
       }),
       execute: ({ type }, ctx) => {
-        const state = ctx.state as GameState;
+        const state = ctx.state;
 
         if (type === "yes_no") {
           const roll = d(6);
@@ -1020,7 +1023,7 @@ VOICE:
       },
     }),
 
-    update_state: tool({
+    update_state: gameTool({
       description:
         "Lightweight state sync for during gameplay. Handles location changes, NPC additions, clock additions, time changes, and session log entries. Resource changes (health/spirit/supply/momentum) are auto-applied by action_roll — only use those fields here for manual adjustments like resting or trading. Pass only what changed.",
       parameters: z.object({
@@ -1058,7 +1061,7 @@ VOICE:
         logEntry: z.string().optional().describe("Short log entry for this scene"),
       }),
       execute: (args, ctx) => {
-        const state = ctx.state as GameState;
+        const state = ctx.state;
 
         // Resources
         if (args.health !== undefined) state.health = Math.max(0, Math.min(5, args.health));
@@ -1203,19 +1206,19 @@ VOICE:
       },
     }),
 
-    save_game: tool({
+    save_game: gameTool({
       description: "Save current game to persistent storage.",
       parameters: z.object({
         slot: z.string().optional().describe("Save slot name, defaults to autosave"),
       }),
       execute: async (args, ctx) => {
-        const state = ctx.state as GameState;
+        const state = ctx.state;
         await ctx.kv.set(`save:${args.slot || "autosave"}`, state);
         return { saved: true, slot: args.slot || "autosave", name: state.playerName, scene: state.sceneCount };
       },
     }),
 
-    load_game: tool({
+    load_game: gameTool({
       description: "Load a previously saved game.",
       parameters: z.object({
         slot: z.string().optional().describe("Save slot name, defaults to autosave"),
@@ -1223,8 +1226,8 @@ VOICE:
       execute: async (args, ctx) => {
         const saved = await ctx.kv.get<GameState>(`save:${args.slot || "autosave"}`);
         if (!saved) return { error: "No save found." };
-        Object.assign(ctx.state as GameState, saved);
-        const state = ctx.state as GameState;
+        Object.assign(ctx.state, saved);
+        const state = ctx.state;
         return {
           loaded: true,
           playerName: state.playerName,

@@ -1,5 +1,9 @@
-import { defineAgent, tool } from "@alexkroman1/aai";
+import { defineAgent, type ToolDef } from "@alexkroman1/aai";
 import { z } from "zod";
+
+function orderTool<P extends z.ZodObject<z.ZodRawShape>>(def: ToolDef<P, OrderState>): ToolDef<P, OrderState> {
+  return def;
+}
 
 interface Pizza {
   id: number;
@@ -84,7 +88,7 @@ Behavior:
   }),
 
   tools: {
-    add_pizza: tool({
+    add_pizza: orderTool({
       description:
         "Add a pizza to the order. Use when the customer has decided on a pizza.",
       parameters: z.object({
@@ -96,7 +100,7 @@ Behavior:
         quantity: z.number().default(1),
       }),
       execute: (args, ctx) => {
-        const state = ctx.state as OrderState;
+        const state = ctx.state;
         const pizza: Pizza = {
           id: state.nextId++,
           size: args.size,
@@ -114,13 +118,13 @@ Behavior:
       },
     }),
 
-    remove_pizza: tool({
+    remove_pizza: orderTool({
       description: "Remove a pizza from the order by its ID.",
       parameters: z.object({
         pizza_id: z.number().describe("The pizza ID to remove"),
       }),
       execute: (args, ctx) => {
-        const state = ctx.state as OrderState;
+        const state = ctx.state;
         const idx = state.pizzas.findIndex((p) => p.id === args.pizza_id);
         if (idx === -1) return { error: "Pizza not found in the order." };
         const removed = state.pizzas.splice(idx, 1)[0];
@@ -133,7 +137,7 @@ Behavior:
       },
     }),
 
-    update_pizza: tool({
+    update_pizza: orderTool({
       description:
         "Update an existing pizza in the order. Only provided fields are changed.",
       parameters: z.object({
@@ -144,7 +148,7 @@ Behavior:
         quantity: z.number().optional(),
       }),
       execute: (args, ctx) => {
-        const state = ctx.state as OrderState;
+        const state = ctx.state;
         const pizza = state.pizzas.find((p) => p.id === args.pizza_id);
         if (!pizza) return { error: "Pizza not found in the order." };
         if (args.size) pizza.size = args.size;
@@ -163,7 +167,7 @@ Behavior:
       description:
         "View the current order summary with all pizzas and total price.",
       execute: (_args, ctx) => {
-        const state = ctx.state as OrderState;
+        const state = ctx.state;
         if (state.pizzas.length === 0)
           return { message: "The order is empty." };
         const total = calculateTotal(state.pizzas);
@@ -181,11 +185,11 @@ Behavior:
       },
     },
 
-    set_customer_name: tool({
+    set_customer_name: orderTool({
       description: "Set the customer name for the order.",
       parameters: z.object({ name: z.string() }),
       execute: ({ name }, ctx) => {
-        const state = ctx.state as OrderState;
+        const state = ctx.state;
         state.customerName = name;
         return { name };
       },
@@ -195,7 +199,7 @@ Behavior:
       description:
         "Place the final order. Use when the customer confirms they are done and ready to order.",
       execute: (_args, ctx) => {
-        const state = ctx.state as OrderState;
+        const state = ctx.state;
         if (state.pizzas.length === 0)
           return { error: "Cannot place an empty order." };
         state.orderPlaced = true;

@@ -96,7 +96,7 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
 
   function getState(sessionId: string): Record<string, unknown> {
     if (!sessionState.has(sessionId) && agent.state) {
-      sessionState.set(sessionId, agent.state() as Record<string, unknown>);
+      sessionState.set(sessionId, agent.state());
     }
     return sessionState.get(sessionId) ?? {};
   }

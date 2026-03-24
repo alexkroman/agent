@@ -12,7 +12,7 @@
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
-import { WebSocketServer } from "ws";
+import { WebSocketServer, type WebSocket as WsWebSocket } from "ws";
 import { createDirectExecutor } from "./direct_executor.ts";
 import type { Kv } from "./kv.ts";
 import { AUDIO_FORMAT } from "./protocol.ts";
@@ -21,6 +21,21 @@ import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime.ts";
 import type { Session } from "./session.ts";
 import type { AgentDef } from "./types.ts";
 import { type SessionWebSocket, wireSessionSocket } from "./ws_handler.ts";
+
+/** Adapt a ws-package WebSocket to SessionWebSocket (runtime-compatible but not type-assignable due to overloads). */
+function toSessionWs(ws: WsWebSocket): SessionWebSocket {
+  return {
+    get readyState() {
+      return ws.readyState;
+    },
+    send(data: string | ArrayBuffer | Uint8Array) {
+      ws.send(data);
+    },
+    addEventListener(type: string, listener: EventListenerOrEventListenerObject) {
+      ws.addEventListener(type, listener);
+    },
+  };
+}
 
 export type ServerOptions = {
   /** The agent definition returned by `defineAgent()`. */
@@ -63,9 +78,7 @@ export function createServer(options: ServerOptions): AgentServer {
     s2sConfig = DEFAULT_S2S_CONFIG,
   } = options;
 
-  const env = resolveEnv(
-    options.env ?? (typeof process !== "undefined" ? (process.env as Record<string, string>) : {}),
-  );
+  const env = resolveEnv(options.env ?? (typeof process !== "undefined" ? process.env : {}));
 
   const executor = createDirectExecutor({ agent, env, ...(kv ? { kv } : {}), logger, s2sConfig });
   const sessions = new Map<string, Session>();
@@ -135,7 +148,7 @@ export function createServer(options: ServerOptions): AgentServer {
         const resume = reqUrl.searchParams.has("resume");
         logger.info(`WS upgrade ${reqUrl.pathname}${resume ? " (resume)" : ""}`);
         wss.handleUpgrade(req, socket, head, (ws) => {
-          handleWs(ws as unknown as SessionWebSocket, resume);
+          handleWs(toSessionWs(ws), resume);
         });
       });
 

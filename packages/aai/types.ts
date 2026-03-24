@@ -112,7 +112,7 @@ export type HookContext<S = Record<string, unknown>> = Omit<ToolContext<S>, "mes
  * `execute` function that runs inside the sandboxed worker.
  *
  * @typeParam P A Zod object schema describing the tool's parameters.
- *   Defaults to `any` so tools without parameters don't need an explicit
+ *   Defaults to `ZodObject<ZodRawShape>` so tools without parameters don't need an explicit
  *   type argument.
  *
  * @example
@@ -171,8 +171,7 @@ export type ToolDef<
  * });
  * ```
  */
-// biome-ignore lint/suspicious/noExplicitAny: S defaults to any so tool() works with any agent state type
-export function tool<P extends z.ZodObject<z.ZodRawShape>, S = any>(
+export function tool<P extends z.ZodObject<z.ZodRawShape>, S = Record<string, unknown>>(
   def: ToolDef<P, S>,
 ): ToolDef<P, S> {
   return def;
@@ -202,7 +201,7 @@ export type StepInfo = {
  * Only `name` is required; all other fields have sensible defaults.
  *
  * @typeParam S The shape of per-session state returned by the `state`
- *   factory. Defaults to `any`.
+ *   factory. Defaults to `Record<string, unknown>`.
  *
  * @example
  * ```ts
@@ -320,7 +319,7 @@ export type AgentDef = {
   builtinTools?: readonly BuiltinTool[];
   activeTools?: readonly string[];
   tools: Readonly<Record<string, ToolDef>>;
-  state?: () => unknown;
+  state?: () => Record<string, unknown>;
   onConnect?: AgentOptions["onConnect"];
   onDisconnect?: AgentOptions["onDisconnect"];
   onError?: AgentOptions["onError"];
@@ -373,7 +372,12 @@ const ToolChoiceSchema = z.union([
 
 const ToolDefSchema = z.object({
   description: z.string().min(1, "Tool description must be non-empty"),
-  parameters: z.any().optional(),
+  parameters: z
+    .custom<z.ZodType>(
+      (val) => val === undefined || val instanceof z.ZodType,
+      "Expected a Zod schema",
+    )
+    .optional(),
   execute: z.function(),
 });
 

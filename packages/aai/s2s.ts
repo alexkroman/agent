@@ -37,9 +37,32 @@ export type CreateS2sWebSocket = (
   opts: { headers: Record<string, string> },
 ) => S2sWebSocket;
 
+/**
+ * Adapt a `ws`-package WebSocket to the minimal S2sWebSocket interface.
+ *
+ * The `ws` WebSocket structurally satisfies S2sWebSocket at runtime, but
+ * TypeScript can't prove it due to overloaded method signatures.
+ */
+function toS2sWebSocket(ws: WebSocket): S2sWebSocket {
+  return {
+    get readyState() {
+      return ws.readyState;
+    },
+    send(data: string) {
+      ws.send(data);
+    },
+    close() {
+      ws.close();
+    },
+    addEventListener(type: string, listener: EventListenerOrEventListenerObject) {
+      ws.addEventListener(type, listener);
+    },
+  };
+}
+
 /** Default S2S WebSocket factory using the `ws` package (Node-only). */
 export const defaultCreateS2sWebSocket: CreateS2sWebSocket = (url, opts) =>
-  new WebSocket(url, { headers: opts.headers }) as unknown as S2sWebSocket;
+  toS2sWebSocket(new WebSocket(url, { headers: opts.headers }));
 
 // ─── Incoming S2S message schema ─────────────────────────────────────────────
 

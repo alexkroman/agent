@@ -19,7 +19,7 @@
 import type * as Http from "node:http";
 import type { ToolSchema } from "@alexkroman1/aai/internal-types";
 import type { Kv } from "@alexkroman1/aai/kv";
-import type { AgentDef, HookContext, Message, ToolContext } from "@alexkroman1/aai/types";
+import type { AgentDef, HookContext, ToolContext } from "@alexkroman1/aai/types";
 import type { VectorStore } from "@alexkroman1/aai/vector";
 import type {
   HookRequest,
@@ -80,7 +80,7 @@ const sessionStates = new Map<string, Record<string, unknown>>();
 
 function getState(agent: AgentDef, sessionId: string): Record<string, unknown> {
   if (!sessionStates.has(sessionId) && agent.state) {
-    sessionStates.set(sessionId, agent.state() as Record<string, unknown>);
+    sessionStates.set(sessionId, agent.state());
   }
   return sessionStates.get(sessionId) ?? {};
 }
@@ -135,7 +135,7 @@ async function executeTool(agent: AgentDef, req: ToolCallRequest): Promise<ToolC
     state: getState(agent, req.sessionId),
     kv,
     vector,
-    messages: req.messages as Message[],
+    messages: req.messages,
   };
 
   const parsed =
@@ -146,7 +146,7 @@ async function executeTool(agent: AgentDef, req: ToolCallRequest): Promise<ToolC
   const result = await tool.execute(parsed, ctx);
   return {
     result: typeof result === "string" ? result : JSON.stringify(result),
-    state: ctx.state as Record<string, unknown>,
+    state: ctx.state,
   };
 }
 
@@ -202,7 +202,7 @@ async function invokeHook(agent: AgentDef, req: HookRequest): Promise<HookRespon
   const handler = handlers[req.hook];
   if (handler) await handler();
 
-  return { state: ctx.state as Record<string, unknown>, result };
+  return { state: ctx.state, result };
 }
 
 // ── HTTP server ──────────────────────────────────────────────────────────
@@ -216,8 +216,51 @@ function readBody(req: Http.IncomingMessage): Promise<string> {
   });
 }
 
+function assertShape<T>(value: unknown, requiredKeys: string[], label: string): T {
+  if (typeof value !== "object" || value === null) {
+    throw new Error(`${label}: expected object, got ${typeof value}`);
+  }
+  for (const key of requiredKeys) {
+    if (!(key in value)) {
+      throw new Error(`${label}: missing required key "${key}"`);
+    }
+  }
+  return value as T;
+}
+
+type Route = (req: Http.IncomingMessage) => Promise<unknown>;
+
+function buildRoutes(agent: AgentDef): Record<string, Route> {
+  return {
+    "GET /config": async () => extractConfig(agent),
+    "POST /tool": async (req) => {
+      const body = assertShape<ToolCallRequest>(
+        JSON.parse(await readBody(req)),
+        ["name", "args", "sessionId", "messages", "env"],
+        "ToolCallRequest",
+      );
+      return executeTool(agent, body);
+    },
+    "POST /hook": async (req) => {
+      const body = assertShape<HookRequest>(
+        JSON.parse(await readBody(req)),
+        ["hook", "sessionId", "env"],
+        "HookRequest",
+      );
+      return invokeHook(agent, body);
+    },
+  };
+}
+
+function getErrorStatus(err: unknown): number {
+  if (typeof err === "object" && err !== null && "status" in err) {
+    const s = (err as Record<string, unknown>).status;
+    if (typeof s === "number") return s;
+  }
+  return 500;
+}
+
 function startHarness(): void {
-  // CJS require — agent bundle is written to the isolate's virtual filesystem
   const mod = require("./agent_bundle.js") as { default?: unknown };
   const agent = (mod.default ?? mod) as AgentDef;
 
@@ -225,37 +268,23 @@ function startHarness(): void {
     throw new Error("Agent bundle must export a default agent definition");
   }
 
+  const routes = buildRoutes(agent);
+
   const server = http.createServer(async (req, res) => {
-    try {
-      if (req.method === "GET" && req.url === "/config") {
-        const config = extractConfig(agent);
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify(config));
-        return;
-      }
-
-      if (req.method === "POST" && req.url === "/tool") {
-        const body = JSON.parse(await readBody(req)) as ToolCallRequest;
-        const result = await executeTool(agent, body);
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify(result));
-        return;
-      }
-
-      if (req.method === "POST" && req.url === "/hook") {
-        const body = JSON.parse(await readBody(req)) as HookRequest;
-        const result = await invokeHook(agent, body);
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify(result));
-        return;
-      }
-
+    const key = `${req.method} ${req.url}`;
+    const handler = routes[key];
+    if (!handler) {
       res.writeHead(404);
       res.end("Not found");
+      return;
+    }
+    try {
+      const result = await handler(req);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(result));
     } catch (err: unknown) {
-      const status = (err as { status?: number }).status ?? 500;
       const msg = err instanceof Error ? err.message : String(err);
-      res.writeHead(status, { "Content-Type": "application/json" });
+      res.writeHead(getErrorStatus(err), { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: msg }));
     }
   });
