@@ -5,6 +5,7 @@
   "type": "module",
   "main": "src/index.ts",
   "scripts": {
+    "predev": "node -e \"const v = +process.versions.node.split('.')[0]; if (v < 22 || v >= 25) { console.error('Node 22 required (got ' + process.version + '). Run: fnm use 22'); process.exit(1); }\"",
     "dev": "tsx watch --env-file=.env src/index.ts",
     "start": "node dist/index.js",
     "build": "tsc -p tsconfig.build.json && esbuild src/_harness_runtime.ts --bundle --platform=node --format=cjs --outfile=dist/_harness_runtime.js --external:./agent_bundle.js",
@@ -29,7 +30,8 @@
   "devDependencies": {
     "@types/mime-types": "^3.0.1",
     "@types/ws": "^8.18.1",
-    "esbuild": "^0.27.3"
+    "esbuild": "^0.27.3",
+    "tsx": "^4.19.4"
   },
   "engines": {
     "node": ">=22 <25"

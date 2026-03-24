@@ -200,6 +200,9 @@ importers:
       esbuild:
         specifier: ^0.27.3
         version: 0.27.4
+      tsx:
+        specifier: ^4.19.4
+        version: 4.21.0
 
   packages/aai-ui:
     dependencies:

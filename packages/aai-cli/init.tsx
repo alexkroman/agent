@@ -12,9 +12,28 @@ import { askText } from "./_prompts.tsx";
 
 const execFileAsync = promisify(execFile);
 
-/** Install npm dependencies, logging progress. */
+/** Check if the CLI is running from the monorepo (dev mode). */
+function isDevMode(): boolean {
+  const cliDir = path.dirname(fileURLToPath(import.meta.url));
+  // In dev mode, the sibling packages/aai/ directory exists
+  const packagesDir = path.resolve(cliDir, "..");
+  const altPackagesDir = path.resolve(cliDir, "../..");
+  return (
+    existsSync(path.join(packagesDir, "aai", "package.json")) ||
+    existsSync(path.join(altPackagesDir, "aai", "package.json"))
+  );
+}
+
+/** Install deps — uses `aai link` in dev mode, `npm install` otherwise. */
 async function installDeps(cwd: string, log: (el: React.ReactNode) => void): Promise<void> {
   if (await fileExists(path.join(cwd, "node_modules"))) return;
+
+  if (isDevMode()) {
+    log(<Step action="Link" msg="local workspace packages (dev mode)" />);
+    const { runLinkCommand } = await import("./_link.ts");
+    runLinkCommand(cwd);
+    return;
+  }
 
   let pkgJson: {
     dependencies?: Record<string, string>;
