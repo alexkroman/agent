@@ -15,33 +15,55 @@
     "rules": {
       "recommended": true,
       "correctness": {
+        "recommended": true,
         "noUnusedImports": "error",
-        "noUnusedVariables": "error"
+        "noUnusedVariables": "error",
+        "noUndeclaredDependencies": "off",
+        "useImportExtensions": "off"
       },
       "style": {
+        "recommended": true,
         "noNonNullAssertion": "error",
-        "useNodejsImportProtocol": "off",
+        "useNodejsImportProtocol": "error",
         "useConsistentBuiltinInstantiation": "error",
         "useCollapsedElseIf": "error",
         "useExplicitLengthCheck": "error",
         "useForOf": "error",
         "useThrowNewError": "error",
-        "useThrowOnlyError": "error"
+        "useThrowOnlyError": "error",
+        "noDefaultExport": "off",
+        "useNamingConvention": "off",
+        "useFilenamingConvention": "off",
+        "useBlockStatements": "off",
+        "noParameterAssign": "error",
+        "useConsistentArrayType": "error",
+        "noEnum": "error",
+        "noShoutyConstants": "error"
       },
       "suspicious": {
+        "recommended": true,
         "noExplicitAny": "error",
         "noConsole": "off",
         "noEmptyBlockStatements": "off",
-        "useErrorMessage": "error"
+        "useErrorMessage": "error",
+        "noMisplacedAssertion": "error",
+        "noAssignInExpressions": "error",
+        "noDoubleEquals": "error"
       },
       "complexity": {
+        "recommended": true,
         "noExcessiveCognitiveComplexity": "warn",
         "noStaticOnlyClass": "error",
         "useDateNow": "error",
-        "useSimplifiedLogicExpression": "error"
+        "useSimplifiedLogicExpression": "error",
+        "noForEach": "error",
+        "noUselessUndefinedInitialization": "error"
       },
       "performance": {
         "useTopLevelRegex": "off"
+      },
+      "security": {
+        "recommended": true
       },
       "a11y": {
         "recommended": false
