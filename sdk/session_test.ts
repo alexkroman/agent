@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { makeConfig } from "./_test_utils.ts";
-import type { ClientSink } from "./protocol.ts";
+import { type ClientSink, HOOK_TIMEOUT_MS } from "./protocol.ts";
 import type { S2sHandle } from "./s2s.ts";
 import { _internals, buildSystemPrompt, createS2sSession, type SessionOptions } from "./session.ts";
 import { DEFAULT_INSTRUCTIONS } from "./types.ts";
@@ -183,7 +183,7 @@ describe("createS2sSession", () => {
 
     await session.start();
     expect(connectSpy).toHaveBeenCalledOnce();
-    expect(onConnect).toHaveBeenCalledWith("session-1", undefined, 30000);
+    expect(onConnect).toHaveBeenCalledWith("session-1", undefined, HOOK_TIMEOUT_MS);
   });
 
   test("start() sends updateSession with greeting on initial connect", async () => {
@@ -223,7 +223,7 @@ describe("createS2sSession", () => {
     const { session } = setup({ hookInvoker });
     await session.start();
     await session.stop();
-    expect(onDisconnect).toHaveBeenCalledWith("session-1", undefined, 30000);
+    expect(onDisconnect).toHaveBeenCalledWith("session-1", undefined, HOOK_TIMEOUT_MS);
   });
 
   test("stop() is idempotent", async () => {
@@ -309,7 +309,7 @@ describe("createS2sSession", () => {
       isFinal: true,
     });
     expect(client.events).toContainEqual({ type: "turn", text: "Hello there" });
-    expect(onTurn).toHaveBeenCalledWith("session-1", "Hello there", 30000);
+    expect(onTurn).toHaveBeenCalledWith("session-1", "Hello there", HOOK_TIMEOUT_MS);
   });
 
   test("user_transcript_delta emits non-final transcript", async () => {

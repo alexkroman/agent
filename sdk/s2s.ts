@@ -257,29 +257,40 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
       resolve(handle);
     });
 
-    function handleS2sMessage(ev: MessageEvent): void {
-      const data = ev.data;
-      let raw: unknown;
+    function tryParseJson(data: unknown): unknown | undefined {
       try {
-        raw = JSON.parse(String(data));
+        return JSON.parse(String(data));
       } catch {
         log.warn("S2S << invalid JSON", { data: String(data).slice(0, 200) });
-        return;
+        return undefined;
       }
+    }
 
-      // Fast path: reply.audio and input.audio are ~95% of traffic — skip logging.
-      const obj = raw as { type?: unknown; data?: unknown; delta?: unknown };
-      if (obj.type !== "reply.audio" && obj.type !== "input.audio") {
-        log.info(
-          `S2S << ${obj.type}`,
-          obj.type === "transcript.agent.delta" ? { delta: obj.delta } : undefined,
-        );
-      }
+    function handleAudioFastPath(obj: { type?: unknown; data?: unknown }): boolean {
       if (obj.type === "reply.audio" && typeof obj.data === "string") {
         const audioBytes = base64ToUint8(obj.data);
         target.dispatchEvent(new CustomEvent("audio", { detail: { audio: audioBytes } }));
-        return;
+        return true;
       }
+      return false;
+    }
+
+    function logIncoming(obj: { type?: unknown; delta?: unknown }): void {
+      // reply.audio and input.audio are ~95% of traffic — skip logging.
+      if (obj.type === "reply.audio" || obj.type === "input.audio") return;
+      log.info(
+        `S2S << ${obj.type}`,
+        obj.type === "transcript.agent.delta" ? { delta: obj.delta } : undefined,
+      );
+    }
+
+    function handleS2sMessage(ev: MessageEvent): void {
+      const raw = tryParseJson(ev.data);
+      if (raw === undefined) return;
+
+      const obj = raw as { type?: unknown; data?: unknown; delta?: unknown };
+      logIncoming(obj);
+      if (handleAudioFastPath(obj)) return;
 
       const parsed = S2sServerMessageSchema.safeParse(raw);
       if (!parsed.success) {
