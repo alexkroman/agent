@@ -3,7 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
-import { renderCheck } from "../sdk/_render_check.ts";
+import { renderCheck } from "./_render_check.ts";
 
 const dir = import.meta.dirname ?? path.dirname(new URL(import.meta.url).pathname);
 const templatesDir = path.resolve(dir, "..", "templates");

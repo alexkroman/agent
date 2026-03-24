@@ -14,8 +14,8 @@ import { type Alias, createServer as createViteServer, type Plugin } from "vite"
  */
 export async function renderCheck(clientEntry: string, cwd: string): Promise<void> {
   // Dynamic imports so esbuild doesn't bundle linkedom into the CLI dist.
-  const { DOMParser, installDomShim } = await import("../ui/_dom_shim.ts");
-  const { installMockWebSocket } = await import("./_mock_ws.ts");
+  const { DOMParser, installDomShim } = await import("./_dom_shim.ts");
+  const { installMockWebSocket } = await import("../sdk/_mock_ws.ts");
 
   installDomShim();
 
