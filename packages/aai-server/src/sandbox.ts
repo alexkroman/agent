@@ -14,7 +14,7 @@
  */
 
 import http from "node:http";
-import type { AgentConfig, ToolSchema } from "@alexkroman1/aai/internal-types";
+import type { AgentConfig } from "@alexkroman1/aai/internal-types";
 import type { KvEntry } from "@alexkroman1/aai/kv";
 import { AUDIO_FORMAT } from "@alexkroman1/aai/protocol";
 import { DEFAULT_S2S_CONFIG } from "@alexkroman1/aai/runtime";
@@ -27,10 +27,11 @@ import {
   createNodeRuntimeDriverFactory,
   NodeRuntime,
 } from "secure-exec";
+import type { IsolateConfig } from "./_harness_protocol.ts";
 import type { AgentMetadata } from "./_schemas.ts";
 import type { DeployStore } from "./bundle_store_tigris.ts";
 import type { KvStore } from "./kv.ts";
-import { generateHarnessScript } from "./sandbox_harness.ts";
+import { getHarnessRuntimeJs } from "./sandbox_harness.ts";
 import type { AgentScope } from "./scope_token.ts";
 import type { ServerVectorStore } from "./vector.ts";
 
@@ -176,35 +177,14 @@ async function startCapabilityServer(
 
 // ── Isolate lifecycle ────────────────────────────────────────────────────
 
-type IsolateConfig = {
-  name: string;
-  instructions: string;
-  greeting: string;
-  sttPrompt?: string;
-  maxSteps?: number;
-  toolChoice?: AgentConfig["toolChoice"];
-  builtinTools?: readonly string[];
-  activeTools?: readonly string[];
-  toolSchemas: ToolSchema[];
-  hasState: boolean;
-  hooks: {
-    onConnect: boolean;
-    onDisconnect: boolean;
-    onError: boolean;
-    onTurn: boolean;
-    onStep: boolean;
-    onBeforeStep: boolean;
-    maxStepsIsFn: boolean;
-  };
-};
-
 async function startIsolate(
   workerCode: string,
   capUrl: string,
 ): Promise<{ port: number; runtime: NodeRuntime }> {
+  const harnessJs = await getHarnessRuntimeJs();
   const fs = createInMemoryFileSystem();
   await fs.writeFile("/app/agent_bundle.js", workerCode);
-  await fs.writeFile("/app/harness.js", generateHarnessScript(capUrl));
+  await fs.writeFile("/app/_harness_runtime.js", harnessJs);
 
   let resolvePort: (port: number) => void;
   const portPromise = new Promise<number>((resolve) => {
@@ -219,6 +199,7 @@ async function startIsolate(
         network: () => ({ allow: true }),
       },
       useDefaultNetwork: true,
+      processConfig: { env: { CAP_URL: capUrl } },
     }),
     runtimeDriverFactory: createNodeRuntimeDriverFactory(),
     memoryLimit: 128,
@@ -234,7 +215,7 @@ async function startIsolate(
     },
   });
 
-  runtime.exec('import("/app/harness.js")', { cwd: "/app" });
+  runtime.exec('import("/app/_harness_runtime.js")', { cwd: "/app" });
 
   const port = await portPromise;
   return { port, runtime };

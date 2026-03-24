@@ -1,10 +1,11 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * AaiVectorizeIndex implementation backed by Upstash Vector REST API.
+ * AaiVectorizeIndex implementation backed by @upstash/vector.
  *
  * @module
  */
 
+import { Index } from "@upstash/vector";
 import type { AaiVectorizeIndex, AaiVectorizeMatch } from "./bindings.ts";
 
 export type VectorizeConfig = {
@@ -12,64 +13,38 @@ export type VectorizeConfig = {
   token: string;
 };
 
-type VectorResponse = { result: unknown; error?: string };
-
-async function vectorFetch(
-  url: string,
-  token: string,
-  path: string,
-  body: unknown,
-): Promise<unknown> {
-  const res = await fetch(`${url}/${path}`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error(`Vectorize error: ${res.status} ${await res.text()}`);
-  const json = (await res.json()) as VectorResponse;
-  if (json.error) throw new Error(`Vectorize: ${json.error}`);
-  return json.result;
-}
-
 export function createVectorizeBinding(config: VectorizeConfig): AaiVectorizeIndex {
-  const { url, token } = config;
+  const index = new Index({ url: config.url, token: config.token });
 
   return {
     async upsert(vectors) {
-      const body = vectors.map((v) => ({
-        id: v.id,
-        ...(v.values ? { vector: v.values } : {}),
-        ...(v.metadata ? { metadata: v.metadata } : {}),
-      }));
-      await vectorFetch(url, token, "upsert", body);
+      for (const v of vectors) {
+        if (v.values) {
+          await index.upsert({ id: v.id, vector: v.values, metadata: v.metadata });
+        } else {
+          await index.upsert({ id: v.id, data: "", metadata: v.metadata });
+        }
+      }
       return { count: vectors.length };
     },
 
     async query(queryVector, options) {
-      const body = {
+      const results = await index.query({
         ...(typeof queryVector === "string" ? { data: queryVector } : { vector: queryVector }),
         topK: options?.topK ?? 10,
         includeMetadata: options?.returnMetadata ?? true,
-        ...(options?.filter ? { filter: options.filter } : {}),
-      };
-      const results = (await vectorFetch(url, token, "query", body)) as {
-        id: string | number;
-        score: number;
-        metadata?: Record<string, unknown>;
-      }[];
+        ...(options?.filter ? { filter: String(options.filter) } : {}),
+      });
       const matches: AaiVectorizeMatch[] = results.map((r) => ({
         id: String(r.id),
         score: r.score,
-        metadata: r.metadata,
+        metadata: r.metadata as Record<string, unknown> | undefined,
       }));
       return { matches };
     },
 
     async deleteByIds(ids) {
-      await vectorFetch(url, token, "delete", ids);
+      await index.delete(ids);
       return { count: ids.length };
     },
   };

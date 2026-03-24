@@ -1,10 +1,11 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * AaiKvNamespace implementation backed by Upstash Redis REST API.
+ * AaiKvNamespace implementation backed by @upstash/redis.
  *
  * @module
  */
 
+import { Redis } from "@upstash/redis";
 import type { AaiKvListResult, AaiKvNamespace } from "./bindings.ts";
 
 export type KvConfig = {
@@ -12,42 +13,25 @@ export type KvConfig = {
   token: string;
 };
 
-type RedisResponse = { result: unknown; error?: string };
-
-async function redisCmd(url: string, token: string, args: string[]): Promise<unknown> {
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(args),
-  });
-  if (!res.ok) throw new Error(`Redis error: ${res.status} ${await res.text()}`);
-  const body = (await res.json()) as RedisResponse;
-  if (body.error) throw new Error(`Redis: ${body.error}`);
-  return body.result;
-}
-
 export function createKvBinding(config: KvConfig): AaiKvNamespace {
-  const { url, token } = config;
+  const redis = new Redis({ url: config.url, token: config.token });
 
   return {
     async get(key) {
-      const result = await redisCmd(url, token, ["GET", key]);
-      return (result as string) ?? null;
+      const result = await redis.get<string>(key);
+      return result ?? null;
     },
 
     async put(key, value, options) {
-      const args = ["SET", key, value];
       if (options?.expirationTtl && options.expirationTtl > 0) {
-        args.push("EX", String(options.expirationTtl));
+        await redis.set(key, value, { ex: options.expirationTtl });
+      } else {
+        await redis.set(key, value);
       }
-      await redisCmd(url, token, args);
     },
 
     async delete(key) {
-      await redisCmd(url, token, ["DEL", key]);
+      await redis.del(key);
     },
 
     async list(options) {
@@ -55,10 +39,10 @@ export function createKvBinding(config: KvConfig): AaiKvNamespace {
       const keys: string[] = [];
       let cursor = "0";
       do {
-        const args = ["SCAN", cursor, "MATCH", pattern];
-        if (options?.limit) args.push("COUNT", String(options.limit));
-        const result = (await redisCmd(url, token, args)) as [string, string[]];
-        cursor = String(result[0]);
+        const args: { match: string; count?: number } = { match: pattern };
+        if (options?.limit) args.count = options.limit;
+        const result: [string, string[]] = await redis.scan(cursor, args);
+        cursor = result[0];
         keys.push(...result[1]);
       } while (cursor !== "0");
 
