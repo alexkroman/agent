@@ -11,7 +11,6 @@ import {
   writeProjectConfig,
 } from "./_discover.ts";
 import { runWithInk, Step, StepInfo } from "./_ink.tsx";
-import { askEnter } from "./_prompts.tsx";
 
 async function deployBundle(opts: {
   bundle: BundleOutput;
@@ -53,8 +52,6 @@ export async function runDeployCommand(opts: {
   const serverUrl = resolveServerUrl(opts.server, projectConfig?.serverUrl);
   const slug = projectConfig?.slug ?? generateSlug();
 
-  let agentUrl = "";
-
   await runWithInk(async ({ log }) => {
     const bundle = await buildAgentBundle(cwd, log);
 
@@ -63,12 +60,6 @@ export async function runDeployCommand(opts: {
       return;
     }
 
-    agentUrl = await deployBundle({ bundle, serverUrl, apiKey, slug, cwd, log });
+    await deployBundle({ bundle, serverUrl, apiKey, slug, cwd, log });
   });
-
-  if (agentUrl) {
-    await askEnter("Press enter to open in browser");
-    const { exec } = await import("node:child_process");
-    exec(`open "${agentUrl}"`);
-  }
 }
