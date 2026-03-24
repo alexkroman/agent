@@ -4,6 +4,52 @@ import path from "node:path";
 import preact from "@preact/preset-vite";
 import { type Alias, createServer as createViteServer, type Plugin } from "vite";
 
+/** Resolve the .ts source path from a package.json export value. */
+function resolveExportSource(val: unknown): string | undefined {
+  if (typeof val === "string") return val;
+  if (typeof val === "object" && val !== null && "source" in val) {
+    return (val as Record<string, string>).source;
+  }
+  return undefined;
+}
+
+/**
+ * Build Vite resolve.alias entries from workspace package.json exports.
+ *
+ * Vite's SSR loader doesn't support self-referencing exports (vitejs#9731),
+ * so resolve.alias is the standard workaround for monorepo-style setups.
+ */
+async function buildWorkspaceAliases(packagesRoot: string): Promise<Alias[]> {
+  const fs = await import("node:fs/promises");
+  const alias: Alias[] = [];
+
+  for (const pkgDir of ["aai", "aai-ui"]) {
+    const pkgPath = path.join(packagesRoot, pkgDir, "package.json");
+    const pkg = JSON.parse(await fs.readFile(pkgPath, "utf-8"));
+    for (const [key, val] of Object.entries(pkg.exports ?? {})) {
+      const source = resolveExportSource(val);
+      if (typeof source === "string" && source.endsWith(".ts")) {
+        alias.push({
+          find: `${pkg.name}${key === "." ? "" : key.slice(1)}`,
+          replacement: path.resolve(packagesRoot, pkgDir, source),
+        });
+      }
+    }
+  }
+
+  // Sort longest-first so `@pkg/name/session` matches before `@pkg/name`.
+  alias.sort((a, b) => (b.find as string).length - (a.find as string).length);
+  return alias;
+}
+
+/** Vite plugin that turns CSS imports into no-ops for SSR. */
+const cssNoop: Plugin = {
+  name: "ssr-css-noop",
+  enforce: "pre",
+  resolveId: (id) => (id.endsWith(".css") ? "\0css-noop" : undefined),
+  load: (id) => (id === "\0css-noop" ? "" : undefined),
+};
+
 /**
  * Smoke-test a client.tsx by loading it via Vite SSR in a DOM-shimmed
  * environment. The module's top-level `mount()` call executes as a side
@@ -29,43 +75,9 @@ export async function renderCheck(clientEntry: string, cwd: string): Promise<voi
   g.document = doc;
   g.location = { origin: "http://localhost:3000", pathname: "/", href: "http://localhost:3000/" };
 
-  // Build resolve.alias from package.json exports so templates can
-  // reference workspace packages and resolve to local .ts source.
-  // Vite's SSR loader doesn't support self-referencing exports (vitejs#9731),
-  // so resolve.alias is the standard workaround for monorepo-style setups.
   const uiRoot = import.meta.dirname ?? __dirname;
   const packagesRoot = path.resolve(uiRoot, "..");
-  const fs = await import("node:fs/promises");
-  const alias: Alias[] = [];
-
-  // Load exports from each workspace package
-  for (const pkgDir of ["aai", "aai-ui"]) {
-    const pkgPath = path.join(packagesRoot, pkgDir, "package.json");
-    const pkg = JSON.parse(await fs.readFile(pkgPath, "utf-8"));
-    for (const [key, val] of Object.entries(pkg.exports ?? {})) {
-      const source =
-        typeof val === "string"
-          ? val
-          : typeof val === "object" && val !== null && "source" in val
-            ? (val as Record<string, string>).source
-            : null;
-      if (typeof source === "string" && source.endsWith(".ts")) {
-        alias.push({
-          find: `${pkg.name}${key === "." ? "" : key.slice(1)}`,
-          replacement: path.resolve(packagesRoot, pkgDir, source),
-        });
-      }
-    }
-  }
-
-  // Sort longest-first so `@pkg/name/session` matches before `@pkg/name`.
-  alias.sort((a, b) => (b.find as string).length - (a.find as string).length);
-  const cssNoop: Plugin = {
-    name: "ssr-css-noop",
-    enforce: "pre",
-    resolveId: (id) => (id.endsWith(".css") ? "\0css-noop" : undefined),
-    load: (id) => (id === "\0css-noop" ? "" : undefined),
-  };
+  const alias = await buildWorkspaceAliases(packagesRoot);
 
   const mock = installMockWebSocket();
   const vite = await createViteServer({
