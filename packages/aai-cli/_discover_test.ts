@@ -7,7 +7,6 @@ import {
   fileExists,
   generateSlug,
   getServerInfo,
-  isDevMode,
   loadAgent,
   readProjectConfig,
   resolveCwd,
@@ -64,30 +63,6 @@ test("DEFAULT_SERVER", () => {
   expect(DEFAULT_SERVER).toBe("https://aai-agent.fly.dev");
 });
 
-// --- isDevMode ---
-
-describe("isDevMode", () => {
-  test("returns true when script ends with .ts", () => {
-    expect(isDevMode("/path/to/cli/cli.ts")).toBe(true);
-  });
-
-  test("returns true when script ends with .tsx", () => {
-    expect(isDevMode("/path/to/cli/cli.tsx")).toBe(true);
-  });
-
-  test("returns false for .js (published bin)", () => {
-    expect(isDevMode("/path/to/dist/aai.js")).toBe(false);
-  });
-
-  test("returns false for empty string", () => {
-    expect(isDevMode("")).toBe(false);
-  });
-
-  test("returns false for no extension", () => {
-    expect(isDevMode("/usr/local/bin/aai")).toBe(false);
-  });
-});
-
 // --- resolveServerUrl ---
 
 describe("resolveServerUrl", () => {
@@ -99,11 +74,8 @@ describe("resolveServerUrl", () => {
     expect(resolveServerUrl(undefined, "https://config.com")).toBe("https://config.com");
   });
 
-  test("falls back to default when no explicit or config", () => {
-    const result = resolveServerUrl(undefined, undefined);
-    // Either dev localhost or DEFAULT_SERVER depending on isDevMode
-    expect(typeof result).toBe("string");
-    expect(result.startsWith("http")).toBe(true);
+  test("falls back to DEFAULT_SERVER when no explicit or config", () => {
+    expect(resolveServerUrl(undefined, undefined)).toBe(DEFAULT_SERVER);
   });
 });
 

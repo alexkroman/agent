@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
-// Dev-mode entry point: runs cli.ts via tsx (no build required).
-// Usage: pnpm link:global → `aai` command runs live source everywhere.
+// Dev-mode entry point: builds the CLI, then runs dist/aai.js.
+// Same code path as production — just rebuilds first.
+// Usage: pnpm link:global → `aai` command always runs fresh build.
 
 import { execFileSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
@@ -9,16 +10,15 @@ import { fileURLToPath } from "node:url";
 
 const cliRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
-// Run tsx from the CLI package root so react/ink resolve correctly,
-// and pass the user's cwd via INIT_CWD for resolveCwd() to pick up.
-const env = { ...process.env, INIT_CWD: process.env.INIT_CWD ?? process.cwd() };
+// Build CLI (fast — tsup is incremental)
+execFileSync("npx", ["tsup", "--silent"], { cwd: cliRoot, stdio: "inherit" });
 
+// Run the same dist/aai.js that production uses
 try {
-  execFileSync(
-    resolve(cliRoot, "node_modules/.bin/tsx"),
-    [resolve(cliRoot, "cli.ts"), ...process.argv.slice(2)],
-    { stdio: "inherit", cwd: cliRoot, env },
-  );
+  execFileSync(process.execPath, [resolve(cliRoot, "dist/aai.js"), ...process.argv.slice(2)], {
+    stdio: "inherit",
+    cwd: process.cwd(),
+  });
 } catch (e) {
   process.exit(e.status ?? 1);
 }

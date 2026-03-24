@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 //
-// Integration test: runs `aai init → link → build → unlink → build` for every template.
-// Run via: pnpm test:integration
+// Integration test: builds CLI, then runs `aai init → link → build → unlink → build`
+// for every template. Run via: pnpm test:integration
 
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -15,10 +15,12 @@ const templates = fs
   .filter((d) => d.isDirectory() && d.name !== "_shared")
   .map((d) => d.name);
 
-const aaiBin = path.resolve(dir, "bin/aai-dev.js");
+// Build CLI once, then use dist/cli.js directly for all tests
+execFileSync("npx", ["tsup", "--silent"], { cwd: dir, stdio: "inherit" });
+const aaiBin = path.resolve(dir, "dist/cli.js");
 
 function aai(args: string[], cwd: string): void {
-  execFileSync("node", [aaiBin, ...args], {
+  execFileSync(process.execPath, [aaiBin, ...args], {
     cwd,
     env: { ...process.env, NO_COLOR: "1", FORCE_COLOR: "0" },
     stdio: "inherit",

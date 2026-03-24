@@ -7,7 +7,6 @@ import preact from "@preact/preset-vite";
 import tailwindcss from "@tailwindcss/vite";
 import { build, type Plugin } from "vite";
 import type { AgentEntry } from "./_discover.ts";
-import { isDevMode } from "./_discover.ts";
 
 /**
  * Error thrown when bundling fails.
@@ -91,11 +90,6 @@ export async function bundleAgent(
   const buildDir = path.join(aaiDir, "build");
   const clientDir = path.join(aaiDir, "client");
 
-  // In dev mode, resolve "source" condition from package.json exports
-  // so builds use monorepo .ts source instead of published dist.
-  const devMode = isDevMode();
-  const devResolve = devMode ? { conditions: ["source"] } : {};
-
   // 1. Worker build — bundles agent.ts + worker shim into a single ESM file
   try {
     await build({
@@ -103,7 +97,6 @@ export async function bundleAgent(
       root: agent.dir,
       logLevel: "warn",
       plugins: [workerEntryPlugin(agent.dir)],
-      resolve: devResolve,
       build: {
         rollupOptions: {
           input: "virtual:worker-entry",
@@ -130,8 +123,7 @@ export async function bundleAgent(
         logLevel: "warn",
         plugins: [preact(), tailwindcss()],
         resolve: {
-          ...devResolve,
-          ...(devMode && { dedupe: ["preact", "@preact/signals"] }),
+          dedupe: ["preact", "@preact/signals"],
         },
         build: {
           outDir: clientDir,

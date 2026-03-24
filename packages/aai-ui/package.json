@@ -30,9 +30,6 @@
     "@preact/signals": {
       "optional": true
     },
-    "preact": {
-      "optional": true
-    },
     "tailwindcss": {
       "optional": true
     }

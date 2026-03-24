@@ -10,19 +10,6 @@ export function resolveCwd(): string {
 }
 
 /**
- * Whether the CLI is running from the dev monorepo (via tsx/node)
- * vs a compiled binary.
- *
- * @param script - Override the script path (defaults to process.argv[1]).
- */
-export function isDevMode(script?: string): boolean {
-  // Dev mode when running raw TS source via tsx (aai-dev alias).
-  // Published users run dist/aai.js via npm bin — that's not dev mode.
-  script ??= process.argv[1] ?? "";
-  return script.endsWith(".ts") || script.endsWith(".tsx");
-}
-
-/**
  * Generates a human-readable slug using human-id.
  */
 export function generateSlug(): string {
@@ -140,7 +127,7 @@ export const DEFAULT_SERVER = "https://aai-agent.fly.dev";
 
 /** Resolve the server URL from an explicit value, project config, or default. */
 export function resolveServerUrl(explicit?: string, configUrl?: string): string {
-  return explicit || configUrl || (isDevMode() ? "http://localhost:3100" : DEFAULT_SERVER);
+  return explicit || configUrl || DEFAULT_SERVER;
 }
 
 export async function fileExists(p: string): Promise<boolean> {

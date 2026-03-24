@@ -3,7 +3,7 @@
   "version": "0.8.8",
   "type": "module",
   "bin": {
-    "aai": "dist/aai.js",
+    "aai": "dist/cli.js",
     "aai-dev": "bin/aai-dev.js"
   },
   "files": [
@@ -18,13 +18,11 @@
   },
   "dependencies": {
     "@alexkroman1/aai": "workspace:*",
-    "@alexkroman1/aai-ui": "workspace:*",
     "@chonkiejs/core": "^0.0.8",
     "@inkjs/ui": "^2.0.0",
     "@preact/preset-vite": "^2.10.4",
     "@tailwindcss/vite": "^4.2.1",
     "chalk": "^5.6.2",
-    "clsx": "^2.1.1",
     "commander": "^14.0.3",
     "human-id": "^4.1.3",
     "ink": "^6.8.0",
