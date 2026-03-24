@@ -81,3 +81,65 @@ describe("e2e: init -> link -> dev --check", () => {
     aai(["dev", "--check", "--port", String(BASE_PORT + i)], projectDir);
   });
 });
+
+describe("e2e: build produces output files", () => {
+  test("init -> link -> build writes .aai/build and .aai/client", () => {
+    const projectDir = path.join(tmpDir, "_build-test");
+    aai(["init", projectDir, "-t", "simple", "--skip-api", "--skip-deploy"], tmpDir);
+    aai(["link"], projectDir);
+    aai(["build"], projectDir);
+
+    expect(fs.existsSync(path.join(projectDir, ".aai", "build", "worker.js"))).toBe(true);
+    expect(fs.existsSync(path.join(projectDir, ".aai", "client", "index.html"))).toBe(true);
+  });
+});
+
+describe("e2e: build -> start serves health", () => {
+  test("start responds to /health after build", async () => {
+    const projectDir = path.join(tmpDir, "_start-test");
+    const port = BASE_PORT + 100;
+    aai(["init", projectDir, "-t", "simple", "--skip-api", "--skip-deploy"], tmpDir);
+    aai(["link"], projectDir);
+    aai(["build"], projectDir);
+
+    const child = aaiSpawn(["start", "--port", String(port)], projectDir);
+    try {
+      await waitForHealth(`http://localhost:${port}/health`);
+      const res = await fetch(`http://localhost:${port}/health`);
+      expect(res.ok).toBe(true);
+      const body = (await res.json()) as { status: string };
+      expect(body.status).toBe("ok");
+    } finally {
+      child.kill();
+    }
+  });
+});
+
+describe("e2e: deploy --dry-run", () => {
+  test("init -> link -> deploy --dry-run succeeds without a server", () => {
+    const projectDir = path.join(tmpDir, "_deploy-dry-test");
+    aai(["init", projectDir, "-t", "simple", "--skip-api", "--skip-deploy"], tmpDir);
+    aai(["link"], projectDir);
+    aai(["deploy", "--dry-run"], projectDir);
+  });
+});
+
+describe("e2e: unlink reverses link", () => {
+  test("link adds file: deps, unlink restores them", () => {
+    const projectDir = path.join(tmpDir, "_unlink-test");
+    aai(["init", projectDir, "-t", "simple", "--skip-api", "--skip-deploy"], tmpDir);
+    aai(["link"], projectDir);
+
+    const linkedPkg = JSON.parse(fs.readFileSync(path.join(projectDir, "package.json"), "utf-8"));
+    const linkedDeps: Record<string, string> = linkedPkg.dependencies ?? {};
+    expect(Object.values(linkedDeps).some((v) => v.startsWith("file:"))).toBe(true);
+
+    aai(["unlink"], projectDir);
+
+    const unlinkedPkg = JSON.parse(
+      fs.readFileSync(path.join(projectDir, "package.json"), "utf-8"),
+    );
+    const unlinkedDeps: Record<string, string> = unlinkedPkg.dependencies ?? {};
+    expect(Object.values(unlinkedDeps).some((v) => v.startsWith("file:"))).toBe(false);
+  });
+});
