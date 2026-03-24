@@ -3,12 +3,12 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const agentRoot = resolve(__dirname, "..");
+const cliRoot = resolve(__dirname, "../packages/aai-cli");
 
-mkdirSync(resolve(agentRoot, "dist"), { recursive: true });
+mkdirSync(resolve(cliRoot, "dist"), { recursive: true });
 
 writeFileSync(
-  resolve(agentRoot, "dist/aai.js"),
+  resolve(cliRoot, "dist/aai.js"),
   `#!/usr/bin/env node
 import { execFileSync } from "node:child_process";
 import { resolve, dirname } from "node:path";
@@ -18,7 +18,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, "..");
 
 try {
-  execFileSync(resolve(root, "node_modules/.bin/tsx"), ["--tsconfig", resolve(root, "cli/tsconfig.json"), resolve(root, "cli/cli.ts"), ...process.argv.slice(2)], {
+  execFileSync(resolve(root, "node_modules/.bin/tsx"), ["--tsconfig", resolve(root, "tsconfig.json"), resolve(root, "cli.ts"), ...process.argv.slice(2)], {
     stdio: "inherit",
     cwd: process.cwd(),
   });
@@ -28,5 +28,5 @@ try {
 `,
 );
 
-chmodSync(resolve(agentRoot, "dist/aai.js"), 0o755);
-console.log("Wrote dev shim to dist/aai.js");
+chmodSync(resolve(cliRoot, "dist/aai.js"), 0o755);
+console.log("Wrote dev shim to packages/aai-cli/dist/aai.js");

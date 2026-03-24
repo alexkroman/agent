@@ -5,9 +5,9 @@ import { createVoiceSession, type VoiceSession } from "./session.ts";
 import { createSessionControls, type SessionSignals } from "./signals.ts";
 import type { AgentState, Message, SessionError, ToolCallInfo } from "./types.ts";
 
-export { installMockWebSocket, MockWebSocket } from "../sdk/_mock_ws.ts";
+export { installMockWebSocket, MockWebSocket } from "@alexkroman1/aai/testing";
 
-import { installMockWebSocket } from "../sdk/_mock_ws.ts";
+import { installMockWebSocket } from "@alexkroman1/aai/testing";
 
 export function delay(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));

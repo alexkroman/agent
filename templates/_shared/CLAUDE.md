@@ -514,8 +514,8 @@ Add `client.tsx` alongside `agent.ts`. Define a Preact component and call
 `mount()` to render it. Use JSX syntax:
 
 ```tsx
-import "aai/ui/styles.css";
-import { mount, useSession } from "aai/ui";
+import "aai-ui/styles.css";
+import { mount, useSession } from "aai-ui";
 
 function App() {
   const { session, started, running, start, toggle, reset } = useSession();
@@ -540,7 +540,7 @@ mount(App);
 
 **Rules:**
 
-- Always import `"aai/ui/styles.css"` at the top — without it, default styles
+- Always import `"aai-ui/styles.css"` at the top — without it, default styles
   won't load
 - Call `mount(YourComponent)` at the end of the file
 - Use `.tsx` file extension for JSX syntax
@@ -569,7 +569,7 @@ mount(App, {
 
 ### Built-in components
 
-Import from `aai/ui`:
+Import from `aai-ui`:
 
 **Layout components:**
 
@@ -650,8 +650,8 @@ not mix them up in custom UIs.
 ### Showing tool calls in custom UI
 
 ```tsx
-import "aai/ui/styles.css";
-import { mount, ToolCallBlock, useSession } from "aai/ui";
+import "aai-ui/styles.css";
+import { mount, ToolCallBlock, useSession } from "aai-ui";
 
 function App() {
   const { session, started, start } = useSession();
@@ -684,9 +684,9 @@ whenever a tool completes. It fires exactly once per completed tool call with
 the parsed JSON result, handling deduplication internally.
 
 ```tsx
-import "aai/ui/styles.css";
+import "aai-ui/styles.css";
 import { useState } from "preact/hooks";
-import { ChatView, SidebarLayout, StartScreen, mount, useToolResult } from "aai/ui";
+import { ChatView, SidebarLayout, StartScreen, mount, useToolResult } from "aai-ui";
 
 interface CartItem { id: number; name: string; price: number }
 
@@ -734,9 +734,9 @@ handles this correctly.
 ### Reacting to agent state
 
 ```tsx
-import "aai/ui/styles.css";
+import "aai-ui/styles.css";
 import { useEffect } from "preact/hooks";
-import { mount, StateIndicator, useSession } from "aai/ui";
+import { mount, StateIndicator, useSession } from "aai-ui";
 
 function App() {
   const { session, started, start } = useSession();
@@ -819,7 +819,7 @@ overridden via `mount()` theme options. All other tokens use fixed defaults.
 **Auto-scrolling messages** — use `useAutoScroll` for custom message lists:
 
 ```tsx
-import { useAutoScroll, useSession } from "aai/ui";
+import { useAutoScroll, useSession } from "aai-ui";
 
 function MyChat() {
   const { session } = useSession();
@@ -904,8 +904,8 @@ Use `fetch_json` builtin tool or `fetch` in custom tools to call these.
 Use `StartScreen` for a branded start card that transitions to `ChatView`:
 
 ```tsx
-import "aai/ui/styles.css";
-import { ChatView, StartScreen, mount } from "aai/ui";
+import "aai-ui/styles.css";
+import { ChatView, StartScreen, mount } from "aai-ui";
 
 function MyAgent() {
   return (
@@ -926,9 +926,9 @@ mount(MyAgent);
 Use `SidebarLayout` for apps with a persistent side panel (cart, dashboard):
 
 ```tsx
-import "aai/ui/styles.css";
+import "aai-ui/styles.css";
 import { useState } from "preact/hooks";
-import { ChatView, SidebarLayout, StartScreen, mount, useToolResult } from "aai/ui";
+import { ChatView, SidebarLayout, StartScreen, mount, useToolResult } from "aai-ui";
 
 function ShopAgent() {
   const [cart, setCart] = useState<{ id: number; name: string }[]>([]);

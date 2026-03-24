@@ -15,7 +15,7 @@ import { type Alias, createServer as createViteServer, type Plugin } from "vite"
 export async function renderCheck(clientEntry: string, cwd: string): Promise<void> {
   // Dynamic imports so esbuild doesn't bundle linkedom into the CLI dist.
   const { DOMParser, installDomShim } = await import("./_dom_shim.ts");
-  const { installMockWebSocket } = await import("../sdk/_mock_ws.ts");
+  const { installMockWebSocket } = await import("@alexkroman1/aai/testing");
 
   installDomShim();
 
@@ -30,24 +30,35 @@ export async function renderCheck(clientEntry: string, cwd: string): Promise<voi
   g.location = { origin: "http://localhost:3000", pathname: "/", href: "http://localhost:3000/" };
 
   // Build resolve.alias from package.json exports so templates can
-  // self-reference `@pkg/name/ui` and resolve to local .ts source.
+  // reference workspace packages and resolve to local .ts source.
   // Vite's SSR loader doesn't support self-referencing exports (vitejs#9731),
   // so resolve.alias is the standard workaround for monorepo-style setups.
-  const pkgRoot = path.resolve(import.meta.dirname ?? __dirname, "..");
+  const uiRoot = import.meta.dirname ?? __dirname;
+  const packagesRoot = path.resolve(uiRoot, "..");
   const fs = await import("node:fs/promises");
-  const pkg = JSON.parse(await fs.readFile(path.join(pkgRoot, "package.json"), "utf-8"));
   const alias: Alias[] = [];
-  for (const [key, val] of Object.entries(pkg.exports ?? {})) {
-    const source = typeof val === "object" && val !== null && "source" in val ? val.source : null;
-    if (typeof source === "string") {
-      alias.push({
-        find: `${pkg.name}${key.slice(1)}`,
-        replacement: path.resolve(pkgRoot, source),
-      });
+
+  // Load exports from each workspace package
+  for (const pkgDir of ["aai", "aai-ui"]) {
+    const pkgPath = path.join(packagesRoot, pkgDir, "package.json");
+    const pkg = JSON.parse(await fs.readFile(pkgPath, "utf-8"));
+    for (const [key, val] of Object.entries(pkg.exports ?? {})) {
+      const source =
+        typeof val === "string"
+          ? val
+          : typeof val === "object" && val !== null && "source" in val
+            ? (val as Record<string, string>).source
+            : null;
+      if (typeof source === "string" && source.endsWith(".ts")) {
+        alias.push({
+          find: `${pkg.name}${key === "." ? "" : key.slice(1)}`,
+          replacement: path.resolve(packagesRoot, pkgDir, source),
+        });
+      }
     }
   }
 
-  // Sort longest-first so `@pkg/name/ui` matches before `@pkg/name`.
+  // Sort longest-first so `@pkg/name/session` matches before `@pkg/name`.
   alias.sort((a, b) => (b.find as string).length - (a.find as string).length);
   const cssNoop: Plugin = {
     name: "ssr-css-noop",
@@ -62,7 +73,7 @@ export async function renderCheck(clientEntry: string, cwd: string): Promise<voi
     logLevel: "silent",
     plugins: [preact(), cssNoop],
     resolve: { alias, dedupe: ["preact", "@preact/signals"] },
-    ssr: { noExternal: [pkg.name as string] },
+    ssr: { noExternal: ["@alexkroman1/aai", "@alexkroman1/aai-ui"] },
     server: { middlewareMode: true },
   });
 

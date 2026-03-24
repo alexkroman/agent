@@ -1,122 +1,108 @@
 /**
- * Generates the "exports" field in package.json from a compact manifest.
+ * Generates the "exports" field in package.json files from a compact manifest.
  *
- * Usage: node scripts/gen-exports.mjs        — prints diff
- *        node scripts/gen-exports.mjs --write — updates package.json in place
+ * Usage: node scripts/gen-exports.mjs              — check (dev exports, .ts source)
+ *        node scripts/gen-exports.mjs --write       — update package.json (dev)
+ *        node scripts/gen-exports.mjs --write --dist — update for publishing (.js dist)
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const pkgPath = resolve(__dirname, "../package.json");
-const sdkPkgPath = resolve(__dirname, "../sdk/package.json");
+const sdkPkgPath = resolve(__dirname, "../packages/aai/package.json");
+const uiPkgPath = resolve(__dirname, "../packages/aai-ui/package.json");
 
-// ── Manifest: [subpath, sourceFile] ──────────────────────────────
-// For a standard sdk/ export, just use the subpath name — the source
-// file is derived automatically (kebab → snake, sdk/{name}.ts).
-// For non-standard mappings, provide the source file explicitly.
-const manifest = [
-  [".", "./sdk/mod.ts"],
-  ["./types", "./sdk/types.ts"],
-  ["./kv", "./sdk/kv.ts"],
-  ["./vector", "./sdk/vector.ts"],
-  ["./testing", "./sdk/_mock_ws.ts"],
-  ["./server", "./sdk/server.ts"],
-  ["./runtime", "./sdk/runtime.ts"],
-  ["./ui", "./ui/mod.ts"],
-  ["./ui/styles.css"],
-  ["./ui/session", "./ui/session_mod.ts"],
-  ["./ui/components", "./ui/components_mod.ts"],
-  ["./internal-types", "./sdk/_internal_types.ts"],
-  ["./protocol", "./sdk/protocol.ts"],
-  ["./worker-entry", "./sdk/worker_entry.ts"],
-  ["./builtin-tools", "./sdk/builtin_tools.ts"],
-  ["./s2s", "./sdk/s2s.ts"],
-  ["./session", "./sdk/session.ts"],
-  ["./ws-handler", "./sdk/ws_handler.ts"],
-  ["./direct-executor", "./sdk/direct_executor.ts"],
-  ["./capnweb", "./sdk/capnweb.ts"],
-  ["./host", "./sdk/host.ts"],
-  ["./winterc-server", "./sdk/winterc_server.ts"],
-  ["./worker-shim", "./sdk/worker_shim.ts"],
+const distMode = process.argv.includes("--dist");
+
+// ── SDK manifest: [subpath, sourceFile] ──────────────────────────────
+const sdkManifest = [
+  [".", "./mod.ts"],
+  ["./types", "./types.ts"],
+  ["./kv", "./kv.ts"],
+  ["./vector", "./vector.ts"],
+  ["./testing", "./_mock_ws.ts"],
+  ["./server", "./server.ts"],
+  ["./runtime", "./runtime.ts"],
+  ["./internal-types", "./_internal_types.ts"],
+  ["./protocol", "./protocol.ts"],
+  ["./worker-entry", "./worker_entry.ts"],
+  ["./builtin-tools", "./builtin_tools.ts"],
+  ["./s2s", "./s2s.ts"],
+  ["./session", "./session.ts"],
+  ["./ws-handler", "./ws_handler.ts"],
+  ["./direct-executor", "./direct_executor.ts"],
+  ["./capnweb", "./capnweb.ts"],
+  ["./host", "./host.ts"],
+  ["./winterc-server", "./winterc_server.ts"],
+  ["./worker-shim", "./worker_shim.ts"],
+  ["./utils", "./_utils.ts"],
+];
+
+// ── UI manifest: [subpath, sourceFile] ──────────────────────────────
+const uiManifest = [
+  [".", "./mod.ts"],
+  ["./styles.css"],
+  ["./session", "./session_mod.ts"],
+  ["./components", "./components_mod.ts"],
 ];
 
 function buildExports(entries) {
   const exports = {};
   for (const [subpath, source] of entries) {
-    // Plain file re-export (e.g. CSS)
     if (!source) {
-      exports[subpath] = subpath.replace("./", "./");
+      exports[subpath] = subpath;
       continue;
     }
-    // Derive dist path: ./sdk/foo.ts → ./dist/sdk/foo
-    const base = source.replace(/\.tsx?$/, "");
-    const distBase = base.replace("./", "./dist/");
-    exports[subpath] = {
-      source,
-      types: `${distBase}.d.ts`,
-      default: `${distBase}.js`,
-    };
+    if (distMode) {
+      const base = source.replace(/\.tsx?$/, "");
+      exports[subpath] = {
+        source,
+        types: `./dist${base.slice(1)}.d.ts`,
+        default: `./dist${base.slice(1)}.js`,
+      };
+    } else {
+      // Dev mode: point directly to .ts source for workspace resolution
+      exports[subpath] = source;
+    }
   }
   return exports;
 }
 
-const newExports = buildExports(manifest);
-
-// Build SDK-only exports: entries sourced from sdk/, with paths relative to sdk/
-function buildSdkExports(entries) {
-  const exports = {};
-  for (const [subpath, source] of entries) {
-    if (!source || !source.startsWith("./sdk/")) continue;
-    const relSource = source.replace("./sdk/", "./");
-    const base = relSource.replace(/\.tsx?$/, "");
-    exports[subpath] = {
-      source: relSource,
-      types: `./dist${base.slice(1)}.d.ts`,
-      default: `./dist${base.slice(1)}.js`,
-    };
-  }
-  return exports;
+function checkPackage(label, pkgPath, manifest) {
+  const newExports = buildExports(manifest);
+  const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
+  const oldJSON = JSON.stringify(pkg.exports, null, 2);
+  const newJSON = JSON.stringify(newExports, null, 2);
+  return { pkg, newExports, oldJSON, newJSON, ok: oldJSON === newJSON, label, pkgPath };
 }
 
-const newSdkExports = buildSdkExports(manifest);
+const checks = [
+  checkPackage("packages/aai", sdkPkgPath, sdkManifest),
+  checkPackage("packages/aai-ui", uiPkgPath, uiManifest),
+];
 
-const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
-const sdkPkg = JSON.parse(readFileSync(sdkPkgPath, "utf-8"));
+const allOk = checks.every((c) => c.ok);
 
-const oldJSON = JSON.stringify(pkg.exports, null, 2);
-const newJSON = JSON.stringify(newExports, null, 2);
-const oldSdkJSON = JSON.stringify(sdkPkg.exports, null, 2);
-const newSdkJSON = JSON.stringify(newSdkExports, null, 2);
-
-const rootOk = oldJSON === newJSON;
-const sdkOk = oldSdkJSON === newSdkJSON;
-
-if (rootOk && sdkOk) {
+if (allOk) {
   console.log("exports maps are up to date.");
   process.exit(0);
 }
 
 if (process.argv.includes("--write")) {
-  if (!rootOk) {
-    pkg.exports = newExports;
-    writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + "\n");
-    console.log("Updated package.json exports.");
-  }
-  if (!sdkOk) {
-    sdkPkg.exports = newSdkExports;
-    writeFileSync(sdkPkgPath, JSON.stringify(sdkPkg, null, 2) + "\n");
-    console.log("Updated sdk/package.json exports.");
+  for (const c of checks) {
+    if (!c.ok) {
+      c.pkg.exports = c.newExports;
+      writeFileSync(c.pkgPath, JSON.stringify(c.pkg, null, 2) + "\n");
+      console.log(`Updated ${c.label}/package.json exports.`);
+    }
   }
 } else {
-  if (!rootOk) {
-    console.log("package.json exports map is out of date.\n");
-    console.log("Expected:\n" + newJSON);
-  }
-  if (!sdkOk) {
-    console.log("sdk/package.json exports map is out of date.\n");
-    console.log("Expected:\n" + newSdkJSON);
+  for (const c of checks) {
+    if (!c.ok) {
+      console.log(`${c.label}/package.json exports map is out of date.\n`);
+      console.log("Expected:\n" + c.newJSON);
+    }
   }
   console.log("Run with --write to update.");
   process.exit(1);

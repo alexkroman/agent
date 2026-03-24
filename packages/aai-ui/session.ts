@@ -1,8 +1,13 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import type {
+  ClientEvent,
+  ClientMessage,
+  ReadyConfig,
+  ServerMessage,
+} from "@alexkroman1/aai/protocol";
+import { errorMessage } from "@alexkroman1/aai/utils";
 import { batch, type Signal, signal } from "@preact/signals";
-import { errorMessage } from "../sdk/_utils.ts";
-import type { ClientEvent, ClientMessage, ReadyConfig, ServerMessage } from "../sdk/protocol.ts";
 import type { VoiceIO } from "./audio.ts";
 import type { AgentState, Message, SessionError, SessionOptions, ToolCallInfo } from "./types.ts";
 

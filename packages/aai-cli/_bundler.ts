@@ -2,10 +2,10 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
+import { errorMessage } from "@alexkroman1/aai/utils";
 import preact from "@preact/preset-vite";
 import tailwindcss from "@tailwindcss/vite";
 import { build, type Plugin } from "vite";
-import { errorMessage } from "../sdk/_utils.ts";
 import type { AgentEntry } from "./_discover.ts";
 import { isDevMode } from "./_discover.ts";
 

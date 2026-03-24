@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import { errorMessage } from "@alexkroman1/aai/utils";
 import type { ReactNode } from "react";
-import { errorMessage } from "../sdk/_utils.ts";
 import { BundleError, type BundleOutput, bundleAgent } from "./_bundler.ts";
 import { loadAgent } from "./_discover.ts";
 import { Info, runWithInk, Step } from "./_ink.tsx";

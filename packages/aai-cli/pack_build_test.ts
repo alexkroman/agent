@@ -7,11 +7,12 @@ import path from "node:path";
 import { afterAll, describe, expect, test } from "vitest";
 
 const dir = import.meta.dirname ?? path.dirname(new URL(import.meta.url).pathname);
-const agentRoot = path.resolve(dir, "..");
+const cliRoot = dir;
+const monorepoRoot = path.resolve(dir, "../..");
 
 // This integration test requires `dist/` to exist (built via `node scripts/build-cli.mjs`).
 // Skip when dist hasn't been built to avoid false failures in dev.
-const hasDist = fs.existsSync(path.join(agentRoot, "dist", "aai.js"));
+const hasDist = fs.existsSync(path.join(cliRoot, "dist", "aai.js"));
 
 describe.skipIf(!hasDist)("aai build from tarball", () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "aai-pack-test-"));
@@ -23,7 +24,7 @@ describe.skipIf(!hasDist)("aai build from tarball", () => {
   test("builds a simple agent without devDependencies", () => {
     // 1. Pack the package into a tarball
     const packOutput = execSync(`npm pack --pack-destination ${tmpDir}`, {
-      cwd: agentRoot,
+      cwd: cliRoot,
       encoding: "utf-8",
     }).trim();
     const filename = packOutput.split("\n").pop() ?? "";
@@ -40,6 +41,7 @@ describe.skipIf(!hasDist)("aai build from tarball", () => {
         type: "module",
         dependencies: {
           "@alexkroman1/aai": `file:${tarball}`,
+          "@alexkroman1/aai-ui": `file:${path.join(monorepoRoot, "packages/aai-ui")}`,
           "@preact/signals": "^2.8.2",
           preact: "^10.29.0",
           tailwindcss: "^4.2.1",
@@ -54,7 +56,7 @@ describe.skipIf(!hasDist)("aai build from tarball", () => {
 
     fs.writeFileSync(
       path.join(projectDir, "client.tsx"),
-      'import "@alexkroman1/aai/ui/styles.css";\nimport { App, mount } from "@alexkroman1/aai/ui";\nmount(App);\n',
+      'import "@alexkroman1/aai-ui/styles.css";\nimport { App, mount } from "@alexkroman1/aai-ui";\nmount(App);\n',
     );
 
     fs.writeFileSync(

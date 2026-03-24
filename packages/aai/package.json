@@ -1,0 +1,53 @@
+{
+  "name": "@alexkroman1/aai",
+  "version": "0.8.8",
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": "./mod.ts",
+    "./types": "./types.ts",
+    "./kv": "./kv.ts",
+    "./vector": "./vector.ts",
+    "./testing": "./_mock_ws.ts",
+    "./server": "./server.ts",
+    "./runtime": "./runtime.ts",
+    "./internal-types": "./_internal_types.ts",
+    "./protocol": "./protocol.ts",
+    "./worker-entry": "./worker_entry.ts",
+    "./builtin-tools": "./builtin_tools.ts",
+    "./s2s": "./s2s.ts",
+    "./session": "./session.ts",
+    "./ws-handler": "./ws_handler.ts",
+    "./direct-executor": "./direct_executor.ts",
+    "./capnweb": "./capnweb.ts",
+    "./host": "./host.ts",
+    "./winterc-server": "./winterc_server.ts",
+    "./worker-shim": "./worker_shim.ts",
+    "./utils": "./_utils.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.19.11",
+    "capnweb": "^0.6.1",
+    "hono": "^4.12.8",
+    "html-to-text": "^9.0.5",
+    "ws": "^8.18.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/html-to-text": "^9.0.4",
+    "@types/json-schema": "^7.0.15",
+    "@types/node": "^25.5.0",
+    "@types/ws": "^8.18.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

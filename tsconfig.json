@@ -18,15 +18,7 @@
     "isolatedModules": true,
     "allowImportingTsExtensions": true,
     "noEmit": true,
-    "incremental": true,
-    "tsBuildInfoFile": ".tsbuildinfo/sdk-ui.tsbuildinfo",
-    "jsx": "react-jsx",
-    "jsxImportSource": "preact",
-    "lib": ["ESNext", "DOM", "DOM.Iterable"],
-    "paths": {
-      "aai/server": ["./sdk/server.ts"]
-    }
-  },
-  "include": ["sdk/**/*.ts", "ui/**/*.ts", "ui/**/*.tsx"],
-  "exclude": ["node_modules", "dist", "**/dist", "**/__snapshots__"]
+    "customConditions": ["source"],
+    "lib": ["ESNext", "DOM", "DOM.Iterable"]
+  }
 }

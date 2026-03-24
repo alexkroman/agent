@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "incremental": true,
+    "tsBuildInfoFile": "../../.tsbuildinfo/aai-cli.tsbuildinfo",
+    "jsx": "react-jsx",
+    "jsxImportSource": "react"
+  },
+  "include": ["./**/*.ts", "./**/*.tsx"],
+  "exclude": ["node_modules", "dist", "templates", "**/__snapshots__"]
+}

@@ -2,8 +2,8 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
+import type { AgentDef } from "@alexkroman1/aai/types";
 import { tsImport } from "tsx/esm/api";
-import type { AgentDef } from "../sdk/types.ts";
 import { getApiKey } from "./_discover.ts";
 
 /** Load an AgentDef by dynamically importing agent.ts via tsx. */
@@ -46,14 +46,14 @@ export async function bootServer(
   env: Record<string, string>,
   port: number,
 ): Promise<void> {
-  const { wrapOnStyleWebSocket } = await import("../sdk/s2s.ts");
+  const { wrapOnStyleWebSocket } = await import("@alexkroman1/aai/s2s");
   const wsMod = await import("ws");
   const WS = wsMod.default ?? wsMod;
   const createWebSocket = (url: string, opts: { headers: Record<string, string> }) =>
     wrapOnStyleWebSocket(new WS(url, { headers: opts.headers }));
   const clientHtml = await fs.readFile(path.join(clientDir, "index.html"), "utf-8");
 
-  const { createServer } = await import("../sdk/server.ts");
+  const { createServer } = await import("@alexkroman1/aai/server");
   const server = createServer({
     agent: agentDef,
     clientHtml,

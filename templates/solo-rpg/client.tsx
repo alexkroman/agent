@@ -1,4 +1,4 @@
-import "@alexkroman1/aai/ui/styles.css";
+import "@alexkroman1/aai-ui/styles.css";
 import { useState } from "preact/hooks";
 import {
   ChatView,
@@ -6,7 +6,7 @@ import {
   StartScreen,
   mount,
   useToolResult,
-} from "@alexkroman1/aai/ui";
+} from "@alexkroman1/aai-ui";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 

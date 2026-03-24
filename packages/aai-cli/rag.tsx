@@ -1,9 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import { errorMessage } from "@alexkroman1/aai/utils";
 import { Text } from "ink";
 import pLimit from "p-limit";
 import type React from "react";
-import { errorMessage } from "../sdk/_utils.ts";
 import { getServerInfo } from "./_discover.ts";
 import { Detail, Info, runWithInk, Step, Warn } from "./_ink.tsx";
 

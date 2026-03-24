@@ -1,0 +1,52 @@
+{
+  "name": "@alexkroman1/aai-ui",
+  "version": "0.8.8",
+  "type": "module",
+  "files": [
+    "dist",
+    "styles.css"
+  ],
+  "exports": {
+    ".": "./mod.ts",
+    "./styles.css": "./styles.css",
+    "./session": "./session_mod.ts",
+    "./components": "./components_mod.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@alexkroman1/aai": "workspace:*",
+    "clsx": "^2.1.1"
+  },
+  "peerDependencies": {
+    "@preact/signals": "^2.8.2",
+    "preact": "^10.29.0",
+    "tailwindcss": "^4.2.1"
+  },
+  "peerDependenciesMeta": {
+    "@preact/signals": {
+      "optional": true
+    },
+    "preact": {
+      "optional": true
+    },
+    "tailwindcss": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@preact/preset-vite": "^2.10.4",
+    "@testing-library/preact": "^3.2.4",
+    "@types/node": "^25.5.0",
+    "jsdom": "^29.0.1",
+    "linkedom": "^0.18.12",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1",
+    "vitest": "^4.1.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

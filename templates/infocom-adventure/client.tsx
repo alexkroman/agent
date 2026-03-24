@@ -1,6 +1,6 @@
-import "@alexkroman1/aai/ui/styles.css";
-import { mount, useSession } from "@alexkroman1/aai/ui";
-import type { Message } from "@alexkroman1/aai/ui";
+import "@alexkroman1/aai-ui/styles.css";
+import { mount, useSession } from "@alexkroman1/aai-ui";
+import type { Message } from "@alexkroman1/aai-ui";
 import { useEffect, useRef } from "preact/hooks";
 
 const CSS = `

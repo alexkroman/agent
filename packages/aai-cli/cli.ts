@@ -3,15 +3,14 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { errorMessage } from "@alexkroman1/aai/utils";
 import chalk from "chalk";
 import { Command } from "commander";
-import { errorMessage } from "../sdk/_utils.ts";
 import { fileExists, getApiKey, resolveCwd } from "./_discover.ts";
 import { interactive, primary } from "./_ink.tsx";
 
 const cliDir = path.dirname(fileURLToPath(import.meta.url));
-// Read version from root package.json (single-package repo)
-const pkgJsonPath = path.join(cliDir, "..", "package.json");
+const pkgJsonPath = path.join(cliDir, "package.json");
 const pkgJson = JSON.parse(readFileSync(pkgJsonPath, "utf-8"));
 const VERSION: string = pkgJson.version;
 
