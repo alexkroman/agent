@@ -10,7 +10,8 @@
     ".": "./mod.ts",
     "./styles.css": "./styles.css",
     "./session": "./session_mod.ts",
-    "./components": "./components_mod.ts"
+    "./components": "./components_mod.ts",
+    "./_render_check": "./_render_check.ts"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

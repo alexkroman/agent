@@ -8,7 +8,6 @@ import { afterAll, describe, expect, test } from "vitest";
 
 const dir = import.meta.dirname ?? path.dirname(new URL(import.meta.url).pathname);
 const cliRoot = dir;
-const monorepoRoot = path.resolve(dir, "../..");
 
 // This integration test requires `dist/` to exist (built via `node scripts/build-cli.mjs`).
 // Skip when dist hasn't been built to avoid false failures in dev.
@@ -41,7 +40,7 @@ describe.skipIf(!hasDist)("aai build from tarball", () => {
         type: "module",
         dependencies: {
           "@alexkroman1/aai": `file:${tarball}`,
-          "@alexkroman1/aai-ui": `file:${path.join(monorepoRoot, "packages/aai-ui")}`,
+          "@alexkroman1/aai-ui": `file:${path.resolve(dir, "../aai-ui")}`,
           "@preact/signals": "^2.8.2",
           preact: "^10.29.0",
           tailwindcss: "^4.2.1",

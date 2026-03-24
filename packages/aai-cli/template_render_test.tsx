@@ -2,11 +2,11 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { renderCheck } from "@alexkroman1/aai-ui/_render_check";
 import { describe, expect, test } from "vitest";
-import { renderCheck } from "./_render_check.ts";
 
 const dir = import.meta.dirname ?? path.dirname(new URL(import.meta.url).pathname);
-const templatesDir = path.resolve(dir, "..", "aai-cli", "templates");
+const templatesDir = path.resolve(dir, "templates");
 
 const templates = fs
   .readdirSync(templatesDir, { withFileTypes: true })

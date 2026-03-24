@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@alexkroman1/aai": "workspace:*",
+    "@alexkroman1/aai-ui": "workspace:*",
     "@chonkiejs/core": "^0.0.8",
     "@inkjs/ui": "^2.0.0",
     "@preact/preset-vite": "^2.10.4",

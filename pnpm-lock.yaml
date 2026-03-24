@@ -78,6 +78,9 @@ importers:
       '@alexkroman1/aai':
         specifier: workspace:*
         version: link:../aai
+      '@alexkroman1/aai-ui':
+        specifier: workspace:*
+        version: link:../aai-ui
       '@chonkiejs/core':
         specifier: ^0.0.8
         version: 0.0.8

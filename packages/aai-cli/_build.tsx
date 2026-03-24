@@ -38,8 +38,7 @@ export async function buildAgentBundle(
 
   if (agent.clientEntry && !opts?.skipRenderCheck) {
     // Dynamic import: linkedom is a devDependency — skip render check if unavailable.
-    const renderCheckPath = "../ui/_render_check.ts";
-    const mod = await import(/* @vite-ignore */ renderCheckPath).catch(() => null);
+    const mod = await import("@alexkroman1/aai-ui/_render_check").catch(() => null);
     if (mod) {
       log(<Step action="Render" msg="check" />);
       try {

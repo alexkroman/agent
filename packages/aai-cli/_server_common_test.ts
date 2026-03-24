@@ -70,7 +70,7 @@ describe("loadAgentDef", () => {
       await fs.writeFile(
         path.join(dir, "agent.ts"),
         [
-          `import { defineAgent } from "${path.resolve(import.meta.dirname ?? __dirname, "../aai/mod.ts")}";`,
+          `import { defineAgent } from "${import.meta.resolve("@alexkroman1/aai").replace("file://", "")}";`,
           `export default defineAgent({ name: "test-agent" });`,
         ].join("\n"),
       );
