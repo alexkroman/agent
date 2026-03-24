@@ -3,8 +3,9 @@
   "compilerOptions": {
     "outDir": "dist",
     "noEmit": false,
+    "allowImportingTsExtensions": false,
+    "rewriteRelativeImportExtensions": true,
     "declaration": true,
-    "declarationMap": true,
     "sourceMap": true
   },
   "exclude": ["src/**/*_test.ts"]

@@ -7,7 +7,7 @@
     "typecheck": "turbo typecheck",
     "lint": "turbo lint",
     "lint:fix": "biome check --write packages/",
-    "check": "pnpm install --frozen-lockfile && turbo build typecheck lint && vitest run --coverage && knip && syncpack lint && madge --circular --extensions ts,tsx packages/ && api-extractor run -c packages/aai/api-extractor.json && api-extractor run -c packages/aai-ui/api-extractor.json && tsc -p packages/aai-cli/tsconfig.templates.json && markdownlint-cli2 '**/*.md' '#**/node_modules' '#.aai' && attw --pack packages/aai && attw --pack packages/aai-ui",
+    "check": "pnpm install --frozen-lockfile && turbo build typecheck lint && vitest run --coverage && knip && syncpack lint && madge --circular --extensions ts,tsx packages/ && api-extractor run -c packages/aai/api-extractor.json && api-extractor run -c packages/aai-ui/api-extractor.json && api-extractor run -c packages/aai-server/api-extractor.json && tsc -p packages/aai-cli/tsconfig.templates.json && markdownlint-cli2 '**/*.md' '#**/node_modules' '#.aai' && attw --pack packages/aai && attw --pack packages/aai-ui",
     "syncpack": "syncpack",
     "changeset": "changeset",
     "version": "changeset version",
