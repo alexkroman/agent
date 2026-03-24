@@ -8,7 +8,7 @@
     "lint": "biome check packages/",
     "lint:fix": "biome check --write packages/",
     "check": "turbo typecheck test && biome check packages/ && tsc -p tsconfig.templates.json && markdownlint-cli2 '**/*.md' '#**/node_modules' '#.aai'",
-    "link:global": "node scripts/write-dev-shim.mjs && pnpm --filter @alexkroman1/aai-cli link --global",
+    "link:global": "pnpm --filter @alexkroman1/aai-cli link --global",
     "prepare": "husky"
   },
   "devDependencies": {

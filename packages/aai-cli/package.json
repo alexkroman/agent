@@ -3,7 +3,8 @@
   "version": "0.8.8",
   "type": "module",
   "bin": {
-    "aai": "dist/aai.js"
+    "aai": "dist/aai.js",
+    "aai-dev": "bin/aai-dev.js"
   },
   "files": [
     "dist",
