@@ -1,6 +1,6 @@
 {
   "name": "@alexkroman1/aai-sdk",
-  "version": "0.8.7",
+  "version": "0.8.8",
   "type": "module",
   "files": [
     "dist"
@@ -112,11 +112,7 @@
     "html-to-text": "^9.0.5",
     "zod": "^4.3.6"
   },
-  "devDependencies": {
-    "@types/json-schema": "^7.0.15",
-    "@types/html-to-text": "^9.0.4",
-    "typescript": "^5.9.3"
-  },
+  "devDependencies": {},
   "engines": {
     "node": ">=20"
   }

@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkgPath = resolve(__dirname, "../package.json");
+const sdkPkgPath = resolve(__dirname, "../sdk/package.json");
 
 // ── Manifest: [subpath, sourceFile] ──────────────────────────────
 // For a standard sdk/ export, just use the subpath name — the source
@@ -63,21 +64,60 @@ function buildExports(entries) {
 
 const newExports = buildExports(manifest);
 
+// Build SDK-only exports: entries sourced from sdk/, with paths relative to sdk/
+function buildSdkExports(entries) {
+  const exports = {};
+  for (const [subpath, source] of entries) {
+    if (!source || !source.startsWith("./sdk/")) continue;
+    const relSource = source.replace("./sdk/", "./");
+    const base = relSource.replace(/\.tsx?$/, "");
+    exports[subpath] = {
+      source: relSource,
+      types: `./dist${base.slice(1)}.d.ts`,
+      default: `./dist${base.slice(1)}.js`,
+    };
+  }
+  return exports;
+}
+
+const newSdkExports = buildSdkExports(manifest);
+
 const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
+const sdkPkg = JSON.parse(readFileSync(sdkPkgPath, "utf-8"));
+
 const oldJSON = JSON.stringify(pkg.exports, null, 2);
 const newJSON = JSON.stringify(newExports, null, 2);
+const oldSdkJSON = JSON.stringify(sdkPkg.exports, null, 2);
+const newSdkJSON = JSON.stringify(newSdkExports, null, 2);
 
-if (oldJSON === newJSON) {
-  console.log("exports map is up to date.");
+const rootOk = oldJSON === newJSON;
+const sdkOk = oldSdkJSON === newSdkJSON;
+
+if (rootOk && sdkOk) {
+  console.log("exports maps are up to date.");
   process.exit(0);
 }
 
 if (process.argv.includes("--write")) {
-  pkg.exports = newExports;
-  writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + "\n");
-  console.log("Updated package.json exports.");
+  if (!rootOk) {
+    pkg.exports = newExports;
+    writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + "\n");
+    console.log("Updated package.json exports.");
+  }
+  if (!sdkOk) {
+    sdkPkg.exports = newSdkExports;
+    writeFileSync(sdkPkgPath, JSON.stringify(sdkPkg, null, 2) + "\n");
+    console.log("Updated sdk/package.json exports.");
+  }
 } else {
-  console.log("exports map is out of date. Run with --write to update.\n");
-  console.log("Expected:\n" + newJSON);
+  if (!rootOk) {
+    console.log("package.json exports map is out of date.\n");
+    console.log("Expected:\n" + newJSON);
+  }
+  if (!sdkOk) {
+    console.log("sdk/package.json exports map is out of date.\n");
+    console.log("Expected:\n" + newSdkJSON);
+  }
+  console.log("Run with --write to update.");
   process.exit(1);
 }
