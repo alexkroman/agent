@@ -6,7 +6,7 @@ export { DOMParser };
 let installed = false;
 
 /**
- * Install linkedom globals so Preact and Radix UI can render in Deno tests.
+ * Install linkedom globals so Preact can render in Node.js SSR (render checks).
  */
 export function installDomShim(): void {
   if (installed) return;

@@ -34,8 +34,7 @@ Three workspace packages under `packages/`:
 - `packages/aai-ui/` (`@alexkroman1/aai-ui`) — Browser client library
   (Preact): session, audio, components
 - `packages/aai-cli/` (`@alexkroman1/aai-cli`) — The `aai` CLI: dev,
-  build, deploy, start, new
-- `templates/` — Agent scaffolding templates (at repo root)
+  build, deploy, start, new. Contains `templates/` for agent scaffolding.
 
 Dependency flow: `aai-cli` and `aai-ui` depend on `aai` (via
 `workspace:*`) but never on each other.
@@ -116,9 +115,9 @@ Internal:
 - **Exports**: In dev mode, package.json exports point to `.ts` source
   for seamless workspace resolution. Update to compiled `.js` dist paths
   before publishing.
-- **Agent API docs**: `templates/_shared/CLAUDE.md` is the agent API reference
-  installed into user projects. When modifying the agent API surface
-  (`packages/aai/types.ts`), update it to match.
-- **Templates**: `templates/` contains agent scaffolding templates. Each
-  template is self-contained with its own `agent.ts` and `client.tsx`.
-  `templates/_shared/` has non-code files common to all templates.
+- **Agent API docs**: `packages/aai-cli/templates/_shared/CLAUDE.md` is the
+  agent API reference installed into user projects. When modifying the agent
+  API surface (`packages/aai/types.ts`), update it to match.
+- **Templates**: `packages/aai-cli/templates/` contains agent scaffolding
+  templates. Each template is self-contained with its own `agent.ts` and
+  `client.tsx`. `_shared/` has non-code files common to all templates.
