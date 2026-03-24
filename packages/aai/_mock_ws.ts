@@ -1,20 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-/** Polyfill CloseEvent for Node.js environments where it's not available. */
-const CloseEventImpl =
-  typeof globalThis.CloseEvent !== "undefined"
-    ? globalThis.CloseEvent
-    : class CloseEvent extends Event {
-        readonly code: number;
-        readonly reason: string;
-        readonly wasClean: boolean;
-        constructor(type: string, init?: { code?: number; reason?: string; wasClean?: boolean }) {
-          super(type);
-          this.code = init?.code ?? 1000;
-          this.reason = init?.reason ?? "";
-          this.wasClean = init?.wasClean ?? true;
-        }
-      };
+import { CloseEventImpl } from "./_polyfills.ts";
 
 /**
  * A mock WebSocket implementation for testing.

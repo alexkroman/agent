@@ -9,37 +9,10 @@
  */
 import type { JSONSchema7 } from "json-schema";
 import { z } from "zod";
+import { CloseEventImpl, ErrorEventImpl } from "./_polyfills.ts";
 import { errorMessage } from "./_utils.ts";
 import type { Logger, S2SConfig } from "./runtime.ts";
 import { consoleLogger } from "./runtime.ts";
-
-/** Polyfill CloseEvent for Node.js environments. */
-const CloseEventImpl =
-  typeof globalThis.CloseEvent !== "undefined"
-    ? globalThis.CloseEvent
-    : class CloseEvent extends Event {
-        readonly code: number;
-        readonly reason: string;
-        readonly wasClean: boolean;
-        constructor(type: string, init?: { code?: number; reason?: string; wasClean?: boolean }) {
-          super(type);
-          this.code = init?.code ?? 1000;
-          this.reason = init?.reason ?? "";
-          this.wasClean = init?.wasClean ?? true;
-        }
-      };
-
-/** Polyfill ErrorEvent for Node.js environments. */
-const ErrorEventImpl =
-  typeof globalThis.ErrorEvent !== "undefined"
-    ? globalThis.ErrorEvent
-    : class ErrorEvent extends Event {
-        readonly message: string;
-        constructor(type: string, init?: { message?: string }) {
-          super(type);
-          this.message = init?.message ?? "";
-        }
-      };
 
 // ─── Base64 helpers (native Buffer for C++-speed encode/decode) ─────────────
 
