@@ -1,0 +1,123 @@
+{
+  "name": "@alexkroman1/aai-sdk",
+  "version": "0.8.7",
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "source": "./mod.ts",
+      "types": "./dist/mod.d.ts",
+      "default": "./dist/mod.js"
+    },
+    "./types": {
+      "source": "./types.ts",
+      "types": "./dist/types.d.ts",
+      "default": "./dist/types.js"
+    },
+    "./kv": {
+      "source": "./kv.ts",
+      "types": "./dist/kv.d.ts",
+      "default": "./dist/kv.js"
+    },
+    "./vector": {
+      "source": "./vector.ts",
+      "types": "./dist/vector.d.ts",
+      "default": "./dist/vector.js"
+    },
+    "./testing": {
+      "source": "./_mock_ws.ts",
+      "types": "./dist/_mock_ws.d.ts",
+      "default": "./dist/_mock_ws.js"
+    },
+    "./server": {
+      "source": "./server.ts",
+      "types": "./dist/server.d.ts",
+      "default": "./dist/server.js"
+    },
+    "./runtime": {
+      "source": "./runtime.ts",
+      "types": "./dist/runtime.d.ts",
+      "default": "./dist/runtime.js"
+    },
+    "./internal-types": {
+      "source": "./_internal_types.ts",
+      "types": "./dist/_internal_types.d.ts",
+      "default": "./dist/_internal_types.js"
+    },
+    "./protocol": {
+      "source": "./protocol.ts",
+      "types": "./dist/protocol.d.ts",
+      "default": "./dist/protocol.js"
+    },
+    "./worker-entry": {
+      "source": "./worker_entry.ts",
+      "types": "./dist/worker_entry.d.ts",
+      "default": "./dist/worker_entry.js"
+    },
+    "./builtin-tools": {
+      "source": "./builtin_tools.ts",
+      "types": "./dist/builtin_tools.d.ts",
+      "default": "./dist/builtin_tools.js"
+    },
+    "./s2s": {
+      "source": "./s2s.ts",
+      "types": "./dist/s2s.d.ts",
+      "default": "./dist/s2s.js"
+    },
+    "./session": {
+      "source": "./session.ts",
+      "types": "./dist/session.d.ts",
+      "default": "./dist/session.js"
+    },
+    "./ws-handler": {
+      "source": "./ws_handler.ts",
+      "types": "./dist/ws_handler.d.ts",
+      "default": "./dist/ws_handler.js"
+    },
+    "./direct-executor": {
+      "source": "./direct_executor.ts",
+      "types": "./dist/direct_executor.d.ts",
+      "default": "./dist/direct_executor.js"
+    },
+    "./capnweb": {
+      "source": "./capnweb.ts",
+      "types": "./dist/capnweb.d.ts",
+      "default": "./dist/capnweb.js"
+    },
+    "./host": {
+      "source": "./host.ts",
+      "types": "./dist/host.d.ts",
+      "default": "./dist/host.js"
+    },
+    "./winterc-server": {
+      "source": "./winterc_server.ts",
+      "types": "./dist/winterc_server.d.ts",
+      "default": "./dist/winterc_server.js"
+    },
+    "./worker-shim": {
+      "source": "./worker_shim.ts",
+      "types": "./dist/worker_shim.d.ts",
+      "default": "./dist/worker_shim.js"
+    }
+  },
+  "scripts": {
+    "prepublishOnly": "tsc -p tsconfig.build.json"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.19.11",
+    "capnweb": "^0.6.1",
+    "hono": "^4.12.8",
+    "html-to-text": "^9.0.5",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/json-schema": "^7.0.15",
+    "@types/html-to-text": "^9.0.4",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
