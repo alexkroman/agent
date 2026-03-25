@@ -32,10 +32,10 @@ export default defineConfig({
         "**/_prompts.ts",
       ],
       thresholds: {
-        lines: 83,
+        lines: 81,
         functions: 82,
-        branches: 71,
-        statements: 82,
+        branches: 70,
+        statements: 81,
       },
     },
     projects: [

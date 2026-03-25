@@ -161,7 +161,7 @@ describe("createDirectExecutor", () => {
       onBeforeStep: () => ({ activeTools: ["toolA"] }),
     });
     const exec = createDirectExecutor({ agent, env: {} });
-    const config = await exec.hookInvoker.resolveTurnConfig("s1");
+    const config = await exec.hookInvoker.resolveTurnConfig("s1", 0);
     expect(config?.activeTools).toEqual(["toolA"]);
   });
 
