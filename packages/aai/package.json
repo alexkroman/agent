@@ -80,7 +80,9 @@
   "scripts": {
     "build": "tsdown && tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
-    "lint": "biome check ."
+    "lint": "biome check .",
+    "check:api": "api-extractor run -c api-extractor.json",
+    "check:attw": "attw --pack --profile esm-only"
   },
   "dependencies": {
     "html-to-text": "^9.0.5",

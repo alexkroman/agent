@@ -27,7 +27,9 @@
   "scripts": {
     "build": "tsdown && tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
-    "lint": "biome check ."
+    "lint": "biome check .",
+    "check:api": "api-extractor run -c api-extractor.json",
+    "check:attw": "attw --pack --profile esm-only --entrypoints . ./session ./components"
   },
   "dependencies": {
     "@alexkroman1/aai": "workspace:*",
