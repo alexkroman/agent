@@ -13,7 +13,7 @@
 
 import type { AgentConfig } from "@alexkroman1/aai/internal-types";
 import type { Kv, KvEntry } from "@alexkroman1/aai/kv";
-import { AUDIO_FORMAT } from "@alexkroman1/aai/protocol";
+import { buildReadyConfig } from "@alexkroman1/aai/protocol";
 import { DEFAULT_S2S_CONFIG } from "@alexkroman1/aai/runtime";
 import { createS2sSession, type HookInvoker, type Session } from "@alexkroman1/aai/session";
 import type { VectorStore } from "@alexkroman1/aai/vector";
@@ -482,30 +482,28 @@ function buildHookInvoker(isolateUrl: string, env: Record<string, string>): Hook
       await callHook("onStep", { sessionId, step });
     },
     async resolveTurnConfig(sessionId) {
-      const r = await callHook("resolveTurnConfig", { sessionId });
-      const parsed = TurnConfigSchema.parse(r);
+      const parsed = TurnConfigSchema.parse(await callHook("resolveTurnConfig", { sessionId }));
       if (parsed == null) return null;
-      return {
-        ...(parsed.maxSteps != null && { maxSteps: parsed.maxSteps }),
-        ...(parsed.activeTools != null && { activeTools: parsed.activeTools }),
-      };
+      const config: { maxSteps?: number; activeTools?: string[] } = {};
+      if (parsed.maxSteps != null) config.maxSteps = parsed.maxSteps;
+      if (parsed.activeTools != null) config.activeTools = parsed.activeTools;
+      return config;
     },
   };
 }
 
 function toAgentConfig(config: IsolateConfig): AgentConfig {
-  return {
+  const ac: AgentConfig = {
     name: config.name,
     instructions: config.instructions,
     greeting: config.greeting,
-    ...(config.sttPrompt !== undefined ? { sttPrompt: config.sttPrompt } : {}),
-    ...(config.maxSteps !== undefined ? { maxSteps: config.maxSteps } : {}),
-    ...(config.toolChoice !== undefined ? { toolChoice: config.toolChoice } : {}),
-    ...(config.builtinTools
-      ? { builtinTools: config.builtinTools as AgentConfig["builtinTools"] }
-      : {}),
-    ...(config.activeTools ? { activeTools: config.activeTools } : {}),
   };
+  if (config.sttPrompt !== undefined) ac.sttPrompt = config.sttPrompt;
+  if (config.maxSteps !== undefined) ac.maxSteps = config.maxSteps;
+  if (config.toolChoice !== undefined) ac.toolChoice = config.toolChoice;
+  if (config.builtinTools) ac.builtinTools = config.builtinTools as AgentConfig["builtinTools"];
+  if (config.activeTools) ac.activeTools = config.activeTools;
+  return ac;
 }
 
 // ── Test internals ───────────────────────────────────────────────────────
@@ -548,12 +546,7 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
   const hookInvoker = buildHookInvoker(isolateUrl, env);
   const apiKey = env.ASSEMBLYAI_API_KEY ?? "";
   const s2sConfig = DEFAULT_S2S_CONFIG;
-
-  const readyConfig = {
-    audioFormat: AUDIO_FORMAT,
-    sampleRate: s2sConfig.inputSampleRate,
-    ttsSampleRate: s2sConfig.outputSampleRate,
-  };
+  const readyConfig = buildReadyConfig(s2sConfig);
 
   const sessions = new Map<string, Session>();
 

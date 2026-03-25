@@ -145,23 +145,16 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
     },
     async resolveTurnConfig(sessionId) {
       const ctx = makeHookContext(sessionId);
-      let maxSteps: number | undefined;
-      let activeTools: string[] | undefined;
-
-      if (typeof agent.maxSteps === "function") {
-        maxSteps = (await agent.maxSteps(ctx)) ?? undefined;
-      }
-
-      if (agent.onBeforeStep) {
-        const result = await agent.onBeforeStep(0, ctx);
-        activeTools = result?.activeTools;
-      }
+      const maxSteps =
+        typeof agent.maxSteps === "function"
+          ? ((await agent.maxSteps(ctx)) ?? undefined)
+          : undefined;
+      const activeTools = agent.onBeforeStep
+        ? (await agent.onBeforeStep(0, ctx))?.activeTools
+        : undefined;
 
       if (maxSteps === undefined && activeTools === undefined) return null;
-      const config: { maxSteps?: number; activeTools?: string[] } = {};
-      if (maxSteps !== undefined) config.maxSteps = maxSteps;
-      if (activeTools !== undefined) config.activeTools = activeTools;
-      return config;
+      return { ...(maxSteps !== undefined && { maxSteps }), ...(activeTools && { activeTools }) };
     },
   };
 

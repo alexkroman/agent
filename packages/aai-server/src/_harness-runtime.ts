@@ -97,15 +97,10 @@ function extractToolSchemas(agent: AgentDef): ToolSchema[] {
 // ── Config extraction ────────────────────────────────────────────────────
 
 function extractConfig(agent: AgentDef): IsolateConfig {
-  return {
+  const config: IsolateConfig = {
     name: agent.name,
     instructions: agent.instructions,
     greeting: agent.greeting,
-    ...(agent.sttPrompt !== undefined ? { sttPrompt: agent.sttPrompt } : {}),
-    ...(typeof agent.maxSteps !== "function" ? { maxSteps: agent.maxSteps } : {}),
-    ...(agent.toolChoice !== undefined ? { toolChoice: agent.toolChoice } : {}),
-    ...(agent.builtinTools ? { builtinTools: agent.builtinTools } : {}),
-    ...(agent.activeTools ? { activeTools: agent.activeTools } : {}),
     toolSchemas: extractToolSchemas(agent),
     hasState: typeof agent.state === "function",
     hooks: {
@@ -118,6 +113,12 @@ function extractConfig(agent: AgentDef): IsolateConfig {
       maxStepsIsFn: typeof agent.maxSteps === "function",
     },
   };
+  if (agent.sttPrompt !== undefined) config.sttPrompt = agent.sttPrompt;
+  if (typeof agent.maxSteps !== "function") config.maxSteps = agent.maxSteps;
+  if (agent.toolChoice !== undefined) config.toolChoice = agent.toolChoice;
+  if (agent.builtinTools) config.builtinTools = [...agent.builtinTools];
+  if (agent.activeTools) config.activeTools = [...agent.activeTools];
+  return config;
 }
 
 // ── Tool execution ───────────────────────────────────────────────────────

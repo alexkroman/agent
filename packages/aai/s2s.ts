@@ -119,7 +119,7 @@ function dispatchS2sMessage(emitter: Emitter<S2sEvents>, msg: S2sServerMessage):
       emitter.emit("tool_call", { call_id: msg.call_id, name: msg.name, args: msg.args });
       break;
     case "reply.done":
-      emitter.emit("reply_done", { ...(msg.status ? { status: msg.status } : {}) });
+      emitter.emit("reply_done", msg.status ? { status: msg.status } : {});
       break;
     case "session.error":
       if (msg.code === "session_not_found" || msg.code === "session_forbidden")

@@ -13,11 +13,14 @@ export type Logger = {
   debug(msg: string, ctx?: LogContext): void;
 };
 
+const log = (fn: (...args: unknown[]) => void) => (msg: string, ctx?: LogContext) =>
+  fn(msg, ...(ctx ? [ctx] : []));
+
 export const consoleLogger: Logger = {
-  info: (msg, ctx) => console.log(msg, ...(ctx ? [ctx] : [])),
-  warn: (msg, ctx) => console.warn(msg, ...(ctx ? [ctx] : [])),
-  error: (msg, ctx) => console.error(msg, ...(ctx ? [ctx] : [])),
-  debug: (msg, ctx) => console.debug(msg, ...(ctx ? [ctx] : [])),
+  info: log(console.log),
+  warn: log(console.warn),
+  error: log(console.error),
+  debug: log(console.debug),
 };
 
 /** S2S endpoint configuration. */

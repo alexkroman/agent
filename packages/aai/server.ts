@@ -11,9 +11,10 @@ import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { WebSocketServer } from "ws";
+import { filterEnv } from "./_utils.ts";
 import { createDirectExecutor } from "./direct-executor.ts";
 import type { Kv } from "./kv.ts";
-import { AUDIO_FORMAT } from "./protocol.ts";
+import { buildReadyConfig } from "./protocol.ts";
 import type { Logger, S2SConfig } from "./runtime.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime.ts";
 import type { Session } from "./session.ts";
@@ -44,13 +45,6 @@ export type AgentServer = {
   close(): Promise<void>;
 };
 
-function resolveEnv(env: Record<string, string | undefined>): Record<string, string> {
-  return Object.fromEntries(Object.entries(env).filter(([, v]) => v !== undefined)) as Record<
-    string,
-    string
-  >;
-}
-
 export function createServer(options: ServerOptions): AgentServer {
   const {
     agent,
@@ -61,15 +55,11 @@ export function createServer(options: ServerOptions): AgentServer {
     s2sConfig = DEFAULT_S2S_CONFIG,
   } = options;
 
-  const env = resolveEnv(options.env ?? (typeof process !== "undefined" ? process.env : {}));
+  const env = filterEnv(options.env ?? (typeof process !== "undefined" ? process.env : {}));
 
   const executor = createDirectExecutor({ agent, env, ...(kv ? { kv } : {}), logger, s2sConfig });
   const sessions = new Map<string, Session>();
-  const readyConfig = {
-    audioFormat: AUDIO_FORMAT,
-    sampleRate: s2sConfig.inputSampleRate,
-    ttsSampleRate: s2sConfig.outputSampleRate,
-  };
+  const readyConfig = buildReadyConfig(s2sConfig);
 
   function handleWs(ws: SessionWebSocket, skipGreeting: boolean): void {
     wireSessionSocket(ws, {
