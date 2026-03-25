@@ -141,16 +141,17 @@ describe("createDirectExecutor", () => {
     const onError = vi.fn();
     const agent = makeAgent({ onError });
     const exec = createDirectExecutor({ agent, env: {} });
-    await exec.hookInvoker.onError("s1", { message: "boom", code: "internal" });
+    await exec.hookInvoker.onError("s1", { message: "boom" });
     expect(onError).toHaveBeenCalledWith(expect.any(Error), expect.any(Object));
-    expect(onError.mock.calls[0][0].message).toBe("boom");
+    const err = onError.mock.calls[0]?.[0] as Error;
+    expect(err.message).toBe("boom");
   });
 
   test("hookInvoker.onStep calls agent.onStep", async () => {
     const onStep = vi.fn();
     const agent = makeAgent({ onStep });
     const exec = createDirectExecutor({ agent, env: {} });
-    const step = { stepIndex: 0, toolName: "test", toolArgs: {}, toolResult: "ok" };
+    const step = { stepNumber: 1, toolCalls: [{ toolName: "test", args: {} }], text: "ok" };
     await exec.hookInvoker.onStep("s1", step);
     expect(onStep).toHaveBeenCalledWith(step, expect.any(Object));
   });
