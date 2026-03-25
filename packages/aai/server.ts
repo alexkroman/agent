@@ -55,7 +55,6 @@ function escapeHtml(s: string): string {
     .replace(/'/g, "&#39;");
 }
 
-
 export function createServer(options: ServerOptions): AgentServer {
   const {
     agent,
