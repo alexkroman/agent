@@ -9,7 +9,6 @@
 import { render, screen } from "@testing-library/preact";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { App } from "./_components/app.tsx";
-// biome-ignore lint/correctness/noUnresolvedImports: re-export from workspace dep unresolvable in per-package lint
 import { createMockSignals, flush, installMockWebSocket, setupSignalsEnv } from "./_test-utils.ts";
 import { mount } from "./mount.tsx";
 import { SessionProvider, useSession } from "./signals.ts";

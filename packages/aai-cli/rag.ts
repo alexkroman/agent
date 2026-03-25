@@ -1,6 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-// biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
 import { errorMessage } from "@alexkroman1/aai/utils";
 import pLimit from "p-limit";
 import { getServerInfo } from "./_discover.ts";

@@ -29,4 +29,5 @@ export default defineConfig({
   dts: false,
   outExtensions: () => ({ js: ".js" }),
   deps: { neverBundle: [/^[^./]/] },
+  hash: false,
 });

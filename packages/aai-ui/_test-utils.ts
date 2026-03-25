@@ -1,13 +1,11 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-// biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
 import { installMockWebSocket } from "@alexkroman1/aai/testing";
 import { batch, signal } from "@preact/signals";
 import { createVoiceSession, type VoiceSession } from "./session.ts";
 import { createSessionControls, type SessionSignals } from "./signals.ts";
 import type { AgentState, Message, SessionError, ToolCallInfo } from "./types.ts";
 
-// biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
 export { installMockWebSocket, MockWebSocket } from "@alexkroman1/aai/testing";
 
 export function delay(ms: number): Promise<void> {
