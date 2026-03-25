@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
+import { expectConsoleWarnings } from "../../_fail_on_warnings.ts";
 import { makeTool } from "./_test-utils.ts";
 import type { ToolDef } from "./types.ts";
 import { executeToolCall } from "./worker-entry.ts";
@@ -45,6 +46,7 @@ describe("executeToolCall", () => {
   });
 
   test("returns error when tool throws", async () => {
+    expectConsoleWarnings();
     expect(
       await run(
         "fail",
@@ -59,6 +61,7 @@ describe("executeToolCall", () => {
   });
 
   test("returns error string when tool throws", async () => {
+    expectConsoleWarnings();
     expect(
       await run(
         "fail",
@@ -107,6 +110,7 @@ describe("executeToolCall", () => {
   });
 
   test("times out tool that runs longer than TOOL_EXECUTION_TIMEOUT_MS", async () => {
+    expectConsoleWarnings();
     vi.useFakeTimers();
     const tool = makeTool({
       execute: () =>

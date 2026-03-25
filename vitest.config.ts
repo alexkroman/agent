@@ -37,6 +37,7 @@ export default defineConfig({
           root: "packages/aai",
           globals: true,
           include: ["**/*.test.ts"],
+          setupFiles: ["../../_fail_on_warnings.ts"],
         },
       },
       {
@@ -45,7 +46,7 @@ export default defineConfig({
           root: "packages/aai-ui",
           globals: true,
           include: ["**/*.test.{ts,tsx}"],
-          setupFiles: ["./_jsdom-setup.ts"],
+          setupFiles: ["./_jsdom-setup.ts", "../../_fail_on_warnings.ts"],
         },
       },
       {
@@ -55,6 +56,7 @@ export default defineConfig({
           globals: true,
           include: ["**/*.test.ts"],
           exclude: ["pack-build.test.ts", "e2e.test.ts", "node_modules", "dist"],
+          setupFiles: ["../../_fail_on_warnings.ts"],
         },
       },
       {
@@ -64,6 +66,7 @@ export default defineConfig({
           globals: true,
           include: ["**/*.test.ts"],
           exclude: ["src/sandbox-integration.test.ts", "node_modules", "dist"],
+          setupFiles: ["../../_fail_on_warnings.ts"],
         },
       },
     ],

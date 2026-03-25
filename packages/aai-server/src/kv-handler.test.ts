@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
+import { expectConsoleErrors } from "../../../_fail_on_warnings.ts";
 import type { Env } from "./context.ts";
 import { handleKv } from "./kv-handler.ts";
 
@@ -122,6 +123,7 @@ describe("kv handler", () => {
   });
 
   test("returns 500 when store throws", async () => {
+    expectConsoleErrors();
     const kvStore = {
       store: new Map(),
       get: () => Promise.reject(new Error("db down")),

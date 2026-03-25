@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
+import { expectConsoleErrors } from "../../../_fail_on_warnings.ts";
 import { createTestVectorStore } from "./_test-utils.ts";
 import type { Env } from "./context.ts";
 import { handleVector } from "./vector-handler.ts";
@@ -88,6 +89,7 @@ describe("vector handler", () => {
   });
 
   test("returns 500 when store throws", async () => {
+    expectConsoleErrors();
     const failingStore = {
       upsert: () => Promise.reject(new Error("vec down")),
       query: () => Promise.reject(new Error("vec down")),

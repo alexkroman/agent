@@ -3,7 +3,7 @@
   "type": "module",
   "scripts": {
     "build": "turbo build",
-    "test": "vitest run",
+    "test": "turbo build && vitest run",
     "typecheck": "turbo typecheck",
     "lint": "turbo lint",
     "lint:fix": "biome check --write packages/",

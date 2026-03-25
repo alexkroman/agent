@@ -8,6 +8,7 @@
  */
 import { render, screen } from "@testing-library/preact";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { expectConsoleErrors } from "../../_fail_on_warnings.ts";
 import { App } from "./_components/app.tsx";
 import { createMockSignals, flush, installMockWebSocket, setupSignalsEnv } from "./_test-utils.ts";
 import { mount } from "./mount.tsx";
@@ -130,6 +131,7 @@ describe("UI integration: signals → component rendering", () => {
   });
 
   test("error event sets error state and stops running", async () => {
+    expectConsoleErrors();
     await env.connect();
     expect(env.signals.running.value).toBe(true);
 

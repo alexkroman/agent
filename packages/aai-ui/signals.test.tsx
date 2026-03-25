@@ -3,6 +3,7 @@
 
 import { render } from "@testing-library/preact";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { expectConsoleErrors } from "../../_fail_on_warnings.ts";
 import { createMockSignals, flush, setupSignalsEnv } from "./_test-utils.ts";
 import { SessionProvider, useSession, useToolResult } from "./signals.ts";
 import type { ToolCallInfo } from "./types.ts";
@@ -28,6 +29,7 @@ describe("createSessionControls", () => {
   });
 
   test("sets running to false on error state", async () => {
+    expectConsoleErrors();
     await env.connect();
     expect(env.signals.running.value).toBe(true);
     env.send({ type: "error", code: "internal", message: "fatal" });

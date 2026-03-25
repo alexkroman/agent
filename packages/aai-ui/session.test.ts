@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { describe, expect, test } from "vitest";
+import { expectConsoleErrors } from "../../_fail_on_warnings.ts";
 import { ClientHandler, type Reactive } from "./session.ts";
 import type { AgentState, Message, SessionError, ToolCallInfo } from "./types.ts";
 
@@ -141,6 +142,7 @@ describe("ClientHandler event handling", () => {
   });
 
   test("error sets error signal and state", () => {
+    expectConsoleErrors();
     const { target, state, error } = createTarget();
     state.value = "listening";
     target.event({ type: "error", code: "stt", message: "Connection lost" });
@@ -149,6 +151,7 @@ describe("ClientHandler event handling", () => {
   });
 
   test("error codes are preserved", () => {
+    expectConsoleErrors();
     const { target, error } = createTarget();
     for (const code of [
       "stt",

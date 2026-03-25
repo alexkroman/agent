@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
+import { expectConsoleErrors } from "../../_fail_on_warnings.ts";
 import { BundleError } from "./_bundler.ts";
 
 describe("BundleError", () => {
@@ -32,6 +33,7 @@ describe("BundleError", () => {
 
 describe("bundleAgent", () => {
   test("throws BundleError when agent dir has no valid entry", async () => {
+    expectConsoleErrors();
     const { bundleAgent } = await import("./_bundler.ts");
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "aai_bundle_"));
     try {

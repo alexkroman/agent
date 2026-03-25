@@ -15,14 +15,14 @@ Two modes:
 
 ```sh
 pnpm install             # Install dependencies
-pnpm test                # Run tests (via Turborepo)
+pnpm test                # Build + run tests
 pnpm lint                # Run Biome linter (via Turborepo)
 pnpm typecheck           # Type check all packages
 pnpm check               # Typecheck + lint + tests
 ```
 
 Run a single package's tests: `pnpm --filter @alexkroman1/aai test`
-Run a single test file: `pnpm vitest run packages/aai/types_test.ts`
+Run a single test file: `pnpm vitest run packages/aai/types.test.ts`
 Run all tests from root: `npx vitest run --config vitest.config.ts`
 
 ## Architecture
@@ -109,7 +109,7 @@ Internal:
 
 - **Runtime**: Node for everything
 - **Frameworks**: Preact (client UI), Tailwind CSS v4 (compiled at bundle time)
-- **Testing**: Vitest. Test files are co-located: `foo.ts` → `foo_test.ts`
+- **Testing**: Vitest. Test files are co-located: `foo.ts` → `foo.test.ts`
 - **Linting**: Biome for all packages
 - **Exports**: In dev mode, package.json exports point to `.ts` source
   for seamless workspace resolution. Update to compiled `.js` dist paths
