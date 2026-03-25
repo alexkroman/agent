@@ -1,0 +1,112 @@
+{
+  "name": "@alexkroman1/aai",
+  "version": "0.8.8",
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "source": "./index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./types": {
+      "source": "./types.ts",
+      "types": "./dist/types.d.ts",
+      "import": "./dist/types.js"
+    },
+    "./kv": {
+      "source": "./kv.ts",
+      "types": "./dist/kv.d.ts",
+      "import": "./dist/kv.js"
+    },
+    "./vector": {
+      "source": "./vector.ts",
+      "types": "./dist/vector.d.ts",
+      "import": "./dist/vector.js"
+    },
+    "./testing": {
+      "source": "./_mock-ws.ts",
+      "types": "./dist/_mock-ws.d.ts",
+      "import": "./dist/_mock-ws.js"
+    },
+    "./server": {
+      "source": "./server.ts",
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
+    },
+    "./protocol": {
+      "source": "./protocol.ts",
+      "types": "./dist/protocol.d.ts",
+      "import": "./dist/protocol.js"
+    },
+    "./s2s": {
+      "source": "./s2s.ts",
+      "types": "./dist/s2s.d.ts",
+      "import": "./dist/s2s.js"
+    },
+    "./session": {
+      "source": "./session.ts",
+      "types": "./dist/session.d.ts",
+      "import": "./dist/session.js"
+    },
+    "./internal-types": {
+      "source": "./_internal-types.ts",
+      "types": "./dist/_internal-types.d.ts",
+      "import": "./dist/_internal-types.js"
+    },
+    "./runtime": {
+      "source": "./runtime.ts",
+      "types": "./dist/runtime.d.ts",
+      "import": "./dist/runtime.js"
+    },
+    "./worker-entry": {
+      "source": "./worker-entry.ts",
+      "types": "./dist/worker-entry.d.ts",
+      "import": "./dist/worker-entry.js"
+    },
+    "./ws-handler": {
+      "source": "./ws-handler.ts",
+      "types": "./dist/ws-handler.d.ts",
+      "import": "./dist/ws-handler.js"
+    },
+    "./utils": {
+      "source": "./_utils.ts",
+      "types": "./dist/_utils.d.ts",
+      "import": "./dist/_utils.js"
+    }
+  },
+  "scripts": {
+    "build": "tsdown && tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check ."
+  },
+  "dependencies": {
+    "html-to-text": "^9.0.5",
+    "nanoevents": "^9.1.0",
+    "ws": "^8.20.0",
+    "zod": "^4.3.6"
+  },
+  "peerDependencies": {
+    "@hono/node-server": "^1.19.11",
+    "hono": "^4.12.9"
+  },
+  "peerDependenciesMeta": {
+    "@hono/node-server": {
+      "optional": true
+    },
+    "hono": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/html-to-text": "^9.0.4",
+    "@types/json-schema": "^7.0.15",
+    "@types/ws": "^8.18.1",
+    "tsdown": "^0.21.4"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

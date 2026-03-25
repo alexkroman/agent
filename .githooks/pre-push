@@ -1,9 +1,0 @@
-#!/bin/sh
-set -e
-
-# Block direct pushes to main
-branch=$(git rev-parse --abbrev-ref HEAD)
-if [ "$branch" = "main" ] || [ "$branch" = "master" ]; then
-  echo "Error: Direct pushes to $branch are not allowed. Use a PR."
-  exit 1
-fi

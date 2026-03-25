@@ -1,0 +1,39 @@
+{
+  "name": "@alexkroman1/aai-cli",
+  "version": "0.8.8",
+  "type": "module",
+  "bin": {
+    "aai": "dist/cli.mjs"
+  },
+  "files": [
+    "dist",
+    "templates"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
+    "test:integration": "vitest run pack-build.test.ts -c vitest.slow.config.ts",
+    "test:e2e": "vitest run e2e.test.ts -c vitest.slow.config.ts"
+  },
+  "dependencies": {
+    "@alexkroman1/aai": "workspace:*",
+    "@chonkiejs/core": "^0.0.8",
+    "@clack/prompts": "^1.1.0",
+    "@preact/preset-vite": "^2.10.5",
+    "@tailwindcss/vite": "^4.2.2",
+    "citty": "^0.2.1",
+    "human-id": "^4.1.3",
+    "p-limit": "^7.3.0",
+    "picocolors": "^1.1.1",
+    "vite": "^8.0.2",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "playwright": "^1.58.2",
+    "tsdown": "^0.21.4"
+  },
+  "engines": {
+    "node": ">=22.6"
+  }
+}

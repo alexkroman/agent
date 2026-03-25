@@ -1,0 +1,7 @@
+{
+  "ignores": [
+    ".changeset/**",
+    "**/api/*.api.md",
+    "**/temp/*.api.md"
+  ]
+}

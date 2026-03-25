@@ -1,0 +1,116 @@
+// Copyright 2025 the AAI authors. MIT license.
+
+import clsx from "clsx";
+import type * as preact from "preact";
+import { useMemo, useState } from "preact/hooks";
+import type { ToolCallInfo } from "../types.ts";
+import {
+  BoltIcon,
+  ChatBubbleIcon,
+  DownloadIcon,
+  ExternalLinkIcon,
+  SearchIcon,
+  TerminalIcon,
+} from "./tool-icons.tsx";
+
+type IconComponent = (props: { class?: string }) => preact.JSX.Element;
+
+type ToolConfig = {
+  Icon: IconComponent;
+  title: string;
+  subtitle: (args: Record<string, unknown>) => string;
+};
+
+const argField =
+  (key: string): ToolConfig["subtitle"] =>
+  (args) =>
+    String(args[key] ?? "");
+
+const TOOL_CONFIG: Record<string, ToolConfig> = {
+  web_search: { Icon: SearchIcon, title: "Web Search", subtitle: argField("query") },
+  visit_webpage: { Icon: ExternalLinkIcon, title: "Visit Page", subtitle: argField("url") },
+  run_code: {
+    Icon: TerminalIcon,
+    title: "Run Code",
+    subtitle: (args) => {
+      const firstLine = String(args.code ?? "").split("\n")[0] ?? "";
+      return firstLine.length > 80 ? `${firstLine.slice(0, 80)}...` : firstLine;
+    },
+  },
+  fetch_json: { Icon: DownloadIcon, title: "Fetch JSON", subtitle: argField("url") },
+  user_input: { Icon: ChatBubbleIcon, title: "Asking User", subtitle: argField("question") },
+};
+
+const DEFAULT_CONFIG: ToolConfig = {
+  Icon: BoltIcon,
+  title: "",
+  subtitle: (args) => {
+    const summary = JSON.stringify(args);
+    return summary.length > 80 ? `${summary.slice(0, 80)}...` : summary;
+  },
+};
+
+function formatResult(result: string): string {
+  try {
+    return JSON.stringify(JSON.parse(result), null, 2);
+  } catch {
+    return result;
+  }
+}
+
+/** @public */
+export function ToolCallBlock({
+  toolCall,
+  className,
+}: {
+  toolCall: ToolCallInfo;
+  className?: string;
+}): preact.JSX.Element {
+  const [isOpen, setOpen] = useState(false);
+  const config = TOOL_CONFIG[toolCall.toolName] ?? DEFAULT_CONFIG;
+  const isPending = toolCall.status === "pending";
+  const title = config.title || toolCall.toolName;
+  const canExpand = !isPending && !!toolCall.result;
+  const formatted = useMemo(
+    () => (toolCall.result ? formatResult(toolCall.result) : ""),
+    [toolCall.result],
+  );
+
+  return (
+    <div class={clsx("flex flex-col", className)}>
+      <button
+        type="button"
+        aria-expanded={canExpand ? isOpen : undefined}
+        disabled={isPending}
+        class={clsx(
+          "flex items-center gap-2 px-3 py-2 rounded-aai border border-aai-border bg-aai-surface-faint select-none text-left w-full",
+          canExpand && "cursor-pointer",
+        )}
+        onClick={() => canExpand && setOpen(!isOpen)}
+      >
+        <config.Icon class="w-4 h-4 text-aai-text-dim shrink-0" />
+        <span class={clsx("text-sm font-medium text-aai-text", isPending && "tool-shimmer")}>
+          {title}
+        </span>
+        <span class="text-sm text-aai-text-dim truncate flex-1 min-w-0">
+          {config.subtitle(toolCall.args)}
+        </span>
+        {canExpand && (
+          <span class="text-xs text-aai-text-dim shrink-0">{isOpen ? "\u25BE" : "\u25B8"}</span>
+        )}
+      </button>
+      {isOpen && (
+        <div class="border-x border-b border-aai-border rounded-b-aai bg-aai-surface max-h-64 overflow-auto">
+          {toolCall.toolName === "run_code" && toolCall.args.code && (
+            <pre class="text-xs text-aai-text p-2 whitespace-pre-wrap border-b border-aai-border font-mono">
+              {String(toolCall.args.code)}
+            </pre>
+          )}
+          {formatted && (
+            <pre class="text-xs text-aai-text-dim p-2 whitespace-pre-wrap">{formatted}</pre>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

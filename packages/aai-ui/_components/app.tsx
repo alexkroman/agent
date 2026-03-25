@@ -1,0 +1,24 @@
+// Copyright 2025 the AAI authors. MIT license.
+import type * as preact from "preact";
+import { useMountConfig } from "../mount-context.ts";
+import { ChatView } from "./chat-view.tsx";
+import { StartScreen } from "./start-screen.tsx";
+
+function AnsiLogo() {
+  return (
+    <pre class="font-aai-mono text-lg leading-[1.1] font-bold text-aai-primary m-0">
+      {"▄▀█ ▄▀█ █\n█▀█ █▀█ █"}
+    </pre>
+  );
+}
+
+/** @public */
+export function App({ className }: { className?: string }): preact.JSX.Element {
+  const { title } = useMountConfig();
+
+  return (
+    <StartScreen icon={title ? undefined : <AnsiLogo />} title={title} className={className}>
+      <ChatView />
+    </StartScreen>
+  );
+}

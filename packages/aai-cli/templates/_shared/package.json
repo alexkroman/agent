@@ -1,0 +1,23 @@
+{
+  "type": "module",
+  "scripts": {
+    "dev": "aai dev",
+    "build": "aai deploy --dry-run",
+    "deploy": "aai deploy",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write ."
+  },
+  "dependencies": {
+    "@alexkroman1/aai": "0.8.8",
+    "@alexkroman1/aai-ui": "0.8.8",
+    "@preact/signals": "^2.8.2",
+    "preact": "^10.29.0",
+    "tailwindcss": "^4.2.1",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.8",
+    "@types/node": "^25.5.0",
+    "typescript": "^6.0.2"
+  }
+}

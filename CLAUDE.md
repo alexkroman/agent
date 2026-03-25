@@ -15,61 +15,74 @@ Two modes:
 
 ```sh
 pnpm install             # Install dependencies
-pnpm test                # Run Vitest tests
-pnpm lint                # Run Biome linter
-pnpm check               # Lint + tests
+pnpm test                # Run tests (via Turborepo)
+pnpm lint                # Run Biome linter (via Turborepo)
+pnpm typecheck           # Type check all packages
+pnpm check               # Typecheck + lint + tests
 ```
 
-Run a single test file: `pnpm vitest run sdk/types_test.ts`
+Run a single package's tests: `pnpm --filter @alexkroman1/aai test`
+Run a single test file: `pnpm vitest run packages/aai/types_test.ts`
 
 ## Architecture
 
-Single npm package `aai` with three source directories:
+Three workspace packages under `packages/`:
 
-- `sdk/` — Agent SDK: `defineAgent`, `createServer`, types, protocol,
-  S2S orchestration, session management, KV, vector store
-- `cli/` — The `aai` CLI: dev, build, deploy, start, new
-- `ui/` — Browser client library (Preact): session, audio, components
-- `templates/` — Agent scaffolding templates
+- `packages/aai/` (`@alexkroman1/aai`) — Agent SDK: `defineAgent`,
+  `createServer`, types, protocol, S2S orchestration, session management,
+  KV, vector store
+- `packages/aai-ui/` (`@alexkroman1/aai-ui`) — Browser client library
+  (Preact): session, audio, components
+- `packages/aai-cli/` (`@alexkroman1/aai-cli`) — The `aai` CLI: dev,
+  build, deploy, start, new. Contains `templates/` for agent scaffolding.
 
-Dependency flow: `cli/` and `ui/` import from `sdk/` but never from each other.
+Dependency flow: `aai-cli` and `aai-ui` depend on `aai` (via
+`workspace:*`) but never on each other.
 
-### Subpath exports
+### Package exports
 
-Public API:
+#### `@alexkroman1/aai` (SDK)
 
-- `aai` — `defineAgent` + re-exported types
-- `aai/server` — `createServer` for self-hosting
-- `aai/types` — all type definitions
-- `aai/kv` — KV store interface + in-memory implementation
-- `aai/vector` — vector store interface + in-memory implementation
-- `aai/testing` — `MockWebSocket`, `installMockWebSocket`
-- `aai/ui` — default Preact UI component
-- `aai/ui/session` — session management
-- `aai/ui/components` — individual UI components
+Public:
+
+- `.` — `defineAgent` + re-exported types
+- `./server` — `createServer` for self-hosting
+- `./types` — all type definitions
+- `./kv` — KV store interface + in-memory implementation
+- `./vector` — vector store interface + in-memory implementation
+- `./testing` — `MockWebSocket`, `installMockWebSocket`
 
 Internal:
 
-- `aai/runtime` — `Logger`, `Metrics`, `S2SConfig` interfaces
-- `aai/s2s` — AssemblyAI S2S WebSocket client
-- `aai/session` — S2S session management
-- `aai/ws-handler` — WebSocket lifecycle handler
-- `aai/direct-executor` — in-process tool execution (self-hosted)
-- `aai/protocol` — wire-format types, Zod schemas, constants
-- `aai/internal-types` — `AgentConfig`, `ToolSchema`, `DeployBody`
-- `aai/worker-entry` — tool execution logic
-- `aai/worker-shim` — capnweb RPC wiring for Deno Workers
-- `aai/builtin-tools` — built-in tool definitions + memory tools
-- `aai/capnweb` — MessagePort RPC + WebSocket bridge
+- `./runtime` — `Logger`, `Metrics`, `S2SConfig` interfaces
+- `./s2s` — AssemblyAI S2S WebSocket client
+- `./session` — S2S session management
+- `./ws-handler` — WebSocket lifecycle handler
+- `./direct-executor` — in-process tool execution (self-hosted)
+- `./protocol` — wire-format types, Zod schemas, constants
+- `./internal-types` — `AgentConfig`, `ToolSchema`, `DeployBody`
+- `./worker-entry` — tool execution logic
+- `./builtin-tools` — built-in tool definitions + memory tools
+- `./utils` — shared utility functions
+
+#### `@alexkroman1/aai-ui` (UI)
+
+- `.` — default Preact UI component
+- `./session` — session management
+- `./components` — individual UI components
+- `./styles.css` — default styles
+
+#### `@alexkroman1/aai-cli` (CLI)
+
+- Binary: `aai` — arg parsing, subcommands: init, dev, build,
+  deploy, start, secret, rag
 
 ### Key Files
 
-#### cli/
+#### packages/aai-cli/
 
-- `cli.ts` — arg parsing, subcommands: init, dev, build,
-  deploy, start, secret, rag
-- `init.tsx` / `dev.tsx` / `build.tsx` / `deploy.tsx` /
-  `start.tsx` — subcommand UI
+- `cli.ts` — arg parsing, subcommands
+- `init.tsx` / `dev.tsx` / `deploy.tsx` / `start.tsx` — subcommand UI
 - `_init.ts` / `_deploy.ts` / `_bundler.ts` — internal logic
 - `_bundler.ts` — generates Vite config at build time, bundles
   `agent.ts`/`client.tsx` into `worker.js`/`index.html`
@@ -77,7 +90,7 @@ Internal:
 - `secret.tsx` / `rag.tsx` — secret management and RAG ingestion commands
 - `_ink.tsx` / `_prompts.tsx` — shared Ink components and interactive prompts
 
-#### ui/
+#### packages/aai-ui/
 
 - `session.ts` — WebSocket session management, audio capture/playback
 - `audio.ts` — PCM encoding/decoding, AudioWorklet management
@@ -93,13 +106,16 @@ Internal:
 
 ## Conventions
 
-- **Runtime**: Node for everything (sdk/ui/cli)
+- **Runtime**: Node for everything
 - **Frameworks**: Preact (client UI), Tailwind CSS v4 (compiled at bundle time)
 - **Testing**: Vitest. Test files are co-located: `foo.ts` → `foo_test.ts`
-- **Linting**: Biome for sdk/, ui/, cli/
-- **Agent API docs**: `templates/_shared/CLAUDE.md` is the agent API reference
-  installed into user projects. When modifying the agent API surface
-  (`sdk/types.ts`), update it to match.
-- **Templates**: `templates/` contains agent scaffolding templates. Each
-  template is self-contained with its own `agent.ts` and `client.tsx`.
-  `templates/_shared/` has non-code files common to all templates.
+- **Linting**: Biome for all packages
+- **Exports**: In dev mode, package.json exports point to `.ts` source
+  for seamless workspace resolution. Update to compiled `.js` dist paths
+  before publishing.
+- **Agent API docs**: `packages/aai-cli/templates/_shared/CLAUDE.md` is the
+  agent API reference installed into user projects. When modifying the agent
+  API surface (`packages/aai/types.ts`), update it to match.
+- **Templates**: `packages/aai-cli/templates/` contains agent scaffolding
+  templates. Each template is self-contained with its own `agent.ts` and
+  `client.tsx`. `_shared/` has non-code files common to all templates.

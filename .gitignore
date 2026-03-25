@@ -3,9 +3,12 @@ dist/
 .aai/
 .env
 .env.*
+!.env.example
 .DS_Store
 .claude
 .tsbuildinfo/
 coverage/
 __pycache__/
 *.pyc
+.turbo
+temp/

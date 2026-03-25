@@ -1,0 +1,27 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "ignoreUnresolved": ["./_jsdom-setup.ts"],
+  "ignoreExportsUsedInFile": true,
+  "exclude": ["exports", "types", "optionalPeerDependencies"],
+  "workspaces": {
+    ".": {
+      "ignore": ["_fail_on_warnings.ts"]
+    },
+    "packages/aai": {
+      "entry": ["**/*.test.ts", "_test-utils.ts"],
+      "includeEntryExports": true
+    },
+    "packages/aai-ui": {
+      "entry": ["**/*.test.{ts,tsx}", "_test-utils.ts"],
+      "includeEntryExports": true
+    },
+    "packages/aai-cli": {
+      "entry": ["**/*.test.ts", "_test-utils.ts"],
+      "ignore": ["templates/**"]
+    },
+    "packages/aai-server": {
+      "entry": ["**/*.test.ts"],
+      "includeEntryExports": true
+    }
+  }
+}
