@@ -33,13 +33,16 @@
   },
   "packageManager": "pnpm@10.29.3",
   "engines": {
-    "node": ">=22.6 <25"
+    "node": ">=24"
   },
   "pnpm": {
     "ignoredBuiltDependencies": [
       "esbuild",
       "isolated-vm",
       "lefthook"
-    ]
+    ],
+    "overrides": {
+      "isolated-vm": "6.0.2"
+    }
   }
 }

@@ -126,7 +126,7 @@ Binary: `aai` — subcommands: init, dev, build, deploy, start, secret, rag, lin
 
 ## Conventions
 
-- **Runtime**: Node
+- **Runtime**: Node 24+
 - **Frameworks**: Preact (client UI), Tailwind CSS v4 (compiled at bundle time)
 - **Testing**: Vitest. Test files co-located: `foo.ts` → `foo_test.ts`
 - **Linting**: Biome. Auto-runs on staged files via lefthook pre-commit hook.
