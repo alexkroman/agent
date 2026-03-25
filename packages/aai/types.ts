@@ -154,7 +154,7 @@ export type ToolDef<
   /** Human-readable description shown to the LLM. */
   description: string;
   /** Zod schema for the tool's parameters. */
-  parameters?: P | undefined;
+  parameters?: P;
   /** Function that executes the tool and returns a result. */
   execute(args: z.infer<P>, ctx: ToolContext<S>): Promise<unknown> | unknown;
 };

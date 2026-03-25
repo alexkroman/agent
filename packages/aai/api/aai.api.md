@@ -120,7 +120,7 @@ export type ToolContext<S = Record<string, unknown>> = {
 // @public
 export type ToolDef<P extends z.ZodObject<z.ZodRawShape> = z.ZodObject<z.ZodRawShape>, S = Record<string, unknown>> = {
     description: string;
-    parameters?: P | undefined;
+    parameters?: P;
     execute(args: z.infer<P>, ctx: ToolContext<S>): Promise<unknown> | unknown;
 };
 
