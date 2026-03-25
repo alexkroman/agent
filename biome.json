@@ -19,7 +19,8 @@
         "noUnusedImports": "error",
         "noUnusedVariables": "error",
         "noUndeclaredDependencies": "error",
-        "useImportExtensions": "error"
+        "useImportExtensions": "error",
+        "noGlobalDirnameFilename": "error"
       },
       "style": {
         "recommended": true,
@@ -48,7 +49,8 @@
         "noSubstr": "error",
         "useTrimStartEnd": "error",
         "useDefaultParameterLast": "error",
-        "useAtIndex": "error"
+        "useAtIndex": "error",
+        "noDoneCallback": "error"
       },
       "suspicious": {
         "recommended": true,
@@ -82,7 +84,8 @@
         "noAccumulatingSpread": "error"
       },
       "security": {
-        "recommended": true
+        "recommended": true,
+        "noSecrets": "error"
       },
       "a11y": {
         "recommended": false
@@ -106,6 +109,9 @@
           },
           "nursery": {
             "noExcessiveLinesPerFile": "off"
+          },
+          "security": {
+            "noSecrets": "off"
           },
           "complexity": {
             "noExcessiveLinesPerFunction": "off"
