@@ -1,13 +1,10 @@
 import { defineConfig } from "vitest/config";
-
-const sharedConfig = {
-  resolve: { conditions: ["source"] },
-  ssr: { resolve: { conditions: ["source"] } },
-} as const;
+import { sharedConfig } from "./vitest.shared.ts";
 
 export default defineConfig({
   ...sharedConfig,
   test: {
+    restoreMocks: true,
     coverage: {
       provider: "v8",
       include: ["packages/*/"],
@@ -46,7 +43,7 @@ export default defineConfig({
         test: {
           name: "aai",
           root: "packages/aai",
-          globals: true,
+          restoreMocks: true,
           include: ["**/*.test.ts"],
         },
       },
@@ -56,6 +53,7 @@ export default defineConfig({
           name: "aai-ui",
           root: "packages/aai-ui",
           globals: true,
+          restoreMocks: true,
           include: ["**/*.test.{ts,tsx}"],
           setupFiles: ["./_jsdom-setup.ts"],
         },
@@ -65,7 +63,7 @@ export default defineConfig({
         test: {
           name: "aai-cli",
           root: "packages/aai-cli",
-          globals: true,
+          restoreMocks: true,
           include: ["**/*.test.ts"],
           exclude: ["pack-build.test.ts", "e2e.test.ts", "node_modules", "dist"],
         },
@@ -75,7 +73,7 @@ export default defineConfig({
         test: {
           name: "aai-server",
           root: "packages/aai-server",
-          globals: true,
+          restoreMocks: true,
           include: ["**/*.test.ts"],
           exclude: ["src/sandbox-integration.test.ts", "node_modules", "dist"],
         },
