@@ -1,0 +1,156 @@
+// Copyright 2025 the AAI authors. MIT license.
+/**
+ * Agent slot lifecycle — lazy-loading, idle eviction, and slot registry.
+ */
+
+import type { AgentMetadata } from "./_schemas.ts";
+import type { BundleStore } from "./bundle-store-tigris.ts";
+import type { KvStore } from "./kv.ts";
+import type { Sandbox, SandboxOptions } from "./sandbox.ts";
+import type { AgentScope } from "./scope-token.ts";
+import type { ServerVectorStore } from "./vector.ts";
+
+// ── Agent slot lifecycle ─────────────────────────────────────────────────
+
+let IDLE_MS = 5 * 60 * 1000;
+
+/** @internal Indirection for testability — avoids circular import at call time. */
+export const _deps = {
+  createSandbox: async (opts: SandboxOptions): Promise<Sandbox> => {
+    // Lazy import to break the circular dependency between sandbox.ts ↔ sandbox-slots.ts
+    const { createSandbox } = await import("./sandbox.ts");
+    return createSandbox(opts);
+  },
+};
+
+export type AgentSlot = {
+  slug: string;
+  keyHash: string;
+  sandbox?: Sandbox;
+  initializing?: Promise<Sandbox>;
+  idleTimer?: ReturnType<typeof setTimeout>;
+};
+
+type EnsureOpts = {
+  getWorkerCode: (slug: string) => Promise<string | null>;
+  kvCtx: { kvStore: KvStore; scope: AgentScope };
+  vectorCtx?: { vectorStore: ServerVectorStore; scope: AgentScope } | undefined;
+  /** Platform API key (e.g. AssemblyAI) — host-only, never enters the isolate. */
+  getApiKey: () => Promise<string>;
+  /** Agent-defined secrets — forwarded to the isolate. */
+  getAgentEnv: () => Promise<Record<string, string>>;
+};
+
+async function spawnAgent(slot: AgentSlot, opts: EnsureOpts): Promise<void> {
+  const { slug } = slot;
+  console.info("Loading agent sandbox", { slug });
+
+  const code = await opts.getWorkerCode(slug);
+  if (!code) throw new Error(`Worker code not found for ${slug}`);
+
+  const [apiKey, agentEnv] = await Promise.all([opts.getApiKey(), opts.getAgentEnv()]);
+  slot.sandbox = await _deps.createSandbox({
+    workerCode: code,
+    apiKey,
+    agentEnv,
+    kvStore: opts.kvCtx.kvStore,
+    scope: opts.kvCtx.scope,
+    vectorStore: opts.vectorCtx?.vectorStore,
+  });
+}
+
+function resetIdleTimer(slot: AgentSlot): void {
+  if (slot.idleTimer) clearTimeout(slot.idleTimer);
+  slot.idleTimer = setTimeout(() => {
+    if (!slot.sandbox) return;
+    console.info("Evicting idle sandbox", { slug: slot.slug });
+    slot.sandbox.terminate();
+    delete slot.sandbox;
+    delete slot.idleTimer;
+  }, IDLE_MS);
+}
+
+export function ensureAgent(slot: AgentSlot, opts: EnsureOpts): Promise<Sandbox> {
+  const t0 = performance.now();
+
+  if (slot.sandbox) {
+    resetIdleTimer(slot);
+    return Promise.resolve(slot.sandbox);
+  }
+  if (slot.initializing) return slot.initializing;
+
+  slot.initializing = spawnAgent(slot, opts)
+    .then(() => {
+      delete slot.initializing;
+      resetIdleTimer(slot);
+      console.info("Agent sandbox ready", {
+        slug: slot.slug,
+        durationMs: Math.round(performance.now() - t0),
+      });
+      // biome-ignore lint/style/noNonNullAssertion: sandbox is set by spawnAgent above
+      return slot.sandbox!;
+    })
+    .catch((err) => {
+      delete slot.initializing;
+      throw err;
+    });
+
+  return slot.initializing;
+}
+
+export function registerSlot(slots: Map<string, AgentSlot>, metadata: AgentMetadata): void {
+  slots.set(metadata.slug, {
+    slug: metadata.slug,
+    keyHash: metadata.credential_hashes[0] ?? "",
+  });
+}
+
+export async function resolveSandbox(
+  slug: string,
+  opts: {
+    slots: Map<string, AgentSlot>;
+    store: BundleStore;
+    kvStore: KvStore;
+    vectorStore?: ServerVectorStore | undefined;
+  },
+): Promise<Sandbox | null> {
+  let slot = opts.slots.get(slug);
+
+  if (!slot) {
+    const manifest = await opts.store.getManifest(slug);
+    if (!manifest) return null;
+    registerSlot(opts.slots, manifest);
+    // biome-ignore lint/style/noNonNullAssertion: just registered above
+    slot = opts.slots.get(slug)!;
+    console.info("Lazy-discovered agent from store", { slug });
+  }
+
+  const scope = { keyHash: slot.keyHash, slug };
+
+  return await ensureAgent(slot, {
+    getWorkerCode: (s: string) => opts.store.getWorkerCode(s),
+    kvCtx: { kvStore: opts.kvStore, scope },
+    vectorCtx: opts.vectorStore ? { vectorStore: opts.vectorStore, scope } : undefined,
+    getApiKey: async () => {
+      const env = await opts.store.getEnv(slug);
+      return env?.ASSEMBLYAI_API_KEY ?? "";
+    },
+    getAgentEnv: async () => {
+      const env = await opts.store.getEnv(slug);
+      if (!env) return {};
+      // Only forward agent-defined secrets; platform keys stay host-side
+      const { ASSEMBLYAI_API_KEY: _, ...agentEnv } = env;
+      return agentEnv;
+    },
+  });
+}
+
+/** @internal Exposed for tests. */
+export const _slotInternals = {
+  get IDLE_MS() {
+    return IDLE_MS;
+  },
+  set IDLE_MS(ms: number) {
+    IDLE_MS = ms;
+  },
+};

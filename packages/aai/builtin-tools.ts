@@ -10,7 +10,10 @@ import { convert } from "html-to-text";
 import { z } from "zod";
 import { EMPTY_PARAMS, type ToolSchema } from "./_internal-types.ts";
 import { errorMessage } from "./_utils.ts";
-import { type ToolDef, tool } from "./types.ts";
+import { memoryTools } from "./memory-tools.ts";
+import type { ToolDef } from "./types.ts";
+
+export { memoryTools } from "./memory-tools.ts";
 
 /** Per-fetch timeout for network tools — tighter than the overall tool timeout. */
 const FETCH_TIMEOUT_MS = 15_000;
@@ -357,75 +360,4 @@ export function getBuiltinToolSchemas(names: readonly string[]): ToolSchema[] {
       parameters: z.toJSONSchema(def.parameters ?? EMPTY_PARAMS) as ToolSchema["parameters"],
     })),
   );
-}
-
-// ─── Memory tools ──────────────────────────────────────────────────────────
-
-/**
- * Returns a standard set of KV-backed memory tools: `save_memory`,
- * `recall_memory`, `list_memories`, and `forget_memory`.
- *
- * Spread the result into your agent's `tools` record.
- *
- * @example
- * ```ts
- * import { defineAgent, memoryTools } from "aai";
- *
- * export default defineAgent({
- *   name: "My Agent",
- *   tools: { ...memoryTools() },
- * });
- * ```
- */
-export function memoryTools() {
-  return {
-    save_memory: tool({
-      description:
-        "Save a piece of information to persistent memory. Use a descriptive key like 'user:name' or 'project:status'.",
-      parameters: z.object({
-        key: z
-          .string()
-          .describe("A descriptive key for this memory (e.g. 'user:name', 'preference:color')"),
-        value: z.string().describe("The information to remember"),
-      }),
-      execute: async ({ key, value }, ctx) => {
-        await ctx.kv.set(key, value);
-        return { saved: key };
-      },
-    }),
-    recall_memory: tool({
-      description: "Retrieve a previously saved memory by its key.",
-      parameters: z.object({
-        key: z.string().describe("The key to look up"),
-      }),
-      execute: async ({ key }, ctx) => {
-        const value = await ctx.kv.get(key);
-        if (value === null) return { found: false, key };
-        return { found: true, key, value };
-      },
-    }),
-    list_memories: tool({
-      description: "List all saved memory keys, optionally filtered by a prefix (e.g. 'user:').",
-      parameters: z.object({
-        prefix: z
-          .string()
-          .describe("Prefix to filter keys (e.g. 'user:'). Use empty string for all.")
-          .optional(),
-      }),
-      execute: async ({ prefix }, ctx) => {
-        const entries = await ctx.kv.list(prefix ?? "");
-        return { count: entries.length, keys: entries.map((e) => e.key) };
-      },
-    }),
-    forget_memory: tool({
-      description: "Delete a previously saved memory by its key.",
-      parameters: z.object({
-        key: z.string().describe("The key to delete"),
-      }),
-      execute: async ({ key }, ctx) => {
-        await ctx.kv.delete(key);
-        return { deleted: key };
-      },
-    }),
-  };
 }

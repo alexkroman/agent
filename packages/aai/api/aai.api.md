@@ -4,7 +4,7 @@
 
 ```ts
 
-import { z } from 'zod';
+import type { z } from 'zod';
 
 // @public
 export type AgentDef = {
