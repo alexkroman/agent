@@ -162,6 +162,8 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
       })
       .catch((err: unknown) => {
         log.error("Session start failed", { ...ctx, sid, error: errorMessage(err) });
+        sessions.delete(sessionId);
+        session = null;
       });
   }
 

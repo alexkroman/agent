@@ -194,7 +194,13 @@ const BLOCKED_GLOBALS = [
  * These patterns catch the most common escape routes while still allowing
  * normal `.constructor` property access for type checking.
  */
-const CONSTRUCTOR_ESCAPE_RE = /\.constructor\s*\(|\.constructor\s*\[|__proto__|getPrototypeOf\s*\(/;
+const CONSTRUCTOR_ESCAPE_RE =
+  /\.constructor\s*\(|\.constructor\s*\[|__proto__|getPrototypeOf\s*\(|arguments\s*\.\s*callee/;
+
+/** Strip JS single-line and multi-line comments so they can't hide blocked patterns. */
+function stripComments(code: string): string {
+  return code.replace(/\/\/[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
+}
 
 function createRunCode(): ToolDef<typeof runCodeParams> {
   return {
@@ -207,7 +213,7 @@ function createRunCode(): ToolDef<typeof runCodeParams> {
       // Block constructor chain escapes that bypass global shadowing.
       // Patterns like `"".constructor.constructor("return process")()` can
       // reach Function/AsyncFunction and create code in the real global scope.
-      if (CONSTRUCTOR_ESCAPE_RE.test(code)) {
+      if (CONSTRUCTOR_ESCAPE_RE.test(stripComments(code))) {
         return {
           error:
             "Code contains blocked patterns (constructor invocation or prototype access). " +

@@ -139,6 +139,9 @@ export function createServer(options: ServerOptions): AgentServer {
       serverHandle = {
         async shutdown() {
           await new Promise<void>((resolve, reject) => {
+            wss.close((err) => (err ? reject(err) : resolve()));
+          });
+          await new Promise<void>((resolve, reject) => {
             nodeServer.close((err) => (err ? reject(err) : resolve()));
           });
         },

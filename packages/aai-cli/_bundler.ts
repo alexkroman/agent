@@ -32,6 +32,24 @@ export type BundleOutput = {
   workerBytes: number;
 };
 
+/** File extensions that are safe to read as UTF-8 text. */
+const TEXT_EXTENSIONS = new Set([
+  ".html",
+  ".htm",
+  ".css",
+  ".js",
+  ".mjs",
+  ".cjs",
+  ".ts",
+  ".mts",
+  ".json",
+  ".map",
+  ".svg",
+  ".xml",
+  ".txt",
+  ".md",
+]);
+
 /** Read all files in a directory as a map of relative paths to contents. */
 async function readDirFiles(dir: string): Promise<Record<string, string>> {
   let entries: import("node:fs").Dirent[];
@@ -49,7 +67,15 @@ async function readDirFiles(dir: string): Promise<Record<string, string>> {
       .filter((e) => e.isFile())
       .map(async (e) => {
         const full = path.join(e.parentPath, e.name);
-        files[path.relative(dir, full)] = await fs.readFile(full, "utf-8");
+        const ext = path.extname(e.name).toLowerCase();
+        const rel = path.relative(dir, full);
+        if (TEXT_EXTENSIONS.has(ext)) {
+          files[rel] = await fs.readFile(full, "utf-8");
+        } else {
+          // Binary files are base64-encoded to preserve data through JSON transport
+          const buf = await fs.readFile(full);
+          files[rel] = `base64:${buf.toString("base64")}`;
+        }
       }),
   );
   return files;
