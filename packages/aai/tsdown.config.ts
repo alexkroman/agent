@@ -16,6 +16,7 @@ export default defineConfig({
     "direct-executor.ts",
     "builtin-tools.ts",
     "_internal-types.ts",
+    "telemetry.ts",
     "_mock-ws.ts",
     "_utils.ts",
   ],

@@ -124,11 +124,11 @@ export type SessionErrorCode = z.infer<typeof SessionErrorCodeSchema>;
 // @public
 export const SessionErrorCodeSchema: z.ZodEnum<{
     tool: "tool";
-    connection: "connection";
     stt: "stt";
     llm: "llm";
     tts: "tts";
     protocol: "protocol";
+    connection: "connection";
     audio: "audio";
     internal: "internal";
 }>;

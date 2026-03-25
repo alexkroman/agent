@@ -473,6 +473,54 @@ Add packages to `package.json` dependencies:
 npm install some-package
 ```
 
+### Telemetry (OpenTelemetry)
+
+The SDK automatically emits OpenTelemetry traces and metrics for the
+STT→LLM→TTS pipeline. To collect them, install an OTel SDK and
+configure it **before** importing aai:
+
+```ts
+// instrument.ts — import first in your entry point
+import { NodeSDK } from "@opentelemetry/sdk-node";
+import { PrometheusExporter } from "@opentelemetry/exporter-prometheus";
+
+new NodeSDK({
+  metricReader: new PrometheusExporter({ port: 9091 }),
+}).start();
+```
+
+Pre-built metrics (all prefixed `aai.`):
+
+- `aai.session.count` / `aai.session.active` — session lifecycle
+- `aai.turn.count` / `aai.turn.bargein.count` — user turns
+- `aai.tool.call.count` / `aai.tool.call.duration` — tool execution
+- `aai.tool.call.error.count` — tool errors
+- `aai.s2s.connection.duration` / `aai.s2s.error.count` — S2S health
+
+Trace spans: `ws.session`, `s2s.connection`, `tool.call` (with tool
+name, call ID, agent, and session ID attributes).
+
+For custom metrics or spans in your agent code:
+
+```ts
+import { meter, tracer } from "aai/telemetry";
+
+const myCounter = meter.createCounter("my_agent.custom_event");
+
+// In a tool:
+execute: (args, ctx) => {
+  myCounter.add(1, { tool: "my_tool" });
+  return tracer.startActiveSpan("my_tool.work", (span) => {
+    // ... do work ...
+    span.end();
+    return result;
+  });
+},
+```
+
+When no OTel SDK is configured, all calls are no-ops with zero
+overhead.
+
 ## Custom UI (`client.tsx`)
 
 Add `client.tsx` alongside `agent.ts`. Define a Preact component and call

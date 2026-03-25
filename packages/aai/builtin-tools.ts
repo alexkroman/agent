@@ -299,6 +299,9 @@ try {
     return { error: errorMessage(err) };
   } finally {
     runtime.dispose();
+    // Allow the isolate's internal promises to settle after disposal
+    // to prevent "Isolate is disposed" unhandled rejections.
+    await new Promise((r) => setTimeout(r, 0));
   }
 }
 

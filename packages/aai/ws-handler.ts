@@ -11,6 +11,7 @@ import { ClientMessageSchema } from "./protocol.ts";
 import type { Logger } from "./runtime.ts";
 import { consoleLogger } from "./runtime.ts";
 import type { Session } from "./session.ts";
+import { tracer } from "./telemetry.ts";
 
 /**
  * Minimal WebSocket interface accepted by {@link wireSessionSocket}.
@@ -144,10 +145,14 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
   const ctx = opts.logContext ?? {};
 
   let session: Session | null = null;
+  const sessionSpan = tracer.startSpan("ws.session", {
+    attributes: { "aai.session.id": sessionId },
+  });
 
   function onOpen(): void {
     opts.onOpen?.();
     log.info("Session connected", { ...ctx, sid });
+    sessionSpan.addEvent("ws.open");
 
     const client = createClientSink(ws);
     session = opts.createSession(sessionId, client);
@@ -160,9 +165,11 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
       .start()
       .then(() => {
         log.info("Session ready", { ...ctx, sid });
+        sessionSpan.addEvent("session.ready");
       })
       .catch((err: unknown) => {
         log.error("Session start failed", { ...ctx, sid, error: errorMessage(err) });
+        sessionSpan.setStatus({ code: 2, message: errorMessage(err) });
         sessions.delete(sessionId);
         session = null;
       });
@@ -185,6 +192,8 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
 
   ws.addEventListener("close", () => {
     log.info("Session disconnected", { ...ctx, sid });
+    sessionSpan.addEvent("ws.close");
+    sessionSpan.end();
     if (session) {
       void session.stop().finally(() => {
         sessions.delete(sessionId);
@@ -196,5 +205,6 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
   ws.addEventListener("error", (ev) => {
     const msg = typeof ev.message === "string" ? ev.message : "WebSocket error";
     log.error("WebSocket error", { ...ctx, sid, error: msg });
+    sessionSpan.recordException(new Error(msg));
   });
 }

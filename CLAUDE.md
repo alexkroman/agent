@@ -70,6 +70,7 @@ Internal (exported in package.json but not part of public API):
 - `./protocol` — wire-format types, Zod schemas, constants
 - `./internal-types` — `AgentConfig`, `ToolSchema`, `DeployBody`
 - `./worker-entry` — tool execution logic
+- `./telemetry` — OpenTelemetry tracer, meter, pre-built metrics, `withSpan` helper
 - `./utils` — shared utility functions
 
 Non-exported internal files (used within the package only):
@@ -238,6 +239,47 @@ a denylist.
 - `_net.test.ts` — SSRF bypass prevention (IPv4-mapped IPv6, cloud metadata,
   `.internal` domains).
 - `scope-token.test.ts` — token expiration enforcement.
+
+### Observability: OpenTelemetry
+
+Unified traces + metrics + logs via OpenTelemetry, replacing the former
+prom-client setup.
+
+**SDK layer (`packages/aai/telemetry.ts`):**
+
+Uses `@opentelemetry/api` only — consumers bring their own SDK and exporters.
+When no SDK is configured, the API returns no-op instances (zero overhead).
+
+Pre-built metrics (`aai.*`):
+
+- `aai.session.count` / `aai.session.active` — session lifecycle
+- `aai.turn.count` / `aai.turn.bargein.count` — user turns
+- `aai.tool.call.count` / `aai.tool.call.duration` — tool execution
+- `aai.tool.call.error.count` — tool errors
+- `aai.s2s.connection.duration` / `aai.s2s.error.count` — S2S health
+
+Trace spans:
+
+- `ws.session` — WebSocket session lifecycle (ws-handler.ts)
+- `s2s.connection` — S2S WebSocket connection (s2s.ts)
+- `tool.call` — tool call with name, call_id, agent, session ID
+
+**Platform layer (`packages/aai-server/src/metrics.ts`):**
+
+Configures `MeterProvider` with `PrometheusExporter` and registers it as the
+global meter provider. SDK-level meters automatically flow through.
+`GET /:slug/metrics` endpoint still serves Prometheus text format, filtered
+by agent label.
+
+**Instrumenting a self-hosted server:**
+
+Install `@opentelemetry/sdk-node` and configure before importing AAI:
+
+```ts
+import { NodeSDK } from "@opentelemetry/sdk-node";
+new NodeSDK({ /* exporters */ }).start();
+// then import and use createServer()
+```
 
 ### Known Limitations
 
