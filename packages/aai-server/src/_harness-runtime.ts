@@ -13,11 +13,8 @@
  */
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-// biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
 import type { Kv } from "@alexkroman1/aai/kv";
-// biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
 import type { AgentDef, HookContext, Middleware, ToolContext } from "@alexkroman1/aai/types";
-// biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
 import type { VectorStore } from "@alexkroman1/aai/vector";
 import type {
   HookRequest,
@@ -204,7 +201,6 @@ async function runMiddlewareBeforeTurn(
     const r = await mw.beforeTurn(text, ctx);
     if (r && "block" in r && r.block) return r.reason;
   }
-  return undefined;
 }
 
 async function runMiddlewareAfterTurn(
@@ -234,7 +230,6 @@ async function runMiddlewareToolIntercept(
     if ("args" in r) currentArgs = r.args;
   }
   if (currentArgs !== args) return { type: "args", args: currentArgs };
-  return undefined;
 }
 
 async function runMiddlewareAfterToolCall(
