@@ -74,14 +74,16 @@ describe("pack + build: dev and user workflows", () => {
   test.each(templates)("template %s", (template) => {
     const projectDir = path.join(tmpDir, template);
 
-    // Dev workflow: init -> link -> build
+    // Dev workflow: init -> link -> test -> build
     aai(["init", projectDir, "-t", template, "--skip-api", "--skip-deploy"], tmpDir);
     aai(["link"], projectDir);
-    aai(["build"], projectDir);
+    aai(["test"], projectDir);
+    aai(["build", "--skip-tests"], projectDir);
 
-    // User workflow: unlink -> install tarballs -> build
+    // User workflow: unlink -> install tarballs -> test -> build
     aai(["unlink"], projectDir);
     installFromTarballs(projectDir);
-    aai(["build"], projectDir);
+    aai(["test"], projectDir);
+    aai(["build", "--skip-tests"], projectDir);
   });
 });

@@ -27,9 +27,14 @@
       "import": "./dist/vector.js"
     },
     "./testing": {
-      "source": "./_mock-ws.ts",
-      "types": "./dist/_mock-ws.d.ts",
-      "import": "./dist/_mock-ws.js"
+      "source": "./testing.ts",
+      "types": "./dist/testing.d.ts",
+      "import": "./dist/testing.js"
+    },
+    "./testing/matchers": {
+      "source": "./matchers.ts",
+      "types": "./dist/matchers.d.ts",
+      "import": "./dist/matchers.js"
     },
     "./server": {
       "source": "./server.ts",
@@ -99,6 +104,7 @@
   },
   "peerDependencies": {
     "@hono/node-server": "^1.19.11",
+    "vitest": "^4.1.1",
     "hono": "^4.12.9"
   },
   "peerDependenciesMeta": {
@@ -106,6 +112,9 @@
       "optional": true
     },
     "hono": {
+      "optional": true
+    },
+    "vitest": {
       "optional": true
     }
   },

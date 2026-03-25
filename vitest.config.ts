@@ -48,6 +48,7 @@ export default defineConfig({
           root: "packages/aai",
           globals: true,
           include: ["**/*.test.ts"],
+          setupFiles: ["./matchers.ts"],
         },
       },
       {

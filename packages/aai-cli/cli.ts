@@ -63,14 +63,28 @@ const dev = defineCommand({
   },
 });
 
+const test = defineCommand({
+  meta: { name: "test", description: "Run agent tests" },
+  async run() {
+    const cwd = resolveCwd();
+    const { runTestCommand } = await import("./test.ts");
+    await runTestCommand(cwd);
+  },
+});
+
 const build = defineCommand({
   meta: { name: "build", description: "Bundle and validate (no server or deploy)" },
   args: {
     yes: { type: "boolean", alias: "y", description: "Accept defaults (no prompts)" },
+    skipTests: { type: "boolean", description: "Skip running tests before build" },
   },
   async run({ args }) {
     const cwd = resolveCwd();
     await ensureAgent(cwd, args.yes);
+    if (!args.skipTests) {
+      const { runVitest } = await import("./test.ts");
+      runVitest(cwd);
+    }
     const { runBuildCommand } = await import("./_build.ts");
     await runBuildCommand(cwd);
   },
@@ -192,7 +206,7 @@ const unlink = defineCommand({
 
 export const mainCommand = defineCommand({
   meta: { name: "aai", version: VERSION, description: "Voice agent development kit" },
-  subCommands: { init, dev, build, deploy, start, secret, rag, link, unlink },
+  subCommands: { init, dev, test, build, deploy, start, secret, rag, link, unlink },
 });
 
 if (process.env.VITEST !== "true") {

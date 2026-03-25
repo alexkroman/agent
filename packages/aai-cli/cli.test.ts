@@ -10,6 +10,7 @@ describe("cli", () => {
     for (const cmd of [
       "init",
       "dev",
+      "test",
       "build",
       "deploy",
       "start",
