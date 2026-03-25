@@ -129,10 +129,17 @@ async function startIsolate(
     },
   });
 
-  runtime.exec(
-    'import agent from "/app/agent_bundle.js";\nimport { startHarness } from "/app/_harness-runtime.js";\nstartHarness(agent);',
-    { cwd: "/app" },
-  );
+  // The exec promise lives as long as the isolate's HTTP server. When the
+  // runtime is disposed, this promise rejects with "Isolate is disposed".
+  // We swallow that expected rejection to prevent unhandled promise warnings.
+  runtime
+    .exec(
+      'import agent from "/app/agent_bundle.js";\nimport { startHarness } from "/app/_harness-runtime.js";\nstartHarness(agent);',
+      { cwd: "/app" },
+    )
+    .catch(() => {
+      // Expected on dispose — isolate's in-flight promises are cancelled.
+    });
 
   const port = await portPromise;
   return { port, runtime };

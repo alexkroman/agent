@@ -212,9 +212,6 @@ describe("isolate protocol", () => {
 
   afterAll(async () => {
     cleanup?.();
-    // Allow isolate's internal promises to settle after disposal
-    // to prevent "Isolate is disposed" unhandled rejections.
-    await new Promise((r) => setTimeout(r, 50));
   });
 
   test("GET /config returns valid IsolateConfig", async () => {
@@ -369,9 +366,8 @@ describe("WebSocket session lifecycle", () => {
     });
   });
 
-  afterAll(async () => {
+  afterAll(() => {
     sandbox?.terminate();
-    await new Promise((r) => setTimeout(r, 50));
   });
 
   test("startSession sends config message on open", async () => {
@@ -460,10 +456,9 @@ export default {
     };
   });
 
-  afterAll(async () => {
+  afterAll(() => {
     cleanup1?.();
     cleanup2?.();
-    await new Promise((r) => setTimeout(r, 50));
   });
 
   test("two isolates run independently", async () => {
@@ -559,9 +554,5 @@ describe("redeploy replaces sandbox", () => {
     expect(sandbox2).toBeTruthy();
 
     sandbox2.terminate();
-
-    // Allow isolate internal promises to settle after disposal
-    // to prevent "Isolate is disposed" unhandled rejections.
-    await new Promise((r) => setTimeout(r, 100));
   });
 });
