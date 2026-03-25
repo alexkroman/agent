@@ -12,6 +12,19 @@ import type {
   ToolCallInterceptResult,
 } from "./types.ts";
 
+/** Run middleware in reverse array order, skipping entries without the given hook. */
+async function reverseMiddleware(
+  middleware: readonly Middleware[],
+  key: keyof Middleware,
+  fn: (mw: Middleware) => Promise<void>,
+): Promise<void> {
+  for (let i = middleware.length - 1; i >= 0; i--) {
+    const mw = middleware[i];
+    if (!mw?.[key]) continue;
+    await fn(mw);
+  }
+}
+
 /** Result from a middleware tool call interceptor. */
 export type ToolInterceptResult =
   | { type: "block"; reason: string }
@@ -75,11 +88,11 @@ export async function runAfterTurnMiddleware(
   text: string,
   ctx: HookContext,
 ): Promise<void> {
-  for (let i = middleware.length - 1; i >= 0; i--) {
-    const mw = middleware[i];
-    if (!mw?.afterTurn) continue;
-    await mw.afterTurn(text, ctx);
-  }
+  await reverseMiddleware(
+    middleware,
+    "afterTurn",
+    (mw) => mw.afterTurn?.(text, ctx) as Promise<void>,
+  );
 }
 
 /**
@@ -133,11 +146,11 @@ export async function runAfterToolCallMiddleware(
   result: string,
   ctx: HookContext,
 ): Promise<void> {
-  for (let i = middleware.length - 1; i >= 0; i--) {
-    const mw = middleware[i];
-    if (!mw?.afterToolCall) continue;
-    await mw.afterToolCall(toolName, args, result, ctx);
-  }
+  await reverseMiddleware(
+    middleware,
+    "afterToolCall",
+    (mw) => mw.afterToolCall?.(toolName, args, result, ctx) as Promise<void>,
+  );
 }
 
 /**

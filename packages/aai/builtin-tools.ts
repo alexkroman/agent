@@ -198,26 +198,13 @@ function createRunCode(): ToolDef<typeof runCodeParams> {
 /** Lazily import secure-exec to avoid top-level side effects. */
 let _secureExec: typeof import("secure-exec") | undefined;
 async function getSecureExec() {
-  // biome-ignore lint/correctness/noUnresolvedImports: secure-exec is an optional peer dependency
   if (!_secureExec) _secureExec = await import("secure-exec");
   return _secureExec;
 }
 
-/**
- * Exported for testing — execute user code in a fresh secure-exec V8 isolate.
- */
-export async function executeInIsolate(code: string): Promise<string | { error: string }> {
-  const {
-    createInMemoryFileSystem,
-    createNodeDriver,
-    createNodeRuntimeDriverFactory,
-    NodeRuntime,
-  } = await getSecureExec();
-
-  // The user code is stored as a separate file and loaded at runtime via
-  // readFileSync + AsyncFunction so that syntax errors are caught by try/catch
-  // rather than causing a silent module-parse failure.
-  const harnessCode = `
+// The harness loads user code via readFileSync + AsyncFunction so that syntax
+// errors are caught by try/catch rather than causing a silent module-parse failure.
+const RUN_CODE_HARNESS = `
 import { readFileSync } from "node:fs";
 
 const __output = [];
@@ -238,8 +225,36 @@ try {
 }
 `;
 
+const READ_ONLY_FS_OPS = new Set(["read", "stat", "readdir", "exists"]);
+
+/** Parse stdout from the run_code harness into a result or error. */
+function parseIsolateOutput(stdout: string, stderr: string): string | { error: string } {
+  if (!stdout) {
+    if (stderr) return { error: stderr.trim() };
+    return { error: "Code execution timed out" };
+  }
+  try {
+    const parsed = JSON.parse(stdout) as { ok: boolean; result?: string; error?: string };
+    if (parsed.ok) return parsed.result ?? "Code ran successfully (no output)";
+    return { error: parsed.error ?? "Unknown error" };
+  } catch {
+    return stdout.trim() || "Code ran successfully (no output)";
+  }
+}
+
+/**
+ * Exported for testing — execute user code in a fresh secure-exec V8 isolate.
+ */
+export async function executeInIsolate(code: string): Promise<string | { error: string }> {
+  const {
+    createInMemoryFileSystem,
+    createNodeDriver,
+    createNodeRuntimeDriverFactory,
+    NodeRuntime,
+  } = await getSecureExec();
+
   const fs = createInMemoryFileSystem();
-  await fs.writeFile("/app/harness.js", harnessCode);
+  await fs.writeFile("/app/harness.js", RUN_CODE_HARNESS);
   await fs.writeFile("/app/user-code.js", code);
 
   let stdout = "";
@@ -251,7 +266,7 @@ try {
       filesystem: fs,
       permissions: {
         fs: (req) =>
-          req.op === "read" || req.op === "stat" || req.op === "readdir" || req.op === "exists"
+          READ_ONLY_FS_OPS.has(req.op)
             ? { allow: true }
             : { allow: false, reason: "Filesystem is read-only" },
         network: () => ({ allow: false, reason: "Network access is disabled in run_code" }),
@@ -275,26 +290,13 @@ try {
   try {
     runtime.exec('import "/app/harness.js";', { cwd: "/app" });
 
-    // Poll for output or process exit with a timeout.
     const deadline = Date.now() + RUN_CODE_TIMEOUT;
     while (Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, 50));
       if (stdout || finished) break;
     }
 
-    // If the isolate exited without stdout (e.g. syntax error), check stderr.
-    if (!stdout) {
-      if (stderr) return { error: stderr.trim() };
-      return { error: "Code execution timed out" };
-    }
-
-    try {
-      const parsed = JSON.parse(stdout) as { ok: boolean; result?: string; error?: string };
-      if (parsed.ok) return parsed.result ?? "Code ran successfully (no output)";
-      return { error: parsed.error ?? "Unknown error" };
-    } catch {
-      return stdout.trim() || "Code ran successfully (no output)";
-    }
+    return parseIsolateOutput(stdout, stderr);
   } catch (err: unknown) {
     return { error: errorMessage(err) };
   } finally {

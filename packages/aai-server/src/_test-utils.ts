@@ -10,12 +10,30 @@ import type { AgentSlot } from "./sandbox.ts";
 import { importScopeKey, type ScopeKey } from "./scope-token.ts";
 import type { ServerVectorStore } from "./vector.ts";
 
-function scopedKey(ns: string, scope: { keyHash: string; slug: string }, key: string): string {
+type Scope = { keyHash: string; slug: string };
+
+function scopedKey(ns: string, scope: Scope, key: string): string {
   return `${ns}:${scope.keyHash}:${scope.slug}:${key}`;
 }
 
-function scopePrefix(ns: string, scope: { keyHash: string; slug: string }): string {
+function scopePrefix(ns: string, scope: Scope): string {
   return `${ns}:${scope.keyHash}:${scope.slug}:`;
+}
+
+/** Iterate a Map, yielding [userKey, value] for entries matching the scoped prefix. */
+function* entriesWithPrefix<V>(
+  store: Map<string, V>,
+  ns: string,
+  scope: Scope,
+  userPrefix = "",
+): Generator<[string, V]> {
+  const prefix = `${scopePrefix(ns, scope)}${userPrefix}`;
+  const stripLen = scopePrefix(ns, scope).length;
+  for (const [key, value] of store) {
+    if (key.startsWith(prefix)) {
+      yield [key.slice(stripLen), value];
+    }
+  }
 }
 
 export const VALID_ENV = {
@@ -167,13 +185,7 @@ export function createTestKvStore(): KvStore {
       return Promise.resolve();
     },
     keys(scope, pattern) {
-      const prefix = scopePrefix("kv", scope);
-      const results: string[] = [];
-      for (const key of store.keys()) {
-        if (key.startsWith(prefix)) {
-          results.push(key.slice(prefix.length));
-        }
-      }
+      const results = [...entriesWithPrefix(store, "kv", scope)].map(([k]) => k);
       if (pattern) {
         const regex = new RegExp(`^${pattern.replace(/\*/g, ".*").replace(/\?/g, ".")}$`);
         return Promise.resolve(results.filter((k) => regex.test(k)));
@@ -181,17 +193,12 @@ export function createTestKvStore(): KvStore {
       return Promise.resolve(results);
     },
     list(scope, userPrefix, options) {
-      const prefix = scopePrefix("kv", scope);
-      const fullPrefix = `${prefix}${userPrefix}`;
       const entries: { key: string; value: unknown }[] = [];
-      for (const [key, value] of store) {
-        if (key.startsWith(fullPrefix)) {
-          const userKey = key.slice(prefix.length);
-          try {
-            entries.push({ key: userKey, value: JSON.parse(value) });
-          } catch {
-            entries.push({ key: userKey, value });
-          }
+      for (const [key, value] of entriesWithPrefix(store, "kv", scope, userPrefix)) {
+        try {
+          entries.push({ key, value: JSON.parse(value) });
+        } catch {
+          entries.push({ key, value });
         }
       }
       return Promise.resolve(sortAndPaginate(entries, options));
@@ -208,7 +215,6 @@ export function createTestVectorStore(): ServerVectorStore {
       return Promise.resolve();
     },
     query(scope, text, topK = 10, _filter?) {
-      const prefix = scopePrefix("vec", scope);
       const query = text.toLowerCase();
       const results: {
         id: string;
@@ -217,9 +223,7 @@ export function createTestVectorStore(): ServerVectorStore {
         metadata?: Record<string, unknown> | undefined;
       }[] = [];
 
-      for (const [key, entry] of store) {
-        if (!key.startsWith(prefix)) continue;
-        const id = key.slice(prefix.length);
+      for (const [id, entry] of entriesWithPrefix(store, "vec", scope)) {
         const data = entry.data.toLowerCase();
         const words = query.split(/\s+/).filter(Boolean);
         const matches = words.filter((w) => data.includes(w)).length;
