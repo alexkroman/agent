@@ -5,4 +5,4 @@
 export const sharedConfig = {
   resolve: { conditions: ["source"] },
   ssr: { resolve: { conditions: ["source"] } },
-} as const;
+};
