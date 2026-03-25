@@ -27,9 +27,9 @@
       "import": "./dist/vector.js"
     },
     "./testing": {
-      "source": "./_mock-ws.ts",
-      "types": "./dist/_mock-ws.d.ts",
-      "import": "./dist/_mock-ws.js"
+      "source": "./testing.ts",
+      "types": "./dist/testing.d.ts",
+      "import": "./dist/testing.js"
     },
     "./server": {
       "source": "./server.ts",

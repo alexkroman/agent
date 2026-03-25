@@ -3,6 +3,7 @@
   "scripts": {
     "dev": "aai dev",
     "build": "aai deploy --dry-run",
+    "test": "vitest run",
     "deploy": "aai deploy",
     "lint": "biome check .",
     "lint:fix": "biome check --write ."
@@ -18,6 +19,7 @@
   "devDependencies": {
     "@biomejs/biome": "^2.4.8",
     "@types/node": "^25.5.0",
-    "typescript": "^6.0.2"
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.1"
   }
 }

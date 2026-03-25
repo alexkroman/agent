@@ -42,7 +42,7 @@ Four workspace packages under `packages/`:
 | ------- | -------- | ------- |
 | `packages/aai/` | `@alexkroman1/aai` | Agent SDK: `defineAgent`, `createServer`, types, protocol, S2S orchestration, session, KV, vector store |
 | `packages/aai-ui/` | `@alexkroman1/aai-ui` | Browser client (Preact): session, audio, UI components |
-| `packages/aai-cli/` | `@alexkroman1/aai-cli` | The `aai` CLI: init, dev, build, deploy, start, secret, rag, link |
+| `packages/aai-cli/` | `@alexkroman1/aai-cli` | The `aai` CLI: init, dev, test, build, deploy, start, secret, rag, link |
 | `packages/aai-server/` | `@alexkroman1/aai-server` | Managed platform server (private): sandbox, sidecar, auth, SSRF protection |
 
 **Dependency flow:** `aai-cli`, `aai-ui`, and `aai-server` depend on `aai`
@@ -59,7 +59,7 @@ Public:
 - `./types` — all type definitions
 - `./kv` — KV store interface + in-memory implementation
 - `./vector` — vector store interface + in-memory implementation
-- `./testing` — `MockWebSocket`, `installMockWebSocket`
+- `./testing` — `MockWebSocket`, `installMockWebSocket`, `createTestHarness`, `TestHarness`, `TurnResult`
 
 Internal (exported in package.json but not part of public API):
 
