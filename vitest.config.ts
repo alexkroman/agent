@@ -1,6 +1,12 @@
 import { defineConfig } from "vitest/config";
 
+const sharedConfig = {
+  resolve: { conditions: ["source"] },
+  ssr: { resolve: { conditions: ["source"] } },
+} as const;
+
 export default defineConfig({
+  ...sharedConfig,
   test: {
     coverage: {
       provider: "v8",
@@ -32,6 +38,7 @@ export default defineConfig({
     },
     projects: [
       {
+        ...sharedConfig,
         test: {
           name: "aai",
           root: "packages/aai",
@@ -40,6 +47,7 @@ export default defineConfig({
         },
       },
       {
+        ...sharedConfig,
         test: {
           name: "aai-ui",
           root: "packages/aai-ui",
@@ -49,6 +57,7 @@ export default defineConfig({
         },
       },
       {
+        ...sharedConfig,
         test: {
           name: "aai-cli",
           root: "packages/aai-cli",
@@ -58,6 +67,7 @@ export default defineConfig({
         },
       },
       {
+        ...sharedConfig,
         test: {
           name: "aai-server",
           root: "packages/aai-server",

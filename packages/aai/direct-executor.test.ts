@@ -111,13 +111,13 @@ describe("createDirectExecutor", () => {
 
   test("resolveTurnConfig returns null when no dynamic config", async () => {
     const exec = createDirectExecutor({ agent: makeAgent(), env: {} });
-    expect(await exec.hookInvoker.resolveTurnConfig("s1")).toBe(null);
+    expect(await exec.hookInvoker.resolveTurnConfig("s1", 0)).toBe(null);
   });
 
   test("resolveTurnConfig resolves dynamic maxSteps", async () => {
     const agent = makeAgent({ maxSteps: () => 15 });
     const exec = createDirectExecutor({ agent, env: {} });
-    const config = await exec.hookInvoker.resolveTurnConfig("s1");
+    const config = await exec.hookInvoker.resolveTurnConfig("s1", 0);
     expect(config?.maxSteps).toBe(15);
   });
 });
