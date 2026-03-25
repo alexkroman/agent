@@ -182,26 +182,18 @@ describe("MockWebSocket", () => {
 
 describe("installMockWebSocket", () => {
   test("replaces globalThis.WebSocket and tracks created instances", () => {
-    const mock = installMockWebSocket();
-    try {
-      const ws = new WebSocket("wss://test.com");
-      expect(mock.created).toHaveLength(1);
-      expect(mock.created[0]).toBe(ws);
-    } finally {
-      mock.restore();
-    }
+    using mock = installMockWebSocket();
+    const ws = new WebSocket("wss://test.com");
+    expect(mock.created).toHaveLength(1);
+    expect(mock.created[0]).toBe(ws);
   });
 
   test("lastWs returns the most recently created instance", () => {
-    const mock = installMockWebSocket();
-    try {
-      expect(mock.lastWs).toBeNull();
-      new WebSocket("wss://first.com");
-      const second = new WebSocket("wss://second.com");
-      expect(mock.lastWs).toBe(second);
-    } finally {
-      mock.restore();
-    }
+    using mock = installMockWebSocket();
+    expect(mock.lastWs).toBeNull();
+    new WebSocket("wss://first.com");
+    const second = new WebSocket("wss://second.com");
+    expect(mock.lastWs).toBe(second);
   });
 
   test("restore() restores original WebSocket", () => {
@@ -212,11 +204,12 @@ describe("installMockWebSocket", () => {
     expect(globalThis.WebSocket).toBe(originalWs);
   });
 
-  test("[Symbol.dispose]() restores original WebSocket", () => {
+  test("using declaration restores original WebSocket on scope exit", () => {
     const originalWs = globalThis.WebSocket;
-    const mock = installMockWebSocket();
-    expect(globalThis.WebSocket).not.toBe(originalWs);
-    mock[Symbol.dispose]();
+    {
+      using _mock = installMockWebSocket();
+      expect(globalThis.WebSocket).not.toBe(originalWs);
+    }
     expect(globalThis.WebSocket).toBe(originalWs);
   });
 });
