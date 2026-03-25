@@ -1,4 +1,4 @@
-name: Publish & Deploy
+name: Release
 
 on:
   push:
@@ -57,8 +57,6 @@ jobs:
       - run: turbo build
 
       - run: pnpm publish -r --no-git-checks
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   deploy:
     needs: detect-changes
