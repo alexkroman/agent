@@ -57,7 +57,7 @@ describe("metrics", () => {
     expect(output).toContain("active_sessions_test");
   });
 
-  test("createHistogram observes values", async () => {
+  test("createHistogram observes values with bucket lines", async () => {
     const hist = createHistogram("duration_seconds_test", {
       help: "duration",
       buckets: [0.1, 0.5, 1],
@@ -66,6 +66,36 @@ describe("metrics", () => {
     hist.record(0.3, { agent: "a" });
 
     const output = await serializeForAgent("a");
-    expect(output).toContain("duration_seconds_test");
+    expect(output).toContain("duration_seconds_test_bucket");
+    expect(output).toContain('le="+Inf"');
+    expect(output).toContain("duration_seconds_test_sum");
+    expect(output).toContain("duration_seconds_test_count");
+  });
+
+  test("serialize includes histogram buckets for all agents", async () => {
+    const hist = createHistogram("latency_test", {
+      help: "latency",
+      buckets: [0.5, 1],
+      labelNames: ["agent"],
+    });
+    hist.record(0.7, { agent: "b" });
+
+    const output = await serialize();
+    expect(output).toContain("# TYPE latency_test histogram");
+    expect(output).toContain("latency_test_bucket");
+    expect(output).toContain("latency_test_count");
+    expect(output).toContain("latency_test_sum");
+  });
+
+  test("serialize counter with labels includes label string", async () => {
+    const counter = createCounter("labeled_total", {
+      help: "labeled",
+      labelNames: ["agent", "method"],
+    });
+    counter.add(1, { agent: "x", method: "GET" });
+
+    const output = await serialize();
+    expect(output).toContain('agent="x"');
+    expect(output).toContain('method="GET"');
   });
 });
