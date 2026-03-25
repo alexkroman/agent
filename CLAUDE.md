@@ -105,6 +105,25 @@ Internal:
 1. LLM response text → TTS → audio chunks → WebSocket → browser
 1. Browser plays audio; user can interrupt at any time (cancels in-flight turn)
 
+### Secure-exec Isolate Constraint
+
+`_harness-runtime.ts` runs inside a secure-exec V8 isolate with **no access
+to `node_modules`**. Only `node:*` built-ins and the virtual filesystem
+files (harness JS + agent bundle) are available.
+
+Rules for `_harness-runtime.ts`:
+
+- **Only use `import type`** from workspace packages and npm deps — never
+  runtime imports. Any runtime import (e.g. Zod schemas) will cause the
+  isolate to fail to boot, manifesting as timeout errors in integration tests.
+- The harness entry in `tsdown.config.ts` must **not** use `noExternal` —
+  bundling workspace packages would still leave transitive npm deps (like
+  `zod`) external and unresolvable in the isolate.
+- Host-side validation (in `sandbox.ts`) is sufficient. The isolate trusts
+  the host since they run in the same server process.
+- `_harness-protocol.ts` is dual-purpose: type-checked at compile time for
+  both host and isolate, but only the host side can use its runtime Zod schemas.
+
 ## Conventions
 
 - **Runtime**: Node for everything

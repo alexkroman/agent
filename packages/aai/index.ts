@@ -21,7 +21,9 @@
  * ```
  */
 
+export type { Kv, KvEntry, KvListOptions } from "./kv.ts";
 export {
+  type AgentDef,
   type AgentOptions,
   type BeforeStepResult,
   type BuiltinTool,
@@ -29,6 +31,7 @@ export {
   type HookContext,
   type Message,
   type StepInfo,
+  type ToolChoice,
   type ToolContext,
   type ToolDef,
   tool,

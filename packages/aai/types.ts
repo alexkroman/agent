@@ -43,6 +43,8 @@ export type BuiltinTool =
  * - `"required"` — The model must call at least one tool.
  * - `"none"` — Tool calling is disabled.
  * - `{ type: "tool"; toolName: string }` — Force a specific tool.
+ *
+ * @public
  */
 export type ToolChoice = "auto" | "required" | "none" | { type: "tool"; toolName: string };
 
@@ -152,7 +154,7 @@ export type ToolDef<
   /** Human-readable description shown to the LLM. */
   description: string;
   /** Zod schema for the tool's parameters. */
-  parameters?: P | undefined;
+  parameters?: P;
   /** Function that executes the tool and returns a result. */
   execute(args: z.infer<P>, ctx: ToolContext<S>): Promise<unknown> | unknown;
 };
@@ -325,6 +327,8 @@ export const DEFAULT_GREETING: string =
  *
  * Unlike {@link AgentOptions}, every field here is resolved to its
  * final value — no optional fields with implicit defaults remain.
+ *
+ * @public
  */
 export type AgentDef = {
   name: string;
@@ -345,7 +349,8 @@ export type AgentDef = {
   onBeforeStep?: AgentOptions["onBeforeStep"];
 };
 
-const BuiltinToolSchema = z.enum([
+/** @internal Zod schema for {@link BuiltinTool}. Exported for reuse in internal schemas. */
+export const BuiltinToolSchema = z.enum([
   "web_search",
   "visit_webpage",
   "fetch_json",
@@ -354,7 +359,8 @@ const BuiltinToolSchema = z.enum([
   "memory",
 ]);
 
-const ToolChoiceSchema = z.union([
+/** @internal Zod schema for {@link ToolChoice}. Exported for reuse in internal schemas. */
+export const ToolChoiceSchema = z.union([
   z.enum(["auto", "required", "none"]),
   z.object({ type: z.literal("tool"), toolName: z.string().min(1) }),
 ]);
@@ -369,6 +375,31 @@ const ToolDefSchema = z.object({
     .optional(),
   execute: z.function(),
 });
+
+// ─── Compile-time drift guards ──────────────────────────────────────────────
+// These type aliases catch at compile time if a manually maintained type
+// drifts out of sync with its Zod schema counterpart. If they produce `never`,
+// the types have diverged and the build will fail at first usage.
+
+/** @internal Fails to compile if BuiltinTool and BuiltinToolSchema diverge. */
+type _AssertBuiltinTool =
+  BuiltinTool extends z.infer<typeof BuiltinToolSchema>
+    ? z.infer<typeof BuiltinToolSchema> extends BuiltinTool
+      ? true
+      : never
+    : never;
+const _btCheck: _AssertBuiltinTool = true;
+void _btCheck;
+
+/** @internal Fails to compile if ToolChoice and ToolChoiceSchema diverge. */
+type _AssertToolChoice =
+  ToolChoice extends z.infer<typeof ToolChoiceSchema>
+    ? z.infer<typeof ToolChoiceSchema> extends ToolChoice
+      ? true
+      : never
+    : never;
+const _tcCheck: _AssertToolChoice = true;
+void _tcCheck;
 
 const AgentOptionsSchema = z.object({
   name: z.string().min(1, "Agent name must be non-empty"),

@@ -13,6 +13,8 @@ export default defineConfig([
   // Harness runtime — loaded into secure-exec isolates.
   // Uses node:http directly (not Hono) because @hono/node-server redefines
   // globalThis.Request which conflicts with secure-exec's frozen built-ins.
+  // IMPORTANT: Only use type-only imports from workspace packages here —
+  // the isolate has no access to node_modules.
   {
     entry: ["src/_harness-runtime.ts"],
     format: "esm",

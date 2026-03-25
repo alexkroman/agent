@@ -6,7 +6,7 @@ import type {
   ReadyConfig,
   ServerMessage,
 } from "@alexkroman1/aai/protocol";
-import { ServerMessageSchema } from "@alexkroman1/aai/protocol";
+import { ServerMessageSchema, toWireMessages } from "@alexkroman1/aai/protocol";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import type { VoiceIO } from "./audio.ts";
 import type {
@@ -266,7 +266,10 @@ export class ClientHandler {
     let msg: ServerMessage;
     try {
       const parsed = ServerMessageSchema.safeParse(JSON.parse(data));
-      if (!parsed.success) return null;
+      if (!parsed.success) {
+        console.warn("Ignoring invalid server message:", parsed.error.message);
+        return null;
+      }
       msg = parsed.data;
     } catch {
       return null;
@@ -446,10 +449,7 @@ export function createVoiceSession(options: SessionOptions): VoiceSession {
           if (isReconnect && messages.value.length > 0) {
             send({
               type: "history",
-              messages: messages.value.map((m) => ({
-                role: m.role,
-                text: m.content,
-              })),
+              messages: toWireMessages(messages.value),
             });
           }
         }

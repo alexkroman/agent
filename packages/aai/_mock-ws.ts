@@ -60,7 +60,7 @@ export class MockWebSocket extends EventTarget {
     listener: (event: { code?: number; reason?: string }) => void,
   ): void;
   override addEventListener(type: "error", listener: (event: { message?: string }) => void): void;
-  // biome-ignore lint/suspicious/noExplicitAny: bridges EventTarget and custom WS interfaces
+  // biome-ignore lint/suspicious/noExplicitAny: implementation signature must encompass all overloads
   override addEventListener(type: string, listener: any): void {
     super.addEventListener(type, listener);
   }

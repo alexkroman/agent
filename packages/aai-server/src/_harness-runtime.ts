@@ -13,7 +13,6 @@
  */
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import type { ToolSchema } from "@alexkroman1/aai/internal-types";
 import type { Kv } from "@alexkroman1/aai/kv";
 import type { AgentDef, HookContext, ToolContext } from "@alexkroman1/aai/types";
 import type { VectorStore } from "@alexkroman1/aai/vector";
@@ -98,14 +97,14 @@ function getState(agent: AgentDef, sessionId: string): Record<string, unknown> {
 
 // ── Tool schemas ─────────────────────────────────────────────────────────
 
-function extractToolSchemas(agent: AgentDef): ToolSchema[] {
+function extractToolSchemas(agent: AgentDef): IsolateConfig["toolSchemas"] {
   return Object.entries(agent.tools).map(([name, def]) => ({
     name,
     description: def.description,
     parameters:
       def.parameters && "toJSON" in def.parameters && typeof def.parameters.toJSON === "function"
-        ? (def.parameters.toJSON() as ToolSchema["parameters"])
-        : ({ type: "object", properties: {} } as ToolSchema["parameters"]),
+        ? (def.parameters.toJSON() as Record<string, unknown>)
+        : ({ type: "object", properties: {} } as Record<string, unknown>),
   }));
 }
 

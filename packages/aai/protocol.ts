@@ -69,7 +69,10 @@ export const TOOL_EXECUTION_TIMEOUT_MS = 30_000;
 
 // ─── Error codes ───────────────────────────────────────────────────────────
 
-/** Zod schema for session error codes. */
+/**
+ * Zod schema for session error codes.
+ * @public
+ */
 export const SessionErrorCodeSchema = z.enum([
   "stt",
   "llm",
@@ -146,12 +149,15 @@ export interface ClientSink {
 /** Supported audio formats for the wire protocol. */
 export type AudioFormatId = "pcm16";
 
+/** Zod schema for {@link ReadyConfig}. */
+export const ReadyConfigSchema = z.object({
+  audioFormat: z.enum(["pcm16"]),
+  sampleRate: z.number().int().positive(),
+  ttsSampleRate: z.number().int().positive(),
+});
+
 /** Protocol-level session config returned to the client on connect. */
-export type ReadyConfig = {
-  audioFormat: AudioFormatId;
-  sampleRate: number;
-  ttsSampleRate: number;
-};
+export type ReadyConfig = z.infer<typeof ReadyConfigSchema>;
 
 /** Zod schema for server→client text messages. */
 export const ServerMessageSchema = z.discriminatedUnion("type", [
@@ -198,10 +204,41 @@ export function buildReadyConfig(s2sConfig: {
   };
 }
 
+// ─── Wire ↔ internal message conversion ─────────────────────────────────
+
+/** Wire-format message used in the `history` client message (uses `text`). */
+export type WireMessage = { role: "user" | "assistant"; text: string };
+
+/**
+ * Convert internal `{ content }` messages to wire-format `{ text }` messages.
+ *
+ * Use when sending a `history` client message. Defined once here so the
+ * field-name mapping can't drift between the UI and server.
+ */
+export function toWireMessages(
+  msgs: readonly { role: "user" | "assistant"; content: string }[],
+): WireMessage[] {
+  return msgs.map((m) => ({ role: m.role, text: m.content }));
+}
+
+/**
+ * Convert wire-format `{ text }` messages to internal `{ content }` messages.
+ *
+ * Use when receiving a `history` client message on the server.
+ */
+export function fromWireMessages(
+  msgs: readonly WireMessage[],
+): { role: "user" | "assistant"; content: string }[] {
+  return msgs.map((m) => ({ role: m.role, content: m.text }));
+}
+
 // ─── Worker RPC interfaces ─────────────────────────────────────────────────
 
+/** Zod schema for {@link TurnConfig}. */
+export const TurnConfigSchema = z.object({
+  maxSteps: z.number().int().positive().optional(),
+  activeTools: z.array(z.string().min(1)).optional(),
+});
+
 /** Combined turn configuration resolved from the worker before a turn starts. */
-export type TurnConfig = {
-  maxSteps?: number;
-  activeTools?: string[];
-};
+export type TurnConfig = z.infer<typeof TurnConfigSchema>;

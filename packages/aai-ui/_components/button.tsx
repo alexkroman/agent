@@ -3,8 +3,10 @@
 import clsx from "clsx";
 import type * as preact from "preact";
 
-type ButtonVariant = "default" | "secondary" | "ghost";
-type ButtonSize = "default" | "lg";
+/** @public */
+export type ButtonVariant = "default" | "secondary" | "ghost";
+/** @public */
+export type ButtonSize = "default" | "lg";
 
 /** @public */
 export function Button({

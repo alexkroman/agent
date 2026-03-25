@@ -13,6 +13,7 @@
  */
 
 export { App } from "./_components/app.tsx";
+export type { ButtonSize, ButtonVariant } from "./_components/button.tsx";
 export { Button } from "./_components/button.tsx";
 export { ChatView } from "./_components/chat-view.tsx";
 export { Controls } from "./_components/controls.tsx";

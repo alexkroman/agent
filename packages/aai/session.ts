@@ -7,7 +7,7 @@
 import type { AgentConfig, ToolSchema } from "./_internal-types.ts";
 import { errorMessage } from "./_utils.ts";
 import type { ClientSink } from "./protocol.ts";
-import { HOOK_TIMEOUT_MS } from "./protocol.ts";
+import { fromWireMessages, HOOK_TIMEOUT_MS } from "./protocol.ts";
 import type { Logger, S2SConfig } from "./runtime.ts";
 import { consoleLogger } from "./runtime.ts";
 import {
@@ -355,9 +355,7 @@ export function createS2sSession(opts: SessionOptions): Session {
     },
 
     onHistory(incoming: readonly { role: "user" | "assistant"; text: string }[]): void {
-      for (const msg of incoming) {
-        conversationMessages.push({ role: msg.role, content: msg.text });
-      }
+      conversationMessages.push(...fromWireMessages(incoming));
     },
 
     waitForTurn(): Promise<void> {

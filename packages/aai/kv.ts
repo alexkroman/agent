@@ -7,6 +7,8 @@
  * A single key-value entry returned by {@link Kv.list}.
  *
  * @typeParam T - The type of the stored value. Defaults to `unknown`.
+ *
+ * @public
  */
 export type KvEntry<T = unknown> = {
   /** The key under which the value is stored. */
@@ -19,6 +21,8 @@ export type KvEntry<T = unknown> = {
  * Options for listing keys from the KV store.
  *
  * Used with {@link Kv.list} to control result ordering and pagination.
+ *
+ * @public
  */
 export type KvListOptions = {
   /** Maximum number of entries to return. */
@@ -30,8 +34,8 @@ export type KvListOptions = {
 /**
  * Async key-value store interface used by agents.
  *
- * Agents access the KV store via {@link ToolContext.kv} or
- * {@link HookContext.kv}. Values are JSON-serialized and stored as
+ * Agents access the KV store via `ToolContext.kv` or
+ * `HookContext.kv`. Values are JSON-serialized and stored as
  * strings with an optional TTL.
  *
  * @example
@@ -46,6 +50,8 @@ export type KvListOptions = {
  *   },
  * };
  * ```
+ *
+ * @public
  */
 export type Kv = {
   /**
@@ -64,7 +70,7 @@ export type Kv = {
    * @param value - The value to store. Must be JSON-serializable.
    * @param options - Optional settings. `expireIn` sets the time-to-live in milliseconds. The entry is
    *   automatically removed after this duration.
-   * @throws {Error} If the serialized value exceeds 65,536 bytes.
+   * @throws Throws an Error if the serialized value exceeds 65,536 bytes.
    */
   set(key: string, value: unknown, options?: { expireIn?: number }): Promise<void>;
   /**
