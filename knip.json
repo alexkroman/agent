@@ -1,7 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
   "ignoreUnresolved": ["./_jsdom-setup.ts"],
-  "ignoreBinaries": ["playwright"],
   "ignoreExportsUsedInFile": true,
   "exclude": ["exports", "types", "optionalPeerDependencies"],
   "workspaces": {
