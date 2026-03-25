@@ -1,9 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { useSignal } from "@preact/signals";
+import { useComputed, useSignal } from "@preact/signals";
 import clsx from "clsx";
 import type * as preact from "preact";
-import { useMemo } from "preact/hooks";
 import type { ToolCallInfo } from "../types.ts";
 import {
   BoltIcon,
@@ -72,10 +71,7 @@ export function ToolCallBlock({
   const isPending = toolCall.status === "pending";
   const title = config.title || toolCall.toolName;
   const canExpand = !isPending && Boolean(toolCall.result);
-  const formatted = useMemo(
-    () => (toolCall.result ? formatResult(toolCall.result) : ""),
-    [toolCall.result],
-  );
+  const formatted = useComputed(() => (toolCall.result ? formatResult(toolCall.result) : ""));
 
   return (
     <div class={clsx("flex flex-col", className)}>
