@@ -13,6 +13,7 @@ import type { Session } from "@alexkroman1/aai/session";
 import { wireSessionSocket } from "@alexkroman1/aai/ws-handler";
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import { WebSocket, WebSocketServer } from "ws";
+import { expectConsoleWarnings } from "../../../_fail_on_warnings.ts";
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -241,6 +242,7 @@ describe("WebSocket server integration", () => {
   });
 
   test("invalid JSON is tolerated", async () => {
+    expectConsoleWarnings();
     const { ws } = await connect(ctx.port);
     ws.send("not-json{{{");
     // Should not crash — send another valid message to confirm
@@ -253,6 +255,7 @@ describe("WebSocket server integration", () => {
   });
 
   test("unknown message type is tolerated", async () => {
+    expectConsoleWarnings();
     const { ws } = await connect(ctx.port);
     ws.send(JSON.stringify({ type: "unknown_type" }));
     ws.send(JSON.stringify({ type: "cancel" }));
