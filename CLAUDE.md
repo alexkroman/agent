@@ -59,7 +59,8 @@ Public:
 - `./types` — all type definitions
 - `./kv` — KV store interface + in-memory implementation
 - `./vector` — vector store interface + in-memory implementation
-- `./testing` — `MockWebSocket`, `installMockWebSocket`, `createTestHarness`, `TestHarness`, `TurnResult`
+- `./testing` — `MockWebSocket`, `installMockWebSocket`,
+  `createTestHarness`, `TestHarness`, `TurnResult`
 
 Internal (exported in package.json but not part of public API):
 
