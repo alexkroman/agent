@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { DEFAULT_TTS_SAMPLE_RATE } from "./protocol.ts";
+import { DEFAULT_STT_SAMPLE_RATE, DEFAULT_TTS_SAMPLE_RATE } from "./protocol.ts";
 
 /** Structured context attached to log messages. */
 export type LogContext = Record<string, unknown>;
@@ -33,6 +33,6 @@ export type S2SConfig = {
 /** Default S2S endpoint configuration. */
 export const DEFAULT_S2S_CONFIG: S2SConfig = {
   wssUrl: "wss://speech-to-speech.us.assemblyai.com/v1/realtime",
-  inputSampleRate: DEFAULT_TTS_SAMPLE_RATE,
+  inputSampleRate: DEFAULT_STT_SAMPLE_RATE,
   outputSampleRate: DEFAULT_TTS_SAMPLE_RATE,
 };

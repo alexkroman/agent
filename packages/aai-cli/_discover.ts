@@ -174,7 +174,7 @@ export async function fileExists(p: string): Promise<boolean> {
  * resolving the client entry point.
  *
  * Env vars are NOT read from `.env` — they're managed on the server
- * via `aai env add` (like `vercel env add`).
+ * via `aai secret put`.
  */
 export async function loadAgent(dir: string): Promise<AgentEntry | null> {
   const hasAgentTs = await fileExists(path.join(dir, "agent.ts"));

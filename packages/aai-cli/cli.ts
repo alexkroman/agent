@@ -196,9 +196,12 @@ export const mainCommand = defineCommand({
 });
 
 if (process.env.VITEST !== "true") {
-  // Default to `init` when no subcommand is given
+  // Default to `init` when no subcommand is given (but not for --help/--version)
   const sub = process.argv[2];
-  if (!sub || sub.startsWith("-")) {
+  if (
+    !sub ||
+    (sub.startsWith("-") && sub !== "--help" && sub !== "--version" && sub !== "-h" && sub !== "-V")
+  ) {
     process.argv.splice(2, 0, "init");
   }
   runMain(mainCommand);

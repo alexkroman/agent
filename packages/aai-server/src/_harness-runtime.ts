@@ -176,13 +176,14 @@ function makeHookCtx(agent: AgentDef, req: HookRequest): HookContext {
 async function runResolveTurnConfig(
   agent: AgentDef,
   ctx: HookContext,
+  stepNumber: number,
 ): Promise<{ maxSteps?: number; activeTools?: string[] } | null> {
   const config: { maxSteps?: number; activeTools?: string[] } = {};
   if (typeof agent.maxSteps === "function") {
     config.maxSteps = (await agent.maxSteps(ctx)) ?? undefined;
   }
   if (agent.onBeforeStep) {
-    const r = await agent.onBeforeStep(0, ctx);
+    const r = await agent.onBeforeStep(stepNumber, ctx);
     if (r?.activeTools) config.activeTools = r.activeTools;
   }
   return config.maxSteps !== undefined || config.activeTools !== undefined ? config : null;
@@ -207,7 +208,7 @@ async function invokeHook(agent: AgentDef, req: HookRequest): Promise<HookRespon
       result = await agent.onBeforeStep?.(req.stepNumber ?? 0, ctx);
     },
     resolveTurnConfig: async () => {
-      result = await runResolveTurnConfig(agent, ctx);
+      result = await runResolveTurnConfig(agent, ctx, req.stepNumber ?? 0);
     },
   };
 

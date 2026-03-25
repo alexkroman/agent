@@ -196,6 +196,12 @@ const BLOCKED_GLOBALS = [
  */
 const CONSTRUCTOR_ESCAPE_RE = /\.constructor\s*\(|\.constructor\s*\[|__proto__|getPrototypeOf\s*\(/;
 
+/**
+ * Block dynamic import() which cannot be shadowed via parameter binding.
+ * Matches `import(`, `import (`, and common obfuscations.
+ */
+const DYNAMIC_IMPORT_RE = /\bimport\s*\(/;
+
 function createRunCode(): ToolDef<typeof runCodeParams> {
   return {
     description:
@@ -212,6 +218,14 @@ function createRunCode(): ToolDef<typeof runCodeParams> {
           error:
             "Code contains blocked patterns (constructor invocation or prototype access). " +
             "Use standard operations instead.",
+        };
+      }
+
+      if (DYNAMIC_IMPORT_RE.test(code)) {
+        return {
+          error:
+            "Dynamic import() is not allowed in sandboxed code. " +
+            "Use only the built-in APIs available in the sandbox.",
         };
       }
 

@@ -7,7 +7,7 @@
 import type { AgentConfig, ToolSchema } from "./_internal-types.ts";
 import { errorMessage } from "./_utils.ts";
 import type { ClientSink } from "./protocol.ts";
-import { HOOK_TIMEOUT_MS } from "./protocol.ts";
+import { HOOK_TIMEOUT_MS, MAX_TOOL_RESULT_CHARS } from "./protocol.ts";
 import type { Logger, S2SConfig } from "./runtime.ts";
 import { consoleLogger } from "./runtime.ts";
 import {
@@ -42,6 +42,7 @@ export type HookInvoker = {
   onStep(sessionId: string, step: StepInfo, timeoutMs?: number): Promise<void>;
   resolveTurnConfig(
     sessionId: string,
+    stepNumber: number,
     timeoutMs?: number,
   ): Promise<{ maxSteps?: number; activeTools?: string[] } | null>;
 };
@@ -112,7 +113,7 @@ export function createS2sSession(opts: SessionOptions): Session {
     activeTools?: string[];
   } | null> {
     if (!hookInvoker) return null;
-    return await hookInvoker.resolveTurnConfig(id, HOOK_TIMEOUT_MS);
+    return await hookInvoker.resolveTurnConfig(id, toolCallCount, HOOK_TIMEOUT_MS);
   }
 
   function fireHook(name: string, fn: (h: HookInvoker) => Promise<void>): void {
@@ -209,7 +210,9 @@ export function createS2sSession(opts: SessionOptions): Session {
     });
     // Accumulate — don't send yet. Results are sent after reply.done.
     pendingTools.push({ call_id, result });
-    client.event({ type: "tool_call_done", toolCallId: call_id, result });
+    const truncatedResult =
+      result.length > MAX_TOOL_RESULT_CHARS ? result.slice(0, MAX_TOOL_RESULT_CHARS) : result;
+    client.event({ type: "tool_call_done", toolCallId: call_id, result: truncatedResult });
   }
 
   /** Wire all S2S events to the client sink, hooks, and session state. */

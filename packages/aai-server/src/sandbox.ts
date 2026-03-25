@@ -500,8 +500,10 @@ function buildHookInvoker(isolateUrl: string): HookInvoker {
     onTurn: (sessionId, text) => hook("onTurn", { sessionId, text }) as Promise<void>,
     onError: (sessionId, error) => hook("onError", { sessionId, error }) as Promise<void>,
     onStep: (sessionId, step) => hook("onStep", { sessionId, step }) as Promise<void>,
-    async resolveTurnConfig(sessionId) {
-      const parsed = TurnConfigSchema.parse(await hook("resolveTurnConfig", { sessionId }));
+    async resolveTurnConfig(sessionId, stepNumber) {
+      const parsed = TurnConfigSchema.parse(
+        await hook("resolveTurnConfig", { sessionId, stepNumber }),
+      );
       if (parsed == null) return null;
       const config: { maxSteps?: number; activeTools?: string[] } = {};
       if (parsed.maxSteps != null) config.maxSteps = parsed.maxSteps;

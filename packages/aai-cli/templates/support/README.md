@@ -49,10 +49,9 @@ duplicated.
 ## Environment variables
 
 ```sh
-aai env add MY_KEY # Set a secret (prompts for value)
-aai env ls         # List secret names
-aai env pull       # Pull names into .env for reference
-aai env rm MY_KEY  # Remove a secret
+aai secret put MY_KEY    # Set a secret (prompts for value)
+aai secret list          # List secret names
+aai secret delete MY_KEY # Remove a secret
 ```
 
 Access secrets in your agent via `ctx.env.MY_KEY`.
