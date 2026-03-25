@@ -1,5 +1,3 @@
-import type { UserConfig } from "vitest/config";
-
 /**
  * Shared Vitest configuration used by the root workspace config
  * and package-specific configs (slow tests, integration tests).
@@ -7,4 +5,4 @@ import type { UserConfig } from "vitest/config";
 export const sharedConfig = {
   resolve: { conditions: ["source"] },
   ssr: { resolve: { conditions: ["source"] } },
-} as const satisfies UserConfig;
+} as const;
