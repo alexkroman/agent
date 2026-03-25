@@ -1,4 +1,4 @@
-import { defineAgent, tool } from "@alexkroman1/aai";
+import { defineAgent, type ToolDef } from "@alexkroman1/aai";
 import { z } from "zod";
 
 /**
@@ -12,6 +12,13 @@ interface TaskState {
   tasks: { id: number; text: string; done: boolean }[];
   nextId: number;
   owner: string;
+}
+
+/** Helper to preserve state generic through tool definitions. */
+function taskTool<P extends z.ZodObject<z.ZodRawShape>>(
+  def: ToolDef<P, TaskState>,
+): ToolDef<P, TaskState> {
+  return def;
 }
 
 export default defineAgent({
@@ -28,43 +35,37 @@ export default defineAgent({
   builtinTools: ["run_code"],
 
   onConnect: (ctx) => {
-    const state = ctx.state as TaskState;
-    state.owner = "connected-user";
+    ctx.state.owner = "connected-user";
   },
 
-  onTurn: (_text, ctx) => {
-    const state = ctx.state as TaskState;
-    // Track that onTurn fired by updating state
-    (state as Record<string, unknown>).lastTurnText = _text;
+  onTurn: (_text, _ctx) => {
+    // Hook fires on each user turn — tracked by harness via t.turns
   },
 
   onStep: (step, _ctx) => {
-    // Verify step numbers are sequential
     if (step.stepNumber < 1) throw new Error("Invalid step number");
   },
 
   tools: {
-    add_task: tool({
+    add_task: taskTool({
       description: "Add a new task to the list",
       parameters: z.object({
         text: z.string().min(1).describe("Task description"),
       }),
       execute: ({ text }, ctx) => {
-        const state = ctx.state as TaskState;
-        const task = { id: state.nextId++, text, done: false };
-        state.tasks.push(task);
-        return { added: task, total: state.tasks.length };
+        const task = { id: ctx.state.nextId++, text, done: false };
+        ctx.state.tasks.push(task);
+        return { added: task, total: ctx.state.tasks.length };
       },
     }),
 
-    complete_task: tool({
+    complete_task: taskTool({
       description: "Mark a task as done",
       parameters: z.object({
         id: z.number().describe("Task ID to complete"),
       }),
       execute: ({ id }, ctx) => {
-        const state = ctx.state as TaskState;
-        const task = state.tasks.find((t) => t.id === id);
+        const task = ctx.state.tasks.find((t) => t.id === id);
         if (!task) return { error: `Task ${id} not found` };
         task.done = true;
         return { completed: task };
@@ -84,7 +85,7 @@ export default defineAgent({
       },
     },
 
-    save_note: tool({
+    save_note: taskTool({
       description: "Save a note to persistent KV storage",
       parameters: z.object({
         key: z.string().min(1),
@@ -96,7 +97,7 @@ export default defineAgent({
       },
     }),
 
-    load_note: tool({
+    load_note: taskTool({
       description: "Load a note from persistent KV storage",
       parameters: z.object({
         key: z.string().min(1),
