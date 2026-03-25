@@ -8,6 +8,24 @@
     "typecheck": {
       "dependsOn": ["^build"]
     },
-    "lint": {}
+    "lint": {},
+    "check:api": {
+      "dependsOn": ["build"]
+    },
+    "check:attw": {
+      "dependsOn": ["build"]
+    },
+    "check:templates": {
+      "dependsOn": ["^build"]
+    },
+    "check:integration": {
+      "dependsOn": ["^build"]
+    },
+    "check:e2e": {
+      "dependsOn": ["^build"]
+    },
+    "//#check:knip": {},
+    "//#check:syncpack": {},
+    "//#check:markdown": {}
   }
 }
