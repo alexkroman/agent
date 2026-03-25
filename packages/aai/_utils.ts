@@ -5,3 +5,10 @@
 export function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
+
+/** Filter out undefined values from an env record. */
+export function filterEnv(env: Record<string, string | undefined>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(env).filter((e): e is [string, string] => e[1] !== undefined),
+  );
+}

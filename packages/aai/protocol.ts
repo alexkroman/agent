@@ -184,6 +184,20 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
 /** Client→server text messages (binary frames carry raw PCM16 audio). */
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 
+// ─── Ready config builder ───────────────────────────────────────────────────
+
+/** Build the protocol-level session config from S2S sample rates. */
+export function buildReadyConfig(s2sConfig: {
+  inputSampleRate: number;
+  outputSampleRate: number;
+}): ReadyConfig {
+  return {
+    audioFormat: AUDIO_FORMAT,
+    sampleRate: s2sConfig.inputSampleRate,
+    ttsSampleRate: s2sConfig.outputSampleRate,
+  };
+}
+
 // ─── Worker RPC interfaces ─────────────────────────────────────────────────
 
 /** Combined turn configuration resolved from the worker before a turn starts. */

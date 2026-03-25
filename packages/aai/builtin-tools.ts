@@ -18,10 +18,7 @@ const FETCH_TIMEOUT_MS = 15_000;
 /** Timeout for sandboxed code execution. */
 const RUN_CODE_TIMEOUT = 5_000;
 
-/** Create a fetch timeout signal. */
-function fetchSignal(): AbortSignal {
-  return AbortSignal.timeout(FETCH_TIMEOUT_MS);
-}
+const fetchSignal = () => AbortSignal.timeout(FETCH_TIMEOUT_MS);
 
 // ─── HTML to text ──────────────────────────────────────────────────────────
 

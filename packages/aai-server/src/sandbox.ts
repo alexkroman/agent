@@ -13,7 +13,7 @@
 
 import type { AgentConfig } from "@alexkroman1/aai/internal-types";
 import type { Kv, KvEntry } from "@alexkroman1/aai/kv";
-import { AUDIO_FORMAT } from "@alexkroman1/aai/protocol";
+import { buildReadyConfig } from "@alexkroman1/aai/protocol";
 import { DEFAULT_S2S_CONFIG } from "@alexkroman1/aai/runtime";
 import { createS2sSession, type HookInvoker, type Session } from "@alexkroman1/aai/session";
 import type { VectorStore } from "@alexkroman1/aai/vector";
@@ -440,72 +440,77 @@ async function getIsolateConfig(port: number): Promise<IsolateConfig> {
 
 // ── Build executeTool + hookInvoker from isolate ─────────────────────────
 
+async function callIsolate<T>(
+  isolateUrl: string,
+  endpoint: string,
+  body: Record<string, unknown>,
+  timeoutMs: number,
+  schema: z.ZodType<T>,
+): Promise<T> {
+  const res = await fetch(`${isolateUrl}/${endpoint}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (!res.ok) throw new Error(`${endpoint} failed: ${res.status}`);
+  return schema.parse(await res.json());
+}
+
 function buildExecuteTool(isolateUrl: string, env: Record<string, string>): ExecuteTool {
   return async (name, args, sessionId, messages) => {
-    const res = await fetch(`${isolateUrl}/tool`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, args, sessionId, messages, env }),
-      signal: AbortSignal.timeout(TOOL_TIMEOUT_MS),
-    });
-    if (!res.ok) throw new Error(`Tool ${name} failed: ${res.status}`);
-    return ToolResponseSchema.parse(await res.json()).result;
+    const { result } = await callIsolate(
+      isolateUrl,
+      "tool",
+      { name, args, sessionId, messages, env },
+      TOOL_TIMEOUT_MS,
+      ToolResponseSchema,
+    );
+    return result;
   };
 }
 
 function buildHookInvoker(isolateUrl: string, env: Record<string, string>): HookInvoker {
-  async function callHook(hook: string, extra: Record<string, unknown> = {}): Promise<unknown> {
-    const res = await fetch(`${isolateUrl}/hook`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ hook, env, ...extra }),
-      signal: AbortSignal.timeout(HOOK_TIMEOUT_MS),
-    });
-    if (!res.ok) throw new Error(`Hook ${hook} failed: ${res.status}`);
-    return HookResponseSchema.parse(await res.json()).result;
-  }
+  const hook = async (name: string, extra: Record<string, unknown> = {}): Promise<unknown> =>
+    (
+      await callIsolate(
+        isolateUrl,
+        "hook",
+        { hook: name, env, ...extra },
+        HOOK_TIMEOUT_MS,
+        HookResponseSchema,
+      )
+    ).result;
 
   return {
-    async onConnect(sessionId) {
-      await callHook("onConnect", { sessionId });
-    },
-    async onDisconnect(sessionId) {
-      await callHook("onDisconnect", { sessionId });
-    },
-    async onTurn(sessionId, text) {
-      await callHook("onTurn", { sessionId, text });
-    },
-    async onError(sessionId, error) {
-      await callHook("onError", { sessionId, error });
-    },
-    async onStep(sessionId, step) {
-      await callHook("onStep", { sessionId, step });
-    },
+    onConnect: (sessionId) => hook("onConnect", { sessionId }) as Promise<void>,
+    onDisconnect: (sessionId) => hook("onDisconnect", { sessionId }) as Promise<void>,
+    onTurn: (sessionId, text) => hook("onTurn", { sessionId, text }) as Promise<void>,
+    onError: (sessionId, error) => hook("onError", { sessionId, error }) as Promise<void>,
+    onStep: (sessionId, step) => hook("onStep", { sessionId, step }) as Promise<void>,
     async resolveTurnConfig(sessionId) {
-      const r = await callHook("resolveTurnConfig", { sessionId });
-      const parsed = TurnConfigSchema.parse(r);
+      const parsed = TurnConfigSchema.parse(await hook("resolveTurnConfig", { sessionId }));
       if (parsed == null) return null;
-      return {
-        ...(parsed.maxSteps != null && { maxSteps: parsed.maxSteps }),
-        ...(parsed.activeTools != null && { activeTools: parsed.activeTools }),
-      };
+      const config: { maxSteps?: number; activeTools?: string[] } = {};
+      if (parsed.maxSteps != null) config.maxSteps = parsed.maxSteps;
+      if (parsed.activeTools != null) config.activeTools = parsed.activeTools;
+      return config;
     },
   };
 }
 
 function toAgentConfig(config: IsolateConfig): AgentConfig {
-  return {
+  const ac: AgentConfig = {
     name: config.name,
     instructions: config.instructions,
     greeting: config.greeting,
-    ...(config.sttPrompt !== undefined ? { sttPrompt: config.sttPrompt } : {}),
-    ...(config.maxSteps !== undefined ? { maxSteps: config.maxSteps } : {}),
-    ...(config.toolChoice !== undefined ? { toolChoice: config.toolChoice } : {}),
-    ...(config.builtinTools
-      ? { builtinTools: config.builtinTools as AgentConfig["builtinTools"] }
-      : {}),
-    ...(config.activeTools ? { activeTools: config.activeTools } : {}),
   };
+  if (config.sttPrompt !== undefined) ac.sttPrompt = config.sttPrompt;
+  if (config.maxSteps !== undefined) ac.maxSteps = config.maxSteps;
+  if (config.toolChoice !== undefined) ac.toolChoice = config.toolChoice;
+  if (config.builtinTools) ac.builtinTools = config.builtinTools as AgentConfig["builtinTools"];
+  if (config.activeTools) ac.activeTools = config.activeTools;
+  return ac;
 }
 
 // ── Test internals ───────────────────────────────────────────────────────
@@ -548,12 +553,7 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
   const hookInvoker = buildHookInvoker(isolateUrl, env);
   const apiKey = env.ASSEMBLYAI_API_KEY ?? "";
   const s2sConfig = DEFAULT_S2S_CONFIG;
-
-  const readyConfig = {
-    audioFormat: AUDIO_FORMAT,
-    sampleRate: s2sConfig.inputSampleRate,
-    ttsSampleRate: s2sConfig.outputSampleRate,
-  };
+  const readyConfig = buildReadyConfig(s2sConfig);
 
   const sessions = new Map<string, Session>();
 

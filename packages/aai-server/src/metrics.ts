@@ -23,14 +23,15 @@ export async function serializeForAgent(agent: string): Promise<string> {
     lines.push(`# TYPE ${metric.name} ${metric.type}`);
 
     for (const v of metric.values) {
-      if (!v.labels || (v.labels as Record<string, string>).agent !== agent) continue;
-      const filtered = { ...v.labels } as Record<string, string>;
-      delete filtered.agent;
-      const labelStr = Object.entries(filtered)
+      const labels = v.labels as Record<string, string> | undefined;
+      if (!labels || labels.agent !== agent) continue;
+      const { agent: _, ...rest } = labels;
+      const labelStr = Object.entries(rest)
         .map(([k, val]) => `${k}="${val}"`)
         .join(",");
       const suffix = labelStr ? `{${labelStr}}` : "";
-      const name = (v as { metricName?: string }).metricName ?? metric.name;
+      const name =
+        "metricName" in v && typeof v.metricName === "string" ? v.metricName : metric.name;
       lines.push(`${name}${suffix} ${v.value}`);
     }
   }
