@@ -1,6 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
-  "ignoreUnresolved": ["./_jsdom-setup.ts"],
+  "ignoreUnresolved": ["./_jsdom-setup.ts", "./matchers.ts"],
   "ignoreExportsUsedInFile": true,
   "exclude": ["exports", "types", "optionalPeerDependencies"],
   "workspaces": {
