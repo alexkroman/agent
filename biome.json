@@ -68,6 +68,12 @@
       },
       "a11y": {
         "recommended": false
+      },
+      "nursery": {
+        "noExcessiveLinesPerFile": {
+          "level": "error",
+          "options": { "maxLines": 500 }
+        }
       }
     }
   },
@@ -78,6 +84,9 @@
         "rules": {
           "correctness": {
             "noUndeclaredDependencies": "off"
+          },
+          "nursery": {
+            "noExcessiveLinesPerFile": "off"
           }
         }
       }
