@@ -997,13 +997,14 @@ pnpm test       # Run all tests (vitest)
 ### Setup
 
 Tests live in `agent.test.ts` alongside `agent.ts`. The project includes
-vitest as a dev dependency.
+vitest as a dev dependency. Import the matchers for `expect().toHaveCalledTool()`:
 
 ### Test harness
 
 ```ts
 import { describe, expect, test } from "vitest";
 import { createTestHarness } from "@alexkroman1/aai/testing";
+import "@alexkroman1/aai/testing/matchers";
 import agent from "./agent.ts";
 
 describe("my agent", () => {
@@ -1049,16 +1050,20 @@ test("multi-turn pizza ordering", async () => {
     { tool: "add_pizza", args: { size: "large", crust: "regular", toppings: ["pepperoni"], quantity: 1 } },
   ]);
 
-  // Assertion helpers on TurnResult
-  expect(turn1.toHaveCalledTool("add_pizza")).toBe(true);
-  expect(turn1.toHaveCalledTool("add_pizza", { size: "large" })).toBe(true); // partial match
-  expect(turn1.toolResults[0]).toContain("$14.99");
+  // Vitest custom matchers — natural expect() syntax
+  expect(turn1).toHaveCalledTool("add_pizza");
+  expect(turn1).toHaveCalledTool("add_pizza", { size: "large" }); // partial match
+  expect(turn1).not.toHaveCalledTool("remove_pizza");
+
+  // Typed tool results — no JSON.parse needed
+  const result = turn1.toolResult<{ added: { size: string }; orderTotal: string }>("add_pizza");
+  expect(result.orderTotal).toContain("$14.99");
 
   // State persists across turns
   const turn2 = await t.turn("Show my order", [
     { tool: "view_order", args: {} },
   ]);
-  const order = JSON.parse(turn2.toolResults[0]);
+  const order = turn2.toolResult<{ pizzas: unknown[] }>("view_order");
   expect(order.pizzas).toHaveLength(1);
 });
 ```
@@ -1067,11 +1072,19 @@ test("multi-turn pizza ordering", async () => {
 
 | Method / Property | Description |
 | --- | --- |
-| `toHaveCalledTool(name, args?)` | Check if tool was called (partial args match) |
+| `toolResult<T>(name)` | Get parsed JSON result of first call to named tool |
 | `getToolCalls(name)` | Get all calls to a specific tool |
 | `toolCalls` | All recorded tool calls with name, args, result |
 | `toolResults` | Just the result strings from each tool call |
 | `text` | The user text that initiated this turn |
+
+Vitest custom matchers (import `@alexkroman1/aai/testing/matchers`):
+
+| Matcher | Description |
+| --- | --- |
+| `expect(turn).toHaveCalledTool(name)` | Assert tool was called |
+| `expect(turn).toHaveCalledTool(name, args)` | Assert with partial args |
+| `expect(turn).not.toHaveCalledTool(name)` | Assert tool was NOT called |
 
 ### Testing patterns
 

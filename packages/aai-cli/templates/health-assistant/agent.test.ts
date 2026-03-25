@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { createTestHarness } from "@alexkroman1/aai/testing";
+import "@alexkroman1/aai/testing/matchers";
 import agent from "./agent.ts";
 
 describe("Dr. Sage (Health Assistant)", () => {
@@ -27,7 +28,7 @@ describe("Dr. Sage (Health Assistant)", () => {
     const turn = await t.turn("Calculate BMI for 70kg and 1.75m", [
       { tool: "run_code", args: { code: "const bmi = 70 / (1.75 * 1.75); console.log(bmi.toFixed(1))" } },
     ]);
-    expect(turn.toHaveCalledTool("run_code")).toBe(true);
+    expect(turn).toHaveCalledTool("run_code");
     expect(turn.toolResults[0]).toBe("22.9");
   });
 });

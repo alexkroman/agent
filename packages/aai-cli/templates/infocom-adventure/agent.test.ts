@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { createTestHarness } from "@alexkroman1/aai/testing";
+import "@alexkroman1/aai/testing/matchers";
 import agent from "./agent.ts";
 
 describe("Infocom Adventure", () => {
@@ -22,8 +23,8 @@ describe("Infocom Adventure", () => {
     const turn = await t.turn("look around", [
       { tool: "game_state_get", args: {} },
     ]);
-    expect(turn.toHaveCalledTool("game_state_get")).toBe(true);
-    const state = JSON.parse(turn.toolResults[0]!);
+    expect(turn).toHaveCalledTool("game_state_get");
+    const state = turn.toolResult("game_state_get");
     expect(state.inventory).toEqual([]);
     expect(state.score).toBe(0);
     expect(state.moves).toBe(0);
@@ -35,13 +36,13 @@ describe("Infocom Adventure", () => {
     const takeTurn = await t.turn("take the lantern", [
       { tool: "game_state_take", args: { value: "brass lantern" } },
     ]);
-    const takeResult = JSON.parse(takeTurn.toolResults[0]!);
+    const takeResult = takeTurn.toolResult("game_state_take");
     expect(takeResult.inventory).toContain("brass lantern");
 
     const dropTurn = await t.turn("drop the lantern", [
       { tool: "game_state_drop", args: { value: "brass lantern" } },
     ]);
-    const dropResult = JSON.parse(dropTurn.toolResults[0]!);
+    const dropResult = dropTurn.toolResult("game_state_drop");
     expect(dropResult.inventory).not.toContain("brass lantern");
   });
 
@@ -50,7 +51,7 @@ describe("Infocom Adventure", () => {
     const turn = await t.turn("go north", [
       { tool: "game_state_move", args: { value: "kitchen" } },
     ]);
-    const result = JSON.parse(turn.toolResults[0]!);
+    const result = turn.toolResult("game_state_move");
     expect(result.currentRoom).toBe("kitchen");
     expect(result.moves).toBe(1);
   });
@@ -60,7 +61,7 @@ describe("Infocom Adventure", () => {
     const turn = await t.turn("solve puzzle", [
       { tool: "game_state_score", args: { value: 10 } },
     ]);
-    const result = JSON.parse(turn.toolResults[0]!);
+    const result = turn.toolResult("game_state_score");
     expect(result.score).toBe(10);
   });
 });

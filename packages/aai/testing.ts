@@ -24,12 +24,12 @@
  *     const turn1 = await t.turn("Add a pizza", [
  *       { tool: "add_pizza", args: { size: "large", crust: "regular", toppings: ["pepperoni"], quantity: 1 } },
  *     ]);
- *     expect(turn1.toHaveCalledTool("add_pizza")).toBe(true);
+ *     expect(turn1).toHaveCalledTool("add_pizza");
  *
  *     const turn2 = await t.turn("View my order", [
  *       { tool: "view_order", args: {} },
  *     ]);
- *     expect(turn2.toHaveCalledTool("view_order")).toBe(true);
+ *     expect(turn2).toHaveCalledTool("view_order");
  *   });
  * });
  * ```
@@ -73,10 +73,10 @@ export type RecordedToolCall = {
  * ]);
  *
  * // Check if a tool was called
- * expect(result.toHaveCalledTool("search_flights")).toBe(true);
+ * expect(result).toHaveCalledTool("search_flights");
  *
  * // Check tool was called with specific args
- * expect(result.toHaveCalledTool("search_flights", { destination: "NYC" })).toBe(true);
+ * expect(result).toHaveCalledTool("search_flights", { destination: "NYC" });
  *
  * // Access raw tool call data
  * expect(result.toolCalls[0].result).toContain("JFK");
@@ -134,6 +134,29 @@ export class TurnResult {
   getToolCalls(toolName: string): readonly RecordedToolCall[] {
     return this.toolCalls.filter((tc) => tc.toolName === toolName);
   }
+
+  /**
+   * Get the parsed JSON result of the first call to a specific tool.
+   *
+   * Throws if the tool was not called during this turn.
+   *
+   * @typeParam T - The expected shape of the parsed result.
+   * @param toolName - The tool name to look up.
+   * @returns The parsed result, cast to `T`.
+   *
+   * @example
+   * ```ts
+   * const order = turn.toolResult<{ pizzas: Pizza[]; total: string }>("view_order");
+   * expect(order.pizzas).toHaveLength(2);
+   * ```
+   */
+  toolResult<T = unknown>(toolName: string): T {
+    const call = this.toolCalls.find((tc) => tc.toolName === toolName);
+    if (!call) {
+      throw new Error(`Tool "${toolName}" was not called during this turn`);
+    }
+    return JSON.parse(call.result) as T;
+  }
 }
 
 // ─── TestHarness ─────────────────────────────────────────────────────────────
@@ -185,7 +208,7 @@ export type TurnToolCall = {
  * const turn = await t.turn("hello", [
  *   { tool: "greet", args: { name: "Alice" } },
  * ]);
- * expect(turn.toHaveCalledTool("greet")).toBe(true);
+ * expect(turn).toHaveCalledTool("greet");
  * ```
  *
  * @public
@@ -284,7 +307,7 @@ export class TestHarness {
    * const turn = await t.turn("Add pepperoni pizza", [
    *   { tool: "add_pizza", args: { size: "large", crust: "regular", toppings: ["pepperoni"], quantity: 1 } },
    * ]);
-   * expect(turn.toHaveCalledTool("add_pizza", { size: "large" })).toBe(true);
+   * expect(turn).toHaveCalledTool("add_pizza", { size: "large" });
    * expect(turn.toolCalls[0].result).toContain("$14.99");
    * ```
    */

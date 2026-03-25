@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { createTestHarness } from "@alexkroman1/aai/testing";
+import "@alexkroman1/aai/testing/matchers";
 import agent from "./agent.ts";
 
 describe("FAQ Bot (Embedded Assets)", () => {
@@ -17,8 +18,8 @@ describe("FAQ Bot (Embedded Assets)", () => {
     const turn = await t.turn("What topics do you know about?", [
       { tool: "list_topics", args: {} },
     ]);
-    expect(turn.toHaveCalledTool("list_topics")).toBe(true);
-    const topics = JSON.parse(turn.toolResults[0]!);
+    expect(turn).toHaveCalledTool("list_topics");
+    const topics = turn.toolResult("list_topics");
     expect(Array.isArray(topics)).toBe(true);
     expect(topics.length).toBeGreaterThan(0);
   });
@@ -29,15 +30,15 @@ describe("FAQ Bot (Embedded Assets)", () => {
     const listTurn = await t.turn("List topics", [
       { tool: "list_topics", args: {} },
     ]);
-    const topics = JSON.parse(listTurn.toolResults[0]!) as string[];
+    const topics = listTurn.toolResult<string[]>("list_topics");
     const firstTopic = topics[0]!;
 
     // Search for it
     const searchTurn = await t.turn(`Tell me about ${firstTopic}`, [
       { tool: "search_knowledge", args: { query: firstTopic } },
     ]);
-    expect(searchTurn.toHaveCalledTool("search_knowledge")).toBe(true);
-    const result = JSON.parse(searchTurn.toolResults[0]!);
+    expect(searchTurn).toHaveCalledTool("search_knowledge");
+    const result = searchTurn.toolResult("search_knowledge");
     expect(result).toHaveProperty("question");
     expect(result).toHaveProperty("answer");
   });
@@ -47,7 +48,7 @@ describe("FAQ Bot (Embedded Assets)", () => {
     const turn = await t.turn("xyznonexistent", [
       { tool: "search_knowledge", args: { query: "xyznonexistent123456" } },
     ]);
-    const result = JSON.parse(turn.toolResults[0]!);
+    const result = turn.toolResult("search_knowledge");
     expect(result.result).toBe("No matching FAQ found.");
   });
 });

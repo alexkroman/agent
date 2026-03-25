@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { createTestHarness } from "@alexkroman1/aai/testing";
+import "@alexkroman1/aai/testing/matchers";
 import agent from "./agent.ts";
 
 describe("Dispatch Command Center", () => {
@@ -29,11 +30,9 @@ describe("Dispatch Command Center", () => {
         },
       },
     ]);
-    expect(createTurn.toHaveCalledTool("incident_create")).toBe(true);
-    const incident = JSON.parse(createTurn.toolResults[0]!);
+    expect(createTurn).toHaveCalledTool("incident_create");
+    const incident = createTurn.toolResult("incident_create");
     expect(incident).toBeDefined();
-    // Verify incident was created with some expected structure
-    expect(typeof createTurn.toolResults[0]).toBe("string");
   });
 
   test("ops_dashboard returns current status", async () => {
@@ -41,8 +40,8 @@ describe("Dispatch Command Center", () => {
     const turn = await t.turn("Show me the dashboard", [
       { tool: "ops_dashboard", args: {} },
     ]);
-    expect(turn.toHaveCalledTool("ops_dashboard")).toBe(true);
-    const dashboard = JSON.parse(turn.toolResults[0]!);
+    expect(turn).toHaveCalledTool("ops_dashboard");
+    const dashboard = turn.toolResult("ops_dashboard");
     expect(dashboard).toHaveProperty("systemAlertLevel");
     expect(dashboard).toHaveProperty("activeIncidentCount");
   });
@@ -52,8 +51,8 @@ describe("Dispatch Command Center", () => {
     const turn = await t.turn("What units are available?", [
       { tool: "resources_get_available", args: { type: "all" } },
     ]);
-    expect(turn.toHaveCalledTool("resources_get_available")).toBe(true);
-    const resources = JSON.parse(turn.toolResults[0]!);
+    expect(turn).toHaveCalledTool("resources_get_available");
+    const resources = turn.toolResult("resources_get_available");
     expect(resources).toBeDefined();
   });
 });

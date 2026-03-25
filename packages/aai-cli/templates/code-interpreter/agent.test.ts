@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { createTestHarness } from "@alexkroman1/aai/testing";
+import "@alexkroman1/aai/testing/matchers";
 import agent from "./agent.ts";
 
 describe("Coda (Code Interpreter)", () => {
@@ -21,7 +22,7 @@ describe("Coda (Code Interpreter)", () => {
     const turn = await t.turn("What is 2 + 2?", [
       { tool: "run_code", args: { code: "console.log(2 + 2)" } },
     ]);
-    expect(turn.toHaveCalledTool("run_code")).toBe(true);
+    expect(turn).toHaveCalledTool("run_code");
     expect(turn.toolResults[0]).toBe("4");
   });
 });

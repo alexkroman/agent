@@ -31,6 +31,11 @@
       "types": "./dist/testing.d.ts",
       "import": "./dist/testing.js"
     },
+    "./testing/matchers": {
+      "source": "./matchers.ts",
+      "types": "./dist/matchers.d.ts",
+      "import": "./dist/matchers.js"
+    },
     "./server": {
       "source": "./server.ts",
       "types": "./dist/server.d.ts",
@@ -99,6 +104,7 @@
   },
   "peerDependencies": {
     "@hono/node-server": "^1.19.11",
+    "vitest": ">=4.0.0",
     "hono": "^4.12.9"
   },
   "peerDependenciesMeta": {
@@ -106,6 +112,9 @@
       "optional": true
     },
     "hono": {
+      "optional": true
+    },
+    "vitest": {
       "optional": true
     }
   },

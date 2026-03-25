@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { createTestHarness } from "@alexkroman1/aai/testing";
+import "@alexkroman1/aai/testing/matchers";
 import agent from "./agent.ts";
 
 describe("Pizza Palace", () => {
@@ -22,16 +23,16 @@ describe("Pizza Palace", () => {
     const addTurn = await t.turn("I want a large pepperoni pizza", [
       { tool: "add_pizza", args: { size: "large", crust: "regular", toppings: ["pepperoni"], quantity: 1 } },
     ]);
-    expect(addTurn.toHaveCalledTool("add_pizza", { size: "large" })).toBe(true);
-    const added = JSON.parse(addTurn.toolResults[0]!);
+    expect(addTurn).toHaveCalledTool("add_pizza", { size: "large" });
+    const added = addTurn.toolResult("add_pizza");
     expect(added.added.size).toBe("large");
     expect(added.itemCount).toBe(1);
 
     const viewTurn = await t.turn("Show me my order", [
       { tool: "view_order", args: {} },
     ]);
-    expect(viewTurn.toHaveCalledTool("view_order")).toBe(true);
-    const order = JSON.parse(viewTurn.toolResults[0]!);
+    expect(viewTurn).toHaveCalledTool("view_order");
+    const order = viewTurn.toolResult("view_order");
     expect(order.pizzas).toHaveLength(1);
   });
 
@@ -45,8 +46,8 @@ describe("Pizza Palace", () => {
     const removeTurn = await t.turn("Remove that pizza", [
       { tool: "remove_pizza", args: { pizza_id: 1 } },
     ]);
-    expect(removeTurn.toHaveCalledTool("remove_pizza")).toBe(true);
-    const result = JSON.parse(removeTurn.toolResults[0]!);
+    expect(removeTurn).toHaveCalledTool("remove_pizza");
+    const result = removeTurn.toolResult("remove_pizza");
     expect(result.itemCount).toBe(0);
   });
 
@@ -60,7 +61,7 @@ describe("Pizza Palace", () => {
     const updateTurn = await t.turn("Add pepperoni to that", [
       { tool: "update_pizza", args: { pizza_id: 1, toppings: ["cheese", "pepperoni"] } },
     ]);
-    const updated = JSON.parse(updateTurn.toolResults[0]!);
+    const updated = updateTurn.toolResult("update_pizza");
     expect(updated.updated.toppings).toContain("pepperoni");
   });
 
@@ -69,7 +70,7 @@ describe("Pizza Palace", () => {
     const turn = await t.turn("Place my order", [
       { tool: "place_order", args: {} },
     ]);
-    const result = JSON.parse(turn.toolResults[0]!);
+    const result = turn.toolResult("place_order");
     expect(result.error).toBe("Cannot place an empty order.");
   });
 
@@ -91,7 +92,7 @@ describe("Pizza Palace", () => {
     const placeTurn = await t.turn("That's it, place the order", [
       { tool: "place_order", args: {} },
     ]);
-    const order = JSON.parse(placeTurn.toolResults[0]!);
+    const order = placeTurn.toolResult("place_order");
     expect(order.orderNumber).toBeDefined();
     expect(order.customerName).toBe("Alex");
     expect(order.pizzas).toBe(2);

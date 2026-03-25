@@ -19,6 +19,7 @@ export default defineConfig({
     "telemetry.ts",
     "_mock-ws.ts",
     "testing.ts",
+    "matchers.ts",
     "_utils.ts",
   ],
   format: "esm",

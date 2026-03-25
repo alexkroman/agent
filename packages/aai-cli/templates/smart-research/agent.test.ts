@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { createTestHarness } from "@alexkroman1/aai/testing";
+import "@alexkroman1/aai/testing/matchers";
 import agent from "./agent.ts";
 
 describe("Smart Research Agent", () => {
@@ -24,8 +25,8 @@ describe("Smart Research Agent", () => {
     const turn = await t.turn("Found a good source", [
       { tool: "save_source", args: { url: "https://example.com", title: "Example" } },
     ]);
-    expect(turn.toHaveCalledTool("save_source")).toBe(true);
-    const result = JSON.parse(turn.toolResults[0]!);
+    expect(turn).toHaveCalledTool("save_source");
+    const result = turn.toolResult("save_source");
     expect(result.saved).toBe(true);
     expect(result.totalSources).toBe(1);
   });
@@ -36,13 +37,13 @@ describe("Smart Research Agent", () => {
     const turn1 = await t.turn("Move to analysis", [
       { tool: "advance_phase", args: {} },
     ]);
-    const result1 = JSON.parse(turn1.toolResults[0]!);
+    const result1 = turn1.toolResult("advance_phase");
     expect(result1.phase).toBe("analyze");
 
     const turn2 = await t.turn("Ready to respond", [
       { tool: "advance_phase", args: {} },
     ]);
-    const result2 = JSON.parse(turn2.toolResults[0]!);
+    const result2 = turn2.toolResult("advance_phase");
     expect(result2.phase).toBe("respond");
   });
 
@@ -54,7 +55,7 @@ describe("Smart Research Agent", () => {
     const turn = await t.turn("Summarize the conversation", [
       { tool: "conversation_summary", args: {} },
     ]);
-    const result = JSON.parse(turn.toolResults[0]!);
+    const result = turn.toolResult("conversation_summary");
     expect(result.totalMessages).toBeGreaterThanOrEqual(3);
   });
 });

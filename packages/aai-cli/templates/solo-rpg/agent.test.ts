@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { createTestHarness } from "@alexkroman1/aai/testing";
+import "@alexkroman1/aai/testing/matchers";
 import agent from "./agent.ts";
 
 describe("Solo RPG", () => {
@@ -25,8 +26,8 @@ describe("Solo RPG", () => {
     const turn = await t.turn("show me my character", [
       { tool: "check_state", args: {} },
     ]);
-    expect(turn.toHaveCalledTool("check_state")).toBe(true);
-    const state = JSON.parse(turn.toolResults[0]!);
+    expect(turn).toHaveCalledTool("check_state");
+    const state = turn.toolResult("check_state");
     expect(state.initialized).toBe(false);
     expect(state.phase).toBe("genre");
   });
@@ -36,8 +37,8 @@ describe("Solo RPG", () => {
     const turn = await t.turn("ask the oracle", [
       { tool: "oracle", args: { type: "yes_no" } },
     ]);
-    expect(turn.toHaveCalledTool("oracle", { type: "yes_no" })).toBe(true);
-    const result = JSON.parse(turn.toolResults[0]!);
+    expect(turn).toHaveCalledTool("oracle", { type: "yes_no" });
+    const result = turn.toolResult("oracle");
     expect(result).toHaveProperty("type", "yes_no");
   });
 
@@ -46,7 +47,7 @@ describe("Solo RPG", () => {
     const turn = await t.turn("move to the tavern", [
       { tool: "update_state", args: { location: "The Silver Tankard", locationDesc: "A warm tavern" } },
     ]);
-    expect(turn.toHaveCalledTool("update_state")).toBe(true);
+    expect(turn).toHaveCalledTool("update_state");
     expect(turn.toolResults[0]).toBeDefined();
   });
 });

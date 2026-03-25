@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { createTestHarness } from "@alexkroman1/aai/testing";
+import "@alexkroman1/aai/testing/matchers";
 import agent from "./agent.ts";
 
 describe("Math Buddy", () => {
@@ -21,7 +22,7 @@ describe("Math Buddy", () => {
     const turn = await t.turn("Calculate 15% tip on $85", [
       { tool: "run_code", args: { code: "console.log((85 * 0.15).toFixed(2))" } },
     ]);
-    expect(turn.toHaveCalledTool("run_code")).toBe(true);
+    expect(turn).toHaveCalledTool("run_code");
     expect(turn.toolResults[0]).toBe("12.75");
   });
 });

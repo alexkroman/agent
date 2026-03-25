@@ -1,4 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
+/// <reference path="./matchers.d.ts" />
 
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
@@ -93,10 +94,9 @@ describe("TestHarness.turn", () => {
     const turn = await t.turn("Add a large pepperoni", [
       { tool: "add_pizza", args: { size: "large", toppings: ["pepperoni"] } },
     ]);
-    expect(turn.toolCalls).toHaveLength(1);
-    expect(turn.toolCalls.at(0)?.toolName).toBe("add_pizza");
-    const parsed = JSON.parse(turn.toolCalls.at(0)?.result as string);
-    expect(parsed.added.size).toBe("large");
+    expect(turn).toHaveCalledTool("add_pizza");
+    const result = turn.toolResult<{ added: { size: string }; count: number }>("add_pizza");
+    expect(result.added.size).toBe("large");
   });
 
   test("records tool messages in conversation history", async () => {
@@ -153,23 +153,23 @@ describe("TestHarness.turn", () => {
 });
 
 describe("TurnResult assertions", () => {
-  test("toHaveCalledTool checks tool name", async () => {
+  test("toHaveCalledTool vitest matcher checks tool name", async () => {
     const t = createTestHarness(pizzaAgent);
     const turn = await t.turn("Add pizza", [
       { tool: "add_pizza", args: { size: "large", toppings: ["pepperoni"] } },
     ]);
-    expect(turn.toHaveCalledTool("add_pizza")).toBe(true);
-    expect(turn.toHaveCalledTool("view_order")).toBe(false);
+    expect(turn).toHaveCalledTool("add_pizza");
+    expect(turn).not.toHaveCalledTool("view_order");
   });
 
-  test("toHaveCalledTool checks partial args", async () => {
+  test("toHaveCalledTool vitest matcher checks partial args", async () => {
     const t = createTestHarness(pizzaAgent);
     const turn = await t.turn("Add pizza", [
       { tool: "add_pizza", args: { size: "large", toppings: ["pepperoni", "mushrooms"] } },
     ]);
-    expect(turn.toHaveCalledTool("add_pizza", { size: "large" })).toBe(true);
-    expect(turn.toHaveCalledTool("add_pizza", { size: "small" })).toBe(false);
-    expect(turn.toHaveCalledTool("add_pizza", { toppings: ["pepperoni", "mushrooms"] })).toBe(true);
+    expect(turn).toHaveCalledTool("add_pizza", { size: "large" });
+    expect(turn).not.toHaveCalledTool("add_pizza", { size: "small" });
+    expect(turn).toHaveCalledTool("add_pizza", { toppings: ["pepperoni", "mushrooms"] });
   });
 
   test("getToolCalls filters by name", async () => {
@@ -184,13 +184,22 @@ describe("TurnResult assertions", () => {
     expect(turn.getToolCalls("place_order")).toHaveLength(0);
   });
 
-  test("toolResults contains result strings", async () => {
+  test("toolResult returns typed parsed JSON", async () => {
     const t = createTestHarness(pizzaAgent);
     const turn = await t.turn("Add pizza", [
       { tool: "add_pizza", args: { size: "medium", toppings: [] } },
     ]);
-    expect(turn.toolResults).toHaveLength(1);
-    expect(JSON.parse(turn.toolResults[0] as string).added.size).toBe("medium");
+    const result = turn.toolResult<{ added: { size: string }; count: number }>("add_pizza");
+    expect(result.added.size).toBe("medium");
+    expect(result.count).toBe(1);
+  });
+
+  test("toolResult throws for uncalled tool", async () => {
+    const t = createTestHarness(pizzaAgent);
+    const turn = await t.turn("Add pizza", [
+      { tool: "add_pizza", args: { size: "small", toppings: [] } },
+    ]);
+    expect(() => turn.toolResult("view_order")).toThrow('Tool "view_order" was not called');
   });
 });
 
@@ -207,7 +216,7 @@ describe("multi-turn conversation", () => {
     ]);
 
     const turn3 = await t.turn("Show me the order", [{ tool: "view_order", args: {} }]);
-    const order = JSON.parse(turn3.toolCalls.at(0)?.result as string);
+    const order = turn3.toolResult<{ count: number; pizzas: unknown[] }>("view_order");
     expect(order.count).toBe(2);
     expect(order.pizzas).toHaveLength(2);
   });
