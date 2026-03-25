@@ -15,6 +15,8 @@ export default defineConfig({
         // Covered by integration test (pnpm test:integration).
         "**/sandbox.ts",
         "**/sandbox-harness.ts",
+        "**/sandbox-network.ts",
+        "**/sandbox-sidecar.ts",
         "**/sandbox-integration.test.ts",
         "**/build-harness.ts",
         // Harness runtime is bundled by Vite into CJS for the isolate.
@@ -24,10 +26,10 @@ export default defineConfig({
         "**/_prompts.ts",
       ],
       thresholds: {
-        lines: 80,
-        functions: 80,
+        lines: 83,
+        functions: 82,
         branches: 71,
-        statements: 80,
+        statements: 82,
       },
     },
     projects: [
