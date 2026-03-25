@@ -38,7 +38,6 @@
   "pnpm": {
     "ignoredBuiltDependencies": [
       "esbuild",
-      "isolated-vm",
       "lefthook"
     ],
     "overrides": {
