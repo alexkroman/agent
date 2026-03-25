@@ -347,7 +347,7 @@ describe("upsertChunks", () => {
     await upsertChunks(chunks, "http://localhost/v", "key", (s) => statusCalls.push(s), mockFetch);
     // Should have initial call, per-chunk call, and final null
     expect(statusCalls.length).toBeGreaterThanOrEqual(2);
-    expect(statusCalls[statusCalls.length - 1]).toBeNull();
+    expect(statusCalls.at(-1)).toBeNull();
   });
 
   test("handles empty chunk array", async () => {

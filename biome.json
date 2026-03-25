@@ -46,7 +46,9 @@
         "noCommonJs": "error",
         "noExportedImports": "error",
         "noSubstr": "error",
-        "useTrimStartEnd": "error"
+        "useTrimStartEnd": "error",
+        "useDefaultParameterLast": "error",
+        "useAtIndex": "error"
       },
       "suspicious": {
         "recommended": true,
@@ -57,7 +59,9 @@
         "noMisplacedAssertion": "error",
         "noAssignInExpressions": "error",
         "noDoubleEquals": "error",
-        "noEvolvingTypes": "error"
+        "noEvolvingTypes": "error",
+        "noSkippedTests": "warn",
+        "useGuardForIn": "error"
       },
       "complexity": {
         "recommended": true,
