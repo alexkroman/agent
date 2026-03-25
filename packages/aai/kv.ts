@@ -125,22 +125,24 @@ function matchGlob(key: string, pattern: string): boolean {
   // Split on `*`, match each literal segment in order.
   const parts = pattern.split("*");
   if (parts.length === 1) return key === pattern;
-  let pos = 0;
-  for (let i = 0; i < parts.length; i++) {
-    const part = parts[i] as string;
-    if (i === 0) {
-      if (!key.startsWith(part)) return false;
-      pos = part.length;
-    } else if (i === parts.length - 1) {
-      if (!key.endsWith(part)) return false;
-      if (key.length - part.length < pos) return false;
-    } else {
-      const idx = key.indexOf(part, pos);
-      if (idx === -1) return false;
-      pos = idx + part.length;
-    }
+
+  // First segment must be a prefix
+  const first = parts[0] as string;
+  if (!key.startsWith(first)) return false;
+
+  // Last segment must be a suffix
+  const last = parts.at(-1) as string;
+  if (!key.endsWith(last)) return false;
+
+  // Middle segments must appear in order between prefix and suffix
+  let pos = first.length;
+  const end = key.length - last.length;
+  for (const part of parts.slice(1, -1)) {
+    const idx = key.indexOf(part, pos);
+    if (idx === -1 || idx > end) return false;
+    pos = idx + part.length;
   }
-  return true;
+  return pos <= end;
 }
 
 /**

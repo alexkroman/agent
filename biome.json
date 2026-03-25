@@ -65,7 +65,7 @@
       },
       "complexity": {
         "recommended": true,
-        "noExcessiveCognitiveComplexity": "warn",
+        "noExcessiveCognitiveComplexity": "error",
         "noExcessiveLinesPerFunction": {
           "level": "error",
           "options": { "maxLines": 150 }
