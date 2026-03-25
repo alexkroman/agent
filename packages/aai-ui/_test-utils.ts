@@ -77,6 +77,9 @@ export class MockAudioNode {
   connect(dest: MockAudioNode | MockAudioWorkletNode) {
     this.connected.push(dest);
   }
+  disconnect() {
+    /* noop */
+  }
 }
 
 export class MockGainNode extends MockAudioNode {

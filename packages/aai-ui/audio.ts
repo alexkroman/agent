@@ -159,6 +159,9 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
       if (lifecycle.signal.aborted) return;
       lifecycle.abort();
       capNode.port.postMessage({ event: "stop" });
+      mic.disconnect();
+      capNode.disconnect();
+      if (playNode) playNode.disconnect();
       for (const t of stream.getTracks()) t.stop();
       await ctx.close().catch(() => {
         /* swallow */

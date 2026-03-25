@@ -171,6 +171,85 @@ describe("buildHookInvoker", () => {
     const config = await invoker.resolveTurnConfig("s1", 1);
     expect(config).toEqual({});
   });
+
+  it("beforeTurn sends text and returns result", async () => {
+    mockHookResponse("blocked");
+    const invoker = _internals.buildHookInvoker("http://127.0.0.1:9999");
+    const result = await invoker.beforeTurn?.("s1", "hello");
+    expect(result).toBe("blocked");
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      "http://127.0.0.1:9999/hook",
+      expect.objectContaining({
+        body: JSON.stringify({ hook: "beforeTurn", sessionId: "s1", text: "hello" }),
+      }),
+    );
+  });
+
+  it("afterTurn sends text", async () => {
+    mockHookResponse();
+    const invoker = _internals.buildHookInvoker("http://127.0.0.1:9999");
+    await invoker.afterTurn?.("s1", "response");
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      "http://127.0.0.1:9999/hook",
+      expect.objectContaining({
+        body: JSON.stringify({ hook: "afterTurn", sessionId: "s1", text: "response" }),
+      }),
+    );
+  });
+
+  it("interceptToolCall sends tool name and args via step field", async () => {
+    mockHookResponse({ type: "block", reason: "not allowed" });
+    const invoker = _internals.buildHookInvoker("http://127.0.0.1:9999");
+    const result = await invoker.interceptToolCall?.("s1", "search", { q: "test" });
+    expect(result).toEqual({ type: "block", reason: "not allowed" });
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      "http://127.0.0.1:9999/hook",
+      expect.objectContaining({
+        body: JSON.stringify({
+          hook: "interceptToolCall",
+          sessionId: "s1",
+          step: {
+            stepNumber: 0,
+            toolCalls: [{ toolName: "search", args: { q: "test" } }],
+            text: "",
+          },
+        }),
+      }),
+    );
+  });
+
+  it("afterToolCall sends tool name, args, and result via step field", async () => {
+    mockHookResponse();
+    const invoker = _internals.buildHookInvoker("http://127.0.0.1:9999");
+    await invoker.afterToolCall?.("s1", "search", { q: "test" }, "found it");
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      "http://127.0.0.1:9999/hook",
+      expect.objectContaining({
+        body: JSON.stringify({
+          hook: "afterToolCall",
+          sessionId: "s1",
+          step: {
+            stepNumber: 0,
+            toolCalls: [{ toolName: "search", args: { q: "test" } }],
+            text: "found it",
+          },
+        }),
+      }),
+    );
+  });
+
+  it("filterOutput sends text and returns filtered result", async () => {
+    mockHookResponse("sanitized text");
+    const invoker = _internals.buildHookInvoker("http://127.0.0.1:9999");
+    const result = await invoker.filterOutput?.("s1", "raw text");
+    expect(result).toBe("sanitized text");
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      "http://127.0.0.1:9999/hook",
+      expect.objectContaining({
+        body: JSON.stringify({ hook: "filterOutput", sessionId: "s1", text: "raw text" }),
+      }),
+    );
+  });
 });
 
 // ── getIsolateConfig ─────────────────────────────────────────────────────

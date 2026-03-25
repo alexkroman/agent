@@ -292,7 +292,7 @@ async function invokeHook(agent: AgentDef, req: HookRequest): Promise<HookRespon
     interceptToolCall: async () => {
       result = await runMiddlewareToolIntercept(
         middleware,
-        req.text ?? "",
+        req.step?.toolCalls[0]?.toolName ?? "",
         (req.step?.toolCalls[0]?.args as Record<string, unknown>) ?? {},
         ctx,
       );
@@ -300,9 +300,9 @@ async function invokeHook(agent: AgentDef, req: HookRequest): Promise<HookRespon
     afterToolCall: async () => {
       await runMiddlewareAfterToolCall(
         middleware,
-        req.text ?? "",
+        req.step?.toolCalls[0]?.toolName ?? "",
         (req.step?.toolCalls[0]?.args as Record<string, unknown>) ?? {},
-        "",
+        req.text ?? "",
         ctx,
       );
     },

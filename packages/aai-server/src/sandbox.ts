@@ -18,7 +18,12 @@ import { buildReadyConfig } from "@alexkroman1/aai/protocol";
 // biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
 import { DEFAULT_S2S_CONFIG } from "@alexkroman1/aai/runtime";
 // biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
-import { createS2sSession, type HookInvoker, type Session } from "@alexkroman1/aai/session";
+import {
+  createS2sSession,
+  type HookInvoker,
+  type Session,
+  type ToolInterceptResult,
+} from "@alexkroman1/aai/session";
 // biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
 import type { ExecuteTool } from "@alexkroman1/aai/worker-entry";
 // biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
@@ -219,6 +224,28 @@ function buildHookInvoker(isolateUrl: string): HookInvoker {
       if (parsed.maxSteps != null) config.maxSteps = parsed.maxSteps;
       if (parsed.activeTools != null) config.activeTools = parsed.activeTools;
       return config;
+    },
+    async beforeTurn(sessionId, text) {
+      const result = await hook("beforeTurn", { sessionId, text });
+      return result as string | undefined;
+    },
+    afterTurn: (sessionId, text) => hook("afterTurn", { sessionId, text }) as Promise<void>,
+    async interceptToolCall(sessionId, tool, args) {
+      const result = await hook("interceptToolCall", {
+        sessionId,
+        step: { stepNumber: 0, toolCalls: [{ toolName: tool, args }], text: "" },
+      });
+      return result as ToolInterceptResult;
+    },
+    async afterToolCall(sessionId, tool, args, result) {
+      await hook("afterToolCall", {
+        sessionId,
+        step: { stepNumber: 0, toolCalls: [{ toolName: tool, args }], text: result },
+      });
+    },
+    async filterOutput(sessionId, text) {
+      const result = await hook("filterOutput", { sessionId, text });
+      return (result as string) ?? text;
     },
   };
 }

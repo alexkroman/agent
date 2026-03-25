@@ -132,6 +132,7 @@ function matchGlob(key: string, pattern: string): boolean {
 
   // Last segment must be a suffix
   const last = parts.at(-1) as string;
+  if (key.length < first.length + last.length) return false;
   if (!key.endsWith(last)) return false;
 
   // Middle segments must appear in order between prefix and suffix
