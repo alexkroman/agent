@@ -2,8 +2,8 @@
 import { HTTPException } from "hono/http-exception";
 import { isPrivateIp } from "./_net.ts";
 import { verifySlugOwner } from "./auth.ts";
-import type { BundleStore } from "./bundle_store_tigris.ts";
-import { type AgentScope, type ScopeKey, verifyScopeToken } from "./scope_token.ts";
+import type { BundleStore } from "./bundle-store-tigris.ts";
+import { type AgentScope, type ScopeKey, verifyScopeToken } from "./scope-token.ts";
 
 const VALID_SLUG_REGEXP = /^[a-z0-9][a-z0-9_-]{0,62}[a-z0-9]$/;
 

@@ -1,6 +1,6 @@
 {
   "$schema": "https://developer.microsoft.com/json-schemas/api-extractor/v7/api-extractor.schema.json",
-  "mainEntryPointFilePath": "./dist/mod.d.ts",
+  "mainEntryPointFilePath": "./dist/index.d.ts",
   "apiReport": {
     "enabled": true,
     "reportFolder": "./api/"
@@ -9,6 +9,11 @@
   "dtsRollup": { "enabled": false },
   "tsdocMetadata": { "enabled": false },
   "compiler": {
-    "tsconfigFilePath": "./tsconfig.build.json"
+    "tsconfigFilePath": "./tsconfig.build.json",
+    "overrideTsconfig": {
+      "compilerOptions": {
+        "skipLibCheck": true
+      }
+    }
   }
 }

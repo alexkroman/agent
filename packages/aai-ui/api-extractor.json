@@ -1,6 +1,6 @@
 {
   "$schema": "https://developer.microsoft.com/json-schemas/api-extractor/v7/api-extractor.schema.json",
-  "mainEntryPointFilePath": "./dist/mod.d.ts",
+  "mainEntryPointFilePath": "./dist/index.d.ts",
   "apiReport": {
     "enabled": true,
     "reportFolder": "./api/"
@@ -12,9 +12,10 @@
     "tsconfigFilePath": "./tsconfig.build.json",
     "overrideTsconfig": {
       "compilerOptions": {
+        "skipLibCheck": true,
         "paths": {
           "@alexkroman1/aai/*": ["../aai/dist/*"],
-          "@alexkroman1/aai": ["../aai/dist/mod.d.ts"]
+          "@alexkroman1/aai": ["../aai/dist/index.d.ts"]
         }
       }
     }

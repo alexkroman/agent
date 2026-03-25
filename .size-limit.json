@@ -1,0 +1,12 @@
+[
+  {
+    "name": "@alexkroman1/aai",
+    "path": "packages/aai/dist/**/*.{js,mjs}",
+    "limit": "30 kB"
+  },
+  {
+    "name": "@alexkroman1/aai-ui",
+    "path": "packages/aai-ui/dist/**/*.{js,mjs}",
+    "limit": "25 kB"
+  }
+]

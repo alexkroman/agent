@@ -7,13 +7,25 @@
     "styles.css"
   ],
   "exports": {
-    ".": "./mod.ts",
+    ".": {
+      "source": "./index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
     "./styles.css": "./styles.css",
-    "./session": "./session_mod.ts",
-    "./components": "./components_mod.ts"
+    "./session": {
+      "source": "./session.ts",
+      "types": "./dist/session.d.ts",
+      "import": "./dist/session.js"
+    },
+    "./components": {
+      "source": "./components.ts",
+      "types": "./dist/components.d.ts",
+      "import": "./dist/components.js"
+    }
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsdown && tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "lint": "biome check ."
   },
@@ -27,16 +39,16 @@
     "tailwindcss": "^4.2.1"
   },
   "peerDependenciesMeta": {
-    "@preact/signals": {
-      "optional": true
-    },
     "tailwindcss": {
       "optional": true
     }
   },
   "devDependencies": {
+    "@preact/signals": "^2.8.2",
     "@testing-library/preact": "^3.2.4",
-    "jsdom": "^29.0.1"
+    "jsdom": "^29.0.1",
+    "preact": "^10.29.0",
+    "tsdown": "^0.21.4"
   },
   "engines": {
     "node": ">=22"

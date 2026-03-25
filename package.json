@@ -7,41 +7,39 @@
     "typecheck": "turbo typecheck",
     "lint": "turbo lint",
     "lint:fix": "biome check --write packages/",
-    "check": "pnpm install --frozen-lockfile && turbo build typecheck lint && vitest run --coverage && knip && syncpack lint && madge --circular --extensions ts,tsx packages/ && api-extractor run -c packages/aai/api-extractor.json && api-extractor run -c packages/aai-ui/api-extractor.json && api-extractor run -c packages/aai-server/api-extractor.json && tsc -p packages/aai-cli/tsconfig.templates.json && markdownlint-cli2 '**/*.md' '#**/node_modules' '#.aai' && attw --pack packages/aai && attw --pack packages/aai-ui && pnpm --filter @alexkroman1/aai-server test:integration && pnpm --filter @alexkroman1/aai-cli test:e2e",
+    "check": "pnpm install --frozen-lockfile && turbo build typecheck lint && vitest run --coverage && knip && syncpack lint && api-extractor run -c packages/aai/api-extractor.json && api-extractor run -c packages/aai-ui/api-extractor.json && tsc -p packages/aai-cli/tsconfig.templates.json && markdownlint-cli2 '**/*.md' '#**/node_modules' '#.aai' && attw --pack --profile esm-only packages/aai && attw --pack packages/aai-ui --profile esm-only --entrypoints . ./session ./components && pnpm --filter @alexkroman1/aai-server test:integration && pnpm --filter @alexkroman1/aai-cli test:e2e",
     "syncpack": "syncpack",
     "changeset": "changeset",
     "version": "changeset version",
     "release": "turbo build && changeset publish",
     "link:global": "cd packages/aai-cli && pnpm link --global",
-    "prepare": "husky"
+    "prepare": "lefthook install"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.2",
-    "@biomejs/biome": "^2",
+    "@biomejs/biome": "^2.4.8",
     "@changesets/cli": "^2.30.0",
     "@microsoft/api-extractor": "^7.57.7",
-    "@preact/signals": "^2.8.2",
     "@types/node": "^25.5.0",
     "@vitest/coverage-v8": "^4.1.1",
-    "husky": "^9.1.7",
-    "knip": "^6.0.4",
-    "lint-staged": "^16.1.0",
-    "madge": "^8.0.0",
-    "markdownlint-cli2": "^0.21.0",
+    "knip": "^6.0.5",
+    "lefthook": "^1.12.3",
+    "markdownlint-cli2": "^0.22.0",
     "preact": "^10.29.0",
     "syncpack": "^14.2.1",
     "turbo": "^2.8.20",
-    "typescript": "^5",
-    "vitest": "^4.1.1",
-    "zod": "^4.3.6"
-  },
-  "lint-staged": {
-    "packages/**/*.{ts,tsx,js,mjs}": [
-      "biome check --write"
-    ]
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.1"
   },
   "packageManager": "pnpm@10.29.3",
   "engines": {
     "node": ">=22 <25"
+  },
+  "pnpm": {
+    "ignoredBuiltDependencies": [
+      "esbuild",
+      "isolated-vm",
+      "lefthook"
+    ]
   }
 }

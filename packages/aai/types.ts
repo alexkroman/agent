@@ -1,15 +1,16 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
  * Core type definitions for the AAI agent SDK.
- *
- * @module
  */
 
 import { z } from "zod";
 import type { Kv } from "./kv.ts";
 import type { VectorStore } from "./vector.ts";
 
-/** Result of the {@linkcode AgentOptions.onBeforeStep} hook. */
+/**
+ * Result of the {@link AgentOptions.onBeforeStep} hook.
+ * @public
+ */
 export type BeforeStepResult = { activeTools?: string[] } | undefined;
 
 /**
@@ -24,6 +25,8 @@ export type BeforeStepResult = { activeTools?: string[] } | undefined;
  * - `"run_code"` — Execute JavaScript in a sandbox for calculations and data processing.
  * - `"vector_search"` — Search the agent's RAG knowledge base for relevant documents.
  * - `"memory"` — Persistent KV memory: save_memory, recall_memory, list_memories, forget_memory.
+ *
+ * @public
  */
 export type BuiltinTool =
   | "web_search"
@@ -47,7 +50,9 @@ export type ToolChoice = "auto" | "required" | "none" | { type: "tool"; toolName
  * A single message in the conversation history.
  *
  * Messages are passed to tool `execute` functions via
- * {@linkcode ToolContext.messages} to provide conversation context.
+ * {@link ToolContext.messages} to provide conversation context.
+ *
+ * @public
  */
 export type Message = {
   /** The role of the message sender. */
@@ -62,7 +67,7 @@ export type Message = {
  * Provides access to the session environment, state, KV store, and
  * conversation history from within a tool's execute handler.
  *
- * @typeParam S The shape of per-session state created by the agent's
+ * @typeParam S - The shape of per-session state created by the agent's
  *   `state` factory. Defaults to `Record<string, unknown>`.
  *
  * @example
@@ -79,6 +84,8 @@ export type Message = {
  *   },
  * };
  * ```
+ *
+ * @public
  */
 export type ToolContext<S = Record<string, unknown>> = {
   /** Environment variables declared in the agent config. */
@@ -96,11 +103,13 @@ export type ToolContext<S = Record<string, unknown>> = {
 /**
  * Context passed to lifecycle hooks (`onConnect`, `onTurn`, etc.).
  *
- * Same as {@linkcode ToolContext} but without `messages`, since hooks
+ * Same as {@link ToolContext} but without `messages`, since hooks
  * run outside the tool execution flow.
  *
- * @typeParam S The shape of per-session state created by the agent's
+ * @typeParam S - The shape of per-session state created by the agent's
  *   `state` factory. Defaults to `Record<string, unknown>`.
+ *
+ * @public
  */
 export type HookContext<S = Record<string, unknown>> = Omit<ToolContext<S>, "messages">;
 
@@ -111,7 +120,7 @@ export type HookContext<S = Record<string, unknown>> = Omit<ToolContext<S>, "mes
  * description (shown to the LLM), optional Zod parameters schema, and an
  * `execute` function that runs inside the sandboxed worker.
  *
- * @typeParam P A Zod object schema describing the tool's parameters.
+ * @typeParam P - A Zod object schema describing the tool's parameters.
  *   Defaults to `ZodObject<ZodRawShape>` so tools without parameters don't need an explicit
  *   type argument.
  *
@@ -133,6 +142,8 @@ export type HookContext<S = Record<string, unknown>> = Omit<ToolContext<S>, "mes
  *
  * const params = z.object({ city: z.string() });
  * ```
+ *
+ * @public
  */
 export type ToolDef<
   P extends z.ZodObject<z.ZodRawShape> = z.ZodObject<z.ZodRawShape>,
@@ -170,6 +181,8 @@ export type ToolDef<
  *   },
  * });
  * ```
+ *
+ * @public
  */
 export function tool<P extends z.ZodObject<z.ZodRawShape>, S = Record<string, unknown>>(
   def: ToolDef<P, S>,
@@ -182,6 +195,8 @@ export function tool<P extends z.ZodObject<z.ZodRawShape>, S = Record<string, un
  *
  * Each turn may consist of multiple steps (up to `maxSteps`). A step
  * represents one LLM invocation that may include tool calls and text output.
+ *
+ * @public
  */
 export type StepInfo = {
   /** 1-based step index within the current turn. */
@@ -196,11 +211,11 @@ export type StepInfo = {
 };
 
 /**
- * Options passed to {@linkcode defineAgent} to configure an agent.
+ * Options passed to {@link defineAgent} to configure an agent.
  *
  * Only `name` is required; all other fields have sensible defaults.
  *
- * @typeParam S The shape of per-session state returned by the `state`
+ * @typeParam S - The shape of per-session state returned by the `state`
  *   factory. Defaults to `Record<string, unknown>`.
  *
  * @example
@@ -222,6 +237,8 @@ export type StepInfo = {
  *   },
  * });
  * ```
+ *
+ * @public
  */
 export type AgentOptions<S = Record<string, unknown>> = {
   /** Display name for the agent. */
@@ -236,7 +253,7 @@ export type AgentOptions<S = Record<string, unknown>> = {
    * Maximum agentic loop iterations per turn. Can be a static number or
    * a function that receives the hook context and returns a number.
    *
-   * @default {5}
+   * @defaultValue 5
    */
   maxSteps?: number | ((ctx: HookContext<S>) => number);
   /** How the LLM should choose tools. */
@@ -304,9 +321,9 @@ export const DEFAULT_GREETING: string =
 
 /**
  * Agent definition with all defaults applied, returned by
- * {@linkcode defineAgent}.
+ * {@link defineAgent}.
  *
- * Unlike {@linkcode AgentOptions}, every field here is resolved to its
+ * Unlike {@link AgentOptions}, every field here is resolved to its
  * final value — no optional fields with implicit defaults remain.
  */
 export type AgentDef = {
@@ -328,34 +345,6 @@ export type AgentDef = {
   onBeforeStep?: AgentOptions["onBeforeStep"];
 };
 
-/**
- * Create an agent definition from the given options, applying sensible defaults.
- *
- * This is the main entry point for defining a voice agent. The returned
- * {@linkcode AgentDef} is consumed by the AAI server at deploy time.
- *
- * @param options Configuration for the agent including name, instructions,
- *   tools, hooks, and other settings.
- * @returns A fully resolved agent definition with all defaults applied.
- *
- * @example Basic agent with a custom tool
- * ```ts
- * import { defineAgent } from "aai";
- * import { z } from "zod";
- *
- * export default defineAgent({
- *   name: "greeter",
- *   instructions: "You greet people warmly.",
- *   tools: {
- *     greet: {
- *       description: "Greet a user by name",
- *       parameters: z.object({ name: z.string() }),
- *       execute: ({ name }) => `Hello, ${name}!`,
- *     },
- *   },
- * });
- * ```
- */
 const BuiltinToolSchema = z.enum([
   "web_search",
   "visit_webpage",
@@ -400,6 +389,36 @@ const AgentOptionsSchema = z.object({
   onBeforeStep: z.function().optional(),
 });
 
+/**
+ * Create an agent definition from the given options, applying sensible defaults.
+ *
+ * This is the main entry point for defining a voice agent. The returned
+ * `AgentDef` is consumed by the AAI server at deploy time.
+ *
+ * @param options - Configuration for the agent including name, instructions,
+ *   tools, hooks, and other settings.
+ * @returns A fully resolved agent definition with all defaults applied.
+ *
+ * @public
+ *
+ * @example Basic agent with a custom tool
+ * ```ts
+ * import { defineAgent } from "aai";
+ * import { z } from "zod";
+ *
+ * export default defineAgent({
+ *   name: "greeter",
+ *   instructions: "You greet people warmly.",
+ *   tools: {
+ *     greet: {
+ *       description: "Greet a user by name",
+ *       parameters: z.object({ name: z.string() }),
+ *       execute: ({ name }) => `Hello, ${name}!`,
+ *     },
+ *   },
+ * });
+ * ```
+ */
 export function defineAgent<S>(options: AgentOptions<S>): AgentDef {
   AgentOptionsSchema.parse(options);
   return {

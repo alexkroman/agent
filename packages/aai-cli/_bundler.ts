@@ -5,7 +5,7 @@ import path from "node:path";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import preact from "@preact/preset-vite";
 import tailwindcss from "@tailwindcss/vite";
-import { build, type Plugin } from "vite";
+import { build } from "vite";
 import type { AgentEntry } from "./_discover.ts";
 
 /**
@@ -20,7 +20,7 @@ export class BundleError extends Error {
   }
 }
 
-/** Output artifacts produced by {@linkcode bundleAgent}. */
+/** Output artifacts produced by {@link bundleAgent}. */
 export type BundleOutput = {
   /** Minified ESM JavaScript for the server-side worker. */
   worker: string;
@@ -32,30 +32,16 @@ export type BundleOutput = {
   workerBytes: number;
 };
 
-/** Vite plugin that provides a virtual worker entry module (no file on disk). */
-function workerEntryPlugin(agentDir: string): Plugin {
-  const virtualId = "virtual:worker-entry";
-  const resolvedId = `\0${virtualId}`;
-  const agentPath = path.join(agentDir, "agent.ts");
-  return {
-    name: "aai-worker-entry",
-    resolveId(source) {
-      return source === virtualId ? resolvedId : null;
-    },
-    load(id) {
-      if (id !== resolvedId) return null;
-      return `import agent from ${JSON.stringify(agentPath)}; module.exports = agent;`;
-    },
-  };
-}
-
 /** Read all files in a directory as a map of relative paths to contents. */
 async function readDirFiles(dir: string): Promise<Record<string, string>> {
   let entries: import("node:fs").Dirent[];
   try {
     entries = await fs.readdir(dir, { recursive: true, withFileTypes: true });
-  } catch {
-    return {};
+  } catch (err: unknown) {
+    if (err instanceof Error && "code" in err && err.code === "ENOENT") {
+      return {};
+    }
+    throw err;
   }
   const files: Record<string, string> = {};
   await Promise.all(
@@ -86,17 +72,16 @@ export async function bundleAgent(
   const buildDir = path.join(aaiDir, "build");
   const clientDir = path.join(aaiDir, "client");
 
-  // 1. Worker build — bundles agent.ts into a single CJS file for V8 isolate execution
+  // 1. Worker build — bundles agent.ts into a single ESM file for the secure-exec isolate
   try {
     await build({
       configFile: false,
       root: agent.dir,
       logLevel: "warn",
-      plugins: [workerEntryPlugin(agent.dir)],
       build: {
         rollupOptions: {
-          input: "virtual:worker-entry",
-          output: { format: "cjs", entryFileNames: "worker.js", exports: "named" },
+          input: path.join(agent.dir, "agent.ts"),
+          output: { format: "es", entryFileNames: "worker.js" },
         },
         outDir: buildDir,
         emptyOutDir: true,

@@ -1,0 +1,29 @@
+import { defineConfig } from "tsdown";
+
+export default defineConfig({
+  entry: [
+    "index.ts",
+    "types.ts",
+    "kv.ts",
+    "vector.ts",
+    "server.ts",
+    "protocol.ts",
+    "s2s.ts",
+    "session.ts",
+    "runtime.ts",
+    "worker-entry.ts",
+    "ws-handler.ts",
+    "direct-executor.ts",
+    "builtin-tools.ts",
+    "_internal-types.ts",
+    "_mock-ws.ts",
+    "_utils.ts",
+  ],
+  format: "esm",
+  platform: "node",
+  target: "node22",
+  outDir: "dist",
+  dts: false,
+  outExtensions: () => ({ js: ".js" }),
+  deps: { neverBundle: [/^[^./]/] },
+});

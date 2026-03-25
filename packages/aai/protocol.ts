@@ -3,8 +3,6 @@
  * WebSocket wire-format types shared by server and client.
  *
  * Note: this module is for internal use only and should not be used directly.
- *
- * @module
  */
 
 import { z } from "zod";
@@ -83,7 +81,11 @@ export const SessionErrorCodeSchema = z.enum([
   "internal",
 ]);
 
-/** Error codes for categorizing session errors on the wire. */
+/**
+ * Error codes for categorizing session errors on the wire.
+ *
+ * @public
+ */
 export type SessionErrorCode = z.infer<typeof SessionErrorCodeSchema>;
 
 // ─── Client events ─────────────────────────────────────────────────────────
@@ -95,7 +97,7 @@ const textEv = <T extends string>(t: T) => z.object({ type: z.literal(t), text: 
 
 const turnOrder = z.number().int().nonnegative().optional();
 
-/** Zod schema for {@linkcode ClientEvent}. */
+/** Zod schema for {@link ClientEvent}. */
 export const ClientEventSchema = z.discriminatedUnion("type", [
   ev("speech_started"),
   ev("speech_stopped"),

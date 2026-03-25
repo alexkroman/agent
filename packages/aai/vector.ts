@@ -1,12 +1,12 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
  * Vector store interface and in-memory implementation.
- *
- * @module
  */
 
 /**
  * A single vector search result entry.
+ *
+ * @public
  */
 export type VectorEntry = {
   /** The unique identifier for this entry. */
@@ -22,8 +22,8 @@ export type VectorEntry = {
 /**
  * Async vector store interface used by agents.
  *
- * Agents access the vector store via {@linkcode ToolContext.vector} or
- * {@linkcode HookContext.vector}. Backed by Upstash Vector with built-in
+ * Agents access the vector store via `ToolContext.vector` or
+ * `HookContext.vector`. Backed by Upstash Vector with built-in
  * embeddings — raw text is sent and vectorized server-side.
  *
  * @example
@@ -38,6 +38,8 @@ export type VectorEntry = {
  *   },
  * };
  * ```
+ *
+ * @public
  */
 export type VectorStore = {
   /**
@@ -45,9 +47,9 @@ export type VectorStore = {
    *
    * The text is automatically embedded by the server's vector database.
    *
-   * @param id Unique identifier for this entry.
-   * @param data The text content to store and embed.
-   * @param metadata Optional metadata to store alongside the vector.
+   * @param id - Unique identifier for this entry.
+   * @param data - The text content to store and embed.
+   * @param metadata - Optional metadata to store alongside the vector.
    */
   upsert(id: string, data: string, metadata?: Record<string, unknown>): Promise<void>;
 
@@ -56,18 +58,16 @@ export type VectorStore = {
    *
    * Returns the most similar entries ranked by score.
    *
-   * @param text The query text to search for.
-   * @param options Optional query parameters.
-   * @param options.topK Maximum number of results (default: 10).
-   * @param options.filter Metadata filter expression.
-   * @returns An array of matching {@linkcode VectorEntry} objects.
+   * @param text - The query text to search for.
+   * @param options - Optional query parameters. `topK` sets the maximum number of results (default: 10). `filter` is a metadata filter expression.
+   * @returns An array of matching {@link VectorEntry} objects.
    */
   query(text: string, options?: { topK?: number; filter?: string }): Promise<VectorEntry[]>;
 
   /**
    * Remove entries by ID.
    *
-   * @param ids A single ID or array of IDs to remove.
+   * @param ids - A single ID or array of IDs to remove.
    */
   remove(ids: string | string[]): Promise<void>;
 };
@@ -78,7 +78,7 @@ export type VectorStore = {
  * Uses brute-force substring matching instead of real vector similarity.
  * Good enough for testing the plumbing but not for production use.
  *
- * @returns A {@linkcode VectorStore} instance backed by in-memory storage.
+ * @returns A {@link VectorStore} instance backed by in-memory storage.
  *
  * @example
  * ```ts

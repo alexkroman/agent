@@ -345,6 +345,8 @@ await ctx.kv.set("user:123", { name: "Alice" }); // save
 await ctx.kv.set("temp:x", value, { expireIn: 60_000 }); // save with TTL (ms)
 const user = await ctx.kv.get<User>("user:123"); // read (or null)
 const notes = await ctx.kv.list("note:", { limit: 10, reverse: true }); // list by prefix
+const allKeys = await ctx.kv.keys(); // all keys
+const userKeys = await ctx.kv.keys("user:*"); // keys matching glob pattern
 await ctx.kv.delete("user:123"); // delete
 ```
 
@@ -624,9 +626,8 @@ data lives on `session` (a `VoiceSession`); UI-only controls are top-level.
   disconnected, `{ intentional: false }` = unexpected disconnect (show
   reconnect UI)
 
-**UI Message type:** `{ role: "user" | "assistant"; text: string }`. Note: UI
-messages use `text` (not `content`). The SDK `Message` type uses `content` — do
-not mix them up in custom UIs.
+**UI Message type:** `{ role: "user" | "assistant"; content: string }`. Both UI
+and SDK `Message` types use `content`.
 
 ### Showing tool calls in custom UI
 
@@ -832,7 +833,7 @@ function MyComponent() {
 
 ## Self-hosting with `createServer()`
 
-Agents can run anywhere (Node, Deno, Docker) without the managed platform:
+Agents can run anywhere (Node, Docker) without the managed platform:
 
 ```ts
 import { defineAgent } from "aai";
@@ -851,9 +852,9 @@ const server = createServer({
 await server.listen(3000);
 ```
 
-Run with `node --experimental-strip-types server.ts` or bundle with your
-preferred tool. The server handles WebSocket connections, STT/TTS, and the
-agentic loop. Set `ASSEMBLYAI_API_KEY` as an environment variable.
+Run with `node server.ts` (Node >=22.6 strips types natively) or bundle
+with your preferred tool. The server handles WebSocket connections, STT/TTS,
+and the agentic loop. Set `ASSEMBLYAI_API_KEY` as an environment variable.
 
 ## Useful free API endpoints
 

@@ -46,14 +46,14 @@ export function createVoiceSession(options: SessionOptions): VoiceSession;
 
 // @public (undocumented)
 export function ErrorBanner(input: {
-    error: Signal<SessionError | null>;
+    error: Reactive<SessionError | null>;
     className?: string;
 }): preact_2.JSX.Element | null;
 
 // @public
 export type Message = {
     role: "user" | "assistant";
-    text: string;
+    content: string;
 };
 
 // @public (undocumented)
@@ -102,12 +102,17 @@ export type MountTheme = {
 };
 
 // @public
+export type Reactive<T> = {
+    value: T;
+};
+
+// @public
 export type SessionError = {
     readonly code: SessionErrorCode;
     readonly message: string;
 };
 
-// Warning: (ae-forgotten-export) The symbol "SessionErrorCodeSchema" needs to be exported by the entry point mod.d.ts
+// Warning: (ae-forgotten-export) The symbol "SessionErrorCodeSchema" needs to be exported by the entry point index.d.ts
 //
 // @public
 export type SessionErrorCode = z.infer<typeof SessionErrorCodeSchema>;
@@ -115,6 +120,8 @@ export type SessionErrorCode = z.infer<typeof SessionErrorCodeSchema>;
 // @public
 export type SessionOptions = {
     platformUrl: string;
+    signal?: <T>(initial: T) => Reactive<T>;
+    batch?: (fn: () => void) => void;
 };
 
 // @public
@@ -156,7 +163,7 @@ export function StartScreen(input: {
 
 // @public (undocumented)
 export function StateIndicator(input: {
-    state: Signal<AgentState>;
+    state: Reactive<AgentState>;
     className?: string;
 }): preact_2.JSX.Element;
 
@@ -183,7 +190,7 @@ export type ToolCallInfo = {
 
 // @public (undocumented)
 export function Transcript(input: {
-    userUtterance: Signal<string | null>;
+    userUtterance: Reactive<string | null>;
     className?: string;
 }): preact_2.JSX.Element | null;
 
@@ -201,13 +208,13 @@ export function useToolResult(callback: (toolName: string, result: unknown, tool
 
 // @public
 export type VoiceSession = {
-    readonly state: Signal<AgentState>;
-    readonly messages: Signal<Message[]>;
-    readonly toolCalls: Signal<ToolCallInfo[]>;
-    readonly userUtterance: Signal<string | null>;
-    readonly agentUtterance: Signal<string | null>;
-    readonly error: Signal<SessionError | null>;
-    readonly disconnected: Signal<{
+    readonly state: Reactive<AgentState>;
+    readonly messages: Reactive<Message[]>;
+    readonly toolCalls: Reactive<ToolCallInfo[]>;
+    readonly userUtterance: Reactive<string | null>;
+    readonly agentUtterance: Reactive<string | null>;
+    readonly error: Reactive<SessionError | null>;
+    readonly disconnected: Reactive<{
         intentional: boolean;
     } | null>;
     connect(options?: {
@@ -222,8 +229,8 @@ export type VoiceSession = {
 
 // Warnings were encountered during analysis:
 //
-// _components/button.tsx:16:3 - (ae-forgotten-export) The symbol "ButtonVariant" needs to be exported by the entry point mod.d.ts
-// _components/button.tsx:17:3 - (ae-forgotten-export) The symbol "ButtonSize" needs to be exported by the entry point mod.d.ts
+// dist/_components/button.d.ts:6:5 - (ae-forgotten-export) The symbol "ButtonVariant" needs to be exported by the entry point index.d.ts
+// dist/_components/button.d.ts:7:5 - (ae-forgotten-export) The symbol "ButtonSize" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 

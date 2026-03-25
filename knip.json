@@ -1,25 +1,26 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
-  "ignoreDependencies": ["@preact/signals", "zod"],
-  "ignoreUnresolved": ["./_jsdom_setup.ts"],
+  "ignoreUnresolved": ["./_jsdom-setup.ts"],
   "ignoreExportsUsedInFile": true,
-  "exclude": ["exports", "types"],
+  "exclude": ["exports", "types", "optionalPeerDependencies"],
   "workspaces": {
-    ".": {},
+    ".": {
+      "ignore": ["_fail_on_warnings.ts"]
+    },
     "packages/aai": {
-      "entry": ["**/*_test.ts", "_test_utils.ts"],
+      "entry": ["**/*.test.ts", "_test-utils.ts"],
       "includeEntryExports": true
     },
     "packages/aai-ui": {
-      "entry": ["**/*_test.{ts,tsx}", "_test_utils.ts"],
+      "entry": ["**/*.test.{ts,tsx}", "_test-utils.ts"],
       "includeEntryExports": true
     },
     "packages/aai-cli": {
-      "entry": ["**/*_test.{ts,tsx}", "_test_utils.ts"],
+      "entry": ["**/*.test.ts", "_test-utils.ts"],
       "ignore": ["templates/**"]
     },
     "packages/aai-server": {
-      "entry": ["**/*_test.ts"],
+      "entry": ["**/*.test.ts"],
       "includeEntryExports": true
     }
   }

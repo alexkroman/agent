@@ -18,8 +18,8 @@
         "recommended": true,
         "noUnusedImports": "error",
         "noUnusedVariables": "error",
-        "noUndeclaredDependencies": "off",
-        "useImportExtensions": "off"
+        "noUndeclaredDependencies": "error",
+        "useImportExtensions": "error"
       },
       "style": {
         "recommended": true,
@@ -38,13 +38,14 @@
         "noParameterAssign": "error",
         "useConsistentArrayType": "error",
         "noEnum": "error",
-        "noShoutyConstants": "error"
+        "noShoutyConstants": "error",
+        "useImportType": "error"
       },
       "suspicious": {
         "recommended": true,
         "noExplicitAny": "error",
         "noConsole": "off",
-        "noEmptyBlockStatements": "off",
+        "noEmptyBlockStatements": "error",
         "useErrorMessage": "error",
         "noMisplacedAssertion": "error",
         "noAssignInExpressions": "error",
@@ -70,6 +71,18 @@
       }
     }
   },
+  "overrides": [
+    {
+      "includes": ["**/*.test.ts", "**/*.test.tsx", "**/_test-utils.ts", "**/_jsdom-setup.ts", "**/vitest*.config.ts"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noUndeclaredDependencies": "off"
+          }
+        }
+      }
+    }
+  ],
   "formatter": {
     "enabled": true,
     "indentStyle": "space",

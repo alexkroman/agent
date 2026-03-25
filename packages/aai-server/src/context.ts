@@ -1,9 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import type { BundleStore } from "./bundle_store_tigris.ts";
+import type { BundleStore } from "./bundle-store-tigris.ts";
 import type { KvStore } from "./kv.ts";
 import type { AgentSlot } from "./sandbox.ts";
-import type { ScopeKey } from "./scope_token.ts";
+import type { ScopeKey } from "./scope-token.ts";
 import type { ServerVectorStore } from "./vector.ts";
 
 export type Env = {
@@ -17,6 +17,6 @@ export type Env = {
   Variables: {
     slug: string;
     keyHash: string;
-    scope: import("./scope_token.ts").AgentScope;
+    scope: import("./scope-token.ts").AgentScope;
   };
 };

@@ -88,7 +88,7 @@ Always search first, then analyze, then answer. Be thorough but concise.`,
   },
 
   tools: {
-    save_source: tool({
+    save_source: tool<z.ZodObject<{ url: z.ZodString; title: z.ZodString }>, ResearchState>({
       description: "Save a source URL found during research for later analysis",
       parameters: z.object({
         url: z.string().describe("The source URL"),
@@ -126,7 +126,7 @@ Always search first, then analyze, then answer. Be thorough but concise.`,
     },
 
     // Feature 2: ctx.messages — access conversation history in tools
-    analyze: tool({
+    analyze: tool<z.ZodObject<{ focus: z.ZodString }>, ResearchState>({
       description:
         "Analyze all gathered sources and conversation context to form a conclusion",
       parameters: z.object({

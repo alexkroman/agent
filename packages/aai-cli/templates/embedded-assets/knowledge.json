@@ -2,7 +2,7 @@
   "faqs": [
     {
       "question": "What is AAI?",
-      "answer": "AAI is a framework for building voice-powered AI agents that run on Deno."
+      "answer": "AAI is a framework for building voice-powered AI agents that run on Node.js."
     },
     {
       "question": "How do agents handle tools?",

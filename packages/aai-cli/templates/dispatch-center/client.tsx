@@ -56,11 +56,11 @@ interface Incident {
 }
 
 function extractIncidents(
-  messages: { role: string; text: string }[],
+  messages: { role: string; content: string }[],
 ): Map<string, Incident> {
   const incidents = new Map<string, Incident>();
   for (const msg of messages) {
-    const incMatches = msg.text.matchAll(/INC-\d{4}/g);
+    const incMatches = msg.content.matchAll(/INC-\d{4}/g);
     for (const m of incMatches) {
       const id = m[0];
       if (!incidents.has(id)) {
@@ -69,7 +69,7 @@ function extractIncidents(
       incidents.get(id)!.mentioned++;
     }
 
-    const lines = msg.text.split("\n");
+    const lines = msg.content.split("\n");
     for (const line of lines) {
       const idMatch = line.match(/INC-\d{4}/);
       if (!idMatch) continue;
@@ -105,18 +105,18 @@ function extractIncidents(
 }
 
 function extractAlertLevel(
-  messages: { role: string; text: string }[],
+  messages: { role: string; content: string }[],
 ): string {
   let level = "green";
   for (const msg of messages) {
-    const match = msg.text.match(/alert level[:\s]+(\w+)/i);
+    const match = msg.content.match(/alert level[:\s]+(\w+)/i);
     if (match) level = match[1]!.toLowerCase();
     if (
-      msg.text.includes("alert level is red") ||
-      msg.text.includes("ALERT: RED")
+      msg.content.includes("alert level is red") ||
+      msg.content.includes("ALERT: RED")
     ) level = "red";
-    if (msg.text.includes("alert level is orange")) level = "orange";
-    if (msg.text.includes("alert level is yellow")) level = "yellow";
+    if (msg.content.includes("alert level is orange")) level = "orange";
+    if (msg.content.includes("alert level is yellow")) level = "yellow";
   }
   return level;
 }
@@ -304,7 +304,7 @@ function App() {
                   >
                     {m.role === "assistant" ? "DISPATCH" : "OPERATOR"}
                   </div>
-                  {m.text}
+                  {m.content}
                 </div>
               ))}
               <div ref={messagesEndRef} />

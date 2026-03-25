@@ -4,26 +4,18 @@
  *
  * Creates the Hono orchestrator backed by Upstash/Tigris services and starts
  * a Node.js HTTP server with WebSocket upgrade support via `ws`.
- *
- * @module
  */
 
-import type { SessionWebSocket } from "@alexkroman1/aai/ws-handler";
 import { serve } from "@hono/node-server";
-import { WebSocketServer, type WebSocket as WsWebSocket } from "ws";
-import { createBundleStore, createS3Client } from "./bundle_store_tigris.ts";
+import { WebSocketServer } from "ws";
+import { createBundleStore, createS3Client } from "./bundle-store-tigris.ts";
 import { deriveCredentialKey } from "./credentials.ts";
 import { createKvStore } from "./kv.ts";
 import { createOrchestrator, type OrchestratorOpts } from "./orchestrator.ts";
 import type { AgentSlot } from "./sandbox.ts";
 import { resolveSandbox } from "./sandbox.ts";
-import { importScopeKey } from "./scope_token.ts";
+import { importScopeKey } from "./scope-token.ts";
 import { createVectorStore } from "./vector.ts";
-
-/** Adapt a ws-package WebSocket to SessionWebSocket (structurally compatible at runtime). */
-function toSessionWs(ws: WsWebSocket): SessionWebSocket {
-  return ws as unknown as SessionWebSocket;
-}
 
 function resolveVectorUrl(env: NodeJS.ProcessEnv): { url: string; token: string } | null {
   let url = env.UPSTASH_VECTOR_REST_URL ?? env.VECTOR_ENDPOINT;
@@ -105,7 +97,7 @@ async function main(): Promise<void> {
 
       const resume = url.searchParams.has("resume");
       wss.handleUpgrade(req, socket, head, (ws) => {
-        sandbox.startSession(toSessionWs(ws), resume);
+        sandbox.startSession(ws, resume);
       });
     } catch (err) {
       console.error("WebSocket upgrade error:", err);

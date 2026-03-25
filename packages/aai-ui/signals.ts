@@ -8,11 +8,13 @@ import type { VoiceSession } from "./session.ts";
 import type { ToolCallInfo } from "./types.ts";
 
 /**
- * Reactive session controls wrapping a {@linkcode VoiceSession} with Preact signals.
+ * Reactive session controls wrapping a {@link VoiceSession} with Preact signals.
  *
  * Components access reactive data via `session` (e.g. `session.state`,
  * `session.messages`). UI-only state (`started`, `running`) and actions
  * (`start`, `toggle`, `reset`) live directly on this object.
+ *
+ * @public
  */
 export type SessionSignals = {
   /** The underlying voice session — all reactive data lives here. */
@@ -29,19 +31,21 @@ export type SessionSignals = {
   toggle(): void;
   /** Reset the session: clear state and reconnect. */
   reset(): void;
-  /** Alias for {@linkcode dispose} for use with `using`. */
+  /** Alias for `dispose` for use with `using`. */
   [Symbol.dispose](): void;
 };
 
 /**
- * Wrap a {@linkcode VoiceSession} in Preact signals for reactive UI binding.
+ * Wrap a {@link VoiceSession} in Preact signals for reactive UI binding.
  *
  * Creates higher-level controls (start, toggle, reset) on top of the raw
  * session, and automatically sets `running` to `false` when the session
  * enters an error state.
  *
  * @param session - The voice session to wrap.
- * @returns A {@linkcode SessionSignals} object for use in Preact components.
+ * @returns A {@link SessionSignals} object for use in Preact components.
+ *
+ * @public
  */
 export function createSessionControls(session: VoiceSession): SessionSignals {
   const started = signal(false);
@@ -85,12 +89,12 @@ const Ctx = createContext<SessionSignals | null>(null);
 
 /**
  * Preact context provider that makes session signals available to descendant
- * components via {@linkcode useSession}.
+ * components via {@link useSession}.
  *
- * @param props - Provider props.
- * @param props.value - The session signals to provide.
- * @param props.children - Child components that may consume the context.
+ * @param props - Provider props. `value` is the session signals to provide. `children` are child components that may consume the context.
  * @returns A Preact VNode wrapping children in the session context.
+ *
+ * @public
  */
 export function SessionProvider({
   value,
@@ -103,10 +107,12 @@ export function SessionProvider({
 }
 
 /**
- * Hook to access session signals from within a {@linkcode SessionProvider}.
+ * Hook to access session signals from within a {@link SessionProvider}.
  *
- * @returns The {@linkcode SessionSignals} from the nearest provider.
- * @throws {Error} If called outside of a `SessionProvider`.
+ * @returns The {@link SessionSignals} from the nearest provider.
+ * @throws If called outside of a `SessionProvider`.
+ *
+ * @public
  */
 export function useSession(): SessionSignals {
   const ctx = useContext(Ctx);
@@ -132,7 +138,9 @@ function tryParseJSON(str: string): unknown {
  * Automatically resets tracking when the session is reset (toolCalls cleared).
  *
  * @param callback - Called once per completed tool call with the tool name,
- *   parsed result, and full {@linkcode ToolCallInfo}.
+ *   parsed result, and full {@link ToolCallInfo}.
+ *
+ * @public
  */
 export function useToolResult(
   callback: (toolName: string, result: unknown, toolCall: ToolCallInfo) => void,
@@ -163,6 +171,8 @@ export function useToolResult(
  * Auto-scroll a container to the bottom when messages, tool calls,
  * or utterances change. Returns a ref to attach to a sentinel `<div>`
  * at the bottom of the scrollable area.
+ *
+ * @public
  */
 export function useAutoScroll(): RefObject<HTMLDivElement> {
   const { session } = useSession();

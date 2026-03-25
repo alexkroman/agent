@@ -299,14 +299,14 @@ function d(sides: number): number {
 }
 
 function pick<T>(arr: readonly T[]): T {
-  return arr[Math.floor(Math.random() * arr.length)];
+  return arr[Math.floor(Math.random() * arr.length)] as T;
 }
 
 function nextNpcId(npcs: NPC[]): string {
   let max = 0;
   for (const n of npcs) {
     const m = n.id.match(/^npc_(\d+)$/);
-    if (m) max = Math.max(max, parseInt(m[1]));
+    if (m) max = Math.max(max, parseInt(m[1]!));
   }
   return `npc_${max + 1}`;
 }
@@ -352,7 +352,7 @@ function advanceTime(game: GameState, progression: string) {
   const steps = progression === "moderate" ? 1 : progression === "long" ? 2 : 0;
   if (steps) {
     const newIdx = (idx + steps) % TIME_PHASES.length;
-    game.timeOfDay = TIME_PHASES[newIdx];
+    game.timeOfDay = TIME_PHASES[newIdx] as string;
   }
 }
 
@@ -444,7 +444,8 @@ function applyConsequences(
         hostile: "distrustful", distrustful: "neutral",
         neutral: "friendly", friendly: "loyal",
       };
-      if (shifts[target.disposition]) target.disposition = shifts[target.disposition];
+      const nextDisposition = shifts[target.disposition];
+      if (nextDisposition) target.disposition = nextDisposition;
     }
   }
 
@@ -725,7 +726,7 @@ VOICE:
         const statValues = [3, 2, 2, 1, 1];
         for (let i = statValues.length - 1; i > 0; i--) {
           const j = Math.floor(Math.random() * (i + 1));
-          [statValues[i], statValues[j]] = [statValues[j], statValues[i]];
+          [statValues[i], statValues[j]] = [statValues[j]!, statValues[i]!];
         }
         const archetypeBias: Record<string, number> = {
           outsider_loner: 0, investigator: 4, trickster: 3,
@@ -735,13 +736,13 @@ VOICE:
         const biasIdx = archetypeBias[args.archetype] ?? Math.floor(Math.random() * 5);
         const highIdx = statValues.indexOf(3);
         if (highIdx !== biasIdx) {
-          [statValues[highIdx], statValues[biasIdx]] = [statValues[biasIdx], statValues[highIdx]];
+          [statValues[highIdx], statValues[biasIdx]] = [statValues[biasIdx]!, statValues[highIdx]!];
         }
-        state.edge = statValues[0];
-        state.heart = statValues[1];
-        state.iron = statValues[2];
-        state.shadow = statValues[3];
-        state.wits = statValues[4];
+        state.edge = statValues[0]!;
+        state.heart = statValues[1]!;
+        state.iron = statValues[2]!;
+        state.shadow = statValues[3]!;
+        state.wits = statValues[4]!;
 
         // Set location, time
         state.currentLocation = args.startingLocation;
@@ -820,7 +821,7 @@ VOICE:
           chaosFactor: 5,
           npcs: state.npcs.map(n => ({ id: n.id, name: n.name, disposition: n.disposition, bond: n.bond, agenda: n.agenda, status: n.status, description: n.description })),
           clocks: state.clocks.map(c => ({ id: c.id, name: c.name, clockType: c.clockType, segments: c.segments, filled: c.filled, triggerDescription: c.triggerDescription })),
-          storyBlueprint: { structureType: state.storyBlueprint.structureType, currentAct: 1, totalActs: state.storyBlueprint.acts.length, centralConflict: state.storyBlueprint.centralConflict, thematicThread: "", storyComplete: false, currentPhase: state.storyBlueprint.acts[0].phase },
+          storyBlueprint: { structureType: state.storyBlueprint.structureType, currentAct: 1, totalActs: state.storyBlueprint.acts.length, centralConflict: state.storyBlueprint.centralConflict, thematicThread: "", storyComplete: false, currentPhase: state.storyBlueprint.acts[0]!.phase },
           openingSituation: args.openingSituation,
           creativitySeed: creativitySeed(),
           phase: "playing",

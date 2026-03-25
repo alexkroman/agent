@@ -28,7 +28,11 @@ export async function handleDeploy(c: Context<Env>): Promise<Response> {
     if (existing.sandbox) {
       existing.sandbox.terminate();
     } else if (existing.initializing) {
-      existing.initializing.then((sb) => sb.terminate()).catch(() => {});
+      existing.initializing
+        .then((sb) => sb.terminate())
+        .catch(() => {
+          // Intentionally swallowed — best-effort cleanup of initializing sandbox
+        });
     }
     delete existing.sandbox;
     delete existing.initializing;

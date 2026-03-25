@@ -1,15 +1,16 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import type { Signal } from "@preact/signals";
 import clsx from "clsx";
 import type * as preact from "preact";
-import { ThinkingIndicator } from "./thinking_indicator.tsx";
+import type { Reactive } from "../types.ts";
+import { ThinkingIndicator } from "./thinking-indicator.tsx";
 
+/** @public */
 export function Transcript({
   userUtterance,
   className,
 }: {
-  userUtterance: Signal<string | null>;
+  userUtterance: Reactive<string | null>;
   className?: string;
 }): preact.JSX.Element | null {
   if (userUtterance.value === null) return null;

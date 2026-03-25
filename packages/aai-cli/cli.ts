@@ -1,22 +1,12 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-// Force color support detection before chalk/ink load.
-if (!(process.env.FORCE_COLOR || process.env.NO_COLOR) && process.stdout.isTTY) {
-  const c = process.env.COLORTERM;
-  process.env.FORCE_COLOR = c === "truecolor" || c === "24bit" ? "3" : c ? "2" : "1";
-}
-
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { errorMessage } from "@alexkroman1/aai/utils";
-import chalk from "chalk";
-import { Command } from "commander";
+import { defineCommand, runMain } from "citty";
 import { fileExists, getApiKey, resolveCwd } from "./_discover.ts";
-import { interactive, primary } from "./_ink.tsx";
 
 const cliDir = path.dirname(fileURLToPath(import.meta.url));
-// When running from dist/cli.js, package.json is one level up
 function findPkgJson(dir: string): string {
   try {
     return readFileSync(path.join(dir, "package.json"), "utf-8");
@@ -27,233 +17,189 @@ function findPkgJson(dir: string): string {
 const pkgJson = JSON.parse(findPkgJson(cliDir));
 const VERSION: string = pkgJson.version;
 
-const banner = [
-  "",
-  `  ${primary(chalk.bold(" ▄▀█ ▄▀█ █"))}   ${chalk.dim("Voice agent development kit")}`,
-  `  ${primary(chalk.bold(" █▀█ █▀█ █"))}   ${primary(`v${VERSION}`)}`,
-  "",
-].join("\n");
-
-const gettingStarted = [
-  "",
-  `  ${chalk.bold(interactive("Getting started"))}`,
-  "",
-  `    ${chalk.dim("$")} ${primary("aai init")} ${interactive("my-agent")}`,
-  `    ${chalk.dim("$")} ${primary("cd")} ${interactive("my-agent")}`,
-  `    ${chalk.dim("$")} ${primary("aai dev")}`,
-  "",
-].join("\n");
-
-/** Check for agent.ts and scaffold if missing. */
 async function ensureAgent(cwd: string, yes?: boolean): Promise<void> {
   if (!(await fileExists(path.join(cwd, "agent.ts")))) {
-    const { runInitCommand } = await import("./init.tsx");
+    const { runInitCommand } = await import("./init.ts");
     await runInitCommand({ yes }, { quiet: true });
   }
 }
 
-/** Hook: inject resolved cwd into command opts. */
-function withCwd(cmd: Command): Command {
-  return cmd.hook("preAction", (thisCmd) => {
-    thisCmd.setOptionValue("cwd", resolveCwd());
-  });
-}
+const init = defineCommand({
+  meta: { name: "init", description: "Scaffold a new agent project" },
+  args: {
+    dir: { type: "positional", description: "Project directory", required: false },
+    template: { type: "string", alias: "t", description: "Template to use" },
+    force: { type: "boolean", alias: "f", description: "Overwrite existing agent.ts" },
+    yes: { type: "boolean", alias: "y", description: "Accept defaults (no prompts)" },
+    skipApi: { type: "boolean", description: "Skip API key check" },
+    skipDeploy: { type: "boolean", description: "Skip post-init deploy" },
+  },
+  async run({ args }) {
+    const { runInitCommand } = await import("./init.ts");
+    await runInitCommand({
+      dir: args.dir,
+      template: args.template,
+      force: args.force,
+      yes: args.yes,
+      skipApi: args.skipApi,
+      skipDeploy: args.skipDeploy,
+    });
+  },
+});
 
-/** Hook: ensure agent.ts exists (runs init if missing). */
-function withAgentGuard(cmd: Command): Command {
-  return cmd.hook("preAction", async (thisCmd) => {
-    await ensureAgent(thisCmd.getOptionValue("cwd"), thisCmd.opts().yes);
-  });
-}
-
-/** Hook: pre-resolve API key (may prompt). */
-function withApiKey(cmd: Command): Command {
-  return cmd.hook("preAction", async () => {
+const dev = defineCommand({
+  meta: { name: "dev", description: "Start a local development server" },
+  args: {
+    port: { type: "string", alias: "p", description: "Port to listen on", default: "3000" },
+    check: { type: "boolean", description: "Start server, verify health, then exit" },
+    yes: { type: "boolean", alias: "y", description: "Accept defaults (no prompts)" },
+  },
+  async run({ args }) {
+    const cwd = resolveCwd();
+    await ensureAgent(cwd, args.yes);
     await getApiKey();
-  });
-}
+    const { runDevCommand } = await import("./dev.ts");
+    await runDevCommand({ cwd, port: args.port, ...(args.check ? { check: args.check } : {}) });
+  },
+});
 
-function createProgram(): Command {
-  const program = new Command();
+const build = defineCommand({
+  meta: { name: "build", description: "Bundle and validate (no server or deploy)" },
+  args: {
+    yes: { type: "boolean", alias: "y", description: "Accept defaults (no prompts)" },
+  },
+  async run({ args }) {
+    const cwd = resolveCwd();
+    await ensureAgent(cwd, args.yes);
+    const { runBuildCommand } = await import("./_build.ts");
+    await runBuildCommand(cwd);
+  },
+});
 
-  program
-    .name("aai")
-    .version(VERSION, "-V, --version")
-    .addHelpText("before", banner)
-    .addHelpText("after", gettingStarted);
-
-  program
-    .command("init")
-    .description("Scaffold a new agent project")
-    .argument("[dir]", "Project directory")
-    .option("-t, --template <template>", "Template to use")
-    .option("-f, --force", "Overwrite existing agent.ts")
-    .option("-y, --yes", "Accept defaults (no prompts)")
-    .option("--skip-api", "Skip API key check")
-    .option("--skip-deploy", "Skip post-init deploy")
-    .action(
-      async (
-        dir: string | undefined,
-        opts: {
-          template?: string;
-          force?: boolean;
-          yes?: boolean;
-          skipApi?: boolean;
-          skipDeploy?: boolean;
-        },
-      ) => {
-        const { runInitCommand } = await import("./init.tsx");
-        await runInitCommand({ dir, ...opts });
-      },
-    );
-
-  withApiKey(
-    withAgentGuard(
-      withCwd(
-        program
-          .command("dev")
-          .description("Start a local development server")
-          .option("-p, --port <number>", "Port to listen on", "3000")
-          .option("--check", "Start server, verify health, then exit")
-          .option("-y, --yes", "Accept defaults (no prompts)")
-          .action(async (opts: { cwd: string; port: string; check?: boolean }) => {
-            const { runDevCommand } = await import("./dev.tsx");
-            await runDevCommand(opts);
-          }),
-      ),
-    ),
-  );
-
-  withAgentGuard(
-    withCwd(
-      program
-        .command("build")
-        .description("Bundle and validate (no server or deploy)")
-        .option("-y, --yes", "Accept defaults (no prompts)")
-        .action(async (opts: { cwd: string }) => {
-          const { runBuildCommand } = await import("./_build.tsx");
-          await runBuildCommand(opts.cwd);
-        }),
-    ),
-  );
-
-  withAgentGuard(
-    withCwd(
-      program
-        .command("deploy")
-        .description("Bundle and deploy to production")
-        .option("-s, --server <url>", "Server URL")
-        .option("--dry-run", "Validate and bundle without deploying")
-        .option("-y, --yes", "Accept defaults (no prompts)")
-        .action(async (opts: { cwd: string; server?: string; dryRun?: boolean }) => {
-          const { runDeployCommand } = await import("./deploy.tsx");
-          await runDeployCommand(opts);
-        }),
-    ),
-  );
-
-  withApiKey(
-    withCwd(
-      program
-        .command("start")
-        .description("Start production server from build")
-        .option("-p, --port <number>", "Port to listen on", "3000")
-        .option("-y, --yes", "Accept defaults (no prompts)")
-        .action(async (opts: { cwd: string; port: string }) => {
-          const { runStartCommand } = await import("./start.tsx");
-          await runStartCommand(opts);
-        }),
-    ),
-  );
-
-  const secret = program
-    .command("secret")
-    .description("Manage secrets")
-    .action(() => secret.help());
-  withApiKey(withCwd(secret));
-
-  secret
-    .command("put")
-    .description("Create or update a secret")
-    .argument("<name>", "Secret name")
-    .action(async (name: string, _opts: unknown, cmd: Command) => {
-      const cwd = cmd.parent?.getOptionValue("cwd") as string;
-      const { runSecretPut } = await import("./secret.tsx");
-      await runSecretPut(cwd, name);
+const deploy = defineCommand({
+  meta: { name: "deploy", description: "Bundle and deploy to production" },
+  args: {
+    server: { type: "string", alias: "s", description: "Server URL" },
+    dryRun: { type: "boolean", description: "Validate and bundle without deploying" },
+    yes: { type: "boolean", alias: "y", description: "Accept defaults (no prompts)" },
+  },
+  async run({ args }) {
+    const cwd = resolveCwd();
+    await ensureAgent(cwd, args.yes);
+    const { runDeployCommand } = await import("./deploy.ts");
+    await runDeployCommand({
+      cwd,
+      ...(args.server ? { server: args.server } : {}),
+      ...(args.dryRun ? { dryRun: args.dryRun } : {}),
     });
+  },
+});
 
-  secret
-    .command("delete")
-    .description("Delete a secret")
-    .argument("<name>", "Secret name")
-    .action(async (name: string, _opts: unknown, cmd: Command) => {
-      const cwd = cmd.parent?.getOptionValue("cwd") as string;
-      const { runSecretDelete } = await import("./secret.tsx");
-      await runSecretDelete(cwd, name);
+const start = defineCommand({
+  meta: { name: "start", description: "Start production server from build" },
+  args: {
+    port: { type: "string", alias: "p", description: "Port to listen on", default: "3000" },
+    yes: { type: "boolean", alias: "y", description: "Accept defaults (no prompts)" },
+  },
+  async run({ args }) {
+    const cwd = resolveCwd();
+    await getApiKey();
+    const { runStartCommand } = await import("./start.ts");
+    await runStartCommand({ cwd, port: args.port });
+  },
+});
+
+const secretPut = defineCommand({
+  meta: { name: "put", description: "Create or update a secret" },
+  args: {
+    name: { type: "positional", description: "Secret name", required: true },
+  },
+  async run({ args }) {
+    const cwd = resolveCwd();
+    await getApiKey();
+    const { runSecretPut } = await import("./secret.ts");
+    await runSecretPut(cwd, args.name);
+  },
+});
+
+const secretDelete = defineCommand({
+  meta: { name: "delete", description: "Delete a secret" },
+  args: {
+    name: { type: "positional", description: "Secret name", required: true },
+  },
+  async run({ args }) {
+    const cwd = resolveCwd();
+    await getApiKey();
+    const { runSecretDelete } = await import("./secret.ts");
+    await runSecretDelete(cwd, args.name);
+  },
+});
+
+const secretList = defineCommand({
+  meta: { name: "list", description: "List secret names" },
+  async run() {
+    const cwd = resolveCwd();
+    await getApiKey();
+    const { runSecretList } = await import("./secret.ts");
+    await runSecretList(cwd);
+  },
+});
+
+const secret = defineCommand({
+  meta: { name: "secret", description: "Manage secrets" },
+  subCommands: { put: secretPut, delete: secretDelete, list: secretList },
+});
+
+const rag = defineCommand({
+  meta: { name: "rag", description: "Ingest a site's llms-full.txt into the vector store" },
+  args: {
+    url: { type: "positional", description: "URL to ingest", required: true },
+    server: { type: "string", alias: "s", description: "Server URL" },
+    chunkSize: { type: "string", description: "Max chunk size in tokens", default: "512" },
+    yes: { type: "boolean", alias: "y", description: "Accept defaults (no prompts)" },
+  },
+  async run({ args }) {
+    const cwd = resolveCwd();
+    await getApiKey();
+    const { runRagCommand } = await import("./rag.ts");
+    await runRagCommand({
+      url: args.url,
+      cwd,
+      ...(args.server ? { server: args.server } : {}),
+      chunkSize: args.chunkSize,
     });
+  },
+});
 
-  secret
-    .command("list")
-    .description("List secret names")
-    .action(async (_opts: unknown, cmd: Command) => {
-      const cwd = cmd.parent?.getOptionValue("cwd") as string;
-      const { runSecretList } = await import("./secret.tsx");
-      await runSecretList(cwd);
-    });
+const link = defineCommand({
+  meta: {
+    name: "link",
+    description: "Link local workspace packages into the current project (dev only)",
+  },
+  async run() {
+    const { runLinkCommand } = await import("./_link.ts");
+    runLinkCommand(resolveCwd());
+  },
+});
 
-  withApiKey(
-    withCwd(
-      program
-        .command("rag")
-        .description("Ingest a site's llms-full.txt into the vector store")
-        .argument("<url>", "URL to ingest")
-        .option("-s, --server <url>", "Server URL")
-        .option("--chunk-size <n>", "Max chunk size in tokens", "512")
-        .option("-y, --yes", "Accept defaults (no prompts)")
-        .action(async (url: string, opts: { cwd: string; server?: string; chunkSize?: string }) => {
-          const { runRagCommand } = await import("./rag.tsx");
-          await runRagCommand({ url, ...opts });
-        }),
-    ),
-  );
+const unlink = defineCommand({
+  meta: { name: "unlink", description: "Restore published package versions (reverses aai link)" },
+  async run() {
+    const { runUnlinkCommand } = await import("./_link.ts");
+    runUnlinkCommand(resolveCwd());
+  },
+});
 
-  program
-    .command("link")
-    .description("Link local workspace packages into the current project (dev only)")
-    .action(async () => {
-      const { runLinkCommand } = await import("./_link.ts");
-      runLinkCommand(resolveCwd());
-    });
-
-  program
-    .command("unlink")
-    .description("Restore published package versions (reverses aai link)")
-    .action(async () => {
-      const { runUnlinkCommand } = await import("./_link.ts");
-      runUnlinkCommand(resolveCwd());
-    });
-
-  return program;
-}
-
-async function main(args: string[]): Promise<void> {
-  // No args → run init (scaffold a new project)
-  if (args.length === 0) {
-    const { runInitCommand } = await import("./init.tsx");
-    await runInitCommand({});
-    return;
-  }
-
-  const program = createProgram();
-  await program.parseAsync(args, { from: "user" });
-}
+export const mainCommand = defineCommand({
+  meta: { name: "aai", version: VERSION, description: "Voice agent development kit" },
+  subCommands: { init, dev, build, deploy, start, secret, rag, link, unlink },
+});
 
 if (process.env.VITEST !== "true") {
-  process.on("SIGINT", () => process.exit(0));
-  main(process.argv.slice(2)).catch((err: unknown) => {
-    console.error(errorMessage(err));
-    process.exit(1);
-  });
+  // Default to `init` when no subcommand is given
+  const sub = process.argv[2];
+  if (!sub || sub.startsWith("-")) {
+    process.argv.splice(2, 0, "init");
+  }
+  runMain(mainCommand);
 }
-
-export { createProgram, main };

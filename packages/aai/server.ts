@@ -5,33 +5,20 @@
  * `createServer()` returns a server with `listen()` for HTTP + WebSocket.
  * Calls `createDirectExecutor` + `wireSessionSocket` directly — no
  * intermediate WintercServer layer.
- *
- * @module
  */
 
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
-import { WebSocketServer, type WebSocket as WsWebSocket } from "ws";
-import { createDirectExecutor } from "./direct_executor.ts";
+import { WebSocketServer } from "ws";
+import { createDirectExecutor } from "./direct-executor.ts";
 import type { Kv } from "./kv.ts";
 import { AUDIO_FORMAT } from "./protocol.ts";
 import type { Logger, S2SConfig } from "./runtime.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime.ts";
 import type { Session } from "./session.ts";
 import type { AgentDef } from "./types.ts";
-import { type SessionWebSocket, wireSessionSocket } from "./ws_handler.ts";
-
-/**
- * Adapt a ws-package WebSocket to SessionWebSocket.
- *
- * At runtime, `ws.WebSocket` satisfies SessionWebSocket — both have the same
- * `readyState`, `send`, and `addEventListener` methods. TypeScript can't prove
- * structural compatibility due to overloaded signatures and ws-specific event types.
- */
-function toSessionWs(ws: WsWebSocket): SessionWebSocket {
-  return ws as unknown as SessionWebSocket;
-}
+import { type SessionWebSocket, wireSessionSocket } from "./ws-handler.ts";
 
 export type ServerOptions = {
   /** The agent definition returned by `defineAgent()`. */
@@ -144,7 +131,7 @@ export function createServer(options: ServerOptions): AgentServer {
         const resume = reqUrl.searchParams.has("resume");
         logger.info(`WS upgrade ${reqUrl.pathname}${resume ? " (resume)" : ""}`);
         wss.handleUpgrade(req, socket, head, (ws) => {
-          handleWs(toSessionWs(ws), resume);
+          handleWs(ws, resume);
         });
       });
 

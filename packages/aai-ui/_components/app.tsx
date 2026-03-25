@@ -1,8 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 import type * as preact from "preact";
-import { useMountConfig } from "../mount_context.ts";
-import { ChatView } from "./chat_view.tsx";
-import { StartScreen } from "./start_screen.tsx";
+import { useMountConfig } from "../mount-context.ts";
+import { ChatView } from "./chat-view.tsx";
+import { StartScreen } from "./start-screen.tsx";
 
 function AnsiLogo() {
   return (
@@ -12,6 +12,7 @@ function AnsiLogo() {
   );
 }
 
+/** @public */
 export function App({ className }: { className?: string }): preact.JSX.Element {
   const { title } = useMountConfig();
 

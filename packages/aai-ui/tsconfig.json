@@ -3,6 +3,8 @@
   "compilerOptions": {
     "incremental": true,
     "tsBuildInfoFile": "../../.tsbuildinfo/aai-ui.tsbuildinfo",
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
+    "types": ["node"],
     "jsx": "react-jsx",
     "jsxImportSource": "preact"
   },

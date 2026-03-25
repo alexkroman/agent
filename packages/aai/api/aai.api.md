@@ -4,7 +4,7 @@
 
 ```ts
 
-import type { z } from 'zod';
+import { z } from 'zod';
 
 // @public
 export type AgentOptions<S = Record<string, unknown>> = {
@@ -34,13 +34,13 @@ export type BeforeStepResult = {
 // @public
 export type BuiltinTool = "web_search" | "visit_webpage" | "fetch_json" | "run_code" | "vector_search" | "memory";
 
-// Warning: (ae-forgotten-export) The symbol "AgentDef" needs to be exported by the entry point mod.d.ts
+// Warning: (ae-forgotten-export) The symbol "AgentDef" needs to be exported by the entry point index.d.ts
 //
 // @public
 export function defineAgent<S>(options: AgentOptions<S>): AgentDef;
 
 // @public
-export type HookContext<S = Record<string, unknown>> = Omit<ToolContext<S>, "abortSignal" | "messages">;
+export type HookContext<S = Record<string, unknown>> = Omit<ToolContext<S>, "messages">;
 
 // @public
 export type Message = {
@@ -59,12 +59,11 @@ export type StepInfo = {
 };
 
 // @public
-export function tool<P extends z.ZodObject<z.ZodRawShape>, S = any>(def: ToolDef<P, S>): ToolDef<P, S>;
+export function tool<P extends z.ZodObject<z.ZodRawShape>, S = Record<string, unknown>>(def: ToolDef<P, S>): ToolDef<P, S>;
 
 // @public
 export type ToolContext<S = Record<string, unknown>> = {
     env: Readonly<Record<string, string>>;
-    abortSignal: AbortSignal;
     state: S;
     kv: Kv;
     vector: VectorStore;
@@ -98,8 +97,8 @@ export type VectorStore = {
 
 // Warnings were encountered during analysis:
 //
-// types.ts:91:3 - (ae-forgotten-export) The symbol "Kv" needs to be exported by the entry point mod.d.ts
-// types.ts:249:3 - (ae-forgotten-export) The symbol "ToolChoice" needs to be exported by the entry point mod.d.ts
+// dist/types.d.ts:88:5 - (ae-forgotten-export) The symbol "Kv" needs to be exported by the entry point index.d.ts
+// dist/types.d.ts:240:5 - (ae-forgotten-export) The symbol "ToolChoice" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 

@@ -1,5 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
-/** Shared utility functions. @module */
+/** Shared utility functions. */
 
 /** Extract an error message from an unknown thrown value. */
 export function errorMessage(err: unknown): string {

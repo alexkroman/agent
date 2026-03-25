@@ -1,0 +1,17 @@
+pre-commit:
+  commands:
+    lint-staged:
+      glob: "packages/**/*.{ts,tsx,js,mjs}"
+      run: npx biome check --write {staged_files} && git add {staged_files}
+
+pre-push:
+  commands:
+    no-push-main:
+      run: |
+        branch=$(git rev-parse --abbrev-ref HEAD)
+        if [ "$branch" = "main" ] || [ "$branch" = "master" ]; then
+          echo "Error: Direct pushes to $branch are not allowed. Use a PR."
+          exit 1
+        fi
+    check:
+      run: pnpm check

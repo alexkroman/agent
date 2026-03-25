@@ -11,8 +11,8 @@ type GameState = {
   history: string[];
 };
 
-function s(ctx: ToolContext<GameState>): GameState {
-  return ctx.state;
+function s(ctx: ToolContext): GameState {
+  return ctx.state as GameState;
 }
 
 export default defineAgent({

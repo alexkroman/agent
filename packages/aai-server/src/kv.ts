@@ -3,7 +3,7 @@
 
 import { type KvEntry, MAX_VALUE_SIZE } from "@alexkroman1/aai/kv";
 import { Redis } from "@upstash/redis";
-import type { AgentScope } from "./scope_token.ts";
+import type { AgentScope } from "./scope-token.ts";
 
 export type KvStore = {
   get(scope: AgentScope, key: string): Promise<string | null>;
@@ -68,6 +68,7 @@ export function createKvStore(url: string, token: string): KvStore {
       return rawKeys.map((k) => k.slice(prefix.length));
     },
 
+    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Redis scan + pipeline + parse in one pass
     async list(scope, userPrefix, options) {
       const prefix = scopePrefix(scope);
       const searchPattern = `${prefix}${userPrefix}*`;

@@ -225,7 +225,7 @@ function InfocomAdventure() {
                   color: msg.role === "user" ? "#00ccff" : "#00ff41",
                 }}
               >
-                {msg.text}
+                {msg.content}
               </div>
             ))}
             {session.userUtterance.value !== null && (

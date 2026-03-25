@@ -1,14 +1,12 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
  * Key-value storage interface and in-memory implementation.
- *
- * @module
  */
 
 /**
- * A single key-value entry returned by {@linkcode Kv.list}.
+ * A single key-value entry returned by {@link Kv.list}.
  *
- * @typeParam T The type of the stored value. Defaults to `unknown`.
+ * @typeParam T - The type of the stored value. Defaults to `unknown`.
  */
 export type KvEntry<T = unknown> = {
   /** The key under which the value is stored. */
@@ -20,7 +18,7 @@ export type KvEntry<T = unknown> = {
 /**
  * Options for listing keys from the KV store.
  *
- * Used with {@linkcode Kv.list} to control result ordering and pagination.
+ * Used with {@link Kv.list} to control result ordering and pagination.
  */
 export type KvListOptions = {
   /** Maximum number of entries to return. */
@@ -32,8 +30,8 @@ export type KvListOptions = {
 /**
  * Async key-value store interface used by agents.
  *
- * Agents access the KV store via {@linkcode ToolContext.kv} or
- * {@linkcode HookContext.kv}. Values are JSON-serialized and stored as
+ * Agents access the KV store via {@link ToolContext.kv} or
+ * {@link HookContext.kv}. Values are JSON-serialized and stored as
  * strings with an optional TTL.
  *
  * @example
@@ -53,8 +51,8 @@ export type Kv = {
   /**
    * Get a value by key, or `null` if not found.
    *
-   * @typeParam T The expected type of the stored value.
-   * @param key The key to look up.
+   * @typeParam T - The expected type of the stored value.
+   * @param key - The key to look up.
    * @returns The deserialized value, or `null` if the key does not exist
    *   or has expired.
    */
@@ -62,10 +60,9 @@ export type Kv = {
   /**
    * Set a value, optionally with a TTL in milliseconds.
    *
-   * @param key The key to store the value under.
-   * @param value The value to store. Must be JSON-serializable.
-   * @param options Optional settings.
-   * @param options.expireIn Time-to-live in milliseconds. The entry is
+   * @param key - The key to store the value under.
+   * @param value - The value to store. Must be JSON-serializable.
+   * @param options - Optional settings. `expireIn` sets the time-to-live in milliseconds. The entry is
    *   automatically removed after this duration.
    * @throws {Error} If the serialized value exceeds 65,536 bytes.
    */
@@ -73,7 +70,7 @@ export type Kv = {
   /**
    * Delete a key.
    *
-   * @param key The key to remove. No-op if the key does not exist.
+   * @param key - The key to remove. No-op if the key does not exist.
    */
   delete(key: string): Promise<void>;
   /**
@@ -81,12 +78,19 @@ export type Kv = {
    *
    * Results are sorted by key in ascending lexicographic order by default.
    *
-   * @typeParam T The expected type of the stored values.
-   * @param prefix Key prefix to filter by. Use `""` to list all entries.
-   * @param options Optional pagination and ordering settings.
-   * @returns An array of matching {@linkcode KvEntry} objects.
+   * @typeParam T - The expected type of the stored values.
+   * @param prefix - Key prefix to filter by. Use `""` to list all entries.
+   * @param options - Optional pagination and ordering settings.
+   * @returns An array of matching {@link KvEntry} objects.
    */
   list<T = unknown>(prefix: string, options?: KvListOptions): Promise<KvEntry<T>[]>;
+  /**
+   * List all keys, optionally filtered by a glob-style pattern.
+   *
+   * @param pattern - Optional glob pattern (e.g. `"user:*"`). If omitted, all keys are returned.
+   * @returns An array of matching key strings.
+   */
+  keys(pattern?: string): Promise<string[]>;
 };
 
 export const MAX_VALUE_SIZE = 65_536;
@@ -104,13 +108,19 @@ export function sortAndPaginate<T extends { key: string }>(
   return entries;
 }
 
+/** Simple glob matcher — supports `*` as a wildcard for any characters. */
+function matchGlob(key: string, pattern: string): boolean {
+  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
+  return new RegExp(`^${escaped}$`).test(key);
+}
+
 /**
  * Create an in-memory KV store (useful for testing and local development).
  *
  * Data is stored in a plain `Map` and does not persist across restarts.
  * TTL expiration is checked lazily on reads and list operations.
  *
- * @returns A {@linkcode Kv} instance backed by in-memory storage.
+ * @returns A {@link Kv} instance backed by in-memory storage.
  *
  * @example
  * ```ts
@@ -180,6 +190,21 @@ export function createMemoryKv(): Kv {
         }
       }
       return sortAndPaginate(entries, options);
+    },
+
+    async keys(pattern?: string): Promise<string[]> {
+      const now = Date.now();
+      const result: string[] = [];
+      for (const [key, entry] of store) {
+        if (entry.expiresAt && entry.expiresAt <= now) {
+          store.delete(key);
+          continue;
+        }
+        if (!pattern || matchGlob(key, pattern)) {
+          result.push(key);
+        }
+      }
+      return result.sort();
     },
   };
 }

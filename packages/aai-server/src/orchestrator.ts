@@ -1,23 +1,24 @@
 // Copyright 2025 the AAI authors. MIT license.
+import { errorMessage } from "@alexkroman1/aai/utils";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
 import { secureHeaders } from "hono/secure-headers";
 import { z } from "zod";
-import type { BundleStore } from "./bundle_store_tigris.ts";
+import type { BundleStore } from "./bundle-store-tigris.ts";
 import type { Env } from "./context.ts";
 import { handleDeploy } from "./deploy.ts";
 import type { KvStore } from "./kv.ts";
-import { handleKv } from "./kv_handler.ts";
+import { handleKv } from "./kv-handler.ts";
 import { serializeForAgent } from "./metrics.ts";
 import { requireInternal, requireOwner, requireScopeToken, validateSlug } from "./middleware.ts";
 import type { AgentSlot } from "./sandbox.ts";
-import type { ScopeKey } from "./scope_token.ts";
-import { handleSecretDelete, handleSecretList, handleSecretSet } from "./secret_handler.ts";
-import { handleAgentHealth, handleAgentPage, handleClientAsset } from "./transport_websocket.ts";
+import type { ScopeKey } from "./scope-token.ts";
+import { handleSecretDelete, handleSecretList, handleSecretSet } from "./secret-handler.ts";
+import { handleAgentHealth, handleAgentPage, handleClientAsset } from "./transport-websocket.ts";
 import type { ServerVectorStore } from "./vector.ts";
-import { handleVector } from "./vector_handler.ts";
+import { handleVector } from "./vector-handler.ts";
 
 export type OrchestratorOpts = {
   slots: Map<string, AgentSlot>;
@@ -37,13 +38,12 @@ export function createOrchestrator(opts: OrchestratorOpts): Hono<Env> {
   });
 
   const ownerMw = createMiddleware<Env>(async (c, next) => {
-    c.set(
-      "keyHash",
-      await requireOwner(c.req.raw, {
-        slug: c.get("slug"),
-        store: c.env.store,
-      }),
-    );
+    const keyHash = await requireOwner(c.req.raw, {
+      slug: c.get("slug"),
+      store: c.env.store,
+    });
+    c.set("keyHash", keyHash);
+    c.set("scope", { keyHash, slug: c.get("slug") });
     await next();
   });
 
@@ -73,7 +73,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Hono<Env> {
     if (err instanceof z.ZodError) {
       return c.json({ error: err.message }, 400);
     }
-    const errMsg = err instanceof Error ? err.message : String(err);
+    const errMsg = errorMessage(err);
     const stack = err instanceof Error ? err.stack : "";
     const path = new URL(c.req.url).pathname;
     console.error(`Unhandled error on ${path}: ${errMsg}\n${stack}`);

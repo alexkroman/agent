@@ -3,7 +3,7 @@
 
 import type { VectorEntry } from "@alexkroman1/aai/vector";
 import { Index } from "@upstash/vector";
-import type { AgentScope } from "./scope_token.ts";
+import type { AgentScope } from "./scope-token.ts";
 
 export type ServerVectorStore = {
   upsert(

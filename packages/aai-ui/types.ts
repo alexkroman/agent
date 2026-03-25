@@ -2,7 +2,11 @@
 /** Microphone buffer duration in seconds before sending to the server. */
 export const MIC_BUFFER_SECONDS = 0.1;
 
-/** Current state of the voice agent session. */
+/**
+ * Current state of the voice agent session.
+ *
+ * @public
+ */
 export type AgentState =
   | "disconnected"
   | "connecting"
@@ -12,15 +16,23 @@ export type AgentState =
   | "speaking"
   | "error";
 
-/** A chat message exchanged between user and assistant. */
+/**
+ * A chat message exchanged between user and assistant.
+ *
+ * @public
+ */
 export type Message = {
   /** The sender of the message. */
   role: "user" | "assistant";
   /** The text content of the message. */
-  text: string;
+  content: string;
 };
 
-/** Info about a tool call for display in the UI. */
+/**
+ * Info about a tool call for display in the UI.
+ *
+ * @public
+ */
 export type ToolCallInfo = {
   toolCallId: string;
   toolName: string;
@@ -35,7 +47,11 @@ import type { SessionErrorCode } from "@alexkroman1/aai/protocol";
 
 export type { SessionErrorCode };
 
-/** Error reported by the voice session. */
+/**
+ * Error reported by the voice session.
+ *
+ * @public
+ */
 export type SessionError = {
   /** The category of the error. */
   readonly code: SessionErrorCode;
@@ -43,8 +59,31 @@ export type SessionError = {
   readonly message: string;
 };
 
-/** Options for creating a voice session. */
+/**
+ * Minimal reactive container. Compatible with `@preact/signals` `Signal<T>`.
+ *
+ * @public
+ */
+export type Reactive<T> = { value: T };
+
+/**
+ * Options for creating a voice session.
+ *
+ * @public
+ */
 export type SessionOptions = {
   /** Base URL of the AAI platform server. */
   platformUrl: string;
+  /**
+   * Factory for creating reactive state containers.
+   * Defaults to a plain mutable wrapper. Pass `signal` from
+   * `@preact/signals` for automatic Preact component re-rendering.
+   */
+  signal?: <T>(initial: T) => Reactive<T>;
+  /**
+   * Function to batch multiple reactive updates.
+   * Defaults to calling the function directly. Pass `batch` from
+   * `@preact/signals` for optimized batched updates.
+   */
+  batch?: (fn: () => void) => void;
 };

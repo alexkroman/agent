@@ -4,9 +4,11 @@
     "outDir": "dist",
     "rootDir": ".",
     "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
     "incremental": false,
     "allowImportingTsExtensions": false,
     "rewriteRelativeImportExtensions": true
   },
-  "exclude": ["node_modules", "dist", "**/*_test.ts", "**/_test_utils.ts"]
+  "exclude": ["node_modules", "dist", "**/*.test.ts", "**/_test-utils.ts"]
 }

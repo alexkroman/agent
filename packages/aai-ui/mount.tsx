@@ -1,12 +1,17 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import { batch, signal } from "@preact/signals";
 import type { ComponentType } from "preact";
 import { render } from "preact";
-import { MountConfigProvider, type MountTheme } from "./mount_context.ts";
+import { MountConfigProvider, type MountTheme } from "./mount-context.ts";
 import { createVoiceSession, type VoiceSession } from "./session.ts";
 import { createSessionControls, SessionProvider, type SessionSignals } from "./signals.ts";
 
-/** Options for {@linkcode mount}. */
+/**
+ * Options for {@link mount}.
+ *
+ * @public
+ */
 export type MountOptions = {
   /** CSS selector or DOM element to render into. Defaults to `"#app"`. */
   target?: string | HTMLElement;
@@ -19,9 +24,11 @@ export type MountOptions = {
 };
 
 /**
- * Handle returned by {@linkcode mount} for cleanup.
+ * Handle returned by {@link mount} for cleanup.
  *
- * Implements {@linkcode Disposable} so it can be used with `using`.
+ * Implements `Disposable` so it can be used with `using`.
+ *
+ * @public
  */
 export type MountHandle = {
   /** The underlying voice session. */
@@ -30,7 +37,7 @@ export type MountHandle = {
   signals: SessionSignals;
   /** Unmount the UI, remove injected styles, and disconnect the session. */
   dispose(): void;
-  /** Alias for {@linkcode dispose} for use with `using`. */
+  /** Alias for `dispose` for use with `using`. */
   [Symbol.dispose](): void;
 };
 
@@ -43,14 +50,16 @@ function resolveContainer(target: string | HTMLElement = "#app"): HTMLElement {
 /**
  * Mount a Preact component with voice session wiring.
  *
- * Creates a {@linkcode VoiceSession}, wraps it in
- * {@linkcode SessionSignals}, and renders the component
- * inside a {@linkcode SessionProvider}.
+ * Creates a {@link VoiceSession}, wraps it in
+ * {@link SessionSignals}, and renders the component
+ * inside a {@link SessionProvider}.
  *
  * @param Component - The Preact component to render.
  * @param options - Mount options (target element, platform URL).
- * @returns A {@linkcode MountHandle} for cleanup.
- * @throws {Error} If the target element is not found in the DOM.
+ * @returns A {@link MountHandle} for cleanup.
+ * @throws If the target element is not found in the DOM.
+ *
+ * @public
  */
 // biome-ignore lint/suspicious/noExplicitAny: mount accepts any component
 export function mount(Component: ComponentType<any>, options?: MountOptions): MountHandle {
@@ -58,7 +67,7 @@ export function mount(Component: ComponentType<any>, options?: MountOptions): Mo
 
   const platformUrl =
     options?.platformUrl ?? globalThis.location.origin + globalThis.location.pathname;
-  const session = createVoiceSession({ platformUrl });
+  const session = createVoiceSession({ platformUrl, signal, batch });
   const signals = createSessionControls(session);
 
   const mountConfig = { title: options?.title, theme: options?.theme };

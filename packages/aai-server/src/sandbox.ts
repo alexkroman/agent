@@ -9,15 +9,14 @@
  *
  * A per-sandbox sidecar server on the host provides scoped KV and
  * vector access — the isolate calls it without authentication (loopback only).
- *
- * @module
  */
 
 import type { AgentConfig } from "@alexkroman1/aai/internal-types";
-import type { KvEntry } from "@alexkroman1/aai/kv";
+import type { Kv, KvEntry } from "@alexkroman1/aai/kv";
 import { AUDIO_FORMAT } from "@alexkroman1/aai/protocol";
 import { DEFAULT_S2S_CONFIG } from "@alexkroman1/aai/runtime";
 import { createS2sSession, type HookInvoker, type Session } from "@alexkroman1/aai/session";
+import type { VectorStore } from "@alexkroman1/aai/vector";
 import type { ExecuteTool } from "@alexkroman1/aai/worker-entry";
 import { type SessionWebSocket, wireSessionSocket } from "@alexkroman1/aai/ws-handler";
 import { serve } from "@hono/node-server";
@@ -30,12 +29,12 @@ import {
   NodeRuntime,
 } from "secure-exec";
 import { z } from "zod";
-import type { IsolateConfig } from "./_harness_protocol.ts";
+import type { IsolateConfig } from "./_harness-protocol.ts";
 import type { AgentMetadata } from "./_schemas.ts";
-import type { BundleStore } from "./bundle_store_tigris.ts";
+import type { BundleStore } from "./bundle-store-tigris.ts";
 import type { KvStore } from "./kv.ts";
-import { getHarnessRuntimeJs } from "./sandbox_harness.ts";
-import type { AgentScope } from "./scope_token.ts";
+import { getHarnessRuntimeJs } from "./sandbox-harness.ts";
+import type { AgentScope } from "./scope-token.ts";
 import type { ServerVectorStore } from "./vector.ts";
 
 export type { AgentMetadata } from "./_schemas.ts";
@@ -84,6 +83,11 @@ function scopedKv(kvStore: KvStore, scope: AgentScope) {
     },
   };
 }
+
+// Compile-time checks: scoped adapters must satisfy the SDK interfaces.
+// If Kv or VectorStore gain a method, these lines will error until implemented.
+null as unknown as ReturnType<typeof scopedKv> satisfies Kv;
+null as unknown as ReturnType<typeof scopedVector> satisfies VectorStore;
 
 function scopedVector(vectorStore: ServerVectorStore, scope: AgentScope) {
   return {
@@ -145,7 +149,11 @@ function buildSidecarApp(
   });
   app.post("/kv/set", async (c) => {
     const { key, value, options } = SidecarKvSetSchema.parse(await c.req.json());
-    await kv.set(key, value, options);
+    await kv.set(
+      key,
+      value,
+      options?.expireIn != null ? { expireIn: options.expireIn } : undefined,
+    );
     return c.json(null);
   });
   app.post("/kv/del", async (c) => {
@@ -155,7 +163,12 @@ function buildSidecarApp(
   });
   app.post("/kv/list", async (c) => {
     const { prefix, limit, reverse } = SidecarKvListSchema.parse(await c.req.json());
-    return c.json(await kv.list(prefix, { limit, reverse }));
+    return c.json(
+      await kv.list(prefix, {
+        ...(limit != null && { limit }),
+        ...(reverse != null && { reverse }),
+      }),
+    );
   });
   app.post("/kv/keys", async (c) => {
     const { pattern } = SidecarKvKeysSchema.parse(await c.req.json());
@@ -168,7 +181,12 @@ function buildSidecarApp(
   });
   app.post("/vec/query", async (c) => {
     const { text, topK, filter } = SidecarVecQuerySchema.parse(await c.req.json());
-    return c.json(await requireVec().query(text, { topK, filter }));
+    return c.json(
+      await requireVec().query(text, {
+        ...(topK != null && { topK }),
+        ...(filter != null && { filter }),
+      }),
+    );
   });
   app.post("/vec/remove", async (c) => {
     const { ids } = SidecarVecRemoveSchema.parse(await c.req.json());
@@ -270,8 +288,8 @@ function buildNetworkAdapter(sidecarUrl: string) {
       if (url.startsWith(sidecarOrigin)) {
         const res = await globalThis.fetch(url, {
           method: options.method ?? "GET",
-          headers: options.headers,
-          body: options.body,
+          ...(options.headers != null && { headers: options.headers }),
+          ...(options.body !== undefined && { body: options.body }),
         });
         const headers: Record<string, string> = {};
         res.headers.forEach((v, k) => {
@@ -302,7 +320,7 @@ async function startIsolate(
   const harnessJs = await getHarnessRuntimeJs();
   const fs = createInMemoryFileSystem();
   await fs.writeFile("/app/agent_bundle.js", workerCode);
-  await fs.writeFile("/app/_harness_runtime.js", harnessJs);
+  await fs.writeFile("/app/_harness-runtime.js", harnessJs);
 
   let resolvePort: (port: number) => void;
   const portPromise = new Promise<number>((resolve) => {
@@ -344,7 +362,10 @@ async function startIsolate(
     },
   });
 
-  runtime.exec('require("/app/_harness_runtime.js")', { cwd: "/app" });
+  runtime.exec(
+    'import agent from "/app/agent_bundle.js";\nimport { startHarness } from "/app/_harness-runtime.js";\nstartHarness(agent);',
+    { cwd: "/app" },
+  );
 
   const port = await portPromise;
   return { port, runtime };
@@ -352,7 +373,7 @@ async function startIsolate(
 
 // ── Isolate response schemas (validated on the host, not in the isolate) ──
 // Annotated with z.ZodType<IsolateConfig> to enforce parity with the type
-// definition in _harness_protocol.ts at compile time.
+// definition in _harness-protocol.ts at compile time.
 
 const ToolSchemaZ = z.object({
   name: z.string(),
@@ -360,13 +381,18 @@ const ToolSchemaZ = z.object({
   parameters: z.record(z.string(), z.unknown()),
 });
 
-const IsolateConfigSchema: z.ZodType<IsolateConfig> = z.object({
+const IsolateConfigSchema = z.object({
   name: z.string(),
   instructions: z.string(),
   greeting: z.string(),
   sttPrompt: z.string().optional(),
   maxSteps: z.number().optional(),
-  toolChoice: z.string().optional(),
+  toolChoice: z
+    .union([
+      z.enum(["auto", "required", "none"]),
+      z.object({ type: z.literal("tool"), toolName: z.string() }),
+    ])
+    .optional(),
   builtinTools: z.array(z.string()).optional(),
   activeTools: z.array(z.string()).optional(),
   toolSchemas: z.array(ToolSchemaZ),
@@ -406,7 +432,7 @@ async function getIsolateConfig(port: number): Promise<IsolateConfig> {
     signal: AbortSignal.timeout(CONFIG_TIMEOUT_MS),
   });
   if (!res.ok) throw new Error(`Isolate /config failed: ${res.status}`);
-  return IsolateConfigSchema.parse(await res.json());
+  return IsolateConfigSchema.parse(await res.json()) as IsolateConfig;
 }
 
 // ── Build executeTool + hookInvoker from isolate ─────────────────────────
@@ -454,7 +480,12 @@ function buildHookInvoker(isolateUrl: string, env: Record<string, string>): Hook
     },
     async resolveTurnConfig(sessionId) {
       const r = await callHook("resolveTurnConfig", { sessionId });
-      return TurnConfigSchema.parse(r);
+      const parsed = TurnConfigSchema.parse(r);
+      if (parsed == null) return null;
+      return {
+        ...(parsed.maxSteps != null && { maxSteps: parsed.maxSteps }),
+        ...(parsed.activeTools != null && { activeTools: parsed.activeTools }),
+      };
     },
   };
 }

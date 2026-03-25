@@ -1,11 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
  * Speech-to-Speech WebSocket client for AssemblyAI's S2S API.
- *
- * Cross-runtime: accepts a WebSocket factory and Logger instead of
- * importing `ws` or `@std/log` directly.
- *
- * @module
  */
 
 import type { JSONSchema7 } from "json-schema";
@@ -25,7 +20,13 @@ export type S2sWebSocket = {
   readonly readyState: number;
   send(data: string): void;
   close(): void;
-  addEventListener(type: string, listener: EventListenerOrEventListenerObject): void;
+  addEventListener(type: "open", listener: () => void): void;
+  addEventListener(type: "message", listener: (event: { data: unknown }) => void): void;
+  addEventListener(
+    type: "close",
+    listener: (event: { code?: number; reason?: string }) => void,
+  ): void;
+  addEventListener(type: "error", listener: (event: { message?: string }) => void): void;
 };
 
 /** WebSocket readyState constant for OPEN. */
@@ -37,21 +38,9 @@ export type CreateS2sWebSocket = (
   opts: { headers: Record<string, string> },
 ) => S2sWebSocket;
 
-/**
- * Adapt a `ws`-package WebSocket to the minimal S2sWebSocket interface.
- *
- * At runtime, `ws.WebSocket` satisfies S2sWebSocket — both have the same
- * `readyState`, `send`, `close`, and `addEventListener` methods. TypeScript
- * can't prove structural compatibility due to overloaded signatures and
- * ws-specific event types vs DOM event types.
- */
-function toS2sWebSocket(ws: WebSocket): S2sWebSocket {
-  return ws as unknown as S2sWebSocket;
-}
-
 /** Default S2S WebSocket factory using the `ws` package (Node-only). */
 export const defaultCreateS2sWebSocket: CreateS2sWebSocket = (url, opts) =>
-  toS2sWebSocket(new WebSocket(url, { headers: opts.headers }));
+  new WebSocket(url, { headers: opts.headers });
 
 // ─── Incoming S2S message schema ─────────────────────────────────────────────
 
@@ -96,43 +85,54 @@ const S2sServerMessageSchema = z.discriminatedUnion("type", [
 
 type S2sServerMessage = z.infer<typeof S2sServerMessageSchema>;
 
-// biome-ignore format: compact lookup table
-type Msg = Record<string, unknown>;
-type Dispatcher = (m: Msg, e: Emitter<S2sEvents>) => void;
-const S2S_DISPATCH: Record<string, Dispatcher | undefined> = {
-  "session.ready": (m, e) => e.emit("ready", { session_id: m.session_id as string }),
-  "session.updated": (m, e) => e.emit("session_updated", m),
-  "input.speech.started": (_m, e) => e.emit("speech_started"),
-  "input.speech.stopped": (_m, e) => e.emit("speech_stopped"),
-  "transcript.user.delta": (m, e) => e.emit("user_transcript_delta", { text: m.text as string }),
-  "transcript.user": (m, e) =>
-    e.emit("user_transcript", { item_id: m.item_id as string, text: m.text as string }),
-  "reply.started": (m, e) => e.emit("reply_started", { reply_id: m.reply_id as string }),
-  "transcript.agent.delta": (m, e) => e.emit("agent_transcript_delta", { text: m.delta as string }),
-  "transcript.agent": (m, e) => e.emit("agent_transcript", { text: m.text as string }),
-  "tool.call": (m, e) =>
-    e.emit("tool_call", {
-      call_id: m.call_id as string,
-      name: m.name as string,
-      args: m.args as Record<string, unknown>,
-    }),
-  "reply.done": (m, e) =>
-    e.emit("reply_done", { ...(typeof m.status === "string" ? { status: m.status } : {}) }),
-  "session.error": (m, e) => {
-    const code = m.code as string,
-      message = m.message as string;
-    if (code === "session_not_found" || code === "session_forbidden")
-      e.emit("session_expired", { code, message });
-    else e.emit("error", { code, message });
-  },
-  error: (m, e) => e.emit("error", { code: "connection", message: m.message as string }),
-  "reply.content_part.started": () => {},
-  "reply.content_part.done": () => {},
-};
-
 /** Dispatch a parsed S2S server message to the emitter. */
 function dispatchS2sMessage(emitter: Emitter<S2sEvents>, msg: S2sServerMessage): void {
-  S2S_DISPATCH[msg.type]?.(msg as Msg, emitter);
+  switch (msg.type) {
+    case "session.ready":
+      emitter.emit("ready", { session_id: msg.session_id });
+      break;
+    case "session.updated":
+      emitter.emit("session_updated", msg);
+      break;
+    case "input.speech.started":
+      emitter.emit("speech_started");
+      break;
+    case "input.speech.stopped":
+      emitter.emit("speech_stopped");
+      break;
+    case "transcript.user.delta":
+      emitter.emit("user_transcript_delta", { text: msg.text });
+      break;
+    case "transcript.user":
+      emitter.emit("user_transcript", { item_id: msg.item_id, text: msg.text });
+      break;
+    case "reply.started":
+      emitter.emit("reply_started", { reply_id: msg.reply_id });
+      break;
+    case "transcript.agent.delta":
+      emitter.emit("agent_transcript_delta", { text: msg.delta });
+      break;
+    case "transcript.agent":
+      emitter.emit("agent_transcript", { text: msg.text });
+      break;
+    case "tool.call":
+      emitter.emit("tool_call", { call_id: msg.call_id, name: msg.name, args: msg.args });
+      break;
+    case "reply.done":
+      emitter.emit("reply_done", { ...(msg.status ? { status: msg.status } : {}) });
+      break;
+    case "session.error":
+      if (msg.code === "session_not_found" || msg.code === "session_forbidden")
+        emitter.emit("session_expired", { code: msg.code, message: msg.message });
+      else emitter.emit("error", { code: msg.code, message: msg.message });
+      break;
+    case "error":
+      emitter.emit("error", { code: "connection", message: msg.message });
+      break;
+    case "reply.content_part.started":
+    case "reply.content_part.done":
+      break;
+  }
 }
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -196,7 +196,7 @@ export type ConnectS2sOptions = {
 /**
  * Connect to AssemblyAI's Speech-to-Speech WebSocket API.
  *
- * Returns an {@linkcode S2sHandle} with a typed `on()` method.
+ * Returns an {@link S2sHandle} with a typed `on()` method.
  * Consumers listen for events: `ready`, `speech_started`, `speech_stopped`,
  * `user_transcript_delta`, `user_transcript`, `reply_started`,
  * `reply_done`, `audio`, `agent_transcript`, `tool_call`,
@@ -288,7 +288,7 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
       );
     }
 
-    function handleS2sMessage(ev: MessageEvent): void {
+    function handleS2sMessage(ev: { data: unknown }): void {
       const raw = tryParseJson(ev.data);
       if (raw === undefined) return;
 
@@ -306,19 +306,18 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
       dispatchS2sMessage(emitter, parsed.data);
     }
 
-    ws.addEventListener("message", handleS2sMessage as EventListener);
+    ws.addEventListener("message", handleS2sMessage);
 
-    ws.addEventListener("close", ((ev: Event & { code?: number; reason?: string }) => {
+    ws.addEventListener("close", (ev) => {
       log.info("S2S WebSocket closed", {
         code: ev.code ?? 0,
         reason: ev.reason ?? "",
       });
       emitter.emit("close");
-    }) as EventListener);
+    });
 
-    ws.addEventListener("error", ((ev: Event) => {
-      const message =
-        "message" in ev && typeof ev.message === "string" ? ev.message : "WebSocket error";
+    ws.addEventListener("error", (ev) => {
+      const message = typeof ev.message === "string" ? ev.message : "WebSocket error";
       const errObj = new Error(message);
       log.error("S2S WebSocket error", { error: errObj.message });
       if (!opened) {
@@ -326,6 +325,6 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
       } else {
         emitter.emit("error", { code: "ws_error", message: errObj.message });
       }
-    }) as EventListener);
+    });
   });
 }

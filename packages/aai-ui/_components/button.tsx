@@ -6,6 +6,7 @@ import type * as preact from "preact";
 type ButtonVariant = "default" | "secondary" | "ghost";
 type ButtonSize = "default" | "lg";
 
+/** @public */
 export function Button({
   variant = "default",
   size = "default",

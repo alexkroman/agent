@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { humanId } from "human-id";
 import { z } from "zod";
-import { askPassword } from "./_prompts.tsx";
+import { askPassword } from "./_prompts.ts";
 
 const AuthConfigSchema = z.object({
   assemblyai_api_key: z.string().optional(),

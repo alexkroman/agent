@@ -2,14 +2,9 @@
 /**
  * S2S session — relays audio between the client and AssemblyAI's
  * Speech-to-Speech API, intercepting only tool calls for local execution.
- *
- * Cross-runtime: accepts Logger and a WebSocket factory via
- * dependency injection.
- *
- * @module
  */
 
-import type { AgentConfig, ToolSchema } from "./_internal_types.ts";
+import type { AgentConfig, ToolSchema } from "./_internal-types.ts";
 import { errorMessage } from "./_utils.ts";
 import type { ClientSink } from "./protocol.ts";
 import { HOOK_TIMEOUT_MS } from "./protocol.ts";
@@ -24,7 +19,7 @@ import {
   type S2sToolSchema,
 } from "./s2s.ts";
 import { DEFAULT_INSTRUCTIONS, type Message, type StepInfo } from "./types.ts";
-import type { ExecuteTool } from "./worker_entry.ts";
+import type { ExecuteTool } from "./worker-entry.ts";
 
 /** A voice session managing the S2S connection for one client. */
 export type Session = {
@@ -117,12 +112,7 @@ export function createS2sSession(opts: SessionOptions): Session {
     activeTools?: string[];
   } | null> {
     if (!hookInvoker) return null;
-    try {
-      return await hookInvoker.resolveTurnConfig(id, HOOK_TIMEOUT_MS);
-    } catch (err: unknown) {
-      log.warn("resolveTurnConfig hook failed", { err: errorMessage(err) });
-      return null;
-    }
+    return await hookInvoker.resolveTurnConfig(id, HOOK_TIMEOUT_MS);
   }
 
   function fireHook(name: string, fn: (h: HookInvoker) => Promise<void>): void {
@@ -169,7 +159,16 @@ export function createS2sSession(opts: SessionOptions): Session {
     });
 
     // Resolve turn config for maxSteps / activeTools
-    const turnConfig = await resolveTurnConfig();
+    let turnConfig: { maxSteps?: number; activeTools?: string[] } | null;
+    try {
+      turnConfig = await resolveTurnConfig();
+    } catch (err: unknown) {
+      const msg = `resolveTurnConfig hook error: ${errorMessage(err)}`;
+      log.error(msg);
+      pendingTools.push({ call_id, result: msg });
+      client.event({ type: "tool_call_done", toolCallId: call_id, result: msg });
+      return;
+    }
 
     const refused = checkTurnLimits(turnConfig, name);
     if (refused !== null) {

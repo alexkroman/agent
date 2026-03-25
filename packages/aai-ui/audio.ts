@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { MIC_BUFFER_SECONDS } from "./types.ts";
 
-/** Configuration for creating a {@linkcode VoiceIO} instance. */
+/** Configuration for creating a {@link VoiceIO} instance. */
 export type VoiceIOOptions = {
   /** Sample rate in Hz expected by the STT engine (e.g. 16000). */
   sttSampleRate: number;
@@ -22,7 +22,7 @@ export type VoiceIOOptions = {
  *
  * Manages microphone capture via an AudioWorklet, resampling to the STT
  * sample rate, and TTS audio playback through a second AudioWorklet. Implements
- * {@linkcode AsyncDisposable} for resource cleanup.
+ * {@link AsyncDisposable} for resource cleanup.
  */
 export type VoiceIO = AsyncDisposable & {
   /** Enqueue a PCM16 audio buffer for playback through the TTS pipeline. */
@@ -37,14 +37,14 @@ export type VoiceIO = AsyncDisposable & {
 };
 
 /**
- * Create a {@linkcode VoiceIO} instance that captures microphone audio and
+ * Create a {@link VoiceIO} instance that captures microphone audio and
  * plays back TTS audio using the Web Audio API.
  *
  * The AudioContext runs at the TTS sample rate for playback fidelity.
  * Captured audio is resampled to the STT rate when the rates differ.
  *
  * @param opts - Voice I/O configuration options.
- * @returns A promise that resolves to a {@linkcode VoiceIO} handle.
+ * @returns A promise that resolves to a {@link VoiceIO} handle.
  * @throws If microphone access is denied or AudioWorklet registration fails.
  */
 export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
@@ -76,7 +76,9 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
     ]);
   } catch (err: unknown) {
     for (const t of stream.getTracks()) t.stop();
-    await ctx.close().catch(() => {});
+    await ctx.close().catch(() => {
+      /* swallow */
+    });
     throw err;
   }
 
@@ -158,7 +160,9 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
       lifecycle.abort();
       capNode.port.postMessage({ event: "stop" });
       for (const t of stream.getTracks()) t.stop();
-      await ctx.close().catch(() => {});
+      await ctx.close().catch(() => {
+        /* swallow */
+      });
     },
 
     async [Symbol.asyncDispose]() {

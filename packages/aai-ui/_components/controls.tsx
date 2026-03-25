@@ -3,6 +3,7 @@ import clsx from "clsx";
 import { useSession } from "../signals.ts";
 import { Button } from "./button.tsx";
 
+/** @public */
 export function Controls({ className }: { className?: string }) {
   const { running, toggle, reset } = useSession();
 
