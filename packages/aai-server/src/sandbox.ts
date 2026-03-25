@@ -540,17 +540,30 @@ export const _internals = {
 
 // ── Public API ───────────────────────────────────────────────────────────
 
+/**
+ * Platform-level env keys that must NOT be forwarded to the isolate.
+ * These are used by the host (e.g. for S2S auth) and should never be
+ * accessible to agent code.
+ */
+const HOST_ONLY_ENV_KEYS = new Set(["ASSEMBLYAI_API_KEY"]);
+
 export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
   const { workerCode, env, kvStore, scope, vectorStore } = opts;
 
   const kv = scopedKv(kvStore, scope);
   const vector = vectorStore ? scopedVector(vectorStore, scope) : undefined;
 
+  // Filter out platform secrets — only user-defined secrets enter the isolate
+  const isolateEnv: Record<string, string> = {};
+  for (const [k, v] of Object.entries(env)) {
+    if (!HOST_ONLY_ENV_KEYS.has(k)) isolateEnv[k] = v;
+  }
+
   // 1. Start the per-sandbox sidecar server (KV/vector on loopback)
   const sidecar = await startSidecarServer(kv, vector);
 
   // 2. Start the isolate with the agent bundle (env passed once at init)
-  const { port: isolatePort, runtime } = await startIsolate(workerCode, sidecar.url, env);
+  const { port: isolatePort, runtime } = await startIsolate(workerCode, sidecar.url, isolateEnv);
 
   // 3. Get the agent config from the isolate
   const config = await getIsolateConfig(isolatePort);
