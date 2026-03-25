@@ -114,10 +114,33 @@ export function sortAndPaginate<T extends { key: string }>(
   return entries;
 }
 
+/** Maximum allowed glob pattern length to prevent ReDoS. */
+const MAX_GLOB_PATTERN_LENGTH = 1024;
+
 /** Simple glob matcher — supports `*` as a wildcard for any characters. */
 function matchGlob(key: string, pattern: string): boolean {
-  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
-  return new RegExp(`^${escaped}$`).test(key);
+  if (pattern.length > MAX_GLOB_PATTERN_LENGTH) {
+    throw new Error(`Glob pattern exceeds maximum length of ${MAX_GLOB_PATTERN_LENGTH}`);
+  }
+  // Split on `*`, match each literal segment in order.
+  const parts = pattern.split("*");
+  if (parts.length === 1) return key === pattern;
+  let pos = 0;
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i] as string;
+    if (i === 0) {
+      if (!key.startsWith(part)) return false;
+      pos = part.length;
+    } else if (i === parts.length - 1) {
+      if (!key.endsWith(part)) return false;
+      if (key.length - part.length < pos) return false;
+    } else {
+      const idx = key.indexOf(part, pos);
+      if (idx === -1) return false;
+      pos = idx + part.length;
+    }
+  }
+  return true;
 }
 
 /**
@@ -163,17 +186,21 @@ export function createMemoryKv(): Kv {
     },
 
     set(key: string, value: unknown, options?: { expireIn?: number }): Promise<void> {
-      const raw = JSON.stringify(value);
-      if (raw.length > MAX_VALUE_SIZE) {
-        throw new Error(`Value exceeds max size of ${MAX_VALUE_SIZE} bytes`);
+      try {
+        const raw = JSON.stringify(value);
+        if (raw.length > MAX_VALUE_SIZE) {
+          return Promise.reject(new Error(`Value exceeds max size of ${MAX_VALUE_SIZE} bytes`));
+        }
+        const expireIn = options?.expireIn;
+        const entry: { raw: string; expiresAt?: number } = { raw };
+        if (expireIn && expireIn > 0) {
+          entry.expiresAt = Date.now() + expireIn;
+        }
+        store.set(key, entry);
+        return Promise.resolve();
+      } catch (err) {
+        return Promise.reject(err);
       }
-      const expireIn = options?.expireIn;
-      const entry: { raw: string; expiresAt?: number } = { raw };
-      if (expireIn && expireIn > 0) {
-        entry.expiresAt = Date.now() + expireIn;
-      }
-      store.set(key, entry);
-      return Promise.resolve();
     },
 
     delete(key: string): Promise<void> {

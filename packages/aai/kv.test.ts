@@ -107,10 +107,10 @@ describe("createMemoryKv", () => {
     vi.useRealTimers();
   });
 
-  test("rejects oversized values", () => {
+  test("rejects oversized values", async () => {
     const kv = createMemoryKv();
     const big = "x".repeat(65_537);
-    expect(() => kv.set("big", big)).toThrow("exceeds max size");
+    await expect(kv.set("big", big)).rejects.toThrow("exceeds max size");
   });
 
   describe("with fake timers", () => {

@@ -313,6 +313,9 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
         code: ev.code ?? 0,
         reason: ev.reason ?? "",
       });
+      if (!opened) {
+        reject(new Error(`WebSocket closed before open (code: ${ev.code ?? 0})`));
+      }
       emitter.emit("close");
     });
 
