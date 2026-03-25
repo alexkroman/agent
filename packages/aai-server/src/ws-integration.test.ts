@@ -18,8 +18,8 @@ import { WebSocket, WebSocketServer } from "ws";
 
 const READY_CONFIG: ReadyConfig = {
   audioFormat: "pcm16",
-  sampleRate: 16000,
-  ttsSampleRate: 24000,
+  sampleRate: 16_000,
+  ttsSampleRate: 24_000,
 };
 
 function makeStubSession(overrides?: Partial<Session>): Session {

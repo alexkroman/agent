@@ -16,7 +16,7 @@ export async function listTemplates(dir: string): Promise<string[]> {
       templates.push(entry.name);
     }
   }
-  return templates.sort();
+  return templates.sort((a, b) => a.localeCompare(b));
 }
 
 /**

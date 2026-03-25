@@ -20,9 +20,8 @@ import type { Session } from "./session.ts";
 export type SessionWebSocket = {
   readonly readyState: number;
   send(data: string | ArrayBuffer | Uint8Array): void;
-  addEventListener(type: "open", listener: () => void): void;
+  addEventListener(type: "close" | "open", listener: () => void): void;
   addEventListener(type: "message", listener: (event: { data: unknown }) => void): void;
-  addEventListener(type: "close", listener: () => void): void;
   addEventListener(type: "error", listener: (event: { message?: string }) => void): void;
 };
 
@@ -123,6 +122,8 @@ function handleTextMessage(
       break;
     case "history":
       session.onHistory(msg.messages);
+      break;
+    default:
       break;
   }
 }

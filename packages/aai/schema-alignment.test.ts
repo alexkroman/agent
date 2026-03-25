@@ -140,8 +140,8 @@ describe("TurnConfigSchema", () => {
 describe("ReadyConfigSchema", () => {
   const valid: ReadyConfig = {
     audioFormat: "pcm16",
-    sampleRate: 16000,
-    ttsSampleRate: 24000,
+    sampleRate: 16_000,
+    ttsSampleRate: 24_000,
   };
 
   test("accepts valid config", () => {

@@ -134,6 +134,8 @@ export class ClientHandler {
           this.#state.value = "error";
         });
         break;
+      default:
+        break;
     }
   }
 

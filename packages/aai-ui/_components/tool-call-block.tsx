@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { useComputed, useSignal } from "@preact/signals";
+import { useSignal } from "@preact/signals";
+import { useMemo } from "preact/hooks";
 import clsx from "clsx";
 import type * as preact from "preact";
 import type { ToolCallInfo } from "../types.ts";
@@ -70,8 +71,11 @@ export function ToolCallBlock({
   const config = TOOL_CONFIG[toolCall.toolName] ?? DEFAULT_CONFIG;
   const isPending = toolCall.status === "pending";
   const title = config.title || toolCall.toolName;
-  const canExpand = !isPending && !!toolCall.result;
-  const formatted = useComputed(() => (toolCall.result ? formatResult(toolCall.result) : ""));
+  const canExpand = !isPending && Boolean(toolCall.result);
+  const formatted = useMemo(
+    () => (toolCall.result ? formatResult(toolCall.result) : ""),
+    [toolCall.result],
+  );
 
   return (
     <div class={clsx("flex flex-col", className)}>

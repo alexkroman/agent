@@ -239,7 +239,7 @@ export function createMemoryKv(): Kv {
           result.push(key);
         }
       }
-      return result.sort();
+      return result.sort((a, b) => a.localeCompare(b));
     },
   };
 }

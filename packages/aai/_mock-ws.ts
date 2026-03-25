@@ -52,9 +52,8 @@ export class MockWebSocket extends EventTarget {
     });
   }
 
-  override addEventListener(type: "open", listener: () => void): void;
+  override addEventListener(type: "close" | "open", listener: () => void): void;
   override addEventListener(type: "message", listener: (event: { data: unknown }) => void): void;
-  override addEventListener(type: "close", listener: () => void): void;
   override addEventListener(
     type: "close",
     listener: (event: { code?: number; reason?: string }) => void,

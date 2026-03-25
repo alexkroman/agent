@@ -147,7 +147,7 @@ function makeSessionOpts(overrides?: Partial<SessionOptions>): SessionOptions {
     },
     toolSchemas: [],
     apiKey: "test-key",
-    s2sConfig: { wssUrl: "wss://fake", inputSampleRate: 16000, outputSampleRate: 24000 },
+    s2sConfig: { wssUrl: "wss://fake", inputSampleRate: 16_000, outputSampleRate: 24_000 },
     executeTool: vi.fn(async () => "tool-result"),
     createWebSocket: vi.fn(),
     logger: silentLogger,

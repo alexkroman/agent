@@ -49,7 +49,9 @@ export function scopedKv(kvStore: KvStore, scope: AgentScope) {
 
 // Compile-time checks: scoped adapters must satisfy the SDK interfaces.
 // If Kv or VectorStore gain a method, these lines will error until implemented.
+// biome-ignore lint/suspicious/noUnusedExpressions: compile-time type check
 null as unknown as ReturnType<typeof scopedKv> satisfies Kv;
+// biome-ignore lint/suspicious/noUnusedExpressions: compile-time type check
 null as unknown as ReturnType<typeof scopedVector> satisfies VectorStore;
 
 export function scopedVector(vectorStore: ServerVectorStore, scope: AgentScope) {

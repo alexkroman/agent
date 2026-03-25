@@ -62,13 +62,13 @@ export type KvRequest = z.infer<typeof KvRequestSchema>;
 // ─── Timeout constants ─────────────────────────────────────────────────────
 
 /** Default timeout for agent lifecycle hooks (onConnect, onTurn, etc). */
-export const HOOK_TIMEOUT_MS = 5_000;
+export const HOOK_TIMEOUT_MS = 5000;
 
 /** Default timeout for tool execution in the worker. */
 export const TOOL_EXECUTION_TIMEOUT_MS = 30_000;
 
 /** Maximum length for tool result strings sent to clients. */
-export const MAX_TOOL_RESULT_CHARS = 4_000;
+export const MAX_TOOL_RESULT_CHARS = 4000;
 
 // ─── Error codes ───────────────────────────────────────────────────────────
 

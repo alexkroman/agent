@@ -14,8 +14,8 @@ import type { AgentEntry } from "./_discover.ts";
  * @param message Human-readable error message (typically formatted build output).
  */
 export class BundleError extends Error {
-  constructor(message: string) {
-    super(message);
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
     this.name = "BundleError";
   }
 }
@@ -117,11 +117,11 @@ export async function bundleAgent(
       },
     });
   } catch (err: unknown) {
-    throw new BundleError(errorMessage(err));
+    throw new BundleError(errorMessage(err), { cause: err });
   }
 
   // 2. Client build — standard Vite multi-file output (index.html + assets/)
-  const skipClient = opts?.skipClient || !agent.clientEntry;
+  const skipClient = opts?.skipClient ?? !agent.clientEntry;
 
   if (!skipClient) {
     try {
@@ -141,7 +141,7 @@ export async function bundleAgent(
         },
       });
     } catch (err: unknown) {
-      throw new BundleError(errorMessage(err));
+      throw new BundleError(errorMessage(err), { cause: err });
     }
   }
 

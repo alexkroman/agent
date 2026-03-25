@@ -22,7 +22,7 @@ export async function _startProductionServer(
 
 export async function runStartCommand(opts: { cwd: string; port: string }): Promise<void> {
   const port = Number.parseInt(opts.port, 10);
-  if (Number.isNaN(port) || port < 0 || port > 65535) {
+  if (Number.isNaN(port) || port < 0 || port > 65_535) {
     throw new Error(`Invalid port: ${opts.port}. Must be a number between 0 and 65535.`);
   }
   const buildDir = path.join(opts.cwd, ".aai", "build");

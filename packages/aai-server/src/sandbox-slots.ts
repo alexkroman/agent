@@ -77,6 +77,7 @@ export function ensureAgent(slot: AgentSlot, opts: EnsureOpts): Promise<Sandbox>
     resetIdleTimer(slot);
     return Promise.resolve(slot.sandbox);
   }
+  // biome-ignore lint/nursery/noMisusedPromises: checking nullability, not truthiness
   if (slot.initializing) return slot.initializing;
 
   slot.initializing = spawnAgent(slot, opts)

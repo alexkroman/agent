@@ -35,7 +35,7 @@ function createWebSocketStub() {
 }
 
 const silentLogger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
-const s2sConfig = { wssUrl: "wss://fake", inputSampleRate: 16000, outputSampleRate: 16000 };
+const s2sConfig = { wssUrl: "wss://fake", inputSampleRate: 16_000, outputSampleRate: 16_000 };
 
 function createTestS2s() {
   const raw = createWebSocketStub();

@@ -19,7 +19,7 @@ export { memoryTools } from "./memory-tools.ts";
 const FETCH_TIMEOUT_MS = 15_000;
 
 /** Timeout for sandboxed code execution. */
-const RUN_CODE_TIMEOUT = 5_000;
+const RUN_CODE_TIMEOUT = 5000;
 
 const fetchSignal = () => AbortSignal.timeout(FETCH_TIMEOUT_MS);
 

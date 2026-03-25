@@ -132,6 +132,8 @@ function dispatchS2sMessage(emitter: Emitter<S2sEvents>, msg: S2sServerMessage):
     case "reply.content_part.started":
     case "reply.content_part.done":
       break;
+    default:
+      break;
   }
 }
 
@@ -266,7 +268,6 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
         return JSON.parse(String(data));
       } catch {
         log.warn("S2S << invalid JSON", { data: String(data).slice(0, 200) });
-        return undefined;
       }
     }
 

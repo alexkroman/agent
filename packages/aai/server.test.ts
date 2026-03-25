@@ -43,7 +43,7 @@ describe("createServer", () => {
   });
 
   test("/ returns default HTML with escaped agent name", async () => {
-    const port = 19876 + Math.floor(Math.random() * 1000);
+    const port = 19_876 + Math.floor(Math.random() * 1000);
     const agent = makeAgent({ name: '<script>alert("xss")</script>' });
     server = createServer({ agent, env: {}, logger: silentLogger });
     await server.listen(port);
@@ -56,7 +56,7 @@ describe("createServer", () => {
   });
 
   test("/ returns custom clientHtml when provided", async () => {
-    const port = 19876 + Math.floor(Math.random() * 1000);
+    const port = 19_876 + Math.floor(Math.random() * 1000);
     server = createServer({
       agent: makeAgent(),
       env: {},
@@ -71,7 +71,7 @@ describe("createServer", () => {
   });
 
   test("/health returns JSON with agent name", async () => {
-    const port = 19876 + Math.floor(Math.random() * 1000);
+    const port = 19_876 + Math.floor(Math.random() * 1000);
     server = createServer({
       agent: makeAgent({ name: "my-agent" }),
       env: {},
@@ -85,7 +85,7 @@ describe("createServer", () => {
   });
 
   test("404 triggers error-level logging", async () => {
-    const port = 19876 + Math.floor(Math.random() * 1000);
+    const port = 19_876 + Math.floor(Math.random() * 1000);
     server = createServer({
       agent: makeAgent(),
       env: {},

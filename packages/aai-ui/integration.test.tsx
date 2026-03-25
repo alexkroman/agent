@@ -51,8 +51,8 @@ describe("UI integration: mount lifecycle", () => {
       JSON.stringify({
         type: "ready",
         audioFormat: "pcm_s16le",
-        sampleRate: 16000,
-        ttsSampleRate: 24000,
+        sampleRate: 16_000,
+        ttsSampleRate: 24_000,
       }),
     );
     await flush();
@@ -109,7 +109,12 @@ describe("UI integration: signals → component rendering", () => {
     expect(env.mock.lastWs).not.toBeNull();
 
     // Simulate ready — state is "ready" (transitions to "listening" with real audio)
-    env.send({ type: "ready", audioFormat: "pcm_s16le", sampleRate: 16000, ttsSampleRate: 24000 });
+    env.send({
+      type: "ready",
+      audioFormat: "pcm_s16le",
+      sampleRate: 16_000,
+      ttsSampleRate: 24_000,
+    });
     expect(env.session.state.value).toBe("ready");
 
     // Simulate turn (user said something)

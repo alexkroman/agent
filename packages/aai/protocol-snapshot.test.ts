@@ -29,8 +29,8 @@ describe("protocol constants", () => {
   });
 
   test("sample rates", () => {
-    expect(DEFAULT_STT_SAMPLE_RATE).toMatchInlineSnapshot(`16000`);
-    expect(DEFAULT_TTS_SAMPLE_RATE).toMatchInlineSnapshot(`24000`);
+    expect(DEFAULT_STT_SAMPLE_RATE).toMatchInlineSnapshot("16000");
+    expect(DEFAULT_TTS_SAMPLE_RATE).toMatchInlineSnapshot("24000");
   });
 
   test("AudioFrameSpec", () => {
@@ -46,8 +46,8 @@ describe("protocol constants", () => {
   });
 
   test("timeout constants", () => {
-    expect(HOOK_TIMEOUT_MS).toMatchInlineSnapshot(`5000`);
-    expect(TOOL_EXECUTION_TIMEOUT_MS).toMatchInlineSnapshot(`30000`);
+    expect(HOOK_TIMEOUT_MS).toMatchInlineSnapshot("5000");
+    expect(TOOL_EXECUTION_TIMEOUT_MS).toMatchInlineSnapshot("30000");
   });
 
   test("error codes", () => {
@@ -173,8 +173,8 @@ describe("ServerMessage type covers all variants", () => {
     const msg: ServerMessage = {
       type: "config",
       audioFormat: "pcm16",
-      sampleRate: 16000,
-      ttsSampleRate: 24000,
+      sampleRate: 16_000,
+      ttsSampleRate: 24_000,
     };
     expect(msg.type).toBe("config");
   });

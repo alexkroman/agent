@@ -40,11 +40,11 @@ async function attemptDeploy(
         clientFiles,
       }),
     });
-  } catch {
+  } catch (err: unknown) {
     const hint = url.startsWith("http://localhost")
       ? "Is the local dev server running? Start it with `aai dev`."
       : "Check your network connection and verify the server URL is correct.";
-    throw new Error(`deployment failed: could not reach ${url}\n  ${hint}`);
+    throw new Error(`deployment failed: could not reach ${url}\n  ${hint}`, { cause: err });
   }
 }
 

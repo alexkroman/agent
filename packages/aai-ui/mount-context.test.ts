@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 // @vitest-environment jsdom
 
+// biome-ignore lint/suspicious/noDeprecatedImports: preact v10 render API is current
 import { h, render } from "preact";
 import { describe, expect, test } from "vitest";
 import { MountConfigProvider, useMountConfig } from "./mount-context.ts";

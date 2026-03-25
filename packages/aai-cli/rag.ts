@@ -165,9 +165,10 @@ export async function runRagCommand(opts: {
 
   try {
     new URL(url);
-  } catch {
+  } catch (err: unknown) {
     throw new Error(
       `Invalid URL: ${url}\n  Provide a fully qualified URL including the protocol (e.g., https://example.com/docs).`,
+      { cause: err },
     );
   }
 

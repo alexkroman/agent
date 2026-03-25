@@ -160,7 +160,7 @@ export function isDevMode(): boolean {
 
 /** Resolve the server URL from an explicit value, project config, or default. */
 export function resolveServerUrl(explicit?: string, configUrl?: string): string {
-  return explicit || configUrl || (isDevMode() ? DEFAULT_DEV_SERVER : DEFAULT_SERVER);
+  return explicit ?? configUrl ?? (isDevMode() ? DEFAULT_DEV_SERVER : DEFAULT_SERVER);
 }
 
 export async function fileExists(p: string): Promise<boolean> {

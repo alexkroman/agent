@@ -69,7 +69,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Hono<Env> {
       allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
       allowHeaders: ["Content-Type", "Authorization"],
       credentials: false,
-      maxAge: 86400,
+      maxAge: 86_400,
     }),
   );
   app.use(
@@ -112,11 +112,11 @@ export function createOrchestrator(opts: OrchestratorOpts): Hono<Env> {
   app.post("/:slug/kv", internalMw, slugMw, scopeTokenMw, handleKv);
   app.post("/:slug/vector", slugMw, ownerMw, handleVector);
 
-  app.get("/:slug/metrics", slugMw, ownerMw, async (c) => {
-    return c.text(await serializeForAgent(c.get("slug")), 200, {
+  app.get("/:slug/metrics", slugMw, ownerMw, async (c) =>
+    c.text(await serializeForAgent(c.get("slug")), 200, {
       "Content-Type": "text/plain; version=0.0.4",
-    });
-  });
+    }),
+  );
 
   app.get("/:slug/health", slugMw, handleAgentHealth);
   app.get("/:slug/assets/:path{.+}", slugMw, handleClientAsset);
@@ -132,9 +132,8 @@ export function createOrchestrator(opts: OrchestratorOpts): Hono<Env> {
   };
 
   const original = app.fetch.bind(app);
-  app.fetch = (req: Request, env?: Record<string, unknown>) => {
-    return original(req, { ...bindings, ...env });
-  };
+  app.fetch = (req: Request, env?: Record<string, unknown>) =>
+    original(req, { ...bindings, ...env });
 
   return app;
 }

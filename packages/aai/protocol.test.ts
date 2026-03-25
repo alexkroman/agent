@@ -17,11 +17,11 @@ import {
 
 describe("protocol constants", () => {
   test("DEFAULT_STT_SAMPLE_RATE is 16000", () => {
-    expect(DEFAULT_STT_SAMPLE_RATE).toBe(16000);
+    expect(DEFAULT_STT_SAMPLE_RATE).toBe(16_000);
   });
 
   test("DEFAULT_TTS_SAMPLE_RATE is 24000", () => {
-    expect(DEFAULT_TTS_SAMPLE_RATE).toBe(24000);
+    expect(DEFAULT_TTS_SAMPLE_RATE).toBe(24_000);
   });
 
   test('AUDIO_FORMAT is "pcm16"', () => {
@@ -39,7 +39,7 @@ describe("protocol constants", () => {
   });
 
   test("TOOL_EXECUTION_TIMEOUT_MS is 30000", () => {
-    expect(TOOL_EXECUTION_TIMEOUT_MS).toBe(30000);
+    expect(TOOL_EXECUTION_TIMEOUT_MS).toBe(30_000);
   });
 });
 
@@ -168,18 +168,18 @@ describe("ClientMessageSchema", () => {
 
 describe("buildReadyConfig", () => {
   test("builds config from sample rates", () => {
-    const config = buildReadyConfig({ inputSampleRate: 16000, outputSampleRate: 24000 });
+    const config = buildReadyConfig({ inputSampleRate: 16_000, outputSampleRate: 24_000 });
     expect(config).toEqual({
       audioFormat: AUDIO_FORMAT,
-      sampleRate: 16000,
-      ttsSampleRate: 24000,
+      sampleRate: 16_000,
+      ttsSampleRate: 24_000,
     });
   });
 
   test("uses custom sample rates", () => {
-    const config = buildReadyConfig({ inputSampleRate: 8000, outputSampleRate: 48000 });
+    const config = buildReadyConfig({ inputSampleRate: 8000, outputSampleRate: 48_000 });
     expect(config.sampleRate).toBe(8000);
-    expect(config.ttsSampleRate).toBe(48000);
+    expect(config.ttsSampleRate).toBe(48_000);
   });
 });
 

@@ -351,7 +351,7 @@ export function createS2sSession(opts: SessionOptions): Session {
       if (sessionAbort.signal.aborted) return;
       sessionAbort.abort();
 
-      if (ctx.turnPromise) await ctx.turnPromise;
+      if (ctx.turnPromise !== null) await ctx.turnPromise;
       ctx.s2s?.close();
       fireHook(ctx, "onDisconnect", (h) => h.onDisconnect(id, HOOK_TIMEOUT_MS));
     },
