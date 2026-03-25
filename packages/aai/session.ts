@@ -4,6 +4,7 @@
 import type { AgentConfig, ToolSchema } from "./_internal-types.ts";
 import { activeSessionsUpDown, sessionCounter, setupListeners } from "./_session-otel.ts";
 import { errorMessage } from "./_utils.ts";
+import type { HookInvoker } from "./middleware.ts";
 import type { ClientSink } from "./protocol.ts";
 import { fromWireMessages, HOOK_TIMEOUT_MS } from "./protocol.ts";
 import type { Logger, S2SConfig } from "./runtime.ts";
@@ -16,13 +17,10 @@ import {
   type S2sToolSchema,
 } from "./s2s.ts";
 import { buildSystemPrompt } from "./system-prompt.ts";
-
-export type { HookInvoker, ToolInterceptResult } from "./middleware.ts";
-
-import type { HookInvoker } from "./middleware.ts";
 import type { Message } from "./types.ts";
 import type { ExecuteTool } from "./worker-entry.ts";
 
+export type { HookInvoker, ToolInterceptResult } from "./middleware.ts";
 export { buildSystemPrompt } from "./system-prompt.ts";
 
 /** A voice session managing the S2S connection for one client. */

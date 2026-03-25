@@ -168,7 +168,7 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
 
     // ── Middleware hooks ───────────────────────────────────────────────
     async beforeTurn(sessionId, text) {
-      if (middleware.length === 0) return undefined;
+      if (middleware.length === 0) return;
       const ctx = makeHookContext(sessionId);
       const result = await runBeforeTurnMiddleware(middleware, text, ctx);
       return result?.reason;
@@ -179,7 +179,7 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
       await runAfterTurnMiddleware(middleware, text, ctx);
     },
     async interceptToolCall(sessionId, toolName, args) {
-      if (middleware.length === 0) return undefined;
+      if (middleware.length === 0) return;
       const ctx = makeHookContext(sessionId);
       return runToolCallInterceptors(middleware, toolName, args, ctx);
     },

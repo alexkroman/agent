@@ -98,9 +98,12 @@ export async function handleToolCall(ctx: S2sSessionCtx, detail: S2sToolCall): P
         span.setAttribute("aai.tool.cached", true);
         span.end();
         finishToolCall(ctx, call_id, ic.result);
-        ctx.fireHook("afterToolCall", (h) =>
-          h.afterToolCall?.(ctx.id, name, parsedArgs, ic.result, HOOK_TIMEOUT_MS) ??
-          Promise.resolve());
+        ctx.fireHook(
+          "afterToolCall",
+          (h) =>
+            h.afterToolCall?.(ctx.id, name, parsedArgs, ic.result, HOOK_TIMEOUT_MS) ??
+            Promise.resolve(),
+        );
         return;
       }
       if (ic?.type === "args") effectiveArgs = ic.args;
@@ -123,8 +126,12 @@ export async function handleToolCall(ctx: S2sSessionCtx, detail: S2sToolCall): P
 
   // Run middleware afterToolCall hooks
   if (ctx.hookInvoker?.afterToolCall) {
-    ctx.fireHook("afterToolCall", (h) =>
-      h.afterToolCall?.(ctx.id, name, effectiveArgs, result, HOOK_TIMEOUT_MS) ?? Promise.resolve());
+    ctx.fireHook(
+      "afterToolCall",
+      (h) =>
+        h.afterToolCall?.(ctx.id, name, effectiveArgs, result, HOOK_TIMEOUT_MS) ??
+        Promise.resolve(),
+    );
   }
 
   toolCallDuration.record((performance.now() - startTime) / 1000, { agent: ctx.agent, tool: name });
@@ -154,13 +161,16 @@ export function setupListeners(ctx: S2sSessionCtx, handle: S2sHandle): void {
     ctx.conversationMessages.push({ role: "user", content: text });
     const fireTurn = () => ctx.fireHook("onTurn", (h) => h.onTurn(ctx.id, text, HOOK_TIMEOUT_MS));
     if (!ctx.hookInvoker?.beforeTurn) return fireTurn();
-    ctx.hookInvoker.beforeTurn(ctx.id, text, HOOK_TIMEOUT_MS).then((reason) => {
-      if (reason) {
-        ctx.log.info("Turn blocked by middleware", { reason });
-        ctx.client.event({ type: "chat", text: reason });
-        ctx.client.event({ type: "tts_done" });
-      } else fireTurn();
-    }).catch(() => fireTurn());
+    ctx.hookInvoker
+      .beforeTurn(ctx.id, text, HOOK_TIMEOUT_MS)
+      .then((reason) => {
+        if (reason) {
+          ctx.log.info("Turn blocked by middleware", { reason });
+          ctx.client.event({ type: "chat", text: reason });
+          ctx.client.event({ type: "tts_done" });
+        } else fireTurn();
+      })
+      .catch(() => fireTurn());
   });
 
   handle.on("reply_started", () => {
@@ -169,7 +179,8 @@ export function setupListeners(ctx: S2sSessionCtx, handle: S2sHandle): void {
   handle.on("audio", ({ audio }) => ctx.client.playAudioChunk(audio));
   handle.on("agent_transcript_delta", ({ text }) => {
     if (!ctx.hookInvoker?.filterOutput) return ctx.client.event({ type: "chat_delta", text });
-    ctx.hookInvoker.filterOutput(ctx.id, text, HOOK_TIMEOUT_MS)
+    ctx.hookInvoker
+      .filterOutput(ctx.id, text, HOOK_TIMEOUT_MS)
       .then((f) => ctx.client.event({ type: "chat_delta", text: f }))
       .catch(() => ctx.client.event({ type: "chat_delta", text }));
   });
@@ -179,7 +190,10 @@ export function setupListeners(ctx: S2sSessionCtx, handle: S2sHandle): void {
       ctx.conversationMessages.push({ role: "assistant", content: t });
     };
     if (!ctx.hookInvoker?.filterOutput) return emit(text);
-    ctx.hookInvoker.filterOutput(ctx.id, text, HOOK_TIMEOUT_MS).then(emit).catch(() => emit(text));
+    ctx.hookInvoker
+      .filterOutput(ctx.id, text, HOOK_TIMEOUT_MS)
+      .then(emit)
+      .catch(() => emit(text));
   });
 
   handle.on("tool_call", (detail) => {
@@ -200,9 +214,11 @@ export function setupListeners(ctx: S2sSessionCtx, handle: S2sHandle): void {
       ctx.pendingTools = [];
     } else {
       if (ctx.hookInvoker?.afterTurn) {
-        const last = ctx.conversationMessages[ctx.conversationMessages.length - 1];
-        ctx.fireHook("afterTurn", (h) =>
-          h.afterTurn?.(ctx.id, last?.content ?? "", HOOK_TIMEOUT_MS) ?? Promise.resolve());
+        const last = ctx.conversationMessages.at(-1);
+        ctx.fireHook(
+          "afterTurn",
+          (h) => h.afterTurn?.(ctx.id, last?.content ?? "", HOOK_TIMEOUT_MS) ?? Promise.resolve(),
+        );
       }
       ctx.client.playAudioDone();
       ctx.client.event({ type: "tts_done" });

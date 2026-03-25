@@ -65,7 +65,6 @@ export async function runBeforeTurnMiddleware(
       return result;
     }
   }
-  return undefined;
 }
 
 /**
@@ -122,7 +121,6 @@ export async function runToolCallInterceptors(
   if (currentArgs !== args) {
     return { type: "args", args: currentArgs as Record<string, unknown> };
   }
-  return undefined;
 }
 
 /**
