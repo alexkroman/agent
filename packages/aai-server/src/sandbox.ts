@@ -440,49 +440,56 @@ async function getIsolateConfig(port: number): Promise<IsolateConfig> {
 
 // ── Build executeTool + hookInvoker from isolate ─────────────────────────
 
+async function callIsolate<T>(
+  isolateUrl: string,
+  endpoint: string,
+  body: Record<string, unknown>,
+  timeoutMs: number,
+  schema: z.ZodType<T>,
+): Promise<T> {
+  const res = await fetch(`${isolateUrl}/${endpoint}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (!res.ok) throw new Error(`${endpoint} failed: ${res.status}`);
+  return schema.parse(await res.json());
+}
+
 function buildExecuteTool(isolateUrl: string, env: Record<string, string>): ExecuteTool {
   return async (name, args, sessionId, messages) => {
-    const res = await fetch(`${isolateUrl}/tool`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, args, sessionId, messages, env }),
-      signal: AbortSignal.timeout(TOOL_TIMEOUT_MS),
-    });
-    if (!res.ok) throw new Error(`Tool ${name} failed: ${res.status}`);
-    return ToolResponseSchema.parse(await res.json()).result;
+    const { result } = await callIsolate(
+      isolateUrl,
+      "tool",
+      { name, args, sessionId, messages, env },
+      TOOL_TIMEOUT_MS,
+      ToolResponseSchema,
+    );
+    return result;
   };
 }
 
 function buildHookInvoker(isolateUrl: string, env: Record<string, string>): HookInvoker {
-  async function callHook(hook: string, extra: Record<string, unknown> = {}): Promise<unknown> {
-    const res = await fetch(`${isolateUrl}/hook`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ hook, env, ...extra }),
-      signal: AbortSignal.timeout(HOOK_TIMEOUT_MS),
-    });
-    if (!res.ok) throw new Error(`Hook ${hook} failed: ${res.status}`);
-    return HookResponseSchema.parse(await res.json()).result;
-  }
+  const hook = async (name: string, extra: Record<string, unknown> = {}): Promise<unknown> =>
+    (
+      await callIsolate(
+        isolateUrl,
+        "hook",
+        { hook: name, env, ...extra },
+        HOOK_TIMEOUT_MS,
+        HookResponseSchema,
+      )
+    ).result;
 
   return {
-    async onConnect(sessionId) {
-      await callHook("onConnect", { sessionId });
-    },
-    async onDisconnect(sessionId) {
-      await callHook("onDisconnect", { sessionId });
-    },
-    async onTurn(sessionId, text) {
-      await callHook("onTurn", { sessionId, text });
-    },
-    async onError(sessionId, error) {
-      await callHook("onError", { sessionId, error });
-    },
-    async onStep(sessionId, step) {
-      await callHook("onStep", { sessionId, step });
-    },
+    onConnect: (sessionId) => hook("onConnect", { sessionId }) as Promise<void>,
+    onDisconnect: (sessionId) => hook("onDisconnect", { sessionId }) as Promise<void>,
+    onTurn: (sessionId, text) => hook("onTurn", { sessionId, text }) as Promise<void>,
+    onError: (sessionId, error) => hook("onError", { sessionId, error }) as Promise<void>,
+    onStep: (sessionId, step) => hook("onStep", { sessionId, step }) as Promise<void>,
     async resolveTurnConfig(sessionId) {
-      const parsed = TurnConfigSchema.parse(await callHook("resolveTurnConfig", { sessionId }));
+      const parsed = TurnConfigSchema.parse(await hook("resolveTurnConfig", { sessionId }));
       if (parsed == null) return null;
       const config: { maxSteps?: number; activeTools?: string[] } = {};
       if (parsed.maxSteps != null) config.maxSteps = parsed.maxSteps;
