@@ -45,6 +45,17 @@ export type AgentServer = {
   close(): Promise<void>;
 };
 
+/** Escape HTML special characters to prevent XSS. */
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+
 export function createServer(options: ServerOptions): AgentServer {
   const {
     agent,
@@ -104,8 +115,9 @@ export function createServer(options: ServerOptions): AgentServer {
 
       app.get("/", (c) => {
         if (clientHtml) return c.html(clientHtml);
+        const safeName = escapeHtml(agent.name);
         return c.html(
-          `<!DOCTYPE html><html><body><h1>${agent.name}</h1><p>Agent server running.</p></body></html>`,
+          `<!DOCTYPE html><html><body><h1>${safeName}</h1><p>Agent server running.</p></body></html>`,
         );
       });
 

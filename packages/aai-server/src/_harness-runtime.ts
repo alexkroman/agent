@@ -204,10 +204,22 @@ async function invokeHook(agent: AgentDef, req: HookRequest): Promise<HookRespon
 
 // ── HTTP helpers ─────────────────────────────────────────────────────────
 
+/** Maximum request body size (5 MB) to prevent memory exhaustion attacks. */
+const MAX_BODY_SIZE = 5 * 1024 * 1024;
+
 function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
-    req.on("data", (c: Buffer) => chunks.push(c));
+    let totalSize = 0;
+    req.on("data", (c: Buffer) => {
+      totalSize += c.length;
+      if (totalSize > MAX_BODY_SIZE) {
+        req.destroy(new Error("Request body too large"));
+        reject(new Error("Request body too large"));
+        return;
+      }
+      chunks.push(c);
+    });
     req.on("end", () => resolve(Buffer.concat(chunks).toString()));
     req.on("error", reject);
   });

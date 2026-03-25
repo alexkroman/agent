@@ -1,4 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
+import { timingSafeEqual } from "node:crypto";
 import type { BundleStore } from "./bundle-store-tigris.ts";
 
 export async function hashApiKey(apiKey: string): Promise<string> {
@@ -6,6 +7,13 @@ export async function hashApiKey(apiKey: string): Promise<string> {
   return Array.from(new Uint8Array(hash))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
+}
+
+/** Constant-time string comparison to prevent timing attacks on credential hashes. */
+function timingSafeCompare(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  const enc = new TextEncoder();
+  return timingSafeEqual(enc.encode(a), enc.encode(b));
 }
 
 export type OwnerResult =
@@ -25,7 +33,8 @@ export async function verifySlugOwner(
     return { status: "unclaimed", keyHash };
   }
 
-  if (manifest.credential_hashes.includes(keyHash)) {
+  const isOwner = manifest.credential_hashes.some((stored) => timingSafeCompare(stored, keyHash));
+  if (isOwner) {
     return { status: "owned", keyHash };
   }
 

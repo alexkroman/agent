@@ -164,6 +164,38 @@ const runCodeParams = z.object({
   code: z.string().describe("JavaScript code to execute. Use console.log() for output."),
 });
 
+/**
+ * Names that must be blocked inside run_code to prevent sandbox escapes.
+ * The AsyncFunction constructor shares the global scope, so we shadow
+ * dangerous globals with `undefined` parameters.
+ */
+const BLOCKED_GLOBALS = [
+  "process",
+  "require",
+  "globalThis",
+  "global",
+  "self",
+  "window",
+  "Function",
+  "eval",
+  "fetch",
+  "setTimeout",
+  "setInterval",
+  "setImmediate",
+  "queueMicrotask",
+  "Deno",
+  "Bun",
+] as const;
+
+/**
+ * Patterns that indicate attempts to escape the run_code sandbox via
+ * constructor chain access (e.g. `"".constructor.constructor("return process")()`).
+ *
+ * These patterns catch the most common escape routes while still allowing
+ * normal `.constructor` property access for type checking.
+ */
+const CONSTRUCTOR_ESCAPE_RE = /\.constructor\s*\(|\.constructor\s*\[|__proto__|getPrototypeOf\s*\(/;
+
 function createRunCode(): ToolDef<typeof runCodeParams> {
   return {
     description:
@@ -171,6 +203,18 @@ function createRunCode(): ToolDef<typeof runCodeParams> {
     parameters: runCodeParams,
     async execute(args) {
       const { code } = args;
+
+      // Block constructor chain escapes that bypass global shadowing.
+      // Patterns like `"".constructor.constructor("return process")()` can
+      // reach Function/AsyncFunction and create code in the real global scope.
+      if (CONSTRUCTOR_ESCAPE_RE.test(code)) {
+        return {
+          error:
+            "Code contains blocked patterns (constructor invocation or prototype access). " +
+            "Use standard operations instead.",
+        };
+      }
+
       const output: string[] = [];
       function capture(...captureArgs: unknown[]) {
         output.push(captureArgs.map(String).join(" "));
@@ -186,9 +230,13 @@ function createRunCode(): ToolDef<typeof runCodeParams> {
         /* noop */
       }).constructor;
       try {
-        const fn = new AsyncFunction("console", code);
+        // Shadow dangerous globals with undefined to prevent sandbox escapes.
+        // The parameter names become local bindings that hide the real globals.
+        const paramNames = ["console", ...BLOCKED_GLOBALS];
+        const fn = new AsyncFunction(...paramNames, code);
+        const paramValues = [fakeConsole, ...BLOCKED_GLOBALS.map(() => undefined)];
         await Promise.race([
-          fn(fakeConsole),
+          fn(...paramValues),
           new Promise((_, reject) =>
             setTimeout(() => reject(new Error("Code execution timed out")), RUN_CODE_TIMEOUT),
           ),

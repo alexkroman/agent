@@ -32,8 +32,9 @@ export async function requireOwner(
   }
   const result = await verifySlugOwner(apiKey, { slug: opts.slug, store: opts.store });
   if (result.status === "forbidden") {
+    // Generic message to avoid confirming slug existence to unauthorized users
     throw new HTTPException(403, {
-      message: `Slug "${opts.slug}" is owned by another user.`,
+      message: "Forbidden",
     });
   }
   return result.keyHash;
