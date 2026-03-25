@@ -14,7 +14,6 @@
  */
 
 import {
-  context,
   type Meter,
   metrics,
   type Span,
@@ -126,7 +125,5 @@ export function withSpan<T>(name: string, fn: (span: Span) => T): T {
   });
 }
 
-export type { Meter, Span, Tracer };
-// Re-export commonly needed types and utilities from the OTel API
-// so consumers don't need a direct @opentelemetry/api dependency.
-export { context, metrics, SpanStatusCode, trace };
+export type { Meter, Span, Tracer } from "@opentelemetry/api";
+export { context, metrics, SpanStatusCode, trace } from "@opentelemetry/api";

@@ -1,5 +1,4 @@
 // Copyright 2025 the AAI authors. MIT license.
-// biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
 import { errorMessage } from "@alexkroman1/aai/utils";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -100,11 +99,11 @@ export function createOrchestrator(opts: OrchestratorOpts): Hono<Env> {
 
   app.get("/health", (c) => c.json({ status: "ok" }));
 
-  app.get("/metrics", internalMw, async (c) => {
-    return c.text(await serialize(), 200, {
+  app.get("/metrics", internalMw, async (c) =>
+    c.text(await serialize(), 200, {
       "Content-Type": "text/plain; version=0.0.4",
-    });
-  });
+    }),
+  );
 
   app.get("/:slug{[a-z0-9][a-z0-9_-]*[a-z0-9]}", (c) => {
     const url = new URL(c.req.url);
