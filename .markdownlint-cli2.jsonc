@@ -2,6 +2,7 @@
   "ignores": [
     ".changeset/**",
     "**/api/*.api.md",
-    "**/temp/*.api.md"
+    "**/temp/*.api.md",
+    "**/CHANGELOG.md"
   ]
 }
