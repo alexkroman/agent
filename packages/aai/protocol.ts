@@ -146,12 +146,15 @@ export interface ClientSink {
 /** Supported audio formats for the wire protocol. */
 export type AudioFormatId = "pcm16";
 
+/** Zod schema for {@link ReadyConfig}. */
+export const ReadyConfigSchema = z.object({
+  audioFormat: z.enum(["pcm16"]),
+  sampleRate: z.number().int().positive(),
+  ttsSampleRate: z.number().int().positive(),
+});
+
 /** Protocol-level session config returned to the client on connect. */
-export type ReadyConfig = {
-  audioFormat: AudioFormatId;
-  sampleRate: number;
-  ttsSampleRate: number;
-};
+export type ReadyConfig = z.infer<typeof ReadyConfigSchema>;
 
 /** Zod schema for server→client text messages. */
 export const ServerMessageSchema = z.discriminatedUnion("type", [
@@ -200,8 +203,11 @@ export function buildReadyConfig(s2sConfig: {
 
 // ─── Worker RPC interfaces ─────────────────────────────────────────────────
 
+/** Zod schema for {@link TurnConfig}. */
+export const TurnConfigSchema = z.object({
+  maxSteps: z.number().int().positive().optional(),
+  activeTools: z.array(z.string().min(1)).optional(),
+});
+
 /** Combined turn configuration resolved from the worker before a turn starts. */
-export type TurnConfig = {
-  maxSteps?: number;
-  activeTools?: string[];
-};
+export type TurnConfig = z.infer<typeof TurnConfigSchema>;

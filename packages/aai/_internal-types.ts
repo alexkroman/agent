@@ -7,48 +7,50 @@
 
 import type { JSONSchema7 } from "json-schema";
 import { z } from "zod";
-import type { BuiltinTool, ToolChoice, ToolDef } from "./types.ts";
+import type { ToolDef } from "./types.ts";
+import { BuiltinToolSchema, ToolChoiceSchema } from "./types.ts";
+
+// ─── AgentConfig ────────────────────────────────────────────────────────────
 
 /**
- * Serializable agent configuration sent over the wire.
+ * Zod schema for serializable agent configuration sent over the wire.
  *
  * This is the JSON-safe subset of the agent definition that can be
  * transmitted between the worker and the host process via structured clone.
  */
-export type AgentConfig = {
-  name: string;
-  instructions: string;
-  greeting: string;
-  sttPrompt?: string | undefined;
-  maxSteps?: number | undefined;
-  toolChoice?: ToolChoice | undefined;
-  builtinTools?: readonly BuiltinTool[] | undefined;
-  /** Default set of active tools. Can be overridden per-turn via `onBeforeStep`. */
-  activeTools?: readonly string[] | undefined;
-};
+export const AgentConfigSchema = z.object({
+  name: z.string().min(1),
+  instructions: z.string(),
+  greeting: z.string(),
+  sttPrompt: z.string().optional(),
+  maxSteps: z.number().int().positive().optional(),
+  toolChoice: ToolChoiceSchema.optional(),
+  builtinTools: z.array(BuiltinToolSchema).readonly().optional(),
+  activeTools: z.array(z.string().min(1)).readonly().optional(),
+});
+
+/** Serializable agent configuration — derived from {@link AgentConfigSchema}. */
+export type AgentConfig = z.infer<typeof AgentConfigSchema>;
+
+// ─── ToolSchema ─────────────────────────────────────────────────────────────
 
 /**
- * Serialized tool schema sent over the wire.
+ * Zod schema for serialized tool definitions sent over the wire.
+ *
  * `parameters` must be a valid JSON Schema object (with `type`, `properties`,
  * etc.) — the Vercel AI SDK wraps it via `jsonSchema()`.
  */
+export const ToolSchemaSchema = z.object({
+  name: z.string().min(1),
+  description: z.string().min(1),
+  parameters: z.record(z.string(), z.unknown()),
+});
+
+/** Serialized tool schema — derived from {@link ToolSchemaSchema}. */
 export type ToolSchema = {
   name: string;
   description: string;
   parameters: JSONSchema7;
-};
-
-/**
- * Request body for the deploy endpoint.
- *
- * Sent by the CLI to the server when deploying a bundled agent.
- */
-export type DeployBody = {
-  /** Env vars are optional at deploy time — set separately via `aai env add`. */
-  env?: Readonly<Record<string, string>> | undefined;
-  worker: string;
-  /** Client build files keyed by relative path (e.g. "index.html", "assets/index-abc.js"). */
-  clientFiles: Readonly<Record<string, string>>;
 };
 
 /** Empty Zod object schema used as default when tools have no parameters. */
