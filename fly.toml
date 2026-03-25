@@ -5,7 +5,6 @@ primary_region = 'sjc'
 
 [env]
   PORT = "8080"
-  NODE_ENV = "production"
 
 [http_service]
   internal_port = 8080

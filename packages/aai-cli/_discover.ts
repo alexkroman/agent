@@ -145,11 +145,13 @@ export const DEFAULT_DEV_SERVER = "http://localhost:8787";
 /** Check if the CLI is running from the monorepo (dev mode). */
 export function isDevMode(): boolean {
   const cliDir = path.dirname(fileURLToPath(import.meta.url));
-  const packagesDir = path.resolve(cliDir, "..");
-  const altPackagesDir = path.resolve(cliDir, "../..");
+  // From source: cliDir is packages/aai-cli/, workspace root is ../..
+  // From dist:   cliDir is packages/aai-cli/dist/, workspace root is ../../..
+  const root1 = path.resolve(cliDir, "../..");
+  const root2 = path.resolve(cliDir, "../../..");
   return (
-    existsSync(path.join(packagesDir, "aai", "package.json")) ||
-    existsSync(path.join(altPackagesDir, "aai", "package.json"))
+    existsSync(path.join(root1, "pnpm-workspace.yaml")) ||
+    existsSync(path.join(root2, "pnpm-workspace.yaml"))
   );
 }
 
