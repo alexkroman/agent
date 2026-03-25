@@ -1,0 +1,51 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "lefthook install"
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(pnpm install*)",
+      "Bash(pnpm test*)",
+      "Bash(pnpm lint*)",
+      "Bash(pnpm typecheck*)",
+      "Bash(pnpm check*)",
+      "Bash(pnpm build*)",
+      "Bash(pnpm --filter *)",
+      "Bash(pnpm vitest *)",
+      "Bash(npx vitest *)",
+      "Bash(turbo *)",
+      "Bash(npx biome *)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git branch*)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(git fetch *)",
+      "Bash(git pull *)",
+      "Bash(git checkout *)",
+      "Bash(git switch *)",
+      "Bash(git merge *)",
+      "Bash(git rebase *)",
+      "Bash(git stash*)",
+      "Bash(git rev-parse *)",
+      "Bash(git remote *)",
+      "Bash(ls *)",
+      "Bash(cat package.json*)",
+      "Bash(node *)",
+      "Bash(npx tsc *)",
+      "Bash(npx api-extractor *)"
+    ]
+  }
+}
