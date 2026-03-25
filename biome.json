@@ -39,7 +39,9 @@
         "useConsistentArrayType": "error",
         "noEnum": "error",
         "noShoutyConstants": "error",
-        "useImportType": "error"
+        "useImportType": "error",
+        "noNestedTernary": "error",
+        "useNumberNamespace": "error"
       },
       "suspicious": {
         "recommended": true,
@@ -49,11 +51,16 @@
         "useErrorMessage": "error",
         "noMisplacedAssertion": "error",
         "noAssignInExpressions": "error",
-        "noDoubleEquals": "error"
+        "noDoubleEquals": "error",
+        "noEvolvingTypes": "error"
       },
       "complexity": {
         "recommended": true,
         "noExcessiveCognitiveComplexity": "warn",
+        "noExcessiveLinesPerFunction": {
+          "level": "error",
+          "options": { "maxLines": 150 }
+        },
         "noStaticOnlyClass": "error",
         "useDateNow": "error",
         "useSimplifiedLogicExpression": "error",
@@ -61,7 +68,8 @@
         "noUselessUndefinedInitialization": "error"
       },
       "performance": {
-        "useTopLevelRegex": "off"
+        "useTopLevelRegex": "off",
+        "noAccumulatingSpread": "error"
       },
       "security": {
         "recommended": true
@@ -87,6 +95,9 @@
           },
           "nursery": {
             "noExcessiveLinesPerFile": "off"
+          },
+          "complexity": {
+            "noExcessiveLinesPerFunction": "off"
           }
         }
       }

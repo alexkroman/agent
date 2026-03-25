@@ -106,7 +106,7 @@ export function sortAndPaginate<T extends { key: string }>(
   entries: T[],
   options?: { limit?: number; reverse?: boolean },
 ): T[] {
-  entries.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+  entries.sort((a, b) => a.key.localeCompare(b.key));
   if (options?.reverse) entries.reverse();
   if (options?.limit && options.limit > 0) {
     entries.length = Math.min(entries.length, options.limit);
