@@ -142,6 +142,6 @@ describe("CLI integration: deploy flow", () => {
 
   test("deploy throws on server errors", async () => {
     const mockFetch = vi.fn().mockResolvedValue(new Response("boom", { status: 500 }));
-    await expect(runDeploy(deployOpts(mockFetch))).rejects.toThrow("deploy failed (500)");
+    await expect(runDeploy(deployOpts(mockFetch))).rejects.toThrow("deploy failed (HTTP 500)");
   });
 });

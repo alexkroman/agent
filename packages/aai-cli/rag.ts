@@ -166,7 +166,9 @@ export async function runRagCommand(opts: {
   try {
     new URL(url);
   } catch {
-    throw new Error(`Invalid URL: ${url}`);
+    throw new Error(
+      `Invalid URL: ${url}\n  Provide a fully qualified URL including the protocol (e.g., https://example.com/docs).`,
+    );
   }
 
   const { apiKey, serverUrl, slug } = await getServerInfo(cwd, opts.server);
