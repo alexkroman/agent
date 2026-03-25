@@ -19,6 +19,6 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - run: npx playwright install --with-deps chromium
+      - run: pnpm --filter @alexkroman1/aai-cli exec playwright install --with-deps chromium
 
       - run: pnpm check
