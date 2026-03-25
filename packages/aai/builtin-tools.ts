@@ -167,110 +167,138 @@ const runCodeParams = z.object({
   code: z.string().describe("JavaScript code to execute. Use console.log() for output."),
 });
 
-/**
- * Names that must be blocked inside run_code to prevent sandbox escapes.
- * The AsyncFunction constructor shares the global scope, so we shadow
- * dangerous globals with `undefined` parameters.
- */
-const BLOCKED_GLOBALS = [
-  "process",
-  "require",
-  "globalThis",
-  "global",
-  "self",
-  "window",
-  "Function",
-  "eval",
-  "fetch",
-  "setTimeout",
-  "setInterval",
-  "setImmediate",
-  "queueMicrotask",
-  "Deno",
-  "Bun",
-] as const;
+/** Memory limit for run_code isolates (MB). */
+const RUN_CODE_MEMORY_MB = 32;
 
 /**
- * Patterns that indicate attempts to escape the run_code sandbox via
- * constructor chain access (e.g. `"".constructor.constructor("return process")()`).
+ * Execute JavaScript code inside a fresh secure-exec V8 isolate.
  *
- * These patterns catch the most common escape routes while still allowing
- * normal `.constructor` property access for type checking.
+ * Each invocation spins up a disposable isolate with:
+ * - No filesystem writes
+ * - No network access
+ * - No child process spawning
+ * - No environment variable access
+ * - 32 MB memory limit
+ * - 5 second execution timeout
+ *
+ * The isolate is disposed immediately after execution, so no state
+ * leaks between invocations or across sessions.
  */
-const CONSTRUCTOR_ESCAPE_RE =
-  /\.constructor\s*\(|\.constructor\s*\[|__proto__|getPrototypeOf\s*\(|arguments\s*\.\s*callee/;
-
-/** Strip JS single-line and multi-line comments so they can't hide blocked patterns. */
-function stripComments(code: string): string {
-  return code.replace(/\/\/[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
-}
-
-/**
- * Block dynamic import() which cannot be shadowed via parameter binding.
- * Matches `import(`, `import (`, and common obfuscations.
- */
-const DYNAMIC_IMPORT_RE = /\bimport\s*\(/;
-
 function createRunCode(): ToolDef<typeof runCodeParams> {
   return {
     description:
       "Execute JavaScript code in a secure sandbox and return the output. Use this for calculations, data transformations, string manipulation, or any task that benefits from running code. Output is captured from console.log(). No network or filesystem access.",
     parameters: runCodeParams,
     async execute(args) {
-      const { code } = args;
-
-      // Block constructor chain escapes that bypass global shadowing.
-      // Patterns like `"".constructor.constructor("return process")()` can
-      // reach Function/AsyncFunction and create code in the real global scope.
-      if (CONSTRUCTOR_ESCAPE_RE.test(stripComments(code))) {
-        return {
-          error:
-            "Code contains blocked patterns (constructor invocation or prototype access). " +
-            "Use standard operations instead.",
-        };
-      }
-
-      if (DYNAMIC_IMPORT_RE.test(code)) {
-        return {
-          error:
-            "Dynamic import() is not allowed in sandboxed code. " +
-            "Use only the built-in APIs available in the sandbox.",
-        };
-      }
-
-      const output: string[] = [];
-      function capture(...captureArgs: unknown[]) {
-        output.push(captureArgs.map(String).join(" "));
-      }
-      const fakeConsole = {
-        log: capture,
-        info: capture,
-        warn: capture,
-        error: capture,
-        debug: capture,
-      };
-      const AsyncFunction = Object.getPrototypeOf(async () => {
-        /* noop */
-      }).constructor;
-      try {
-        // Shadow dangerous globals with undefined to prevent sandbox escapes.
-        // The parameter names become local bindings that hide the real globals.
-        const paramNames = ["console", ...BLOCKED_GLOBALS];
-        const fn = new AsyncFunction(...paramNames, code);
-        const paramValues = [fakeConsole, ...BLOCKED_GLOBALS.map(() => undefined)];
-        await Promise.race([
-          fn(...paramValues),
-          new Promise((_, reject) =>
-            setTimeout(() => reject(new Error("Code execution timed out")), RUN_CODE_TIMEOUT),
-          ),
-        ]);
-        const result = output.join("\n").trim();
-        return result || "Code ran successfully (no output)";
-      } catch (err: unknown) {
-        return { error: errorMessage(err) };
-      }
+      return executeInIsolate(args.code);
     },
   };
+}
+
+/** Lazily import secure-exec to avoid top-level side effects. */
+let _secureExec: typeof import("secure-exec") | undefined;
+async function getSecureExec() {
+  if (!_secureExec) _secureExec = await import("secure-exec");
+  return _secureExec;
+}
+
+/**
+ * Exported for testing — execute user code in a fresh secure-exec V8 isolate.
+ */
+export async function executeInIsolate(code: string): Promise<string | { error: string }> {
+  const {
+    createInMemoryFileSystem,
+    createNodeDriver,
+    createNodeRuntimeDriverFactory,
+    NodeRuntime,
+  } = await getSecureExec();
+
+  // The user code is stored as a separate file and loaded at runtime via
+  // readFileSync + AsyncFunction so that syntax errors are caught by try/catch
+  // rather than causing a silent module-parse failure.
+  const harnessCode = `
+import { readFileSync } from "node:fs";
+
+const __output = [];
+const __capture = (...args) => __output.push(args.map(String).join(" "));
+const __console = {
+  log: __capture, info: __capture, warn: __capture,
+  error: __capture, debug: __capture,
+};
+try {
+  const __userCode = readFileSync("/app/user-code.js", "utf8");
+  const __AsyncFn = Object.getPrototypeOf(async function(){}).constructor;
+  const __fn = new __AsyncFn("console", __userCode);
+  await __fn(__console);
+  const result = __output.join("\\n").trim();
+  process.stdout.write(JSON.stringify({ ok: true, result: result || "Code ran successfully (no output)" }));
+} catch (err) {
+  process.stdout.write(JSON.stringify({ ok: false, error: String(err?.message ?? err) }));
+}
+`;
+
+  const fs = createInMemoryFileSystem();
+  await fs.writeFile("/app/harness.js", harnessCode);
+  await fs.writeFile("/app/user-code.js", code);
+
+  let stdout = "";
+  let stderr = "";
+  let finished = false;
+
+  const runtime = new NodeRuntime({
+    systemDriver: createNodeDriver({
+      filesystem: fs,
+      permissions: {
+        fs: (req) =>
+          req.op === "read" || req.op === "stat" || req.op === "readdir" || req.op === "exists"
+            ? { allow: true }
+            : { allow: false, reason: "Filesystem is read-only" },
+        network: () => ({ allow: false, reason: "Network access is disabled in run_code" }),
+        childProcess: () => ({ allow: false, reason: "Subprocess spawning is disabled" }),
+        env: () => ({ allow: false, reason: "Env access is disabled in run_code" }),
+      },
+    }),
+    runtimeDriverFactory: createNodeRuntimeDriverFactory(),
+    memoryLimit: RUN_CODE_MEMORY_MB,
+    onStdio(event) {
+      if (event.channel === "stdout") stdout += event.message;
+      if (event.channel === "stderr") {
+        stderr += event.message;
+        // Stderr output (e.g. uncaught errors, syntax errors) means
+        // the isolate is done — no stdout result will follow.
+        finished = true;
+      }
+    },
+  });
+
+  try {
+    runtime.exec('import "/app/harness.js";', { cwd: "/app" });
+
+    // Poll for output or process exit with a timeout.
+    const deadline = Date.now() + RUN_CODE_TIMEOUT;
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 50));
+      if (stdout || finished) break;
+    }
+
+    // If the isolate exited without stdout (e.g. syntax error), check stderr.
+    if (!stdout) {
+      if (stderr) return { error: stderr.trim() };
+      return { error: "Code execution timed out" };
+    }
+
+    try {
+      const parsed = JSON.parse(stdout) as { ok: boolean; result?: string; error?: string };
+      if (parsed.ok) return parsed.result ?? "Code ran successfully (no output)";
+      return { error: parsed.error ?? "Unknown error" };
+    } catch {
+      return stdout.trim() || "Code ran successfully (no output)";
+    }
+  } catch (err: unknown) {
+    return { error: errorMessage(err) };
+  } finally {
+    runtime.dispose();
+  }
 }
 
 // ─── vector_search ─────────────────────────────────────────────────────────

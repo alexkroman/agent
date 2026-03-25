@@ -200,12 +200,18 @@ a denylist.
 - Sessions are per-sandbox (`Map<string, Session>`).
 - No shared mutable state between sandboxes.
 
+**`run_code` built-in tool (aai/builtin-tools.ts):**
+
+- Each invocation runs in a **fresh secure-exec V8 isolate** — fully
+  isolated from the host process and from other invocations.
+- No network, no filesystem writes, no child processes, no env vars.
+- 32 MB memory limit, 5-second execution timeout.
+- Isolate is disposed immediately after execution — no state leaks.
+- Works identically in both self-hosted and platform modes.
+
 **Self-hosted server (aai/server.ts):**
 
 - HTML output uses `escapeHtml()` to prevent XSS from agent names.
-- `run_code` built-in tool shadows dangerous globals (`process`, `require`,
-  `globalThis`, `Function`, `eval`, `fetch`, etc.) via AsyncFunction
-  parameter binding and blocks constructor chain escapes via regex.
 
 **SSRF protection (aai-server/_net.ts):**
 
@@ -223,8 +229,12 @@ a denylist.
 
 - `sandbox-integration.test.ts` — network, filesystem, process, env
   isolation e2e. Run: `pnpm --filter @alexkroman1/aai-server test:integration`
-- `builtin-tools.test.ts` — `run_code` global shadowing, constructor chain
-  blocking.
+- `builtin-tools.test.ts` — `run_code` isolate security boundaries.
+- `run-code-isolate.test.ts` — comprehensive integration tests for
+  run_code V8 isolate (network, filesystem, process, env, constructor
+  chain bypass, cross-invocation isolation).
+- `pentest.test.ts` — penetration tests verifying isolate prevents
+  previously-exploitable constructor chain bypasses.
 - `_net.test.ts` — SSRF bypass prevention (IPv4-mapped IPv6, cloud metadata,
   `.internal` domains).
 - `scope-token.test.ts` — token expiration enforcement.

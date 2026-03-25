@@ -85,6 +85,7 @@
   "dependencies": {
     "html-to-text": "^9.0.5",
     "nanoevents": "^9.1.0",
+    "secure-exec": "^0.1.0",
     "ws": "^8.20.0",
     "zod": "^4.3.6"
   },
