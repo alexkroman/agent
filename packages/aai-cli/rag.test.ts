@@ -399,6 +399,18 @@ describe("runRagCommand", () => {
     await expect(runRagCommand({ url: "not-a-url", cwd: "." })).rejects.toThrow("Invalid URL");
   });
 
+  test("invalid chunkSize throws", async () => {
+    await expect(
+      runRagCommand({ url: "https://example.com/docs", cwd: ".", chunkSize: "abc" }),
+    ).rejects.toThrow("Invalid chunk size");
+  });
+
+  test("negative chunkSize throws", async () => {
+    await expect(
+      runRagCommand({ url: "https://example.com/docs", cwd: ".", chunkSize: "-5" }),
+    ).rejects.toThrow("Invalid chunk size");
+  });
+
   test("valid URL but missing project config throws", async () => {
     const { mkdtemp, rm } = await import("node:fs/promises");
     const { join } = await import("node:path");
