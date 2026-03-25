@@ -13,8 +13,11 @@
  */
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+// biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
 import type { Kv } from "@alexkroman1/aai/kv";
+// biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
 import type { AgentDef, HookContext, ToolContext } from "@alexkroman1/aai/types";
+// biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
 import type { VectorStore } from "@alexkroman1/aai/vector";
 import type {
   HookRequest,

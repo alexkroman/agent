@@ -1,5 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+// biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
 import { sortAndPaginate } from "@alexkroman1/aai/kv";
 import { type AgentMetadata, AgentMetadataSchema } from "./_schemas.ts";
 import type { BundleStore } from "./bundle-store-tigris.ts";

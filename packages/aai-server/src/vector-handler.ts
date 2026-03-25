@@ -1,5 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+// biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
 import { errorMessage } from "@alexkroman1/aai/utils";
 import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";

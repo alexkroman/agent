@@ -9,6 +9,7 @@
 
 // biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at runtime
 import { defineAgent, tool } from "@alexkroman1/aai";
+// biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
 import { agentToolsToSchemas } from "@alexkroman1/aai/internal-types";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
