@@ -204,5 +204,5 @@ if (process.env.VITEST !== "true") {
   ) {
     process.argv.splice(2, 0, "init");
   }
-  runMain(mainCommand);
+  void runMain(mainCommand);
 }
