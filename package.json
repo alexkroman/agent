@@ -7,7 +7,7 @@
     "typecheck": "turbo typecheck",
     "lint": "turbo lint",
     "lint:fix": "biome check --write packages/",
-    "check": "pnpm install --frozen-lockfile && turbo build typecheck lint check:api check:attw check:templates check:knip check:syncpack check:markdown check:integration check:e2e && vitest run --coverage",
+    "check": "turbo build typecheck lint check:api check:attw check:templates check:knip check:syncpack check:markdown check:integration check:e2e && vitest run --coverage",
     "check:knip": "knip",
     "check:syncpack": "syncpack lint",
     "check:markdown": "markdownlint-cli2 '**/*.md' '#**/node_modules' '#.aai'",
