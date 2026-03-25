@@ -10,7 +10,6 @@ import type {
   Message,
   Reactive,
   SessionError,
-  SessionErrorCode,
   SessionOptions,
   ToolCallInfo,
 } from "./types.ts";
@@ -24,7 +23,7 @@ export type {
   SessionErrorCode,
   SessionOptions,
   ToolCallInfo,
-};
+} from "./types.ts";
 
 /** Built-in non-reactive container (plain mutable wrapper). */
 function plainReactive<T>(initial: T): Reactive<T> {

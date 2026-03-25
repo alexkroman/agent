@@ -41,7 +41,12 @@
         "noShoutyConstants": "error",
         "useImportType": "error",
         "noNestedTernary": "error",
-        "useNumberNamespace": "error"
+        "useNumberNamespace": "error",
+        "noUselessElse": "error",
+        "noCommonJs": "error",
+        "noExportedImports": "error",
+        "noSubstr": "error",
+        "useTrimStartEnd": "error"
       },
       "suspicious": {
         "recommended": true,
@@ -65,7 +70,8 @@
         "useDateNow": "error",
         "useSimplifiedLogicExpression": "error",
         "noForEach": "error",
-        "noUselessUndefinedInitialization": "error"
+        "noUselessUndefinedInitialization": "error",
+        "noUselessStringConcat": "error"
       },
       "performance": {
         "useTopLevelRegex": "off",

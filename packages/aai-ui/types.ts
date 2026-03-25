@@ -45,9 +45,8 @@ export type ToolCallInfo = {
 
 import type { SessionErrorCode } from "@alexkroman1/aai/protocol";
 
+export type { SessionErrorCode } from "@alexkroman1/aai/protocol";
 export { SessionErrorCodeSchema } from "@alexkroman1/aai/protocol";
-
-export type { SessionErrorCode };
 
 /**
  * Error reported by the voice session.
