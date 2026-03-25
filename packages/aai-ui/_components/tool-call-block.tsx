@@ -1,9 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { useSignal } from "@preact/signals";
-import { useMemo } from "preact/hooks";
 import clsx from "clsx";
 import type * as preact from "preact";
+import { useMemo } from "preact/hooks";
 import type { ToolCallInfo } from "../types.ts";
 import {
   BoltIcon,
