@@ -559,5 +559,9 @@ describe("redeploy replaces sandbox", () => {
     expect(sandbox2).toBeTruthy();
 
     sandbox2.terminate();
+
+    // Allow isolate internal promises to settle after disposal
+    // to prevent "Isolate is disposed" unhandled rejections.
+    await new Promise((r) => setTimeout(r, 100));
   });
 });
