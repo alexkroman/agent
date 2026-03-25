@@ -537,35 +537,40 @@ function Sidebar({ game }: { game: GameState }) {
           )}
 
           {/* NPCs */}
-          {game.npcs.filter(n => n.status !== "deceased").length > 0 && (
-            <div class="et-section">
-              <div class="et-label">Characters</div>
-              {game.npcs.filter(n => n.status === "active").map((npc) => (
-                <NpcCard key={npc.id} npc={npc} />
-              ))}
-              {game.npcs.filter(n => n.status === "background").length > 0 && (
-                <>
-                  <div style={{
-                    fontSize: "8px", color: C.textDim, textTransform: "uppercase",
-                    letterSpacing: "0.1em", margin: "6px 0 4px", fontFamily: "sans-serif",
-                  }}>
-                    Known
-                  </div>
-                  {game.npcs.filter(n => n.status === "background").map((npc) => (
-                    <div key={npc.id} style={{
-                      fontSize: "10px", color: C.textMuted, marginBottom: "2px",
-                      paddingLeft: "8px", borderLeft: `1px solid ${C.border}`,
+          {(() => {
+            const active = game.npcs.filter(n => n.status === "active");
+            const background = game.npcs.filter(n => n.status === "background");
+            if (active.length === 0 && background.length === 0) return null;
+            return (
+              <div class="et-section">
+                <div class="et-label">Characters</div>
+                {active.map((npc) => (
+                  <NpcCard key={npc.id} npc={npc} />
+                ))}
+                {background.length > 0 && (
+                  <>
+                    <div style={{
+                      fontSize: "8px", color: C.textDim, textTransform: "uppercase",
+                      letterSpacing: "0.1em", margin: "6px 0 4px", fontFamily: "sans-serif",
                     }}>
-                      {npc.name}
-                      <span style={{ fontSize: "8px", color: C.textDim, marginLeft: "4px" }}>
-                        {npc.disposition}
-                      </span>
+                      Known
                     </div>
-                  ))}
-                </>
-              )}
-            </div>
-          )}
+                    {background.map((npc) => (
+                      <div key={npc.id} style={{
+                        fontSize: "10px", color: C.textMuted, marginBottom: "2px",
+                        paddingLeft: "8px", borderLeft: `1px solid ${C.border}`,
+                      }}>
+                        {npc.name}
+                        <span style={{ fontSize: "8px", color: C.textDim, marginLeft: "4px" }}>
+                          {npc.disposition}
+                        </span>
+                      </div>
+                    ))}
+                  </>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Session Log */}
           {game.sessionLog.length > 0 && (

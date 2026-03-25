@@ -8,6 +8,15 @@ export type ButtonVariant = "default" | "secondary" | "ghost";
 /** @public */
 export type ButtonSize = "default" | "lg";
 
+const LG_STYLE: preact.JSX.CSSProperties = {
+  display: "grid",
+  placeItems: "center",
+  appearance: "none",
+  margin: 0,
+  padding: "12px 32px",
+  lineHeight: 1,
+};
+
 /** @public */
 export function Button({
   variant = "default",
@@ -24,18 +33,7 @@ export function Button({
   return (
     <button
       type="button"
-      style={
-        size === "lg"
-          ? {
-              display: "grid",
-              placeItems: "center",
-              appearance: "none",
-              margin: 0,
-              padding: "12px 32px",
-              lineHeight: 1,
-            }
-          : undefined
-      }
+      style={size === "lg" ? LG_STYLE : undefined}
       class={clsx(
         size !== "lg" &&
           "flex items-center justify-center appearance-none m-0 h-8 px-3 py-1.5 w-fit leading-none",

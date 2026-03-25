@@ -77,9 +77,11 @@ function InfocomAdventure() {
   const { session, started, running, start, toggle, reset } = useSession();
   const bottom = useRef<HTMLDivElement>(null);
 
+  const totalMessages = session.messages.value.length;
+  const utterance = session.userUtterance.value;
   useEffect(() => {
     bottom.current?.scrollIntoView({ behavior: "smooth" });
-  }, [session.messages.value.length, session.userUtterance.value]);
+  }, [totalMessages, utterance]);
 
   const stateVal = session.state.value;
   const stateLabel = stateVal === "listening"

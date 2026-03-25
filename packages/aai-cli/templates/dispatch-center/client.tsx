@@ -1,7 +1,7 @@
 import "@alexkroman1/aai-ui/styles.css";
 import { mount, useSession } from "@alexkroman1/aai-ui";
 import type { Message } from "@alexkroman1/aai-ui";
-import { useEffect, useRef } from "preact/hooks";
+import { useEffect, useMemo, useRef } from "preact/hooks";
 
 const CSS = `
 @keyframes dc-pulse {
@@ -176,8 +176,8 @@ function App() {
   const error = session.error.value;
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const incidents = extractIncidents(msgs);
-  const alertLevel = extractAlertLevel(msgs);
+  const incidents = useMemo(() => extractIncidents(msgs), [msgs]);
+  const alertLevel = useMemo(() => extractAlertLevel(msgs), [msgs]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
