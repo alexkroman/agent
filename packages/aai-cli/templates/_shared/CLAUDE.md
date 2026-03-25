@@ -41,6 +41,8 @@ aai secret put <NAME>    # Set a secret on the server (prompts for value)
 aai secret delete <NAME> # Remove a secret
 aai secret list          # List secret names
 aai rag <url>            # Ingest a site's llms-full.txt into the vector store
+aai link                 # Link local workspace packages (dev only)
+aai unlink               # Restore published package versions (reverses link)
 ```
 
 ## Templates
@@ -144,46 +146,31 @@ Optimize for spoken conversation:
 - Define personality, tone, and specialty
 - Include when and how to use each tool
 
+**Patterns by agent type:**
+
+- **Code execution** — "You MUST use the run_code tool for ANY question involving
+  math, counting, or data processing. NEVER do mental math."
+- **Research** — "Search first. Never guess or rely on memory for factual
+  questions. Use visit_webpage when search snippets aren't detailed enough."
+- **FAQ/support** — "Always use vector_search before answering. Base answers
+  strictly on retrieved docs — don't guess."
+- **API-calling** — List endpoints directly in instructions so the LLM knows
+  what's available and what each returns.
+- **Game/interactive** — "You ARE the game. Keep descriptions to two to four
+  sentences. No visual formatting."
+
 ### Environment variables
 
-Secrets are managed on the server via the CLI, like `vercel env`. They are
-injected into agent workers at runtime and available as `ctx.env`. Secrets are
-**never** embedded in the bundled code.
+Secrets are managed via the CLI and injected at runtime as `ctx.env`. Never
+hardcode secrets in `agent.ts`.
 
 ```sh
-# Set secrets on the server (prompts for value)
-aai secret put ASSEMBLYAI_API_KEY
-aai secret put MY_API_KEY
-
-# List what's set
-aai secret list
-
-# Remove a secret
-aai secret delete MY_API_KEY
+aai secret put MY_API_KEY    # Set (prompts for value)
+aai secret list              # List names
+aai secret delete MY_API_KEY # Remove
 ```
 
-Access secrets in tool code via `ctx.env`:
-
-```ts
-import { defineAgent } from "aai";
-import { z } from "zod";
-
-export default defineAgent({
-  name: "API Agent",
-  tools: {
-    call_api: {
-      description: "Call an external API",
-      parameters: z.object({ query: z.string() }),
-      execute: async (args, ctx) => {
-        const res = await fetch(`https://api.example.com?q=${args.query}`, {
-          headers: { Authorization: `Bearer ${ctx.env.MY_API_KEY}` },
-        });
-        return res.json();
-      },
-    },
-  },
-});
-```
+Access in tool code: `ctx.env.MY_API_KEY` (see "Fetching external APIs" below).
 
 ## Tools
 
@@ -271,21 +258,20 @@ Hooks get `HookContext` (same but without `messages`).
 
 ### Fetching external APIs
 
-Use `fetch` directly in tool execute functions:
+Use `fetch` in tool execute functions. Access secrets via `ctx.env`:
 
 ```ts
 execute: async (args, ctx) => {
-  const resp = await fetch(url, {
-    headers: { Authorization: `Bearer ${ctx.env.API_KEY}` },
+  const resp = await fetch(`https://api.example.com?q=${args.query}`, {
+    headers: { Authorization: `Bearer ${ctx.env.MY_API_KEY}` },
   });
   if (!resp.ok) return { error: `${resp.status} ${resp.statusText}` };
   return resp.json();
 },
 ```
 
-`fetch` is proxied through the host process (the worker has no direct network
-access). All URLs are validated against SSRF rules — only public addresses are
-allowed.
+`fetch` is proxied through the host — the worker has no direct network access.
+Only public URLs are allowed (private/internal IPs are blocked by SSRF rules).
 
 ## State and storage
 
@@ -502,7 +488,7 @@ function App() {
   const tx = session.userUtterance.value;
   return (
     <div>
-      {msgs.map((m, i) => <p key={i}>{m.text}</p>)}
+      {msgs.map((m, i) => <p key={i}>{m.content}</p>)}
       {tx !== null && <p>{tx || "..."}</p>}
       {!started.value ? <button onClick={start}>Start</button> : (
         <>
@@ -595,7 +581,7 @@ data lives on `session` (a `VoiceSession`); UI-only controls are top-level.
 | Signal / field                 | Type                   | Description                                                     |
 | ------------------------------ | ---------------------- | --------------------------------------------------------------- |
 | `session.state.value`          | `AgentState`           | "disconnected", "connecting", "ready", "listening", etc.        |
-| `session.messages.value`       | `Message[]`            | `{ role, text }` objects                                        |
+| `session.messages.value`       | `Message[]`            | `{ role, content }` objects                                     |
 | `session.toolCalls.value`      | `ToolCallInfo[]`       | `{ toolCallId, toolName, args, status, result? }` — tool calls  |
 | `session.userUtterance.value`  | `string \| null`       | `null` = not speaking, `""` = speech detected, string = text    |
 | `session.agentUtterance.value` | `string \| null`       | `null` = not speaking, string = streaming agent response text   |
@@ -622,8 +608,7 @@ data lives on `session` (a `VoiceSession`); UI-only controls are top-level.
   disconnected, `{ intentional: false }` = unexpected disconnect (show
   reconnect UI)
 
-**UI Message type:** `{ role: "user" | "assistant"; content: string }`. Both UI
-and SDK `Message` types use `content`.
+**Message type:** `{ role: "user" | "assistant"; content: string }`.
 
 ### Showing tool calls in custom UI
 
@@ -642,7 +627,7 @@ function App() {
     <div>
       {msgs.map((m, i) => (
         <div key={i}>
-          <p>{m.text}</p>
+          <p>{m.content}</p>
           {toolCalls
             .filter((tc) => tc.afterMessageIndex === i)
             .map((tc) => <ToolCallBlock key={tc.toolCallId} toolCall={tc} />)}
@@ -805,7 +790,7 @@ function MyChat() {
 
   return (
     <div class="overflow-y-auto">
-      {session.messages.value.map((m, i) => <p key={i}>{m.text}</p>)}
+      {session.messages.value.map((m, i) => <p key={i}>{m.content}</p>)}
       <div ref={bottomRef} />
     </div>
   );
@@ -877,66 +862,6 @@ Drug interactions (RxNorm):
 
 Use `fetch_json` builtin tool or `fetch` in custom tools to call these.
 
-## Custom start screen with `StartScreen`
-
-Use `StartScreen` for a branded start card that transitions to `ChatView`:
-
-```tsx
-import "aai-ui/styles.css";
-import { ChatView, StartScreen, mount } from "aai-ui";
-
-function MyAgent() {
-  return (
-    <StartScreen icon={<span>&#x1F3A4;</span>} title="My Agent" subtitle="Ask me anything">
-      <ChatView />
-    </StartScreen>
-  );
-}
-
-mount(MyAgent);
-```
-
-`StartScreen` handles the started/not-started transition automatically. Pass
-`icon`, `title`, `subtitle`, and `buttonText` to customize the card.
-
-## Sidebar layout with `SidebarLayout`
-
-Use `SidebarLayout` for apps with a persistent side panel (cart, dashboard):
-
-```tsx
-import "aai-ui/styles.css";
-import { useState } from "preact/hooks";
-import { ChatView, SidebarLayout, StartScreen, mount, useToolResult } from "aai-ui";
-
-function ShopAgent() {
-  const [cart, setCart] = useState<{ id: number; name: string }[]>([]);
-
-  useToolResult((toolName, result: any) => {
-    if (toolName === "add_item") setCart((prev) => [...prev, result.item]);
-  });
-
-  const sidebar = (
-    <div class="p-4">
-      <h3 class="text-aai-text font-bold">Cart ({cart.length})</h3>
-      {cart.map((i) => <p key={i.id} class="text-aai-text text-sm">{i.name}</p>)}
-    </div>
-  );
-
-  return (
-    <StartScreen title="Shop" buttonText="Start Shopping">
-      <SidebarLayout sidebar={sidebar}>
-        <ChatView />
-      </SidebarLayout>
-    </StartScreen>
-  );
-}
-
-mount(ShopAgent);
-```
-
-`SidebarLayout` accepts `width` (default `"20rem"`) and `side` (`"left"` or
-`"right"`).
-
 ## Project structure
 
 After scaffolding, your project directory looks like:
@@ -958,79 +883,21 @@ my-agent/
     build/          # Bundle output
 ```
 
-## Instructions patterns from templates
-
-Good instructions tell the LLM what it is, how to behave, and when to use each
-tool. Study these patterns:
-
-**Code execution agent** — force tool use for anything computational:
-
-```text
-You MUST use the run_code tool for ANY question involving math, counting,
-string manipulation, or data processing. NEVER do mental math or estimate.
-Use console.log() to output intermediate steps.
-```
-
-**Research agent** — search before answering:
-
-```text
-Search first. Never guess or rely on memory for factual questions.
-Use visit_webpage when search snippets aren't detailed enough.
-For complex questions, search multiple times with different queries.
-```
-
-**FAQ/support agent** — stay grounded in knowledge:
-
-```text
-Always use vector_search to find relevant documentation before answering.
-Base your answers strictly on the retrieved documentation — don't guess.
-If search results aren't relevant, say the docs don't cover that topic.
-```
-
-**API-calling agent** — tell the LLM which endpoints to use:
-
-```text
-API endpoints (use fetch_json):
-- Currency rates: https://open.er-api.com/v6/latest/{CODE}
-  Returns { rates: { USD: 1.0, EUR: 0.85, ... } }
-- Weather: https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}...
-```
-
-**Game/interactive agent** — establish world rules and voice style:
-
-```text
-You ARE the game. Maintain world state, describe rooms, handle puzzles.
-Keep descriptions to two to four sentences. No visual formatting.
-Use directional words naturally: "To the north you see..." not "N: forest"
-```
-
 ## Common pitfalls
 
-- **Using `useEffect` to build state from tool calls** — Iterating
-  `session.toolCalls.value` in a `useEffect` re-processes every tool call on
-  every signal change, causing duplicates (e.g. cart items added multiple
-  times). Use the `useToolResult` hook instead — it fires exactly once per
-  completed tool call with proper deduplication.
-- **Writing `instructions` with visual formatting** — Bullets, bold, numbered
-  lists sound terrible when spoken. Use natural transitions: "First", "Next",
-  "Finally". Write instructions as if you're coaching a human phone operator.
-- **Returning huge payloads from tools** — Everything a tool returns goes into
-  the LLM context. Filter, summarize, or truncate API responses before
-  returning. Return only what the agent needs to formulate a spoken answer.
-- **Forgetting sandbox constraints** — Agent code runs in a sandboxed Worker
-  with no direct network or filesystem access. Use `fetch` (proxied through the
-  host) for HTTP. Use `ctx.env` for secrets. Direct network access will fail.
-- **Hardcoding secrets** — Never put API keys in `agent.ts`. Use
-  `aai secret put MY_KEY` to store them on the server, then access via
-  `ctx.env.MY_KEY`.
-- **Telling the agent to be verbose** — Voice responses should be 1-3 sentences.
-  If your `instructions` say "provide detailed explanations", the agent will
-  monologue. Instruct it to be brief and let the user ask follow-ups.
-- **Not setting secrets before deploying** — If your agent needs custom
-  secrets, set them with `aai secret put MY_KEY` before deploying.
-- **Forgetting SSRF restrictions on `fetch`** — The host validates all proxied
-  fetch URLs. Requests to private/internal IP addresses (localhost, 10.x,
-  192.168.x, etc.) are blocked.
+- **Using `useEffect` to build state from tool calls** — Use `useToolResult`
+  instead. It fires once per completed tool call with deduplication. Iterating
+  `session.toolCalls.value` in `useEffect` causes duplicates.
+- **Visual formatting in `instructions`** — Bullets, bold, numbered lists sound
+  terrible when spoken. Use "First", "Next", "Finally" transitions instead.
+- **Returning huge payloads from tools** — Tool returns go into LLM context.
+  Filter and truncate API responses to only what the agent needs.
+- **Verbose instructions** — Voice responses should be 1-3 sentences. Don't
+  say "provide detailed explanations" — the agent will monologue.
+- **Hardcoding secrets** — Use `aai secret put` + `ctx.env`, never inline keys.
+  Set secrets before deploying.
+- **SSRF restrictions** — `fetch` is proxied; private/internal IPs (localhost,
+  10.x, 192.168.x) are blocked.
 
 ## Troubleshooting
 
