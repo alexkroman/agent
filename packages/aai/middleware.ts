@@ -16,7 +16,7 @@ import type {
 async function reverseMiddleware(
   middleware: readonly Middleware[],
   key: keyof Middleware,
-  fn: (mw: Middleware) => Promise<void>,
+  fn: (mw: Middleware) => Promise<void> | void,
 ): Promise<void> {
   for (let i = middleware.length - 1; i >= 0; i--) {
     const mw = middleware[i];
@@ -88,11 +88,9 @@ export async function runAfterTurnMiddleware(
   text: string,
   ctx: HookContext,
 ): Promise<void> {
-  await reverseMiddleware(
-    middleware,
-    "afterTurn",
-    (mw) => mw.afterTurn?.(text, ctx) as Promise<void>,
-  );
+  await reverseMiddleware(middleware, "afterTurn", async (mw) => {
+    await mw.afterTurn?.(text, ctx);
+  });
 }
 
 /**
@@ -146,11 +144,9 @@ export async function runAfterToolCallMiddleware(
   result: string,
   ctx: HookContext,
 ): Promise<void> {
-  await reverseMiddleware(
-    middleware,
-    "afterToolCall",
-    (mw) => mw.afterToolCall?.(toolName, args, result, ctx) as Promise<void>,
-  );
+  await reverseMiddleware(middleware, "afterToolCall", async (mw) => {
+    await mw.afterToolCall?.(toolName, args, result, ctx);
+  });
 }
 
 /**

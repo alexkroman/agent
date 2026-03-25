@@ -300,6 +300,10 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
       const raw = tryParseJson(ev.data);
       if (raw === undefined) return;
 
+      if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+        log.warn("S2S << non-object JSON message", { type: typeof raw });
+        return;
+      }
       const obj = raw as Record<string, unknown>;
       logIncoming(obj);
       if (handleAudioFastPath(obj)) return;

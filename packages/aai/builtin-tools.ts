@@ -72,10 +72,14 @@ function createWebSearch(fetchFn = globalThis.fetch): ToolDef<typeof webSearchPa
         headers: { "X-Subscription-Token": apiKey },
         signal: fetchSignal(),
       });
-      if (!resp.ok) return [];
+      if (!resp.ok) {
+        return { error: `Search request failed: ${resp.status} ${resp.statusText}` };
+      }
       const raw = await resp.json();
       const data = BraveSearchResponseSchema.safeParse(raw);
-      if (!data.success) return [];
+      if (!data.success) {
+        return { error: "Unexpected search response format" };
+      }
       return (data.data.web?.results ?? []).slice(0, maxResults).map((r) => ({
         title: r.title,
         url: r.url,
