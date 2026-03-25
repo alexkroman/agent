@@ -105,7 +105,7 @@ describe("buildHookInvoker", () => {
     globalThis.fetch = originalFetch;
   });
 
-  function mockHookResponse(result: unknown) {
+  function mockHookResponse(result?: unknown) {
     globalThis.fetch = vi.fn(async () => Response.json({ state: {}, result }));
   }
 
