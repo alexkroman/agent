@@ -11,7 +11,7 @@ COPY packages/aai/package.json packages/aai/
 COPY packages/aai-server/package.json packages/aai-server/
 
 # Install dependencies
-RUN pnpm install --frozen-lockfile --prod=false
+RUN pnpm install --frozen-lockfile --ignore-scripts --prod=false
 
 # Copy source
 COPY packages/aai/ packages/aai/
@@ -33,11 +33,11 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages/aai/package.json packages/aai/
 COPY packages/aai-server/package.json packages/aai-server/
 
-RUN pnpm install --frozen-lockfile --prod
+RUN pnpm install --frozen-lockfile --ignore-scripts --prod
 
 COPY --from=build /app/packages/aai/dist/ packages/aai/dist/
 COPY --from=build /app/packages/aai-server/dist/ packages/aai-server/dist/
 
 EXPOSE 8080
 
-CMD ["node", "packages/aai-server/dist/index.js"]
+CMD ["node", "packages/aai-server/dist/index.mjs"]
