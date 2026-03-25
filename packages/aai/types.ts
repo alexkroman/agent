@@ -43,6 +43,8 @@ export type BuiltinTool =
  * - `"required"` — The model must call at least one tool.
  * - `"none"` — Tool calling is disabled.
  * - `{ type: "tool"; toolName: string }` — Force a specific tool.
+ *
+ * @public
  */
 export type ToolChoice = "auto" | "required" | "none" | { type: "tool"; toolName: string };
 
@@ -325,6 +327,8 @@ export const DEFAULT_GREETING: string =
  *
  * Unlike {@link AgentOptions}, every field here is resolved to its
  * final value — no optional fields with implicit defaults remain.
+ *
+ * @public
  */
 export type AgentDef = {
   name: string;

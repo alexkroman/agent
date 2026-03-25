@@ -7,6 +7,8 @@
  * A single key-value entry returned by {@link Kv.list}.
  *
  * @typeParam T - The type of the stored value. Defaults to `unknown`.
+ *
+ * @public
  */
 export type KvEntry<T = unknown> = {
   /** The key under which the value is stored. */
@@ -19,6 +21,8 @@ export type KvEntry<T = unknown> = {
  * Options for listing keys from the KV store.
  *
  * Used with {@link Kv.list} to control result ordering and pagination.
+ *
+ * @public
  */
 export type KvListOptions = {
   /** Maximum number of entries to return. */
@@ -46,6 +50,8 @@ export type KvListOptions = {
  *   },
  * };
  * ```
+ *
+ * @public
  */
 export type Kv = {
   /**

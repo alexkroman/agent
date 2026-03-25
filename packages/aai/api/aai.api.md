@@ -7,6 +7,26 @@
 import { z } from 'zod';
 
 // @public
+export type AgentDef = {
+    name: string;
+    instructions: string;
+    greeting: string;
+    sttPrompt?: string;
+    maxSteps: number | ((ctx: HookContext) => number);
+    toolChoice?: ToolChoice;
+    builtinTools?: readonly BuiltinTool[];
+    activeTools?: readonly string[];
+    tools: Readonly<Record<string, ToolDef>>;
+    state?: () => Record<string, unknown>;
+    onConnect?: AgentOptions["onConnect"];
+    onDisconnect?: AgentOptions["onDisconnect"];
+    onError?: AgentOptions["onError"];
+    onTurn?: AgentOptions["onTurn"];
+    onStep?: AgentOptions["onStep"];
+    onBeforeStep?: AgentOptions["onBeforeStep"];
+};
+
+// @public
 export type AgentOptions<S = Record<string, unknown>> = {
     name: string;
     instructions?: string;
@@ -34,13 +54,34 @@ export type BeforeStepResult = {
 // @public
 export type BuiltinTool = "web_search" | "visit_webpage" | "fetch_json" | "run_code" | "vector_search" | "memory";
 
-// Warning: (ae-forgotten-export) The symbol "AgentDef" needs to be exported by the entry point index.d.ts
-//
 // @public
 export function defineAgent<S>(options: AgentOptions<S>): AgentDef;
 
 // @public
 export type HookContext<S = Record<string, unknown>> = Omit<ToolContext<S>, "messages">;
+
+// @public
+export type Kv = {
+    get<T = unknown>(key: string): Promise<T | null>;
+    set(key: string, value: unknown, options?: {
+        expireIn?: number;
+    }): Promise<void>;
+    delete(key: string): Promise<void>;
+    list<T = unknown>(prefix: string, options?: KvListOptions): Promise<KvEntry<T>[]>;
+    keys(pattern?: string): Promise<string[]>;
+};
+
+// @public
+export type KvEntry<T = unknown> = {
+    key: string;
+    value: T;
+};
+
+// @public
+export type KvListOptions = {
+    limit?: number;
+    reverse?: boolean;
+};
 
 // @public
 export type Message = {
@@ -60,6 +101,12 @@ export type StepInfo = {
 
 // @public
 export function tool<P extends z.ZodObject<z.ZodRawShape>, S = Record<string, unknown>>(def: ToolDef<P, S>): ToolDef<P, S>;
+
+// @public
+export type ToolChoice = "auto" | "required" | "none" | {
+    type: "tool";
+    toolName: string;
+};
 
 // @public
 export type ToolContext<S = Record<string, unknown>> = {
@@ -94,11 +141,6 @@ export type VectorStore = {
     }): Promise<VectorEntry[]>;
     remove(ids: string | string[]): Promise<void>;
 };
-
-// Warnings were encountered during analysis:
-//
-// dist/types.d.ts:88:5 - (ae-forgotten-export) The symbol "Kv" needs to be exported by the entry point index.d.ts
-// dist/types.d.ts:240:5 - (ae-forgotten-export) The symbol "ToolChoice" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 
