@@ -6,13 +6,22 @@
 import type { AgentMetadata } from "./_schemas.ts";
 import type { BundleStore } from "./bundle-store-tigris.ts";
 import type { KvStore } from "./kv.ts";
-import { createSandbox, type Sandbox } from "./sandbox.ts";
+import type { Sandbox, SandboxOptions } from "./sandbox.ts";
 import type { AgentScope } from "./scope-token.ts";
 import type { ServerVectorStore } from "./vector.ts";
 
 // ── Agent slot lifecycle ─────────────────────────────────────────────────
 
 let IDLE_MS = 5 * 60 * 1000;
+
+/** @internal Indirection for testability — avoids circular import at call time. */
+export const _deps = {
+  createSandbox: async (opts: SandboxOptions): Promise<Sandbox> => {
+    // Lazy import to break the circular dependency between sandbox.ts ↔ sandbox-slots.ts
+    const { createSandbox } = await import("./sandbox.ts");
+    return createSandbox(opts);
+  },
+};
 
 export type AgentSlot = {
   slug: string;
@@ -40,7 +49,7 @@ async function spawnAgent(slot: AgentSlot, opts: EnsureOpts): Promise<void> {
   if (!code) throw new Error(`Worker code not found for ${slug}`);
 
   const [apiKey, agentEnv] = await Promise.all([opts.getApiKey(), opts.getAgentEnv()]);
-  slot.sandbox = await createSandbox({
+  slot.sandbox = await _deps.createSandbox({
     workerCode: code,
     apiKey,
     agentEnv,

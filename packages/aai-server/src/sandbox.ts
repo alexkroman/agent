@@ -231,6 +231,9 @@ export const _internals = {
   getIsolateConfig,
   buildNetworkPolicy,
   createSandbox,
+  toAgentConfig,
+  buildExecuteTool,
+  buildHookInvoker,
   get IDLE_MS() {
     return _slotInternals.IDLE_MS;
   },
