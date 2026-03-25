@@ -196,7 +196,6 @@ function createRunCode(): ToolDef<typeof runCodeParams> {
 }
 
 /** Lazily import secure-exec to avoid top-level side effects. */
-// biome-ignore lint/correctness/noUnresolvedImports: secure-exec is an optional peer dependency
 let _secureExec: typeof import("secure-exec") | undefined;
 async function getSecureExec() {
   // biome-ignore lint/correctness/noUnresolvedImports: secure-exec is an optional peer dependency
