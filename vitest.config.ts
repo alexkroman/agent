@@ -17,8 +17,9 @@ export default defineConfig({
         "**/templates/**",
         "**/dist/**",
         "**/__snapshots__/**",
-        // Sandbox harness files run inside secure-exec isolates, not vitest.
+        // Sandbox core + harness files run inside secure-exec isolates, not vitest.
         // Covered by integration test (pnpm test:integration).
+        "**/sandbox.ts",
         "**/sandbox-harness.ts",
         "**/sandbox-network.ts",
         "**/sandbox-sidecar.ts",
