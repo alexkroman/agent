@@ -95,102 +95,116 @@ describe("getBuiltinToolDefs", () => {
     expect(result).toBe("w\ne\nd\ni");
   });
 
-  // ─── run_code security: global shadowing ────────────────────────────
+  // ─── run_code security: isolate prevents host access ──────────────
 
-  test("run_code blocks access to process", async () => {
-    const defs = getBuiltinToolDefs(["run_code"]);
-    const ctx = createMockToolContext();
-    const result = await defs.run_code?.execute({ code: "console.log(typeof process)" }, ctx);
-    expect(result).toBe("undefined");
-  });
-
-  test("run_code blocks access to require", async () => {
-    const defs = getBuiltinToolDefs(["run_code"]);
-    const ctx = createMockToolContext();
-    const result = await defs.run_code?.execute({ code: "console.log(typeof require)" }, ctx);
-    expect(result).toBe("undefined");
-  });
-
-  test("run_code blocks access to globalThis", async () => {
-    const defs = getBuiltinToolDefs(["run_code"]);
-    const ctx = createMockToolContext();
-    const result = await defs.run_code?.execute({ code: "console.log(typeof globalThis)" }, ctx);
-    expect(result).toBe("undefined");
-  });
-
-  test("run_code blocks access to Function constructor", async () => {
-    const defs = getBuiltinToolDefs(["run_code"]);
-    const ctx = createMockToolContext();
-    const result = await defs.run_code?.execute({ code: "console.log(typeof Function)" }, ctx);
-    expect(result).toBe("undefined");
-  });
-
-  test("run_code blocks access to eval", async () => {
-    const defs = getBuiltinToolDefs(["run_code"]);
-    const ctx = createMockToolContext();
-    const result = await defs.run_code?.execute({ code: "console.log(typeof eval)" }, ctx);
-    expect(result).toBe("undefined");
-  });
-
-  test("run_code blocks access to fetch", async () => {
-    const defs = getBuiltinToolDefs(["run_code"]);
-    const ctx = createMockToolContext();
-    const result = await defs.run_code?.execute({ code: "console.log(typeof fetch)" }, ctx);
-    expect(result).toBe("undefined");
-  });
-
-  // ─── run_code security: constructor chain escape ────────────────────
-
-  test("run_code blocks constructor chain escape via string", async () => {
+  test("run_code isolate blocks network access", async () => {
     const defs = getBuiltinToolDefs(["run_code"]);
     const ctx = createMockToolContext();
     const result = await defs.run_code?.execute(
-      { code: '"".constructor.constructor("return process")()' },
+      {
+        code: `
+          try {
+            const res = await fetch("https://example.com");
+            console.log("ESCAPED:" + res.status);
+          } catch(e) {
+            console.log("BLOCKED:" + e.message);
+          }
+        `,
+      },
       ctx,
     );
-    expect(result).toHaveProperty("error");
-    expect((result as { error: string }).error).toMatch(/blocked patterns/);
+    expect(typeof result).toBe("string");
+    expect(result as string).toMatch(/BLOCKED/);
   });
 
-  test("run_code blocks constructor chain escape via array", async () => {
+  test("run_code isolate blocks filesystem writes", async () => {
     const defs = getBuiltinToolDefs(["run_code"]);
     const ctx = createMockToolContext();
     const result = await defs.run_code?.execute(
-      { code: '[].constructor.constructor("return process")()' },
+      {
+        code: `
+          try {
+            const fs = await import("node:fs");
+            fs.writeFileSync("/tmp/pwned.txt", "owned");
+            console.log("ESCAPED");
+          } catch(e) {
+            console.log("BLOCKED:" + e.message);
+          }
+        `,
+      },
       ctx,
     );
-    expect(result).toHaveProperty("error");
-    expect((result as { error: string }).error).toMatch(/blocked patterns/);
+    expect(typeof result).toBe("string");
+    expect(result as string).toMatch(/BLOCKED/);
   });
 
-  test("run_code blocks __proto__ access", async () => {
-    const defs = getBuiltinToolDefs(["run_code"]);
-    const ctx = createMockToolContext();
-    const result = await defs.run_code?.execute({ code: "const p = ({}).__proto__" }, ctx);
-    expect(result).toHaveProperty("error");
-    expect((result as { error: string }).error).toMatch(/blocked patterns/);
-  });
-
-  test("run_code blocks getPrototypeOf escape", async () => {
-    const defs = getBuiltinToolDefs(["run_code"]);
-    const ctx = createMockToolContext();
-    const result = await defs.run_code?.execute(
-      { code: "Object.getPrototypeOf(async function(){}).constructor" },
-      ctx,
-    );
-    expect(result).toHaveProperty("error");
-    expect((result as { error: string }).error).toMatch(/blocked patterns/);
-  });
-
-  test("run_code blocks constructor bracket access", async () => {
+  test("run_code isolate blocks child process spawning", async () => {
     const defs = getBuiltinToolDefs(["run_code"]);
     const ctx = createMockToolContext();
     const result = await defs.run_code?.execute(
-      { code: '"".constructor["constructor"]("return process")()' },
+      {
+        code: `
+          try {
+            const cp = await import("node:child_process");
+            const out = cp.execSync("id").toString();
+            console.log("ESCAPED:" + out);
+          } catch(e) {
+            console.log("BLOCKED:" + e.message);
+          }
+        `,
+      },
       ctx,
     );
-    expect(result).toHaveProperty("error");
-    expect((result as { error: string }).error).toMatch(/blocked patterns/);
+    expect(typeof result).toBe("string");
+    expect(result as string).toMatch(/BLOCKED/);
+  });
+
+  test("run_code isolate blocks env var access", async () => {
+    const defs = getBuiltinToolDefs(["run_code"]);
+    const ctx = createMockToolContext();
+    const result = await defs.run_code?.execute(
+      {
+        code: `
+          try {
+            const keys = process.env ? Object.keys(process.env) : [];
+            const hasPath = keys.includes("PATH");
+            const hasHome = keys.includes("HOME");
+            console.log(hasPath || hasHome ? "LEAKED_ENV" : "SAFE:" + keys.length);
+          } catch(e) {
+            console.log("SAFE:" + e.message);
+          }
+        `,
+      },
+      ctx,
+    );
+    expect(typeof result).toBe("string");
+    expect(result as string).not.toMatch(/LEAKED_ENV/);
+  });
+
+  test("run_code isolate prevents constructor chain escape", async () => {
+    const defs = getBuiltinToolDefs(["run_code"]);
+    const ctx = createMockToolContext();
+    // This was the critical bypass in the old regex approach — now the isolate
+    // blocks env access so host secrets can't be exfiltrated.
+    const result = await defs.run_code?.execute(
+      {
+        code: `
+          const c = "con" + "stru" + "ctor";
+          const F = ""[c][c];
+          try {
+            const p = F("return process")();
+            const keys = p && p.env ? Object.keys(p.env) : [];
+            const hasPath = keys.includes("PATH");
+            console.log(hasPath ? "LEAKED_ENV" : "SAFE:" + keys.length);
+          } catch(e) {
+            console.log("SAFE:" + e.message);
+          }
+        `,
+      },
+      ctx,
+    );
+    expect(typeof result).toBe("string");
+    expect(result as string).not.toMatch(/LEAKED_ENV/);
   });
 
   test("run_code allows normal .constructor property check", async () => {

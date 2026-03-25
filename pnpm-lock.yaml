@@ -65,6 +65,9 @@ importers:
       nanoevents:
         specifier: ^9.1.0
         version: 9.1.0
+      secure-exec:
+        specifier: ^0.1.0
+        version: 0.1.0
       ws:
         specifier: ^8.20.0
         version: 8.20.0
