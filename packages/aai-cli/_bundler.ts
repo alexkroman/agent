@@ -79,9 +79,10 @@ export async function bundleAgent(
       root: agent.dir,
       logLevel: "warn",
       build: {
-        rollupOptions: {
-          input: path.join(agent.dir, "agent.ts"),
-          output: { format: "es", entryFileNames: "worker.js" },
+        lib: {
+          entry: path.join(agent.dir, "agent.ts"),
+          formats: ["es"],
+          fileName: () => "worker.js",
         },
         outDir: buildDir,
         emptyOutDir: true,

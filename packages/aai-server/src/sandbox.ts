@@ -359,6 +359,9 @@ async function startIsolate(
           // Not the port announcement, ignore
         }
       }
+      if (event.channel === "stderr") {
+        console.error("[isolate stderr]", event.message);
+      }
     },
   });
 

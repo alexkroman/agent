@@ -1,5 +1,12 @@
 # @alexkroman1/aai-cli
 
+## 0.9.3
+
+### Patch Changes
+
+- Fix dependencies
+  - @alexkroman1/aai@0.9.3
+
 ## 0.9.2
 
 ### Patch Changes
