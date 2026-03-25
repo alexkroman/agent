@@ -18,10 +18,10 @@
     "check:templates": {
       "dependsOn": ["^build"]
     },
-    "test:integration": {
+    "check:integration": {
       "dependsOn": ["^build"]
     },
-    "test:e2e": {
+    "check:e2e": {
       "dependsOn": ["^build"]
     },
     "//#check:knip": {},
