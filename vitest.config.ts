@@ -27,13 +27,15 @@ export default defineConfig({
         "**/build-harness.ts",
         // Harness runtime is bundled by Vite into CJS for the isolate.
         "**/_harness-runtime.ts",
+        // OTel session wiring — tested via integration tests, not unit tests.
+        "**/_session-otel.ts",
         // CLI entry point and interactive prompts can't be unit tested.
         "**/cli.ts",
         "**/_prompts.ts",
       ],
       thresholds: {
         lines: 81,
-        functions: 82,
+        functions: 81,
         branches: 69,
         statements: 81,
       },

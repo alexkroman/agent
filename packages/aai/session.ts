@@ -1,12 +1,10 @@
 // Copyright 2025 the AAI authors. MIT license.
-/**
- * S2S session — relays audio between the client and AssemblyAI's
- * Speech-to-Speech API, intercepting only tool calls for local execution.
- */
+/** S2S session — relays audio between client and AssemblyAI S2S API. */
 
 import type { AgentConfig, ToolSchema } from "./_internal-types.ts";
 import { activeSessionsUpDown, sessionCounter, setupListeners } from "./_session-otel.ts";
 import { errorMessage } from "./_utils.ts";
+import type { HookInvoker } from "./middleware.ts";
 import type { ClientSink } from "./protocol.ts";
 import { fromWireMessages, HOOK_TIMEOUT_MS } from "./protocol.ts";
 import type { Logger, S2SConfig } from "./runtime.ts";
@@ -19,9 +17,10 @@ import {
   type S2sToolSchema,
 } from "./s2s.ts";
 import { buildSystemPrompt } from "./system-prompt.ts";
-import type { Message, StepInfo } from "./types.ts";
+import type { Message } from "./types.ts";
 import type { ExecuteTool } from "./worker-entry.ts";
 
+export type { HookInvoker, ToolInterceptResult } from "./middleware.ts";
 export { buildSystemPrompt } from "./system-prompt.ts";
 
 /** A voice session managing the S2S connection for one client. */
@@ -34,20 +33,6 @@ export type Session = {
   onReset(): void;
   onHistory(incoming: readonly { role: "user" | "assistant"; text: string }[]): void;
   waitForTurn(): Promise<void>;
-};
-
-/** Generic interface for invoking agent lifecycle hooks. */
-export type HookInvoker = {
-  onConnect(sessionId: string, timeoutMs?: number): Promise<void>;
-  onDisconnect(sessionId: string, timeoutMs?: number): Promise<void>;
-  onTurn(sessionId: string, text: string, timeoutMs?: number): Promise<void>;
-  onError(sessionId: string, error: { message: string }, timeoutMs?: number): Promise<void>;
-  onStep(sessionId: string, step: StepInfo, timeoutMs?: number): Promise<void>;
-  resolveTurnConfig(
-    sessionId: string,
-    stepNumber: number,
-    timeoutMs?: number,
-  ): Promise<{ maxSteps?: number; activeTools?: string[] } | null>;
 };
 
 /** Configuration options for creating a new session. */
@@ -82,6 +67,7 @@ export type S2sSessionCtx = {
   readonly client: ClientSink;
   readonly agentConfig: AgentConfig;
   readonly executeTool: ExecuteTool;
+  readonly hookInvoker: HookInvoker | undefined;
   readonly log: Logger;
   s2s: S2sHandle | null;
   pendingTools: PendingTool[];

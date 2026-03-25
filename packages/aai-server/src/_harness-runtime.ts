@@ -16,7 +16,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 // biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
 import type { Kv } from "@alexkroman1/aai/kv";
 // biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
-import type { AgentDef, HookContext, ToolContext } from "@alexkroman1/aai/types";
+import type { AgentDef, HookContext, Middleware, ToolContext } from "@alexkroman1/aai/types";
 // biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
 import type { VectorStore } from "@alexkroman1/aai/vector";
 import type {
@@ -128,6 +128,7 @@ function extractConfig(agent: AgentDef): IsolateConfig {
       onStep: typeof agent.onStep === "function",
       onBeforeStep: typeof agent.onBeforeStep === "function",
       maxStepsIsFn: typeof agent.maxSteps === "function",
+      hasMiddleware: Array.isArray(agent.middleware) && agent.middleware.length > 0,
     },
   };
   if (agent.sttPrompt !== undefined) config.sttPrompt = agent.sttPrompt;
@@ -191,9 +192,78 @@ async function runResolveTurnConfig(
   return config.maxSteps !== undefined || config.activeTools !== undefined ? config : null;
 }
 
+// ── Middleware runner (inline — cannot import from middleware.ts in isolate) ──
+
+async function runMiddlewareBeforeTurn(
+  middleware: readonly Middleware[],
+  text: string,
+  ctx: HookContext,
+): Promise<string | undefined> {
+  for (const mw of middleware) {
+    if (!mw.beforeTurn) continue;
+    const r = await mw.beforeTurn(text, ctx);
+    if (r && "block" in r && r.block) return r.reason;
+  }
+}
+
+async function runMiddlewareAfterTurn(
+  middleware: readonly Middleware[],
+  text: string,
+  ctx: HookContext,
+): Promise<void> {
+  for (let i = middleware.length - 1; i >= 0; i--) {
+    const mw = middleware[i];
+    if (mw?.afterTurn) await mw.afterTurn(text, ctx);
+  }
+}
+
+async function runMiddlewareToolIntercept(
+  middleware: readonly Middleware[],
+  toolName: string,
+  args: Record<string, unknown>,
+  ctx: HookContext,
+): Promise<unknown> {
+  let currentArgs = args;
+  for (const mw of middleware) {
+    if (!mw.toolCallInterceptor) continue;
+    const r = await mw.toolCallInterceptor(toolName, currentArgs, ctx);
+    if (!r) continue;
+    if ("block" in r && r.block) return { type: "block", reason: r.reason };
+    if ("result" in r) return { type: "result", result: r.result };
+    if ("args" in r) currentArgs = r.args;
+  }
+  if (currentArgs !== args) return { type: "args", args: currentArgs };
+}
+
+async function runMiddlewareAfterToolCall(
+  middleware: readonly Middleware[],
+  toolName: string,
+  args: Record<string, unknown>,
+  result: string,
+  ctx: HookContext,
+): Promise<void> {
+  for (let i = middleware.length - 1; i >= 0; i--) {
+    const mw = middleware[i];
+    if (mw?.afterToolCall) await mw.afterToolCall(toolName, args, result, ctx);
+  }
+}
+
+async function runMiddlewareOutputFilter(
+  middleware: readonly Middleware[],
+  text: string,
+  ctx: HookContext,
+): Promise<string> {
+  let filtered = text;
+  for (const mw of middleware) {
+    if (mw.outputFilter) filtered = await mw.outputFilter(filtered, ctx);
+  }
+  return filtered;
+}
+
 async function invokeHook(agent: AgentDef, req: HookRequest): Promise<HookResponse> {
   const ctx = makeHookCtx(agent, req);
   let result: unknown;
+  const middleware: readonly Middleware[] = agent.middleware ?? [];
 
   const handlers: Record<string, () => Promise<void> | void> = {
     onConnect: () => agent.onConnect?.(ctx),
@@ -211,6 +281,33 @@ async function invokeHook(agent: AgentDef, req: HookRequest): Promise<HookRespon
     },
     resolveTurnConfig: async () => {
       result = await runResolveTurnConfig(agent, ctx, req.stepNumber ?? 0);
+    },
+    // Middleware hooks
+    beforeTurn: async () => {
+      result = await runMiddlewareBeforeTurn(middleware, req.text ?? "", ctx);
+    },
+    afterTurn: async () => {
+      await runMiddlewareAfterTurn(middleware, req.text ?? "", ctx);
+    },
+    interceptToolCall: async () => {
+      result = await runMiddlewareToolIntercept(
+        middleware,
+        req.text ?? "",
+        (req.step?.toolCalls[0]?.args as Record<string, unknown>) ?? {},
+        ctx,
+      );
+    },
+    afterToolCall: async () => {
+      await runMiddlewareAfterToolCall(
+        middleware,
+        req.text ?? "",
+        (req.step?.toolCalls[0]?.args as Record<string, unknown>) ?? {},
+        "",
+        ctx,
+      );
+    },
+    filterOutput: async () => {
+      result = await runMiddlewareOutputFilter(middleware, req.text ?? "", ctx);
     },
   };
 

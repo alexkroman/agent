@@ -26,6 +26,7 @@ export const HooksSchema = z.object({
   onStep: z.boolean(),
   onBeforeStep: z.boolean(),
   maxStepsIsFn: z.boolean(),
+  hasMiddleware: z.boolean(),
 });
 
 /** Zod schema for agent metadata returned by the isolate on GET /config. */

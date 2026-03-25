@@ -66,6 +66,7 @@ with `aai init -t <template_name>`.
 | `dispatch-center`   | 911 dispatch with incident triage and resource assignment. **Has custom UI.**      |
 | `infocom-adventure` | Zork-style text adventure with state, puzzles, inventory. **Has custom UI.**       |
 | `solo-rpg`          | Solo dark-fantasy RPG with dice, oaths, combat, save/load. **Has custom UI.**      |
+| `middleware`        | Middleware demo: rate limiting, PII redaction, caching, analytics                  |
 | `embedded-assets`   | FAQ bot using embedded JSON knowledge (no web search)                              |
 | `support`           | RAG-powered support agent using vector_search (AssemblyAI docs example)            |
 
@@ -87,7 +88,7 @@ export default defineAgent({
 
 ```ts
 import { defineAgent, tool } from "aai"; // defineAgent + helpers
-import type { BeforeStepResult, BuiltinTool, HookContext, StepInfo, ToolContext } from "aai";
+import type { BeforeStepResult, BuiltinTool, HookContext, Middleware, StepInfo, ToolContext } from "aai";
 import { z } from "zod"; // Tools with typed params (included in package.json)
 ```
 
@@ -120,6 +121,9 @@ defineAgent({
   onStep?: (step: StepInfo, ctx: HookContext) => void | Promise<void>;
   onBeforeStep?: (stepNumber: number, ctx: HookContext) =>
     BeforeStepResult | Promise<BeforeStepResult>;
+
+  // Middleware
+  middleware?: Middleware[];   // Composable interceptors (see below)
 });
 ```
 
@@ -427,6 +431,54 @@ export default defineAgent({
 ```
 
 Use `onBeforeStep` to override `activeTools` dynamically per step.
+
+### Middleware / interceptors
+
+Middleware provides composable hooks for turns, tool calls, and output
+filtering. Runs in array order for "before" hooks and reverse for "after".
+
+```ts
+import type { Middleware } from "aai";
+
+const rateLimiter: Middleware = {
+  name: "rate-limiter",
+  beforeTurn: (text, ctx) => {
+    // Return { block: true, reason: "..." } to block the turn
+    // Return void to proceed
+  },
+  afterTurn: (text, ctx) => {
+    // Run after a turn completes
+  },
+};
+
+const piiRedactor: Middleware = {
+  name: "pii-redactor",
+  outputFilter: (text, ctx) => {
+    // Transform agent text before TTS. Return the filtered text.
+    return text.replace(/\d{3}-\d{2}-\d{4}/g, "[SSN REDACTED]");
+  },
+};
+
+const cacheMiddleware: Middleware = {
+  name: "tool-cache",
+  toolCallInterceptor: (toolName, args, ctx) => {
+    // Return { result: "cached" } to skip execution
+    // Return { block: true, reason: "denied" } to deny the call
+    // Return { args: { ...modified } } to transform arguments
+    // Return void to proceed normally
+  },
+  afterToolCall: (toolName, args, result, ctx) => {
+    // Run after tool execution (e.g. cache the result)
+  },
+};
+
+export default defineAgent({
+  name: "My Agent",
+  middleware: [rateLimiter, piiRedactor, cacheMiddleware],
+});
+```
+
+See the `middleware` template (`aai init -t middleware`) for a full example.
 
 ### Dynamic `maxSteps`
 

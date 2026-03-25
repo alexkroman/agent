@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
+import type { Middleware } from "./types.ts";
 import { DEFAULT_GREETING, DEFAULT_INSTRUCTIONS, defineAgent } from "./types.ts";
 
 describe("defineAgent", () => {
@@ -76,5 +77,30 @@ describe("defineAgent", () => {
   test("maxSteps defaults to 5", () => {
     const agent = defineAgent({ name: "Test" });
     expect(agent.maxSteps).toBe(5);
+  });
+
+  test("preserves middleware array", () => {
+    const middleware: Middleware[] = [
+      { name: "logger", beforeTurn: () => undefined },
+      { name: "cache", toolCallInterceptor: () => undefined },
+    ];
+    const agent = defineAgent({ name: "Test", middleware });
+    expect(agent.middleware).toHaveLength(2);
+    expect(agent.middleware?.[0]?.name).toBe("logger");
+    expect(agent.middleware?.[1]?.name).toBe("cache");
+  });
+
+  test("middleware defaults to undefined when not provided", () => {
+    const agent = defineAgent({ name: "Test" });
+    expect(agent.middleware).toBeUndefined();
+  });
+
+  test("validates middleware name is non-empty", () => {
+    expect(() =>
+      defineAgent({
+        name: "Test",
+        middleware: [{ name: "" }],
+      }),
+    ).toThrow();
   });
 });

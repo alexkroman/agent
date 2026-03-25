@@ -14,6 +14,85 @@ import type { VectorStore } from "./vector.ts";
 export type BeforeStepResult = { activeTools?: string[] } | undefined;
 
 /**
+ * Result returned by a `beforeTurn` middleware to block a turn.
+ * @public
+ */
+export type MiddlewareBlockResult = { block: true; reason: string };
+
+/**
+ * Result returned by a `toolCallInterceptor` to short-circuit tool execution.
+ *
+ * Return `{ result: string }` to skip execution and use a cached/synthetic result.
+ * Return `{ block: true; reason: string }` to deny the tool call.
+ * Return `{ args: Record<string, unknown> }` to transform the arguments.
+ * Return `undefined` to proceed normally.
+ *
+ * @public
+ */
+export type ToolCallInterceptResult =
+  | { result: string }
+  | { block: true; reason: string }
+  | { args: Record<string, unknown> }
+  | undefined;
+
+/**
+ * Composable middleware for the agent lifecycle.
+ *
+ * Middleware can intercept turns, tool calls, and output at well-defined
+ * points. Multiple middleware compose in array order: the first middleware
+ * in the array runs first for "before" hooks and last for "after" hooks.
+ *
+ * @typeParam S - The shape of per-session state. Defaults to `Record<string, unknown>`.
+ *
+ * @public
+ */
+export type Middleware<S = Record<string, unknown>> = {
+  /** Human-readable name for logging and debugging. */
+  name: string;
+
+  /**
+   * Runs before each user turn. Can block the turn by returning
+   * `{ block: true, reason: "..." }`. Return `undefined` to proceed.
+   */
+  beforeTurn?: (
+    text: string,
+    ctx: HookContext<S>,
+  ) => MiddlewareBlockResult | undefined | Promise<MiddlewareBlockResult | undefined>;
+
+  /**
+   * Runs after each user turn completes (after all steps finish).
+   */
+  afterTurn?: (text: string, ctx: HookContext<S>) => void | Promise<void>;
+
+  /**
+   * Runs before each tool call. Can approve, deny, transform args, or
+   * return a cached result.
+   */
+  toolCallInterceptor?: (
+    toolName: string,
+    args: Readonly<Record<string, unknown>>,
+    ctx: HookContext<S>,
+  ) => ToolCallInterceptResult | Promise<ToolCallInterceptResult>;
+
+  /**
+   * Runs after each tool call completes. Useful for caching results,
+   * logging, or analytics.
+   */
+  afterToolCall?: (
+    toolName: string,
+    args: Readonly<Record<string, unknown>>,
+    result: string,
+    ctx: HookContext<S>,
+  ) => void | Promise<void>;
+
+  /**
+   * Filters agent text output before it is sent to TTS. Return the
+   * (possibly modified) text. Runs on every agent transcript chunk.
+   */
+  outputFilter?: (text: string, ctx: HookContext<S>) => string | Promise<string>;
+};
+
+/**
  * Identifier for a built-in server-side tool.
  *
  * Built-in tools run on the host process (not inside the sandboxed worker)
@@ -293,6 +372,14 @@ export type AgentOptions<S = Record<string, unknown>> = {
     stepNumber: number,
     ctx: HookContext<S>,
   ) => BeforeStepResult | Promise<BeforeStepResult>;
+
+  /**
+   * Composable middleware that intercepts turns, tool calls, and output.
+   *
+   * Middleware runs in array order for "before" hooks (first to last)
+   * and reverse order for "after" hooks (last to first).
+   */
+  middleware?: readonly Middleware<S>[];
 };
 
 /**
@@ -347,6 +434,7 @@ export type AgentDef = {
   onTurn?: AgentOptions["onTurn"];
   onStep?: AgentOptions["onStep"];
   onBeforeStep?: AgentOptions["onBeforeStep"];
+  middleware?: readonly Middleware[];
 };
 
 // Re-export validation schemas and defineAgent from their dedicated module.

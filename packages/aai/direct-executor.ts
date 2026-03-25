@@ -10,12 +10,19 @@ import { type AgentConfig, agentToolsToSchemas, type ToolSchema } from "./_inter
 import { getBuiltinToolDefs, getBuiltinToolSchemas } from "./builtin-tools.ts";
 import type { Kv } from "./kv.ts";
 import { createMemoryKv } from "./kv.ts";
+import {
+  runAfterToolCallMiddleware,
+  runAfterTurnMiddleware,
+  runBeforeTurnMiddleware,
+  runOutputFilters,
+  runToolCallInterceptors,
+} from "./middleware.ts";
 import type { ClientSink } from "./protocol.ts";
 import type { Logger, S2SConfig } from "./runtime.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime.ts";
 import type { CreateS2sWebSocket } from "./s2s.ts";
 import { createS2sSession, type HookInvoker, type Session } from "./session.ts";
-import type { AgentDef, HookContext, StepInfo } from "./types.ts";
+import type { AgentDef, HookContext, Middleware, StepInfo } from "./types.ts";
 import type { VectorStore } from "./vector.ts";
 import { createMemoryVectorStore } from "./vector.ts";
 import type { ExecuteTool } from "./worker-entry.ts";
@@ -126,6 +133,8 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
     });
   };
 
+  const middleware: readonly Middleware[] = agent.middleware ?? [];
+
   const hookInvoker: HookInvoker = {
     async onConnect(sessionId) {
       await agent.onConnect?.(makeHookContext(sessionId));
@@ -155,6 +164,34 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
 
       if (maxSteps === undefined && activeTools === undefined) return null;
       return { ...(maxSteps !== undefined && { maxSteps }), ...(activeTools && { activeTools }) };
+    },
+
+    // ── Middleware hooks ───────────────────────────────────────────────
+    async beforeTurn(sessionId, text) {
+      if (middleware.length === 0) return;
+      const ctx = makeHookContext(sessionId);
+      const result = await runBeforeTurnMiddleware(middleware, text, ctx);
+      return result?.reason;
+    },
+    async afterTurn(sessionId, text) {
+      if (middleware.length === 0) return;
+      const ctx = makeHookContext(sessionId);
+      await runAfterTurnMiddleware(middleware, text, ctx);
+    },
+    async interceptToolCall(sessionId, toolName, args) {
+      if (middleware.length === 0) return;
+      const ctx = makeHookContext(sessionId);
+      return runToolCallInterceptors(middleware, toolName, args, ctx);
+    },
+    async afterToolCall(sessionId, toolName, args, result) {
+      if (middleware.length === 0) return;
+      const ctx = makeHookContext(sessionId);
+      await runAfterToolCallMiddleware(middleware, toolName, args, result, ctx);
+    },
+    async filterOutput(sessionId, text) {
+      if (middleware.length === 0) return text;
+      const ctx = makeHookContext(sessionId);
+      return runOutputFilters(middleware, text, ctx);
     },
   };
 

@@ -210,7 +210,12 @@ describe("isolate protocol", () => {
     };
   });
 
-  afterAll(() => cleanup?.());
+  afterAll(async () => {
+    cleanup?.();
+    // Allow isolate's internal promises to settle after disposal
+    // to prevent "Isolate is disposed" unhandled rejections.
+    await new Promise((r) => setTimeout(r, 50));
+  });
 
   test("GET /config returns valid IsolateConfig", async () => {
     const res = await fetch(`http://127.0.0.1:${port}/config`);
@@ -364,7 +369,10 @@ describe("WebSocket session lifecycle", () => {
     });
   });
 
-  afterAll(() => sandbox?.terminate());
+  afterAll(async () => {
+    sandbox?.terminate();
+    await new Promise((r) => setTimeout(r, 50));
+  });
 
   test("startSession sends config message on open", async () => {
     const messages: string[] = [];
@@ -452,9 +460,10 @@ export default {
     };
   });
 
-  afterAll(() => {
+  afterAll(async () => {
     cleanup1?.();
     cleanup2?.();
+    await new Promise((r) => setTimeout(r, 50));
   });
 
   test("two isolates run independently", async () => {
