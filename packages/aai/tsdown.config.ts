@@ -18,6 +18,7 @@ export default defineConfig({
     "_internal-types.ts",
     "telemetry.ts",
     "_mock-ws.ts",
+    "testing.ts",
     "_utils.ts",
   ],
   format: "esm",
