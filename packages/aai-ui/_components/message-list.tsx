@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { computed } from "@preact/signals";
+import { useComputed } from "@preact/signals";
 import clsx from "clsx";
 import type { VNode } from "preact";
 import { useAutoScroll, useSession } from "../signals.ts";
@@ -14,7 +14,7 @@ export function MessageList({ className }: { className?: string }) {
   const { session } = useSession();
   const scrollRef = useAutoScroll();
 
-  const showThinking = computed(() => {
+  const showThinking = useComputed(() => {
     if (session.state.value !== "thinking") return false;
     const last = session.toolCalls.value.at(-1);
     if (last?.status === "pending") return false;

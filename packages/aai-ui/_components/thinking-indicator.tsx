@@ -3,6 +3,11 @@
 import clsx from "clsx";
 import type * as preact from "preact";
 
+const DOT_STYLES: preact.JSX.CSSProperties[] = [0, 0.16, 0.32].map((delay) => ({
+  animation: "aai-bounce 1.4s infinite ease-in-out both",
+  animationDelay: `${delay}s`,
+}));
+
 /** @public */
 export function ThinkingIndicator({ className }: { className?: string }): preact.JSX.Element {
   return (
@@ -12,15 +17,8 @@ export function ThinkingIndicator({ className }: { className?: string }): preact
         className,
       )}
     >
-      {[0, 0.16, 0.32].map((delay) => (
-        <div
-          key={delay}
-          class="w-1.5 h-1.5 rounded-full bg-aai-text-dim"
-          style={{
-            animation: "aai-bounce 1.4s infinite ease-in-out both",
-            animationDelay: `${delay}s`,
-          }}
-        />
+      {DOT_STYLES.map((style, i) => (
+        <div key={i} class="w-1.5 h-1.5 rounded-full bg-aai-text-dim" style={style} />
       ))}
     </div>
   );
