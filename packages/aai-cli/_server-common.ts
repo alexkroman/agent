@@ -2,7 +2,9 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
+// biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
 import type { AgentServer } from "@alexkroman1/aai/server";
+// biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
 import type { AgentDef } from "@alexkroman1/aai/types";
 import { getApiKey } from "./_discover.ts";
 
@@ -43,6 +45,7 @@ export async function bootServer(
   port: number,
 ): Promise<AgentServer> {
   const clientHtml = await fs.readFile(path.join(clientDir, "index.html"), "utf-8");
+  // biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
   const { createServer } = await import("@alexkroman1/aai/server");
   const server = createServer({ agent: agentDef, clientHtml, clientDir, env });
   await server.listen(port);
