@@ -66,7 +66,7 @@ with `aai init -t <template_name>`.
 | `dispatch-center`   | 911 dispatch with incident triage and resource assignment. **Has custom UI.**      |
 | `infocom-adventure` | Zork-style text adventure with state, puzzles, inventory. **Has custom UI.**       |
 | `solo-rpg`          | Solo dark-fantasy RPG with dice, oaths, combat, save/load. **Has custom UI.**      |
-| `middleware`         | Middleware demo: rate limiting, PII redaction, caching, analytics logging           |
+| `middleware`        | Middleware demo: rate limiting, PII redaction, caching, analytics                  |
 | `embedded-assets`   | FAQ bot using embedded JSON knowledge (no web search)                              |
 | `support`           | RAG-powered support agent using vector_search (AssemblyAI docs example)            |
 
@@ -434,8 +434,8 @@ Use `onBeforeStep` to override `activeTools` dynamically per step.
 
 ### Middleware / interceptors
 
-Middleware provides composable hooks for turns, tool calls, and output filtering.
-Middleware runs in array order for "before" hooks and reverse order for "after" hooks.
+Middleware provides composable hooks for turns, tool calls, and output
+filtering. Runs in array order for "before" hooks and reverse for "after".
 
 ```ts
 import type { Middleware } from "aai";

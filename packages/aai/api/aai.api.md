@@ -24,6 +24,7 @@ export type AgentDef = {
     onTurn?: AgentOptions["onTurn"];
     onStep?: AgentOptions["onStep"];
     onBeforeStep?: AgentOptions["onBeforeStep"];
+    middleware?: readonly Middleware[];
 };
 
 // @public
@@ -44,6 +45,7 @@ export type AgentOptions<S = Record<string, unknown>> = {
     onTurn?: (text: string, ctx: HookContext<S>) => void | Promise<void>;
     onStep?: (step: StepInfo, ctx: HookContext<S>) => void | Promise<void>;
     onBeforeStep?: (stepNumber: number, ctx: HookContext<S>) => BeforeStepResult | Promise<BeforeStepResult>;
+    middleware?: readonly Middleware<S>[];
 };
 
 // @public
@@ -90,6 +92,22 @@ export type Message = {
 };
 
 // @public
+export type Middleware<S = Record<string, unknown>> = {
+    name: string;
+    beforeTurn?: (text: string, ctx: HookContext<S>) => MiddlewareBlockResult | undefined | Promise<MiddlewareBlockResult | undefined>;
+    afterTurn?: (text: string, ctx: HookContext<S>) => void | Promise<void>;
+    toolCallInterceptor?: (toolName: string, args: Readonly<Record<string, unknown>>, ctx: HookContext<S>) => ToolCallInterceptResult | Promise<ToolCallInterceptResult>;
+    afterToolCall?: (toolName: string, args: Readonly<Record<string, unknown>>, result: string, ctx: HookContext<S>) => void | Promise<void>;
+    outputFilter?: (text: string, ctx: HookContext<S>) => string | Promise<string>;
+};
+
+// @public
+export type MiddlewareBlockResult = {
+    block: true;
+    reason: string;
+};
+
+// @public
 export type StepInfo = {
     stepNumber: number;
     toolCalls: readonly {
@@ -101,6 +119,16 @@ export type StepInfo = {
 
 // @public
 export function tool<P extends z.ZodObject<z.ZodRawShape>, S = Record<string, unknown>>(def: ToolDef<P, S>): ToolDef<P, S>;
+
+// @public
+export type ToolCallInterceptResult = {
+    result: string;
+} | {
+    block: true;
+    reason: string;
+} | {
+    args: Record<string, unknown>;
+} | undefined;
 
 // @public
 export type ToolChoice = "auto" | "required" | "none" | {
