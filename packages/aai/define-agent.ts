@@ -14,6 +14,7 @@ import {
   DEFAULT_GREETING,
   DEFAULT_INSTRUCTIONS,
   type ToolChoice,
+  // biome-ignore lint/suspicious/noImportCycles: types.ts re-exports from define-agent.ts for public API surface
 } from "./types.ts";
 
 // ─── Zod schemas ────────────────────────────────────────────────────────────

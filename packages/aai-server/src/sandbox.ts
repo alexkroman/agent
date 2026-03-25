@@ -35,10 +35,13 @@ import type { KvStore } from "./kv.ts";
 import { getHarnessRuntimeJs } from "./sandbox-harness.ts";
 import { buildNetworkAdapter, buildNetworkPolicy } from "./sandbox-network.ts";
 import { scopedKv, scopedVector, startSidecarServer } from "./sandbox-sidecar.ts";
+// biome-ignore lint/suspicious/noImportCycles: sandbox ↔ sandbox-slots cycle is architectural (lazy import on the other side)
+import { _slotInternals } from "./sandbox-slots.ts";
 import type { AgentScope } from "./scope-token.ts";
 import type { ServerVectorStore } from "./vector.ts";
 
 export type { AgentMetadata } from "./_schemas.ts";
+// biome-ignore lint/suspicious/noImportCycles: re-export from sandbox-slots (cycle broken by lazy import)
 export { type AgentSlot, ensureAgent, registerSlot, resolveSandbox } from "./sandbox-slots.ts";
 
 export type SandboxOptions = {
@@ -222,8 +225,6 @@ function toAgentConfig(config: IsolateConfig): AgentConfig {
 }
 
 // ── Test internals ───────────────────────────────────────────────────────
-
-import { _slotInternals } from "./sandbox-slots.ts";
 
 export const _internals = {
   startSidecarServer,

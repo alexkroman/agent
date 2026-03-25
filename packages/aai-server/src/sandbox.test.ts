@@ -105,7 +105,7 @@ describe("buildHookInvoker", () => {
     globalThis.fetch = originalFetch;
   });
 
-  function mockHookResponse(result: unknown = undefined) {
+  function mockHookResponse(result: unknown) {
     globalThis.fetch = vi.fn(async () => Response.json({ state: {}, result }));
   }
 
@@ -202,7 +202,7 @@ describe("getIsolateConfig", () => {
     };
     globalThis.fetch = vi.fn(async () => Response.json(config));
 
-    const result = await _internals.getIsolateConfig(12345);
+    const result = await _internals.getIsolateConfig(12_345);
     expect(result.name).toBe("agent");
     expect(result.toolSchemas).toHaveLength(1);
     expect(result.hooks.onConnect).toBe(true);
