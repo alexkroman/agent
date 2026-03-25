@@ -1,8 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import { useComputed, useSignal } from "@preact/signals";
 import clsx from "clsx";
 import type * as preact from "preact";
-import { useMemo, useState } from "preact/hooks";
 import type { ToolCallInfo } from "../types.ts";
 import {
   BoltIcon,
@@ -66,27 +66,26 @@ export function ToolCallBlock({
   toolCall: ToolCallInfo;
   className?: string;
 }): preact.JSX.Element {
-  const [isOpen, setOpen] = useState(false);
+  const isOpen = useSignal(false);
   const config = TOOL_CONFIG[toolCall.toolName] ?? DEFAULT_CONFIG;
   const isPending = toolCall.status === "pending";
   const title = config.title || toolCall.toolName;
   const canExpand = !isPending && !!toolCall.result;
-  const formatted = useMemo(
-    () => (toolCall.result ? formatResult(toolCall.result) : ""),
-    [toolCall.result],
-  );
+  const formatted = useComputed(() => (toolCall.result ? formatResult(toolCall.result) : ""));
 
   return (
     <div class={clsx("flex flex-col", className)}>
       <button
         type="button"
-        aria-expanded={canExpand ? isOpen : undefined}
+        aria-expanded={canExpand ? isOpen.value : undefined}
         disabled={isPending}
         class={clsx(
           "flex items-center gap-2 px-3 py-2 rounded-aai border border-aai-border bg-aai-surface-faint select-none text-left w-full",
           canExpand && "cursor-pointer",
         )}
-        onClick={() => canExpand && setOpen(!isOpen)}
+        onClick={() => {
+          if (canExpand) isOpen.value = !isOpen.value;
+        }}
       >
         <config.Icon class="w-4 h-4 text-aai-text-dim shrink-0" />
         <span class={clsx("text-sm font-medium text-aai-text", isPending && "tool-shimmer")}>
@@ -96,18 +95,20 @@ export function ToolCallBlock({
           {config.subtitle(toolCall.args)}
         </span>
         {canExpand && (
-          <span class="text-xs text-aai-text-dim shrink-0">{isOpen ? "\u25BE" : "\u25B8"}</span>
+          <span class="text-xs text-aai-text-dim shrink-0">
+            {isOpen.value ? "\u25BE" : "\u25B8"}
+          </span>
         )}
       </button>
-      {isOpen && (
+      {isOpen.value && (
         <div class="border-x border-b border-aai-border rounded-b-aai bg-aai-surface max-h-64 overflow-auto">
           {toolCall.toolName === "run_code" && toolCall.args.code && (
             <pre class="text-xs text-aai-text p-2 whitespace-pre-wrap border-b border-aai-border font-mono">
               {String(toolCall.args.code)}
             </pre>
           )}
-          {formatted && (
-            <pre class="text-xs text-aai-text-dim p-2 whitespace-pre-wrap">{formatted}</pre>
+          {formatted.value && (
+            <pre class="text-xs text-aai-text-dim p-2 whitespace-pre-wrap">{formatted.value}</pre>
           )}
         </div>
       )}
