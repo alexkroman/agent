@@ -24,7 +24,7 @@ export async function buildAgentBundle(
     bundle = await bundleAgent(agent);
   } catch (err) {
     if (err instanceof BundleError) {
-      throw new Error(`Bundle failed: ${err.message}`);
+      throw new Error(`Bundle failed: ${err.message}`, { cause: err });
     }
     throw err;
   }

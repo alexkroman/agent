@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 // KV store backed by @upstash/redis.
 
+// biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
 import { type KvEntry, MAX_VALUE_SIZE } from "@alexkroman1/aai/kv";
 import { Redis } from "@upstash/redis";
 import type { AgentScope } from "./scope-token.ts";

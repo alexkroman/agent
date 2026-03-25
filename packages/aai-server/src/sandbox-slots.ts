@@ -17,7 +17,7 @@ let IDLE_MS = 5 * 60 * 1000;
 /** @internal Indirection for testability — avoids circular import at call time. */
 export const _deps = {
   createSandbox: async (opts: SandboxOptions): Promise<Sandbox> => {
-    // Lazy import to break the circular dependency between sandbox.ts ↔ sandbox-slots.ts
+    // biome-ignore lint/suspicious/noImportCycles: intentional lazy import to break circular dependency
     const { createSandbox } = await import("./sandbox.ts");
     return createSandbox(opts);
   },
@@ -77,6 +77,7 @@ export function ensureAgent(slot: AgentSlot, opts: EnsureOpts): Promise<Sandbox>
     resetIdleTimer(slot);
     return Promise.resolve(slot.sandbox);
   }
+  // biome-ignore lint/nursery/noMisusedPromises: checking nullability, not truthiness
   if (slot.initializing) return slot.initializing;
 
   slot.initializing = spawnAgent(slot, opts)

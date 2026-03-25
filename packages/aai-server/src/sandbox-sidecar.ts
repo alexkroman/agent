@@ -6,7 +6,9 @@
  * scoped KV and vector access — the isolate calls it without authentication.
  */
 
+// biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
 import type { Kv, KvEntry } from "@alexkroman1/aai/kv";
+// biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
 import type { VectorStore } from "@alexkroman1/aai/vector";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
@@ -49,7 +51,9 @@ export function scopedKv(kvStore: KvStore, scope: AgentScope) {
 
 // Compile-time checks: scoped adapters must satisfy the SDK interfaces.
 // If Kv or VectorStore gain a method, these lines will error until implemented.
+// biome-ignore lint/suspicious/noUnusedExpressions: compile-time type check
 null as unknown as ReturnType<typeof scopedKv> satisfies Kv;
+// biome-ignore lint/suspicious/noUnusedExpressions: compile-time type check
 null as unknown as ReturnType<typeof scopedVector> satisfies VectorStore;
 
 export function scopedVector(vectorStore: ServerVectorStore, scope: AgentScope) {

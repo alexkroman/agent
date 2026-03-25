@@ -101,8 +101,8 @@ describe("createMemoryKv", () => {
     vi.useFakeTimers();
     const kv = createMemoryKv();
     await kv.set("alive", "1");
-    await kv.set("dying", "2", { expireIn: 5_000 });
-    vi.advanceTimersByTime(6_000);
+    await kv.set("dying", "2", { expireIn: 5000 });
+    vi.advanceTimersByTime(6000);
     expect(await kv.keys()).toEqual(["alive"]);
     vi.useRealTimers();
   });
@@ -128,8 +128,8 @@ describe("createMemoryKv", () => {
     test("expired entries excluded from list", async () => {
       const kv = createMemoryKv();
       await kv.set("alive", "1");
-      await kv.set("dying", "2", { expireIn: 5_000 });
-      vi.advanceTimersByTime(6_000);
+      await kv.set("dying", "2", { expireIn: 5000 });
+      vi.advanceTimersByTime(6000);
       const entries = await kv.list("");
       expect(entries.length).toBe(1);
       expect(entries[0]?.key).toBe("alive");

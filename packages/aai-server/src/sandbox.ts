@@ -11,11 +11,17 @@
  * vector access — the isolate calls it without authentication (loopback only).
  */
 
+// biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
 import type { AgentConfig } from "@alexkroman1/aai/internal-types";
+// biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
 import { buildReadyConfig } from "@alexkroman1/aai/protocol";
+// biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
 import { DEFAULT_S2S_CONFIG } from "@alexkroman1/aai/runtime";
+// biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
 import { createS2sSession, type HookInvoker, type Session } from "@alexkroman1/aai/session";
+// biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
 import type { ExecuteTool } from "@alexkroman1/aai/worker-entry";
+// biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
 import { type SessionWebSocket, wireSessionSocket } from "@alexkroman1/aai/ws-handler";
 import {
   createInMemoryFileSystem,
@@ -35,10 +41,13 @@ import type { KvStore } from "./kv.ts";
 import { getHarnessRuntimeJs } from "./sandbox-harness.ts";
 import { buildNetworkAdapter, buildNetworkPolicy } from "./sandbox-network.ts";
 import { scopedKv, scopedVector, startSidecarServer } from "./sandbox-sidecar.ts";
+// biome-ignore lint/suspicious/noImportCycles: sandbox ↔ sandbox-slots cycle is architectural (lazy import on the other side)
+import { _slotInternals } from "./sandbox-slots.ts";
 import type { AgentScope } from "./scope-token.ts";
 import type { ServerVectorStore } from "./vector.ts";
 
 export type { AgentMetadata } from "./_schemas.ts";
+// biome-ignore lint/suspicious/noImportCycles: re-export from sandbox-slots (cycle broken by lazy import)
 export { type AgentSlot, ensureAgent, registerSlot, resolveSandbox } from "./sandbox-slots.ts";
 
 export type SandboxOptions = {
@@ -222,8 +231,6 @@ function toAgentConfig(config: IsolateConfig): AgentConfig {
 }
 
 // ── Test internals ───────────────────────────────────────────────────────
-
-import { _slotInternals } from "./sandbox-slots.ts";
 
 export const _internals = {
   startSidecarServer,

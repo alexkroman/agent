@@ -1,7 +1,10 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+// biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
 import type { ClientMessage, ReadyConfig } from "@alexkroman1/aai/protocol";
+// biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
 import { toWireMessages } from "@alexkroman1/aai/protocol";
+// biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
 import { errorMessage } from "@alexkroman1/aai/utils";
 import type { VoiceIO } from "./audio.ts";
 import { ClientHandler } from "./client-handler.ts";
@@ -10,7 +13,6 @@ import type {
   Message,
   Reactive,
   SessionError,
-  SessionErrorCode,
   SessionOptions,
   ToolCallInfo,
 } from "./types.ts";
@@ -24,7 +26,7 @@ export type {
   SessionErrorCode,
   SessionOptions,
   ToolCallInfo,
-};
+} from "./types.ts";
 
 /** Built-in non-reactive container (plain mutable wrapper). */
 function plainReactive<T>(initial: T): Reactive<T> {
@@ -35,6 +37,72 @@ function plainReactive<T>(initial: T): Reactive<T> {
 function plainBatch(fn: () => void): void {
   fn();
 }
+
+// ─── Audio initialization (extracted for function-length limit) ──────────────
+
+/** Shared mutable connection state for audio initialization. */
+type ConnState = {
+  ws: WebSocket | null;
+  voiceIO: VoiceIO | null;
+  audioSetupInFlight: boolean;
+};
+
+/** Initialize audio capture/playback after the server sends a ready config. */
+async function initAudioCapture(
+  conn: ConnState,
+  msg: ReadyConfig,
+  deps: {
+    send: (msg: ClientMessage) => void;
+    sendBinary: (data: ArrayBuffer) => void;
+    state: Reactive<AgentState>;
+    error: Reactive<SessionError | null>;
+    batch: (fn: () => void) => void;
+  },
+): Promise<void> {
+  if (conn.audioSetupInFlight) return;
+  conn.audioSetupInFlight = true;
+  try {
+    const [{ createVoiceIO }, captureWorklet, playbackWorklet] = await Promise.all([
+      import("./audio.ts"),
+      import("./worklets/capture-processor.ts").then((m) => m.default),
+      import("./worklets/playback-processor.ts").then((m) => m.default),
+    ]);
+    const io = await createVoiceIO({
+      sttSampleRate: msg.sampleRate,
+      ttsSampleRate: msg.ttsSampleRate,
+      captureWorkletSrc: captureWorklet,
+      playbackWorkletSrc: playbackWorklet,
+      onMicData: (pcm16: ArrayBuffer) => {
+        // Always stream audio — S2S handles VAD natively.
+        try {
+          deps.sendBinary(pcm16);
+        } catch {
+          /* connection may be closed */
+        }
+      },
+    });
+    if (!conn.ws || conn.ws.readyState !== WebSocket.OPEN) {
+      io.close();
+      return;
+    }
+    conn.voiceIO = io;
+    deps.send({ type: "audio_ready" });
+    deps.state.value = "listening";
+  } catch (err: unknown) {
+    if (!conn.ws || conn.ws.readyState !== WebSocket.OPEN) return;
+    deps.batch(() => {
+      deps.error.value = {
+        code: "audio",
+        message: `Microphone access failed: ${errorMessage(err)}`,
+      };
+      deps.state.value = "error";
+    });
+  } finally {
+    conn.audioSetupInFlight = false;
+  }
+}
+
+// ─── Voice session type ──────────────────────────────────────────────────────
 
 /**
  * A reactive voice session that manages WebSocket communication,
@@ -88,6 +156,8 @@ export type VoiceSession = {
   [Symbol.dispose](): void;
 };
 
+// ─── Voice session factory ───────────────────────────────────────────────────
+
 /**
  * Create a voice session that connects to an AAI server via WebSocket.
  *
@@ -110,15 +180,14 @@ export function createVoiceSession(options: SessionOptions): VoiceSession {
   const error = reactive<SessionError | null>(null);
   const disconnected = reactive<{ intentional: boolean } | null>(null);
 
-  let ws: WebSocket | null = null;
-  let voiceIO: VoiceIO | null = null;
+  const conn: ConnState = { ws: null, voiceIO: null, audioSetupInFlight: false };
   let connectionController: AbortController | null = null;
   let hasConnected = false;
-  let audioSetupInFlight = false;
+
   function cleanupAudio(): void {
-    audioSetupInFlight = false;
-    void voiceIO?.close();
-    voiceIO = null;
+    conn.audioSetupInFlight = false;
+    void conn.voiceIO?.close();
+    conn.voiceIO = null;
   }
 
   function resetState(): void {
@@ -132,68 +201,26 @@ export function createVoiceSession(options: SessionOptions): VoiceSession {
   }
 
   function send(msg: ClientMessage): void {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify(msg));
+    if (conn.ws && conn.ws.readyState === WebSocket.OPEN) {
+      conn.ws.send(JSON.stringify(msg));
     }
   }
 
   function sendBinary(data: ArrayBuffer): void {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(data);
+    if (conn.ws && conn.ws.readyState === WebSocket.OPEN) {
+      conn.ws.send(data);
     }
   }
 
-  async function handleReady(msg: ReadyConfig): Promise<void> {
-    if (audioSetupInFlight) return;
-    audioSetupInFlight = true;
-    try {
-      const [{ createVoiceIO }, captureWorklet, playbackWorklet] = await Promise.all([
-        import("./audio.ts"),
-        import("./worklets/capture-processor.ts").then((m) => m.default),
-        import("./worklets/playback-processor.ts").then((m) => m.default),
-      ]);
-      const io = await createVoiceIO({
-        sttSampleRate: msg.sampleRate,
-        ttsSampleRate: msg.ttsSampleRate,
-        captureWorkletSrc: captureWorklet,
-        playbackWorkletSrc: playbackWorklet,
-        onMicData: (pcm16: ArrayBuffer) => {
-          // Always stream audio — S2S handles VAD natively.
-          try {
-            sendBinary(pcm16);
-          } catch {
-            /* connection may be closed */
-          }
-        },
-      });
-      if (!ws || ws.readyState !== WebSocket.OPEN) {
-        io.close();
-        return;
-      }
-      voiceIO = io;
-      send({ type: "audio_ready" });
-      state.value = "listening";
-    } catch (err: unknown) {
-      if (!ws || ws.readyState !== WebSocket.OPEN) return;
-      batchFn(() => {
-        error.value = {
-          code: "audio",
-          message: `Microphone access failed: ${errorMessage(err)}`,
-        };
-        state.value = "error";
-      });
-    } finally {
-      audioSetupInFlight = false;
-    }
-  }
+  const audioDeps = { send, sendBinary, state, error, batch: batchFn };
 
   function connect(opts?: { signal?: AbortSignal }): void {
     disconnected.value = null;
     state.value = "connecting";
     connectionController?.abort();
     cleanupAudio();
-    ws?.close();
-    ws = null;
+    conn.ws?.close();
+    conn.ws = null;
     const controller = new AbortController();
     connectionController = controller;
     const { signal: sig } = controller;
@@ -211,7 +238,7 @@ export function createVoiceSession(options: SessionOptions): VoiceSession {
 
     const socket = new WebSocket(wsUrl.toString());
     socket.binaryType = "arraybuffer";
-    ws = socket;
+    conn.ws = socket;
 
     const handler = new ClientHandler({
       state,
@@ -220,7 +247,7 @@ export function createVoiceSession(options: SessionOptions): VoiceSession {
       userUtterance,
       agentUtterance,
       error,
-      voiceIO: () => voiceIO,
+      voiceIO: () => conn.voiceIO,
       batch: batchFn,
     });
 
@@ -240,7 +267,7 @@ export function createVoiceSession(options: SessionOptions): VoiceSession {
         if (config) {
           const isReconnect = hasConnected;
           hasConnected = true;
-          void handleReady(config);
+          void initAudioCapture(conn, config, audioDeps);
 
           // Send history if reconnecting
           if (isReconnect && messages.value.length > 0) {
@@ -270,14 +297,14 @@ export function createVoiceSession(options: SessionOptions): VoiceSession {
   }
 
   function cancel(): void {
-    voiceIO?.flush();
+    conn.voiceIO?.flush();
     state.value = "listening";
     send({ type: "cancel" });
   }
 
   function reset(): void {
-    voiceIO?.flush();
-    if (ws && ws.readyState === WebSocket.OPEN) {
+    conn.voiceIO?.flush();
+    if (conn.ws && conn.ws.readyState === WebSocket.OPEN) {
       send({ type: "reset" });
       return;
     }
@@ -290,8 +317,8 @@ export function createVoiceSession(options: SessionOptions): VoiceSession {
     connectionController?.abort();
     connectionController = null;
     cleanupAudio();
-    ws?.close();
-    ws = null;
+    conn.ws?.close();
+    conn.ws = null;
     state.value = "disconnected";
     disconnected.value = { intentional: true };
   }

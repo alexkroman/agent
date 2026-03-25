@@ -9,6 +9,7 @@
 import { render, screen } from "@testing-library/preact";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { App } from "./_components/app.tsx";
+// biome-ignore lint/correctness/noUnresolvedImports: re-export from workspace dep unresolvable in per-package lint
 import { createMockSignals, flush, installMockWebSocket, setupSignalsEnv } from "./_test-utils.ts";
 import { mount } from "./mount.tsx";
 import { SessionProvider, useSession } from "./signals.ts";
@@ -51,8 +52,8 @@ describe("UI integration: mount lifecycle", () => {
       JSON.stringify({
         type: "ready",
         audioFormat: "pcm_s16le",
-        sampleRate: 16000,
-        ttsSampleRate: 24000,
+        sampleRate: 16_000,
+        ttsSampleRate: 24_000,
       }),
     );
     await flush();
@@ -109,7 +110,12 @@ describe("UI integration: signals → component rendering", () => {
     expect(env.mock.lastWs).not.toBeNull();
 
     // Simulate ready — state is "ready" (transitions to "listening" with real audio)
-    env.send({ type: "ready", audioFormat: "pcm_s16le", sampleRate: 16000, ttsSampleRate: 24000 });
+    env.send({
+      type: "ready",
+      audioFormat: "pcm_s16le",
+      sampleRate: 16_000,
+      ttsSampleRate: 24_000,
+    });
     expect(env.session.state.value).toBe("ready");
 
     // Simulate turn (user said something)

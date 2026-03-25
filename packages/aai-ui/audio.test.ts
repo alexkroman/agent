@@ -14,8 +14,8 @@ function noop() {
 
 function voiceOpts(overrides?: Partial<Parameters<typeof createVoiceIO>[0]>) {
   return {
-    sttSampleRate: 16000,
-    ttsSampleRate: 24000,
+    sttSampleRate: 16_000,
+    ttsSampleRate: 24_000,
     captureWorkletSrc: "cap",
     playbackWorkletSrc: "play",
     onMicData: noop,
@@ -44,7 +44,7 @@ describe("createVoiceIO", () => {
 
   test("uses TTS sample rate for the AudioContext", async () => {
     const io = await createVoiceIO(voiceOpts());
-    expect(audio.lastContext().sampleRate).toBe(24000);
+    expect(audio.lastContext().sampleRate).toBe(24_000);
     await io.close();
   });
 
@@ -76,8 +76,8 @@ describe("createVoiceIO", () => {
     });
     const io = await createVoiceIO(
       voiceOpts({
-        sttSampleRate: 16000,
-        ttsSampleRate: 16000,
+        sttSampleRate: 16_000,
+        ttsSampleRate: 16_000,
         onMicData,
       }),
     );
@@ -86,14 +86,14 @@ describe("createVoiceIO", () => {
     for (let i = 0; i < 13; i++) {
       const buf = new ArrayBuffer(256);
       const view = new Int16Array(buf);
-      view.fill(16384);
+      view.fill(16_384);
       capNode.port.simulateMessage({ event: "chunk", buffer: buf });
     }
 
     expect(onMicData.mock.calls.length > 0).toBe(true);
     const firstCall = onMicData.mock.calls[0] as [ArrayBuffer];
     const pcm16 = new Int16Array(firstCall[0]);
-    expect(pcm16[0]).toBe(16384);
+    expect(pcm16[0]).toBe(16_384);
     await io.close();
   });
 

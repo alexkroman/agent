@@ -11,6 +11,7 @@
  * every callsite that needs to change.
  */
 
+// biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
 import { AgentConfigSchema, ToolSchemaSchema } from "@alexkroman1/aai/internal-types";
 import { z } from "zod";
 

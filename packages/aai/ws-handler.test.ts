@@ -26,7 +26,7 @@ const silentLogger = {
   debug: vi.fn(),
 };
 
-const defaultConfig = { audioFormat: "pcm16" as const, sampleRate: 16000, ttsSampleRate: 24000 };
+const defaultConfig = { audioFormat: "pcm16" as const, sampleRate: 16_000, ttsSampleRate: 24_000 };
 
 describe("wireSessionSocket", () => {
   test("'Session ready' is not logged until session.start() resolves", async () => {

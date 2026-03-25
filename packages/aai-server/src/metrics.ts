@@ -6,6 +6,7 @@
  * Customer view:  GET /:slug/metrics    -> serializeForAgent("slug")
  */
 
+// biome-ignore lint/correctness/noUnresolvedImports: prom-client is a runtime dependency of aai-server
 import client from "prom-client";
 
 const registry = new client.Registry();

@@ -7,6 +7,7 @@ import { StartScreen } from "./start-screen.tsx";
 function AnsiLogo() {
   return (
     <pre class="font-aai-mono text-lg leading-[1.1] font-bold text-aai-primary m-0">
+      {/* biome-ignore lint/style/useConsistentCurlyBraces: string contains escape sequence */}
       {"▄▀█ ▄▀█ █\n█▀█ █▀█ █"}
     </pre>
   );

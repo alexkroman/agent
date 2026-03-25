@@ -27,6 +27,7 @@ export function ChatView({ className }: { className?: string }): preact.JSX.Elem
           <span class="text-sm font-semibold text-aai-primary">{title}</span>
         ) : (
           <pre class="font-aai-mono text-[10px] leading-[1.1] font-bold text-aai-primary m-0">
+            {/* biome-ignore lint/style/useConsistentCurlyBraces: string contains escape sequence */}
             {"▄▀█ ▄▀█ █\n█▀█ █▀█ █"}
           </pre>
         )}

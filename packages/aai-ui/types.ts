@@ -1,4 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
+
+// biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
+import type { SessionErrorCode } from "@alexkroman1/aai/protocol";
+
 /** Microphone buffer duration in seconds before sending to the server. */
 export const MIC_BUFFER_SECONDS = 0.1;
 
@@ -43,11 +47,10 @@ export type ToolCallInfo = {
   afterMessageIndex: number;
 };
 
-import type { SessionErrorCode } from "@alexkroman1/aai/protocol";
-
+// biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
+export type { SessionErrorCode } from "@alexkroman1/aai/protocol";
+// biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
 export { SessionErrorCodeSchema } from "@alexkroman1/aai/protocol";
-
-export type { SessionErrorCode };
 
 /**
  * Error reported by the voice session.

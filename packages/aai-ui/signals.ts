@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { batch, effect, type Signal, signal, useSignalEffect } from "@preact/signals";
+// biome-ignore lint/correctness/noUnresolvedImports: preact JSX types resolved via tsconfig
 import type { ComponentChildren, JSX, RefObject } from "preact";
 import { createContext, h } from "preact";
 import { useContext, useEffect, useRef } from "preact/hooks";
@@ -150,21 +151,23 @@ export function useToolResult(
   const cbRef = useRef(callback);
   cbRef.current = callback;
 
-  useEffect(() => {
-    return effect(() => {
-      const toolCalls = session.toolCalls.value;
-      if (toolCalls.length === 0) {
-        seenRef.current.clear();
-        return;
-      }
-      for (const tc of toolCalls) {
-        if (tc.status !== "done" || !tc.result) continue;
-        if (seenRef.current.has(tc.toolCallId)) continue;
-        seenRef.current.add(tc.toolCallId);
-        cbRef.current(tc.toolName, tryParseJSON(tc.result), tc);
-      }
-    });
-  }, [session]);
+  useEffect(
+    () =>
+      effect(() => {
+        const toolCalls = session.toolCalls.value;
+        if (toolCalls.length === 0) {
+          seenRef.current.clear();
+          return;
+        }
+        for (const tc of toolCalls) {
+          if (tc.status !== "done" || !tc.result) continue;
+          if (seenRef.current.has(tc.toolCallId)) continue;
+          seenRef.current.add(tc.toolCallId);
+          cbRef.current(tc.toolName, tryParseJSON(tc.result), tc);
+        }
+      }),
+    [session],
+  );
 }
 
 /**
@@ -179,9 +182,14 @@ export function useAutoScroll(): RefObject<HTMLDivElement> {
   const ref = useRef<HTMLDivElement>(null);
 
   useSignalEffect(() => {
+    // Reading signal values to subscribe to changes (Preact signals pattern)
+    // biome-ignore lint/suspicious/noUnusedExpressions: signal subscription
     session.messages.value;
+    // biome-ignore lint/suspicious/noUnusedExpressions: signal subscription
     session.toolCalls.value;
+    // biome-ignore lint/suspicious/noUnusedExpressions: signal subscription
     session.userUtterance.value;
+    // biome-ignore lint/suspicious/noUnusedExpressions: signal subscription
     session.agentUtterance.value;
     ref.current?.scrollIntoView({ behavior: "smooth" });
   });

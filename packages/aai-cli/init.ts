@@ -85,7 +85,7 @@ export async function runInitCommand(
     ? path.join(cliDir, "templates")
     : path.join(cliDir, "..", "templates");
   const { runInit } = await import("./_init.ts");
-  const template = opts.template || "simple";
+  const template = opts.template ?? "simple";
 
   await runCommand(async ({ log }) => {
     log(step("Create", dir));

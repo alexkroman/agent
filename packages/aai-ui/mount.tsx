@@ -2,6 +2,7 @@
 
 import { batch, signal } from "@preact/signals";
 import type { ComponentType } from "preact";
+// biome-ignore lint/suspicious/noDeprecatedImports: preact v10 render API is current
 import { render } from "preact";
 import { MountConfigProvider, type MountTheme } from "./mount-context.ts";
 import { createVoiceSession, type VoiceSession } from "./session.ts";

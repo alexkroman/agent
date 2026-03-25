@@ -1,6 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+// biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
 import type { ReadyConfig, ServerMessage } from "@alexkroman1/aai/protocol";
+// biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
 import { ServerMessageSchema } from "@alexkroman1/aai/protocol";
 import type { VoiceIO } from "./audio.ts";
 import type { AgentState, Message, Reactive, SessionError, ToolCallInfo } from "./types.ts";
@@ -133,6 +135,8 @@ export class ClientHandler {
           };
           this.#state.value = "error";
         });
+        break;
+      default:
         break;
     }
   }

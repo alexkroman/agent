@@ -70,7 +70,7 @@ export function ToolCallBlock({
   const config = TOOL_CONFIG[toolCall.toolName] ?? DEFAULT_CONFIG;
   const isPending = toolCall.status === "pending";
   const title = config.title || toolCall.toolName;
-  const canExpand = !isPending && !!toolCall.result;
+  const canExpand = !isPending && Boolean(toolCall.result);
   const formatted = useComputed(() => (toolCall.result ? formatResult(toolCall.result) : ""));
 
   return (

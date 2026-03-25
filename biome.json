@@ -19,7 +19,10 @@
         "noUnusedImports": "error",
         "noUnusedVariables": "error",
         "noUndeclaredDependencies": "error",
-        "useImportExtensions": "error"
+        "useImportExtensions": "error",
+        "noGlobalDirnameFilename": "error",
+        "noPrivateImports": "error",
+        "noUnresolvedImports": "error"
       },
       "style": {
         "recommended": true,
@@ -33,13 +36,35 @@
         "useThrowOnlyError": "error",
         "noDefaultExport": "off",
         "useNamingConvention": "off",
-        "useFilenamingConvention": "off",
+        "useFilenamingConvention": "error",
         "useBlockStatements": "off",
         "noParameterAssign": "error",
         "useConsistentArrayType": "error",
         "noEnum": "error",
         "noShoutyConstants": "error",
-        "useImportType": "error"
+        "useImportType": "error",
+        "noNestedTernary": "error",
+        "useNumberNamespace": "error",
+        "noUselessElse": "error",
+        "noCommonJs": "error",
+        "noExportedImports": "error",
+        "noSubstr": "error",
+        "useTrimStartEnd": "error",
+        "useDefaultParameterLast": "error",
+        "useAtIndex": "error",
+        "noDoneCallback": "error",
+        "noNamespace": "error",
+        "noParameterProperties": "error",
+        "noUnusedTemplateLiteral": "error",
+        "noYodaExpression": "error",
+        "useAsConstAssertion": "error",
+        "useCollapsedIf": "error",
+        "useConsistentArrowReturn": "error",
+        "useConsistentCurlyBraces": "error",
+        "useDefaultSwitchClause": "error",
+        "useNodeAssertStrict": "error",
+        "useNumericSeparators": "error",
+        "useUnifiedTypeSignatures": "error"
       },
       "suspicious": {
         "recommended": true,
@@ -49,22 +74,45 @@
         "useErrorMessage": "error",
         "noMisplacedAssertion": "error",
         "noAssignInExpressions": "error",
-        "noDoubleEquals": "error"
+        "noDoubleEquals": "error",
+        "noEvolvingTypes": "error",
+        "noSkippedTests": "warn",
+        "useGuardForIn": "error",
+        "noConstantBinaryExpressions": "error",
+        "noDeprecatedImports": "error",
+        "noDuplicateDependencies": "error",
+        "noExportsInTest": "error",
+        "noFocusedTests": "error",
+        "noImportCycles": "error",
+        "noUnusedExpressions": "error"
       },
       "complexity": {
         "recommended": true,
-        "noExcessiveCognitiveComplexity": "warn",
+        "noExcessiveCognitiveComplexity": "error",
+        "noExcessiveLinesPerFunction": {
+          "level": "error",
+          "options": { "maxLines": 150 }
+        },
         "noStaticOnlyClass": "error",
         "useDateNow": "error",
         "useSimplifiedLogicExpression": "error",
         "noForEach": "error",
-        "noUselessUndefinedInitialization": "error"
+        "noUselessUndefinedInitialization": "error",
+        "noUselessStringConcat": "error",
+        "noExcessiveNestedTestSuites": "error",
+        "noImplicitCoercions": "error",
+        "noUselessCatchBinding": "error",
+        "noUselessUndefined": "error",
+        "useWhile": "error"
       },
       "performance": {
-        "useTopLevelRegex": "off"
+        "useTopLevelRegex": "off",
+        "noAccumulatingSpread": "error",
+        "noReExportAll": "error"
       },
       "security": {
-        "recommended": true
+        "recommended": true,
+        "noSecrets": "error"
       },
       "a11y": {
         "recommended": false
@@ -73,7 +121,28 @@
         "noExcessiveLinesPerFile": {
           "level": "error",
           "options": { "maxLines": 400 }
-        }
+        },
+        "noFloatingPromises": "error",
+        "noMisusedPromises": "error",
+        "noNestedPromises": "error",
+        "noConditionalExpect": "error",
+        "noUnnecessaryConditions": "error",
+        "noUselessReturn": "error",
+        "noMultiAssign": "error",
+        "noMultiStr": "error",
+        "noProto": "error",
+        "noReturnAssign": "error",
+        "noScriptUrl": "error",
+        "noRedundantDefaultExport": "error",
+        "noParametersOnlyUsedInRecursion": "error",
+        "useArraySome": "error",
+        "useArraySortCompare": "error",
+        "useExhaustiveSwitchCases": "error",
+        "useFind": "error",
+        "useSpread": "error",
+        "useImportsFirst": "error",
+        "useErrorCause": "error",
+        "useNullishCoalescing": "error"
       }
     }
   },
@@ -86,7 +155,17 @@
             "noUndeclaredDependencies": "off"
           },
           "nursery": {
-            "noExcessiveLinesPerFile": "off"
+            "noExcessiveLinesPerFile": "off",
+            "noConditionalExpect": "off"
+          },
+          "security": {
+            "noSecrets": "off"
+          },
+          "complexity": {
+            "noExcessiveLinesPerFunction": "off"
+          },
+          "suspicious": {
+            "noExportsInTest": "off"
           }
         }
       }

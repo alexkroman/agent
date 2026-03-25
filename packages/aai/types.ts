@@ -350,4 +350,5 @@ export type AgentDef = {
 };
 
 // Re-export validation schemas and defineAgent from their dedicated module.
+// biome-ignore lint/suspicious/noImportCycles: re-export for public API surface (define-agent imports types)
 export { BuiltinToolSchema, defineAgent, ToolChoiceSchema } from "./define-agent.ts";

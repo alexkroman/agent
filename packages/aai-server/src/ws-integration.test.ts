@@ -8,8 +8,11 @@
  * so the test runs without external dependencies.
  */
 import http from "node:http";
+// biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
 import type { ReadyConfig, ServerMessage } from "@alexkroman1/aai/protocol";
+// biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
 import type { Session } from "@alexkroman1/aai/session";
+// biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
 import { wireSessionSocket } from "@alexkroman1/aai/ws-handler";
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import { WebSocket, WebSocketServer } from "ws";
@@ -18,8 +21,8 @@ import { WebSocket, WebSocketServer } from "ws";
 
 const READY_CONFIG: ReadyConfig = {
   audioFormat: "pcm16",
-  sampleRate: 16000,
-  ttsSampleRate: 24000,
+  sampleRate: 16_000,
+  ttsSampleRate: 24_000,
 };
 
 function makeStubSession(overrides?: Partial<Session>): Session {

@@ -1,5 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+// biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
 import { errorMessage } from "@alexkroman1/aai/utils";
 import pLimit from "p-limit";
 import { getServerInfo } from "./_discover.ts";
@@ -165,9 +166,10 @@ export async function runRagCommand(opts: {
 
   try {
     new URL(url);
-  } catch {
+  } catch (err: unknown) {
     throw new Error(
       `Invalid URL: ${url}\n  Provide a fully qualified URL including the protocol (e.g., https://example.com/docs).`,
+      { cause: err },
     );
   }
 
