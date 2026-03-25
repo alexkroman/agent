@@ -17,4 +17,8 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm --filter @alexkroman1/aai-cli exec playwright install --with-deps chromium
+
       - run: pnpm check
