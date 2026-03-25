@@ -443,7 +443,7 @@ describe("createS2sSession", () => {
     });
   });
 
-  test("tool_call sends pending results on reply_done", async () => {
+  test("tool_call sends result immediately (not batched until reply_done)", async () => {
     const executeTool = vi.fn(async () => "result-1");
     const { session, mockHandle } = setup({ executeTool });
     await session.start();
@@ -451,8 +451,7 @@ describe("createS2sSession", () => {
     mockHandle._fire("tool_call", { call_id: "c1", name: "t1", args: {} });
     await session.waitForTurn();
 
-    mockHandle._fire("reply_done", {});
-
+    // Result should already be sent — before reply_done fires
     expect(mockHandle.sendToolResult).toHaveBeenCalledWith("c1", "result-1");
   });
 
@@ -567,6 +566,103 @@ describe("createS2sSession", () => {
     await session.start();
     // Give time for async hook to settle
     await new Promise((r) => setTimeout(r, 10));
+  });
+
+  // ─── Concurrency bug regression tests ─────────────────────────────────
+
+  test("barge-in prevents in-flight tool results from being sent", async () => {
+    let resolveToolCall!: (value: string) => void;
+    const executeTool = vi.fn(
+      () =>
+        new Promise<string>((r) => {
+          resolveToolCall = r;
+        }),
+    );
+    const { session, mockHandle } = setup({ executeTool });
+    await session.start();
+
+    // Start a tool call (stays pending)
+    mockHandle._fire("reply_started", { reply_id: "r1" });
+    mockHandle._fire("tool_call", { call_id: "c1", name: "t1", args: {} });
+
+    // Wait for executeTool to be called (handleToolCall has async steps before it)
+    await vi.waitFor(() => expect(executeTool).toHaveBeenCalled());
+
+    // Barge-in before tool completes
+    mockHandle._fire("reply_done", { status: "interrupted" });
+
+    // Now the tool finishes — its result should NOT be sent
+    resolveToolCall("late-result");
+    await session.waitForTurn();
+
+    expect(mockHandle.sendToolResult).not.toHaveBeenCalled();
+  });
+
+  test("tool results sent immediately even when reply_done arrives late", async () => {
+    let resolveToolCall!: (value: string) => void;
+    const executeTool = vi.fn(
+      () =>
+        new Promise<string>((r) => {
+          resolveToolCall = r;
+        }),
+    );
+    const { session, mockHandle } = setup({ executeTool });
+    await session.start();
+
+    mockHandle._fire("reply_started", { reply_id: "r1" });
+    mockHandle._fire("tool_call", { call_id: "c1", name: "t1", args: {} });
+
+    // Wait for executeTool to be called
+    await vi.waitFor(() => expect(executeTool).toHaveBeenCalled());
+
+    // Tool finishes before reply_done
+    resolveToolCall("result-1");
+    await session.waitForTurn();
+
+    // Result should be sent immediately — not waiting for reply_done
+    expect(mockHandle.sendToolResult).toHaveBeenCalledWith("c1", "result-1");
+  });
+
+  test("reply_started resets interrupted flag so new reply tools are sent", async () => {
+    const executeTool = vi.fn(async () => "result");
+    const { session, mockHandle } = setup({ executeTool });
+    await session.start();
+
+    // First reply — interrupted
+    mockHandle._fire("reply_started", { reply_id: "r1" });
+    mockHandle._fire("reply_done", { status: "interrupted" });
+
+    // Second reply — should work normally
+    mockHandle._fire("reply_started", { reply_id: "r2" });
+    mockHandle._fire("tool_call", { call_id: "c1", name: "t1", args: {} });
+    await session.waitForTurn();
+
+    expect(mockHandle.sendToolResult).toHaveBeenCalledWith("c1", "result");
+  });
+
+  test("stop() during start() closes S2S handle to prevent orphaned connection", async () => {
+    let resolveConnect!: (value: S2sHandle) => void;
+    const handle = makeMockHandle();
+    const spy = vi.spyOn(_internals, "connectS2s").mockImplementation(
+      () =>
+        new Promise((r) => {
+          resolveConnect = r as (value: S2sHandle) => void;
+        }),
+    );
+    const client = makeClient();
+    const session = createS2sSession(makeSessionOpts({ client }));
+
+    const startPromise = session.start();
+    // Stop before connect completes
+    const stopPromise = session.stop();
+
+    // Now connect completes — handle should be closed immediately
+    resolveConnect(handle);
+    await startPromise;
+    await stopPromise;
+
+    expect(handle.close).toHaveBeenCalled();
+    spy.mockRestore();
   });
 
   test("resolveTurnConfig failure returns error and skips tool execution", async () => {

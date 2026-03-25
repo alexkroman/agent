@@ -65,7 +65,7 @@ export type SandboxOptions = {
 
 export type Sandbox = {
   startSession(socket: SessionWebSocket, skipGreeting?: boolean): void;
-  terminate(): void;
+  terminate(): Promise<void>;
 };
 
 // ── Isolate lifecycle ────────────────────────────────────────────────────
@@ -332,11 +332,16 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
         readyConfig,
       });
     },
-    terminate(): void {
-      for (const session of sessions.values()) {
-        void session.stop();
-      }
+    async terminate(): Promise<void> {
+      // Await all session stops before disposing runtime/sidecar to prevent
+      // in-flight tool calls from hitting a disposed isolate or closed sidecar.
+      const stops = [...sessions.values()].map((s) =>
+        s.stop().catch(() => {
+          /* best-effort cleanup — swallow stop errors during terminate */
+        }),
+      );
       sessions.clear();
+      await Promise.all(stops);
       // Use terminate() (async) instead of dispose() (sync) to properly
       // await HTTP server closure before disposing the V8 isolate.
       // This prevents "Isolate is disposed" unhandled rejections from

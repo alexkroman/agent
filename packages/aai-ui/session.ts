@@ -45,6 +45,9 @@ type ConnState = {
   ws: WebSocket | null;
   voiceIO: VoiceIO | null;
   audioSetupInFlight: boolean;
+  /** Monotonically increasing counter bumped on each connect(). Prevents a stale
+   *  initAudioCapture from assigning its voiceIO to a newer connection. */
+  generation: number;
 };
 
 /** Initialize audio capture/playback after the server sends a ready config. */
@@ -61,6 +64,10 @@ async function initAudioCapture(
 ): Promise<void> {
   if (conn.audioSetupInFlight) return;
   conn.audioSetupInFlight = true;
+  // Capture the connection generation so we can detect if connect() was
+  // called while we were awaiting. Without this, a stale initAudioCapture
+  // could assign its voiceIO to a newer connection.
+  const gen = conn.generation;
   try {
     const [{ createVoiceIO }, captureWorklet, playbackWorklet] = await Promise.all([
       import("./audio.ts"),
@@ -81,7 +88,7 @@ async function initAudioCapture(
         }
       },
     });
-    if (!conn.ws || conn.ws.readyState !== WebSocket.OPEN) {
+    if (conn.generation !== gen || !conn.ws || conn.ws.readyState !== WebSocket.OPEN) {
       io.close();
       return;
     }
@@ -89,7 +96,7 @@ async function initAudioCapture(
     deps.send({ type: "audio_ready" });
     deps.state.value = "listening";
   } catch (err: unknown) {
-    if (!conn.ws || conn.ws.readyState !== WebSocket.OPEN) return;
+    if (conn.generation !== gen || !conn.ws || conn.ws.readyState !== WebSocket.OPEN) return;
     deps.batch(() => {
       deps.error.value = {
         code: "audio",
@@ -180,7 +187,7 @@ export function createVoiceSession(options: SessionOptions): VoiceSession {
   const error = reactive<SessionError | null>(null);
   const disconnected = reactive<{ intentional: boolean } | null>(null);
 
-  const conn: ConnState = { ws: null, voiceIO: null, audioSetupInFlight: false };
+  const conn: ConnState = { ws: null, voiceIO: null, audioSetupInFlight: false, generation: 0 };
   let connectionController: AbortController | null = null;
   let hasConnected = false;
 
@@ -221,6 +228,7 @@ export function createVoiceSession(options: SessionOptions): VoiceSession {
     cleanupAudio();
     conn.ws?.close();
     conn.ws = null;
+    conn.generation++;
     const controller = new AbortController();
     connectionController = controller;
     const { signal: sig } = controller;

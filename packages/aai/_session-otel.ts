@@ -23,10 +23,15 @@ import {
 export { activeSessionsUpDown, sessionCounter } from "./telemetry.ts";
 
 function finishToolCall(ctx: S2sSessionCtx, call_id: string, result: string): void {
-  ctx.pendingTools.push({ call_id, result });
   const truncatedResult =
     result.length > MAX_TOOL_RESULT_CHARS ? result.slice(0, MAX_TOOL_RESULT_CHARS) : result;
   ctx.client.event({ type: "tool_call_done", toolCallId: call_id, result: truncatedResult });
+  // Send tool result immediately rather than batching in pendingTools.
+  // Batching created a race: reply_done could fire before async tool calls
+  // finished, clearing pendingTools and losing late-arriving results.
+  if (!ctx.replyInterrupted) {
+    ctx.s2s?.sendToolResult(call_id, result);
+  }
 }
 
 export async function handleToolCall(ctx: S2sSessionCtx, detail: S2sToolCall): Promise<void> {
@@ -175,6 +180,8 @@ export function setupListeners(ctx: S2sSessionCtx, handle: S2sHandle): void {
 
   handle.on("reply_started", () => {
     ctx.toolCallCount = 0;
+    ctx.replyInterrupted = false;
+    ctx.hasPendingTools = false;
   });
   handle.on("audio", ({ audio }) => ctx.client.playAudioChunk(audio));
   handle.on("agent_transcript_delta", ({ text }) => {
@@ -197,6 +204,7 @@ export function setupListeners(ctx: S2sSessionCtx, handle: S2sHandle): void {
   });
 
   handle.on("tool_call", (detail) => {
+    ctx.hasPendingTools = true;
     const p = handleToolCall(ctx, detail).catch((err: unknown) => {
       ctx.log.error("Tool call handler failed", { err: errorMessage(err) });
     });
@@ -207,12 +215,11 @@ export function setupListeners(ctx: S2sSessionCtx, handle: S2sHandle): void {
     if (status === "interrupted") {
       ctx.log.info("S2S reply interrupted (barge-in)");
       bargeInCounter.add(1, { agent: ctx.agent });
-      ctx.pendingTools = [];
+      // Mark interrupted so in-flight tool calls don't send results.
+      ctx.replyInterrupted = true;
       ctx.client.event({ type: "cancelled" });
-    } else if (ctx.pendingTools.length > 0) {
-      for (const tool of ctx.pendingTools) ctx.s2s?.sendToolResult(tool.call_id, tool.result);
-      ctx.pendingTools = [];
-    } else {
+    } else if (!ctx.hasPendingTools) {
+      // No tool calls in this reply — it's a final response.
       if (ctx.hookInvoker?.afterTurn) {
         const last = ctx.conversationMessages.at(-1);
         ctx.fireHook(
@@ -223,6 +230,7 @@ export function setupListeners(ctx: S2sSessionCtx, handle: S2sHandle): void {
       ctx.client.playAudioDone();
       ctx.client.event({ type: "tts_done" });
     }
+    // Tool results are sent immediately in finishToolCall — no batching needed.
   });
 
   handle.on("error", ({ code, message }) => {

@@ -74,6 +74,10 @@ export type S2sSessionCtx = {
   toolCallCount: number;
   turnPromise: Promise<void> | null;
   conversationMessages: Message[];
+  /** True when the current reply was interrupted (barge-in), suppressing late tool results. */
+  replyInterrupted: boolean;
+  /** True when any tool_call event has fired for the current reply. */
+  hasPendingTools: boolean;
   resolveTurnConfig(): Promise<{ maxSteps?: number; activeTools?: string[] } | null>;
   checkTurnLimits(
     turnConfig: { maxSteps?: number; activeTools?: string[] } | null,
@@ -99,6 +103,8 @@ function buildCtx(opts: {
     toolCallCount: 0,
     turnPromise: null,
     conversationMessages: [],
+    replyInterrupted: false,
+    hasPendingTools: false,
     resolveTurnConfig() {
       if (!hookInvoker) return Promise.resolve(null);
       return hookInvoker.resolveTurnConfig(id, ctx.toolCallCount, HOOK_TIMEOUT_MS);
@@ -170,6 +176,13 @@ export function createS2sSession(opts: SessionOptions): Session {
         createWebSocket,
         logger: log,
       });
+      // Guard against close() racing with start(): if the session was
+      // stopped while we were connecting, close the handle immediately
+      // to avoid an orphaned S2S connection.
+      if (sessionAbort.signal.aborted) {
+        handle.close();
+        return;
+      }
       setupListeners(ctx, handle);
       handle.updateSession({
         system_prompt: systemPrompt,
@@ -213,6 +226,8 @@ export function createS2sSession(opts: SessionOptions): Session {
       ctx.toolCallCount = 0;
       ctx.turnPromise = null;
       ctx.pendingTools = [];
+      ctx.replyInterrupted = false;
+      ctx.hasPendingTools = false;
       ctx.s2s?.close();
       client.event({ type: "reset" });
       connectAndSetup().catch((err: unknown) =>
