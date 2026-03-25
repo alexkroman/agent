@@ -72,7 +72,7 @@
       "nursery": {
         "noExcessiveLinesPerFile": {
           "level": "error",
-          "options": { "maxLines": 500 }
+          "options": { "maxLines": 400 }
         }
       }
     }
