@@ -41,7 +41,10 @@ export type { AgentMetadata } from "./_schemas.ts";
 
 export type SandboxOptions = {
   workerCode: string;
-  env: Record<string, string>;
+  /** Platform API key (e.g. AssemblyAI) — used by the host only, never sent to the isolate. */
+  apiKey: string;
+  /** Agent-defined secrets — forwarded to the isolate via AAI_ENV_ prefixed process env. */
+  agentEnv: Record<string, string>;
   kvStore: KvStore;
   scope: AgentScope;
   vectorStore?: ServerVectorStore | undefined;
@@ -540,30 +543,18 @@ export const _internals = {
 
 // ── Public API ───────────────────────────────────────────────────────────
 
-/**
- * Platform-level env keys that must NOT be forwarded to the isolate.
- * These are used by the host (e.g. for S2S auth) and should never be
- * accessible to agent code.
- */
-const HOST_ONLY_ENV_KEYS = new Set(["ASSEMBLYAI_API_KEY"]);
-
 export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
-  const { workerCode, env, kvStore, scope, vectorStore } = opts;
+  const { workerCode, apiKey, agentEnv, kvStore, scope, vectorStore } = opts;
 
   const kv = scopedKv(kvStore, scope);
   const vector = vectorStore ? scopedVector(vectorStore, scope) : undefined;
 
-  // Filter out platform secrets — only user-defined secrets enter the isolate
-  const isolateEnv: Record<string, string> = {};
-  for (const [k, v] of Object.entries(env)) {
-    if (!HOST_ONLY_ENV_KEYS.has(k)) isolateEnv[k] = v;
-  }
-
   // 1. Start the per-sandbox sidecar server (KV/vector on loopback)
   const sidecar = await startSidecarServer(kv, vector);
 
-  // 2. Start the isolate with the agent bundle (env passed once at init)
-  const { port: isolatePort, runtime } = await startIsolate(workerCode, sidecar.url, isolateEnv);
+  // 2. Start the isolate with the agent bundle
+  //    Only agent-defined secrets enter the isolate; apiKey stays host-side.
+  const { port: isolatePort, runtime } = await startIsolate(workerCode, sidecar.url, agentEnv);
 
   // 3. Get the agent config from the isolate
   const config = await getIsolateConfig(isolatePort);
@@ -574,7 +565,6 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
   const agentConfig = toAgentConfig(config);
   const executeTool = buildExecuteTool(isolateUrl);
   const hookInvoker = buildHookInvoker(isolateUrl);
-  const apiKey = env.ASSEMBLYAI_API_KEY ?? "";
   const s2sConfig = DEFAULT_S2S_CONFIG;
   const readyConfig = buildReadyConfig(s2sConfig);
 
@@ -629,7 +619,10 @@ type EnsureOpts = {
   getWorkerCode: (slug: string) => Promise<string | null>;
   kvCtx: { kvStore: KvStore; scope: AgentScope };
   vectorCtx?: { vectorStore: ServerVectorStore; scope: AgentScope } | undefined;
-  getEnv: () => Promise<Record<string, string>>;
+  /** Platform API key (e.g. AssemblyAI) — host-only, never enters the isolate. */
+  getApiKey: () => Promise<string>;
+  /** Agent-defined secrets — forwarded to the isolate. */
+  getAgentEnv: () => Promise<Record<string, string>>;
 };
 
 async function spawnAgent(slot: AgentSlot, opts: EnsureOpts): Promise<void> {
@@ -639,9 +632,11 @@ async function spawnAgent(slot: AgentSlot, opts: EnsureOpts): Promise<void> {
   const code = await opts.getWorkerCode(slug);
   if (!code) throw new Error(`Worker code not found for ${slug}`);
 
+  const [apiKey, agentEnv] = await Promise.all([opts.getApiKey(), opts.getAgentEnv()]);
   slot.sandbox = await createSandbox({
     workerCode: code,
-    env: await opts.getEnv(),
+    apiKey,
+    agentEnv,
     kvStore: opts.kvCtx.kvStore,
     scope: opts.kvCtx.scope,
     vectorStore: opts.vectorCtx?.vectorStore,
@@ -720,6 +715,16 @@ export async function resolveSandbox(
     getWorkerCode: (s: string) => opts.store.getWorkerCode(s),
     kvCtx: { kvStore: opts.kvStore, scope },
     vectorCtx: opts.vectorStore ? { vectorStore: opts.vectorStore, scope } : undefined,
-    getEnv: async () => (await opts.store.getEnv(slug)) ?? {},
+    getApiKey: async () => {
+      const env = await opts.store.getEnv(slug);
+      return env?.ASSEMBLYAI_API_KEY ?? "";
+    },
+    getAgentEnv: async () => {
+      const env = await opts.store.getEnv(slug);
+      if (!env) return {};
+      // Only forward agent-defined secrets; platform keys stay host-side
+      const { ASSEMBLYAI_API_KEY: _, ...agentEnv } = env;
+      return agentEnv;
+    },
   });
 }

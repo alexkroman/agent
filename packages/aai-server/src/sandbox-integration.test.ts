@@ -351,7 +351,8 @@ describe("WebSocket session lifecycle", () => {
     const { createTestKvStore, createTestVectorStore } = await import("./_test-utils.ts");
     sandbox = await _internals.createSandbox({
       workerCode: AGENT_BUNDLE,
-      env: { ASSEMBLYAI_API_KEY: "test-key" },
+      apiKey: "test-key",
+      agentEnv: {},
       kvStore: createTestKvStore(),
       scope: { keyHash: "test", slug: "ws-test" },
       vectorStore: createTestVectorStore(),
@@ -494,7 +495,8 @@ describe("idle eviction", () => {
 
     const sandbox = await _internals.createSandbox({
       workerCode: AGENT_BUNDLE,
-      env: { ASSEMBLYAI_API_KEY: "test-key" },
+      apiKey: "test-key",
+      agentEnv: {},
       kvStore,
       scope,
     });
@@ -524,14 +526,16 @@ describe("redeploy replaces sandbox", () => {
 
     const sandbox1 = await _internals.createSandbox({
       workerCode: `export default { name: "v1", instructions: "v1", greeting: "v1", maxSteps: 1, tools: {} };`,
-      env: { ASSEMBLYAI_API_KEY: "test-key" },
+      apiKey: "test-key",
+      agentEnv: {},
       kvStore,
       scope,
     });
 
     const sandbox2 = await _internals.createSandbox({
       workerCode: `export default { name: "v2", instructions: "v2", greeting: "v2", maxSteps: 1, tools: {} };`,
-      env: { ASSEMBLYAI_API_KEY: "test-key" },
+      apiKey: "test-key",
+      agentEnv: {},
       kvStore,
       scope,
     });
