@@ -2,8 +2,7 @@
 
 import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
-// biome-ignore lint/correctness/noUnresolvedImports: CJS default interop not supported by biome
-import mime from "mime-types";
+import mime from "mime";
 import { SafePathSchema } from "./_schemas.ts";
 import type { Env } from "./context.ts";
 import { resolveSandbox } from "./sandbox.ts";
@@ -37,7 +36,7 @@ export async function handleClientAsset(c: Context<Env>): Promise<Response> {
   const content = await c.env.store.getClientFile(slug, `assets/${assetPath}`);
   if (!content) throw new HTTPException(404, { message: "Asset not found" });
 
-  const contentType = mime.lookup(assetPath) || "application/octet-stream";
+  const contentType = mime.getType(assetPath) || "application/octet-stream";
 
   return c.body(content, 200, {
     "Content-Type": contentType,

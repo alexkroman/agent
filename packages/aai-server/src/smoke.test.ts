@@ -7,7 +7,7 @@
  * SDK → deploy body → server round trip without interface mismatch.
  */
 
-// biome-ignore lint/correctness/noUnresolvedImports: biome can't follow bundled chunk re-exports
+// biome-ignore lint/correctness/noUnresolvedImports: d.ts re-exports use .ts extensions that biome can't resolve
 import { defineAgent, tool } from "@alexkroman1/aai";
 import { agentToolsToSchemas } from "@alexkroman1/aai/internal-types";
 import { describe, expect, test } from "vitest";

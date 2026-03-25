@@ -14,6 +14,7 @@
 import type { AgentConfig } from "@alexkroman1/aai/internal-types";
 import { buildReadyConfig } from "@alexkroman1/aai/protocol";
 import { DEFAULT_S2S_CONFIG } from "@alexkroman1/aai/runtime";
+// biome-ignore lint/correctness/noUnresolvedImports: d.ts re-exports use .ts extensions that biome can't resolve
 import {
   createS2sSession,
   type HookInvoker,

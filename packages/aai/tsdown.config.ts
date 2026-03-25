@@ -30,4 +30,5 @@ export default defineConfig({
   outExtensions: () => ({ js: ".js" }),
   deps: { neverBundle: [/^[^./]/] },
   hash: false,
+  outputOptions: { preserveModules: true },
 });

@@ -25,14 +25,13 @@
     "@upstash/vector": "^1.2.3",
     "hono": "^4.12.9",
     "jose": "^6.2.2",
-    "mime-types": "^3.0.2",
+    "mime": "^4.0.6",
     "secure-exec": "^0.1.0",
     "ws": "^8.20.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
     "@smithy/types": "^4.13.1",
-    "@types/mime-types": "^3.0.1",
     "@types/ws": "^8.18.1",
     "tsdown": "^0.21.4"
   },
