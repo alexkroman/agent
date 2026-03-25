@@ -143,14 +143,14 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
     async onStep(sessionId, step: StepInfo) {
       await agent.onStep?.(step, makeHookContext(sessionId));
     },
-    async resolveTurnConfig(sessionId) {
+    async resolveTurnConfig(sessionId, stepNumber) {
       const ctx = makeHookContext(sessionId);
       const maxSteps =
         typeof agent.maxSteps === "function"
           ? ((await agent.maxSteps(ctx)) ?? undefined)
           : undefined;
       const activeTools = agent.onBeforeStep
-        ? (await agent.onBeforeStep(0, ctx))?.activeTools
+        ? (await agent.onBeforeStep(stepNumber, ctx))?.activeTools
         : undefined;
 
       if (maxSteps === undefined && activeTools === undefined) return null;

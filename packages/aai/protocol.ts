@@ -67,6 +67,9 @@ export const HOOK_TIMEOUT_MS = 5_000;
 /** Default timeout for tool execution in the worker. */
 export const TOOL_EXECUTION_TIMEOUT_MS = 30_000;
 
+/** Maximum length for tool result strings sent to clients. */
+export const MAX_TOOL_RESULT_CHARS = 4_000;
+
 // ─── Error codes ───────────────────────────────────────────────────────────
 
 /**
@@ -117,7 +120,7 @@ export const ClientEventSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("tool_call_done"),
     toolCallId: z.string(),
-    result: z.string().max(4000),
+    result: z.string().max(MAX_TOOL_RESULT_CHARS),
   }),
   ev("tts_done"),
   ev("cancelled"),

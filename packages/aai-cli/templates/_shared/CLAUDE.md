@@ -40,7 +40,6 @@ aai deploy --dry-run     # Validate and bundle without deploying
 aai secret put <NAME>    # Set a secret on the server (prompts for value)
 aai secret delete <NAME> # Remove a secret
 aai secret list          # List secret names
-aai secret pull          # Pull secret names into .env for local dev
 aai rag <url>            # Ingest a site's llms-full.txt into the vector store
 ```
 
@@ -158,9 +157,6 @@ aai secret put MY_API_KEY
 
 # List what's set
 aai secret list
-
-# Pull secret names into .env for local dev reference
-aai secret pull
 
 # Remove a secret
 aai secret delete MY_API_KEY
