@@ -29,7 +29,13 @@ import {
   NodeRuntime,
 } from "secure-exec";
 import { z } from "zod";
-import type { IsolateConfig } from "./_harness-protocol.ts";
+import {
+  HookResponseSchema,
+  type IsolateConfig,
+  IsolateConfigSchema,
+  ToolCallResponseSchema,
+  TurnConfigResultSchema,
+} from "./_harness-protocol.ts";
 import type { AgentMetadata } from "./_schemas.ts";
 import type { BundleStore } from "./bundle-store-tigris.ts";
 import type { KvStore } from "./kv.ts";
@@ -390,46 +396,9 @@ async function startIsolate(
 // Annotated with z.ZodType<IsolateConfig> to enforce parity with the type
 // definition in _harness-protocol.ts at compile time.
 
-const ToolSchemaZ = z.object({
-  name: z.string(),
-  description: z.string(),
-  parameters: z.record(z.string(), z.unknown()),
-});
-
-const IsolateConfigSchema = z.object({
-  name: z.string(),
-  instructions: z.string(),
-  greeting: z.string(),
-  sttPrompt: z.string().optional(),
-  maxSteps: z.number().optional(),
-  toolChoice: z
-    .union([
-      z.enum(["auto", "required", "none"]),
-      z.object({ type: z.literal("tool"), toolName: z.string() }),
-    ])
-    .optional(),
-  builtinTools: z.array(z.string()).optional(),
-  activeTools: z.array(z.string()).optional(),
-  toolSchemas: z.array(ToolSchemaZ),
-  hasState: z.boolean(),
-  hooks: z.object({
-    onConnect: z.boolean(),
-    onDisconnect: z.boolean(),
-    onError: z.boolean(),
-    onTurn: z.boolean(),
-    onStep: z.boolean(),
-    onBeforeStep: z.boolean(),
-    maxStepsIsFn: z.boolean(),
-  }),
-});
-
-const ToolResponseSchema = z.object({ result: z.string() });
-
-const HookResponseSchema = z.object({ result: z.unknown().optional() });
-
-const TurnConfigSchema = z
-  .object({ maxSteps: z.number().optional(), activeTools: z.array(z.string()).optional() })
-  .nullable();
+// RPC schemas are defined in _harness-protocol.ts (single source of truth).
+// IsolateConfigSchema, ToolCallResponseSchema, HookResponseSchema,
+// TurnConfigResultSchema are imported above.
 
 // ── Isolate RPC timeouts ─────────────────────────────────────────────────
 
@@ -476,7 +445,7 @@ function buildExecuteTool(isolateUrl: string): ExecuteTool {
       "tool",
       { name, args, sessionId, messages },
       TOOL_TIMEOUT_MS,
-      ToolResponseSchema,
+      ToolCallResponseSchema,
     );
     return result;
   };
@@ -501,7 +470,7 @@ function buildHookInvoker(isolateUrl: string): HookInvoker {
     onError: (sessionId, error) => hook("onError", { sessionId, error }) as Promise<void>,
     onStep: (sessionId, step) => hook("onStep", { sessionId, step }) as Promise<void>,
     async resolveTurnConfig(sessionId) {
-      const parsed = TurnConfigSchema.parse(await hook("resolveTurnConfig", { sessionId }));
+      const parsed = TurnConfigResultSchema.parse(await hook("resolveTurnConfig", { sessionId }));
       if (parsed == null) return null;
       const config: { maxSteps?: number; activeTools?: string[] } = {};
       if (parsed.maxSteps != null) config.maxSteps = parsed.maxSteps;

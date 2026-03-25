@@ -1,56 +1,115 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Shared types for the host ↔ isolate wire protocol.
+ * Shared Zod schemas and types for the host ↔ isolate wire protocol.
  *
- * These types are used by both sandbox.ts (host side) and
- * _harness-runtime.ts (isolate side) to ensure the JSON shapes match
- * at compile time.
+ * This module is the SINGLE SOURCE OF TRUTH for the RPC boundary between
+ * the managed server (sandbox.ts) and user-deployed agent code
+ * (_harness-runtime.ts). Both sides import from here so that any schema
+ * change is validated at compile time AND at runtime on both ends.
+ *
+ * Adding/removing a field? Update the schema here — TypeScript will flag
+ * every callsite that needs to change.
  */
 
-import type { AgentConfig, ToolSchema } from "@alexkroman1/aai/internal-types";
-import type { Message, StepInfo } from "@alexkroman1/aai/types";
+import { AgentConfigSchema, ToolSchemaSchema } from "@alexkroman1/aai/internal-types";
+import { z } from "zod";
+
+// ─── IsolateConfig (GET /config response) ───────────────────────────────
+
+/** Zod schema for the hooks capability flags. */
+export const HooksSchema = z.object({
+  onConnect: z.boolean(),
+  onDisconnect: z.boolean(),
+  onError: z.boolean(),
+  onTurn: z.boolean(),
+  onStep: z.boolean(),
+  onBeforeStep: z.boolean(),
+  maxStepsIsFn: z.boolean(),
+});
+
+/** Zod schema for agent metadata returned by the isolate on GET /config. */
+export const IsolateConfigSchema = AgentConfigSchema.extend({
+  toolSchemas: z.array(ToolSchemaSchema),
+  hasState: z.boolean(),
+  hooks: HooksSchema,
+});
 
 /** Response from GET /config — agent metadata extracted by the harness. */
-export type IsolateConfig = AgentConfig & {
-  toolSchemas: ToolSchema[];
-  hasState: boolean;
-  hooks: {
-    onConnect: boolean;
-    onDisconnect: boolean;
-    onError: boolean;
-    onTurn: boolean;
-    onStep: boolean;
-    onBeforeStep: boolean;
-    maxStepsIsFn: boolean;
-  };
-};
+export type IsolateConfig = z.infer<typeof IsolateConfigSchema>;
 
-/** Request body for POST /tool */
-export type ToolCallRequest = {
-  name: string;
-  args: Record<string, unknown>;
-  sessionId: string;
-  messages: readonly Message[];
-};
+// ─── ToolCallRequest / Response (POST /tool) ────────────────────────────
 
-/** Response body for POST /tool */
-export type ToolCallResponse = {
-  result: string;
-  state: Record<string, unknown>;
-};
+/** Zod schema for POST /tool request body. */
+export const ToolCallRequestSchema = z.object({
+  name: z.string().min(1),
+  args: z.record(z.string(), z.unknown()),
+  sessionId: z.string().min(1),
+  messages: z.array(
+    z.object({
+      role: z.enum(["user", "assistant", "tool"]),
+      content: z.string(),
+    }),
+  ),
+  env: z.record(z.string(), z.string()),
+});
 
-/** Request body for POST /hook */
-export type HookRequest = {
-  hook: string;
-  sessionId: string;
-  text?: string;
-  error?: { message: string };
-  step?: StepInfo;
-  stepNumber?: number;
-};
+/** Request body for POST /tool — derived from {@link ToolCallRequestSchema}. */
+export type ToolCallRequest = z.infer<typeof ToolCallRequestSchema>;
 
-/** Response body for POST /hook */
-export type HookResponse = {
-  state: Record<string, unknown>;
-  result?: unknown;
-};
+/** Zod schema for POST /tool response body. */
+export const ToolCallResponseSchema = z.object({
+  result: z.string(),
+  state: z.record(z.string(), z.unknown()),
+});
+
+/** Response body for POST /tool — derived from {@link ToolCallResponseSchema}. */
+export type ToolCallResponse = z.infer<typeof ToolCallResponseSchema>;
+
+// ─── HookRequest / Response (POST /hook) ────────────────────────────────
+
+/** Zod schema for POST /hook request body. */
+export const HookRequestSchema = z.object({
+  hook: z.string().min(1),
+  sessionId: z.string().min(1),
+  env: z.record(z.string(), z.string()),
+  text: z.string().optional(),
+  error: z.object({ message: z.string() }).optional(),
+  step: z
+    .object({
+      stepNumber: z.number().int().nonnegative(),
+      toolCalls: z.array(
+        z.object({
+          toolName: z.string(),
+          args: z.record(z.string(), z.unknown()),
+        }),
+      ),
+      text: z.string(),
+    })
+    .optional(),
+  stepNumber: z.number().int().nonnegative().optional(),
+});
+
+/** Request body for POST /hook — derived from {@link HookRequestSchema}. */
+export type HookRequest = z.infer<typeof HookRequestSchema>;
+
+/** Zod schema for POST /hook response body. */
+export const HookResponseSchema = z.object({
+  state: z.record(z.string(), z.unknown()),
+  result: z.unknown().optional(),
+});
+
+/** Response body for POST /hook — derived from {@link HookResponseSchema}. */
+export type HookResponse = z.infer<typeof HookResponseSchema>;
+
+// ─── TurnConfig (resolveTurnConfig hook result) ─────────────────────────
+
+/** Zod schema for the resolveTurnConfig hook result. */
+export const TurnConfigResultSchema = z
+  .object({
+    maxSteps: z.number().int().positive().optional(),
+    activeTools: z.array(z.string().min(1)).optional(),
+  })
+  .nullable();
+
+/** Resolved turn config, or null if no overrides. */
+export type TurnConfigResult = z.infer<typeof TurnConfigResultSchema>;
