@@ -186,7 +186,6 @@ function toolCall(port: number, name: string, args: Record<string, unknown> = {}
     args,
     sessionId: "s1",
     messages: [],
-    env: {},
   } satisfies ToolCallRequest);
 }
 
@@ -202,7 +201,7 @@ describe("isolate protocol", () => {
     const vector = createMockVector();
     const sidecar = await _internals.startSidecarServer(kv, vector);
     sidecarPort = Number.parseInt(new URL(sidecar.url).port, 10);
-    const isolate = await _internals.startIsolate(AGENT_BUNDLE, sidecar.url);
+    const isolate = await _internals.startIsolate(AGENT_BUNDLE, sidecar.url, {});
     port = isolate.port;
     cleanup = () => {
       isolate.runtime.dispose();
@@ -243,7 +242,6 @@ describe("isolate protocol", () => {
       args: {},
       sessionId: "s1",
       messages: [],
-      env: {},
     } satisfies ToolCallRequest);
     expect(status).toBe(500);
     expect(data.error).toMatch(/intentional failure/);
@@ -265,7 +263,6 @@ describe("isolate protocol", () => {
     const { data } = await post<HookResponse>(port, "/hook", {
       hook: "onConnect",
       sessionId: "hook-s1",
-      env: {},
     } satisfies HookRequest);
     expect(data.state.count).toBe(1);
   });
@@ -274,7 +271,6 @@ describe("isolate protocol", () => {
     const { data } = await post<HookResponse>(port, "/hook", {
       hook: "onTurn",
       sessionId: "hook-s1",
-      env: {},
       text: "user said something",
     } satisfies HookRequest);
     expect(data.state.lastTurn).toBe("user said something");
@@ -284,7 +280,6 @@ describe("isolate protocol", () => {
     const { data } = await post<HookResponse>(port, "/hook", {
       hook: "resolveTurnConfig",
       sessionId: "hook-s1",
-      env: {},
     } satisfies HookRequest);
     expect(data.result).toBeNull();
   });
@@ -337,7 +332,7 @@ describe("isolate protocol", () => {
 
   // ── Security: env var isolation ──────────────────────────────────────
 
-  test("isolate can only read SIDECAR_URL env var", async () => {
+  test("isolate can only read allowed env vars (SIDECAR_URL + AAI_ENV_*)", async () => {
     const { data } = await toolCall(port, "read_env");
     const env = JSON.parse(data.result);
     expect(env.SIDECAR_URL).toBeTruthy();
@@ -436,8 +431,8 @@ export default {
     const sidecar1 = await _internals.startSidecarServer(kv1, undefined);
     const sidecar2 = await _internals.startSidecarServer(kv2, undefined);
     const [iso1, iso2] = await Promise.all([
-      _internals.startIsolate(BUNDLE_A, sidecar1.url),
-      _internals.startIsolate(BUNDLE_B, sidecar2.url),
+      _internals.startIsolate(BUNDLE_A, sidecar1.url, {}),
+      _internals.startIsolate(BUNDLE_B, sidecar2.url, {}),
     ]);
     port1 = iso1.port;
     port2 = iso2.port;

@@ -316,11 +316,20 @@ function buildNetworkAdapter(sidecarUrl: string) {
 async function startIsolate(
   workerCode: string,
   sidecarUrl: string,
+  agentEnv: Record<string, string>,
 ): Promise<{ port: number; runtime: NodeRuntime }> {
   const harnessJs = await getHarnessRuntimeJs();
   const fs = createInMemoryFileSystem();
   await fs.writeFile("/app/agent_bundle.js", workerCode);
   await fs.writeFile("/app/_harness-runtime.js", harnessJs);
+
+  // Prefix agent env vars so they can be distinguished from system vars.
+  // The harness reads AAI_ENV_* and strips the prefix to build ctx.env.
+  const prefixedEnv: Record<string, string> = { SIDECAR_URL: sidecarUrl };
+  for (const [k, v] of Object.entries(agentEnv)) {
+    prefixedEnv[`AAI_ENV_${k}`] = v;
+  }
+  const allowedKeys = new Set(Object.keys(prefixedEnv));
 
   let resolvePort: (port: number) => void;
   const portPromise = new Promise<number>((resolve) => {
@@ -338,13 +347,13 @@ async function startIsolate(
         network: buildNetworkPolicy(sidecarUrl),
         childProcess: () => ({ allow: false, reason: "Subprocess spawning is disabled" }),
         env: (req) =>
-          req.op === "read" && req.key === "SIDECAR_URL"
+          req.op === "read" && allowedKeys.has(req.key ?? "")
             ? { allow: true }
             : { allow: false, reason: "Env access restricted" },
       },
       networkAdapter: buildNetworkAdapter(sidecarUrl),
       processConfig: {
-        env: { SIDECAR_URL: sidecarUrl },
+        env: prefixedEnv,
         timingMitigation: "freeze",
       },
     }),
@@ -457,12 +466,12 @@ async function callIsolate<T>(
   return schema.parse(await res.json());
 }
 
-function buildExecuteTool(isolateUrl: string, env: Record<string, string>): ExecuteTool {
+function buildExecuteTool(isolateUrl: string): ExecuteTool {
   return async (name, args, sessionId, messages) => {
     const { result } = await callIsolate(
       isolateUrl,
       "tool",
-      { name, args, sessionId, messages, env },
+      { name, args, sessionId, messages },
       TOOL_TIMEOUT_MS,
       ToolResponseSchema,
     );
@@ -470,13 +479,13 @@ function buildExecuteTool(isolateUrl: string, env: Record<string, string>): Exec
   };
 }
 
-function buildHookInvoker(isolateUrl: string, env: Record<string, string>): HookInvoker {
+function buildHookInvoker(isolateUrl: string): HookInvoker {
   const hook = async (name: string, extra: Record<string, unknown> = {}): Promise<unknown> =>
     (
       await callIsolate(
         isolateUrl,
         "hook",
-        { hook: name, env, ...extra },
+        { hook: name, ...extra },
         HOOK_TIMEOUT_MS,
         HookResponseSchema,
       )
@@ -540,17 +549,18 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
   // 1. Start the per-sandbox sidecar server (KV/vector on loopback)
   const sidecar = await startSidecarServer(kv, vector);
 
-  // 2. Start the isolate with the agent bundle
-  const { port: isolatePort, runtime } = await startIsolate(workerCode, sidecar.url);
+  // 2. Start the isolate with the agent bundle (env passed once at init)
+  const { port: isolatePort, runtime } = await startIsolate(workerCode, sidecar.url, env);
 
   // 3. Get the agent config from the isolate
   const config = await getIsolateConfig(isolatePort);
   const isolateUrl = `http://127.0.0.1:${isolatePort}`;
 
   // 4. Build executeTool + hookInvoker that proxy to the isolate
+  //    env is no longer sent per-request — it lives inside the isolate
   const agentConfig = toAgentConfig(config);
-  const executeTool = buildExecuteTool(isolateUrl, env);
-  const hookInvoker = buildHookInvoker(isolateUrl, env);
+  const executeTool = buildExecuteTool(isolateUrl);
+  const hookInvoker = buildHookInvoker(isolateUrl);
   const apiKey = env.ASSEMBLYAI_API_KEY ?? "";
   const s2sConfig = DEFAULT_S2S_CONFIG;
   const readyConfig = buildReadyConfig(s2sConfig);
