@@ -12,7 +12,7 @@ import type { Env } from "./context.ts";
 import { handleDeploy } from "./deploy.ts";
 import type { KvStore } from "./kv.ts";
 import { handleKv } from "./kv-handler.ts";
-import { serializeForAgent } from "./metrics.ts";
+import { serialize, serializeForAgent } from "./metrics.ts";
 import { requireInternal, requireOwner, requireScopeToken, validateSlug } from "./middleware.ts";
 import type { AgentSlot } from "./sandbox.ts";
 import type { ScopeKey } from "./scope-token.ts";
@@ -99,6 +99,12 @@ export function createOrchestrator(opts: OrchestratorOpts): Hono<Env> {
   });
 
   app.get("/health", (c) => c.json({ status: "ok" }));
+
+  app.get("/metrics", internalMw, async (c) => {
+    return c.text(await serialize(), 200, {
+      "Content-Type": "text/plain; version=0.0.4",
+    });
+  });
 
   app.get("/:slug{[a-z0-9][a-z0-9_-]*[a-z0-9]}", (c) => {
     const url = new URL(c.req.url);

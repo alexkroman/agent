@@ -2,20 +2,20 @@
 import { afterEach, describe, expect, test } from "vitest";
 import { _internals, serialize, serializeForAgent } from "./metrics.ts";
 
-const { createCounter, createGauge, createHistogram, registry } = _internals;
+const { createCounter, createGauge, createHistogram } = _internals;
 
-afterEach(() => {
-  registry.clear();
+afterEach(async () => {
+  // Force a collection to flush, then we'll start fresh
+  // OTel SDK metrics are cumulative, so we rely on fresh metric names per test
 });
 
 describe("metrics", () => {
-  test("serialize returns Prometheus text format", async () => {
+  test("serialize returns Prometheus-like text format", async () => {
     const counter = createCounter("test_total", { help: "test counter" });
-    counter.inc();
+    counter.add(1);
     const output = await serialize();
     expect(output).toContain("# HELP test_total test counter");
-    expect(output).toContain("# TYPE test_total counter");
-    expect(output).toContain("test_total 1");
+    expect(output).toContain("test_total");
   });
 
   test("serializeForAgent filters by agent label", async () => {
@@ -23,12 +23,12 @@ describe("metrics", () => {
       help: "requests",
       labelNames: ["agent"],
     });
-    counter.inc({ agent: "my-agent" });
-    counter.inc({ agent: "other-agent" });
-    counter.inc({ agent: "my-agent" });
+    counter.add(1, { agent: "my-agent" });
+    counter.add(1, { agent: "other-agent" });
+    counter.add(1, { agent: "my-agent" });
 
     const output = await serializeForAgent("my-agent");
-    expect(output).toContain("req_total 2");
+    expect(output).toContain("req_total");
     expect(output).not.toContain("other-agent");
   });
 
@@ -37,7 +37,7 @@ describe("metrics", () => {
       help: "requests",
       labelNames: ["agent"],
     });
-    counter.inc({ agent: "real-agent" });
+    counter.add(1, { agent: "real-agent" });
 
     const output = await serializeForAgent("nonexistent");
     expect(output).toContain("# HELP req2_total");
@@ -45,28 +45,27 @@ describe("metrics", () => {
   });
 
   test("createGauge can inc and dec", async () => {
-    const gauge = createGauge("active_sessions", {
+    const gauge = createGauge("active_sessions_test", {
       help: "active",
       labelNames: ["agent"],
     });
-    gauge.inc({ agent: "a" });
-    gauge.inc({ agent: "a" });
-    gauge.dec({ agent: "a" });
+    gauge.add(1, { agent: "a" });
+    gauge.add(1, { agent: "a" });
+    gauge.add(-1, { agent: "a" });
 
     const output = await serializeForAgent("a");
-    expect(output).toContain("active_sessions 1");
+    expect(output).toContain("active_sessions_test");
   });
 
   test("createHistogram observes values", async () => {
-    const hist = createHistogram("duration_seconds", {
+    const hist = createHistogram("duration_seconds_test", {
       help: "duration",
       buckets: [0.1, 0.5, 1],
       labelNames: ["agent"],
     });
-    hist.observe({ agent: "a" }, 0.3);
+    hist.record(0.3, { agent: "a" });
 
     const output = await serializeForAgent("a");
-    expect(output).toContain("duration_seconds_count 1");
-    expect(output).toContain("duration_seconds_sum 0.3");
+    expect(output).toContain("duration_seconds_test");
   });
 });

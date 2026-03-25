@@ -19,6 +19,16 @@ import {
   type S2sToolSchema,
 } from "./s2s.ts";
 import { buildSystemPrompt } from "./system-prompt.ts";
+import {
+  activeSessionsUpDown,
+  bargeInCounter,
+  sessionCounter,
+  toolCallCounter,
+  toolCallDuration,
+  toolCallErrorCounter,
+  tracer,
+  turnCounter,
+} from "./telemetry.ts";
 import type { Message, StepInfo } from "./types.ts";
 import type { ExecuteTool } from "./worker-entry.ts";
 
@@ -133,8 +143,24 @@ function checkTurnLimits(
   return null;
 }
 
+function finishToolCall(ctx: S2sSessionCtx, call_id: string, result: string): void {
+  ctx.pendingTools.push({ call_id, result });
+  const truncatedResult =
+    result.length > MAX_TOOL_RESULT_CHARS ? result.slice(0, MAX_TOOL_RESULT_CHARS) : result;
+  ctx.client.event({ type: "tool_call_done", toolCallId: call_id, result: truncatedResult });
+}
+
 async function handleToolCall(ctx: S2sSessionCtx, detail: S2sToolCall): Promise<void> {
   const { call_id, name, args: parsedArgs } = detail;
+  const span = tracer.startSpan("tool.call", {
+    attributes: {
+      "aai.tool.name": name,
+      "aai.tool.call_id": call_id,
+      "aai.agent": ctx.agent,
+      "aai.session.id": ctx.id,
+    },
+  });
+  const startTime = performance.now();
 
   ctx.client.event({
     type: "tool_call_start",
@@ -149,15 +175,17 @@ async function handleToolCall(ctx: S2sSessionCtx, detail: S2sToolCall): Promise<
   } catch (err: unknown) {
     const msg = `resolveTurnConfig hook error: ${errorMessage(err)}`;
     ctx.log.error(msg);
-    ctx.pendingTools.push({ call_id, result: msg });
-    ctx.client.event({ type: "tool_call_done", toolCallId: call_id, result: msg });
+    span.setStatus({ code: 2, message: msg });
+    span.end();
+    finishToolCall(ctx, call_id, msg);
     return;
   }
 
   const refused = checkTurnLimits(ctx, turnConfig, name);
   if (refused !== null) {
-    ctx.pendingTools.push({ call_id, result: refused });
-    ctx.client.event({ type: "tool_call_done", toolCallId: call_id, result: refused });
+    span.setAttribute("aai.tool.refused", true);
+    span.end();
+    finishToolCall(ctx, call_id, refused);
     return;
   }
 
@@ -174,6 +202,7 @@ async function handleToolCall(ctx: S2sSessionCtx, detail: S2sToolCall): Promise<
   );
 
   ctx.log.info("S2S tool call", { tool: name, call_id, args: parsedArgs, agent: ctx.agent });
+  toolCallCounter.add(1, { agent: ctx.agent, tool: name });
 
   let result: string;
   try {
@@ -181,18 +210,19 @@ async function handleToolCall(ctx: S2sSessionCtx, detail: S2sToolCall): Promise<
   } catch (err: unknown) {
     const msg = errorMessage(err);
     ctx.log.error("Tool execution failed", { tool: name, error: msg });
+    toolCallErrorCounter.add(1, { agent: ctx.agent, tool: name });
+    span.setStatus({ code: 2, message: msg });
+    span.recordException(err instanceof Error ? err : new Error(msg));
     result = JSON.stringify({ error: msg });
   }
 
-  ctx.log.info("S2S tool result", {
+  toolCallDuration.record((performance.now() - startTime) / 1000, {
+    agent: ctx.agent,
     tool: name,
-    call_id,
-    resultLength: result.length,
   });
-  ctx.pendingTools.push({ call_id, result });
-  const truncatedResult =
-    result.length > MAX_TOOL_RESULT_CHARS ? result.slice(0, MAX_TOOL_RESULT_CHARS) : result;
-  ctx.client.event({ type: "tool_call_done", toolCallId: call_id, result: truncatedResult });
+  ctx.log.info("S2S tool result", { tool: name, call_id, resultLength: result.length });
+  finishToolCall(ctx, call_id, result);
+  span.end();
 }
 
 /** Wire all S2S events to the client sink, hooks, and session state. */
@@ -215,6 +245,7 @@ function setupListeners(ctx: S2sSessionCtx, handle: S2sHandle): void {
 
   handle.on("user_transcript", ({ text }) => {
     ctx.log.info("S2S user transcript", { text });
+    turnCounter.add(1, { agent: ctx.agent });
     ctx.client.event({ type: "transcript", text, isFinal: true });
     ctx.client.event({ type: "turn", text });
     ctx.conversationMessages.push({ role: "user", content: text });
@@ -248,6 +279,7 @@ function setupListeners(ctx: S2sSessionCtx, handle: S2sHandle): void {
   handle.on("reply_done", ({ status }) => {
     if (status === "interrupted") {
       ctx.log.info("S2S reply interrupted (barge-in)");
+      bargeInCounter.add(1, { agent: ctx.agent });
       ctx.pendingTools = [];
       ctx.client.event({ type: "cancelled" });
     } else if (ctx.pendingTools.length > 0) {
@@ -343,6 +375,8 @@ export function createS2sSession(opts: SessionOptions): Session {
 
   return {
     async start(): Promise<void> {
+      sessionCounter.add(1, { agent });
+      activeSessionsUpDown.add(1, { agent });
       fireHook(ctx, "onConnect", (h) => h.onConnect(id, HOOK_TIMEOUT_MS));
       await connectAndSetup();
     },
@@ -350,6 +384,7 @@ export function createS2sSession(opts: SessionOptions): Session {
     async stop(): Promise<void> {
       if (sessionAbort.signal.aborted) return;
       sessionAbort.abort();
+      activeSessionsUpDown.add(-1, { agent });
 
       if (ctx.turnPromise !== null) await ctx.turnPromise;
       ctx.s2s?.close();

@@ -71,6 +71,11 @@
       "types": "./dist/ws-handler.d.ts",
       "import": "./dist/ws-handler.js"
     },
+    "./telemetry": {
+      "source": "./telemetry.ts",
+      "types": "./dist/telemetry.d.ts",
+      "import": "./dist/telemetry.js"
+    },
     "./utils": {
       "source": "./_utils.ts",
       "types": "./dist/_utils.d.ts",
@@ -85,6 +90,7 @@
     "check:attw": "attw --pack --profile esm-only"
   },
   "dependencies": {
+    "@opentelemetry/api": "^1.9.0",
     "html-to-text": "^9.0.5",
     "nanoevents": "^9.1.0",
     "secure-exec": "^0.1.0",

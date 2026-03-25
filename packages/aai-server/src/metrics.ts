@@ -1,74 +1,175 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Prometheus metrics backed by prom-client.
+ * OpenTelemetry metrics backed by the OTel SDK.
+ *
+ * Replaces the former prom-client implementation with a unified
+ * OpenTelemetry setup that provides metrics, traces, and logs from
+ * a single SDK.
  *
  * Platform view:  GET /metrics          -> serialize()
  * Customer view:  GET /:slug/metrics    -> serializeForAgent("slug")
  */
 
-// biome-ignore lint/correctness/noUnresolvedImports: prom-client is a runtime dependency of aai-server
-import client from "prom-client";
+import { metrics } from "@opentelemetry/api";
+import { PrometheusExporter } from "@opentelemetry/exporter-prometheus";
+import {
+  type CollectionResult,
+  type DataPoint,
+  MeterProvider,
+  type MetricReader,
+} from "@opentelemetry/sdk-metrics";
 
-const registry = new client.Registry();
+// ─── SDK Setup ───────────────────────────────────────────────────────────────
+
+const exporter = new PrometheusExporter({ preventServerStart: true });
+
+const meterProvider = new MeterProvider({
+  readers: [exporter],
+});
+
+// Register as the global meter provider so SDK-level meters (e.g. in
+// packages/aai/telemetry.ts) automatically flow through this provider.
+metrics.setGlobalMeterProvider(meterProvider);
+
+// ─── Prometheus serialization ────────────────────────────────────────────────
 
 export async function serialize(): Promise<string> {
-  return registry.metrics();
+  const result = await collectMetrics();
+  return formatResult(result, undefined);
 }
 
 export async function serializeForAgent(agent: string): Promise<string> {
-  const dump = await registry.getMetricsAsJSON();
-  const lines: string[] = [];
+  const result = await collectMetrics();
+  return formatResult(result, agent);
+}
 
-  for (const metric of dump) {
-    lines.push(`# HELP ${metric.name} ${metric.help}`);
-    lines.push(`# TYPE ${metric.name} ${metric.type}`);
+// ─── Internal helpers ────────────────────────────────────────────────────────
 
-    for (const v of metric.values) {
-      const labels = v.labels as Record<string, string> | undefined;
-      if (!labels || labels.agent !== agent) continue;
-      const { agent: _, ...rest } = labels;
-      const labelStr = Object.entries(rest)
-        .map(([k, val]) => `${k}="${val}"`)
-        .join(",");
+async function collectMetrics(): Promise<CollectionResult> {
+  return (exporter as unknown as MetricReader).collect();
+}
+
+type NumberDataPoint = DataPoint<number>;
+
+/** Structural type matching OTel HistogramDataPoint.value */
+type HistogramValue = {
+  buckets: { boundaries: number[]; counts: number[] };
+  count: number;
+  sum: number;
+};
+
+function formatLabels(labels: Record<string, string>): string {
+  return Object.entries(labels)
+    .map(([k, v]) => `${k}="${v}"`)
+    .join(",");
+}
+
+/** Detect histogram by checking if data point value has bucket structure. */
+function isHistogramDataPoint(dp: NumberDataPoint): boolean {
+  const val = dp.value as unknown;
+  return typeof val === "object" && val !== null && "buckets" in val;
+}
+
+function filterLabels(
+  dp: NumberDataPoint,
+  agentFilter: string | undefined,
+): { include: boolean; labelStr: string } {
+  const labels = dp.attributes as Record<string, string>;
+  if (agentFilter !== undefined) {
+    if (labels.agent !== agentFilter) return { include: false, labelStr: "" };
+    const { agent: _, ...rest } = labels;
+    return { include: true, labelStr: formatLabels(rest) };
+  }
+  return { include: true, labelStr: formatLabels(labels) };
+}
+
+function pushHistogramLines(
+  lines: string[],
+  name: string,
+  dp: NumberDataPoint,
+  labelStr: string,
+): void {
+  const hdp = dp as unknown as { value: HistogramValue };
+  const { boundaries, counts } = hdp.value.buckets;
+  for (let i = 0; i < boundaries.length; i++) {
+    lines.push(
+      `${name}_bucket{${labelStr ? `${labelStr},` : ""}le="${boundaries[i]}"} ${counts[i]}`,
+    );
+  }
+  const suffix = labelStr ? `{${labelStr}}` : "";
+  lines.push(`${name}_bucket{${labelStr ? `${labelStr},` : ""}le="+Inf"} ${hdp.value.count}`);
+  lines.push(`${name}_sum${suffix} ${hdp.value.sum}`);
+  lines.push(`${name}_count${suffix} ${hdp.value.count}`);
+}
+
+function formatDataPoints(
+  lines: string[],
+  name: string,
+  dataPoints: NumberDataPoint[],
+  agentFilter: string | undefined,
+): void {
+  for (const dp of dataPoints) {
+    const { include, labelStr } = filterLabels(dp, agentFilter);
+    if (!include) continue;
+    if (isHistogramDataPoint(dp)) {
+      pushHistogramLines(lines, name, dp, labelStr);
+    } else {
       const suffix = labelStr ? `{${labelStr}}` : "";
-      const name =
-        "metricName" in v && typeof v.metricName === "string" ? v.metricName : metric.name;
-      lines.push(`${name}${suffix} ${v.value}`);
+      lines.push(`${name}${suffix} ${dp.value}`);
     }
   }
+}
 
+function detectMetricType(dataPoints: NumberDataPoint[]): string {
+  const first = dataPoints[0];
+  if (first !== undefined && isHistogramDataPoint(first)) return "histogram";
+  return "gauge";
+}
+
+function formatResult(result: CollectionResult, agentFilter: string | undefined): string {
+  const lines: string[] = [];
+  for (const scopeMetrics of result.resourceMetrics.scopeMetrics) {
+    for (const metric of scopeMetrics.metrics) {
+      const { descriptor, dataPoints } = metric;
+      const dps = dataPoints as NumberDataPoint[];
+      const promType = detectMetricType(dps);
+      lines.push(`# HELP ${descriptor.name} ${descriptor.description ?? ""}`);
+      lines.push(`# TYPE ${descriptor.name} ${promType}`);
+      formatDataPoints(lines, descriptor.name, dps, agentFilter);
+    }
+  }
   return `${lines.join("\n")}\n`;
 }
 
+// ─── Convenience factories (for server-specific metrics) ─────────────────────
+
+const serverMeter = metrics.getMeter("aai-server", "0.8.9");
+
 function createCounter(name: string, opts: { help: string; labelNames?: string[] }) {
-  return new client.Counter({
-    name,
-    help: opts.help,
-    labelNames: opts.labelNames ?? [],
-    registers: [registry],
-  });
+  return serverMeter.createCounter(name, { description: opts.help });
 }
 
 function createGauge(name: string, opts: { help: string; labelNames?: string[] }) {
-  return new client.Gauge({
-    name,
-    help: opts.help,
-    labelNames: opts.labelNames ?? [],
-    registers: [registry],
-  });
+  return serverMeter.createUpDownCounter(name, { description: opts.help });
 }
 
 function createHistogram(
   name: string,
   opts: { help: string; buckets?: number[]; labelNames?: string[] },
 ) {
-  return new client.Histogram({
-    name,
-    help: opts.help,
-    buckets: opts.buckets ?? [0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30],
-    labelNames: opts.labelNames ?? [],
-    registers: [registry],
-  });
+  const options: { description: string; advice?: { explicitBucketBoundaries: number[] } } = {
+    description: opts.help,
+  };
+  if (opts.buckets) {
+    options.advice = { explicitBucketBoundaries: opts.buckets };
+  }
+  return serverMeter.createHistogram(name, options);
 }
 
-export const _internals = { createCounter, createGauge, createHistogram, registry };
+export const _internals = {
+  createCounter,
+  createGauge,
+  createHistogram,
+  meterProvider,
+  exporter,
+};
