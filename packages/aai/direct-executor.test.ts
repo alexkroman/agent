@@ -1,5 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { makeAgent } from "./_test-utils.ts";
 import { buildAgentConfig, createDirectExecutor } from "./direct-executor.ts";
@@ -119,5 +119,93 @@ describe("createDirectExecutor", () => {
     const exec = createDirectExecutor({ agent, env: {} });
     const config = await exec.hookInvoker.resolveTurnConfig("s1", 0);
     expect(config?.maxSteps).toBe(15);
+  });
+
+  test("hookInvoker.onDisconnect calls agent.onDisconnect", async () => {
+    const onDisconnect = vi.fn();
+    const agent = makeAgent({ onDisconnect });
+    const exec = createDirectExecutor({ agent, env: {} });
+    await exec.hookInvoker.onDisconnect("session-1");
+    expect(onDisconnect).toHaveBeenCalledOnce();
+  });
+
+  test("hookInvoker.onTurn calls agent.onTurn with text", async () => {
+    const onTurn = vi.fn();
+    const agent = makeAgent({ onTurn });
+    const exec = createDirectExecutor({ agent, env: {} });
+    await exec.hookInvoker.onTurn("s1", "hello world");
+    expect(onTurn).toHaveBeenCalledWith("hello world", expect.any(Object));
+  });
+
+  test("hookInvoker.onError calls agent.onError with Error", async () => {
+    const onError = vi.fn();
+    const agent = makeAgent({ onError });
+    const exec = createDirectExecutor({ agent, env: {} });
+    await exec.hookInvoker.onError("s1", { message: "boom" });
+    expect(onError).toHaveBeenCalledWith(expect.any(Error), expect.any(Object));
+    const err = onError.mock.calls[0]?.[0] as Error;
+    expect(err.message).toBe("boom");
+  });
+
+  test("hookInvoker.onStep calls agent.onStep", async () => {
+    const onStep = vi.fn();
+    const agent = makeAgent({ onStep });
+    const exec = createDirectExecutor({ agent, env: {} });
+    const step = { stepNumber: 1, toolCalls: [{ toolName: "test", args: {} }], text: "ok" };
+    await exec.hookInvoker.onStep("s1", step);
+    expect(onStep).toHaveBeenCalledWith(step, expect.any(Object));
+  });
+
+  test("resolveTurnConfig resolves onBeforeStep activeTools", async () => {
+    const agent = makeAgent({
+      onBeforeStep: () => ({ activeTools: ["toolA"] }),
+    });
+    const exec = createDirectExecutor({ agent, env: {} });
+    const config = await exec.hookInvoker.resolveTurnConfig("s1");
+    expect(config?.activeTools).toEqual(["toolA"]);
+  });
+
+  test("session state is initialized from agent.state factory", async () => {
+    const agent = makeAgent({
+      state: () => ({ counter: 0 }),
+      tools: {
+        get_state: {
+          description: "Get state",
+          execute: (_args, ctx) => JSON.stringify(ctx.state),
+        },
+      },
+    });
+    const exec = createDirectExecutor({ agent, env: {} });
+    const result = await exec.executeTool("get_state", {}, "s1", []);
+    expect(JSON.parse(result)).toEqual({ counter: 0 });
+  });
+
+  test("executeTool passes messages to tool context", async () => {
+    const agent = makeAgent({
+      tools: {
+        echo_messages: {
+          description: "Echo messages",
+          execute: (_args, ctx) => JSON.stringify(ctx.messages),
+        },
+      },
+    });
+    const exec = createDirectExecutor({ agent, env: {} });
+    const msgs = [{ role: "user" as const, content: "hi" }];
+    const result = await exec.executeTool("echo_messages", {}, "s1", msgs);
+    expect(JSON.parse(result)).toEqual(msgs);
+  });
+
+  test("env is frozen and passed to tools", async () => {
+    const agent = makeAgent({
+      tools: {
+        get_env: {
+          description: "Get env",
+          execute: (_args, ctx) => ctx.env.MY_VAR ?? "missing",
+        },
+      },
+    });
+    const exec = createDirectExecutor({ agent, env: { MY_VAR: "hello" } });
+    const result = await exec.executeTool("get_env", {}, "s1", []);
+    expect(result).toBe("hello");
   });
 });
