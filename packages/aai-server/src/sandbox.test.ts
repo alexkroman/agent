@@ -152,7 +152,7 @@ describe("buildHookInvoker", () => {
   it("resolveTurnConfig returns parsed config", async () => {
     mockHookResponse({ maxSteps: 3, activeTools: ["search"] });
     const invoker = _internals.buildHookInvoker("http://127.0.0.1:9999");
-    const config = await invoker.resolveTurnConfig("s1");
+    const config = await invoker.resolveTurnConfig("s1", 1);
 
     expect(config).toEqual({ maxSteps: 3, activeTools: ["search"] });
   });
@@ -160,14 +160,14 @@ describe("buildHookInvoker", () => {
   it("resolveTurnConfig returns null when hook returns null", async () => {
     mockHookResponse(null);
     const invoker = _internals.buildHookInvoker("http://127.0.0.1:9999");
-    const config = await invoker.resolveTurnConfig("s1");
+    const config = await invoker.resolveTurnConfig("s1", 1);
     expect(config).toBeNull();
   });
 
   it("resolveTurnConfig omits undefined fields", async () => {
     mockHookResponse({});
     const invoker = _internals.buildHookInvoker("http://127.0.0.1:9999");
-    const config = await invoker.resolveTurnConfig("s1");
+    const config = await invoker.resolveTurnConfig("s1", 1);
     expect(config).toEqual({});
   });
 });
