@@ -21,6 +21,7 @@ describe("toAgentConfig", () => {
       onStep: false,
       onBeforeStep: false,
       maxStepsIsFn: false,
+      hasMiddleware: false,
     },
   };
 
@@ -198,6 +199,7 @@ describe("getIsolateConfig", () => {
         onStep: false,
         onBeforeStep: false,
         maxStepsIsFn: false,
+        hasMiddleware: false,
       },
     };
     globalThis.fetch = vi.fn(async () => Response.json(config));

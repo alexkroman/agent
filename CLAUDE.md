@@ -77,6 +77,7 @@ Non-exported internal files (used within the package only):
 
 - `builtin-tools.ts` — built-in tool definitions + memory tools
 - `direct-executor.ts` — in-process tool execution (self-hosted)
+- `middleware.ts` — middleware runner for turns, tool calls, and output filtering
 
 #### `@alexkroman1/aai-ui` (UI)
 

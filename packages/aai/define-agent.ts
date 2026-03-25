@@ -88,6 +88,18 @@ const AgentOptionsSchema = z.object({
   onTurn: z.function().optional(),
   onStep: z.function().optional(),
   onBeforeStep: z.function().optional(),
+  middleware: z
+    .array(
+      z.object({
+        name: z.string().min(1, "Middleware name must be non-empty"),
+        beforeTurn: z.function().optional(),
+        afterTurn: z.function().optional(),
+        toolCallInterceptor: z.function().optional(),
+        afterToolCall: z.function().optional(),
+        outputFilter: z.function().optional(),
+      }),
+    )
+    .optional(),
 });
 
 // ─── defineAgent ────────────────────────────────────────────────────────────
