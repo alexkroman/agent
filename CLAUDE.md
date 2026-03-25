@@ -120,3 +120,83 @@ Internal:
 - **Templates**: `packages/aai-cli/templates/` contains agent scaffolding
   templates. Each template is self-contained with its own `agent.ts` and
   `client.tsx`. `_shared/` has non-code files common to all templates.
+- **Updating CLAUDE.md**: When you make changes to the codebase that
+  would help future agents understand the architecture, security model,
+  conventions, or gotchas, update this file. Keep it concise and accurate.
+
+## Security Architecture
+
+### Platform Sandbox (aai-server)
+
+Agent code runs in **secure-exec V8 isolates** with strict permission
+boundaries. Key files: `packages/aai-server/src/sandbox.ts`,
+`_harness-runtime.ts`, `_harness-protocol.ts`.
+
+**Isolation layers:**
+
+- **Filesystem**: Read-only in-memory virtual FS. No write/delete/mkdir.
+- **Network**: Isolate can only reach its own per-sandbox sidecar server
+  on loopback (exact host+port enforced via Zod-validated network policy).
+  No external URLs, no cloud metadata, no port scanning.
+- **Child processes**: All subprocess spawning disabled.
+- **Env vars**: Only `SIDECAR_URL` and `AAI_ENV_*` prefixed vars are
+  readable. Platform secrets (e.g. `ASSEMBLYAI_API_KEY`) stay host-side
+  and never enter the isolate.
+- **Memory**: 128 MB limit per isolate.
+- **Timing**: `timingMitigation: "freeze"` prevents side-channel attacks.
+
+**Credential separation:**
+
+`SandboxOptions` has separate `apiKey` (platform, host-only) and
+`agentEnv` (user secrets, forwarded to isolate) fields. Platform keys
+are structurally prevented from entering sandboxes — there is no
+denylist/filter; they are separate fields in the type system.
+
+**Cross-agent isolation:**
+
+- KV keys are prefixed `kv:{keyHash}:{slug}:{key}` — agents cannot
+  access each other's data.
+- Vector store uses Upstash namespace `{keyHash}:{slug}`.
+- Each sandbox gets its own sidecar on an ephemeral loopback port.
+  Network policy pins the isolate to that exact port.
+- Sessions are per-sandbox (own `Map<string, Session>`).
+- No shared mutable state between sandboxes.
+
+**Self-hosted server (aai/server.ts):**
+
+- HTML output uses `escapeHtml()` to prevent XSS from agent names.
+- `run_code` built-in tool shadows dangerous globals (`process`,
+  `require`, `globalThis`, `Function`, `eval`, `fetch`, etc.) via
+  AsyncFunction parameter binding and blocks constructor chain escapes
+  (`"".constructor.constructor(...)`) via regex.
+
+**SSRF protection (aai-server/_net.ts):**
+
+- `assertPublicUrl()` uses `BlockList` for private IP ranges.
+- Handles IPv4-mapped IPv6 bypass (`::ffff:127.0.0.1`).
+- Blocks `.internal`, `.local`, cloud metadata hostnames.
+
+**Auth:**
+
+- API key hashes compared with `timingSafeEqual` (constant-time).
+- Scope tokens are HS256 JWTs with 1-hour expiry.
+- Stored credentials are AES-256-GCM encrypted with HKDF-derived keys.
+
+### Testing security boundaries
+
+- `sandbox-integration.test.ts`: Tests network, filesystem, process,
+  and env isolation end-to-end in real isolates.
+  Run: `pnpm --filter @alexkroman1/aai-server test:integration`
+- `builtin-tools.test.ts`: Tests run_code global shadowing and
+  constructor chain blocking.
+- `_net.test.ts`: Tests SSRF bypass prevention (IPv4-mapped IPv6,
+  cloud metadata, .internal domains).
+- `scope-token.test.ts`: Tests token expiration enforcement.
+
+### Known limitations
+
+- **E2E tests**: Playwright/Chromium may not be installed in all
+  environments. The `aai-cli` e2e test (`test:e2e`) may fail locally.
+  CI handles this. Use `--no-verify` on push if blocked by pre-push hook.
+- **API Extractor**: Covers main entry points of `aai` and `aai-ui` only.
+  Subpath exports (e.g. `./kv`, `./vector`, `./protocol`) are not covered.
