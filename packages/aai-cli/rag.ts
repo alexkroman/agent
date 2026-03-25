@@ -173,8 +173,12 @@ export async function runRagCommand(opts: {
     );
   }
 
-  const { apiKey, serverUrl, slug } = await getServerInfo(cwd, opts.server);
   const chunkSize = Number.parseInt(opts.chunkSize ?? "512", 10);
+  if (Number.isNaN(chunkSize) || chunkSize <= 0) {
+    throw new Error(`Invalid chunk size: "${opts.chunkSize}". Must be a positive integer.`);
+  }
+
+  const { apiKey, serverUrl, slug } = await getServerInfo(cwd, opts.server);
 
   await runCommand(async ({ log, setStatus }) => {
     await runRag({ url, apiKey, serverUrl, slug, chunkSize, log, setStatus });

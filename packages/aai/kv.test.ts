@@ -166,4 +166,22 @@ describe("createMemoryKv", () => {
     expect(entries[0]?.value.title).toBe("first");
     expect(entries[1]?.value.title).toBe("second");
   });
+
+  test("keys glob rejects key shorter than pattern literal segments", async () => {
+    const kv = createMemoryKv();
+    await kv.set("a", "1");
+    await kv.set("abc:xyz", "2");
+    // Pattern "abc*xyz" requires at least 6 chars; "a" should not match
+    expect(await kv.keys("abc*xyz")).toEqual(["abc:xyz"]);
+    expect(await kv.keys("abcdef*")).toEqual([]);
+  });
+
+  test("keys glob handles multi-wildcard patterns", async () => {
+    const kv = createMemoryKv();
+    await kv.set("a:b:c", "1");
+    await kv.set("a:x:c", "2");
+    await kv.set("b:x:c", "3");
+    expect(await kv.keys("a*c")).toEqual(["a:b:c", "a:x:c"]);
+    expect(await kv.keys("a*b*c")).toEqual(["a:b:c"]);
+  });
 });
