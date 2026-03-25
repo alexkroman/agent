@@ -130,6 +130,7 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
       kv,
       vector,
       messages,
+      logger,
     });
   };
 

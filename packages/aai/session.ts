@@ -3,7 +3,7 @@
 
 import type { AgentConfig, ToolSchema } from "./_internal-types.ts";
 import { activeSessionsUpDown, sessionCounter, setupListeners } from "./_session-otel.ts";
-import { errorMessage } from "./_utils.ts";
+import { errorDetail, errorMessage } from "./_utils.ts";
 import type { HookInvoker } from "./middleware.ts";
 import type { ClientSink } from "./protocol.ts";
 import { fromWireMessages, HOOK_TIMEOUT_MS } from "./protocol.ts";
@@ -195,7 +195,7 @@ export function createS2sSession(opts: SessionOptions): Session {
       ctx.s2s = handle;
     } catch (err: unknown) {
       const msg = errorMessage(err);
-      log.error("S2S connect failed", { error: msg });
+      log.error("S2S connect failed", { error: errorDetail(err) });
       client.event({ type: "error", code: "internal", message: msg });
     }
   }

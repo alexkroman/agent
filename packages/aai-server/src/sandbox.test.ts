@@ -93,7 +93,7 @@ describe("buildExecuteTool", () => {
     globalThis.fetch = vi.fn(async () => new Response(null, { status: 500 }));
 
     const exec = _internals.buildExecuteTool("http://127.0.0.1:9999");
-    await expect(exec("bad_tool", {}, "s1", [])).rejects.toThrow("tool failed: 500");
+    await expect(exec("bad_tool", {}, "s1", [])).rejects.toThrow("tool failed (500):");
   });
 });
 
@@ -296,7 +296,7 @@ describe("getIsolateConfig", () => {
 
   it("throws on non-ok response", async () => {
     globalThis.fetch = vi.fn(async () => new Response(null, { status: 503 }));
-    await expect(_internals.getIsolateConfig(9999)).rejects.toThrow("/config failed: 503");
+    await expect(_internals.getIsolateConfig(9999)).rejects.toThrow("/config failed (503):");
   });
 });
 
