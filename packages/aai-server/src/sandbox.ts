@@ -12,17 +12,12 @@
  */
 
 import type { AgentConfig } from "@alexkroman1/aai/internal-types";
-import type { Kv, KvEntry } from "@alexkroman1/aai/kv";
 import { buildReadyConfig } from "@alexkroman1/aai/protocol";
 import { DEFAULT_S2S_CONFIG } from "@alexkroman1/aai/runtime";
 import { createS2sSession, type HookInvoker, type Session } from "@alexkroman1/aai/session";
-import type { VectorStore } from "@alexkroman1/aai/vector";
 import type { ExecuteTool } from "@alexkroman1/aai/worker-entry";
 import { type SessionWebSocket, wireSessionSocket } from "@alexkroman1/aai/ws-handler";
-import { serve } from "@hono/node-server";
-import { Hono } from "hono";
 import {
-  createDefaultNetworkAdapter,
   createInMemoryFileSystem,
   createNodeDriver,
   createNodeRuntimeDriverFactory,
@@ -40,6 +35,8 @@ import type { AgentMetadata } from "./_schemas.ts";
 import type { BundleStore } from "./bundle-store-tigris.ts";
 import type { KvStore } from "./kv.ts";
 import { getHarnessRuntimeJs } from "./sandbox-harness.ts";
+import { buildNetworkAdapter, buildNetworkPolicy } from "./sandbox-network.ts";
+import { scopedKv, scopedVector, startSidecarServer } from "./sandbox-sidecar.ts";
 import type { AgentScope } from "./scope-token.ts";
 import type { ServerVectorStore } from "./vector.ts";
 
@@ -60,265 +57,6 @@ export type Sandbox = {
   startSession(socket: SessionWebSocket, skipGreeting?: boolean): void;
   terminate(): void;
 };
-
-// ── Scoped store adapters (for sidecar server) ──────────────────────────
-
-function scopedKv(kvStore: KvStore, scope: AgentScope) {
-  return {
-    async get(key: string) {
-      const raw = await kvStore.get(scope, key);
-      if (raw === null) return null;
-      try {
-        return JSON.parse(raw);
-      } catch {
-        return raw;
-      }
-    },
-    async set(key: string, value: unknown, options?: { expireIn?: number }) {
-      const ttl = options?.expireIn ? Math.ceil(options.expireIn / 1000) : undefined;
-      await kvStore.set(scope, key, JSON.stringify(value), ttl);
-    },
-    async delete(key: string) {
-      await kvStore.del(scope, key);
-    },
-    async list<T = unknown>(
-      prefix: string,
-      options?: { limit?: number; reverse?: boolean },
-    ): Promise<KvEntry<T>[]> {
-      return (await kvStore.list(scope, prefix, options ?? {})) as KvEntry<T>[];
-    },
-    async keys(pattern?: string) {
-      return await kvStore.keys(scope, pattern);
-    },
-  };
-}
-
-// Compile-time checks: scoped adapters must satisfy the SDK interfaces.
-// If Kv or VectorStore gain a method, these lines will error until implemented.
-null as unknown as ReturnType<typeof scopedKv> satisfies Kv;
-null as unknown as ReturnType<typeof scopedVector> satisfies VectorStore;
-
-function scopedVector(vectorStore: ServerVectorStore, scope: AgentScope) {
-  return {
-    async upsert(id: string, data: string, metadata?: Record<string, unknown>) {
-      await vectorStore.upsert(scope, id, data, metadata);
-    },
-    async query(text: string, options?: { topK?: number; filter?: string }) {
-      return await vectorStore.query(scope, text, options?.topK, options?.filter);
-    },
-    async remove(ids: string | string[]) {
-      await vectorStore.remove(scope, Array.isArray(ids) ? ids : [ids]);
-    },
-  };
-}
-
-// ── Sidecar request schemas (per-endpoint, loopback only) ───────────────
-
-const SidecarKvGetSchema = z.object({ key: z.string() });
-const SidecarKvSetSchema = z.object({
-  key: z.string(),
-  value: z.unknown(),
-  options: z.object({ expireIn: z.number().optional() }).optional(),
-});
-const SidecarKvDelSchema = z.object({ key: z.string() });
-const SidecarKvListSchema = z.object({
-  prefix: z.string(),
-  limit: z.number().optional(),
-  reverse: z.boolean().optional(),
-});
-const SidecarKvKeysSchema = z.object({ pattern: z.string().optional() });
-const SidecarVecUpsertSchema = z.object({
-  id: z.string(),
-  data: z.string(),
-  metadata: z.record(z.string(), z.unknown()).optional(),
-});
-const SidecarVecQuerySchema = z.object({
-  text: z.string(),
-  topK: z.number().optional(),
-  filter: z.string().optional(),
-});
-const SidecarVecRemoveSchema = z.object({ ids: z.union([z.string(), z.array(z.string())]) });
-
-// ── Sidecar server (per-sandbox, loopback, no auth) ─────────────────────
-
-function buildSidecarApp(
-  kv: ReturnType<typeof scopedKv>,
-  vector: ReturnType<typeof scopedVector> | undefined,
-): Hono {
-  const app = new Hono();
-
-  const requireVec = () => {
-    if (!vector) throw Object.assign(new Error("Vector store not configured"), { status: 503 });
-    return vector;
-  };
-
-  app.post("/kv/get", async (c) => {
-    const { key } = SidecarKvGetSchema.parse(await c.req.json());
-    return c.json((await kv.get(key)) ?? null);
-  });
-  app.post("/kv/set", async (c) => {
-    const { key, value, options } = SidecarKvSetSchema.parse(await c.req.json());
-    await kv.set(
-      key,
-      value,
-      options?.expireIn != null ? { expireIn: options.expireIn } : undefined,
-    );
-    return c.json(null);
-  });
-  app.post("/kv/del", async (c) => {
-    const { key } = SidecarKvDelSchema.parse(await c.req.json());
-    await kv.delete(key);
-    return c.json(null);
-  });
-  app.post("/kv/list", async (c) => {
-    const { prefix, limit, reverse } = SidecarKvListSchema.parse(await c.req.json());
-    return c.json(
-      await kv.list(prefix, {
-        ...(limit != null && { limit }),
-        ...(reverse != null && { reverse }),
-      }),
-    );
-  });
-  app.post("/kv/keys", async (c) => {
-    const { pattern } = SidecarKvKeysSchema.parse(await c.req.json());
-    return c.json(await kv.keys(pattern));
-  });
-  app.post("/vec/upsert", async (c) => {
-    const { id, data, metadata } = SidecarVecUpsertSchema.parse(await c.req.json());
-    await requireVec().upsert(id, data, metadata);
-    return c.json(null);
-  });
-  app.post("/vec/query", async (c) => {
-    const { text, topK, filter } = SidecarVecQuerySchema.parse(await c.req.json());
-    return c.json(
-      await requireVec().query(text, {
-        ...(topK != null && { topK }),
-        ...(filter != null && { filter }),
-      }),
-    );
-  });
-  app.post("/vec/remove", async (c) => {
-    const { ids } = SidecarVecRemoveSchema.parse(await c.req.json());
-    await requireVec().remove(ids);
-    return c.json(null);
-  });
-
-  app.onError((err, c) => {
-    const isValidation = err.name === "ZodError";
-    const status = (
-      isValidation ? 400 : ((err as { status?: number }).status ?? 500)
-    ) as import("hono/utils/http-status").ContentfulStatusCode;
-    return c.json({ error: err.message }, status);
-  });
-
-  return app;
-}
-
-async function startSidecarServer(
-  kv: ReturnType<typeof scopedKv>,
-  vector: ReturnType<typeof scopedVector> | undefined,
-): Promise<{ url: string; close: () => void }> {
-  const app = buildSidecarApp(kv, vector);
-  const server = serve({ fetch: app.fetch, port: 0, hostname: "127.0.0.1" });
-
-  await new Promise<void>((resolve) => {
-    server.on("listening", resolve);
-  });
-
-  const addr = server.address() as { port: number };
-  return {
-    url: `http://127.0.0.1:${addr.port}`,
-    close: () => server.close(),
-  };
-}
-
-// ── Isolate network policy ────────────────────────────────────────────────
-
-const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
-
-const SidecarUrlSchema = z
-  .string()
-  .url()
-  .refine((u) => LOOPBACK_HOSTS.has(new URL(u).hostname), "Sidecar server must be on loopback");
-
-/**
- * Build a network permission check that restricts the isolate to:
- *   1. Listening on loopback (its own harness HTTP server)
- *   2. DNS lookups for loopback hostnames only
- *   3. fetch/http to the sidecar server URL only
- *
- * Everything else (cloud metadata, internal services, external hosts) is denied.
- */
-function buildNetworkPolicy(sidecarUrl: string) {
-  const parsed = new URL(SidecarUrlSchema.parse(sidecarUrl));
-  const allowedHost = parsed.hostname;
-  const allowedPort = parsed.port;
-
-  const AllowedRequestSchema = z.object({
-    url: z
-      .string()
-      .url()
-      .refine((u) => {
-        const t = new URL(u);
-        return t.hostname === allowedHost && t.port === allowedPort;
-      }, "URL must target the sidecar server"),
-  });
-
-  return (req: { op: string; url?: string; hostname?: string }) => {
-    if (req.op === "listen") return { allow: true };
-    if (req.op === "dns") {
-      return LOOPBACK_HOSTS.has(req.hostname ?? "")
-        ? { allow: true }
-        : { allow: false, reason: "DNS lookups restricted to loopback" };
-    }
-    const result = AllowedRequestSchema.safeParse(req);
-    return result.success
-      ? { allow: true }
-      : { allow: false, reason: "Network restricted to sidecar server" };
-  };
-}
-
-/**
- * Build a network adapter that wraps the default but exempts the sidecar
- * URL from SSRF checks. The default adapter blocks all private IPs (including
- * 127.0.0.1), but the isolate needs to reach the sidecar on loopback.
- */
-function buildNetworkAdapter(sidecarUrl: string) {
-  const defaultAdapter = createDefaultNetworkAdapter();
-  const sidecarOrigin = new URL(sidecarUrl).origin;
-
-  return {
-    ...defaultAdapter,
-    async fetch(
-      url: string,
-      options: { method?: string; headers?: Record<string, string>; body?: string | null },
-    ) {
-      // Sidecar calls bypass SSRF — they're our own capability server on loopback
-      if (url.startsWith(sidecarOrigin)) {
-        const res = await globalThis.fetch(url, {
-          method: options.method ?? "GET",
-          ...(options.headers != null && { headers: options.headers }),
-          ...(options.body !== undefined && { body: options.body }),
-        });
-        const headers: Record<string, string> = {};
-        res.headers.forEach((v, k) => {
-          headers[k] = v;
-        });
-        return {
-          ok: res.ok,
-          status: res.status,
-          statusText: res.statusText,
-          headers,
-          body: await res.text(),
-          url: res.url,
-          redirected: res.redirected,
-        };
-      }
-      // Everything else goes through the default adapter (with SSRF checks)
-      return defaultAdapter.fetch(url, options);
-    },
-  };
-}
 
 // ── Isolate lifecycle ────────────────────────────────────────────────────
 
@@ -392,15 +130,7 @@ async function startIsolate(
   return { port, runtime };
 }
 
-// ── Isolate response schemas (validated on the host, not in the isolate) ──
-// Annotated with z.ZodType<IsolateConfig> to enforce parity with the type
-// definition in _harness-protocol.ts at compile time.
-
-// RPC schemas are defined in _harness-protocol.ts (single source of truth).
-// IsolateConfigSchema, ToolCallResponseSchema, HookResponseSchema,
-// TurnConfigResultSchema are imported above.
-
-// ── Isolate RPC timeouts ─────────────────────────────────────────────────
+// ── Isolate RPC ──────────────────────────────────────────────────────────
 
 /** Timeout for initial config fetch (isolate boot). */
 const CONFIG_TIMEOUT_MS = 10_000;
@@ -409,8 +139,6 @@ const TOOL_TIMEOUT_MS = 30_000;
 /** Timeout for lifecycle hook calls. */
 const HOOK_TIMEOUT_MS = 10_000;
 
-// ── Isolate config fetch ─────────────────────────────────────────────────
-
 async function getIsolateConfig(port: number): Promise<IsolateConfig> {
   const res = await fetch(`http://127.0.0.1:${port}/config`, {
     signal: AbortSignal.timeout(CONFIG_TIMEOUT_MS),
@@ -418,8 +146,6 @@ async function getIsolateConfig(port: number): Promise<IsolateConfig> {
   if (!res.ok) throw new Error(`Isolate /config failed: ${res.status}`);
   return IsolateConfigSchema.parse(await res.json()) as IsolateConfig;
 }
-
-// ── Build executeTool + hookInvoker from isolate ─────────────────────────
 
 async function callIsolate<T>(
   isolateUrl: string,
