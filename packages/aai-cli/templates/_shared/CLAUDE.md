@@ -1017,19 +1017,20 @@ describe("my agent", () => {
 
 `createTestHarness(agent, options?)` wraps your agent and provides:
 
-| Method / Property     | Description                                          |
-| --------------------- | ---------------------------------------------------- |
-| `executeTool(name, args)` | Execute a single tool with full agent context      |
-| `turn(text, toolCalls?)` | Simulate a user turn with optional tool calls       |
-| `addUserMessage(text)` | Add a user message to conversation history           |
-| `addAssistantMessage(text)` | Add an assistant message to conversation history |
-| `messages`            | Read-only conversation history                        |
-| `steps`               | All `onStep` hook invocations recorded               |
-| `turns`               | All `onTurn` hook invocations recorded               |
-| `connect()` / `disconnect()` | Fire lifecycle hooks manually                  |
-| `reset()`             | Clear conversation state                              |
+| Method / Property | Description |
+| --- | --- |
+| `executeTool(name, args)` | Execute a single tool with full agent context |
+| `turn(text, toolCalls?)` | Simulate a user turn with optional tool calls |
+| `addUserMessage(text)` | Add a user message to conversation history |
+| `addAssistantMessage(text)` | Add an assistant message to history |
+| `messages` | Read-only conversation history |
+| `steps` | All `onStep` hook invocations recorded |
+| `turns` | All `onTurn` hook invocations recorded |
+| `connect()` / `disconnect()` | Fire lifecycle hooks manually |
+| `reset()` | Clear conversation state |
 
 Options:
+
 ```ts
 createTestHarness(agent, {
   env: { API_KEY: "test-key" },  // mock environment variables
@@ -1064,17 +1065,18 @@ test("multi-turn pizza ordering", async () => {
 
 ### TurnResult API
 
-| Method / Property      | Description                                         |
-| ---------------------- | --------------------------------------------------- |
-| `toHaveCalledTool(name, args?)` | Check if tool was called (with optional partial args match) |
-| `getToolCalls(name)`   | Get all calls to a specific tool                     |
-| `toolCalls`            | All recorded tool calls with name, args, and result  |
-| `toolResults`          | Just the result strings from each tool call           |
-| `text`                 | The user text that initiated this turn                |
+| Method / Property | Description |
+| --- | --- |
+| `toHaveCalledTool(name, args?)` | Check if tool was called (partial args match) |
+| `getToolCalls(name)` | Get all calls to a specific tool |
+| `toolCalls` | All recorded tool calls with name, args, result |
+| `toolResults` | Just the result strings from each tool call |
+| `text` | The user text that initiated this turn |
 
 ### Testing patterns
 
 **Environment variables:**
+
 ```ts
 const t = createTestHarness(agent, { env: { MY_KEY: "test-123" } });
 const result = await t.executeTool("check_key", {});
@@ -1082,6 +1084,7 @@ expect(result).toBe("test-123");
 ```
 
 **State persistence across turns:**
+
 ```ts
 const t = createTestHarness(agent);
 await t.turn("first action", [{ tool: "increment", args: {} }]);
@@ -1091,6 +1094,7 @@ expect(turn.toolResults[0]).toBe("2");
 ```
 
 **Pre-loading conversation history:**
+
 ```ts
 const t = createTestHarness(agent);
 t.addUserMessage("My name is Alice");
