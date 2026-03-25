@@ -19,12 +19,13 @@
 export * from "./components.ts";
 export type { VoiceSession } from "./session.ts";
 export { createVoiceSession } from "./session.ts";
-export type {
-  AgentState,
-  Message,
-  Reactive,
-  SessionError,
-  SessionErrorCode,
-  SessionOptions,
-  ToolCallInfo,
+export {
+  type AgentState,
+  type Message,
+  type Reactive,
+  type SessionError,
+  type SessionErrorCode,
+  SessionErrorCodeSchema,
+  type SessionOptions,
+  type ToolCallInfo,
 } from "./types.ts";

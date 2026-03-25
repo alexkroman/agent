@@ -69,7 +69,10 @@ export const TOOL_EXECUTION_TIMEOUT_MS = 30_000;
 
 // ─── Error codes ───────────────────────────────────────────────────────────
 
-/** Zod schema for session error codes. */
+/**
+ * Zod schema for session error codes.
+ * @public
+ */
 export const SessionErrorCodeSchema = z.enum([
   "stt",
   "llm",

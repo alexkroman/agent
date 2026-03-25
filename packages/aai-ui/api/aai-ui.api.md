@@ -29,6 +29,12 @@ export function Button(input: {
 } & Omit<preact_2.JSX.HTMLAttributes<HTMLButtonElement>, "className">): preact_2.JSX.Element;
 
 // @public (undocumented)
+export type ButtonSize = "default" | "lg";
+
+// @public (undocumented)
+export type ButtonVariant = "default" | "secondary" | "ghost";
+
+// @public (undocumented)
 export function ChatView(input: {
     className?: string;
 }): preact_2.JSX.Element;
@@ -112,10 +118,20 @@ export type SessionError = {
     readonly message: string;
 };
 
-// Warning: (ae-forgotten-export) The symbol "SessionErrorCodeSchema" needs to be exported by the entry point index.d.ts
-//
 // @public
 export type SessionErrorCode = z.infer<typeof SessionErrorCodeSchema>;
+
+// @public
+export const SessionErrorCodeSchema: z.ZodEnum<{
+    tool: "tool";
+    connection: "connection";
+    stt: "stt";
+    llm: "llm";
+    tts: "tts";
+    protocol: "protocol";
+    audio: "audio";
+    internal: "internal";
+}>;
 
 // @public
 export type SessionOptions = {
@@ -226,11 +242,6 @@ export type VoiceSession = {
     disconnect(): void;
     [Symbol.dispose](): void;
 };
-
-// Warnings were encountered during analysis:
-//
-// dist/_components/button.d.ts:6:5 - (ae-forgotten-export) The symbol "ButtonVariant" needs to be exported by the entry point index.d.ts
-// dist/_components/button.d.ts:7:5 - (ae-forgotten-export) The symbol "ButtonSize" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 
