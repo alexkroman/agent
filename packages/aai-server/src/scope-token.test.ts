@@ -38,4 +38,17 @@ describe("scope tokens", () => {
     const token = await signScopeToken(key1, scope);
     expect(await verifyScopeToken(key2, token)).toBeNull();
   });
+
+  test("rejects expired token", async () => {
+    const key = await importScopeKey("test-secret");
+    // Create a token that expired 10 seconds ago by manually crafting with jose
+    const { SignJWT } = await import("jose");
+    const now = Math.floor(Date.now() / 1000);
+    const token = await new SignJWT({ sub: scope.keyHash, scope: scope.slug })
+      .setProtectedHeader({ alg: "HS256" })
+      .setIssuedAt(now - 7200)
+      .setExpirationTime(now - 10)
+      .sign(key);
+    expect(await verifyScopeToken(key, token)).toBeNull();
+  });
 });

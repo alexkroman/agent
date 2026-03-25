@@ -38,17 +38,38 @@ export function isPrivateIp(ip: string): boolean {
 }
 
 /**
+ * Detect IPv4-mapped IPv6 addresses (e.g. `::ffff:127.0.0.1`) and extract
+ * the embedded IPv4 for a proper private-IP check.
+ */
+function extractMappedIp(ip: string): string {
+  const mapped = ip.match(/^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/i);
+  return mapped ? (mapped[1] as string) : ip;
+}
+
+/**
  * SSRF guard: block requests to private/reserved IPs.
+ *
+ * Checks the raw hostname and also extracts embedded IPv4 from
+ * IPv4-mapped IPv6 addresses to prevent bypass via `::ffff:127.0.0.1`.
  */
 export function assertPublicUrl(url: string): void {
   const parsed = new URL(url);
   const hostname = parsed.hostname.replace(/^\[|\]$/g, "");
+  const effective = extractMappedIp(hostname);
 
-  if (isPrivateIp(hostname)) {
+  if (isPrivateIp(hostname) || isPrivateIp(effective)) {
     throw new Error(`Blocked request to private address: ${hostname}`);
   }
 
-  if (hostname === "localhost" || hostname.endsWith(".local")) {
+  // Block localhost, .local (mDNS), and common cloud metadata hostnames
+  const lower = hostname.toLowerCase();
+  if (
+    lower === "localhost" ||
+    lower.endsWith(".local") ||
+    lower.endsWith(".internal") ||
+    lower === "metadata.google.internal" ||
+    lower === "169.254.169.254"
+  ) {
     throw new Error(`Blocked request to private address: ${hostname}`);
   }
 }

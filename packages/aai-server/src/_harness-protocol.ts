@@ -31,7 +31,6 @@ export type ToolCallRequest = {
   args: Record<string, unknown>;
   sessionId: string;
   messages: readonly Message[];
-  env: Record<string, string>;
 };
 
 /** Response body for POST /tool */
@@ -44,7 +43,6 @@ export type ToolCallResponse = {
 export type HookRequest = {
   hook: string;
   sessionId: string;
-  env: Record<string, string>;
   text?: string;
   error?: { message: string };
   step?: StepInfo;

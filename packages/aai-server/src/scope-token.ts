@@ -21,9 +21,15 @@ export async function importScopeKey(secret: string): Promise<ScopeKey> {
   );
 }
 
+/** Default scope token lifetime: 1 hour. */
+const SCOPE_TOKEN_LIFETIME_S = 3600;
+
 export async function signScopeToken(key: ScopeKey, scope: AgentScope): Promise<string> {
+  const now = Math.floor(Date.now() / 1000);
   return new SignJWT({ sub: scope.keyHash, scope: scope.slug })
     .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt(now)
+    .setExpirationTime(now + SCOPE_TOKEN_LIFETIME_S)
     .sign(key);
 }
 

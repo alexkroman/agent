@@ -57,12 +57,29 @@ export function createOrchestrator(opts: OrchestratorOpts): Hono<Env> {
     await next();
   });
 
-  app.use("*", cors());
+  app.use(
+    "*",
+    cors({
+      origin: (origin) => {
+        // Allow same-origin requests (origin is null) and any origin for
+        // agent pages (they are public-facing). Restrict credentials so
+        // cookies/auth headers are not sent cross-origin by default.
+        return origin ?? "*";
+      },
+      allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+      allowHeaders: ["Content-Type", "Authorization"],
+      credentials: false,
+      maxAge: 86400,
+    }),
+  );
   app.use(
     "*",
     secureHeaders({
       crossOriginOpenerPolicy: "same-origin",
       crossOriginEmbedderPolicy: "credentialless",
+      crossOriginResourcePolicy: "same-origin",
+      xContentTypeOptions: "nosniff",
+      xFrameOptions: "DENY",
     }),
   );
 

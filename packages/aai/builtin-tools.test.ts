@@ -95,6 +95,114 @@ describe("getBuiltinToolDefs", () => {
     expect(result).toBe("w\ne\nd\ni");
   });
 
+  // ─── run_code security: global shadowing ────────────────────────────
+
+  test("run_code blocks access to process", async () => {
+    const defs = getBuiltinToolDefs(["run_code"]);
+    const ctx = createMockToolContext();
+    const result = await defs.run_code?.execute({ code: "console.log(typeof process)" }, ctx);
+    expect(result).toBe("undefined");
+  });
+
+  test("run_code blocks access to require", async () => {
+    const defs = getBuiltinToolDefs(["run_code"]);
+    const ctx = createMockToolContext();
+    const result = await defs.run_code?.execute({ code: "console.log(typeof require)" }, ctx);
+    expect(result).toBe("undefined");
+  });
+
+  test("run_code blocks access to globalThis", async () => {
+    const defs = getBuiltinToolDefs(["run_code"]);
+    const ctx = createMockToolContext();
+    const result = await defs.run_code?.execute({ code: "console.log(typeof globalThis)" }, ctx);
+    expect(result).toBe("undefined");
+  });
+
+  test("run_code blocks access to Function constructor", async () => {
+    const defs = getBuiltinToolDefs(["run_code"]);
+    const ctx = createMockToolContext();
+    const result = await defs.run_code?.execute({ code: "console.log(typeof Function)" }, ctx);
+    expect(result).toBe("undefined");
+  });
+
+  test("run_code blocks access to eval", async () => {
+    const defs = getBuiltinToolDefs(["run_code"]);
+    const ctx = createMockToolContext();
+    const result = await defs.run_code?.execute({ code: "console.log(typeof eval)" }, ctx);
+    expect(result).toBe("undefined");
+  });
+
+  test("run_code blocks access to fetch", async () => {
+    const defs = getBuiltinToolDefs(["run_code"]);
+    const ctx = createMockToolContext();
+    const result = await defs.run_code?.execute({ code: "console.log(typeof fetch)" }, ctx);
+    expect(result).toBe("undefined");
+  });
+
+  // ─── run_code security: constructor chain escape ────────────────────
+
+  test("run_code blocks constructor chain escape via string", async () => {
+    const defs = getBuiltinToolDefs(["run_code"]);
+    const ctx = createMockToolContext();
+    const result = await defs.run_code?.execute(
+      { code: '"".constructor.constructor("return process")()' },
+      ctx,
+    );
+    expect(result).toHaveProperty("error");
+    expect((result as { error: string }).error).toMatch(/blocked patterns/);
+  });
+
+  test("run_code blocks constructor chain escape via array", async () => {
+    const defs = getBuiltinToolDefs(["run_code"]);
+    const ctx = createMockToolContext();
+    const result = await defs.run_code?.execute(
+      { code: '[].constructor.constructor("return process")()' },
+      ctx,
+    );
+    expect(result).toHaveProperty("error");
+    expect((result as { error: string }).error).toMatch(/blocked patterns/);
+  });
+
+  test("run_code blocks __proto__ access", async () => {
+    const defs = getBuiltinToolDefs(["run_code"]);
+    const ctx = createMockToolContext();
+    const result = await defs.run_code?.execute({ code: "const p = ({}).__proto__" }, ctx);
+    expect(result).toHaveProperty("error");
+    expect((result as { error: string }).error).toMatch(/blocked patterns/);
+  });
+
+  test("run_code blocks getPrototypeOf escape", async () => {
+    const defs = getBuiltinToolDefs(["run_code"]);
+    const ctx = createMockToolContext();
+    const result = await defs.run_code?.execute(
+      { code: "Object.getPrototypeOf(async function(){}).constructor" },
+      ctx,
+    );
+    expect(result).toHaveProperty("error");
+    expect((result as { error: string }).error).toMatch(/blocked patterns/);
+  });
+
+  test("run_code blocks constructor bracket access", async () => {
+    const defs = getBuiltinToolDefs(["run_code"]);
+    const ctx = createMockToolContext();
+    const result = await defs.run_code?.execute(
+      { code: '"".constructor["constructor"]("return process")()' },
+      ctx,
+    );
+    expect(result).toHaveProperty("error");
+    expect((result as { error: string }).error).toMatch(/blocked patterns/);
+  });
+
+  test("run_code allows normal .constructor property check", async () => {
+    const defs = getBuiltinToolDefs(["run_code"]);
+    const ctx = createMockToolContext();
+    const result = await defs.run_code?.execute(
+      { code: 'console.log("hello".constructor.name)' },
+      ctx,
+    );
+    expect(result).toBe("String");
+  });
+
   // ─── fetch_json ────────────────────────────────────────────────────────
 
   test("fetch_json fetches and returns JSON", async () => {

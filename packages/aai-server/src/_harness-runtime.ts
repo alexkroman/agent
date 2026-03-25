@@ -27,6 +27,21 @@ import type {
 
 const SIDECAR_URL = process.env.SIDECAR_URL ?? "";
 
+/**
+ * Read agent env vars from process.env once at startup.
+ * The host passes them with an AAI_ENV_ prefix; we strip the prefix
+ * so tools/hooks see the original key names (e.g. ASSEMBLYAI_API_KEY).
+ * This avoids sending secrets over the wire on every RPC call.
+ */
+const AAI_ENV_PREFIX = "AAI_ENV_";
+const agentEnv: Record<string, string> = Object.freeze(
+  Object.fromEntries(
+    Object.entries(process.env)
+      .filter(([k]) => k.startsWith(AAI_ENV_PREFIX))
+      .map(([k, v]) => [k.slice(AAI_ENV_PREFIX.length), v ?? ""]),
+  ),
+);
+
 // ── Sidecar server proxy (KV / vector) ───────────────────────────────────
 
 async function sidecarRpc<T>(path: string, body: unknown): Promise<T> {
@@ -128,7 +143,7 @@ async function executeTool(agent: AgentDef, req: ToolCallRequest): Promise<ToolC
   if (!tool) throw Object.assign(new Error(`Unknown tool: ${req.name}`), { status: 404 });
 
   const ctx: ToolContext = {
-    env: Object.freeze(req.env),
+    env: agentEnv,
     state: getState(agent, req.sessionId),
     kv,
     vector,
@@ -151,7 +166,7 @@ async function executeTool(agent: AgentDef, req: ToolCallRequest): Promise<ToolC
 
 function makeHookCtx(agent: AgentDef, req: HookRequest): HookContext {
   return {
-    env: Object.freeze(req.env),
+    env: agentEnv,
     state: getState(agent, req.sessionId),
     kv,
     vector,
@@ -204,10 +219,22 @@ async function invokeHook(agent: AgentDef, req: HookRequest): Promise<HookRespon
 
 // ── HTTP helpers ─────────────────────────────────────────────────────────
 
+/** Maximum request body size (5 MB) to prevent memory exhaustion attacks. */
+const MAX_BODY_SIZE = 5 * 1024 * 1024;
+
 function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
-    req.on("data", (c: Buffer) => chunks.push(c));
+    let totalSize = 0;
+    req.on("data", (c: Buffer) => {
+      totalSize += c.length;
+      if (totalSize > MAX_BODY_SIZE) {
+        req.destroy(new Error("Request body too large"));
+        reject(new Error("Request body too large"));
+        return;
+      }
+      chunks.push(c);
+    });
     req.on("end", () => resolve(Buffer.concat(chunks).toString()));
     req.on("error", reject);
   });
