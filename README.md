@@ -8,5 +8,7 @@ npx @alexkroman1/aai@latest init my-agent
 
 ## Documentation
 
-- [CLAUDE.md](./CLAUDE.md) — for humans and agents working on the aai framework itself
-- [Agent CLAUDE.md](./packages/aai-cli/templates/_shared/CLAUDE.md) — for humans and agents building voice apps with aai
+- [CLAUDE.md](./CLAUDE.md) — for humans and agents working
+  on the aai framework itself
+- [Agent CLAUDE.md](./packages/aai-cli/templates/_shared/CLAUDE.md)
+  — for humans and agents building voice apps with aai
