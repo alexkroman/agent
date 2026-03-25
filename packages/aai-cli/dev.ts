@@ -22,21 +22,27 @@ export async function _startDevServer(
   try {
     const healthRes = await fetch(`${base}/health`);
     if (!healthRes.ok) {
-      throw new Error(`GET /health returned ${healthRes.status}`);
+      throw new Error(
+        `GET /health returned ${healthRes.status}. The server started but the health endpoint failed.`,
+      );
     }
     const health = (await healthRes.json()) as { status: string; name?: string };
     if (health.status !== "ok") {
-      throw new Error(`GET /health returned ${JSON.stringify(health)}`);
+      throw new Error(
+        `GET /health returned unhealthy status: ${JSON.stringify(health)}. Check your agent.ts for errors.`,
+      );
     }
     log(step("Health", health.name ?? "ok"));
 
     const pageRes = await fetch(`${base}/`);
     if (!pageRes.ok) {
-      throw new Error(`GET / returned ${pageRes.status}`);
+      throw new Error(`GET / returned ${pageRes.status}. The client page failed to load.`);
     }
     const html = await pageRes.text();
     if (!(html.includes("<") && html.includes("html"))) {
-      throw new Error("GET / did not return valid HTML");
+      throw new Error(
+        "GET / did not return valid HTML. Check that client.tsx exists and builds correctly.",
+      );
     }
     log(step("Client", "ok"));
   } catch (err) {

@@ -68,6 +68,9 @@ export async function getApiKey(): Promise<string> {
     return config.assemblyai_api_key;
   }
 
+  console.log("  Get your API key at https://www.assemblyai.com/dashboard/signup");
+  console.log("  Or set the ASSEMBLYAI_API_KEY environment variable to skip this prompt.\n");
+
   let key: string | undefined;
   while (!key) {
     key = await askPassword("ASSEMBLYAI_API_KEY");

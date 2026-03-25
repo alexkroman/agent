@@ -69,7 +69,7 @@ describe("runDeploy", () => {
 
   test("throws on non-403 error response", async () => {
     const mockFetch = vi.fn().mockResolvedValue(new Response("server error", { status: 500 }));
-    await expect(runDeploy(deployOpts(mockFetch))).rejects.toThrow("deploy failed (500)");
+    await expect(runDeploy(deployOpts(mockFetch))).rejects.toThrow("deploy failed (HTTP 500)");
   });
 
   test("throws on network failure", async () => {
@@ -84,7 +84,7 @@ describe("runDeploy", () => {
       .fn()
       .mockResolvedValue(new Response("bad request: missing worker", { status: 400 }));
     await expect(runDeploy(deployOpts(mockFetch))).rejects.toThrow(
-      "deploy failed (400): bad request: missing worker",
+      "deploy failed (HTTP 400): bad request: missing worker",
     );
   });
 
@@ -97,14 +97,14 @@ describe("runDeploy", () => {
       ),
     );
     await expect(runDeploy(deployOpts(mockFetch))).rejects.toThrow(
-      "could not find available slug after 20 attempts",
+      "could not find an available agent slug after 20 attempts",
     );
     expect(mockFetch).toHaveBeenCalledTimes(20);
   });
 
   test("403 without slug message throws immediately", async () => {
     const mockFetch = vi.fn().mockResolvedValue(new Response("forbidden", { status: 403 }));
-    await expect(runDeploy(deployOpts(mockFetch))).rejects.toThrow("deploy failed (403)");
+    await expect(runDeploy(deployOpts(mockFetch))).rejects.toThrow("deploy failed (HTTP 403)");
     expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 });

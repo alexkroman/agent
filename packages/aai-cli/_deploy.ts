@@ -41,7 +41,10 @@ async function attemptDeploy(
       }),
     });
   } catch {
-    throw new Error(`deployment failed: could not reach ${url}`);
+    const hint = url.startsWith("http://localhost")
+      ? "Is the local dev server running? Start it with `aai dev`."
+      : "Check your network connection and verify the server URL is correct.";
+    throw new Error(`deployment failed: could not reach ${url}\n  ${hint}`);
   }
 }
 
@@ -76,8 +79,17 @@ export async function runDeploy(opts: DeployOpts): Promise<DeployResult> {
       continue;
     }
 
-    throw new Error(`deploy failed (${resp.status}): ${text}`);
+    const hint =
+      resp.status === 401
+        ? "Your API key may be invalid. Check ~/.config/aai/config.json or set ASSEMBLYAI_API_KEY."
+        : resp.status === 413
+          ? "Your bundle is too large. Try reducing dependencies or splitting your agent."
+          : "";
+    throw new Error(`deploy failed (HTTP ${resp.status}): ${text}${hint ? `\n  ${hint}` : ""}`);
   }
 
-  throw new Error(`deploy failed: could not find available slug after ${MAX_RETRIES} attempts`);
+  throw new Error(
+    `deploy failed: could not find an available agent slug after ${MAX_RETRIES} attempts. ` +
+      "Try setting a custom slug in .aai/project.json.",
+  );
 }
