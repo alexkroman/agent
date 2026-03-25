@@ -22,20 +22,29 @@ import {
 
 export { activeSessionsUpDown, sessionCounter } from "./telemetry.ts";
 
-function finishToolCall(ctx: S2sSessionCtx, call_id: string, result: string): void {
+function finishToolCall(
+  ctx: S2sSessionCtx,
+  call_id: string,
+  result: string,
+  generation: number,
+): void {
   const truncatedResult =
     result.length > MAX_TOOL_RESULT_CHARS ? result.slice(0, MAX_TOOL_RESULT_CHARS) : result;
   ctx.client.event({ type: "tool_call_done", toolCallId: call_id, result: truncatedResult });
-  // Send tool result immediately rather than batching in pendingTools.
-  // Batching created a race: reply_done could fire before async tool calls
-  // finished, clearing pendingTools and losing late-arriving results.
-  if (!ctx.replyInterrupted) {
-    ctx.s2s?.sendToolResult(call_id, result);
+  // Only accumulate if this tool call belongs to the current reply.
+  // A barge-in bumps replyGeneration, so late-finishing tools from the
+  // interrupted reply are silently discarded instead of leaking into
+  // the next reply's pendingTools.
+  if (ctx.replyGeneration === generation) {
+    ctx.pendingTools.push({ call_id, result });
   }
 }
 
 export async function handleToolCall(ctx: S2sSessionCtx, detail: S2sToolCall): Promise<void> {
   const { call_id, name, args: parsedArgs } = detail;
+  // Capture the reply generation at call start so finishToolCall can detect
+  // whether this tool call's reply was interrupted while we were executing.
+  const generation = ctx.replyGeneration;
   const span = tracer.startSpan("tool.call", {
     attributes: {
       "aai.tool.name": name,
@@ -61,7 +70,7 @@ export async function handleToolCall(ctx: S2sSessionCtx, detail: S2sToolCall): P
     ctx.log.error(msg);
     span.setStatus({ code: 2, message: msg });
     span.end();
-    finishToolCall(ctx, call_id, msg);
+    finishToolCall(ctx, call_id, msg, generation);
     return;
   }
 
@@ -69,7 +78,7 @@ export async function handleToolCall(ctx: S2sSessionCtx, detail: S2sToolCall): P
   if (refused !== null) {
     span.setAttribute("aai.tool.refused", true);
     span.end();
-    finishToolCall(ctx, call_id, refused);
+    finishToolCall(ctx, call_id, refused, generation);
     return;
   }
 
@@ -96,13 +105,13 @@ export async function handleToolCall(ctx: S2sSessionCtx, detail: S2sToolCall): P
       if (ic?.type === "block") {
         span.setAttribute("aai.tool.blocked", true);
         span.end();
-        finishToolCall(ctx, call_id, JSON.stringify({ error: ic.reason }));
+        finishToolCall(ctx, call_id, JSON.stringify({ error: ic.reason }), generation);
         return;
       }
       if (ic?.type === "result") {
         span.setAttribute("aai.tool.cached", true);
         span.end();
-        finishToolCall(ctx, call_id, ic.result);
+        finishToolCall(ctx, call_id, ic.result, generation);
         ctx.fireHook(
           "afterToolCall",
           (h) =>
@@ -141,7 +150,7 @@ export async function handleToolCall(ctx: S2sSessionCtx, detail: S2sToolCall): P
 
   toolCallDuration.record((performance.now() - startTime) / 1000, { agent: ctx.agent, tool: name });
   ctx.log.info("S2S tool result", { tool: name, call_id, resultLength: result.length });
-  finishToolCall(ctx, call_id, result);
+  finishToolCall(ctx, call_id, result, generation);
   span.end();
 }
 
@@ -180,8 +189,8 @@ export function setupListeners(ctx: S2sSessionCtx, handle: S2sHandle): void {
 
   handle.on("reply_started", () => {
     ctx.toolCallCount = 0;
-    ctx.replyInterrupted = false;
-    ctx.hasPendingTools = false;
+    ctx.replyGeneration++;
+    ctx.pendingTools = [];
   });
   handle.on("audio", ({ audio }) => ctx.client.playAudioChunk(audio));
   handle.on("agent_transcript_delta", ({ text }) => {
@@ -204,7 +213,6 @@ export function setupListeners(ctx: S2sSessionCtx, handle: S2sHandle): void {
   });
 
   handle.on("tool_call", (detail) => {
-    ctx.hasPendingTools = true;
     const p = handleToolCall(ctx, detail).catch((err: unknown) => {
       ctx.log.error("Tool call handler failed", { err: errorMessage(err) });
     });
@@ -215,22 +223,37 @@ export function setupListeners(ctx: S2sSessionCtx, handle: S2sHandle): void {
     if (status === "interrupted") {
       ctx.log.info("S2S reply interrupted (barge-in)");
       bargeInCounter.add(1, { agent: ctx.agent });
-      // Mark interrupted so in-flight tool calls don't send results.
-      ctx.replyInterrupted = true;
+      // Bump generation so in-flight tool calls discard their results
+      // instead of pushing to pendingTools (checked in finishToolCall).
+      ctx.replyGeneration++;
+      ctx.pendingTools = [];
       ctx.client.event({ type: "cancelled" });
-    } else if (!ctx.hasPendingTools) {
-      // No tool calls in this reply — it's a final response.
-      if (ctx.hookInvoker?.afterTurn) {
-        const last = ctx.conversationMessages.at(-1);
-        ctx.fireHook(
-          "afterTurn",
-          (h) => h.afterTurn?.(ctx.id, last?.content ?? "", HOOK_TIMEOUT_MS) ?? Promise.resolve(),
-        );
-      }
-      ctx.client.playAudioDone();
-      ctx.client.event({ type: "tts_done" });
+      return;
     }
-    // Tool results are sent immediately in finishToolCall — no batching needed.
+    // Wait for all in-flight tool calls to complete before sending results.
+    // Without this, reply_done can fire while async tool execution is still
+    // in progress, causing pendingTools to be empty → results never sent → deadlock.
+    const sendPending = () => {
+      if (ctx.pendingTools.length > 0) {
+        for (const tool of ctx.pendingTools) ctx.s2s?.sendToolResult(tool.call_id, tool.result);
+        ctx.pendingTools = [];
+      } else {
+        if (ctx.hookInvoker?.afterTurn) {
+          const last = ctx.conversationMessages.at(-1);
+          ctx.fireHook(
+            "afterTurn",
+            (h) => h.afterTurn?.(ctx.id, last?.content ?? "", HOOK_TIMEOUT_MS) ?? Promise.resolve(),
+          );
+        }
+        ctx.client.playAudioDone();
+        ctx.client.event({ type: "tts_done" });
+      }
+    };
+    if (ctx.turnPromise !== null) {
+      void ctx.turnPromise.then(sendPending);
+    } else {
+      sendPending();
+    }
   });
 
   handle.on("error", ({ code, message }) => {

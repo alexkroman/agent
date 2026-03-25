@@ -443,7 +443,7 @@ describe("createS2sSession", () => {
     });
   });
 
-  test("tool_call sends result immediately (not batched until reply_done)", async () => {
+  test("tool_call batches result and sends on reply_done", async () => {
     const executeTool = vi.fn(async () => "result-1");
     const { session, mockHandle } = setup({ executeTool });
     await session.start();
@@ -451,8 +451,14 @@ describe("createS2sSession", () => {
     mockHandle._fire("tool_call", { call_id: "c1", name: "t1", args: {} });
     await session.waitForTurn();
 
-    // Result should already be sent — before reply_done fires
-    expect(mockHandle.sendToolResult).toHaveBeenCalledWith("c1", "result-1");
+    // Result not sent yet — S2S protocol requires waiting for reply_done
+    expect(mockHandle.sendToolResult).not.toHaveBeenCalled();
+
+    mockHandle._fire("reply_done", { status: "completed" });
+    // reply_done waits for turnPromise then sends
+    await vi.waitFor(() => {
+      expect(mockHandle.sendToolResult).toHaveBeenCalledWith("c1", "result-1");
+    });
   });
 
   test("tool execution error returns JSON error string", async () => {
@@ -588,17 +594,21 @@ describe("createS2sSession", () => {
     // Wait for executeTool to be called (handleToolCall has async steps before it)
     await vi.waitFor(() => expect(executeTool).toHaveBeenCalled());
 
-    // Barge-in before tool completes
+    // Barge-in before tool completes — bumps replyGeneration
     mockHandle._fire("reply_done", { status: "interrupted" });
 
-    // Now the tool finishes — its result should NOT be sent
+    // Now the tool finishes — its result should be discarded (generation mismatch)
     resolveToolCall("late-result");
     await session.waitForTurn();
+
+    // Start new reply and trigger reply_done — stale result must not leak
+    mockHandle._fire("reply_started", { reply_id: "r2" });
+    mockHandle._fire("reply_done", { status: "completed" });
 
     expect(mockHandle.sendToolResult).not.toHaveBeenCalled();
   });
 
-  test("tool results sent immediately even when reply_done arrives late", async () => {
+  test("reply_done waits for slow tool calls before sending results", async () => {
     let resolveToolCall!: (value: string) => void;
     const executeTool = vi.fn(
       () =>
@@ -615,29 +625,52 @@ describe("createS2sSession", () => {
     // Wait for executeTool to be called
     await vi.waitFor(() => expect(executeTool).toHaveBeenCalled());
 
-    // Tool finishes before reply_done
-    resolveToolCall("result-1");
-    await session.waitForTurn();
+    // reply_done fires while tool is still executing
+    mockHandle._fire("reply_done", { status: "completed" });
 
-    // Result should be sent immediately — not waiting for reply_done
-    expect(mockHandle.sendToolResult).toHaveBeenCalledWith("c1", "result-1");
+    // Result not sent yet — tool still running
+    expect(mockHandle.sendToolResult).not.toHaveBeenCalled();
+
+    // Tool finishes — reply_done's deferred handler should now send it
+    resolveToolCall("result-1");
+    await vi.waitFor(() => {
+      expect(mockHandle.sendToolResult).toHaveBeenCalledWith("c1", "result-1");
+    });
   });
 
-  test("reply_started resets interrupted flag so new reply tools are sent", async () => {
-    const executeTool = vi.fn(async () => "result");
+  test("stale tool results from interrupted reply don't leak into next reply", async () => {
+    let resolveToolCall!: (value: string) => void;
+    const executeTool = vi.fn(
+      () =>
+        new Promise<string>((r) => {
+          resolveToolCall = r;
+        }),
+    );
     const { session, mockHandle } = setup({ executeTool });
     await session.start();
 
-    // First reply — interrupted
+    // First reply — interrupted while tool is running
     mockHandle._fire("reply_started", { reply_id: "r1" });
+    mockHandle._fire("tool_call", { call_id: "c1", name: "t1", args: {} });
+    await vi.waitFor(() => expect(executeTool).toHaveBeenCalled());
     mockHandle._fire("reply_done", { status: "interrupted" });
 
-    // Second reply — should work normally
-    mockHandle._fire("reply_started", { reply_id: "r2" });
-    mockHandle._fire("tool_call", { call_id: "c1", name: "t1", args: {} });
+    // Tool from first reply finishes late
+    resolveToolCall("stale-result");
     await session.waitForTurn();
 
-    expect(mockHandle.sendToolResult).toHaveBeenCalledWith("c1", "result");
+    // Second reply has its own tool call
+    executeTool.mockImplementation(async () => "fresh-result");
+    mockHandle._fire("reply_started", { reply_id: "r2" });
+    mockHandle._fire("tool_call", { call_id: "c2", name: "t2", args: {} });
+    await session.waitForTurn();
+    mockHandle._fire("reply_done", { status: "completed" });
+
+    // Only the fresh result should be sent, not the stale one
+    await vi.waitFor(() => {
+      expect(mockHandle.sendToolResult).toHaveBeenCalledTimes(1);
+    });
+    expect(mockHandle.sendToolResult).toHaveBeenCalledWith("c2", "fresh-result");
   });
 
   test("stop() during start() closes S2S handle to prevent orphaned connection", async () => {
