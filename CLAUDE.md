@@ -23,6 +23,7 @@ pnpm check               # Typecheck + lint + tests
 
 Run a single package's tests: `pnpm --filter @alexkroman1/aai test`
 Run a single test file: `pnpm vitest run packages/aai/types_test.ts`
+Run all tests from root: `npx vitest run --config vitest.config.ts`
 
 ## Architecture
 

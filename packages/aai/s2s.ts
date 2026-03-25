@@ -292,7 +292,7 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
       const raw = tryParseJson(ev.data);
       if (raw === undefined) return;
 
-      const obj = raw as { type?: unknown; data?: unknown; delta?: unknown };
+      const obj = raw as Record<string, unknown>;
       logIncoming(obj);
       if (handleAudioFastPath(obj)) return;
 

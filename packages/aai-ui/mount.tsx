@@ -42,9 +42,10 @@ export type MountHandle = {
 };
 
 function resolveContainer(target: string | HTMLElement = "#app"): HTMLElement {
-  const el = typeof target === "string" ? document.querySelector(target) : target;
+  if (typeof target !== "string") return target;
+  const el = document.querySelector<HTMLElement>(target);
   if (!el) throw new Error(`Element not found: ${target}`);
-  return el as HTMLElement;
+  return el;
 }
 
 /**
@@ -75,7 +76,7 @@ export function mount(Component: ComponentType<any>, options?: MountOptions): Mo
   // Apply theme overrides as CSS custom properties on the container.
   if (options?.theme) {
     const t = options.theme;
-    const el = container as HTMLElement;
+    const el = container;
     if (t.bg) el.style.setProperty("--color-aai-bg", t.bg);
     if (t.primary) el.style.setProperty("--color-aai-primary", t.primary);
     if (t.text) el.style.setProperty("--color-aai-text", t.text);
