@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "lefthook install"
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(pnpm install*)",
+      "Bash(pnpm test*)",
+      "Bash(pnpm lint*)",
+      "Bash(pnpm typecheck*)",
+      "Bash(pnpm check*)",
+      "Bash(pnpm build*)",
+      "Bash(pnpm --filter *)",
+      "Bash(pnpm vitest *)",
+      "Bash(pnpm run *)",
+      "Bash(npx vitest *)",
+      "Bash(turbo *)",
+      "Bash(npx biome *)",
+      "Bash(npx tsc *)",
+      "Bash(npx api-extractor *)",
+      "Bash(node *)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git show*)",
+      "Bash(git branch*)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(git fetch *)",
+      "Bash(git pull *)",
+      "Bash(git checkout *)",
+      "Bash(git switch *)",
+      "Bash(git merge *)",
+      "Bash(git rebase *)",
+      "Bash(git stash*)",
+      "Bash(git rev-parse *)",
+      "Bash(git remote *)",
+      "Bash(git cherry-pick *)",
+      "Bash(ls *)",
+      "Bash(mkdir *)",
+      "Bash(cp *)",
+      "Bash(mv *)",
+      "Bash(cat *)"
+    ]
+  },
+  "includeGitInstructions": true
+}

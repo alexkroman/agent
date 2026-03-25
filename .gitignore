@@ -5,7 +5,8 @@ dist/
 .env.*
 !.env.example
 .DS_Store
-.claude
+.claude/*
+!.claude/settings.json
 .tsbuildinfo/
 coverage/
 __pycache__/
