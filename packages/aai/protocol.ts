@@ -201,6 +201,34 @@ export function buildReadyConfig(s2sConfig: {
   };
 }
 
+// ─── Wire ↔ internal message conversion ─────────────────────────────────
+
+/** Wire-format message used in the `history` client message (uses `text`). */
+export type WireMessage = { role: "user" | "assistant"; text: string };
+
+/**
+ * Convert internal `{ content }` messages to wire-format `{ text }` messages.
+ *
+ * Use when sending a `history` client message. Defined once here so the
+ * field-name mapping can't drift between the UI and server.
+ */
+export function toWireMessages(
+  msgs: readonly { role: "user" | "assistant"; content: string }[],
+): WireMessage[] {
+  return msgs.map((m) => ({ role: m.role, text: m.content }));
+}
+
+/**
+ * Convert wire-format `{ text }` messages to internal `{ content }` messages.
+ *
+ * Use when receiving a `history` client message on the server.
+ */
+export function fromWireMessages(
+  msgs: readonly WireMessage[],
+): { role: "user" | "assistant"; content: string }[] {
+  return msgs.map((m) => ({ role: m.role, content: m.text }));
+}
+
 // ─── Worker RPC interfaces ─────────────────────────────────────────────────
 
 /** Zod schema for {@link TurnConfig}. */
