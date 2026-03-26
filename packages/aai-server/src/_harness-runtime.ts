@@ -300,31 +300,36 @@ function isRouteResult(v: unknown): v is RouteResult {
   return typeof v === "object" && v !== null && "data" in v;
 }
 
-async function handleRoute(
-  agent: AgentDef,
-  req: IncomingMessage,
-): Promise<RouteResult> {
+async function handleToolRoute(agent: AgentDef, req: IncomingMessage): Promise<RouteResult> {
+  const body = await parseJsonBody<ToolCallRequest>(req);
+  if (isRouteResult(body)) return body;
+  if (!body || typeof body.name !== "string" || typeof body.sessionId !== "string") {
+    return {
+      data: { error: "Invalid tool call request: missing name or sessionId" },
+      status: 400,
+    };
+  }
+  return { data: await executeTool(agent, body) };
+}
+
+async function handleHookRoute(agent: AgentDef, req: IncomingMessage): Promise<RouteResult> {
+  const body = await parseJsonBody<HookRequest>(req);
+  if (isRouteResult(body)) return body;
+  if (!body || typeof body.hook !== "string" || typeof body.sessionId !== "string") {
+    return { data: { error: "Invalid hook request: missing hook or sessionId" }, status: 400 };
+  }
+  return { data: await invokeHook(agent, body) };
+}
+
+async function handleRoute(agent: AgentDef, req: IncomingMessage): Promise<RouteResult> {
   if (req.method === "GET" && req.url === "/config") {
     return { data: extractConfig(agent) };
   }
   if (req.method === "POST" && req.url === "/tool") {
-    const body = await parseJsonBody<ToolCallRequest>(req);
-    if (isRouteResult(body)) return body;
-    if (!body || typeof body.name !== "string" || typeof body.sessionId !== "string") {
-      return {
-        data: { error: "Invalid tool call request: missing name or sessionId" },
-        status: 400,
-      };
-    }
-    return { data: await executeTool(agent, body) };
+    return handleToolRoute(agent, req);
   }
   if (req.method === "POST" && req.url === "/hook") {
-    const body = await parseJsonBody<HookRequest>(req);
-    if (isRouteResult(body)) return body;
-    if (!body || typeof body.hook !== "string" || typeof body.sessionId !== "string") {
-      return { data: { error: "Invalid hook request: missing hook or sessionId" }, status: 400 };
-    }
-    return { data: await invokeHook(agent, body) };
+    return handleHookRoute(agent, req);
   }
   return { data: { error: "Not found" }, status: 404 };
 }
