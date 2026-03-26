@@ -54,6 +54,15 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Cache TypeScript incremental build info
+        uses: actions/cache@v4
+        with:
+          path: .tsbuildinfo/
+          key: tsbuildinfo-build-${{ runner.os }}-${{ hashFiles('packages/*/tsconfig.json', 'tsconfig.json') }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            tsbuildinfo-build-${{ runner.os }}-${{ hashFiles('packages/*/tsconfig.json', 'tsconfig.json') }}-
+            tsbuildinfo-build-${{ runner.os }}-
+
       - run: pnpm -r run build
 
       - run: pnpm publish -r --no-git-checks
