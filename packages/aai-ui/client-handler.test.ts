@@ -61,12 +61,12 @@ function createTarget(voiceOverrides?: Partial<Record<string, (...args: never[])
   return { target, state, messages, toolCalls, userUtterance, agentUtterance, error, ...io };
 }
 
-describe("ClientHandler.handleMessage", () => {
+describe("ClientHandler.handleChatMessage", () => {
   test("binary ArrayBuffer dispatches audio chunk", () => {
     const { target, state, chunks } = createTarget();
     state.value = "listening";
     const buf = new Uint8Array([1, 2, 3, 4]).buffer;
-    const result = target.handleMessage(buf);
+    const result = target.handleChatMessage(buf);
     expect(result).toBe(null);
     expect(chunks().length).toBe(1);
     expect(state.value).toBe("speaking");
@@ -76,7 +76,7 @@ describe("ClientHandler.handleMessage", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const { target, state } = createTarget();
     state.value = "listening";
-    const result = target.handleMessage("not valid json {{{");
+    const result = target.handleChatMessage("not valid json {{{");
     expect(result).toBe(null);
     expect(state.value).toBe("listening");
     warn.mockRestore();
@@ -86,7 +86,9 @@ describe("ClientHandler.handleMessage", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const { target, state } = createTarget();
     state.value = "listening";
-    const result = target.handleMessage(JSON.stringify({ type: "unknown_event_type", data: 123 }));
+    const result = target.handleChatMessage(
+      JSON.stringify({ type: "unknown_event_type", data: 123 }),
+    );
     expect(result).toBe(null);
     expect(state.value).toBe("listening");
     expect(warn).toHaveBeenCalledWith("Ignoring invalid server message:", expect.any(String));
@@ -95,7 +97,7 @@ describe("ClientHandler.handleMessage", () => {
 
   test("config message returns parsed ReadyConfig", () => {
     const { target } = createTarget();
-    const result = target.handleMessage(
+    const result = target.handleChatMessage(
       JSON.stringify({
         type: "config",
         audioFormat: "pcm16",
@@ -113,7 +115,7 @@ describe("ClientHandler.handleMessage", () => {
   test("config message with unsupported format returns null", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const { target } = createTarget();
-    const result = target.handleMessage(
+    const result = target.handleChatMessage(
       JSON.stringify({
         type: "config",
         audioFormat: "mp3",
@@ -129,7 +131,7 @@ describe("ClientHandler.handleMessage", () => {
   test("audio_done message calls playAudioDone", async () => {
     const { target, state, wasDone } = createTarget();
     state.value = "speaking";
-    target.handleMessage(JSON.stringify({ type: "audio_done" }));
+    target.handleChatMessage(JSON.stringify({ type: "audio_done" }));
     await new Promise((r) => setTimeout(r, 0));
     expect(wasDone()).toBe(true);
     expect(state.value).toBe("listening");
@@ -137,7 +139,7 @@ describe("ClientHandler.handleMessage", () => {
 
   test("event messages are dispatched to event()", () => {
     const { target, state, messages } = createTarget();
-    target.handleMessage(JSON.stringify({ type: "turn", text: "hello" }));
+    target.handleChatMessage(JSON.stringify({ type: "turn", text: "hello" }));
     expect(state.value).toBe("thinking");
     expect(messages.value).toEqual([{ role: "user", content: "hello" }]);
   });
@@ -265,7 +267,7 @@ describe("ClientHandler.event edge cases", () => {
         toolName: "search",
         args: { query: "test" },
         status: "pending",
-        afterMessageIndex: 0,
+        afterChatMessageIndex: 0,
       },
     ]);
   });
@@ -278,7 +280,7 @@ describe("ClientHandler.event edge cases", () => {
         toolName: "search",
         args: {},
         status: "pending",
-        afterMessageIndex: 0,
+        afterChatMessageIndex: 0,
       },
     ];
     target.event({ type: "tool_call_done", toolCallId: "tc1", result: "found it" });
@@ -294,7 +296,7 @@ describe("ClientHandler.event edge cases", () => {
         toolName: "search",
         args: {},
         status: "pending",
-        afterMessageIndex: 0,
+        afterChatMessageIndex: 0,
       },
     ];
     target.event({ type: "tool_call_done", toolCallId: "tc_unknown", result: "nope" });
@@ -317,7 +319,7 @@ describe("ClientHandler.event edge cases", () => {
         args: {},
         status: "done",
         result: "x",
-        afterMessageIndex: 0,
+        afterChatMessageIndex: 0,
       },
     ];
     target.event({ type: "reset" });
