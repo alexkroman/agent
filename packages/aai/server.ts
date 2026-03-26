@@ -124,8 +124,9 @@ export function createServer(options: ServerOptions): AgentServer {
 
       const nodeServer = serve({ fetch: app.fetch, port });
 
-      await new Promise<void>((resolve) => {
+      await new Promise<void>((resolve, reject) => {
         nodeServer.on("listening", resolve);
+        nodeServer.on("error", reject);
       });
 
       const wss = new WebSocketServer({ noServer: true });

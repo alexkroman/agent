@@ -177,8 +177,9 @@ export async function startSidecarServer(
   const app = buildSidecarApp(kv, vector);
   const server = serve({ fetch: app.fetch, port: 0, hostname: "127.0.0.1" });
 
-  await new Promise<void>((resolve) => {
+  await new Promise<void>((resolve, reject) => {
     server.on("listening", resolve);
+    server.on("error", reject);
   });
 
   const addr = server.address() as { port: number };
