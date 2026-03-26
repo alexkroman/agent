@@ -752,10 +752,10 @@ data lives on `session` (a `VoiceSession`); UI-only controls are top-level.
 
 **Hooks:**
 
-| Hook                                          | Description                                                                                  |
-| --------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `useToolResult((toolName, result, tc) => {})` | Fires once per completed tool call with parsed JSON result. Use for carts, scoreboards, etc. |
-| `useToolResult<R>("tool_name", (result, tc) => {})` | Fires only for the named tool, with `result` typed as `R`. |
+| Hook                                                 | Description                                                                                  |
+| ---------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `useToolResult((toolName, result, tc) => {})`        | Fires once per completed tool call with parsed JSON result. Use for carts, scoreboards, etc. |
+| `useToolResult<R>("tool_name", (result, tc) => {})`  | Fires only for the named tool, with `result` typed as `R`.                                   |
 
 **Signal semantics for utterances:**
 

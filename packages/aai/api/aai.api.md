@@ -68,9 +68,6 @@ export { defineTool }
 export { defineTool as tool }
 
 // @public
-export type ToolResultMap<T extends Record<string, unknown> = Record<string, unknown>> = T;
-
-// @public
 export type HookContext<S = Record<string, unknown>> = Omit<ToolContext<S>, "messages" | "sendUpdate">;
 
 // @public
@@ -161,6 +158,9 @@ export type ToolDef<P extends z.ZodObject<z.ZodRawShape> = z.ZodObject<z.ZodRawS
     parameters?: P;
     execute(args: z.infer<P>, ctx: ToolContext<S>): Promise<unknown> | unknown;
 };
+
+// @public
+export type ToolResultMap<T extends Record<string, unknown> = Record<string, unknown>> = T;
 
 // @public
 export type VectorEntry = {
