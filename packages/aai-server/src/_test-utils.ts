@@ -179,7 +179,7 @@ export function createTestKvStore(): KvStore {
       store.set(scopedKey("kv", scope, key), value);
       return Promise.resolve();
     },
-    del(scope, key) {
+    delete(scope, key) {
       store.delete(scopedKey("kv", scope, key));
       return Promise.resolve();
     },
@@ -239,7 +239,7 @@ export function createTestVectorStore(): ServerVectorStore {
       results.sort((a, b) => b.score - a.score);
       return Promise.resolve(results.slice(0, topK));
     },
-    remove(scope, ids) {
+    delete(scope, ids) {
       for (const id of ids) {
         store.delete(scopedKey("vec", scope, id));
       }

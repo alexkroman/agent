@@ -62,7 +62,7 @@ const kv: Kv = {
     return sidecarRpc<void>("/kv/set", { key, value, options });
   },
   delete(key: string) {
-    return sidecarRpc<void>("/kv/del", { key });
+    return sidecarRpc<void>("/kv/delete", { key });
   },
   list<T = unknown>(prefix: string, options?: { limit?: number; reverse?: boolean }) {
     return sidecarRpc<{ key: string; value: T }[]>("/kv/list", { prefix, ...options });
@@ -79,8 +79,8 @@ const vector: VectorStore = {
   query(text: string, options?: { topK?: number; filter?: string }) {
     return sidecarRpc("/vec/query", { text, ...options });
   },
-  remove(ids: string | string[]) {
-    return sidecarRpc<void>("/vec/remove", { ids: Array.isArray(ids) ? ids : [ids] });
+  delete(ids: string | string[]) {
+    return sidecarRpc<void>("/vec/delete", { ids: Array.isArray(ids) ? ids : [ids] });
   },
 };
 

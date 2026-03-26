@@ -167,7 +167,7 @@ export type VectorStore = {
         topK?: number;
         filter?: string;
     }): Promise<VectorEntry[]>;
-    remove(ids: string | string[]): Promise<void>;
+    delete(ids: string | string[]): Promise<void>;
 };
 
 // (No @packageDocumentation comment for this package)

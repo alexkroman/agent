@@ -91,7 +91,7 @@ describe("vector handler", () => {
     const failingStore = {
       upsert: () => Promise.reject(new Error("vec down")),
       query: () => Promise.reject(new Error("vec down")),
-      remove: () => Promise.reject(new Error("vec down")),
+      delete: () => Promise.reject(new Error("vec down")),
     };
     const { app } = createTestApp(
       failingStore as unknown as ReturnType<typeof createTestVectorStore>,

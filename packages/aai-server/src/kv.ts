@@ -8,7 +8,7 @@ import type { AgentScope } from "./scope-token.ts";
 export type KvStore = {
   get(scope: AgentScope, key: string): Promise<string | null>;
   set(scope: AgentScope, key: string, value: string, ttl?: number): Promise<void>;
-  del(scope: AgentScope, key: string): Promise<void>;
+  delete(scope: AgentScope, key: string): Promise<void>;
   keys(scope: AgentScope, pattern?: string): Promise<string[]>;
   list(
     scope: AgentScope,
@@ -57,7 +57,7 @@ export function createKvStore(url: string, token: string): KvStore {
       }
     },
 
-    async del(scope, key) {
+    async delete(scope, key) {
       await redis.del(scopedKey(scope, key));
     },
 

@@ -62,19 +62,19 @@ describe("createMemoryVectorStore", () => {
     expect(results[0]?.data).toBe("new text");
   });
 
-  test("remove deletes single entry", async () => {
+  test("delete removes single entry", async () => {
     const v = createMemoryVectorStore();
     await v.upsert("doc", "hello");
-    await v.remove("doc");
+    await v.delete("doc");
     expect(await v.query("hello")).toEqual([]);
   });
 
-  test("remove deletes multiple entries", async () => {
+  test("delete removes multiple entries", async () => {
     const v = createMemoryVectorStore();
     await v.upsert("a", "hello");
     await v.upsert("b", "hello");
     await v.upsert("c", "hello");
-    await v.remove(["a", "b"]);
+    await v.delete(["a", "b"]);
     const results = await v.query("hello");
     expect(results.length).toBe(1);
     expect(results[0]?.id).toBe("c");
@@ -103,9 +103,9 @@ describe("createMemoryVectorStore", () => {
     expect(results).toEqual([]);
   });
 
-  test("remove non-existent id does not throw", async () => {
+  test("delete non-existent id does not throw", async () => {
     const v = createMemoryVectorStore();
-    await expect(v.remove("nonexistent")).resolves.toBeUndefined();
+    await expect(v.delete("nonexistent")).resolves.toBeUndefined();
   });
 
   test("upsert without metadata results in undefined metadata", async () => {

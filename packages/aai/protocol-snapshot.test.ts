@@ -197,7 +197,7 @@ describe("KvRequest wire format", () => {
     ["get", { op: "get", key: "k1" }],
     ["set", { op: "set", key: "k1", value: "v1" }],
     ["set with ttl", { op: "set", key: "k1", value: "v1", ttl: 60 }],
-    ["del", { op: "del", key: "k1" }],
+    ["delete", { op: "delete", key: "k1" }],
     ["list", { op: "list", prefix: "user:" }],
     ["list with options", { op: "list", prefix: "", limit: 10, reverse: true }],
     ["keys", { op: "keys" }],

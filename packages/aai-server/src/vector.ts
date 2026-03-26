@@ -13,7 +13,7 @@ export type ServerVectorStore = {
     metadata?: Record<string, unknown>,
   ): Promise<void>;
   query(scope: AgentScope, text: string, topK?: number, filter?: string): Promise<VectorEntry[]>;
-  remove(scope: AgentScope, ids: string[]): Promise<void>;
+  delete(scope: AgentScope, ids: string[]): Promise<void>;
 };
 
 function namespace(scope: AgentScope): string {
@@ -49,7 +49,7 @@ export function createVectorStore(url: string, token: string): ServerVectorStore
       }));
     },
 
-    async remove(scope, ids) {
+    async delete(scope, ids) {
       const ns = namespace(scope);
       await index.delete(ids, { namespace: ns });
     },

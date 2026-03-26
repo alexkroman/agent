@@ -158,7 +158,7 @@ function createMockVector() {
         .map(([id, v]) => ({ id, data: v.data, score: 1.0, metadata: v.metadata }));
       return results;
     },
-    remove: async (ids: string | string[]) => {
+    delete: async (ids: string | string[]) => {
       for (const id of Array.isArray(ids) ? ids : [ids]) docs.delete(id);
     },
   };

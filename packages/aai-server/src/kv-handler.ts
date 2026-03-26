@@ -17,8 +17,8 @@ export async function handleKv(c: Context<Env>): Promise<Response> {
       case "set":
         await kvStore.set(scope, msg.key, msg.value, msg.ttl);
         return c.json({ result: "OK" });
-      case "del":
-        await kvStore.del(scope, msg.key);
+      case "delete":
+        await kvStore.delete(scope, msg.key);
         return c.json({ result: "OK" });
       case "keys":
         return c.json({ result: await kvStore.keys(scope, msg.pattern) });

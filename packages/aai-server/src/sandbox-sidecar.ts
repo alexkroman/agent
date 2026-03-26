@@ -33,7 +33,7 @@ export function scopedKv(kvStore: KvStore, scope: AgentScope) {
       await kvStore.set(scope, key, JSON.stringify(value), ttl);
     },
     async delete(key: string) {
-      await kvStore.del(scope, key);
+      await kvStore.delete(scope, key);
     },
     async list<T = unknown>(
       prefix: string,
@@ -62,8 +62,8 @@ export function scopedVector(vectorStore: ServerVectorStore, scope: AgentScope) 
     async query(text: string, options?: { topK?: number; filter?: string }) {
       return await vectorStore.query(scope, text, options?.topK, options?.filter);
     },
-    async remove(ids: string | string[]) {
-      await vectorStore.remove(scope, Array.isArray(ids) ? ids : [ids]);
+    async delete(ids: string | string[]) {
+      await vectorStore.delete(scope, Array.isArray(ids) ? ids : [ids]);
     },
   };
 }
@@ -76,7 +76,7 @@ const SidecarKvSetSchema = z.object({
   value: z.unknown(),
   options: z.object({ expireIn: z.number().optional() }).optional(),
 });
-const SidecarKvDelSchema = z.object({ key: z.string() });
+const SidecarKvDeleteSchema = z.object({ key: z.string() });
 const SidecarKvListSchema = z.object({
   prefix: z.string(),
   limit: z.number().optional(),
@@ -93,7 +93,7 @@ const SidecarVecQuerySchema = z.object({
   topK: z.number().optional(),
   filter: z.string().optional(),
 });
-const SidecarVecRemoveSchema = z.object({ ids: z.union([z.string(), z.array(z.string())]) });
+const SidecarVecDeleteSchema = z.object({ ids: z.union([z.string(), z.array(z.string())]) });
 
 // ── Sidecar server (per-sandbox, loopback, no auth) ─────────────────────
 
@@ -121,8 +121,8 @@ function buildSidecarApp(
     );
     return c.json(null);
   });
-  app.post("/kv/del", async (c) => {
-    const { key } = SidecarKvDelSchema.parse(await c.req.json());
+  app.post("/kv/delete", async (c) => {
+    const { key } = SidecarKvDeleteSchema.parse(await c.req.json());
     await kv.delete(key);
     return c.json(null);
   });
@@ -153,9 +153,9 @@ function buildSidecarApp(
       }),
     );
   });
-  app.post("/vec/remove", async (c) => {
-    const { ids } = SidecarVecRemoveSchema.parse(await c.req.json());
-    await requireVec().remove(ids);
+  app.post("/vec/delete", async (c) => {
+    const { ids } = SidecarVecDeleteSchema.parse(await c.req.json());
+    await requireVec().delete(ids);
     return c.json(null);
   });
 

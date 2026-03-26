@@ -16,7 +16,7 @@ function createMockKvStore() {
       store.set(key, value);
       return Promise.resolve();
     },
-    del: (_scope: unknown, key: string) => {
+    delete: (_scope: unknown, key: string) => {
       store.delete(key);
       return Promise.resolve();
     },
@@ -91,10 +91,10 @@ describe("kv handler", () => {
     expect(kv.store.get("k1")).toBe("v1");
   });
 
-  test("del removes key and returns OK", async () => {
+  test("delete removes key and returns OK", async () => {
     const kv = createMockKvStore();
     kv.store.set("k1", "v1");
-    const { status, json } = await postKv(kv, { op: "del", key: "k1" });
+    const { status, json } = await postKv(kv, { op: "delete", key: "k1" });
     expect(status).toBe(200);
     expect(json.result).toBe("OK");
     expect(kv.store.has("k1")).toBe(false);
@@ -126,7 +126,7 @@ describe("kv handler", () => {
       store: new Map(),
       get: () => Promise.reject(new Error("db down")),
       set: () => Promise.reject(new Error("db down")),
-      del: () => Promise.reject(new Error("db down")),
+      delete: () => Promise.reject(new Error("db down")),
       keys: () => Promise.reject(new Error("db down")),
       list: () => Promise.reject(new Error("db down")),
     };
