@@ -298,6 +298,50 @@ packages (`aai`, `aai-ui`, `aai-cli`, `aai-server`).
   add configurable ±30s skew.
   *(Engineer 1, #14)*
 
+### Test Coverage (Engineer 6)
+
+- [ ] **KV store has zero tests**: `aai-server/src/kv.ts` — critical Redis
+  scanning logic (scopedKey, scanAll pagination) completely untested. Add scope
+  isolation and pagination edge case tests.
+  *(Engineer 6, #3)*
+
+- [ ] **Vector store has zero tests**: `aai-server/src/vector.ts` — namespace
+  construction and scope isolation untested. Add injection and boundary tests.
+  *(Engineer 6, #4)*
+
+- [ ] **Transport WebSocket untested**: `aai-server/src/transport-websocket.ts`
+  — CSP headers, SafePathSchema validation, content-type detection have no tests.
+  *(Engineer 6, #5)*
+
+- [ ] **Harness runtime untested**: `aai-server/src/_harness-runtime.ts` — 80+
+  lines of core isolate runtime with sidecar RPC, middleware, KV/vector
+  bindings. No direct tests.
+  *(Engineer 6, #7)*
+
+- [ ] **16 UI components untested**: All `_components/*.tsx` files in `aai-ui`
+  lack component tests. Priority: `message-bubble.tsx` (role-based rendering),
+  `chat-view.tsx`, `error-banner.tsx`.
+  *(Engineer 6, #10-25)*
+
+- [ ] **CLI commands untested**: `_init.ts`, `_link.ts`, `delete.ts`,
+  `dev.ts`, `secret.ts`, `start.ts` — no tests for error handling paths,
+  edge cases, or permission errors.
+  *(Engineer 6, #28-35)*
+
+- [ ] **Sandbox test weak assertions**: `sandbox.test.ts:102-253` — hook
+  invoker tests verify fetch calls but not error handling, timeout scenarios,
+  or state management after failed hooks.
+  *(Engineer 6, sandbox)*
+
+- [ ] **Deploy test weak coverage**: `deploy.test.ts` — 14 assertions across
+  10 tests. Missing: malformed worker code, concurrent deploy conflicts, env
+  var size limits.
+  *(Engineer 6, deploy)*
+
+- [ ] **46% of source files have no test coverage**: 64 of 139 source files
+  are untested. Overall test-to-source ratio needs improvement.
+  *(Engineer 6, summary)*
+
 ---
 
 ## Design Decisions
@@ -330,8 +374,8 @@ packages (`aai`, `aai-ui`, `aai-cli`, `aai-server`).
 
 ## Notes
 
-- Engineers 6 (Testing) and 8 (Dependencies) reviews were still in progress
-  at plan creation time. Their findings will be appended when available.
+- Engineer 8 (Dependencies) review was still in progress at plan creation
+  time. Findings will be appended when available.
 - Many findings overlap across reviewers (e.g., the barge-in race condition
   was flagged by both the Concurrency and Reliability engineers). These have
   been deduplicated and cross-referenced.
