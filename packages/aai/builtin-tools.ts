@@ -9,6 +9,7 @@
 import { convert } from "html-to-text";
 import { z } from "zod";
 import { EMPTY_PARAMS, type ToolSchema } from "./_internal-types.ts";
+import { ssrfSafeFetch } from "./_ssrf.ts";
 import { errorMessage } from "./_utils.ts";
 import { memoryTools } from "./memory-tools.ts";
 import type { ToolDef } from "./types.ts";
@@ -105,15 +106,18 @@ function createVisitWebpage(fetchFn = globalThis.fetch): ToolDef<typeof visitWeb
     parameters: visitWebpageParams,
     async execute(args, _ctx) {
       const { url } = args;
-      const resp = await fetchFn(url, {
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (compatible; VoiceAgent/1.0; +https://github.com/AssemblyAI/aai)",
-          Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      const resp = await ssrfSafeFetch(
+        url,
+        {
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (compatible; VoiceAgent/1.0; +https://github.com/AssemblyAI/aai)",
+            Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          },
+          signal: fetchSignal(),
         },
-        redirect: "follow",
-        signal: fetchSignal(),
-      });
+        fetchFn,
+      );
       if (!resp.ok) {
         return { error: `Failed to fetch: ${resp.status} ${resp.statusText}`, url };
       }
@@ -149,10 +153,11 @@ function createFetchJson(fetchFn = globalThis.fetch): ToolDef<typeof fetchJsonPa
     parameters: fetchJsonParams,
     async execute(args, _ctx) {
       const { url, headers } = args;
-      const resp = await fetchFn(url, {
-        ...(headers && { headers }),
-        signal: fetchSignal(),
-      });
+      const resp = await ssrfSafeFetch(
+        url,
+        { ...(headers && { headers }), signal: fetchSignal() },
+        fetchFn,
+      );
       if (!resp.ok) {
         return { error: `HTTP ${resp.status} ${resp.statusText}`, url };
       }
