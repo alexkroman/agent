@@ -83,23 +83,23 @@ function resetIdleTimer(slot: AgentSlot): void {
   }, IDLE_MS);
 }
 
-export function ensureAgent(slot: AgentSlot, opts: EnsureOpts): Promise<Sandbox> {
-  const t0 = performance.now();
-
+export async function ensureAgent(slot: AgentSlot, opts: EnsureOpts): Promise<Sandbox> {
   // If a previous sandbox is being terminated, wait for it to finish
-  // before checking or creating a new one.
+  // before checking or creating a new one. Loop in case a new
+  // termination starts between awaiting and re-checking.
   // biome-ignore lint/nursery/noMisusedPromises: checking nullability, not truthiness
-  if (slot.terminating) {
-    return slot.terminating.then(() => ensureAgent(slot, opts));
+  while (slot.terminating) {
+    await slot.terminating;
   }
 
   if (slot.sandbox) {
     resetIdleTimer(slot);
-    return Promise.resolve(slot.sandbox);
+    return slot.sandbox;
   }
   // biome-ignore lint/nursery/noMisusedPromises: checking nullability, not truthiness
   if (slot.initializing) return slot.initializing;
 
+  const t0 = performance.now();
   slot.initializing = spawnAgent(slot, opts)
     .then(() => {
       delete slot.initializing;
