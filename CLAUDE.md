@@ -14,8 +14,8 @@ agents can be deployed to the managed platform.
 ```sh
 pnpm install             # Install dependencies
 pnpm test                # Run all tests (vitest)
-pnpm lint                # Run Biome linter (via Turborepo)
-pnpm typecheck           # Type-check all packages (via Turborepo)
+pnpm lint                # Run Biome linter (all packages)
+pnpm typecheck           # Type-check all packages
 pnpm lint:fix            # Auto-fix lint issues
 ```
 
@@ -29,8 +29,8 @@ npx vitest run --config vitest.config.ts      # All from root
 
 **Full CI check** (`pnpm check`):
 
-Runs everything in sequence: `install --frozen-lockfile` → `turbo build
-typecheck lint` → `vitest --coverage` → `knip` → `syncpack lint` →
+Runs everything in sequence: `install --frozen-lockfile` → `pnpm -r run build`
+→ `typecheck` → `lint` → `vitest --coverage` → `knip` → `syncpack lint` →
 `api-extractor` (aai, aai-ui) → template type-check → `markdownlint-cli2` →
 `attw --pack` (aai, aai-ui) → aai-server integration tests → aai-cli e2e tests.
 

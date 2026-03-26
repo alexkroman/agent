@@ -11,5 +11,4 @@ dist/
 coverage/
 __pycache__/
 *.pyc
-.turbo
 temp/
