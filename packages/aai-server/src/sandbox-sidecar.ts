@@ -30,7 +30,8 @@ export function scopedKv(kvStore: KvStore, scope: AgentScope) {
       }
     },
     async set(key: string, value: unknown, options?: { expireIn?: number }) {
-      await kvStore.set(scope, key, JSON.stringify(value), options?.expireIn);
+      const ttlSeconds = options?.expireIn != null ? Math.ceil(options.expireIn / 1000) : undefined;
+      await kvStore.set(scope, key, JSON.stringify(value), ttlSeconds);
     },
     async delete(key: string) {
       await kvStore.del(scope, key);
