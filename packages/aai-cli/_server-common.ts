@@ -1,6 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import fs from "node:fs/promises";
 import path from "node:path";
 import type { AgentServer } from "@alexkroman1/aai/server";
 import type { AgentDef } from "@alexkroman1/aai/types";
@@ -66,9 +65,8 @@ export async function bootServer(
   env: Record<string, string>,
   port: number,
 ): Promise<AgentServer> {
-  const clientHtml = await fs.readFile(path.join(clientDir, "index.html"), "utf-8");
   const { createServer } = await import("@alexkroman1/aai/server");
-  const server = createServer({ agent: agentDef, clientHtml, clientDir, env });
+  const server = createServer({ agent: agentDef, clientDir, env });
   await server.listen(port);
   return server;
 }
