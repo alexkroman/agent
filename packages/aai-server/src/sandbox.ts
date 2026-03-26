@@ -92,6 +92,7 @@ async function startIsolate(
 
   let resolvePort: (port: number) => void;
   let rejectPort: (err: Error) => void;
+  let portResolved = false;
   const portPromise = new Promise<number>((resolve, reject) => {
     resolvePort = resolve;
     rejectPort = reject;
@@ -124,7 +125,11 @@ async function startIsolate(
       if (event.channel === "stdout") {
         try {
           const parsed = z.object({ port: z.number() }).safeParse(JSON.parse(event.message));
-          if (parsed.success) resolvePort(parsed.data.port);
+          // Guard: only resolve once. Subsequent port announcements are ignored.
+          if (parsed.success && !portResolved) {
+            portResolved = true;
+            resolvePort(parsed.data.port);
+          }
         } catch {
           // Not the port announcement, ignore
         }
@@ -372,8 +377,8 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
           console.warn("Session stop failed during sandbox terminate:", err);
         }),
       );
-      sessions.clear();
       await Promise.all(stops);
+      sessions.clear();
       // Use terminate() (async) instead of dispose() (sync) to properly
       // await HTTP server closure before disposing the V8 isolate.
       // This prevents "Isolate is disposed" unhandled rejections from

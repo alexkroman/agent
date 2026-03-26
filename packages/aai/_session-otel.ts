@@ -93,7 +93,7 @@ export async function handleToolCall(ctx: S2sSessionCtx, detail: S2sToolCall): P
     return;
   }
 
-  const refused = ctx.consumeToolCallStep(turnConfig, name);
+  const refused = ctx.consumeToolCallStep(turnConfig, name, generation);
   if (refused !== null) {
     span.setAttribute("aai.tool.refused", true);
     span.end();
@@ -205,17 +205,23 @@ function handleUserTranscript(ctx: S2sSessionCtx, text: string): void {
 }
 
 function handleAgentTranscriptDelta(ctx: S2sSessionCtx, text: string): void {
-  if (!ctx.hookInvoker?.filterOutput) {
+  const filterOutput = ctx.hookInvoker?.filterOutput;
+  if (!filterOutput) {
     ctx.client.event({ type: "chat_delta", text });
     return;
   }
-  ctx.hookInvoker
-    .filterOutput(ctx.id, text, HOOK_TIMEOUT_MS)
-    .then((f) => ctx.client.event({ type: "chat_delta", text: f }))
-    .catch((err: unknown) => {
+  // Chain filter calls sequentially to preserve ordering. Without this,
+  // concurrent filterOutput calls could resolve out of order, producing
+  // garbled text on the client.
+  ctx.filterChain = ctx.filterChain.then(async () => {
+    try {
+      const f = await filterOutput.call(ctx.hookInvoker, ctx.id, text, HOOK_TIMEOUT_MS);
+      ctx.client.event({ type: "chat_delta", text: f });
+    } catch (err: unknown) {
       ctx.log.warn("filterOutput hook failed", { error: errorMessage(err) });
       ctx.client.event({ type: "chat_delta", text });
-    });
+    }
+  });
 }
 
 function handleAgentTranscript(ctx: S2sSessionCtx, text: string): void {
@@ -223,17 +229,22 @@ function handleAgentTranscript(ctx: S2sSessionCtx, text: string): void {
     ctx.client.event({ type: "chat", text: t });
     ctx.pushMessages({ role: "assistant", content: t });
   };
-  if (!ctx.hookInvoker?.filterOutput) {
+  const filterOutput = ctx.hookInvoker?.filterOutput;
+  if (!filterOutput) {
     emit(text);
     return;
   }
-  ctx.hookInvoker
-    .filterOutput(ctx.id, text, HOOK_TIMEOUT_MS)
-    .then(emit)
-    .catch((err: unknown) => {
+  // Chain after any pending deltas to ensure the final transcript
+  // is emitted after all deltas are processed.
+  ctx.filterChain = ctx.filterChain.then(async () => {
+    try {
+      const f = await filterOutput.call(ctx.hookInvoker, ctx.id, text, HOOK_TIMEOUT_MS);
+      emit(f);
+    } catch (err: unknown) {
       ctx.log.warn("filterOutput hook failed", { error: errorMessage(err) });
       emit(text);
-    });
+    }
+  });
 }
 
 function handleReplyDone(ctx: S2sSessionCtx, status: string | undefined): void {
@@ -300,6 +311,12 @@ export function setupListeners(ctx: S2sSessionCtx, handle: S2sHandle): void {
     ctx.toolCallCount = 0;
     ctx.replyGeneration++;
     ctx.pendingTools = [];
+    // Reset the turn promise chain so stale resolved promises from
+    // a previous reply don't cause sendPending to execute immediately
+    // in handleReplyDone before current-reply tool calls finish.
+    ctx.turnPromise = null;
+    // Reset filter chain so stale filter promises don't block new deltas.
+    ctx.filterChain = Promise.resolve();
   });
   handle.on("audio", ({ audio }) => ctx.client.playAudioChunk(audio));
   handle.on("agentTranscriptDelta", ({ text }) => handleAgentTranscriptDelta(ctx, text));

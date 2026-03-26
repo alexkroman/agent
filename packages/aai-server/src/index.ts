@@ -132,6 +132,7 @@ async function main(): Promise<void> {
         return slot.sandbox?.terminate();
       })
       .filter(Boolean);
+    // Await all sandbox terminations before closing the server.
     await Promise.allSettled(stops);
     nodeServer.close(() => process.exit(0));
     // Force exit if cleanup takes too long

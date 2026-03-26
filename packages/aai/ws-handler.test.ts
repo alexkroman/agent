@@ -149,7 +149,7 @@ describe("wireSessionSocket", () => {
 
   // ─── Binary audio handling ──────────────────────────────────────────────
 
-  test("Uint8Array binary data is forwarded to session.onAudio", () => {
+  test("Uint8Array binary data is forwarded to session.onAudio", async () => {
     const session = makeStubSession();
     const ws = new MockWebSocket("ws://test");
     ws.readyState = MockWebSocket.OPEN;
@@ -160,6 +160,10 @@ describe("wireSessionSocket", () => {
       readyConfig: defaultConfig,
       logger: silentLogger,
     });
+
+    // Wait for session.start() microtask to resolve so the session is ready.
+    await vi.waitFor(() => expect(session.start).toHaveBeenCalled());
+    await Promise.resolve();
 
     const audio = new Uint8Array([1, 2, 3, 4]);
     ws.simulateMessage(audio.buffer);
@@ -169,7 +173,7 @@ describe("wireSessionSocket", () => {
     expect(passed).toBeInstanceOf(Uint8Array);
   });
 
-  test("ArrayBuffer data is forwarded to session.onAudio", () => {
+  test("ArrayBuffer data is forwarded to session.onAudio", async () => {
     const session = makeStubSession();
     const ws = new MockWebSocket("ws://test");
     ws.readyState = MockWebSocket.OPEN;
@@ -180,6 +184,9 @@ describe("wireSessionSocket", () => {
       readyConfig: defaultConfig,
       logger: silentLogger,
     });
+
+    await vi.waitFor(() => expect(session.start).toHaveBeenCalled());
+    await Promise.resolve();
 
     const buf = new ArrayBuffer(4);
     ws.simulateMessage(buf);
@@ -189,7 +196,7 @@ describe("wireSessionSocket", () => {
 
   // ─── Text message handling ──────────────────────────────────────────────
 
-  test("audio_ready message calls session.onAudioReady", () => {
+  test("audio_ready message calls session.onAudioReady", async () => {
     const session = makeStubSession();
     const ws = new MockWebSocket("ws://test");
     ws.readyState = MockWebSocket.OPEN;
@@ -200,12 +207,15 @@ describe("wireSessionSocket", () => {
       readyConfig: defaultConfig,
       logger: silentLogger,
     });
+
+    await vi.waitFor(() => expect(session.start).toHaveBeenCalled());
+    await Promise.resolve();
 
     ws.simulateMessage(JSON.stringify({ type: "audio_ready" }));
     expect(session.onAudioReady).toHaveBeenCalledOnce();
   });
 
-  test("cancel message calls session.onCancel", () => {
+  test("cancel message calls session.onCancel", async () => {
     const session = makeStubSession();
     const ws = new MockWebSocket("ws://test");
     ws.readyState = MockWebSocket.OPEN;
@@ -216,12 +226,15 @@ describe("wireSessionSocket", () => {
       readyConfig: defaultConfig,
       logger: silentLogger,
     });
+
+    await vi.waitFor(() => expect(session.start).toHaveBeenCalled());
+    await Promise.resolve();
 
     ws.simulateMessage(JSON.stringify({ type: "cancel" }));
     expect(session.onCancel).toHaveBeenCalledOnce();
   });
 
-  test("reset message calls session.onReset", () => {
+  test("reset message calls session.onReset", async () => {
     const session = makeStubSession();
     const ws = new MockWebSocket("ws://test");
     ws.readyState = MockWebSocket.OPEN;
@@ -232,12 +245,15 @@ describe("wireSessionSocket", () => {
       readyConfig: defaultConfig,
       logger: silentLogger,
     });
+
+    await vi.waitFor(() => expect(session.start).toHaveBeenCalled());
+    await Promise.resolve();
 
     ws.simulateMessage(JSON.stringify({ type: "reset" }));
     expect(session.onReset).toHaveBeenCalledOnce();
   });
 
-  test("history message calls session.onHistory", () => {
+  test("history message calls session.onHistory", async () => {
     const session = makeStubSession();
     const ws = new MockWebSocket("ws://test");
     ws.readyState = MockWebSocket.OPEN;
@@ -248,6 +264,9 @@ describe("wireSessionSocket", () => {
       readyConfig: defaultConfig,
       logger: silentLogger,
     });
+
+    await vi.waitFor(() => expect(session.start).toHaveBeenCalled());
+    await Promise.resolve();
 
     const messages = [
       { role: "user" as const, text: "Hello" },
@@ -257,7 +276,7 @@ describe("wireSessionSocket", () => {
     expect(session.onHistory).toHaveBeenCalledWith(messages);
   });
 
-  test("invalid JSON is logged and ignored", () => {
+  test("invalid JSON is logged and ignored", async () => {
     const session = makeStubSession();
     const ws = new MockWebSocket("ws://test");
     ws.readyState = MockWebSocket.OPEN;
@@ -269,12 +288,15 @@ describe("wireSessionSocket", () => {
       readyConfig: defaultConfig,
       logger,
     });
+
+    await vi.waitFor(() => expect(session.start).toHaveBeenCalled());
+    await Promise.resolve();
 
     ws.simulateMessage("not-json{{{");
     expect(logger.warn).toHaveBeenCalledWith("Invalid JSON from client", expect.any(Object));
   });
 
-  test("invalid message schema is logged and ignored", () => {
+  test("invalid message schema is logged and ignored", async () => {
     const session = makeStubSession();
     const ws = new MockWebSocket("ws://test");
     ws.readyState = MockWebSocket.OPEN;
@@ -286,6 +308,9 @@ describe("wireSessionSocket", () => {
       readyConfig: defaultConfig,
       logger,
     });
+
+    await vi.waitFor(() => expect(session.start).toHaveBeenCalled());
+    await Promise.resolve();
 
     ws.simulateMessage(JSON.stringify({ type: "unknown_type" }));
     expect(logger.warn).toHaveBeenCalledWith("Invalid client message", expect.any(Object));
