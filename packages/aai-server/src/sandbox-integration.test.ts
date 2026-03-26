@@ -134,8 +134,11 @@ function createMockKv() {
     set: async (key: string, value: unknown, _options?: { expireIn?: number }) => {
       store.set(key, value);
     },
-    delete: async (key: string) => {
-      store.delete(key);
+    delete: async (keys: string | string[]) => {
+      const keyArray = Array.isArray(keys) ? keys : [keys];
+      for (const key of keyArray) {
+        store.delete(key);
+      }
     },
     list: async <T = unknown>(
       _prefix: string,
