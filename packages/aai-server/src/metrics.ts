@@ -12,12 +12,7 @@
 
 import { metrics } from "@opentelemetry/api";
 import { PrometheusExporter } from "@opentelemetry/exporter-prometheus";
-import {
-  type CollectionResult,
-  type DataPoint,
-  MeterProvider,
-  type MetricReader,
-} from "@opentelemetry/sdk-metrics";
+import { type CollectionResult, type DataPoint, MeterProvider } from "@opentelemetry/sdk-metrics";
 
 // ─── SDK Setup ───────────────────────────────────────────────────────────────
 
@@ -46,7 +41,8 @@ export async function serializeForAgent(agent: string): Promise<string> {
 // ─── Internal helpers ────────────────────────────────────────────────────────
 
 async function collectMetrics(): Promise<CollectionResult> {
-  return (exporter as unknown as MetricReader).collect();
+  // PrometheusExporter extends MetricReader, so collect() is inherited directly.
+  return exporter.collect();
 }
 
 type NumberDataPoint = DataPoint<number>;
@@ -74,7 +70,10 @@ function filterLabels(
   dp: NumberDataPoint,
   agentFilter: string | undefined,
 ): { include: boolean; labelStr: string } {
-  const labels = dp.attributes as Record<string, string>;
+  const labels: Record<string, string> = {};
+  for (const [k, v] of Object.entries(dp.attributes)) {
+    if (v != null) labels[k] = String(v);
+  }
   if (agentFilter !== undefined) {
     if (labels.agent !== agentFilter) return { include: false, labelStr: "" };
     const { agent: _, ...rest } = labels;
@@ -89,17 +88,17 @@ function pushHistogramLines(
   dp: NumberDataPoint,
   labelStr: string,
 ): void {
-  const hdp = dp as unknown as { value: HistogramValue };
-  const { boundaries, counts } = hdp.value.buckets;
+  const val = dp.value as unknown as HistogramValue;
+  const { boundaries, counts } = val.buckets;
   for (let i = 0; i < boundaries.length; i++) {
     lines.push(
       `${name}_bucket{${labelStr ? `${labelStr},` : ""}le="${boundaries[i]}"} ${counts[i]}`,
     );
   }
   const suffix = labelStr ? `{${labelStr}}` : "";
-  lines.push(`${name}_bucket{${labelStr ? `${labelStr},` : ""}le="+Inf"} ${hdp.value.count}`);
-  lines.push(`${name}_sum${suffix} ${hdp.value.sum}`);
-  lines.push(`${name}_count${suffix} ${hdp.value.count}`);
+  lines.push(`${name}_bucket{${labelStr ? `${labelStr},` : ""}le="+Inf"} ${val.count}`);
+  lines.push(`${name}_sum${suffix} ${val.sum}`);
+  lines.push(`${name}_count${suffix} ${val.count}`);
 }
 
 function formatDataPoints(
@@ -166,6 +165,7 @@ function createHistogram(
   return serverMeter.createHistogram(name, options);
 }
 
+/** @internal Not part of the public API. Exposed for testing only. */
 export const _internals = {
   createCounter,
   createGauge,

@@ -1,9 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 /** S2S session — relays audio between client and AssemblyAI S2S API. */
 
-import type { AgentConfig, ToolSchema } from "./_internal-types.ts";
 import { activeSessionsUpDown, sessionCounter, setupListeners } from "./_session-otel.ts";
-import { errorDetail, errorMessage } from "./_utils.ts";
+import type { AgentConfig, ToolSchema } from "./internal-types.ts";
 import type { HookInvoker } from "./middleware.ts";
 import type { ClientSink } from "./protocol.ts";
 import { fromWireMessages, HOOK_TIMEOUT_MS } from "./protocol.ts";
@@ -18,6 +17,7 @@ import {
 } from "./s2s.ts";
 import { buildSystemPrompt } from "./system-prompt.ts";
 import type { Message } from "./types.ts";
+import { errorDetail, errorMessage } from "./utils.ts";
 import type { ExecuteTool } from "./worker-entry.ts";
 
 export type { HookInvoker, ToolInterceptResult } from "./middleware.ts";
@@ -52,6 +52,7 @@ export type SessionOptions = {
   logger?: Logger;
 };
 
+/** @internal Not part of the public API. Exposed for testing only. */
 export const _internals = {
   connectS2s,
 };
@@ -171,7 +172,13 @@ export function createS2sSession(opts: SessionOptions): Session {
   const sessionAbort = new AbortController();
   const ctx = buildCtx({ id, agent, client, agentConfig, executeTool, hookInvoker, log });
 
+  /** Monotonically increasing counter bumped on each connectAndSetup call.
+   *  Only the most recent invocation is allowed to set ctx.s2s, preventing
+   *  earlier completions from overwriting a newer connection during rapid resets. */
+  let connectGeneration = 0;
+
   async function connectAndSetup(): Promise<void> {
+    const generation = ++connectGeneration;
     try {
       const handle = await _internals.connectS2s({
         apiKey,
@@ -186,6 +193,13 @@ export function createS2sSession(opts: SessionOptions): Session {
         handle.close();
         return;
       }
+      // Guard against rapid resets: if a newer connectAndSetup was launched
+      // while we were connecting, this invocation is stale — close the handle
+      // to avoid an orphaned S2S connection.
+      if (generation !== connectGeneration) {
+        handle.close();
+        return;
+      }
       setupListeners(ctx, handle);
       handle.updateSession({
         system_prompt: systemPrompt,
@@ -197,6 +211,7 @@ export function createS2sSession(opts: SessionOptions): Session {
       const msg = errorMessage(err);
       log.error("S2S connect failed", { error: errorDetail(err) });
       client.event({ type: "error", code: "internal", message: msg });
+      throw err;
     }
   }
 

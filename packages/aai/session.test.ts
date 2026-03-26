@@ -534,14 +534,15 @@ describe("createS2sSession", () => {
 
   // ─── connectS2s failure ────────────────────────────────────────────────
 
-  test("start() handles connectS2s failure gracefully", async () => {
+  test("start() rejects on connectS2s failure so caller can clean up", async () => {
     makeMockHandle();
     const spy = vi.spyOn(_internals, "connectS2s").mockRejectedValue(new Error("connect failed"));
     const client = makeClient();
     const session = createS2sSession(makeSessionOpts({ client }));
 
-    await session.start();
+    await expect(session.start()).rejects.toThrow("connect failed");
 
+    // Error event is still sent to the client before re-throwing
     expect(client.events).toContainEqual(
       expect.objectContaining({
         type: "error",
@@ -695,6 +696,55 @@ describe("createS2sSession", () => {
     await stopPromise;
 
     expect(handle.close).toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  test("rapid onReset closes stale connections from earlier resets", async () => {
+    // Simulate three rapid resets where connectS2s resolves in reverse order.
+    // Only the last connection should be kept; earlier ones should be closed.
+    const handles: ReturnType<typeof makeMockHandle>[] = [];
+    const resolvers: ((h: S2sHandle) => void)[] = [];
+
+    const spy = vi.spyOn(_internals, "connectS2s").mockImplementation(
+      () =>
+        new Promise<S2sHandle>((resolve) => {
+          const h = makeMockHandle();
+          handles.push(h);
+          resolvers.push(resolve as (value: S2sHandle) => void);
+        }),
+    );
+
+    const client = makeClient();
+    const session = createS2sSession(makeSessionOpts({ client }));
+
+    // Initial start — creates first pending connection
+    const startPromise = session.start();
+
+    // Two rapid resets before initial connect completes
+    session.onReset();
+    session.onReset();
+
+    // We now have 3 pending connectS2s calls (1 from start + 2 from resets).
+    // Resolve them in order: first two are stale, third is current.
+    expect(resolvers.length).toBe(3);
+
+    // biome-ignore lint/style/noNonNullAssertion: test assertions after length check
+    resolvers[0]?.(handles[0]!);
+    // biome-ignore lint/style/noNonNullAssertion: test assertions after length check
+    resolvers[1]?.(handles[1]!);
+    // biome-ignore lint/style/noNonNullAssertion: test assertions after length check
+    resolvers[2]?.(handles[2]!);
+
+    await startPromise;
+    // Let all microtasks settle
+    await new Promise((r) => setTimeout(r, 10));
+
+    // First two handles should be closed (stale generations)
+    expect(handles[0]?.close).toHaveBeenCalled();
+    expect(handles[1]?.close).toHaveBeenCalled();
+    // Third handle (most recent) should NOT be closed — it's the active one
+    expect(handles[2]?.close).not.toHaveBeenCalled();
+
     spy.mockRestore();
   });
 

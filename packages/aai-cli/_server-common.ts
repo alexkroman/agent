@@ -15,6 +15,23 @@ export async function loadAgentDef(cwd: string): Promise<AgentDef> {
   if (!agentDef || typeof agentDef !== "object" || !agentDef.name) {
     throw new Error("agent.ts must export a default agent definition (from defineAgent())");
   }
+
+  const missing: string[] = [];
+  if (typeof agentDef.name !== "string") missing.push("name (string)");
+  if (typeof agentDef.instructions !== "string") missing.push("instructions (string)");
+  if (typeof agentDef.greeting !== "string") missing.push("greeting (string)");
+  if (typeof agentDef.maxSteps !== "number" && typeof agentDef.maxSteps !== "function")
+    missing.push("maxSteps (number or function)");
+  if (!agentDef.tools || typeof agentDef.tools !== "object" || Array.isArray(agentDef.tools))
+    missing.push("tools (object)");
+
+  if (missing.length > 0) {
+    throw new Error(
+      `Invalid agent definition: missing or invalid fields: ${missing.join(", ")}. ` +
+        "Use defineAgent() to create a valid agent definition.",
+    );
+  }
+
   return agentDef as AgentDef;
 }
 

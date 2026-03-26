@@ -96,4 +96,43 @@ describe("loadAgentDef", () => {
       );
     });
   });
+
+  test("throws when required fields are missing from plain object", async () => {
+    await withTempDir(async (dir) => {
+      await fs.writeFile(path.join(dir, "agent.ts"), 'export default { name: "test" };');
+      await expect(loadAgentDef(dir)).rejects.toThrow("Invalid agent definition");
+      await expect(loadAgentDef(dir)).rejects.toThrow("instructions (string)");
+      await expect(loadAgentDef(dir)).rejects.toThrow("greeting (string)");
+      await expect(loadAgentDef(dir)).rejects.toThrow("maxSteps (number or function)");
+      await expect(loadAgentDef(dir)).rejects.toThrow("tools (object)");
+    });
+  });
+
+  test("throws when tools is an array instead of object", async () => {
+    await withTempDir(async (dir) => {
+      await fs.writeFile(
+        path.join(dir, "agent.ts"),
+        'export default { name: "test", instructions: "hi", greeting: "hello", maxSteps: 5, tools: [] };',
+      );
+      await expect(loadAgentDef(dir)).rejects.toThrow("tools (object)");
+    });
+  });
+
+  test("accepts valid plain object with all required fields", async () => {
+    await withTempDir(async (dir) => {
+      await fs.writeFile(
+        path.join(dir, "agent.ts"),
+        'export default { name: "test", instructions: "hi", greeting: "hello", maxSteps: 5, tools: {} };',
+      );
+      const def = await loadAgentDef(dir);
+      expect(def.name).toBe("test");
+    });
+  });
+
+  test("suggests using defineAgent in error message", async () => {
+    await withTempDir(async (dir) => {
+      await fs.writeFile(path.join(dir, "agent.ts"), 'export default { name: "test" };');
+      await expect(loadAgentDef(dir)).rejects.toThrow("Use defineAgent()");
+    });
+  });
 });

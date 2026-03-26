@@ -8,18 +8,14 @@
  * directly — no WintercServer or proxy AgentDef needed.
  *
  * A per-sandbox sidecar server on the host provides scoped KV and
- * vector access — the isolate calls it without authentication (loopback only).
+ * vector access. Each sidecar authenticates requests with a per-sandbox
+ * bearer token shared only with its corresponding isolate.
  */
 
 import type { AgentConfig } from "@alexkroman1/aai/internal-types";
 import { buildReadyConfig } from "@alexkroman1/aai/protocol";
 import { DEFAULT_S2S_CONFIG } from "@alexkroman1/aai/runtime";
-import {
-  createS2sSession,
-  type HookInvoker,
-  type Session,
-  type ToolInterceptResult,
-} from "@alexkroman1/aai/session";
+import { createS2sSession, type HookInvoker, type Session } from "@alexkroman1/aai/session";
 import type { ExecuteTool } from "@alexkroman1/aai/worker-entry";
 import { type SessionWebSocket, wireSessionSocket } from "@alexkroman1/aai/ws-handler";
 import {
@@ -30,11 +26,15 @@ import {
 } from "secure-exec";
 import { z } from "zod";
 import {
+  BeforeTurnResultSchema,
+  FilterOutputResultSchema,
   HookResponseSchema,
   type IsolateConfig,
   IsolateConfigSchema,
   ToolCallResponseSchema,
+  ToolInterceptResultSchema,
   TurnConfigResultSchema,
+  VoidHookResultSchema,
 } from "./_harness-protocol.ts";
 import type { KvStore } from "./kv.ts";
 import { getHarnessRuntimeJs } from "./sandbox-harness.ts";
@@ -71,6 +71,7 @@ async function startIsolate(
   workerCode: string,
   sidecarUrl: string,
   agentEnv: Record<string, string>,
+  sidecarToken?: string,
 ): Promise<{ port: number; runtime: NodeRuntime }> {
   const harnessJs = await getHarnessRuntimeJs();
   const fs = createInMemoryFileSystem();
@@ -80,14 +81,17 @@ async function startIsolate(
   // Prefix agent env vars so they can be distinguished from system vars.
   // The harness reads AAI_ENV_* and strips the prefix to build ctx.env.
   const prefixedEnv: Record<string, string> = { SIDECAR_URL: sidecarUrl };
+  if (sidecarToken) prefixedEnv.SIDECAR_TOKEN = sidecarToken;
   for (const [k, v] of Object.entries(agentEnv)) {
     prefixedEnv[`AAI_ENV_${k}`] = v;
   }
   const allowedKeys = new Set(Object.keys(prefixedEnv));
 
   let resolvePort: (port: number) => void;
-  const portPromise = new Promise<number>((resolve) => {
+  let rejectPort: (err: Error) => void;
+  const portPromise = new Promise<number>((resolve, reject) => {
     resolvePort = resolve;
+    rejectPort = reject;
   });
 
   const runtime = new NodeRuntime({
@@ -130,23 +134,40 @@ async function startIsolate(
 
   // The exec promise lives as long as the isolate's HTTP server. It is not
   // awaited because the sandbox owns the runtime lifecycle (via terminate()).
-  // The catch handler covers the edge case where terminate() is called during
-  // isolate boot before the HTTP server is fully established.
-  runtime
+  // If exec rejects before the port is announced, propagate that as a boot failure.
+  const execPromise = runtime
     .exec(
       'import agent from "/app/agent_bundle.js";\nimport { startHarness } from "/app/_harness-runtime.js";\nstartHarness(agent);',
       { cwd: "/app" },
     )
-    .catch(() => {
-      // Isolate disposed during boot — safe to ignore.
+    .catch((err) => {
+      rejectPort(new Error(`Isolate exited before announcing port: ${err}`));
     });
 
-  const port = await portPromise;
+  const timeoutId = setTimeout(() => {
+    rejectPort(new Error(`Isolate failed to announce port within ${PORT_ANNOUNCE_TIMEOUT_MS}ms`));
+  }, PORT_ANNOUNCE_TIMEOUT_MS);
+
+  let port: number;
+  try {
+    port = await portPromise;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+
+  // After port is resolved, let exec run in background; suppress rejections
+  // from terminate() being called later.
+  execPromise.catch(() => {
+    /* Isolate disposed during normal lifecycle — safe to ignore. */
+  });
+
   return { port, runtime };
 }
 
 // ── Isolate RPC ──────────────────────────────────────────────────────────
 
+/** Timeout for the isolate to announce its HTTP port via stdout. */
+const PORT_ANNOUNCE_TIMEOUT_MS = 15_000;
 /** Timeout for initial config fetch (isolate boot). */
 const CONFIG_TIMEOUT_MS = 10_000;
 /** Timeout for tool execution calls. */
@@ -160,7 +181,8 @@ async function getIsolateConfig(port: number): Promise<IsolateConfig> {
   });
   if (!res.ok) {
     const body = await res.text().catch(() => "");
-    throw new Error(`Isolate /config failed (${res.status}): ${body}`);
+    console.error(`[sandbox] Isolate /config failed (${res.status}):`, body);
+    throw new Error(`Isolate /config failed (${res.status})`);
   }
   return IsolateConfigSchema.parse(await res.json()) as IsolateConfig;
 }
@@ -180,7 +202,11 @@ async function callIsolate<T>(
   });
   if (!res.ok) {
     const body = await res.text().catch(() => "");
-    throw new Error(`${endpoint} failed (${res.status}): ${body}`);
+    // Log full error detail server-side for debugging, but do not include
+    // the isolate's error body in the thrown error to prevent leaking
+    // internal details (file paths, stack traces) to upstream callers.
+    console.error(`[sandbox] ${endpoint} failed (${res.status}):`, body);
+    throw new Error(`${endpoint} failed (${res.status})`);
   }
   return schema.parse(await res.json());
 }
@@ -211,11 +237,21 @@ function buildHookInvoker(isolateUrl: string): HookInvoker {
     ).result;
 
   return {
-    onConnect: (sessionId) => hook("onConnect", { sessionId }) as Promise<void>,
-    onDisconnect: (sessionId) => hook("onDisconnect", { sessionId }) as Promise<void>,
-    onTurn: (sessionId, text) => hook("onTurn", { sessionId, text }) as Promise<void>,
-    onError: (sessionId, error) => hook("onError", { sessionId, error }) as Promise<void>,
-    onStep: (sessionId, step) => hook("onStep", { sessionId, step }) as Promise<void>,
+    async onConnect(sessionId) {
+      VoidHookResultSchema.parse(await hook("onConnect", { sessionId }));
+    },
+    async onDisconnect(sessionId) {
+      VoidHookResultSchema.parse(await hook("onDisconnect", { sessionId }));
+    },
+    async onTurn(sessionId, text) {
+      VoidHookResultSchema.parse(await hook("onTurn", { sessionId, text }));
+    },
+    async onError(sessionId, error) {
+      VoidHookResultSchema.parse(await hook("onError", { sessionId, error }));
+    },
+    async onStep(sessionId, step) {
+      VoidHookResultSchema.parse(await hook("onStep", { sessionId, step }));
+    },
     async resolveTurnConfig(sessionId, stepNumber) {
       const parsed = TurnConfigResultSchema.parse(
         await hook("resolveTurnConfig", { sessionId, stepNumber }),
@@ -227,26 +263,31 @@ function buildHookInvoker(isolateUrl: string): HookInvoker {
       return config;
     },
     async beforeTurn(sessionId, text) {
-      const result = await hook("beforeTurn", { sessionId, text });
-      return result as string | undefined;
+      return BeforeTurnResultSchema.parse(await hook("beforeTurn", { sessionId, text }));
     },
-    afterTurn: (sessionId, text) => hook("afterTurn", { sessionId, text }) as Promise<void>,
+    async afterTurn(sessionId, text) {
+      VoidHookResultSchema.parse(await hook("afterTurn", { sessionId, text }));
+    },
     async interceptToolCall(sessionId, tool, args) {
       const result = await hook("interceptToolCall", {
         sessionId,
         step: { stepNumber: 0, toolCalls: [{ toolName: tool, args }], text: "" },
       });
-      return result as ToolInterceptResult;
+      return ToolInterceptResultSchema.parse(result);
     },
     async afterToolCall(sessionId, tool, args, result) {
-      await hook("afterToolCall", {
-        sessionId,
-        step: { stepNumber: 0, toolCalls: [{ toolName: tool, args }], text: result },
-      });
+      VoidHookResultSchema.parse(
+        await hook("afterToolCall", {
+          sessionId,
+          step: { stepNumber: 0, toolCalls: [{ toolName: tool, args }], text: result },
+        }),
+      );
     },
     async filterOutput(sessionId, text) {
-      const result = await hook("filterOutput", { sessionId, text });
-      return (result as string) ?? text;
+      const result = FilterOutputResultSchema.parse(
+        await hook("filterOutput", { sessionId, text }),
+      );
+      return result ?? text;
     },
   };
 }
@@ -267,6 +308,7 @@ function toAgentConfig(config: IsolateConfig): AgentConfig {
 
 // ── Test internals ───────────────────────────────────────────────────────
 
+/** @internal Not part of the public API. Exposed for testing only. */
 export const _internals = {
   startSidecarServer,
   startIsolate,
@@ -297,7 +339,13 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
 
   // 2. Start the isolate with the agent bundle
   //    Only agent-defined secrets enter the isolate; apiKey stays host-side.
-  const { port: isolatePort, runtime } = await startIsolate(workerCode, sidecar.url, agentEnv);
+  //    The sidecar token is passed so the isolate can authenticate to its sidecar.
+  const { port: isolatePort, runtime } = await startIsolate(
+    workerCode,
+    sidecar.url,
+    agentEnv,
+    sidecar.token,
+  );
 
   // 3. Get the agent config from the isolate
   const config = await getIsolateConfig(isolatePort);
