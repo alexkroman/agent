@@ -22,8 +22,8 @@ import type { AgentState, Reactive } from "../types.ts";
  * <StateIndicator state={session.state} />
  * ```
  *
- * @param props.state     - A reactive {@link AgentState} value.
- * @param props.className - Additional CSS class names.
+ * @param state - A reactive {@link AgentState} value.
+ * @param className - Additional CSS class names.
  *
  * @public
  */

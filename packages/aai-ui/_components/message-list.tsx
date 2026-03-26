@@ -23,7 +23,7 @@ import { Transcript } from "./transcript.tsx";
  * <MessageList className="flex-1" />
  * ```
  *
- * @param props.className - Additional CSS class names applied to the scroll container.
+ * @param className - Additional CSS class names applied to the scroll container.
  *
  * @public
  */

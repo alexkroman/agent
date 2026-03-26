@@ -14,7 +14,7 @@ import { Button } from "./button.tsx";
  * <Controls className="justify-end" />
  * ```
  *
- * @param props.className - Additional CSS class names applied to the container.
+ * @param className - Additional CSS class names applied to the container.
  *
  * @public
  */

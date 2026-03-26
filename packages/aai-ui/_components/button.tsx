@@ -50,10 +50,10 @@ const LG_STYLE: preact.JSX.CSSProperties = {
  * </Button>
  * ```
  *
- * @param props.variant  - Visual style (`"default"` | `"secondary"` | `"ghost"`). Defaults to `"default"`.
- * @param props.size     - Size preset (`"default"` | `"lg"`). Defaults to `"default"`.
- * @param props.className - Additional CSS class names.
- * @param props.children  - Button label / content.
+ * @param variant - Visual style (`"default"` | `"secondary"` | `"ghost"`). Defaults to `"default"`.
+ * @param size - Size preset (`"default"` | `"lg"`). Defaults to `"default"`.
+ * @param className - Additional CSS class names.
+ * @param children - Button label / content.
  *
  * @public
  */

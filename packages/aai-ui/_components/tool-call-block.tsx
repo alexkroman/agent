@@ -74,8 +74,8 @@ function formatResult(result: string): string {
  * <ToolCallBlock toolCall={toolCall} />
  * ```
  *
- * @param props.toolCall  - The tool call to render (see {@link ToolCallInfo}).
- * @param props.className - Additional CSS class names.
+ * @param toolCall - The tool call to render (see {@link ToolCallInfo}).
+ * @param className - Additional CSS class names.
  *
  * @public
  */

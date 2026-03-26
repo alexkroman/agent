@@ -18,9 +18,9 @@ import { ThinkingIndicator } from "./thinking-indicator.tsx";
  * <Transcript userUtterance={session.userUtterance} />
  * ```
  *
- * @param props.userUtterance - Reactive string (`null` when idle, `""` when
+ * @param userUtterance - Reactive string (`null` when idle, `""` when
  *   listening but no text yet, or the transcript text).
- * @param props.className     - Additional CSS class names.
+ * @param className - Additional CSS class names.
  *
  * @public
  */

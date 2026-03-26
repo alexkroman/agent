@@ -16,8 +16,8 @@ import type { ChatMessage } from "../types.ts";
  * <MessageBubble message={{ role: "assistant", content: "Hi there!" }} />
  * ```
  *
- * @param props.message   - The chat message to display (see {@link ChatMessage}).
- * @param props.className - Additional CSS class names applied to the root element.
+ * @param message - The chat message to display (see {@link ChatMessage}).
+ * @param className - Additional CSS class names applied to the root element.
  *
  * @public
  */

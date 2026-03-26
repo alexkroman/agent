@@ -28,7 +28,7 @@ function AnsiLogo() {
  * mount(App, { target: "#app", title: "My Agent" });
  * ```
  *
- * @param props.className - Additional CSS class names applied to the root element.
+ * @param className - Additional CSS class names applied to the root element.
  *
  * @public
  */

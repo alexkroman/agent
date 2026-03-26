@@ -14,8 +14,8 @@ import type { Reactive, SessionError } from "../types.ts";
  * <ErrorBanner error={session.error} />
  * ```
  *
- * @param props.error     - A reactive {@link SessionError} (or `null`).
- * @param props.className - Additional CSS class names.
+ * @param error - A reactive {@link SessionError} (or `null`).
+ * @param className - Additional CSS class names.
  *
  * @public
  */

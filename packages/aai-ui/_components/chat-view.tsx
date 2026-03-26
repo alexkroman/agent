@@ -30,7 +30,7 @@ import { StateIndicator } from "./state-indicator.tsx";
  * </SidebarLayout>
  * ```
  *
- * @param props.className - Additional CSS class names applied to the root element.
+ * @param className - Additional CSS class names applied to the root element.
  *
  * @public
  */

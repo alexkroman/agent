@@ -16,7 +16,7 @@ const DOT_STYLES: preact.JSX.CSSProperties[] = [0, 0.16, 0.32].map((delay) => ({
  * {isThinking && <ThinkingIndicator />}
  * ```
  *
- * @param props.className - Additional CSS class names.
+ * @param className - Additional CSS class names.
  *
  * @public
  */
