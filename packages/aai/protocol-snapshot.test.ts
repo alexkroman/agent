@@ -91,6 +91,7 @@ describe("server→client event wire format", () => {
     ["tts_done", { type: "tts_done" }],
     ["cancelled", { type: "cancelled" }],
     ["reset", { type: "reset" }],
+    ["idle_timeout", { type: "idle_timeout" }],
     ["error", { type: "error", code: "stt", message: "Speech recognition failed" }],
   ];
 

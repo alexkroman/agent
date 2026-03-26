@@ -2,7 +2,12 @@
 /** S2S session — relays audio between client and AssemblyAI S2S API. */
 
 import type { AgentConfig, ToolSchema } from "./_internal-types.ts";
-import { activeSessionsUpDown, sessionCounter, setupListeners } from "./_session-otel.ts";
+import {
+  activeSessionsUpDown,
+  sessionCounter,
+  setupIdleTimeout,
+  setupListeners,
+} from "./_session-otel.ts";
 import { errorDetail, errorMessage, toolError } from "./_utils.ts";
 import type { HookInvoker } from "./middleware.ts";
 import type { ClientSink } from "./protocol.ts";
@@ -140,9 +145,18 @@ export type S2sSessionCtx = {
   pushMessages(...msgs: Message[]): void;
   /** Sequential promise chain for filterOutput calls, ensuring ordering. */
   filterChain: Promise<void>;
+  /** Configured idle timeout in milliseconds. 0 = disabled. */
+  readonly idleTimeoutMs: number;
+  /** Reset the idle timer. Called on every S2S activity event. */
+  resetIdleTimer(): void;
+  /** Clear the idle timer. Called on session stop. */
+  clearIdleTimer(): void;
+  /** Register the callback invoked when the idle timer fires. */
+  setIdleCallback(fn: (() => void) | null): void;
 };
 
 const DEFAULT_MAX_HISTORY = 200;
+const DEFAULT_IDLE_TIMEOUT_MS = 300_000; // 5 minutes
 
 function buildCtx(opts: {
   id: string;
@@ -153,13 +167,20 @@ function buildCtx(opts: {
   hookInvoker: HookInvoker | undefined;
   log: Logger;
   maxHistory?: number | undefined;
+  idleTimeoutMs?: number | undefined;
 }): S2sSessionCtx {
   const { id, agentConfig, hookInvoker, log } = opts;
   const maxHistory = opts.maxHistory ?? DEFAULT_MAX_HISTORY;
+  const rawTimeout = opts.idleTimeoutMs ?? agentConfig.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
+  const idleTimeoutMs = rawTimeout === 0 || !Number.isFinite(rawTimeout) ? 0 : rawTimeout;
   let cachedActiveTools: string[] | undefined;
   let cachedActiveSet: Set<string> | undefined;
   /** Track in-flight hook promises so they can be awaited during shutdown. */
   const pendingHooks = new Set<Promise<void>>();
+  /** Handle for the current idle timer (cleared/reset on activity). */
+  let idleTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Callback installed by setupIdleTimeout; fires when the idle timer expires. */
+  let onIdleExpired: (() => void) | null = null;
   const ctx: S2sSessionCtx = {
     ...opts,
     s2s: null,
@@ -234,6 +255,23 @@ function buildCtx(opts: {
       if (maxHistory > 0 && ctx.conversationMessages.length > maxHistory) {
         ctx.conversationMessages = ctx.conversationMessages.slice(-maxHistory);
       }
+    },
+    idleTimeoutMs,
+    resetIdleTimer() {
+      if (idleTimeoutMs <= 0) return;
+      if (idleTimer !== null) clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        onIdleExpired?.();
+      }, idleTimeoutMs);
+    },
+    clearIdleTimer() {
+      if (idleTimer !== null) {
+        clearTimeout(idleTimer);
+        idleTimer = null;
+      }
+    },
+    setIdleCallback(fn: (() => void) | null) {
+      onIdleExpired = fn;
     },
   };
   return ctx;
@@ -320,12 +358,14 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
         return;
       }
       setupListeners(ctx, handle);
+      setupIdleTimeout(ctx, handle);
       handle.updateSession({
         systemPrompt,
         tools: s2sTools,
         ...(agentConfig.greeting ? { greeting: agentConfig.greeting } : {}),
       });
       ctx.s2s = handle;
+      ctx.resetIdleTimer();
     } catch (err: unknown) {
       const msg = errorMessage(err);
       log.error("S2S connect failed", { error: errorDetail(err) });
@@ -343,6 +383,7 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
     async stop(): Promise<void> {
       if (sessionAbort.signal.aborted) return;
       sessionAbort.abort();
+      ctx.clearIdleTimer();
       activeSessionsUpDown.add(-1, { agent });
       if (ctx.turnPromise !== null) await ctx.turnPromise;
       // Drain in-flight hooks (onTurn, onStep, etc.) BEFORE closing
@@ -354,6 +395,7 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
       await ctx.drainHooks();
     },
     onAudio(data: Uint8Array): void {
+      ctx.resetIdleTimer();
       ctx.s2s?.sendAudio(data);
     },
     onAudioReady(): void {
@@ -368,6 +410,7 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
       ctx.turnPromise = null;
       ctx.pendingTools = [];
       ctx.replyGeneration++;
+      ctx.clearIdleTimer();
       ctx.s2s?.close();
       client.event({ type: "reset" });
       connectAndSetup().catch((err: unknown) =>

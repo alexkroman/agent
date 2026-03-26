@@ -26,6 +26,7 @@ export const AgentConfigSchema = z.object({
   toolChoice: ToolChoiceSchema.optional(),
   builtinTools: z.array(BuiltinToolSchema).readonly().optional(),
   activeTools: z.array(z.string().min(1)).readonly().optional(),
+  idleTimeoutMs: z.number().nonnegative().optional(),
 });
 
 /** Serializable agent configuration — derived from {@link AgentConfigSchema}. */
@@ -45,6 +46,7 @@ export interface AgentConfigSource {
   toolChoice?: AgentConfig["toolChoice"] | undefined;
   builtinTools?: Readonly<AgentConfig["builtinTools"]> | AgentConfig["builtinTools"] | undefined;
   activeTools?: Readonly<AgentConfig["activeTools"]> | AgentConfig["activeTools"] | undefined;
+  idleTimeoutMs?: number | undefined;
 }
 
 /** Extract the serializable {@link AgentConfig} subset from a source object. */
@@ -60,6 +62,7 @@ export function toAgentConfig(src: AgentConfigSource): AgentConfig {
   if (src.toolChoice !== undefined) config.toolChoice = src.toolChoice;
   if (src.builtinTools) config.builtinTools = [...src.builtinTools];
   if (src.activeTools) config.activeTools = [...src.activeTools];
+  if (src.idleTimeoutMs !== undefined) config.idleTimeoutMs = src.idleTimeoutMs;
   return config;
 }
 

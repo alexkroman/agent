@@ -105,6 +105,11 @@ export const wsSendBackpressureCounter = meter.createCounter("aai.ws.send_backpr
   description: "Messages dropped or queued due to WebSocket backpressure",
 });
 
+/** Sessions closed due to S2S idle timeout. */
+export const idleTimeoutCounter = meter.createCounter("aai.session.idle.timeout.count", {
+  description: "Sessions closed due to S2S idle timeout",
+});
+
 // ─── Span helpers ────────────────────────────────────────────────────────────
 
 /**

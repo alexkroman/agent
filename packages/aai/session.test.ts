@@ -807,4 +807,156 @@ describe("createS2sSession", () => {
     expect(doneEvent).toBeDefined();
     expect(doneEvent?.result).toContain("resolveTurnConfig hook error");
   });
+
+  // ─── Idle timeout tests ──────────────────────────────────────────────
+
+  test("idle timeout fires after configured period of inactivity", async () => {
+    vi.useFakeTimers();
+    const { session, client, mockHandle } = setup({
+      agentConfig: {
+        name: "test-agent",
+        instructions: DEFAULT_INSTRUCTIONS,
+        greeting: "Hello!",
+        idleTimeoutMs: 10_000,
+      },
+    });
+    await session.start();
+
+    // Advance time past the idle timeout
+    vi.advanceTimersByTime(10_000);
+
+    expect(
+      client.events.some((e: unknown) => (e as Record<string, unknown>).type === "idle_timeout"),
+    ).toBe(true);
+    expect(mockHandle.close).toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  test("idle timeout is reset by incoming audio", async () => {
+    vi.useFakeTimers();
+    const { session, client, mockHandle } = setup({
+      agentConfig: {
+        name: "test-agent",
+        instructions: DEFAULT_INSTRUCTIONS,
+        greeting: "Hello!",
+        idleTimeoutMs: 10_000,
+      },
+    });
+    await session.start();
+
+    // Advance 8 seconds (still within timeout)
+    vi.advanceTimersByTime(8000);
+
+    // Send audio — should reset the timer
+    session.onAudio(new Uint8Array([1, 2, 3]));
+
+    // Advance another 8 seconds (16s total, but only 8s since last activity)
+    vi.advanceTimersByTime(8000);
+
+    // Should NOT have timed out yet
+    expect(
+      client.events.some((e: unknown) => (e as Record<string, unknown>).type === "idle_timeout"),
+    ).toBe(false);
+
+    // Advance 2 more seconds (10s since last activity)
+    vi.advanceTimersByTime(2000);
+
+    expect(
+      client.events.some((e: unknown) => (e as Record<string, unknown>).type === "idle_timeout"),
+    ).toBe(true);
+    expect(mockHandle.close).toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  test("idle timeout is reset by S2S events (transcript, audio, replies)", async () => {
+    vi.useFakeTimers();
+    const { session, client, mockHandle } = setup({
+      agentConfig: {
+        name: "test-agent",
+        instructions: DEFAULT_INSTRUCTIONS,
+        greeting: "Hello!",
+        idleTimeoutMs: 10_000,
+      },
+    });
+    await session.start();
+
+    // Advance 8s then fire an S2S event
+    vi.advanceTimersByTime(8000);
+    mockHandle._fire("speechStarted");
+
+    // 8 more seconds — should not timeout yet (only 8s since speechStarted)
+    vi.advanceTimersByTime(8000);
+    expect(
+      client.events.some((e: unknown) => (e as Record<string, unknown>).type === "idle_timeout"),
+    ).toBe(false);
+
+    // 2 more seconds to hit the 10s mark since last activity
+    vi.advanceTimersByTime(2000);
+    expect(
+      client.events.some((e: unknown) => (e as Record<string, unknown>).type === "idle_timeout"),
+    ).toBe(true);
+    vi.useRealTimers();
+  });
+
+  test("idle timeout disabled when idleTimeoutMs is 0", async () => {
+    vi.useFakeTimers();
+    const { session, client } = setup({
+      agentConfig: {
+        name: "test-agent",
+        instructions: DEFAULT_INSTRUCTIONS,
+        greeting: "Hello!",
+        idleTimeoutMs: 0,
+      },
+    });
+    await session.start();
+
+    vi.advanceTimersByTime(600_000); // 10 minutes
+
+    expect(
+      client.events.some((e: unknown) => (e as Record<string, unknown>).type === "idle_timeout"),
+    ).toBe(false);
+    vi.useRealTimers();
+  });
+
+  test("idle timer is cleared on stop()", async () => {
+    vi.useFakeTimers();
+    const { session, client } = setup({
+      agentConfig: {
+        name: "test-agent",
+        instructions: DEFAULT_INSTRUCTIONS,
+        greeting: "Hello!",
+        idleTimeoutMs: 10_000,
+      },
+    });
+    await session.start();
+    await session.stop();
+
+    // Advance past the timeout — timer should have been cleared
+    vi.advanceTimersByTime(20_000);
+
+    expect(
+      client.events.some((e: unknown) => (e as Record<string, unknown>).type === "idle_timeout"),
+    ).toBe(false);
+    vi.useRealTimers();
+  });
+
+  test("default idle timeout is 5 minutes when not configured", async () => {
+    vi.useFakeTimers();
+    const { session, client, mockHandle } = setup();
+    await session.start();
+
+    // Advance 4 minutes — should not timeout
+    vi.advanceTimersByTime(240_000);
+    expect(
+      client.events.some((e: unknown) => (e as Record<string, unknown>).type === "idle_timeout"),
+    ).toBe(false);
+
+    // Advance 1 more minute (5 minutes total)
+    vi.advanceTimersByTime(60_000);
+    expect(
+      client.events.some((e: unknown) => (e as Record<string, unknown>).type === "idle_timeout"),
+    ).toBe(true);
+    expect(mockHandle.close).toHaveBeenCalled();
+    vi.useRealTimers();
+  });
 });

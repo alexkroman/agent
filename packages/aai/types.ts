@@ -575,6 +575,18 @@ export type AgentOptions<S = Record<string, unknown>> = {
    * and reverse order for "after" hooks (last to first).
    */
   middleware?: readonly Middleware<S>[];
+
+  /**
+   * Close the S2S connection after this many milliseconds of inactivity.
+   * Inactivity means no audio, transcripts, or tool calls in either direction.
+   * When the timeout fires the session is stopped and the client receives an
+   * `idle_timeout` event.
+   *
+   * Set to `0` or `Infinity` to disable.
+   *
+   * @defaultValue 300_000 (5 minutes)
+   */
+  idleTimeoutMs?: number;
 };
 
 /**
@@ -634,6 +646,7 @@ export type AgentDef<S = Record<string, unknown>> = {
     ctx: HookContext<S>,
   ) => BeforeStepResult | Promise<BeforeStepResult>;
   middleware?: readonly Middleware<S>[];
+  idleTimeoutMs?: number;
 };
 
 // ─── Zod schemas ────────────────────────────────────────────────────────────
@@ -720,6 +733,7 @@ const AgentOptionsSchema = z.object({
       }),
     )
     .optional(),
+  idleTimeoutMs: z.number().nonnegative().optional(),
 });
 
 // ─── defineAgent ────────────────────────────────────────────────────────────

@@ -131,6 +131,7 @@ export const ClientEventSchema = z.discriminatedUnion("type", [
   ev("tts_done"),
   ev("cancelled"),
   ev("reset"),
+  ev("idle_timeout"),
   z.object({ type: z.literal("error"), code: SessionErrorCodeSchema, message: z.string() }),
 ]);
 
