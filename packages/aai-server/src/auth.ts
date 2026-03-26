@@ -2,18 +2,17 @@
 import { timingSafeEqual } from "node:crypto";
 import type { BundleStore } from "./bundle-store-tigris.ts";
 
+const textEncoder = new TextEncoder();
+
 export async function hashApiKey(apiKey: string): Promise<string> {
-  const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(apiKey));
-  return Array.from(new Uint8Array(hash))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
+  const hash = await crypto.subtle.digest("SHA-256", textEncoder.encode(apiKey));
+  return Buffer.from(hash).toString("hex");
 }
 
 /** Constant-time string comparison to prevent timing attacks on credential hashes. */
 function timingSafeCompare(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
-  const enc = new TextEncoder();
-  return timingSafeEqual(enc.encode(a), enc.encode(b));
+  return timingSafeEqual(textEncoder.encode(a), textEncoder.encode(b));
 }
 
 export type OwnerResult =

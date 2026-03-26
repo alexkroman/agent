@@ -112,11 +112,15 @@ export async function upsertChunks(
   let errors = 0;
   let lastError = "";
 
-  const updateStatus = () => {
+  let lastStatusUpdate = 0;
+  const updateStatus = (force = false) => {
+    const now = Date.now();
+    if (!force && now - lastStatusUpdate < 100) return;
+    lastStatusUpdate = now;
     const pct = Math.round((completed / total) * 100);
     setStatus(`   Upsert ${completed}/${total} (${pct}%)`);
   };
-  updateStatus();
+  updateStatus(true);
 
   const limit = pLimit(5);
   await Promise.all(

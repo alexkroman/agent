@@ -261,8 +261,8 @@ export async function executeInIsolate(code: string): Promise<string | { error: 
   await fs.writeFile("/app/harness.js", RUN_CODE_HARNESS);
   await fs.writeFile("/app/user-code.js", code);
 
-  let stdout = "";
-  let stderr = "";
+  const stdoutChunks: string[] = [];
+  const stderrChunks: string[] = [];
   let finished = false;
 
   const runtime = new NodeRuntime({
@@ -281,9 +281,9 @@ export async function executeInIsolate(code: string): Promise<string | { error: 
     runtimeDriverFactory: createNodeRuntimeDriverFactory(),
     memoryLimit: RUN_CODE_MEMORY_MB,
     onStdio(event) {
-      if (event.channel === "stdout") stdout += event.message;
+      if (event.channel === "stdout") stdoutChunks.push(event.message);
       if (event.channel === "stderr") {
-        stderr += event.message;
+        stderrChunks.push(event.message);
         // Stderr output (e.g. uncaught errors, syntax errors) means
         // the isolate is done — no stdout result will follow.
         finished = true;
@@ -300,10 +300,10 @@ export async function executeInIsolate(code: string): Promise<string | { error: 
     const deadline = Date.now() + RUN_CODE_TIMEOUT;
     while (Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, 50));
-      if (stdout || finished) break;
+      if (stdoutChunks.length > 0 || finished) break;
     }
 
-    return parseIsolateOutput(stdout, stderr);
+    return parseIsolateOutput(stdoutChunks.join(""), stderrChunks.join(""));
   } catch (err: unknown) {
     return { error: errorMessage(err) };
   } finally {

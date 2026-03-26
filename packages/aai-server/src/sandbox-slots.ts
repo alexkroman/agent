@@ -127,17 +127,18 @@ export async function resolveSandbox(
   }
 
   const scope = { keyHash: slot.keyHash, slug };
+  const envPromise = opts.store.getEnv(slug);
 
   return await ensureAgent(slot, {
     getWorkerCode: (s: string) => opts.store.getWorkerCode(s),
     kvCtx: { kvStore: opts.kvStore, scope },
     vectorCtx: opts.vectorStore ? { vectorStore: opts.vectorStore, scope } : undefined,
     getApiKey: async () => {
-      const env = await opts.store.getEnv(slug);
+      const env = await envPromise;
       return env?.ASSEMBLYAI_API_KEY ?? "";
     },
     getAgentEnv: async () => {
-      const env = await opts.store.getEnv(slug);
+      const env = await envPromise;
       if (!env) return {};
       // Only forward agent-defined secrets; platform keys stay host-side
       const { ASSEMBLYAI_API_KEY: _, ...agentEnv } = env;
