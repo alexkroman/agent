@@ -18,7 +18,8 @@ You are helping a user build a voice agent using the **aai** framework.
 ## Key rules
 
 - Every agent lives in `agent.ts` and exports a default `defineAgent()` call
-- Custom UI goes in `client.tsx` alongside `agent.ts`
+- Custom UI goes in `client.tsx` alongside `agent.ts` — **uses Preact, not
+  React** (import from `preact/hooks`, not `react`)
 - Optimize `instructions` for spoken conversation — short sentences, no visual
   formatting, no exclamation points
 - Never hardcode secrets — use `aai secret put` and access via `ctx.env`
@@ -602,6 +603,10 @@ When no OTel SDK is configured, all calls are no-ops with zero
 overhead.
 
 ## Custom UI (`client.tsx`)
+
+> **Important:** The client UI uses **Preact**, not React. Import hooks from
+> `preact/hooks` (e.g. `import { useState } from "preact/hooks"`), not from
+> `"react"`. Importing from `"react"` will cause bundler errors.
 
 Add `client.tsx` alongside `agent.ts`. Define a Preact component and call
 `mount()` to render it. Use JSX syntax:
