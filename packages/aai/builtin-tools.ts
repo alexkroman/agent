@@ -307,12 +307,13 @@ export async function executeInIsolate(code: string): Promise<string | { error: 
   } catch (err: unknown) {
     return { error: errorMessage(err) };
   } finally {
-    runtime.dispose();
-    // Wait for the exec promise to settle after disposal. Now that the
-    // isolate is disposed, exec rejects immediately rather than hanging.
-    await execPromise.catch(() => {
+    // Attach the catch handler BEFORE disposing so the rejection is always
+    // captured, even if it fires asynchronously after dispose returns.
+    const settled = execPromise.catch(() => {
       // Isolate disposed — exec rejection is expected.
     });
+    runtime.dispose();
+    await settled;
   }
 }
 
