@@ -11,7 +11,7 @@
     "check:local": "pnpm -r run typecheck && pnpm -r run lint && pnpm run check:syncpack && vitest run",
     "check:knip": "knip",
     "check:syncpack": "syncpack lint",
-    "check:markdown": "markdownlint-cli2 '**/*.md' '#**/node_modules' '#.aai'",
+    "check:markdown": "markdownlint-cli2 '**/*.md' '#**/node_modules' '#.aai' '#.claude'",
     "syncpack": "syncpack",
     "changeset": "changeset",
     "version": "changeset version",
