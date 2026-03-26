@@ -73,6 +73,7 @@ Internal (exported in package.json but not part of public API):
 - `./worker-entry` — tool execution logic
 - `./telemetry` — OpenTelemetry tracer, meter, pre-built metrics, `withSpan` helper
 - `./utils` — shared utility functions
+- `./ssrf` — SSRF protection (`assertPublicUrl`, `isPrivateIp`, `ssrfSafeFetch`)
 
 Non-exported internal files (used within the package only):
 

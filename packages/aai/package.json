@@ -85,6 +85,11 @@
       "source": "./_utils.ts",
       "types": "./dist/_utils.d.ts",
       "import": "./dist/_utils.js"
+    },
+    "./ssrf": {
+      "source": "./_ssrf.ts",
+      "types": "./dist/_ssrf.d.ts",
+      "import": "./dist/_ssrf.js"
     }
   },
   "scripts": {
