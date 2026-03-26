@@ -577,6 +577,33 @@ describe("createS2sSession", () => {
     await session.start();
     // Give time for async hook to settle
     await new Promise((r) => setTimeout(r, 10));
+
+    // onError should be invoked when onConnect fails
+    expect(hookInvoker.onError).toHaveBeenCalledWith(expect.any(String), { message: "hook error" });
+  });
+
+  test("hook failure in onError does not recurse", async () => {
+    const hookInvoker = {
+      onConnect: vi.fn(() => {
+        throw new Error("connect failed");
+      }),
+      onDisconnect: vi.fn(),
+      onTurn: vi.fn(),
+      onError: vi.fn(() => {
+        throw new Error("onError also failed");
+      }),
+      onStep: vi.fn(),
+      resolveTurnConfig: vi.fn(async () => null),
+    };
+    const { session } = setup({ hookInvoker });
+
+    // Should not throw even when both onConnect and onError fail
+    await session.start();
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(hookInvoker.onError).toHaveBeenCalledWith(expect.any(String), {
+      message: "connect failed",
+    });
   });
 
   // ─── Concurrency bug regression tests ─────────────────────────────────

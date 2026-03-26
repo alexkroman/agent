@@ -202,13 +202,28 @@ function buildCtx(opts: {
     },
     fireHook(name, fn) {
       if (!hookInvoker) return;
+      const notifyOnError = (err: unknown) => {
+        log.warn(`${name} hook failed`, { err: errorMessage(err) });
+        if (name !== "onError") {
+          try {
+            const r = hookInvoker.onError(id, { message: errorMessage(err) });
+            if (r && typeof r.catch === "function") {
+              r.catch((e: unknown) => {
+                log.warn("onError hook failed", { err: errorMessage(e) });
+              });
+            }
+          } catch (e: unknown) {
+            log.warn("onError hook failed", { err: errorMessage(e) });
+          }
+        }
+      };
       try {
         const p = fn(hookInvoker)
-          .catch((err: unknown) => log.warn(`${name} hook failed`, { err: errorMessage(err) }))
+          .catch(notifyOnError)
           .finally(() => pendingHooks.delete(p));
         pendingHooks.add(p);
       } catch (err: unknown) {
-        log.warn(`${name} hook failed`, { err: errorMessage(err) });
+        notifyOnError(err);
       }
     },
     async drainHooks() {
