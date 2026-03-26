@@ -106,6 +106,57 @@ describe("executeToolCall", () => {
     expect(await run("test", {}, tool)).toBe("async result");
   });
 
+  test("normalizes capitalized enum value from voice/STT input", async () => {
+    const tool = makeTool({
+      parameters: z.object({
+        location: z.enum(["study", "garden", "kitchen", "library"]),
+      }),
+      execute: (args) => `moved to ${(args as { location: string }).location}`,
+    });
+    expect(await run("move", { location: "Study" }, tool)).toBe("moved to study");
+  });
+
+  test("normalizes fully uppercase enum value", async () => {
+    const tool = makeTool({
+      parameters: z.object({
+        mood: z.enum(["chill", "intense", "cozy"]),
+      }),
+      execute: (args) => (args as { mood: string }).mood,
+    });
+    expect(await run("set_mood", { mood: "INTENSE" }, tool)).toBe("intense");
+  });
+
+  test("does not modify already-correct enum values", async () => {
+    const tool = makeTool({
+      parameters: z.object({
+        size: z.enum(["small", "medium", "large"]),
+      }),
+      execute: (args) => (args as { size: string }).size,
+    });
+    expect(await run("order", { size: "medium" }, tool)).toBe("medium");
+  });
+
+  test("does not modify non-enum string fields", async () => {
+    const tool = makeTool({
+      parameters: z.object({
+        name: z.string(),
+      }),
+      execute: (args) => (args as { name: string }).name,
+    });
+    expect(await run("greet", { name: "Alice" }, tool)).toBe("Alice");
+  });
+
+  test("returns error for enum value with no case-insensitive match", async () => {
+    const tool = makeTool({
+      parameters: z.object({
+        location: z.enum(["study", "garden"]),
+      }),
+      execute: () => "ok",
+    });
+    const result = await run("move", { location: "bedroom" }, tool);
+    expect(result).toContain("Error:");
+  });
+
   test("times out tool that runs longer than TOOL_EXECUTION_TIMEOUT_MS", async () => {
     vi.useFakeTimers();
     const tool = makeTool({

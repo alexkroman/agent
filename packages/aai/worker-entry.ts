@@ -13,6 +13,42 @@ import type { Logger } from "./runtime.ts";
 import type { Message, ToolContext, ToolDef } from "./types.ts";
 import type { VectorStore } from "./vector.ts";
 
+/**
+ * Normalize enum arguments to handle case mismatches from voice/STT input.
+ *
+ * When users speak enum values, STT may produce "Study" instead of "study".
+ * This function inspects the Zod schema for enum fields and performs
+ * case-insensitive matching, returning a corrected copy of the args.
+ */
+function normalizeEnumArgs(
+  args: Readonly<Record<string, unknown>>,
+  schema: z.ZodType,
+): Record<string, unknown> {
+  // Only handle ZodObject schemas (the common case for tool parameters)
+  const def = (schema as { _zod?: { def?: { type?: string; shape?: Record<string, z.ZodType> } } })
+    ._zod?.def;
+  if (!def || def.type !== "object" || !def.shape) return { ...args };
+
+  const result: Record<string, unknown> = { ...args };
+  for (const [key, fieldSchema] of Object.entries(def.shape)) {
+    const fieldDef = (
+      fieldSchema as { _zod?: { def?: { type?: string; entries?: Record<string, unknown> } } }
+    )._zod?.def;
+    if (fieldDef?.type !== "enum" || !fieldDef.entries || typeof result[key] !== "string") {
+      continue;
+    }
+    const input = result[key] as string;
+    // entries is an object like { study: "study", garden: "garden" }
+    const values = Object.values(fieldDef.entries) as string[];
+    // If it already matches exactly, skip
+    if (values.includes(input)) continue;
+    const lower = input.toLowerCase();
+    const match = values.find((v) => typeof v === "string" && v.toLowerCase() === lower);
+    if (match) result[key] = match;
+  }
+  return result;
+}
+
 /** Yield to the event loop so pending I/O (e.g. WebSocket frames) can be processed. */
 const yieldTick = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 
@@ -80,7 +116,8 @@ export async function executeToolCall(
 ): Promise<string> {
   const { tool } = options;
   const schema = tool.parameters ?? EMPTY_PARAMS;
-  const parsed = schema.safeParse(args);
+  const normalized = normalizeEnumArgs(args, schema);
+  const parsed = schema.safeParse(normalized);
   if (!parsed.success) {
     const issues = (parsed.error?.issues ?? [])
       .map((i: z.ZodIssue) => `${i.path.map(String).join(".")}: ${i.message}`)
