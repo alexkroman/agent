@@ -25,6 +25,7 @@ import {
 // ─── Scoped instances ────────────────────────────────────────────────────────
 
 const SCOPE = "aai";
+// NOTE: Keep in sync with package.json version
 const VERSION = "0.9.3";
 
 /** Tracer scoped to the AAI SDK. */
@@ -88,9 +89,7 @@ export const bargeInCounter = meter.createCounter("aai.turn.bargein.count", {
  * Run `fn` inside a new span. The span is automatically ended and its
  * status set based on whether `fn` throws.
  */
-export function withSpan<T>(name: string, fn: (span: Span) => Promise<T>): Promise<T>;
-export function withSpan<T>(name: string, fn: (span: Span) => T): T;
-export function withSpan<T>(name: string, fn: (span: Span) => T | Promise<T>): T | Promise<T> {
+export function withSpan<T>(name: string, fn: (span: Span) => T): T {
   return tracer.startActiveSpan(name, (span) => {
     try {
       const result = fn(span);
@@ -110,7 +109,7 @@ export function withSpan<T>(name: string, fn: (span: Span) => T | Promise<T>): T
             span.recordException(err instanceof Error ? err : new Error(String(err)));
             span.end();
             throw err;
-          });
+          }) as T;
       }
       span.setStatus({ code: SpanStatusCode.OK });
       span.end();

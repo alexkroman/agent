@@ -9,6 +9,7 @@
 import { convert } from "html-to-text";
 import { z } from "zod";
 import { EMPTY_PARAMS, type ToolSchema } from "./_internal-types.ts";
+import { ssrfSafeFetch } from "./_ssrf.ts";
 import { errorMessage } from "./_utils.ts";
 import { memoryTools } from "./memory-tools.ts";
 import type { ToolDef } from "./types.ts";
@@ -105,15 +106,18 @@ function createVisitWebpage(fetchFn = globalThis.fetch): ToolDef<typeof visitWeb
     parameters: visitWebpageParams,
     async execute(args, _ctx) {
       const { url } = args;
-      const resp = await fetchFn(url, {
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (compatible; VoiceAgent/1.0; +https://github.com/AssemblyAI/aai)",
-          Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      const resp = await ssrfSafeFetch(
+        url,
+        {
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (compatible; VoiceAgent/1.0; +https://github.com/AssemblyAI/aai)",
+            Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          },
+          signal: fetchSignal(),
         },
-        redirect: "follow",
-        signal: fetchSignal(),
-      });
+        fetchFn,
+      );
       if (!resp.ok) {
         return { error: `Failed to fetch: ${resp.status} ${resp.statusText}`, url };
       }
@@ -149,10 +153,11 @@ function createFetchJson(fetchFn = globalThis.fetch): ToolDef<typeof fetchJsonPa
     parameters: fetchJsonParams,
     async execute(args, _ctx) {
       const { url, headers } = args;
-      const resp = await fetchFn(url, {
-        ...(headers && { headers }),
-        signal: fetchSignal(),
-      });
+      const resp = await ssrfSafeFetch(
+        url,
+        { ...(headers && { headers }), signal: fetchSignal() },
+        fetchFn,
+      );
       if (!resp.ok) {
         return { error: `HTTP ${resp.status} ${resp.statusText}`, url };
       }
@@ -200,10 +205,10 @@ function createRunCode(): ToolDef<typeof runCodeParams> {
 }
 
 /** Lazily import secure-exec to avoid top-level side effects. */
-let _secureExec: typeof import("secure-exec") | undefined;
-async function getSecureExec() {
-  if (!_secureExec) _secureExec = await import("secure-exec");
-  return _secureExec;
+let _secureExecPromise: Promise<typeof import("secure-exec")> | undefined;
+function getSecureExec() {
+  _secureExecPromise ??= import("secure-exec");
+  return _secureExecPromise;
 }
 
 // The harness loads user code via readFileSync + AsyncFunction so that syntax
@@ -263,7 +268,10 @@ export async function executeInIsolate(code: string): Promise<string | { error: 
 
   const stdoutChunks: string[] = [];
   const stderrChunks: string[] = [];
-  let finished = false;
+  let resolveOutput: (() => void) | null = null;
+  const outputReady = new Promise<void>((r) => {
+    resolveOutput = r;
+  });
 
   const runtime = new NodeRuntime({
     systemDriver: createNodeDriver({
@@ -282,12 +290,8 @@ export async function executeInIsolate(code: string): Promise<string | { error: 
     memoryLimit: RUN_CODE_MEMORY_MB,
     onStdio(event) {
       if (event.channel === "stdout") stdoutChunks.push(event.message);
-      if (event.channel === "stderr") {
-        stderrChunks.push(event.message);
-        // Stderr output (e.g. uncaught errors, syntax errors) means
-        // the isolate is done — no stdout result will follow.
-        finished = true;
-      }
+      if (event.channel === "stderr") stderrChunks.push(event.message);
+      resolveOutput?.();
     },
   });
 
@@ -297,11 +301,8 @@ export async function executeInIsolate(code: string): Promise<string | { error: 
   const execPromise = runtime.exec('import "/app/harness.js";', { cwd: "/app" });
 
   try {
-    const deadline = Date.now() + RUN_CODE_TIMEOUT;
-    while (Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 50));
-      if (stdoutChunks.length > 0 || finished) break;
-    }
+    // Wait for output (stdout/stderr) or timeout — no polling needed.
+    await Promise.race([outputReady, new Promise<void>((r) => setTimeout(r, RUN_CODE_TIMEOUT))]);
 
     // Let the isolate finish naturally — wait a short grace period for exec
     // to settle after output is captured (avoids disposing mid-execution).

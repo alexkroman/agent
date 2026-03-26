@@ -56,6 +56,7 @@ export type SessionOptions = {
   maxHistory?: number;
 };
 
+/** @internal Not part of the public API. Exposed for testing only. */
 export const _internals = {
   connectS2s,
 };
@@ -109,6 +110,8 @@ function buildCtx(opts: {
 }): S2sSessionCtx {
   const { id, agentConfig, hookInvoker, log } = opts;
   const maxHistory = opts.maxHistory ?? DEFAULT_MAX_HISTORY;
+  let cachedActiveTools: string[] | undefined;
+  let cachedActiveSet: Set<string> | undefined;
   const ctx: S2sSessionCtx = {
     ...opts,
     s2s: null,
@@ -133,8 +136,11 @@ function buildCtx(opts: {
         return "Maximum tool steps reached. Please respond to the user now.";
       }
       if (turnConfig?.activeTools) {
-        const activeSet = new Set(turnConfig.activeTools);
-        if (!activeSet.has(name)) {
+        if (turnConfig.activeTools !== cachedActiveTools) {
+          cachedActiveTools = turnConfig.activeTools;
+          cachedActiveSet = new Set(turnConfig.activeTools);
+        }
+        if (!cachedActiveSet?.has(name)) {
           log.info("Tool filtered by activeTools", { name });
           return JSON.stringify({ error: `Tool "${name}" is not available at this step.` });
         }
@@ -238,7 +244,6 @@ export function createS2sSession(opts: SessionOptions): Session {
       const msg = errorMessage(err);
       log.error("S2S connect failed", { error: errorDetail(err) });
       client.event({ type: "error", code: "internal", message: msg });
-      throw err;
     }
   }
 

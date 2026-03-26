@@ -162,6 +162,14 @@ export type VoiceSession = {
 
 // ─── Voice session factory ───────────────────────────────────────────────────
 
+function buildWsUrl(platformUrl: string, token: string | undefined, resume: boolean): URL {
+  const wsUrl = new URL("websocket", platformUrl.endsWith("/") ? platformUrl : `${platformUrl}/`);
+  wsUrl.protocol = wsUrl.protocol === "https:" ? "wss:" : "ws:";
+  if (token) wsUrl.searchParams.set("token", token);
+  if (resume) wsUrl.searchParams.set("resume", "1");
+  return wsUrl;
+}
+
 /**
  * Create a voice session that connects to an AAI server via WebSocket.
  *
@@ -236,10 +244,7 @@ export function createVoiceSession(options: SessionOptions): VoiceSession {
       });
     }
 
-    const base = options.platformUrl;
-    const wsUrl = new URL("websocket", base.endsWith("/") ? base : `${base}/`);
-    wsUrl.protocol = wsUrl.protocol === "https:" ? "wss:" : "ws:";
-    if (hasConnected) wsUrl.searchParams.set("resume", "1");
+    const wsUrl = buildWsUrl(options.platformUrl, options.token, hasConnected);
 
     const socket = new WebSocket(wsUrl.toString());
     socket.binaryType = "arraybuffer";

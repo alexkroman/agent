@@ -147,6 +147,8 @@ const ISOLATE_TOOL_TIMEOUT_MS = 25_000;
 
 async function executeTool(agent: AgentDef, req: ToolCallRequest): Promise<ToolCallResponse> {
   const tool = agent.tools[req.name];
+  // Harness uses raw node:http (no Hono), so errors carry a `.status` property
+  // via Object.assign. The catch handler in startServer() reads it.
   if (!tool) throw Object.assign(new Error(`Unknown tool: ${req.name}`), { status: 404 });
 
   const ctx: ToolContext = {
@@ -272,44 +274,26 @@ async function runMiddlewareOutputFilter(
   return filtered;
 }
 
-async function invokeHook(agent: AgentDef, req: HookRequest): Promise<HookResponse> {
-  const ctx = makeHookCtx(agent, req);
-  let result: unknown;
+async function invokeMiddlewareHook(
+  agent: AgentDef,
+  req: HookRequest,
+  ctx: HookContext,
+): Promise<unknown> {
   const middleware: readonly Middleware[] = agent.middleware ?? [];
-
-  const handlers: Record<string, () => Promise<void> | void> = {
-    onConnect: () => agent.onConnect?.(ctx),
-    onDisconnect: async () => {
-      await agent.onDisconnect?.(ctx);
-      sessionStates.delete(req.sessionId);
-    },
-    onTurn: () => agent.onTurn?.(req.text ?? "", ctx),
-    onError: () => agent.onError?.(new Error(req.error?.message ?? "Unknown error"), ctx),
-    onStep: () => {
-      if (req.step) return agent.onStep?.(req.step, ctx);
-    },
-    onBeforeStep: async () => {
-      result = await agent.onBeforeStep?.(req.stepNumber ?? 0, ctx);
-    },
-    resolveTurnConfig: async () => {
-      result = await runResolveTurnConfig(agent, ctx, req.stepNumber ?? 0);
-    },
-    // Middleware hooks
-    beforeTurn: async () => {
-      result = await runMiddlewareBeforeTurn(middleware, req.text ?? "", ctx);
-    },
-    afterTurn: async () => {
+  switch (req.hook) {
+    case "beforeTurn":
+      return runMiddlewareBeforeTurn(middleware, req.text ?? "", ctx);
+    case "afterTurn":
       await runMiddlewareAfterTurn(middleware, req.text ?? "", ctx);
-    },
-    interceptToolCall: async () => {
-      result = await runMiddlewareToolIntercept(
+      return;
+    case "interceptToolCall":
+      return runMiddlewareToolIntercept(
         middleware,
         req.step?.toolCalls[0]?.toolName ?? "",
         (req.step?.toolCalls[0]?.args as Record<string, unknown>) ?? {},
         ctx,
       );
-    },
-    afterToolCall: async () => {
+    case "afterToolCall":
       await runMiddlewareAfterToolCall(
         middleware,
         req.step?.toolCalls[0]?.toolName ?? "",
@@ -317,14 +301,45 @@ async function invokeHook(agent: AgentDef, req: HookRequest): Promise<HookRespon
         req.text ?? "",
         ctx,
       );
-    },
-    filterOutput: async () => {
-      result = await runMiddlewareOutputFilter(middleware, req.text ?? "", ctx);
-    },
-  };
+      return;
+    case "filterOutput":
+      return runMiddlewareOutputFilter(middleware, req.text ?? "", ctx);
+    default:
+      return;
+  }
+}
 
-  const handler = handlers[req.hook];
-  if (handler) await handler();
+async function invokeHook(agent: AgentDef, req: HookRequest): Promise<HookResponse> {
+  const ctx = makeHookCtx(agent, req);
+  let result: unknown;
+
+  switch (req.hook) {
+    case "onConnect":
+      await agent.onConnect?.(ctx);
+      break;
+    case "onDisconnect":
+      await agent.onDisconnect?.(ctx);
+      sessionStates.delete(req.sessionId);
+      break;
+    case "onTurn":
+      await agent.onTurn?.(req.text ?? "", ctx);
+      break;
+    case "onError":
+      await agent.onError?.(new Error(req.error?.message ?? "Unknown error"), ctx);
+      break;
+    case "onStep":
+      if (req.step) await agent.onStep?.(req.step, ctx);
+      break;
+    case "onBeforeStep":
+      result = await agent.onBeforeStep?.(req.stepNumber ?? 0, ctx);
+      break;
+    case "resolveTurnConfig":
+      result = await runResolveTurnConfig(agent, ctx, req.stepNumber ?? 0);
+      break;
+    default:
+      result = await invokeMiddlewareHook(agent, req, ctx);
+      break;
+  }
 
   return { state: ctx.state, result };
 }
