@@ -178,8 +178,10 @@ start, secret, rag, link, unlink
 - **Runtime**: Node
 - **Frameworks**: Preact (client UI), Tailwind CSS v4 (compiled at bundle time)
 - **Testing**: Vitest. Test files co-located: `foo.ts` → `foo_test.ts`.
-  All vitest projects (unit, slow, integration) are defined in the root
-  `vitest.config.ts`. Use `--project <name>` to run a specific project.
+  Unit test projects (aai, aai-ui, aai-cli, aai-server) are defined in the
+  root `vitest.config.ts`. Use `--project <name>` to run a specific project.
+  Slow/integration tests have separate per-package configs (`vitest.slow.config.ts`,
+  `vitest.integration.config.ts`) to avoid running during `vitest run`.
   In tests, use `flush()` from `_test-utils.ts` instead of
   `await new Promise(r => setTimeout(r, 0))` to yield to microtasks.
   Use `vi.waitFor()` instead of arbitrary delays when polling for async results.

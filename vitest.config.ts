@@ -88,28 +88,6 @@ export default defineConfig({
           ],
         },
       },
-      // Slow tests: CLI e2e and pack-build (separate from unit tests)
-      {
-        ...sharedConfig,
-        test: {
-          name: "aai-cli-slow",
-          root: "packages/aai-cli",
-          include: ["e2e.test.ts", "pack-build.test.ts"],
-          testTimeout: 300_000,
-          hookTimeout: 300_000,
-        },
-      },
-      // Integration tests: sandbox isolation tests (separate from unit tests)
-      {
-        ...sharedConfig,
-        test: {
-          name: "aai-server-integration",
-          root: "packages/aai-server",
-          include: ["src/sandbox-integration.test.ts"],
-          testTimeout: 30_000,
-          hookTimeout: 30_000,
-        },
-      },
     ],
   },
 });
