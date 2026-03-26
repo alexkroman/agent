@@ -16,5 +16,34 @@ pre-push:
           echo "Error: Direct pushes to $branch are not allowed. Use a PR."
           exit 1
         fi
+    no-conflicts-with-main:
+      run: |
+        branch=$(git rev-parse --abbrev-ref HEAD)
+        if [ "$branch" = "main" ] || [ "$branch" = "master" ]; then
+          exit 0
+        fi
+        echo "Checking for merge conflicts with main..."
+        git fetch origin main --quiet 2>/dev/null || {
+          echo "Warning: Could not fetch origin/main — skipping conflict check."
+          exit 0
+        }
+        # Try a merge in-memory (no worktree changes) using merge-tree
+        base=$(git merge-base HEAD origin/main 2>/dev/null) || {
+          echo "Warning: No common ancestor with main — skipping conflict check."
+          exit 0
+        }
+        merge_result=$(git merge-tree "$base" HEAD origin/main 2>/dev/null)
+        if echo "$merge_result" | grep -q "^<<<<<<<"; then
+          echo ""
+          echo "Error: This branch has merge conflicts with main."
+          echo "Please rebase or merge main into your branch before pushing:"
+          echo ""
+          echo "  git fetch origin main"
+          echo "  git rebase origin/main"
+          echo ""
+          echo "Then resolve any conflicts and try again."
+          exit 1
+        fi
+        echo "No conflicts with main detected."
     check:
       run: pnpm check

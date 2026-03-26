@@ -169,11 +169,22 @@ secret, rag, link, unlink
   non-code files common to all templates.
 - **Git hooks** (lefthook): pre-commit runs `biome check --write` on staged
   files and `syncpack lint` when package.json changes; pre-push blocks pushes
-  to main/master and runs `pnpm check`.
+  to main/master, checks for merge conflicts with main, and runs `pnpm check`.
 - **Updating CLAUDE.md**: When you make changes that affect architecture,
   security model, conventions, or gotchas, update this file.
 
 ## PR Workflow (reducing fix-up commits)
+
+**Before pushing**, rebase on the latest `main` to avoid merge conflicts:
+
+```sh
+git fetch origin main
+git rebase origin/main
+```
+
+The pre-push hook will automatically check for conflicts with `main` and
+block the push if any are found. This prevents PRs from being opened with
+merge conflicts.
 
 Run `pnpm check:local` **before your first commit** on a PR branch. This
 catches the most common issues that historically required follow-up commits:
