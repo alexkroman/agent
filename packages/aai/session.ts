@@ -1,9 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 /** S2S session — relays audio between client and AssemblyAI S2S API. */
 
-import type { AgentConfig, ToolSchema } from "./_internal-types.ts";
 import { activeSessionsUpDown, sessionCounter, setupListeners } from "./_session-otel.ts";
-import { errorDetail, errorMessage } from "./_utils.ts";
+import type { AgentConfig, ToolSchema } from "./internal-types.ts";
 import type { HookInvoker } from "./middleware.ts";
 import type { ClientSink } from "./protocol.ts";
 import { fromWireMessages, HOOK_TIMEOUT_MS } from "./protocol.ts";
@@ -18,6 +17,7 @@ import {
 } from "./s2s.ts";
 import { buildSystemPrompt } from "./system-prompt.ts";
 import type { Message } from "./types.ts";
+import { errorDetail, errorMessage } from "./utils.ts";
 import type { ExecuteTool } from "./worker-entry.ts";
 
 export type { HookInvoker, ToolInterceptResult } from "./middleware.ts";
@@ -210,6 +210,7 @@ export function createS2sSession(opts: SessionOptions): Session {
       const msg = errorMessage(err);
       log.error("S2S connect failed", { error: errorDetail(err) });
       client.event({ type: "error", code: "internal", message: msg });
+      throw err;
     }
   }
 

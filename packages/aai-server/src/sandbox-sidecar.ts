@@ -3,9 +3,12 @@
  * Scoped store adapters and sidecar HTTP server for agent sandboxes.
  *
  * Each sandbox gets a per-sandbox sidecar server on loopback that provides
- * scoped KV and vector access — the isolate calls it without authentication.
+ * scoped KV and vector access. A per-sidecar bearer token (shared only with
+ * the corresponding isolate via SIDECAR_TOKEN env var) authenticates every
+ * request, preventing other host processes from accessing the sidecar.
  */
 
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import type { Kv, KvEntry } from "@alexkroman1/aai/kv";
 import type { VectorStore } from "@alexkroman1/aai/vector";
 import { serve } from "@hono/node-server";
@@ -32,8 +35,11 @@ export function scopedKv(kvStore: KvStore, scope: AgentScope) {
       const ttl = options?.expireIn ? Math.ceil(options.expireIn / 1000) : undefined;
       await kvStore.set(scope, key, JSON.stringify(value), ttl);
     },
-    async delete(key: string) {
-      await kvStore.del(scope, key);
+    async delete(keys: string | string[]) {
+      const keyArray = Array.isArray(keys) ? keys : [keys];
+      for (const key of keyArray) {
+        await kvStore.del(scope, key);
+      }
     },
     async list<T = unknown>(
       prefix: string,
@@ -76,7 +82,9 @@ const SidecarKvSetSchema = z.object({
   value: z.unknown(),
   options: z.object({ expireIn: z.number().optional() }).optional(),
 });
-const SidecarKvDelSchema = z.object({ key: z.string() });
+const SidecarKvDelSchema = z.object({
+  key: z.union([z.string(), z.array(z.string())]),
+});
 const SidecarKvListSchema = z.object({
   prefix: z.string(),
   limit: z.number().optional(),
@@ -95,13 +103,31 @@ const SidecarVecQuerySchema = z.object({
 });
 const SidecarVecRemoveSchema = z.object({ ids: z.union([z.string(), z.array(z.string())]) });
 
-// ── Sidecar server (per-sandbox, loopback, no auth) ─────────────────────
+// ── Sidecar server (per-sandbox, loopback + bearer token auth) ──────────
 
 function buildSidecarApp(
   kv: ReturnType<typeof scopedKv>,
   vector: ReturnType<typeof scopedVector> | undefined,
+  token: string,
 ): Hono {
   const app = new Hono();
+
+  // Authenticate every request with a constant-time comparison of the
+  // per-sidecar bearer token. This prevents other processes on the host
+  // from accessing another sandbox's KV/vector data.
+  const expectedBuf = Buffer.from(token, "utf8");
+  app.use("*", async (c, next) => {
+    const auth = c.req.header("authorization") ?? "";
+    const prefix = "Bearer ";
+    if (!auth.startsWith(prefix)) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+    const providedBuf = Buffer.from(auth.slice(prefix.length), "utf8");
+    if (expectedBuf.length !== providedBuf.length || !timingSafeEqual(expectedBuf, providedBuf)) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+    await next();
+  });
 
   const requireVec = () => {
     if (!vector) throw Object.assign(new Error("Vector store not configured"), { status: 503 });
@@ -123,7 +149,10 @@ function buildSidecarApp(
   });
   app.post("/kv/del", async (c) => {
     const { key } = SidecarKvDelSchema.parse(await c.req.json());
-    await kv.delete(key);
+    const keys = Array.isArray(key) ? key : [key];
+    for (const k of keys) {
+      await kv.delete(k);
+    }
     return c.json(null);
   });
   app.post("/kv/list", async (c) => {
@@ -177,8 +206,9 @@ function buildSidecarApp(
 export async function startSidecarServer(
   kv: ReturnType<typeof scopedKv>,
   vector: ReturnType<typeof scopedVector> | undefined,
-): Promise<{ url: string; close: () => void }> {
-  const app = buildSidecarApp(kv, vector);
+): Promise<{ url: string; token: string; close: () => void }> {
+  const token = randomBytes(32).toString("hex");
+  const app = buildSidecarApp(kv, vector, token);
   const server = serve({ fetch: app.fetch, port: 0, hostname: "127.0.0.1" });
 
   await new Promise<void>((resolve, reject) => {
@@ -186,9 +216,11 @@ export async function startSidecarServer(
     server.on("error", reject);
   });
 
-  const addr = server.address() as { port: number };
+  const addr = server.address();
+  if (!addr || typeof addr === "string") throw new Error("Sidecar server failed to bind to a port");
   return {
     url: `http://127.0.0.1:${addr.port}`,
+    token,
     close: () => server.close(),
   };
 }

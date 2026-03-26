@@ -1,6 +1,6 @@
 import "@alexkroman1/aai-ui/styles.css";
 import { mount, useSession } from "@alexkroman1/aai-ui";
-import type { Message } from "@alexkroman1/aai-ui";
+import type { ChatMessage } from "@alexkroman1/aai-ui";
 import { useEffect, useRef } from "preact/hooks";
 
 const CSS = `
@@ -97,7 +97,7 @@ function InfocomAdventure() {
     : "Idle";
 
   const msgCount =
-    session.messages.value.filter((m: Message) => m.role === "user").length;
+    session.messages.value.filter((m: ChatMessage) => m.role === "user").length;
 
   const dotColor = stateVal === "listening"
     ? "#00ff41"
@@ -216,7 +216,7 @@ function InfocomAdventure() {
               scrollbarColor: "#00ff41 #001a00",
             }}
           >
-            {session.messages.value.map((msg: Message, i: number) => (
+            {session.messages.value.map((msg: ChatMessage, i: number) => (
               <div
                 key={i}
                 class={`mb-4 ${msg.role === "user" ? "ic-user-msg" : ""}`}
