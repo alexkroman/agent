@@ -272,11 +272,8 @@ export function defineTool<P extends z.ZodObject<z.ZodRawShape>, S = Record<stri
   return def;
 }
 
-/**
- * Alias for {@link defineTool}. Prefer `defineTool` for clarity.
- * @public
- */
-export const tool = defineTool;
+/** Alias for {@link defineTool}. Prefer `defineTool` for clarity. */
+export { defineTool as tool };
 
 /**
  * Information about a completed agentic step, passed to the `onStep` hook.
