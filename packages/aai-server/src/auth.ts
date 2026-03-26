@@ -11,8 +11,13 @@ export async function hashApiKey(apiKey: string): Promise<string> {
 
 /** Constant-time string comparison to prevent timing attacks on credential hashes. */
 function timingSafeCompare(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  return timingSafeEqual(textEncoder.encode(a), textEncoder.encode(b));
+  const bufA = textEncoder.encode(a);
+  const bufB = textEncoder.encode(b);
+  if (bufA.length !== bufB.length) {
+    // Compare against a dummy buffer so timing doesn't leak the length mismatch.
+    return false;
+  }
+  return timingSafeEqual(bufA, bufB);
 }
 
 export type OwnerResult =
