@@ -144,7 +144,9 @@ export class ClientHandler {
     if (this.#state.value !== "speaking") {
       this.#state.value = "speaking";
     }
-    this.#voiceIO()?.enqueue(chunk.buffer as ArrayBuffer);
+    if (chunk.buffer instanceof ArrayBuffer) {
+      this.#voiceIO()?.enqueue(chunk.buffer);
+    }
   }
 
   playAudioDone(): void {

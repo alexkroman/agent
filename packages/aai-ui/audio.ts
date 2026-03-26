@@ -99,7 +99,7 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
 
   capNode.port.onmessage = (e: MessageEvent) => {
     if (e.data.event !== "chunk") return;
-    const chunk = new Uint8Array(e.data.buffer as ArrayBuffer);
+    const chunk = new Uint8Array(e.data.buffer as ArrayBufferLike);
 
     capBuf.set(chunk, capOffset);
     capOffset += chunk.byteLength;
