@@ -773,6 +773,147 @@ data lives on `session` (a `VoiceSession`); UI-only controls are top-level.
 | `useToolResult((toolName, result, tc) => {})`        | Fires once per completed tool call with parsed JSON result. Use for carts, scoreboards, etc. |
 | `useToolResult<R>("tool_name", (result, tc) => {})`  | Fires only for the named tool, with `result` typed as `R`.                                   |
 
+### Custom UI data flow
+
+When a tool executes on the server, the result flows to the UI as follows:
+
+```text
+Tool returns object on server
+  → server sends "tool_call_start" (status: "pending", no result)
+  → server sends "tool_call_done"  (status: "done", result as JSON string)
+  → session.toolCalls signal updates
+  → useToolResult fires callback with (toolName, parsedResult, toolCallInfo)
+  → your component updates local state via useState
+```
+
+#### `useToolResult` in detail
+
+```ts
+useToolResult(callback: (toolName: string, result: unknown, toolCall: ToolCallInfo) => void): void
+```
+
+| Parameter  | Type           | Description                                                                                                        |
+| ---------- | -------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `toolName` | `string`       | Name of the tool that completed                                                                                    |
+| `result`   | `unknown`      | **Parsed JSON** — the hook parses the raw JSON string for you. Falls back to the raw string if JSON parsing fails. |
+| `toolCall` | `ToolCallInfo` | Full metadata: `{ toolCallId, toolName, args, status, result, afterMessageIndex }`                                 |
+
+**When does it fire?** Exactly **once per completed tool call**. It tracks
+`toolCallId` internally, so it never fires twice for the same call — even
+when the `toolCalls` signal updates for unrelated reasons.
+
+**What about multiple calls to the same tool?** Each call has a unique
+`toolCallId`. If the agent calls `get_recipe` three times, your callback
+fires three times — once for each call — with the individual result. Use
+`toolCall.toolCallId` if you need to distinguish them, or `toolCall.args`
+to see what arguments were passed.
+
+**What does it return?** The `result` parameter is the **parsed JSON object**
+your tool returned (not a string). For example, if your tool returns
+`{ recipe: { name: "Pasta", steps: [...] } }`, the callback receives that
+object directly. If the result isn't valid JSON, you get the raw string.
+
+**Lifecycle:** When the session resets (user calls `reset()`), the internal
+deduplication set clears, so tool calls from a new session are handled fresh.
+
+#### `ToolCallInfo` type
+
+```ts
+type ToolCallInfo = {
+  toolCallId: string;            // Unique ID — used for deduplication
+  toolName: string;              // Tool name
+  args: Record<string, unknown>; // Parsed arguments passed to the tool
+  status: "pending" | "done";    // "pending" while executing, "done" when complete
+  result?: string;               // Raw JSON string (only present when status="done")
+  afterMessageIndex: number;     // Position in messages array for UI ordering
+};
+```
+
+#### Simple example: recipe card
+
+```tsx
+import "aai-ui/styles.css";
+import { useState } from "preact/hooks";
+import { ChatView, mount, useSession, useToolResult } from "@alexkroman1/aai-ui";
+
+interface Recipe { name: string; ingredients: string[]; steps: string[] }
+
+function RecipeAgent() {
+  const { session, started, start } = useSession();
+  const [recipe, setRecipe] = useState<Recipe | null>(null);
+
+  useToolResult((toolName, result: any) => {
+    if (toolName === "get_recipe" && result.recipe) {
+      setRecipe(result.recipe);
+    }
+  });
+
+  if (!started.value) return <button onClick={start}>Start</button>;
+
+  return (
+    <div class="flex gap-4 h-full">
+      <div class="flex-1"><ChatView /></div>
+      {recipe && (
+        <div class="w-80 p-4 bg-aai-surface rounded-lg">
+          <h2 class="text-aai-text font-bold text-lg">{recipe.name}</h2>
+          <h3 class="text-aai-muted mt-2 font-semibold">Ingredients</h3>
+          <ul class="list-disc ml-4 text-aai-text text-sm">
+            {recipe.ingredients.map((ing) => <li key={ing}>{ing}</li>)}
+          </ul>
+          <h3 class="text-aai-muted mt-2 font-semibold">Steps</h3>
+          <ol class="list-decimal ml-4 text-aai-text text-sm">
+            {recipe.steps.map((s, i) => <li key={i}>{s}</li>)}
+          </ol>
+        </div>
+      )}
+    </div>
+  );
+}
+
+mount(RecipeAgent);
+```
+
+#### Handling multiple tool calls of the same name
+
+If the agent calls `get_recipe` multiple times (e.g. user asks for a different
+recipe), each call fires the callback separately. Store a list or replace the
+previous value — whatever your UI needs:
+
+```tsx
+// Replace: always show the latest recipe
+useToolResult((toolName, result: any) => {
+  if (toolName === "get_recipe") setRecipe(result.recipe);
+});
+
+// Accumulate: collect all recipes
+useToolResult((toolName, result: any) => {
+  if (toolName === "get_recipe") {
+    setRecipes((prev) => [...prev, result.recipe]);
+  }
+});
+```
+
+#### Anti-patterns
+
+**Do NOT use `useEffect` + `session.toolCalls.value` to build derived state.**
+That pattern re-processes every tool call on every signal change, causing
+duplicates (e.g. items added to the cart multiple times). `useToolResult`
+handles deduplication correctly.
+
+```tsx
+// ❌ WRONG — duplicates on every signal update
+useEffect(() => {
+  for (const tc of session.toolCalls.value) {
+    if (tc.status === "done") setCart((prev) => [...prev, tc.result]);
+  }
+}, [session.toolCalls.value]);
+
+// ✅ CORRECT — fires once per completed call
+useToolResult((toolName, result) => {
+  if (toolName === "add_item") setCart((prev) => [...prev, result.item]);
+});
+```
+
 **Signal semantics for utterances:**
 
 - `userUtterance`: `null` = user is not speaking, `""` = speech detected but
@@ -817,9 +958,9 @@ mount(App);
 
 ### Building dynamic UI from tool results
 
-Use `useToolResult` to update local state (carts, scoreboards, dashboards)
-whenever a tool completes. It fires exactly once per completed tool call with
-the parsed JSON result, handling deduplication internally.
+Use `useToolResult` to update local state whenever a tool completes. See
+the **Custom UI data flow** section above for the full reference, including
+callback signature, `ToolCallInfo` type, and anti-patterns.
 
 **Sharing types between agent and client:** Create a `shared.ts` file with
 your tool result types using `ToolResultMap`, then import it from both
@@ -876,11 +1017,6 @@ function ShopAgent() {
 
 mount(ShopAgent);
 ```
-
-**Do NOT use `useEffect` + `session.toolCalls.value` to build derived state.**
-That pattern re-processes every tool call on every signal change, causing
-duplicates (e.g. items added to the cart multiple times). `useToolResult`
-handles this correctly.
 
 ### Reacting to agent state
 
