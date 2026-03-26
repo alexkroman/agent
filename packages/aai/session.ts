@@ -3,7 +3,7 @@
 
 import type { AgentConfig, ToolSchema } from "./_internal-types.ts";
 import { activeSessionsUpDown, sessionCounter, setupListeners } from "./_session-otel.ts";
-import { errorDetail, errorMessage } from "./_utils.ts";
+import { errorDetail, errorMessage, toolError } from "./_utils.ts";
 import type { HookInvoker } from "./middleware.ts";
 import type { ClientSink } from "./protocol.ts";
 import { fromWireMessages, HOOK_TIMEOUT_MS } from "./protocol.ts";
@@ -177,7 +177,7 @@ function buildCtx(opts: {
     consumeToolCallStep(turnConfig, name, generation) {
       // Guard: ignore tool calls from a stale reply generation.
       if (generation !== ctx.replyGeneration) {
-        return "Reply was interrupted. Discarding stale tool call.";
+        return toolError("Reply was interrupted. Discarding stale tool call.");
       }
       const maxSteps = turnConfig?.maxSteps ?? agentConfig.maxSteps;
       ctx.toolCallCount++;
@@ -186,7 +186,7 @@ function buildCtx(opts: {
           toolCallCount: ctx.toolCallCount,
           maxSteps,
         });
-        return "Maximum tool steps reached. Please respond to the user now.";
+        return toolError("Maximum tool steps reached. Please respond to the user now.");
       }
       if (turnConfig?.activeTools) {
         if (turnConfig.activeTools !== cachedActiveTools) {
@@ -195,7 +195,7 @@ function buildCtx(opts: {
         }
         if (!cachedActiveSet?.has(name)) {
           log.info("Tool filtered by activeTools", { name });
-          return JSON.stringify({ error: `Tool "${name}" is not available at this step.` });
+          return toolError(`Tool "${name}" is not available at this step.`);
         }
       }
       return null;

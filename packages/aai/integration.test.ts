@@ -158,7 +158,7 @@ describe("SDK integration: defineAgent → tool execution", () => {
     expect(await exec.executeTool("typed", { count: 5 }, "s1", [])).toBe("10");
     // Invalid input
     const err = await exec.executeTool("typed", { count: "not a number" }, "s1", []);
-    expect(err).toContain("Error");
+    expect(err).toContain("error");
   });
 
   test("buildAgentConfig produces serializable config", () => {
