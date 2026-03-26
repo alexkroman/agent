@@ -4,7 +4,6 @@ export default defineConfig({
   entry: [
     "index.ts",
     "session.ts",
-    "components.ts",
     "types.ts",
     "audio.ts",
     "mount.tsx",
