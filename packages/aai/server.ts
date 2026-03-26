@@ -36,6 +36,15 @@ export type ServerOptions = {
   logger?: Logger;
   /** S2S configuration. Defaults to AssemblyAI production. */
   s2sConfig?: S2SConfig;
+  /**
+   * Allowed origins for WebSocket connections. When set, the server validates
+   * the `Origin` header on upgrade requests and rejects connections from
+   * origins not in this list.
+   *
+   * Defaults to the server's own origin (`http://localhost:<port>`).
+   * Pass `"*"` to allow any origin (disables validation).
+   */
+  allowedOrigins?: string[] | "*";
 };
 
 export type AgentServer = {
@@ -63,6 +72,7 @@ export function createServer(options: ServerOptions): AgentServer {
     clientDir,
     logger = consoleLogger,
     s2sConfig = DEFAULT_S2S_CONFIG,
+    allowedOrigins,
   } = options;
 
   const env = filterEnv(options.env ?? (typeof process !== "undefined" ? process.env : {}));
@@ -130,7 +140,29 @@ export function createServer(options: ServerOptions): AgentServer {
       });
 
       const wss = new WebSocketServer({ noServer: true });
+
+      // Build the set of allowed origins for WebSocket upgrade validation.
+      const effectiveAllowedOrigins =
+        allowedOrigins === "*"
+          ? null // null means allow any origin
+          : new Set(allowedOrigins ?? [`http://localhost:${port}`, `http://127.0.0.1:${port}`]);
+
       nodeServer.on("upgrade", (req, socket, head) => {
+        const origin = req.headers.origin ?? "";
+
+        // Reject cross-origin WebSocket connections. Requests with no Origin
+        // header (non-browser clients) are allowed through.
+        if (
+          effectiveAllowedOrigins !== null &&
+          origin !== "" &&
+          !effectiveAllowedOrigins.has(origin)
+        ) {
+          logger.error(`WS upgrade rejected: origin "${origin}" not allowed`);
+          socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
+          socket.destroy();
+          return;
+        }
+
         const reqUrl = new URL(req.url ?? "/", `http://localhost:${port}`);
         const resume = reqUrl.searchParams.has("resume");
         logger.info(`WS upgrade ${reqUrl.pathname}${resume ? " (resume)" : ""}`);
