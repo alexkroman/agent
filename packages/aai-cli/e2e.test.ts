@@ -8,8 +8,21 @@
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { type Browser, chromium } from "playwright";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
+
+let playwrightAvailable = false;
+let chromium: typeof import("playwright").chromium | undefined;
+type Browser = import("playwright").Browser;
+
+try {
+  ({ chromium } = await import("playwright"));
+  // Verify the browser binary is actually installed
+  const b = await chromium.launch();
+  await b.close();
+  playwrightAvailable = true;
+} catch {
+  // Playwright or Chromium not installed — browser tests will be skipped
+}
 
 const dir = import.meta.dirname ?? path.dirname(new URL(import.meta.url).pathname);
 const templatesDir = path.join(dir, "templates");
@@ -309,7 +322,7 @@ function defineBrowserTests(getContext: () => { browser: Browser; port: number }
   });
 }
 
-describe("e2e: browser on build -> start", () => {
+describe.skipIf(!playwrightAvailable)("e2e: browser on build -> start", () => {
   let browser: Browser;
   let child: ChildProcess;
   const port = BASE_PORT + 200;
@@ -320,7 +333,8 @@ describe("e2e: browser on build -> start", () => {
     aai(["build"], projectDir);
     child = aaiSpawn(["start", "--port", String(port)], projectDir);
     await waitForHealth(`http://localhost:${port}/health`);
-    browser = await chromium.launch();
+    // biome-ignore lint/style/noNonNullAssertion: guarded by describe.skipIf(!playwrightAvailable)
+    browser = await chromium!.launch();
   });
 
   afterAll(async () => {
@@ -331,7 +345,7 @@ describe("e2e: browser on build -> start", () => {
   defineBrowserTests(() => ({ browser, port }));
 });
 
-describe("e2e: browser on dev server", () => {
+describe.skipIf(!playwrightAvailable)("e2e: browser on dev server", () => {
   let browser: Browser;
   let child: ChildProcess;
   const port = BASE_PORT + 201;
@@ -341,7 +355,8 @@ describe("e2e: browser on dev server", () => {
     initProject("simple", projectDir);
     child = aaiSpawn(["dev", "--port", String(port)], projectDir);
     await waitForHealth(`http://localhost:${port}/health`);
-    browser = await chromium.launch();
+    // biome-ignore lint/style/noNonNullAssertion: guarded by describe.skipIf(!playwrightAvailable)
+    browser = await chromium!.launch();
   });
 
   afterAll(async () => {
