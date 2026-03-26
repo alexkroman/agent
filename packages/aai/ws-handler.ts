@@ -40,6 +40,8 @@ export type WsSessionOptions = {
   onOpen?: () => void;
   /** Callback invoked when the WebSocket connection closes. */
   onClose?: () => void;
+  /** Callback to clean up per-session state when a session is removed. */
+  onSessionRemoved?: (sessionId: string) => void;
   /** Logger instance. Defaults to console. */
   logger?: Logger;
 };
@@ -171,6 +173,7 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
         log.error("Session start failed", { ...ctx, sid, error: errorDetail(err) });
         sessionSpan.setStatus({ code: 2, message: errorMessage(err) });
         sessions.delete(sessionId);
+        opts.onSessionRemoved?.(sessionId);
         session = null;
       });
   }
@@ -202,6 +205,7 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
         })
         .finally(() => {
           sessions.delete(sessionId);
+          opts.onSessionRemoved?.(sessionId);
         });
     }
     opts.onClose?.();

@@ -49,6 +49,8 @@ export type DirectExecutor = {
     client: ClientSink;
     skipGreeting?: boolean;
   }): Session;
+  /** Clean up per-session state for the given session ID. Idempotent. */
+  cleanupSession(sessionId: string): void;
 };
 
 /** Build a serializable AgentConfig from an AgentDef. */
@@ -219,5 +221,9 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
     });
   }
 
-  return { executeTool, hookInvoker, toolSchemas, createSession };
+  function cleanupSession(sessionId: string): void {
+    sessionState.delete(sessionId);
+  }
+
+  return { executeTool, hookInvoker, toolSchemas, createSession, cleanupSession };
 }

@@ -208,4 +208,62 @@ describe("createDirectExecutor", () => {
     const result = await exec.executeTool("get_env", {}, "s1", []);
     expect(result).toBe("hello");
   });
+
+  test("cleanupSession removes per-session state", async () => {
+    const agent = makeAgent({
+      state: () => ({ counter: 0 }),
+      tools: {
+        get_state: {
+          description: "Get state",
+          execute: (_args, ctx) => JSON.stringify(ctx.state),
+        },
+      },
+    });
+    const exec = createDirectExecutor({ agent, env: {} });
+    // Initialize state for session
+    await exec.executeTool("get_state", {}, "s1", []);
+    // Cleanup should remove it
+    exec.cleanupSession("s1");
+    // After cleanup, state should be re-initialized from factory
+    const result = await exec.executeTool("get_state", {}, "s1", []);
+    expect(JSON.parse(result)).toEqual({ counter: 0 });
+  });
+
+  test("cleanupSession is idempotent", () => {
+    const exec = createDirectExecutor({ agent: makeAgent(), env: {} });
+    // Calling cleanupSession on a non-existent session should not throw
+    expect(() => exec.cleanupSession("nonexistent")).not.toThrow();
+    expect(() => exec.cleanupSession("nonexistent")).not.toThrow();
+  });
+
+  test("cleanupSession cleans state even if onDisconnect throws", async () => {
+    const agent = makeAgent({
+      state: () => ({ counter: 0 }),
+      onDisconnect: () => {
+        throw new Error("onDisconnect failed");
+      },
+      tools: {
+        inc: {
+          description: "Increment counter",
+          execute: (_args, ctx) => {
+            // biome-ignore lint/suspicious/noExplicitAny: test helper
+            const state = ctx.state as any;
+            state.counter++;
+            return String(state.counter);
+          },
+        },
+      },
+    });
+    const exec = createDirectExecutor({ agent, env: {} });
+    // Mutate state
+    await exec.executeTool("inc", {}, "s1", []);
+    // onDisconnect throws but we still need cleanup
+    await expect(exec.hookInvoker.onDisconnect("s1")).rejects.toThrow("onDisconnect failed");
+    // State was not cleaned by onDisconnect since it threw before delete
+    // Use cleanupSession as the safety net
+    exec.cleanupSession("s1");
+    // State should be re-initialized
+    const result = await exec.executeTool("inc", {}, "s1", []);
+    expect(result).toBe("1");
+  });
 });

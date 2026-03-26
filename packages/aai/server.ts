@@ -77,6 +77,7 @@ export function createServer(options: ServerOptions): AgentServer {
       createSession: (sid, client) =>
         executor.createSession({ id: sid, agent: agent.name, client, skipGreeting }),
       readyConfig,
+      onSessionRemoved: (sid) => executor.cleanupSession(sid),
       logger,
     });
   }
@@ -153,7 +154,9 @@ export function createServer(options: ServerOptions): AgentServer {
 
     async close() {
       if (sessions.size > 0) {
+        const sessionIds = [...sessions.keys()];
         await Promise.allSettled([...sessions.values()].map((s) => s.stop()));
+        for (const sid of sessionIds) executor.cleanupSession(sid);
         sessions.clear();
       }
       await serverHandle?.shutdown();
