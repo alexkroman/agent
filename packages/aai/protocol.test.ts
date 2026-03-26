@@ -153,7 +153,7 @@ describe("ClientMessageSchema", () => {
   test("accepts history with messages", () => {
     const result = ClientMessageSchema.safeParse({
       type: "history",
-      messages: [{ role: "user", text: "hello" }],
+      messages: [{ role: "user", content: "hello" }],
     });
     expect(result.success).toBe(true);
   });
@@ -184,15 +184,15 @@ describe("buildReadyConfig", () => {
 });
 
 describe("toWireMessages", () => {
-  test("converts internal messages to wire format", () => {
+  test("converts internal messages to wire format using content field", () => {
     const internal = [
       { role: "user" as const, content: "hello" },
       { role: "assistant" as const, content: "hi there" },
     ];
     const wire = toWireMessages(internal);
     expect(wire).toEqual([
-      { role: "user", text: "hello" },
-      { role: "assistant", text: "hi there" },
+      { role: "user", content: "hello" },
+      { role: "assistant", content: "hi there" },
     ]);
   });
 
@@ -202,10 +202,10 @@ describe("toWireMessages", () => {
 });
 
 describe("fromWireMessages", () => {
-  test("converts wire messages to internal format", () => {
+  test("converts wire messages to internal format using content field", () => {
     const wire = [
-      { role: "user" as const, text: "hello" },
-      { role: "assistant" as const, text: "hi there" },
+      { role: "user" as const, content: "hello" },
+      { role: "assistant" as const, content: "hi there" },
     ];
     const internal = fromWireMessages(wire);
     expect(internal).toEqual([

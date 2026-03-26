@@ -74,7 +74,7 @@ export async function runAfterTurnMiddleware(
 }
 
 /**
- * Run all `toolCallInterceptor` middleware in order. Returns a result that
+ * Run all `beforeToolCall` middleware in order. Returns a result that
  * may block execution, provide a cached result, or transform args.
  * Returns `undefined` to proceed with normal execution.
  */
@@ -86,9 +86,9 @@ export async function runToolCallInterceptors(
 ): Promise<ToolInterceptResult> {
   let currentArgs = args;
   for (const mw of middleware) {
-    if (!mw.toolCallInterceptor) continue;
+    if (!mw.beforeToolCall) continue;
     try {
-      const result: ToolCallInterceptResult = await mw.toolCallInterceptor(
+      const result: ToolCallInterceptResult = await mw.beforeToolCall(
         toolName,
         currentArgs,
         ctx,
@@ -104,7 +104,7 @@ export async function runToolCallInterceptors(
         currentArgs = result.args;
       }
     } catch (err) {
-      console.warn("Middleware toolCallInterceptor failed:", err);
+      console.warn("Middleware beforeToolCall failed:", err);
     }
   }
   // If any middleware transformed args, return the final transformed version
@@ -129,7 +129,7 @@ export async function runAfterToolCallMiddleware(
 }
 
 /**
- * Run all `outputFilter` middleware in order, piping the text through each.
+ * Run all `beforeOutput` middleware in order, piping the text through each.
  */
 export async function runOutputFilters(
   middleware: readonly Middleware[],
@@ -138,11 +138,11 @@ export async function runOutputFilters(
 ): Promise<string> {
   let filtered = text;
   for (const mw of middleware) {
-    if (!mw.outputFilter) continue;
+    if (!mw.beforeOutput) continue;
     try {
-      filtered = await mw.outputFilter(filtered, ctx);
+      filtered = await mw.beforeOutput(filtered, ctx);
     } catch (err) {
-      console.warn("Middleware outputFilter failed:", err);
+      console.warn("Middleware beforeOutput failed:", err);
     }
   }
   return filtered;

@@ -4,13 +4,13 @@
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import { createTestHarness } from "./testing.ts";
-import { defineAgent, tool } from "./types.ts";
+import { defineAgent, defineTool } from "./types.ts";
 
 const pizzaAgent = defineAgent({
   name: "Pizza Agent",
   state: () => ({ pizzas: [] as { size: string; toppings: string[] }[], placed: false }),
   tools: {
-    add_pizza: tool({
+    add_pizza: defineTool({
       description: "Add a pizza to the order",
       parameters: z.object({
         size: z.enum(["small", "medium", "large"]),
@@ -309,7 +309,7 @@ describe("KV and vector store", () => {
     const agent = defineAgent({
       name: "kv-test",
       tools: {
-        save: tool({
+        save: defineTool({
           description: "Save to KV",
           parameters: z.object({ key: z.string(), value: z.string() }),
           execute: async (args, ctx) => {
@@ -317,7 +317,7 @@ describe("KV and vector store", () => {
             return "saved";
           },
         }),
-        load: tool({
+        load: defineTool({
           description: "Load from KV",
           parameters: z.object({ key: z.string() }),
           execute: async (args, ctx) => (await ctx.kv.get<string>(args.key)) ?? "not found",

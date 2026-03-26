@@ -1,4 +1,4 @@
-import { defineAgent, tool } from "@alexkroman1/aai";
+import { defineAgent, defineTool } from "@alexkroman1/aai";
 import type { ToolContext } from "@alexkroman1/aai";
 import { z } from "zod";
 
@@ -89,7 +89,7 @@ ATMOSPHERE:
         };
       },
     },
-    game_state_move: tool({
+    game_state_move: defineTool({
       description:
         "Move the player to a new room and increment the move counter.",
       parameters: z.object({
@@ -102,7 +102,7 @@ ATMOSPHERE:
         return { currentRoom: g.currentRoom, moves: g.moves };
       },
     }),
-    game_state_take: tool({
+    game_state_take: defineTool({
       description: "Add an item to the player's inventory.",
       parameters: z.object({
         value: z.string().describe("Item name to take"),
@@ -113,7 +113,7 @@ ATMOSPHERE:
         return { inventory: g.inventory };
       },
     }),
-    game_state_drop: tool({
+    game_state_drop: defineTool({
       description: "Remove an item from the player's inventory.",
       parameters: z.object({
         value: z.string().describe("Item name to drop"),
@@ -124,7 +124,7 @@ ATMOSPHERE:
         return { inventory: g.inventory };
       },
     }),
-    game_state_score: tool({
+    game_state_score: defineTool({
       description: "Add points to the player's score.",
       parameters: z.object({
         value: z.number().describe("Points to add"),
@@ -135,7 +135,7 @@ ATMOSPHERE:
         return { score: g.score };
       },
     }),
-    game_state_flag: tool({
+    game_state_flag: defineTool({
       description:
         "Set a game flag to true, used for tracking puzzle and event state.",
       parameters: z.object({
@@ -147,7 +147,7 @@ ATMOSPHERE:
         return { flags: g.flags };
       },
     }),
-    game_state_history: tool({
+    game_state_history: defineTool({
       description:
         "Log a player command to the history and increment the move counter.",
       parameters: z.object({

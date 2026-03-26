@@ -7,7 +7,7 @@
  * SDK → deploy body → server round trip without interface mismatch.
  */
 
-import { defineAgent, tool } from "@alexkroman1/aai";
+import { type AgentDef, defineAgent, defineTool } from "@alexkroman1/aai";
 import { agentToolsToSchemas } from "@alexkroman1/aai/internal-types";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
@@ -18,7 +18,8 @@ import { createTestOrchestrator } from "./_test-utils.ts";
 /**
  * Build a deploy body from an SDK-defined agent, mimicking what the CLI does.
  */
-function buildDeployBodyFromAgent(agent: ReturnType<typeof defineAgent>): string {
+// biome-ignore lint/suspicious/noExplicitAny: accepts any state type
+function buildDeployBodyFromAgent(agent: AgentDef<any>): string {
   const config = buildAgentConfig(agent);
   const _schemas = agentToolsToSchemas(agent.tools);
 
@@ -44,7 +45,7 @@ describe("cross-package smoke: SDK → server deploy", () => {
       maxSteps: 3,
       builtinTools: ["web_search"],
       tools: {
-        echo: tool({
+        echo: defineTool({
           description: "Echo the input",
           parameters: z.object({ text: z.string() }),
           execute: ({ text }) => `echo:${text}`,
@@ -90,7 +91,7 @@ describe("cross-package smoke: SDK → server deploy", () => {
       toolChoice: "required",
       builtinTools: ["web_search", "run_code"],
       tools: {
-        search: tool({
+        search: defineTool({
           description: "Search",
           parameters: z.object({ query: z.string() }),
           execute: ({ query }) => query,
@@ -113,7 +114,7 @@ describe("cross-package smoke: SDK → server deploy", () => {
     const agent = defineAgent({
       name: "schema-check",
       tools: {
-        greet: tool({
+        greet: defineTool({
           description: "Greet by name",
           parameters: z.object({ name: z.string(), formal: z.boolean().optional() }),
           execute: ({ name }) => `Hello, ${name}!`,

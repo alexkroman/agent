@@ -20,7 +20,7 @@ export type BeforeStepResult = { activeTools?: string[] } | undefined;
 export type MiddlewareBlockResult = { block: true; reason: string };
 
 /**
- * Result returned by a `toolCallInterceptor` to short-circuit tool execution.
+ * Result returned by a `beforeToolCall` middleware hook to short-circuit tool execution.
  *
  * Return `{ result: string }` to skip execution and use a cached/synthetic result.
  * Return `{ block: true; reason: string }` to deny the tool call.
@@ -68,7 +68,7 @@ export type Middleware<S = Record<string, unknown>> = {
    * Runs before each tool call. Can approve, deny, transform args, or
    * return a cached result.
    */
-  toolCallInterceptor?: (
+  beforeToolCall?: (
     toolName: string,
     args: Readonly<Record<string, unknown>>,
     ctx: HookContext<S>,
@@ -89,7 +89,7 @@ export type Middleware<S = Record<string, unknown>> = {
    * Filters agent text output before it is sent to TTS. Return the
    * (possibly modified) text. Runs on every agent transcript chunk.
    */
-  outputFilter?: (text: string, ctx: HookContext<S>) => string | Promise<string>;
+  beforeOutput?: (text: string, ctx: HookContext<S>) => string | Promise<string>;
 };
 
 /**
@@ -243,18 +243,19 @@ export type ToolDef<
  *
  * When tools are defined inline in `defineAgent({ tools: { ... } })`, the
  * generic `P` gets widened to the base `ZodObject` type, so `args` in
- * `execute` loses its specific shape. Wrapping a tool definition in `tool()`
- * lets TypeScript infer `P` from `parameters` and type `args` correctly.
+ * `execute` loses its specific shape. Wrapping a tool definition in
+ * `defineTool()` lets TypeScript infer `P` from `parameters` and type
+ * `args` correctly.
  *
  * @example
  * ```ts
- * import { defineAgent, tool } from "aai";
+ * import { defineAgent, defineTool } from "aai";
  * import { z } from "zod";
  *
  * export default defineAgent({
  *   name: "my-agent",
  *   tools: {
- *     greet: tool({
+ *     greet: defineTool({
  *       description: "Greet the user",
  *       parameters: z.object({ name: z.string() }),
  *       execute: ({ name }) => `Hello, ${name}!`, // name is string
@@ -265,11 +266,14 @@ export type ToolDef<
  *
  * @public
  */
-export function tool<P extends z.ZodObject<z.ZodRawShape>, S = Record<string, unknown>>(
+export function defineTool<P extends z.ZodObject<z.ZodRawShape>, S = Record<string, unknown>>(
   def: ToolDef<P, S>,
 ): ToolDef<P, S> {
   return def;
 }
+
+/** Alias for {@link defineTool}. Prefer `defineTool` for clarity. */
+export { defineTool as tool };
 
 /**
  * Information about a completed agentic step, passed to the `onStep` hook.
@@ -408,32 +412,36 @@ export const DEFAULT_GREETING: string =
   "Hey there. I'm a voice assistant. What can I help you with?";
 
 /**
- * Agent definition with all defaults applied, returned by
- * {@link defineAgent}.
+ * Agent definition returned by {@link defineAgent}.
  *
- * Unlike {@link AgentOptions}, every field here is resolved to its
- * final value — no optional fields with implicit defaults remain.
+ * Core fields (`name`, `instructions`, `greeting`, `maxSteps`, `tools`)
+ * are resolved to their final values with defaults applied. Optional
+ * behavioral fields (hooks, middleware, `sttPrompt`, etc.) remain
+ * optional — `undefined` means "not configured."
  *
  * @public
  */
-export type AgentDef = {
+export type AgentDef<S = Record<string, unknown>> = {
   name: string;
   instructions: string;
   greeting: string;
   sttPrompt?: string;
-  maxSteps: number | ((ctx: HookContext) => number);
+  maxSteps: number | ((ctx: HookContext<S>) => number);
   toolChoice?: ToolChoice;
   builtinTools?: readonly BuiltinTool[];
   activeTools?: readonly string[];
-  tools: Readonly<Record<string, ToolDef>>;
-  state?: () => Record<string, unknown>;
-  onConnect?: AgentOptions["onConnect"];
-  onDisconnect?: AgentOptions["onDisconnect"];
-  onError?: AgentOptions["onError"];
-  onTurn?: AgentOptions["onTurn"];
-  onStep?: AgentOptions["onStep"];
-  onBeforeStep?: AgentOptions["onBeforeStep"];
-  middleware?: readonly Middleware[];
+  tools: Readonly<Record<string, ToolDef<z.ZodObject<z.ZodRawShape>, S>>>;
+  state?: () => S;
+  onConnect?: (ctx: HookContext<S>) => void | Promise<void>;
+  onDisconnect?: (ctx: HookContext<S>) => void | Promise<void>;
+  onError?: (error: Error, ctx?: HookContext<S>) => void;
+  onTurn?: (text: string, ctx: HookContext<S>) => void | Promise<void>;
+  onStep?: (step: StepInfo, ctx: HookContext<S>) => void | Promise<void>;
+  onBeforeStep?: (
+    stepNumber: number,
+    ctx: HookContext<S>,
+  ) => BeforeStepResult | Promise<BeforeStepResult>;
+  middleware?: readonly Middleware<S>[];
 };
 
 // ─── Zod schemas ────────────────────────────────────────────────────────────
@@ -513,9 +521,9 @@ const AgentOptionsSchema = z.object({
         name: z.string().min(1, "Middleware name must be non-empty"),
         beforeTurn: z.function().optional(),
         afterTurn: z.function().optional(),
-        toolCallInterceptor: z.function().optional(),
+        beforeToolCall: z.function().optional(),
         afterToolCall: z.function().optional(),
-        outputFilter: z.function().optional(),
+        beforeOutput: z.function().optional(),
       }),
     )
     .optional(),
@@ -553,7 +561,7 @@ const AgentOptionsSchema = z.object({
  * });
  * ```
  */
-export function defineAgent<S>(options: AgentOptions<S>): AgentDef {
+export function defineAgent<S = Record<string, unknown>>(options: AgentOptions<S>): AgentDef<S> {
   AgentOptionsSchema.parse(options);
   return {
     ...options,
@@ -561,5 +569,5 @@ export function defineAgent<S>(options: AgentOptions<S>): AgentDef {
     greeting: options.greeting ?? DEFAULT_GREETING,
     maxSteps: options.maxSteps ?? 5,
     tools: options.tools ?? {},
-  } as AgentDef;
+  } as AgentDef<S>;
 }

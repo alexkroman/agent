@@ -34,8 +34,9 @@ export function scopedKv(kvStore: KvStore, scope: AgentScope) {
       const ttlSeconds = options?.expireIn != null ? Math.ceil(options.expireIn / 1000) : undefined;
       await kvStore.set(scope, key, JSON.stringify(value), ttlSeconds);
     },
-    async delete(key: string) {
-      await kvStore.del(scope, key);
+    async delete(keys: string | string[]) {
+      const keyArray = Array.isArray(keys) ? keys : [keys];
+      for (const key of keyArray) await kvStore.del(scope, key);
     },
     async list<T = unknown>(
       prefix: string,
@@ -64,7 +65,7 @@ export function scopedVector(vectorStore: ServerVectorStore, scope: AgentScope) 
     async query(text: string, options?: { topK?: number; filter?: string }) {
       return await vectorStore.query(scope, text, options?.topK, options?.filter);
     },
-    async remove(ids: string | string[]) {
+    async delete(ids: string | string[]) {
       await vectorStore.remove(scope, Array.isArray(ids) ? ids : [ids]);
     },
   };
@@ -95,7 +96,7 @@ const SidecarVecQuerySchema = z.object({
   topK: z.number().optional(),
   filter: z.string().optional(),
 });
-const SidecarVecRemoveSchema = z.object({ ids: z.union([z.string(), z.array(z.string())]) });
+const SidecarVecDeleteSchema = z.object({ ids: z.union([z.string(), z.array(z.string())]) });
 
 // ── Sidecar server (per-sandbox, loopback, no auth) ─────────────────────
 
@@ -155,9 +156,9 @@ function buildSidecarApp(
       }),
     );
   });
-  app.post("/vec/remove", async (c) => {
-    const { ids } = SidecarVecRemoveSchema.parse(await c.req.json());
-    await requireVec().remove(ids);
+  app.post("/vec/delete", async (c) => {
+    const { ids } = SidecarVecDeleteSchema.parse(await c.req.json());
+    await requireVec().delete(ids);
     return c.json(null);
   });
 

@@ -7,7 +7,7 @@ import type { VoiceIO } from "./audio.ts";
 import { ClientHandler } from "./client-handler.ts";
 import type {
   AgentState,
-  Message,
+  ChatMessage,
   Reactive,
   SessionError,
   ToolCallInfo,
@@ -17,7 +17,7 @@ import type {
 export { ClientHandler } from "./client-handler.ts";
 export type {
   AgentState,
-  Message,
+  ChatMessage,
   Reactive,
   SessionError,
   SessionErrorCode,
@@ -150,7 +150,7 @@ export type VoiceSession = {
   /** Current agent state (connecting, listening, thinking, etc.). */
   readonly state: Reactive<AgentState>;
   /** Chat message history for the session. */
-  readonly messages: Reactive<Message[]>;
+  readonly messages: Reactive<ChatMessage[]>;
   /** Active tool calls for the current turn. */
   readonly toolCalls: Reactive<ToolCallInfo[]>;
   /**
@@ -208,11 +208,11 @@ function buildWsUrl(platformUrl: string, token: string | undefined, resume: bool
  * @public
  */
 export function createVoiceSession(options: VoiceSessionOptions): VoiceSession {
-  const reactive = options.signal ?? plainReactive;
+  const reactive = options.reactiveFactory ?? plainReactive;
   const batchFn = options.batch ?? plainBatch;
 
   const state = reactive<AgentState>("disconnected");
-  const messages = reactive<Message[]>([]);
+  const messages = reactive<ChatMessage[]>([]);
   const toolCalls = reactive<ToolCallInfo[]>([]);
   const userUtterance = reactive<string | null>(null);
   const agentUtterance = reactive<string | null>(null);

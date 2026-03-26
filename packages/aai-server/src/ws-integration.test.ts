@@ -209,8 +209,8 @@ describe("WebSocket server integration", () => {
   test("history message calls session.onHistory", async () => {
     const { ws } = await connect(ctx.port);
     const messages = [
-      { role: "user" as const, text: "Hello" },
-      { role: "assistant" as const, text: "Hi" },
+      { role: "user" as const, content: "Hello" },
+      { role: "assistant" as const, content: "Hi" },
     ];
     ws.send(JSON.stringify({ type: "history", messages }));
     await vi.waitFor(() => {

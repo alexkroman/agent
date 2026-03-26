@@ -282,8 +282,8 @@ describe("createS2sSession", () => {
     const { session } = setup();
     await session.start();
     session.onHistory([
-      { role: "user", text: "Hello" },
-      { role: "assistant", text: "Hi" },
+      { role: "user", content: "Hello" },
+      { role: "assistant", content: "Hi" },
     ]);
     // No error — messages stored internally
   });

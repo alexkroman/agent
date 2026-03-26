@@ -1,4 +1,4 @@
-import { defineAgent, tool } from "@alexkroman1/aai";
+import { defineAgent, defineTool } from "@alexkroman1/aai";
 import type { Middleware } from "@alexkroman1/aai";
 import { z } from "zod";
 
@@ -59,7 +59,7 @@ function piiRedactor(): Middleware {
 
   return {
     name: "pii-redactor",
-    outputFilter: (text) => {
+    beforeOutput: (text) => {
       let filtered = text;
       for (const [pattern, replacement] of patterns) {
         filtered = filtered.replace(pattern, replacement);
@@ -85,7 +85,7 @@ function analyticsLogger(): Middleware {
     afterTurn: (text, ctx) => {
       console.log(`[analytics] Turn completed for session`);
     },
-    toolCallInterceptor: (toolName, args, _ctx) => {
+    beforeToolCall: (toolName, args, _ctx) => {
       console.log(`[analytics] Tool call: ${toolName}`, args);
       return undefined;
     },
@@ -98,7 +98,7 @@ function analyticsLogger(): Middleware {
 function toolCallCache(): Middleware {
   return {
     name: "tool-call-cache",
-    toolCallInterceptor: (toolName, args, ctx) => {
+    beforeToolCall: (toolName, args, ctx) => {
       const state = ctx.state as {
         _cache?: Record<string, string>;
       };
@@ -144,7 +144,7 @@ Keep answers short and conversational.`,
   }),
 
   tools: {
-    get_weather: tool({
+    get_weather: defineTool({
       description: "Get current weather for a city",
       parameters: z.object({
         city: z.string().describe("City name"),
@@ -160,7 +160,7 @@ Keep answers short and conversational.`,
       },
     }),
 
-    calculate: tool({
+    calculate: defineTool({
       description: "Calculate a math expression",
       parameters: z.object({
         expression: z.string().describe("Math expression to evaluate"),

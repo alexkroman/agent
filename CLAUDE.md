@@ -54,7 +54,7 @@ Four workspace packages under `packages/`:
 
 Public:
 
-- `.` — `defineAgent` + re-exported types
+- `.` — `defineAgent`, `defineTool` + re-exported types
 - `./server` — `createServer` for self-hosting
 - `./types` — all type definitions
 - `./kv` — KV store interface + in-memory implementation

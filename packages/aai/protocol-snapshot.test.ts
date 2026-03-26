@@ -132,8 +132,8 @@ describe("client→server message wire format", () => {
       {
         type: "history",
         messages: [
-          { role: "user", text: "Hello" },
-          { role: "assistant", text: "Hi" },
+          { role: "user", content: "Hello" },
+          { role: "assistant", content: "Hi" },
         ],
       },
     ],

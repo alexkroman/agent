@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Type-level tests for defineAgent and tool() type inference.
+ * Type-level tests for defineAgent and defineTool() type inference.
  *
  * These use vitest's expectTypeOf to verify that TypeScript correctly
  * infers parameter types, state types, and context types without
@@ -10,11 +10,11 @@
 import { describe, expectTypeOf, test } from "vitest";
 import { z } from "zod";
 import type { AgentDef, HookContext, Message, ToolContext, ToolDef } from "./types.ts";
-import { defineAgent, tool } from "./types.ts";
+import { defineAgent, defineTool } from "./types.ts";
 
-describe("tool() type inference", () => {
+describe("defineTool() type inference", () => {
   test("infers parameter types in execute args", () => {
-    const _t = tool({
+    const _t = defineTool({
       description: "test",
       parameters: z.object({ name: z.string(), count: z.number() }),
       execute: (args) => args,
@@ -25,7 +25,7 @@ describe("tool() type inference", () => {
     expectTypeOf<Args>().toEqualTypeOf<{ name: string; count: number }>();
   });
 
-  test("tool without parameters has unknown args", () => {
+  test("defineTool without parameters has unknown args", () => {
     const _t: ToolDef = {
       description: "test",
       execute: (args) => args,
@@ -37,7 +37,7 @@ describe("tool() type inference", () => {
   });
 
   test("execute receives ToolContext as second arg", () => {
-    const _t = tool({
+    const _t = defineTool({
       description: "test",
       parameters: z.object({ x: z.string() }),
       execute: (_args, ctx) => ctx,
@@ -94,8 +94,8 @@ describe("defineAgent type inference", () => {
     });
   });
 
-  test("tools field accepts tool() wrapped definitions", () => {
-    const greet = tool({
+  test("tools field accepts defineTool() wrapped definitions", () => {
+    const greet = defineTool({
       description: "Greet",
       parameters: z.object({ name: z.string() }),
       execute: ({ name }) => `Hello, ${name}!`,

@@ -192,7 +192,7 @@ describe("scopedKv", () => {
 // ── scopedVector ────────────────────────────────────────────────────────
 
 describe("scopedVector", () => {
-  it("delegates upsert/query/remove with correct scope", async () => {
+  it("delegates upsert/query/delete with correct scope", async () => {
     const vecStore = createMockVectorStore();
     const vec = scopedVector(vecStore, scopeA);
 
@@ -202,7 +202,7 @@ describe("scopedVector", () => {
     await vec.query("search text", { topK: 5, filter: "tag = 'test'" });
     expect(vecStore.query).toHaveBeenCalledWith(scopeA, "search text", 5, "tag = 'test'");
 
-    await vec.remove("id1");
+    await vec.delete("id1");
     expect(vecStore.remove).toHaveBeenCalledWith(scopeA, ["id1"]);
   });
 
@@ -218,14 +218,14 @@ describe("scopedVector", () => {
     expect(vecStore.upsert).toHaveBeenCalledWith(scopeB, "doc1", "data from B", undefined);
   });
 
-  it("normalizes single id to array in remove()", async () => {
+  it("normalizes single id to array in delete()", async () => {
     const vecStore = createMockVectorStore();
     const vec = scopedVector(vecStore, scopeA);
 
-    await vec.remove("single-id");
+    await vec.delete("single-id");
     expect(vecStore.remove).toHaveBeenCalledWith(scopeA, ["single-id"]);
 
-    await vec.remove(["id1", "id2"]);
+    await vec.delete(["id1", "id2"]);
     expect(vecStore.remove).toHaveBeenCalledWith(scopeA, ["id1", "id2"]);
   });
 });
@@ -351,8 +351,8 @@ describe("startSidecarServer", () => {
       const results = await queryRes.json();
       expect(Array.isArray(results)).toBe(true);
 
-      // remove
-      const removeRes = await fetch(`${url}/vec/remove`, {
+      // delete
+      const removeRes = await fetch(`${url}/vec/delete`, {
         method: "POST",
         headers,
         body: JSON.stringify({ ids: "d1" }),

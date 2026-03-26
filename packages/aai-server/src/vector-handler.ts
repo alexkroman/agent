@@ -30,7 +30,7 @@ export async function handleVector(c: Context<Env>): Promise<Response> {
         return c.json({
           result: await vectorStore.query(scope, msg.text, msg.topK, msg.filter),
         });
-      case "remove":
+      case "delete":
         await vectorStore.remove(scope, msg.ids);
         return c.json({ result: "OK" });
       default: {
