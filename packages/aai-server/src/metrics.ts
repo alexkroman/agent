@@ -142,7 +142,7 @@ function formatResult(result: CollectionResult, agentFilter: string | undefined)
 
 // ─── Convenience factories (for server-specific metrics) ─────────────────────
 
-const serverMeter = metrics.getMeter("aai-server", "0.8.9");
+const serverMeter = metrics.getMeter("aai-server", "0.9.3");
 
 function createCounter(name: string, opts: { help: string; labelNames?: string[] }) {
   return serverMeter.createCounter(name, { description: opts.help });
@@ -165,6 +165,7 @@ function createHistogram(
   return serverMeter.createHistogram(name, options);
 }
 
+/** @internal Not part of the public API. Exposed for testing only. */
 export const _internals = {
   createCounter,
   createGauge,

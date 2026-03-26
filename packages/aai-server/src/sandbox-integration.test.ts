@@ -134,11 +134,8 @@ function createMockKv() {
     set: async (key: string, value: unknown, _options?: { expireIn?: number }) => {
       store.set(key, value);
     },
-    delete: async (keys: string | string[]) => {
-      const keyArray = Array.isArray(keys) ? keys : [keys];
-      for (const key of keyArray) {
-        store.delete(key);
-      }
+    delete: async (key: string) => {
+      store.delete(key);
     },
     list: async <T = unknown>(
       _prefix: string,
@@ -189,7 +186,6 @@ function toolCall(port: number, name: string, args: Record<string, unknown> = {}
     args,
     sessionId: "s1",
     messages: [],
-    env: {},
   } satisfies ToolCallRequest);
 }
 
@@ -205,7 +201,7 @@ describe("isolate protocol", () => {
     const vector = createMockVector();
     const sidecar = await _internals.startSidecarServer(kv, vector);
     sidecarPort = Number.parseInt(new URL(sidecar.url).port, 10);
-    const isolate = await _internals.startIsolate(AGENT_BUNDLE, sidecar.url, {}, sidecar.token);
+    const isolate = await _internals.startIsolate(AGENT_BUNDLE, sidecar.url, {});
     port = isolate.port;
     cleanup = () => {
       isolate.runtime.dispose();
@@ -248,10 +244,9 @@ describe("isolate protocol", () => {
       args: {},
       sessionId: "s1",
       messages: [],
-      env: {},
     } satisfies ToolCallRequest);
     expect(status).toBe(500);
-    expect(data.error).toBe("Internal error");
+    expect(data.error).toMatch(/intentional failure/);
   });
 
   test("KV round-trip through sidecar", async () => {
@@ -270,7 +265,6 @@ describe("isolate protocol", () => {
     const { data } = await post<HookResponse>(port, "/hook", {
       hook: "onConnect",
       sessionId: "hook-s1",
-      env: {},
     } satisfies HookRequest);
     expect(data.state.count).toBe(1);
   });
@@ -280,7 +274,6 @@ describe("isolate protocol", () => {
       hook: "onTurn",
       sessionId: "hook-s1",
       text: "user said something",
-      env: {},
     } satisfies HookRequest);
     expect(data.state.lastTurn).toBe("user said something");
   });
@@ -289,7 +282,6 @@ describe("isolate protocol", () => {
     const { data } = await post<HookResponse>(port, "/hook", {
       hook: "resolveTurnConfig",
       sessionId: "hook-s1",
-      env: {},
     } satisfies HookRequest);
     expect(data.result).toBeNull();
   });
@@ -444,8 +436,8 @@ export default {
     const sidecar1 = await _internals.startSidecarServer(kv1, undefined);
     const sidecar2 = await _internals.startSidecarServer(kv2, undefined);
     const [iso1, iso2] = await Promise.all([
-      _internals.startIsolate(BUNDLE_A, sidecar1.url, {}, sidecar1.token),
-      _internals.startIsolate(BUNDLE_B, sidecar2.url, {}, sidecar2.token),
+      _internals.startIsolate(BUNDLE_A, sidecar1.url, {}),
+      _internals.startIsolate(BUNDLE_B, sidecar2.url, {}),
     ]);
     port1 = iso1.port;
     port2 = iso2.port;

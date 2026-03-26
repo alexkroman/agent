@@ -178,6 +178,39 @@ test("kv set and get round-trip", async () => {
   expect(((await getRes.json()) as Record<string, unknown>).result).toBe("v1");
 });
 
+// ── Session token ─────────────────────────────────────────────────────
+
+test("session-token rejects without auth", async () => {
+  const { fetch } = await createTestOrchestrator();
+  await deployAgent(fetch);
+  const res = await fetch("/my-agent/session-token", { method: "POST" });
+  expect(res.status).toBe(401);
+});
+
+test("session-token rejects wrong owner", async () => {
+  const { fetch } = await createTestOrchestrator();
+  await deployAgent(fetch, "my-agent", "key1");
+  const res = await fetch("/my-agent/session-token", {
+    method: "POST",
+    headers: { Authorization: "Bearer wrong-key" },
+  });
+  expect(res.status).toBe(403);
+});
+
+test("session-token returns token for valid owner", async () => {
+  const { fetch } = await createTestOrchestrator();
+  await deployAgent(fetch, "my-agent", "key1");
+  const res = await fetch("/my-agent/session-token", {
+    method: "POST",
+    headers: { Authorization: "Bearer key1" },
+  });
+  expect(res.status).toBe(200);
+  const body = (await res.json()) as { token: string };
+  expect(body.token).toBeDefined();
+  expect(typeof body.token).toBe("string");
+  expect(body.token.length).toBeGreaterThan(0);
+});
+
 test("kv scope isolation", async () => {
   const { fetch, scopeKey } = await createTestOrchestrator();
   const tokenA = await signScopeToken(scopeKey, { keyHash: "acct-1", slug: "agent-a" });

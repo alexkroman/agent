@@ -7,6 +7,7 @@
  * pipeline: tool calls, user turns, barge-ins, and session lifecycle.
  */
 
+import { errorDetail, errorMessage } from "./_utils.ts";
 import { HOOK_TIMEOUT_MS, MAX_TOOL_RESULT_CHARS } from "./protocol.ts";
 import type { S2sHandle, S2sToolCall } from "./s2s.ts";
 import type { S2sSessionCtx } from "./session.ts";
@@ -18,37 +19,36 @@ import {
   tracer,
   turnCounter,
 } from "./telemetry.ts";
-import { errorDetail, errorMessage } from "./utils.ts";
 
 export { activeSessionsUpDown, sessionCounter } from "./telemetry.ts";
 
 function finishToolCall(
   ctx: S2sSessionCtx,
-  call_id: string,
+  callId: string,
   result: string,
   generation: number,
 ): void {
   const truncatedResult =
     result.length > MAX_TOOL_RESULT_CHARS ? result.slice(0, MAX_TOOL_RESULT_CHARS) : result;
-  ctx.client.event({ type: "tool_call_done", toolCallId: call_id, result: truncatedResult });
+  ctx.client.event({ type: "tool_call_done", toolCallId: callId, result: truncatedResult });
   // Only accumulate if this tool call belongs to the current reply.
   // A barge-in bumps replyGeneration, so late-finishing tools from the
   // interrupted reply are silently discarded instead of leaking into
   // the next reply's pendingTools.
   if (ctx.replyGeneration === generation) {
-    ctx.pendingTools.push({ call_id, result });
+    ctx.pendingTools.push({ callId, result });
   }
 }
 
 export async function handleToolCall(ctx: S2sSessionCtx, detail: S2sToolCall): Promise<void> {
-  const { call_id, name, args: parsedArgs } = detail;
+  const { callId, name, args: parsedArgs } = detail;
   // Capture the reply generation at call start so finishToolCall can detect
   // whether this tool call's reply was interrupted while we were executing.
   const generation = ctx.replyGeneration;
   const span = tracer.startSpan("tool.call", {
     attributes: {
       "aai.tool.name": name,
-      "aai.tool.call_id": call_id,
+      "aai.tool.call_id": callId,
       "aai.agent": ctx.agent,
       "aai.session.id": ctx.id,
     },
@@ -57,7 +57,7 @@ export async function handleToolCall(ctx: S2sSessionCtx, detail: S2sToolCall): P
 
   ctx.client.event({
     type: "tool_call_start",
-    toolCallId: call_id,
+    toolCallId: callId,
     toolName: name,
     args: parsedArgs,
   });
@@ -70,15 +70,15 @@ export async function handleToolCall(ctx: S2sSessionCtx, detail: S2sToolCall): P
     ctx.log.error(msg);
     span.setStatus({ code: 2, message: msg });
     span.end();
-    finishToolCall(ctx, call_id, msg, generation);
+    finishToolCall(ctx, callId, msg, generation);
     return;
   }
 
-  const refused = ctx.checkTurnLimits(turnConfig, name);
+  const refused = ctx.consumeToolCallStep(turnConfig, name);
   if (refused !== null) {
     span.setAttribute("aai.tool.refused", true);
     span.end();
-    finishToolCall(ctx, call_id, refused, generation);
+    finishToolCall(ctx, callId, refused, generation);
     return;
   }
 
@@ -94,7 +94,7 @@ export async function handleToolCall(ctx: S2sSessionCtx, detail: S2sToolCall): P
     ),
   );
 
-  ctx.log.info("S2S tool call", { tool: name, call_id, args: parsedArgs, agent: ctx.agent });
+  ctx.log.info("S2S tool call", { tool: name, callId, args: parsedArgs, agent: ctx.agent });
   toolCallCounter.add(1, { agent: ctx.agent, tool: name });
 
   // Run middleware tool call interceptors
@@ -105,13 +105,13 @@ export async function handleToolCall(ctx: S2sSessionCtx, detail: S2sToolCall): P
       if (ic?.type === "block") {
         span.setAttribute("aai.tool.blocked", true);
         span.end();
-        finishToolCall(ctx, call_id, JSON.stringify({ error: ic.reason }), generation);
+        finishToolCall(ctx, callId, JSON.stringify({ error: ic.reason }), generation);
         return;
       }
       if (ic?.type === "result") {
         span.setAttribute("aai.tool.cached", true);
         span.end();
-        finishToolCall(ctx, call_id, ic.result, generation);
+        finishToolCall(ctx, callId, ic.result, generation);
         ctx.fireHook(
           "afterToolCall",
           (h) =>
@@ -149,128 +149,139 @@ export async function handleToolCall(ctx: S2sSessionCtx, detail: S2sToolCall): P
   }
 
   toolCallDuration.record((performance.now() - startTime) / 1000, { agent: ctx.agent, tool: name });
-  ctx.log.info("S2S tool result", { tool: name, call_id, resultLength: result.length });
-  finishToolCall(ctx, call_id, result, generation);
+  ctx.log.info("S2S tool result", { tool: name, callId, resultLength: result.length });
+  finishToolCall(ctx, callId, result, generation);
   span.end();
+}
+
+function handleUserTranscript(ctx: S2sSessionCtx, text: string): void {
+  ctx.log.info("S2S user transcript", { text });
+  turnCounter.add(1, { agent: ctx.agent });
+  ctx.client.event({ type: "transcript", text, isFinal: true });
+  ctx.client.event({ type: "turn", text });
+  ctx.pushMessages({ role: "user", content: text });
+  const fireTurn = () => ctx.fireHook("onTurn", (h) => h.onTurn(ctx.id, text, HOOK_TIMEOUT_MS));
+  if (!ctx.hookInvoker?.beforeTurn) {
+    fireTurn();
+    return;
+  }
+  ctx.hookInvoker
+    .beforeTurn(ctx.id, text, HOOK_TIMEOUT_MS)
+    .then((reason) => {
+      if (reason) {
+        ctx.log.info("Turn blocked by middleware", { reason });
+        ctx.client.event({ type: "chat", text: reason });
+        ctx.client.event({ type: "tts_done" });
+      } else fireTurn();
+    })
+    .catch((err: unknown) => {
+      ctx.log.warn("beforeTurn hook failed", { error: errorMessage(err) });
+      fireTurn();
+    });
+}
+
+function handleAgentTranscriptDelta(ctx: S2sSessionCtx, text: string): void {
+  if (!ctx.hookInvoker?.filterOutput) {
+    ctx.client.event({ type: "chat_delta", text });
+    return;
+  }
+  ctx.hookInvoker
+    .filterOutput(ctx.id, text, HOOK_TIMEOUT_MS)
+    .then((f) => ctx.client.event({ type: "chat_delta", text: f }))
+    .catch((err: unknown) => {
+      ctx.log.warn("filterOutput hook failed", { error: errorMessage(err) });
+      ctx.client.event({ type: "chat_delta", text });
+    });
+}
+
+function handleAgentTranscript(ctx: S2sSessionCtx, text: string): void {
+  const emit = (t: string) => {
+    ctx.client.event({ type: "chat", text: t });
+    ctx.pushMessages({ role: "assistant", content: t });
+  };
+  if (!ctx.hookInvoker?.filterOutput) {
+    emit(text);
+    return;
+  }
+  ctx.hookInvoker
+    .filterOutput(ctx.id, text, HOOK_TIMEOUT_MS)
+    .then(emit)
+    .catch((err: unknown) => {
+      ctx.log.warn("filterOutput hook failed", { error: errorMessage(err) });
+      emit(text);
+    });
+}
+
+function handleReplyDone(ctx: S2sSessionCtx, status: string | undefined): void {
+  if (status === "interrupted") {
+    ctx.log.info("S2S reply interrupted (barge-in)");
+    bargeInCounter.add(1, { agent: ctx.agent });
+    // Bump generation so in-flight tool calls discard their results
+    // instead of pushing to pendingTools (checked in finishToolCall).
+    ctx.replyGeneration++;
+    ctx.pendingTools = [];
+    ctx.client.event({ type: "cancelled" });
+    return;
+  }
+  // Wait for all in-flight tool calls to complete before sending results.
+  // Without this, reply_done can fire while async tool execution is still
+  // in progress, causing pendingTools to be empty → results never sent → deadlock.
+  const sendPending = () => {
+    if (ctx.pendingTools.length > 0) {
+      for (const tool of ctx.pendingTools) ctx.s2s?.sendToolResult(tool.callId, tool.result);
+      ctx.pendingTools = [];
+    } else {
+      if (ctx.hookInvoker?.afterTurn) {
+        const last = ctx.conversationMessages.at(-1);
+        ctx.fireHook(
+          "afterTurn",
+          (h) => h.afterTurn?.(ctx.id, last?.content ?? "", HOOK_TIMEOUT_MS) ?? Promise.resolve(),
+        );
+      }
+      ctx.client.playAudioDone();
+      ctx.client.event({ type: "tts_done" });
+    }
+  };
+  if (ctx.turnPromise !== null) {
+    void ctx.turnPromise.then(sendPending);
+  } else {
+    sendPending();
+  }
 }
 
 /** Wire all S2S events to the client sink, hooks, and session state. */
 export function setupListeners(ctx: S2sSessionCtx, handle: S2sHandle): void {
-  handle.on("ready", ({ session_id }) => ctx.log.info("S2S session ready", { session_id }));
-  handle.on("session_expired", () => {
+  handle.on("ready", ({ sessionId }) => ctx.log.info("S2S session ready", { sessionId }));
+  handle.on("sessionExpired", () => {
     ctx.log.info("S2S session expired");
     handle.close();
   });
-  handle.on("speech_started", () => ctx.client.event({ type: "speech_started" }));
-  handle.on("speech_stopped", () => ctx.client.event({ type: "speech_stopped" }));
-  handle.on("user_transcript_delta", ({ text }) =>
+  handle.on("speechStarted", () => ctx.client.event({ type: "speech_started" }));
+  handle.on("speechStopped", () => ctx.client.event({ type: "speech_stopped" }));
+  handle.on("userTranscriptDelta", ({ text }) =>
     ctx.client.event({ type: "transcript", text, isFinal: false }),
   );
-
-  handle.on("user_transcript", ({ text }) => {
-    ctx.log.info("S2S user transcript", { text });
-    turnCounter.add(1, { agent: ctx.agent });
-    ctx.client.event({ type: "transcript", text, isFinal: true });
-    ctx.client.event({ type: "turn", text });
-    ctx.conversationMessages.push({ role: "user", content: text });
-    const fireTurn = () => ctx.fireHook("onTurn", (h) => h.onTurn(ctx.id, text, HOOK_TIMEOUT_MS));
-    if (!ctx.hookInvoker?.beforeTurn) return fireTurn();
-    ctx.hookInvoker
-      .beforeTurn(ctx.id, text, HOOK_TIMEOUT_MS)
-      .then((reason) => {
-        if (reason) {
-          ctx.log.info("Turn blocked by middleware", { reason });
-          ctx.client.event({ type: "chat", text: reason });
-          ctx.client.event({ type: "tts_done" });
-        } else fireTurn();
-      })
-      .catch((err: unknown) => {
-        ctx.log.warn("beforeTurn hook failed", { error: errorMessage(err) });
-        fireTurn();
-      });
-  });
-
-  handle.on("reply_started", () => {
+  handle.on("userTranscript", ({ text }) => handleUserTranscript(ctx, text));
+  handle.on("replyStarted", () => {
     ctx.toolCallCount = 0;
     ctx.replyGeneration++;
     ctx.pendingTools = [];
   });
   handle.on("audio", ({ audio }) => ctx.client.playAudioChunk(audio));
-  handle.on("agent_transcript_delta", ({ text }) => {
-    if (!ctx.hookInvoker?.filterOutput) return ctx.client.event({ type: "chat_delta", text });
-    ctx.hookInvoker
-      .filterOutput(ctx.id, text, HOOK_TIMEOUT_MS)
-      .then((f) => ctx.client.event({ type: "chat_delta", text: f }))
-      .catch((err: unknown) => {
-        ctx.log.warn("filterOutput hook failed", { error: errorMessage(err) });
-        ctx.client.event({ type: "chat_delta", text });
-      });
-  });
-  handle.on("agent_transcript", ({ text }) => {
-    const emit = (t: string) => {
-      ctx.client.event({ type: "chat", text: t });
-      ctx.conversationMessages.push({ role: "assistant", content: t });
-    };
-    if (!ctx.hookInvoker?.filterOutput) return emit(text);
-    ctx.hookInvoker
-      .filterOutput(ctx.id, text, HOOK_TIMEOUT_MS)
-      .then(emit)
-      .catch((err: unknown) => {
-        ctx.log.warn("filterOutput hook failed", { error: errorMessage(err) });
-        emit(text);
-      });
-  });
-
-  handle.on("tool_call", (detail) => {
+  handle.on("agentTranscriptDelta", ({ text }) => handleAgentTranscriptDelta(ctx, text));
+  handle.on("agentTranscript", ({ text }) => handleAgentTranscript(ctx, text));
+  handle.on("toolCall", (detail) => {
     const p = handleToolCall(ctx, detail).catch((err: unknown) => {
       ctx.log.error("Tool call handler failed", { err: errorMessage(err) });
     });
     ctx.turnPromise = (ctx.turnPromise ?? Promise.resolve()).then(() => p);
   });
-
-  handle.on("reply_done", ({ status }) => {
-    if (status === "interrupted") {
-      ctx.log.info("S2S reply interrupted (barge-in)");
-      bargeInCounter.add(1, { agent: ctx.agent });
-      // Bump generation so in-flight tool calls discard their results
-      // instead of pushing to pendingTools (checked in finishToolCall).
-      ctx.replyGeneration++;
-      ctx.pendingTools = [];
-      ctx.client.event({ type: "cancelled" });
-      return;
-    }
-    // Wait for all in-flight tool calls to complete before sending results.
-    // Without this, reply_done can fire while async tool execution is still
-    // in progress, causing pendingTools to be empty → results never sent → deadlock.
-    const sendPending = () => {
-      if (ctx.pendingTools.length > 0) {
-        for (const tool of ctx.pendingTools) ctx.s2s?.sendToolResult(tool.call_id, tool.result);
-        ctx.pendingTools = [];
-      } else {
-        if (ctx.hookInvoker?.afterTurn) {
-          const last = ctx.conversationMessages.at(-1);
-          ctx.fireHook(
-            "afterTurn",
-            (h) => h.afterTurn?.(ctx.id, last?.content ?? "", HOOK_TIMEOUT_MS) ?? Promise.resolve(),
-          );
-        }
-        ctx.client.playAudioDone();
-        ctx.client.event({ type: "tts_done" });
-      }
-    };
-    if (ctx.turnPromise !== null) {
-      void ctx.turnPromise.then(sendPending);
-    } else {
-      sendPending();
-    }
-  });
-
+  handle.on("replyDone", ({ status }) => handleReplyDone(ctx, status));
   handle.on("error", ({ code, message }) => {
     ctx.log.error("S2S error", { code, message });
     ctx.client.event({ type: "error", code: "internal", message });
     handle.close();
   });
-
   handle.on("close", () => {
     ctx.log.info("S2S closed");
     ctx.s2s = null;

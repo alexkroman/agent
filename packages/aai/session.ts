@@ -1,8 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
 /** S2S session — relays audio between client and AssemblyAI S2S API. */
 
+import type { AgentConfig, ToolSchema } from "./_internal-types.ts";
 import { activeSessionsUpDown, sessionCounter, setupListeners } from "./_session-otel.ts";
-import type { AgentConfig, ToolSchema } from "./internal-types.ts";
+import { errorDetail, errorMessage } from "./_utils.ts";
 import type { HookInvoker } from "./middleware.ts";
 import type { ClientSink } from "./protocol.ts";
 import { fromWireMessages, HOOK_TIMEOUT_MS } from "./protocol.ts";
@@ -17,7 +18,6 @@ import {
 } from "./s2s.ts";
 import { buildSystemPrompt } from "./system-prompt.ts";
 import type { Message } from "./types.ts";
-import { errorDetail, errorMessage } from "./utils.ts";
 import type { ExecuteTool } from "./worker-entry.ts";
 
 export type { HookInvoker, ToolInterceptResult } from "./middleware.ts";
@@ -36,7 +36,7 @@ export type Session = {
 };
 
 /** Configuration options for creating a new session. */
-export type SessionOptions = {
+export type S2sSessionOptions = {
   id: string;
   agent: string;
   client: ClientSink;
@@ -50,15 +50,20 @@ export type SessionOptions = {
   hookInvoker?: HookInvoker;
   skipGreeting?: boolean;
   logger?: Logger;
+  /** Maximum number of conversation messages to retain. Older messages are
+   *  dropped (sliding window) to bound memory in long-running sessions.
+   *  Defaults to 200. Set to 0 or Infinity to disable trimming. */
+  maxHistory?: number;
 };
 
+/** @internal Not part of the public API. Exposed for testing only. */
 export const _internals = {
   connectS2s,
 };
 
 // ─── Session context ─────────────────────────────────────────────────────────
 
-type PendingTool = { call_id: string; result: string };
+type PendingTool = { callId: string; result: string };
 
 /** Mutable state + dependencies shared across session helper functions. */
 export type S2sSessionCtx = {
@@ -74,18 +79,24 @@ export type S2sSessionCtx = {
   toolCallCount: number;
   turnPromise: Promise<void> | null;
   conversationMessages: Message[];
+  /** Maximum number of messages to retain in conversationMessages. */
+  readonly maxHistory: number;
   /** Monotonically increasing counter bumped on each reply_started. Tool calls
    *  capture the generation at start; finishToolCall only pushes to pendingTools
    *  if the generation still matches, preventing stale results from interrupted
    *  replies from leaking into subsequent replies. */
   replyGeneration: number;
   resolveTurnConfig(): Promise<{ maxSteps?: number; activeTools?: string[] } | null>;
-  checkTurnLimits(
+  consumeToolCallStep(
     turnConfig: { maxSteps?: number; activeTools?: string[] } | null,
     name: string,
   ): string | null;
   fireHook(name: string, fn: (h: HookInvoker) => Promise<void>): void;
+  /** Push one or more messages and trim to maxHistory. */
+  pushMessages(...msgs: Message[]): void;
 };
+
+const DEFAULT_MAX_HISTORY = 200;
 
 function buildCtx(opts: {
   id: string;
@@ -95,8 +106,12 @@ function buildCtx(opts: {
   executeTool: ExecuteTool;
   hookInvoker: HookInvoker | undefined;
   log: Logger;
+  maxHistory?: number | undefined;
 }): S2sSessionCtx {
   const { id, agentConfig, hookInvoker, log } = opts;
+  const maxHistory = opts.maxHistory ?? DEFAULT_MAX_HISTORY;
+  let cachedActiveTools: string[] | undefined;
+  let cachedActiveSet: Set<string> | undefined;
   const ctx: S2sSessionCtx = {
     ...opts,
     s2s: null,
@@ -104,12 +119,13 @@ function buildCtx(opts: {
     toolCallCount: 0,
     turnPromise: null,
     conversationMessages: [],
+    maxHistory,
     replyGeneration: 0,
     resolveTurnConfig() {
       if (!hookInvoker) return Promise.resolve(null);
       return hookInvoker.resolveTurnConfig(id, ctx.toolCallCount, HOOK_TIMEOUT_MS);
     },
-    checkTurnLimits(turnConfig, name) {
+    consumeToolCallStep(turnConfig, name) {
       const maxSteps = turnConfig?.maxSteps ?? agentConfig.maxSteps;
       ctx.toolCallCount++;
       if (maxSteps !== undefined && ctx.toolCallCount > maxSteps) {
@@ -120,8 +136,11 @@ function buildCtx(opts: {
         return "Maximum tool steps reached. Please respond to the user now.";
       }
       if (turnConfig?.activeTools) {
-        const activeSet = new Set(turnConfig.activeTools);
-        if (!activeSet.has(name)) {
+        if (turnConfig.activeTools !== cachedActiveTools) {
+          cachedActiveTools = turnConfig.activeTools;
+          cachedActiveSet = new Set(turnConfig.activeTools);
+        }
+        if (!cachedActiveSet?.has(name)) {
           log.info("Tool filtered by activeTools", { name });
           return JSON.stringify({ error: `Tool "${name}" is not available at this step.` });
         }
@@ -138,6 +157,12 @@ function buildCtx(opts: {
         log.warn(`${name} hook failed`, { err: errorMessage(err) });
       }
     },
+    pushMessages(...msgs: Message[]) {
+      ctx.conversationMessages.push(...msgs);
+      if (maxHistory > 0 && ctx.conversationMessages.length > maxHistory) {
+        ctx.conversationMessages = ctx.conversationMessages.slice(-maxHistory);
+      }
+    },
   };
   return ctx;
 }
@@ -145,7 +170,7 @@ function buildCtx(opts: {
 // ─── Main session factory ────────────────────────────────────────────────────
 
 /** Create an S2S-backed session with the same interface as the STT+LLM+TTS session. */
-export function createS2sSession(opts: SessionOptions): Session {
+export function createS2sSession(opts: S2sSessionOptions): Session {
   const {
     id,
     agent,
@@ -169,7 +194,16 @@ export function createS2sSession(opts: SessionOptions): Session {
   }));
 
   const sessionAbort = new AbortController();
-  const ctx = buildCtx({ id, agent, client, agentConfig, executeTool, hookInvoker, log });
+  const ctx = buildCtx({
+    id,
+    agent,
+    client,
+    agentConfig,
+    executeTool,
+    hookInvoker,
+    log,
+    maxHistory: opts.maxHistory,
+  });
 
   /** Monotonically increasing counter bumped on each connectAndSetup call.
    *  Only the most recent invocation is allowed to set ctx.s2s, preventing
@@ -201,7 +235,7 @@ export function createS2sSession(opts: SessionOptions): Session {
       }
       setupListeners(ctx, handle);
       handle.updateSession({
-        system_prompt: systemPrompt,
+        systemPrompt,
         tools: s2sTools,
         ...(agentConfig.greeting ? { greeting: agentConfig.greeting } : {}),
       });
@@ -210,7 +244,6 @@ export function createS2sSession(opts: SessionOptions): Session {
       const msg = errorMessage(err);
       log.error("S2S connect failed", { error: errorDetail(err) });
       client.event({ type: "error", code: "internal", message: msg });
-      throw err;
     }
   }
 
@@ -251,7 +284,7 @@ export function createS2sSession(opts: SessionOptions): Session {
       );
     },
     onHistory(incoming: readonly { role: "user" | "assistant"; text: string }[]): void {
-      ctx.conversationMessages.push(...fromWireMessages(incoming));
+      ctx.pushMessages(...fromWireMessages(incoming));
     },
     waitForTurn(): Promise<void> {
       return ctx.turnPromise ?? Promise.resolve();
