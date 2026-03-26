@@ -147,21 +147,18 @@ describe("scopedKv", () => {
     expect(result).toBe("not-valid-json");
   });
 
-  it("converts expireIn from milliseconds to seconds (ceiling)", async () => {
+  it("passes expireIn in milliseconds to the underlying store", async () => {
     const kvStore = createMockKvStore();
     const kv = scopedKv(kvStore, scopeA);
 
-    // 1500ms → ceil(1.5) = 2 seconds
     await kv.set("ttl-key", "val", { expireIn: 1500 });
-    expect(kvStore.set).toHaveBeenCalledWith(scopeA, "ttl-key", JSON.stringify("val"), 2);
+    expect(kvStore.set).toHaveBeenCalledWith(scopeA, "ttl-key", JSON.stringify("val"), 1500);
 
-    // 1000ms → exactly 1 second
     await kv.set("ttl-key2", "val", { expireIn: 1000 });
-    expect(kvStore.set).toHaveBeenCalledWith(scopeA, "ttl-key2", JSON.stringify("val"), 1);
+    expect(kvStore.set).toHaveBeenCalledWith(scopeA, "ttl-key2", JSON.stringify("val"), 1000);
 
-    // 500ms → ceil(0.5) = 1 second
     await kv.set("ttl-key3", "val", { expireIn: 500 });
-    expect(kvStore.set).toHaveBeenCalledWith(scopeA, "ttl-key3", JSON.stringify("val"), 1);
+    expect(kvStore.set).toHaveBeenCalledWith(scopeA, "ttl-key3", JSON.stringify("val"), 500);
   });
 
   it("passes undefined ttl when expireIn is not set", async () => {
@@ -355,12 +352,12 @@ describe("startSidecarServer", () => {
       expect(Array.isArray(results)).toBe(true);
 
       // delete
-      const removeRes = await fetch(`${url}/vec/delete`, {
+      const deleteRes = await fetch(`${url}/vec/delete`, {
         method: "POST",
         headers,
         body: JSON.stringify({ ids: "d1" }),
       });
-      expect(removeRes.ok).toBe(true);
+      expect(deleteRes.ok).toBe(true);
     } finally {
       close();
     }

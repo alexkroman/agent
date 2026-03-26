@@ -7,7 +7,8 @@ import type { AgentScope } from "./scope-token.ts";
 
 export type KvStore = {
   get(scope: AgentScope, key: string): Promise<string | null>;
-  set(scope: AgentScope, key: string, value: string, ttl?: number): Promise<void>;
+  /** Set a value. `expireIn` is the TTL in **milliseconds**. */
+  set(scope: AgentScope, key: string, value: string, expireIn?: number): Promise<void>;
   delete(scope: AgentScope, key: string): Promise<void>;
   keys(scope: AgentScope, pattern?: string): Promise<string[]>;
   list(
@@ -45,13 +46,13 @@ export function createKvStore(url: string, token: string): KvStore {
       return result ?? null;
     },
 
-    async set(scope, key, value, ttl) {
+    async set(scope, key, value, expireIn) {
       if (value.length > MAX_VALUE_SIZE) {
         throw new Error(`Value exceeds max size of ${MAX_VALUE_SIZE} bytes`);
       }
       const sk = scopedKey(scope, key);
-      if (ttl && ttl > 0) {
-        await redis.set(sk, value, { ex: ttl });
+      if (expireIn && expireIn > 0) {
+        await redis.set(sk, value, { px: expireIn });
       } else {
         await redis.set(sk, value);
       }

@@ -87,6 +87,13 @@ export type SessionOptions = {
   /** Base URL of the AAI platform server. */
   platformUrl: string;
   /**
+   * Short-lived scope token for authenticating WebSocket connections.
+   * Obtain one via `POST /:slug/session-token` with owner credentials.
+   * When provided, it is sent as the `?token=` query parameter on the
+   * WebSocket upgrade request.
+   */
+  token?: string;
+  /**
    * Factory for creating reactive state containers.
    * Defaults to a plain mutable wrapper. Pass `signal` from
    * `@preact/signals` for automatic Preact component re-rendering.

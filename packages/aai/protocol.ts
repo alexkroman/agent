@@ -44,7 +44,8 @@ export const KvRequestSchema = z.discriminatedUnion("op", [
     op: z.literal("set"),
     key: z.string().min(1),
     value: z.string(),
-    ttl: z.number().int().positive().optional(),
+    /** Time-to-live in **milliseconds**. */
+    expireIn: z.number().int().positive().optional(),
   }),
   z.object({
     op: z.literal("delete"),

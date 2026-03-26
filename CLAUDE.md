@@ -29,10 +29,10 @@ npx vitest run --config vitest.config.ts      # All from root
 
 **Full CI check** (`pnpm check`):
 
-Runs everything in sequence: `install --frozen-lockfile` → `pnpm -r run build`
-→ `typecheck` → `lint` → `vitest --coverage` → `knip` → `syncpack lint` →
-`api-extractor` (aai, aai-ui) → template type-check → `markdownlint-cli2` →
-`attw --pack` (aai, aai-ui) → aai-server integration tests → aai-cli e2e tests.
+Runs everything in sequence: `pnpm -r run build` → `typecheck` → `lint` →
+`api-extractor` (aai, aai-ui) → `attw --pack` (aai, aai-ui) → template
+type-check → `knip` → `syncpack lint` → `markdownlint-cli2` → aai-server
+integration tests → aai-cli e2e tests → `vitest --coverage`.
 
 ## Architecture
 
@@ -82,9 +82,8 @@ Non-exported internal files (used within the package only):
 
 #### `@alexkroman1/aai-ui` (UI)
 
-- `.` — default Preact UI component
-- `./session` — session management
-- `./components` — individual UI components
+- `.` — default Preact UI component + session + mount helpers
+- `./session` — session management (no Preact dependency)
 - `./styles.css` — default styles
 
 #### `@alexkroman1/aai-cli` (CLI)
