@@ -13,7 +13,6 @@ import type { S2sHandle, S2sToolCall } from "./s2s.ts";
 import type { S2sSessionCtx } from "./session.ts";
 import {
   bargeInCounter,
-  idleTimeoutCounter,
   toolCallCounter,
   toolCallDuration,
   toolCallErrorCounter,
@@ -391,39 +390,4 @@ export function setupListeners(ctx: S2sSessionCtx, handle: S2sHandle): void {
     ctx.replyGeneration++;
     ctx.pendingTools = [];
   });
-}
-
-/**
- * Wire idle-timeout behaviour onto an S2S handle.
- *
- * Resets the idle timer on every inbound S2S event that indicates activity
- * (user/agent transcripts, audio, tool calls, replies). When the timer
- * fires, the S2S connection is closed and the client receives an
- * `idle_timeout` event.
- *
- * @param ctx - The shared mutable session context.
- * @param handle - The S2S WebSocket handle to monitor.
- */
-export function setupIdleTimeout(ctx: S2sSessionCtx, handle: S2sHandle): void {
-  if (ctx.idleTimeoutMs <= 0) return;
-
-  ctx.setIdleCallback(() => {
-    ctx.log.info("S2S idle timeout", { timeoutMs: ctx.idleTimeoutMs, agent: ctx.agent });
-    idleTimeoutCounter.add(1, { agent: ctx.agent });
-    ctx.client.event({ type: "idle_timeout" });
-    handle.close();
-  });
-
-  // Reset idle timer on any inbound S2S activity.
-  const resetIdle = () => ctx.resetIdleTimer();
-  handle.on("userTranscript", resetIdle);
-  handle.on("userTranscriptDelta", resetIdle);
-  handle.on("agentTranscript", resetIdle);
-  handle.on("agentTranscriptDelta", resetIdle);
-  handle.on("audio", resetIdle);
-  handle.on("toolCall", resetIdle);
-  handle.on("replyStarted", resetIdle);
-  handle.on("replyDone", resetIdle);
-  handle.on("speechStarted", resetIdle);
-  handle.on("speechStopped", resetIdle);
 }
