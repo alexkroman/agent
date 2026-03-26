@@ -75,7 +75,12 @@ function createWebSearch(fetchFn = globalThis.fetch): ToolDef<typeof webSearchPa
       if (!resp.ok) {
         return { error: `Search request failed: ${resp.status} ${resp.statusText}` };
       }
-      const raw = await resp.json();
+      let raw: unknown;
+      try {
+        raw = await resp.json();
+      } catch {
+        return { error: "Response was not valid JSON" };
+      }
       const data = BraveSearchResponseSchema.safeParse(raw);
       if (!data.success) {
         return { error: "Unexpected search response format" };
