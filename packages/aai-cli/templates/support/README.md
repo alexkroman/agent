@@ -46,15 +46,23 @@ Run the same `aai rag` command again to update the vector store with fresh
 documentation. Chunks are keyed by content, so unchanged pages won't be
 duplicated.
 
-## Environment variables
+## Secrets
+
+Access secrets in your agent via `ctx.env.MY_KEY`.
+
+**Local development** — add secrets to `.env` (auto-loaded by `aai dev`):
+
+```sh
+MY_KEY=secret-value
+```
+
+**Production** — set secrets on the server:
 
 ```sh
 aai secret put MY_KEY    # Set a secret (prompts for value)
 aai secret list          # List secret names
 aai secret delete MY_KEY # Remove a secret
 ```
-
-Access secrets in your agent via `ctx.env.MY_KEY`.
 
 ## Learn more
 

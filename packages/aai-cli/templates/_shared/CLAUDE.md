@@ -165,10 +165,20 @@ Optimize for spoken conversation:
 - **Game/interactive** — "You ARE the game. Keep descriptions to two to four
   sentences. No visual formatting."
 
-### Environment variables
+### Secrets / environment variables
 
-Secrets are managed via the CLI and injected at runtime as `ctx.env`. Never
-hardcode secrets in `agent.ts`.
+Never hardcode secrets in `agent.ts`. Access them at runtime via `ctx.env`.
+
+**Local development** — add secrets to `.env` in your project root. The file is
+auto-loaded by `aai dev` (process env vars take precedence over `.env` values):
+
+```sh
+# .env (gitignored)
+ALPHA_VANTAGE_KEY=sk-abc123
+MY_API_KEY=secret-value
+```
+
+**Production** — set secrets on the deployed server:
 
 ```sh
 aai secret put MY_API_KEY    # Set (prompts for value)
@@ -251,7 +261,7 @@ LLM produces a text response.
 Every `execute` function and lifecycle hook receives a context object:
 
 ```ts
-ctx.env; // Record<string, string> — secrets from `aai secret put`
+ctx.env; // Record<string, string> — secrets (from .env locally, aai secret put in production)
 ctx.state; // per-session state
 ctx.kv; // persistent KV store
 ctx.vector; // VectorStore — vector store for RAG (tools only)
@@ -940,6 +950,21 @@ Run with `node server.ts` (Node >=22.6 strips types natively) or bundle
 with your preferred tool. The server handles WebSocket connections, STT/TTS,
 and the agentic loop. Set `ASSEMBLYAI_API_KEY` as an environment variable.
 
+**Env in self-hosted mode:** `ctx.env` is exactly the `env` record you pass to
+`createServer({ env })`. If omitted, it defaults to `process.env`. There is no
+`AAI_ENV_*` prefixing — that only applies to the managed platform. Pass only the
+keys your agent needs:
+
+```ts
+const server = createServer({
+  agent,
+  env: {
+    ASSEMBLYAI_API_KEY: process.env.ASSEMBLYAI_API_KEY!,
+    MY_API_KEY: process.env.MY_API_KEY!,
+  },
+});
+```
+
 ## Useful free API endpoints
 
 These public APIs require no auth and work well in voice agents:
@@ -1131,8 +1156,8 @@ const turn = await t.turn("What is my name?", [
   Filter and truncate API responses to only what the agent needs.
 - **Verbose instructions** — Voice responses should be 1-3 sentences. Don't
   say "provide detailed explanations" — the agent will monologue.
-- **Hardcoding secrets** — Use `aai secret put` + `ctx.env`, never inline keys.
-  Set secrets before deploying.
+- **Hardcoding secrets** — Use `.env` for local dev, `aai secret put` for
+  production. Access via `ctx.env` in both cases. Never inline keys.
 - **SSRF restrictions** — `fetch` is proxied; private/internal IPs (localhost,
   10.x, 192.168.x) are blocked.
 

@@ -187,8 +187,8 @@ export async function fileExists(p: string): Promise<boolean> {
  * Loads agent metadata from a directory by checking for `agent.ts` and
  * resolving the client entry point.
  *
- * Env vars are NOT read from `.env` — they're managed on the server
- * via `aai secret put`.
+ * Env vars for deployed agents are managed on the server via
+ * `aai secret put`. For local dev, `.env` is loaded by `resolveServerEnv`.
  */
 export async function loadAgent(dir: string): Promise<AgentEntry | null> {
   const hasAgentTs = await fileExists(path.join(dir, "agent.ts"));

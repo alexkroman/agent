@@ -73,17 +73,24 @@ npm run dev        # Run locally (opens browser)
 npm run deploy     # Deploy to production
 \`\`\`
 
-## Environment variables
+## Secrets
 
-Secrets are managed on the server, not in local files:
+Access secrets in your agent via \`ctx.env.MY_KEY\`.
+
+**Local development** — add secrets to \`.env\` (auto-loaded by \`aai dev\`):
+
+\`\`\`sh
+ALPHA_VANTAGE_KEY=sk-abc123
+MY_API_KEY=secret-value
+\`\`\`
+
+**Production** — set secrets on the server:
 
 \`\`\`sh
 aai secret put MY_KEY    # Set a secret (prompts for value)
 aai secret list          # List secret names
 aai secret delete MY_KEY # Remove a secret
 \`\`\`
-
-Access secrets in your agent via \`ctx.env.MY_KEY\`.
 
 ## Learn more
 
