@@ -1,8 +1,8 @@
 import { defineConfig } from "vitest/config";
+import { sharedConfig } from "../../vitest.shared.ts";
 
 export default defineConfig({
-  resolve: { conditions: ["source"] },
-  ssr: { resolve: { conditions: ["source"] } },
+  ...sharedConfig,
   test: {
     include: ["e2e.test.ts", "pack-build.test.ts"],
     testTimeout: 300_000,

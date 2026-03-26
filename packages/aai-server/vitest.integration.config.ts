@@ -1,8 +1,8 @@
 import { defineConfig } from "vitest/config";
+import { sharedConfig } from "../../vitest.shared.ts";
 
 export default defineConfig({
-  resolve: { conditions: ["source"] },
-  ssr: { resolve: { conditions: ["source"] } },
+  ...sharedConfig,
   test: {
     include: ["src/sandbox-integration.test.ts"],
     testTimeout: 30_000,
