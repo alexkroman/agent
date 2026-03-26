@@ -248,7 +248,7 @@ describe("isolate protocol", () => {
       env: {},
     } satisfies ToolCallRequest);
     expect(status).toBe(500);
-    expect(data.error).toMatch(/intentional failure/);
+    expect(data.error).toBe("Internal error");
   });
 
   test("KV round-trip through sidecar", async () => {
