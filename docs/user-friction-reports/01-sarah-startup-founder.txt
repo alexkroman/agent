@@ -1,0 +1,163 @@
+================================================================================
+USER PERSONA: Sarah — Non-technical Startup Founder
+================================================================================
+
+BACKGROUND:
+Sarah is a startup founder with basic JavaScript knowledge. She wants to build
+a customer intake agent for her insurance company that collects policy info
+from callers. She has no experience with TypeScript, Zod, or modern toolchains.
+
+GOAL:
+Build a voice agent that asks callers for their name, policy number, issue
+description, and routes them to the right department.
+
+================================================================================
+AGENT SHE BUILT (agent.ts):
+================================================================================
+
+import { defineAgent } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default defineAgent({
+  name: "InsureCo Intake Agent",
+  instructions: `You are a friendly customer intake agent for InsureCo.
+Your job is to collect the caller's name, policy number, and a brief
+description of their issue, then route them to the correct department.
+
+Departments:
+- Claims: property damage, auto accidents, theft, loss
+- Billing: payments, premium questions, account changes
+- Policy: new policies, renewals, coverage questions
+- General: anything else
+
+Be warm and professional. Confirm each piece of info before moving on.
+At the end, summarize what you collected and which department they'll
+be connected to.`,
+  greeting:
+    "Hello, thank you for calling InsureCo. I can help get you to the right department. May I start with your name?",
+
+  state: () => ({
+    name: "",
+    policyNumber: "",
+    issue: "",
+    department: "",
+    collected: false,
+  }),
+
+  tools: {
+    record_info: {
+      description:
+        "Record the caller's information as it's collected during the conversation",
+      parameters: z.object({
+        name: z.string().optional(),
+        policyNumber: z.string().optional(),
+        issue: z.string().optional(),
+      }),
+      execute: (args, ctx) => {
+        if (args.name) ctx.state.name = args.name;
+        if (args.policyNumber) ctx.state.policyNumber = args.policyNumber;
+        if (args.issue) ctx.state.issue = args.issue;
+        return {
+          collected: {
+            name: ctx.state.name || "not yet",
+            policyNumber: ctx.state.policyNumber || "not yet",
+            issue: ctx.state.issue || "not yet",
+          },
+        };
+      },
+    },
+
+    route_to_department: {
+      description:
+        "Route the caller to the appropriate department based on their issue",
+      parameters: z.object({
+        department: z.enum(["Claims", "Billing", "Policy", "General"]),
+        reason: z.string(),
+      }),
+      execute: (args, ctx) => {
+        ctx.state.department = args.department;
+        ctx.state.collected = true;
+        return {
+          routed: true,
+          department: args.department,
+          reason: args.reason,
+          caller: ctx.state.name,
+          policy: ctx.state.policyNumber,
+        };
+      },
+    },
+  },
+});
+
+================================================================================
+FRICTION & PROBLEMS ENCOUNTERED:
+================================================================================
+
+1. TYPESCRIPT + ZOD LEARNING CURVE (Severity: HIGH)
+   Sarah has basic JS knowledge but the SDK requires TypeScript and Zod.
+   She spent 2 hours figuring out why `z.object()` kept erroring — she had
+   not installed zod ("zod" is a peer dependency not mentioned in the
+   `aai init` output). The error message was a raw TypeScript compilation
+   error that didn't mention "install zod."
+
+   Suggestion: `aai init` should auto-install zod, or the simple template
+   should include a `z.object` example so users see the import pattern. The
+   error when zod is missing should say "Did you install zod? Run: npm i zod".
+
+2. NO GUIDANCE ON TOOL PARAMETER TYPES (Severity: MEDIUM)
+   Sarah initially wrote `parameters: { name: "string" }` (plain JS object)
+   because she didn't realize Zod schemas were required. The error said
+   "parameters must be a ZodObject" but didn't show the correct syntax.
+
+   Suggestion: Include a "Common mistakes" section in the user-facing
+   CLAUDE.md showing the wrong way vs the right way.
+
+3. STATE TYPING CONFUSION (Severity: MEDIUM)
+   Sarah's first attempt used `state: { name: "", policyNumber: "" }` (a
+   plain object, not a factory function). The runtime error "state must be
+   a function" was clear, but she then wrote `state: function() { return {} }`
+   and lost TypeScript inference for `ctx.state` — everything was `unknown`.
+   She couldn't figure out how to get autocomplete working.
+
+   Suggestion: Show the `state: (): MyType => ({...})` pattern prominently
+   in the getting-started guide. Consider accepting a plain object for
+   state and wrapping it in a factory internally.
+
+4. TOOL EXECUTE RETURN VALUE CONFUSION (Severity: LOW)
+   Sarah returned a string from her first tool ("Routed to Claims") and
+   didn't realize the LLM would get exactly that string. She wanted structured
+   data but didn't know the return value was JSON-serialized. The docs say
+   "return values go into LLM context" but don't explain what that means
+   concretely for someone unfamiliar with LLM tool-calling.
+
+   Suggestion: Add a brief "What happens to tool results" section showing
+   that returned objects become JSON strings in the conversation.
+
+5. INSTRUCTIONS OPTIMIZED FOR TEXT, NOT VOICE (Severity: LOW)
+   Sarah's first instructions included bullet points, numbered lists, and
+   bold formatting. The agent read these aloud awkwardly ("dash claims colon
+   property damage comma auto accidents"). She didn't find the "optimize for
+   spoken conversation" guidance until after several confusing test sessions.
+
+   Suggestion: Show a before/after example of voice-optimized instructions
+   in the CLAUDE.md getting-started section.
+
+6. NO WEBHOOK / CALLBACK FOR ROUTING (Severity: MEDIUM)
+   Sarah wanted the agent to actually transfer the call or send a webhook
+   when routing to a department. There's no built-in mechanism for this.
+   She ended up making `route_to_department` a no-op that just logs, which
+   feels incomplete. She expected some kind of `ctx.transfer()` or
+   `ctx.webhook()` API.
+
+   Suggestion: Document the "tools are for LLM context, not side-effects"
+   mental model more clearly. Provide a pattern for webhook callbacks
+   using fetch_json or a custom tool with fetch.
+
+7. TESTING THE AGENT IS UNINTUITIVE (Severity: MEDIUM)
+   Sarah didn't know about `createTestHarness` and tried testing by talking
+   to the dev server manually. She found `aai test` but had no test file.
+   The `aai init` simple template doesn't include a test file, so she didn't
+   know what the testing API looked like.
+
+   Suggestion: Every template should include a basic test file showing
+   `createTestHarness` usage.

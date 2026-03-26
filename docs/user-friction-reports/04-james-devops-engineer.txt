@@ -1,0 +1,249 @@
+================================================================================
+USER PERSONA: James — DevOps / Platform Engineer
+================================================================================
+
+BACKGROUND:
+James is a DevOps engineer responsible for running infrastructure. He wants to
+build a voice-controlled ops assistant that can check service health, query
+metrics, and trigger runbooks. He cares deeply about observability, error
+handling, and deployment reliability.
+
+GOAL:
+Build a self-hosted ops agent that queries internal APIs, surfaces alerts, and
+integrates with the company's existing monitoring stack (Prometheus, PagerDuty).
+
+================================================================================
+AGENT HE BUILT (agent.ts):
+================================================================================
+
+import { defineAgent, tool } from "@alexkroman1/aai";
+import type { Middleware } from "@alexkroman1/aai";
+import { z } from "zod";
+
+interface OpsState {
+  acknowledgedAlerts: string[];
+  lastHealthCheck: Record<string, string>;
+}
+
+function errorBoundary(): Middleware<OpsState> {
+  return {
+    name: "error-boundary",
+    beforeTurn: (text) => {
+      console.log(`[ops] Turn started: ${text.slice(0, 80)}`);
+      return undefined;
+    },
+    afterToolCall: (toolName, _args, result) => {
+      if (result.includes('"error"')) {
+        console.error(`[ops] Tool ${toolName} returned error: ${result}`);
+      }
+    },
+  };
+}
+
+export default defineAgent({
+  name: "OpsBot",
+  instructions: `You are OpsBot, an operations assistant for the platform team.
+You check service health, query metrics, and help manage incidents.
+
+Rules:
+- Always check_service_health before reporting on a service status.
+- Use query_metrics for specific metric lookups.
+- When acknowledging alerts, use acknowledge_alert and confirm the alert ID.
+- Be extremely precise with service names and metric values.
+- If something looks critical, say so clearly and urgently.
+- Keep responses brief. Ops conversations need to be fast.`,
+  greeting:
+    "OpsBot online. I can check service health, query metrics, and manage alerts. What do you need?",
+
+  builtinTools: ["fetch_json"],
+
+  state: (): OpsState => ({
+    acknowledgedAlerts: [],
+    lastHealthCheck: {},
+  }),
+
+  middleware: [errorBoundary()],
+
+  maxSteps: 8,
+
+  tools: {
+    check_service_health: tool<
+      z.ZodObject<{ service: z.ZodString }>,
+      OpsState
+    >({
+      description: "Check the health status of an internal service",
+      parameters: z.object({
+        service: z.string().describe("Service name like api-gateway, auth-service, payments"),
+      }),
+      execute: async ({ service }, ctx) => {
+        const baseUrl = ctx.env.INTERNAL_API_URL;
+        if (!baseUrl) return { error: "INTERNAL_API_URL not configured" };
+        try {
+          const resp = await fetch(`${baseUrl}/health/${encodeURIComponent(service)}`);
+          const data = await resp.json();
+          ctx.state.lastHealthCheck[service] = data.status;
+          return {
+            service,
+            status: data.status,
+            uptime: data.uptime,
+            lastDeployment: data.lastDeployment,
+            errorRate: data.errorRate,
+          };
+        } catch (err) {
+          return { error: `Failed to reach ${service}: ${(err as Error).message}` };
+        }
+      },
+    }),
+
+    query_metrics: tool<
+      z.ZodObject<{ query: z.ZodString; timeRange: z.ZodOptional<z.ZodString> }>,
+      OpsState
+    >({
+      description: "Query Prometheus metrics by PromQL expression",
+      parameters: z.object({
+        query: z.string().describe("PromQL query expression"),
+        timeRange: z.string().optional().describe("Time range like 1h, 6h, 24h. Defaults to 1h"),
+      }),
+      execute: async ({ query, timeRange }, ctx) => {
+        const promUrl = ctx.env.PROMETHEUS_URL;
+        if (!promUrl) return { error: "PROMETHEUS_URL not configured" };
+        const range = timeRange || "1h";
+        try {
+          const resp = await fetch(
+            `${promUrl}/api/v1/query?query=${encodeURIComponent(query)}&time=${range}`
+          );
+          const data = await resp.json();
+          if (data.status !== "success") return { error: data.error || "Query failed" };
+          return {
+            query,
+            timeRange: range,
+            resultCount: data.data?.result?.length || 0,
+            results: (data.data?.result || []).slice(0, 5).map((r: any) => ({
+              metric: r.metric,
+              value: r.value?.[1],
+            })),
+          };
+        } catch (err) {
+          return { error: `Prometheus query failed: ${(err as Error).message}` };
+        }
+      },
+    }),
+
+    acknowledge_alert: tool<
+      z.ZodObject<{ alertId: z.ZodString; note: z.ZodOptional<z.ZodString> }>,
+      OpsState
+    >({
+      description: "Acknowledge a PagerDuty alert",
+      parameters: z.object({
+        alertId: z.string().describe("PagerDuty alert ID"),
+        note: z.string().optional().describe("Acknowledgement note"),
+      }),
+      execute: async ({ alertId, note }, ctx) => {
+        ctx.state.acknowledgedAlerts.push(alertId);
+        return {
+          acknowledged: true,
+          alertId,
+          note: note || "Acknowledged via OpsBot",
+          totalAcknowledged: ctx.state.acknowledgedAlerts.length,
+        };
+      },
+    }),
+
+    list_acknowledged: {
+      description: "List all alerts acknowledged in this session",
+      execute: (_args, ctx) => {
+        return {
+          alerts: (ctx.state as OpsState).acknowledgedAlerts,
+          count: (ctx.state as OpsState).acknowledgedAlerts.length,
+        };
+      },
+    },
+  },
+});
+
+================================================================================
+FRICTION & PROBLEMS ENCOUNTERED:
+================================================================================
+
+1. SELF-HOSTED DEPLOYMENT STORY IS INCOMPLETE (Severity: HIGH)
+   James wants to run the agent as a Docker container in his k8s cluster.
+   `createServer()` returns an HTTP server, but there's no guidance on:
+   - Dockerfile best practices
+   - Health check endpoint configuration (he found /health by reading source)
+   - Graceful shutdown handling
+   - Running behind a reverse proxy (nginx/envoy)
+   - WebSocket upgrade handling through load balancers
+
+   He spent half a day piecing together a working Docker setup.
+
+   Suggestion: Provide a Dockerfile template and deployment guide for
+   self-hosted mode. Document the /health endpoint. Add a section on
+   load balancer configuration for WebSocket support.
+
+2. OPENTELEMETRY INTEGRATION IS DOCUMENTED BUT BOOTSTRAPPING IS UNCLEAR (Severity: HIGH)
+   The CLAUDE.md mentions OpenTelemetry support with pre-built metrics.
+   James tried to wire up his existing Prometheus/Grafana stack but couldn't
+   figure out the initialization order. The docs say "install @opentelemetry/
+   sdk-node and configure before importing AAI" but don't show a complete
+   working example with Prometheus exporter.
+
+   Suggestion: Provide a complete self-hosted example with OTel + Prometheus
+   exporter, including the exact import order and SDK configuration.
+
+3. NO REQUEST/SESSION CONTEXT IN LOGS (Severity: MEDIUM)
+   James's middleware logs tool calls but there's no session ID or request
+   ID available in the middleware context. When multiple users connect
+   simultaneously, logs from different sessions interleave with no way to
+   correlate them.
+
+   Suggestion: Add `ctx.sessionId` to HookContext and ToolContext so logs
+   can be correlated. This is essential for any production deployment.
+
+4. ERROR HANDLING IN TOOLS IS MANUAL AND INCONSISTENT (Severity: MEDIUM)
+   Every tool needs its own try/catch wrapping. There's no built-in error
+   boundary for tools — if a tool throws, it's unclear what happens (does
+   the turn fail? does the LLM get an error message? does onError fire?).
+   James had to read the source to understand the error propagation.
+
+   Suggestion: Document what happens when a tool throws. Consider a built-in
+   error wrapping that converts thrown errors to `{ error: message }` tool
+   results automatically.
+
+5. ENV VARIABLE STORY FOR SELF-HOSTED IS UNCLEAR (Severity: MEDIUM)
+   James passes `env: process.env` to `createServer()` but his tools access
+   `ctx.env`. He's unsure if `ctx.env` is the same as `process.env` in
+   self-hosted mode or if it's filtered. The platform docs mention
+   `AAI_ENV_*` prefixing but that doesn't apply to self-hosted.
+
+   Suggestion: Clearly document: in self-hosted mode, `ctx.env` = whatever
+   you pass to `createServer({ env })`. In platform mode, only `AAI_ENV_*`
+   vars are available.
+
+6. WEBSOCKET RECONNECTION BEHAVIOR IS OPAQUE (Severity: LOW)
+   When James's agent server restarts (during deployment), connected clients
+   lose their WebSocket connections. There's no documentation on:
+   - Does the client auto-reconnect?
+   - Is session state preserved across reconnects?
+   - How to handle the ?resume query parameter?
+
+   Suggestion: Document WebSocket lifecycle, reconnection behavior, and
+   session resumption semantics.
+
+7. NO RBAC OR AUTH FOR SELF-HOSTED (Severity: MEDIUM)
+   James's ops agent has access to sensitive infrastructure APIs. The
+   self-hosted server has no authentication middleware. Anyone who can reach
+   the server can use the agent. He had to implement auth himself by
+   wrapping the server.
+
+   Suggestion: Provide an auth middleware pattern or hook for self-hosted
+   deployments. Even a simple API key or JWT validation example would help.
+
+8. `maxSteps: 8` FEELS ARBITRARY (Severity: LOW)
+   James set maxSteps to 8 because the default 5 wasn't enough for his
+   multi-tool workflows (health check + metrics query + alert ack). But he
+   has no visibility into how many steps a typical turn uses. There's no
+   way to log or monitor step counts without writing custom middleware.
+
+   Suggestion: Include step count in the default logging or make it easy
+   to monitor. The dynamic maxSteps function is powerful but the docs don't
+   explain how to choose a good value.

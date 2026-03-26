@@ -1,0 +1,215 @@
+================================================================================
+USER PERSONA: Maya — Recent Bootcamp Graduate
+================================================================================
+
+BACKGROUND:
+Maya just finished a coding bootcamp (JavaScript/React focus). She's building
+her portfolio and wants to make a voice agent as a project. She has basic
+JavaScript knowledge, limited TypeScript experience, and has never used a CLI
+build tool beyond create-react-app.
+
+GOAL:
+Build a simple daily planner agent that manages a to-do list, sets reminders,
+and gives motivational messages. Keep it simple enough for a portfolio piece.
+
+================================================================================
+AGENT SHE BUILT (agent.ts):
+================================================================================
+
+import { defineAgent } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default defineAgent({
+  name: "DayPal",
+  instructions: `You are DayPal, a friendly daily planner assistant.
+You help users manage their to-do list and stay motivated.
+
+Be encouraging and upbeat. Use casual language. When the user adds a task,
+confirm it warmly. When they complete one, celebrate briefly. If they ask
+for motivation, give a short pep talk.
+
+Keep everything conversational and brief. This is a voice app.`,
+  greeting:
+    "Hey there! I'm DayPal, your daily planner buddy. You can add tasks, check them off, or just ask for some motivation. What's on your plate today?",
+
+  state: () => ({
+    tasks: [] as { id: number; text: string; done: boolean; priority: string }[],
+    nextId: 1,
+    completedToday: 0,
+  }),
+
+  tools: {
+    add_task: {
+      description: "Add a new task to the to-do list",
+      parameters: z.object({
+        text: z.string().describe("What the task is"),
+        priority: z.enum(["low", "medium", "high"]).default("medium"),
+      }),
+      execute: (args: { text: string; priority: string }, ctx: any) => {
+        const task = {
+          id: ctx.state.nextId++,
+          text: args.text,
+          done: false,
+          priority: args.priority,
+        };
+        ctx.state.tasks.push(task);
+        return {
+          added: task,
+          totalTasks: ctx.state.tasks.length,
+          pending: ctx.state.tasks.filter((t: any) => !t.done).length,
+        };
+      },
+    },
+
+    complete_task: {
+      description: "Mark a task as done",
+      parameters: z.object({
+        taskId: z.number().describe("The task ID to complete"),
+      }),
+      execute: (args: { taskId: number }, ctx: any) => {
+        const task = ctx.state.tasks.find((t: any) => t.id === args.taskId);
+        if (!task) return { error: "Task not found" };
+        task.done = true;
+        ctx.state.completedToday++;
+        return {
+          completed: task,
+          completedToday: ctx.state.completedToday,
+          remaining: ctx.state.tasks.filter((t: any) => !t.done).length,
+        };
+      },
+    },
+
+    list_tasks: {
+      description: "Show all current tasks",
+      execute: (_args: unknown, ctx: any) => {
+        return {
+          tasks: ctx.state.tasks,
+          total: ctx.state.tasks.length,
+          done: ctx.state.tasks.filter((t: any) => t.done).length,
+          pending: ctx.state.tasks.filter((t: any) => !t.done).length,
+        };
+      },
+    },
+
+    get_motivation: {
+      description: "Get a motivational message",
+      execute: (_args: unknown, ctx: any) => {
+        const messages = [
+          "You're doing great! Every task you finish is a step forward.",
+          "Remember, progress over perfection. Keep going!",
+          "You've got this! One task at a time.",
+          "The fact that you're planning your day means you're already ahead.",
+          "Small steps lead to big changes. Keep at it!",
+        ];
+        const pending = ctx.state.tasks.filter((t: any) => !t.done).length;
+        return {
+          message: messages[Math.floor(Math.random() * messages.length)],
+          completedToday: ctx.state.completedToday,
+          remaining: pending,
+        };
+      },
+    },
+  },
+});
+
+================================================================================
+FRICTION & PROBLEMS ENCOUNTERED:
+================================================================================
+
+1. INITIAL SETUP IS OVERWHELMING (Severity: HIGH)
+   Maya ran `aai init` and got a project with `package.json`, `tsconfig.json`,
+   `agent.ts`, and various config files. She doesn't understand half of
+   these files. The simple template gives a 6-line agent that "just works"
+   but she has no idea what any of the boilerplate is for.
+
+   Suggestion: Add a "Your first 5 minutes" guide that explains just the
+   files that matter: agent.ts (your code), package.json (dependencies),
+   and ignore everything else. Reduce the scaffolded config files to the
+   absolute minimum.
+
+2. TypeScript ERRORS ARE CRYPTIC (Severity: HIGH)
+   Maya has basic JS knowledge. When she wrote `(args: any, ctx: any)` in
+   her tool execute functions (visible in her code above), it worked but
+   she got no autocomplete. When she tried removing the type annotations
+   to let inference work, she got errors like "Type '{ text: string; }' is
+   not assignable to type 'infer<ZodObject<...>>'". These TypeScript
+   generics errors are incomprehensible to a beginner.
+
+   Suggestion: Provide a "JavaScript-friendly" mode or document that
+   beginners can use `as any` escape hatches. Better yet, improve the
+   type inference so that inline tool definitions "just work" without
+   explicit type annotations.
+
+3. WHAT IS ZOD? (Severity: HIGH)
+   Maya has never heard of Zod. She googled "zod npm" and found the docs,
+   but she doesn't understand why she needs a schema validation library to
+   define tool parameters. She would have expected to write plain JavaScript
+   objects like `{ text: "string", priority: "string" }`.
+
+   Suggestion: The getting-started guide should explain Zod in one paragraph:
+   "Zod is a schema library that defines what arguments your tools accept.
+   It's like defining a form's validation rules." Include a cheat sheet of
+   the 5 most common Zod types: z.string(), z.number(), z.boolean(),
+   z.enum(), z.object().
+
+4. `aai dev` PORT CONFUSION (Severity: MEDIUM)
+   Maya ran `aai dev` and it said "Server running on port 3000." She opened
+   localhost:3000 in Chrome but saw a basic page. She expected a chat
+   interface. The default UI requires microphone permissions which Chrome
+   blocked silently. She stared at a non-functional page for 10 minutes
+   before figuring out she needed to allow microphone access.
+
+   Suggestion: The dev server landing page should clearly say "Click to
+   allow microphone access" with a prominent button, not just render a
+   silent UI that waits for audio.
+
+5. CAN'T TEST WITHOUT A MICROPHONE (Severity: HIGH)
+   Maya is developing on a desktop without a microphone. The entire dev
+   experience requires voice input. She can't type messages to test her
+   agent. She tried writing tests with createTestHarness but had to learn
+   a new testing framework (Vitest) first.
+
+   Suggestion: Add a text input mode to the default dev UI. A simple text
+   box alongside the microphone button would let developers test without
+   audio hardware. This is a major accessibility issue.
+
+6. ERROR MESSAGES DON'T POINT TO SOLUTIONS (Severity: MEDIUM)
+   When Maya misspelled a Zod method (`z.stirng()` instead of `z.string()`),
+   the build error was a wall of TypeScript output. The actual error was
+   "Property 'stirng' does not exist on type 'typeof z'" buried in 20 lines
+   of generic type expansion.
+
+   Suggestion: Consider a custom error handler in `aai build` that catches
+   common mistakes and provides friendly messages. Or at minimum, strip
+   the TypeScript generic noise from error output.
+
+7. DEPLOYMENT IS A BLACK BOX (Severity: MEDIUM)
+   Maya ran `aai deploy` successfully but has no idea where her agent is
+   running, how to share the URL, or how to update it. The deploy output
+   showed a URL but didn't explain how billing works, usage limits, or
+   how to take it down.
+
+   Suggestion: After deployment, show a clear summary: "Your agent is live
+   at [URL]. Share this link with anyone. To update, run `aai deploy` again.
+   To take it down, run `aai undeploy`." (Note: `aai undeploy` doesn't
+   exist, which is itself a gap.)
+
+8. NO UNDO / UNDEPLOY (Severity: LOW)
+   Maya deployed her agent, realized the greeting had a typo, fixed it, and
+   wanted to redeploy. She ran `aai deploy` again and it worked, but she
+   worried about the old version still being accessible. There's no
+   `aai undeploy` or `aai status` command to manage deployed agents.
+
+   Suggestion: Add deployment management commands: `aai status` (show
+   deployed agents), `aai undeploy` (take down), `aai logs` (view
+   production logs).
+
+9. PORTFOLIO PRESENTATION FRICTION (Severity: LOW)
+   Maya wanted to include her agent in her portfolio with a demo link.
+   The deployed agent requires microphone access, which is jarring for
+   portfolio reviewers who just want to see it work. There's no way to
+   embed a recording or demo mode.
+
+   Suggestion: Consider a "demo mode" that plays a pre-recorded
+   conversation, or a way to embed the agent in an iframe with a
+   preview of the conversation flow.

@@ -1,0 +1,242 @@
+================================================================================
+USER PERSONA: Marcus — Senior Backend Engineer
+================================================================================
+
+BACKGROUND:
+Marcus is a senior backend engineer at a fintech company. He's comfortable with
+TypeScript, Node.js, and building APIs. He wants to build a financial data
+agent that pulls real-time stock quotes, performs calculations, and maintains
+a user's watchlist across sessions.
+
+GOAL:
+Build a voice agent that fetches stock data from APIs, does portfolio math,
+and persists watchlists using the KV store.
+
+================================================================================
+AGENT HE BUILT (agent.ts):
+================================================================================
+
+import { defineAgent, tool } from "@alexkroman1/aai";
+import type { Middleware } from "@alexkroman1/aai";
+import { z } from "zod";
+
+interface PortfolioState {
+  watchlist: string[];
+  alerts: { symbol: string; targetPrice: number; direction: "above" | "below" }[];
+}
+
+function auditLogger(): Middleware<PortfolioState> {
+  return {
+    name: "audit-logger",
+    afterToolCall: (toolName, args, result, ctx) => {
+      const entry = JSON.stringify({
+        timestamp: new Date().toISOString(),
+        tool: toolName,
+        args,
+        resultLength: result.length,
+      });
+      console.log(`[audit] ${entry}`);
+    },
+  };
+}
+
+export default defineAgent({
+  name: "FinBot",
+  instructions: `You are FinBot, a financial data assistant. You fetch real-time
+stock information, perform portfolio calculations, and manage watchlists.
+
+Rules:
+- Always use get_stock_quote before giving price information. Never guess prices.
+- Use run_code for any math: portfolio totals, percentage changes, projections.
+- When the user asks to watch a stock, add it to their persistent watchlist.
+- Be precise with numbers. Round dollar amounts to 2 decimal places.
+- Keep responses short. This is voice, not a written report.
+- If an API call fails, say so honestly. Don't make up data.`,
+  greeting:
+    "Hey, I'm FinBot. I can pull stock quotes, track your watchlist, and do portfolio math. What are you looking at today?",
+
+  builtinTools: ["fetch_json", "run_code"],
+
+  state: (): PortfolioState => ({
+    watchlist: [],
+    alerts: [],
+  }),
+
+  middleware: [auditLogger()],
+
+  onConnect: async (ctx) => {
+    const saved = await ctx.kv.get<string[]>("watchlist");
+    if (saved) ctx.state.watchlist = saved;
+  },
+
+  tools: {
+    get_stock_quote: tool<
+      z.ZodObject<{ symbol: z.ZodString }>,
+      PortfolioState
+    >({
+      description: "Fetch current stock quote by ticker symbol",
+      parameters: z.object({
+        symbol: z.string().describe("Stock ticker symbol like AAPL or MSFT"),
+      }),
+      execute: async ({ symbol }, ctx) => {
+        const apiKey = ctx.env.ALPHA_VANTAGE_KEY;
+        if (!apiKey) return { error: "ALPHA_VANTAGE_KEY not configured" };
+        const url = `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${encodeURIComponent(symbol)}&apikey=${apiKey}`;
+        const resp = await fetch(url);
+        const data = await resp.json();
+        const quote = data["Global Quote"];
+        if (!quote || !quote["05. price"]) {
+          return { error: `No data found for ${symbol}` };
+        }
+        return {
+          symbol: quote["01. symbol"],
+          price: parseFloat(quote["05. price"]),
+          change: parseFloat(quote["09. change"]),
+          changePercent: quote["10. change percent"],
+          volume: parseInt(quote["06. volume"], 10),
+        };
+      },
+    }),
+
+    add_to_watchlist: tool<
+      z.ZodObject<{ symbol: z.ZodString }>,
+      PortfolioState
+    >({
+      description: "Add a stock ticker to the user's persistent watchlist",
+      parameters: z.object({
+        symbol: z.string(),
+      }),
+      execute: async ({ symbol }, ctx) => {
+        const sym = symbol.toUpperCase();
+        if (!ctx.state.watchlist.includes(sym)) {
+          ctx.state.watchlist.push(sym);
+          await ctx.kv.set("watchlist", ctx.state.watchlist);
+        }
+        return { watchlist: ctx.state.watchlist };
+      },
+    }),
+
+    remove_from_watchlist: tool<
+      z.ZodObject<{ symbol: z.ZodString }>,
+      PortfolioState
+    >({
+      description: "Remove a stock ticker from the watchlist",
+      parameters: z.object({
+        symbol: z.string(),
+      }),
+      execute: async ({ symbol }, ctx) => {
+        const sym = symbol.toUpperCase();
+        ctx.state.watchlist = ctx.state.watchlist.filter((s) => s !== sym);
+        await ctx.kv.set("watchlist", ctx.state.watchlist);
+        return { watchlist: ctx.state.watchlist };
+      },
+    }),
+
+    get_watchlist: {
+      description: "Get the user's current watchlist",
+      execute: (_args, ctx) => {
+        return { watchlist: (ctx.state as PortfolioState).watchlist };
+      },
+    },
+
+    set_price_alert: tool<
+      z.ZodObject<{
+        symbol: z.ZodString;
+        targetPrice: z.ZodNumber;
+        direction: z.ZodEnum<["above", "below"]>;
+      }>,
+      PortfolioState
+    >({
+      description: "Set a price alert for a stock",
+      parameters: z.object({
+        symbol: z.string(),
+        targetPrice: z.number(),
+        direction: z.enum(["above", "below"]),
+      }),
+      execute: (args, ctx) => {
+        ctx.state.alerts.push({
+          symbol: args.symbol.toUpperCase(),
+          targetPrice: args.targetPrice,
+          direction: args.direction,
+        });
+        return { alert: args, totalAlerts: ctx.state.alerts.length };
+      },
+    },
+  },
+});
+
+================================================================================
+FRICTION & PROBLEMS ENCOUNTERED:
+================================================================================
+
+1. FETCH INSIDE TOOL EXECUTE — SANDBOXED VS SELF-HOSTED CONFUSION (Severity: HIGH)
+   Marcus used `fetch()` directly in his tool's execute function. This works
+   in self-hosted mode (`createServer`) but fails silently in the platform
+   sandbox because network access is restricted. The docs say "use `fetch`
+   (proxied) for HTTP" but don't explain that raw `fetch` only works
+   self-hosted, while the platform requires the `fetch_json` built-in tool.
+
+   He spent an hour debugging why his deployed agent couldn't reach the API
+   despite the same code working in `aai dev`.
+
+   Suggestion: Clearly distinguish "self-hosted fetch works" vs "platform
+   sandbox: use fetch_json or sidecar." Add a lint warning or runtime error
+   when direct fetch is used in platform mode.
+
+2. GENERIC TYPE ANNOTATIONS ON `tool()` ARE VERBOSE (Severity: MEDIUM)
+   Marcus had to write `tool<z.ZodObject<{ symbol: z.ZodString }>, PortfolioState>`
+   to get proper typing. This is extremely verbose. He tried just `tool({...})`
+   but lost state typing. He also tried the `orderTool` pattern from the
+   pizza-ordering template but felt it was a hack.
+
+   Suggestion: The `tool()` helper should infer both the Zod schema type and
+   the state type from context. Consider `defineAgent` providing a
+   `createTool` helper that already has the state type baked in:
+   `const createTool = agentToolFactory<PortfolioState>();`
+
+3. KV STORE PERSISTENCE EXPECTATIONS (Severity: MEDIUM)
+   Marcus loaded watchlist data in `onConnect` and saved it in tool handlers.
+   But he expected KV to be automatically persisted between server restarts
+   in dev mode. The in-memory KV implementation loses data on restart, which
+   confused him — his watchlist kept disappearing during development.
+
+   Suggestion: Document clearly that `aai dev` uses in-memory KV by default.
+   Consider a file-backed KV for dev mode, or at least warn at startup:
+   "Using in-memory KV — data will not persist across restarts."
+
+4. NO ASYNC onConnect ERROR HANDLING (Severity: LOW)
+   Marcus's `onConnect` is async and calls `ctx.kv.get()`. If the KV store
+   throws (e.g., network error in production), there's no clear guidance on
+   how to handle it. The `onError` hook exists but it's unclear if it catches
+   errors from `onConnect`.
+
+   Suggestion: Document the error propagation model for lifecycle hooks.
+
+5. MIDDLEWARE TYPE GENERIC IS OPTIONAL BUT MAKES STATE `unknown` (Severity: MEDIUM)
+   When Marcus first wrote `function auditLogger(): Middleware` (without the
+   generic), `ctx.state` was `Record<string, unknown>`. He had to add
+   `Middleware<PortfolioState>` to get typing, but this means every middleware
+   function needs the state generic threaded through. For reusable middleware
+   (like the audit logger), this is awkward — it doesn't actually use the
+   state shape.
+
+   Suggestion: Middleware that doesn't access state shouldn't need the generic.
+   Consider splitting the type or using a more flexible approach.
+
+6. SECRET MANAGEMENT WORKFLOW IS DISCONNECTED (Severity: LOW)
+   Marcus needed `ALPHA_VANTAGE_KEY` available. He found `aai secret put`
+   but it only sets secrets on the platform, not for local dev. For dev mode,
+   he had to create a `.env` file manually — but the docs don't mention `.env`
+   file support anywhere.
+
+   Suggestion: Document the full secret story: `.env` for dev, `aai secret put`
+   for production. Show the complete workflow.
+
+7. PRICE ALERTS HAVE NO BACKGROUND EXECUTION (Severity: LOW)
+   Marcus set up price alerts in state but realized there's no way to run
+   background checks. The agent only executes tools in response to user speech.
+   There's no cron, background polling, or event-driven execution model.
+
+   Suggestion: Document this limitation clearly. The agent is reactive (user
+   speaks → agent responds), not proactive. If users need background tasks,
+   they need a separate service.

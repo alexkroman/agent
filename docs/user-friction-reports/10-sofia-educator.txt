@@ -1,0 +1,307 @@
+================================================================================
+USER PERSONA: Sofia — High School CS Teacher / Educator
+================================================================================
+
+BACKGROUND:
+Sofia teaches AP Computer Science at a high school. She wants to build a
+voice-powered tutoring agent that helps students practice coding concepts,
+quizzes them, and explains errors. She has intermediate Python and JavaScript
+skills but isn't a professional developer.
+
+GOAL:
+Build an interactive CS tutoring agent that quizzes students, runs their code
+answers, provides hints, and tracks progress per student.
+
+================================================================================
+AGENT SHE BUILT (agent.ts):
+================================================================================
+
+import { defineAgent, tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+interface StudentState {
+  studentName: string;
+  currentTopic: string;
+  questionsAsked: number;
+  questionsCorrect: number;
+  currentQuestion: { question: string; answer: string; hint: string } | null;
+  streak: number;
+}
+
+const QUESTIONS: Record<string, { question: string; answer: string; hint: string }[]> = {
+  arrays: [
+    {
+      question: "Write a function that returns the sum of all numbers in an array.",
+      answer: "function sum(arr) { return arr.reduce((a, b) => a + b, 0); }",
+      hint: "Try using the reduce method on the array.",
+    },
+    {
+      question: "Write a function that finds the largest number in an array without using Math.max.",
+      answer: "function findMax(arr) { let max = arr[0]; for (let n of arr) if (n > max) max = n; return max; }",
+      hint: "Start with the first element as your maximum, then loop through.",
+    },
+    {
+      question: "Write a function that reverses an array in place without using the reverse method.",
+      answer: "function reverseArr(arr) { for (let i = 0; i < arr.length / 2; i++) { let t = arr[i]; arr[i] = arr[arr.length-1-i]; arr[arr.length-1-i] = t; } return arr; }",
+      hint: "Swap elements from the outside in, moving toward the middle.",
+    },
+  ],
+  loops: [
+    {
+      question: "Write a for loop that prints numbers 1 to 10.",
+      answer: "for (let i = 1; i <= 10; i++) console.log(i);",
+      hint: "Start your loop variable at 1 and go up to and including 10.",
+    },
+    {
+      question: "Write a while loop that counts down from 5 to 1.",
+      answer: "let i = 5; while (i >= 1) { console.log(i); i--; }",
+      hint: "Start at 5 and decrease by 1 each iteration.",
+    },
+  ],
+  functions: [
+    {
+      question: "Write a function called greet that takes a name and returns 'Hello, name!'",
+      answer: "function greet(name) { return `Hello, ${name}!`; }",
+      hint: "Use template literals or string concatenation to build the greeting.",
+    },
+    {
+      question: "Write a function that takes two numbers and returns their average.",
+      answer: "function average(a, b) { return (a + b) / 2; }",
+      hint: "Add the numbers together, then divide by 2.",
+    },
+  ],
+};
+
+export default defineAgent({
+  name: "CodeTutor",
+  instructions: `You are CodeTutor, a patient and encouraging CS tutor for
+high school students. You quiz students on JavaScript concepts and help them
+learn.
+
+Teaching style:
+- Be patient and encouraging. Never make students feel dumb.
+- When a student gets something wrong, explain why kindly.
+- Use simple language. Avoid jargon unless you're teaching that term.
+- After a correct answer, briefly explain why it works.
+- Track their streak and celebrate milestones (3 in a row, 5 in a row).
+- If they're stuck, offer the hint before giving the answer.
+- Keep responses voice-friendly: short, clear, no code formatting.
+- When reading code aloud, describe it in plain English rather than reading
+  syntax characters.`,
+  greeting:
+    "Hey! I'm CodeTutor. I can quiz you on arrays, loops, functions, and more. What topic would you like to practice?",
+
+  builtinTools: ["run_code"],
+
+  state: (): StudentState => ({
+    studentName: "",
+    currentTopic: "",
+    questionsAsked: 0,
+    questionsCorrect: 0,
+    currentQuestion: null,
+    streak: 0,
+  }),
+
+  tools: {
+    set_topic: tool<z.ZodObject<{ topic: z.ZodString }>, StudentState>({
+      description: "Set the current quiz topic",
+      parameters: z.object({
+        topic: z.string().describe("Topic to practice: arrays, loops, or functions"),
+      }),
+      execute: ({ topic }, ctx) => {
+        const validTopics = Object.keys(QUESTIONS);
+        if (!validTopics.includes(topic)) {
+          return { error: `Invalid topic. Choose from: ${validTopics.join(", ")}` };
+        }
+        ctx.state.currentTopic = topic;
+        return { topic, questionsAvailable: QUESTIONS[topic].length };
+      },
+    }),
+
+    next_question: {
+      description: "Get the next quiz question for the current topic",
+      execute: (_args, ctx) => {
+        const state = ctx.state as StudentState;
+        if (!state.currentTopic) return { error: "Set a topic first." };
+        const pool = QUESTIONS[state.currentTopic];
+        if (!pool || pool.length === 0) return { error: "No questions for this topic." };
+        const q = pool[state.questionsAsked % pool.length];
+        state.currentQuestion = q;
+        state.questionsAsked++;
+        return {
+          questionNumber: state.questionsAsked,
+          topic: state.currentTopic,
+          question: q.question,
+        };
+      },
+    },
+
+    check_answer: tool<z.ZodObject<{ studentCode: z.ZodString }>, StudentState>({
+      description: "Check a student's code answer against the expected solution by running both",
+      parameters: z.object({
+        studentCode: z.string().describe("The student's code answer"),
+      }),
+      execute: ({ studentCode }, ctx) => {
+        if (!ctx.state.currentQuestion) {
+          return { error: "No active question. Get a question first." };
+        }
+        // We can't actually run the code here (run_code is a separate built-in tool)
+        // So we do a simple text comparison
+        const expected = ctx.state.currentQuestion.answer;
+        const isCorrect = studentCode.replace(/\s+/g, " ").trim().toLowerCase()
+          .includes(expected.replace(/\s+/g, " ").trim().toLowerCase().slice(0, 20));
+
+        if (isCorrect) {
+          ctx.state.questionsCorrect++;
+          ctx.state.streak++;
+        } else {
+          ctx.state.streak = 0;
+        }
+
+        return {
+          correct: isCorrect,
+          streak: ctx.state.streak,
+          score: `${ctx.state.questionsCorrect}/${ctx.state.questionsAsked}`,
+          hint: isCorrect ? null : ctx.state.currentQuestion.hint,
+          expectedApproach: isCorrect ? null : "Try again or ask for the solution.",
+        };
+      },
+    }),
+
+    get_hint: {
+      description: "Get a hint for the current question",
+      execute: (_args, ctx) => {
+        const state = ctx.state as StudentState;
+        if (!state.currentQuestion) return { error: "No active question." };
+        return { hint: state.currentQuestion.hint };
+      },
+    },
+
+    show_solution: {
+      description: "Show the solution for the current question (after student has tried)",
+      execute: (_args, ctx) => {
+        const state = ctx.state as StudentState;
+        if (!state.currentQuestion) return { error: "No active question." };
+        return {
+          solution: state.currentQuestion.answer,
+          explanation: "Study this pattern and try a similar problem next.",
+        };
+      },
+    },
+
+    get_progress: {
+      description: "Show the student's quiz progress and stats",
+      execute: (_args, ctx) => {
+        const state = ctx.state as StudentState;
+        return {
+          topic: state.currentTopic,
+          questionsAttempted: state.questionsAsked,
+          correct: state.questionsCorrect,
+          accuracy: state.questionsAsked > 0
+            ? `${Math.round((state.questionsCorrect / state.questionsAsked) * 100)}%`
+            : "No questions yet",
+          currentStreak: state.streak,
+        };
+      },
+    },
+  },
+});
+
+================================================================================
+FRICTION & PROBLEMS ENCOUNTERED:
+================================================================================
+
+1. VOICE INPUT FOR CODE IS FUNDAMENTALLY BROKEN (Severity: CRITICAL)
+   Sofia's core use case — students speaking code answers — doesn't work.
+   When a student says "function sum of arr return arr dot reduce a comma b
+   arrow a plus b comma zero," the STT transcribes it as natural language,
+   not code. The `check_answer` tool receives garbled text, not valid
+   JavaScript.
+
+   This is the fundamental mismatch: the SDK is voice-first, but code
+   is inherently visual/textual. Sofia's entire use case collapses.
+
+   Suggestion: Document clearly that voice agents are for conversational
+   interactions, not code input. Suggest hybrid approaches: "For code input,
+   build a custom UI with a text editor component alongside the voice
+   interface." The agent can ask questions and give hints by voice while
+   the student types code in a text area.
+
+2. CAN'T CALL BUILT-IN TOOLS FROM CUSTOM TOOLS (Severity: HIGH)
+   Sofia wanted `check_answer` to use `run_code` internally to actually
+   execute the student's code and verify it produces the right output.
+   But built-in tools and custom tools can't call each other. They're
+   separate. She ended up doing a fragile string comparison instead of
+   actual code execution.
+
+   Suggestion: Document that tools are independent and can't invoke each
+   other. Suggest the pattern: let the LLM orchestrate multi-tool flows.
+   The LLM can call `check_answer` to get the student's code, then call
+   `run_code` to execute it. But this uses multiple steps and is indirect.
+
+3. PROGRESS DOESN'T PERSIST ACROSS SESSIONS (Severity: HIGH)
+   Sofia wants student progress to persist. She needs to identify which
+   student is connecting (there's no auth or user identity) and load their
+   history from KV. But there's no concept of "user" in the SDK. Every
+   WebSocket connection starts fresh unless she builds a login system
+   herself.
+
+   Suggestion: Provide guidance on user identity for applications that need
+   it. Show a pattern: pass a user token in the WebSocket URL query params,
+   validate in onConnect, and use it as a KV key prefix.
+
+4. READING CODE ALOUD IS TERRIBLE (Severity: HIGH)
+   When the agent reads back code ("the function sum takes arr and returns
+   arr dot reduce"), it sounds unnatural and confusing. TTS wasn't designed
+   for code syntax. Sofia's instruction to "describe code in plain English"
+   helps but makes answers less precise.
+
+   Suggestion: Document this as a known limitation of voice agents. Suggest
+   the pattern: use voice for conceptual explanations and hints, use a
+   custom UI text display for actual code. The `outputFilter` middleware
+   could potentially strip code blocks from voice output while leaving
+   them visible in the UI.
+
+5. QUESTION POOL IS STATIC AND LIMITED (Severity: MEDIUM)
+   Sofia hardcoded questions in the agent. She wanted to use the LLM to
+   generate questions dynamically, but there's no "generate content" tool.
+   The LLM naturally generates questions in its responses, but Sofia wanted
+   structured question objects with specific answer keys and hints.
+
+   Suggestion: Show a pattern where the LLM generates questions and the
+   agent captures them in state via a tool. E.g., a `create_question` tool
+   that the LLM calls with a structured question, answer, and hint.
+
+6. NO CLASSROOM / MULTI-USER MANAGEMENT (Severity: MEDIUM)
+   Sofia wants to deploy one agent for her whole class. But each student
+   gets an independent session with no shared state. She can't see which
+   students are struggling, review their answers, or adjust difficulty.
+   There's no teacher dashboard or admin view.
+
+   Suggestion: This is a feature gap for educational use cases. Document
+   that each session is independent. Suggest writing tool results to an
+   external analytics service if cross-session visibility is needed.
+
+7. STT PROMPT DOESN'T HELP ENOUGH (Severity: MEDIUM)
+   Sofia set `sttPrompt: "JavaScript, function, array, reduce, map, filter,
+   for loop, while loop, console.log"`. This helps with keyword recognition
+   but the STT still can't transcribe code syntax (braces, semicolons,
+   arrow functions). The sttPrompt is designed for vocabulary hints, not
+   grammar/syntax hints.
+
+   Suggestion: Document sttPrompt limitations clearly. It helps with
+   vocabulary (proper nouns, jargon) but can't change how the STT
+   interprets syntax and punctuation.
+
+8. TESTING EDUCATIONAL FLOWS IS COMPLEX (Severity: LOW)
+   Sofia wanted to test the full quiz flow: set_topic → next_question →
+   check_answer → get_hint → show_solution. Using createTestHarness, she
+   needs to simulate each tool call in sequence. The test harness works
+   but doesn't simulate the LLM deciding which tools to call, so she
+   can't test the "does the agent ask a follow-up after a wrong answer?"
+   behavior.
+
+   Suggestion: Document the boundary between what the test harness tests
+   (tool logic, state transitions) vs. what it doesn't test (LLM behavior,
+   conversation flow). Suggest manual testing via aai dev for conversation
+   flow validation.

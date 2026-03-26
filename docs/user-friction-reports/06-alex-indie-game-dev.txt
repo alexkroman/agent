@@ -1,0 +1,323 @@
+================================================================================
+USER PERSONA: Alex — Indie Game Developer
+================================================================================
+
+BACKGROUND:
+Alex is an indie game developer who builds interactive fiction and narrative
+games. They're proficient in TypeScript and enjoy creative coding. They want to
+build a voice-driven mystery game where the player investigates a crime scene.
+
+GOAL:
+Build a detective mystery voice game with inventory, clue tracking, location
+movement, and branching narrative that responds to player choices.
+
+================================================================================
+AGENT THEY BUILT (agent.ts):
+================================================================================
+
+import { defineAgent, tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+interface GameState {
+  location: string;
+  inventory: string[];
+  clues: string[];
+  npcsInterviewed: string[];
+  accused: string | null;
+  gameOver: boolean;
+  turnCount: number;
+}
+
+const LOCATIONS: Record<string, { description: string; items: string[]; npcs: string[] }> = {
+  study: {
+    description: "A wood-paneled study. Books line the walls. A desk sits near the window with papers scattered across it. There's a half-empty glass of whiskey.",
+    items: ["torn letter", "whiskey glass", "desk key"],
+    npcs: ["butler"],
+  },
+  garden: {
+    description: "A moonlit garden with rose bushes and a stone fountain. Footprints trail through the mud toward the gate.",
+    items: ["muddy footprint cast", "broken rose stem", "dropped earring"],
+    npcs: ["gardener"],
+  },
+  kitchen: {
+    description: "A large kitchen with copper pots hanging from the ceiling. Something smells recently burnt. A back door leads to the garden.",
+    items: ["burnt recipe note", "kitchen knife", "cleaning supplies"],
+    npcs: ["cook"],
+  },
+  library: {
+    description: "Floor-to-ceiling bookshelves with a rolling ladder. A secret compartment behind a painting is slightly ajar.",
+    items: ["hidden diary", "old photograph", "poison bottle"],
+    npcs: [],
+  },
+};
+
+const NPC_DIALOGUES: Record<string, string> = {
+  butler: "I was polishing the silver all evening, sir. Though I did hear raised voices from the study around nine. The master and his business partner were arguing about money, as usual.",
+  gardener: "I was tending the roses until dark. I saw someone running through the garden around half past nine. Couldn't make out who, but they dropped something shiny near the fountain.",
+  cook: "I was preparing the evening meal. The mistress came through the kitchen around quarter to ten, in quite a state. She went out the back door toward the garden. She was wearing her pearl earrings when she left.",
+};
+
+export default defineAgent({
+  name: "Detective Noir",
+  instructions: `You are the narrator of a noir detective mystery. The player is
+investigating the murder of Lord Ashworth, found dead in his study at 10 PM.
+
+Set the scene atmospherically but briefly. This is voice, so keep descriptions
+to 2-3 sentences max. Use a noir tone: dark, moody, sardonic.
+
+The suspects are: the butler, the gardener, the cook, and Lady Ashworth (the wife).
+The real killer is Lady Ashworth. Clues point to her:
+- The dropped earring in the garden matches her pearls
+- The cook saw her go through the kitchen to the garden
+- The hidden diary reveals Lord Ashworth was changing his will
+- The poison bottle matches the toxicology
+
+Don't reveal the answer. Let the player piece it together. If they accuse the
+wrong person, tell them the evidence doesn't add up. If they accuse Lady
+Ashworth with at least 3 clues collected, they win.
+
+Guide the player to use examine, move, talk, and collect commands.`,
+  greeting:
+    "The rain hammers the cobblestones as you arrive at Ashworth Manor. Lord Ashworth is dead. The body's in the study, and everyone claims they didn't do it. You're starting in the study. What's your first move, detective?",
+
+  state: (): GameState => ({
+    location: "study",
+    inventory: [],
+    clues: [],
+    npcsInterviewed: [],
+    accused: null,
+    gameOver: false,
+    turnCount: 0,
+  }),
+
+  maxSteps: 3,
+
+  onTurn: (_text, ctx) => {
+    ctx.state.turnCount++;
+  },
+
+  tools: {
+    move: tool<z.ZodObject<{ location: z.ZodEnum<["study", "garden", "kitchen", "library"]> }>, GameState>({
+      description: "Move to a different room in the manor",
+      parameters: z.object({
+        location: z.enum(["study", "garden", "kitchen", "library"]),
+      }),
+      execute: ({ location }, ctx) => {
+        ctx.state.location = location;
+        const loc = LOCATIONS[location];
+        return {
+          location,
+          description: loc.description,
+          visibleItems: loc.items,
+          npcsPresent: loc.npcs,
+        };
+      },
+    }),
+
+    examine: tool<z.ZodObject<{ item: z.ZodString }>, GameState>({
+      description: "Examine an item in the current room",
+      parameters: z.object({
+        item: z.string().describe("The item to examine"),
+      }),
+      execute: ({ item }, ctx) => {
+        const loc = LOCATIONS[ctx.state.location];
+        if (!loc.items.includes(item)) {
+          return { error: `You don't see "${item}" here.` };
+        }
+        const descriptions: Record<string, string> = {
+          "torn letter": "A letter torn in half. You can make out: '...change the will... she won't get a penny...'",
+          "whiskey glass": "Half-empty whiskey glass. No lipstick marks. Smells normal, no unusual odor.",
+          "desk key": "A small brass key. Might open something in the library.",
+          "muddy footprint cast": "Small footprints in heeled shoes, leading from the kitchen door to the gate.",
+          "broken rose stem": "A rose stem snapped recently. Thorns have traces of fabric — dark blue silk.",
+          "dropped earring": "A pearl earring. Expensive. Matches a set you might find on the lady of the house.",
+          "burnt recipe note": "Not a recipe — it's a partially burnt note reading: '...he knows about the account in Geneva...'",
+          "kitchen knife": "Clean. Recently washed but no signs of blood. Probably not the weapon.",
+          "cleaning supplies": "Standard kitchen supplies. Nothing out of place.",
+          "hidden diary": "Lord Ashworth's diary. Last entry: 'Meeting with solicitor tomorrow to cut her out entirely.'",
+          "old photograph": "Lord and Lady Ashworth on their wedding day. She's wearing pearl earrings.",
+          "poison bottle": "A small vial labeled 'Arsenic — Rat Poison.' Nearly empty. Hidden behind books.",
+        };
+        return {
+          item,
+          description: descriptions[item] || "Nothing remarkable.",
+          isClue: ["torn letter", "dropped earring", "hidden diary", "poison bottle", "muddy footprint cast", "burnt recipe note"].includes(item),
+        };
+      },
+    }),
+
+    collect: tool<z.ZodObject<{ item: z.ZodString }>, GameState>({
+      description: "Collect an item and add it to your inventory as evidence",
+      parameters: z.object({
+        item: z.string(),
+      }),
+      execute: ({ item }, ctx) => {
+        if (ctx.state.inventory.includes(item)) {
+          return { error: "You already have that." };
+        }
+        const loc = LOCATIONS[ctx.state.location];
+        if (!loc.items.includes(item)) {
+          return { error: `"${item}" is not here.` };
+        }
+        ctx.state.inventory.push(item);
+        const clueItems = ["torn letter", "dropped earring", "hidden diary", "poison bottle", "muddy footprint cast", "burnt recipe note"];
+        if (clueItems.includes(item) && !ctx.state.clues.includes(item)) {
+          ctx.state.clues.push(item);
+        }
+        return {
+          collected: item,
+          inventory: ctx.state.inventory,
+          clueCount: ctx.state.clues.length,
+        };
+      },
+    }),
+
+    talk: tool<z.ZodObject<{ npc: z.ZodString }>, GameState>({
+      description: "Talk to a character in the current room",
+      parameters: z.object({
+        npc: z.string().describe("The person to talk to"),
+      }),
+      execute: ({ npc }, ctx) => {
+        const loc = LOCATIONS[ctx.state.location];
+        if (!loc.npcs.includes(npc)) {
+          return { error: `${npc} is not here.` };
+        }
+        if (!ctx.state.npcsInterviewed.includes(npc)) {
+          ctx.state.npcsInterviewed.push(npc);
+        }
+        return {
+          npc,
+          dialogue: NPC_DIALOGUES[npc] || "They have nothing to say.",
+          interviewed: ctx.state.npcsInterviewed,
+        };
+      },
+    }),
+
+    accuse: tool<z.ZodObject<{ suspect: z.ZodString; evidence: z.ZodArray<z.ZodString> }>, GameState>({
+      description: "Make your final accusation with supporting evidence",
+      parameters: z.object({
+        suspect: z.string().describe("Who you're accusing"),
+        evidence: z.array(z.string()).describe("List of clues supporting the accusation"),
+      }),
+      execute: ({ suspect, evidence }, ctx) => {
+        ctx.state.accused = suspect;
+        const isCorrect = suspect.toLowerCase().includes("ashworth") || suspect.toLowerCase().includes("lady") || suspect.toLowerCase().includes("wife");
+        const hasEnoughClues = ctx.state.clues.length >= 3;
+        ctx.state.gameOver = true;
+        return {
+          suspect,
+          evidencePresented: evidence,
+          correct: isCorrect && hasEnoughClues,
+          totalClues: ctx.state.clues.length,
+          turnsUsed: ctx.state.turnCount,
+          message: isCorrect && hasEnoughClues
+            ? "Case solved. Lady Ashworth, confronted with the evidence, confesses."
+            : isCorrect
+              ? "You're on the right track but need more evidence. Keep investigating."
+              : "The evidence doesn't support that accusation. The real killer is still free.",
+        };
+      },
+    }),
+
+    check_inventory: {
+      description: "Check your collected items and clues",
+      execute: (_args, ctx) => {
+        return {
+          inventory: (ctx.state as GameState).inventory,
+          clues: (ctx.state as GameState).clues,
+          npcsInterviewed: (ctx.state as GameState).npcsInterviewed,
+          location: (ctx.state as GameState).location,
+        };
+      },
+    },
+  },
+});
+
+================================================================================
+FRICTION & PROBLEMS ENCOUNTERED:
+================================================================================
+
+1. GAME STATE IS NOT SAVEABLE/LOADABLE (Severity: HIGH)
+   Alex built a complex game with deep state. Players can't save their game
+   and come back later. The `state` is in-memory and dies with the session.
+   The KV store could be used for save/load but there's no built-in pattern,
+   and the player would need a save ID mechanism. The solo-rpg template has
+   save/load tools but Alex didn't discover this until late.
+
+   Suggestion: Make the solo-rpg save/load pattern more discoverable. Add a
+   "Persistent State Patterns" section to the user guide showing KV-based
+   save/load.
+
+2. NO MULTI-TURN CONVERSATION WITHOUT VOICE (Severity: HIGH)
+   Alex wanted to test the game flow by typing, not speaking. The `aai dev`
+   server requires a WebSocket audio connection. There's no text-only mode
+   for rapid iteration on narrative-heavy agents. The test harness works but
+   it only simulates tool calls, not the full LLM-powered conversation.
+
+   Suggestion: Add a text-only mode to `aai dev` (a simple chat interface
+   without audio). This would dramatically speed up development for
+   narrative agents.
+
+3. TOOL PARAMETER ENUMS ARE FRAGILE WITH VOICE (Severity: MEDIUM)
+   The `move` tool uses `z.enum(["study", "garden", "kitchen", "library"])`.
+   When users speak, the STT might transcribe "the study" or "go to study"
+   and the LLM correctly extracts "study". But sometimes it extracts
+   "Study" (capitalized) which fails Zod validation. The error message
+   goes back to the LLM but wastes a step.
+
+   Suggestion: Consider case-insensitive enum matching, or a
+   `z.enum().transform(s => s.toLowerCase())` pattern in the docs.
+   Alternatively, use z.string() with validation in execute().
+
+4. maxSteps: 3 IS TOO LOW FOR GAME TURNS (Severity: MEDIUM)
+   Alex set maxSteps to 3 thinking "one tool call per turn is enough." But
+   the LLM sometimes uses examine + collect in a single turn, or move + talk.
+   Multi-tool turns are natural in games. The agent would silently stop
+   after 3 steps, leaving the player confused about why nothing happened.
+
+   Suggestion: The docs should explain that maxSteps is "agentic loop
+   iterations" not "tool calls." Each step can have one tool call plus LLM
+   reasoning. If the LLM needs to call 3 tools sequentially, it needs at
+   least 3 steps. Provide guidance on choosing maxSteps.
+
+5. VOICE PACING FOR NARRATIVE IS HARD TO CONTROL (Severity: MEDIUM)
+   Noir detective narration needs dramatic pauses and pacing. TTS reads
+   everything at the same speed. Alex tried adding ellipses and dashes in
+   the instructions but the TTS doesn't interpret them as pauses.
+
+   Suggestion: Document TTS behavior with punctuation. If the TTS supports
+   SSML or pause markers, document how to use them. If not, document the
+   limitation.
+
+6. STATE ASSERTIONS IN GAME LOGIC (Severity: LOW)
+   Alex wanted to prevent players from collecting items in rooms they're not
+   in (e.g., collecting "poison bottle" while in the study). The validation
+   logic works but is duplicated across examine, collect, and talk. There's
+   no middleware pattern for "validate state preconditions before tool
+   execution."
+
+   Suggestion: Show a middleware pattern for state validation that runs
+   before specific tools. The toolCallInterceptor can do this but the
+   connection isn't obvious.
+
+7. THE LLM SOMETIMES REVEALS THE ANSWER (Severity: MEDIUM)
+   Despite instructions saying "don't reveal the answer," the LLM sometimes
+   hints too strongly or outright says "Lady Ashworth did it" when the
+   player has collected key evidence. The instructions-based approach for
+   game secrets is unreliable.
+
+   Suggestion: Document that LLM instructions are best-effort, not
+   guarantees. Suggest the pattern of keeping secrets in tool logic rather
+   than instructions — e.g., the `accuse` tool checks the answer, and the
+   instructions just say "let the player investigate."
+
+8. COMPLEX GENERIC TYPE ANNOTATIONS (Severity: LOW)
+   Every tool definition requires
+   `tool<z.ZodObject<{...}>, GameState>({...})`. This is extremely verbose,
+   especially with complex parameter schemas. The infocom-adventure and
+   solo-rpg templates handle this with a helper function but it's still
+   boilerplate.
+
+   Suggestion: Same as Marcus's feedback — the tool generic inference could
+   be improved. The state generic should be inferrable from the defineAgent
+   call context.

@@ -1,0 +1,265 @@
+================================================================================
+USER PERSONA: Raj — Mobile App Developer (React Native)
+================================================================================
+
+BACKGROUND:
+Raj builds React Native mobile apps. He wants to embed a voice agent into his
+existing fitness tracking app. He's comfortable with JavaScript/TypeScript and
+React but has never built a voice application or worked with WebSockets directly.
+
+GOAL:
+Build a fitness coaching agent that tracks workouts, provides exercise guidance,
+and motivates users during sets. Integrate it into an existing React Native app.
+
+================================================================================
+AGENT HE BUILT (agent.ts):
+================================================================================
+
+import { defineAgent, tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+interface WorkoutState {
+  currentWorkout: {
+    type: string;
+    exercises: { name: string; sets: number; reps: number; weight: number }[];
+    startTime: number;
+  } | null;
+  history: { date: string; type: string; duration: number; exercises: number }[];
+  personalRecords: Record<string, number>;
+}
+
+export default defineAgent({
+  name: "FitCoach",
+  instructions: `You are FitCoach, an encouraging personal trainer. You guide
+users through workouts, track their exercises, and celebrate their progress.
+
+Guidelines:
+- Be energetic but not annoying. Think supportive gym buddy, not drill sergeant.
+- Count reps naturally. Say "nice, that's 8" not "rep count: 8 of 10."
+- When logging exercises, confirm the details back to the user.
+- Track personal records and mention when the user beats one.
+- During rest periods, give brief tips or encouragement.
+- Keep everything voice-optimized. Short sentences, clear numbers.
+- If they sound tired, suggest adjusting the weight or taking a longer rest.`,
+  greeting:
+    "What's up! I'm FitCoach. Ready to crush a workout? Tell me what you're training today, or I can suggest something.",
+
+  builtinTools: ["run_code"],
+
+  state: (): WorkoutState => ({
+    currentWorkout: null,
+    history: [],
+    personalRecords: {},
+  }),
+
+  onConnect: async (ctx) => {
+    const history = await ctx.kv.get<WorkoutState["history"]>("workout_history");
+    if (history) ctx.state.history = history;
+    const prs = await ctx.kv.get<Record<string, number>>("personal_records");
+    if (prs) ctx.state.personalRecords = prs;
+  },
+
+  tools: {
+    start_workout: tool<z.ZodObject<{ type: z.ZodString }>, WorkoutState>({
+      description: "Start a new workout session",
+      parameters: z.object({
+        type: z.string().describe("Workout type: push, pull, legs, cardio, full-body"),
+      }),
+      execute: ({ type }, ctx) => {
+        ctx.state.currentWorkout = {
+          type,
+          exercises: [],
+          startTime: Date.now(),
+        };
+        return { started: type, message: `${type} day! Let's go.` };
+      },
+    }),
+
+    log_exercise: tool<
+      z.ZodObject<{
+        name: z.ZodString;
+        sets: z.ZodNumber;
+        reps: z.ZodNumber;
+        weight: z.ZodNumber;
+      }>,
+      WorkoutState
+    >({
+      description: "Log a completed exercise with sets, reps, and weight",
+      parameters: z.object({
+        name: z.string().describe("Exercise name like bench press, squat, deadlift"),
+        sets: z.number().describe("Number of sets completed"),
+        reps: z.number().describe("Reps per set"),
+        weight: z.number().describe("Weight in pounds"),
+      }),
+      execute: ({ name, sets, reps, weight }, ctx) => {
+        if (!ctx.state.currentWorkout) {
+          return { error: "No workout in progress. Start a workout first." };
+        }
+        ctx.state.currentWorkout.exercises.push({ name, sets, reps, weight });
+
+        const key = name.toLowerCase();
+        const isPR = !ctx.state.personalRecords[key] || weight > ctx.state.personalRecords[key];
+        if (isPR) {
+          ctx.state.personalRecords[key] = weight;
+        }
+
+        return {
+          logged: { name, sets, reps, weight },
+          exerciseCount: ctx.state.currentWorkout.exercises.length,
+          personalRecord: isPR ? `New PR for ${name}: ${weight} lbs!` : null,
+        };
+      },
+    }),
+
+    end_workout: {
+      description: "End the current workout and save to history",
+      execute: async (_args, ctx) => {
+        const state = ctx.state as WorkoutState;
+        if (!state.currentWorkout) return { error: "No workout in progress." };
+        const duration = Math.round((Date.now() - state.currentWorkout.startTime) / 60000);
+        const summary = {
+          date: new Date().toISOString().split("T")[0],
+          type: state.currentWorkout.type,
+          duration,
+          exercises: state.currentWorkout.exercises.length,
+        };
+        state.history.push(summary);
+        await ctx.kv.set("workout_history", state.history);
+        await ctx.kv.set("personal_records", state.personalRecords);
+
+        const result = {
+          ...summary,
+          exerciseDetails: state.currentWorkout.exercises,
+          totalSets: state.currentWorkout.exercises.reduce((s, e) => s + e.sets, 0),
+        };
+        state.currentWorkout = null;
+        return result;
+      },
+    },
+
+    get_history: {
+      description: "Get recent workout history",
+      execute: (_args, ctx) => {
+        const state = ctx.state as WorkoutState;
+        return {
+          recentWorkouts: state.history.slice(-5),
+          totalWorkouts: state.history.length,
+          personalRecords: state.personalRecords,
+        };
+      },
+    },
+
+    suggest_workout: tool<z.ZodObject<{ muscleGroup: z.ZodOptional<z.ZodString> }>, WorkoutState>({
+      description: "Suggest a workout routine based on history and preferences",
+      parameters: z.object({
+        muscleGroup: z.string().optional().describe("Target muscle group, or omit for a balanced suggestion"),
+      }),
+      execute: ({ muscleGroup }, ctx) => {
+        const routines: Record<string, string[]> = {
+          push: ["bench press 4x8", "overhead press 3x10", "dips 3x12", "lateral raises 3x15"],
+          pull: ["deadlifts 3x5", "barbell rows 4x8", "pull-ups 3x max", "face pulls 3x15"],
+          legs: ["squats 4x8", "romanian deadlifts 3x10", "leg press 3x12", "calf raises 4x15"],
+          cardio: ["20 min treadmill intervals", "10 min rowing", "jump rope 3x2 min"],
+        };
+        const group = muscleGroup || "push";
+        return {
+          suggestion: group,
+          exercises: routines[group] || routines.push,
+          note: "Adjust weights based on your last session.",
+        };
+      },
+    }),
+  },
+});
+
+================================================================================
+FRICTION & PROBLEMS ENCOUNTERED:
+================================================================================
+
+1. NO REACT NATIVE / MOBILE SDK (Severity: CRITICAL)
+   This is Raj's showstopper. The UI package (`@alexkroman1/aai-ui`) is
+   Preact-based and assumes a browser DOM environment. There's no React
+   Native compatible client. Raj needs:
+   - WebSocket connection management (available via `session.ts`)
+   - Audio capture from the phone's microphone
+   - Audio playback of agent responses
+   - React Native-compatible state management
+
+   The session module exports a `createVoiceSession` that could theoretically
+   work, but it depends on browser `AudioContext` and `MediaStream` APIs
+   that don't exist in React Native.
+
+   Suggestion: Provide a headless session client that separates WebSocket
+   protocol handling from browser audio APIs. Then document how to bring
+   your own audio capture/playback for React Native (using expo-av or
+   react-native-audio-api). Even just documenting the WebSocket protocol
+   would let Raj build a custom client.
+
+2. WEBSOCKET PROTOCOL IS UNDOCUMENTED (Severity: HIGH)
+   Since Raj can't use the browser client, he needs to implement the
+   WebSocket protocol himself. The protocol types are in `protocol.ts`
+   (internal export) but there's no documentation on:
+   - What messages to send/receive
+   - Audio format requirements (PCM? What sample rate?)
+   - Session lifecycle (connect → greeting → turn → response flow)
+   - How to handle interruptions
+
+   He had to read the source of `session.ts` and `ws-handler.ts` to
+   understand the wire protocol.
+
+   Suggestion: Publish a WebSocket Protocol Reference documenting all
+   message types, audio formats, and the expected message sequence.
+
+3. AUDIO FORMAT REQUIREMENTS ARE BURIED (Severity: HIGH)
+   The audio pipeline expects specific PCM format (sample rate, bit depth,
+   channels). This is implemented in `audio.ts` in the UI package but
+   not documented anywhere. Raj needs to configure his React Native audio
+   capture to match exactly, or the STT will fail silently.
+
+   Suggestion: Document audio format requirements: PCM 16-bit, 16kHz,
+   mono (or whatever the actual requirements are).
+
+4. NO OFFLINE / LOCAL-FIRST OPTION (Severity: MEDIUM)
+   Raj's fitness app users might be in a gym with poor connectivity. The
+   agent requires a persistent WebSocket connection to a server running
+   STT and LLM. There's no offline fallback or local processing mode.
+
+   Suggestion: Document the connectivity requirements. Suggest patterns
+   for graceful degradation (e.g., queue voice commands and process when
+   reconnected, or fall back to a text interface).
+
+5. KV PERSISTENCE ACROSS APP SESSIONS (Severity: MEDIUM)
+   Raj uses KV for workout history and personal records. On the platform,
+   KV persists across sessions. But the KV key includes a session/user
+   context that Raj doesn't control from the mobile app. He wants workout
+   data tied to a specific user, not a WebSocket session.
+
+   Suggestion: Document how KV keys are scoped (per-agent? per-user?
+   per-session?). Provide a pattern for user-scoped data persistence.
+
+6. VOICE DURING WORKOUTS IS AWKWARD (Severity: MEDIUM)
+   The voice-first paradigm assumes the user can speak freely. In a gym,
+   users might be mid-set, breathing hard, or in a quiet area. Raj wanted
+   a hybrid mode: voice when hands-free, text/buttons when voice is
+   impractical.
+
+   Suggestion: Document the text-input capability (if it exists) or
+   provide guidance on building hybrid voice+touch interfaces.
+
+7. STT ACCURACY FOR FITNESS JARGON (Severity: LOW)
+   Exercise names like "sumo deadlift," "Romanian deadlift," "close-grip
+   bench," and "hip thrust" are sometimes mistranscribed. The `sttPrompt`
+   option exists but Raj didn't discover it until reading the types.ts source.
+
+   Suggestion: Make `sttPrompt` more prominent in the docs. Show a fitness
+   example: `sttPrompt: "bench press, deadlift, squat, overhead press,
+   barbell row, pull-up, dip"`.
+
+8. REAL-TIME TIMER / COUNTDOWN NOT POSSIBLE (Severity: MEDIUM)
+   During rest periods between sets, users want a countdown timer ("rest
+   for 90 seconds"). The agent can say "rest for 90 seconds" but can't
+   actively count down or notify when rest is over. There's no push
+   mechanism from server to client outside the conversation flow.
+
+   Suggestion: Document this limitation. Suggest handling timers on the
+   client side, triggered by tool results.

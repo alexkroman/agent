@@ -1,0 +1,208 @@
+================================================================================
+USER PERSONA: Elena — Data Scientist / ML Engineer
+================================================================================
+
+BACKGROUND:
+Elena is a data scientist comfortable with Python but less experienced with
+TypeScript/Node. She wants to build a voice agent that answers questions about
+datasets by running analysis code and querying a knowledge base she's ingested.
+
+GOAL:
+Build a data exploration agent that uses run_code for computations, vector_search
+for domain knowledge, and can explain statistical concepts conversationally.
+
+================================================================================
+AGENT SHE BUILT (agent.ts):
+================================================================================
+
+import { defineAgent, tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default defineAgent({
+  name: "DataBot",
+  instructions: `You are DataBot, a data analysis assistant. You help users
+explore data, run calculations, and understand statistical concepts.
+
+How you work:
+- Use run_code to compute statistics, generate summaries, and process numbers.
+  The code runs in JavaScript, not Python. Use Math functions and array methods.
+- Use vector_search to look up domain-specific knowledge from ingested docs.
+- When explaining stats concepts, use plain language. Avoid jargon unless asked.
+- Always show your work. Run the calculation, then explain the result.
+- If the user provides numbers, put them in code to verify rather than doing
+  mental math.
+- Keep spoken responses under 30 seconds. For complex results, summarize the
+  key finding and offer to go deeper.`,
+  greeting:
+    "Hi, I'm DataBot. I can run calculations, look up documentation, and explain data concepts. What would you like to explore?",
+
+  builtinTools: ["run_code", "vector_search", "web_search"],
+
+  state: () => ({
+    datasets: {} as Record<string, number[]>,
+    lastResult: null as unknown,
+  }),
+
+  tools: {
+    load_dataset: tool({
+      description: "Load a named dataset of numbers for analysis",
+      parameters: z.object({
+        name: z.string().describe("Name for this dataset"),
+        values: z.array(z.number()).describe("Array of numeric values"),
+      }),
+      execute: ({ name, values }, ctx) => {
+        ctx.state.datasets[name] = values;
+        return {
+          loaded: name,
+          count: values.length,
+          min: Math.min(...values),
+          max: Math.max(...values),
+          mean: values.reduce((a, b) => a + b, 0) / values.length,
+        };
+      },
+    }),
+
+    compute_stats: tool({
+      description: "Compute summary statistics for a loaded dataset",
+      parameters: z.object({
+        dataset: z.string().describe("Name of the dataset to analyze"),
+      }),
+      execute: ({ dataset }, ctx) => {
+        const values = ctx.state.datasets[dataset];
+        if (!values) return { error: `Dataset "${dataset}" not loaded` };
+
+        const n = values.length;
+        const mean = values.reduce((a, b) => a + b, 0) / n;
+        const sorted = [...values].sort((a, b) => a - b);
+        const median = n % 2 === 0
+          ? (sorted[n / 2 - 1] + sorted[n / 2]) / 2
+          : sorted[Math.floor(n / 2)];
+        const variance = values.reduce((sum, v) => sum + (v - mean) ** 2, 0) / n;
+        const stdDev = Math.sqrt(variance);
+
+        ctx.state.lastResult = { mean, median, stdDev, n };
+        return {
+          dataset,
+          count: n,
+          mean: Math.round(mean * 1000) / 1000,
+          median,
+          standardDeviation: Math.round(stdDev * 1000) / 1000,
+          min: sorted[0],
+          max: sorted[n - 1],
+          range: sorted[n - 1] - sorted[0],
+        };
+      },
+    }),
+
+    compare_datasets: tool({
+      description: "Compare two loaded datasets statistically",
+      parameters: z.object({
+        dataset1: z.string(),
+        dataset2: z.string(),
+      }),
+      execute: ({ dataset1, dataset2 }, ctx) => {
+        const d1 = ctx.state.datasets[dataset1];
+        const d2 = ctx.state.datasets[dataset2];
+        if (!d1) return { error: `Dataset "${dataset1}" not found` };
+        if (!d2) return { error: `Dataset "${dataset2}" not found` };
+
+        const mean1 = d1.reduce((a, b) => a + b, 0) / d1.length;
+        const mean2 = d2.reduce((a, b) => a + b, 0) / d2.length;
+
+        return {
+          dataset1: { name: dataset1, count: d1.length, mean: Math.round(mean1 * 1000) / 1000 },
+          dataset2: { name: dataset2, count: d2.length, mean: Math.round(mean2 * 1000) / 1000 },
+          meanDifference: Math.round((mean1 - mean2) * 1000) / 1000,
+          percentDifference: Math.round(((mean1 - mean2) / mean2) * 100 * 10) / 10,
+        };
+      },
+    }),
+  },
+});
+
+================================================================================
+FRICTION & PROBLEMS ENCOUNTERED:
+================================================================================
+
+1. PYTHON DEVELOPER STUCK WITH JAVASCRIPT run_code (Severity: HIGH)
+   Elena's first instinct was to write Python in the run_code tool:
+   `import numpy as np; np.mean([1,2,3])`. The error message from the V8
+   isolate was "SyntaxError: Unexpected identifier" which doesn't mention
+   that only JavaScript is supported. She wasted 20 minutes before
+   discovering that run_code is JavaScript-only.
+
+   Suggestion: The run_code error for Python-like syntax should detect
+   common Python patterns and suggest "run_code executes JavaScript, not
+   Python." The tool description should say "JavaScript" more prominently.
+   Consider supporting Python via a Pyodide-based isolate as a future feature.
+
+2. run_code CANNOT ACCESS AGENT STATE OR LOADED DATA (Severity: HIGH)
+   Elena loaded datasets via her custom tool, then tried to use run_code
+   to do further analysis on them. But run_code runs in a separate V8
+   isolate with no access to the agent's state, tools, or context. The code
+   can't reference `ctx.state.datasets`. She had to duplicate data by
+   having the LLM pass it as a literal in the code string.
+
+   Suggestion: Document clearly that run_code is completely sandboxed with
+   no access to agent state. Suggest the pattern of passing data through
+   the code string. Consider a "stateful compute" variant that receives
+   serialized context.
+
+3. VECTOR SEARCH REQUIRES UPSTASH — NO LOCAL ALTERNATIVE (Severity: HIGH)
+   Elena wanted to ingest her team's data documentation and query it via
+   vector_search. She ran `aai rag <url>` but it requires an Upstash account
+   and API key. There's no local vector search for development. The in-memory
+   vector store only does substring matching, which is useless for semantic
+   search.
+
+   Suggestion: Provide a better local dev experience for vector search.
+   Even a simple TF-IDF or BM25 implementation would be better than substring
+   matching. Or integrate with a local embedding model.
+
+4. LARGE DATASET HANDLING IS UNCLEAR (Severity: MEDIUM)
+   Elena tried loading a dataset with 10,000 numbers. The tool returned
+   successfully but the JSON-serialized result was huge, consuming most of
+   the LLM context window. The agent started losing earlier conversation
+   context. There's no guidance on managing context window usage.
+
+   Suggestion: Document best practices for large data: truncate tool results,
+   return summaries not raw data, paginate. Consider a built-in warning when
+   tool results exceed a size threshold.
+
+5. NO DATA VISUALIZATION (Severity: MEDIUM)
+   Elena expected to generate charts or graphs. The voice-first paradigm
+   doesn't naturally support visual output. She could build a custom UI
+   with a charting library but there's no guidance on how to pipe tool
+   results to a chart component.
+
+   Suggestion: Provide a custom UI example that renders charts from tool
+   results. Show the pattern of tool → useToolResult → chart component.
+
+6. `aai rag` ONLY SUPPORTS llms-full.txt FORMAT (Severity: MEDIUM)
+   Elena wanted to ingest her team's Jupyter notebooks and markdown docs
+   into the vector store. `aai rag` only accepts a URL pointing to an
+   llms-full.txt file. There's no way to ingest arbitrary local files,
+   CSV data, or other document formats.
+
+   Suggestion: Support local file ingestion in `aai rag`. Accept markdown,
+   text files, or a directory of documents. The llms-full.txt format is too
+   narrow for most use cases.
+
+7. TESTING STATISTICAL TOOLS IS TEDIOUS (Severity: LOW)
+   Elena wrote tests for compute_stats and compare_datasets using
+   createTestHarness. The test harness works well for "did the tool get
+   called with the right args" but she wanted to verify the computed
+   values. She had to parse the stringified JSON result to check numbers.
+
+   Suggestion: The TurnResult.toolResult<T>() helper is useful but
+   underdocumented. Show examples of typed result extraction in the
+   test-patterns template.
+
+8. INSTRUCTIONS KEEP GETTING TRUNCATED IN VOICE (Severity: LOW)
+   Elena's detailed instructions about "how you work" were effective but
+   the agent sometimes ignored the "keep spoken responses under 30 seconds"
+   rule for complex explanations. There's no way to enforce output length
+   in the SDK — it depends entirely on the LLM following instructions.
+
+   Suggestion: Consider an outputFilter middleware example that truncates
+   overly long responses, or a maxResponseLength option.

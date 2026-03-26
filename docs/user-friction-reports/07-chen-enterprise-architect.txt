@@ -1,0 +1,295 @@
+================================================================================
+USER PERSONA: Chen — Enterprise Architect
+================================================================================
+
+BACKGROUND:
+Chen is a senior enterprise architect at a large healthcare company. He needs to
+evaluate the SDK for building HIPAA-compliant patient triage agents. He cares
+about security, compliance, audit trails, and multi-agent architectures.
+
+GOAL:
+Build a patient triage agent with PII redaction middleware, audit logging,
+department routing, and compliance guardrails. Evaluate the SDK for enterprise
+readiness.
+
+================================================================================
+AGENT HE BUILT (agent.ts):
+================================================================================
+
+import { defineAgent, tool } from "@alexkroman1/aai";
+import type { Middleware } from "@alexkroman1/aai";
+import { z } from "zod";
+
+interface TriageState {
+  patientId: string;
+  severity: "low" | "medium" | "high" | "critical" | "unknown";
+  symptoms: string[];
+  vitals: Record<string, string>;
+  department: string;
+  auditLog: { timestamp: string; action: string; details: string }[];
+}
+
+function hipaaGuardrails(): Middleware<TriageState> {
+  const blockedPhrases = [
+    "diagnose", "prescription", "prescribe", "you have", "you are suffering from",
+    "take this medication", "your diagnosis is",
+  ];
+  return {
+    name: "hipaa-guardrails",
+    beforeTurn: (text) => {
+      // Log all incoming patient interactions
+      console.log(`[hipaa] Incoming turn: ${text.length} chars`);
+      return undefined;
+    },
+    outputFilter: (text) => {
+      let filtered = text;
+      for (const phrase of blockedPhrases) {
+        if (filtered.toLowerCase().includes(phrase)) {
+          filtered = filtered.replace(
+            new RegExp(phrase, "gi"),
+            "[CLINICAL TERM REDACTED]"
+          );
+          console.warn(`[hipaa] Redacted clinical term from output: "${phrase}"`);
+        }
+      }
+      return filtered;
+    },
+    toolCallInterceptor: (toolName, args) => {
+      // Block any tool that might try to store unencrypted PII
+      if (toolName === "save_note" || toolName === "save_memory") {
+        return { block: true, reason: "Direct PII storage is not permitted. Use secure_record instead." };
+      }
+      return undefined;
+    },
+  };
+}
+
+function auditTrail(): Middleware<TriageState> {
+  return {
+    name: "audit-trail",
+    beforeTurn: (text, ctx) => {
+      ctx.state.auditLog.push({
+        timestamp: new Date().toISOString(),
+        action: "turn_start",
+        details: `Patient input: ${text.length} chars`,
+      });
+      return undefined;
+    },
+    afterToolCall: (toolName, args, _result, ctx) => {
+      ctx.state.auditLog.push({
+        timestamp: new Date().toISOString(),
+        action: `tool_call:${toolName}`,
+        details: JSON.stringify(args),
+      });
+    },
+  };
+}
+
+export default defineAgent({
+  name: "HealthTriage",
+  instructions: `You are HealthTriage, a medical intake and triage assistant.
+You collect symptoms, assess urgency, and route patients to the right department.
+
+Critical rules:
+- You are NOT a doctor. Never diagnose, prescribe, or give medical advice.
+- Collect symptoms and vital signs using the provided tools.
+- Use assess_severity to determine triage level after collecting symptoms.
+- Route to the appropriate department using route_patient.
+- If the patient reports chest pain, difficulty breathing, or severe bleeding,
+  immediately assess as critical and route to emergency.
+- Be calm, professional, and empathetic. Use short sentences.
+- Ask about allergies and current medications during intake.
+- Never store patient names or SSNs in plain text.`,
+  greeting:
+    "Hello, I'm the triage assistant. I'll help get you to the right care team. Can you tell me what's going on today?",
+
+  state: (): TriageState => ({
+    patientId: `PT-${Date.now()}`,
+    severity: "unknown",
+    symptoms: [],
+    vitals: {},
+    department: "",
+    auditLog: [],
+  }),
+
+  middleware: [hipaaGuardrails(), auditTrail()],
+  maxSteps: 6,
+
+  tools: {
+    record_symptom: tool<z.ZodObject<{ symptom: z.ZodString; duration: z.ZodOptional<z.ZodString> }>, TriageState>({
+      description: "Record a symptom reported by the patient",
+      parameters: z.object({
+        symptom: z.string().describe("The symptom description"),
+        duration: z.string().optional().describe("How long they've had the symptom"),
+      }),
+      execute: ({ symptom, duration }, ctx) => {
+        const entry = duration ? `${symptom} (${duration})` : symptom;
+        ctx.state.symptoms.push(entry);
+        return {
+          recorded: entry,
+          totalSymptoms: ctx.state.symptoms.length,
+          patientId: ctx.state.patientId,
+        };
+      },
+    }),
+
+    record_vitals: tool<z.ZodObject<{ type: z.ZodString; value: z.ZodString }>, TriageState>({
+      description: "Record a vital sign measurement",
+      parameters: z.object({
+        type: z.string().describe("Vital type: temperature, blood_pressure, heart_rate, oxygen_saturation"),
+        value: z.string().describe("The measurement value"),
+      }),
+      execute: ({ type, value }, ctx) => {
+        ctx.state.vitals[type] = value;
+        return { recorded: { type, value }, allVitals: ctx.state.vitals };
+      },
+    }),
+
+    assess_severity: {
+      description: "Assess the triage severity based on collected symptoms and vitals",
+      execute: (_args, ctx) => {
+        const state = ctx.state as TriageState;
+        const criticalKeywords = ["chest pain", "breathing", "unconscious", "severe bleeding", "stroke"];
+        const highKeywords = ["fracture", "high fever", "vomiting blood", "severe pain"];
+
+        const allSymptoms = state.symptoms.join(" ").toLowerCase();
+        let severity: TriageState["severity"] = "low";
+
+        if (criticalKeywords.some((k) => allSymptoms.includes(k))) {
+          severity = "critical";
+        } else if (highKeywords.some((k) => allSymptoms.includes(k))) {
+          severity = "high";
+        } else if (state.symptoms.length >= 3) {
+          severity = "medium";
+        }
+
+        state.severity = severity;
+        return {
+          severity,
+          symptoms: state.symptoms,
+          vitals: state.vitals,
+          patientId: state.patientId,
+        };
+      },
+    },
+
+    route_patient: tool<z.ZodObject<{ department: z.ZodString; notes: z.ZodOptional<z.ZodString> }>, TriageState>({
+      description: "Route the patient to the appropriate department",
+      parameters: z.object({
+        department: z.string().describe("Department: emergency, urgent_care, primary_care, specialist, mental_health"),
+        notes: z.string().optional().describe("Routing notes for the receiving department"),
+      }),
+      execute: ({ department, notes }, ctx) => {
+        ctx.state.department = department;
+        return {
+          routed: true,
+          department,
+          severity: ctx.state.severity,
+          patientId: ctx.state.patientId,
+          notes: notes || "",
+          symptomSummary: ctx.state.symptoms,
+        };
+      },
+    }),
+
+    get_audit_log: {
+      description: "Retrieve the audit log for this session",
+      execute: (_args, ctx) => {
+        const state = ctx.state as TriageState;
+        return {
+          patientId: state.patientId,
+          entries: state.auditLog,
+          count: state.auditLog.length,
+        };
+      },
+    },
+  },
+});
+
+================================================================================
+FRICTION & PROBLEMS ENCOUNTERED:
+================================================================================
+
+1. NO MULTI-AGENT / AGENT HANDOFF ARCHITECTURE (Severity: HIGH)
+   Chen's enterprise use case requires multiple specialized agents: triage
+   agent → specialist agent → scheduling agent. The SDK has no concept of
+   agent-to-agent handoff, orchestration, or routing. Each `defineAgent()`
+   is a standalone unit. Chen expected something like "transfer this
+   conversation to another agent" or "spawn a sub-agent."
+
+   Suggestion: Document the single-agent architecture explicitly. If
+   multi-agent is planned, add it to a roadmap. In the meantime, suggest
+   the pattern of using different instructions/tools per phase (like
+   the smart-research template) to simulate agent handoff within a
+   single agent.
+
+2. MIDDLEWARE CANNOT PREVENT LLM FROM SAYING THINGS (Severity: HIGH)
+   The HIPAA guardrails use `outputFilter` to redact clinical terms, but
+   this only catches exact phrases. The LLM can rephrase around the filter
+   ("it sounds like you might have condition X"). Output filters are
+   string-level, not semantic-level. For true compliance, Chen needs the
+   LLM to never generate prohibited content, which can't be guaranteed.
+
+   Suggestion: Document that outputFilter is a string-level safety net, not
+   a compliance guarantee. Suggest combining outputFilter with strong
+   instructions, and recommend a separate compliance review layer for
+   healthcare applications.
+
+3. AUDIT LOG IS IN-MEMORY ONLY (Severity: HIGH)
+   Chen's audit trail middleware stores logs in session state. When the
+   session ends, the audit log is gone. For HIPAA compliance, audit logs
+   need durable storage. The KV store could work but there's no `onDisconnect`
+   guarantee that the log will be flushed (what if the server crashes?).
+
+   Suggestion: Provide a pattern for streaming audit events to an external
+   system (e.g., via fetch in afterToolCall). Document the durability
+   guarantees (or lack thereof) for session state and KV.
+
+4. NO INPUT VALIDATION MIDDLEWARE FOR PII DETECTION (Severity: MEDIUM)
+   The outputFilter catches PII in outputs, but there's no built-in way
+   to detect PII in user input (speech transcripts) before it reaches the
+   LLM. Once the LLM has seen a SSN or patient ID, it may echo it back.
+   `beforeTurn` can block turns but can't redact parts of the input.
+
+   Suggestion: Add an `inputFilter` or `transformInput` middleware hook
+   that can modify the user's text before it reaches the LLM. Or extend
+   `beforeTurn` to support returning a modified text.
+
+5. MIDDLEWARE ORDERING IS IMPLICIT (Severity: MEDIUM)
+   Chen has two middleware: hipaaGuardrails and auditTrail. The docs say
+   "before hooks run first-to-last, after hooks run last-to-first" but this
+   is buried in a brief mention. Chen expected a priority system. When
+   the guardrail blocks a turn, should the audit trail still log it? It
+   depends on ordering, but this interaction isn't documented.
+
+   Suggestion: Add a "Middleware Composition" section with a diagram showing
+   the execution order. Document what happens when beforeTurn blocks: does
+   the rest of the middleware chain run? Do afterTurn hooks fire?
+
+6. NO ROLE-BASED ACCESS CONTROL FOR TOOLS (Severity: MEDIUM)
+   Chen wanted `get_audit_log` to be accessible only to administrators,
+   not patients. There's no concept of user roles or tool-level access
+   control. The `toolCallInterceptor` can manually check, but there's no
+   user identity context available.
+
+   Suggestion: Add a `ctx.user` or `ctx.auth` field that self-hosted
+   deployments can populate from their auth layer.
+
+7. KV ENCRYPTION AT REST (Severity: MEDIUM)
+   For HIPAA compliance, data at rest must be encrypted. The platform KV
+   (Upstash) provides encryption, but the in-memory KV for dev and any
+   self-hosted KV implementation don't. There's no guidance on bringing
+   an encrypted KV for self-hosted production use.
+
+   Suggestion: Document the encryption story: platform KV is encrypted,
+   self-hosted users are responsible for their own KV encryption. Provide
+   a pattern for wrapping a KV implementation with encryption.
+
+8. TEMPLATE DOESN'T COVER ENTERPRISE PATTERNS (Severity: LOW)
+   The 18 templates cover consumer use cases (pizza ordering, games,
+   entertainment) but none demonstrate enterprise patterns: compliance
+   middleware, audit logging, secure data handling, external system
+   integration with retry logic.
+
+   Suggestion: Add an "enterprise" or "compliance" template demonstrating
+   audit trails, PII redaction, guardrails, and secure external API calls.

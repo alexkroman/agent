@@ -1,0 +1,210 @@
+================================================================================
+USER PERSONA: Priya — Frontend Developer (React/Next.js)
+================================================================================
+
+BACKGROUND:
+Priya is a frontend developer who builds React apps. She's strong in TypeScript
+and component design but has limited backend experience. She wants to build a
+voice agent with a custom UI showing a visual recipe card as the agent talks
+through cooking instructions.
+
+GOAL:
+Build a cooking assistant with a custom Preact client that displays recipe
+cards, ingredient lists, and step-by-step instructions alongside the voice.
+
+================================================================================
+AGENT SHE BUILT (agent.ts):
+================================================================================
+
+import { defineAgent, tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+const RECIPES: Record<string, { name: string; servings: number; prepTime: string; ingredients: string[]; steps: string[] }> = {
+  "pasta_carbonara": {
+    name: "Pasta Carbonara",
+    servings: 4,
+    prepTime: "25 minutes",
+    ingredients: ["400g spaghetti", "200g guanciale", "4 egg yolks", "100g pecorino romano", "black pepper"],
+    steps: [
+      "Bring a large pot of salted water to boil and cook spaghetti until al dente",
+      "Cut guanciale into small strips and cook in a pan over medium heat until crispy",
+      "Whisk egg yolks with grated pecorino and plenty of black pepper",
+      "Drain pasta, reserving one cup of pasta water",
+      "Toss hot pasta with guanciale off heat, then quickly stir in egg mixture",
+      "Add pasta water a splash at a time until creamy. Serve immediately",
+    ],
+  },
+  "chicken_stir_fry": {
+    name: "Chicken Stir Fry",
+    servings: 2,
+    prepTime: "20 minutes",
+    ingredients: ["2 chicken breasts", "mixed vegetables", "soy sauce", "sesame oil", "garlic", "ginger", "rice"],
+    steps: [
+      "Cook rice according to package directions",
+      "Slice chicken into thin strips and marinate in soy sauce for 5 minutes",
+      "Heat sesame oil in a wok over high heat",
+      "Stir fry chicken until golden, about 4 minutes, then set aside",
+      "Stir fry vegetables with garlic and ginger for 3 minutes",
+      "Return chicken to wok, add a splash more soy sauce, toss together",
+      "Serve over rice",
+    ],
+  },
+};
+
+export default defineAgent({
+  name: "Chef Voice",
+  instructions: `You are Chef Voice, a friendly cooking assistant. Walk users
+through recipes step by step. When they pick a recipe, use get_recipe to load
+it and the UI will display the recipe card. Then guide them through each step
+conversationally.
+
+Keep responses short and timed to cooking. Say things like "while that's
+heating up" or "this next part goes fast so have everything ready."
+Never list all steps at once. Go one at a time and wait for them to say
+they're ready for the next step.`,
+  greeting:
+    "Hey, I'm Chef Voice. I can walk you through some recipes. Want to make pasta carbonara or chicken stir fry?",
+
+  state: () => ({
+    currentRecipe: null as string | null,
+    currentStep: 0,
+  }),
+
+  tools: {
+    get_recipe: tool({
+      description: "Load a recipe by ID to display on screen and start cooking",
+      parameters: z.object({
+        recipeId: z.string().describe("Recipe identifier like pasta_carbonara"),
+      }),
+      execute: ({ recipeId }, ctx) => {
+        const recipe = RECIPES[recipeId];
+        if (!recipe) return { error: `Recipe "${recipeId}" not found` };
+        ctx.state.currentRecipe = recipeId;
+        ctx.state.currentStep = 0;
+        return recipe;
+      },
+    }),
+
+    next_step: {
+      description: "Advance to the next step in the current recipe",
+      execute: (_args, ctx) => {
+        const recipeId = ctx.state.currentRecipe;
+        if (!recipeId) return { error: "No recipe loaded" };
+        const recipe = RECIPES[recipeId];
+        if (!recipe) return { error: "Recipe not found" };
+        ctx.state.currentStep++;
+        const stepIndex = ctx.state.currentStep;
+        if (stepIndex >= recipe.steps.length) {
+          return { done: true, message: "That's the last step. Enjoy your meal!" };
+        }
+        return {
+          stepNumber: stepIndex + 1,
+          totalSteps: recipe.steps.length,
+          instruction: recipe.steps[stepIndex],
+        };
+      },
+    },
+
+    set_timer: tool({
+      description: "Set a cooking timer (voice reminder)",
+      parameters: z.object({
+        minutes: z.number().describe("Timer duration in minutes"),
+        label: z.string().describe("What the timer is for"),
+      }),
+      execute: ({ minutes, label }) => {
+        return {
+          timerSet: true,
+          minutes,
+          label,
+          message: `Timer set for ${minutes} minutes: ${label}`,
+        };
+      },
+    }),
+  },
+});
+
+================================================================================
+FRICTION & PROBLEMS ENCOUNTERED:
+================================================================================
+
+1. REACT VS PREACT CONFUSION (Severity: HIGH)
+   Priya's entire career is React. The SDK uses Preact for the client UI.
+   She created `client.tsx` importing from "react" and got cryptic bundler
+   errors. It took her 30 minutes to realize she needed Preact imports.
+   The template files use `import { h } from "preact"` but this isn't
+   explained anywhere prominent in the docs.
+
+   Suggestion: The getting-started guide should have a prominent callout:
+   "Client UI uses Preact, not React. Use `import { h } from 'preact'`
+   instead of React." Consider supporting React as an alternative, or at
+   minimum provide a clear migration guide for React developers.
+
+2. CUSTOM UI DATA FLOW IS UNCLEAR (Severity: HIGH)
+   Priya wanted her recipe card to update when `get_recipe` returns data.
+   She couldn't figure out how to get tool results into the UI. She found
+   `useToolResult` in the UI package but the documentation doesn't explain:
+   - When does it update? (After each tool call? Only the latest?)
+   - Does it return the raw JSON or a parsed object?
+   - How to handle multiple tool calls of the same name?
+   She spent significant time reading the aai-ui source code to understand
+   the data flow.
+
+   Suggestion: Add a dedicated "Custom UI" guide with examples showing
+   exactly how tool results flow to the UI. The pizza-ordering template
+   has a custom UI but it's complex — a simpler example would help.
+
+3. NO HOT RELOAD FOR CLIENT CHANGES (Severity: MEDIUM)
+   During development with `aai dev`, changes to `agent.ts` trigger a
+   rebuild, but changes to `client.tsx` require a manual browser refresh.
+   Priya is used to Next.js HMR and found the DX jarring.
+
+   Suggestion: Add HMR support for client code, or at minimum document
+   that client changes require a manual refresh.
+
+4. TOOL RESULT → UI UPDATE TIMING (Severity: MEDIUM)
+   When the agent calls `get_recipe`, the recipe data is returned as a tool
+   result. But the UI updates via `useToolResult` and there's a noticeable
+   delay between the agent saying "Let me pull up that recipe" and the card
+   appearing. The voice and UI feel disconnected.
+
+   Suggestion: Document the timing model. Consider a way for tools to
+   push UI updates immediately rather than waiting for the full agentic
+   loop to complete.
+
+5. CSS/STYLING STORY IS CONFUSING (Severity: MEDIUM)
+   The SDK ships with `styles.css` for default UI components. Priya wanted
+   to customize styles but wasn't sure how. The templates use Tailwind but
+   it's compiled at bundle time. She tried adding a `tailwind.config.js` but
+   it was ignored. She ended up inlining styles in her Preact components.
+
+   Suggestion: Document the styling story clearly: what's customizable via
+   theme props, what requires CSS overrides, and how Tailwind works in the
+   bundler.
+
+6. NO TYPE EXPORT FOR TOOL RESULTS IN UI PACKAGE (Severity: LOW)
+   Priya wanted to type her tool results in the client:
+   `const recipe = useToolResult<Recipe>("get_recipe")`. But there's no way
+   to share types between `agent.ts` and `client.tsx` cleanly. She had to
+   duplicate the Recipe type in both files.
+
+   Suggestion: Support a shared types file (e.g., `shared.ts`) that both
+   agent and client can import, or provide a pattern for this.
+
+7. SET_TIMER IS A NO-OP (Severity: MEDIUM)
+   Priya's timer tool returns data but doesn't actually set a timer. There's
+   no SDK mechanism for scheduling delayed actions, push notifications, or
+   client-side timers triggered from tool results. The agent says "timer set"
+   but nothing actually happens.
+
+   Suggestion: Either provide a client-side timer utility triggered by tool
+   results, or document clearly that timers/scheduled-actions are outside
+   the agent's capability and suggest workarounds.
+
+8. PREACT COMPONENT LIBRARY IS UNDERDOCUMENTED (Severity: MEDIUM)
+   The UI package exports many components (ChatView, Controls, MessageBubble,
+   SidebarLayout, etc.) but there's no props documentation or usage examples
+   beyond reading the source. Priya wanted to use SidebarLayout for her
+   recipe card but didn't know what props it accepts.
+
+   Suggestion: Add JSDoc or a component reference with props and usage
+   examples for each exported UI component.
