@@ -41,6 +41,12 @@ export type ServerOptions = {
   logger?: Logger;
   /** S2S configuration. Defaults to AssemblyAI production. */
   s2sConfig?: S2SConfig;
+  /**
+   * Shared secret for authenticating WebSocket upgrade requests.
+   * When set, clients must pass `?token=<authToken>` in the WebSocket URL.
+   * **Strongly recommended** when the server is exposed to the network.
+   */
+  authToken?: string;
 };
 
 /**
@@ -100,6 +106,7 @@ export function createServer(options: ServerOptions): AgentServer {
     clientDir,
     logger = consoleLogger,
     s2sConfig = DEFAULT_S2S_CONFIG,
+    authToken,
   } = options;
 
   const env = filterEnv(options.env ?? (typeof process !== "undefined" ? process.env : {}));
@@ -156,10 +163,16 @@ export function createServer(options: ServerOptions): AgentServer {
         app.use("/*", serveStatic({ root: clientDir }));
       }
 
+      const csp =
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
+        "connect-src 'self' wss: ws:; img-src 'self' data:; font-src 'self'; object-src 'none'; base-uri 'self'";
+
       app.get("/", (c) => {
-        if (clientHtml) return c.html(clientHtml);
+        if (clientHtml) return c.html(clientHtml, 200, { "Content-Security-Policy": csp });
         return c.html(
           `<!DOCTYPE html><html><body><h1>${safeAgentName}</h1><p>Agent server running.</p></body></html>`,
+          200,
+          { "Content-Security-Policy": csp },
         );
       });
 
@@ -173,9 +186,27 @@ export function createServer(options: ServerOptions): AgentServer {
       const addr = nodeServer.address();
       listenPort = typeof addr === "object" && addr ? addr.port : port;
 
+      if (!authToken) {
+        logger.warn(
+          "No authToken configured — WebSocket connections are unauthenticated. " +
+            "Set the authToken option to require a shared secret for WebSocket upgrades. " +
+            "Do NOT expose this server to the public internet without authentication.",
+        );
+      }
+
       const wss = new WebSocketServer({ noServer: true });
       nodeServer.on("upgrade", (req, socket, head) => {
         const reqUrl = new URL(req.url ?? "/", `http://localhost:${listenPort}`);
+
+        if (authToken) {
+          const clientToken = reqUrl.searchParams.get("token");
+          if (clientToken !== authToken) {
+            socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+            socket.destroy();
+            return;
+          }
+        }
+
         const resume = reqUrl.searchParams.has("resume");
         logger.info(`WS upgrade ${reqUrl.pathname}${resume ? " (resume)" : ""}`);
         wss.handleUpgrade(req, socket, head, (ws) => {

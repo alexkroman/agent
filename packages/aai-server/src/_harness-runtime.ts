@@ -299,6 +299,12 @@ async function handleRoute(
     } catch {
       return { data: { error: "Invalid JSON in request body" }, status: 400 };
     }
+    if (!body || typeof body.name !== "string" || typeof body.sessionId !== "string") {
+      return {
+        data: { error: "Invalid tool call request: missing name or sessionId" },
+        status: 400,
+      };
+    }
     return { data: await executeTool(agent, body) };
   }
   if (req.method === "POST" && req.url === "/hook") {
@@ -307,6 +313,9 @@ async function handleRoute(
       body = JSON.parse(await readBody(req)) as HookRequest;
     } catch {
       return { data: { error: "Invalid JSON in request body" }, status: 400 };
+    }
+    if (!body || typeof body.hook !== "string" || typeof body.sessionId !== "string") {
+      return { data: { error: "Invalid hook request: missing hook or sessionId" }, status: 400 };
     }
     return { data: await invokeHook(agent, body) };
   }

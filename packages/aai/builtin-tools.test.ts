@@ -257,18 +257,42 @@ describe("getBuiltinToolDefs", () => {
     });
   });
 
-  test("fetch_json passes custom headers to fetch", async () => {
+  test("fetch_json passes allowed custom headers to fetch", async () => {
     const mockFetch = vi.fn(() => Promise.resolve(new Response(JSON.stringify({ ok: true }))));
     const defs = getBuiltinToolDefs(["fetch_json"], {
       fetch: mockFetch as typeof globalThis.fetch,
     });
     const ctx = createMockToolContext();
     await defs.fetch_json?.execute(
-      { url: "https://api.example.com", headers: { Authorization: "Bearer tok" } },
+      {
+        url: "https://api.example.com",
+        headers: { Accept: "application/json", "x-api-key": "tok" },
+      },
       ctx,
     );
     const callArgs = mockFetch.mock.calls[0] as unknown as [string, RequestInit];
-    expect(callArgs[1]).toMatchObject({ headers: { Authorization: "Bearer tok" } });
+    expect(callArgs[1]).toMatchObject({
+      headers: { Accept: "application/json", "x-api-key": "tok" },
+    });
+  });
+
+  test("fetch_json blocks dangerous headers like Authorization", async () => {
+    const mockFetch = vi.fn(() => Promise.resolve(new Response(JSON.stringify({ ok: true }))));
+    const defs = getBuiltinToolDefs(["fetch_json"], {
+      fetch: mockFetch as typeof globalThis.fetch,
+    });
+    const ctx = createMockToolContext();
+    await defs.fetch_json?.execute(
+      {
+        url: "https://api.example.com",
+        headers: { Authorization: "Bearer tok", Accept: "application/json" },
+      },
+      ctx,
+    );
+    const callArgs = mockFetch.mock.calls[0] as unknown as [string, RequestInit];
+    // Authorization should be stripped, Accept should remain
+    expect(callArgs[1]).toMatchObject({ headers: { Accept: "application/json" } });
+    expect((callArgs[1].headers as Record<string, string>).Authorization).toBeUndefined();
   });
 
   // ─── web_search ────────────────────────────────────────────────────────
