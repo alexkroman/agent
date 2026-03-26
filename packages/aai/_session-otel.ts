@@ -18,6 +18,7 @@ import {
   toolCallErrorCounter,
   tracer,
   turnCounter,
+  turnStepsHistogram,
 } from "./telemetry.ts";
 
 export { activeSessionsUpDown, sessionCounter } from "./telemetry.ts";
@@ -266,6 +267,11 @@ function handleReplyDone(ctx: S2sSessionCtx, status: string | undefined): void {
       for (const tool of ctx.pendingTools) ctx.s2s?.sendToolResult(tool.callId, tool.result);
       ctx.pendingTools = [];
     } else {
+      const stepsUsed = ctx.toolCallCount;
+      if (stepsUsed > 0) {
+        ctx.log.info("Turn complete", { steps: stepsUsed, agent: ctx.agent });
+        turnStepsHistogram.record(stepsUsed, { agent: ctx.agent });
+      }
       if (ctx.hookInvoker?.afterTurn) {
         const last = ctx.conversationMessages.at(-1);
         ctx.fireHook(

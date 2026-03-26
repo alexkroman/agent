@@ -85,6 +85,11 @@ export const s2sErrorCounter = meter.createCounter("aai.s2s.error.count", {
   description: "Total S2S errors",
 });
 
+/** Number of agentic loop steps (tool calls) per completed turn. */
+export const turnStepsHistogram = meter.createHistogram("aai.turn.steps", {
+  description: "Number of agentic loop steps per completed turn",
+});
+
 /** Total barge-in (reply interrupted) events. */
 export const bargeInCounter = meter.createCounter("aai.turn.bargein.count", {
   description: "Total barge-in (reply interrupted) events",
