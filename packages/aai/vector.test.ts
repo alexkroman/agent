@@ -154,4 +154,30 @@ describe("createLanceDbVectorStore", () => {
       if (origKey) process.env.OPENAI_API_KEY = origKey;
     }
   });
+
+  test("uses openaiApiKey option when provided", async () => {
+    const origKey = process.env.OPENAI_API_KEY;
+    delete process.env.OPENAI_API_KEY;
+    try {
+      // Should not throw — the key is provided via options, not env
+      const v = await createLanceDbVectorStore({
+        path: tmpDir(),
+        openaiApiKey: "sk-test-fake-key",
+      });
+      // The store is created; actual embedding call would fail but creation succeeds
+      expect(v).toBeDefined();
+    } finally {
+      if (origKey) process.env.OPENAI_API_KEY = origKey;
+    }
+  });
+
+  test("query with filter option passes filter to search", async () => {
+    const v = await createLanceDbVectorStore({ path: tmpDir(), embedFn });
+    await v.upsert("doc-1", "hello world");
+    await v.upsert("doc-2", "hello there");
+    // Filter on the id column (a real LanceDB column)
+    const results = await v.query("hello", { filter: 'id = "doc-1"' });
+    expect(results.length).toBe(1);
+    expect(results[0]?.id).toBe("doc-1");
+  });
 });

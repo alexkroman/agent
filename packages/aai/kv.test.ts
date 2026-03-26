@@ -187,6 +187,22 @@ describe("createSqliteKv", () => {
     expect(await kv.keys("a*b*c")).toEqual(["a:b:c"]);
   });
 
+  test("keys glob starting with wildcard scans all keys", async () => {
+    const kv = createSqliteKv({ path: ":memory:" });
+    await kv.set("foo:bar", "1");
+    await kv.set("baz:bar", "2");
+    await kv.set("foo:qux", "3");
+    expect(await kv.keys("*:bar")).toEqual(["baz:bar", "foo:bar"]);
+  });
+
+  test("keys with plain prefix (no glob) returns matching keys", async () => {
+    const kv = createSqliteKv({ path: ":memory:" });
+    await kv.set("app:config:a", "1");
+    await kv.set("app:config:b", "2");
+    await kv.set("app:data:x", "3");
+    expect(await kv.keys("app:config:")).toEqual(["app:config:a", "app:config:b"]);
+  });
+
   test("data persists across instances with same file", async () => {
     const { mkdirSync, rmSync } = await import("node:fs");
     const { join } = await import("node:path");

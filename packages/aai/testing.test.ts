@@ -330,4 +330,45 @@ describe("KV and vector store", () => {
     const turn = await t.turn("Load data", [{ tool: "load", args: { key: "color" } }]);
     expect(turn.toolCalls.at(0)?.result).toBe("blue");
   });
+
+  test("default vector store works without explicit vector option", async () => {
+    const agent = defineAgent({
+      name: "vector-harness-test",
+      tools: {
+        index: defineTool({
+          description: "Index a doc",
+          parameters: z.object({ id: z.string(), text: z.string() }),
+          execute: async (args, ctx) => {
+            await ctx.vector.upsert(args.id, args.text);
+            return "indexed";
+          },
+        }),
+        search: defineTool({
+          description: "Search docs",
+          parameters: z.object({ query: z.string() }),
+          execute: async (args, ctx) => {
+            const results = await ctx.vector.query(args.query, { topK: 1 });
+            return results[0]?.data ?? "no results";
+          },
+        }),
+        remove: defineTool({
+          description: "Remove a doc",
+          parameters: z.object({ id: z.string() }),
+          execute: async (args, ctx) => {
+            await ctx.vector.delete(args.id);
+            return "deleted";
+          },
+        }),
+      },
+    });
+
+    // No vector option passed — uses the default lazy LanceDB test store
+    const t = createTestHarness(agent);
+    await t.turn("Index", [{ tool: "index", args: { id: "d1", text: "Paris is in France" } }]);
+    const searchTurn = await t.turn("Search", [{ tool: "search", args: { query: "France" } }]);
+    expect(searchTurn.toolCalls.at(0)?.result).toBe("Paris is in France");
+
+    const deleteTurn = await t.turn("Remove", [{ tool: "remove", args: { id: "d1" } }]);
+    expect(deleteTurn.toolCalls.at(0)?.result).toBe("deleted");
+  });
 });
