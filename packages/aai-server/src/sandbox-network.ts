@@ -29,16 +29,6 @@ export function buildNetworkPolicy(sidecarUrl: string) {
   const allowedHost = parsed.hostname;
   const allowedPort = parsed.port;
 
-  const AllowedRequestSchema = z.object({
-    url: z
-      .string()
-      .url()
-      .refine((u) => {
-        const t = new URL(u);
-        return t.hostname === allowedHost && t.port === allowedPort;
-      }, "URL must target the sidecar server"),
-  });
-
   return (req: { op: string; url?: string; hostname?: string }) => {
     if (req.op === "listen") return { allow: true };
     if (req.op === "dns") {
@@ -46,10 +36,15 @@ export function buildNetworkPolicy(sidecarUrl: string) {
         ? { allow: true }
         : { allow: false, reason: "DNS lookups restricted to loopback" };
     }
-    const result = AllowedRequestSchema.safeParse(req);
-    return result.success
-      ? { allow: true }
-      : { allow: false, reason: "Network restricted to sidecar server" };
+    try {
+      const t = new URL(req.url ?? "");
+      if (t.hostname === allowedHost && t.port === allowedPort) {
+        return { allow: true };
+      }
+    } catch {
+      // invalid URL — fall through to deny
+    }
+    return { allow: false, reason: "Network restricted to sidecar server" };
   };
 }
 
