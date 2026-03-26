@@ -280,17 +280,18 @@ describe("getBuiltinToolDefs", () => {
     expect(result).toEqual({ error: "BRAVE_API_KEY is not set — web search unavailable" });
   });
 
-  test("web_search returns empty array on non-ok response", async () => {
-    const mockFetch = () => Promise.resolve(new Response("", { status: 500 }));
+  test("web_search returns error on non-ok response", async () => {
+    const mockFetch = () =>
+      Promise.resolve(new Response("", { status: 500, statusText: "Internal Server Error" }));
     const defs = getBuiltinToolDefs(["web_search"], {
       fetch: mockFetch as typeof globalThis.fetch,
     });
     const ctx = createMockToolContext({ env: { BRAVE_API_KEY: "key123" } });
     const result = await defs.web_search?.execute({ query: "test" }, ctx);
-    expect(result).toEqual([]);
+    expect(result).toEqual({ error: "Search request failed: 500 Internal Server Error" });
   });
 
-  test("web_search returns empty array when response doesn't match schema", async () => {
+  test("web_search returns empty results when response has no web results", async () => {
     const mockFetch = () => Promise.resolve(new Response(JSON.stringify({ invalid: true })));
     const defs = getBuiltinToolDefs(["web_search"], {
       fetch: mockFetch as typeof globalThis.fetch,

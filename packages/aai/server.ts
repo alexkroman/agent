@@ -85,6 +85,8 @@ export function createServer(options: ServerOptions): AgentServer {
 
   return {
     async listen(port = 3000) {
+      if (serverHandle) throw new Error("Server is already listening");
+
       const app = new Hono();
 
       app.onError((err, c) => {
@@ -149,10 +151,10 @@ export function createServer(options: ServerOptions): AgentServer {
     },
 
     async close() {
-      for (const session of sessions.values()) {
-        await session.stop();
+      if (sessions.size > 0) {
+        await Promise.allSettled([...sessions.values()].map((s) => s.stop()));
+        sessions.clear();
       }
-      sessions.clear();
       await serverHandle?.shutdown();
     },
   };
