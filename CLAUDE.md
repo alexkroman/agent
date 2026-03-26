@@ -17,6 +17,7 @@ pnpm test                # Run all tests (vitest)
 pnpm lint                # Run Biome linter (all packages)
 pnpm typecheck           # Type-check all packages
 pnpm lint:fix            # Auto-fix lint issues
+pnpm check:local         # Fast pre-commit gate (typecheck + lint + syncpack + test)
 ```
 
 **Running specific tests:**
@@ -149,9 +150,26 @@ secret, rag, link, unlink
   self-contained with its own `agent.ts` and `client.tsx`. `_shared/` has
   non-code files common to all templates.
 - **Git hooks** (lefthook): pre-commit runs `biome check --write` on staged
-  files; pre-push blocks pushes to main/master and runs `pnpm check`.
+  files and `syncpack lint` when package.json changes; pre-push blocks pushes
+  to main/master and runs `pnpm check`.
 - **Updating CLAUDE.md**: When you make changes that affect architecture,
   security model, conventions, or gotchas, update this file.
+
+## PR Workflow (reducing fix-up commits)
+
+Run `pnpm check:local` **before your first commit** on a PR branch. This
+catches the most common issues that historically required follow-up commits:
+
+1. **Syncpack version drift**: When bumping a dependency, also update
+   `packages/aai-cli/templates/_shared/package.json` if it has the same dep.
+   `pnpm check:syncpack` catches this.
+2. **Test assertion mismatches**: After changing output formats or error
+   messages, run `pnpm test` and update affected assertions.
+3. **Lint in related files**: Pre-commit only lints staged files. Run
+   `pnpm lint` to catch lint issues in files affected by your change.
+4. **API extractor reports**: After changing public API exports, run
+   `pnpm -r run build && pnpm -r run --if-present check:api` and commit
+   updated `.api.md` reports.
 
 ## Security Architecture
 
