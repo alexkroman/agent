@@ -200,6 +200,23 @@ const rag = defineCommand({
   },
 });
 
+const doctor = defineCommand({
+  meta: { name: "doctor", description: "Check environment health and diagnose issues" },
+  args: {
+    port: {
+      type: "string",
+      alias: "p",
+      description: "Port to check availability",
+      default: "3000",
+    },
+  },
+  async run({ args }) {
+    const cwd = resolveCwd();
+    const { runDoctorCommand } = await import("./doctor.ts");
+    await runDoctorCommand({ cwd, port: args.port });
+  },
+});
+
 const link = defineCommand({
   meta: {
     name: "link",
@@ -221,7 +238,20 @@ const unlink = defineCommand({
 
 export const mainCommand = defineCommand({
   meta: { name: "aai", version: VERSION, description: "Voice agent development kit" },
-  subCommands: { init, dev, test, build, deploy, delete: del, start, secret, rag, link, unlink },
+  subCommands: {
+    init,
+    dev,
+    test,
+    build,
+    deploy,
+    delete: del,
+    start,
+    secret,
+    rag,
+    link,
+    unlink,
+    doctor,
+  },
 });
 
 if (process.env.VITEST !== "true") {

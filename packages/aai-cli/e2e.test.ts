@@ -97,10 +97,11 @@ afterAll(() => {
   if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
-describe("e2e: init -> test -> dev --check", () => {
+describe("e2e: init -> doctor -> test -> dev --check", () => {
   test.each(templates.map((t, i) => [t, i] as const))("template %s", (template, i) => {
     const projectDir = path.join(tmpDir, template);
     initProject(template, projectDir);
+    aai(["doctor"], projectDir);
     aai(["test"], projectDir);
     aai(["dev", "--check", "--port", String(BASE_PORT + i)], projectDir);
   });
