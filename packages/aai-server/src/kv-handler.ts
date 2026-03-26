@@ -8,7 +8,13 @@ import type { Env } from "./context.ts";
 export async function handleKv(c: Context<Env>): Promise<Response> {
   const { kvStore } = c.env;
   const scope = c.get("scope");
-  const msg = KvRequestSchema.parse(await c.req.json());
+
+  let msg: ReturnType<typeof KvRequestSchema.parse>;
+  try {
+    msg = KvRequestSchema.parse(await c.req.json());
+  } catch (err: unknown) {
+    return c.json({ error: `Invalid KV request: ${errorMessage(err)}` }, 400);
+  }
 
   try {
     switch (msg.op) {
@@ -39,6 +45,6 @@ export async function handleKv(c: Context<Env>): Promise<Response> {
       slug: scope.slug,
       error: errorMessage(err),
     });
-    return c.json({ error: `KV operation failed: ${msg.op}` }, 500);
+    return c.json({ error: `KV ${msg.op} failed: ${errorMessage(err)}` }, 500);
   }
 }

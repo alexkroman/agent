@@ -50,13 +50,13 @@ export type WsSessionOptions = {
  * Text events are sent as JSON text frames; audio chunks are sent as
  * binary frames (zero-copy).
  */
-function createClientSink(ws: SessionWebSocket): ClientSink {
+function createClientSink(ws: SessionWebSocket, log: Logger): ClientSink {
   /** Send data over ws, tolerating races where the socket closes between readyState check and send. */
   function safeSend(data: string | ArrayBuffer | Uint8Array): void {
     try {
       if (ws.readyState === 1) ws.send(data);
-    } catch {
-      /* socket closed between check and send */
+    } catch (err) {
+      log.debug?.("safeSend failed", { error: err instanceof Error ? err.message : String(err) });
     }
   }
   return {
@@ -154,7 +154,7 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
     log.info("Session connected", { ...ctx, sid });
     sessionSpan.addEvent("ws.open");
 
-    const client = createClientSink(ws);
+    const client = createClientSink(ws, log);
     session = opts.createSession(sessionId, client);
     sessions.set(sessionId, session);
 
@@ -198,7 +198,7 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
       void session
         .stop()
         .catch((err) => {
-          log.error("Session stop failed", { ...ctx, sid, error: err });
+          log.error("Session stop failed", { ...ctx, sid, error: errorDetail(err) });
         })
         .finally(() => {
           sessions.delete(sessionId);

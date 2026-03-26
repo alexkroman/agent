@@ -1,5 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 import type { Context } from "hono";
+import { z } from "zod";
 import { type DeployBody, DeployBodySchema, EnvSchema } from "./_schemas.ts";
 import type { Env } from "./context.ts";
 
@@ -10,8 +11,12 @@ export async function handleDeploy(c: Context<Env>): Promise<Response> {
   let body: DeployBody;
   try {
     body = DeployBodySchema.parse(await c.req.json());
-  } catch {
-    return c.json({ error: "Invalid deploy body" }, 400);
+  } catch (err) {
+    const msg =
+      err instanceof z.ZodError
+        ? err.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")
+        : "Invalid deploy body";
+    return c.json({ error: msg }, 400);
   }
 
   const storedEnv = (await c.env.store.getEnv(slug)) ?? {};

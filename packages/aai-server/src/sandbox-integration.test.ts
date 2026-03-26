@@ -297,13 +297,13 @@ describe("isolate protocol", () => {
     expect(res.status).toBe(404);
   });
 
-  test("invalid JSON returns 500", async () => {
+  test("invalid JSON returns 400", async () => {
     const res = await fetch(`http://127.0.0.1:${port}/tool`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-harness-token": TEST_AUTH_TOKEN },
       body: "not json{{{",
     });
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(400);
   });
 
   test("request without auth token returns 401", async () => {

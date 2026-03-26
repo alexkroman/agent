@@ -197,7 +197,10 @@ export function createServer(options: ServerOptions): AgentServer {
 
     async close() {
       if (sessions.size > 0) {
-        await Promise.allSettled([...sessions.values()].map((s) => s.stop()));
+        const results = await Promise.allSettled([...sessions.values()].map((s) => s.stop()));
+        for (const r of results) {
+          if (r.status === "rejected") logger.warn(`Session stop failed during close: ${r.reason}`);
+        }
         sessions.clear();
       }
       await serverHandle?.shutdown();

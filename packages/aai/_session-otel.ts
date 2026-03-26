@@ -141,7 +141,12 @@ export async function handleToolCall(ctx: S2sSessionCtx, detail: S2sToolCall): P
       }
       if (ic?.type === "args") effectiveArgs = ic.args;
     } catch (err: unknown) {
-      ctx.log.warn("interceptToolCall middleware failed", { err: errorMessage(err) });
+      // Fail-open: middleware error does not block the tool call. The tool
+      // proceeds with its original (or partially transformed) args.
+      ctx.log.warn("interceptToolCall middleware failed (fail-open, tool call proceeds)", {
+        err: errorMessage(err),
+        tool: name,
+      });
     }
   }
 
