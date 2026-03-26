@@ -1,0 +1,11 @@
+# Default owners for everything
+* @alexkroman
+
+# Package-specific ownership (add team members as the project grows)
+# packages/aai/       @alexkroman
+# packages/aai-ui/    @alexkroman
+# packages/aai-cli/   @alexkroman
+# packages/aai-server/ @alexkroman
+
+# CI and release configuration
+.github/ @alexkroman

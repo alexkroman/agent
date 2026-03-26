@@ -1,0 +1,26 @@
+# Auto-label PRs based on changed paths (used by label.yml workflow)
+pkg:aai:
+  - changed-files:
+      - any-glob-to-any-file: packages/aai/**
+
+pkg:aai-ui:
+  - changed-files:
+      - any-glob-to-any-file: packages/aai-ui/**
+
+pkg:aai-cli:
+  - changed-files:
+      - any-glob-to-any-file: packages/aai-cli/**
+
+pkg:aai-server:
+  - changed-files:
+      - any-glob-to-any-file: packages/aai-server/**
+
+ci:
+  - changed-files:
+      - any-glob-to-any-file: .github/**
+
+docs:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "**/*.md"
+          - .changeset/**

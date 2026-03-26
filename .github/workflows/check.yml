@@ -3,6 +3,12 @@ name: Check
 on:
   push:
     branches-ignore: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   lint:
@@ -105,3 +111,20 @@ jobs:
       - run: pnpm -r run build
       - run: pnpm --filter @alexkroman1/aai-cli exec playwright install --with-deps chromium
       - run: pnpm -r run --if-present check:e2e
+
+  # Single gate job for branch protection — add only "ci" as a required check
+  ci:
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [lint, typecheck, test, check-api, check-templates, check-quality, integration, e2e]
+    steps:
+      - name: Check results
+        run: |
+          results="${{ needs.lint.result }} ${{ needs.typecheck.result }} ${{ needs.test.result }} ${{ needs.check-api.result }} ${{ needs.check-templates.result }} ${{ needs.check-quality.result }} ${{ needs.integration.result }} ${{ needs.e2e.result }}"
+          for r in $results; do
+            if [ "$r" != "success" ] && [ "$r" != "skipped" ]; then
+              echo "CI failed: one or more jobs did not succeed"
+              exit 1
+            fi
+          done
+          echo "All CI jobs passed"
