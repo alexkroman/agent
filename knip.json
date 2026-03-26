@@ -5,7 +5,7 @@
   "exclude": ["exports", "types", "optionalPeerDependencies"],
   "workspaces": {
     ".": {
-      "ignore": ["_fail_on_warnings.ts"]
+      "ignore": ["_fail_on_warnings.ts", "examples/**"]
     },
     "packages/aai": {
       "entry": ["**/*.test.ts", "_test-utils.ts"],
