@@ -11,6 +11,7 @@ import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { WebSocketServer } from "ws";
+import { filterEnv } from "./_utils.ts";
 import { createDirectExecutor } from "./direct-executor.ts";
 import type { Kv } from "./kv.ts";
 import { buildReadyConfig } from "./protocol.ts";
@@ -18,13 +19,8 @@ import type { Logger, S2SConfig } from "./runtime.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime.ts";
 import type { Session } from "./session.ts";
 import type { AgentDef } from "./types.ts";
-import { filterEnv } from "./utils.ts";
 import { type SessionWebSocket, wireSessionSocket } from "./ws-handler.ts";
 
-/**
- * Options for creating a self-hosted agent server.
- * @public
- */
 export type ServerOptions = {
   /** The agent definition returned by `defineAgent()`. */
   agent: AgentDef;
@@ -40,21 +36,8 @@ export type ServerOptions = {
   logger?: Logger;
   /** S2S configuration. Defaults to AssemblyAI production. */
   s2sConfig?: S2SConfig;
-  /**
-   * Allowed origins for WebSocket connections. When set, the server validates
-   * the `Origin` header on upgrade requests and rejects connections from
-   * origins not in this list.
-   *
-   * Defaults to the server's own origin (`http://localhost:<port>`).
-   * Pass `"*"` to allow any origin (disables validation).
-   */
-  allowedOrigins?: string[] | "*";
 };
 
-/**
- * Handle returned by {@link createServer}.
- * @public
- */
 export type AgentServer = {
   /** Start listening on the given port. */
   listen(port?: number): Promise<void>;
@@ -64,7 +47,7 @@ export type AgentServer = {
   port: number | undefined;
 };
 
-/** @internal Escape HTML special characters to prevent XSS. */
+/** Escape HTML special characters to prevent XSS. */
 function escapeHtml(s: string): string {
   return s
     .replace(/&/g, "&amp;")
@@ -74,10 +57,6 @@ function escapeHtml(s: string): string {
     .replace(/'/g, "&#39;");
 }
 
-/**
- * Create a self-hostable agent server.
- * @public
- */
 export function createServer(options: ServerOptions): AgentServer {
   const {
     agent,
@@ -86,7 +65,6 @@ export function createServer(options: ServerOptions): AgentServer {
     clientDir,
     logger = consoleLogger,
     s2sConfig = DEFAULT_S2S_CONFIG,
-    allowedOrigins,
   } = options;
 
   const env = filterEnv(options.env ?? (typeof process !== "undefined" ? process.env : {}));
@@ -161,34 +139,7 @@ export function createServer(options: ServerOptions): AgentServer {
       listenPort = typeof addr === "object" && addr ? addr.port : port;
 
       const wss = new WebSocketServer({ noServer: true });
-
-      // Build the set of allowed origins for WebSocket upgrade validation.
-      const effectiveAllowedOrigins =
-        allowedOrigins === "*"
-          ? null // null means allow any origin
-          : new Set(
-              allowedOrigins ?? [
-                `http://localhost:${listenPort}`,
-                `http://127.0.0.1:${listenPort}`,
-              ],
-            );
-
       nodeServer.on("upgrade", (req, socket, head) => {
-        const origin = req.headers.origin ?? "";
-
-        // Reject cross-origin WebSocket connections. Requests with no Origin
-        // header (non-browser clients) are allowed through.
-        if (
-          effectiveAllowedOrigins !== null &&
-          origin !== "" &&
-          !effectiveAllowedOrigins.has(origin)
-        ) {
-          logger.error(`WS upgrade rejected: origin "${origin}" not allowed`);
-          socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
-          socket.destroy();
-          return;
-        }
-
         const reqUrl = new URL(req.url ?? "/", `http://localhost:${listenPort}`);
         const resume = reqUrl.searchParams.has("resume");
         logger.info(`WS upgrade ${reqUrl.pathname}${resume ? " (resume)" : ""}`);

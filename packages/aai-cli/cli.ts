@@ -14,8 +14,8 @@ function findPkgJson(dir: string): string {
     return readFileSync(path.join(dir, "..", "package.json"), "utf-8");
   }
 }
-const pkgJson: { version: string } = JSON.parse(findPkgJson(cliDir));
-const VERSION = pkgJson.version;
+const pkgJson = JSON.parse(findPkgJson(cliDir));
+const VERSION: string = pkgJson.version;
 
 async function ensureAgent(cwd: string, yes?: boolean): Promise<void> {
   if (!(await fileExists(path.join(cwd, "agent.ts")))) {
@@ -192,7 +192,7 @@ const link = defineCommand({
   },
   async run() {
     const { runLinkCommand } = await import("./_link.ts");
-    await runLinkCommand(resolveCwd());
+    runLinkCommand(resolveCwd());
   },
 });
 
@@ -200,7 +200,7 @@ const unlink = defineCommand({
   meta: { name: "unlink", description: "Restore published package versions (reverses aai link)" },
   async run() {
     const { runUnlinkCommand } = await import("./_link.ts");
-    await runUnlinkCommand(resolveCwd());
+    runUnlinkCommand(resolveCwd());
   },
 });
 
@@ -218,8 +218,5 @@ if (process.env.VITEST !== "true") {
   ) {
     process.argv.splice(2, 0, "init");
   }
-  runMain(mainCommand).catch((err) => {
-    console.error(err);
-    process.exit(1);
-  });
+  void runMain(mainCommand);
 }

@@ -22,24 +22,14 @@ export type AgentState =
 /**
  * A chat message exchanged between user and assistant.
  *
- * This is a UI-specific subset of the SDK's {@link @alexkroman1/aai#Message | Message} type,
- * which also includes the `"tool"` role. Renamed to `ChatMessage` to avoid
- * ambiguity when both packages are imported.
- *
  * @public
  */
-export type ChatMessage = {
+export type Message = {
   /** The sender of the message. */
   role: "user" | "assistant";
   /** The text content of the message. */
   content: string;
 };
-
-/**
- * @deprecated Use {@link ChatMessage} instead. This alias will be removed in a future release.
- * @public
- */
-export type Message = ChatMessage;
 
 /**
  * Info about a tool call for display in the UI.
@@ -86,6 +76,13 @@ export type Reactive<T> = { value: T };
 export type SessionOptions = {
   /** Base URL of the AAI platform server. */
   platformUrl: string;
+  /**
+   * Short-lived scope token for authenticating WebSocket connections.
+   * Obtain one via `POST /:slug/session-token` with owner credentials.
+   * When provided, it is sent as the `?token=` query parameter on the
+   * WebSocket upgrade request.
+   */
+  token?: string;
   /**
    * Factory for creating reactive state containers.
    * Defaults to a plain mutable wrapper. Pass `signal` from

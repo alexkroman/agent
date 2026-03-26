@@ -17,26 +17,19 @@ function getPackagesDir(): string {
     : path.resolve(parent, "..");
 }
 
-interface PackageJson {
-  name: string;
-  dependencies?: Record<string, string>;
-}
-
 type DepRewriter = (currentVersion: string, localPath: string) => string | null;
 
 function rewriteWorkspaceDeps(cwd: string, rewrite: DepRewriter, verb: string): void {
   const packagesDir = getPackagesDir();
   const pkgJsonPath = path.join(cwd, "package.json");
-  const pkgJson: PackageJson = JSON.parse(fs.readFileSync(pkgJsonPath, "utf-8"));
+  const pkgJson = JSON.parse(fs.readFileSync(pkgJsonPath, "utf-8"));
   const deps = pkgJson.dependencies ?? {};
   const changed: string[] = [];
 
   for (const pkgDir of WORKSPACE_PKGS) {
     const localPath = path.join(packagesDir, pkgDir);
-    const localPkg: PackageJson = JSON.parse(
-      fs.readFileSync(path.join(localPath, "package.json"), "utf-8"),
-    );
-    const name = localPkg.name;
+    const localPkg = JSON.parse(fs.readFileSync(path.join(localPath, "package.json"), "utf-8"));
+    const name = localPkg.name as string;
     if (!deps[name]) continue;
     const newVersion = rewrite(deps[name], localPath);
     if (newVersion !== null) {

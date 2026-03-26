@@ -1,8 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
 /** S2S session — relays audio between client and AssemblyAI S2S API. */
 
+import type { AgentConfig, ToolSchema } from "./_internal-types.ts";
 import { activeSessionsUpDown, sessionCounter, setupListeners } from "./_session-otel.ts";
-import type { AgentConfig, ToolSchema } from "./internal-types.ts";
+import { errorDetail, errorMessage } from "./_utils.ts";
 import type { HookInvoker } from "./middleware.ts";
 import type { ClientSink } from "./protocol.ts";
 import { fromWireMessages, HOOK_TIMEOUT_MS } from "./protocol.ts";
@@ -17,7 +18,6 @@ import {
 } from "./s2s.ts";
 import { buildSystemPrompt } from "./system-prompt.ts";
 import type { Message } from "./types.ts";
-import { errorDetail, errorMessage } from "./utils.ts";
 import type { ExecuteTool } from "./worker-entry.ts";
 
 export type { HookInvoker, ToolInterceptResult } from "./middleware.ts";
@@ -52,6 +52,7 @@ export type SessionOptions = {
   logger?: Logger;
 };
 
+/** @internal Not part of the public API. Exposed for testing only. */
 export const _internals = {
   connectS2s,
 };
@@ -97,6 +98,8 @@ function buildCtx(opts: {
   log: Logger;
 }): S2sSessionCtx {
   const { id, agentConfig, hookInvoker, log } = opts;
+  let cachedActiveTools: string[] | undefined;
+  let cachedActiveSet: Set<string> | undefined;
   const ctx: S2sSessionCtx = {
     ...opts,
     s2s: null,
@@ -120,8 +123,11 @@ function buildCtx(opts: {
         return "Maximum tool steps reached. Please respond to the user now.";
       }
       if (turnConfig?.activeTools) {
-        const activeSet = new Set(turnConfig.activeTools);
-        if (!activeSet.has(name)) {
+        if (turnConfig.activeTools !== cachedActiveTools) {
+          cachedActiveTools = turnConfig.activeTools;
+          cachedActiveSet = new Set(turnConfig.activeTools);
+        }
+        if (!cachedActiveSet?.has(name)) {
           log.info("Tool filtered by activeTools", { name });
           return JSON.stringify({ error: `Tool "${name}" is not available at this step.` });
         }
@@ -210,7 +216,6 @@ export function createS2sSession(opts: SessionOptions): Session {
       const msg = errorMessage(err);
       log.error("S2S connect failed", { error: errorDetail(err) });
       client.event({ type: "error", code: "internal", message: msg });
-      throw err;
     }
   }
 

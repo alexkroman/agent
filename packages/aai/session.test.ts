@@ -534,15 +534,14 @@ describe("createS2sSession", () => {
 
   // ─── connectS2s failure ────────────────────────────────────────────────
 
-  test("start() rejects on connectS2s failure so caller can clean up", async () => {
+  test("start() handles connectS2s failure gracefully", async () => {
     makeMockHandle();
     const spy = vi.spyOn(_internals, "connectS2s").mockRejectedValue(new Error("connect failed"));
     const client = makeClient();
     const session = createS2sSession(makeSessionOpts({ client }));
 
-    await expect(session.start()).rejects.toThrow("connect failed");
+    await session.start();
 
-    // Error event is still sent to the client before re-throwing
     expect(client.events).toContainEqual(
       expect.objectContaining({
         type: "error",

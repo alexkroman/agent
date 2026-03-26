@@ -59,15 +59,9 @@ export class MockWebSocket extends EventTarget {
     listener: (event: { code?: number; reason?: string }) => void,
   ): void;
   override addEventListener(type: "error", listener: (event: { message?: string }) => void): void;
-  override addEventListener(
-    type: string,
-    listener:
-      | (() => void)
-      | ((event: { data: unknown }) => void)
-      | ((event: { code?: number; reason?: string }) => void)
-      | ((event: { message?: string }) => void),
-  ): void {
-    super.addEventListener(type, listener as EventListener);
+  // biome-ignore lint/suspicious/noExplicitAny: implementation signature must encompass all overloads
+  override addEventListener(type: string, listener: any): void {
+    super.addEventListener(type, listener);
   }
 
   /**
