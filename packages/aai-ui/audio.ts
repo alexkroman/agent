@@ -76,8 +76,8 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
     ]);
   } catch (err: unknown) {
     for (const t of stream.getTracks()) t.stop();
-    await ctx.close().catch(() => {
-      /* swallow */
+    await ctx.close().catch((err) => {
+      console.warn("AudioContext close failed:", err);
     });
     throw err;
   }

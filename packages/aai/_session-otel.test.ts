@@ -223,8 +223,8 @@ describe("handleToolCall", () => {
     });
     await handleToolCall(ctx, tc());
     expect(ctx.log.warn).toHaveBeenCalledWith(
-      "interceptToolCall middleware failed",
-      expect.any(Object),
+      "interceptToolCall middleware failed (fail-open, tool call proceeds)",
+      expect.objectContaining({ err: "middleware broke", tool: "myTool" }),
     );
     expect(ctx.executeTool).toHaveBeenCalled();
   });

@@ -132,6 +132,6 @@ describe("kv handler", () => {
     };
     const { status, json } = await postKv(kvStore, { op: "get", key: "x" });
     expect(status).toBe(500);
-    expect(json.error).toContain("KV operation failed: get");
+    expect(json.error).toContain("KV get failed: db down");
   });
 });

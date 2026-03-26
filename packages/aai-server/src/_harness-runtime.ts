@@ -293,11 +293,21 @@ async function handleRoute(
     return { data: extractConfig(agent) };
   }
   if (req.method === "POST" && req.url === "/tool") {
-    const body = JSON.parse(await readBody(req)) as ToolCallRequest;
+    let body: ToolCallRequest;
+    try {
+      body = JSON.parse(await readBody(req)) as ToolCallRequest;
+    } catch {
+      return { data: { error: "Invalid JSON in request body" }, status: 400 };
+    }
     return { data: await executeTool(agent, body) };
   }
   if (req.method === "POST" && req.url === "/hook") {
-    const body = JSON.parse(await readBody(req)) as HookRequest;
+    let body: HookRequest;
+    try {
+      body = JSON.parse(await readBody(req)) as HookRequest;
+    } catch {
+      return { data: { error: "Invalid JSON in request body" }, status: 400 };
+    }
     return { data: await invokeHook(agent, body) };
   }
   return { data: { error: "Not found" }, status: 404 };

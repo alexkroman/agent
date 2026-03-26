@@ -106,8 +106,6 @@ describe("vector handler", () => {
       { vectorStore: failingStore } as Record<string, unknown>,
     );
     expect(res.status).toBe(500);
-    expect(((await res.json()) as Record<string, unknown>).error).toContain(
-      "Vector operation failed",
-    );
+    expect(((await res.json()) as Record<string, unknown>).error).toContain("Vector query failed:");
   });
 });
