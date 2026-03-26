@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import type { ReadyConfig, ServerMessage } from "@alexkroman1/aai/protocol";
-import { ServerMessageSchema } from "@alexkroman1/aai/protocol";
+import { ReadyConfigSchema, ServerMessageSchema } from "@alexkroman1/aai/protocol";
 import type { VoiceIO } from "./audio.ts";
 import type { AgentState, Message, Reactive, SessionError, ToolCallInfo } from "./types.ts";
 
@@ -195,7 +195,12 @@ export class ClientHandler {
 
     if (msg.type === "config") {
       const { type: _, ...config } = msg;
-      return config as ReadyConfig;
+      const parsed = ReadyConfigSchema.safeParse(config);
+      if (!parsed.success) {
+        console.warn("Unsupported server config:", parsed.error.message);
+        return null;
+      }
+      return parsed.data;
     }
 
     if (msg.type === "audio_done") {
