@@ -118,20 +118,11 @@ export type SessionError = {
     readonly message: string;
 };
 
+// Warning: (ae-forgotten-export) The symbol "SessionErrorCodeSchema" needs to be exported by the entry point index.d.ts
+//
 // @public
 export type SessionErrorCode = z.infer<typeof SessionErrorCodeSchema>;
 
-// @public
-export const SessionErrorCodeSchema: z.ZodEnum<{
-    tool: "tool";
-    stt: "stt";
-    llm: "llm";
-    tts: "tts";
-    protocol: "protocol";
-    connection: "connection";
-    audio: "audio";
-    internal: "internal";
-}>;
 
 // @public
 export function SessionProvider(input: {
