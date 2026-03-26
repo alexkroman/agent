@@ -15,6 +15,7 @@ export function createMockToolContext(overrides?: Partial<ToolContext>): ToolCon
       // no-op in tests
     },
     fetch: globalThis.fetch,
+    sessionId: "test-session",
     ...overrides,
   };
 }

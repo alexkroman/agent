@@ -263,6 +263,7 @@ export type ToolContext<S = Record<string, unknown>> = {
   vector: VectorStore;
   /** Read-only snapshot of conversation messages so far. */
   messages: readonly Message[];
+<<<<<<< HEAD
   /**
    * Push an intermediate update to the client UI before the tool finishes.
    *
@@ -285,6 +286,8 @@ export type ToolContext<S = Record<string, unknown>> = {
    * code to ensure portability across both deployment modes.
    */
   fetch: typeof globalThis.fetch;
+  /** Unique identifier for the current session. Useful for correlating logs across concurrent sessions. */
+  sessionId: string;
 };
 
 /**

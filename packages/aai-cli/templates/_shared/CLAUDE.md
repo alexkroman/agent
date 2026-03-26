@@ -292,6 +292,7 @@ Every `execute` function and lifecycle hook receives a context object:
 ```ts
 ctx.env; // Record<string, string> — secrets (from .env locally, aai secret put in production)
 ctx.state; // per-session state
+ctx.sessionId; // string — unique session identifier (for log correlation)
 ctx.kv; // persistent KV store
 ctx.vector; // VectorStore — vector store for RAG (tools only)
 ctx.messages; // readonly Message[] — conversation history (tools only)
