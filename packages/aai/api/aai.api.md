@@ -63,9 +63,39 @@ export function createToolFactory<S = Record<string, unknown>>(): <P extends z.Z
 export function defineAgent<S = Record<string, unknown>>(options: AgentOptions<S>): AgentDef<S>;
 
 // @public
+export function defineFlow<Steps extends string>(config: FlowConfig<Steps>): Flow<Steps>;
+
+// @public
 function defineTool<P extends z.ZodObject<z.ZodRawShape>, S = Record<string, unknown>>(def: ToolDef<P, S>): ToolDef<P, S>;
 export { defineTool }
 export { defineTool as tool }
+
+// @public
+export type Flow<Steps extends string = string> = {
+    initialState(): FlowState;
+    transition(ctx: HasFlowState, event: string): void;
+    currentStep(ctx: HasFlowState): Steps;
+    middleware(): Middleware;
+};
+
+// @public
+export type FlowConfig<Steps extends string = string> = {
+    initial: NoInfer<Steps>;
+    steps: Record<Steps, FlowStep>;
+};
+
+// @public
+export type FlowState = {
+    __flow: string;
+};
+
+// @public
+export type FlowStep = {
+    instructions?: string;
+    activeTools?: readonly string[];
+    on?: Record<string, string>;
+    terminal?: boolean;
+};
 
 // @public
 export type HookContext<S = Record<string, unknown>> = Omit<ToolContext<S>, "messages" | "sendUpdate">;
@@ -181,6 +211,10 @@ export type VectorStore = {
     }): Promise<VectorEntry[]>;
     delete(ids: string | string[]): Promise<void>;
 };
+
+// Warnings were encountered during analysis:
+//
+// dist/flow.d.ts:139:5 - (ae-forgotten-export) The symbol "HasFlowState" needs to be exported by the entry point index.d.ts
 
 // (No @packageDocumentation comment for this package)
 
