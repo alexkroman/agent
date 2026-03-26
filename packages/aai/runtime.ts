@@ -7,6 +7,7 @@
  * and the {@link S2SConfig} for Speech-to-Speech endpoint configuration.
  */
 
+import { context, trace } from "@opentelemetry/api";
 import { DEFAULT_STT_SAMPLE_RATE, DEFAULT_TTS_SAMPLE_RATE } from "./protocol.ts";
 
 /** Structured context attached to log messages. */
@@ -47,6 +48,45 @@ export const consoleLogger: Logger = {
   warn: log(console.warn),
   error: log(console.error),
   debug: log(console.debug),
+};
+
+/**
+ * Structured JSON logger for production diagnostics. Each log entry is a
+ * single-line JSON object with `timestamp`, `level`, `msg`, and any
+ * caller-provided context fields. When an active OpenTelemetry span exists,
+ * `trace_id` and `span_id` are included automatically.
+ */
+function jsonLog(level: string) {
+  return (msg: string, ctx?: LogContext): void => {
+    const entry: Record<string, unknown> = {
+      timestamp: new Date().toISOString(),
+      level,
+      msg,
+    };
+
+    // Attach OTel trace context when available.
+    const span = trace.getSpan(context.active());
+    if (span) {
+      const sc = span.spanContext();
+      entry.trace_id = sc.traceId;
+      entry.span_id = sc.spanId;
+    }
+
+    if (ctx) {
+      Object.assign(entry, ctx);
+    }
+
+    // Single-line JSON to stdout/stderr based on level.
+    const out = level === "error" || level === "warn" ? process.stderr : process.stdout;
+    out.write(`${JSON.stringify(entry)}\n`);
+  };
+}
+
+export const jsonLogger: Logger = {
+  info: jsonLog("info"),
+  warn: jsonLog("warn"),
+  error: jsonLog("error"),
+  debug: jsonLog("debug"),
 };
 
 /**
