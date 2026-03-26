@@ -60,7 +60,9 @@ export type BuiltinTool = "web_search" | "visit_webpage" | "fetch_json" | "run_c
 export function defineAgent<S = Record<string, unknown>>(options: AgentOptions<S>): AgentDef<S>;
 
 // @public
-export function defineTool<P extends z.ZodObject<z.ZodRawShape>, S = Record<string, unknown>>(def: ToolDef<P, S>): ToolDef<P, S>;
+function defineTool<P extends z.ZodObject<z.ZodRawShape>, S = Record<string, unknown>>(def: ToolDef<P, S>): ToolDef<P, S>;
+export { defineTool }
+export { defineTool as tool }
 
 // @public
 export type HookContext<S = Record<string, unknown>> = Omit<ToolContext<S>, "messages">;
@@ -119,9 +121,6 @@ export type StepInfo = {
     }[];
     text: string;
 };
-
-// @public
-export const tool: typeof defineTool;
 
 // @public
 export type ToolCallInterceptResult = {
