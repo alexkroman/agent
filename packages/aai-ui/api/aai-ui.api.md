@@ -134,14 +134,6 @@ export const SessionErrorCodeSchema: z.ZodEnum<{
 }>;
 
 // @public
-export type VoiceSessionOptions = {
-    platformUrl: string;
-    token?: string;
-    signal?: <T>(initial: T) => Reactive<T>;
-    batch?: (fn: () => void) => void;
-};
-
-// @public
 export function SessionProvider(input: {
     value: SessionSignals;
     children?: ComponentChildren;
@@ -242,6 +234,14 @@ export type VoiceSession = {
     reset(): void;
     disconnect(): void;
     [Symbol.dispose](): void;
+};
+
+// @public
+export type VoiceSessionOptions = {
+    platformUrl: string;
+    token?: string;
+    signal?: <T>(initial: T) => Reactive<T>;
+    batch?: (fn: () => void) => void;
 };
 
 // (No @packageDocumentation comment for this package)
