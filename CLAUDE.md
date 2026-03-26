@@ -35,7 +35,7 @@ pnpm test                # Run all tests (vitest)
 pnpm lint                # Run Biome linter (all packages)
 pnpm typecheck           # Type-check all packages
 pnpm lint:fix            # Auto-fix lint issues
-pnpm check:local         # Pre-commit gate (build + typecheck + lint + api-extractor + syncpack + test)
+pnpm check:local         # Fast pre-commit gate (parallel: build → typecheck + lint + api + syncpack → test)
 ```
 
 **Running specific tests:**
@@ -48,10 +48,16 @@ npx vitest run --config vitest.config.ts      # All from root
 
 **Full CI check** (`pnpm check`):
 
-Runs everything in sequence: `pnpm -r run build` → `typecheck` → `lint` →
-`api-extractor` (aai, aai-ui) → `attw --pack` (aai, aai-ui) → template
-type-check → `knip` → `syncpack lint` → `markdownlint-cli2` → aai-server
-integration tests → aai-cli e2e tests → `vitest --coverage`.
+Runs via `scripts/check.sh` in three parallelized phases:
+
+1. **Build** (sequential): `pnpm -r run build`
+2. **Checks** (parallel): typecheck, lint, api-extractor, attw, templates,
+   knip, syncpack, markdownlint
+3. **Tests** (parallel): integration tests, e2e tests, vitest with coverage
+
+`pnpm check:local` uses the same script with `--local` flag, running a
+subset: build → typecheck + lint + api-extractor + syncpack (parallel) →
+vitest (no coverage).
 
 ## Architecture
 
