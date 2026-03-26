@@ -86,6 +86,20 @@ export function createBundleStore(
   const { bucket, credentialKey } = opts;
   const cache = new Map<string, CacheEntry>();
 
+  // Per-slug mutex to serialize read-modify-write operations on the manifest.
+  const manifestLocks = new Map<string, Promise<void>>();
+  async function withManifestLock<T>(slug: string, fn: () => Promise<T>): Promise<T> {
+    const prev = manifestLocks.get(slug) ?? Promise.resolve();
+    const { promise: next, resolve } = Promise.withResolvers<void>();
+    manifestLocks.set(slug, next);
+    try {
+      await prev;
+      return await fn();
+    } finally {
+      resolve();
+    }
+  }
+
   async function put(key: string, body: string, contentType: string): Promise<void> {
     const res = await s3.send(
       new PutObjectCommand({
@@ -216,14 +230,16 @@ export function createBundleStore(
     },
 
     async putEnv(slug, env) {
-      const raw = await getRawManifest(slug);
-      if (!raw) throw new Error(`Agent ${slug} not found`);
-      const updated = {
-        ...raw,
-        env: await encryptEnv(credentialKey, { env, slug }),
-        envEncrypted: true,
-      };
-      await put(objectKey(slug, "manifest.json"), JSON.stringify(updated), "application/json");
+      await withManifestLock(slug, async () => {
+        const raw = await getRawManifest(slug);
+        if (!raw) throw new Error(`Agent ${slug} not found`);
+        const updated = {
+          ...raw,
+          env: await encryptEnv(credentialKey, { env, slug }),
+          envEncrypted: true,
+        };
+        await put(objectKey(slug, "manifest.json"), JSON.stringify(updated), "application/json");
+      });
     },
   };
 
