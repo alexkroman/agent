@@ -64,12 +64,12 @@ export type HookContext<S = Record<string, unknown>> = Omit<ToolContext<S>, "mes
 
 // @public
 export type Kv = {
-    get<T = unknown>(key: string): Promise<T | null>;
+    get<T = unknown>(key: string, schema?: z.ZodType<T>): Promise<T | null>;
     set(key: string, value: unknown, options?: {
         expireIn?: number;
     }): Promise<void>;
     delete(key: string): Promise<void>;
-    list<T = unknown>(prefix: string, options?: KvListOptions): Promise<KvEntry<T>[]>;
+    list<T = unknown>(prefix: string, options?: KvListOptions, schema?: z.ZodType<T>): Promise<KvEntry<T>[]>;
     keys(pattern?: string): Promise<string[]>;
 };
 
