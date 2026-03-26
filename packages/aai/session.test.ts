@@ -3,7 +3,12 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { makeConfig } from "./_test-utils.ts";
 import { type ClientSink, HOOK_TIMEOUT_MS } from "./protocol.ts";
 import type { S2sEvents, S2sHandle } from "./s2s.ts";
-import { _internals, buildSystemPrompt, createS2sSession, type SessionOptions } from "./session.ts";
+import {
+  _internals,
+  buildSystemPrompt,
+  createS2sSession,
+  type S2sSessionOptions,
+} from "./session.ts";
 import { DEFAULT_INSTRUCTIONS } from "./types.ts";
 
 // ─── buildSystemPrompt tests (existing) ─────────────────────────────────────
@@ -135,7 +140,7 @@ const silentLogger = {
   debug: vi.fn(),
 };
 
-function makeSessionOpts(overrides?: Partial<SessionOptions>): SessionOptions {
+function makeSessionOpts(overrides?: Partial<S2sSessionOptions>): S2sSessionOptions {
   return {
     id: "session-1",
     agent: "test-agent",
@@ -159,7 +164,7 @@ describe("createS2sSession", () => {
   let connectSpy: ReturnType<typeof vi.spyOn>;
   let mockHandle: ReturnType<typeof makeMockHandle>;
 
-  function setup(overrides?: Partial<SessionOptions>) {
+  function setup(overrides?: Partial<S2sSessionOptions>) {
     mockHandle = makeMockHandle();
     connectSpy = vi.spyOn(_internals, "connectS2s").mockResolvedValue(mockHandle);
     const client = makeClient();

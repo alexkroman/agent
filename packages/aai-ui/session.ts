@@ -10,8 +10,8 @@ import type {
   Message,
   Reactive,
   SessionError,
-  SessionOptions,
   ToolCallInfo,
+  VoiceSessionOptions,
 } from "./types.ts";
 
 export { ClientHandler } from "./client-handler.ts";
@@ -21,8 +21,8 @@ export type {
   Reactive,
   SessionError,
   SessionErrorCode,
-  SessionOptions,
   ToolCallInfo,
+  VoiceSessionOptions,
 } from "./types.ts";
 
 /** Built-in non-reactive container (plain mutable wrapper). */
@@ -180,7 +180,7 @@ function buildWsUrl(platformUrl: string, token: string | undefined, resume: bool
  *
  * @public
  */
-export function createVoiceSession(options: SessionOptions): VoiceSession {
+export function createVoiceSession(options: VoiceSessionOptions): VoiceSession {
   const reactive = options.signal ?? plainReactive;
   const batchFn = options.batch ?? plainBatch;
 
