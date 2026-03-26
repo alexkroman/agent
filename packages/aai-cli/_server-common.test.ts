@@ -1,41 +1,91 @@
 // Copyright 2025 the AAI authors. MIT license.
 import fs from "node:fs/promises";
 import path from "node:path";
-import { describe, expect, test } from "vitest";
-import { loadAgentDef, resolveServerEnv } from "./_server-common.ts";
+import { afterEach, describe, expect, test } from "vitest";
+import { envFileKeys, loadAgentDef, resolveServerEnv } from "./_server-common.ts";
 import { withTempDir } from "./_test-utils.ts";
 
+describe("envFileKeys", () => {
+  test("extracts key names from KEY=VALUE lines", () => {
+    expect(envFileKeys("FOO=bar\nBAZ=qux")).toEqual(["FOO", "BAZ"]);
+  });
+
+  test("skips comments and blank lines", () => {
+    expect(envFileKeys("# comment\n\nFOO=bar\n  # another")).toEqual(["FOO"]);
+  });
+
+  test("handles empty values", () => {
+    expect(envFileKeys("KEY=")).toEqual(["KEY"]);
+  });
+
+  test("trims whitespace around keys", () => {
+    expect(envFileKeys("  KEY  =  value  ")).toEqual(["KEY"]);
+  });
+
+  test("skips lines without =", () => {
+    expect(envFileKeys("NOEQ\nFOO=bar")).toEqual(["FOO"]);
+  });
+});
+
 describe("resolveServerEnv", () => {
-  test("returns env with existing ASSEMBLYAI_API_KEY", async () => {
-    const env = await resolveServerEnv({ ASSEMBLYAI_API_KEY: "test-key-123" });
+  // process.loadEnvFile mutates process.env, so clean up after .env tests
+  const injectedKeys: string[] = [];
+  afterEach(() => {
+    for (const key of injectedKeys) delete process.env[key];
+    injectedKeys.length = 0;
+  });
+
+  test("includes ASSEMBLYAI_API_KEY even without .env file", async () => {
+    const env = await resolveServerEnv(undefined, { ASSEMBLYAI_API_KEY: "test-key-123" });
     expect(env.ASSEMBLYAI_API_KEY).toBe("test-key-123");
   });
 
-  test("returned env contains all provided entries", async () => {
-    const env = await resolveServerEnv({
+  test("only includes declared keys, not all of baseEnv", async () => {
+    const env = await resolveServerEnv(undefined, {
       ASSEMBLYAI_API_KEY: "key",
-      NODE_ENV: "test",
+      PATH: "/usr/bin",
+      HOME: "/home/user",
     });
-    expect(env.NODE_ENV).toBe("test");
+    // Only ASSEMBLYAI_API_KEY should be present, not PATH/HOME
     expect(env.ASSEMBLYAI_API_KEY).toBe("key");
+    expect(env).not.toHaveProperty("PATH");
+    expect(env).not.toHaveProperty("HOME");
   });
 
-  test("filters out undefined values", async () => {
-    const env = await resolveServerEnv({
-      ASSEMBLYAI_API_KEY: "key",
-      MISSING: undefined,
+  test("loads only declared keys from .env file", async () => {
+    injectedKeys.push("AAI_TEST_SECRET", "ASSEMBLYAI_API_KEY");
+    await withTempDir(async (dir) => {
+      await fs.writeFile(
+        path.join(dir, ".env"),
+        "AAI_TEST_SECRET=from-dotenv\nASSEMBLYAI_API_KEY=key",
+      );
+      const env = await resolveServerEnv(dir);
+      expect(env.AAI_TEST_SECRET).toBe("from-dotenv");
+      expect(env.ASSEMBLYAI_API_KEY).toBe("key");
+      // System vars should not leak in
+      expect(env).not.toHaveProperty("PATH");
+      expect(env).not.toHaveProperty("HOME");
     });
-    expect(env).not.toHaveProperty("MISSING");
   });
 
-  test("preserves multiple defined values", async () => {
-    const env = await resolveServerEnv({
-      ASSEMBLYAI_API_KEY: "key",
-      FOO: "bar",
-      BAZ: "qux",
+  test("shell env overrides .env values for declared keys", async () => {
+    injectedKeys.push("AAI_TEST_OVERRIDE", "ASSEMBLYAI_API_KEY");
+    await withTempDir(async (dir) => {
+      await fs.writeFile(
+        path.join(dir, ".env"),
+        "AAI_TEST_OVERRIDE=from-file\nASSEMBLYAI_API_KEY=key",
+      );
+      process.env.AAI_TEST_OVERRIDE = "from-shell";
+      const env = await resolveServerEnv(dir);
+      expect(env.AAI_TEST_OVERRIDE).toBe("from-shell");
     });
-    expect(env.FOO).toBe("bar");
-    expect(env.BAZ).toBe("qux");
+  });
+
+  test("returns only ASSEMBLYAI_API_KEY when no .env file exists", async () => {
+    await withTempDir(async (dir) => {
+      const env = await resolveServerEnv(dir, { ASSEMBLYAI_API_KEY: "key", FOO: "bar" });
+      expect(env).toEqual({ ASSEMBLYAI_API_KEY: "key" });
+    });
   });
 });
 

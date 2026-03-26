@@ -14,7 +14,7 @@ export async function _startProductionServer(
 
   log(step("Start", "loading agent"));
   const agentDef = await loadAgentDef(cwd);
-  const env = await resolveServerEnv();
+  const env = await resolveServerEnv(cwd);
 
   await bootServer(agentDef, clientDir, env, port);
   log(step("Ready", `http://localhost:${port}`));

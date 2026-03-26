@@ -10,7 +10,7 @@ import { info, runCommand, step } from "./_ui.ts";
 async function runCheckMode(cwd: string, port: number, log: (msg: string) => void): Promise<void> {
   const bundle = await buildAgentBundle(cwd, log);
   const agentDef = await loadAgentDef(cwd);
-  const env = await resolveServerEnv();
+  const env = await resolveServerEnv(cwd);
   const server = await bootServer(agentDef, bundle.clientDir, env, port);
   log(step("Ready", `http://localhost:${port}`));
 
