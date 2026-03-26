@@ -17,9 +17,13 @@ export async function handleKv(c: Context<Env>): Promise<Response> {
       case "set":
         await kvStore.set(scope, msg.key, msg.value, msg.ttl);
         return c.json({ result: "OK" });
-      case "delete":
-        await kvStore.delete(scope, msg.key);
+      case "delete": {
+        const keys = Array.isArray(msg.key) ? msg.key : [msg.key];
+        for (const key of keys) {
+          await kvStore.delete(scope, key);
+        }
         return c.json({ result: "OK" });
+      }
       case "keys":
         return c.json({ result: await kvStore.keys(scope, msg.pattern) });
       case "list": {

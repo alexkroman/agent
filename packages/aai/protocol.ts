@@ -46,7 +46,10 @@ export const KvRequestSchema = z.discriminatedUnion("op", [
     value: z.string(),
     ttl: z.number().int().positive().optional(),
   }),
-  z.object({ op: z.literal("delete"), key: z.string().min(1) }),
+  z.object({
+    op: z.literal("delete"),
+    key: z.union([z.string().min(1), z.array(z.string().min(1)).min(1)]),
+  }),
   z.object({
     op: z.literal("list"),
     prefix: z.string(),
