@@ -26,6 +26,9 @@ export type SessionWebSocket = {
   addEventListener(type: "error", listener: (event: { message?: string }) => void): void;
 };
 
+/** Default timeout for session.start() in milliseconds. */
+const DEFAULT_SESSION_START_TIMEOUT_MS = 10_000;
+
 /** Options for wiring a WebSocket to a session. */
 export type WsSessionOptions = {
   /** Map of active sessions (session is added on open, removed on close). */
@@ -42,6 +45,8 @@ export type WsSessionOptions = {
   onClose?: () => void;
   /** Logger instance. Defaults to console. */
   logger?: Logger;
+  /** Timeout in ms for session.start(). Defaults to 10 000 (10s). */
+  sessionStartTimeoutMs?: number;
 };
 
 /**
@@ -180,8 +185,18 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
     // Send config immediately — zero RTT
     ws.send(JSON.stringify({ type: "config", ...opts.readyConfig }));
 
-    session
-      .start()
+    const timeoutMs = opts.sessionStartTimeoutMs ?? DEFAULT_SESSION_START_TIMEOUT_MS;
+    const startWithTimeout = Promise.race([
+      session.start(),
+      new Promise<never>((_resolve, reject) => {
+        setTimeout(
+          () => reject(new Error(`session.start() timed out after ${timeoutMs}ms`)),
+          timeoutMs,
+        );
+      }),
+    ]);
+
+    startWithTimeout
       .then(() => {
         log.info("Session ready", { ...ctx, sid });
         sessionSpan.addEvent("session.ready");

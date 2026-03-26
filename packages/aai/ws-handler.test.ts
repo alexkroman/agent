@@ -578,6 +578,45 @@ describe("wireSessionSocket", () => {
     ws.close();
   });
 
+  // ─── Session start timeout ─────────────────────────────────────────────
+
+  test("session.start() timeout triggers 'Session start failed'", async () => {
+    const session = makeStubSession();
+    // start() never resolves — simulates a hanging S2S connection
+    session.start = vi.fn(
+      () =>
+        new Promise<void>(() => {
+          /* intentionally never resolves */
+        }),
+    );
+
+    const ws = new MockWebSocket("ws://test");
+    ws.readyState = MockWebSocket.OPEN;
+    const sessions = new Map<string, Session>();
+
+    wireSessionSocket(ws, {
+      sessions,
+      createSession: () => session,
+      readyConfig: defaultConfig,
+      logger: silentLogger,
+      sessionStartTimeoutMs: 50,
+    });
+
+    expect(sessions.size).toBe(1);
+
+    await vi.waitFor(
+      () => {
+        expect(sessions.size).toBe(0);
+      },
+      { timeout: 500 },
+    );
+
+    expect(silentLogger.error).toHaveBeenCalledWith(
+      "Session start failed",
+      expect.objectContaining({ error: expect.stringContaining("timed out") }),
+    );
+  });
+
   // ─── Socket not yet open ───────────────────────────────────────────────
 
   test("waits for open event when readyState is not OPEN", async () => {

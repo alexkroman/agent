@@ -374,5 +374,10 @@ export function setupListeners(ctx: S2sSessionCtx, handle: S2sHandle): void {
   handle.on("close", () => {
     ctx.log.info("S2S closed");
     ctx.s2s = null;
+    // Bump replyGeneration so in-flight tool calls (still executing
+    // ctx.executeTool) will discard their results in finishToolCall
+    // instead of pushing to pendingTools that can never be drained.
+    ctx.replyGeneration++;
+    ctx.pendingTools = [];
   });
 }
