@@ -366,8 +366,8 @@ describe("WebSocket session lifecycle", () => {
     });
   });
 
-  afterAll(() => {
-    sandbox?.terminate();
+  afterAll(async () => {
+    await sandbox?.terminate();
   });
 
   test("startSession sends config message on open", async () => {

@@ -498,6 +498,61 @@ describe("wireSessionSocket", () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
+  // ─── Concurrency regression tests ─────────────────────────────────────
+
+  test("close during start() does not double-stop or throw", async () => {
+    let resolveStart!: () => void;
+    const session = makeStubSession();
+    session.start = vi.fn(
+      () =>
+        new Promise<void>((r) => {
+          resolveStart = r;
+        }),
+    );
+    const ws = new MockWebSocket("ws://test");
+    ws.readyState = MockWebSocket.OPEN;
+    const sessions = new Map<string, Session>();
+
+    wireSessionSocket(ws, {
+      sessions,
+      createSession: () => session,
+      readyConfig: defaultConfig,
+      logger: silentLogger,
+    });
+
+    // Close while start() is pending
+    ws.close();
+
+    // Now start() resolves
+    resolveStart();
+    await vi.waitFor(() => {
+      expect(session.stop).toHaveBeenCalledOnce();
+    });
+  });
+
+  test("start() failure removes session from map before close", async () => {
+    const session = makeStubSession();
+    session.start = vi.fn(() => Promise.reject(new Error("boom")));
+    const ws = new MockWebSocket("ws://test");
+    ws.readyState = MockWebSocket.OPEN;
+    const sessions = new Map<string, Session>();
+
+    wireSessionSocket(ws, {
+      sessions,
+      createSession: () => session,
+      readyConfig: defaultConfig,
+      logger: silentLogger,
+    });
+
+    // Wait for start() rejection to propagate
+    await vi.waitFor(() => {
+      expect(sessions.size).toBe(0);
+    });
+
+    // Close should not throw — session is null
+    ws.close();
+  });
+
   // ─── Socket not yet open ───────────────────────────────────────────────
 
   test("waits for open event when readyState is not OPEN", async () => {
