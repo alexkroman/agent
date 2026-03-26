@@ -1,9 +1,5 @@
-import { defineAgent, type ToolDef } from "@alexkroman1/aai";
+import { createToolFactory, defineAgent } from "@alexkroman1/aai";
 import { z } from "zod";
-
-function orderTool<P extends z.ZodObject<z.ZodRawShape>>(def: ToolDef<P, OrderState>): ToolDef<P, OrderState> {
-  return def;
-}
 
 interface Pizza {
   id: number;
@@ -19,6 +15,8 @@ interface OrderState {
   customerName: string;
   orderPlaced: boolean;
 }
+
+const orderTool = createToolFactory<OrderState>();
 
 const MENU = {
   sizes: { small: 8.99, medium: 11.99, large: 14.99 },

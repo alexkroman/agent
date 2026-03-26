@@ -89,7 +89,7 @@ export default defineAgent({
 ### Imports
 
 ```ts
-import { defineAgent, defineTool } from "@alexkroman1/aai"; // defineAgent + helpers
+import { createToolFactory, defineAgent, defineTool } from "@alexkroman1/aai"; // defineAgent + helpers
 import type { BeforeStepResult, BuiltinTool, HookContext, Middleware, StepInfo, ToolContext } from "@alexkroman1/aai";
 import { z } from "zod"; // Tools with typed params (included in package.json)
 ```
@@ -218,6 +218,31 @@ export default defineAgent({
 **Important:** Wrap tool definitions in `defineTool()` to get typed `args`
 inferred from the Zod `parameters` schema. Without `defineTool()`, args are
 untyped.
+
+**Typed state in tools:** When your agent uses typed session state, use
+`createToolFactory` to avoid verbose generics on every tool:
+
+```ts
+import { createToolFactory, defineAgent } from "@alexkroman1/aai";
+import { z } from "zod";
+
+interface MyState { items: string[] }
+const tool = createToolFactory<MyState>();
+
+export default defineAgent<MyState>({
+  name: "my-agent",
+  state: () => ({ items: [] }),
+  tools: {
+    add_item: tool({
+      description: "Add an item",
+      parameters: z.object({ item: z.string() }),
+      execute: ({ item }, ctx) => {
+        ctx.state.items.push(item); // ctx.state is typed as MyState
+      },
+    }),
+  },
+});
+```
 
 Zod schema patterns:
 

@@ -27,6 +27,7 @@ export {
   type AgentOptions,
   type BeforeStepResult,
   type BuiltinTool,
+  createToolFactory,
   defineAgent,
   defineTool,
   type HookContext,
