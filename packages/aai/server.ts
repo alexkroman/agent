@@ -43,6 +43,8 @@ export type AgentServer = {
   listen(port?: number): Promise<void>;
   /** Stop the server. */
   close(): Promise<void>;
+  /** The port the server is listening on, or `undefined` before `listen()`. */
+  port: number | undefined;
 };
 
 /** Escape HTML special characters to prevent XSS. */
@@ -82,8 +84,12 @@ export function createServer(options: ServerOptions): AgentServer {
   }
 
   let serverHandle: { shutdown(): Promise<void> } | null = null;
+  let listenPort: number | undefined;
 
   return {
+    get port() {
+      return listenPort;
+    },
     async listen(port = 3000) {
       if (serverHandle) throw new Error("Server is already listening");
 
@@ -129,9 +135,12 @@ export function createServer(options: ServerOptions): AgentServer {
         nodeServer.on("error", reject);
       });
 
+      const addr = nodeServer.address();
+      listenPort = typeof addr === "object" && addr ? addr.port : port;
+
       const wss = new WebSocketServer({ noServer: true });
       nodeServer.on("upgrade", (req, socket, head) => {
-        const reqUrl = new URL(req.url ?? "/", `http://localhost:${port}`);
+        const reqUrl = new URL(req.url ?? "/", `http://localhost:${listenPort}`);
         const resume = reqUrl.searchParams.has("resume");
         logger.info(`WS upgrade ${reqUrl.pathname}${resume ? " (resume)" : ""}`);
         wss.handleUpgrade(req, socket, head, (ws) => {
@@ -157,6 +166,7 @@ export function createServer(options: ServerOptions): AgentServer {
         sessions.clear();
       }
       await serverHandle?.shutdown();
+      listenPort = undefined;
     },
   };
 }
