@@ -11,7 +11,7 @@ import { ClientMessageSchema } from "./protocol.ts";
 import type { Logger } from "./runtime.ts";
 import { consoleLogger } from "./runtime.ts";
 import type { Session } from "./session.ts";
-import { tracer, wsSendDroppedCounter } from "./telemetry.ts";
+import { tracer, wsSendBackpressureCounter, wsSendDroppedCounter } from "./telemetry.ts";
 
 /**
  * Minimal WebSocket interface accepted by {@link wireSessionSocket}.
@@ -20,6 +20,8 @@ import { tracer, wsSendDroppedCounter } from "./telemetry.ts";
  */
 export type SessionWebSocket = {
   readonly readyState: number;
+  /** Bytes queued but not yet sent. Used for backpressure detection. */
+  readonly bufferedAmount?: number;
   send(data: string | ArrayBuffer | Uint8Array): void;
   addEventListener(type: "close" | "open", listener: () => void): void;
   addEventListener(type: "message", listener: (event: { data: unknown }) => void): void;
@@ -44,17 +46,76 @@ export type WsSessionOptions = {
   logger?: Logger;
 };
 
+/** Backpressure threshold: drop/queue when bufferedAmount exceeds 1 MB. */
+const BACKPRESSURE_HIGH_WATER = 1024 * 1024;
+/** Maximum queued text events while backpressured. Oldest are dropped when full. */
+const MAX_TEXT_QUEUE = 64;
+
 /**
  * Creates a {@link ClientSink} backed by a plain WebSocket.
  *
  * Text events are sent as JSON text frames; audio chunks are sent as
  * binary frames (zero-copy).
+ *
+ * Backpressure handling: when `ws.bufferedAmount` exceeds
+ * {@link BACKPRESSURE_HIGH_WATER}, audio chunks are dropped (real-time
+ * data becomes stale) and text events are held in a bounded queue that
+ * drains on subsequent sends.
  */
 function createClientSink(ws: SessionWebSocket, log: Logger): ClientSink {
-  /** Send data over ws, tolerating races where the socket closes between readyState check and send. */
+  const textQueue: string[] = [];
+
+  function isBackpressured(): boolean {
+    return (ws.bufferedAmount ?? 0) >= BACKPRESSURE_HIGH_WATER;
+  }
+
+  /** Try to flush queued text events while the socket has capacity. */
+  function drainTextQueue(): void {
+    while (textQueue.length > 0 && !isBackpressured()) {
+      const msg = textQueue.shift();
+      if (msg === undefined) break;
+      try {
+        if (ws.readyState === 1) ws.send(msg);
+      } catch {
+        // Socket died while draining — remaining queue items are stale.
+        textQueue.length = 0;
+        wsSendDroppedCounter.add(1);
+        return;
+      }
+    }
+  }
+
+  /** Enqueue a text event, dropping the oldest if the queue is full. */
+  function enqueueText(data: string): void {
+    if (textQueue.length >= MAX_TEXT_QUEUE) {
+      textQueue.shift();
+      wsSendBackpressureCounter.add(1);
+      log.debug?.("safeSend: text queue full, dropping oldest event");
+    }
+    textQueue.push(data);
+  }
+
+  /** Send data over ws with backpressure detection. */
   function safeSend(data: string | ArrayBuffer | Uint8Array): void {
     try {
-      if (ws.readyState === 1) ws.send(data);
+      if (ws.readyState !== 1) return;
+
+      drainTextQueue();
+
+      if (!isBackpressured()) {
+        ws.send(data);
+        return;
+      }
+
+      // Backpressured: audio is real-time so stale chunks are dropped.
+      if (typeof data !== "string") {
+        wsSendBackpressureCounter.add(1);
+        log.debug?.("safeSend: dropping audio chunk due to backpressure");
+        return;
+      }
+
+      // Text control events are queued for later delivery.
+      enqueueText(data);
     } catch (err) {
       log.debug?.("safeSend: socket closed between readyState check and send", {
         error: err instanceof Error ? err.message : String(err),
@@ -62,6 +123,7 @@ function createClientSink(ws: SessionWebSocket, log: Logger): ClientSink {
       wsSendDroppedCounter.add(1);
     }
   }
+
   return {
     get open() {
       return ws.readyState === 1;

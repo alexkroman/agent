@@ -28,6 +28,8 @@ export class MockWebSocket extends EventTarget {
 
   readyState = MockWebSocket.CONNECTING;
   binaryType = "arraybuffer";
+  /** Simulated bufferedAmount for backpressure testing. */
+  bufferedAmount = 0;
   /** All messages passed to {@link send}, in order. */
   sent: (string | ArrayBuffer | Uint8Array)[] = [];
   url: string;
