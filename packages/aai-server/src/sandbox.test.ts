@@ -95,6 +95,24 @@ describe("buildExecuteTool", () => {
     const exec = _internals.buildExecuteTool("http://127.0.0.1:9999", "test-token");
     await expect(exec("bad_tool", {}, "s1", [])).rejects.toThrow("tool failed (500):");
   });
+
+  it("aborts immediately when crash signal fires", async () => {
+    globalThis.fetch = vi.fn(
+      (_url: string | URL | Request, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+        }),
+    );
+    const controller = new AbortController();
+    const exec = _internals.buildExecuteTool(
+      "http://127.0.0.1:9999",
+      "test-token",
+      controller.signal,
+    );
+    const promise = exec("slow_tool", {}, "s1", []);
+    controller.abort(new Error("Isolate crashed"));
+    await expect(promise).rejects.toThrow("Isolate crashed");
+  });
 });
 
 // ── buildHookInvoker ─────────────────────────────────────────────────────
@@ -109,6 +127,24 @@ describe("buildHookInvoker", () => {
   function mockHookResponse(result?: unknown) {
     globalThis.fetch = vi.fn(async () => Response.json({ state: {}, result }));
   }
+
+  it("aborts immediately when crash signal fires", async () => {
+    globalThis.fetch = vi.fn(
+      (_url: string | URL | Request, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+        }),
+    );
+    const controller = new AbortController();
+    const invoker = _internals.buildHookInvoker(
+      "http://127.0.0.1:9999",
+      "test-token",
+      controller.signal,
+    );
+    const promise = invoker.onConnect("s1");
+    controller.abort(new Error("Isolate crashed"));
+    await expect(promise).rejects.toThrow("Isolate crashed");
+  });
 
   it("onConnect sends correct hook name", async () => {
     mockHookResponse();

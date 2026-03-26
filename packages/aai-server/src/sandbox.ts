@@ -1,15 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
-/**
- * Agent sandbox using secure-exec V8 isolates.
- *
- * Each deployed agent runs inside a secure-exec isolate. The isolate loads
- * the agent bundle and exposes tool execution + lifecycle hooks over HTTP
- * on loopback. The host calls `createS2sSession` + `wireSessionSocket`
- * directly — no intermediary or proxy AgentDef needed.
- *
- * A per-sandbox sidecar server on the host provides scoped KV and
- * vector access — the isolate calls it without authentication (loopback only).
- */
+/** Agent sandbox using secure-exec V8 isolates. */
 
 import { randomBytes } from "node:crypto";
 import { toAgentConfig } from "@alexkroman1/aai/internal-types";
@@ -74,14 +64,13 @@ async function startIsolate(
   sidecarUrl: string,
   agentEnv: Record<string, string>,
   authToken: string,
-): Promise<{ port: number; runtime: NodeRuntime }> {
+): Promise<{ port: number; runtime: NodeRuntime; crashed: AbortSignal }> {
   const harnessJs = await getHarnessRuntimeJs();
   const fs = createInMemoryFileSystem();
   await fs.writeFile("/app/agent_bundle.js", workerCode);
   await fs.writeFile("/app/_harness-runtime.js", harnessJs);
 
-  // Prefix agent env vars so they can be distinguished from system vars.
-  // The harness reads AAI_ENV_* and strips the prefix to build ctx.env.
+  // Prefix agent env vars with AAI_ENV_ so the harness can identify them.
   const prefixedEnv: Record<string, string> = {
     SIDECAR_URL: sidecarUrl,
     HARNESS_AUTH_TOKEN: authToken,
@@ -90,6 +79,8 @@ async function startIsolate(
     prefixedEnv[`AAI_ENV_${k}`] = v;
   }
   const allowedKeys = new Set(Object.keys(prefixedEnv));
+
+  const crashController = new AbortController();
 
   let resolvePort: (port: number) => void;
   let rejectPort: (err: Error) => void;
@@ -141,9 +132,7 @@ async function startIsolate(
     },
   });
 
-  // The exec promise lives as long as the isolate's HTTP server. It is not
-  // awaited because the sandbox owns the runtime lifecycle (via terminate()).
-  // If exec rejects before the port is announced, propagate that as a boot failure.
+  // Exec lives as long as the isolate. Pre-port rejections propagate as boot failures.
   const execPromise = runtime
     .exec(
       'import agent from "/app/agent_bundle.js";\nimport { startHarness } from "/app/_harness-runtime.js";\nstartHarness(agent);',
@@ -164,29 +153,25 @@ async function startIsolate(
     clearTimeout(timeoutId);
   }
 
-  // After port is resolved, let exec run in background; suppress rejections
-  // from terminate() being called later.
-  execPromise.catch(() => {
-    /* Isolate disposed during normal lifecycle — safe to ignore. */
+  // After port is resolved, let exec run in background. If it rejects
+  // unexpectedly (crash), abort the crash signal so in-flight calls fail fast.
+  execPromise.catch((err) => {
+    if (!crashController.signal.aborted) {
+      crashController.abort(
+        new Error(`Isolate crashed: ${err instanceof Error ? err.message : err}`),
+      );
+    }
   });
 
-  return { port, runtime };
+  return { port, runtime, crashed: crashController.signal };
 }
 
 // ── Isolate RPC ──────────────────────────────────────────────────────────
 
-/** Timeout for the isolate to announce its HTTP port via stdout. */
 const PORT_ANNOUNCE_TIMEOUT_MS = 15_000;
-/** Timeout for initial config fetch (isolate boot). */
 const CONFIG_TIMEOUT_MS = 10_000;
-/**
- * Timeout for tool execution calls (host-side).
- *
- * The isolate-side timeout (ISOLATE_TOOL_TIMEOUT_MS = 25s in _harness-runtime.ts)
- * is 5s shorter so it returns a clean error before the host aborts.
- */
+/** Host-side tool timeout (isolate-side is 25s — 5s shorter for clean errors). */
 const TOOL_TIMEOUT_MS = 30_000;
-/** Timeout for lifecycle hook calls. */
 const HOOK_TIMEOUT_MS = 10_000;
 
 async function getIsolateConfig(port: number, authToken: string): Promise<IsolateConfig> {
@@ -208,12 +193,15 @@ async function callIsolate<T>(
   timeoutMs: number,
   schema: z.ZodType<T>,
   authToken: string,
+  crashed?: AbortSignal,
 ): Promise<T> {
+  const signals = [AbortSignal.timeout(timeoutMs)];
+  if (crashed) signals.push(crashed);
   const res = await fetch(`${isolateUrl}/${endpoint}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-harness-token": authToken },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(timeoutMs),
+    signal: AbortSignal.any(signals),
   });
   if (!res.ok) {
     const body = await res.text().catch(() => "");
@@ -222,7 +210,11 @@ async function callIsolate<T>(
   return schema.parse(await res.json());
 }
 
-function buildExecuteTool(isolateUrl: string, authToken: string): ExecuteTool {
+function buildExecuteTool(
+  isolateUrl: string,
+  authToken: string,
+  crashed?: AbortSignal,
+): ExecuteTool {
   return async (name, args, sessionId, messages) => {
     const { result } = await callIsolate(
       isolateUrl,
@@ -231,12 +223,17 @@ function buildExecuteTool(isolateUrl: string, authToken: string): ExecuteTool {
       TOOL_TIMEOUT_MS,
       ToolCallResponseSchema,
       authToken,
+      crashed,
     );
     return result;
   };
 }
 
-function buildHookInvoker(isolateUrl: string, authToken: string): HookInvoker {
+function buildHookInvoker(
+  isolateUrl: string,
+  authToken: string,
+  crashed?: AbortSignal,
+): HookInvoker {
   const hook = async (name: string, extra: Record<string, unknown> = {}): Promise<unknown> =>
     (
       await callIsolate(
@@ -246,6 +243,7 @@ function buildHookInvoker(isolateUrl: string, authToken: string): HookInvoker {
         HOOK_TIMEOUT_MS,
         HookResponseSchema,
         authToken,
+        crashed,
       )
     ).result;
 
@@ -309,11 +307,7 @@ function buildHookInvoker(isolateUrl: string, authToken: string): HookInvoker {
   };
 }
 
-// toAgentConfig is imported from @alexkroman1/aai/internal-types
-
-// ── Test internals ───────────────────────────────────────────────────────
-
-/** @internal Not part of the public API. Exposed for testing only. */
+/** @internal Exposed for testing only. */
 export const _internals = {
   startSidecarServer,
   startIsolate,
@@ -339,20 +333,17 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
   const kv = scopedKv(kvStore, scope);
   const vector = vectorStore ? scopedVector(vectorStore, scope) : undefined;
   const sidecar = await startSidecarServer(kv, vector);
-  // Per-sandbox auth token prevents other host processes from calling harness endpoints.
   const authToken = randomBytes(32).toString("hex");
-  // Only agent-defined secrets enter the isolate; apiKey stays host-side.
-  const { port: isolatePort, runtime } = await startIsolate(
-    workerCode,
-    sidecar.url,
-    agentEnv,
-    authToken,
-  );
+  const {
+    port: isolatePort,
+    runtime,
+    crashed,
+  } = await startIsolate(workerCode, sidecar.url, agentEnv, authToken);
   const config = await getIsolateConfig(isolatePort, authToken);
   const isolateUrl = `http://127.0.0.1:${isolatePort}`;
   const agentConfig = toAgentConfig(config);
-  const executeTool = buildExecuteTool(isolateUrl, authToken);
-  const hookInvoker = buildHookInvoker(isolateUrl, authToken);
+  const executeTool = buildExecuteTool(isolateUrl, authToken, crashed);
+  const hookInvoker = buildHookInvoker(isolateUrl, authToken, crashed);
   const s2sConfig = DEFAULT_S2S_CONFIG;
   const readyConfig = buildReadyConfig(s2sConfig);
 
@@ -389,10 +380,7 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
       );
       await Promise.all(stops);
       sessions.clear();
-      // Use terminate() (async) instead of dispose() (sync) to properly
-      // await HTTP server closure before disposing the V8 isolate.
-      // This prevents "Isolate is disposed" unhandled rejections from
-      // in-flight operations that race with synchronous isolate disposal.
+      // Async terminate() avoids "Isolate is disposed" rejections from in-flight ops.
       await runtime.terminate().catch((err) => {
         console.warn("Runtime terminate failed:", err);
       });
