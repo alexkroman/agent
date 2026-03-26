@@ -100,7 +100,7 @@ export type Message = {
 };
 
 // @public
-export type Middleware<S = Record<string, unknown>> = {
+export type Middleware<S = any> = {
     name: string;
     beforeInput?: (text: string, ctx: HookContext<S>) => string | Promise<string>;
     beforeTurn?: (text: string, ctx: HookContext<S>) => MiddlewareBlockResult | undefined | Promise<MiddlewareBlockResult | undefined>;
