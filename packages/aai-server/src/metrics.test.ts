@@ -98,4 +98,16 @@ describe("metrics", () => {
     expect(output).toContain('agent="x"');
     expect(output).toContain('method="GET"');
   });
+
+  test("non-string attribute values are converted to strings", async () => {
+    const counter = createCounter("nonstr_total", {
+      help: "non-string attrs",
+      labelNames: ["agent", "status"],
+    });
+    counter.add(1, { agent: "a", status: 200 });
+
+    const output = await serializeForAgent("a");
+    expect(output).toContain('status="200"');
+    expect(output).not.toContain("[object");
+  });
 });
