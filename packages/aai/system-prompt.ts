@@ -18,6 +18,19 @@ const VOICE_RULES =
   '- Use short conversational sentences. To list things, say "First," "Next," "Finally,"\n' +
   "- Keep responses concise — 1 to 3 sentences max";
 
+/**
+ * Build the system prompt sent to the LLM from the agent configuration.
+ *
+ * Assembles the default instructions, today's date, agent-specific instructions,
+ * and optional sections for tool usage preamble and voice output rules.
+ *
+ * @param config - The serializable agent configuration (name, instructions, etc.).
+ * @param opts.hasTools - When `true`, appends a preamble instructing the LLM to
+ *   speak a brief phrase before each tool call to fill silence.
+ * @param opts.voice - When `true`, appends strict voice-specific output rules
+ *   (no markdown, no bullet points, conversational tone, concise responses).
+ * @returns The assembled system prompt string.
+ */
 export function buildSystemPrompt(
   config: AgentConfig,
   opts: { hasTools: boolean; voice?: boolean },

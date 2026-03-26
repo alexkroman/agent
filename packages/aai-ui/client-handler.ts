@@ -10,8 +10,9 @@ type BatchFn = (fn: () => void) => void;
 /**
  * Handles server→client messages and updates reactive Preact signals
  * accordingly (state transitions, transcripts, messages, audio playback).
+ *
+ * @internal Exported for testing only.
  */
-/** @internal Exported for testing only. */
 export class ClientHandler {
   #state: Reactive<AgentState>;
   #messages: Reactive<Message[]>;
@@ -139,6 +140,7 @@ export class ClientHandler {
     }
   }
 
+  /** Enqueue a PCM16 audio chunk for playback. Transitions state to `"speaking"` on the first chunk. */
   playAudioChunk(chunk: Uint8Array): void {
     if (this.#state.value === "error") return;
     if (this.#state.value !== "speaking") {
@@ -149,6 +151,11 @@ export class ClientHandler {
     }
   }
 
+  /**
+   * Signal that the server has finished sending audio for this turn.
+   * Waits for the audio queue to drain, then transitions state to `"listening"`.
+   * Uses the `#generation` counter to discard stale completions from interrupted turns.
+   */
   playAudioDone(): void {
     const gen = this.#generation;
     const io = this.#voiceIO();

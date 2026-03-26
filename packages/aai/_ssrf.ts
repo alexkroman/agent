@@ -40,6 +40,12 @@ for (const [prefix, bits] of [
   privateBlocks.addSubnet(prefix, bits, "ipv6");
 }
 
+/**
+ * Check whether an IP address falls within a private or reserved range.
+ *
+ * @param ip - An IPv4 or IPv6 address string.
+ * @returns `true` if the address is in a private/reserved range.
+ */
 export function isPrivateIp(ip: string): boolean {
   const type = ip.includes(":") ? "ipv6" : "ipv4";
   return privateBlocks.check(ip, type);
@@ -66,8 +72,20 @@ function extractMappedIp(ip: string): string {
 }
 
 /**
- * SSRF guard: block requests to private/reserved IPs and well-known
- * internal hostnames.
+ * SSRF guard: assert that a URL targets a public internet address.
+ *
+ * Blocks requests to:
+ * - Private IPv4 ranges (RFC 1918: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)
+ * - Loopback (127.0.0.0/8), link-local (169.254.0.0/16), shared (100.64.0.0/10)
+ * - IPv4-mapped IPv6 addresses embedding private IPs (e.g. `::ffff:127.0.0.1`)
+ * - IPv6 loopback (`::1`), ULA (`fc00::/7`), link-local (`fe80::/10`)
+ * - `localhost`, `.local` (mDNS), `.internal` domains
+ * - Cloud metadata endpoints (`169.254.169.254`, `metadata.google.internal`)
+ * - Non-http(s) schemes (e.g. `file:`, `ftp:`)
+ *
+ * @param url - The URL to validate (must be parseable by `new URL()`).
+ * @throws {Error} If the URL targets a private/reserved address or uses a
+ *   disallowed protocol scheme.
  */
 export function assertPublicUrl(url: string): void {
   const parsed = new URL(url);

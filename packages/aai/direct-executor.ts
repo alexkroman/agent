@@ -33,21 +33,41 @@ import { createMemoryVectorStore } from "./vector.ts";
 import type { ExecuteTool } from "./worker-entry.ts";
 import { executeToolCall } from "./worker-entry.ts";
 
+/**
+ * Configuration for creating a direct (in-process) tool executor for self-hosted mode.
+ *
+ * In self-hosted mode, agent tools run directly in the Node process — no sandbox or
+ * RPC layer. This type configures the agent, environment, stores, and logging.
+ */
 export type DirectExecutorOptions = {
   agent: AgentDef;
   env: Record<string, string>;
   kv?: Kv | undefined;
   vector?: VectorStore | undefined;
+  /** Vector search callback. Accepts a query and topK, returns a JSON string.
+   *  Used as an RPC proxy in platform mode; in self-hosted mode the default
+   *  uses the local `vector` store directly. */
   vectorSearch?: ((query: string, topK: number) => Promise<string>) | undefined;
+  /** Custom WebSocket factory for the S2S connection (useful for testing). */
   createWebSocket?: CreateS2sWebSocket | undefined;
   logger?: Logger | undefined;
   s2sConfig?: S2SConfig | undefined;
 };
 
+/**
+ * The direct (in-process) executor returned by {@link createDirectExecutor}.
+ *
+ * Provides tool execution, hook invocation, tool schemas for the S2S API,
+ * and a factory for creating voice sessions.
+ */
 export type DirectExecutor = {
+  /** Execute a named tool with the given args, returning a JSON result string. */
   executeTool: ExecuteTool;
+  /** Hook invoker wired to the agent's lifecycle hooks and middleware. */
   hookInvoker: HookInvoker;
+  /** Tool schemas registered with the S2S API (custom + built-in). */
   toolSchemas: ToolSchema[];
+  /** Create a new voice session for a connected client. */
   createSession(opts: {
     id: string;
     agent: string;
@@ -61,7 +81,16 @@ export function buildAgentConfig(agent: AgentDef): AgentConfig {
   return toAgentConfig(agent);
 }
 
-/** Create a direct (in-process) tool executor and hook invoker for an agent. */
+/**
+ * Create a direct (in-process) tool executor and hook invoker for an agent.
+ *
+ * Merges built-in and custom tool definitions, builds tool schemas for the
+ * S2S API, and wires up middleware and lifecycle hooks.
+ *
+ * @param opts - Executor configuration. See {@link DirectExecutorOptions}.
+ * @returns A {@link DirectExecutor} with tool execution, hook invocation,
+ *   schemas, and session creation.
+ */
 export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecutor {
   const {
     agent,

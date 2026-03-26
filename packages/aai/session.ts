@@ -23,15 +23,34 @@ import type { ExecuteTool } from "./worker-entry.ts";
 export type { HookInvoker, ToolInterceptResult } from "./middleware.ts";
 export { buildSystemPrompt } from "./system-prompt.ts";
 
-/** A voice session managing the S2S connection for one client. */
+/**
+ * A voice session managing the Speech-to-Speech connection for one client.
+ *
+ * Created by {@link createS2sSession}. Each session owns a single S2S WebSocket
+ * connection and relays audio between the browser client and AssemblyAI.
+ *
+ * @internal Exported for use by `ws-handler.ts`, `server.ts`, and `direct-executor.ts`.
+ */
 export type Session = {
+  /** Open the S2S connection and fire the `onConnect` hook. */
   start(): Promise<void>;
+  /** Gracefully shut down: wait for in-flight turns, close the S2S socket, fire `onDisconnect`. */
   stop(): Promise<void>;
+  /** Forward raw PCM audio from the client microphone to the S2S connection. */
   onAudio(data: Uint8Array): void;
+  /** Called when the client has finished setting up its audio pipeline. For S2S sessions this is a no-op since the greeting comes automatically. */
   onAudioReady(): void;
+  /** Handle a client-initiated cancellation (barge-in). Sends a `cancelled` event. */
   onCancel(): void;
+  /** Reset the session: clear conversation history, bump generation counters, reconnect S2S. */
   onReset(): void;
+  /**
+   * Inject conversation history from the client (e.g. on reconnect).
+   * @param incoming - Messages in the wire format (`{role, text}`) which are
+   *   converted to internal `Message` objects via `fromWireMessages`.
+   */
   onHistory(incoming: readonly { role: "user" | "assistant"; text: string }[]): void;
+  /** Returns a promise that resolves when the current in-flight turn completes, or resolves immediately if no turn is active. */
   waitForTurn(): Promise<void>;
 };
 
@@ -65,7 +84,14 @@ export const _internals = {
 
 type PendingTool = { callId: string; result: string };
 
-/** Mutable state + dependencies shared across session helper functions. */
+/**
+ * Mutable state and dependencies shared across session helper functions.
+ *
+ * Created once per session by `buildCtx` and threaded through `setupListeners`,
+ * `handleToolCall`, and other internal helpers. Contains both immutable
+ * dependencies (logger, executor) and mutable per-turn state (pending tools,
+ * generation counters).
+ */
 export type S2sSessionCtx = {
   readonly id: string;
   readonly agent: string;
@@ -86,11 +112,27 @@ export type S2sSessionCtx = {
    *  if the generation still matches, preventing stale results from interrupted
    *  replies from leaking into subsequent replies. */
   replyGeneration: number;
+  /**
+   * Resolve per-turn configuration (dynamic `maxSteps` and `activeTools`) via the hook invoker.
+   * @returns The turn config, or `null` if no hook invoker is configured.
+   */
   resolveTurnConfig(): Promise<{ maxSteps?: number; activeTools?: string[] } | null>;
+  /**
+   * Increment the tool call counter and check whether the call should be refused.
+   * @param turnConfig - The resolved turn config from {@link resolveTurnConfig}.
+   * @param name - The tool name being invoked.
+   * @returns A refusal message string if the call exceeds `maxSteps` or the tool
+   *   is not in `activeTools`, or `null` if the call is allowed to proceed.
+   */
   consumeToolCallStep(
     turnConfig: { maxSteps?: number; activeTools?: string[] } | null,
     name: string,
   ): string | null;
+  /**
+   * Fire a lifecycle hook asynchronously. Errors are logged but never propagated.
+   * @param name - Hook name for logging (e.g. `"onConnect"`, `"onStep"`).
+   * @param fn - Callback receiving the {@link HookInvoker} to call.
+   */
   fireHook(name: string, fn: (h: HookInvoker) => Promise<void>): void;
   /** Push one or more messages and trim to maxHistory. */
   pushMessages(...msgs: Message[]): void;
@@ -169,7 +211,21 @@ function buildCtx(opts: {
 
 // ─── Main session factory ────────────────────────────────────────────────────
 
-/** Create an S2S-backed session with the same interface as the STT+LLM+TTS session. */
+/**
+ * Create a Speech-to-Speech backed session implementing the {@link Session} interface.
+ *
+ * Connects to AssemblyAI's S2S WebSocket, configures the system prompt and tools,
+ * and wires up event listeners for user transcripts, agent replies, tool calls,
+ * barge-ins, and session lifecycle. Manages reconnection on `onReset` via a
+ * `connectGeneration` guard that prevents stale connection attempts from overwriting
+ * newer ones during rapid resets. A `sessionAbort` AbortController is used to
+ * coordinate cleanup on `stop()`.
+ *
+ * @param opts - Session configuration. See {@link S2sSessionOptions} for all fields
+ *   including the agent config, tool schemas, API key, and optional hooks.
+ * @returns A {@link Session} with `start`, `stop`, `onAudio`, `onReset`, and other
+ *   lifecycle methods.
+ */
 export function createS2sSession(opts: S2sSessionOptions): Session {
   const {
     id,

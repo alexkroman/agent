@@ -21,6 +21,11 @@ import type { Session } from "./session.ts";
 import type { AgentDef } from "./types.ts";
 import { type SessionWebSocket, wireSessionSocket } from "./ws-handler.ts";
 
+/**
+ * Configuration for a self-hosted agent server created by {@link createServer}.
+ *
+ * @public
+ */
 export type ServerOptions = {
   /** The agent definition returned by `defineAgent()`. */
   agent: AgentDef;
@@ -38,6 +43,12 @@ export type ServerOptions = {
   s2sConfig?: S2SConfig;
 };
 
+/**
+ * Handle returned by {@link createServer} with lifecycle methods to start
+ * and stop the HTTP + WebSocket server.
+ *
+ * @public
+ */
 export type AgentServer = {
   /** Start listening on the given port. */
   listen(port?: number): Promise<void>;
@@ -57,6 +68,28 @@ function escapeHtml(s: string): string {
     .replace(/'/g, "&#39;");
 }
 
+/**
+ * Create an HTTP + WebSocket server for self-hosted agent deployments.
+ *
+ * Sets up a Hono HTTP server with a `/health` endpoint and WebSocket upgrade
+ * handling. Agent tools execute directly in-process via {@link createDirectExecutor}.
+ *
+ * @param options - Server configuration including the agent definition, optional
+ *   KV store, client assets, logger, and S2S config. See {@link ServerOptions}.
+ * @returns An {@link AgentServer} with `listen()` and `close()` lifecycle methods.
+ *
+ * @example
+ * ```ts
+ * import { defineAgent } from "@alexkroman1/aai";
+ * import { createServer } from "@alexkroman1/aai/server";
+ *
+ * const agent = defineAgent({ name: "my-agent" });
+ * const server = createServer({ agent });
+ * await server.listen(3000);
+ * ```
+ *
+ * @public
+ */
 export function createServer(options: ServerOptions): AgentServer {
   const {
     agent,
