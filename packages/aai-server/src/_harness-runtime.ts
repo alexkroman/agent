@@ -55,7 +55,9 @@ async function sidecarRpc<T>(path: string, body: unknown): Promise<T> {
 }
 
 const kv: Kv = {
-  get<T = unknown>(key: string) {
+  get<T = unknown>(key: string, _schema?: unknown) {
+    // Schema validation is not supported in the isolate; the sidecar handles raw JSON.
+    void _schema;
     return sidecarRpc<T | null>("/kv/get", { key });
   },
   set(key: string, value: unknown, options?: { expireIn?: number }) {
@@ -64,7 +66,13 @@ const kv: Kv = {
   delete(key: string) {
     return sidecarRpc<void>("/kv/del", { key });
   },
-  list<T = unknown>(prefix: string, options?: { limit?: number; reverse?: boolean }) {
+  list<T = unknown>(
+    prefix: string,
+    options?: { limit?: number; reverse?: boolean },
+    _schema?: unknown,
+  ) {
+    // Schema validation is not supported in the isolate; the sidecar handles raw JSON.
+    void _schema;
     return sidecarRpc<{ key: string; value: T }[]>("/kv/list", { prefix, ...options });
   },
   keys(pattern?: string) {

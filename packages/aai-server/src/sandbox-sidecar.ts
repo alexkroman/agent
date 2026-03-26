@@ -19,11 +19,12 @@ import type { ServerVectorStore } from "./vector.ts";
 
 export function scopedKv(kvStore: KvStore, scope: AgentScope) {
   return {
-    async get(key: string) {
+    async get<T = unknown>(key: string, schema?: z.ZodType<T>) {
       const raw = await kvStore.get(scope, key);
       if (raw === null) return null;
       try {
-        return JSON.parse(raw);
+        const parsed = JSON.parse(raw);
+        return schema ? schema.parse(parsed) : parsed;
       } catch {
         return raw;
       }
@@ -38,8 +39,15 @@ export function scopedKv(kvStore: KvStore, scope: AgentScope) {
     async list<T = unknown>(
       prefix: string,
       options?: { limit?: number; reverse?: boolean },
+      schema?: z.ZodType<T>,
     ): Promise<KvEntry<T>[]> {
-      return (await kvStore.list(scope, prefix, options ?? {})) as KvEntry<T>[];
+      const entries = (await kvStore.list(scope, prefix, options ?? {})) as KvEntry<T>[];
+      if (schema) {
+        for (const entry of entries) {
+          entry.value = schema.parse(entry.value);
+        }
+      }
+      return entries;
     },
     async keys(pattern?: string) {
       return await kvStore.keys(scope, pattern);

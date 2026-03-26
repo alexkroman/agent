@@ -1,5 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { z } from "zod";
 import { createMemoryKv } from "./kv.ts";
 
 describe("createMemoryKv", () => {
@@ -183,5 +184,53 @@ describe("createMemoryKv", () => {
     await kv.set("b:x:c", "3");
     expect(await kv.keys("a*c")).toEqual(["a:b:c", "a:x:c"]);
     expect(await kv.keys("a*b*c")).toEqual(["a:b:c"]);
+  });
+
+  describe("schema validation", () => {
+    const UserSchema = z.object({ name: z.string(), age: z.number() });
+
+    test("get with schema validates and returns typed value", async () => {
+      const kv = createMemoryKv();
+      await kv.set("user", { name: "alice", age: 30 });
+      const user = await kv.get("user", UserSchema);
+      expect(user).toEqual({ name: "alice", age: 30 });
+    });
+
+    test("get with schema returns null for missing key", async () => {
+      const kv = createMemoryKv();
+      const user = await kv.get("missing", UserSchema);
+      expect(user).toBe(null);
+    });
+
+    test("get with schema throws on invalid data", async () => {
+      const kv = createMemoryKv();
+      await kv.set("bad", { name: 123 });
+      await expect(kv.get("bad", UserSchema)).rejects.toThrow();
+    });
+
+    test("list with schema validates each entry", async () => {
+      const kv = createMemoryKv();
+      await kv.set("u:1", { name: "alice", age: 30 });
+      await kv.set("u:2", { name: "bob", age: 25 });
+      const entries = await kv.list("u:", undefined, UserSchema);
+      expect(entries).toEqual([
+        { key: "u:1", value: { name: "alice", age: 30 } },
+        { key: "u:2", value: { name: "bob", age: 25 } },
+      ]);
+    });
+
+    test("list with schema throws on invalid entry", async () => {
+      const kv = createMemoryKv();
+      await kv.set("u:1", { name: "alice", age: 30 });
+      await kv.set("u:2", { name: 123 });
+      await expect(kv.list("u:", undefined, UserSchema)).rejects.toThrow();
+    });
+
+    test("get without schema still works (trust-based cast)", async () => {
+      const kv = createMemoryKv();
+      await kv.set("user", { name: "alice", age: 30 });
+      const user = await kv.get<{ name: string; age: number }>("user");
+      expect(user).toEqual({ name: "alice", age: 30 });
+    });
   });
 });

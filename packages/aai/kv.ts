@@ -3,6 +3,8 @@
  * Key-value storage interface and in-memory implementation.
  */
 
+import type { z } from "zod";
+
 /**
  * A single key-value entry returned by {@link Kv.list}.
  *
@@ -57,12 +59,20 @@ export type Kv = {
   /**
    * Get a value by key, or `null` if not found.
    *
+   * **Warning:** Without a `schema`, the type parameter `T` is a trust-based
+   * cast — `JSON.parse` returns `any` and the `as T` assertion provides no
+   * runtime validation. If the stored value does not match `T`, callers will
+   * receive data of the wrong shape silently. Pass a Zod schema to opt into
+   * runtime validation.
+   *
    * @typeParam T - The expected type of the stored value.
    * @param key - The key to look up.
+   * @param schema - Optional Zod schema to validate the parsed value at runtime.
+   *   If validation fails, a `ZodError` is thrown.
    * @returns The deserialized value, or `null` if the key does not exist
    *   or has expired.
    */
-  get<T = unknown>(key: string): Promise<T | null>;
+  get<T = unknown>(key: string, schema?: z.ZodType<T>): Promise<T | null>;
   /**
    * Set a value, optionally with a TTL in milliseconds.
    *
@@ -84,12 +94,23 @@ export type Kv = {
    *
    * Results are sorted by key in ascending lexicographic order by default.
    *
+   * **Warning:** Without a `schema`, the type parameter `T` is a trust-based
+   * cast — `JSON.parse` returns `any` and the `as T` assertion provides no
+   * runtime validation. Pass a Zod schema to opt into runtime validation for
+   * each entry's value.
+   *
    * @typeParam T - The expected type of the stored values.
    * @param prefix - Key prefix to filter by. Use `""` to list all entries.
    * @param options - Optional pagination and ordering settings.
+   * @param schema - Optional Zod schema to validate each parsed value at runtime.
+   *   If any value fails validation, a `ZodError` is thrown.
    * @returns An array of matching {@link KvEntry} objects.
    */
-  list<T = unknown>(prefix: string, options?: KvListOptions): Promise<KvEntry<T>[]>;
+  list<T = unknown>(
+    prefix: string,
+    options?: KvListOptions,
+    schema?: z.ZodType<T>,
+  ): Promise<KvEntry<T>[]>;
   /**
    * List all keys, optionally filtered by a glob-style pattern.
    *
@@ -178,14 +199,23 @@ export function createMemoryKv(): Kv {
     return entry.expiresAt !== undefined && entry.expiresAt <= Date.now();
   }
 
+  function parseValue<T>(raw: string, schema?: z.ZodType<T>): T {
+    const parsed = JSON.parse(raw);
+    return schema ? schema.parse(parsed) : (parsed as T);
+  }
+
   return {
-    get<T = unknown>(key: string): Promise<T | null> {
-      const entry = store.get(key);
-      if (!entry || isExpired(entry)) {
-        if (entry) store.delete(key);
-        return Promise.resolve(null);
+    get<T = unknown>(key: string, schema?: z.ZodType<T>): Promise<T | null> {
+      try {
+        const entry = store.get(key);
+        if (!entry || isExpired(entry)) {
+          if (entry) store.delete(key);
+          return Promise.resolve(null);
+        }
+        return Promise.resolve(parseValue<T>(entry.raw, schema));
+      } catch (err) {
+        return Promise.reject(err);
       }
-      return Promise.resolve(JSON.parse(entry.raw) as T);
     },
 
     set(key: string, value: unknown, options?: { expireIn?: number }): Promise<void> {
@@ -211,7 +241,11 @@ export function createMemoryKv(): Kv {
       return Promise.resolve();
     },
 
-    async list<T = unknown>(prefix: string, options?: KvListOptions): Promise<KvEntry<T>[]> {
+    async list<T = unknown>(
+      prefix: string,
+      options?: KvListOptions,
+      schema?: z.ZodType<T>,
+    ): Promise<KvEntry<T>[]> {
       const now = Date.now();
       const entries: KvEntry<T>[] = [];
       let i = 0;
@@ -222,7 +256,7 @@ export function createMemoryKv(): Kv {
           continue;
         }
         if (key.startsWith(prefix)) {
-          entries.push({ key, value: JSON.parse(entry.raw) as T });
+          entries.push({ key, value: parseValue<T>(entry.raw, schema) });
         }
       }
       return sortAndPaginate(entries, options);
