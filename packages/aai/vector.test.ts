@@ -1,15 +1,15 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
-import { createMemoryVectorStore } from "./vector.ts";
+import { createSqliteVectorStore } from "./sqlite-vector.ts";
 
-describe("createMemoryVectorStore", () => {
+describe("createSqliteVectorStore", () => {
   test("query returns empty for empty store", async () => {
-    const v = createMemoryVectorStore();
+    const v = createSqliteVectorStore({ path: ":memory:" });
     expect(await v.query("anything")).toEqual([]);
   });
 
   test("upsert and query returns matching entries", async () => {
-    const v = createMemoryVectorStore();
+    const v = createSqliteVectorStore({ path: ":memory:" });
     await v.upsert("doc-1", "The capital of France is Paris.");
     await v.upsert("doc-2", "The capital of Germany is Berlin.");
     const results = await v.query("France capital");
@@ -19,7 +19,7 @@ describe("createMemoryVectorStore", () => {
   });
 
   test("query scores by word match ratio", async () => {
-    const v = createMemoryVectorStore();
+    const v = createSqliteVectorStore({ path: ":memory:" });
     await v.upsert("a", "apple banana cherry");
     await v.upsert("b", "apple cherry");
     const results = await v.query("apple banana cherry");
@@ -29,7 +29,7 @@ describe("createMemoryVectorStore", () => {
   });
 
   test("query respects topK", async () => {
-    const v = createMemoryVectorStore();
+    const v = createSqliteVectorStore({ path: ":memory:" });
     await v.upsert("a", "word");
     await v.upsert("b", "word");
     await v.upsert("c", "word");
@@ -38,7 +38,7 @@ describe("createMemoryVectorStore", () => {
   });
 
   test("query is case insensitive", async () => {
-    const v = createMemoryVectorStore();
+    const v = createSqliteVectorStore({ path: ":memory:" });
     await v.upsert("doc", "Hello World");
     const results = await v.query("hello");
     expect(results.length).toBe(1);
@@ -46,14 +46,14 @@ describe("createMemoryVectorStore", () => {
   });
 
   test("upsert preserves metadata", async () => {
-    const v = createMemoryVectorStore();
+    const v = createSqliteVectorStore({ path: ":memory:" });
     await v.upsert("doc", "some text", { source: "test" });
     const results = await v.query("some text");
     expect(results[0]?.metadata).toEqual({ source: "test" });
   });
 
   test("upsert overwrites existing entry", async () => {
-    const v = createMemoryVectorStore();
+    const v = createSqliteVectorStore({ path: ":memory:" });
     await v.upsert("doc", "old text");
     await v.upsert("doc", "new text");
     expect(await v.query("old")).toEqual([]);
@@ -63,14 +63,14 @@ describe("createMemoryVectorStore", () => {
   });
 
   test("remove deletes single entry", async () => {
-    const v = createMemoryVectorStore();
+    const v = createSqliteVectorStore({ path: ":memory:" });
     await v.upsert("doc", "hello");
     await v.delete("doc");
     expect(await v.query("hello")).toEqual([]);
   });
 
   test("remove deletes multiple entries", async () => {
-    const v = createMemoryVectorStore();
+    const v = createSqliteVectorStore({ path: ":memory:" });
     await v.upsert("a", "hello");
     await v.upsert("b", "hello");
     await v.upsert("c", "hello");
@@ -81,14 +81,14 @@ describe("createMemoryVectorStore", () => {
   });
 
   test("query returns original data", async () => {
-    const v = createMemoryVectorStore();
+    const v = createSqliteVectorStore({ path: ":memory:" });
     await v.upsert("doc", "The Capital of France");
     const results = await v.query("capital");
     expect(results[0]?.data).toBe("The Capital of France");
   });
 
   test("query skips non-matching entries", async () => {
-    const v = createMemoryVectorStore();
+    const v = createSqliteVectorStore({ path: ":memory:" });
     await v.upsert("a", "apples and oranges");
     await v.upsert("b", "cats and dogs");
     const results = await v.query("apples");
@@ -97,21 +97,40 @@ describe("createMemoryVectorStore", () => {
   });
 
   test("query with empty string returns no results", async () => {
-    const v = createMemoryVectorStore();
+    const v = createSqliteVectorStore({ path: ":memory:" });
     await v.upsert("doc", "some content");
     const results = await v.query("");
     expect(results).toEqual([]);
   });
 
   test("remove non-existent id does not throw", async () => {
-    const v = createMemoryVectorStore();
+    const v = createSqliteVectorStore({ path: ":memory:" });
     await expect(v.delete("nonexistent")).resolves.toBeUndefined();
   });
 
   test("upsert without metadata results in undefined metadata", async () => {
-    const v = createMemoryVectorStore();
+    const v = createSqliteVectorStore({ path: ":memory:" });
     await v.upsert("doc", "text");
     const results = await v.query("text");
     expect(results[0]?.metadata).toBeUndefined();
+  });
+
+  test("data persists across instances with same file", async () => {
+    const { mkdirSync, rmSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const { tmpdir } = await import("node:os");
+    const dir = join(tmpdir(), `aai-vec-persist-${Date.now()}`);
+    mkdirSync(dir, { recursive: true });
+    const dbPath = join(dir, "test.db");
+    try {
+      const v1 = createSqliteVectorStore({ path: dbPath });
+      await v1.upsert("doc", "persistent data");
+      const v2 = createSqliteVectorStore({ path: dbPath });
+      const results = await v2.query("persistent");
+      expect(results.length).toBe(1);
+      expect(results[0]?.data).toBe("persistent data");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

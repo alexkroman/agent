@@ -8,9 +8,9 @@
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import { buildAgentConfig, createDirectExecutor } from "./direct-executor.ts";
-import { createMemoryKv } from "./kv.ts";
+import { createSqliteKv } from "./sqlite-kv.ts";
+import { createSqliteVectorStore } from "./sqlite-vector.ts";
 import { defineAgent, defineTool } from "./types.ts";
-import { createMemoryVectorStore } from "./vector.ts";
 
 describe("SDK integration: defineAgent → tool execution", () => {
   test("defineAgent + defineTool() + executeToolCall round-trip", async () => {
@@ -31,7 +31,7 @@ describe("SDK integration: defineAgent → tool execution", () => {
   });
 
   test("tool with KV access works end-to-end", async () => {
-    const kv = createMemoryKv();
+    const kv = createSqliteKv({ path: ":memory:" });
     const agent = defineAgent({
       name: "kv-agent",
       tools: {
@@ -61,7 +61,7 @@ describe("SDK integration: defineAgent → tool execution", () => {
   });
 
   test("tool with vector store access works end-to-end", async () => {
-    const vector = createMemoryVectorStore();
+    const vector = createSqliteVectorStore({ path: ":memory:" });
     const agent = defineAgent({
       name: "vector-agent",
       tools: {

@@ -38,9 +38,11 @@
  */
 
 import { createDirectExecutor, type DirectExecutor } from "./direct-executor.ts";
-import { createMemoryKv, type Kv } from "./kv.ts";
+import type { Kv } from "./kv.ts";
+import { createSqliteKv } from "./sqlite-kv.ts";
+import { createSqliteVectorStore } from "./sqlite-vector.ts";
 import type { AgentDef, Message, StepInfo } from "./types.ts";
-import { createMemoryVectorStore, type VectorStore } from "./vector.ts";
+import type { VectorStore } from "./vector.ts";
 
 export { installMockWebSocket, MockWebSocket } from "./_mock-ws.ts";
 
@@ -169,9 +171,9 @@ export class TurnResult {
 export type TestHarnessOptions = {
   /** Environment variables available to tools via `ctx.env`. */
   env?: Record<string, string>;
-  /** KV store instance. Defaults to an in-memory store. */
+  /** KV store instance. Defaults to an in-memory SQLite store. */
   kv?: Kv;
-  /** Vector store instance. Defaults to an in-memory store. */
+  /** Vector store instance. Defaults to an in-memory SQLite store. */
   vector?: VectorStore;
 };
 
@@ -414,7 +416,11 @@ export function createTestHarness(
   agent: AgentDef<any>,
   options: TestHarnessOptions = {},
 ): TestHarness {
-  const { env = {}, kv = createMemoryKv(), vector = createMemoryVectorStore() } = options;
+  const {
+    env = {},
+    kv = createSqliteKv({ path: ":memory:" }),
+    vector = createSqliteVectorStore({ path: ":memory:" }),
+  } = options;
 
   const executor = createDirectExecutor({ agent, env, kv, vector });
   const sessionId = `test-${Date.now()}`;

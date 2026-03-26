@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Vector store interface and in-memory implementation.
+ * Vector store interface.
  */
 
 /**
@@ -71,67 +71,3 @@ export type VectorStore = {
    */
   delete(ids: string | string[]): Promise<void>;
 };
-
-/**
- * Create an in-memory vector store for testing and local development.
- *
- * Uses brute-force substring matching instead of real vector similarity.
- * Good enough for testing the plumbing but not for production use.
- *
- * @returns A {@link VectorStore} instance backed by in-memory storage.
- *
- * @example
- * ```ts
- * import { createMemoryVectorStore } from "aai";
- *
- * const vector = createMemoryVectorStore();
- * await vector.upsert("doc-1", "The capital of France is Paris.");
- * const results = await vector.query("France capital");
- * ```
- */
-export function createMemoryVectorStore(): VectorStore {
-  const store = new Map<string, { data: string; metadata?: Record<string, unknown> | undefined }>();
-
-  return {
-    upsert(id: string, data: string, metadata?: Record<string, unknown>): Promise<void> {
-      store.set(id, { data, metadata });
-      return Promise.resolve();
-    },
-
-    async query(
-      text: string,
-      options?: { topK?: number; filter?: string },
-    ): Promise<VectorEntry[]> {
-      const topK = options?.topK ?? 10;
-      const query = text.toLowerCase();
-      const words = query.split(/\s+/).filter(Boolean);
-      const results: VectorEntry[] = [];
-
-      let i = 0;
-      for (const [id, entry] of store) {
-        if (++i % 500 === 0) await new Promise<void>((r) => setTimeout(r, 0));
-        const data = entry.data.toLowerCase();
-        const matches = words.filter((w) => data.includes(w)).length;
-        if (matches > 0) {
-          results.push({
-            id,
-            score: matches / Math.max(words.length, 1),
-            data: entry.data,
-            metadata: entry.metadata,
-          });
-        }
-      }
-
-      results.sort((a, b) => b.score - a.score);
-      return results.slice(0, topK);
-    },
-
-    delete(ids: string | string[]): Promise<void> {
-      const idArray = Array.isArray(ids) ? ids : [ids];
-      for (const id of idArray) {
-        store.delete(id);
-      }
-      return Promise.resolve();
-    },
-  };
-}

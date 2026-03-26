@@ -3,7 +3,7 @@ import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { makeAgent } from "./_test-utils.ts";
 import { buildAgentConfig, createDirectExecutor } from "./direct-executor.ts";
-import { createMemoryKv } from "./kv.ts";
+import { createSqliteKv } from "./sqlite-kv.ts";
 import { defineTool } from "./types.ts";
 
 describe("buildAgentConfig", () => {
@@ -82,7 +82,7 @@ describe("createDirectExecutor", () => {
   });
 
   test("executeTool passes KV to tool context", async () => {
-    const kv = createMemoryKv();
+    const kv = createSqliteKv({ path: ":memory:" });
     await kv.set("key1", "value1");
     const agent = makeAgent({
       tools: {
