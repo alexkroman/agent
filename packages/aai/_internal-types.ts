@@ -32,6 +32,38 @@ export const AgentConfigSchema = z.object({
 /** Serializable agent configuration — derived from {@link AgentConfigSchema}. */
 export type AgentConfig = z.infer<typeof AgentConfigSchema>;
 
+/**
+ * Input shape accepted by {@link toAgentConfig}. Covers both `AgentDef`
+ * (where `maxSteps` may be a function) and `IsolateConfig` (where it is
+ * always a number).
+ */
+export interface AgentConfigSource {
+  name: string;
+  instructions: string;
+  greeting: string;
+  sttPrompt?: string | undefined;
+  maxSteps?: number | ((...args: never[]) => number) | undefined;
+  toolChoice?: AgentConfig["toolChoice"] | undefined;
+  builtinTools?: Readonly<AgentConfig["builtinTools"]> | AgentConfig["builtinTools"] | undefined;
+  activeTools?: Readonly<AgentConfig["activeTools"]> | AgentConfig["activeTools"] | undefined;
+}
+
+/** Extract the serializable {@link AgentConfig} subset from a source object. */
+export function toAgentConfig(src: AgentConfigSource): AgentConfig {
+  const config: AgentConfig = {
+    name: src.name,
+    instructions: src.instructions,
+    greeting: src.greeting,
+  };
+  if (src.sttPrompt !== undefined) config.sttPrompt = src.sttPrompt;
+  if (typeof src.maxSteps !== "function" && src.maxSteps !== undefined)
+    config.maxSteps = src.maxSteps;
+  if (src.toolChoice !== undefined) config.toolChoice = src.toolChoice;
+  if (src.builtinTools) config.builtinTools = [...src.builtinTools];
+  if (src.activeTools) config.activeTools = [...src.activeTools];
+  return config;
+}
+
 // ─── ToolSchema ─────────────────────────────────────────────────────────────
 
 /**
