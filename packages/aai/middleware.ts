@@ -40,26 +40,26 @@ export type HookInvoker = {
   onError(sessionId: string, error: { message: string }, timeoutMs?: number): Promise<void>;
   onStep(sessionId: string, step: StepInfo, timeoutMs?: number): Promise<void>;
   resolveTurnConfig(
-    sid: string,
+    sessionId: string,
     step: number,
-    ms?: number,
+    timeoutMs?: number,
   ): Promise<{ maxSteps?: number; activeTools?: string[] } | null>;
-  beforeTurn?(sid: string, text: string, ms?: number): Promise<string | undefined>;
-  afterTurn?(sid: string, text: string, ms?: number): Promise<void>;
+  beforeTurn?(sessionId: string, text: string, timeoutMs?: number): Promise<string | undefined>;
+  afterTurn?(sessionId: string, text: string, timeoutMs?: number): Promise<void>;
   interceptToolCall?(
-    sid: string,
+    sessionId: string,
     tool: string,
     args: Readonly<Record<string, unknown>>,
-    ms?: number,
+    timeoutMs?: number,
   ): Promise<ToolInterceptResult>;
   afterToolCall?(
-    sid: string,
+    sessionId: string,
     tool: string,
     args: Readonly<Record<string, unknown>>,
     result: string,
-    ms?: number,
+    timeoutMs?: number,
   ): Promise<void>;
-  filterOutput?(sid: string, text: string, ms?: number): Promise<string>;
+  filterOutput?(sessionId: string, text: string, timeoutMs?: number): Promise<string>;
 };
 
 /**
