@@ -13,6 +13,7 @@ import {
   toolCallErrorCounter,
   tracer,
   turnCounter,
+  turnStepsHistogram,
   withSpan,
 } from "./telemetry.ts";
 
@@ -38,6 +39,7 @@ describe("telemetry", () => {
     expect(s2sConnectionDuration).toBeDefined();
     expect(s2sErrorCounter).toBeDefined();
     expect(bargeInCounter).toBeDefined();
+    expect(turnStepsHistogram).toBeDefined();
   });
 
   test("counter add does not throw", () => {
