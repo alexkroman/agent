@@ -8,6 +8,12 @@
           {
             "type": "command",
             "command": "npx lefthook install"
+          },
+          {
+            "type": "command",
+            "command": "pnpm install --frozen-lockfile 2>/dev/null || pnpm install",
+            "timeout": 120,
+            "statusMessage": "Installing dependencies..."
           }
         ]
       }
