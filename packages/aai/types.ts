@@ -263,7 +263,6 @@ export type ToolContext<S = Record<string, unknown>> = {
   vector: VectorStore;
   /** Read-only snapshot of conversation messages so far. */
   messages: readonly Message[];
-<<<<<<< HEAD
   /**
    * Push an intermediate update to the client UI before the tool finishes.
    *

@@ -151,6 +151,7 @@ export type ToolContext<S = Record<string, unknown>> = {
     messages: readonly Message[];
     sendUpdate(data: unknown): void;
     fetch: typeof globalThis.fetch;
+    sessionId: string;
 };
 
 // @public
