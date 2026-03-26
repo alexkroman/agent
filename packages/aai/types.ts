@@ -179,6 +179,19 @@ export type ToolContext<S = Record<string, unknown>> = {
   vector: VectorStore;
   /** Read-only snapshot of conversation messages so far. */
   messages: readonly Message[];
+  /**
+   * Push an intermediate update to the client UI before the tool finishes.
+   *
+   * Use this to send progressive data so the UI can render partial results
+   * immediately (e.g. a loading card, preview, or streaming data) instead
+   * of waiting for the full tool result.
+   *
+   * The data is serialized to JSON and delivered as a `tool_call_update`
+   * event on the client. Use `useToolCallUpdate` in the UI to consume it.
+   *
+   * No-op in sandbox (platform) mode.
+   */
+  sendUpdate(data: unknown): void;
 };
 
 /**
@@ -192,7 +205,10 @@ export type ToolContext<S = Record<string, unknown>> = {
  *
  * @public
  */
-export type HookContext<S = Record<string, unknown>> = Omit<ToolContext<S>, "messages">;
+export type HookContext<S = Record<string, unknown>> = Omit<
+  ToolContext<S>,
+  "messages" | "sendUpdate"
+>;
 
 /**
  * Definition of a custom tool that the agent can invoke.

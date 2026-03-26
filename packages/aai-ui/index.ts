@@ -40,6 +40,8 @@ export {
   SessionProvider,
   useAutoScroll,
   useSession,
+  useToolCallStart,
+  useToolCallUpdate,
   useToolResult,
 } from "./signals.ts";
 export type {

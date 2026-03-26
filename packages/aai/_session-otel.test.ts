@@ -107,6 +107,7 @@ describe("handleToolCall", () => {
       { foo: "bar" },
       "session-1",
       ctx.conversationMessages,
+      expect.any(Function),
     );
     expect(findEvent(ctx, "tool_call_start")).toMatchObject({
       toolCallId: "call-1",
@@ -117,6 +118,22 @@ describe("handleToolCall", () => {
       result: "tool-result",
     });
     expect(ctx.pendingTools).toEqual([{ callId: "call-1", result: "tool-result" }]);
+  });
+
+  test("onUpdate emits tool_call_update event to client", async () => {
+    const ctx = makeCtx({
+      executeTool: vi.fn(async (_name, _args, _sid, _msgs, onUpdate) => {
+        onUpdate?.({ preview: "partial" });
+        return "final";
+      }),
+    } as Partial<S2sSessionCtx>);
+    await handleToolCall(ctx, tc());
+    const updateEvent = allEvents(ctx).find((e) => e.type === "tool_call_update");
+    expect(updateEvent).toMatchObject({
+      type: "tool_call_update",
+      toolCallId: "call-1",
+      data: '{"preview":"partial"}',
+    });
   });
 
   test("resolveTurnConfig error: returns error without executing", async () => {
@@ -178,6 +195,7 @@ describe("handleToolCall", () => {
       { modified: true },
       "session-1",
       ctx.conversationMessages,
+      expect.any(Function),
     );
   });
 

@@ -134,6 +134,10 @@ async function executeTool(agent: AgentDef, req: ToolCallRequest): Promise<ToolC
     kv,
     vector,
     messages: req.messages,
+    sendUpdate() {
+      // No-op in sandbox mode — updates require direct WebSocket access
+      // which is not available inside the V8 isolate.
+    },
   };
 
   const parsed =

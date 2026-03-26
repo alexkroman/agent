@@ -12,6 +12,7 @@ describe("ToolCallBlock", () => {
     toolName: "web_search",
     args: { query: "weather today" },
     status: "pending",
+    updates: [],
     afterMessageIndex: 0,
   };
 
@@ -21,6 +22,7 @@ describe("ToolCallBlock", () => {
     args: { url: "https://api.example.com/data" },
     status: "done",
     result: '{"temperature": 72}',
+    updates: [],
     afterMessageIndex: 0,
   };
 

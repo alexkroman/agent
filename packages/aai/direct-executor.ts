@@ -139,7 +139,7 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
     };
   }
 
-  const executeTool: ExecuteTool = async (name, args, sessionId, messages) => {
+  const executeTool: ExecuteTool = async (name, args, sessionId, messages, onUpdate) => {
     const tool = allTools[name];
     if (!tool) return toolError(`Unknown tool: ${name}`);
 
@@ -151,6 +151,7 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
       vector,
       messages,
       logger,
+      onUpdate,
     });
   };
 

@@ -98,6 +98,7 @@ function makeTc(
     args: {},
     status: "done",
     result: JSON.stringify({ ok: true }),
+    updates: [],
     afterMessageIndex: 0,
     ...overrides,
   };

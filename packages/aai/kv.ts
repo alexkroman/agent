@@ -248,6 +248,7 @@ export function createMemoryKv(): Kv {
       return sortAndPaginate(entries, options);
     },
 
+    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: glob pattern matching inherently branchy
     async keys(pattern?: string): Promise<string[]> {
       const now = Date.now();
       const result: string[] = [];
