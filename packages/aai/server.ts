@@ -21,6 +21,10 @@ import type { Session } from "./session.ts";
 import type { AgentDef } from "./types.ts";
 import { type SessionWebSocket, wireSessionSocket } from "./ws-handler.ts";
 
+/**
+ * Options for creating a self-hosted agent server.
+ * @public
+ */
 export type ServerOptions = {
   /** The agent definition returned by `defineAgent()`. */
   agent: AgentDef;
@@ -38,6 +42,10 @@ export type ServerOptions = {
   s2sConfig?: S2SConfig;
 };
 
+/**
+ * Handle returned by {@link createServer}.
+ * @public
+ */
 export type AgentServer = {
   /** Start listening on the given port. */
   listen(port?: number): Promise<void>;
@@ -45,7 +53,7 @@ export type AgentServer = {
   close(): Promise<void>;
 };
 
-/** Escape HTML special characters to prevent XSS. */
+/** @internal Escape HTML special characters to prevent XSS. */
 function escapeHtml(s: string): string {
   return s
     .replace(/&/g, "&amp;")
@@ -55,6 +63,10 @@ function escapeHtml(s: string): string {
     .replace(/'/g, "&#39;");
 }
 
+/**
+ * Create a self-hostable agent server.
+ * @public
+ */
 export function createServer(options: ServerOptions): AgentServer {
   const {
     agent,
