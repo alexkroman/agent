@@ -370,6 +370,19 @@ function json(res: ServerResponse, data: unknown, status = 200): void {
 // adapter redefines globalThis.Request which conflicts with secure-exec's
 // frozen built-in globals.
 
+/**
+ * Handles HTTP request errors with sanitized messages. Returns a generic
+ * "Internal error" for 5xx to avoid leaking stack traces, file paths, or
+ * schema structures. 4xx errors use controlled messages that are safe to expose.
+ */
+function handleRequestError(err: unknown, req: IncomingMessage, res: ServerResponse): void {
+  const status = (err as { status?: number }).status ?? 500;
+  const detail = err instanceof Error ? err.message : "Internal error";
+  console.error(`[harness] ${req.method} ${req.url} error (${status}):`, detail);
+  const message = status >= 500 ? "Internal error" : detail;
+  json(res, { error: message }, status);
+}
+
 export function startHarness(agent: AgentDef): void {
   if (!agent || typeof agent !== "object" || !agent.name) {
     throw new Error("Agent bundle must export a default agent definition");
@@ -393,9 +406,7 @@ export function startHarness(agent: AgentDef): void {
       }
       json(res, { error: "Not found" }, 404);
     } catch (err: unknown) {
-      const status = (err as { status?: number }).status ?? 500;
-      const message = err instanceof Error ? err.message : "Internal error";
-      json(res, { error: message }, status);
+      handleRequestError(err, req, res);
     }
   });
 
