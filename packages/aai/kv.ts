@@ -100,6 +100,13 @@ export type Kv = {
    * @returns An array of matching key strings.
    */
   keys(pattern?: string): Promise<string[]>;
+  /**
+   * Close the KV store, releasing any resources (intervals, database handles).
+   *
+   * After calling `close()`, the store must not be used. This is a no-op
+   * for implementations that hold no resources (e.g. in-memory stores).
+   */
+  close?(): void;
 };
 
 export const MAX_VALUE_SIZE = 65_536;

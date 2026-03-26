@@ -79,6 +79,7 @@ export type Kv = {
     delete(keys: string | string[]): Promise<void>;
     list<T = unknown>(prefix: string, options?: KvListOptions): Promise<KvEntry<T>[]>;
     keys(pattern?: string): Promise<string[]>;
+    close?(): void;
 };
 
 // @public
