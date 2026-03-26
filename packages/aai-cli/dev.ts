@@ -45,7 +45,7 @@ export async function _startDevServer(
       );
     }
     log(step("Client", "ok"));
-  } catch (err) {
+  } catch (err: unknown) {
     await server.close();
     throw err;
   }

@@ -21,7 +21,7 @@ function taskTool<P extends z.ZodObject<z.ZodRawShape>>(
   return def;
 }
 
-export default defineAgent({
+export default defineAgent<TaskState>({
   name: "Test Patterns",
   instructions: "You are a task manager that demonstrates testable agent patterns.",
   greeting: "Hey, I'm your task manager. Try adding a task.",
@@ -75,7 +75,7 @@ export default defineAgent({
     list_tasks: {
       description: "List all tasks with their status",
       execute: (_args, ctx) => {
-        const state = ctx.state as TaskState;
+        const state = ctx.state;
         return {
           tasks: state.tasks,
           total: state.tasks.length,
@@ -130,7 +130,7 @@ export default defineAgent({
     get_owner: {
       description: "Get the session owner set by onConnect",
       execute: (_args, ctx) => {
-        const state = ctx.state as TaskState;
+        const state = ctx.state;
         return { owner: state.owner };
       },
     },

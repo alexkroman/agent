@@ -161,13 +161,11 @@ function buildSidecarApp(
   });
 
   app.onError((err, c) => {
-    let status = 500;
-    if (err.name === "ZodError") status = 400;
-    else if (err instanceof HTTPException) status = err.status;
-    return c.json(
-      { error: err.message },
-      status as import("hono/utils/http-status").ContentfulStatusCode,
-    );
+    if (err instanceof HTTPException) {
+      return c.json({ error: err.message }, err.status);
+    }
+    const status = err.name === "ZodError" ? 400 : 500;
+    return c.json({ error: err.message }, status as 400 | 500);
   });
 
   return app;

@@ -298,9 +298,8 @@ export function createVoiceSession(options: VoiceSessionOptions): VoiceSession {
 
     socket.addEventListener(
       "message",
-      (event: Event) => {
-        const msgEvent = event as MessageEvent;
-        const config = handler.handleMessage(msgEvent.data);
+      (event: MessageEvent) => {
+        const config = handler.handleMessage(event.data);
         if (config) {
           const isReconnect = hasConnected;
           hasConnected = true;

@@ -45,7 +45,7 @@ async function installDeps(cwd: string, log: (msg: string) => void): Promise<voi
 
   try {
     await execFileAsync("npm", ["install"], { cwd });
-  } catch (err) {
+  } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     log(warn(`npm install failed: ${msg}`));
     log(warn("Run `npm install` manually in the project directory to install dependencies."));

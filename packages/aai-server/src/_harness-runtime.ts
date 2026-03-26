@@ -285,20 +285,30 @@ function isAuthorized(req: IncomingMessage): boolean {
   return !HARNESS_AUTH_TOKEN || req.headers["x-harness-token"] === HARNESS_AUTH_TOKEN;
 }
 
+type RouteResult = { data: unknown; status?: number };
+
+async function parseJsonBody<T>(req: IncomingMessage): Promise<T | RouteResult> {
+  try {
+    return JSON.parse(await readBody(req)) as T;
+  } catch {
+    return { data: { error: "Invalid JSON in request body" }, status: 400 };
+  }
+}
+
+function isRouteResult(v: unknown): v is RouteResult {
+  return typeof v === "object" && v !== null && "data" in v;
+}
+
 async function handleRoute(
   agent: AgentDef,
   req: IncomingMessage,
-): Promise<{ data: unknown; status?: number }> {
+): Promise<RouteResult> {
   if (req.method === "GET" && req.url === "/config") {
     return { data: extractConfig(agent) };
   }
   if (req.method === "POST" && req.url === "/tool") {
-    let body: ToolCallRequest;
-    try {
-      body = JSON.parse(await readBody(req)) as ToolCallRequest;
-    } catch {
-      return { data: { error: "Invalid JSON in request body" }, status: 400 };
-    }
+    const body = await parseJsonBody<ToolCallRequest>(req);
+    if (isRouteResult(body)) return body;
     if (!body || typeof body.name !== "string" || typeof body.sessionId !== "string") {
       return {
         data: { error: "Invalid tool call request: missing name or sessionId" },
@@ -308,12 +318,8 @@ async function handleRoute(
     return { data: await executeTool(agent, body) };
   }
   if (req.method === "POST" && req.url === "/hook") {
-    let body: HookRequest;
-    try {
-      body = JSON.parse(await readBody(req)) as HookRequest;
-    } catch {
-      return { data: { error: "Invalid JSON in request body" }, status: 400 };
-    }
+    const body = await parseJsonBody<HookRequest>(req);
+    if (isRouteResult(body)) return body;
     if (!body || typeof body.hook !== "string" || typeof body.sessionId !== "string") {
       return { data: { error: "Invalid hook request: missing hook or sessionId" }, status: 400 };
     }

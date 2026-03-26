@@ -59,7 +59,7 @@ export class MockWebSocket extends EventTarget {
     listener: (event: { code?: number; reason?: string }) => void,
   ): void;
   override addEventListener(type: "error", listener: (event: { message?: string }) => void): void;
-  // biome-ignore lint/suspicious/noExplicitAny: implementation signature must encompass all overloads
+  // biome-ignore lint/suspicious/noExplicitAny: TypeScript requires `any` for overload implementation signatures when overloads have incompatible parameter types (e.g. `() => void` vs `(event: {data: unknown}) => void`)
   override addEventListener(type: string, listener: any): void {
     super.addEventListener(type, listener);
   }

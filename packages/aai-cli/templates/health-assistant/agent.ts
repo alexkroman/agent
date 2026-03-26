@@ -1,38 +1,54 @@
 import { defineAgent, tool } from "@alexkroman1/aai";
 import { z } from "zod";
 
-function first(field: unknown): string | undefined {
-  return Array.isArray(field) ? field[0] : undefined;
+function first(arr: string[] | undefined): string | undefined {
+  return arr?.[0];
 }
+
+const FdaOpenfdaSchema = z.record(z.string(), z.array(z.string()));
+
+const FdaDrugSchema = z.object({
+  openfda: FdaOpenfdaSchema.optional(),
+  purpose: z.array(z.string()).optional(),
+  indications_and_usage: z.array(z.string()).optional(),
+  warnings: z.array(z.string()).optional(),
+  dosage_and_administration: z.array(z.string()).optional(),
+  adverse_reactions: z.array(z.string()).optional(),
+}).passthrough();
+
+const FdaResponseSchema = z.object({
+  results: z.array(FdaDrugSchema).optional(),
+});
 
 async function lookupDrug(
   name: string,
 ): Promise<Record<string, unknown>> {
   const q = encodeURIComponent(name.toLowerCase());
-  let raw: Record<string, unknown>;
+  let raw: unknown;
   try {
     const resp = await fetch(
       `https://api.fda.gov/drug/label.json?search=openfda.generic_name:"${q}"+openfda.brand_name:"${q}"&limit=1`,
     );
-    raw = resp.ok ? await resp.json() : { error: `Drug not found: ${name}` };
+    raw = resp.ok ? await resp.json() : null;
   } catch {
-    raw = { error: `Drug not found: ${name}` };
+    raw = null;
   }
 
-  if ("error" in raw) return raw;
-  const results = raw.results as Record<string, unknown>[] | undefined;
-  if (!results?.length) return { error: `No FDA data found for: ${name}` };
+  const parsed = FdaResponseSchema.safeParse(raw);
+  if (!parsed.success || !parsed.data.results?.length) {
+    return { error: `No FDA data found for: ${name}` };
+  }
 
-  const drug = results[0]!;
-  const openfda = (drug.openfda ?? {}) as Record<string, string[]>;
+  const drug = parsed.data.results[0]!;
+  const openfda = drug.openfda ?? {};
   return {
-    name: openfda.generic_name?.[0] ?? name,
-    brand_names: openfda.brand_name ?? [],
+    name: openfda["generic_name"]?.[0] ?? name,
+    brand_names: openfda["brand_name"] ?? [],
     purpose: first(drug.purpose) ?? first(drug.indications_and_usage) ?? "N/A",
     warnings: first(drug.warnings)?.slice(0, 500) ?? "N/A",
     dosage: first(drug.dosage_and_administration)?.slice(0, 500) ?? "N/A",
     side_effects: first(drug.adverse_reactions)?.slice(0, 500) ?? "N/A",
-    manufacturer: openfda.manufacturer_name?.[0] ?? "N/A",
+    manufacturer: openfda["manufacturer_name"]?.[0] ?? "N/A",
   };
 }
 
@@ -89,13 +105,19 @@ async function checkInteractions(
 
   if ("error" in raw) return raw;
 
-  type InteractionGroup = {
-    fullInteractionType?: {
-      interactionPair?: { description: string; severity: string }[];
-    }[];
-  };
+  const InteractionResponseSchema = z.object({
+    fullInteractionTypeGroup: z.array(z.object({
+      fullInteractionType: z.array(z.object({
+        interactionPair: z.array(z.object({
+          description: z.string(),
+          severity: z.string(),
+        })).optional(),
+      })).optional(),
+    })).optional(),
+  });
 
-  const groups = (raw.fullInteractionTypeGroup ?? []) as InteractionGroup[];
+  const parsed = InteractionResponseSchema.safeParse(raw);
+  const groups = parsed.success ? (parsed.data.fullInteractionTypeGroup ?? []) : [];
   const interactions = groups
     .flatMap((g) => g.fullInteractionType ?? [])
     .flatMap((t) => t.interactionPair ?? [])

@@ -1,3 +1,4 @@
+// biome-ignore lint/nursery/noExcessiveLinesPerFile: builtin tools are cohesive; splitting would obscure relationships
 // Copyright 2025 the AAI authors. MIT license.
 /**
  * Built-in tool definitions for the AAI agent SDK.
@@ -248,6 +249,12 @@ function getSecureExec() {
   return _secureExecPromise;
 }
 
+const IsolateOutputSchema = z.object({
+  ok: z.boolean(),
+  result: z.string().optional(),
+  error: z.string().optional(),
+});
+
 // The harness loads user code via readFileSync + AsyncFunction so that syntax
 // errors are caught by try/catch rather than causing a silent module-parse failure.
 const RUN_CODE_HARNESS = `
@@ -278,7 +285,7 @@ function parseIsolateOutput(stdout: string, stderr: string): string | { error: s
     return { error: "Code execution timed out" };
   }
   try {
-    const parsed = JSON.parse(stdout) as { ok: boolean; result?: string; error?: string };
+    const parsed = IsolateOutputSchema.parse(JSON.parse(stdout));
     if (parsed.ok) return parsed.result ?? "Code ran successfully (no output)";
     return { error: parsed.error ?? "Unknown error" };
   } catch {

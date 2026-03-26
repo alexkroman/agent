@@ -16,6 +16,10 @@ export function flush(): Promise<void> {
   return new Promise<void>((r) => queueMicrotask(r));
 }
 
+// Test helpers assign incomplete mocks to global properties (e.g. a plain
+// {origin} for `location` instead of the full DOM Location interface).
+// The double-cast is required because `typeof globalThis & Record<string, unknown>`
+// still enforces the full DOM types on existing properties.
 const g = globalThis as unknown as Record<string, unknown>;
 
 export function installMockLocation(origin = "http://localhost:3000") {

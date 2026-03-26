@@ -115,7 +115,7 @@ async function main(): Promise<void> {
       wss.handleUpgrade(req, socket, head, (ws) => {
         sandbox.startSession(ws, resume);
       });
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("WebSocket upgrade error:", err);
       socket.destroy();
     }
@@ -151,7 +151,7 @@ async function main(): Promise<void> {
   });
 }
 
-main().catch((err) => {
+main().catch((err: unknown) => {
   console.error("Fatal:", err);
   process.exit(1);
 });
