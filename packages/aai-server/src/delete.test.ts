@@ -2,26 +2,26 @@
 import { expect, test } from "vitest";
 import { createTestOrchestrator, deployAgent } from "./_test-utils.ts";
 
-test("undeploy returns 200 for deployed agent", async () => {
+test("delete returns 200 for deployed agent", async () => {
   const { fetch } = await createTestOrchestrator();
   await deployAgent(fetch);
 
-  const resp = await fetch("/my-agent/undeploy", {
-    method: "POST",
+  const resp = await fetch("/my-agent", {
+    method: "DELETE",
     headers: { Authorization: "Bearer key1" },
   });
 
   expect(resp.status).toBe(200);
   const body = (await resp.json()) as Record<string, unknown>;
-  expect(body).toEqual({ ok: true, message: "Undeployed my-agent" });
+  expect(body).toEqual({ ok: true, message: "Deleted my-agent" });
 });
 
-test("undeploy removes agent from store", async () => {
+test("delete removes agent from store", async () => {
   const { fetch, store } = await createTestOrchestrator();
   await deployAgent(fetch);
 
-  await fetch("/my-agent/undeploy", {
-    method: "POST",
+  await fetch("/my-agent", {
+    method: "DELETE",
     headers: { Authorization: "Bearer key1" },
   });
 
@@ -29,12 +29,12 @@ test("undeploy removes agent from store", async () => {
   expect(manifest).toBeNull();
 });
 
-test("undeploy returns 401 without auth", async () => {
+test("delete returns 401 without auth", async () => {
   const { fetch } = await createTestOrchestrator();
   await deployAgent(fetch);
 
-  const resp = await fetch("/my-agent/undeploy", {
-    method: "POST",
+  const resp = await fetch("/my-agent", {
+    method: "DELETE",
   });
 
   expect(resp.status).toBe(401);

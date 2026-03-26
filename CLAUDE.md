@@ -112,8 +112,8 @@ Non-exported internal files (used within the package only):
 
 #### `@alexkroman1/aai-cli` (CLI)
 
-Binary: `aai` — subcommands: init, dev, test, build, deploy, start,
-secret, rag, link, unlink
+Binary: `aai` — subcommands: init, dev, test, build, deploy, delete,
+start, secret, rag, link, unlink
 
 ### Key Files
 

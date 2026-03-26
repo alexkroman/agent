@@ -109,15 +109,15 @@ const deploy = defineCommand({
   },
 });
 
-const undeploy = defineCommand({
-  meta: { name: "undeploy", description: "Remove a deployed agent from production" },
+const del = defineCommand({
+  meta: { name: "delete", description: "Remove a deployed agent" },
   args: {
     server: { type: "string", alias: "s", description: "Server URL" },
   },
   async run({ args }) {
     const cwd = resolveCwd();
-    const { runUndeployCommand } = await import("./undeploy.ts");
-    await runUndeployCommand({
+    const { runDeleteCommand } = await import("./delete.ts");
+    await runDeleteCommand({
       cwd,
       ...(args.server ? { server: args.server } : {}),
     });
@@ -221,7 +221,7 @@ const unlink = defineCommand({
 
 export const mainCommand = defineCommand({
   meta: { name: "aai", version: VERSION, description: "Voice agent development kit" },
-  subCommands: { init, dev, test, build, deploy, undeploy, start, secret, rag, link, unlink },
+  subCommands: { init, dev, test, build, deploy, delete: del, start, secret, rag, link, unlink },
 });
 
 if (process.env.VITEST !== "true") {

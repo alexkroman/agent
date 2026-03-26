@@ -2,7 +2,7 @@
 import type { Context } from "hono";
 import type { Env } from "./context.ts";
 
-export async function handleUndeploy(c: Context<Env>): Promise<Response> {
+export async function handleDelete(c: Context<Env>): Promise<Response> {
   const slug = c.get("slug");
 
   const existing = c.env.slots.get(slug);
@@ -21,7 +21,7 @@ export async function handleUndeploy(c: Context<Env>): Promise<Response> {
 
   await c.env.store.deleteAgent(slug);
 
-  console.info("Undeploy received", { slug });
+  console.info("Delete received", { slug });
 
-  return c.json({ ok: true, message: `Undeployed ${slug}` });
+  return c.json({ ok: true, message: `Deleted ${slug}` });
 }

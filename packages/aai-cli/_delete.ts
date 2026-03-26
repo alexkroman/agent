@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-export type UndeployOpts = {
+export type DeleteOpts = {
   url: string;
   slug: string;
   apiKey: string;
@@ -8,13 +8,13 @@ export type UndeployOpts = {
   fetch?: typeof globalThis.fetch;
 };
 
-export async function runUndeploy(opts: UndeployOpts): Promise<void> {
+export async function runDelete(opts: DeleteOpts): Promise<void> {
   const fetchFn = opts.fetch ?? globalThis.fetch.bind(globalThis);
 
   let resp: Response;
   try {
-    resp = await fetchFn(`${opts.url}/${opts.slug}/undeploy`, {
-      method: "POST",
+    resp = await fetchFn(`${opts.url}/${opts.slug}`, {
+      method: "DELETE",
       headers: {
         Authorization: `Bearer ${opts.apiKey}`,
       },
@@ -23,7 +23,7 @@ export async function runUndeploy(opts: UndeployOpts): Promise<void> {
     const hint = opts.url.startsWith("http://localhost")
       ? "Is the local dev server running? Start it with `aai dev`."
       : "Check your network connection and verify the server URL is correct.";
-    throw new Error(`undeploy failed: could not reach ${opts.url}\n  ${hint}`, { cause: err });
+    throw new Error(`delete failed: could not reach ${opts.url}\n  ${hint}`, { cause: err });
   }
 
   if (resp.ok) return;
@@ -37,5 +37,5 @@ export async function runUndeploy(opts: UndeployOpts): Promise<void> {
   } else if (resp.status === 404) {
     hint = "The agent may not be deployed. Check `.aai/project.json` for the correct slug.";
   }
-  throw new Error(`undeploy failed (HTTP ${resp.status}): ${text}${hint ? `\n  ${hint}` : ""}`);
+  throw new Error(`delete failed (HTTP ${resp.status}): ${text}${hint ? `\n  ${hint}` : ""}`);
 }
