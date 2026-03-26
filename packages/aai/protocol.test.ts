@@ -173,6 +173,7 @@ describe("buildReadyConfig", () => {
       audioFormat: AUDIO_FORMAT,
       sampleRate: 16_000,
       ttsSampleRate: 24_000,
+      protocolVersion: 1,
     });
   });
 

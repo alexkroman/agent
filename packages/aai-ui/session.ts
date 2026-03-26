@@ -1,10 +1,16 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import type { ClientMessage, ReadyConfig } from "@alexkroman1/aai/protocol";
-import { toWireMessages } from "@alexkroman1/aai/protocol";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import type { VoiceIO } from "./audio.ts";
 import { ClientHandler } from "./client-handler.ts";
+import {
+  type ClientHeartbeat,
+  type ConfigHandlerDeps,
+  clearClientHeartbeat,
+  handleConfigMessage,
+  handlePong,
+} from "./heartbeat.ts";
 import type {
   AgentState,
   Message,
@@ -38,7 +44,7 @@ function plainBatch(fn: () => void): void {
 // ─── Audio initialization (extracted for function-length limit) ──────────────
 
 /** Shared mutable connection state for audio initialization. */
-type ConnState = {
+export type ConnState = {
   ws: WebSocket | null;
   voiceIO: VoiceIO | null;
   audioSetupInFlight: boolean;
@@ -175,7 +181,6 @@ export type VoiceSession = {
 export function createVoiceSession(options: SessionOptions): VoiceSession {
   const reactive = options.signal ?? plainReactive;
   const batchFn = options.batch ?? plainBatch;
-
   const state = reactive<AgentState>("disconnected");
   const messages = reactive<Message[]>([]);
   const toolCalls = reactive<ToolCallInfo[]>([]);
@@ -183,12 +188,12 @@ export function createVoiceSession(options: SessionOptions): VoiceSession {
   const agentUtterance = reactive<string | null>(null);
   const error = reactive<SessionError | null>(null);
   const disconnected = reactive<{ intentional: boolean } | null>(null);
-
   const conn: ConnState = { ws: null, voiceIO: null, audioSetupInFlight: false, generation: 0 };
   let connectionController: AbortController | null = null;
-  let hasConnected = false;
-
+  const hasConnected = { value: false };
+  const hb: ClientHeartbeat = { pingTimer: null, pongTimer: null };
   function cleanupAudio(): void {
+    clearClientHeartbeat(hb);
     conn.audioSetupInFlight = false;
     void conn.voiceIO?.close();
     conn.voiceIO = null;
@@ -217,6 +222,15 @@ export function createVoiceSession(options: SessionOptions): VoiceSession {
   }
 
   const audioDeps = { send, sendBinary, state, error, batch: batchFn };
+  const cfgDeps: ConfigHandlerDeps = {
+    conn,
+    hb,
+    send,
+    audioDeps,
+    messages,
+    hasConnected,
+    initAudio: initAudioCapture,
+  };
 
   function connect(opts?: { signal?: AbortSignal }): void {
     disconnected.value = null;
@@ -239,7 +253,7 @@ export function createVoiceSession(options: SessionOptions): VoiceSession {
     const base = options.platformUrl;
     const wsUrl = new URL("websocket", base.endsWith("/") ? base : `${base}/`);
     wsUrl.protocol = wsUrl.protocol === "https:" ? "wss:" : "ws:";
-    if (hasConnected) wsUrl.searchParams.set("resume", "1");
+    if (hasConnected.value) wsUrl.searchParams.set("resume", "1");
 
     const socket = new WebSocket(wsUrl.toString());
     socket.binaryType = "arraybuffer";
@@ -263,33 +277,24 @@ export function createVoiceSession(options: SessionOptions): VoiceSession {
       },
       { signal: sig },
     );
-
     socket.addEventListener(
       "message",
       (event: Event) => {
-        const msgEvent = event as MessageEvent;
-        const config = handler.handleMessage(msgEvent.data);
-        if (config) {
-          const isReconnect = hasConnected;
-          hasConnected = true;
-          initAudioCapture(conn, config, audioDeps).catch((err) => {
-            audioDeps.batch(() => {
-              audioDeps.error.value = {
-                code: "audio",
-                message: `Audio capture failed: ${errorMessage(err)}`,
-              };
-              audioDeps.state.value = "error";
-            });
-          });
+        const data = (event as MessageEvent).data;
+        if (handlePong(data, hb)) return;
+        const config = handler.handleMessage(data);
+        if (config) handleConfigMessage(config, cfgDeps);
+      },
+      { signal: sig },
+    );
 
-          // Send history if reconnecting
-          if (isReconnect && messages.value.length > 0) {
-            send({
-              type: "history",
-              messages: toWireMessages(messages.value),
-            });
-          }
-        }
+    socket.addEventListener(
+      "error",
+      () => {
+        batchFn(() => {
+          error.value = { code: "connection", message: "WebSocket connection error" };
+          state.value = "error";
+        });
       },
       { signal: sig },
     );
@@ -297,12 +302,10 @@ export function createVoiceSession(options: SessionOptions): VoiceSession {
     socket.addEventListener(
       "close",
       () => {
-        if (sig.aborted) {
-          return;
-        }
+        if (sig.aborted) return;
         controller.abort();
         disconnected.value = { intentional: false };
-        cleanupAudio();
+        cleanupAudio(); // also clears heartbeat
         state.value = "disconnected";
       },
       { signal: sig },

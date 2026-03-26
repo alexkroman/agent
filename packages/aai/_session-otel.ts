@@ -274,5 +274,7 @@ export function setupListeners(ctx: S2sSessionCtx, handle: S2sHandle): void {
   handle.on("close", () => {
     ctx.log.info("S2S closed");
     ctx.s2s = null;
+    // Issue 11: Notify the session layer so it can attempt reconnection.
+    ctx.onS2sClose?.();
   });
 }

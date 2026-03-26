@@ -20,7 +20,9 @@ import { tracer } from "./telemetry.ts";
  */
 export type SessionWebSocket = {
   readonly readyState: number;
+  readonly bufferedAmount?: number;
   send(data: string | ArrayBuffer | Uint8Array): void;
+  close(): void;
   addEventListener(type: "close" | "open", listener: () => void): void;
   addEventListener(type: "message", listener: (event: { data: unknown }) => void): void;
   addEventListener(type: "error", listener: (event: { message?: string }) => void): void;
@@ -43,6 +45,9 @@ export type WsSessionOptions = {
   /** Logger instance. Defaults to console. */
   logger?: Logger;
 };
+
+/** WebSocket bufferedAmount threshold (256 KB) above which audio frames are dropped. */
+const CLIENT_BACKPRESSURE_THRESHOLD = 256 * 1024;
 
 /**
  * Creates a {@link ClientSink} backed by a plain WebSocket.
@@ -67,12 +72,40 @@ function createClientSink(ws: SessionWebSocket): ClientSink {
       safeSend(JSON.stringify(e));
     },
     playAudioChunk(chunk) {
+      // Issue 6: Drop audio chunks when the client connection is congested
+      // to prevent unbounded server memory growth for slow clients.
+      if (
+        "bufferedAmount" in ws &&
+        typeof ws.bufferedAmount === "number" &&
+        ws.bufferedAmount > CLIENT_BACKPRESSURE_THRESHOLD
+      ) {
+        return;
+      }
       safeSend(chunk);
     },
     playAudioDone() {
       safeSend(JSON.stringify({ type: "audio_done" }));
     },
   };
+}
+
+/** Try to handle an application-level ping; returns true if handled. */
+function handlePing(data: unknown, ws: SessionWebSocket): boolean {
+  if (typeof data !== "string") return false;
+  try {
+    const json = JSON.parse(data);
+    if (json && json.type === "ping") {
+      try {
+        if (ws.readyState === 1) ws.send(JSON.stringify({ type: "pong" }));
+      } catch {
+        /* socket closed */
+      }
+      return true;
+    }
+  } catch {
+    /* not JSON */
+  }
+  return false;
 }
 
 function handleBinaryAudio(data: unknown, session: Session): boolean {
@@ -124,6 +157,9 @@ function handleTextMessage(
     case "history":
       session.onHistory(msg.messages);
       break;
+    case "ping":
+      // Handled at transport level in wireSessionSocket.
+      break;
     default:
       break;
   }
@@ -170,6 +206,22 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
       .catch((err: unknown) => {
         log.error("Session start failed", { ...ctx, sid, error: errorDetail(err) });
         sessionSpan.setStatus({ code: 2, message: errorMessage(err) });
+        // Issue 4: Notify the client and close the WebSocket so they can
+        // detect the failure and retry instead of silently dropping messages.
+        try {
+          if (ws.readyState === 1) {
+            ws.send(
+              JSON.stringify({
+                type: "error",
+                code: "internal",
+                message: `Session start failed: ${errorMessage(err)}`,
+              }),
+            );
+          }
+        } catch {
+          /* socket may already be closed */
+        }
+        ws.close();
         sessions.delete(sessionId);
         session = null;
       });
@@ -183,9 +235,10 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
   }
 
   ws.addEventListener("message", (event) => {
-    if (!session) return;
     const { data } = event;
-
+    // Issue 2: Respond to heartbeat pings even if session isn't ready.
+    if (handlePing(data, ws)) return;
+    if (!session) return;
     if (handleBinaryAudio(data, session)) return;
     handleTextMessage(data, session, log, ctx, sid);
   });

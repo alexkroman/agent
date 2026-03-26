@@ -110,11 +110,20 @@ async function main(): Promise<void> {
   function shutdown() {
     console.info("Shutting down...");
     wss.close();
+    // Issue 12: Await sandbox termination promises so in-flight operations
+    // (tool calls, KV writes, session stops) complete cleanly before exit.
+    const terminatePromises: Promise<unknown>[] = [];
     for (const slot of opts.slots.values()) {
       if (slot.idleTimer) clearTimeout(slot.idleTimer);
-      slot.sandbox?.terminate();
+      if (slot.sandbox) terminatePromises.push(slot.sandbox.terminate());
     }
-    nodeServer.close(() => process.exit(0));
+    Promise.allSettled(terminatePromises)
+      .then(() => {
+        nodeServer.close(() => process.exit(0));
+      })
+      .catch(() => {
+        nodeServer.close(() => process.exit(0));
+      });
     // Force exit if cleanup takes too long
     setTimeout(() => process.exit(1), 3000).unref();
   }

@@ -70,6 +70,12 @@ export const TOOL_EXECUTION_TIMEOUT_MS = 30_000;
 /** Maximum length for tool result strings sent to clients. */
 export const MAX_TOOL_RESULT_CHARS = 4000;
 
+/**
+ * Current wire protocol version.
+ * Increment when making breaking changes to the message format.
+ */
+export const PROTOCOL_VERSION = 1;
+
 // ─── Error codes ───────────────────────────────────────────────────────────
 
 /**
@@ -157,6 +163,7 @@ export const ReadyConfigSchema = z.object({
   audioFormat: z.enum(["pcm16"]),
   sampleRate: z.number().int().positive(),
   ttsSampleRate: z.number().int().positive(),
+  protocolVersion: z.number().int().positive().optional(),
 });
 
 /** Protocol-level session config returned to the client on connect. */
@@ -169,8 +176,10 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     audioFormat: z.string(),
     sampleRate: z.number(),
     ttsSampleRate: z.number(),
+    protocolVersion: z.number().int().positive().optional(),
   }),
   ev("audio_done"),
+  ev("pong"),
   ...ClientEventSchema.options,
 ]);
 
@@ -182,6 +191,7 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   ev("audio_ready"),
   ev("cancel"),
   ev("reset"),
+  ev("ping"),
   z.object({
     type: z.literal("history"),
     messages: z
@@ -204,6 +214,7 @@ export function buildReadyConfig(s2sConfig: {
     audioFormat: AUDIO_FORMAT,
     sampleRate: s2sConfig.inputSampleRate,
     ttsSampleRate: s2sConfig.outputSampleRate,
+    protocolVersion: PROTOCOL_VERSION,
   };
 }
 

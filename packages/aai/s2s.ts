@@ -14,14 +14,13 @@ import { s2sConnectionDuration, s2sErrorCounter, tracer } from "./telemetry.ts";
 const uint8ToBase64 = (bytes: Uint8Array): string => Buffer.from(bytes).toString("base64");
 const base64ToUint8 = (base64: string): Uint8Array => new Uint8Array(Buffer.from(base64, "base64"));
 
-// ─── WebSocket abstraction ──────────────────────────────────────────────────
-
-/** Minimal WebSocket interface for the S2S client. */
 export type S2sWebSocket = {
   readonly readyState: number;
+  readonly bufferedAmount?: number;
   send(data: string): void;
   close(): void;
-  addEventListener(type: "open", listener: () => void): void;
+  ping?(): void;
+  addEventListener(type: "open" | "pong", listener: () => void): void;
   addEventListener(type: "message", listener: (event: { data: unknown }) => void): void;
   addEventListener(
     type: "close",
@@ -30,20 +29,15 @@ export type S2sWebSocket = {
   addEventListener(type: "error", listener: (event: { message?: string }) => void): void;
 };
 
-/** WebSocket readyState constant for OPEN. */
 const WS_OPEN = 1;
 
-/** Factory for creating WebSocket connections (e.g. the `ws` package). */
 export type CreateS2sWebSocket = (
   url: string,
   opts: { headers: Record<string, string> },
 ) => S2sWebSocket;
 
-/** Default S2S WebSocket factory using the `ws` package (Node-only). */
 export const defaultCreateS2sWebSocket: CreateS2sWebSocket = (url, opts) =>
   new WebSocket(url, { headers: opts.headers });
-
-// ─── Incoming S2S message schema ─────────────────────────────────────────────
 
 const S2sServerMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("session.ready"), session_id: z.string() }),
@@ -86,7 +80,6 @@ const S2sServerMessageSchema = z.discriminatedUnion("type", [
 
 type S2sServerMessage = z.infer<typeof S2sServerMessageSchema>;
 
-/** Dispatch a parsed S2S server message to the emitter. */
 function dispatchS2sMessage(emitter: Emitter<S2sEvents>, msg: S2sServerMessage): void {
   switch (msg.type) {
     case "session.ready":
@@ -138,8 +131,6 @@ function dispatchS2sMessage(emitter: Emitter<S2sEvents>, msg: S2sServerMessage):
   }
 }
 
-// ─── Types ──────────────────────────────────────────────────────────────────
-
 export type S2sSessionConfig = {
   system_prompt: string;
   tools: S2sToolSchema[];
@@ -159,7 +150,6 @@ export type S2sToolCall = {
   args: Record<string, unknown>;
 };
 
-/** Typed event map for S2S handle events. */
 export type S2sEvents = {
   ready: (detail: { session_id: string }) => void;
   session_updated: (detail: Record<string, unknown>) => void;
@@ -187,8 +177,6 @@ export type S2sHandle = {
   close(): void;
 };
 
-// ─── Connect ────────────────────────────────────────────────────────────────
-
 export type ConnectS2sOptions = {
   apiKey: string;
   config: S2SConfig;
@@ -196,15 +184,73 @@ export type ConnectS2sOptions = {
   logger?: Logger;
 };
 
-/**
- * Connect to AssemblyAI's Speech-to-Speech WebSocket API.
- *
- * Returns an {@link S2sHandle} with a typed `on()` method.
- * Consumers listen for events: `ready`, `speech_started`, `speech_stopped`,
- * `user_transcript_delta`, `user_transcript`, `reply_started`,
- * `reply_done`, `audio`, `agent_transcript`, `tool_call`,
- * `session_expired`, `error`, `close`.
- */
+const S2S_CONNECT_TIMEOUT_MS = 10_000;
+const S2S_PING_INTERVAL_MS = 30_000;
+const S2S_PONG_TIMEOUT_MS = 10_000;
+const S2S_BACKPRESSURE_THRESHOLD = 256 * 1024;
+
+type HeartbeatState = {
+  pingTimer: ReturnType<typeof setInterval> | null;
+  pongTimer: ReturnType<typeof setTimeout> | null;
+};
+
+function startS2sHeartbeat(ws: S2sWebSocket, log: Logger, hb: HeartbeatState): void {
+  const pingFn = ws.ping;
+  if (typeof pingFn !== "function") return;
+  hb.pingTimer = setInterval(() => {
+    if (ws.readyState !== WS_OPEN) {
+      clearS2sHeartbeat(hb);
+      return;
+    }
+    pingFn.call(ws);
+    hb.pongTimer = setTimeout(() => {
+      log.warn("S2S pong timeout — closing connection");
+      ws.close();
+    }, S2S_PONG_TIMEOUT_MS);
+  }, S2S_PING_INTERVAL_MS);
+}
+
+function clearS2sHeartbeat(hb: HeartbeatState): void {
+  if (hb.pingTimer) clearInterval(hb.pingTimer);
+  if (hb.pongTimer) clearTimeout(hb.pongTimer);
+  hb.pingTimer = null;
+  hb.pongTimer = null;
+}
+
+function handleS2sMessage(data: unknown, emitter: Emitter<S2sEvents>, log: Logger): void {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(String(data));
+  } catch {
+    log.warn("S2S << invalid JSON", { data: String(data).slice(0, 200) });
+    return;
+  }
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    log.warn("S2S << non-object JSON message", { type: typeof raw });
+    return;
+  }
+  const obj = raw as Record<string, unknown>;
+  // reply.audio and input.audio are ~95% of traffic — skip logging.
+  if (obj.type !== "reply.audio" && obj.type !== "input.audio") {
+    log.info(
+      `S2S << ${obj.type}`,
+      obj.type === "transcript.agent.delta" ? { delta: obj.delta } : undefined,
+    );
+  }
+  // Fast path for audio — skip Zod validation.
+  if (obj.type === "reply.audio" && typeof obj.data === "string") {
+    emitter.emit("audio", { audio: base64ToUint8(obj.data) });
+    return;
+  }
+  const parsed = S2sServerMessageSchema.safeParse(raw);
+  if (!parsed.success) {
+    log.warn(`S2S << unrecognised message type: ${obj.type ?? JSON.stringify(raw).slice(0, 200)}`);
+    return;
+  }
+  dispatchS2sMessage(emitter, parsed.data);
+}
+
+/** Connect to AssemblyAI's S2S WebSocket API. Returns an {@link S2sHandle}. */
 export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
   const { apiKey, config, createWebSocket, logger: log = consoleLogger } = opts;
 
@@ -222,6 +268,28 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
 
     const emitter = createNanoEvents<S2sEvents>();
     let opened = false;
+    const hb: HeartbeatState = { pingTimer: null, pongTimer: null };
+
+    // Issue 10: Connection timeout — reject if open event not received in time.
+    const connectTimer = setTimeout(() => {
+      if (!opened) {
+        const err = new Error(`S2S connection timed out after ${S2S_CONNECT_TIMEOUT_MS}ms`);
+        log.error("S2S connection timeout", { url: config.wssUrl });
+        s2sErrorCounter.add(1);
+        connectionSpan.setStatus({ code: 2, message: err.message });
+        connectionSpan.recordException(err);
+        connectionSpan.end();
+        ws.close();
+        reject(err);
+      }
+    }, S2S_CONNECT_TIMEOUT_MS);
+
+    ws.addEventListener("pong", () => {
+      if (hb.pongTimer) {
+        clearTimeout(hb.pongTimer);
+        hb.pongTimer = null;
+      }
+    });
 
     function send(msg: { type: string; [key: string]: unknown }): void {
       if (ws.readyState !== WS_OPEN) return;
@@ -240,6 +308,14 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
 
       sendAudio(audio: Uint8Array): void {
         if (ws.readyState !== WS_OPEN) return;
+        // Issue 5: Drop audio frames when the send buffer is congested
+        // to prevent unbounded memory growth during network hiccups.
+        if (
+          typeof ws.bufferedAmount === "number" &&
+          ws.bufferedAmount > S2S_BACKPRESSURE_THRESHOLD
+        ) {
+          return;
+        }
         ws.send(`{"type":"input.audio","audio":"${uint8ToBase64(audio)}"}`);
       },
 
@@ -259,68 +335,25 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
 
       close(): void {
         log.info("S2S closing");
+        clearS2sHeartbeat(hb);
         ws.close();
       },
     };
 
     ws.addEventListener("open", () => {
       opened = true;
+      clearTimeout(connectTimer);
       log.info("S2S WebSocket open");
       connectionSpan.addEvent("ws.open");
+      startS2sHeartbeat(ws, log, hb);
       resolve(handle);
     });
 
-    function tryParseJson(data: unknown): unknown | undefined {
-      try {
-        return JSON.parse(String(data));
-      } catch {
-        log.warn("S2S << invalid JSON", { data: String(data).slice(0, 200) });
-      }
-    }
-
-    function handleAudioFastPath(obj: { type?: unknown; data?: unknown }): boolean {
-      if (obj.type === "reply.audio" && typeof obj.data === "string") {
-        const audioBytes = base64ToUint8(obj.data);
-        emitter.emit("audio", { audio: audioBytes });
-        return true;
-      }
-      return false;
-    }
-
-    function logIncoming(obj: { type?: unknown; delta?: unknown }): void {
-      // reply.audio and input.audio are ~95% of traffic — skip logging.
-      if (obj.type === "reply.audio" || obj.type === "input.audio") return;
-      log.info(
-        `S2S << ${obj.type}`,
-        obj.type === "transcript.agent.delta" ? { delta: obj.delta } : undefined,
-      );
-    }
-
-    function handleS2sMessage(ev: { data: unknown }): void {
-      const raw = tryParseJson(ev.data);
-      if (raw === undefined) return;
-
-      if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
-        log.warn("S2S << non-object JSON message", { type: typeof raw });
-        return;
-      }
-      const obj = raw as Record<string, unknown>;
-      logIncoming(obj);
-      if (handleAudioFastPath(obj)) return;
-
-      const parsed = S2sServerMessageSchema.safeParse(raw);
-      if (!parsed.success) {
-        log.warn(
-          `S2S << unrecognised message type: ${obj.type ?? JSON.stringify(raw).slice(0, 200)}`,
-        );
-        return;
-      }
-      dispatchS2sMessage(emitter, parsed.data);
-    }
-
-    ws.addEventListener("message", handleS2sMessage);
+    ws.addEventListener("message", (ev) => handleS2sMessage(ev.data, emitter, log));
 
     ws.addEventListener("close", (ev) => {
+      clearTimeout(connectTimer);
+      clearS2sHeartbeat(hb);
       log.info("S2S WebSocket closed", {
         code: ev.code ?? 0,
         reason: ev.reason ?? "",
@@ -339,6 +372,8 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
     });
 
     ws.addEventListener("error", (ev) => {
+      clearTimeout(connectTimer);
+      clearS2sHeartbeat(hb);
       const message = typeof ev.message === "string" ? ev.message : "WebSocket error";
       const errObj = new Error(message);
       log.error("S2S WebSocket error", { error: errObj.message });

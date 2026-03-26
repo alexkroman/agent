@@ -85,6 +85,8 @@ export type S2sSessionCtx = {
     name: string,
   ): string | null;
   fireHook(name: string, fn: (h: HookInvoker) => Promise<void>): void;
+  /** Callback invoked when the S2S connection closes unexpectedly. */
+  onS2sClose?: () => void;
 };
 
 function buildCtx(opts: {
@@ -171,6 +173,11 @@ export function createS2sSession(opts: SessionOptions): Session {
   const sessionAbort = new AbortController();
   const ctx = buildCtx({ id, agent, client, agentConfig, executeTool, hookInvoker, log });
 
+  // Issue 11: Automatic S2S reconnection with exponential backoff.
+  const MAX_RECONNECT_ATTEMPTS = 3;
+  const RECONNECT_BASE_MS = 1000;
+  let reconnectAttempts = 0;
+
   /** Monotonically increasing counter bumped on each connectAndSetup call.
    *  Only the most recent invocation is allowed to set ctx.s2s, preventing
    *  earlier completions from overwriting a newer connection during rapid resets. */
@@ -214,6 +221,38 @@ export function createS2sSession(opts: SessionOptions): Session {
     }
   }
 
+  // Issue 11: When the S2S connection drops unexpectedly, attempt reconnection
+  // with exponential backoff so transient failures don't permanently degrade
+  // the session.
+  ctx.onS2sClose = () => {
+    if (sessionAbort.signal.aborted) return; // Session is stopping, don't reconnect.
+    if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+      log.error("S2S reconnect limit reached", { attempts: reconnectAttempts });
+      client.event({
+        type: "error",
+        code: "connection",
+        message: "Lost connection to speech service",
+      });
+      return;
+    }
+    const delay = RECONNECT_BASE_MS * 2 ** reconnectAttempts;
+    reconnectAttempts++;
+    log.info("S2S reconnecting", { attempt: reconnectAttempts, delayMs: delay });
+    setTimeout(() => {
+      if (sessionAbort.signal.aborted) return;
+      connectAndSetup()
+        .then(() => {
+          reconnectAttempts = 0; // Reset on successful reconnection.
+          log.info("S2S reconnected successfully");
+        })
+        .catch((err: unknown) => {
+          log.error("S2S reconnect failed", { error: errorMessage(err) });
+          // onS2sClose will fire again from the failed connection's close event,
+          // triggering the next retry if under the limit.
+        });
+    }, delay);
+  };
+
   return {
     async start(): Promise<void> {
       sessionCounter.add(1, { agent });
@@ -244,11 +283,22 @@ export function createS2sSession(opts: SessionOptions): Session {
       ctx.turnPromise = null;
       ctx.pendingTools = [];
       ctx.replyGeneration++;
-      ctx.s2s?.close();
+      // Issue 8: Close the old connection and immediately null the reference
+      // so audio sent during the reconnection window is cleanly dropped
+      // instead of being sent to a closing connection.
+      const oldS2s = ctx.s2s;
+      ctx.s2s = null;
+      oldS2s?.close();
       client.event({ type: "reset" });
-      connectAndSetup().catch((err: unknown) =>
-        log.error("S2S reset reconnect failed", { error: errorMessage(err) }),
-      );
+      connectAndSetup().catch((err: unknown) => {
+        log.error("S2S reset reconnect failed", { error: errorMessage(err) });
+        // Surface the reconnection failure to the client.
+        client.event({
+          type: "error",
+          code: "connection",
+          message: `Reset reconnect failed: ${errorMessage(err)}`,
+        });
+      });
     },
     onHistory(incoming: readonly { role: "user" | "assistant"; text: string }[]): void {
       ctx.conversationMessages.push(...fromWireMessages(incoming));

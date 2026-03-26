@@ -200,15 +200,26 @@ export class ClientHandler {
         console.warn("Unsupported server config:", parsed.error.message);
         return null;
       }
+      // Issue 14: Validate that the negotiated audio format is supported.
+      if (parsed.data.audioFormat !== "pcm16") {
+        console.error(`Unsupported audio format: ${parsed.data.audioFormat}`);
+        this.#batch(() => {
+          this.#error.value = {
+            code: "audio",
+            message: `Unsupported audio format: ${parsed.data.audioFormat}`,
+          };
+          this.#state.value = "error";
+        });
+        return null;
+      }
       return parsed.data;
     }
 
-    if (msg.type === "audio_done") {
-      this.playAudioDone();
+    if (msg.type === "audio_done" || msg.type === "pong") {
+      if (msg.type === "audio_done") this.playAudioDone();
       return null;
     }
 
-    // All other messages are ClientEvent
     this.event(msg);
     return null;
   }
