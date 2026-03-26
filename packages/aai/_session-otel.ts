@@ -74,7 +74,7 @@ export async function handleToolCall(ctx: S2sSessionCtx, detail: S2sToolCall): P
     return;
   }
 
-  const refused = ctx.checkTurnLimits(turnConfig, name);
+  const refused = ctx.consumeToolCallStep(turnConfig, name);
   if (refused !== null) {
     span.setAttribute("aai.tool.refused", true);
     span.end();

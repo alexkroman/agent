@@ -87,7 +87,7 @@ export type S2sSessionCtx = {
    *  replies from leaking into subsequent replies. */
   replyGeneration: number;
   resolveTurnConfig(): Promise<{ maxSteps?: number; activeTools?: string[] } | null>;
-  checkTurnLimits(
+  consumeToolCallStep(
     turnConfig: { maxSteps?: number; activeTools?: string[] } | null,
     name: string,
   ): string | null;
@@ -125,7 +125,7 @@ function buildCtx(opts: {
       if (!hookInvoker) return Promise.resolve(null);
       return hookInvoker.resolveTurnConfig(id, ctx.toolCallCount, HOOK_TIMEOUT_MS);
     },
-    checkTurnLimits(turnConfig, name) {
+    consumeToolCallStep(turnConfig, name) {
       const maxSteps = turnConfig?.maxSteps ?? agentConfig.maxSteps;
       ctx.toolCallCount++;
       if (maxSteps !== undefined && ctx.toolCallCount > maxSteps) {

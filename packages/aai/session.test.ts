@@ -483,7 +483,7 @@ describe("createS2sSession", () => {
     expect(doneEvent.result).toBe(JSON.stringify({ error: "boom" }));
   });
 
-  test("checkTurnLimits refuses tool when maxSteps exceeded", async () => {
+  test("consumeToolCallStep refuses tool when maxSteps exceeded", async () => {
     const executeTool = vi.fn(async () => "ok");
     const hookInvoker = {
       onConnect: vi.fn(),
@@ -513,7 +513,7 @@ describe("createS2sSession", () => {
     expect(executeTool).toHaveBeenCalledTimes(1);
   });
 
-  test("checkTurnLimits refuses tool not in activeTools", async () => {
+  test("consumeToolCallStep refuses tool not in activeTools", async () => {
     const executeTool = vi.fn(async () => "ok");
     const hookInvoker = {
       onConnect: vi.fn(),
