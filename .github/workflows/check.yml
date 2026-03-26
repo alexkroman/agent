@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  lint:
+  setup:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -21,9 +21,17 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm -r run lint
+      - run: pnpm -r run build
+      - uses: actions/cache/save@v4
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+            packages/*/dist
+          key: workspace-${{ github.sha }}
 
-  typecheck:
+  lint-and-typecheck:
+    needs: setup
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -31,11 +39,41 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm -r run typecheck
+      - uses: actions/cache/restore@v4
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+            packages/*/dist
+          key: workspace-${{ github.sha }}
+      - run: pnpm -r run lint & pnpm -r run typecheck & wait
+
+  checks:
+    needs: setup
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - uses: actions/cache/restore@v4
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+            packages/*/dist
+          key: workspace-${{ github.sha }}
+      - run: |
+          pnpm -r run --if-present check:api
+          pnpm -r run --if-present check:attw
+          pnpm -r run --if-present check:templates
+          pnpm run check:knip
+          pnpm run check:syncpack
+          pnpm run check:markdown
 
   test:
+    needs: setup
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -43,49 +81,17 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - uses: actions/cache/restore@v4
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+            packages/*/dist
+          key: workspace-${{ github.sha }}
       - run: pnpm vitest run --coverage
 
-  check-api:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v5
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm -r run build
-      - run: pnpm -r run --if-present check:api
-      - run: pnpm -r run --if-present check:attw
-
-  check-templates:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v5
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm -r run --if-present check:templates
-
-  check-quality:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v5
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm run check:knip && pnpm run check:syncpack && pnpm run check:markdown
-
   integration:
+    needs: setup
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -93,12 +99,17 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm -r run build
+      - uses: actions/cache/restore@v4
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+            packages/*/dist
+          key: workspace-${{ github.sha }}
       - run: pnpm -r run --if-present check:integration
 
   e2e:
+    needs: setup
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -106,9 +117,13 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm -r run build
+      - uses: actions/cache/restore@v4
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+            packages/*/dist
+          key: workspace-${{ github.sha }}
       - run: pnpm --filter @alexkroman1/aai-cli exec playwright install --with-deps chromium
       - run: pnpm -r run --if-present check:e2e
 
@@ -116,11 +131,11 @@ jobs:
   ci:
     runs-on: ubuntu-latest
     if: always()
-    needs: [lint, typecheck, test, check-api, check-templates, check-quality, integration, e2e]
+    needs: [lint-and-typecheck, checks, test, integration, e2e]
     steps:
       - name: Check results
         run: |
-          results="${{ needs.lint.result }} ${{ needs.typecheck.result }} ${{ needs.test.result }} ${{ needs.check-api.result }} ${{ needs.check-templates.result }} ${{ needs.check-quality.result }} ${{ needs.integration.result }} ${{ needs.e2e.result }}"
+          results="${{ needs.lint-and-typecheck.result }} ${{ needs.checks.result }} ${{ needs.test.result }} ${{ needs.integration.result }} ${{ needs.e2e.result }}"
           for r in $results; do
             if [ "$r" != "success" ] && [ "$r" != "skipped" ]; then
               echo "CI failed: one or more jobs did not succeed"
