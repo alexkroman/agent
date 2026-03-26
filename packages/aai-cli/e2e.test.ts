@@ -181,16 +181,18 @@ function defineBrowserTests(getContext: () => { browser: Browser; port: number }
     const wsUrl = await wsConnected;
     expect(wsUrl).toContain("/websocket");
 
-    // Wait briefly for the config frame to arrive
-    await page.waitForTimeout(1000);
-    const configFrame = frames.find((f) => {
-      try {
-        return JSON.parse(f).type === "config";
-      } catch {
-        return false;
-      }
-    });
-    expect(configFrame).toBeDefined();
+    // Poll for config frame arrival instead of fixed timeout
+    const hasConfig = () =>
+      frames.some((f) => {
+        try {
+          return JSON.parse(f).type === "config";
+        } catch {
+          return false;
+        }
+      });
+    const deadline = Date.now() + 10_000;
+    while (!hasConfig() && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50));
+    expect(hasConfig()).toBe(true);
 
     await page.close();
   });
@@ -229,8 +231,19 @@ function defineBrowserTests(getContext: () => { browser: Browser; port: number }
     await page.getByRole("button", { name: "Start" }).click();
     await wsConnected;
 
-    // Wait for config frame and the WS reference to be captured
-    await page.waitForTimeout(1000);
+    // Wait for the WS reference to be captured (patched send fires on first client message)
+    const wsReady = async () => {
+      const deadline = Date.now() + 10_000;
+      while (Date.now() < deadline) {
+        const ready = await page.evaluate(() =>
+          Boolean((globalThis as Record<string, unknown>).__aai_test_ws),
+        );
+        if (ready) return;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      throw new Error("Timed out waiting for WebSocket reference");
+    };
+    await wsReady();
 
     // Helper: inject a server message into the browser's WebSocket
     const inject = (msg: Record<string, unknown>) =>

@@ -5,7 +5,7 @@
  * capability proxying end-to-end.
  */
 
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import type {
   HookRequest,
   HookResponse,
@@ -519,9 +519,8 @@ describe("idle eviction", () => {
 
     expect(slot.sandbox).toBeTruthy();
 
-    await new Promise((r) => setTimeout(r, 500));
-
-    expect(slot.sandbox).toBeUndefined();
+    // Poll until the idle timer fires instead of a fixed sleep
+    await vi.waitFor(() => expect(slot.sandbox).toBeUndefined(), { timeout: 5000, interval: 50 });
   });
 });
 
