@@ -483,12 +483,37 @@ export default defineAgent({
 
 See the `middleware` template (`aai init -t middleware`) for a full example.
 
-### Dynamic `maxSteps`
+### `maxSteps` — controlling the agentic loop
+
+The `maxSteps` option limits how many tool calls the LLM can make in a single
+turn before being forced to respond. Default is **5**.
+
+**Choosing a value:** Count the maximum number of sequential tool calls your
+agent needs in its longest workflow. For example, if a health-check workflow
+calls `check_status` → `query_metrics` → `acknowledge_alert`, that's 3 steps.
+Add a small buffer (1–2) for the LLM to self-correct or call an extra tool,
+giving `maxSteps: 5`. Multi-tool workflows that chain 5+ calls may need 8–10.
+
+**Observability:** When a turn uses tool calls, the SDK logs a `"Turn complete"`
+message with `{ steps, agent }` and records the `aai.turn.steps` histogram
+metric. Use this to monitor actual step usage and right-size your `maxSteps`.
+When `maxSteps` is exceeded, a warning is logged automatically.
+
+**Dynamic maxSteps** — use a function to vary the limit per turn based on
+session state:
 
 ```ts
 maxSteps: (ctx) => {
   const state = ctx.state as { complexity: string };
   return state.complexity === "complex" ? 10 : 5;
+},
+```
+
+You can also monitor steps via the `onStep` hook:
+
+```ts
+onStep: (step, ctx) => {
+  console.log(`[step ${step.stepNumber}] tools: ${step.toolCalls.map(t => t.toolName).join(", ")}`);
 },
 ```
 
