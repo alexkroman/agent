@@ -13,6 +13,76 @@ import { z } from "zod";
  * Middleware composes in order: first middleware wraps second wraps third, etc.
  */
 
+// ─── Safe Math Expression Parser ────────────────────────────────────────
+// Recursive-descent parser for arithmetic: +, -, *, /, %, parentheses.
+// No eval/Function — only numeric literals and operators are accepted.
+
+function evalMath(expr: string): number {
+  let pos = 0;
+  const src = expr.replace(/\s+/g, "");
+
+  function parseExpr(): number {
+    let left = parseTerm();
+    while (pos < src.length && (src[pos] === "+" || src[pos] === "-")) {
+      const op = src[pos++];
+      const right = parseTerm();
+      left = op === "+" ? left + right : left - right;
+    }
+    return left;
+  }
+
+  function parseTerm(): number {
+    let left = parseUnary();
+    while (
+      pos < src.length &&
+      (src[pos] === "*" || src[pos] === "/" || src[pos] === "%")
+    ) {
+      const op = src[pos++];
+      const right = parseUnary();
+      if (op === "*") left = left * right;
+      else if (op === "/") left = left / right;
+      else left = left % right;
+    }
+    return left;
+  }
+
+  function parseUnary(): number {
+    if (src[pos] === "-") {
+      pos++;
+      return -parseUnary();
+    }
+    if (src[pos] === "+") {
+      pos++;
+      return parseUnary();
+    }
+    return parsePrimary();
+  }
+
+  function parsePrimary(): number {
+    if (src[pos] === "(") {
+      pos++; // skip '('
+      const val = parseExpr();
+      if (src[pos] !== ")") throw new Error("Missing closing parenthesis");
+      pos++; // skip ')'
+      return val;
+    }
+    const start = pos;
+    while (pos < src.length) {
+      const ch = src[pos]!;
+      if ((ch >= "0" && ch <= "9") || ch === ".") pos++;
+      else break;
+    }
+    if (pos === start) throw new Error("Unexpected token");
+    const num = Number(src.slice(start, pos));
+    if (Number.isNaN(num)) throw new Error("Invalid number");
+    return num;
+  }
+
+  const result = parseExpr();
+  if (pos < src.length) throw new Error("Unexpected trailing characters");
+  return result;
+}
+
 // ─── Rate Limiter Middleware ─────────────────────────────────────────────
 // Limits the number of turns per session within a time window.
 
@@ -161,16 +231,13 @@ Keep answers short and conversational.`,
     }),
 
     calculate: tool({
-      description: "Calculate a math expression",
+      description: "Calculate a math expression (supports +, -, *, /, %, parentheses)",
       parameters: z.object({
         expression: z.string().describe("Math expression to evaluate"),
       }),
       execute: ({ expression }) => {
-        // Simple calculator — safe subset
-        const sanitized = expression.replace(/[^0-9+\-*/().% ]/g, "");
         try {
-          // biome-ignore lint/security/noGlobalEval: intentional for demo calculator
-          const result = new Function(`return (${sanitized})`)();
+          const result = evalMath(expression);
           return { expression, result };
         } catch {
           return { expression, error: "Invalid expression" };

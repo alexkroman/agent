@@ -4,13 +4,12 @@
  */
 
 import type { z } from "zod";
-import { EMPTY_PARAMS } from "./_internal-types.ts";
-import { errorDetail, errorMessage } from "./_utils.ts";
+import { EMPTY_PARAMS } from "./internal-types.ts";
 import type { Kv } from "./kv.ts";
 import { TOOL_EXECUTION_TIMEOUT_MS } from "./protocol.ts";
 import type { Logger } from "./runtime.ts";
-
 import type { Message, ToolContext, ToolDef } from "./types.ts";
+import { errorDetail, errorMessage } from "./utils.ts";
 import type { VectorStore } from "./vector.ts";
 
 /** Yield to the event loop so pending I/O (e.g. WebSocket frames) can be processed. */
