@@ -186,7 +186,8 @@ export async function startSidecarServer(
     server.on("error", reject);
   });
 
-  const addr = server.address() as { port: number };
+  const addr = server.address();
+  if (!addr || typeof addr === "string") throw new Error("Sidecar server failed to bind to a port");
   return {
     url: `http://127.0.0.1:${addr.port}`,
     close: () => server.close(),
