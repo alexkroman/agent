@@ -11,7 +11,7 @@ import { convert } from "html-to-text";
 import { z } from "zod";
 import { EMPTY_PARAMS, type ToolSchema } from "./_internal-types.ts";
 import { ssrfSafeFetch } from "./_ssrf.ts";
-import { errorMessage } from "./_utils.ts";
+import { errorMessage, isReadOnlyFsOp } from "./_utils.ts";
 import { memoryTools } from "./memory-tools.ts";
 import type { ToolDef } from "./types.ts";
 
@@ -206,10 +206,10 @@ function createRunCode(): ToolDef<typeof runCodeParams> {
 }
 
 /** Lazily import secure-exec to avoid top-level side effects. */
-let _secureExec: typeof import("secure-exec") | undefined;
-async function getSecureExec() {
-  if (!_secureExec) _secureExec = await import("secure-exec");
-  return _secureExec;
+let _secureExecPromise: Promise<typeof import("secure-exec")> | undefined;
+function getSecureExec() {
+  _secureExecPromise ??= import("secure-exec");
+  return _secureExecPromise;
 }
 
 // The harness loads user code via readFileSync + AsyncFunction so that syntax
@@ -234,8 +234,6 @@ try {
   process.stdout.write(JSON.stringify({ ok: false, error: String(err?.message ?? err) }));
 }
 `;
-
-const READ_ONLY_FS_OPS = new Set(["read", "stat", "readdir", "exists"]);
 
 /** Parse stdout from the run_code harness into a result or error. */
 function parseIsolateOutput(stdout: string, stderr: string): string | { error: string } {
@@ -279,7 +277,7 @@ export async function executeInIsolate(code: string): Promise<string | { error: 
       filesystem: fs,
       permissions: {
         fs: (req) =>
-          READ_ONLY_FS_OPS.has(req.op)
+          isReadOnlyFsOp(req.op)
             ? { allow: true }
             : { allow: false, reason: "Filesystem is read-only" },
         network: () => ({ allow: false, reason: "Network access is disabled in run_code" }),

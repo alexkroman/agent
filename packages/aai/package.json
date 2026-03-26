@@ -85,6 +85,11 @@
       "source": "./_utils.ts",
       "types": "./dist/_utils.d.ts",
       "import": "./dist/_utils.js"
+    },
+    "./middleware-core": {
+      "source": "./middleware-core.ts",
+      "types": "./dist/middleware-core.d.ts",
+      "import": "./dist/middleware-core.js"
     }
   },
   "scripts": {
@@ -95,7 +100,6 @@
     "check:attw": "attw --pack --profile esm-only"
   },
   "dependencies": {
-    "@opentelemetry/api": "^1.9.0",
     "html-to-text": "^9.0.5",
     "nanoevents": "^9.1.0",
     "secure-exec": "^0.1.0",
@@ -104,11 +108,15 @@
   },
   "peerDependencies": {
     "@hono/node-server": "^1.19.11",
+    "@opentelemetry/api": "^1.9.0",
     "vitest": "^4.1.1",
     "hono": "^4.12.9"
   },
   "peerDependenciesMeta": {
     "@hono/node-server": {
+      "optional": true
+    },
+    "@opentelemetry/api": {
       "optional": true
     },
     "hono": {

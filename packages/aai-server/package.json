@@ -1,13 +1,13 @@
 {
   "name": "@alexkroman1/aai-server",
-  "version": "0.8.9",
+  "version": "0.9.3",
   "private": true,
   "type": "module",
   "main": "src/index.ts",
   "scripts": {
     "predev": "node -e \"const [maj,min] = process.versions.node.split('.').map(Number); if (maj < 22 || (maj === 22 && min < 6)) { console.error('Node >=22.6 required (got ' + process.version + '). Run: fnm use 22'); process.exit(1); }\"",
     "dev": "node --watch --env-file=.env src/index.ts",
-    "start": "node dist/index.js",
+    "start": "node dist/index.mjs",
     "build": "tsdown",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",

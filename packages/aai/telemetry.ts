@@ -25,7 +25,7 @@ import {
 // ─── Scoped instances ────────────────────────────────────────────────────────
 
 const SCOPE = "aai";
-// Keep in sync with package.json "version" field.
+// NOTE: Keep in sync with package.json version
 const VERSION = "0.9.3";
 
 /** Tracer scoped to the AAI SDK. */

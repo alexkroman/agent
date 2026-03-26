@@ -51,7 +51,6 @@ export const ToolCallRequestSchema = z.object({
       content: z.string(),
     }),
   ),
-  env: z.record(z.string(), z.string()),
 });
 
 /** Request body for POST /tool — derived from {@link ToolCallRequestSchema}. */
@@ -72,7 +71,6 @@ export type ToolCallResponse = z.infer<typeof ToolCallResponseSchema>;
 export const HookRequestSchema = z.object({
   hook: z.string().min(1),
   sessionId: z.string().min(1),
-  env: z.record(z.string(), z.string()),
   text: z.string().optional(),
   error: z.object({ message: z.string() }).optional(),
   step: z

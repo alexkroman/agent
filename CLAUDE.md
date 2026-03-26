@@ -29,10 +29,10 @@ npx vitest run --config vitest.config.ts      # All from root
 
 **Full CI check** (`pnpm check`):
 
-Runs everything in sequence: `install --frozen-lockfile` → `pnpm -r run build`
-→ `typecheck` → `lint` → `vitest --coverage` → `knip` → `syncpack lint` →
-`api-extractor` (aai, aai-ui) → template type-check → `markdownlint-cli2` →
-`attw --pack` (aai, aai-ui) → aai-server integration tests → aai-cli e2e tests.
+Runs everything in sequence: `pnpm -r run build` → `typecheck` → `lint` →
+`api-extractor` (aai, aai-ui) → `attw --pack` (aai, aai-ui) → template
+type-check → `knip` → `syncpack lint` → `markdownlint-cli2` → aai-server
+integration tests → aai-cli e2e tests → `vitest --coverage`.
 
 ## Architecture
 
@@ -75,12 +75,14 @@ Internal (exported in package.json but not part of public API):
 - `./worker-entry` — tool execution logic
 - `./telemetry` — OpenTelemetry tracer, meter, pre-built metrics, `withSpan` helper
 - `./utils` — shared utility functions
+- `./middleware-core` — pure middleware runner functions (zero runtime deps,
+  isolate-safe; bundled into the harness runtime)
 
 Non-exported internal files (used within the package only):
 
 - `builtin-tools.ts` — built-in tool definitions + memory tools
 - `direct-executor.ts` — in-process tool execution (self-hosted)
-- `middleware.ts` — middleware runner for turns, tool calls, and output filtering
+- `middleware.ts` — middleware re-exports from middleware-core + `HookInvoker`
 
 #### `@alexkroman1/aai-ui` (UI)
 
