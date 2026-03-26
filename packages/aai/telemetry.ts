@@ -90,6 +90,11 @@ export const bargeInCounter = meter.createCounter("aai.turn.bargein.count", {
   description: "Total barge-in (reply interrupted) events",
 });
 
+/** Messages silently dropped because the WebSocket was closed. */
+export const wsSendDroppedCounter = meter.createCounter("aai.ws.send_dropped", {
+  description: "Messages silently dropped because the WebSocket was closed",
+});
+
 // ─── Span helpers ────────────────────────────────────────────────────────────
 
 /**

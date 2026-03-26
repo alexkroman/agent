@@ -108,7 +108,7 @@ async function initAudioCapture(
         try {
           deps.sendBinary(pcm16);
         } catch {
-          /* connection may be closed */
+          console.debug("[aai-ui] sendBinary dropped: connection closed");
         }
       },
     });

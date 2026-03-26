@@ -120,7 +120,8 @@ function extractConfig(agent: AgentDef): IsolateConfig {
   return config;
 }
 
-// Slightly under host's 30s timeout so isolate returns a clean error first.
+// Must equal TOOL_TIMEOUT_MS (30s) - TOOL_TIMEOUT_MARGIN_MS (5s) in sandbox.ts
+// so the isolate returns a clean error before the host-side timeout aborts.
 const ISOLATE_TOOL_TIMEOUT_MS = 25_000;
 
 async function executeTool(agent: AgentDef, req: ToolCallRequest): Promise<ToolCallResponse> {
@@ -334,7 +335,10 @@ export function startHarness(agent: AgentDef): void {
   });
 
   server.listen(0, "127.0.0.1", () => {
-    const addr = server.address() as { port: number };
+    const addr = server.address();
+    if (!addr || typeof addr === "string") {
+      throw new Error(`Expected server address with numeric port, got: ${JSON.stringify(addr)}`);
+    }
     process.stdout.write(`${JSON.stringify({ port: addr.port })}\n`);
   });
 }

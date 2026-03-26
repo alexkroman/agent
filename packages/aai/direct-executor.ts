@@ -12,6 +12,7 @@ import {
   type ToolSchema,
   toAgentConfig,
 } from "./_internal-types.ts";
+import { createSessionStateMap } from "./_utils.ts";
 import { getBuiltinToolDefs, getBuiltinToolSchemas } from "./builtin-tools.ts";
 import type { Kv } from "./kv.ts";
 import { createMemoryKv } from "./kv.ts";
@@ -120,20 +121,13 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
   const toolSchemas: ToolSchema[] = [...customSchemas, ...builtinSchemas];
 
   // Per-session mutable state
-  const sessionState = new Map<string, Record<string, unknown>>();
+  const sessionState = createSessionStateMap(agent.state);
   const frozenEnv = Object.freeze({ ...env });
-
-  function getState(sessionId: string): Record<string, unknown> {
-    if (!sessionState.has(sessionId) && agent.state) {
-      sessionState.set(sessionId, agent.state());
-    }
-    return sessionState.get(sessionId) ?? {};
-  }
 
   function makeHookContext(sessionId: string): HookContext {
     return {
       env: frozenEnv,
-      state: getState(sessionId),
+      state: sessionState.get(sessionId),
       get kv() {
         return kv;
       },
@@ -150,7 +144,7 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
     return executeToolCall(name, args, {
       tool,
       env: frozenEnv,
-      state: getState(sessionId ?? ""),
+      state: sessionState.get(sessionId ?? ""),
       kv,
       vector,
       messages,
