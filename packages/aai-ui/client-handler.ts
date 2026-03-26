@@ -145,7 +145,9 @@ export class ClientHandler {
       this.#state.value = "speaking";
     }
     if (chunk.buffer instanceof ArrayBuffer) {
-      this.#voiceIO()?.enqueue(chunk.buffer);
+      this.#voiceIO()?.enqueue(
+        chunk.buffer.slice(chunk.byteOffset, chunk.byteOffset + chunk.byteLength),
+      );
     }
   }
 
