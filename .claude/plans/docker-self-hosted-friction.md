@@ -52,11 +52,12 @@ The CLAUDE.md template mentions `createServer()` but doesn't explicitly
 list the required peer deps for self-hosting. A user following the docs
 has to discover by trial and error that they need:
 
-```
+```sh
 npm install @alexkroman1/aai hono @hono/node-server zod
 ```
 
 **Suggested fix:**
+
 - Add a "Self-hosting prerequisites" callout in the CLAUDE.md template
   listing the required peer deps.
 - Consider making `createServer()` throw a clear error message if hono
@@ -103,6 +104,7 @@ services:
 When using `createServer()` without `clientDir` or `clientHtml`, visiting
 the server in a browser shows a plain `<h1>` tag. There's no built-in way
 to serve the default `aai-ui` component without either:
+
 - Bundling a client separately and passing `clientDir`
 - Inlining HTML via `clientHtml`
 
@@ -121,6 +123,7 @@ or add a CLI command like `aai build --self-hosted` that produces a
 **Impact:** Users deploy insecure or oversized containers.
 
 The docs don't mention:
+
 - Using multi-stage builds to reduce image size
 - Setting `NODE_ENV=production`
 - Running as a non-root user
