@@ -172,7 +172,7 @@ export function setupListeners(ctx: S2sSessionCtx, handle: S2sHandle): void {
     turnCounter.add(1, { agent: ctx.agent });
     ctx.client.event({ type: "transcript", text, isFinal: true });
     ctx.client.event({ type: "turn", text });
-    ctx.conversationMessages.push({ role: "user", content: text });
+    ctx.pushMessages({ role: "user", content: text });
     const fireTurn = () => ctx.fireHook("onTurn", (h) => h.onTurn(ctx.id, text, HOOK_TIMEOUT_MS));
     if (!ctx.hookInvoker?.beforeTurn) return fireTurn();
     ctx.hookInvoker
@@ -209,7 +209,7 @@ export function setupListeners(ctx: S2sSessionCtx, handle: S2sHandle): void {
   handle.on("agent_transcript", ({ text }) => {
     const emit = (t: string) => {
       ctx.client.event({ type: "chat", text: t });
-      ctx.conversationMessages.push({ role: "assistant", content: t });
+      ctx.pushMessages({ role: "assistant", content: t });
     };
     if (!ctx.hookInvoker?.filterOutput) return emit(text);
     ctx.hookInvoker
