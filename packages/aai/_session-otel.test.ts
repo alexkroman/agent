@@ -56,6 +56,7 @@ function makeHook(overrides?: Partial<HookInvoker>): HookInvoker {
 }
 
 function makeCtx(overrides?: Partial<S2sSessionCtx>): S2sSessionCtx {
+  const conversationMessages = overrides?.conversationMessages ?? [];
   return {
     id: "session-1",
     agent: "test-agent",
@@ -68,17 +69,18 @@ function makeCtx(overrides?: Partial<S2sSessionCtx>): S2sSessionCtx {
     pendingTools: [],
     toolCallCount: 0,
     turnPromise: null,
-    conversationMessages: [],
+    conversationMessages,
     replyGeneration: 0,
     resolveTurnConfig: vi.fn(async () => null),
-    checkTurnLimits: vi.fn(() => null),
+    consumeToolCallStep: vi.fn(() => null),
+    pushMessages: vi.fn((...msgs: unknown[]) => conversationMessages.push(...(msgs as never[]))),
     fireHook: vi.fn(),
     ...overrides,
   } as unknown as S2sSessionCtx;
 }
 
 const tc = (o?: Partial<S2sToolCall>): S2sToolCall => ({
-  call_id: "call-1",
+  callId: "call-1",
   name: "myTool",
   args: { foo: "bar" },
   ...o,
@@ -114,7 +116,7 @@ describe("handleToolCall", () => {
       toolCallId: "call-1",
       result: "tool-result",
     });
-    expect(ctx.pendingTools).toEqual([{ call_id: "call-1", result: "tool-result" }]);
+    expect(ctx.pendingTools).toEqual([{ callId: "call-1", result: "tool-result" }]);
   });
 
   test("resolveTurnConfig error: returns error without executing", async () => {
@@ -132,7 +134,7 @@ describe("handleToolCall", () => {
 
   test("refused tool call: returns refusal without executing", async () => {
     const ctx = makeCtx({
-      checkTurnLimits: vi.fn(() => "Tool not allowed"),
+      consumeToolCallStep: vi.fn(() => "Tool not allowed"),
     } as Partial<S2sSessionCtx>);
     await handleToolCall(ctx, tc());
     expect(ctx.executeTool).not.toHaveBeenCalled();
@@ -237,11 +239,11 @@ describe("setupListeners", () => {
     const ctx = makeCtx({
       toolCallCount: 5,
       replyGeneration: 2,
-      pendingTools: [{ call_id: "x", result: "y" }],
+      pendingTools: [{ callId: "x", result: "y" }],
     });
     const h = makeMockHandle();
     setupListeners(ctx, h);
-    h._fire("reply_started", { reply_id: "r1" });
+    h._fire("replyStarted", { replyId: "r1" });
     expect(ctx.toolCallCount).toBe(0);
     expect(ctx.replyGeneration).toBe(3);
     expect(ctx.pendingTools).toEqual([]);
@@ -251,7 +253,7 @@ describe("setupListeners", () => {
     const ctx = makeCtx({ replyGeneration: 1 });
     const h = makeMockHandle();
     setupListeners(ctx, h);
-    h._fire("reply_done", { status: "interrupted" });
+    h._fire("replyDone", { status: "interrupted" });
     expect(ctx.replyGeneration).toBe(2);
     expect(ctx.pendingTools).toEqual([]);
     expect(allEvents(ctx)).toContainEqual({ type: "cancelled" });
@@ -261,12 +263,12 @@ describe("setupListeners", () => {
     const s2s = makeMockHandle();
     const ctx = makeCtx({
       s2s,
-      pendingTools: [{ call_id: "c1", result: "r1" }],
+      pendingTools: [{ callId: "c1", result: "r1" }],
       turnPromise: null,
     });
     const h = makeMockHandle();
     setupListeners(ctx, h);
-    h._fire("reply_done", { status: "done" });
+    h._fire("replyDone", { status: "done" });
     expect(s2s.sendToolResult).toHaveBeenCalledWith("c1", "r1");
     expect(ctx.pendingTools).toEqual([]);
   });
@@ -275,7 +277,7 @@ describe("setupListeners", () => {
     const ctx = makeCtx({ pendingTools: [], turnPromise: null });
     const h = makeMockHandle();
     setupListeners(ctx, h);
-    h._fire("reply_done", { status: "done" });
+    h._fire("replyDone", { status: "done" });
     expect(allEvents(ctx)).toContainEqual({ type: "tts_done" });
   });
 
@@ -285,10 +287,10 @@ describe("setupListeners", () => {
       resolve = r;
     });
     const s2s = makeMockHandle();
-    const ctx = makeCtx({ s2s, pendingTools: [{ call_id: "c1", result: "r1" }], turnPromise: p });
+    const ctx = makeCtx({ s2s, pendingTools: [{ callId: "c1", result: "r1" }], turnPromise: p });
     const h = makeMockHandle();
     setupListeners(ctx, h);
-    h._fire("reply_done", { status: "done" });
+    h._fire("replyDone", { status: "done" });
     expect(s2s.sendToolResult).not.toHaveBeenCalled();
     resolve();
     await vi.waitFor(() => {
@@ -305,7 +307,7 @@ describe("setupListeners", () => {
     } as Partial<S2sSessionCtx>);
     const h = makeMockHandle();
     setupListeners(ctx, h);
-    h._fire("reply_done", { status: "done" });
+    h._fire("replyDone", { status: "done" });
     expect(ctx.fireHook).toHaveBeenCalledWith("afterTurn", expect.any(Function));
   });
 
@@ -313,7 +315,7 @@ describe("setupListeners", () => {
     const ctx = makeCtx();
     const h = makeMockHandle();
     setupListeners(ctx, h);
-    h._fire("user_transcript", { item_id: "i1", text: "hello" });
+    h._fire("userTranscript", { itemId: "i1", text: "hello" });
     expect(ctx.conversationMessages).toEqual([{ role: "user", content: "hello" }]);
     expect(allEvents(ctx)).toContainEqual({ type: "transcript", text: "hello", isFinal: true });
     expect(allEvents(ctx)).toContainEqual({ type: "turn", text: "hello" });
@@ -326,7 +328,7 @@ describe("setupListeners", () => {
     });
     const h = makeMockHandle();
     setupListeners(ctx, h);
-    h._fire("user_transcript", { item_id: "i1", text: "hello" });
+    h._fire("userTranscript", { itemId: "i1", text: "hello" });
     await vi.waitFor(() => {
       expect(allEvents(ctx)).toContainEqual({ type: "chat", text: "not allowed" });
       expect(allEvents(ctx)).toContainEqual({ type: "tts_done" });
@@ -337,7 +339,7 @@ describe("setupListeners", () => {
     const ctx = makeCtx();
     const h = makeMockHandle();
     setupListeners(ctx, h);
-    h._fire("session_expired", { code: "expired", message: "gone" });
+    h._fire("sessionExpired", { code: "expired", message: "gone" });
     expect(h.close).toHaveBeenCalled();
   });
 
@@ -371,7 +373,7 @@ describe("setupListeners", () => {
     const ctx = makeCtx();
     const h = makeMockHandle();
     setupListeners(ctx, h);
-    h._fire("agent_transcript_delta", { text: "hi" });
+    h._fire("agentTranscriptDelta", { text: "hi" });
     expect(allEvents(ctx)).toContainEqual({ type: "chat_delta", text: "hi" });
   });
 
@@ -379,7 +381,7 @@ describe("setupListeners", () => {
     const ctx = makeCtx();
     const h = makeMockHandle();
     setupListeners(ctx, h);
-    h._fire("agent_transcript", { text: "response" });
+    h._fire("agentTranscript", { text: "response" });
     expect(ctx.conversationMessages).toEqual([{ role: "assistant", content: "response" }]);
     expect(allEvents(ctx)).toContainEqual({ type: "chat", text: "response" });
   });
@@ -388,8 +390,8 @@ describe("setupListeners", () => {
     const ctx = makeCtx();
     const h = makeMockHandle();
     setupListeners(ctx, h);
-    h._fire("speech_started");
-    h._fire("speech_stopped");
+    h._fire("speechStarted");
+    h._fire("speechStopped");
     expect(allEvents(ctx)).toContainEqual({ type: "speech_started" });
     expect(allEvents(ctx)).toContainEqual({ type: "speech_stopped" });
   });
