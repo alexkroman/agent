@@ -139,6 +139,7 @@ export const SessionErrorCodeSchema: z.ZodEnum<{
 // @public
 export type SessionOptions = {
     platformUrl: string;
+    token?: string;
     signal?: <T>(initial: T) => Reactive<T>;
     batch?: (fn: () => void) => void;
 };
