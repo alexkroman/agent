@@ -161,8 +161,12 @@ function buildSidecarApp(
 
   app.onError((err, c) => {
     const isValidation = err.name === "ZodError";
+    const errStatus =
+      typeof err === "object" && err !== null && "status" in err
+        ? (err as { status?: number }).status
+        : undefined;
     const status = (
-      isValidation ? 400 : ((err as { status?: number }).status ?? 500)
+      isValidation ? 400 : (errStatus ?? 500)
     ) as import("hono/utils/http-status").ContentfulStatusCode;
     return c.json({ error: err.message }, status);
   });
