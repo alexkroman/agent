@@ -32,8 +32,11 @@ export function scopedKv(kvStore: KvStore, scope: AgentScope) {
       const ttl = options?.expireIn ? Math.ceil(options.expireIn / 1000) : undefined;
       await kvStore.set(scope, key, JSON.stringify(value), ttl);
     },
-    async delete(key: string) {
-      await kvStore.del(scope, key);
+    async delete(keys: string | string[]) {
+      const keyArray = Array.isArray(keys) ? keys : [keys];
+      for (const key of keyArray) {
+        await kvStore.del(scope, key);
+      }
     },
     async list<T = unknown>(
       prefix: string,
@@ -76,7 +79,9 @@ const SidecarKvSetSchema = z.object({
   value: z.unknown(),
   options: z.object({ expireIn: z.number().optional() }).optional(),
 });
-const SidecarKvDelSchema = z.object({ key: z.string() });
+const SidecarKvDelSchema = z.object({
+  key: z.union([z.string(), z.array(z.string())]),
+});
 const SidecarKvListSchema = z.object({
   prefix: z.string(),
   limit: z.number().optional(),
@@ -123,7 +128,10 @@ function buildSidecarApp(
   });
   app.post("/kv/del", async (c) => {
     const { key } = SidecarKvDelSchema.parse(await c.req.json());
-    await kv.delete(key);
+    const keys = Array.isArray(key) ? key : [key];
+    for (const k of keys) {
+      await kv.delete(k);
+    }
     return c.json(null);
   });
   app.post("/kv/list", async (c) => {

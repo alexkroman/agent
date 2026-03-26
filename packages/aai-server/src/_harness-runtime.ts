@@ -61,8 +61,8 @@ const kv: Kv = {
   set(key: string, value: unknown, options?: { expireIn?: number }) {
     return sidecarRpc<void>("/kv/set", { key, value, options });
   },
-  delete(key: string) {
-    return sidecarRpc<void>("/kv/del", { key });
+  delete(keys: string | string[]) {
+    return sidecarRpc<void>("/kv/del", { key: keys });
   },
   list<T = unknown>(prefix: string, options?: { limit?: number; reverse?: boolean }) {
     return sidecarRpc<{ key: string; value: T }[]>("/kv/list", { prefix, ...options });

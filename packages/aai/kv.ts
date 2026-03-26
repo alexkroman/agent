@@ -74,11 +74,11 @@ export type Kv = {
    */
   set(key: string, value: unknown, options?: { expireIn?: number }): Promise<void>;
   /**
-   * Delete a key.
+   * Delete one or more keys.
    *
-   * @param key - The key to remove. No-op if the key does not exist.
+   * @param keys - A single key or array of keys to remove. No-op for keys that do not exist.
    */
-  delete(key: string): Promise<void>;
+  delete(keys: string | string[]): Promise<void>;
   /**
    * List entries whose keys start with the given prefix.
    *
@@ -206,8 +206,11 @@ export function createMemoryKv(): Kv {
       }
     },
 
-    delete(key: string): Promise<void> {
-      store.delete(key);
+    delete(keys: string | string[]): Promise<void> {
+      const keyArray = Array.isArray(keys) ? keys : [keys];
+      for (const key of keyArray) {
+        store.delete(key);
+      }
       return Promise.resolve();
     },
 
