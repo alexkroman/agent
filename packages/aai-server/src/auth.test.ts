@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { expect, test } from "vitest";
 import { createTestStore } from "./_test-utils.ts";
-import { hashApiKey, verifySlugOwner } from "./auth.ts";
+import { _clearHashCache, hashApiKey, verifySlugOwner } from "./auth.ts";
 
 test("hashApiKey produces consistent 64-char hex", async () => {
   const h1 = await hashApiKey("key");
@@ -9,6 +9,49 @@ test("hashApiKey produces consistent 64-char hex", async () => {
   expect(h1).toBe(h2);
   expect(h1).toMatch(/^[0-9a-f]{64}$/);
   expect(await hashApiKey("other")).not.toBe(h1);
+});
+
+test("hashApiKey returns cached result on repeated calls", async () => {
+  _clearHashCache();
+  const h1 = await hashApiKey("cached-key");
+  // Spy on crypto.subtle.digest to verify it's not called again
+  const original = crypto.subtle.digest.bind(crypto.subtle);
+  let digestCalls = 0;
+  crypto.subtle.digest = (...args: Parameters<typeof crypto.subtle.digest>) => {
+    digestCalls++;
+    return original(...args);
+  };
+  const h2 = await hashApiKey("cached-key");
+  expect(h2).toBe(h1);
+  expect(digestCalls).toBe(0);
+  // New key should call digest
+  await hashApiKey("new-key");
+  expect(digestCalls).toBe(1);
+  crypto.subtle.digest = original;
+  _clearHashCache();
+});
+
+test("hashApiKey cache evicts oldest entry when full", async () => {
+  _clearHashCache();
+  // Fill cache to capacity (100 entries)
+  for (let i = 0; i < 100; i++) {
+    await hashApiKey(`evict-key-${i}`);
+  }
+  // Adding one more should evict the first
+  await hashApiKey("evict-key-new");
+  // Verify first key is no longer cached by spying
+  const original = crypto.subtle.digest.bind(crypto.subtle);
+  let digestCalls = 0;
+  crypto.subtle.digest = (...args: Parameters<typeof crypto.subtle.digest>) => {
+    digestCalls++;
+    return original(...args);
+  };
+  await hashApiKey("evict-key-0"); // should miss cache (was evicted)
+  expect(digestCalls).toBe(1);
+  await hashApiKey("evict-key-50"); // should still be cached
+  expect(digestCalls).toBe(1);
+  crypto.subtle.digest = original;
+  _clearHashCache();
 });
 
 test("verifySlugOwner returns unclaimed for missing slug", async () => {
