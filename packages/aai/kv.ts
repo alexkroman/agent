@@ -117,13 +117,6 @@ export function sortAndPaginate<T extends { key: string }>(
   return entries;
 }
 
-/** Return a predicate that matches keys against an optional pattern (prefix or glob). */
-function buildKeyMatcher(pattern?: string): (key: string) => boolean {
-  if (!pattern) return () => true;
-  if (pattern.includes("*")) return (key) => matchGlob(key, pattern);
-  return (key) => key.startsWith(pattern);
-}
-
 /** Maximum allowed glob pattern length to prevent ReDoS. */
 const MAX_GLOB_PATTERN_LENGTH = 1024;
 
