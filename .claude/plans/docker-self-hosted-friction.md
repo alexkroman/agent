@@ -74,9 +74,10 @@ signal is a warning about missing `authToken`. When a client connects and
 tries to speak, the S2S connection to AssemblyAI fails — but there's no
 clear startup error telling you "you forgot to set ASSEMBLYAI_API_KEY."
 
-**Suggested fix:** Log a clear warning at startup if `ASSEMBLYAI_API_KEY`
-is not in the env. Or add a `--check` flag that validates required config
-before starting.
+**Suggested fix:** `createServer()` should throw at startup if
+`ASSEMBLYAI_API_KEY` is not present in the environment. A fast, loud
+failure is far better than a server that appears healthy but silently
+breaks on the first WebSocket connection.
 
 ### 4. No `docker-compose.yml` example
 
