@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .aai/
+.turbo/
 .env
 .env.*
 !.env.example
