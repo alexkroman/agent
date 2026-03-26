@@ -5,7 +5,7 @@
  * Audio validation is handled at the host transport layer (see host.ts).
  */
 
-import { errorDetail, errorMessage } from "./_utils.ts";
+import { errorDetail, errorMessage, WS_OPEN } from "./_utils.ts";
 import type { ClientMessage, ClientSink, ReadyConfig } from "./protocol.ts";
 import { ClientMessageSchema } from "./protocol.ts";
 import type { Logger } from "./runtime.ts";
@@ -54,14 +54,14 @@ function createClientSink(ws: SessionWebSocket): ClientSink {
   /** Send data over ws, tolerating races where the socket closes between readyState check and send. */
   function safeSend(data: string | ArrayBuffer | Uint8Array): void {
     try {
-      if (ws.readyState === 1) ws.send(data);
+      if (ws.readyState === WS_OPEN) ws.send(data);
     } catch {
       /* socket closed between check and send */
     }
   }
   return {
     get open() {
-      return ws.readyState === 1;
+      return ws.readyState === WS_OPEN;
     },
     event(e) {
       safeSend(JSON.stringify(e));
@@ -175,8 +175,8 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
       });
   }
 
-  // readyState 1 = OPEN — socket already open (e.g. from ws handleUpgrade)
-  if (ws.readyState === 1) {
+  // Socket already open (e.g. from ws handleUpgrade)
+  if (ws.readyState === WS_OPEN) {
     onOpen();
   } else {
     ws.addEventListener("open", onOpen);

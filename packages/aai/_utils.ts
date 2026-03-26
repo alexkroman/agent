@@ -14,6 +14,9 @@ export function errorDetail(err: unknown): string {
   return String(err);
 }
 
+/** WebSocket readyState constant for OPEN (1). */
+export const WS_OPEN = 1;
+
 /** Filter out undefined values from an env record. */
 export function filterEnv(env: Record<string, string | undefined>): Record<string, string> {
   return Object.fromEntries(

@@ -7,6 +7,7 @@ import type { JSONSchema7 } from "json-schema";
 import { createNanoEvents, type Emitter, type Unsubscribe } from "nanoevents";
 import { WebSocket } from "ws";
 import { z } from "zod";
+import { WS_OPEN } from "./_utils.ts";
 import type { Logger, S2SConfig } from "./runtime.ts";
 import { consoleLogger } from "./runtime.ts";
 import { s2sConnectionDuration, s2sErrorCounter, tracer } from "./telemetry.ts";
@@ -29,9 +30,6 @@ export type S2sWebSocket = {
   ): void;
   addEventListener(type: "error", listener: (event: { message?: string }) => void): void;
 };
-
-/** WebSocket readyState constant for OPEN. */
-const WS_OPEN = 1;
 
 /** Factory for creating WebSocket connections (e.g. the `ws` package). */
 export type CreateS2sWebSocket = (
