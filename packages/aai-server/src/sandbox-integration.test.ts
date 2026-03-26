@@ -296,17 +296,24 @@ describe("isolate protocol", () => {
   });
 
   test("GET unknown route returns 404", async () => {
-    const res = await fetch(`http://127.0.0.1:${port}/nonexistent`);
+    const res = await fetch(`http://127.0.0.1:${port}/nonexistent`, {
+      headers: { "x-harness-token": TEST_AUTH_TOKEN },
+    });
     expect(res.status).toBe(404);
   });
 
   test("invalid JSON returns 500", async () => {
     const res = await fetch(`http://127.0.0.1:${port}/tool`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "x-harness-token": TEST_AUTH_TOKEN },
       body: "not json{{{",
     });
     expect(res.status).toBe(500);
+  });
+
+  test("request without auth token returns 401", async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/config`);
+    expect(res.status).toBe(401);
   });
 
   // ── Security: network isolation ──────────────────────────────────────
