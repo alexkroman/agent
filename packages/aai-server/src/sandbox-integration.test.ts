@@ -202,7 +202,7 @@ describe("isolate protocol", () => {
     const vector = createMockVector();
     const sidecar = await _internals.startSidecarServer(kv, vector);
     sidecarPort = Number.parseInt(new URL(sidecar.url).port, 10);
-    const isolate = await _internals.startIsolate(AGENT_BUNDLE, sidecar.url, {});
+    const isolate = await _internals.startIsolate(AGENT_BUNDLE, sidecar.url, {}, sidecar.token);
     port = isolate.port;
     cleanup = () => {
       isolate.runtime.dispose();
@@ -441,8 +441,8 @@ export default {
     const sidecar1 = await _internals.startSidecarServer(kv1, undefined);
     const sidecar2 = await _internals.startSidecarServer(kv2, undefined);
     const [iso1, iso2] = await Promise.all([
-      _internals.startIsolate(BUNDLE_A, sidecar1.url, {}),
-      _internals.startIsolate(BUNDLE_B, sidecar2.url, {}),
+      _internals.startIsolate(BUNDLE_A, sidecar1.url, {}, sidecar1.token),
+      _internals.startIsolate(BUNDLE_B, sidecar2.url, {}, sidecar2.token),
     ]);
     port1 = iso1.port;
     port2 = iso2.port;

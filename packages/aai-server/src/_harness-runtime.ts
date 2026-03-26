@@ -8,6 +8,7 @@
  *
  * Environment variables (set by host):
  * - SIDECAR_URL: loopback URL for the per-sandbox sidecar server
+ * - SIDECAR_TOKEN: bearer token for authenticating to the sidecar
  *
  * The agent bundle is expected at "./agent_bundle.js" (default export).
  */
@@ -25,6 +26,7 @@ import type {
 } from "./_harness-protocol.ts";
 
 const SIDECAR_URL = process.env.SIDECAR_URL ?? "";
+const SIDECAR_TOKEN = process.env.SIDECAR_TOKEN ?? "";
 
 /**
  * Read agent env vars from process.env once at startup.
@@ -44,9 +46,11 @@ const agentEnv: Record<string, string> = Object.freeze(
 // ── Sidecar server proxy (KV / vector) ───────────────────────────────────
 
 async function sidecarRpc<T>(path: string, body: unknown): Promise<T> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (SIDECAR_TOKEN) headers.Authorization = `Bearer ${SIDECAR_TOKEN}`;
   const res = await fetch(`${SIDECAR_URL}${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`${path} failed: ${res.status}`);
