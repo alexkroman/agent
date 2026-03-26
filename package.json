@@ -45,6 +45,7 @@
       "lefthook"
     ],
     "onlyBuiltDependencies": [
+      "@lancedb/lancedb",
       "better-sqlite3"
     ]
   }

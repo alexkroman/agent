@@ -37,10 +37,13 @@
  * @packageDocumentation
  */
 
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createDirectExecutor, type DirectExecutor } from "./direct-executor.ts";
 import type { Kv } from "./kv.ts";
+import { createLanceDbVectorStore, createTestEmbedFn } from "./lancedb-vector.ts";
 import { createSqliteKv } from "./sqlite-kv.ts";
-import { createSqliteVectorStore } from "./sqlite-vector.ts";
 import type { AgentDef, Message, StepInfo } from "./types.ts";
 import type { VectorStore } from "./vector.ts";
 
@@ -383,6 +386,38 @@ export class TestHarness {
 }
 
 /**
+ * Create a LanceDB-backed vector store with deterministic test embeddings.
+ * Uses a temp directory that is unique per call for test isolation.
+ */
+function createTestVectorStore(): VectorStore {
+  const dir = mkdtempSync(join(tmpdir(), "aai-test-vec-"));
+  let store: VectorStore | null = null;
+  let promise: Promise<VectorStore> | null = null;
+  function getStore(): Promise<VectorStore> {
+    if (store) return Promise.resolve(store);
+    promise ??= createLanceDbVectorStore({
+      path: dir,
+      embedFn: createTestEmbedFn(),
+    }).then((s) => {
+      store = s;
+      return s;
+    });
+    return promise;
+  }
+  return {
+    async upsert(id, data, metadata?) {
+      return (await getStore()).upsert(id, data, metadata);
+    },
+    async query(text, options?) {
+      return (await getStore()).query(text, options);
+    },
+    async delete(ids) {
+      return (await getStore()).delete(ids);
+    },
+  };
+}
+
+/**
  * Create a test harness for unit-testing an agent.
  *
  * The harness wraps the agent's tool definitions and lifecycle hooks,
@@ -419,7 +454,7 @@ export function createTestHarness(
   const {
     env = {},
     kv = createSqliteKv({ path: ":memory:" }),
-    vector = createSqliteVectorStore({ path: ":memory:" }),
+    vector = createTestVectorStore(),
   } = options;
 
   const executor = createDirectExecutor({ agent, env, kv, vector });
