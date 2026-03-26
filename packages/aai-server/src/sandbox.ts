@@ -130,16 +130,17 @@ async function startIsolate(
     },
   });
 
-  // The exec promise lives as long as the isolate's HTTP server. When the
-  // runtime is disposed, this promise rejects with "Isolate is disposed".
-  // We swallow that expected rejection to prevent unhandled promise warnings.
+  // The exec promise lives as long as the isolate's HTTP server. It is not
+  // awaited because the sandbox owns the runtime lifecycle (via terminate()).
+  // The catch handler covers the edge case where terminate() is called during
+  // isolate boot before the HTTP server is fully established.
   runtime
     .exec(
       'import agent from "/app/agent_bundle.js";\nimport { startHarness } from "/app/_harness-runtime.js";\nstartHarness(agent);',
       { cwd: "/app" },
     )
     .catch(() => {
-      // Expected on dispose — isolate's in-flight promises are cancelled.
+      // Isolate disposed during boot — safe to ignore.
     });
 
   const port = await portPromise;
@@ -335,8 +336,11 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
         void session.stop();
       }
       sessions.clear();
-      runtime.dispose();
-      sidecar.close();
+      // Use terminate() (async) instead of dispose() (sync) to properly
+      // await HTTP server closure before disposing the V8 isolate.
+      // This prevents "Isolate is disposed" unhandled rejections from
+      // in-flight operations that race with synchronous isolate disposal.
+      void runtime.terminate().then(() => sidecar.close());
     },
   };
 }
