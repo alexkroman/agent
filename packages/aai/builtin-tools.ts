@@ -291,9 +291,9 @@ export async function executeInIsolate(code: string): Promise<string | { error: 
     },
   });
 
-  // Track the exec promise so we can ensure it settles before disposal.
-  // Previously it was fire-and-forget, causing an unhandled rejection when
-  // dispose() cancelled the in-flight V8 execution.
+  // Await the exec promise so the isolate completes naturally before disposal.
+  // This avoids "Isolate is disposed" rejections from internal secure-exec
+  // promises (like ESM compilation) that fire when we dispose mid-execution.
   const execPromise = runtime.exec('import "/app/harness.js";', { cwd: "/app" });
 
   try {
@@ -303,17 +303,20 @@ export async function executeInIsolate(code: string): Promise<string | { error: 
       if (stdoutChunks.length > 0 || finished) break;
     }
 
+    // Let the isolate finish naturally — wait a short grace period for exec
+    // to settle after output is captured (avoids disposing mid-execution).
+    await Promise.race([
+      execPromise.catch(() => {
+        // exec may reject on error code paths — already handled by parseIsolateOutput
+      }),
+      new Promise((r) => setTimeout(r, 200)),
+    ]);
+
     return parseIsolateOutput(stdoutChunks.join(""), stderrChunks.join(""));
   } catch (err: unknown) {
     return { error: errorMessage(err) };
   } finally {
-    // Attach the catch handler BEFORE disposing so the rejection is always
-    // captured, even if it fires asynchronously after dispose returns.
-    const settled = execPromise.catch(() => {
-      // Isolate disposed — exec rejection is expected.
-    });
     runtime.dispose();
-    await settled;
   }
 }
 
