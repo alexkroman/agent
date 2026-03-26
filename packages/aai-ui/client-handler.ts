@@ -157,8 +157,8 @@ export class ClientHandler {
           if (this.#generation !== gen) return;
           this.#state.value = "listening";
         })
-        .catch(() => {
-          /* swallow */
+        .catch((err: unknown) => {
+          console.warn("Audio playback done failed:", err);
         });
     } else {
       this.#state.value = "listening";
