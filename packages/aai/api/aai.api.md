@@ -7,24 +7,24 @@
 import { z } from 'zod';
 
 // @public
-export type AgentDef = {
+export type AgentDef<S = Record<string, unknown>> = {
     name: string;
     instructions: string;
     greeting: string;
     sttPrompt?: string;
-    maxSteps: number | ((ctx: HookContext) => number);
+    maxSteps: number | ((ctx: HookContext<S>) => number);
     toolChoice?: ToolChoice;
     builtinTools?: readonly BuiltinTool[];
     activeTools?: readonly string[];
-    tools: Readonly<Record<string, ToolDef>>;
-    state?: () => Record<string, unknown>;
-    onConnect?: AgentOptions["onConnect"];
-    onDisconnect?: AgentOptions["onDisconnect"];
-    onError?: AgentOptions["onError"];
-    onTurn?: AgentOptions["onTurn"];
-    onStep?: AgentOptions["onStep"];
-    onBeforeStep?: AgentOptions["onBeforeStep"];
-    middleware?: readonly Middleware[];
+    tools: Readonly<Record<string, ToolDef<z.ZodObject<z.ZodRawShape>, S>>>;
+    state?: () => S;
+    onConnect?: (ctx: HookContext<S>) => void | Promise<void>;
+    onDisconnect?: (ctx: HookContext<S>) => void | Promise<void>;
+    onError?: (error: Error, ctx?: HookContext<S>) => void;
+    onTurn?: (text: string, ctx: HookContext<S>) => void | Promise<void>;
+    onStep?: (step: StepInfo, ctx: HookContext<S>) => void | Promise<void>;
+    onBeforeStep?: (stepNumber: number, ctx: HookContext<S>) => BeforeStepResult | Promise<BeforeStepResult>;
+    middleware?: readonly Middleware<S>[];
 };
 
 // @public
@@ -57,7 +57,10 @@ export type BeforeStepResult = {
 export type BuiltinTool = "web_search" | "visit_webpage" | "fetch_json" | "run_code" | "vector_search" | "memory";
 
 // @public
-export function defineAgent<S>(options: AgentOptions<S>): AgentDef;
+export function defineAgent<S = Record<string, unknown>>(options: AgentOptions<S>): AgentDef<S>;
+
+// @public
+export function defineTool<P extends z.ZodObject<z.ZodRawShape>, S = Record<string, unknown>>(def: ToolDef<P, S>): ToolDef<P, S>;
 
 // @public
 export type HookContext<S = Record<string, unknown>> = Omit<ToolContext<S>, "messages">;
@@ -68,7 +71,7 @@ export type Kv = {
     set(key: string, value: unknown, options?: {
         expireIn?: number;
     }): Promise<void>;
-    delete(key: string): Promise<void>;
+    delete(keys: string | string[]): Promise<void>;
     list<T = unknown>(prefix: string, options?: KvListOptions): Promise<KvEntry<T>[]>;
     keys(pattern?: string): Promise<string[]>;
 };
@@ -96,9 +99,9 @@ export type Middleware<S = Record<string, unknown>> = {
     name: string;
     beforeTurn?: (text: string, ctx: HookContext<S>) => MiddlewareBlockResult | undefined | Promise<MiddlewareBlockResult | undefined>;
     afterTurn?: (text: string, ctx: HookContext<S>) => void | Promise<void>;
-    toolCallInterceptor?: (toolName: string, args: Readonly<Record<string, unknown>>, ctx: HookContext<S>) => ToolCallInterceptResult | undefined | Promise<ToolCallInterceptResult | undefined>;
+    beforeToolCall?: (toolName: string, args: Readonly<Record<string, unknown>>, ctx: HookContext<S>) => ToolCallInterceptResult | undefined | Promise<ToolCallInterceptResult | undefined>;
     afterToolCall?: (toolName: string, args: Readonly<Record<string, unknown>>, result: string, ctx: HookContext<S>) => void | Promise<void>;
-    outputFilter?: (text: string, ctx: HookContext<S>) => string | Promise<string>;
+    beforeOutput?: (text: string, ctx: HookContext<S>) => string | Promise<string>;
 };
 
 // @public
@@ -118,7 +121,7 @@ export type StepInfo = {
 };
 
 // @public
-export function tool<P extends z.ZodObject<z.ZodRawShape>, S = Record<string, unknown>>(def: ToolDef<P, S>): ToolDef<P, S>;
+export const tool: typeof defineTool;
 
 // @public
 export type ToolCallInterceptResult = {
@@ -167,7 +170,7 @@ export type VectorStore = {
         topK?: number;
         filter?: string;
     }): Promise<VectorEntry[]>;
-    remove(ids: string | string[]): Promise<void>;
+    delete(ids: string | string[]): Promise<void>;
 };
 
 // (No @packageDocumentation comment for this package)

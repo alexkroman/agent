@@ -34,6 +34,12 @@ export type ButtonSize = "default" | "lg";
 // @public (undocumented)
 export type ButtonVariant = "default" | "secondary" | "ghost";
 
+// @public
+export type ChatMessage = {
+    role: "user" | "assistant";
+    content: string;
+};
+
 // @public (undocumented)
 export function ChatView(input: {
     className?: string;
@@ -56,15 +62,9 @@ export function ErrorBanner(input: {
     className?: string;
 }): preact_2.JSX.Element | null;
 
-// @public
-export type Message = {
-    role: "user" | "assistant";
-    content: string;
-};
-
 // @public (undocumented)
 export function MessageBubble(input: {
-    message: Message;
+    message: ChatMessage;
     className?: string;
 }): preact_2.JSX.Element;
 
@@ -122,7 +122,6 @@ export type SessionError = {
 //
 // @public
 export type SessionErrorCode = z.infer<typeof SessionErrorCodeSchema>;
-
 
 // @public
 export function SessionProvider(input: {
@@ -209,7 +208,7 @@ export function useToolResult(callback: (toolName: string, result: unknown, tool
 // @public
 export type VoiceSession = {
     readonly state: Reactive<AgentState>;
-    readonly messages: Reactive<Message[]>;
+    readonly messages: Reactive<ChatMessage[]>;
     readonly toolCalls: Reactive<ToolCallInfo[]>;
     readonly userUtterance: Reactive<string | null>;
     readonly agentUtterance: Reactive<string | null>;
@@ -231,7 +230,7 @@ export type VoiceSession = {
 export type VoiceSessionOptions = {
     platformUrl: string;
     token?: string;
-    signal?: <T>(initial: T) => Reactive<T>;
+    reactiveFactory?: <T>(initial: T) => Reactive<T>;
     batch?: (fn: () => void) => void;
 };
 
