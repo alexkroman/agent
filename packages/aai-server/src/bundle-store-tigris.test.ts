@@ -102,4 +102,42 @@ describe("bundle store S3 304 handling", () => {
     const result = await store.getManifest("nonexistent");
     expect(result).toBeNull();
   });
+
+  test("cache evicts least recently used entries when maxCacheSize is exceeded", async () => {
+    const s3 = mockS3();
+    const credentialKey = await deriveCredentialKey("test-secret");
+    // Create store with a very small cache (2 entries)
+    const store = createBundleStore(s3, { bucket: "test", credentialKey, maxCacheSize: 2 });
+
+    // Deploy 3 agents to fill cache beyond limit
+    for (const name of ["a", "b", "c"]) {
+      await store.putAgent({
+        slug: name,
+        env: { KEY: "val" },
+        worker: `console.log('${name}');`,
+        clientFiles: {},
+        credential_hashes: [],
+      });
+    }
+
+    // Read worker code for agents a, b, c — each populates a cache entry
+    await store.getWorkerCode("a"); // cache: [a]
+    await store.getWorkerCode("b"); // cache: [a, b]
+    await store.getWorkerCode("c"); // cache: [b, c] — a evicted
+
+    // Agent "a" was evicted, so next fetch must hit S3 (no IfNoneMatch)
+    const sendSpy = s3.send as ReturnType<typeof vi.fn>;
+    const callsBefore = sendSpy.mock.calls.length;
+    const resultA = await store.getWorkerCode("a");
+    expect(resultA).toBe("console.log('a');");
+
+    // The S3 call should NOT have IfNoneMatch (cache miss, not conditional GET)
+    const getCall = sendSpy.mock.calls
+      .slice(callsBefore)
+      .find(
+        (c) => (c[0] as { constructor: { name: string } }).constructor.name === "GetObjectCommand",
+      );
+    expect(getCall).toBeDefined();
+    expect((getCall?.[0] as { input: Record<string, unknown> }).input.IfNoneMatch).toBeUndefined();
+  });
 });

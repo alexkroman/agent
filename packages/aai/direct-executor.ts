@@ -6,8 +6,8 @@
  * Tools execute directly in-process — no sandbox, no RPC.
  */
 
-import { type AgentConfig, agentToolsToSchemas, type ToolSchema } from "./_internal-types.ts";
 import { getBuiltinToolDefs, getBuiltinToolSchemas } from "./builtin-tools.ts";
+import { type AgentConfig, agentToolsToSchemas, type ToolSchema } from "./internal-types.ts";
 import type { Kv } from "./kv.ts";
 import { createMemoryKv } from "./kv.ts";
 import {
