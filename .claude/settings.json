@@ -48,6 +48,7 @@
       "Bash(pnpm lint*)",
       "Bash(pnpm typecheck*)",
       "Bash(pnpm check*)",
+      "Bash(bash scripts/check*)",
       "Bash(pnpm build*)",
       "Bash(pnpm --filter *)",
       "Bash(pnpm vitest *)",
