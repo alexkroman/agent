@@ -291,9 +291,12 @@ export async function executeInIsolate(code: string): Promise<string | { error: 
     },
   });
 
-  try {
-    runtime.exec('import "/app/harness.js";', { cwd: "/app" });
+  // Track the exec promise so we can ensure it settles before disposal.
+  // Previously it was fire-and-forget, causing an unhandled rejection when
+  // dispose() cancelled the in-flight V8 execution.
+  const execPromise = runtime.exec('import "/app/harness.js";', { cwd: "/app" });
 
+  try {
     const deadline = Date.now() + RUN_CODE_TIMEOUT;
     while (Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, 50));
@@ -305,9 +308,11 @@ export async function executeInIsolate(code: string): Promise<string | { error: 
     return { error: errorMessage(err) };
   } finally {
     runtime.dispose();
-    // Allow the isolate's internal promises to settle after disposal
-    // to prevent "Isolate is disposed" unhandled rejections.
-    await new Promise((r) => setTimeout(r, 0));
+    // Wait for the exec promise to settle after disposal. Now that the
+    // isolate is disposed, exec rejects immediately rather than hanging.
+    await execPromise.catch(() => {
+      // Isolate disposed — exec rejection is expected.
+    });
   }
 }
 
