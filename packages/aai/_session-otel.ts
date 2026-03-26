@@ -7,10 +7,10 @@
  * pipeline: tool calls, user turns, barge-ins, and session lifecycle.
  */
 
+import type { S2sSessionCtx } from "./_session-ctx.ts";
 import { errorDetail, errorMessage, toolError } from "./_utils.ts";
 import { HOOK_TIMEOUT_MS, MAX_TOOL_RESULT_CHARS } from "./protocol.ts";
 import type { S2sHandle, S2sToolCall } from "./s2s.ts";
-import type { S2sSessionCtx } from "./session.ts";
 import {
   bargeInCounter,
   toolCallCounter,
@@ -332,6 +332,14 @@ function handleReplyDone(ctx: S2sSessionCtx, status: string | undefined): void {
   }
 }
 
+/** Options for customizing S2S event listener behavior. */
+export type SetupListenersOptions = {
+  /** Custom handler for session expiration. When provided, replaces the
+   *  default behavior of closing the handle. Used by resume logic to
+   *  fall back to a fresh session when S2S resume fails. */
+  onSessionExpired?: () => void;
+};
+
 /**
  * Wire all S2S events to the client sink, hooks, and session state.
  *
@@ -342,12 +350,21 @@ function handleReplyDone(ctx: S2sSessionCtx, status: string | undefined): void {
  *
  * @param ctx - The shared mutable session context.
  * @param handle - The S2S WebSocket handle to listen on.
+ * @param opts - Optional overrides for listener behavior.
  */
-export function setupListeners(ctx: S2sSessionCtx, handle: S2sHandle): void {
+export function setupListeners(
+  ctx: S2sSessionCtx,
+  handle: S2sHandle,
+  opts?: SetupListenersOptions,
+): void {
   handle.on("ready", ({ sessionId }) => ctx.log.info("S2S session ready", { sessionId }));
   handle.on("sessionExpired", () => {
-    ctx.log.info("S2S session expired");
-    handle.close();
+    if (opts?.onSessionExpired) {
+      opts.onSessionExpired();
+    } else {
+      ctx.log.info("S2S session expired");
+      handle.close();
+    }
   });
   handle.on("speechStarted", () => ctx.client.event({ type: "speech_started" }));
   handle.on("speechStopped", () => ctx.client.event({ type: "speech_stopped" }));

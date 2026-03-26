@@ -547,6 +547,19 @@ export type AgentOptions<S = Record<string, unknown>> = {
   tools?: Readonly<Record<string, ToolDef<z.ZodObject<z.ZodRawShape>, NoInfer<S>>>>;
   /** Factory that creates fresh per-session state. Called once per connection. */
   state?: () => S;
+  /**
+   * Enable automatic session state persistence across reconnects.
+   *
+   * When enabled, session state, conversation history, and the S2S session ID
+   * are saved to KV on disconnect and restored when the client reconnects with
+   * `?sessionId=<old-session-id>` in the WebSocket URL.
+   *
+   * - `true` — enable with default TTL (1 hour)
+   * - `{ ttl: number }` — enable with custom TTL in milliseconds
+   *
+   * Requires the agent's `state` return value to be JSON-serializable.
+   */
+  persistence?: boolean | { ttl?: number };
   /** Called when a new session connects. */
   onConnect?: (ctx: HookContext<S>) => void | Promise<void>;
   /** Called when a session disconnects. */
@@ -636,6 +649,8 @@ export type AgentDef<S = Record<string, unknown>> = {
   activeTools?: readonly string[];
   tools: Readonly<Record<string, ToolDef<z.ZodObject<z.ZodRawShape>, S>>>;
   state?: () => S;
+  /** Resolved persistence config, or `undefined` if disabled. */
+  persistence?: { ttl: number };
   onConnect?: (ctx: HookContext<S>) => void | Promise<void>;
   onDisconnect?: (ctx: HookContext<S>) => void | Promise<void>;
   onError?: (error: Error, ctx?: HookContext<S>) => void;
@@ -714,6 +729,9 @@ const AgentOptionsSchema = z.object({
   activeTools: z.array(z.string().min(1)).optional(),
   tools: z.record(z.string(), ToolDefSchema).optional(),
   state: z.function().optional(),
+  persistence: z
+    .union([z.literal(true), z.object({ ttl: z.number().int().positive().optional() })])
+    .optional(),
   onConnect: z.function().optional(),
   onDisconnect: z.function().optional(),
   onError: z.function().optional(),
@@ -768,13 +786,25 @@ const AgentOptionsSchema = z.object({
  * });
  * ```
  */
+/** Default TTL for persisted session data: 1 hour. */
+const DEFAULT_PERSIST_TTL = 3_600_000;
+
 export function defineAgent<S = Record<string, unknown>>(options: AgentOptions<S>): AgentDef<S> {
   AgentOptionsSchema.parse(options);
+  const persistence = options.persistence
+    ? {
+        ttl:
+          typeof options.persistence === "object"
+            ? (options.persistence.ttl ?? DEFAULT_PERSIST_TTL)
+            : DEFAULT_PERSIST_TTL,
+      }
+    : undefined;
   return {
     ...options,
     instructions: options.instructions ?? DEFAULT_INSTRUCTIONS,
     greeting: options.greeting ?? DEFAULT_GREETING,
     maxSteps: options.maxSteps ?? 5,
     tools: options.tools ?? {},
+    persistence,
   } as AgentDef<S>;
 }

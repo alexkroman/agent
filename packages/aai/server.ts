@@ -146,16 +146,30 @@ export function createServer(options: ServerOptions): AgentServer {
   const readyConfig = buildReadyConfig(s2sConfig);
   const safeAgentName = escapeHtml(agent.name);
 
-  function handleWs(ws: SessionWebSocket, skipGreeting: boolean): void {
+  /** Parse resume parameters from the WebSocket upgrade URL. */
+  function parseResumeParams(url: URL): { skipGreeting: boolean; resumeFrom?: string } {
+    const sessionId = url.searchParams.get("sessionId") ?? undefined;
+    const resume = url.searchParams.has("resume") || sessionId !== undefined;
+    return { skipGreeting: resume, ...(sessionId ? { resumeFrom: sessionId } : {}) };
+  }
+
+  function handleWs(ws: SessionWebSocket, skipGreeting: boolean, resumeFrom?: string): void {
     wireSessionSocket(ws, {
       sessions,
       createSession: (sid, client) =>
-        executor.createSession({ id: sid, agent: agent.name, client, skipGreeting }),
+        executor.createSession({
+          id: sid,
+          agent: agent.name,
+          client,
+          skipGreeting,
+          ...(resumeFrom ? { resumeFrom } : {}),
+        }),
       readyConfig,
       logger,
       ...(options.sessionStartTimeoutMs !== undefined
         ? { sessionStartTimeoutMs: options.sessionStartTimeoutMs }
         : {}),
+      ...(resumeFrom ? { resumeFrom } : {}),
     });
   }
 
@@ -240,10 +254,10 @@ export function createServer(options: ServerOptions): AgentServer {
           }
         }
 
-        const resume = reqUrl.searchParams.has("resume");
-        logger.info(`WS upgrade ${reqUrl.pathname}${resume ? " (resume)" : ""}`);
+        const resumeParams = parseResumeParams(reqUrl);
+        logger.info(`WS upgrade ${reqUrl.pathname}${resumeParams.skipGreeting ? " (resume)" : ""}`);
         wss.handleUpgrade(req, socket, head, (ws) => {
-          handleWs(ws, resume);
+          handleWs(ws, resumeParams.skipGreeting, resumeParams.resumeFrom);
         });
       });
 

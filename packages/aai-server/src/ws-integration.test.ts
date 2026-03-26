@@ -161,7 +161,7 @@ describe("WebSocket server integration", () => {
 
   test("client receives config message on connect", async () => {
     const { ws, config } = await connect(ctx.port);
-    expect(config).toEqual({ type: "config", ...READY_CONFIG });
+    expect(config).toEqual({ type: "config", ...READY_CONFIG, sessionId: expect.any(String) });
     ws.close();
     await waitForClose(ws);
   });
