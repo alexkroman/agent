@@ -7,7 +7,6 @@
  * Network requests go through the host's fetch proxy (with SSRF protection).
  */
 
-import { convert } from "html-to-text";
 import { z } from "zod";
 import { EMPTY_PARAMS, type ToolSchema } from "./_internal-types.ts";
 import { ssrfSafeFetch } from "./_ssrf.ts";
@@ -27,7 +26,15 @@ const fetchSignal = () => AbortSignal.timeout(FETCH_TIMEOUT_MS);
 
 // ─── HTML to text ──────────────────────────────────────────────────────────
 
-function htmlToText(html: string): string {
+/** Lazily import html-to-text to avoid loading 824KB dep tree at startup. */
+let _htmlToTextPromise: Promise<typeof import("html-to-text")> | undefined;
+function getHtmlToText() {
+  _htmlToTextPromise ??= import("html-to-text");
+  return _htmlToTextPromise;
+}
+
+async function htmlToText(html: string): Promise<string> {
+  const { convert } = await getHtmlToText();
   return convert(html, { wordwrap: false });
 }
 
@@ -125,7 +132,7 @@ function createVisitWebpage(fetchFn = globalThis.fetch): ToolDef<typeof visitWeb
       const htmlContent = await resp.text();
       const trimmedHtml =
         htmlContent.length > MAX_HTML_BYTES ? htmlContent.slice(0, MAX_HTML_BYTES) : htmlContent;
-      const text = htmlToText(trimmedHtml);
+      const text = await htmlToText(trimmedHtml);
       const truncated = text.length > MAX_PAGE_CHARS;
       const content = truncated ? text.slice(0, MAX_PAGE_CHARS) : text;
       return {
