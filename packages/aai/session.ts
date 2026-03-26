@@ -113,9 +113,12 @@ function buildCtx(opts: {
         });
         return "Maximum tool steps reached. Please respond to the user now.";
       }
-      if (turnConfig?.activeTools && !turnConfig.activeTools.includes(name)) {
-        log.info("Tool filtered by activeTools", { name });
-        return JSON.stringify({ error: `Tool "${name}" is not available at this step.` });
+      if (turnConfig?.activeTools) {
+        const activeSet = new Set(turnConfig.activeTools);
+        if (!activeSet.has(name)) {
+          log.info("Tool filtered by activeTools", { name });
+          return JSON.stringify({ error: `Tool "${name}" is not available at this step.` });
+        }
       }
       return null;
     },
