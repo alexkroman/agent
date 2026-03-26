@@ -68,8 +68,8 @@ export type Kv = {
    *
    * @param key - The key to store the value under.
    * @param value - The value to store. Must be JSON-serializable.
-   * @param options - Optional settings. `expireIn` sets the time-to-live in milliseconds. The entry is
-   *   automatically removed after this duration.
+   * @param options - Optional settings. `expireIn` sets the time-to-live in **milliseconds**
+   *   (e.g. `60_000` for 1 minute). The entry is automatically removed after this duration.
    * @throws Throws an Error if the serialized value exceeds 65,536 bytes.
    */
   set(key: string, value: unknown, options?: { expireIn?: number }): Promise<void>;
