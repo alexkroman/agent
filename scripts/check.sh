@@ -15,6 +15,16 @@ cd "$ROOT"
 
 MODE="${1:-full}"
 
+# Use pnpm --filter to only run on changed packages when possible.
+# Falls back to -r (all packages) when on main or origin/main is unavailable.
+if git rev-parse --verify origin/main &>/dev/null \
+   && [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]; then
+  PNPM_FILTER='--filter ...[origin/main]'
+  echo "Using pnpm filter: $PNPM_FILTER"
+else
+  PNPM_FILTER='-r'
+fi
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -58,14 +68,14 @@ pnpm -r run build
 # ── Phase 2: Checks (parallel) ──
 echo -e "\n${YELLOW}Phase 2: Checks (parallel)${NC}"
 
-run_step "typecheck"        pnpm -r run typecheck
-run_step "lint"             pnpm -r run lint
-run_step "check:api"        pnpm -r run --if-present check:api
+run_step "typecheck"        pnpm $PNPM_FILTER run typecheck
+run_step "lint"             pnpm $PNPM_FILTER run lint
+run_step "check:api"        pnpm $PNPM_FILTER run --if-present check:api
 run_step "check:syncpack"   pnpm run check:syncpack
 
 if [ "$MODE" != "--local" ]; then
-  run_step "check:attw"       pnpm -r run --if-present check:attw
-  run_step "check:templates"  pnpm -r run --if-present check:templates
+  run_step "check:attw"       pnpm $PNPM_FILTER run --if-present check:attw
+  run_step "check:templates"  pnpm $PNPM_FILTER run --if-present check:templates
   run_step "check:knip"       pnpm run check:knip
   run_step "check:markdown"   pnpm run check:markdown
 fi
@@ -83,8 +93,8 @@ echo -e "\n${YELLOW}Phase 3: Tests (parallel)${NC}"
 if [ "$MODE" = "--local" ]; then
   run_step "vitest"           vitest run
 else
-  run_step "integration"      pnpm -r run --if-present check:integration
-  run_step "e2e"              pnpm -r run --if-present check:e2e
+  run_step "integration"      pnpm $PNPM_FILTER run --if-present check:integration
+  run_step "e2e"              pnpm $PNPM_FILTER run --if-present check:e2e
   run_step "vitest"           vitest run --coverage
 fi
 

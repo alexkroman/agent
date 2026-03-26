@@ -15,6 +15,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: pnpm/action-setup@v5
       - uses: actions/setup-node@v6
         with:
@@ -35,6 +37,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: pnpm/action-setup@v5
       - uses: actions/setup-node@v6
         with:
@@ -46,13 +50,15 @@ jobs:
             packages/*/node_modules
             packages/*/dist
           key: workspace-${{ github.sha }}
-      - run: pnpm -r run lint & pnpm -r run typecheck & wait
+      - run: pnpm --filter "...[origin/main]" run lint & pnpm --filter "...[origin/main]" run typecheck & wait
 
   checks:
     needs: setup
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: pnpm/action-setup@v5
       - uses: actions/setup-node@v6
         with:
@@ -65,9 +71,9 @@ jobs:
             packages/*/dist
           key: workspace-${{ github.sha }}
       - run: |
-          pnpm -r run --if-present check:api
-          pnpm -r run --if-present check:attw
-          pnpm -r run --if-present check:templates
+          pnpm --filter "...[origin/main]" run --if-present check:api
+          pnpm --filter "...[origin/main]" run --if-present check:attw
+          pnpm --filter "...[origin/main]" run --if-present check:templates
           pnpm run check:knip
           pnpm run check:syncpack
           pnpm run check:markdown
@@ -77,6 +83,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: pnpm/action-setup@v5
       - uses: actions/setup-node@v6
         with:
@@ -88,13 +96,15 @@ jobs:
             packages/*/node_modules
             packages/*/dist
           key: workspace-${{ github.sha }}
-      - run: pnpm vitest run --coverage
+      - run: pnpm vitest run --changed origin/main --coverage
 
   integration:
     needs: setup
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: pnpm/action-setup@v5
       - uses: actions/setup-node@v6
         with:
@@ -106,13 +116,15 @@ jobs:
             packages/*/node_modules
             packages/*/dist
           key: workspace-${{ github.sha }}
-      - run: pnpm -r run --if-present check:integration
+      - run: pnpm --filter "...[origin/main]" run --if-present check:integration
 
   e2e:
     needs: setup
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - uses: pnpm/action-setup@v5
       - uses: actions/setup-node@v6
         with:
@@ -125,7 +137,7 @@ jobs:
             packages/*/dist
           key: workspace-${{ github.sha }}
       - run: pnpm --filter @alexkroman1/aai-cli exec playwright install --with-deps chromium
-      - run: pnpm -r run --if-present check:e2e
+      - run: pnpm --filter "...[origin/main]" run --if-present check:e2e
 
   # Single gate job for branch protection — add only "ci" as a required check
   ci:
