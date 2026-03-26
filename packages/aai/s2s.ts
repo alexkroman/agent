@@ -7,10 +7,10 @@ import type { JSONSchema7 } from "json-schema";
 import { createNanoEvents, type Emitter, type Unsubscribe } from "nanoevents";
 import { WebSocket } from "ws";
 import { z } from "zod";
-import { WS_OPEN } from "./_utils.ts";
 import type { Logger, S2SConfig } from "./runtime.ts";
 import { consoleLogger } from "./runtime.ts";
 import { s2sConnectionDuration, s2sErrorCounter, tracer } from "./telemetry.ts";
+import { WS_OPEN } from "./utils.ts";
 
 const uint8ToBase64 = (bytes: Uint8Array): string => Buffer.from(bytes).toString("base64");
 const base64ToUint8 = (base64: string): Uint8Array => new Uint8Array(Buffer.from(base64, "base64"));
@@ -29,6 +29,8 @@ export type S2sWebSocket = {
     listener: (event: { code?: number; reason?: string }) => void,
   ): void;
   addEventListener(type: "error", listener: (event: { message?: string }) => void): void;
+  // biome-ignore lint/suspicious/noExplicitAny: must accept any listener signature for cleanup
+  removeEventListener(type: string, listener: (...args: any[]) => void): void;
 };
 
 /** Factory for creating WebSocket connections (e.g. the `ws` package). */
@@ -257,16 +259,10 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
 
       close(): void {
         log.info("S2S closing");
+        removeListeners();
         ws.close();
       },
     };
-
-    ws.addEventListener("open", () => {
-      opened = true;
-      log.info("S2S WebSocket open");
-      connectionSpan.addEvent("ws.open");
-      resolve(handle);
-    });
 
     function tryParseJson(data: unknown): unknown | undefined {
       try {
@@ -316,9 +312,14 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
       dispatchS2sMessage(emitter, parsed.data);
     }
 
-    ws.addEventListener("message", handleS2sMessage);
+    function handleOpen(): void {
+      opened = true;
+      log.info("S2S WebSocket open");
+      connectionSpan.addEvent("ws.open");
+      resolve(handle);
+    }
 
-    ws.addEventListener("close", (ev) => {
+    function handleClose(ev: { code?: number; reason?: string }): void {
       log.info("S2S WebSocket closed", {
         code: ev.code ?? 0,
         reason: ev.reason ?? "",
@@ -330,13 +331,14 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
         "ws.close.reason": ev.reason ?? "",
       });
       connectionSpan.end();
+      removeListeners();
       if (!opened) {
         reject(new Error(`WebSocket closed before open (code: ${ev.code ?? 0})`));
       }
       emitter.emit("close");
-    });
+    }
 
-    ws.addEventListener("error", (ev) => {
+    function handleError(ev: { message?: string }): void {
       const message = typeof ev.message === "string" ? ev.message : "WebSocket error";
       const errObj = new Error(message);
       log.error("S2S WebSocket error", { error: errObj.message });
@@ -344,11 +346,24 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
       connectionSpan.setStatus({ code: 2, message: errObj.message }); // ERROR
       connectionSpan.recordException(errObj);
       if (!opened) {
+        removeListeners();
         connectionSpan.end();
         reject(errObj);
       } else {
         emitter.emit("error", { code: "ws_error", message: errObj.message });
       }
-    });
+    }
+
+    function removeListeners(): void {
+      ws.removeEventListener("open", handleOpen);
+      ws.removeEventListener("message", handleS2sMessage);
+      ws.removeEventListener("close", handleClose);
+      ws.removeEventListener("error", handleError);
+    }
+
+    ws.addEventListener("open", handleOpen);
+    ws.addEventListener("message", handleS2sMessage);
+    ws.addEventListener("close", handleClose);
+    ws.addEventListener("error", handleError);
   });
 }

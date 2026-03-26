@@ -59,6 +59,39 @@ type CacheEntry = {
   etag: string;
 };
 
+/** Simple LRU cache backed by a Map (iteration order = insertion order). */
+class LRUCache<K, V> {
+  #map = new Map<K, V>();
+  #maxSize: number;
+  constructor(maxSize: number) {
+    this.#maxSize = maxSize;
+  }
+
+  get(key: K): V | undefined {
+    const val = this.#map.get(key);
+    if (val !== undefined) {
+      // Move to end (most recently used)
+      this.#map.delete(key);
+      this.#map.set(key, val);
+    }
+    return val;
+  }
+
+  set(key: K, value: V): void {
+    if (this.#map.has(key)) this.#map.delete(key);
+    this.#map.set(key, value);
+    if (this.#map.size > this.#maxSize) {
+      // Evict the least recently used (first entry)
+      const oldest = this.#map.keys().next().value;
+      if (oldest !== undefined) this.#map.delete(oldest);
+    }
+  }
+
+  delete(key: K): void {
+    this.#map.delete(key);
+  }
+}
+
 function objectKey(slug: string, file: string): string {
   return `agents/${slug}/${file}`;
 }
@@ -79,12 +112,14 @@ export function createS3Client(env: {
   });
 }
 
+const DEFAULT_MAX_CACHE_SIZE = 1000;
+
 export function createBundleStore(
   s3: S3Client,
-  opts: { bucket: string; credentialKey: CredentialKey },
+  opts: { bucket: string; credentialKey: CredentialKey; maxCacheSize?: number },
 ): BundleStore {
   const { bucket, credentialKey } = opts;
-  const cache = new Map<string, CacheEntry>();
+  const cache = new LRUCache<string, CacheEntry>(opts.maxCacheSize ?? DEFAULT_MAX_CACHE_SIZE);
 
   async function put(key: string, body: string, contentType: string): Promise<void> {
     const res = await s3.send(
