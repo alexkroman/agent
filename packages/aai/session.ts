@@ -171,7 +171,13 @@ export function createS2sSession(opts: SessionOptions): Session {
   const sessionAbort = new AbortController();
   const ctx = buildCtx({ id, agent, client, agentConfig, executeTool, hookInvoker, log });
 
+  /** Monotonically increasing counter bumped on each connectAndSetup call.
+   *  Only the most recent invocation is allowed to set ctx.s2s, preventing
+   *  earlier completions from overwriting a newer connection during rapid resets. */
+  let connectGeneration = 0;
+
   async function connectAndSetup(): Promise<void> {
+    const generation = ++connectGeneration;
     try {
       const handle = await _internals.connectS2s({
         apiKey,
@@ -183,6 +189,13 @@ export function createS2sSession(opts: SessionOptions): Session {
       // stopped while we were connecting, close the handle immediately
       // to avoid an orphaned S2S connection.
       if (sessionAbort.signal.aborted) {
+        handle.close();
+        return;
+      }
+      // Guard against rapid resets: if a newer connectAndSetup was launched
+      // while we were connecting, this invocation is stale — close the handle
+      // to avoid an orphaned S2S connection.
+      if (generation !== connectGeneration) {
         handle.close();
         return;
       }
