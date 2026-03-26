@@ -1,7 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 // Vector store backed by @upstash/vector.
 
-// biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
 import type { VectorEntry } from "@alexkroman1/aai/vector";
 import { Index } from "@upstash/vector";
 import type { AgentScope } from "./scope-token.ts";
