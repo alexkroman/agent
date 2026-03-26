@@ -102,6 +102,7 @@ export async function runToolCallInterceptors(
     } catch (err) {
       console.warn("Middleware beforeToolCall failed:", err);
     }
+    }
   }
   // If any middleware transformed args, return the final transformed version
   if (currentArgs !== args) {
