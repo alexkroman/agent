@@ -48,7 +48,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Hono<Env> {
   });
 
   const internalMw = createMiddleware<Env>(async (c, next) => {
-    requireInternal(c);
+    requireInternal(c.req.raw);
     await next();
   });
 

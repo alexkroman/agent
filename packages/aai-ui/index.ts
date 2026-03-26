@@ -44,7 +44,6 @@ export {
 } from "./signals.ts";
 export {
   type AgentState,
-  type ChatMessage,
   type Message,
   type Reactive,
   type SessionError,

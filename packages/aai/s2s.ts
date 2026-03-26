@@ -28,8 +28,6 @@ export type S2sWebSocket = {
     listener: (event: { code?: number; reason?: string }) => void,
   ): void;
   addEventListener(type: "error", listener: (event: { message?: string }) => void): void;
-  // biome-ignore lint/suspicious/noExplicitAny: must accept any listener signature for cleanup
-  removeEventListener(type: string, listener: (...args: any[]) => void): void;
 };
 
 /** WebSocket readyState constant for OPEN. */
@@ -261,10 +259,16 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
 
       close(): void {
         log.info("S2S closing");
-        removeListeners();
         ws.close();
       },
     };
+
+    ws.addEventListener("open", () => {
+      opened = true;
+      log.info("S2S WebSocket open");
+      connectionSpan.addEvent("ws.open");
+      resolve(handle);
+    });
 
     function tryParseJson(data: unknown): unknown | undefined {
       try {
@@ -314,14 +318,9 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
       dispatchS2sMessage(emitter, parsed.data);
     }
 
-    function handleOpen(): void {
-      opened = true;
-      log.info("S2S WebSocket open");
-      connectionSpan.addEvent("ws.open");
-      resolve(handle);
-    }
+    ws.addEventListener("message", handleS2sMessage);
 
-    function handleClose(ev: { code?: number; reason?: string }): void {
+    ws.addEventListener("close", (ev) => {
       log.info("S2S WebSocket closed", {
         code: ev.code ?? 0,
         reason: ev.reason ?? "",
@@ -333,14 +332,13 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
         "ws.close.reason": ev.reason ?? "",
       });
       connectionSpan.end();
-      removeListeners();
       if (!opened) {
         reject(new Error(`WebSocket closed before open (code: ${ev.code ?? 0})`));
       }
       emitter.emit("close");
-    }
+    });
 
-    function handleError(ev: { message?: string }): void {
+    ws.addEventListener("error", (ev) => {
       const message = typeof ev.message === "string" ? ev.message : "WebSocket error";
       const errObj = new Error(message);
       log.error("S2S WebSocket error", { error: errObj.message });
@@ -348,24 +346,11 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
       connectionSpan.setStatus({ code: 2, message: errObj.message }); // ERROR
       connectionSpan.recordException(errObj);
       if (!opened) {
-        removeListeners();
         connectionSpan.end();
         reject(errObj);
       } else {
         emitter.emit("error", { code: "ws_error", message: errObj.message });
       }
-    }
-
-    function removeListeners(): void {
-      ws.removeEventListener("open", handleOpen);
-      ws.removeEventListener("message", handleS2sMessage);
-      ws.removeEventListener("close", handleClose);
-      ws.removeEventListener("error", handleError);
-    }
-
-    ws.addEventListener("open", handleOpen);
-    ws.addEventListener("message", handleS2sMessage);
-    ws.addEventListener("close", handleClose);
-    ws.addEventListener("error", handleError);
+    });
   });
 }

@@ -23,24 +23,7 @@ export async function handleAgentPage(c: Context<Env>): Promise<Response> {
   const slug = c.get("slug");
   const page = await c.env.store.getClientFile(slug, "index.html");
   if (!page) throw new HTTPException(404, { message: "HTML not found" });
-  const nonce = crypto.randomUUID();
-  const csp = [
-    `default-src 'none'`,
-    `script-src 'nonce-${nonce}'`,
-    `style-src 'self' 'unsafe-inline'`,
-    `img-src 'self' data: blob:`,
-    `font-src 'self'`,
-    `connect-src 'self' wss:`,
-    `media-src 'self' blob:`,
-    `frame-src 'none'`,
-    `object-src 'none'`,
-    `base-uri 'none'`,
-  ].join("; ");
-  const html =
-    typeof page === "string" ? page.replace(/<script/gi, `<script nonce="${nonce}"`) : page;
-  c.header("Content-Security-Policy", csp);
-  c.header("X-Content-Type-Options", "nosniff");
-  return c.html(html);
+  return c.html(page);
 }
 
 export async function handleClientAsset(c: Context<Env>): Promise<Response> {

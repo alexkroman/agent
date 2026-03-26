@@ -57,9 +57,9 @@
       "import": "./dist/session.js"
     },
     "./internal-types": {
-      "source": "./internal-types.ts",
-      "types": "./dist/internal-types.d.ts",
-      "import": "./dist/internal-types.js"
+      "source": "./_internal-types.ts",
+      "types": "./dist/_internal-types.d.ts",
+      "import": "./dist/_internal-types.js"
     },
     "./runtime": {
       "source": "./runtime.ts",
@@ -82,9 +82,9 @@
       "import": "./dist/telemetry.js"
     },
     "./utils": {
-      "source": "./utils.ts",
-      "types": "./dist/utils.d.ts",
-      "import": "./dist/utils.js"
+      "source": "./_utils.ts",
+      "types": "./dist/_utils.d.ts",
+      "import": "./dist/_utils.js"
     }
   },
   "scripts": {

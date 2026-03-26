@@ -8,7 +8,6 @@
  *
  * Environment variables (set by host):
  * - SIDECAR_URL: loopback URL for the per-sandbox sidecar server
- * - SIDECAR_TOKEN: bearer token for authenticating to the sidecar
  *
  * The agent bundle is expected at "./agent_bundle.js" (default export).
  */
@@ -26,7 +25,6 @@ import type {
 } from "./_harness-protocol.ts";
 
 const SIDECAR_URL = process.env.SIDECAR_URL ?? "";
-const SIDECAR_TOKEN = process.env.SIDECAR_TOKEN ?? "";
 
 /**
  * Read agent env vars from process.env once at startup.
@@ -46,11 +44,9 @@ const agentEnv: Record<string, string> = Object.freeze(
 // ── Sidecar server proxy (KV / vector) ───────────────────────────────────
 
 async function sidecarRpc<T>(path: string, body: unknown): Promise<T> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (SIDECAR_TOKEN) headers.Authorization = `Bearer ${SIDECAR_TOKEN}`;
   const res = await fetch(`${SIDECAR_URL}${path}`, {
     method: "POST",
-    headers,
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`${path} failed: ${res.status}`);
@@ -65,8 +61,8 @@ const kv: Kv = {
   set(key: string, value: unknown, options?: { expireIn?: number }) {
     return sidecarRpc<void>("/kv/set", { key, value, options });
   },
-  delete(keys: string | string[]) {
-    return sidecarRpc<void>("/kv/del", { key: keys });
+  delete(key: string) {
+    return sidecarRpc<void>("/kv/del", { key });
   },
   list<T = unknown>(prefix: string, options?: { limit?: number; reverse?: boolean }) {
     return sidecarRpc<{ key: string; value: T }[]>("/kv/list", { prefix, ...options });
@@ -385,19 +381,6 @@ function json(res: ServerResponse, data: unknown, status = 200): void {
 // adapter redefines globalThis.Request which conflicts with secure-exec's
 // frozen built-in globals.
 
-/**
- * Handles HTTP request errors with sanitized messages. Returns a generic
- * "Internal error" for 5xx to avoid leaking stack traces, file paths, or
- * schema structures. 4xx errors use controlled messages that are safe to expose.
- */
-function handleRequestError(err: unknown, req: IncomingMessage, res: ServerResponse): void {
-  const status = (err as { status?: number }).status ?? 500;
-  const detail = err instanceof Error ? err.message : "Internal error";
-  console.error(`[harness] ${req.method} ${req.url} error (${status}):`, detail);
-  const message = status >= 500 ? "Internal error" : detail;
-  json(res, { error: message }, status);
-}
-
 export function startHarness(agent: AgentDef): void {
   if (!agent || typeof agent !== "object" || !agent.name) {
     throw new Error("Agent bundle must export a default agent definition");
@@ -421,7 +404,9 @@ export function startHarness(agent: AgentDef): void {
       }
       json(res, { error: "Not found" }, 404);
     } catch (err: unknown) {
-      handleRequestError(err, req, res);
+      const status = (err as { status?: number }).status ?? 500;
+      const message = err instanceof Error ? err.message : "Internal error";
+      json(res, { error: message }, status);
     }
   });
 

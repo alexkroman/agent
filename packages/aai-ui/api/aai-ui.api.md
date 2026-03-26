@@ -34,12 +34,6 @@ export type ButtonSize = "default" | "lg";
 // @public (undocumented)
 export type ButtonVariant = "default" | "secondary" | "ghost";
 
-// @public
-export type ChatMessage = {
-    role: "user" | "assistant";
-    content: string;
-};
-
 // @public (undocumented)
 export function ChatView(input: {
     className?: string;
@@ -62,12 +56,15 @@ export function ErrorBanner(input: {
     className?: string;
 }): preact_2.JSX.Element | null;
 
-// @public @deprecated (undocumented)
-export type Message = ChatMessage;
+// @public
+export type Message = {
+    role: "user" | "assistant";
+    content: string;
+};
 
 // @public (undocumented)
 export function MessageBubble(input: {
-    message: ChatMessage;
+    message: Message;
     className?: string;
 }): preact_2.JSX.Element;
 
@@ -126,10 +123,10 @@ export type SessionErrorCode = z.infer<typeof SessionErrorCodeSchema>;
 
 // @public
 export const SessionErrorCodeSchema: z.ZodEnum<{
+    tool: "tool";
     stt: "stt";
     llm: "llm";
     tts: "tts";
-    tool: "tool";
     protocol: "protocol";
     connection: "connection";
     audio: "audio";
@@ -229,7 +226,7 @@ export function useToolResult(callback: (toolName: string, result: unknown, tool
 // @public
 export type VoiceSession = {
     readonly state: Reactive<AgentState>;
-    readonly messages: Reactive<ChatMessage[]>;
+    readonly messages: Reactive<Message[]>;
     readonly toolCalls: Reactive<ToolCallInfo[]>;
     readonly userUtterance: Reactive<string | null>;
     readonly agentUtterance: Reactive<string | null>;
