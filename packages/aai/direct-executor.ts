@@ -138,6 +138,7 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
     return {
       env: frozenEnv,
       state: sessionState.get(sessionId),
+      sessionId,
       get kv() {
         return kv;
       },
@@ -156,6 +157,7 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
       tool,
       env: frozenEnv,
       state: sessionState.get(sessionId ?? ""),
+      sessionId: sessionId ?? "",
       kv,
       vector,
       messages,

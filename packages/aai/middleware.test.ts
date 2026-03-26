@@ -14,6 +14,7 @@ function makeCtx(state: Record<string, unknown> = {}): HookContext {
   return {
     env: {},
     state,
+    sessionId: "test-session",
     kv: {} as never,
     vector: {} as never,
     fetch: globalThis.fetch,

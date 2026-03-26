@@ -285,6 +285,8 @@ export type ToolContext<S = Record<string, unknown>> = {
    * code to ensure portability across both deployment modes.
    */
   fetch: typeof globalThis.fetch;
+  /** Unique identifier for the current session. Useful for correlating logs across concurrent sessions. */
+  sessionId: string;
 };
 
 /**

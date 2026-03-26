@@ -34,7 +34,7 @@ export type ExecuteTool = (
 ) => Promise<string>;
 
 function buildToolContext(opts: ExecuteToolCallOptions): ToolContext {
-  const { env, state, kv, vector, messages, onUpdate, fetch: fetchFn } = opts;
+  const { env, state, kv, vector, messages, onUpdate, fetch: fetchFn, sessionId } = opts;
   return {
     env: { ...env },
     state: state ?? {},
@@ -51,6 +51,7 @@ function buildToolContext(opts: ExecuteToolCallOptions): ToolContext {
       onUpdate?.(data);
     },
     fetch: fetchFn ?? globalThis.fetch,
+    sessionId: sessionId ?? "",
   };
 }
 
@@ -59,6 +60,7 @@ export type ExecuteToolCallOptions = {
   tool: ToolDef;
   env: Readonly<Record<string, string>>;
   state?: Record<string, unknown>;
+  sessionId?: string | undefined;
   kv?: Kv | undefined;
   vector?: VectorStore | undefined;
   messages?: readonly Message[] | undefined;

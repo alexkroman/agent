@@ -175,6 +175,7 @@ async function executeTool(agent: AgentDef, req: ToolCallRequest): Promise<ToolC
   const ctx: ToolContext = {
     env: agentEnv,
     state: getState(agent, req.sessionId),
+    sessionId: req.sessionId,
     kv,
     vector,
     messages: req.messages,
@@ -208,6 +209,7 @@ function makeHookCtx(agent: AgentDef, req: HookRequest): HookContext {
   return {
     env: agentEnv,
     state: getState(agent, req.sessionId),
+    sessionId: req.sessionId,
     kv,
     vector,
     fetch: sidecarFetch,
