@@ -57,6 +57,9 @@ export type BeforeStepResult = {
 export type BuiltinTool = "web_search" | "visit_webpage" | "fetch_json" | "run_code" | "vector_search" | "memory";
 
 // @public
+export function createToolFactory<S = Record<string, unknown>>(): <P extends z.ZodObject<z.ZodRawShape>>(def: ToolDef<P, S>) => ToolDef<P, S>;
+
+// @public
 export function defineAgent<S = Record<string, unknown>>(options: AgentOptions<S>): AgentDef<S>;
 
 // @public
