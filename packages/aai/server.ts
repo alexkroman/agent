@@ -47,14 +47,16 @@ export type AgentServer = {
   port: number | undefined;
 };
 
-/** Escape HTML special characters to prevent XSS. */
+/** Escape HTML special characters to prevent XSS (single-pass). */
+const _escapeMap: Record<string, string> = {
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  '"': "&quot;",
+  "'": "&#39;",
+};
 function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+  return s.replace(/[&<>"']/g, (ch) => _escapeMap[ch] as string);
 }
 
 export function createServer(options: ServerOptions): AgentServer {
@@ -72,6 +74,7 @@ export function createServer(options: ServerOptions): AgentServer {
   const executor = createDirectExecutor({ agent, env, ...(kv ? { kv } : {}), logger, s2sConfig });
   const sessions = new Map<string, Session>();
   const readyConfig = buildReadyConfig(s2sConfig);
+  const safeAgentName = escapeHtml(agent.name);
 
   function handleWs(ws: SessionWebSocket, skipGreeting: boolean): void {
     wireSessionSocket(ws, {
@@ -96,7 +99,7 @@ export function createServer(options: ServerOptions): AgentServer {
       const app = new Hono();
 
       app.onError((err, c) => {
-        logger.error(`${c.req.method} ${new URL(c.req.url).pathname} error: ${err.message}`);
+        logger.error(`${c.req.method} ${c.req.path} error: ${err.message}`);
         return c.json({ error: "Internal Server Error" }, 500);
       });
 
@@ -106,7 +109,7 @@ export function createServer(options: ServerOptions): AgentServer {
         const ms = Date.now() - start;
         const { status } = c.res;
         const method = c.req.method;
-        const path = new URL(c.req.url).pathname;
+        const path = c.req.path;
         if (status >= 400) {
           logger.error(`${method} ${path} ${status} ${ms}ms`);
         } else {
@@ -122,9 +125,8 @@ export function createServer(options: ServerOptions): AgentServer {
 
       app.get("/", (c) => {
         if (clientHtml) return c.html(clientHtml);
-        const safeName = escapeHtml(agent.name);
         return c.html(
-          `<!DOCTYPE html><html><body><h1>${safeName}</h1><p>Agent server running.</p></body></html>`,
+          `<!DOCTYPE html><html><body><h1>${safeAgentName}</h1><p>Agent server running.</p></body></html>`,
         );
       });
 

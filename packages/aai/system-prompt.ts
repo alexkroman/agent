@@ -6,6 +6,25 @@
 import type { AgentConfig } from "./_internal-types.ts";
 import { DEFAULT_INSTRUCTIONS } from "./types.ts";
 
+// Cache the formatted date string — same for all sessions on a given day.
+let _cachedDate = "";
+let _cachedDateDay = -1;
+
+function getFormattedDate(): string {
+  const now = new Date();
+  const day = now.getDate();
+  if (day !== _cachedDateDay) {
+    _cachedDate = now.toLocaleDateString("en-US", {
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+    _cachedDateDay = day;
+  }
+  return _cachedDate;
+}
+
 const VOICE_RULES =
   "\n\nCRITICAL OUTPUT RULES — you MUST follow these for EVERY response:\n" +
   "Your response will be spoken aloud by a TTS system and displayed as plain text.\n" +
@@ -34,12 +53,7 @@ export function buildSystemPrompt(
       "This fills silence while the tool executes. Keep preambles to one short sentence."
     : "";
 
-  const today = new Date().toLocaleDateString("en-US", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
+  const today = getFormattedDate();
 
   return (
     DEFAULT_INSTRUCTIONS +

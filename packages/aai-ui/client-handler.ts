@@ -23,6 +23,8 @@ export class ClientHandler {
   #batch: BatchFn;
   /** Incremented on each turn boundary — stale async callbacks compare against this. */
   #generation = 0;
+  /** Buffer for accumulating chat_delta fragments (avoids O(n²) string concat). */
+  #deltaBuffer: string[] = [];
   constructor(opts: {
     state: Reactive<AgentState>;
     messages: Reactive<Message[]>;
@@ -57,6 +59,7 @@ export class ClientHandler {
         break;
       case "turn":
         this.#generation++;
+        this.#deltaBuffer.length = 0;
         this.#batch(() => {
           this.#userUtterance.value = null;
           this.#messages.value = [...this.#messages.value, { role: "user", content: e.text }];
@@ -64,11 +67,11 @@ export class ClientHandler {
         });
         break;
       case "chat_delta":
-        this.#agentUtterance.value = this.#agentUtterance.value
-          ? `${this.#agentUtterance.value} ${e.text}`
-          : e.text;
+        this.#deltaBuffer.push(e.text);
+        this.#agentUtterance.value = this.#deltaBuffer.join(" ");
         break;
       case "chat":
+        this.#deltaBuffer.length = 0;
         this.#batch(() => {
           this.#agentUtterance.value = null;
           this.#messages.value = [...this.#messages.value, { role: "assistant", content: e.text }];

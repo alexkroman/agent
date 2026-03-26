@@ -6,7 +6,6 @@
 import type { JSONSchema7 } from "json-schema";
 import { createNanoEvents, type Emitter, type Unsubscribe } from "nanoevents";
 import { WebSocket } from "ws";
-import { z } from "zod";
 import type { Logger, S2SConfig } from "./runtime.ts";
 import { consoleLogger } from "./runtime.ts";
 import { s2sConnectionDuration, s2sErrorCounter, tracer } from "./telemetry.ts";
@@ -43,48 +42,86 @@ export type CreateS2sWebSocket = (
 export const defaultCreateS2sWebSocket: CreateS2sWebSocket = (url, opts) =>
   new WebSocket(url, { headers: opts.headers });
 
-// ─── Incoming S2S message schema ─────────────────────────────────────────────
+// ─── Incoming S2S message types ──────────────────────────────────────────────
 
-const S2sServerMessageSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("session.ready"), session_id: z.string() }),
-  z.object({ type: z.literal("session.updated") }).passthrough(),
-  z.object({ type: z.literal("input.speech.started") }),
-  z.object({ type: z.literal("input.speech.stopped") }),
-  z.object({ type: z.literal("transcript.user.delta"), text: z.string() }),
-  z.object({
-    type: z.literal("transcript.user"),
-    item_id: z.string(),
-    text: z.string(),
-  }),
-  z.object({ type: z.literal("reply.started"), reply_id: z.string() }),
-  // reply.audio is handled on the fast path before Zod.
-  z.object({ type: z.literal("transcript.agent.delta"), delta: z.string() }).passthrough(),
-  z.object({ type: z.literal("transcript.agent"), text: z.string() }),
-  z.object({ type: z.literal("reply.content_part.started") }).passthrough(),
-  z.object({ type: z.literal("reply.content_part.done") }).passthrough(),
-  z.object({
-    type: z.literal("tool.call"),
-    call_id: z.string(),
-    name: z.string(),
-    args: z.record(z.string(), z.unknown()).optional().default({}),
-  }),
-  z.object({
-    type: z.literal("reply.done"),
-    status: z.string().optional(),
-  }),
-  z.object({
-    type: z.literal("session.error"),
-    code: z.string(),
-    message: z.string(),
-  }),
-  // Connection-level error (bare "error" without "session." prefix).
-  z.object({
-    type: z.literal("error"),
-    message: z.string(),
-  }),
+type S2sServerMessage =
+  | { type: "session.ready"; session_id: string }
+  | { type: "session.updated"; [k: string]: unknown }
+  | { type: "input.speech.started" }
+  | { type: "input.speech.stopped" }
+  | { type: "transcript.user.delta"; text: string }
+  | { type: "transcript.user"; item_id: string; text: string }
+  | { type: "reply.started"; reply_id: string }
+  | { type: "transcript.agent.delta"; delta: string; [k: string]: unknown }
+  | { type: "transcript.agent"; text: string }
+  | { type: "reply.content_part.started"; [k: string]: unknown }
+  | { type: "reply.content_part.done"; [k: string]: unknown }
+  | { type: "tool.call"; call_id: string; name: string; args: Record<string, unknown> }
+  | { type: "reply.done"; status?: string }
+  | { type: "session.error"; code: string; message: string }
+  | { type: "error"; message: string };
+
+/** Check that `obj` has string-typed fields for each key. */
+function hasStringFields(obj: Record<string, unknown>, ...keys: string[]): boolean {
+  for (const k of keys) if (typeof obj[k] !== "string") return false;
+  return true;
+}
+
+function parseToolCall(obj: Record<string, unknown>): S2sServerMessage | undefined {
+  if (!hasStringFields(obj, "call_id", "name")) return;
+  const args =
+    obj.args != null && typeof obj.args === "object" && !Array.isArray(obj.args)
+      ? (obj.args as Record<string, unknown>)
+      : {};
+  return { type: "tool.call", call_id: obj.call_id as string, name: obj.name as string, args };
+}
+
+type MessageValidator = (obj: Record<string, unknown>) => S2sServerMessage | undefined;
+
+function passthrough(obj: Record<string, unknown>): S2sServerMessage {
+  return obj as S2sServerMessage;
+}
+
+function requireFields(
+  ...keys: string[]
+): (obj: Record<string, unknown>) => S2sServerMessage | undefined {
+  return (obj) => (hasStringFields(obj, ...keys) ? (obj as S2sServerMessage) : undefined);
+}
+
+/** Lookup table mapping S2S message types to their validators. */
+const MESSAGE_VALIDATORS = new Map<string, MessageValidator>([
+  ["session.ready", requireFields("session_id")],
+  ["session.updated", passthrough],
+  ["input.speech.started", passthrough],
+  ["input.speech.stopped", passthrough],
+  ["reply.content_part.started", passthrough],
+  ["reply.content_part.done", passthrough],
+  ["transcript.user.delta", requireFields("text")],
+  ["transcript.user", requireFields("item_id", "text")],
+  ["reply.started", requireFields("reply_id")],
+  ["transcript.agent.delta", requireFields("delta")],
+  ["transcript.agent", requireFields("text")],
+  ["tool.call", parseToolCall],
+  [
+    "reply.done",
+    (obj) => ({
+      type: "reply.done" as const,
+      ...(typeof obj.status === "string" ? { status: obj.status } : {}),
+    }),
+  ],
+  ["session.error", requireFields("code", "message")],
+  ["error", requireFields("message")],
 ]);
 
-type S2sServerMessage = z.infer<typeof S2sServerMessageSchema>;
+/**
+ * Manually parse an S2S server message from a raw JSON object, avoiding
+ * Zod schema overhead on the hot path. Returns undefined for unrecognised types.
+ */
+function parseS2sMessage(obj: Record<string, unknown>): S2sServerMessage | undefined {
+  const type = obj.type;
+  if (typeof type !== "string") return;
+  return MESSAGE_VALIDATORS.get(type)?.(obj);
+}
 
 /** Dispatch a parsed S2S server message to the emitter, mapping wire-format
  *  snake_case fields to SDK-facing camelCase at the boundary. */
@@ -310,14 +347,14 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
       logIncoming(obj);
       if (handleAudioFastPath(obj)) return;
 
-      const parsed = S2sServerMessageSchema.safeParse(raw);
-      if (!parsed.success) {
+      const parsed = parseS2sMessage(obj);
+      if (!parsed) {
         log.warn(
           `S2S << unrecognised message type: ${obj.type ?? JSON.stringify(raw).slice(0, 200)}`,
         );
         return;
       }
-      dispatchS2sMessage(emitter, parsed.data);
+      dispatchS2sMessage(emitter, parsed);
     }
 
     ws.addEventListener("message", handleS2sMessage);
