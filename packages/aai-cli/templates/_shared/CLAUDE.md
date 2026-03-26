@@ -761,7 +761,7 @@ data lives on `session` (a `VoiceSession`); UI-only controls are top-level.
 
 When a tool executes on the server, the result flows to the UI as follows:
 
-```
+```text
 Tool returns object on server
   → server sends "tool_call_start" (status: "pending", no result)
   → server sends "tool_call_done"  (status: "done", result as JSON string)
@@ -776,11 +776,11 @@ Tool returns object on server
 useToolResult(callback: (toolName: string, result: unknown, toolCall: ToolCallInfo) => void): void
 ```
 
-| Parameter  | Type             | Description                                                      |
-| ---------- | ---------------- | ---------------------------------------------------------------- |
-| `toolName` | `string`         | Name of the tool that completed                                  |
-| `result`   | `unknown`        | **Parsed JSON** — the hook parses the raw JSON string for you. Falls back to the raw string if JSON parsing fails. |
-| `toolCall` | `ToolCallInfo`   | Full metadata: `{ toolCallId, toolName, args, status, result, afterMessageIndex }` |
+| Parameter  | Type           | Description                                                                                                        |
+| ---------- | -------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `toolName` | `string`       | Name of the tool that completed                                                                                    |
+| `result`   | `unknown`      | **Parsed JSON** — the hook parses the raw JSON string for you. Falls back to the raw string if JSON parsing fails. |
+| `toolCall` | `ToolCallInfo` | Full metadata: `{ toolCallId, toolName, args, status, result, afterMessageIndex }`                                 |
 
 **When does it fire?** Exactly **once per completed tool call**. It tracks
 `toolCallId` internally, so it never fires twice for the same call — even
