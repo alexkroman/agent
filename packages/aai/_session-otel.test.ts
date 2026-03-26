@@ -298,6 +298,24 @@ describe("setupListeners", () => {
     });
   });
 
+  test("reply_done without pending tools logs step count when steps > 0", () => {
+    const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+    const ctx = makeCtx({ pendingTools: [], turnPromise: null, toolCallCount: 3, log });
+    const h = makeMockHandle();
+    setupListeners(ctx, h);
+    h._fire("replyDone", { status: "done" });
+    expect(log.info).toHaveBeenCalledWith("Turn complete", { steps: 3, agent: "test-agent" });
+  });
+
+  test("reply_done without pending tools skips step log when steps = 0", () => {
+    const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+    const ctx = makeCtx({ pendingTools: [], turnPromise: null, toolCallCount: 0, log });
+    const h = makeMockHandle();
+    setupListeners(ctx, h);
+    h._fire("replyDone", { status: "done" });
+    expect(log.info).not.toHaveBeenCalledWith("Turn complete", expect.any(Object));
+  });
+
   test("reply_done without pending tools fires afterTurn hook", () => {
     const ctx = makeCtx({
       pendingTools: [],

@@ -263,6 +263,7 @@ Pre-built metrics (`aai.*`):
 - `aai.turn.count` / `aai.turn.bargein.count` — user turns
 - `aai.tool.call.count` / `aai.tool.call.duration` — tool execution
 - `aai.tool.call.error.count` — tool errors
+- `aai.turn.steps` — agentic loop steps (tool calls) per completed turn
 - `aai.s2s.connection.duration` / `aai.s2s.error.count` — S2S health
 
 Trace spans:
