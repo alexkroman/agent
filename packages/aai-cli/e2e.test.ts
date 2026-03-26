@@ -194,6 +194,105 @@ function defineBrowserTests(getContext: () => { browser: Browser; port: number }
 
     await page.close();
   });
+
+  test("full conversation flow: start → agent speaks → user speaks → tool call → agent responds → stop", async () => {
+    const { browser, port } = getContext();
+    const page = await browser.newPage();
+
+    // Intercept WebSocket construction to capture the instance for message injection.
+    // Use addInitScript so the patch runs before any page JS.
+    await page.addInitScript(() => {
+      const OrigWS = globalThis.WebSocket;
+      // @ts-expect-error -- overriding native class for test
+      globalThis.WebSocket = class extends OrigWS {
+        constructor(url: string | URL, protocols?: string | string[]) {
+          super(url, protocols);
+          (globalThis as Record<string, unknown>).__aai_test_ws = this;
+        }
+      };
+    });
+
+    await page.goto(`http://localhost:${port}`);
+
+    // Track frames via Playwright's WS listener
+    const clientFrames: string[] = [];
+    const wsConnected = new Promise<void>((resolve) => {
+      page.on("websocket", (ws) => {
+        ws.on("framesent", (frame) => {
+          if (typeof frame.payload === "string") clientFrames.push(frame.payload);
+        });
+        resolve();
+      });
+    });
+
+    // Click Start to open the session
+    await page.getByRole("button", { name: "Start" }).click();
+    await wsConnected;
+
+    // Wait for config frame and the WS reference to be captured
+    await page.waitForTimeout(1000);
+
+    // Helper: inject a server message into the browser's WebSocket
+    const inject = (msg: Record<string, unknown>) =>
+      page.evaluate((json) => {
+        const ws = (globalThis as Record<string, unknown>).__aai_test_ws as WebSocket;
+        ws.dispatchEvent(new MessageEvent("message", { data: JSON.stringify(json) }));
+      }, msg);
+
+    // Step 1: Simulate agent greeting
+    await inject({ type: "turn", text: "Hello", turnOrder: 1 });
+    await inject({ type: "chat_delta", text: "Hi there!" });
+    await inject({ type: "chat", text: "Hi there! How can I help you?" });
+    await inject({ type: "tts_done" });
+    await page.getByText("Hi there! How can I help you?").waitFor();
+
+    // Step 2: Simulate user speaking
+    await inject({ type: "speech_started" });
+    await inject({ type: "transcript", text: "What's the weather?", isFinal: false });
+    await inject({ type: "transcript", text: "What's the weather today?", isFinal: true });
+    await inject({ type: "turn", text: "What's the weather today?", turnOrder: 2 });
+    await page.getByText("What's the weather today?").waitFor();
+
+    // Step 3: Simulate tool call
+    await inject({
+      type: "tool_call_start",
+      toolCallId: "tc_001",
+      toolName: "web_search",
+      args: { query: "weather today" },
+    });
+    await page.getByRole("button", { name: /Web Search/i }).waitFor();
+
+    await inject({
+      type: "tool_call_done",
+      toolCallId: "tc_001",
+      result: "Sunny, 72°F",
+    });
+
+    // Step 4: Agent responds after tool call
+    await inject({ type: "chat_delta", text: "The weather today is sunny" });
+    await inject({ type: "chat", text: "The weather today is sunny and 72°F!" });
+    await inject({ type: "tts_done" });
+    await page.getByText("The weather today is sunny and 72°F!").waitFor();
+
+    // Step 5: Verify session controls are visible.
+    // In headless mode, audio init fails so the button shows "Resume" (not "Stop").
+    // Either way, clicking it toggles the running state.
+    const toggleBtn = page.getByRole("button", { name: /Stop|Resume/ });
+    await toggleBtn.waitFor({ timeout: 5000 });
+    const wasRunning = (await toggleBtn.textContent())?.trim() === "Stop";
+    await toggleBtn.click();
+
+    // After clicking, the button text flips
+    const expectedAfter = wasRunning ? "Resume" : "Stop";
+    await page.getByRole("button", { name: expectedAfter }).waitFor({ timeout: 3000 });
+
+    // Full conversation still visible after toggle
+    expect(await page.getByText("Hi there! How can I help you?").isVisible()).toBe(true);
+    expect(await page.getByText("What's the weather today?").isVisible()).toBe(true);
+    expect(await page.getByText("The weather today is sunny and 72°F!").isVisible()).toBe(true);
+
+    await page.close();
+  });
 }
 
 describe("e2e: browser on build -> start", () => {
