@@ -243,8 +243,8 @@ describe("startSidecarServer", () => {
     kvStore.list = vi.fn(async () => [{ key: "k1", value: "v1" }]);
 
     const kv = scopedKv(kvStore, scopeA);
-    const { url, token, close } = await startSidecarServer(kv, undefined);
-    const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+    const { url, close } = await startSidecarServer(kv, undefined);
+    const headers = { "Content-Type": "application/json" };
 
     try {
       // KV get
@@ -296,12 +296,12 @@ describe("startSidecarServer", () => {
 
   it("returns 503 when vector store is not configured", async () => {
     const kv = scopedKv(createMockKvStore(), scopeA);
-    const { url, token, close } = await startSidecarServer(kv, undefined);
+    const { url, close } = await startSidecarServer(kv, undefined);
 
     try {
       const res = await fetch(`${url}/vec/query`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: "search" }),
       });
       expect(res.status).toBe(503);
@@ -314,12 +314,12 @@ describe("startSidecarServer", () => {
 
   it("returns 400 for invalid request bodies", async () => {
     const kv = scopedKv(createMockKvStore(), scopeA);
-    const { url, token, close } = await startSidecarServer(kv, undefined);
+    const { url, close } = await startSidecarServer(kv, undefined);
 
     try {
       const res = await fetch(`${url}/kv/get`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}), // missing required "key" field
       });
       expect(res.status).toBe(400);
@@ -332,8 +332,8 @@ describe("startSidecarServer", () => {
     const vecStore = createMockVectorStore();
     const kv = scopedKv(createMockKvStore(), scopeA);
     const vec = scopedVector(vecStore, scopeA);
-    const { url, token, close } = await startSidecarServer(kv, vec);
-    const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+    const { url, close } = await startSidecarServer(kv, vec);
+    const headers = { "Content-Type": "application/json" };
 
     try {
       // upsert
