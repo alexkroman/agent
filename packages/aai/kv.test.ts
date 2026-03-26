@@ -203,6 +203,15 @@ describe("createSqliteKv", () => {
     expect(await kv.keys("app:config:")).toEqual(["app:config:a", "app:config:b"]);
   });
 
+  test("close clears interval and closes database", async () => {
+    const kv = createSqliteKv({ path: ":memory:" });
+    await kv.set("k", "v");
+    expect(await kv.get("k")).toBe("v");
+    kv.close?.();
+    // After close, database operations should throw
+    expect(() => kv.get("k")).toThrow("not open");
+  });
+
   test("data persists across instances with same file", async () => {
     const { mkdirSync, rmSync } = await import("node:fs");
     const { join } = await import("node:path");

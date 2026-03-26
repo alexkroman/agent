@@ -95,6 +95,11 @@ export function createSqliteKv(options?: SqliteKvOptions): Kv {
   if (cleanupInterval.unref) cleanupInterval.unref();
 
   return {
+    close() {
+      clearInterval(cleanupInterval);
+      db.close();
+    },
+
     get<T = unknown>(key: string): Promise<T | null> {
       const now = Date.now();
       const row = stmtGet.get(key);
