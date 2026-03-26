@@ -14,7 +14,7 @@ import { handleKv } from "./kv-handler.ts";
 import { serialize, serializeForAgent } from "./metrics.ts";
 import { requireInternal, requireOwner, requireScopeToken, validateSlug } from "./middleware.ts";
 import type { AgentSlot } from "./sandbox.ts";
-import type { ScopeKey } from "./scope-token.ts";
+import { type ScopeKey, signScopeToken } from "./scope-token.ts";
 import { handleSecretDelete, handleSecretList, handleSecretSet } from "./secret-handler.ts";
 import { handleAgentHealth, handleAgentPage, handleClientAsset } from "./transport-websocket.ts";
 import type { ServerVectorStore } from "./vector.ts";
@@ -48,7 +48,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Hono<Env> {
   });
 
   const internalMw = createMiddleware<Env>(async (c, next) => {
-    requireInternal(c);
+    requireInternal(c.req.raw);
     await next();
   });
 
@@ -117,6 +117,12 @@ export function createOrchestrator(opts: OrchestratorOpts): Hono<Env> {
   app.delete("/:slug/secret/:key", slugMw, ownerMw, handleSecretDelete);
   app.post("/:slug/kv", internalMw, slugMw, scopeTokenMw, handleKv);
   app.post("/:slug/vector", slugMw, ownerMw, handleVector);
+
+  app.post("/:slug/session-token", slugMw, ownerMw, async (c) => {
+    const scope = c.get("scope");
+    const token = await signScopeToken(c.env.scopeKey, scope);
+    return c.json({ token });
+  });
 
   app.get("/:slug/metrics", slugMw, ownerMw, async (c) =>
     c.text(await serializeForAgent(c.get("slug")), 200, {

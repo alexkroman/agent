@@ -4,7 +4,7 @@ import { installMockWebSocket } from "@alexkroman1/aai/testing";
 import { batch, signal } from "@preact/signals";
 import { createVoiceSession, type VoiceSession } from "./session.ts";
 import { createSessionControls, type SessionSignals } from "./signals.ts";
-import type { AgentState, ChatMessage, SessionError, ToolCallInfo } from "./types.ts";
+import type { AgentState, Message, SessionError, ToolCallInfo } from "./types.ts";
 
 export { installMockWebSocket, MockWebSocket } from "@alexkroman1/aai/testing";
 
@@ -205,7 +205,7 @@ export function setupSignalsEnv() {
 export function createMockSignals(
   overrides?: Partial<{
     state: AgentState;
-    messages: ChatMessage[];
+    messages: Message[];
     userUtterance: string | null;
     error: SessionError | null;
     started: boolean;
@@ -214,7 +214,7 @@ export function createMockSignals(
 ): SessionSignals {
   const mockSession = {
     state: signal<AgentState>(overrides?.state ?? "disconnected"),
-    messages: signal<ChatMessage[]>(overrides?.messages ?? []),
+    messages: signal<Message[]>(overrides?.messages ?? []),
     toolCalls: signal<ToolCallInfo[]>([]),
     userUtterance: signal<string | null>(overrides?.userUtterance ?? null),
     agentUtterance: signal<string | null>(null),

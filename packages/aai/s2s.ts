@@ -28,8 +28,6 @@ export type S2sWebSocket = {
     listener: (event: { code?: number; reason?: string }) => void,
   ): void;
   addEventListener(type: "error", listener: (event: { message?: string }) => void): void;
-  // biome-ignore lint/suspicious/noExplicitAny: must accept any listener signature for cleanup
-  removeEventListener(type: string, listener: (...args: any[]) => void): void;
 };
 
 /** WebSocket readyState constant for OPEN. */
@@ -88,45 +86,46 @@ const S2sServerMessageSchema = z.discriminatedUnion("type", [
 
 type S2sServerMessage = z.infer<typeof S2sServerMessageSchema>;
 
-/** Dispatch a parsed S2S server message to the emitter. */
+/** Dispatch a parsed S2S server message to the emitter, mapping wire-format
+ *  snake_case fields to SDK-facing camelCase at the boundary. */
 function dispatchS2sMessage(emitter: Emitter<S2sEvents>, msg: S2sServerMessage): void {
   switch (msg.type) {
     case "session.ready":
-      emitter.emit("ready", { session_id: msg.session_id });
+      emitter.emit("ready", { sessionId: msg.session_id });
       break;
     case "session.updated":
-      emitter.emit("session_updated", msg);
+      emitter.emit("sessionUpdated", msg);
       break;
     case "input.speech.started":
-      emitter.emit("speech_started");
+      emitter.emit("speechStarted");
       break;
     case "input.speech.stopped":
-      emitter.emit("speech_stopped");
+      emitter.emit("speechStopped");
       break;
     case "transcript.user.delta":
-      emitter.emit("user_transcript_delta", { text: msg.text });
+      emitter.emit("userTranscriptDelta", { text: msg.text });
       break;
     case "transcript.user":
-      emitter.emit("user_transcript", { item_id: msg.item_id, text: msg.text });
+      emitter.emit("userTranscript", { itemId: msg.item_id, text: msg.text });
       break;
     case "reply.started":
-      emitter.emit("reply_started", { reply_id: msg.reply_id });
+      emitter.emit("replyStarted", { replyId: msg.reply_id });
       break;
     case "transcript.agent.delta":
-      emitter.emit("agent_transcript_delta", { text: msg.delta });
+      emitter.emit("agentTranscriptDelta", { text: msg.delta });
       break;
     case "transcript.agent":
-      emitter.emit("agent_transcript", { text: msg.text });
+      emitter.emit("agentTranscript", { text: msg.text });
       break;
     case "tool.call":
-      emitter.emit("tool_call", { call_id: msg.call_id, name: msg.name, args: msg.args });
+      emitter.emit("toolCall", { callId: msg.call_id, name: msg.name, args: msg.args });
       break;
     case "reply.done":
-      emitter.emit("reply_done", msg.status ? { status: msg.status } : {});
+      emitter.emit("replyDone", msg.status ? { status: msg.status } : {});
       break;
     case "session.error":
       if (msg.code === "session_not_found" || msg.code === "session_forbidden")
-        emitter.emit("session_expired", { code: msg.code, message: msg.message });
+        emitter.emit("sessionExpired", { code: msg.code, message: msg.message });
       else emitter.emit("error", { code: msg.code, message: msg.message });
       break;
     case "error":
@@ -143,7 +142,7 @@ function dispatchS2sMessage(emitter: Emitter<S2sEvents>, msg: S2sServerMessage):
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 export type S2sSessionConfig = {
-  system_prompt: string;
+  systemPrompt: string;
   tools: S2sToolSchema[];
   greeting?: string;
 };
@@ -156,25 +155,25 @@ export type S2sToolSchema = {
 };
 
 export type S2sToolCall = {
-  call_id: string;
+  callId: string;
   name: string;
   args: Record<string, unknown>;
 };
 
 /** Typed event map for S2S handle events. */
 export type S2sEvents = {
-  ready: (detail: { session_id: string }) => void;
-  session_updated: (detail: Record<string, unknown>) => void;
-  session_expired: (detail: { code: string; message: string }) => void;
-  speech_started: () => void;
-  speech_stopped: () => void;
-  user_transcript_delta: (detail: { text: string }) => void;
-  user_transcript: (detail: { item_id: string; text: string }) => void;
-  reply_started: (detail: { reply_id: string }) => void;
-  agent_transcript_delta: (detail: { text: string }) => void;
-  agent_transcript: (detail: { text: string }) => void;
-  tool_call: (detail: S2sToolCall) => void;
-  reply_done: (detail: { status?: string }) => void;
+  ready: (detail: { sessionId: string }) => void;
+  sessionUpdated: (detail: Record<string, unknown>) => void;
+  sessionExpired: (detail: { code: string; message: string }) => void;
+  speechStarted: () => void;
+  speechStopped: () => void;
+  userTranscriptDelta: (detail: { text: string }) => void;
+  userTranscript: (detail: { itemId: string; text: string }) => void;
+  replyStarted: (detail: { replyId: string }) => void;
+  agentTranscriptDelta: (detail: { text: string }) => void;
+  agentTranscript: (detail: { text: string }) => void;
+  toolCall: (detail: S2sToolCall) => void;
+  replyDone: (detail: { status?: string }) => void;
   audio: (detail: { audio: Uint8Array }) => void;
   error: (detail: { code: string; message: string }) => void;
   close: () => void;
@@ -202,10 +201,10 @@ export type ConnectS2sOptions = {
  * Connect to AssemblyAI's Speech-to-Speech WebSocket API.
  *
  * Returns an {@link S2sHandle} with a typed `on()` method.
- * Consumers listen for events: `ready`, `speech_started`, `speech_stopped`,
- * `user_transcript_delta`, `user_transcript`, `reply_started`,
- * `reply_done`, `audio`, `agent_transcript`, `tool_call`,
- * `session_expired`, `error`, `close`.
+ * Consumers listen for events: `ready`, `speechStarted`, `speechStopped`,
+ * `userTranscriptDelta`, `userTranscript`, `replyStarted`,
+ * `replyDone`, `audio`, `agentTranscript`, `toolCall`,
+ * `sessionExpired`, `error`, `close`.
  */
 export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
   const { apiKey, config, createWebSocket, logger: log = consoleLogger } = opts;
@@ -252,7 +251,8 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
       },
 
       updateSession(sessionConfig: S2sSessionConfig): void {
-        send({ type: "session.update", session: sessionConfig });
+        const { systemPrompt, ...rest } = sessionConfig;
+        send({ type: "session.update", session: { system_prompt: systemPrompt, ...rest } });
       },
 
       resumeSession(sessionId: string): void {
@@ -261,10 +261,16 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
 
       close(): void {
         log.info("S2S closing");
-        removeListeners();
         ws.close();
       },
     };
+
+    ws.addEventListener("open", () => {
+      opened = true;
+      log.info("S2S WebSocket open");
+      connectionSpan.addEvent("ws.open");
+      resolve(handle);
+    });
 
     function tryParseJson(data: unknown): unknown | undefined {
       try {
@@ -314,14 +320,9 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
       dispatchS2sMessage(emitter, parsed.data);
     }
 
-    function handleOpen(): void {
-      opened = true;
-      log.info("S2S WebSocket open");
-      connectionSpan.addEvent("ws.open");
-      resolve(handle);
-    }
+    ws.addEventListener("message", handleS2sMessage);
 
-    function handleClose(ev: { code?: number; reason?: string }): void {
+    ws.addEventListener("close", (ev) => {
       log.info("S2S WebSocket closed", {
         code: ev.code ?? 0,
         reason: ev.reason ?? "",
@@ -333,14 +334,13 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
         "ws.close.reason": ev.reason ?? "",
       });
       connectionSpan.end();
-      removeListeners();
       if (!opened) {
         reject(new Error(`WebSocket closed before open (code: ${ev.code ?? 0})`));
       }
       emitter.emit("close");
-    }
+    });
 
-    function handleError(ev: { message?: string }): void {
+    ws.addEventListener("error", (ev) => {
       const message = typeof ev.message === "string" ? ev.message : "WebSocket error";
       const errObj = new Error(message);
       log.error("S2S WebSocket error", { error: errObj.message });
@@ -348,24 +348,11 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
       connectionSpan.setStatus({ code: 2, message: errObj.message }); // ERROR
       connectionSpan.recordException(errObj);
       if (!opened) {
-        removeListeners();
         connectionSpan.end();
         reject(errObj);
       } else {
         emitter.emit("error", { code: "ws_error", message: errObj.message });
       }
-    }
-
-    function removeListeners(): void {
-      ws.removeEventListener("open", handleOpen);
-      ws.removeEventListener("message", handleS2sMessage);
-      ws.removeEventListener("close", handleClose);
-      ws.removeEventListener("error", handleError);
-    }
-
-    ws.addEventListener("open", handleOpen);
-    ws.addEventListener("message", handleS2sMessage);
-    ws.addEventListener("close", handleClose);
-    ws.addEventListener("error", handleError);
+    });
   });
 }

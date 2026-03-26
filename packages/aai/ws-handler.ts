@@ -5,13 +5,13 @@
  * Audio validation is handled at the host transport layer (see host.ts).
  */
 
+import { errorDetail, errorMessage } from "./_utils.ts";
 import type { ClientMessage, ClientSink, ReadyConfig } from "./protocol.ts";
 import { ClientMessageSchema } from "./protocol.ts";
 import type { Logger } from "./runtime.ts";
 import { consoleLogger } from "./runtime.ts";
 import type { Session } from "./session.ts";
 import { tracer } from "./telemetry.ts";
-import { errorDetail, errorMessage } from "./utils.ts";
 
 /**
  * Minimal WebSocket interface accepted by {@link wireSessionSocket}.

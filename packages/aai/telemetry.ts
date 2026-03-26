@@ -24,95 +24,61 @@ import {
 
 // ─── Scoped instances ────────────────────────────────────────────────────────
 
-/** @internal */
 const SCOPE = "aai";
-/** @internal */
+// NOTE: Keep in sync with package.json version
 const VERSION = "0.9.3";
 
-/**
- * Tracer scoped to the AAI SDK.
- * @public
- */
+/** Tracer scoped to the AAI SDK. */
 export const tracer: Tracer = trace.getTracer(SCOPE, VERSION);
 
-/**
- * Meter scoped to the AAI SDK.
- * @public
- */
+/** Meter scoped to the AAI SDK. */
 export const meter: Meter = metrics.getMeter(SCOPE, VERSION);
 
 // ─── Pre-built metrics ──────────────────────────────────────────────────────
 
-/**
- * Total sessions opened.
- * @public
- */
+/** Total sessions opened. */
 export const sessionCounter = meter.createCounter("aai.session.count", {
   description: "Total voice sessions opened",
 });
 
-/**
- * Currently active sessions.
- * @public
- */
+/** Currently active sessions. */
 export const activeSessionsUpDown = meter.createUpDownCounter("aai.session.active", {
   description: "Currently active voice sessions",
 });
 
-/**
- * Total user turns (speech → transcript).
- * @public
- */
+/** Total user turns (speech → transcript). */
 export const turnCounter = meter.createCounter("aai.turn.count", {
   description: "Total user turns",
 });
 
-/**
- * Total tool calls executed.
- * @public
- */
+/** Total tool calls executed. */
 export const toolCallCounter = meter.createCounter("aai.tool.call.count", {
   description: "Total tool calls executed",
 });
 
-/**
- * Tool call execution duration in seconds.
- * @public
- */
+/** Tool call execution duration in seconds. */
 export const toolCallDuration = meter.createHistogram("aai.tool.call.duration", {
   description: "Tool call execution duration in seconds",
   unit: "s",
 });
 
-/**
- * Total tool call errors.
- * @public
- */
+/** Total tool call errors. */
 export const toolCallErrorCounter = meter.createCounter("aai.tool.call.error.count", {
   description: "Total tool call errors",
 });
 
-/**
- * S2S WebSocket connection duration in seconds.
- * @public
- */
+/** S2S WebSocket connection duration in seconds. */
 export const s2sConnectionDuration = meter.createHistogram("aai.s2s.connection.duration", {
   description: "S2S WebSocket connection duration in seconds",
   unit: "s",
 });
 
-/**
- * Total S2S errors.
- * @public
- */
+/** Total S2S errors. */
 export const s2sErrorCounter = meter.createCounter("aai.s2s.error.count", {
   description: "Total S2S errors",
 });
 
-/**
- * Total barge-in (reply interrupted) events.
- * @public
- */
+/** Total barge-in (reply interrupted) events. */
 export const bargeInCounter = meter.createCounter("aai.turn.bargein.count", {
   description: "Total barge-in (reply interrupted) events",
 });
@@ -122,11 +88,8 @@ export const bargeInCounter = meter.createCounter("aai.turn.bargein.count", {
 /**
  * Run `fn` inside a new span. The span is automatically ended and its
  * status set based on whether `fn` throws.
- * @public
  */
-export function withSpan<T>(name: string, fn: (span: Span) => Promise<T>): Promise<T>;
-export function withSpan<T>(name: string, fn: (span: Span) => T): T;
-export function withSpan<T>(name: string, fn: (span: Span) => T | Promise<T>): T | Promise<T> {
+export function withSpan<T>(name: string, fn: (span: Span) => T): T {
   return tracer.startActiveSpan(name, (span) => {
     try {
       const result = fn(span);
@@ -146,7 +109,7 @@ export function withSpan<T>(name: string, fn: (span: Span) => T | Promise<T>): T
             span.recordException(err instanceof Error ? err : new Error(String(err)));
             span.end();
             throw err;
-          });
+          }) as T;
       }
       span.setStatus({ code: SpanStatusCode.OK });
       span.end();

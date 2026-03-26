@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { expect, test } from "vitest";
 import { z } from "zod";
-import { agentToolsToSchemas } from "./internal-types.ts";
+import { agentToolsToSchemas } from "./_internal-types.ts";
 import type { ToolDef } from "./types.ts";
 
 test("agentToolsToSchemas - converts tool definitions to OpenAI schema", () => {
