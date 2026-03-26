@@ -121,6 +121,9 @@ export const VoidHookResultSchema = z.unknown().transform(() => undefined);
 /** Schema for beforeTurn hook result — string or undefined. */
 export const BeforeTurnResultSchema = z.unknown().pipe(z.string().optional());
 
+/** Schema for filterInput hook result — string or undefined. */
+export const FilterInputResultSchema = z.unknown().pipe(z.string().optional());
+
 /** Schema for filterOutput hook result — string or undefined. */
 export const FilterOutputResultSchema = z.unknown().pipe(z.string().optional());
 

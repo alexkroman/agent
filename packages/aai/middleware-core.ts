@@ -39,6 +39,27 @@ export type ToolInterceptResult =
   | undefined;
 
 /**
+ * Run all `beforeInput` middleware in order, piping the text through each.
+ * Symmetric to {@link runOutputFilters} but for user input.
+ */
+export async function runInputFilters(
+  middleware: readonly Middleware[],
+  text: string,
+  ctx: HookContext,
+): Promise<string> {
+  let filtered = text;
+  for (const mw of middleware) {
+    if (!mw.beforeInput) continue;
+    try {
+      filtered = await mw.beforeInput(filtered, ctx);
+    } catch (err) {
+      console.warn("Middleware beforeInput failed:", err);
+    }
+  }
+  return filtered;
+}
+
+/**
  * Run all `beforeTurn` middleware in order. Returns a block result if any
  * middleware blocks the turn, or `undefined` to proceed.
  */

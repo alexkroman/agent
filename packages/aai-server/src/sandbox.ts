@@ -28,6 +28,7 @@ import {
 import { z } from "zod";
 import {
   BeforeTurnResultSchema,
+  FilterInputResultSchema,
   FilterOutputResultSchema,
   HookResponseSchema,
   type IsolateConfig,
@@ -273,6 +274,10 @@ function buildHookInvoker(isolateUrl: string, authToken: string): HookInvoker {
       if (parsed.maxSteps != null) config.maxSteps = parsed.maxSteps;
       if (parsed.activeTools != null) config.activeTools = parsed.activeTools;
       return config;
+    },
+    async filterInput(sessionId, text) {
+      const result = FilterInputResultSchema.parse(await hook("filterInput", { sessionId, text }));
+      return result ?? text;
     },
     async beforeTurn(sessionId, text) {
       return BeforeTurnResultSchema.parse(await hook("beforeTurn", { sessionId, text }));

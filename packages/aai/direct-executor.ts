@@ -20,6 +20,7 @@ import {
   runAfterToolCallMiddleware,
   runAfterTurnMiddleware,
   runBeforeTurnMiddleware,
+  runInputFilters,
   runOutputFilters,
   runToolCallInterceptors,
 } from "./middleware.ts";
@@ -189,6 +190,11 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
     },
 
     // ── Middleware hooks ───────────────────────────────────────────────
+    async filterInput(sessionId, text) {
+      if (middleware.length === 0) return text;
+      const ctx = makeHookContext(sessionId);
+      return runInputFilters(middleware, text, ctx);
+    },
     async beforeTurn(sessionId, text) {
       if (middleware.length === 0) return;
       const ctx = makeHookContext(sessionId);

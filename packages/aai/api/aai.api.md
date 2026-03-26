@@ -102,6 +102,7 @@ export type Message = {
 // @public
 export type Middleware<S = Record<string, unknown>> = {
     name: string;
+    beforeInput?: (text: string, ctx: HookContext<S>) => string | Promise<string>;
     beforeTurn?: (text: string, ctx: HookContext<S>) => MiddlewareBlockResult | undefined | Promise<MiddlewareBlockResult | undefined>;
     afterTurn?: (text: string, ctx: HookContext<S>) => void | Promise<void>;
     beforeToolCall?: (toolName: string, args: Readonly<Record<string, unknown>>, ctx: HookContext<S>) => ToolCallInterceptResult | undefined | Promise<ToolCallInterceptResult | undefined>;

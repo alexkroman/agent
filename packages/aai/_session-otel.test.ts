@@ -359,6 +359,26 @@ describe("setupListeners", () => {
     expect(ctx.fireHook).toHaveBeenCalledWith("onTurn", expect.any(Function));
   });
 
+  test("user_transcript with filterInput: pushes filtered text to messages", async () => {
+    const ctx = makeCtx({
+      hookInvoker: makeHook({
+        filterInput: vi.fn(async (_sid, text) => text.replace(/secret/g, "[REDACTED]")),
+      }),
+    });
+    const h = makeMockHandle();
+    setupListeners(ctx, h);
+    h._fire("userTranscript", { itemId: "i1", text: "the secret code" });
+    await vi.waitFor(() => {
+      // Original text in transcript event, filtered text in messages
+      expect(allEvents(ctx)).toContainEqual({
+        type: "transcript",
+        text: "the secret code",
+        isFinal: true,
+      });
+      expect(ctx.conversationMessages).toEqual([{ role: "user", content: "the [REDACTED] code" }]);
+    });
+  });
+
   test("user_transcript with beforeTurn block: emits chat + tts_done", async () => {
     const ctx = makeCtx({
       hookInvoker: makeHook({ beforeTurn: vi.fn(async () => "not allowed") }),

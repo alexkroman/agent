@@ -7,6 +7,7 @@ import {
   runAfterToolCallMiddleware,
   runAfterTurnMiddleware,
   runBeforeTurnMiddleware,
+  runInputFilters,
   runOutputFilters,
   runToolCallInterceptors,
 } from "@alexkroman1/aai/middleware-core";
@@ -192,6 +193,8 @@ async function invokeMiddlewareHook(
 ): Promise<unknown> {
   const middleware: readonly Middleware[] = agent.middleware ?? [];
   switch (req.hook) {
+    case "filterInput":
+      return runInputFilters(middleware, req.text ?? "", ctx);
     case "beforeTurn": {
       const r = await runBeforeTurnMiddleware(middleware, req.text ?? "", ctx);
       return r?.reason;
