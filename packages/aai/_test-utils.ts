@@ -14,6 +14,7 @@ export function createMockToolContext(overrides?: Partial<ToolContext>): ToolCon
     sendUpdate() {
       // no-op in tests
     },
+    fetch: globalThis.fetch,
     ...overrides,
   };
 }

@@ -374,3 +374,79 @@ describe("startSidecarServer", () => {
     }
   });
 });
+
+// ── Fetch proxy ──────────────────────────────────────────────────────
+
+describe("sidecar /fetch proxy", () => {
+  it("blocks requests to private IPs (SSRF protection)", async () => {
+    const kv = scopedKv(createMockKvStore(), scopeA);
+    const sidecar = await startSidecarServer(kv, undefined);
+
+    try {
+      const res = await fetch(`${sidecar.url}/fetch`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: "http://169.254.169.254/latest/meta-data/" }),
+      });
+      // ssrfSafeFetch throws, which the sidecar catches and returns as 500
+      expect(res.ok).toBe(false);
+      expect(res.status).toBe(500);
+    } finally {
+      sidecar.close();
+    }
+  });
+
+  it("blocks requests to localhost", async () => {
+    const kv = scopedKv(createMockKvStore(), scopeA);
+    const sidecar = await startSidecarServer(kv, undefined);
+
+    try {
+      const res = await fetch(`${sidecar.url}/fetch`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: "http://127.0.0.1:8080/secret" }),
+      });
+      expect(res.ok).toBe(false);
+      expect(res.status).toBe(500);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toContain("private address");
+    } finally {
+      sidecar.close();
+    }
+  });
+
+  it("returns 400 for invalid request body", async () => {
+    const kv = scopedKv(createMockKvStore(), scopeA);
+    const sidecar = await startSidecarServer(kv, undefined);
+
+    try {
+      const res = await fetch(`${sidecar.url}/fetch`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ not_a_url: true }),
+      });
+      expect(res.status).toBe(400);
+    } finally {
+      sidecar.close();
+    }
+  });
+
+  it("blocks requests to .internal domains", async () => {
+    const kv = scopedKv(createMockKvStore(), scopeA);
+    const sidecar = await startSidecarServer(kv, undefined);
+
+    try {
+      const res = await fetch(`${sidecar.url}/fetch`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: "http://metadata.google.internal/computeMetadata/v1/" }),
+      });
+      expect(res.ok).toBe(false);
+      expect(res.status).toBe(500);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toContain("private address");
+    } finally {
+      sidecar.close();
+    }
+  });
+});

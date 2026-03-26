@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 /** Sandbox harness runtime — runs inside the secure-exec V8 isolate. */
-
+// biome-ignore lint/nursery/noExcessiveLinesPerFile: single-file isolate runtime, splitting would break sandbox constraints
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { Kv } from "@alexkroman1/aai/kv";
 import {
@@ -34,8 +34,12 @@ const agentEnv: Record<string, string> = Object.freeze(
   ),
 );
 
+// Capture the original fetch before we override globalThis.fetch below.
+// sidecarRpc must use the raw fetch to reach the sidecar on loopback.
+const _originalFetch = globalThis.fetch;
+
 async function sidecarRpc<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(`${SIDECAR_URL}${path}`, {
+  const res = await _originalFetch(`${SIDECAR_URL}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -74,6 +78,45 @@ const vector: VectorStore = {
     return sidecarRpc<void>("/vec/delete", { ids: Array.isArray(ids) ? ids : [ids] });
   },
 };
+
+type ProxyData = {
+  status: number;
+  statusText: string;
+  headers: Record<string, string>;
+  body: string;
+};
+
+/** Proxied fetch routed through the sidecar with SSRF protection on the host. */
+async function sidecarFetch(input: string | URL | Request, init?: RequestInit): Promise<Response> {
+  const req = input instanceof Request ? input : new Request(input, init);
+  const headers: Record<string, string> = {};
+  req.headers.forEach((v, k) => {
+    headers[k] = v;
+  });
+  const body = req.body ? await req.text() : null;
+  const proxyRes = await sidecarRpc<ProxyData>("/fetch", {
+    url: req.url,
+    method: req.method,
+    headers,
+    body,
+  });
+  return new Response(Buffer.from(proxyRes.body, "base64"), {
+    status: proxyRes.status,
+    statusText: proxyRes.statusText,
+    headers: new Headers(proxyRes.headers),
+  });
+}
+
+// Override globalThis.fetch so bare fetch() in tool code proxies through sidecar.
+try {
+  Object.defineProperty(globalThis, "fetch", {
+    value: sidecarFetch,
+    writable: true,
+    configurable: true,
+  });
+} catch {
+  /* secure-exec may prevent override; ctx.fetch still works */
+}
 
 const sessionStates = new Map<string, Record<string, unknown>>();
 
@@ -136,9 +179,9 @@ async function executeTool(agent: AgentDef, req: ToolCallRequest): Promise<ToolC
     vector,
     messages: req.messages,
     sendUpdate() {
-      // No-op in sandbox mode — updates require direct WebSocket access
-      // which is not available inside the V8 isolate.
+      /* no-op in sandbox — no WebSocket access */
     },
+    fetch: sidecarFetch,
   };
 
   const parsed =
@@ -167,6 +210,7 @@ function makeHookCtx(agent: AgentDef, req: HookRequest): HookContext {
     state: getState(agent, req.sessionId),
     kv,
     vector,
+    fetch: sidecarFetch,
   };
 }
 
@@ -311,10 +355,7 @@ async function handleToolRoute(agent: AgentDef, req: IncomingMessage): Promise<R
   const body = await parseJsonBody<ToolCallRequest>(req);
   if (isRouteResult(body)) return body;
   if (!body || typeof body.name !== "string" || typeof body.sessionId !== "string") {
-    return {
-      data: { error: "Invalid tool call request: missing name or sessionId" },
-      status: 400,
-    };
+    return { data: { error: "Invalid tool call request: missing name or sessionId" }, status: 400 };
   }
   return { data: await executeTool(agent, body) };
 }
@@ -329,15 +370,9 @@ async function handleHookRoute(agent: AgentDef, req: IncomingMessage): Promise<R
 }
 
 async function handleRoute(agent: AgentDef, req: IncomingMessage): Promise<RouteResult> {
-  if (req.method === "GET" && req.url === "/config") {
-    return { data: extractConfig(agent) };
-  }
-  if (req.method === "POST" && req.url === "/tool") {
-    return handleToolRoute(agent, req);
-  }
-  if (req.method === "POST" && req.url === "/hook") {
-    return handleHookRoute(agent, req);
-  }
+  if (req.method === "GET" && req.url === "/config") return { data: extractConfig(agent) };
+  if (req.method === "POST" && req.url === "/tool") return handleToolRoute(agent, req);
+  if (req.method === "POST" && req.url === "/hook") return handleHookRoute(agent, req);
   return { data: { error: "Not found" }, status: 404 };
 }
 

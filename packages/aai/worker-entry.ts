@@ -34,7 +34,7 @@ export type ExecuteTool = (
 ) => Promise<string>;
 
 function buildToolContext(opts: ExecuteToolCallOptions): ToolContext {
-  const { env, state, kv, vector, messages, onUpdate } = opts;
+  const { env, state, kv, vector, messages, onUpdate, fetch: fetchFn } = opts;
   return {
     env: { ...env },
     state: state ?? {},
@@ -50,6 +50,7 @@ function buildToolContext(opts: ExecuteToolCallOptions): ToolContext {
     sendUpdate(data: unknown): void {
       onUpdate?.(data);
     },
+    fetch: fetchFn ?? globalThis.fetch,
   };
 }
 
@@ -64,6 +65,8 @@ export type ExecuteToolCallOptions = {
   logger?: Logger | undefined;
   /** Callback for intermediate UI updates from `ctx.sendUpdate()`. */
   onUpdate?: ((data: unknown) => void) | undefined;
+  /** Override fetch implementation for the tool context. */
+  fetch?: typeof globalThis.fetch | undefined;
 };
 
 /**

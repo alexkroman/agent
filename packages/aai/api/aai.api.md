@@ -150,6 +150,7 @@ export type ToolContext<S = Record<string, unknown>> = {
     vector: VectorStore;
     messages: readonly Message[];
     sendUpdate(data: unknown): void;
+    fetch: typeof globalThis.fetch;
 };
 
 // @public

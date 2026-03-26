@@ -7,6 +7,7 @@
  */
 
 import type { Kv, KvEntry } from "@alexkroman1/aai/kv";
+import { ssrfSafeFetch } from "@alexkroman1/aai/ssrf";
 import { getServerPort } from "@alexkroman1/aai/utils";
 import type { VectorStore } from "@alexkroman1/aai/vector";
 import { serve } from "@hono/node-server";
@@ -97,6 +98,18 @@ const SidecarVecQuerySchema = z.object({
   filter: z.string().optional(),
 });
 const SidecarVecDeleteSchema = z.object({ ids: z.union([z.string(), z.array(z.string())]) });
+const SidecarFetchSchema = z.object({
+  url: z.string().url(),
+  method: z.string().optional(),
+  headers: z.record(z.string(), z.string()).optional(),
+  body: z.string().nullish(),
+});
+
+/** Per-fetch timeout — matches the built-in tool timeout in builtin-tools.ts. */
+const FETCH_PROXY_TIMEOUT_MS = 15_000;
+
+/** Maximum response body size (1 MB) to prevent the sidecar from buffering huge responses. */
+const MAX_RESPONSE_BODY_BYTES = 1_048_576;
 
 // ── Sidecar server (per-sandbox, loopback, no auth) ─────────────────────
 
@@ -160,6 +173,38 @@ function buildSidecarApp(
     const { ids } = SidecarVecDeleteSchema.parse(await c.req.json());
     await requireVec().delete(ids);
     return c.json(null);
+  });
+
+  // ── Fetch proxy (SSRF-safe) ──────────────────────────────────────────
+  app.post("/fetch", async (c) => {
+    const { url, method, headers, body } = SidecarFetchSchema.parse(await c.req.json());
+    const resp = await ssrfSafeFetch(
+      url,
+      {
+        method: method ?? "GET",
+        ...(headers && { headers }),
+        ...(body != null && { body }),
+        signal: AbortSignal.timeout(FETCH_PROXY_TIMEOUT_MS),
+      },
+      globalThis.fetch,
+    );
+    const respHeaders: Record<string, string> = {};
+    resp.headers.forEach((v, k) => {
+      respHeaders[k] = v;
+    });
+    // Read body as an ArrayBuffer so we can enforce a size limit and
+    // base64-encode binary responses faithfully.
+    const buf = await resp.arrayBuffer();
+    const bodyBytes = new Uint8Array(buf);
+    const truncated = bodyBytes.length > MAX_RESPONSE_BODY_BYTES;
+    const slice = truncated ? bodyBytes.slice(0, MAX_RESPONSE_BODY_BYTES) : bodyBytes;
+    return c.json({
+      status: resp.status,
+      statusText: resp.statusText,
+      headers: respHeaders,
+      body: Buffer.from(slice).toString("base64"),
+      truncated,
+    });
   });
 
   app.onError((err, c) => {
