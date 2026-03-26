@@ -84,9 +84,8 @@ Non-exported internal files (used within the package only):
 
 #### `@alexkroman1/aai-ui` (UI)
 
-- `.` — default Preact UI component
-- `./session` — session management
-- `./components` — individual UI components
+- `.` — default Preact UI component + session + mount helpers
+- `./session` — session management (no Preact dependency)
 - `./styles.css` — default styles
 
 #### `@alexkroman1/aai-cli` (CLI)

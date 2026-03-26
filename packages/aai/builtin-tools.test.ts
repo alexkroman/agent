@@ -377,6 +377,116 @@ describe("getBuiltinToolDefs", () => {
     expect(typeof result.totalChars).toBe("number");
   });
 
+  // ─── SSRF protection ─────────────────────────────────────────────────
+
+  test("visit_webpage blocks requests to private IPs", async () => {
+    const mockFetch = vi.fn(() => Promise.resolve(new Response("ok")));
+    const defs = getBuiltinToolDefs(["visit_webpage"], {
+      fetch: mockFetch as typeof globalThis.fetch,
+    });
+    const ctx = createMockToolContext();
+    for (const privateUrl of [
+      "http://127.0.0.1/secret",
+      "http://10.0.0.1/internal",
+      "http://169.254.169.254/latest/meta-data/",
+      "http://192.168.1.1/admin",
+      "http://172.16.0.1/internal",
+      "http://localhost/secret",
+    ]) {
+      await expect(defs.visit_webpage?.execute({ url: privateUrl }, ctx)).rejects.toThrow(
+        /Blocked request to private address/,
+      );
+    }
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  test("visit_webpage blocks redirect to private IP (SSRF bypass)", async () => {
+    const mockFetch = vi.fn(() =>
+      Promise.resolve(
+        new Response("", {
+          status: 302,
+          headers: { location: "http://169.254.169.254/latest/meta-data/" },
+        }),
+      ),
+    );
+    const defs = getBuiltinToolDefs(["visit_webpage"], {
+      fetch: mockFetch as typeof globalThis.fetch,
+    });
+    const ctx = createMockToolContext();
+    await expect(
+      defs.visit_webpage?.execute({ url: "https://evil.com/redirect" }, ctx),
+    ).rejects.toThrow(/Blocked request to private address/);
+    // The initial fetch should have been called, but not the redirect target
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  test("visit_webpage follows safe redirects", async () => {
+    let callCount = 0;
+    const mockFetch = vi.fn(() => {
+      callCount++;
+      if (callCount === 1) {
+        return Promise.resolve(
+          new Response("", {
+            status: 301,
+            headers: { location: "https://safe.example.com/page" },
+          }),
+        );
+      }
+      return Promise.resolve(new Response("<html><body>Final</body></html>"));
+    });
+    const defs = getBuiltinToolDefs(["visit_webpage"], {
+      fetch: mockFetch as typeof globalThis.fetch,
+    });
+    const ctx = createMockToolContext();
+    const result = (await defs.visit_webpage?.execute(
+      { url: "https://example.com/old" },
+      ctx,
+    )) as Record<string, unknown>;
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(typeof result.content).toBe("string");
+  });
+
+  test("fetch_json blocks requests to private IPs", async () => {
+    const mockFetch = vi.fn(() => Promise.resolve(new Response("{}")));
+    const defs = getBuiltinToolDefs(["fetch_json"], {
+      fetch: mockFetch as typeof globalThis.fetch,
+    });
+    const ctx = createMockToolContext();
+    await expect(
+      defs.fetch_json?.execute({ url: "http://169.254.169.254/latest/meta-data/" }, ctx),
+    ).rejects.toThrow(/Blocked request to private address/);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  test("fetch_json blocks redirect to private IP", async () => {
+    const mockFetch = vi.fn(() =>
+      Promise.resolve(
+        new Response("", {
+          status: 302,
+          headers: { location: "http://127.0.0.1:8080/internal" },
+        }),
+      ),
+    );
+    const defs = getBuiltinToolDefs(["fetch_json"], {
+      fetch: mockFetch as typeof globalThis.fetch,
+    });
+    const ctx = createMockToolContext();
+    await expect(defs.fetch_json?.execute({ url: "https://evil.com/api" }, ctx)).rejects.toThrow(
+      /Blocked request to private address/,
+    );
+  });
+
+  test("visit_webpage blocks IPv4-mapped IPv6 bypass", async () => {
+    const mockFetch = vi.fn(() => Promise.resolve(new Response("ok")));
+    const defs = getBuiltinToolDefs(["visit_webpage"], {
+      fetch: mockFetch as typeof globalThis.fetch,
+    });
+    const ctx = createMockToolContext();
+    await expect(
+      defs.visit_webpage?.execute({ url: "http://[::ffff:127.0.0.1]/secret" }, ctx),
+    ).rejects.toThrow(/Blocked request to private address/);
+  });
+
   // ─── vector_search ─────────────────────────────────────────────────────
 
   test("vector_search requires callback", () => {

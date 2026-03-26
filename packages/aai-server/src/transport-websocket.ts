@@ -7,6 +7,7 @@ import { SafePathSchema } from "./_schemas.ts";
 import type { Env } from "./context.ts";
 import { resolveSandbox } from "./sandbox.ts";
 
+/** @internal Not part of the public API. Exposed for testing only. */
 export const _internals = { resolveSandbox };
 
 export async function handleAgentHealth(c: Context<Env>): Promise<Response> {

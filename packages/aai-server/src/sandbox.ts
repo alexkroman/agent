@@ -300,6 +300,7 @@ function toAgentConfig(config: IsolateConfig): AgentConfig {
 
 // ── Test internals ───────────────────────────────────────────────────────
 
+/** @internal Not part of the public API. Exposed for testing only. */
 export const _internals = {
   startSidecarServer,
   startIsolate,
