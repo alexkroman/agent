@@ -45,7 +45,15 @@ export async function runSecretDelete(cwd: string, name: string): Promise<void> 
 export async function runSecretList(cwd: string): Promise<void> {
   await runCommand(async ({ log }) => {
     const { resp } = await apiFetch(cwd, "");
-    const { vars } = (await resp.json()) as { vars: string[] };
+    const body = await resp.json();
+    if (
+      !body ||
+      typeof body !== "object" ||
+      !Array.isArray((body as Record<string, unknown>).vars)
+    ) {
+      throw new Error("Unexpected response from server: missing or invalid 'vars' field");
+    }
+    const { vars } = body as { vars: string[] };
     if (vars.length === 0) {
       log(stepInfo("Secrets", "none set"));
     } else {

@@ -59,6 +59,23 @@ describe("createSessionControls", () => {
     env.session.disconnect();
   });
 
+  test("Symbol.dispose calls dispose", () => {
+    const { signals } = env;
+    // Verify error effect is active: setting error state changes running
+    signals.start();
+    env.session.state.value = "error" as never;
+    expect(signals.running.value).toBe(false);
+
+    // Dispose via Symbol.dispose
+    signals[Symbol.dispose]();
+
+    // After dispose, error effect should no longer fire
+    signals.running.value = true;
+    env.session.state.value = "ready" as never;
+    env.session.state.value = "error" as never;
+    expect(signals.running.value).toBe(true); // effect no longer active
+  });
+
   test("reset() sends reset message", async () => {
     await env.connect();
 

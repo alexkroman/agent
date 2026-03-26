@@ -326,6 +326,16 @@ describe("getBuiltinToolDefs", () => {
     expect(fetchUrl).toContain("count=2");
   });
 
+  test("web_search returns error when response is not valid JSON", async () => {
+    const mockFetch = () => Promise.resolve(new Response("not json", { status: 200 }));
+    const defs = getBuiltinToolDefs(["web_search"], {
+      fetch: mockFetch as typeof globalThis.fetch,
+    });
+    const ctx = createMockToolContext({ env: { BRAVE_API_KEY: "key123" } });
+    const result = await defs.web_search?.execute({ query: "test" }, ctx);
+    expect(result).toEqual({ error: "Response was not valid JSON" });
+  });
+
   // ─── visit_webpage ─────────────────────────────────────────────────────
 
   test("visit_webpage returns content for successful fetch", async () => {
