@@ -25,28 +25,39 @@ function resolveVectorUrl(env: NodeJS.ProcessEnv): { url: string; token: string 
   return { url, token };
 }
 
-async function buildOpts(env: NodeJS.ProcessEnv): Promise<OrchestratorOpts> {
-  const bucket = env.BUCKET_NAME;
-  const kvSecret = env.KV_SCOPE_SECRET;
-  if (!(bucket && kvSecret)) {
-    throw new Error("BUCKET_NAME and KV_SCOPE_SECRET must be set");
+function requireEnv<const K extends string>(
+  env: NodeJS.ProcessEnv,
+  keys: readonly K[],
+): { [P in K]: string } {
+  const missing = keys.filter((k) => !env[k]);
+  if (missing.length > 0) {
+    throw new Error(`Missing required environment variables: ${missing.join(", ")}`);
   }
+  return Object.fromEntries(keys.map((k) => [k, env[k]])) as { [P in K]: string };
+}
 
-  const credentialKey = await deriveCredentialKey(kvSecret);
+async function buildOpts(env: NodeJS.ProcessEnv): Promise<OrchestratorOpts> {
+  const required = requireEnv(env, [
+    "BUCKET_NAME",
+    "KV_SCOPE_SECRET",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "UPSTASH_REDIS_REST_URL",
+    "UPSTASH_REDIS_REST_TOKEN",
+  ]);
+
+  const credentialKey = await deriveCredentialKey(required.KV_SCOPE_SECRET);
   const s3 = createS3Client({
     ...(env.AWS_ENDPOINT_URL_S3 ? { AWS_ENDPOINT_URL_S3: env.AWS_ENDPOINT_URL_S3 } : {}),
-    AWS_ACCESS_KEY_ID: env.AWS_ACCESS_KEY_ID ?? "",
-    AWS_SECRET_ACCESS_KEY: env.AWS_SECRET_ACCESS_KEY ?? "",
+    AWS_ACCESS_KEY_ID: required.AWS_ACCESS_KEY_ID,
+    AWS_SECRET_ACCESS_KEY: required.AWS_SECRET_ACCESS_KEY,
   });
-  const store = createBundleStore(s3, { bucket, credentialKey });
-  const kvStore = createKvStore(
-    env.UPSTASH_REDIS_REST_URL ?? "",
-    env.UPSTASH_REDIS_REST_TOKEN ?? "",
-  );
+  const store = createBundleStore(s3, { bucket: required.BUCKET_NAME, credentialKey });
+  const kvStore = createKvStore(required.UPSTASH_REDIS_REST_URL, required.UPSTASH_REDIS_REST_TOKEN);
 
   const vec = resolveVectorUrl(env);
   const vectorStore = vec ? createVectorStore(vec.url, vec.token) : undefined;
-  const scopeKey = await importScopeKey(kvSecret);
+  const scopeKey = await importScopeKey(required.KV_SCOPE_SECRET);
 
   return {
     slots: new Map<string, AgentSlot>(),
