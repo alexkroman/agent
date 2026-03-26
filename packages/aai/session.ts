@@ -197,6 +197,7 @@ export function createS2sSession(opts: SessionOptions): Session {
       const msg = errorMessage(err);
       log.error("S2S connect failed", { error: errorDetail(err) });
       client.event({ type: "error", code: "internal", message: msg });
+      throw err;
     }
   }
 
