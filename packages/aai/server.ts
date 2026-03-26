@@ -11,7 +11,6 @@ import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { WebSocketServer } from "ws";
-import { filterEnv } from "./_utils.ts";
 import { createDirectExecutor } from "./direct-executor.ts";
 import type { Kv } from "./kv.ts";
 import { buildReadyConfig } from "./protocol.ts";
@@ -19,6 +18,7 @@ import type { Logger, S2SConfig } from "./runtime.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime.ts";
 import type { Session } from "./session.ts";
 import type { AgentDef } from "./types.ts";
+import { filterEnv } from "./utils.ts";
 import { type SessionWebSocket, wireSessionSocket } from "./ws-handler.ts";
 
 export type ServerOptions = {
