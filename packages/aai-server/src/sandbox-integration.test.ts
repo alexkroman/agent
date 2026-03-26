@@ -134,11 +134,8 @@ function createMockKv() {
     set: async (key: string, value: unknown, _options?: { expireIn?: number }) => {
       store.set(key, value);
     },
-    delete: async (keys: string | string[]) => {
-      const keyArray = Array.isArray(keys) ? keys : [keys];
-      for (const key of keyArray) {
-        store.delete(key);
-      }
+    delete: async (key: string) => {
+      store.delete(key);
     },
     list: async <T = unknown>(
       _prefix: string,
@@ -169,6 +166,8 @@ function createMockVector() {
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
+const TEST_AUTH_TOKEN = "integration-test-token";
+
 async function post<T>(
   port: number,
   path: string,
@@ -176,7 +175,7 @@ async function post<T>(
 ): Promise<{ status: number; data: T }> {
   const res = await fetch(`http://127.0.0.1:${port}${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "x-harness-token": TEST_AUTH_TOKEN },
     body: JSON.stringify(body),
   });
   const data = (await res.json()) as T;
@@ -189,7 +188,6 @@ function toolCall(port: number, name: string, args: Record<string, unknown> = {}
     args,
     sessionId: "s1",
     messages: [],
-    env: {},
   } satisfies ToolCallRequest);
 }
 
@@ -205,7 +203,7 @@ describe("isolate protocol", () => {
     const vector = createMockVector();
     const sidecar = await _internals.startSidecarServer(kv, vector);
     sidecarPort = Number.parseInt(new URL(sidecar.url).port, 10);
-    const isolate = await _internals.startIsolate(AGENT_BUNDLE, sidecar.url, {}, sidecar.token);
+    const isolate = await _internals.startIsolate(AGENT_BUNDLE, sidecar.url, {}, TEST_AUTH_TOKEN);
     port = isolate.port;
     cleanup = () => {
       isolate.runtime.dispose();
@@ -218,7 +216,9 @@ describe("isolate protocol", () => {
   });
 
   test("GET /config returns valid IsolateConfig", async () => {
-    const res = await fetch(`http://127.0.0.1:${port}/config`);
+    const res = await fetch(`http://127.0.0.1:${port}/config`, {
+      headers: { "x-harness-token": TEST_AUTH_TOKEN },
+    });
     expect(res.ok).toBe(true);
     const config = (await res.json()) as IsolateConfig;
     expect(config.name).toBe("integration-test");
@@ -248,10 +248,9 @@ describe("isolate protocol", () => {
       args: {},
       sessionId: "s1",
       messages: [],
-      env: {},
     } satisfies ToolCallRequest);
     expect(status).toBe(500);
-    expect(data.error).toBe("Internal error");
+    expect(data.error).toMatch(/intentional failure/);
   });
 
   test("KV round-trip through sidecar", async () => {
@@ -270,7 +269,6 @@ describe("isolate protocol", () => {
     const { data } = await post<HookResponse>(port, "/hook", {
       hook: "onConnect",
       sessionId: "hook-s1",
-      env: {},
     } satisfies HookRequest);
     expect(data.state.count).toBe(1);
   });
@@ -280,7 +278,6 @@ describe("isolate protocol", () => {
       hook: "onTurn",
       sessionId: "hook-s1",
       text: "user said something",
-      env: {},
     } satisfies HookRequest);
     expect(data.state.lastTurn).toBe("user said something");
   });
@@ -289,23 +286,29 @@ describe("isolate protocol", () => {
     const { data } = await post<HookResponse>(port, "/hook", {
       hook: "resolveTurnConfig",
       sessionId: "hook-s1",
-      env: {},
     } satisfies HookRequest);
     expect(data.result).toBeNull();
   });
 
   test("GET unknown route returns 404", async () => {
-    const res = await fetch(`http://127.0.0.1:${port}/nonexistent`);
+    const res = await fetch(`http://127.0.0.1:${port}/nonexistent`, {
+      headers: { "x-harness-token": TEST_AUTH_TOKEN },
+    });
     expect(res.status).toBe(404);
   });
 
   test("invalid JSON returns 500", async () => {
     const res = await fetch(`http://127.0.0.1:${port}/tool`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "x-harness-token": TEST_AUTH_TOKEN },
       body: "not json{{{",
     });
     expect(res.status).toBe(500);
+  });
+
+  test("request without auth token returns 401", async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/config`);
+    expect(res.status).toBe(401);
   });
 
   // ── Security: network isolation ──────────────────────────────────────
@@ -444,8 +447,8 @@ export default {
     const sidecar1 = await _internals.startSidecarServer(kv1, undefined);
     const sidecar2 = await _internals.startSidecarServer(kv2, undefined);
     const [iso1, iso2] = await Promise.all([
-      _internals.startIsolate(BUNDLE_A, sidecar1.url, {}, sidecar1.token),
-      _internals.startIsolate(BUNDLE_B, sidecar2.url, {}, sidecar2.token),
+      _internals.startIsolate(BUNDLE_A, sidecar1.url, {}, TEST_AUTH_TOKEN),
+      _internals.startIsolate(BUNDLE_B, sidecar2.url, {}, TEST_AUTH_TOKEN),
     ]);
     port1 = iso1.port;
     port2 = iso2.port;
@@ -466,8 +469,12 @@ export default {
 
   test("two isolates run independently", async () => {
     const [config1, config2] = await Promise.all([
-      fetch(`http://127.0.0.1:${port1}/config`).then((r) => r.json()),
-      fetch(`http://127.0.0.1:${port2}/config`).then((r) => r.json()),
+      fetch(`http://127.0.0.1:${port1}/config`, {
+        headers: { "x-harness-token": TEST_AUTH_TOKEN },
+      }).then((r) => r.json()),
+      fetch(`http://127.0.0.1:${port2}/config`, {
+        headers: { "x-harness-token": TEST_AUTH_TOKEN },
+      }).then((r) => r.json()),
     ]);
 
     expect((config1 as IsolateConfig).name).toBe("agent-a");

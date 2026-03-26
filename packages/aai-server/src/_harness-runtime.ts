@@ -1,20 +1,15 @@
 // Copyright 2025 the AAI authors. MIT license.
-/**
- * Sandbox harness runtime — runs inside the secure-exec isolate.
- *
- * This file is type-checked at compile time against the shared protocol
- * types and AgentDef. At runtime, the compiled JS is loaded into the
- * isolate's virtual filesystem and executed.
- *
- * Environment variables (set by host):
- * - SIDECAR_URL: loopback URL for the per-sandbox sidecar server
- * - SIDECAR_TOKEN: bearer token for authenticating to the sidecar
- *
- * The agent bundle is expected at "./agent_bundle.js" (default export).
- */
+/** Sandbox harness runtime — runs inside the secure-exec V8 isolate. */
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { Kv } from "@alexkroman1/aai/kv";
+import {
+  runAfterToolCallMiddleware,
+  runAfterTurnMiddleware,
+  runBeforeTurnMiddleware,
+  runOutputFilters,
+  runToolCallInterceptors,
+} from "@alexkroman1/aai/middleware-core";
 import type { AgentDef, HookContext, Middleware, ToolContext } from "@alexkroman1/aai/types";
 import type { VectorStore } from "@alexkroman1/aai/vector";
 import type {
@@ -26,14 +21,9 @@ import type {
 } from "./_harness-protocol.ts";
 
 const SIDECAR_URL = process.env.SIDECAR_URL ?? "";
-const SIDECAR_TOKEN = process.env.SIDECAR_TOKEN ?? "";
+const HARNESS_AUTH_TOKEN = process.env.HARNESS_AUTH_TOKEN ?? "";
 
-/**
- * Read agent env vars from process.env once at startup.
- * The host passes them with an AAI_ENV_ prefix; we strip the prefix
- * so tools/hooks see the original key names (e.g. ASSEMBLYAI_API_KEY).
- * This avoids sending secrets over the wire on every RPC call.
- */
+// Strip AAI_ENV_ prefix so tools/hooks see original key names.
 const AAI_ENV_PREFIX = "AAI_ENV_";
 const agentEnv: Record<string, string> = Object.freeze(
   Object.fromEntries(
@@ -43,14 +33,10 @@ const agentEnv: Record<string, string> = Object.freeze(
   ),
 );
 
-// ── Sidecar server proxy (KV / vector) ───────────────────────────────────
-
 async function sidecarRpc<T>(path: string, body: unknown): Promise<T> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (SIDECAR_TOKEN) headers.Authorization = `Bearer ${SIDECAR_TOKEN}`;
   const res = await fetch(`${SIDECAR_URL}${path}`, {
     method: "POST",
-    headers,
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`${path} failed: ${res.status}`);
@@ -65,8 +51,8 @@ const kv: Kv = {
   set(key: string, value: unknown, options?: { expireIn?: number }) {
     return sidecarRpc<void>("/kv/set", { key, value, options });
   },
-  delete(keys: string | string[]) {
-    return sidecarRpc<void>("/kv/del", { key: keys });
+  delete(key: string) {
+    return sidecarRpc<void>("/kv/del", { key });
   },
   list<T = unknown>(prefix: string, options?: { limit?: number; reverse?: boolean }) {
     return sidecarRpc<{ key: string; value: T }[]>("/kv/list", { prefix, ...options });
@@ -88,8 +74,6 @@ const vector: VectorStore = {
   },
 };
 
-// ── Per-session state ────────────────────────────────────────────────────
-
 const sessionStates = new Map<string, Record<string, unknown>>();
 
 function getState(agent: AgentDef, sessionId: string): Record<string, unknown> {
@@ -98,8 +82,6 @@ function getState(agent: AgentDef, sessionId: string): Record<string, unknown> {
   }
   return sessionStates.get(sessionId) ?? {};
 }
-
-// ── Tool schemas ─────────────────────────────────────────────────────────
 
 function extractToolSchemas(agent: AgentDef): IsolateConfig["toolSchemas"] {
   return Object.entries(agent.tools).map(([name, def]) => ({
@@ -111,8 +93,6 @@ function extractToolSchemas(agent: AgentDef): IsolateConfig["toolSchemas"] {
         : ({ type: "object", properties: {} } as Record<string, unknown>),
   }));
 }
-
-// ── Config extraction ────────────────────────────────────────────────────
 
 function extractConfig(agent: AgentDef): IsolateConfig {
   const config: IsolateConfig = {
@@ -140,13 +120,7 @@ function extractConfig(agent: AgentDef): IsolateConfig {
   return config;
 }
 
-// ── Tool execution ───────────────────────────────────────────────────────
-
-/**
- * Timeout for tool execution inside the isolate. Set slightly under the
- * host's TOOL_TIMEOUT_MS (30 s) so the isolate returns a clean error
- * before the host-side timeout fires.
- */
+// Slightly under host's 30s timeout so isolate returns a clean error first.
 const ISOLATE_TOOL_TIMEOUT_MS = 25_000;
 
 async function executeTool(agent: AgentDef, req: ToolCallRequest): Promise<ToolCallResponse> {
@@ -181,8 +155,6 @@ async function executeTool(agent: AgentDef, req: ToolCallRequest): Promise<ToolC
   };
 }
 
-// ── Hook invocation ──────────────────────────────────────────────────────
-
 function makeHookCtx(agent: AgentDef, req: HookRequest): HookContext {
   return {
     env: agentEnv,
@@ -208,134 +180,78 @@ async function runResolveTurnConfig(
   return config.maxSteps !== undefined || config.activeTools !== undefined ? config : null;
 }
 
-// ── Middleware runner (inline — cannot import from middleware.ts in isolate) ──
-
-async function runMiddlewareBeforeTurn(
-  middleware: readonly Middleware[],
-  text: string,
-  ctx: HookContext,
-): Promise<string | undefined> {
-  for (const mw of middleware) {
-    if (!mw.beforeTurn) continue;
-    const r = await mw.beforeTurn(text, ctx);
-    if (r && "block" in r && r.block) return r.reason;
-  }
-}
-
-async function runMiddlewareAfterTurn(
-  middleware: readonly Middleware[],
-  text: string,
-  ctx: HookContext,
-): Promise<void> {
-  for (let i = middleware.length - 1; i >= 0; i--) {
-    const mw = middleware[i];
-    if (mw?.afterTurn) await mw.afterTurn(text, ctx);
-  }
-}
-
-async function runMiddlewareToolIntercept(
-  middleware: readonly Middleware[],
-  toolName: string,
-  args: Record<string, unknown>,
+async function invokeMiddlewareHook(
+  agent: AgentDef,
+  req: HookRequest,
   ctx: HookContext,
 ): Promise<unknown> {
-  let currentArgs = args;
-  for (const mw of middleware) {
-    if (!mw.toolCallInterceptor) continue;
-    const r = await mw.toolCallInterceptor(toolName, currentArgs, ctx);
-    if (!r) continue;
-    if ("block" in r && r.block) return { type: "block", reason: r.reason };
-    if ("result" in r) return { type: "result", result: r.result };
-    if ("args" in r) currentArgs = r.args;
-  }
-  if (currentArgs !== args) return { type: "args", args: currentArgs };
-}
-
-async function runMiddlewareAfterToolCall(
-  middleware: readonly Middleware[],
-  toolName: string,
-  args: Record<string, unknown>,
-  result: string,
-  ctx: HookContext,
-): Promise<void> {
-  for (let i = middleware.length - 1; i >= 0; i--) {
-    const mw = middleware[i];
-    if (mw?.afterToolCall) await mw.afterToolCall(toolName, args, result, ctx);
-  }
-}
-
-async function runMiddlewareOutputFilter(
-  middleware: readonly Middleware[],
-  text: string,
-  ctx: HookContext,
-): Promise<string> {
-  let filtered = text;
-  for (const mw of middleware) {
-    if (mw.outputFilter) filtered = await mw.outputFilter(filtered, ctx);
-  }
-  return filtered;
-}
-
-async function invokeHook(agent: AgentDef, req: HookRequest): Promise<HookResponse> {
-  const ctx = makeHookCtx(agent, req);
-  let result: unknown;
   const middleware: readonly Middleware[] = agent.middleware ?? [];
-
-  const handlers: Record<string, () => Promise<void> | void> = {
-    onConnect: () => agent.onConnect?.(ctx),
-    onDisconnect: async () => {
-      await agent.onDisconnect?.(ctx);
-      sessionStates.delete(req.sessionId);
-    },
-    onTurn: () => agent.onTurn?.(req.text ?? "", ctx),
-    onError: () => agent.onError?.(new Error(req.error?.message ?? "Unknown error"), ctx),
-    onStep: () => {
-      if (req.step) return agent.onStep?.(req.step, ctx);
-    },
-    onBeforeStep: async () => {
-      result = await agent.onBeforeStep?.(req.stepNumber ?? 0, ctx);
-    },
-    resolveTurnConfig: async () => {
-      result = await runResolveTurnConfig(agent, ctx, req.stepNumber ?? 0);
-    },
-    // Middleware hooks
-    beforeTurn: async () => {
-      result = await runMiddlewareBeforeTurn(middleware, req.text ?? "", ctx);
-    },
-    afterTurn: async () => {
-      await runMiddlewareAfterTurn(middleware, req.text ?? "", ctx);
-    },
-    interceptToolCall: async () => {
-      result = await runMiddlewareToolIntercept(
+  switch (req.hook) {
+    case "beforeTurn": {
+      const r = await runBeforeTurnMiddleware(middleware, req.text ?? "", ctx);
+      return r?.reason;
+    }
+    case "afterTurn":
+      await runAfterTurnMiddleware(middleware, req.text ?? "", ctx);
+      return;
+    case "interceptToolCall":
+      return runToolCallInterceptors(
         middleware,
         req.step?.toolCalls[0]?.toolName ?? "",
         (req.step?.toolCalls[0]?.args as Record<string, unknown>) ?? {},
         ctx,
       );
-    },
-    afterToolCall: async () => {
-      await runMiddlewareAfterToolCall(
+    case "afterToolCall":
+      await runAfterToolCallMiddleware(
         middleware,
         req.step?.toolCalls[0]?.toolName ?? "",
         (req.step?.toolCalls[0]?.args as Record<string, unknown>) ?? {},
         req.text ?? "",
         ctx,
       );
-    },
-    filterOutput: async () => {
-      result = await runMiddlewareOutputFilter(middleware, req.text ?? "", ctx);
-    },
-  };
+      return;
+    case "filterOutput":
+      return runOutputFilters(middleware, req.text ?? "", ctx);
+    default:
+      return;
+  }
+}
 
-  const handler = handlers[req.hook];
-  if (handler) await handler();
+async function invokeHook(agent: AgentDef, req: HookRequest): Promise<HookResponse> {
+  const ctx = makeHookCtx(agent, req);
+  let result: unknown;
+
+  switch (req.hook) {
+    case "onConnect":
+      await agent.onConnect?.(ctx);
+      break;
+    case "onDisconnect":
+      await agent.onDisconnect?.(ctx);
+      sessionStates.delete(req.sessionId);
+      break;
+    case "onTurn":
+      await agent.onTurn?.(req.text ?? "", ctx);
+      break;
+    case "onError":
+      await agent.onError?.(new Error(req.error?.message ?? "Unknown error"), ctx);
+      break;
+    case "onStep":
+      if (req.step) await agent.onStep?.(req.step, ctx);
+      break;
+    case "onBeforeStep":
+      result = await agent.onBeforeStep?.(req.stepNumber ?? 0, ctx);
+      break;
+    case "resolveTurnConfig":
+      result = await runResolveTurnConfig(agent, ctx, req.stepNumber ?? 0);
+      break;
+    default:
+      result = await invokeMiddlewareHook(agent, req, ctx);
+      break;
+  }
 
   return { state: ctx.state, result };
 }
 
-// ── HTTP helpers ─────────────────────────────────────────────────────────
-
-/** Maximum request body size (5 MB) to prevent memory exhaustion attacks. */
 const MAX_BODY_SIZE = 5 * 1024 * 1024;
 
 function readBody(req: IncomingMessage): Promise<string> {
@@ -365,22 +281,26 @@ function json(res: ServerResponse, data: unknown, status = 200): void {
   res.end(body);
 }
 
-// ── HTTP server (node:http) ──────────────────────────────────────────────
-// Uses node:http directly instead of Hono because @hono/node-server's
-// adapter redefines globalThis.Request which conflicts with secure-exec's
-// frozen built-in globals.
+function isAuthorized(req: IncomingMessage): boolean {
+  return !HARNESS_AUTH_TOKEN || req.headers["x-harness-token"] === HARNESS_AUTH_TOKEN;
+}
 
-/**
- * Handles HTTP request errors with sanitized messages. Returns a generic
- * "Internal error" for 5xx to avoid leaking stack traces, file paths, or
- * schema structures. 4xx errors use controlled messages that are safe to expose.
- */
-function handleRequestError(err: unknown, req: IncomingMessage, res: ServerResponse): void {
-  const status = (err as { status?: number }).status ?? 500;
-  const detail = err instanceof Error ? err.message : "Internal error";
-  console.error(`[harness] ${req.method} ${req.url} error (${status}):`, detail);
-  const message = status >= 500 ? "Internal error" : detail;
-  json(res, { error: message }, status);
+async function handleRoute(
+  agent: AgentDef,
+  req: IncomingMessage,
+): Promise<{ data: unknown; status?: number }> {
+  if (req.method === "GET" && req.url === "/config") {
+    return { data: extractConfig(agent) };
+  }
+  if (req.method === "POST" && req.url === "/tool") {
+    const body = JSON.parse(await readBody(req)) as ToolCallRequest;
+    return { data: await executeTool(agent, body) };
+  }
+  if (req.method === "POST" && req.url === "/hook") {
+    const body = JSON.parse(await readBody(req)) as HookRequest;
+    return { data: await invokeHook(agent, body) };
+  }
+  return { data: { error: "Not found" }, status: 404 };
 }
 
 export function startHarness(agent: AgentDef): void {
@@ -390,23 +310,16 @@ export function startHarness(agent: AgentDef): void {
 
   const server = createServer(async (req, res) => {
     try {
-      if (req.method === "GET" && req.url === "/config") {
-        json(res, extractConfig(agent));
+      if (!isAuthorized(req)) {
+        json(res, { error: "Unauthorized" }, 401);
         return;
       }
-      if (req.method === "POST" && req.url === "/tool") {
-        const body = JSON.parse(await readBody(req)) as ToolCallRequest;
-        json(res, await executeTool(agent, body));
-        return;
-      }
-      if (req.method === "POST" && req.url === "/hook") {
-        const body = JSON.parse(await readBody(req)) as HookRequest;
-        json(res, await invokeHook(agent, body));
-        return;
-      }
-      json(res, { error: "Not found" }, 404);
+      const { data, status } = await handleRoute(agent, req);
+      json(res, data, status);
     } catch (err: unknown) {
-      handleRequestError(err, req, res);
+      const status = (err as { status?: number }).status ?? 500;
+      const message = err instanceof Error ? err.message : "Internal error";
+      json(res, { error: message }, status);
     }
   });
 

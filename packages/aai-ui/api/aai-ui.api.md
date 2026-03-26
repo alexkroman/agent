@@ -34,12 +34,6 @@ export type ButtonSize = "default" | "lg";
 // @public (undocumented)
 export type ButtonVariant = "default" | "secondary" | "ghost";
 
-// @public
-export type ChatMessage = {
-    role: "user" | "assistant";
-    content: string;
-};
-
 // @public (undocumented)
 export function ChatView(input: {
     className?: string;
@@ -54,7 +48,7 @@ export function Controls(input: {
 export function createSessionControls(session: VoiceSession): SessionSignals;
 
 // @public
-export function createVoiceSession(options: SessionOptions): VoiceSession;
+export function createVoiceSession(options: VoiceSessionOptions): VoiceSession;
 
 // @public (undocumented)
 export function ErrorBanner(input: {
@@ -62,12 +56,15 @@ export function ErrorBanner(input: {
     className?: string;
 }): preact_2.JSX.Element | null;
 
-// @public @deprecated (undocumented)
-export type Message = ChatMessage;
+// @public
+export type Message = {
+    role: "user" | "assistant";
+    content: string;
+};
 
 // @public (undocumented)
 export function MessageBubble(input: {
-    message: ChatMessage;
+    message: Message;
     className?: string;
 }): preact_2.JSX.Element;
 
@@ -121,27 +118,11 @@ export type SessionError = {
     readonly message: string;
 };
 
+// Warning: (ae-forgotten-export) The symbol "SessionErrorCodeSchema" needs to be exported by the entry point index.d.ts
+//
 // @public
 export type SessionErrorCode = z.infer<typeof SessionErrorCodeSchema>;
 
-// @public
-export const SessionErrorCodeSchema: z.ZodEnum<{
-    stt: "stt";
-    llm: "llm";
-    tts: "tts";
-    tool: "tool";
-    protocol: "protocol";
-    connection: "connection";
-    audio: "audio";
-    internal: "internal";
-}>;
-
-// @public
-export type SessionOptions = {
-    platformUrl: string;
-    signal?: <T>(initial: T) => Reactive<T>;
-    batch?: (fn: () => void) => void;
-};
 
 // @public
 export function SessionProvider(input: {
@@ -228,7 +209,7 @@ export function useToolResult(callback: (toolName: string, result: unknown, tool
 // @public
 export type VoiceSession = {
     readonly state: Reactive<AgentState>;
-    readonly messages: Reactive<ChatMessage[]>;
+    readonly messages: Reactive<Message[]>;
     readonly toolCalls: Reactive<ToolCallInfo[]>;
     readonly userUtterance: Reactive<string | null>;
     readonly agentUtterance: Reactive<string | null>;
@@ -244,6 +225,14 @@ export type VoiceSession = {
     reset(): void;
     disconnect(): void;
     [Symbol.dispose](): void;
+};
+
+// @public
+export type VoiceSessionOptions = {
+    platformUrl: string;
+    token?: string;
+    signal?: <T>(initial: T) => Reactive<T>;
+    batch?: (fn: () => void) => void;
 };
 
 // (No @packageDocumentation comment for this package)

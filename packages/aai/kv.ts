@@ -68,17 +68,17 @@ export type Kv = {
    *
    * @param key - The key to store the value under.
    * @param value - The value to store. Must be JSON-serializable.
-   * @param options - Optional settings. `expireIn` sets the time-to-live in milliseconds. The entry is
-   *   automatically removed after this duration.
+   * @param options - Optional settings. `expireIn` sets the time-to-live in **milliseconds**
+   *   (e.g. `60_000` for 1 minute). The entry is automatically removed after this duration.
    * @throws Throws an Error if the serialized value exceeds 65,536 bytes.
    */
   set(key: string, value: unknown, options?: { expireIn?: number }): Promise<void>;
   /**
-   * Delete one or more keys.
+   * Delete a key.
    *
-   * @param keys - A single key or array of keys to remove. No-op for keys that do not exist.
+   * @param key - The key to remove. No-op if the key does not exist.
    */
-  delete(keys: string | string[]): Promise<void>;
+  delete(key: string): Promise<void>;
   /**
    * List entries whose keys start with the given prefix.
    *
@@ -206,11 +206,8 @@ export function createMemoryKv(): Kv {
       }
     },
 
-    delete(keys: string | string[]): Promise<void> {
-      const keyArray = Array.isArray(keys) ? keys : [keys];
-      for (const key of keyArray) {
-        store.delete(key);
-      }
+    delete(key: string): Promise<void> {
+      store.delete(key);
       return Promise.resolve();
     },
 

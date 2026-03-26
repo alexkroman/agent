@@ -33,17 +33,6 @@ describe("createMemoryKv", () => {
     expect(await kv.get("k1")).toBe(null);
   });
 
-  test("delete removes multiple keys", async () => {
-    const kv = createMemoryKv();
-    await kv.set("k1", "v1");
-    await kv.set("k2", "v2");
-    await kv.set("k3", "v3");
-    await kv.delete(["k1", "k3"]);
-    expect(await kv.get("k1")).toBe(null);
-    expect(await kv.get("k2")).toBe("v2");
-    expect(await kv.get("k3")).toBe(null);
-  });
-
   test("list returns entries matching prefix", async () => {
     const kv = createMemoryKv();
     await kv.set("user:1", { name: "alice" });

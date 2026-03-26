@@ -147,21 +147,18 @@ describe("scopedKv", () => {
     expect(result).toBe("not-valid-json");
   });
 
-  it("converts expireIn from milliseconds to seconds (ceiling)", async () => {
+  it("passes expireIn directly to the underlying store", async () => {
     const kvStore = createMockKvStore();
     const kv = scopedKv(kvStore, scopeA);
 
-    // 1500ms → ceil(1.5) = 2 seconds
     await kv.set("ttl-key", "val", { expireIn: 1500 });
-    expect(kvStore.set).toHaveBeenCalledWith(scopeA, "ttl-key", JSON.stringify("val"), 2);
+    expect(kvStore.set).toHaveBeenCalledWith(scopeA, "ttl-key", JSON.stringify("val"), 1500);
 
-    // 1000ms → exactly 1 second
     await kv.set("ttl-key2", "val", { expireIn: 1000 });
-    expect(kvStore.set).toHaveBeenCalledWith(scopeA, "ttl-key2", JSON.stringify("val"), 1);
+    expect(kvStore.set).toHaveBeenCalledWith(scopeA, "ttl-key2", JSON.stringify("val"), 1000);
 
-    // 500ms → ceil(0.5) = 1 second
     await kv.set("ttl-key3", "val", { expireIn: 500 });
-    expect(kvStore.set).toHaveBeenCalledWith(scopeA, "ttl-key3", JSON.stringify("val"), 1);
+    expect(kvStore.set).toHaveBeenCalledWith(scopeA, "ttl-key3", JSON.stringify("val"), 500);
   });
 
   it("passes undefined ttl when expireIn is not set", async () => {
@@ -244,12 +241,13 @@ describe("startSidecarServer", () => {
 
     const kv = scopedKv(kvStore, scopeA);
     const { url, close } = await startSidecarServer(kv, undefined);
+    const headers = { "Content-Type": "application/json" };
 
     try {
       // KV get
       const getRes = await fetch(`${url}/kv/get`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({ key: "test-key" }),
       });
       expect(getRes.ok).toBe(true);
@@ -258,7 +256,7 @@ describe("startSidecarServer", () => {
       // KV set
       const setRes = await fetch(`${url}/kv/set`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({ key: "k", value: "v" }),
       });
       expect(setRes.ok).toBe(true);
@@ -266,7 +264,7 @@ describe("startSidecarServer", () => {
       // KV del
       const delRes = await fetch(`${url}/kv/del`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({ key: "k" }),
       });
       expect(delRes.ok).toBe(true);
@@ -274,7 +272,7 @@ describe("startSidecarServer", () => {
       // KV keys
       const keysRes = await fetch(`${url}/kv/keys`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({}),
       });
       expect(keysRes.ok).toBe(true);
@@ -283,7 +281,7 @@ describe("startSidecarServer", () => {
       // KV list
       const listRes = await fetch(`${url}/kv/list`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({ prefix: "" }),
       });
       expect(listRes.ok).toBe(true);
@@ -332,12 +330,13 @@ describe("startSidecarServer", () => {
     const kv = scopedKv(createMockKvStore(), scopeA);
     const vec = scopedVector(vecStore, scopeA);
     const { url, close } = await startSidecarServer(kv, vec);
+    const headers = { "Content-Type": "application/json" };
 
     try {
       // upsert
       const upsertRes = await fetch(`${url}/vec/upsert`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({ id: "d1", data: "hello" }),
       });
       expect(upsertRes.ok).toBe(true);
@@ -345,7 +344,7 @@ describe("startSidecarServer", () => {
       // query
       const queryRes = await fetch(`${url}/vec/query`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({ text: "hello" }),
       });
       expect(queryRes.ok).toBe(true);
@@ -355,7 +354,7 @@ describe("startSidecarServer", () => {
       // remove
       const removeRes = await fetch(`${url}/vec/remove`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({ ids: "d1" }),
       });
       expect(removeRes.ok).toBe(true);

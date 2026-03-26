@@ -71,7 +71,7 @@ describe("buildExecuteTool", () => {
   it("calls /tool endpoint and returns result", async () => {
     globalThis.fetch = vi.fn(async () => Response.json({ result: "tool-output", state: {} }));
 
-    const exec = _internals.buildExecuteTool("http://127.0.0.1:9999");
+    const exec = _internals.buildExecuteTool("http://127.0.0.1:9999", "test-token");
     const result = await exec("my_tool", { x: 1 }, "session-1", []);
 
     expect(result).toBe("tool-output");
@@ -92,8 +92,8 @@ describe("buildExecuteTool", () => {
   it("throws on non-ok response", async () => {
     globalThis.fetch = vi.fn(async () => new Response(null, { status: 500 }));
 
-    const exec = _internals.buildExecuteTool("http://127.0.0.1:9999");
-    await expect(exec("bad_tool", {}, "s1", [])).rejects.toThrow("tool failed (500)");
+    const exec = _internals.buildExecuteTool("http://127.0.0.1:9999", "test-token");
+    await expect(exec("bad_tool", {}, "s1", [])).rejects.toThrow("tool failed (500):");
   });
 });
 
@@ -112,7 +112,7 @@ describe("buildHookInvoker", () => {
 
   it("onConnect sends correct hook name", async () => {
     mockHookResponse();
-    const invoker = _internals.buildHookInvoker("http://127.0.0.1:9999");
+    const invoker = _internals.buildHookInvoker("http://127.0.0.1:9999", "test-token");
     await invoker.onConnect("session-1");
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
@@ -125,7 +125,7 @@ describe("buildHookInvoker", () => {
 
   it("onTurn sends text", async () => {
     mockHookResponse();
-    const invoker = _internals.buildHookInvoker("http://127.0.0.1:9999");
+    const invoker = _internals.buildHookInvoker("http://127.0.0.1:9999", "test-token");
     await invoker.onTurn("s1", "Hello");
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
@@ -138,7 +138,7 @@ describe("buildHookInvoker", () => {
 
   it("onStep sends step data", async () => {
     mockHookResponse();
-    const invoker = _internals.buildHookInvoker("http://127.0.0.1:9999");
+    const invoker = _internals.buildHookInvoker("http://127.0.0.1:9999", "test-token");
     const step = { stepNumber: 1, toolCalls: [{ toolName: "t", args: {} }], text: "" };
     await invoker.onStep("s1", step);
 
@@ -152,7 +152,7 @@ describe("buildHookInvoker", () => {
 
   it("resolveTurnConfig returns parsed config", async () => {
     mockHookResponse({ maxSteps: 3, activeTools: ["search"] });
-    const invoker = _internals.buildHookInvoker("http://127.0.0.1:9999");
+    const invoker = _internals.buildHookInvoker("http://127.0.0.1:9999", "test-token");
     const config = await invoker.resolveTurnConfig("s1", 1);
 
     expect(config).toEqual({ maxSteps: 3, activeTools: ["search"] });
@@ -160,21 +160,21 @@ describe("buildHookInvoker", () => {
 
   it("resolveTurnConfig returns null when hook returns null", async () => {
     mockHookResponse(null);
-    const invoker = _internals.buildHookInvoker("http://127.0.0.1:9999");
+    const invoker = _internals.buildHookInvoker("http://127.0.0.1:9999", "test-token");
     const config = await invoker.resolveTurnConfig("s1", 1);
     expect(config).toBeNull();
   });
 
   it("resolveTurnConfig omits undefined fields", async () => {
     mockHookResponse({});
-    const invoker = _internals.buildHookInvoker("http://127.0.0.1:9999");
+    const invoker = _internals.buildHookInvoker("http://127.0.0.1:9999", "test-token");
     const config = await invoker.resolveTurnConfig("s1", 1);
     expect(config).toEqual({});
   });
 
   it("beforeTurn sends text and returns result", async () => {
     mockHookResponse("blocked");
-    const invoker = _internals.buildHookInvoker("http://127.0.0.1:9999");
+    const invoker = _internals.buildHookInvoker("http://127.0.0.1:9999", "test-token");
     const result = await invoker.beforeTurn?.("s1", "hello");
     expect(result).toBe("blocked");
     expect(globalThis.fetch).toHaveBeenCalledWith(
@@ -187,7 +187,7 @@ describe("buildHookInvoker", () => {
 
   it("afterTurn sends text", async () => {
     mockHookResponse();
-    const invoker = _internals.buildHookInvoker("http://127.0.0.1:9999");
+    const invoker = _internals.buildHookInvoker("http://127.0.0.1:9999", "test-token");
     await invoker.afterTurn?.("s1", "response");
     expect(globalThis.fetch).toHaveBeenCalledWith(
       "http://127.0.0.1:9999/hook",
@@ -199,7 +199,7 @@ describe("buildHookInvoker", () => {
 
   it("interceptToolCall sends tool name and args via step field", async () => {
     mockHookResponse({ type: "block", reason: "not allowed" });
-    const invoker = _internals.buildHookInvoker("http://127.0.0.1:9999");
+    const invoker = _internals.buildHookInvoker("http://127.0.0.1:9999", "test-token");
     const result = await invoker.interceptToolCall?.("s1", "search", { q: "test" });
     expect(result).toEqual({ type: "block", reason: "not allowed" });
     expect(globalThis.fetch).toHaveBeenCalledWith(
@@ -220,7 +220,7 @@ describe("buildHookInvoker", () => {
 
   it("afterToolCall sends tool name, args, and result via step field", async () => {
     mockHookResponse();
-    const invoker = _internals.buildHookInvoker("http://127.0.0.1:9999");
+    const invoker = _internals.buildHookInvoker("http://127.0.0.1:9999", "test-token");
     await invoker.afterToolCall?.("s1", "search", { q: "test" }, "found it");
     expect(globalThis.fetch).toHaveBeenCalledWith(
       "http://127.0.0.1:9999/hook",
@@ -240,7 +240,7 @@ describe("buildHookInvoker", () => {
 
   it("filterOutput sends text and returns filtered result", async () => {
     mockHookResponse("sanitized text");
-    const invoker = _internals.buildHookInvoker("http://127.0.0.1:9999");
+    const invoker = _internals.buildHookInvoker("http://127.0.0.1:9999", "test-token");
     const result = await invoker.filterOutput?.("s1", "raw text");
     expect(result).toBe("sanitized text");
     expect(globalThis.fetch).toHaveBeenCalledWith(
@@ -283,20 +283,25 @@ describe("getIsolateConfig", () => {
     };
     globalThis.fetch = vi.fn(async () => Response.json(config));
 
-    const result = await _internals.getIsolateConfig(12_345);
+    const result = await _internals.getIsolateConfig(12_345, "test-token");
     expect(result.name).toBe("agent");
     expect(result.toolSchemas).toHaveLength(1);
     expect(result.hooks.onConnect).toBe(true);
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
       "http://127.0.0.1:12345/config",
-      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      expect.objectContaining({
+        headers: { "x-harness-token": "test-token" },
+        signal: expect.any(AbortSignal),
+      }),
     );
   });
 
   it("throws on non-ok response", async () => {
     globalThis.fetch = vi.fn(async () => new Response(null, { status: 503 }));
-    await expect(_internals.getIsolateConfig(9999)).rejects.toThrow("/config failed (503)");
+    await expect(_internals.getIsolateConfig(9999, "test-token")).rejects.toThrow(
+      "/config failed (503):",
+    );
   });
 });
 
