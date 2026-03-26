@@ -99,7 +99,7 @@ export type Middleware<S = Record<string, unknown>> = {
  * and provide capabilities like web search, code execution, and API access.
  *
  * - `"web_search"` — Search the web for current information, facts, or news.
- * - `"visit_webpage"` — Fetch a URL and return its content as Markdown.
+ * - `"visit_webpage"` — Fetch a URL and return its content as clean text.
  * - `"fetch_json"` — Call a REST API endpoint and return the JSON response.
  * - `"run_code"` — Execute JavaScript in a sandbox for calculations and data processing.
  * - `"vector_search"` — Search the agent's RAG knowledge base for relevant documents.
@@ -307,7 +307,6 @@ export type StepInfo = {
  * export default defineAgent({
  *   name: "research-bot",
  *   instructions: "You help users research topics.",
- *   voice: "orion",
  *   builtinTools: ["web_search"],
  *   tools: {
  *     summarize: {

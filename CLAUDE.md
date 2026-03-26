@@ -61,10 +61,12 @@ Public:
 - `./vector` — vector store interface + in-memory implementation
 - `./testing` — `MockWebSocket`, `installMockWebSocket`,
   `createTestHarness`, `TestHarness`, `TurnResult`
+- `./testing/matchers` — Vitest custom matchers (`toHaveCalledTool`)
 
 Internal (exported in package.json but not part of public API):
 
-- `./runtime` — `Logger`, `Metrics`, `S2SConfig` interfaces
+- `./runtime` — `Logger`, `LogContext`, `S2SConfig`, `consoleLogger`,
+  `DEFAULT_S2S_CONFIG`
 - `./s2s` — AssemblyAI S2S WebSocket client
 - `./session` — S2S session management
 - `./ws-handler` — WebSocket lifecycle handler
@@ -89,7 +91,8 @@ Non-exported internal files (used within the package only):
 
 #### `@alexkroman1/aai-cli` (CLI)
 
-Binary: `aai` — subcommands: init, dev, build, deploy, start, secret, rag, link
+Binary: `aai` — subcommands: init, dev, test, build, deploy, start,
+secret, rag, link, unlink
 
 ### Key Files
 
@@ -139,7 +142,7 @@ Binary: `aai` — subcommands: init, dev, build, deploy, start, secret, rag, lin
 - **Agent API docs**: `packages/aai-cli/templates/_shared/CLAUDE.md` is the
   agent API reference installed into user projects. When modifying the agent
   API surface (`packages/aai/types.ts`), update it to match.
-- **Templates**: `packages/aai-cli/templates/` contains 16 agent scaffolding
+- **Templates**: `packages/aai-cli/templates/` contains 18 agent scaffolding
   templates (simple, memory-agent, web-researcher, etc.). Each is
   self-contained with its own `agent.ts` and `client.tsx`. `_shared/` has
   non-code files common to all templates.
