@@ -5,10 +5,10 @@ function first(arr: string[] | undefined): string | undefined {
   return arr?.[0];
 }
 
-const FdaOpenfdaSchema = z.record(z.array(z.string())).default({});
+const FdaOpenfdaSchema = z.record(z.string(), z.array(z.string()));
 
 const FdaDrugSchema = z.object({
-  openfda: FdaOpenfdaSchema,
+  openfda: FdaOpenfdaSchema.optional(),
   purpose: z.array(z.string()).optional(),
   indications_and_usage: z.array(z.string()).optional(),
   warnings: z.array(z.string()).optional(),
@@ -40,15 +40,15 @@ async function lookupDrug(
   }
 
   const drug = parsed.data.results[0]!;
-  const openfda = drug.openfda;
+  const openfda = drug.openfda ?? {};
   return {
-    name: openfda.generic_name?.[0] ?? name,
-    brand_names: openfda.brand_name ?? [],
+    name: openfda["generic_name"]?.[0] ?? name,
+    brand_names: openfda["brand_name"] ?? [],
     purpose: first(drug.purpose) ?? first(drug.indications_and_usage) ?? "N/A",
     warnings: first(drug.warnings)?.slice(0, 500) ?? "N/A",
     dosage: first(drug.dosage_and_administration)?.slice(0, 500) ?? "N/A",
     side_effects: first(drug.adverse_reactions)?.slice(0, 500) ?? "N/A",
-    manufacturer: openfda.manufacturer_name?.[0] ?? "N/A",
+    manufacturer: openfda["manufacturer_name"]?.[0] ?? "N/A",
   };
 }
 

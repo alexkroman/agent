@@ -16,13 +16,11 @@ export function flush(): Promise<void> {
   return new Promise<void>((r) => queueMicrotask(r));
 }
 
-type TestGlobal = typeof globalThis & {
-  location?: { origin: string };
-  AudioContext?: unknown;
-  AudioWorkletNode?: unknown;
-  navigator?: { mediaDevices?: { getUserMedia?: unknown } };
-};
-const g: TestGlobal = globalThis;
+// Test helpers assign incomplete mocks to global properties (e.g. a plain
+// {origin} for `location` instead of the full DOM Location interface).
+// The double-cast is required because `typeof globalThis & Record<string, unknown>`
+// still enforces the full DOM types on existing properties.
+const g = globalThis as unknown as Record<string, unknown>;
 
 export function installMockLocation(origin = "http://localhost:3000") {
   const had = "location" in globalThis;
@@ -136,7 +134,7 @@ export type AudioMockContext = {
 export function installAudioMocks(): AudioMockContext & { restore: () => void } {
   const origAudioContext = globalThis.AudioContext;
   const origAudioWorkletNode = globalThis.AudioWorkletNode;
-  const nav = g.navigator;
+  const nav = g.navigator as { mediaDevices?: { getUserMedia?: unknown } } | undefined;
   const origGetUserMedia = nav?.mediaDevices?.getUserMedia;
 
   let _lastContext: MockAudioContext;

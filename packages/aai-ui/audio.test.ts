@@ -142,7 +142,9 @@ describe("createVoiceIO", () => {
 
   test("cleans up on worklet load error", async () => {
     let _lastContext!: MockAudioContext;
-    const g = globalThis as typeof globalThis & { AudioContext: unknown };
+    // Double-cast needed: test assigns an incomplete AudioContext mock that
+    // doesn't satisfy the full DOM AudioContext interface.
+    const g = globalThis as unknown as Record<string, unknown>;
     g.AudioContext = class extends MockAudioContext {
       constructor(opts?: { sampleRate?: number }) {
         super(opts);
