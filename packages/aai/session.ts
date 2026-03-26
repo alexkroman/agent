@@ -27,7 +27,7 @@ import type { ExecuteTool } from "./worker-entry.ts";
 
 export type { S2sSessionCtx } from "./_session-ctx.ts";
 export type { PersistedSession, SessionPersistence } from "./_session-persist.ts";
-export { PERSIST_PREFIX } from "./_session-persist.ts";
+export { persistKey } from "./_session-persist.ts";
 export type { HookInvoker, ToolInterceptResult } from "./middleware.ts";
 export { buildSystemPrompt } from "./system-prompt.ts";
 
@@ -209,7 +209,6 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
         return;
       }
 
-      // Capture S2S session ID for persistence
       handle.on("ready", ({ sessionId: s2sId }) => {
         currentS2sSessionId = s2sId;
       });

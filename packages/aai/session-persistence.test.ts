@@ -5,8 +5,8 @@ import type { S2sEvents, S2sHandle } from "./s2s.ts";
 import {
   _internals,
   createS2sSession,
-  PERSIST_PREFIX,
   type PersistedSession,
+  persistKey,
   type S2sSessionOptions,
   type SessionPersistence,
 } from "./session.ts";
@@ -167,7 +167,7 @@ describe("session persistence", () => {
     await session.stop();
 
     // Verify persisted data
-    const persisted = await kv.get<PersistedSession>(`${PERSIST_PREFIX}session-1`);
+    const persisted = await kv.get<PersistedSession>(persistKey("session-1"));
     expect(persisted).toEqual({
       s2sSessionId: "s2s-abc123",
       messages: [
@@ -188,7 +188,7 @@ describe("session persistence", () => {
     await session.start();
     await session.stop();
 
-    expect(setSpy).toHaveBeenCalledWith(`${PERSIST_PREFIX}session-1`, expect.any(Object), {
+    expect(setSpy).toHaveBeenCalledWith(persistKey("session-1"), expect.any(Object), {
       expireIn: 7_200_000,
     });
   });
@@ -205,7 +205,7 @@ describe("session persistence", () => {
       ],
       state: { favoriteColor: "blue", loginCount: 5 },
     };
-    await kv.set(`${PERSIST_PREFIX}old-session-1`, persisted);
+    await kv.set(persistKey("old-session-1"), persisted);
 
     const helper = makePersistence(kv);
     const { session, mockHandle } = setup({
@@ -225,9 +225,15 @@ describe("session persistence", () => {
     // updateSession should NOT have been called (resume takes priority)
     expect(mockHandle.updateSession).not.toHaveBeenCalled();
 
-    // Old persisted data should be cleaned up
-    const oldData = await kv.get(`${PERSIST_PREFIX}old-session-1`);
-    expect(oldData).toBeNull();
+    // Old persisted data is cleaned up on stop(), not on start()
+    const oldDataBeforeStop = await kv.get(persistKey("old-session-1"));
+    expect(oldDataBeforeStop).not.toBeNull();
+
+    await session.stop();
+
+    // Now old data should be cleaned up
+    const oldDataAfterStop = await kv.get(persistKey("old-session-1"));
+    expect(oldDataAfterStop).toBeNull();
   });
 
   test("resume falls back to updateSession when S2S session expired", async () => {
@@ -237,7 +243,7 @@ describe("session persistence", () => {
       messages: [{ role: "user", content: "Hello" }],
       state: { count: 1 },
     };
-    await kv.set(`${PERSIST_PREFIX}old-session`, persisted);
+    await kv.set(persistKey("old-session"), persisted);
 
     const { persistence } = makePersistence(kv);
     const { session, mockHandle } = setup({
@@ -269,7 +275,7 @@ describe("session persistence", () => {
       messages: [],
       state: {},
     };
-    await kv.set(`${PERSIST_PREFIX}old`, persisted);
+    await kv.set(persistKey("old"), persisted);
 
     const { persistence } = makePersistence(kv);
     const { session, mockHandle } = setup({ persistence, resumeFrom: "old" });
@@ -364,7 +370,7 @@ describe("session persistence", () => {
       messages: [{ role: "user", content: "Hello" }],
       state: { count: 1 },
     };
-    await kv.set(`${PERSIST_PREFIX}old`, persisted);
+    await kv.set(persistKey("old"), persisted);
 
     const { persistence } = makePersistence(kv);
     const { session, mockHandle } = setup({ persistence, resumeFrom: "old" });
@@ -394,7 +400,7 @@ describe("session persistence", () => {
     await s1.session.stop();
 
     // Verify session 1 was persisted
-    const persistedData = await kv.get<PersistedSession>(`${PERSIST_PREFIX}sess-1`);
+    const persistedData = await kv.get<PersistedSession>(persistKey("sess-1"));
     expect(persistedData).toEqual(
       expect.objectContaining({ state: { score: 100 }, s2sSessionId: "s2s-round-trip" }),
     );
