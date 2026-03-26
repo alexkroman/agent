@@ -3,7 +3,7 @@
 import type { ReadyConfig, ServerMessage } from "@alexkroman1/aai/protocol";
 import { ReadyConfigSchema, ServerMessageSchema } from "@alexkroman1/aai/protocol";
 import type { VoiceIO } from "./audio.ts";
-import type { AgentState, Message, Reactive, SessionError, ToolCallInfo } from "./types.ts";
+import type { AgentState, ChatMessage, Reactive, SessionError, ToolCallInfo } from "./types.ts";
 
 type BatchFn = (fn: () => void) => void;
 
@@ -14,7 +14,7 @@ type BatchFn = (fn: () => void) => void;
 /** @internal Exported for testing only. */
 export class ClientHandler {
   #state: Reactive<AgentState>;
-  #messages: Reactive<Message[]>;
+  #messages: Reactive<ChatMessage[]>;
   #toolCalls: Reactive<ToolCallInfo[]>;
   #userUtterance: Reactive<string | null>;
   #agentUtterance: Reactive<string | null>;
@@ -25,7 +25,7 @@ export class ClientHandler {
   #generation = 0;
   constructor(opts: {
     state: Reactive<AgentState>;
-    messages: Reactive<Message[]>;
+    messages: Reactive<ChatMessage[]>;
     toolCalls: Reactive<ToolCallInfo[]>;
     userUtterance: Reactive<string | null>;
     agentUtterance: Reactive<string | null>;
