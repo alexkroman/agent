@@ -9,7 +9,7 @@
  */
 import { describe, expect, expectTypeOf, test } from "vitest";
 import type { z } from "zod";
-import { type AgentConfig, AgentConfigSchema, ToolSchemaSchema } from "./_internal-types.ts";
+import { type AgentConfig, AgentConfigSchema, ToolSchemaSchema } from "./internal-types.ts";
 import {
   type ReadyConfig,
   ReadyConfigSchema,

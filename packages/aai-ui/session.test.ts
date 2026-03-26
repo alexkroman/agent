@@ -2,7 +2,7 @@
 
 import { describe, expect, test } from "vitest";
 import { ClientHandler, type Reactive } from "./session.ts";
-import type { AgentState, Message, SessionError, ToolCallInfo } from "./types.ts";
+import type { AgentState, ChatMessage, SessionError, ToolCallInfo } from "./types.ts";
 
 function reactive<T>(initial: T): Reactive<T> {
   return { value: initial };
@@ -40,7 +40,7 @@ function makeVoiceIO(overrides?: Partial<Record<string, (...args: never[]) => un
 
 function createTarget(voiceOverrides?: Partial<Record<string, (...args: never[]) => unknown>>) {
   const state = reactive<AgentState>("connecting");
-  const messages = reactive<Message[]>([]);
+  const messages = reactive<ChatMessage[]>([]);
   const toolCalls = reactive<ToolCallInfo[]>([]);
   const userUtterance = reactive<string | null>(null);
   const agentUtterance = reactive<string | null>(null);
