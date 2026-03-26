@@ -178,7 +178,8 @@ async function getIsolateConfig(port: number): Promise<IsolateConfig> {
   });
   if (!res.ok) {
     const body = await res.text().catch(() => "");
-    throw new Error(`Isolate /config failed (${res.status}): ${body}`);
+    console.error(`[sandbox] Isolate /config failed (${res.status}):`, body);
+    throw new Error(`Isolate /config failed (${res.status})`);
   }
   return IsolateConfigSchema.parse(await res.json()) as IsolateConfig;
 }
@@ -198,7 +199,11 @@ async function callIsolate<T>(
   });
   if (!res.ok) {
     const body = await res.text().catch(() => "");
-    throw new Error(`${endpoint} failed (${res.status}): ${body}`);
+    // Log full error detail server-side for debugging, but do not include
+    // the isolate's error body in the thrown error to prevent leaking
+    // internal details (file paths, stack traces) to upstream callers.
+    console.error(`[sandbox] ${endpoint} failed (${res.status}):`, body);
+    throw new Error(`${endpoint} failed (${res.status})`);
   }
   return schema.parse(await res.json());
 }
