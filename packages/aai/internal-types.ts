@@ -7,8 +7,8 @@
 
 import type { JSONSchema7 } from "json-schema";
 import { z } from "zod";
-import { BuiltinToolSchema, ToolChoiceSchema } from "./define-agent.ts";
 import type { ToolDef } from "./types.ts";
+import { BuiltinToolSchema, ToolChoiceSchema } from "./types.ts";
 
 // ─── AgentConfig ────────────────────────────────────────────────────────────
 
