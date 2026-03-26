@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { describe, expect, test } from "vitest";
+import { flush } from "./_test-utils.ts";
 import { ClientHandler, type Reactive } from "./session.ts";
 import type { AgentState, ChatMessage, SessionError, ToolCallInfo } from "./types.ts";
 
@@ -176,7 +177,7 @@ describe("ClientHandler event handling", () => {
     const { target, state, wasDone } = createTarget();
     state.value = "speaking";
     target.playAudioDone();
-    await new Promise((r) => setTimeout(r, 0));
+    await flush();
     expect(wasDone()).toBe(true);
     expect(state.value).toBe("listening");
   });

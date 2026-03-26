@@ -14,9 +14,9 @@
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
     "check:templates": "tsc -p tsconfig.templates.json",
-    "test:integration": "vitest run pack-build.test.ts -c vitest.slow.config.ts",
-    "test:e2e": "vitest run e2e.test.ts -c vitest.slow.config.ts",
-    "check:e2e": "vitest run e2e.test.ts -c vitest.slow.config.ts"
+    "test:integration": "vitest run --project aai-cli-slow -- pack-build.test.ts",
+    "test:e2e": "vitest run --project aai-cli-slow -- e2e.test.ts",
+    "check:e2e": "vitest run --project aai-cli-slow -- e2e.test.ts"
   },
   "dependencies": {
     "@alexkroman1/aai": "workspace:*",

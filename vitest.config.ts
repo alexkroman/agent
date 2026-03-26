@@ -66,7 +66,12 @@ export default defineConfig({
           root: "packages/aai-cli",
           restoreMocks: true,
           include: ["**/*.test.ts"],
-          exclude: ["pack-build.test.ts", "e2e.test.ts", "node_modules", "dist"],
+          exclude: [
+            "pack-build.test.ts",
+            "e2e.test.ts",
+            "node_modules",
+            "dist",
+          ],
         },
       },
       {
@@ -76,7 +81,33 @@ export default defineConfig({
           root: "packages/aai-server",
           restoreMocks: true,
           include: ["**/*.test.ts"],
-          exclude: ["src/sandbox-integration.test.ts", "node_modules", "dist"],
+          exclude: [
+            "src/sandbox-integration.test.ts",
+            "node_modules",
+            "dist",
+          ],
+        },
+      },
+      // Slow tests: CLI e2e and pack-build (separate from unit tests)
+      {
+        ...sharedConfig,
+        test: {
+          name: "aai-cli-slow",
+          root: "packages/aai-cli",
+          include: ["e2e.test.ts", "pack-build.test.ts"],
+          testTimeout: 300_000,
+          hookTimeout: 300_000,
+        },
+      },
+      // Integration tests: sandbox isolation tests (separate from unit tests)
+      {
+        ...sharedConfig,
+        test: {
+          name: "aai-server-integration",
+          root: "packages/aai-server",
+          include: ["src/sandbox-integration.test.ts"],
+          testTimeout: 30_000,
+          hookTimeout: 30_000,
         },
       },
     ],

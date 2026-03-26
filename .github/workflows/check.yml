@@ -88,10 +88,17 @@ jobs:
           pnpm run check:knip
           pnpm run check:syncpack
           pnpm run check:markdown
+      - name: Check for API baseline drift
+        run: bash scripts/check-api-diff.sh
 
+  # Unit tests sharded by package — run in parallel
   test:
     needs: setup
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        project: [aai, aai-ui, aai-cli, aai-server]
     steps:
       - uses: actions/checkout@v6
         with:
@@ -108,7 +115,7 @@ jobs:
             packages/*/dist
             .tsbuildinfo
           key: workspace-${{ github.sha }}
-      - run: pnpm vitest run --changed origin/main --coverage
+      - run: pnpm vitest run --project ${{ matrix.project }} --coverage
 
   integration:
     needs: setup

@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { describe, expect, test, vi } from "vitest";
+import { flush } from "./_test-utils.ts";
 import { ClientHandler } from "./client-handler.ts";
 import type { AgentState, ChatMessage, Reactive, SessionError, ToolCallInfo } from "./types.ts";
 
@@ -130,7 +131,7 @@ describe("ClientHandler.handleMessage", () => {
     const { target, state, wasDone } = createTarget();
     state.value = "speaking";
     target.handleMessage(JSON.stringify({ type: "audio_done" }));
-    await new Promise((r) => setTimeout(r, 0));
+    await flush();
     expect(wasDone()).toBe(true);
     expect(state.value).toBe("listening");
   });
@@ -178,7 +179,7 @@ describe("ClientHandler.playAudioDone generation tracking", () => {
     target.event({ type: "cancelled" });
     expect(state.value).toBe("listening");
     // Let the done() promise resolve
-    await new Promise((r) => setTimeout(r, 0));
+    await flush();
     // State should still be listening (from cancelled), not overwritten by stale callback
     expect(state.value).toBe("listening");
   });
@@ -190,7 +191,7 @@ describe("ClientHandler.playAudioDone generation tracking", () => {
     // A new turn increments generation
     target.event({ type: "turn", text: "new input" });
     expect(state.value).toBe("thinking");
-    await new Promise((r) => setTimeout(r, 0));
+    await flush();
     // Stale callback should not change state back to listening
     expect(state.value).toBe("thinking");
   });
@@ -227,7 +228,7 @@ describe("ClientHandler.playAudioDone generation tracking", () => {
     });
     state.value = "speaking";
     target.playAudioDone();
-    await new Promise((r) => setTimeout(r, 0));
+    await flush();
     expect(warn).toHaveBeenCalledWith("Audio playback done failed:", expect.any(Error));
     warn.mockRestore();
   });

@@ -1,6 +1,6 @@
 import { createNanoEvents } from "nanoevents";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { makeConfig } from "./_test-utils.ts";
+import { flush, makeConfig } from "./_test-utils.ts";
 import { type ClientSink, HOOK_TIMEOUT_MS } from "./protocol.ts";
 import type { S2sEvents, S2sHandle } from "./s2s.ts";
 import {
@@ -576,8 +576,7 @@ describe("createS2sSession", () => {
 
     // invokeHook catches errors, so this should not throw
     await session.start();
-    // Give time for async hook to settle
-    await new Promise((r) => setTimeout(r, 10));
+    await flush();
 
     // onError should be invoked when onConnect fails
     expect(hookInvoker.onError).toHaveBeenCalledWith(expect.any(String), { message: "hook error" });
@@ -600,7 +599,7 @@ describe("createS2sSession", () => {
 
     // Should not throw even when both onConnect and onError fail
     await session.start();
-    await new Promise((r) => setTimeout(r, 10));
+    await flush();
 
     expect(hookInvoker.onError).toHaveBeenCalledWith(expect.any(String), {
       message: "connect failed",
@@ -768,8 +767,7 @@ describe("createS2sSession", () => {
     resolvers[2]?.(handles[2]!);
 
     await startPromise;
-    // Let all microtasks settle
-    await new Promise((r) => setTimeout(r, 10));
+    await flush();
 
     // First two handles should be closed (stale generations)
     expect(handles[0]?.close).toHaveBeenCalled();
