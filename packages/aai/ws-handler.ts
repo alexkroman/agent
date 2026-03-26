@@ -195,9 +195,14 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
     sessionSpan.addEvent("ws.close");
     sessionSpan.end();
     if (session) {
-      void session.stop().finally(() => {
-        sessions.delete(sessionId);
-      });
+      void session
+        .stop()
+        .catch((err) => {
+          log.error("Session stop failed", { ...ctx, sid, error: err });
+        })
+        .finally(() => {
+          sessions.delete(sessionId);
+        });
     }
     opts.onClose?.();
   });
