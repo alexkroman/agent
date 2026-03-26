@@ -20,7 +20,10 @@ function createMockKvStore(): KvStore {
       return entry?.value ?? null;
     }),
     set: vi.fn(async (_scope: AgentScope, key: string, value: string, ttl?: number) => {
-      store.set(`${_scope.keyHash}:${_scope.slug}:${key}`, { value, ttl });
+      store.set(`${_scope.keyHash}:${_scope.slug}:${key}`, {
+        value,
+        ...(ttl !== undefined && { ttl }),
+      });
     }),
     del: vi.fn(async (_scope: AgentScope, key: string) => {
       store.delete(`${_scope.keyHash}:${_scope.slug}:${key}`);
@@ -46,7 +49,7 @@ function createMockVectorStore(): ServerVectorStore {
   return {
     upsert: vi.fn(
       async (scope: AgentScope, id: string, data: string, metadata?: Record<string, unknown>) => {
-        getNamespace(scope).set(id, { data, metadata });
+        getNamespace(scope).set(id, { data, ...(metadata !== undefined && { metadata }) });
       },
     ),
     query: vi.fn(async (scope: AgentScope, _text: string, _topK?: number, _filter?: string) => {
@@ -301,7 +304,7 @@ describe("startSidecarServer", () => {
         body: JSON.stringify({ text: "search" }),
       });
       expect(res.status).toBe(503);
-      const body = await res.json();
+      const body = (await res.json()) as { error: string };
       expect(body.error).toContain("Vector store not configured");
     } finally {
       close();
