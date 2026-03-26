@@ -192,7 +192,7 @@ const link = defineCommand({
   },
   async run() {
     const { runLinkCommand } = await import("./_link.ts");
-    runLinkCommand(resolveCwd());
+    await runLinkCommand(resolveCwd());
   },
 });
 
@@ -200,7 +200,7 @@ const unlink = defineCommand({
   meta: { name: "unlink", description: "Restore published package versions (reverses aai link)" },
   async run() {
     const { runUnlinkCommand } = await import("./_link.ts");
-    runUnlinkCommand(resolveCwd());
+    await runUnlinkCommand(resolveCwd());
   },
 });
 
@@ -218,5 +218,8 @@ if (process.env.VITEST !== "true") {
   ) {
     process.argv.splice(2, 0, "init");
   }
-  void runMain(mainCommand);
+  runMain(mainCommand).catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
 }
