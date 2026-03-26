@@ -1,5 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
-import { beforeEach, describe, expect, type Mock, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import { buildNetworkAdapter, buildNetworkPolicy } from "./sandbox-network.ts";
 
 vi.mock("secure-exec", () => ({
@@ -169,13 +169,13 @@ describe("buildNetworkAdapter", () => {
 
   test("sidecar fetch omits headers when undefined", async () => {
     const mockResponse = new Response("ok");
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(mockResponse);
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (_url, init) => {
+      expect(init).not.toHaveProperty("headers");
+      return mockResponse;
+    });
 
     const adapter = buildNetworkAdapter(SIDECAR);
     await adapter.fetch("http://127.0.0.1:9876/health", { method: "GET" });
-
-    const callArgs = (fetchSpy as Mock).mock.calls[0][1];
-    expect(callArgs).not.toHaveProperty("headers");
   });
 
   test("does not bypass SSRF for different port on same host", async () => {
