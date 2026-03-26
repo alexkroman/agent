@@ -270,6 +270,22 @@ packages (`aai`, `aai-ui`, `aai-cli`, `aai-server`).
   — each endpoint validates identically. Use middleware.
   *(Engineer 7, #6)*
 
+### Dependencies & Build (Engineer 8)
+
+- [ ] **Missing package exports for internal modules**: `aai/package.json` —
+  `direct-executor.ts` and `builtin-tools.ts` are compiled by tsdown but not
+  exported, forcing relative workspace imports.
+  *(Engineer 8, #1)*
+
+- [ ] **Unnecessary tsdown entry**: `aai/tsdown.config.ts:20` — `_mock-ws.ts`
+  is compiled but never publicly exported. Remove from entry array.
+  *(Engineer 8, #2)*
+
+- [ ] **Private package has `main` pointing to source**: `aai-server/package.json:6`
+  — `"main": "src/index.ts"` is incorrect for a private package. Remove or
+  point to dist.
+  *(Engineer 8, #8)*
+
 ### Observability Polish
 
 - [ ] **Sandbox lifecycle missing timing metrics**: `sandbox-slots.ts:49,69,107`
@@ -374,8 +390,7 @@ packages (`aai`, `aai-ui`, `aai-cli`, `aai-server`).
 
 ## Notes
 
-- Engineer 8 (Dependencies) review was still in progress at plan creation
-  time. Findings will be appended when available.
+- All 10 engineer reviews are now complete and incorporated.
 - Many findings overlap across reviewers (e.g., the barge-in race condition
   was flagged by both the Concurrency and Reliability engineers). These have
   been deduplicated and cross-referenced.
