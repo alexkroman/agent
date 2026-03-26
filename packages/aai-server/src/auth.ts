@@ -13,11 +13,11 @@ export async function hashApiKey(apiKey: string): Promise<string> {
 function timingSafeCompare(a: string, b: string): boolean {
   const bufA = textEncoder.encode(a);
   const bufB = textEncoder.encode(b);
-  if (bufA.length !== bufB.length) {
-    // Compare against a dummy buffer so timing doesn't leak the length mismatch.
-    return false;
-  }
-  return timingSafeEqual(bufA, bufB);
+  // When lengths differ, compare bufA against itself so timing doesn't leak
+  // the length mismatch — timingSafeEqual requires equal-length buffers.
+  const match =
+    bufA.length === bufB.length ? timingSafeEqual(bufA, bufB) : !timingSafeEqual(bufA, bufA);
+  return match;
 }
 
 export type OwnerResult =
