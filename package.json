@@ -7,7 +7,7 @@
     "typecheck": "pnpm -r run typecheck",
     "lint": "pnpm -r run lint",
     "lint:fix": "biome check --write packages/",
-    "check": "pnpm -r run build && pnpm -r run typecheck && pnpm -r run lint && pnpm -r run --if-present check:api && pnpm -r run --if-present check:attw && pnpm -r run --if-present check:templates && pnpm run check:knip && pnpm run check:syncpack && pnpm run check:markdown && pnpm -r run --if-present check:integration && pnpm -r run --if-present check:e2e && vitest run --coverage",
+    "check": "bash scripts/check.sh",
     "check:local": "bash scripts/check-local.sh",
     "check:knip": "knip",
     "check:syncpack": "syncpack lint",
