@@ -9,8 +9,14 @@ export async function hashApiKey(apiKey: string): Promise<string> {
   return Buffer.from(hash).toString("hex");
 }
 
-/** Constant-time string comparison to prevent timing attacks on credential hashes. */
-function timingSafeCompare(a: string, b: string): boolean {
+/**
+ * Constant-time string comparison to prevent timing attacks on credential hashes.
+ *
+ * Note: the length check short-circuits before the constant-time comparison,
+ * which technically leaks length information. This is an accepted tradeoff
+ * because all inputs are SHA-256 hex digests (always 64 characters).
+ */
+export function timingSafeCompare(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
   return timingSafeEqual(textEncoder.encode(a), textEncoder.encode(b));
 }
