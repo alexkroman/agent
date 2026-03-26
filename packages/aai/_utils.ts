@@ -14,6 +14,14 @@ export function errorDetail(err: unknown): string {
   return String(err);
 }
 
+/** Set of filesystem operations that are safe for read-only access. */
+const READ_ONLY_FS_OPS = new Set(["read", "stat", "readdir", "exists"]);
+
+/** Check whether a filesystem operation is a read-only operation. */
+export function isReadOnlyFsOp(op: string): boolean {
+  return READ_ONLY_FS_OPS.has(op);
+}
+
 /** Filter out undefined values from an env record. */
 export function filterEnv(env: Record<string, string | undefined>): Record<string, string> {
   return Object.fromEntries(
