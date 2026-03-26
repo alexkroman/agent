@@ -284,13 +284,17 @@ function handleReplyDone(ctx: S2sSessionCtx, status: string | undefined): void {
     // instead of pushing to pendingTools (checked in finishToolCall).
     ctx.replyGeneration++;
     ctx.pendingTools = [];
+    ctx.filterChain = Promise.resolve();
     ctx.client.event({ type: "cancelled" });
     return;
   }
+  // Capture generation at reply_done to guard against stale sends.
+  const doneGeneration = ctx.replyGeneration;
   // Wait for all in-flight tool calls to complete before sending results.
   // Without this, reply_done can fire while async tool execution is still
   // in progress, causing pendingTools to be empty → results never sent → deadlock.
   const sendPending = () => {
+    if (ctx.replyGeneration !== doneGeneration) return;
     if (ctx.pendingTools.length > 0) {
       for (const tool of ctx.pendingTools) ctx.s2s?.sendToolResult(tool.callId, tool.result);
       ctx.pendingTools = [];

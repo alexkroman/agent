@@ -63,4 +63,5 @@ export const VectorRequestSchema = z.discriminatedUnion("op", [
 export type VectorHttpRequest = z.infer<typeof VectorRequestSchema>;
 
 // Secrets
-export const SecretUpdatesSchema = z.record(z.string(), z.string());
+const SecretKeySchema = z.string().regex(/^[a-zA-Z_]\w*$/, "Invalid secret key name");
+export const SecretUpdatesSchema = z.record(SecretKeySchema, z.string());

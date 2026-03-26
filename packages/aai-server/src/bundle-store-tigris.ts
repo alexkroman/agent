@@ -132,7 +132,9 @@ export function createBundleStore(
     const prefix = `agents/${slug}/`;
     const listRes = await s3.send(new ListObjectsV2Command({ Bucket: bucket, Prefix: prefix }));
 
-    const keys = (listRes.Contents ?? []).map((obj) => obj.Key).filter(Boolean) as string[];
+    const keys = (listRes.Contents ?? [])
+      .map((obj) => obj.Key)
+      .filter((k): k is string => typeof k === "string");
     if (keys.length === 0) return;
 
     await s3.send(

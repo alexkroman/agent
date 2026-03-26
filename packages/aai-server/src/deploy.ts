@@ -57,14 +57,14 @@ async function handleDeployInner(c: Context<Env>): Promise<Response> {
   if (existing?.sandbox || existing?.initializing) {
     console.info("Replacing existing deploy", { slug });
     if (existing.sandbox) {
-      await existing.sandbox.terminate().catch(() => {
-        // Intentionally swallowed — best-effort cleanup of existing sandbox
+      await existing.sandbox.terminate().catch((err: unknown) => {
+        console.warn("Failed to terminate existing sandbox", { slug, error: String(err) });
       });
     } else if (existing.initializing) {
       await existing.initializing
         .then((sb) => sb.terminate())
-        .catch(() => {
-          // Intentionally swallowed — best-effort cleanup of initializing sandbox
+        .catch((err: unknown) => {
+          console.warn("Failed to terminate initializing sandbox", { slug, error: String(err) });
         });
     }
     delete existing.sandbox;

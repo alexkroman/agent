@@ -1,6 +1,6 @@
 # Plan: Multi-Agent Code Quality Review
 
-**Status:** draft
+**Status:** in-progress
 **Created:** 2026-03-26
 **Updated:** 2026-03-26
 
@@ -18,19 +18,19 @@ fixes a real bug or meaningful risk, and doesn't require architectural changes.
 
 ## Quick Wins — Security (1-5 lines each)
 
-- [ ] **CORS default too permissive**: `orchestrator.ts:63-77` defaults to
+- [x] **CORS default too permissive**: `orchestrator.ts:63-77` defaults to
   `"*"` origin. Change default to reject or require explicit config.
   *(~1 line change, high security impact)*
 
-- [ ] **Secret key names not validated**: `secret-handler.ts:49` — add
+- [x] **Secret key names not validated**: `secret-handler.ts:49` — add
   `z.string().regex(/^[a-zA-Z_]\w*$/)` to reject path traversal attempts.
   *(~2 lines)*
 
-- [ ] **Secret keys logged in plaintext**: `secret-handler.ts:42` — change
+- [x] **Secret keys logged in plaintext**: `secret-handler.ts:42` — change
   `keys: Object.keys(updates)` to `keyCount: Object.keys(updates).length`.
   *(~1 line)*
 
-- [ ] **Timing-safe comparison misleading**: `auth.ts:34-42` —
+- [x] **Timing-safe comparison misleading**: `auth.ts:34-42` —
   `!timingSafeEqual(bufA, bufA)` is confusing. Use explicit length check
   before `timingSafeEqual(bufA, bufB)`.
   *(~3 lines)*
@@ -39,22 +39,22 @@ fixes a real bug or meaningful risk, and doesn't require architectural changes.
 
 ## Quick Wins — Correctness (1-10 lines each)
 
-- [ ] **Barge-in filter chain not reset**: `_session-otel.ts:280-288` —
+- [x] **Barge-in filter chain not reset**: `_session-otel.ts:280-288` —
   add `ctx.filterChain = Promise.resolve()` in barge-in handler. Without
   this, stale chat deltas emit after cancellation.
   *(1 line fix, real user-facing bug)*
 
-- [ ] **Tool results leak across reply generations**:
+- [x] **Tool results leak across reply generations**:
   `_session-otel.ts:293-296` — capture `replyGeneration` at
   `handleReplyDone` entry and verify in `sendPending` before sending.
   *(~5 lines, prevents wrong tool results in new replies)*
 
-- [ ] **Session state not cleaned on hook errors**:
+- [x] **Session state not cleaned on hook errors**:
   `_harness-runtime.ts:284` — add state cleanup in error path, not just
   `onDisconnect`. Prevents memory leak from reconnecting clients.
   *(~3 lines)*
 
-- [ ] **Fire-and-forget terminate without await**: `secret-handler.ts:12` —
+- [x] **Fire-and-forget terminate without await**: `secret-handler.ts:12` —
   await `slot.sandbox.terminate()` before proceeding.
   *(~1 line)*
 
@@ -62,15 +62,15 @@ fixes a real bug or meaningful risk, and doesn't require architectural changes.
 
 ## Quick Wins — Error Visibility (1-3 lines each)
 
-- [ ] **Deploy handler swallows errors silently**: `deploy.ts:60-66` —
+- [x] **Deploy handler swallows errors silently**: `deploy.ts:60-66` —
   add `console.warn` in the `.catch()` blocks instead of empty handlers.
   *(~3 lines, huge debugging improvement)*
 
-- [ ] **Shutdown doesn't log rejection reasons**: `index.ts:129-136` —
+- [x] **Shutdown doesn't log rejection reasons**: `index.ts:129-136` —
   inspect `Promise.allSettled()` results and log any rejections.
   *(~5 lines)*
 
-- [ ] **Deploy/cleanup errors completely silent**: `deploy.ts:18,60,66` —
+- [x] **Deploy/cleanup errors completely silent**: `deploy.ts:18,60,66` —
   same pattern, add minimal logging to all `.catch(() => {})` blocks.
   *(~3 lines)*
 
@@ -78,15 +78,15 @@ fixes a real bug or meaningful risk, and doesn't require architectural changes.
 
 ## Quick Wins — Type Safety (1-3 lines each)
 
-- [ ] **Redundant Zod cast**: `sandbox.ts:201` — remove unnecessary
+- [x] **Redundant Zod cast**: `sandbox.ts:201` — remove unnecessary
   `as IsolateConfig` after `IsolateConfigSchema.parse()`.
   *(delete 1 cast)*
 
-- [ ] **`.filter(Boolean) as string[]`**: `bundle-store-tigris.ts:135` —
+- [x] **`.filter(Boolean) as string[]`**: `bundle-store-tigris.ts:135` —
   replace with `.filter((k): k is string => typeof k === "string")`.
   *(1 line)*
 
-- [ ] **Unsafe type assertions in S2S parsing**: `s2s.ts:74-76` — add
+- [x] **Unsafe type assertions in S2S parsing**: `s2s.ts:74-76` — add
   `typeof obj.call_id !== "string"` guard before the assertion.
   *(~3 lines)*
 
@@ -94,16 +94,16 @@ fixes a real bug or meaningful risk, and doesn't require architectural changes.
 
 ## Quick Wins — Build Hygiene (1-5 lines each)
 
-- [ ] **Unnecessary tsdown entry**: `aai/tsdown.config.ts:20` — remove
+- [x] **Unnecessary tsdown entry**: `aai/tsdown.config.ts:20` — remove
   `_mock-ws.ts` from entry array (test-only file being compiled).
   *(delete 1 line)*
 
-- [ ] **Private package has `main` pointing to source**:
+- [x] **Private package has `main` pointing to source**:
   `aai-server/package.json:6` — remove `"main": "src/index.ts"` since
   package is `"private": true`.
   *(delete 1 line)*
 
-- [ ] **Duplicated error utilities**: `utils.ts` and `_utils.ts` both
+- [x] **Duplicated error utilities**: `utils.ts` and `_utils.ts` both
   define `errorMessage()` and `errorDetail()`. Consolidate to one file.
   *(~10 lines, prevents drift)*
 
@@ -111,7 +111,7 @@ fixes a real bug or meaningful risk, and doesn't require architectural changes.
 
 ## Quick Wins — Performance (1-5 lines each)
 
-- [ ] **O(n^2) delta buffer concatenation**: `client-handler.ts:72` —
+- [x] **O(n^2) delta buffer concatenation**: `client-handler.ts:72` —
   `deltaBuffer.join(" ")` runs on every `chat_delta`. Only join on `chat`
   event completion instead.
   *(~3 lines, eliminates quadratic behavior in long responses)*

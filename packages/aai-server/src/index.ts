@@ -133,7 +133,10 @@ async function main(): Promise<void> {
       })
       .filter(Boolean);
     // Await all sandbox terminations before closing the server.
-    await Promise.allSettled(stops);
+    const results = await Promise.allSettled(stops);
+    for (const r of results) {
+      if (r.status === "rejected") console.warn("Sandbox termination failed:", r.reason);
+    }
     nodeServer.close(() => process.exit(0));
     // Force exit if cleanup takes too long
     setTimeout(() => process.exit(1), 3000).unref();

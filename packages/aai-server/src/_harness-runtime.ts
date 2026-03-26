@@ -275,32 +275,37 @@ async function invokeHook(agent: AgentDef, req: HookRequest): Promise<HookRespon
   const ctx = makeHookCtx(agent, req);
   let result: unknown;
 
-  switch (req.hook) {
-    case "onConnect":
-      await agent.onConnect?.(ctx);
-      break;
-    case "onDisconnect":
-      await agent.onDisconnect?.(ctx);
-      sessionStates.delete(req.sessionId);
-      break;
-    case "onTurn":
-      await agent.onTurn?.(req.text ?? "", ctx);
-      break;
-    case "onError":
-      await agent.onError?.(new Error(req.error?.message ?? "Unknown error"), ctx);
-      break;
-    case "onStep":
-      if (req.step) await agent.onStep?.(req.step, ctx);
-      break;
-    case "onBeforeStep":
-      result = await agent.onBeforeStep?.(req.stepNumber ?? 0, ctx);
-      break;
-    case "resolveTurnConfig":
-      result = await runResolveTurnConfig(agent, ctx, req.stepNumber ?? 0);
-      break;
-    default:
-      result = await invokeMiddlewareHook(agent, req, ctx);
-      break;
+  try {
+    switch (req.hook) {
+      case "onConnect":
+        await agent.onConnect?.(ctx);
+        break;
+      case "onDisconnect":
+        await agent.onDisconnect?.(ctx);
+        sessionStates.delete(req.sessionId);
+        break;
+      case "onTurn":
+        await agent.onTurn?.(req.text ?? "", ctx);
+        break;
+      case "onError":
+        await agent.onError?.(new Error(req.error?.message ?? "Unknown error"), ctx);
+        break;
+      case "onStep":
+        if (req.step) await agent.onStep?.(req.step, ctx);
+        break;
+      case "onBeforeStep":
+        result = await agent.onBeforeStep?.(req.stepNumber ?? 0, ctx);
+        break;
+      case "resolveTurnConfig":
+        result = await runResolveTurnConfig(agent, ctx, req.stepNumber ?? 0);
+        break;
+      default:
+        result = await invokeMiddlewareHook(agent, req, ctx);
+        break;
+    }
+  } catch (err) {
+    sessionStates.delete(req.sessionId);
+    throw err;
   }
 
   return { state: ctx.state, result };

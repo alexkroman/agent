@@ -66,7 +66,8 @@ export function createOrchestrator(opts: OrchestratorOpts): Hono<Env> {
     cors({
       origin: (origin) => {
         if (!origin) return "*"; // same-origin
-        if (!allowedOrigins || allowedOrigins.includes("*")) return origin;
+        if (!allowedOrigins) return ""; // reject when no origins configured
+        if (allowedOrigins.includes("*")) return origin;
         return allowedOrigins.includes(origin) ? origin : "";
       },
       allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],

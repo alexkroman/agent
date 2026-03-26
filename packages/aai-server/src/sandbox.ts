@@ -198,7 +198,7 @@ async function getIsolateConfig(port: number, authToken: string): Promise<Isolat
     const body = await res.text().catch(() => "");
     throw new Error(`Isolate /config failed (${res.status}): ${body}`);
   }
-  return IsolateConfigSchema.parse(await res.json()) as IsolateConfig;
+  return IsolateConfigSchema.parse(await res.json());
 }
 
 async function callIsolate<T>(
