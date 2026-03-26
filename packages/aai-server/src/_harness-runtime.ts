@@ -25,6 +25,7 @@ import type {
 } from "./_harness-protocol.ts";
 
 const SIDECAR_URL = process.env.SIDECAR_URL ?? "";
+const HARNESS_AUTH_TOKEN = process.env.HARNESS_AUTH_TOKEN ?? "";
 
 /**
  * Read agent env vars from process.env once at startup.
@@ -366,6 +367,28 @@ function json(res: ServerResponse, data: unknown, status = 200): void {
 // adapter redefines globalThis.Request which conflicts with secure-exec's
 // frozen built-in globals.
 
+function isAuthorized(req: IncomingMessage): boolean {
+  return !HARNESS_AUTH_TOKEN || req.headers["x-harness-token"] === HARNESS_AUTH_TOKEN;
+}
+
+async function handleRoute(
+  agent: AgentDef,
+  req: IncomingMessage,
+): Promise<{ data: unknown; status?: number }> {
+  if (req.method === "GET" && req.url === "/config") {
+    return { data: extractConfig(agent) };
+  }
+  if (req.method === "POST" && req.url === "/tool") {
+    const body = JSON.parse(await readBody(req)) as ToolCallRequest;
+    return { data: await executeTool(agent, body) };
+  }
+  if (req.method === "POST" && req.url === "/hook") {
+    const body = JSON.parse(await readBody(req)) as HookRequest;
+    return { data: await invokeHook(agent, body) };
+  }
+  return { data: { error: "Not found" }, status: 404 };
+}
+
 export function startHarness(agent: AgentDef): void {
   if (!agent || typeof agent !== "object" || !agent.name) {
     throw new Error("Agent bundle must export a default agent definition");
@@ -373,21 +396,12 @@ export function startHarness(agent: AgentDef): void {
 
   const server = createServer(async (req, res) => {
     try {
-      if (req.method === "GET" && req.url === "/config") {
-        json(res, extractConfig(agent));
+      if (!isAuthorized(req)) {
+        json(res, { error: "Unauthorized" }, 401);
         return;
       }
-      if (req.method === "POST" && req.url === "/tool") {
-        const body = JSON.parse(await readBody(req)) as ToolCallRequest;
-        json(res, await executeTool(agent, body));
-        return;
-      }
-      if (req.method === "POST" && req.url === "/hook") {
-        const body = JSON.parse(await readBody(req)) as HookRequest;
-        json(res, await invokeHook(agent, body));
-        return;
-      }
-      json(res, { error: "Not found" }, 404);
+      const { data, status } = await handleRoute(agent, req);
+      json(res, data, status);
     } catch (err: unknown) {
       const status = (err as { status?: number }).status ?? 500;
       const message = err instanceof Error ? err.message : "Internal error";
