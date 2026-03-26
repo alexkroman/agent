@@ -9,6 +9,12 @@ agents can be deployed to the managed platform.
 - **Self-hosted**: `agent.ts` → `createServer()` → runs on Node/Docker
 - **Platform**: `agent.ts` → CLI bundle → deploy to managed server
 
+## Shared Plans
+
+Active planning docs live in `.claude/plans/`. **Check these before starting
+work on related areas.** Update plan status and check off tasks as you
+complete them. Copy `TEMPLATE.md` when creating a new plan.
+
 ## Commands
 
 ```sh
