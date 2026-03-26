@@ -85,6 +85,11 @@
       "source": "./_utils.ts",
       "types": "./dist/_utils.d.ts",
       "import": "./dist/_utils.js"
+    },
+    "./middleware-core": {
+      "source": "./middleware-core.ts",
+      "types": "./dist/middleware-core.d.ts",
+      "import": "./dist/middleware-core.js"
     }
   },
   "scripts": {

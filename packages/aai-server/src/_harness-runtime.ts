@@ -14,6 +14,13 @@
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { Kv } from "@alexkroman1/aai/kv";
+import {
+  runAfterToolCallMiddleware,
+  runAfterTurnMiddleware,
+  runBeforeTurnMiddleware,
+  runOutputFilters,
+  runToolCallInterceptors,
+} from "@alexkroman1/aai/middleware-core";
 import type { AgentDef, HookContext, Middleware, ToolContext } from "@alexkroman1/aai/types";
 import type { VectorStore } from "@alexkroman1/aai/vector";
 import type {
@@ -206,74 +213,6 @@ async function runResolveTurnConfig(
   return config.maxSteps !== undefined || config.activeTools !== undefined ? config : null;
 }
 
-// ── Middleware runner (inline — cannot import from middleware.ts in isolate) ──
-
-async function runMiddlewareBeforeTurn(
-  middleware: readonly Middleware[],
-  text: string,
-  ctx: HookContext,
-): Promise<string | undefined> {
-  for (const mw of middleware) {
-    if (!mw.beforeTurn) continue;
-    const r = await mw.beforeTurn(text, ctx);
-    if (r && "block" in r && r.block) return r.reason;
-  }
-}
-
-async function runMiddlewareAfterTurn(
-  middleware: readonly Middleware[],
-  text: string,
-  ctx: HookContext,
-): Promise<void> {
-  for (let i = middleware.length - 1; i >= 0; i--) {
-    const mw = middleware[i];
-    if (mw?.afterTurn) await mw.afterTurn(text, ctx);
-  }
-}
-
-async function runMiddlewareToolIntercept(
-  middleware: readonly Middleware[],
-  toolName: string,
-  args: Record<string, unknown>,
-  ctx: HookContext,
-): Promise<unknown> {
-  let currentArgs = args;
-  for (const mw of middleware) {
-    if (!mw.toolCallInterceptor) continue;
-    const r = await mw.toolCallInterceptor(toolName, currentArgs, ctx);
-    if (!r) continue;
-    if ("block" in r && r.block) return { type: "block", reason: r.reason };
-    if ("result" in r) return { type: "result", result: r.result };
-    if ("args" in r) currentArgs = r.args;
-  }
-  if (currentArgs !== args) return { type: "args", args: currentArgs };
-}
-
-async function runMiddlewareAfterToolCall(
-  middleware: readonly Middleware[],
-  toolName: string,
-  args: Record<string, unknown>,
-  result: string,
-  ctx: HookContext,
-): Promise<void> {
-  for (let i = middleware.length - 1; i >= 0; i--) {
-    const mw = middleware[i];
-    if (mw?.afterToolCall) await mw.afterToolCall(toolName, args, result, ctx);
-  }
-}
-
-async function runMiddlewareOutputFilter(
-  middleware: readonly Middleware[],
-  text: string,
-  ctx: HookContext,
-): Promise<string> {
-  let filtered = text;
-  for (const mw of middleware) {
-    if (mw.outputFilter) filtered = await mw.outputFilter(filtered, ctx);
-  }
-  return filtered;
-}
-
 async function invokeMiddlewareHook(
   agent: AgentDef,
   req: HookRequest,
@@ -281,20 +220,22 @@ async function invokeMiddlewareHook(
 ): Promise<unknown> {
   const middleware: readonly Middleware[] = agent.middleware ?? [];
   switch (req.hook) {
-    case "beforeTurn":
-      return runMiddlewareBeforeTurn(middleware, req.text ?? "", ctx);
+    case "beforeTurn": {
+      const r = await runBeforeTurnMiddleware(middleware, req.text ?? "", ctx);
+      return r?.reason;
+    }
     case "afterTurn":
-      await runMiddlewareAfterTurn(middleware, req.text ?? "", ctx);
+      await runAfterTurnMiddleware(middleware, req.text ?? "", ctx);
       return;
     case "interceptToolCall":
-      return runMiddlewareToolIntercept(
+      return runToolCallInterceptors(
         middleware,
         req.step?.toolCalls[0]?.toolName ?? "",
         (req.step?.toolCalls[0]?.args as Record<string, unknown>) ?? {},
         ctx,
       );
     case "afterToolCall":
-      await runMiddlewareAfterToolCall(
+      await runAfterToolCallMiddleware(
         middleware,
         req.step?.toolCalls[0]?.toolName ?? "",
         (req.step?.toolCalls[0]?.args as Record<string, unknown>) ?? {},
@@ -303,7 +244,7 @@ async function invokeMiddlewareHook(
       );
       return;
     case "filterOutput":
-      return runMiddlewareOutputFilter(middleware, req.text ?? "", ctx);
+      return runOutputFilters(middleware, req.text ?? "", ctx);
     default:
       return;
   }
