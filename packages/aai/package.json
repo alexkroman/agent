@@ -105,6 +105,11 @@
       "source": "./lancedb-vector.ts",
       "types": "./dist/lancedb-vector.d.ts",
       "import": "./dist/lancedb-vector.js"
+    },
+    "./flow": {
+      "source": "./flow.ts",
+      "types": "./dist/flow.d.ts",
+      "import": "./dist/flow.js"
     }
   },
   "scripts": {

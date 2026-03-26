@@ -21,6 +21,7 @@
  * ```
  */
 
+export { defineFlow, type Flow, type FlowConfig, type FlowState, type FlowStep } from "./flow.ts";
 export type { Kv, KvEntry, KvListOptions } from "./kv.ts";
 export {
   type AgentDef,
