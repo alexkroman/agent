@@ -11,7 +11,7 @@ import { ClientMessageSchema } from "./protocol.ts";
 import type { Logger } from "./runtime.ts";
 import { consoleLogger } from "./runtime.ts";
 import type { Session } from "./session.ts";
-import { tracer } from "./telemetry.ts";
+import { tracer, wsSendDroppedCounter } from "./telemetry.ts";
 
 /**
  * Minimal WebSocket interface accepted by {@link wireSessionSocket}.
@@ -56,7 +56,10 @@ function createClientSink(ws: SessionWebSocket, log: Logger): ClientSink {
     try {
       if (ws.readyState === 1) ws.send(data);
     } catch (err) {
-      log.debug?.("safeSend failed", { error: err instanceof Error ? err.message : String(err) });
+      log.debug?.("safeSend: socket closed between readyState check and send", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      wsSendDroppedCounter.add(1);
     }
   }
   return {

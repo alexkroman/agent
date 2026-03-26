@@ -178,7 +178,12 @@ async function startIsolate(
 const PORT_ANNOUNCE_TIMEOUT_MS = 15_000;
 /** Timeout for initial config fetch (isolate boot). */
 const CONFIG_TIMEOUT_MS = 10_000;
-/** Timeout for tool execution calls. */
+/**
+ * Timeout for tool execution calls (host-side).
+ *
+ * The isolate-side timeout (ISOLATE_TOOL_TIMEOUT_MS = 25s in _harness-runtime.ts)
+ * is 5s shorter so it returns a clean error before the host aborts.
+ */
 const TOOL_TIMEOUT_MS = 30_000;
 /** Timeout for lifecycle hook calls. */
 const HOOK_TIMEOUT_MS = 10_000;

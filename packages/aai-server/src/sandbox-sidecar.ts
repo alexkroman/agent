@@ -7,6 +7,7 @@
  */
 
 import type { Kv, KvEntry } from "@alexkroman1/aai/kv";
+import { getServerPort } from "@alexkroman1/aai/utils";
 import type { VectorStore } from "@alexkroman1/aai/vector";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
@@ -183,9 +184,9 @@ export async function startSidecarServer(
     server.on("error", reject);
   });
 
-  const addr = server.address() as { port: number };
+  const port = getServerPort(server.address());
   return {
-    url: `http://127.0.0.1:${addr.port}`,
+    url: `http://127.0.0.1:${port}`,
     close: () => server.close(),
   };
 }

@@ -262,7 +262,10 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
     let opened = false;
 
     function send(msg: { type: string; [key: string]: unknown }): void {
-      if (ws.readyState !== WS_OPEN) return;
+      if (ws.readyState !== WS_OPEN) {
+        log.debug("S2S send dropped: socket not open", { type: msg.type });
+        return;
+      }
       const json = JSON.stringify(msg);
       if (msg.type !== "input.audio") {
         log.info(
@@ -277,7 +280,10 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
       on: emitter.on.bind(emitter),
 
       sendAudio(audio: Uint8Array): void {
-        if (ws.readyState !== WS_OPEN) return;
+        if (ws.readyState !== WS_OPEN) {
+          log.debug("S2S sendAudio dropped: socket not open");
+          return;
+        }
         ws.send(`{"type":"input.audio","audio":"${uint8ToBase64(audio)}"}`);
       },
 

@@ -22,6 +22,46 @@ export function isReadOnlyFsOp(op: string): boolean {
   return READ_ONLY_FS_OPS.has(op);
 }
 
+/**
+ * Safely extract the port from `server.address()`, guarding against the
+ * string (pipe/socket) and null return types.
+ */
+export function getServerPort(addr: unknown): number {
+  if (
+    addr &&
+    typeof addr === "object" &&
+    "port" in addr &&
+    typeof (addr as { port: unknown }).port === "number"
+  ) {
+    return (addr as { port: number }).port;
+  }
+  throw new Error(`Expected server address with numeric port, got: ${JSON.stringify(addr)}`);
+}
+
+/**
+ * Lazily initialized per-session state manager.
+ *
+ * On first access for a given session, calls `initState()` (if provided) to
+ * create the initial state. Returns `{}` if no initializer and no prior state.
+ */
+export function createSessionStateMap(initState?: () => Record<string, unknown>): {
+  get(sessionId: string): Record<string, unknown>;
+  delete(sessionId: string): boolean;
+} {
+  const map = new Map<string, Record<string, unknown>>();
+  return {
+    get(sessionId: string): Record<string, unknown> {
+      if (!map.has(sessionId) && initState) {
+        map.set(sessionId, initState());
+      }
+      return map.get(sessionId) ?? {};
+    },
+    delete(sessionId: string): boolean {
+      return map.delete(sessionId);
+    },
+  };
+}
+
 /** Filter out undefined values from an env record. */
 export function filterEnv(env: Record<string, string | undefined>): Record<string, string> {
   return Object.fromEntries(
