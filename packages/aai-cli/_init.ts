@@ -92,7 +92,7 @@ See \`CLAUDE.md\` for the full agent API reference.
   try {
     await fs.writeFile(readmePath, readme, { flag: "wx" });
   } catch (err: unknown) {
-    if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+    if (!(err instanceof Error && "code" in err && err.code === "EEXIST")) throw err;
   }
 
   return targetDir;
