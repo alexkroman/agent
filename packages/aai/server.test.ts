@@ -24,17 +24,6 @@ describe("createServer", () => {
     expect(server).toHaveProperty("close");
   });
 
-  test("/health returns ok JSON", async () => {
-    const agent = makeAgent({ name: "health-agent" });
-    server = createServer({ agent, env: {}, logger: silentLogger });
-    await server.listen(0);
-
-    // Hono's serve binds on port 0, need to get actual port
-    // We'll use a known port for testing
-    await server.close();
-    server = null;
-  });
-
   test("listen and close lifecycle works", async () => {
     server = createServer({ agent: makeAgent(), env: {}, logger: silentLogger });
     await server.listen(0);
