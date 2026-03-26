@@ -21,6 +21,7 @@ export default defineConfig({
     "testing.ts",
     "matchers.ts",
     "utils.ts",
+    "_net.ts",
   ],
   format: "esm",
   platform: "node",

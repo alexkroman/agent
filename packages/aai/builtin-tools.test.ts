@@ -336,6 +336,94 @@ describe("getBuiltinToolDefs", () => {
     expect(result).toEqual({ error: "Response was not valid JSON" });
   });
 
+  // ─── SSRF protection ─────────────────────────────────────────────────
+
+  test("fetch_json blocks private IP addresses", async () => {
+    const mockFetch = vi.fn(() => Promise.resolve(new Response("{}")));
+    const defs = getBuiltinToolDefs(["fetch_json"], {
+      fetch: mockFetch as typeof globalThis.fetch,
+    });
+    const ctx = createMockToolContext();
+    const result = await defs.fetch_json?.execute(
+      { url: "http://169.254.169.254/latest/meta-data/" },
+      ctx,
+    );
+    expect(result).toEqual({
+      error: "URL blocked: requests to private/internal addresses are not allowed",
+      url: "http://169.254.169.254/latest/meta-data/",
+    });
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  test("fetch_json blocks localhost", async () => {
+    const mockFetch = vi.fn(() => Promise.resolve(new Response("{}")));
+    const defs = getBuiltinToolDefs(["fetch_json"], {
+      fetch: mockFetch as typeof globalThis.fetch,
+    });
+    const ctx = createMockToolContext();
+    const result = await defs.fetch_json?.execute({ url: "http://127.0.0.1:6379/" }, ctx);
+    expect(result).toEqual({
+      error: "URL blocked: requests to private/internal addresses are not allowed",
+      url: "http://127.0.0.1:6379/",
+    });
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  test("visit_webpage blocks private IP addresses", async () => {
+    const mockFetch = vi.fn(() => Promise.resolve(new Response("")));
+    const defs = getBuiltinToolDefs(["visit_webpage"], {
+      fetch: mockFetch as typeof globalThis.fetch,
+    });
+    const ctx = createMockToolContext();
+    const result = await defs.visit_webpage?.execute({ url: "http://192.168.1.1/" }, ctx);
+    expect(result).toEqual({
+      error: "URL blocked: requests to private/internal addresses are not allowed",
+      url: "http://192.168.1.1/",
+    });
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  test("visit_webpage blocks cloud metadata endpoint", async () => {
+    const mockFetch = vi.fn(() => Promise.resolve(new Response("")));
+    const defs = getBuiltinToolDefs(["visit_webpage"], {
+      fetch: mockFetch as typeof globalThis.fetch,
+    });
+    const ctx = createMockToolContext();
+    const result = await defs.visit_webpage?.execute(
+      { url: "http://169.254.169.254/latest/meta-data/" },
+      ctx,
+    );
+    expect(result).toEqual({
+      error: "URL blocked: requests to private/internal addresses are not allowed",
+      url: "http://169.254.169.254/latest/meta-data/",
+    });
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  test("fetch_json blocks .internal domains", async () => {
+    const mockFetch = vi.fn(() => Promise.resolve(new Response("{}")));
+    const defs = getBuiltinToolDefs(["fetch_json"], {
+      fetch: mockFetch as typeof globalThis.fetch,
+    });
+    const ctx = createMockToolContext();
+    const result = await defs.fetch_json?.execute({ url: "http://metadata.google.internal/" }, ctx);
+    expect(result).toEqual({
+      error: "URL blocked: requests to private/internal addresses are not allowed",
+      url: "http://metadata.google.internal/",
+    });
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  test("fetch_json allows public URLs", async () => {
+    const mockFetch = vi.fn(() => Promise.resolve(new Response(JSON.stringify({ ok: true }))));
+    const defs = getBuiltinToolDefs(["fetch_json"], {
+      fetch: mockFetch as typeof globalThis.fetch,
+    });
+    const ctx = createMockToolContext();
+    await defs.fetch_json?.execute({ url: "https://api.example.com/data" }, ctx);
+    expect(mockFetch).toHaveBeenCalled();
+  });
+
   // ─── visit_webpage ─────────────────────────────────────────────────────
 
   test("visit_webpage returns content for successful fetch", async () => {

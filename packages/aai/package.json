@@ -85,6 +85,11 @@
       "source": "./utils.ts",
       "types": "./dist/utils.d.ts",
       "import": "./dist/utils.js"
+    },
+    "./net": {
+      "source": "./_net.ts",
+      "types": "./dist/_net.d.ts",
+      "import": "./dist/_net.js"
     }
   },
   "scripts": {

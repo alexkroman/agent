@@ -9,9 +9,10 @@
 import { convert } from "html-to-text";
 import { z } from "zod";
 import { EMPTY_PARAMS, type ToolSchema } from "./internal-types.ts";
+import { assertPublicUrl } from "./_net.ts";
+import { errorMessage } from "./utils.ts";
 import { memoryTools } from "./memory-tools.ts";
 import type { ToolDef } from "./types.ts";
-import { errorMessage } from "./utils.ts";
 
 export { memoryTools } from "./memory-tools.ts";
 
@@ -110,6 +111,14 @@ function createVisitWebpage(fetchFn = globalThis.fetch): ToolDef<typeof visitWeb
     parameters: visitWebpageParams,
     async execute(args, _ctx) {
       const { url } = args;
+      try {
+        assertPublicUrl(url);
+      } catch {
+        return {
+          error: "URL blocked: requests to private/internal addresses are not allowed",
+          url,
+        };
+      }
       const resp = await fetchFn(url, {
         headers: {
           "User-Agent":
@@ -154,6 +163,14 @@ function createFetchJson(fetchFn = globalThis.fetch): ToolDef<typeof fetchJsonPa
     parameters: fetchJsonParams,
     async execute(args, _ctx) {
       const { url, headers } = args;
+      try {
+        assertPublicUrl(url);
+      } catch {
+        return {
+          error: "URL blocked: requests to private/internal addresses are not allowed",
+          url,
+        };
+      }
       const resp = await fetchFn(url, {
         ...(headers && { headers }),
         signal: fetchSignal(),
