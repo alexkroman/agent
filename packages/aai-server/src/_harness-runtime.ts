@@ -43,8 +43,6 @@ const agentEnv: Record<string, string> = Object.freeze(
   ),
 );
 
-// ── Sidecar server proxy (KV / vector) ───────────────────────────────────
-
 async function sidecarRpc<T>(path: string, body: unknown): Promise<T> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (SIDECAR_TOKEN) headers.Authorization = `Bearer ${SIDECAR_TOKEN}`;
@@ -60,8 +58,6 @@ async function sidecarRpc<T>(path: string, body: unknown): Promise<T> {
 
 const kv: Kv = {
   get<T = unknown>(key: string, _schema?: unknown) {
-    // Schema validation is not supported in the isolate; the sidecar handles raw JSON.
-    void _schema;
     return sidecarRpc<T | null>("/kv/get", { key });
   },
   set(key: string, value: unknown, options?: { expireIn?: number }) {
@@ -75,8 +71,6 @@ const kv: Kv = {
     options?: { limit?: number; reverse?: boolean },
     _schema?: unknown,
   ) {
-    // Schema validation is not supported in the isolate; the sidecar handles raw JSON.
-    void _schema;
     return sidecarRpc<{ key: string; value: T }[]>("/kv/list", { prefix, ...options });
   },
   keys(pattern?: string) {
@@ -96,18 +90,12 @@ const vector: VectorStore = {
   },
 };
 
-// ── Per-session state ────────────────────────────────────────────────────
-
 const sessionStates = new Map<string, Record<string, unknown>>();
 
 function getState(agent: AgentDef, sessionId: string): Record<string, unknown> {
-  if (!sessionStates.has(sessionId) && agent.state) {
-    sessionStates.set(sessionId, agent.state());
-  }
+  if (!sessionStates.has(sessionId) && agent.state) sessionStates.set(sessionId, agent.state());
   return sessionStates.get(sessionId) ?? {};
 }
-
-// ── Tool schemas ─────────────────────────────────────────────────────────
 
 function extractToolSchemas(agent: AgentDef): IsolateConfig["toolSchemas"] {
   return Object.entries(agent.tools).map(([name, def]) => ({
@@ -119,8 +107,6 @@ function extractToolSchemas(agent: AgentDef): IsolateConfig["toolSchemas"] {
         : ({ type: "object", properties: {} } as Record<string, unknown>),
   }));
 }
-
-// ── Config extraction ────────────────────────────────────────────────────
 
 function extractConfig(agent: AgentDef): IsolateConfig {
   const config: IsolateConfig = {
@@ -148,19 +134,11 @@ function extractConfig(agent: AgentDef): IsolateConfig {
   return config;
 }
 
-// ── Tool execution ───────────────────────────────────────────────────────
-
-/**
- * Timeout for tool execution inside the isolate. Set slightly under the
- * host's TOOL_TIMEOUT_MS (30 s) so the isolate returns a clean error
- * before the host-side timeout fires.
- */
+/** Timeout slightly under host's 30 s so isolate returns a clean error first. */
 const ISOLATE_TOOL_TIMEOUT_MS = 25_000;
 
 async function executeTool(agent: AgentDef, req: ToolCallRequest): Promise<ToolCallResponse> {
   const tool = agent.tools[req.name];
-  // Harness uses raw node:http (no Hono), so errors carry a `.status` property
-  // via Object.assign. The catch handler in startServer() reads it.
   if (!tool) throw Object.assign(new Error(`Unknown tool: ${req.name}`), { status: 404 });
 
   const ctx: ToolContext = {
@@ -191,8 +169,6 @@ async function executeTool(agent: AgentDef, req: ToolCallRequest): Promise<ToolC
   };
 }
 
-// ── Hook invocation ──────────────────────────────────────────────────────
-
 function makeHookCtx(agent: AgentDef, req: HookRequest): HookContext {
   return {
     env: agentEnv,
@@ -217,8 +193,6 @@ async function runResolveTurnConfig(
   }
   return config.maxSteps !== undefined || config.activeTools !== undefined ? config : null;
 }
-
-// ── Middleware runner (inline — cannot import from middleware.ts in isolate) ──
 
 async function runMiddlewareBeforeTurn(
   middleware: readonly Middleware[],
@@ -356,9 +330,6 @@ async function invokeHook(agent: AgentDef, req: HookRequest): Promise<HookRespon
   return { state: ctx.state, result };
 }
 
-// ── HTTP helpers ─────────────────────────────────────────────────────────
-
-/** Maximum request body size (5 MB) to prevent memory exhaustion attacks. */
 const MAX_BODY_SIZE = 5 * 1024 * 1024;
 
 function readBody(req: IncomingMessage): Promise<string> {
@@ -388,22 +359,11 @@ function json(res: ServerResponse, data: unknown, status = 200): void {
   res.end(body);
 }
 
-// ── HTTP server (node:http) ──────────────────────────────────────────────
-// Uses node:http directly instead of Hono because @hono/node-server's
-// adapter redefines globalThis.Request which conflicts with secure-exec's
-// frozen built-in globals.
-
-/**
- * Handles HTTP request errors with sanitized messages. Returns a generic
- * "Internal error" for 5xx to avoid leaking stack traces, file paths, or
- * schema structures. 4xx errors use controlled messages that are safe to expose.
- */
 function handleRequestError(err: unknown, req: IncomingMessage, res: ServerResponse): void {
   const status = (err as { status?: number }).status ?? 500;
   const detail = err instanceof Error ? err.message : "Internal error";
   console.error(`[harness] ${req.method} ${req.url} error (${status}):`, detail);
-  const message = status >= 500 ? "Internal error" : detail;
-  json(res, { error: message }, status);
+  json(res, { error: status >= 500 ? "Internal error" : detail }, status);
 }
 
 export function startHarness(agent: AgentDef): void {
