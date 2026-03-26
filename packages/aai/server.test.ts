@@ -94,10 +94,9 @@ describe("createServer", () => {
     await server.listen(port);
 
     await fetch(`http://localhost:${port}/nonexistent-path`);
-    // The middleware logs errors for status >= 400
-    // Give a moment for async logging
-    await new Promise((r) => setTimeout(r, 50));
-    expect(silentLogger.error).toHaveBeenCalled();
+    await vi.waitFor(() => {
+      expect(silentLogger.error).toHaveBeenCalled();
+    });
   });
 
   test("close is safe to call without listen", async () => {
