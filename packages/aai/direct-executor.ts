@@ -12,7 +12,7 @@ import {
   type ToolSchema,
   toAgentConfig,
 } from "./_internal-types.ts";
-import { createSessionStateMap } from "./_utils.ts";
+import { createSessionStateMap, toolError } from "./_utils.ts";
 import { getBuiltinToolDefs, getBuiltinToolSchemas } from "./builtin-tools.ts";
 import type { Kv } from "./kv.ts";
 import { createMemoryKv } from "./kv.ts";
@@ -141,7 +141,7 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
 
   const executeTool: ExecuteTool = async (name, args, sessionId, messages) => {
     const tool = allTools[name];
-    if (!tool) return JSON.stringify({ error: `Unknown tool: ${name}` });
+    if (!tool) return toolError(`Unknown tool: ${name}`);
 
     return executeToolCall(name, args, {
       tool,

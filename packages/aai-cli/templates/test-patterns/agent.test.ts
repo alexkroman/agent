@@ -23,7 +23,7 @@ describe("basic tool execution", () => {
     const t = createTestHarness(agent);
     // "text" is required and must be non-empty
     const result = await t.executeTool("add_task", { text: "" });
-    expect(result).toContain("Error");
+    expect(result).toContain("error");
   });
 
   test("executeTool returns an error for unknown tools", async () => {

@@ -5,7 +5,7 @@
 
 import type { z } from "zod";
 import { EMPTY_PARAMS } from "./_internal-types.ts";
-import { errorDetail, errorMessage } from "./_utils.ts";
+import { errorDetail, errorMessage, toolError } from "./_utils.ts";
 import type { Kv } from "./kv.ts";
 import { TOOL_EXECUTION_TIMEOUT_MS } from "./protocol.ts";
 import type { Logger } from "./runtime.ts";
@@ -65,8 +65,9 @@ export type ExecuteToolCallOptions = {
  *
  * Validates the provided arguments against the tool's Zod parameter schema,
  * constructs a {@link ToolContext}, invokes the tool's `execute` function,
- * and serializes the result to a string. Errors are caught and returned as
- * `"Error: ..."` strings rather than thrown.
+ * and serializes the result to a string. Errors (validation failures,
+ * execution throws, timeouts) are caught and returned as JSON strings
+ * via {@link toolError} (`'{"error":"<message>"}'`) rather than thrown.
  *
  * @param name - The name of the tool being invoked.
  * @param args - Raw arguments from the LLM to validate and pass to the tool.
@@ -85,7 +86,7 @@ export async function executeToolCall(
     const issues = (parsed.error?.issues ?? [])
       .map((i: z.ZodIssue) => `${i.path.map(String).join(".")}: ${i.message}`)
       .join(", ");
-    return `Error: Invalid arguments for tool "${name}": ${issues}`;
+    return toolError(`Invalid arguments for tool "${name}": ${issues}`);
   }
 
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -109,7 +110,7 @@ export async function executeToolCall(
     } else {
       console.warn(`[tool-executor] Tool execution failed: ${name}`, err);
     }
-    return `Error: ${errorMessage(err)}`;
+    return toolError(errorMessage(err));
   } finally {
     clearTimeout(timer);
   }

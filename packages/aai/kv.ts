@@ -149,13 +149,6 @@ function matchGlob(key: string, pattern: string): boolean {
   return pos <= end;
 }
 
-/** Build a key-matching function from an optional glob/prefix pattern. */
-function buildKeyMatcher(pattern?: string): (key: string) => boolean {
-  if (!pattern) return () => true;
-  if (pattern.includes("*")) return (key) => matchGlob(key, pattern);
-  return (key) => key.startsWith(pattern);
-}
-
 /**
  * Create an in-memory KV store (useful for testing and local development).
  *
@@ -186,6 +179,17 @@ export function createMemoryKv(): Kv {
 
   function isExpired(entry: { expiresAt?: number }): boolean {
     return entry.expiresAt !== undefined && entry.expiresAt <= Date.now();
+  }
+
+  function purgeExpired(now: number): void {
+    for (const [key, entry] of store) {
+      if (entry.expiresAt && entry.expiresAt <= now) store.delete(key);
+    }
+  }
+
+  function matchesPattern(key: string, pattern?: string, isGlob?: boolean): boolean {
+    if (!pattern) return true;
+    return isGlob ? matchGlob(key, pattern) : key.startsWith(pattern);
   }
 
   return {
@@ -247,16 +251,11 @@ export function createMemoryKv(): Kv {
     async keys(pattern?: string): Promise<string[]> {
       const now = Date.now();
       const result: string[] = [];
-      const expiredKeys: string[] = [];
-      const matcher = buildKeyMatcher(pattern);
-      for (const [key, entry] of store) {
-        if (entry.expiresAt && entry.expiresAt <= now) {
-          expiredKeys.push(key);
-          continue;
-        }
-        if (matcher(key)) result.push(key);
+      const isGlob = pattern?.includes("*");
+      purgeExpired(now);
+      for (const [key] of store) {
+        if (matchesPattern(key, pattern, isGlob)) result.push(key);
       }
-      for (const key of expiredKeys) store.delete(key);
       return result.sort((a, b) => a.localeCompare(b));
     },
   };

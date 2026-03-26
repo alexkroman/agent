@@ -127,18 +127,19 @@ describe("handleToolCall", () => {
     } as Partial<S2sSessionCtx>);
     await handleToolCall(ctx, tc());
     expect(ctx.executeTool).not.toHaveBeenCalled();
-    expect(findEvent(ctx, "tool_call_done")?.result as string).toContain(
-      "resolveTurnConfig hook error",
-    );
+    const result = JSON.parse(findEvent(ctx, "tool_call_done")?.result as string);
+    expect(result.error).toContain("resolveTurnConfig hook error");
   });
 
   test("refused tool call: returns refusal without executing", async () => {
     const ctx = makeCtx({
-      consumeToolCallStep: vi.fn(() => "Tool not allowed"),
+      consumeToolCallStep: vi.fn(() => JSON.stringify({ error: "Tool not allowed" })),
     } as Partial<S2sSessionCtx>);
     await handleToolCall(ctx, tc());
     expect(ctx.executeTool).not.toHaveBeenCalled();
-    expect(findEvent(ctx, "tool_call_done")?.result).toBe("Tool not allowed");
+    expect(findEvent(ctx, "tool_call_done")?.result).toBe(
+      JSON.stringify({ error: "Tool not allowed" }),
+    );
   });
 
   test("middleware block: returns error JSON without executing", async () => {
