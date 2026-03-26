@@ -12,7 +12,7 @@
  */
 
 import { randomBytes } from "node:crypto";
-import type { AgentConfig } from "@alexkroman1/aai/internal-types";
+import { toAgentConfig } from "@alexkroman1/aai/internal-types";
 import { buildReadyConfig } from "@alexkroman1/aai/protocol";
 import { DEFAULT_S2S_CONFIG } from "@alexkroman1/aai/runtime";
 import { createS2sSession, type HookInvoker, type Session } from "@alexkroman1/aai/session";
@@ -293,22 +293,11 @@ function buildHookInvoker(isolateUrl: string, authToken: string): HookInvoker {
   };
 }
 
-function toAgentConfig(config: IsolateConfig): AgentConfig {
-  const ac: AgentConfig = {
-    name: config.name,
-    instructions: config.instructions,
-    greeting: config.greeting,
-  };
-  if (config.sttPrompt !== undefined) ac.sttPrompt = config.sttPrompt;
-  if (config.maxSteps !== undefined) ac.maxSteps = config.maxSteps;
-  if (config.toolChoice !== undefined) ac.toolChoice = config.toolChoice;
-  if (config.builtinTools) ac.builtinTools = config.builtinTools as AgentConfig["builtinTools"];
-  if (config.activeTools) ac.activeTools = config.activeTools;
-  return ac;
-}
+// toAgentConfig is imported from @alexkroman1/aai/internal-types
 
 // ── Test internals ───────────────────────────────────────────────────────
 
+/** @internal Not part of the public API. Exposed for testing only. */
 export const _internals = {
   startSidecarServer,
   startIsolate,

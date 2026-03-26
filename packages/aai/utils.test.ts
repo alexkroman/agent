@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
-import { errorDetail, errorMessage, filterEnv } from "./_utils.ts";
+import { errorMessage, filterEnv } from "./utils.ts";
 
 describe("errorMessage", () => {
   test("extracts message from Error instance", () => {
@@ -21,33 +21,6 @@ describe("errorMessage", () => {
 
   test("converts undefined to string", () => {
     expect(errorMessage(undefined)).toBe("undefined");
-  });
-});
-
-describe("errorDetail", () => {
-  test("returns stack trace when available", () => {
-    const err = new Error("something broke");
-    const result = errorDetail(err);
-    expect(result).toBe(err.stack);
-    expect(result).toContain("something broke");
-  });
-
-  test("returns message when stack is undefined", () => {
-    const err = new Error("no stack");
-    Object.defineProperty(err, "stack", { value: undefined });
-    expect(errorDetail(err)).toBe("no stack");
-  });
-
-  test("converts string to string", () => {
-    expect(errorDetail("plain string")).toBe("plain string");
-  });
-
-  test("converts null to string", () => {
-    expect(errorDetail(null)).toBe("null");
-  });
-
-  test("converts undefined to string", () => {
-    expect(errorDetail(undefined)).toBe("undefined");
   });
 });
 

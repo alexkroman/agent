@@ -1,16 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
-/**
- * Sandbox harness runtime — runs inside the secure-exec isolate.
- *
- * This file is type-checked at compile time against the shared protocol
- * types and AgentDef. At runtime, the compiled JS is loaded into the
- * isolate's virtual filesystem and executed.
- *
- * Environment variables (set by host):
- * - SIDECAR_URL: loopback URL for the per-sandbox sidecar server
- *
- * The agent bundle is expected at "./agent_bundle.js" (default export).
- */
+/** Sandbox harness runtime — runs inside the secure-exec V8 isolate. */
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { Kv } from "@alexkroman1/aai/kv";
@@ -27,12 +16,7 @@ import type {
 const SIDECAR_URL = process.env.SIDECAR_URL ?? "";
 const HARNESS_AUTH_TOKEN = process.env.HARNESS_AUTH_TOKEN ?? "";
 
-/**
- * Read agent env vars from process.env once at startup.
- * The host passes them with an AAI_ENV_ prefix; we strip the prefix
- * so tools/hooks see the original key names (e.g. ASSEMBLYAI_API_KEY).
- * This avoids sending secrets over the wire on every RPC call.
- */
+// Strip AAI_ENV_ prefix so tools/hooks see original key names.
 const AAI_ENV_PREFIX = "AAI_ENV_";
 const agentEnv: Record<string, string> = Object.freeze(
   Object.fromEntries(
@@ -41,8 +25,6 @@ const agentEnv: Record<string, string> = Object.freeze(
       .map(([k, v]) => [k.slice(AAI_ENV_PREFIX.length), v ?? ""]),
   ),
 );
-
-// ── Sidecar server proxy (KV / vector) ───────────────────────────────────
 
 async function sidecarRpc<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`${SIDECAR_URL}${path}`, {
@@ -85,8 +67,6 @@ const vector: VectorStore = {
   },
 };
 
-// ── Per-session state ────────────────────────────────────────────────────
-
 const sessionStates = new Map<string, Record<string, unknown>>();
 
 function getState(agent: AgentDef, sessionId: string): Record<string, unknown> {
@@ -95,8 +75,6 @@ function getState(agent: AgentDef, sessionId: string): Record<string, unknown> {
   }
   return sessionStates.get(sessionId) ?? {};
 }
-
-// ── Tool schemas ─────────────────────────────────────────────────────────
 
 function extractToolSchemas(agent: AgentDef): IsolateConfig["toolSchemas"] {
   return Object.entries(agent.tools).map(([name, def]) => ({
@@ -108,8 +86,6 @@ function extractToolSchemas(agent: AgentDef): IsolateConfig["toolSchemas"] {
         : ({ type: "object", properties: {} } as Record<string, unknown>),
   }));
 }
-
-// ── Config extraction ────────────────────────────────────────────────────
 
 function extractConfig(agent: AgentDef): IsolateConfig {
   const config: IsolateConfig = {
@@ -137,13 +113,7 @@ function extractConfig(agent: AgentDef): IsolateConfig {
   return config;
 }
 
-// ── Tool execution ───────────────────────────────────────────────────────
-
-/**
- * Timeout for tool execution inside the isolate. Set slightly under the
- * host's TOOL_TIMEOUT_MS (30 s) so the isolate returns a clean error
- * before the host-side timeout fires.
- */
+// Slightly under host's 30s timeout so isolate returns a clean error first.
 const ISOLATE_TOOL_TIMEOUT_MS = 25_000;
 
 async function executeTool(agent: AgentDef, req: ToolCallRequest): Promise<ToolCallResponse> {
@@ -178,8 +148,6 @@ async function executeTool(agent: AgentDef, req: ToolCallRequest): Promise<ToolC
   };
 }
 
-// ── Hook invocation ──────────────────────────────────────────────────────
-
 function makeHookCtx(agent: AgentDef, req: HookRequest): HookContext {
   return {
     env: agentEnv,
@@ -204,8 +172,6 @@ async function runResolveTurnConfig(
   }
   return config.maxSteps !== undefined || config.activeTools !== undefined ? config : null;
 }
-
-// ── Middleware runner (inline — cannot import from middleware.ts in isolate) ──
 
 async function runMiddlewareBeforeTurn(
   middleware: readonly Middleware[],
@@ -273,44 +239,26 @@ async function runMiddlewareOutputFilter(
   return filtered;
 }
 
-async function invokeHook(agent: AgentDef, req: HookRequest): Promise<HookResponse> {
-  const ctx = makeHookCtx(agent, req);
-  let result: unknown;
+async function invokeMiddlewareHook(
+  agent: AgentDef,
+  req: HookRequest,
+  ctx: HookContext,
+): Promise<unknown> {
   const middleware: readonly Middleware[] = agent.middleware ?? [];
-
-  const handlers: Record<string, () => Promise<void> | void> = {
-    onConnect: () => agent.onConnect?.(ctx),
-    onDisconnect: async () => {
-      await agent.onDisconnect?.(ctx);
-      sessionStates.delete(req.sessionId);
-    },
-    onTurn: () => agent.onTurn?.(req.text ?? "", ctx),
-    onError: () => agent.onError?.(new Error(req.error?.message ?? "Unknown error"), ctx),
-    onStep: () => {
-      if (req.step) return agent.onStep?.(req.step, ctx);
-    },
-    onBeforeStep: async () => {
-      result = await agent.onBeforeStep?.(req.stepNumber ?? 0, ctx);
-    },
-    resolveTurnConfig: async () => {
-      result = await runResolveTurnConfig(agent, ctx, req.stepNumber ?? 0);
-    },
-    // Middleware hooks
-    beforeTurn: async () => {
-      result = await runMiddlewareBeforeTurn(middleware, req.text ?? "", ctx);
-    },
-    afterTurn: async () => {
+  switch (req.hook) {
+    case "beforeTurn":
+      return runMiddlewareBeforeTurn(middleware, req.text ?? "", ctx);
+    case "afterTurn":
       await runMiddlewareAfterTurn(middleware, req.text ?? "", ctx);
-    },
-    interceptToolCall: async () => {
-      result = await runMiddlewareToolIntercept(
+      return;
+    case "interceptToolCall":
+      return runMiddlewareToolIntercept(
         middleware,
         req.step?.toolCalls[0]?.toolName ?? "",
         (req.step?.toolCalls[0]?.args as Record<string, unknown>) ?? {},
         ctx,
       );
-    },
-    afterToolCall: async () => {
+    case "afterToolCall":
       await runMiddlewareAfterToolCall(
         middleware,
         req.step?.toolCalls[0]?.toolName ?? "",
@@ -318,21 +266,49 @@ async function invokeHook(agent: AgentDef, req: HookRequest): Promise<HookRespon
         req.text ?? "",
         ctx,
       );
-    },
-    filterOutput: async () => {
-      result = await runMiddlewareOutputFilter(middleware, req.text ?? "", ctx);
-    },
-  };
+      return;
+    case "filterOutput":
+      return runMiddlewareOutputFilter(middleware, req.text ?? "", ctx);
+    default:
+      return;
+  }
+}
 
-  const handler = handlers[req.hook];
-  if (handler) await handler();
+async function invokeHook(agent: AgentDef, req: HookRequest): Promise<HookResponse> {
+  const ctx = makeHookCtx(agent, req);
+  let result: unknown;
+
+  switch (req.hook) {
+    case "onConnect":
+      await agent.onConnect?.(ctx);
+      break;
+    case "onDisconnect":
+      await agent.onDisconnect?.(ctx);
+      sessionStates.delete(req.sessionId);
+      break;
+    case "onTurn":
+      await agent.onTurn?.(req.text ?? "", ctx);
+      break;
+    case "onError":
+      await agent.onError?.(new Error(req.error?.message ?? "Unknown error"), ctx);
+      break;
+    case "onStep":
+      if (req.step) await agent.onStep?.(req.step, ctx);
+      break;
+    case "onBeforeStep":
+      result = await agent.onBeforeStep?.(req.stepNumber ?? 0, ctx);
+      break;
+    case "resolveTurnConfig":
+      result = await runResolveTurnConfig(agent, ctx, req.stepNumber ?? 0);
+      break;
+    default:
+      result = await invokeMiddlewareHook(agent, req, ctx);
+      break;
+  }
 
   return { state: ctx.state, result };
 }
 
-// ── HTTP helpers ─────────────────────────────────────────────────────────
-
-/** Maximum request body size (5 MB) to prevent memory exhaustion attacks. */
 const MAX_BODY_SIZE = 5 * 1024 * 1024;
 
 function readBody(req: IncomingMessage): Promise<string> {
@@ -361,11 +337,6 @@ function json(res: ServerResponse, data: unknown, status = 200): void {
   });
   res.end(body);
 }
-
-// ── HTTP server (node:http) ──────────────────────────────────────────────
-// Uses node:http directly instead of Hono because @hono/node-server's
-// adapter redefines globalThis.Request which conflicts with secure-exec's
-// frozen built-in globals.
 
 function isAuthorized(req: IncomingMessage): boolean {
   return !HARNESS_AUTH_TOKEN || req.headers["x-harness-token"] === HARNESS_AUTH_TOKEN;
