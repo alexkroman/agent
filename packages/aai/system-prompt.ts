@@ -3,7 +3,7 @@
  * System prompt builder for S2S sessions.
  */
 
-import type { AgentConfig } from "./internal-types.ts";
+import type { AgentConfig } from "./_internal-types.ts";
 import { DEFAULT_INSTRUCTIONS } from "./types.ts";
 
 const VOICE_RULES =

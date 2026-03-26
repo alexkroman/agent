@@ -1,6 +1,4 @@
 // Copyright 2025 the AAI authors. MIT license.
-import { getConnInfo } from "@hono/node-server/conninfo";
-import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { isPrivateIp } from "./_net.ts";
 import { verifySlugOwner } from "./auth.ts";
@@ -48,36 +46,9 @@ export function requireUpgrade(req: Request): void {
   }
 }
 
-export function requireInternal(c: Context): void {
-  // First, check the actual TCP socket remote address via getConnInfo.
-  // Only trust proxy-set headers (CF-Connecting-IP, Fly-Client-IP) if the
-  // TCP connection itself originates from a private IP (i.e. a trusted proxy).
-  // This prevents header spoofing when the server is directly accessible.
-  let socketIp = "";
-  try {
-    socketIp = getConnInfo(c).remote.address ?? "";
-  } catch {
-    // getConnInfo throws when there is no underlying Node socket (e.g. in
-    // Hono's app.request() test helper). Fall through to header-only check.
-  }
-
-  if (socketIp) {
-    if (!isPrivateIp(socketIp)) {
-      // Socket is not from a private IP — reject regardless of headers
-      throw new HTTPException(403, { message: "Forbidden" });
-    }
-    // Socket is from a private IP — either a direct internal request or a
-    // trusted reverse proxy. Check proxy headers for the original client IP;
-    // if present, the client IP must also be private.
-    const proxyIp = c.req.header("cf-connecting-ip") ?? c.req.header("fly-client-ip");
-    if (proxyIp && !isPrivateIp(proxyIp)) {
-      throw new HTTPException(403, { message: "Forbidden" });
-    }
-    return;
-  }
-
-  // No socket IP available — fall back to proxy headers only
-  const ip = c.req.header("cf-connecting-ip") ?? c.req.header("fly-client-ip") ?? "";
+export function requireInternal(req: Request): void {
+  // In workerd, use CF-Connecting-IP or Fly-Client-IP header
+  const ip = req.headers.get("cf-connecting-ip") ?? req.headers.get("fly-client-ip") ?? "";
   if (!(ip && isPrivateIp(ip))) {
     throw new HTTPException(403, { message: "Forbidden" });
   }

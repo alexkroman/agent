@@ -6,7 +6,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { fileExists, getApiKey, isDevMode, resolveCwd } from "./_discover.ts";
+import { ensureApiKeyInEnv, fileExists, isDevMode, resolveCwd } from "./_discover.ts";
 import { askText } from "./_prompts.ts";
 import { interactive, runCommand, step, warn } from "./_ui.ts";
 
@@ -64,7 +64,7 @@ export async function runInitCommand(
   extra?: { quiet?: boolean | undefined },
 ): Promise<string> {
   if (!opts.skipApi) {
-    await getApiKey();
+    await ensureApiKeyInEnv();
   }
 
   let dir = opts.dir;

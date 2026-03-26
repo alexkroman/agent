@@ -95,12 +95,12 @@ describe("connectS2s", () => {
   test("updateSession sends session.update message", async () => {
     const { raw, handle } = await setupHandle();
 
-    handle.updateSession({ system_prompt: "test", tools: [] });
+    handle.updateSession({ systemPrompt: "test", tools: [] });
 
     expect(raw.send).toHaveBeenCalledOnce();
     const sent = JSON.parse(raw.send.mock.calls[0]?.[0] as string);
     expect(sent.type).toBe("session.update");
-    expect(sent.session.system_prompt).toBe("test");
+    expect(sent.session.system_prompt).toBe("test"); // wire format stays snake_case
   });
 
   test("sendAudio sends base64-encoded audio when open", async () => {
@@ -156,7 +156,7 @@ describe("connectS2s", () => {
     const { raw, handle } = await setupHandle();
     raw.readyState = 3; // CLOSED
 
-    handle.updateSession({ system_prompt: "test", tools: [] });
+    handle.updateSession({ systemPrompt: "test", tools: [] });
     expect(raw.send).not.toHaveBeenCalled();
   });
 
@@ -178,31 +178,31 @@ describe("connectS2s", () => {
     );
 
     expect(onReady).toHaveBeenCalledOnce();
-    expect(onReady.mock.calls[0]?.[0].session_id).toBe("s123");
+    expect(onReady.mock.calls[0]?.[0].sessionId).toBe("s123");
   });
 
-  test("input.speech.started dispatches 'speech_started'", async () => {
+  test("input.speech.started dispatches 'speechStarted'", async () => {
     const { raw, handle } = await setupHandle();
     const handler = vi.fn();
-    handle.on("speech_started", handler);
+    handle.on("speechStarted", handler);
 
     raw.emit("message", Buffer.from(JSON.stringify({ type: "input.speech.started" })));
     expect(handler).toHaveBeenCalledOnce();
   });
 
-  test("input.speech.stopped dispatches 'speech_stopped'", async () => {
+  test("input.speech.stopped dispatches 'speechStopped'", async () => {
     const { raw, handle } = await setupHandle();
     const handler = vi.fn();
-    handle.on("speech_stopped", handler);
+    handle.on("speechStopped", handler);
 
     raw.emit("message", Buffer.from(JSON.stringify({ type: "input.speech.stopped" })));
     expect(handler).toHaveBeenCalledOnce();
   });
 
-  test("transcript.user.delta dispatches 'user_transcript_delta'", async () => {
+  test("transcript.user.delta dispatches 'userTranscriptDelta'", async () => {
     const { raw, handle } = await setupHandle();
     const handler = vi.fn();
-    handle.on("user_transcript_delta", handler);
+    handle.on("userTranscriptDelta", handler);
 
     raw.emit(
       "message",
@@ -217,10 +217,10 @@ describe("connectS2s", () => {
     expect(handler.mock.calls[0]?.[0].text).toBe("Hel");
   });
 
-  test("transcript.user dispatches 'user_transcript'", async () => {
+  test("transcript.user dispatches 'userTranscript'", async () => {
     const { raw, handle } = await setupHandle();
     const handler = vi.fn();
-    handle.on("user_transcript", handler);
+    handle.on("userTranscript", handler);
 
     raw.emit(
       "message",
@@ -234,14 +234,14 @@ describe("connectS2s", () => {
     );
 
     const payload = handler.mock.calls[0]?.[0];
-    expect(payload.item_id).toBe("item-1");
+    expect(payload.itemId).toBe("item-1");
     expect(payload.text).toBe("Hello world");
   });
 
-  test("reply.started dispatches 'reply_started'", async () => {
+  test("reply.started dispatches 'replyStarted'", async () => {
     const { raw, handle } = await setupHandle();
     const handler = vi.fn();
-    handle.on("reply_started", handler);
+    handle.on("replyStarted", handler);
 
     raw.emit(
       "message",
@@ -253,13 +253,13 @@ describe("connectS2s", () => {
       ),
     );
 
-    expect(handler.mock.calls[0]?.[0].reply_id).toBe("r1");
+    expect(handler.mock.calls[0]?.[0].replyId).toBe("r1");
   });
 
-  test("transcript.agent.delta dispatches 'agent_transcript_delta'", async () => {
+  test("transcript.agent.delta dispatches 'agentTranscriptDelta'", async () => {
     const { raw, handle } = await setupHandle();
     const handler = vi.fn();
-    handle.on("agent_transcript_delta", handler);
+    handle.on("agentTranscriptDelta", handler);
 
     raw.emit(
       "message",
@@ -274,10 +274,10 @@ describe("connectS2s", () => {
     expect(handler.mock.calls[0]?.[0].text).toBe("I think");
   });
 
-  test("transcript.agent dispatches 'agent_transcript'", async () => {
+  test("transcript.agent dispatches 'agentTranscript'", async () => {
     const { raw, handle } = await setupHandle();
     const handler = vi.fn();
-    handle.on("agent_transcript", handler);
+    handle.on("agentTranscript", handler);
 
     raw.emit(
       "message",
@@ -292,10 +292,10 @@ describe("connectS2s", () => {
     expect(handler.mock.calls[0]?.[0].text).toBe("Full response");
   });
 
-  test("tool.call dispatches 'tool_call'", async () => {
+  test("tool.call dispatches 'toolCall'", async () => {
     const { raw, handle } = await setupHandle();
     const handler = vi.fn();
-    handle.on("tool_call", handler);
+    handle.on("toolCall", handler);
 
     raw.emit(
       "message",
@@ -310,15 +310,15 @@ describe("connectS2s", () => {
     );
 
     const payload = handler.mock.calls[0]?.[0];
-    expect(payload.call_id).toBe("c1");
+    expect(payload.callId).toBe("c1");
     expect(payload.name).toBe("web_search");
     expect(payload.args).toEqual({ query: "test" });
   });
 
-  test("reply.done dispatches 'reply_done'", async () => {
+  test("reply.done dispatches 'replyDone'", async () => {
     const { raw, handle } = await setupHandle();
     const handler = vi.fn();
-    handle.on("reply_done", handler);
+    handle.on("replyDone", handler);
 
     raw.emit(
       "message",
@@ -333,10 +333,10 @@ describe("connectS2s", () => {
     expect(handler.mock.calls[0]?.[0].status).toBe("completed");
   });
 
-  test("session.error with session_not_found dispatches 'session_expired'", async () => {
+  test("session.error with session_not_found dispatches 'sessionExpired'", async () => {
     const { raw, handle } = await setupHandle();
     const handler = vi.fn();
-    handle.on("session_expired", handler);
+    handle.on("sessionExpired", handler);
 
     raw.emit(
       "message",
@@ -352,10 +352,10 @@ describe("connectS2s", () => {
     expect(handler).toHaveBeenCalledOnce();
   });
 
-  test("session.error with session_forbidden dispatches 'session_expired'", async () => {
+  test("session.error with session_forbidden dispatches 'sessionExpired'", async () => {
     const { raw, handle } = await setupHandle();
     const handler = vi.fn();
-    handle.on("session_expired", handler);
+    handle.on("sessionExpired", handler);
 
     raw.emit(
       "message",
@@ -510,10 +510,10 @@ describe("connectS2s", () => {
     expect(payload.code).toBe("ws_error");
   });
 
-  test("session.updated dispatches 'session_updated'", async () => {
+  test("session.updated dispatches 'sessionUpdated'", async () => {
     const { raw, handle } = await setupHandle();
     const handler = vi.fn();
-    handle.on("session_updated", handler);
+    handle.on("sessionUpdated", handler);
 
     raw.emit("message", Buffer.from(JSON.stringify({ type: "session.updated" })));
 

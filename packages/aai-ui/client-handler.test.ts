@@ -265,7 +265,7 @@ describe("ClientHandler.event edge cases", () => {
         toolName: "search",
         args: { query: "test" },
         status: "pending",
-        afterMessageIndex: 0,
+        afterChatMessageIndex: 0,
       },
     ]);
   });
@@ -278,7 +278,7 @@ describe("ClientHandler.event edge cases", () => {
         toolName: "search",
         args: {},
         status: "pending",
-        afterMessageIndex: 0,
+        afterChatMessageIndex: 0,
       },
     ];
     target.event({ type: "tool_call_done", toolCallId: "tc1", result: "found it" });
@@ -294,7 +294,7 @@ describe("ClientHandler.event edge cases", () => {
         toolName: "search",
         args: {},
         status: "pending",
-        afterMessageIndex: 0,
+        afterChatMessageIndex: 0,
       },
     ];
     target.event({ type: "tool_call_done", toolCallId: "tc_unknown", result: "nope" });
@@ -317,7 +317,7 @@ describe("ClientHandler.event edge cases", () => {
         args: {},
         status: "done",
         result: "x",
-        afterMessageIndex: 0,
+        afterChatMessageIndex: 0,
       },
     ];
     target.event({ type: "reset" });
