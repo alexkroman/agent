@@ -48,7 +48,7 @@ export function Controls(input: {
 export function createSessionControls(session: VoiceSession): SessionSignals;
 
 // @public
-export function createVoiceSession(options: SessionOptions): VoiceSession;
+export function createVoiceSession(options: VoiceSessionOptions): VoiceSession;
 
 // @public (undocumented)
 export function ErrorBanner(input: {
@@ -134,7 +134,7 @@ export const SessionErrorCodeSchema: z.ZodEnum<{
 }>;
 
 // @public
-export type SessionOptions = {
+export type VoiceSessionOptions = {
     platformUrl: string;
     token?: string;
     signal?: <T>(initial: T) => Reactive<T>;

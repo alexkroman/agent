@@ -36,7 +36,7 @@ export type Session = {
 };
 
 /** Configuration options for creating a new session. */
-export type SessionOptions = {
+export type S2sSessionOptions = {
   id: string;
   agent: string;
   client: ClientSink;
@@ -151,7 +151,7 @@ function buildCtx(opts: {
 // ─── Main session factory ────────────────────────────────────────────────────
 
 /** Create an S2S-backed session with the same interface as the STT+LLM+TTS session. */
-export function createS2sSession(opts: SessionOptions): Session {
+export function createS2sSession(opts: S2sSessionOptions): Session {
   const {
     id,
     agent,

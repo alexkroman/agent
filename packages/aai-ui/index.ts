@@ -49,6 +49,6 @@ export {
   type SessionError,
   type SessionErrorCode,
   SessionErrorCodeSchema,
-  type SessionOptions,
   type ToolCallInfo,
+  type VoiceSessionOptions,
 } from "./types.ts";
