@@ -16,12 +16,9 @@ import { buildReadyConfig } from "@alexkroman1/aai/protocol";
 import { DEFAULT_S2S_CONFIG } from "@alexkroman1/aai/runtime";
 import {
   createS2sSession,
-  // biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
   type HookInvoker,
   type Session,
-  // biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
   type ToolInterceptResult,
-  // biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
 } from "@alexkroman1/aai/session";
 import type { ExecuteTool } from "@alexkroman1/aai/worker-entry";
 import { type SessionWebSocket, wireSessionSocket } from "@alexkroman1/aai/ws-handler";

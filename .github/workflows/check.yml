@@ -15,7 +15,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm turbo lint
+      - run: pnpm -r run lint
 
   typecheck:
     runs-on: ubuntu-latest
@@ -27,7 +27,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm turbo typecheck
+      - run: pnpm -r run typecheck
 
   test:
     runs-on: ubuntu-latest
@@ -51,7 +51,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm turbo check:api check:attw
+      - run: pnpm -r run --if-present check:api check:attw
 
   check-templates:
     runs-on: ubuntu-latest
@@ -63,7 +63,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm turbo check:templates
+      - run: pnpm -r run --if-present check:templates
 
   check-quality:
     runs-on: ubuntu-latest
@@ -75,7 +75,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm turbo check:knip check:syncpack check:markdown
+      - run: pnpm run check:knip && pnpm run check:syncpack && pnpm run check:markdown
 
   integration:
     runs-on: ubuntu-latest
@@ -87,7 +87,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm turbo check:integration
+      - run: pnpm -r run --if-present check:integration
 
   e2e:
     runs-on: ubuntu-latest
@@ -100,4 +100,4 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @alexkroman1/aai-cli exec playwright install --with-deps chromium
-      - run: pnpm turbo check:e2e
+      - run: pnpm -r run --if-present check:e2e

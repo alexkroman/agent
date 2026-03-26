@@ -1,7 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-// biome-ignore lint/correctness/noUnresolvedImports: re-export from workspace dep unresolvable in per-package lint
 import { delay, installMockWebSocket } from "./_test-utils.ts";
 import { mount } from "./mount.tsx";
 

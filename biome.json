@@ -22,7 +22,7 @@
         "useImportExtensions": "error",
         "noGlobalDirnameFilename": "error",
         "noPrivateImports": "error",
-        "noUnresolvedImports": "error"
+        "noUnresolvedImports": "off"
       },
       "style": {
         "recommended": true,

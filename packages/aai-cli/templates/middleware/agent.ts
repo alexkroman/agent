@@ -80,12 +80,14 @@ function analyticsLogger(): Middleware {
     name: "analytics-logger",
     beforeTurn: (text, _ctx) => {
       console.log(`[analytics] Turn started: "${text.slice(0, 50)}..."`);
+      return undefined;
     },
     afterTurn: (text, ctx) => {
       console.log(`[analytics] Turn completed for session`);
     },
     toolCallInterceptor: (toolName, args, _ctx) => {
       console.log(`[analytics] Tool call: ${toolName}`, args);
+      return undefined;
     },
   };
 }
