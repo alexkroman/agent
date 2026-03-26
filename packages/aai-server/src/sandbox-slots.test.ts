@@ -22,7 +22,7 @@ import {
 function makeMockSandbox(): Sandbox {
   return {
     startSession: vi.fn(),
-    terminate: vi.fn(),
+    terminate: vi.fn().mockResolvedValue(undefined),
   };
 }
 

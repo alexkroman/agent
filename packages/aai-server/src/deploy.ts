@@ -26,7 +26,9 @@ export async function handleDeploy(c: Context<Env>): Promise<Response> {
   if (existing?.sandbox || existing?.initializing) {
     console.info("Replacing existing deploy", { slug });
     if (existing.sandbox) {
-      existing.sandbox.terminate();
+      existing.sandbox.terminate().catch(() => {
+        // Intentionally swallowed — best-effort cleanup of existing sandbox
+      });
     } else if (existing.initializing) {
       existing.initializing
         .then((sb) => sb.terminate())

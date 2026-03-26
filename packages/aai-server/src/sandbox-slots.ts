@@ -64,7 +64,9 @@ function resetIdleTimer(slot: AgentSlot): void {
   slot.idleTimer = setTimeout(() => {
     if (!slot.sandbox) return;
     console.info("Evicting idle sandbox", { slug: slot.slug });
-    slot.sandbox.terminate();
+    slot.sandbox.terminate().catch(() => {
+      // Intentionally swallowed — best-effort idle eviction cleanup
+    });
     delete slot.sandbox;
     delete slot.idleTimer;
   }, IDLE_MS);
