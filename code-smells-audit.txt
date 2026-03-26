@@ -1,0 +1,314 @@
+============================================================================
+              THE CODE SMELL CASEBOOK
+          Detective Code Smell's Investigation
+               /home/user/agent
+============================================================================
+
+It was a cold night in March 2026. The kind of night where the rain falls
+sideways and the only thing keeping you warm is a terminal and a bad habit
+of reading other people's code. A client walked into my office -- said
+their codebase had been acting funny. "Just take a look," they said. "See
+what you find." So I did. I cracked open /home/user/agent and what I found
+in there... well, let's just say the code had a smell about it. Like a
+function that had been refactored one too many times, but never quite the
+right way.
+
+Here's what my investigation turned up.
+
+============================================================================
+CASE #1: The Middleware Doppelganger
+File: packages/aai-server/src/_harness-runtime.ts (lines 211-275)
+File: packages/aai/middleware.ts (lines 69-166)
+Smell: DUPLICATE CODE
+----------------------------------------------------------------------------
+I was tailing two suspects when I noticed they were wearing the same suit.
+The harness runtime has five middleware runner functions --
+runMiddlewareBeforeTurn, runMiddlewareAfterTurn, runMiddlewareToolIntercept,
+runMiddlewareAfterToolCall, and runMiddlewareOutputFilter -- that are
+near-identical copies of the functions in middleware.ts
+(runBeforeTurnMiddleware, runAfterTurnMiddleware, runToolCallInterceptors,
+runAfterToolCallMiddleware, runOutputFilters). Same logic, same loops,
+same iteration patterns. The comment even admits it: "Middleware runner
+(inline -- cannot import from middleware.ts in isolate)".
+
+I understand the isolate constraint -- you can't import runtime code from
+external packages. But this is a maintenance landmine. When one changes,
+the other has to change too. That's textbook shotgun surgery.
+
+RECOMMENDATION: Extract the middleware logic into a pure, zero-dependency
+module (no Zod, no npm deps) that can be safely bundled into the isolate's
+virtual filesystem alongside the harness. Or generate the duplicate code
+from a single source during the build step.
+
+============================================================================
+CASE #2: The Session State Twin
+File: packages/aai/direct-executor.ts (lines 94-102)
+File: packages/aai-server/src/_harness-runtime.ts (lines 89-96)
+Smell: DUPLICATE CODE / DATA CLUMP
+----------------------------------------------------------------------------
+I followed the dependency trail and hit a dead end -- the same dead end,
+twice. Both files have an identical getState() function: a Map of session
+states, a check for existence, a call to agent.state() to initialize, and
+a fallback to empty object. The pattern is:
+
+  const sessionState = new Map<string, Record<string, unknown>>();
+  function getState(sessionId: string): Record<string, unknown> {
+    if (!sessionState.has(sessionId) && agent.state) {
+      sessionState.set(sessionId, agent.state());
+    }
+    return sessionState.get(sessionId) ?? {};
+  }
+
+Two copies of the same logic, each maintaining their own Map, each with
+the same lazy-init-then-lookup pattern. It's the kind of duplication that
+whispers "extract me."
+
+RECOMMENDATION: Create a SessionStateManager class or factory function
+in a shared utility that both modules can reference.
+
+============================================================================
+CASE #3: The God Context Object
+File: packages/aai/session.ts (lines 65-89)
+Smell: GOD OBJECT / DATA CLUMP
+----------------------------------------------------------------------------
+The S2sSessionCtx type had more responsibilities than a two-bit gumshoe
+with three open cases. It holds the session ID, agent name, client sink,
+agent config, tool executor, hook invoker, logger, the S2S handle, pending
+tools, tool call count, turn promise, conversation messages, reply
+generation counter, AND three method implementations (resolveTurnConfig,
+checkTurnLimits, fireHook). This context object is passed to every session
+helper function in _session-otel.ts as a single grab-bag of everything.
+
+It's a data clump married to a god object. The mutable fields (s2s,
+pendingTools, toolCallCount, turnPromise, conversationMessages,
+replyGeneration) are mixed freely with readonly configuration and
+injected dependencies.
+
+RECOMMENDATION: Separate this into at least two concerns: a readonly
+"session dependencies" bag (id, agent, client, agentConfig, executeTool,
+hookInvoker, log) and a mutable "session state" object (s2s, pendingTools,
+toolCallCount, etc.). The methods should live on a class or be standalone
+functions, not dangling off a type alias.
+
+============================================================================
+CASE #4: The 155-Line Stakeout
+File: packages/aai/_session-otel.ts (lines 43-155)
+Smell: LONG FUNCTION / EXCESSIVE COMPLEXITY
+----------------------------------------------------------------------------
+handleToolCall is 112 lines of nested try/catch blocks, early returns,
+conditional middleware invocations, metric recordings, span management,
+and hook firings. It does everything: resolves turn config, checks limits,
+fires onStep hooks, runs interceptor middleware, executes the tool, runs
+afterToolCall middleware, records duration metrics, logs the result, and
+pushes to pending tools. That's at least seven distinct responsibilities
+in one function.
+
+I counted five different exit paths before the function reaches its happy
+ending. A dame with that many escape routes is hard to trust.
+
+RECOMMENDATION: Extract sub-operations into named helper functions:
+checkAndApplyLimits(), runInterceptors(), executeAndRecord(). Each should
+own its own span/metric concern. The function should read like a high-level
+orchestration script.
+
+============================================================================
+CASE #5: The Silent Witness
+File: packages/aai/ws-handler.ts (line 58-59)
+File: packages/aai/s2s.ts (line 226-228)
+File: packages/aai-ui/session.ts (lines 81-85, 216-219)
+Smell: SWALLOWED EXCEPTIONS
+----------------------------------------------------------------------------
+Empty catch blocks. The code's way of saying "I saw nothing, copper."
+Found in multiple locations:
+
+  ws-handler.ts:58   catch { /* socket closed between check and send */ }
+  s2s.ts:227         if (ws.readyState !== WS_OPEN) return;
+  session.ts:83      catch { /* connection may be closed */ }
+  session.ts:216-219 send() silently drops messages on closed sockets
+
+While race-condition guards for WebSocket sends are defensible, the
+pattern is repeated in at least four places with no logging, no metrics,
+no breadcrumbs. When something goes wrong at 3 AM, these silent witnesses
+will make debugging a nightmare.
+
+RECOMMENDATION: Add at minimum a debug-level log or a metric counter
+(e.g., aai.ws.send_dropped) so operators can tell how often messages
+are being silently discarded. Centralize the "safe send" pattern into a
+shared utility.
+
+============================================================================
+CASE #6: The Catch-All Fence
+File: packages/aai-server/src/sandbox.ts (lines 98-99)
+Smell: PRIMITIVE OBSESSION / MAGIC STRINGS
+----------------------------------------------------------------------------
+The filesystem permission check reads:
+
+  req.op === "read" || req.op === "stat" || req.op === "readdir" || req.op === "exists"
+
+Meanwhile, over in builtin-tools.ts (line 237):
+
+  const READ_ONLY_FS_OPS = new Set(["read", "stat", "readdir", "exists"]);
+
+Same set of operations, expressed two different ways. The sandbox uses a
+chain of string comparisons; the builtin-tools uses a Set. Neither knows
+about the other. If a new read-only operation is added to the runtime, one
+will get updated and the other will be left out in the cold.
+
+RECOMMENDATION: Define the read-only filesystem operations as a shared
+constant (e.g., READONLY_FS_OPS) in a common utils module. Both sandbox.ts
+and builtin-tools.ts should reference it.
+
+============================================================================
+CASE #7: The Unreachable Informant
+File: packages/aai/s2s.ts (lines 90-139)
+Smell: LONG METHOD / FEATURE ENVY
+----------------------------------------------------------------------------
+dispatchS2sMessage is a 50-line switch statement that takes a parsed S2S
+message and re-emits it through a nanoevents emitter. Every single case
+does the same thing: extract fields from the message and emit an event.
+It's a manual mapping table wearing a switch statement's trench coat.
+
+The function knows too much about the internals of every message type.
+It has feature envy for the emitter -- it wants to be a lookup table
+but was born a switch.
+
+RECOMMENDATION: Replace with a declarative event mapping table:
+  const EVENT_MAP = { "session.ready": (msg) => ["ready", { session_id: msg.session_id }], ... }
+Then dispatch becomes: const [event, detail] = EVENT_MAP[msg.type](msg); emitter.emit(event, detail);
+
+============================================================================
+CASE #8: The Unsafe Cast Ring
+File: packages/aai-server/src/_harness-runtime.ts (line 414)
+File: packages/aai-server/src/sandbox-sidecar.ts (line 187)
+File: packages/aai-server/src/sandbox.ts (line 120)
+File: packages/aai/types.ts (line 565)
+Smell: TYPE ASSERTIONS / UNSAFE CASTS
+----------------------------------------------------------------------------
+I found a gang of type assertions running a racket across the codebase:
+
+  server.address() as { port: number }    -- three locations
+  } as AgentDef;                          -- types.ts line 565
+
+These are the kind of casts that work until they don't. The
+server.address() call can return a string (for pipe/socket connections)
+or null. The "as AgentDef" at the end of defineAgent() papers over the
+fact that the generic S parameter is erased -- the function accepts
+AgentOptions<S> but returns AgentDef (no S). That's a type-system
+escape hatch.
+
+RECOMMENDATION: For server.address(), add a runtime guard:
+  const addr = server.address();
+  if (!addr || typeof addr === "string") throw new Error("...");
+For defineAgent, consider making AgentDef generic over S, or use a
+proper type narrowing function instead of a cast.
+
+============================================================================
+CASE #9: The Timeout Syndicate
+File: packages/aai/protocol.ts (lines 66-72)
+File: packages/aai-server/src/sandbox.ts (lines 167-173)
+File: packages/aai-server/src/_harness-runtime.ts (line 146)
+File: packages/aai/builtin-tools.ts (lines 20-23)
+Smell: DATA CLUMP / SCATTERED CONSTANTS
+----------------------------------------------------------------------------
+Timeout values are scattered across the codebase like shell casings at a
+crime scene:
+
+  protocol.ts:        HOOK_TIMEOUT_MS = 5000, TOOL_EXECUTION_TIMEOUT_MS = 30_000
+  sandbox.ts:         PORT_ANNOUNCE_TIMEOUT_MS = 15_000, CONFIG_TIMEOUT_MS = 10_000,
+                      TOOL_TIMEOUT_MS = 30_000, HOOK_TIMEOUT_MS = 10_000
+  _harness-runtime.ts: ISOLATE_TOOL_TIMEOUT_MS = 25_000
+  builtin-tools.ts:   FETCH_TIMEOUT_MS = 15_000, RUN_CODE_TIMEOUT = 5000
+
+That's nine different timeout constants across four files, some of which
+are intentionally coordinated (ISOLATE_TOOL_TIMEOUT_MS at 25s is "slightly
+under" sandbox.ts TOOL_TIMEOUT_MS at 30s) but this relationship is only
+documented in a comment, not enforced in code.
+
+RECOMMENDATION: Centralize timeout configuration into a single constants
+module (e.g., timeouts.ts). Express derived timeouts mathematically:
+  ISOLATE_TOOL_TIMEOUT_MS = TOOL_TIMEOUT_MS - 5000;
+This makes the relationships explicit and maintainable.
+
+============================================================================
+CASE #10: The _internals Leak
+File: packages/aai/session.ts (lines 56-58)
+File: packages/aai-server/src/sandbox.ts (lines 292-307)
+File: packages/aai-server/src/sandbox-slots.ts (lines 153-160)
+File: packages/aai-server/src/metrics.ts (found via grep)
+Smell: INAPPROPRIATE INTIMACY / TEST SMELL
+----------------------------------------------------------------------------
+This module had more secrets than a speakeasy -- and it was willing to
+share them with anyone who asked. The _internals export pattern appears
+in at least four production source files, each exposing internal
+implementation details solely for testing purposes.
+
+  session.ts:       export const _internals = { connectS2s };
+  sandbox.ts:       export const _internals = { startSidecarServer, startIsolate, ... };
+  sandbox-slots.ts: export const _slotInternals = { get IDLE_MS, set IDLE_MS };
+  metrics.ts:       (similar pattern)
+
+Each _internals object is a trapdoor in the module's encapsulation. Tests
+reach through these holes to mock or control behavior they shouldn't know
+about. When tests need _internals to function, it means the code's
+boundaries are in the wrong place.
+
+RECOMMENDATION: Use dependency injection instead. Pass createS2s as a
+parameter to createS2sSession (it already accepts createWebSocket -- go
+one level up). For IDLE_MS, accept it as a config option. For sandbox
+internals, inject the factory functions rather than exporting them for
+monkey-patching.
+
+============================================================================
+CASE #11: The Promise.race Gambit
+File: packages/aai/builtin-tools.ts (lines 303-314)
+Smell: COMPLEX CONTROL FLOW / TEMPORAL COUPLING
+----------------------------------------------------------------------------
+The executeInIsolate function plays a dangerous game with Promise.race:
+
+  await Promise.race([outputReady, new Promise<void>(r => setTimeout(r, RUN_CODE_TIMEOUT))]);
+  await Promise.race([execPromise.catch(() => {}), new Promise(r => setTimeout(r, 200))]);
+
+Two consecutive Promise.race calls, one with a 5-second timeout and a
+200ms grace period. The second race has a .catch(() => {}) that swallows
+errors, and there's a magic 200ms timeout that exists solely to "let the
+isolate finish naturally." The whole sequence relies on timing assumptions
+about V8 isolate shutdown behavior.
+
+This is temporal coupling at its finest -- the code works because of how
+long things happen to take, not because of any structural guarantee.
+
+RECOMMENDATION: Use a proper completion signal from the isolate (e.g., a
+"done" event or exit code) rather than racing against timeouts. If
+Promise.race is truly necessary, encapsulate the pattern in a named
+helper like "awaitWithTimeout(promise, ms, fallback)" that makes the
+intent clear.
+
+============================================================================
+
+CLOSING MONOLOGUE:
+
+I leaned back in my chair and lit another metaphorical cigarette. The
+codebase wasn't a disaster -- far from it. The architecture was clean,
+the security model was well-thought-out, and whoever built this knew
+their way around a V8 isolate. But even the best neighborhoods have
+their dark alleys.
+
+The middleware duplication was the biggest racket in town -- two copies
+of the same logic separated by an architectural constraint that nobody
+had tried to work around. The god context object in session.ts was
+carrying too many secrets for one type alias. And those _internals
+exports? They were informants that had gotten too comfortable.
+
+But here's the thing about code smells -- they're not crimes. They're
+warnings. Signs that something might go wrong down the road if nobody
+pays attention. And in my line of work, paying attention is all that
+separates the clean code from the kind that ends up in a maintenance
+nightmare at 3 AM.
+
+The case isn't closed. It never is. But at least now we know where
+the bodies are buried.
+
+    -- Detective Code Smell
+       March 26, 2026
+
+============================================================================

@@ -1,0 +1,318 @@
+================================================================================
+                    TEST COVERAGE AUDIT REPORT
+              AAI Voice Agent Development Kit
+================================================================================
+
+Oh HELLO there, beautiful codebase! I am YOUR Test Evangelist and I have been
+DIVING through every package, every module, every lonely untested function
+in this repository and let me tell you -- there is SO MUCH POTENTIAL here for
+testing greatness! You've got some SOLID test coverage in many areas (session.ts
+has 779 lines of tests! ws-handler.test.ts is 597 lines! The builtin-tools
+tests are *chef's kiss*) but oh my goodness, I found some gaps that are just
+BEGGING for attention!
+
+Let's make this codebase SHINE. Here are my findings:
+
+================================================================================
+ISSUE #1: packages/aai/_ssrf.ts -- COMPLETELY UNTESTED (Security-Critical!)
+================================================================================
+
+Oh! OH! This file implements SSRF protection for the ENTIRE self-hosted SDK
+and it has ZERO dedicated tests! Yes, the builtin-tools.test.ts exercises it
+indirectly through visit_webpage and fetch_json, but the core functions
+`assertPublicUrl()`, `isPrivateIpv4()`, `ipToInt()`, and `ssrfSafeFetch()`
+deserve their OWN test file. This is SECURITY CODE, people!
+
+The server-side equivalent (_net.ts in aai-server) HAS its own test file.
+The SDK-side copy does not. This is a security parity gap.
+
+Recommended tests:
+  - assertPublicUrl: test ALL private ranges (0.0.0.0/8, 10.x, 100.64.x,
+    127.x, 169.254.x, 172.16-31.x, 192.0.0.x, 192.168.x, 198.18.x, 224.x,
+    240.x) individually
+  - assertPublicUrl: IPv4-mapped IPv6 bypass (::ffff:127.0.0.1)
+  - assertPublicUrl: IPv4-mapped IPv6 hex format (::ffff:7f00:1)
+  - assertPublicUrl: blocked hostnames (localhost, ::1, ::, *.local, *.internal,
+    metadata.google.internal, 169.254.169.254)
+  - assertPublicUrl: allowed public IPs (8.8.8.8, 1.1.1.1)
+  - assertPublicUrl: blocked protocols (ftp:, file:, javascript:)
+  - assertPublicUrl: allowed protocols (http:, https:)
+  - ssrfSafeFetch: redirect chain with all-safe URLs succeeds
+  - ssrfSafeFetch: redirect to private IP is blocked mid-chain
+  - ssrfSafeFetch: exceeding MAX_REDIRECTS (5) throws "Too many redirects"
+  - ssrfSafeFetch: redirect with no Location header returns response
+  - ipToInt: edge cases (0.0.0.0, 255.255.255.255)
+
+================================================================================
+ISSUE #2: packages/aai/matchers.ts -- NO TEST FILE
+================================================================================
+
+The custom Vitest matcher `toHaveCalledTool()` has NO tests! This is a testing
+utility that other people's tests depend on. If IT breaks, tests that use it
+could silently pass or fail for the wrong reasons. Edge cases are just
+undiscovered friends!
+
+Recommended tests:
+  - toHaveCalledTool with a matching tool name returns pass: true
+  - toHaveCalledTool with non-matching tool name returns pass: false
+  - toHaveCalledTool with matching name AND matching partial args
+  - toHaveCalledTool with matching name but WRONG args
+  - toHaveCalledTool receives non-TurnResult value (should fail gracefully)
+  - .not.toHaveCalledTool on a tool that WAS called
+  - Message formatting includes called tool names for debugging
+
+================================================================================
+ISSUE #3: packages/aai-server/src/transport-websocket.ts -- NO TEST FILE
+================================================================================
+
+Three HTTP handler functions (handleAgentHealth, handleAgentPage,
+handleClientAsset) with ZERO tests! These are the public-facing endpoints
+that serve the agent UI. The handleClientAsset function has path traversal
+protection via SafePathSchema and MIME type detection -- both need testing!
+
+Recommended tests:
+  - handleAgentHealth: returns 404 when manifest not found
+  - handleAgentHealth: returns {status: "ok", slug} when manifest exists
+  - handleAgentPage: returns 404 when no HTML found
+  - handleAgentPage: returns HTML content when found
+  - handleClientAsset: returns 400 for invalid/malicious path (path traversal)
+  - handleClientAsset: returns 404 for missing asset
+  - handleClientAsset: returns correct MIME type for .js, .css, .png, .svg
+  - handleClientAsset: returns immutable Cache-Control header
+  - handleClientAsset: falls back to application/octet-stream for unknown types
+
+================================================================================
+ISSUE #4: packages/aai-ui/signals.ts -- NO TEST FILE
+================================================================================
+
+This module exports `createSessionControls`, `useSession`, `useToolResult`,
+and `useAutoScroll` -- ALL public API! createSessionControls manages start/
+toggle/reset logic with Preact signals. useSession throws if no provider.
+useToolResult has deduplication logic. None of this is tested!
+
+Recommended tests:
+  - createSessionControls: start() sets started=true, running=true, calls
+    session.connect()
+  - createSessionControls: toggle() from running calls cancel+disconnect,
+    sets running=false
+  - createSessionControls: toggle() from stopped calls connect, sets
+    running=true
+  - createSessionControls: error state auto-sets running=false via effect
+  - createSessionControls: reset() calls session.reset()
+  - createSessionControls: dispose() / Symbol.dispose cleans up the effect
+  - useSession: throws "requires a SessionProvider" when no provider
+  - tryParseJSON: returns parsed object for valid JSON
+  - tryParseJSON: returns raw string for invalid JSON
+  - useToolResult: deduplicates by toolCallId
+  - useToolResult: resets tracking when toolCalls cleared
+
+================================================================================
+ISSUE #5: packages/aai-cli/secret.ts -- NO TEST FILE
+================================================================================
+
+Secret management (put, delete, list) with ZERO tests! This module makes
+authenticated API calls to manage secrets. The apiFetch helper constructs
+URLs and sets auth headers. runSecretPut asks for passwords interactively.
+None of this is validated.
+
+Recommended tests:
+  - apiFetch: constructs correct URL with slug and path suffix
+  - apiFetch: sets Authorization header with Bearer token
+  - apiFetch: throws on non-ok response with error text
+  - runSecretPut: sends PUT with JSON body containing name/value
+  - runSecretPut: throws when no value provided (empty password)
+  - runSecretDelete: sends DELETE with correct path
+  - runSecretList: parses and displays var names
+  - runSecretList: handles empty vars array
+
+================================================================================
+ISSUE #6: packages/aai-cli/_link.ts -- NO TEST FILE
+================================================================================
+
+The link/unlink commands rewrite package.json dependencies to file: paths
+and run npm install. This is filesystem-mutating code with zero tests!
+
+Recommended tests:
+  - runLinkCommand: rewrites matching deps to file: paths
+  - runLinkCommand: leaves non-matching deps unchanged
+  - runLinkCommand: prints "No packages to link" when none match
+  - runUnlinkCommand: rewrites file: deps back to "*"
+  - runUnlinkCommand: ignores deps that are not file: prefixed
+  - getPackagesDir: resolves correctly from source vs dist layout
+
+================================================================================
+ISSUE #7: packages/aai-server/src/_base64url.ts -- NO TEST FILE
+================================================================================
+
+Two utility functions (toBase64Url, fromBase64Url) with NO tests! These are
+used in auth/token code. You know what would make this code AMAZING? Tests!
+Actually, like EIGHT tests!
+
+Recommended tests:
+  - toBase64Url: encodes known byte sequences correctly
+  - fromBase64Url: decodes back to original bytes (round-trip)
+  - toBase64Url: handles empty Uint8Array
+  - fromBase64Url: handles empty string
+  - toBase64Url: produces URL-safe output (no +, /, or = padding)
+  - Round-trip: encode then decode preserves arbitrary binary data
+  - fromBase64Url: handles strings with URL-safe characters (- and _)
+
+================================================================================
+ISSUE #8: packages/aai/middleware.test.ts -- MISSING ERROR HANDLING TESTS
+================================================================================
+
+The middleware tests are solid for happy paths but have ZERO tests for what
+happens when a middleware callback THROWS! The middleware runner functions
+(runBeforeTurnMiddleware, runToolCallInterceptors, etc.) don't have try/catch
+around callbacks, which means a throwing middleware will crash the turn. Is
+that intentional? Either way, the behavior should be documented via tests!
+
+Recommended tests:
+  - beforeTurn middleware throws Error: does it propagate? Is the turn aborted?
+  - afterTurn middleware throws: does it prevent subsequent middleware from
+    running?
+  - toolCallInterceptor throws: what happens to the tool call?
+  - outputFilter throws: does the original text survive?
+  - afterToolCall middleware throws: is the tool result still returned?
+  - First middleware throws, second middleware: is it still called?
+
+================================================================================
+ISSUE #9: packages/aai/server.ts -- escapeHtml NOT DIRECTLY UNIT-TESTED
+================================================================================
+
+The `escapeHtml` function is a private function inside server.ts. It IS
+exercised through the integration test (XSS test with <script>alert("xss")
+</script>), and there's an analysis in pentest.test.ts. BUT the function
+itself has no focused unit tests covering ALL five replacement cases
+individually. What about unicode? What about null bytes? What about edge
+cases with & appearing before < ?
+
+Recommended tests (export escapeHtml or test via the server endpoint):
+  - Replaces & with &amp; (must happen FIRST to avoid double-encoding)
+  - Replaces < with &lt;
+  - Replaces > with &gt;
+  - Replaces " with &quot;
+  - Replaces ' with &#39;
+  - Empty string returns empty string
+  - String with NO special chars passes through unchanged
+  - String with ALL special chars at once: &<>"'
+  - Double-encoding prevention: &amp; does NOT become &amp;amp;
+
+================================================================================
+ISSUE #10: packages/aai-server/src/kv.ts and vector.ts -- NO TEST FILES
+================================================================================
+
+The Upstash-backed KV store and vector store implementations have ZERO unit
+tests! These are the production data stores. Yes, they're thin wrappers around
+@upstash/redis and @upstash/vector, but the key-scoping logic (scopedKey,
+scopePrefix, namespace) is critical for cross-agent isolation -- a security
+boundary! And the `list` method has a biome-ignore for cognitive complexity,
+which is a SIGN it needs tests!
+
+Recommended tests (with mocked Redis/Index):
+  KV store:
+  - scopedKey: produces correct format "kv:{keyHash}:{slug}:{key}"
+  - get: returns null when key doesn't exist
+  - set: respects MAX_VALUE_SIZE limit (throws on too large)
+  - set: passes TTL (px option) when expireIn > 0
+  - set: omits TTL when expireIn is undefined or 0
+  - keys: strips scope prefix from returned keys
+  - keys: uses correct search pattern with/without user pattern
+  - list: returns entries sorted ascending by default
+  - list: returns entries sorted descending when reverse=true
+  - list: respects limit option
+  - list: handles empty result set
+  - list: parses JSON values, falls back to raw string on parse error
+
+  Vector store:
+  - namespace: produces correct format "{keyHash}:{slug}"
+  - upsert: passes data and metadata to correct namespace
+  - query: returns mapped results with score, data, metadata
+  - query: defaults topK to 10
+  - query: passes filter when provided
+  - remove: deletes from correct namespace
+
+================================================================================
+ISSUE #11: packages/aai-cli/_init.ts -- NO TEST FILE
+================================================================================
+
+The project initialization logic (listTemplates, copyDirNoOverwrite, runInit)
+has no dedicated test file! runInit creates directories, copies files, layers
+shared files, generates README.md. The copyDirNoOverwrite function has EEXIST
+error handling logic. The init.test.ts in the CLI root tests the CLI command
+surface, but not the core _init.ts functions directly.
+
+Recommended tests:
+  - listTemplates: lists only directories, skips _prefixed dirs, sorts
+  - listTemplates: returns empty array for empty directory
+  - runInit: throws for unknown template name with helpful message
+  - runInit: copies template files first, then shared files underneath
+  - runInit: shared files do NOT overwrite template-specific files
+  - runInit: creates .env from .env.example when it exists
+  - runInit: handles missing .env.example gracefully
+  - copyDirNoOverwrite: skips files that already exist at destination
+  - copyDirNoOverwrite: creates intermediate directories
+
+================================================================================
+ISSUE #12: packages/aai-server/src/sandbox-harness.ts -- NO TEST FILE
+================================================================================
+
+The getHarnessRuntimeJs function has file caching, multiple candidate paths,
+and an error path. Zero tests! The caching behavior (cachedHarnessJs) is
+especially test-worthy -- it's a module-level mutable variable.
+
+Recommended tests:
+  - Returns JS content from first valid candidate path
+  - Caches result after first read (second call doesn't hit filesystem)
+  - Falls through candidates when earlier paths don't exist
+  - Throws descriptive error when NO candidate paths exist
+  - Returned content is a string (not empty)
+
+================================================================================
+ISSUE #13: packages/aai-cli/templates/middleware/ -- THE ONLY TEMPLATE
+           WITHOUT agent.test.ts!
+================================================================================
+
+Every single template directory (16 total) has an agent.test.ts file EXCEPT
+the middleware template! All the other templates -- simple, memory-agent,
+web-researcher, pizza-ordering, solo-rpg, etc. -- they all have tests! But
+the middleware template is sitting there, all alone, untested. This template
+demonstrates a KEY feature (middleware chains) and deserves validation.
+
+Recommended: Create agent.test.ts mirroring the pattern from other templates,
+testing the middleware agent's behavior including:
+  - The middleware chain executes in order
+  - beforeTurn and afterTurn hooks fire
+  - Tool calls pass through the interceptor
+  - Output filters are applied to responses
+
+================================================================================
+
+CLOSING PEP TALK:
+
+Listen, this codebase is ALREADY in great shape. The security testing
+(pentest.test.ts, sandbox-integration tests, SSRF tests) is genuinely
+impressive. The session.test.ts and ws-handler.test.ts show real dedication
+to quality. The builtin-tools tests cover happy paths AND error paths AND
+security boundaries.
+
+But you know what separates a GOOD codebase from a LEGENDARY one? Closing
+those gaps! Every untested function is a future bug waiting to surprise you
+at 3 AM. Every missing edge case test is a production incident that didn't
+have to happen.
+
+The biggest priority items from this audit are:
+  1. _ssrf.ts (Issue #1) -- security code with no dedicated tests
+  2. kv.ts/vector.ts in aai-server (Issue #10) -- isolation boundary code
+  3. transport-websocket.ts (Issue #3) -- public-facing endpoints
+  4. signals.ts (Issue #4) -- public UI API
+  5. middleware error handling (Issue #8) -- undefined behavior under failures
+
+Go forth and TEST! Your future selves will thank you! Every test you write
+is a love letter to the developer who will maintain this code next!
+
+================================================================================
+Generated: 2026-03-26
+Audited packages: aai, aai-ui, aai-cli, aai-server
+Total issues found: 13
+================================================================================
