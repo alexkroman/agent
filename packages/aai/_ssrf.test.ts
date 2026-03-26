@@ -54,82 +54,82 @@ describe("assertPublicUrl", () => {
       "http://198.18.0.1/",
       "http://224.0.0.1/",
       "http://240.0.0.1/",
-    ])("blocks %s", (url) => {
-      expect(() => assertPublicUrl(url)).toThrow("Blocked request to private address");
+    ])("blocks %s", async (url) => {
+      await expect(assertPublicUrl(url)).rejects.toThrow("Blocked request to private address");
     });
   });
 
   describe("IPv4-mapped IPv6 bypass prevention", () => {
-    test("blocks ::ffff:127.0.0.1 (dotted form)", () => {
-      expect(() => assertPublicUrl("http://[::ffff:127.0.0.1]/")).toThrow(
+    test("blocks ::ffff:127.0.0.1 (dotted form)", async () => {
+      await expect(assertPublicUrl("http://[::ffff:127.0.0.1]/")).rejects.toThrow(
         "Blocked request to private address",
       );
     });
 
-    test("blocks ::ffff:7f00:1 (hex form)", () => {
-      expect(() => assertPublicUrl("http://[::ffff:7f00:1]/")).toThrow(
+    test("blocks ::ffff:7f00:1 (hex form)", async () => {
+      await expect(assertPublicUrl("http://[::ffff:7f00:1]/")).rejects.toThrow(
         "Blocked request to private address",
       );
     });
 
-    test("blocks ::ffff:a9fe:a9fe (169.254.169.254 in hex)", () => {
-      expect(() => assertPublicUrl("http://[::ffff:a9fe:a9fe]/")).toThrow(
+    test("blocks ::ffff:a9fe:a9fe (169.254.169.254 in hex)", async () => {
+      await expect(assertPublicUrl("http://[::ffff:a9fe:a9fe]/")).rejects.toThrow(
         "Blocked request to private address",
       );
     });
   });
 
   describe("blocks dangerous hostnames", () => {
-    test("blocks localhost", () => {
-      expect(() => assertPublicUrl("http://localhost/")).toThrow(
+    test("blocks localhost", async () => {
+      await expect(assertPublicUrl("http://localhost/")).rejects.toThrow(
         "Blocked request to private address",
       );
     });
 
-    test("blocks .local domains", () => {
-      expect(() => assertPublicUrl("http://myhost.local/")).toThrow(
+    test("blocks .local domains", async () => {
+      await expect(assertPublicUrl("http://myhost.local/")).rejects.toThrow(
         "Blocked request to private address",
       );
     });
 
-    test("blocks .internal domains", () => {
-      expect(() => assertPublicUrl("http://service.internal/")).toThrow(
+    test("blocks .internal domains", async () => {
+      await expect(assertPublicUrl("http://service.internal/")).rejects.toThrow(
         "Blocked request to private address",
       );
     });
 
-    test("blocks metadata.google.internal", () => {
-      expect(() => assertPublicUrl("http://metadata.google.internal/")).toThrow(
+    test("blocks metadata.google.internal", async () => {
+      await expect(assertPublicUrl("http://metadata.google.internal/")).rejects.toThrow(
         "Blocked request to private address",
       );
     });
 
-    test("blocks cloud metadata IP 169.254.169.254", () => {
-      expect(() => assertPublicUrl("http://169.254.169.254/")).toThrow(
+    test("blocks cloud metadata IP 169.254.169.254", async () => {
+      await expect(assertPublicUrl("http://169.254.169.254/")).rejects.toThrow(
         "Blocked request to private address",
       );
     });
   });
 
   describe("protocol restrictions", () => {
-    test("blocks ftp:", () => {
-      expect(() => assertPublicUrl("ftp://example.com/")).toThrow(
+    test("blocks ftp:", async () => {
+      await expect(assertPublicUrl("ftp://example.com/")).rejects.toThrow(
         "Blocked request with disallowed protocol",
       );
     });
 
-    test("blocks file:", () => {
-      expect(() => assertPublicUrl("file:///etc/passwd")).toThrow(
+    test("blocks file:", async () => {
+      await expect(assertPublicUrl("file:///etc/passwd")).rejects.toThrow(
         "Blocked request with disallowed protocol",
       );
     });
 
-    test("allows http:", () => {
-      expect(() => assertPublicUrl("http://example.com/")).not.toThrow();
+    test("allows http:", async () => {
+      await expect(assertPublicUrl("http://example.com/")).resolves.toBeUndefined();
     });
 
-    test("allows https:", () => {
-      expect(() => assertPublicUrl("https://example.com/")).not.toThrow();
+    test("allows https:", async () => {
+      await expect(assertPublicUrl("https://example.com/")).resolves.toBeUndefined();
     });
   });
 
@@ -138,8 +138,8 @@ describe("assertPublicUrl", () => {
       "http://8.8.8.8/",
       "http://1.1.1.1/",
       "https://93.184.216.34/",
-    ])("allows %s", (url) => {
-      expect(() => assertPublicUrl(url)).not.toThrow();
+    ])("allows %s", async (url) => {
+      await expect(assertPublicUrl(url)).resolves.toBeUndefined();
     });
   });
 });
@@ -185,14 +185,15 @@ describe("ssrfSafeFetch", () => {
 
   test("throws 'Too many redirects' after exceeding limit", async () => {
     // 6 redirects (0..5) + initial = exceeds MAX_REDIRECTS (5)
+    // Use literal IP to avoid DNS resolution timeouts in tests
     const mockFetch = vi.fn().mockResolvedValue(
       new Response(null, {
         status: 302,
-        headers: { location: "https://example.com/loop" },
+        headers: { location: "https://8.8.8.8/loop" },
       }),
     );
 
-    await expect(ssrfSafeFetch("https://example.com/start", {}, mockFetch)).rejects.toThrow(
+    await expect(ssrfSafeFetch("https://8.8.8.8/start", {}, mockFetch)).rejects.toThrow(
       "Too many redirects",
     );
   });

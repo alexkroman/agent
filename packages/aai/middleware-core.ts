@@ -23,11 +23,7 @@ async function reverseMiddleware(
   for (let i = middleware.length - 1; i >= 0; i--) {
     const mw = middleware[i];
     if (!mw?.[key]) continue;
-    try {
-      await fn(mw);
-    } catch (err) {
-      console.warn(`Middleware ${key} failed:`, err);
-    }
+    await fn(mw);
   }
 }
 
@@ -49,13 +45,9 @@ export async function runBeforeTurnMiddleware(
 ): Promise<MiddlewareBlockResult | undefined> {
   for (const mw of middleware) {
     if (!mw.beforeTurn) continue;
-    try {
-      const result = await mw.beforeTurn(text, ctx);
-      if (result && "block" in result && result.block) {
-        return result;
-      }
-    } catch (err) {
-      console.warn("Middleware beforeTurn failed:", err);
+    const result = await mw.beforeTurn(text, ctx);
+    if (result && "block" in result && result.block) {
+      return result;
     }
   }
 }
@@ -87,24 +79,16 @@ export async function runToolCallInterceptors(
   let currentArgs = args;
   for (const mw of middleware) {
     if (!mw.beforeToolCall) continue;
-    try {
-      const result: ToolCallInterceptResult = await mw.beforeToolCall(
-        toolName,
-        currentArgs,
-        ctx,
-      );
-      if (!result) continue;
-      if ("block" in result && result.block) {
-        return { type: "block", reason: result.reason };
-      }
-      if ("result" in result) {
-        return { type: "result", result: result.result };
-      }
-      if ("args" in result) {
-        currentArgs = result.args;
-      }
-    } catch (err) {
-      console.warn("Middleware beforeToolCall failed:", err);
+    const result: ToolCallInterceptResult = await mw.beforeToolCall(toolName, currentArgs, ctx);
+    if (!result) continue;
+    if ("block" in result && result.block) {
+      return { type: "block", reason: result.reason };
+    }
+    if ("result" in result) {
+      return { type: "result", result: result.result };
+    }
+    if ("args" in result) {
+      currentArgs = result.args;
     }
   }
   // If any middleware transformed args, return the final transformed version
@@ -139,11 +123,7 @@ export async function runOutputFilters(
   let filtered = text;
   for (const mw of middleware) {
     if (!mw.beforeOutput) continue;
-    try {
-      filtered = await mw.beforeOutput(filtered, ctx);
-    } catch (err) {
-      console.warn("Middleware beforeOutput failed:", err);
-    }
+    filtered = await mw.beforeOutput(filtered, ctx);
   }
   return filtered;
 }

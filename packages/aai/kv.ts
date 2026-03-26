@@ -149,6 +149,13 @@ function matchGlob(key: string, pattern: string): boolean {
   return pos <= end;
 }
 
+/** Build a key-matching function from an optional glob/prefix pattern. */
+function buildKeyMatcher(pattern?: string): (key: string) => boolean {
+  if (!pattern) return () => true;
+  if (pattern.includes("*")) return (key) => matchGlob(key, pattern);
+  return (key) => key.startsWith(pattern);
+}
+
 /**
  * Create an in-memory KV store (useful for testing and local development).
  *
@@ -241,15 +248,13 @@ export function createMemoryKv(): Kv {
       const now = Date.now();
       const result: string[] = [];
       const expiredKeys: string[] = [];
-      const isGlob = pattern != null && pattern.includes("*");
+      const matcher = buildKeyMatcher(pattern);
       for (const [key, entry] of store) {
         if (entry.expiresAt && entry.expiresAt <= now) {
           expiredKeys.push(key);
           continue;
         }
-        if (!pattern || (isGlob ? matchGlob(key, pattern) : key.startsWith(pattern))) {
-          result.push(key);
-        }
+        if (matcher(key)) result.push(key);
       }
       for (const key of expiredKeys) store.delete(key);
       return result.sort((a, b) => a.localeCompare(b));
