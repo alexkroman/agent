@@ -7,7 +7,7 @@ import type { VoiceIO } from "./audio.ts";
 import { ClientHandler } from "./client-handler.ts";
 import type {
   AgentState,
-  Message,
+  ChatMessage,
   Reactive,
   SessionError,
   SessionOptions,
@@ -17,6 +17,7 @@ import type {
 export { ClientHandler } from "./client-handler.ts";
 export type {
   AgentState,
+  ChatMessage,
   Message,
   Reactive,
   SessionError,
@@ -123,7 +124,7 @@ export type VoiceSession = {
   /** Current agent state (connecting, listening, thinking, etc.). */
   readonly state: Reactive<AgentState>;
   /** Chat message history for the session. */
-  readonly messages: Reactive<Message[]>;
+  readonly messages: Reactive<ChatMessage[]>;
   /** Active tool calls for the current turn. */
   readonly toolCalls: Reactive<ToolCallInfo[]>;
   /**
@@ -162,6 +163,14 @@ export type VoiceSession = {
 
 // ─── Voice session factory ───────────────────────────────────────────────────
 
+function buildWsUrl(platformUrl: string, token: string | undefined, resume: boolean): URL {
+  const wsUrl = new URL("websocket", platformUrl.endsWith("/") ? platformUrl : `${platformUrl}/`);
+  wsUrl.protocol = wsUrl.protocol === "https:" ? "wss:" : "ws:";
+  if (token) wsUrl.searchParams.set("token", token);
+  if (resume) wsUrl.searchParams.set("resume", "1");
+  return wsUrl;
+}
+
 /**
  * Create a voice session that connects to an AAI server via WebSocket.
  *
@@ -177,7 +186,7 @@ export function createVoiceSession(options: SessionOptions): VoiceSession {
   const batchFn = options.batch ?? plainBatch;
 
   const state = reactive<AgentState>("disconnected");
-  const messages = reactive<Message[]>([]);
+  const messages = reactive<ChatMessage[]>([]);
   const toolCalls = reactive<ToolCallInfo[]>([]);
   const userUtterance = reactive<string | null>(null);
   const agentUtterance = reactive<string | null>(null);
@@ -236,10 +245,7 @@ export function createVoiceSession(options: SessionOptions): VoiceSession {
       });
     }
 
-    const base = options.platformUrl;
-    const wsUrl = new URL("websocket", base.endsWith("/") ? base : `${base}/`);
-    wsUrl.protocol = wsUrl.protocol === "https:" ? "wss:" : "ws:";
-    if (hasConnected) wsUrl.searchParams.set("resume", "1");
+    const wsUrl = buildWsUrl(options.platformUrl, options.token, hasConnected);
 
     const socket = new WebSocket(wsUrl.toString());
     socket.binaryType = "arraybuffer";

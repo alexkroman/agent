@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import type { AgentConfig } from "./_internal-types.ts";
+import type { AgentConfig } from "./internal-types.ts";
 import type { AgentDef, ToolContext, ToolDef } from "./types.ts";
 import { DEFAULT_INSTRUCTIONS } from "./types.ts";
 

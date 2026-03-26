@@ -8,10 +8,10 @@
 
 import { convert } from "html-to-text";
 import { z } from "zod";
-import { EMPTY_PARAMS, type ToolSchema } from "./_internal-types.ts";
-import { errorMessage } from "./_utils.ts";
+import { EMPTY_PARAMS, type ToolSchema } from "./internal-types.ts";
 import { memoryTools } from "./memory-tools.ts";
 import type { ToolDef } from "./types.ts";
+import { errorMessage } from "./utils.ts";
 
 export { memoryTools } from "./memory-tools.ts";
 
@@ -75,7 +75,12 @@ function createWebSearch(fetchFn = globalThis.fetch): ToolDef<typeof webSearchPa
       if (!resp.ok) {
         return { error: `Search request failed: ${resp.status} ${resp.statusText}` };
       }
-      const raw = await resp.json();
+      let raw: unknown;
+      try {
+        raw = await resp.json();
+      } catch {
+        return { error: "Response was not valid JSON" };
+      }
       const data = BraveSearchResponseSchema.safeParse(raw);
       if (!data.success) {
         return { error: "Unexpected search response format" };
@@ -263,9 +268,9 @@ export async function executeInIsolate(code: string): Promise<string | { error: 
 
   const stdoutChunks: string[] = [];
   const stderrChunks: string[] = [];
-  let notifyOutput: (() => void) | null = null;
-  const outputReady = new Promise<void>((resolve) => {
-    notifyOutput = resolve;
+  let resolveOutput: (() => void) | null = null;
+  const outputReady = new Promise<void>((r) => {
+    resolveOutput = r;
   });
 
   const runtime = new NodeRuntime({
@@ -285,10 +290,8 @@ export async function executeInIsolate(code: string): Promise<string | { error: 
     memoryLimit: RUN_CODE_MEMORY_MB,
     onStdio(event) {
       if (event.channel === "stdout") stdoutChunks.push(event.message);
-      if (event.channel === "stderr") {
-        stderrChunks.push(event.message);
-      }
-      notifyOutput?.();
+      if (event.channel === "stderr") stderrChunks.push(event.message);
+      resolveOutput?.();
     },
   });
 
@@ -298,7 +301,7 @@ export async function executeInIsolate(code: string): Promise<string | { error: 
   const execPromise = runtime.exec('import "/app/harness.js";', { cwd: "/app" });
 
   try {
-    // Wait for output (stdout or stderr) or timeout — no polling needed.
+    // Wait for output (stdout/stderr) or timeout — no polling needed.
     await Promise.race([outputReady, new Promise<void>((r) => setTimeout(r, RUN_CODE_TIMEOUT))]);
 
     // Let the isolate finish naturally — wait a short grace period for exec
