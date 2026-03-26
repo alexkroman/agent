@@ -78,13 +78,13 @@ function piiRedactor(): Middleware {
 function analyticsLogger(): Middleware {
   return {
     name: "analytics-logger",
-    beforeTurn: (text, _ctx) => {
+    beforeTurn: (text, _ctx): undefined => {
       console.log(`[analytics] Turn started: "${text.slice(0, 50)}..."`);
     },
-    afterTurn: (text, ctx) => {
+    afterTurn: (text, ctx): undefined => {
       console.log(`[analytics] Turn completed for session`);
     },
-    toolCallInterceptor: (toolName, args, _ctx) => {
+    toolCallInterceptor: (toolName, args, _ctx): undefined => {
       console.log(`[analytics] Tool call: ${toolName}`, args);
     },
   };
