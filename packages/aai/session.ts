@@ -50,6 +50,10 @@ export type S2sSessionOptions = {
   hookInvoker?: HookInvoker;
   skipGreeting?: boolean;
   logger?: Logger;
+  /** Maximum number of conversation messages to retain. Older messages are
+   *  dropped (sliding window) to bound memory in long-running sessions.
+   *  Defaults to 200. Set to 0 or Infinity to disable trimming. */
+  maxHistory?: number;
 };
 
 /** @internal Not part of the public API. Exposed for testing only. */
@@ -75,6 +79,8 @@ export type S2sSessionCtx = {
   toolCallCount: number;
   turnPromise: Promise<void> | null;
   conversationMessages: Message[];
+  /** Maximum number of messages to retain in conversationMessages. */
+  readonly maxHistory: number;
   /** Monotonically increasing counter bumped on each reply_started. Tool calls
    *  capture the generation at start; finishToolCall only pushes to pendingTools
    *  if the generation still matches, preventing stale results from interrupted
@@ -86,7 +92,11 @@ export type S2sSessionCtx = {
     name: string,
   ): string | null;
   fireHook(name: string, fn: (h: HookInvoker) => Promise<void>): void;
+  /** Push one or more messages and trim to maxHistory. */
+  pushMessages(...msgs: Message[]): void;
 };
+
+const DEFAULT_MAX_HISTORY = 200;
 
 function buildCtx(opts: {
   id: string;
@@ -96,8 +106,10 @@ function buildCtx(opts: {
   executeTool: ExecuteTool;
   hookInvoker: HookInvoker | undefined;
   log: Logger;
+  maxHistory?: number | undefined;
 }): S2sSessionCtx {
   const { id, agentConfig, hookInvoker, log } = opts;
+  const maxHistory = opts.maxHistory ?? DEFAULT_MAX_HISTORY;
   let cachedActiveTools: string[] | undefined;
   let cachedActiveSet: Set<string> | undefined;
   const ctx: S2sSessionCtx = {
@@ -107,6 +119,7 @@ function buildCtx(opts: {
     toolCallCount: 0,
     turnPromise: null,
     conversationMessages: [],
+    maxHistory,
     replyGeneration: 0,
     resolveTurnConfig() {
       if (!hookInvoker) return Promise.resolve(null);
@@ -144,6 +157,12 @@ function buildCtx(opts: {
         log.warn(`${name} hook failed`, { err: errorMessage(err) });
       }
     },
+    pushMessages(...msgs: Message[]) {
+      ctx.conversationMessages.push(...msgs);
+      if (maxHistory > 0 && ctx.conversationMessages.length > maxHistory) {
+        ctx.conversationMessages = ctx.conversationMessages.slice(-maxHistory);
+      }
+    },
   };
   return ctx;
 }
@@ -175,7 +194,16 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
   }));
 
   const sessionAbort = new AbortController();
-  const ctx = buildCtx({ id, agent, client, agentConfig, executeTool, hookInvoker, log });
+  const ctx = buildCtx({
+    id,
+    agent,
+    client,
+    agentConfig,
+    executeTool,
+    hookInvoker,
+    log,
+    maxHistory: opts.maxHistory,
+  });
 
   /** Monotonically increasing counter bumped on each connectAndSetup call.
    *  Only the most recent invocation is allowed to set ctx.s2s, preventing
@@ -256,7 +284,7 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
       );
     },
     onHistory(incoming: readonly { role: "user" | "assistant"; text: string }[]): void {
-      ctx.conversationMessages.push(...fromWireMessages(incoming));
+      ctx.pushMessages(...fromWireMessages(incoming));
     },
     waitForTurn(): Promise<void> {
       return ctx.turnPromise ?? Promise.resolve();

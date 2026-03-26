@@ -159,7 +159,7 @@ function handleUserTranscript(ctx: S2sSessionCtx, text: string): void {
   turnCounter.add(1, { agent: ctx.agent });
   ctx.client.event({ type: "transcript", text, isFinal: true });
   ctx.client.event({ type: "turn", text });
-  ctx.conversationMessages.push({ role: "user", content: text });
+  ctx.pushMessages({ role: "user", content: text });
   const fireTurn = () => ctx.fireHook("onTurn", (h) => h.onTurn(ctx.id, text, HOOK_TIMEOUT_MS));
   if (!ctx.hookInvoker?.beforeTurn) {
     fireTurn();
@@ -197,7 +197,7 @@ function handleAgentTranscriptDelta(ctx: S2sSessionCtx, text: string): void {
 function handleAgentTranscript(ctx: S2sSessionCtx, text: string): void {
   const emit = (t: string) => {
     ctx.client.event({ type: "chat", text: t });
-    ctx.conversationMessages.push({ role: "assistant", content: t });
+    ctx.pushMessages({ role: "assistant", content: t });
   };
   if (!ctx.hookInvoker?.filterOutput) {
     emit(text);
