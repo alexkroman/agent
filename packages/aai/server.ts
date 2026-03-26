@@ -57,6 +57,12 @@ export type ServerOptions = {
    * this window the connection is cleaned up.
    */
   sessionStartTimeoutMs?: number;
+  /**
+   * Maximum time in milliseconds to wait for sessions to stop during
+   * {@link AgentServer.close | close()}. Sessions still running after this
+   * deadline are force-closed. Defaults to `30_000` (30 seconds).
+   */
+  shutdownTimeoutMs?: number;
 };
 
 /**
@@ -123,6 +129,7 @@ export function createServer(options: ServerOptions): AgentServer {
     logger = consoleLogger,
     s2sConfig = DEFAULT_S2S_CONFIG,
     authToken,
+    shutdownTimeoutMs = 30_000,
   } = options;
 
   const env = filterEnv(options.env ?? (typeof process !== "undefined" ? process.env : {}));
@@ -254,9 +261,25 @@ export function createServer(options: ServerOptions): AgentServer {
 
     async close() {
       if (sessions.size > 0) {
-        const results = await Promise.allSettled([...sessions.values()].map((s) => s.stop()));
-        for (const r of results) {
-          if (r.status === "rejected") logger.warn(`Session stop failed during close: ${r.reason}`);
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const timeout = new Promise<"timeout">((resolve) => {
+          timer = setTimeout(resolve, shutdownTimeoutMs, "timeout");
+        });
+        const graceful = Promise.allSettled([...sessions.values()].map((s) => s.stop())).then(
+          (results) => {
+            for (const r of results) {
+              if (r.status === "rejected")
+                logger.warn(`Session stop failed during close: ${r.reason}`);
+            }
+            return "done" as const;
+          },
+        );
+        const outcome = await Promise.race([graceful, timeout]);
+        if (timer) clearTimeout(timer);
+        if (outcome === "timeout") {
+          logger.warn(
+            `Shutdown timeout (${shutdownTimeoutMs}ms) exceeded — force-closing ${sessions.size} remaining session(s)`,
+          );
         }
         sessions.clear();
       }
