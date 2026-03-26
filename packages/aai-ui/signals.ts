@@ -128,6 +128,17 @@ function tryParseJSON(str: string): unknown {
   }
 }
 
+function isNewCompletedCall(
+  tc: ToolCallInfo,
+  seen: Set<string>,
+  filterName: string | undefined,
+): tc is ToolCallInfo & { result: string } {
+  if (tc.status !== "done" || !tc.result) return false;
+  if (seen.has(tc.toolCallId)) return false;
+  if (filterName && tc.toolName !== filterName) return false;
+  return true;
+}
+
 /**
  * Hook that fires a callback exactly once for each newly completed tool call.
  *
@@ -137,6 +148,28 @@ function tryParseJSON(str: string): unknown {
  *
  * Automatically resets tracking when the session is reset (toolCalls cleared).
  *
+ * @example
+ * ```tsx
+ * // Filter by tool name with a typed result:
+ * useToolResult<Recipe>("get_recipe", (result, toolCall) => {
+ *   setRecipe(result);
+ * });
+ *
+ * // Receive all tool results (untyped):
+ * useToolResult((toolName, result, toolCall) => {
+ *   console.log(toolName, result);
+ * });
+ * ```
+ *
+ * @public
+ */
+export function useToolResult<R = unknown>(
+  toolName: string,
+  callback: (result: R, toolCall: ToolCallInfo) => void,
+): void;
+/**
+ * Hook that fires a callback exactly once for each newly completed tool call.
+ *
  * @param callback - Called once per completed tool call with the tool name,
  *   parsed result, and full {@link ToolCallInfo}.
  *
@@ -144,7 +177,19 @@ function tryParseJSON(str: string): unknown {
  */
 export function useToolResult(
   callback: (toolName: string, result: unknown, toolCall: ToolCallInfo) => void,
+): void;
+export function useToolResult<R = unknown>(
+  toolNameOrCallback:
+    | string
+    | ((toolName: string, result: unknown, toolCall: ToolCallInfo) => void),
+  maybeCallback?: (result: R, toolCall: ToolCallInfo) => void,
 ): void {
+  const filterName = typeof toolNameOrCallback === "string" ? toolNameOrCallback : undefined;
+  const callback =
+    typeof toolNameOrCallback === "function"
+      ? toolNameOrCallback
+      : (_name: string, result: unknown, tc: ToolCallInfo) => maybeCallback?.(result as R, tc);
+
   const { session } = useSession();
   const seenRef = useRef(new Set<string>());
   const cbRef = useRef(callback);
@@ -159,8 +204,7 @@ export function useToolResult(
           return;
         }
         for (const tc of toolCalls) {
-          if (tc.status !== "done" || !tc.result) continue;
-          if (seenRef.current.has(tc.toolCallId)) continue;
+          if (!isNewCompletedCall(tc, seenRef.current, filterName)) continue;
           seenRef.current.add(tc.toolCallId);
           cbRef.current(tc.toolName, tryParseJSON(tc.result), tc);
         }

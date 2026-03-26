@@ -1,14 +1,7 @@
 import "@alexkroman1/aai-ui/styles.css";
 import { useState } from "preact/hooks";
 import { ChatView, SidebarLayout, StartScreen, mount, useSession, useToolResult } from "@alexkroman1/aai-ui";
-
-interface Pizza {
-  id: number;
-  size: string;
-  crust: string;
-  toppings: string[];
-  quantity: number;
-}
+import { type Pizza, type PizzaToolResults, pizzaPrice } from "./shared.ts";
 
 interface OrderInfo {
   pizzas: Pizza[];
@@ -16,45 +9,6 @@ interface OrderInfo {
   orderPlaced: boolean;
   orderNumber?: number;
   estimatedMinutes?: number;
-}
-
-const SIZE_PRICES: Record<string, number> = {
-  small: 8.99,
-  medium: 11.99,
-  large: 14.99,
-};
-const CRUST_PRICES: Record<string, number> = {
-  thin: 0,
-  regular: 0,
-  thick: 1.0,
-  stuffed: 2.0,
-};
-const TOPPING_PRICES: Record<string, number> = {
-  pepperoni: 1.5,
-  sausage: 1.5,
-  mushrooms: 1.0,
-  onions: 1.0,
-  green_peppers: 1.0,
-  black_olives: 1.0,
-  bacon: 2.0,
-  ham: 1.5,
-  pineapple: 1.0,
-  jalapenos: 1.0,
-  extra_cheese: 1.5,
-  spinach: 1.0,
-  tomatoes: 1.0,
-  anchovies: 1.5,
-  chicken: 2.0,
-};
-
-function pizzaPrice(p: Pizza): number {
-  const base = SIZE_PRICES[p.size] ?? 11.99;
-  const crust = CRUST_PRICES[p.crust] ?? 0;
-  const toppings = p.toppings.reduce(
-    (s, t) => s + (TOPPING_PRICES[t] ?? 1.0),
-    0,
-  );
-  return (base + crust + toppings) * p.quantity;
 }
 
 function PizzaIcon({ size }: { size: string }) {
@@ -155,58 +109,56 @@ function PizzaAgent() {
     orderPlaced: false,
   });
 
-  useToolResult((toolName, result: any) => {
-    switch (toolName) {
-      case "add_pizza":
-        if (result.added) {
-          setOrder((prev) => ({
-            ...prev,
-            pizzas: [...prev.pizzas, result.added],
-            total: result.orderTotal,
-          }));
-        }
-        break;
-      case "remove_pizza":
-        if (result.removed) {
-          setOrder((prev) => ({
-            ...prev,
-            pizzas: prev.pizzas.filter(
-              (p: Pizza) => p.id !== result.removed.id,
-            ),
-            total: result.orderTotal,
-          }));
-        }
-        break;
-      case "update_pizza":
-        if (result.updated) {
-          setOrder((prev) => ({
-            ...prev,
-            pizzas: prev.pizzas.map((p: Pizza) =>
-              p.id === result.updated.id ? result.updated : p,
-            ),
-            total: result.orderTotal,
-          }));
-        }
-        break;
-      case "view_order":
-        if (result.pizzas) {
-          const total =
-            result.orderTotal ||
-            `$${result.pizzas.reduce((s: number, p: Pizza) => s + pizzaPrice(p), 0).toFixed(2)}`;
-          setOrder((prev) => ({ ...prev, total }));
-        }
-        break;
-      case "place_order":
-        if (result.orderNumber) {
-          setOrder((prev) => ({
-            ...prev,
-            orderPlaced: true,
-            orderNumber: result.orderNumber,
-            total: result.total,
-            estimatedMinutes: result.estimatedMinutes,
-          }));
-        }
-        break;
+  useToolResult<PizzaToolResults["add_pizza"]>("add_pizza", (result) => {
+    if (result.added) {
+      setOrder((prev) => ({
+        ...prev,
+        pizzas: [...prev.pizzas, result.added],
+        total: result.orderTotal,
+      }));
+    }
+  });
+
+  useToolResult<PizzaToolResults["remove_pizza"]>("remove_pizza", (result) => {
+    if (result.removed) {
+      setOrder((prev) => ({
+        ...prev,
+        pizzas: prev.pizzas.filter((p) => p.id !== result.removed.id),
+        total: result.orderTotal,
+      }));
+    }
+  });
+
+  useToolResult<PizzaToolResults["update_pizza"]>("update_pizza", (result) => {
+    if (result.updated) {
+      setOrder((prev) => ({
+        ...prev,
+        pizzas: prev.pizzas.map((p) =>
+          p.id === result.updated.id ? result.updated : p,
+        ),
+        total: result.orderTotal,
+      }));
+    }
+  });
+
+  useToolResult<PizzaToolResults["view_order"]>("view_order", (result) => {
+    if ("pizzas" in result) {
+      const total =
+        result.orderTotal ||
+        `$${result.pizzas.reduce((s: number, p: Pizza) => s + pizzaPrice(p), 0).toFixed(2)}`;
+      setOrder((prev) => ({ ...prev, total }));
+    }
+  });
+
+  useToolResult<PizzaToolResults["place_order"]>("place_order", (result) => {
+    if (result.orderNumber) {
+      setOrder((prev) => ({
+        ...prev,
+        orderPlaced: true,
+        orderNumber: result.orderNumber,
+        total: result.total,
+        estimatedMinutes: result.estimatedMinutes,
+      }));
     }
   });
 

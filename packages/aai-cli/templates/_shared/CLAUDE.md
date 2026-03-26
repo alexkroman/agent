@@ -755,6 +755,7 @@ data lives on `session` (a `VoiceSession`); UI-only controls are top-level.
 | Hook                                          | Description                                                                                  |
 | --------------------------------------------- | -------------------------------------------------------------------------------------------- |
 | `useToolResult((toolName, result, tc) => {})` | Fires once per completed tool call with parsed JSON result. Use for carts, scoreboards, etc. |
+| `useToolResult<R>("tool_name", (result, tc) => {})` | Fires only for the named tool, with `result` typed as `R`. |
 
 **Signal semantics for utterances:**
 
@@ -804,28 +805,41 @@ Use `useToolResult` to update local state (carts, scoreboards, dashboards)
 whenever a tool completes. It fires exactly once per completed tool call with
 the parsed JSON result, handling deduplication internally.
 
+**Sharing types between agent and client:** Create a `shared.ts` file with
+your tool result types using `ToolResultMap`, then import it from both
+`agent.ts` and `client.tsx`:
+
+```ts
+// shared.ts — imported by both agent.ts and client.tsx
+import type { ToolResultMap } from "@alexkroman1/aai";
+
+export interface CartItem { id: number; name: string; price: number }
+
+export type ShopToolResults = ToolResultMap<{
+  add_item: { item: CartItem };
+  remove_item: { removedId: number };
+  clear_cart: { cleared: boolean };
+}>;
+```
+
 ```tsx
+// client.tsx — typed tool results, no duplication
 import "aai-ui/styles.css";
 import { useState } from "preact/hooks";
 import { ChatView, SidebarLayout, StartScreen, mount, useToolResult } from "@alexkroman1/aai-ui";
-
-interface CartItem { id: number; name: string; price: number }
+import type { CartItem, ShopToolResults } from "./shared.ts";
 
 function ShopAgent() {
   const [cart, setCart] = useState<CartItem[]>([]);
 
-  useToolResult((toolName, result: any) => {
-    switch (toolName) {
-      case "add_item":
-        setCart((prev) => [...prev, result.item]);
-        break;
-      case "remove_item":
-        setCart((prev) => prev.filter((i) => i.id !== result.removedId));
-        break;
-      case "clear_cart":
-        setCart([]);
-        break;
-    }
+  useToolResult<ShopToolResults["add_item"]>("add_item", (result) => {
+    setCart((prev) => [...prev, result.item]);
+  });
+  useToolResult<ShopToolResults["remove_item"]>("remove_item", (result) => {
+    setCart((prev) => prev.filter((i) => i.id !== result.removedId));
+  });
+  useToolResult("clear_cart", () => {
+    setCart([]);
   });
 
   const sidebar = (

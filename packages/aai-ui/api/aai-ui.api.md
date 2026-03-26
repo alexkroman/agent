@@ -210,6 +210,9 @@ export function useToolCallStart(callback: (toolName: string, args: Record<strin
 export function useToolCallUpdate(callback: (toolName: string, data: unknown, toolCall: ToolCallInfo) => void): void;
 
 // @public
+export function useToolResult<R = unknown>(toolName: string, callback: (result: R, toolCall: ToolCallInfo) => void): void;
+
+// @public
 export function useToolResult(callback: (toolName: string, result: unknown, toolCall: ToolCallInfo) => void): void;
 
 // @public

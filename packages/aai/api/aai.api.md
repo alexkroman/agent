@@ -68,6 +68,9 @@ export { defineTool }
 export { defineTool as tool }
 
 // @public
+export type ToolResultMap<T extends Record<string, unknown> = Record<string, unknown>> = T;
+
+// @public
 export type HookContext<S = Record<string, unknown>> = Omit<ToolContext<S>, "messages" | "sendUpdate">;
 
 // @public
