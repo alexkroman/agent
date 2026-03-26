@@ -69,11 +69,14 @@ function hasStringFields(obj: Record<string, unknown>, ...keys: string[]): boole
 
 function parseToolCall(obj: Record<string, unknown>): S2sServerMessage | undefined {
   if (!hasStringFields(obj, "call_id", "name")) return;
+  const callId = obj.call_id;
+  const name = obj.name;
+  if (typeof callId !== "string" || typeof name !== "string") return;
   const args =
     obj.args != null && typeof obj.args === "object" && !Array.isArray(obj.args)
       ? (obj.args as Record<string, unknown>)
       : {};
-  return { type: "tool.call", call_id: obj.call_id as string, name: obj.name as string, args };
+  return { type: "tool.call", call_id: callId, name, args };
 }
 
 type MessageValidator = (obj: Record<string, unknown>) => S2sServerMessage | undefined;

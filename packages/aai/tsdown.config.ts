@@ -17,7 +17,6 @@ export default defineConfig({
     "builtin-tools.ts",
     "_internal-types.ts",
     "telemetry.ts",
-    "_mock-ws.ts",
     "testing.ts",
     "matchers.ts",
     "_utils.ts",
