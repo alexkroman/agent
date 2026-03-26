@@ -2,6 +2,7 @@
 // Zod schemas -- validate untrusted input at HTTP/WebSocket boundaries.
 
 import { posix } from "node:path";
+import { validateVectorFilter } from "@alexkroman1/aai/vector";
 import { z } from "zod";
 
 /**
@@ -52,7 +53,10 @@ export const VectorRequestSchema = z.discriminatedUnion("op", [
     op: z.literal("query"),
     text: z.string().min(1),
     topK: z.number().int().positive().max(100).optional(),
-    filter: z.string().optional(),
+    filter: z
+      .string()
+      .transform((f) => validateVectorFilter(f))
+      .optional(),
   }),
   z.object({
     op: z.literal("delete"),

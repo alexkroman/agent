@@ -4,12 +4,114 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { createLanceDbVectorStore, createTestEmbedFn } from "./lancedb-vector.ts";
+import { validateVectorFilter } from "./vector.ts";
 
 const embedFn = createTestEmbedFn();
 
 function makeTmpDir(): string {
   return mkdtempSync(join(tmpdir(), "aai-vec-test-"));
 }
+
+describe("validateVectorFilter", () => {
+  test("accepts valid comparison filter", () => {
+    expect(validateVectorFilter('category = "news"')).toBe('category = "news"');
+  });
+
+  test("accepts valid AND/OR filter", () => {
+    expect(validateVectorFilter('type = "blog" AND status = "published"')).toBe(
+      'type = "blog" AND status = "published"',
+    );
+  });
+
+  test("accepts numeric comparisons", () => {
+    expect(validateVectorFilter("score > 0.5")).toBe("score > 0.5");
+  });
+
+  test("accepts NOT operator", () => {
+    expect(validateVectorFilter('NOT category = "spam"')).toBe('NOT category = "spam"');
+  });
+
+  test("accepts IN operator", () => {
+    expect(validateVectorFilter('status IN ("active", "pending")')).toBe(
+      'status IN ("active", "pending")',
+    );
+  });
+
+  test("accepts HAS CONTAINS GLOB operators", () => {
+    expect(validateVectorFilter('tags HAS "ai"')).toBe('tags HAS "ai"');
+    expect(validateVectorFilter('name GLOB "test*"')).toBe('name GLOB "test*"');
+    expect(validateVectorFilter('body CONTAINS "hello"')).toBe('body CONTAINS "hello"');
+  });
+
+  test("trims whitespace", () => {
+    expect(validateVectorFilter('  id = "x"  ')).toBe('id = "x"');
+  });
+
+  test("rejects empty filter", () => {
+    expect(() => validateVectorFilter("")).toThrow("must not be empty");
+    expect(() => validateVectorFilter("   ")).toThrow("must not be empty");
+  });
+
+  test("rejects filter exceeding max length", () => {
+    const long = "a".repeat(1001);
+    expect(() => validateVectorFilter(long)).toThrow("exceeds maximum length");
+  });
+
+  test("rejects SELECT keyword", () => {
+    expect(() => validateVectorFilter("id = (SELECT id FROM other)")).toThrow(
+      "disallowed SQL keyword",
+    );
+  });
+
+  test("rejects DROP keyword", () => {
+    expect(() => validateVectorFilter('x = "y" OR DROP TABLE foo')).toThrow(
+      "disallowed SQL keyword",
+    );
+  });
+
+  test("rejects UNION keyword", () => {
+    expect(() => validateVectorFilter('id = "1" UNION SELECT * FROM secrets')).toThrow(
+      "disallowed SQL keyword",
+    );
+  });
+
+  test("rejects DELETE keyword", () => {
+    expect(() => validateVectorFilter("DELETE FROM vectors")).toThrow("disallowed SQL keyword");
+  });
+
+  test("rejects INSERT keyword", () => {
+    expect(() => validateVectorFilter("INSERT INTO vectors VALUES(1)")).toThrow(
+      "disallowed SQL keyword",
+    );
+  });
+
+  test("rejects semicolons", () => {
+    expect(() => validateVectorFilter('id = "1"; id = "2"')).toThrow("disallowed characters");
+  });
+
+  test("rejects SQL line comments", () => {
+    expect(() => validateVectorFilter('id = "1" -- comment')).toThrow("disallowed characters");
+  });
+
+  test("rejects block comments", () => {
+    expect(() => validateVectorFilter('id = "1" /* comment */')).toThrow("disallowed characters");
+  });
+
+  test("rejects null bytes", () => {
+    expect(() => validateVectorFilter('id = "1"\0')).toThrow("disallowed characters");
+  });
+
+  test("keyword check is case-insensitive", () => {
+    expect(() => validateVectorFilter("select * from foo")).toThrow("disallowed SQL keyword");
+    expect(() => validateVectorFilter("SeLeCt * from foo")).toThrow("disallowed SQL keyword");
+  });
+
+  test("does not false-positive on substrings", () => {
+    // "selected" contains "select" but is not the keyword
+    expect(validateVectorFilter('selected = "true"')).toBe('selected = "true"');
+    expect(validateVectorFilter('dropdown = "yes"')).toBe('dropdown = "yes"');
+  });
+});
 
 describe("createLanceDbVectorStore", () => {
   const tmpDirs: string[] = [];
@@ -179,5 +281,16 @@ describe("createLanceDbVectorStore", () => {
     const results = await v.query("hello", { filter: 'id = "doc-1"' });
     expect(results.length).toBe(1);
     expect(results[0]?.id).toBe("doc-1");
+  });
+
+  test("query rejects dangerous filter expressions", async () => {
+    const v = await createLanceDbVectorStore({ path: tmpDir(), embedFn });
+    await v.upsert("doc-1", "hello world");
+    await expect(v.query("hello", { filter: 'id = "1"; id = "2"' })).rejects.toThrow(
+      "disallowed characters",
+    );
+    await expect(v.query("hello", { filter: "id = (SELECT id FROM other)" })).rejects.toThrow(
+      "disallowed SQL keyword",
+    );
   });
 });

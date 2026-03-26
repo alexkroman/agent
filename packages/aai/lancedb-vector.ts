@@ -7,7 +7,7 @@
  */
 
 import * as lancedb from "@lancedb/lancedb";
-import type { VectorEntry, VectorStore } from "./vector.ts";
+import { type VectorEntry, type VectorStore, validateVectorFilter } from "./vector.ts";
 
 /** Function that converts text into an embedding vector. */
 export type EmbedFn = (text: string) => Promise<number[]>;
@@ -169,7 +169,7 @@ export async function createLanceDbVectorStore(
 
       let search = table.vectorSearch(queryVec).distanceType("cosine").limit(topK);
       if (options?.filter) {
-        search = search.where(options.filter);
+        search = search.where(validateVectorFilter(options.filter));
       }
 
       const rows: Record<string, unknown>[] = await search.toArray();
