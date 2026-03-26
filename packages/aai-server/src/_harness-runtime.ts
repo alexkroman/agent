@@ -75,6 +75,34 @@ const vector: VectorStore = {
   },
 };
 
+type ProxyData = {
+  status: number;
+  statusText: string;
+  headers: Record<string, string>;
+  body: string;
+};
+
+/** Proxied fetch routed through the sidecar with SSRF protection on the host. */
+async function sidecarFetch(input: string | URL | Request, init?: RequestInit): Promise<Response> {
+  const req = input instanceof Request ? input : new Request(input, init);
+  const headers: Record<string, string> = {};
+  req.headers.forEach((v, k) => {
+    headers[k] = v;
+  });
+  const body = req.body ? await req.text() : null;
+  const proxyRes = await sidecarRpc<ProxyData>("/fetch", {
+    url: req.url,
+    method: req.method,
+    headers,
+    body,
+  });
+  return new Response(Buffer.from(proxyRes.body, "base64"), {
+    status: proxyRes.status,
+    statusText: proxyRes.statusText,
+    headers: new Headers(proxyRes.headers),
+  });
+}
+
 const sessionStates = new Map<string, Record<string, unknown>>();
 
 function getState(agent: AgentDef, sessionId: string): Record<string, unknown> {
@@ -139,6 +167,7 @@ async function executeTool(agent: AgentDef, req: ToolCallRequest): Promise<ToolC
       // No-op in sandbox mode — updates require direct WebSocket access
       // which is not available inside the V8 isolate.
     },
+    fetch: sidecarFetch,
   };
 
   const parsed =
@@ -167,6 +196,7 @@ function makeHookCtx(agent: AgentDef, req: HookRequest): HookContext {
     state: getState(agent, req.sessionId),
     kv,
     vector,
+    fetch: sidecarFetch,
   };
 }
 
@@ -311,10 +341,7 @@ async function handleToolRoute(agent: AgentDef, req: IncomingMessage): Promise<R
   const body = await parseJsonBody<ToolCallRequest>(req);
   if (isRouteResult(body)) return body;
   if (!body || typeof body.name !== "string" || typeof body.sessionId !== "string") {
-    return {
-      data: { error: "Invalid tool call request: missing name or sessionId" },
-      status: 400,
-    };
+    return { data: { error: "Invalid tool call request: missing name or sessionId" }, status: 400 };
   }
   return { data: await executeTool(agent, body) };
 }
@@ -329,15 +356,9 @@ async function handleHookRoute(agent: AgentDef, req: IncomingMessage): Promise<R
 }
 
 async function handleRoute(agent: AgentDef, req: IncomingMessage): Promise<RouteResult> {
-  if (req.method === "GET" && req.url === "/config") {
-    return { data: extractConfig(agent) };
-  }
-  if (req.method === "POST" && req.url === "/tool") {
-    return handleToolRoute(agent, req);
-  }
-  if (req.method === "POST" && req.url === "/hook") {
-    return handleHookRoute(agent, req);
-  }
+  if (req.method === "GET" && req.url === "/config") return { data: extractConfig(agent) };
+  if (req.method === "POST" && req.url === "/tool") return handleToolRoute(agent, req);
+  if (req.method === "POST" && req.url === "/hook") return handleHookRoute(agent, req);
   return { data: { error: "Not found" }, status: 404 };
 }
 

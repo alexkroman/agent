@@ -16,6 +16,7 @@ function makeCtx(state: Record<string, unknown> = {}): HookContext {
     state,
     kv: {} as never,
     vector: {} as never,
+    fetch: globalThis.fetch,
   };
 }
 

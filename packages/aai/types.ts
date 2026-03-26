@@ -272,6 +272,15 @@ export type ToolContext<S = Record<string, unknown>> = {
    * No-op in sandbox (platform) mode.
    */
   sendUpdate(data: unknown): void;
+  /**
+   * SSRF-safe fetch function.
+   *
+   * In self-hosted mode this calls the network directly (with SSRF protection).
+   * In platform mode this is proxied through the sidecar so it works inside
+   * the sandbox. Always use `ctx.fetch` instead of the global `fetch` in tool
+   * code to ensure portability across both deployment modes.
+   */
+  fetch: typeof globalThis.fetch;
 };
 
 /**

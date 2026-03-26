@@ -12,6 +12,7 @@ import {
   type ToolSchema,
   toAgentConfig,
 } from "./_internal-types.ts";
+import { ssrfSafeFetch } from "./_ssrf.ts";
 import { createSessionStateMap, toolError } from "./_utils.ts";
 import { getBuiltinToolDefs, getBuiltinToolSchemas } from "./builtin-tools.ts";
 import type { Kv } from "./kv.ts";
@@ -127,6 +128,12 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
   const sessionState = createSessionStateMap(agent.state);
   const frozenEnv = Object.freeze({ ...env });
 
+  /** SSRF-safe fetch for tool/hook contexts in self-hosted mode. */
+  const safeFetch: typeof globalThis.fetch = (input, init) => {
+    const req = new Request(input, init);
+    return ssrfSafeFetch(req.url, { ...init, method: req.method }, globalThis.fetch);
+  };
+
   function makeHookContext(sessionId: string): HookContext {
     return {
       env: frozenEnv,
@@ -137,6 +144,7 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
       get vector() {
         return vector;
       },
+      fetch: safeFetch,
     };
   }
 
@@ -153,6 +161,7 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
       messages,
       logger,
       onUpdate,
+      fetch: safeFetch,
     });
   };
 
