@@ -15,12 +15,12 @@ import { z } from 'zod';
 // @public
 export type AgentState = "disconnected" | "connecting" | "ready" | "listening" | "thinking" | "speaking" | "error";
 
-// @public (undocumented)
+// @public
 export function App(input: {
     className?: string;
 }): preact_2.JSX.Element;
 
-// @public (undocumented)
+// @public
 export function Button(input: {
     variant?: ButtonVariant;
     size?: ButtonSize;
@@ -28,10 +28,10 @@ export function Button(input: {
     children?: preact_2.ComponentChildren;
 } & Omit<preact_2.JSX.HTMLAttributes<HTMLButtonElement>, "className">): preact_2.JSX.Element;
 
-// @public (undocumented)
+// @public
 export type ButtonSize = "default" | "lg";
 
-// @public (undocumented)
+// @public
 export type ButtonVariant = "default" | "secondary" | "ghost";
 
 // @public
@@ -40,12 +40,12 @@ export type ChatMessage = {
     content: string;
 };
 
-// @public (undocumented)
+// @public
 export function ChatView(input: {
     className?: string;
 }): preact_2.JSX.Element;
 
-// @public (undocumented)
+// @public
 export function Controls(input: {
     className?: string;
 }): JSX.Element;
@@ -56,19 +56,19 @@ export function createSessionControls(session: VoiceSession): SessionSignals;
 // @public
 export function createVoiceSession(options: VoiceSessionOptions): VoiceSession;
 
-// @public (undocumented)
+// @public
 export function ErrorBanner(input: {
     error: Reactive<SessionError | null>;
     className?: string;
 }): preact_2.JSX.Element | null;
 
-// @public (undocumented)
+// @public
 export function MessageBubble(input: {
     message: ChatMessage;
     className?: string;
 }): preact_2.JSX.Element;
 
-// @public (undocumented)
+// @public
 export function MessageList(input: {
     className?: string;
 }): JSX.Element;
@@ -160,18 +160,18 @@ export function StartScreen(input: {
     className?: string | undefined;
 }): JSX.Element;
 
-// @public (undocumented)
+// @public
 export function StateIndicator(input: {
     state: Reactive<AgentState>;
     className?: string;
 }): preact_2.JSX.Element;
 
-// @public (undocumented)
+// @public
 export function ThinkingIndicator(input: {
     className?: string;
 }): preact_2.JSX.Element;
 
-// @public (undocumented)
+// @public
 export function ToolCallBlock(input: {
     toolCall: ToolCallInfo;
     className?: string;
@@ -188,7 +188,7 @@ export type ToolCallInfo = {
     afterMessageIndex: number;
 };
 
-// @public (undocumented)
+// @public
 export function Transcript(input: {
     userUtterance: Reactive<string | null>;
     className?: string;

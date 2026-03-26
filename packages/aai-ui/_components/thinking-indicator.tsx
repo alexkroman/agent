@@ -8,7 +8,18 @@ const DOT_STYLES: preact.JSX.CSSProperties[] = [0, 0.16, 0.32].map((delay) => ({
   animationDelay: `${delay}s`,
 }));
 
-/** @public */
+/**
+ * Animated three-dot "thinking" indicator shown while the agent is processing.
+ *
+ * @example
+ * ```tsx
+ * {isThinking && <ThinkingIndicator />}
+ * ```
+ *
+ * @param className - Additional CSS class names.
+ *
+ * @public
+ */
 export function ThinkingIndicator({ className }: { className?: string }): preact.JSX.Element {
   return (
     <div

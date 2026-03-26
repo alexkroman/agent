@@ -4,7 +4,29 @@ import clsx from "clsx";
 import type * as preact from "preact";
 import type { AgentState, Reactive } from "../types.ts";
 
-/** @public */
+/**
+ * Colored dot + label showing the current {@link AgentState}.
+ *
+ * State-to-color mapping:
+ * - `disconnected` — gray
+ * - `connecting` — yellow
+ * - `ready` — green
+ * - `listening` — blue
+ * - `thinking` — purple
+ * - `speaking` — red
+ * - `error` — red
+ *
+ * @example
+ * ```tsx
+ * const { session } = useSession();
+ * <StateIndicator state={session.state} />
+ * ```
+ *
+ * @param state - A reactive {@link AgentState} value.
+ * @param className - Additional CSS class names.
+ *
+ * @public
+ */
 export function StateIndicator({
   state,
   className,

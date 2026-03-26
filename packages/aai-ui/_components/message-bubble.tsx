@@ -4,7 +4,23 @@ import clsx from "clsx";
 import type * as preact from "preact";
 import type { ChatMessage } from "../types.ts";
 
-/** @public */
+/**
+ * Renders a single chat message as a styled bubble.
+ *
+ * - **User** messages appear right-aligned with a faint surface background.
+ * - **Assistant** messages appear left-aligned as plain text.
+ *
+ * @example
+ * ```tsx
+ * <MessageBubble message={{ role: "user", content: "Hello!" }} />
+ * <MessageBubble message={{ role: "assistant", content: "Hi there!" }} />
+ * ```
+ *
+ * @param message - The chat message to display (see {@link ChatMessage}).
+ * @param className - Additional CSS class names applied to the root element.
+ *
+ * @public
+ */
 export function MessageBubble({
   message,
   className,

@@ -4,7 +4,21 @@ import clsx from "clsx";
 import type * as preact from "preact";
 import type { Reactive, SessionError } from "../types.ts";
 
-/** @public */
+/**
+ * Displays a session error as a styled inline banner.
+ * Returns `null` when there is no active error.
+ *
+ * @example
+ * ```tsx
+ * const { session } = useSession();
+ * <ErrorBanner error={session.error} />
+ * ```
+ *
+ * @param error - A reactive {@link SessionError} (or `null`).
+ * @param className - Additional CSS class names.
+ *
+ * @public
+ */
 export function ErrorBanner({
   error,
   className,

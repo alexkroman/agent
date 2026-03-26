@@ -58,7 +58,27 @@ function formatResult(result: string): string {
   }
 }
 
-/** @public */
+/**
+ * Renders a tool invocation with an icon, title, subtitle, and a
+ * collapsible result viewer.
+ *
+ * Built-in tool types (`web_search`, `visit_webpage`, `run_code`,
+ * `fetch_json`, `user_input`) get custom icons and labels. Unknown tools
+ * fall back to a generic bolt icon.
+ *
+ * While the tool call is pending a shimmer animation is shown. Once
+ * complete, clicking the block expands the formatted JSON result.
+ *
+ * @example
+ * ```tsx
+ * <ToolCallBlock toolCall={toolCall} />
+ * ```
+ *
+ * @param toolCall - The tool call to render (see {@link ToolCallInfo}).
+ * @param className - Additional CSS class names.
+ *
+ * @public
+ */
 export function ToolCallBlock({
   toolCall,
   className,
