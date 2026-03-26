@@ -7,7 +7,7 @@
  * pipeline: tool calls, user turns, barge-ins, and session lifecycle.
  */
 
-import { errorDetail, errorMessage } from "./_utils.ts";
+import { errorDetail, errorMessage, toolError } from "./_utils.ts";
 import { HOOK_TIMEOUT_MS, MAX_TOOL_RESULT_CHARS } from "./protocol.ts";
 import type { S2sHandle, S2sToolCall } from "./s2s.ts";
 import type { S2sSessionCtx } from "./session.ts";
@@ -90,7 +90,7 @@ export async function handleToolCall(ctx: S2sSessionCtx, detail: S2sToolCall): P
     ctx.log.error(msg);
     span.setStatus({ code: 2, message: msg });
     span.end();
-    finishToolCall(ctx, callId, msg, generation);
+    finishToolCall(ctx, callId, toolError(msg), generation);
     return;
   }
 
@@ -125,7 +125,7 @@ export async function handleToolCall(ctx: S2sSessionCtx, detail: S2sToolCall): P
       if (ic?.type === "block") {
         span.setAttribute("aai.tool.blocked", true);
         span.end();
-        finishToolCall(ctx, callId, JSON.stringify({ error: ic.reason }), generation);
+        finishToolCall(ctx, callId, toolError(ic.reason), generation);
         return;
       }
       if (ic?.type === "result") {
@@ -160,7 +160,7 @@ export async function handleToolCall(ctx: S2sSessionCtx, detail: S2sToolCall): P
     toolCallErrorCounter.add(1, { agent: ctx.agent, tool: name });
     span.setStatus({ code: 2, message: msg });
     span.recordException(err instanceof Error ? err : new Error(msg));
-    result = JSON.stringify({ error: msg });
+    result = toolError(msg);
   }
 
   // Run middleware afterToolCall hooks

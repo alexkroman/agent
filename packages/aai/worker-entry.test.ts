@@ -40,8 +40,9 @@ describe("executeToolCall", () => {
   test("returns error for invalid args", async () => {
     const tool = makeTool({ parameters: z.object({ name: z.string() }), execute: () => "ok" });
     const result = await run("greet", { name: 123 }, tool);
-    expect(result.startsWith("Error: Invalid arguments")).toBe(true);
-    expect(result.includes("greet")).toBe(true);
+    const parsed = JSON.parse(result);
+    expect(parsed.error).toContain("Invalid arguments");
+    expect(parsed.error).toContain("greet");
   });
 
   test("returns error when tool throws", async () => {
@@ -55,7 +56,7 @@ describe("executeToolCall", () => {
           },
         }),
       ),
-    ).toBe("Error: boom");
+    ).toBe(JSON.stringify({ error: "boom" }));
   });
 
   test("returns error string when tool throws", async () => {
@@ -69,7 +70,7 @@ describe("executeToolCall", () => {
           },
         }),
       ),
-    ).toBe("Error: string error");
+    ).toBe(JSON.stringify({ error: "string error" }));
   });
 
   test("passes env to tool context", async () => {
@@ -117,7 +118,7 @@ describe("executeToolCall", () => {
     const promise = run("slow", {}, tool);
     await vi.advanceTimersByTimeAsync(30_000);
     const result = await promise;
-    expect(result).toBe('Error: Tool "slow" timed out after 30000ms');
+    expect(result).toBe(JSON.stringify({ error: 'Tool "slow" timed out after 30000ms' }));
     vi.useRealTimers();
   });
 });
