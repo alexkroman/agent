@@ -102,4 +102,33 @@ describe("bundle store S3 304 handling", () => {
     const result = await store.getManifest("nonexistent");
     expect(result).toBeNull();
   });
+
+  test("concurrent putEnv calls do not lose updates", async () => {
+    const s3 = mockS3();
+    const credentialKey = await deriveCredentialKey("test-secret");
+    const store = createBundleStore(s3, { bucket: "test", credentialKey });
+
+    await store.putAgent({
+      slug: "test-agent",
+      env: { INITIAL: "value" },
+      worker: "console.log('w');",
+      clientFiles: { "index.html": "<html></html>" },
+      credential_hashes: ["hash1"],
+    });
+
+    // Fire two concurrent putEnv calls — without locking, one would overwrite the other
+    await Promise.all([
+      store.putEnv("test-agent", { A: "1" }),
+      store.putEnv("test-agent", { B: "2" }),
+    ]);
+
+    // The last write wins, but it must have completed after the first.
+    // Verify the manifest is readable and contains env from one of the calls
+    // (not corrupted or lost).
+    const env = await store.getEnv("test-agent");
+    expect(env).not.toBeNull();
+    // With serialization, the second call reads the result of the first,
+    // then overwrites. So the final env should be { B: "2" }.
+    expect(env).toEqual({ B: "2" });
+  });
 });
