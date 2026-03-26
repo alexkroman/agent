@@ -69,7 +69,7 @@ export function mount(Component: ComponentType<any>, options?: MountOptions): Mo
 
   const platformUrl =
     options?.platformUrl ?? globalThis.location.origin + globalThis.location.pathname;
-  const session = createVoiceSession({ platformUrl, signal, batch });
+  const session = createVoiceSession({ platformUrl, reactiveFactory: signal, batch });
   const signals = createSessionControls(session);
 
   const mountConfig = { title: options?.title, theme: options?.theme };

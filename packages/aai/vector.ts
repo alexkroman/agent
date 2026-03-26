@@ -65,11 +65,11 @@ export type VectorStore = {
   query(text: string, options?: { topK?: number; filter?: string }): Promise<VectorEntry[]>;
 
   /**
-   * Remove entries by ID.
+   * Delete entries by ID.
    *
-   * @param ids - A single ID or array of IDs to remove.
+   * @param ids - A single ID or array of IDs to delete.
    */
-  remove(ids: string | string[]): Promise<void>;
+  delete(ids: string | string[]): Promise<void>;
 };
 
 /**
@@ -126,7 +126,7 @@ export function createMemoryVectorStore(): VectorStore {
       return results.slice(0, topK);
     },
 
-    remove(ids: string | string[]): Promise<void> {
+    delete(ids: string | string[]): Promise<void> {
       const idArray = Array.isArray(ids) ? ids : [ids];
       for (const id of idArray) {
         store.delete(id);

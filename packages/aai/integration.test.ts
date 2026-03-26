@@ -9,15 +9,15 @@ import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import { buildAgentConfig, createDirectExecutor } from "./direct-executor.ts";
 import { createMemoryKv } from "./kv.ts";
-import { defineAgent, tool } from "./types.ts";
+import { defineAgent, defineTool } from "./types.ts";
 import { createMemoryVectorStore } from "./vector.ts";
 
 describe("SDK integration: defineAgent → tool execution", () => {
-  test("defineAgent + tool() + executeToolCall round-trip", async () => {
+  test("defineAgent + defineTool() + executeToolCall round-trip", async () => {
     const agent = defineAgent({
       name: "test-agent",
       tools: {
-        greet: tool({
+        greet: defineTool({
           description: "Greet by name",
           parameters: z.object({ name: z.string() }),
           execute: ({ name }) => `Hello, ${name}!`,
@@ -35,7 +35,7 @@ describe("SDK integration: defineAgent → tool execution", () => {
     const agent = defineAgent({
       name: "kv-agent",
       tools: {
-        save: tool({
+        save: defineTool({
           description: "Save a value",
           parameters: z.object({ key: z.string(), value: z.string() }),
           execute: async ({ key, value }, ctx) => {
@@ -43,7 +43,7 @@ describe("SDK integration: defineAgent → tool execution", () => {
             return "saved";
           },
         }),
-        load: tool({
+        load: defineTool({
           description: "Load a value",
           parameters: z.object({ key: z.string() }),
           execute: async ({ key }, ctx) => {
@@ -65,7 +65,7 @@ describe("SDK integration: defineAgent → tool execution", () => {
     const agent = defineAgent({
       name: "vector-agent",
       tools: {
-        index: tool({
+        index: defineTool({
           description: "Index a document",
           parameters: z.object({ id: z.string(), text: z.string() }),
           execute: async ({ id, text }, ctx) => {
@@ -73,7 +73,7 @@ describe("SDK integration: defineAgent → tool execution", () => {
             return "indexed";
           },
         }),
-        search: tool({
+        search: defineTool({
           description: "Search documents",
           parameters: z.object({ query: z.string() }),
           execute: async ({ query }, ctx) => {
@@ -145,7 +145,7 @@ describe("SDK integration: defineAgent → tool execution", () => {
     const agent = defineAgent({
       name: "validation-agent",
       tools: {
-        typed: tool({
+        typed: defineTool({
           description: "Typed tool",
           parameters: z.object({ count: z.number() }),
           execute: ({ count }) => String(count * 2),

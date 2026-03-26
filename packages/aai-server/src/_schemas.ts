@@ -55,7 +55,7 @@ export const VectorRequestSchema = z.discriminatedUnion("op", [
     filter: z.string().optional(),
   }),
   z.object({
-    op: z.literal("remove"),
+    op: z.literal("delete"),
     ids: z.array(z.string().min(1)).min(1),
   }),
 ]);

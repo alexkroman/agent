@@ -20,7 +20,8 @@ export type KvEntry<T = unknown> = {
 /**
  * Options for listing keys from the KV store.
  *
- * Used with {@link Kv.list} to control result ordering and pagination.
+ * Used with {@link Kv.list} and {@link Kv.keys} to control filtering,
+ * ordering, and pagination.
  *
  * @public
  */
@@ -74,11 +75,11 @@ export type Kv = {
    */
   set(key: string, value: unknown, options?: { expireIn?: number }): Promise<void>;
   /**
-   * Delete a key.
+   * Delete one or more keys.
    *
-   * @param key - The key to remove. No-op if the key does not exist.
+   * @param keys - A single key or array of keys to delete. No-op for keys that do not exist.
    */
-  delete(key: string): Promise<void>;
+  delete(keys: string | string[]): Promise<void>;
   /**
    * List entries whose keys start with the given prefix.
    *
@@ -91,9 +92,11 @@ export type Kv = {
    */
   list<T = unknown>(prefix: string, options?: KvListOptions): Promise<KvEntry<T>[]>;
   /**
-   * List all keys, optionally filtered by a glob-style pattern.
+   * List all keys, optionally filtered by a prefix or glob-style pattern.
    *
-   * @param pattern - Optional glob pattern (e.g. `"user:*"`). If omitted, all keys are returned.
+   * @param pattern - Optional prefix string or glob pattern (e.g. `"user:*"`).
+   *   A pattern without wildcards (`*`) is treated as a prefix match.
+   *   If omitted, all keys are returned.
    * @returns An array of matching key strings.
    */
   keys(pattern?: string): Promise<string[]>;
@@ -206,8 +209,9 @@ export function createMemoryKv(): Kv {
       }
     },
 
-    delete(key: string): Promise<void> {
-      store.delete(key);
+    delete(keys: string | string[]): Promise<void> {
+      const keyArray = Array.isArray(keys) ? keys : [keys];
+      for (const k of keyArray) store.delete(k);
       return Promise.resolve();
     },
 
@@ -237,12 +241,13 @@ export function createMemoryKv(): Kv {
       const now = Date.now();
       const result: string[] = [];
       const expiredKeys: string[] = [];
+      const isGlob = pattern != null && pattern.includes("*");
       for (const [key, entry] of store) {
         if (entry.expiresAt && entry.expiresAt <= now) {
           expiredKeys.push(key);
           continue;
         }
-        if (!pattern || matchGlob(key, pattern)) {
+        if (!pattern || (isGlob ? matchGlob(key, pattern) : key.startsWith(pattern))) {
           result.push(key);
         }
       }

@@ -4,7 +4,7 @@ import { z } from "zod";
 import { makeAgent } from "./_test-utils.ts";
 import { buildAgentConfig, createDirectExecutor } from "./direct-executor.ts";
 import { createMemoryKv } from "./kv.ts";
-import { tool } from "./types.ts";
+import { defineTool } from "./types.ts";
 
 describe("buildAgentConfig", () => {
   test("maps name, instructions, greeting from AgentDef", () => {
@@ -70,7 +70,7 @@ describe("createDirectExecutor", () => {
   test("executeTool with a real tool returns result", async () => {
     const agent = makeAgent({
       tools: {
-        add: tool({
+        add: defineTool({
           description: "Add two numbers",
           parameters: z.object({ a: z.number(), b: z.number() }),
           execute: ({ a, b }) => String(a + b),

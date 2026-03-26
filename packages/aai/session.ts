@@ -46,10 +46,9 @@ export type Session = {
   onReset(): void;
   /**
    * Inject conversation history from the client (e.g. on reconnect).
-   * @param incoming - Messages in the wire format (`{role, text}`) which are
-   *   converted to internal `Message` objects via `fromWireMessages`.
+   * @param incoming - Messages with `{role, content}` fields.
    */
-  onHistory(incoming: readonly { role: "user" | "assistant"; text: string }[]): void;
+  onHistory(incoming: readonly { role: "user" | "assistant"; content: string }[]): void;
   /** Returns a promise that resolves when the current in-flight turn completes, or resolves immediately if no turn is active. */
   waitForTurn(): Promise<void>;
 };
@@ -358,7 +357,7 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
         log.error("S2S reset reconnect failed", { error: errorMessage(err) }),
       );
     },
-    onHistory(incoming: readonly { role: "user" | "assistant"; text: string }[]): void {
+    onHistory(incoming: readonly { role: "user" | "assistant"; content: string }[]): void {
       ctx.pushMessages(...fromWireMessages(incoming));
     },
     waitForTurn(): Promise<void> {

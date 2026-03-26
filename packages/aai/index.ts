@@ -28,6 +28,7 @@ export {
   type BeforeStepResult,
   type BuiltinTool,
   defineAgent,
+  defineTool,
   type HookContext,
   type Message,
   type Middleware,

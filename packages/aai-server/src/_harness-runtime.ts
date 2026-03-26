@@ -69,8 +69,8 @@ const vector: VectorStore = {
   query(text: string, options?: { topK?: number; filter?: string }) {
     return sidecarRpc("/vec/query", { text, ...options });
   },
-  remove(ids: string | string[]) {
-    return sidecarRpc<void>("/vec/remove", { ids: Array.isArray(ids) ? ids : [ids] });
+  delete(ids: string | string[]) {
+    return sidecarRpc<void>("/vec/delete", { ids: Array.isArray(ids) ? ids : [ids] });
   },
 };
 

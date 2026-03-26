@@ -186,7 +186,7 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("history"),
     messages: z
-      .array(z.object({ role: z.enum(["user", "assistant"]), text: z.string().max(100_000) }))
+      .array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().max(100_000) }))
       .max(200),
   }),
 ]);
@@ -208,32 +208,33 @@ export function buildReadyConfig(s2sConfig: {
   };
 }
 
-// ─── Wire ↔ internal message conversion ─────────────────────────────────
+// ─── Wire message types ──────────────────────────────────────────────────
 
-/** Wire-format message used in the `history` client message (uses `text`). */
-export type WireMessage = { role: "user" | "assistant"; text: string };
+/** Wire-format message used in the `history` client message. */
+export type WireMessage = { role: "user" | "assistant"; content: string };
 
 /**
- * Convert internal `{ content }` messages to wire-format `{ text }` messages.
+ * Convert internal messages to wire-format messages.
  *
- * Use when sending a `history` client message. Defined once here so the
- * field-name mapping can't drift between the UI and server.
+ * Now that the wire format uses `content` (matching the internal format),
+ * this is an identity mapping. Retained for API stability.
  */
 export function toWireMessages(
   msgs: readonly { role: "user" | "assistant"; content: string }[],
 ): WireMessage[] {
-  return msgs.map((m) => ({ role: m.role, text: m.content }));
+  return msgs.map((m) => ({ role: m.role, content: m.content }));
 }
 
 /**
- * Convert wire-format `{ text }` messages to internal `{ content }` messages.
+ * Convert wire-format messages to internal messages.
  *
- * Use when receiving a `history` client message on the server.
+ * Now that the wire format uses `content` (matching the internal format),
+ * this is an identity mapping. Retained for API stability.
  */
 export function fromWireMessages(
   msgs: readonly WireMessage[],
 ): { role: "user" | "assistant"; content: string }[] {
-  return msgs.map((m) => ({ role: m.role, content: m.text }));
+  return msgs.map((m) => ({ role: m.role, content: m.content }));
 }
 
 // ─── Worker RPC interfaces ─────────────────────────────────────────────────

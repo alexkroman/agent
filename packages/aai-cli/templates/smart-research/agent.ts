@@ -1,4 +1,4 @@
-import { defineAgent, tool } from "@alexkroman1/aai";
+import { defineAgent, defineTool } from "@alexkroman1/aai";
 import type { HookContext, StepInfo } from "@alexkroman1/aai";
 import { z } from "zod";
 
@@ -88,7 +88,7 @@ Always search first, then analyze, then answer. Be thorough but concise.`,
   },
 
   tools: {
-    save_source: tool<z.ZodObject<{ url: z.ZodString; title: z.ZodString }>, ResearchState>({
+    save_source: defineTool<z.ZodObject<{ url: z.ZodString; title: z.ZodString }>, ResearchState>({
       description: "Save a source URL found during research for later analysis",
       parameters: z.object({
         url: z.string().describe("The source URL"),
@@ -126,7 +126,7 @@ Always search first, then analyze, then answer. Be thorough but concise.`,
     },
 
     // Feature 2: ctx.messages — access conversation history in tools
-    analyze: tool<z.ZodObject<{ focus: z.ZodString }>, ResearchState>({
+    analyze: defineTool<z.ZodObject<{ focus: z.ZodString }>, ResearchState>({
       description:
         "Analyze all gathered sources and conversation context to form a conclusion",
       parameters: z.object({

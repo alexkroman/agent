@@ -269,8 +269,8 @@ describe("wireSessionSocket", () => {
     await Promise.resolve();
 
     const messages = [
-      { role: "user" as const, text: "Hello" },
-      { role: "assistant" as const, text: "Hi" },
+      { role: "user" as const, content: "Hello" },
+      { role: "assistant" as const, content: "Hi" },
     ];
     ws.simulateMessage(JSON.stringify({ type: "history", messages }));
     expect(session.onHistory).toHaveBeenCalledWith(messages);

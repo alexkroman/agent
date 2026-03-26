@@ -72,7 +72,7 @@ describe("runAfterTurnMiddleware", () => {
 
 describe("runToolCallInterceptors", () => {
   test("returns undefined when no interceptors act", async () => {
-    const mw: Middleware[] = [{ name: "logger", toolCallInterceptor: vi.fn() }];
+    const mw: Middleware[] = [{ name: "logger", beforeToolCall: vi.fn() }];
     const result = await runToolCallInterceptors(mw, "tool", {}, makeCtx());
     expect(result).toBeUndefined();
   });
@@ -81,7 +81,7 @@ describe("runToolCallInterceptors", () => {
     const mw: Middleware[] = [
       {
         name: "blocker",
-        toolCallInterceptor: () => ({ block: true as const, reason: "denied" }),
+        beforeToolCall: () => ({ block: true as const, reason: "denied" }),
       },
     ];
     const result = await runToolCallInterceptors(mw, "tool", {}, makeCtx());
@@ -92,7 +92,7 @@ describe("runToolCallInterceptors", () => {
     const mw: Middleware[] = [
       {
         name: "cache",
-        toolCallInterceptor: () => ({ result: "cached" }),
+        beforeToolCall: () => ({ result: "cached" }),
       },
     ];
     const result = await runToolCallInterceptors(mw, "tool", {}, makeCtx());
@@ -103,7 +103,7 @@ describe("runToolCallInterceptors", () => {
     const mw: Middleware[] = [
       {
         name: "transformer",
-        toolCallInterceptor: (_name, args) => ({
+        beforeToolCall: (_name, args) => ({
           args: { ...args, extra: true },
         }),
       },
@@ -116,13 +116,13 @@ describe("runToolCallInterceptors", () => {
     const mw: Middleware[] = [
       {
         name: "add-x",
-        toolCallInterceptor: (_name, args) => ({
+        beforeToolCall: (_name, args) => ({
           args: { ...args, x: 1 },
         }),
       },
       {
         name: "add-y",
-        toolCallInterceptor: (_name, args) => ({
+        beforeToolCall: (_name, args) => ({
           args: { ...args, y: 2 },
         }),
       },
@@ -163,8 +163,8 @@ describe("runAfterToolCallMiddleware", () => {
 describe("runOutputFilters", () => {
   test("pipes text through filters in order", async () => {
     const mw: Middleware[] = [
-      { name: "upper", outputFilter: (text) => text.toUpperCase() },
-      { name: "trim", outputFilter: (text) => text.trim() },
+      { name: "upper", beforeOutput: (text) => text.toUpperCase() },
+      { name: "trim", beforeOutput: (text) => text.trim() },
     ];
     const result = await runOutputFilters(mw, "  hello  ", makeCtx());
     expect(result).toBe("HELLO");
@@ -179,17 +179,17 @@ describe("runOutputFilters", () => {
     const mw: Middleware[] = [
       {
         name: "pii",
-        outputFilter: (text) => text.replace(/\b\d{3}[-.]?\d{2}[-.]?\d{4}\b/g, "[SSN REDACTED]"),
+        beforeOutput: (text) => text.replace(/\b\d{3}[-.]?\d{2}[-.]?\d{4}\b/g, "[SSN REDACTED]"),
       },
     ];
     const result = await runOutputFilters(mw, "SSN is 123-45-6789", makeCtx());
     expect(result).toBe("SSN is [SSN REDACTED]");
   });
 
-  test("skips middleware without outputFilter", async () => {
+  test("skips middleware without beforeOutput", async () => {
     const mw: Middleware[] = [
       { name: "no-filter" },
-      { name: "has-filter", outputFilter: (text) => `[${text}]` },
+      { name: "has-filter", beforeOutput: (text) => `[${text}]` },
     ];
     const result = await runOutputFilters(mw, "hello", makeCtx());
     expect(result).toBe("[hello]");
@@ -199,7 +199,7 @@ describe("runOutputFilters", () => {
     const mw: Middleware[] = [
       {
         name: "async-filter",
-        outputFilter: async (text) => {
+        beforeOutput: async (text) => {
           await new Promise((r) => setTimeout(r, 1));
           return text.toUpperCase();
         },
@@ -239,12 +239,12 @@ describe("middleware state access", () => {
     expect(state.turns).toBe(1);
   });
 
-  test("toolCallInterceptor can access state for caching", async () => {
+  test("beforeToolCall can access state for caching", async () => {
     const state = { cache: { "tool:{}": "cached-result" } };
     const mw: Middleware[] = [
       {
         name: "cache",
-        toolCallInterceptor: (toolName, args, ctx) => {
+        beforeToolCall: (toolName, args, ctx) => {
           const cache = (ctx.state as { cache: Record<string, string> }).cache;
           const key = `${toolName}:${JSON.stringify(args)}`;
           if (cache[key]) return { result: cache[key] };
@@ -266,7 +266,7 @@ describe("middleware composition edge cases", () => {
     await runAfterTurnMiddleware([], "hello", makeCtx());
   });
 
-  test("empty middleware array is a no-op for toolCallInterceptors", async () => {
+  test("empty middleware array is a no-op for beforeToolCalls", async () => {
     const result = await runToolCallInterceptors([], "tool", {}, makeCtx());
     expect(result).toBeUndefined();
   });
@@ -274,12 +274,12 @@ describe("middleware composition edge cases", () => {
   test("block in second middleware prevents third from running", async () => {
     const third = vi.fn();
     const mw: Middleware[] = [
-      { name: "first", toolCallInterceptor: vi.fn() },
+      { name: "first", beforeToolCall: vi.fn() },
       {
         name: "blocker",
-        toolCallInterceptor: () => ({ block: true as const, reason: "stop" }),
+        beforeToolCall: () => ({ block: true as const, reason: "stop" }),
       },
-      { name: "third", toolCallInterceptor: third },
+      { name: "third", beforeToolCall: third },
     ];
     const result = await runToolCallInterceptors(mw, "tool", {}, makeCtx());
     expect(result).toEqual({ type: "block", reason: "stop" });
@@ -291,9 +291,9 @@ describe("middleware composition edge cases", () => {
     const mw: Middleware[] = [
       {
         name: "cache",
-        toolCallInterceptor: () => ({ result: "fast" }),
+        beforeToolCall: () => ({ result: "fast" }),
       },
-      { name: "second", toolCallInterceptor: second },
+      { name: "second", beforeToolCall: second },
     ];
     const result = await runToolCallInterceptors(mw, "tool", {}, makeCtx());
     expect(result).toEqual({ type: "result", result: "fast" });
@@ -316,9 +316,9 @@ describe("middleware composition edge cases", () => {
 
   test("multiple output filters chain correctly", async () => {
     const mw: Middleware[] = [
-      { name: "redact-ssn", outputFilter: (t) => t.replace(/\d{3}-\d{2}-\d{4}/g, "[SSN]") },
-      { name: "redact-email", outputFilter: (t) => t.replace(/\b\S+@\S+\.\S+\b/g, "[EMAIL]") },
-      { name: "wrap", outputFilter: (t) => `filtered: ${t}` },
+      { name: "redact-ssn", beforeOutput: (t) => t.replace(/\d{3}-\d{2}-\d{4}/g, "[SSN]") },
+      { name: "redact-email", beforeOutput: (t) => t.replace(/\b\S+@\S+\.\S+\b/g, "[EMAIL]") },
+      { name: "wrap", beforeOutput: (t) => `filtered: ${t}` },
     ];
     const result = await runOutputFilters(
       mw,
@@ -387,11 +387,11 @@ describe("middleware error propagation", () => {
     expect(first).not.toHaveBeenCalled();
   });
 
-  test("toolCallInterceptor: throwing middleware propagates error", async () => {
+  test("beforeToolCall: throwing middleware propagates error", async () => {
     const mw: Middleware[] = [
       {
         name: "thrower",
-        toolCallInterceptor: () => {
+        beforeToolCall: () => {
           throw new Error("intercept boom");
         },
       },
@@ -401,11 +401,11 @@ describe("middleware error propagation", () => {
     );
   });
 
-  test("outputFilter: throwing filter propagates error", async () => {
+  test("beforeOutput: throwing filter propagates error", async () => {
     const mw: Middleware[] = [
       {
         name: "thrower",
-        outputFilter: () => {
+        beforeOutput: () => {
           throw new Error("filter boom");
         },
       },
@@ -413,16 +413,16 @@ describe("middleware error propagation", () => {
     await expect(runOutputFilters(mw, "hello", makeCtx())).rejects.toThrow("filter boom");
   });
 
-  test("outputFilter: throwing filter prevents subsequent filters", async () => {
+  test("beforeOutput: throwing filter prevents subsequent filters", async () => {
     const second = vi.fn().mockReturnValue("filtered");
     const mw: Middleware[] = [
       {
         name: "thrower",
-        outputFilter: () => {
+        beforeOutput: () => {
           throw new Error("filter boom");
         },
       },
-      { name: "second", outputFilter: second },
+      { name: "second", beforeOutput: second },
     ];
     await expect(runOutputFilters(mw, "hello", makeCtx())).rejects.toThrow("filter boom");
     expect(second).not.toHaveBeenCalled();

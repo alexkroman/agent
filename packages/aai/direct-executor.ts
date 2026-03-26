@@ -40,7 +40,8 @@ import { executeToolCall } from "./worker-entry.ts";
  * RPC layer. This type configures the agent, environment, stores, and logging.
  */
 export type DirectExecutorOptions = {
-  agent: AgentDef;
+  // biome-ignore lint/suspicious/noExplicitAny: accepts any state type
+  agent: AgentDef<any>;
   env: Record<string, string>;
   kv?: Kv | undefined;
   vector?: VectorStore | undefined;
@@ -77,7 +78,8 @@ export type DirectExecutor = {
 };
 
 /** Build a serializable AgentConfig from an AgentDef. */
-export function buildAgentConfig(agent: AgentDef): AgentConfig {
+// biome-ignore lint/suspicious/noExplicitAny: accepts any state type
+export function buildAgentConfig(agent: AgentDef<any>): AgentConfig {
   return toAgentConfig(agent);
 }
 

@@ -28,7 +28,8 @@ import { type SessionWebSocket, wireSessionSocket } from "./ws-handler.ts";
  */
 export type ServerOptions = {
   /** The agent definition returned by `defineAgent()`. */
-  agent: AgentDef;
+  // biome-ignore lint/suspicious/noExplicitAny: accepts any state type
+  agent: AgentDef<any>;
   /** Environment variables. Defaults to `process.env`. */
   env?: Record<string, string>;
   /** KV store. Defaults to in-memory. */
@@ -99,6 +100,11 @@ function escapeHtml(s: string): string {
  * @public
  */
 export function createServer(options: ServerOptions): AgentServer {
+  if (options.clientHtml && options.clientDir) {
+    throw new Error(
+      "ServerOptions: clientHtml and clientDir are mutually exclusive — provide one or the other, not both.",
+    );
+  }
   const {
     agent,
     kv,

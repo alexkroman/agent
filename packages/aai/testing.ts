@@ -409,7 +409,11 @@ export class TestHarness {
  *
  * @public
  */
-export function createTestHarness(agent: AgentDef, options: TestHarnessOptions = {}): TestHarness {
+export function createTestHarness(
+  // biome-ignore lint/suspicious/noExplicitAny: accepts any state type
+  agent: AgentDef<any>,
+  options: TestHarnessOptions = {},
+): TestHarness {
   const { env = {}, kv = createMemoryKv(), vector = createMemoryVectorStore() } = options;
 
   const executor = createDirectExecutor({ agent, env, kv, vector });

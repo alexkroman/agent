@@ -82,7 +82,7 @@ describe("defineAgent", () => {
   test("preserves middleware array", () => {
     const middleware: Middleware[] = [
       { name: "logger", beforeTurn: () => undefined },
-      { name: "cache", toolCallInterceptor: () => undefined },
+      { name: "cache", beforeToolCall: () => undefined },
     ];
     const agent = defineAgent({ name: "Test", middleware });
     expect(agent.middleware).toHaveLength(2);

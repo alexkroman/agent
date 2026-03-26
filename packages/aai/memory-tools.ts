@@ -4,7 +4,7 @@
  */
 
 import { z } from "zod";
-import { tool } from "./types.ts";
+import { defineTool } from "./types.ts";
 
 /**
  * Returns a standard set of KV-backed memory tools: `save_memory`,
@@ -28,7 +28,7 @@ import { tool } from "./types.ts";
  */
 export function memoryTools() {
   return {
-    save_memory: tool({
+    save_memory: defineTool({
       description:
         "Save a piece of information to persistent memory. Use a descriptive key like 'user:name' or 'project:status'.",
       parameters: z.object({
@@ -42,7 +42,7 @@ export function memoryTools() {
         return { saved: key };
       },
     }),
-    recall_memory: tool({
+    recall_memory: defineTool({
       description: "Retrieve a previously saved memory by its key.",
       parameters: z.object({
         key: z.string().describe("The key to look up"),
@@ -53,7 +53,7 @@ export function memoryTools() {
         return { found: true, key, value };
       },
     }),
-    list_memories: tool({
+    list_memories: defineTool({
       description: "List all saved memory keys, optionally filtered by a prefix (e.g. 'user:').",
       parameters: z.object({
         prefix: z
@@ -66,7 +66,7 @@ export function memoryTools() {
         return { count: entries.length, keys: entries.map((e) => e.key) };
       },
     }),
-    forget_memory: tool({
+    forget_memory: defineTool({
       description: "Delete a previously saved memory by its key.",
       parameters: z.object({
         key: z.string().describe("The key to delete"),

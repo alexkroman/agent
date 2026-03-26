@@ -1,4 +1,4 @@
-import { defineAgent, tool } from "@alexkroman1/aai";
+import { defineAgent, defineTool } from "@alexkroman1/aai";
 import { z } from "zod";
 import knowledge from "./knowledge.json" with { type: "json" };
 
@@ -23,7 +23,7 @@ Rules:
   greeting:
     "Hi! I'm your FAQ assistant. Ask me anything about the AAI agent framework and I'll look it up in my knowledge base.",
   tools: {
-    search_knowledge: tool({
+    search_knowledge: defineTool({
       description:
         "Search the embedded FAQ knowledge base for an answer matching the user's question.",
       parameters: z.object({

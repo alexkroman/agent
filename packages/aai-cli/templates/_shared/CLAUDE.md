@@ -89,7 +89,7 @@ export default defineAgent({
 ### Imports
 
 ```ts
-import { defineAgent, tool } from "@alexkroman1/aai"; // defineAgent + helpers
+import { defineAgent, defineTool } from "@alexkroman1/aai"; // defineAgent + helpers
 import type { BeforeStepResult, BuiltinTool, HookContext, Middleware, StepInfo, ToolContext } from "@alexkroman1/aai";
 import { z } from "zod"; // Tools with typed params (included in package.json)
 ```
@@ -186,13 +186,13 @@ Define tools as plain objects in the `tools` record. The `parameters` field
 takes a Zod schema for type-safe argument inference:
 
 ```ts
-import { defineAgent, tool } from "@alexkroman1/aai";
+import { defineAgent, defineTool } from "@alexkroman1/aai";
 import { z } from "zod";
 
 export default defineAgent({
   name: "Weather Agent",
   tools: {
-    get_weather: tool({
+    get_weather: defineTool({
       description: "Get current weather for a city",
       parameters: z.object({
         city: z.string().describe("City name"),
@@ -206,7 +206,7 @@ export default defineAgent({
       },
     }),
 
-    // No-parameter tools — omit `parameters` and `tool()` wrapper
+    // No-parameter tools — omit `parameters` and `defineTool()` wrapper
     list_items: {
       description: "List all items",
       execute: () => items,
@@ -215,8 +215,9 @@ export default defineAgent({
 });
 ```
 
-**Important:** Wrap tool definitions in `tool()` to get typed `args` inferred
-from the Zod `parameters` schema. Without `tool()`, args are untyped.
+**Important:** Wrap tool definitions in `defineTool()` to get typed `args`
+inferred from the Zod `parameters` schema. Without `defineTool()`, args are
+untyped.
 
 Zod schema patterns:
 
@@ -455,7 +456,7 @@ const rateLimiter: Middleware = {
 
 const piiRedactor: Middleware = {
   name: "pii-redactor",
-  outputFilter: (text, ctx) => {
+  beforeOutput: (text, ctx) => {
     // Transform agent text before TTS. Return the filtered text.
     return text.replace(/\d{3}-\d{2}-\d{4}/g, "[SSN REDACTED]");
   },
@@ -463,7 +464,7 @@ const piiRedactor: Middleware = {
 
 const cacheMiddleware: Middleware = {
   name: "tool-cache",
-  toolCallInterceptor: (toolName, args, ctx) => {
+  beforeToolCall: (toolName, args, ctx) => {
     // Return { result: "cached" } to skip execution
     // Return { block: true, reason: "denied" } to deny the call
     // Return { args: { ...modified } } to transform arguments

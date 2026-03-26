@@ -24,7 +24,7 @@ export type AgentState =
  *
  * @public
  */
-export type Message = {
+export type ChatMessage = {
   /** The sender of the message. */
   role: "user" | "assistant";
   /** The text content of the message. */
@@ -87,7 +87,7 @@ export type VoiceSessionOptions = {
    * Defaults to a plain mutable wrapper. Pass `signal` from
    * `@preact/signals` for automatic Preact component re-rendering.
    */
-  signal?: <T>(initial: T) => Reactive<T>;
+  reactiveFactory?: <T>(initial: T) => Reactive<T>;
   /**
    * Function to batch multiple reactive updates.
    * Defaults to calling the function directly. Pass `batch` from
