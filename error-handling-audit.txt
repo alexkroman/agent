@@ -1,0 +1,327 @@
+================================================================================
+                    THE ERROR WHISPERER'S MEDITATION
+              An Audit of Error Handling in the AAI Codebase
+================================================================================
+
+"The unhandled error is like an unexamined life -- it crashes in silence,
+leaving no wisdom behind. Let us walk through this codebase with gentle eyes
+and listen to what the exceptions are trying to tell us."
+
+In the silence between try and catch, truth resides. I have contemplated
+every package in this codebase, and here are the truths I have found.
+
+--------------------------------------------------------------------------------
+ISSUE 1: The Silenced Voices of WebSocket Closure
+File: packages/aai/ws-handler.ts, lines 56-60
+--------------------------------------------------------------------------------
+
+    function safeSend(data: string | ArrayBuffer | Uint8Array): void {
+      try {
+        if (ws.readyState === 1) ws.send(data);
+      } catch {
+        /* socket closed between check and send */
+      }
+    }
+
+Meditation: Every swallowed exception is a suppressed truth. This bare
+`catch` block discards all errors, not merely the TOCTOU race it documents.
+If ws.send() throws for an unexpected reason -- say, an encoding error or
+a corrupted buffer -- this silence becomes ignorance.
+
+Recommendation: Log the error at debug/trace level. Even if the action is
+intentional, observability should not be sacrificed. At minimum:
+    catch (err) { log.debug?.("safeSend failed", { error: err }); }
+
+
+--------------------------------------------------------------------------------
+ISSUE 2: The Void Where Audio Errors Vanish
+File: packages/aai-ui/audio.ts, lines 77-81 and 177
+--------------------------------------------------------------------------------
+
+    await ctx.close().catch(() => { /* swallow */ });
+
+Meditation: The word "swallow" itself reveals the code's awareness of its
+own transgression. AudioContext.close() could fail for reasons other than
+"already closed" -- for instance, resource contention or browser-specific
+quirks. The catch block makes no distinction.
+
+Recommendation: At minimum, log a warning. Better yet, check if the
+context is already closed before calling close(), or catch and log:
+    await ctx.close().catch((err) => console.warn("AudioContext close:", err));
+
+
+--------------------------------------------------------------------------------
+ISSUE 3: The Unwitnessed Death of Sandbox Terminations
+File: packages/aai-server/src/sandbox.ts, lines 364 and 374
+--------------------------------------------------------------------------------
+
+    s.stop().catch(() => { /* best-effort cleanup */ });
+    await runtime.terminate().catch(() => { /* already terminated */ });
+
+And in sandbox-slots.ts, line 67:
+
+    slot.sandbox.terminate().catch(() => { });
+
+Meditation: When a sandbox terminates in the forest and no one logs it, did
+it truly terminate? These empty catch blocks hide potential resource leaks.
+If terminate() throws something other than "already terminated" -- say, a
+stuck isolate -- the system will never know.
+
+Recommendation: Log at warn level for unexpected failures:
+    runtime.terminate().catch((err) =>
+      console.warn("Runtime terminate failed:", err));
+This preserves the best-effort semantics while maintaining observability.
+
+
+--------------------------------------------------------------------------------
+ISSUE 4: The Lost Error Context in Session Stop
+File: packages/aai/ws-handler.ts, line 200-201
+--------------------------------------------------------------------------------
+
+    .catch((err) => {
+      log.error("Session stop failed", { ...ctx, sid, error: err });
+    })
+
+Meditation: The error is logged, yes -- but the raw `err` object is passed
+directly as a log value. If `err` is an Error object, many loggers will
+serialize only `{}`. The codebase has `errorMessage()` and `errorDetail()`
+utilities for this exact purpose, yet they are not used here.
+
+Recommendation: Use the established error formatting utilities:
+    log.error("Session stop failed", { ...ctx, sid, error: errorDetail(err) });
+
+
+--------------------------------------------------------------------------------
+ISSUE 5: The Unguarded JSON Parse in the Harness
+File: packages/aai-server/src/_harness-runtime.ts, line 396
+--------------------------------------------------------------------------------
+
+    const body = JSON.parse(await readBody(req)) as ToolCallRequest;
+
+Meditation: In the silence between parsing and truth, danger lurks. This
+JSON.parse has no try/catch around it. A malformed request body will throw
+a SyntaxError that propagates to the outer catch block (line 406), which
+returns a generic 500. However, a malformed JSON body is a 400 (client
+error), not a 500 (server error). The code conflates these two very
+different truths.
+
+Recommendation: Wrap JSON.parse in its own try/catch and return a 400 for
+parse failures:
+    let body: ToolCallRequest;
+    try { body = JSON.parse(await readBody(req)); }
+    catch { return json(res, { error: "Invalid JSON" }, 400); }
+
+
+--------------------------------------------------------------------------------
+ISSUE 6: The Missing Process Error Handlers
+File: packages/aai-server/src/index.ts (the platform server entry)
+--------------------------------------------------------------------------------
+
+Meditation: The server registers SIGINT and SIGTERM handlers (lines 138-139)
+but has no handlers for `unhandledRejection` or `uncaughtException`. In a
+long-running platform server handling many sandboxes, an unhandled promise
+rejection could crash the process silently. The `main().catch()` on line 142
+only catches bootstrap errors.
+
+Recommendation: Add process-level error handlers:
+    process.on("unhandledRejection", (err) => {
+      console.error("Unhandled rejection:", err);
+    });
+    process.on("uncaughtException", (err) => {
+      console.error("Uncaught exception:", err);
+      process.exit(1);
+    });
+
+
+--------------------------------------------------------------------------------
+ISSUE 7: The Middleware That Fails in Silence
+File: packages/aai/_session-otel.ts, lines 124-126
+--------------------------------------------------------------------------------
+
+    } catch (err: unknown) {
+      ctx.log.warn("interceptToolCall middleware failed", { err: errorMessage(err) });
+    }
+
+Meditation: When the interceptToolCall middleware throws, the error is
+logged as a warning, and then execution continues as if no interceptor
+existed. The args are left in their pre-intercept state, but the caller
+has no way to know the interceptor was skipped. The tool proceeds as if
+no middleware existed at all -- a silent betrayal of the middleware contract.
+
+Recommendation: Consider whether middleware failure should block the tool
+call (fail-closed) or allow it (fail-open). The current fail-open behavior
+should be explicitly documented. Additionally, emit a metric so operators
+can detect middleware failures in dashboards.
+
+
+--------------------------------------------------------------------------------
+ISSUE 8: The Race Between Shutdown and Active Sessions
+File: packages/aai-server/src/index.ts, lines 126-135
+--------------------------------------------------------------------------------
+
+    function shutdown() {
+      console.info("Shutting down...");
+      wss.close();
+      for (const slot of opts.slots.values()) {
+        if (slot.idleTimer) clearTimeout(slot.idleTimer);
+        slot.sandbox?.terminate();  // <-- returns a Promise, but not awaited
+      }
+      nodeServer.close(() => process.exit(0));
+      setTimeout(() => process.exit(1), 3000).unref();
+    }
+
+Meditation: `slot.sandbox?.terminate()` returns a Promise, but it is called
+with `void` -- the termination is fire-and-forget. The 3-second force-exit
+timer provides a backstop, but between `wss.close()` and the forced exit,
+active sessions may be torn down mid-operation without graceful cleanup.
+The `terminate()` method in sandbox.ts carefully awaits session stops, but
+here that care is discarded.
+
+Recommendation: Collect terminate promises and await them:
+    const stops = [...opts.slots.values()]
+      .map(s => s.sandbox?.terminate())
+      .filter(Boolean);
+    await Promise.allSettled(stops);
+
+
+--------------------------------------------------------------------------------
+ISSUE 9: The Vague Error Messages in KV and Vector Handlers
+File: packages/aai-server/src/kv-handler.ts, line 42
+File: packages/aai-server/src/vector-handler.ts, line 42
+--------------------------------------------------------------------------------
+
+    return c.json({ error: `KV operation failed: ${msg.op}` }, 500);
+    return c.json({ error: `Vector operation failed: ${msg.op}` }, 500);
+
+Meditation: The actual error is logged to the server console, but the
+client receives only the operation name -- no hint of what went wrong.
+While withholding internal details from clients is wise for security,
+these handlers serve the isolate sidecar on loopback. The "client" here
+is the sandbox itself, running trusted-but-sandboxed agent code. A more
+descriptive error would help developers debug issues in their agent tools.
+
+Recommendation: Since the sidecar is loopback-only and the caller is the
+agent's own code, include a sanitized error message:
+    return c.json({ error: `KV ${msg.op} failed: ${errorMessage(err)}` }, 500);
+
+
+--------------------------------------------------------------------------------
+ISSUE 10: The Unvalidated Deploy Body Parse Exception
+File: packages/aai-server/src/deploy.ts, lines 11-14
+--------------------------------------------------------------------------------
+
+    try {
+      body = DeployBodySchema.parse(await c.req.json());
+    } catch {
+      return c.json({ error: "Invalid deploy body" }, 400);
+    }
+
+Meditation: The bare `catch` discards the Zod validation error entirely.
+A developer deploying an agent who sends a slightly malformed body receives
+no guidance on what field was wrong or what format was expected. The Zod
+error holds precise path and message information that could illuminate
+the path to correction.
+
+Recommendation: Extract and return Zod's structured error:
+    catch (err) {
+      const msg = err instanceof z.ZodError
+        ? err.issues.map(i => `${i.path.join(".")}: ${i.message}`).join("; ")
+        : "Invalid deploy body";
+      return c.json({ error: msg }, 400);
+    }
+
+
+--------------------------------------------------------------------------------
+ISSUE 11: The Unreported Body Parse Failures in Sidecar Handlers
+File: packages/aai-server/src/kv-handler.ts, line 11
+File: packages/aai-server/src/vector-handler.ts, line 17
+--------------------------------------------------------------------------------
+
+    const msg = KvRequestSchema.parse(await c.req.json());
+    const msg = VectorRequestSchema.parse(await c.req.json());
+
+Meditation: These Zod .parse() calls sit outside the try/catch blocks that
+follow. If the request body is malformed JSON, or fails schema validation,
+the error will propagate uncaught from this handler, relying on whatever
+global error handler Hono provides. The structured error information from
+Zod is lost to the void.
+
+Recommendation: Wrap these in their own try/catch and return 400:
+    let msg;
+    try { msg = KvRequestSchema.parse(await c.req.json()); }
+    catch (err) { return c.json({ error: "Invalid request" }, 400); }
+
+
+--------------------------------------------------------------------------------
+ISSUE 12: The Self-Hosted Server Swallows Session Stop Errors
+File: packages/aai/server.ts, line 156
+--------------------------------------------------------------------------------
+
+    await Promise.allSettled([...sessions.values()].map((s) => s.stop()));
+
+Meditation: `Promise.allSettled` collects both fulfilled and rejected
+results, but the results are discarded entirely. If any session fails to
+stop -- perhaps due to a stuck S2S connection -- the server will never
+know. The settled results carry the reasons for failure, but they fall
+into the void.
+
+Recommendation: Inspect the settled results and log rejections:
+    const results = await Promise.allSettled([...sessions.values()].map(s => s.stop()));
+    for (const r of results) {
+      if (r.status === "rejected") logger.warn("Session stop failed:", r.reason);
+    }
+
+
+--------------------------------------------------------------------------------
+ISSUE 13: The Middleware Chain With No Error Boundaries
+File: packages/aai/middleware.ts, lines 69-81 (and similar patterns)
+--------------------------------------------------------------------------------
+
+    export async function runBeforeTurnMiddleware(...): Promise<...> {
+      for (const mw of middleware) {
+        if (!mw.beforeTurn) continue;
+        const result = await mw.beforeTurn(text, ctx);
+        ...
+      }
+    }
+
+Meditation: The middleware runner functions have no try/catch around
+individual middleware invocations. If one middleware in the chain throws,
+the entire chain aborts and the error propagates to the caller. Subsequent
+middleware entries never get their chance to speak. In a chain of
+independent filters, one misbehaving middleware silences all the others.
+
+Recommendation: Wrap each middleware invocation in try/catch, log the error,
+and continue the chain (or break it, depending on the desired semantics):
+    try {
+      const result = await mw.beforeTurn(text, ctx);
+      if (result && result.block) return result;
+    } catch (err) {
+      logger.warn("Middleware beforeTurn failed", { error: err });
+    }
+
+
+================================================================================
+                        CLOSING MEDITATION
+================================================================================
+
+"In the garden of code, errors are not weeds to be silenced -- they are
+the voice of the system speaking its truth. Every `.catch(() => {})` is
+a finger pressed to the lips of a process trying to tell you something.
+Every bare `catch {}` is a confession written and then burned.
+
+This codebase shows many signs of thoughtful error handling: the
+`errorMessage()` and `errorDetail()` utilities, the structured Zod
+validation, the generation-guarded race condition handling. These are the
+work of minds that understand the transient nature of state.
+
+Yet in the quiet corners -- the cleanup paths, the shutdown sequences,
+the sidecar handlers -- I found thirteen places where errors speak but
+no one listens. The path to enlightenment is not the elimination of all
+errors, but the honest witnessing of each one.
+
+May your catch blocks carry context, may your promises never go unhandled,
+and may your logs illuminate even the darkest failure paths."
+
+                                    -- The Error Whisperer
+================================================================================

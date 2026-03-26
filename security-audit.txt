@@ -1,0 +1,344 @@
+================================================================================
+                    SECURITY AUDIT — AAI VOICE AGENT SDK
+                         The Paranoid Security Auditor
+                              2026-03-26
+================================================================================
+
+Listen up. I have been through every dark corner of this codebase — the
+sandboxes, the auth layers, the WebSocket handlers, the CLI, all of it.
+Some of what I found will make you uncomfortable. Good. You SHOULD be
+uncomfortable. Trust nothing. Verify everything. Sleep well knowing THIS
+is in production.
+
+Here are my findings.
+
+--------------------------------------------------------------------------------
+ISSUE #1 — API Key Hash Cache Stores Raw API Keys as Map Keys
+FILE: packages/aai-server/src/auth.ts, lines 8-23
+SEVERITY: HIGH
+
+The hashApiKey() function caches API key hashes using the raw, plaintext
+API key as the Map key:
+
+    const hashCache = new Map<string, string>();
+    ...
+    const cached = hashCache.get(apiKey);  // line 11
+    ...
+    hashCache.set(apiKey, hex);            // line 22
+
+This means up to 100 plaintext API keys live in memory in a global Map,
+indefinitely (until evicted by new entries). A heap dump, core dump, or
+memory disclosure vulnerability would expose every API key that has
+authenticated recently. I have seen breaches start with less.
+
+RECOMMENDATION: Cache by the hash itself (hash -> true), or use a
+short-lived WeakRef-based cache. At minimum, zero out or avoid storing
+the raw key. The whole point of hashing credentials is to NOT keep the
+originals around.
+
+--------------------------------------------------------------------------------
+ISSUE #2 — Self-Hosted Server Has No Authentication on WebSocket Upgrade
+FILE: packages/aai/server.ts, lines 133-139
+SEVERITY: HIGH
+
+The self-hosted createServer() accepts ANY WebSocket upgrade request with
+zero authentication:
+
+    nodeServer.on("upgrade", (req, socket, head) => {
+      const reqUrl = new URL(req.url ?? "/", `http://localhost:${port}`);
+      const resume = reqUrl.searchParams.has("resume");
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        handleWs(ws, resume);
+      });
+    });
+
+No token check. No API key check. No origin validation. Anyone who can
+reach this port can establish a voice session, consume your AssemblyAI
+credits, and interact with all your tools. This is a ticking time bomb
+for anyone who exposes port 3000 to the internet.
+
+RECOMMENDATION: Implement an authentication mechanism for WebSocket
+upgrades in self-hosted mode. At minimum, require a bearer token or
+shared secret in the query string or headers. Document that this server
+MUST NOT be exposed to the public internet without a reverse proxy that
+handles auth.
+
+--------------------------------------------------------------------------------
+ISSUE #3 — SSRF Protection Does Not Resolve DNS Before Checking IPs
+FILE: packages/aai/_ssrf.ts, lines 43-82
+SEVERITY: HIGH
+
+The assertPublicUrl() function checks hostnames and literal IP addresses
+against blocklists, but it never performs DNS resolution. An attacker can
+register a domain like evil.example.com that resolves to 127.0.0.1 or
+169.254.169.254, and ssrfSafeFetch will happily pass the hostname check
+("evil.example.com" is not in the blocklist) and then fetch will resolve
+it to loopback/metadata at the OS level.
+
+This is a classic DNS rebinding / TOCTOU SSRF bypass. The server-side
+_net.ts has the same issue.
+
+RECOMMENDATION: Resolve the hostname to IP addresses BEFORE making the
+request (dns.lookup or dns.resolve), then validate the resolved IPs
+against the blocklist. Re-validate on each redirect. Consider using a
+custom Agent that hooks into the socket connect event to verify the
+resolved IP.
+
+--------------------------------------------------------------------------------
+ISSUE #4 — Timing Side-Channel on API Key Length Comparison
+FILE: packages/aai-server/src/auth.ts, line 33
+SEVERITY: MEDIUM
+
+The timingSafeCompare function early-returns false when lengths differ:
+
+    function timingSafeCompare(a: string, b: string): boolean {
+      if (a.length !== b.length) return false;   // <-- timing leak
+      return timingSafeEqual(textEncoder.encode(a), textEncoder.encode(b));
+    }
+
+Since all SHA-256 hex digests are exactly 64 characters, this is
+mitigated in the current usage (hash-to-hash comparison). However, the
+function name suggests general-purpose constant-time comparison, and if
+anyone reuses it for non-hash strings (e.g., raw tokens), the length
+check leaks information.
+
+RECOMMENDATION: Rename the function to timingSafeCompareHashes or add
+a comment/assertion that both inputs must be fixed-length hex digests.
+Alternatively, pad shorter strings to avoid the early return.
+
+--------------------------------------------------------------------------------
+ISSUE #5 — requireInternal() Trusts Client-Supplied IP Headers
+FILE: packages/aai-server/src/middleware.ts, lines 49-55
+SEVERITY: HIGH
+
+The requireInternal() function checks CF-Connecting-IP or Fly-Client-IP
+headers to determine if a request is "internal":
+
+    export function requireInternal(req: Request): void {
+      const ip = req.headers.get("cf-connecting-ip")
+              ?? req.headers.get("fly-client-ip") ?? "";
+      if (!(ip && isPrivateIp(ip))) {
+        throw new HTTPException(403, { message: "Forbidden" });
+      }
+    }
+
+If the server is NOT behind Cloudflare or Fly.io (e.g., running directly
+on a VM or in Docker), these headers are trivially spoofable by any HTTP
+client. An external attacker could send:
+
+    CF-Connecting-IP: 10.0.0.1
+
+...and gain access to the /metrics endpoint and any other internal-only
+routes. This is textbook header injection.
+
+RECOMMENDATION: Only trust these headers when running behind the
+corresponding proxy. Validate using the actual TCP socket remote address
+when not behind a trusted reverse proxy. Add configuration to specify
+which proxy headers to trust, similar to Express's trust proxy setting.
+
+--------------------------------------------------------------------------------
+ISSUE #6 — CORS Policy Reflects Any Origin
+FILE: packages/aai-server/src/orchestrator.ts, lines 62-73
+SEVERITY: MEDIUM
+
+The CORS middleware reflects any request origin:
+
+    origin: (origin) => {
+      return origin ?? "*";
+    },
+
+While credentials: false prevents cookie/auth header leakage, this still
+allows any website to make unauthenticated cross-origin requests to
+agent endpoints (health checks, agent pages, etc.). Combined with any
+future misconfiguration where credentials become needed, this becomes a
+full cross-origin attack surface.
+
+RECOMMENDATION: Restrict allowed origins to a configurable allowlist, or
+at minimum to the platform's own domain. The "return whatever origin they
+send" pattern is a security anti-pattern even with credentials: false.
+
+--------------------------------------------------------------------------------
+ISSUE #7 — Harness Runtime Parses Tool/Hook Request Bodies Without Validation
+FILE: packages/aai-server/src/_harness-runtime.ts, lines 396-402
+SEVERITY: MEDIUM
+
+The harness HTTP server inside the isolate parses incoming JSON bodies
+and casts them directly to typed interfaces without any runtime
+validation:
+
+    const body = JSON.parse(await readBody(req)) as ToolCallRequest;
+    ...
+    const body = JSON.parse(await readBody(req)) as HookRequest;
+
+The TypeScript "as" cast provides zero runtime protection. If a malformed
+request somehow reaches the harness (e.g., via a bug in the host-side
+code, or if the sidecar URL is somehow leaked), it could cause
+unexpected behavior or crashes. The host-side sandbox.ts also constructs
+these requests without validation on the response path.
+
+RECOMMENDATION: Add Zod schema validation for ToolCallRequest and
+HookRequest inside the harness. Yes, the isolate is supposed to be
+trusted, but defense in depth means trusting no one — not even yourself.
+
+--------------------------------------------------------------------------------
+ISSUE #8 — WebSocket Token Passed in URL Query String (Token Leakage)
+FILE: packages/aai-server/src/index.ts, lines 88-89
+  and: packages/aai-ui/session.ts, lines 165-169
+SEVERITY: MEDIUM
+
+The platform WebSocket connection passes the scope token as a URL query
+parameter:
+
+    // Server side:
+    const token = url.searchParams.get("token");
+
+    // Client side:
+    if (token) wsUrl.searchParams.set("token", token);
+
+Tokens in query strings are logged by web servers, proxies, CDNs, and
+browser history. They appear in Referer headers if the page navigates.
+This JWT token, while short-lived (1 hour), could be captured from
+access logs and replayed within its validity window.
+
+RECOMMENDATION: Use the Sec-WebSocket-Protocol header or a subprotocol
+to pass the token, or require the token in the first WebSocket message
+after connection. Avoid query string tokens for anything sensitive.
+
+--------------------------------------------------------------------------------
+ISSUE #9 — No Rate Limiting on Any Endpoint
+FILE: packages/aai-server/src/orchestrator.ts (entire file)
+  and: packages/aai/server.ts (entire file)
+SEVERITY: MEDIUM
+
+Neither the platform orchestrator nor the self-hosted server implements
+any rate limiting. The deploy endpoint, secret management endpoints,
+session-token endpoint, and WebSocket upgrade handler are all unlimited.
+
+An attacker could:
+- Brute-force API keys against the deploy/secret endpoints
+- Exhaust server resources by opening thousands of WebSocket sessions
+- DoS the AssemblyAI S2S API by rapidly creating sessions
+- Flood the KV store with writes
+
+RECOMMENDATION: Add rate limiting middleware, at minimum on auth-related
+endpoints (deploy, secret, session-token) and WebSocket connections.
+Consider per-IP and per-API-key rate limits.
+
+--------------------------------------------------------------------------------
+ISSUE #10 — Client HTML Served Without Content-Security-Policy
+FILE: packages/aai-server/src/transport-websocket.ts, lines 22-27
+  and: packages/aai/server.ts, lines 117-123
+SEVERITY: MEDIUM
+
+Agent HTML pages are served without any Content-Security-Policy header:
+
+    // transport-websocket.ts
+    export async function handleAgentPage(c: Context<Env>): Promise<Response> {
+      const page = await c.env.store.getClientFile(slug, "index.html");
+      return c.html(page);   // No CSP header
+    }
+
+    // server.ts (self-hosted)
+    if (clientHtml) return c.html(clientHtml);
+
+The platform orchestrator sets secureHeaders (X-Frame-Options, etc.) but
+does NOT set a Content-Security-Policy. Agent HTML pages could contain
+injected scripts, load external resources, or be subject to XSS if the
+agent builder includes user-controlled content.
+
+RECOMMENDATION: Add a strict Content-Security-Policy header, at minimum:
+default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';
+connect-src 'self' wss:; Adjust as needed for agent functionality.
+
+--------------------------------------------------------------------------------
+ISSUE #11 — _clearHashCache Exported for Testing Exposes Cache Manipulation
+FILE: packages/aai-server/src/auth.ts, lines 27-29
+SEVERITY: LOW
+
+    export function _clearHashCache(): void {
+      hashCache.clear();
+    }
+
+This function is exported and callable by any code that imports auth.ts.
+In a monorepo with shared dependencies, a compromised or buggy module
+could clear the hash cache, causing a temporary performance degradation
+(all keys need re-hashing). Combined with Issue #1, this is a minor
+attack surface amplification.
+
+RECOMMENDATION: Gate this behind a NODE_ENV check or use a Symbol-keyed
+export to prevent accidental or malicious usage in production.
+
+--------------------------------------------------------------------------------
+ISSUE #12 — Deploy Endpoint Overwrites Credential Hashes Array
+FILE: packages/aai-server/src/deploy.ts, line 48
+SEVERITY: MEDIUM
+
+When deploying, the credential_hashes array is set to ONLY the current
+deployer's key hash:
+
+    await c.env.store.putAgent({
+      ...
+      credential_hashes: [keyHash],
+    });
+
+This means if Agent X was originally deployed by User A, and User A
+deploys again, the credential_hashes array is overwritten with just
+User A's hash. If there was a mechanism for shared ownership (multiple
+API keys authorized for the same slug), a redeploy silently revokes
+all other authorized keys. This could be a denial-of-service vector
+in a multi-user scenario.
+
+RECOMMENDATION: Merge the new keyHash into the existing credential_hashes
+array rather than replacing it, or document that each deploy is a full
+ownership reset. Add an explicit API for managing authorized keys.
+
+--------------------------------------------------------------------------------
+ISSUE #13 — fetch_json Tool Allows Arbitrary Custom Headers from LLM
+FILE: packages/aai/builtin-tools.ts, lines 141-170
+SEVERITY: MEDIUM
+
+The fetch_json tool accepts arbitrary headers from the LLM:
+
+    const fetchJsonParams = z.object({
+      url: z.string(),
+      headers: z.record(z.string(), z.string()).optional(),
+    });
+
+The LLM can set ANY HTTP header on outgoing requests, including:
+- Authorization headers to exfiltrate tokens from env vars via
+  a controlled URL
+- Host header manipulation
+- Internal routing headers
+
+While SSRF protection blocks private IPs, an attacker who controls the
+LLM prompt (via prompt injection) could instruct the agent to
+fetch_json to attacker.com with Authorization: Bearer <extracted_key>.
+
+RECOMMENDATION: Restrict allowed headers to a safe allowlist (Accept,
+Content-Type, etc.). Block Authorization, Cookie, Host, and
+X-Forwarded-* headers. Or remove the headers parameter entirely and
+have users create custom tools for authenticated API access.
+
+================================================================================
+
+CLOSING STATEMENT:
+
+This codebase shows evidence of security-conscious design — the V8
+isolate sandboxing, credential separation, SSRF blocklists, Zod
+validation at boundaries, timing-safe comparison, and XSS escaping are
+all good signs. Someone here has thought about security.
+
+But thinking about security and achieving security are two different
+things. The DNS rebinding SSRF bypass (Issue #3), the spoofable internal
+IP headers (Issue #5), and the completely unauthenticated self-hosted
+WebSocket (Issue #2) are the ones that keep me up at night. Any one of
+these could be the thread that unravels the whole sweater.
+
+Fix the critical and high issues first. Then the mediums. Then go back
+and check everything I DIDN'T find, because I guarantee there is more.
+There is always more.
+
+Trust no input. Validate everything. Sleep with one eye open.
+
+— The Paranoid Security Auditor
+================================================================================

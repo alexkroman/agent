@@ -1,0 +1,284 @@
+============================================================================
+                  THE API ARISTOCRAT'S AUDIT OF THE AAI SDK
+              A Connoisseur's Withering Appraisal of Public Interfaces
+============================================================================
+
+Ahem. I have spent the morning inspecting the AAI codebase with the
+meticulous care one might reserve for examining a supposedly fine
+Bordeaux -- only to discover it was corked from the start. While the
+SDK shows flashes of competence (dare I say, the occasional whiff of
+actual craftsmanship), it is marred by the sort of inconsistencies and
+naming gaffes that suggest a committee of authors who never once shared
+a meal together. Let us proceed.
+
+
+----------------------------------------------------------------------------
+ISSUE #1: The Great delete/remove Schism
+----------------------------------------------------------------------------
+Files:  packages/aai/kv.ts (line 80)
+        packages/aai/vector.ts (line 72)
+
+The Kv interface uses `delete(key)` to remove entries. The VectorStore
+interface uses `remove(ids)` for the same conceptual operation. In polite
+society, we pick ONE verb for destruction and commit to it. This is the
+API equivalent of setting your dinner table with one fork on the left
+and one on the right, but for different courses at different angles.
+
+A PROPER API would use `delete` on both (consistent with JS Map, Set,
+and the Kv interface itself), or `remove` on both. Not this Jekyll-and-
+Hyde approach.
+
+
+----------------------------------------------------------------------------
+ISSUE #2: The "signal" That Isn't a Signal
+----------------------------------------------------------------------------
+File:   packages/aai-ui/types.ts (line 91)
+        packages/aai-ui/session.ts (line 184)
+
+SessionOptions has a property called `signal` that is... a factory
+function for creating reactive containers. Not an AbortSignal. Not a
+Preact Signal. A factory function. Meanwhile, connect() takes an
+options bag with `signal` that IS an AbortSignal.
+
+    // SessionOptions
+    signal?: <T>(initial: T) => Reactive<T>;
+
+    // connect() options
+    connect(options?: { signal?: AbortSignal }): void;
+
+Two completely different `signal` concepts in the same public type
+surface. The naming here suggests the author was in a GREAT hurry to
+catch a departing train. A PROPER API would call the reactive factory
+`createReactive` or `reactiveFactory` -- anything that does not collide
+with the web platform's most sacred AbortSignal convention.
+
+
+----------------------------------------------------------------------------
+ISSUE #3: The Phantom Generic on AgentDef
+----------------------------------------------------------------------------
+File:   packages/aai/types.ts (lines 420-438 vs 324-383)
+
+AgentOptions<S> is beautifully generic over the session state type S.
+Then defineAgent<S>(options: AgentOptions<S>) returns... AgentDef, which
+has NO generic parameter. The state type is erased entirely. Observe the
+indignity at line 565:
+
+    return { ...options, ... } as AgentDef;
+
+That `as AgentDef` cast is doing unspeakable violence to the type system.
+Every hook, every middleware, every tool callback loses its typed state
+the moment it passes through defineAgent. This has the elegance of a
+wet newspaper. A PROPER API would either make AgentDef<S> generic or
+use a branded/opaque type that preserves the inference chain.
+
+
+----------------------------------------------------------------------------
+ISSUE #4: Two Message Types, One Name, Zero Shame
+----------------------------------------------------------------------------
+Files:  packages/aai/types.ts (line 138)    -- role: "user"|"assistant"|"tool"
+        packages/aai-ui/types.ts (line 27)  -- role: "user"|"assistant"
+
+Both packages export a type called `Message`. They are structurally
+different: the SDK Message includes role "tool", the UI Message does not.
+Both are publicly exported from their respective packages. A consumer
+working with both packages will experience the special joy of import
+aliasing:
+
+    import { Message as SdkMessage } from "@alexkroman1/aai";
+    import { Message as UiMessage } from "@alexkroman1/aai-ui";
+
+I've seen better abstractions in a kindergarten art class. A PROPER API
+would either unify them (the UI type is a strict subset) or give them
+distinct names -- ServerMessage and ChatMessage, perhaps, for those of
+us who value clarity.
+
+
+----------------------------------------------------------------------------
+ISSUE #5: The Inconsistent Deletion Arity
+----------------------------------------------------------------------------
+Files:  packages/aai/kv.ts (line 80)     -- delete(key: string)
+        packages/aai/vector.ts (line 72)  -- remove(ids: string | string[])
+
+Beyond the naming inconsistency noted in Issue #1, the Kv.delete method
+accepts a single key, while VectorStore.remove accepts either a single
+ID or an array. If I want to delete five KV entries, I must loop. If I
+want to delete five vector entries, I pass an array. This asymmetry is
+the API design equivalent of a restaurant that lets you order multiple
+desserts but only one appetizer. A PROPER API would support batch
+operations consistently on both interfaces, or on neither.
+
+
+----------------------------------------------------------------------------
+ISSUE #6: The Middleware Hook Naming Cacophony
+----------------------------------------------------------------------------
+File:   packages/aai/types.ts (lines 49-93)
+
+Observe the naming pattern in Middleware<S>:
+  - beforeTurn / afterTurn        (symmetric, lovely)
+  - toolCallInterceptor           (wait, why not "beforeToolCall"?)
+  - afterToolCall                 (back to the before/after pattern)
+  - outputFilter                  (now it's a noun, not a verb pair)
+
+Three different naming conventions in a single type. "Interceptor" is
+a noun-pattern. "before/after" is a temporal-pair pattern. "Filter" is
+yet another noun. This reads like the type was designed by three people
+in three different time zones who communicated exclusively via carrier
+pigeon.
+
+A PROPER API would commit to one convention:
+  beforeTurn / afterTurn
+  beforeToolCall / afterToolCall
+  beforeOutput (or outputFilter, if you must)
+
+
+----------------------------------------------------------------------------
+ISSUE #7: The AgentDef Lie About "All Defaults Applied"
+----------------------------------------------------------------------------
+File:   packages/aai/types.ts (lines 419-438)
+
+The JSDoc proudly declares: "Unlike AgentOptions, every field here is
+resolved to its final value -- no optional fields with implicit defaults
+remain."
+
+And yet AgentDef contains: sttPrompt?, toolChoice?, builtinTools?,
+activeTools?, state?, onConnect?, onDisconnect?, onError?, onTurn?,
+onStep?, onBeforeStep?, middleware?
+
+That is THIRTEEN optional fields on a type that claims to have "no
+optional fields with implicit defaults." The documentation is lying to
+the reader's face with the confidence of a sommelier recommending
+boxed wine. A PROPER API would either truly resolve all defaults (using
+`undefined` sentinel values or actual defaults) or not make grandiose
+claims in the JSDoc.
+
+
+----------------------------------------------------------------------------
+ISSUE #8: The Kv.list prefix vs Kv.keys pattern Divergence
+----------------------------------------------------------------------------
+File:   packages/aai/kv.ts (lines 83-99)
+
+To enumerate keys with a prefix, you use `list(prefix)`.
+To enumerate keys with a glob pattern, you use `keys(pattern?)`.
+
+These are two different filtering paradigms for the same store -- prefix
+matching for one, glob matching for the other. A user who wants all keys
+starting with "user:" must choose between:
+
+    kv.list("user:")      // returns full entries with values
+    kv.keys("user:*")     // returns just key strings
+
+The filter syntax is different (prefix string vs glob pattern) for what
+is conceptually the same narrowing operation. A PROPER API would have
+`list` accept the same filter options as `keys`, or `keys` would accept
+a prefix parameter, maintaining a consistent mental model.
+
+
+----------------------------------------------------------------------------
+ISSUE #9: The createVoiceSession / createSessionControls Two-Step
+----------------------------------------------------------------------------
+Files:  packages/aai-ui/session.ts (line 183)
+        packages/aai-ui/signals.ts (line 50)
+
+To use voice in a Preact app, the consumer must:
+  1. createVoiceSession(options)  -- get a VoiceSession
+  2. createSessionControls(session) -- wrap it in SessionSignals
+  3. Feed SessionSignals into SessionProvider
+
+The VoiceSession itself accepts `signal` and `batch` factories to be
+reactive, yet the consumer STILL needs a second wrapper for Preact
+integration. The mount() function hides this, but anyone doing custom
+composition must perform this awkward two-step waltz.
+
+A PROPER API would either: (a) make createVoiceSession directly return
+something usable in Preact when given signal/batch, or (b) provide a
+single `createSession` that does both steps based on the options
+provided.
+
+
+----------------------------------------------------------------------------
+ISSUE #10: The "tool" Helper That Does Nothing
+----------------------------------------------------------------------------
+File:   packages/aai/types.ts (lines 268-272)
+
+    export function tool<P, S>(def: ToolDef<P, S>): ToolDef<P, S> {
+      return def;
+    }
+
+This is an identity function. It takes a thing and returns the same
+thing. Its sole reason for existence is to work around TypeScript's
+inability to infer generics in certain inline positions. While I
+understand the pragmatic necessity, exporting a public function called
+`tool` -- a noun so generic it could mean anything -- that is literally
+a no-op at runtime, is the kind of thing that makes API reviewers weep
+into their handkerchiefs.
+
+A PROPER API would name this `defineTool` (parallel to `defineAgent`)
+so the intent is obvious, and add a runtime validation pass (as
+defineAgent does with Zod) to justify its existence beyond a type-level
+parlor trick.
+
+
+----------------------------------------------------------------------------
+ISSUE #11: The toWireMessages / fromWireMessages Content-Text Shuffle
+----------------------------------------------------------------------------
+File:   packages/aai/protocol.ts (lines 222-237)
+
+The internal message format uses `content`. The wire format uses `text`.
+Two public functions exist solely to rename this single field back and
+forth:
+
+    toWireMessages:   { content } -> { text }
+    fromWireMessages: { text }    -> { content }
+
+This is a field-renaming tax levied on every message in the system. The
+comment even admits the purpose: "Defined once here so the field-name
+mapping can't drift between the UI and server." Perhaps -- and I say
+this with the gentlest possible contempt -- one should simply have
+used the SAME FIELD NAME on both sides? A PROPER API would settle on
+one name (`content`, to match the OpenAI convention the SDK clearly
+borrows from) and use it everywhere.
+
+
+----------------------------------------------------------------------------
+ISSUE #12: ServerOptions Has Both clientHtml AND clientDir
+----------------------------------------------------------------------------
+File:   packages/aai/server.ts (lines 24-39)
+
+    clientHtml?: string;   // raw HTML string
+    clientDir?: string;    // directory path
+
+What happens when both are provided? Looking at the implementation
+(lines 112-123), clientDir sets up serveStatic middleware, and clientHtml
+is returned on GET /. But serveStatic on "/*" would match "/" first if
+an index.html exists in clientDir, making clientHtml unreachable. The
+precedence is implicit, undocumented, and depends on Hono middleware
+ordering. This is the API equivalent of having two front doors to your
+house and not telling guests which one opens.
+
+A PROPER API would use a discriminated union:
+    client: { type: "html"; html: string } | { type: "dir"; path: string }
+Or at minimum, document the precedence and throw if both are supplied.
+
+
+============================================================================
+                         CLOSING REMARKS
+============================================================================
+
+In summation, the AAI SDK is not without its virtues. The Zod validation
+at the defineAgent boundary, the compile-time drift guards, the clean
+separation of concerns between packages -- these are the work of someone
+who has, at least once, read a book on API design.
+
+But the inconsistencies! The naming! The two Message types! The signal
+that is not a signal! These are the hallmarks of a codebase that grew
+organically, like mold on a fine cheese -- except without the eventual
+improvement in flavor.
+
+I award this API surface a generous 6.5 out of 10. It functions. It is
+documented. But it lacks the ruthless consistency that separates a
+merely adequate interface from one worthy of genuine admiration.
+
+I shall be in my study, recovering from the ordeal.
+
+                                        -- The API Aristocrat
+                                           March 26, 2026
