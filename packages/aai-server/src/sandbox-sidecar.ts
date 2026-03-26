@@ -111,6 +111,9 @@ const FETCH_PROXY_TIMEOUT_MS = 15_000;
 /** Maximum response body size (1 MB) to prevent the sidecar from buffering huge responses. */
 const MAX_RESPONSE_BODY_BYTES = 1_048_576;
 
+/** Timeout for sidecar server to start listening (ms). */
+const SIDECAR_STARTUP_TIMEOUT_MS = 10_000;
+
 // ── Sidecar server (per-sandbox, loopback, no auth) ─────────────────────
 
 function buildSidecarApp(
@@ -226,8 +229,17 @@ export async function startSidecarServer(
   const server = serve({ fetch: app.fetch, port: 0, hostname: "127.0.0.1" });
 
   await new Promise<void>((resolve, reject) => {
-    server.on("listening", resolve);
-    server.on("error", reject);
+    const timeout = setTimeout(() => {
+      reject(new Error(`Sidecar server failed to start within ${SIDECAR_STARTUP_TIMEOUT_MS}ms`));
+    }, SIDECAR_STARTUP_TIMEOUT_MS);
+    server.on("listening", () => {
+      clearTimeout(timeout);
+      resolve();
+    });
+    server.on("error", (err) => {
+      clearTimeout(timeout);
+      reject(err);
+    });
   });
 
   const port = getServerPort(server.address());
