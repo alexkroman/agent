@@ -52,6 +52,7 @@ export type SessionOptions = {
   logger?: Logger;
 };
 
+/** @internal Not part of the public API. Exposed for testing only. */
 export const _internals = {
   connectS2s,
 };
