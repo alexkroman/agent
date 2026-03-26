@@ -121,7 +121,7 @@ export function sortAndPaginate<T extends { key: string }>(
 const MAX_GLOB_PATTERN_LENGTH = 1024;
 
 /** Simple glob matcher — supports `*` as a wildcard for any characters. */
-function matchGlob(key: string, pattern: string): boolean {
+export function matchGlob(key: string, pattern: string): boolean {
   if (pattern.length > MAX_GLOB_PATTERN_LENGTH) {
     throw new Error(`Glob pattern exceeds maximum length of ${MAX_GLOB_PATTERN_LENGTH}`);
   }

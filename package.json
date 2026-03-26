@@ -43,6 +43,9 @@
       "esbuild",
       "isolated-vm",
       "lefthook"
+    ],
+    "onlyBuiltDependencies": [
+      "better-sqlite3"
     ]
   }
 }

@@ -95,6 +95,16 @@
       "source": "./middleware-core.ts",
       "types": "./dist/middleware-core.d.ts",
       "import": "./dist/middleware-core.js"
+    },
+    "./sqlite-kv": {
+      "source": "./sqlite-kv.ts",
+      "types": "./dist/sqlite-kv.d.ts",
+      "import": "./dist/sqlite-kv.js"
+    },
+    "./sqlite-vector": {
+      "source": "./sqlite-vector.ts",
+      "types": "./dist/sqlite-vector.d.ts",
+      "import": "./dist/sqlite-vector.js"
     }
   },
   "scripts": {
@@ -105,6 +115,7 @@
     "check:attw": "attw --pack --profile esm-only"
   },
   "dependencies": {
+    "better-sqlite3": "^12.8.0",
     "html-to-text": "^9.0.5",
     "nanoevents": "^9.1.0",
     "secure-exec": "^0.1.0",
@@ -114,8 +125,8 @@
   "peerDependencies": {
     "@hono/node-server": "^1.19.11",
     "@opentelemetry/api": "^1.9.1",
-    "vitest": "^4.1.1",
-    "hono": "^4.12.9"
+    "hono": "^4.12.9",
+    "vitest": "^4.1.1"
   },
   "peerDependenciesMeta": {
     "@hono/node-server": {
@@ -132,6 +143,7 @@
     }
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/html-to-text": "^9.0.4",
     "@types/json-schema": "^7.0.15",
     "@types/ws": "^8.18.1",
