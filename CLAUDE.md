@@ -35,7 +35,7 @@ pnpm test                # Run all tests (vitest)
 pnpm lint                # Run Biome linter (all packages)
 pnpm typecheck           # Type-check all packages
 pnpm lint:fix            # Auto-fix lint issues
-pnpm check:local         # Fast pre-commit gate (typecheck + lint + syncpack + test)
+pnpm check:local         # Pre-commit gate (build + typecheck + lint + api-extractor + syncpack + test)
 ```
 
 **Running specific tests:**
@@ -196,9 +196,8 @@ catches the most common issues that historically required follow-up commits:
    messages, run `pnpm test` and update affected assertions.
 3. **Lint in related files**: Pre-commit only lints staged files. Run
    `pnpm lint` to catch lint issues in files affected by your change.
-4. **API extractor reports**: After changing public API exports, run
-   `pnpm -r run build && pnpm -r run --if-present check:api` and commit
-   updated `.api.md` reports.
+4. **API extractor reports**: `check:local` now includes build + api-extractor.
+   After changing public API exports, commit updated `.api.md` reports.
 
 ## Security Architecture
 

@@ -6,6 +6,9 @@ pre-commit:
     syncpack:
       glob: "**/package.json"
       run: pnpm run check:syncpack
+    api-extractor:
+      glob: "packages/{aai,aai-ui}/src/**/*.ts"
+      run: pnpm -r run build && pnpm -r run --if-present check:api
 
 pre-push:
   commands:
