@@ -8,7 +8,7 @@
     "lint": "pnpm -r run lint",
     "lint:fix": "biome check --write packages/",
     "check": "bash scripts/check.sh",
-    "check:local": "bash scripts/check-local.sh",
+    "check:local": "bash scripts/check.sh --local",
     "check:knip": "knip",
     "check:syncpack": "syncpack lint",
     "check:markdown": "markdownlint-cli2 '**/*.md' '#**/node_modules' '#.aai'",
