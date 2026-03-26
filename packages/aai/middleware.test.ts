@@ -296,7 +296,7 @@ describe("middleware state access", () => {
       {
         name: "counter",
         beforeTurn: (_text, ctx): undefined => {
-          (ctx.state as { count: number }).count++;
+          ctx.state.count++;
         },
       },
     ];
@@ -310,7 +310,7 @@ describe("middleware state access", () => {
       {
         name: "counter",
         afterTurn: (_text, ctx) => {
-          (ctx.state as { turns: number }).turns++;
+          ctx.state.turns++;
         },
       },
     ];
@@ -324,14 +324,37 @@ describe("middleware state access", () => {
       {
         name: "cache",
         beforeToolCall: (toolName, args, ctx) => {
-          const cache = (ctx.state as { cache: Record<string, string> }).cache;
           const key = `${toolName}:${JSON.stringify(args)}`;
-          if (cache[key]) return { result: cache[key] };
+          if (ctx.state.cache[key]) return { result: ctx.state.cache[key] };
         },
       },
     ];
     const result = await runToolCallInterceptors(mw, "tool", {}, makeCtx(state));
     expect(result).toEqual({ type: "result", result: "cached-result" });
+  });
+
+  test("state-agnostic Middleware works in typed Middleware<S> array", () => {
+    type AppState = { counter: number };
+
+    // Reusable middleware — no generic needed
+    const logger: Middleware = {
+      name: "logger",
+      beforeTurn: (text) => {
+        console.log(text);
+      },
+    };
+
+    // State-aware middleware
+    const counter: Middleware<AppState> = {
+      name: "counter",
+      beforeTurn: (_text, ctx) => {
+        ctx.state.counter++;
+      },
+    };
+
+    // Both should be assignable to the same typed array
+    const mws: Middleware<AppState>[] = [logger, counter];
+    expect(mws).toHaveLength(2);
   });
 });
 

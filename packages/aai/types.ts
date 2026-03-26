@@ -97,11 +97,15 @@ export type ToolCallInterceptResult =
  * If you want the guardrail to run *before* the audit trail logs, place it
  * first in the array: `[hipaaGuardrails, auditTrail]`.
  *
- * @typeParam S - The shape of per-session state. Defaults to `Record<string, unknown>`.
+ * @typeParam S - The shape of per-session state. Defaults to `any` so that
+ *   reusable, state-agnostic middleware (e.g. loggers, rate-limiters) can be
+ *   authored without threading a state generic. Use an explicit generic
+ *   (`Middleware<MyState>`) when the middleware reads or writes session state.
  *
  * @public
  */
-export type Middleware<S = Record<string, unknown>> = {
+// biome-ignore lint/suspicious/noExplicitAny: `any` default lets state-agnostic middleware work with any agent state without requiring a generic.
+export type Middleware<S = any> = {
   /** Human-readable name for logging and debugging. */
   name: string;
 
