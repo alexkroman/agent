@@ -148,7 +148,7 @@
   },
   "overrides": [
     {
-      "includes": ["**/*.test.ts", "**/*.test.tsx", "**/_test-utils.ts", "**/_jsdom-setup.ts", "**/vitest*.config.ts"],
+      "includes": ["**/*.test.ts", "**/*.test.tsx", "**/_test-utils.ts", "**/_jsdom-setup.ts", "**/vitest*.config.ts", "**/tsdown.config.ts"],
       "linter": {
         "rules": {
           "correctness": {
@@ -166,6 +166,16 @@
           },
           "suspicious": {
             "noExportsInTest": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["**/tsdown.config.ts"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noUnresolvedImports": "off"
           }
         }
       }

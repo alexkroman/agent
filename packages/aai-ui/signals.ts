@@ -1,7 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { batch, effect, type Signal, signal, useSignalEffect } from "@preact/signals";
-import type { ComponentChildren, RefObject, VNode } from "preact";
+// biome-ignore lint/correctness/noUnresolvedImports: preact JSX namespace resolved by TypeScript
+import type { ComponentChildren, JSX, RefObject } from "preact";
 import { createContext, h } from "preact";
 import { useContext, useEffect, useRef } from "preact/hooks";
 import type { VoiceSession } from "./session.ts";
@@ -102,7 +103,7 @@ export function SessionProvider({
 }: {
   value: SessionSignals;
   children?: ComponentChildren;
-}): VNode {
+}): JSX.Element {
   return h(Ctx.Provider, { value }, children);
 }
 
