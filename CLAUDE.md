@@ -11,9 +11,11 @@ agents can be deployed to the managed platform.
 
 ## Shared Plans
 
-Active planning docs live in `.claude/plans/`. **Check these before starting
-work on related areas.** Update plan status and check off tasks as you
-complete them. Copy `TEMPLATE.md` when creating a new plan.
+Active planning docs live in `plans/`. This is an open directory -- any human
+or AI agent can read, create, or pick up plans. No linting is enforced there.
+
+**Check existing plans before starting work on related areas.** Update plan
+status and check off tasks as you complete them.
 
 **When to create a plan:**
 
