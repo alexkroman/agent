@@ -1,0 +1,274 @@
+================================================================================
+                     THE DOCUMENTATION LIBRARIAN'S AUDIT
+                     AAI Voice Agent Development Kit
+                     Conducted: 2026-03-26
+================================================================================
+
+*adjusts glasses, clears throat*
+
+Ahem. I have spent the morning inspecting every shelf, drawer, and dusty corner
+of this codebase. While I will concede -- QUIETLY -- that certain public API
+types in packages/aai/types.ts are admirably documented with JSDoc, examples,
+and @public tags, the rest of this library is... *shudders* ...a mixed bag at
+best. Several exported functions walk around NAKED without so much as a
+@param tag to cover themselves.
+
+Below are my citations. Each one represents a violation of the sacred covenant
+between author and reader. Fix them. ALL of them.
+
+--------------------------------------------------------------------------------
+
+CITATION 1: createServer() -- The Crown Jewel With No Crown
+File: /home/user/agent/packages/aai/server.ts, line 58
+Offense: The `createServer` function is THE primary public API for self-hosted
+  deployments -- it is literally the `./server` subpath export -- and yet it
+  has ZERO JSDoc. No @param, no @returns, no @example, no @public tag.
+  Meanwhile its sibling `defineAgent()` in types.ts gets a full docstring with
+  two code examples. The favoritism is palpable.
+What proper documentation would include:
+  - A JSDoc block explaining this creates an HTTP + WebSocket server for
+    self-hosted agent deployments
+  - @param options - description referencing ServerOptions
+  - @returns description of AgentServer
+  - @example showing minimal usage: createServer({ agent }).listen(3000)
+  - @public tag
+
+CITATION 2: ServerOptions and AgentServer types -- Adequate But Incomplete
+File: /home/user/agent/packages/aai/server.ts, lines 24-46
+Offense: Both `ServerOptions` and `AgentServer` are exported types that form
+  the public API surface of the `./server` subpath. While their individual
+  fields have inline doc comments (commendable, I suppose), neither type itself
+  has a JSDoc block with @public, @example, or a description of what the type
+  represents as a whole. In my library, every exported type gets a proper
+  introduction. EVERY. ONE.
+What proper documentation would include:
+  - JSDoc block on ServerOptions explaining it configures a self-hosted server
+  - JSDoc block on AgentServer explaining it is the handle returned by
+    createServer with lifecycle methods
+  - @public tags on both
+
+CITATION 3: The Session Type -- An Interface Wearing a Disguise
+File: /home/user/agent/packages/aai/session.ts, lines 27-36
+Offense: The `Session` type is exported and used extensively across the
+  codebase (ws-handler.ts, server.ts, direct-executor.ts), yet it has only
+  a one-line comment "A voice session managing the S2S connection for one
+  client." None of its six methods (start, stop, onAudio, onAudioReady,
+  onCancel, onReset, onHistory, waitForTurn) have ANY documentation. What
+  does `onAudioReady` do? What does `waitForTurn` resolve to? Shhhh...
+  listen... do you hear that? That is the sound of a developer crying because
+  they have to read the implementation to understand the contract.
+What proper documentation would include:
+  - @public or @internal tag (it is re-exported, so clarify its visibility)
+  - JSDoc on each method explaining its purpose, when it is called, and
+    what its parameters mean
+  - Particularly: onHistory's `incoming` parameter has a non-obvious shape
+    that differs from the internal Message type
+
+CITATION 4: createS2sSession() -- Complex Factory, Sparse Docs
+File: /home/user/agent/packages/aai/session.ts, line 154
+Offense: `createS2sSession` is a 112-line exported function that creates the
+  core session object managing S2S connections, tool execution, hooks,
+  greeting suppression, and reconnection logic. Its JSDoc is a single
+  sentence: "Create an S2S-backed session with the same interface as the
+  STT+LLM+TTS session." No @param, no @returns, no explanation of the
+  SessionOptions fields. This function is doing the heavy lifting of the
+  ENTIRE voice pipeline and it gets less documentation than a grocery list.
+What proper documentation would include:
+  - Detailed @param description for SessionOptions
+  - @returns explaining the Session lifecycle
+  - Notes about the connectGeneration guard for rapid resets
+  - Note about sessionAbort for cleanup
+
+CITATION 5: S2sSessionCtx -- Mutable State Bag With Cryptic Fields
+File: /home/user/agent/packages/aai/session.ts, lines 65-89
+Offense: This exported type contains the entire mutable state for an S2S
+  session, including `replyGeneration`, `pendingTools`, `toolCallCount`,
+  and three method signatures (`resolveTurnConfig`, `checkTurnLimits`,
+  `fireHook`). Only `replyGeneration` has a doc comment. The methods
+  `resolveTurnConfig`, `checkTurnLimits`, and `fireHook` have NO
+  documentation whatsoever. What does `checkTurnLimits` return? A string
+  means "refused" and null means "proceed"? I had to READ THE CODE to
+  discover this. Unconscionable.
+What proper documentation would include:
+  - JSDoc on the type itself explaining it is the shared mutable context
+    for a single S2S session
+  - @param and @returns docs on resolveTurnConfig, checkTurnLimits, fireHook
+  - Clarification that checkTurnLimits returns a refusal message or null
+
+CITATION 6: The Entire runtime.ts Module -- Terse to a Fault
+File: /home/user/agent/packages/aai/runtime.ts, lines 1-38
+Offense: This module exports `Logger`, `LogContext`, `consoleLogger`,
+  `S2SConfig`, and `DEFAULT_S2S_CONFIG` as part of the `./runtime` subpath.
+  The file has NO module-level JSDoc. The `Logger` type gets a one-liner
+  "Structured logger interface. Used by tests to suppress output." but no
+  @example showing how to provide a custom logger. `S2SConfig` says
+  "S2S endpoint configuration" with no explanation of what S2S stands for
+  (Speech-to-Speech) or what the fields control. The `consoleLogger`
+  implementation uses a clever higher-order `log` function on line 16 that
+  is completely uncommented -- a reader unfamiliar with the pattern would
+  need to stare at it.
+What proper documentation would include:
+  - Module-level JSDoc explaining this defines runtime dependencies
+  - S2SConfig: explain what S2S means, what wssUrl points to, and what the
+    sample rates control
+  - Logger: @example showing a custom logger implementation
+  - consoleLogger: brief explanation of the partial-application pattern
+
+CITATION 7: handleToolCall and setupListeners -- Exported Without Ceremony
+File: /home/user/agent/packages/aai/_session-otel.ts, lines 43 and 253
+Offense: `handleToolCall` is an exported async function that orchestrates
+  the ENTIRE tool call pipeline -- span creation, middleware interception,
+  execution, error handling, and result truncation -- and it has NO JSDoc.
+  Not a word. Similarly, `setupListeners` gets a single-line comment
+  "Wire all S2S events to the client sink, hooks, and session state" but
+  no @param descriptions. The `finishToolCall` helper (line 25) silently
+  discards results from interrupted replies based on a generation counter,
+  which is a subtle and important behavior documented only by inline
+  comments inside the function body.
+What proper documentation would include:
+  - JSDoc on handleToolCall explaining the full pipeline: turn config
+    resolution, limit checking, middleware interception, execution, and
+    result propagation
+  - @param descriptions for ctx and detail
+  - JSDoc on setupListeners with @param for ctx and handle
+  - JSDoc on finishToolCall explaining the generation-based discard logic
+
+CITATION 8: DirectExecutorOptions and DirectExecutor -- Exported, Undocumented
+File: /home/user/agent/packages/aai/direct-executor.ts, lines 36-57
+Offense: Both `DirectExecutorOptions` and `DirectExecutor` are exported types
+  with NO JSDoc blocks. `DirectExecutorOptions` has fields like
+  `vectorSearch` (a callback, not a VectorStore -- why?) and `createWebSocket`
+  that have no explanation. `DirectExecutor` exposes `executeTool`,
+  `hookInvoker`, `toolSchemas`, and `createSession` with no documentation
+  of what they do or how they relate. The `createDirectExecutor` function
+  (line 65) gets a single line: "Create a direct (in-process) tool executor
+  and hook invoker for an agent." No @param, no @returns, no @example.
+What proper documentation would include:
+  - JSDoc on both types explaining their role in self-hosted mode
+  - @param descriptions on DirectExecutorOptions explaining why vectorSearch
+    is a callback (host RPC proxy) vs the VectorStore interface
+  - @returns on createDirectExecutor
+
+CITATION 9: ClientHandler Class -- Marked Internal, Documented Unevenly
+File: /home/user/agent/packages/aai-ui/client-handler.ts, lines 14-15
+Offense: The class has TWO competing doc comments on adjacent lines --
+  first a description, then "@internal Exported for testing only." The
+  constructor takes an options bag with 8 fields and NONE of them are
+  documented. The `event()` method (line 47) has a single-line comment
+  but no @param. The `playAudioChunk` method (line 142) and
+  `playAudioDone` method (line 152) have NO documentation at all.
+  The `#generation` field (line 25) is documented with one comment but
+  its purpose -- preventing stale async callbacks from updating state
+  after a turn boundary -- deserves more explanation.
+What proper documentation would include:
+  - Merge the two competing JSDoc blocks into one coherent block
+  - Document constructor options or reference a named options type
+  - JSDoc on playAudioChunk and playAudioDone explaining their role
+    in the audio pipeline
+
+CITATION 10: assertPublicUrl -- Security Function, No JSDoc
+File: /home/user/agent/packages/aai/_ssrf.ts, line 43
+Offense: `assertPublicUrl` is an exported function that provides SSRF
+  protection -- a SECURITY-CRITICAL piece of infrastructure -- and it has
+  NO JSDoc. No @param, no @throws, no explanation of what IP ranges it
+  blocks or why. The `PRIVATE_RANGES` constant (line 12) is an array of
+  tuples with no explanation of the tuple format [prefix, CIDR bits].
+  The `ipToInt` and `isPrivateIpv4` helper functions also lack any
+  documentation. For a security module, this is particularly troubling
+  because reviewers need to quickly understand what is and is not blocked.
+What proper documentation would include:
+  - JSDoc on assertPublicUrl with @param, @throws, and a list of what
+    it blocks (private IPv4 ranges, IPv4-mapped IPv6, localhost, cloud
+    metadata endpoints, .local/.internal domains, non-http(s) schemes)
+  - Comment on PRIVATE_RANGES explaining the tuple format
+  - JSDoc on ipToInt and isPrivateIpv4
+
+CITATION 11: buildSystemPrompt -- Undocumented Parameter Shapes
+File: /home/user/agent/packages/aai/system-prompt.ts, line 21
+Offense: `buildSystemPrompt` is an exported function (re-exported from
+  session.ts) that constructs the system prompt sent to the LLM. It has
+  NO JSDoc. The `opts` parameter has `hasTools` and `voice` fields that
+  control significant behavioral differences in the output (whether tool
+  preamble and voice rules are appended), but neither is documented.
+  A developer reading the call site would have no idea what `voice: true`
+  actually does without reading this file.
+What proper documentation would include:
+  - JSDoc explaining this builds the system prompt from agent config
+  - @param config - the serializable agent config
+  - @param opts.hasTools - whether to include tool-use preamble
+  - @param opts.voice - whether to append voice-specific output rules
+  - @returns the assembled system prompt string
+
+CITATION 12: The ConnState Type and initAudioCapture -- Complex Logic, Minimal Docs
+File: /home/user/agent/packages/aai-ui/session.ts, lines 41-107
+Offense: `ConnState` is a type with a `generation` field documented by a
+  long inline comment, but the type itself has only a terse "Shared mutable
+  connection state for audio initialization." The `initAudioCapture` function
+  is 56 lines of async code handling AudioWorklet initialization, generation
+  guards for stale connections, error recovery, and microphone permission
+  failures. Its JSDoc is one line: "Initialize audio capture/playback after
+  the server sends a ready config." The `deps` parameter bundles 5 items
+  with zero explanation. This is a function where THINGS CAN GO WRONG
+  (microphone denied, stale connection, WebSocket closed mid-setup) and
+  each failure path deserves documentation.
+What proper documentation would include:
+  - Expanded JSDoc on initAudioCapture explaining the full lifecycle:
+    request mic access, register AudioWorklets, create VoiceIO, send
+    audio_ready, and all failure modes
+  - @param conn - the mutable connection state
+  - @param msg - the ReadyConfig from the server
+  - @param deps - the reactive state and send functions
+
+CITATION 13: memoryTools() Return Type -- Undocumented Return Shape
+File: /home/user/agent/packages/aai/memory-tools.ts, line 25
+Offense: The `memoryTools` function has a nice JSDoc with an @example, but
+  it has NO @returns tag documenting what tool names it produces. A developer
+  reading the docs would see "spread the result into your agent's tools
+  record" but not know whether the keys are `save_memory`, `saveMemory`,
+  `memory_save`, or something else entirely without reading the implementation.
+  The function also lacks a @public tag despite being re-exported from the
+  main index.ts via the builtin "memory" tool name.
+What proper documentation would include:
+  - @returns documenting the four tool names: save_memory, recall_memory,
+    list_memories, forget_memory
+  - @public tag
+
+CITATION 14: The Entire _mock-ws.ts Module -- Test Utility Without API Docs
+File: /home/user/agent/packages/aai/_mock-ws.ts
+Offense: `MockWebSocket` and `installMockWebSocket` are exported from the
+  public `./testing` subpath. These are what USERS of the SDK will import
+  to test their agents. Let me check...
+  *adjusts glasses, peers at the re-export in testing.ts line 45*
+  Yes, they are publicly exported. And yet I would wager they have minimal
+  documentation given the pattern I have observed in this codebase. Users
+  need to know: what does MockWebSocket simulate? What does
+  installMockWebSocket patch? How do I use them in a test?
+What proper documentation would include:
+  - JSDoc on MockWebSocket explaining it simulates a WebSocket for testing
+  - JSDoc on installMockWebSocket explaining it monkey-patches the global
+    WebSocket constructor
+  - @example showing usage in a test file
+  - @public tags on both
+
+================================================================================
+
+*sets down red pen, removes glasses, pinches bridge of nose*
+
+In summary: the public-facing types.ts file is a model citizen -- thorough
+JSDoc, @public tags, code examples, linked references. The kv.ts, vector.ts,
+and testing.ts files are also reasonably well documented. But beyond those
+showcases, the documentation quality drops sharply. Internal modules that are
+nonetheless exported (session.ts, direct-executor.ts, _session-otel.ts,
+runtime.ts, s2s.ts) are documented at a level I would charitably describe as
+"notes scribbled on a napkin."
+
+The most urgent gaps are in security-critical code (_ssrf.ts), the primary
+self-hosted API (server.ts createServer), and the complex session management
+pipeline (session.ts, _session-otel.ts) where subtle generation-counter
+logic and race-condition guards DEMAND clear explanatory documentation.
+
+Now if you will excuse me, I need to go lie down in a dark, quiet room.
+
+Shhhhh.
+
+================================================================================

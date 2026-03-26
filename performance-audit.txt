@@ -1,0 +1,370 @@
+================================================================================
+                    PERFORMANCE AUDIT: AAI Voice Agent SDK
+                    The Performance Hawk Speaks. Listen Up.
+================================================================================
+
+My profiler is SCREAMING. I have read every file in this codebase and I can
+HEAR the wasted CPU cycles. Every unnecessary allocation is a slap in the face
+to the silicon that runs this code. Audio frames are flying at 16kHz and you
+people are running Zod schemas on HOT PATHS. Let me enumerate the sins.
+
+================================================================================
+
+ISSUE #1: Zod validation on EVERY incoming S2S message (HOT PATH)
+File: packages/aai/s2s.ts, lines 300-318 (handleS2sMessage)
+------------------------------------------------------------------------
+Pattern: Every single WebSocket message from AssemblyAI -- and there are
+THOUSANDS per second during active audio -- gets JSON.parse'd, then checked
+with handleAudioFastPath, then STILL gets run through
+S2sServerMessageSchema.safeParse(). The audio fast path skips Zod (good), but
+every other message -- transcript deltas, speech start/stop events, reply
+events -- all go through a full Zod discriminatedUnion parse.
+
+Commentary: Do you have any idea how many cycles Zod burns on a
+discriminatedUnion with 14 variants?! Every transcript delta, every
+speech_started, every reply.done -- they all pay the Zod tax. On a busy
+server with 50 concurrent sessions, this is DEATH BY A THOUSAND PARSES.
+
+Fix: Use a plain switch on obj.type with manual field checks for the 3-4
+fields each message type actually has. Reserve Zod for the initial config
+exchange and error paths. The hot path should be: JSON.parse -> check type
+string -> extract known fields -> emit. Zero schema overhead.
+
+================================================================================
+
+ISSUE #2: Zod validation on every client WebSocket text message
+File: packages/aai/ws-handler.ts, lines 107-111 (handleTextMessage)
+------------------------------------------------------------------------
+Pattern: ClientMessageSchema.safeParse(json) runs on every text frame from
+the client. The discriminatedUnion has 4 variants (audio_ready, cancel,
+reset, history). This happens on every text message for every session.
+
+Commentary: The client sends maybe 4 distinct message types, all trivially
+shaped. Running a full Zod parse with schema construction on each one is like
+hiring a forensic accountant to count the change in your pocket.
+
+Fix: Check json.type as a string, then validate only the "history" variant
+(the one with actual complex structure). The other 3 are just { type: string }
+-- a typeof check is literally all you need.
+
+================================================================================
+
+ISSUE #3: Repeated string concatenation for agent transcript deltas
+File: packages/aai-ui/client-handler.ts, lines 67-69
+------------------------------------------------------------------------
+Pattern:
+  this.#agentUtterance.value = this.#agentUtterance.value
+    ? `${this.#agentUtterance.value} ${e.text}`
+    : e.text;
+
+This builds a new string by concatenating the ENTIRE accumulated utterance
+plus new text on EVERY SINGLE DELTA. For a 500-word agent response arriving
+in 50 deltas, you are copying the entire growing string 50 times.
+
+Commentary: This is O(n^2) string building! The classic "string concatenation
+in a loop" anti-pattern. My profiler just threw up. For a 2000-character
+response arriving in 40 deltas, you copy roughly 40,000 characters total
+instead of 2,000.
+
+Fix: Use an array to accumulate deltas, join on final read. Or at minimum,
+keep a string array and only join when the signal value is read. The reactive
+wrapper makes this tricky but an internal buffer array joined on access would
+eliminate the quadratic copying.
+
+================================================================================
+
+ISSUE #4: escapeHtml uses 5 chained .replace() with regex on every request
+File: packages/aai/server.ts, lines 49-56
+------------------------------------------------------------------------
+Pattern:
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
+Five separate regex passes over the string, creating 5 intermediate strings.
+This runs on the agent name for every GET / request.
+
+Commentary: FIVE passes! FIVE intermediate string allocations! For something
+that could be done in a single pass! This is called on the hot path of the
+root page handler. The agent name doesn't change -- why are we escaping it
+on EVERY request?!
+
+Fix: (a) Cache the escaped agent name at server startup since it never
+changes. (b) If you must escape dynamically, use a single-pass approach:
+s.replace(/[&<>"']/g, (ch) => escapeMap[ch]). One regex, one pass, one
+allocation.
+
+================================================================================
+
+ISSUE #5: new URL() allocation on every HTTP request in logging middleware
+File: packages/aai/server.ts, lines 93 and 103
+------------------------------------------------------------------------
+Pattern:
+  Line 93: logger.error(`${c.req.method} ${new URL(c.req.url).pathname} ...`);
+  Line 103: const path = new URL(c.req.url).pathname;
+
+Two separate new URL() calls per request (error handler + middleware). URL
+parsing allocates a URL object just to extract .pathname. The middleware runs
+on EVERY request.
+
+Commentary: new URL() is one of the most expensive standard library calls in
+Node.js. It allocates the URL object, parses the full URL spec, decodes
+percent-encoded segments, normalizes the path -- all to extract a pathname
+that Hono probably already parsed. Doing it TWICE per request in the error
+handler is adding insult to injury.
+
+Fix: Use c.req.path or c.req.routePath which Hono already provides for free
+-- zero allocation. If unavailable, parse once and reuse.
+
+================================================================================
+
+ISSUE #6: isPrivateIpv4 rebuilds IP parts array on every call
+File: packages/aai/_ssrf.ts, lines 31-41
+------------------------------------------------------------------------
+Pattern:
+  function isPrivateIpv4(ip: string): boolean {
+    const n = ipToInt(ip);
+    for (const [prefix, bits] of PRIVATE_RANGES) {
+      const parts = prefix.split(".");
+      while (parts.length < 4) parts.push("0");
+      const net = ipToInt(parts.join("."));
+      const mask = bits === 0 ? 0 : (~0 << (32 - bits)) >>> 0;
+      if ((n & mask) === (net & mask)) return true;
+    }
+    return false;
+  }
+
+For EVERY IP check (which happens on every visit_webpage and fetch_json tool
+call), this splits each of the 11 PRIVATE_RANGES prefixes, pads them with
+"0", joins them back, and converts to int. That is 11 iterations of
+split/push/join/parse per call.
+
+Commentary: This allocation is COMPLETELY unnecessary! The PRIVATE_RANGES
+array is a CONSTANT. The network integers and masks NEVER CHANGE. You are
+computing the same 11 network/mask pairs from scratch every single time.
+
+Fix: Pre-compute a static array of { net: number, mask: number } at module
+load time. Then isPrivateIpv4 becomes a simple loop of integer comparisons
+with zero allocations. The server-side _net.ts does this correctly with
+BlockList -- the SDK-side _ssrf.ts should match.
+
+================================================================================
+
+ISSUE #7: buildSystemPrompt creates a new Date and format string every call
+File: packages/aai/system-prompt.ts, lines 37-42
+------------------------------------------------------------------------
+Pattern:
+  const today = new Date().toLocaleDateString("en-US", {
+    weekday: "long", year: "numeric", month: "long", day: "numeric",
+  });
+
+This runs every time a session is created. toLocaleDateString with options
+forces the Intl.DateTimeFormat constructor path internally, which is
+notoriously expensive -- it loads locale data, creates a formatter, formats
+once, then throws it all away.
+
+Commentary: The date string is the same for ALL sessions created on the same
+day! You are constructing an Intl formatter for EVERY session just to get
+"Thursday, March 26, 2026" which hasn't changed since midnight.
+
+Fix: Cache the formatted date string with a day-level TTL. Compute it once,
+store it in a module-level variable, and only recompute when the date changes
+(check Date.now() vs. last midnight timestamp).
+
+================================================================================
+
+ISSUE #8: Spread operator creates shallow copies on every middleware hook
+File: packages/aai/direct-executor.ts, lines 104-115 (makeHookContext)
+------------------------------------------------------------------------
+Pattern:
+  function makeHookContext(sessionId: string): HookContext {
+    return {
+      env: frozenEnv,
+      state: getState(sessionId),
+      get kv() { return kv; },
+      get vector() { return vector; },
+    };
+  }
+
+This is called for EVERY hook invocation -- onTurn, onStep, beforeTurn,
+afterTurn, interceptToolCall, afterToolCall, filterOutput. That is up to 7
+object allocations per tool call, each creating a new HookContext object.
+
+Commentary: The env, kv, and vector are the SAME for every call within a
+session. Only `state` is session-specific. You are creating a fresh object
+with two getter closures for every single hook invocation. With middleware
+chains, a single tool call can trigger 4-5 hook invocations, each allocating
+a new context object.
+
+Fix: Cache the HookContext per session. Since state is mutable (same
+reference), and env/kv/vector are fixed, create ONE context object per session
+on first access and reuse it for all subsequent hook calls.
+
+================================================================================
+
+ISSUE #9: JSON.stringify for each arg comparison in TurnResult.toHaveCalledTool
+File: packages/aai/testing.ts, lines 118-126
+------------------------------------------------------------------------
+Pattern:
+  return Object.entries(args).every(
+    ([key, value]) => JSON.stringify(tc.args[key]) === JSON.stringify(value),
+  );
+
+Every call to toHaveCalledTool with args does JSON.stringify on BOTH sides of
+the comparison for EVERY key in the args object, for EVERY tool call in the
+turn.
+
+Commentary: JSON.stringify for deep equality comparison?! This allocates a
+new string for every single field comparison! If you have 5 tool calls and
+check 3 args, that is 30 JSON.stringify calls. For test code this is
+"acceptable" but it sets a terrible example and can slow down test suites
+with many assertions.
+
+Fix: Use a proper deep-equal utility (structuredClone comparison, or a
+recursive equality check). Or at minimum, try === first for primitives
+before falling back to JSON.stringify.
+
+================================================================================
+
+ISSUE #10: timingSafeCompare re-encodes strings to Uint8Array on every call
+File: packages/aai-server/src/auth.ts, lines 32-35
+------------------------------------------------------------------------
+Pattern:
+  function timingSafeCompare(a: string, b: string): boolean {
+    if (a.length !== b.length) return false;
+    return timingSafeEqual(textEncoder.encode(a), textEncoder.encode(b));
+  }
+
+Called inside verifySlugOwner which iterates credential_hashes.some(),
+encoding the keyHash string to a Uint8Array on EVERY comparison.
+
+Commentary: The keyHash is the same for the entire request, but you encode it
+to bytes EVERY TIME you compare against a stored hash! If an agent has 3
+credential hashes, you encode the same keyHash 3 times. The stored hashes
+are always the same too, and they get re-encoded every time.
+
+Fix: Encode the keyHash ONCE before the .some() loop. Better yet, since
+credential hashes are hex strings of fixed length (64 chars for SHA-256),
+pre-allocate a reusable buffer and write into it.
+
+================================================================================
+
+ISSUE #11: filterEnv creates intermediate arrays for every server startup
+File: packages/aai/_utils.ts, lines 18-22
+------------------------------------------------------------------------
+Pattern:
+  export function filterEnv(env: Record<string, string | undefined>):
+    Record<string, string> {
+    return Object.fromEntries(
+      Object.entries(env).filter(...)
+    );
+  }
+
+Called with process.env which can have 50-100+ entries. Object.entries creates
+an array of [key, value] tuples, filter creates ANOTHER array, and
+Object.fromEntries creates a new object from that.
+
+Commentary: Three allocations for a simple filtering operation! process.env
+typically has 50-100 entries, so you are creating 100+ tuple arrays, two
+intermediate arrays, and a final object -- all for a one-time startup
+operation that could be done with a simple for...in loop.
+
+Fix: Use a for...in loop that writes directly to the result object. One
+allocation (the result), zero intermediate arrays. This is a startup cost
+so impact is minimal, but it represents sloppy thinking about allocations.
+
+================================================================================
+
+ISSUE #12: New AbortController per session even when never aborted
+File: packages/aai/session.ts, line 177
+------------------------------------------------------------------------
+Pattern:
+  const sessionAbort = new AbortController();
+
+Every session creates an AbortController. AbortController internally
+allocates an AbortSignal with an event target. The vast majority of sessions
+complete normally and the AbortController is never triggered.
+
+Commentary: This one is minor, but AbortController is not free -- it sets up
+an EventTarget with listener machinery. For a high-throughput server with
+thousands of short-lived sessions, these add up. The only usage is to check
+sessionAbort.signal.aborted (a boolean check) and to call abort() on stop.
+
+Fix: Use a plain boolean flag instead. You only check .aborted and call
+.abort() -- you never register signal listeners on it. A boolean flip is
+literally free.
+
+================================================================================
+
+ISSUE #13: conversationMessages array grows unbounded
+File: packages/aai/session.ts, line 109 and _session-otel.ts, lines 162, 200
+------------------------------------------------------------------------
+Pattern:
+  ctx.conversationMessages.push({ role: "user", content: text });
+  ctx.conversationMessages.push({ role: "assistant", content: text });
+
+Messages are pushed into conversationMessages with no limit, and the entire
+array is passed to executeTool on every tool call. For long-running sessions
+(hours of conversation), this array grows without bound.
+
+Commentary: An unbounded array that gets passed BY REFERENCE to every tool
+call! A 2-hour voice session could accumulate hundreds of messages. Every
+tool call then carries this entire history. There is no trimming, no
+windowing, no maximum length. This is a MEMORY LEAK waiting to happen on
+long-running sessions.
+
+Fix: Implement a sliding window (e.g., keep last 50 messages) or a maximum
+message count. When the limit is reached, drop the oldest messages. The tool
+executor probably doesn't need the entire conversation history anyway.
+
+================================================================================
+
+ISSUE #14: Zod schema compilation at import time (module-level)
+Files: packages/aai/protocol.ts, packages/aai/s2s.ts,
+       packages/aai-server/src/sandbox-sidecar.ts
+------------------------------------------------------------------------
+Pattern: Multiple files define Zod schemas at module top level:
+  const S2sServerMessageSchema = z.discriminatedUnion("type", [...14 variants])
+  const ClientMessageSchema = z.discriminatedUnion("type", [...])
+  const ClientEventSchema = z.discriminatedUnion("type", [...])
+
+These all compile at import time, adding to cold start latency.
+
+Commentary: Every single import of these modules pays the cost of compiling
+all these Zod schemas. For a serverless deployment or CLI tool that imports
+the SDK, this adds hundreds of milliseconds to cold start. The
+discriminatedUnion with 14 variants in s2s.ts is particularly expensive.
+
+Fix: Lazily compile schemas on first use, not at import time. Wrap in a
+getter function that memoizes the compiled schema. This moves the cost from
+import time to first-use time, and if a code path never validates (e.g., the
+CLI importing protocol types but never parsing messages), the cost is zero.
+
+================================================================================
+
+CLOSING STATEMENT
+================================================================================
+
+This codebase has some genuinely good performance instincts -- the audio fast
+path in s2s.ts that skips Zod for reply.audio, the double-buffering in
+audio.ts, the hash cache in auth.ts, and the generation-based stale check in
+session.ts are all signs that someone here THINKS about performance.
+
+But then you turn around and run Zod on every non-audio WebSocket message,
+build quadratic strings in the UI, recompute static data on every call, and
+let arrays grow without bounds. It is MADDENING.
+
+The top priorities, in order of impact:
+1. Issue #1 (Zod on S2S hot path) -- affects every message, every session
+2. Issue #3 (O(n^2) string concat in UI) -- affects every agent response
+3. Issue #6 (SSRF IP check recomputation) -- affects every network tool call
+4. Issue #13 (unbounded message array) -- memory leak for long sessions
+5. Issue #7 (date formatting per session) -- low-hanging fruit, easy win
+
+Fix these five and your p99 latency will thank you. The silicon DEMANDS it.
+
+-- The Performance Hawk
+   "Every nanosecond counts. Every allocation is a choice."

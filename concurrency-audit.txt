@@ -1,0 +1,401 @@
+===============================================================================
+                 CONCURRENCY AUDIT - THE RACE CONDITION REFEREE
+===============================================================================
+
+*TWEET!* *TWEET!* *TWEEEEET!*
+
+All right, players, listen up! I'm The Race Condition Referee, and I've been
+reviewing the game tape of this entire codebase. I've got my whistle, my red
+cards, and a whole notebook full of VIOLATIONS. Some of you are running
+plays that would get you ejected from any concurrent programming league.
+
+Let's go through the calls. Every single one of these is on the record.
+
+===============================================================================
+VIOLATION #1 - FIRE-AND-FORGET ASYNC IN SESSION START (ws-handler.ts)
+===============================================================================
+
+File: packages/aai/ws-handler.ts, lines 164-175
+
+    session
+      .start()
+      .then(() => { ... })
+      .catch((err: unknown) => {
+        ...
+        sessions.delete(sessionId);
+        session = null;
+      });
+
+FOUL! Unsynchronized fire-and-forget promise! The session.start() call is
+launched without await, but messages can arrive on the WebSocket BEFORE start()
+completes. The "message" event listener at line 185 checks `if (!session)`
+but the session object is already assigned at line 158 -- it just hasn't
+finished starting yet. This means audio data and text messages can be
+dispatched to a session whose S2S connection isn't established yet. The
+session.onAudio() call will hit `ctx.s2s?.sendAudio(data)` which silently
+drops the audio (because s2s is still null), but the user loses their first
+words with no indication anything went wrong.
+
+THE CORRECT PLAY: Either gate incoming messages on a "ready" flag that gets
+set after start() resolves, or buffer messages until the session is fully
+initialized.
+
+===============================================================================
+VIOLATION #2 - MAP MUTATION DURING ASYNC ITERATION (sandbox.ts terminate)
+===============================================================================
+
+File: packages/aai-server/src/sandbox.ts, lines 363-369
+
+    const stops = [...sessions.values()].map((s) =>
+      s.stop().catch(() => { ... })
+    );
+    sessions.clear();
+    await Promise.all(stops);
+
+TECHNICAL FOUL! The code spreads the Map into an array (good instinct), but
+then calls sessions.clear() BEFORE awaiting the stop promises. Meanwhile,
+the ws-handler "close" event at ws-handler.ts:203 does
+`sessions.delete(sessionId)` inside the session.stop().finally() callback.
+That delete races with the clear() -- if a new session connects between
+clear() and the Promise.all completing, it could be added to the map and
+then orphaned when the old stops finish and nobody references it.
+
+THE CORRECT PLAY: Await Promise.all(stops) BEFORE clearing the map, or
+set a "terminating" flag that prevents new sessions from being added.
+
+===============================================================================
+VIOLATION #3 - SHARED MUTABLE STATE WITHOUT SYNCHRONIZATION (session.ts ctx)
+===============================================================================
+
+File: packages/aai/session.ts, lines 73-76, and _session-otel.ts lines 265-278
+
+The S2sSessionCtx object contains shared mutable fields: pendingTools,
+toolCallCount, turnPromise, replyGeneration, and conversationMessages.
+These are mutated from multiple async event handlers concurrently:
+
+  - reply_started handler (line 266-268): resets toolCallCount, bumps
+    replyGeneration, clears pendingTools
+  - tool_call handler (line 273-278): chains onto turnPromise
+  - reply_done handler: reads pendingTools and turnPromise
+  - handleToolCall: increments toolCallCount via checkTurnLimits
+
+All of these are event-driven callbacks from the S2S WebSocket, and while
+Node.js is single-threaded, the async tool execution means multiple tool
+calls can be in-flight simultaneously. A reply_started event can fire while
+tool calls from the previous reply are still executing, leading to
+toolCallCount being reset mid-agentic-loop.
+
+ILLEGAL SCREEN! The code does use replyGeneration to guard pendingTools
+(that's smart defense), but toolCallCount is reset without any guard --
+a late-finishing tool from a previous reply will still increment it after
+the reset, giving an incorrect count for the new reply.
+
+THE CORRECT PLAY: Make toolCallCount generation-aware like pendingTools, or
+capture it at the start of each reply and use generation checks before
+incrementing.
+
+===============================================================================
+VIOLATION #4 - FIRE-AND-FORGET HOOK INVOCATION (session.ts fireHook)
+===============================================================================
+
+File: packages/aai/session.ts, lines 137-146
+
+    fireHook(name, fn) {
+      if (!hookInvoker) return;
+      try {
+        fn(hookInvoker).catch((err: unknown) =>
+          log.warn(`${name} hook failed`, { err: errorMessage(err) }),
+        );
+      } catch (err: unknown) {
+        log.warn(`${name} hook failed`, { err: errorMessage(err) });
+      }
+    },
+
+FOUL! This is a textbook fire-and-forget pattern. The hook promise is
+launched and its rejection is caught, but the caller never awaits it. This
+is used for onConnect (session.ts line 226), onDisconnect (line 235),
+onStep (_session-otel.ts line 85), onTurn (line 163), afterToolCall
+(line 143), and afterTurn (line 236). If any of these hooks perform
+critical state mutations (like updating KV), the mutations may not complete
+before the session is torn down. The stop() method at line 233 does await
+turnPromise but does NOT await any pending fireHook invocations.
+
+THE CORRECT PLAY: Track all in-flight hook promises and await them during
+stop(), or at minimum document that hooks are best-effort and may not
+complete during shutdown.
+
+===============================================================================
+VIOLATION #5 - UNPROTECTED CONCURRENT MAP DELETION (kv.ts list/keys)
+===============================================================================
+
+File: packages/aai/kv.ts, lines 214-229 and 231-244
+
+    async list<T = unknown>(prefix: string, ...): Promise<KvEntry<T>[]> {
+      ...
+      for (const [key, entry] of store) {
+        if (++i % 500 === 0) await new Promise<void>((r) => setTimeout(r, 0));
+        if (entry.expiresAt && entry.expiresAt <= now) {
+          store.delete(key);   // <-- MUTATING WHILE ITERATING!
+          continue;
+        }
+        ...
+      }
+
+THAT'S A TECHNICAL -- you can't mutate a Map while iterating! Well,
+technically in JavaScript you CAN delete keys during Map iteration without
+crashing (the spec allows it), BUT the yield via setTimeout at line 219
+gives other code a chance to run, and that code could call set() or
+delete() on the same Map, leading to entries being skipped or visited twice.
+The keys() method at line 234 has the same pattern of deleting expired
+entries during iteration (though without the yield, so it's safer on that
+front).
+
+THE CORRECT PLAY: Collect expired keys in a separate array and delete them
+after the iteration completes, or at least don't yield to the event loop
+mid-iteration if you're mutating the Map.
+
+===============================================================================
+VIOLATION #6 - RACE BETWEEN IDLE EVICTION AND ACTIVE USE (sandbox-slots.ts)
+===============================================================================
+
+File: packages/aai-server/src/sandbox-slots.ts, lines 62-73
+
+    slot.idleTimer = setTimeout(() => {
+      if (!slot.sandbox) return;
+      slot.sandbox.terminate().catch(() => { ... });
+      delete slot.sandbox;
+      delete slot.idleTimer;
+    }, IDLE_MS);
+
+And at line 75-81:
+
+    export function ensureAgent(slot: AgentSlot, ...): Promise<Sandbox> {
+      if (slot.sandbox) {
+        resetIdleTimer(slot);
+        return Promise.resolve(slot.sandbox);
+      }
+
+FOUL! Time-of-check-time-of-use race! ensureAgent returns the sandbox
+at line 80, but the idle timer could fire between when the caller receives
+the sandbox reference and when they actually use it. The caller gets a
+sandbox that is being terminated. Additionally, resetIdleTimer clears the
+old timer and sets a new one, but terminate() is async and fire-and-forget
+-- if ensureAgent is called during the narrow window where terminate() is
+in progress but slot.sandbox hasn't been deleted yet... wait, delete
+happens synchronously on line 70. Still, the terminate() is not awaited,
+so the sandbox could be in a half-terminated state when a new session
+tries to use it.
+
+THE CORRECT PLAY: Use a state machine (idle/active/terminating) instead
+of optimistic field checks, and ensure terminate() completes before the
+slot is reusable.
+
+===============================================================================
+VIOLATION #7 - SHUTDOWN DOESN'T AWAIT SANDBOX TERMINATION (index.ts)
+===============================================================================
+
+File: packages/aai-server/src/index.ts, lines 126-136
+
+    function shutdown() {
+      console.info("Shutting down...");
+      wss.close();
+      for (const slot of opts.slots.values()) {
+        if (slot.idleTimer) clearTimeout(slot.idleTimer);
+        slot.sandbox?.terminate();    // <-- NOT AWAITED!
+      }
+      nodeServer.close(() => process.exit(0));
+      setTimeout(() => process.exit(1), 3000).unref();
+    }
+
+DELAY OF GAME! sandbox.terminate() returns a Promise, but it's called
+without await inside a synchronous function. The terminate() method
+(sandbox.ts lines 360-382) awaits session stops, runtime termination, and
+sidecar closure -- all of which are async. By not awaiting these, the
+process.exit(0) in the nodeServer.close callback will fire while
+termination is still in progress, potentially corrupting in-flight
+operations.
+
+THE CORRECT PLAY: Make shutdown async, await all terminate() calls
+(with a timeout), THEN close the server and exit.
+
+===============================================================================
+VIOLATION #8 - ORDERING VIOLATION IN FILTER OUTPUT (session-otel.ts)
+===============================================================================
+
+File: packages/aai/_session-otel.ts, lines 183-195 and 197-213
+
+    function handleAgentTranscriptDelta(ctx, text): void {
+      ...
+      ctx.hookInvoker
+        .filterOutput(ctx.id, text, HOOK_TIMEOUT_MS)
+        .then((f) => ctx.client.event({ type: "chat_delta", text: f }))
+        .catch(...);
+    }
+
+    function handleAgentTranscript(ctx, text): void {
+      ...
+      ctx.hookInvoker
+        .filterOutput(ctx.id, text, HOOK_TIMEOUT_MS)
+        .then(emit)
+        .catch(...);
+    }
+
+ILLEGAL SUBSTITUTION -- out of order! Multiple transcript delta events
+arrive in sequence, and each launches an independent async filterOutput
+call. If filter call N+1 resolves before filter call N, the client receives
+deltas out of order, producing garbled text. The same applies to the final
+agent_transcript event -- it could resolve before the last delta.
+
+THE CORRECT PLAY: Chain the filter promises sequentially (similar to how
+turnPromise chains tool calls), or queue deltas and process them in order.
+
+===============================================================================
+VIOLATION #9 - DOUBLE-CLOSE / USE-AFTER-CLOSE ON S2S HANDLE (session.ts)
+===============================================================================
+
+File: packages/aai/session.ts, lines 229-256
+
+    async stop(): Promise<void> {
+      if (sessionAbort.signal.aborted) return;
+      sessionAbort.abort();
+      ...
+      ctx.s2s?.close();
+      ...
+    },
+    onReset(): void {
+      ...
+      ctx.s2s?.close();
+      ...
+      connectAndSetup().catch(...);
+    },
+
+DOUBLE DRIBBLE! If onReset() is called and then stop() is called
+immediately after (e.g., user resets then disconnects), the sequence is:
+1. onReset closes the old S2S handle
+2. connectAndSetup() starts connecting a new one (async)
+3. stop() fires, sets sessionAbort, and closes ctx.s2s
+4. But ctx.s2s might still be null (connectAndSetup hasn't resolved)
+5. connectAndSetup resolves, checks sessionAbort (good!), closes handle
+
+The guard at line 197 handles this, but there's still a window where
+onReset's connectAndSetup is racing with stop(). If the await on line
+233 (ctx.turnPromise) takes time, the new S2S connection could be
+established and start receiving events between the abort and the close,
+creating a brief period of zombie activity.
+
+THE CORRECT PLAY: Cancel connectAndSetup via the AbortController signal
+directly, rather than relying on a post-hoc check after the await.
+
+===============================================================================
+VIOLATION #10 - PROMISE CONSTRUCTOR ANTI-PATTERN WITH LATE ASSIGNMENT
+                (sandbox.ts startIsolate)
+===============================================================================
+
+File: packages/aai-server/src/sandbox.ts, lines 87-92
+
+    let resolvePort: (port: number) => void;
+    let rejectPort: (err: Error) => void;
+    const portPromise = new Promise<number>((resolve, reject) => {
+      resolvePort = resolve;
+      rejectPort = reject;
+    });
+
+And then at line 121:
+
+    if (parsed.success) resolvePort(parsed.data.port);
+
+FOUL! Definite assignment evasion! The resolvePort and rejectPort variables
+are used with the `let` declaration and assigned inside the Promise
+constructor callback. While the Promise constructor executes synchronously
+(so the assignment happens before portPromise is used), this is the classic
+"deferred promise" anti-pattern. More critically, the onStdio callback at
+line 118 is called for EVERY stdout message. If the isolate prints
+multiple JSON objects with a "port" field, resolvePort will be called
+multiple times. Calling resolve() on an already-resolved promise is a no-op
+(not an error), but it signals that the code doesn't expect this case --
+and the intermediate port values would be silently ignored.
+
+THE CORRECT PLAY: Use a flag to ensure resolvePort is called at most once,
+or use AbortController / Promise.withResolvers() for cleaner deferred
+patterns.
+
+===============================================================================
+VIOLATION #11 - TURN PROMISE CHAIN NEVER RESETS (session-otel.ts)
+===============================================================================
+
+File: packages/aai/_session-otel.ts, lines 273-278
+
+    handle.on("tool_call", (detail) => {
+      const p = handleToolCall(ctx, detail).catch((err: unknown) => {
+        ctx.log.error("Tool call handler failed", { err: errorMessage(err) });
+      });
+      ctx.turnPromise = (ctx.turnPromise ?? Promise.resolve()).then(() => p);
+    });
+
+And handleReplyDone at line 245:
+
+    if (ctx.turnPromise !== null) {
+      void ctx.turnPromise.then(sendPending);
+    }
+
+TRAVELING! The turnPromise chains grow indefinitely across turns. Each
+tool call appends to the chain via .then(), and while JavaScript GC
+can collect resolved promise chains, the chain is never explicitly reset
+to null between replies. The reply_started handler (line 265) does NOT
+reset turnPromise. Only onReset (session.ts line 249) sets it to null.
+This means in a long session with many tool-call replies, the promise
+chain keeps growing. Furthermore, handleReplyDone reads turnPromise to
+decide whether to wait for tools, but a stale turnPromise from a PREVIOUS
+reply (that already resolved) will cause sendPending to execute
+immediately via the resolved .then(), potentially before current-reply
+tool calls finish.
+
+THE CORRECT PLAY: Reset ctx.turnPromise = null in the reply_started
+handler alongside the other resets (toolCallCount, pendingTools).
+
+===============================================================================
+VIOLATION #12 - DEPLOY RACE: SLOT OVERWRITE DURING INITIALIZATION
+===============================================================================
+
+File: packages/aai-server/src/deploy.ts, lines 25-51
+
+    const existing = c.env.slots.get(slug);
+    if (existing?.sandbox || existing?.initializing) {
+      ...
+      await existing.sandbox.terminate().catch(() => {});
+      ...
+    }
+    ...
+    c.env.slots.set(slug, { slug, keyHash });
+
+FOUL! Two concurrent deploy requests for the same slug can race. Request A
+reads existing at line 25, finds no sandbox. Request B reads existing at
+line 25, also finds no sandbox. Both proceed to putAgent and overwrite the
+slot at line 51. The second deploy's worker code wins in the store, but
+the slot state is set twice. More dangerously, if request A finds an
+initializing sandbox, it awaits terminate, but request B could be
+mid-flight at the same time, seeing the slot in a partially-cleaned state.
+
+THE CORRECT PLAY: Use a per-slug mutex or "deploying" state to serialize
+concurrent deploys for the same agent.
+
+===============================================================================
+
+*TWEEEEEEEEET!* FULL TIME, FOLKS!
+
+That's 12 violations across 4 packages. Some of these are minor fouls --
+silent data drops, best-effort semantics that are actually fine in practice.
+Others are FLAGRANT -- out-of-order message delivery, unsynchronized
+shutdown, and classic TOCTOU races.
+
+This codebase has good defensive instincts in places: the generation
+counters in session.ts and the client-side ConnState.generation are
+textbook race-prevention plays. The safeSend pattern in ws-handler.ts
+shows awareness of WebSocket close races. But the async fire-and-forget
+pattern is used too liberally, and several shutdown paths don't properly
+await their cleanup.
+
+The ref blows the final whistle. Clean up those fouls before the next
+sprint, team!
+
+*drops whistle mic*
