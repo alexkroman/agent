@@ -2,7 +2,8 @@
 /**
  * Built-in tool definitions for the AAI agent SDK.
  *
- * These tools run inside the sandboxed worker alongside custom tools.
+ * In self-hosted mode, these run in-process alongside custom tools.
+ * In platform mode, they run on the host process outside the sandbox.
  * Network requests go through the host's fetch proxy (with SSRF protection).
  */
 

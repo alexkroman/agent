@@ -5,7 +5,7 @@
  * Each deployed agent runs inside a secure-exec isolate. The isolate loads
  * the agent bundle and exposes tool execution + lifecycle hooks over HTTP
  * on loopback. The host calls `createS2sSession` + `wireSessionSocket`
- * directly — no WintercServer or proxy AgentDef needed.
+ * directly — no intermediary or proxy AgentDef needed.
  *
  * A per-sandbox sidecar server on the host provides scoped KV and
  * vector access — the isolate calls it without authentication (loopback only).

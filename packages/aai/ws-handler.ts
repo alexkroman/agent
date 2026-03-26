@@ -2,7 +2,7 @@
 /**
  * WebSocket session lifecycle handler.
  *
- * Audio validation is handled at the host transport layer (see host.ts).
+ * Audio validation is handled at the host transport layer (see server.ts).
  */
 
 import { errorDetail, errorMessage } from "./_utils.ts";

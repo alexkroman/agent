@@ -34,7 +34,7 @@ aai init                 # Scaffold a new agent (uses simple template)
 aai init -t <template>   # Scaffold from a specific template
 aai dev                  # Start local dev server
 aai test                 # Run agent tests (vitest)
-aai build                # Run tests, then bundle and validate
+aai build                # Run tests, then bundle and validate (skip tests with --skipTests)
 aai deploy               # Bundle and deploy to production
 aai deploy -y            # Deploy without prompts
 aai deploy --dry-run     # Validate and bundle without deploying
@@ -70,13 +70,14 @@ with `aai init -t <template_name>`.
 | `middleware`        | Middleware demo: rate limiting, PII redaction, caching, analytics                  |
 | `embedded-assets`   | FAQ bot using embedded JSON knowledge (no web search)                              |
 | `support`           | RAG-powered support agent using vector_search (AssemblyAI docs example)            |
+| `test-patterns`     | Demonstrates every testable agent pattern (tools, hooks, middleware, state)        |
 
 ## Minimal agent
 
 Every agent lives in `agent.ts` and exports a default `defineAgent()` call:
 
 ```ts
-import { defineAgent } from "aai";
+import { defineAgent } from "@alexkroman1/aai";
 
 export default defineAgent({
   name: "My Agent",
@@ -88,8 +89,8 @@ export default defineAgent({
 ### Imports
 
 ```ts
-import { defineAgent, tool } from "aai"; // defineAgent + helpers
-import type { BeforeStepResult, BuiltinTool, HookContext, Middleware, StepInfo, ToolContext } from "aai";
+import { defineAgent, tool } from "@alexkroman1/aai"; // defineAgent + helpers
+import type { BeforeStepResult, BuiltinTool, HookContext, Middleware, StepInfo, ToolContext } from "@alexkroman1/aai";
 import { z } from "zod"; // Tools with typed params (included in package.json)
 ```
 
@@ -185,7 +186,7 @@ Define tools as plain objects in the `tools` record. The `parameters` field
 takes a Zod schema for type-safe argument inference:
 
 ```ts
-import { defineAgent, tool } from "aai";
+import { defineAgent, tool } from "@alexkroman1/aai";
 import { z } from "zod";
 
 export default defineAgent({
@@ -235,7 +236,7 @@ Enable via `builtinTools`.
 | Tool            | Description                                    | Params                              |
 | --------------- | ---------------------------------------------- | ----------------------------------- |
 | `web_search`    | Search the web (Brave Search)                  | `query`, `max_results?` (default 5) |
-| `visit_webpage` | Fetch URL → Markdown                           | `url`                               |
+| `visit_webpage` | Fetch URL → plain text                         | `url`                               |
 | `fetch_json`    | HTTP GET a JSON API                            | `url`, `headers?`                   |
 | `run_code`      | Execute JS in sandbox (no net/fs, 5s timeout)  | `code`                              |
 | `vector_search` | Search the agent's RAG knowledge base          | `query`, `topK?` (default 5)        |
@@ -348,7 +349,7 @@ Add `"memory"` to `builtinTools` to give the agent four persistent KV tools:
 `save_memory`, `recall_memory`, `list_memories`, and `forget_memory`.
 
 ```ts
-import { defineAgent } from "aai";
+import { defineAgent } from "@alexkroman1/aai";
 
 export default defineAgent({
   name: "My Agent",
@@ -439,7 +440,7 @@ Middleware provides composable hooks for turns, tool calls, and output
 filtering. Runs in array order for "before" hooks and reverse for "after".
 
 ```ts
-import type { Middleware } from "aai";
+import type { Middleware } from "@alexkroman1/aai";
 
 const rateLimiter: Middleware = {
   name: "rate-limiter",
@@ -556,7 +557,7 @@ name, call ID, agent, and session ID attributes).
 For custom metrics or spans in your agent code:
 
 ```ts
-import { meter, tracer } from "aai/telemetry";
+import { meter, tracer } from "@alexkroman1/aai/telemetry";
 
 const myCounter = meter.createCounter("my_agent.custom_event");
 
@@ -581,7 +582,7 @@ Add `client.tsx` alongside `agent.ts`. Define a Preact component and call
 
 ```tsx
 import "aai-ui/styles.css";
-import { mount, useSession } from "aai-ui";
+import { mount, useSession } from "@alexkroman1/aai-ui";
 
 function App() {
   const { session, started, running, start, toggle, reset } = useSession();
@@ -715,7 +716,7 @@ data lives on `session` (a `VoiceSession`); UI-only controls are top-level.
 
 ```tsx
 import "aai-ui/styles.css";
-import { mount, ToolCallBlock, useSession } from "aai-ui";
+import { mount, ToolCallBlock, useSession } from "@alexkroman1/aai-ui";
 
 function App() {
   const { session, started, start } = useSession();
@@ -750,7 +751,7 @@ the parsed JSON result, handling deduplication internally.
 ```tsx
 import "aai-ui/styles.css";
 import { useState } from "preact/hooks";
-import { ChatView, SidebarLayout, StartScreen, mount, useToolResult } from "aai-ui";
+import { ChatView, SidebarLayout, StartScreen, mount, useToolResult } from "@alexkroman1/aai-ui";
 
 interface CartItem { id: number; name: string; price: number }
 
@@ -800,7 +801,7 @@ handles this correctly.
 ```tsx
 import "aai-ui/styles.css";
 import { useEffect } from "preact/hooks";
-import { mount, StateIndicator, useSession } from "aai-ui";
+import { mount, StateIndicator, useSession } from "@alexkroman1/aai-ui";
 
 function App() {
   const { session, started, start } = useSession();
@@ -883,7 +884,7 @@ overridden via `mount()` theme options. All other tokens use fixed defaults.
 **Auto-scrolling messages** — use `useAutoScroll` for custom message lists:
 
 ```tsx
-import { useAutoScroll, useSession } from "aai-ui";
+import { useAutoScroll, useSession } from "@alexkroman1/aai-ui";
 
 function MyChat() {
   const { session } = useSession();
@@ -918,8 +919,8 @@ function MyComponent() {
 Agents can run anywhere (Node, Docker) without the managed platform:
 
 ```ts
-import { defineAgent } from "aai";
-import { createServer } from "aai/server";
+import { defineAgent } from "@alexkroman1/aai";
+import { createServer } from "@alexkroman1/aai/server";
 
 const agent = defineAgent({
   name: "My Agent",

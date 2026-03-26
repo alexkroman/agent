@@ -4,7 +4,7 @@
  *
  * `createServer()` returns a server with `listen()` for HTTP + WebSocket.
  * Calls `createDirectExecutor` + `wireSessionSocket` directly — no
- * intermediate WintercServer layer.
+ * intermediary needed.
  */
 
 import { serve } from "@hono/node-server";
