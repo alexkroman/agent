@@ -371,7 +371,7 @@ describe("setupListeners", () => {
     }
     expect(ctx.pendingTools).toHaveLength(3);
     // The oldest entry (call-0) should have been evicted.
-    expect(ctx.pendingTools[0].callId).toBe("call-1");
+    expect(ctx.pendingTools[0]?.callId).toBe("call-1");
   });
 
   test("user_transcript: pushes message and fires turn hook", () => {
