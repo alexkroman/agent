@@ -96,7 +96,7 @@ export type Middleware<S = Record<string, unknown>> = {
     name: string;
     beforeTurn?: (text: string, ctx: HookContext<S>) => MiddlewareBlockResult | undefined | Promise<MiddlewareBlockResult | undefined>;
     afterTurn?: (text: string, ctx: HookContext<S>) => void | Promise<void>;
-    toolCallInterceptor?: (toolName: string, args: Readonly<Record<string, unknown>>, ctx: HookContext<S>) => ToolCallInterceptResult | Promise<ToolCallInterceptResult>;
+    toolCallInterceptor?: (toolName: string, args: Readonly<Record<string, unknown>>, ctx: HookContext<S>) => ToolCallInterceptResult | undefined | Promise<ToolCallInterceptResult | undefined>;
     afterToolCall?: (toolName: string, args: Readonly<Record<string, unknown>>, result: string, ctx: HookContext<S>) => void | Promise<void>;
     outputFilter?: (text: string, ctx: HookContext<S>) => string | Promise<string>;
 };

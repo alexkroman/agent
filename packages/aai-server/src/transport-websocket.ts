@@ -2,7 +2,6 @@
 
 import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
-// biome-ignore lint/correctness/noUnresolvedImports: runtime dependency
 import mime from "mime-types";
 import { SafePathSchema } from "./_schemas.ts";
 import type { Env } from "./context.ts";

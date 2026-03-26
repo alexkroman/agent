@@ -290,7 +290,7 @@ describe("getIsolateConfig", () => {
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
       "http://127.0.0.1:12345/config",
-      expect.anything(),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
   });
 

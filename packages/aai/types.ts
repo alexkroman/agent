@@ -72,7 +72,7 @@ export type Middleware<S = Record<string, unknown>> = {
     toolName: string,
     args: Readonly<Record<string, unknown>>,
     ctx: HookContext<S>,
-  ) => ToolCallInterceptResult | Promise<ToolCallInterceptResult>;
+  ) => ToolCallInterceptResult | undefined | Promise<ToolCallInterceptResult | undefined>;
 
   /**
    * Runs after each tool call completes. Useful for caching results,

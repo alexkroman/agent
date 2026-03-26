@@ -7,7 +7,6 @@
  * SDK → deploy body → server round trip without interface mismatch.
  */
 
-// biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at runtime
 import { defineAgent, tool } from "@alexkroman1/aai";
 import { agentToolsToSchemas } from "@alexkroman1/aai/internal-types";
 import { describe, expect, test } from "vitest";

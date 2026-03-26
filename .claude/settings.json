@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "lefthook install"
+            "command": "npx lefthook install"
           }
         ]
       }

@@ -1,7 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { batch, effect, type Signal, signal, useSignalEffect } from "@preact/signals";
-// biome-ignore lint/correctness/noUnresolvedImports: preact JSX types resolved via tsconfig
 import type { ComponentChildren, JSX, RefObject } from "preact";
 import { createContext, h } from "preact";
 import { useContext, useEffect, useRef } from "preact/hooks";

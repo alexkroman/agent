@@ -119,8 +119,9 @@ function connect(port: number): Promise<{
 
     ws.on("error", reject);
 
-    // Timeout safety
-    setTimeout(() => reject(new Error("connect timeout")), 5000);
+    // Timeout safety — cleared on success to avoid dangling handles
+    const timer = setTimeout(() => reject(new Error("connect timeout")), 5000);
+    ws.on("open", () => clearTimeout(timer));
   });
 }
 
