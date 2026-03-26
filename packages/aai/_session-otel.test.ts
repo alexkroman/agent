@@ -30,20 +30,14 @@ function makeMockHandle(): S2sHandle & {
 
 function makeClient(): MockClient {
   const events: Record<string, unknown>[] = [];
-  let n = 0;
   return {
     open: true,
     events,
-    get audioDoneCount() {
-      return n;
-    },
     event(e) {
       events.push(e as Record<string, unknown>);
     },
     playAudioChunk: vi.fn(),
-    playAudioDone() {
-      n++;
-    },
+    playAudioDone: vi.fn(),
   };
 }
 
