@@ -16,6 +16,7 @@ import { toAgentConfig } from "@alexkroman1/aai/internal-types";
 import { buildReadyConfig } from "@alexkroman1/aai/protocol";
 import { DEFAULT_S2S_CONFIG } from "@alexkroman1/aai/runtime";
 import { createS2sSession, type HookInvoker, type Session } from "@alexkroman1/aai/session";
+import { isReadOnlyFsOp } from "@alexkroman1/aai/utils";
 import type { ExecuteTool } from "@alexkroman1/aai/worker-entry";
 import { type SessionWebSocket, wireSessionSocket } from "@alexkroman1/aai/ws-handler";
 import {
@@ -101,7 +102,7 @@ async function startIsolate(
       filesystem: fs,
       permissions: {
         fs: (req) =>
-          req.op === "read" || req.op === "stat" || req.op === "readdir" || req.op === "exists"
+          isReadOnlyFsOp(req.op)
             ? { allow: true }
             : { allow: false, reason: "Filesystem is read-only" },
         network: buildNetworkPolicy(sidecarUrl),

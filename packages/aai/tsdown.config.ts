@@ -21,6 +21,7 @@ export default defineConfig({
     "testing.ts",
     "matchers.ts",
     "_utils.ts",
+    "middleware-core.ts",
   ],
   format: "esm",
   platform: "node",

@@ -73,7 +73,7 @@ export type Reactive<T> = { value: T };
  *
  * @public
  */
-export type SessionOptions = {
+export type VoiceSessionOptions = {
   /** Base URL of the AAI platform server. */
   platformUrl: string;
   /**
