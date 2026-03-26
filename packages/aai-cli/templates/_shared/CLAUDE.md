@@ -169,8 +169,11 @@ Optimize for spoken conversation:
 
 Never hardcode secrets in `agent.ts`. Access them at runtime via `ctx.env`.
 
-**Local development** — add secrets to `.env` in your project root. The file is
-auto-loaded by `aai dev` (process env vars take precedence over `.env` values):
+`ctx.env` contains **only** the secrets you explicitly declare — not all of
+`process.env`. This keeps behavior consistent between local dev and production.
+
+**Local development** — add secrets to `.env` in your project root. Only keys
+listed here are available via `ctx.env` (shell exports override `.env` values):
 
 ```sh
 # .env (gitignored)
@@ -178,7 +181,7 @@ ALPHA_VANTAGE_KEY=sk-abc123
 MY_API_KEY=secret-value
 ```
 
-**Production** — set secrets on the deployed server:
+**Production** — set the same keys on the deployed server:
 
 ```sh
 aai secret put MY_API_KEY    # Set (prompts for value)
