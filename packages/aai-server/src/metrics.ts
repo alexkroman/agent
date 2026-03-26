@@ -74,7 +74,10 @@ function filterLabels(
   dp: NumberDataPoint,
   agentFilter: string | undefined,
 ): { include: boolean; labelStr: string } {
-  const labels = dp.attributes as Record<string, string>;
+  const labels: Record<string, string> = {};
+  for (const [k, v] of Object.entries(dp.attributes)) {
+    if (v != null) labels[k] = String(v);
+  }
   if (agentFilter !== undefined) {
     if (labels.agent !== agentFilter) return { include: false, labelStr: "" };
     const { agent: _, ...rest } = labels;
