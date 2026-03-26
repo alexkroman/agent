@@ -3,6 +3,7 @@
     ".changeset/**",
     "**/api/*.api.md",
     "**/temp/*.api.md",
-    "**/CHANGELOG.md"
+    "**/CHANGELOG.md",
+    "plans/**"
   ]
 }
