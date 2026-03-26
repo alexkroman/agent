@@ -17,6 +17,7 @@ import type { AgentSlot } from "./sandbox.ts";
 import { type ScopeKey, signScopeToken } from "./scope-token.ts";
 import { handleSecretDelete, handleSecretList, handleSecretSet } from "./secret-handler.ts";
 import { handleAgentHealth, handleAgentPage, handleClientAsset } from "./transport-websocket.ts";
+import { handleUndeploy } from "./undeploy.ts";
 import type { ServerVectorStore } from "./vector.ts";
 import { handleVector } from "./vector-handler.ts";
 
@@ -114,6 +115,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Hono<Env> {
   });
 
   app.post("/:slug/deploy", slugMw, ownerMw, handleDeploy);
+  app.post("/:slug/undeploy", slugMw, ownerMw, handleUndeploy);
   app.get("/:slug/secret", slugMw, ownerMw, handleSecretList);
   app.put("/:slug/secret", slugMw, ownerMw, handleSecretSet);
   app.delete("/:slug/secret/:key", slugMw, ownerMw, handleSecretDelete);
