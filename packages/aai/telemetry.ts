@@ -13,6 +13,7 @@
  *   STT → LLM → TTS pipeline
  */
 
+import { createRequire } from "node:module";
 import {
   type Meter,
   metrics,
@@ -25,8 +26,8 @@ import {
 // ─── Scoped instances ────────────────────────────────────────────────────────
 
 const SCOPE = "aai";
-// NOTE: Keep in sync with package.json version
-const VERSION = "0.9.3";
+const _require = createRequire(import.meta.url);
+const VERSION: string = (_require("./package.json") as { version: string }).version;
 
 /** Tracer scoped to the AAI SDK. */
 export const tracer: Tracer = trace.getTracer(SCOPE, VERSION);
