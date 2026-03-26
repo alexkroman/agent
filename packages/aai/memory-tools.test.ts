@@ -82,7 +82,10 @@ describe("memoryTools", () => {
       await tools.save_memory.execute({ key: "user:name", value: "Alice" }, ctx);
       await tools.save_memory.execute({ key: "user:age", value: "30" }, ctx);
       await tools.save_memory.execute({ key: "project:status", value: "active" }, ctx);
-      const result = await tools.list_memories.execute({ prefix: "user:" }, ctx);
+      const result = (await tools.list_memories.execute({ prefix: "user:" }, ctx)) as {
+        count: number;
+        keys: string[];
+      };
       expect(result.count).toBe(2);
       expect(result.keys).toContain("user:name");
       expect(result.keys).toContain("user:age");
