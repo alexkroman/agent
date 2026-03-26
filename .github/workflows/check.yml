@@ -79,6 +79,7 @@ jobs:
             node_modules
             packages/*/node_modules
             packages/*/dist
+            .tsbuildinfo
           key: workspace-${{ github.sha }}
       - run: |
           pnpm --filter "...[origin/main]" run --if-present check:api
@@ -105,6 +106,7 @@ jobs:
             node_modules
             packages/*/node_modules
             packages/*/dist
+            .tsbuildinfo
           key: workspace-${{ github.sha }}
       - run: pnpm vitest run --changed origin/main --coverage
 
@@ -125,6 +127,7 @@ jobs:
             node_modules
             packages/*/node_modules
             packages/*/dist
+            .tsbuildinfo
           key: workspace-${{ github.sha }}
       - run: pnpm --filter "...[origin/main]" run --if-present check:integration
 
@@ -145,6 +148,7 @@ jobs:
             node_modules
             packages/*/node_modules
             packages/*/dist
+            .tsbuildinfo
           key: workspace-${{ github.sha }}
       - run: pnpm --filter @alexkroman1/aai-cli exec playwright install --with-deps chromium
       - run: pnpm --filter "...[origin/main]" run --if-present check:e2e
