@@ -8,13 +8,19 @@
  *
  * Environment variables (set by host):
  * - SIDECAR_URL: loopback URL for the per-sandbox sidecar server
- * - SIDECAR_TOKEN: bearer token for authenticating to the sidecar
  *
  * The agent bundle is expected at "./agent_bundle.js" (default export).
  */
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { Kv } from "@alexkroman1/aai/kv";
+import {
+  runAfterToolCallMiddleware,
+  runAfterTurnMiddleware,
+  runBeforeTurnMiddleware,
+  runOutputFilters,
+  runToolCallInterceptors,
+} from "@alexkroman1/aai/middleware-core";
 import type { AgentDef, HookContext, Middleware, ToolContext } from "@alexkroman1/aai/types";
 import type { VectorStore } from "@alexkroman1/aai/vector";
 import type {
@@ -26,7 +32,6 @@ import type {
 } from "./_harness-protocol.ts";
 
 const SIDECAR_URL = process.env.SIDECAR_URL ?? "";
-const SIDECAR_TOKEN = process.env.SIDECAR_TOKEN ?? "";
 
 /**
  * Read agent env vars from process.env once at startup.
@@ -46,11 +51,9 @@ const agentEnv: Record<string, string> = Object.freeze(
 // ── Sidecar server proxy (KV / vector) ───────────────────────────────────
 
 async function sidecarRpc<T>(path: string, body: unknown): Promise<T> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (SIDECAR_TOKEN) headers.Authorization = `Bearer ${SIDECAR_TOKEN}`;
   const res = await fetch(`${SIDECAR_URL}${path}`, {
     method: "POST",
-    headers,
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`${path} failed: ${res.status}`);
@@ -65,8 +68,8 @@ const kv: Kv = {
   set(key: string, value: unknown, options?: { expireIn?: number }) {
     return sidecarRpc<void>("/kv/set", { key, value, options });
   },
-  delete(keys: string | string[]) {
-    return sidecarRpc<void>("/kv/del", { key: keys });
+  delete(key: string) {
+    return sidecarRpc<void>("/kv/del", { key });
   },
   list<T = unknown>(prefix: string, options?: { limit?: number; reverse?: boolean }) {
     return sidecarRpc<{ key: string; value: T }[]>("/kv/list", { prefix, ...options });
@@ -151,6 +154,8 @@ const ISOLATE_TOOL_TIMEOUT_MS = 25_000;
 
 async function executeTool(agent: AgentDef, req: ToolCallRequest): Promise<ToolCallResponse> {
   const tool = agent.tools[req.name];
+  // Harness uses raw node:http (no Hono), so errors carry a `.status` property
+  // via Object.assign. The catch handler in startServer() reads it.
   if (!tool) throw Object.assign(new Error(`Unknown tool: ${req.name}`), { status: 404 });
 
   const ctx: ToolContext = {
@@ -208,127 +213,74 @@ async function runResolveTurnConfig(
   return config.maxSteps !== undefined || config.activeTools !== undefined ? config : null;
 }
 
-// ── Middleware runner (inline — cannot import from middleware.ts in isolate) ──
-
-async function runMiddlewareBeforeTurn(
-  middleware: readonly Middleware[],
-  text: string,
-  ctx: HookContext,
-): Promise<string | undefined> {
-  for (const mw of middleware) {
-    if (!mw.beforeTurn) continue;
-    const r = await mw.beforeTurn(text, ctx);
-    if (r && "block" in r && r.block) return r.reason;
-  }
-}
-
-async function runMiddlewareAfterTurn(
-  middleware: readonly Middleware[],
-  text: string,
-  ctx: HookContext,
-): Promise<void> {
-  for (let i = middleware.length - 1; i >= 0; i--) {
-    const mw = middleware[i];
-    if (mw?.afterTurn) await mw.afterTurn(text, ctx);
-  }
-}
-
-async function runMiddlewareToolIntercept(
-  middleware: readonly Middleware[],
-  toolName: string,
-  args: Record<string, unknown>,
+async function invokeMiddlewareHook(
+  agent: AgentDef,
+  req: HookRequest,
   ctx: HookContext,
 ): Promise<unknown> {
-  let currentArgs = args;
-  for (const mw of middleware) {
-    if (!mw.toolCallInterceptor) continue;
-    const r = await mw.toolCallInterceptor(toolName, currentArgs, ctx);
-    if (!r) continue;
-    if ("block" in r && r.block) return { type: "block", reason: r.reason };
-    if ("result" in r) return { type: "result", result: r.result };
-    if ("args" in r) currentArgs = r.args;
-  }
-  if (currentArgs !== args) return { type: "args", args: currentArgs };
-}
-
-async function runMiddlewareAfterToolCall(
-  middleware: readonly Middleware[],
-  toolName: string,
-  args: Record<string, unknown>,
-  result: string,
-  ctx: HookContext,
-): Promise<void> {
-  for (let i = middleware.length - 1; i >= 0; i--) {
-    const mw = middleware[i];
-    if (mw?.afterToolCall) await mw.afterToolCall(toolName, args, result, ctx);
-  }
-}
-
-async function runMiddlewareOutputFilter(
-  middleware: readonly Middleware[],
-  text: string,
-  ctx: HookContext,
-): Promise<string> {
-  let filtered = text;
-  for (const mw of middleware) {
-    if (mw.outputFilter) filtered = await mw.outputFilter(filtered, ctx);
-  }
-  return filtered;
-}
-
-async function invokeHook(agent: AgentDef, req: HookRequest): Promise<HookResponse> {
-  const ctx = makeHookCtx(agent, req);
-  let result: unknown;
   const middleware: readonly Middleware[] = agent.middleware ?? [];
-
-  const handlers: Record<string, () => Promise<void> | void> = {
-    onConnect: () => agent.onConnect?.(ctx),
-    onDisconnect: async () => {
-      await agent.onDisconnect?.(ctx);
-      sessionStates.delete(req.sessionId);
-    },
-    onTurn: () => agent.onTurn?.(req.text ?? "", ctx),
-    onError: () => agent.onError?.(new Error(req.error?.message ?? "Unknown error"), ctx),
-    onStep: () => {
-      if (req.step) return agent.onStep?.(req.step, ctx);
-    },
-    onBeforeStep: async () => {
-      result = await agent.onBeforeStep?.(req.stepNumber ?? 0, ctx);
-    },
-    resolveTurnConfig: async () => {
-      result = await runResolveTurnConfig(agent, ctx, req.stepNumber ?? 0);
-    },
-    // Middleware hooks
-    beforeTurn: async () => {
-      result = await runMiddlewareBeforeTurn(middleware, req.text ?? "", ctx);
-    },
-    afterTurn: async () => {
-      await runMiddlewareAfterTurn(middleware, req.text ?? "", ctx);
-    },
-    interceptToolCall: async () => {
-      result = await runMiddlewareToolIntercept(
+  switch (req.hook) {
+    case "beforeTurn": {
+      const r = await runBeforeTurnMiddleware(middleware, req.text ?? "", ctx);
+      return r?.reason;
+    }
+    case "afterTurn":
+      await runAfterTurnMiddleware(middleware, req.text ?? "", ctx);
+      return;
+    case "interceptToolCall":
+      return runToolCallInterceptors(
         middleware,
         req.step?.toolCalls[0]?.toolName ?? "",
         (req.step?.toolCalls[0]?.args as Record<string, unknown>) ?? {},
         ctx,
       );
-    },
-    afterToolCall: async () => {
-      await runMiddlewareAfterToolCall(
+    case "afterToolCall":
+      await runAfterToolCallMiddleware(
         middleware,
         req.step?.toolCalls[0]?.toolName ?? "",
         (req.step?.toolCalls[0]?.args as Record<string, unknown>) ?? {},
         req.text ?? "",
         ctx,
       );
-    },
-    filterOutput: async () => {
-      result = await runMiddlewareOutputFilter(middleware, req.text ?? "", ctx);
-    },
-  };
+      return;
+    case "filterOutput":
+      return runOutputFilters(middleware, req.text ?? "", ctx);
+    default:
+      return;
+  }
+}
 
-  const handler = handlers[req.hook];
-  if (handler) await handler();
+async function invokeHook(agent: AgentDef, req: HookRequest): Promise<HookResponse> {
+  const ctx = makeHookCtx(agent, req);
+  let result: unknown;
+
+  switch (req.hook) {
+    case "onConnect":
+      await agent.onConnect?.(ctx);
+      break;
+    case "onDisconnect":
+      await agent.onDisconnect?.(ctx);
+      sessionStates.delete(req.sessionId);
+      break;
+    case "onTurn":
+      await agent.onTurn?.(req.text ?? "", ctx);
+      break;
+    case "onError":
+      await agent.onError?.(new Error(req.error?.message ?? "Unknown error"), ctx);
+      break;
+    case "onStep":
+      if (req.step) await agent.onStep?.(req.step, ctx);
+      break;
+    case "onBeforeStep":
+      result = await agent.onBeforeStep?.(req.stepNumber ?? 0, ctx);
+      break;
+    case "resolveTurnConfig":
+      result = await runResolveTurnConfig(agent, ctx, req.stepNumber ?? 0);
+      break;
+    default:
+      result = await invokeMiddlewareHook(agent, req, ctx);
+      break;
+  }
 
   return { state: ctx.state, result };
 }
@@ -370,19 +322,6 @@ function json(res: ServerResponse, data: unknown, status = 200): void {
 // adapter redefines globalThis.Request which conflicts with secure-exec's
 // frozen built-in globals.
 
-/**
- * Handles HTTP request errors with sanitized messages. Returns a generic
- * "Internal error" for 5xx to avoid leaking stack traces, file paths, or
- * schema structures. 4xx errors use controlled messages that are safe to expose.
- */
-function handleRequestError(err: unknown, req: IncomingMessage, res: ServerResponse): void {
-  const status = (err as { status?: number }).status ?? 500;
-  const detail = err instanceof Error ? err.message : "Internal error";
-  console.error(`[harness] ${req.method} ${req.url} error (${status}):`, detail);
-  const message = status >= 500 ? "Internal error" : detail;
-  json(res, { error: message }, status);
-}
-
 export function startHarness(agent: AgentDef): void {
   if (!agent || typeof agent !== "object" || !agent.name) {
     throw new Error("Agent bundle must export a default agent definition");
@@ -406,7 +345,9 @@ export function startHarness(agent: AgentDef): void {
       }
       json(res, { error: "Not found" }, 404);
     } catch (err: unknown) {
-      handleRequestError(err, req, res);
+      const status = (err as { status?: number }).status ?? 500;
+      const message = err instanceof Error ? err.message : "Internal error";
+      json(res, { error: message }, status);
     }
   });
 
