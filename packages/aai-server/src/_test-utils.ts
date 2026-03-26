@@ -137,7 +137,9 @@ export function deployBody(overrides?: Record<string, unknown>): string {
 
 export type TestFetch = (input: string | Request, init?: RequestInit) => Promise<Response>;
 
-export async function createTestOrchestrator(): Promise<{
+export async function createTestOrchestrator(
+  overrides?: Partial<import("./orchestrator.ts").OrchestratorOpts>,
+): Promise<{
   fetch: TestFetch;
   store: BundleStore;
   scopeKey: ScopeKey;
@@ -148,7 +150,14 @@ export async function createTestOrchestrator(): Promise<{
   const scopeKey = await createTestScopeKey();
   const kvStore = createTestKvStore();
   const vectorStore = createTestVectorStore();
-  const app = createOrchestrator({ slots: new Map(), store, scopeKey, kvStore, vectorStore });
+  const app = createOrchestrator({
+    slots: new Map(),
+    store,
+    scopeKey,
+    kvStore,
+    vectorStore,
+    ...overrides,
+  });
   const fetch: TestFetch = async (input, init) => app.request(input, init);
   return { fetch, store, scopeKey, kvStore, vectorStore };
 }

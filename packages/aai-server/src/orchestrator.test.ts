@@ -1,5 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
-import { expect, test } from "vitest";
+import { describe, expect, test } from "vitest";
 import { createTestOrchestrator, deployAgent, deployBody } from "./_test-utils.ts";
 import { hashApiKey } from "./auth.ts";
 import { signScopeToken } from "./scope-token.ts";
@@ -185,4 +185,68 @@ test("kv scope isolation", async () => {
   await fetch(...kvReq("agent-a", tokenA, { op: "set", key: "secret", value: "a-data" }));
   const res = await fetch(...kvReq("agent-b", tokenB, { op: "get", key: "secret" }));
   expect(((await res.json()) as Record<string, unknown>).result).toBeNull();
+});
+
+// ── Rate limiting ──────────────────────────────────────────────────────
+
+describe("rate limiting", () => {
+  test("deploy returns 429 after exceeding limit", async () => {
+    const { fetch } = await createTestOrchestrator({
+      rateLimits: { deploy: { maxRequests: 2, windowMs: 60_000 } },
+    });
+    const opts = {
+      method: "POST",
+      headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
+      body: deployBody(),
+    };
+    expect((await fetch("/my-agent/deploy", opts)).status).toBe(200);
+    expect((await fetch("/my-agent/deploy", opts)).status).toBe(200);
+    const res = await fetch("/my-agent/deploy", opts);
+    expect(res.status).toBe(429);
+    expect(((await res.json()) as Record<string, unknown>).error).toBe("Too many requests");
+  });
+
+  test("secret list returns 429 after exceeding limit", async () => {
+    const { fetch } = await createTestOrchestrator({
+      rateLimits: { secret: { maxRequests: 2, windowMs: 60_000 } },
+    });
+    await deployAgent(fetch);
+    const opts = { headers: { Authorization: "Bearer key1" } };
+    expect((await fetch("/my-agent/secret", opts)).status).toBe(200);
+    expect((await fetch("/my-agent/secret", opts)).status).toBe(200);
+    expect((await fetch("/my-agent/secret", opts)).status).toBe(429);
+  });
+
+  test("different API keys have independent rate limits", async () => {
+    const { fetch, store } = await createTestOrchestrator({
+      rateLimits: { deploy: { maxRequests: 1, windowMs: 60_000 } },
+    });
+    // Deploy with key1 to claim the slug, then add key2 as co-owner
+    await deployAgent(fetch, "my-agent", "key1");
+    const manifest = await store.getManifest("my-agent");
+    if (!manifest) throw new Error("manifest missing");
+    const key2Hash = await hashApiKey("key2");
+    await store.putAgent({
+      slug: "my-agent",
+      env: manifest.env,
+      worker: "w",
+      clientFiles: { "index.html": "<html></html>" },
+      credential_hashes: [...(manifest.credential_hashes ?? []), key2Hash],
+    });
+
+    const opts1 = {
+      method: "POST",
+      headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
+      body: deployBody(),
+    };
+    const opts2 = {
+      method: "POST",
+      headers: { Authorization: "Bearer key2", "Content-Type": "application/json" },
+      body: deployBody(),
+    };
+    // key1 is rate-limited (used 1 in deployAgent)
+    expect((await fetch("/my-agent/deploy", opts1)).status).toBe(429);
+    // key2 still has its own budget
+    expect((await fetch("/my-agent/deploy", opts2)).status).toBe(200);
+  });
 });

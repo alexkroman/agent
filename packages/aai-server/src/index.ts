@@ -12,6 +12,7 @@ import { createBundleStore, createS3Client } from "./bundle-store-tigris.ts";
 import { deriveCredentialKey } from "./credentials.ts";
 import { createKvStore } from "./kv.ts";
 import { createOrchestrator, type OrchestratorOpts } from "./orchestrator.ts";
+import { ConnectionLimiter, RateLimiter } from "./rate-limit.ts";
 import type { AgentSlot } from "./sandbox.ts";
 import { resolveSandbox } from "./sandbox.ts";
 import { importScopeKey } from "./scope-token.ts";
@@ -73,6 +74,12 @@ async function main(): Promise<void> {
 
   const wss = new WebSocketServer({ noServer: true });
 
+  // ── WebSocket rate limiting ──────────────────────────────────────────
+  // Max 50 concurrent sessions per slug (each spawns S2S + isolate memory).
+  const wsSessionLimiter = new ConnectionLimiter(50);
+  // Max 10 WebSocket connection attempts per IP per minute.
+  const wsRateLimiter = new RateLimiter({ maxRequests: 10, windowMs: 60_000 });
+
   nodeServer.on("upgrade", async (req, socket, head) => {
     try {
       const url = new URL(req.url ?? "/", `http://localhost:${port}`);
@@ -82,7 +89,24 @@ async function main(): Promise<void> {
         return;
       }
 
+      // Per-IP rate limit on connection attempts
+      const ip =
+        req.headers["x-forwarded-for"]?.toString().split(",")[0]?.trim() ??
+        req.socket.remoteAddress ??
+        "unknown";
+      if (!wsRateLimiter.consume(ip)) {
+        socket.destroy();
+        return;
+      }
+
       const slug = match[1] as string;
+
+      // Per-slug concurrent session limit
+      if (!wsSessionLimiter.acquire(slug)) {
+        socket.destroy();
+        return;
+      }
+
       const sandbox = await resolveSandbox(slug, {
         slots: opts.slots,
         store: opts.store,
@@ -91,6 +115,7 @@ async function main(): Promise<void> {
       });
 
       if (!sandbox) {
+        wsSessionLimiter.release(slug);
         socket.destroy();
         return;
       }
@@ -98,6 +123,7 @@ async function main(): Promise<void> {
       const resume = url.searchParams.has("resume");
       wss.handleUpgrade(req, socket, head, (ws) => {
         sandbox.startSession(ws, resume);
+        ws.on("close", () => wsSessionLimiter.release(slug));
       });
     } catch (err) {
       console.error("WebSocket upgrade error:", err);

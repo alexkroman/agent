@@ -13,6 +13,7 @@ import type { KvStore } from "./kv.ts";
 import { handleKv } from "./kv-handler.ts";
 import { serialize, serializeForAgent } from "./metrics.ts";
 import { requireInternal, requireOwner, requireScopeToken, validateSlug } from "./middleware.ts";
+import { RateLimiter } from "./rate-limit.ts";
 import type { AgentSlot } from "./sandbox.ts";
 import type { ScopeKey } from "./scope-token.ts";
 import { handleSecretDelete, handleSecretList, handleSecretSet } from "./secret-handler.ts";
@@ -26,10 +27,26 @@ export type OrchestratorOpts = {
   kvStore: KvStore;
   vectorStore?: ServerVectorStore | undefined;
   scopeKey: ScopeKey;
+  /** Override default rate-limit settings (primarily for testing). */
+  rateLimits?: {
+    deploy?: { maxRequests: number; windowMs: number };
+    secret?: { maxRequests: number; windowMs: number };
+  };
 };
 
 export function createOrchestrator(opts: OrchestratorOpts): Hono<Env> {
   const app = new Hono<Env>();
+
+  // ── Rate limiters ────────────────────────────────────────────────────
+  // Deploy: 10 deploys per minute per API-key hash (deploys are heavy –
+  // each stores a 10 MB bundle and restarts the sandbox).
+  const deployLimiter = new RateLimiter(
+    opts.rateLimits?.deploy ?? { maxRequests: 10, windowMs: 60_000 },
+  );
+  // Secrets: 30 requests per minute per API-key hash.
+  const secretLimiter = new RateLimiter(
+    opts.rateLimits?.secret ?? { maxRequests: 30, windowMs: 60_000 },
+  );
 
   const slugMw = createMiddleware<Env>(async (c, next) => {
     // biome-ignore lint/style/noNonNullAssertion: slug param guaranteed by route pattern
@@ -46,6 +63,16 @@ export function createOrchestrator(opts: OrchestratorOpts): Hono<Env> {
     c.set("scope", { keyHash, slug: c.get("slug") });
     await next();
   });
+
+  /** Rate-limit middleware factory keyed on the authenticated keyHash. */
+  const rateLimitMw = (limiter: RateLimiter) =>
+    createMiddleware<Env>(async (c, next) => {
+      const key = c.get("keyHash");
+      if (!limiter.consume(key)) {
+        throw new HTTPException(429, { message: "Too many requests" });
+      }
+      await next();
+    });
 
   const internalMw = createMiddleware<Env>(async (c, next) => {
     requireInternal(c.req.raw);
@@ -111,10 +138,10 @@ export function createOrchestrator(opts: OrchestratorOpts): Hono<Env> {
     return c.redirect(url.toString(), 301);
   });
 
-  app.post("/:slug/deploy", slugMw, ownerMw, handleDeploy);
-  app.get("/:slug/secret", slugMw, ownerMw, handleSecretList);
-  app.put("/:slug/secret", slugMw, ownerMw, handleSecretSet);
-  app.delete("/:slug/secret/:key", slugMw, ownerMw, handleSecretDelete);
+  app.post("/:slug/deploy", slugMw, ownerMw, rateLimitMw(deployLimiter), handleDeploy);
+  app.get("/:slug/secret", slugMw, ownerMw, rateLimitMw(secretLimiter), handleSecretList);
+  app.put("/:slug/secret", slugMw, ownerMw, rateLimitMw(secretLimiter), handleSecretSet);
+  app.delete("/:slug/secret/:key", slugMw, ownerMw, rateLimitMw(secretLimiter), handleSecretDelete);
   app.post("/:slug/kv", internalMw, slugMw, scopeTokenMw, handleKv);
   app.post("/:slug/vector", slugMw, ownerMw, handleVector);
 
