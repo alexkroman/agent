@@ -15,12 +15,8 @@ import type { AgentConfig } from "@alexkroman1/aai/internal-types";
 import { buildReadyConfig } from "@alexkroman1/aai/protocol";
 import { DEFAULT_S2S_CONFIG } from "@alexkroman1/aai/runtime";
 // biome-ignore lint/correctness/noUnresolvedImports: d.ts re-exports use .ts extensions that biome can't resolve
-import {
-  createS2sSession,
-  type HookInvoker,
-  type Session,
-  type ToolInterceptResult,
-} from "@alexkroman1/aai/session";
+import type { HookInvoker, Session, ToolInterceptResult } from "@alexkroman1/aai/session";
+import { createS2sSession } from "@alexkroman1/aai/session";
 import type { ExecuteTool } from "@alexkroman1/aai/worker-entry";
 import { type SessionWebSocket, wireSessionSocket } from "@alexkroman1/aai/ws-handler";
 import {
