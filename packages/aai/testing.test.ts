@@ -62,7 +62,7 @@ describe("createTestHarness", () => {
   test("executeTool validates arguments", async () => {
     const t = createTestHarness(pizzaAgent);
     const result = await t.executeTool("add_pizza", { size: "huge", toppings: [] });
-    expect(result).toContain("Error");
+    expect(result).toContain("error");
   });
 
   test("env vars are passed to tool context", async () => {
