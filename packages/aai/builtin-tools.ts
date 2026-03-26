@@ -10,7 +10,7 @@ import { convert } from "html-to-text";
 import { z } from "zod";
 import { EMPTY_PARAMS, type ToolSchema } from "./_internal-types.ts";
 import { ssrfSafeFetch } from "./_ssrf.ts";
-import { errorMessage } from "./_utils.ts";
+import { errorMessage, isReadOnlyFsOp } from "./_utils.ts";
 import { memoryTools } from "./memory-tools.ts";
 import type { ToolDef } from "./types.ts";
 
@@ -234,8 +234,6 @@ try {
 }
 `;
 
-const READ_ONLY_FS_OPS = new Set(["read", "stat", "readdir", "exists"]);
-
 /** Parse stdout from the run_code harness into a result or error. */
 function parseIsolateOutput(stdout: string, stderr: string): string | { error: string } {
   if (!stdout) {
@@ -278,7 +276,7 @@ export async function executeInIsolate(code: string): Promise<string | { error: 
       filesystem: fs,
       permissions: {
         fs: (req) =>
-          READ_ONLY_FS_OPS.has(req.op)
+          isReadOnlyFsOp(req.op)
             ? { allow: true }
             : { allow: false, reason: "Filesystem is read-only" },
         network: () => ({ allow: false, reason: "Network access is disabled in run_code" }),

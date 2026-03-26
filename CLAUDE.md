@@ -74,12 +74,14 @@ Internal (exported in package.json but not part of public API):
 - `./telemetry` — OpenTelemetry tracer, meter, pre-built metrics, `withSpan` helper
 - `./utils` — shared utility functions
 - `./ssrf` — SSRF protection (`assertPublicUrl`, `isPrivateIp`, `ssrfSafeFetch`)
+- `./middleware-core` — pure middleware runner functions (zero runtime deps,
+  isolate-safe; bundled into the harness runtime)
 
 Non-exported internal files (used within the package only):
 
 - `builtin-tools.ts` — built-in tool definitions + memory tools
 - `direct-executor.ts` — in-process tool execution (self-hosted)
-- `middleware.ts` — middleware runner for turns, tool calls, and output filtering
+- `middleware.ts` — middleware re-exports from middleware-core + `HookInvoker`
 
 #### `@alexkroman1/aai-ui` (UI)
 

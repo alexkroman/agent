@@ -90,6 +90,11 @@
       "source": "./_ssrf.ts",
       "types": "./dist/_ssrf.d.ts",
       "import": "./dist/_ssrf.js"
+    },
+    "./middleware-core": {
+      "source": "./middleware-core.ts",
+      "types": "./dist/middleware-core.d.ts",
+      "import": "./dist/middleware-core.js"
     }
   },
   "scripts": {
