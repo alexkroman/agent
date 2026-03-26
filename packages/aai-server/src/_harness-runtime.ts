@@ -138,6 +138,13 @@ function extractConfig(agent: AgentDef): IsolateConfig {
 
 // ── Tool execution ───────────────────────────────────────────────────────
 
+/**
+ * Timeout for tool execution inside the isolate. Set slightly under the
+ * host's TOOL_TIMEOUT_MS (30 s) so the isolate returns a clean error
+ * before the host-side timeout fires.
+ */
+const ISOLATE_TOOL_TIMEOUT_MS = 25_000;
+
 async function executeTool(agent: AgentDef, req: ToolCallRequest): Promise<ToolCallResponse> {
   const tool = agent.tools[req.name];
   if (!tool) throw Object.assign(new Error(`Unknown tool: ${req.name}`), { status: 404 });
@@ -155,7 +162,15 @@ async function executeTool(agent: AgentDef, req: ToolCallRequest): Promise<ToolC
       ? tool.parameters.parse(req.args)
       : req.args;
 
-  const result = await tool.execute(parsed, ctx);
+  const result = await Promise.race([
+    tool.execute(parsed, ctx),
+    new Promise<never>((_resolve, reject) => {
+      setTimeout(
+        () => reject(new Error(`Tool "${req.name}" timed out after ${ISOLATE_TOOL_TIMEOUT_MS}ms`)),
+        ISOLATE_TOOL_TIMEOUT_MS,
+      );
+    }),
+  ]);
   return {
     result: typeof result === "string" ? result : JSON.stringify(result),
     state: ctx.state,
