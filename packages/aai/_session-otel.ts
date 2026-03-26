@@ -7,7 +7,6 @@
  * pipeline: tool calls, user turns, barge-ins, and session lifecycle.
  */
 
-import { errorDetail, errorMessage } from "./_utils.ts";
 import { HOOK_TIMEOUT_MS, MAX_TOOL_RESULT_CHARS } from "./protocol.ts";
 import type { S2sHandle, S2sToolCall } from "./s2s.ts";
 import type { S2sSessionCtx } from "./session.ts";
@@ -19,6 +18,7 @@ import {
   tracer,
   turnCounter,
 } from "./telemetry.ts";
+import { errorDetail, errorMessage } from "./utils.ts";
 
 export { activeSessionsUpDown, sessionCounter } from "./telemetry.ts";
 
