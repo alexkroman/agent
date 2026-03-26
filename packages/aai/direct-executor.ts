@@ -6,6 +6,7 @@
  * Tools execute directly in-process — no sandbox, no RPC.
  */
 
+import { mkdirSync } from "node:fs";
 import {
   type AgentConfig,
   agentToolsToSchemas,
@@ -16,7 +17,7 @@ import { ssrfSafeFetch } from "./_ssrf.ts";
 import { createSessionStateMap, toolError } from "./_utils.ts";
 import { getBuiltinToolDefs, getBuiltinToolSchemas } from "./builtin-tools.ts";
 import type { Kv } from "./kv.ts";
-import { createMemoryKv } from "./kv.ts";
+import { createLanceDbVectorStore } from "./lancedb-vector.ts";
 import {
   runAfterToolCallMiddleware,
   runAfterTurnMiddleware,
@@ -30,11 +31,51 @@ import type { Logger, S2SConfig } from "./runtime.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime.ts";
 import type { CreateS2sWebSocket } from "./s2s.ts";
 import { createS2sSession, type HookInvoker, type Session } from "./session.ts";
+import { createSqliteKv } from "./sqlite-kv.ts";
 import type { AgentDef, HookContext, Middleware, StepInfo } from "./types.ts";
 import type { VectorStore } from "./vector.ts";
-import { createMemoryVectorStore } from "./vector.ts";
 import type { ExecuteTool } from "./worker-entry.ts";
 import { executeToolCall } from "./worker-entry.ts";
+
+/** Create a SQLite-backed KV store in `.aai/local.db`. */
+function createLocalKv(): Kv {
+  mkdirSync(".aai", { recursive: true });
+  return createSqliteKv();
+}
+
+/** Create a LanceDB-backed vector store in `.aai/lancedb` with lazy async init. */
+function createLocalVectorStore(): VectorStore {
+  mkdirSync(".aai", { recursive: true });
+  return lazyVectorStore(() => createLanceDbVectorStore({ path: ".aai/lancedb" }));
+}
+
+/**
+ * Wrap an async VectorStore factory in a synchronous VectorStore that
+ * lazily initializes on first use. Keeps the public API synchronous.
+ */
+function lazyVectorStore(init: () => Promise<VectorStore>): VectorStore {
+  let store: VectorStore | null = null;
+  let promise: Promise<VectorStore> | null = null;
+  function getStore(): Promise<VectorStore> {
+    if (store) return Promise.resolve(store);
+    promise ??= init().then((s) => {
+      store = s;
+      return s;
+    });
+    return promise;
+  }
+  return {
+    async upsert(id, data, metadata?) {
+      return (await getStore()).upsert(id, data, metadata);
+    },
+    async query(text, options?) {
+      return (await getStore()).query(text, options);
+    },
+    async delete(ids) {
+      return (await getStore()).delete(ids);
+    },
+  };
+}
 
 /**
  * Configuration for creating a direct (in-process) tool executor for self-hosted mode.
@@ -100,8 +141,8 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
   const {
     agent,
     env,
-    kv = createMemoryKv(),
-    vector = createMemoryVectorStore(),
+    kv = createLocalKv(),
+    vector = createLocalVectorStore(),
     vectorSearch,
     createWebSocket,
     logger = consoleLogger,

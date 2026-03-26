@@ -19,6 +19,7 @@ import type { Logger, S2SConfig } from "./runtime.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime.ts";
 import type { Session } from "./session.ts";
 import type { AgentDef } from "./types.ts";
+import type { VectorStore } from "./vector.ts";
 import { type SessionWebSocket, wireSessionSocket } from "./ws-handler.ts";
 
 /**
@@ -32,8 +33,10 @@ export type ServerOptions = {
   agent: AgentDef<any>;
   /** Environment variables. Defaults to `process.env`. */
   env?: Record<string, string>;
-  /** KV store. Defaults to in-memory. */
+  /** KV store. Defaults to SQLite-backed (`.aai/local.db`). */
   kv?: Kv;
+  /** Vector store. Defaults to SQLite-backed (`.aai/local.db`). */
+  vector?: VectorStore;
   /** HTML to serve at `GET /`. */
   clientHtml?: string;
   /** Directory containing built client files (index.html + assets/). */
@@ -108,6 +111,7 @@ export function createServer(options: ServerOptions): AgentServer {
   const {
     agent,
     kv,
+    vector,
     clientHtml,
     clientDir,
     logger = consoleLogger,
@@ -117,7 +121,14 @@ export function createServer(options: ServerOptions): AgentServer {
 
   const env = filterEnv(options.env ?? (typeof process !== "undefined" ? process.env : {}));
 
-  const executor = createDirectExecutor({ agent, env, ...(kv ? { kv } : {}), logger, s2sConfig });
+  const executor = createDirectExecutor({
+    agent,
+    env,
+    ...(kv ? { kv } : {}),
+    ...(vector ? { vector } : {}),
+    logger,
+    s2sConfig,
+  });
   const sessions = new Map<string, Session>();
   const readyConfig = buildReadyConfig(s2sConfig);
   const safeAgentName = escapeHtml(agent.name);

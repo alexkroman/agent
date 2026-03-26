@@ -1,11 +1,11 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
 import { createMockToolContext } from "./_test-utils.ts";
-import { createMemoryKv } from "./kv.ts";
 import { memoryTools } from "./memory-tools.ts";
+import { createSqliteKv } from "./sqlite-kv.ts";
 
 function setup() {
-  const kv = createMemoryKv();
+  const kv = createSqliteKv({ path: ":memory:" });
   const tools = memoryTools();
   const ctx = createMockToolContext({ kv });
   return { kv, tools, ctx };

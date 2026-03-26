@@ -5,12 +5,16 @@
  * These test the connected flow as a consumer would use it:
  * defineAgent → tools → direct executor → KV/vector in tool context.
  */
+
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import { buildAgentConfig, createDirectExecutor } from "./direct-executor.ts";
-import { createMemoryKv } from "./kv.ts";
+import { createLanceDbVectorStore, createTestEmbedFn } from "./lancedb-vector.ts";
+import { createSqliteKv } from "./sqlite-kv.ts";
 import { defineAgent, defineTool } from "./types.ts";
-import { createMemoryVectorStore } from "./vector.ts";
 
 describe("SDK integration: defineAgent → tool execution", () => {
   test("defineAgent + defineTool() + executeToolCall round-trip", async () => {
@@ -31,7 +35,7 @@ describe("SDK integration: defineAgent → tool execution", () => {
   });
 
   test("tool with KV access works end-to-end", async () => {
-    const kv = createMemoryKv();
+    const kv = createSqliteKv({ path: ":memory:" });
     const agent = defineAgent({
       name: "kv-agent",
       tools: {
@@ -61,7 +65,8 @@ describe("SDK integration: defineAgent → tool execution", () => {
   });
 
   test("tool with vector store access works end-to-end", async () => {
-    const vector = createMemoryVectorStore();
+    const dir = mkdtempSync(join(tmpdir(), "aai-int-vec-"));
+    const vector = await createLanceDbVectorStore({ path: dir, embedFn: createTestEmbedFn() });
     const agent = defineAgent({
       name: "vector-agent",
       tools: {

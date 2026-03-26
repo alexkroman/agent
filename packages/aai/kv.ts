@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Key-value storage interface and in-memory implementation.
+ * Key-value storage interface and shared utilities.
  */
 
 /**
@@ -121,7 +121,7 @@ export function sortAndPaginate<T extends { key: string }>(
 const MAX_GLOB_PATTERN_LENGTH = 1024;
 
 /** Simple glob matcher — supports `*` as a wildcard for any characters. */
-function matchGlob(key: string, pattern: string): boolean {
+export function matchGlob(key: string, pattern: string): boolean {
   if (pattern.length > MAX_GLOB_PATTERN_LENGTH) {
     throw new Error(`Glob pattern exceeds maximum length of ${MAX_GLOB_PATTERN_LENGTH}`);
   }
@@ -147,117 +147,4 @@ function matchGlob(key: string, pattern: string): boolean {
     pos = idx + part.length;
   }
   return pos <= end;
-}
-
-/**
- * Create an in-memory KV store (useful for testing and local development).
- *
- * Data is stored in a plain `Map` and does not persist across restarts.
- * TTL expiration is checked lazily on reads and list operations.
- *
- * @returns A {@link Kv} instance backed by in-memory storage.
- *
- * @example
- * ```ts
- * import { createMemoryKv } from "./kv.ts";
- *
- * const kv = createMemoryKv();
- * await kv.set("greeting", "hello");
- * const value = await kv.get<string>("greeting"); // "hello"
- * ```
- *
- * @example With TTL
- * ```ts
- * import { createMemoryKv } from "./kv.ts";
- *
- * const kv = createMemoryKv();
- * await kv.set("temp", "expires soon", { expireIn: 5000 });
- * ```
- */
-export function createMemoryKv(): Kv {
-  const store = new Map<string, { raw: string; expiresAt?: number }>();
-
-  function isExpired(entry: { expiresAt?: number }): boolean {
-    return entry.expiresAt !== undefined && entry.expiresAt <= Date.now();
-  }
-
-  function purgeExpired(now: number): void {
-    for (const [key, entry] of store) {
-      if (entry.expiresAt && entry.expiresAt <= now) store.delete(key);
-    }
-  }
-
-  function matchesPattern(key: string, pattern?: string, isGlob?: boolean): boolean {
-    if (!pattern) return true;
-    return isGlob ? matchGlob(key, pattern) : key.startsWith(pattern);
-  }
-
-  return {
-    get<T = unknown>(key: string): Promise<T | null> {
-      const entry = store.get(key);
-      if (!entry || isExpired(entry)) {
-        if (entry) store.delete(key);
-        return Promise.resolve(null);
-      }
-      return Promise.resolve(JSON.parse(entry.raw) as T);
-    },
-
-    set(key: string, value: unknown, options?: { expireIn?: number }): Promise<void> {
-      try {
-        const raw = JSON.stringify(value);
-        if (raw.length > MAX_VALUE_SIZE) {
-          return Promise.reject(new Error(`Value exceeds max size of ${MAX_VALUE_SIZE} bytes`));
-        }
-        const expireIn = options?.expireIn;
-        const entry: { raw: string; expiresAt?: number } = { raw };
-        if (expireIn && expireIn > 0) {
-          entry.expiresAt = Date.now() + expireIn;
-        }
-        store.set(key, entry);
-        return Promise.resolve();
-      } catch (err) {
-        return Promise.reject(err);
-      }
-    },
-
-    delete(keys: string | string[]): Promise<void> {
-      const keyArray = Array.isArray(keys) ? keys : [keys];
-      for (const k of keyArray) store.delete(k);
-      return Promise.resolve();
-    },
-
-    async list<T = unknown>(prefix: string, options?: KvListOptions): Promise<KvEntry<T>[]> {
-      const now = Date.now();
-      const entries: KvEntry<T>[] = [];
-      const expiredKeys: string[] = [];
-      let i = 0;
-      for (const [key, entry] of store) {
-        if (++i % 500 === 0) await new Promise<void>((r) => setTimeout(r, 0));
-        if (entry.expiresAt && entry.expiresAt <= now) {
-          expiredKeys.push(key);
-          continue;
-        }
-        if (key.startsWith(prefix)) {
-          entries.push({ key, value: JSON.parse(entry.raw) as T });
-        }
-      }
-      // Delete expired keys after iteration completes to avoid mutating
-      // the Map while iterating (the yield via setTimeout above gives
-      // other code a chance to run between iterations).
-      for (const key of expiredKeys) store.delete(key);
-      return sortAndPaginate(entries, options);
-    },
-
-    // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: glob pattern matching inherently branchy
-    async keys(pattern?: string): Promise<string[]> {
-      const now = Date.now();
-      const result: string[] = [];
-      const isGlob = pattern?.includes("*");
-      purgeExpired(now);
-      for (const [key] of store) {
-        if (matchesPattern(key, pattern, isGlob)) result.push(key);
-      }
-      return result.sort((a, b) => a.localeCompare(b));
-    },
-  };
 }

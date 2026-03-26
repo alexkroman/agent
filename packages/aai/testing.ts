@@ -37,10 +37,15 @@
  * @packageDocumentation
  */
 
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createDirectExecutor, type DirectExecutor } from "./direct-executor.ts";
-import { createMemoryKv, type Kv } from "./kv.ts";
+import type { Kv } from "./kv.ts";
+import { createLanceDbVectorStore, createTestEmbedFn } from "./lancedb-vector.ts";
+import { createSqliteKv } from "./sqlite-kv.ts";
 import type { AgentDef, Message, StepInfo } from "./types.ts";
-import { createMemoryVectorStore, type VectorStore } from "./vector.ts";
+import type { VectorStore } from "./vector.ts";
 
 export { installMockWebSocket, MockWebSocket } from "./_mock-ws.ts";
 
@@ -169,9 +174,9 @@ export class TurnResult {
 export type TestHarnessOptions = {
   /** Environment variables available to tools via `ctx.env`. */
   env?: Record<string, string>;
-  /** KV store instance. Defaults to an in-memory store. */
+  /** KV store instance. Defaults to an in-memory SQLite store. */
   kv?: Kv;
-  /** Vector store instance. Defaults to an in-memory store. */
+  /** Vector store instance. Defaults to an in-memory SQLite store. */
   vector?: VectorStore;
 };
 
@@ -381,6 +386,38 @@ export class TestHarness {
 }
 
 /**
+ * Create a LanceDB-backed vector store with deterministic test embeddings.
+ * Uses a temp directory that is unique per call for test isolation.
+ */
+function createTestVectorStore(): VectorStore {
+  const dir = mkdtempSync(join(tmpdir(), "aai-test-vec-"));
+  let store: VectorStore | null = null;
+  let promise: Promise<VectorStore> | null = null;
+  function getStore(): Promise<VectorStore> {
+    if (store) return Promise.resolve(store);
+    promise ??= createLanceDbVectorStore({
+      path: dir,
+      embedFn: createTestEmbedFn(),
+    }).then((s) => {
+      store = s;
+      return s;
+    });
+    return promise;
+  }
+  return {
+    async upsert(id, data, metadata?) {
+      return (await getStore()).upsert(id, data, metadata);
+    },
+    async query(text, options?) {
+      return (await getStore()).query(text, options);
+    },
+    async delete(ids) {
+      return (await getStore()).delete(ids);
+    },
+  };
+}
+
+/**
  * Create a test harness for unit-testing an agent.
  *
  * The harness wraps the agent's tool definitions and lifecycle hooks,
@@ -414,7 +451,11 @@ export function createTestHarness(
   agent: AgentDef<any>,
   options: TestHarnessOptions = {},
 ): TestHarness {
-  const { env = {}, kv = createMemoryKv(), vector = createMemoryVectorStore() } = options;
+  const {
+    env = {},
+    kv = createSqliteKv({ path: ":memory:" }),
+    vector = createTestVectorStore(),
+  } = options;
 
   const executor = createDirectExecutor({ agent, env, kv, vector });
   const sessionId = `test-${Date.now()}`;

@@ -43,6 +43,10 @@
       "esbuild",
       "isolated-vm",
       "lefthook"
+    ],
+    "onlyBuiltDependencies": [
+      "@lancedb/lancedb",
+      "better-sqlite3"
     ]
   }
 }

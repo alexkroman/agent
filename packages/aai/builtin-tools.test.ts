@@ -2,7 +2,7 @@
 import { describe, expect, test, vi } from "vitest";
 import { createMockToolContext } from "./_test-utils.ts";
 import { getBuiltinToolDefs, getBuiltinToolSchemas, memoryTools } from "./builtin-tools.ts";
-import { createMemoryKv } from "./kv.ts";
+import { createSqliteKv } from "./sqlite-kv.ts";
 
 describe("getBuiltinToolSchemas", () => {
   test("returns requested tools", () => {
@@ -545,7 +545,7 @@ describe("getBuiltinToolDefs", () => {
 
 describe("memoryTools", () => {
   test("save_memory saves to kv and returns key", async () => {
-    const kv = createMemoryKv();
+    const kv = createSqliteKv({ path: ":memory:" });
     const tools = memoryTools();
     const ctx = createMockToolContext({ kv });
 
@@ -555,7 +555,7 @@ describe("memoryTools", () => {
   });
 
   test("recall_memory returns found value", async () => {
-    const kv = createMemoryKv();
+    const kv = createSqliteKv({ path: ":memory:" });
     await kv.set("test:key", "test-value");
     const tools = memoryTools();
     const ctx = createMockToolContext({ kv });
@@ -565,7 +565,7 @@ describe("memoryTools", () => {
   });
 
   test("recall_memory returns not found for missing key", async () => {
-    const kv = createMemoryKv();
+    const kv = createSqliteKv({ path: ":memory:" });
     const tools = memoryTools();
     const ctx = createMockToolContext({ kv });
 
@@ -574,7 +574,7 @@ describe("memoryTools", () => {
   });
 
   test("list_memories lists keys with prefix filter", async () => {
-    const kv = createMemoryKv();
+    const kv = createSqliteKv({ path: ":memory:" });
     await kv.set("user:name", "Alice");
     await kv.set("user:age", "30");
     await kv.set("project:id", "123");
@@ -592,7 +592,7 @@ describe("memoryTools", () => {
   });
 
   test("list_memories lists all keys with empty prefix", async () => {
-    const kv = createMemoryKv();
+    const kv = createSqliteKv({ path: ":memory:" });
     await kv.set("a", "1");
     await kv.set("b", "2");
     const tools = memoryTools();
@@ -606,7 +606,7 @@ describe("memoryTools", () => {
   });
 
   test("forget_memory deletes from kv", async () => {
-    const kv = createMemoryKv();
+    const kv = createSqliteKv({ path: ":memory:" });
     await kv.set("to-delete", "val");
     const tools = memoryTools();
     const ctx = createMockToolContext({ kv });
