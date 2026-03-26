@@ -34,7 +34,7 @@
     "@smithy/types": "^4.13.1",
     "@types/mime-types": "^3.0.1",
     "@types/ws": "^8.18.1",
-    "tsdown": "^0.21.4"
+    "tsdown": "^0.21.5"
   },
   "engines": {
     "node": ">=22.6"
