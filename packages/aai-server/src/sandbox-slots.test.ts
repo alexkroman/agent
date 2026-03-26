@@ -139,6 +139,40 @@ describe("ensureAgent", () => {
     expect(sandbox.terminate).toHaveBeenCalledOnce();
   });
 
+  it("concurrent calls during termination share the same new sandbox", async () => {
+    const slot = makeSlot();
+    const opts = makeEnsureOpts();
+
+    // Create initial sandbox
+    await ensureAgent(slot, opts);
+    expect(mockCreateSandbox).toHaveBeenCalledTimes(1);
+
+    // Use a deferred promise so we control when terminate() resolves
+    let resolveTerminate!: () => void;
+    const terminatePromise = new Promise<void>((r) => {
+      resolveTerminate = r;
+    });
+    // biome-ignore lint/style/noNonNullAssertion: sandbox is set above
+    slot.sandbox!.terminate = vi.fn(() => terminatePromise);
+
+    // Trigger idle eviction — sandbox is deleted, termination starts
+    vi.advanceTimersByTime(_slotInternals.IDLE_MS + 1);
+    expect(slot.sandbox).toBeUndefined();
+    expect(slot.terminating).toBeDefined();
+
+    // Two concurrent ensureAgent calls while termination is in progress
+    const p1 = ensureAgent(slot, opts);
+    const p2 = ensureAgent(slot, opts);
+
+    // Let termination complete
+    resolveTerminate();
+    const [sb1, sb2] = await Promise.all([p1, p2]);
+
+    // Both should get the same sandbox, only one new createSandbox call
+    expect(sb1).toBe(sb2);
+    expect(mockCreateSandbox).toHaveBeenCalledTimes(2);
+  });
+
   it("resets idle timer on subsequent ensureAgent calls", async () => {
     const slot = makeSlot();
     const opts = makeEnsureOpts();
