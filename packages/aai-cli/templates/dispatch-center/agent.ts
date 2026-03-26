@@ -1,10 +1,6 @@
-import { defineAgent, type ToolDef } from "@alexkroman1/aai";
+import { createToolFactory, defineAgent } from "@alexkroman1/aai";
 import { z } from "zod";
 import type { HookContext, ToolContext } from "@alexkroman1/aai";
-
-function dispatchTool<P extends z.ZodObject<z.ZodRawShape>>(def: ToolDef<P, DispatchState>): ToolDef<P, DispatchState> {
-  return def;
-}
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -73,6 +69,8 @@ interface DispatchState {
   alertLevel: "green" | "yellow" | "orange" | "red"; // system-wide
   mutualAidRequested: boolean;
 }
+
+const dispatchTool = createToolFactory<DispatchState>();
 
 // ─── Session state ───────────────────────────────────────────────────────────
 

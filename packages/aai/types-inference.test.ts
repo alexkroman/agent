@@ -10,7 +10,7 @@
 import { describe, expectTypeOf, test } from "vitest";
 import { z } from "zod";
 import type { AgentDef, HookContext, Message, ToolContext, ToolDef } from "./types.ts";
-import { defineAgent, defineTool } from "./types.ts";
+import { createToolFactory, defineAgent, defineTool } from "./types.ts";
 
 describe("defineTool() type inference", () => {
   test("infers parameter types in execute args", () => {
@@ -60,6 +60,58 @@ describe("defineTool() type inference", () => {
     expectTypeOf<HookContext>().toHaveProperty("kv");
     expectTypeOf<HookContext>().toHaveProperty("env");
     expectTypeOf<HookContext>().not.toHaveProperty("messages");
+  });
+});
+
+describe("createToolFactory() type inference", () => {
+  test("bakes state type into returned helper", () => {
+    type MyState = { count: number };
+    const tool = createToolFactory<MyState>();
+
+    const _t = tool({
+      description: "inc",
+      parameters: z.object({ by: z.number() }),
+      execute: (args, ctx) => {
+        expectTypeOf(args).toEqualTypeOf<{ by: number }>();
+        expectTypeOf(ctx.state).toEqualTypeOf<MyState>();
+      },
+    });
+
+    type Args = Parameters<typeof _t.execute>[0];
+    expectTypeOf<Args>().toEqualTypeOf<{ by: number }>();
+  });
+
+  test("works with defineAgent tools field", () => {
+    type MyState = { items: string[] };
+    const tool = createToolFactory<MyState>();
+
+    defineAgent<MyState>({
+      name: "factory-test",
+      state: () => ({ items: [] }),
+      tools: {
+        add: tool({
+          description: "Add item",
+          parameters: z.object({ item: z.string() }),
+          execute: ({ item }, ctx) => {
+            expectTypeOf(item).toBeString();
+            expectTypeOf(ctx.state).toEqualTypeOf<MyState>();
+            ctx.state.items.push(item);
+          },
+        }),
+      },
+    });
+  });
+
+  test("tool without parameters still works", () => {
+    type MyState = { ready: boolean };
+    const tool = createToolFactory<MyState>();
+
+    const _t = tool({
+      description: "reset",
+      execute: (_args, ctx) => {
+        expectTypeOf(ctx.state).toEqualTypeOf<MyState>();
+      },
+    });
   });
 });
 

@@ -276,6 +276,48 @@ export function defineTool<P extends z.ZodObject<z.ZodRawShape>, S = Record<stri
 export { defineTool as tool };
 
 /**
+ * Create a typed `defineTool` helper with the session state type baked in.
+ *
+ * When tools need access to typed session state, you'd normally have to write
+ * verbose generics on every `defineTool` call. `createToolFactory` eliminates
+ * that boilerplate by returning a `defineTool` variant that already knows `S`.
+ *
+ * @example
+ * ```ts
+ * import { createToolFactory, defineAgent } from "aai";
+ * import { z } from "zod";
+ *
+ * interface PortfolioState { holdings: Map<string, number> }
+ *
+ * const tool = createToolFactory<PortfolioState>();
+ *
+ * export default defineAgent<PortfolioState>({
+ *   name: "portfolio",
+ *   state: () => ({ holdings: new Map() }),
+ *   tools: {
+ *     buy: tool({
+ *       description: "Buy shares",
+ *       parameters: z.object({ symbol: z.string(), qty: z.number() }),
+ *       execute: (args, ctx) => {
+ *         // args.symbol is string, ctx.state is PortfolioState
+ *         ctx.state.holdings.set(args.symbol, args.qty);
+ *       },
+ *     }),
+ *   },
+ * });
+ * ```
+ *
+ * @public
+ */
+export function createToolFactory<S = Record<string, unknown>>(): <
+  P extends z.ZodObject<z.ZodRawShape>,
+>(
+  def: ToolDef<P, S>,
+) => ToolDef<P, S> {
+  return (def) => def;
+}
+
+/**
  * Information about a completed agentic step, passed to the `onStep` hook.
  *
  * Each turn may consist of multiple steps (up to `maxSteps`). A step

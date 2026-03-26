@@ -1,4 +1,4 @@
-import { defineAgent, type ToolDef } from "@alexkroman1/aai";
+import { createToolFactory, defineAgent } from "@alexkroman1/aai";
 import { z } from "zod";
 
 /**
@@ -14,12 +14,7 @@ interface TaskState {
   owner: string;
 }
 
-/** Helper to preserve state generic through tool definitions. */
-function taskTool<P extends z.ZodObject<z.ZodRawShape>>(
-  def: ToolDef<P, TaskState>,
-): ToolDef<P, TaskState> {
-  return def;
-}
+const taskTool = createToolFactory<TaskState>();
 
 export default defineAgent<TaskState>({
   name: "Test Patterns",

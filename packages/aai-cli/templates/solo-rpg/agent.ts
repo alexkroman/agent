@@ -1,4 +1,4 @@
-import { defineAgent, type ToolDef } from "@alexkroman1/aai";
+import { createToolFactory, defineAgent } from "@alexkroman1/aai";
 import type { HookContext } from "@alexkroman1/aai";
 import { z } from "zod";
 
@@ -289,9 +289,7 @@ const defaultState: GameState = {
   kidMode: false,
 };
 
-function gameTool<P extends z.ZodObject<z.ZodRawShape>>(def: ToolDef<P, GameState>): ToolDef<P, GameState> {
-  return def;
-}
+const gameTool = createToolFactory<GameState>();
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function d(sides: number): number {
