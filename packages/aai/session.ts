@@ -58,7 +58,7 @@ export const _internals = {
 
 // ─── Session context ─────────────────────────────────────────────────────────
 
-type PendingTool = { call_id: string; result: string };
+type PendingTool = { callId: string; result: string };
 
 /** Mutable state + dependencies shared across session helper functions. */
 export type S2sSessionCtx = {
@@ -201,7 +201,7 @@ export function createS2sSession(opts: SessionOptions): Session {
       }
       setupListeners(ctx, handle);
       handle.updateSession({
-        system_prompt: systemPrompt,
+        systemPrompt,
         tools: s2sTools,
         ...(agentConfig.greeting ? { greeting: agentConfig.greeting } : {}),
       });
