@@ -13,6 +13,7 @@ export {
   runAfterToolCallMiddleware,
   runAfterTurnMiddleware,
   runBeforeTurnMiddleware,
+  runInputFilters,
   runOutputFilters,
   runToolCallInterceptors,
   type ToolInterceptResult,
@@ -30,6 +31,7 @@ export type HookInvoker = {
     step: number,
     ms?: number,
   ): Promise<{ maxSteps?: number; activeTools?: string[] } | null>;
+  filterInput?(sid: string, text: string, ms?: number): Promise<string>;
   beforeTurn?(sid: string, text: string, ms?: number): Promise<string | undefined>;
   afterTurn?(sid: string, text: string, ms?: number): Promise<void>;
   interceptToolCall?(

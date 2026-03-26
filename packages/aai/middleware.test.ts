@@ -4,6 +4,7 @@ import {
   runAfterToolCallMiddleware,
   runAfterTurnMiddleware,
   runBeforeTurnMiddleware,
+  runInputFilters,
   runOutputFilters,
   runToolCallInterceptors,
 } from "./middleware.ts";
@@ -55,6 +56,83 @@ describe("runBeforeTurnMiddleware", () => {
     const mw: Middleware[] = [{ name: "no-hook" }, { name: "has-hook", beforeTurn: vi.fn() }];
     await runBeforeTurnMiddleware(mw, "hello", makeCtx());
     expect(mw[1]?.beforeTurn).toHaveBeenCalledOnce();
+  });
+});
+
+describe("runInputFilters", () => {
+  test("pipes text through filters in order", async () => {
+    const mw: Middleware[] = [
+      { name: "upper", beforeInput: (text) => text.toUpperCase() },
+      { name: "trim", beforeInput: (text) => text.trim() },
+    ];
+    const result = await runInputFilters(mw, "  hello  ", makeCtx());
+    expect(result).toBe("HELLO");
+  });
+
+  test("returns original text when no filters", async () => {
+    const result = await runInputFilters([], "hello", makeCtx());
+    expect(result).toBe("hello");
+  });
+
+  test("PII redaction pattern for input", async () => {
+    const mw: Middleware[] = [
+      {
+        name: "pii-input",
+        beforeInput: (text) => text.replace(/\b\d{3}[-.]?\d{2}[-.]?\d{4}\b/g, "[SSN REDACTED]"),
+      },
+    ];
+    const result = await runInputFilters(mw, "My SSN is 123-45-6789", makeCtx());
+    expect(result).toBe("My SSN is [SSN REDACTED]");
+  });
+
+  test("skips middleware without beforeInput", async () => {
+    const mw: Middleware[] = [
+      { name: "no-filter" },
+      { name: "has-filter", beforeInput: (text) => `[${text}]` },
+    ];
+    const result = await runInputFilters(mw, "hello", makeCtx());
+    expect(result).toBe("[hello]");
+  });
+
+  test("supports async input filters", async () => {
+    const mw: Middleware[] = [
+      {
+        name: "async-filter",
+        beforeInput: async (text) => {
+          await new Promise((r) => setTimeout(r, 1));
+          return text.replace(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g, "[EMAIL]");
+        },
+      },
+    ];
+    const result = await runInputFilters(mw, "email me at test@example.com", makeCtx());
+    expect(result).toBe("email me at [EMAIL]");
+  });
+
+  test("multiple input filters chain correctly", async () => {
+    const mw: Middleware[] = [
+      { name: "redact-ssn", beforeInput: (t) => t.replace(/\d{3}-\d{2}-\d{4}/g, "[SSN]") },
+      { name: "redact-email", beforeInput: (t) => t.replace(/\b\S+@\S+\.\S+\b/g, "[EMAIL]") },
+    ];
+    const result = await runInputFilters(mw, "SSN 123-45-6789 email user@test.com", makeCtx());
+    expect(result).toBe("SSN [SSN] email [EMAIL]");
+  });
+
+  test("beforeInput runs before beforeTurn sees the text", async () => {
+    const seenByBeforeTurn: string[] = [];
+    const mw: Middleware[] = [
+      {
+        name: "redactor",
+        beforeInput: (text) => text.replace(/secret/g, "[REDACTED]"),
+        beforeTurn: (text) => {
+          seenByBeforeTurn.push(text);
+        },
+      },
+    ];
+    const filtered = await runInputFilters(mw, "the secret code", makeCtx());
+    expect(filtered).toBe("the [REDACTED] code");
+    // Simulate the session flow: beforeTurn receives the filtered text
+    await runBeforeTurnMiddleware(mw, filtered, makeCtx());
+    expect(seenByBeforeTurn).toEqual(["the [REDACTED] code"]);
   });
 });
 
@@ -399,6 +477,35 @@ describe("middleware error propagation (fail-open)", () => {
     ];
     const result = await runToolCallInterceptors(mw, "tool", {}, makeCtx());
     expect(result).toBeUndefined();
+  });
+
+  test("beforeInput: throwing filter is caught, original text preserved", async () => {
+    const mw: Middleware[] = [
+      {
+        name: "thrower",
+        beforeInput: () => {
+          throw new Error("input filter boom");
+        },
+      },
+    ];
+    const result = await runInputFilters(mw, "hello", makeCtx());
+    expect(result).toBe("hello");
+  });
+
+  test("beforeInput: throwing filter does not prevent subsequent filters", async () => {
+    const second = vi.fn().mockReturnValue("filtered");
+    const mw: Middleware[] = [
+      {
+        name: "thrower",
+        beforeInput: () => {
+          throw new Error("input filter boom");
+        },
+      },
+      { name: "second", beforeInput: second },
+    ];
+    const result = await runInputFilters(mw, "hello", makeCtx());
+    expect(second).toHaveBeenCalled();
+    expect(result).toBe("filtered");
   });
 
   test("beforeOutput: throwing filter is caught, original text preserved", async () => {

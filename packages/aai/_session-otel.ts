@@ -184,24 +184,43 @@ function handleUserTranscript(ctx: S2sSessionCtx, text: string): void {
   turnCounter.add(1, { agent: ctx.agent });
   ctx.client.event({ type: "transcript", text, isFinal: true });
   ctx.client.event({ type: "turn", text });
-  ctx.pushMessages({ role: "user", content: text });
-  const fireTurn = () => ctx.fireHook("onTurn", (h) => h.onTurn(ctx.id, text, HOOK_TIMEOUT_MS));
-  if (!ctx.hookInvoker?.beforeTurn) {
-    fireTurn();
+
+  // Apply input filters (PII redaction etc.) before the text reaches the LLM.
+  // The original text is shown in transcript/turn events; the filtered text
+  // is what gets pushed to conversation messages and sent to beforeTurn/LLM.
+  const processFiltered = (filtered: string) => {
+    ctx.pushMessages({ role: "user", content: filtered });
+    const fireTurn = () =>
+      ctx.fireHook("onTurn", (h) => h.onTurn(ctx.id, filtered, HOOK_TIMEOUT_MS));
+    if (!ctx.hookInvoker?.beforeTurn) {
+      fireTurn();
+      return;
+    }
+    ctx.hookInvoker
+      .beforeTurn(ctx.id, filtered, HOOK_TIMEOUT_MS)
+      .then((reason) => {
+        if (reason) {
+          ctx.log.info("Turn blocked by middleware", { reason });
+          ctx.client.event({ type: "chat", text: reason });
+          ctx.client.event({ type: "tts_done" });
+        } else fireTurn();
+      })
+      .catch((err: unknown) => {
+        ctx.log.warn("beforeTurn hook failed", { error: errorMessage(err) });
+        fireTurn();
+      });
+  };
+
+  if (!ctx.hookInvoker?.filterInput) {
+    processFiltered(text);
     return;
   }
   ctx.hookInvoker
-    .beforeTurn(ctx.id, text, HOOK_TIMEOUT_MS)
-    .then((reason) => {
-      if (reason) {
-        ctx.log.info("Turn blocked by middleware", { reason });
-        ctx.client.event({ type: "chat", text: reason });
-        ctx.client.event({ type: "tts_done" });
-      } else fireTurn();
-    })
+    .filterInput(ctx.id, text, HOOK_TIMEOUT_MS)
+    .then((filtered) => processFiltered(filtered))
     .catch((err: unknown) => {
-      ctx.log.warn("beforeTurn hook failed", { error: errorMessage(err) });
-      fireTurn();
+      ctx.log.warn("filterInput hook failed", { error: errorMessage(err) });
+      processFiltered(text);
     });
 }
 

@@ -42,6 +42,61 @@ export type ToolCallInterceptResult =
  * points. Multiple middleware compose in array order: the first middleware
  * in the array runs first for "before" hooks and last for "after" hooks.
  *
+ * ## Middleware Composition Order
+ *
+ * **"Before" hooks** run in array order (first middleware → last):
+ * `beforeInput` → `beforeTurn` → `beforeToolCall` → `beforeOutput`
+ *
+ * **"After" hooks** run in reverse array order (last middleware → first):
+ * `afterToolCall` → `afterTurn`
+ *
+ * ### Execution flow for a user turn
+ *
+ * ```
+ * User text arrives
+ *   │
+ *   ▼
+ * beforeInput  — transform/redact input text (piped through each middleware)
+ *   │
+ *   ▼
+ * beforeTurn   — block or allow the turn (short-circuits on first block)
+ *   │
+ *   ▼  (if not blocked)
+ * LLM reasoning + tool calls
+ *   │  ┌─ beforeToolCall (per call, short-circuits on block/result)
+ *   │  └─ afterToolCall  (per call, reverse order)
+ *   │
+ *   ▼
+ * beforeOutput — transform/redact LLM output text (piped through each middleware)
+ *   │
+ *   ▼
+ * afterTurn    — cleanup/logging (reverse order)
+ * ```
+ *
+ * ### Short-circuit behavior
+ *
+ * - **`beforeTurn`**: If *any* middleware returns `{ block: true, reason }`,
+ *   the turn is blocked and subsequent `beforeTurn` hooks do **not** run.
+ *   When a turn is blocked, `afterTurn` hooks do **not** fire (the turn
+ *   never started).
+ * - **`beforeToolCall`**: If *any* middleware blocks or returns a cached
+ *   result, subsequent `beforeToolCall` hooks do **not** run. Arg transforms
+ *   accumulate across middleware.
+ * - **`beforeInput`** / **`beforeOutput`**: These *always* run all middleware
+ *   in sequence (no short-circuit). Each receives the output of the previous.
+ *
+ * ### Ordering example
+ *
+ * ```ts
+ * middleware: [auditTrail, hipaaGuardrails]
+ * ```
+ * - `beforeInput`: auditTrail runs first, then hipaaGuardrails
+ * - `beforeTurn`: auditTrail runs first; if it blocks, hipaaGuardrails is skipped
+ * - `afterTurn`: hipaaGuardrails runs first (reverse), then auditTrail
+ *
+ * If you want the guardrail to run *before* the audit trail logs, place it
+ * first in the array: `[hipaaGuardrails, auditTrail]`.
+ *
  * @typeParam S - The shape of per-session state. Defaults to `Record<string, unknown>`.
  *
  * @public
@@ -51,8 +106,32 @@ export type Middleware<S = Record<string, unknown>> = {
   name: string;
 
   /**
+   * Filters user input text before it reaches the LLM. Return the
+   * (possibly modified) text. Runs on every user transcript, before
+   * `beforeTurn`.
+   *
+   * Use this to redact PII (SSNs, emails, patient IDs) from speech
+   * transcripts so the LLM never sees sensitive data.
+   *
+   * Middleware is piped in array order: the output of one filter becomes
+   * the input of the next.
+   *
+   * @example
+   * ```ts
+   * beforeInput: (text) =>
+   *   text.replace(/\b\d{3}[-.]?\d{2}[-.]?\d{4}\b/g, "[SSN REDACTED]")
+   * ```
+   */
+  beforeInput?: (text: string, ctx: HookContext<S>) => string | Promise<string>;
+
+  /**
    * Runs before each user turn. Can block the turn by returning
    * `{ block: true, reason: "..." }`. Return `undefined` to proceed.
+   *
+   * Receives the text *after* `beforeInput` filtering has been applied.
+   *
+   * When a turn is blocked, subsequent `beforeTurn` middleware is skipped,
+   * and `afterTurn` hooks do **not** fire.
    */
   beforeTurn?: (
     text: string,
@@ -61,6 +140,7 @@ export type Middleware<S = Record<string, unknown>> = {
 
   /**
    * Runs after each user turn completes (after all steps finish).
+   * Runs in reverse array order.
    */
   afterTurn?: (text: string, ctx: HookContext<S>) => void | Promise<void>;
 
@@ -76,7 +156,7 @@ export type Middleware<S = Record<string, unknown>> = {
 
   /**
    * Runs after each tool call completes. Useful for caching results,
-   * logging, or analytics.
+   * logging, or analytics. Runs in reverse array order.
    */
   afterToolCall?: (
     toolName: string,
@@ -519,6 +599,7 @@ const AgentOptionsSchema = z.object({
     .array(
       z.object({
         name: z.string().min(1, "Middleware name must be non-empty"),
+        beforeInput: z.function().optional(),
         beforeTurn: z.function().optional(),
         afterTurn: z.function().optional(),
         beforeToolCall: z.function().optional(),
