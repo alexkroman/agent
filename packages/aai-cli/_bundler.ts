@@ -5,7 +5,7 @@ import path from "node:path";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import preact from "@preact/preset-vite";
 import tailwindcss from "@tailwindcss/vite";
-import { build } from "vite";
+import { build, createServer as createViteServer, type ViteDevServer } from "vite";
 import type { AgentEntry } from "./_discover.ts";
 
 /**
@@ -154,4 +154,35 @@ export async function bundleAgent(
     clientDir,
     workerBytes: Buffer.byteLength(worker),
   };
+}
+
+/**
+ * Create a Vite dev server for client HMR during development.
+ *
+ * The dev server serves client files with hot module replacement enabled and
+ * proxies backend requests (`/health`, `/websocket`) to the agent server.
+ */
+export async function createClientDevServer(
+  agentDir: string,
+  backendPort: number,
+  port: number,
+): Promise<ViteDevServer> {
+  const target = `http://localhost:${backendPort}`;
+  const vite = await createViteServer({
+    configFile: false,
+    root: agentDir,
+    plugins: [preact(), tailwindcss()],
+    resolve: {
+      dedupe: ["preact", "@preact/signals"],
+    },
+    server: {
+      port,
+      strictPort: true,
+      proxy: {
+        "/health": target,
+        "/websocket": { target, ws: true },
+      },
+    },
+  });
+  return vite;
 }

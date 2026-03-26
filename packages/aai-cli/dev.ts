@@ -1,23 +1,19 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { buildAgentBundle } from "./_build.ts";
-import { bootServer, loadAgentDef, resolveServerEnv } from "./_server-common.ts";
+import { createClientDevServer } from "./_bundler.ts";
+import { loadAgent } from "./_discover.ts";
+import { bootBackendServer, bootServer, loadAgentDef, resolveServerEnv } from "./_server-common.ts";
 import { info, runCommand, step } from "./_ui.ts";
 
-export async function _startDevServer(
-  cwd: string,
-  port: number,
-  log: (msg: string) => void,
-  opts?: { check?: boolean },
-): Promise<void> {
+/** Build, boot, and verify the server — used by `--check` mode. */
+async function runCheckMode(cwd: string, port: number, log: (msg: string) => void): Promise<void> {
   const bundle = await buildAgentBundle(cwd, log);
-
   const agentDef = await loadAgentDef(cwd);
   const env = await resolveServerEnv();
   const server = await bootServer(agentDef, bundle.clientDir, env, port);
   log(step("Ready", `http://localhost:${port}`));
 
-  // Verify agent + client are healthy after boot
   const base = `http://localhost:${port}`;
   try {
     const healthRes = await fetch(`${base}/health`);
@@ -50,12 +46,44 @@ export async function _startDevServer(
     throw err;
   }
 
-  // --check: exit after verification instead of staying up
+  await server.close();
+}
+
+export async function _startDevServer(
+  cwd: string,
+  port: number,
+  log: (msg: string) => void,
+  opts?: { check?: boolean },
+): Promise<void> {
   if (opts?.check) {
-    await server.close();
-  } else {
-    log(info("Ctrl-C to quit"));
+    await runCheckMode(cwd, port, log);
+    return;
   }
+
+  // Dev mode: Vite dev server for client HMR
+  const agent = await loadAgent(cwd);
+  if (!agent) {
+    throw new Error("No agent found — run `aai init` first");
+  }
+
+  const agentDef = await loadAgentDef(cwd);
+  const env = await resolveServerEnv();
+
+  // Backend runs on an internal port; Vite proxies to it
+  const backendPort = port + 1;
+  await bootBackendServer(agentDef, env, backendPort);
+
+  if (agent.clientEntry) {
+    const vite = await createClientDevServer(cwd, backendPort, port);
+    await vite.listen();
+    log(step("Ready", `http://localhost:${port}`));
+    log(info("Client HMR enabled — edits to client.tsx update instantly"));
+  } else {
+    log(step("Ready", `http://localhost:${backendPort}`));
+    log(info("No client.tsx found — serving agent API only"));
+  }
+
+  log(info("Ctrl-C to quit"));
 }
 
 export async function runDevCommand(opts: {
