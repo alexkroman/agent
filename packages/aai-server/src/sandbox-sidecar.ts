@@ -10,6 +10,7 @@ import type { Kv, KvEntry } from "@alexkroman1/aai/kv";
 import type { VectorStore } from "@alexkroman1/aai/vector";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
+import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import type { KvStore } from "./kv.ts";
 import type { AgentScope } from "./scope-token.ts";
@@ -104,7 +105,7 @@ function buildSidecarApp(
   const app = new Hono();
 
   const requireVec = () => {
-    if (!vector) throw Object.assign(new Error("Vector store not configured"), { status: 503 });
+    if (!vector) throw new HTTPException(503, { message: "Vector store not configured" });
     return vector;
   };
 
@@ -160,15 +161,13 @@ function buildSidecarApp(
   });
 
   app.onError((err, c) => {
-    const isValidation = err.name === "ZodError";
-    const errStatus =
-      typeof err === "object" && err !== null && "status" in err
-        ? (err as { status?: number }).status
-        : undefined;
-    const status = (
-      isValidation ? 400 : (errStatus ?? 500)
-    ) as import("hono/utils/http-status").ContentfulStatusCode;
-    return c.json({ error: err.message }, status);
+    let status = 500;
+    if (err.name === "ZodError") status = 400;
+    else if (err instanceof HTTPException) status = err.status;
+    return c.json(
+      { error: err.message },
+      status as import("hono/utils/http-status").ContentfulStatusCode,
+    );
   });
 
   return app;

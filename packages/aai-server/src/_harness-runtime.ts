@@ -147,6 +147,8 @@ const ISOLATE_TOOL_TIMEOUT_MS = 25_000;
 
 async function executeTool(agent: AgentDef, req: ToolCallRequest): Promise<ToolCallResponse> {
   const tool = agent.tools[req.name];
+  // Harness uses raw node:http (no Hono), so errors carry a `.status` property
+  // via Object.assign. The catch handler in startServer() reads it.
   if (!tool) throw Object.assign(new Error(`Unknown tool: ${req.name}`), { status: 404 });
 
   const ctx: ToolContext = {
