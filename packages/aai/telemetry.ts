@@ -100,6 +100,11 @@ export const wsSendDroppedCounter = meter.createCounter("aai.ws.send_dropped", {
   description: "Messages silently dropped because the WebSocket was closed",
 });
 
+/** Messages dropped or queued due to WebSocket backpressure. */
+export const wsSendBackpressureCounter = meter.createCounter("aai.ws.send_backpressure", {
+  description: "Messages dropped or queued due to WebSocket backpressure",
+});
+
 // ─── Span helpers ────────────────────────────────────────────────────────────
 
 /**
