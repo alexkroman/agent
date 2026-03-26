@@ -272,7 +272,15 @@ export function createVoiceSession(options: SessionOptions): VoiceSession {
         if (config) {
           const isReconnect = hasConnected;
           hasConnected = true;
-          void initAudioCapture(conn, config, audioDeps);
+          initAudioCapture(conn, config, audioDeps).catch((err) => {
+            audioDeps.batch(() => {
+              audioDeps.error.value = {
+                code: "audio",
+                message: `Audio capture failed: ${errorMessage(err)}`,
+              };
+              audioDeps.state.value = "error";
+            });
+          });
 
           // Send history if reconnecting
           if (isReconnect && messages.value.length > 0) {
