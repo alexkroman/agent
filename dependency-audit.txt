@@ -1,0 +1,264 @@
+============================================================================
+  AAI DEPENDENCY AUDIT REPORT
+  Dr. Dependency Dentist, DDS (Doctor of Dependency Sciences)
+  Examination Date: 2026-03-26
+============================================================================
+
+Ahh, please sit back and open wide. I'm Dr. Dependency Dentist, and I'll be
+performing your semi-annual dependency checkup today. Let me just snap on
+these gloves and take a look at what we're working with...
+
+*taps on package.json with dental mirror*
+
+Hmm, I see four workspace packages, a pnpm monorepo, and... oh my. When was
+the last time this codebase had a DEEP cleaning? I'm seeing some plaque
+buildup in a few spots. Let me document my findings.
+
+============================================================================
+  DIAGNOSES
+============================================================================
+
+DIAGNOSIS #1: Phantom Dependencies in aai-cli (hono / @hono/node-server)
+  Package:    packages/aai-cli/package.json
+  Deps:       "hono": "^4.12.9", "@hono/node-server": "^1.19.11"
+  Assessment: These two dependencies are listed as direct dependencies of
+              aai-cli, yet they are NEVER imported anywhere in the aai-cli
+              source code. Zero imports. Not even a dynamic import(). They
+              exist solely to satisfy the peer dependencies of
+              @alexkroman1/aai when aai-cli calls `createServer()` from
+              `@alexkroman1/aai/server` (in _server-common.ts:63).
+  Severity:   Cosmetic cavity -- functional but misleading
+  Treatment:  This is a defensible pattern (providing peer deps for a
+              transitive package), but it should be documented with a
+              comment in package.json explaining WHY these are here. Without
+              that context, any developer running a dep audit will flag them
+              as unused. Add a comment or consider moving the server
+              functionality to its own package that declares these as direct
+              deps.
+
+DIAGNOSIS #2: The @aws-sdk/client-s3 Wisdom Tooth -- 22MB of Pain
+  Package:    packages/aai-server/package.json
+  Dep:        "@aws-sdk/client-s3": "^3.1016.0"
+  Assessment: This dependency brings in 22MB of installed weight (32 @aws-sdk
+              packages + @smithy transitive deps) for a single file:
+              src/bundle-store-tigris.ts. That's a LOT of enamel for one
+              tooth. The Tigris bundle store uses only 5 S3 commands:
+              PutObjectCommand, GetObjectCommand, ListObjectsV2Command,
+              DeleteObjectsCommand, and S3Client.
+  Severity:   Moderate -- bloated install size
+  Treatment:  Since Tigris is S3-compatible, consider using a lightweight
+              S3-compatible client like @aws-lite/s3 or even raw HTTP calls
+              with aws4 signing (a few KB vs 22MB). Alternatively, if the
+              full SDK is truly needed, ensure it is lazily imported so it
+              doesn't affect cold start times. Currently it's a top-level
+              static import.
+
+DIAGNOSIS #3: Duplicate zod Across the Family
+  Package:    packages/aai/package.json, packages/aai-cli/package.json,
+              packages/aai-server/package.json
+  Dep:        "zod": "^4.3.6" (in all three)
+  Assessment: zod appears as a direct dependency in three packages. While
+              aai-server and aai-cli DO import zod directly in their own
+              source code (not just transitively via @alexkroman1/aai), this
+              means three copies could theoretically be resolved if version
+              ranges ever diverge. Currently they're all "^4.3.6" so pnpm
+              deduplicates them.
+  Severity:   Low -- controlled for now, but a ticking time bomb
+  Treatment:  Add a syncpack version group to enforce that zod stays in sync
+              across all packages (it's currently not covered by
+              .syncpackrc.json, which only ignores secure-exec). This
+              prevents a future maintainer from bumping one and not the
+              others, which would cause subtle runtime differences with Zod
+              schemas.
+
+DIAGNOSIS #4: Duplicate ws and secure-exec Between aai and aai-server
+  Package:    packages/aai/package.json AND packages/aai-server/package.json
+  Deps:       "ws": "^8.20.0", "secure-exec": "^0.1.0"
+  Assessment: Both aai and aai-server list ws and secure-exec as direct
+              dependencies. Both packages DO import them directly:
+              - ws: aai/server.ts + aai/s2s.ts, aai-server/src/index.ts
+              - secure-exec: aai/builtin-tools.ts (dynamic), aai-server/
+                src/sandbox.ts + sandbox-network.ts
+              So these are legitimate direct deps. However, if pnpm ever
+              resolves them to different versions, the WebSocket or isolate
+              behavior could differ between self-hosted (aai) and platform
+              (aai-server) modes.
+  Severity:   Low but insidious -- version drift risk
+  Treatment:  Add ws and secure-exec to a syncpack version group to enforce
+              identical versions. The secure-exec entry is already "isIgnored"
+              in .syncpackrc.json which actually DEFEATS the purpose --
+              syncpack won't warn if versions diverge.
+
+DIAGNOSIS #5: @preact/signals is a Non-Optional Peer Dep But preact Is Not
+  Package:    packages/aai-ui/package.json
+  Deps:       peerDependencies: { "@preact/signals": "^2.8.2",
+              "preact": "^10.29.0", "tailwindcss": "^4.2.1" }
+              peerDependenciesMeta: { "tailwindcss": { "optional": true } }
+  Assessment: preact and @preact/signals are both required (non-optional)
+              peer deps, yet the ./session export path
+              (packages/aai-ui/session.ts) imports NEITHER preact nor
+              @preact/signals. Users who only want the headless session
+              client (no UI components) are forced to install preact and
+              @preact/signals even though they'll never use them. The session
+              subpath is deliberately framework-agnostic.
+  Severity:   Moderate -- unnecessary install burden for headless users
+  Treatment:  Consider making preact and @preact/signals optional peer deps,
+              or split the session into a truly standalone package. At
+              minimum, document that the ./session export works without
+              preact installed (even if the peer dep warning will fire).
+
+DIAGNOSIS #6: Root package.json Has preact as devDependency
+  Package:    package.json (root)
+  Dep:        "preact": "^10.29.0"
+  Assessment: preact is listed as a root-level devDependency even though no
+              root-level code imports it. It exists to satisfy the aai-ui
+              workspace package's peer dependency during testing. This is a
+              common monorepo pattern, but it couples the root to a
+              framework choice of a single sub-package.
+  Severity:   Low -- cosmetic plaque
+  Treatment:  Acceptable as-is for monorepo hoisting. If you want to be
+              hygienic, the aai-ui package already has preact in its own
+              devDependencies (for the same purpose), so the root entry may
+              be redundant depending on your pnpm hoisting settings. Test
+              removing it from root and see if aai-ui tests still pass.
+
+DIAGNOSIS #7: playwright is a 14MB devDependency for One Test File
+  Package:    packages/aai-cli/package.json
+  Dep:        "playwright": "^1.58.2" (devDependencies)
+  Assessment: 14MB of installed size, used by exactly ONE file:
+              packages/aai-cli/e2e.test.ts. The CLAUDE.md itself notes
+              "Playwright/Chromium may not be installed in all environments"
+              and "The aai-cli e2e test may fail locally."
+  Severity:   Low -- it's a devDependency, but it's a heavy one
+  Treatment:  This is a standard trade-off for e2e testing. Consider moving
+              e2e tests into a separate workspace package (e.g. packages/
+              aai-e2e) so that playwright is only installed when explicitly
+              needed. Alternatively, mark it as an optional dependency or
+              use a lighter-weight HTTP-only e2e approach for the parts that
+              don't need browser rendering.
+
+DIAGNOSIS #8: html-to-text Dependency Chain in SDK Package
+  Package:    packages/aai/package.json
+  Dep:        "html-to-text": "^9.0.5"
+  Assessment: This 824KB dependency tree (html-to-text + htmlparser2 +
+              selderee + deepmerge + dom-serializer) exists in the core SDK
+              package -- the one that ALL other packages depend on. It's used
+              in exactly one place: packages/aai/builtin-tools.ts line 9,
+              for the `convert()` function that strips HTML to plain text for
+              the web scraping built-in tool.
+  Severity:   Moderate -- adds weight to the core package for one feature
+  Treatment:  Consider lazy-loading html-to-text via dynamic import() (like
+              you already do for secure-exec in the same file). This way it
+              only loads when the web scraping tool is actually invoked.
+              The convert() import at the top of builtin-tools.ts is eager:
+                import { convert } from "html-to-text";  // line 9
+              Change to:
+                const { convert } = await import("html-to-text");
+              inside the tool handler function.
+
+DIAGNOSIS #9: @types/json-schema Used But json-schema Not Declared
+  Package:    packages/aai/package.json
+  Dep:        "@types/json-schema": "^7.0.15" (devDependencies)
+  Assessment: The code imports `type { JSONSchema7 } from "json-schema"` in
+              multiple files (internal-types.ts, _internal-types.ts, s2s.ts).
+              These are all `import type` so they're erased at runtime and
+              don't need a runtime dependency on "json-schema". However, the
+              @types/json-schema package provides these types.
+
+              The concern: if a consumer tries to use the exported types
+              that reference JSONSchema7 (e.g. ToolSchema.parameters), their
+              editor will show "Cannot find module 'json-schema'" unless
+              they also install @types/json-schema. Since ToolSchema is part
+              of the internal-types export (./internal-types), this affects
+              downstream packages like aai-server.
+  Severity:   Low -- affects type resolution for internal consumers only
+  Treatment:  Either re-export the JSONSchema7 type from the SDK's own types
+              module (so consumers don't need @types/json-schema), or add
+              @types/json-schema as a dependency (not devDependency) since
+              the type is part of the public .d.ts surface. Alternatively,
+              since internal-types is not part of the public API, this may
+              be acceptable as-is.
+
+DIAGNOSIS #10: Overly Broad Caret Ranges on Major Dependencies
+  Package:    Multiple packages
+  Deps:       "zod": "^4.3.6", "hono": "^4.12.9", "ws": "^8.20.0",
+              "vite": "^8.0.2", "typescript": "^6.0.2"
+  Assessment: Using caret (^) ranges on major version dependencies means
+              accepting any minor/patch within the major version. For example,
+              "^4.3.6" for zod allows 4.999.999. While caret ranges are
+              common, these are framework-level dependencies where a minor
+              version bump can introduce breaking behavioral changes (Zod 4
+              was itself a major rewrite, Vite 8 has significant changes).
+  Severity:   Low -- standard npm convention, but risky for critical deps
+  Treatment:  For the SDK package (aai), consider using tilde (~) ranges
+              for zod and ws to limit to patch updates only. The lockfile
+              protects you today, but consumers installing your published
+              package will resolve the latest matching version, which could
+              be significantly newer than what you tested against.
+
+DIAGNOSIS #11: @smithy/types as devDependency Only Used in Test
+  Package:    packages/aai-server/package.json
+  Dep:        "@smithy/types": "^4.13.1" (devDependencies)
+  Assessment: This is correctly placed as a devDependency -- it's only
+              imported in bundle-store-tigris.test.ts (line 3:
+              `import type { SdkStream } from "@smithy/types"`).
+              However, @smithy/types is already a transitive dependency of
+              @aws-sdk/client-s3, so this explicit devDependency is
+              redundant. It could drift to a version incompatible with the
+              @aws-sdk version.
+  Severity:   Low -- cosmetic, redundant declaration
+  Treatment:  Remove the explicit @smithy/types devDependency and let it
+              resolve transitively through @aws-sdk/client-s3. If the type
+              import fails, that's a sign of an AWS SDK version mismatch
+              worth investigating.
+
+DIAGNOSIS #12: secure-exec Ignored by syncpack -- Defeats Version Sync
+  Package:    .syncpackrc.json
+  Config:     { "dependencies": ["secure-exec"], "isIgnored": true }
+  Assessment: The syncpack config explicitly ignores secure-exec, meaning
+              version mismatches between packages/aai (^0.1.0) and
+              packages/aai-server (^0.1.0) will go undetected. The comment
+              says "resolved at deploy time" but both packages currently
+              declare the same version. If one gets bumped and not the
+              other, the V8 isolate behavior could differ between self-hosted
+              and platform modes -- a very hard-to-debug issue.
+  Severity:   Moderate -- silent version drift for a security-critical dep
+  Treatment:  Remove the isIgnored rule for secure-exec. If versions must
+              diverge intentionally (unlikely for a ^0.x range), use a
+              pinned version group instead. The "resolved at deploy time"
+              rationale is unclear since both packages install it normally
+              via pnpm.
+
+============================================================================
+  PROGNOSIS
+============================================================================
+
+Overall, this dependency graph is in FAIR condition. I'd give it a B-minus
+on the oral hygiene scale. The fundamentals are sound -- the workspace
+dependency flow is clean (no circular deps, no cross-contamination between
+cli/ui/server), syncpack and knip are in place for basic hygiene, and version
+ranges are consistent across packages today.
+
+However, I'm prescribing the following treatment plan, in priority order:
+
+1. URGENT: Fix the syncpack secure-exec ignore rule (#12) -- this is like
+   having a loose filling over a nerve. One bad bump and you'll feel it.
+
+2. RECOMMENDED: Lazy-load html-to-text in builtin-tools.ts (#8) -- easy
+   win, matches the existing pattern used for secure-exec in the same file.
+
+3. RECOMMENDED: Add syncpack version groups for zod, ws (#3, #4) -- prevent
+   future version drift on shared critical dependencies.
+
+4. ELECTIVE: Evaluate @aws-sdk/client-s3 alternatives (#2) -- 22MB is a lot
+   of plaque for 5 S3 operations.
+
+5. COSMETIC: Add comments explaining why hono/@hono are in aai-cli (#1) --
+   save the next developer a confused hour.
+
+Schedule a follow-up in 6 months. And remember -- floss your dependencies
+daily!
+
+-- Dr. Dependency Dentist, DDS
+   "A clean dependency graph is a happy dependency graph."
+============================================================================
