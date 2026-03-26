@@ -14,8 +14,8 @@ function findPkgJson(dir: string): string {
     return readFileSync(path.join(dir, "..", "package.json"), "utf-8");
   }
 }
-const pkgJson = JSON.parse(findPkgJson(cliDir));
-const VERSION: string = pkgJson.version;
+const pkgJson: { version: string } = JSON.parse(findPkgJson(cliDir));
+const VERSION = pkgJson.version;
 
 async function ensureAgent(cwd: string, yes?: boolean): Promise<void> {
   if (!(await fileExists(path.join(cwd, "agent.ts")))) {
