@@ -22,6 +22,13 @@ import {
 
 export { activeSessionsUpDown, sessionCounter } from "./telemetry.ts";
 
+/**
+ * Complete a tool call by truncating the result, emitting a `tool_call_done` event,
+ * and accumulating the result in `ctx.pendingTools` — but only if the reply that
+ * initiated this call is still active. A barge-in bumps `ctx.replyGeneration`,
+ * so late-finishing tools from an interrupted reply are silently discarded instead
+ * of leaking into the next reply's pending tools.
+ */
 function finishToolCall(
   ctx: S2sSessionCtx,
   callId: string,
@@ -40,6 +47,18 @@ function finishToolCall(
   }
 }
 
+/**
+ * Orchestrate the full tool call pipeline for a single S2S tool invocation.
+ *
+ * Steps: resolve per-turn config → check step/tool limits → run middleware
+ * `interceptToolCall` (which may block, return a cached result, or modify args)
+ * → execute the tool → run `afterToolCall` middleware → record metrics and
+ * finish via {@link finishToolCall}. Each step is wrapped in an OpenTelemetry
+ * span (`tool.call`) with agent/session/tool attributes.
+ *
+ * @param ctx - The shared mutable session context (see {@link S2sSessionCtx}).
+ * @param detail - The tool call details from the S2S API (call ID, name, parsed args).
+ */
 export async function handleToolCall(ctx: S2sSessionCtx, detail: S2sToolCall): Promise<void> {
   const { callId, name, args: parsedArgs } = detail;
   // Capture the reply generation at call start so finishToolCall can detect
@@ -249,7 +268,17 @@ function handleReplyDone(ctx: S2sSessionCtx, status: string | undefined): void {
   }
 }
 
-/** Wire all S2S events to the client sink, hooks, and session state. */
+/**
+ * Wire all S2S events to the client sink, hooks, and session state.
+ *
+ * Registers listeners on the S2S handle for: ready, session expiry, speech
+ * start/stop, user/agent transcripts, reply lifecycle, tool calls, audio
+ * chunks, errors, and close. Each listener delegates to a focused handler
+ * function that updates `ctx` and emits client events.
+ *
+ * @param ctx - The shared mutable session context.
+ * @param handle - The S2S WebSocket handle to listen on.
+ */
 export function setupListeners(ctx: S2sSessionCtx, handle: S2sHandle): void {
   handle.on("ready", ({ sessionId }) => ctx.log.info("S2S session ready", { sessionId }));
   handle.on("sessionExpired", () => {

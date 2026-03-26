@@ -37,7 +37,13 @@ function plainBatch(fn: () => void): void {
 
 // ─── Audio initialization (extracted for function-length limit) ──────────────
 
-/** Shared mutable connection state for audio initialization. */
+/**
+ * Shared mutable connection state for audio initialization.
+ *
+ * Tracks the active WebSocket, VoiceIO instance, and a generation counter
+ * that prevents stale async operations (e.g. a slow `initAudioCapture`) from
+ * assigning their results to a newer connection after a reconnect.
+ */
 type ConnState = {
   ws: WebSocket | null;
   voiceIO: VoiceIO | null;
@@ -47,7 +53,28 @@ type ConnState = {
   generation: number;
 };
 
-/** Initialize audio capture/playback after the server sends a ready config. */
+/**
+ * Initialize audio capture and playback after the server sends a ready config.
+ *
+ * Lifecycle: dynamically import audio modules → request microphone access →
+ * register AudioWorklet processors → create a `VoiceIO` instance → send
+ * `audio_ready` to the server → transition state to `"listening"`.
+ *
+ * Uses the connection `generation` counter to detect if `connect()` was called
+ * while awaiting async operations; if so, the stale VoiceIO is closed immediately
+ * to prevent it from being assigned to a newer connection.
+ *
+ * On failure (e.g. microphone permission denied, WebSocket closed mid-setup),
+ * sets the error state and transitions to `"error"`.
+ *
+ * @param conn - The shared mutable connection state (WebSocket, VoiceIO, generation).
+ * @param msg - The `ReadyConfig` from the server containing audio sample rates.
+ * @param deps.send - Send a typed client message over the WebSocket.
+ * @param deps.sendBinary - Send raw binary audio data over the WebSocket.
+ * @param deps.state - Reactive state signal for the agent's current state.
+ * @param deps.error - Reactive signal for session errors.
+ * @param deps.batch - Batching function for grouping reactive updates.
+ */
 async function initAudioCapture(
   conn: ConnState,
   msg: ReadyConfig,

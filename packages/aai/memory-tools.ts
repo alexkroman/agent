@@ -21,6 +21,10 @@ import { tool } from "./types.ts";
  *   tools: { ...memoryTools() },
  * });
  * ```
+ *
+ * @returns A record with four tool definitions: `save_memory`, `recall_memory`,
+ *   `list_memories`, and `forget_memory`.
+ * @public
  */
 export function memoryTools() {
   return {
