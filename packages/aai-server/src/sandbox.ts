@@ -11,6 +11,7 @@
  * vector access — the isolate calls it without authentication (loopback only).
  */
 
+import { randomBytes } from "node:crypto";
 import { toAgentConfig } from "@alexkroman1/aai/internal-types";
 import { buildReadyConfig } from "@alexkroman1/aai/protocol";
 import { DEFAULT_S2S_CONFIG } from "@alexkroman1/aai/runtime";
@@ -71,6 +72,7 @@ async function startIsolate(
   workerCode: string,
   sidecarUrl: string,
   agentEnv: Record<string, string>,
+  authToken: string,
 ): Promise<{ port: number; runtime: NodeRuntime }> {
   const harnessJs = await getHarnessRuntimeJs();
   const fs = createInMemoryFileSystem();
@@ -79,7 +81,10 @@ async function startIsolate(
 
   // Prefix agent env vars so they can be distinguished from system vars.
   // The harness reads AAI_ENV_* and strips the prefix to build ctx.env.
-  const prefixedEnv: Record<string, string> = { SIDECAR_URL: sidecarUrl };
+  const prefixedEnv: Record<string, string> = {
+    SIDECAR_URL: sidecarUrl,
+    HARNESS_AUTH_TOKEN: authToken,
+  };
   for (const [k, v] of Object.entries(agentEnv)) {
     prefixedEnv[`AAI_ENV_${k}`] = v;
   }
@@ -173,8 +178,9 @@ const TOOL_TIMEOUT_MS = 30_000;
 /** Timeout for lifecycle hook calls. */
 const HOOK_TIMEOUT_MS = 10_000;
 
-async function getIsolateConfig(port: number): Promise<IsolateConfig> {
+async function getIsolateConfig(port: number, authToken: string): Promise<IsolateConfig> {
   const res = await fetch(`http://127.0.0.1:${port}/config`, {
+    headers: { "x-harness-token": authToken },
     signal: AbortSignal.timeout(CONFIG_TIMEOUT_MS),
   });
   if (!res.ok) {
@@ -190,10 +196,11 @@ async function callIsolate<T>(
   body: Record<string, unknown>,
   timeoutMs: number,
   schema: z.ZodType<T>,
+  authToken: string,
 ): Promise<T> {
   const res = await fetch(`${isolateUrl}/${endpoint}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "x-harness-token": authToken },
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(timeoutMs),
   });
@@ -204,7 +211,7 @@ async function callIsolate<T>(
   return schema.parse(await res.json());
 }
 
-function buildExecuteTool(isolateUrl: string): ExecuteTool {
+function buildExecuteTool(isolateUrl: string, authToken: string): ExecuteTool {
   return async (name, args, sessionId, messages) => {
     const { result } = await callIsolate(
       isolateUrl,
@@ -212,12 +219,13 @@ function buildExecuteTool(isolateUrl: string): ExecuteTool {
       { name, args, sessionId, messages },
       TOOL_TIMEOUT_MS,
       ToolCallResponseSchema,
+      authToken,
     );
     return result;
   };
 }
 
-function buildHookInvoker(isolateUrl: string): HookInvoker {
+function buildHookInvoker(isolateUrl: string, authToken: string): HookInvoker {
   const hook = async (name: string, extra: Record<string, unknown> = {}): Promise<unknown> =>
     (
       await callIsolate(
@@ -226,6 +234,7 @@ function buildHookInvoker(isolateUrl: string): HookInvoker {
         { hook: name, ...extra },
         HOOK_TIMEOUT_MS,
         HookResponseSchema,
+        authToken,
       )
     ).result;
 
@@ -314,23 +323,21 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
 
   const kv = scopedKv(kvStore, scope);
   const vector = vectorStore ? scopedVector(vectorStore, scope) : undefined;
-
-  // 1. Start the per-sandbox sidecar server (KV/vector on loopback)
   const sidecar = await startSidecarServer(kv, vector);
-
-  // 2. Start the isolate with the agent bundle
-  //    Only agent-defined secrets enter the isolate; apiKey stays host-side.
-  const { port: isolatePort, runtime } = await startIsolate(workerCode, sidecar.url, agentEnv);
-
-  // 3. Get the agent config from the isolate
-  const config = await getIsolateConfig(isolatePort);
+  // Per-sandbox auth token prevents other host processes from calling harness endpoints.
+  const authToken = randomBytes(32).toString("hex");
+  // Only agent-defined secrets enter the isolate; apiKey stays host-side.
+  const { port: isolatePort, runtime } = await startIsolate(
+    workerCode,
+    sidecar.url,
+    agentEnv,
+    authToken,
+  );
+  const config = await getIsolateConfig(isolatePort, authToken);
   const isolateUrl = `http://127.0.0.1:${isolatePort}`;
-
-  // 4. Build executeTool + hookInvoker that proxy to the isolate
-  //    env is no longer sent per-request — it lives inside the isolate
   const agentConfig = toAgentConfig(config);
-  const executeTool = buildExecuteTool(isolateUrl);
-  const hookInvoker = buildHookInvoker(isolateUrl);
+  const executeTool = buildExecuteTool(isolateUrl, authToken);
+  const hookInvoker = buildHookInvoker(isolateUrl, authToken);
   const s2sConfig = DEFAULT_S2S_CONFIG;
   const readyConfig = buildReadyConfig(s2sConfig);
 
@@ -359,11 +366,10 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
       });
     },
     async terminate(): Promise<void> {
-      // Await all session stops before disposing runtime/sidecar to prevent
-      // in-flight tool calls from hitting a disposed isolate or closed sidecar.
+      // Stop all sessions before disposing runtime/sidecar.
       const stops = [...sessions.values()].map((s) =>
         s.stop().catch(() => {
-          /* best-effort cleanup — swallow stop errors during terminate */
+          /* best-effort */
         }),
       );
       sessions.clear();

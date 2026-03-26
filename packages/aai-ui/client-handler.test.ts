@@ -2,7 +2,7 @@
 
 import { describe, expect, test, vi } from "vitest";
 import { ClientHandler } from "./client-handler.ts";
-import type { AgentState, ChatMessage, Reactive, SessionError, ToolCallInfo } from "./types.ts";
+import type { AgentState, Message, Reactive, SessionError, ToolCallInfo } from "./types.ts";
 
 function reactive<T>(initial: T): Reactive<T> {
   return { value: initial };
@@ -40,7 +40,7 @@ function makeVoiceIO(overrides?: Partial<Record<string, (...args: never[]) => un
 
 function createTarget(voiceOverrides?: Partial<Record<string, (...args: never[]) => unknown>>) {
   const state = reactive<AgentState>("connecting");
-  const messages = reactive<ChatMessage[]>([]);
+  const messages = reactive<Message[]>([]);
   const toolCalls = reactive<ToolCallInfo[]>([]);
   const userUtterance = reactive<string | null>(null);
   const agentUtterance = reactive<string | null>(null);
@@ -61,12 +61,12 @@ function createTarget(voiceOverrides?: Partial<Record<string, (...args: never[])
   return { target, state, messages, toolCalls, userUtterance, agentUtterance, error, ...io };
 }
 
-describe("ClientHandler.handleChatMessage", () => {
+describe("ClientHandler.handleMessage", () => {
   test("binary ArrayBuffer dispatches audio chunk", () => {
     const { target, state, chunks } = createTarget();
     state.value = "listening";
     const buf = new Uint8Array([1, 2, 3, 4]).buffer;
-    const result = target.handleChatMessage(buf);
+    const result = target.handleMessage(buf);
     expect(result).toBe(null);
     expect(chunks().length).toBe(1);
     expect(state.value).toBe("speaking");
@@ -76,7 +76,7 @@ describe("ClientHandler.handleChatMessage", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const { target, state } = createTarget();
     state.value = "listening";
-    const result = target.handleChatMessage("not valid json {{{");
+    const result = target.handleMessage("not valid json {{{");
     expect(result).toBe(null);
     expect(state.value).toBe("listening");
     warn.mockRestore();
@@ -86,9 +86,7 @@ describe("ClientHandler.handleChatMessage", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const { target, state } = createTarget();
     state.value = "listening";
-    const result = target.handleChatMessage(
-      JSON.stringify({ type: "unknown_event_type", data: 123 }),
-    );
+    const result = target.handleMessage(JSON.stringify({ type: "unknown_event_type", data: 123 }));
     expect(result).toBe(null);
     expect(state.value).toBe("listening");
     expect(warn).toHaveBeenCalledWith("Ignoring invalid server message:", expect.any(String));
@@ -97,7 +95,7 @@ describe("ClientHandler.handleChatMessage", () => {
 
   test("config message returns parsed ReadyConfig", () => {
     const { target } = createTarget();
-    const result = target.handleChatMessage(
+    const result = target.handleMessage(
       JSON.stringify({
         type: "config",
         audioFormat: "pcm16",
@@ -115,7 +113,7 @@ describe("ClientHandler.handleChatMessage", () => {
   test("config message with unsupported format returns null", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const { target } = createTarget();
-    const result = target.handleChatMessage(
+    const result = target.handleMessage(
       JSON.stringify({
         type: "config",
         audioFormat: "mp3",
@@ -131,7 +129,7 @@ describe("ClientHandler.handleChatMessage", () => {
   test("audio_done message calls playAudioDone", async () => {
     const { target, state, wasDone } = createTarget();
     state.value = "speaking";
-    target.handleChatMessage(JSON.stringify({ type: "audio_done" }));
+    target.handleMessage(JSON.stringify({ type: "audio_done" }));
     await new Promise((r) => setTimeout(r, 0));
     expect(wasDone()).toBe(true);
     expect(state.value).toBe("listening");
@@ -139,7 +137,7 @@ describe("ClientHandler.handleChatMessage", () => {
 
   test("event messages are dispatched to event()", () => {
     const { target, state, messages } = createTarget();
-    target.handleChatMessage(JSON.stringify({ type: "turn", text: "hello" }));
+    target.handleMessage(JSON.stringify({ type: "turn", text: "hello" }));
     expect(state.value).toBe("thinking");
     expect(messages.value).toEqual([{ role: "user", content: "hello" }]);
   });
@@ -199,7 +197,7 @@ describe("ClientHandler.playAudioDone generation tracking", () => {
 
   test("transitions to listening when no voiceIO is available", () => {
     const state = reactive<AgentState>("speaking");
-    const messages = reactive<ChatMessage[]>([]);
+    const messages = reactive<Message[]>([]);
     const toolCalls = reactive<ToolCallInfo[]>([]);
     const userUtterance = reactive<string | null>(null);
     const agentUtterance = reactive<string | null>(null);
@@ -267,7 +265,7 @@ describe("ClientHandler.event edge cases", () => {
         toolName: "search",
         args: { query: "test" },
         status: "pending",
-        afterChatMessageIndex: 0,
+        afterMessageIndex: 0,
       },
     ]);
   });
@@ -280,7 +278,7 @@ describe("ClientHandler.event edge cases", () => {
         toolName: "search",
         args: {},
         status: "pending",
-        afterChatMessageIndex: 0,
+        afterMessageIndex: 0,
       },
     ];
     target.event({ type: "tool_call_done", toolCallId: "tc1", result: "found it" });
@@ -296,7 +294,7 @@ describe("ClientHandler.event edge cases", () => {
         toolName: "search",
         args: {},
         status: "pending",
-        afterChatMessageIndex: 0,
+        afterMessageIndex: 0,
       },
     ];
     target.event({ type: "tool_call_done", toolCallId: "tc_unknown", result: "nope" });
@@ -319,7 +317,7 @@ describe("ClientHandler.event edge cases", () => {
         args: {},
         status: "done",
         result: "x",
-        afterChatMessageIndex: 0,
+        afterMessageIndex: 0,
       },
     ];
     target.event({ type: "reset" });

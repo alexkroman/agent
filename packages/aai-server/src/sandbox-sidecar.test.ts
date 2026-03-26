@@ -147,21 +147,18 @@ describe("scopedKv", () => {
     expect(result).toBe("not-valid-json");
   });
 
-  it("converts expireIn from milliseconds to seconds (ceiling)", async () => {
+  it("passes expireIn directly to the underlying store", async () => {
     const kvStore = createMockKvStore();
     const kv = scopedKv(kvStore, scopeA);
 
-    // 1500ms → ceil(1.5) = 2 seconds
     await kv.set("ttl-key", "val", { expireIn: 1500 });
-    expect(kvStore.set).toHaveBeenCalledWith(scopeA, "ttl-key", JSON.stringify("val"), 2);
+    expect(kvStore.set).toHaveBeenCalledWith(scopeA, "ttl-key", JSON.stringify("val"), 1500);
 
-    // 1000ms → exactly 1 second
     await kv.set("ttl-key2", "val", { expireIn: 1000 });
-    expect(kvStore.set).toHaveBeenCalledWith(scopeA, "ttl-key2", JSON.stringify("val"), 1);
+    expect(kvStore.set).toHaveBeenCalledWith(scopeA, "ttl-key2", JSON.stringify("val"), 1000);
 
-    // 500ms → ceil(0.5) = 1 second
     await kv.set("ttl-key3", "val", { expireIn: 500 });
-    expect(kvStore.set).toHaveBeenCalledWith(scopeA, "ttl-key3", JSON.stringify("val"), 1);
+    expect(kvStore.set).toHaveBeenCalledWith(scopeA, "ttl-key3", JSON.stringify("val"), 500);
   });
 
   it("passes undefined ttl when expireIn is not set", async () => {
@@ -243,8 +240,8 @@ describe("startSidecarServer", () => {
     kvStore.list = vi.fn(async () => [{ key: "k1", value: "v1" }]);
 
     const kv = scopedKv(kvStore, scopeA);
-    const { url, token, close } = await startSidecarServer(kv, undefined);
-    const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+    const { url, close } = await startSidecarServer(kv, undefined);
+    const headers = { "Content-Type": "application/json" };
 
     try {
       // KV get
@@ -296,12 +293,12 @@ describe("startSidecarServer", () => {
 
   it("returns 503 when vector store is not configured", async () => {
     const kv = scopedKv(createMockKvStore(), scopeA);
-    const { url, token, close } = await startSidecarServer(kv, undefined);
+    const { url, close } = await startSidecarServer(kv, undefined);
 
     try {
       const res = await fetch(`${url}/vec/query`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: "search" }),
       });
       expect(res.status).toBe(503);
@@ -314,12 +311,12 @@ describe("startSidecarServer", () => {
 
   it("returns 400 for invalid request bodies", async () => {
     const kv = scopedKv(createMockKvStore(), scopeA);
-    const { url, token, close } = await startSidecarServer(kv, undefined);
+    const { url, close } = await startSidecarServer(kv, undefined);
 
     try {
       const res = await fetch(`${url}/kv/get`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}), // missing required "key" field
       });
       expect(res.status).toBe(400);
@@ -332,8 +329,8 @@ describe("startSidecarServer", () => {
     const vecStore = createMockVectorStore();
     const kv = scopedKv(createMockKvStore(), scopeA);
     const vec = scopedVector(vecStore, scopeA);
-    const { url, token, close } = await startSidecarServer(kv, vec);
-    const headers = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+    const { url, close } = await startSidecarServer(kv, vec);
+    const headers = { "Content-Type": "application/json" };
 
     try {
       // upsert

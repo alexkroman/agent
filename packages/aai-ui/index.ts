@@ -42,13 +42,12 @@ export {
   useSession,
   useToolResult,
 } from "./signals.ts";
-export {
-  type AgentState,
-  type Message,
-  type Reactive,
-  type SessionError,
-  type SessionErrorCode,
-  SessionErrorCodeSchema,
-  type ToolCallInfo,
-  type VoiceSessionOptions,
+export type {
+  AgentState,
+  Message,
+  Reactive,
+  SessionError,
+  SessionErrorCode,
+  ToolCallInfo,
+  VoiceSessionOptions,
 } from "./types.ts";

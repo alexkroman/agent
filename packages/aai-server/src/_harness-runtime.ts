@@ -1,16 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
-/**
- * Sandbox harness runtime — runs inside the secure-exec isolate.
- *
- * This file is type-checked at compile time against the shared protocol
- * types and AgentDef. At runtime, the compiled JS is loaded into the
- * isolate's virtual filesystem and executed.
- *
- * Environment variables (set by host):
- * - SIDECAR_URL: loopback URL for the per-sandbox sidecar server
- *
- * The agent bundle is expected at "./agent_bundle.js" (default export).
- */
+/** Sandbox harness runtime — runs inside the secure-exec V8 isolate. */
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { Kv } from "@alexkroman1/aai/kv";
@@ -32,13 +21,9 @@ import type {
 } from "./_harness-protocol.ts";
 
 const SIDECAR_URL = process.env.SIDECAR_URL ?? "";
+const HARNESS_AUTH_TOKEN = process.env.HARNESS_AUTH_TOKEN ?? "";
 
-/**
- * Read agent env vars from process.env once at startup.
- * The host passes them with an AAI_ENV_ prefix; we strip the prefix
- * so tools/hooks see the original key names (e.g. ASSEMBLYAI_API_KEY).
- * This avoids sending secrets over the wire on every RPC call.
- */
+// Strip AAI_ENV_ prefix so tools/hooks see original key names.
 const AAI_ENV_PREFIX = "AAI_ENV_";
 const agentEnv: Record<string, string> = Object.freeze(
   Object.fromEntries(
@@ -47,8 +32,6 @@ const agentEnv: Record<string, string> = Object.freeze(
       .map(([k, v]) => [k.slice(AAI_ENV_PREFIX.length), v ?? ""]),
   ),
 );
-
-// ── Sidecar server proxy (KV / vector) ───────────────────────────────────
 
 async function sidecarRpc<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`${SIDECAR_URL}${path}`, {
@@ -91,8 +74,6 @@ const vector: VectorStore = {
   },
 };
 
-// ── Per-session state ────────────────────────────────────────────────────
-
 const sessionStates = new Map<string, Record<string, unknown>>();
 
 function getState(agent: AgentDef, sessionId: string): Record<string, unknown> {
@@ -101,8 +82,6 @@ function getState(agent: AgentDef, sessionId: string): Record<string, unknown> {
   }
   return sessionStates.get(sessionId) ?? {};
 }
-
-// ── Tool schemas ─────────────────────────────────────────────────────────
 
 function extractToolSchemas(agent: AgentDef): IsolateConfig["toolSchemas"] {
   return Object.entries(agent.tools).map(([name, def]) => ({
@@ -114,8 +93,6 @@ function extractToolSchemas(agent: AgentDef): IsolateConfig["toolSchemas"] {
         : ({ type: "object", properties: {} } as Record<string, unknown>),
   }));
 }
-
-// ── Config extraction ────────────────────────────────────────────────────
 
 function extractConfig(agent: AgentDef): IsolateConfig {
   const config: IsolateConfig = {
@@ -143,19 +120,11 @@ function extractConfig(agent: AgentDef): IsolateConfig {
   return config;
 }
 
-// ── Tool execution ───────────────────────────────────────────────────────
-
-/**
- * Timeout for tool execution inside the isolate. Set slightly under the
- * host's TOOL_TIMEOUT_MS (30 s) so the isolate returns a clean error
- * before the host-side timeout fires.
- */
+// Slightly under host's 30s timeout so isolate returns a clean error first.
 const ISOLATE_TOOL_TIMEOUT_MS = 25_000;
 
 async function executeTool(agent: AgentDef, req: ToolCallRequest): Promise<ToolCallResponse> {
   const tool = agent.tools[req.name];
-  // Harness uses raw node:http (no Hono), so errors carry a `.status` property
-  // via Object.assign. The catch handler in startServer() reads it.
   if (!tool) throw Object.assign(new Error(`Unknown tool: ${req.name}`), { status: 404 });
 
   const ctx: ToolContext = {
@@ -185,8 +154,6 @@ async function executeTool(agent: AgentDef, req: ToolCallRequest): Promise<ToolC
     state: ctx.state,
   };
 }
-
-// ── Hook invocation ──────────────────────────────────────────────────────
 
 function makeHookCtx(agent: AgentDef, req: HookRequest): HookContext {
   return {
@@ -285,9 +252,6 @@ async function invokeHook(agent: AgentDef, req: HookRequest): Promise<HookRespon
   return { state: ctx.state, result };
 }
 
-// ── HTTP helpers ─────────────────────────────────────────────────────────
-
-/** Maximum request body size (5 MB) to prevent memory exhaustion attacks. */
 const MAX_BODY_SIZE = 5 * 1024 * 1024;
 
 function readBody(req: IncomingMessage): Promise<string> {
@@ -317,10 +281,27 @@ function json(res: ServerResponse, data: unknown, status = 200): void {
   res.end(body);
 }
 
-// ── HTTP server (node:http) ──────────────────────────────────────────────
-// Uses node:http directly instead of Hono because @hono/node-server's
-// adapter redefines globalThis.Request which conflicts with secure-exec's
-// frozen built-in globals.
+function isAuthorized(req: IncomingMessage): boolean {
+  return !HARNESS_AUTH_TOKEN || req.headers["x-harness-token"] === HARNESS_AUTH_TOKEN;
+}
+
+async function handleRoute(
+  agent: AgentDef,
+  req: IncomingMessage,
+): Promise<{ data: unknown; status?: number }> {
+  if (req.method === "GET" && req.url === "/config") {
+    return { data: extractConfig(agent) };
+  }
+  if (req.method === "POST" && req.url === "/tool") {
+    const body = JSON.parse(await readBody(req)) as ToolCallRequest;
+    return { data: await executeTool(agent, body) };
+  }
+  if (req.method === "POST" && req.url === "/hook") {
+    const body = JSON.parse(await readBody(req)) as HookRequest;
+    return { data: await invokeHook(agent, body) };
+  }
+  return { data: { error: "Not found" }, status: 404 };
+}
 
 export function startHarness(agent: AgentDef): void {
   if (!agent || typeof agent !== "object" || !agent.name) {
@@ -329,21 +310,12 @@ export function startHarness(agent: AgentDef): void {
 
   const server = createServer(async (req, res) => {
     try {
-      if (req.method === "GET" && req.url === "/config") {
-        json(res, extractConfig(agent));
+      if (!isAuthorized(req)) {
+        json(res, { error: "Unauthorized" }, 401);
         return;
       }
-      if (req.method === "POST" && req.url === "/tool") {
-        const body = JSON.parse(await readBody(req)) as ToolCallRequest;
-        json(res, await executeTool(agent, body));
-        return;
-      }
-      if (req.method === "POST" && req.url === "/hook") {
-        const body = JSON.parse(await readBody(req)) as HookRequest;
-        json(res, await invokeHook(agent, body));
-        return;
-      }
-      json(res, { error: "Not found" }, 404);
+      const { data, status } = await handleRoute(agent, req);
+      json(res, data, status);
     } catch (err: unknown) {
       const status = (err as { status?: number }).status ?? 500;
       const message = err instanceof Error ? err.message : "Internal error";
