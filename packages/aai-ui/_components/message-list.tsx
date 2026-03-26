@@ -9,7 +9,24 @@ import { ThinkingIndicator } from "./thinking-indicator.tsx";
 import { ToolCallBlock } from "./tool-call-block.tsx";
 import { Transcript } from "./transcript.tsx";
 
-/** @public */
+/**
+ * Scrollable list of all chat messages, tool-call blocks, live transcript,
+ * streaming agent utterance, and a thinking indicator.
+ *
+ * Messages and tool calls are interleaved in the correct order. The list
+ * auto-scrolls to the latest content via {@link useAutoScroll}.
+ *
+ * Must be rendered inside a {@link SessionProvider}.
+ *
+ * @example
+ * ```tsx
+ * <MessageList className="flex-1" />
+ * ```
+ *
+ * @param props.className - Additional CSS class names applied to the scroll container.
+ *
+ * @public
+ */
 export function MessageList({ className }: { className?: string }) {
   const { session } = useSession();
   const scrollRef = useAutoScroll();

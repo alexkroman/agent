@@ -3,7 +3,21 @@ import clsx from "clsx";
 import { useSession } from "../signals.ts";
 import { Button } from "./button.tsx";
 
-/** @public */
+/**
+ * Session control buttons: **Stop / Resume** and **New Conversation**.
+ *
+ * Reads session state from {@link useSession}. Must be rendered inside a
+ * {@link SessionProvider}.
+ *
+ * @example
+ * ```tsx
+ * <Controls className="justify-end" />
+ * ```
+ *
+ * @param props.className - Additional CSS class names applied to the container.
+ *
+ * @public
+ */
 export function Controls({ className }: { className?: string }) {
   const { running, toggle, reset } = useSession();
 

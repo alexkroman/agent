@@ -5,7 +5,25 @@ import type * as preact from "preact";
 import type { Reactive } from "../types.ts";
 import { ThinkingIndicator } from "./thinking-indicator.tsx";
 
-/** @public */
+/**
+ * Live speech-to-text transcript shown while the user is speaking.
+ * Returns `null` when there is no active utterance.
+ *
+ * Displays a {@link ThinkingIndicator} while waiting for the first
+ * transcription text (i.e., `userUtterance` is `""`).
+ *
+ * @example
+ * ```tsx
+ * const { session } = useSession();
+ * <Transcript userUtterance={session.userUtterance} />
+ * ```
+ *
+ * @param props.userUtterance - Reactive string (`null` when idle, `""` when
+ *   listening but no text yet, or the transcript text).
+ * @param props.className     - Additional CSS class names.
+ *
+ * @public
+ */
 export function Transcript({
   userUtterance,
   className,

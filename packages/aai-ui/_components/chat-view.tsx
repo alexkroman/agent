@@ -9,7 +9,31 @@ import { ErrorBanner } from "./error-banner.tsx";
 import { MessageList } from "./message-list.tsx";
 import { StateIndicator } from "./state-indicator.tsx";
 
-/** @public */
+/**
+ * The main chat interface for a voice agent session.
+ * Displays a header (with title and {@link StateIndicator}), an
+ * {@link ErrorBanner}, the {@link MessageList}, and session {@link Controls}.
+ *
+ * Must be rendered inside a {@link SessionProvider}.
+ *
+ * @example
+ * ```tsx
+ * <StartScreen icon="🍕" title="Pizza Palace">
+ *   <ChatView />
+ * </StartScreen>
+ * ```
+ *
+ * @example Pair with a sidebar
+ * ```tsx
+ * <SidebarLayout sidebar={<RecipeCard />}>
+ *   <ChatView className="border-l" />
+ * </SidebarLayout>
+ * ```
+ *
+ * @param props.className - Additional CSS class names applied to the root element.
+ *
+ * @public
+ */
 export function ChatView({ className }: { className?: string }): preact.JSX.Element {
   const { session } = useSession();
   const { title } = useMountConfig();

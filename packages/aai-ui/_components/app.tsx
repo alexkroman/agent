@@ -13,7 +13,25 @@ function AnsiLogo() {
   );
 }
 
-/** @public */
+/**
+ * The default top-level UI component for an AAI voice agent.
+ * Renders a {@link StartScreen} (with the AAI logo or a custom title from
+ * {@link useMountConfig}) followed by a {@link ChatView} once the session starts.
+ *
+ * This is the component rendered by {@link mount} when no custom component is
+ * provided.
+ *
+ * @example
+ * ```tsx
+ * import { App, mount } from "@aai/ui";
+ *
+ * mount(App, { target: "#app", title: "My Agent" });
+ * ```
+ *
+ * @param props.className - Additional CSS class names applied to the root element.
+ *
+ * @public
+ */
 export function App({ className }: { className?: string }): preact.JSX.Element {
   const { title } = useMountConfig();
 
