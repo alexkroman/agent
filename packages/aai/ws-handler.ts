@@ -5,13 +5,13 @@
  * Audio validation is handled at the host transport layer (see host.ts).
  */
 
-import { errorDetail, errorMessage } from "./_utils.ts";
 import type { ClientMessage, ClientSink, ReadyConfig } from "./protocol.ts";
 import { ClientMessageSchema } from "./protocol.ts";
 import type { Logger } from "./runtime.ts";
 import { consoleLogger } from "./runtime.ts";
 import type { Session } from "./session.ts";
 import { tracer } from "./telemetry.ts";
+import { errorDetail, errorMessage } from "./utils.ts";
 
 /**
  * Minimal WebSocket interface accepted by {@link wireSessionSocket}.
@@ -72,7 +72,7 @@ function createClientSink(ws: SessionWebSocket): ClientSink {
       safeSend(JSON.stringify(e));
     },
     playAudioChunk(chunk) {
-      // Issue 6: Drop audio chunks when the client connection is congested
+      // Drop audio chunks when the client connection is congested
       // to prevent unbounded server memory growth for slow clients.
       if (
         "bufferedAmount" in ws &&
@@ -206,7 +206,7 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
       .catch((err: unknown) => {
         log.error("Session start failed", { ...ctx, sid, error: errorDetail(err) });
         sessionSpan.setStatus({ code: 2, message: errorMessage(err) });
-        // Issue 4: Notify the client and close the WebSocket so they can
+        // Notify the client and close the WebSocket so they can
         // detect the failure and retry instead of silently dropping messages.
         try {
           if (ws.readyState === 1) {
@@ -236,7 +236,7 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
 
   ws.addEventListener("message", (event) => {
     const { data } = event;
-    // Issue 2: Respond to heartbeat pings even if session isn't ready.
+    // Respond to heartbeat pings even if session isn't ready.
     if (handlePing(data, ws)) return;
     if (!session) return;
     if (handleBinaryAudio(data, session)) return;

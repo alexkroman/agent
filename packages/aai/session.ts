@@ -1,9 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 /** S2S session — relays audio between client and AssemblyAI S2S API. */
 
-import type { AgentConfig, ToolSchema } from "./_internal-types.ts";
 import { activeSessionsUpDown, sessionCounter, setupListeners } from "./_session-otel.ts";
-import { errorDetail, errorMessage } from "./_utils.ts";
+import type { AgentConfig, ToolSchema } from "./internal-types.ts";
 import type { HookInvoker } from "./middleware.ts";
 import type { ClientSink } from "./protocol.ts";
 import { fromWireMessages, HOOK_TIMEOUT_MS } from "./protocol.ts";
@@ -18,6 +17,7 @@ import {
 } from "./s2s.ts";
 import { buildSystemPrompt } from "./system-prompt.ts";
 import type { Message } from "./types.ts";
+import { errorDetail, errorMessage } from "./utils.ts";
 import type { ExecuteTool } from "./worker-entry.ts";
 
 export type { HookInvoker, ToolInterceptResult } from "./middleware.ts";
@@ -52,6 +52,7 @@ export type SessionOptions = {
   logger?: Logger;
 };
 
+/** @internal Not part of the public API. Exposed for testing only. */
 export const _internals = {
   connectS2s,
 };
@@ -173,7 +174,7 @@ export function createS2sSession(opts: SessionOptions): Session {
   const sessionAbort = new AbortController();
   const ctx = buildCtx({ id, agent, client, agentConfig, executeTool, hookInvoker, log });
 
-  // Issue 11: Automatic S2S reconnection with exponential backoff.
+  // Automatic S2S reconnection with exponential backoff.
   const MAX_RECONNECT_ATTEMPTS = 3;
   const RECONNECT_BASE_MS = 1000;
   let reconnectAttempts = 0;
@@ -221,7 +222,7 @@ export function createS2sSession(opts: SessionOptions): Session {
     }
   }
 
-  // Issue 11: When the S2S connection drops unexpectedly, attempt reconnection
+  // When the S2S connection drops unexpectedly, attempt reconnection
   // with exponential backoff so transient failures don't permanently degrade
   // the session.
   ctx.onS2sClose = () => {
@@ -283,7 +284,7 @@ export function createS2sSession(opts: SessionOptions): Session {
       ctx.turnPromise = null;
       ctx.pendingTools = [];
       ctx.replyGeneration++;
-      // Issue 8: Close the old connection and immediately null the reference
+      // Close the old connection and immediately null the reference
       // so audio sent during the reconnection window is cleanly dropped
       // instead of being sent to a closing connection.
       const oldS2s = ctx.s2s;

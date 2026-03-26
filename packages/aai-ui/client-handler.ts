@@ -3,7 +3,7 @@
 import type { ReadyConfig, ServerMessage } from "@alexkroman1/aai/protocol";
 import { ReadyConfigSchema, ServerMessageSchema } from "@alexkroman1/aai/protocol";
 import type { VoiceIO } from "./audio.ts";
-import type { AgentState, Message, Reactive, SessionError, ToolCallInfo } from "./types.ts";
+import type { AgentState, ChatMessage, Reactive, SessionError, ToolCallInfo } from "./types.ts";
 
 type BatchFn = (fn: () => void) => void;
 
@@ -14,18 +14,20 @@ type BatchFn = (fn: () => void) => void;
 /** @internal Exported for testing only. */
 export class ClientHandler {
   #state: Reactive<AgentState>;
-  #messages: Reactive<Message[]>;
+  #messages: Reactive<ChatMessage[]>;
   #toolCalls: Reactive<ToolCallInfo[]>;
   #userUtterance: Reactive<string | null>;
   #agentUtterance: Reactive<string | null>;
   #error: Reactive<SessionError | null>;
   #voiceIO: () => VoiceIO | null;
   #batch: BatchFn;
+  /** Accumulates chat_delta text fragments; joined on flush to avoid O(n²) string concat. */
+  #deltaBuffer: string[] = [];
   /** Incremented on each turn boundary — stale async callbacks compare against this. */
   #generation = 0;
   constructor(opts: {
     state: Reactive<AgentState>;
-    messages: Reactive<Message[]>;
+    messages: Reactive<ChatMessage[]>;
     toolCalls: Reactive<ToolCallInfo[]>;
     userUtterance: Reactive<string | null>;
     agentUtterance: Reactive<string | null>;
@@ -64,11 +66,11 @@ export class ClientHandler {
         });
         break;
       case "chat_delta":
-        this.#agentUtterance.value = this.#agentUtterance.value
-          ? `${this.#agentUtterance.value} ${e.text}`
-          : e.text;
+        this.#deltaBuffer.push(e.text);
+        this.#agentUtterance.value = this.#deltaBuffer.join(" ");
         break;
       case "chat":
+        this.#deltaBuffer.length = 0;
         this.#batch(() => {
           this.#agentUtterance.value = null;
           this.#messages.value = [...this.#messages.value, { role: "assistant", content: e.text }];
@@ -104,6 +106,7 @@ export class ClientHandler {
         break;
       case "cancelled":
         this.#generation++;
+        this.#deltaBuffer.length = 0;
         this.#voiceIO()?.flush();
         this.#batch(() => {
           this.#userUtterance.value = null;
@@ -113,6 +116,7 @@ export class ClientHandler {
         break;
       case "reset": {
         this.#generation++;
+        this.#deltaBuffer.length = 0;
         this.#voiceIO()?.flush();
         this.#batch(() => {
           this.#messages.value = [];
@@ -145,7 +149,9 @@ export class ClientHandler {
       this.#state.value = "speaking";
     }
     if (chunk.buffer instanceof ArrayBuffer) {
-      this.#voiceIO()?.enqueue(chunk.buffer);
+      this.#voiceIO()?.enqueue(
+        chunk.buffer.slice(chunk.byteOffset, chunk.byteOffset + chunk.byteLength),
+      );
     }
   }
 
@@ -200,7 +206,7 @@ export class ClientHandler {
         console.warn("Unsupported server config:", parsed.error.message);
         return null;
       }
-      // Issue 14: Validate that the negotiated audio format is supported.
+      // Validate that the negotiated audio format is supported.
       if (parsed.data.audioFormat !== "pcm16") {
         console.error(`Unsupported audio format: ${parsed.data.audioFormat}`);
         this.#batch(() => {

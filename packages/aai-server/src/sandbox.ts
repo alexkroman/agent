@@ -8,7 +8,8 @@
  * directly — no WintercServer or proxy AgentDef needed.
  *
  * A per-sandbox sidecar server on the host provides scoped KV and
- * vector access — the isolate calls it without authentication (loopback only).
+ * vector access. Each sidecar authenticates requests with a per-sandbox
+ * bearer token shared only with its corresponding isolate.
  */
 
 import type { AgentConfig } from "@alexkroman1/aai/internal-types";
@@ -70,6 +71,7 @@ async function startIsolate(
   workerCode: string,
   sidecarUrl: string,
   agentEnv: Record<string, string>,
+  sidecarToken?: string,
 ): Promise<{ port: number; runtime: NodeRuntime }> {
   const harnessJs = await getHarnessRuntimeJs();
   const fs = createInMemoryFileSystem();
@@ -79,6 +81,7 @@ async function startIsolate(
   // Prefix agent env vars so they can be distinguished from system vars.
   // The harness reads AAI_ENV_* and strips the prefix to build ctx.env.
   const prefixedEnv: Record<string, string> = { SIDECAR_URL: sidecarUrl };
+  if (sidecarToken) prefixedEnv.SIDECAR_TOKEN = sidecarToken;
   for (const [k, v] of Object.entries(agentEnv)) {
     prefixedEnv[`AAI_ENV_${k}`] = v;
   }
@@ -178,7 +181,8 @@ async function getIsolateConfig(port: number): Promise<IsolateConfig> {
   });
   if (!res.ok) {
     const body = await res.text().catch(() => "");
-    throw new Error(`Isolate /config failed (${res.status}): ${body}`);
+    console.error(`[sandbox] Isolate /config failed (${res.status}):`, body);
+    throw new Error(`Isolate /config failed (${res.status})`);
   }
   return IsolateConfigSchema.parse(await res.json()) as IsolateConfig;
 }
@@ -198,7 +202,11 @@ async function callIsolate<T>(
   });
   if (!res.ok) {
     const body = await res.text().catch(() => "");
-    throw new Error(`${endpoint} failed (${res.status}): ${body}`);
+    // Log full error detail server-side for debugging, but do not include
+    // the isolate's error body in the thrown error to prevent leaking
+    // internal details (file paths, stack traces) to upstream callers.
+    console.error(`[sandbox] ${endpoint} failed (${res.status}):`, body);
+    throw new Error(`${endpoint} failed (${res.status})`);
   }
   return schema.parse(await res.json());
 }
@@ -300,6 +308,7 @@ function toAgentConfig(config: IsolateConfig): AgentConfig {
 
 // ── Test internals ───────────────────────────────────────────────────────
 
+/** @internal Not part of the public API. Exposed for testing only. */
 export const _internals = {
   startSidecarServer,
   startIsolate,
@@ -330,7 +339,13 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
 
   // 2. Start the isolate with the agent bundle
   //    Only agent-defined secrets enter the isolate; apiKey stays host-side.
-  const { port: isolatePort, runtime } = await startIsolate(workerCode, sidecar.url, agentEnv);
+  //    The sidecar token is passed so the isolate can authenticate to its sidecar.
+  const { port: isolatePort, runtime } = await startIsolate(
+    workerCode,
+    sidecar.url,
+    agentEnv,
+    sidecar.token,
+  );
 
   // 3. Get the agent config from the isolate
   const config = await getIsolateConfig(isolatePort);

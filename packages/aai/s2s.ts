@@ -27,6 +27,8 @@ export type S2sWebSocket = {
     listener: (event: { code?: number; reason?: string }) => void,
   ): void;
   addEventListener(type: "error", listener: (event: { message?: string }) => void): void;
+  // biome-ignore lint/suspicious/noExplicitAny: must accept any listener signature for cleanup
+  removeEventListener(type: string, listener: (...args: any[]) => void): void;
 };
 
 const WS_OPEN = 1;
@@ -136,20 +138,17 @@ export type S2sSessionConfig = {
   tools: S2sToolSchema[];
   greeting?: string;
 };
-
 export type S2sToolSchema = {
   type: "function";
   name: string;
   description: string;
   parameters: JSONSchema7;
 };
-
 export type S2sToolCall = {
   call_id: string;
   name: string;
   args: Record<string, unknown>;
 };
-
 export type S2sEvents = {
   ready: (detail: { session_id: string }) => void;
   session_updated: (detail: Record<string, unknown>) => void;
@@ -193,7 +192,6 @@ type HeartbeatState = {
   pingTimer: ReturnType<typeof setInterval> | null;
   pongTimer: ReturnType<typeof setTimeout> | null;
 };
-
 function startS2sHeartbeat(ws: S2sWebSocket, log: Logger, hb: HeartbeatState): void {
   const pingFn = ws.ping;
   if (typeof pingFn !== "function") return;
@@ -209,15 +207,13 @@ function startS2sHeartbeat(ws: S2sWebSocket, log: Logger, hb: HeartbeatState): v
     }, S2S_PONG_TIMEOUT_MS);
   }, S2S_PING_INTERVAL_MS);
 }
-
 function clearS2sHeartbeat(hb: HeartbeatState): void {
   if (hb.pingTimer) clearInterval(hb.pingTimer);
   if (hb.pongTimer) clearTimeout(hb.pongTimer);
   hb.pingTimer = null;
   hb.pongTimer = null;
 }
-
-function handleS2sMessage(data: unknown, emitter: Emitter<S2sEvents>, log: Logger): void {
+function dispatchRawS2sMessage(data: unknown, emitter: Emitter<S2sEvents>, log: Logger): void {
   let raw: unknown;
   try {
     raw = JSON.parse(String(data));
@@ -230,14 +226,12 @@ function handleS2sMessage(data: unknown, emitter: Emitter<S2sEvents>, log: Logge
     return;
   }
   const obj = raw as Record<string, unknown>;
-  // reply.audio and input.audio are ~95% of traffic — skip logging.
   if (obj.type !== "reply.audio" && obj.type !== "input.audio") {
     log.info(
       `S2S << ${obj.type}`,
       obj.type === "transcript.agent.delta" ? { delta: obj.delta } : undefined,
     );
   }
-  // Fast path for audio — skip Zod validation.
   if (obj.type === "reply.audio" && typeof obj.data === "string") {
     emitter.emit("audio", { audio: base64ToUint8(obj.data) });
     return;
@@ -249,7 +243,6 @@ function handleS2sMessage(data: unknown, emitter: Emitter<S2sEvents>, log: Logge
   }
   dispatchS2sMessage(emitter, parsed.data);
 }
-
 /** Connect to AssemblyAI's S2S WebSocket API. Returns an {@link S2sHandle}. */
 export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
   const { apiKey, config, createWebSocket, logger: log = consoleLogger } = opts;
@@ -270,7 +263,7 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
     let opened = false;
     const hb: HeartbeatState = { pingTimer: null, pongTimer: null };
 
-    // Issue 10: Connection timeout — reject if open event not received in time.
+    // Connection timeout — reject if open event not received in time.
     const connectTimer = setTimeout(() => {
       if (!opened) {
         const err = new Error(`S2S connection timed out after ${S2S_CONNECT_TIMEOUT_MS}ms`);
@@ -308,7 +301,7 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
 
       sendAudio(audio: Uint8Array): void {
         if (ws.readyState !== WS_OPEN) return;
-        // Issue 5: Drop audio frames when the send buffer is congested
+        // Drop audio frames when the send buffer is congested
         // to prevent unbounded memory growth during network hiccups.
         if (
           typeof ws.bufferedAmount === "number" &&
@@ -336,22 +329,24 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
       close(): void {
         log.info("S2S closing");
         clearS2sHeartbeat(hb);
+        removeListeners();
         ws.close();
       },
     };
 
-    ws.addEventListener("open", () => {
+    const handleS2sMessage = (ev: { data: unknown }) =>
+      dispatchRawS2sMessage(ev.data, emitter, log);
+
+    function handleOpen(): void {
       opened = true;
       clearTimeout(connectTimer);
       log.info("S2S WebSocket open");
       connectionSpan.addEvent("ws.open");
       startS2sHeartbeat(ws, log, hb);
       resolve(handle);
-    });
+    }
 
-    ws.addEventListener("message", (ev) => handleS2sMessage(ev.data, emitter, log));
-
-    ws.addEventListener("close", (ev) => {
+    function handleClose(ev: { code?: number; reason?: string }): void {
       clearTimeout(connectTimer);
       clearS2sHeartbeat(hb);
       log.info("S2S WebSocket closed", {
@@ -365,13 +360,14 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
         "ws.close.reason": ev.reason ?? "",
       });
       connectionSpan.end();
+      removeListeners();
       if (!opened) {
         reject(new Error(`WebSocket closed before open (code: ${ev.code ?? 0})`));
       }
       emitter.emit("close");
-    });
+    }
 
-    ws.addEventListener("error", (ev) => {
+    function handleError(ev: { message?: string }): void {
       clearTimeout(connectTimer);
       clearS2sHeartbeat(hb);
       const message = typeof ev.message === "string" ? ev.message : "WebSocket error";
@@ -381,11 +377,24 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
       connectionSpan.setStatus({ code: 2, message: errObj.message }); // ERROR
       connectionSpan.recordException(errObj);
       if (!opened) {
+        removeListeners();
         connectionSpan.end();
         reject(errObj);
       } else {
         emitter.emit("error", { code: "ws_error", message: errObj.message });
       }
-    });
+    }
+
+    function removeListeners(): void {
+      ws.removeEventListener("open", handleOpen);
+      ws.removeEventListener("message", handleS2sMessage);
+      ws.removeEventListener("close", handleClose);
+      ws.removeEventListener("error", handleError);
+    }
+
+    ws.addEventListener("open", handleOpen);
+    ws.addEventListener("message", handleS2sMessage);
+    ws.addEventListener("close", handleClose);
+    ws.addEventListener("error", handleError);
   });
 }

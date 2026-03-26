@@ -5,7 +5,7 @@ import type { ClientMessage, ReadyConfig } from "@alexkroman1/aai/protocol";
 import { PROTOCOL_VERSION, toWireMessages } from "@alexkroman1/aai/protocol";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import type { VoiceIO } from "./audio.ts";
-import type { AgentState, Message, Reactive, SessionError } from "./types.ts";
+import type { AgentState, ChatMessage, Reactive, SessionError } from "./types.ts";
 
 /** Shared mutable connection state (matches session.ts ConnState). */
 type ConnState = {
@@ -78,7 +78,7 @@ export type ConfigHandlerDeps = {
     error: Reactive<SessionError | null>;
     batch: (fn: () => void) => void;
   };
-  messages: Reactive<Message[]>;
+  messages: Reactive<ChatMessage[]>;
   hasConnected: { value: boolean };
   initAudio: (
     conn: ConnState,

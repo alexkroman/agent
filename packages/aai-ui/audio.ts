@@ -101,7 +101,7 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
     if (e.data.event !== "chunk") return;
     const chunk = new Uint8Array(e.data.buffer as ArrayBufferLike);
 
-    // Issue 7: Bounds check — flush the buffer if the incoming chunk
+    // Bounds check — flush the buffer if the incoming chunk
     // would write past the end, preventing silent data corruption.
     if (capOffset + chunk.byteLength > capBuf.byteLength && capOffset > 0) {
       onMicData(capBuf.slice(0, capOffset).buffer);
@@ -160,7 +160,7 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
 
     flush() {
       if (playNode) playNode.port.postMessage({ event: "interrupt" });
-      // Issue 9: Resolve any pending done() promise so callers don't hang.
+      // Resolve any pending done() promise so callers don't hang.
       if (onPlaybackStop) {
         onPlaybackStop();
         onPlaybackStop = null;
@@ -170,7 +170,7 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
     async close() {
       if (lifecycle.signal.aborted) return;
       lifecycle.abort();
-      // Issue 9: Resolve any pending done() promise before tearing down.
+      // Resolve any pending done() promise before tearing down.
       if (onPlaybackStop) {
         onPlaybackStop();
         onPlaybackStop = null;
