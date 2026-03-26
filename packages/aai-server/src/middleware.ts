@@ -46,9 +46,20 @@ export function requireUpgrade(req: Request): void {
   }
 }
 
+/**
+ * Require that the request originates from a private/internal IP.
+ *
+ * Checks proxy-set headers (CF-Connecting-IP, Fly-Client-IP) first, then
+ * falls back to the TCP socket remote address. The proxy headers are only
+ * trustworthy when running behind Cloudflare or Fly.io — in other
+ * environments, the socket address provides the ground truth.
+ */
 export function requireInternal(req: Request): void {
-  // In workerd, use CF-Connecting-IP or Fly-Client-IP header
-  const ip = req.headers.get("cf-connecting-ip") ?? req.headers.get("fly-client-ip") ?? "";
+  const proxyIp = req.headers.get("cf-connecting-ip") ?? req.headers.get("fly-client-ip");
+  // Prefer socket remote address when available (not spoofable).
+  // @ts-expect-error -- Node/Bun Request extensions may carry socket info
+  const socketIp: string | undefined = req.socket?.remoteAddress;
+  const ip = socketIp ?? proxyIp ?? "";
   if (!(ip && isPrivateIp(ip))) {
     throw new HTTPException(403, { message: "Forbidden" });
   }

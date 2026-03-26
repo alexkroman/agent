@@ -26,6 +26,8 @@ export type OrchestratorOpts = {
   kvStore: KvStore;
   vectorStore?: ServerVectorStore | undefined;
   scopeKey: ScopeKey;
+  /** Allowed CORS origins. Defaults to `["*"]` (any origin). */
+  allowedOrigins?: string[];
 };
 
 export function createOrchestrator(opts: OrchestratorOpts): Hono<Env> {
@@ -57,14 +59,14 @@ export function createOrchestrator(opts: OrchestratorOpts): Hono<Env> {
     await next();
   });
 
+  const allowedOrigins = opts.allowedOrigins;
   app.use(
     "*",
     cors({
       origin: (origin) => {
-        // Allow same-origin requests (origin is null) and any origin for
-        // agent pages (they are public-facing). Restrict credentials so
-        // cookies/auth headers are not sent cross-origin by default.
-        return origin ?? "*";
+        if (!origin) return "*"; // same-origin
+        if (!allowedOrigins || allowedOrigins.includes("*")) return origin;
+        return allowedOrigins.includes(origin) ? origin : "";
       },
       allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
       allowHeaders: ["Content-Type", "Authorization"],

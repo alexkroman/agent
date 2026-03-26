@@ -150,9 +150,37 @@ const fetchJsonParams = z.object({
   url: z.string().describe("The URL to fetch JSON from"),
   headers: z
     .record(z.string(), z.string())
-    .describe("Optional HTTP headers to include in the request")
+    .describe(
+      "Optional HTTP headers to include in the request (only safe headers like Accept, Content-Type are allowed)",
+    )
     .optional(),
 });
+
+/** Headers the LLM must never control — could exfiltrate credentials or manipulate routing. */
+const BLOCKED_FETCH_HEADERS = new Set([
+  "authorization",
+  "cookie",
+  "set-cookie",
+  "host",
+  "proxy-authorization",
+  "x-forwarded-for",
+  "x-forwarded-host",
+  "x-forwarded-proto",
+  "x-real-ip",
+  "cf-connecting-ip",
+  "fly-client-ip",
+]);
+
+function sanitizeHeaders(
+  raw: Record<string, string> | undefined,
+): Record<string, string> | undefined {
+  if (!raw) return;
+  const safe: Record<string, string> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (!BLOCKED_FETCH_HEADERS.has(key.toLowerCase())) safe[key] = value;
+  }
+  return Object.keys(safe).length > 0 ? safe : undefined;
+}
 
 function createFetchJson(fetchFn = globalThis.fetch): ToolDef<typeof fetchJsonParams> {
   return {
@@ -161,9 +189,10 @@ function createFetchJson(fetchFn = globalThis.fetch): ToolDef<typeof fetchJsonPa
     parameters: fetchJsonParams,
     async execute(args, _ctx) {
       const { url, headers } = args;
+      const safeHeaders = sanitizeHeaders(headers);
       const resp = await ssrfSafeFetch(
         url,
-        { ...(headers && { headers }), signal: fetchSignal() },
+        { ...(safeHeaders && { headers: safeHeaders }), signal: fetchSignal() },
         fetchFn,
       );
       if (!resp.ok) {
