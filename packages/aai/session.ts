@@ -345,10 +345,12 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
       sessionAbort.abort();
       activeSessionsUpDown.add(-1, { agent });
       if (ctx.turnPromise !== null) await ctx.turnPromise;
+      // Drain in-flight hooks (onTurn, onStep, etc.) BEFORE closing
+      // the S2S connection so they don't send on a closed socket.
+      await ctx.drainHooks();
       ctx.s2s?.close();
       ctx.fireHook("onDisconnect", (h) => h.onDisconnect(id, HOOK_TIMEOUT_MS));
-      // Await all in-flight hook promises so critical state mutations
-      // (e.g. KV writes) complete before the session is torn down.
+      // Drain again for the onDisconnect hook we just fired.
       await ctx.drainHooks();
     },
     onAudio(data: Uint8Array): void {

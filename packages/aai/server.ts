@@ -51,6 +51,12 @@ export type ServerOptions = {
    * **Strongly recommended** when the server is exposed to the network.
    */
   authToken?: string;
+  /**
+   * Timeout in ms for `session.start()` (S2S connection setup).
+   * Defaults to 10 000 (10 s). If the session doesn't initialize within
+   * this window the connection is cleaned up.
+   */
+  sessionStartTimeoutMs?: number;
 };
 
 /**
@@ -140,6 +146,9 @@ export function createServer(options: ServerOptions): AgentServer {
         executor.createSession({ id: sid, agent: agent.name, client, skipGreeting }),
       readyConfig,
       logger,
+      ...(options.sessionStartTimeoutMs !== undefined
+        ? { sessionStartTimeoutMs: options.sessionStartTimeoutMs }
+        : {}),
     });
   }
 
