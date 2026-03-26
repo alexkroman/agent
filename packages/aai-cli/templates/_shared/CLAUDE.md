@@ -613,8 +613,11 @@ mount(App);
 - Call `mount(YourComponent)` at the end of the file
 - Use `.tsx` file extension for JSX syntax
 - Import hooks from `preact/hooks` (`useEffect`, `useRef`, `useState`, etc.)
-- Style with `style={{ color: "red" }}` or inject `<style>` for selectors,
-  keyframes, media queries
+- Style with Tailwind classes (`class="bg-aai-surface text-aai-text"`),
+  inline styles for dynamic values, or injected `<style>` tags for keyframes
+  and media queries
+- Do **not** add a `tailwind.config.js` — Tailwind v4 is configured via CSS
+  in `styles.css`, not a JS config file
 
 ### `mount()` options
 
@@ -827,16 +830,85 @@ mount(App);
 
 ### Styling custom UIs
 
-The framework uses **Tailwind CSS v4** (compiled at bundle time). Prefer
-Tailwind classes over inline styles — all design tokens work as classes:
-`bg-aai-surface` not `style={{ background: "var(--color-aai-surface)" }}`,
-`border-t border-aai-border` not `style={{ borderTop: "1px solid var(--)" }}`.
+#### How styling works
 
-Three approaches:
+The SDK has three styling layers, from simplest to most flexible:
+
+1. **Theme props** — pass 5 core colors to `mount()` for quick branding
+2. **CSS custom property overrides** — override any `--color-aai-*` token in
+   your own CSS for full control over the design system
+3. **Tailwind classes + custom CSS** — use Tailwind utility classes for layout
+   and custom styles, plus injected `<style>` tags for keyframes/media queries
+
+#### Tailwind CSS v4 (no config file)
+
+The bundler uses **Tailwind CSS v4** with the `@tailwindcss/vite` plugin.
+Tailwind is compiled at bundle time — it scans your `client.tsx` for class
+names and generates only the CSS you use.
+
+**Important:** Tailwind v4 is configured entirely via CSS (`styles.css`), not
+via JavaScript. **A `tailwind.config.js` file in your project will be
+ignored.** To extend the theme, override CSS custom properties instead (see
+below).
+
+#### Layer 1: Theme props (quick branding)
+
+Pass colors to `mount()` to override the 5 core design tokens without writing
+any CSS:
+
+```ts
+mount(App, {
+  theme: {
+    bg: "#1a1a2e",       // Background color
+    primary: "#e94560",  // Accent color (buttons, links)
+    text: "#eaeaea",     // Main text color
+    surface: "#16213e",  // Card/surface backgrounds
+    border: "#0f3460",   // Border color
+  },
+});
+```
+
+This sets CSS custom properties on the container element at runtime.
+
+#### Layer 2: CSS custom property overrides (full token control)
+
+For tokens beyond the 5 theme props (state colors, fonts, radius, etc.),
+override CSS custom properties in an injected `<style>` tag or in your
+`client.tsx`:
+
+```tsx
+function App() {
+  return (
+    <>
+      <style>{`
+        :root {
+          --color-aai-state-listening: #00bfff;
+          --color-aai-state-speaking: #ff6b6b;
+          --radius-aai: 12px;
+          --font-aai: "Roboto", system-ui, sans-serif;
+        }
+      `}</style>
+      {/* your UI */}
+    </>
+  );
+}
+```
+
+All `--color-aai-*` and `--font-aai*` tokens are live CSS custom properties —
+overriding them changes every component that references them.
+
+#### Layer 3: Tailwind classes + custom CSS
+
+Prefer Tailwind classes over inline styles — all design tokens work as
+classes: `bg-aai-surface` not `style={{ background: "var(--color-aai-surface)" }}`,
+`border-t border-aai-border` not `style={{ borderTop: "1px solid ..." }}`.
+
+Three approaches for applying styles in components:
 
 1. **Tailwind classes** — `class="flex items-center gap-2 bg-aai-surface"`
-2. **Inline styles** — only for dynamic values (`style={{ width: pixels }}`)
-3. **Injected `<style>` tags** — for keyframes, selectors, media queries:
+2. **Inline styles** — only for dynamic/computed values
+   (`style={{ width: pixels }}`)
+3. **Injected `<style>` tags** — for keyframes, pseudo-selectors, media queries:
 
 ```tsx
 function App() {
@@ -855,8 +927,9 @@ function App() {
 }
 ```
 
-**Design tokens** — available as CSS custom properties and Tailwind classes
-(e.g. `bg-aai-bg`, `text-aai-text-muted`, `rounded-aai`, `font-aai`):
+#### Design tokens reference
+
+Available as CSS custom properties and Tailwind classes:
 
 | Token                        | Tailwind class            | Default                   |
 | ---------------------------- | ------------------------- | ------------------------- |
@@ -877,8 +950,12 @@ function App() {
 | `--font-aai`                 | `font-aai`                | Inter, sans-serif         |
 | `--font-aai-mono`            | `font-aai-mono`           | IBM Plex Mono, mono       |
 
+State colors: `disconnected`, `connecting`, `ready`, `listening`, `thinking`,
+`speaking`, `error`.
+
 The 5 core colors (`bg`, `primary`, `text`, `surface`, `border`) can be
-overridden via `mount()` theme options. All other tokens use fixed defaults.
+overridden via `mount()` theme props. All tokens can be overridden via CSS
+custom properties.
 
 ### Common UI patterns
 
