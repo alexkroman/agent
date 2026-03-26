@@ -5,48 +5,6 @@ import type { AgentServer } from "@alexkroman1/aai/server";
 import type { AgentDef } from "@alexkroman1/aai/types";
 import { getApiKey } from "./_discover.ts";
 
-/**
- * Parse a `.env` file into a key-value record.
- *
- * Supports `KEY=VALUE`, optional quoting (single/double), `#` comments,
- * and blank lines. Does **not** support multi-line values or variable
- * interpolation — use explicit values.
- */
-export function parseEnvFile(content: string): Record<string, string> {
-  const env: Record<string, string> = {};
-  for (const raw of content.split("\n")) {
-    const line = raw.trim();
-    if (!line || line.startsWith("#")) continue;
-    const eqIdx = line.indexOf("=");
-    if (eqIdx === -1) continue;
-    const key = line.slice(0, eqIdx).trim();
-    let value = line.slice(eqIdx + 1).trim();
-    // Strip matching quotes
-    if (
-      value.length >= 2 &&
-      ((value.startsWith('"') && value.endsWith('"')) ||
-        (value.startsWith("'") && value.endsWith("'")))
-    ) {
-      value = value.slice(1, -1);
-    }
-    if (key) env[key] = value;
-  }
-  return env;
-}
-
-/**
- * Load a `.env` file from the given directory. Returns an empty record if the
- * file does not exist.
- */
-export async function loadEnvFile(dir: string): Promise<Record<string, string>> {
-  try {
-    const content = await fs.readFile(path.join(dir, ".env"), "utf-8");
-    return parseEnvFile(content);
-  } catch {
-    return {};
-  }
-}
-
 /** Load an AgentDef by dynamically importing agent.ts via Node's native TS support. */
 export async function loadAgentDef(cwd: string): Promise<AgentDef> {
   const agentPath = path.resolve(cwd, "agent.ts");
@@ -79,9 +37,9 @@ export async function loadAgentDef(cwd: string): Promise<AgentDef> {
 /**
  * Build an env record, ensuring ASSEMBLYAI_API_KEY is set.
  *
- * When {@link cwd} is provided, a `.env` file in that directory is loaded
- * first. Process environment variables take precedence over `.env` values,
- * so you can always override a `.env` entry by exporting a shell variable.
+ * When {@link cwd} is provided, `.env` is loaded into `process.env` via
+ * Node's built-in `process.loadEnvFile()`. Existing env vars are never
+ * overridden, so shell exports always win — matching `--env-file` semantics.
  *
  * @param cwd - Project directory to load `.env` from (optional).
  * @param baseEnv - Override the base environment (defaults to process.env).
@@ -90,12 +48,16 @@ export async function resolveServerEnv(
   cwd?: string,
   baseEnv?: Record<string, string | undefined>,
 ): Promise<Record<string, string>> {
-  const dotEnv = cwd ? await loadEnvFile(cwd) : {};
-  const processEnv: Record<string, string> = Object.fromEntries(
+  if (cwd) {
+    try {
+      process.loadEnvFile(path.join(cwd, ".env"));
+    } catch {
+      // No .env file — that's fine
+    }
+  }
+  const env: Record<string, string> = Object.fromEntries(
     Object.entries(baseEnv ?? process.env).filter((e): e is [string, string] => e[1] !== undefined),
   );
-  // .env values are the base; process env wins on conflicts
-  const env: Record<string, string> = { ...dotEnv, ...processEnv };
   if (!env.ASSEMBLYAI_API_KEY) {
     env.ASSEMBLYAI_API_KEY = await getApiKey();
   }

@@ -1,45 +1,18 @@
 // Copyright 2025 the AAI authors. MIT license.
 import fs from "node:fs/promises";
 import path from "node:path";
-import { describe, expect, test } from "vitest";
-import { loadAgentDef, parseEnvFile, resolveServerEnv } from "./_server-common.ts";
+import { afterEach, describe, expect, test } from "vitest";
+import { loadAgentDef, resolveServerEnv } from "./_server-common.ts";
 import { withTempDir } from "./_test-utils.ts";
 
-describe("parseEnvFile", () => {
-  test("parses KEY=VALUE pairs", () => {
-    expect(parseEnvFile("FOO=bar\nBAZ=qux")).toEqual({ FOO: "bar", BAZ: "qux" });
-  });
-
-  test("skips comments and blank lines", () => {
-    expect(parseEnvFile("# comment\n\nFOO=bar\n  # another")).toEqual({ FOO: "bar" });
-  });
-
-  test("strips double quotes", () => {
-    expect(parseEnvFile('KEY="hello world"')).toEqual({ KEY: "hello world" });
-  });
-
-  test("strips single quotes", () => {
-    expect(parseEnvFile("KEY='hello world'")).toEqual({ KEY: "hello world" });
-  });
-
-  test("handles empty values", () => {
-    expect(parseEnvFile("KEY=")).toEqual({ KEY: "" });
-  });
-
-  test("handles values with = sign", () => {
-    expect(parseEnvFile("KEY=a=b=c")).toEqual({ KEY: "a=b=c" });
-  });
-
-  test("trims whitespace around keys and values", () => {
-    expect(parseEnvFile("  KEY  =  value  ")).toEqual({ KEY: "value" });
-  });
-
-  test("skips lines without =", () => {
-    expect(parseEnvFile("NOEQ\nFOO=bar")).toEqual({ FOO: "bar" });
-  });
-});
-
 describe("resolveServerEnv", () => {
+  // process.loadEnvFile mutates process.env, so clean up after .env tests
+  const injectedKeys: string[] = [];
+  afterEach(() => {
+    for (const key of injectedKeys) delete process.env[key];
+    injectedKeys.length = 0;
+  });
+
   test("returns env with existing ASSEMBLYAI_API_KEY", async () => {
     const env = await resolveServerEnv(undefined, { ASSEMBLYAI_API_KEY: "test-key-123" });
     expect(env.ASSEMBLYAI_API_KEY).toBe("test-key-123");
@@ -73,21 +46,27 @@ describe("resolveServerEnv", () => {
   });
 
   test("loads .env file when cwd is provided", async () => {
+    injectedKeys.push("AAI_TEST_SECRET", "ASSEMBLYAI_API_KEY");
     await withTempDir(async (dir) => {
-      await fs.writeFile(path.join(dir, ".env"), "MY_SECRET=from-dotenv\nASSEMBLYAI_API_KEY=key");
-      const env = await resolveServerEnv(dir, {});
-      expect(env.MY_SECRET).toBe("from-dotenv");
+      await fs.writeFile(
+        path.join(dir, ".env"),
+        "AAI_TEST_SECRET=from-dotenv\nASSEMBLYAI_API_KEY=key",
+      );
+      const env = await resolveServerEnv(dir);
+      expect(env.AAI_TEST_SECRET).toBe("from-dotenv");
     });
   });
 
   test("process env takes precedence over .env", async () => {
+    injectedKeys.push("AAI_TEST_PRECEDENCE", "ASSEMBLYAI_API_KEY");
     await withTempDir(async (dir) => {
-      await fs.writeFile(path.join(dir, ".env"), "MY_KEY=from-file\nASSEMBLYAI_API_KEY=key");
-      const env = await resolveServerEnv(dir, {
-        MY_KEY: "from-process",
-        ASSEMBLYAI_API_KEY: "key",
-      });
-      expect(env.MY_KEY).toBe("from-process");
+      await fs.writeFile(
+        path.join(dir, ".env"),
+        "AAI_TEST_PRECEDENCE=from-file\nASSEMBLYAI_API_KEY=key",
+      );
+      process.env.AAI_TEST_PRECEDENCE = "from-shell";
+      const env = await resolveServerEnv(dir);
+      expect(env.AAI_TEST_PRECEDENCE).toBe("from-shell");
     });
   });
 
