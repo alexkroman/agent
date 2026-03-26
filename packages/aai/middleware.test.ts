@@ -216,7 +216,7 @@ describe("middleware state access", () => {
     const mw: Middleware[] = [
       {
         name: "counter",
-        beforeTurn: (_text, ctx) => {
+        beforeTurn: (_text, ctx): undefined => {
           (ctx.state as { count: number }).count++;
         },
       },

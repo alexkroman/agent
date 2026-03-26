@@ -11,19 +11,18 @@
  * vector access — the isolate calls it without authentication (loopback only).
  */
 
-// biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
 import type { AgentConfig } from "@alexkroman1/aai/internal-types";
-// biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
 import { buildReadyConfig } from "@alexkroman1/aai/protocol";
-// biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
 import { DEFAULT_S2S_CONFIG } from "@alexkroman1/aai/runtime";
-// biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
-import type { HookInvoker, Session, ToolInterceptResult } from "@alexkroman1/aai/session";
-// biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
-import { createS2sSession } from "@alexkroman1/aai/session";
-// biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
+import {
+  createS2sSession,
+  // biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
+  type HookInvoker,
+  type Session,
+  // biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
+  type ToolInterceptResult,
+} from "@alexkroman1/aai/session";
 import type { ExecuteTool } from "@alexkroman1/aai/worker-entry";
-// biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
 import { type SessionWebSocket, wireSessionSocket } from "@alexkroman1/aai/ws-handler";
 import {
   createInMemoryFileSystem,
