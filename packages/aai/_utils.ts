@@ -6,6 +6,14 @@ export function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/** Extract a detailed error string (message + stack) for diagnostic logging. */
+export function errorDetail(err: unknown): string {
+  if (err instanceof Error) {
+    return err.stack ?? err.message;
+  }
+  return String(err);
+}
+
 /** Filter out undefined values from an env record. */
 export function filterEnv(env: Record<string, string | undefined>): Record<string, string> {
   return Object.fromEntries(

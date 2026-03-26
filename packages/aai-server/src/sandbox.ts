@@ -21,6 +21,7 @@ import {
   type Session,
   // biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
   type ToolInterceptResult,
+  // biome-ignore lint/correctness/noUnresolvedImports: workspace dependency resolved at build time
 } from "@alexkroman1/aai/session";
 import type { ExecuteTool } from "@alexkroman1/aai/worker-entry";
 import { type SessionWebSocket, wireSessionSocket } from "@alexkroman1/aai/ws-handler";
@@ -160,7 +161,10 @@ async function getIsolateConfig(port: number): Promise<IsolateConfig> {
   const res = await fetch(`http://127.0.0.1:${port}/config`, {
     signal: AbortSignal.timeout(CONFIG_TIMEOUT_MS),
   });
-  if (!res.ok) throw new Error(`Isolate /config failed: ${res.status}`);
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`Isolate /config failed (${res.status}): ${body}`);
+  }
   return IsolateConfigSchema.parse(await res.json()) as IsolateConfig;
 }
 
@@ -177,7 +181,10 @@ async function callIsolate<T>(
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(timeoutMs),
   });
-  if (!res.ok) throw new Error(`${endpoint} failed: ${res.status}`);
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`${endpoint} failed (${res.status}): ${body}`);
+  }
   return schema.parse(await res.json());
 }
 
@@ -345,7 +352,14 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
       // await HTTP server closure before disposing the V8 isolate.
       // This prevents "Isolate is disposed" unhandled rejections from
       // in-flight operations that race with synchronous isolate disposal.
-      void runtime.terminate().then(() => sidecar.close());
+      await runtime.terminate().catch(() => {
+        /* already terminated */
+      });
+      try {
+        sidecar.close();
+      } catch {
+        /* already closed */
+      }
     },
   };
 }

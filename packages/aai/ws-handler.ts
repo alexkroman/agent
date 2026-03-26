@@ -5,7 +5,7 @@
  * Audio validation is handled at the host transport layer (see host.ts).
  */
 
-import { errorMessage } from "./_utils.ts";
+import { errorDetail, errorMessage } from "./_utils.ts";
 import type { ClientMessage, ClientSink, ReadyConfig } from "./protocol.ts";
 import { ClientMessageSchema } from "./protocol.ts";
 import type { Logger } from "./runtime.ts";
@@ -168,7 +168,7 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
         sessionSpan.addEvent("session.ready");
       })
       .catch((err: unknown) => {
-        log.error("Session start failed", { ...ctx, sid, error: errorMessage(err) });
+        log.error("Session start failed", { ...ctx, sid, error: errorDetail(err) });
         sessionSpan.setStatus({ code: 2, message: errorMessage(err) });
         sessions.delete(sessionId);
         session = null;

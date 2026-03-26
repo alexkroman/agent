@@ -5,9 +5,10 @@
 
 import type { z } from "zod";
 import { EMPTY_PARAMS } from "./_internal-types.ts";
-import { errorMessage } from "./_utils.ts";
+import { errorDetail, errorMessage } from "./_utils.ts";
 import type { Kv } from "./kv.ts";
 import { TOOL_EXECUTION_TIMEOUT_MS } from "./protocol.ts";
+import type { Logger } from "./runtime.ts";
 
 import type { Message, ToolContext, ToolDef } from "./types.ts";
 import type { VectorStore } from "./vector.ts";
@@ -56,6 +57,7 @@ export type ExecuteToolCallOptions = {
   kv?: Kv | undefined;
   vector?: VectorStore | undefined;
   messages?: readonly Message[] | undefined;
+  logger?: Logger | undefined;
 };
 
 /**
@@ -101,7 +103,12 @@ export async function executeToolCall(
     if (result == null) return "null";
     return typeof result === "string" ? result : JSON.stringify(result);
   } catch (err: unknown) {
-    console.warn(`[tool-executor] Tool execution failed: ${name}`, err);
+    const log = options.logger;
+    if (log) {
+      log.warn("Tool execution failed", { tool: name, error: errorDetail(err) });
+    } else {
+      console.warn(`[tool-executor] Tool execution failed: ${name}`, err);
+    }
     return `Error: ${errorMessage(err)}`;
   } finally {
     clearTimeout(timer);

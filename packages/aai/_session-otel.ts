@@ -7,7 +7,7 @@
  * pipeline: tool calls, user turns, barge-ins, and session lifecycle.
  */
 
-import { errorMessage } from "./_utils.ts";
+import { errorDetail, errorMessage } from "./_utils.ts";
 import { HOOK_TIMEOUT_MS, MAX_TOOL_RESULT_CHARS } from "./protocol.ts";
 import type { S2sHandle, S2sToolCall } from "./s2s.ts";
 import type { S2sSessionCtx } from "./session.ts";
@@ -131,7 +131,7 @@ export async function handleToolCall(ctx: S2sSessionCtx, detail: S2sToolCall): P
     result = await ctx.executeTool(name, effectiveArgs, ctx.id, ctx.conversationMessages);
   } catch (err: unknown) {
     const msg = errorMessage(err);
-    ctx.log.error("Tool execution failed", { tool: name, error: msg });
+    ctx.log.error("Tool execution failed", { tool: name, error: errorDetail(err) });
     toolCallErrorCounter.add(1, { agent: ctx.agent, tool: name });
     span.setStatus({ code: 2, message: msg });
     span.recordException(err instanceof Error ? err : new Error(msg));
@@ -184,7 +184,10 @@ export function setupListeners(ctx: S2sSessionCtx, handle: S2sHandle): void {
           ctx.client.event({ type: "tts_done" });
         } else fireTurn();
       })
-      .catch(() => fireTurn());
+      .catch((err: unknown) => {
+        ctx.log.warn("beforeTurn hook failed", { error: errorMessage(err) });
+        fireTurn();
+      });
   });
 
   handle.on("reply_started", () => {
@@ -198,7 +201,10 @@ export function setupListeners(ctx: S2sSessionCtx, handle: S2sHandle): void {
     ctx.hookInvoker
       .filterOutput(ctx.id, text, HOOK_TIMEOUT_MS)
       .then((f) => ctx.client.event({ type: "chat_delta", text: f }))
-      .catch(() => ctx.client.event({ type: "chat_delta", text }));
+      .catch((err: unknown) => {
+        ctx.log.warn("filterOutput hook failed", { error: errorMessage(err) });
+        ctx.client.event({ type: "chat_delta", text });
+      });
   });
   handle.on("agent_transcript", ({ text }) => {
     const emit = (t: string) => {
@@ -209,7 +215,10 @@ export function setupListeners(ctx: S2sSessionCtx, handle: S2sHandle): void {
     ctx.hookInvoker
       .filterOutput(ctx.id, text, HOOK_TIMEOUT_MS)
       .then(emit)
-      .catch(() => emit(text));
+      .catch((err: unknown) => {
+        ctx.log.warn("filterOutput hook failed", { error: errorMessage(err) });
+        emit(text);
+      });
   });
 
   handle.on("tool_call", (detail) => {
