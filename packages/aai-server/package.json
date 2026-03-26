@@ -16,9 +16,9 @@
   },
   "dependencies": {
     "@alexkroman1/aai": "workspace:*",
-    "@aws-sdk/client-s3": "^3.1016.0",
+    "@aws-sdk/client-s3": "^3.1017.0",
     "@hono/node-server": "^1.19.11",
-    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/exporter-prometheus": "^0.214.0",
     "@opentelemetry/sdk-metrics": "^2.6.1",
     "@upstash/redis": "^1.37.0",
