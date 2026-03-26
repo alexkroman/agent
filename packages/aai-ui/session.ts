@@ -17,7 +17,6 @@ import type {
 export { ClientHandler } from "./client-handler.ts";
 export type {
   AgentState,
-  ChatMessage,
   Message,
   Reactive,
   SessionError,
