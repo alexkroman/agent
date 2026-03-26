@@ -85,8 +85,10 @@ async function startIsolate(
   const allowedKeys = new Set(Object.keys(prefixedEnv));
 
   let resolvePort: (port: number) => void;
-  const portPromise = new Promise<number>((resolve) => {
+  let rejectPort: (err: Error) => void;
+  const portPromise = new Promise<number>((resolve, reject) => {
     resolvePort = resolve;
+    rejectPort = reject;
   });
 
   const runtime = new NodeRuntime({
@@ -129,23 +131,40 @@ async function startIsolate(
 
   // The exec promise lives as long as the isolate's HTTP server. It is not
   // awaited because the sandbox owns the runtime lifecycle (via terminate()).
-  // The catch handler covers the edge case where terminate() is called during
-  // isolate boot before the HTTP server is fully established.
-  runtime
+  // If exec rejects before the port is announced, propagate that as a boot failure.
+  const execPromise = runtime
     .exec(
       'import agent from "/app/agent_bundle.js";\nimport { startHarness } from "/app/_harness-runtime.js";\nstartHarness(agent);',
       { cwd: "/app" },
     )
-    .catch(() => {
-      // Isolate disposed during boot — safe to ignore.
+    .catch((err) => {
+      rejectPort(new Error(`Isolate exited before announcing port: ${err}`));
     });
 
-  const port = await portPromise;
+  const timeoutId = setTimeout(() => {
+    rejectPort(new Error(`Isolate failed to announce port within ${PORT_ANNOUNCE_TIMEOUT_MS}ms`));
+  }, PORT_ANNOUNCE_TIMEOUT_MS);
+
+  let port: number;
+  try {
+    port = await portPromise;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+
+  // After port is resolved, let exec run in background; suppress rejections
+  // from terminate() being called later.
+  execPromise.catch(() => {
+    /* Isolate disposed during normal lifecycle — safe to ignore. */
+  });
+
   return { port, runtime };
 }
 
 // ── Isolate RPC ──────────────────────────────────────────────────────────
 
+/** Timeout for the isolate to announce its HTTP port via stdout. */
+const PORT_ANNOUNCE_TIMEOUT_MS = 15_000;
 /** Timeout for initial config fetch (isolate boot). */
 const CONFIG_TIMEOUT_MS = 10_000;
 /** Timeout for tool execution calls. */
