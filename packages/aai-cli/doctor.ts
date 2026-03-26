@@ -1,16 +1,12 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
-import { promisify } from "node:util";
 import pc from "picocolors";
 import { fileExists } from "./_discover.ts";
 import { envFileKeys, loadAgentDef } from "./_server-common.ts";
 import { runCommand, step } from "./_ui.ts";
-
-const execFileAsync = promisify(execFile);
 
 type CheckResult = {
   name: string;
@@ -229,35 +225,6 @@ async function checkAgentSyntax(cwd: string): Promise<CheckResult> {
   }
 }
 
-async function checkTypeScript(cwd: string): Promise<CheckResult> {
-  const tsconfigPath = path.join(cwd, "tsconfig.json");
-  if (!(await fileExists(tsconfigPath))) {
-    return {
-      name: "TypeScript",
-      status: "pass",
-      message: "No tsconfig.json (using Node native TS)",
-    };
-  }
-
-  try {
-    await execFileAsync("npx", ["tsc", "--noEmit", "--pretty", "false"], {
-      cwd,
-      timeout: 30_000,
-    });
-    return { name: "TypeScript", status: "pass", message: "No type errors" };
-  } catch (err: unknown) {
-    const stderr = (err as { stderr?: string }).stderr ?? "";
-    const lines = stderr.split("\n").filter((l) => l.includes("error TS"));
-    const count = lines.length;
-    return {
-      name: "TypeScript",
-      status: "warn",
-      message: `${count || "Some"} type error(s) found`,
-      fix: "Run `npx tsc --noEmit` to see full type errors",
-    };
-  }
-}
-
 // ── Main ───────────────────────────────────────────────────────────
 
 export async function _runDoctor(
@@ -280,7 +247,6 @@ export async function _runDoctor(
   results.push(await checkEnvFile(cwd));
   results.push(await checkPortAvailable(port));
   results.push(await checkAgentSyntax(cwd));
-  results.push(await checkTypeScript(cwd));
 
   // Print results
   for (const r of results) {
