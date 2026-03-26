@@ -42,6 +42,8 @@ export type ToolCallInfo = {
   args: Record<string, unknown>;
   status: "pending" | "done";
   result?: string | undefined;
+  /** Intermediate updates pushed by the tool via `ctx.sendUpdate()`. */
+  updates: string[];
   /** Index in the messages array where this tool call should appear. */
   afterMessageIndex: number;
 };

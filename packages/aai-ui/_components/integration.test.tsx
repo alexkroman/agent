@@ -135,6 +135,7 @@ describe("MessageList: messages + tool calls interleaved", () => {
         args: { query: "weather" },
         status: "done",
         result: '{"temp": 72}',
+        updates: [],
         afterMessageIndex: 0,
       },
     ];
@@ -179,6 +180,7 @@ describe("MessageList: messages + tool calls interleaved", () => {
         toolName: "web_search",
         args: {},
         status: "pending",
+        updates: [],
         afterMessageIndex: 0,
       },
     ];
@@ -201,6 +203,7 @@ describe("MessageList: messages + tool calls interleaved", () => {
         toolName: "web_search",
         args: { query: "test" },
         status: "pending",
+        updates: [],
         afterMessageIndex: 0,
       },
     ];

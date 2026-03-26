@@ -11,6 +11,9 @@ export function createMockToolContext(overrides?: Partial<ToolContext>): ToolCon
     kv: {} as never,
     vector: {} as never,
     messages: [],
+    sendUpdate() {
+      // no-op in tests
+    },
     ...overrides,
   };
 }

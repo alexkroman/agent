@@ -150,9 +150,18 @@ export async function handleToolCall(ctx: S2sSessionCtx, detail: S2sToolCall): P
     }
   }
 
+  const onUpdate = (data: unknown): void => {
+    const serialized = typeof data === "string" ? data : JSON.stringify(data);
+    const truncated =
+      serialized.length > MAX_TOOL_RESULT_CHARS
+        ? serialized.slice(0, MAX_TOOL_RESULT_CHARS)
+        : serialized;
+    ctx.client.event({ type: "tool_call_update", toolCallId: callId, data: truncated });
+  };
+
   let result: string;
   try {
-    result = await ctx.executeTool(name, effectiveArgs, ctx.id, ctx.conversationMessages);
+    result = await ctx.executeTool(name, effectiveArgs, ctx.id, ctx.conversationMessages, onUpdate);
   } catch (err: unknown) {
     const msg = errorMessage(err);
     ctx.log.error("Tool execution failed", { tool: name, error: errorDetail(err) });

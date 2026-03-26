@@ -434,6 +434,7 @@ describe("createS2sSession", () => {
       { key: "value" },
       "session-1",
       expect.any(Array),
+      expect.any(Function),
     );
     expect(client.events).toContainEqual({
       type: "tool_call_start",

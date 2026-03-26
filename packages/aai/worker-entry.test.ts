@@ -106,6 +106,29 @@ describe("executeToolCall", () => {
     expect(await run("test", {}, tool)).toBe("async result");
   });
 
+  test("sendUpdate calls onUpdate callback", async () => {
+    const updates: unknown[] = [];
+    const tool = makeTool({
+      execute: (_args, ctx) => {
+        ctx.sendUpdate({ preview: "loading" });
+        ctx.sendUpdate({ preview: "ready" });
+        return "done";
+      },
+    });
+    await executeToolCall("test", {}, { tool, env: {}, onUpdate: (d) => updates.push(d) });
+    expect(updates).toEqual([{ preview: "loading" }, { preview: "ready" }]);
+  });
+
+  test("sendUpdate is a no-op when onUpdate is not provided", async () => {
+    const tool = makeTool({
+      execute: (_args, ctx) => {
+        ctx.sendUpdate({ data: "test" });
+        return "ok";
+      },
+    });
+    expect(await run("test", {}, tool)).toBe("ok");
+  });
+
   test("times out tool that runs longer than TOOL_EXECUTION_TIMEOUT_MS", async () => {
     vi.useFakeTimers();
     const tool = makeTool({

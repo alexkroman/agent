@@ -30,10 +30,11 @@ export type ExecuteTool = (
   args: Readonly<Record<string, unknown>>,
   sessionId?: string,
   messages?: readonly Message[],
+  onUpdate?: (data: unknown) => void,
 ) => Promise<string>;
 
 function buildToolContext(opts: ExecuteToolCallOptions): ToolContext {
-  const { env, state, kv, vector, messages } = opts;
+  const { env, state, kv, vector, messages, onUpdate } = opts;
   return {
     env: { ...env },
     state: state ?? {},
@@ -46,6 +47,9 @@ function buildToolContext(opts: ExecuteToolCallOptions): ToolContext {
       return vector;
     },
     messages: messages ?? [],
+    sendUpdate(data: unknown): void {
+      onUpdate?.(data);
+    },
   };
 }
 
@@ -58,6 +62,8 @@ export type ExecuteToolCallOptions = {
   vector?: VectorStore | undefined;
   messages?: readonly Message[] | undefined;
   logger?: Logger | undefined;
+  /** Callback for intermediate UI updates from `ctx.sendUpdate()`. */
+  onUpdate?: ((data: unknown) => void) | undefined;
 };
 
 /**
