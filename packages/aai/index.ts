@@ -39,6 +39,7 @@ export {
   type ToolChoice,
   type ToolContext,
   type ToolDef,
+  type ToolResultMap,
   tool,
 } from "./types.ts";
 export type { VectorEntry, VectorStore } from "./vector.ts";

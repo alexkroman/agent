@@ -414,6 +414,45 @@ export function createToolFactory<S = Record<string, unknown>>(): <
 }
 
 /**
+ * A mapping of tool names to their result types.
+ *
+ * Define this in a shared file (e.g. `shared.ts`) that both `agent.ts` and
+ * `client.tsx` can import, so tool result types stay in sync without
+ * duplication.
+ *
+ * @example
+ * ```ts
+ * // shared.ts
+ * import type { ToolResultMap } from "@alexkroman1/aai";
+ *
+ * export interface Pizza {
+ *   id: number;
+ *   size: "small" | "medium" | "large";
+ *   toppings: string[];
+ * }
+ *
+ * export type MyToolResults = ToolResultMap<{
+ *   add_pizza: { added: Pizza; orderTotal: string };
+ *   place_order: { orderNumber: number; total: string };
+ * }>;
+ * ```
+ *
+ * Then use with {@link @alexkroman1/aai-ui#useToolResult | useToolResult}:
+ *
+ * ```tsx
+ * // client.tsx
+ * import type { MyToolResults } from "./shared.ts";
+ *
+ * useToolResult<MyToolResults["add_pizza"]>("add_pizza", (result) => {
+ *   console.log(result.added); // fully typed
+ * });
+ * ```
+ *
+ * @public
+ */
+export type ToolResultMap<T extends Record<string, unknown> = Record<string, unknown>> = T;
+
+/**
  * Information about a completed agentic step, passed to the `onStep` hook.
  *
  * Each turn may consist of multiple steps (up to `maxSteps`). A step

@@ -160,6 +160,9 @@ export type ToolDef<P extends z.ZodObject<z.ZodRawShape> = z.ZodObject<z.ZodRawS
 };
 
 // @public
+export type ToolResultMap<T extends Record<string, unknown> = Record<string, unknown>> = T;
+
+// @public
 export type VectorEntry = {
     id: string;
     score: number;

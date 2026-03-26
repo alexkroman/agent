@@ -221,6 +221,41 @@ describe("useToolResult", () => {
     expect(calls).toEqual(["add_pizza", "add_pizza"]);
   });
 
+  test("filters by tool name when first argument is a string", async () => {
+    const signals = createMockSignals({ started: true, state: "listening" });
+    const results: unknown[] = [];
+
+    function Harness() {
+      useToolResult("add_pizza", (result) => {
+        results.push(result);
+      });
+      return <div />;
+    }
+
+    render(
+      <SessionProvider value={signals}>
+        <Harness />
+      </SessionProvider>,
+    );
+    await vi.advanceTimersByTimeAsync(0);
+
+    signals.session.toolCalls.value = [
+      makeTc({
+        toolCallId: "tc1",
+        toolName: "add_pizza",
+        result: JSON.stringify({ added: true }),
+      }),
+      makeTc({
+        toolCallId: "tc2",
+        toolName: "remove_pizza",
+        result: JSON.stringify({ removed: true }),
+      }),
+    ];
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(results).toEqual([{ added: true }]);
+  });
+
   test("passes raw string when result is not valid JSON", async () => {
     const signals = createMockSignals({ started: true, state: "listening" });
     const results: unknown[] = [];
