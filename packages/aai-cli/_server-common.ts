@@ -70,3 +70,20 @@ export async function bootServer(
   await server.listen(port);
   return server;
 }
+
+/**
+ * Boot the agent server without client serving.
+ *
+ * Used in dev mode where Vite handles client files with HMR,
+ * and only the backend (health, WebSocket) runs on this server.
+ */
+export async function bootBackendServer(
+  agentDef: AgentDef,
+  env: Record<string, string>,
+  port: number,
+): Promise<AgentServer> {
+  const { createServer } = await import("@alexkroman1/aai/server");
+  const server = createServer({ agent: agentDef, env });
+  await server.listen(port);
+  return server;
+}
