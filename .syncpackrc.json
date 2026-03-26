@@ -1,9 +1,19 @@
 {
   "versionGroups": [
     {
-      "label": "Ignore secure-exec (resolved at deploy time)",
+      "label": "Ensure secure-exec stays in sync across aai and aai-server",
       "dependencies": ["secure-exec"],
-      "isIgnored": true
+      "policy": "sameRange"
+    },
+    {
+      "label": "Ensure zod stays in sync across all packages",
+      "dependencies": ["zod"],
+      "policy": "sameRange"
+    },
+    {
+      "label": "Ensure ws stays in sync across aai and aai-server",
+      "dependencies": ["ws"],
+      "policy": "sameRange"
     }
   ]
 }
