@@ -12,7 +12,7 @@ import { StateIndicator } from "./_components/state-indicator.tsx";
 import { Transcript } from "./_components/transcript.tsx";
 import { createMockSignals } from "./_test-utils.ts";
 import { SessionProvider, type SessionSignals } from "./signals.ts";
-import type { AgentState, ChatMessage } from "./types.ts";
+import type { AgentState, Message } from "./types.ts";
 
 function renderWithProvider(vnode: preact.ComponentChildren, signals: SessionSignals) {
   return render(<SessionProvider value={signals}>{vnode}</SessionProvider>);
@@ -46,13 +46,13 @@ describe("ErrorBanner", () => {
 
 describe("MessageBubble", () => {
   test("renders message text", () => {
-    const msg: ChatMessage = { role: "user", content: "Hello there" };
+    const msg: Message = { role: "user", content: "Hello there" };
     render(<MessageBubble message={msg} />);
     expect(screen.getByText("Hello there")).toBeDefined();
   });
 
   test("renders assistant message text", () => {
-    const msg: ChatMessage = { role: "assistant", content: "Simple reply" };
+    const msg: Message = { role: "assistant", content: "Simple reply" };
     render(<MessageBubble message={msg} />);
     expect(screen.getByText("Simple reply")).toBeDefined();
   });

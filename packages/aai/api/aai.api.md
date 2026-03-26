@@ -4,7 +4,7 @@
 
 ```ts
 
-import type { z } from 'zod';
+import { z } from 'zod';
 
 // @public
 export type AgentDef = {
@@ -68,7 +68,7 @@ export type Kv = {
     set(key: string, value: unknown, options?: {
         expireIn?: number;
     }): Promise<void>;
-    delete(keys: string | string[]): Promise<void>;
+    delete(key: string): Promise<void>;
     list<T = unknown>(prefix: string, options?: KvListOptions): Promise<KvEntry<T>[]>;
     keys(pattern?: string): Promise<string[]>;
 };

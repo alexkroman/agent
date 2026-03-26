@@ -8,7 +8,6 @@
       "@alexkroman1/aai": ["../aai/index.ts"],
       "@alexkroman1/aai/types": ["../aai/types.ts"],
       "@alexkroman1/aai-ui": ["../aai-ui/index.ts"],
-      "@alexkroman1/aai-ui/components": ["../aai-ui/components.ts"],
       "@alexkroman1/aai-ui/session": ["../aai-ui/session.ts"],
       "@alexkroman1/aai-ui/styles.css": ["../aai-ui/styles.css"]
     }

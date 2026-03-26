@@ -53,8 +53,11 @@ async function writeAuthConfig(config: AuthConfig): Promise<void> {
 }
 
 /**
- * Retrieves the AssemblyAI API key from `~/.config/aai/config.json`.
- * If not found, interactively prompts the user and persists it.
+ * Retrieves the AssemblyAI API key from `process.env`, `~/.config/aai/config.json`,
+ * or by interactively prompting the user (persisting it to config).
+ *
+ * Does NOT mutate `process.env`. Callers that need the key available in the
+ * environment for child processes should use {@link ensureApiKeyInEnv} instead.
  */
 export async function getApiKey(): Promise<string> {
   // Check env var first (allows CI/test usage without interactive prompt)
@@ -64,7 +67,6 @@ export async function getApiKey(): Promise<string> {
 
   const config = await readAuthConfig();
   if (config.assemblyai_api_key) {
-    process.env.ASSEMBLYAI_API_KEY = config.assemblyai_api_key;
     return config.assemblyai_api_key;
   }
 
@@ -77,8 +79,17 @@ export async function getApiKey(): Promise<string> {
   }
 
   config.assemblyai_api_key = key;
-  process.env.ASSEMBLYAI_API_KEY = key;
   await writeAuthConfig(config);
+  return key;
+}
+
+/**
+ * Resolves the API key via {@link getApiKey} and sets it on `process.env.ASSEMBLYAI_API_KEY`
+ * so that child processes and downstream code can read it from the environment.
+ */
+export async function ensureApiKeyInEnv(): Promise<string> {
+  const key = await getApiKey();
+  process.env.ASSEMBLYAI_API_KEY = key;
   return key;
 }
 

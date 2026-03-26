@@ -1,6 +1,6 @@
 import "@alexkroman1/aai-ui/styles.css";
 import { mount, useSession } from "@alexkroman1/aai-ui";
-import type { ChatMessage } from "@alexkroman1/aai-ui";
+import type { Message } from "@alexkroman1/aai-ui";
 import { useEffect, useMemo, useRef } from "preact/hooks";
 
 const CSS = `
@@ -279,7 +279,7 @@ function App() {
                   operations.
                 </div>
               )}
-              {msgs.map((m: ChatMessage, i: number) => (
+              {msgs.map((m: Message, i: number) => (
                 <div
                   key={i}
                   class="rounded-lg text-[13px] max-w-[85%] px-3.5 py-2.5"
