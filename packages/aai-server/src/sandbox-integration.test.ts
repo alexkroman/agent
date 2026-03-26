@@ -186,7 +186,6 @@ function toolCall(port: number, name: string, args: Record<string, unknown> = {}
     args,
     sessionId: "s1",
     messages: [],
-    env: {},
   } satisfies ToolCallRequest);
 }
 
@@ -245,7 +244,6 @@ describe("isolate protocol", () => {
       args: {},
       sessionId: "s1",
       messages: [],
-      env: {},
     } satisfies ToolCallRequest);
     expect(status).toBe(500);
     expect(data.error).toMatch(/intentional failure/);
@@ -267,7 +265,6 @@ describe("isolate protocol", () => {
     const { data } = await post<HookResponse>(port, "/hook", {
       hook: "onConnect",
       sessionId: "hook-s1",
-      env: {},
     } satisfies HookRequest);
     expect(data.state.count).toBe(1);
   });
@@ -277,7 +274,6 @@ describe("isolate protocol", () => {
       hook: "onTurn",
       sessionId: "hook-s1",
       text: "user said something",
-      env: {},
     } satisfies HookRequest);
     expect(data.state.lastTurn).toBe("user said something");
   });
@@ -286,7 +282,6 @@ describe("isolate protocol", () => {
     const { data } = await post<HookResponse>(port, "/hook", {
       hook: "resolveTurnConfig",
       sessionId: "hook-s1",
-      env: {},
     } satisfies HookRequest);
     expect(data.result).toBeNull();
   });
