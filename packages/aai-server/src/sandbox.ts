@@ -14,12 +14,7 @@
 import type { AgentConfig } from "@alexkroman1/aai/internal-types";
 import { buildReadyConfig } from "@alexkroman1/aai/protocol";
 import { DEFAULT_S2S_CONFIG } from "@alexkroman1/aai/runtime";
-import {
-  createS2sSession,
-  type HookInvoker,
-  type Session,
-  type ToolInterceptResult,
-} from "@alexkroman1/aai/session";
+import { createS2sSession, type HookInvoker, type Session } from "@alexkroman1/aai/session";
 import type { ExecuteTool } from "@alexkroman1/aai/worker-entry";
 import { type SessionWebSocket, wireSessionSocket } from "@alexkroman1/aai/ws-handler";
 import {
@@ -30,11 +25,15 @@ import {
 } from "secure-exec";
 import { z } from "zod";
 import {
+  BeforeTurnResultSchema,
+  FilterOutputResultSchema,
   HookResponseSchema,
   type IsolateConfig,
   IsolateConfigSchema,
   ToolCallResponseSchema,
+  ToolInterceptResultSchema,
   TurnConfigResultSchema,
+  VoidHookResultSchema,
 } from "./_harness-protocol.ts";
 import type { KvStore } from "./kv.ts";
 import { getHarnessRuntimeJs } from "./sandbox-harness.ts";
@@ -211,11 +210,21 @@ function buildHookInvoker(isolateUrl: string): HookInvoker {
     ).result;
 
   return {
-    onConnect: (sessionId) => hook("onConnect", { sessionId }) as Promise<void>,
-    onDisconnect: (sessionId) => hook("onDisconnect", { sessionId }) as Promise<void>,
-    onTurn: (sessionId, text) => hook("onTurn", { sessionId, text }) as Promise<void>,
-    onError: (sessionId, error) => hook("onError", { sessionId, error }) as Promise<void>,
-    onStep: (sessionId, step) => hook("onStep", { sessionId, step }) as Promise<void>,
+    async onConnect(sessionId) {
+      VoidHookResultSchema.parse(await hook("onConnect", { sessionId }));
+    },
+    async onDisconnect(sessionId) {
+      VoidHookResultSchema.parse(await hook("onDisconnect", { sessionId }));
+    },
+    async onTurn(sessionId, text) {
+      VoidHookResultSchema.parse(await hook("onTurn", { sessionId, text }));
+    },
+    async onError(sessionId, error) {
+      VoidHookResultSchema.parse(await hook("onError", { sessionId, error }));
+    },
+    async onStep(sessionId, step) {
+      VoidHookResultSchema.parse(await hook("onStep", { sessionId, step }));
+    },
     async resolveTurnConfig(sessionId, stepNumber) {
       const parsed = TurnConfigResultSchema.parse(
         await hook("resolveTurnConfig", { sessionId, stepNumber }),
@@ -227,26 +236,31 @@ function buildHookInvoker(isolateUrl: string): HookInvoker {
       return config;
     },
     async beforeTurn(sessionId, text) {
-      const result = await hook("beforeTurn", { sessionId, text });
-      return result as string | undefined;
+      return BeforeTurnResultSchema.parse(await hook("beforeTurn", { sessionId, text }));
     },
-    afterTurn: (sessionId, text) => hook("afterTurn", { sessionId, text }) as Promise<void>,
+    async afterTurn(sessionId, text) {
+      VoidHookResultSchema.parse(await hook("afterTurn", { sessionId, text }));
+    },
     async interceptToolCall(sessionId, tool, args) {
       const result = await hook("interceptToolCall", {
         sessionId,
         step: { stepNumber: 0, toolCalls: [{ toolName: tool, args }], text: "" },
       });
-      return result as ToolInterceptResult;
+      return ToolInterceptResultSchema.parse(result);
     },
     async afterToolCall(sessionId, tool, args, result) {
-      await hook("afterToolCall", {
-        sessionId,
-        step: { stepNumber: 0, toolCalls: [{ toolName: tool, args }], text: result },
-      });
+      VoidHookResultSchema.parse(
+        await hook("afterToolCall", {
+          sessionId,
+          step: { stepNumber: 0, toolCalls: [{ toolName: tool, args }], text: result },
+        }),
+      );
     },
     async filterOutput(sessionId, text) {
-      const result = await hook("filterOutput", { sessionId, text });
-      return (result as string) ?? text;
+      const result = FilterOutputResultSchema.parse(
+        await hook("filterOutput", { sessionId, text }),
+      );
+      return result ?? text;
     },
   };
 }
