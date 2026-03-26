@@ -127,6 +127,7 @@ export type S2sSessionCtx = {
   consumeToolCallStep(
     turnConfig: { maxSteps?: number; activeTools?: string[] } | null,
     name: string,
+    generation: number,
   ): string | null;
   /**
    * Fire a lifecycle hook asynchronously. Errors are logged but never propagated.
@@ -134,8 +135,12 @@ export type S2sSessionCtx = {
    * @param fn - Callback receiving the {@link HookInvoker} to call.
    */
   fireHook(name: string, fn: (h: HookInvoker) => Promise<void>): void;
+  /** Await all in-flight hook promises. Used during shutdown. */
+  drainHooks(): Promise<void>;
   /** Push one or more messages and trim to maxHistory. */
   pushMessages(...msgs: Message[]): void;
+  /** Sequential promise chain for filterOutput calls, ensuring ordering. */
+  filterChain: Promise<void>;
 };
 
 const DEFAULT_MAX_HISTORY = 200;
@@ -154,6 +159,8 @@ function buildCtx(opts: {
   const maxHistory = opts.maxHistory ?? DEFAULT_MAX_HISTORY;
   let cachedActiveTools: string[] | undefined;
   let cachedActiveSet: Set<string> | undefined;
+  /** Track in-flight hook promises so they can be awaited during shutdown. */
+  const pendingHooks = new Set<Promise<void>>();
   const ctx: S2sSessionCtx = {
     ...opts,
     s2s: null,
@@ -163,11 +170,16 @@ function buildCtx(opts: {
     conversationMessages: [],
     maxHistory,
     replyGeneration: 0,
+    filterChain: Promise.resolve(),
     resolveTurnConfig() {
       if (!hookInvoker) return Promise.resolve(null);
       return hookInvoker.resolveTurnConfig(id, ctx.toolCallCount, HOOK_TIMEOUT_MS);
     },
-    consumeToolCallStep(turnConfig, name) {
+    consumeToolCallStep(turnConfig, name, generation) {
+      // Guard: ignore tool calls from a stale reply generation.
+      if (generation !== ctx.replyGeneration) {
+        return "Reply was interrupted. Discarding stale tool call.";
+      }
       const maxSteps = turnConfig?.maxSteps ?? agentConfig.maxSteps;
       ctx.toolCallCount++;
       if (maxSteps !== undefined && ctx.toolCallCount > maxSteps) {
@@ -192,12 +204,16 @@ function buildCtx(opts: {
     fireHook(name, fn) {
       if (!hookInvoker) return;
       try {
-        fn(hookInvoker).catch((err: unknown) =>
-          log.warn(`${name} hook failed`, { err: errorMessage(err) }),
-        );
+        const p = fn(hookInvoker)
+          .catch((err: unknown) => log.warn(`${name} hook failed`, { err: errorMessage(err) }))
+          .finally(() => pendingHooks.delete(p));
+        pendingHooks.add(p);
       } catch (err: unknown) {
         log.warn(`${name} hook failed`, { err: errorMessage(err) });
       }
+    },
+    async drainHooks() {
+      if (pendingHooks.size > 0) await Promise.all([...pendingHooks]);
     },
     pushMessages(...msgs: Message[]) {
       ctx.conversationMessages.push(...msgs);
@@ -317,6 +333,9 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
       if (ctx.turnPromise !== null) await ctx.turnPromise;
       ctx.s2s?.close();
       ctx.fireHook("onDisconnect", (h) => h.onDisconnect(id, HOOK_TIMEOUT_MS));
+      // Await all in-flight hook promises so critical state mutations
+      // (e.g. KV writes) complete before the session is torn down.
+      await ctx.drainHooks();
     },
     onAudio(data: Uint8Array): void {
       ctx.s2s?.sendAudio(data);

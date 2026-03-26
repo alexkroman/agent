@@ -214,32 +214,39 @@ export function createMemoryKv(): Kv {
     async list<T = unknown>(prefix: string, options?: KvListOptions): Promise<KvEntry<T>[]> {
       const now = Date.now();
       const entries: KvEntry<T>[] = [];
+      const expiredKeys: string[] = [];
       let i = 0;
       for (const [key, entry] of store) {
         if (++i % 500 === 0) await new Promise<void>((r) => setTimeout(r, 0));
         if (entry.expiresAt && entry.expiresAt <= now) {
-          store.delete(key);
+          expiredKeys.push(key);
           continue;
         }
         if (key.startsWith(prefix)) {
           entries.push({ key, value: JSON.parse(entry.raw) as T });
         }
       }
+      // Delete expired keys after iteration completes to avoid mutating
+      // the Map while iterating (the yield via setTimeout above gives
+      // other code a chance to run between iterations).
+      for (const key of expiredKeys) store.delete(key);
       return sortAndPaginate(entries, options);
     },
 
     async keys(pattern?: string): Promise<string[]> {
       const now = Date.now();
       const result: string[] = [];
+      const expiredKeys: string[] = [];
       for (const [key, entry] of store) {
         if (entry.expiresAt && entry.expiresAt <= now) {
-          store.delete(key);
+          expiredKeys.push(key);
           continue;
         }
         if (!pattern || matchGlob(key, pattern)) {
           result.push(key);
         }
       }
+      for (const key of expiredKeys) store.delete(key);
       return result.sort((a, b) => a.localeCompare(b));
     },
   };
