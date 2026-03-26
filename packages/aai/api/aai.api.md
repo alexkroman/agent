@@ -18,6 +18,9 @@ export type AgentDef<S = Record<string, unknown>> = {
     activeTools?: readonly string[];
     tools: Readonly<Record<string, ToolDef<z.ZodObject<z.ZodRawShape>, S>>>;
     state?: () => S;
+    persistence?: {
+        ttl: number;
+    };
     onConnect?: (ctx: HookContext<S>) => void | Promise<void>;
     onDisconnect?: (ctx: HookContext<S>) => void | Promise<void>;
     onError?: (error: Error, ctx?: HookContext<S>) => void;
@@ -40,6 +43,9 @@ export type AgentOptions<S = Record<string, unknown>> = {
     activeTools?: readonly string[];
     tools?: Readonly<Record<string, ToolDef<z.ZodObject<z.ZodRawShape>, NoInfer<S>>>>;
     state?: () => S;
+    persistence?: boolean | {
+        ttl?: number;
+    };
     onConnect?: (ctx: HookContext<S>) => void | Promise<void>;
     onDisconnect?: (ctx: HookContext<S>) => void | Promise<void>;
     onError?: (error: Error, ctx?: HookContext<S>) => void;
@@ -61,7 +67,7 @@ export type BuiltinTool = "web_search" | "visit_webpage" | "fetch_json" | "run_c
 // @public
 export function createToolFactory<S = Record<string, unknown>>(): <P extends z.ZodObject<z.ZodRawShape>>(def: ToolDef<P, S>) => ToolDef<P, S>;
 
-// @public
+// @public (undocumented)
 export function defineAgent<S = Record<string, unknown>>(options: AgentOptions<S>): AgentDef<S>;
 
 // @public
