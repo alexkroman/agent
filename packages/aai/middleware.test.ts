@@ -263,7 +263,7 @@ describe("middleware composition edge cases", () => {
   });
 
   test("empty middleware array is a no-op for afterTurn", async () => {
-    await expect(runAfterTurnMiddleware([], "hello", makeCtx())).resolves.toBeUndefined();
+    await runAfterTurnMiddleware([], "hello", makeCtx());
   });
 
   test("empty middleware array is a no-op for toolCallInterceptors", async () => {

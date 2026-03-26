@@ -2,14 +2,14 @@
 
 import clsx from "clsx";
 import type * as preact from "preact";
-import type { ChatMessage } from "../types.ts";
+import type { Message } from "../types.ts";
 
 /** @public */
 export function MessageBubble({
   message,
   className,
 }: {
-  message: ChatMessage;
+  message: Message;
   className?: string;
 }): preact.JSX.Element {
   const isUser = message.role === "user";

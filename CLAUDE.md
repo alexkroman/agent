@@ -29,10 +29,10 @@ npx vitest run --config vitest.config.ts      # All from root
 
 **Full CI check** (`pnpm check`):
 
-Runs everything in sequence: `install --frozen-lockfile` → `pnpm -r run build`
-→ `typecheck` → `lint` → `vitest --coverage` → `knip` → `syncpack lint` →
-`api-extractor` (aai, aai-ui) → template type-check → `markdownlint-cli2` →
-`attw --pack` (aai, aai-ui) → aai-server integration tests → aai-cli e2e tests.
+Runs everything in sequence: `pnpm -r run build` → `typecheck` → `lint` →
+`api-extractor` (aai, aai-ui) → `attw --pack` (aai, aai-ui) → template
+type-check → `knip` → `syncpack lint` → `markdownlint-cli2` → aai-server
+integration tests → aai-cli e2e tests → `vitest --coverage`.
 
 ## Architecture
 
@@ -82,9 +82,8 @@ Non-exported internal files (used within the package only):
 
 #### `@alexkroman1/aai-ui` (UI)
 
-- `.` — default Preact UI component
-- `./session` — session management
-- `./components` — individual UI components
+- `.` — default Preact UI component + session + mount helpers
+- `./session` — session management (no Preact dependency)
 - `./styles.css` — default styles
 
 #### `@alexkroman1/aai-cli` (CLI)
@@ -180,14 +179,10 @@ boundaries. Key files: `packages/aai-server/src/sandbox.ts`,
 - **Filesystem**: Read-only in-memory virtual FS. No write/delete/mkdir.
 - **Network**: Isolate can only reach its own per-sandbox sidecar on
   loopback (exact host+port enforced via Zod-validated network policy).
-  Each sidecar requires a per-sandbox bearer token (generated with
-  `crypto.randomBytes`, compared with `timingSafeEqual`). The token is
-  shared only with the corresponding isolate via `SIDECAR_TOKEN` env var.
   No external URLs, no cloud metadata, no port scanning.
 - **Child processes**: All subprocess spawning disabled.
-- **Env vars**: Only `SIDECAR_URL`, `SIDECAR_TOKEN`, and `AAI_ENV_*`
-  prefixed vars are readable. Platform secrets (e.g.
-  `ASSEMBLYAI_API_KEY`) stay host-side.
+- **Env vars**: Only `SIDECAR_URL` and `AAI_ENV_*` prefixed vars are
+  readable. Platform secrets (e.g. `ASSEMBLYAI_API_KEY`) stay host-side.
 - **Memory**: 128 MB limit per isolate.
 - **Timing**: `timingMitigation: "freeze"` prevents side-channel attacks.
 

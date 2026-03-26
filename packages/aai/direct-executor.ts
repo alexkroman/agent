@@ -6,8 +6,13 @@
  * Tools execute directly in-process — no sandbox, no RPC.
  */
 
+import {
+  type AgentConfig,
+  agentToolsToSchemas,
+  type ToolSchema,
+  toAgentConfig,
+} from "./_internal-types.ts";
 import { getBuiltinToolDefs, getBuiltinToolSchemas } from "./builtin-tools.ts";
-import { type AgentConfig, agentToolsToSchemas, type ToolSchema } from "./internal-types.ts";
 import type { Kv } from "./kv.ts";
 import { createMemoryKv } from "./kv.ts";
 import {
@@ -53,17 +58,7 @@ export type DirectExecutor = {
 
 /** Build a serializable AgentConfig from an AgentDef. */
 export function buildAgentConfig(agent: AgentDef): AgentConfig {
-  const config: AgentConfig = {
-    name: agent.name,
-    instructions: agent.instructions,
-    greeting: agent.greeting,
-  };
-  if (agent.sttPrompt !== undefined) config.sttPrompt = agent.sttPrompt;
-  if (typeof agent.maxSteps !== "function") config.maxSteps = agent.maxSteps;
-  if (agent.toolChoice !== undefined) config.toolChoice = agent.toolChoice;
-  if (agent.builtinTools) config.builtinTools = [...agent.builtinTools];
-  if (agent.activeTools) config.activeTools = [...agent.activeTools];
-  return config;
+  return toAgentConfig(agent);
 }
 
 /** Create a direct (in-process) tool executor and hook invoker for an agent. */
