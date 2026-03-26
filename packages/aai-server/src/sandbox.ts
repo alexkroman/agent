@@ -143,7 +143,7 @@ async function startIsolate(
       'import agent from "/app/agent_bundle.js";\nimport { startHarness } from "/app/_harness-runtime.js";\nstartHarness(agent);',
       { cwd: "/app" },
     )
-    .catch((err) => {
+    .catch((err: unknown) => {
       rejectPort(new Error(`Isolate exited before announcing port: ${err}`));
     });
 

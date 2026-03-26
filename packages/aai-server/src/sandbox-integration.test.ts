@@ -386,8 +386,7 @@ describe("WebSocket session lifecycle", () => {
       send(data: string | ArrayBuffer | Uint8Array) {
         if (typeof data === "string") messages.push(data);
       },
-      // biome-ignore lint/suspicious/noExplicitAny: test mock
-      addEventListener(type: string, listener: any) {
+      addEventListener(type: string, listener: (event: Event) => void) {
         if (type === "open") {
           _opened = true;
           listener(new Event("open"));

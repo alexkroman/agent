@@ -93,7 +93,7 @@ export function ensureAgent(slot: AgentSlot, opts: EnsureOpts): Promise<Sandbox>
       // biome-ignore lint/style/noNonNullAssertion: sandbox is set by spawnAgent above
       return slot.sandbox!;
     })
-    .catch((err) => {
+    .catch((err: unknown) => {
       delete slot.initializing;
       throw err;
     });

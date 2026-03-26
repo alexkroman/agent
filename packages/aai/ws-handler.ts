@@ -197,7 +197,7 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
     if (session) {
       void session
         .stop()
-        .catch((err) => {
+        .catch((err: unknown) => {
           log.error("Session stop failed", { ...ctx, sid, error: err });
         })
         .finally(() => {

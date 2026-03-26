@@ -242,7 +242,12 @@ function parseIsolateOutput(stdout: string, stderr: string): string | { error: s
     return { error: "Code execution timed out" };
   }
   try {
-    const parsed = JSON.parse(stdout) as { ok: boolean; result?: string; error?: string };
+    const IsolateOutputSchema = z.object({
+      ok: z.boolean(),
+      result: z.string().optional(),
+      error: z.string().optional(),
+    });
+    const parsed = IsolateOutputSchema.parse(JSON.parse(stdout));
     if (parsed.ok) return parsed.result ?? "Code ran successfully (no output)";
     return { error: parsed.error ?? "Unknown error" };
   } catch {

@@ -4,6 +4,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { z } from "zod";
 
 const WORKSPACE_PKGS = ["aai", "aai-ui"];
 
@@ -28,8 +29,10 @@ function rewriteWorkspaceDeps(cwd: string, rewrite: DepRewriter, verb: string): 
 
   for (const pkgDir of WORKSPACE_PKGS) {
     const localPath = path.join(packagesDir, pkgDir);
-    const localPkg = JSON.parse(fs.readFileSync(path.join(localPath, "package.json"), "utf-8"));
-    const name = localPkg.name as string;
+    const localPkg = z
+      .object({ name: z.string() })
+      .parse(JSON.parse(fs.readFileSync(path.join(localPath, "package.json"), "utf-8")));
+    const name = localPkg.name;
     if (!deps[name]) continue;
     const newVersion = rewrite(deps[name], localPath);
     if (newVersion !== null) {

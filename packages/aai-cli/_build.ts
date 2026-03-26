@@ -22,7 +22,7 @@ export async function buildAgentBundle(
   let bundle: BundleOutput;
   try {
     bundle = await bundleAgent(agent);
-  } catch (err) {
+  } catch (err: unknown) {
     if (err instanceof BundleError) {
       throw new Error(`Bundle failed: ${err.message}`, { cause: err });
     }

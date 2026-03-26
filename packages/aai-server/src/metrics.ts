@@ -45,8 +45,6 @@ async function collectMetrics(): Promise<CollectionResult> {
   return exporter.collect();
 }
 
-type NumberDataPoint = DataPoint<number>;
-
 /** Structural type matching OTel HistogramDataPoint.value */
 type HistogramValue = {
   buckets: { boundaries: number[]; counts: number[] };
@@ -60,14 +58,16 @@ function formatLabels(labels: Record<string, string>): string {
     .join(",");
 }
 
-/** Detect histogram by checking if data point value has bucket structure. */
-function isHistogramDataPoint(dp: NumberDataPoint): boolean {
-  const val = dp.value as unknown;
+/** Type-narrow a data point to one whose value is a histogram structure. */
+function isHistogramDataPoint(
+  dp: DataPoint<number | HistogramValue>,
+): dp is DataPoint<HistogramValue> {
+  const val: unknown = dp.value;
   return typeof val === "object" && val !== null && "buckets" in val;
 }
 
 function filterLabels(
-  dp: NumberDataPoint,
+  dp: DataPoint<number | HistogramValue>,
   agentFilter: string | undefined,
 ): { include: boolean; labelStr: string } {
   const labels: Record<string, string> = {};
@@ -85,10 +85,10 @@ function filterLabels(
 function pushHistogramLines(
   lines: string[],
   name: string,
-  dp: NumberDataPoint,
+  dp: DataPoint<HistogramValue>,
   labelStr: string,
 ): void {
-  const val = dp.value as unknown as HistogramValue;
+  const val = dp.value;
   const { boundaries, counts } = val.buckets;
   for (let i = 0; i < boundaries.length; i++) {
     lines.push(
@@ -104,7 +104,7 @@ function pushHistogramLines(
 function formatDataPoints(
   lines: string[],
   name: string,
-  dataPoints: NumberDataPoint[],
+  dataPoints: DataPoint<number | HistogramValue>[],
   agentFilter: string | undefined,
 ): void {
   for (const dp of dataPoints) {
@@ -119,7 +119,7 @@ function formatDataPoints(
   }
 }
 
-function detectMetricType(dataPoints: NumberDataPoint[]): string {
+function detectMetricType(dataPoints: DataPoint<number | HistogramValue>[]): string {
   const first = dataPoints[0];
   if (first !== undefined && isHistogramDataPoint(first)) return "histogram";
   return "gauge";
@@ -130,7 +130,7 @@ function formatResult(result: CollectionResult, agentFilter: string | undefined)
   for (const scopeMetrics of result.resourceMetrics.scopeMetrics) {
     for (const metric of scopeMetrics.metrics) {
       const { descriptor, dataPoints } = metric;
-      const dps = dataPoints as NumberDataPoint[];
+      const dps = dataPoints as DataPoint<number | HistogramValue>[];
       const promType = detectMetricType(dps);
       lines.push(`# HELP ${descriptor.name} ${descriptor.description ?? ""}`);
       lines.push(`# TYPE ${descriptor.name} ${promType}`);
