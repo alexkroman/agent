@@ -328,3 +328,117 @@ describe("middleware composition edge cases", () => {
     expect(result).toBe("filtered: Contact [EMAIL], SSN [SSN]");
   });
 });
+
+// ─── Error handling behavior (Issue #8) ──────────────────────────────────────
+
+describe("middleware error propagation", () => {
+  test("beforeTurn: throwing middleware propagates error", async () => {
+    const mw: Middleware[] = [
+      {
+        name: "thrower",
+        beforeTurn: () => {
+          throw new Error("boom");
+        },
+      },
+    ];
+    await expect(runBeforeTurnMiddleware(mw, "hello", makeCtx())).rejects.toThrow("boom");
+  });
+
+  test("beforeTurn: throwing middleware prevents subsequent middleware from running", async () => {
+    const second = vi.fn();
+    const mw: Middleware[] = [
+      {
+        name: "thrower",
+        beforeTurn: () => {
+          throw new Error("boom");
+        },
+      },
+      { name: "second", beforeTurn: second },
+    ];
+    await expect(runBeforeTurnMiddleware(mw, "hello", makeCtx())).rejects.toThrow("boom");
+    expect(second).not.toHaveBeenCalled();
+  });
+
+  test("afterTurn: throwing middleware propagates error", async () => {
+    const mw: Middleware[] = [
+      {
+        name: "thrower",
+        afterTurn: () => {
+          throw new Error("afterTurn boom");
+        },
+      },
+    ];
+    await expect(runAfterTurnMiddleware(mw, "hello", makeCtx())).rejects.toThrow("afterTurn boom");
+  });
+
+  test("afterTurn: throwing middleware prevents subsequent (earlier-order) middleware", async () => {
+    const first = vi.fn();
+    const mw: Middleware[] = [
+      { name: "first", afterTurn: first },
+      {
+        name: "thrower",
+        afterTurn: () => {
+          throw new Error("boom");
+        },
+      },
+    ];
+    // afterTurn runs in reverse, so "thrower" (index 1) runs first
+    await expect(runAfterTurnMiddleware(mw, "hello", makeCtx())).rejects.toThrow("boom");
+    expect(first).not.toHaveBeenCalled();
+  });
+
+  test("toolCallInterceptor: throwing middleware propagates error", async () => {
+    const mw: Middleware[] = [
+      {
+        name: "thrower",
+        toolCallInterceptor: () => {
+          throw new Error("intercept boom");
+        },
+      },
+    ];
+    await expect(runToolCallInterceptors(mw, "tool", {}, makeCtx())).rejects.toThrow(
+      "intercept boom",
+    );
+  });
+
+  test("outputFilter: throwing filter propagates error", async () => {
+    const mw: Middleware[] = [
+      {
+        name: "thrower",
+        outputFilter: () => {
+          throw new Error("filter boom");
+        },
+      },
+    ];
+    await expect(runOutputFilters(mw, "hello", makeCtx())).rejects.toThrow("filter boom");
+  });
+
+  test("outputFilter: throwing filter prevents subsequent filters", async () => {
+    const second = vi.fn().mockReturnValue("filtered");
+    const mw: Middleware[] = [
+      {
+        name: "thrower",
+        outputFilter: () => {
+          throw new Error("filter boom");
+        },
+      },
+      { name: "second", outputFilter: second },
+    ];
+    await expect(runOutputFilters(mw, "hello", makeCtx())).rejects.toThrow("filter boom");
+    expect(second).not.toHaveBeenCalled();
+  });
+
+  test("afterToolCall: throwing middleware propagates error", async () => {
+    const mw: Middleware[] = [
+      {
+        name: "thrower",
+        afterToolCall: () => {
+          throw new Error("afterTool boom");
+        },
+      },
+    ];
+    await expect(runAfterToolCallMiddleware(mw, "tool", {}, "result", makeCtx())).rejects.toThrow(
+      "afterTool boom",
+    );
+  });
+});
