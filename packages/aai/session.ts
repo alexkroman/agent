@@ -98,6 +98,8 @@ function buildCtx(opts: {
   log: Logger;
 }): S2sSessionCtx {
   const { id, agentConfig, hookInvoker, log } = opts;
+  let cachedActiveTools: string[] | undefined;
+  let cachedActiveSet: Set<string> | undefined;
   const ctx: S2sSessionCtx = {
     ...opts,
     s2s: null,
@@ -121,8 +123,11 @@ function buildCtx(opts: {
         return "Maximum tool steps reached. Please respond to the user now.";
       }
       if (turnConfig?.activeTools) {
-        const activeSet = new Set(turnConfig.activeTools);
-        if (!activeSet.has(name)) {
+        if (turnConfig.activeTools !== cachedActiveTools) {
+          cachedActiveTools = turnConfig.activeTools;
+          cachedActiveSet = new Set(turnConfig.activeTools);
+        }
+        if (!cachedActiveSet?.has(name)) {
           log.info("Tool filtered by activeTools", { name });
           return JSON.stringify({ error: `Tool "${name}" is not available at this step.` });
         }
