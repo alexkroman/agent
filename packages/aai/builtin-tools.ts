@@ -200,10 +200,10 @@ function createRunCode(): ToolDef<typeof runCodeParams> {
 }
 
 /** Lazily import secure-exec to avoid top-level side effects. */
-let _secureExec: typeof import("secure-exec") | undefined;
-async function getSecureExec() {
-  if (!_secureExec) _secureExec = await import("secure-exec");
-  return _secureExec;
+let _secureExecPromise: Promise<typeof import("secure-exec")> | undefined;
+function getSecureExec() {
+  _secureExecPromise ??= import("secure-exec");
+  return _secureExecPromise;
 }
 
 // The harness loads user code via readFileSync + AsyncFunction so that syntax
