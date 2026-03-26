@@ -19,11 +19,15 @@ export async function handleAgentHealth(c: Context<Env>): Promise<Response> {
   return c.json({ status: "ok", slug });
 }
 
+const CSP =
+  "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
+  "connect-src 'self' wss: ws:; img-src 'self' data:; font-src 'self'; object-src 'none'; base-uri 'self'";
+
 export async function handleAgentPage(c: Context<Env>): Promise<Response> {
   const slug = c.get("slug");
   const page = await c.env.store.getClientFile(slug, "index.html");
   if (!page) throw new HTTPException(404, { message: "HTML not found" });
-  return c.html(page);
+  return c.html(page, 200, { "Content-Security-Policy": CSP });
 }
 
 export async function handleClientAsset(c: Context<Env>): Promise<Response> {

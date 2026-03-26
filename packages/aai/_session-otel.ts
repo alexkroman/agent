@@ -22,6 +22,13 @@ import {
 
 export { activeSessionsUpDown, sessionCounter } from "./telemetry.ts";
 
+/**
+ * Complete a tool call by truncating the result, emitting a `tool_call_done` event,
+ * and accumulating the result in `ctx.pendingTools` — but only if the reply that
+ * initiated this call is still active. A barge-in bumps `ctx.replyGeneration`,
+ * so late-finishing tools from an interrupted reply are silently discarded instead
+ * of leaking into the next reply's pending tools.
+ */
 function finishToolCall(
   ctx: S2sSessionCtx,
   callId: string,
@@ -40,6 +47,18 @@ function finishToolCall(
   }
 }
 
+/**
+ * Orchestrate the full tool call pipeline for a single S2S tool invocation.
+ *
+ * Steps: resolve per-turn config → check step/tool limits → run middleware
+ * `interceptToolCall` (which may block, return a cached result, or modify args)
+ * → execute the tool → run `afterToolCall` middleware → record metrics and
+ * finish via {@link finishToolCall}. Each step is wrapped in an OpenTelemetry
+ * span (`tool.call`) with agent/session/tool attributes.
+ *
+ * @param ctx - The shared mutable session context (see {@link S2sSessionCtx}).
+ * @param detail - The tool call details from the S2S API (call ID, name, parsed args).
+ */
 export async function handleToolCall(ctx: S2sSessionCtx, detail: S2sToolCall): Promise<void> {
   const { callId, name, args: parsedArgs } = detail;
   // Capture the reply generation at call start so finishToolCall can detect
@@ -74,7 +93,7 @@ export async function handleToolCall(ctx: S2sSessionCtx, detail: S2sToolCall): P
     return;
   }
 
-  const refused = ctx.consumeToolCallStep(turnConfig, name);
+  const refused = ctx.consumeToolCallStep(turnConfig, name, generation);
   if (refused !== null) {
     span.setAttribute("aai.tool.refused", true);
     span.end();
@@ -122,7 +141,12 @@ export async function handleToolCall(ctx: S2sSessionCtx, detail: S2sToolCall): P
       }
       if (ic?.type === "args") effectiveArgs = ic.args;
     } catch (err: unknown) {
-      ctx.log.warn("interceptToolCall middleware failed", { err: errorMessage(err) });
+      // Fail-open: middleware error does not block the tool call. The tool
+      // proceeds with its original (or partially transformed) args.
+      ctx.log.warn("interceptToolCall middleware failed (fail-open, tool call proceeds)", {
+        err: errorMessage(err),
+        tool: name,
+      });
     }
   }
 
@@ -181,17 +205,23 @@ function handleUserTranscript(ctx: S2sSessionCtx, text: string): void {
 }
 
 function handleAgentTranscriptDelta(ctx: S2sSessionCtx, text: string): void {
-  if (!ctx.hookInvoker?.filterOutput) {
+  const filterOutput = ctx.hookInvoker?.filterOutput;
+  if (!filterOutput) {
     ctx.client.event({ type: "chat_delta", text });
     return;
   }
-  ctx.hookInvoker
-    .filterOutput(ctx.id, text, HOOK_TIMEOUT_MS)
-    .then((f) => ctx.client.event({ type: "chat_delta", text: f }))
-    .catch((err: unknown) => {
+  // Chain filter calls sequentially to preserve ordering. Without this,
+  // concurrent filterOutput calls could resolve out of order, producing
+  // garbled text on the client.
+  ctx.filterChain = ctx.filterChain.then(async () => {
+    try {
+      const f = await filterOutput.call(ctx.hookInvoker, ctx.id, text, HOOK_TIMEOUT_MS);
+      ctx.client.event({ type: "chat_delta", text: f });
+    } catch (err: unknown) {
       ctx.log.warn("filterOutput hook failed", { error: errorMessage(err) });
       ctx.client.event({ type: "chat_delta", text });
-    });
+    }
+  });
 }
 
 function handleAgentTranscript(ctx: S2sSessionCtx, text: string): void {
@@ -199,17 +229,22 @@ function handleAgentTranscript(ctx: S2sSessionCtx, text: string): void {
     ctx.client.event({ type: "chat", text: t });
     ctx.pushMessages({ role: "assistant", content: t });
   };
-  if (!ctx.hookInvoker?.filterOutput) {
+  const filterOutput = ctx.hookInvoker?.filterOutput;
+  if (!filterOutput) {
     emit(text);
     return;
   }
-  ctx.hookInvoker
-    .filterOutput(ctx.id, text, HOOK_TIMEOUT_MS)
-    .then(emit)
-    .catch((err: unknown) => {
+  // Chain after any pending deltas to ensure the final transcript
+  // is emitted after all deltas are processed.
+  ctx.filterChain = ctx.filterChain.then(async () => {
+    try {
+      const f = await filterOutput.call(ctx.hookInvoker, ctx.id, text, HOOK_TIMEOUT_MS);
+      emit(f);
+    } catch (err: unknown) {
       ctx.log.warn("filterOutput hook failed", { error: errorMessage(err) });
       emit(text);
-    });
+    }
+  });
 }
 
 function handleReplyDone(ctx: S2sSessionCtx, status: string | undefined): void {
@@ -249,7 +284,17 @@ function handleReplyDone(ctx: S2sSessionCtx, status: string | undefined): void {
   }
 }
 
-/** Wire all S2S events to the client sink, hooks, and session state. */
+/**
+ * Wire all S2S events to the client sink, hooks, and session state.
+ *
+ * Registers listeners on the S2S handle for: ready, session expiry, speech
+ * start/stop, user/agent transcripts, reply lifecycle, tool calls, audio
+ * chunks, errors, and close. Each listener delegates to a focused handler
+ * function that updates `ctx` and emits client events.
+ *
+ * @param ctx - The shared mutable session context.
+ * @param handle - The S2S WebSocket handle to listen on.
+ */
 export function setupListeners(ctx: S2sSessionCtx, handle: S2sHandle): void {
   handle.on("ready", ({ sessionId }) => ctx.log.info("S2S session ready", { sessionId }));
   handle.on("sessionExpired", () => {
@@ -266,6 +311,12 @@ export function setupListeners(ctx: S2sSessionCtx, handle: S2sHandle): void {
     ctx.toolCallCount = 0;
     ctx.replyGeneration++;
     ctx.pendingTools = [];
+    // Reset the turn promise chain so stale resolved promises from
+    // a previous reply don't cause sendPending to execute immediately
+    // in handleReplyDone before current-reply tool calls finish.
+    ctx.turnPromise = null;
+    // Reset filter chain so stale filter promises don't block new deltas.
+    ctx.filterChain = Promise.resolve();
   });
   handle.on("audio", ({ audio }) => ctx.client.playAudioChunk(audio));
   handle.on("agentTranscriptDelta", ({ text }) => handleAgentTranscriptDelta(ctx, text));

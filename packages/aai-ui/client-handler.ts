@@ -10,8 +10,9 @@ type BatchFn = (fn: () => void) => void;
 /**
  * Handles server→client messages and updates reactive Preact signals
  * accordingly (state transitions, transcripts, messages, audio playback).
+ *
+ * @internal Exported for testing only.
  */
-/** @internal Exported for testing only. */
 export class ClientHandler {
   #state: Reactive<AgentState>;
   #messages: Reactive<Message[]>;
@@ -23,6 +24,8 @@ export class ClientHandler {
   #batch: BatchFn;
   /** Incremented on each turn boundary — stale async callbacks compare against this. */
   #generation = 0;
+  /** Buffer for accumulating chat_delta fragments (avoids O(n²) string concat). */
+  #deltaBuffer: string[] = [];
   constructor(opts: {
     state: Reactive<AgentState>;
     messages: Reactive<Message[]>;
@@ -57,6 +60,7 @@ export class ClientHandler {
         break;
       case "turn":
         this.#generation++;
+        this.#deltaBuffer.length = 0;
         this.#batch(() => {
           this.#userUtterance.value = null;
           this.#messages.value = [...this.#messages.value, { role: "user", content: e.text }];
@@ -64,11 +68,11 @@ export class ClientHandler {
         });
         break;
       case "chat_delta":
-        this.#agentUtterance.value = this.#agentUtterance.value
-          ? `${this.#agentUtterance.value} ${e.text}`
-          : e.text;
+        this.#deltaBuffer.push(e.text);
+        this.#agentUtterance.value = this.#deltaBuffer.join(" ");
         break;
       case "chat":
+        this.#deltaBuffer.length = 0;
         this.#batch(() => {
           this.#agentUtterance.value = null;
           this.#messages.value = [...this.#messages.value, { role: "assistant", content: e.text }];
@@ -139,6 +143,7 @@ export class ClientHandler {
     }
   }
 
+  /** Enqueue a PCM16 audio chunk for playback. Transitions state to `"speaking"` on the first chunk. */
   playAudioChunk(chunk: Uint8Array): void {
     if (this.#state.value === "error") return;
     if (this.#state.value !== "speaking") {
@@ -149,6 +154,11 @@ export class ClientHandler {
     }
   }
 
+  /**
+   * Signal that the server has finished sending audio for this turn.
+   * Waits for the audio queue to drain, then transitions state to `"listening"`.
+   * Uses the `#generation` counter to discard stale completions from interrupted turns.
+   */
   playAudioDone(): void {
     const gen = this.#generation;
     const io = this.#voiceIO();

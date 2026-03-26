@@ -123,20 +123,32 @@ async function main(): Promise<void> {
 
   console.info(`AAI server listening on http://localhost:${port}`);
 
-  function shutdown() {
+  async function shutdown() {
     console.info("Shutting down...");
     wss.close();
-    for (const slot of opts.slots.values()) {
-      if (slot.idleTimer) clearTimeout(slot.idleTimer);
-      slot.sandbox?.terminate();
-    }
+    const stops = [...opts.slots.values()]
+      .map((slot) => {
+        if (slot.idleTimer) clearTimeout(slot.idleTimer);
+        return slot.sandbox?.terminate();
+      })
+      .filter(Boolean);
+    // Await all sandbox terminations before closing the server.
+    await Promise.allSettled(stops);
     nodeServer.close(() => process.exit(0));
     // Force exit if cleanup takes too long
     setTimeout(() => process.exit(1), 3000).unref();
   }
 
-  process.on("SIGINT", shutdown);
-  process.on("SIGTERM", shutdown);
+  process.on("SIGINT", () => void shutdown());
+  process.on("SIGTERM", () => void shutdown());
+
+  process.on("unhandledRejection", (err) => {
+    console.error("Unhandled rejection:", err);
+  });
+  process.on("uncaughtException", (err) => {
+    console.error("Uncaught exception:", err);
+    process.exit(1);
+  });
 }
 
 main().catch((err: unknown) => {

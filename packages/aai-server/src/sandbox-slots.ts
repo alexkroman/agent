@@ -29,6 +29,9 @@ export type AgentSlot = {
   sandbox?: Sandbox;
   initializing?: Promise<Sandbox>;
   idleTimer?: ReturnType<typeof setTimeout>;
+  /** Set while a sandbox is being terminated. Prevents ensureAgent from
+   *  returning a sandbox in a half-terminated state. */
+  terminating?: Promise<void>;
 };
 
 type EnsureOpts = {
@@ -64,16 +67,31 @@ function resetIdleTimer(slot: AgentSlot): void {
   slot.idleTimer = setTimeout(() => {
     if (!slot.sandbox) return;
     console.info("Evicting idle sandbox", { slug: slot.slug });
-    slot.sandbox.terminate().catch(() => {
-      // Intentionally swallowed — best-effort idle eviction cleanup
-    });
+    // Mark as terminating before starting async cleanup to prevent
+    // ensureAgent from returning a sandbox that is being torn down.
+    const sb = slot.sandbox;
     delete slot.sandbox;
     delete slot.idleTimer;
+    slot.terminating = sb
+      .terminate()
+      .catch((err) => {
+        console.warn("Idle sandbox terminate failed:", { slug: slot.slug, error: err });
+      })
+      .finally(() => {
+        delete slot.terminating;
+      });
   }, IDLE_MS);
 }
 
 export function ensureAgent(slot: AgentSlot, opts: EnsureOpts): Promise<Sandbox> {
   const t0 = performance.now();
+
+  // If a previous sandbox is being terminated, wait for it to finish
+  // before checking or creating a new one.
+  // biome-ignore lint/nursery/noMisusedPromises: checking nullability, not truthiness
+  if (slot.terminating) {
+    return slot.terminating.then(() => ensureAgent(slot, opts));
+  }
 
   if (slot.sandbox) {
     resetIdleTimer(slot);

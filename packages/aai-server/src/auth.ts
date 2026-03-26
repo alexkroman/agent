@@ -5,27 +5,29 @@ import type { BundleStore } from "./bundle-store-tigris.ts";
 const textEncoder = new TextEncoder();
 
 const CACHE_MAX = 100;
-const hashCache = new Map<string, string>();
+// Cache keyed by hash hex → true. We never store the raw API key in memory;
+// instead we always re-hash and check if the result is in the cache.
+const hashCache = new Set<string>();
 
 export async function hashApiKey(apiKey: string): Promise<string> {
-  const cached = hashCache.get(apiKey);
-  if (cached !== undefined) {
-    return cached;
-  }
   const hash = await crypto.subtle.digest("SHA-256", textEncoder.encode(apiKey));
   const hex = Buffer.from(hash).toString("hex");
-  if (hashCache.size >= CACHE_MAX) {
-    // Evict oldest entry (first inserted)
-    const first = hashCache.keys().next().value;
-    if (first !== undefined) hashCache.delete(first);
+  if (!hashCache.has(hex)) {
+    if (hashCache.size >= CACHE_MAX) {
+      // Evict oldest entry (first inserted)
+      const first = hashCache.values().next().value;
+      if (first !== undefined) hashCache.delete(first);
+    }
+    hashCache.add(hex);
   }
-  hashCache.set(apiKey, hex);
   return hex;
 }
 
-/** Visible for testing — clears the internal hash cache. */
+/** Visible for testing — clears the internal hash cache. No-op in production. */
 export function _clearHashCache(): void {
-  hashCache.clear();
+  if (process.env.NODE_ENV === "test" || process.env.NODE_ENV === "development") {
+    hashCache.clear();
+  }
 }
 
 /** Constant-time string comparison to prevent timing attacks on credential hashes. */

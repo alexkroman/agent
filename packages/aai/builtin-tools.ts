@@ -1,3 +1,4 @@
+// biome-ignore lint/nursery/noExcessiveLinesPerFile: builtin tools are cohesive; splitting would obscure relationships
 // Copyright 2025 the AAI authors. MIT license.
 /**
  * Built-in tool definitions for the AAI agent SDK.
@@ -7,7 +8,6 @@
  * Network requests go through the host's fetch proxy (with SSRF protection).
  */
 
-import { convert } from "html-to-text";
 import { z } from "zod";
 import { EMPTY_PARAMS, type ToolSchema } from "./_internal-types.ts";
 import { ssrfSafeFetch } from "./_ssrf.ts";
@@ -27,7 +27,15 @@ const fetchSignal = () => AbortSignal.timeout(FETCH_TIMEOUT_MS);
 
 // ─── HTML to text ──────────────────────────────────────────────────────────
 
-function htmlToText(html: string): string {
+/** Lazily import html-to-text to avoid loading 824KB dep tree at startup. */
+let _htmlToTextPromise: Promise<typeof import("html-to-text")> | undefined;
+function getHtmlToText() {
+  _htmlToTextPromise ??= import("html-to-text");
+  return _htmlToTextPromise;
+}
+
+async function htmlToText(html: string): Promise<string> {
+  const { convert } = await getHtmlToText();
   return convert(html, { wordwrap: false });
 }
 
@@ -125,7 +133,7 @@ function createVisitWebpage(fetchFn = globalThis.fetch): ToolDef<typeof visitWeb
       const htmlContent = await resp.text();
       const trimmedHtml =
         htmlContent.length > MAX_HTML_BYTES ? htmlContent.slice(0, MAX_HTML_BYTES) : htmlContent;
-      const text = htmlToText(trimmedHtml);
+      const text = await htmlToText(trimmedHtml);
       const truncated = text.length > MAX_PAGE_CHARS;
       const content = truncated ? text.slice(0, MAX_PAGE_CHARS) : text;
       return {
@@ -143,9 +151,37 @@ const fetchJsonParams = z.object({
   url: z.string().describe("The URL to fetch JSON from"),
   headers: z
     .record(z.string(), z.string())
-    .describe("Optional HTTP headers to include in the request")
+    .describe(
+      "Optional HTTP headers to include in the request (only safe headers like Accept, Content-Type are allowed)",
+    )
     .optional(),
 });
+
+/** Headers the LLM must never control — could exfiltrate credentials or manipulate routing. */
+const BLOCKED_FETCH_HEADERS = new Set([
+  "authorization",
+  "cookie",
+  "set-cookie",
+  "host",
+  "proxy-authorization",
+  "x-forwarded-for",
+  "x-forwarded-host",
+  "x-forwarded-proto",
+  "x-real-ip",
+  "cf-connecting-ip",
+  "fly-client-ip",
+]);
+
+function sanitizeHeaders(
+  raw: Record<string, string> | undefined,
+): Record<string, string> | undefined {
+  if (!raw) return;
+  const safe: Record<string, string> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (!BLOCKED_FETCH_HEADERS.has(key.toLowerCase())) safe[key] = value;
+  }
+  return Object.keys(safe).length > 0 ? safe : undefined;
+}
 
 function createFetchJson(fetchFn = globalThis.fetch): ToolDef<typeof fetchJsonParams> {
   return {
@@ -154,9 +190,10 @@ function createFetchJson(fetchFn = globalThis.fetch): ToolDef<typeof fetchJsonPa
     parameters: fetchJsonParams,
     async execute(args, _ctx) {
       const { url, headers } = args;
+      const safeHeaders = sanitizeHeaders(headers);
       const resp = await ssrfSafeFetch(
         url,
-        { ...(headers && { headers }), signal: fetchSignal() },
+        { ...(safeHeaders && { headers: safeHeaders }), signal: fetchSignal() },
         fetchFn,
       );
       if (!resp.ok) {
@@ -212,6 +249,12 @@ function getSecureExec() {
   return _secureExecPromise;
 }
 
+const IsolateOutputSchema = z.object({
+  ok: z.boolean(),
+  result: z.string().optional(),
+  error: z.string().optional(),
+});
+
 // The harness loads user code via readFileSync + AsyncFunction so that syntax
 // errors are caught by try/catch rather than causing a silent module-parse failure.
 const RUN_CODE_HARNESS = `
@@ -242,11 +285,6 @@ function parseIsolateOutput(stdout: string, stderr: string): string | { error: s
     return { error: "Code execution timed out" };
   }
   try {
-    const IsolateOutputSchema = z.object({
-      ok: z.boolean(),
-      result: z.string().optional(),
-      error: z.string().optional(),
-    });
     const parsed = IsolateOutputSchema.parse(JSON.parse(stdout));
     if (parsed.ok) return parsed.result ?? "Code ran successfully (no output)";
     return { error: parsed.error ?? "Unknown error" };

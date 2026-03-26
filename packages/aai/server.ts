@@ -21,6 +21,11 @@ import type { Session } from "./session.ts";
 import type { AgentDef } from "./types.ts";
 import { type SessionWebSocket, wireSessionSocket } from "./ws-handler.ts";
 
+/**
+ * Configuration for a self-hosted agent server created by {@link createServer}.
+ *
+ * @public
+ */
 export type ServerOptions = {
   /** The agent definition returned by `defineAgent()`. */
   agent: AgentDef;
@@ -36,8 +41,20 @@ export type ServerOptions = {
   logger?: Logger;
   /** S2S configuration. Defaults to AssemblyAI production. */
   s2sConfig?: S2SConfig;
+  /**
+   * Shared secret for authenticating WebSocket upgrade requests.
+   * When set, clients must pass `?token=<authToken>` in the WebSocket URL.
+   * **Strongly recommended** when the server is exposed to the network.
+   */
+  authToken?: string;
 };
 
+/**
+ * Handle returned by {@link createServer} with lifecycle methods to start
+ * and stop the HTTP + WebSocket server.
+ *
+ * @public
+ */
 export type AgentServer = {
   /** Start listening on the given port. */
   listen(port?: number): Promise<void>;
@@ -47,16 +64,40 @@ export type AgentServer = {
   port: number | undefined;
 };
 
-/** Escape HTML special characters to prevent XSS. */
+/** Escape HTML special characters to prevent XSS (single-pass). */
+const _escapeMap: Record<string, string> = {
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  '"': "&quot;",
+  "'": "&#39;",
+};
 function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+  return s.replace(/[&<>"']/g, (ch) => _escapeMap[ch] as string);
 }
 
+/**
+ * Create an HTTP + WebSocket server for self-hosted agent deployments.
+ *
+ * Sets up a Hono HTTP server with a `/health` endpoint and WebSocket upgrade
+ * handling. Agent tools execute directly in-process via {@link createDirectExecutor}.
+ *
+ * @param options - Server configuration including the agent definition, optional
+ *   KV store, client assets, logger, and S2S config. See {@link ServerOptions}.
+ * @returns An {@link AgentServer} with `listen()` and `close()` lifecycle methods.
+ *
+ * @example
+ * ```ts
+ * import { defineAgent } from "@alexkroman1/aai";
+ * import { createServer } from "@alexkroman1/aai/server";
+ *
+ * const agent = defineAgent({ name: "my-agent" });
+ * const server = createServer({ agent });
+ * await server.listen(3000);
+ * ```
+ *
+ * @public
+ */
 export function createServer(options: ServerOptions): AgentServer {
   const {
     agent,
@@ -65,6 +106,7 @@ export function createServer(options: ServerOptions): AgentServer {
     clientDir,
     logger = consoleLogger,
     s2sConfig = DEFAULT_S2S_CONFIG,
+    authToken,
   } = options;
 
   const env = filterEnv(options.env ?? (typeof process !== "undefined" ? process.env : {}));
@@ -72,6 +114,7 @@ export function createServer(options: ServerOptions): AgentServer {
   const executor = createDirectExecutor({ agent, env, ...(kv ? { kv } : {}), logger, s2sConfig });
   const sessions = new Map<string, Session>();
   const readyConfig = buildReadyConfig(s2sConfig);
+  const safeAgentName = escapeHtml(agent.name);
 
   function handleWs(ws: SessionWebSocket, skipGreeting: boolean): void {
     wireSessionSocket(ws, {
@@ -96,7 +139,7 @@ export function createServer(options: ServerOptions): AgentServer {
       const app = new Hono();
 
       app.onError((err, c) => {
-        logger.error(`${c.req.method} ${new URL(c.req.url).pathname} error: ${err.message}`);
+        logger.error(`${c.req.method} ${c.req.path} error: ${err.message}`);
         return c.json({ error: "Internal Server Error" }, 500);
       });
 
@@ -106,7 +149,7 @@ export function createServer(options: ServerOptions): AgentServer {
         const ms = Date.now() - start;
         const { status } = c.res;
         const method = c.req.method;
-        const path = new URL(c.req.url).pathname;
+        const path = c.req.path;
         if (status >= 400) {
           logger.error(`${method} ${path} ${status} ${ms}ms`);
         } else {
@@ -120,11 +163,16 @@ export function createServer(options: ServerOptions): AgentServer {
         app.use("/*", serveStatic({ root: clientDir }));
       }
 
+      const csp =
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
+        "connect-src 'self' wss: ws:; img-src 'self' data:; font-src 'self'; object-src 'none'; base-uri 'self'";
+
       app.get("/", (c) => {
-        if (clientHtml) return c.html(clientHtml);
-        const safeName = escapeHtml(agent.name);
+        if (clientHtml) return c.html(clientHtml, 200, { "Content-Security-Policy": csp });
         return c.html(
-          `<!DOCTYPE html><html><body><h1>${safeName}</h1><p>Agent server running.</p></body></html>`,
+          `<!DOCTYPE html><html><body><h1>${safeAgentName}</h1><p>Agent server running.</p></body></html>`,
+          200,
+          { "Content-Security-Policy": csp },
         );
       });
 
@@ -138,9 +186,27 @@ export function createServer(options: ServerOptions): AgentServer {
       const addr = nodeServer.address();
       listenPort = typeof addr === "object" && addr ? addr.port : port;
 
+      if (!authToken) {
+        logger.warn(
+          "No authToken configured — WebSocket connections are unauthenticated. " +
+            "Set the authToken option to require a shared secret for WebSocket upgrades. " +
+            "Do NOT expose this server to the public internet without authentication.",
+        );
+      }
+
       const wss = new WebSocketServer({ noServer: true });
       nodeServer.on("upgrade", (req, socket, head) => {
         const reqUrl = new URL(req.url ?? "/", `http://localhost:${listenPort}`);
+
+        if (authToken) {
+          const clientToken = reqUrl.searchParams.get("token");
+          if (clientToken !== authToken) {
+            socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+            socket.destroy();
+            return;
+          }
+        }
+
         const resume = reqUrl.searchParams.has("resume");
         logger.info(`WS upgrade ${reqUrl.pathname}${resume ? " (resume)" : ""}`);
         wss.handleUpgrade(req, socket, head, (ws) => {
@@ -162,7 +228,10 @@ export function createServer(options: ServerOptions): AgentServer {
 
     async close() {
       if (sessions.size > 0) {
-        await Promise.allSettled([...sessions.values()].map((s) => s.stop()));
+        const results = await Promise.allSettled([...sessions.values()].map((s) => s.stop()));
+        for (const r of results) {
+          if (r.status === "rejected") logger.warn(`Session stop failed during close: ${r.reason}`);
+        }
         sessions.clear();
       }
       await serverHandle?.shutdown();

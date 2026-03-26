@@ -52,7 +52,14 @@ export async function resolveServerEnv(
   return env;
 }
 
-/** Create and start an agent server with static file serving. */
+/**
+ * Create and start an agent server with static file serving.
+ *
+ * NOTE: This dynamically imports `@alexkroman1/aai/server` which has peer
+ * dependencies on `hono` and `@hono/node-server`. Those packages are listed
+ * as direct dependencies of aai-cli (in package.json) solely to satisfy
+ * those peer deps — they are not imported directly by aai-cli code.
+ */
 export async function bootServer(
   agentDef: AgentDef,
   clientDir: string,
