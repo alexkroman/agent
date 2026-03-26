@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import type { ServerMessage } from "@alexkroman1/aai/protocol";
+import type { ReadyConfig, ServerMessage } from "@alexkroman1/aai/protocol";
 import { ReadyConfigSchema, ServerMessageSchema } from "@alexkroman1/aai/protocol";
 import type { VoiceIO } from "./audio.ts";
 import type { AgentState, Message, Reactive, SessionError, ToolCallInfo } from "./types.ts";
