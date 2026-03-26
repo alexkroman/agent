@@ -2,7 +2,7 @@
 
 import { describe, expect, test, vi } from "vitest";
 import { ClientHandler } from "./client-handler.ts";
-import type { AgentState, Message, Reactive, SessionError, ToolCallInfo } from "./types.ts";
+import type { AgentState, ChatMessage, Reactive, SessionError, ToolCallInfo } from "./types.ts";
 
 function reactive<T>(initial: T): Reactive<T> {
   return { value: initial };
@@ -40,7 +40,7 @@ function makeVoiceIO(overrides?: Partial<Record<string, (...args: never[]) => un
 
 function createTarget(voiceOverrides?: Partial<Record<string, (...args: never[]) => unknown>>) {
   const state = reactive<AgentState>("connecting");
-  const messages = reactive<Message[]>([]);
+  const messages = reactive<ChatMessage[]>([]);
   const toolCalls = reactive<ToolCallInfo[]>([]);
   const userUtterance = reactive<string | null>(null);
   const agentUtterance = reactive<string | null>(null);
@@ -197,7 +197,7 @@ describe("ClientHandler.playAudioDone generation tracking", () => {
 
   test("transitions to listening when no voiceIO is available", () => {
     const state = reactive<AgentState>("speaking");
-    const messages = reactive<Message[]>([]);
+    const messages = reactive<ChatMessage[]>([]);
     const toolCalls = reactive<ToolCallInfo[]>([]);
     const userUtterance = reactive<string | null>(null);
     const agentUtterance = reactive<string | null>(null);
