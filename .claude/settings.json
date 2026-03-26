@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "if echo \"$TOOL_INPUT\" | grep -qE '^git (push|commit)'; then echo 'IMPORTANT: Before pushing, ensure you have run pnpm test and pnpm lint locally and they pass. If you have not run them yet, abort this action, run the checks first, and fix any failures before committing/pushing.'; fi"
+            "command": "if echo \"$TOOL_INPUT\" | grep -qE '^git (push|commit)'; then echo 'IMPORTANT: Before committing, run pnpm check:local (typecheck + lint + syncpack + tests). This catches version drift in template package.json, lint issues in non-staged files, and test assertion mismatches — the top causes of fix-up commits. If you have not run it yet, abort this action and run pnpm check:local first.'; fi"
           }
         ]
       }
