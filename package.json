@@ -11,7 +11,7 @@
     "check:local": "bash scripts/check-local.sh",
     "check:knip": "knip",
     "check:syncpack": "syncpack lint",
-    "check:markdown": "markdownlint-cli2 '**/*.md' '#**/node_modules' '#.aai'",
+    "check:markdown": "markdownlint-cli2 '**/*.md' '#**/node_modules' '#.aai' '#.claude'",
     "syncpack": "syncpack",
     "changeset": "changeset",
     "version": "changeset version",
