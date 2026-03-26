@@ -147,18 +147,18 @@ describe("scopedKv", () => {
     expect(result).toBe("not-valid-json");
   });
 
-  it("passes expireIn directly to the underlying store", async () => {
+  it("converts expireIn from ms to seconds (ceil) for the underlying store", async () => {
     const kvStore = createMockKvStore();
     const kv = scopedKv(kvStore, scopeA);
 
     await kv.set("ttl-key", "val", { expireIn: 1500 });
-    expect(kvStore.set).toHaveBeenCalledWith(scopeA, "ttl-key", JSON.stringify("val"), 1500);
+    expect(kvStore.set).toHaveBeenCalledWith(scopeA, "ttl-key", JSON.stringify("val"), 2);
 
     await kv.set("ttl-key2", "val", { expireIn: 1000 });
-    expect(kvStore.set).toHaveBeenCalledWith(scopeA, "ttl-key2", JSON.stringify("val"), 1000);
+    expect(kvStore.set).toHaveBeenCalledWith(scopeA, "ttl-key2", JSON.stringify("val"), 1);
 
     await kv.set("ttl-key3", "val", { expireIn: 500 });
-    expect(kvStore.set).toHaveBeenCalledWith(scopeA, "ttl-key3", JSON.stringify("val"), 500);
+    expect(kvStore.set).toHaveBeenCalledWith(scopeA, "ttl-key3", JSON.stringify("val"), 1);
   });
 
   it("passes undefined ttl when expireIn is not set", async () => {

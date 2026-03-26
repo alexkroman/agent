@@ -27,7 +27,13 @@ import {
 
 const SCOPE = "aai";
 const _require = createRequire(import.meta.url);
-const VERSION: string = (_require("./package.json") as { version: string }).version;
+// "./package.json" resolves from source; "../package.json" resolves from dist/
+let VERSION = "0.0.0";
+try {
+  VERSION = (_require("./package.json") as { version: string }).version;
+} catch {
+  VERSION = (_require("../package.json") as { version: string }).version;
+}
 
 /** Tracer scoped to the AAI SDK. */
 export const tracer: Tracer = trace.getTracer(SCOPE, VERSION);
