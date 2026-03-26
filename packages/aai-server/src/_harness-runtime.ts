@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 /** Sandbox harness runtime — runs inside the secure-exec V8 isolate. */
-
+// biome-ignore lint/nursery/noExcessiveLinesPerFile: single-file isolate runtime, splitting would break sandbox constraints
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { Kv } from "@alexkroman1/aai/kv";
 import {
@@ -34,8 +34,12 @@ const agentEnv: Record<string, string> = Object.freeze(
   ),
 );
 
+// Capture the original fetch before we override globalThis.fetch below.
+// sidecarRpc must use the raw fetch to reach the sidecar on loopback.
+const _originalFetch = globalThis.fetch;
+
 async function sidecarRpc<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(`${SIDECAR_URL}${path}`, {
+  const res = await _originalFetch(`${SIDECAR_URL}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -103,6 +107,17 @@ async function sidecarFetch(input: string | URL | Request, init?: RequestInit): 
   });
 }
 
+// Override globalThis.fetch so bare fetch() in tool code proxies through sidecar.
+try {
+  Object.defineProperty(globalThis, "fetch", {
+    value: sidecarFetch,
+    writable: true,
+    configurable: true,
+  });
+} catch {
+  /* secure-exec may prevent override; ctx.fetch still works */
+}
+
 const sessionStates = new Map<string, Record<string, unknown>>();
 
 function getState(agent: AgentDef, sessionId: string): Record<string, unknown> {
@@ -164,8 +179,7 @@ async function executeTool(agent: AgentDef, req: ToolCallRequest): Promise<ToolC
     vector,
     messages: req.messages,
     sendUpdate() {
-      // No-op in sandbox mode — updates require direct WebSocket access
-      // which is not available inside the V8 isolate.
+      /* no-op in sandbox — no WebSocket access */
     },
     fetch: sidecarFetch,
   };
