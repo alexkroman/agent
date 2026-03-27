@@ -4,6 +4,64 @@
  */
 
 /**
+ * Maximum allowed length for a vector filter expression.
+ * @internal
+ */
+const MAX_FILTER_LENGTH = 1000;
+
+/**
+ * SQL/query keywords that must not appear in filter expressions.
+ * Checked case-insensitively as whole words (word-boundary match).
+ * @internal
+ */
+const DANGEROUS_KEYWORDS =
+  /\b(SELECT|INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|EXEC|EXECUTE|UNION|INTO|TRUNCATE|GRANT|REVOKE|CALL)\b/i;
+
+/**
+ * Patterns that indicate injection attempts in filter strings.
+ * @internal
+ */
+const DANGEROUS_PATTERNS = [
+  /;/, // statement terminators
+  /--/, // SQL line comments
+  /\/\*/, // block comment open
+  /\*\//, // block comment close
+  /\0/, // null bytes
+];
+
+/**
+ * Validate a vector filter expression to prevent injection attacks.
+ *
+ * Rejects filters containing SQL keywords (SELECT, DROP, etc.),
+ * statement terminators, comments, and null bytes. Enforces a
+ * maximum length of 1000 characters.
+ *
+ * @param filter - The raw filter string from user input.
+ * @returns The validated filter string (trimmed).
+ * @throws Error if the filter contains dangerous patterns.
+ *
+ * @public
+ */
+export function validateVectorFilter(filter: string): string {
+  const trimmed = filter.trim();
+  if (trimmed.length === 0) {
+    throw new Error("Vector filter must not be empty");
+  }
+  if (trimmed.length > MAX_FILTER_LENGTH) {
+    throw new Error(`Vector filter exceeds maximum length of ${MAX_FILTER_LENGTH} characters`);
+  }
+  if (DANGEROUS_KEYWORDS.test(trimmed)) {
+    throw new Error("Vector filter contains disallowed SQL keyword");
+  }
+  for (const pattern of DANGEROUS_PATTERNS) {
+    if (pattern.test(trimmed)) {
+      throw new Error("Vector filter contains disallowed characters");
+    }
+  }
+  return trimmed;
+}
+
+/**
  * A single vector search result entry.
  *
  * @public

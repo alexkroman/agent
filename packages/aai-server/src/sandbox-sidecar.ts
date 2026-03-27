@@ -9,7 +9,7 @@
 import type { Kv, KvEntry } from "@alexkroman1/aai/kv";
 import { ssrfSafeFetch } from "@alexkroman1/aai/ssrf";
 import { getServerPort } from "@alexkroman1/aai/utils";
-import type { VectorStore } from "@alexkroman1/aai/vector";
+import { type VectorStore, validateVectorFilter } from "@alexkroman1/aai/vector";
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
@@ -95,7 +95,10 @@ const SidecarVecUpsertSchema = z.object({
 const SidecarVecQuerySchema = z.object({
   text: z.string(),
   topK: z.number().optional(),
-  filter: z.string().optional(),
+  filter: z
+    .string()
+    .transform((f) => validateVectorFilter(f))
+    .optional(),
 });
 const SidecarVecDeleteSchema = z.object({ ids: z.union([z.string(), z.array(z.string())]) });
 const SidecarFetchSchema = z.object({
