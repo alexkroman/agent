@@ -8,7 +8,7 @@ async function setup() {
   const store = createTestStore();
   const storage = createTestStorage();
   const slots = new Map<string, AgentSlot>();
-  const app = createOrchestrator({ slots, store, storage });
+  const { app } = createOrchestrator({ slots, store, storage });
   const fetch = async (input: string | Request, init?: RequestInit) => app.request(input, init);
   return { fetch, store, slots };
 }

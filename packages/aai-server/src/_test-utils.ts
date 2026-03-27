@@ -116,7 +116,7 @@ export async function createTestOrchestrator(): Promise<{
 }> {
   const store = createTestStore();
   const storage = createTestStorage();
-  const app = createOrchestrator({ slots: new Map(), store, storage });
+  const { app } = createOrchestrator({ slots: new Map(), store, storage });
   const fetch: TestFetch = async (input, init) => app.request(input, init);
   return { fetch, store, storage };
 }

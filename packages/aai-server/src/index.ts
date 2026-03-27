@@ -11,12 +11,10 @@ import { createStorage } from "unstorage";
 import memoryDriver from "unstorage/drivers/memory";
 import overlayDriver from "unstorage/drivers/overlay";
 import s3Driver from "unstorage/drivers/s3";
-import { WebSocketServer } from "ws";
 import { createBundleStore } from "./bundle-store.ts";
 import { deriveCredentialKey } from "./credentials.ts";
 import { createOrchestrator, type OrchestratorOpts } from "./orchestrator.ts";
 import type { AgentSlot } from "./sandbox.ts";
-import { resolveSandbox } from "./sandbox.ts";
 
 function requireEnv<const K extends string>(
   env: NodeJS.ProcessEnv,
@@ -79,60 +77,23 @@ async function buildOpts(env: NodeJS.ProcessEnv): Promise<OrchestratorOpts> {
   };
 }
 
-const SLUG_WS_RE = /^\/([a-z0-9][a-z0-9_-]*[a-z0-9])\/websocket$/;
-
 async function main(): Promise<void> {
   const env = process.env;
   const port = Number.parseInt(env.PORT ?? "8787", 10);
 
   const opts = await buildOpts(env);
-  const app = createOrchestrator(opts);
+  const { app, injectWebSocket } = createOrchestrator(opts);
   const nodeServer = serve({ fetch: app.fetch, port });
+  injectWebSocket(nodeServer as import("node:http").Server);
 
   await new Promise<void>((resolve) => {
     nodeServer.on("listening", resolve);
-  });
-
-  const wss = new WebSocketServer({ noServer: true });
-
-  nodeServer.on("upgrade", async (req, socket, head) => {
-    try {
-      const url = new URL(req.url ?? "/", `http://localhost:${port}`);
-      const match = SLUG_WS_RE.exec(url.pathname);
-      if (!match) {
-        socket.destroy();
-        return;
-      }
-
-      const slug = match[1] as string;
-
-      const sandbox = await resolveSandbox(slug, {
-        slots: opts.slots,
-        store: opts.store,
-        storage: opts.storage,
-      });
-
-      if (!sandbox) {
-        socket.destroy();
-        return;
-      }
-
-      const resumeFrom = url.searchParams.get("sessionId") ?? undefined;
-      const skipGreeting = url.searchParams.has("resume") || resumeFrom !== undefined;
-      wss.handleUpgrade(req, socket, head, (ws) => {
-        sandbox.startSession(ws, skipGreeting, resumeFrom);
-      });
-    } catch (err: unknown) {
-      console.error("WebSocket upgrade error:", err);
-      socket.destroy();
-    }
   });
 
   console.info(`AAI server listening on http://localhost:${port}`);
 
   async function shutdown() {
     console.info("Shutting down...");
-    wss.close();
     const stops = [...opts.slots.values()]
       .map((slot) => {
         if (slot.idleTimer) clearTimeout(slot.idleTimer);

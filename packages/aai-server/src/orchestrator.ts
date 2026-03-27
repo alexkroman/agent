@@ -1,5 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { errorMessage } from "@alexkroman1/aai/utils";
+import { createNodeWebSocket } from "@hono/node-ws";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { createMiddleware } from "hono/factory";
@@ -15,6 +16,7 @@ import { handleKv } from "./kv-handler.ts";
 import { serialize, serializeForAgent } from "./metrics.ts";
 import { requireInternal, requireOwner, validateSlug } from "./middleware.ts";
 import type { AgentSlot } from "./sandbox.ts";
+import { resolveSandbox } from "./sandbox.ts";
 import { createScopedKv } from "./scoped-storage.ts";
 import { handleSecretDelete, handleSecretList, handleSecretSet } from "./secret-handler.ts";
 import { handleAgentHealth, handleAgentPage, handleClientAsset } from "./transport-websocket.ts";
@@ -28,8 +30,14 @@ export type OrchestratorOpts = {
   allowedOrigins?: string[];
 };
 
-export function createOrchestrator(opts: OrchestratorOpts): Hono<Env> {
+export type Orchestrator = {
+  app: Hono<Env>;
+  injectWebSocket: (server: import("node:http").Server) => void;
+};
+
+export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   const app = new Hono<Env>();
+  const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
 
   const slugMw = createMiddleware<Env>(async (c, next) => {
     // biome-ignore lint/style/noNonNullAssertion: slug param guaranteed by route pattern
@@ -137,6 +145,35 @@ export function createOrchestrator(opts: OrchestratorOpts): Hono<Env> {
 
   app.get("/:slug/", slugMw, handleAgentPage);
 
+  app.get(
+    "/:slug/websocket",
+    slugMw,
+    upgradeWebSocket((c) => {
+      const slug = c.get("slug");
+      return {
+        async onOpen(_evt, ws) {
+          try {
+            const sandbox = await resolveSandbox(slug, {
+              slots: opts.slots,
+              store: opts.store,
+              storage: opts.storage,
+            });
+            if (!sandbox) {
+              ws.close(1008, "Agent not found");
+              return;
+            }
+            const resumeFrom = c.req.query("sessionId") ?? undefined;
+            const skipGreeting = c.req.query("resume") !== undefined || resumeFrom !== undefined;
+            if (ws.raw) sandbox.startSession(ws.raw, skipGreeting, resumeFrom);
+          } catch (err: unknown) {
+            console.error("WebSocket open error:", err);
+            ws.close(1011, "Internal error");
+          }
+        },
+      };
+    }),
+  );
+
   // Bindings injected at serve time via app.fetch(req, bindings)
   const bindings = {
     slots: opts.slots,
@@ -148,5 +185,5 @@ export function createOrchestrator(opts: OrchestratorOpts): Hono<Env> {
   app.fetch = (req: Request, env?: Record<string, unknown>) =>
     original(req, { ...bindings, ...env });
 
-  return app;
+  return { app, injectWebSocket };
 }
