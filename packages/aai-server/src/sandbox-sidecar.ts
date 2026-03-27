@@ -11,6 +11,7 @@ import { ssrfSafeFetch } from "@alexkroman1/aai/ssrf";
 import { getServerPort } from "@alexkroman1/aai/utils";
 import { type VectorStore, validateVectorFilter } from "@alexkroman1/aai/vector";
 import { serve } from "@hono/node-server";
+import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
@@ -130,12 +131,12 @@ function buildSidecarApp(
     return vector;
   };
 
-  app.post("/kv/get", async (c) => {
-    const { key } = SidecarKvGetSchema.parse(await c.req.json());
+  app.post("/kv/get", zValidator("json", SidecarKvGetSchema), async (c) => {
+    const { key } = c.req.valid("json");
     return c.json((await kv.get(key)) ?? null);
   });
-  app.post("/kv/set", async (c) => {
-    const { key, value, options } = SidecarKvSetSchema.parse(await c.req.json());
+  app.post("/kv/set", zValidator("json", SidecarKvSetSchema), async (c) => {
+    const { key, value, options } = c.req.valid("json");
     await kv.set(
       key,
       value,
@@ -143,13 +144,13 @@ function buildSidecarApp(
     );
     return c.json(null);
   });
-  app.post("/kv/del", async (c) => {
-    const { key } = SidecarKvDelSchema.parse(await c.req.json());
+  app.post("/kv/del", zValidator("json", SidecarKvDelSchema), async (c) => {
+    const { key } = c.req.valid("json");
     await kv.delete(key);
     return c.json(null);
   });
-  app.post("/kv/list", async (c) => {
-    const { prefix, limit, reverse } = SidecarKvListSchema.parse(await c.req.json());
+  app.post("/kv/list", zValidator("json", SidecarKvListSchema), async (c) => {
+    const { prefix, limit, reverse } = c.req.valid("json");
     return c.json(
       await kv.list(prefix, {
         ...(limit != null && { limit }),
@@ -157,17 +158,17 @@ function buildSidecarApp(
       }),
     );
   });
-  app.post("/kv/keys", async (c) => {
-    const { pattern } = SidecarKvKeysSchema.parse(await c.req.json());
+  app.post("/kv/keys", zValidator("json", SidecarKvKeysSchema), async (c) => {
+    const { pattern } = c.req.valid("json");
     return c.json(await kv.keys(pattern));
   });
-  app.post("/vec/upsert", async (c) => {
-    const { id, data, metadata } = SidecarVecUpsertSchema.parse(await c.req.json());
+  app.post("/vec/upsert", zValidator("json", SidecarVecUpsertSchema), async (c) => {
+    const { id, data, metadata } = c.req.valid("json");
     await requireVec().upsert(id, data, metadata);
     return c.json(null);
   });
-  app.post("/vec/query", async (c) => {
-    const { text, topK, filter } = SidecarVecQuerySchema.parse(await c.req.json());
+  app.post("/vec/query", zValidator("json", SidecarVecQuerySchema), async (c) => {
+    const { text, topK, filter } = c.req.valid("json");
     return c.json(
       await requireVec().query(text, {
         ...(topK != null && { topK }),
@@ -175,15 +176,15 @@ function buildSidecarApp(
       }),
     );
   });
-  app.post("/vec/delete", async (c) => {
-    const { ids } = SidecarVecDeleteSchema.parse(await c.req.json());
+  app.post("/vec/delete", zValidator("json", SidecarVecDeleteSchema), async (c) => {
+    const { ids } = c.req.valid("json");
     await requireVec().delete(ids);
     return c.json(null);
   });
 
   // ── Fetch proxy (SSRF-safe) ──────────────────────────────────────────
-  app.post("/fetch", async (c) => {
-    const { url, method, headers, body } = SidecarFetchSchema.parse(await c.req.json());
+  app.post("/fetch", zValidator("json", SidecarFetchSchema), async (c) => {
+    const { url, method, headers, body } = c.req.valid("json");
     const resp = await ssrfSafeFetch(
       url,
       {

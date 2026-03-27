@@ -2,9 +2,20 @@
 
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { generateText, stepCountIs } from "ai";
+import pc from "picocolors";
+import yoctoSpinner from "yocto-spinner";
 import { getApiKey } from "./_discover.ts";
 import { makeTools } from "./_generate-tools.ts";
-import { runCommand, step } from "./_ui.ts";
+
+const TOOL_ICONS: Record<string, string> = {
+  read: "→",
+  edit: "✎",
+  write: "✏",
+  glob: "✱",
+  grep: "◇",
+  bash: "$",
+  ls: "▪",
+};
 
 const SYSTEM_PROMPT = `You are a pragmatic, expert coding agent that builds voice agents using the AAI framework. You persist until the task is fully handled — do not stop at analysis or partial fixes.
 
@@ -27,16 +38,24 @@ const SYSTEM_PROMPT = `You are a pragmatic, expert coding agent that builds voic
 - Handle edge cases in tool execute functions.
 - Parallelize tool calls when possible — e.g. read multiple files at once.`;
 
+function toolLabel(name: string, input: Record<string, unknown>): string {
+  const icon = TOOL_ICONS[name] ?? "•";
+  const file = (input.filePath ?? input.path ?? input.pattern ?? "") as string;
+  if (name === "bash")
+    return `${pc.dim(icon)} ${pc.cyan(name)} ${pc.dim(String(input.command ?? "").slice(0, 60))}`;
+  if (file) return `${pc.dim(icon)} ${pc.cyan(name)} ${file}`;
+  return `${pc.dim(icon)} ${pc.cyan(name)}`;
+}
+
 export async function runGenerateCommand(opts: { cwd: string; prompt: string }): Promise<void> {
   const { cwd, prompt } = opts;
   const baseURL = process.env.LLM_BASE_URL ?? "https://llm-gateway.assemblyai.com/v1";
   const modelId = process.env.LLM_MODEL ?? "gpt-5.2";
 
-  await runCommand(async ({ log }) => {
-    const apiKey = await getApiKey();
+  const apiKey = await getApiKey();
+  let spinner = yoctoSpinner({ text: "Thinking..." }).start();
 
-    log(step("Generate", "Generating agent code..."));
-
+  try {
     const provider = createOpenAICompatible({ name: "assemblyai", baseURL, apiKey });
 
     const result = await generateText({
@@ -44,28 +63,27 @@ export async function runGenerateCommand(opts: { cwd: string; prompt: string }):
       system: SYSTEM_PROMPT,
       prompt,
       tools: makeTools(cwd),
-      maxOutputTokens: 16_384,
+      maxOutputTokens: 65_536,
       toolChoice: "auto",
       stopWhen: stepCountIs(20),
-      onStepFinish: ({ toolCalls, toolResults, finishReason, text }) => {
-        for (let i = 0; i < toolCalls.length; i++) {
-          const tc = toolCalls[i];
-          const tr = toolResults[i];
-          const name = tc?.toolName ?? "?";
-          const input = tc?.input as Record<string, unknown> | undefined;
-          const file = (input?.filePath as string) ?? "";
-          const output = tr?.output;
-          const resStr = output != null ? String(output).slice(0, 80) : "(no result)";
-          log(step("Generate", `${name} ${file} → ${resStr}`));
+      onStepFinish: ({ staticToolCalls, finishReason, text }) => {
+        for (const tc of staticToolCalls) {
+          const label = toolLabel(tc.toolName, tc.input as Record<string, unknown>);
+          spinner.stop(`${label}`);
+          spinner = yoctoSpinner({ text: "Thinking..." }).start();
         }
         if (finishReason === "stop" && text) {
-          log(step("Generate", text.slice(0, 120)));
+          spinner.stop(pc.dim(text.slice(0, 120)));
+          spinner = yoctoSpinner({ text: "Thinking..." }).start();
         }
       },
     });
 
-    log(
-      step("Generate", `Done (${result.steps.length} step(s), ${result.usage.totalTokens} tokens)`),
+    spinner.stop(
+      `${pc.green("✔")} Done ${pc.dim(`(${result.steps.length} steps, ${result.usage.totalTokens} tokens)`)}`,
     );
-  });
+  } catch (err) {
+    spinner.stop(`${pc.red("✖")} ${err instanceof Error ? err.message : String(err)}`);
+    process.exitCode = 1;
+  }
 }

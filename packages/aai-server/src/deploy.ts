@@ -1,6 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
 import type { Context } from "hono";
-import { z } from "zod";
 import { type DeployBody, DeployBodySchema, EnvSchema } from "./_schemas.ts";
 import type { Env } from "./context.ts";
 import { withSlugLock } from "./slug-lock.ts";
@@ -14,16 +13,7 @@ async function handleDeployInner(c: Context<Env>): Promise<Response> {
   const slug = c.get("slug");
   const keyHash = c.get("keyHash");
 
-  let body: DeployBody;
-  try {
-    body = DeployBodySchema.parse(await c.req.json());
-  } catch (err) {
-    const msg =
-      err instanceof z.ZodError
-        ? err.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ")
-        : "Invalid deploy body";
-    return c.json({ error: msg }, 400);
-  }
+  const body: DeployBody = DeployBodySchema.parse(await c.req.json());
 
   const storedEnv = (await c.env.store.getEnv(slug)) ?? {};
   const env = body.env ? { ...storedEnv, ...body.env } : storedEnv;

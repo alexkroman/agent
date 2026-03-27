@@ -9,12 +9,7 @@ export async function handleKv(c: Context<Env>): Promise<Response> {
   const { kvStore } = c.env;
   const scope = c.get("scope");
 
-  let msg: ReturnType<typeof KvRequestSchema.parse>;
-  try {
-    msg = KvRequestSchema.parse(await c.req.json());
-  } catch (err: unknown) {
-    return c.json({ error: `Invalid KV request: ${errorMessage(err)}` }, 400);
-  }
+  const msg = KvRequestSchema.parse(await c.req.json());
 
   try {
     switch (msg.op) {
