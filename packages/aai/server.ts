@@ -7,7 +7,6 @@
  * intermediary needed.
  */
 
-import { randomBytes } from "node:crypto";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
@@ -46,12 +45,6 @@ export type ServerOptions = {
   logger?: Logger;
   /** S2S configuration. Defaults to AssemblyAI production. */
   s2sConfig?: S2SConfig;
-  /**
-   * Shared secret for authenticating WebSocket upgrade requests.
-   * When set, clients must pass `?token=<authToken>` in the WebSocket URL.
-   * **Strongly recommended** when the server is exposed to the network.
-   */
-  authToken?: string;
   /**
    * Timeout in ms for `session.start()` (S2S connection setup).
    * Defaults to 10 000 (10 s). If the session doesn't initialize within
@@ -156,11 +149,6 @@ export function createServer(options: ServerOptions): AgentServer {
     shutdownTimeoutMs = 30_000,
   } = options;
 
-  // Auto-generate auth token when serving HTML (production self-hosted).
-  // When no HTML is served (e.g. dev mode with Vite proxy), skip auth.
-  const servesHtml = clientHtml != null || clientDir != null;
-  const authToken = options.authToken ?? (servesHtml ? randomBytes(32).toString("hex") : undefined);
-
   const env = filterEnv(options.env ?? (typeof process !== "undefined" ? process.env : {}));
 
   const executor = createDirectExecutor({
@@ -236,17 +224,10 @@ export function createServer(options: ServerOptions): AgentServer {
         "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
         "connect-src 'self' wss: ws:; img-src 'self' data:; font-src 'self'; object-src 'none'; base-uri 'self'";
 
-      const tokenMeta = authToken ? `<meta name="aai-token" content="${authToken}">` : "";
-
       app.get("/", (c) => {
-        if (clientHtml) {
-          const html = tokenMeta
-            ? clientHtml.replace("</head>", `${tokenMeta}</head>`)
-            : clientHtml;
-          return c.html(html, 200, { "Content-Security-Policy": csp });
-        }
+        if (clientHtml) return c.html(clientHtml, 200, { "Content-Security-Policy": csp });
         return c.html(
-          `<!DOCTYPE html><html><head>${tokenMeta}</head><body><h1>${safeAgentName}</h1><p>Agent server running.</p></body></html>`,
+          `<!DOCTYPE html><html><body><h1>${safeAgentName}</h1><p>Agent server running.</p></body></html>`,
           200,
           { "Content-Security-Policy": csp },
         );
@@ -265,15 +246,6 @@ export function createServer(options: ServerOptions): AgentServer {
       const wss = new WebSocketServer({ noServer: true });
       nodeServer.on("upgrade", (req, socket, head) => {
         const reqUrl = new URL(req.url ?? "/", `http://localhost:${listenPort}`);
-
-        if (authToken) {
-          const clientToken = reqUrl.searchParams.get("token");
-          if (clientToken !== authToken) {
-            socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
-            socket.destroy();
-            return;
-          }
-        }
 
         const resumeFrom = reqUrl.searchParams.get("sessionId") ?? undefined;
         const skipGreeting = reqUrl.searchParams.has("resume") || resumeFrom !== undefined;

@@ -188,15 +188,9 @@ export type VoiceSession = {
 
 // ─── Voice session factory ───────────────────────────────────────────────────
 
-function buildWsUrl(
-  platformUrl: string,
-  token: string | undefined,
-  resume: boolean,
-  sessionId?: string,
-): URL {
+function buildWsUrl(platformUrl: string, resume: boolean, sessionId?: string): URL {
   const wsUrl = new URL("websocket", platformUrl.endsWith("/") ? platformUrl : `${platformUrl}/`);
   wsUrl.protocol = wsUrl.protocol === "https:" ? "wss:" : "ws:";
-  if (token) wsUrl.searchParams.set("token", token);
   if (sessionId) wsUrl.searchParams.set("sessionId", sessionId);
   else if (resume) wsUrl.searchParams.set("resume", "1");
   return wsUrl;
@@ -277,7 +271,7 @@ export function createVoiceSession(options: VoiceSessionOptions): VoiceSession {
     }
 
     const resumeId = !hasConnected ? options.resumeSessionId : undefined;
-    const wsUrl = buildWsUrl(options.platformUrl, options.token, hasConnected, resumeId);
+    const wsUrl = buildWsUrl(options.platformUrl, hasConnected, resumeId);
 
     const socket = new WebSocket(wsUrl.toString());
     socket.binaryType = "arraybuffer";

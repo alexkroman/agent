@@ -94,7 +94,6 @@ export type MountHandle = {
 export type MountOptions = {
     target?: string | HTMLElement;
     platformUrl?: string;
-    token?: string;
     title?: string;
     theme?: MountTheme;
     onSessionId?: ((sessionId: string) => void) | undefined;
@@ -242,7 +241,6 @@ export type VoiceSession = {
 // @public
 export type VoiceSessionOptions = {
     platformUrl: string;
-    token?: string;
     reactiveFactory?: <T>(initial: T) => Reactive<T>;
     batch?: (fn: () => void) => void;
     onSessionId?: ((sessionId: string) => void) | undefined;
