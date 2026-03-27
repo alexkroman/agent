@@ -1,4 +1,3 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap");
 @import "tailwindcss";
 @source "./";
 @source "../dist/ui/";
@@ -24,8 +23,8 @@
   --color-aai-state-speaking: #e06c75;
   --color-aai-state-error: #e06c75;
   --radius-aai: 6px;
-  --font-aai: "Inter", system-ui, -apple-system, sans-serif;
-  --font-aai-mono: "IBM Plex Mono", monospace;
+  --font-aai: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-aai-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 
 @layer base {
