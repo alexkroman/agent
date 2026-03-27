@@ -29,7 +29,7 @@ const templatesDir = path.resolve(dir, "../aai-templates");
 
 const templates = fs
   .readdirSync(templatesDir, { withFileTypes: true })
-  .filter((d) => d.isDirectory() && !d.name.startsWith("_"))
+  .filter((d) => d.isDirectory() && !d.name.startsWith("_") && d.name !== "node_modules")
   .map((d) => d.name);
 
 let aaiBin: string;

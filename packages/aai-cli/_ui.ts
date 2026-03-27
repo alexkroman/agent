@@ -1,30 +1,30 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import pc from "picocolors";
+import { colorize } from "consola/utils";
 
-/** Primary brand color wrapper. */
+/** Primary brand color wrapper (cyan highlight). */
 export function primary(s: string): string {
-  return pc.yellow(s);
+  return colorize("cyanBright", s);
 }
 
-/** Interactive/info color wrapper. */
+/** Interactive/info color wrapper (blue). */
 export function interactive(s: string): string {
-  return pc.cyan(s);
+  return colorize("blueBright", s);
 }
 
 /** Colored step message: bold action label + message. */
 export function step(action: string, msg: string): string {
-  return `${pc.bold(pc.yellow(action))} ${msg}`;
+  return `${colorize("bold", colorize("cyanBright", action))} ${msg}`;
 }
 
-/** Informational step message: bold cyan action + message. */
+/** Informational step message: bold blue action + message. */
 export function stepInfo(action: string, msg: string): string {
-  return `${pc.bold(pc.cyan(action))} ${msg}`;
+  return `${colorize("bold", colorize("blueBright", action))} ${msg}`;
 }
 
 /** Dimmed info sub-line (indented). */
 export function info(msg: string): string {
-  return pc.dim(`  ${msg}`);
+  return colorize("dim", `  ${msg}`);
 }
 
 /** Detail sub-line (indented). */
@@ -32,14 +32,14 @@ export function detail(msg: string): string {
   return `  ${msg}`;
 }
 
-/** Yellow warning message. */
+/** Warning message. */
 export function warn(msg: string): string {
-  return `${pc.yellow("!")} ${msg}`;
+  return `${colorize("yellowBright", "!")} ${msg}`;
 }
 
-/** Red error message. */
+/** Error message. */
 export function errorLine(msg: string): string {
-  return `${pc.red("x")} ${msg}`;
+  return `${colorize("redBright", "x")} ${msg}`;
 }
 
 /** Parse and validate a port string. Returns the numeric port or throws. */
@@ -65,7 +65,7 @@ export async function runCommand(fn: (helpers: RunHelpers) => Promise<void>): Pr
   const log = (msg: string) => console.log(msg);
   const setStatus = (msg: string | null) => {
     if (msg) {
-      process.stdout.write(`\r${pc.dim(msg)}`);
+      process.stdout.write(`\r${colorize("dim", msg)}`);
     } else {
       process.stdout.write("\r\x1b[K");
     }

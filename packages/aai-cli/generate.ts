@@ -3,11 +3,13 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { spinner as clackSpinner } from "@clack/prompts";
 import { generateText, stepCountIs } from "ai";
-import pc from "picocolors";
+import { consola as _consola } from "consola";
+import { colorize } from "consola/utils";
 import { getApiKey } from "./_discover.ts";
 import { makeTools } from "./_generate-tools.ts";
+
+const consola = _consola.create({ defaults: { message: "" }, formatOptions: { date: false } });
 
 const TOOL_ICONS: Record<string, string> = {
   read: "→",
@@ -43,9 +45,9 @@ function toolLabel(name: string, input: Record<string, unknown>): string {
   const icon = TOOL_ICONS[name] ?? "•";
   const file = (input.filePath ?? input.path ?? input.pattern ?? "") as string;
   if (name === "bash")
-    return `${icon} ${pc.cyan(name)} ${pc.dim(String(input.command ?? "").slice(0, 60))}`;
-  if (file) return `${icon} ${pc.cyan(name)} ${file}`;
-  return `${icon} ${pc.cyan(name)}`;
+    return `${icon} ${colorize("cyanBright", name)} ${colorize("dim", String(input.command ?? "").slice(0, 60))}`;
+  if (file) return `${icon} ${colorize("cyanBright", name)} ${file}`;
+  return `${icon} ${colorize("cyanBright", name)}`;
 }
 
 function formatDuration(ms: number): string {
@@ -60,21 +62,23 @@ function printCode(filePath: string, content: string): void {
   const maxLines = 40;
   const truncated = lines.length > maxLines;
   const shown = truncated ? lines.slice(0, maxLines) : lines;
-  console.log(pc.dim(`  ┌── ${filePath} (${lang})`));
+  console.log(colorize("dim", `  ┌── ${filePath} (${lang})`));
   for (const line of shown) {
-    console.log(pc.dim(`  │ ${line}`));
+    console.log(colorize("dim", `  │ ${line}`));
   }
   if (truncated) {
-    console.log(pc.dim(`  │ ... (${lines.length - maxLines} more lines)`));
+    console.log(colorize("dim", `  │ ... (${lines.length - maxLines} more lines)`));
   }
-  console.log(pc.dim("  └──"));
+  console.log(colorize("dim", "  └──"));
 }
 
 function printBox(text: string): string {
   const lines = text.split("\n");
-  return [pc.dim("  ┌──"), ...lines.map((line) => pc.dim(`  │ ${line}`)), pc.dim("  └──")].join(
-    "\n",
-  );
+  return [
+    colorize("dim", "  ┌──"),
+    ...lines.map((line) => colorize("dim", `  │ ${line}`)),
+    colorize("dim", "  └──"),
+  ].join("\n");
 }
 
 function maybeShowCode(toolName: string, input: Record<string, unknown> | undefined): void {
@@ -82,90 +86,6 @@ function maybeShowCode(toolName: string, input: Record<string, unknown> | undefi
     const filePath = String(input.filePath ?? "");
     const content = String(input.content ?? input.newString ?? "");
     if (filePath && content) printCode(filePath, content);
-  }
-}
-
-/** Manages spinner text with an elapsed-time ticker. */
-class SpinnerTimer {
-  private s;
-  stepNumber = 0;
-  lastAction = "";
-  startMs = Date.now();
-  timer: ReturnType<typeof setInterval> | null = null;
-
-  constructor() {
-    this.s = clackSpinner();
-    this.s.start("Planning...");
-    this.startTicker();
-  }
-
-  private buildText(): string {
-    const elapsed = Math.round((Date.now() - this.startMs) / 1000);
-    const time = elapsed > 0 ? pc.dim(` (${elapsed}s)`) : "";
-    const step = this.stepNumber > 0 ? `Step ${this.stepNumber}` : "Step 1";
-    if (this.lastAction) {
-      return `${pc.dim(step)} · Thinking after ${this.lastAction}...${time}`;
-    }
-    return `${pc.dim(step)} · Planning...${time}`;
-  }
-
-  private startTicker(): void {
-    this.stopTicker();
-    this.timer = setInterval(() => {
-      this.s.message(this.buildText());
-    }, 1000);
-  }
-
-  private stopTicker(): void {
-    if (this.timer) {
-      clearInterval(this.timer);
-      this.timer = null;
-    }
-  }
-
-  /** Reset the elapsed timer and update the thinking context. */
-  resetTimer(lastAction?: string): void {
-    if (lastAction !== undefined) this.lastAction = lastAction;
-    this.startMs = Date.now();
-    this.s.message(this.buildText());
-    this.startTicker();
-  }
-
-  /** Update spinner text for a tool that's currently executing. */
-  setToolRunning(label: string): void {
-    this.stopTicker();
-    this.s.message(label);
-  }
-
-  /** Print a completed tool line and restart the thinking spinner. */
-  completeTool(line: string, lastAction: string): void {
-    this.s.clear();
-    console.log(line);
-    this.lastAction = lastAction;
-    this.startMs = Date.now();
-    this.s.start(this.buildText());
-    this.startTicker();
-  }
-
-  /** Print a text line and restart the thinking spinner. */
-  completeText(text: string): void {
-    this.s.clear();
-    console.log(text);
-    this.startMs = Date.now();
-    this.s.start(this.buildText());
-    this.startTicker();
-  }
-
-  /** Stop the spinner with a success message. */
-  stop(message: string): void {
-    this.stopTicker();
-    this.s.stop(message);
-  }
-
-  /** Stop the spinner with an error message. */
-  error(message: string): void {
-    this.stopTicker();
-    this.s.error(message);
   }
 }
 
@@ -185,7 +105,7 @@ export async function runGenerateCommand(opts: { cwd: string; prompt: string }):
     // No CLAUDE.md — the model can still use tools to discover the API.
   }
 
-  const st = new SpinnerTimer();
+  consola.start("Planning...");
 
   try {
     const provider = createOpenAICompatible({ name: "assemblyai", baseURL, apiKey });
@@ -199,36 +119,34 @@ export async function runGenerateCommand(opts: { cwd: string; prompt: string }):
       toolChoice: "auto",
       stopWhen: stepCountIs(20),
       experimental_onStepStart: ({ stepNumber }) => {
-        st.stepNumber = stepNumber + 1;
-        st.resetTimer();
+        consola.start(`Step ${stepNumber + 1} · Thinking...`);
       },
       experimental_onToolCallStart: ({ toolCall }) => {
         const input = toolCall.input as Record<string, unknown> | undefined;
-        st.setToolRunning(toolLabel(toolCall.toolName, input ?? {}));
+        consola.info(toolLabel(toolCall.toolName, input ?? {}));
       },
       experimental_onToolCallFinish: ({ toolCall, durationMs, ...rest }) => {
         const input = toolCall.input as Record<string, unknown> | undefined;
         const label = toolLabel(toolCall.toolName, input ?? {});
         const time = formatDuration(durationMs);
         const ok = "success" in rest && rest.success;
-        const mark = ok ? pc.green("✔") : pc.red("✖");
-        const file = String(input?.filePath ?? input?.path ?? input?.pattern ?? "");
-        const action = file ? `${toolCall.toolName} ${file}` : toolCall.toolName;
+        const mark = ok ? colorize("greenBright", "✔") : colorize("redBright", "✖");
 
-        st.completeTool(`${mark} ${label} ${pc.dim(time)}`, action);
+        console.log(`${mark} ${label} ${colorize("dim", time)}`);
         if (ok) maybeShowCode(toolCall.toolName, input);
       },
       onStepFinish: ({ finishReason, text }) => {
         if (finishReason === "stop" && text) {
-          const boxed = printBox(text);
-          st.completeText(boxed);
+          console.log(printBox(text));
         }
       },
     });
 
-    st.stop(`Done ${pc.dim(`(${result.steps.length} steps, ${result.usage.totalTokens} tokens)`)}`);
+    consola.success(
+      `Done ${colorize("dim", `(${result.steps.length} steps, ${result.usage.totalTokens} tokens)`)}`,
+    );
   } catch (err) {
-    st.error(err instanceof Error ? err.message : String(err));
+    consola.error(err instanceof Error ? err.message : String(err));
     process.exitCode = 1;
   }
 }

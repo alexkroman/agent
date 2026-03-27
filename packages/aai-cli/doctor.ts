@@ -3,7 +3,7 @@
 import fs from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
-import pc from "picocolors";
+import { colorize } from "consola/utils";
 import { fileExists } from "./_discover.ts";
 import { envFileKeys, loadAgentDef } from "./_server-common.ts";
 import { parsePort, runCommand, step } from "./_ui.ts";
@@ -15,9 +15,9 @@ type CheckResult = {
   fix?: string;
 };
 
-const PASS = pc.green("✓");
-const WARN = pc.yellow("!");
-const FAIL = pc.red("✗");
+const PASS = colorize("greenBright", "✓");
+const WARN = colorize("yellowBright", "!");
+const FAIL = colorize("redBright", "✗");
 
 function statusIcon(status: CheckResult["status"]): string {
   if (status === "pass") return PASS;
@@ -251,9 +251,9 @@ export async function _runDoctor(
   // Print results
   for (const r of results) {
     const icon = statusIcon(r.status);
-    log(`  ${icon} ${pc.bold(r.name)}: ${r.message}`);
+    log(`  ${icon} ${colorize("bold", r.name)}: ${r.message}`);
     if (r.fix) {
-      log(pc.dim(`    → ${r.fix}`));
+      log(colorize("dim", `    → ${r.fix}`));
     }
   }
 

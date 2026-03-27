@@ -32,7 +32,7 @@ export async function listTemplates(): Promise<string[]> {
   const dir = await resolveTemplatesDir();
   const entries = await fs.readdir(dir, { withFileTypes: true });
   return entries
-    .filter((e) => e.isDirectory() && !e.name.startsWith("_"))
+    .filter((e) => e.isDirectory() && !e.name.startsWith("_") && e.name !== "node_modules")
     .map((e) => e.name)
     .sort((a, b) => a.localeCompare(b));
 }
@@ -45,7 +45,7 @@ export async function downloadAndMergeTemplate(template: string, targetDir: stri
 
   const available = await fs.readdir(templatesDir, { withFileTypes: true });
   const names = available
-    .filter((e) => e.isDirectory() && !e.name.startsWith("_"))
+    .filter((e) => e.isDirectory() && !e.name.startsWith("_") && e.name !== "node_modules")
     .map((e) => e.name);
   if (!names.includes(template)) {
     throw new Error(`unknown template '${template}' -- available: ${names.join(", ")}`);
