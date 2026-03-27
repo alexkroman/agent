@@ -216,7 +216,7 @@ export function createServer(options: ServerOptions): AgentServer {
         secureHeaders({
           contentSecurityPolicy: {
             defaultSrc: ["'self'"],
-            scriptSrc: ["'self'", "blob:"],
+            scriptSrc: ["'self'", "'unsafe-eval'", "blob:"],
             styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
             connectSrc: ["'self'", "wss:", "ws:"],
             imgSrc: ["'self'", "data:"],
