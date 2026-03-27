@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 // Vector store backed by @upstash/vector.
 
-import { type VectorEntry, validateVectorFilter } from "@alexkroman1/aai/vector";
+import type { VectorEntry } from "@alexkroman1/aai/vector";
 import { Index } from "@upstash/vector";
 import type { AgentScope } from "./scope-token.ts";
 
@@ -37,7 +37,7 @@ export function createVectorStore(url: string, token: string): ServerVectorStore
           topK,
           includeData: true,
           includeMetadata: true,
-          ...(filter ? { filter: validateVectorFilter(filter) } : {}),
+          ...(filter ? { filter } : {}),
         },
         { namespace: ns },
       );
