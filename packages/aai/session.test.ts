@@ -356,7 +356,12 @@ describe("createS2sSession", () => {
     const { session, client, mockHandle } = setup();
     await session.start();
 
-    mockHandle._fire("agentTranscript", { text: "Full response" });
+    mockHandle._fire("agentTranscript", {
+      text: "Full response",
+      replyId: "r1",
+      itemId: "i1",
+      interrupted: false,
+    });
 
     expect(client.events).toContainEqual({ type: "chat", text: "Full response" });
   });
@@ -420,6 +425,7 @@ describe("createS2sSession", () => {
     const { session, client, mockHandle } = setup({ executeTool });
     await session.start();
 
+    mockHandle._fire("replyStarted", { replyId: "r1" });
     mockHandle._fire("toolCall", {
       callId: "call-1",
       name: "my_tool",
@@ -454,6 +460,7 @@ describe("createS2sSession", () => {
     const { session, mockHandle } = setup({ executeTool });
     await session.start();
 
+    mockHandle._fire("replyStarted", { replyId: "r1" });
     mockHandle._fire("toolCall", { callId: "c1", name: "t1", args: {} });
     await session.waitForTurn();
 
@@ -474,6 +481,7 @@ describe("createS2sSession", () => {
     const { session, client, mockHandle } = setup({ executeTool });
     await session.start();
 
+    mockHandle._fire("replyStarted", { replyId: "r1" });
     mockHandle._fire("toolCall", { callId: "c1", name: "t1", args: {} });
     await session.waitForTurn();
 
@@ -497,6 +505,7 @@ describe("createS2sSession", () => {
     const { session, client, mockHandle } = setup({ executeTool, hookInvoker });
     await session.start();
 
+    mockHandle._fire("replyStarted", { replyId: "r1" });
     // First tool call — should succeed (count goes to 1, which equals maxSteps)
     mockHandle._fire("toolCall", { callId: "c1", name: "t1", args: {} });
     await session.waitForTurn();
@@ -512,30 +521,6 @@ describe("createS2sSession", () => {
     expect(doneEvent.result).toContain("Maximum tool steps reached");
     // executeTool should only be called for the first one
     expect(executeTool).toHaveBeenCalledTimes(1);
-  });
-
-  test("consumeToolCallStep refuses tool not in activeTools", async () => {
-    const executeTool = vi.fn(async () => "ok");
-    const hookInvoker = {
-      onConnect: vi.fn(),
-      onDisconnect: vi.fn(),
-      onTurn: vi.fn(),
-      onError: vi.fn(),
-      onStep: vi.fn(),
-      resolveTurnConfig: vi.fn(async () => ({ activeTools: ["allowed_tool"] })),
-    };
-    const { session, client, mockHandle } = setup({ executeTool, hookInvoker });
-    await session.start();
-
-    mockHandle._fire("toolCall", { callId: "c1", name: "blocked_tool", args: {} });
-    await session.waitForTurn();
-
-    const doneEvent = client.events.find((e) => {
-      const ev = e as Record<string, unknown>;
-      return ev.type === "tool_call_done" && ev.toolCallId === "c1";
-    }) as Record<string, unknown>;
-    expect(doneEvent.result).toContain("not available");
-    expect(executeTool).not.toHaveBeenCalled();
   });
 
   // ─── connectS2s failure ────────────────────────────────────────────────
@@ -626,7 +611,7 @@ describe("createS2sSession", () => {
     // Wait for executeTool to be called (handleToolCall has async steps before it)
     await vi.waitFor(() => expect(executeTool).toHaveBeenCalled());
 
-    // Barge-in before tool completes — bumps replyGeneration
+    // Barge-in before tool completes — invalidates currentReplyId
     mockHandle._fire("replyDone", { status: "interrupted" });
 
     // Now the tool finishes — its result should be discarded (generation mismatch)
@@ -793,6 +778,7 @@ describe("createS2sSession", () => {
     const { session, mockHandle, client } = setup({ hookInvoker, executeTool });
     await session.start();
 
+    mockHandle._fire("replyStarted", { replyId: "r1" });
     mockHandle._fire("toolCall", { callId: "c1", name: "t1", args: {} });
     await session.waitForTurn();
 

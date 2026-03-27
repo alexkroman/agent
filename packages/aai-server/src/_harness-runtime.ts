@@ -151,7 +151,6 @@ function extractConfig(agent: AgentDef): IsolateConfig {
       onError: typeof agent.onError === "function",
       onTurn: typeof agent.onTurn === "function",
       onStep: typeof agent.onStep === "function",
-      onBeforeStep: typeof agent.onBeforeStep === "function",
       maxStepsIsFn: typeof agent.maxSteps === "function",
       hasMiddleware: Array.isArray(agent.middleware) && agent.middleware.length > 0,
     },
@@ -160,7 +159,6 @@ function extractConfig(agent: AgentDef): IsolateConfig {
   if (typeof agent.maxSteps !== "function") config.maxSteps = agent.maxSteps;
   if (agent.toolChoice !== undefined) config.toolChoice = agent.toolChoice;
   if (agent.builtinTools) config.builtinTools = [...agent.builtinTools];
-  if (agent.activeTools) config.activeTools = [...agent.activeTools];
   return config;
 }
 
@@ -219,17 +217,12 @@ function makeHookCtx(agent: AgentDef, req: HookRequest): HookContext {
 async function runResolveTurnConfig(
   agent: AgentDef,
   ctx: HookContext,
-  stepNumber: number,
-): Promise<{ maxSteps?: number; activeTools?: string[] } | null> {
-  const config: { maxSteps?: number; activeTools?: string[] } = {};
+): Promise<{ maxSteps?: number } | null> {
   if (typeof agent.maxSteps === "function") {
-    config.maxSteps = (await agent.maxSteps(ctx)) ?? undefined;
+    const maxSteps = (await agent.maxSteps(ctx)) ?? undefined;
+    if (maxSteps !== undefined) return { maxSteps };
   }
-  if (agent.onBeforeStep) {
-    const r = await agent.onBeforeStep(stepNumber, ctx);
-    if (r?.activeTools) config.activeTools = r.activeTools;
-  }
-  return config.maxSteps !== undefined || config.activeTools !== undefined ? config : null;
+  return null;
 }
 
 async function invokeMiddlewareHook(
@@ -293,11 +286,8 @@ async function invokeHook(agent: AgentDef, req: HookRequest): Promise<HookRespon
       case "onStep":
         if (req.step) await agent.onStep?.(req.step, ctx);
         break;
-      case "onBeforeStep":
-        result = await agent.onBeforeStep?.(req.stepNumber ?? 0, ctx);
-        break;
       case "resolveTurnConfig":
-        result = await runResolveTurnConfig(agent, ctx, req.stepNumber ?? 0);
+        result = await runResolveTurnConfig(agent, ctx);
         break;
       default:
         result = await invokeMiddlewareHook(agent, req, ctx);

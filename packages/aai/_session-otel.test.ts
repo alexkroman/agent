@@ -70,7 +70,7 @@ function makeCtx(overrides?: Partial<S2sSessionCtx>): S2sSessionCtx {
     toolCallCount: 0,
     turnPromise: null,
     conversationMessages,
-    replyGeneration: 0,
+    currentReplyId: "r0",
     maxHistory: 200,
     resolveTurnConfig: vi.fn(async () => null),
     consumeToolCallStep: vi.fn(() => null),
@@ -212,11 +212,11 @@ describe("handleToolCall", () => {
     expect(ctx.pendingTools).toHaveLength(1);
   });
 
-  test("stale generation: discards result from pendingTools", async () => {
+  test("stale reply: discards result from pendingTools", async () => {
     const ctx = makeCtx({
-      replyGeneration: 1,
+      currentReplyId: "r1",
       executeTool: vi.fn(async () => {
-        ctx.replyGeneration = 2;
+        ctx.currentReplyId = "r2";
         return "stale";
       }),
     } as Partial<S2sSessionCtx>);
@@ -255,26 +255,26 @@ describe("handleToolCall", () => {
 describe("setupListeners", () => {
   afterEach(() => vi.restoreAllMocks());
 
-  test("reply_started resets state", () => {
+  test("reply_started resets state and sets currentReplyId", () => {
     const ctx = makeCtx({
       toolCallCount: 5,
-      replyGeneration: 2,
+      currentReplyId: "old-reply",
       pendingTools: [{ callId: "x", result: "y" }],
     });
     const h = makeMockHandle();
     setupListeners(ctx, h);
     h._fire("replyStarted", { replyId: "r1" });
     expect(ctx.toolCallCount).toBe(0);
-    expect(ctx.replyGeneration).toBe(3);
+    expect(ctx.currentReplyId).toBe("r1");
     expect(ctx.pendingTools).toEqual([]);
   });
 
-  test("reply_done interrupted: bumps generation and emits cancelled", () => {
-    const ctx = makeCtx({ replyGeneration: 1 });
+  test("reply_done interrupted: nullifies currentReplyId and emits cancelled", () => {
+    const ctx = makeCtx({ currentReplyId: "r1" });
     const h = makeMockHandle();
     setupListeners(ctx, h);
     h._fire("replyDone", { status: "interrupted" });
-    expect(ctx.replyGeneration).toBe(2);
+    expect(ctx.currentReplyId).toBeNull();
     expect(ctx.pendingTools).toEqual([]);
     expect(allEvents(ctx)).toContainEqual({ type: "cancelled" });
   });
@@ -349,16 +349,16 @@ describe("setupListeners", () => {
     expect(ctx.fireHook).toHaveBeenCalledWith("afterTurn", expect.any(Function));
   });
 
-  test("reply_done stale generation: clears pendingTools to free memory", () => {
+  test("reply_done stale reply: clears pendingTools to free memory", () => {
     const ctx = makeCtx({
       pendingTools: [{ callId: "c1", result: "r1" }],
-      replyGeneration: 1,
+      currentReplyId: "reply-1",
       turnPromise: null,
     });
     const h = makeMockHandle();
     setupListeners(ctx, h);
-    // Bump generation to simulate a barge-in or new reply after replyDone captured its generation.
-    ctx.replyGeneration = 5;
+    // Change reply ID to simulate a new reply after replyDone captured its ID.
+    ctx.currentReplyId = "reply-2";
     h._fire("replyDone", { status: "done" });
     expect(ctx.pendingTools).toEqual([]);
   });
@@ -464,9 +464,28 @@ describe("setupListeners", () => {
     const ctx = makeCtx();
     const h = makeMockHandle();
     setupListeners(ctx, h);
-    h._fire("agentTranscript", { text: "response" });
+    h._fire("agentTranscript", {
+      text: "response",
+      replyId: "r1",
+      itemId: "i1",
+      interrupted: false,
+    });
     expect(ctx.conversationMessages).toEqual([{ role: "assistant", content: "response" }]);
     expect(allEvents(ctx)).toContainEqual({ type: "chat", text: "response" });
+  });
+
+  test("agent_transcript interrupted: emits chat but does not push to conversation", () => {
+    const ctx = makeCtx();
+    const h = makeMockHandle();
+    setupListeners(ctx, h);
+    h._fire("agentTranscript", {
+      text: "partial resp",
+      replyId: "r1",
+      itemId: "i1",
+      interrupted: true,
+    });
+    expect(ctx.conversationMessages).toEqual([]);
+    expect(allEvents(ctx)).toContainEqual({ type: "chat", text: "partial resp" });
   });
 
   test("speech events forwarded", () => {

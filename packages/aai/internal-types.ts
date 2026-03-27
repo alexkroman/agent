@@ -25,7 +25,6 @@ export const AgentConfigSchema = z.object({
   maxSteps: z.number().int().positive().optional(),
   toolChoice: ToolChoiceSchema.optional(),
   builtinTools: z.array(BuiltinToolSchema).readonly().optional(),
-  activeTools: z.array(z.string().min(1)).readonly().optional(),
 });
 
 /** Serializable agent configuration — derived from {@link AgentConfigSchema}. */

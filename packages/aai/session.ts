@@ -315,7 +315,7 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
       ctx.toolCallCount = 0;
       ctx.turnPromise = null;
       ctx.pendingTools = [];
-      ctx.replyGeneration++;
+      ctx.currentReplyId = null;
       currentS2sSessionId = null;
       idle.clear();
       ctx.s2s?.close();

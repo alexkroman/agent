@@ -26,24 +26,18 @@ export { activeSessionsUpDown, sessionCounter } from "./telemetry.ts";
 /**
  * Complete a tool call by truncating the result, emitting a `tool_call_done` event,
  * and accumulating the result in `ctx.pendingTools` — but only if the reply that
- * initiated this call is still active. A barge-in bumps `ctx.replyGeneration`,
- * so late-finishing tools from an interrupted reply are silently discarded instead
- * of leaking into the next reply's pending tools.
+ * initiated this call is still active.
  */
 function finishToolCall(
   ctx: S2sSessionCtx,
   callId: string,
   result: string,
-  generation: number,
+  replyId: string | null,
 ): void {
   const truncatedResult =
     result.length > MAX_TOOL_RESULT_CHARS ? result.slice(0, MAX_TOOL_RESULT_CHARS) : result;
   ctx.client.event({ type: "tool_call_done", toolCallId: callId, result: truncatedResult });
-  // Only accumulate if this tool call belongs to the current reply.
-  // A barge-in bumps replyGeneration, so late-finishing tools from the
-  // interrupted reply are silently discarded instead of leaking into
-  // the next reply's pendingTools.
-  if (ctx.replyGeneration === generation) {
+  if (replyId !== null && replyId === ctx.currentReplyId) {
     ctx.pendingTools.push({ callId, result });
     // Defensive cap: drop the oldest entry if the array exceeds maxHistory.
     // In practice pendingTools is bounded by maxSteps (default 5), but if
@@ -68,9 +62,9 @@ function finishToolCall(
  */
 export async function handleToolCall(ctx: S2sSessionCtx, detail: S2sToolCall): Promise<void> {
   const { callId, name, args: parsedArgs } = detail;
-  // Capture the reply generation at call start so finishToolCall can detect
+  // Capture the reply ID at call start so finishToolCall can detect
   // whether this tool call's reply was interrupted while we were executing.
-  const generation = ctx.replyGeneration;
+  const replyId = ctx.currentReplyId;
   const span = tracer.startSpan("tool.call", {
     attributes: {
       "aai.tool.name": name,
@@ -88,7 +82,7 @@ export async function handleToolCall(ctx: S2sSessionCtx, detail: S2sToolCall): P
     args: parsedArgs,
   });
 
-  let turnConfig: { maxSteps?: number; activeTools?: string[] } | null;
+  let turnConfig: { maxSteps?: number } | null;
   try {
     turnConfig = await ctx.resolveTurnConfig();
   } catch (err: unknown) {
@@ -96,15 +90,15 @@ export async function handleToolCall(ctx: S2sSessionCtx, detail: S2sToolCall): P
     ctx.log.error(msg);
     span.setStatus({ code: 2, message: msg });
     span.end();
-    finishToolCall(ctx, callId, toolError(msg), generation);
+    finishToolCall(ctx, callId, toolError(msg), replyId);
     return;
   }
 
-  const refused = ctx.consumeToolCallStep(turnConfig, name, generation);
+  const refused = ctx.consumeToolCallStep(turnConfig, name, replyId);
   if (refused !== null) {
     span.setAttribute("aai.tool.refused", true);
     span.end();
-    finishToolCall(ctx, callId, refused, generation);
+    finishToolCall(ctx, callId, refused, replyId);
     return;
   }
 
@@ -131,13 +125,13 @@ export async function handleToolCall(ctx: S2sSessionCtx, detail: S2sToolCall): P
       if (ic?.type === "block") {
         span.setAttribute("aai.tool.blocked", true);
         span.end();
-        finishToolCall(ctx, callId, toolError(ic.reason), generation);
+        finishToolCall(ctx, callId, toolError(ic.reason), replyId);
         return;
       }
       if (ic?.type === "result") {
         span.setAttribute("aai.tool.cached", true);
         span.end();
-        finishToolCall(ctx, callId, ic.result, generation);
+        finishToolCall(ctx, callId, ic.result, replyId);
         ctx.fireHook(
           "afterToolCall",
           (h) =>
@@ -190,7 +184,7 @@ export async function handleToolCall(ctx: S2sSessionCtx, detail: S2sToolCall): P
 
   toolCallDuration.record((performance.now() - startTime) / 1000, { agent: ctx.agent, tool: name });
   ctx.log.info("S2S tool result", { tool: name, callId, resultLength: result.length });
-  finishToolCall(ctx, callId, result, generation);
+  finishToolCall(ctx, callId, result, replyId);
   span.end();
 }
 
@@ -259,10 +253,12 @@ function handleAgentTranscriptDelta(ctx: S2sSessionCtx, text: string): void {
   });
 }
 
-function handleAgentTranscript(ctx: S2sSessionCtx, text: string): void {
+function handleAgentTranscript(ctx: S2sSessionCtx, text: string, interrupted: boolean): void {
   const emit = (t: string) => {
     ctx.client.event({ type: "chat", text: t });
-    ctx.pushMessages({ role: "assistant", content: t });
+    if (!interrupted) {
+      ctx.pushMessages({ role: "assistant", content: t });
+    }
   };
   const filterOutput = ctx.hookInvoker?.filterOutput;
   if (!filterOutput) {
@@ -286,21 +282,19 @@ function handleReplyDone(ctx: S2sSessionCtx, status: string | undefined): void {
   if (status === "interrupted") {
     ctx.log.info("S2S reply interrupted (barge-in)");
     bargeInCounter.add(1, { agent: ctx.agent });
-    // Bump generation so in-flight tool calls discard their results
-    // instead of pushing to pendingTools (checked in finishToolCall).
-    ctx.replyGeneration++;
+    // Invalidate currentReplyId so in-flight tool calls discard their results.
+    ctx.currentReplyId = null;
     ctx.pendingTools = [];
     ctx.filterChain = Promise.resolve();
     ctx.client.event({ type: "cancelled" });
     return;
   }
-  // Capture generation at reply_done to guard against stale sends.
-  const doneGeneration = ctx.replyGeneration;
+  const doneReplyId = ctx.currentReplyId;
   // Wait for all in-flight tool calls to complete before sending results.
   // Without this, reply_done can fire while async tool execution is still
   // in progress, causing pendingTools to be empty → results never sent → deadlock.
   const sendPending = () => {
-    if (ctx.replyGeneration !== doneGeneration) {
+    if (ctx.currentReplyId !== doneReplyId) {
       // Stale reply — discard accumulated results to free memory.
       ctx.pendingTools = [];
       return;
@@ -372,9 +366,9 @@ export function setupListeners(
     ctx.client.event({ type: "transcript", text, isFinal: false }),
   );
   handle.on("userTranscript", ({ text }) => handleUserTranscript(ctx, text));
-  handle.on("replyStarted", () => {
+  handle.on("replyStarted", ({ replyId }) => {
     ctx.toolCallCount = 0;
-    ctx.replyGeneration++;
+    ctx.currentReplyId = replyId;
     ctx.pendingTools = [];
     // Reset the turn promise chain so stale resolved promises from
     // a previous reply don't cause sendPending to execute immediately
@@ -385,7 +379,9 @@ export function setupListeners(
   });
   handle.on("audio", ({ audio }) => ctx.client.playAudioChunk(audio));
   handle.on("agentTranscriptDelta", ({ text }) => handleAgentTranscriptDelta(ctx, text));
-  handle.on("agentTranscript", ({ text }) => handleAgentTranscript(ctx, text));
+  handle.on("agentTranscript", ({ text, interrupted }) =>
+    handleAgentTranscript(ctx, text, interrupted),
+  );
   handle.on("toolCall", (detail) => {
     const p = handleToolCall(ctx, detail).catch((err: unknown) => {
       ctx.log.error("Tool call handler failed", { err: errorMessage(err) });
@@ -401,10 +397,8 @@ export function setupListeners(
   handle.on("close", () => {
     ctx.log.info("S2S closed");
     ctx.s2s = null;
-    // Bump replyGeneration so in-flight tool calls (still executing
-    // ctx.executeTool) will discard their results in finishToolCall
-    // instead of pushing to pendingTools that can never be drained.
-    ctx.replyGeneration++;
+    // Invalidate currentReplyId so in-flight tool calls discard their results.
+    ctx.currentReplyId = null;
     ctx.pendingTools = [];
   });
 }

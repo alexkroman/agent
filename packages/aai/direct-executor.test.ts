@@ -48,11 +48,6 @@ describe("buildAgentConfig", () => {
     const config = buildAgentConfig(makeAgent({ builtinTools: ["web_search", "run_code"] }));
     expect(config.builtinTools).toEqual(["web_search", "run_code"]);
   });
-
-  test("includes activeTools when defined", () => {
-    const config = buildAgentConfig(makeAgent({ activeTools: ["toolA", "toolB"] }));
-    expect(config.activeTools).toEqual(["toolA", "toolB"]);
-  });
 });
 
 describe("createDirectExecutor", () => {
@@ -111,13 +106,13 @@ describe("createDirectExecutor", () => {
 
   test("resolveTurnConfig returns null when no dynamic config", async () => {
     const exec = createDirectExecutor({ agent: makeAgent(), env: {} });
-    expect(await exec.hookInvoker.resolveTurnConfig("s1", 0)).toBe(null);
+    expect(await exec.hookInvoker.resolveTurnConfig("s1")).toBe(null);
   });
 
   test("resolveTurnConfig resolves dynamic maxSteps", async () => {
     const agent = makeAgent({ maxSteps: () => 15 });
     const exec = createDirectExecutor({ agent, env: {} });
-    const config = await exec.hookInvoker.resolveTurnConfig("s1", 0);
+    const config = await exec.hookInvoker.resolveTurnConfig("s1");
     expect(config?.maxSteps).toBe(15);
   });
 
@@ -154,15 +149,6 @@ describe("createDirectExecutor", () => {
     const step = { stepNumber: 1, toolCalls: [{ toolName: "test", args: {} }], text: "ok" };
     await exec.hookInvoker.onStep("s1", step);
     expect(onStep).toHaveBeenCalledWith(step, expect.any(Object));
-  });
-
-  test("resolveTurnConfig resolves onBeforeStep activeTools", async () => {
-    const agent = makeAgent({
-      onBeforeStep: () => ({ activeTools: ["toolA"] }),
-    });
-    const exec = createDirectExecutor({ agent, env: {} });
-    const config = await exec.hookInvoker.resolveTurnConfig("s1", 0);
-    expect(config?.activeTools).toEqual(["toolA"]);
   });
 
   test("session state is initialized from agent.state factory", async () => {

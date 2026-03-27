@@ -38,7 +38,6 @@ describe("AgentConfigSchema", () => {
       maxSteps: 10,
       toolChoice: "auto",
       builtinTools: ["web_search", "run_code"],
-      activeTools: ["greet", "search"],
     };
     expect(AgentConfigSchema.parse(full)).toEqual(full);
   });
@@ -59,10 +58,6 @@ describe("AgentConfigSchema", () => {
     expect(AgentConfigSchema.safeParse({ ...valid, builtinTools: ["not_a_tool"] }).success).toBe(
       false,
     );
-  });
-
-  test("rejects empty activeTools entries", () => {
-    expect(AgentConfigSchema.safeParse({ ...valid, activeTools: [""] }).success).toBe(false);
   });
 
   test("type derived from schema matches AgentConfig", () => {
@@ -118,16 +113,12 @@ describe("TurnConfigSchema", () => {
   });
 
   test("accepts full config", () => {
-    const full: TurnConfig = { maxSteps: 3, activeTools: ["greet"] };
+    const full: TurnConfig = { maxSteps: 3 };
     expect(TurnConfigSchema.parse(full)).toEqual(full);
   });
 
   test("rejects non-positive maxSteps", () => {
     expect(TurnConfigSchema.safeParse({ maxSteps: 0 }).success).toBe(false);
-  });
-
-  test("rejects empty activeTools entries", () => {
-    expect(TurnConfigSchema.safeParse({ activeTools: [""] }).success).toBe(false);
   });
 
   test("type derived from schema matches TurnConfig", () => {

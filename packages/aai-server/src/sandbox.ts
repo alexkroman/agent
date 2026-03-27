@@ -263,14 +263,11 @@ function buildHookInvoker(
     async onStep(sessionId, step) {
       VoidHookResultSchema.parse(await hook("onStep", { sessionId, step }));
     },
-    async resolveTurnConfig(sessionId, stepNumber) {
-      const parsed = TurnConfigResultSchema.parse(
-        await hook("resolveTurnConfig", { sessionId, stepNumber }),
-      );
+    async resolveTurnConfig(sessionId) {
+      const parsed = TurnConfigResultSchema.parse(await hook("resolveTurnConfig", { sessionId }));
       if (parsed == null) return null;
-      const config: { maxSteps?: number; activeTools?: string[] } = {};
+      const config: { maxSteps?: number } = {};
       if (parsed.maxSteps != null) config.maxSteps = parsed.maxSteps;
-      if (parsed.activeTools != null) config.activeTools = parsed.activeTools;
       return config;
     },
     async filterInput(sessionId, text) {

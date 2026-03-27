@@ -8,12 +8,6 @@ import type { Kv } from "./kv.ts";
 import type { VectorStore } from "./vector.ts";
 
 /**
- * Result of the {@link AgentOptions.onBeforeStep} hook.
- * @public
- */
-export type BeforeStepResult = { activeTools?: string[] } | undefined;
-
-/**
  * Result returned by a `beforeTurn` middleware to block a turn.
  * @public
  */
@@ -536,13 +530,6 @@ export type AgentOptions<S = Record<string, unknown>> = {
   toolChoice?: ToolChoice;
   /** Built-in tools to enable (e.g. `"web_search"`, `"run_code"`). */
   builtinTools?: readonly BuiltinTool[];
-  /**
-   * Default set of active tools per turn.
-   *
-   * When set, only these tools are available to the LLM each turn.
-   * Can be overridden dynamically per-turn via `onBeforeStep`.
-   */
-  activeTools?: readonly string[];
   /** Custom tools the agent can invoke. */
   tools?: Readonly<Record<string, ToolDef<z.ZodObject<z.ZodRawShape>, NoInfer<S>>>>;
   /** Factory that creates fresh per-session state. Called once per connection. */
@@ -570,17 +557,6 @@ export type AgentOptions<S = Record<string, unknown>> = {
   onTurn?: (text: string, ctx: HookContext<S>) => void | Promise<void>;
   /** Called after each agentic step completes. */
   onStep?: (step: StepInfo, ctx: HookContext<S>) => void | Promise<void>;
-  /**
-   * Called before each step; can restrict which tools are active.
-   *
-   * Return `{ activeTools: [...] }` to limit available tools for the
-   * upcoming step, or `void` to keep all tools active.
-   */
-  onBeforeStep?: (
-    stepNumber: number,
-    ctx: HookContext<S>,
-  ) => BeforeStepResult | Promise<BeforeStepResult>;
-
   /**
    * Composable middleware that intercepts turns, tool calls, and output.
    *
@@ -646,7 +622,6 @@ export type AgentDef<S = Record<string, unknown>> = {
   maxSteps: number | ((ctx: HookContext<S>) => number);
   toolChoice?: ToolChoice;
   builtinTools?: readonly BuiltinTool[];
-  activeTools?: readonly string[];
   tools: Readonly<Record<string, ToolDef<z.ZodObject<z.ZodRawShape>, S>>>;
   state?: () => S;
   /** Resolved persistence config, or `undefined` if disabled. */
@@ -656,10 +631,6 @@ export type AgentDef<S = Record<string, unknown>> = {
   onError?: (error: Error, ctx?: HookContext<S>) => void;
   onTurn?: (text: string, ctx: HookContext<S>) => void | Promise<void>;
   onStep?: (step: StepInfo, ctx: HookContext<S>) => void | Promise<void>;
-  onBeforeStep?: (
-    stepNumber: number,
-    ctx: HookContext<S>,
-  ) => BeforeStepResult | Promise<BeforeStepResult>;
   middleware?: readonly Middleware<S>[];
   idleTimeoutMs?: number;
 };
@@ -729,7 +700,6 @@ const AgentOptionsSchema = z.object({
   maxSteps: z.union([z.number().int().positive(), z.function()]).optional(),
   toolChoice: ToolChoiceSchema.optional(),
   builtinTools: z.array(BuiltinToolSchema).optional(),
-  activeTools: z.array(z.string().min(1)).optional(),
   tools: z.record(z.string(), ToolDefSchema).optional(),
   state: z.function().optional(),
   persistence: z
@@ -740,7 +710,6 @@ const AgentOptionsSchema = z.object({
   onError: z.function().optional(),
   onTurn: z.function().optional(),
   onStep: z.function().optional(),
-  onBeforeStep: z.function().optional(),
   middleware: z
     .array(
       z.object({

@@ -273,6 +273,7 @@ describe("createS2sSession resource cleanup", () => {
     await session.start();
 
     // Start a tool call
+    mockHandle._fire("replyStarted", { replyId: "r1" });
     mockHandle._fire("toolCall", { callId: "c1", name: "t1", args: {} });
     await vi.waitFor(() => expect(executeTool).toHaveBeenCalled());
 
@@ -324,6 +325,7 @@ describe("createS2sSession resource cleanup", () => {
     await session.start();
 
     // Accumulate some tool calls
+    mockHandle._fire("replyStarted", { replyId: "r1" });
     mockHandle._fire("toolCall", { callId: "c1", name: "t1", args: {} });
     await session.waitForTurn();
 
@@ -337,7 +339,7 @@ describe("createS2sSession resource cleanup", () => {
     expect(mockHandle.close).toHaveBeenCalled();
   });
 
-  test("onReset bumps replyGeneration to discard stale tool results", async () => {
+  test("onReset invalidates currentReplyId to discard stale tool results", async () => {
     let resolveToolCall!: (value: string) => void;
     const executeTool = vi.fn(
       () =>

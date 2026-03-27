@@ -25,7 +25,6 @@ export type { Kv, KvEntry, KvListOptions } from "./kv.ts";
 export {
   type AgentDef,
   type AgentOptions,
-  type BeforeStepResult,
   type BuiltinTool,
   createToolFactory,
   defineAgent,

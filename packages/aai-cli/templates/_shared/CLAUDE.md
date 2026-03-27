@@ -91,7 +91,7 @@ export default defineAgent({
 
 ```ts
 import { createToolFactory, defineAgent, defineTool } from "@alexkroman1/aai"; // defineAgent + helpers
-import type { BeforeStepResult, BuiltinTool, HookContext, Middleware, StepInfo, ToolContext } from "@alexkroman1/aai";
+import type { BuiltinTool, HookContext, Middleware, StepInfo, ToolContext } from "@alexkroman1/aai";
 import { z } from "zod"; // Tools with typed params (included in package.json)
 ```
 
@@ -110,7 +110,6 @@ defineAgent({
   builtinTools?: BuiltinTool[];
   tools?: Record<string, ToolDef>;
   toolChoice?: ToolChoice;   // "auto" | "required" | "none" | { type: "tool", toolName }
-  activeTools?: string[];    // Default active tools per turn (subset of all tools)
   maxSteps?: number | ((ctx: HookContext) => number);
 
   // State
@@ -122,8 +121,6 @@ defineAgent({
   onError?: (error: Error, ctx?: HookContext) => void;
   onTurn?: (text: string, ctx: HookContext) => void | Promise<void>;
   onStep?: (step: StepInfo, ctx: HookContext) => void | Promise<void>;
-  onBeforeStep?: (stepNumber: number, ctx: HookContext) =>
-    BeforeStepResult | Promise<BeforeStepResult>;
 
   // Middleware
   middleware?: Middleware[];   // Composable interceptors (see below)
@@ -412,19 +409,6 @@ onStep: (step, ctx) => {
 },
 ```
 
-`onBeforeStep` — return `{ activeTools: [...] }` to filter tools per step:
-
-```ts
-state: () => ({ phase: "gather" }),
-onBeforeStep: (stepNumber, ctx) => {
-  const state = ctx.state as { phase: string };
-  if (state.phase === "gather") {
-    return { activeTools: ["search", "lookup"] };
-  }
-  return { activeTools: ["summarize"] };
-},
-```
-
 ### Tool choice
 
 Control when the LLM uses tools:
@@ -435,45 +419,6 @@ toolChoice: "required", // Force a tool call every step (useful for research pip
 toolChoice: "none",     // Disable all tool use
 toolChoice: { type: "tool", toolName: "search" }, // Force a specific tool
 ```
-
-### Phase-based tool filtering
-
-Combine `state`, `onBeforeStep`, and `activeTools` for multi-phase workflows:
-
-```ts
-state: () => ({ phase: "gather" as "gather" | "analyze" | "respond" }),
-onBeforeStep: (_step, ctx) => {
-  const state = ctx.state as { phase: string };
-  if (state.phase === "gather") return { activeTools: ["web_search", "advance"] };
-  if (state.phase === "analyze") return { activeTools: ["summarize", "advance"] };
-  return { activeTools: [] }; // respond phase — LLM speaks freely
-},
-tools: {
-  advance: {
-    description: "Move to the next phase",
-    execute: (_args, ctx) => {
-      const state = ctx.state as { phase: string };
-      if (state.phase === "gather") state.phase = "analyze";
-      else if (state.phase === "analyze") state.phase = "respond";
-      return { phase: state.phase };
-    },
-  },
-},
-```
-
-### Static `activeTools`
-
-Restrict which tools the LLM can use by default, without writing a hook:
-
-```ts
-export default defineAgent({
-  builtinTools: ["web_search", "visit_webpage", "run_code"],
-  tools: { summarize: {/* ... */} },
-  activeTools: ["web_search", "summarize"], // Only these two are available
-});
-```
-
-Use `onBeforeStep` to override `activeTools` dynamically per step.
 
 ### Middleware / interceptors
 
@@ -1456,7 +1401,6 @@ const turn = await t.turn("What is my name?", [
 - **Tool returns `undefined`** — Make sure `execute` returns a value. Even
   `return { ok: true }` is better than an implicit void return.
 - **Agent doesn't use a tool** — Check `description` is clear about when to use
-  it. The LLM relies on the description to decide. Also check `activeTools`
-  isn't filtering it out.
+  it. The LLM relies on the description to decide.
 - **KV reads return `null`** — Keys are scoped per agent deployment. A
   redeployment with a new slug creates a fresh KV namespace.

@@ -15,7 +15,6 @@ export type AgentDef<S = Record<string, unknown>> = {
     maxSteps: number | ((ctx: HookContext<S>) => number);
     toolChoice?: ToolChoice;
     builtinTools?: readonly BuiltinTool[];
-    activeTools?: readonly string[];
     tools: Readonly<Record<string, ToolDef<z.ZodObject<z.ZodRawShape>, S>>>;
     state?: () => S;
     persistence?: {
@@ -26,7 +25,6 @@ export type AgentDef<S = Record<string, unknown>> = {
     onError?: (error: Error, ctx?: HookContext<S>) => void;
     onTurn?: (text: string, ctx: HookContext<S>) => void | Promise<void>;
     onStep?: (step: StepInfo, ctx: HookContext<S>) => void | Promise<void>;
-    onBeforeStep?: (stepNumber: number, ctx: HookContext<S>) => BeforeStepResult | Promise<BeforeStepResult>;
     middleware?: readonly Middleware<S>[];
     idleTimeoutMs?: number;
 };
@@ -40,7 +38,6 @@ export type AgentOptions<S = Record<string, unknown>> = {
     maxSteps?: number | ((ctx: HookContext<S>) => number);
     toolChoice?: ToolChoice;
     builtinTools?: readonly BuiltinTool[];
-    activeTools?: readonly string[];
     tools?: Readonly<Record<string, ToolDef<z.ZodObject<z.ZodRawShape>, NoInfer<S>>>>;
     state?: () => S;
     persistence?: boolean | {
@@ -51,15 +48,9 @@ export type AgentOptions<S = Record<string, unknown>> = {
     onError?: (error: Error, ctx?: HookContext<S>) => void;
     onTurn?: (text: string, ctx: HookContext<S>) => void | Promise<void>;
     onStep?: (step: StepInfo, ctx: HookContext<S>) => void | Promise<void>;
-    onBeforeStep?: (stepNumber: number, ctx: HookContext<S>) => BeforeStepResult | Promise<BeforeStepResult>;
     middleware?: readonly Middleware<S>[];
     idleTimeoutMs?: number;
 };
-
-// @public
-export type BeforeStepResult = {
-    activeTools?: string[];
-} | undefined;
 
 // @public
 export type BuiltinTool = "web_search" | "visit_webpage" | "fetch_json" | "run_code" | "vector_search" | "memory";
