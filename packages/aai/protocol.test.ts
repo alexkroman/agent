@@ -1,18 +1,15 @@
 import { describe, expect, test } from "vitest";
 import {
   AUDIO_FORMAT,
-  AudioFrameSpec,
   buildReadyConfig,
   ClientEventSchema,
   ClientMessageSchema,
   DEFAULT_STT_SAMPLE_RATE,
   DEFAULT_TTS_SAMPLE_RATE,
-  fromWireMessages,
   HOOK_TIMEOUT_MS,
   KvRequestSchema,
   SessionErrorCodeSchema,
   TOOL_EXECUTION_TIMEOUT_MS,
-  toWireMessages,
 } from "./protocol.ts";
 
 describe("protocol constants", () => {
@@ -26,12 +23,6 @@ describe("protocol constants", () => {
 
   test('AUDIO_FORMAT is "pcm16"', () => {
     expect(AUDIO_FORMAT).toBe("pcm16");
-  });
-
-  test("AudioFrameSpec has correct values", () => {
-    expect(AudioFrameSpec.bitsPerSample).toBe(16);
-    expect(AudioFrameSpec.channels).toBe(1);
-    expect(AudioFrameSpec.bytesPerSample).toBe(2);
   });
 
   test("HOOK_TIMEOUT_MS is 5000", () => {
@@ -180,49 +171,5 @@ describe("buildReadyConfig", () => {
     const config = buildReadyConfig({ inputSampleRate: 8000, outputSampleRate: 48_000 });
     expect(config.sampleRate).toBe(8000);
     expect(config.ttsSampleRate).toBe(48_000);
-  });
-});
-
-describe("toWireMessages", () => {
-  test("converts internal messages to wire format using content field", () => {
-    const internal = [
-      { role: "user" as const, content: "hello" },
-      { role: "assistant" as const, content: "hi there" },
-    ];
-    const wire = toWireMessages(internal);
-    expect(wire).toEqual([
-      { role: "user", content: "hello" },
-      { role: "assistant", content: "hi there" },
-    ]);
-  });
-
-  test("handles empty array", () => {
-    expect(toWireMessages([])).toEqual([]);
-  });
-});
-
-describe("fromWireMessages", () => {
-  test("converts wire messages to internal format using content field", () => {
-    const wire = [
-      { role: "user" as const, content: "hello" },
-      { role: "assistant" as const, content: "hi there" },
-    ];
-    const internal = fromWireMessages(wire);
-    expect(internal).toEqual([
-      { role: "user", content: "hello" },
-      { role: "assistant", content: "hi there" },
-    ]);
-  });
-
-  test("handles empty array", () => {
-    expect(fromWireMessages([])).toEqual([]);
-  });
-
-  test("round-trips correctly", () => {
-    const original = [
-      { role: "user" as const, content: "test message" },
-      { role: "assistant" as const, content: "response" },
-    ];
-    expect(fromWireMessages(toWireMessages(original))).toEqual(original);
   });
 });

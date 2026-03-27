@@ -1,7 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import type { ClientMessage, ReadyConfig } from "@alexkroman1/aai/protocol";
-import { toWireMessages } from "@alexkroman1/aai/protocol";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import type { VoiceIO } from "./audio.ts";
 import { ClientHandler } from "./client-handler.ts";
@@ -325,7 +324,7 @@ export function createVoiceSession(options: VoiceSessionOptions): VoiceSession {
           if (isReconnect && messages.value.length > 0) {
             send({
               type: "history",
-              messages: toWireMessages(messages.value),
+              messages: messages.value.map((m) => ({ role: m.role, content: m.content })),
             });
           }
         }

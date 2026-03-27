@@ -28,15 +28,6 @@ export const DEFAULT_TTS_SAMPLE_RATE = 24_000;
  */
 export const AUDIO_FORMAT = "pcm16" as const;
 
-/** Specification for binary audio frames exchanged over WebSocket. */
-export const AudioFrameSpec = {
-  format: AUDIO_FORMAT,
-  bitsPerSample: 16,
-  endianness: "little",
-  channels: 1,
-  bytesPerSample: 2,
-} as const;
-
 /** Zod schema for KV operation requests from the worker to the host. */
 export const KvRequestSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("get"), key: z.string().min(1) }),
@@ -215,35 +206,6 @@ export function buildReadyConfig(s2sConfig: {
     sampleRate: s2sConfig.inputSampleRate,
     ttsSampleRate: s2sConfig.outputSampleRate,
   };
-}
-
-// ─── Wire message types ──────────────────────────────────────────────────
-
-/** Wire-format message used in the `history` client message. */
-export type WireMessage = { role: "user" | "assistant"; content: string };
-
-/**
- * Convert internal messages to wire-format messages.
- *
- * Now that the wire format uses `content` (matching the internal format),
- * this is an identity mapping. Retained for API stability.
- */
-export function toWireMessages(
-  msgs: readonly { role: "user" | "assistant"; content: string }[],
-): WireMessage[] {
-  return msgs.map((m) => ({ role: m.role, content: m.content }));
-}
-
-/**
- * Convert wire-format messages to internal messages.
- *
- * Now that the wire format uses `content` (matching the internal format),
- * this is an identity mapping. Retained for API stability.
- */
-export function fromWireMessages(
-  msgs: readonly WireMessage[],
-): { role: "user" | "assistant"; content: string }[] {
-  return msgs.map((m) => ({ role: m.role, content: m.content }));
 }
 
 // ─── Worker RPC interfaces ─────────────────────────────────────────────────

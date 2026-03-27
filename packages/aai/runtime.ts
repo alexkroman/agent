@@ -35,19 +35,12 @@ export type Logger = {
   debug(msg: string, ctx?: LogContext): void;
 };
 
-/**
- * Default console-backed logger. Uses partial application (`log`) to bind
- * each log level to its corresponding `console` method while forwarding
- * the optional context object as a second argument.
- */
-const log = (fn: (...args: unknown[]) => void) => (msg: string, ctx?: LogContext) =>
-  fn(msg, ...(ctx ? [ctx] : []));
-
+/** Default console-backed logger. */
 export const consoleLogger: Logger = {
-  info: log(console.log),
-  warn: log(console.warn),
-  error: log(console.error),
-  debug: log(console.debug),
+  info: (msg, ctx?) => (ctx ? console.log(msg, ctx) : console.log(msg)),
+  warn: (msg, ctx?) => (ctx ? console.warn(msg, ctx) : console.warn(msg)),
+  error: (msg, ctx?) => (ctx ? console.error(msg, ctx) : console.error(msg)),
+  debug: (msg, ctx?) => (ctx ? console.debug(msg, ctx) : console.debug(msg)),
 };
 
 /**

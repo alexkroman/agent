@@ -12,7 +12,7 @@ import {
 import { errorDetail, errorMessage } from "./_utils.ts";
 import type { HookInvoker } from "./middleware.ts";
 import type { ClientSink } from "./protocol.ts";
-import { fromWireMessages, HOOK_TIMEOUT_MS } from "./protocol.ts";
+import { HOOK_TIMEOUT_MS } from "./protocol.ts";
 import type { Logger, S2SConfig } from "./runtime.ts";
 import { consoleLogger } from "./runtime.ts";
 import {
@@ -325,7 +325,7 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
       );
     },
     onHistory(incoming: readonly { role: "user" | "assistant"; content: string }[]): void {
-      ctx.pushMessages(...fromWireMessages(incoming));
+      ctx.pushMessages(...incoming.map((m) => ({ role: m.role, content: m.content })));
     },
     waitForTurn(): Promise<void> {
       return ctx.turnPromise ?? Promise.resolve();
