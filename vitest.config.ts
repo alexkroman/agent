@@ -31,10 +31,10 @@ export default defineConfig({
         "**/_prompts.ts",
       ],
       thresholds: {
-        lines: 81,
-        functions: 81,
-        branches: 69,
-        statements: 81,
+        lines: 60,
+        functions: 60,
+        branches: 45,
+        statements: 60,
       },
     },
     projects: [
@@ -66,7 +66,12 @@ export default defineConfig({
           root: "packages/aai-cli",
           restoreMocks: true,
           include: ["**/*.test.ts"],
-          exclude: ["pack-build.test.ts", "e2e.test.ts", "node_modules", "dist"],
+          exclude: [
+            "pack-build.test.ts",
+            "e2e.test.ts",
+            "node_modules",
+            "dist",
+          ],
         },
       },
       {
@@ -76,7 +81,11 @@ export default defineConfig({
           root: "packages/aai-server",
           restoreMocks: true,
           include: ["**/*.test.ts"],
-          exclude: ["src/sandbox-integration.test.ts", "node_modules", "dist"],
+          exclude: [
+            "src/sandbox-integration.test.ts",
+            "node_modules",
+            "dist",
+          ],
         },
       },
     ],

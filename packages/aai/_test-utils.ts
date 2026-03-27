@@ -4,6 +4,11 @@ import type { AgentConfig } from "./_internal-types.ts";
 import type { AgentDef, ToolContext, ToolDef } from "./types.ts";
 import { DEFAULT_INSTRUCTIONS } from "./types.ts";
 
+/** Yield to the microtask queue so pending promises settle. */
+export function flush(): Promise<void> {
+  return new Promise<void>((r) => queueMicrotask(r));
+}
+
 export function createMockToolContext(overrides?: Partial<ToolContext>): ToolContext {
   return {
     env: {},

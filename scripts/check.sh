@@ -87,15 +87,20 @@ if [ "$FAILED" -ne 0 ]; then
   exit 1
 fi
 
-# ── Phase 3: Tests (parallel) ──
+# ── Phase 3: Tests (parallel, sharded by package) ──
 echo -e "\n${YELLOW}Phase 3: Tests (parallel)${NC}"
 
 if [ "$MODE" = "--local" ]; then
-  run_step "vitest"           vitest run
+  # Shard unit tests by package for faster local feedback
+  run_step "vitest:aai"        npx vitest run --project aai
+  run_step "vitest:aai-ui"     npx vitest run --project aai-ui
+  run_step "vitest:aai-cli"    npx vitest run --project aai-cli
+  run_step "vitest:aai-server" npx vitest run --project aai-server
 else
-  run_step "integration"      pnpm $PNPM_FILTER run --if-present check:integration
-  run_step "e2e"              pnpm $PNPM_FILTER run --if-present check:e2e
-  run_step "vitest"           vitest run --coverage
+  run_step "integration"       pnpm $PNPM_FILTER run --if-present check:integration
+  run_step "e2e"               pnpm $PNPM_FILTER run --if-present check:e2e
+  # Coverage runs all projects together to avoid temp-dir race conditions
+  run_step "vitest"            npx vitest run --coverage
 fi
 
 wait_all

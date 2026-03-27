@@ -40,12 +40,22 @@ pnpm lint:fix            # Auto-fix lint issues
 pnpm check:local         # Fast pre-commit gate (parallel: build → typecheck + lint + api + syncpack → test)
 ```
 
+**Single-package shortcuts:**
+
+```sh
+pnpm test:aai            # Run only aai tests
+pnpm test:aai-ui         # Run only aai-ui tests
+pnpm test:aai-cli        # Run only aai-cli tests
+pnpm test:aai-server     # Run only aai-server tests
+pnpm dev:aai-server      # Start aai-server in dev mode
+```
+
 **Running specific tests:**
 
 ```sh
-pnpm --filter @alexkroman1/aai test          # Single package
-pnpm vitest run packages/aai/types_test.ts    # Single file
-npx vitest run --config vitest.config.ts      # All from root
+pnpm vitest run --project aai              # Single package via --project
+pnpm vitest run packages/aai/types_test.ts # Single file
+pnpm --filter @alexkroman1/aai test        # Single package via pnpm filter
 ```
 
 **Full CI check** (`pnpm check`):
@@ -55,7 +65,8 @@ Runs via `scripts/check.sh` in three parallelized phases:
 1. **Build** (sequential): `pnpm -r run build`
 2. **Checks** (parallel): typecheck, lint, api-extractor, attw, templates,
    knip, syncpack, markdownlint
-3. **Tests** (parallel): integration tests, e2e tests, vitest with coverage
+3. **Tests** (parallel, sharded by package): vitest per-package (aai, aai-ui,
+   aai-cli, aai-server), integration tests, e2e tests
 
 `pnpm check:local` uses the same script with `--local` flag, running a
 subset: build → typecheck + lint + api-extractor + syncpack (parallel) →
@@ -90,7 +101,10 @@ Public:
   `createTestHarness`, `TestHarness`, `TurnResult`
 - `./testing/matchers` — Vitest custom matchers (`toHaveCalledTool`)
 
-Internal (exported in package.json but not part of public API):
+Internal (exported in package.json but not part of public API — do **not**
+depend on these from consumer code; they may change without notice).
+API-extractor tracks only the **public** entry points (`.` and `./types`).
+Changes to internal exports do not trigger API baseline drift:
 
 - `./runtime` — `Logger`, `LogContext`, `S2SConfig`, `consoleLogger`,
   `DEFAULT_S2S_CONFIG`
@@ -163,7 +177,14 @@ start, secret, rag, link, unlink
 
 - **Runtime**: Node
 - **Frameworks**: Preact (client UI), Tailwind CSS v4 (compiled at bundle time)
-- **Testing**: Vitest. Test files co-located: `foo.ts` → `foo_test.ts`
+- **Testing**: Vitest. Test files co-located: `foo.ts` → `foo_test.ts`.
+  Unit test projects (aai, aai-ui, aai-cli, aai-server) are defined in the
+  root `vitest.config.ts`. Use `--project <name>` to run a specific project.
+  Slow/integration tests have separate per-package configs (`vitest.slow.config.ts`,
+  `vitest.integration.config.ts`) to avoid running during `vitest run`.
+  In tests, use `flush()` from `_test-utils.ts` instead of
+  `await new Promise(r => setTimeout(r, 0))` to yield to microtasks.
+  Use `vi.waitFor()` instead of arbitrary delays when polling for async results.
 - **Linting**: Biome. Auto-runs on staged files via lefthook pre-commit hook.
 - **Exports**: In dev mode, package.json exports point to `.ts` source for
   seamless workspace resolution. Update to compiled `.js` dist paths before
@@ -206,6 +227,8 @@ catches the most common issues that historically required follow-up commits:
    `pnpm lint` to catch lint issues in files affected by your change.
 4. **API extractor reports**: `check:local` now includes build + api-extractor.
    After changing public API exports, commit updated `.api.md` reports.
+   CI also runs `check:api-diff` which detects stale `.api.md` baselines
+   and provides clear instructions for resolving them.
 
 ## Security Architecture
 
