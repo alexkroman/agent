@@ -20,8 +20,8 @@ export async function handleAgentHealth(c: Context<Env>): Promise<Response> {
 }
 
 const CSP =
-  "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
-  "connect-src 'self' wss: ws:; img-src 'self' data:; font-src 'self'; object-src 'none'; base-uri 'self'";
+  "default-src 'self'; script-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+  "connect-src 'self' wss: ws:; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; object-src 'none'; base-uri 'self'";
 
 export async function handleAgentPage(c: Context<Env>): Promise<Response> {
   const slug = c.get("slug");
