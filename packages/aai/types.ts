@@ -134,7 +134,8 @@ export type Middleware<S = any> = {
   beforeTurn?: (
     text: string,
     ctx: HookContext<S>,
-  ) => MiddlewareBlockResult | undefined | Promise<MiddlewareBlockResult | undefined>;
+    // biome-ignore lint/suspicious/noConfusingVoidType: void allows callbacks to omit return
+  ) => MiddlewareBlockResult | void | undefined | Promise<MiddlewareBlockResult | void | undefined>;
 
   /**
    * Runs after each user turn completes (after all steps finish).
