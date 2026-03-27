@@ -45,6 +45,12 @@ function finishToolCall(
   // the next reply's pendingTools.
   if (ctx.replyGeneration === generation) {
     ctx.pendingTools.push({ callId, result });
+    // Defensive cap: drop the oldest entry if the array exceeds maxHistory.
+    // In practice pendingTools is bounded by maxSteps (default 5), but if
+    // maxSteps is disabled or set very high this prevents unbounded growth.
+    if (ctx.maxHistory > 0 && ctx.pendingTools.length > ctx.maxHistory) {
+      ctx.pendingTools.shift();
+    }
   }
 }
 
@@ -294,7 +300,11 @@ function handleReplyDone(ctx: S2sSessionCtx, status: string | undefined): void {
   // Without this, reply_done can fire while async tool execution is still
   // in progress, causing pendingTools to be empty → results never sent → deadlock.
   const sendPending = () => {
-    if (ctx.replyGeneration !== doneGeneration) return;
+    if (ctx.replyGeneration !== doneGeneration) {
+      // Stale reply — discard accumulated results to free memory.
+      ctx.pendingTools = [];
+      return;
+    }
     if (ctx.pendingTools.length > 0) {
       for (const tool of ctx.pendingTools) ctx.s2s?.sendToolResult(tool.callId, tool.result);
       ctx.pendingTools = [];

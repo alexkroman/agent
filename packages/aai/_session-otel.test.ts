@@ -71,6 +71,7 @@ function makeCtx(overrides?: Partial<S2sSessionCtx>): S2sSessionCtx {
     turnPromise: null,
     conversationMessages,
     replyGeneration: 0,
+    maxHistory: 200,
     resolveTurnConfig: vi.fn(async () => null),
     consumeToolCallStep: vi.fn(() => null),
     pushMessages: vi.fn((...msgs: unknown[]) => conversationMessages.push(...(msgs as never[]))),
@@ -346,6 +347,31 @@ describe("setupListeners", () => {
     setupListeners(ctx, h);
     h._fire("replyDone", { status: "done" });
     expect(ctx.fireHook).toHaveBeenCalledWith("afterTurn", expect.any(Function));
+  });
+
+  test("reply_done stale generation: clears pendingTools to free memory", () => {
+    const ctx = makeCtx({
+      pendingTools: [{ callId: "c1", result: "r1" }],
+      replyGeneration: 1,
+      turnPromise: null,
+    });
+    const h = makeMockHandle();
+    setupListeners(ctx, h);
+    // Bump generation to simulate a barge-in or new reply after replyDone captured its generation.
+    ctx.replyGeneration = 5;
+    h._fire("replyDone", { status: "done" });
+    expect(ctx.pendingTools).toEqual([]);
+  });
+
+  test("finishToolCall caps pendingTools at maxHistory", async () => {
+    const ctx = makeCtx({ maxHistory: 3 } as Partial<S2sSessionCtx>);
+    // Simulate 4 sequential tool calls in the same reply generation.
+    for (let i = 0; i < 4; i++) {
+      await handleToolCall(ctx, tc({ callId: `call-${i}`, name: "myTool" }));
+    }
+    expect(ctx.pendingTools).toHaveLength(3);
+    // The oldest entry (call-0) should have been evicted.
+    expect(ctx.pendingTools[0]?.callId).toBe("call-1");
   });
 
   test("user_transcript: pushes message and fires turn hook", () => {
