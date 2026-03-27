@@ -1,4 +1,9 @@
 {
+  "source": [
+    "package.json",
+    "packages/*/package.json",
+    "!packages/aai-cli/templates/_shared/package.json"
+  ],
   "versionGroups": [
     {
       "label": "Ensure secure-exec stays in sync across aai and aai-server",
