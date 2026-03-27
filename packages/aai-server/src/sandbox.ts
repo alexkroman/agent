@@ -32,13 +32,11 @@ import type { KvStore } from "./kv.ts";
 import { getHarnessRuntimeJs } from "./sandbox-harness.ts";
 import { buildNetworkAdapter, buildNetworkPolicy } from "./sandbox-network.ts";
 import { scopedKv, scopedVector, startSidecarServer } from "./sandbox-sidecar.ts";
-// biome-ignore lint/suspicious/noImportCycles: sandbox ↔ sandbox-slots cycle is architectural (lazy import on the other side)
-import { _slotInternals } from "./sandbox-slots.ts";
+import { _deps, _slotInternals } from "./sandbox-slots.ts";
 import type { AgentScope } from "./scope-token.ts";
 import type { ServerVectorStore } from "./vector.ts";
 
 export type { AgentMetadata } from "./_schemas.ts";
-// biome-ignore lint/suspicious/noImportCycles: re-export from sandbox-slots (cycle broken by lazy import)
 export { type AgentSlot, ensureAgent, registerSlot, resolveSandbox } from "./sandbox-slots.ts";
 
 export type SandboxOptions = {
@@ -394,3 +392,7 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
     },
   };
 }
+
+// Register createSandbox with sandbox-slots to break the circular dependency
+// without a dynamic import (which triggers bundler warnings).
+_deps.createSandbox = createSandbox;
