@@ -153,7 +153,7 @@ function handleTextMessage(
  */
 export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions): void {
   const { sessions, logger: log = consoleLogger } = opts;
-  const sessionId = crypto.randomUUID();
+  const sessionId = opts.resumeFrom ?? crypto.randomUUID();
   const sid = sessionId.slice(0, 8);
   const ctx = opts.logContext ?? {};
 

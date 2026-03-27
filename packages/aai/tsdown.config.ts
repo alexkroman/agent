@@ -1,27 +1,19 @@
+import { readFileSync } from "node:fs";
+import { basename } from "node:path";
 import { defineConfig } from "tsdown";
 
+// Derive build entries from package.json exports so they can never drift.
+const pkg = JSON.parse(readFileSync("package.json", "utf-8"));
+const entry = [
+  ...new Set(
+    Object.values(pkg.exports as Record<string, Record<string, string>>)
+      .filter((v): v is { source: string } => typeof v === "object" && typeof v.source === "string")
+      .map((v) => basename(v.source)),
+  ),
+];
+
 export default defineConfig({
-  entry: [
-    "index.ts",
-    "types.ts",
-    "kv.ts",
-    "vector.ts",
-    "server.ts",
-    "protocol.ts",
-    "s2s.ts",
-    "session.ts",
-    "runtime.ts",
-    "worker-entry.ts",
-    "ws-handler.ts",
-    "direct-executor.ts",
-    "builtin-tools.ts",
-    "_internal-types.ts",
-    "telemetry.ts",
-    "testing.ts",
-    "matchers.ts",
-    "_utils.ts",
-    "middleware-core.ts",
-  ],
+  entry,
   format: "esm",
   platform: "node",
   target: "node22",

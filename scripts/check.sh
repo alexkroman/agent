@@ -33,7 +33,8 @@ NC='\033[0m' # No Color
 LOGDIR=$(mktemp -d)
 trap 'rm -rf "$LOGDIR"' EXIT
 
-declare -A PIDS
+STEP_PIDS=()
+STEP_LABELS=()
 FAILED=0
 
 run_step() {
@@ -42,12 +43,15 @@ run_step() {
   local logfile="$LOGDIR/$label.log"
   echo -e "${YELLOW}Starting:${NC} $label"
   "$@" > "$logfile" 2>&1 &
-  PIDS[$!]="$label"
+  STEP_PIDS+=($!)
+  STEP_LABELS+=("$label")
 }
 
 wait_all() {
-  for pid in "${!PIDS[@]}"; do
-    local label="${PIDS[$pid]}"
+  local i
+  for (( i=0; i<${#STEP_PIDS[@]}; i++ )); do
+    local pid="${STEP_PIDS[$i]}"
+    local label="${STEP_LABELS[$i]}"
     if wait "$pid"; then
       echo -e "${GREEN}  Passed:${NC} $label"
     else
@@ -58,7 +62,8 @@ wait_all() {
       FAILED=1
     fi
   done
-  PIDS=()
+  STEP_PIDS=()
+  STEP_LABELS=()
 }
 
 # ── Phase 1: Build (sequential, required by later steps) ──

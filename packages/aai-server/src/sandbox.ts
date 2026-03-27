@@ -53,7 +53,7 @@ export type SandboxOptions = {
 };
 
 export type Sandbox = {
-  startSession(socket: SessionWebSocket, skipGreeting?: boolean): void;
+  startSession(socket: SessionWebSocket, skipGreeting?: boolean, resumeFrom?: string): void;
   terminate(): Promise<void>;
 };
 
@@ -349,7 +349,7 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
   console.info("Sandbox initialized", { slug: scope.slug, isolatePort });
 
   return {
-    startSession(socket: SessionWebSocket, skipGreeting?: boolean): void {
+    startSession(socket: SessionWebSocket, skipGreeting?: boolean, resumeFrom?: string): void {
       wireSessionSocket(socket, {
         sessions,
         createSession: (sid, client) =>
@@ -364,8 +364,10 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
             executeTool,
             hookInvoker,
             skipGreeting: skipGreeting ?? false,
+            ...(resumeFrom ? { resumeFrom } : {}),
           }),
         readyConfig,
+        ...(resumeFrom ? { resumeFrom } : {}),
       });
     },
     async terminate(): Promise<void> {

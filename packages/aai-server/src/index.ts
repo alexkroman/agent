@@ -14,7 +14,7 @@ import { createKvStore } from "./kv.ts";
 import { createOrchestrator, type OrchestratorOpts } from "./orchestrator.ts";
 import type { AgentSlot } from "./sandbox.ts";
 import { resolveSandbox } from "./sandbox.ts";
-import { importScopeKey, verifyScopeToken } from "./scope-token.ts";
+import { importScopeKey } from "./scope-token.ts";
 import { createVectorStore } from "./vector.ts";
 
 function resolveVectorUrl(env: NodeJS.ProcessEnv): { url: string; token: string } | null {
@@ -95,21 +95,6 @@ async function main(): Promise<void> {
 
       const slug = match[1] as string;
 
-      // Require a valid scope token for WebSocket connections.
-      const token = url.searchParams.get("token");
-      if (!token) {
-        socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
-        socket.destroy();
-        return;
-      }
-
-      const scope = await verifyScopeToken(opts.scopeKey, token);
-      if (!scope || scope.slug !== slug) {
-        socket.write("HTTP/1.1 403 Forbidden\r\n\r\n");
-        socket.destroy();
-        return;
-      }
-
       const sandbox = await resolveSandbox(slug, {
         slots: opts.slots,
         store: opts.store,
@@ -122,9 +107,10 @@ async function main(): Promise<void> {
         return;
       }
 
-      const resume = url.searchParams.has("resume");
+      const resumeFrom = url.searchParams.get("sessionId") ?? undefined;
+      const skipGreeting = url.searchParams.has("resume") || resumeFrom !== undefined;
       wss.handleUpgrade(req, socket, head, (ws) => {
-        sandbox.startSession(ws, resume);
+        sandbox.startSession(ws, skipGreeting, resumeFrom);
       });
     } catch (err: unknown) {
       console.error("WebSocket upgrade error:", err);

@@ -1,5 +1,5 @@
 import "@alexkroman1/aai-ui/styles.css";
-import { useState } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
 import {
   ChatView,
   SidebarLayout,
@@ -610,6 +610,16 @@ function Sidebar({ game }: { game: GameState }) {
 
 function SoloRPGApp() {
   const [game, setGame] = useState<GameState>(structuredClone(INITIAL));
+
+  // Load saved game state from KV on page load
+  useEffect(() => {
+    fetch(`${location.origin}${location.pathname}kv?key=${encodeURIComponent("save:game")}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((saved: GameState | null) => {
+        if (saved) setGame((prev) => ({ ...prev, ...saved }));
+      })
+      .catch(() => {});
+  }, []);
 
   // Merge a full-state result into the game
   const mergeState = (result: any, prev: GameState): GameState => ({

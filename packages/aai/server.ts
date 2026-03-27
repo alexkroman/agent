@@ -7,6 +7,7 @@
  * intermediary needed.
  */
 
+import { mkdirSync } from "node:fs";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
@@ -18,6 +19,7 @@ import { buildReadyConfig } from "./protocol.ts";
 import type { Logger, S2SConfig } from "./runtime.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime.ts";
 import type { Session } from "./session.ts";
+import { createSqliteKv } from "./sqlite-kv.ts";
 import type { AgentDef } from "./types.ts";
 import type { VectorStore } from "./vector.ts";
 import { type SessionWebSocket, wireSessionSocket } from "./ws-handler.ts";
@@ -45,12 +47,6 @@ export type ServerOptions = {
   logger?: Logger;
   /** S2S configuration. Defaults to AssemblyAI production. */
   s2sConfig?: S2SConfig;
-  /**
-   * Shared secret for authenticating WebSocket upgrade requests.
-   * When set, clients must pass `?token=<authToken>` in the WebSocket URL.
-   * **Strongly recommended** when the server is exposed to the network.
-   */
-  authToken?: string;
   /**
    * Timeout in ms for `session.start()` (S2S connection setup).
    * Defaults to 10 000 (10 s). If the session doesn't initialize within
@@ -152,16 +148,21 @@ export function createServer(options: ServerOptions): AgentServer {
     clientDir,
     logger = consoleLogger,
     s2sConfig = DEFAULT_S2S_CONFIG,
-    authToken,
     shutdownTimeoutMs = 30_000,
   } = options;
 
   const env = filterEnv(options.env ?? (typeof process !== "undefined" ? process.env : {}));
+  const resolvedKv =
+    kv ??
+    (() => {
+      mkdirSync(".aai", { recursive: true });
+      return createSqliteKv();
+    })();
 
   const executor = createDirectExecutor({
     agent,
     env,
-    ...(kv ? { kv } : {}),
+    kv: resolvedKv,
     ...(vector ? { vector } : {}),
     logger,
     s2sConfig,
@@ -223,13 +224,21 @@ export function createServer(options: ServerOptions): AgentServer {
 
       app.get("/health", (c) => c.json({ status: "ok", name: agent.name }));
 
+      app.get("/kv", async (c) => {
+        const key = c.req.query("key");
+        if (!key) return c.json({ error: "Missing key query parameter" }, 400);
+        const value = await resolvedKv.get(key);
+        if (value === null) return c.json(null, 404);
+        return c.json(value);
+      });
+
       if (clientDir) {
         app.use("/*", serveStatic({ root: clientDir }));
       }
 
       const csp =
-        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
-        "connect-src 'self' wss: ws:; img-src 'self' data:; font-src 'self'; object-src 'none'; base-uri 'self'";
+        "default-src 'self'; script-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+        "connect-src 'self' wss: ws:; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; object-src 'none'; base-uri 'self'";
 
       app.get("/", (c) => {
         if (clientHtml) return c.html(clientHtml, 200, { "Content-Security-Policy": csp });
@@ -250,26 +259,9 @@ export function createServer(options: ServerOptions): AgentServer {
       const addr = nodeServer.address();
       listenPort = typeof addr === "object" && addr ? addr.port : port;
 
-      if (!authToken) {
-        logger.warn(
-          "No authToken configured — WebSocket connections are unauthenticated. " +
-            "Set the authToken option to require a shared secret for WebSocket upgrades. " +
-            "Do NOT expose this server to the public internet without authentication.",
-        );
-      }
-
       const wss = new WebSocketServer({ noServer: true });
       nodeServer.on("upgrade", (req, socket, head) => {
         const reqUrl = new URL(req.url ?? "/", `http://localhost:${listenPort}`);
-
-        if (authToken) {
-          const clientToken = reqUrl.searchParams.get("token");
-          if (clientToken !== authToken) {
-            socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
-            socket.destroy();
-            return;
-          }
-        }
 
         const resumeFrom = reqUrl.searchParams.get("sessionId") ?? undefined;
         const skipGreeting = reqUrl.searchParams.has("resume") || resumeFrom !== undefined;

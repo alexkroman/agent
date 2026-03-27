@@ -15,7 +15,7 @@ import { handleKv } from "./kv-handler.ts";
 import { serialize, serializeForAgent } from "./metrics.ts";
 import { requireInternal, requireOwner, requireScopeToken, validateSlug } from "./middleware.ts";
 import type { AgentSlot } from "./sandbox.ts";
-import { type ScopeKey, signScopeToken } from "./scope-token.ts";
+import type { ScopeKey } from "./scope-token.ts";
 import { handleSecretDelete, handleSecretList, handleSecretSet } from "./secret-handler.ts";
 import { handleAgentHealth, handleAgentPage, handleClientAsset } from "./transport-websocket.ts";
 import type { ServerVectorStore } from "./vector.ts";
@@ -123,12 +123,6 @@ export function createOrchestrator(opts: OrchestratorOpts): Hono<Env> {
   app.post("/:slug/kv", internalMw, slugMw, scopeTokenMw, handleKv);
   app.post("/:slug/vector", slugMw, ownerMw, handleVector);
 
-  app.post("/:slug/session-token", slugMw, ownerMw, async (c) => {
-    const scope = c.get("scope");
-    const token = await signScopeToken(c.env.scopeKey, scope);
-    return c.json({ token });
-  });
-
   app.get("/:slug/metrics", slugMw, ownerMw, async (c) =>
     c.text(await serializeForAgent(c.get("slug")), 200, {
       "Content-Type": "text/plain; version=0.0.4",
@@ -137,6 +131,23 @@ export function createOrchestrator(opts: OrchestratorOpts): Hono<Env> {
 
   app.get("/:slug/health", slugMw, handleAgentHealth);
   app.get("/:slug/assets/:path{.+}", slugMw, handleClientAsset);
+
+  app.get("/:slug/kv", slugMw, async (c) => {
+    const key = c.req.query("key");
+    if (!key) return c.json({ error: "Missing key query parameter" }, 400);
+    const slug = c.get("slug");
+    const manifest = await c.env.store.getManifest(slug);
+    if (!manifest) return c.json(null, 404);
+    const keyHash = manifest.credential_hashes[0] ?? "anonymous";
+    const value = await c.env.kvStore.get({ keyHash, slug }, key);
+    if (value === null) return c.json(null, 404);
+    try {
+      return c.json(JSON.parse(value));
+    } catch {
+      return c.json(value);
+    }
+  });
+
   app.get("/:slug/", slugMw, handleAgentPage);
 
   // Bindings injected at serve time via app.fetch(req, bindings)
