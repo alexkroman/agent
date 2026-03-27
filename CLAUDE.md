@@ -9,26 +9,6 @@ agents can be deployed to the managed platform.
 - **Self-hosted**: `agent.ts` → `createServer()` → runs on Node/Docker
 - **Platform**: `agent.ts` → CLI bundle → deploy to managed server
 
-## Shared Plans
-
-Active planning docs live in `plans/`. This is an open directory -- any human
-or AI agent can read, create, or pick up plans. No linting is enforced there.
-
-**Check existing plans before starting work on related areas.** Update plan
-status and check off tasks as you complete them.
-
-**When to create a plan:**
-
-- Before starting any multi-step feature or refactor, create a plan first.
-- When you encounter friction during development (confusing APIs, missing
-  docs, unclear ownership, flaky tests, slow builds, non-obvious workarounds),
-  create a plan describing the friction and a proposed fix. Tag its status
-  as `draft` so others can review.
-- When you discover work that's out of scope for your current task but
-  should be done, capture it as a plan rather than ignoring it.
-
-Plans are cheap. When in doubt, write one.
-
 ## Commands
 
 ```sh
