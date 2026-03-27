@@ -156,7 +156,8 @@
           },
           "nursery": {
             "noExcessiveLinesPerFile": "off",
-            "noConditionalExpect": "off"
+            "noConditionalExpect": "off",
+            "useImportsFirst": "off"
           },
           "security": {
             "noSecrets": "off"
