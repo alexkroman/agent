@@ -37,14 +37,13 @@
  * @packageDocumentation
  */
 
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { createStorage } from "unstorage";
+import { createTestEmbedFn } from "./_embeddings.ts";
 import { createDirectExecutor, type DirectExecutor } from "./direct-executor.ts";
 import type { Kv } from "./kv.ts";
-import { createSqliteKv } from "./sqlite-kv.ts";
-import { createSqliteVectorStore, createTestEmbedFn } from "./sqlite-vector.ts";
 import type { AgentDef, Message, StepInfo } from "./types.ts";
+import { createUnstorageKv } from "./unstorage-kv.ts";
+import { createUnstorageVectorStore } from "./unstorage-vector.ts";
 import type { VectorStore } from "./vector.ts";
 
 export { installMockWebSocket, MockWebSocket } from "./_mock-ws.ts";
@@ -390,9 +389,8 @@ export class TestHarness {
  * Uses a temp directory that is unique per call for test isolation.
  */
 function createTestVectorStore(): VectorStore {
-  const dir = mkdtempSync(join(tmpdir(), "aai-test-vec-"));
-  return createSqliteVectorStore({
-    path: join(dir, "vectors.db"),
+  return createUnstorageVectorStore({
+    storage: createStorage(),
     embedFn: createTestEmbedFn(),
   });
 }
@@ -433,7 +431,7 @@ export function createTestHarness(
 ): TestHarness {
   const {
     env = {},
-    kv = createSqliteKv({ path: ":memory:" }),
+    kv = createUnstorageKv({ storage: createStorage() }),
     vector = createTestVectorStore(),
   } = options;
 

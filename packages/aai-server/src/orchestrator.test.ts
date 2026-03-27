@@ -2,7 +2,6 @@
 import { expect, test } from "vitest";
 import { createTestOrchestrator, deployAgent, deployBody } from "./_test-utils.ts";
 import { hashApiKey } from "./auth.ts";
-import { signScopeToken } from "./scope-token.ts";
 
 test("returns health check", async () => {
   const { fetch } = await createTestOrchestrator();
@@ -154,15 +153,14 @@ test("per-agent metrics rejects without auth", async () => {
   expect((await fetch("/test-agent/metrics")).status).toBe(401);
 });
 
-function kvReq(slug: string, token: string, body: Record<string, unknown>): [string, RequestInit] {
+function kvReq(slug: string, apiKey: string, body: Record<string, unknown>): [string, RequestInit] {
   return [
     `/${slug}/kv`,
     {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${token}`,
+        Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
-        "fly-client-ip": "127.0.0.1",
       },
       body: JSON.stringify(body),
     },
@@ -170,19 +168,19 @@ function kvReq(slug: string, token: string, body: Record<string, unknown>): [str
 }
 
 test("kv set and get round-trip", async () => {
-  const { fetch, scopeKey } = await createTestOrchestrator();
-  const token = await signScopeToken(scopeKey, { keyHash: "acct-1", slug: "my-agent" });
-  const setRes = await fetch(...kvReq("my-agent", token, { op: "set", key: "k1", value: "v1" }));
+  const { fetch } = await createTestOrchestrator();
+  await deployAgent(fetch, "my-agent");
+  const setRes = await fetch(...kvReq("my-agent", "key1", { op: "set", key: "k1", value: "v1" }));
   expect(((await setRes.json()) as Record<string, unknown>).result).toBe("OK");
-  const getRes = await fetch(...kvReq("my-agent", token, { op: "get", key: "k1" }));
+  const getRes = await fetch(...kvReq("my-agent", "key1", { op: "get", key: "k1" }));
   expect(((await getRes.json()) as Record<string, unknown>).result).toBe("v1");
 });
 
 test("kv scope isolation", async () => {
-  const { fetch, scopeKey } = await createTestOrchestrator();
-  const tokenA = await signScopeToken(scopeKey, { keyHash: "acct-1", slug: "agent-a" });
-  const tokenB = await signScopeToken(scopeKey, { keyHash: "acct-1", slug: "agent-b" });
-  await fetch(...kvReq("agent-a", tokenA, { op: "set", key: "secret", value: "a-data" }));
-  const res = await fetch(...kvReq("agent-b", tokenB, { op: "get", key: "secret" }));
+  const { fetch } = await createTestOrchestrator();
+  await deployAgent(fetch, "agent-aa", "key1");
+  await deployAgent(fetch, "agent-bb", "key1");
+  await fetch(...kvReq("agent-aa", "key1", { op: "set", key: "secret", value: "a-data" }));
+  const res = await fetch(...kvReq("agent-bb", "key1", { op: "get", key: "secret" }));
   expect(((await res.json()) as Record<string, unknown>).result).toBeNull();
 });

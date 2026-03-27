@@ -1,12 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  createTestKvStore,
-  createTestStore,
-  createTestVectorStore,
-  makeSlot,
-} from "./_test-utils.ts";
+import { createTestStorage, createTestStore, makeSlot } from "./_test-utils.ts";
 import type { Sandbox } from "./sandbox.ts";
 import {
   _deps,
@@ -32,10 +27,11 @@ _deps.createSandbox = mockCreateSandbox;
 // ── Helpers ──────────────────────────────────────────────────────────────
 
 function makeEnsureOpts(overrides?: Record<string, unknown>) {
-  const kvStore = createTestKvStore();
+  const storage = createTestStorage();
   return {
     getWorkerCode: vi.fn(async () => "console.log('agent');"),
-    kvCtx: { kvStore, scope: { keyHash: "kh", slug: "test" } },
+    storage,
+    slug: "test",
     getApiKey: vi.fn(async () => "api-key"),
     getAgentEnv: vi.fn(async () => ({ SECRET: "val" })),
     ...overrides,
@@ -208,16 +204,18 @@ describe("resolveSandbox", () => {
 
   it("returns null when slug not found in slots or store", async () => {
     const store = createTestStore();
+    const storage = createTestStorage();
     const result = await resolveSandbox("unknown", {
       slots: new Map(),
       store,
-      kvStore: createTestKvStore(),
+      storage,
     });
     expect(result).toBeNull();
   });
 
   it("lazy-discovers agent from store and creates sandbox", async () => {
     const store = createTestStore();
+    const storage = createTestStorage();
     await store.putAgent({
       slug: "lazy-agent",
       env: { ASSEMBLYAI_API_KEY: "key" },
@@ -230,7 +228,7 @@ describe("resolveSandbox", () => {
     const result = await resolveSandbox("lazy-agent", {
       slots,
       store,
-      kvStore: createTestKvStore(),
+      storage,
     });
 
     expect(result).toBeDefined();
@@ -240,6 +238,7 @@ describe("resolveSandbox", () => {
 
   it("strips ASSEMBLYAI_API_KEY from agentEnv", async () => {
     const store = createTestStore();
+    const storage = createTestStorage();
     await store.putAgent({
       slug: "env-agent",
       env: { ASSEMBLYAI_API_KEY: "platform-key", CUSTOM_SECRET: "val" },
@@ -252,7 +251,7 @@ describe("resolveSandbox", () => {
     await resolveSandbox("env-agent", {
       slots,
       store,
-      kvStore: createTestKvStore(),
+      storage,
     });
 
     expect(mockCreateSandbox).toHaveBeenCalledWith(
@@ -265,6 +264,7 @@ describe("resolveSandbox", () => {
 
   it("reuses existing slot", async () => {
     const store = createTestStore();
+    const storage = createTestStorage();
     await store.putAgent({
       slug: "reuse",
       env: { ASSEMBLYAI_API_KEY: "key" },
@@ -279,21 +279,22 @@ describe("resolveSandbox", () => {
     await resolveSandbox("reuse", {
       slots,
       store,
-      kvStore: createTestKvStore(),
+      storage,
     });
 
     // Second call reuses sandbox
     await resolveSandbox("reuse", {
       slots,
       store,
-      kvStore: createTestKvStore(),
+      storage,
     });
 
     expect(mockCreateSandbox).toHaveBeenCalledOnce();
   });
 
-  it("passes vectorStore when provided", async () => {
+  it("passes storage and slug to createSandbox", async () => {
     const store = createTestStore();
+    const storage = createTestStorage();
     await store.putAgent({
       slug: "vec-agent",
       env: { ASSEMBLYAI_API_KEY: "key" },
@@ -302,17 +303,17 @@ describe("resolveSandbox", () => {
       clientFiles: {},
     });
 
-    const vectorStore = createTestVectorStore();
     const slots = new Map<string, AgentSlot>();
 
     await resolveSandbox("vec-agent", {
       slots,
       store,
-      kvStore: createTestKvStore(),
-      vectorStore,
+      storage,
     });
 
-    expect(mockCreateSandbox).toHaveBeenCalledWith(expect.objectContaining({ vectorStore }));
+    expect(mockCreateSandbox).toHaveBeenCalledWith(
+      expect.objectContaining({ storage, slug: "vec-agent" }),
+    );
   });
 });
 

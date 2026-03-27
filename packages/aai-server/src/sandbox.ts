@@ -15,6 +15,7 @@ import {
   createNodeRuntimeDriverFactory,
   NodeRuntime,
 } from "secure-exec";
+import type { Storage } from "unstorage";
 import { z } from "zod";
 import {
   BeforeTurnResultSchema,
@@ -28,13 +29,11 @@ import {
   TurnConfigResultSchema,
   VoidHookResultSchema,
 } from "./_harness-protocol.ts";
-import type { KvStore } from "./kv.ts";
 import { getHarnessRuntimeJs } from "./sandbox-harness.ts";
 import { buildNetworkAdapter, buildNetworkPolicy } from "./sandbox-network.ts";
-import { scopedKv, scopedVector, startSidecarServer } from "./sandbox-sidecar.ts";
+import { startSidecarServer } from "./sandbox-sidecar.ts";
 import { _deps, _slotInternals } from "./sandbox-slots.ts";
-import type { AgentScope } from "./scope-token.ts";
-import type { ServerVectorStore } from "./vector.ts";
+import { createScopedKv, createScopedVector } from "./scoped-storage.ts";
 
 export type { AgentMetadata } from "./_schemas.ts";
 export { type AgentSlot, ensureAgent, registerSlot, resolveSandbox } from "./sandbox-slots.ts";
@@ -45,9 +44,8 @@ export type SandboxOptions = {
   apiKey: string;
   /** Agent-defined secrets — forwarded to the isolate via AAI_ENV_ prefixed process env. */
   agentEnv: Record<string, string>;
-  kvStore: KvStore;
-  scope: AgentScope;
-  vectorStore?: ServerVectorStore | undefined;
+  storage: Storage;
+  slug: string;
 };
 
 export type Sandbox = {
@@ -323,10 +321,10 @@ export const _internals = {
 // ── Public API ───────────────────────────────────────────────────────────
 
 export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
-  const { workerCode, apiKey, agentEnv, kvStore, scope, vectorStore } = opts;
+  const { workerCode, apiKey, agentEnv, storage, slug } = opts;
 
-  const kv = scopedKv(kvStore, scope);
-  const vector = vectorStore ? scopedVector(vectorStore, scope) : undefined;
+  const kv = createScopedKv(storage, slug);
+  const vector = createScopedVector(storage, slug);
   const sidecar = await startSidecarServer(kv, vector);
   const authToken = randomBytes(32).toString("hex");
   const {
@@ -344,7 +342,7 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
 
   const sessions = new Map<string, Session>();
 
-  console.info("Sandbox initialized", { slug: scope.slug, isolatePort });
+  console.info("Sandbox initialized", { slug, isolatePort });
 
   return {
     startSession(socket: SessionWebSocket, skipGreeting?: boolean, resumeFrom?: string): void {

@@ -127,20 +127,19 @@ export default {
 
 // ── Mocks ────────────────────────────────────────────────────────────────
 
-function createMockKv() {
+type Kv = import("@alexkroman1/aai/kv").Kv;
+
+function createMockKv(): Kv {
   const store = new Map<string, unknown>();
   return {
-    get: async (key: string) => store.get(key) ?? null,
+    get: (async (key: string) => store.get(key) ?? null) as Kv["get"],
     set: async (key: string, value: unknown, _options?: { expireIn?: number }) => {
       store.set(key, value);
     },
     delete: async (key: string) => {
       store.delete(key);
     },
-    list: async <T = unknown>(
-      _prefix: string,
-      _options?: { limit?: number; reverse?: boolean },
-    ): Promise<{ key: string; value: T }[]> => [],
+    list: (async () => []) as Kv["list"],
     keys: async (_pattern?: string): Promise<string[]> => [],
   };
 }
@@ -361,14 +360,13 @@ describe("WebSocket session lifecycle", () => {
   let sandbox: Awaited<ReturnType<typeof _internals.createSandbox>>;
 
   beforeAll(async () => {
-    const { createTestKvStore, createTestVectorStore } = await import("./_test-utils.ts");
+    const { createTestStorage } = await import("./_test-utils.ts");
     sandbox = await _internals.createSandbox({
       workerCode: AGENT_BUNDLE,
       apiKey: "test-key",
       agentEnv: {},
-      kvStore: createTestKvStore(),
-      scope: { keyHash: "test", slug: "ws-test" },
-      vectorStore: createTestVectorStore(),
+      storage: createTestStorage(),
+      slug: "ws-test",
     });
   });
 
@@ -502,9 +500,8 @@ describe("idle eviction", () => {
   test("sandbox is evicted after idle timeout", async () => {
     _internals.IDLE_MS = 200;
 
-    const { createTestKvStore } = await import("./_test-utils.ts");
-    const kvStore = createTestKvStore();
-    const scope = { keyHash: "test", slug: "idle-test" };
+    const { createTestStorage } = await import("./_test-utils.ts");
+    const storage = createTestStorage();
 
     const slot = {
       slug: "idle-test",
@@ -515,8 +512,8 @@ describe("idle eviction", () => {
       workerCode: AGENT_BUNDLE,
       apiKey: "test-key",
       agentEnv: {},
-      kvStore,
-      scope,
+      storage,
+      slug: "idle-test",
     });
 
     slot.sandbox = sandbox;
@@ -537,24 +534,23 @@ describe("idle eviction", () => {
 
 describe("redeploy replaces sandbox", () => {
   test("deploying same slug terminates old sandbox", async () => {
-    const { createTestKvStore } = await import("./_test-utils.ts");
-    const kvStore = createTestKvStore();
-    const scope = { keyHash: "test", slug: "redeploy-test" };
+    const { createTestStorage } = await import("./_test-utils.ts");
+    const storage = createTestStorage();
 
     const sandbox1 = await _internals.createSandbox({
       workerCode: `export default { name: "v1", instructions: "v1", greeting: "v1", maxSteps: 1, tools: {} };`,
       apiKey: "test-key",
       agentEnv: {},
-      kvStore,
-      scope,
+      storage,
+      slug: "redeploy-test",
     });
 
     const sandbox2 = await _internals.createSandbox({
       workerCode: `export default { name: "v2", instructions: "v2", greeting: "v2", maxSteps: 1, tools: {} };`,
       apiKey: "test-key",
       agentEnv: {},
-      kvStore,
-      scope,
+      storage,
+      slug: "redeploy-test",
     });
 
     sandbox1.terminate();

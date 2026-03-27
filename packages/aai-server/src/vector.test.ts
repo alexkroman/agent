@@ -1,134 +1,65 @@
 // Copyright 2025 the AAI authors. MIT license.
-import { beforeEach, describe, expect, test, vi } from "vitest";
-import type { AgentScope } from "./scope-token.ts";
 
-type QueryResult = {
-  id: string | number;
-  score: number;
-  data: string | null;
-  metadata: Record<string, unknown> | null;
-};
+import type { Storage } from "unstorage";
+import { beforeEach, describe, expect, test } from "vitest";
+import { createTestStorage } from "./_test-utils.ts";
+import { createScopedVector } from "./scoped-storage.ts";
 
-const indexMethods = {
-  upsert: vi.fn(async () => undefined),
-  query: vi.fn(async (): Promise<QueryResult[]> => []),
-  delete: vi.fn(async () => undefined),
-};
+describe("createScopedVector", () => {
+  let storage: Storage;
 
-vi.mock("@upstash/vector", () => ({
-  Index: class MockIndex {
-    upsert = indexMethods.upsert;
-    query = indexMethods.query;
-    delete = indexMethods.delete;
-  },
-}));
-
-const SCOPE: AgentScope = { keyHash: "abc", slug: "test-agent" };
-const NS = "abc:test-agent";
-
-const { createVectorStore } = await import("./vector.ts");
-
-describe("createVectorStore", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    storage = createTestStorage();
   });
 
-  test("upsert sends data with correct namespace", async () => {
-    const vs = createVectorStore("http://localhost", "token");
-    await vs.upsert(SCOPE, "doc-1", "hello world", { source: "test" });
-    expect(indexMethods.upsert).toHaveBeenCalledWith(
-      { id: "doc-1", data: "hello world", metadata: { source: "test" } },
-      { namespace: NS },
-    );
+  test("upsert and query round-trip", async () => {
+    const vec = createScopedVector(storage, "test-agent");
+    await vec.upsert("doc-1", "hello world", { source: "test" });
+    const results = await vec.query("hello world", { topK: 5 });
+    expect(results.length).toBeGreaterThan(0);
+    expect(results[0]?.id).toBe("doc-1");
+    expect(results[0]?.data).toBe("hello world");
+    expect(results[0]?.metadata).toEqual({ source: "test" });
   });
 
   test("upsert without metadata", async () => {
-    const vs = createVectorStore("http://localhost", "token");
-    await vs.upsert(SCOPE, "doc-2", "some text");
-    expect(indexMethods.upsert).toHaveBeenCalledWith(
-      { id: "doc-2", data: "some text", metadata: undefined },
-      { namespace: NS },
-    );
+    const vec = createScopedVector(storage, "test-agent");
+    await vec.upsert("doc-2", "some text");
+    const results = await vec.query("some text", { topK: 1 });
+    expect(results.length).toBeGreaterThan(0);
+    expect(results[0]?.id).toBe("doc-2");
   });
 
-  test("query passes topK and filter", async () => {
-    indexMethods.query.mockResolvedValueOnce([
-      { id: "doc-1", score: 0.95, data: "hello", metadata: { k: "v" } },
-      { id: 42, score: 0.8, data: null, metadata: null },
-    ]);
-    const vs = createVectorStore("http://localhost", "token");
-
-    const results = await vs.query(SCOPE, "search text", 5, "source = 'test'");
-    expect(indexMethods.query).toHaveBeenCalledWith(
-      {
-        data: "search text",
-        topK: 5,
-        includeData: true,
-        includeMetadata: true,
-        filter: "source = 'test'",
-      },
-      { namespace: NS },
-    );
-    expect(results).toEqual([
-      { id: "doc-1", score: 0.95, data: "hello", metadata: { k: "v" } },
-      { id: "42", score: 0.8, data: null, metadata: null },
-    ]);
-  });
-
-  test("query uses default topK of 10", async () => {
-    indexMethods.query.mockResolvedValueOnce([]);
-    const vs = createVectorStore("http://localhost", "token");
-
-    await vs.query(SCOPE, "search text");
-    expect(indexMethods.query).toHaveBeenCalledWith(
-      {
-        data: "search text",
-        topK: 10,
-        includeData: true,
-        includeMetadata: true,
-      },
-      { namespace: NS },
-    );
-  });
-
-  test("query without filter omits filter field", async () => {
-    indexMethods.query.mockResolvedValueOnce([]);
-    const vs = createVectorStore("http://localhost", "token");
-
-    await vs.query(SCOPE, "text", 3);
-    const callArgs = (indexMethods.query.mock.calls[0] as unknown[])[0];
-    expect(callArgs).not.toHaveProperty("filter");
-  });
-
-  test("remove deletes ids in correct namespace", async () => {
-    const vs = createVectorStore("http://localhost", "token");
-    await vs.remove(SCOPE, ["id-1", "id-2"]);
-    expect(indexMethods.delete).toHaveBeenCalledWith(["id-1", "id-2"], { namespace: NS });
+  test("delete removes vectors", async () => {
+    const vec = createScopedVector(storage, "test-agent");
+    await vec.upsert("doc-1", "hello");
+    await vec.delete("doc-1");
+    const results = await vec.query("hello", { topK: 5 });
+    expect(results.every((r) => r.id !== "doc-1")).toBe(true);
   });
 
   test("scoping isolates different agents", async () => {
-    const vs = createVectorStore("http://localhost", "token");
-    const scope1: AgentScope = { keyHash: "h1", slug: "agent-a" };
-    const scope2: AgentScope = { keyHash: "h2", slug: "agent-b" };
+    const vecA = createScopedVector(storage, "agent-a");
+    const vecB = createScopedVector(storage, "agent-b");
 
-    await vs.upsert(scope1, "doc", "data1");
-    await vs.upsert(scope2, "doc", "data2");
+    await vecA.upsert("doc", "data from A");
+    await vecB.upsert("doc", "data from B");
 
-    expect(indexMethods.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "doc", data: "data1" }),
-      { namespace: "h1:agent-a" },
-    );
-    expect(indexMethods.upsert).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "doc", data: "data2" }),
-      { namespace: "h2:agent-b" },
-    );
+    const resultsA = await vecA.query("data from A", { topK: 1 });
+    expect(resultsA.length).toBeGreaterThan(0);
+    expect(resultsA[0]?.data).toBe("data from A");
+
+    const resultsB = await vecB.query("data from B", { topK: 1 });
+    expect(resultsB.length).toBeGreaterThan(0);
+    expect(resultsB[0]?.data).toBe("data from B");
   });
 
-  test("query converts numeric id to string", async () => {
-    indexMethods.query.mockResolvedValueOnce([{ id: 123, score: 0.5, data: "x", metadata: {} }]);
-    const vs = createVectorStore("http://localhost", "token");
-
-    const results = await vs.query(SCOPE, "test");
-    expect(results).toMatchObject([{ id: "123" }]);
+  test("query respects topK", async () => {
+    const vec = createScopedVector(storage, "test-agent");
+    await vec.upsert("doc-1", "hello world");
+    await vec.upsert("doc-2", "hello earth");
+    await vec.upsert("doc-3", "hello universe");
+    const results = await vec.query("hello", { topK: 2 });
+    expect(results.length).toBeLessThanOrEqual(2);
   });
 });

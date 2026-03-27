@@ -1,11 +1,13 @@
 // Copyright 2025 the AAI authors. MIT license.
+
+import { createStorage } from "unstorage";
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { toAgentConfig } from "./_internal-types.ts";
 import { makeAgent } from "./_test-utils.ts";
 import { createDirectExecutor } from "./direct-executor.ts";
-import { createSqliteKv } from "./sqlite-kv.ts";
 import { defineTool } from "./types.ts";
+import { createUnstorageKv } from "./unstorage-kv.ts";
 
 describe("toAgentConfig", () => {
   test("maps name, instructions, greeting from AgentDef", () => {
@@ -78,7 +80,7 @@ describe("createDirectExecutor", () => {
   });
 
   test("executeTool passes KV to tool context", async () => {
-    const kv = createSqliteKv({ path: ":memory:" });
+    const kv = createUnstorageKv({ storage: createStorage() });
     await kv.set("key1", "value1");
     const agent = makeAgent({
       tools: {
