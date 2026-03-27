@@ -81,7 +81,7 @@ importers:
         version: 0.1.0
       unstorage:
         specifier: ^1.17.5
-        version: 1.17.5(@upstash/redis@1.37.0)
+        version: 1.17.5(@upstash/redis@1.37.0)(aws4fetch@1.0.20)
       vitest:
         specifier: ^4.1.1
         version: 4.1.1(@opentelemetry/api@1.9.1)(@types/node@25.5.0)(jsdom@29.0.1(@noble/hashes@1.8.0))(vite@8.0.3(@types/node@25.5.0)(esbuild@0.27.4)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))
@@ -183,6 +183,9 @@ importers:
       '@opentelemetry/sdk-metrics':
         specifier: ^2.6.1
         version: 2.6.1(@opentelemetry/api@1.9.1)
+      aws4fetch:
+        specifier: ^1.0.20
+        version: 1.0.20
       hono:
         specifier: ^4.12.9
         version: 4.12.9
@@ -194,7 +197,7 @@ importers:
         version: 0.1.0
       unstorage:
         specifier: ^1.17.5
-        version: 1.17.5(@upstash/redis@1.37.0)
+        version: 1.17.5(@upstash/redis@1.37.0)(aws4fetch@1.0.20)
       zod:
         specifier: ^4.3.6
         version: 4.3.6
@@ -2047,6 +2050,9 @@ packages:
   available-typed-arrays@1.0.7:
     resolution: {integrity: sha512-wvUjBtSGN7+7SjNpq/9M2Tg350UZD3q62IFZLbRAR1bSMlCo1ZaeW+BJ+D090e4hIIZLBcTDWe4Mh4jvUDajzQ==}
     engines: {node: '>= 0.4'}
+
+  aws4fetch@1.0.20:
+    resolution: {integrity: sha512-/djoAN709iY65ETD6LKCtyyEI04XIBP5xVvfmNxsEP0uJB5tyaGBztSryRr4HqMStr9R06PisQE7m9zDTXKu6g==}
 
   babel-plugin-transform-hook-names@1.0.2:
     resolution: {integrity: sha512-5gafyjyyBTTdX/tQQ0hRgu4AhNHG/hqWi0ZZmg2xvs2FgRkJXzDNKBZCyoYqgFkovfDrgM8OoKg8karoUvWeCw==}
@@ -5998,6 +6004,8 @@ snapshots:
     dependencies:
       possible-typed-array-names: 1.1.0
 
+  aws4fetch@1.0.20: {}
+
   babel-plugin-transform-hook-names@1.0.2(@babel/core@7.29.0):
     dependencies:
       '@babel/core': 7.29.0
@@ -8401,7 +8409,7 @@ snapshots:
     dependencies:
       rolldown: 1.0.0-rc.11
 
-  unstorage@1.17.5(@upstash/redis@1.37.0):
+  unstorage@1.17.5(@upstash/redis@1.37.0)(aws4fetch@1.0.20):
     dependencies:
       anymatch: 3.1.3
       chokidar: 5.0.0
@@ -8413,6 +8421,7 @@ snapshots:
       ufo: 1.6.3
     optionalDependencies:
       '@upstash/redis': 1.37.0
+      aws4fetch: 1.0.20
 
   update-browserslist-db@1.2.3(browserslist@4.28.1):
     dependencies:

@@ -1,9 +1,19 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import { createTestEmbedFn, createUnstorageVectorStore } from "@alexkroman1/aai/unstorage-vector";
+import type { VectorStore } from "@alexkroman1/aai/vector";
 import type { Storage } from "unstorage";
 import { beforeEach, describe, expect, test } from "vitest";
 import { createTestStorage } from "./_test-utils.ts";
-import { createScopedVector } from "./scoped-storage.ts";
+
+/** Create a scoped vector store with deterministic test embeddings. */
+function createTestVector(storage: Storage, slug: string): VectorStore {
+  return createUnstorageVectorStore({
+    storage,
+    blobKey: `agents/${slug}/vectors.json`,
+    embedFn: createTestEmbedFn(),
+  });
+}
 
 describe("createScopedVector", () => {
   let storage: Storage;
@@ -13,7 +23,7 @@ describe("createScopedVector", () => {
   });
 
   test("upsert and query round-trip", async () => {
-    const vec = createScopedVector(storage, "test-agent");
+    const vec = createTestVector(storage, "test-agent");
     await vec.upsert("doc-1", "hello world", { source: "test" });
     const results = await vec.query("hello world", { topK: 5 });
     expect(results.length).toBeGreaterThan(0);
@@ -23,7 +33,7 @@ describe("createScopedVector", () => {
   });
 
   test("upsert without metadata", async () => {
-    const vec = createScopedVector(storage, "test-agent");
+    const vec = createTestVector(storage, "test-agent");
     await vec.upsert("doc-2", "some text");
     const results = await vec.query("some text", { topK: 1 });
     expect(results.length).toBeGreaterThan(0);
@@ -31,7 +41,7 @@ describe("createScopedVector", () => {
   });
 
   test("delete removes vectors", async () => {
-    const vec = createScopedVector(storage, "test-agent");
+    const vec = createTestVector(storage, "test-agent");
     await vec.upsert("doc-1", "hello");
     await vec.delete("doc-1");
     const results = await vec.query("hello", { topK: 5 });
@@ -39,8 +49,8 @@ describe("createScopedVector", () => {
   });
 
   test("scoping isolates different agents", async () => {
-    const vecA = createScopedVector(storage, "agent-a");
-    const vecB = createScopedVector(storage, "agent-b");
+    const vecA = createTestVector(storage, "agent-a");
+    const vecB = createTestVector(storage, "agent-b");
 
     await vecA.upsert("doc", "data from A");
     await vecB.upsert("doc", "data from B");
@@ -55,7 +65,7 @@ describe("createScopedVector", () => {
   });
 
   test("query respects topK", async () => {
-    const vec = createScopedVector(storage, "test-agent");
+    const vec = createTestVector(storage, "test-agent");
     await vec.upsert("doc-1", "hello world");
     await vec.upsert("doc-2", "hello earth");
     await vec.upsert("doc-3", "hello universe");
