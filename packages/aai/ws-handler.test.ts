@@ -658,4 +658,65 @@ describe("wireSessionSocket", () => {
     ws.simulateMessage(JSON.stringify({ type: "audio_ready" }));
     // No error thrown
   });
+
+  // ─── Session resume ────────────────────────────────────────────────────
+
+  test("resumeFrom reuses old session ID instead of generating new UUID", () => {
+    const sessions = new Map<string, Session>();
+    const ws = new MockWebSocket("ws://test");
+    ws.readyState = MockWebSocket.OPEN;
+    let capturedId: string | undefined;
+
+    wireSessionSocket(ws, {
+      sessions,
+      createSession: (sid) => {
+        capturedId = sid;
+        return makeStubSession();
+      },
+      readyConfig: defaultConfig,
+      logger: silentLogger,
+      resumeFrom: "old-session-abc",
+    });
+
+    expect(capturedId).toBe("old-session-abc");
+    expect(sessions.has("old-session-abc")).toBe(true);
+  });
+
+  test("config message includes resumed session ID", () => {
+    const ws = new MockWebSocket("ws://test");
+    ws.readyState = MockWebSocket.OPEN;
+
+    wireSessionSocket(ws, {
+      sessions: new Map(),
+      createSession: () => makeStubSession(),
+      readyConfig: defaultConfig,
+      logger: silentLogger,
+      resumeFrom: "resume-id-123",
+    });
+
+    const config = ws.sentJson()[0];
+    expect(config).toMatchObject({ type: "config", sessionId: "resume-id-123" });
+  });
+
+  test("without resumeFrom, generates a new UUID session ID", () => {
+    const sessions = new Map<string, Session>();
+    const ws = new MockWebSocket("ws://test");
+    ws.readyState = MockWebSocket.OPEN;
+    let capturedId: string | undefined;
+
+    wireSessionSocket(ws, {
+      sessions,
+      createSession: (sid) => {
+        capturedId = sid;
+        return makeStubSession();
+      },
+      readyConfig: defaultConfig,
+      logger: silentLogger,
+    });
+
+    expect(capturedId).toBeDefined();
+    expect(capturedId).not.toBe("");
+    // UUID format: 8-4-4-4-12
+    expect(capturedId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+  });
 });
