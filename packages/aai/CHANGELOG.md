@@ -1,5 +1,11 @@
 # @alexkroman1/aai
 
+## 0.9.4
+
+### Patch Changes
+
+- Release all packages with version increment
+
 ## 0.9.3
 
 ## 0.9.2
