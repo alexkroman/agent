@@ -379,9 +379,12 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
       );
       await Promise.all(stops);
       sessions.clear();
-      // Async terminate() avoids "Isolate is disposed" rejections from in-flight ops.
-      await runtime.terminate().catch((err) => {
-        console.warn("Runtime terminate failed:", err);
+      await runtime.terminate().catch((err: unknown) => {
+        // "Isolate is already disposed" is expected during shutdown — ignore it.
+        const msg = err instanceof Error ? err.message : String(err);
+        if (!msg.includes("already disposed")) {
+          console.warn("Runtime terminate failed:", err);
+        }
       });
       try {
         sidecar.close();
