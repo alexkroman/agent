@@ -3,12 +3,10 @@
  * Agent slot lifecycle — lazy-loading, idle eviction, and slot registry.
  */
 
+import type { Storage } from "unstorage";
 import type { AgentMetadata } from "./_schemas.ts";
-import type { BundleStore } from "./bundle-store-tigris.ts";
-import type { KvStore } from "./kv.ts";
+import type { BundleStore } from "./bundle-store.ts";
 import type { Sandbox, SandboxOptions } from "./sandbox.ts";
-import type { AgentScope } from "./scope-token.ts";
-import type { ServerVectorStore } from "./vector.ts";
 
 // ── Agent slot lifecycle ─────────────────────────────────────────────────
 
@@ -32,8 +30,8 @@ export type AgentSlot = {
 
 type EnsureOpts = {
   getWorkerCode: (slug: string) => Promise<string | null>;
-  kvCtx: { kvStore: KvStore; scope: AgentScope };
-  vectorCtx?: { vectorStore: ServerVectorStore; scope: AgentScope } | undefined;
+  storage: Storage;
+  slug: string;
   /** Platform API key (e.g. AssemblyAI) — host-only, never enters the isolate. */
   getApiKey: () => Promise<string>;
   /** Agent-defined secrets — forwarded to the isolate. */
@@ -52,9 +50,8 @@ async function spawnAgent(slot: AgentSlot, opts: EnsureOpts): Promise<void> {
     workerCode: code,
     apiKey,
     agentEnv,
-    kvStore: opts.kvCtx.kvStore,
-    scope: opts.kvCtx.scope,
-    vectorStore: opts.vectorCtx?.vectorStore,
+    storage: opts.storage,
+    slug: opts.slug,
   });
 }
 
@@ -127,8 +124,7 @@ export async function resolveSandbox(
   opts: {
     slots: Map<string, AgentSlot>;
     store: BundleStore;
-    kvStore: KvStore;
-    vectorStore?: ServerVectorStore | undefined;
+    storage: Storage;
   },
 ): Promise<Sandbox | null> {
   let slot = opts.slots.get(slug);
@@ -142,13 +138,12 @@ export async function resolveSandbox(
     console.info("Lazy-discovered agent from store", { slug });
   }
 
-  const scope = { keyHash: slot.keyHash, slug };
   const envPromise = opts.store.getEnv(slug);
 
   return await ensureAgent(slot, {
     getWorkerCode: (s: string) => opts.store.getWorkerCode(s),
-    kvCtx: { kvStore: opts.kvStore, scope },
-    vectorCtx: opts.vectorStore ? { vectorStore: opts.vectorStore, scope } : undefined,
+    storage: opts.storage,
+    slug,
     getApiKey: async () => {
       const env = await envPromise;
       return env?.ASSEMBLYAI_API_KEY ?? "";

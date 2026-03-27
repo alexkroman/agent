@@ -1,21 +1,17 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
 import {
-  createTestKvStore,
   createTestOrchestrator,
-  createTestScopeKey,
+  createTestStorage,
   createTestStore,
   deployAgent,
 } from "./_test-utils.ts";
-import { hashApiKey } from "./auth.ts";
 import { createOrchestrator } from "./orchestrator.ts";
-import { signScopeToken } from "./scope-token.ts";
 
 test("orchestrator adds Cross-Origin-Isolation headers", async () => {
   const store = createTestStore();
-  const scopeKey = await createTestScopeKey();
-  const kvStore = createTestKvStore();
-  const app = createOrchestrator({ slots: new Map(), store, scopeKey, kvStore });
+  const storage = createTestStorage();
+  const { app } = createOrchestrator({ slots: new Map(), store, storage });
   const res = await app.fetch(new Request("http://localhost/health"));
   expect(res.headers.get("Cross-Origin-Opener-Policy")).toBe("same-origin");
   expect(res.headers.get("Cross-Origin-Embedder-Policy")).toBe("credentialless");
@@ -23,9 +19,8 @@ test("orchestrator adds Cross-Origin-Isolation headers", async () => {
 
 test("orchestrator returns 401 on deploy without auth", async () => {
   const store = createTestStore();
-  const scopeKey = await createTestScopeKey();
-  const kvStore = createTestKvStore();
-  const app = createOrchestrator({ slots: new Map(), store, scopeKey, kvStore });
+  const storage = createTestStorage();
+  const { app } = createOrchestrator({ slots: new Map(), store, storage });
   const res = await app.fetch(new Request("http://localhost/my-agent/deploy", { method: "POST" }));
   expect(res.status).toBe(401);
 });
@@ -77,49 +72,28 @@ describe("requireOwner", () => {
   });
 });
 
-describe("requireScopeToken", () => {
-  test("returns 401 without token on KV endpoint", async () => {
+describe("requireOwner on KV endpoint", () => {
+  test("returns 401 without auth on KV endpoint", async () => {
     const { fetch } = await createTestOrchestrator();
     await deployAgent(fetch, "my-agent");
     const res = await fetch("/my-agent/kv", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "cf-connecting-ip": "127.0.0.1",
       },
       body: JSON.stringify({ op: "get", key: "test" }),
     });
     expect(res.status).toBe(401);
   });
 
-  test("returns 403 with invalid token", async () => {
+  test("accepts valid owner API key on KV endpoint", async () => {
     const { fetch } = await createTestOrchestrator();
     await deployAgent(fetch, "my-agent");
     const res = await fetch("/my-agent/kv", {
       method: "POST",
       headers: {
-        Authorization: "Bearer invalid-token",
+        Authorization: "Bearer key1",
         "Content-Type": "application/json",
-        "cf-connecting-ip": "127.0.0.1",
-      },
-      body: JSON.stringify({ op: "get", key: "test" }),
-    });
-    expect(res.status).toBe(403);
-    const json = (await res.json()) as { error: string };
-    expect(json.error).toContain("Invalid or tampered");
-  });
-
-  test("accepts valid scope token", async () => {
-    const { fetch, scopeKey } = await createTestOrchestrator();
-    await deployAgent(fetch, "my-agent");
-    const keyHash = await hashApiKey("key1");
-    const token = await signScopeToken(scopeKey, { keyHash, slug: "my-agent" });
-    const res = await fetch("/my-agent/kv", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-        "cf-connecting-ip": "127.0.0.1",
       },
       body: JSON.stringify({ op: "get", key: "test" }),
     });

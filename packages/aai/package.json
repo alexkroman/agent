@@ -96,15 +96,15 @@
       "types": "./dist/middleware-core.d.ts",
       "import": "./dist/middleware-core.js"
     },
-    "./sqlite-kv": {
-      "source": "./sqlite-kv.ts",
-      "types": "./dist/sqlite-kv.d.ts",
-      "import": "./dist/sqlite-kv.js"
+    "./unstorage-kv": {
+      "source": "./unstorage-kv.ts",
+      "types": "./dist/unstorage-kv.d.ts",
+      "import": "./dist/unstorage-kv.js"
     },
-    "./sqlite-vector": {
-      "source": "./sqlite-vector.ts",
-      "types": "./dist/sqlite-vector.d.ts",
-      "import": "./dist/sqlite-vector.js"
+    "./unstorage-vector": {
+      "source": "./unstorage-vector.ts",
+      "types": "./dist/unstorage-vector.d.ts",
+      "import": "./dist/unstorage-vector.js"
     }
   },
   "scripts": {
@@ -119,17 +119,22 @@
     "html-to-text": "^9.0.5",
     "nanoevents": "^9.1.0",
     "secure-exec": "^0.1.0",
+    "unstorage": "^1.17.5",
     "ws": "^8.20.0",
     "zod": "^4.3.6"
   },
   "peerDependencies": {
     "@hono/node-server": "^1.19.11",
+    "@hono/node-ws": "^1.3.0",
     "@opentelemetry/api": "^1.9.1",
     "hono": "^4.12.9",
     "vitest": "^4.1.1"
   },
   "peerDependenciesMeta": {
     "@hono/node-server": {
+      "optional": true
+    },
+    "@hono/node-ws": {
       "optional": true
     },
     "@opentelemetry/api": {

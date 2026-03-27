@@ -1,23 +1,14 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { expect, test, vi } from "vitest";
-import {
-  createTestKvStore,
-  createTestScopeKey,
-  createTestStore,
-  createTestVectorStore,
-  deployAgent,
-  makeSlot,
-} from "./_test-utils.ts";
+import { createTestStorage, createTestStore, deployAgent, makeSlot } from "./_test-utils.ts";
 import { createOrchestrator } from "./orchestrator.ts";
 import type { AgentSlot } from "./sandbox.ts";
 
 async function setup() {
   const store = createTestStore();
+  const storage = createTestStorage();
   const slots = new Map<string, AgentSlot>();
-  const scopeKey = await createTestScopeKey();
-  const kvStore = createTestKvStore();
-  const vectorStore = createTestVectorStore();
-  const app = createOrchestrator({ slots, store, scopeKey, kvStore, vectorStore });
+  const { app } = createOrchestrator({ slots, store, storage });
   const fetch = async (input: string | Request, init?: RequestInit) => app.request(input, init);
   return { fetch, store, slots };
 }

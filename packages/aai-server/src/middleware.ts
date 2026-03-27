@@ -3,8 +3,7 @@
 import { isPrivateIp } from "@alexkroman1/aai/ssrf";
 import { HTTPException } from "hono/http-exception";
 import { verifySlugOwner } from "./auth.ts";
-import type { BundleStore } from "./bundle-store-tigris.ts";
-import { type AgentScope, type ScopeKey, verifyScopeToken } from "./scope-token.ts";
+import type { BundleStore } from "./bundle-store.ts";
 
 const VALID_SLUG_REGEXP = /^[a-z0-9][a-z0-9_-]{0,62}[a-z0-9]$/;
 
@@ -64,16 +63,4 @@ export function requireInternal(req: Request): void {
   if (!(ip && isPrivateIp(ip))) {
     throw new HTTPException(403, { message: "Forbidden" });
   }
-}
-
-export async function requireScopeToken(req: Request, scopeKey: ScopeKey): Promise<AgentScope> {
-  const token = bearerToken(req);
-  if (!token) {
-    throw new HTTPException(401, { message: "Missing Authorization header" });
-  }
-  const scope = await verifyScopeToken(scopeKey, token);
-  if (!scope) {
-    throw new HTTPException(403, { message: "Invalid or tampered scope token" });
-  }
-  return scope;
 }

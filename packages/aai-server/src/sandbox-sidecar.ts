@@ -1,12 +1,13 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Scoped store adapters and sidecar HTTP server for agent sandboxes.
+ * Sidecar HTTP server for agent sandboxes.
  *
  * Each sandbox gets a per-sandbox sidecar server on loopback that provides
- * scoped KV and vector access — the isolate calls it without authentication.
+ * KV and vector access — the isolate calls it without authentication.
+ * KV and VectorStore instances are pre-scoped at construction time.
  */
 
-import type { Kv, KvEntry } from "@alexkroman1/aai/kv";
+import type { Kv } from "@alexkroman1/aai/kv";
 import { ssrfSafeFetch } from "@alexkroman1/aai/ssrf";
 import { getServerPort } from "@alexkroman1/aai/utils";
 import { type VectorStore, validateVectorFilter } from "@alexkroman1/aai/vector";
@@ -15,63 +16,6 @@ import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
-import type { KvStore } from "./kv.ts";
-import type { AgentScope } from "./scope-token.ts";
-import type { ServerVectorStore } from "./vector.ts";
-
-// ── Scoped store adapters ────────────────────────────────────────────────
-
-export function scopedKv(kvStore: KvStore, scope: AgentScope) {
-  return {
-    async get(key: string) {
-      const raw = await kvStore.get(scope, key);
-      if (raw === null) return null;
-      try {
-        return JSON.parse(raw);
-      } catch {
-        return raw;
-      }
-    },
-    async set(key: string, value: unknown, options?: { expireIn?: number }) {
-      const ttlSeconds = options?.expireIn != null ? Math.ceil(options.expireIn / 1000) : undefined;
-      await kvStore.set(scope, key, JSON.stringify(value), ttlSeconds);
-    },
-    async delete(keys: string | string[]) {
-      const keyArray = Array.isArray(keys) ? keys : [keys];
-      for (const key of keyArray) await kvStore.del(scope, key);
-    },
-    async list<T = unknown>(
-      prefix: string,
-      options?: { limit?: number; reverse?: boolean },
-    ): Promise<KvEntry<T>[]> {
-      return (await kvStore.list(scope, prefix, options ?? {})) as KvEntry<T>[];
-    },
-    async keys(pattern?: string) {
-      return await kvStore.keys(scope, pattern);
-    },
-  };
-}
-
-// Compile-time checks: scoped adapters must satisfy the SDK interfaces.
-// If Kv or VectorStore gain a method, these lines will error until implemented.
-// biome-ignore lint/suspicious/noUnusedExpressions: compile-time type check
-null as unknown as ReturnType<typeof scopedKv> satisfies Kv;
-// biome-ignore lint/suspicious/noUnusedExpressions: compile-time type check
-null as unknown as ReturnType<typeof scopedVector> satisfies VectorStore;
-
-export function scopedVector(vectorStore: ServerVectorStore, scope: AgentScope) {
-  return {
-    async upsert(id: string, data: string, metadata?: Record<string, unknown>) {
-      await vectorStore.upsert(scope, id, data, metadata);
-    },
-    async query(text: string, options?: { topK?: number; filter?: string }) {
-      return await vectorStore.query(scope, text, options?.topK, options?.filter);
-    },
-    async delete(ids: string | string[]) {
-      await vectorStore.remove(scope, Array.isArray(ids) ? ids : [ids]);
-    },
-  };
-}
 
 // ── Sidecar request schemas (per-endpoint, loopback only) ───────────────
 
@@ -120,10 +64,7 @@ const SIDECAR_STARTUP_TIMEOUT_MS = 10_000;
 
 // ── Sidecar server (per-sandbox, loopback, no auth) ─────────────────────
 
-function buildSidecarApp(
-  kv: ReturnType<typeof scopedKv>,
-  vector: ReturnType<typeof scopedVector> | undefined,
-): Hono {
+function buildSidecarApp(kv: Kv, vector: VectorStore | undefined): Hono {
   const app = new Hono();
 
   const requireVec = () => {
@@ -226,8 +167,8 @@ function buildSidecarApp(
 }
 
 export async function startSidecarServer(
-  kv: ReturnType<typeof scopedKv>,
-  vector: ReturnType<typeof scopedVector> | undefined,
+  kv: Kv,
+  vector: VectorStore | undefined,
 ): Promise<{ url: string; close: () => void }> {
   const app = buildSidecarApp(kv, vector);
   const server = serve({ fetch: app.fetch, port: 0, hostname: "127.0.0.1" });

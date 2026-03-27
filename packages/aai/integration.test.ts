@@ -6,16 +6,15 @@
  * defineAgent → tools → direct executor → KV/vector in tool context.
  */
 
-import { mkdtempSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { createStorage } from "unstorage";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
+import { createTestEmbedFn } from "./_embeddings.ts";
 import { toAgentConfig } from "./_internal-types.ts";
 import { createDirectExecutor } from "./direct-executor.ts";
-import { createSqliteKv } from "./sqlite-kv.ts";
-import { createSqliteVectorStore, createTestEmbedFn } from "./sqlite-vector.ts";
 import { defineAgent, defineTool } from "./types.ts";
+import { createUnstorageKv } from "./unstorage-kv.ts";
+import { createUnstorageVectorStore } from "./unstorage-vector.ts";
 
 describe("SDK integration: defineAgent → tool execution", () => {
   test("defineAgent + defineTool() + executeToolCall round-trip", async () => {
@@ -36,7 +35,7 @@ describe("SDK integration: defineAgent → tool execution", () => {
   });
 
   test("tool with KV access works end-to-end", async () => {
-    const kv = createSqliteKv({ path: ":memory:" });
+    const kv = createUnstorageKv({ storage: createStorage() });
     const agent = defineAgent({
       name: "kv-agent",
       tools: {
@@ -66,9 +65,8 @@ describe("SDK integration: defineAgent → tool execution", () => {
   });
 
   test("tool with vector store access works end-to-end", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "aai-int-vec-"));
-    const vector = createSqliteVectorStore({
-      path: join(dir, "vectors.db"),
+    const vector = createUnstorageVectorStore({
+      storage: createStorage(),
       embedFn: createTestEmbedFn(),
     });
     const agent = defineAgent({

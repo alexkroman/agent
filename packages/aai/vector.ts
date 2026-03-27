@@ -81,8 +81,9 @@ export type VectorEntry = {
  * Async vector store interface used by agents.
  *
  * Agents access the vector store via `ToolContext.vector` or
- * `HookContext.vector`. Backed by Upstash Vector with built-in
- * embeddings — raw text is sent and vectorized server-side.
+ * `HookContext.vector`. Backed by unstorage with local embeddings
+ * via `all-MiniLM-L6-v2` by default. Pluggable storage driver and
+ * embedding function.
  *
  * @example
  * ```ts

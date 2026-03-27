@@ -2,31 +2,31 @@
 
 import { errorMessage } from "@alexkroman1/aai/utils";
 import type { Context } from "hono";
-import { HTTPException } from "hono/http-exception";
 import { VectorRequestSchema } from "./_schemas.ts";
 import type { Env } from "./context.ts";
+import { createScopedVector } from "./scoped-storage.ts";
 
 export async function handleVector(c: Context<Env>): Promise<Response> {
-  const { vectorStore } = c.env;
-  const scope = c.get("scope");
-
-  if (!vectorStore) {
-    throw new HTTPException(503, { message: "Vector store not configured" });
-  }
+  const slug = c.get("slug");
+  const vector = createScopedVector(c.env.storage, slug);
 
   const msg = VectorRequestSchema.parse(await c.req.json());
 
   try {
     switch (msg.op) {
       case "upsert":
-        await vectorStore.upsert(scope, msg.id, msg.data, msg.metadata);
+        await vector.upsert(msg.id, msg.data, msg.metadata);
         return c.json({ result: "OK" });
-      case "query":
+      case "query": {
+        const queryOpts: { topK?: number; filter?: string } = {};
+        if (msg.topK != null) queryOpts.topK = msg.topK;
+        if (msg.filter != null) queryOpts.filter = msg.filter;
         return c.json({
-          result: await vectorStore.query(scope, msg.text, msg.topK, msg.filter),
+          result: await vector.query(msg.text, queryOpts),
         });
+      }
       case "delete":
-        await vectorStore.remove(scope, msg.ids);
+        await vector.delete(msg.ids);
         return c.json({ result: "OK" });
       default: {
         const _: never = msg;
@@ -36,7 +36,7 @@ export async function handleVector(c: Context<Env>): Promise<Response> {
   } catch (err: unknown) {
     console.error("Vector operation failed", {
       op: msg.op,
-      slug: scope.slug,
+      slug,
       error: errorMessage(err),
     });
     return c.json({ error: `Vector ${msg.op} failed: ${errorMessage(err)}` }, 500);

@@ -6,7 +6,7 @@
  * Tools execute directly in-process — no sandbox, no RPC.
  */
 
-import { mkdirSync } from "node:fs";
+import { createStorage } from "unstorage";
 import { agentToolsToSchemas, type ToolSchema, toAgentConfig } from "./_internal-types.ts";
 import { ssrfSafeFetch } from "./_ssrf.ts";
 import { createSessionStateMap, toolError } from "./_utils.ts";
@@ -25,23 +25,21 @@ import type { Logger, S2SConfig } from "./runtime.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime.ts";
 import type { CreateS2sWebSocket } from "./s2s.ts";
 import { createS2sSession, type HookInvoker, type Session } from "./session.ts";
-import { createSqliteKv } from "./sqlite-kv.ts";
-import { createSqliteVectorStore } from "./sqlite-vector.ts";
 import type { AgentDef, HookContext, Middleware, StepInfo } from "./types.ts";
+import { createUnstorageKv } from "./unstorage-kv.ts";
+import { createUnstorageVectorStore } from "./unstorage-vector.ts";
 import type { VectorStore } from "./vector.ts";
 import type { ExecuteTool } from "./worker-entry.ts";
 import { executeToolCall } from "./worker-entry.ts";
 
-/** Create a SQLite-backed KV store in `.aai/local.db`. */
+/** Create an in-memory KV store (default for self-hosted). */
 function createLocalKv(): Kv {
-  mkdirSync(".aai", { recursive: true });
-  return createSqliteKv();
+  return createUnstorageKv({ storage: createStorage() });
 }
 
-/** Create a SQLite-vec backed vector store in `.aai/vectors.db`. */
+/** Create an in-memory vector store (default for self-hosted). */
 function createLocalVectorStore(): VectorStore {
-  mkdirSync(".aai", { recursive: true });
-  return createSqliteVectorStore({ path: ".aai/vectors.db" });
+  return createUnstorageVectorStore({ storage: createStorage() });
 }
 
 /**

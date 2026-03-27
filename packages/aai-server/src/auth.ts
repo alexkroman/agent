@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { timingSafeEqual } from "node:crypto";
-import type { BundleStore } from "./bundle-store-tigris.ts";
+import type { BundleStore } from "./bundle-store.ts";
 
 const textEncoder = new TextEncoder();
 

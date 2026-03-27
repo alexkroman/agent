@@ -56,7 +56,7 @@ describe("server shutdown timeout", () => {
     await server.listen(0);
 
     // Connect + immediately close the WS so the HTTP server can shut down.
-    const ws = new WebSocket(`ws://localhost:${server.port}/ws`);
+    const ws = new WebSocket(`ws://localhost:${server.port}/websocket`);
     await new Promise<void>((resolve, reject) => {
       ws.on("open", resolve);
       ws.on("error", reject);
@@ -95,7 +95,7 @@ describe("server shutdown timeout", () => {
     });
     await server.listen(0);
 
-    const ws = new WebSocket(`ws://localhost:${server.port}/ws`);
+    const ws = new WebSocket(`ws://localhost:${server.port}/websocket`);
     await new Promise<void>((resolve, reject) => {
       ws.on("open", resolve);
       ws.on("error", reject);
@@ -131,7 +131,7 @@ describe("server shutdown timeout", () => {
     });
     await server.listen(0);
 
-    const ws = new WebSocket(`ws://localhost:${server.port}/ws`);
+    const ws = new WebSocket(`ws://localhost:${server.port}/websocket`);
     await new Promise<void>((resolve, reject) => {
       ws.on("open", resolve);
       ws.on("error", reject);

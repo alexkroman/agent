@@ -7,21 +7,22 @@
  * intermediary needed.
  */
 
-import { mkdirSync } from "node:fs";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
+import { createNodeWebSocket } from "@hono/node-ws";
 import { Hono } from "hono";
-import { WebSocketServer } from "ws";
+import { html } from "hono/html";
+import { secureHeaders } from "hono/secure-headers";
+import { createStorage, type Storage } from "unstorage";
 import { filterEnv } from "./_utils.ts";
 import { createDirectExecutor } from "./direct-executor.ts";
-import type { Kv } from "./kv.ts";
 import { buildReadyConfig } from "./protocol.ts";
 import type { Logger, S2SConfig } from "./runtime.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime.ts";
 import type { Session } from "./session.ts";
-import { createSqliteKv } from "./sqlite-kv.ts";
 import type { AgentDef } from "./types.ts";
-import type { VectorStore } from "./vector.ts";
+import { createUnstorageKv } from "./unstorage-kv.ts";
+import { createUnstorageVectorStore } from "./unstorage-vector.ts";
 import { type SessionWebSocket, wireSessionSocket } from "./ws-handler.ts";
 
 /**
@@ -35,10 +36,11 @@ export type ServerOptions = {
   agent: AgentDef<any>;
   /** Environment variables. Defaults to `process.env`. */
   env?: Record<string, string>;
-  /** KV store. Defaults to SQLite-backed (`.aai/local.db`). */
-  kv?: Kv;
-  /** Vector store. Defaults to SQLite-backed (`.aai/local.db`). */
-  vector?: VectorStore;
+  /**
+   * Unstorage instance for KV and vector storage. Defaults to in-memory.
+   * Configure with an S3/R2/filesystem driver for persistence.
+   */
+  storage?: Storage;
   /** HTML to serve at `GET /`. */
   clientHtml?: string;
   /** Directory containing built client files (index.html + assets/). */
@@ -75,14 +77,6 @@ export type AgentServer = {
   /** The port the server is listening on, or `undefined` before `listen()`. */
   port: number | undefined;
 };
-
-/** Escape HTML special characters to prevent XSS. */
-function escapeHtml(s: string): string {
-  return s.replace(
-    /[&<>"']/g,
-    (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch] as string,
-  );
-}
 
 /**
  * Create an HTTP + WebSocket server for self-hosted agent deployments.
@@ -142,8 +136,6 @@ export function createServer(options: ServerOptions): AgentServer {
   }
   const {
     agent,
-    kv,
-    vector,
     clientHtml,
     clientDir,
     logger = consoleLogger,
@@ -152,24 +144,20 @@ export function createServer(options: ServerOptions): AgentServer {
   } = options;
 
   const env = filterEnv(options.env ?? (typeof process !== "undefined" ? process.env : {}));
-  const resolvedKv =
-    kv ??
-    (() => {
-      mkdirSync(".aai", { recursive: true });
-      return createSqliteKv();
-    })();
+  const storage = options.storage ?? createStorage();
+  const kv = createUnstorageKv({ storage });
+  const vector = createUnstorageVectorStore({ storage });
 
   const executor = createDirectExecutor({
     agent,
     env,
-    kv: resolvedKv,
-    ...(vector ? { vector } : {}),
+    kv,
+    vector,
     logger,
     s2sConfig,
   });
   const sessions = new Map<string, Session>();
   const readyConfig = buildReadyConfig(s2sConfig);
-  const safeAgentName = escapeHtml(agent.name);
 
   function handleWs(ws: SessionWebSocket, skipGreeting: boolean, resumeFrom?: string): void {
     wireSessionSocket(ws, {
@@ -202,6 +190,7 @@ export function createServer(options: ServerOptions): AgentServer {
       if (serverHandle) throw new Error("Server is already listening");
 
       const app = new Hono();
+      const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
 
       app.onError((err, c) => {
         logger.error(`${c.req.method} ${c.req.path} error: ${err.message}`);
@@ -222,12 +211,28 @@ export function createServer(options: ServerOptions): AgentServer {
         }
       });
 
+      app.use(
+        "*",
+        secureHeaders({
+          contentSecurityPolicy: {
+            defaultSrc: ["'self'"],
+            scriptSrc: ["'self'", "blob:"],
+            styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+            connectSrc: ["'self'", "wss:", "ws:"],
+            imgSrc: ["'self'", "data:"],
+            fontSrc: ["'self'", "https://fonts.gstatic.com"],
+            objectSrc: ["'none'"],
+            baseUri: ["'self'"],
+          },
+        }),
+      );
+
       app.get("/health", (c) => c.json({ status: "ok", name: agent.name }));
 
       app.get("/kv", async (c) => {
         const key = c.req.query("key");
         if (!key) return c.json({ error: "Missing key query parameter" }, 400);
-        const value = await resolvedKv.get(key);
+        const value = await kv.get(key);
         if (value === null) return c.json(null, 404);
         return c.json(value);
       });
@@ -236,20 +241,29 @@ export function createServer(options: ServerOptions): AgentServer {
         app.use("/*", serveStatic({ root: clientDir }));
       }
 
-      const csp =
-        "default-src 'self'; script-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
-        "connect-src 'self' wss: ws:; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; object-src 'none'; base-uri 'self'";
-
       app.get("/", (c) => {
-        if (clientHtml) return c.html(clientHtml, 200, { "Content-Security-Policy": csp });
+        if (clientHtml) return c.html(clientHtml);
         return c.html(
-          `<!DOCTYPE html><html><body><h1>${safeAgentName}</h1><p>Agent server running.</p></body></html>`,
-          200,
-          { "Content-Security-Policy": csp },
+          html`<!DOCTYPE html><html><body><h1>${agent.name}</h1><p>Agent server running.</p></body></html>`,
         );
       });
 
+      app.get(
+        "/websocket",
+        upgradeWebSocket((c) => {
+          const resumeFrom = c.req.query("sessionId") ?? undefined;
+          const skipGreeting = c.req.query("resume") !== undefined || resumeFrom !== undefined;
+          logger.info(`WS upgrade ${c.req.path}${skipGreeting ? " (resume)" : ""}`);
+          return {
+            onOpen(_evt, ws) {
+              if (ws.raw) handleWs(ws.raw, skipGreeting, resumeFrom);
+            },
+          };
+        }),
+      );
+
       const nodeServer = serve({ fetch: app.fetch, port });
+      injectWebSocket(nodeServer);
 
       await new Promise<void>((resolve, reject) => {
         nodeServer.on("listening", resolve);
@@ -259,23 +273,8 @@ export function createServer(options: ServerOptions): AgentServer {
       const addr = nodeServer.address();
       listenPort = typeof addr === "object" && addr ? addr.port : port;
 
-      const wss = new WebSocketServer({ noServer: true });
-      nodeServer.on("upgrade", (req, socket, head) => {
-        const reqUrl = new URL(req.url ?? "/", `http://localhost:${listenPort}`);
-
-        const resumeFrom = reqUrl.searchParams.get("sessionId") ?? undefined;
-        const skipGreeting = reqUrl.searchParams.has("resume") || resumeFrom !== undefined;
-        logger.info(`WS upgrade ${reqUrl.pathname}${skipGreeting ? " (resume)" : ""}`);
-        wss.handleUpgrade(req, socket, head, (ws) => {
-          handleWs(ws, skipGreeting, resumeFrom);
-        });
-      });
-
       serverHandle = {
         async shutdown() {
-          await new Promise<void>((resolve, reject) => {
-            wss.close((err) => (err ? reject(err) : resolve()));
-          });
           await new Promise<void>((resolve, reject) => {
             nodeServer.close((err) => (err ? reject(err) : resolve()));
           });
