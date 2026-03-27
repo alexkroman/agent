@@ -80,16 +80,12 @@ export type AgentServer = {
   port: number | undefined;
 };
 
-/** Escape HTML special characters to prevent XSS (single-pass). */
-const _escapeMap: Record<string, string> = {
-  "&": "&amp;",
-  "<": "&lt;",
-  ">": "&gt;",
-  '"': "&quot;",
-  "'": "&#39;",
-};
+/** Escape HTML special characters to prevent XSS. */
 function escapeHtml(s: string): string {
-  return s.replace(/[&<>"']/g, (ch) => _escapeMap[ch] as string);
+  return s.replace(
+    /[&<>"']/g,
+    (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch] as string,
+  );
 }
 
 /**
@@ -173,13 +169,6 @@ export function createServer(options: ServerOptions): AgentServer {
   const sessions = new Map<string, Session>();
   const readyConfig = buildReadyConfig(s2sConfig);
   const safeAgentName = escapeHtml(agent.name);
-
-  /** Parse resume parameters from the WebSocket upgrade URL. */
-  function parseResumeParams(url: URL): { skipGreeting: boolean; resumeFrom?: string } {
-    const sessionId = url.searchParams.get("sessionId") ?? undefined;
-    const resume = url.searchParams.has("resume") || sessionId !== undefined;
-    return { skipGreeting: resume, ...(sessionId ? { resumeFrom: sessionId } : {}) };
-  }
 
   function handleWs(ws: SessionWebSocket, skipGreeting: boolean, resumeFrom?: string): void {
     wireSessionSocket(ws, {
@@ -282,10 +271,11 @@ export function createServer(options: ServerOptions): AgentServer {
           }
         }
 
-        const resumeParams = parseResumeParams(reqUrl);
-        logger.info(`WS upgrade ${reqUrl.pathname}${resumeParams.skipGreeting ? " (resume)" : ""}`);
+        const resumeFrom = reqUrl.searchParams.get("sessionId") ?? undefined;
+        const skipGreeting = reqUrl.searchParams.has("resume") || resumeFrom !== undefined;
+        logger.info(`WS upgrade ${reqUrl.pathname}${skipGreeting ? " (resume)" : ""}`);
         wss.handleUpgrade(req, socket, head, (ws) => {
-          handleWs(ws, resumeParams.skipGreeting, resumeParams.resumeFrom);
+          handleWs(ws, skipGreeting, resumeFrom);
         });
       });
 
