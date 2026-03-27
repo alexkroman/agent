@@ -61,6 +61,37 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     await next();
   });
 
+  // WebSocket route must be registered before CORS/secureHeaders middleware
+  // to avoid the "immutable headers" error that breaks WebSocket upgrades.
+  app.get(
+    "/:slug/websocket",
+    slugMw,
+    upgradeWebSocket((c) => {
+      const slug = c.get("slug");
+      return {
+        async onOpen(_evt, ws) {
+          try {
+            const sandbox = await resolveSandbox(slug, {
+              slots: opts.slots,
+              store: opts.store,
+              storage: opts.storage,
+            });
+            if (!sandbox) {
+              ws.close(1008, "Agent not found");
+              return;
+            }
+            const resumeFrom = c.req.query("sessionId") ?? undefined;
+            const skipGreeting = c.req.query("resume") !== undefined || resumeFrom !== undefined;
+            if (ws.raw) sandbox.startSession(ws.raw, skipGreeting, resumeFrom);
+          } catch (err: unknown) {
+            console.error("WebSocket open error:", err);
+            ws.close(1011, "Internal error");
+          }
+        },
+      };
+    }),
+  );
+
   const allowedOrigins = opts.allowedOrigins;
   app.use(
     "*",
@@ -146,35 +177,6 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   });
 
   app.get("/:slug/", slugMw, handleAgentPage);
-
-  app.get(
-    "/:slug/websocket",
-    slugMw,
-    upgradeWebSocket((c) => {
-      const slug = c.get("slug");
-      return {
-        async onOpen(_evt, ws) {
-          try {
-            const sandbox = await resolveSandbox(slug, {
-              slots: opts.slots,
-              store: opts.store,
-              storage: opts.storage,
-            });
-            if (!sandbox) {
-              ws.close(1008, "Agent not found");
-              return;
-            }
-            const resumeFrom = c.req.query("sessionId") ?? undefined;
-            const skipGreeting = c.req.query("resume") !== undefined || resumeFrom !== undefined;
-            if (ws.raw) sandbox.startSession(ws.raw, skipGreeting, resumeFrom);
-          } catch (err: unknown) {
-            console.error("WebSocket open error:", err);
-            ws.close(1011, "Internal error");
-          }
-        },
-      };
-    }),
-  );
 
   // Bindings injected at serve time via app.fetch(req, bindings)
   const bindings = {

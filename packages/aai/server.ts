@@ -197,6 +197,22 @@ export function createServer(options: ServerOptions): AgentServer {
         return c.json({ error: "Internal Server Error" }, 500);
       });
 
+      // WebSocket route must be registered before secureHeaders middleware
+      // to avoid the "immutable headers" error that breaks WebSocket upgrades.
+      app.get(
+        "/websocket",
+        upgradeWebSocket((c) => {
+          const resumeFrom = c.req.query("sessionId") ?? undefined;
+          const skipGreeting = c.req.query("resume") !== undefined || resumeFrom !== undefined;
+          logger.info(`WS upgrade ${c.req.path}${skipGreeting ? " (resume)" : ""}`);
+          return {
+            onOpen(_evt, ws) {
+              if (ws.raw) handleWs(ws.raw, skipGreeting, resumeFrom);
+            },
+          };
+        }),
+      );
+
       app.use("/*", async (c, next) => {
         const start = Date.now();
         await next();
@@ -247,20 +263,6 @@ export function createServer(options: ServerOptions): AgentServer {
           html`<!DOCTYPE html><html><body><h1>${agent.name}</h1><p>Agent server running.</p></body></html>`,
         );
       });
-
-      app.get(
-        "/websocket",
-        upgradeWebSocket((c) => {
-          const resumeFrom = c.req.query("sessionId") ?? undefined;
-          const skipGreeting = c.req.query("resume") !== undefined || resumeFrom !== undefined;
-          logger.info(`WS upgrade ${c.req.path}${skipGreeting ? " (resume)" : ""}`);
-          return {
-            onOpen(_evt, ws) {
-              if (ws.raw) handleWs(ws.raw, skipGreeting, resumeFrom);
-            },
-          };
-        }),
-      );
 
       const nodeServer = serve({ fetch: app.fetch, port });
       injectWebSocket(nodeServer);
