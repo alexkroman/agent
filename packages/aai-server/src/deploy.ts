@@ -3,31 +3,11 @@ import type { Context } from "hono";
 import { z } from "zod";
 import { type DeployBody, DeployBodySchema, EnvSchema } from "./_schemas.ts";
 import type { Env } from "./context.ts";
+import { withSlugLock } from "./slug-lock.ts";
 
-/** Per-slug mutex to serialize concurrent deploys for the same agent. */
-const deployLocks = new Map<string, Promise<Response>>();
-
-export async function handleDeploy(c: Context<Env>): Promise<Response> {
+export function handleDeploy(c: Context<Env>): Promise<Response> {
   const slug = c.get("slug");
-
-  // Serialize deploys for the same slug to prevent races where two
-  // concurrent requests both read the slot state, both try to terminate,
-  // and both overwrite each other's results.
-  const existing = deployLocks.get(slug);
-  if (existing) {
-    await existing.catch(() => {
-      /* previous deploy finished or failed — safe to proceed */
-    });
-  }
-
-  const p = handleDeployInner(c);
-  deployLocks.set(slug, p);
-  try {
-    return await p;
-  } finally {
-    // Only delete if we're still the current lock holder.
-    if (deployLocks.get(slug) === p) deployLocks.delete(slug);
-  }
+  return withSlugLock(slug, () => handleDeployInner(c));
 }
 
 async function handleDeployInner(c: Context<Env>): Promise<Response> {
