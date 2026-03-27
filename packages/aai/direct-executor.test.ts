@@ -1,51 +1,52 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
+import { toAgentConfig } from "./_internal-types.ts";
 import { makeAgent } from "./_test-utils.ts";
-import { buildAgentConfig, createDirectExecutor } from "./direct-executor.ts";
+import { createDirectExecutor } from "./direct-executor.ts";
 import { createSqliteKv } from "./sqlite-kv.ts";
 import { defineTool } from "./types.ts";
 
-describe("buildAgentConfig", () => {
+describe("toAgentConfig", () => {
   test("maps name, instructions, greeting from AgentDef", () => {
-    const config = buildAgentConfig(makeAgent());
+    const config = toAgentConfig(makeAgent());
     expect(config.name).toBe("test-agent");
     expect(config.instructions).toBe("Be helpful.");
     expect(config.greeting).toBe("Hello!");
   });
 
   test("includes sttPrompt when defined", () => {
-    const config = buildAgentConfig(makeAgent({ sttPrompt: "transcription hint" }));
+    const config = toAgentConfig(makeAgent({ sttPrompt: "transcription hint" }));
     expect(config.sttPrompt).toBe("transcription hint");
   });
 
   test("omits sttPrompt when undefined", () => {
-    const config = buildAgentConfig(makeAgent());
+    const config = toAgentConfig(makeAgent());
     expect(config).not.toHaveProperty("sttPrompt");
   });
 
   test("includes static maxSteps", () => {
-    const config = buildAgentConfig(makeAgent({ maxSteps: 10 }));
+    const config = toAgentConfig(makeAgent({ maxSteps: 10 }));
     expect(config.maxSteps).toBe(10);
   });
 
   test("excludes function maxSteps", () => {
-    const config = buildAgentConfig(makeAgent({ maxSteps: () => 10 }));
+    const config = toAgentConfig(makeAgent({ maxSteps: () => 10 }));
     expect(config).not.toHaveProperty("maxSteps");
   });
 
   test("includes toolChoice when defined", () => {
-    const config = buildAgentConfig(makeAgent({ toolChoice: "required" }));
+    const config = toAgentConfig(makeAgent({ toolChoice: "required" }));
     expect(config.toolChoice).toBe("required");
   });
 
   test("omits toolChoice when undefined", () => {
-    const config = buildAgentConfig(makeAgent());
+    const config = toAgentConfig(makeAgent());
     expect(config).not.toHaveProperty("toolChoice");
   });
 
   test("includes builtinTools when defined", () => {
-    const config = buildAgentConfig(makeAgent({ builtinTools: ["web_search", "run_code"] }));
+    const config = toAgentConfig(makeAgent({ builtinTools: ["web_search", "run_code"] }));
     expect(config.builtinTools).toEqual(["web_search", "run_code"]);
   });
 });

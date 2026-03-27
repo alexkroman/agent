@@ -2,17 +2,15 @@
 /**
  * Cross-package smoke test.
  *
- * Verifies that the SDK's defineAgent + buildAgentConfig output is accepted
+ * Verifies that the SDK's defineAgent + toAgentConfig output is accepted
  * by the server's deploy endpoint, and that tool schemas survive the
  * SDK → deploy body → server round trip without interface mismatch.
  */
 
 import { type AgentDef, defineAgent, defineTool } from "@alexkroman1/aai";
-import { agentToolsToSchemas } from "@alexkroman1/aai/internal-types";
+import { agentToolsToSchemas, toAgentConfig } from "@alexkroman1/aai/internal-types";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
-// direct-executor.ts has no package export, so use relative path through workspace
-import { buildAgentConfig } from "../../aai/direct-executor.ts";
 import { createTestOrchestrator } from "./_test-utils.ts";
 
 /**
@@ -20,7 +18,7 @@ import { createTestOrchestrator } from "./_test-utils.ts";
  */
 // biome-ignore lint/suspicious/noExplicitAny: accepts any state type
 function buildDeployBodyFromAgent(agent: AgentDef<any>): string {
-  const config = buildAgentConfig(agent);
+  const config = toAgentConfig(agent);
   const _schemas = agentToolsToSchemas(agent.tools);
 
   // The deploy body contains the bundled worker code (JS string),
@@ -82,7 +80,7 @@ describe("cross-package smoke: SDK → server deploy", () => {
     expect(await pageRes.text()).toContain("<html>");
   });
 
-  test("buildAgentConfig produces JSON-safe config from SDK agent", () => {
+  test("toAgentConfig produces JSON-safe config from SDK agent", () => {
     const agent = defineAgent({
       name: "json-safe",
       instructions: "Custom instructions",
@@ -99,7 +97,7 @@ describe("cross-package smoke: SDK → server deploy", () => {
       },
     });
 
-    const config = buildAgentConfig(agent);
+    const config = toAgentConfig(agent);
     // Must survive JSON round-trip (no functions, no class instances)
     const roundTripped = JSON.parse(JSON.stringify(config));
     expect(roundTripped.name).toBe("json-safe");

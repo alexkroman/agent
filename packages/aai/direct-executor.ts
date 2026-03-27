@@ -7,12 +7,7 @@
  */
 
 import { mkdirSync } from "node:fs";
-import {
-  type AgentConfig,
-  agentToolsToSchemas,
-  type ToolSchema,
-  toAgentConfig,
-} from "./_internal-types.ts";
+import { agentToolsToSchemas, type ToolSchema, toAgentConfig } from "./_internal-types.ts";
 import { ssrfSafeFetch } from "./_ssrf.ts";
 import { createSessionStateMap, toolError } from "./_utils.ts";
 import { getBuiltinToolDefs, getBuiltinToolSchemas } from "./builtin-tools.ts";
@@ -123,12 +118,6 @@ export type DirectExecutor = {
   }): Session;
 };
 
-/** Build a serializable AgentConfig from an AgentDef. */
-// biome-ignore lint/suspicious/noExplicitAny: accepts any state type
-export function buildAgentConfig(agent: AgentDef<any>): AgentConfig {
-  return toAgentConfig(agent);
-}
-
 /**
  * Create a direct (in-process) tool executor and hook invoker for an agent.
  *
@@ -150,7 +139,7 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
     logger = consoleLogger,
     s2sConfig = DEFAULT_S2S_CONFIG,
   } = opts;
-  const agentConfig = buildAgentConfig(agent);
+  const agentConfig = toAgentConfig(agent);
 
   // Merge custom + builtin tool definitions
   const builtinDefs = getBuiltinToolDefs(
