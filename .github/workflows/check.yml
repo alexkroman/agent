@@ -24,7 +24,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Cache TypeScript incremental build info
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: .tsbuildinfo/
           key: tsbuildinfo-build-${{ runner.os }}-${{ hashFiles('packages/*/tsconfig.json', 'tsconfig.json') }}-${{ hashFiles('pnpm-lock.yaml') }}
@@ -32,7 +32,7 @@ jobs:
             tsbuildinfo-build-${{ runner.os }}-${{ hashFiles('packages/*/tsconfig.json', 'tsconfig.json') }}-
             tsbuildinfo-build-${{ runner.os }}-
       - run: pnpm -r run build
-      - uses: actions/cache/save@v4
+      - uses: actions/cache/save@v5
         with:
           path: |
             node_modules
@@ -52,7 +52,7 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 22
-      - uses: actions/cache/restore@v4
+      - uses: actions/cache/restore@v5
         with:
           path: |
             node_modules
@@ -73,7 +73,7 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 22
-      - uses: actions/cache/restore@v4
+      - uses: actions/cache/restore@v5
         with:
           path: |
             node_modules
@@ -107,7 +107,7 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 22
-      - uses: actions/cache/restore@v4
+      - uses: actions/cache/restore@v5
         with:
           path: |
             node_modules
@@ -128,7 +128,7 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 22
-      - uses: actions/cache/restore@v4
+      - uses: actions/cache/restore@v5
         with:
           path: |
             node_modules
@@ -149,7 +149,7 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 22
-      - uses: actions/cache/restore@v4
+      - uses: actions/cache/restore@v5
         with:
           path: |
             node_modules
