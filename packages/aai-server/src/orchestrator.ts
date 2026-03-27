@@ -92,32 +92,34 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     }),
   );
 
+  // Skip CORS and secureHeaders for WebSocket upgrades — these middleware
+  // modify response headers, which breaks the immutable upgrade response.
+  const isWsUpgrade = (c: { req: { header: (k: string) => string | undefined } }) =>
+    c.req.header("upgrade")?.toLowerCase() === "websocket";
+
   const allowedOrigins = opts.allowedOrigins;
-  app.use(
-    "*",
-    cors({
-      origin: (origin) => {
-        if (!origin) return "*"; // same-origin
-        if (!allowedOrigins) return ""; // reject when no origins configured
-        if (allowedOrigins.includes("*")) return "*";
-        return allowedOrigins.includes(origin) ? origin : "";
-      },
-      allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-      allowHeaders: ["Content-Type", "Authorization"],
-      credentials: false,
-      maxAge: 86_400,
-    }),
-  );
-  app.use(
-    "*",
-    secureHeaders({
-      crossOriginOpenerPolicy: "same-origin",
-      crossOriginEmbedderPolicy: "credentialless",
-      crossOriginResourcePolicy: "same-origin",
-      xContentTypeOptions: "nosniff",
-      xFrameOptions: "DENY",
-    }),
-  );
+  const corsMw = cors({
+    origin: (origin) => {
+      if (!origin) return "*"; // same-origin
+      if (!allowedOrigins) return ""; // reject when no origins configured
+      if (allowedOrigins.includes("*")) return "*";
+      return allowedOrigins.includes(origin) ? origin : "";
+    },
+    allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowHeaders: ["Content-Type", "Authorization"],
+    credentials: false,
+    maxAge: 86_400,
+  });
+  app.use("*", (c, next) => (isWsUpgrade(c) ? next() : corsMw(c, next)));
+
+  const secureMw = secureHeaders({
+    crossOriginOpenerPolicy: "same-origin",
+    crossOriginEmbedderPolicy: "credentialless",
+    crossOriginResourcePolicy: "same-origin",
+    xContentTypeOptions: "nosniff",
+    xFrameOptions: "DENY",
+  });
+  app.use("*", (c, next) => (isWsUpgrade(c) ? next() : secureMw(c, next)));
 
   app.onError((err, c) => {
     if (err instanceof HTTPException) {
@@ -186,9 +188,13 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     modelCacheDir: opts.modelCacheDir,
   };
 
+  // Use Object.assign to mutate the caller's env rather than spreading into
+  // a new object. @hono/node-ws's injectWebSocket passes an env object and
+  // reads a symbol back from it after app.request() — spreading would break
+  // that reference and prevent WebSocket upgrades from completing.
   const original = app.fetch.bind(app);
   app.fetch = (req: Request, env?: Record<string, unknown>) =>
-    original(req, { ...bindings, ...env });
+    original(req, Object.assign(env ?? {}, bindings));
 
   return { app, injectWebSocket };
 }

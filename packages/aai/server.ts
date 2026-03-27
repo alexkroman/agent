@@ -227,20 +227,22 @@ export function createServer(options: ServerOptions): AgentServer {
         }
       });
 
-      app.use(
-        "*",
-        secureHeaders({
-          contentSecurityPolicy: {
-            defaultSrc: ["'self'"],
-            scriptSrc: ["'self'", "'unsafe-eval'", "blob:"],
-            styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
-            connectSrc: ["'self'", "wss:", "ws:"],
-            imgSrc: ["'self'", "data:"],
-            fontSrc: ["'self'", "https://fonts.gstatic.com"],
-            objectSrc: ["'none'"],
-            baseUri: ["'self'"],
-          },
-        }),
+      const secureMw = secureHeaders({
+        contentSecurityPolicy: {
+          defaultSrc: ["'self'"],
+          scriptSrc: ["'self'", "'unsafe-eval'", "blob:"],
+          styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+          connectSrc: ["'self'", "wss:", "ws:"],
+          imgSrc: ["'self'", "data:"],
+          fontSrc: ["'self'", "https://fonts.gstatic.com"],
+          objectSrc: ["'none'"],
+          baseUri: ["'self'"],
+        },
+      });
+      // Skip secureHeaders for WebSocket upgrades — it modifies response
+      // headers, which breaks the immutable upgrade response.
+      app.use("*", (c, next) =>
+        c.req.header("upgrade")?.toLowerCase() === "websocket" ? next() : secureMw(c, next),
       );
 
       app.get("/health", (c) => c.json({ status: "ok", name: agent.name }));
