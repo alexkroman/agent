@@ -692,6 +692,7 @@ function SoloRPGApp() {
 }
 
 const SESSION_KEY = "solo-rpg:sessionId";
+const savedSessionId = localStorage.getItem(SESSION_KEY);
 
 mount(SoloRPGApp, {
   title: "Solo RPG",
@@ -703,5 +704,5 @@ mount(SoloRPGApp, {
     border: C.border,
   },
   onSessionId: (id: string) => localStorage.setItem(SESSION_KEY, id),
-  resumeSessionId: localStorage.getItem(SESSION_KEY) ?? undefined,
+  ...(savedSessionId ? { resumeSessionId: savedSessionId } : {}),
 });
