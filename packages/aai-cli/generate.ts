@@ -42,9 +42,9 @@ function toolLabel(name: string, input: Record<string, unknown>): string {
   const icon = TOOL_ICONS[name] ?? "•";
   const file = (input.filePath ?? input.path ?? input.pattern ?? "") as string;
   if (name === "bash")
-    return `${pc.dim(icon)} ${pc.cyan(name)} ${pc.dim(String(input.command ?? "").slice(0, 60))}`;
-  if (file) return `${pc.dim(icon)} ${pc.cyan(name)} ${file}`;
-  return `${pc.dim(icon)} ${pc.cyan(name)}`;
+    return `${icon} ${pc.cyan(name)} ${pc.dim(String(input.command ?? "").slice(0, 60))}`;
+  if (file) return `${icon} ${pc.cyan(name)} ${file}`;
+  return `${icon} ${pc.cyan(name)}`;
 }
 
 export async function runGenerateCommand(opts: { cwd: string; prompt: string }): Promise<void> {
@@ -66,12 +66,24 @@ export async function runGenerateCommand(opts: { cwd: string; prompt: string }):
       maxOutputTokens: 65_536,
       toolChoice: "auto",
       stopWhen: stepCountIs(20),
-      onStepFinish: ({ staticToolCalls, finishReason, text }) => {
-        for (const tc of staticToolCalls) {
-          const label = toolLabel(tc.toolName, tc.input as Record<string, unknown>);
-          spinner.stop(`${label}`);
-          spinner = yoctoSpinner({ text: "Thinking..." }).start();
-        }
+      experimental_onStepStart: ({ stepNumber }) => {
+        spinner.text = stepNumber === 0 ? "Planning..." : "Thinking...";
+      },
+      experimental_onToolCallStart: ({ toolCall }) => {
+        const input = toolCall.input as Record<string, unknown> | undefined;
+        const label = toolLabel(toolCall.toolName, input ?? {});
+        spinner.text = label;
+      },
+      experimental_onToolCallFinish: ({ toolCall, durationMs, ...rest }) => {
+        const input = toolCall.input as Record<string, unknown> | undefined;
+        const label = toolLabel(toolCall.toolName, input ?? {});
+        const time = durationMs < 1000 ? `${durationMs}ms` : `${(durationMs / 1000).toFixed(1)}s`;
+        const ok = "success" in rest && rest.success;
+        const mark = ok ? pc.green("✔") : pc.red("✖");
+        spinner.stop(`${mark} ${label} ${pc.dim(time)}`);
+        spinner = yoctoSpinner({ text: "Thinking..." }).start();
+      },
+      onStepFinish: ({ finishReason, text }) => {
         if (finishReason === "stop" && text) {
           spinner.stop(pc.dim(text.slice(0, 120)));
           spinner = yoctoSpinner({ text: "Thinking..." }).start();
