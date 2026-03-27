@@ -157,7 +157,7 @@ export function createLocalVectorStore(): ServerVectorStore {
         }));
     },
     async remove(_scope, _ids) {
-      // biome-ignore lint/suspicious/noEmptyBlockStatements: no-op for local dev
+      // no-op for local dev
     },
   };
 }
