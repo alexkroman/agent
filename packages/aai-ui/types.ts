@@ -101,11 +101,11 @@ export type VoiceSessionOptions = {
    * Use this to store the ID (e.g. in localStorage) for reconnection
    * via `resumeSessionId`.
    */
-  onSessionId?: (sessionId: string) => void;
+  onSessionId?: ((sessionId: string) => void) | undefined;
   /**
    * Session ID from a previous connection. When set, the server will
    * attempt to restore persisted session state (if the agent has
    * `persistence` enabled).
    */
-  resumeSessionId?: string;
+  resumeSessionId?: string | undefined;
 };

@@ -23,9 +23,9 @@ export type MountOptions = {
   /** Theme color overrides. */
   theme?: MountTheme;
   /** Called when the server sends a session ID. Store it for reconnection. */
-  onSessionId?: (sessionId: string) => void;
+  onSessionId?: ((sessionId: string) => void) | undefined;
   /** Session ID from a previous connection for resuming persisted state. */
-  resumeSessionId?: string;
+  resumeSessionId?: string | undefined;
 };
 
 /**
@@ -77,8 +77,8 @@ export function mount(Component: ComponentType<any>, options?: MountOptions): Mo
     platformUrl,
     reactiveFactory: signal,
     batch,
-    ...(options?.onSessionId ? { onSessionId: options.onSessionId } : {}),
-    ...(options?.resumeSessionId ? { resumeSessionId: options.resumeSessionId } : {}),
+    onSessionId: options?.onSessionId,
+    resumeSessionId: options?.resumeSessionId,
   });
   const signals = createSessionControls(session);
 
