@@ -8,6 +8,11 @@
 
 import { serve } from "@hono/node-server";
 import { WebSocketServer } from "ws";
+import {
+  createLocalBundleStore,
+  createLocalKvStore,
+  createLocalVectorStore,
+} from "./_local-dev.ts";
 import { createBundleStore, createS3Client } from "./bundle-store-tigris.ts";
 import { deriveCredentialKey } from "./credentials.ts";
 import { createKvStore } from "./kv.ts";
@@ -36,7 +41,29 @@ function requireEnv<const K extends string>(
   return Object.fromEntries(keys.map((k) => [k, env[k]])) as { [P in K]: string };
 }
 
+function isLocalDev(env: NodeJS.ProcessEnv): boolean {
+  return env.AAI_LOCAL_DEV === "1" || !env.UPSTASH_REDIS_REST_URL;
+}
+
+async function buildLocalOpts(env: NodeJS.ProcessEnv): Promise<OrchestratorOpts> {
+  const scopeSecret = env.KV_SCOPE_SECRET ?? "local-dev-secret";
+  const scopeKey = await importScopeKey(scopeSecret);
+  const vectorStore = await createLocalVectorStore();
+  console.info(
+    `Local dev mode: SQLite KV + in-memory bundles + ${vectorStore ? "LanceDB vector" : "no vector (set OPENAI_API_KEY for embeddings)"} (.aai/server-data/)`,
+  );
+  return {
+    slots: new Map<string, AgentSlot>(),
+    store: createLocalBundleStore(),
+    kvStore: createLocalKvStore(),
+    vectorStore,
+    scopeKey,
+  };
+}
+
 async function buildOpts(env: NodeJS.ProcessEnv): Promise<OrchestratorOpts> {
+  if (isLocalDev(env)) return buildLocalOpts(env);
+
   const required = requireEnv(env, [
     "BUCKET_NAME",
     "KV_SCOPE_SECRET",
