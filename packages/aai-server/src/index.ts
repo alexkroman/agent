@@ -41,7 +41,7 @@ async function buildLocalOpts(_env: NodeJS.ProcessEnv): Promise<OrchestratorOpts
     store: createBundleStore(storage, { credentialKey }),
     storage,
     // Resolve to repo root so the model cache works regardless of CWD.
-    modelCacheDir: resolve(import.meta.dirname, "../../.aai/models"),
+    modelCacheDir: resolve(import.meta.dirname, "../../../.aai/models"),
   };
 }
 
