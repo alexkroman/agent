@@ -1,5 +1,12 @@
 # @alexkroman1/aai-cli
 
+## 0.10.1
+
+### Patch Changes
+
+- Updated dependencies [aa23a1c]
+  - @alexkroman1/aai@0.10.1
+
 ## 0.10.0
 
 ### Minor Changes

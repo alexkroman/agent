@@ -1,5 +1,11 @@
 # @alexkroman1/aai
 
+## 0.10.1
+
+### Patch Changes
+
+- aa23a1c: Add repository.url for npm provenance, fix circular dependency, bump CI actions
+
 ## 0.10.0
 
 ### Minor Changes
