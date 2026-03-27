@@ -4,7 +4,7 @@ import { buildAgentBundle } from "./_build.ts";
 import { createClientDevServer } from "./_bundler.ts";
 import { loadAgent } from "./_discover.ts";
 import { bootBackendServer, bootServer, loadAgentDef, resolveServerEnv } from "./_server-common.ts";
-import { info, runCommand, step } from "./_ui.ts";
+import { info, parsePort, runCommand, step } from "./_ui.ts";
 
 /** Build, boot, and verify the server — used by `--check` mode. */
 async function runCheckMode(cwd: string, port: number, log: (msg: string) => void): Promise<void> {
@@ -91,10 +91,7 @@ export async function runDevCommand(opts: {
   port: string;
   check?: boolean;
 }): Promise<void> {
-  const port = Number.parseInt(opts.port, 10);
-  if (Number.isNaN(port) || port < 0 || port > 65_535) {
-    throw new Error(`Invalid port: ${opts.port}. Must be a number between 0 and 65535.`);
-  }
+  const port = parsePort(opts.port);
 
   await runCommand(async ({ log }) => {
     await _startDevServer(opts.cwd, port, log, opts.check ? { check: true } : undefined);

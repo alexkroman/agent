@@ -6,7 +6,7 @@ import path from "node:path";
 import pc from "picocolors";
 import { fileExists } from "./_discover.ts";
 import { envFileKeys, loadAgentDef } from "./_server-common.ts";
-import { runCommand, step } from "./_ui.ts";
+import { parsePort, runCommand, step } from "./_ui.ts";
 
 type CheckResult = {
   name: string;
@@ -278,10 +278,7 @@ export async function _runDoctor(
 }
 
 export async function runDoctorCommand(opts: { cwd: string; port: string }): Promise<void> {
-  const port = Number.parseInt(opts.port, 10);
-  if (Number.isNaN(port) || port < 0 || port > 65_535) {
-    throw new Error(`Invalid port: ${opts.port}. Must be a number between 0 and 65535.`);
-  }
+  const port = parsePort(opts.port);
 
   await runCommand(async ({ log }) => {
     await _runDoctor(opts.cwd, port, log);

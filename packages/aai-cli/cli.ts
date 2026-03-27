@@ -6,6 +6,13 @@ import { fileURLToPath } from "node:url";
 import { defineCommand, runMain } from "citty";
 import { ensureApiKeyInEnv, fileExists, resolveCwd } from "./_discover.ts";
 
+/** Shared arg definitions for citty commands. */
+const sharedArgs = {
+  port: { type: "string", alias: "p", description: "Port to listen on", default: "3000" },
+  server: { type: "string", alias: "s", description: "Server URL" },
+  yes: { type: "boolean", alias: "y", description: "Accept defaults (no prompts)" },
+} as const;
+
 const cliDir = path.dirname(fileURLToPath(import.meta.url));
 function findPkgJson(dir: string): string {
   try {
@@ -30,7 +37,7 @@ const init = defineCommand({
     dir: { type: "positional", description: "Project directory", required: false },
     template: { type: "string", alias: "t", description: "Template to use" },
     force: { type: "boolean", alias: "f", description: "Overwrite existing agent.ts" },
-    yes: { type: "boolean", alias: "y", description: "Accept defaults (no prompts)" },
+    yes: sharedArgs.yes,
     skipApi: { type: "boolean", description: "Skip API key check" },
     skipDeploy: { type: "boolean", description: "Skip post-init deploy" },
   },

@@ -3,9 +3,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { spinner as clackSpinner } from "@clack/prompts";
 import { generateText, stepCountIs } from "ai";
 import pc from "picocolors";
-import yoctoSpinner from "yocto-spinner";
 import { getApiKey } from "./_discover.ts";
 import { makeTools } from "./_generate-tools.ts";
 
@@ -87,14 +87,15 @@ function maybeShowCode(toolName: string, input: Record<string, unknown> | undefi
 
 /** Manages spinner text with an elapsed-time ticker. */
 class SpinnerTimer {
-  spinner;
+  private s;
   stepNumber = 0;
   lastAction = "";
   startMs = Date.now();
   timer: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
-    this.spinner = yoctoSpinner({ text: "Planning..." }).start();
+    this.s = clackSpinner();
+    this.s.start("Planning...");
     this.startTicker();
   }
 
@@ -111,7 +112,7 @@ class SpinnerTimer {
   private startTicker(): void {
     this.stopTicker();
     this.timer = setInterval(() => {
-      this.spinner.text = this.buildText();
+      this.s.message(this.buildText());
     }, 1000);
   }
 
@@ -126,38 +127,45 @@ class SpinnerTimer {
   resetTimer(lastAction?: string): void {
     if (lastAction !== undefined) this.lastAction = lastAction;
     this.startMs = Date.now();
-    this.spinner.text = this.buildText();
+    this.s.message(this.buildText());
     this.startTicker();
   }
 
   /** Update spinner text for a tool that's currently executing. */
   setToolRunning(label: string): void {
     this.stopTicker();
-    this.spinner.text = label;
+    this.s.message(label);
   }
 
   /** Print a completed tool line and restart the thinking spinner. */
   completeTool(line: string, lastAction: string): void {
-    this.spinner.stop(line);
+    this.s.clear();
+    console.log(line);
     this.lastAction = lastAction;
     this.startMs = Date.now();
-    this.spinner = yoctoSpinner({ text: this.buildText() }).start();
+    this.s.start(this.buildText());
     this.startTicker();
   }
 
   /** Print a text line and restart the thinking spinner. */
   completeText(text: string): void {
-    this.spinner.stop();
+    this.s.clear();
     console.log(text);
     this.startMs = Date.now();
-    this.spinner = yoctoSpinner({ text: this.buildText() }).start();
+    this.s.start(this.buildText());
     this.startTicker();
   }
 
-  /** Stop the spinner with a final message. */
+  /** Stop the spinner with a success message. */
   stop(message: string): void {
     this.stopTicker();
-    this.spinner.stop(message);
+    this.s.stop(message);
+  }
+
+  /** Stop the spinner with an error message. */
+  error(message: string): void {
+    this.stopTicker();
+    this.s.error(message);
   }
 }
 
@@ -218,11 +226,9 @@ export async function runGenerateCommand(opts: { cwd: string; prompt: string }):
       },
     });
 
-    st.stop(
-      `${pc.green("✔")} Done ${pc.dim(`(${result.steps.length} steps, ${result.usage.totalTokens} tokens)`)}`,
-    );
+    st.stop(`Done ${pc.dim(`(${result.steps.length} steps, ${result.usage.totalTokens} tokens)`)}`);
   } catch (err) {
-    st.stop(`${pc.red("✖")} ${err instanceof Error ? err.message : String(err)}`);
+    st.error(err instanceof Error ? err.message : String(err));
     process.exitCode = 1;
   }
 }

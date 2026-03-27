@@ -42,6 +42,15 @@ export function errorLine(msg: string): string {
   return `${pc.red("x")} ${msg}`;
 }
 
+/** Parse and validate a port string. Returns the numeric port or throws. */
+export function parsePort(raw: string): number {
+  const port = Number.parseInt(raw, 10);
+  if (Number.isNaN(port) || port < 0 || port > 65_535) {
+    throw new Error(`Invalid port: ${raw}. Must be a number between 0 and 65535.`);
+  }
+  return port;
+}
+
 /** Helpers passed to the `run` callback of `runCommand`. */
 export type RunHelpers = {
   log: (msg: string) => void;
