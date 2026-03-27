@@ -94,6 +94,7 @@ export type MountHandle = {
 export type MountOptions = {
     target?: string | HTMLElement;
     platformUrl?: string;
+    token?: string;
     title?: string;
     theme?: MountTheme;
     onSessionId?: ((sessionId: string) => void) | undefined;

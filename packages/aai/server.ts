@@ -7,6 +7,7 @@
  * intermediary needed.
  */
 
+import { randomBytes } from "node:crypto";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
@@ -152,9 +153,13 @@ export function createServer(options: ServerOptions): AgentServer {
     clientDir,
     logger = consoleLogger,
     s2sConfig = DEFAULT_S2S_CONFIG,
-    authToken,
     shutdownTimeoutMs = 30_000,
   } = options;
+
+  // Auto-generate auth token when serving HTML (production self-hosted).
+  // When no HTML is served (e.g. dev mode with Vite proxy), skip auth.
+  const servesHtml = clientHtml != null || clientDir != null;
+  const authToken = options.authToken ?? (servesHtml ? randomBytes(32).toString("hex") : undefined);
 
   const env = filterEnv(options.env ?? (typeof process !== "undefined" ? process.env : {}));
 
@@ -231,10 +236,17 @@ export function createServer(options: ServerOptions): AgentServer {
         "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
         "connect-src 'self' wss: ws:; img-src 'self' data:; font-src 'self'; object-src 'none'; base-uri 'self'";
 
+      const tokenMeta = authToken ? `<meta name="aai-token" content="${authToken}">` : "";
+
       app.get("/", (c) => {
-        if (clientHtml) return c.html(clientHtml, 200, { "Content-Security-Policy": csp });
+        if (clientHtml) {
+          const html = tokenMeta
+            ? clientHtml.replace("</head>", `${tokenMeta}</head>`)
+            : clientHtml;
+          return c.html(html, 200, { "Content-Security-Policy": csp });
+        }
         return c.html(
-          `<!DOCTYPE html><html><body><h1>${safeAgentName}</h1><p>Agent server running.</p></body></html>`,
+          `<!DOCTYPE html><html><head>${tokenMeta}</head><body><h1>${safeAgentName}</h1><p>Agent server running.</p></body></html>`,
           200,
           { "Content-Security-Policy": csp },
         );
@@ -249,14 +261,6 @@ export function createServer(options: ServerOptions): AgentServer {
 
       const addr = nodeServer.address();
       listenPort = typeof addr === "object" && addr ? addr.port : port;
-
-      if (!authToken) {
-        logger.warn(
-          "No authToken configured — WebSocket connections are unauthenticated. " +
-            "Set the authToken option to require a shared secret for WebSocket upgrades. " +
-            "Do NOT expose this server to the public internet without authentication.",
-        );
-      }
 
       const wss = new WebSocketServer({ noServer: true });
       nodeServer.on("upgrade", (req, socket, head) => {

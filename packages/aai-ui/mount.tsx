@@ -18,6 +18,8 @@ export type MountOptions = {
   target?: string | HTMLElement;
   /** Base URL of the AAI platform server. Derived from `location.href` by default. */
   platformUrl?: string;
+  /** Auth token for WebSocket connections. Auto-read from `<meta name="aai-token">` if not set. */
+  token?: string;
   /** Agent title shown in the header and start screen. */
   title?: string;
   /** Theme color overrides. */
@@ -73,8 +75,11 @@ export function mount(Component: ComponentType<any>, options?: MountOptions): Mo
 
   const platformUrl =
     options?.platformUrl ?? globalThis.location.origin + globalThis.location.pathname;
+  const token =
+    options?.token ?? document.querySelector<HTMLMetaElement>('meta[name="aai-token"]')?.content;
   const session = createVoiceSession({
     platformUrl,
+    ...(token ? { token } : {}),
     reactiveFactory: signal,
     batch,
     onSessionId: options?.onSessionId,
