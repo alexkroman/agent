@@ -19,7 +19,6 @@ describe("toAgentConfig", () => {
       onError: false,
       onTurn: false,
       onStep: false,
-      onBeforeStep: false,
       maxStepsIsFn: false,
       hasMiddleware: false,
     },
@@ -39,14 +38,12 @@ describe("toAgentConfig", () => {
       maxSteps: 10,
       toolChoice: "required",
       builtinTools: ["web_search", "run_code"],
-      activeTools: ["greet", "search"],
     };
     const ac = _internals.toAgentConfig(config);
     expect(ac.sttPrompt).toBe("Technical terms");
     expect(ac.maxSteps).toBe(10);
     expect(ac.toolChoice).toBe("required");
     expect(ac.builtinTools).toEqual(["web_search", "run_code"]);
-    expect(ac.activeTools).toEqual(["greet", "search"]);
   });
 
   it("omits optional fields when undefined", () => {
@@ -55,7 +52,6 @@ describe("toAgentConfig", () => {
     expect(ac).not.toHaveProperty("maxSteps");
     expect(ac).not.toHaveProperty("toolChoice");
     expect(ac).not.toHaveProperty("builtinTools");
-    expect(ac).not.toHaveProperty("activeTools");
   });
 });
 
@@ -187,24 +183,24 @@ describe("buildHookInvoker", () => {
   });
 
   it("resolveTurnConfig returns parsed config", async () => {
-    mockHookResponse({ maxSteps: 3, activeTools: ["search"] });
+    mockHookResponse({ maxSteps: 3 });
     const invoker = _internals.buildHookInvoker("http://127.0.0.1:9999", "test-token");
-    const config = await invoker.resolveTurnConfig("s1", 1);
+    const config = await invoker.resolveTurnConfig("s1");
 
-    expect(config).toEqual({ maxSteps: 3, activeTools: ["search"] });
+    expect(config).toEqual({ maxSteps: 3 });
   });
 
   it("resolveTurnConfig returns null when hook returns null", async () => {
     mockHookResponse(null);
     const invoker = _internals.buildHookInvoker("http://127.0.0.1:9999", "test-token");
-    const config = await invoker.resolveTurnConfig("s1", 1);
+    const config = await invoker.resolveTurnConfig("s1");
     expect(config).toBeNull();
   });
 
   it("resolveTurnConfig omits undefined fields", async () => {
     mockHookResponse({});
     const invoker = _internals.buildHookInvoker("http://127.0.0.1:9999", "test-token");
-    const config = await invoker.resolveTurnConfig("s1", 1);
+    const config = await invoker.resolveTurnConfig("s1");
     expect(config).toEqual({});
   });
 
@@ -312,7 +308,7 @@ describe("getIsolateConfig", () => {
         onError: false,
         onTurn: true,
         onStep: false,
-        onBeforeStep: false,
+
         maxStepsIsFn: false,
         hasMiddleware: false,
       },

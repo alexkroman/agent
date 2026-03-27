@@ -25,7 +25,6 @@ export const AgentConfigSchema = z.object({
   maxSteps: z.number().int().positive().optional(),
   toolChoice: ToolChoiceSchema.optional(),
   builtinTools: z.array(BuiltinToolSchema).readonly().optional(),
-  activeTools: z.array(z.string().min(1)).readonly().optional(),
   idleTimeoutMs: z.number().nonnegative().optional(),
 });
 
@@ -45,7 +44,6 @@ export interface AgentConfigSource {
   maxSteps?: number | ((...args: never[]) => number) | undefined;
   toolChoice?: AgentConfig["toolChoice"] | undefined;
   builtinTools?: Readonly<AgentConfig["builtinTools"]> | AgentConfig["builtinTools"] | undefined;
-  activeTools?: Readonly<AgentConfig["activeTools"]> | AgentConfig["activeTools"] | undefined;
   idleTimeoutMs?: number | undefined;
 }
 
@@ -61,7 +59,6 @@ export function toAgentConfig(src: AgentConfigSource): AgentConfig {
     config.maxSteps = src.maxSteps;
   if (src.toolChoice !== undefined) config.toolChoice = src.toolChoice;
   if (src.builtinTools) config.builtinTools = [...src.builtinTools];
-  if (src.activeTools) config.activeTools = [...src.activeTools];
   if (src.idleTimeoutMs !== undefined) config.idleTimeoutMs = src.idleTimeoutMs;
   return config;
 }

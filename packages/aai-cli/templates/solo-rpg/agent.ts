@@ -630,15 +630,6 @@ VOICE:
     }
   },
 
-  // Force check_state as the first tool call on every turn after initialization.
-  // This ensures the LLM always sees real state and never hallucinates HP, momentum, etc.
-  onBeforeStep: (stepNumber: number, ctx: HookContext<GameState>) => {
-    if (stepNumber === 1 && ctx.state.initialized) {
-      return { activeTools: ["check_state"] };
-    }
-    return {};
-  },
-
   tools: {
     check_state: {
       description:

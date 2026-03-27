@@ -274,7 +274,7 @@ describe("connectS2s", () => {
     expect(handler.mock.calls[0]?.[0].text).toBe("I think");
   });
 
-  test("transcript.agent dispatches 'agentTranscript'", async () => {
+  test("transcript.agent dispatches 'agentTranscript' with all fields", async () => {
     const { raw, handle } = await setupHandle();
     const handler = vi.fn();
     handle.on("agentTranscript", handler);
@@ -285,11 +285,32 @@ describe("connectS2s", () => {
         JSON.stringify({
           type: "transcript.agent",
           text: "Full response",
+          reply_id: "r1",
+          item_id: "i1",
+          interrupted: false,
         }),
       ),
     );
 
-    expect(handler.mock.calls[0]?.[0].text).toBe("Full response");
+    const payload = handler.mock.calls[0]?.[0];
+    expect(payload.text).toBe("Full response");
+    expect(payload.replyId).toBe("r1");
+    expect(payload.itemId).toBe("i1");
+    expect(payload.interrupted).toBe(false);
+  });
+
+  test("transcript.agent defaults interrupted to false when missing", async () => {
+    const { raw, handle } = await setupHandle();
+    const handler = vi.fn();
+    handle.on("agentTranscript", handler);
+
+    raw.emit(
+      "message",
+      Buffer.from(JSON.stringify({ type: "transcript.agent", text: "response" })),
+    );
+
+    expect(handler.mock.calls[0]?.[0].interrupted).toBe(false);
+    expect(handler.mock.calls[0]?.[0].replyId).toBe("");
   });
 
   test("tool.call dispatches 'toolCall'", async () => {

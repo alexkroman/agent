@@ -251,7 +251,6 @@ export function fromWireMessages(
 /** Zod schema for {@link TurnConfig}. */
 export const TurnConfigSchema = z.object({
   maxSteps: z.number().int().positive().optional(),
-  activeTools: z.array(z.string().min(1)).optional(),
 });
 
 /** Combined turn configuration resolved from the worker before a turn starts. */

@@ -41,18 +41,18 @@ export type S2sSessionCtx = {
   conversationMessages: Message[];
   /** Maximum number of messages to retain in conversationMessages. */
   readonly maxHistory: number;
-  /** Monotonically increasing counter bumped on each reply_started. Tool calls
-   *  capture the generation at start; finishToolCall only pushes to pendingTools
-   *  if the generation still matches, preventing stale results from interrupted
-   *  replies from leaking into subsequent replies. */
-  replyGeneration: number;
-  /** Resolve per-turn configuration (dynamic `maxSteps` and `activeTools`). */
-  resolveTurnConfig(): Promise<{ maxSteps?: number; activeTools?: string[] } | null>;
+  /** The `reply_id` from the most recent `reply.started` event. Tool calls
+   *  capture this at start; finishToolCall only pushes to pendingTools if the
+   *  reply ID still matches, preventing stale results from interrupted replies
+   *  from leaking into subsequent replies. Set to `null` on close/reset. */
+  currentReplyId: string | null;
+  /** Resolve per-turn configuration (dynamic `maxSteps`). */
+  resolveTurnConfig(): Promise<{ maxSteps?: number } | null>;
   /** Increment the tool call counter and check whether the call should be refused. */
   consumeToolCallStep(
-    turnConfig: { maxSteps?: number; activeTools?: string[] } | null,
+    turnConfig: { maxSteps?: number } | null,
     name: string,
-    generation: number,
+    replyId: string | null,
   ): string | null;
   /** Fire a lifecycle hook asynchronously. Errors are logged but never propagated. */
   fireHook(name: string, fn: (h: HookInvoker) => Promise<void>): void;
@@ -78,8 +78,6 @@ export function buildCtx(opts: {
 }): S2sSessionCtx {
   const { id, agentConfig, hookInvoker, log } = opts;
   const maxHistory = opts.maxHistory ?? DEFAULT_MAX_HISTORY;
-  let cachedActiveTools: string[] | undefined;
-  let cachedActiveSet: Set<string> | undefined;
   /** Track in-flight hook promises so they can be awaited during shutdown. */
   const pendingHooks = new Set<Promise<void>>();
   const ctx: S2sSessionCtx = {
@@ -90,15 +88,15 @@ export function buildCtx(opts: {
     turnPromise: null,
     conversationMessages: [],
     maxHistory,
-    replyGeneration: 0,
+    currentReplyId: null,
     filterChain: Promise.resolve(),
     resolveTurnConfig() {
       if (!hookInvoker) return Promise.resolve(null);
-      return hookInvoker.resolveTurnConfig(id, ctx.toolCallCount, HOOK_TIMEOUT_MS);
+      return hookInvoker.resolveTurnConfig(id, HOOK_TIMEOUT_MS);
     },
-    consumeToolCallStep(turnConfig, name, generation) {
-      // Guard: ignore tool calls from a stale reply generation.
-      if (generation !== ctx.replyGeneration) {
+    consumeToolCallStep(turnConfig, _name, replyId) {
+      // Guard: ignore tool calls from a stale reply (interrupted or closed).
+      if (replyId === null || replyId !== ctx.currentReplyId) {
         return toolError("Reply was interrupted. Discarding stale tool call.");
       }
       const maxSteps = turnConfig?.maxSteps ?? agentConfig.maxSteps;
@@ -109,16 +107,6 @@ export function buildCtx(opts: {
           maxSteps,
         });
         return toolError("Maximum tool steps reached. Please respond to the user now.");
-      }
-      if (turnConfig?.activeTools) {
-        if (turnConfig.activeTools !== cachedActiveTools) {
-          cachedActiveTools = turnConfig.activeTools;
-          cachedActiveSet = new Set(turnConfig.activeTools);
-        }
-        if (!cachedActiveSet?.has(name)) {
-          log.info("Tool filtered by activeTools", { name });
-          return toolError(`Tool "${name}" is not available at this step.`);
-        }
       }
       return null;
     },

@@ -7,8 +7,7 @@ import { z } from "zod";
  * 1. toolChoice: "required" — forces the LLM to use tools every step
  * 2. ctx.messages — tools can read conversation history
  * 3. onStep — logs each step's tool calls
- * 4. onBeforeStep — restricts available tools based on research phase
- * 5. maxSteps as function — adapts max steps based on session complexity
+ * 4. maxSteps as function — adapts max steps based on session complexity
  */
 
 type ResearchState = {
@@ -34,7 +33,7 @@ Always search first, then analyze, then answer. Be thorough but concise.`,
   // Feature 1: toolChoice — force the LLM to always use a tool
   toolChoice: "required",
 
-  // Feature 5: maxSteps as function — more steps for complex research
+  // Feature 4: maxSteps as function — more steps for complex research
   maxSteps: (ctx: HookContext<ResearchState>) => {
     const state = ctx.state;
     return state.complexity === "deep" ? 10 : 5;
@@ -56,35 +55,6 @@ Always search first, then analyze, then answer. Be thorough but concise.`,
         `[step ${step.stepNumber}] ${tc.toolName} (phase: ${state.phase})`,
       );
     }
-  },
-
-  // Feature 4: onBeforeStep — restrict tools per research phase
-  onBeforeStep: (
-    _stepNumber: number,
-    ctx: HookContext<ResearchState>,
-  ) => {
-    const state = ctx.state;
-    if (state.phase === "gather") {
-      return {
-        activeTools: [
-          "web_search",
-          "save_source",
-          "mark_complex",
-          "advance_phase",
-        ],
-      };
-    }
-    if (state.phase === "analyze") {
-      return {
-        activeTools: [
-          "analyze",
-          "conversation_summary",
-          "advance_phase",
-        ],
-      };
-    }
-    // respond phase: no tools needed, LLM responds with text directly
-    return { activeTools: [] };
   },
 
   tools: {

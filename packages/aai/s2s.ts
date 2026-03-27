@@ -13,9 +13,6 @@ import { s2sConnectionDuration, s2sErrorCounter, tracer } from "./telemetry.ts";
 const uint8ToBase64 = (bytes: Uint8Array): string => Buffer.from(bytes).toString("base64");
 const base64ToUint8 = (base64: string): Uint8Array => new Uint8Array(Buffer.from(base64, "base64"));
 
-// ─── WebSocket abstraction ──────────────────────────────────────────────────
-
-/** Minimal WebSocket interface for the S2S client. */
 export type S2sWebSocket = {
   readonly readyState: number;
   send(data: string): void;
@@ -29,20 +26,15 @@ export type S2sWebSocket = {
   addEventListener(type: "error", listener: (event: { message?: string }) => void): void;
 };
 
-/** WebSocket readyState constant for OPEN. */
 const WS_OPEN = 1;
 
-/** Factory for creating WebSocket connections (e.g. the `ws` package). */
 export type CreateS2sWebSocket = (
   url: string,
   opts: { headers: Record<string, string> },
 ) => S2sWebSocket;
 
-/** Default S2S WebSocket factory using the `ws` package (Node-only). */
 export const defaultCreateS2sWebSocket: CreateS2sWebSocket = (url, opts) =>
   new WebSocket(url, { headers: opts.headers });
-
-// ─── Incoming S2S message types ──────────────────────────────────────────────
 
 type S2sServerMessage =
   | { type: "session.ready"; session_id: string }
@@ -53,7 +45,13 @@ type S2sServerMessage =
   | { type: "transcript.user"; item_id: string; text: string }
   | { type: "reply.started"; reply_id: string }
   | { type: "transcript.agent.delta"; delta: string; [k: string]: unknown }
-  | { type: "transcript.agent"; text: string }
+  | {
+      type: "transcript.agent";
+      text: string;
+      reply_id: string;
+      item_id: string;
+      interrupted: boolean;
+    }
   | { type: "reply.content_part.started"; [k: string]: unknown }
   | { type: "reply.content_part.done"; [k: string]: unknown }
   | { type: "tool.call"; call_id: string; name: string; args: Record<string, unknown> }
@@ -61,22 +59,29 @@ type S2sServerMessage =
   | { type: "session.error"; code: string; message: string }
   | { type: "error"; message: string };
 
-/** Check that `obj` has string-typed fields for each key. */
 function hasStringFields(obj: Record<string, unknown>, ...keys: string[]): boolean {
   for (const k of keys) if (typeof obj[k] !== "string") return false;
   return true;
 }
 
+function parseAgentTranscript(obj: Record<string, unknown>): S2sServerMessage | undefined {
+  if (typeof obj.text !== "string") return;
+  return {
+    type: "transcript.agent" as const,
+    text: obj.text,
+    reply_id: typeof obj.reply_id === "string" ? obj.reply_id : "",
+    item_id: typeof obj.item_id === "string" ? obj.item_id : "",
+    interrupted: obj.interrupted === true,
+  };
+}
+
 function parseToolCall(obj: Record<string, unknown>): S2sServerMessage | undefined {
-  if (!hasStringFields(obj, "call_id", "name")) return;
-  const callId = obj.call_id;
-  const name = obj.name;
-  if (typeof callId !== "string" || typeof name !== "string") return;
+  if (typeof obj.call_id !== "string" || typeof obj.name !== "string") return;
   const args =
     obj.args != null && typeof obj.args === "object" && !Array.isArray(obj.args)
       ? (obj.args as Record<string, unknown>)
       : {};
-  return { type: "tool.call", call_id: callId, name, args };
+  return { type: "tool.call", call_id: obj.call_id, name: obj.name, args };
 }
 
 type MessageValidator = (obj: Record<string, unknown>) => S2sServerMessage | undefined;
@@ -91,7 +96,6 @@ function requireFields(
   return (obj) => (hasStringFields(obj, ...keys) ? (obj as S2sServerMessage) : undefined);
 }
 
-/** Lookup table mapping S2S message types to their validators. */
 const MESSAGE_VALIDATORS = new Map<string, MessageValidator>([
   ["session.ready", requireFields("session_id")],
   ["session.updated", passthrough],
@@ -103,7 +107,7 @@ const MESSAGE_VALIDATORS = new Map<string, MessageValidator>([
   ["transcript.user", requireFields("item_id", "text")],
   ["reply.started", requireFields("reply_id")],
   ["transcript.agent.delta", requireFields("delta")],
-  ["transcript.agent", requireFields("text")],
+  ["transcript.agent", parseAgentTranscript],
   ["tool.call", parseToolCall],
   [
     "reply.done",
@@ -116,18 +120,12 @@ const MESSAGE_VALIDATORS = new Map<string, MessageValidator>([
   ["error", requireFields("message")],
 ]);
 
-/**
- * Manually parse an S2S server message from a raw JSON object, avoiding
- * Zod schema overhead on the hot path. Returns undefined for unrecognised types.
- */
 function parseS2sMessage(obj: Record<string, unknown>): S2sServerMessage | undefined {
   const type = obj.type;
   if (typeof type !== "string") return;
   return MESSAGE_VALIDATORS.get(type)?.(obj);
 }
 
-/** Dispatch a parsed S2S server message to the emitter, mapping wire-format
- *  snake_case fields to SDK-facing camelCase at the boundary. */
 function dispatchS2sMessage(emitter: Emitter<S2sEvents>, msg: S2sServerMessage): void {
   switch (msg.type) {
     case "session.ready":
@@ -155,7 +153,12 @@ function dispatchS2sMessage(emitter: Emitter<S2sEvents>, msg: S2sServerMessage):
       emitter.emit("agentTranscriptDelta", { text: msg.delta });
       break;
     case "transcript.agent":
-      emitter.emit("agentTranscript", { text: msg.text });
+      emitter.emit("agentTranscript", {
+        text: msg.text,
+        replyId: msg.reply_id,
+        itemId: msg.item_id,
+        interrupted: msg.interrupted,
+      });
       break;
     case "tool.call":
       emitter.emit("toolCall", { callId: msg.call_id, name: msg.name, args: msg.args });
@@ -179,8 +182,6 @@ function dispatchS2sMessage(emitter: Emitter<S2sEvents>, msg: S2sServerMessage):
   }
 }
 
-// ─── Types ──────────────────────────────────────────────────────────────────
-
 export type S2sSessionConfig = {
   systemPrompt: string;
   tools: S2sToolSchema[];
@@ -200,7 +201,6 @@ export type S2sToolCall = {
   args: Record<string, unknown>;
 };
 
-/** Typed event map for S2S handle events. */
 export type S2sEvents = {
   ready: (detail: { sessionId: string }) => void;
   sessionUpdated: (detail: Record<string, unknown>) => void;
@@ -211,7 +211,12 @@ export type S2sEvents = {
   userTranscript: (detail: { itemId: string; text: string }) => void;
   replyStarted: (detail: { replyId: string }) => void;
   agentTranscriptDelta: (detail: { text: string }) => void;
-  agentTranscript: (detail: { text: string }) => void;
+  agentTranscript: (detail: {
+    text: string;
+    replyId: string;
+    itemId: string;
+    interrupted: boolean;
+  }) => void;
   toolCall: (detail: S2sToolCall) => void;
   replyDone: (detail: { status?: string }) => void;
   audio: (detail: { audio: Uint8Array }) => void;
@@ -228,8 +233,6 @@ export type S2sHandle = {
   close(): void;
 };
 
-// ─── Connect ────────────────────────────────────────────────────────────────
-
 export type ConnectS2sOptions = {
   apiKey: string;
   config: S2SConfig;
@@ -237,15 +240,6 @@ export type ConnectS2sOptions = {
   logger?: Logger;
 };
 
-/**
- * Connect to AssemblyAI's Speech-to-Speech WebSocket API.
- *
- * Returns an {@link S2sHandle} with a typed `on()` method.
- * Consumers listen for events: `ready`, `speechStarted`, `speechStopped`,
- * `userTranscriptDelta`, `userTranscript`, `replyStarted`,
- * `replyDone`, `audio`, `agentTranscript`, `toolCall`,
- * `sessionExpired`, `error`, `close`.
- */
 export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
   const { apiKey, config, createWebSocket, logger: log = consoleLogger } = opts;
 

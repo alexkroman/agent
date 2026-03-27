@@ -23,7 +23,6 @@ export const HooksSchema = z.object({
   onError: z.boolean(),
   onTurn: z.boolean(),
   onStep: z.boolean(),
-  onBeforeStep: z.boolean(),
   maxStepsIsFn: z.boolean(),
   hasMiddleware: z.boolean(),
 });
@@ -106,7 +105,6 @@ export type HookResponse = z.infer<typeof HookResponseSchema>;
 export const TurnConfigResultSchema = z
   .object({
     maxSteps: z.number().int().positive().optional(),
-    activeTools: z.array(z.string().min(1)).optional(),
   })
   .nullable();
 

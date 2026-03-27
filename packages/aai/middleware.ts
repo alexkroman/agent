@@ -26,11 +26,7 @@ export type HookInvoker = {
   onTurn(sessionId: string, text: string, timeoutMs?: number): Promise<void>;
   onError(sessionId: string, error: { message: string }, timeoutMs?: number): Promise<void>;
   onStep(sessionId: string, step: StepInfo, timeoutMs?: number): Promise<void>;
-  resolveTurnConfig(
-    sid: string,
-    step: number,
-    ms?: number,
-  ): Promise<{ maxSteps?: number; activeTools?: string[] } | null>;
+  resolveTurnConfig(sid: string, ms?: number): Promise<{ maxSteps?: number } | null>;
   filterInput?(sid: string, text: string, ms?: number): Promise<string>;
   beforeTurn?(sid: string, text: string, ms?: number): Promise<string | undefined>;
   afterTurn?(sid: string, text: string, ms?: number): Promise<void>;
