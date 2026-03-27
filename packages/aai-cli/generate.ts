@@ -47,6 +47,12 @@ function toolLabel(name: string, input: Record<string, unknown>): string {
   return `${icon} ${pc.cyan(name)}`;
 }
 
+function formatDuration(ms: number): string {
+  if (ms < 1) return "<1ms";
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
 export async function runGenerateCommand(opts: { cwd: string; prompt: string }): Promise<void> {
   const { cwd, prompt } = opts;
   const baseURL = process.env.LLM_BASE_URL ?? "https://llm-gateway.assemblyai.com/v1";
@@ -77,7 +83,7 @@ export async function runGenerateCommand(opts: { cwd: string; prompt: string }):
       experimental_onToolCallFinish: ({ toolCall, durationMs, ...rest }) => {
         const input = toolCall.input as Record<string, unknown> | undefined;
         const label = toolLabel(toolCall.toolName, input ?? {});
-        const time = durationMs < 1000 ? `${durationMs}ms` : `${(durationMs / 1000).toFixed(1)}s`;
+        const time = formatDuration(durationMs);
         const ok = "success" in rest && rest.success;
         const mark = ok ? pc.green("✔") : pc.red("✖");
         spinner.stop(`${mark} ${label} ${pc.dim(time)}`);

@@ -39,7 +39,7 @@ jobs:
             packages/*/node_modules
             packages/*/dist
             .tsbuildinfo
-          key: workspace-${{ github.sha }}
+          key: workspace-node${{ hashFiles('.node-version') }}-${{ github.sha }}
 
   lint-and-typecheck:
     needs: setup
@@ -59,7 +59,7 @@ jobs:
             packages/*/node_modules
             packages/*/dist
             .tsbuildinfo
-          key: workspace-${{ github.sha }}
+          key: workspace-node${{ hashFiles('.node-version') }}-${{ github.sha }}
       - run: pnpm --filter "...[origin/main]" run lint & pnpm --filter "...[origin/main]" run typecheck & wait
 
   checks:
@@ -80,7 +80,7 @@ jobs:
             packages/*/node_modules
             packages/*/dist
             .tsbuildinfo
-          key: workspace-${{ github.sha }}
+          key: workspace-node${{ hashFiles('.node-version') }}-${{ github.sha }}
       - run: |
           pnpm --filter "...[origin/main]" run --if-present check:api
           pnpm --filter "...[origin/main]" run --if-present check:attw
@@ -114,7 +114,7 @@ jobs:
             packages/*/node_modules
             packages/*/dist
             .tsbuildinfo
-          key: workspace-${{ github.sha }}
+          key: workspace-node${{ hashFiles('.node-version') }}-${{ github.sha }}
       - run: pnpm vitest run --project ${{ matrix.project }} --coverage
 
   integration:
@@ -135,7 +135,7 @@ jobs:
             packages/*/node_modules
             packages/*/dist
             .tsbuildinfo
-          key: workspace-${{ github.sha }}
+          key: workspace-node${{ hashFiles('.node-version') }}-${{ github.sha }}
       - run: pnpm --filter "...[origin/main]" run --if-present check:integration
 
   e2e:
@@ -156,7 +156,7 @@ jobs:
             packages/*/node_modules
             packages/*/dist
             .tsbuildinfo
-          key: workspace-${{ github.sha }}
+          key: workspace-node${{ hashFiles('.node-version') }}-${{ github.sha }}
       - run: pnpm --filter @alexkroman1/aai-cli exec playwright install --with-deps chromium
       - run: pnpm --filter "...[origin/main]" run --if-present check:e2e
 
