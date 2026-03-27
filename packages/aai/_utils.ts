@@ -74,17 +74,7 @@ export function createSessionStateMap(initState?: () => Record<string, unknown>)
   };
 }
 
-/**
- * Create a standardized tool error result string.
- *
- * All tool errors — validation failures, execution throws, timeouts, refusals,
- * and middleware blocks — are returned to the LLM as a JSON string with an
- * `error` field: `'{"error":"<message>"}'`. This ensures the LLM always
- * receives a consistent, parseable error format regardless of the failure mode.
- *
- * Tool errors are **never thrown** — they are always caught and converted to
- * this format so the agentic loop can continue.
- */
+/** Return a JSON error string for the LLM: `'{"error":"<message>"}'`. */
 export function toolError(message: string): string {
   return JSON.stringify({ error: message });
 }

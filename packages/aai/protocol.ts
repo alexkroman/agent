@@ -26,7 +26,7 @@ export const DEFAULT_TTS_SAMPLE_RATE = 24_000;
  *
  * All audio frames are 16-bit signed PCM, little-endian, mono.
  */
-export const AUDIO_FORMAT = "pcm16" as const;
+export const AUDIO_FORMAT = "pcm16";
 
 /** Zod schema for KV operation requests from the worker to the host. */
 export const KvRequestSchema = z.discriminatedUnion("op", [

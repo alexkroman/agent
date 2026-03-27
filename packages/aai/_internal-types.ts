@@ -43,7 +43,7 @@ export interface AgentConfigSource {
   sttPrompt?: string | undefined;
   maxSteps?: number | ((...args: never[]) => number) | undefined;
   toolChoice?: AgentConfig["toolChoice"] | undefined;
-  builtinTools?: Readonly<AgentConfig["builtinTools"]> | AgentConfig["builtinTools"] | undefined;
+  builtinTools?: Readonly<AgentConfig["builtinTools"]> | undefined;
   idleTimeoutMs?: number | undefined;
 }
 
