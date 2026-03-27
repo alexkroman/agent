@@ -52,8 +52,10 @@ export async function runGenerateCommand(opts: { cwd: string; prompt: string }):
           const tc = toolCalls[i];
           const tr = toolResults[i];
           const name = tc?.toolName ?? "?";
-          const file = tc?.args?.filePath ?? "";
-          const resStr = tr?.result != null ? String(tr.result).slice(0, 80) : "(no result)";
+          const input = tc?.input as Record<string, unknown> | undefined;
+          const file = (input?.filePath as string) ?? "";
+          const output = tr?.output;
+          const resStr = output != null ? String(output).slice(0, 80) : "(no result)";
           log(step("Generate", `${name} ${file} → ${resStr}`));
         }
         if (finishReason === "stop" && text) {
