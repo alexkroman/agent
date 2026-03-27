@@ -107,9 +107,10 @@ async function main(): Promise<void> {
         return;
       }
 
-      const resume = url.searchParams.has("resume");
+      const resumeFrom = url.searchParams.get("sessionId") ?? undefined;
+      const skipGreeting = url.searchParams.has("resume") || resumeFrom !== undefined;
       wss.handleUpgrade(req, socket, head, (ws) => {
-        sandbox.startSession(ws, resume);
+        sandbox.startSession(ws, skipGreeting, resumeFrom);
       });
     } catch (err: unknown) {
       console.error("WebSocket upgrade error:", err);
