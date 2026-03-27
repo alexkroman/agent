@@ -25,11 +25,11 @@ try {
 }
 
 const dir = import.meta.dirname ?? path.dirname(new URL(import.meta.url).pathname);
-const templatesDir = path.join(dir, "templates");
+const templatesDir = path.resolve(dir, "../aai-templates");
 
 const templates = fs
   .readdirSync(templatesDir, { withFileTypes: true })
-  .filter((d) => d.isDirectory() && d.name !== "_shared")
+  .filter((d) => d.isDirectory() && !d.name.startsWith("_"))
   .map((d) => d.name);
 
 let aaiBin: string;

@@ -7,7 +7,8 @@
       "!**/dist",
       "!**/.aai",
       "!**/__snapshots__",
-      "!**/templates"
+      "!**/templates",
+      "!packages/aai-templates"
     ]
   },
   "linter": {

@@ -11,8 +11,13 @@ import { renderUsage } from "citty";
 import { describe, expect, test, vi } from "vitest";
 import { runDeploy } from "./_deploy.ts";
 import { fileExists } from "./_discover.ts";
-import { listTemplates, runInit } from "./_init.ts";
-import { makeBundle, silenced, withTempDir } from "./_test-utils.ts";
+import {
+  fakeDownloadAndMerge,
+  fakeListTemplates,
+  makeBundle,
+  silenced,
+  withTempDir,
+} from "./_test-utils.ts";
 import { mainCommand } from "./cli.ts";
 
 // --- CLI arg parsing integration ---
@@ -40,6 +45,17 @@ describe("CLI integration: arg parsing", () => {
 
 // --- init integration ---
 
+let fakeTemplatesDir: string;
+
+vi.mock("./_templates.ts", () => ({
+  listTemplates: () => fakeListTemplates(fakeTemplatesDir),
+  downloadAndMergeTemplate: (template: string, targetDir: string) =>
+    fakeDownloadAndMerge(fakeTemplatesDir, template, targetDir),
+}));
+
+const { listTemplates } = await import("./_templates.ts");
+const { runInit } = await import("./_init.ts");
+
 describe("CLI integration: init creates working project", () => {
   async function createFakeTemplates(dir: string): Promise<string> {
     const templatesDir = path.join(dir, "templates");
@@ -61,9 +77,9 @@ describe("CLI integration: init creates working project", () => {
   test("init creates all expected files from template + shared", async () => {
     await withTempDir(
       silenced(async (dir) => {
-        const templatesDir = await createFakeTemplates(dir);
+        fakeTemplatesDir = await createFakeTemplates(dir);
         const target = path.join(dir, "my-project");
-        await runInit({ targetDir: target, template: "simple", templatesDir });
+        await runInit({ targetDir: target, template: "simple" });
 
         expect(await fileExists(path.join(target, "agent.ts"))).toBe(true);
         const agentContent = await fs.readFile(path.join(target, "agent.ts"), "utf-8");
@@ -78,8 +94,8 @@ describe("CLI integration: init creates working project", () => {
 
   test("listTemplates returns only non-underscore directories", async () => {
     await withTempDir(async (dir) => {
-      const templatesDir = await createFakeTemplates(dir);
-      const templates = await listTemplates(templatesDir);
+      fakeTemplatesDir = await createFakeTemplates(dir);
+      const templates = await listTemplates();
       expect(templates).toEqual(["simple"]);
       expect(templates).not.toContain("_shared");
     });
@@ -88,9 +104,9 @@ describe("CLI integration: init creates working project", () => {
   test("init rejects unknown template", async () => {
     await withTempDir(
       silenced(async (dir) => {
-        const templatesDir = await createFakeTemplates(dir);
+        fakeTemplatesDir = await createFakeTemplates(dir);
         await expect(
-          runInit({ targetDir: path.join(dir, "out"), template: "nope", templatesDir }),
+          runInit({ targetDir: path.join(dir, "out"), template: "nope" }),
         ).rejects.toThrow("unknown template");
       }),
     );

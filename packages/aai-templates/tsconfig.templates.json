@@ -12,5 +12,5 @@
       "@alexkroman1/aai-ui/styles.css": ["../aai-ui/styles.css"]
     }
   },
-  "include": ["templates/css.d.ts", "templates/*/agent.ts", "templates/*/client.tsx"]
+  "include": ["css.d.ts", "*/agent.ts", "*/client.tsx"]
 }

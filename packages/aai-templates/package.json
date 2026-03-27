@@ -1,0 +1,12 @@
+{
+  "name": "@alexkroman1/aai-templates",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check:templates": "tsc -p tsconfig.templates.json"
+  },
+  "devDependencies": {
+    "zod": "^4.3.6"
+  }
+}

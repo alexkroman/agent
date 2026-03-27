@@ -1,10 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { ensureApiKeyInEnv, fileExists, isDevMode, resolveCwd } from "./_discover.ts";
 import { askText } from "./_prompts.ts";
@@ -79,17 +77,12 @@ export async function runInitCommand(
     );
   }
 
-  const cliDir = path.dirname(fileURLToPath(import.meta.url));
-  // When running from dist/, templates are one level up
-  const templatesDir = existsSync(path.join(cliDir, "templates"))
-    ? path.join(cliDir, "templates")
-    : path.join(cliDir, "..", "templates");
   const { runInit } = await import("./_init.ts");
   const template = opts.template ?? "simple";
 
   await runCommand(async ({ log }) => {
     log(step("Create", dir));
-    await runInit({ targetDir: cwd, template, templatesDir });
+    await runInit({ targetDir: cwd, template });
     await installDeps(cwd, log);
   });
 

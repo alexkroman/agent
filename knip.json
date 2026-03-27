@@ -16,8 +16,10 @@
       "includeEntryExports": true
     },
     "packages/aai-cli": {
-      "entry": ["**/*.test.ts", "_test-utils.ts"],
-      "ignore": ["templates/**"]
+      "entry": ["**/*.test.ts", "_test-utils.ts"]
+    },
+    "packages/aai-templates": {
+      "ignore": ["**"]
     },
     "packages/aai-server": {
       "entry": ["**/*.test.ts"],
