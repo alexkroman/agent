@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { createSqliteVecVectorStore, createTestEmbedFn } from "./sqlite-vec-vector.ts";
+import { createSqliteVectorStore, createTestEmbedFn } from "./sqlite-vector.ts";
 import { validateVectorFilter } from "./vector.ts";
 
 const embedFn = createTestEmbedFn();
@@ -15,7 +15,7 @@ function makeTmpDir(): string {
 function makeStore(dir?: string) {
   const d = dir ?? makeTmpDir();
   tmpDirs.push(d);
-  return createSqliteVecVectorStore({ path: join(d, "vectors.db"), embedFn });
+  return createSqliteVectorStore({ path: join(d, "vectors.db"), embedFn });
 }
 
 const tmpDirs: string[] = [];
@@ -121,7 +121,7 @@ describe("validateVectorFilter", () => {
   });
 });
 
-describe("createSqliteVecVectorStore", () => {
+describe("createSqliteVectorStore", () => {
   afterEach(() => {
     for (const d of tmpDirs) {
       try {
@@ -241,9 +241,9 @@ describe("createSqliteVecVectorStore", () => {
     const dir = makeTmpDir();
     tmpDirs.push(dir);
     const dbPath = join(dir, "vectors.db");
-    const v1 = createSqliteVecVectorStore({ path: dbPath, embedFn });
+    const v1 = createSqliteVectorStore({ path: dbPath, embedFn });
     await v1.upsert("doc", "persistent data");
-    const v2 = createSqliteVecVectorStore({ path: dbPath, embedFn });
+    const v2 = createSqliteVectorStore({ path: dbPath, embedFn });
     const results = await v2.query("persistent");
     expect(results.length).toBeGreaterThanOrEqual(1);
     expect(results[0]?.data).toBe("persistent data");
@@ -253,7 +253,7 @@ describe("createSqliteVecVectorStore", () => {
     const dir = makeTmpDir();
     tmpDirs.push(dir);
     // Local embeddings — no API key needed
-    const v = createSqliteVecVectorStore({
+    const v = createSqliteVectorStore({
       path: join(dir, "vectors.db"),
       embedFn,
     });

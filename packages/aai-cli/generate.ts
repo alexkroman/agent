@@ -1,5 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import fs from "node:fs/promises";
+import path from "node:path";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { generateText, stepCountIs } from "ai";
 import pc from "picocolors";
@@ -22,15 +24,14 @@ const SYSTEM_PROMPT = `You are a pragmatic, expert coding agent that builds voic
 # Workflow
 
 1. Use glob or ls to see the project structure.
-2. Use read on CLAUDE.md — this is the complete API reference. Read it carefully before writing any code.
-3. Use read on agent.ts to see the current code.
-4. Plan your approach: what name, instructions, greeting, tools, state, and builtinTools does this agent need?
-5. Use write to update agent.ts with the complete implementation. Write the entire file — no placeholders or TODOs.
-6. Use read to verify your changes. If something is wrong, use edit to fix it.
+2. Use read on agent.ts to see the current code.
+3. Plan your approach: what name, instructions, greeting, tools, state, and builtinTools does this agent need?
+4. Use write to update agent.ts with the complete implementation. Write the entire file — no placeholders or TODOs.
+5. Use read to verify your changes. If something is wrong, use edit to fix it.
 
 # Rules
 
-- CLAUDE.md contains the full API reference — always read it first.
+- The API reference is included below — do NOT read CLAUDE.md, it is already in your context.
 - agent.ts must export a default defineAgent() call.
 - Only modify agent.ts (and optionally client.tsx for custom UI).
 - Do NOT create extra files or install packages.
@@ -53,32 +54,149 @@ function formatDuration(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
+function printCode(filePath: string, content: string): void {
+  const lang = path.extname(filePath).slice(1) || "text";
+  const lines = content.split("\n");
+  const maxLines = 40;
+  const truncated = lines.length > maxLines;
+  const shown = truncated ? lines.slice(0, maxLines) : lines;
+  console.log(pc.dim(`  ┌── ${filePath} (${lang})`));
+  for (const line of shown) {
+    console.log(pc.dim(`  │ ${line}`));
+  }
+  if (truncated) {
+    console.log(pc.dim(`  │ ... (${lines.length - maxLines} more lines)`));
+  }
+  console.log(pc.dim("  └──"));
+}
+
+function printBox(text: string): string {
+  const lines = text.split("\n");
+  return [pc.dim("  ┌──"), ...lines.map((line) => pc.dim(`  │ ${line}`)), pc.dim("  └──")].join(
+    "\n",
+  );
+}
+
+function maybeShowCode(toolName: string, input: Record<string, unknown> | undefined): void {
+  if ((toolName === "write" || toolName === "edit") && input) {
+    const filePath = String(input.filePath ?? "");
+    const content = String(input.content ?? input.newString ?? "");
+    if (filePath && content) printCode(filePath, content);
+  }
+}
+
+/** Manages spinner text with an elapsed-time ticker. */
+class SpinnerTimer {
+  spinner;
+  stepNumber = 0;
+  lastAction = "";
+  startMs = Date.now();
+  timer: ReturnType<typeof setInterval> | null = null;
+
+  constructor() {
+    this.spinner = yoctoSpinner({ text: "Planning..." }).start();
+    this.startTicker();
+  }
+
+  private buildText(): string {
+    const elapsed = Math.round((Date.now() - this.startMs) / 1000);
+    const time = elapsed > 0 ? pc.dim(` (${elapsed}s)`) : "";
+    const step = this.stepNumber > 0 ? `Step ${this.stepNumber}` : "Step 1";
+    if (this.lastAction) {
+      return `${pc.dim(step)} · Thinking after ${this.lastAction}...${time}`;
+    }
+    return `${pc.dim(step)} · Planning...${time}`;
+  }
+
+  private startTicker(): void {
+    this.stopTicker();
+    this.timer = setInterval(() => {
+      this.spinner.text = this.buildText();
+    }, 1000);
+  }
+
+  private stopTicker(): void {
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+  }
+
+  /** Reset the elapsed timer and update the thinking context. */
+  resetTimer(lastAction?: string): void {
+    if (lastAction !== undefined) this.lastAction = lastAction;
+    this.startMs = Date.now();
+    this.spinner.text = this.buildText();
+    this.startTicker();
+  }
+
+  /** Update spinner text for a tool that's currently executing. */
+  setToolRunning(label: string): void {
+    this.stopTicker();
+    this.spinner.text = label;
+  }
+
+  /** Print a completed tool line and restart the thinking spinner. */
+  completeTool(line: string, lastAction: string): void {
+    this.spinner.stop(line);
+    this.lastAction = lastAction;
+    this.startMs = Date.now();
+    this.spinner = yoctoSpinner({ text: this.buildText() }).start();
+    this.startTicker();
+  }
+
+  /** Print a text line and restart the thinking spinner. */
+  completeText(text: string): void {
+    this.spinner.stop();
+    console.log(text);
+    this.startMs = Date.now();
+    this.spinner = yoctoSpinner({ text: this.buildText() }).start();
+    this.startTicker();
+  }
+
+  /** Stop the spinner with a final message. */
+  stop(message: string): void {
+    this.stopTicker();
+    this.spinner.stop(message);
+  }
+}
+
 export async function runGenerateCommand(opts: { cwd: string; prompt: string }): Promise<void> {
   const { cwd, prompt } = opts;
   const baseURL = process.env.LLM_BASE_URL ?? "https://llm-gateway.assemblyai.com/v1";
   const modelId = process.env.LLM_MODEL ?? "gpt-5.2";
 
   const apiKey = await getApiKey();
-  let spinner = yoctoSpinner({ text: "Thinking..." }).start();
+
+  // Inject CLAUDE.md into the system prompt so the model doesn't waste a step reading it.
+  let systemPrompt = SYSTEM_PROMPT;
+  try {
+    const claudeMd = await fs.readFile(path.join(cwd, "CLAUDE.md"), "utf-8");
+    systemPrompt += `\n\n# API Reference (CLAUDE.md)\n\n${claudeMd}`;
+  } catch {
+    // No CLAUDE.md — the model can still use tools to discover the API.
+  }
+
+  const st = new SpinnerTimer();
 
   try {
     const provider = createOpenAICompatible({ name: "assemblyai", baseURL, apiKey });
 
     const result = await generateText({
       model: provider(modelId),
-      system: SYSTEM_PROMPT,
+      system: systemPrompt,
       prompt,
       tools: makeTools(cwd),
       maxOutputTokens: 65_536,
       toolChoice: "auto",
       stopWhen: stepCountIs(20),
       experimental_onStepStart: ({ stepNumber }) => {
-        spinner.text = stepNumber === 0 ? "Planning..." : "Thinking...";
+        st.stepNumber = stepNumber + 1;
+        st.resetTimer();
       },
       experimental_onToolCallStart: ({ toolCall }) => {
         const input = toolCall.input as Record<string, unknown> | undefined;
-        const label = toolLabel(toolCall.toolName, input ?? {});
-        spinner.text = label;
+        st.setToolRunning(toolLabel(toolCall.toolName, input ?? {}));
       },
       experimental_onToolCallFinish: ({ toolCall, durationMs, ...rest }) => {
         const input = toolCall.input as Record<string, unknown> | undefined;
@@ -86,22 +204,25 @@ export async function runGenerateCommand(opts: { cwd: string; prompt: string }):
         const time = formatDuration(durationMs);
         const ok = "success" in rest && rest.success;
         const mark = ok ? pc.green("✔") : pc.red("✖");
-        spinner.stop(`${mark} ${label} ${pc.dim(time)}`);
-        spinner = yoctoSpinner({ text: "Thinking..." }).start();
+        const file = String(input?.filePath ?? input?.path ?? input?.pattern ?? "");
+        const action = file ? `${toolCall.toolName} ${file}` : toolCall.toolName;
+
+        st.completeTool(`${mark} ${label} ${pc.dim(time)}`, action);
+        if (ok) maybeShowCode(toolCall.toolName, input);
       },
       onStepFinish: ({ finishReason, text }) => {
         if (finishReason === "stop" && text) {
-          spinner.stop(pc.dim(text.slice(0, 120)));
-          spinner = yoctoSpinner({ text: "Thinking..." }).start();
+          const boxed = printBox(text);
+          st.completeText(boxed);
         }
       },
     });
 
-    spinner.stop(
+    st.stop(
       `${pc.green("✔")} Done ${pc.dim(`(${result.steps.length} steps, ${result.usage.totalTokens} tokens)`)}`,
     );
   } catch (err) {
-    spinner.stop(`${pc.red("✖")} ${err instanceof Error ? err.message : String(err)}`);
+    st.stop(`${pc.red("✖")} ${err instanceof Error ? err.message : String(err)}`);
     process.exitCode = 1;
   }
 }

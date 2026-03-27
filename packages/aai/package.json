@@ -101,10 +101,10 @@
       "types": "./dist/sqlite-kv.d.ts",
       "import": "./dist/sqlite-kv.js"
     },
-    "./sqlite-vec-vector": {
-      "source": "./sqlite-vec-vector.ts",
-      "types": "./dist/sqlite-vec-vector.d.ts",
-      "import": "./dist/sqlite-vec-vector.js"
+    "./sqlite-vector": {
+      "source": "./sqlite-vector.ts",
+      "types": "./dist/sqlite-vector.d.ts",
+      "import": "./dist/sqlite-vector.js"
     }
   },
   "scripts": {
@@ -116,11 +116,9 @@
   },
   "dependencies": {
     "@huggingface/transformers": "^3.8.1",
-    "better-sqlite3": "^12.8.0",
     "html-to-text": "^9.0.5",
     "nanoevents": "^9.1.0",
     "secure-exec": "^0.1.0",
-    "sqlite-vec": "^0.1.7",
     "ws": "^8.20.0",
     "zod": "^4.3.6"
   },
@@ -145,7 +143,6 @@
     }
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
     "@types/html-to-text": "^9.0.4",
     "@types/json-schema": "^7.0.15",
     "@types/ws": "^8.18.1",

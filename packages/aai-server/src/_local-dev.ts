@@ -8,7 +8,7 @@ import { mkdirSync } from "node:fs";
 import type { Kv } from "@alexkroman1/aai/kv";
 import { MAX_VALUE_SIZE, matchGlob } from "@alexkroman1/aai/kv";
 import { createSqliteKv } from "@alexkroman1/aai/sqlite-kv";
-import { createSqliteVecVectorStore } from "@alexkroman1/aai/sqlite-vec-vector";
+import { createSqliteVectorStore } from "@alexkroman1/aai/sqlite-vector";
 import type { VectorEntry } from "@alexkroman1/aai/vector";
 import { type AgentMetadata, AgentMetadataSchema } from "./_schemas.ts";
 import type { BundleStore } from "./bundle-store-tigris.ts";
@@ -139,7 +139,7 @@ function vectorScope(scope: AgentScope): string {
 /** Wrap the SDK's SQLite-vec VectorStore into a scoped ServerVectorStore. */
 export function createLocalVectorStore(): ServerVectorStore {
   mkdirSync(DATA_DIR, { recursive: true });
-  const store = createSqliteVecVectorStore({ path: `${DATA_DIR}/vectors.db` });
+  const store = createSqliteVectorStore({ path: `${DATA_DIR}/vectors.db` });
   return {
     async upsert(scope, id, data, metadata) {
       const scopedId = `${vectorScope(scope)}:${id}`;

@@ -43,7 +43,7 @@ import { join } from "node:path";
 import { createDirectExecutor, type DirectExecutor } from "./direct-executor.ts";
 import type { Kv } from "./kv.ts";
 import { createSqliteKv } from "./sqlite-kv.ts";
-import { createSqliteVecVectorStore, createTestEmbedFn } from "./sqlite-vec-vector.ts";
+import { createSqliteVectorStore, createTestEmbedFn } from "./sqlite-vector.ts";
 import type { AgentDef, Message, StepInfo } from "./types.ts";
 import type { VectorStore } from "./vector.ts";
 
@@ -391,7 +391,7 @@ export class TestHarness {
  */
 function createTestVectorStore(): VectorStore {
   const dir = mkdtempSync(join(tmpdir(), "aai-test-vec-"));
-  return createSqliteVecVectorStore({
+  return createSqliteVectorStore({
     path: join(dir, "vectors.db"),
     embedFn: createTestEmbedFn(),
   });

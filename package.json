@@ -22,8 +22,7 @@
     "changeset": "changeset",
     "version": "changeset version",
     "release": "pnpm -r run build && changeset publish",
-    "prepare": "lefthook install",
-    "postinstall": "pnpm rebuild better-sqlite3 2>/dev/null || true"
+    "prepare": "lefthook install"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.2",

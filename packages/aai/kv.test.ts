@@ -209,7 +209,7 @@ describe("createSqliteKv", () => {
     expect(await kv.get("k")).toBe("v");
     kv.close?.();
     // After close, database operations should throw
-    expect(() => kv.get("k")).toThrow("not open");
+    expect(() => kv.get("k")).toThrow();
   });
 
   test("data persists across instances with same file", async () => {

@@ -26,7 +26,7 @@ import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime.ts";
 import type { CreateS2sWebSocket } from "./s2s.ts";
 import { createS2sSession, type HookInvoker, type Session } from "./session.ts";
 import { createSqliteKv } from "./sqlite-kv.ts";
-import { createSqliteVecVectorStore } from "./sqlite-vec-vector.ts";
+import { createSqliteVectorStore } from "./sqlite-vector.ts";
 import type { AgentDef, HookContext, Middleware, StepInfo } from "./types.ts";
 import type { VectorStore } from "./vector.ts";
 import type { ExecuteTool } from "./worker-entry.ts";
@@ -41,7 +41,7 @@ function createLocalKv(): Kv {
 /** Create a SQLite-vec backed vector store in `.aai/vectors.db`. */
 function createLocalVectorStore(): VectorStore {
   mkdirSync(".aai", { recursive: true });
-  return createSqliteVecVectorStore({ path: ".aai/vectors.db" });
+  return createSqliteVectorStore({ path: ".aai/vectors.db" });
 }
 
 /**

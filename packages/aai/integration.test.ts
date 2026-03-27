@@ -14,7 +14,7 @@ import { z } from "zod";
 import { toAgentConfig } from "./_internal-types.ts";
 import { createDirectExecutor } from "./direct-executor.ts";
 import { createSqliteKv } from "./sqlite-kv.ts";
-import { createSqliteVecVectorStore, createTestEmbedFn } from "./sqlite-vec-vector.ts";
+import { createSqliteVectorStore, createTestEmbedFn } from "./sqlite-vector.ts";
 import { defineAgent, defineTool } from "./types.ts";
 
 describe("SDK integration: defineAgent → tool execution", () => {
@@ -67,7 +67,7 @@ describe("SDK integration: defineAgent → tool execution", () => {
 
   test("tool with vector store access works end-to-end", async () => {
     const dir = mkdtempSync(join(tmpdir(), "aai-int-vec-"));
-    const vector = createSqliteVecVectorStore({
+    const vector = createSqliteVectorStore({
       path: join(dir, "vectors.db"),
       embedFn: createTestEmbedFn(),
     });

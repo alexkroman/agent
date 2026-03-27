@@ -1,16 +1,16 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * SQLite-vec backed vector store with local embeddings.
+ * SQLite-backed vector store with local embeddings.
  *
  * Persists data across restarts using a local SQLite database file.
- * Uses the sqlite-vec extension for vector similarity search.
+ * Uses brute-force cosine similarity over `node:sqlite` — no native
+ * extensions required. Fast enough for local dev (sub-ms for <10k vectors).
  * Embeddings are computed locally via `all-MiniLM-L6-v2` (384 dims) —
  * no external API key required. The model is downloaded on first use
  * (~86 MB) and cached in `.aai/models/`.
  */
 
-import Database from "better-sqlite3";
-import * as sqliteVec from "sqlite-vec";
+import { DatabaseSync } from "node:sqlite";
 import type { VectorEntry, VectorStore } from "./vector.ts";
 
 /** Function that converts text into an embedding vector. */
@@ -30,8 +30,6 @@ export type SqliteVecVectorStoreOptions = {
   modelCacheDir?: string;
 };
 
-const TABLE_NAME = "vec_items";
-const META_TABLE = "vec_meta";
 const DEFAULT_DIMENSIONS = 384;
 const DEFAULT_MODEL = "Xenova/all-MiniLM-L6-v2";
 
@@ -93,122 +91,112 @@ export function createTestEmbedFn(dimensions = DEFAULT_DIMENSIONS): EmbedFn {
   };
 }
 
+/** Cosine similarity between two vectors stored as Buffers of float32. */
+function cosineSimilarity(a: Buffer, b: Buffer): number {
+  const fa = new Float32Array(a.buffer, a.byteOffset, a.byteLength / 4);
+  const fb = new Float32Array(b.buffer, b.byteOffset, b.byteLength / 4);
+  let dot = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let i = 0; i < fa.length; i++) {
+    const ai = fa[i] ?? 0;
+    const bi = fb[i] ?? 0;
+    dot += ai * bi;
+    normA += ai * ai;
+    normB += bi * bi;
+  }
+  const denom = Math.sqrt(normA) * Math.sqrt(normB);
+  return denom === 0 ? 0 : dot / denom;
+}
+
 /**
- * Create a SQLite-vec backed vector store with local embeddings.
+ * Create a SQLite-backed vector store with local embeddings.
  *
  * Data persists to a local SQLite file (default: `.aai/vectors.db`).
  * Embeddings are computed locally using `all-MiniLM-L6-v2` by default —
  * no API key required. The model auto-downloads on first use (~86 MB).
+ *
+ * Vector search uses brute-force cosine similarity over all stored
+ * embeddings. This is fast for local dev workloads (<10k vectors).
  *
  * @param options - See {@link SqliteVecVectorStoreOptions}.
  * @returns A {@link VectorStore} instance.
  *
  * @example
  * ```ts
- * import { createSqliteVecVectorStore } from "@alexkroman1/aai/sqlite-vec-vector";
+ * import { createSqliteVectorStore } from "@alexkroman1/aai/sqlite-vector";
  *
- * const vector = createSqliteVecVectorStore();
+ * const vector = createSqliteVectorStore();
  * await vector.upsert("doc-1", "The capital of France is Paris.");
  * const results = await vector.query("France capital");
  * ```
  */
-export function createSqliteVecVectorStore(options?: SqliteVecVectorStoreOptions): VectorStore {
+export function createSqliteVectorStore(options?: SqliteVecVectorStoreOptions): VectorStore {
   const dbPath = options?.path ?? ".aai/vectors.db";
-  const dimensions = options?.dimensions ?? DEFAULT_DIMENSIONS;
   const cacheDir = options?.modelCacheDir ?? ".aai/models";
   const embedFn: EmbedFn = options?.embedFn ?? createLocalEmbedFn(cacheDir);
 
-  const db = new Database(dbPath);
-  db.pragma("journal_mode = WAL");
-  sqliteVec.load(db);
+  const db = new DatabaseSync(dbPath);
+  db.exec("PRAGMA journal_mode = WAL");
 
-  // Metadata table: stores id, data, and metadata alongside the vec0 index.
-  // vec0 auxiliary columns are limited, so we use a separate table joined by id.
   db.exec(`
-    CREATE TABLE IF NOT EXISTS ${META_TABLE} (
+    CREATE TABLE IF NOT EXISTS vectors (
       id TEXT PRIMARY KEY,
       data TEXT NOT NULL,
-      metadata TEXT NOT NULL DEFAULT ''
+      metadata TEXT NOT NULL DEFAULT '',
+      embedding BLOB NOT NULL
     )
   `);
 
-  // vec0 virtual table for vector search with cosine distance
-  db.exec(`
-    CREATE VIRTUAL TABLE IF NOT EXISTS ${TABLE_NAME} USING vec0(
-      id TEXT PRIMARY KEY,
-      embedding float[${dimensions}] distance_metric=cosine
-    )
-  `);
-
-  const stmtUpsertMeta = db.prepare(
-    `INSERT OR REPLACE INTO ${META_TABLE} (id, data, metadata) VALUES (?, ?, ?)`,
+  const stmtUpsert = db.prepare(
+    "INSERT OR REPLACE INTO vectors (id, data, metadata, embedding) VALUES (?, ?, ?, ?)",
   );
-  const stmtDeleteMeta = db.prepare(`DELETE FROM ${META_TABLE} WHERE id = ?`);
-  const stmtDeleteVec = db.prepare(`DELETE FROM ${TABLE_NAME} WHERE id = ?`);
-  const stmtInsertVec = db.prepare(`INSERT INTO ${TABLE_NAME} (id, embedding) VALUES (?, ?)`);
-  const stmtQuery = db.prepare(
-    `SELECT v.id, v.distance, m.data, m.metadata
-     FROM ${TABLE_NAME} v
-     LEFT JOIN ${META_TABLE} m ON m.id = v.id
-     WHERE v.embedding MATCH ?
-     AND v.k = ?`,
-  );
-
-  const upsertTransaction = db.transaction(
-    (id: string, data: string, metaJson: string, embedding: Float32Array) => {
-      // Delete existing entry if present (vec0 doesn't support INSERT OR REPLACE)
-      stmtDeleteVec.run(id);
-      stmtDeleteMeta.run(id);
-      stmtInsertVec.run(id, embedding);
-      stmtUpsertMeta.run(id, data, metaJson);
-    },
-  );
-
-  const deleteTransaction = db.transaction((id: string) => {
-    stmtDeleteVec.run(id);
-    stmtDeleteMeta.run(id);
-  });
+  const stmtDelete = db.prepare("DELETE FROM vectors WHERE id = ?");
+  const stmtAll = db.prepare("SELECT id, data, metadata, embedding FROM vectors");
 
   return {
     async upsert(id: string, data: string, metadata?: Record<string, unknown>): Promise<void> {
       const vector = await embedFn(data);
+      const embedding = Buffer.from(new Float32Array(vector).buffer);
       const metaJson = metadata ? JSON.stringify(metadata) : "";
-      const embedding = new Float32Array(vector);
-      upsertTransaction(id, data, metaJson, embedding);
+      stmtUpsert.run(id, data, metaJson, embedding);
     },
 
     async query(
       text: string,
-      options?: { topK?: number; filter?: string },
+      queryOptions?: { topK?: number; filter?: string },
     ): Promise<VectorEntry[]> {
-      const topK = options?.topK ?? 10;
+      const topK = queryOptions?.topK ?? 10;
       if (!text.trim()) return [];
 
       const queryVec = await embedFn(text);
-      const embedding = new Float32Array(queryVec);
+      const queryBuf = Buffer.from(new Float32Array(queryVec).buffer);
 
-      const rows = stmtQuery.all(embedding, topK) as {
+      const rows = stmtAll.all() as {
         id: string;
-        distance: number;
-        data: string | null;
-        metadata: string | null;
+        data: string;
+        metadata: string;
+        embedding: Buffer;
       }[];
 
-      return rows.map((row) => ({
+      const scored = rows.map((row) => ({
         id: row.id,
-        score: 1 - row.distance, // cosine distance -> similarity
-        data: row.data ?? undefined,
+        score: cosineSimilarity(queryBuf, row.embedding),
+        data: row.data,
         metadata:
           row.metadata && row.metadata !== ""
             ? (JSON.parse(row.metadata) as Record<string, unknown>)
             : undefined,
       }));
+
+      scored.sort((a, b) => b.score - a.score);
+      return scored.slice(0, topK);
     },
 
     async delete(ids: string | string[]): Promise<void> {
       const idArray = Array.isArray(ids) ? ids : [ids];
       for (const id of idArray) {
-        deleteTransaction(id);
+        stmtDelete.run(id);
       }
     },
   };
