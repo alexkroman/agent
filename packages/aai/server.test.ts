@@ -108,4 +108,65 @@ describe("createServer", () => {
     });
     expect(server).toHaveProperty("close");
   });
+
+  test("throws when both clientHtml and clientDir are provided", () => {
+    expect(() =>
+      createServer({
+        agent: makeAgent(),
+        env: {},
+        clientHtml: "<h1>Custom</h1>",
+        clientDir: "./public",
+        logger: silentLogger,
+      }),
+    ).toThrow("mutually exclusive");
+  });
+
+  test("warns when no authToken is configured", async () => {
+    const logger = { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() };
+    server = createServer({ agent: makeAgent(), env: {}, logger });
+    await server.listen(0);
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("No authToken configured"));
+  });
+
+  test("does not warn when authToken is provided", async () => {
+    const logger = { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() };
+    server = createServer({ agent: makeAgent(), env: {}, logger, authToken: "secret" });
+    await server.listen(0);
+    const warnCalls = logger.warn.mock.calls.map((c: unknown[]) => String(c[0]));
+    expect(warnCalls.every((m) => !m.includes("No authToken"))).toBe(true);
+  });
+
+  test("successful request triggers info-level logging", async () => {
+    const logger = { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() };
+    server = createServer({ agent: makeAgent(), env: {}, logger });
+    await server.listen(0);
+    await fetch(`http://localhost:${server.port}/health`);
+    await vi.waitFor(() =>
+      expect(logger.info).toHaveBeenCalledWith(expect.stringMatching(/GET \/health 200/)),
+    );
+  });
+
+  test("port returns undefined before listen", () => {
+    server = createServer({ agent: makeAgent(), env: {}, logger: silentLogger });
+    expect(server.port).toBeUndefined();
+  });
+
+  test("port returns actual port after listen", async () => {
+    server = createServer({ agent: makeAgent(), env: {}, logger: silentLogger });
+    await server.listen(0);
+    expect(server.port).toBeGreaterThan(0);
+  });
+
+  test("listen throws if called twice", async () => {
+    server = createServer({ agent: makeAgent(), env: {}, logger: silentLogger });
+    await server.listen(0);
+    await expect(server.listen(0)).rejects.toThrow("already listening");
+  });
+
+  test("/ returns CSP header", async () => {
+    server = createServer({ agent: makeAgent(), env: {}, logger: silentLogger });
+    await server.listen(0);
+    const res = await fetch(`http://localhost:${server.port}/`);
+    expect(res.headers.get("Content-Security-Policy")).toContain("default-src 'self'");
+  });
 });

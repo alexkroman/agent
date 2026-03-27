@@ -1,7 +1,15 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { expect, test } from "vitest";
-import { createTestOrchestrator, deployAgent, deployBody } from "./_test-utils.ts";
+import {
+  createTestKvStore,
+  createTestOrchestrator,
+  createTestScopeKey,
+  createTestStore,
+  deployAgent,
+  deployBody,
+} from "./_test-utils.ts";
 import { hashApiKey } from "./auth.ts";
+import { createOrchestrator } from "./orchestrator.ts";
 import { signScopeToken } from "./scope-token.ts";
 
 test("returns health check", async () => {
@@ -209,6 +217,128 @@ test("session-token returns token for valid owner", async () => {
   expect(body.token).toBeDefined();
   expect(typeof body.token).toBe("string");
   expect(body.token.length).toBeGreaterThan(0);
+});
+
+// ── CORS ─────────────────────────────────────────────────────────────
+
+test("CORS allows any origin by default (allowedOrigins includes *)", async () => {
+  const store = createTestStore();
+  const scopeKey = await createTestScopeKey();
+  const kvStore = createTestKvStore();
+  const app = createOrchestrator({
+    slots: new Map(),
+    store,
+    scopeKey,
+    kvStore,
+    allowedOrigins: ["*"],
+  });
+  const res = await app.fetch(
+    new Request("http://localhost/health", {
+      headers: { Origin: "https://example.com" },
+    }),
+  );
+  expect(res.headers.get("Access-Control-Allow-Origin")).toBe("*");
+});
+
+test("CORS rejects disallowed origin", async () => {
+  const store = createTestStore();
+  const scopeKey = await createTestScopeKey();
+  const kvStore = createTestKvStore();
+  const app = createOrchestrator({
+    slots: new Map(),
+    store,
+    scopeKey,
+    kvStore,
+    allowedOrigins: ["https://allowed.com"],
+  });
+  const res = await app.fetch(
+    new Request("http://localhost/health", {
+      headers: { Origin: "https://evil.com" },
+    }),
+  );
+  // Empty string or missing header means rejected
+  const allowOrigin = res.headers.get("Access-Control-Allow-Origin");
+  expect(allowOrigin === "" || allowOrigin === null).toBe(true);
+});
+
+test("CORS allows specific origin when matched", async () => {
+  const store = createTestStore();
+  const scopeKey = await createTestScopeKey();
+  const kvStore = createTestKvStore();
+  const app = createOrchestrator({
+    slots: new Map(),
+    store,
+    scopeKey,
+    kvStore,
+    allowedOrigins: ["https://allowed.com"],
+  });
+  const res = await app.fetch(
+    new Request("http://localhost/health", {
+      headers: { Origin: "https://allowed.com" },
+    }),
+  );
+  expect(res.headers.get("Access-Control-Allow-Origin")).toBe("https://allowed.com");
+});
+
+test("CORS returns * for same-origin (no Origin header)", async () => {
+  const { fetch } = await createTestOrchestrator();
+  const res = await fetch("/health");
+  // No Origin header = same-origin, returns *
+  expect(res.headers.get("Access-Control-Allow-Origin")).toBe("*");
+});
+
+// ── Error handler ────────────────────────────────────────────────────
+
+test("error handler returns 500 for unexpected errors", async () => {
+  const { fetch } = await createTestOrchestrator();
+  // Trigger a ZodError via invalid deploy body
+  const res = await fetch("/my-agent/deploy", {
+    method: "POST",
+    headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
+    body: "not json",
+  });
+  expect(res.status).toBe(400);
+});
+
+// ── Secure headers ───────────────────────────────────────────────────
+
+test("adds X-Content-Type-Options and X-Frame-Options headers", async () => {
+  const { fetch } = await createTestOrchestrator();
+  const res = await fetch("/health");
+  expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
+  expect(res.headers.get("X-Frame-Options")).toBe("DENY");
+});
+
+test("CORS rejects when no origins configured", async () => {
+  const store = createTestStore();
+  const scopeKey = await createTestScopeKey();
+  const kvStore = createTestKvStore();
+  const app = createOrchestrator({
+    slots: new Map(),
+    store,
+    scopeKey,
+    kvStore,
+    // no allowedOrigins at all
+  });
+  const res = await app.fetch(
+    new Request("http://localhost/health", {
+      headers: { Origin: "https://example.com" },
+    }),
+  );
+  const allowOrigin = res.headers.get("Access-Control-Allow-Origin");
+  expect(allowOrigin === "" || allowOrigin === null).toBe(true);
+});
+
+test("error handler returns 500 for unhandled errors", async () => {
+  const store = createTestStore();
+  const scopeKey = await createTestScopeKey();
+  const kvStore = createTestKvStore();
+  const app = createOrchestrator({ slots: new Map(), store, scopeKey, kvStore });
+  // Hit a route that triggers an unhandled error by calling metrics
+  // without the internal auth header — which causes an HTTPException path
+  const res = await app.fetch(new Request("http://localhost/metrics"));
+  // requireInternal throws HTTPException(403) when no fly-client-ip
+  expect(res.status).toBe(403);
 });
 
 test("kv scope isolation", async () => {

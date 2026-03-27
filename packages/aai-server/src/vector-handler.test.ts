@@ -87,6 +87,34 @@ describe("vector handler", () => {
     expect((json.result as unknown[]).length).toBe(0);
   });
 
+  test("delete removes vectors and returns OK", async () => {
+    const vs = createTestVectorStore();
+    await vs.upsert(SCOPE, "doc1", "hello");
+    const { status, json } = await postVector({ op: "delete", ids: ["doc1"] }, vs);
+    expect(status).toBe(200);
+    expect(json.result).toBe("OK");
+  });
+
+  test("query with custom topK", async () => {
+    const vs = createTestVectorStore();
+    await vs.upsert(SCOPE, "doc1", "hello world");
+    await vs.upsert(SCOPE, "doc2", "hello there");
+    const { status, json } = await postVector({ op: "query", text: "hello", topK: 1 }, vs);
+    expect(status).toBe(200);
+    const result = json.result as unknown[];
+    expect(result).toHaveLength(1);
+  });
+
+  test("upsert with metadata", async () => {
+    const vs = createTestVectorStore();
+    const { status, json } = await postVector(
+      { op: "upsert", id: "doc1", data: "hello", metadata: { source: "test" } },
+      vs,
+    );
+    expect(status).toBe(200);
+    expect(json.result).toBe("OK");
+  });
+
   test("returns 500 when store throws", async () => {
     const failingStore = {
       upsert: () => Promise.reject(new Error("vec down")),

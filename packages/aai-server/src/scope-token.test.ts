@@ -39,6 +39,19 @@ describe("scope tokens", () => {
     expect(await verifyScopeToken(key2, token)).toBeNull();
   });
 
+  test("rejects valid JWT with missing scope fields", async () => {
+    const key = await importScopeKey("test-secret");
+    const { SignJWT } = await import("jose");
+    const now = Math.floor(Date.now() / 1000);
+    // Valid JWT but payload is missing required 'sub' and 'scope'
+    const token = await new SignJWT({ foo: "bar" })
+      .setProtectedHeader({ alg: "HS256" })
+      .setIssuedAt(now)
+      .setExpirationTime(now + 3600)
+      .sign(key);
+    expect(await verifyScopeToken(key, token)).toBeNull();
+  });
+
   test("rejects expired token", async () => {
     const key = await importScopeKey("test-secret");
     // Create a token that expired 10 seconds ago by manually crafting with jose

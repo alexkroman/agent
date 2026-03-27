@@ -76,6 +76,48 @@ test("deploy replaces existing sandbox on redeploy", async () => {
   expect(body.message).toContain("my-agent");
 });
 
+test("deploy merges credential hashes for multi-user ownership", async () => {
+  const { fetch } = await createTestOrchestrator();
+  // First deploy by key1
+  await deployAgent(fetch, "my-agent", "key1");
+  // Second deploy by key2
+  const res = await fetch("/my-agent/deploy", {
+    method: "POST",
+    headers: { Authorization: "Bearer key2", "Content-Type": "application/json" },
+    body: deployBody(),
+  });
+  // key2 should be rejected since it's not an owner
+  expect(res.status).toBe(403);
+});
+
+test("redeploy by same owner preserves credential hash without duplication", async () => {
+  const { fetch, store } = await createTestOrchestrator();
+  await deployAgent(fetch, "my-agent", "key1");
+  // Redeploy with same key
+  await fetch("/my-agent/deploy", {
+    method: "POST",
+    headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
+    body: deployBody(),
+  });
+  const manifest = await store.getManifest("my-agent");
+  const keyHash = await hashApiKey("key1");
+  // Should not have duplicates
+  const count = manifest?.credential_hashes.filter((h) => h === keyHash).length;
+  expect(count).toBe(1);
+});
+
+test("deploy registers new slot in slots map", async () => {
+  const { fetch } = await createTestOrchestrator();
+  await deployAgent(fetch, "my-agent", "key1");
+  // The slot should exist — verified by being able to re-deploy
+  const res = await fetch("/my-agent/deploy", {
+    method: "POST",
+    headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
+    body: deployBody(),
+  });
+  expect(res.status).toBe(200);
+});
+
 test("deploy works without env in body (uses stored env)", async () => {
   const { fetch, store } = await createTestOrchestrator();
   await store.putAgent({

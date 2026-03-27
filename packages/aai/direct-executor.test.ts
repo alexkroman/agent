@@ -242,4 +242,111 @@ describe("createDirectExecutor", () => {
     const result = await exec.executeTool("get_env", {}, "s1", []);
     expect(result).toBe("hello");
   });
+
+  test("middleware filterInput is called when middleware exists", async () => {
+    const agent = makeAgent({
+      middleware: [
+        {
+          name: "upper",
+          beforeInput: (text: string) => text.toUpperCase(),
+        },
+      ],
+    });
+    const exec = createDirectExecutor({ agent, env: {} });
+    const result = await exec.hookInvoker.filterInput?.("s1", "hello");
+    expect(result).toBe("HELLO");
+  });
+
+  test("middleware filterInput returns text unchanged when no middleware", async () => {
+    const agent = makeAgent({ middleware: [] });
+    const exec = createDirectExecutor({ agent, env: {} });
+    const result = await exec.hookInvoker.filterInput?.("s1", "hello");
+    expect(result).toBe("hello");
+  });
+
+  test("middleware filterOutput returns text unchanged when no middleware", async () => {
+    const agent = makeAgent({ middleware: [] });
+    const exec = createDirectExecutor({ agent, env: {} });
+    const result = await exec.hookInvoker.filterOutput?.("s1", "hello");
+    expect(result).toBe("hello");
+  });
+
+  test("middleware filterOutput is called when middleware exists", async () => {
+    const agent = makeAgent({
+      middleware: [
+        {
+          name: "tag",
+          beforeOutput: (text: string) => `[filtered] ${text}`,
+        },
+      ],
+    });
+    const exec = createDirectExecutor({ agent, env: {} });
+    const result = await exec.hookInvoker.filterOutput?.("s1", "response");
+    expect(result).toBe("[filtered] response");
+  });
+
+  test("middleware beforeTurn returns undefined when no middleware", async () => {
+    const agent = makeAgent({ middleware: [] });
+    const exec = createDirectExecutor({ agent, env: {} });
+    const result = await exec.hookInvoker.beforeTurn?.("s1", "text");
+    expect(result).toBeUndefined();
+  });
+
+  test("middleware afterTurn completes when no middleware", async () => {
+    const agent = makeAgent({ middleware: [] });
+    const exec = createDirectExecutor({ agent, env: {} });
+    await expect(exec.hookInvoker.afterTurn?.("s1", "text")).resolves.toBeUndefined();
+  });
+
+  test("middleware interceptToolCall returns undefined when no middleware", async () => {
+    const agent = makeAgent({ middleware: [] });
+    const exec = createDirectExecutor({ agent, env: {} });
+    const result = await exec.hookInvoker.interceptToolCall?.("s1", "tool", {});
+    expect(result).toBeUndefined();
+  });
+
+  test("middleware afterToolCall completes when no middleware", async () => {
+    const agent = makeAgent({ middleware: [] });
+    const exec = createDirectExecutor({ agent, env: {} });
+    await expect(
+      exec.hookInvoker.afterToolCall?.("s1", "tool", {}, "result"),
+    ).resolves.toBeUndefined();
+  });
+
+  test("resolveTurnConfig returns null when maxSteps function returns undefined", async () => {
+    const agent = makeAgent({ maxSteps: () => undefined as unknown as number });
+    const exec = createDirectExecutor({ agent, env: {} });
+    const config = await exec.hookInvoker.resolveTurnConfig("s1");
+    expect(config).toBe(null);
+  });
+
+  test("toolSchemas works without builtinTools", () => {
+    const agent = makeAgent({
+      tools: {
+        custom: { description: "Custom", execute: () => "ok" },
+      },
+    });
+    const exec = createDirectExecutor({ agent, env: {} });
+    const names = exec.toolSchemas.map((s) => s.name);
+    expect(names).toContain("custom");
+    expect(names).not.toContain("run_code");
+  });
+
+  test("executeTool handles missing sessionId", async () => {
+    const agent = makeAgent({
+      tools: {
+        echo: { description: "Echo", execute: () => "ok" },
+      },
+    });
+    const exec = createDirectExecutor({ agent, env: {} });
+    const result = await exec.executeTool("echo", {}, undefined as unknown as string, []);
+    expect(result).toBe("ok");
+  });
+
+  test("hookInvoker.onConnect and onDisconnect with no agent hooks", async () => {
+    const agent = makeAgent({});
+    const exec = createDirectExecutor({ agent, env: {} });
+    await expect(exec.hookInvoker.onConnect("s1")).resolves.toBeUndefined();
+    await expect(exec.hookInvoker.onDisconnect("s1")).resolves.toBeUndefined();
+  });
 });

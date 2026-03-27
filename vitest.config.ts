@@ -29,12 +29,30 @@ export default defineConfig({
         // CLI entry point and interactive prompts can't be unit tested.
         "**/cli.ts",
         "**/_prompts.ts",
+        // CLI subcommands that spawn processes / require real Vite builds.
+        "**/aai-cli/dev.ts",
+        "**/aai-cli/test.ts",
+        "**/aai-cli/_bundler.ts",
+        "**/aai-cli/_build.ts",
+        "**/aai-cli/_discover.ts",
+        // UI: re-export barrel, Preact signal wiring, and presentational components
+        // that need real browser APIs or are trivially presentational.
+        "**/aai-ui/index.ts",
+        "**/aai-ui/signals.ts",
+        "**/aai-ui/_components/sidebar-layout.tsx",
+        "**/aai-ui/_components/tool-icons.tsx",
+        "**/aai-ui/_components/tool-call-block.tsx",
+        "**/aai-ui/mount.tsx",
+        // OTel wiring — no-op when no SDK configured.
+        "**/aai/telemetry.ts",
+        // run_code uses secure-exec V8 isolates; covered by integration tests.
+        "**/_run-code.ts",
       ],
       thresholds: {
-        lines: 60,
-        functions: 60,
-        branches: 60,
-        statements: 60,
+        lines: 80,
+        functions: 80,
+        branches: 80,
+        statements: 80,
       },
     },
     projects: [

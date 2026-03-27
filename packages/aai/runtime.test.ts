@@ -2,7 +2,7 @@
 
 import { type Span, type SpanContext, TraceFlags, trace } from "@opentelemetry/api";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { jsonLogger } from "./runtime.ts";
+import { consoleLogger, jsonLogger } from "./runtime.ts";
 
 /** Parse the JSON line at `index` from `chunks`, failing if missing. */
 function parseEntry(chunks: string[], index: number): Record<string, unknown> {
@@ -106,5 +106,83 @@ describe("jsonLogger", () => {
     const entry = parseEntry(stdoutChunks, 0);
     expect(entry.trace_id).toBeUndefined();
     expect(entry.span_id).toBeUndefined();
+  });
+
+  it("outputs entry without context fields when ctx is omitted", () => {
+    setup();
+    jsonLogger.info("bare message");
+    const entry = parseEntry(stdoutChunks, 0);
+    expect(entry.msg).toBe("bare message");
+    expect(entry.level).toBe("info");
+    // Should not have extra context keys beyond timestamp/level/msg
+    const keys = Object.keys(entry);
+    expect(keys).toEqual(expect.arrayContaining(["timestamp", "level", "msg"]));
+    expect(keys).toHaveLength(3);
+  });
+
+  it("debug level writes to stdout", () => {
+    setup();
+    jsonLogger.debug("debug message");
+    expect(stdoutChunks).toHaveLength(1);
+    expect(stderrChunks).toHaveLength(0);
+    expect(parseEntry(stdoutChunks, 0).level).toBe("debug");
+  });
+});
+
+describe("consoleLogger", () => {
+  it("calls console.log for info with context", () => {
+    const spy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    consoleLogger.info("msg", { key: "val" });
+    expect(spy).toHaveBeenCalledWith("msg", { key: "val" });
+    spy.mockRestore();
+  });
+
+  it("calls console.log for info without context", () => {
+    const spy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    consoleLogger.info("msg");
+    expect(spy).toHaveBeenCalledWith("msg");
+    spy.mockRestore();
+  });
+
+  it("calls console.warn for warn with context", () => {
+    const spy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    consoleLogger.warn("warning", { detail: 1 });
+    expect(spy).toHaveBeenCalledWith("warning", { detail: 1 });
+    spy.mockRestore();
+  });
+
+  it("calls console.warn for warn without context", () => {
+    const spy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    consoleLogger.warn("warning");
+    expect(spy).toHaveBeenCalledWith("warning");
+    spy.mockRestore();
+  });
+
+  it("calls console.error for error with context", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    consoleLogger.error("err", { code: 500 });
+    expect(spy).toHaveBeenCalledWith("err", { code: 500 });
+    spy.mockRestore();
+  });
+
+  it("calls console.error for error without context", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    consoleLogger.error("err");
+    expect(spy).toHaveBeenCalledWith("err");
+    spy.mockRestore();
+  });
+
+  it("calls console.debug for debug with context", () => {
+    const spy = vi.spyOn(console, "debug").mockImplementation(() => undefined);
+    consoleLogger.debug("dbg", { v: true });
+    expect(spy).toHaveBeenCalledWith("dbg", { v: true });
+    spy.mockRestore();
+  });
+
+  it("calls console.debug for debug without context", () => {
+    const spy = vi.spyOn(console, "debug").mockImplementation(() => undefined);
+    consoleLogger.debug("dbg");
+    expect(spy).toHaveBeenCalledWith("dbg");
+    spy.mockRestore();
   });
 });
