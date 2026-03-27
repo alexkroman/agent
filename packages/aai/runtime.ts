@@ -7,8 +7,14 @@
  * and the {@link S2SConfig} for Speech-to-Speech endpoint configuration.
  */
 
-import { context, trace } from "@opentelemetry/api";
 import { DEFAULT_STT_SAMPLE_RATE, DEFAULT_TTS_SAMPLE_RATE } from "./protocol.ts";
+
+let _otel: typeof import("@opentelemetry/api") | undefined;
+try {
+  _otel = await import("@opentelemetry/api");
+} catch {
+  // @opentelemetry/api is an optional peer dependency
+}
 
 /** Structured context attached to log messages. */
 export type LogContext = Record<string, unknown>;
@@ -58,11 +64,13 @@ function jsonLog(level: string) {
     };
 
     // Attach OTel trace context when available.
-    const span = trace.getSpan(context.active());
-    if (span) {
-      const sc = span.spanContext();
-      entry.trace_id = sc.traceId;
-      entry.span_id = sc.spanId;
+    if (_otel) {
+      const span = _otel.trace.getSpan(_otel.context.active());
+      if (span) {
+        const sc = span.spanContext();
+        entry.trace_id = sc.traceId;
+        entry.span_id = sc.spanId;
+      }
     }
 
     if (ctx) {
