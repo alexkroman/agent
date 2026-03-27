@@ -20,6 +20,7 @@ export default defineConfig({
     "testing.ts",
     "matchers.ts",
     "_utils.ts",
+    "_ssrf.ts",
     "middleware-core.ts",
   ],
   format: "esm",
