@@ -7,6 +7,7 @@ RUN corepack enable && corepack prepare pnpm@10.29.3 --activate
 
 # Copy workspace config and lockfile first (layer cache)
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY patches/ patches/
 COPY packages/aai/package.json packages/aai/
 COPY packages/aai-server/package.json packages/aai-server/
 
@@ -30,6 +31,7 @@ WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@10.29.3 --activate
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY patches/ patches/
 COPY packages/aai/package.json packages/aai/
 COPY packages/aai-server/package.json packages/aai-server/
 
