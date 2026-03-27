@@ -98,4 +98,14 @@ describe("createServer", () => {
     await server.close();
     server = null;
   });
+
+  test("accepts shutdownTimeoutMs option", () => {
+    server = createServer({
+      agent: makeAgent(),
+      env: {},
+      logger: silentLogger,
+      shutdownTimeoutMs: 5000,
+    });
+    expect(server).toHaveProperty("close");
+  });
 });
