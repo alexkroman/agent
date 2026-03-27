@@ -7,7 +7,6 @@
  * intermediary needed.
  */
 
-import { randomBytes } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
@@ -152,11 +151,6 @@ export function createServer(options: ServerOptions): AgentServer {
     shutdownTimeoutMs = 30_000,
   } = options;
 
-  // Auto-generate auth token when serving HTML (production self-hosted).
-  // When no HTML is served (e.g. dev mode with Vite proxy), skip auth.
-  const servesHtml = clientHtml != null || clientDir != null;
-  const authToken = options.authToken ?? (servesHtml ? randomBytes(32).toString("hex") : undefined);
-
   const env = filterEnv(options.env ?? (typeof process !== "undefined" ? process.env : {}));
   const resolvedKv =
     kv ??
@@ -246,17 +240,10 @@ export function createServer(options: ServerOptions): AgentServer {
         "default-src 'self'; script-src 'self' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
         "connect-src 'self' wss: ws:; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; object-src 'none'; base-uri 'self'";
 
-      const tokenMeta = authToken ? `<meta name="aai-token" content="${authToken}">` : "";
-
       app.get("/", (c) => {
-        if (clientHtml) {
-          const html = tokenMeta
-            ? clientHtml.replace("</head>", `${tokenMeta}</head>`)
-            : clientHtml;
-          return c.html(html, 200, { "Content-Security-Policy": csp });
-        }
+        if (clientHtml) return c.html(clientHtml, 200, { "Content-Security-Policy": csp });
         return c.html(
-          `<!DOCTYPE html><html><head>${tokenMeta}</head><body><h1>${safeAgentName}</h1><p>Agent server running.</p></body></html>`,
+          `<!DOCTYPE html><html><body><h1>${safeAgentName}</h1><p>Agent server running.</p></body></html>`,
           200,
           { "Content-Security-Policy": csp },
         );
