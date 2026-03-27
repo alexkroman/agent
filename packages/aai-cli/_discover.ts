@@ -14,6 +14,7 @@ const AuthConfigSchema = z.object({
 const ProjectConfigSchema = z.object({
   slug: z.string(),
   serverUrl: z.string(),
+  sessionId: z.string().optional(),
 });
 
 /** Resolve the working directory from INIT_CWD or process.cwd(). */

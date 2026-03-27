@@ -362,7 +362,7 @@ describe("KV and vector store", () => {
       },
     });
 
-    // No vector option passed — uses the default lazy LanceDB test store
+    // No vector option passed — uses the default SQLite-vec test store
     const t = createTestHarness(agent);
     await t.turn("Index", [{ tool: "index", args: { id: "d1", text: "Paris is in France" } }]);
     const searchTurn = await t.turn("Search", [{ tool: "search", args: { query: "France" } }]);

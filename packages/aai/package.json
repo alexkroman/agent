@@ -101,10 +101,10 @@
       "types": "./dist/sqlite-kv.d.ts",
       "import": "./dist/sqlite-kv.js"
     },
-    "./lancedb-vector": {
-      "source": "./lancedb-vector.ts",
-      "types": "./dist/lancedb-vector.d.ts",
-      "import": "./dist/lancedb-vector.js"
+    "./sqlite-vec-vector": {
+      "source": "./sqlite-vec-vector.ts",
+      "types": "./dist/sqlite-vec-vector.d.ts",
+      "import": "./dist/sqlite-vec-vector.js"
     }
   },
   "scripts": {
@@ -115,11 +115,12 @@
     "check:attw": "attw --pack --profile esm-only"
   },
   "dependencies": {
-    "@lancedb/lancedb": "^0.14.0",
+    "@huggingface/transformers": "^3.8.1",
     "better-sqlite3": "^12.8.0",
     "html-to-text": "^9.0.5",
     "nanoevents": "^9.1.0",
     "secure-exec": "^0.1.0",
+    "sqlite-vec": "^0.1.7",
     "ws": "^8.20.0",
     "zod": "^4.3.6"
   },

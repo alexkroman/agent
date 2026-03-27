@@ -8,9 +8,7 @@
     "test:aai-ui": "vitest run --project aai-ui",
     "test:aai-cli": "vitest run --project aai-cli",
     "test:aai-server": "vitest run --project aai-server",
-    "test:aai-slack": "vitest run --project aai-slack",
     "dev:aai-server": "pnpm --filter @alexkroman1/aai-server dev",
-    "dev:aai-slack": "pnpm --filter @alexkroman1/aai-slack dev",
     "typecheck": "pnpm -r run typecheck",
     "lint": "pnpm -r run lint",
     "lint:fix": "biome check --write packages/",
@@ -24,7 +22,6 @@
     "changeset": "changeset",
     "version": "changeset version",
     "release": "pnpm -r run build && changeset publish",
-    "link:global": "cd packages/aai-cli && pnpm link --global",
     "prepare": "lefthook install"
   },
   "devDependencies": {
@@ -53,8 +50,13 @@
       "lefthook"
     ],
     "onlyBuiltDependencies": [
-      "@lancedb/lancedb",
-      "better-sqlite3"
-    ]
+      "better-sqlite3",
+      "onnxruntime-node",
+      "sharp",
+      "sqlite-vec"
+    ],
+    "patchedDependencies": {
+      "eventsource-parser@3.0.6": "patches/eventsource-parser@3.0.6.patch"
+    }
   }
 }

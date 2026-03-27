@@ -88,15 +88,6 @@ export default defineConfig({
           ],
         },
       },
-      {
-        ...sharedConfig,
-        test: {
-          name: "aai-slack",
-          root: "packages/aai-slack",
-          restoreMocks: true,
-          include: ["**/*.test.ts"],
-        },
-      },
     ],
   },
 });

@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { createLanceDbVectorStore, createTestEmbedFn } from "./lancedb-vector.ts";
+import { createSqliteVecVectorStore, createTestEmbedFn } from "./sqlite-vec-vector.ts";
 import { validateVectorFilter } from "./vector.ts";
 
 const embedFn = createTestEmbedFn();
@@ -11,6 +11,14 @@ const embedFn = createTestEmbedFn();
 function makeTmpDir(): string {
   return mkdtempSync(join(tmpdir(), "aai-vec-test-"));
 }
+
+function makeStore(dir?: string) {
+  const d = dir ?? makeTmpDir();
+  tmpDirs.push(d);
+  return createSqliteVecVectorStore({ path: join(d, "vectors.db"), embedFn });
+}
+
+const tmpDirs: string[] = [];
 
 describe("validateVectorFilter", () => {
   test("accepts valid comparison filter", () => {
@@ -113,15 +121,7 @@ describe("validateVectorFilter", () => {
   });
 });
 
-describe("createLanceDbVectorStore", () => {
-  const tmpDirs: string[] = [];
-
-  function tmpDir(): string {
-    const d = makeTmpDir();
-    tmpDirs.push(d);
-    return d;
-  }
-
+describe("createSqliteVecVectorStore", () => {
   afterEach(() => {
     for (const d of tmpDirs) {
       try {
@@ -134,12 +134,12 @@ describe("createLanceDbVectorStore", () => {
   });
 
   test("query returns empty for empty store", async () => {
-    const v = await createLanceDbVectorStore({ path: tmpDir(), embedFn });
+    const v = makeStore();
     expect(await v.query("anything")).toEqual([]);
   });
 
   test("upsert and query returns matching entries", async () => {
-    const v = await createLanceDbVectorStore({ path: tmpDir(), embedFn });
+    const v = makeStore();
     await v.upsert("doc-1", "The capital of France is Paris.");
     await v.upsert("doc-2", "The capital of Germany is Berlin.");
     const results = await v.query("France capital");
@@ -150,7 +150,7 @@ describe("createLanceDbVectorStore", () => {
   });
 
   test("query ranks better matches higher", async () => {
-    const v = await createLanceDbVectorStore({ path: tmpDir(), embedFn });
+    const v = makeStore();
     await v.upsert("a", "apple banana cherry");
     await v.upsert("b", "apple cherry");
     const results = await v.query("apple banana cherry");
@@ -160,7 +160,7 @@ describe("createLanceDbVectorStore", () => {
   });
 
   test("query respects topK", async () => {
-    const v = await createLanceDbVectorStore({ path: tmpDir(), embedFn });
+    const v = makeStore();
     await v.upsert("a", "word");
     await v.upsert("b", "word");
     await v.upsert("c", "word");
@@ -169,14 +169,14 @@ describe("createLanceDbVectorStore", () => {
   });
 
   test("upsert preserves metadata", async () => {
-    const v = await createLanceDbVectorStore({ path: tmpDir(), embedFn });
+    const v = makeStore();
     await v.upsert("doc", "some text", { source: "test" });
     const results = await v.query("some text");
     expect(results[0]?.metadata).toEqual({ source: "test" });
   });
 
   test("upsert overwrites existing entry", async () => {
-    const v = await createLanceDbVectorStore({ path: tmpDir(), embedFn });
+    const v = makeStore();
     await v.upsert("doc", "old text");
     await v.upsert("doc", "new text");
     const results = await v.query("new text");
@@ -185,14 +185,14 @@ describe("createLanceDbVectorStore", () => {
   });
 
   test("delete removes single entry", async () => {
-    const v = await createLanceDbVectorStore({ path: tmpDir(), embedFn });
+    const v = makeStore();
     await v.upsert("doc", "hello world");
     await v.delete("doc");
     expect(await v.query("hello world")).toEqual([]);
   });
 
   test("delete removes multiple entries", async () => {
-    const v = await createLanceDbVectorStore({ path: tmpDir(), embedFn });
+    const v = makeStore();
     await v.upsert("a", "hello world");
     await v.upsert("b", "hello world");
     await v.upsert("c", "hello world");
@@ -203,14 +203,14 @@ describe("createLanceDbVectorStore", () => {
   });
 
   test("query returns original data", async () => {
-    const v = await createLanceDbVectorStore({ path: tmpDir(), embedFn });
+    const v = makeStore();
     await v.upsert("doc", "The Capital of France");
     const results = await v.query("capital");
     expect(results[0]?.data).toBe("The Capital of France");
   });
 
   test("query skips non-matching entries", async () => {
-    const v = await createLanceDbVectorStore({ path: tmpDir(), embedFn });
+    const v = makeStore();
     await v.upsert("a", "apples and oranges");
     await v.upsert("b", "cats and dogs");
     const results = await v.query("apples");
@@ -219,78 +219,44 @@ describe("createLanceDbVectorStore", () => {
   });
 
   test("query with empty string returns no results", async () => {
-    const v = await createLanceDbVectorStore({ path: tmpDir(), embedFn });
+    const v = makeStore();
     await v.upsert("doc", "some content");
     const results = await v.query("");
     expect(results).toEqual([]);
   });
 
   test("delete non-existent id does not throw", async () => {
-    const v = await createLanceDbVectorStore({ path: tmpDir(), embedFn });
+    const v = makeStore();
     await expect(v.delete("nonexistent")).resolves.toBeUndefined();
   });
 
   test("upsert without metadata results in undefined metadata", async () => {
-    const v = await createLanceDbVectorStore({ path: tmpDir(), embedFn });
+    const v = makeStore();
     await v.upsert("doc", "text");
     const results = await v.query("text");
     expect(results[0]?.metadata).toBeUndefined();
   });
 
   test("data persists across instances with same path", async () => {
-    const dir = tmpDir();
-    const v1 = await createLanceDbVectorStore({ path: dir, embedFn });
+    const dir = makeTmpDir();
+    tmpDirs.push(dir);
+    const dbPath = join(dir, "vectors.db");
+    const v1 = createSqliteVecVectorStore({ path: dbPath, embedFn });
     await v1.upsert("doc", "persistent data");
-    const v2 = await createLanceDbVectorStore({ path: dir, embedFn });
+    const v2 = createSqliteVecVectorStore({ path: dbPath, embedFn });
     const results = await v2.query("persistent");
     expect(results.length).toBeGreaterThanOrEqual(1);
     expect(results[0]?.data).toBe("persistent data");
   });
 
-  test("throws when no API key and no embedFn", async () => {
-    const origKey = process.env.OPENAI_API_KEY;
-    delete process.env.OPENAI_API_KEY;
-    try {
-      await expect(createLanceDbVectorStore({ path: tmpDir() })).rejects.toThrow(/OPENAI_API_KEY/);
-    } finally {
-      if (origKey) process.env.OPENAI_API_KEY = origKey;
-    }
-  });
-
-  test("uses openaiApiKey option when provided", async () => {
-    const origKey = process.env.OPENAI_API_KEY;
-    delete process.env.OPENAI_API_KEY;
-    try {
-      // Should not throw — the key is provided via options, not env
-      const v = await createLanceDbVectorStore({
-        path: tmpDir(),
-        openaiApiKey: "sk-test-fake-key",
-      });
-      // The store is created; actual embedding call would fail but creation succeeds
-      expect(v).toBeDefined();
-    } finally {
-      if (origKey) process.env.OPENAI_API_KEY = origKey;
-    }
-  });
-
-  test("query with filter option passes filter to search", async () => {
-    const v = await createLanceDbVectorStore({ path: tmpDir(), embedFn });
-    await v.upsert("doc-1", "hello world");
-    await v.upsert("doc-2", "hello there");
-    // Filter on the id column (a real LanceDB column)
-    const results = await v.query("hello", { filter: 'id = "doc-1"' });
-    expect(results.length).toBe(1);
-    expect(results[0]?.id).toBe("doc-1");
-  });
-
-  test("query rejects dangerous filter expressions", async () => {
-    const v = await createLanceDbVectorStore({ path: tmpDir(), embedFn });
-    await v.upsert("doc-1", "hello world");
-    await expect(v.query("hello", { filter: 'id = "1"; id = "2"' })).rejects.toThrow(
-      "disallowed characters",
-    );
-    await expect(v.query("hello", { filter: "id = (SELECT id FROM other)" })).rejects.toThrow(
-      "disallowed SQL keyword",
-    );
+  test("creates store without any API key", () => {
+    const dir = makeTmpDir();
+    tmpDirs.push(dir);
+    // Local embeddings — no API key needed
+    const v = createSqliteVecVectorStore({
+      path: join(dir, "vectors.db"),
+      embedFn,
+    });
+    expect(v).toBeDefined();
   });
 });
