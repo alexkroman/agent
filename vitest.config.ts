@@ -50,6 +50,10 @@ export default defineConfig({
       },
       {
         ...sharedConfig,
+        resolve: {
+          ...sharedConfig.resolve,
+          alias: { "node:sqlite": new URL("packages/aai-ui/_sqlite-stub.ts", import.meta.url).pathname },
+        },
         test: {
           name: "aai-ui",
           root: "packages/aai-ui",
@@ -86,15 +90,6 @@ export default defineConfig({
             "node_modules",
             "dist",
           ],
-        },
-      },
-      {
-        ...sharedConfig,
-        test: {
-          name: "aai-slack",
-          root: "packages/aai-slack",
-          restoreMocks: true,
-          include: ["**/*.test.ts"],
         },
       },
     ],

@@ -42,6 +42,49 @@ export function silenced<T>(fn: (dir: string) => Promise<T>) {
   };
 }
 
+/** List template names from a directory (excludes _ prefixed dirs). */
+export async function fakeListTemplates(dir: string): Promise<string[]> {
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+  return entries
+    .filter((e) => e.isDirectory() && !e.name.startsWith("_"))
+    .map((e) => e.name)
+    .sort((a, b) => a.localeCompare(b));
+}
+
+/** Copy template + _shared layer from a fake templates dir to targetDir. */
+export async function fakeDownloadAndMerge(
+  templatesDir: string,
+  template: string,
+  targetDir: string,
+): Promise<void> {
+  const names = await fakeListTemplates(templatesDir);
+  if (!names.includes(template)) {
+    throw new Error(`unknown template '${template}' -- available: ${names.join(", ")}`);
+  }
+  await fs.cp(path.join(templatesDir, template), targetDir, { recursive: true, force: true });
+  await copySharedNoOverwrite(path.join(templatesDir, "_shared"), targetDir);
+}
+
+async function copySharedNoOverwrite(sharedDir: string, dest: string): Promise<void> {
+  let entries: import("node:fs").Dirent[];
+  try {
+    entries = await fs.readdir(sharedDir, { recursive: true, withFileTypes: true });
+  } catch {
+    return; // no _shared dir
+  }
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    const rel = path.relative(sharedDir, path.join(entry.parentPath, entry.name));
+    const destPath = path.join(dest, rel);
+    await fs.mkdir(path.dirname(destPath), { recursive: true });
+    try {
+      await fs.copyFile(path.join(sharedDir, rel), destPath, fs.constants.COPYFILE_EXCL);
+    } catch (err: unknown) {
+      if (!(err instanceof Error && "code" in err && err.code === "EEXIST")) throw err;
+    }
+  }
+}
+
 /** Create a minimal BundleOutput for deploy tests. */
 export function makeBundle(overrides?: Partial<BundleOutput>): BundleOutput {
   return {

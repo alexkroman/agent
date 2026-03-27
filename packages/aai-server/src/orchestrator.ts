@@ -91,7 +91,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Hono<Env> {
     if (err instanceof HTTPException) {
       return c.json({ error: err.message }, err.status);
     }
-    if (err instanceof z.ZodError) {
+    if (err instanceof z.ZodError || err instanceof SyntaxError) {
       return c.json({ error: err.message }, 400);
     }
     const errMsg = errorMessage(err);

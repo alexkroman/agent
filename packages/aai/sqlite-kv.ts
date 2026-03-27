@@ -3,10 +3,11 @@
  * SQLite-backed key-value storage for local development.
  *
  * Persists data across restarts using a local SQLite database file.
+ * Uses `node:sqlite` (built into Node 22+) — no native dependencies.
  * Drop-in replacement for the in-memory KV store.
  */
 
-import Database from "better-sqlite3";
+import { DatabaseSync } from "node:sqlite";
 import type { Kv, KvEntry, KvListOptions } from "./kv.ts";
 import { MAX_VALUE_SIZE, matchGlob, sortAndPaginate } from "./kv.ts";
 
@@ -38,10 +39,9 @@ export type SqliteKvOptions = {
  */
 export function createSqliteKv(options?: SqliteKvOptions): Kv {
   const dbPath = options?.path ?? ".aai/local.db";
-  const db = new Database(dbPath);
+  const db = new DatabaseSync(dbPath);
 
-  // Enable WAL mode for better concurrent read performance
-  db.pragma("journal_mode = WAL");
+  db.exec("PRAGMA journal_mode = WAL");
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS kv (
@@ -51,32 +51,27 @@ export function createSqliteKv(options?: SqliteKvOptions): Kv {
     )
   `);
 
-  // Create index for prefix/expiry queries
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_kv_expires_at ON kv(expires_at)
       WHERE expires_at IS NOT NULL
   `);
 
-  const stmtGet = db.prepare<[string], { value: string; expires_at: number | null }>(
-    "SELECT value, expires_at FROM kv WHERE key = ?",
-  );
-  const stmtUpsert = db.prepare<[string, string, number | null]>(
+  const stmtGet = db.prepare("SELECT value, expires_at FROM kv WHERE key = ?");
+  const stmtUpsert = db.prepare(
     "INSERT INTO kv (key, value, expires_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, expires_at = excluded.expires_at",
   );
-  const stmtDelete = db.prepare<[string]>("DELETE FROM kv WHERE key = ?");
-  const stmtDeleteExpired = db.prepare<[number]>(
+  const stmtDelete = db.prepare("DELETE FROM kv WHERE key = ?");
+  const stmtDeleteExpired = db.prepare(
     "DELETE FROM kv WHERE expires_at IS NOT NULL AND expires_at <= ?",
   );
-  const stmtListPrefix = db.prepare<[string, string, number], { key: string; value: string }>(
+  const stmtListPrefix = db.prepare(
     "SELECT key, value FROM kv WHERE key >= ? AND key < ? AND (expires_at IS NULL OR expires_at > ?)",
   );
-  const stmtListAll = db.prepare<[number], { key: string; value: string }>(
+  const stmtListAll = db.prepare(
     "SELECT key, value FROM kv WHERE expires_at IS NULL OR expires_at > ?",
   );
-  const stmtKeysAll = db.prepare<[number], { key: string }>(
-    "SELECT key FROM kv WHERE expires_at IS NULL OR expires_at > ?",
-  );
-  const stmtKeysPrefix = db.prepare<[string, string, number], { key: string }>(
+  const stmtKeysAll = db.prepare("SELECT key FROM kv WHERE expires_at IS NULL OR expires_at > ?");
+  const stmtKeysPrefix = db.prepare(
     "SELECT key FROM kv WHERE key >= ? AND key < ? AND (expires_at IS NULL OR expires_at > ?)",
   );
 
@@ -102,7 +97,7 @@ export function createSqliteKv(options?: SqliteKvOptions): Kv {
 
     get<T = unknown>(key: string): Promise<T | null> {
       const now = Date.now();
-      const row = stmtGet.get(key);
+      const row = stmtGet.get(key) as { value: string; expires_at: number | null } | undefined;
       if (!row) return Promise.resolve(null);
       if (row.expires_at !== null && row.expires_at <= now) {
         stmtDelete.run(key);
@@ -111,13 +106,13 @@ export function createSqliteKv(options?: SqliteKvOptions): Kv {
       return Promise.resolve(JSON.parse(row.value) as T);
     },
 
-    set(key: string, value: unknown, options?: { expireIn?: number }): Promise<void> {
+    set(key: string, value: unknown, setOptions?: { expireIn?: number }): Promise<void> {
       try {
         const raw = JSON.stringify(value);
         if (raw.length > MAX_VALUE_SIZE) {
           return Promise.reject(new Error(`Value exceeds max size of ${MAX_VALUE_SIZE} bytes`));
         }
-        const expireIn = options?.expireIn;
+        const expireIn = setOptions?.expireIn;
         const expiresAt = expireIn && expireIn > 0 ? Date.now() + expireIn : null;
         stmtUpsert.run(key, raw, expiresAt);
         return Promise.resolve();
@@ -128,27 +123,24 @@ export function createSqliteKv(options?: SqliteKvOptions): Kv {
 
     delete(keys: string | string[]): Promise<void> {
       const keyArray = Array.isArray(keys) ? keys : [keys];
-      const deleteMany = db.transaction((ks: string[]) => {
-        for (const k of ks) stmtDelete.run(k);
-      });
-      deleteMany(keyArray);
+      for (const k of keyArray) stmtDelete.run(k);
       return Promise.resolve();
     },
 
-    list<T = unknown>(prefix: string, options?: KvListOptions): Promise<KvEntry<T>[]> {
+    list<T = unknown>(prefix: string, listOptions?: KvListOptions): Promise<KvEntry<T>[]> {
       const now = Date.now();
       let rows: { key: string; value: string }[];
       if (prefix === "") {
-        rows = stmtListAll.all(now);
+        rows = stmtListAll.all(now) as { key: string; value: string }[];
       } else {
         const upper = prefixUpperBound(prefix);
-        rows = stmtListPrefix.all(prefix, upper, now);
+        rows = stmtListPrefix.all(prefix, upper, now) as { key: string; value: string }[];
       }
       const entries: KvEntry<T>[] = rows.map((row) => ({
         key: row.key,
         value: JSON.parse(row.value) as T,
       }));
-      return Promise.resolve(sortAndPaginate(entries, options));
+      return Promise.resolve(sortAndPaginate(entries, listOptions));
     },
 
     keys(pattern?: string): Promise<string[]> {
@@ -156,29 +148,27 @@ export function createSqliteKv(options?: SqliteKvOptions): Kv {
       const isGlob = pattern?.includes("*");
 
       if (!pattern) {
-        const rows = stmtKeysAll.all(now);
+        const rows = stmtKeysAll.all(now) as { key: string }[];
         const keys = rows.map((r) => r.key);
         return Promise.resolve(keys.sort((a, b) => a.localeCompare(b)));
       }
 
       if (isGlob) {
-        // Extract prefix before the first `*` for an efficient scan
         const starIdx = pattern.indexOf("*");
         const prefix = pattern.slice(0, starIdx);
         let rows: { key: string }[];
         if (prefix === "") {
-          rows = stmtKeysAll.all(now);
+          rows = stmtKeysAll.all(now) as { key: string }[];
         } else {
           const upper = prefixUpperBound(prefix);
-          rows = stmtKeysPrefix.all(prefix, upper, now);
+          rows = stmtKeysPrefix.all(prefix, upper, now) as { key: string }[];
         }
         const keys = rows.filter((r) => matchGlob(r.key, pattern)).map((r) => r.key);
         return Promise.resolve(keys.sort((a, b) => a.localeCompare(b)));
       }
 
-      // Plain prefix match
       const upper = prefixUpperBound(pattern);
-      const rows = stmtKeysPrefix.all(pattern, upper, now);
+      const rows = stmtKeysPrefix.all(pattern, upper, now) as { key: string }[];
       const keys = rows.map((r) => r.key);
       return Promise.resolve(keys.sort((a, b) => a.localeCompare(b)));
     },

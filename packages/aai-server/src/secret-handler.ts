@@ -29,13 +29,7 @@ export async function handleSecretList(c: Context<Env>): Promise<Response> {
 
 export async function handleSecretSet(c: Context<Env>): Promise<Response> {
   const slug = c.get("slug");
-  const parsed = SecretUpdatesSchema.safeParse(await c.req.json());
-  if (!parsed.success) {
-    throw new HTTPException(400, {
-      message: "Body must be a JSON object of string key-value pairs",
-    });
-  }
-  const updates = parsed.data;
+  const updates = SecretUpdatesSchema.parse(await c.req.json());
 
   const reserved = Object.keys(updates).filter((k) => RESERVED_KEYS.has(k));
   if (reserved.length > 0) {

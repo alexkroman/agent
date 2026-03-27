@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { consola } from "consola";
 import { humanId } from "human-id";
 import { z } from "zod";
 import { askPassword } from "./_prompts.ts";
@@ -14,6 +15,7 @@ const AuthConfigSchema = z.object({
 const ProjectConfigSchema = z.object({
   slug: z.string(),
   serverUrl: z.string(),
+  sessionId: z.string().optional(),
 });
 
 /** Resolve the working directory from INIT_CWD or process.cwd(). */
@@ -70,8 +72,8 @@ export async function getApiKey(): Promise<string> {
     return config.assemblyai_api_key;
   }
 
-  console.log("  Get your API key at https://www.assemblyai.com/dashboard/signup");
-  console.log("  Or set the ASSEMBLYAI_API_KEY environment variable to skip this prompt.\n");
+  consola.info("Get your API key at https://www.assemblyai.com/dashboard/signup");
+  consola.info("Or set the ASSEMBLYAI_API_KEY environment variable to skip this prompt.\n");
 
   let key: string | undefined;
   while (!key) {

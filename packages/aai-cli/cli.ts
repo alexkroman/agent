@@ -6,6 +6,13 @@ import { fileURLToPath } from "node:url";
 import { defineCommand, runMain } from "citty";
 import { ensureApiKeyInEnv, fileExists, resolveCwd } from "./_discover.ts";
 
+/** Shared arg definitions for citty commands. */
+const sharedArgs = {
+  port: { type: "string", alias: "p", description: "Port to listen on", default: "3000" },
+  server: { type: "string", alias: "s", description: "Server URL" },
+  yes: { type: "boolean", alias: "y", description: "Accept defaults (no prompts)" },
+} as const;
+
 const cliDir = path.dirname(fileURLToPath(import.meta.url));
 function findPkgJson(dir: string): string {
   try {
@@ -30,7 +37,7 @@ const init = defineCommand({
     dir: { type: "positional", description: "Project directory", required: false },
     template: { type: "string", alias: "t", description: "Template to use" },
     force: { type: "boolean", alias: "f", description: "Overwrite existing agent.ts" },
-    yes: { type: "boolean", alias: "y", description: "Accept defaults (no prompts)" },
+    yes: sharedArgs.yes,
     skipApi: { type: "boolean", description: "Skip API key check" },
     skipDeploy: { type: "boolean", description: "Skip post-init deploy" },
   },
@@ -217,6 +224,37 @@ const doctor = defineCommand({
   },
 });
 
+const generate = defineCommand({
+  meta: { name: "generate", description: "Generate or modify agent code using AI" },
+  args: {
+    prompt: { type: "positional", description: "What to generate", required: true },
+  },
+  async run({ args }) {
+    const cwd = resolveCwd();
+    await ensureApiKeyInEnv();
+    const { runGenerateCommand } = await import("./generate.ts");
+    await runGenerateCommand({ cwd, prompt: args.prompt });
+  },
+});
+
+const run = defineCommand({
+  meta: { name: "run", description: "Init, generate, and deploy in one step" },
+  args: {
+    prompt: { type: "positional", description: "What to build", required: true },
+    server: { type: "string", alias: "s", description: "Server URL" },
+  },
+  async run({ args }) {
+    await ensureAgent(resolveCwd(), true);
+    await ensureApiKeyInEnv();
+    // Re-resolve cwd after init (init may change process.cwd to the new project dir)
+    const cwd = resolveCwd();
+    const { runGenerateCommand } = await import("./generate.ts");
+    await runGenerateCommand({ cwd, prompt: args.prompt });
+    const { runDeployCommand } = await import("./deploy.ts");
+    await runDeployCommand({ cwd, ...(args.server ? { server: args.server } : {}) });
+  },
+});
+
 const link = defineCommand({
   meta: {
     name: "link",
@@ -248,6 +286,8 @@ export const mainCommand = defineCommand({
     start,
     secret,
     rag,
+    generate,
+    run,
     link,
     unlink,
     doctor,
@@ -255,13 +295,35 @@ export const mainCommand = defineCommand({
 });
 
 if (process.env.VITEST !== "true") {
-  // Default to `init` when no subcommand is given (but not for --help/--version)
   const sub = process.argv[2];
-  if (
-    !sub ||
-    (sub.startsWith("-") && sub !== "--help" && sub !== "--version" && sub !== "-h" && sub !== "-V")
-  ) {
+  const knownCommands = new Set(Object.keys(mainCommand.subCommands ?? {}));
+  const helpFlags = new Set(["--help", "--version", "-h", "-V"]);
+
+  if (!sub || (sub.startsWith("-") && !helpFlags.has(sub))) {
+    // No argument or unknown flag → default to init
     process.argv.splice(2, 0, "init");
+  } else if (!(sub.startsWith("-") || knownCommands.has(sub))) {
+    // Bare prompt: aai "build me a flower shop agent" → run
+    // Collect all non-flag args into a single prompt string
+    const promptParts: string[] = [];
+    const flagArgs: string[] = [];
+    for (let i = 2; i < process.argv.length; i++) {
+      if (process.argv[i]?.startsWith("-")) {
+        flagArgs.push(process.argv[i] as string);
+        if (i + 1 < process.argv.length && !process.argv[i + 1]?.startsWith("-")) {
+          flagArgs.push(process.argv[++i] as string);
+        }
+      } else {
+        promptParts.push(process.argv[i] as string);
+      }
+    }
+    process.argv = [
+      process.argv[0] as string,
+      process.argv[1] as string,
+      "run",
+      promptParts.join(" "),
+      ...flagArgs,
+    ];
   }
   void runMain(mainCommand);
 }

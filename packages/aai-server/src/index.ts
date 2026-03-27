@@ -48,9 +48,9 @@ function isLocalDev(env: NodeJS.ProcessEnv): boolean {
 async function buildLocalOpts(env: NodeJS.ProcessEnv): Promise<OrchestratorOpts> {
   const scopeSecret = env.KV_SCOPE_SECRET ?? "local-dev-secret";
   const scopeKey = await importScopeKey(scopeSecret);
-  const vectorStore = await createLocalVectorStore();
+  const vectorStore = createLocalVectorStore();
   console.info(
-    `Local dev mode: SQLite KV + in-memory bundles + ${vectorStore ? "LanceDB vector" : "no vector (set OPENAI_API_KEY for embeddings)"} (.aai/server-data/)`,
+    "Local dev mode: SQLite KV + in-memory bundles + SQLite-vec vector (.aai/server-data/)",
   );
   return {
     slots: new Map<string, AgentSlot>(),

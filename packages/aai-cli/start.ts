@@ -3,7 +3,7 @@
 import path from "node:path";
 import { fileExists } from "./_discover.ts";
 import { bootServer, loadAgentDef, resolveServerEnv } from "./_server-common.ts";
-import { runCommand, step } from "./_ui.ts";
+import { parsePort, runCommand, step } from "./_ui.ts";
 
 export async function _startProductionServer(
   cwd: string,
@@ -21,10 +21,7 @@ export async function _startProductionServer(
 }
 
 export async function runStartCommand(opts: { cwd: string; port: string }): Promise<void> {
-  const port = Number.parseInt(opts.port, 10);
-  if (Number.isNaN(port) || port < 0 || port > 65_535) {
-    throw new Error(`Invalid port: ${opts.port}. Must be a number between 0 and 65535.`);
-  }
+  const port = parsePort(opts.port);
   const buildDir = path.join(opts.cwd, ".aai", "build");
 
   if (!(await fileExists(path.join(buildDir, "worker.js")))) {

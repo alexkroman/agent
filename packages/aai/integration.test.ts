@@ -13,8 +13,8 @@ import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import { toAgentConfig } from "./_internal-types.ts";
 import { createDirectExecutor } from "./direct-executor.ts";
-import { createLanceDbVectorStore, createTestEmbedFn } from "./lancedb-vector.ts";
 import { createSqliteKv } from "./sqlite-kv.ts";
+import { createSqliteVectorStore, createTestEmbedFn } from "./sqlite-vector.ts";
 import { defineAgent, defineTool } from "./types.ts";
 
 describe("SDK integration: defineAgent → tool execution", () => {
@@ -67,7 +67,10 @@ describe("SDK integration: defineAgent → tool execution", () => {
 
   test("tool with vector store access works end-to-end", async () => {
     const dir = mkdtempSync(join(tmpdir(), "aai-int-vec-"));
-    const vector = await createLanceDbVectorStore({ path: dir, embedFn: createTestEmbedFn() });
+    const vector = createSqliteVectorStore({
+      path: join(dir, "vectors.db"),
+      embedFn: createTestEmbedFn(),
+    });
     const agent = defineAgent({
       name: "vector-agent",
       tools: {

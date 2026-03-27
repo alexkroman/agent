@@ -4,6 +4,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { consola } from "consola";
 import { z } from "zod";
 
 const WORKSPACE_PKGS = ["aai", "aai-ui"];
@@ -42,12 +43,12 @@ function rewriteWorkspaceDeps(cwd: string, rewrite: DepRewriter, verb: string): 
   }
 
   if (changed.length === 0) {
-    console.log(`No packages to ${verb}.`);
+    consola.info(`No packages to ${verb}.`);
     return;
   }
 
   fs.writeFileSync(pkgJsonPath, `${JSON.stringify(pkgJson, null, 2)}\n`);
-  console.log(`${verb}: ${changed.join(", ")} → installing...`);
+  consola.start(`${verb}: ${changed.join(", ")} → installing...`);
   execFileSync("npm", ["install"], { cwd, stdio: "inherit" });
 }
 

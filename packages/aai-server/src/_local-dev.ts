@@ -7,8 +7,8 @@
 import { mkdirSync } from "node:fs";
 import type { Kv } from "@alexkroman1/aai/kv";
 import { MAX_VALUE_SIZE, matchGlob } from "@alexkroman1/aai/kv";
-import { createLanceDbVectorStore } from "@alexkroman1/aai/lancedb-vector";
 import { createSqliteKv } from "@alexkroman1/aai/sqlite-kv";
+import { createSqliteVectorStore } from "@alexkroman1/aai/sqlite-vector";
 import type { VectorEntry } from "@alexkroman1/aai/vector";
 import { type AgentMetadata, AgentMetadataSchema } from "./_schemas.ts";
 import type { BundleStore } from "./bundle-store-tigris.ts";
@@ -136,28 +136,28 @@ function vectorScope(scope: AgentScope): string {
   return `${scope.keyHash}:${scope.slug}`;
 }
 
-/** Wrap the SDK's LanceDB VectorStore into a scoped ServerVectorStore. */
-export async function createLocalVectorStore(): Promise<ServerVectorStore | undefined> {
+/** Wrap the SDK's SQLite-vec VectorStore into a scoped ServerVectorStore. */
+export function createLocalVectorStore(): ServerVectorStore {
   mkdirSync(DATA_DIR, { recursive: true });
-  const store = await createLanceDbVectorStore({ path: `${DATA_DIR}/lancedb` }).catch(() => null);
-  if (!store) return;
+  const store = createSqliteVectorStore({ path: `${DATA_DIR}/vectors.db` });
   return {
     async upsert(scope, id, data, metadata) {
       const scopedId = `${vectorScope(scope)}:${id}`;
       await store.upsert(scopedId, data, { ...metadata, _scope: vectorScope(scope) });
     },
-    async query(scope, text, topK, filter) {
+    async query(scope, text, topK, _filter) {
       const prefix = `${vectorScope(scope)}:`;
-      const scopeFilter = `_scope = "${vectorScope(scope)}"`;
-      const combinedFilter = filter ? `${scopeFilter} AND (${filter})` : scopeFilter;
-      const results = await store.query(text, { topK: topK ?? 10, filter: combinedFilter });
-      return results.map((r: VectorEntry) => ({
-        ...r,
-        id: r.id.startsWith(prefix) ? r.id.slice(prefix.length) : r.id,
-      }));
+      const results = await store.query(text, { topK: topK ?? 10 });
+      // Filter to only this scope's results and strip scope prefix from IDs
+      return results
+        .filter((r: VectorEntry) => r.id.startsWith(prefix))
+        .map((r: VectorEntry) => ({
+          ...r,
+          id: r.id.slice(prefix.length),
+        }));
     },
     async remove(_scope, _ids) {
-      // biome-ignore lint/suspicious/noEmptyBlockStatements: SDK VectorStore has no remove method
+      // no-op for local dev
     },
   };
 }

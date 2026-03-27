@@ -1255,7 +1255,12 @@ pnpm test       # Run all tests (vitest)
 ### Setup
 
 Tests live in `agent.test.ts` alongside `agent.ts`. The project includes
-vitest as a dev dependency. Import the matchers for `expect().toHaveCalledTool()`:
+vitest as a dev dependency. Import the matchers for `expect().toHaveCalledTool()`.
+
+**Important:** `agent.test.ts` asserts the agent's `name` field (e.g.
+`expect(agent.name).toBe("Simple Assistant")`). When changing the agent's
+name in `agent.ts`, update the corresponding assertion in `agent.test.ts`
+to match.
 
 ### Test harness
 

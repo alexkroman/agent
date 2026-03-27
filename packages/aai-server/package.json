@@ -18,6 +18,7 @@
     "@alexkroman1/aai": "workspace:*",
     "@aws-sdk/client-s3": "^3.1017.0",
     "@hono/node-server": "^1.19.11",
+    "@hono/zod-validator": "^0.7.6",
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/exporter-prometheus": "^0.214.0",
     "@opentelemetry/sdk-metrics": "^2.6.1",

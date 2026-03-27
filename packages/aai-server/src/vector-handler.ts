@@ -14,12 +14,7 @@ export async function handleVector(c: Context<Env>): Promise<Response> {
     throw new HTTPException(503, { message: "Vector store not configured" });
   }
 
-  let msg: ReturnType<typeof VectorRequestSchema.parse>;
-  try {
-    msg = VectorRequestSchema.parse(await c.req.json());
-  } catch (err: unknown) {
-    return c.json({ error: `Invalid vector request: ${errorMessage(err)}` }, 400);
-  }
+  const msg = VectorRequestSchema.parse(await c.req.json());
 
   try {
     switch (msg.op) {
