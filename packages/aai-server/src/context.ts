@@ -8,6 +8,7 @@ export type Env = {
     slots: Map<string, import("./sandbox.ts").AgentSlot>;
     store: BundleStore;
     storage: Storage;
+    modelCacheDir?: string;
   };
   Variables: {
     slug: string;

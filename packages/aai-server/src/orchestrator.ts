@@ -28,6 +28,8 @@ export type OrchestratorOpts = {
   storage: Storage;
   /** Allowed CORS origins. Defaults to `["*"]` (any origin). */
   allowedOrigins?: string[];
+  /** Directory for caching embedding models. Defaults to `.aai/models`. */
+  modelCacheDir?: string;
 };
 
 export type Orchestrator = {
@@ -179,6 +181,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     slots: opts.slots,
     store: opts.store,
     storage: opts.storage,
+    modelCacheDir: opts.modelCacheDir,
   };
 
   const original = app.fetch.bind(app);

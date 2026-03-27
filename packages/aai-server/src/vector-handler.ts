@@ -8,7 +8,11 @@ import { createScopedVector } from "./scoped-storage.ts";
 
 export async function handleVector(c: Context<Env>): Promise<Response> {
   const slug = c.get("slug");
-  const vector = createScopedVector(c.env.storage, slug);
+  const vector = createScopedVector(
+    c.env.storage,
+    slug,
+    c.env.modelCacheDir ? { modelCacheDir: c.env.modelCacheDir } : undefined,
+  );
 
   const msg = VectorRequestSchema.parse(await c.req.json());
 

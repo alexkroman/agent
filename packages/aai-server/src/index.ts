@@ -6,6 +6,7 @@
  * a Node.js HTTP server with WebSocket upgrade support via `ws`.
  */
 
+import { resolve } from "node:path";
 import { serve } from "@hono/node-server";
 import { createStorage } from "unstorage";
 import memoryDriver from "unstorage/drivers/memory";
@@ -39,6 +40,8 @@ async function buildLocalOpts(_env: NodeJS.ProcessEnv): Promise<OrchestratorOpts
     slots: new Map<string, AgentSlot>(),
     store: createBundleStore(storage, { credentialKey }),
     storage,
+    // Resolve to repo root so the model cache works regardless of CWD.
+    modelCacheDir: resolve(import.meta.dirname, "../../.aai/models"),
   };
 }
 

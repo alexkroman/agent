@@ -16,9 +16,14 @@ export function createScopedKv(storage: Storage, slug: string): Kv {
 }
 
 /** Create a vector store scoped to a specific agent slug. */
-export function createScopedVector(storage: Storage, slug: string): VectorStore {
+export function createScopedVector(
+  storage: Storage,
+  slug: string,
+  opts?: { modelCacheDir?: string },
+): VectorStore {
   return createUnstorageVectorStore({
     storage,
     blobKey: `agents/${slug}/vectors.json`,
+    ...(opts?.modelCacheDir ? { modelCacheDir: opts.modelCacheDir } : {}),
   });
 }
