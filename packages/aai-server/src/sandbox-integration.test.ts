@@ -196,7 +196,7 @@ function toolCall(port: number, name: string, args: Record<string, unknown> = {}
 describe("isolate protocol", () => {
   let port: number;
   let sidecarPort: number;
-  let cleanup: () => void;
+  let cleanup: () => Promise<void>;
 
   beforeAll(async () => {
     const kv = createMockKv();
@@ -205,14 +205,14 @@ describe("isolate protocol", () => {
     sidecarPort = Number.parseInt(new URL(sidecar.url).port, 10);
     const isolate = await _internals.startIsolate(AGENT_BUNDLE, sidecar.url, {}, TEST_AUTH_TOKEN);
     port = isolate.port;
-    cleanup = () => {
-      isolate.runtime.dispose();
+    cleanup = async () => {
+      await isolate.runtime.terminate();
       sidecar.close();
     };
   });
 
   afterAll(async () => {
-    cleanup?.();
+    await cleanup?.();
   });
 
   test("GET /config returns valid IsolateConfig", async () => {
@@ -417,8 +417,8 @@ describe("WebSocket session lifecycle", () => {
 describe("multiple concurrent agents", () => {
   let port1: number;
   let port2: number;
-  let cleanup1: () => void;
-  let cleanup2: () => void;
+  let cleanup1: () => Promise<void>;
+  let cleanup2: () => Promise<void>;
 
   const BUNDLE_A = `
 export default {
@@ -451,19 +451,19 @@ export default {
     ]);
     port1 = iso1.port;
     port2 = iso2.port;
-    cleanup1 = () => {
-      iso1.runtime.dispose();
+    cleanup1 = async () => {
+      await iso1.runtime.terminate();
       sidecar1.close();
     };
-    cleanup2 = () => {
-      iso2.runtime.dispose();
+    cleanup2 = async () => {
+      await iso2.runtime.terminate();
       sidecar2.close();
     };
   });
 
-  afterAll(() => {
-    cleanup1?.();
-    cleanup2?.();
+  afterAll(async () => {
+    await cleanup1?.();
+    await cleanup2?.();
   });
 
   test("two isolates run independently", async () => {
