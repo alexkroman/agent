@@ -2,6 +2,7 @@ app = 'aai-agent'
 primary_region = 'sjc'
 
 [build]
+  dockerfile = "packages/aai-server/Dockerfile"
 
 [env]
   PORT = "8080"

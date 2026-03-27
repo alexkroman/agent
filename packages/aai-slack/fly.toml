@@ -1,0 +1,19 @@
+app = 'aai-slack'
+primary_region = 'sjc'
+
+[build]
+  dockerfile = "packages/aai-slack/Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+
+[deploy]
+  strategy = "rolling"
+
+kill_signal = "SIGTERM"
+kill_timeout = "10s"
+
+[[vm]]
+  memory = '1gb'
+  cpu_kind = 'shared'
+  cpus = 1
