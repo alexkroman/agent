@@ -85,7 +85,7 @@ async function main(): Promise<void> {
   const port = Number.parseInt(env.PORT ?? "8787", 10);
 
   const opts = await buildOpts(env);
-  const { app, injectWebSocket } = createOrchestrator(opts);
+  const { app, injectWebSocket, closeWebSocket } = createOrchestrator(opts);
   const nodeServer = serve({ fetch: app.fetch, port });
   injectWebSocket(nodeServer as import("node:http").Server);
 
@@ -97,6 +97,7 @@ async function main(): Promise<void> {
 
   async function shutdown() {
     console.info("Shutting down...");
+    closeWebSocket();
     const stops = [...opts.slots.values()]
       .map((slot) => {
         if (slot.idleTimer) clearTimeout(slot.idleTimer);

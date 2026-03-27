@@ -35,11 +35,12 @@ export type OrchestratorOpts = {
 export type Orchestrator = {
   app: Hono<Env>;
   injectWebSocket: (server: import("node:http").Server) => void;
+  closeWebSocket: () => void;
 };
 
 export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   const app = new Hono<Env>();
-  const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
+  const { wss, injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
 
   const slugMw = createMiddleware<Env>(async (c, next) => {
     // biome-ignore lint/style/noNonNullAssertion: slug param guaranteed by route pattern
@@ -196,5 +197,5 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   app.fetch = (req: Request, env?: Record<string, unknown>) =>
     original(req, Object.assign(env ?? {}, bindings));
 
-  return { app, injectWebSocket };
+  return { app, injectWebSocket, closeWebSocket: () => wss.close() };
 }
