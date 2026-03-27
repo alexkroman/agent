@@ -718,6 +718,9 @@ type _AssertToolChoice =
 const _tcCheck: _AssertToolChoice = true;
 void _tcCheck;
 
+/** Default TTL for persisted session data: 1 hour. */
+const DEFAULT_PERSIST_TTL = 3_600_000;
+
 const AgentOptionsSchema = z.object({
   name: z.string().min(1, "Agent name must be non-empty"),
   instructions: z.string().optional(),
@@ -786,9 +789,6 @@ const AgentOptionsSchema = z.object({
  * });
  * ```
  */
-/** Default TTL for persisted session data: 1 hour. */
-const DEFAULT_PERSIST_TTL = 3_600_000;
-
 export function defineAgent<S = Record<string, unknown>>(options: AgentOptions<S>): AgentDef<S> {
   AgentOptionsSchema.parse(options);
   const persistence = options.persistence

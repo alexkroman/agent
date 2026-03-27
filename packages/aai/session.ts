@@ -11,7 +11,6 @@ import {
 } from "./_session-persist.ts";
 import { errorDetail, errorMessage } from "./_utils.ts";
 import type { HookInvoker } from "./middleware.ts";
-import { idleTimeoutCounter } from "./telemetry.ts";
 import type { ClientSink } from "./protocol.ts";
 import { fromWireMessages, HOOK_TIMEOUT_MS } from "./protocol.ts";
 import type { Logger, S2SConfig } from "./runtime.ts";
@@ -23,6 +22,7 @@ import {
   type S2sToolSchema,
 } from "./s2s.ts";
 import { buildSystemPrompt } from "./system-prompt.ts";
+import { idleTimeoutCounter } from "./telemetry.ts";
 import type { ExecuteTool } from "./worker-entry.ts";
 
 export type { S2sSessionCtx } from "./_session-ctx.ts";
@@ -94,6 +94,44 @@ export const _internals = {
 
 const DEFAULT_IDLE_TIMEOUT_MS = 300_000; // 5 minutes
 
+type IdleTimer = { reset(): void; clear(): void };
+
+function createIdleTimer(opts: {
+  timeoutMs: number;
+  agent: string;
+  log: Logger;
+  client: ClientSink;
+  ctx: { s2s: { close(): void } | null };
+}): IdleTimer {
+  if (opts.timeoutMs <= 0)
+    return {
+      reset() {
+        /* no-op: idle timeout disabled */
+      },
+      clear() {
+        /* no-op: idle timeout disabled */
+      },
+    };
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  return {
+    reset() {
+      if (timer !== null) clearTimeout(timer);
+      timer = setTimeout(() => {
+        opts.log.info("S2S idle timeout", { timeoutMs: opts.timeoutMs, agent: opts.agent });
+        idleTimeoutCounter.add(1, { agent: opts.agent });
+        opts.client.event({ type: "idle_timeout" });
+        opts.ctx.s2s?.close();
+      }, opts.timeoutMs);
+    },
+    clear() {
+      if (timer !== null) {
+        clearTimeout(timer);
+        timer = null;
+      }
+    },
+  };
+}
+
 // ─── Main session factory ────────────────────────────────────────────────────
 
 /**
@@ -148,26 +186,9 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
     maxHistory: opts.maxHistory,
   });
 
-  // ── Idle timeout ──────────────────────────────────────────────────────
   const rawTimeout = agentConfig.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
-  const idleTimeoutMs = rawTimeout === 0 || !Number.isFinite(rawTimeout) ? 0 : rawTimeout;
-  let idleTimer: ReturnType<typeof setTimeout> | null = null;
-  function resetIdleTimer(): void {
-    if (idleTimeoutMs <= 0) return;
-    if (idleTimer !== null) clearTimeout(idleTimer);
-    idleTimer = setTimeout(() => {
-      log.info("S2S idle timeout", { timeoutMs: idleTimeoutMs, agent });
-      idleTimeoutCounter.add(1, { agent });
-      client.event({ type: "idle_timeout" });
-      ctx.s2s?.close();
-    }, idleTimeoutMs);
-  }
-  function clearIdleTimer(): void {
-    if (idleTimer !== null) {
-      clearTimeout(idleTimer);
-      idleTimer = null;
-    }
-  }
+  const idleMs = rawTimeout === 0 || !Number.isFinite(rawTimeout) ? 0 : rawTimeout;
+  const idle = createIdleTimer({ timeoutMs: idleMs, agent, log, client, ctx });
 
   let currentS2sSessionId: string | null = null;
   let resumeS2sId: string | null = null;
@@ -194,17 +215,8 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
         createWebSocket,
         logger: log,
       });
-      // Guard against close() racing with start(): if the session was
-      // stopped while we were connecting, close the handle immediately
-      // to avoid an orphaned S2S connection.
-      if (sessionAbort.signal.aborted) {
-        handle.close();
-        return;
-      }
-      // Guard against rapid resets: if a newer connectAndSetup was launched
-      // while we were connecting, this invocation is stale — close the handle
-      // to avoid an orphaned S2S connection.
-      if (generation !== connectGeneration) {
+      // Stale if session was stopped or a newer connectAndSetup was launched.
+      if (sessionAbort.signal.aborted || generation !== connectGeneration) {
         handle.close();
         return;
       }
@@ -239,7 +251,7 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
       }
 
       ctx.s2s = handle;
-      resetIdleTimer();
+      idle.reset();
     } catch (err: unknown) {
       const msg = errorMessage(err);
       log.error("S2S connect failed", { error: errorDetail(err) });
@@ -267,7 +279,7 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
     async stop(): Promise<void> {
       if (sessionAbort.signal.aborted) return;
       sessionAbort.abort();
-      clearIdleTimer();
+      idle.clear();
       activeSessionsUpDown.add(-1, { agent });
       if (ctx.turnPromise !== null) await ctx.turnPromise;
       // Drain in-flight hooks (onTurn, onStep, etc.) BEFORE closing
@@ -289,7 +301,7 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
       await ctx.drainHooks();
     },
     onAudio(data: Uint8Array): void {
-      resetIdleTimer();
+      idle.reset();
       ctx.s2s?.sendAudio(data);
     },
     onAudioReady(): void {
@@ -305,7 +317,7 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
       ctx.pendingTools = [];
       ctx.replyGeneration++;
       currentS2sSessionId = null;
-      clearIdleTimer();
+      idle.clear();
       ctx.s2s?.close();
       client.event({ type: "reset" });
       connectAndSetup().catch((err: unknown) =>
