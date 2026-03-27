@@ -7,6 +7,7 @@
  * intermediary needed.
  */
 
+import { mkdirSync } from "node:fs";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
@@ -18,6 +19,7 @@ import { buildReadyConfig } from "./protocol.ts";
 import type { Logger, S2SConfig } from "./runtime.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime.ts";
 import type { Session } from "./session.ts";
+import { createSqliteKv } from "./sqlite-kv.ts";
 import type { AgentDef } from "./types.ts";
 import type { VectorStore } from "./vector.ts";
 import { type SessionWebSocket, wireSessionSocket } from "./ws-handler.ts";
@@ -150,11 +152,17 @@ export function createServer(options: ServerOptions): AgentServer {
   } = options;
 
   const env = filterEnv(options.env ?? (typeof process !== "undefined" ? process.env : {}));
+  const resolvedKv =
+    kv ??
+    (() => {
+      mkdirSync(".aai", { recursive: true });
+      return createSqliteKv();
+    })();
 
   const executor = createDirectExecutor({
     agent,
     env,
-    ...(kv ? { kv } : {}),
+    kv: resolvedKv,
     ...(vector ? { vector } : {}),
     logger,
     s2sConfig,
@@ -215,6 +223,14 @@ export function createServer(options: ServerOptions): AgentServer {
       });
 
       app.get("/health", (c) => c.json({ status: "ok", name: agent.name }));
+
+      app.get("/kv", async (c) => {
+        const key = c.req.query("key");
+        if (!key) return c.json({ error: "Missing key query parameter" }, 400);
+        const value = await resolvedKv.get(key);
+        if (value === null) return c.json(null, 404);
+        return c.json(value);
+      });
 
       if (clientDir) {
         app.use("/*", serveStatic({ root: clientDir }));
