@@ -6,23 +6,13 @@
 import type { AgentConfig } from "./_internal-types.ts";
 import { DEFAULT_INSTRUCTIONS } from "./types.ts";
 
-// Cache the formatted date string — same for all sessions on a given day.
-let _cachedDate = "";
-let _cachedDateDay = -1;
-
 function getFormattedDate(): string {
-  const now = new Date();
-  const day = now.getDate();
-  if (day !== _cachedDateDay) {
-    _cachedDate = now.toLocaleDateString("en-US", {
-      weekday: "long",
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    });
-    _cachedDateDay = day;
-  }
-  return _cachedDate;
+  return new Date().toLocaleDateString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
 }
 
 const VOICE_RULES =

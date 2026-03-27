@@ -246,26 +246,25 @@ export type BuiltinToolOptions = {
 
 type ToolDefRecord = Record<string, ToolDef<z.ZodObject<z.ZodRawShape>>>;
 
-/** Single-tool creators and multi-tool expanders in one registry. */
-const TOOL_REGISTRY: Record<
-  string,
-  { create: (opts?: BuiltinToolOptions) => ToolDef } | { multi: () => Record<string, ToolDef> }
-> = {
-  web_search: { create: (opts) => createWebSearch(opts?.fetch) },
-  visit_webpage: { create: (opts) => createVisitWebpage(opts?.fetch) },
-  fetch_json: { create: (opts) => createFetchJson(opts?.fetch) },
-  run_code: { create: createRunCode },
-  vector_search: { create: (opts) => createVectorSearch(opts?.vectorSearch ?? (async () => "")) },
-  memory: { multi: memoryTools },
-};
-
 /** Resolve a builtin name to an array of [toolName, ToolDef] pairs. */
 function resolveBuiltin(name: string, opts?: BuiltinToolOptions): [string, ToolDef][] {
-  const entry = TOOL_REGISTRY[name];
-  if (!entry) return [];
-  if ("multi" in entry) return Object.entries(entry.multi());
-  if (name === "vector_search" && !opts?.vectorSearch) return [];
-  return [[name, entry.create(opts)]];
+  switch (name) {
+    case "web_search":
+      return [["web_search", createWebSearch(opts?.fetch)]];
+    case "visit_webpage":
+      return [["visit_webpage", createVisitWebpage(opts?.fetch)]];
+    case "fetch_json":
+      return [["fetch_json", createFetchJson(opts?.fetch)]];
+    case "run_code":
+      return [["run_code", createRunCode()]];
+    case "vector_search":
+      if (!opts?.vectorSearch) return [];
+      return [["vector_search", createVectorSearch(opts.vectorSearch)]];
+    case "memory":
+      return Object.entries(memoryTools());
+    default:
+      return [];
+  }
 }
 
 /**

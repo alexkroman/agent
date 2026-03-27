@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
+
+import { isPrivateIp } from "@alexkroman1/aai/ssrf";
 import { HTTPException } from "hono/http-exception";
-import { isPrivateIp } from "./_net.ts";
 import { verifySlugOwner } from "./auth.ts";
 import type { BundleStore } from "./bundle-store-tigris.ts";
 import { type AgentScope, type ScopeKey, verifyScopeToken } from "./scope-token.ts";

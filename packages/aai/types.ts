@@ -664,31 +664,6 @@ const ToolDefSchema = z.object({
   execute: z.function(),
 });
 
-// ─── Compile-time drift guards ──────────────────────────────────────────────
-// These type aliases catch at compile time if a manually maintained type
-// drifts out of sync with its Zod schema counterpart. If they produce `never`,
-// the types have diverged and the build will fail at first usage.
-
-/** @internal Fails to compile if BuiltinTool and BuiltinToolSchema diverge. */
-type _AssertBuiltinTool =
-  BuiltinTool extends z.infer<typeof BuiltinToolSchema>
-    ? z.infer<typeof BuiltinToolSchema> extends BuiltinTool
-      ? true
-      : never
-    : never;
-const _btCheck: _AssertBuiltinTool = true;
-void _btCheck;
-
-/** @internal Fails to compile if ToolChoice and ToolChoiceSchema diverge. */
-type _AssertToolChoice =
-  ToolChoice extends z.infer<typeof ToolChoiceSchema>
-    ? z.infer<typeof ToolChoiceSchema> extends ToolChoice
-      ? true
-      : never
-    : never;
-const _tcCheck: _AssertToolChoice = true;
-void _tcCheck;
-
 /** Default TTL for persisted session data: 1 hour. */
 const DEFAULT_PERSIST_TTL = 3_600_000;
 

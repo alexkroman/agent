@@ -11,7 +11,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
-import { buildAgentConfig, createDirectExecutor } from "./direct-executor.ts";
+import { toAgentConfig } from "./_internal-types.ts";
+import { createDirectExecutor } from "./direct-executor.ts";
 import { createLanceDbVectorStore, createTestEmbedFn } from "./lancedb-vector.ts";
 import { createSqliteKv } from "./sqlite-kv.ts";
 import { defineAgent, defineTool } from "./types.ts";
@@ -166,7 +167,7 @@ describe("SDK integration: defineAgent → tool execution", () => {
     expect(err).toContain("error");
   });
 
-  test("buildAgentConfig produces serializable config", () => {
+  test("toAgentConfig produces serializable config", () => {
     const agent = defineAgent({
       name: "config-test",
       instructions: "Custom instructions",
@@ -175,7 +176,7 @@ describe("SDK integration: defineAgent → tool execution", () => {
       toolChoice: "required",
     });
 
-    const config = buildAgentConfig(agent);
+    const config = toAgentConfig(agent);
     // Should survive JSON round-trip
     const parsed = JSON.parse(JSON.stringify(config));
     expect(parsed.name).toBe("config-test");

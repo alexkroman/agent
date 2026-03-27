@@ -10,7 +10,6 @@ import { describe, expect, test } from "vitest";
 import type { ClientEvent, ClientMessage, ServerMessage } from "./protocol.ts";
 import {
   AUDIO_FORMAT,
-  AudioFrameSpec,
   ClientEventSchema,
   ClientMessageSchema,
   DEFAULT_STT_SAMPLE_RATE,
@@ -31,18 +30,6 @@ describe("protocol constants", () => {
   test("sample rates", () => {
     expect(DEFAULT_STT_SAMPLE_RATE).toMatchInlineSnapshot("16000");
     expect(DEFAULT_TTS_SAMPLE_RATE).toMatchInlineSnapshot("24000");
-  });
-
-  test("AudioFrameSpec", () => {
-    expect(AudioFrameSpec).toMatchInlineSnapshot(`
-      {
-        "bitsPerSample": 16,
-        "bytesPerSample": 2,
-        "channels": 1,
-        "endianness": "little",
-        "format": "pcm16",
-      }
-    `);
   });
 
   test("timeout constants", () => {

@@ -1,7 +1,25 @@
 // Copyright 2025 the AAI authors. MIT license.
 /** Shared utility functions. */
 
-export { errorDetail, errorMessage, filterEnv } from "./utils.ts";
+/** Extract an error message from an unknown thrown value. */
+export function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/** Extract a detailed error string (message + stack) for diagnostic logging. */
+export function errorDetail(err: unknown): string {
+  if (err instanceof Error) {
+    return err.stack ?? err.message;
+  }
+  return String(err);
+}
+
+/** Filter out undefined values from an env record. */
+export function filterEnv(env: Record<string, string | undefined>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(env).filter((e): e is [string, string] => e[1] !== undefined),
+  );
+}
 
 /** Set of filesystem operations that are safe for read-only access. */
 const READ_ONLY_FS_OPS = new Set(["read", "stat", "readdir", "exists"]);
@@ -56,17 +74,7 @@ export function createSessionStateMap(initState?: () => Record<string, unknown>)
   };
 }
 
-/**
- * Create a standardized tool error result string.
- *
- * All tool errors — validation failures, execution throws, timeouts, refusals,
- * and middleware blocks — are returned to the LLM as a JSON string with an
- * `error` field: `'{"error":"<message>"}'`. This ensures the LLM always
- * receives a consistent, parseable error format regardless of the failure mode.
- *
- * Tool errors are **never thrown** — they are always caught and converted to
- * this format so the agentic loop can continue.
- */
+/** Return a JSON error string for the LLM: `'{"error":"<message>"}'`. */
 export function toolError(message: string): string {
   return JSON.stringify({ error: message });
 }
