@@ -807,4 +807,91 @@ describe("createS2sSession", () => {
     expect(doneEvent).toBeDefined();
     expect(doneEvent?.result).toContain("resolveTurnConfig hook error");
   });
+
+  // ─── Idle timeout tests ──────────────────────────────────────────────
+
+  function hasIdleTimeout(events: unknown[]): boolean {
+    return events.some((e) => (e as Record<string, unknown>).type === "idle_timeout");
+  }
+
+  test("idle timeout fires after configured period of inactivity", async () => {
+    vi.useFakeTimers();
+    const { session, client, mockHandle } = setup({
+      agentConfig: {
+        name: "test-agent",
+        instructions: DEFAULT_INSTRUCTIONS,
+        greeting: "Hello!",
+        idleTimeoutMs: 10_000,
+      },
+    });
+    await session.start();
+    vi.advanceTimersByTime(10_000);
+    expect(hasIdleTimeout(client.events)).toBe(true);
+    expect(mockHandle.close).toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  test("idle timeout is reset by client audio", async () => {
+    vi.useFakeTimers();
+    const { session, client } = setup({
+      agentConfig: {
+        name: "test-agent",
+        instructions: DEFAULT_INSTRUCTIONS,
+        greeting: "Hello!",
+        idleTimeoutMs: 10_000,
+      },
+    });
+    await session.start();
+    vi.advanceTimersByTime(8000);
+    session.onAudio(new Uint8Array([1, 2, 3]));
+    vi.advanceTimersByTime(8000);
+    expect(hasIdleTimeout(client.events)).toBe(false);
+    vi.advanceTimersByTime(2000);
+    expect(hasIdleTimeout(client.events)).toBe(true);
+    vi.useRealTimers();
+  });
+
+  test("idle timeout disabled when idleTimeoutMs is 0", async () => {
+    vi.useFakeTimers();
+    const { session, client } = setup({
+      agentConfig: {
+        name: "test-agent",
+        instructions: DEFAULT_INSTRUCTIONS,
+        greeting: "Hello!",
+        idleTimeoutMs: 0,
+      },
+    });
+    await session.start();
+    vi.advanceTimersByTime(600_000);
+    expect(hasIdleTimeout(client.events)).toBe(false);
+    vi.useRealTimers();
+  });
+
+  test("idle timer is cleared on stop()", async () => {
+    vi.useFakeTimers();
+    const { session, client } = setup({
+      agentConfig: {
+        name: "test-agent",
+        instructions: DEFAULT_INSTRUCTIONS,
+        greeting: "Hello!",
+        idleTimeoutMs: 10_000,
+      },
+    });
+    await session.start();
+    await session.stop();
+    vi.advanceTimersByTime(20_000);
+    expect(hasIdleTimeout(client.events)).toBe(false);
+    vi.useRealTimers();
+  });
+
+  test("default idle timeout is 5 minutes when not configured", async () => {
+    vi.useFakeTimers();
+    const { session, client } = setup();
+    await session.start();
+    vi.advanceTimersByTime(240_000);
+    expect(hasIdleTimeout(client.events)).toBe(false);
+    vi.advanceTimersByTime(60_000);
+    expect(hasIdleTimeout(client.events)).toBe(true);
+    vi.useRealTimers();
+  });
 });

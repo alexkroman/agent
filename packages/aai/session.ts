@@ -17,6 +17,7 @@ import {
   type S2sToolSchema,
 } from "./s2s.ts";
 import { buildSystemPrompt } from "./system-prompt.ts";
+import { idleTimeoutCounter } from "./telemetry.ts";
 import type { Message } from "./types.ts";
 import type { ExecuteTool } from "./worker-entry.ts";
 
@@ -143,6 +144,7 @@ export type S2sSessionCtx = {
 };
 
 const DEFAULT_MAX_HISTORY = 200;
+const DEFAULT_IDLE_TIMEOUT_MS = 300_000; // 5 minutes
 
 function buildCtx(opts: {
   id: string;
@@ -291,6 +293,27 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
     maxHistory: opts.maxHistory,
   });
 
+  // ── Idle timeout ──────────────────────────────────────────────────────
+  const rawTimeout = agentConfig.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
+  const idleTimeoutMs = rawTimeout === 0 || !Number.isFinite(rawTimeout) ? 0 : rawTimeout;
+  let idleTimer: ReturnType<typeof setTimeout> | null = null;
+  function resetIdleTimer(): void {
+    if (idleTimeoutMs <= 0) return;
+    if (idleTimer !== null) clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => {
+      log.info("S2S idle timeout", { timeoutMs: idleTimeoutMs, agent });
+      idleTimeoutCounter.add(1, { agent });
+      client.event({ type: "idle_timeout" });
+      ctx.s2s?.close();
+    }, idleTimeoutMs);
+  }
+  function clearIdleTimer(): void {
+    if (idleTimer !== null) {
+      clearTimeout(idleTimer);
+      idleTimer = null;
+    }
+  }
+
   /** Monotonically increasing counter bumped on each connectAndSetup call.
    *  Only the most recent invocation is allowed to set ctx.s2s, preventing
    *  earlier completions from overwriting a newer connection during rapid resets. */
@@ -326,6 +349,7 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
         ...(agentConfig.greeting ? { greeting: agentConfig.greeting } : {}),
       });
       ctx.s2s = handle;
+      resetIdleTimer();
     } catch (err: unknown) {
       const msg = errorMessage(err);
       log.error("S2S connect failed", { error: errorDetail(err) });
@@ -343,6 +367,7 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
     async stop(): Promise<void> {
       if (sessionAbort.signal.aborted) return;
       sessionAbort.abort();
+      clearIdleTimer();
       activeSessionsUpDown.add(-1, { agent });
       if (ctx.turnPromise !== null) await ctx.turnPromise;
       // Drain in-flight hooks (onTurn, onStep, etc.) BEFORE closing
@@ -354,6 +379,7 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
       await ctx.drainHooks();
     },
     onAudio(data: Uint8Array): void {
+      resetIdleTimer();
       ctx.s2s?.sendAudio(data);
     },
     onAudioReady(): void {
@@ -368,6 +394,7 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
       ctx.turnPromise = null;
       ctx.pendingTools = [];
       ctx.replyGeneration++;
+      clearIdleTimer();
       ctx.s2s?.close();
       client.event({ type: "reset" });
       connectAndSetup().catch((err: unknown) =>

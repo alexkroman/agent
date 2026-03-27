@@ -25,6 +25,7 @@ export type AgentDef<S = Record<string, unknown>> = {
     onStep?: (step: StepInfo, ctx: HookContext<S>) => void | Promise<void>;
     onBeforeStep?: (stepNumber: number, ctx: HookContext<S>) => BeforeStepResult | Promise<BeforeStepResult>;
     middleware?: readonly Middleware<S>[];
+    idleTimeoutMs?: number;
 };
 
 // @public
@@ -46,6 +47,7 @@ export type AgentOptions<S = Record<string, unknown>> = {
     onStep?: (step: StepInfo, ctx: HookContext<S>) => void | Promise<void>;
     onBeforeStep?: (stepNumber: number, ctx: HookContext<S>) => BeforeStepResult | Promise<BeforeStepResult>;
     middleware?: readonly Middleware<S>[];
+    idleTimeoutMs?: number;
 };
 
 // @public
