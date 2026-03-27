@@ -47,6 +47,9 @@ export type WsSessionOptions = {
   logger?: Logger;
   /** Timeout in ms for session.start(). Defaults to 10 000 (10s). */
   sessionStartTimeoutMs?: number;
+  /** Old session ID to resume from. When set, the persisted session data
+   *  (state, messages, S2S session ID) is restored from KV. */
+  resumeFrom?: string;
 };
 
 /**
@@ -184,8 +187,9 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
     session = opts.createSession(sessionId, client);
     sessions.set(sessionId, session);
 
-    // Send config immediately — zero RTT
-    ws.send(JSON.stringify({ type: "config", ...opts.readyConfig }));
+    // Send config immediately — zero RTT. Include sessionId so the client
+    // can reconnect with ?sessionId=<id> to resume a persisted session.
+    ws.send(JSON.stringify({ type: "config", ...opts.readyConfig, sessionId }));
 
     const timeoutMs = opts.sessionStartTimeoutMs ?? DEFAULT_SESSION_START_TIMEOUT_MS;
     const startWithTimeout = Promise.race([

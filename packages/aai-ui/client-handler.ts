@@ -195,7 +195,7 @@ export class ClientHandler {
    * Returns the parsed config if the message is a `config` message,
    * otherwise `null`.
    */
-  handleMessage(data: string | ArrayBuffer): ReadyConfig | null {
+  handleMessage(data: string | ArrayBuffer): (ReadyConfig & { sessionId?: string }) | null {
     // Binary frame → raw PCM16 TTS audio
     if (data instanceof ArrayBuffer) {
       this.playAudioChunk(new Uint8Array(data));
@@ -216,13 +216,13 @@ export class ClientHandler {
     }
 
     if (msg.type === "config") {
-      const { type: _, ...config } = msg;
+      const { type: _, sessionId, ...config } = msg;
       const parsed = ReadyConfigSchema.safeParse(config);
       if (!parsed.success) {
         console.warn("Unsupported server config:", parsed.error.message);
         return null;
       }
-      return parsed.data;
+      return sessionId ? { ...parsed.data, sessionId } : parsed.data;
     }
 
     if (msg.type === "audio_done") {

@@ -18,6 +18,9 @@ export type AgentDef<S = Record<string, unknown>> = {
     activeTools?: readonly string[];
     tools: Readonly<Record<string, ToolDef<z.ZodObject<z.ZodRawShape>, S>>>;
     state?: () => S;
+    persistence?: {
+        ttl: number;
+    };
     onConnect?: (ctx: HookContext<S>) => void | Promise<void>;
     onDisconnect?: (ctx: HookContext<S>) => void | Promise<void>;
     onError?: (error: Error, ctx?: HookContext<S>) => void;
@@ -40,6 +43,9 @@ export type AgentOptions<S = Record<string, unknown>> = {
     activeTools?: readonly string[];
     tools?: Readonly<Record<string, ToolDef<z.ZodObject<z.ZodRawShape>, NoInfer<S>>>>;
     state?: () => S;
+    persistence?: boolean | {
+        ttl?: number;
+    };
     onConnect?: (ctx: HookContext<S>) => void | Promise<void>;
     onDisconnect?: (ctx: HookContext<S>) => void | Promise<void>;
     onError?: (error: Error, ctx?: HookContext<S>) => void;

@@ -96,4 +96,16 @@ export type VoiceSessionOptions = {
    * `@preact/signals` for optimized batched updates.
    */
   batch?: (fn: () => void) => void;
+  /**
+   * Called when the server sends a session ID in the config message.
+   * Use this to store the ID (e.g. in localStorage) for reconnection
+   * via `resumeSessionId`.
+   */
+  onSessionId?: ((sessionId: string) => void) | undefined;
+  /**
+   * Session ID from a previous connection. When set, the server will
+   * attempt to restore persisted session state (if the agent has
+   * `persistence` enabled).
+   */
+  resumeSessionId?: string | undefined;
 };

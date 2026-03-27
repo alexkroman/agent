@@ -691,6 +691,8 @@ function SoloRPGApp() {
   );
 }
 
+const SESSION_KEY = "solo-rpg:sessionId";
+
 mount(SoloRPGApp, {
   title: "Solo RPG",
   theme: {
@@ -700,4 +702,6 @@ mount(SoloRPGApp, {
     surface: C.surface,
     border: C.border,
   },
+  onSessionId: (id: string) => localStorage.setItem(SESSION_KEY, id),
+  resumeSessionId: localStorage.getItem(SESSION_KEY) ?? undefined,
 });

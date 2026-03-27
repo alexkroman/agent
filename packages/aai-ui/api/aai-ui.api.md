@@ -96,6 +96,8 @@ export type MountOptions = {
     platformUrl?: string;
     title?: string;
     theme?: MountTheme;
+    onSessionId?: ((sessionId: string) => void) | undefined;
+    resumeSessionId?: string | undefined;
 };
 
 // @public
@@ -242,6 +244,8 @@ export type VoiceSessionOptions = {
     token?: string;
     reactiveFactory?: <T>(initial: T) => Reactive<T>;
     batch?: (fn: () => void) => void;
+    onSessionId?: ((sessionId: string) => void) | undefined;
+    resumeSessionId?: string | undefined;
 };
 
 // (No @packageDocumentation comment for this package)

@@ -176,6 +176,9 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     audioFormat: z.string(),
     sampleRate: z.number(),
     ttsSampleRate: z.number(),
+    /** Session ID for this connection. Clients can reconnect with
+     *  `?sessionId=<id>` to resume a persisted session. */
+    sessionId: z.string().optional(),
   }),
   ev("audio_done"),
   ...ClientEventSchema.options,

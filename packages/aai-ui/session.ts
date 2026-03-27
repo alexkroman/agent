@@ -189,11 +189,17 @@ export type VoiceSession = {
 
 // ─── Voice session factory ───────────────────────────────────────────────────
 
-function buildWsUrl(platformUrl: string, token: string | undefined, resume: boolean): URL {
+function buildWsUrl(
+  platformUrl: string,
+  token: string | undefined,
+  resume: boolean,
+  sessionId?: string,
+): URL {
   const wsUrl = new URL("websocket", platformUrl.endsWith("/") ? platformUrl : `${platformUrl}/`);
   wsUrl.protocol = wsUrl.protocol === "https:" ? "wss:" : "ws:";
   if (token) wsUrl.searchParams.set("token", token);
-  if (resume) wsUrl.searchParams.set("resume", "1");
+  if (sessionId) wsUrl.searchParams.set("sessionId", sessionId);
+  else if (resume) wsUrl.searchParams.set("resume", "1");
   return wsUrl;
 }
 
@@ -271,7 +277,8 @@ export function createVoiceSession(options: VoiceSessionOptions): VoiceSession {
       });
     }
 
-    const wsUrl = buildWsUrl(options.platformUrl, options.token, hasConnected);
+    const resumeId = !hasConnected ? options.resumeSessionId : undefined;
+    const wsUrl = buildWsUrl(options.platformUrl, options.token, hasConnected, resumeId);
 
     const socket = new WebSocket(wsUrl.toString());
     socket.binaryType = "arraybuffer";
@@ -301,6 +308,7 @@ export function createVoiceSession(options: VoiceSessionOptions): VoiceSession {
       (event: MessageEvent) => {
         const config = handler.handleMessage(event.data);
         if (config) {
+          if (config.sessionId) options.onSessionId?.(config.sessionId);
           const isReconnect = hasConnected;
           hasConnected = true;
           initAudioCapture(conn, config, audioDeps).catch((err) => {

@@ -35,6 +35,8 @@ export function getServerPort(addr: unknown): number {
  */
 export function createSessionStateMap(initState?: () => Record<string, unknown>): {
   get(sessionId: string): Record<string, unknown>;
+  /** Explicitly set the state for a session (used by persistence restore). */
+  set(sessionId: string, state: Record<string, unknown>): void;
   delete(sessionId: string): boolean;
 } {
   const map = new Map<string, Record<string, unknown>>();
@@ -44,6 +46,9 @@ export function createSessionStateMap(initState?: () => Record<string, unknown>)
         map.set(sessionId, initState());
       }
       return map.get(sessionId) ?? {};
+    },
+    set(sessionId: string, state: Record<string, unknown>): void {
+      map.set(sessionId, state);
     },
     delete(sessionId: string): boolean {
       return map.delete(sessionId);
