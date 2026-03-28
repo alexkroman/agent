@@ -98,7 +98,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        project: [aai, aai-ui, aai-cli, aai-server]
+        project: [aai, aai-ui, aai-cli, aai-server, templates]
     steps:
       - uses: actions/checkout@v6
         with:
@@ -136,7 +136,7 @@ jobs:
             packages/*/dist
             .tsbuildinfo
           key: workspace-node${{ hashFiles('.node-version') }}-${{ github.sha }}
-      - run: pnpm --filter "...[origin/main]" run --if-present check:integration
+      - run: pnpm vitest run -c vitest.integration.config.ts
 
   e2e:
     needs: setup
@@ -157,6 +157,10 @@ jobs:
             packages/*/dist
             .tsbuildinfo
           key: workspace-node${{ hashFiles('.node-version') }}-${{ github.sha }}
+      - uses: actions/cache@v5
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('packages/aai-cli/package.json') }}
       - run: pnpm --filter @alexkroman1/aai-cli exec playwright install --with-deps chromium
       - run: pnpm --filter "...[origin/main]" run --if-present check:e2e
 

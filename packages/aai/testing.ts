@@ -44,6 +44,7 @@ import type { AgentDef, Message, StepInfo } from "./types.ts";
 import { createUnstorageKv } from "./unstorage-kv.ts";
 
 export { installMockWebSocket, MockWebSocket } from "./_mock-ws.ts";
+export { flush } from "./_test-utils.ts";
 
 // ─── TurnResult ──────────────────────────────────────────────────────────────
 

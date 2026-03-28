@@ -1,47 +1,12 @@
-import { createNanoEvents } from "nanoevents";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { handleToolCall, setupListeners } from "./_session-otel.ts";
+import { makeClient, makeMockHandle, silentLogger } from "./_test-utils.ts";
 import type { HookInvoker } from "./middleware.ts";
-import type { ClientSink } from "./protocol.ts";
 import { MAX_TOOL_RESULT_CHARS } from "./protocol.ts";
-import type { S2sEvents, S2sHandle, S2sToolCall } from "./s2s.ts";
+import type { S2sToolCall } from "./s2s.ts";
 import type { S2sSessionCtx } from "./session.ts";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-type MockClient = ClientSink & { events: Record<string, unknown>[] };
-
-function makeMockHandle(): S2sHandle & {
-  _fire: <K extends keyof S2sEvents>(type: K, ...args: Parameters<S2sEvents[K]>) => void;
-} {
-  const emitter = createNanoEvents<S2sEvents>();
-  return {
-    on: emitter.on.bind(emitter),
-    sendAudio: vi.fn(),
-    sendToolResult: vi.fn(),
-    updateSession: vi.fn(),
-    resumeSession: vi.fn(),
-    close: vi.fn(),
-    _fire<K extends keyof S2sEvents>(type: K, ...args: Parameters<S2sEvents[K]>) {
-      emitter.emit(type, ...args);
-    },
-  };
-}
-
-function makeClient(): MockClient {
-  const events: Record<string, unknown>[] = [];
-  return {
-    open: true,
-    events,
-    event(e) {
-      events.push(e as Record<string, unknown>);
-    },
-    playAudioChunk: vi.fn(),
-    playAudioDone: vi.fn(),
-  };
-}
-
-const silentLogger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
 
 function makeHook(overrides?: Partial<HookInvoker>): HookInvoker {
   return {
@@ -87,12 +52,14 @@ const tc = (o?: Partial<S2sToolCall>): S2sToolCall => ({
   ...o,
 });
 
+type ClientWithEvents = { events: Record<string, unknown>[] };
+
 function findEvent(ctx: S2sSessionCtx, type: string) {
-  return (ctx.client as MockClient).events.find((e) => e.type === type);
+  return (ctx.client as unknown as ClientWithEvents).events.find((e) => e.type === type);
 }
 
 function allEvents(ctx: S2sSessionCtx) {
-  return (ctx.client as MockClient).events;
+  return (ctx.client as unknown as ClientWithEvents).events;
 }
 
 // ─── handleToolCall ──────────────────────────────────────────────────────────

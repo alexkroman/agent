@@ -9,27 +9,25 @@ export default defineConfig({
       provider: "v8",
       include: ["packages/*/"],
       exclude: [
+        // Test infrastructure
         "**/*.test.{ts,tsx}",
         "**/_test-utils.ts",
         "**/templates/**",
         "**/dist/**",
         "**/__snapshots__/**",
-        // Sandbox core + harness files run inside secure-exec isolates, not vitest.
-        // Covered by integration test (pnpm test:integration).
-        "**/sandbox.ts",
-        "**/sandbox-harness.ts",
-        "**/sandbox-network.ts",
-        "**/sandbox-sidecar.ts",
-        "**/sandbox-integration.test.ts",
-        "**/build-harness.ts",
-        // Harness runtime is bundled by Vite into CJS for the isolate.
-        "**/_harness-runtime.ts",
-        // OTel session wiring — tested via integration tests, not unit tests.
-        "**/_session-otel.ts",
+        // Sandbox harness: runs inside secure-exec V8 isolates, not vitest.
+        // Covered by integration tests (pnpm test:integration).
+        "packages/aai-server/src/sandbox*.ts",
+        "packages/aai-server/src/_harness-runtime.ts",
+        "packages/aai-server/src/build-harness.ts",
         // CLI entry point and interactive prompts can't be unit tested.
-        "**/cli.ts",
-        "**/_prompts.ts",
+        "packages/aai-cli/cli.ts",
+        "packages/aai-cli/_prompts.ts",
+        // OTel session wiring — tested via integration tests, not unit tests.
+        "packages/aai/_session-otel.ts",
       ],
+      // Global minimum. Per-package actuals are higher:
+      // aai ~93%, aai-ui ~85%, aai-cli ~75%, aai-server ~80%
       thresholds: {
         lines: 60,
         functions: 60,
@@ -43,8 +41,14 @@ export default defineConfig({
         test: {
           name: "aai",
           root: "packages/aai",
-          restoreMocks: true,
           include: ["**/*.test.ts"],
+          exclude: [
+            "pentest.test.ts",
+            "run-code-isolate.test.ts",
+            "integration.test.ts",
+            "node_modules",
+            "dist",
+          ],
           setupFiles: ["./matchers.ts"],
         },
       },
@@ -54,7 +58,6 @@ export default defineConfig({
           name: "aai-ui",
           root: "packages/aai-ui",
           globals: true,
-          restoreMocks: true,
           include: ["**/*.test.{ts,tsx}"],
           setupFiles: ["./_jsdom-setup.ts"],
         },
@@ -64,7 +67,6 @@ export default defineConfig({
         test: {
           name: "aai-cli",
           root: "packages/aai-cli",
-          restoreMocks: true,
           include: ["**/*.test.ts"],
           exclude: [
             "pack-build.test.ts",
@@ -79,13 +81,22 @@ export default defineConfig({
         test: {
           name: "aai-server",
           root: "packages/aai-server",
-          restoreMocks: true,
           include: ["**/*.test.ts"],
           exclude: [
             "src/sandbox-integration.test.ts",
+            "src/ws-integration.test.ts",
             "node_modules",
             "dist",
           ],
+        },
+      },
+      {
+        ...sharedConfig,
+        test: {
+          name: "templates",
+          root: "packages/aai-templates",
+          include: ["*/agent.test.ts"],
+          setupFiles: ["../aai/matchers.ts"],
         },
       },
     ],

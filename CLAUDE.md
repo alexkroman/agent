@@ -13,20 +13,30 @@ agents can be deployed to the managed platform.
 
 ```sh
 pnpm install             # Install dependencies
-pnpm test                # Run all tests (vitest)
+pnpm test                # Run all unit tests (vitest)
 pnpm lint                # Run Biome linter (all packages)
 pnpm typecheck           # Type-check all packages
 pnpm lint:fix            # Auto-fix lint issues
 pnpm check:local         # Fast pre-commit gate (parallel: build → typecheck + lint + api + syncpack → test)
 ```
 
+**Test tiers:**
+
+| Tier | Command | Scope | Timeout |
+| ---- | ------- | ----- | ------- |
+| Unit | `pnpm test` | Fast, mocked, co-located | 5s |
+| Integration | `pnpm test:integration` | Real subsystems (V8 isolates, HTTP servers) | 30s |
+| E2E | `pnpm test:e2e` | Full process spawn + Playwright browser | 300s |
+| Templates | `pnpm test:templates` | Template agent example tests | 5s |
+
 **Single-package shortcuts:**
 
 ```sh
-pnpm test:aai            # Run only aai tests
-pnpm test:aai-ui         # Run only aai-ui tests
-pnpm test:aai-cli        # Run only aai-cli tests
-pnpm test:aai-server     # Run only aai-server tests
+pnpm test:aai            # Run only aai unit tests
+pnpm test:aai-ui         # Run only aai-ui unit tests
+pnpm test:aai-cli        # Run only aai-cli unit tests
+pnpm test:aai-server     # Run only aai-server unit tests
+pnpm test:templates      # Run template agent tests
 pnpm dev:aai-server      # Start aai-server in dev mode
 ```
 
@@ -34,7 +44,8 @@ pnpm dev:aai-server      # Start aai-server in dev mode
 
 ```sh
 pnpm vitest run --project aai              # Single package via --project
-pnpm vitest run packages/aai/types_test.ts # Single file
+pnpm vitest run packages/aai/types.test.ts # Single file
+pnpm vitest run session                    # All files matching "session"
 pnpm --filter @alexkroman1/aai test        # Single package via pnpm filter
 ```
 
@@ -46,7 +57,7 @@ Runs via `scripts/check.sh` in three parallelized phases:
 2. **Checks** (parallel): typecheck, lint, api-extractor, attw, templates,
    knip, syncpack, markdownlint
 3. **Tests** (parallel, sharded by package): vitest per-package (aai, aai-ui,
-   aai-cli, aai-server), integration tests, e2e tests
+   aai-cli, aai-server, templates), integration tests, e2e tests
 
 `pnpm check:local` uses the same script with `--local` flag, running a
 subset: build → typecheck + lint + api-extractor + syncpack (parallel) →
@@ -156,7 +167,7 @@ start, secret, link, unlink
 
 - **Runtime**: Node
 - **Frameworks**: Preact (client UI), Tailwind CSS v4 (compiled at bundle time)
-- **Testing**: Vitest. Test files co-located: `foo.ts` → `foo_test.ts`.
+- **Testing**: Vitest. Test files co-located: `foo.ts` → `foo.test.ts`.
   Unit test projects (aai, aai-ui, aai-cli, aai-server) are defined in the
   root `vitest.config.ts`. Use `--project <name>` to run a specific project.
   Slow/integration tests have separate per-package configs (`vitest.slow.config.ts`,

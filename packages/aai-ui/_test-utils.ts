@@ -8,12 +8,12 @@ import type { AgentState, ChatMessage, SessionError, ToolCallInfo } from "./type
 
 export { installMockWebSocket, MockWebSocket } from "@alexkroman1/aai/testing";
 
-export function delay(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
 export function flush(): Promise<void> {
   return new Promise<void>((r) => queueMicrotask(r));
+}
+
+export function delay(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
 }
 
 // Test helpers assign incomplete mocks to global properties (e.g. a plain

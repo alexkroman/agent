@@ -101,6 +101,7 @@ if [ "$MODE" = "--local" ]; then
   run_step "vitest:aai-ui"     npx vitest run --project aai-ui
   run_step "vitest:aai-cli"    npx vitest run --project aai-cli
   run_step "vitest:aai-server" npx vitest run --project aai-server
+  run_step "vitest:templates"  npx vitest run --project templates
 else
   run_step "integration"       pnpm $PNPM_FILTER run --if-present check:integration
   run_step "e2e"               pnpm $PNPM_FILTER run --if-present check:e2e

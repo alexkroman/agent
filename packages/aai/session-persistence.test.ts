@@ -1,7 +1,5 @@
-import { createNanoEvents } from "nanoevents";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import type { ClientSink } from "./protocol.ts";
-import type { S2sEvents, S2sHandle } from "./s2s.ts";
+import { makeClient, makeMockHandle, makeSessionOpts, silentLogger } from "./_test-utils.ts";
 import {
   _internals,
   createS2sSession,
@@ -10,50 +8,8 @@ import {
   type S2sSessionOptions,
   type SessionPersistence,
 } from "./session.ts";
-import { DEFAULT_INSTRUCTIONS } from "./types.ts";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function makeMockHandle(): S2sHandle & {
-  _fire: <K extends keyof S2sEvents>(type: K, ...args: Parameters<S2sEvents[K]>) => void;
-} {
-  const emitter = createNanoEvents<S2sEvents>();
-  return {
-    on: emitter.on.bind(emitter),
-    sendAudio: vi.fn(),
-    sendToolResult: vi.fn(),
-    updateSession: vi.fn(),
-    resumeSession: vi.fn(),
-    close: vi.fn(),
-    _fire<K extends keyof S2sEvents>(type: K, ...args: Parameters<S2sEvents[K]>) {
-      emitter.emit(type, ...args);
-    },
-  };
-}
-
-function makeClient(): ClientSink & { events: unknown[] } {
-  const events: unknown[] = [];
-  return {
-    open: true,
-    events,
-    event(e) {
-      events.push(e);
-    },
-    playAudioChunk() {
-      /* no-op in tests */
-    },
-    playAudioDone() {
-      /* no-op in tests */
-    },
-  };
-}
-
-const silentLogger = {
-  info: vi.fn(),
-  warn: vi.fn(),
-  error: vi.fn(),
-  debug: vi.fn(),
-};
 
 /** In-memory KV store for testing. */
 function makeMemoryKv() {
@@ -104,26 +60,6 @@ function makePersistence(kv: ReturnType<typeof makeMemoryKv>): {
     get state() {
       return state;
     },
-  };
-}
-
-function makeSessionOpts(overrides?: Partial<S2sSessionOptions>): S2sSessionOptions {
-  return {
-    id: "session-1",
-    agent: "test-agent",
-    client: makeClient(),
-    agentConfig: {
-      name: "test-agent",
-      instructions: DEFAULT_INSTRUCTIONS,
-      greeting: "Hello!",
-    },
-    toolSchemas: [],
-    apiKey: "test-key",
-    s2sConfig: { wssUrl: "wss://fake", inputSampleRate: 16_000, outputSampleRate: 24_000 },
-    executeTool: vi.fn(async () => "tool-result"),
-    createWebSocket: vi.fn(),
-    logger: silentLogger,
-    ...overrides,
   };
 }
 

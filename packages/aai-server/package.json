@@ -12,7 +12,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
     "test:integration": "vitest run --config vitest.integration.config.ts",
-    "check:integration": "vitest run --config vitest.integration.config.ts"
+    "check:integration": "pnpm run test:integration"
   },
   "dependencies": {
     "@alexkroman1/aai": "workspace:*",
