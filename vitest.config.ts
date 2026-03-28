@@ -89,7 +89,6 @@ export default defineConfig({
           include: ["**/*.test.ts"],
           exclude: [
             "pack-build.test.ts",
-            "e2e.test.ts",
             "node_modules",
             "dist",
           ],
@@ -103,6 +102,7 @@ export default defineConfig({
           include: ["**/*.test.ts"],
           exclude: [
             "src/sandbox-integration.test.ts",
+            "src/sandbox-conformance.test.ts",
             "src/ws-integration.test.ts",
             "node_modules",
             "dist",

@@ -4,6 +4,7 @@ import { createStorage } from "unstorage";
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { toAgentConfig } from "./_internal-types.ts";
+import { CONFORMANCE_AGENT, testRuntime } from "./_runtime-conformance.ts";
 import { makeAgent } from "./_test-utils.ts";
 import { createDirectExecutor } from "./direct-executor.ts";
 import { defineTool } from "./types.ts";
@@ -253,3 +254,15 @@ describe("createDirectExecutor", () => {
     expect(typeof exec.startSession).toBe("function");
   });
 });
+
+// ── Shared conformance suite (same tests run against sandbox in integration) ─
+
+const directExec = createDirectExecutor({
+  agent: CONFORMANCE_AGENT,
+  env: { MY_VAR: "test-value" },
+});
+
+testRuntime("direct", () => ({
+  executeTool: directExec.executeTool,
+  hookInvoker: directExec.hookInvoker,
+}));

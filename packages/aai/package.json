@@ -100,6 +100,11 @@
       "source": "./unstorage-kv.ts",
       "types": "./dist/unstorage-kv.d.ts",
       "import": "./dist/unstorage-kv.js"
+    },
+    "./runtime-conformance": {
+      "source": "./_runtime-conformance.ts",
+      "types": "./dist/_runtime-conformance.d.ts",
+      "import": "./dist/_runtime-conformance.js"
     }
   },
   "scripts": {
