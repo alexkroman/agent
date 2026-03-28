@@ -92,7 +92,7 @@ export default defineConfig([
   // globalThis.Request which conflicts with secure-exec's frozen built-ins.
   // IMPORTANT: Only use type-only imports from workspace packages here —
   // the isolate has no access to node_modules.
-  // EXCEPTION: middleware-core and utils are explicitly bundled via noExternal
+  // EXCEPTION: middleware and utils are explicitly bundled via noExternal
   // because they contain zero runtime dependencies.
   {
     entry: ["src/_harness-runtime.ts"],
@@ -100,7 +100,7 @@ export default defineConfig([
     platform: "node",
     target: "node22",
     outDir: "dist",
-    noExternal: [/@alexkroman1\/aai\/middleware-core/, /@alexkroman1\/aai\/utils/],
+    noExternal: [/@alexkroman1\/aai\/middleware/, /@alexkroman1\/aai\/utils/],
     plugins: [constantSyncPlugin(), isolateGuardPlugin()],
   },
 ]);

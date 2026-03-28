@@ -5,7 +5,7 @@ import type { AgentConfig, ToolSchema } from "./_internal-types.ts";
 import { activeSessionsUpDown, sessionCounter, setupListeners } from "./_session-otel.ts";
 import { errorDetail, errorMessage, toolError } from "./_utils.ts";
 import { DEFAULT_IDLE_TIMEOUT_MS, DEFAULT_MAX_HISTORY, HOOK_TIMEOUT_MS } from "./constants.ts";
-import type { HookInvoker } from "./middleware.ts";
+import type { HookInvoker } from "./lifecycle.ts";
 import type { ClientSink } from "./protocol.ts";
 import type { Logger, S2SConfig } from "./runtime.ts";
 import { consoleLogger } from "./runtime.ts";
@@ -185,12 +185,8 @@ export function buildCtx(opts: {
 
 // ─── Re-exports ─────────────────────────────────────────────────────────────
 
-export type {
-  HookInvoker,
-  LifecycleHooks,
-  MiddlewareRunner,
-  ToolInterceptResult,
-} from "./middleware.ts";
+export type { HookInvoker, LifecycleHooks } from "./lifecycle.ts";
+export type { MiddlewareRunner, ToolInterceptResult } from "./middleware.ts";
 export { buildSystemPrompt } from "./system-prompt.ts";
 
 /**

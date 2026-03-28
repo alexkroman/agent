@@ -96,10 +96,10 @@
       "types": "./dist/_ssrf.d.ts",
       "import": "./dist/_ssrf.js"
     },
-    "./middleware-core": {
-      "source": "./middleware-core.ts",
-      "types": "./dist/middleware-core.d.ts",
-      "import": "./dist/middleware-core.js"
+    "./middleware": {
+      "source": "./middleware.ts",
+      "types": "./dist/middleware.d.ts",
+      "import": "./dist/middleware.js"
     },
     "./unstorage-kv": {
       "source": "./unstorage-kv.ts",

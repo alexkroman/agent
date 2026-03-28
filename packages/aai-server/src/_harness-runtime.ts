@@ -2,7 +2,7 @@
 /** Sandbox harness runtime -- runs inside the secure-exec V8 isolate. */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { Kv } from "@alexkroman1/aai/kv";
-import { buildMiddlewareRunner } from "@alexkroman1/aai/middleware-core";
+import { buildMiddlewareRunner } from "@alexkroman1/aai/middleware";
 import type { AgentDef, HookContext, ToolContext } from "@alexkroman1/aai/types";
 import { createSessionStateMap } from "@alexkroman1/aai/utils";
 import type {

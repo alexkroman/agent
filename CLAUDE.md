@@ -108,14 +108,14 @@ type test updates:
 - `./telemetry` — OpenTelemetry tracer, meter, pre-built metrics, `withSpan` helper
 - `./utils` — shared utility functions
 - `./ssrf` — SSRF protection (`assertPublicUrl`, `isPrivateIp`, `ssrfSafeFetch`)
-- `./middleware-core` — pure middleware runner functions (zero runtime deps,
+- `./middleware` — pure middleware runner functions (zero runtime deps,
   isolate-safe; bundled into the harness runtime)
 
 Non-exported internal files (used within the package only):
 
 - `builtin-tools.ts` — built-in tool definitions + memory tools
 - `direct-executor.ts` — in-process tool execution (self-hosted)
-- `middleware.ts` — middleware re-exports from middleware-core + `HookInvoker`
+- `lifecycle.ts` — `LifecycleHooks`, `HookInvoker` (agent callback types)
 
 #### `@alexkroman1/aai-ui` (UI)
 

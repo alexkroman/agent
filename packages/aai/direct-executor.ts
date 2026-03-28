@@ -13,7 +13,7 @@ import { createSessionStateMap, toolError } from "./_utils.ts";
 import type { AgentRuntime, SessionStartOptions } from "./adapter.ts";
 import { getBuiltinToolDefs, getBuiltinToolSchemas } from "./builtin-tools.ts";
 import type { Kv } from "./kv.ts";
-import type { HookInvoker, LifecycleHooks } from "./middleware.ts";
+import type { HookInvoker, LifecycleHooks } from "./lifecycle.ts";
 import { buildMiddlewareRunner } from "./middleware.ts";
 import type { ClientSink } from "./protocol.ts";
 import { buildReadyConfig, type ReadyConfig } from "./protocol.ts";

@@ -31,7 +31,7 @@
 
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
-import type { HookInvoker } from "./middleware.ts";
+import type { HookInvoker } from "./lifecycle.ts";
 import { type AgentDef, defineTool } from "./types.ts";
 import type { ExecuteTool } from "./worker-entry.ts";
 
