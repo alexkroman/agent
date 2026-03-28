@@ -3,14 +3,13 @@
  * Sidecar HTTP server for agent sandboxes.
  *
  * Each sandbox gets a per-sandbox sidecar server on loopback that provides
- * KV and vector access — the isolate calls it without authentication.
- * KV and VectorStore instances are pre-scoped at construction time.
+ * KV access — the isolate calls it without authentication.
+ * KV instance is pre-scoped at construction time.
  */
 
 import type { Kv } from "@alexkroman1/aai/kv";
 import { ssrfSafeFetch } from "@alexkroman1/aai/ssrf";
 import { getServerPort } from "@alexkroman1/aai/utils";
-import { type VectorStore, validateVectorFilter } from "@alexkroman1/aai/vector";
 import { serve } from "@hono/node-server";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
@@ -32,20 +31,6 @@ const SidecarKvListSchema = z.object({
   reverse: z.boolean().optional(),
 });
 const SidecarKvKeysSchema = z.object({ pattern: z.string().optional() });
-const SidecarVecUpsertSchema = z.object({
-  id: z.string(),
-  data: z.string(),
-  metadata: z.record(z.string(), z.unknown()).optional(),
-});
-const SidecarVecQuerySchema = z.object({
-  text: z.string(),
-  topK: z.number().optional(),
-  filter: z
-    .string()
-    .transform((f) => validateVectorFilter(f))
-    .optional(),
-});
-const SidecarVecDeleteSchema = z.object({ ids: z.union([z.string(), z.array(z.string())]) });
 const SidecarFetchSchema = z.object({
   url: z.string().url(),
   method: z.string().optional(),
@@ -64,13 +49,8 @@ const SIDECAR_STARTUP_TIMEOUT_MS = 10_000;
 
 // ── Sidecar server (per-sandbox, loopback, no auth) ─────────────────────
 
-function buildSidecarApp(kv: Kv, vector: VectorStore | undefined): Hono {
+function buildSidecarApp(kv: Kv): Hono {
   const app = new Hono();
-
-  const requireVec = () => {
-    if (!vector) throw new HTTPException(503, { message: "Vector store not configured" });
-    return vector;
-  };
 
   app.post("/kv/get", zValidator("json", SidecarKvGetSchema), async (c) => {
     const { key } = c.req.valid("json");
@@ -103,26 +83,6 @@ function buildSidecarApp(kv: Kv, vector: VectorStore | undefined): Hono {
     const { pattern } = c.req.valid("json");
     return c.json(await kv.keys(pattern));
   });
-  app.post("/vec/upsert", zValidator("json", SidecarVecUpsertSchema), async (c) => {
-    const { id, data, metadata } = c.req.valid("json");
-    await requireVec().upsert(id, data, metadata);
-    return c.json(null);
-  });
-  app.post("/vec/query", zValidator("json", SidecarVecQuerySchema), async (c) => {
-    const { text, topK, filter } = c.req.valid("json");
-    return c.json(
-      await requireVec().query(text, {
-        ...(topK != null && { topK }),
-        ...(filter != null && { filter }),
-      }),
-    );
-  });
-  app.post("/vec/delete", zValidator("json", SidecarVecDeleteSchema), async (c) => {
-    const { ids } = c.req.valid("json");
-    await requireVec().delete(ids);
-    return c.json(null);
-  });
-
   // ── Fetch proxy (SSRF-safe) ──────────────────────────────────────────
   app.post("/fetch", zValidator("json", SidecarFetchSchema), async (c) => {
     const { url, method, headers, body } = c.req.valid("json");
@@ -166,11 +126,8 @@ function buildSidecarApp(kv: Kv, vector: VectorStore | undefined): Hono {
   return app;
 }
 
-export async function startSidecarServer(
-  kv: Kv,
-  vector: VectorStore | undefined,
-): Promise<{ url: string; close: () => void }> {
-  const app = buildSidecarApp(kv, vector);
+export async function startSidecarServer(kv: Kv): Promise<{ url: string; close: () => void }> {
+  const app = buildSidecarApp(kv);
   const server = serve({ fetch: app.fetch, port: 0, hostname: "127.0.0.1" });
 
   await new Promise<void>((resolve, reject) => {

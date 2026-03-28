@@ -11,7 +11,6 @@ import { TOOL_EXECUTION_TIMEOUT_MS } from "./protocol.ts";
 import type { Logger } from "./runtime.ts";
 
 import type { Message, ToolContext, ToolDef } from "./types.ts";
-import type { VectorStore } from "./vector.ts";
 
 /** Yield to the event loop so pending I/O (e.g. WebSocket frames) can be processed. */
 const yieldTick = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
@@ -34,17 +33,13 @@ export type ExecuteTool = (
 ) => Promise<string>;
 
 function buildToolContext(opts: ExecuteToolCallOptions): ToolContext {
-  const { env, state, kv, vector, messages, onUpdate, fetch: fetchFn, sessionId } = opts;
+  const { env, state, kv, messages, onUpdate, fetch: fetchFn, sessionId } = opts;
   return {
     env: { ...env },
     state: state ?? {},
     get kv(): Kv {
       if (!kv) throw new Error("KV not available");
       return kv;
-    },
-    get vector(): VectorStore {
-      if (!vector) throw new Error("Vector store not available");
-      return vector;
     },
     messages: messages ?? [],
     sendUpdate(data: unknown): void {
@@ -62,7 +57,6 @@ export type ExecuteToolCallOptions = {
   state?: Record<string, unknown>;
   sessionId?: string | undefined;
   kv?: Kv | undefined;
-  vector?: VectorStore | undefined;
   messages?: readonly Message[] | undefined;
   logger?: Logger | undefined;
   /** Callback for intermediate UI updates from `ctx.sendUpdate()`. */

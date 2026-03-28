@@ -1,5 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
-/** Sandbox harness runtime — runs inside the secure-exec V8 isolate. */
+/** Sandbox harness runtime -- runs inside the secure-exec V8 isolate. */
 // biome-ignore lint/nursery/noExcessiveLinesPerFile: single-file isolate runtime, splitting would break sandbox constraints
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { Kv } from "@alexkroman1/aai/kv";
@@ -12,11 +12,12 @@ import {
   runToolCallInterceptors,
 } from "@alexkroman1/aai/middleware-core";
 import type { AgentDef, HookContext, Middleware, ToolContext } from "@alexkroman1/aai/types";
-import type { VectorStore } from "@alexkroman1/aai/vector";
 import type {
   HookRequest,
   HookResponse,
   IsolateConfig,
+  RpcRequest,
+  RpcResponse,
   ToolCallRequest,
   ToolCallResponse,
 } from "./_harness-protocol.ts";
@@ -64,18 +65,6 @@ const kv: Kv = {
   },
   keys(pattern?: string) {
     return sidecarRpc<string[]>("/kv/keys", { pattern });
-  },
-};
-
-const vector: VectorStore = {
-  upsert(id: string, data: string, metadata?: Record<string, unknown>) {
-    return sidecarRpc<void>("/vec/upsert", { id, data, metadata });
-  },
-  query(text: string, options?: { topK?: number; filter?: string }) {
-    return sidecarRpc("/vec/query", { text, ...options });
-  },
-  delete(ids: string | string[]) {
-    return sidecarRpc<void>("/vec/delete", { ids: Array.isArray(ids) ? ids : [ids] });
   },
 };
 
@@ -175,10 +164,9 @@ async function executeTool(agent: AgentDef, req: ToolCallRequest): Promise<ToolC
     state: getState(agent, req.sessionId),
     sessionId: req.sessionId,
     kv,
-    vector,
     messages: req.messages,
     sendUpdate() {
-      /* no-op in sandbox — no WebSocket access */
+      /* no-op in sandbox -- no WebSocket access */
     },
     fetch: sidecarFetch,
   };
@@ -209,7 +197,6 @@ function makeHookCtx(agent: AgentDef, req: HookRequest): HookContext {
     state: getState(agent, req.sessionId),
     sessionId: req.sessionId,
     kv,
-    vector,
     fetch: sidecarFetch,
   };
 }
@@ -334,43 +321,33 @@ function isAuthorized(req: IncomingMessage): boolean {
   return !HARNESS_AUTH_TOKEN || req.headers["x-harness-token"] === HARNESS_AUTH_TOKEN;
 }
 
-type RouteResult = { data: unknown; status?: number };
-
-async function parseJsonBody<T>(req: IncomingMessage): Promise<T | RouteResult> {
-  try {
-    return JSON.parse(await readBody(req)) as T;
-  } catch {
-    return { data: { error: "Invalid JSON in request body" }, status: 400 };
+async function dispatch(agent: AgentDef, msg: RpcRequest): Promise<RpcResponse> {
+  switch (msg.type) {
+    case "config":
+      return extractConfig(agent);
+    case "tool": {
+      if (!msg.name || typeof msg.name !== "string" || !msg.sessionId) {
+        throw Object.assign(new Error("Invalid tool call request: missing name or sessionId"), {
+          status: 400,
+        });
+      }
+      return executeTool(agent, msg);
+    }
+    case "hook": {
+      if (!msg.hook || typeof msg.hook !== "string" || !msg.sessionId) {
+        throw Object.assign(new Error("Invalid hook request: missing hook or sessionId"), {
+          status: 400,
+        });
+      }
+      return invokeHook(agent, msg);
+    }
+    default: {
+      const _: never = msg;
+      throw Object.assign(new Error(`Unknown RPC type: ${(_ as { type: string }).type}`), {
+        status: 400,
+      });
+    }
   }
-}
-
-function isRouteResult(v: unknown): v is RouteResult {
-  return typeof v === "object" && v !== null && "data" in v;
-}
-
-async function handleToolRoute(agent: AgentDef, req: IncomingMessage): Promise<RouteResult> {
-  const body = await parseJsonBody<ToolCallRequest>(req);
-  if (isRouteResult(body)) return body;
-  if (!body || typeof body.name !== "string" || typeof body.sessionId !== "string") {
-    return { data: { error: "Invalid tool call request: missing name or sessionId" }, status: 400 };
-  }
-  return { data: await executeTool(agent, body) };
-}
-
-async function handleHookRoute(agent: AgentDef, req: IncomingMessage): Promise<RouteResult> {
-  const body = await parseJsonBody<HookRequest>(req);
-  if (isRouteResult(body)) return body;
-  if (!body || typeof body.hook !== "string" || typeof body.sessionId !== "string") {
-    return { data: { error: "Invalid hook request: missing hook or sessionId" }, status: 400 };
-  }
-  return { data: await invokeHook(agent, body) };
-}
-
-async function handleRoute(agent: AgentDef, req: IncomingMessage): Promise<RouteResult> {
-  if (req.method === "GET" && req.url === "/config") return { data: extractConfig(agent) };
-  if (req.method === "POST" && req.url === "/tool") return handleToolRoute(agent, req);
-  if (req.method === "POST" && req.url === "/hook") return handleHookRoute(agent, req);
-  return { data: { error: "Not found" }, status: 404 };
 }
 
 export function startHarness(agent: AgentDef): void {
@@ -384,8 +361,19 @@ export function startHarness(agent: AgentDef): void {
         json(res, { error: "Unauthorized" }, 401);
         return;
       }
-      const { data, status } = await handleRoute(agent, req);
-      json(res, data, status);
+      if (req.method !== "POST" || req.url !== "/rpc") {
+        json(res, { error: "Not found" }, 404);
+        return;
+      }
+      let msg: RpcRequest;
+      try {
+        msg = JSON.parse(await readBody(req)) as RpcRequest;
+      } catch {
+        json(res, { error: "Invalid JSON in request body" }, 400);
+        return;
+      }
+      const result = await dispatch(agent, msg);
+      json(res, result);
     } catch (err: unknown) {
       const status = (err as { status?: number }).status ?? 500;
       const message = err instanceof Error ? err.message : "Internal error";

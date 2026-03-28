@@ -42,7 +42,6 @@ aai deploy --dry-run     # Validate and bundle without deploying
 aai secret put <NAME>    # Set a secret on the server (prompts for value)
 aai secret delete <NAME> # Remove a secret
 aai secret list          # List secret names
-aai rag <url>            # Ingest a site's llms-full.txt into the vector store
 aai link                 # Link local workspace packages (dev only)
 aai unlink               # Restore published package versions (reverses link)
 ```
@@ -70,7 +69,7 @@ with `aai init -t <template_name>`.
 | `solo-rpg`          | Solo dark-fantasy RPG with dice, oaths, combat, save/load. **Has custom UI.**      |
 | `middleware`        | Middleware demo: rate limiting, PII redaction, caching, analytics                  |
 | `embedded-assets`   | FAQ bot using embedded JSON knowledge (no web search)                              |
-| `support`           | RAG-powered support agent using vector_search (AssemblyAI docs example)            |
+| `support`           | Support agent for AssemblyAI docs                                                 |
 | `test-patterns`     | Demonstrates every testable agent pattern (tools, hooks, middleware, state)        |
 
 ## Minimal agent
@@ -156,8 +155,7 @@ Optimize for spoken conversation:
   math, counting, or data processing. NEVER do mental math."
 - **Research** — "Search first. Never guess or rely on memory for factual
   questions. Use visit_webpage when search snippets aren't detailed enough."
-- **FAQ/support** — "Always use vector_search before answering. Base answers
-  strictly on retrieved docs — don't guess."
+- **FAQ/support** — "Base answers strictly on your knowledge — don't guess."
 - **API-calling** — List endpoints directly in instructions so the LLM knows
   what's available and what each returns.
 - **Game/interactive** — "You ARE the game. Keep descriptions to two to four
@@ -276,7 +274,6 @@ Enable via `builtinTools`.
 | `visit_webpage` | Fetch URL → plain text                         | `url`                               |
 | `fetch_json`    | HTTP GET a JSON API                            | `url`, `headers?`                   |
 | `run_code`      | Execute JS in sandbox (no net/fs, 5s timeout)  | `code`                              |
-| `vector_search` | Search the agent's RAG knowledge base          | `query`, `topK?` (default 5)        |
 | `memory`        | Persistent KV memory (4 tools, see below)      | —                                   |
 
 The agentic loop runs up to `maxSteps` iterations (default 5) and stops when the
@@ -291,7 +288,6 @@ ctx.env; // Record<string, string> — secrets (from .env locally, aai secret pu
 ctx.state; // per-session state
 ctx.sessionId; // string — unique session identifier (for log correlation)
 ctx.kv; // persistent KV store
-ctx.vector; // VectorStore — vector store for RAG (tools only)
 ctx.messages; // readonly Message[] — conversation history (tools only)
 ```
 
@@ -1299,7 +1295,6 @@ Options:
 createTestHarness(agent, {
   env: { API_KEY: "test-key" },  // mock environment variables
   kv: myKvStore,                  // custom KV store (default: in-memory)
-  vector: myVectorStore,          // custom vector store (default: in-memory)
 });
 ```
 

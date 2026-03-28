@@ -22,7 +22,6 @@ import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime.ts";
 import type { Session } from "./session.ts";
 import type { AgentDef } from "./types.ts";
 import { createUnstorageKv } from "./unstorage-kv.ts";
-import { createUnstorageVectorStore } from "./unstorage-vector.ts";
 import { type SessionWebSocket, wireSessionSocket } from "./ws-handler.ts";
 
 /**
@@ -37,7 +36,7 @@ export type ServerOptions = {
   /** Environment variables. Defaults to `process.env`. */
   env?: Record<string, string>;
   /**
-   * Unstorage instance for KV and vector storage. Defaults to in-memory.
+   * Unstorage instance for KV storage. Defaults to in-memory.
    * Configure with an S3/R2/filesystem driver for persistence.
    */
   storage?: Storage;
@@ -146,13 +145,11 @@ export function createServer(options: ServerOptions): AgentServer {
   const env = filterEnv(options.env ?? (typeof process !== "undefined" ? process.env : {}));
   const storage = options.storage ?? createStorage();
   const kv = createUnstorageKv({ storage });
-  const vector = createUnstorageVectorStore({ storage });
 
   const executor = createDirectExecutor({
     agent,
     env,
     kv,
-    vector,
     logger,
     s2sConfig,
   });

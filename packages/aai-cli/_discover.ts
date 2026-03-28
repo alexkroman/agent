@@ -126,7 +126,7 @@ export async function writeProjectConfig(agentDir: string, data: ProjectConfig):
 
 /**
  * Read project config (throws if missing), resolve API key and server URL.
- * Shared by secret and rag commands.
+ * Shared by secret commands.
  */
 export async function getServerInfo(cwd: string, explicitServer?: string, explicitApiKey?: string) {
   const config = await readProjectConfig(cwd);

@@ -58,9 +58,9 @@ Four workspace packages under `packages/`:
 
 | Package | npm name | Purpose |
 | ------- | -------- | ------- |
-| `packages/aai/` | `@alexkroman1/aai` | Agent SDK: `defineAgent`, `createServer`, types, protocol, S2S orchestration, session, KV, vector store |
+| `packages/aai/` | `@alexkroman1/aai` | Agent SDK: `defineAgent`, `createServer`, types, protocol, S2S orchestration, session, KV |
 | `packages/aai-ui/` | `@alexkroman1/aai-ui` | Browser client (Preact): session, audio, UI components |
-| `packages/aai-cli/` | `@alexkroman1/aai-cli` | The `aai` CLI: init, dev, test, build, deploy, start, secret, rag, link |
+| `packages/aai-cli/` | `@alexkroman1/aai-cli` | The `aai` CLI: init, dev, test, build, deploy, start, secret, link |
 | `packages/aai-server/` | `@alexkroman1/aai-server` | Managed platform server (private): sandbox, sidecar, auth, SSRF protection |
 
 **Dependency flow:** `aai-cli`, `aai-ui`, and `aai-server` depend on `aai`
@@ -76,7 +76,6 @@ Public:
 - `./server` — `createServer` for self-hosting
 - `./types` — all type definitions
 - `./kv` — KV store interface + in-memory implementation
-- `./vector` — vector store interface + in-memory implementation
 - `./testing` — `MockWebSocket`, `installMockWebSocket`,
   `createTestHarness`, `TestHarness`, `TurnResult`
 - `./testing/matchers` — Vitest custom matchers (`toHaveCalledTool`)
@@ -115,7 +114,7 @@ Non-exported internal files (used within the package only):
 #### `@alexkroman1/aai-cli` (CLI)
 
 Binary: `aai` — subcommands: init, dev, test, build, deploy, delete,
-start, secret, rag, link, unlink
+start, secret, link, unlink
 
 ### Key Files
 
@@ -127,7 +126,7 @@ start, secret, rag, link, unlink
 - `_bundler.ts` — generates Vite config, bundles `agent.ts`/`client.tsx`
   into `worker.js`/`index.html`
 - `_discover.ts` — agent discovery, auth config, project config
-- `secret.ts` / `rag.ts` — secret management and RAG ingestion
+- `secret.ts` — secret management
 - `_ui.ts` — shared Ink UI components
 - `_prompts.ts` — interactive prompts
 - `_link.ts` — workspace package linking (dev only)
@@ -260,7 +259,6 @@ a denylist.
 
 - KV keys prefixed `kv:{keyHash}:{slug}:{key}` — agents cannot access
   each other's data.
-- Vector store uses Upstash namespace `{keyHash}:{slug}`.
 - Each sandbox gets its own sidecar on an ephemeral loopback port.
 - Sessions are per-sandbox (`Map<string, Session>`).
 - No shared mutable state between sandboxes.
@@ -351,4 +349,4 @@ new NodeSDK({ /* exporters */ }).start();
 - **E2E tests**: Playwright/Chromium may not be installed in all environments.
   The `aai-cli` e2e test (`test:e2e`) may fail locally. CI handles this.
 - **API Extractor**: Covers main entry points of `aai` and `aai-ui` only.
-  Subpath exports (e.g. `./kv`, `./vector`, `./protocol`) are not covered.
+  Subpath exports (e.g. `./kv`, `./protocol`) are not covered.

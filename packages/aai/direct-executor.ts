@@ -12,6 +12,7 @@ import { ssrfSafeFetch } from "./_ssrf.ts";
 import { createSessionStateMap, toolError } from "./_utils.ts";
 import { getBuiltinToolDefs, getBuiltinToolSchemas } from "./builtin-tools.ts";
 import type { Kv } from "./kv.ts";
+import type { HookInvoker, LifecycleHooks, MiddlewareRunner } from "./middleware.ts";
 import {
   runAfterToolCallMiddleware,
   runAfterTurnMiddleware,
@@ -24,22 +25,15 @@ import type { ClientSink } from "./protocol.ts";
 import type { Logger, S2SConfig } from "./runtime.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime.ts";
 import type { CreateS2sWebSocket } from "./s2s.ts";
-import { createS2sSession, type HookInvoker, type Session } from "./session.ts";
+import { createS2sSession, type Session } from "./session.ts";
 import type { AgentDef, HookContext, Middleware, StepInfo } from "./types.ts";
 import { createUnstorageKv } from "./unstorage-kv.ts";
-import { createUnstorageVectorStore } from "./unstorage-vector.ts";
-import type { VectorStore } from "./vector.ts";
 import type { ExecuteTool } from "./worker-entry.ts";
 import { executeToolCall } from "./worker-entry.ts";
 
 /** Create an in-memory KV store (default for self-hosted). */
 function createLocalKv(): Kv {
   return createUnstorageKv({ storage: createStorage() });
-}
-
-/** Create an in-memory vector store (default for self-hosted). */
-function createLocalVectorStore(): VectorStore {
-  return createUnstorageVectorStore({ storage: createStorage() });
 }
 
 /**
@@ -53,11 +47,6 @@ export type DirectExecutorOptions = {
   agent: AgentDef<any>;
   env: Record<string, string>;
   kv?: Kv | undefined;
-  vector?: VectorStore | undefined;
-  /** Vector search callback. Accepts a query and topK, returns a JSON string.
-   *  Used as an RPC proxy in platform mode; in self-hosted mode the default
-   *  uses the local `vector` store directly. */
-  vectorSearch?: ((query: string, topK: number) => Promise<string>) | undefined;
   /** Custom WebSocket factory for the S2S connection (useful for testing). */
   createWebSocket?: CreateS2sWebSocket | undefined;
   logger?: Logger | undefined;
@@ -88,6 +77,35 @@ export type DirectExecutor = {
   }): Session;
 };
 
+/** Build middleware runner from agent middleware, or undefined if no middleware. */
+function buildMiddlewareRunner(
+  middleware: readonly Middleware[],
+  makeCtx: (sid: string) => HookContext,
+): MiddlewareRunner | undefined {
+  if (middleware.length === 0) return;
+  return {
+    async filterInput(sessionId, text) {
+      return runInputFilters(middleware, text, makeCtx(sessionId));
+    },
+    async beforeTurn(sessionId, text) {
+      const result = await runBeforeTurnMiddleware(middleware, text, makeCtx(sessionId));
+      return result?.reason;
+    },
+    async afterTurn(sessionId, text) {
+      await runAfterTurnMiddleware(middleware, text, makeCtx(sessionId));
+    },
+    async interceptToolCall(sessionId, toolName, args) {
+      return runToolCallInterceptors(middleware, toolName, args, makeCtx(sessionId));
+    },
+    async afterToolCall(sessionId, toolName, args, result) {
+      await runAfterToolCallMiddleware(middleware, toolName, args, result, makeCtx(sessionId));
+    },
+    async filterOutput(sessionId, text) {
+      return runOutputFilters(middleware, text, makeCtx(sessionId));
+    },
+  };
+}
+
 /**
  * Create a direct (in-process) tool executor and hook invoker for an agent.
  *
@@ -103,8 +121,6 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
     agent,
     env,
     kv = createLocalKv(),
-    vector = createLocalVectorStore(),
-    vectorSearch,
     createWebSocket,
     logger = consoleLogger,
     s2sConfig = DEFAULT_S2S_CONFIG,
@@ -112,10 +128,7 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
   const agentConfig = toAgentConfig(agent);
 
   // Merge custom + builtin tool definitions
-  const builtinDefs = getBuiltinToolDefs(
-    agent.builtinTools ?? [],
-    vectorSearch ? { vectorSearch } : undefined,
-  );
+  const builtinDefs = getBuiltinToolDefs(agent.builtinTools ?? []);
   const allTools: Record<string, AgentDef["tools"][string]> = {
     ...builtinDefs,
     ...agent.tools,
@@ -144,9 +157,6 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
       get kv() {
         return kv;
       },
-      get vector() {
-        return vector;
-      },
       fetch: safeFetch,
     };
   }
@@ -161,7 +171,6 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
       state: sessionState.get(sessionId ?? ""),
       sessionId: sessionId ?? "",
       kv,
-      vector,
       messages,
       logger,
       onUpdate,
@@ -169,9 +178,8 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
     });
   };
 
-  const middleware: readonly Middleware[] = agent.middleware ?? [];
-
-  const hookInvoker: HookInvoker = {
+  // ── Lifecycle hooks (always present) ─────────────────────────────────
+  const lifecycleHooks: LifecycleHooks = {
     async onConnect(sessionId) {
       await agent.onConnect?.(makeHookContext(sessionId));
     },
@@ -197,40 +205,11 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
       if (maxSteps === undefined) return null;
       return { maxSteps };
     },
-
-    // ── Middleware hooks ───────────────────────────────────────────────
-    async filterInput(sessionId, text) {
-      if (middleware.length === 0) return text;
-      const ctx = makeHookContext(sessionId);
-      return runInputFilters(middleware, text, ctx);
-    },
-    async beforeTurn(sessionId, text) {
-      if (middleware.length === 0) return;
-      const ctx = makeHookContext(sessionId);
-      const result = await runBeforeTurnMiddleware(middleware, text, ctx);
-      return result?.reason;
-    },
-    async afterTurn(sessionId, text) {
-      if (middleware.length === 0) return;
-      const ctx = makeHookContext(sessionId);
-      await runAfterTurnMiddleware(middleware, text, ctx);
-    },
-    async interceptToolCall(sessionId, toolName, args) {
-      if (middleware.length === 0) return;
-      const ctx = makeHookContext(sessionId);
-      return runToolCallInterceptors(middleware, toolName, args, ctx);
-    },
-    async afterToolCall(sessionId, toolName, args, result) {
-      if (middleware.length === 0) return;
-      const ctx = makeHookContext(sessionId);
-      await runAfterToolCallMiddleware(middleware, toolName, args, result, ctx);
-    },
-    async filterOutput(sessionId, text) {
-      if (middleware.length === 0) return text;
-      const ctx = makeHookContext(sessionId);
-      return runOutputFilters(middleware, text, ctx);
-    },
   };
+
+  // ── Middleware runner (only built when middleware exists) ────────────
+  const middlewareRunner = buildMiddlewareRunner(agent.middleware ?? [], makeHookContext);
+  const hookInvoker: HookInvoker = { ...lifecycleHooks, ...middlewareRunner };
 
   function createSession(sessionOpts: {
     id: string;

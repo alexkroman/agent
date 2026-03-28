@@ -27,12 +27,6 @@ describe("getBuiltinToolSchemas", () => {
     expect(schemas).toHaveLength(0);
   });
 
-  test("includes vector_search when present", () => {
-    const schemas = getBuiltinToolSchemas(["vector_search"]);
-    expect(schemas).toHaveLength(1);
-    expect(schemas[0]?.name).toBe("vector_search");
-  });
-
   test("memory expands to 4 tools", () => {
     const schemas = getBuiltinToolSchemas(["memory"]);
     expect(schemas).toHaveLength(4);
@@ -511,35 +505,6 @@ describe("getBuiltinToolDefs", () => {
     await expect(
       defs.visit_webpage?.execute({ url: "http://[::ffff:127.0.0.1]/secret" }, ctx),
     ).rejects.toThrow(/Blocked request to private address/);
-  });
-
-  // ─── vector_search ─────────────────────────────────────────────────────
-
-  test("vector_search requires callback", () => {
-    const withoutCb = getBuiltinToolDefs(["vector_search"]);
-    expect(withoutCb.vector_search).toBeUndefined();
-
-    const withCb = getBuiltinToolDefs(["vector_search"], {
-      vectorSearch: async () => "results",
-    });
-    expect(withCb.vector_search).toBeDefined();
-  });
-
-  test("vector_search calls callback with correct args", async () => {
-    const vectorSearch = vi.fn(async () => "search results");
-    const defs = getBuiltinToolDefs(["vector_search"], { vectorSearch });
-    const ctx = createMockToolContext();
-    const result = await defs.vector_search?.execute({ query: "my query", topK: 3 }, ctx);
-    expect(vectorSearch).toHaveBeenCalledWith("my query", 3);
-    expect(result).toBe("search results");
-  });
-
-  test("vector_search uses default topK of 5", async () => {
-    const vectorSearch = vi.fn(async () => "results");
-    const defs = getBuiltinToolDefs(["vector_search"], { vectorSearch });
-    const ctx = createMockToolContext();
-    await defs.vector_search?.execute({ query: "q" }, ctx);
-    expect(vectorSearch).toHaveBeenCalledWith("q", 5);
   });
 });
 

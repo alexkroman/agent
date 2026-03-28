@@ -21,11 +21,6 @@
       "types": "./dist/kv.d.ts",
       "import": "./dist/kv.js"
     },
-    "./vector": {
-      "source": "./vector.ts",
-      "types": "./dist/vector.d.ts",
-      "import": "./dist/vector.js"
-    },
     "./testing": {
       "source": "./testing.ts",
       "types": "./dist/testing.d.ts",
@@ -100,11 +95,6 @@
       "source": "./unstorage-kv.ts",
       "types": "./dist/unstorage-kv.d.ts",
       "import": "./dist/unstorage-kv.js"
-    },
-    "./unstorage-vector": {
-      "source": "./unstorage-vector.ts",
-      "types": "./dist/unstorage-vector.d.ts",
-      "import": "./dist/unstorage-vector.js"
     }
   },
   "scripts": {
@@ -115,7 +105,6 @@
     "check:attw": "attw --pack --profile esm-only"
   },
   "dependencies": {
-    "@huggingface/transformers": "^3.8.1",
     "html-to-text": "^9.0.5",
     "nanoevents": "^9.1.0",
     "secure-exec": "^0.1.0",

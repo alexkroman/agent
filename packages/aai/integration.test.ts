@@ -3,18 +3,16 @@
  * Integration tests for the SDK public API surface.
  *
  * These test the connected flow as a consumer would use it:
- * defineAgent → tools → direct executor → KV/vector in tool context.
+ * defineAgent → tools → direct executor → KV in tool context.
  */
 
 import { createStorage } from "unstorage";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
-import { createTestEmbedFn } from "./_embeddings.ts";
 import { toAgentConfig } from "./_internal-types.ts";
 import { createDirectExecutor } from "./direct-executor.ts";
 import { defineAgent, defineTool } from "./types.ts";
 import { createUnstorageKv } from "./unstorage-kv.ts";
-import { createUnstorageVectorStore } from "./unstorage-vector.ts";
 
 describe("SDK integration: defineAgent → tool execution", () => {
   test("defineAgent + defineTool() + executeToolCall round-trip", async () => {
@@ -62,44 +60,6 @@ describe("SDK integration: defineAgent → tool execution", () => {
     await exec.executeTool("save", { key: "color", value: "blue" }, "s1", []);
     const result = await exec.executeTool("load", { key: "color" }, "s1", []);
     expect(result).toBe("blue");
-  });
-
-  test("tool with vector store access works end-to-end", async () => {
-    const vector = createUnstorageVectorStore({
-      storage: createStorage(),
-      embedFn: createTestEmbedFn(),
-    });
-    const agent = defineAgent({
-      name: "vector-agent",
-      tools: {
-        index: defineTool({
-          description: "Index a document",
-          parameters: z.object({ id: z.string(), text: z.string() }),
-          execute: async ({ id, text }, ctx) => {
-            await ctx.vector.upsert(id, text);
-            return "indexed";
-          },
-        }),
-        search: defineTool({
-          description: "Search documents",
-          parameters: z.object({ query: z.string() }),
-          execute: async ({ query }, ctx) => {
-            const results = await ctx.vector.query(query, { topK: 1 });
-            return results[0]?.data ?? "no results";
-          },
-        }),
-      },
-    });
-
-    const exec = createDirectExecutor({ agent, env: {}, vector });
-    await exec.executeTool(
-      "index",
-      { id: "doc1", text: "The capital of France is Paris" },
-      "s1",
-      [],
-    );
-    const result = await exec.executeTool("search", { query: "France capital" }, "s1", []);
-    expect(result).toBe("The capital of France is Paris");
   });
 
   test("env vars are passed to tool context", async () => {

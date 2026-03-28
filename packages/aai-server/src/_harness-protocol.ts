@@ -1,20 +1,23 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Shared Zod schemas and types for the host ↔ isolate wire protocol.
+ * Shared Zod schemas and types for the host <-> isolate wire protocol.
  *
  * This module is the SINGLE SOURCE OF TRUTH for the RPC boundary between
  * the managed server (sandbox.ts) and user-deployed agent code
  * (_harness-runtime.ts). Both sides import from here so that any schema
  * change is validated at compile time AND at runtime on both ends.
  *
- * Adding/removing a field? Update the schema here — TypeScript will flag
+ * All requests are sent via POST /rpc with a discriminated union body
+ * (`{ type: "config" | "tool" | "hook", ... }`).
+ *
+ * Adding/removing a field? Update the schema here -- TypeScript will flag
  * every callsite that needs to change.
  */
 
 import { AgentConfigSchema, ToolSchemaSchema } from "@alexkroman1/aai/internal-types";
 import { z } from "zod";
 
-// ─── IsolateConfig (GET /config response) ───────────────────────────────
+// ─── IsolateConfig (config RPC response) ────────────────────────────────
 
 /** Zod schema for the hooks capability flags. */
 export const HooksSchema = z.object({
@@ -27,19 +30,19 @@ export const HooksSchema = z.object({
   hasMiddleware: z.boolean(),
 });
 
-/** Zod schema for agent metadata returned by the isolate on GET /config. */
+/** Zod schema for agent metadata returned by the isolate for `{type:"config"}` RPC. */
 export const IsolateConfigSchema = AgentConfigSchema.extend({
   toolSchemas: z.array(ToolSchemaSchema),
   hasState: z.boolean(),
   hooks: HooksSchema,
 });
 
-/** Response from GET /config — agent metadata extracted by the harness. */
+/** Response from config RPC -- agent metadata extracted by the harness. */
 export type IsolateConfig = z.infer<typeof IsolateConfigSchema>;
 
-// ─── ToolCallRequest / Response (POST /tool) ────────────────────────────
+// ─── ToolCallRequest / Response (tool RPC) ──────────────────────────────
 
-/** Zod schema for POST /tool request body. */
+/** Zod schema for tool RPC request body. */
 export const ToolCallRequestSchema = z.object({
   name: z.string().min(1),
   args: z.record(z.string(), z.unknown()),
@@ -52,21 +55,21 @@ export const ToolCallRequestSchema = z.object({
   ),
 });
 
-/** Request body for POST /tool — derived from {@link ToolCallRequestSchema}. */
+/** Request body for tool RPC -- derived from {@link ToolCallRequestSchema}. */
 export type ToolCallRequest = z.infer<typeof ToolCallRequestSchema>;
 
-/** Zod schema for POST /tool response body. */
+/** Zod schema for tool RPC response body. */
 export const ToolCallResponseSchema = z.object({
   result: z.string(),
   state: z.record(z.string(), z.unknown()),
 });
 
-/** Response body for POST /tool — derived from {@link ToolCallResponseSchema}. */
+/** Response body for tool RPC -- derived from {@link ToolCallResponseSchema}. */
 export type ToolCallResponse = z.infer<typeof ToolCallResponseSchema>;
 
-// ─── HookRequest / Response (POST /hook) ────────────────────────────────
+// ─── HookRequest / Response (hook RPC) ──────────────────────────────────
 
-/** Zod schema for POST /hook request body. */
+/** Zod schema for hook RPC request body. */
 export const HookRequestSchema = z.object({
   hook: z.string().min(1),
   sessionId: z.string().min(1),
@@ -87,16 +90,16 @@ export const HookRequestSchema = z.object({
   stepNumber: z.number().int().nonnegative().optional(),
 });
 
-/** Request body for POST /hook — derived from {@link HookRequestSchema}. */
+/** Request body for hook RPC -- derived from {@link HookRequestSchema}. */
 export type HookRequest = z.infer<typeof HookRequestSchema>;
 
-/** Zod schema for POST /hook response body. */
+/** Zod schema for hook RPC response body. */
 export const HookResponseSchema = z.object({
   state: z.record(z.string(), z.unknown()),
   result: z.unknown().optional(),
 });
 
-/** Response body for POST /hook — derived from {@link HookResponseSchema}. */
+/** Response body for hook RPC -- derived from {@link HookResponseSchema}. */
 export type HookResponse = z.infer<typeof HookResponseSchema>;
 
 // ─── TurnConfig (resolveTurnConfig hook result) ─────────────────────────
@@ -113,19 +116,19 @@ export type TurnConfigResult = z.infer<typeof TurnConfigResultSchema>;
 
 // ─── Hook result validation schemas ─────────────────────────────────────
 
-/** Schema for void hook results — must be undefined/null. */
+/** Schema for void hook results -- must be undefined/null. */
 export const VoidHookResultSchema = z.unknown().transform(() => undefined);
 
-/** Schema for beforeTurn hook result — string or undefined. */
+/** Schema for beforeTurn hook result -- string or undefined. */
 export const BeforeTurnResultSchema = z.unknown().pipe(z.string().optional());
 
-/** Schema for filterInput hook result — string or undefined. */
+/** Schema for filterInput hook result -- string or undefined. */
 export const FilterInputResultSchema = z.unknown().pipe(z.string().optional());
 
-/** Schema for filterOutput hook result — string or undefined. */
+/** Schema for filterOutput hook result -- string or undefined. */
 export const FilterOutputResultSchema = z.unknown().pipe(z.string().optional());
 
-/** Schema for interceptToolCall hook result — discriminated union or undefined. */
+/** Schema for interceptToolCall hook result -- discriminated union or undefined. */
 export const ToolInterceptResultSchema = z
   .union([
     z.object({ type: z.literal("block"), reason: z.string() }),
@@ -133,3 +136,18 @@ export const ToolInterceptResultSchema = z
     z.object({ type: z.literal("args"), args: z.record(z.string(), z.unknown()) }),
   ])
   .optional();
+
+// ─── RPC discriminated union ────────────────────────────────────────────
+
+/** Zod schema for RPC request -- discriminated union on `type`. */
+export const RpcRequestSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("config") }),
+  ToolCallRequestSchema.extend({ type: z.literal("tool") }),
+  HookRequestSchema.extend({ type: z.literal("hook") }),
+]);
+
+/** RPC request -- discriminated union sent to the `/rpc` endpoint. */
+export type RpcRequest = z.infer<typeof RpcRequestSchema>;
+
+/** RPC response -- the isolate always returns one of these shapes. */
+export type RpcResponse = IsolateConfig | ToolCallResponse | HookResponse;

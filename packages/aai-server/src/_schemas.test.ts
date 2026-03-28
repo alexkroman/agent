@@ -1,11 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
-import {
-  AgentMetadataSchema,
-  DeployBodySchema,
-  EnvSchema,
-  VectorRequestSchema,
-} from "./_schemas.ts";
+import { AgentMetadataSchema, DeployBodySchema, EnvSchema } from "./_schemas.ts";
 
 describe("DeployBodySchema", () => {
   test("accepts valid deploy body", () => {
@@ -61,34 +56,5 @@ describe("AgentMetadataSchema", () => {
 
   test("rejects missing slug", () => {
     expect(AgentMetadataSchema.safeParse({ env: {} }).success).toBe(false);
-  });
-});
-
-describe("VectorRequestSchema", () => {
-  test("accepts query with valid filter", () => {
-    const result = VectorRequestSchema.safeParse({
-      op: "query",
-      text: "hello",
-      filter: 'category = "news"',
-    });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data).toMatchObject({ op: "query", filter: 'category = "news"' });
-    }
-  });
-
-  test("accepts query without filter", () => {
-    const result = VectorRequestSchema.safeParse({ op: "query", text: "hello" });
-    expect(result.success).toBe(true);
-  });
-
-  test("rejects query with dangerous filter", () => {
-    expect(() =>
-      VectorRequestSchema.parse({
-        op: "query",
-        text: "hello",
-        filter: "id = (SELECT id FROM other)",
-      }),
-    ).toThrow("disallowed SQL keyword");
   });
 });

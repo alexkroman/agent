@@ -14,7 +14,6 @@ export function createMockToolContext(overrides?: Partial<ToolContext>): ToolCon
     env: {},
     state: {},
     kv: {} as never,
-    vector: {} as never,
     messages: [],
     sendUpdate() {
       // no-op in tests

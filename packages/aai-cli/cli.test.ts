@@ -15,7 +15,6 @@ describe("cli", () => {
       "deploy",
       "start",
       "secret",
-      "rag",
       "link",
       "unlink",
     ]) {

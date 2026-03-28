@@ -186,27 +186,6 @@ const secret = defineCommand({
   subCommands: { put: secretPut, delete: secretDelete, list: secretList },
 });
 
-const rag = defineCommand({
-  meta: { name: "rag", description: "Ingest a site's llms-full.txt into the vector store" },
-  args: {
-    url: { type: "positional", description: "URL to ingest", required: true },
-    server: { type: "string", alias: "s", description: "Server URL" },
-    chunkSize: { type: "string", description: "Max chunk size in tokens", default: "512" },
-    yes: { type: "boolean", alias: "y", description: "Accept defaults (no prompts)" },
-  },
-  async run({ args }) {
-    const cwd = resolveCwd();
-    await ensureApiKeyInEnv();
-    const { runRagCommand } = await import("./rag.ts");
-    await runRagCommand({
-      url: args.url,
-      cwd,
-      ...(args.server ? { server: args.server } : {}),
-      chunkSize: args.chunkSize,
-    });
-  },
-});
-
 const doctor = defineCommand({
   meta: { name: "doctor", description: "Check environment health and diagnose issues" },
   args: {
@@ -285,7 +264,6 @@ export const mainCommand = defineCommand({
     delete: del,
     start,
     secret,
-    rag,
     generate,
     run,
     link,

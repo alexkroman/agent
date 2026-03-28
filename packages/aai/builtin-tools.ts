@@ -205,41 +205,10 @@ function createFetchJson(fetchFn = globalThis.fetch): ToolDef<typeof fetchJsonPa
   };
 }
 
-// ─── vector_search ─────────────────────────────────────────────────────────
-
-const vectorSearchParams = z.object({
-  query: z
-    .string()
-    .describe(
-      "Short keyword query to search the knowledge base. Use specific topic " +
-        "terms, not full sentences. Do NOT include the company or product name " +
-        "since all documents are from the same source. For example, if the user " +
-        'asks "how much does Acme cost", search for "pricing plans rates".',
-    ),
-  topK: z.number().describe("Maximum results to return (default: 5)").optional(),
-});
-
-/** Callback for proxying vector search through the host RPC. */
-export type VectorSearchFn = (query: string, topK: number) => Promise<string>;
-
-function createVectorSearch(vectorSearchFn: VectorSearchFn): ToolDef<typeof vectorSearchParams> {
-  return {
-    description:
-      "Search the agent's knowledge base for relevant information. Use this when the user asks a question that might be answered by previously ingested documents or data. Returns the most relevant matches ranked by similarity.",
-    parameters: vectorSearchParams,
-    async execute(args) {
-      const { query, topK = 5 } = args;
-      return vectorSearchFn(query, topK);
-    },
-  };
-}
-
 // ─── Public API ────────────────────────────────────────────────────────────
 
 /** Options for creating built-in tool definitions. */
 export type BuiltinToolOptions = {
-  /** RPC callback for vector_search (proxied through host). */
-  vectorSearch?: VectorSearchFn;
   /** Override fetch implementation (defaults to globalThis.fetch). For testing. */
   fetch?: typeof globalThis.fetch;
 };
@@ -257,9 +226,6 @@ function resolveBuiltin(name: string, opts?: BuiltinToolOptions): [string, ToolD
       return [["fetch_json", createFetchJson(opts?.fetch)]];
     case "run_code":
       return [["run_code", createRunCode()]];
-    case "vector_search":
-      if (!opts?.vectorSearch) return [];
-      return [["vector_search", createVectorSearch(opts.vectorSearch)]];
     case "memory":
       return Object.entries(memoryTools());
     default:
@@ -269,7 +235,7 @@ function resolveBuiltin(name: string, opts?: BuiltinToolOptions): [string, ToolD
 
 /**
  * Create built-in tool definitions for the given tool names.
- * For runtime use — vector_search requires opts.vectorSearch to be included.
+ * For runtime use.
  */
 export function getBuiltinToolDefs(
   names: readonly string[],
@@ -285,7 +251,7 @@ export function getBuiltinToolDefs(
 /** Returns JSON tool schemas for the specified builtin tools. */
 export function getBuiltinToolSchemas(names: readonly string[]): ToolSchema[] {
   return names.flatMap((name) =>
-    resolveBuiltin(name, { vectorSearch: async () => "" }).map(([toolName, def]) => ({
+    resolveBuiltin(name).map(([toolName, def]) => ({
       name: toolName,
       description: def.description,
       parameters: z.toJSONSchema(def.parameters ?? EMPTY_PARAMS) as ToolSchema["parameters"],

@@ -5,7 +5,6 @@
 
 import { z } from "zod";
 import type { Kv } from "./kv.ts";
-import type { VectorStore } from "./vector.ts";
 
 /**
  * Result returned by a `beforeTurn` middleware to block a turn.
@@ -181,18 +180,11 @@ export type Middleware<S = any> = {
  * - `"visit_webpage"` — Fetch a URL and return its content as clean text.
  * - `"fetch_json"` — Call a REST API endpoint and return the JSON response.
  * - `"run_code"` — Execute JavaScript in a sandbox for calculations and data processing.
- * - `"vector_search"` — Search the agent's RAG knowledge base for relevant documents.
  * - `"memory"` — Persistent KV memory: save_memory, recall_memory, list_memories, forget_memory.
  *
  * @public
  */
-export type BuiltinTool =
-  | "web_search"
-  | "visit_webpage"
-  | "fetch_json"
-  | "run_code"
-  | "vector_search"
-  | "memory";
+export type BuiltinTool = "web_search" | "visit_webpage" | "fetch_json" | "run_code" | "memory";
 
 /**
  * How the LLM should select tools during a turn.
@@ -254,8 +246,6 @@ export type ToolContext<S = Record<string, unknown>> = {
   state: S;
   /** Key-value store scoped to this agent deployment. */
   kv: Kv;
-  /** Vector store scoped to this agent deployment. */
-  vector: VectorStore;
   /** Read-only snapshot of conversation messages so far. */
   messages: readonly Message[];
   /**
@@ -644,7 +634,6 @@ export const BuiltinToolSchema = z.enum([
   "visit_webpage",
   "fetch_json",
   "run_code",
-  "vector_search",
   "memory",
 ]);
 

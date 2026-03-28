@@ -1,4 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
+
+import { createUnstorageKv } from "@alexkroman1/aai/unstorage-kv";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import { createNodeWebSocket } from "@hono/node-ws";
 import { Hono } from "hono";
@@ -17,10 +19,8 @@ import { serialize, serializeForAgent } from "./metrics.ts";
 import { requireInternal, requireOwner, validateSlug } from "./middleware.ts";
 import type { AgentSlot } from "./sandbox.ts";
 import { resolveSandbox } from "./sandbox.ts";
-import { createScopedKv } from "./scoped-storage.ts";
 import { handleSecretDelete, handleSecretList, handleSecretSet } from "./secret-handler.ts";
 import { handleAgentHealth, handleAgentPage, handleClientAsset } from "./transport-websocket.ts";
-import { handleVector } from "./vector-handler.ts";
 
 export type OrchestratorOpts = {
   slots: Map<string, AgentSlot>;
@@ -120,7 +120,6 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   app.put("/:slug/secret", slugMw, ownerMw, handleSecretSet);
   app.delete("/:slug/secret/:key", slugMw, ownerMw, handleSecretDelete);
   app.post("/:slug/kv", slugMw, ownerMw, handleKv);
-  app.post("/:slug/vector", slugMw, ownerMw, handleVector);
 
   app.get("/:slug/metrics", slugMw, ownerMw, async (c) =>
     c.text(await serializeForAgent(c.get("slug")), 200, {
@@ -137,7 +136,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     const slug = c.get("slug");
     const manifest = await c.env.store.getManifest(slug);
     if (!manifest) return c.json(null, 404);
-    const kv = createScopedKv(c.env.storage, slug);
+    const kv = createUnstorageKv({ storage: c.env.storage, prefix: `agents/${slug}/kv` });
     const value = await kv.get(key);
     if (value === null) return c.json(null, 404);
     return c.json(value);

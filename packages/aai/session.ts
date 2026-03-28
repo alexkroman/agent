@@ -28,7 +28,12 @@ import type { ExecuteTool } from "./worker-entry.ts";
 export type { S2sSessionCtx } from "./_session-ctx.ts";
 export type { PersistedSession, SessionPersistence } from "./_session-persist.ts";
 export { persistKey } from "./_session-persist.ts";
-export type { HookInvoker, ToolInterceptResult } from "./middleware.ts";
+export type {
+  HookInvoker,
+  LifecycleHooks,
+  MiddlewareRunner,
+  ToolInterceptResult,
+} from "./middleware.ts";
 export { buildSystemPrompt } from "./system-prompt.ts";
 
 /**

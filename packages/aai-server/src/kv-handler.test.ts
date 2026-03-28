@@ -1,5 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import { createUnstorageKv } from "@alexkroman1/aai/unstorage-kv";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { describe, expect, test } from "vitest";
@@ -7,7 +8,6 @@ import { z } from "zod";
 import { createTestStorage } from "./_test-utils.ts";
 import type { Env } from "./context.ts";
 import { handleKv } from "./kv-handler.ts";
-import { createScopedKv } from "./scoped-storage.ts";
 
 const SLUG = "test-agent";
 
@@ -61,8 +61,8 @@ describe("kv handler", () => {
 
   test("get returns stored value", async () => {
     const { app, storage } = createTestApp();
-    // Pre-populate via the scoped KV interface
-    const kv = createScopedKv(storage, SLUG);
+    // Pre-populate via the KV interface with the same prefix the handler uses
+    const kv = createUnstorageKv({ storage, prefix: `agents/${SLUG}/kv` });
     await kv.set("mykey", "myval");
     const { status, json } = await postKv(app, storage, { op: "get", key: "mykey" });
     expect(status).toBe(200);
@@ -74,13 +74,13 @@ describe("kv handler", () => {
     const { status, json } = await postKv(app, storage, { op: "set", key: "k1", value: "v1" });
     expect(status).toBe(200);
     expect(json.result).toBe("OK");
-    const kv = createScopedKv(storage, SLUG);
+    const kv = createUnstorageKv({ storage, prefix: `agents/${SLUG}/kv` });
     expect(await kv.get("k1")).toBe("v1");
   });
 
   test("del removes key and returns OK", async () => {
     const { app, storage } = createTestApp();
-    const kv = createScopedKv(storage, SLUG);
+    const kv = createUnstorageKv({ storage, prefix: `agents/${SLUG}/kv` });
     await kv.set("k1", "v1");
     const { status, json } = await postKv(app, storage, { op: "del", key: "k1" });
     expect(status).toBe(200);
@@ -90,7 +90,7 @@ describe("kv handler", () => {
 
   test("keys returns all keys", async () => {
     const { app, storage } = createTestApp();
-    const kv = createScopedKv(storage, SLUG);
+    const kv = createUnstorageKv({ storage, prefix: `agents/${SLUG}/kv` });
     await kv.set("a", "1");
     await kv.set("b", "2");
     const { status, json } = await postKv(app, storage, { op: "keys" });
@@ -100,7 +100,7 @@ describe("kv handler", () => {
 
   test("list returns entries matching prefix", async () => {
     const { app, storage } = createTestApp();
-    const kv = createScopedKv(storage, SLUG);
+    const kv = createUnstorageKv({ storage, prefix: `agents/${SLUG}/kv` });
     await kv.set("note:1", "a");
     await kv.set("note:2", "b");
     await kv.set("other:1", "c");

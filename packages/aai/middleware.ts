@@ -19,18 +19,22 @@ export {
   type ToolInterceptResult,
 } from "./middleware-core.ts";
 
-/** Generic interface for invoking agent lifecycle hooks, including middleware. */
-export type HookInvoker = {
+/** Agent lifecycle hooks — direct pass-throughs to agent callbacks. */
+export type LifecycleHooks = {
   onConnect(sessionId: string, timeoutMs?: number): Promise<void>;
   onDisconnect(sessionId: string, timeoutMs?: number): Promise<void>;
   onTurn(sessionId: string, text: string, timeoutMs?: number): Promise<void>;
   onError(sessionId: string, error: { message: string }, timeoutMs?: number): Promise<void>;
   onStep(sessionId: string, step: StepInfo, timeoutMs?: number): Promise<void>;
   resolveTurnConfig(sid: string, ms?: number): Promise<{ maxSteps?: number } | null>;
-  filterInput?(sid: string, text: string, ms?: number): Promise<string>;
-  beforeTurn?(sid: string, text: string, ms?: number): Promise<string | undefined>;
-  afterTurn?(sid: string, text: string, ms?: number): Promise<void>;
-  interceptToolCall?(
+};
+
+/** Middleware interceptor methods — only present when middleware is configured. */
+export type MiddlewareRunner = {
+  filterInput(sid: string, text: string, ms?: number): Promise<string>;
+  beforeTurn(sid: string, text: string, ms?: number): Promise<string | undefined>;
+  afterTurn(sid: string, text: string, ms?: number): Promise<void>;
+  interceptToolCall(
     sid: string,
     tool: string,
     args: Readonly<Record<string, unknown>>,
@@ -41,12 +45,23 @@ export type HookInvoker = {
     | { type: "args"; args: Record<string, unknown> }
     | undefined
   >;
-  afterToolCall?(
+  afterToolCall(
     sid: string,
     tool: string,
     args: Readonly<Record<string, unknown>>,
     result: string,
     ms?: number,
   ): Promise<void>;
-  filterOutput?(sid: string, text: string, ms?: number): Promise<string>;
+  filterOutput(sid: string, text: string, ms?: number): Promise<string>;
 };
+
+/**
+ * Generic interface for invoking agent lifecycle hooks, including middleware.
+ *
+ * When middleware is configured, all methods are present. When no middleware
+ * exists, the middleware methods (`filterInput`, `beforeTurn`, etc.) may be
+ * absent. Callers should use optional chaining for middleware methods.
+ *
+ * Backward-compatible alias: `LifecycleHooks & Partial<MiddlewareRunner>`.
+ */
+export type HookInvoker = LifecycleHooks & Partial<MiddlewareRunner>;

@@ -1,18 +1,12 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
  * Integration test: deploys a minimal agent into a real secure-exec isolate
- * and verifies the host ↔ isolate protocol, security boundaries, and
+ * and verifies the host <-> isolate protocol, security boundaries, and
  * capability proxying end-to-end.
  */
 
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
-import type {
-  HookRequest,
-  HookResponse,
-  IsolateConfig,
-  ToolCallRequest,
-  ToolCallResponse,
-} from "./_harness-protocol.ts";
+import type { HookResponse, IsolateConfig, ToolCallResponse } from "./_harness-protocol.ts";
 import { _internals } from "./sandbox.ts";
 
 // ── Agent bundle ─────────────────────────────────────────────────────────
@@ -34,14 +28,6 @@ export default {
         await ctx.kv.set("test-key", args.value);
         const result = await ctx.kv.get("test-key");
         return "stored:" + JSON.stringify(result);
-      },
-    },
-    vec_roundtrip: {
-      description: "Upsert then query vectors",
-      async execute(args, ctx) {
-        await ctx.vector.upsert("doc1", args.text, { source: "test" });
-        const results = await ctx.vector.query(args.text, { topK: 1 });
-        return "found:" + results.length;
       },
     },
     throws: {
@@ -144,25 +130,6 @@ function createMockKv(): Kv {
   };
 }
 
-function createMockVector() {
-  const docs = new Map<string, { data: string; metadata?: Record<string, unknown> }>();
-  return {
-    upsert: async (id: string, data: string, metadata?: Record<string, unknown>) => {
-      docs.set(id, metadata != null ? { data, metadata } : { data });
-    },
-    query: async (text: string, options?: { topK?: number; filter?: string }) => {
-      const results = [...docs.entries()]
-        .filter(([, v]) => v.data.includes(text) || text.includes(v.data))
-        .slice(0, options?.topK ?? 3)
-        .map(([id, v]) => ({ id, data: v.data, score: 1.0, metadata: v.metadata }));
-      return results;
-    },
-    delete: async (ids: string | string[]) => {
-      for (const id of Array.isArray(ids) ? ids : [ids]) docs.delete(id);
-    },
-  };
-}
-
 // ── Helpers ──────────────────────────────────────────────────────────────
 
 const TEST_AUTH_TOKEN = "integration-test-token";
@@ -181,13 +148,26 @@ async function post<T>(
   return { status: res.status, data };
 }
 
+function rpc<T>(port: number, message: Record<string, unknown>) {
+  return post<T>(port, "/rpc", message);
+}
+
 function toolCall(port: number, name: string, args: Record<string, unknown> = {}) {
-  return post<ToolCallResponse>(port, "/tool", {
+  return rpc<ToolCallResponse>(port, {
+    type: "tool",
     name,
     args,
     sessionId: "s1",
     messages: [],
-  } satisfies ToolCallRequest);
+  });
+}
+
+function hookCall(port: number, hookName: string, extra: Record<string, unknown> = {}) {
+  return rpc<HookResponse>(port, {
+    type: "hook",
+    hook: hookName,
+    ...extra,
+  });
 }
 
 // ── Protocol tests ───────────────────────────────────────────────────────
@@ -199,8 +179,7 @@ describe("isolate protocol", () => {
 
   beforeAll(async () => {
     const kv = createMockKv();
-    const vector = createMockVector();
-    const sidecar = await _internals.startSidecarServer(kv, vector);
+    const sidecar = await _internals.startSidecarServer(kv);
     sidecarPort = Number.parseInt(new URL(sidecar.url).port, 10);
     const isolate = await _internals.startIsolate(AGENT_BUNDLE, sidecar.url, {}, TEST_AUTH_TOKEN);
     port = isolate.port;
@@ -214,12 +193,8 @@ describe("isolate protocol", () => {
     await cleanup?.();
   });
 
-  test("GET /config returns valid IsolateConfig", async () => {
-    const res = await fetch(`http://127.0.0.1:${port}/config`, {
-      headers: { "x-harness-token": TEST_AUTH_TOKEN },
-    });
-    expect(res.ok).toBe(true);
-    const config = (await res.json()) as IsolateConfig;
+  test("POST /rpc {type:'config'} returns valid IsolateConfig", async () => {
+    const { data: config } = await rpc<IsolateConfig>(port, { type: "config" });
     expect(config.name).toBe("integration-test");
     expect(config.instructions).toBe("You are a test agent.");
     expect(config.greeting).toBe("Hello from the isolate");
@@ -242,12 +217,13 @@ describe("isolate protocol", () => {
   });
 
   test("tool exception returns 500", async () => {
-    const { status, data } = await post<{ error: string }>(port, "/tool", {
+    const { status, data } = await rpc<{ error: string }>(port, {
+      type: "tool",
       name: "throws",
       args: {},
       sessionId: "s1",
       messages: [],
-    } satisfies ToolCallRequest);
+    });
     expect(status).toBe(500);
     expect(data.error).toMatch(/intentional failure/);
   });
@@ -258,34 +234,21 @@ describe("isolate protocol", () => {
     expect(data.result).toBe('stored:"abc"');
   });
 
-  test("vector round-trip through sidecar", async () => {
-    const { status, data } = await toolCall(port, "vec_roundtrip", { text: "hello vectors" });
-    expect(status).toBe(200);
-    expect(data.result).toBe("found:1");
-  });
-
   test("onConnect hook updates state", async () => {
-    const { data } = await post<HookResponse>(port, "/hook", {
-      hook: "onConnect",
-      sessionId: "hook-s1",
-    } satisfies HookRequest);
+    const { data } = await hookCall(port, "onConnect", { sessionId: "hook-s1" });
     expect(data.state.count).toBe(1);
   });
 
   test("onTurn hook receives text", async () => {
-    const { data } = await post<HookResponse>(port, "/hook", {
-      hook: "onTurn",
+    const { data } = await hookCall(port, "onTurn", {
       sessionId: "hook-s1",
       text: "user said something",
-    } satisfies HookRequest);
+    });
     expect(data.state.lastTurn).toBe("user said something");
   });
 
   test("resolveTurnConfig returns null for static maxSteps", async () => {
-    const { data } = await post<HookResponse>(port, "/hook", {
-      hook: "resolveTurnConfig",
-      sessionId: "hook-s1",
-    } satisfies HookRequest);
+    const { data } = await hookCall(port, "resolveTurnConfig", { sessionId: "hook-s1" });
     expect(data.result).toBeNull();
   });
 
@@ -297,7 +260,7 @@ describe("isolate protocol", () => {
   });
 
   test("invalid JSON returns 400", async () => {
-    const res = await fetch(`http://127.0.0.1:${port}/tool`, {
+    const res = await fetch(`http://127.0.0.1:${port}/rpc`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-harness-token": TEST_AUTH_TOKEN },
       body: "not json{{{",
@@ -306,7 +269,11 @@ describe("isolate protocol", () => {
   });
 
   test("request without auth token returns 401", async () => {
-    const res = await fetch(`http://127.0.0.1:${port}/config`);
+    const res = await fetch(`http://127.0.0.1:${port}/rpc`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "config" }),
+    });
     expect(res.status).toBe(401);
   });
 
@@ -441,8 +408,8 @@ export default {
   beforeAll(async () => {
     const kv1 = createMockKv();
     const kv2 = createMockKv();
-    const sidecar1 = await _internals.startSidecarServer(kv1, undefined);
-    const sidecar2 = await _internals.startSidecarServer(kv2, undefined);
+    const sidecar1 = await _internals.startSidecarServer(kv1);
+    const sidecar2 = await _internals.startSidecarServer(kv2);
     const [iso1, iso2] = await Promise.all([
       _internals.startIsolate(BUNDLE_A, sidecar1.url, {}, TEST_AUTH_TOKEN),
       _internals.startIsolate(BUNDLE_B, sidecar2.url, {}, TEST_AUTH_TOKEN),
@@ -465,19 +432,15 @@ export default {
   });
 
   test("two isolates run independently", async () => {
-    const [config1, config2] = await Promise.all([
-      fetch(`http://127.0.0.1:${port1}/config`, {
-        headers: { "x-harness-token": TEST_AUTH_TOKEN },
-      }).then((r) => r.json()),
-      fetch(`http://127.0.0.1:${port2}/config`, {
-        headers: { "x-harness-token": TEST_AUTH_TOKEN },
-      }).then((r) => r.json()),
+    const [r1, r2] = await Promise.all([
+      rpc<IsolateConfig>(port1, { type: "config" }),
+      rpc<IsolateConfig>(port2, { type: "config" }),
     ]);
 
-    expect((config1 as IsolateConfig).name).toBe("agent-a");
-    expect((config2 as IsolateConfig).name).toBe("agent-b");
-    expect((config1 as IsolateConfig).maxSteps).toBe(1);
-    expect((config2 as IsolateConfig).maxSteps).toBe(2);
+    expect(r1.data.name).toBe("agent-a");
+    expect(r2.data.name).toBe("agent-b");
+    expect(r1.data.maxSteps).toBe(1);
+    expect(r2.data.maxSteps).toBe(2);
   });
 
   test("tool calls route to correct isolate", async () => {

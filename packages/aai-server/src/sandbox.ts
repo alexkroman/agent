@@ -6,6 +6,7 @@ import { toAgentConfig } from "@alexkroman1/aai/internal-types";
 import { buildReadyConfig } from "@alexkroman1/aai/protocol";
 import { DEFAULT_S2S_CONFIG } from "@alexkroman1/aai/runtime";
 import { createS2sSession, type HookInvoker, type Session } from "@alexkroman1/aai/session";
+import { createUnstorageKv } from "@alexkroman1/aai/unstorage-kv";
 import { isReadOnlyFsOp } from "@alexkroman1/aai/utils";
 import type { ExecuteTool } from "@alexkroman1/aai/worker-entry";
 import { type SessionWebSocket, wireSessionSocket } from "@alexkroman1/aai/ws-handler";
@@ -24,6 +25,7 @@ import {
   HookResponseSchema,
   type IsolateConfig,
   IsolateConfigSchema,
+  type RpcRequest,
   ToolCallResponseSchema,
   ToolInterceptResultSchema,
   TurnConfigResultSchema,
@@ -33,7 +35,6 @@ import { getHarnessRuntimeJs } from "./sandbox-harness.ts";
 import { buildNetworkAdapter, buildNetworkPolicy } from "./sandbox-network.ts";
 import { startSidecarServer } from "./sandbox-sidecar.ts";
 import { _deps, _slotInternals } from "./sandbox-slots.ts";
-import { createScopedKv, createScopedVector } from "./scoped-storage.ts";
 
 export type { AgentMetadata } from "./_schemas.ts";
 export { type AgentSlot, ensureAgent, registerSlot, resolveSandbox } from "./sandbox-slots.ts";
@@ -171,21 +172,22 @@ const TOOL_TIMEOUT_MS = 30_000;
 const HOOK_TIMEOUT_MS = 10_000;
 
 async function getIsolateConfig(port: number, authToken: string): Promise<IsolateConfig> {
-  const res = await fetch(`http://127.0.0.1:${port}/config`, {
-    headers: { "x-harness-token": authToken },
+  const res = await fetch(`http://127.0.0.1:${port}/rpc`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-harness-token": authToken },
+    body: JSON.stringify({ type: "config" }),
     signal: AbortSignal.timeout(CONFIG_TIMEOUT_MS),
   });
   if (!res.ok) {
     const body = await res.text().catch(() => "");
-    throw new Error(`Isolate /config failed (${res.status}): ${body}`);
+    throw new Error(`Isolate /rpc (config) failed (${res.status}): ${body}`);
   }
   return IsolateConfigSchema.parse(await res.json());
 }
 
 async function callIsolate<T>(
   isolateUrl: string,
-  endpoint: string,
-  body: Record<string, unknown>,
+  message: RpcRequest,
   timeoutMs: number,
   schema: z.ZodType<T>,
   authToken: string,
@@ -193,15 +195,15 @@ async function callIsolate<T>(
 ): Promise<T> {
   const signals = [AbortSignal.timeout(timeoutMs)];
   if (crashed) signals.push(crashed);
-  const res = await fetch(`${isolateUrl}/${endpoint}`, {
+  const res = await fetch(`${isolateUrl}/rpc`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-harness-token": authToken },
-    body: JSON.stringify(body),
+    body: JSON.stringify(message),
     signal: AbortSignal.any(signals),
   });
   if (!res.ok) {
     const body = await res.text().catch(() => "");
-    throw new Error(`${endpoint} failed (${res.status}): ${body}`);
+    throw new Error(`rpc (${message.type}) failed (${res.status}): ${body}`);
   }
   return schema.parse(await res.json());
 }
@@ -214,8 +216,7 @@ function buildExecuteTool(
   return async (name, args, sessionId, messages) => {
     const { result } = await callIsolate(
       isolateUrl,
-      "tool",
-      { name, args, sessionId, messages },
+      { type: "tool", name, args, sessionId: sessionId ?? "", messages: [...(messages ?? [])] },
       TOOL_TIMEOUT_MS,
       ToolCallResponseSchema,
       authToken,
@@ -234,8 +235,7 @@ function buildHookInvoker(
     (
       await callIsolate(
         isolateUrl,
-        "hook",
-        { hook: name, ...extra },
+        { type: "hook", hook: name, ...extra } as RpcRequest & { type: "hook" },
         HOOK_TIMEOUT_MS,
         HookResponseSchema,
         authToken,
@@ -323,9 +323,8 @@ export const _internals = {
 export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
   const { workerCode, apiKey, agentEnv, storage, slug } = opts;
 
-  const kv = createScopedKv(storage, slug);
-  const vector = createScopedVector(storage, slug);
-  const sidecar = await startSidecarServer(kv, vector);
+  const kv = createUnstorageKv({ storage, prefix: `agents/${slug}/kv` });
+  const sidecar = await startSidecarServer(kv);
   const authToken = randomBytes(32).toString("hex");
   const {
     port: isolatePort,

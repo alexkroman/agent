@@ -64,7 +64,7 @@ describe("buildExecuteTool", () => {
     globalThis.fetch = originalFetch;
   });
 
-  it("calls /tool endpoint and returns result", async () => {
+  it("calls /rpc endpoint with type:tool and returns result", async () => {
     globalThis.fetch = vi.fn(async () => Response.json({ result: "tool-output", state: {} }));
 
     const exec = _internals.buildExecuteTool("http://127.0.0.1:9999", "test-token");
@@ -72,10 +72,11 @@ describe("buildExecuteTool", () => {
 
     expect(result).toBe("tool-output");
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      "http://127.0.0.1:9999/tool",
+      "http://127.0.0.1:9999/rpc",
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({
+          type: "tool",
           name: "my_tool",
           args: { x: 1 },
           sessionId: "session-1",
@@ -89,7 +90,7 @@ describe("buildExecuteTool", () => {
     globalThis.fetch = vi.fn(async () => new Response(null, { status: 500 }));
 
     const exec = _internals.buildExecuteTool("http://127.0.0.1:9999", "test-token");
-    await expect(exec("bad_tool", {}, "s1", [])).rejects.toThrow("tool failed (500):");
+    await expect(exec("bad_tool", {}, "s1", [])).rejects.toThrow("rpc (tool) failed (500):");
   });
 
   it("aborts immediately when crash signal fires", async () => {
@@ -142,15 +143,15 @@ describe("buildHookInvoker", () => {
     await expect(promise).rejects.toThrow("Isolate crashed");
   });
 
-  it("onConnect sends correct hook name", async () => {
+  it("onConnect sends correct hook name via /rpc", async () => {
     mockHookResponse();
     const invoker = _internals.buildHookInvoker("http://127.0.0.1:9999", "test-token");
     await invoker.onConnect("session-1");
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      "http://127.0.0.1:9999/hook",
+      "http://127.0.0.1:9999/rpc",
       expect.objectContaining({
-        body: JSON.stringify({ hook: "onConnect", sessionId: "session-1" }),
+        body: JSON.stringify({ type: "hook", hook: "onConnect", sessionId: "session-1" }),
       }),
     );
   });
@@ -161,9 +162,9 @@ describe("buildHookInvoker", () => {
     await invoker.onTurn("s1", "Hello");
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      "http://127.0.0.1:9999/hook",
+      "http://127.0.0.1:9999/rpc",
       expect.objectContaining({
-        body: JSON.stringify({ hook: "onTurn", sessionId: "s1", text: "Hello" }),
+        body: JSON.stringify({ type: "hook", hook: "onTurn", sessionId: "s1", text: "Hello" }),
       }),
     );
   });
@@ -175,9 +176,9 @@ describe("buildHookInvoker", () => {
     await invoker.onStep("s1", step);
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      "http://127.0.0.1:9999/hook",
+      "http://127.0.0.1:9999/rpc",
       expect.objectContaining({
-        body: JSON.stringify({ hook: "onStep", sessionId: "s1", step }),
+        body: JSON.stringify({ type: "hook", hook: "onStep", sessionId: "s1", step }),
       }),
     );
   });
@@ -210,9 +211,9 @@ describe("buildHookInvoker", () => {
     const result = await invoker.beforeTurn?.("s1", "hello");
     expect(result).toBe("blocked");
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      "http://127.0.0.1:9999/hook",
+      "http://127.0.0.1:9999/rpc",
       expect.objectContaining({
-        body: JSON.stringify({ hook: "beforeTurn", sessionId: "s1", text: "hello" }),
+        body: JSON.stringify({ type: "hook", hook: "beforeTurn", sessionId: "s1", text: "hello" }),
       }),
     );
   });
@@ -222,9 +223,14 @@ describe("buildHookInvoker", () => {
     const invoker = _internals.buildHookInvoker("http://127.0.0.1:9999", "test-token");
     await invoker.afterTurn?.("s1", "response");
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      "http://127.0.0.1:9999/hook",
+      "http://127.0.0.1:9999/rpc",
       expect.objectContaining({
-        body: JSON.stringify({ hook: "afterTurn", sessionId: "s1", text: "response" }),
+        body: JSON.stringify({
+          type: "hook",
+          hook: "afterTurn",
+          sessionId: "s1",
+          text: "response",
+        }),
       }),
     );
   });
@@ -235,9 +241,10 @@ describe("buildHookInvoker", () => {
     const result = await invoker.interceptToolCall?.("s1", "search", { q: "test" });
     expect(result).toEqual({ type: "block", reason: "not allowed" });
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      "http://127.0.0.1:9999/hook",
+      "http://127.0.0.1:9999/rpc",
       expect.objectContaining({
         body: JSON.stringify({
+          type: "hook",
           hook: "interceptToolCall",
           sessionId: "s1",
           step: {
@@ -255,9 +262,10 @@ describe("buildHookInvoker", () => {
     const invoker = _internals.buildHookInvoker("http://127.0.0.1:9999", "test-token");
     await invoker.afterToolCall?.("s1", "search", { q: "test" }, "found it");
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      "http://127.0.0.1:9999/hook",
+      "http://127.0.0.1:9999/rpc",
       expect.objectContaining({
         body: JSON.stringify({
+          type: "hook",
           hook: "afterToolCall",
           sessionId: "s1",
           step: {
@@ -276,9 +284,14 @@ describe("buildHookInvoker", () => {
     const result = await invoker.filterOutput?.("s1", "raw text");
     expect(result).toBe("sanitized text");
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      "http://127.0.0.1:9999/hook",
+      "http://127.0.0.1:9999/rpc",
       expect.objectContaining({
-        body: JSON.stringify({ hook: "filterOutput", sessionId: "s1", text: "raw text" }),
+        body: JSON.stringify({
+          type: "hook",
+          hook: "filterOutput",
+          sessionId: "s1",
+          text: "raw text",
+        }),
       }),
     );
   });
@@ -321,9 +334,11 @@ describe("getIsolateConfig", () => {
     expect(result.hooks.onConnect).toBe(true);
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      "http://127.0.0.1:12345/config",
+      "http://127.0.0.1:12345/rpc",
       expect.objectContaining({
-        headers: { "x-harness-token": "test-token" },
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-harness-token": "test-token" },
+        body: JSON.stringify({ type: "config" }),
         signal: expect.any(AbortSignal),
       }),
     );
@@ -332,7 +347,7 @@ describe("getIsolateConfig", () => {
   it("throws on non-ok response", async () => {
     globalThis.fetch = vi.fn(async () => new Response(null, { status: 503 }));
     await expect(_internals.getIsolateConfig(9999, "test-token")).rejects.toThrow(
-      "/config failed (503):",
+      "/rpc (config) failed (503):",
     );
   });
 });

@@ -52,7 +52,7 @@ async function buildOpts(env: NodeJS.ProcessEnv): Promise<OrchestratorOpts> {
     : await deriveCredentialKey("default-credential-key");
 
   // Single unstorage instance with overlay (memory cache + S3 persistence).
-  // Used for bundles, KV, and vector storage — all in the same Tigris bucket.
+  // Used for bundles and KV storage — all in the same Tigris bucket.
   const storage = createStorage({
     driver: overlayDriver({
       layers: [
