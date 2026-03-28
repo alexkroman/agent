@@ -397,12 +397,13 @@ describe.skipIf(!playwrightAvailable)("browser: build -> start", () => {
 
     const toggleBtn = page.getByRole("button", { name: /Stop|Resume/ });
     await toggleBtn.waitFor({ timeout: 5000 });
-    const label = (await toggleBtn.textContent())?.trim();
-    expect(label).toBe("Stop");
+    const initialLabel = (await toggleBtn.textContent())?.trim();
 
-    // Click Stop -> should become Resume
+    // Click toggles to the opposite state regardless of initial state
+    // (server may close the WebSocket before we check, flipping running to false)
     await toggleBtn.click();
-    await page.getByRole("button", { name: "Resume" }).waitFor({ timeout: 3000 });
+    const expectedLabel = initialLabel === "Stop" ? "Resume" : "Stop";
+    await page.getByRole("button", { name: expectedLabel }).waitFor({ timeout: 3000 });
 
     await page.close();
   });

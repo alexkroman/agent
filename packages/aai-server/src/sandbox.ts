@@ -320,6 +320,7 @@ export const _internals = {
   set IDLE_MS(ms: number) {
     _slotInternals.IDLE_MS = ms;
   },
+  resetIdleTimer: _slotInternals.resetIdleTimer,
 };
 
 // ── Public API ───────────────────────────────────────────────────────────

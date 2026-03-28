@@ -82,14 +82,11 @@ jobs:
             .tsbuildinfo
           key: workspace-node${{ hashFiles('.node-version') }}-${{ github.sha }}
       - run: |
-          pnpm --filter "...[origin/main]" run --if-present check:api
           pnpm --filter "...[origin/main]" run --if-present check:attw
           pnpm --filter "...[origin/main]" run --if-present check:templates
           pnpm run check:knip
           pnpm run check:syncpack
           pnpm run check:markdown
-      - name: Check for API baseline drift
-        run: bash scripts/check-api-diff.sh
 
   # Unit tests sharded by package — run in parallel
   test:

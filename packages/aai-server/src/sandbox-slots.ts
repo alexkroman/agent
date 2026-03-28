@@ -166,4 +166,5 @@ export const _slotInternals = {
   set IDLE_MS(ms: number) {
     IDLE_MS = ms;
   },
+  resetIdleTimer,
 };

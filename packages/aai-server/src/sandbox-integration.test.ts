@@ -480,11 +480,7 @@ describe("idle eviction", () => {
     });
 
     slot.sandbox = sandbox;
-    slot.idleTimer = setTimeout(() => {
-      slot.sandbox?.terminate();
-      delete slot.sandbox;
-      delete slot.idleTimer;
-    }, _internals.IDLE_MS);
+    _internals.resetIdleTimer(slot);
 
     expect(slot.sandbox).toBeTruthy();
 

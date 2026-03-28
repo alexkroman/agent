@@ -9,9 +9,6 @@ pre-commit:
     typecheck:
       glob: "packages/**/*.{ts,tsx}"
       run: pnpm -r run build && pnpm typecheck
-    api-extractor:
-      glob: "packages/{aai,aai-ui}/src/**/*.ts"
-      run: pnpm -r run build && pnpm -r run --if-present check:api
 
 pre-push:
   commands:

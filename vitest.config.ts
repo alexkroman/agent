@@ -13,7 +13,7 @@ export default defineConfig({
         "**/*.test.{ts,tsx}",
         "**/*.test-d.ts",
         "**/_test-utils.ts",
-        "**/templates/**",
+        "**/aai-templates/**",
         "**/dist/**",
         "**/__snapshots__/**",
         // Sandbox harness: runs inside secure-exec V8 isolates, not vitest.
