@@ -4,9 +4,11 @@ import path from "node:path";
 import { describe, expect, test } from "vitest";
 import {
   DEFAULT_SERVER,
+  ensureApiKeyInEnv,
   fileExists,
   generateSlug,
   getServerInfo,
+  isDevMode,
   loadAgent,
   readProjectConfig,
   resolveCwd,
@@ -174,6 +176,35 @@ describe("getServerInfo", () => {
       const info = await getServerInfo(dir, "https://override.com", "key");
       expect(info.serverUrl).toBe("https://override.com");
     });
+  });
+});
+
+// --- ensureApiKeyInEnv ---
+
+describe("ensureApiKeyInEnv", () => {
+  test("sets process.env.ASSEMBLYAI_API_KEY from env", async () => {
+    const orig = process.env.ASSEMBLYAI_API_KEY;
+    process.env.ASSEMBLYAI_API_KEY = "test-key-env";
+    try {
+      const key = await ensureApiKeyInEnv();
+      expect(key).toBe("test-key-env");
+      expect(process.env.ASSEMBLYAI_API_KEY).toBe("test-key-env");
+    } finally {
+      if (orig !== undefined) {
+        process.env.ASSEMBLYAI_API_KEY = orig;
+      } else {
+        delete process.env.ASSEMBLYAI_API_KEY;
+      }
+    }
+  });
+});
+
+// --- isDevMode ---
+
+describe("isDevMode", () => {
+  test("returns true when running from monorepo", () => {
+    // Tests run from the monorepo, so this should be true
+    expect(isDevMode()).toBe(true);
   });
 });
 

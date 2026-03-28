@@ -75,7 +75,7 @@ echo -e "\n${YELLOW}Phase 2: Checks (parallel)${NC}"
 
 run_step "typecheck"        pnpm $PNPM_FILTER run typecheck
 run_step "lint"             pnpm $PNPM_FILTER run lint
-run_step "check:api"        pnpm $PNPM_FILTER run --if-present check:api
+run_step "check:publint"    pnpm $PNPM_FILTER run --if-present check:publint
 run_step "check:syncpack"   pnpm run check:syncpack
 
 if [ "$MODE" != "--local" ]; then
@@ -101,6 +101,7 @@ if [ "$MODE" = "--local" ]; then
   run_step "vitest:aai-ui"     npx vitest run --project aai-ui
   run_step "vitest:aai-cli"    npx vitest run --project aai-cli
   run_step "vitest:aai-server" npx vitest run --project aai-server
+  run_step "vitest:templates"  npx vitest run --project templates
 else
   run_step "integration"       pnpm $PNPM_FILTER run --if-present check:integration
   run_step "e2e"               pnpm $PNPM_FILTER run --if-present check:e2e

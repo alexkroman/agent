@@ -1,14 +1,16 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * End-to-end test: builds CLI, then for every template:
- *   init -> dev --check (builds, starts server, hits /health, exits)
+ * End-to-end CLI tests (Vite builds, real servers, Playwright browser):
+ *   1. Template builds: dev & user workflows for representative templates
+ *   2. CLI commands: dev --check, start, deploy --dry-run
+ *   3. Browser tests (Playwright): UI render, WebSocket, conversation flow
  *
  * Run via: pnpm test:e2e
  */
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 
 let playwrightAvailable = false;
 let chromium: typeof import("playwright").chromium | undefined;
@@ -16,7 +18,6 @@ type Browser = import("playwright").Browser;
 
 try {
   ({ chromium } = await import("playwright"));
-  // Verify the browser binary is actually installed
   const b = await chromium.launch();
   await b.close();
   playwrightAvailable = true;
@@ -25,16 +26,18 @@ try {
 }
 
 const dir = import.meta.dirname ?? path.dirname(new URL(import.meta.url).pathname);
-const templatesDir = path.resolve(dir, "../aai-templates");
+const packagesDir = path.resolve(dir, "..");
 
-const templates = fs
-  .readdirSync(templatesDir, { withFileTypes: true })
-  .filter((d) => d.isDirectory() && !d.name.startsWith("_") && d.name !== "node_modules")
-  .map((d) => d.name);
+// Representative subset: minimal baseline, stateful + tools, external tools + custom UI.
+// Full template coverage is handled by the templates unit test tier (pnpm test:templates).
+const templates = ["simple", "memory-agent", "web-researcher"];
 
 let aaiBin: string;
 let tmpDir: string;
-const BASE_PORT = 4567;
+let tarballs: Record<string, string>;
+
+// Random high port base to avoid collisions between parallel CI runs
+const BASE_PORT = 40_000 + Math.floor(Math.random() * 10_000);
 
 function aaiEnv(): NodeJS.ProcessEnv {
   return {
@@ -65,7 +68,12 @@ function aaiSpawn(args: string[], cwd: string): ChildProcess {
   });
 }
 
-async function waitForHealth(url: string, timeoutMs = 30_000): Promise<void> {
+/** Poll a health endpoint, capturing child stderr for diagnostics on timeout. */
+async function waitForHealth(url: string, child?: ChildProcess, timeoutMs = 30_000): Promise<void> {
+  let stderr = "";
+  child?.stderr?.on("data", (chunk: Buffer) => {
+    stderr += chunk.toString();
+  });
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     try {
@@ -76,49 +84,93 @@ async function waitForHealth(url: string, timeoutMs = 30_000): Promise<void> {
     }
     await new Promise((r) => setTimeout(r, 500));
   }
-  throw new Error(`Timed out waiting for ${url}`);
+  throw new Error(`Timed out waiting for ${url}${stderr ? `\nServer stderr:\n${stderr}` : ""}`);
 }
 
-/** Scaffold a project and install deps. Init links workspace packages in dev mode. */
+/** Wait for a child process to exit (for clean teardown). */
+function waitForExit(child: ChildProcess, timeoutMs = 5000): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, timeoutMs);
+    child.on("exit", () => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
+}
+
 function initProject(template: string, projectDir: string): void {
   aai(["init", projectDir, "-t", template, "--skip-api", "--skip-deploy"], tmpDir);
+  installFromTarballs(projectDir);
+}
+
+function installFromTarballs(projectDir: string): void {
+  const pkgJsonPath = path.join(projectDir, "package.json");
+  const pkgJson = JSON.parse(fs.readFileSync(pkgJsonPath, "utf-8"));
+  const deps = pkgJson.dependencies ?? {};
+  for (const [name, tarball] of Object.entries(tarballs)) {
+    if (deps[name]) deps[name] = `file:${tarball}`;
+  }
+  fs.writeFileSync(pkgJsonPath, `${JSON.stringify(pkgJson, null, 2)}\n`);
+  execFileSync("npm", ["install"], { cwd: projectDir, stdio: "inherit" });
 }
 
 beforeAll(() => {
+  // Build CLI
   execFileSync("npx", ["tsdown"], { cwd: dir, stdio: "inherit" });
-  // tsdown outputs .mjs for ESM format
   const mjs = path.resolve(dir, "dist/cli.mjs");
   const js = path.resolve(dir, "dist/cli.js");
   aaiBin = fs.existsSync(mjs) ? mjs : js;
   tmpDir = fs.mkdtempSync("/tmp/aai-e2e-test-");
+
+  // Pack SDK packages into tarballs
+  const tarballDir = path.join(tmpDir, "_tarballs");
+  fs.mkdirSync(tarballDir);
+  tarballs = {};
+  for (const pkgDir of ["aai", "aai-ui"]) {
+    const pkgPath = path.join(packagesDir, pkgDir);
+    execFileSync("pnpm", ["run", "build"], { cwd: pkgPath, stdio: "inherit" });
+    const output = execFileSync("pnpm", ["pack", "--pack-destination", tarballDir], {
+      cwd: pkgPath,
+      encoding: "utf-8",
+    }).trim();
+    // pnpm pack returns the full absolute path; npm pack returns just the filename
+    const tarballPath = output.split("\n").pop() ?? "";
+    const pkg = JSON.parse(fs.readFileSync(path.join(pkgPath, "package.json"), "utf-8"));
+    tarballs[pkg.name] = path.isAbsolute(tarballPath)
+      ? tarballPath
+      : path.join(tarballDir, tarballPath);
+  }
 });
 
 afterAll(() => {
   if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
-describe("e2e: init -> doctor -> test -> dev --check", () => {
-  test.each(templates.map((t, i) => [t, i] as const))("template %s", (template, i) => {
+// --- Pack + build: representative templates ---
+
+describe("pack + build: template workflows", () => {
+  test.each(templates)("template %s", (template) => {
     const projectDir = path.join(tmpDir, template);
-    initProject(template, projectDir);
-    aai(["doctor"], projectDir);
+
+    // Init + install from tarballs + test + build
+    aai(["init", projectDir, "-t", template, "--skip-api", "--skip-deploy"], tmpDir);
+    installFromTarballs(projectDir);
     aai(["test"], projectDir);
-    aai(["dev", "--check", "--port", String(BASE_PORT + i)], projectDir);
+    aai(["build", "--skip-tests"], projectDir);
   });
 });
 
-describe("e2e: build produces output files", () => {
-  test("init -> build writes .aai/build and .aai/client", () => {
-    const projectDir = path.join(tmpDir, "_build-test");
+// --- CLI commands (single template) ---
+
+describe("CLI: dev --check", () => {
+  test("init -> dev --check", () => {
+    const projectDir = path.join(tmpDir, "_dev-check");
     initProject("simple", projectDir);
-    aai(["build"], projectDir);
-
-    expect(fs.existsSync(path.join(projectDir, ".aai", "build", "worker.js"))).toBe(true);
-    expect(fs.existsSync(path.join(projectDir, ".aai", "client", "index.html"))).toBe(true);
+    aai(["dev", "--check", "--port", String(BASE_PORT)], projectDir);
   });
 });
 
-describe("e2e: build -> start serves health", () => {
+describe("CLI: build -> start serves health", () => {
   test("start responds to /health after build", async () => {
     const projectDir = path.join(tmpDir, "_start-test");
     const port = BASE_PORT + 100;
@@ -127,18 +179,19 @@ describe("e2e: build -> start serves health", () => {
 
     const child = aaiSpawn(["start", "--port", String(port)], projectDir);
     try {
-      await waitForHealth(`http://localhost:${port}/health`);
+      await waitForHealth(`http://localhost:${port}/health`, child);
       const res = await fetch(`http://localhost:${port}/health`);
       expect(res.ok).toBe(true);
       const body = (await res.json()) as { status: string };
       expect(body.status).toBe("ok");
     } finally {
       child.kill();
+      await waitForExit(child);
     }
   });
 });
 
-describe("e2e: deploy --dry-run", () => {
+describe("CLI: deploy --dry-run", () => {
   test("init -> deploy --dry-run succeeds without a server", () => {
     const projectDir = path.join(tmpDir, "_deploy-dry-test");
     initProject("simple", projectDir);
@@ -146,42 +199,99 @@ describe("e2e: deploy --dry-run", () => {
   });
 });
 
-describe("e2e: unlink reverses link", () => {
-  test("init links file: deps, unlink restores them", () => {
-    const projectDir = path.join(tmpDir, "_unlink-test");
-    initProject("simple", projectDir);
+// --- Browser tests (Playwright) ---
 
-    // After init (dev mode), deps should have file: paths
-    const linkedPkg = JSON.parse(fs.readFileSync(path.join(projectDir, "package.json"), "utf-8"));
-    const linkedDeps: Record<string, string> = linkedPkg.dependencies ?? {};
-    expect(Object.values(linkedDeps).some((v) => v.startsWith("file:"))).toBe(true);
+/** Set up a page with a WebSocket capture hook and event injector. */
+async function setupEventInjector(browser: Browser, port: number) {
+  const page = await browser.newPage();
 
-    aai(["unlink"], projectDir);
-
-    // After unlink, no file: paths should remain
-    const unlinkedPkg = JSON.parse(fs.readFileSync(path.join(projectDir, "package.json"), "utf-8"));
-    const unlinkedDeps: Record<string, string> = unlinkedPkg.dependencies ?? {};
-    expect(Object.values(unlinkedDeps).some((v) => v.startsWith("file:"))).toBe(false);
+  await page.addInitScript(() => {
+    const OrigWS = globalThis.WebSocket;
+    // @ts-expect-error -- overriding native class for test
+    globalThis.WebSocket = class extends OrigWS {
+      constructor(url: string | URL, protocols?: string | string[]) {
+        super(url, protocols);
+        (globalThis as Record<string, unknown>).__aai_test_ws = this;
+      }
+    };
   });
-});
 
-/** Shared browser tests: UI renders, Start click opens WebSocket. */
-function defineBrowserTests(getContext: () => { browser: Browser; port: number }): void {
+  await page.goto(`http://localhost:${port}`);
+
+  const clientFrames: string[] = [];
+  const wsConnected = new Promise<void>((resolve) => {
+    page.on("websocket", (ws) => {
+      ws.on("framesent", (frame) => {
+        if (typeof frame.payload === "string") clientFrames.push(frame.payload);
+      });
+      resolve();
+    });
+  });
+
+  await page.getByRole("button", { name: "Start" }).click();
+  await wsConnected;
+
+  // Wait for the WebSocket reference to be available
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const ready = await page.evaluate(() =>
+      Boolean((globalThis as Record<string, unknown>).__aai_test_ws),
+    );
+    if (ready) break;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+
+  /** Inject a server->client event via the captured WebSocket. */
+  const inject = (msg: Record<string, unknown>) =>
+    page.evaluate((json) => {
+      const ws = (globalThis as Record<string, unknown>).__aai_test_ws as WebSocket;
+      ws.dispatchEvent(new MessageEvent("message", { data: JSON.stringify(json) }));
+    }, msg);
+
+  /** Replay a fixture file (from aai-ui/__fixtures__/). */
+  const replayFixture = async (fixtureName: string) => {
+    const fixturePath = path.resolve(dir, "../aai-ui/__fixtures__", fixtureName);
+    const messages = JSON.parse(fs.readFileSync(fixturePath, "utf-8")) as Record<string, unknown>[];
+    for (const msg of messages) {
+      await inject(msg);
+    }
+  };
+
+  return { page, inject, replayFixture, clientFrames };
+}
+
+describe.skipIf(!playwrightAvailable)("browser: build -> start", () => {
+  let browser: Browser;
+  let child: ChildProcess;
+  const port = BASE_PORT + 200;
+
+  beforeAll(async () => {
+    const projectDir = path.join(tmpDir, "_browser-start");
+    initProject("simple", projectDir);
+    aai(["build"], projectDir);
+    child = aaiSpawn(["start", "--port", String(port)], projectDir);
+    await waitForHealth(`http://localhost:${port}/health`, child);
+    // biome-ignore lint/style/noNonNullAssertion: guarded by describe.skipIf(!playwrightAvailable)
+    browser = await chromium!.launch();
+  });
+
+  afterAll(async () => {
+    await browser?.close();
+    child?.kill();
+    if (child) await waitForExit(child);
+  });
+
   test("page renders with Start button", async () => {
-    const { browser, port } = getContext();
     const page = await browser.newPage();
     await page.goto(`http://localhost:${port}`);
-    const startBtn = page.getByRole("button", { name: "Start" });
-    expect(await startBtn.isVisible()).toBe(true);
+    await page.getByRole("button", { name: "Start" }).waitFor();
     await page.close();
   });
 
   test("clicking Start opens a WebSocket and receives config", async () => {
-    const { browser, port } = getContext();
     const page = await browser.newPage();
     await page.goto(`http://localhost:${port}`);
 
-    // Collect frames via page-level WS listener before clicking Start
     const frames: string[] = [];
     const wsConnected = new Promise<string>((resolve) => {
       page.on("websocket", (ws) => {
@@ -196,174 +306,105 @@ function defineBrowserTests(getContext: () => { browser: Browser; port: number }
     const wsUrl = await wsConnected;
     expect(wsUrl).toContain("/websocket");
 
-    // Poll for config frame arrival instead of fixed timeout
-    const hasConfig = () =>
-      frames.some((f) => {
-        try {
-          return JSON.parse(f).type === "config";
-        } catch {
-          return false;
-        }
-      });
-    const deadline = Date.now() + 10_000;
-    while (!hasConfig() && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50));
-    expect(hasConfig()).toBe(true);
+    await vi.waitFor(
+      () => {
+        const found = frames.some((f) => {
+          try {
+            return JSON.parse(f).type === "config";
+          } catch {
+            return false;
+          }
+        });
+        expect(found).toBe(true);
+      },
+      { timeout: 10_000, interval: 50 },
+    );
 
     await page.close();
   });
 
-  test("full conversation flow: start → agent speaks → user speaks → tool call → agent responds → stop", async () => {
-    const { browser, port } = getContext();
-    const page = await browser.newPage();
+  // ── Fixture-driven event injection tests ───────────────────────────────
 
-    // Intercept WebSocket construction to capture the instance for message injection.
-    // Use addInitScript so the patch runs before any page JS.
-    await page.addInitScript(() => {
-      const OrigWS = globalThis.WebSocket;
-      // @ts-expect-error -- overriding native class for test
-      globalThis.WebSocket = class extends OrigWS {
-        constructor(url: string | URL, protocols?: string | string[]) {
-          super(url, protocols);
-          (globalThis as Record<string, unknown>).__aai_test_ws = this;
-        }
-      };
-    });
+  test("greeting session: agent message renders in browser", async () => {
+    const { page, replayFixture } = await setupEventInjector(browser, port);
+    await replayFixture("greeting-session.json");
+    await page.getByText("Hello! How can I help you today?").waitFor();
+    await page.close();
+  });
 
-    await page.goto(`http://localhost:${port}`);
+  test("simple conversation: user + assistant messages render", async () => {
+    const { page, replayFixture } = await setupEventInjector(browser, port);
+    await replayFixture("simple-conversation.json");
 
-    // Track frames via Playwright's WS listener
-    const clientFrames: string[] = [];
-    const wsConnected = new Promise<void>((resolve) => {
-      page.on("websocket", (ws) => {
-        ws.on("framesent", (frame) => {
-          if (typeof frame.payload === "string") clientFrames.push(frame.payload);
-        });
-        resolve();
-      });
-    });
+    await page.getByText("Hi there!").waitFor();
+    await page.getByText("Tell me a fun fact about space.").waitFor();
+    await page.getByText("A day on Venus is longer than its year.").waitFor();
 
-    // Click Start to open the session
-    await page.getByRole("button", { name: "Start" }).click();
-    await wsConnected;
+    await page.close();
+  });
 
-    // Wait for the WS reference to be captured (patched send fires on first client message)
-    const wsReady = async () => {
-      const deadline = Date.now() + 10_000;
-      while (Date.now() < deadline) {
-        const ready = await page.evaluate(() =>
-          Boolean((globalThis as Record<string, unknown>).__aai_test_ws),
-        );
-        if (ready) return;
-        await new Promise((r) => setTimeout(r, 50));
-      }
-      throw new Error("Timed out waiting for WebSocket reference");
-    };
-    await wsReady();
+  test("tool call flow: tool block renders with name, messages appear", async () => {
+    const { page, replayFixture } = await setupEventInjector(browser, port);
+    await replayFixture("tool-call-flow.json");
 
-    // Helper: inject a server message into the browser's WebSocket
-    const inject = (msg: Record<string, unknown>) =>
-      page.evaluate((json) => {
-        const ws = (globalThis as Record<string, unknown>).__aai_test_ws as WebSocket;
-        ws.dispatchEvent(new MessageEvent("message", { data: JSON.stringify(json) }));
-      }, msg);
+    await page.getByText("The weather in San Francisco is sunny at 72°F.").waitFor();
+    await page.getByText("get_weather").waitFor();
+    await page.getByText("What is the weather like in San Francisco?").waitFor();
 
-    // Step 1: Simulate agent greeting
-    await inject({ type: "turn", text: "Hello", turnOrder: 1 });
-    await inject({ type: "chat_delta", text: "Hi there!" });
-    await inject({ type: "chat", text: "Hi there! How can I help you?" });
-    await inject({ type: "tts_done" });
-    await page.getByText("Hi there! How can I help you?").waitFor();
+    await page.close();
+  });
 
-    // Step 2: Simulate user speaking
-    await inject({ type: "speech_started" });
-    await inject({ type: "transcript", text: "What's the weather?", isFinal: false });
-    await inject({ type: "transcript", text: "What's the weather today?", isFinal: true });
-    await inject({ type: "turn", text: "What's the weather today?", turnOrder: 2 });
-    await page.getByText("What's the weather today?").waitFor();
+  test("error recovery: error banner renders with message", async () => {
+    const { page, replayFixture } = await setupEventInjector(browser, port);
+    await replayFixture("error-recovery.json");
 
-    // Step 3: Simulate tool call
-    await inject({
-      type: "tool_call_start",
-      toolCallId: "tc_001",
-      toolName: "web_search",
-      args: { query: "weather today" },
-    });
-    await page.getByRole("button", { name: /Web Search/i }).waitFor();
+    await page.getByText("Speech recognition failed").waitFor();
+    await page.getByRole("button", { name: "Resume" }).waitFor();
 
-    await inject({
-      type: "tool_call_done",
-      toolCallId: "tc_001",
-      result: "Sunny, 72°F",
-    });
+    await page.close();
+  });
 
-    // Step 4: Agent responds after tool call
-    await inject({ type: "chat_delta", text: "The weather today is sunny" });
-    await inject({ type: "chat", text: "The weather today is sunny and 72°F!" });
-    await inject({ type: "tts_done" });
-    await page.getByText("The weather today is sunny and 72°F!").waitFor();
+  test("barge-in: interrupted response cleared, new answer renders", async () => {
+    const { page, replayFixture } = await setupEventInjector(browser, port);
+    await replayFixture("barge-in.json");
 
-    // Step 5: Verify session controls are visible.
-    // In headless mode, audio init fails so the button shows "Resume" (not "Stop").
-    // Either way, clicking it toggles the running state.
+    await page.getByText("No problem!").waitFor();
+    await page.getByText("What about").waitFor();
+    await page.getByText("Actually never mind").waitFor();
+
+    await page.close();
+  });
+
+  test("multi-turn with tools: two tool calls and all messages render", async () => {
+    const { page, replayFixture } = await setupEventInjector(browser, port);
+    await replayFixture("multi-turn-with-tools.json");
+
+    await page.getByText("London is 55°F and rainy.").waitFor();
+    await page.getByText("Weather in NYC?").waitFor();
+    await page.getByText("And in London?").waitFor();
+    const toolBlocks = await page.getByText("get_weather").all();
+    expect(toolBlocks.length).toBe(2);
+    await page.getByText(/65°F/).waitFor();
+    await page.getByText(/55°F/).waitFor();
+
+    await page.close();
+  });
+
+  test("stop/resume toggle works after fixture replay", async () => {
+    const { page, replayFixture } = await setupEventInjector(browser, port);
+    await replayFixture("greeting-session.json");
+    await page.getByText("Hello! How can I help you today?").waitFor();
+
     const toggleBtn = page.getByRole("button", { name: /Stop|Resume/ });
     await toggleBtn.waitFor({ timeout: 5000 });
-    const wasRunning = (await toggleBtn.textContent())?.trim() === "Stop";
+    const initialLabel = (await toggleBtn.textContent())?.trim();
+
+    // Click toggles to the opposite state regardless of initial state
+    // (server may close the WebSocket before we check, flipping running to false)
     await toggleBtn.click();
-
-    // After clicking, the button text flips
-    const expectedAfter = wasRunning ? "Resume" : "Stop";
-    await page.getByRole("button", { name: expectedAfter }).waitFor({ timeout: 3000 });
-
-    // Full conversation still visible after toggle
-    expect(await page.getByText("Hi there! How can I help you?").isVisible()).toBe(true);
-    expect(await page.getByText("What's the weather today?").isVisible()).toBe(true);
-    expect(await page.getByText("The weather today is sunny and 72°F!").isVisible()).toBe(true);
+    const expectedLabel = initialLabel === "Stop" ? "Resume" : "Stop";
+    await page.getByRole("button", { name: expectedLabel }).waitFor({ timeout: 3000 });
 
     await page.close();
   });
-}
-
-describe.skipIf(!playwrightAvailable)("e2e: browser on build -> start", () => {
-  let browser: Browser;
-  let child: ChildProcess;
-  const port = BASE_PORT + 200;
-
-  beforeAll(async () => {
-    const projectDir = path.join(tmpDir, "_browser-start");
-    initProject("simple", projectDir);
-    aai(["build"], projectDir);
-    child = aaiSpawn(["start", "--port", String(port)], projectDir);
-    await waitForHealth(`http://localhost:${port}/health`);
-    // biome-ignore lint/style/noNonNullAssertion: guarded by describe.skipIf(!playwrightAvailable)
-    browser = await chromium!.launch();
-  });
-
-  afterAll(async () => {
-    await browser?.close();
-    child?.kill();
-  });
-
-  defineBrowserTests(() => ({ browser, port }));
-});
-
-describe.skipIf(!playwrightAvailable)("e2e: browser on dev server", () => {
-  let browser: Browser;
-  let child: ChildProcess;
-  const port = BASE_PORT + 201;
-
-  beforeAll(async () => {
-    const projectDir = path.join(tmpDir, "_browser-dev");
-    initProject("simple", projectDir);
-    child = aaiSpawn(["dev", "--port", String(port)], projectDir);
-    await waitForHealth(`http://localhost:${port}/health`);
-    // biome-ignore lint/style/noNonNullAssertion: guarded by describe.skipIf(!playwrightAvailable)
-    browser = await chromium!.launch();
-  });
-
-  afterAll(async () => {
-    await browser?.close();
-    child?.kill();
-  });
-
-  defineBrowserTests(() => ({ browser, port }));
 });

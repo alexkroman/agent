@@ -2,9 +2,9 @@
 /**
  * Self-hostable agent server.
  *
- * `createServer()` returns a server with `listen()` for HTTP + WebSocket.
- * Calls `createDirectExecutor` + `wireSessionSocket` directly — no
- * intermediary needed.
+ * {@link createAgentApp} returns a composable Hono app that can be mounted
+ * into a larger application. {@link createServer} wraps it with `listen()`
+ * and `close()` for standalone deployments.
  */
 
 import { serve } from "@hono/node-server";
@@ -14,16 +14,11 @@ import { Hono } from "hono";
 import { html } from "hono/html";
 import { secureHeaders } from "hono/secure-headers";
 import { createStorage, type Storage } from "unstorage";
-import { filterEnv } from "./_utils.ts";
 import { createDirectExecutor } from "./direct-executor.ts";
-import { buildReadyConfig } from "./protocol.ts";
 import type { Logger, S2SConfig } from "./runtime.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime.ts";
-import type { Session } from "./session.ts";
 import type { AgentDef } from "./types.ts";
 import { createUnstorageKv } from "./unstorage-kv.ts";
-import { createUnstorageVectorStore } from "./unstorage-vector.ts";
-import { type SessionWebSocket, wireSessionSocket } from "./ws-handler.ts";
 
 /**
  * Configuration for a self-hosted agent server created by {@link createServer}.
@@ -37,7 +32,7 @@ export type ServerOptions = {
   /** Environment variables. Defaults to `process.env`. */
   env?: Record<string, string>;
   /**
-   * Unstorage instance for KV and vector storage. Defaults to in-memory.
+   * Unstorage instance for KV storage. Defaults to in-memory.
    * Configure with an S3/R2/filesystem driver for persistence.
    */
   storage?: Storage;
@@ -79,56 +74,39 @@ export type AgentServer = {
 };
 
 /**
- * Create an HTTP + WebSocket server for self-hosted agent deployments.
+ * Result of {@link createAgentApp}. Contains the Hono app and a shutdown
+ * function to gracefully stop active sessions.
  *
- * Sets up a Hono HTTP server with a `/health` endpoint and WebSocket upgrade
- * handling. Agent tools execute directly in-process via {@link createDirectExecutor}.
+ * @public
+ */
+export type AgentApp = {
+  /** Hono app with agent routes. Mount it or add your own middleware. */
+  app: Hono;
+  /** Gracefully stop all active sessions and release resources. */
+  shutdown(): Promise<void>;
+};
+
+/**
+ * Create a composable Hono app with agent routes and WebSocket handling.
  *
- * @param options - Server configuration including the agent definition, optional
- *   KV store, client assets, logger, and S2S config. See {@link ServerOptions}.
- * @returns An {@link AgentServer} with `listen()` and `close()` lifecycle methods.
+ * Use this when you want to embed agent routes into a larger Hono app,
+ * add custom middleware, or compose with other services. For standalone
+ * deployments, use {@link createServer} instead.
  *
- * @example
+ * @example Mount into your own Hono app
  * ```ts
- * import { defineAgent } from "@alexkroman1/aai";
- * import { createServer } from "@alexkroman1/aai/server";
+ * import { Hono } from "hono";
+ * import { createAgentApp } from "@alexkroman1/aai/server";
  *
- * const agent = defineAgent({ name: "my-agent" });
- * const server = createServer({ agent });
- * await server.listen(3000);
+ * const { app: agentApp, shutdown } = createAgentApp({ agent });
+ * const app = new Hono();
+ * app.route("/agent", agentApp);
+ * app.get("/custom", (c) => c.text("hello"));
  * ```
  *
  * @public
  */
-async function drainSessions(
-  sessions: Map<string, Session>,
-  shutdownTimeoutMs: number,
-  logger: Logger,
-): Promise<void> {
-  if (sessions.size === 0) return;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<"timeout">((resolve) => {
-    timer = setTimeout(resolve, shutdownTimeoutMs, "timeout");
-  });
-  const graceful = Promise.allSettled([...sessions.values()].map((s) => s.stop())).then(
-    (results) => {
-      for (const r of results) {
-        if (r.status === "rejected") logger.warn(`Session stop failed during close: ${r.reason}`);
-      }
-      return "done" as const;
-    },
-  );
-  const outcome = await Promise.race([graceful, timeout]);
-  if (timer) clearTimeout(timer);
-  if (outcome === "timeout") {
-    logger.warn(
-      `Shutdown timeout (${shutdownTimeoutMs}ms) exceeded — force-closing ${sessions.size} remaining session(s)`,
-    );
-  }
-  sessions.clear();
-}
-
-export function createServer(options: ServerOptions): AgentServer {
+export function createAgentApp(options: ServerOptions): AgentApp {
   if (options.clientHtml && options.clientDir) {
     throw new Error(
       "ServerOptions: clientHtml and clientDir are mutually exclusive — provide one or the other, not both.",
@@ -143,41 +121,132 @@ export function createServer(options: ServerOptions): AgentServer {
     shutdownTimeoutMs = 30_000,
   } = options;
 
-  const env = filterEnv(options.env ?? (typeof process !== "undefined" ? process.env : {}));
+  const rawEnv = options.env ?? (typeof process !== "undefined" ? process.env : {});
+  const env = Object.fromEntries(
+    Object.entries(rawEnv).filter((e): e is [string, string] => e[1] !== undefined),
+  );
   const storage = options.storage ?? createStorage();
   const kv = createUnstorageKv({ storage });
-  const vector = createUnstorageVectorStore({ storage });
 
-  const executor = createDirectExecutor({
+  const runtime = createDirectExecutor({
     agent,
     env,
     kv,
-    vector,
     logger,
     s2sConfig,
+    sessionStartTimeoutMs: options.sessionStartTimeoutMs,
+    shutdownTimeoutMs,
   });
-  const sessions = new Map<string, Session>();
-  const readyConfig = buildReadyConfig(s2sConfig);
 
-  function handleWs(ws: SessionWebSocket, skipGreeting: boolean, resumeFrom?: string): void {
-    wireSessionSocket(ws, {
-      sessions,
-      createSession: (sid, client) =>
-        executor.createSession({
-          id: sid,
-          agent: agent.name,
-          client,
-          skipGreeting,
-          ...(resumeFrom ? { resumeFrom } : {}),
-        }),
-      readyConfig,
-      logger,
-      ...(options.sessionStartTimeoutMs !== undefined
-        ? { sessionStartTimeoutMs: options.sessionStartTimeoutMs }
-        : {}),
-      ...(resumeFrom ? { resumeFrom } : {}),
-    });
+  const app = new Hono();
+  const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
+
+  app.onError((err, c) => {
+    logger.error(`${c.req.method} ${c.req.path} error: ${err.message}`);
+    return c.json({ error: "Internal Server Error" }, 500);
+  });
+
+  app.use("/*", async (c, next) => {
+    const start = Date.now();
+    await next();
+    const ms = Date.now() - start;
+    const { status } = c.res;
+    const method = c.req.method;
+    const path = c.req.path;
+    if (status >= 400) {
+      logger.error(`${method} ${path} ${status} ${ms}ms`);
+    } else {
+      logger.info(`${method} ${path} ${status} ${ms}ms`);
+    }
+  });
+
+  app.use(
+    "*",
+    secureHeaders({
+      contentSecurityPolicy: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "blob:"],
+        styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+        connectSrc: ["'self'", "wss:", "ws:"],
+        imgSrc: ["'self'", "data:"],
+        fontSrc: ["'self'", "https://fonts.gstatic.com"],
+        objectSrc: ["'none'"],
+        baseUri: ["'self'"],
+      },
+    }),
+  );
+
+  app.get("/health", (c) => c.json({ status: "ok", name: agent.name }));
+
+  app.get("/kv", async (c) => {
+    const key = c.req.query("key");
+    if (!key) return c.json({ error: "Missing key query parameter" }, 400);
+    const value = await kv.get(key);
+    if (value === null) return c.json(null, 404);
+    return c.json(value);
+  });
+
+  if (clientDir) {
+    app.use("/*", serveStatic({ root: clientDir }));
   }
+
+  app.get("/", (c) => {
+    if (clientHtml) return c.html(clientHtml);
+    return c.html(
+      html`<!DOCTYPE html><html><body><h1>${agent.name}</h1><p>Agent server running.</p></body></html>`,
+    );
+  });
+
+  app.get(
+    "/websocket",
+    upgradeWebSocket((c) => {
+      const resumeFrom = c.req.query("sessionId") ?? undefined;
+      const skipGreeting = c.req.query("resume") !== undefined || resumeFrom !== undefined;
+      logger.info(`WS upgrade ${c.req.path}${skipGreeting ? " (resume)" : ""}`);
+      return {
+        onOpen(_evt, ws) {
+          if (ws.raw)
+            runtime.startSession(ws.raw, {
+              skipGreeting,
+              ...(resumeFrom ? { resumeFrom } : {}),
+            });
+        },
+      };
+    }),
+  );
+
+  // Expose injectWebSocket so createServer can wire it to the Node server.
+  // biome-ignore lint/suspicious/noExplicitAny: internal plumbing
+  (app as any)._injectWebSocket = injectWebSocket;
+
+  return {
+    app,
+    shutdown: () => runtime.shutdown(),
+  };
+}
+
+/**
+ * Create an HTTP + WebSocket server for self-hosted agent deployments.
+ *
+ * For composable usage (mounting into your own Hono app), use
+ * {@link createAgentApp} instead.
+ *
+ * @example
+ * ```ts
+ * import { defineAgent } from "@alexkroman1/aai";
+ * import { createServer } from "@alexkroman1/aai/server";
+ *
+ * const agent = defineAgent({ name: "my-agent" });
+ * const server = createServer({ agent });
+ * await server.listen(3000);
+ * ```
+ *
+ * @public
+ */
+export function createServer(options: ServerOptions): AgentServer {
+  const { app, shutdown } = createAgentApp(options);
+  // biome-ignore lint/suspicious/noExplicitAny: internal plumbing from createAgentApp
+  const injectWebSocket: (server: ReturnType<typeof serve>) => void = (app as any)._injectWebSocket;
 
   let serverHandle: { shutdown(): Promise<void> } | null = null;
   let listenPort: number | undefined;
@@ -188,79 +257,6 @@ export function createServer(options: ServerOptions): AgentServer {
     },
     async listen(port = 3000) {
       if (serverHandle) throw new Error("Server is already listening");
-
-      const app = new Hono();
-      const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
-
-      app.onError((err, c) => {
-        logger.error(`${c.req.method} ${c.req.path} error: ${err.message}`);
-        return c.json({ error: "Internal Server Error" }, 500);
-      });
-
-      app.use("/*", async (c, next) => {
-        const start = Date.now();
-        await next();
-        const ms = Date.now() - start;
-        const { status } = c.res;
-        const method = c.req.method;
-        const path = c.req.path;
-        if (status >= 400) {
-          logger.error(`${method} ${path} ${status} ${ms}ms`);
-        } else {
-          logger.info(`${method} ${path} ${status} ${ms}ms`);
-        }
-      });
-
-      app.use(
-        "*",
-        secureHeaders({
-          contentSecurityPolicy: {
-            defaultSrc: ["'self'"],
-            scriptSrc: ["'self'", "blob:"],
-            styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
-            connectSrc: ["'self'", "wss:", "ws:"],
-            imgSrc: ["'self'", "data:"],
-            fontSrc: ["'self'", "https://fonts.gstatic.com"],
-            objectSrc: ["'none'"],
-            baseUri: ["'self'"],
-          },
-        }),
-      );
-
-      app.get("/health", (c) => c.json({ status: "ok", name: agent.name }));
-
-      app.get("/kv", async (c) => {
-        const key = c.req.query("key");
-        if (!key) return c.json({ error: "Missing key query parameter" }, 400);
-        const value = await kv.get(key);
-        if (value === null) return c.json(null, 404);
-        return c.json(value);
-      });
-
-      if (clientDir) {
-        app.use("/*", serveStatic({ root: clientDir }));
-      }
-
-      app.get("/", (c) => {
-        if (clientHtml) return c.html(clientHtml);
-        return c.html(
-          html`<!DOCTYPE html><html><body><h1>${agent.name}</h1><p>Agent server running.</p></body></html>`,
-        );
-      });
-
-      app.get(
-        "/websocket",
-        upgradeWebSocket((c) => {
-          const resumeFrom = c.req.query("sessionId") ?? undefined;
-          const skipGreeting = c.req.query("resume") !== undefined || resumeFrom !== undefined;
-          logger.info(`WS upgrade ${c.req.path}${skipGreeting ? " (resume)" : ""}`);
-          return {
-            onOpen(_evt, ws) {
-              if (ws.raw) handleWs(ws.raw, skipGreeting, resumeFrom);
-            },
-          };
-        }),
-      );
 
       const nodeServer = serve({ fetch: app.fetch, port });
       injectWebSocket(nodeServer);
@@ -283,7 +279,7 @@ export function createServer(options: ServerOptions): AgentServer {
     },
 
     async close() {
-      await drainSessions(sessions, shutdownTimeoutMs, logger);
+      await shutdown();
       await serverHandle?.shutdown();
       listenPort = undefined;
     },

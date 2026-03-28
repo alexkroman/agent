@@ -1,14 +1,13 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import { createUnstorageKv, errorMessage } from "@alexkroman1/aai/internal";
 import { KvRequestSchema } from "@alexkroman1/aai/protocol";
-import { errorMessage } from "@alexkroman1/aai/utils";
 import type { Context } from "hono";
 import type { Env } from "./context.ts";
-import { createScopedKv } from "./scoped-storage.ts";
 
 export async function handleKv(c: Context<Env>): Promise<Response> {
   const slug = c.get("slug");
-  const kv = createScopedKv(c.env.storage, slug);
+  const kv = createUnstorageKv({ storage: c.env.storage, prefix: `agents/${slug}/kv` });
 
   const msg = KvRequestSchema.parse(await c.req.json());
 

@@ -7,14 +7,12 @@
  * error, and reset to prevent memory leaks in long-running processes.
  */
 
-import { createNanoEvents } from "nanoevents";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { MockWebSocket } from "./_mock-ws.ts";
-import type { ClientSink } from "./protocol.ts";
-import type { S2sEvents, S2sHandle } from "./s2s.ts";
+import { makeClient, makeMockHandle, makeSessionOpts, silentLogger } from "./_test-utils.ts";
+import type { S2sHandle } from "./s2s.ts";
 import type { Session } from "./session.ts";
 import { _internals, createS2sSession, type S2sSessionOptions } from "./session.ts";
-import { DEFAULT_INSTRUCTIONS } from "./types.ts";
 import { wireSessionSocket } from "./ws-handler.ts";
 
 // ─── Shared helpers ──────────────────────────────────────────────────────────
@@ -34,78 +32,7 @@ function makeStubSession(startDelay?: number): Session {
   };
 }
 
-const silentLogger = {
-  info: vi.fn(),
-  warn: vi.fn(),
-  error: vi.fn(),
-  debug: vi.fn(),
-};
-
 const defaultConfig = { audioFormat: "pcm16" as const, sampleRate: 16_000, ttsSampleRate: 24_000 };
-
-function makeMockHandle(): S2sHandle & {
-  _fire: <K extends keyof S2sEvents>(type: K, ...args: Parameters<S2sEvents[K]>) => void;
-} {
-  const emitter = createNanoEvents<S2sEvents>();
-  return {
-    on: emitter.on.bind(emitter),
-    sendAudio: vi.fn(),
-    sendToolResult: vi.fn(),
-    updateSession: vi.fn(),
-    resumeSession: vi.fn(),
-    close: vi.fn(),
-    _fire<K extends keyof S2sEvents>(type: K, ...args: Parameters<S2sEvents[K]>) {
-      emitter.emit(type, ...args);
-    },
-  };
-}
-
-function makeClient(): ClientSink & {
-  events: unknown[];
-  audioChunks: Uint8Array[];
-  audioDoneCount: number;
-} {
-  const events: unknown[] = [];
-  const audioChunks: Uint8Array[] = [];
-  let audioDoneCount = 0;
-  return {
-    open: true,
-    events,
-    audioChunks,
-    get audioDoneCount() {
-      return audioDoneCount;
-    },
-    event(e) {
-      events.push(e);
-    },
-    playAudioChunk(chunk) {
-      audioChunks.push(chunk);
-    },
-    playAudioDone() {
-      audioDoneCount++;
-    },
-  };
-}
-
-function makeSessionOpts(overrides?: Partial<S2sSessionOptions>): S2sSessionOptions {
-  return {
-    id: "session-1",
-    agent: "test-agent",
-    client: makeClient(),
-    agentConfig: {
-      name: "test-agent",
-      instructions: DEFAULT_INSTRUCTIONS,
-      greeting: "Hello!",
-    },
-    toolSchemas: [],
-    apiKey: "test-key",
-    s2sConfig: { wssUrl: "wss://fake", inputSampleRate: 16_000, outputSampleRate: 24_000 },
-    executeTool: vi.fn(async () => "tool-result"),
-    createWebSocket: vi.fn(),
-    logger: silentLogger,
-    ...overrides,
-  };
-}
 
 // ─── wireSessionSocket cleanup tests ─────────────────────────────────────────
 
@@ -299,7 +226,6 @@ describe("createS2sSession resource cleanup", () => {
       }),
       onTurn: vi.fn(),
       onError: vi.fn(),
-      onStep: vi.fn(),
       resolveTurnConfig: vi.fn(async () => null),
     };
     const { session, mockHandle } = setup({ hookInvoker });

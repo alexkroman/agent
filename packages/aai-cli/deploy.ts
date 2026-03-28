@@ -1,7 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { buildAgentBundle } from "./_build.ts";
-import type { BundleOutput } from "./_bundler.ts";
+import { type BundleOutput, buildAgentBundle } from "./_bundler.ts";
 import { runDeploy } from "./_deploy.ts";
 import {
   generateSlug,
@@ -10,7 +9,7 @@ import {
   resolveServerUrl,
   writeProjectConfig,
 } from "./_discover.ts";
-import { runCommand, step, stepInfo } from "./_ui.ts";
+import { consola } from "./_ui.ts";
 
 async function deployBundle(opts: {
   bundle: BundleOutput;
@@ -18,12 +17,11 @@ async function deployBundle(opts: {
   apiKey: string;
   slug: string;
   cwd: string;
-  log: (msg: string) => void;
 }): Promise<string> {
-  const { bundle, serverUrl, apiKey, cwd, log } = opts;
+  const { bundle, serverUrl, apiKey, cwd } = opts;
   let { slug } = opts;
 
-  log(step("Deploy", slug));
+  consola.start(`Deploy ${slug}`);
   const deployed = await runDeploy({
     url: serverUrl,
     bundle,
@@ -36,7 +34,7 @@ async function deployBundle(opts: {
   await writeProjectConfig(cwd, { slug, serverUrl });
 
   const agentUrl = `${serverUrl}/${slug}`;
-  log(step("Ready", agentUrl));
+  consola.success(`Ready ${agentUrl}`);
   return agentUrl;
 }
 
@@ -52,14 +50,12 @@ export async function runDeployCommand(opts: {
   const serverUrl = resolveServerUrl(opts.server, projectConfig?.serverUrl);
   const slug = projectConfig?.slug ?? generateSlug();
 
-  await runCommand(async ({ log }) => {
-    const bundle = await buildAgentBundle(cwd, log);
+  const bundle = await buildAgentBundle(cwd);
 
-    if (dryRun) {
-      log(stepInfo("Dry run", `would deploy as ${slug}`));
-      return;
-    }
+  if (dryRun) {
+    consola.info(`Dry run: would deploy as ${slug}`);
+    return;
+  }
 
-    await deployBundle({ bundle, serverUrl, apiKey, slug, cwd, log });
-  });
+  await deployBundle({ bundle, serverUrl, apiKey, slug, cwd });
 }

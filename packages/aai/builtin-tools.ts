@@ -11,14 +11,12 @@ import { z } from "zod";
 import { EMPTY_PARAMS, type ToolSchema } from "./_internal-types.ts";
 import { createRunCode } from "./_run-code.ts";
 import { ssrfSafeFetch } from "./_ssrf.ts";
+import { FETCH_TIMEOUT_MS, MAX_HTML_BYTES, MAX_PAGE_CHARS } from "./constants.ts";
 import { memoryTools } from "./memory-tools.ts";
 import type { ToolDef } from "./types.ts";
 
 export { executeInIsolate } from "./_run-code.ts";
 export { memoryTools } from "./memory-tools.ts";
-
-/** Per-fetch timeout for network tools — tighter than the overall tool timeout. */
-const FETCH_TIMEOUT_MS = 15_000;
 
 const fetchSignal = () => AbortSignal.timeout(FETCH_TIMEOUT_MS);
 
@@ -97,9 +95,6 @@ function createWebSearch(fetchFn = globalThis.fetch): ToolDef<typeof webSearchPa
 }
 
 // ─── visit_webpage ─────────────────────────────────────────────────────────
-
-const MAX_PAGE_CHARS = 10_000;
-const MAX_HTML_BYTES = 200_000;
 
 const visitWebpageParams = z.object({
   url: z.string().describe("The full URL to fetch (e.g., 'https://example.com/page')"),
@@ -205,41 +200,10 @@ function createFetchJson(fetchFn = globalThis.fetch): ToolDef<typeof fetchJsonPa
   };
 }
 
-// ─── vector_search ─────────────────────────────────────────────────────────
-
-const vectorSearchParams = z.object({
-  query: z
-    .string()
-    .describe(
-      "Short keyword query to search the knowledge base. Use specific topic " +
-        "terms, not full sentences. Do NOT include the company or product name " +
-        "since all documents are from the same source. For example, if the user " +
-        'asks "how much does Acme cost", search for "pricing plans rates".',
-    ),
-  topK: z.number().describe("Maximum results to return (default: 5)").optional(),
-});
-
-/** Callback for proxying vector search through the host RPC. */
-export type VectorSearchFn = (query: string, topK: number) => Promise<string>;
-
-function createVectorSearch(vectorSearchFn: VectorSearchFn): ToolDef<typeof vectorSearchParams> {
-  return {
-    description:
-      "Search the agent's knowledge base for relevant information. Use this when the user asks a question that might be answered by previously ingested documents or data. Returns the most relevant matches ranked by similarity.",
-    parameters: vectorSearchParams,
-    async execute(args) {
-      const { query, topK = 5 } = args;
-      return vectorSearchFn(query, topK);
-    },
-  };
-}
-
 // ─── Public API ────────────────────────────────────────────────────────────
 
 /** Options for creating built-in tool definitions. */
 export type BuiltinToolOptions = {
-  /** RPC callback for vector_search (proxied through host). */
-  vectorSearch?: VectorSearchFn;
   /** Override fetch implementation (defaults to globalThis.fetch). For testing. */
   fetch?: typeof globalThis.fetch;
 };
@@ -257,9 +221,6 @@ function resolveBuiltin(name: string, opts?: BuiltinToolOptions): [string, ToolD
       return [["fetch_json", createFetchJson(opts?.fetch)]];
     case "run_code":
       return [["run_code", createRunCode()]];
-    case "vector_search":
-      if (!opts?.vectorSearch) return [];
-      return [["vector_search", createVectorSearch(opts.vectorSearch)]];
     case "memory":
       return Object.entries(memoryTools());
     default:
@@ -269,7 +230,7 @@ function resolveBuiltin(name: string, opts?: BuiltinToolOptions): [string, ToolD
 
 /**
  * Create built-in tool definitions for the given tool names.
- * For runtime use — vector_search requires opts.vectorSearch to be included.
+ * For runtime use.
  */
 export function getBuiltinToolDefs(
   names: readonly string[],
@@ -285,7 +246,7 @@ export function getBuiltinToolDefs(
 /** Returns JSON tool schemas for the specified builtin tools. */
 export function getBuiltinToolSchemas(names: readonly string[]): ToolSchema[] {
   return names.flatMap((name) =>
-    resolveBuiltin(name, { vectorSearch: async () => "" }).map(([toolName, def]) => ({
+    resolveBuiltin(name).map(([toolName, def]) => ({
       name: toolName,
       description: def.description,
       parameters: z.toJSONSchema(def.parameters ?? EMPTY_PARAMS) as ToolSchema["parameters"],

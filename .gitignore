@@ -13,3 +13,4 @@ coverage/
 __pycache__/
 *.pyc
 temp/
+tmp/

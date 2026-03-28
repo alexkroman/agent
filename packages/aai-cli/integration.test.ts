@@ -25,7 +25,7 @@ import { mainCommand } from "./cli.ts";
 describe("CLI integration: arg parsing", () => {
   test("all subcommands are registered", () => {
     const subs = mainCommand.subCommands as Record<string, unknown>;
-    for (const cmd of ["init", "dev", "build", "deploy", "start", "secret", "rag"]) {
+    for (const cmd of ["init", "dev", "build", "deploy", "start", "secret"]) {
       expect(subs[cmd]).toBeDefined();
     }
   });

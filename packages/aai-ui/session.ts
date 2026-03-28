@@ -24,16 +24,6 @@ export type {
   VoiceSessionOptions,
 } from "./types.ts";
 
-/** Built-in non-reactive container (plain mutable wrapper). */
-function plainReactive<T>(initial: T): Reactive<T> {
-  return { value: initial };
-}
-
-/** No-op batch — just calls the function. */
-function plainBatch(fn: () => void): void {
-  fn();
-}
-
 // ─── Audio initialization (extracted for function-length limit) ──────────────
 
 /**
@@ -207,8 +197,9 @@ function buildWsUrl(platformUrl: string, resume: boolean, sessionId?: string): U
  * @public
  */
 export function createVoiceSession(options: VoiceSessionOptions): VoiceSession {
-  const reactive = options.reactiveFactory ?? plainReactive;
-  const batchFn = options.batch ?? plainBatch;
+  const reactive =
+    options.reactiveFactory ?? (<T>(initial: T): Reactive<T> => ({ value: initial }));
+  const batchFn = options.batch ?? ((fn: () => void) => fn());
 
   const state = reactive<AgentState>("disconnected");
   const messages = reactive<ChatMessage[]>([]);

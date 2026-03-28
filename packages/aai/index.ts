@@ -33,7 +33,6 @@ export {
   type Message,
   type Middleware,
   type MiddlewareBlockResult,
-  type StepInfo,
   type ToolCallInterceptResult,
   type ToolChoice,
   type ToolContext,
@@ -41,4 +40,3 @@ export {
   type ToolResultMap,
   tool,
 } from "./types.ts";
-export type { VectorEntry, VectorStore } from "./vector.ts";

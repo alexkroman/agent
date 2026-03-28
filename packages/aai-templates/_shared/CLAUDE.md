@@ -42,9 +42,7 @@ aai deploy --dry-run     # Validate and bundle without deploying
 aai secret put <NAME>    # Set a secret on the server (prompts for value)
 aai secret delete <NAME> # Remove a secret
 aai secret list          # List secret names
-aai rag <url>            # Ingest a site's llms-full.txt into the vector store
-aai link                 # Link local workspace packages (dev only)
-aai unlink               # Restore published package versions (reverses link)
+
 ```
 
 ## Templates
@@ -70,7 +68,7 @@ with `aai init -t <template_name>`.
 | `solo-rpg`          | Solo dark-fantasy RPG with dice, oaths, combat, save/load. **Has custom UI.**      |
 | `middleware`        | Middleware demo: rate limiting, PII redaction, caching, analytics                  |
 | `embedded-assets`   | FAQ bot using embedded JSON knowledge (no web search)                              |
-| `support`           | RAG-powered support agent using vector_search (AssemblyAI docs example)            |
+| `support`           | Support agent for AssemblyAI docs                                                  |
 | `test-patterns`     | Demonstrates every testable agent pattern (tools, hooks, middleware, state)        |
 
 ## Minimal agent
@@ -91,7 +89,7 @@ export default defineAgent({
 
 ```ts
 import { createToolFactory, defineAgent, defineTool } from "@alexkroman1/aai"; // defineAgent + helpers
-import type { BuiltinTool, HookContext, Middleware, StepInfo, ToolContext } from "@alexkroman1/aai";
+import type { BuiltinTool, HookContext, Middleware, ToolContext } from "@alexkroman1/aai";
 import { z } from "zod"; // Tools with typed params (included in package.json)
 ```
 
@@ -120,7 +118,6 @@ defineAgent({
   onDisconnect?: (ctx: HookContext) => void | Promise<void>;
   onError?: (error: Error, ctx?: HookContext) => void;
   onTurn?: (text: string, ctx: HookContext) => void | Promise<void>;
-  onStep?: (step: StepInfo, ctx: HookContext) => void | Promise<void>;
 
   // Middleware
   middleware?: Middleware[];   // Composable interceptors (see below)
@@ -156,8 +153,7 @@ Optimize for spoken conversation:
   math, counting, or data processing. NEVER do mental math."
 - **Research** — "Search first. Never guess or rely on memory for factual
   questions. Use visit_webpage when search snippets aren't detailed enough."
-- **FAQ/support** — "Always use vector_search before answering. Base answers
-  strictly on retrieved docs — don't guess."
+- **FAQ/support** — "Base answers strictly on your knowledge — don't guess."
 - **API-calling** — List endpoints directly in instructions so the LLM knows
   what's available and what each returns.
 - **Game/interactive** — "You ARE the game. Keep descriptions to two to four
@@ -276,7 +272,6 @@ Enable via `builtinTools`.
 | `visit_webpage` | Fetch URL → plain text                         | `url`                               |
 | `fetch_json`    | HTTP GET a JSON API                            | `url`, `headers?`                   |
 | `run_code`      | Execute JS in sandbox (no net/fs, 5s timeout)  | `code`                              |
-| `vector_search` | Search the agent's RAG knowledge base          | `query`, `topK?` (default 5)        |
 | `memory`        | Persistent KV memory (4 tools, see below)      | —                                   |
 
 The agentic loop runs up to `maxSteps` iterations (default 5) and stops when the
@@ -291,7 +286,6 @@ ctx.env; // Record<string, string> — secrets (from .env locally, aai secret pu
 ctx.state; // per-session state
 ctx.sessionId; // string — unique session identifier (for log correlation)
 ctx.kv; // persistent KV store
-ctx.vector; // VectorStore — vector store for RAG (tools only)
 ctx.messages; // readonly Message[] — conversation history (tools only)
 ```
 
@@ -399,16 +393,6 @@ Keys use colon-separated prefixes (`"user:name"`, `"preference:color"`).
 
 ## Advanced patterns
 
-### Step hooks
-
-`onStep` — called after each LLM step (logging, analytics):
-
-```ts
-onStep: (step, ctx) => {
-  console.log(`Step ${step.stepNumber}: ${step.toolCalls.length} tool calls`);
-},
-```
-
 ### Tool choice
 
 Control when the LLM uses tools:
@@ -430,32 +414,35 @@ import type { Middleware } from "@alexkroman1/aai";
 
 const rateLimiter: Middleware = {
   name: "rate-limiter",
-  beforeTurn: (text, ctx) => {
+  beforeTurn: (ctx) => {
+    // ctx.text has the user's input
     // Return { block: true, reason: "..." } to block the turn
     // Return void to proceed
   },
-  afterTurn: (text, ctx) => {
-    // Run after a turn completes
+  afterTurn: (ctx) => {
+    // Run after a turn completes (ctx.text has the turn text)
   },
 };
 
 const piiRedactor: Middleware = {
   name: "pii-redactor",
-  beforeOutput: (text, ctx) => {
+  beforeOutput: (ctx) => {
     // Transform agent text before TTS. Return the filtered text.
-    return text.replace(/\d{3}-\d{2}-\d{4}/g, "[SSN REDACTED]");
+    return (ctx.text ?? "").replace(/\d{3}-\d{2}-\d{4}/g, "[SSN REDACTED]");
   },
 };
 
 const cacheMiddleware: Middleware = {
   name: "tool-cache",
-  beforeToolCall: (toolName, args, ctx) => {
-    // Return { result: "cached" } to skip execution
-    // Return { block: true, reason: "denied" } to deny the call
-    // Return { args: { ...modified } } to transform arguments
+  beforeToolCall: (ctx) => {
+    // ctx.tool has the tool name, ctx.args has the arguments
+    // Return { type: "result", result: "cached" } to skip execution
+    // Return { type: "block", reason: "denied" } to deny the call
+    // Return { type: "args", args: { ...modified } } to transform arguments
     // Return void to proceed normally
   },
-  afterToolCall: (toolName, args, result, ctx) => {
+  afterToolCall: (ctx) => {
+    // ctx.tool, ctx.args, ctx.result are set
     // Run after tool execution (e.g. cache the result)
   },
 };
@@ -491,14 +478,6 @@ session state:
 maxSteps: (ctx) => {
   const state = ctx.state as { complexity: string };
   return state.complexity === "complex" ? 10 : 5;
-},
-```
-
-You can also monitor steps via the `onStep` hook:
-
-```ts
-onStep: (step, ctx) => {
-  console.log(`[step ${step.stepNumber}] tools: ${step.toolCalls.map(t => t.toolName).join(", ")}`);
 },
 ```
 
@@ -568,7 +547,7 @@ name, call ID, agent, and session ID attributes).
 For custom metrics or spans in your agent code:
 
 ```ts
-import { meter, tracer } from "@alexkroman1/aai/telemetry";
+import { meter, tracer } from "@alexkroman1/aai/internal";
 
 const myCounter = meter.createCounter("my_agent.custom_event");
 
@@ -1177,6 +1156,18 @@ const server = createServer({
 await server.listen(3000);
 ```
 
+For composable usage, `createAgentApp()` returns a Hono app you can mount:
+
+```ts
+import { Hono } from "hono";
+import { createAgentApp } from "@alexkroman1/aai/server";
+
+const { app: agentApp, shutdown } = createAgentApp({ agent });
+const app = new Hono();
+app.route("/agent", agentApp);
+app.get("/custom", (c) => c.text("hello"));
+```
+
 Run with `node server.ts` (Node >=22.6 strips types natively) or bundle
 with your preferred tool. The server handles WebSocket connections, STT/TTS,
 and the agentic loop. Set `ASSEMBLYAI_API_KEY` as an environment variable.
@@ -1288,7 +1279,6 @@ describe("my agent", () => {
 | `addUserMessage(text)` | Add a user message to conversation history |
 | `addAssistantMessage(text)` | Add an assistant message to history |
 | `messages` | Read-only conversation history |
-| `steps` | All `onStep` hook invocations recorded |
 | `turns` | All `onTurn` hook invocations recorded |
 | `connect()` / `disconnect()` | Fire lifecycle hooks manually |
 | `reset()` | Clear conversation state |
@@ -1299,7 +1289,6 @@ Options:
 createTestHarness(agent, {
   env: { API_KEY: "test-key" },  // mock environment variables
   kv: myKvStore,                  // custom KV store (default: in-memory)
-  vector: myVectorStore,          // custom vector store (default: in-memory)
 });
 ```
 

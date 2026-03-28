@@ -1,7 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 // Bundle store backed by unstorage (S3-compatible storage via Tigris, R2, etc.).
 
-import { errorMessage } from "@alexkroman1/aai/utils";
+import { errorMessage } from "@alexkroman1/aai/internal";
+import AsyncLock from "async-lock";
 import type { Storage } from "unstorage";
 import { z } from "zod";
 import type { AgentMetadata } from "./_schemas.ts";
@@ -41,18 +42,7 @@ export function createBundleStore(
 ): BundleStore {
   const { credentialKey } = opts;
 
-  const manifestLocks = new Map<string, Promise<void>>();
-  async function withManifestLock<T>(slug: string, fn: () => Promise<T>): Promise<T> {
-    const prev = manifestLocks.get(slug) ?? Promise.resolve();
-    const { promise: next, resolve } = Promise.withResolvers<void>();
-    manifestLocks.set(slug, next);
-    try {
-      await prev;
-      return await fn();
-    } finally {
-      resolve();
-    }
-  }
+  const manifestLock = new AsyncLock();
 
   async function deleteByPrefix(prefix: string): Promise<void> {
     const keys = await storage.getKeys(prefix);
@@ -69,7 +59,7 @@ export function createBundleStore(
   const store: BundleStore = {
     async putAgent(bundle) {
       try {
-        await deleteByPrefix(`agents:${bundle.slug}`);
+        await deleteByPrefix(`agents/${bundle.slug}`);
       } catch (err) {
         console.warn(
           `Failed to delete old agent files for ${bundle.slug}, proceeding with overwrite: ${errorMessage(err)}`,
@@ -114,7 +104,7 @@ export function createBundleStore(
     },
 
     async deleteAgent(slug) {
-      await deleteByPrefix(`agents:${slug}`);
+      await deleteByPrefix(`agents/${slug}`);
     },
 
     async getEnv(slug) {
@@ -124,7 +114,7 @@ export function createBundleStore(
     },
 
     async putEnv(slug, env) {
-      await withManifestLock(slug, async () => {
+      await manifestLock.acquire(slug, async () => {
         const raw = await getRawManifest(slug);
         if (!raw) throw new Error(`Agent ${slug} not found`);
         const updated = {

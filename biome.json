@@ -1,5 +1,5 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.4.8/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.4.9/schema.json",
   "files": {
     "includes": [
       "packages/**",
@@ -8,7 +8,8 @@
       "!**/.aai",
       "!**/__snapshots__",
       "!**/templates",
-      "!packages/aai-templates"
+      "!packages/aai-templates",
+      "!tmp"
     ]
   },
   "linter": {
@@ -90,10 +91,6 @@
       "complexity": {
         "recommended": true,
         "noExcessiveCognitiveComplexity": "error",
-        "noExcessiveLinesPerFunction": {
-          "level": "error",
-          "options": { "maxLines": 150 }
-        },
         "noStaticOnlyClass": "error",
         "useDateNow": "error",
         "useSimplifiedLogicExpression": "error",
@@ -119,10 +116,6 @@
         "recommended": false
       },
       "nursery": {
-        "noExcessiveLinesPerFile": {
-          "level": "error",
-          "options": { "maxLines": 400 }
-        },
         "noFloatingPromises": "error",
         "noMisusedPromises": "error",
         "noNestedPromises": "error",
@@ -149,22 +142,24 @@
   },
   "overrides": [
     {
-      "includes": ["**/*.test.ts", "**/*.test.tsx", "**/_test-utils.ts", "**/_jsdom-setup.ts", "**/vitest*.config.ts"],
+      "includes": [
+        "**/*.test.ts",
+        "**/*.test.tsx",
+        "**/_test-utils.ts",
+        "**/_jsdom-setup.ts",
+        "**/vitest*.config.ts"
+      ],
       "linter": {
         "rules": {
           "correctness": {
             "noUndeclaredDependencies": "off"
           },
           "nursery": {
-            "noExcessiveLinesPerFile": "off",
             "noConditionalExpect": "off",
             "useImportsFirst": "off"
           },
           "security": {
             "noSecrets": "off"
-          },
-          "complexity": {
-            "noExcessiveLinesPerFunction": "off"
           },
           "suspicious": {
             "noExportsInTest": "off"

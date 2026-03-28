@@ -38,15 +38,13 @@
  */
 
 import { createStorage } from "unstorage";
-import { createTestEmbedFn } from "./_embeddings.ts";
 import { createDirectExecutor, type DirectExecutor } from "./direct-executor.ts";
 import type { Kv } from "./kv.ts";
-import type { AgentDef, Message, StepInfo } from "./types.ts";
+import type { AgentDef, Message } from "./types.ts";
 import { createUnstorageKv } from "./unstorage-kv.ts";
-import { createUnstorageVectorStore } from "./unstorage-vector.ts";
-import type { VectorStore } from "./vector.ts";
 
 export { installMockWebSocket, MockWebSocket } from "./_mock-ws.ts";
+export { flush } from "./_test-utils.ts";
 
 // ─── TurnResult ──────────────────────────────────────────────────────────────
 
@@ -175,8 +173,6 @@ export type TestHarnessOptions = {
   env?: Record<string, string>;
   /** KV store instance. Defaults to an in-memory SQLite store. */
   kv?: Kv;
-  /** Vector store instance. Defaults to an in-memory SQLite store. */
-  vector?: VectorStore;
 };
 
 /**
@@ -224,7 +220,6 @@ export class TestHarness {
   readonly _sessionId: string;
 
   private _messages: Message[] = [];
-  private _onStepCalls: StepInfo[] = [];
   private _onTurnCalls: string[] = [];
   private _connected = false;
 
@@ -237,11 +232,6 @@ export class TestHarness {
   /** Conversation messages accumulated across turns. */
   get messages(): readonly Message[] {
     return this._messages;
-  }
-
-  /** All `onStep` hook invocations recorded so far. */
-  get steps(): readonly StepInfo[] {
-    return this._onStepCalls;
   }
 
   /** All `onTurn` hook invocations (the text argument) recorded so far. */
@@ -272,7 +262,7 @@ export class TestHarness {
   /**
    * Execute a single tool by name with the given arguments.
    *
-   * The tool runs with full agent context (env, state, kv, vector, messages).
+   * The tool runs with full agent context (env, state, kv, messages).
    * The call is **not** recorded in conversation history — use {@link turn}
    * for that.
    *
@@ -299,7 +289,7 @@ export class TestHarness {
    * 1. Fires `onConnect` if this is the first turn
    * 2. Adds the user message to conversation history
    * 3. Fires the `onTurn` hook
-   * 4. Executes each tool call in order, firing `onStep` for each
+   * 4. Executes each tool call in order
    * 5. Returns a {@link TurnResult} with assertion helpers
    *
    * @param text - The user's spoken/typed input.
@@ -327,8 +317,7 @@ export class TestHarness {
 
     // Execute tool calls
     const recorded: RecordedToolCall[] = [];
-    for (let i = 0; i < toolCalls.length; i++) {
-      const tc = toolCalls[i] as TurnToolCall;
+    for (const tc of toolCalls) {
       const result = await this._executor.executeTool(
         tc.tool,
         tc.args,
@@ -340,15 +329,6 @@ export class TestHarness {
 
       // Record tool message in conversation
       this._messages.push({ role: "tool", content: result });
-
-      // Fire onStep hook
-      const step: StepInfo = {
-        stepNumber: i + 1,
-        toolCalls: [{ toolName: tc.tool, args: tc.args }],
-        text: "",
-      };
-      this._onStepCalls.push(step);
-      await this._executor.hookInvoker.onStep(this._sessionId, step);
     }
 
     return new TurnResult(text, recorded);
@@ -375,24 +355,12 @@ export class TestHarness {
   /**
    * Reset conversation state: clears messages, step/turn history.
    *
-   * Does **not** reset KV or vector store — create a new harness for that.
+   * Does **not** reset KV store — create a new harness for that.
    */
   reset(): void {
     this._messages = [];
-    this._onStepCalls = [];
     this._onTurnCalls = [];
   }
-}
-
-/**
- * Create a SQLite-vec backed vector store with deterministic test embeddings.
- * Uses a temp directory that is unique per call for test isolation.
- */
-function createTestVectorStore(): VectorStore {
-  return createUnstorageVectorStore({
-    storage: createStorage(),
-    embedFn: createTestEmbedFn(),
-  });
 }
 
 /**
@@ -403,7 +371,7 @@ function createTestVectorStore(): VectorStore {
  * conversations — all without audio, network, or an LLM.
  *
  * @param agent - The agent definition returned by `defineAgent()`.
- * @param options - Optional environment, KV, and vector store overrides.
+ * @param options - Optional environment and KV store overrides.
  * @returns A {@link TestHarness} instance.
  *
  * @example
@@ -429,13 +397,9 @@ export function createTestHarness(
   agent: AgentDef<any>,
   options: TestHarnessOptions = {},
 ): TestHarness {
-  const {
-    env = {},
-    kv = createUnstorageKv({ storage: createStorage() }),
-    vector = createTestVectorStore(),
-  } = options;
+  const { env = {}, kv = createUnstorageKv({ storage: createStorage() }) } = options;
 
-  const executor = createDirectExecutor({ agent, env, kv, vector });
+  const executor = createDirectExecutor({ agent, env, kv });
   const sessionId = `test-${Date.now()}`;
 
   return new TestHarness(executor, sessionId);

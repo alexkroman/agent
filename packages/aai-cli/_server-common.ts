@@ -7,23 +7,23 @@ import type { AgentDef } from "@alexkroman1/aai/types";
 import { getApiKey } from "./_discover.ts";
 
 /**
- * Return the variable names declared in a `.env` file.
+ * Parse a `.env` file into a key→value record.
  *
- * Only used to determine *which* keys the developer intended as agent
- * secrets — actual values are resolved from `process.env` (so shell
- * overrides still win).
+ * Used to determine *which* keys the developer intended as agent
+ * secrets and their default values. Shell overrides still win because
+ * callers merge with `process.env` (existing vars take precedence).
  */
-export function envFileKeys(content: string): string[] {
-  const keys: string[] = [];
+export function parseEnvFile(content: string): Record<string, string> {
+  const entries: Record<string, string> = {};
   for (const raw of content.split("\n")) {
     const line = raw.trim();
     if (!line || line.startsWith("#")) continue;
     const eq = line.indexOf("=");
     if (eq === -1) continue;
     const key = line.slice(0, eq).trim();
-    if (key) keys.push(key);
+    if (key) entries[key] = line.slice(eq + 1);
   }
-  return keys;
+  return entries;
 }
 
 /** Load an AgentDef by dynamically importing agent.ts via Node's native TS support. */
@@ -64,8 +64,9 @@ export async function loadAgentDef(cwd: string): Promise<AgentDef> {
  * from accidentally depending on shell-level vars (PATH, HOME, etc.) that
  * won't exist in production.
  *
- * Values are resolved from `process.env` after loading `.env` via Node's
- * built-in `process.loadEnvFile()`, so shell exports override `.env`.
+ * Values are resolved by merging the `.env` file with the current
+ * environment — existing shell exports take precedence over `.env`
+ * defaults, without mutating `process.env`.
  *
  * @param cwd - Project directory containing `.env` (optional).
  * @param baseEnv - Override the environment to read values from (tests only).
@@ -74,15 +75,11 @@ export async function resolveServerEnv(
   cwd?: string,
   baseEnv?: Record<string, string | undefined>,
 ): Promise<Record<string, string>> {
-  let declaredKeys: string[] = [];
+  let fileEntries: Record<string, string> = {};
   if (cwd) {
-    const envPath = path.join(cwd, ".env");
     try {
-      // Parse key names from the .env file
-      const content = await fs.readFile(envPath, "utf-8");
-      declaredKeys = envFileKeys(content);
-      // Load values into process.env (existing vars are not overridden)
-      process.loadEnvFile(envPath);
+      const content = await fs.readFile(path.join(cwd, ".env"), "utf-8");
+      fileEntries = parseEnvFile(content);
     } catch {
       // No .env file — that's fine
     }
@@ -90,10 +87,11 @@ export async function resolveServerEnv(
 
   const source = baseEnv ?? process.env;
 
-  // Only include explicitly-declared keys (not all of process.env)
+  // Only include explicitly-declared keys (not all of process.env).
+  // Shell env takes precedence over .env file values.
   const env: Record<string, string> = {};
-  for (const key of declaredKeys) {
-    const val = source[key];
+  for (const [key, fileVal] of Object.entries(fileEntries)) {
+    const val = source[key] ?? fileVal;
     if (val !== undefined) env[key] = val;
   }
 
@@ -105,7 +103,7 @@ export async function resolveServerEnv(
 }
 
 /**
- * Create and start an agent server with static file serving.
+ * Create and start an agent server, optionally with static file serving.
  *
  * NOTE: This dynamically imports `@alexkroman1/aai/server` which has peer
  * dependencies on `hono` and `@hono/node-server`. Those packages are listed
@@ -114,29 +112,16 @@ export async function resolveServerEnv(
  */
 export async function bootServer(
   agentDef: AgentDef,
-  clientDir: string,
+  clientDir: string | undefined,
   env: Record<string, string>,
   port: number,
 ): Promise<AgentServer> {
   const { createServer } = await import("@alexkroman1/aai/server");
-  const server = createServer({ agent: agentDef, clientDir, env });
-  await server.listen(port);
-  return server;
-}
-
-/**
- * Boot the agent server without client serving.
- *
- * Used in dev mode where Vite handles client files with HMR,
- * and only the backend (health, WebSocket) runs on this server.
- */
-export async function bootBackendServer(
-  agentDef: AgentDef,
-  env: Record<string, string>,
-  port: number,
-): Promise<AgentServer> {
-  const { createServer } = await import("@alexkroman1/aai/server");
-  const server = createServer({ agent: agentDef, env });
+  const server = createServer({
+    agent: agentDef,
+    ...(clientDir ? { clientDir } : {}),
+    env,
+  });
   await server.listen(port);
   return server;
 }

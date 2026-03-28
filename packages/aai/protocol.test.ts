@@ -1,15 +1,17 @@
 import { describe, expect, test } from "vitest";
 import {
+  DEFAULT_STT_SAMPLE_RATE,
+  DEFAULT_TTS_SAMPLE_RATE,
+  HOOK_TIMEOUT_MS,
+  TOOL_EXECUTION_TIMEOUT_MS,
+} from "./constants.ts";
+import {
   AUDIO_FORMAT,
   buildReadyConfig,
   ClientEventSchema,
   ClientMessageSchema,
-  DEFAULT_STT_SAMPLE_RATE,
-  DEFAULT_TTS_SAMPLE_RATE,
-  HOOK_TIMEOUT_MS,
   KvRequestSchema,
   SessionErrorCodeSchema,
-  TOOL_EXECUTION_TIMEOUT_MS,
 } from "./protocol.ts";
 
 describe("protocol constants", () => {

@@ -3,9 +3,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { errorMessage } from "@alexkroman1/aai/utils";
 import { generateText, stepCountIs } from "ai";
 import { consola as _consola } from "consola";
-import { colorize } from "consola/utils";
 import { getApiKey } from "./_discover.ts";
 import { makeTools } from "./_generate-tools.ts";
 
@@ -44,10 +44,9 @@ const SYSTEM_PROMPT = `You are a pragmatic, expert coding agent that builds voic
 function toolLabel(name: string, input: Record<string, unknown>): string {
   const icon = TOOL_ICONS[name] ?? "•";
   const file = (input.filePath ?? input.path ?? input.pattern ?? "") as string;
-  if (name === "bash")
-    return `${icon} ${colorize("cyanBright", name)} ${colorize("dim", String(input.command ?? "").slice(0, 60))}`;
-  if (file) return `${icon} ${colorize("cyanBright", name)} ${file}`;
-  return `${icon} ${colorize("cyanBright", name)}`;
+  if (name === "bash") return `${icon} ${name} ${String(input.command ?? "").slice(0, 60)}`;
+  if (file) return `${icon} ${name} ${file}`;
+  return `${icon} ${name}`;
 }
 
 function formatDuration(ms: number): string {
@@ -57,28 +56,12 @@ function formatDuration(ms: number): string {
 }
 
 function printCode(filePath: string, content: string): void {
-  const lang = path.extname(filePath).slice(1) || "text";
   const lines = content.split("\n");
   const maxLines = 40;
   const truncated = lines.length > maxLines;
-  const shown = truncated ? lines.slice(0, maxLines) : lines;
-  console.log(colorize("dim", `  ┌── ${filePath} (${lang})`));
-  for (const line of shown) {
-    console.log(colorize("dim", `  │ ${line}`));
-  }
-  if (truncated) {
-    console.log(colorize("dim", `  │ ... (${lines.length - maxLines} more lines)`));
-  }
-  console.log(colorize("dim", "  └──"));
-}
-
-function printBox(text: string): string {
-  const lines = text.split("\n");
-  return [
-    colorize("dim", "  ┌──"),
-    ...lines.map((line) => colorize("dim", `  │ ${line}`)),
-    colorize("dim", "  └──"),
-  ].join("\n");
+  const shown = truncated ? lines.slice(0, maxLines).join("\n") : content;
+  const suffix = truncated ? `\n... (${lines.length - maxLines} more lines)` : "";
+  consola.box({ title: filePath, message: shown + suffix, style: { borderColor: "dim" } });
 }
 
 function maybeShowCode(toolName: string, input: Record<string, unknown> | undefined): void {
@@ -130,23 +113,24 @@ export async function runGenerateCommand(opts: { cwd: string; prompt: string }):
         const label = toolLabel(toolCall.toolName, input ?? {});
         const time = formatDuration(durationMs);
         const ok = "success" in rest && rest.success;
-        const mark = ok ? colorize("greenBright", "✔") : colorize("redBright", "✖");
 
-        console.log(`${mark} ${label} ${colorize("dim", time)}`);
-        if (ok) maybeShowCode(toolCall.toolName, input);
+        if (ok) {
+          consola.success(`${label} ${time}`);
+          maybeShowCode(toolCall.toolName, input);
+        } else {
+          consola.fail(`${label} ${time}`);
+        }
       },
       onStepFinish: ({ finishReason, text }) => {
         if (finishReason === "stop" && text) {
-          console.log(printBox(text));
+          consola.box(text);
         }
       },
     });
 
-    consola.success(
-      `Done ${colorize("dim", `(${result.steps.length} steps, ${result.usage.totalTokens} tokens)`)}`,
-    );
+    consola.success(`Done (${result.steps.length} steps, ${result.usage.totalTokens} tokens)`);
   } catch (err) {
-    consola.error(err instanceof Error ? err.message : String(err));
+    consola.error(errorMessage(err));
     process.exitCode = 1;
   }
 }

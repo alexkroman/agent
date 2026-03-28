@@ -1,0 +1,24 @@
+[
+  {
+    "type": "config",
+    "audioFormat": "pcm16",
+    "sampleRate": 16000,
+    "ttsSampleRate": 24000,
+    "sessionId": "sess_fixture_002"
+  },
+  { "type": "chat", "text": "Hi there!" },
+  { "type": "tts_done" },
+
+  { "type": "speech_started" },
+  { "type": "transcript", "text": "Tell me", "isFinal": false },
+  { "type": "transcript", "text": "Tell me a fun", "isFinal": false },
+  { "type": "transcript", "text": "Tell me a fun fact about space.", "isFinal": true },
+  { "type": "speech_stopped" },
+  { "type": "turn", "text": "Tell me a fun fact about space." },
+
+  { "type": "chat_delta", "text": "A day" },
+  { "type": "chat_delta", "text": " on Venus" },
+  { "type": "chat_delta", "text": " is longer than its year." },
+  { "type": "chat", "text": "A day on Venus is longer than its year." },
+  { "type": "tts_done" }
+]

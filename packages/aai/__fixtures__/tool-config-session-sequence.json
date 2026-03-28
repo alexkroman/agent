@@ -1,0 +1,51 @@
+[
+  {
+    "type": "session.updated",
+    "timestamp": 1774668542.389923,
+    "config": {
+      "system_prompt": "You are a weather assistant. Always use the get_weather tool when asked about weather. Keep responses under 10 words.",
+      "tools": [
+        {
+          "type": "function",
+          "name": "get_weather",
+          "description": "Get the current weather for a city",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "city": {
+                "type": "string",
+                "description": "City name"
+              }
+            },
+            "required": ["city"]
+          }
+        }
+      ]
+    }
+  },
+  {
+    "type": "session.ready",
+    "timestamp": 1774668542.4018698,
+    "session_id": "sess_d0b0b408c00944c49183bb2d6f18feb9",
+    "config": {
+      "system_prompt": "You are a weather assistant. Always use the get_weather tool when asked about weather. Keep responses under 10 words.",
+      "tools": [
+        {
+          "type": "function",
+          "name": "get_weather",
+          "description": "Get the current weather for a city",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "city": {
+                "type": "string",
+                "description": "City name"
+              }
+            },
+            "required": ["city"]
+          }
+        }
+      ]
+    }
+  }
+]

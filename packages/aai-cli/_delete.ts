@@ -1,5 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import { apiError, apiRequest, HINT_INVALID_API_KEY } from "./_api-client.ts";
+
 export type DeleteOpts = {
   url: string;
   slug: string;
@@ -11,31 +13,21 @@ export type DeleteOpts = {
 export async function runDelete(opts: DeleteOpts): Promise<void> {
   const fetchFn = opts.fetch ?? globalThis.fetch.bind(globalThis);
 
-  let resp: Response;
-  try {
-    resp = await fetchFn(`${opts.url}/${opts.slug}`, {
-      method: "DELETE",
-      headers: {
-        Authorization: `Bearer ${opts.apiKey}`,
-      },
-    });
-  } catch (err: unknown) {
-    const hint = opts.url.startsWith("http://localhost")
-      ? "Is the local dev server running? Start it with `aai dev`."
-      : "Check your network connection and verify the server URL is correct.";
-    throw new Error(`delete failed: could not reach ${opts.url}\n  ${hint}`, { cause: err });
-  }
+  const resp = await apiRequest(
+    `${opts.url}/${opts.slug}`,
+    { method: "DELETE", apiKey: opts.apiKey, action: "delete" },
+    fetchFn,
+  );
 
   if (resp.ok) return;
 
   const text = await resp.text();
 
-  let hint = "";
+  let hint: string | undefined;
   if (resp.status === 401) {
-    hint =
-      "Your API key may be invalid. Check ~/.config/aai/config.json or set ASSEMBLYAI_API_KEY.";
+    hint = HINT_INVALID_API_KEY;
   } else if (resp.status === 404) {
     hint = "The agent may not be deployed. Check `.aai/project.json` for the correct slug.";
   }
-  throw new Error(`delete failed (HTTP ${resp.status}): ${text}${hint ? `\n  ${hint}` : ""}`);
+  throw apiError("delete", resp.status, text, hint);
 }

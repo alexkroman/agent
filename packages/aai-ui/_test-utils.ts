@@ -1,19 +1,17 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { installMockWebSocket } from "@alexkroman1/aai/testing";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { flush, installMockWebSocket } from "@alexkroman1/aai/testing";
 import { batch, signal } from "@preact/signals";
 import { createVoiceSession, type VoiceSession } from "./session.ts";
 import { createSessionControls, type SessionSignals } from "./signals.ts";
 import type { AgentState, ChatMessage, SessionError, ToolCallInfo } from "./types.ts";
 
-export { installMockWebSocket, MockWebSocket } from "@alexkroman1/aai/testing";
+export { flush, installMockWebSocket, MockWebSocket } from "@alexkroman1/aai/testing";
 
 export function delay(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
-}
-
-export function flush(): Promise<void> {
-  return new Promise<void>((r) => queueMicrotask(r));
 }
 
 // Test helpers assign incomplete mocks to global properties (e.g. a plain
@@ -204,6 +202,28 @@ export function setupSignalsEnv() {
       loc.restore();
     },
   };
+}
+
+// ─── Fixture replay helpers ──────────────────────────────────────────────────
+
+/** Load a JSON fixture from __fixtures__/. */
+export function loadFixture<T = Record<string, unknown>[]>(name: string): T {
+  return JSON.parse(readFileSync(resolve(import.meta.dirname, "__fixtures__", name), "utf-8"));
+}
+
+/**
+ * Replay a fixture session through the signals test environment.
+ * Sends each message via the mock WebSocket, yielding between messages.
+ */
+export async function replayFixture(
+  env: ReturnType<typeof setupSignalsEnv>,
+  fixtureName: string,
+): Promise<void> {
+  const messages = loadFixture(fixtureName);
+  for (const msg of messages) {
+    env.send(msg);
+    await flush();
+  }
 }
 
 export function createMockSignals(

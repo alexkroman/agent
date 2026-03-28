@@ -1,12 +1,10 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "ignoreUnresolved": ["./_jsdom-setup.ts", "./matchers.ts"],
+  "ignoreUnresolved": ["./_jsdom-setup.ts", "./matchers.ts", "../aai/matchers.ts"],
   "ignoreExportsUsedInFile": true,
   "exclude": ["exports", "types", "optionalPeerDependencies"],
   "workspaces": {
-    ".": {
-      "ignore": ["_fail_on_warnings.ts"]
-    },
+    ".": {},
     "packages/aai": {
       "entry": ["**/*.test.ts", "_test-utils.ts"],
       "includeEntryExports": true

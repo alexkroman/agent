@@ -6,17 +6,12 @@
 
 import { z } from "zod";
 import { errorMessage, isReadOnlyFsOp } from "./_utils.ts";
+import { RUN_CODE_MEMORY_MB, RUN_CODE_TIMEOUT_MS } from "./constants.ts";
 import type { ToolDef } from "./types.ts";
 
 const runCodeParams = z.object({
   code: z.string().describe("JavaScript code to execute. Use console.log() for output."),
 });
-
-/** Timeout for sandboxed code execution. */
-const RUN_CODE_TIMEOUT = 5000;
-
-/** Memory limit for run_code isolates (MB). */
-const RUN_CODE_MEMORY_MB = 32;
 
 /**
  * Execute JavaScript code inside a fresh secure-exec V8 isolate.
@@ -145,7 +140,7 @@ export async function executeInIsolate(code: string): Promise<string | { error: 
 
   try {
     // Wait for output (stdout/stderr) or timeout — no polling needed.
-    await Promise.race([outputReady, new Promise<void>((r) => setTimeout(r, RUN_CODE_TIMEOUT))]);
+    await Promise.race([outputReady, new Promise<void>((r) => setTimeout(r, RUN_CODE_TIMEOUT_MS))]);
 
     // Let the isolate finish naturally — wait a short grace period for exec
     // to settle after output is captured (avoids disposing mid-execution).

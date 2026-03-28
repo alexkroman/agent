@@ -4,7 +4,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createTestStorage, createTestStore, makeSlot } from "./_test-utils.ts";
 import type { Sandbox } from "./sandbox.ts";
 import {
-  _deps,
   _slotInternals,
   type AgentSlot,
   ensureAgent,
@@ -15,20 +14,23 @@ import {
 // ── Mock createSandbox ──────────────────────────────────────────────────
 
 function makeMockSandbox(): Sandbox {
+  const shutdown = vi.fn().mockResolvedValue(undefined);
   return {
     startSession: vi.fn(),
-    terminate: vi.fn().mockResolvedValue(undefined),
+    shutdown,
+    terminate: shutdown,
+    readyConfig: { audioFormat: "pcm16", sampleRate: 16_000, ttsSampleRate: 24_000 },
   };
 }
 
 const mockCreateSandbox = vi.fn(async () => makeMockSandbox());
-_deps.createSandbox = mockCreateSandbox;
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
 function makeEnsureOpts(overrides?: Record<string, unknown>) {
   const storage = createTestStorage();
   return {
+    createSandbox: mockCreateSandbox,
     getWorkerCode: vi.fn(async () => "console.log('agent');"),
     storage,
     slug: "test",
@@ -206,6 +208,7 @@ describe("resolveSandbox", () => {
     const store = createTestStore();
     const storage = createTestStorage();
     const result = await resolveSandbox("unknown", {
+      createSandbox: mockCreateSandbox,
       slots: new Map(),
       store,
       storage,
@@ -226,6 +229,7 @@ describe("resolveSandbox", () => {
 
     const slots = new Map<string, AgentSlot>();
     const result = await resolveSandbox("lazy-agent", {
+      createSandbox: mockCreateSandbox,
       slots,
       store,
       storage,
@@ -249,6 +253,7 @@ describe("resolveSandbox", () => {
 
     const slots = new Map<string, AgentSlot>();
     await resolveSandbox("env-agent", {
+      createSandbox: mockCreateSandbox,
       slots,
       store,
       storage,
@@ -277,6 +282,7 @@ describe("resolveSandbox", () => {
     registerSlot(slots, { slug: "reuse", env: {}, credential_hashes: ["hash"] });
 
     await resolveSandbox("reuse", {
+      createSandbox: mockCreateSandbox,
       slots,
       store,
       storage,
@@ -284,6 +290,7 @@ describe("resolveSandbox", () => {
 
     // Second call reuses sandbox
     await resolveSandbox("reuse", {
+      createSandbox: mockCreateSandbox,
       slots,
       store,
       storage,
@@ -306,6 +313,7 @@ describe("resolveSandbox", () => {
     const slots = new Map<string, AgentSlot>();
 
     await resolveSandbox("vec-agent", {
+      createSandbox: mockCreateSandbox,
       slots,
       store,
       storage,

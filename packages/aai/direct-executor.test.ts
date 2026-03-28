@@ -4,6 +4,7 @@ import { createStorage } from "unstorage";
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { toAgentConfig } from "./_internal-types.ts";
+import { CONFORMANCE_AGENT, testRuntime } from "./_runtime-conformance.ts";
 import { makeAgent } from "./_test-utils.ts";
 import { createDirectExecutor } from "./direct-executor.ts";
 import { defineTool } from "./types.ts";
@@ -145,15 +146,6 @@ describe("createDirectExecutor", () => {
     expect(err.message).toBe("boom");
   });
 
-  test("hookInvoker.onStep calls agent.onStep", async () => {
-    const onStep = vi.fn();
-    const agent = makeAgent({ onStep });
-    const exec = createDirectExecutor({ agent, env: {} });
-    const step = { stepNumber: 1, toolCalls: [{ toolName: "test", args: {} }], text: "ok" };
-    await exec.hookInvoker.onStep("s1", step);
-    expect(onStep).toHaveBeenCalledWith(step, expect.any(Object));
-  });
-
   test("session state is initialized from agent.state factory", async () => {
     const agent = makeAgent({
       state: () => ({ counter: 0 }),
@@ -244,4 +236,33 @@ describe("createDirectExecutor", () => {
     const result = await exec.executeTool("get_env", {}, "s1", []);
     expect(result).toBe("hello");
   });
+
+  test("readyConfig is present with audio format", () => {
+    const exec = createDirectExecutor({ agent: makeAgent(), env: {} });
+    expect(exec.readyConfig).toEqual(
+      expect.objectContaining({ audioFormat: "pcm16", sampleRate: expect.any(Number) }),
+    );
+  });
+
+  test("shutdown resolves immediately when no sessions exist", async () => {
+    const exec = createDirectExecutor({ agent: makeAgent(), env: {} });
+    await expect(exec.shutdown()).resolves.toBeUndefined();
+  });
+
+  test("startSession is a function", () => {
+    const exec = createDirectExecutor({ agent: makeAgent(), env: {} });
+    expect(typeof exec.startSession).toBe("function");
+  });
 });
+
+// ── Shared conformance suite (same tests run against sandbox in integration) ─
+
+const directExec = createDirectExecutor({
+  agent: CONFORMANCE_AGENT,
+  env: { MY_VAR: "test-value" },
+});
+
+testRuntime("direct", () => ({
+  executeTool: directExec.executeTool,
+  hookInvoker: directExec.hookInvoker,
+}));

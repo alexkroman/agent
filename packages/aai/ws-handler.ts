@@ -5,7 +5,9 @@
  * Audio validation is handled at the host transport layer (see server.ts).
  */
 
+import pTimeout from "p-timeout";
 import { errorDetail, errorMessage } from "./_utils.ts";
+import { DEFAULT_SESSION_START_TIMEOUT_MS } from "./constants.ts";
 import type { ClientMessage, ClientSink, ReadyConfig } from "./protocol.ts";
 import { ClientMessageSchema } from "./protocol.ts";
 import type { Logger } from "./runtime.ts";
@@ -26,9 +28,6 @@ export type SessionWebSocket = {
   addEventListener(type: "error", listener: (event: { message?: string }) => void): void;
 };
 
-/** Default timeout for session.start() in milliseconds. */
-const DEFAULT_SESSION_START_TIMEOUT_MS = 10_000;
-
 /** Options for wiring a WebSocket to a session. */
 export type WsSessionOptions = {
   /** Map of active sessions (session is added on open, removed on close). */
@@ -47,8 +46,7 @@ export type WsSessionOptions = {
   logger?: Logger;
   /** Timeout in ms for session.start(). Defaults to 10 000 (10s). */
   sessionStartTimeoutMs?: number;
-  /** Old session ID to resume from. When set, the persisted session data
-   *  (state, messages, S2S session ID) is restored from KV. */
+  /** Old session ID to resume. When set, reuses this ID instead of generating a new UUID. */
   resumeFrom?: string;
 };
 
@@ -66,7 +64,7 @@ function createClientSink(ws: SessionWebSocket, log: Logger): ClientSink {
       ws.send(data);
     } catch (err) {
       log.debug?.("safeSend: socket closed between readyState check and send", {
-        error: err instanceof Error ? err.message : String(err),
+        error: errorMessage(err),
       });
       wsSendDroppedCounter.add(1);
     }
@@ -192,15 +190,10 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
     ws.send(JSON.stringify({ type: "config", ...opts.readyConfig, sessionId }));
 
     const timeoutMs = opts.sessionStartTimeoutMs ?? DEFAULT_SESSION_START_TIMEOUT_MS;
-    const startWithTimeout = Promise.race([
-      session.start(),
-      new Promise<never>((_resolve, reject) => {
-        setTimeout(
-          () => reject(new Error(`session.start() timed out after ${timeoutMs}ms`)),
-          timeoutMs,
-        );
-      }),
-    ]);
+    const startWithTimeout = pTimeout(session.start(), {
+      milliseconds: timeoutMs,
+      message: `session.start() timed out after ${timeoutMs}ms`,
+    });
 
     startWithTimeout
       .then(() => {

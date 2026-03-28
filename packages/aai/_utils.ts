@@ -14,35 +14,12 @@ export function errorDetail(err: unknown): string {
   return String(err);
 }
 
-/** Filter out undefined values from an env record. */
-export function filterEnv(env: Record<string, string | undefined>): Record<string, string> {
-  return Object.fromEntries(
-    Object.entries(env).filter((e): e is [string, string] => e[1] !== undefined),
-  );
-}
-
 /** Set of filesystem operations that are safe for read-only access. */
 const READ_ONLY_FS_OPS = new Set(["read", "stat", "readdir", "exists"]);
 
 /** Check whether a filesystem operation is a read-only operation. */
 export function isReadOnlyFsOp(op: string): boolean {
   return READ_ONLY_FS_OPS.has(op);
-}
-
-/**
- * Safely extract the port from `server.address()`, guarding against the
- * string (pipe/socket) and null return types.
- */
-export function getServerPort(addr: unknown): number {
-  if (
-    addr &&
-    typeof addr === "object" &&
-    "port" in addr &&
-    typeof (addr as { port: unknown }).port === "number"
-  ) {
-    return (addr as { port: number }).port;
-  }
-  throw new Error(`Expected server address with numeric port, got: ${JSON.stringify(addr)}`);
 }
 
 /**
@@ -53,7 +30,7 @@ export function getServerPort(addr: unknown): number {
  */
 export function createSessionStateMap(initState?: () => Record<string, unknown>): {
   get(sessionId: string): Record<string, unknown>;
-  /** Explicitly set the state for a session (used by persistence restore). */
+  /** Explicitly set the state for a session. */
   set(sessionId: string, state: Record<string, unknown>): void;
   delete(sessionId: string): boolean;
 } {

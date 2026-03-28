@@ -8,10 +8,6 @@ describe("AssemblyAI Support", () => {
     expect(agent.name).toBe("AssemblyAI Support");
   });
 
-  test("enables vector_search builtin tool", () => {
-    expect(agent.builtinTools).toContain("vector_search");
-  });
-
   test("harness can be created", () => {
     const t = createTestHarness(agent);
     expect(t).toBeDefined();

@@ -2,8 +2,8 @@
 // Zod schemas -- validate untrusted input at HTTP/WebSocket boundaries.
 
 import { posix } from "node:path";
-import { validateVectorFilter } from "@alexkroman1/aai/vector";
 import { z } from "zod";
+import { MAX_WORKER_SIZE } from "./constants.ts";
 
 /**
  * Zod schema for a safe relative file path.
@@ -21,7 +21,7 @@ export const SafePathSchema = z
 
 export const DeployBodySchema = z.object({
   env: z.record(z.string(), z.string()).optional(),
-  worker: z.string().min(1).max(10_000_000),
+  worker: z.string().min(1).max(MAX_WORKER_SIZE),
   clientFiles: z.record(SafePathSchema, z.string()),
 });
 
@@ -40,29 +40,6 @@ export const AgentMetadataSchema = z.object({
 });
 
 export type AgentMetadata = z.infer<typeof AgentMetadataSchema>;
-
-// Vector
-export const VectorRequestSchema = z.discriminatedUnion("op", [
-  z.object({
-    op: z.literal("upsert"),
-    id: z.string().min(1),
-    data: z.string().min(1),
-    metadata: z.record(z.string(), z.unknown()).optional(),
-  }),
-  z.object({
-    op: z.literal("query"),
-    text: z.string().min(1),
-    topK: z.number().int().positive().max(100).optional(),
-    filter: z
-      .string()
-      .transform((f) => validateVectorFilter(f))
-      .optional(),
-  }),
-  z.object({
-    op: z.literal("delete"),
-    ids: z.array(z.string().min(1)).min(1),
-  }),
-]);
 
 // Secrets
 const SecretKeySchema = z.string().regex(/^[a-zA-Z_]\w*$/, "Invalid secret key name");

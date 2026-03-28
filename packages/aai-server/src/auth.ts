@@ -1,25 +1,19 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { timingSafeEqual } from "node:crypto";
+import { LRUCache } from "lru-cache";
 import type { BundleStore } from "./bundle-store.ts";
+import { AUTH_HASH_CACHE_MAX } from "./constants.ts";
 
 const textEncoder = new TextEncoder();
 
-const CACHE_MAX = 100;
-// Cache keyed by hash hex → true. We never store the raw API key in memory;
+// Cache keyed by hash hex. We never store the raw API key in memory;
 // instead we always re-hash and check if the result is in the cache.
-const hashCache = new Set<string>();
+const hashCache = new LRUCache<string, true>({ max: AUTH_HASH_CACHE_MAX });
 
 export async function hashApiKey(apiKey: string): Promise<string> {
   const hash = await crypto.subtle.digest("SHA-256", textEncoder.encode(apiKey));
   const hex = Buffer.from(hash).toString("hex");
-  if (!hashCache.has(hex)) {
-    if (hashCache.size >= CACHE_MAX) {
-      // Evict oldest entry (first inserted)
-      const first = hashCache.values().next().value;
-      if (first !== undefined) hashCache.delete(first);
-    }
-    hashCache.add(hex);
-  }
+  hashCache.set(hex, true);
   return hex;
 }
 

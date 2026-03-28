@@ -26,6 +26,18 @@ const silentLogger = {
   debug: vi.fn(),
 };
 
+function makeLogger() {
+  return { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+}
+
+/** Wait until wireSessionSocket has fully initialized (sessionReady = true). */
+async function waitForSessionReady(logger: { info: ReturnType<typeof vi.fn> }): Promise<void> {
+  await vi.waitFor(() => {
+    const calls = logger.info.mock.calls.map((c: unknown[]) => c[0]);
+    if (!calls.includes("Session ready")) throw new Error("Session not ready yet");
+  });
+}
+
 const defaultConfig = { audioFormat: "pcm16" as const, sampleRate: 16_000, ttsSampleRate: 24_000 };
 
 describe("wireSessionSocket", () => {
@@ -153,17 +165,16 @@ describe("wireSessionSocket", () => {
     const session = makeStubSession();
     const ws = new MockWebSocket("ws://test");
     ws.readyState = MockWebSocket.OPEN;
+    const logger = makeLogger();
 
     wireSessionSocket(ws, {
       sessions: new Map(),
       createSession: () => session,
       readyConfig: defaultConfig,
-      logger: silentLogger,
+      logger,
     });
 
-    // Wait for session.start() microtask to resolve so the session is ready.
-    await vi.waitFor(() => expect(session.start).toHaveBeenCalled());
-    await Promise.resolve();
+    await waitForSessionReady(logger);
 
     const audio = new Uint8Array([1, 2, 3, 4]);
     ws.simulateMessage(audio.buffer);
@@ -177,16 +188,16 @@ describe("wireSessionSocket", () => {
     const session = makeStubSession();
     const ws = new MockWebSocket("ws://test");
     ws.readyState = MockWebSocket.OPEN;
+    const logger = makeLogger();
 
     wireSessionSocket(ws, {
       sessions: new Map(),
       createSession: () => session,
       readyConfig: defaultConfig,
-      logger: silentLogger,
+      logger,
     });
 
-    await vi.waitFor(() => expect(session.start).toHaveBeenCalled());
-    await Promise.resolve();
+    await waitForSessionReady(logger);
 
     const buf = new ArrayBuffer(4);
     ws.simulateMessage(buf);
@@ -200,16 +211,16 @@ describe("wireSessionSocket", () => {
     const session = makeStubSession();
     const ws = new MockWebSocket("ws://test");
     ws.readyState = MockWebSocket.OPEN;
+    const logger = makeLogger();
 
     wireSessionSocket(ws, {
       sessions: new Map(),
       createSession: () => session,
       readyConfig: defaultConfig,
-      logger: silentLogger,
+      logger,
     });
 
-    await vi.waitFor(() => expect(session.start).toHaveBeenCalled());
-    await Promise.resolve();
+    await waitForSessionReady(logger);
 
     ws.simulateMessage(JSON.stringify({ type: "audio_ready" }));
     expect(session.onAudioReady).toHaveBeenCalledOnce();
@@ -219,16 +230,16 @@ describe("wireSessionSocket", () => {
     const session = makeStubSession();
     const ws = new MockWebSocket("ws://test");
     ws.readyState = MockWebSocket.OPEN;
+    const logger = makeLogger();
 
     wireSessionSocket(ws, {
       sessions: new Map(),
       createSession: () => session,
       readyConfig: defaultConfig,
-      logger: silentLogger,
+      logger,
     });
 
-    await vi.waitFor(() => expect(session.start).toHaveBeenCalled());
-    await Promise.resolve();
+    await waitForSessionReady(logger);
 
     ws.simulateMessage(JSON.stringify({ type: "cancel" }));
     expect(session.onCancel).toHaveBeenCalledOnce();
@@ -238,16 +249,16 @@ describe("wireSessionSocket", () => {
     const session = makeStubSession();
     const ws = new MockWebSocket("ws://test");
     ws.readyState = MockWebSocket.OPEN;
+    const logger = makeLogger();
 
     wireSessionSocket(ws, {
       sessions: new Map(),
       createSession: () => session,
       readyConfig: defaultConfig,
-      logger: silentLogger,
+      logger,
     });
 
-    await vi.waitFor(() => expect(session.start).toHaveBeenCalled());
-    await Promise.resolve();
+    await waitForSessionReady(logger);
 
     ws.simulateMessage(JSON.stringify({ type: "reset" }));
     expect(session.onReset).toHaveBeenCalledOnce();
@@ -257,16 +268,16 @@ describe("wireSessionSocket", () => {
     const session = makeStubSession();
     const ws = new MockWebSocket("ws://test");
     ws.readyState = MockWebSocket.OPEN;
+    const logger = makeLogger();
 
     wireSessionSocket(ws, {
       sessions: new Map(),
       createSession: () => session,
       readyConfig: defaultConfig,
-      logger: silentLogger,
+      logger,
     });
 
-    await vi.waitFor(() => expect(session.start).toHaveBeenCalled());
-    await Promise.resolve();
+    await waitForSessionReady(logger);
 
     const messages = [
       { role: "user" as const, content: "Hello" },
@@ -289,8 +300,7 @@ describe("wireSessionSocket", () => {
       logger,
     });
 
-    await vi.waitFor(() => expect(session.start).toHaveBeenCalled());
-    await Promise.resolve();
+    await waitForSessionReady(logger);
 
     ws.simulateMessage("not-json{{{");
     expect(logger.warn).toHaveBeenCalledWith("Invalid JSON from client", expect.any(Object));
@@ -309,8 +319,7 @@ describe("wireSessionSocket", () => {
       logger,
     });
 
-    await vi.waitFor(() => expect(session.start).toHaveBeenCalled());
-    await Promise.resolve();
+    await waitForSessionReady(logger);
 
     ws.simulateMessage(JSON.stringify({ type: "unknown_type" }));
     expect(logger.warn).toHaveBeenCalledWith("Invalid client message", expect.any(Object));

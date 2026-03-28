@@ -7,19 +7,7 @@
 
 import { z } from "zod";
 
-/**
- * Default sample rate for speech-to-text audio in Hz.
- *
- * This is the sample rate expected by the STT provider (AssemblyAI).
- */
-export const DEFAULT_STT_SAMPLE_RATE = 16_000;
-
-/**
- * Default sample rate for text-to-speech audio in Hz.
- *
- * This is the sample rate produced by the TTS provider.
- */
-export const DEFAULT_TTS_SAMPLE_RATE = 24_000;
+import { MAX_TOOL_RESULT_CHARS } from "./constants.ts";
 
 /**
  * Audio codec identifier used in the wire protocol.
@@ -50,17 +38,6 @@ export const KvRequestSchema = z.discriminatedUnion("op", [
 
 /** KV operation request — discriminated union on the `op` field. */
 export type KvRequest = z.infer<typeof KvRequestSchema>;
-
-// ─── Timeout constants ─────────────────────────────────────────────────────
-
-/** Default timeout for agent lifecycle hooks (onConnect, onTurn, etc). */
-export const HOOK_TIMEOUT_MS = 5000;
-
-/** Default timeout for tool execution in the worker. */
-export const TOOL_EXECUTION_TIMEOUT_MS = 30_000;
-
-/** Maximum length for tool result strings sent to clients. */
-export const MAX_TOOL_RESULT_CHARS = 4000;
 
 // ─── Error codes ───────────────────────────────────────────────────────────
 
@@ -108,11 +85,6 @@ export const ClientEventSchema = z.discriminatedUnion("type", [
     toolCallId: z.string(),
     toolName: z.string(),
     args: z.record(z.string(), z.unknown()),
-  }),
-  z.object({
-    type: z.literal("tool_call_update"),
-    toolCallId: z.string(),
-    data: z.string().max(MAX_TOOL_RESULT_CHARS),
   }),
   z.object({
     type: z.literal("tool_call_done"),

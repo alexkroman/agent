@@ -41,7 +41,8 @@ type AuthConfig = z.infer<typeof AuthConfigSchema>;
 async function readAuthConfig(): Promise<AuthConfig> {
   try {
     return AuthConfigSchema.parse(JSON.parse(await fs.readFile(CONFIG_FILE, "utf-8")));
-  } catch {
+  } catch (error) {
+    consola.debug(`Failed to read auth config from ${CONFIG_FILE}:`, error);
     return {};
   }
 }
@@ -110,7 +111,11 @@ export async function readProjectConfig(agentDir: string): Promise<ProjectConfig
     return ProjectConfigSchema.parse(
       JSON.parse(await fs.readFile(path.join(agentDir, ".aai", "project.json"), "utf-8")),
     );
-  } catch {
+  } catch (error) {
+    consola.debug(
+      `Failed to read project config from ${path.join(agentDir, ".aai", "project.json")}:`,
+      error,
+    );
     return null;
   }
 }
@@ -126,7 +131,7 @@ export async function writeProjectConfig(agentDir: string, data: ProjectConfig):
 
 /**
  * Read project config (throws if missing), resolve API key and server URL.
- * Shared by secret and rag commands.
+ * Shared by secret commands.
  */
 export async function getServerInfo(cwd: string, explicitServer?: string, explicitApiKey?: string) {
   const config = await readProjectConfig(cwd);
@@ -182,7 +187,8 @@ export async function fileExists(p: string): Promise<boolean> {
   try {
     await fs.access(p);
     return true;
-  } catch {
+  } catch (error) {
+    consola.debug(`File access check failed for ${p}:`, error);
     return false;
   }
 }

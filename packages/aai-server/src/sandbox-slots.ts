@@ -6,16 +6,12 @@
 import type { Storage } from "unstorage";
 import type { AgentMetadata } from "./_schemas.ts";
 import type { BundleStore } from "./bundle-store.ts";
+import { DEFAULT_SLOT_IDLE_MS } from "./constants.ts";
 import type { Sandbox, SandboxOptions } from "./sandbox.ts";
 
 // ── Agent slot lifecycle ─────────────────────────────────────────────────
 
-let IDLE_MS = 5 * 60 * 1000;
-
-/** @internal Indirection for testability — avoids circular import at call time. */
-export const _deps = {
-  createSandbox: null as unknown as (opts: SandboxOptions) => Promise<Sandbox>,
-};
+let IDLE_MS = DEFAULT_SLOT_IDLE_MS;
 
 export type AgentSlot = {
   slug: string;
@@ -29,6 +25,7 @@ export type AgentSlot = {
 };
 
 type EnsureOpts = {
+  createSandbox: (opts: SandboxOptions) => Promise<Sandbox>;
   getWorkerCode: (slug: string) => Promise<string | null>;
   storage: Storage;
   slug: string;
@@ -38,7 +35,7 @@ type EnsureOpts = {
   getAgentEnv: () => Promise<Record<string, string>>;
 };
 
-async function spawnAgent(slot: AgentSlot, opts: EnsureOpts): Promise<void> {
+async function spawnAgent(slot: AgentSlot, opts: EnsureOpts): Promise<Sandbox> {
   const { slug } = slot;
   console.info("Loading agent sandbox", { slug });
 
@@ -46,13 +43,15 @@ async function spawnAgent(slot: AgentSlot, opts: EnsureOpts): Promise<void> {
   if (!code) throw new Error(`Worker code not found for ${slug}`);
 
   const [apiKey, agentEnv] = await Promise.all([opts.getApiKey(), opts.getAgentEnv()]);
-  slot.sandbox = await _deps.createSandbox({
+  const sandbox = await opts.createSandbox({
     workerCode: code,
     apiKey,
     agentEnv,
     storage: opts.storage,
     slug: opts.slug,
   });
+  slot.sandbox = sandbox;
+  return sandbox;
 }
 
 function resetIdleTimer(slot: AgentSlot): void {
@@ -94,15 +93,14 @@ export async function ensureAgent(slot: AgentSlot, opts: EnsureOpts): Promise<Sa
 
   const t0 = performance.now();
   slot.initializing = spawnAgent(slot, opts)
-    .then(() => {
+    .then((sandbox) => {
       delete slot.initializing;
       resetIdleTimer(slot);
       console.info("Agent sandbox ready", {
         slug: slot.slug,
         durationMs: Math.round(performance.now() - t0),
       });
-      // biome-ignore lint/style/noNonNullAssertion: sandbox is set by spawnAgent above
-      return slot.sandbox!;
+      return sandbox;
     })
     .catch((err: unknown) => {
       delete slot.initializing;
@@ -110,6 +108,28 @@ export async function ensureAgent(slot: AgentSlot, opts: EnsureOpts): Promise<Sa
     });
 
   return slot.initializing;
+}
+
+/**
+ * Best-effort terminate a slot's sandbox (running or initializing) and clear
+ * sandbox state. Errors are logged but never thrown.
+ */
+export async function terminateSlot(slot: AgentSlot): Promise<void> {
+  const { slug } = slot;
+  if (slot.sandbox) {
+    await slot.sandbox.terminate().catch((err: unknown) => {
+      console.warn("Failed to terminate sandbox", { slug, error: String(err) });
+    });
+    // biome-ignore lint/nursery/noMisusedPromises: checking nullability, not truthiness
+  } else if (slot.initializing) {
+    await slot.initializing
+      .then((sb) => sb.terminate())
+      .catch((err: unknown) => {
+        console.warn("Failed to terminate initializing sandbox", { slug, error: String(err) });
+      });
+  }
+  delete slot.sandbox;
+  delete slot.initializing;
 }
 
 export function registerSlot(slots: Map<string, AgentSlot>, metadata: AgentMetadata): void {
@@ -122,6 +142,7 @@ export function registerSlot(slots: Map<string, AgentSlot>, metadata: AgentMetad
 export async function resolveSandbox(
   slug: string,
   opts: {
+    createSandbox: (opts: SandboxOptions) => Promise<Sandbox>;
     slots: Map<string, AgentSlot>;
     store: BundleStore;
     storage: Storage;
@@ -141,6 +162,7 @@ export async function resolveSandbox(
   const envPromise = opts.store.getEnv(slug);
 
   return await ensureAgent(slot, {
+    createSandbox: opts.createSandbox,
     getWorkerCode: (s: string) => opts.store.getWorkerCode(s),
     storage: opts.storage,
     slug,
@@ -166,4 +188,5 @@ export const _slotInternals = {
   set IDLE_MS(ms: number) {
     IDLE_MS = ms;
   },
+  resetIdleTimer,
 };

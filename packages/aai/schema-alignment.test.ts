@@ -165,7 +165,6 @@ describe("type ↔ schema alignment", () => {
         "visit_webpage",
         "fetch_json",
         "run_code",
-        "vector_search",
         "memory",
       ]
     `);

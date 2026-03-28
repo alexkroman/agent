@@ -1,0 +1,30 @@
+[
+  {
+    "type": "input.speech.started",
+    "timestamp": 1774669393.0812206
+  },
+  {
+    "type": "input.speech.stopped",
+    "timestamp": 1774669394.1324704
+  },
+  {
+    "type": "transcript.user",
+    "timestamp": 1774669394.2344203,
+    "item_id": "msg_8ee3b8ef00ec4354ae5c084bebfc5361",
+    "text": "Tell me a fun fact about space."
+  },
+  {
+    "type": "input.speech.started",
+    "timestamp": 1774669404.8296304
+  },
+  {
+    "type": "input.speech.stopped",
+    "timestamp": 1774669406.0299
+  },
+  {
+    "type": "transcript.user",
+    "timestamp": 1774669406.184384,
+    "item_id": "msg_2ff13ff4b77b46e19d2b7f20ad88d822",
+    "text": "What is the weather like in San Francisco?"
+  }
+]

@@ -124,17 +124,6 @@ describe("TestHarness.turn", () => {
     expect(t.turns).toEqual(["hello", "world"]);
   });
 
-  test("fires onStep hook for each tool call", async () => {
-    const t = createTestHarness(pizzaAgent);
-    await t.turn("Two pizzas please", [
-      { tool: "add_pizza", args: { size: "small", toppings: ["cheese"] } },
-      { tool: "add_pizza", args: { size: "large", toppings: ["pepperoni"] } },
-    ]);
-    expect(t.steps).toHaveLength(2);
-    expect(t.steps.at(0)?.stepNumber).toBe(1);
-    expect(t.steps.at(1)?.stepNumber).toBe(2);
-  });
-
   test("fires onConnect on first turn", async () => {
     const log: string[] = [];
     const agent = defineAgent({
@@ -257,11 +246,9 @@ describe("multi-turn conversation", () => {
     const t = createTestHarness(pizzaAgent);
     await t.turn("Add pizza", [{ tool: "add_pizza", args: { size: "small", toppings: [] } }]);
     expect(t.messages.length).toBeGreaterThan(0);
-    expect(t.steps.length).toBeGreaterThan(0);
 
     t.reset();
     expect(t.messages).toHaveLength(0);
-    expect(t.steps).toHaveLength(0);
     expect(t.turns).toHaveLength(0);
   });
 });
@@ -304,7 +291,7 @@ describe("lifecycle hooks", () => {
   });
 });
 
-describe("KV and vector store", () => {
+describe("KV store", () => {
   test("kv store is accessible in tools", async () => {
     const agent = defineAgent({
       name: "kv-test",
@@ -329,46 +316,5 @@ describe("KV and vector store", () => {
     await t.turn("Save data", [{ tool: "save", args: { key: "color", value: "blue" } }]);
     const turn = await t.turn("Load data", [{ tool: "load", args: { key: "color" } }]);
     expect(turn.toolCalls.at(0)?.result).toBe("blue");
-  });
-
-  test("default vector store works without explicit vector option", async () => {
-    const agent = defineAgent({
-      name: "vector-harness-test",
-      tools: {
-        index: defineTool({
-          description: "Index a doc",
-          parameters: z.object({ id: z.string(), text: z.string() }),
-          execute: async (args, ctx) => {
-            await ctx.vector.upsert(args.id, args.text);
-            return "indexed";
-          },
-        }),
-        search: defineTool({
-          description: "Search docs",
-          parameters: z.object({ query: z.string() }),
-          execute: async (args, ctx) => {
-            const results = await ctx.vector.query(args.query, { topK: 1 });
-            return results[0]?.data ?? "no results";
-          },
-        }),
-        remove: defineTool({
-          description: "Remove a doc",
-          parameters: z.object({ id: z.string() }),
-          execute: async (args, ctx) => {
-            await ctx.vector.delete(args.id);
-            return "deleted";
-          },
-        }),
-      },
-    });
-
-    // No vector option passed — uses the default SQLite-vec test store
-    const t = createTestHarness(agent);
-    await t.turn("Index", [{ tool: "index", args: { id: "d1", text: "Paris is in France" } }]);
-    const searchTurn = await t.turn("Search", [{ tool: "search", args: { query: "France" } }]);
-    expect(searchTurn.toolCalls.at(0)?.result).toBe("Paris is in France");
-
-    const deleteTurn = await t.turn("Remove", [{ tool: "remove", args: { id: "d1" } }]);
-    expect(deleteTurn.toolCalls.at(0)?.result).toBe("deleted");
   });
 });

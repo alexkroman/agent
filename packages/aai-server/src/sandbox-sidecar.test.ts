@@ -1,7 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import type { Kv } from "@alexkroman1/aai/kv";
-import type { VectorStore } from "@alexkroman1/aai/vector";
 import { describe, expect, it, vi } from "vitest";
 import { startSidecarServer } from "./sandbox-sidecar.ts";
 
@@ -22,26 +21,6 @@ function createMockKv(): Kv {
   };
 }
 
-function createMockVectorStore(): VectorStore {
-  const docs = new Map<string, { data: string; metadata?: Record<string, unknown> }>();
-  return {
-    upsert: vi.fn(async (id: string, data: string, metadata?: Record<string, unknown>) => {
-      docs.set(id, { data, ...(metadata !== undefined && { metadata }) });
-    }),
-    query: vi.fn(async (_text: string, _opts?: { topK?: number; filter?: string }) =>
-      Array.from(docs.entries()).map(([id, entry]) => ({
-        id,
-        score: 1,
-        data: entry.data,
-        metadata: entry.metadata,
-      })),
-    ),
-    delete: vi.fn(async (ids: string | string[]) => {
-      for (const id of Array.isArray(ids) ? ids : [ids]) docs.delete(id);
-    }),
-  };
-}
-
 // ── Sidecar HTTP server ─────────────────────────────────────────────────
 
 describe("startSidecarServer", () => {
@@ -51,7 +30,7 @@ describe("startSidecarServer", () => {
     kv.keys = vi.fn(async () => ["k1", "k2"]);
     kv.list = vi.fn(async () => [{ key: "k1", value: "v1" }]) as Kv["list"];
 
-    const { url, close } = await startSidecarServer(kv, undefined);
+    const { url, close } = await startSidecarServer(kv);
     const headers = { "Content-Type": "application/json" };
 
     try {
@@ -102,27 +81,9 @@ describe("startSidecarServer", () => {
     }
   });
 
-  it("returns 503 when vector store is not configured", async () => {
-    const kv = createMockKv();
-    const { url, close } = await startSidecarServer(kv, undefined);
-
-    try {
-      const res = await fetch(`${url}/vec/query`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: "search" }),
-      });
-      expect(res.status).toBe(503);
-      const body = (await res.json()) as { error: string };
-      expect(body.error).toContain("Vector store not configured");
-    } finally {
-      close();
-    }
-  });
-
   it("returns 400 for invalid request bodies", async () => {
     const kv = createMockKv();
-    const { url, close } = await startSidecarServer(kv, undefined);
+    const { url, close } = await startSidecarServer(kv);
 
     try {
       const res = await fetch(`${url}/kv/get`, {
@@ -136,46 +97,9 @@ describe("startSidecarServer", () => {
     }
   });
 
-  it("serves vector endpoints when vector store is configured", async () => {
-    const vecStore = createMockVectorStore();
-    const kv = createMockKv();
-    const { url, close } = await startSidecarServer(kv, vecStore);
-    const headers = { "Content-Type": "application/json" };
-
-    try {
-      // upsert
-      const upsertRes = await fetch(`${url}/vec/upsert`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ id: "d1", data: "hello" }),
-      });
-      expect(upsertRes.ok).toBe(true);
-
-      // query
-      const queryRes = await fetch(`${url}/vec/query`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ text: "hello" }),
-      });
-      expect(queryRes.ok).toBe(true);
-      const results = await queryRes.json();
-      expect(Array.isArray(results)).toBe(true);
-
-      // delete
-      const removeRes = await fetch(`${url}/vec/delete`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ ids: "d1" }),
-      });
-      expect(removeRes.ok).toBe(true);
-    } finally {
-      close();
-    }
-  });
-
   it("binds to 127.0.0.1 (loopback only)", async () => {
     const kv = createMockKv();
-    const { url, close } = await startSidecarServer(kv, undefined);
+    const { url, close } = await startSidecarServer(kv);
 
     try {
       expect(url).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
@@ -190,7 +114,7 @@ describe("startSidecarServer", () => {
 describe("sidecar /fetch proxy", () => {
   it("blocks requests to private IPs (SSRF protection)", async () => {
     const kv = createMockKv();
-    const sidecar = await startSidecarServer(kv, undefined);
+    const sidecar = await startSidecarServer(kv);
 
     try {
       const res = await fetch(`${sidecar.url}/fetch`, {
@@ -208,7 +132,7 @@ describe("sidecar /fetch proxy", () => {
 
   it("blocks requests to localhost", async () => {
     const kv = createMockKv();
-    const sidecar = await startSidecarServer(kv, undefined);
+    const sidecar = await startSidecarServer(kv);
 
     try {
       const res = await fetch(`${sidecar.url}/fetch`, {
@@ -227,7 +151,7 @@ describe("sidecar /fetch proxy", () => {
 
   it("returns 400 for invalid request body", async () => {
     const kv = createMockKv();
-    const sidecar = await startSidecarServer(kv, undefined);
+    const sidecar = await startSidecarServer(kv);
 
     try {
       const res = await fetch(`${sidecar.url}/fetch`, {
@@ -243,7 +167,7 @@ describe("sidecar /fetch proxy", () => {
 
   it("blocks requests to .internal domains", async () => {
     const kv = createMockKv();
-    const sidecar = await startSidecarServer(kv, undefined);
+    const sidecar = await startSidecarServer(kv);
 
     try {
       const res = await fetch(`${sidecar.url}/fetch`, {

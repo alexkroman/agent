@@ -1,0 +1,402 @@
+[
+  {
+    "type": "session.updated",
+    "timestamp": 1774669401.4762232,
+    "config": {
+      "system_prompt": "You are a weather assistant. Always use the get_weather tool for weather questions. After getting the result, tell the user the weather in one sentence.",
+      "tools": [
+        {
+          "type": "function",
+          "name": "get_weather",
+          "description": "Get the current weather for a city",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "city": {
+                "type": "string",
+                "description": "City name"
+              }
+            },
+            "required": ["city"]
+          }
+        }
+      ],
+      "greeting": "Ask me about the weather!"
+    }
+  },
+  {
+    "type": "session.ready",
+    "timestamp": 1774669401.5069516,
+    "session_id": "sess_b01d5d5f1865418b955dc30b00b3d52b",
+    "config": {
+      "system_prompt": "You are a weather assistant. Always use the get_weather tool for weather questions. After getting the result, tell the user the weather in one sentence.",
+      "tools": [
+        {
+          "type": "function",
+          "name": "get_weather",
+          "description": "Get the current weather for a city",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "city": {
+                "type": "string",
+                "description": "City name"
+              }
+            },
+            "required": ["city"]
+          }
+        }
+      ],
+      "greeting": "Ask me about the weather!"
+    }
+  },
+  {
+    "type": "reply.started",
+    "timestamp": 1774669401.5081005,
+    "reply_id": "resp_0c5069c8a284417696b0fb94121b5302"
+  },
+  {
+    "type": "transcript.agent.delta",
+    "timestamp": 1774669402.1684852,
+    "reply_id": "resp_0c5069c8a284417696b0fb94121b5302",
+    "item_id": "msg_f3a8a53d8cce4ad6b92607ea38131f7d",
+    "delta": "Ask",
+    "start_ms": 50,
+    "end_ms": 360
+  },
+  {
+    "type": "transcript.agent.delta",
+    "timestamp": 1774669402.174215,
+    "reply_id": "resp_0c5069c8a284417696b0fb94121b5302",
+    "item_id": "msg_f3a8a53d8cce4ad6b92607ea38131f7d",
+    "delta": "me",
+    "start_ms": 360,
+    "end_ms": 490
+  },
+  {
+    "type": "transcript.agent.delta",
+    "timestamp": 1774669402.1841848,
+    "reply_id": "resp_0c5069c8a284417696b0fb94121b5302",
+    "item_id": "msg_f3a8a53d8cce4ad6b92607ea38131f7d",
+    "delta": "about",
+    "start_ms": 490,
+    "end_ms": 790
+  },
+  {
+    "type": "transcript.agent.delta",
+    "timestamp": 1774669402.1846042,
+    "reply_id": "resp_0c5069c8a284417696b0fb94121b5302",
+    "item_id": "msg_f3a8a53d8cce4ad6b92607ea38131f7d",
+    "delta": "the",
+    "start_ms": 790,
+    "end_ms": 890
+  },
+  {
+    "type": "transcript.agent.delta",
+    "timestamp": 1774669402.1852572,
+    "reply_id": "resp_0c5069c8a284417696b0fb94121b5302",
+    "item_id": "msg_f3a8a53d8cce4ad6b92607ea38131f7d",
+    "delta": "weather",
+    "start_ms": 890,
+    "end_ms": 1440
+  },
+  {
+    "type": "transcript.agent",
+    "timestamp": 1774669403.61195,
+    "reply_id": "resp_0c5069c8a284417696b0fb94121b5302",
+    "item_id": "msg_f3a8a53d8cce4ad6b92607ea38131f7d",
+    "text": "Ask me about the weather!",
+    "interrupted": false
+  },
+  {
+    "type": "reply.done",
+    "timestamp": 1774669403.9528494,
+    "reply_id": "resp_0c5069c8a284417696b0fb94121b5302",
+    "status": "completed"
+  },
+  {
+    "type": "input.speech.started",
+    "timestamp": 1774669404.8296304
+  },
+  {
+    "type": "reply.started",
+    "timestamp": 1774669405.0349832,
+    "reply_id": "resp_c8b83fbfde1d4dbc8cb39318c3012981"
+  },
+  {
+    "type": "input.speech.stopped",
+    "timestamp": 1774669406.0299
+  },
+  {
+    "type": "transcript.user",
+    "timestamp": 1774669406.184384,
+    "item_id": "msg_2ff13ff4b77b46e19d2b7f20ad88d822",
+    "text": "What is the weather like in San Francisco?"
+  },
+  {
+    "type": "tool.call",
+    "timestamp": 1774669406.466613,
+    "call_id": "chatcmpl-tool-9793a062159342bb8e221cbab79229e3",
+    "name": "get_weather",
+    "args": {
+      "city": "San Francisco"
+    }
+  },
+  {
+    "type": "transcript.agent.delta",
+    "timestamp": 1774669407.4831357,
+    "reply_id": "resp_c8b83fbfde1d4dbc8cb39318c3012981",
+    "item_id": "msg_8421a07d995e4f25b07983ce420b7eca",
+    "delta": "The",
+    "start_ms": 60,
+    "end_ms": 140
+  },
+  {
+    "type": "transcript.agent.delta",
+    "timestamp": 1774669407.4837995,
+    "reply_id": "resp_c8b83fbfde1d4dbc8cb39318c3012981",
+    "item_id": "msg_8421a07d995e4f25b07983ce420b7eca",
+    "delta": "weather",
+    "start_ms": 140,
+    "end_ms": 490
+  },
+  {
+    "type": "transcript.agent.delta",
+    "timestamp": 1774669407.484151,
+    "reply_id": "resp_c8b83fbfde1d4dbc8cb39318c3012981",
+    "item_id": "msg_8421a07d995e4f25b07983ce420b7eca",
+    "delta": "in",
+    "start_ms": 490,
+    "end_ms": 570
+  },
+  {
+    "type": "transcript.agent.delta",
+    "timestamp": 1774669407.4845755,
+    "reply_id": "resp_c8b83fbfde1d4dbc8cb39318c3012981",
+    "item_id": "msg_8421a07d995e4f25b07983ce420b7eca",
+    "delta": "San",
+    "start_ms": 570,
+    "end_ms": 810
+  },
+  {
+    "type": "transcript.agent.delta",
+    "timestamp": 1774669407.4865131,
+    "reply_id": "resp_c8b83fbfde1d4dbc8cb39318c3012981",
+    "item_id": "msg_8421a07d995e4f25b07983ce420b7eca",
+    "delta": "Francisco",
+    "start_ms": 810,
+    "end_ms": 1420
+  },
+  {
+    "type": "transcript.agent.delta",
+    "timestamp": 1774669407.4871988,
+    "reply_id": "resp_c8b83fbfde1d4dbc8cb39318c3012981",
+    "item_id": "msg_8421a07d995e4f25b07983ce420b7eca",
+    "delta": "is",
+    "start_ms": 1420,
+    "end_ms": 1560
+  },
+  {
+    "type": "transcript.agent.delta",
+    "timestamp": 1774669407.4879847,
+    "reply_id": "resp_c8b83fbfde1d4dbc8cb39318c3012981",
+    "item_id": "msg_8421a07d995e4f25b07983ce420b7eca",
+    "delta": "sunny",
+    "start_ms": 1560,
+    "end_ms": 2120
+  },
+  {
+    "type": "transcript.agent.delta",
+    "timestamp": 1774669407.4885712,
+    "reply_id": "resp_c8b83fbfde1d4dbc8cb39318c3012981",
+    "item_id": "msg_8421a07d995e4f25b07983ce420b7eca",
+    "delta": "with",
+    "start_ms": 2420,
+    "end_ms": 2560
+  },
+  {
+    "type": "transcript.agent.delta",
+    "timestamp": 1774669407.489625,
+    "reply_id": "resp_c8b83fbfde1d4dbc8cb39318c3012981",
+    "item_id": "msg_8421a07d995e4f25b07983ce420b7eca",
+    "delta": "a",
+    "start_ms": 2560,
+    "end_ms": 2620
+  },
+  {
+    "type": "transcript.agent.delta",
+    "timestamp": 1774669407.4898896,
+    "reply_id": "resp_c8b83fbfde1d4dbc8cb39318c3012981",
+    "item_id": "msg_8421a07d995e4f25b07983ce420b7eca",
+    "delta": "temperature",
+    "start_ms": 2620,
+    "end_ms": 3150
+  },
+  {
+    "type": "transcript.agent.delta",
+    "timestamp": 1774669407.490296,
+    "reply_id": "resp_c8b83fbfde1d4dbc8cb39318c3012981",
+    "item_id": "msg_8421a07d995e4f25b07983ce420b7eca",
+    "delta": "of",
+    "start_ms": 3150,
+    "end_ms": 3250
+  },
+  {
+    "type": "transcript.agent.delta",
+    "timestamp": 1774669407.5877714,
+    "reply_id": "resp_c8b83fbfde1d4dbc8cb39318c3012981",
+    "item_id": "msg_8421a07d995e4f25b07983ce420b7eca",
+    "delta": "72",
+    "start_ms": 3250,
+    "end_ms": 3840
+  },
+  {
+    "type": "transcript.agent.delta",
+    "timestamp": 1774669407.5882273,
+    "reply_id": "resp_c8b83fbfde1d4dbc8cb39318c3012981",
+    "item_id": "msg_8421a07d995e4f25b07983ce420b7eca",
+    "delta": "degrees",
+    "start_ms": 3840,
+    "end_ms": 4230
+  },
+  {
+    "type": "transcript.agent.delta",
+    "timestamp": 1774669407.7004278,
+    "reply_id": "resp_c8b83fbfde1d4dbc8cb39318c3012981",
+    "item_id": "msg_8421a07d995e4f25b07983ce420b7eca",
+    "delta": "Fahrenheit",
+    "start_ms": 4230,
+    "end_ms": 4850
+  },
+  {
+    "type": "transcript.agent.delta",
+    "timestamp": 1774669407.8406742,
+    "reply_id": "resp_c8b83fbfde1d4dbc8cb39318c3012981",
+    "item_id": "msg_8421a07d995e4f25b07983ce420b7eca",
+    "delta": "45",
+    "start_ms": 4850,
+    "end_ms": 5550
+  },
+  {
+    "type": "transcript.agent.delta",
+    "timestamp": 1774669407.8414223,
+    "reply_id": "resp_c8b83fbfde1d4dbc8cb39318c3012981",
+    "item_id": "msg_8421a07d995e4f25b07983ce420b7eca",
+    "delta": "percent",
+    "start_ms": 5550,
+    "end_ms": 5900
+  },
+  {
+    "type": "transcript.agent.delta",
+    "timestamp": 1774669407.8417192,
+    "reply_id": "resp_c8b83fbfde1d4dbc8cb39318c3012981",
+    "item_id": "msg_8421a07d995e4f25b07983ce420b7eca",
+    "delta": "humidity",
+    "start_ms": 5900,
+    "end_ms": 6460
+  },
+  {
+    "type": "transcript.agent.delta",
+    "timestamp": 1774669407.8432105,
+    "reply_id": "resp_c8b83fbfde1d4dbc8cb39318c3012981",
+    "item_id": "msg_8421a07d995e4f25b07983ce420b7eca",
+    "delta": "and",
+    "start_ms": 6750,
+    "end_ms": 6880
+  },
+  {
+    "type": "transcript.agent.delta",
+    "timestamp": 1774669407.9338508,
+    "reply_id": "resp_c8b83fbfde1d4dbc8cb39318c3012981",
+    "item_id": "msg_8421a07d995e4f25b07983ce420b7eca",
+    "delta": "winds",
+    "start_ms": 6880,
+    "end_ms": 7420
+  },
+  {
+    "type": "transcript.agent.delta",
+    "timestamp": 1774669407.934356,
+    "reply_id": "resp_c8b83fbfde1d4dbc8cb39318c3012981",
+    "item_id": "msg_8421a07d995e4f25b07983ce420b7eca",
+    "delta": "at",
+    "start_ms": 7670,
+    "end_ms": 7830
+  },
+  {
+    "type": "transcript.agent.delta",
+    "timestamp": 1774669407.9845164,
+    "reply_id": "resp_c8b83fbfde1d4dbc8cb39318c3012981",
+    "item_id": "msg_8421a07d995e4f25b07983ce420b7eca",
+    "delta": "8",
+    "start_ms": 7860,
+    "end_ms": 8119
+  },
+  {
+    "type": "transcript.agent.delta",
+    "timestamp": 1774669408.0391734,
+    "reply_id": "resp_c8b83fbfde1d4dbc8cb39318c3012981",
+    "item_id": "msg_8421a07d995e4f25b07983ce420b7eca",
+    "delta": "miles",
+    "start_ms": 8119,
+    "end_ms": 8510
+  },
+  {
+    "type": "transcript.agent.delta",
+    "timestamp": 1774669408.0396338,
+    "reply_id": "resp_c8b83fbfde1d4dbc8cb39318c3012981",
+    "item_id": "msg_8421a07d995e4f25b07983ce420b7eca",
+    "delta": "per",
+    "start_ms": 8510,
+    "end_ms": 8770
+  },
+  {
+    "type": "transcript.agent.delta",
+    "timestamp": 1774669408.122849,
+    "reply_id": "resp_c8b83fbfde1d4dbc8cb39318c3012981",
+    "item_id": "msg_8421a07d995e4f25b07983ce420b7eca",
+    "delta": "hour",
+    "start_ms": 8770,
+    "end_ms": 9100
+  },
+  {
+    "type": "transcript.agent.delta",
+    "timestamp": 1774669408.1234386,
+    "reply_id": "resp_c8b83fbfde1d4dbc8cb39318c3012981",
+    "item_id": "msg_8421a07d995e4f25b07983ce420b7eca",
+    "delta": "from",
+    "start_ms": 9100,
+    "end_ms": 9340
+  },
+  {
+    "type": "transcript.agent.delta",
+    "timestamp": 1774669408.1249368,
+    "reply_id": "resp_c8b83fbfde1d4dbc8cb39318c3012981",
+    "item_id": "msg_8421a07d995e4f25b07983ce420b7eca",
+    "delta": "the",
+    "start_ms": 9340,
+    "end_ms": 9420
+  },
+  {
+    "type": "transcript.agent.delta",
+    "timestamp": 1774669408.1262057,
+    "reply_id": "resp_c8b83fbfde1d4dbc8cb39318c3012981",
+    "item_id": "msg_8421a07d995e4f25b07983ce420b7eca",
+    "delta": "northwest",
+    "start_ms": 9420,
+    "end_ms": 10170
+  },
+  {
+    "type": "transcript.agent",
+    "timestamp": 1774669417.728002,
+    "reply_id": "resp_c8b83fbfde1d4dbc8cb39318c3012981",
+    "item_id": "msg_8421a07d995e4f25b07983ce420b7eca",
+    "text": "The weather in San Francisco is sunny with a temperature of 72 degrees Fahrenheit, 45 percent humidity, and winds at 8 miles per hour from the northwest.",
+    "interrupted": false
+  },
+  {
+    "type": "reply.done",
+    "timestamp": 1774669417.9831085,
+    "reply_id": "resp_c8b83fbfde1d4dbc8cb39318c3012981",
+    "status": "completed"
+  }
+]

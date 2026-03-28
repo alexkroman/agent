@@ -47,9 +47,8 @@ describe("defineTool() type inference", () => {
     expectTypeOf<Ctx>().toMatchTypeOf<ToolContext>();
   });
 
-  test("ToolContext provides kv, vector, env, messages", () => {
+  test("ToolContext provides kv, env, messages", () => {
     expectTypeOf<ToolContext>().toHaveProperty("kv");
-    expectTypeOf<ToolContext>().toHaveProperty("vector");
     expectTypeOf<ToolContext>().toHaveProperty("env");
     expectTypeOf<ToolContext>().toHaveProperty("messages");
     expectTypeOf<ToolContext["messages"]>().toEqualTypeOf<readonly Message[]>();

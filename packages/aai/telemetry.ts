@@ -13,7 +13,6 @@
  *   STT → LLM → TTS pipeline
  */
 
-import { createRequire } from "node:module";
 import {
   type Meter,
   metrics,
@@ -22,24 +21,17 @@ import {
   type Tracer,
   trace,
 } from "@opentelemetry/api";
+import { errorMessage } from "./_utils.ts";
 
 // ─── Scoped instances ────────────────────────────────────────────────────────
 
 const SCOPE = "aai";
-const _require = createRequire(import.meta.url);
-// "./package.json" resolves from source; "../package.json" resolves from dist/
-let VERSION = "0.0.0";
-try {
-  VERSION = (_require("./package.json") as { version: string }).version;
-} catch {
-  VERSION = (_require("../package.json") as { version: string }).version;
-}
 
 /** Tracer scoped to the AAI SDK. */
-export const tracer: Tracer = trace.getTracer(SCOPE, VERSION);
+export const tracer: Tracer = trace.getTracer(SCOPE);
 
 /** Meter scoped to the AAI SDK. */
-export const meter: Meter = metrics.getMeter(SCOPE, VERSION);
+export const meter: Meter = metrics.getMeter(SCOPE);
 
 // ─── Pre-built metrics ──────────────────────────────────────────────────────
 
@@ -126,9 +118,9 @@ export function withSpan<T>(name: string, fn: (span: Span) => T): T {
           .catch((err: unknown) => {
             span.setStatus({
               code: SpanStatusCode.ERROR,
-              message: err instanceof Error ? err.message : String(err),
+              message: errorMessage(err),
             });
-            span.recordException(err instanceof Error ? err : new Error(String(err)));
+            span.recordException(err instanceof Error ? err : new Error(errorMessage(err)));
             span.end();
             throw err;
           }) as T;
@@ -139,9 +131,9 @@ export function withSpan<T>(name: string, fn: (span: Span) => T): T {
     } catch (err: unknown) {
       span.setStatus({
         code: SpanStatusCode.ERROR,
-        message: err instanceof Error ? err.message : String(err),
+        message: errorMessage(err),
       });
-      span.recordException(err instanceof Error ? err : new Error(String(err)));
+      span.recordException(err instanceof Error ? err : new Error(errorMessage(err)));
       span.end();
       throw err;
     }

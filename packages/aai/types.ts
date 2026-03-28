@@ -5,7 +5,6 @@
 
 import { z } from "zod";
 import type { Kv } from "./kv.ts";
-import type { VectorStore } from "./vector.ts";
 
 /**
  * Result returned by a `beforeTurn` middleware to block a turn.
@@ -16,17 +15,17 @@ export type MiddlewareBlockResult = { block: true; reason: string };
 /**
  * Result returned by a `beforeToolCall` middleware hook to short-circuit tool execution.
  *
- * Return `{ result: string }` to skip execution and use a cached/synthetic result.
- * Return `{ block: true; reason: string }` to deny the tool call.
- * Return `{ args: Record<string, unknown> }` to transform the arguments.
+ * Return `{ type: "result", result: string }` to skip execution and use a cached/synthetic result.
+ * Return `{ type: "block", reason: string }` to deny the tool call.
+ * Return `{ type: "args", args: Record<string, unknown> }` to transform the arguments.
  * Return `undefined` to proceed normally.
  *
  * @public
  */
 export type ToolCallInterceptResult =
-  | { result: string }
-  | { block: true; reason: string }
-  | { args: Record<string, unknown> }
+  | { type: "result"; result: string }
+  | { type: "block"; reason: string }
+  | { type: "args"; args: Record<string, unknown> }
   | undefined;
 
 /**
@@ -98,7 +97,7 @@ export type ToolCallInterceptResult =
  *
  * @public
  */
-// biome-ignore lint/suspicious/noExplicitAny: `any` default lets state-agnostic middleware work with any agent state without requiring a generic.
+// biome-ignore lint/suspicious/noExplicitAny: `any` default is required for variance — state-agnostic Middleware must be assignable to Middleware<SpecificState>[] arrays.
 export type Middleware<S = any> = {
   /** Human-readable name for logging and debugging. */
   name: string;
@@ -114,61 +113,56 @@ export type Middleware<S = any> = {
    * Middleware is piped in array order: the output of one filter becomes
    * the input of the next.
    *
+   * `ctx.text` contains the current text (after prior filters).
+   *
    * @example
    * ```ts
-   * beforeInput: (text) =>
-   *   text.replace(/\b\d{3}[-.]?\d{2}[-.]?\d{4}\b/g, "[SSN REDACTED]")
+   * beforeInput: (ctx) =>
+   *   (ctx.text ?? "").replace(/\b\d{3}[-.]?\d{2}[-.]?\d{4}\b/g, "[SSN REDACTED]")
    * ```
    */
-  beforeInput?: (text: string, ctx: HookContext<S>) => string | Promise<string>;
+  beforeInput?: (ctx: HookContext<S>) => string | Promise<string>;
 
   /**
    * Runs before each user turn. Can block the turn by returning
    * `{ block: true, reason: "..." }`. Return `undefined` to proceed.
    *
-   * Receives the text *after* `beforeInput` filtering has been applied.
+   * `ctx.text` contains the text *after* `beforeInput` filtering.
    *
    * When a turn is blocked, subsequent `beforeTurn` middleware is skipped,
    * and `afterTurn` hooks do **not** fire.
    */
   beforeTurn?: (
-    text: string,
     ctx: HookContext<S>,
     // biome-ignore lint/suspicious/noConfusingVoidType: void allows callbacks to omit return
   ) => MiddlewareBlockResult | void | undefined | Promise<MiddlewareBlockResult | void | undefined>;
 
   /**
    * Runs after each user turn completes (after all steps finish).
-   * Runs in reverse array order.
+   * `ctx.text` contains the turn text. Runs in reverse array order.
    */
-  afterTurn?: (text: string, ctx: HookContext<S>) => void | Promise<void>;
+  afterTurn?: (ctx: HookContext<S>) => void | Promise<void>;
 
   /**
    * Runs before each tool call. Can approve, deny, transform args, or
-   * return a cached result.
+   * return a cached result. `ctx.tool` and `ctx.args` are set.
    */
   beforeToolCall?: (
-    toolName: string,
-    args: Readonly<Record<string, unknown>>,
     ctx: HookContext<S>,
   ) => ToolCallInterceptResult | undefined | Promise<ToolCallInterceptResult | undefined>;
 
   /**
    * Runs after each tool call completes. Useful for caching results,
-   * logging, or analytics. Runs in reverse array order.
+   * logging, or analytics. `ctx.tool`, `ctx.args`, and `ctx.result` are set.
+   * Runs in reverse array order.
    */
-  afterToolCall?: (
-    toolName: string,
-    args: Readonly<Record<string, unknown>>,
-    result: string,
-    ctx: HookContext<S>,
-  ) => void | Promise<void>;
+  afterToolCall?: (ctx: HookContext<S>) => void | Promise<void>;
 
   /**
    * Filters agent text output before it is sent to TTS. Return the
-   * (possibly modified) text. Runs on every agent transcript chunk.
+   * (possibly modified) text. `ctx.text` contains the current text.
    */
-  beforeOutput?: (text: string, ctx: HookContext<S>) => string | Promise<string>;
+  beforeOutput?: (ctx: HookContext<S>) => string | Promise<string>;
 };
 
 /**
@@ -181,18 +175,11 @@ export type Middleware<S = any> = {
  * - `"visit_webpage"` — Fetch a URL and return its content as clean text.
  * - `"fetch_json"` — Call a REST API endpoint and return the JSON response.
  * - `"run_code"` — Execute JavaScript in a sandbox for calculations and data processing.
- * - `"vector_search"` — Search the agent's RAG knowledge base for relevant documents.
  * - `"memory"` — Persistent KV memory: save_memory, recall_memory, list_memories, forget_memory.
  *
  * @public
  */
-export type BuiltinTool =
-  | "web_search"
-  | "visit_webpage"
-  | "fetch_json"
-  | "run_code"
-  | "vector_search"
-  | "memory";
+export type BuiltinTool = "web_search" | "visit_webpage" | "fetch_json" | "run_code" | "memory";
 
 /**
  * How the LLM should select tools during a turn.
@@ -254,23 +241,8 @@ export type ToolContext<S = Record<string, unknown>> = {
   state: S;
   /** Key-value store scoped to this agent deployment. */
   kv: Kv;
-  /** Vector store scoped to this agent deployment. */
-  vector: VectorStore;
   /** Read-only snapshot of conversation messages so far. */
   messages: readonly Message[];
-  /**
-   * Push an intermediate update to the client UI before the tool finishes.
-   *
-   * Use this to send progressive data so the UI can render partial results
-   * immediately (e.g. a loading card, preview, or streaming data) instead
-   * of waiting for the full tool result.
-   *
-   * The data is serialized to JSON and delivered as a `tool_call_update`
-   * event on the client. Use `useToolCallUpdate` in the UI to consume it.
-   *
-   * No-op in sandbox (platform) mode.
-   */
-  sendUpdate(data: unknown): void;
   /**
    * SSRF-safe fetch function.
    *
@@ -285,20 +257,43 @@ export type ToolContext<S = Record<string, unknown>> = {
 };
 
 /**
- * Context passed to lifecycle hooks (`onConnect`, `onTurn`, etc.).
+ * Context passed to lifecycle hooks and middleware.
  *
- * Same as {@link ToolContext} but without `messages`, since hooks
- * run outside the tool execution flow.
+ * Base fields (`env`, `state`, `kv`, `fetch`, `sessionId`) are always set.
+ * Per-phase fields are set by the middleware runner for the current hook:
+ * - `text` — set for text-based hooks (beforeInput, beforeTurn, afterTurn, beforeOutput)
+ * - `tool`, `args` — set for tool hooks (beforeToolCall, afterToolCall)
+ * - `result` — set for afterToolCall
  *
  * @typeParam S - The shape of per-session state created by the agent's
  *   `state` factory. Defaults to `Record<string, unknown>`.
  *
  * @public
  */
-export type HookContext<S = Record<string, unknown>> = Omit<
-  ToolContext<S>,
-  "messages" | "sendUpdate"
->;
+export type HookContext<S = Record<string, unknown>> = {
+  /** Environment variables declared in the agent config. */
+  env: Readonly<Record<string, string>>;
+  /** Mutable per-session state created by the agent's `state` factory. */
+  state: S;
+  /** Key-value store scoped to this agent deployment. */
+  kv: Kv;
+  /**
+   * SSRF-safe fetch function.
+   * In self-hosted mode this calls the network directly (with SSRF protection).
+   * In platform mode this is proxied through the sidecar.
+   */
+  fetch: typeof globalThis.fetch;
+  /** Unique identifier for the current session. */
+  sessionId: string;
+  /** Turn or filter text. Set for text-based hooks. */
+  text?: string;
+  /** Tool name. Set for tool call hooks. */
+  tool?: string;
+  /** Tool arguments. Set for tool call hooks. */
+  args?: Readonly<Record<string, unknown>>;
+  /** Tool call result. Set for afterToolCall. */
+  result?: string;
+};
 
 /**
  * Definition of a custom tool that the agent can invoke.
@@ -463,26 +458,6 @@ export function createToolFactory<S = Record<string, unknown>>(): <
 export type ToolResultMap<T extends Record<string, unknown> = Record<string, unknown>> = T;
 
 /**
- * Information about a completed agentic step, passed to the `onStep` hook.
- *
- * Each turn may consist of multiple steps (up to `maxSteps`). A step
- * represents one LLM invocation that may include tool calls and text output.
- *
- * @public
- */
-export type StepInfo = {
-  /** 1-based step index within the current turn. */
-  stepNumber: number;
-  /** Tool calls made during this step. */
-  toolCalls: readonly {
-    toolName: string;
-    args: Readonly<Record<string, unknown>>;
-  }[];
-  /** LLM text output for this step. */
-  text: string;
-};
-
-/**
  * Options passed to {@link defineAgent} to configure an agent.
  *
  * Only `name` is required; all other fields have sensible defaults.
@@ -535,19 +510,6 @@ export type AgentOptions<S = Record<string, unknown>> = {
   tools?: Readonly<Record<string, ToolDef<z.ZodObject<z.ZodRawShape>, NoInfer<S>>>>;
   /** Factory that creates fresh per-session state. Called once per connection. */
   state?: () => S;
-  /**
-   * Enable automatic session state persistence across reconnects.
-   *
-   * When enabled, session state, conversation history, and the S2S session ID
-   * are saved to KV on disconnect and restored when the client reconnects with
-   * `?sessionId=<old-session-id>` in the WebSocket URL.
-   *
-   * - `true` — enable with default TTL (1 hour)
-   * - `{ ttl: number }` — enable with custom TTL in milliseconds
-   *
-   * Requires the agent's `state` return value to be JSON-serializable.
-   */
-  persistence?: boolean | { ttl?: number };
   /** Called when a new session connects. */
   onConnect?: (ctx: HookContext<S>) => void | Promise<void>;
   /** Called when a session disconnects. */
@@ -556,8 +518,6 @@ export type AgentOptions<S = Record<string, unknown>> = {
   onError?: (error: Error, ctx?: HookContext<S>) => void;
   /** Called after a complete turn (all steps finished). */
   onTurn?: (text: string, ctx: HookContext<S>) => void | Promise<void>;
-  /** Called after each agentic step completes. */
-  onStep?: (step: StepInfo, ctx: HookContext<S>) => void | Promise<void>;
   /**
    * Composable middleware that intercepts turns, tool calls, and output.
    *
@@ -625,13 +585,10 @@ export type AgentDef<S = Record<string, unknown>> = {
   builtinTools?: readonly BuiltinTool[];
   tools: Readonly<Record<string, ToolDef<z.ZodObject<z.ZodRawShape>, S>>>;
   state?: () => S;
-  /** Resolved persistence config, or `undefined` if disabled. */
-  persistence?: { ttl: number };
   onConnect?: (ctx: HookContext<S>) => void | Promise<void>;
   onDisconnect?: (ctx: HookContext<S>) => void | Promise<void>;
   onError?: (error: Error, ctx?: HookContext<S>) => void;
   onTurn?: (text: string, ctx: HookContext<S>) => void | Promise<void>;
-  onStep?: (step: StepInfo, ctx: HookContext<S>) => void | Promise<void>;
   middleware?: readonly Middleware<S>[];
   idleTimeoutMs?: number;
 };
@@ -644,7 +601,6 @@ export const BuiltinToolSchema = z.enum([
   "visit_webpage",
   "fetch_json",
   "run_code",
-  "vector_search",
   "memory",
 ]);
 
@@ -665,9 +621,6 @@ const ToolDefSchema = z.object({
   execute: z.function(),
 });
 
-/** Default TTL for persisted session data: 1 hour. */
-const DEFAULT_PERSIST_TTL = 3_600_000;
-
 const AgentOptionsSchema = z.object({
   name: z.string().min(1, "Agent name must be non-empty"),
   instructions: z.string().optional(),
@@ -678,14 +631,10 @@ const AgentOptionsSchema = z.object({
   builtinTools: z.array(BuiltinToolSchema).optional(),
   tools: z.record(z.string(), ToolDefSchema).optional(),
   state: z.function().optional(),
-  persistence: z
-    .union([z.literal(true), z.object({ ttl: z.number().int().positive().optional() })])
-    .optional(),
   onConnect: z.function().optional(),
   onDisconnect: z.function().optional(),
   onError: z.function().optional(),
   onTurn: z.function().optional(),
-  onStep: z.function().optional(),
   middleware: z
     .array(
       z.object({
@@ -736,20 +685,11 @@ const AgentOptionsSchema = z.object({
  */
 export function defineAgent<S = Record<string, unknown>>(options: AgentOptions<S>): AgentDef<S> {
   AgentOptionsSchema.parse(options);
-  const persistence = options.persistence
-    ? {
-        ttl:
-          typeof options.persistence === "object"
-            ? (options.persistence.ttl ?? DEFAULT_PERSIST_TTL)
-            : DEFAULT_PERSIST_TTL,
-      }
-    : undefined;
   return {
     ...options,
     instructions: options.instructions ?? DEFAULT_INSTRUCTIONS,
     greeting: options.greeting ?? DEFAULT_GREETING,
     maxSteps: options.maxSteps ?? 5,
     tools: options.tools ?? {},
-    persistence,
   } as AgentDef<S>;
 }

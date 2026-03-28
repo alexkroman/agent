@@ -13,20 +13,30 @@ agents can be deployed to the managed platform.
 
 ```sh
 pnpm install             # Install dependencies
-pnpm test                # Run all tests (vitest)
+pnpm test                # Run all unit tests (vitest)
 pnpm lint                # Run Biome linter (all packages)
 pnpm typecheck           # Type-check all packages
 pnpm lint:fix            # Auto-fix lint issues
-pnpm check:local         # Fast pre-commit gate (parallel: build → typecheck + lint + api + syncpack → test)
+pnpm check:local         # Fast pre-commit gate (parallel: build → typecheck + lint + publint + syncpack → test)
 ```
+
+**Test tiers:**
+
+| Tier | Command | Scope | Timeout |
+| ---- | ------- | ----- | ------- |
+| Unit | `pnpm test` | Fast, mocked, co-located | 5s |
+| Integration | `pnpm test:integration` | Real subsystems (V8 isolates, HTTP servers) | 30s |
+| E2E | `pnpm test:e2e` | Full process spawn + Playwright browser | 300s |
+| Templates | `pnpm test:templates` | Template agent example tests | 5s |
 
 **Single-package shortcuts:**
 
 ```sh
-pnpm test:aai            # Run only aai tests
-pnpm test:aai-ui         # Run only aai-ui tests
-pnpm test:aai-cli        # Run only aai-cli tests
-pnpm test:aai-server     # Run only aai-server tests
+pnpm test:aai            # Run only aai unit tests
+pnpm test:aai-ui         # Run only aai-ui unit tests
+pnpm test:aai-cli        # Run only aai-cli unit tests
+pnpm test:aai-server     # Run only aai-server unit tests
+pnpm test:templates      # Run template agent tests
 pnpm dev:aai-server      # Start aai-server in dev mode
 ```
 
@@ -34,7 +44,8 @@ pnpm dev:aai-server      # Start aai-server in dev mode
 
 ```sh
 pnpm vitest run --project aai              # Single package via --project
-pnpm vitest run packages/aai/types_test.ts # Single file
+pnpm vitest run packages/aai/types.test.ts # Single file
+pnpm vitest run session                    # All files matching "session"
 pnpm --filter @alexkroman1/aai test        # Single package via pnpm filter
 ```
 
@@ -43,13 +54,13 @@ pnpm --filter @alexkroman1/aai test        # Single package via pnpm filter
 Runs via `scripts/check.sh` in three parallelized phases:
 
 1. **Build** (sequential): `pnpm -r run build`
-2. **Checks** (parallel): typecheck, lint, api-extractor, attw, templates,
+2. **Checks** (parallel): typecheck, lint, publint, attw, templates,
    knip, syncpack, markdownlint
 3. **Tests** (parallel, sharded by package): vitest per-package (aai, aai-ui,
-   aai-cli, aai-server), integration tests, e2e tests
+   aai-cli, aai-server, templates), integration tests, e2e tests
 
 `pnpm check:local` uses the same script with `--local` flag, running a
-subset: build → typecheck + lint + api-extractor + syncpack (parallel) →
+subset: build → typecheck + lint + publint + syncpack (parallel) →
 vitest (no coverage).
 
 ## Architecture
@@ -58,9 +69,9 @@ Four workspace packages under `packages/`:
 
 | Package | npm name | Purpose |
 | ------- | -------- | ------- |
-| `packages/aai/` | `@alexkroman1/aai` | Agent SDK: `defineAgent`, `createServer`, types, protocol, S2S orchestration, session, KV, vector store |
+| `packages/aai/` | `@alexkroman1/aai` | Agent SDK: `defineAgent`, `createServer`, types, protocol, S2S orchestration, session, KV |
 | `packages/aai-ui/` | `@alexkroman1/aai-ui` | Browser client (Preact): session, audio, UI components |
-| `packages/aai-cli/` | `@alexkroman1/aai-cli` | The `aai` CLI: init, dev, test, build, deploy, start, secret, rag, link |
+| `packages/aai-cli/` | `@alexkroman1/aai-cli` | The `aai` CLI: init, dev, test, build, deploy, start, secret, generate, run |
 | `packages/aai-server/` | `@alexkroman1/aai-server` | Managed platform server (private): sandbox, sidecar, auth, SSRF protection |
 
 **Dependency flow:** `aai-cli`, `aai-ui`, and `aai-server` depend on `aai`
@@ -73,18 +84,18 @@ Four workspace packages under `packages/`:
 Public:
 
 - `.` — `defineAgent`, `defineTool` + re-exported types
-- `./server` — `createServer` for self-hosting
+- `./server` — `createServer` + `createAgentApp` for self-hosting
 - `./types` — all type definitions
 - `./kv` — KV store interface + in-memory implementation
-- `./vector` — vector store interface + in-memory implementation
 - `./testing` — `MockWebSocket`, `installMockWebSocket`,
   `createTestHarness`, `TestHarness`, `TurnResult`
 - `./testing/matchers` — Vitest custom matchers (`toHaveCalledTool`)
 
 Internal (exported in package.json but not part of public API — do **not**
 depend on these from consumer code; they may change without notice).
-API-extractor tracks only the **public** entry points (`.` and `./types`).
-Changes to internal exports do not trigger API baseline drift:
+Type-level tests (`.test-d.ts`) cover only the **public** entry points
+(`.`, `./types`, `./server`). Changes to internal exports do not require
+type test updates:
 
 - `./runtime` — `Logger`, `LogContext`, `S2SConfig`, `consoleLogger`,
   `DEFAULT_S2S_CONFIG`
@@ -97,14 +108,14 @@ Changes to internal exports do not trigger API baseline drift:
 - `./telemetry` — OpenTelemetry tracer, meter, pre-built metrics, `withSpan` helper
 - `./utils` — shared utility functions
 - `./ssrf` — SSRF protection (`assertPublicUrl`, `isPrivateIp`, `ssrfSafeFetch`)
-- `./middleware-core` — pure middleware runner functions (zero runtime deps,
+- `./middleware` — pure middleware runner functions (zero runtime deps,
   isolate-safe; bundled into the harness runtime)
 
 Non-exported internal files (used within the package only):
 
 - `builtin-tools.ts` — built-in tool definitions + memory tools
 - `direct-executor.ts` — in-process tool execution (self-hosted)
-- `middleware.ts` — middleware re-exports from middleware-core + `HookInvoker`
+- `lifecycle.ts` — `LifecycleHooks`, `HookInvoker` (agent callback types)
 
 #### `@alexkroman1/aai-ui` (UI)
 
@@ -115,7 +126,7 @@ Non-exported internal files (used within the package only):
 #### `@alexkroman1/aai-cli` (CLI)
 
 Binary: `aai` — subcommands: init, dev, test, build, deploy, delete,
-start, secret, rag, link, unlink
+start, secret, generate, run
 
 ### Key Files
 
@@ -127,10 +138,9 @@ start, secret, rag, link, unlink
 - `_bundler.ts` — generates Vite config, bundles `agent.ts`/`client.tsx`
   into `worker.js`/`index.html`
 - `_discover.ts` — agent discovery, auth config, project config
-- `secret.ts` / `rag.ts` — secret management and RAG ingestion
+- `secret.ts` — secret management
 - `_ui.ts` — shared Ink UI components
 - `_prompts.ts` — interactive prompts
-- `_link.ts` — workspace package linking (dev only)
 
 #### packages/aai-ui/
 
@@ -157,7 +167,7 @@ start, secret, rag, link, unlink
 
 - **Runtime**: Node
 - **Frameworks**: Preact (client UI), Tailwind CSS v4 (compiled at bundle time)
-- **Testing**: Vitest. Test files co-located: `foo.ts` → `foo_test.ts`.
+- **Testing**: Vitest. Test files co-located: `foo.ts` → `foo.test.ts`.
   Unit test projects (aai, aai-ui, aai-cli, aai-server) are defined in the
   root `vitest.config.ts`. Use `--project <name>` to run a specific project.
   Slow/integration tests have separate per-package configs (`vitest.slow.config.ts`,
@@ -165,6 +175,13 @@ start, secret, rag, link, unlink
   In tests, use `flush()` from `_test-utils.ts` instead of
   `await new Promise(r => setTimeout(r, 0))` to yield to microtasks.
   Use `vi.waitFor()` instead of arbitrary delays when polling for async results.
+  Type-level tests use `.test-d.ts` files with `typecheck: { only: true }`
+  — they are checked by tsc but never executed at runtime. Use
+  `expectTypeOf` from vitest to assert on type shapes. Projects:
+  `aai-types`, `aai-ui-types`.
+- **Package validation**: `publint` runs post-build to verify package.json
+  exports resolve to real files. `attw` validates export types. Both run
+  in the check pipeline.
 - **Linting**: Biome. Auto-runs on staged files via lefthook pre-commit hook.
 - **Exports**: In dev mode, package.json exports point to `.ts` source for
   seamless workspace resolution. Update to compiled `.js` dist paths before
@@ -205,10 +222,10 @@ catches the most common issues that historically required follow-up commits:
    messages, run `pnpm test` and update affected assertions.
 3. **Lint in related files**: Pre-commit only lints staged files. Run
    `pnpm lint` to catch lint issues in files affected by your change.
-4. **API extractor reports**: `check:local` now includes build + api-extractor.
-   After changing public API exports, commit updated `.api.md` reports.
-   CI also runs `check:api-diff` which detects stale `.api.md` baselines
-   and provides clear instructions for resolving them.
+4. **Type-level tests**: After changing public API types (`defineAgent`,
+   `defineTool`, `createServer`, etc.), run `pnpm vitest run --project aai-types`
+   to verify type contracts haven't regressed. Update `.test-d.ts` files
+   if the change is intentional.
 
 ## Security Architecture
 
@@ -260,7 +277,6 @@ a denylist.
 
 - KV keys prefixed `kv:{keyHash}:{slug}:{key}` — agents cannot access
   each other's data.
-- Vector store uses Upstash namespace `{keyHash}:{slug}`.
 - Each sandbox gets its own sidecar on an ephemeral loopback port.
 - Sessions are per-sandbox (`Map<string, Session>`).
 - No shared mutable state between sandboxes.
@@ -350,5 +366,6 @@ new NodeSDK({ /* exporters */ }).start();
 
 - **E2E tests**: Playwright/Chromium may not be installed in all environments.
   The `aai-cli` e2e test (`test:e2e`) may fail locally. CI handles this.
-- **API Extractor**: Covers main entry points of `aai` and `aai-ui` only.
-  Subpath exports (e.g. `./kv`, `./vector`, `./protocol`) are not covered.
+- **Type-level tests**: Cover public entry points of `aai` (`.`, `./types`,
+  `./server`) and `aai-ui` (`./session`). Subpath exports (e.g. `./kv`,
+  `./protocol`) are not covered by type tests.

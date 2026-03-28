@@ -1,18 +1,17 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { buildAgentBundle } from "./_build.ts";
-import { createClientDevServer } from "./_bundler.ts";
+import { buildAgentBundle, createClientDevServer } from "./_bundler.ts";
 import { loadAgent } from "./_discover.ts";
-import { bootBackendServer, bootServer, loadAgentDef, resolveServerEnv } from "./_server-common.ts";
-import { info, parsePort, runCommand, step } from "./_ui.ts";
+import { bootServer, loadAgentDef, resolveServerEnv } from "./_server-common.ts";
+import { consola, parsePort } from "./_ui.ts";
 
 /** Build, boot, and verify the server — used by `--check` mode. */
-async function runCheckMode(cwd: string, port: number, log: (msg: string) => void): Promise<void> {
-  const bundle = await buildAgentBundle(cwd, log);
+async function runCheckMode(cwd: string, port: number): Promise<void> {
+  const bundle = await buildAgentBundle(cwd);
   const agentDef = await loadAgentDef(cwd);
   const env = await resolveServerEnv(cwd);
   const server = await bootServer(agentDef, bundle.clientDir, env, port);
-  log(step("Ready", `http://localhost:${port}`));
+  consola.success(`Ready http://localhost:${port}`);
 
   const base = `http://localhost:${port}`;
   try {
@@ -28,7 +27,7 @@ async function runCheckMode(cwd: string, port: number, log: (msg: string) => voi
         `GET /health returned unhealthy status: ${JSON.stringify(health)}. Check your agent.ts for errors.`,
       );
     }
-    log(step("Health", health.name ?? "ok"));
+    consola.success(`Health ${health.name ?? "ok"}`);
 
     const pageRes = await fetch(`${base}/`);
     if (!pageRes.ok) {
@@ -40,7 +39,7 @@ async function runCheckMode(cwd: string, port: number, log: (msg: string) => voi
         "GET / did not return valid HTML. Check that client.tsx exists and builds correctly.",
       );
     }
-    log(step("Client", "ok"));
+    consola.success("Client ok");
   } catch (err: unknown) {
     await server.close();
     throw err;
@@ -52,11 +51,10 @@ async function runCheckMode(cwd: string, port: number, log: (msg: string) => voi
 export async function _startDevServer(
   cwd: string,
   port: number,
-  log: (msg: string) => void,
   opts?: { check?: boolean },
 ): Promise<void> {
   if (opts?.check) {
-    await runCheckMode(cwd, port, log);
+    await runCheckMode(cwd, port);
     return;
   }
 
@@ -71,19 +69,19 @@ export async function _startDevServer(
 
   // Backend runs on an internal port; Vite proxies to it
   const backendPort = port + 1;
-  await bootBackendServer(agentDef, env, backendPort);
+  await bootServer(agentDef, undefined, env, backendPort);
 
   if (agent.clientEntry) {
     const vite = await createClientDevServer(cwd, backendPort, port);
     await vite.listen();
-    log(step("Ready", `http://localhost:${port}`));
-    log(info("Client HMR enabled — edits to client.tsx update instantly"));
+    consola.success(`Ready http://localhost:${port}`);
+    consola.info("Client HMR enabled — edits to client.tsx update instantly");
   } else {
-    log(step("Ready", `http://localhost:${backendPort}`));
-    log(info("No client.tsx found — serving agent API only"));
+    consola.success(`Ready http://localhost:${backendPort}`);
+    consola.info("No client.tsx found — serving agent API only");
   }
 
-  log(info("Ctrl-C to quit"));
+  consola.info("Ctrl-C to quit");
 }
 
 export async function runDevCommand(opts: {
@@ -92,8 +90,5 @@ export async function runDevCommand(opts: {
   check?: boolean;
 }): Promise<void> {
   const port = parsePort(opts.port);
-
-  await runCommand(async ({ log }) => {
-    await _startDevServer(opts.cwd, port, log, opts.check ? { check: true } : undefined);
-  });
+  await _startDevServer(opts.cwd, port, opts.check ? { check: true } : undefined);
 }

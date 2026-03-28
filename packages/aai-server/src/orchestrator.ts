@@ -1,5 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
-import { errorMessage } from "@alexkroman1/aai/utils";
+
+import { createUnstorageKv, errorMessage } from "@alexkroman1/aai/internal";
 import { createNodeWebSocket } from "@hono/node-ws";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -17,10 +18,8 @@ import { serialize, serializeForAgent } from "./metrics.ts";
 import { requireInternal, requireOwner, validateSlug } from "./middleware.ts";
 import type { AgentSlot } from "./sandbox.ts";
 import { resolveSandbox } from "./sandbox.ts";
-import { createScopedKv } from "./scoped-storage.ts";
 import { handleSecretDelete, handleSecretList, handleSecretSet } from "./secret-handler.ts";
 import { handleAgentHealth, handleAgentPage, handleClientAsset } from "./transport-websocket.ts";
-import { handleVector } from "./vector-handler.ts";
 
 export type OrchestratorOpts = {
   slots: Map<string, AgentSlot>;
@@ -120,7 +119,6 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   app.put("/:slug/secret", slugMw, ownerMw, handleSecretSet);
   app.delete("/:slug/secret/:key", slugMw, ownerMw, handleSecretDelete);
   app.post("/:slug/kv", slugMw, ownerMw, handleKv);
-  app.post("/:slug/vector", slugMw, ownerMw, handleVector);
 
   app.get("/:slug/metrics", slugMw, ownerMw, async (c) =>
     c.text(await serializeForAgent(c.get("slug")), 200, {
@@ -137,7 +135,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     const slug = c.get("slug");
     const manifest = await c.env.store.getManifest(slug);
     if (!manifest) return c.json(null, 404);
-    const kv = createScopedKv(c.env.storage, slug);
+    const kv = createUnstorageKv({ storage: c.env.storage, prefix: `agents/${slug}/kv` });
     const value = await kv.get(key);
     if (value === null) return c.json(null, 404);
     return c.json(value);
@@ -164,7 +162,11 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
             }
             const resumeFrom = c.req.query("sessionId") ?? undefined;
             const skipGreeting = c.req.query("resume") !== undefined || resumeFrom !== undefined;
-            if (ws.raw) sandbox.startSession(ws.raw, skipGreeting, resumeFrom);
+            if (ws.raw)
+              sandbox.startSession(ws.raw, {
+                skipGreeting,
+                ...(resumeFrom ? { resumeFrom } : {}),
+              });
           } catch (err: unknown) {
             console.error("WebSocket open error:", err);
             ws.close(1011, "Internal error");

@@ -1,34 +1,174 @@
 // Copyright 2025 the AAI authors. MIT license.
 /** S2S session — relays audio between client and AssemblyAI S2S API. */
 
-import type { AgentConfig, ToolSchema } from "./_internal-types.ts";
-import { buildCtx } from "./_session-ctx.ts";
+import type { AgentConfig, ExecuteTool, ToolSchema } from "./_internal-types.ts";
 import { activeSessionsUpDown, sessionCounter, setupListeners } from "./_session-otel.ts";
-import {
-  restorePersistedSession,
-  type SessionPersistence,
-  saveSessionData,
-} from "./_session-persist.ts";
-import { errorDetail, errorMessage } from "./_utils.ts";
+import { errorDetail, errorMessage, toolError } from "./_utils.ts";
+import { DEFAULT_IDLE_TIMEOUT_MS, DEFAULT_MAX_HISTORY, HOOK_TIMEOUT_MS } from "./constants.ts";
 import type { HookInvoker } from "./middleware.ts";
 import type { ClientSink } from "./protocol.ts";
-import { HOOK_TIMEOUT_MS } from "./protocol.ts";
 import type { Logger, S2SConfig } from "./runtime.ts";
 import { consoleLogger } from "./runtime.ts";
 import {
   type CreateS2sWebSocket,
   connectS2s,
   defaultCreateS2sWebSocket,
+  type S2sHandle,
   type S2sToolSchema,
 } from "./s2s.ts";
 import { buildSystemPrompt } from "./system-prompt.ts";
 import { idleTimeoutCounter } from "./telemetry.ts";
-import type { ExecuteTool } from "./worker-entry.ts";
+import type { Message } from "./types.ts";
 
-export type { S2sSessionCtx } from "./_session-ctx.ts";
-export type { PersistedSession, SessionPersistence } from "./_session-persist.ts";
-export { persistKey } from "./_session-persist.ts";
-export type { HookInvoker, ToolInterceptResult } from "./middleware.ts";
+export type { S2sHandle } from "./s2s.ts";
+
+// ─── Session context (formerly _session-ctx.ts) ─────────────────────────────
+
+type PendingTool = { callId: string; result: string };
+
+/** Per-reply mutable state — reset on beginReply/cancelReply. */
+export type ReplyState = {
+  pendingTools: PendingTool[];
+  toolCallCount: number;
+  currentReplyId: string | null;
+};
+
+/** Immutable dependencies injected at session creation. */
+export type SessionDeps = {
+  readonly id: string;
+  readonly agent: string;
+  readonly client: ClientSink;
+  readonly agentConfig: AgentConfig;
+  readonly executeTool: ExecuteTool;
+  readonly hookInvoker: HookInvoker | undefined;
+  readonly log: Logger;
+  readonly maxHistory: number;
+};
+
+/**
+ * Session context threaded through event handlers.
+ *
+ * Split into three layers:
+ * - {@link SessionDeps} — immutable dependencies (set once)
+ * - {@link ReplyState} via `reply` — per-reply mutable state (reset on beginReply/cancelReply)
+ * - Remaining fields — connection, conversation, and lifecycle methods
+ */
+export type S2sSessionCtx = SessionDeps & {
+  s2s: S2sHandle | null;
+  reply: ReplyState;
+  turnPromise: Promise<void> | null;
+  conversationMessages: Message[];
+  filterChain: Promise<void>;
+
+  resolveTurnConfig(): Promise<{ maxSteps?: number } | null>;
+  consumeToolCallStep(
+    turnConfig: { maxSteps?: number } | null,
+    name: string,
+    replyId: string | null,
+  ): string | null;
+  fireHook(name: string, fn: (h: HookInvoker) => Promise<void>): void;
+  drainHooks(): Promise<void>;
+  pushMessages(...msgs: Message[]): void;
+  beginReply(replyId: string): void;
+  cancelReply(): void;
+  chainTurn(p: Promise<void>): void;
+};
+
+export function buildCtx(opts: {
+  id: string;
+  agent: string;
+  client: ClientSink;
+  agentConfig: AgentConfig;
+  executeTool: ExecuteTool;
+  hookInvoker: HookInvoker | undefined;
+  log: Logger;
+  maxHistory?: number | undefined;
+}): S2sSessionCtx {
+  const { id, agentConfig, hookInvoker, log } = opts;
+  const maxHistory = opts.maxHistory ?? DEFAULT_MAX_HISTORY;
+  /** Track in-flight hook promises so they can be awaited during shutdown. */
+  const pendingHooks = new Set<Promise<void>>();
+  const ctx: S2sSessionCtx = {
+    ...opts,
+    s2s: null,
+    reply: { pendingTools: [], toolCallCount: 0, currentReplyId: null },
+    turnPromise: null,
+    conversationMessages: [],
+    maxHistory,
+    filterChain: Promise.resolve(),
+    resolveTurnConfig() {
+      if (!hookInvoker) return Promise.resolve(null);
+      return hookInvoker.resolveTurnConfig(id, HOOK_TIMEOUT_MS);
+    },
+    consumeToolCallStep(turnConfig, _name, replyId) {
+      if (replyId === null || replyId !== ctx.reply.currentReplyId) {
+        return toolError("Reply was interrupted. Discarding stale tool call.");
+      }
+      const maxSteps = turnConfig?.maxSteps ?? agentConfig.maxSteps;
+      ctx.reply.toolCallCount++;
+      if (maxSteps !== undefined && ctx.reply.toolCallCount > maxSteps) {
+        log.info("maxSteps exceeded, refusing tool call", {
+          toolCallCount: ctx.reply.toolCallCount,
+          maxSteps,
+        });
+        return toolError("Maximum tool steps reached. Please respond to the user now.");
+      }
+      return null;
+    },
+    fireHook(name, fn) {
+      if (!hookInvoker) return;
+      const notifyOnError = (err: unknown) => {
+        log.warn(`${name} hook failed`, { err: errorMessage(err) });
+        if (name !== "onError") {
+          try {
+            const r = hookInvoker.onError(id, { message: errorMessage(err) });
+            if (r && typeof r.catch === "function") {
+              r.catch((e: unknown) => {
+                log.warn("onError hook failed", { err: errorMessage(e) });
+              });
+            }
+          } catch (e: unknown) {
+            log.warn("onError hook failed", { err: errorMessage(e) });
+          }
+        }
+      };
+      try {
+        const p = fn(hookInvoker)
+          .catch(notifyOnError)
+          .finally(() => pendingHooks.delete(p));
+        pendingHooks.add(p);
+      } catch (err: unknown) {
+        notifyOnError(err);
+      }
+    },
+    async drainHooks() {
+      if (pendingHooks.size > 0) await Promise.all([...pendingHooks]);
+    },
+    pushMessages(...msgs: Message[]) {
+      ctx.conversationMessages.push(...msgs);
+      if (maxHistory > 0 && ctx.conversationMessages.length > maxHistory) {
+        ctx.conversationMessages = ctx.conversationMessages.slice(-maxHistory);
+      }
+    },
+    beginReply(replyId: string) {
+      ctx.reply = { pendingTools: [], toolCallCount: 0, currentReplyId: replyId };
+      ctx.turnPromise = null;
+      ctx.filterChain = Promise.resolve();
+    },
+    cancelReply() {
+      ctx.reply = { pendingTools: [], toolCallCount: 0, currentReplyId: null };
+      ctx.filterChain = Promise.resolve();
+    },
+    chainTurn(p: Promise<void>) {
+      ctx.turnPromise = (ctx.turnPromise ?? Promise.resolve()).then(() => p);
+    },
+  };
+  return ctx;
+}
+
+// ─── Re-exports ─────────────────────────────────────────────────────────────
+
+export type { HookInvoker, LifecycleHooks, MiddlewareRunner } from "./middleware.ts";
 export { buildSystemPrompt } from "./system-prompt.ts";
 
 /**
@@ -80,19 +220,12 @@ export type S2sSessionOptions = {
    *  dropped (sliding window) to bound memory in long-running sessions.
    *  Defaults to 200. Set to 0 or Infinity to disable trimming. */
   maxHistory?: number;
-  /** Persistence configuration for auto-saving/restoring session data. */
-  persistence?: SessionPersistence;
-  /** Old session ID to resume from. Loads persisted state/messages from KV
-   *  and attempts S2S session resume. */
-  resumeFrom?: string;
 };
 
 /** @internal Not part of the public API. Exposed for testing only. */
 export const _internals = {
   connectS2s,
 };
-
-const DEFAULT_IDLE_TIMEOUT_MS = 300_000; // 5 minutes
 
 type IdleTimer = { reset(): void; clear(): void };
 
@@ -161,8 +294,6 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
     createWebSocket = defaultCreateS2sWebSocket,
     hookInvoker,
     logger: log = consoleLogger,
-    persistence,
-    resumeFrom,
   } = opts;
   const agentConfig = opts.skipGreeting ? { ...opts.agentConfig, greeting: "" } : opts.agentConfig;
   const hasTools = toolSchemas.length > 0 || (agentConfig.builtinTools?.length ?? 0) > 0;
@@ -189,10 +320,6 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
   const rawTimeout = agentConfig.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
   const idleMs = rawTimeout === 0 || !Number.isFinite(rawTimeout) ? 0 : rawTimeout;
   const idle = createIdleTimer({ timeoutMs: idleMs, agent, log, client, ctx });
-
-  let currentS2sSessionId: string | null = null;
-  let resumeS2sId: string | null = null;
-  const pendingCleanupKey: string | undefined = resumeFrom;
 
   /** Monotonically increasing counter bumped on each connectAndSetup call.
    *  Only the most recent invocation is allowed to set ctx.s2s, preventing
@@ -221,34 +348,8 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
         return;
       }
 
-      handle.on("ready", ({ sessionId: s2sId }) => {
-        currentS2sSessionId = s2sId;
-      });
-
-      if (resumeS2sId) {
-        const s2sId = resumeS2sId;
-        resumeS2sId = null; // Only try resume once
-
-        // Set up with fallback: if S2S resume fails (session expired),
-        // fall back to a fresh session on the same connection.
-        let resumeFallbackUsed = false;
-        setupListeners(ctx, handle, {
-          onSessionExpired: () => {
-            if (!resumeFallbackUsed) {
-              resumeFallbackUsed = true;
-              log.info("S2S session resume failed, falling back to new session");
-              handle.updateSession(sessionUpdatePayload);
-            } else {
-              ctx.log.info("S2S session expired");
-              handle.close();
-            }
-          },
-        });
-        handle.resumeSession(s2sId);
-      } else {
-        setupListeners(ctx, handle);
-        handle.updateSession(sessionUpdatePayload);
-      }
+      setupListeners(ctx, handle);
+      handle.updateSession(sessionUpdatePayload);
 
       ctx.s2s = handle;
       idle.reset();
@@ -261,16 +362,6 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
 
   return {
     async start(): Promise<void> {
-      // If resuming, load persisted data before connecting
-      if (persistence && resumeFrom) {
-        try {
-          const s2sId = await restorePersistedSession(persistence, resumeFrom, ctx, log);
-          if (s2sId) resumeS2sId = s2sId;
-        } catch (err: unknown) {
-          log.warn("Failed to restore persisted session", { error: errorMessage(err) });
-        }
-      }
-
       sessionCounter.add(1, { agent });
       activeSessionsUpDown.add(1, { agent });
       ctx.fireHook("onConnect", (h) => h.onConnect(id, HOOK_TIMEOUT_MS));
@@ -282,19 +373,9 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
       idle.clear();
       activeSessionsUpDown.add(-1, { agent });
       if (ctx.turnPromise !== null) await ctx.turnPromise;
-      // Drain in-flight hooks (onTurn, onStep, etc.) BEFORE closing
+      // Drain in-flight hooks (onTurn, etc.) BEFORE closing
       // the S2S connection so they don't send on a closed socket.
       await ctx.drainHooks();
-
-      // Persist session data before cleanup
-      if (persistence) {
-        try {
-          await saveSessionData(persistence, id, ctx, currentS2sSessionId, log, pendingCleanupKey);
-        } catch (err: unknown) {
-          log.warn("Failed to persist session", { error: errorMessage(err) });
-        }
-      }
-
       ctx.s2s?.close();
       ctx.fireHook("onDisconnect", (h) => h.onDisconnect(id, HOOK_TIMEOUT_MS));
       // Drain again for the onDisconnect hook we just fired.
@@ -311,12 +392,10 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
       client.event({ type: "cancelled" });
     },
     onReset(): void {
+      ctx.cancelReply();
       ctx.conversationMessages = [];
-      ctx.toolCallCount = 0;
+      ctx.reply.toolCallCount = 0;
       ctx.turnPromise = null;
-      ctx.pendingTools = [];
-      ctx.currentReplyId = null;
-      currentS2sSessionId = null;
       idle.clear();
       ctx.s2s?.close();
       client.event({ type: "reset" });

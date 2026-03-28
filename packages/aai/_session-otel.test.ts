@@ -1,47 +1,12 @@
-import { createNanoEvents } from "nanoevents";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { handleToolCall, setupListeners } from "./_session-otel.ts";
+import { makeClient, makeMockHandle, silentLogger } from "./_test-utils.ts";
+import { MAX_TOOL_RESULT_CHARS } from "./constants.ts";
 import type { HookInvoker } from "./middleware.ts";
-import type { ClientSink } from "./protocol.ts";
-import { MAX_TOOL_RESULT_CHARS } from "./protocol.ts";
-import type { S2sEvents, S2sHandle, S2sToolCall } from "./s2s.ts";
+import type { S2sToolCall } from "./s2s.ts";
 import type { S2sSessionCtx } from "./session.ts";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
-
-type MockClient = ClientSink & { events: Record<string, unknown>[] };
-
-function makeMockHandle(): S2sHandle & {
-  _fire: <K extends keyof S2sEvents>(type: K, ...args: Parameters<S2sEvents[K]>) => void;
-} {
-  const emitter = createNanoEvents<S2sEvents>();
-  return {
-    on: emitter.on.bind(emitter),
-    sendAudio: vi.fn(),
-    sendToolResult: vi.fn(),
-    updateSession: vi.fn(),
-    resumeSession: vi.fn(),
-    close: vi.fn(),
-    _fire<K extends keyof S2sEvents>(type: K, ...args: Parameters<S2sEvents[K]>) {
-      emitter.emit(type, ...args);
-    },
-  };
-}
-
-function makeClient(): MockClient {
-  const events: Record<string, unknown>[] = [];
-  return {
-    open: true,
-    events,
-    event(e) {
-      events.push(e as Record<string, unknown>);
-    },
-    playAudioChunk: vi.fn(),
-    playAudioDone: vi.fn(),
-  };
-}
-
-const silentLogger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
 
 function makeHook(overrides?: Partial<HookInvoker>): HookInvoker {
   return {
@@ -49,7 +14,6 @@ function makeHook(overrides?: Partial<HookInvoker>): HookInvoker {
     onDisconnect: vi.fn(),
     onTurn: vi.fn(),
     onError: vi.fn(),
-    onStep: vi.fn(),
     resolveTurnConfig: vi.fn(async () => null),
     ...overrides,
   } as HookInvoker;
@@ -57,7 +21,13 @@ function makeHook(overrides?: Partial<HookInvoker>): HookInvoker {
 
 function makeCtx(overrides?: Partial<S2sSessionCtx>): S2sSessionCtx {
   const conversationMessages = overrides?.conversationMessages ?? [];
-  return {
+  const reply = {
+    pendingTools: [] as { callId: string; result: string }[],
+    toolCallCount: 0,
+    currentReplyId: "r0" as string | null,
+    ...overrides?.reply,
+  };
+  const ctx: Record<string, unknown> = {
     id: "session-1",
     agent: "test-agent",
     client: makeClient(),
@@ -66,18 +36,39 @@ function makeCtx(overrides?: Partial<S2sSessionCtx>): S2sSessionCtx {
     hookInvoker: undefined,
     log: silentLogger,
     s2s: null,
-    pendingTools: [],
-    toolCallCount: 0,
     turnPromise: null,
     conversationMessages,
-    currentReplyId: "r0",
     maxHistory: 200,
+    filterChain: Promise.resolve(),
     resolveTurnConfig: vi.fn(async () => null),
     consumeToolCallStep: vi.fn(() => null),
     pushMessages: vi.fn((...msgs: unknown[]) => conversationMessages.push(...(msgs as never[]))),
     fireHook: vi.fn(),
-    ...overrides,
-  } as unknown as S2sSessionCtx;
+    beginReply(replyId: string) {
+      (ctx as unknown as S2sSessionCtx).reply = {
+        pendingTools: [],
+        toolCallCount: 0,
+        currentReplyId: replyId,
+      };
+      ctx.turnPromise = null;
+      ctx.filterChain = Promise.resolve();
+    },
+    cancelReply() {
+      (ctx as unknown as S2sSessionCtx).reply = {
+        pendingTools: [],
+        toolCallCount: 0,
+        currentReplyId: null,
+      };
+      ctx.filterChain = Promise.resolve();
+    },
+    chainTurn(p: Promise<void>) {
+      ctx.turnPromise = ((ctx.turnPromise as Promise<void> | null) ?? Promise.resolve()).then(
+        () => p,
+      );
+    },
+    ...{ ...overrides, reply },
+  };
+  return ctx as unknown as S2sSessionCtx;
 }
 
 const tc = (o?: Partial<S2sToolCall>): S2sToolCall => ({
@@ -87,12 +78,14 @@ const tc = (o?: Partial<S2sToolCall>): S2sToolCall => ({
   ...o,
 });
 
+type ClientWithEvents = { events: Record<string, unknown>[] };
+
 function findEvent(ctx: S2sSessionCtx, type: string) {
-  return (ctx.client as MockClient).events.find((e) => e.type === type);
+  return (ctx.client as unknown as ClientWithEvents).events.find((e) => e.type === type);
 }
 
 function allEvents(ctx: S2sSessionCtx) {
-  return (ctx.client as MockClient).events;
+  return (ctx.client as unknown as ClientWithEvents).events;
 }
 
 // ─── handleToolCall ──────────────────────────────────────────────────────────
@@ -108,7 +101,6 @@ describe("handleToolCall", () => {
       { foo: "bar" },
       "session-1",
       ctx.conversationMessages,
-      expect.any(Function),
     );
     expect(findEvent(ctx, "tool_call_start")).toMatchObject({
       toolCallId: "call-1",
@@ -118,23 +110,7 @@ describe("handleToolCall", () => {
       toolCallId: "call-1",
       result: "tool-result",
     });
-    expect(ctx.pendingTools).toEqual([{ callId: "call-1", result: "tool-result" }]);
-  });
-
-  test("onUpdate emits tool_call_update event to client", async () => {
-    const ctx = makeCtx({
-      executeTool: vi.fn(async (_name, _args, _sid, _msgs, onUpdate) => {
-        onUpdate?.({ preview: "partial" });
-        return "final";
-      }),
-    } as Partial<S2sSessionCtx>);
-    await handleToolCall(ctx, tc());
-    const updateEvent = allEvents(ctx).find((e) => e.type === "tool_call_update");
-    expect(updateEvent).toMatchObject({
-      type: "tool_call_update",
-      toolCallId: "call-1",
-      data: '{"preview":"partial"}',
-    });
+    expect(ctx.reply.pendingTools).toEqual([{ callId: "call-1", result: "tool-result" }]);
   });
 
   test("resolveTurnConfig error: returns error without executing", async () => {
@@ -196,7 +172,6 @@ describe("handleToolCall", () => {
       { modified: true },
       "session-1",
       ctx.conversationMessages,
-      expect.any(Function),
     );
   });
 
@@ -209,19 +184,19 @@ describe("handleToolCall", () => {
     await handleToolCall(ctx, tc());
     expect(ctx.log.error).toHaveBeenCalledWith("Tool execution failed", expect.any(Object));
     expect(findEvent(ctx, "tool_call_done")?.result).toBe(JSON.stringify({ error: "exec fail" }));
-    expect(ctx.pendingTools).toHaveLength(1);
+    expect(ctx.reply.pendingTools).toHaveLength(1);
   });
 
   test("stale reply: discards result from pendingTools", async () => {
     const ctx = makeCtx({
-      currentReplyId: "r1",
+      reply: { pendingTools: [], toolCallCount: 0, currentReplyId: "r1" },
       executeTool: vi.fn(async () => {
-        ctx.currentReplyId = "r2";
+        ctx.reply.currentReplyId = "r2";
         return "stale";
       }),
-    } as Partial<S2sSessionCtx>);
+    });
     await handleToolCall(ctx, tc());
-    expect(ctx.pendingTools).toEqual([]);
+    expect(ctx.reply.pendingTools).toEqual([]);
     expect(findEvent(ctx, "tool_call_done")).toBeDefined();
   });
 
@@ -257,25 +232,27 @@ describe("setupListeners", () => {
 
   test("reply_started resets state and sets currentReplyId", () => {
     const ctx = makeCtx({
-      toolCallCount: 5,
-      currentReplyId: "old-reply",
-      pendingTools: [{ callId: "x", result: "y" }],
+      reply: {
+        toolCallCount: 5,
+        currentReplyId: "old-reply",
+        pendingTools: [{ callId: "x", result: "y" }],
+      },
     });
     const h = makeMockHandle();
     setupListeners(ctx, h);
     h._fire("replyStarted", { replyId: "r1" });
-    expect(ctx.toolCallCount).toBe(0);
-    expect(ctx.currentReplyId).toBe("r1");
-    expect(ctx.pendingTools).toEqual([]);
+    expect(ctx.reply.toolCallCount).toBe(0);
+    expect(ctx.reply.currentReplyId).toBe("r1");
+    expect(ctx.reply.pendingTools).toEqual([]);
   });
 
   test("reply_done interrupted: nullifies currentReplyId and emits cancelled", () => {
-    const ctx = makeCtx({ currentReplyId: "r1" });
+    const ctx = makeCtx({ reply: { pendingTools: [], toolCallCount: 0, currentReplyId: "r1" } });
     const h = makeMockHandle();
     setupListeners(ctx, h);
     h._fire("replyDone", { status: "interrupted" });
-    expect(ctx.currentReplyId).toBeNull();
-    expect(ctx.pendingTools).toEqual([]);
+    expect(ctx.reply.currentReplyId).toBeNull();
+    expect(ctx.reply.pendingTools).toEqual([]);
     expect(allEvents(ctx)).toContainEqual({ type: "cancelled" });
   });
 
@@ -283,18 +260,25 @@ describe("setupListeners", () => {
     const s2s = makeMockHandle();
     const ctx = makeCtx({
       s2s,
-      pendingTools: [{ callId: "c1", result: "r1" }],
+      reply: {
+        pendingTools: [{ callId: "c1", result: "r1" }],
+        toolCallCount: 0,
+        currentReplyId: "r0",
+      },
       turnPromise: null,
     });
     const h = makeMockHandle();
     setupListeners(ctx, h);
     h._fire("replyDone", { status: "done" });
     expect(s2s.sendToolResult).toHaveBeenCalledWith("c1", "r1");
-    expect(ctx.pendingTools).toEqual([]);
+    expect(ctx.reply.pendingTools).toEqual([]);
   });
 
   test("reply_done without pending tools: emits tts_done", () => {
-    const ctx = makeCtx({ pendingTools: [], turnPromise: null });
+    const ctx = makeCtx({
+      reply: { pendingTools: [], toolCallCount: 0, currentReplyId: "r0" },
+      turnPromise: null,
+    });
     const h = makeMockHandle();
     setupListeners(ctx, h);
     h._fire("replyDone", { status: "done" });
@@ -307,7 +291,15 @@ describe("setupListeners", () => {
       resolve = r;
     });
     const s2s = makeMockHandle();
-    const ctx = makeCtx({ s2s, pendingTools: [{ callId: "c1", result: "r1" }], turnPromise: p });
+    const ctx = makeCtx({
+      s2s,
+      reply: {
+        pendingTools: [{ callId: "c1", result: "r1" }],
+        toolCallCount: 0,
+        currentReplyId: "r0",
+      },
+      turnPromise: p,
+    });
     const h = makeMockHandle();
     setupListeners(ctx, h);
     h._fire("replyDone", { status: "done" });
@@ -320,7 +312,11 @@ describe("setupListeners", () => {
 
   test("reply_done without pending tools logs step count when steps > 0", () => {
     const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
-    const ctx = makeCtx({ pendingTools: [], turnPromise: null, toolCallCount: 3, log });
+    const ctx = makeCtx({
+      reply: { pendingTools: [], toolCallCount: 3, currentReplyId: "r0" },
+      turnPromise: null,
+      log,
+    });
     const h = makeMockHandle();
     setupListeners(ctx, h);
     h._fire("replyDone", { status: "done" });
@@ -329,7 +325,11 @@ describe("setupListeners", () => {
 
   test("reply_done without pending tools skips step log when steps = 0", () => {
     const log = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
-    const ctx = makeCtx({ pendingTools: [], turnPromise: null, toolCallCount: 0, log });
+    const ctx = makeCtx({
+      reply: { pendingTools: [], toolCallCount: 0, currentReplyId: "r0" },
+      turnPromise: null,
+      log,
+    });
     const h = makeMockHandle();
     setupListeners(ctx, h);
     h._fire("replyDone", { status: "done" });
@@ -338,11 +338,11 @@ describe("setupListeners", () => {
 
   test("reply_done without pending tools fires afterTurn hook", () => {
     const ctx = makeCtx({
-      pendingTools: [],
+      reply: { pendingTools: [], toolCallCount: 0, currentReplyId: "r0" },
       turnPromise: null,
       hookInvoker: makeHook({ afterTurn: vi.fn(async () => undefined) }),
       conversationMessages: [{ role: "assistant", content: "hello" }],
-    } as Partial<S2sSessionCtx>);
+    });
     const h = makeMockHandle();
     setupListeners(ctx, h);
     h._fire("replyDone", { status: "done" });
@@ -351,16 +351,19 @@ describe("setupListeners", () => {
 
   test("reply_done stale reply: clears pendingTools to free memory", () => {
     const ctx = makeCtx({
-      pendingTools: [{ callId: "c1", result: "r1" }],
-      currentReplyId: "reply-1",
+      reply: {
+        pendingTools: [{ callId: "c1", result: "r1" }],
+        toolCallCount: 0,
+        currentReplyId: "reply-1",
+      },
       turnPromise: null,
     });
     const h = makeMockHandle();
     setupListeners(ctx, h);
     // Change reply ID to simulate a new reply after replyDone captured its ID.
-    ctx.currentReplyId = "reply-2";
+    ctx.reply.currentReplyId = "reply-2";
     h._fire("replyDone", { status: "done" });
-    expect(ctx.pendingTools).toEqual([]);
+    expect(ctx.reply.pendingTools).toEqual([]);
   });
 
   test("finishToolCall caps pendingTools at maxHistory", async () => {
@@ -369,9 +372,9 @@ describe("setupListeners", () => {
     for (let i = 0; i < 4; i++) {
       await handleToolCall(ctx, tc({ callId: `call-${i}`, name: "myTool" }));
     }
-    expect(ctx.pendingTools).toHaveLength(3);
+    expect(ctx.reply.pendingTools).toHaveLength(3);
     // The oldest entry (call-0) should have been evicted.
-    expect(ctx.pendingTools[0]?.callId).toBe("call-1");
+    expect(ctx.reply.pendingTools[0]?.callId).toBe("call-1");
   });
 
   test("user_transcript: pushes message and fires turn hook", () => {

@@ -1,25 +1,28 @@
 // Copyright 2025 the AAI authors. MIT license.
-/** Sandbox harness runtime — runs inside the secure-exec V8 isolate. */
-// biome-ignore lint/nursery/noExcessiveLinesPerFile: single-file isolate runtime, splitting would break sandbox constraints
+/** Sandbox harness runtime -- runs inside the secure-exec V8 isolate. */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { Kv } from "@alexkroman1/aai/kv";
-import {
-  runAfterToolCallMiddleware,
-  runAfterTurnMiddleware,
-  runBeforeTurnMiddleware,
-  runInputFilters,
-  runOutputFilters,
-  runToolCallInterceptors,
-} from "@alexkroman1/aai/middleware-core";
-import type { AgentDef, HookContext, Middleware, ToolContext } from "@alexkroman1/aai/types";
-import type { VectorStore } from "@alexkroman1/aai/vector";
+import { buildMiddlewareRunner } from "@alexkroman1/aai/middleware";
+import type { AgentDef, HookContext, ToolContext } from "@alexkroman1/aai/types";
+import { createSessionStateMap } from "@alexkroman1/aai/utils";
 import type {
   HookRequest,
   HookResponse,
   IsolateConfig,
+  RpcRequest,
+  RpcResponse,
   ToolCallRequest,
   ToolCallResponse,
 } from "./_harness-protocol.ts";
+
+/** Lightweight error with HTTP status for RPC responses (no external deps). */
+class RpcError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
 
 const SIDECAR_URL = process.env.SIDECAR_URL ?? "";
 const HARNESS_AUTH_TOKEN = process.env.HARNESS_AUTH_TOKEN ?? "";
@@ -46,6 +49,8 @@ async function sidecarRpc<T>(path: string, body: unknown): Promise<T> {
   });
   if (!res.ok) throw new Error(`${path} failed: ${res.status}`);
   const text = await res.text();
+  // Host-validated: the sidecar runs in the same server process and returns
+  // trusted responses. Schema validation happens host-side (see sandbox-sidecar.ts).
   return text ? (JSON.parse(text) as T) : (null as T);
 }
 
@@ -64,18 +69,6 @@ const kv: Kv = {
   },
   keys(pattern?: string) {
     return sidecarRpc<string[]>("/kv/keys", { pattern });
-  },
-};
-
-const vector: VectorStore = {
-  upsert(id: string, data: string, metadata?: Record<string, unknown>) {
-    return sidecarRpc<void>("/vec/upsert", { id, data, metadata });
-  },
-  query(text: string, options?: { topK?: number; filter?: string }) {
-    return sidecarRpc("/vec/query", { text, ...options });
-  },
-  delete(ids: string | string[]) {
-    return sidecarRpc<void>("/vec/delete", { ids: Array.isArray(ids) ? ids : [ids] });
   },
 };
 
@@ -118,14 +111,10 @@ try {
   /* secure-exec may prevent override; ctx.fetch still works */
 }
 
-const sessionStates = new Map<string, Record<string, unknown>>();
-
-function getState(agent: AgentDef, sessionId: string): Record<string, unknown> {
-  if (!sessionStates.has(sessionId) && agent.state) {
-    sessionStates.set(sessionId, agent.state());
-  }
-  return sessionStates.get(sessionId) ?? {};
-}
+// Lazily-initialized per-session state (shared pattern with self-hosted mode).
+let sessionState: ReturnType<typeof createSessionStateMap>;
+// Middleware runner (shared builder with self-hosted mode). Undefined when no middleware.
+let middlewareRunner: ReturnType<typeof buildMiddlewareRunner>;
 
 function extractToolSchemas(agent: AgentDef): IsolateConfig["toolSchemas"] {
   return Object.entries(agent.tools).map(([name, def]) => ({
@@ -150,7 +139,6 @@ function extractConfig(agent: AgentDef): IsolateConfig {
       onDisconnect: typeof agent.onDisconnect === "function",
       onError: typeof agent.onError === "function",
       onTurn: typeof agent.onTurn === "function",
-      onStep: typeof agent.onStep === "function",
       maxStepsIsFn: typeof agent.maxSteps === "function",
       hasMiddleware: Array.isArray(agent.middleware) && agent.middleware.length > 0,
     },
@@ -162,24 +150,20 @@ function extractConfig(agent: AgentDef): IsolateConfig {
   return config;
 }
 
-// Must equal TOOL_TIMEOUT_MS (30s) - TOOL_TIMEOUT_MARGIN_MS (5s) in sandbox.ts
-// so the isolate returns a clean error before the host-side timeout aborts.
-const ISOLATE_TOOL_TIMEOUT_MS = 25_000;
+/** Tool timeout — must match HARNESS_TOOL_TIMEOUT_MS in constants.ts (30s).
+ *  Defined inline because the harness cannot import workspace packages at runtime. */
+const TOOL_TIMEOUT_MS = 30_000;
 
 async function executeTool(agent: AgentDef, req: ToolCallRequest): Promise<ToolCallResponse> {
   const tool = agent.tools[req.name];
-  if (!tool) throw Object.assign(new Error(`Unknown tool: ${req.name}`), { status: 404 });
+  if (!tool) throw new RpcError(`Unknown tool: ${req.name}`, 404);
 
   const ctx: ToolContext = {
     env: agentEnv,
-    state: getState(agent, req.sessionId),
+    state: sessionState.get(req.sessionId),
     sessionId: req.sessionId,
     kv,
-    vector,
     messages: req.messages,
-    sendUpdate() {
-      /* no-op in sandbox — no WebSocket access */
-    },
     fetch: sidecarFetch,
   };
 
@@ -188,28 +172,33 @@ async function executeTool(agent: AgentDef, req: ToolCallRequest): Promise<ToolC
       ? tool.parameters.parse(req.args)
       : req.args;
 
-  const result = await Promise.race([
-    tool.execute(parsed, ctx),
-    new Promise<never>((_resolve, reject) => {
-      setTimeout(
-        () => reject(new Error(`Tool "${req.name}" timed out after ${ISOLATE_TOOL_TIMEOUT_MS}ms`)),
-        ISOLATE_TOOL_TIMEOUT_MS,
-      );
-    }),
-  ]);
-  return {
-    result: typeof result === "string" ? result : JSON.stringify(result),
-    state: ctx.state,
-  };
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const result = await Promise.race([
+      tool.execute(parsed, ctx),
+      new Promise<never>((_resolve, reject) => {
+        timeoutId = setTimeout(
+          () =>
+            reject(new RpcError(`Tool "${req.name}" timed out after ${TOOL_TIMEOUT_MS}ms`, 504)),
+          TOOL_TIMEOUT_MS,
+        );
+      }),
+    ]);
+    return {
+      result: typeof result === "string" ? result : JSON.stringify(result),
+      state: ctx.state,
+    };
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
-function makeHookCtx(agent: AgentDef, req: HookRequest): HookContext {
+function makeHookCtx(_agent: AgentDef, req: HookRequest): HookContext {
   return {
     env: agentEnv,
-    state: getState(agent, req.sessionId),
+    state: sessionState.get(req.sessionId),
     sessionId: req.sessionId,
     kv,
-    vector,
     fetch: sidecarFetch,
   };
 }
@@ -225,82 +214,64 @@ async function runResolveTurnConfig(
   return null;
 }
 
-async function invokeMiddlewareHook(
-  agent: AgentDef,
-  req: HookRequest,
-  ctx: HookContext,
-): Promise<unknown> {
-  const middleware: readonly Middleware[] = agent.middleware ?? [];
-  switch (req.hook) {
-    case "filterInput":
-      return runInputFilters(middleware, req.text ?? "", ctx);
-    case "beforeTurn": {
-      const r = await runBeforeTurnMiddleware(middleware, req.text ?? "", ctx);
-      return r?.reason;
-    }
-    case "afterTurn":
-      await runAfterTurnMiddleware(middleware, req.text ?? "", ctx);
-      return;
-    case "interceptToolCall":
-      return runToolCallInterceptors(
-        middleware,
-        req.step?.toolCalls[0]?.toolName ?? "",
-        (req.step?.toolCalls[0]?.args as Record<string, unknown>) ?? {},
-        ctx,
-      );
-    case "afterToolCall":
-      await runAfterToolCallMiddleware(
-        middleware,
-        req.step?.toolCalls[0]?.toolName ?? "",
-        (req.step?.toolCalls[0]?.args as Record<string, unknown>) ?? {},
-        req.text ?? "",
-        ctx,
-      );
-      return;
-    case "filterOutput":
-      return runOutputFilters(middleware, req.text ?? "", ctx);
-    default:
-      return;
-  }
-}
-
 async function invokeHook(agent: AgentDef, req: HookRequest): Promise<HookResponse> {
   const ctx = makeHookCtx(agent, req);
   let result: unknown;
 
-  try {
-    switch (req.hook) {
-      case "onConnect":
-        await agent.onConnect?.(ctx);
-        break;
-      case "onDisconnect":
-        await agent.onDisconnect?.(ctx);
-        sessionStates.delete(req.sessionId);
-        break;
-      case "onTurn":
-        await agent.onTurn?.(req.text ?? "", ctx);
-        break;
-      case "onError":
-        await agent.onError?.(new Error(req.error?.message ?? "Unknown error"), ctx);
-        break;
-      case "onStep":
-        if (req.step) await agent.onStep?.(req.step, ctx);
-        break;
-      case "resolveTurnConfig":
-        result = await runResolveTurnConfig(agent, ctx);
-        break;
-      default:
-        result = await invokeMiddlewareHook(agent, req, ctx);
-        break;
-    }
-  } catch (err) {
-    sessionStates.delete(req.sessionId);
-    throw err;
+  switch (req.hook) {
+    case "onConnect":
+      await agent.onConnect?.(ctx);
+      break;
+    case "onDisconnect":
+      await agent.onDisconnect?.(ctx);
+      sessionState.delete(req.sessionId);
+      break;
+    case "onTurn":
+      await agent.onTurn?.(req.text ?? "", ctx);
+      break;
+    case "onError":
+      await agent.onError?.(new Error(req.error?.message ?? "Unknown error"), ctx);
+      break;
+    case "resolveTurnConfig":
+      result = await runResolveTurnConfig(agent, ctx);
+      break;
+    // Middleware hooks — dispatched to pre-built runner
+    case "filterInput":
+      result = await middlewareRunner?.filterInput(req.sessionId, req.text ?? "");
+      break;
+    case "beforeTurn":
+      result = await middlewareRunner?.beforeTurn(req.sessionId, req.text ?? "");
+      break;
+    case "afterTurn":
+      await middlewareRunner?.afterTurn(req.sessionId, req.text ?? "");
+      break;
+    case "interceptToolCall":
+      result = await middlewareRunner?.interceptToolCall(
+        req.sessionId,
+        req.toolName ?? "",
+        (req.toolArgs as Record<string, unknown>) ?? {},
+      );
+      break;
+    case "afterToolCall":
+      await middlewareRunner?.afterToolCall(
+        req.sessionId,
+        req.toolName ?? "",
+        (req.toolArgs as Record<string, unknown>) ?? {},
+        req.text ?? "",
+      );
+      break;
+    case "filterOutput":
+      result = await middlewareRunner?.filterOutput(req.sessionId, req.text ?? "");
+      break;
+    default:
+      break;
   }
 
   return { state: ctx.state, result };
 }
 
+/** Must match HARNESS_MAX_BODY_SIZE in constants.ts (5 MB).
+ *  Defined inline because the harness cannot import workspace packages at runtime. */
 const MAX_BODY_SIZE = 5 * 1024 * 1024;
 
 function readBody(req: IncomingMessage): Promise<string> {
@@ -334,49 +305,41 @@ function isAuthorized(req: IncomingMessage): boolean {
   return !HARNESS_AUTH_TOKEN || req.headers["x-harness-token"] === HARNESS_AUTH_TOKEN;
 }
 
-type RouteResult = { data: unknown; status?: number };
-
-async function parseJsonBody<T>(req: IncomingMessage): Promise<T | RouteResult> {
-  try {
-    return JSON.parse(await readBody(req)) as T;
-  } catch {
-    return { data: { error: "Invalid JSON in request body" }, status: 400 };
+async function dispatch(agent: AgentDef, msg: RpcRequest): Promise<RpcResponse> {
+  switch (msg.type) {
+    case "config":
+      return extractConfig(agent);
+    case "tool": {
+      if (!msg.name || typeof msg.name !== "string" || !msg.sessionId) {
+        throw new RpcError("Invalid tool call request: missing name or sessionId", 400);
+      }
+      return executeTool(agent, msg);
+    }
+    case "hook": {
+      if (!msg.hook || typeof msg.hook !== "string" || !msg.sessionId) {
+        throw new RpcError("Invalid hook request: missing hook or sessionId", 400);
+      }
+      return invokeHook(agent, msg);
+    }
+    default: {
+      const _: never = msg;
+      throw new RpcError(`Unknown RPC type: ${(_ as { type: string }).type}`, 400);
+    }
   }
-}
-
-function isRouteResult(v: unknown): v is RouteResult {
-  return typeof v === "object" && v !== null && "data" in v;
-}
-
-async function handleToolRoute(agent: AgentDef, req: IncomingMessage): Promise<RouteResult> {
-  const body = await parseJsonBody<ToolCallRequest>(req);
-  if (isRouteResult(body)) return body;
-  if (!body || typeof body.name !== "string" || typeof body.sessionId !== "string") {
-    return { data: { error: "Invalid tool call request: missing name or sessionId" }, status: 400 };
-  }
-  return { data: await executeTool(agent, body) };
-}
-
-async function handleHookRoute(agent: AgentDef, req: IncomingMessage): Promise<RouteResult> {
-  const body = await parseJsonBody<HookRequest>(req);
-  if (isRouteResult(body)) return body;
-  if (!body || typeof body.hook !== "string" || typeof body.sessionId !== "string") {
-    return { data: { error: "Invalid hook request: missing hook or sessionId" }, status: 400 };
-  }
-  return { data: await invokeHook(agent, body) };
-}
-
-async function handleRoute(agent: AgentDef, req: IncomingMessage): Promise<RouteResult> {
-  if (req.method === "GET" && req.url === "/config") return { data: extractConfig(agent) };
-  if (req.method === "POST" && req.url === "/tool") return handleToolRoute(agent, req);
-  if (req.method === "POST" && req.url === "/hook") return handleHookRoute(agent, req);
-  return { data: { error: "Not found" }, status: 404 };
 }
 
 export function startHarness(agent: AgentDef): void {
   if (!agent || typeof agent !== "object" || !agent.name) {
     throw new Error("Agent bundle must export a default agent definition");
   }
+  sessionState = createSessionStateMap(agent.state);
+  middlewareRunner = buildMiddlewareRunner(agent.middleware ?? [], (sid) => ({
+    env: agentEnv,
+    state: sessionState.get(sid),
+    sessionId: sid,
+    kv,
+    fetch: sidecarFetch,
+  }));
 
   const server = createServer(async (req, res) => {
     try {
@@ -384,10 +347,24 @@ export function startHarness(agent: AgentDef): void {
         json(res, { error: "Unauthorized" }, 401);
         return;
       }
-      const { data, status } = await handleRoute(agent, req);
-      json(res, data, status);
+      if (req.method !== "POST" || req.url !== "/rpc") {
+        json(res, { error: "Not found" }, 404);
+        return;
+      }
+      let msg: RpcRequest;
+      try {
+        // Host-validated: sandbox.ts validates RPC responses with Zod schemas
+        // (see callIsolate). The isolate trusts the host since both run in
+        // the same server process.
+        msg = JSON.parse(await readBody(req)) as RpcRequest;
+      } catch {
+        json(res, { error: "Invalid JSON in request body" }, 400);
+        return;
+      }
+      const result = await dispatch(agent, msg);
+      json(res, result);
     } catch (err: unknown) {
-      const status = (err as { status?: number }).status ?? 500;
+      const status = err instanceof RpcError ? err.status : 500;
       const message = err instanceof Error ? err.message : "Internal error";
       json(res, { error: message }, status);
     }

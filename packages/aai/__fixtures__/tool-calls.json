@@ -1,0 +1,11 @@
+[
+  {
+    "type": "tool.call",
+    "timestamp": 1774669406.466613,
+    "call_id": "chatcmpl-tool-9793a062159342bb8e221cbab79229e3",
+    "name": "get_weather",
+    "args": {
+      "city": "San Francisco"
+    }
+  }
+]

@@ -57,7 +57,6 @@
       "Bash(pnpm -r *)",
       "Bash(npx biome *)",
       "Bash(npx tsc *)",
-      "Bash(npx api-extractor *)",
       "Bash(node *)",
       "Bash(git status*)",
       "Bash(git diff*)",
