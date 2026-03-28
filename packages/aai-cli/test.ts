@@ -6,7 +6,7 @@
 import { execSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { runCommand, step } from "./_ui.ts";
+import { consola } from "./_ui.ts";
 
 /**
  * Run vitest in the given project directory.
@@ -21,7 +21,9 @@ export function runVitest(cwd: string): boolean {
 
   if (!hasTests) return false;
 
-  execSync("npx vitest run", {
+  const testFile = existsSync(path.join(cwd, "agent.test.ts")) ? "agent.test.ts" : "agent.test.js";
+
+  execSync(`npx vitest run --root . ${testFile}`, {
     cwd,
     stdio: "inherit",
     env: { ...process.env, NODE_OPTIONS: "--experimental-strip-types" },
@@ -32,13 +34,11 @@ export function runVitest(cwd: string): boolean {
 
 /** Run agent tests. Used by `aai test`. */
 export async function runTestCommand(cwd: string): Promise<void> {
-  await runCommand(async ({ log }) => {
-    log(step("Test", "running agent tests"));
-    const ran = runVitest(cwd);
-    if (!ran) {
-      log("No test files found (agent.test.ts). Skipping.");
-      return;
-    }
-    log(step("Test", "ok"));
-  });
+  consola.start("Running agent tests");
+  const ran = runVitest(cwd);
+  if (!ran) {
+    consola.info("No test files found (agent.test.ts). Skipping.");
+    return;
+  }
+  consola.success("Tests passed");
 }
