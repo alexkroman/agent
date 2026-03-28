@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test, vi } from "vitest";
 import {
+  buildMiddlewareRunner,
   runAfterToolCallMiddleware,
   runAfterTurnMiddleware,
   runBeforeTurnMiddleware,
@@ -573,5 +574,111 @@ describe("middleware error propagation (fail-open)", () => {
     await expect(
       runAfterToolCallMiddleware(mw, "tool", {}, "result", makeCtx()),
     ).resolves.toBeUndefined();
+  });
+});
+
+// ─── onError callback ──────────────────────────────────────────────────────────
+
+describe("onError callback", () => {
+  test("runner functions call onError with middleware name, hook, and error", async () => {
+    const onError = vi.fn();
+    const boom = new Error("boom");
+    const mw: Middleware[] = [
+      {
+        name: "guardrail",
+        beforeInput: () => {
+          throw boom;
+        },
+      },
+    ];
+    await runInputFilters(mw, "hello", makeCtx(), onError);
+    expect(onError).toHaveBeenCalledWith({
+      middleware: "guardrail",
+      hook: "beforeInput",
+      error: boom,
+    });
+  });
+
+  test("onError receives correct hook name for each phase", async () => {
+    const onError = vi.fn();
+    const thrower: Middleware = {
+      name: "bad-mw",
+      beforeInput: () => {
+        throw new Error("1");
+      },
+      beforeTurn: () => {
+        throw new Error("2");
+      },
+      afterTurn: () => {
+        throw new Error("3");
+      },
+      beforeToolCall: () => {
+        throw new Error("4");
+      },
+      afterToolCall: () => {
+        throw new Error("5");
+      },
+      beforeOutput: () => {
+        throw new Error("6");
+      },
+    };
+    const mw = [thrower];
+    const ctx = makeCtx();
+    await runInputFilters(mw, "", ctx, onError);
+    await runBeforeTurnMiddleware(mw, "", ctx, onError);
+    await runAfterTurnMiddleware(mw, "", ctx, onError);
+    await runToolCallInterceptors(mw, "t", {}, ctx, onError);
+    await runAfterToolCallMiddleware(mw, "t", {}, "", ctx, onError);
+    await runOutputFilters(mw, "", ctx, onError);
+
+    // biome-ignore lint/suspicious/noExplicitAny: test helper
+    const hooks = onError.mock.calls.map((c: any) => c[0].hook);
+    expect(hooks).toEqual([
+      "beforeInput",
+      "beforeTurn",
+      "afterTurn",
+      "beforeToolCall",
+      "afterToolCall",
+      "beforeOutput",
+    ]);
+  });
+
+  test("buildMiddlewareRunner threads onError to all hooks", async () => {
+    const onError = vi.fn();
+    const mw: Middleware[] = [
+      {
+        name: "failing-guardrail",
+        beforeInput: () => {
+          throw new Error("filter fail");
+        },
+        beforeOutput: () => {
+          throw new Error("output fail");
+        },
+      },
+    ];
+    // biome-ignore lint/style/noNonNullAssertion: non-empty middleware guarantees defined runner
+    const runner = buildMiddlewareRunner(mw, () => makeCtx(), onError)!;
+    await runner.filterInput("s1", "hi");
+    await runner.filterOutput("s1", "bye");
+    expect(onError).toHaveBeenCalledTimes(2);
+    expect(onError.mock.calls[0]?.[0].hook).toBe("beforeInput");
+    expect(onError.mock.calls[1]?.[0].hook).toBe("beforeOutput");
+  });
+
+  test("default onError uses console.warn", async () => {
+    const spy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const mw: Middleware[] = [
+      {
+        name: "thrower",
+        beforeTurn: () => {
+          throw new Error("boom");
+        },
+      },
+    ];
+    await runBeforeTurnMiddleware(mw, "hello", makeCtx());
+    expect(spy).toHaveBeenCalledOnce();
+    expect(spy.mock.calls[0]?.[0]).toContain("thrower");
+    expect(spy.mock.calls[0]?.[0]).toContain("beforeTurn");
+    spy.mockRestore();
   });
 });

@@ -41,7 +41,7 @@ export const AUTH_HASH_CACHE_MAX = 100;
 // ─── Harness runtime (isolate-side) ──────────────────────────────────────
 // These are duplicated as literals in _harness-runtime.ts because the
 // harness cannot import workspace packages at runtime (secure-exec
-// constraint). Keep them in sync manually.
+// constraint). The constant-sync build plugin enforces they stay in sync.
 
 /** Tool execution timeout inside the isolate (ms). Must match TOOL_EXECUTION_TIMEOUT_MS. */
 export const HARNESS_TOOL_TIMEOUT_MS = 30_000;

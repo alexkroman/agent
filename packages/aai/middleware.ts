@@ -9,6 +9,7 @@
 
 export {
   buildMiddlewareRunner,
+  type MiddlewareErrorHandler,
   runAfterToolCallMiddleware,
   runAfterTurnMiddleware,
   runBeforeTurnMiddleware,

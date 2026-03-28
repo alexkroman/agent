@@ -19,34 +19,54 @@ import type {
 // for what buildMiddlewareRunner produces.
 
 /**
+ * Called when a middleware hook throws. Receives the middleware name, the hook
+ * that failed, and the original error. The runner always continues (fail-open)
+ * regardless of what this callback does.
+ */
+export type MiddlewareErrorHandler = (info: {
+  middleware: string;
+  hook: string;
+  error: unknown;
+}) => void;
+
+const defaultOnError: MiddlewareErrorHandler = ({ middleware, hook, error }) => {
+  console.warn(`Middleware ${middleware} ${hook} failed:`, error);
+};
+
+/**
  * Build a MiddlewareRunner from an array of middleware and a context factory.
  * Returns `undefined` when the middleware array is empty (no-op optimization).
  *
  * Shared by both self-hosted (direct-executor) and platform (_harness-runtime)
  * to avoid duplicating the adapter logic.
+ *
+ * @param onError - Optional error handler. Defaults to `console.warn`. Called
+ *   when any middleware hook throws. The runner always continues (fail-open).
  */
 export function buildMiddlewareRunner(
   middleware: readonly Middleware[],
   makeCtx: (sid: string) => HookContext,
+  onError?: MiddlewareErrorHandler,
 ) {
   if (middleware.length === 0) return;
+  const handler = onError ?? defaultOnError;
   return {
     async filterInput(sessionId: string, text: string) {
-      return runInputFilters(middleware, text, makeCtx(sessionId));
+      return runInputFilters(middleware, text, makeCtx(sessionId), handler);
     },
     async beforeTurn(sessionId: string, text: string) {
-      const result = await runBeforeTurnMiddleware(middleware, text, makeCtx(sessionId));
+      const result = await runBeforeTurnMiddleware(middleware, text, makeCtx(sessionId), handler);
       return result?.reason;
     },
     async afterTurn(sessionId: string, text: string) {
-      await runAfterTurnMiddleware(middleware, text, makeCtx(sessionId));
+      await runAfterTurnMiddleware(middleware, text, makeCtx(sessionId), handler);
     },
     async interceptToolCall(
       sessionId: string,
       toolName: string,
       args: Readonly<Record<string, unknown>>,
     ) {
-      return runToolCallInterceptors(middleware, toolName, args, makeCtx(sessionId));
+      return runToolCallInterceptors(middleware, toolName, args, makeCtx(sessionId), handler);
     },
     async afterToolCall(
       sessionId: string,
@@ -54,10 +74,17 @@ export function buildMiddlewareRunner(
       args: Readonly<Record<string, unknown>>,
       result: string,
     ) {
-      await runAfterToolCallMiddleware(middleware, toolName, args, result, makeCtx(sessionId));
+      await runAfterToolCallMiddleware(
+        middleware,
+        toolName,
+        args,
+        result,
+        makeCtx(sessionId),
+        handler,
+      );
     },
     async filterOutput(sessionId: string, text: string) {
-      return runOutputFilters(middleware, text, makeCtx(sessionId));
+      return runOutputFilters(middleware, text, makeCtx(sessionId), handler);
     },
   };
 }
@@ -77,14 +104,15 @@ export async function runInputFilters(
   middleware: readonly Middleware[],
   text: string,
   ctx: HookContext,
+  onError: MiddlewareErrorHandler = defaultOnError,
 ): Promise<string> {
   let filtered = text;
   for (const mw of middleware) {
     if (!mw.beforeInput) continue;
     try {
       filtered = await mw.beforeInput(filtered, ctx);
-    } catch (err) {
-      console.warn("Middleware beforeInput failed:", err);
+    } catch (error) {
+      onError({ middleware: mw.name, hook: "beforeInput", error });
     }
   }
   return filtered;
@@ -98,6 +126,7 @@ export async function runBeforeTurnMiddleware(
   middleware: readonly Middleware[],
   text: string,
   ctx: HookContext,
+  onError: MiddlewareErrorHandler = defaultOnError,
 ): Promise<MiddlewareBlockResult | undefined> {
   for (const mw of middleware) {
     if (!mw.beforeTurn) continue;
@@ -106,8 +135,8 @@ export async function runBeforeTurnMiddleware(
       if (result && "block" in result && result.block) {
         return result;
       }
-    } catch (err) {
-      console.warn("Middleware beforeTurn failed:", err);
+    } catch (error) {
+      onError({ middleware: mw.name, hook: "beforeTurn", error });
     }
   }
 }
@@ -119,14 +148,15 @@ export async function runAfterTurnMiddleware(
   middleware: readonly Middleware[],
   text: string,
   ctx: HookContext,
+  onError: MiddlewareErrorHandler = defaultOnError,
 ): Promise<void> {
   for (let i = middleware.length - 1; i >= 0; i--) {
     const mw = middleware[i];
     if (!mw?.afterTurn) continue;
     try {
       await mw.afterTurn(text, ctx);
-    } catch (err) {
-      console.warn("Middleware afterTurn failed:", err);
+    } catch (error) {
+      onError({ middleware: mw.name, hook: "afterTurn", error });
     }
   }
 }
@@ -141,6 +171,7 @@ export async function runToolCallInterceptors(
   toolName: string,
   args: Readonly<Record<string, unknown>>,
   ctx: HookContext,
+  onError: MiddlewareErrorHandler = defaultOnError,
 ): Promise<ToolInterceptResult> {
   let currentArgs = args;
   for (const mw of middleware) {
@@ -157,8 +188,8 @@ export async function runToolCallInterceptors(
       if ("args" in result) {
         currentArgs = result.args;
       }
-    } catch (err) {
-      console.warn("Middleware beforeToolCall failed:", err);
+    } catch (error) {
+      onError({ middleware: mw.name, hook: "beforeToolCall", error });
     }
   }
   // If any middleware transformed args, return the final transformed version
@@ -176,14 +207,15 @@ export async function runAfterToolCallMiddleware(
   args: Readonly<Record<string, unknown>>,
   result: string,
   ctx: HookContext,
+  onError: MiddlewareErrorHandler = defaultOnError,
 ): Promise<void> {
   for (let i = middleware.length - 1; i >= 0; i--) {
     const mw = middleware[i];
     if (!mw?.afterToolCall) continue;
     try {
       await mw.afterToolCall(toolName, args, result, ctx);
-    } catch (err) {
-      console.warn("Middleware afterToolCall failed:", err);
+    } catch (error) {
+      onError({ middleware: mw.name, hook: "afterToolCall", error });
     }
   }
 }
@@ -195,14 +227,15 @@ export async function runOutputFilters(
   middleware: readonly Middleware[],
   text: string,
   ctx: HookContext,
+  onError: MiddlewareErrorHandler = defaultOnError,
 ): Promise<string> {
   let filtered = text;
   for (const mw of middleware) {
     if (!mw.beforeOutput) continue;
     try {
       filtered = await mw.beforeOutput(filtered, ctx);
-    } catch (err) {
-      console.warn("Middleware beforeOutput failed:", err);
+    } catch (error) {
+      onError({ middleware: mw.name, hook: "beforeOutput", error });
     }
   }
   return filtered;
