@@ -3,8 +3,8 @@
  * Self-hostable agent server.
  *
  * `createServer()` returns a server with `listen()` for HTTP + WebSocket.
- * Calls `createDirectExecutor` + `wireSessionSocket` directly — no
- * intermediary needed.
+ * Uses {@link createDirectExecutor} which satisfies the {@link AgentRuntime}
+ * interface — the server itself is runtime-agnostic.
  */
 
 import { serve } from "@hono/node-server";
@@ -16,13 +16,10 @@ import { secureHeaders } from "hono/secure-headers";
 import { createStorage, type Storage } from "unstorage";
 import { filterEnv } from "./_utils.ts";
 import { createDirectExecutor } from "./direct-executor.ts";
-import { buildReadyConfig } from "./protocol.ts";
 import type { Logger, S2SConfig } from "./runtime.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime.ts";
-import type { Session } from "./session.ts";
 import type { AgentDef } from "./types.ts";
 import { createUnstorageKv } from "./unstorage-kv.ts";
-import { type SessionWebSocket, wireSessionSocket } from "./ws-handler.ts";
 
 /**
  * Configuration for a self-hosted agent server created by {@link createServer}.
@@ -99,34 +96,6 @@ export type AgentServer = {
  *
  * @public
  */
-async function drainSessions(
-  sessions: Map<string, Session>,
-  shutdownTimeoutMs: number,
-  logger: Logger,
-): Promise<void> {
-  if (sessions.size === 0) return;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<"timeout">((resolve) => {
-    timer = setTimeout(resolve, shutdownTimeoutMs, "timeout");
-  });
-  const graceful = Promise.allSettled([...sessions.values()].map((s) => s.stop())).then(
-    (results) => {
-      for (const r of results) {
-        if (r.status === "rejected") logger.warn(`Session stop failed during close: ${r.reason}`);
-      }
-      return "done" as const;
-    },
-  );
-  const outcome = await Promise.race([graceful, timeout]);
-  if (timer) clearTimeout(timer);
-  if (outcome === "timeout") {
-    logger.warn(
-      `Shutdown timeout (${shutdownTimeoutMs}ms) exceeded — force-closing ${sessions.size} remaining session(s)`,
-    );
-  }
-  sessions.clear();
-}
-
 export function createServer(options: ServerOptions): AgentServer {
   if (options.clientHtml && options.clientDir) {
     throw new Error(
@@ -146,34 +115,15 @@ export function createServer(options: ServerOptions): AgentServer {
   const storage = options.storage ?? createStorage();
   const kv = createUnstorageKv({ storage });
 
-  const executor = createDirectExecutor({
+  const runtime = createDirectExecutor({
     agent,
     env,
     kv,
     logger,
     s2sConfig,
+    sessionStartTimeoutMs: options.sessionStartTimeoutMs,
+    shutdownTimeoutMs,
   });
-  const sessions = new Map<string, Session>();
-  const readyConfig = buildReadyConfig(s2sConfig);
-
-  function handleWs(ws: SessionWebSocket, skipGreeting: boolean, resumeFrom?: string): void {
-    wireSessionSocket(ws, {
-      sessions,
-      createSession: (sid, client) =>
-        executor.createSession({
-          id: sid,
-          agent: agent.name,
-          client,
-          skipGreeting,
-        }),
-      readyConfig,
-      logger,
-      ...(options.sessionStartTimeoutMs !== undefined
-        ? { sessionStartTimeoutMs: options.sessionStartTimeoutMs }
-        : {}),
-      ...(resumeFrom ? { resumeFrom } : {}),
-    });
-  }
 
   let serverHandle: { shutdown(): Promise<void> } | null = null;
   let listenPort: number | undefined;
@@ -252,7 +202,11 @@ export function createServer(options: ServerOptions): AgentServer {
           logger.info(`WS upgrade ${c.req.path}${skipGreeting ? " (resume)" : ""}`);
           return {
             onOpen(_evt, ws) {
-              if (ws.raw) handleWs(ws.raw, skipGreeting, resumeFrom);
+              if (ws.raw)
+                runtime.startSession(ws.raw, {
+                  skipGreeting,
+                  ...(resumeFrom ? { resumeFrom } : {}),
+                });
             },
           };
         }),
@@ -279,7 +233,7 @@ export function createServer(options: ServerOptions): AgentServer {
     },
 
     async close() {
-      await drainSessions(sessions, shutdownTimeoutMs, logger);
+      await runtime.shutdown();
       await serverHandle?.shutdown();
       listenPort = undefined;
     },

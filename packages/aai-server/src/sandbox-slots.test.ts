@@ -15,9 +15,12 @@ import {
 // ── Mock createSandbox ──────────────────────────────────────────────────
 
 function makeMockSandbox(): Sandbox {
+  const shutdown = vi.fn().mockResolvedValue(undefined);
   return {
     startSession: vi.fn(),
-    terminate: vi.fn().mockResolvedValue(undefined),
+    shutdown,
+    terminate: shutdown,
+    readyConfig: { audioFormat: "pcm16", sampleRate: 16_000, ttsSampleRate: 24_000 },
   };
 }
 

@@ -163,7 +163,11 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
             }
             const resumeFrom = c.req.query("sessionId") ?? undefined;
             const skipGreeting = c.req.query("resume") !== undefined || resumeFrom !== undefined;
-            if (ws.raw) sandbox.startSession(ws.raw, skipGreeting, resumeFrom);
+            if (ws.raw)
+              sandbox.startSession(ws.raw, {
+                skipGreeting,
+                ...(resumeFrom ? { resumeFrom } : {}),
+              });
           } catch (err: unknown) {
             console.error("WebSocket open error:", err);
             ws.close(1011, "Internal error");

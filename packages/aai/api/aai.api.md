@@ -21,7 +21,6 @@ export type AgentDef<S = Record<string, unknown>> = {
     onDisconnect?: (ctx: HookContext<S>) => void | Promise<void>;
     onError?: (error: Error, ctx?: HookContext<S>) => void;
     onTurn?: (text: string, ctx: HookContext<S>) => void | Promise<void>;
-    onStep?: (step: StepInfo, ctx: HookContext<S>) => void | Promise<void>;
     middleware?: readonly Middleware<S>[];
     idleTimeoutMs?: number;
 };
@@ -41,13 +40,12 @@ export type AgentOptions<S = Record<string, unknown>> = {
     onDisconnect?: (ctx: HookContext<S>) => void | Promise<void>;
     onError?: (error: Error, ctx?: HookContext<S>) => void;
     onTurn?: (text: string, ctx: HookContext<S>) => void | Promise<void>;
-    onStep?: (step: StepInfo, ctx: HookContext<S>) => void | Promise<void>;
     middleware?: readonly Middleware<S>[];
     idleTimeoutMs?: number;
 };
 
 // @public
-export type BuiltinTool = "web_search" | "visit_webpage" | "fetch_json" | "run_code" | "vector_search" | "memory";
+export type BuiltinTool = "web_search" | "visit_webpage" | "fetch_json" | "run_code" | "memory";
 
 // @public
 export function createToolFactory<S = Record<string, unknown>>(): <P extends z.ZodObject<z.ZodRawShape>>(def: ToolDef<P, S>) => ToolDef<P, S>;
@@ -111,16 +109,6 @@ export type MiddlewareBlockResult = {
 };
 
 // @public
-export type StepInfo = {
-    stepNumber: number;
-    toolCalls: readonly {
-        toolName: string;
-        args: Readonly<Record<string, unknown>>;
-    }[];
-    text: string;
-};
-
-// @public
 export type ToolCallInterceptResult = {
     result: string;
 } | {
@@ -141,7 +129,6 @@ export type ToolContext<S = Record<string, unknown>> = {
     env: Readonly<Record<string, string>>;
     state: S;
     kv: Kv;
-    vector: VectorStore;
     messages: readonly Message[];
     fetch: typeof globalThis.fetch;
     sessionId: string;
@@ -156,24 +143,6 @@ export type ToolDef<P extends z.ZodObject<z.ZodRawShape> = z.ZodObject<z.ZodRawS
 
 // @public
 export type ToolResultMap<T extends Record<string, unknown> = Record<string, unknown>> = T;
-
-// @public
-export type VectorEntry = {
-    id: string;
-    score: number;
-    data?: string | undefined;
-    metadata?: Record<string, unknown> | undefined;
-};
-
-// @public
-export type VectorStore = {
-    upsert(id: string, data: string, metadata?: Record<string, unknown>): Promise<void>;
-    query(text: string, options?: {
-        topK?: number;
-        filter?: string;
-    }): Promise<VectorEntry[]>;
-    delete(ids: string | string[]): Promise<void>;
-};
 
 // (No @packageDocumentation comment for this package)
 

@@ -235,4 +235,21 @@ describe("createDirectExecutor", () => {
     const result = await exec.executeTool("get_env", {}, "s1", []);
     expect(result).toBe("hello");
   });
+
+  test("readyConfig is present with audio format", () => {
+    const exec = createDirectExecutor({ agent: makeAgent(), env: {} });
+    expect(exec.readyConfig).toEqual(
+      expect.objectContaining({ audioFormat: "pcm16", sampleRate: expect.any(Number) }),
+    );
+  });
+
+  test("shutdown resolves immediately when no sessions exist", async () => {
+    const exec = createDirectExecutor({ agent: makeAgent(), env: {} });
+    await expect(exec.shutdown()).resolves.toBeUndefined();
+  });
+
+  test("startSession is a function", () => {
+    const exec = createDirectExecutor({ agent: makeAgent(), env: {} });
+    expect(typeof exec.startSession).toBe("function");
+  });
 });

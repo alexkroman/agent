@@ -2,6 +2,7 @@
 /** Agent sandbox using secure-exec V8 isolates. */
 
 import { randomBytes } from "node:crypto";
+import type { AgentRuntime, SessionStartOptions } from "@alexkroman1/aai/adapter";
 import { toAgentConfig } from "@alexkroman1/aai/internal-types";
 import {
   buildReadyConfig,
@@ -53,8 +54,8 @@ export type SandboxOptions = {
   slug: string;
 };
 
-export type Sandbox = {
-  startSession(socket: SessionWebSocket, skipGreeting?: boolean, resumeFrom?: string): void;
+export type Sandbox = AgentRuntime & {
+  /** @deprecated Use {@link AgentRuntime.shutdown} instead. Kept for existing callers. */
   terminate(): Promise<void>;
 };
 
@@ -346,8 +347,33 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
 
   console.info("Sandbox initialized", { slug, isolatePort });
 
+  async function shutdownSandbox(): Promise<void> {
+    // Stop all sessions before disposing runtime/sidecar.
+    const stops = [...sessions.values()].map((s) =>
+      s.stop().catch((err) => {
+        console.warn("Session stop failed during sandbox terminate:", err);
+      }),
+    );
+    await Promise.all(stops);
+    sessions.clear();
+    await runtime.terminate().catch((err: unknown) => {
+      // "Isolate is already disposed" is expected during shutdown — ignore it.
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.includes("already disposed")) {
+        console.warn("Runtime terminate failed:", err);
+      }
+    });
+    try {
+      sidecar.close();
+    } catch {
+      /* already closed */
+    }
+  }
+
   return {
-    startSession(socket: SessionWebSocket, skipGreeting?: boolean, resumeFrom?: string): void {
+    readyConfig,
+    startSession(socket: SessionWebSocket, startOpts?: SessionStartOptions): void {
+      const resumeFrom = startOpts?.resumeFrom;
       wireSessionSocket(socket, {
         sessions,
         createSession: (sid, client) =>
@@ -361,34 +387,18 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
             s2sConfig,
             executeTool,
             hookInvoker,
-            skipGreeting: skipGreeting ?? false,
+            skipGreeting: startOpts?.skipGreeting ?? false,
+            ...(resumeFrom ? { resumeFrom } : {}),
           }),
         readyConfig,
+        ...(startOpts?.logContext ? { logContext: startOpts.logContext } : {}),
+        ...(startOpts?.onOpen ? { onOpen: startOpts.onOpen } : {}),
+        ...(startOpts?.onClose ? { onClose: startOpts.onClose } : {}),
         ...(resumeFrom ? { resumeFrom } : {}),
       });
     },
-    async terminate(): Promise<void> {
-      // Stop all sessions before disposing runtime/sidecar.
-      const stops = [...sessions.values()].map((s) =>
-        s.stop().catch((err) => {
-          console.warn("Session stop failed during sandbox terminate:", err);
-        }),
-      );
-      await Promise.all(stops);
-      sessions.clear();
-      await runtime.terminate().catch((err: unknown) => {
-        // "Isolate is already disposed" is expected during shutdown — ignore it.
-        const msg = err instanceof Error ? err.message : String(err);
-        if (!msg.includes("already disposed")) {
-          console.warn("Runtime terminate failed:", err);
-        }
-      });
-      try {
-        sidecar.close();
-      } catch {
-        /* already closed */
-      }
-    },
+    shutdown: shutdownSandbox,
+    terminate: shutdownSandbox,
   };
 }
 

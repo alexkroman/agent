@@ -365,7 +365,7 @@ describe("WebSocket session lifecycle", () => {
       },
     };
 
-    sandbox.startSession(ws as unknown as WebSocket, false);
+    sandbox.startSession(ws as unknown as WebSocket, { skipGreeting: false });
 
     await new Promise((r) => setTimeout(r, 200));
 
