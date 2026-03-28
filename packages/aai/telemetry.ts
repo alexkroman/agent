@@ -22,6 +22,7 @@ import {
   type Tracer,
   trace,
 } from "@opentelemetry/api";
+import { errorMessage } from "./_utils.ts";
 
 // ─── Scoped instances ────────────────────────────────────────────────────────
 
@@ -126,9 +127,9 @@ export function withSpan<T>(name: string, fn: (span: Span) => T): T {
           .catch((err: unknown) => {
             span.setStatus({
               code: SpanStatusCode.ERROR,
-              message: err instanceof Error ? err.message : String(err),
+              message: errorMessage(err),
             });
-            span.recordException(err instanceof Error ? err : new Error(String(err)));
+            span.recordException(err instanceof Error ? err : new Error(errorMessage(err)));
             span.end();
             throw err;
           }) as T;
@@ -139,9 +140,9 @@ export function withSpan<T>(name: string, fn: (span: Span) => T): T {
     } catch (err: unknown) {
       span.setStatus({
         code: SpanStatusCode.ERROR,
-        message: err instanceof Error ? err.message : String(err),
+        message: errorMessage(err),
       });
-      span.recordException(err instanceof Error ? err : new Error(String(err)));
+      span.recordException(err instanceof Error ? err : new Error(errorMessage(err)));
       span.end();
       throw err;
     }

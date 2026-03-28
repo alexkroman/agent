@@ -27,6 +27,7 @@
     "hono": "^4.12.9",
     "lru-cache": "^11.2.7",
     "mime-types": "^3.0.2",
+    "p-timeout": "^7.0.1",
     "secure-exec": "^0.1.0",
     "unstorage": "^1.17.5",
     "zod": "^4.3.6"

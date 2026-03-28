@@ -3,6 +3,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { errorMessage } from "@alexkroman1/aai/utils";
 import { generateText, stepCountIs } from "ai";
 import { consola as _consola } from "consola";
 import { getApiKey } from "./_discover.ts";
@@ -129,7 +130,7 @@ export async function runGenerateCommand(opts: { cwd: string; prompt: string }):
 
     consola.success(`Done (${result.steps.length} steps, ${result.usage.totalTokens} tokens)`);
   } catch (err) {
-    consola.error(err instanceof Error ? err.message : String(err));
+    consola.error(errorMessage(err));
     process.exitCode = 1;
   }
 }

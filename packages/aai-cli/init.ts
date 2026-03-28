@@ -4,6 +4,7 @@ import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
+import { errorMessage } from "@alexkroman1/aai/utils";
 import { colorize } from "consola/utils";
 import { ensureApiKeyInEnv, fileExists, resolveCwd } from "./_discover.ts";
 import { askText } from "./_prompts.ts";
@@ -38,7 +39,7 @@ async function installDeps(cwd: string): Promise<void> {
   try {
     await execFileAsync("npm", ["install"], { cwd });
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     consola.warn(`npm install failed: ${msg}`);
     consola.warn("Run `npm install` manually in the project directory to install dependencies.");
   }

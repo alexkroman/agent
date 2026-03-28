@@ -12,9 +12,10 @@ import {
 import { DEFAULT_S2S_CONFIG } from "@alexkroman1/aai/runtime";
 import { createS2sSession, type HookInvoker, type Session } from "@alexkroman1/aai/session";
 import { createUnstorageKv } from "@alexkroman1/aai/unstorage-kv";
-import { isReadOnlyFsOp } from "@alexkroman1/aai/utils";
+import { errorMessage, isReadOnlyFsOp } from "@alexkroman1/aai/utils";
 import type { ExecuteTool } from "@alexkroman1/aai/worker-entry";
 import { type SessionWebSocket, wireSessionSocket } from "@alexkroman1/aai/ws-handler";
+import pTimeout from "p-timeout";
 import {
   createInMemoryFileSystem,
   createNodeDriver,
@@ -149,24 +150,16 @@ async function startIsolate(
       rejectPort(new Error(`Isolate exited before announcing port: ${err}`));
     });
 
-  const timeoutId = setTimeout(() => {
-    rejectPort(new Error(`Isolate failed to announce port within ${PORT_ANNOUNCE_TIMEOUT_MS}ms`));
-  }, PORT_ANNOUNCE_TIMEOUT_MS);
-
-  let port: number;
-  try {
-    port = await portPromise;
-  } finally {
-    clearTimeout(timeoutId);
-  }
+  const port = await pTimeout(portPromise, {
+    milliseconds: PORT_ANNOUNCE_TIMEOUT_MS,
+    message: `Isolate failed to announce port within ${PORT_ANNOUNCE_TIMEOUT_MS}ms`,
+  });
 
   // After port is resolved, let exec run in background. If it rejects
   // unexpectedly (crash), abort the crash signal so in-flight calls fail fast.
   execPromise.catch((err) => {
     if (!crashController.signal.aborted) {
-      crashController.abort(
-        new Error(`Isolate crashed: ${err instanceof Error ? err.message : err}`),
-      );
+      crashController.abort(new Error(`Isolate crashed: ${errorMessage(err)}`));
     }
   });
 
@@ -364,7 +357,7 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
     sessions.clear();
     await runtime.terminate().catch((err: unknown) => {
       // "Isolate is already disposed" is expected during shutdown — ignore it.
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errorMessage(err);
       if (!msg.includes("already disposed")) {
         console.warn("Runtime terminate failed:", err);
       }

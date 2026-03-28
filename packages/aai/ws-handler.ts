@@ -66,7 +66,7 @@ function createClientSink(ws: SessionWebSocket, log: Logger): ClientSink {
       ws.send(data);
     } catch (err) {
       log.debug?.("safeSend: socket closed between readyState check and send", {
-        error: err instanceof Error ? err.message : String(err),
+        error: errorMessage(err),
       });
       wsSendDroppedCounter.add(1);
     }

@@ -8,6 +8,7 @@ import type { Stats } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
+import { errorMessage } from "@alexkroman1/aai/utils";
 import type { Tool } from "ai";
 import { z } from "zod";
 
@@ -52,7 +53,7 @@ function formatExecError(err: unknown): string {
     const e = err as { stdout: string; stderr: string; code: number };
     return `Exit code ${e.code}\n${`${e.stdout}\n${e.stderr}`.trim()}`;
   }
-  return `Error: ${err instanceof Error ? err.message : String(err)}`;
+  return `Error: ${errorMessage(err)}`;
 }
 
 function truncateOutput(output: string): string {
@@ -251,7 +252,7 @@ function makeSearchTools(workDir: string): Record<string, Tool> {
           if (isRgNoMatch(err)) {
             return "No files found matching pattern.";
           }
-          return `Error running glob: ${err instanceof Error ? err.message : String(err)}`;
+          return `Error running glob: ${errorMessage(err)}`;
         }
       },
     },
@@ -300,7 +301,7 @@ function makeSearchTools(workDir: string): Record<string, Tool> {
           if (isRgNoMatch(err)) {
             return "No matches found.";
           }
-          return `Error running grep: ${err instanceof Error ? err.message : String(err)}`;
+          return `Error running grep: ${errorMessage(err)}`;
         }
       },
     },
