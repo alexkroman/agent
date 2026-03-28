@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Slow CLI tests (formerly split across pack-build + e2e):
- *   1. Pack + build: dev & user workflows for every template
+ * End-to-end CLI tests (Vite builds, real servers, Playwright browser):
+ *   1. Template builds: dev & user workflows for every template
  *   2. CLI commands: dev --check, start, deploy --dry-run
  *   3. Browser tests (Playwright): UI render, WebSocket, conversation flow
  *

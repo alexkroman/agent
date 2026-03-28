@@ -88,7 +88,7 @@ export default defineConfig({
           root: "packages/aai-cli",
           include: ["**/*.test.ts"],
           exclude: [
-            "pack-build.test.ts",
+            "e2e.test.ts",
             "node_modules",
             "dist",
           ],

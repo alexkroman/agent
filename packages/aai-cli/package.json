@@ -12,7 +12,7 @@
     "build": "tsdown",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
-    "test:e2e": "vitest run pack-build.test.ts -c vitest.slow.config.ts",
+    "test:e2e": "vitest run e2e.test.ts -c vitest.slow.config.ts",
     "check:e2e": "pnpm run test:e2e"
   },
   "dependencies": {
