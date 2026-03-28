@@ -105,7 +105,7 @@ export async function resolveServerEnv(
 }
 
 /**
- * Create and start an agent server with static file serving.
+ * Create and start an agent server, optionally with static file serving.
  *
  * NOTE: This dynamically imports `@alexkroman1/aai/server` which has peer
  * dependencies on `hono` and `@hono/node-server`. Those packages are listed
@@ -114,29 +114,16 @@ export async function resolveServerEnv(
  */
 export async function bootServer(
   agentDef: AgentDef,
-  clientDir: string,
+  clientDir: string | undefined,
   env: Record<string, string>,
   port: number,
 ): Promise<AgentServer> {
   const { createServer } = await import("@alexkroman1/aai/server");
-  const server = createServer({ agent: agentDef, clientDir, env });
-  await server.listen(port);
-  return server;
-}
-
-/**
- * Boot the agent server without client serving.
- *
- * Used in dev mode where Vite handles client files with HMR,
- * and only the backend (health, WebSocket) runs on this server.
- */
-export async function bootBackendServer(
-  agentDef: AgentDef,
-  env: Record<string, string>,
-  port: number,
-): Promise<AgentServer> {
-  const { createServer } = await import("@alexkroman1/aai/server");
-  const server = createServer({ agent: agentDef, env });
+  const server = createServer({
+    agent: agentDef,
+    ...(clientDir ? { clientDir } : {}),
+    env,
+  });
   await server.listen(port);
   return server;
 }

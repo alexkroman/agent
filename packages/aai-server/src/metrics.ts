@@ -140,36 +140,8 @@ function formatResult(result: CollectionResult, agentFilter: string | undefined)
   return `${lines.join("\n")}\n`;
 }
 
-// ─── Convenience factories (for server-specific metrics) ─────────────────────
-
-const serverMeter = metrics.getMeter("aai-server", "0.9.3");
-
-function createCounter(name: string, opts: { help: string; labelNames?: string[] }) {
-  return serverMeter.createCounter(name, { description: opts.help });
-}
-
-function createGauge(name: string, opts: { help: string; labelNames?: string[] }) {
-  return serverMeter.createUpDownCounter(name, { description: opts.help });
-}
-
-function createHistogram(
-  name: string,
-  opts: { help: string; buckets?: number[]; labelNames?: string[] },
-) {
-  const options: { description: string; advice?: { explicitBucketBoundaries: number[] } } = {
-    description: opts.help,
-  };
-  if (opts.buckets) {
-    options.advice = { explicitBucketBoundaries: opts.buckets };
-  }
-  return serverMeter.createHistogram(name, options);
-}
-
 /** @internal Not part of the public API. Exposed for testing only. */
 export const _internals = {
-  createCounter,
-  createGauge,
-  createHistogram,
   meterProvider,
   exporter,
 };

@@ -1,17 +1,13 @@
 // Copyright 2025 the AAI authors. MIT license.
-import { afterEach, describe, expect, test } from "vitest";
-import { _internals, serialize, serializeForAgent } from "./metrics.ts";
+import { metrics } from "@opentelemetry/api";
+import { describe, expect, test } from "vitest";
+import { serialize, serializeForAgent } from "./metrics.ts";
 
-const { createCounter, createGauge, createHistogram } = _internals;
-
-afterEach(async () => {
-  // Force a collection to flush, then we'll start fresh
-  // OTel SDK metrics are cumulative, so we rely on fresh metric names per test
-});
+const meter = metrics.getMeter("aai-server-test");
 
 describe("metrics", () => {
   test("serialize returns Prometheus-like text format", async () => {
-    const counter = createCounter("test_total", { help: "test counter" });
+    const counter = meter.createCounter("test_total", { description: "test counter" });
     counter.add(1);
     const output = await serialize();
     expect(output).toContain("# HELP test_total test counter");
@@ -19,9 +15,8 @@ describe("metrics", () => {
   });
 
   test("serializeForAgent filters by agent label", async () => {
-    const counter = createCounter("req_total", {
-      help: "requests",
-      labelNames: ["agent"],
+    const counter = meter.createCounter("req_total", {
+      description: "requests",
     });
     counter.add(1, { agent: "my-agent" });
     counter.add(1, { agent: "other-agent" });
@@ -33,9 +28,8 @@ describe("metrics", () => {
   });
 
   test("serializeForAgent returns empty metrics for unknown agent", async () => {
-    const counter = createCounter("req2_total", {
-      help: "requests",
-      labelNames: ["agent"],
+    const counter = meter.createCounter("req2_total", {
+      description: "requests",
     });
     counter.add(1, { agent: "real-agent" });
 
@@ -45,9 +39,8 @@ describe("metrics", () => {
   });
 
   test("createGauge can inc and dec", async () => {
-    const gauge = createGauge("active_sessions_test", {
-      help: "active",
-      labelNames: ["agent"],
+    const gauge = meter.createUpDownCounter("active_sessions_test", {
+      description: "active",
     });
     gauge.add(1, { agent: "a" });
     gauge.add(1, { agent: "a" });
@@ -58,10 +51,9 @@ describe("metrics", () => {
   });
 
   test("createHistogram observes values with bucket lines", async () => {
-    const hist = createHistogram("duration_seconds_test", {
-      help: "duration",
-      buckets: [0.1, 0.5, 1],
-      labelNames: ["agent"],
+    const hist = meter.createHistogram("duration_seconds_test", {
+      description: "duration",
+      advice: { explicitBucketBoundaries: [0.1, 0.5, 1] },
     });
     hist.record(0.3, { agent: "a" });
 
@@ -73,10 +65,9 @@ describe("metrics", () => {
   });
 
   test("serialize includes histogram buckets for all agents", async () => {
-    const hist = createHistogram("latency_test", {
-      help: "latency",
-      buckets: [0.5, 1],
-      labelNames: ["agent"],
+    const hist = meter.createHistogram("latency_test", {
+      description: "latency",
+      advice: { explicitBucketBoundaries: [0.5, 1] },
     });
     hist.record(0.7, { agent: "b" });
 
@@ -88,9 +79,8 @@ describe("metrics", () => {
   });
 
   test("serialize counter with labels includes label string", async () => {
-    const counter = createCounter("labeled_total", {
-      help: "labeled",
-      labelNames: ["agent", "method"],
+    const counter = meter.createCounter("labeled_total", {
+      description: "labeled",
     });
     counter.add(1, { agent: "x", method: "GET" });
 
@@ -100,9 +90,8 @@ describe("metrics", () => {
   });
 
   test("non-string attribute values are converted to strings", async () => {
-    const counter = createCounter("nonstr_total", {
-      help: "non-string attrs",
-      labelNames: ["agent", "status"],
+    const counter = meter.createCounter("nonstr_total", {
+      description: "non-string attrs",
     });
     counter.add(1, { agent: "a", status: 200 });
 

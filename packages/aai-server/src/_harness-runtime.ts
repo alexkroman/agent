@@ -1,6 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
 /** Sandbox harness runtime -- runs inside the secure-exec V8 isolate. */
-// biome-ignore lint/nursery/noExcessiveLinesPerFile: single-file isolate runtime, splitting would break sandbox constraints
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { Kv } from "@alexkroman1/aai/kv";
 import {

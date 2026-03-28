@@ -3,7 +3,7 @@
 import { buildAgentBundle } from "./_build.ts";
 import { createClientDevServer } from "./_bundler.ts";
 import { loadAgent } from "./_discover.ts";
-import { bootBackendServer, bootServer, loadAgentDef, resolveServerEnv } from "./_server-common.ts";
+import { bootServer, loadAgentDef, resolveServerEnv } from "./_server-common.ts";
 import { info, parsePort, runCommand, step } from "./_ui.ts";
 
 /** Build, boot, and verify the server — used by `--check` mode. */
@@ -71,7 +71,7 @@ export async function _startDevServer(
 
   // Backend runs on an internal port; Vite proxies to it
   const backendPort = port + 1;
-  await bootBackendServer(agentDef, env, backendPort);
+  await bootServer(agentDef, undefined, env, backendPort);
 
   if (agent.clientEntry) {
     const vite = await createClientDevServer(cwd, backendPort, port);
