@@ -106,7 +106,7 @@
     "build": "tsdown && tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
-    "check:api": "api-extractor run -c api-extractor.json",
+    "check:publint": "publint",
     "check:attw": "attw --pack --profile esm-only"
   },
   "dependencies": {

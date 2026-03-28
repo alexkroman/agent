@@ -11,6 +11,7 @@ export default defineConfig({
       exclude: [
         // Test infrastructure
         "**/*.test.{ts,tsx}",
+        "**/*.test-d.ts",
         "**/_test-utils.ts",
         "**/templates/**",
         "**/dist/**",
@@ -55,11 +56,29 @@ export default defineConfig({
       {
         ...sharedConfig,
         test: {
+          name: "aai-types",
+          root: "packages/aai",
+          include: ["**/*.test-d.ts"],
+          typecheck: { enabled: true, only: true },
+        },
+      },
+      {
+        ...sharedConfig,
+        test: {
           name: "aai-ui",
           root: "packages/aai-ui",
           globals: true,
           include: ["**/*.test.{ts,tsx}"],
           setupFiles: ["./_jsdom-setup.ts"],
+        },
+      },
+      {
+        ...sharedConfig,
+        test: {
+          name: "aai-ui-types",
+          root: "packages/aai-ui",
+          include: ["**/*.test-d.ts"],
+          typecheck: { enabled: true, only: true },
         },
       },
       {

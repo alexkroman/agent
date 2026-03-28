@@ -1,8 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
  * Validates that every published export in package.json has a corresponding
- * source file and that all symbols listed in the api-extractor report are
- * actually exported from the main entry point.
+ * source file and that the main entry point exports expected public symbols.
  *
  * This test operates on source files only — dist/ is never read.
  */
@@ -29,27 +28,12 @@ describe("published exports", () => {
     });
   }
 
-  it("main entry (.) re-exports all symbols from api-extractor report", async () => {
-    const apiReport = readFileSync(resolve(PKG_DIR, "api/aai.api.md"), "utf-8");
+  it("main entry (.) exports expected public symbols", async () => {
     const mod = await import(resolve(PKG_DIR, "index.ts"));
 
-    // Extract exported value names (functions, consts, classes) from the api report.
-    // Type-only exports are not visible at runtime and are checked separately.
-    const valueExports = new Set<string>();
-    for (const match of apiReport.matchAll(/^export (?:function |const |class )(\w+)/gm)) {
-      if (match[1]) valueExports.add(match[1]);
-    }
-
-    // Extract type-only exports for a count assertion
-    const typeExports = new Set<string>();
-    for (const match of apiReport.matchAll(/^export type (\w+)/gm)) {
-      if (match[1]) typeExports.add(match[1]);
-    }
-
-    expect(valueExports.size).toBeGreaterThan(0);
-    expect(typeExports.size).toBeGreaterThan(0);
-
-    for (const name of valueExports) {
+    // Value exports (functions, consts) that consumers depend on
+    const expectedValues = ["defineAgent", "defineTool", "tool", "createToolFactory"];
+    for (const name of expectedValues) {
       expect(mod, `Missing value export: ${name}`).toHaveProperty(name);
     }
   });

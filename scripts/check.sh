@@ -75,7 +75,7 @@ echo -e "\n${YELLOW}Phase 2: Checks (parallel)${NC}"
 
 run_step "typecheck"        pnpm $PNPM_FILTER run typecheck
 run_step "lint"             pnpm $PNPM_FILTER run lint
-run_step "check:api"        pnpm $PNPM_FILTER run --if-present check:api
+run_step "check:publint"    pnpm $PNPM_FILTER run --if-present check:publint
 run_step "check:syncpack"   pnpm run check:syncpack
 
 if [ "$MODE" != "--local" ]; then

@@ -17,7 +17,7 @@ pnpm test                # Run all unit tests (vitest)
 pnpm lint                # Run Biome linter (all packages)
 pnpm typecheck           # Type-check all packages
 pnpm lint:fix            # Auto-fix lint issues
-pnpm check:local         # Fast pre-commit gate (parallel: build → typecheck + lint + api + syncpack → test)
+pnpm check:local         # Fast pre-commit gate (parallel: build → typecheck + lint + publint + syncpack → test)
 ```
 
 **Test tiers:**
@@ -54,13 +54,13 @@ pnpm --filter @alexkroman1/aai test        # Single package via pnpm filter
 Runs via `scripts/check.sh` in three parallelized phases:
 
 1. **Build** (sequential): `pnpm -r run build`
-2. **Checks** (parallel): typecheck, lint, api-extractor, attw, templates,
+2. **Checks** (parallel): typecheck, lint, publint, attw, templates,
    knip, syncpack, markdownlint
 3. **Tests** (parallel, sharded by package): vitest per-package (aai, aai-ui,
    aai-cli, aai-server, templates), integration tests, e2e tests
 
 `pnpm check:local` uses the same script with `--local` flag, running a
-subset: build → typecheck + lint + api-extractor + syncpack (parallel) →
+subset: build → typecheck + lint + publint + syncpack (parallel) →
 vitest (no coverage).
 
 ## Architecture
@@ -93,8 +93,9 @@ Public:
 
 Internal (exported in package.json but not part of public API — do **not**
 depend on these from consumer code; they may change without notice).
-API-extractor tracks only the **public** entry points (`.` and `./types`).
-Changes to internal exports do not trigger API baseline drift:
+Type-level tests (`.test-d.ts`) cover only the **public** entry points
+(`.`, `./types`, `./server`). Changes to internal exports do not require
+type test updates:
 
 - `./runtime` — `Logger`, `LogContext`, `S2SConfig`, `consoleLogger`,
   `DEFAULT_S2S_CONFIG`
@@ -175,6 +176,13 @@ start, secret, link, unlink
   In tests, use `flush()` from `_test-utils.ts` instead of
   `await new Promise(r => setTimeout(r, 0))` to yield to microtasks.
   Use `vi.waitFor()` instead of arbitrary delays when polling for async results.
+  Type-level tests use `.test-d.ts` files with `typecheck: { only: true }`
+  — they are checked by tsc but never executed at runtime. Use
+  `expectTypeOf` from vitest to assert on type shapes. Projects:
+  `aai-types`, `aai-ui-types`.
+- **Package validation**: `publint` runs post-build to verify package.json
+  exports resolve to real files. `attw` validates export types. Both run
+  in the check pipeline.
 - **Linting**: Biome. Auto-runs on staged files via lefthook pre-commit hook.
 - **Exports**: In dev mode, package.json exports point to `.ts` source for
   seamless workspace resolution. Update to compiled `.js` dist paths before
@@ -215,10 +223,10 @@ catches the most common issues that historically required follow-up commits:
    messages, run `pnpm test` and update affected assertions.
 3. **Lint in related files**: Pre-commit only lints staged files. Run
    `pnpm lint` to catch lint issues in files affected by your change.
-4. **API extractor reports**: `check:local` now includes build + api-extractor.
-   After changing public API exports, commit updated `.api.md` reports.
-   CI also runs `check:api-diff` which detects stale `.api.md` baselines
-   and provides clear instructions for resolving them.
+4. **Type-level tests**: After changing public API types (`defineAgent`,
+   `defineTool`, `createServer`, etc.), run `pnpm vitest run --project aai-types`
+   to verify type contracts haven't regressed. Update `.test-d.ts` files
+   if the change is intentional.
 
 ## Security Architecture
 
@@ -359,5 +367,6 @@ new NodeSDK({ /* exporters */ }).start();
 
 - **E2E tests**: Playwright/Chromium may not be installed in all environments.
   The `aai-cli` e2e test (`test:e2e`) may fail locally. CI handles this.
-- **API Extractor**: Covers main entry points of `aai` and `aai-ui` only.
-  Subpath exports (e.g. `./kv`, `./protocol`) are not covered.
+- **Type-level tests**: Cover public entry points of `aai` (`.`, `./types`,
+  `./server`) and `aai-ui` (`./session`). Subpath exports (e.g. `./kv`,
+  `./protocol`) are not covered by type tests.
