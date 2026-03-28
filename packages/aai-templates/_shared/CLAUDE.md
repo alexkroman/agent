@@ -69,7 +69,7 @@ with `aai init -t <template_name>`.
 | `solo-rpg`          | Solo dark-fantasy RPG with dice, oaths, combat, save/load. **Has custom UI.**      |
 | `middleware`        | Middleware demo: rate limiting, PII redaction, caching, analytics                  |
 | `embedded-assets`   | FAQ bot using embedded JSON knowledge (no web search)                              |
-| `support`           | Support agent for AssemblyAI docs                                                 |
+| `support`           | Support agent for AssemblyAI docs                                                  |
 | `test-patterns`     | Demonstrates every testable agent pattern (tools, hooks, middleware, state)        |
 
 ## Minimal agent
