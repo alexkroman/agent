@@ -1,11 +1,14 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { createNanoEvents } from "nanoevents";
 import { vi } from "vitest";
 import type { AgentConfig } from "./_internal-types.ts";
+import { createDirectExecutor } from "./direct-executor.ts";
 import type { ClientSink } from "./protocol.ts";
 import type { S2sEvents, S2sHandle } from "./s2s.ts";
-import type { S2sSessionOptions } from "./session.ts";
+import { _internals, type S2sSessionOptions } from "./session.ts";
 import type { AgentDef, ToolContext, ToolDef } from "./types.ts";
 import { DEFAULT_INSTRUCTIONS } from "./types.ts";
 
@@ -133,5 +136,126 @@ export function makeSessionOpts(overrides?: Partial<S2sSessionOptions>): S2sSess
     createWebSocket: vi.fn(),
     logger: silentLogger,
     ...overrides,
+  };
+}
+
+// ─── Fixture replay helpers ──────────────────────────────────────────────────
+
+const FIXTURE_DIR = resolve(import.meta.dirname, "__fixtures__");
+
+/** Load a JSON fixture from __fixtures__/. */
+export function loadFixture<T = Record<string, unknown>[]>(name: string): T {
+  return JSON.parse(readFileSync(resolve(FIXTURE_DIR, name), "utf-8"));
+}
+
+/**
+ * Wire-format → event translator: maps a single raw S2S API message to
+ * a `_fire()` call on the mock handle.  Returns false if the message
+ * type is not dispatchable (audio, content_part, unknown).
+ */
+type FireFn = (handle: MockS2sHandle, msg: Record<string, unknown>) => void;
+
+const FIXTURE_DISPATCH: Record<string, FireFn> = {
+  "session.ready": (h, m) => h._fire("ready", { sessionId: m.session_id as string }),
+  "session.updated": (h, m) => h._fire("sessionUpdated", m),
+  "session.error": (h, m) => {
+    const code = m.code as string;
+    const payload = { code, message: m.message as string };
+    if (code === "session_not_found" || code === "session_forbidden")
+      h._fire("sessionExpired", payload);
+    else h._fire("error", payload);
+  },
+  error: (h, m) => h._fire("error", { code: "connection", message: m.message as string }),
+  "input.speech.started": (h) => h._fire("speechStarted"),
+  "input.speech.stopped": (h) => h._fire("speechStopped"),
+  "transcript.user.delta": (h, m) => h._fire("userTranscriptDelta", { text: m.text as string }),
+  "transcript.user": (h, m) =>
+    h._fire("userTranscript", { itemId: (m.item_id as string) ?? "", text: m.text as string }),
+  "reply.started": (h, m) => h._fire("replyStarted", { replyId: (m.reply_id as string) ?? "" }),
+  "transcript.agent.delta": (h, m) =>
+    h._fire("agentTranscriptDelta", { text: (m.delta as string) ?? "" }),
+  "transcript.agent": (h, m) =>
+    h._fire("agentTranscript", {
+      text: (m.text as string) ?? "",
+      replyId: (m.reply_id as string) ?? "",
+      itemId: (m.item_id as string) ?? "",
+      interrupted: m.interrupted === true,
+    }),
+  "tool.call": (h, m) =>
+    h._fire("toolCall", {
+      callId: m.call_id as string,
+      name: m.name as string,
+      args: (m.args as Record<string, unknown>) ?? {},
+    }),
+  "reply.done": (h, m) => h._fire("replyDone", m.status ? { status: m.status as string } : {}),
+};
+
+/**
+ * Replay recorded S2S API messages through a MockS2sHandle.
+ *
+ * Converts raw wire-format JSON (from __fixtures__/) into typed `_fire()` calls.
+ * This is the inverse of `dispatchS2sMessage` in s2s.ts — it translates
+ * snake_case API fields to camelCase event payloads.
+ *
+ * Messages that don't map to an event (audio, `reply.content_part.*`) are skipped.
+ */
+export function replayFixtureMessages(
+  handle: MockS2sHandle,
+  messages: Record<string, unknown>[],
+): void {
+  for (const msg of messages) {
+    FIXTURE_DISPATCH[msg.type as string]?.(handle, msg);
+  }
+}
+
+// ─── Real-executor fixture replay ────────────────────────────────────────────
+
+/**
+ * Create a real DirectExecutor-backed session for fixture replay testing.
+ *
+ * Uses a real `DirectExecutor` (real tool execution, real middleware, real
+ * hook invoker) but replaces the S2S WebSocket with a mock handle so fixture
+ * messages can be replayed through the full orchestration layer.
+ *
+ * Exercises: defineAgent → toAgentConfig → tool schemas → Zod arg validation
+ * → executeToolCall → middleware beforeToolCall/afterToolCall → session
+ * orchestration (reply guards, tool buffering, turnPromise chaining).
+ *
+ * Call `cleanup()` when done to restore the connectS2s spy.
+ */
+export function createFixtureSession(
+  // biome-ignore lint/suspicious/noExplicitAny: test helper accepts any agent state type
+  agent: AgentDef<any>,
+  opts?: { env?: Record<string, string> },
+) {
+  const mockHandle = makeMockHandle();
+  const connectSpy = vi.spyOn(_internals, "connectS2s").mockResolvedValue(mockHandle);
+  const client = makeClient();
+
+  const executor = createDirectExecutor({
+    agent,
+    env: opts?.env ?? {},
+    logger: silentLogger,
+  });
+
+  const session = executor.createSession({
+    id: "fixture-session",
+    agent: agent.name,
+    client,
+  });
+
+  return {
+    session,
+    client,
+    mockHandle,
+    executor,
+    /** Replay a fixture file through the session's S2S handle. */
+    replay(fixtureName: string) {
+      replayFixtureMessages(mockHandle, loadFixture(fixtureName));
+    },
+    /** Restore the connectS2s spy. Call in afterEach. */
+    cleanup() {
+      connectSpy.mockRestore();
+    },
   };
 }

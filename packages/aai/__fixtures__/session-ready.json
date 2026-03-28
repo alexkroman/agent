@@ -1,0 +1,48 @@
+[
+  {
+    "type": "session.ready",
+    "timestamp": 1774669383.7014148,
+    "session_id": "sess_2575293792fe47c790905010a6bb4a5e",
+    "config": {
+      "system_prompt": "You are a helpful assistant. Keep responses very short, under 10 words.",
+      "tools": [],
+      "greeting": "Hello! How can I help you today?"
+    }
+  },
+  {
+    "type": "session.ready",
+    "timestamp": 1774669390.5586526,
+    "session_id": "sess_2246ce7e2eb146e08e62c9476278fbef",
+    "config": {
+      "system_prompt": "You are a helpful assistant. Keep responses to one short sentence.",
+      "tools": [],
+      "greeting": "Hi!"
+    }
+  },
+  {
+    "type": "session.ready",
+    "timestamp": 1774669401.5069516,
+    "session_id": "sess_b01d5d5f1865418b955dc30b00b3d52b",
+    "config": {
+      "system_prompt": "You are a weather assistant. Always use the get_weather tool for weather questions. After getting the result, tell the user the weather in one sentence.",
+      "tools": [
+        {
+          "type": "function",
+          "name": "get_weather",
+          "description": "Get the current weather for a city",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "city": {
+                "type": "string",
+                "description": "City name"
+              }
+            },
+            "required": ["city"]
+          }
+        }
+      ],
+      "greeting": "Ask me about the weather!"
+    }
+  }
+]
