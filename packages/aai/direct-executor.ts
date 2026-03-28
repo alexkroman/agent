@@ -19,7 +19,7 @@ import {
 import { ssrfSafeFetch } from "./_ssrf.ts";
 import { errorDetail, errorMessage, toolError } from "./_utils.ts";
 import { getBuiltinToolDefs, getBuiltinToolSchemas } from "./builtin-tools.ts";
-import { TOOL_EXECUTION_TIMEOUT_MS } from "./constants.ts";
+import { DEFAULT_SHUTDOWN_TIMEOUT_MS, TOOL_EXECUTION_TIMEOUT_MS } from "./constants.ts";
 import type { Kv } from "./kv.ts";
 import { buildMiddlewareRunner, type HookInvoker, type LifecycleHooks } from "./middleware.ts";
 import type { ClientSink } from "./protocol.ts";
@@ -199,7 +199,7 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
     logger = consoleLogger,
     s2sConfig = DEFAULT_S2S_CONFIG,
     sessionStartTimeoutMs,
-    shutdownTimeoutMs = 30_000,
+    shutdownTimeoutMs = DEFAULT_SHUTDOWN_TIMEOUT_MS,
   } = opts;
   const agentConfig = toAgentConfig(agent);
   const sessions = new Map<string, Session>();

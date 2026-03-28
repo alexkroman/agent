@@ -34,6 +34,9 @@ export const FETCH_TIMEOUT_MS = 15_000;
 /** Timeout for sandboxed run_code execution. */
 export const RUN_CODE_TIMEOUT_MS = 5000;
 
+/** Maximum time to wait for sessions to stop during graceful shutdown. */
+export const DEFAULT_SHUTDOWN_TIMEOUT_MS = 30_000;
+
 // ─── Size / length limits ────────────────────────────────────────────────
 
 /** Maximum length for tool result strings sent to clients. */
@@ -58,3 +61,17 @@ export const DEFAULT_MAX_HISTORY = 200;
 
 /** Memory limit for run_code isolates (MB). */
 export const RUN_CODE_MEMORY_MB = 32;
+
+// ─── Security ───────────────────────────────────────────────────────────
+
+/**
+ * Content-Security-Policy applied to agent UI pages (both self-hosted and
+ * platform). Single source of truth — used by `secureHeaders` middleware
+ * and per-response CSP headers.
+ */
+export const AGENT_CSP =
+  "default-src 'self'; script-src 'self' blob:; " +
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+  "connect-src 'self' wss: ws:; img-src 'self' data:; " +
+  "font-src 'self' https://fonts.gstatic.com; " +
+  "object-src 'none'; base-uri 'self'";

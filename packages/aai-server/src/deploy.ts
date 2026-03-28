@@ -1,18 +1,17 @@
 // Copyright 2025 the AAI authors. MIT license.
-import type { Context } from "hono";
 import { type DeployBody, DeployBodySchema, EnvSchema } from "./_schemas.ts";
-import type { Env } from "./context.ts";
+import type { AppContext } from "./factory.ts";
 import { terminateSlot } from "./sandbox-slots.ts";
 import { withSlugLock } from "./slug-lock.ts";
 
-export function handleDeploy(c: Context<Env>): Promise<Response> {
-  const slug = c.get("slug");
+export function handleDeploy(c: AppContext): Promise<Response> {
+  const slug = c.var.slug;
   return withSlugLock(slug, () => handleDeployInner(c));
 }
 
-async function handleDeployInner(c: Context<Env>): Promise<Response> {
-  const slug = c.get("slug");
-  const keyHash = c.get("keyHash");
+async function handleDeployInner(c: AppContext): Promise<Response> {
+  const slug = c.var.slug;
+  const keyHash = c.var.keyHash;
 
   const body: DeployBody = DeployBodySchema.parse(await c.req.json());
 
