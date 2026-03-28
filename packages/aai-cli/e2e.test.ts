@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
  * End-to-end CLI tests (Vite builds, real servers, Playwright browser):
- *   1. Template builds: dev & user workflows for every template
+ *   1. Template builds: dev & user workflows for representative templates
  *   2. CLI commands: dev --check, start, deploy --dry-run
  *   3. Browser tests (Playwright): UI render, WebSocket, conversation flow
  *
@@ -10,7 +10,7 @@
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 
 let playwrightAvailable = false;
 let chromium: typeof import("playwright").chromium | undefined;
@@ -27,17 +27,17 @@ try {
 
 const dir = import.meta.dirname ?? path.dirname(new URL(import.meta.url).pathname);
 const packagesDir = path.resolve(dir, "..");
-const templatesDir = path.resolve(dir, "../aai-templates");
 
-const templates = fs
-  .readdirSync(templatesDir, { withFileTypes: true })
-  .filter((d) => d.isDirectory() && !d.name.startsWith("_") && d.name !== "node_modules")
-  .map((d) => d.name);
+// Representative subset: minimal baseline, stateful + tools, external tools + custom UI.
+// Full template coverage is handled by the templates unit test tier (pnpm test:templates).
+const templates = ["simple", "memory-agent", "web-researcher"];
 
 let aaiBin: string;
 let tmpDir: string;
 let tarballs: Record<string, string>;
-const BASE_PORT = 4567;
+
+// Random high port base to avoid collisions between parallel CI runs
+const BASE_PORT = 40_000 + Math.floor(Math.random() * 10_000);
 
 function aaiEnv(): NodeJS.ProcessEnv {
   return {
@@ -68,7 +68,12 @@ function aaiSpawn(args: string[], cwd: string): ChildProcess {
   });
 }
 
-async function waitForHealth(url: string, timeoutMs = 30_000): Promise<void> {
+/** Poll a health endpoint, capturing child stderr for diagnostics on timeout. */
+async function waitForHealth(url: string, child?: ChildProcess, timeoutMs = 30_000): Promise<void> {
+  let stderr = "";
+  child?.stderr?.on("data", (chunk: Buffer) => {
+    stderr += chunk.toString();
+  });
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     try {
@@ -79,7 +84,18 @@ async function waitForHealth(url: string, timeoutMs = 30_000): Promise<void> {
     }
     await new Promise((r) => setTimeout(r, 500));
   }
-  throw new Error(`Timed out waiting for ${url}`);
+  throw new Error(`Timed out waiting for ${url}${stderr ? `\nServer stderr:\n${stderr}` : ""}`);
+}
+
+/** Wait for a child process to exit (for clean teardown). */
+function waitForExit(child: ChildProcess, timeoutMs = 5000): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, timeoutMs);
+    child.on("exit", () => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
 }
 
 function initProject(template: string, projectDir: string): void {
@@ -129,7 +145,7 @@ afterAll(() => {
   if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
-// --- Pack + build: all templates ---
+// --- Pack + build: representative templates ---
 
 describe("pack + build: dev and user workflows", () => {
   test.each(templates)("template %s", (template) => {
@@ -168,13 +184,14 @@ describe("CLI: build -> start serves health", () => {
 
     const child = aaiSpawn(["start", "--port", String(port)], projectDir);
     try {
-      await waitForHealth(`http://localhost:${port}/health`);
+      await waitForHealth(`http://localhost:${port}/health`, child);
       const res = await fetch(`http://localhost:${port}/health`);
       expect(res.ok).toBe(true);
       const body = (await res.json()) as { status: string };
       expect(body.status).toBe("ok");
     } finally {
       child.kill();
+      await waitForExit(child);
     }
   });
 });
@@ -229,7 +246,7 @@ async function setupEventInjector(browser: Browser, port: number) {
     await new Promise((r) => setTimeout(r, 50));
   }
 
-  /** Inject a server→client event via the captured WebSocket. */
+  /** Inject a server->client event via the captured WebSocket. */
   const inject = (msg: Record<string, unknown>) =>
     page.evaluate((json) => {
       const ws = (globalThis as Record<string, unknown>).__aai_test_ws as WebSocket;
@@ -248,18 +265,35 @@ async function setupEventInjector(browser: Browser, port: number) {
   return { page, inject, replayFixture, clientFrames };
 }
 
-function defineBrowserTests(getContext: () => { browser: Browser; port: number }): void {
+describe.skipIf(!playwrightAvailable)("browser: build -> start", () => {
+  let browser: Browser;
+  let child: ChildProcess;
+  const port = BASE_PORT + 200;
+
+  beforeAll(async () => {
+    const projectDir = path.join(tmpDir, "_browser-start");
+    initProject("simple", projectDir);
+    aai(["build"], projectDir);
+    child = aaiSpawn(["start", "--port", String(port)], projectDir);
+    await waitForHealth(`http://localhost:${port}/health`, child);
+    // biome-ignore lint/style/noNonNullAssertion: guarded by describe.skipIf(!playwrightAvailable)
+    browser = await chromium!.launch();
+  });
+
+  afterAll(async () => {
+    await browser?.close();
+    child?.kill();
+    if (child) await waitForExit(child);
+  });
+
   test("page renders with Start button", async () => {
-    const { browser, port } = getContext();
     const page = await browser.newPage();
     await page.goto(`http://localhost:${port}`);
-    const startBtn = page.getByRole("button", { name: "Start" });
-    expect(await startBtn.isVisible()).toBe(true);
+    await page.getByRole("button", { name: "Start" }).waitFor();
     await page.close();
   });
 
   test("clicking Start opens a WebSocket and receives config", async () => {
-    const { browser, port } = getContext();
     const page = await browser.newPage();
     await page.goto(`http://localhost:${port}`);
 
@@ -277,17 +311,19 @@ function defineBrowserTests(getContext: () => { browser: Browser; port: number }
     const wsUrl = await wsConnected;
     expect(wsUrl).toContain("/websocket");
 
-    const hasConfig = () =>
-      frames.some((f) => {
-        try {
-          return JSON.parse(f).type === "config";
-        } catch {
-          return false;
-        }
-      });
-    const dl = Date.now() + 10_000;
-    while (!hasConfig() && Date.now() < dl) await new Promise((r) => setTimeout(r, 50));
-    expect(hasConfig()).toBe(true);
+    await vi.waitFor(
+      () => {
+        const found = frames.some((f) => {
+          try {
+            return JSON.parse(f).type === "config";
+          } catch {
+            return false;
+          }
+        });
+        expect(found).toBe(true);
+      },
+      { timeout: 10_000, interval: 50 },
+    );
 
     await page.close();
   });
@@ -295,141 +331,84 @@ function defineBrowserTests(getContext: () => { browser: Browser; port: number }
   // ── Fixture-driven event injection tests ───────────────────────────────
 
   test("greeting session: agent message renders in browser", async () => {
-    const { browser, port } = getContext();
     const { page, replayFixture } = await setupEventInjector(browser, port);
-
     await replayFixture("greeting-session.json");
     await page.getByText("Hello! How can I help you today?").waitFor();
-    expect(await page.getByText("Hello! How can I help you today?").isVisible()).toBe(true);
-
     await page.close();
   });
 
   test("simple conversation: user + assistant messages render", async () => {
-    const { browser, port } = getContext();
     const { page, replayFixture } = await setupEventInjector(browser, port);
-
     await replayFixture("simple-conversation.json");
+
+    await page.getByText("Hi there!").waitFor();
     await page.getByText("Tell me a fun fact about space.").waitFor();
     await page.getByText("A day on Venus is longer than its year.").waitFor();
-
-    expect(await page.getByText("Hi there!").isVisible()).toBe(true);
-    expect(await page.getByText("Tell me a fun fact about space.").isVisible()).toBe(true);
-    expect(await page.getByText("A day on Venus is longer than its year.").isVisible()).toBe(true);
 
     await page.close();
   });
 
   test("tool call flow: tool block renders with name, messages appear", async () => {
-    const { browser, port } = getContext();
     const { page, replayFixture } = await setupEventInjector(browser, port);
-
     await replayFixture("tool-call-flow.json");
-    await page.getByText("The weather in San Francisco is sunny at 72°F.").waitFor();
 
-    // Tool call block should be visible with tool name
-    expect(await page.getByText("get_weather").isVisible()).toBe(true);
-    // Messages present
-    expect(await page.getByText("What is the weather like in San Francisco?").isVisible()).toBe(
-      true,
-    );
-    expect(await page.getByText("The weather in San Francisco is sunny at 72°F.").isVisible()).toBe(
-      true,
-    );
+    await page.getByText("The weather in San Francisco is sunny at 72°F.").waitFor();
+    await page.getByText("get_weather").waitFor();
+    await page.getByText("What is the weather like in San Francisco?").waitFor();
 
     await page.close();
   });
 
   test("error recovery: error banner renders with message", async () => {
-    const { browser, port } = getContext();
     const { page, replayFixture } = await setupEventInjector(browser, port);
-
     await replayFixture("error-recovery.json");
-    await page.getByText("Speech recognition failed").waitFor();
 
-    expect(await page.getByText("Speech recognition failed").isVisible()).toBe(true);
-    // Resume button should appear
-    expect(await page.getByRole("button", { name: "Resume" }).isVisible()).toBe(true);
+    await page.getByText("Speech recognition failed").waitFor();
+    await page.getByRole("button", { name: "Resume" }).waitFor();
 
     await page.close();
   });
 
   test("barge-in: interrupted response cleared, new answer renders", async () => {
-    const { browser, port } = getContext();
     const { page, replayFixture } = await setupEventInjector(browser, port);
-
     await replayFixture("barge-in.json");
-    await page.getByText("No problem!").waitFor();
 
-    // Final answer visible
-    expect(await page.getByText("No problem!").isVisible()).toBe(true);
-    // Both user turns visible
-    expect(await page.getByText("What about").isVisible()).toBe(true);
-    expect(await page.getByText("Actually never mind").isVisible()).toBe(true);
+    await page.getByText("No problem!").waitFor();
+    await page.getByText("What about").waitFor();
+    await page.getByText("Actually never mind").waitFor();
 
     await page.close();
   });
 
   test("multi-turn with tools: two tool calls and all messages render", async () => {
-    const { browser, port } = getContext();
     const { page, replayFixture } = await setupEventInjector(browser, port);
-
     await replayFixture("multi-turn-with-tools.json");
-    await page.getByText("London is 55°F and rainy.").waitFor();
 
-    // Both user questions
-    expect(await page.getByText("Weather in NYC?").isVisible()).toBe(true);
-    expect(await page.getByText("And in London?").isVisible()).toBe(true);
-    // Both tool call blocks
+    await page.getByText("London is 55°F and rainy.").waitFor();
+    await page.getByText("Weather in NYC?").waitFor();
+    await page.getByText("And in London?").waitFor();
     const toolBlocks = await page.getByText("get_weather").all();
     expect(toolBlocks.length).toBe(2);
-    // Both answers
-    expect(await page.getByText(/65°F/).isVisible()).toBe(true);
-    expect(await page.getByText(/55°F/).isVisible()).toBe(true);
+    await page.getByText(/65°F/).waitFor();
+    await page.getByText(/55°F/).waitFor();
 
     await page.close();
   });
 
   test("stop/resume toggle works after fixture replay", async () => {
-    const { browser, port } = getContext();
     const { page, replayFixture } = await setupEventInjector(browser, port);
-
     await replayFixture("greeting-session.json");
     await page.getByText("Hello! How can I help you today?").waitFor();
 
-    // Should see Stop button
     const toggleBtn = page.getByRole("button", { name: /Stop|Resume/ });
     await toggleBtn.waitFor({ timeout: 5000 });
     const label = (await toggleBtn.textContent())?.trim();
     expect(label).toBe("Stop");
 
-    // Click Stop → should become Resume
+    // Click Stop -> should become Resume
     await toggleBtn.click();
     await page.getByRole("button", { name: "Resume" }).waitFor({ timeout: 3000 });
 
     await page.close();
   });
-}
-
-describe.skipIf(!playwrightAvailable)("browser: build -> start", () => {
-  let browser: Browser;
-  let child: ChildProcess;
-  const port = BASE_PORT + 200;
-
-  beforeAll(async () => {
-    const projectDir = path.join(tmpDir, "_browser-start");
-    initProject("simple", projectDir);
-    aai(["build"], projectDir);
-    child = aaiSpawn(["start", "--port", String(port)], projectDir);
-    await waitForHealth(`http://localhost:${port}/health`);
-    // biome-ignore lint/style/noNonNullAssertion: guarded by describe.skipIf(!playwrightAvailable)
-    browser = await chromium!.launch();
-  });
-
-  afterAll(async () => {
-    await browser?.close();
-    child?.kill();
-  });
-
-  defineBrowserTests(() => ({ browser, port }));
 });
