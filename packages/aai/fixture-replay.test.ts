@@ -455,27 +455,24 @@ describe("fixture replay with real executor", () => {
       return expect(chats.length).toBeGreaterThanOrEqual(2);
     });
 
-    // The agent response about Venus should have been filtered
-    const chats = ctx.client.events.filter((e) => (e as { type: string }).type === "chat");
-    const responsesWithPlanet = chats.filter((e) =>
-      ((e as { text: string }).text ?? "").includes("[PLANET]"),
-    );
-    // If the agent mentioned Venus, it should be redacted
-    const responsesWithVenus = chats.filter((e) =>
-      ((e as { text: string }).text ?? "").includes("Venus"),
-    );
-    // Either Venus was mentioned and got redacted, or it wasn't mentioned at all
-    if (responsesWithVenus.length === 0) {
-      // Agent didn't mention Venus in final transcript — check deltas
-      const deltas = ctx.client.events.filter((e) => (e as { type: string }).type === "chat_delta");
-      const venusDeltas = deltas.filter((e) =>
-        ((e as { text: string }).text ?? "").includes("Venus"),
-      );
-      // If deltas mentioned Venus, they should have been filtered
-      expect(venusDeltas.length).toBe(0);
-    } else {
-      // Venus was not redacted — that's a bug (shouldn't happen)
-      expect(responsesWithPlanet.length).toBeGreaterThan(0);
+    // The fixture agent response is "A day on Venus is longer than its year."
+    // filterOutput should have replaced "Venus" with "[PLANET]"
+    const chats = ctx.client.events
+      .filter((e) => (e as { type: string }).type === "chat")
+      .map((e) => (e as { text: string }).text);
+
+    // The response chat should contain [PLANET], not Venus
+    const responseTxt = chats.find((t) => t.includes("day on"));
+    expect(responseTxt).toBeDefined();
+    expect(responseTxt).toContain("[PLANET]");
+    expect(responseTxt).not.toContain("Venus");
+
+    // Deltas should also be filtered
+    const deltas = ctx.client.events
+      .filter((e) => (e as { type: string }).type === "chat_delta")
+      .map((e) => (e as { text: string }).text);
+    for (const d of deltas) {
+      expect(d).not.toContain("Venus");
     }
   });
 
@@ -690,12 +687,31 @@ describe("fixture replay with real executor", () => {
   // ── Interrupted transcript NOT added to conversation history ────────────
 
   test("interrupted agent transcript is not pushed to conversation history", async () => {
-    const ctx = createFixtureSession(simpleAgent);
+    // Use a tool that captures messages to inspect conversation history
+    let capturedMessages: readonly { role: string; content: string }[] = [];
+    const agent = defineAgent({
+      name: "interrupt-history-agent",
+      instructions: "You are helpful.",
+      greeting: "Hi!",
+      tools: {
+        check_history: defineTool({
+          description: "Check history",
+          parameters: z.object({ q: z.string() }),
+          execute: (_args, ctx) => {
+            capturedMessages = [...ctx.messages];
+            return "ok";
+          },
+        }),
+      },
+    });
+
+    const ctx = createFixtureSession(agent);
     cleanup = ctx.cleanup;
     await ctx.session.start();
 
-    // Manually fire an interrupted transcript sequence
     const h = ctx.mockHandle;
+
+    // Fire an interrupted transcript — should NOT go into conversation history
     h._fire("replyStarted", { replyId: "r1" });
     h._fire("agentTranscript", {
       text: "This was interrupted",
@@ -706,12 +722,12 @@ describe("fixture replay with real executor", () => {
     h._fire("replyDone", { status: "interrupted" });
     await flush();
 
-    // Client should see the chat text but cancelled event
+    // Client sees both chat and cancelled events
     const types = ctx.client.events.map((e) => (e as { type: string }).type);
     expect(types).toContain("chat");
     expect(types).toContain("cancelled");
 
-    // Now fire a non-interrupted transcript
+    // Fire a non-interrupted transcript — SHOULD go into conversation history
     h._fire("replyStarted", { replyId: "r2" });
     h._fire("agentTranscript", {
       text: "This was completed",
@@ -722,12 +738,19 @@ describe("fixture replay with real executor", () => {
     h._fire("replyDone", { status: "completed" });
     await flush();
 
-    // Client received both transcripts as chat events
-    const chats = ctx.client.events
-      .filter((e) => (e as { type: string }).type === "chat")
-      .map((e) => (e as { text: string }).text);
-    expect(chats).toContain("This was interrupted");
-    expect(chats).toContain("This was completed");
+    // Trigger a tool call to inspect conversation history.
+    // userTranscript starts a new turn context.
+    h._fire("userTranscript", { itemId: "u1", text: "check" });
+    await flush();
+    h._fire("replyStarted", { replyId: "r3" });
+    h._fire("toolCall", { callId: "c1", name: "check_history", args: { q: "test" } });
+    // Wait for tool to execute (captures messages)
+    await vi.waitFor(() => expect(capturedMessages.length).toBeGreaterThan(0));
+
+    // Conversation history should contain the completed text but NOT the interrupted text
+    const assistantMsgs = capturedMessages.filter((m) => m.role === "assistant");
+    expect(assistantMsgs.some((m) => m.content === "This was completed")).toBe(true);
+    expect(assistantMsgs.every((m) => m.content !== "This was interrupted")).toBe(true);
   });
 
   // ── Conversation history correctness after full tool-call flow ──────────

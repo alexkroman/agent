@@ -318,15 +318,33 @@ describe("fixture replay: barge-in (cancellation)", () => {
     expect(msgs[3]?.content).toBe("No problem!");
   });
 
-  test("cancelled response text does NOT appear in final messages", async () => {
+  test("cancelled chat_delta text clears from agentUtterance, not persisted in messages", async () => {
     env.signals.start();
     await flush();
 
-    await replayFixture(env, "barge-in.json");
+    const fixture = loadFixture("barge-in.json");
 
-    // The interrupted delta text "Well, the thing is" should not be in messages
+    // Send events up through the two chat_deltas (before cancelled)
+    // config[0], chat[1], tts_done[2], speech[3], transcript[4], speech[5],
+    // turn[6], chat_delta[7], chat_delta[8]
+    for (let i = 0; i <= 8; i++) {
+      env.send(fixture[i] as Record<string, unknown>);
+      await flush();
+    }
+
+    // agentUtterance should have accumulated delta text
+    expect(env.session.agentUtterance.value).toContain("Well,");
+
+    // Now send cancelled[9]
+    env.send(fixture[9] as Record<string, unknown>);
+    await flush();
+
+    // agentUtterance should be cleared
+    expect(env.session.agentUtterance.value).toBe(null);
+
+    // Messages should NOT contain the delta text (deltas never go to messages)
     const allContent = env.session.messages.value.map((m) => m.content);
-    expect(allContent.every((c) => !c.includes("Well, the thing is"))).toBe(true);
+    expect(allContent.every((c) => !c.includes("Well,"))).toBe(true);
   });
 });
 
