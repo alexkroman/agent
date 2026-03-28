@@ -112,13 +112,16 @@ beforeAll(() => {
   for (const pkgDir of ["aai", "aai-ui"]) {
     const pkgPath = path.join(packagesDir, pkgDir);
     execFileSync("pnpm", ["run", "build"], { cwd: pkgPath, stdio: "inherit" });
-    const output = execFileSync("npm", ["pack", "--pack-destination", tarballDir], {
+    const output = execFileSync("pnpm", ["pack", "--pack-destination", tarballDir], {
       cwd: pkgPath,
       encoding: "utf-8",
     }).trim();
-    const filename = output.split("\n").pop() ?? "";
+    // pnpm pack returns the full absolute path; npm pack returns just the filename
+    const tarballPath = output.split("\n").pop() ?? "";
     const pkg = JSON.parse(fs.readFileSync(path.join(pkgPath, "package.json"), "utf-8"));
-    tarballs[pkg.name] = path.join(tarballDir, filename);
+    tarballs[pkg.name] = path.isAbsolute(tarballPath)
+      ? tarballPath
+      : path.join(tarballDir, tarballPath);
   }
 });
 
