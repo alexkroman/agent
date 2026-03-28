@@ -26,15 +26,15 @@ export type { S2sHandle } from "./s2s.ts";
 
 type PendingTool = { callId: string; result: string };
 
-/**
- * Mutable state and dependencies shared across session helper functions.
- *
- * Created once per session by `buildCtx` and threaded through `setupListeners`,
- * `handleToolCall`, and other internal helpers. Contains both immutable
- * dependencies (logger, executor) and mutable per-turn state (pending tools,
- * generation counters).
- */
-export type S2sSessionCtx = {
+/** Per-reply mutable state — reset on beginReply/cancelReply. */
+export type ReplyState = {
+  pendingTools: PendingTool[];
+  toolCallCount: number;
+  currentReplyId: string | null;
+};
+
+/** Immutable dependencies injected at session creation. */
+export type SessionDeps = {
   readonly id: string;
   readonly agent: string;
   readonly client: ClientSink;
@@ -42,45 +42,35 @@ export type S2sSessionCtx = {
   readonly executeTool: ExecuteTool;
   readonly hookInvoker: HookInvoker | undefined;
   readonly log: Logger;
+  readonly maxHistory: number;
+};
+
+/**
+ * Session context threaded through event handlers.
+ *
+ * Split into three layers:
+ * - {@link SessionDeps} — immutable dependencies (set once)
+ * - {@link ReplyState} via `reply` — per-reply mutable state (reset on beginReply/cancelReply)
+ * - Remaining fields — connection, conversation, and lifecycle methods
+ */
+export type S2sSessionCtx = SessionDeps & {
   s2s: S2sHandle | null;
-  pendingTools: PendingTool[];
-  toolCallCount: number;
+  reply: ReplyState;
   turnPromise: Promise<void> | null;
   conversationMessages: Message[];
-  /** Maximum number of messages to retain in conversationMessages. */
-  readonly maxHistory: number;
-  /** The `reply_id` from the most recent `reply.started` event. Tool calls
-   *  capture this at start; finishToolCall only pushes to pendingTools if the
-   *  reply ID still matches, preventing stale results from interrupted replies
-   *  from leaking into subsequent replies. Set to `null` on close/reset. */
-  currentReplyId: string | null;
-  /** Resolve per-turn configuration (dynamic `maxSteps`). */
+  filterChain: Promise<void>;
+
   resolveTurnConfig(): Promise<{ maxSteps?: number } | null>;
-  /** Increment the tool call counter and check whether the call should be refused. */
   consumeToolCallStep(
     turnConfig: { maxSteps?: number } | null,
     name: string,
     replyId: string | null,
   ): string | null;
-  /** Fire a lifecycle hook asynchronously. Errors are logged but never propagated. */
   fireHook(name: string, fn: (h: HookInvoker) => Promise<void>): void;
-  /** Await all in-flight hook promises. Used during shutdown. */
   drainHooks(): Promise<void>;
-  /** Push one or more messages and trim to maxHistory. */
   pushMessages(...msgs: Message[]): void;
-  /** Sequential promise chain for filterOutput calls, ensuring ordering. */
-  filterChain: Promise<void>;
-
-  // ── State transition methods ──────────────────────────────────────
-  // Per-reply mutable state (pendingTools, toolCallCount, currentReplyId,
-  // turnPromise, filterChain) is modified from multiple event handlers.
-  // These methods centralise the resets so fields stay in sync.
-
-  /** Reset per-reply state for a new reply from the S2S API. */
   beginReply(replyId: string): void;
-  /** Invalidate the current reply (barge-in, close, or reset). */
   cancelReply(): void;
-  /** Append a tool-call promise to the turn promise chain. */
   chainTurn(p: Promise<void>): void;
 };
 
@@ -101,27 +91,24 @@ export function buildCtx(opts: {
   const ctx: S2sSessionCtx = {
     ...opts,
     s2s: null,
-    pendingTools: [],
-    toolCallCount: 0,
+    reply: { pendingTools: [], toolCallCount: 0, currentReplyId: null },
     turnPromise: null,
     conversationMessages: [],
     maxHistory,
-    currentReplyId: null,
     filterChain: Promise.resolve(),
     resolveTurnConfig() {
       if (!hookInvoker) return Promise.resolve(null);
       return hookInvoker.resolveTurnConfig(id, HOOK_TIMEOUT_MS);
     },
     consumeToolCallStep(turnConfig, _name, replyId) {
-      // Guard: ignore tool calls from a stale reply (interrupted or closed).
-      if (replyId === null || replyId !== ctx.currentReplyId) {
+      if (replyId === null || replyId !== ctx.reply.currentReplyId) {
         return toolError("Reply was interrupted. Discarding stale tool call.");
       }
       const maxSteps = turnConfig?.maxSteps ?? agentConfig.maxSteps;
-      ctx.toolCallCount++;
-      if (maxSteps !== undefined && ctx.toolCallCount > maxSteps) {
+      ctx.reply.toolCallCount++;
+      if (maxSteps !== undefined && ctx.reply.toolCallCount > maxSteps) {
         log.info("maxSteps exceeded, refusing tool call", {
-          toolCallCount: ctx.toolCallCount,
+          toolCallCount: ctx.reply.toolCallCount,
           maxSteps,
         });
         return toolError("Maximum tool steps reached. Please respond to the user now.");
@@ -164,15 +151,12 @@ export function buildCtx(opts: {
       }
     },
     beginReply(replyId: string) {
-      ctx.toolCallCount = 0;
-      ctx.currentReplyId = replyId;
-      ctx.pendingTools = [];
+      ctx.reply = { pendingTools: [], toolCallCount: 0, currentReplyId: replyId };
       ctx.turnPromise = null;
       ctx.filterChain = Promise.resolve();
     },
     cancelReply() {
-      ctx.currentReplyId = null;
-      ctx.pendingTools = [];
+      ctx.reply = { pendingTools: [], toolCallCount: 0, currentReplyId: null };
       ctx.filterChain = Promise.resolve();
     },
     chainTurn(p: Promise<void>) {
@@ -184,12 +168,7 @@ export function buildCtx(opts: {
 
 // ─── Re-exports ─────────────────────────────────────────────────────────────
 
-export type {
-  HookInvoker,
-  LifecycleHooks,
-  MiddlewareRunner,
-  ToolInterceptResult,
-} from "./middleware.ts";
+export type { HookInvoker, LifecycleHooks, MiddlewareRunner } from "./middleware.ts";
 export { buildSystemPrompt } from "./system-prompt.ts";
 
 /**
@@ -415,7 +394,7 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
     onReset(): void {
       ctx.cancelReply();
       ctx.conversationMessages = [];
-      ctx.toolCallCount = 0;
+      ctx.reply.toolCallCount = 0;
       ctx.turnPromise = null;
       idle.clear();
       ctx.s2s?.close();

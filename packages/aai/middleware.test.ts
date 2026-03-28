@@ -178,7 +178,7 @@ describe("runToolCallInterceptors", () => {
     const mw: Middleware[] = [
       {
         name: "blocker",
-        beforeToolCall: () => ({ block: true as const, reason: "denied" }),
+        beforeToolCall: () => ({ type: "block", reason: "denied" }),
       },
     ];
     const result = await runToolCallInterceptors(mw, makeCtx({}, { tool: "tool", args: {} }));
@@ -189,7 +189,7 @@ describe("runToolCallInterceptors", () => {
     const mw: Middleware[] = [
       {
         name: "cache",
-        beforeToolCall: () => ({ result: "cached" }),
+        beforeToolCall: () => ({ type: "result", result: "cached" }),
       },
     ];
     const result = await runToolCallInterceptors(mw, makeCtx({}, { tool: "tool", args: {} }));
@@ -201,6 +201,7 @@ describe("runToolCallInterceptors", () => {
       {
         name: "transformer",
         beforeToolCall: (ctx) => ({
+          type: "args",
           args: { ...ctx.args, extra: true },
         }),
       },
@@ -214,12 +215,14 @@ describe("runToolCallInterceptors", () => {
       {
         name: "add-x",
         beforeToolCall: (ctx) => ({
+          type: "args",
           args: { ...ctx.args, x: 1 },
         }),
       },
       {
         name: "add-y",
         beforeToolCall: (ctx) => ({
+          type: "args",
           args: { ...ctx.args, y: 2 },
         }),
       },
@@ -347,7 +350,7 @@ describe("middleware state access", () => {
         name: "cache",
         beforeToolCall: (ctx) => {
           const key = `${ctx.tool}:${JSON.stringify(ctx.args)}`;
-          if (ctx.state.cache[key]) return { result: ctx.state.cache[key] };
+          if (ctx.state.cache[key]) return { type: "result", result: ctx.state.cache[key] };
         },
       },
     ];
@@ -401,7 +404,7 @@ describe("middleware composition edge cases", () => {
       { name: "first", beforeToolCall: vi.fn() },
       {
         name: "blocker",
-        beforeToolCall: () => ({ block: true as const, reason: "stop" }),
+        beforeToolCall: () => ({ type: "block", reason: "stop" }),
       },
       { name: "third", beforeToolCall: third },
     ];
@@ -415,7 +418,7 @@ describe("middleware composition edge cases", () => {
     const mw: Middleware[] = [
       {
         name: "cache",
-        beforeToolCall: () => ({ result: "fast" }),
+        beforeToolCall: () => ({ type: "result", result: "fast" }),
       },
       { name: "second", beforeToolCall: second },
     ];

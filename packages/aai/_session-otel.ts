@@ -25,7 +25,7 @@ export { activeSessionsUpDown, sessionCounter } from "./telemetry.ts";
 
 /**
  * Complete a tool call by truncating the result, emitting a `tool_call_done` event,
- * and accumulating the result in `ctx.pendingTools` — but only if the reply that
+ * and accumulating the result in `ctx.reply.pendingTools` — but only if the reply that
  * initiated this call is still active.
  */
 function finishToolCall(
@@ -37,13 +37,13 @@ function finishToolCall(
   const truncatedResult =
     result.length > MAX_TOOL_RESULT_CHARS ? result.slice(0, MAX_TOOL_RESULT_CHARS) : result;
   ctx.client.event({ type: "tool_call_done", toolCallId: callId, result: truncatedResult });
-  if (replyId !== null && replyId === ctx.currentReplyId) {
-    ctx.pendingTools.push({ callId, result });
+  if (replyId !== null && replyId === ctx.reply.currentReplyId) {
+    ctx.reply.pendingTools.push({ callId, result });
     // Defensive cap: drop the oldest entry if the array exceeds maxHistory.
     // In practice pendingTools is bounded by maxSteps (default 5), but if
     // maxSteps is disabled or set very high this prevents unbounded growth.
-    if (ctx.maxHistory > 0 && ctx.pendingTools.length > ctx.maxHistory) {
-      ctx.pendingTools.shift();
+    if (ctx.maxHistory > 0 && ctx.reply.pendingTools.length > ctx.maxHistory) {
+      ctx.reply.pendingTools.shift();
     }
   }
 }
@@ -64,7 +64,7 @@ export async function handleToolCall(ctx: S2sSessionCtx, detail: S2sToolCall): P
   const { callId, name, args: parsedArgs } = detail;
   // Capture the reply ID at call start so finishToolCall can detect
   // whether this tool call's reply was interrupted while we were executing.
-  const replyId = ctx.currentReplyId;
+  const replyId = ctx.reply.currentReplyId;
   const span = tracer.startSpan("tool.call", {
     attributes: {
       "aai.tool.name": name,
@@ -109,7 +109,7 @@ export async function handleToolCall(ctx: S2sSessionCtx, detail: S2sToolCall): P
   let effectiveArgs = parsedArgs;
   if (ctx.hookInvoker?.interceptToolCall) {
     try {
-      const ic = await ctx.hookInvoker.interceptToolCall(ctx.id, name, parsedArgs, HOOK_TIMEOUT_MS);
+      const ic = await ctx.hookInvoker.interceptToolCall(ctx.id, name, parsedArgs);
       if (ic?.type === "block") {
         span.setAttribute("aai.tool.blocked", true);
         span.end();
@@ -122,9 +122,7 @@ export async function handleToolCall(ctx: S2sSessionCtx, detail: S2sToolCall): P
         finishToolCall(ctx, callId, ic.result, replyId);
         ctx.fireHook(
           "afterToolCall",
-          (h) =>
-            h.afterToolCall?.(ctx.id, name, parsedArgs, ic.result, HOOK_TIMEOUT_MS) ??
-            Promise.resolve(),
+          (h) => h.afterToolCall?.(ctx.id, name, parsedArgs, ic.result) ?? Promise.resolve(),
         );
         return;
       }
@@ -155,9 +153,7 @@ export async function handleToolCall(ctx: S2sSessionCtx, detail: S2sToolCall): P
   if (ctx.hookInvoker?.afterToolCall) {
     ctx.fireHook(
       "afterToolCall",
-      (h) =>
-        h.afterToolCall?.(ctx.id, name, effectiveArgs, result, HOOK_TIMEOUT_MS) ??
-        Promise.resolve(),
+      (h) => h.afterToolCall?.(ctx.id, name, effectiveArgs, result) ?? Promise.resolve(),
     );
   }
 
@@ -185,7 +181,7 @@ function handleUserTranscript(ctx: S2sSessionCtx, text: string): void {
       return;
     }
     ctx.hookInvoker
-      .beforeTurn(ctx.id, filtered, HOOK_TIMEOUT_MS)
+      .beforeTurn(ctx.id, filtered)
       .then((reason) => {
         if (reason) {
           ctx.log.info("Turn blocked by middleware", { reason });
@@ -204,7 +200,7 @@ function handleUserTranscript(ctx: S2sSessionCtx, text: string): void {
     return;
   }
   ctx.hookInvoker
-    .filterInput(ctx.id, text, HOOK_TIMEOUT_MS)
+    .filterInput(ctx.id, text)
     .then((filtered) => processFiltered(filtered))
     .catch((err: unknown) => {
       ctx.log.warn("filterInput hook failed", { error: errorMessage(err) });
@@ -229,7 +225,7 @@ function chainFilterOutput(
   }
   ctx.filterChain = ctx.filterChain.then(async () => {
     try {
-      const f = await filterOutput.call(ctx.hookInvoker, ctx.id, text, HOOK_TIMEOUT_MS);
+      const f = await filterOutput.call(ctx.hookInvoker, ctx.id, text);
       emit(f);
     } catch (err: unknown) {
       ctx.log.warn("filterOutput hook failed", { error: errorMessage(err) });
@@ -264,21 +260,21 @@ function handleReplyDone(ctx: S2sSessionCtx, status: string | undefined): void {
     ctx.client.event({ type: "cancelled" });
     return;
   }
-  const doneReplyId = ctx.currentReplyId;
+  const doneReplyId = ctx.reply.currentReplyId;
   // Wait for all in-flight tool calls to complete before sending results.
   // Without this, reply_done can fire while async tool execution is still
   // in progress, causing pendingTools to be empty → results never sent → deadlock.
   const sendPending = () => {
-    if (ctx.currentReplyId !== doneReplyId) {
+    if (ctx.reply.currentReplyId !== doneReplyId) {
       // Stale reply — discard accumulated results to free memory.
-      ctx.pendingTools = [];
+      ctx.reply.pendingTools = [];
       return;
     }
-    if (ctx.pendingTools.length > 0) {
-      for (const tool of ctx.pendingTools) ctx.s2s?.sendToolResult(tool.callId, tool.result);
-      ctx.pendingTools = [];
+    if (ctx.reply.pendingTools.length > 0) {
+      for (const tool of ctx.reply.pendingTools) ctx.s2s?.sendToolResult(tool.callId, tool.result);
+      ctx.reply.pendingTools = [];
     } else {
-      const stepsUsed = ctx.toolCallCount;
+      const stepsUsed = ctx.reply.toolCallCount;
       if (stepsUsed > 0) {
         ctx.log.info("Turn complete", { steps: stepsUsed, agent: ctx.agent });
         turnStepsHistogram.record(stepsUsed, { agent: ctx.agent });
@@ -287,7 +283,7 @@ function handleReplyDone(ctx: S2sSessionCtx, status: string | undefined): void {
         const last = ctx.conversationMessages.at(-1);
         ctx.fireHook(
           "afterTurn",
-          (h) => h.afterTurn?.(ctx.id, last?.content ?? "", HOOK_TIMEOUT_MS) ?? Promise.resolve(),
+          (h) => h.afterTurn?.(ctx.id, last?.content ?? "") ?? Promise.resolve(),
         );
       }
       ctx.client.playAudioDone();

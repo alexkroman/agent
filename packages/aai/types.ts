@@ -15,17 +15,17 @@ export type MiddlewareBlockResult = { block: true; reason: string };
 /**
  * Result returned by a `beforeToolCall` middleware hook to short-circuit tool execution.
  *
- * Return `{ result: string }` to skip execution and use a cached/synthetic result.
- * Return `{ block: true; reason: string }` to deny the tool call.
- * Return `{ args: Record<string, unknown> }` to transform the arguments.
+ * Return `{ type: "result", result: string }` to skip execution and use a cached/synthetic result.
+ * Return `{ type: "block", reason: string }` to deny the tool call.
+ * Return `{ type: "args", args: Record<string, unknown> }` to transform the arguments.
  * Return `undefined` to proceed normally.
  *
  * @public
  */
 export type ToolCallInterceptResult =
-  | { result: string }
-  | { block: true; reason: string }
-  | { args: Record<string, unknown> }
+  | { type: "result"; result: string }
+  | { type: "block"; reason: string }
+  | { type: "args"; args: Record<string, unknown> }
   | undefined;
 
 /**

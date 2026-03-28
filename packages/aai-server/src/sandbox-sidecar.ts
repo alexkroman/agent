@@ -7,7 +7,7 @@
  * KV instance is pre-scoped at construction time.
  */
 
-import { getServerPort, ssrfSafeFetch } from "@alexkroman1/aai/internal";
+import { ssrfSafeFetch } from "@alexkroman1/aai/internal";
 import type { Kv } from "@alexkroman1/aai/kv";
 import { serve } from "@hono/node-server";
 import { zValidator } from "@hono/zod-validator";
@@ -139,7 +139,11 @@ export async function startSidecarServer(kv: Kv): Promise<{ url: string; close: 
     });
   });
 
-  const port = getServerPort(server.address());
+  const addr = server.address();
+  if (!addr || typeof addr !== "object" || typeof addr.port !== "number") {
+    throw new Error(`Expected server address with numeric port, got: ${JSON.stringify(addr)}`);
+  }
+  const port = addr.port;
   return {
     url: `http://127.0.0.1:${port}`,
     close: () => server.close(),

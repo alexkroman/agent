@@ -37,14 +37,13 @@ export type HookInvoker = LifecycleHooks & Partial<MiddlewareRunner>;
 
 /** Middleware interceptor methods — only present when middleware is configured. */
 export type MiddlewareRunner = {
-  filterInput(sid: string, text: string, ms?: number): Promise<string>;
-  beforeTurn(sid: string, text: string, ms?: number): Promise<string | undefined>;
-  afterTurn(sid: string, text: string, ms?: number): Promise<void>;
+  filterInput(sid: string, text: string): Promise<string>;
+  beforeTurn(sid: string, text: string): Promise<string | undefined>;
+  afterTurn(sid: string, text: string): Promise<void>;
   interceptToolCall(
     sid: string,
     tool: string,
     args: Readonly<Record<string, unknown>>,
-    ms?: number,
   ): Promise<
     | { type: "block"; reason: string }
     | { type: "result"; result: string }
@@ -56,9 +55,8 @@ export type MiddlewareRunner = {
     tool: string,
     args: Readonly<Record<string, unknown>>,
     result: string,
-    ms?: number,
   ): Promise<void>;
-  filterOutput(sid: string, text: string, ms?: number): Promise<string>;
+  filterOutput(sid: string, text: string): Promise<string>;
 };
 
 /**
@@ -133,13 +131,6 @@ export function buildMiddlewareRunner(
   };
 }
 
-/** Result from a middleware tool call interceptor. */
-export type ToolInterceptResult =
-  | { type: "block"; reason: string }
-  | { type: "result"; result: string }
-  | { type: "args"; args: Record<string, unknown> }
-  | undefined;
-
 /**
  * Run all `beforeInput` middleware in order, piping the text through each.
  * `ctx.text` must be set.
@@ -212,30 +203,19 @@ export async function runToolCallInterceptors(
   middleware: readonly Middleware[],
   ctx: HookContext,
   onError: MiddlewareErrorHandler = defaultOnError,
-): Promise<ToolInterceptResult> {
+): Promise<ToolCallInterceptResult> {
   let currentArgs = ctx.args ?? {};
   for (const mw of middleware) {
     if (!mw.beforeToolCall) continue;
     try {
-      const result: ToolCallInterceptResult = await mw.beforeToolCall({
-        ...ctx,
-        args: currentArgs,
-      });
+      const result = await mw.beforeToolCall({ ...ctx, args: currentArgs });
       if (!result) continue;
-      if ("block" in result && result.block) {
-        return { type: "block", reason: result.reason };
-      }
-      if ("result" in result) {
-        return { type: "result", result: result.result };
-      }
-      if ("args" in result) {
-        currentArgs = result.args;
-      }
+      if (result.type === "block" || result.type === "result") return result;
+      if (result.type === "args") currentArgs = result.args;
     } catch (error) {
       onError({ middleware: mw.name, hook: "beforeToolCall", error });
     }
   }
-  // If any middleware transformed args, return the final transformed version
   if (currentArgs !== (ctx.args ?? {})) {
     return { type: "args", args: currentArgs as Record<string, unknown> };
   }

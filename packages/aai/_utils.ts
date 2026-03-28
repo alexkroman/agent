@@ -23,22 +23,6 @@ export function isReadOnlyFsOp(op: string): boolean {
 }
 
 /**
- * Safely extract the port from `server.address()`, guarding against the
- * string (pipe/socket) and null return types.
- */
-export function getServerPort(addr: unknown): number {
-  if (
-    addr &&
-    typeof addr === "object" &&
-    "port" in addr &&
-    typeof (addr as { port: unknown }).port === "number"
-  ) {
-    return (addr as { port: number }).port;
-  }
-  throw new Error(`Expected server address with numeric port, got: ${JSON.stringify(addr)}`);
-}
-
-/**
  * Lazily initialized per-session state manager.
  *
  * On first access for a given session, calls `initState()` (if provided) to

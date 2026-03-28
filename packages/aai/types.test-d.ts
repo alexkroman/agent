@@ -262,9 +262,9 @@ describe("exported types", () => {
 
   it("ToolCallInterceptResult is a discriminated union", () => {
     expectTypeOf<ToolCallInterceptResult>().toEqualTypeOf<
-      | { result: string }
-      | { block: true; reason: string }
-      | { args: Record<string, unknown> }
+      | { type: "result"; result: string }
+      | { type: "block"; reason: string }
+      | { type: "args"; args: Record<string, unknown> }
       | undefined
     >();
   });

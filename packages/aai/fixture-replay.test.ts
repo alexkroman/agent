@@ -207,7 +207,7 @@ describe("fixture replay with real executor", () => {
       middleware: [
         {
           name: "blocker",
-          beforeToolCall: () => ({ block: true as const, reason: "Blocked by policy" }),
+          beforeToolCall: () => ({ type: "block", reason: "Blocked by policy" }),
         },
       ],
     });
@@ -258,6 +258,7 @@ describe("fixture replay with real executor", () => {
         {
           name: "arg-transformer",
           beforeToolCall: () => ({
+            type: "args",
             args: { city: "New York" }, // override the city
           }),
         },
@@ -623,6 +624,7 @@ describe("fixture replay with real executor", () => {
         {
           name: "cache-middleware",
           beforeToolCall: () => ({
+            type: "result",
             result: JSON.stringify({ city: "San Francisco", temperature: "68°F", cached: true }),
           }),
         },

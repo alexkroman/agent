@@ -106,7 +106,7 @@ function toolCallCache(): Middleware {
       const key = `${ctx.tool}:${JSON.stringify(ctx.args)}`;
       if (state._cache[key]) {
         console.log(`[cache] Cache hit: ${ctx.tool}`);
-        return { result: state._cache[key] };
+        return { type: "result", result: state._cache[key] };
       }
     },
     afterToolCall: (ctx) => {

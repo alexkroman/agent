@@ -436,9 +436,9 @@ const cacheMiddleware: Middleware = {
   name: "tool-cache",
   beforeToolCall: (ctx) => {
     // ctx.tool has the tool name, ctx.args has the arguments
-    // Return { result: "cached" } to skip execution
-    // Return { block: true, reason: "denied" } to deny the call
-    // Return { args: { ...modified } } to transform arguments
+    // Return { type: "result", result: "cached" } to skip execution
+    // Return { type: "block", reason: "denied" } to deny the call
+    // Return { type: "args", args: { ...modified } } to transform arguments
     // Return void to proceed normally
   },
   afterToolCall: (ctx) => {
