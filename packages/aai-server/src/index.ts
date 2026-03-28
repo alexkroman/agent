@@ -12,6 +12,7 @@ import memoryDriver from "unstorage/drivers/memory";
 import overlayDriver from "unstorage/drivers/overlay";
 import s3Driver from "unstorage/drivers/s3";
 import { createBundleStore } from "./bundle-store.ts";
+import { DEFAULT_CREDENTIAL_SCOPE, DEFAULT_PORT } from "./constants.ts";
 import { deriveCredentialKey } from "./credentials.ts";
 import { createOrchestrator, type OrchestratorOpts } from "./orchestrator.ts";
 import type { AgentSlot } from "./sandbox.ts";
@@ -49,7 +50,7 @@ async function buildOpts(env: NodeJS.ProcessEnv): Promise<OrchestratorOpts> {
 
   const credentialKey = env.KV_SCOPE_SECRET
     ? await deriveCredentialKey(env.KV_SCOPE_SECRET)
-    : await deriveCredentialKey("default-credential-key");
+    : await deriveCredentialKey(DEFAULT_CREDENTIAL_SCOPE);
 
   // Single unstorage instance with overlay (memory cache + S3 persistence).
   // Used for bundles and KV storage — all in the same Tigris bucket.
@@ -79,7 +80,7 @@ async function buildOpts(env: NodeJS.ProcessEnv): Promise<OrchestratorOpts> {
 
 async function main(): Promise<void> {
   const env = process.env;
-  const port = Number.parseInt(env.PORT ?? "8787", 10);
+  const port = Number.parseInt(env.PORT ?? String(DEFAULT_PORT), 10);
 
   const opts = await buildOpts(env);
   const { app, injectWebSocket } = createOrchestrator(opts);

@@ -1,15 +1,14 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { SecretUpdatesSchema } from "./_schemas.ts";
-import type { Env } from "./context.ts";
+import type { AppContext } from "./factory.ts";
 import { terminateSlot } from "./sandbox-slots.ts";
 
 /** Keys managed by the platform that agents must not override or delete. */
 const RESERVED_KEYS = new Set(["ASSEMBLYAI_API_KEY"]);
 
-async function restartSandbox(c: Context<Env>, slug: string, reason: string): Promise<void> {
+async function restartSandbox(c: AppContext, slug: string, reason: string): Promise<void> {
   const slot = c.env.slots.get(slug);
   if (slot?.sandbox || slot?.initializing) {
     console.info(`Restarting sandbox for ${reason}`, { slug });
@@ -17,8 +16,8 @@ async function restartSandbox(c: Context<Env>, slug: string, reason: string): Pr
   }
 }
 
-export async function handleSecretList(c: Context<Env>): Promise<Response> {
-  const slug = c.get("slug");
+export async function handleSecretList(c: AppContext): Promise<Response> {
+  const slug = c.var.slug;
   const env = await c.env.store.getEnv(slug);
   if (!env) {
     throw new HTTPException(404, { message: `Agent ${slug} not found` });
@@ -26,8 +25,8 @@ export async function handleSecretList(c: Context<Env>): Promise<Response> {
   return c.json({ vars: Object.keys(env) });
 }
 
-export async function handleSecretSet(c: Context<Env>): Promise<Response> {
-  const slug = c.get("slug");
+export async function handleSecretSet(c: AppContext): Promise<Response> {
+  const slug = c.var.slug;
   const updates = SecretUpdatesSchema.parse(await c.req.json());
 
   const reserved = Object.keys(updates).filter((k) => RESERVED_KEYS.has(k));
@@ -46,8 +45,8 @@ export async function handleSecretSet(c: Context<Env>): Promise<Response> {
   return c.json({ ok: true, keys: Object.keys(merged) });
 }
 
-export async function handleSecretDelete(c: Context<Env>): Promise<Response> {
-  const slug = c.get("slug");
+export async function handleSecretDelete(c: AppContext): Promise<Response> {
+  const slug = c.var.slug;
   // biome-ignore lint/style/noNonNullAssertion: key param guaranteed by route
   const key = c.req.param("key")!;
   if (!/^[a-zA-Z_]\w*$/.test(key)) {

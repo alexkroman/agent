@@ -1,16 +1,15 @@
 // Copyright 2025 the AAI authors. MIT license.
-import type { Context } from "hono";
-import type { Env } from "./context.ts";
+import type { AppContext } from "./factory.ts";
 import { terminateSlot } from "./sandbox-slots.ts";
 import { withSlugLock } from "./slug-lock.ts";
 
-export function handleDelete(c: Context<Env>): Promise<Response> {
-  const slug = c.get("slug");
+export function handleDelete(c: AppContext): Promise<Response> {
+  const slug = c.var.slug;
   return withSlugLock(slug, () => handleDeleteInner(c));
 }
 
-async function handleDeleteInner(c: Context<Env>): Promise<Response> {
-  const slug = c.get("slug");
+async function handleDeleteInner(c: AppContext): Promise<Response> {
+  const slug = c.var.slug;
 
   const existing = c.env.slots.get(slug);
   if (existing) await terminateSlot(existing);

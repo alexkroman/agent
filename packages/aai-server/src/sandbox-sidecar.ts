@@ -12,13 +12,13 @@ import type { Kv } from "@alexkroman1/aai/kv";
 import { serve } from "@hono/node-server";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
-import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import {
   FETCH_PROXY_TIMEOUT_MS,
   MAX_RESPONSE_BODY_BYTES,
   SIDECAR_STARTUP_TIMEOUT_MS,
 } from "./constants.ts";
+import { createErrorHandler } from "./error-handler.ts";
 
 // ── Sidecar request schemas (per-endpoint, loopback only) ───────────────
 
@@ -110,13 +110,7 @@ function buildSidecarApp(kv: Kv): Hono {
     });
   });
 
-  app.onError((err, c) => {
-    if (err instanceof HTTPException) {
-      return c.json({ error: err.message }, err.status);
-    }
-    const status = err.name === "ZodError" ? 400 : 500;
-    return c.json({ error: err.message }, status as 400 | 500);
-  });
+  app.onError(createErrorHandler({ exposeErrors: true }));
 
   return app;
 }

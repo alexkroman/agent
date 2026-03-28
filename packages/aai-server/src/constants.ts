@@ -49,6 +49,14 @@ export const HARNESS_TOOL_TIMEOUT_MS = 30_000;
 /** Maximum HTTP request body the harness RPC server will accept (bytes, 5 MB). */
 export const HARNESS_MAX_BODY_SIZE = 5 * 1024 * 1024;
 
+// ─── Server ─────────────────────────────────────────────────────────────
+
+/** Default HTTP server listen port. */
+export const DEFAULT_PORT = 8787;
+
+/** Default credential key derivation scope when KV_SCOPE_SECRET is unset. */
+export const DEFAULT_CREDENTIAL_SCOPE = "default-credential-key";
+
 // ─── Deploy ──────────────────────────────────────────────────────────────
 
 /** Maximum worker bundle size (bytes, 10 MB). */
