@@ -1,18 +1,17 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { createUnstorageKv, errorMessage } from "@alexkroman1/aai/internal";
+import { createUnstorageKv } from "@alexkroman1/aai/internal";
 import { createNodeWebSocket } from "@hono/node-ws";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { createMiddleware } from "hono/factory";
-import { HTTPException } from "hono/http-exception";
 import { secureHeaders } from "hono/secure-headers";
 import type { Storage } from "unstorage";
-import { z } from "zod";
 import type { BundleStore } from "./bundle-store.ts";
 import type { Env } from "./context.ts";
 import { handleDelete } from "./delete.ts";
 import { handleDeploy } from "./deploy.ts";
+import { createErrorHandler } from "./error-handler.ts";
+import { factory } from "./factory.ts";
 import { handleKv } from "./kv-handler.ts";
 import { serialize, serializeForAgent } from "./metrics.ts";
 import { requireInternal, requireOwner, validateSlug } from "./middleware.ts";
@@ -38,22 +37,22 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   const app = new Hono<Env>();
   const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
 
-  const slugMw = createMiddleware<Env>(async (c, next) => {
+  const slugMw = factory.createMiddleware(async (c, next) => {
     // biome-ignore lint/style/noNonNullAssertion: slug param guaranteed by route pattern
     c.set("slug", validateSlug(c.req.param("slug")!));
     await next();
   });
 
-  const ownerMw = createMiddleware<Env>(async (c, next) => {
+  const ownerMw = factory.createMiddleware(async (c, next) => {
     const keyHash = await requireOwner(c.req.raw, {
-      slug: c.get("slug"),
+      slug: c.var.slug,
       store: c.env.store,
     });
     c.set("keyHash", keyHash);
     await next();
   });
 
-  const internalMw = createMiddleware<Env>(async (c, next) => {
+  const internalMw = factory.createMiddleware(async (c, next) => {
     requireInternal(c.req.raw);
     await next();
   });
@@ -85,19 +84,9 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     }),
   );
 
-  app.onError((err, c) => {
-    if (err instanceof HTTPException) {
-      return c.json({ error: err.message }, err.status);
-    }
-    if (err instanceof z.ZodError || err instanceof SyntaxError) {
-      return c.json({ error: err.message }, 400);
-    }
-    const errMsg = errorMessage(err);
-    const stack = err instanceof Error ? err.stack : "";
-    const path = new URL(c.req.url).pathname;
-    console.error(`Unhandled error on ${path}: ${errMsg}\n${stack}`);
-    return c.json({ error: "Internal server error" }, 500);
-  });
+  app.notFound((c) => c.json({ error: "Not found" }, 404));
+
+  app.onError(createErrorHandler());
 
   app.get("/health", (c) => c.json({ status: "ok" }));
 
@@ -107,32 +96,33 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     }),
   );
 
+  // Bare-slug redirect (before sub-router so it takes priority)
   app.get("/:slug{[a-z0-9][a-z0-9_-]*[a-z0-9]}", (c) => {
     const url = new URL(c.req.url);
     url.pathname += "/";
     return c.redirect(url.toString(), 301);
   });
 
-  app.post("/:slug/deploy", slugMw, ownerMw, handleDeploy);
-  app.delete("/:slug", slugMw, ownerMw, handleDelete);
-  app.get("/:slug/secret", slugMw, ownerMw, handleSecretList);
-  app.put("/:slug/secret", slugMw, ownerMw, handleSecretSet);
-  app.delete("/:slug/secret/:key", slugMw, ownerMw, handleSecretDelete);
-  app.post("/:slug/kv", slugMw, ownerMw, handleKv);
+  // ── Slug-scoped sub-router ──────────────────────────────────────────
+  const agents = new Hono<Env>();
+  agents.use("*", slugMw);
 
-  app.get("/:slug/metrics", slugMw, ownerMw, async (c) =>
-    c.text(await serializeForAgent(c.get("slug")), 200, {
+  // Owner-protected routes
+  agents.post("/deploy", ownerMw, handleDeploy);
+  agents.delete("/", ownerMw, handleDelete);
+  agents.get("/secret", ownerMw, handleSecretList);
+  agents.put("/secret", ownerMw, handleSecretSet);
+  agents.delete("/secret/:key", ownerMw, handleSecretDelete);
+  agents.post("/kv", ownerMw, handleKv);
+  agents.get("/metrics", ownerMw, async (c) =>
+    c.text(await serializeForAgent(c.var.slug), 200, {
       "Content-Type": "text/plain; version=0.0.4",
     }),
   );
-
-  app.get("/:slug/health", slugMw, handleAgentHealth);
-  app.get("/:slug/assets/:path{.+}", slugMw, handleClientAsset);
-
-  app.get("/:slug/kv", slugMw, ownerMw, async (c) => {
+  agents.get("/kv", ownerMw, async (c) => {
     const key = c.req.query("key");
     if (!key) return c.json({ error: "Missing key query parameter" }, 400);
-    const slug = c.get("slug");
+    const slug = c.var.slug;
     const manifest = await c.env.store.getManifest(slug);
     if (!manifest) return c.json(null, 404);
     const kv = createUnstorageKv({ storage: c.env.storage, prefix: `agents/${slug}/kv` });
@@ -141,13 +131,15 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     return c.json(value);
   });
 
-  app.get("/:slug/", slugMw, handleAgentPage);
-
-  app.get(
-    "/:slug/websocket",
-    slugMw,
+  // Public routes
+  agents.get("/health", handleAgentHealth);
+  agents.get("/assets/:path{.+}", handleClientAsset);
+  // Agent page (GET /:slug/) stays on top-level app because Hono's
+  // mergePath("/:slug", "/") collapses the trailing slash.
+  agents.get(
+    "/websocket",
     upgradeWebSocket((c) => {
-      const slug = c.get("slug");
+      const slug = c.var.slug;
       return {
         async onOpen(_evt, ws) {
           try {
@@ -175,6 +167,9 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
       };
     }),
   );
+
+  app.route("/:slug", agents);
+  app.get("/:slug/", slugMw, handleAgentPage);
 
   // Bindings injected at serve time via app.fetch(req, bindings)
   const bindings = {

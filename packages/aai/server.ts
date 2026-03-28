@@ -12,8 +12,14 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { createNodeWebSocket } from "@hono/node-ws";
 import { Hono } from "hono";
 import { html } from "hono/html";
+import { logger as honoLogger } from "hono/logger";
 import { secureHeaders } from "hono/secure-headers";
 import { createStorage, type Storage } from "unstorage";
+import {
+  AGENT_CSP,
+  DEFAULT_SESSION_START_TIMEOUT_MS,
+  DEFAULT_SHUTDOWN_TIMEOUT_MS,
+} from "./constants.ts";
 import { createDirectExecutor } from "./direct-executor.ts";
 import type { Logger, S2SConfig } from "./runtime.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime.ts";
@@ -82,6 +88,8 @@ export type AgentServer = {
 export type AgentApp = {
   /** Hono app with agent routes. Mount it or add your own middleware. */
   app: Hono;
+  /** Wire WebSocket support into a Node HTTP server. */
+  injectWebSocket: (server: ReturnType<typeof serve>) => void;
   /** Gracefully stop all active sessions and release resources. */
   shutdown(): Promise<void>;
 };
@@ -118,7 +126,7 @@ export function createAgentApp(options: ServerOptions): AgentApp {
     clientDir,
     logger = consoleLogger,
     s2sConfig = DEFAULT_S2S_CONFIG,
-    shutdownTimeoutMs = 30_000,
+    shutdownTimeoutMs = DEFAULT_SHUTDOWN_TIMEOUT_MS,
   } = options;
 
   const rawEnv = options.env ?? (typeof process !== "undefined" ? process.env : {});
@@ -134,47 +142,42 @@ export function createAgentApp(options: ServerOptions): AgentApp {
     kv,
     logger,
     s2sConfig,
-    sessionStartTimeoutMs: options.sessionStartTimeoutMs,
+    sessionStartTimeoutMs: options.sessionStartTimeoutMs ?? DEFAULT_SESSION_START_TIMEOUT_MS,
     shutdownTimeoutMs,
   });
 
   const app = new Hono();
   const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
 
+  app.notFound((c) => c.json({ error: "Not found" }, 404));
+
   app.onError((err, c) => {
     logger.error(`${c.req.method} ${c.req.path} error: ${err.message}`);
     return c.json({ error: "Internal Server Error" }, 500);
   });
 
-  app.use("/*", async (c, next) => {
-    const start = Date.now();
-    await next();
-    const ms = Date.now() - start;
-    const { status } = c.res;
-    const method = c.req.method;
-    const path = c.req.path;
-    if (status >= 400) {
-      logger.error(`${method} ${path} ${status} ${ms}ms`);
-    } else {
-      logger.info(`${method} ${path} ${status} ${ms}ms`);
-    }
-  });
-
+  // Strip ANSI escape codes (hono/logger may colorize the status)
+  const ansiPattern = new RegExp(`${String.fromCharCode(27)}\\[\\d+m`, "g");
   app.use(
     "*",
-    secureHeaders({
-      contentSecurityPolicy: {
-        defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "blob:"],
-        styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
-        connectSrc: ["'self'", "wss:", "ws:"],
-        imgSrc: ["'self'", "data:"],
-        fontSrc: ["'self'", "https://fonts.gstatic.com"],
-        objectSrc: ["'none'"],
-        baseUri: ["'self'"],
-      },
+    honoLogger((msg: string) => {
+      // hono/logger format: "<-- GET /" or "--> GET / 404 12ms"
+      const clean = msg.replace(ansiPattern, "");
+      const statusMatch = clean.match(/--> \w+ \S+ (\d{3})/);
+      const status = statusMatch ? Number(statusMatch[1]) : 0;
+      if (status >= 400) {
+        logger.error(msg);
+      } else {
+        logger.info(msg);
+      }
     }),
   );
+
+  app.use("*", secureHeaders());
+  app.use("*", (c, next) => {
+    c.header("Content-Security-Policy", AGENT_CSP);
+    return next();
+  });
 
   app.get("/health", (c) => c.json({ status: "ok", name: agent.name }));
 
@@ -187,7 +190,7 @@ export function createAgentApp(options: ServerOptions): AgentApp {
   });
 
   if (clientDir) {
-    app.use("/*", serveStatic({ root: clientDir }));
+    app.use("*", serveStatic({ root: clientDir }));
   }
 
   app.get("/", (c) => {
@@ -215,12 +218,9 @@ export function createAgentApp(options: ServerOptions): AgentApp {
     }),
   );
 
-  // Expose injectWebSocket so createServer can wire it to the Node server.
-  // biome-ignore lint/suspicious/noExplicitAny: internal plumbing
-  (app as any)._injectWebSocket = injectWebSocket;
-
   return {
     app,
+    injectWebSocket,
     shutdown: () => runtime.shutdown(),
   };
 }
@@ -244,9 +244,7 @@ export function createAgentApp(options: ServerOptions): AgentApp {
  * @public
  */
 export function createServer(options: ServerOptions): AgentServer {
-  const { app, shutdown } = createAgentApp(options);
-  // biome-ignore lint/suspicious/noExplicitAny: internal plumbing from createAgentApp
-  const injectWebSocket: (server: ReturnType<typeof serve>) => void = (app as any)._injectWebSocket;
+  const { app, injectWebSocket, shutdown } = createAgentApp(options);
 
   let serverHandle: { shutdown(): Promise<void> } | null = null;
   let listenPort: number | undefined;

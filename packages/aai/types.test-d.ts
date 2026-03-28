@@ -226,10 +226,11 @@ describe("createServer", () => {
 });
 
 describe("createAgentApp", () => {
-  it("returns AgentApp with app and shutdown", () => {
+  it("returns AgentApp with app, injectWebSocket, and shutdown", () => {
     const agent = defineAgent({ name: "test" });
     const result = createAgentApp({ agent });
     expectTypeOf(result).toEqualTypeOf<AgentApp>();
+    expectTypeOf(result.injectWebSocket).toBeFunction();
     expectTypeOf(result.shutdown).toEqualTypeOf<() => Promise<void>>();
   });
 });
