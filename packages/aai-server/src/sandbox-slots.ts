@@ -34,7 +34,7 @@ type EnsureOpts = {
   getAgentEnv: () => Promise<Record<string, string>>;
 };
 
-async function spawnAgent(slot: AgentSlot, opts: EnsureOpts): Promise<void> {
+async function spawnAgent(slot: AgentSlot, opts: EnsureOpts): Promise<Sandbox> {
   const { slug } = slot;
   console.info("Loading agent sandbox", { slug });
 
@@ -42,13 +42,15 @@ async function spawnAgent(slot: AgentSlot, opts: EnsureOpts): Promise<void> {
   if (!code) throw new Error(`Worker code not found for ${slug}`);
 
   const [apiKey, agentEnv] = await Promise.all([opts.getApiKey(), opts.getAgentEnv()]);
-  slot.sandbox = await opts.createSandbox({
+  const sandbox = await opts.createSandbox({
     workerCode: code,
     apiKey,
     agentEnv,
     storage: opts.storage,
     slug: opts.slug,
   });
+  slot.sandbox = sandbox;
+  return sandbox;
 }
 
 function resetIdleTimer(slot: AgentSlot): void {
@@ -90,15 +92,14 @@ export async function ensureAgent(slot: AgentSlot, opts: EnsureOpts): Promise<Sa
 
   const t0 = performance.now();
   slot.initializing = spawnAgent(slot, opts)
-    .then(() => {
+    .then((sandbox) => {
       delete slot.initializing;
       resetIdleTimer(slot);
       console.info("Agent sandbox ready", {
         slug: slot.slug,
         durationMs: Math.round(performance.now() - t0),
       });
-      // biome-ignore lint/style/noNonNullAssertion: sandbox is set by spawnAgent above
-      return slot.sandbox!;
+      return sandbox;
     })
     .catch((err: unknown) => {
       delete slot.initializing;

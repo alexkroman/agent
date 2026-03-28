@@ -212,40 +212,21 @@ function handleUserTranscript(ctx: S2sSessionCtx, text: string): void {
     });
 }
 
-function handleAgentTranscriptDelta(ctx: S2sSessionCtx, text: string): void {
-  const filterOutput = ctx.hookInvoker?.filterOutput;
-  if (!filterOutput) {
-    ctx.client.event({ type: "chat_delta", text });
-    return;
-  }
-  // Chain filter calls sequentially to preserve ordering. Without this,
-  // concurrent filterOutput calls could resolve out of order, producing
-  // garbled text on the client.
-  ctx.filterChain = ctx.filterChain.then(async () => {
-    try {
-      const f = await filterOutput.call(ctx.hookInvoker, ctx.id, text, HOOK_TIMEOUT_MS);
-      ctx.client.event({ type: "chat_delta", text: f });
-    } catch (err: unknown) {
-      ctx.log.warn("filterOutput hook failed", { error: errorMessage(err) });
-      ctx.client.event({ type: "chat_delta", text });
-    }
-  });
-}
-
-function handleAgentTranscript(ctx: S2sSessionCtx, text: string, interrupted: boolean): void {
-  const emit = (t: string) => {
-    ctx.client.event({ type: "chat", text: t });
-    if (!interrupted) {
-      ctx.pushMessages({ role: "assistant", content: t });
-    }
-  };
+/**
+ * Chain a filterOutput call onto `ctx.filterChain` to preserve ordering.
+ * On success the filtered text is passed to `emit`; on failure the raw
+ * `text` is passed instead (fail-open).
+ */
+function chainFilterOutput(
+  ctx: S2sSessionCtx,
+  text: string,
+  emit: (filtered: string) => void,
+): void {
   const filterOutput = ctx.hookInvoker?.filterOutput;
   if (!filterOutput) {
     emit(text);
     return;
   }
-  // Chain after any pending deltas to ensure the final transcript
-  // is emitted after all deltas are processed.
   ctx.filterChain = ctx.filterChain.then(async () => {
     try {
       const f = await filterOutput.call(ctx.hookInvoker, ctx.id, text, HOOK_TIMEOUT_MS);
@@ -253,6 +234,23 @@ function handleAgentTranscript(ctx: S2sSessionCtx, text: string, interrupted: bo
     } catch (err: unknown) {
       ctx.log.warn("filterOutput hook failed", { error: errorMessage(err) });
       emit(text);
+    }
+  });
+}
+
+function handleAgentTranscriptDelta(ctx: S2sSessionCtx, text: string): void {
+  chainFilterOutput(ctx, text, (filtered) => {
+    ctx.client.event({ type: "chat_delta", text: filtered });
+  });
+}
+
+function handleAgentTranscript(ctx: S2sSessionCtx, text: string, interrupted: boolean): void {
+  // Chain after any pending deltas to ensure the final transcript
+  // is emitted after all deltas are processed.
+  chainFilterOutput(ctx, text, (filtered) => {
+    ctx.client.event({ type: "chat", text: filtered });
+    if (!interrupted) {
+      ctx.pushMessages({ role: "assistant", content: filtered });
     }
   });
 }

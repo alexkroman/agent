@@ -140,6 +140,47 @@ function isNewCompletedCall(
 }
 
 /**
+ * Shared helper for hooks that need to fire a callback once per new tool call.
+ *
+ * Handles deduplication via a `Set<string>` ref, automatic reset when the
+ * signal array is cleared, and a stable callback ref to avoid stale closures.
+ *
+ * @param session - The voice session whose `toolCalls` signal to watch.
+ * @param shouldProcess - Predicate that decides whether a tool call is eligible.
+ *   Called with the tool call and the seen-IDs set. Must NOT mutate the set.
+ * @param onNew - Invoked for each eligible tool call that hasn't been seen yet.
+ */
+function useToolCallEffect(
+  session: VoiceSession,
+  shouldProcess: (tc: ToolCallInfo, seen: Set<string>) => boolean,
+  onNew: (tc: ToolCallInfo) => void,
+): void {
+  const seenRef = useRef(new Set<string>());
+  const cbRef = useRef(onNew);
+  cbRef.current = onNew;
+  const predicateRef = useRef(shouldProcess);
+  predicateRef.current = shouldProcess;
+
+  useEffect(
+    () =>
+      effect(() => {
+        const toolCalls = session.toolCalls.value;
+        if (toolCalls.length === 0) {
+          seenRef.current.clear();
+          return;
+        }
+        for (const tc of toolCalls) {
+          if (!predicateRef.current(tc, seenRef.current)) continue;
+          if (seenRef.current.has(tc.toolCallId)) continue;
+          seenRef.current.add(tc.toolCallId);
+          cbRef.current(tc);
+        }
+      }),
+    [session],
+  );
+}
+
+/**
  * Hook that fires a callback exactly once for each newly completed tool call.
  *
  * Handles deduplication internally — safe to use with `useState` setters
@@ -191,25 +232,12 @@ export function useToolResult<R = unknown>(
       : (_name: string, result: unknown, tc: ToolCallInfo) => maybeCallback?.(result as R, tc);
 
   const { session } = useSession();
-  const seenRef = useRef(new Set<string>());
-  const cbRef = useRef(callback);
-  cbRef.current = callback;
 
-  useEffect(
-    () =>
-      effect(() => {
-        const toolCalls = session.toolCalls.value;
-        if (toolCalls.length === 0) {
-          seenRef.current.clear();
-          return;
-        }
-        for (const tc of toolCalls) {
-          if (!isNewCompletedCall(tc, seenRef.current, filterName)) continue;
-          seenRef.current.add(tc.toolCallId);
-          cbRef.current(tc.toolName, tryParseJSON(tc.result), tc);
-        }
-      }),
-    [session],
+  useToolCallEffect(
+    session,
+    (tc, seen) => isNewCompletedCall(tc, seen, filterName),
+    (tc) =>
+      callback(tc.toolName, tryParseJSON((tc as ToolCallInfo & { result: string }).result), tc),
   );
 }
 
@@ -228,25 +256,11 @@ export function useToolCallStart(
   callback: (toolName: string, args: Record<string, unknown>, toolCall: ToolCallInfo) => void,
 ): void {
   const { session } = useSession();
-  const seenRef = useRef(new Set<string>());
-  const cbRef = useRef(callback);
-  cbRef.current = callback;
 
-  useEffect(
-    () =>
-      effect(() => {
-        const toolCalls = session.toolCalls.value;
-        if (toolCalls.length === 0) {
-          seenRef.current.clear();
-          return;
-        }
-        for (const tc of toolCalls) {
-          if (seenRef.current.has(tc.toolCallId)) continue;
-          seenRef.current.add(tc.toolCallId);
-          cbRef.current(tc.toolName, tc.args, tc);
-        }
-      }),
-    [session],
+  useToolCallEffect(
+    session,
+    () => true,
+    (tc) => callback(tc.toolName, tc.args, tc),
   );
 }
 
