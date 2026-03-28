@@ -119,8 +119,8 @@ describe("defineAgent", () => {
       middleware: [
         {
           name: "logger",
-          beforeTurn: (text, ctx) => {
-            expectTypeOf(text).toEqualTypeOf<string>();
+          beforeTurn: (ctx) => {
+            expectTypeOf(ctx.text).toEqualTypeOf<string | undefined>();
             expectTypeOf(ctx.state).toEqualTypeOf<{ count: number }>();
           },
         },
@@ -265,10 +265,18 @@ describe("exported types", () => {
     expectTypeOf<MyResults>().toEqualTypeOf<{ add: { id: number }; remove: { ok: boolean } }>();
   });
 
-  it("HookContext is ToolContext without messages", () => {
-    type TC = ToolContext<{ x: number }>;
+  it("HookContext extends ToolContext fields (minus messages) with per-hook data", () => {
     type HC = HookContext<{ x: number }>;
-    expectTypeOf<HC>().toEqualTypeOf<Omit<TC, "messages">>();
+    type TC = ToolContext<{ x: number }>;
+    // HookContext has all ToolContext fields except messages
+    expectTypeOf<HC["env"]>().toEqualTypeOf<TC["env"]>();
+    expectTypeOf<HC["state"]>().toEqualTypeOf<TC["state"]>();
+    expectTypeOf<HC["kv"]>().toEqualTypeOf<TC["kv"]>();
+    expectTypeOf<HC["fetch"]>().toEqualTypeOf<TC["fetch"]>();
+    expectTypeOf<HC["sessionId"]>().toEqualTypeOf<TC["sessionId"]>();
+    // Plus per-hook optional fields
+    expectTypeOf<HC["text"]>().toEqualTypeOf<string | undefined>();
+    expectTypeOf<HC["tool"]>().toEqualTypeOf<string | undefined>();
   });
 
   it("KvEntry has expected shape", () => {

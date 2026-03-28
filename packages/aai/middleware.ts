@@ -74,39 +74,40 @@ export function buildMiddlewareRunner(
   const handler = onError ?? defaultOnError;
   return {
     async filterInput(sessionId: string, text: string) {
-      return runInputFilters(middleware, text, makeCtx(sessionId), handler);
+      return runInputFilters(middleware, { ...makeCtx(sessionId), text }, handler);
     },
     async beforeTurn(sessionId: string, text: string) {
-      const result = await runBeforeTurnMiddleware(middleware, text, makeCtx(sessionId), handler);
+      const result = await runBeforeTurnMiddleware(
+        middleware,
+        { ...makeCtx(sessionId), text },
+        handler,
+      );
       return result?.reason;
     },
     async afterTurn(sessionId: string, text: string) {
-      await runAfterTurnMiddleware(middleware, text, makeCtx(sessionId), handler);
+      await runAfterTurnMiddleware(middleware, { ...makeCtx(sessionId), text }, handler);
     },
     async interceptToolCall(
       sessionId: string,
-      toolName: string,
+      tool: string,
       args: Readonly<Record<string, unknown>>,
     ) {
-      return runToolCallInterceptors(middleware, toolName, args, makeCtx(sessionId), handler);
+      return runToolCallInterceptors(middleware, { ...makeCtx(sessionId), tool, args }, handler);
     },
     async afterToolCall(
       sessionId: string,
-      toolName: string,
+      tool: string,
       args: Readonly<Record<string, unknown>>,
       result: string,
     ) {
       await runAfterToolCallMiddleware(
         middleware,
-        toolName,
-        args,
-        result,
-        makeCtx(sessionId),
+        { ...makeCtx(sessionId), tool, args, result },
         handler,
       );
     },
     async filterOutput(sessionId: string, text: string) {
-      return runOutputFilters(middleware, text, makeCtx(sessionId), handler);
+      return runOutputFilters(middleware, { ...makeCtx(sessionId), text }, handler);
     },
   };
 }
@@ -120,19 +121,18 @@ export type ToolInterceptResult =
 
 /**
  * Run all `beforeInput` middleware in order, piping the text through each.
- * Symmetric to {@link runOutputFilters} but for user input.
+ * `ctx.text` must be set.
  */
 export async function runInputFilters(
   middleware: readonly Middleware[],
-  text: string,
   ctx: HookContext,
   onError: MiddlewareErrorHandler = defaultOnError,
 ): Promise<string> {
-  let filtered = text;
+  let filtered = ctx.text ?? "";
   for (const mw of middleware) {
     if (!mw.beforeInput) continue;
     try {
-      filtered = await mw.beforeInput(filtered, ctx);
+      filtered = await mw.beforeInput({ ...ctx, text: filtered });
     } catch (error) {
       onError({ middleware: mw.name, hook: "beforeInput", error });
     }
@@ -142,18 +142,17 @@ export async function runInputFilters(
 
 /**
  * Run all `beforeTurn` middleware in order. Returns a block result if any
- * middleware blocks the turn, or `undefined` to proceed.
+ * middleware blocks the turn, or `undefined` to proceed. `ctx.text` must be set.
  */
 export async function runBeforeTurnMiddleware(
   middleware: readonly Middleware[],
-  text: string,
   ctx: HookContext,
   onError: MiddlewareErrorHandler = defaultOnError,
 ): Promise<MiddlewareBlockResult | undefined> {
   for (const mw of middleware) {
     if (!mw.beforeTurn) continue;
     try {
-      const result = await mw.beforeTurn(text, ctx);
+      const result = await mw.beforeTurn(ctx);
       if (result && "block" in result && result.block) {
         return result;
       }
@@ -164,11 +163,10 @@ export async function runBeforeTurnMiddleware(
 }
 
 /**
- * Run all `afterTurn` middleware in reverse order.
+ * Run all `afterTurn` middleware in reverse order. `ctx.text` must be set.
  */
 export async function runAfterTurnMiddleware(
   middleware: readonly Middleware[],
-  text: string,
   ctx: HookContext,
   onError: MiddlewareErrorHandler = defaultOnError,
 ): Promise<void> {
@@ -176,7 +174,7 @@ export async function runAfterTurnMiddleware(
     const mw = middleware[i];
     if (!mw?.afterTurn) continue;
     try {
-      await mw.afterTurn(text, ctx);
+      await mw.afterTurn(ctx);
     } catch (error) {
       onError({ middleware: mw.name, hook: "afterTurn", error });
     }
@@ -186,20 +184,22 @@ export async function runAfterTurnMiddleware(
 /**
  * Run all `beforeToolCall` middleware in order. Returns a result that
  * may block execution, provide a cached result, or transform args.
- * Returns `undefined` to proceed with normal execution.
+ * Returns `undefined` to proceed. `ctx.tool` and `ctx.args` must be set.
  */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: inherent to intercept logic (block/result/args branching)
 export async function runToolCallInterceptors(
   middleware: readonly Middleware[],
-  toolName: string,
-  args: Readonly<Record<string, unknown>>,
   ctx: HookContext,
   onError: MiddlewareErrorHandler = defaultOnError,
 ): Promise<ToolInterceptResult> {
-  let currentArgs = args;
+  let currentArgs = ctx.args ?? {};
   for (const mw of middleware) {
     if (!mw.beforeToolCall) continue;
     try {
-      const result: ToolCallInterceptResult = await mw.beforeToolCall(toolName, currentArgs, ctx);
+      const result: ToolCallInterceptResult = await mw.beforeToolCall({
+        ...ctx,
+        args: currentArgs,
+      });
       if (!result) continue;
       if ("block" in result && result.block) {
         return { type: "block", reason: result.reason };
@@ -215,19 +215,17 @@ export async function runToolCallInterceptors(
     }
   }
   // If any middleware transformed args, return the final transformed version
-  if (currentArgs !== args) {
+  if (currentArgs !== (ctx.args ?? {})) {
     return { type: "args", args: currentArgs as Record<string, unknown> };
   }
 }
 
 /**
  * Run all `afterToolCall` middleware in reverse order.
+ * `ctx.tool`, `ctx.args`, and `ctx.result` must be set.
  */
 export async function runAfterToolCallMiddleware(
   middleware: readonly Middleware[],
-  toolName: string,
-  args: Readonly<Record<string, unknown>>,
-  result: string,
   ctx: HookContext,
   onError: MiddlewareErrorHandler = defaultOnError,
 ): Promise<void> {
@@ -235,7 +233,7 @@ export async function runAfterToolCallMiddleware(
     const mw = middleware[i];
     if (!mw?.afterToolCall) continue;
     try {
-      await mw.afterToolCall(toolName, args, result, ctx);
+      await mw.afterToolCall(ctx);
     } catch (error) {
       onError({ middleware: mw.name, hook: "afterToolCall", error });
     }
@@ -244,18 +242,18 @@ export async function runAfterToolCallMiddleware(
 
 /**
  * Run all `beforeOutput` middleware in order, piping the text through each.
+ * `ctx.text` must be set.
  */
 export async function runOutputFilters(
   middleware: readonly Middleware[],
-  text: string,
   ctx: HookContext,
   onError: MiddlewareErrorHandler = defaultOnError,
 ): Promise<string> {
-  let filtered = text;
+  let filtered = ctx.text ?? "";
   for (const mw of middleware) {
     if (!mw.beforeOutput) continue;
     try {
-      filtered = await mw.beforeOutput(filtered, ctx);
+      filtered = await mw.beforeOutput({ ...ctx, text: filtered });
     } catch (error) {
       onError({ middleware: mw.name, hook: "beforeOutput", error });
     }

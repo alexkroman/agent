@@ -257,7 +257,7 @@ describe("fixture replay with real executor", () => {
       middleware: [
         {
           name: "arg-transformer",
-          beforeToolCall: (_tool, _args) => ({
+          beforeToolCall: () => ({
             args: { city: "New York" }, // override the city
           }),
         },
@@ -345,7 +345,7 @@ describe("fixture replay with real executor", () => {
       middleware: [
         {
           name: "pii-redactor",
-          beforeInput: (text) => text.replace(/San Francisco/gi, "[REDACTED]"),
+          beforeInput: (ctx) => (ctx.text ?? "").replace(/San Francisco/gi, "[REDACTED]"),
         },
       ],
     });
@@ -440,7 +440,7 @@ describe("fixture replay with real executor", () => {
       middleware: [
         {
           name: "output-censor",
-          beforeOutput: (text) => text.replace(/Venus/gi, "[PLANET]"),
+          beforeOutput: (ctx) => (ctx.text ?? "").replace(/Venus/gi, "[PLANET]"),
         },
       ],
     });
@@ -853,8 +853,8 @@ describe("fixture replay with real executor", () => {
       middleware: [
         {
           name: "delta-filter",
-          beforeOutput: (text) => {
-            const filtered = text.toUpperCase();
+          beforeOutput: (ctx) => {
+            const filtered = (ctx.text ?? "").toUpperCase();
             filteredDeltas.push(filtered);
             return filtered;
           },
@@ -919,11 +919,11 @@ describe("fixture replay with real executor", () => {
       middleware: [
         {
           name: "after-detail",
-          afterToolCall: (toolName, args, result) => {
+          afterToolCall: (ctx) => {
             afterCalls.push({
-              tool: toolName,
-              args: args as Record<string, unknown>,
-              result,
+              tool: ctx.tool ?? "",
+              args: ctx.args as Record<string, unknown>,
+              result: ctx.result ?? "",
             });
           },
         },

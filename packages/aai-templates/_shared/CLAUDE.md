@@ -414,32 +414,35 @@ import type { Middleware } from "@alexkroman1/aai";
 
 const rateLimiter: Middleware = {
   name: "rate-limiter",
-  beforeTurn: (text, ctx) => {
+  beforeTurn: (ctx) => {
+    // ctx.text has the user's input
     // Return { block: true, reason: "..." } to block the turn
     // Return void to proceed
   },
-  afterTurn: (text, ctx) => {
-    // Run after a turn completes
+  afterTurn: (ctx) => {
+    // Run after a turn completes (ctx.text has the turn text)
   },
 };
 
 const piiRedactor: Middleware = {
   name: "pii-redactor",
-  beforeOutput: (text, ctx) => {
+  beforeOutput: (ctx) => {
     // Transform agent text before TTS. Return the filtered text.
-    return text.replace(/\d{3}-\d{2}-\d{4}/g, "[SSN REDACTED]");
+    return (ctx.text ?? "").replace(/\d{3}-\d{2}-\d{4}/g, "[SSN REDACTED]");
   },
 };
 
 const cacheMiddleware: Middleware = {
   name: "tool-cache",
-  beforeToolCall: (toolName, args, ctx) => {
+  beforeToolCall: (ctx) => {
+    // ctx.tool has the tool name, ctx.args has the arguments
     // Return { result: "cached" } to skip execution
     // Return { block: true, reason: "denied" } to deny the call
     // Return { args: { ...modified } } to transform arguments
     // Return void to proceed normally
   },
-  afterToolCall: (toolName, args, result, ctx) => {
+  afterToolCall: (ctx) => {
+    // ctx.tool, ctx.args, ctx.result are set
     // Run after tool execution (e.g. cache the result)
   },
 };

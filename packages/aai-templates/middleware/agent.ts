@@ -19,7 +19,7 @@ import { z } from "zod";
 function rateLimiter(maxTurns = 20, windowMs = 60_000): Middleware {
   return {
     name: "rate-limiter",
-    beforeTurn: (text, ctx) => {
+    beforeTurn: (ctx) => {
       const state = ctx.state as {
         _rl?: { count: number; windowStart: number };
       };
@@ -59,12 +59,12 @@ function piiRedactor(): Middleware {
 
   return {
     name: "pii-redactor",
-    beforeOutput: (text) => {
-      let filtered = text;
+    beforeOutput: (ctx) => {
+      let filtered = (ctx.text ?? "");
       for (const [pattern, replacement] of patterns) {
         filtered = filtered.replace(pattern, replacement);
       }
-      if (filtered !== text) {
+      if (filtered !== ctx.text) {
         console.log("[pii-redactor] Redacted PII from output");
       }
       return filtered;
@@ -78,15 +78,15 @@ function piiRedactor(): Middleware {
 function analyticsLogger(): Middleware {
   return {
     name: "analytics-logger",
-    beforeTurn: (text, _ctx) => {
-      console.log(`[analytics] Turn started: "${text.slice(0, 50)}..."`);
+    beforeTurn: (ctx) => {
+      console.log(`[analytics] Turn started: "${(ctx.text ?? "").slice(0, 50)}..."`);
       return undefined;
     },
-    afterTurn: (text, ctx) => {
+    afterTurn: () => {
       console.log(`[analytics] Turn completed for session`);
     },
-    beforeToolCall: (toolName, args, _ctx) => {
-      console.log(`[analytics] Tool call: ${toolName}`, args);
+    beforeToolCall: (ctx) => {
+      console.log(`[analytics] Tool call: ${ctx.tool}`, ctx.args);
       return undefined;
     },
   };
@@ -98,25 +98,25 @@ function analyticsLogger(): Middleware {
 function toolCallCache(): Middleware {
   return {
     name: "tool-call-cache",
-    beforeToolCall: (toolName, args, ctx) => {
+    beforeToolCall: (ctx) => {
       const state = ctx.state as {
         _cache?: Record<string, string>;
       };
       if (!state._cache) state._cache = {};
-      const key = `${toolName}:${JSON.stringify(args)}`;
+      const key = `${ctx.tool}:${JSON.stringify(ctx.args)}`;
       if (state._cache[key]) {
-        console.log(`[cache] Cache hit: ${toolName}`);
+        console.log(`[cache] Cache hit: ${ctx.tool}`);
         return { result: state._cache[key] };
       }
     },
-    afterToolCall: (toolName, args, result, ctx) => {
+    afterToolCall: (ctx) => {
       const state = ctx.state as {
         _cache?: Record<string, string>;
       };
       if (!state._cache) state._cache = {};
-      const key = `${toolName}:${JSON.stringify(args)}`;
-      state._cache[key] = result;
-      console.log(`[cache] Cached result for: ${toolName}`);
+      const key = `${ctx.tool}:${JSON.stringify(ctx.args)}`;
+      state._cache[key] = (ctx.result ?? "");
+      console.log(`[cache] Cached result for: ${ctx.tool}`);
     },
   };
 }

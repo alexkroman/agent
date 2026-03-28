@@ -113,61 +113,56 @@ export type Middleware<S = any> = {
    * Middleware is piped in array order: the output of one filter becomes
    * the input of the next.
    *
+   * `ctx.text` contains the current text (after prior filters).
+   *
    * @example
    * ```ts
-   * beforeInput: (text) =>
-   *   text.replace(/\b\d{3}[-.]?\d{2}[-.]?\d{4}\b/g, "[SSN REDACTED]")
+   * beforeInput: (ctx) =>
+   *   (ctx.text ?? "").replace(/\b\d{3}[-.]?\d{2}[-.]?\d{4}\b/g, "[SSN REDACTED]")
    * ```
    */
-  beforeInput?: (text: string, ctx: HookContext<S>) => string | Promise<string>;
+  beforeInput?: (ctx: HookContext<S>) => string | Promise<string>;
 
   /**
    * Runs before each user turn. Can block the turn by returning
    * `{ block: true, reason: "..." }`. Return `undefined` to proceed.
    *
-   * Receives the text *after* `beforeInput` filtering has been applied.
+   * `ctx.text` contains the text *after* `beforeInput` filtering.
    *
    * When a turn is blocked, subsequent `beforeTurn` middleware is skipped,
    * and `afterTurn` hooks do **not** fire.
    */
   beforeTurn?: (
-    text: string,
     ctx: HookContext<S>,
     // biome-ignore lint/suspicious/noConfusingVoidType: void allows callbacks to omit return
   ) => MiddlewareBlockResult | void | undefined | Promise<MiddlewareBlockResult | void | undefined>;
 
   /**
    * Runs after each user turn completes (after all steps finish).
-   * Runs in reverse array order.
+   * `ctx.text` contains the turn text. Runs in reverse array order.
    */
-  afterTurn?: (text: string, ctx: HookContext<S>) => void | Promise<void>;
+  afterTurn?: (ctx: HookContext<S>) => void | Promise<void>;
 
   /**
    * Runs before each tool call. Can approve, deny, transform args, or
-   * return a cached result.
+   * return a cached result. `ctx.tool` and `ctx.args` are set.
    */
   beforeToolCall?: (
-    toolName: string,
-    args: Readonly<Record<string, unknown>>,
     ctx: HookContext<S>,
   ) => ToolCallInterceptResult | undefined | Promise<ToolCallInterceptResult | undefined>;
 
   /**
    * Runs after each tool call completes. Useful for caching results,
-   * logging, or analytics. Runs in reverse array order.
+   * logging, or analytics. `ctx.tool`, `ctx.args`, and `ctx.result` are set.
+   * Runs in reverse array order.
    */
-  afterToolCall?: (
-    toolName: string,
-    args: Readonly<Record<string, unknown>>,
-    result: string,
-    ctx: HookContext<S>,
-  ) => void | Promise<void>;
+  afterToolCall?: (ctx: HookContext<S>) => void | Promise<void>;
 
   /**
    * Filters agent text output before it is sent to TTS. Return the
-   * (possibly modified) text. Runs on every agent transcript chunk.
+   * (possibly modified) text. `ctx.text` contains the current text.
    */
-  beforeOutput?: (text: string, ctx: HookContext<S>) => string | Promise<string>;
+  beforeOutput?: (ctx: HookContext<S>) => string | Promise<string>;
 };
 
 /**
@@ -262,17 +257,43 @@ export type ToolContext<S = Record<string, unknown>> = {
 };
 
 /**
- * Context passed to lifecycle hooks (`onConnect`, `onTurn`, etc.).
+ * Context passed to lifecycle hooks and middleware.
  *
- * Same as {@link ToolContext} but without `messages`, since hooks
- * run outside the tool execution flow.
+ * Base fields (`env`, `state`, `kv`, `fetch`, `sessionId`) are always set.
+ * Per-phase fields are set by the middleware runner for the current hook:
+ * - `text` — set for text-based hooks (beforeInput, beforeTurn, afterTurn, beforeOutput)
+ * - `tool`, `args` — set for tool hooks (beforeToolCall, afterToolCall)
+ * - `result` — set for afterToolCall
  *
  * @typeParam S - The shape of per-session state created by the agent's
  *   `state` factory. Defaults to `Record<string, unknown>`.
  *
  * @public
  */
-export type HookContext<S = Record<string, unknown>> = Omit<ToolContext<S>, "messages">;
+export type HookContext<S = Record<string, unknown>> = {
+  /** Environment variables declared in the agent config. */
+  env: Readonly<Record<string, string>>;
+  /** Mutable per-session state created by the agent's `state` factory. */
+  state: S;
+  /** Key-value store scoped to this agent deployment. */
+  kv: Kv;
+  /**
+   * SSRF-safe fetch function.
+   * In self-hosted mode this calls the network directly (with SSRF protection).
+   * In platform mode this is proxied through the sidecar.
+   */
+  fetch: typeof globalThis.fetch;
+  /** Unique identifier for the current session. */
+  sessionId: string;
+  /** Turn or filter text. Set for text-based hooks. */
+  text?: string;
+  /** Tool name. Set for tool call hooks. */
+  tool?: string;
+  /** Tool arguments. Set for tool call hooks. */
+  args?: Readonly<Record<string, unknown>>;
+  /** Tool call result. Set for afterToolCall. */
+  result?: string;
+};
 
 /**
  * Definition of a custom tool that the agent can invoke.
