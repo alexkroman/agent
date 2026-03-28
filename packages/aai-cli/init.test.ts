@@ -7,13 +7,13 @@ import { fileExists } from "./_discover.ts";
 import { fakeDownloadAndMerge, fakeListTemplates, silenced, withTempDir } from "./_test-utils.ts";
 
 async function createFakeTemplates(dir: string): Promise<string> {
-  const templatesDir = path.join(dir, "templates");
-  const shared = path.join(templatesDir, "_shared");
-  await fs.mkdir(shared, { recursive: true });
-  await fs.writeFile(path.join(shared, "shared.txt"), "from shared");
-  await fs.writeFile(path.join(shared, ".env.example"), "MY_KEY=");
+  const rootDir = path.join(dir, "fake-root");
+  const scaffold = path.join(rootDir, "scaffold");
+  await fs.mkdir(scaffold, { recursive: true });
+  await fs.writeFile(path.join(scaffold, "shared.txt"), "from shared");
+  await fs.writeFile(path.join(scaffold, ".env.example"), "MY_KEY=");
 
-  const simple = path.join(templatesDir, "simple");
+  const simple = path.join(rootDir, "templates", "simple");
   await fs.mkdir(simple, { recursive: true });
   await fs.writeFile(
     path.join(simple, "agent.ts"),
@@ -22,7 +22,7 @@ async function createFakeTemplates(dir: string): Promise<string> {
   await fs.writeFile(path.join(simple, "readme.txt"), "hello");
   await fs.writeFile(path.join(simple, "package.json"), "{}");
 
-  const advanced = path.join(templatesDir, "advanced");
+  const advanced = path.join(rootDir, "templates", "advanced");
   const sub = path.join(advanced, "tools");
   await fs.mkdir(sub, { recursive: true });
   await fs.writeFile(
@@ -31,7 +31,7 @@ async function createFakeTemplates(dir: string): Promise<string> {
   );
   await fs.writeFile(path.join(sub, "helper.ts"), "// helper");
 
-  const withEnv = path.join(templatesDir, "with-env");
+  const withEnv = path.join(rootDir, "templates", "with-env");
   await fs.mkdir(withEnv, { recursive: true });
   await fs.writeFile(
     path.join(withEnv, "agent.ts"),
@@ -39,7 +39,7 @@ async function createFakeTemplates(dir: string): Promise<string> {
   );
   await fs.writeFile(path.join(withEnv, ".env.example"), "CUSTOM_KEY=");
 
-  return templatesDir;
+  return rootDir;
 }
 
 let fakeTemplatesDir: string;
@@ -54,7 +54,7 @@ const { listTemplates } = await import("./_templates.ts");
 const { runInit } = await import("./_init.ts");
 
 describe("listTemplates", () => {
-  test("returns sorted directory names excluding shared", async () => {
+  test("returns sorted template directory names", async () => {
     await withTempDir(async (dir) => {
       fakeTemplatesDir = await createFakeTemplates(dir);
       expect(await listTemplates()).toEqual(["advanced", "simple", "with-env"]);
@@ -63,6 +63,7 @@ describe("listTemplates", () => {
 
   test("returns empty for empty dir", async () => {
     await withTempDir(async (dir) => {
+      await fs.mkdir(path.join(dir, "templates"), { recursive: true });
       fakeTemplatesDir = dir;
       expect(await listTemplates()).toEqual([]);
     });

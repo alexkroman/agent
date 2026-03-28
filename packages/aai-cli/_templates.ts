@@ -29,24 +29,23 @@ async function resolveTemplatesDir(): Promise<string> {
 
 /** List available template names. */
 export async function listTemplates(): Promise<string[]> {
-  const dir = await resolveTemplatesDir();
+  const dir = path.join(await resolveTemplatesDir(), "templates");
   const entries = await fs.readdir(dir, { withFileTypes: true });
   return entries
-    .filter((e) => e.isDirectory() && !e.name.startsWith("_") && e.name !== "node_modules")
+    .filter((e) => e.isDirectory())
     .map((e) => e.name)
     .sort((a, b) => a.localeCompare(b));
 }
 
 /**
- * Download a template into targetDir, merging _shared files underneath.
+ * Download a template into targetDir, merging scaffold files underneath.
  */
 export async function downloadAndMergeTemplate(template: string, targetDir: string): Promise<void> {
-  const templatesDir = await resolveTemplatesDir();
+  const root = await resolveTemplatesDir();
+  const templatesDir = path.join(root, "templates");
 
   const available = await fs.readdir(templatesDir, { withFileTypes: true });
-  const names = available
-    .filter((e) => e.isDirectory() && !e.name.startsWith("_") && e.name !== "node_modules")
-    .map((e) => e.name);
+  const names = available.filter((e) => e.isDirectory()).map((e) => e.name);
   if (!names.includes(template)) {
     throw new Error(`unknown template '${template}' -- available: ${names.join(", ")}`);
   }
@@ -54,17 +53,17 @@ export async function downloadAndMergeTemplate(template: string, targetDir: stri
   // Copy template-specific files first
   await fs.cp(path.join(templatesDir, template), targetDir, { recursive: true, force: true });
 
-  // Layer _shared files underneath (don't overwrite template files)
-  const sharedDir = path.join(templatesDir, "_shared");
-  if (existsSync(sharedDir)) {
-    const entries = await fs.readdir(sharedDir, { recursive: true, withFileTypes: true });
+  // Layer scaffold files underneath (don't overwrite template files)
+  const scaffoldDir = path.join(root, "scaffold");
+  if (existsSync(scaffoldDir)) {
+    const entries = await fs.readdir(scaffoldDir, { recursive: true, withFileTypes: true });
     for (const entry of entries) {
       if (!entry.isFile()) continue;
-      const rel = path.relative(sharedDir, path.join(entry.parentPath, entry.name));
+      const rel = path.relative(scaffoldDir, path.join(entry.parentPath, entry.name));
       const destPath = path.join(targetDir, rel);
       await fs.mkdir(path.dirname(destPath), { recursive: true });
       try {
-        await fs.copyFile(path.join(sharedDir, rel), destPath, fs.constants.COPYFILE_EXCL);
+        await fs.copyFile(path.join(scaffoldDir, rel), destPath, fs.constants.COPYFILE_EXCL);
       } catch (err: unknown) {
         if (!(err instanceof Error && "code" in err && err.code === "EEXIST")) throw err;
       }

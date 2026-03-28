@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "check:templates": "tsc -p tsconfig.templates.json"
+    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@alexkroman1/aai": "workspace:*",
