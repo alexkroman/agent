@@ -12,11 +12,6 @@ import type { Sandbox, SandboxOptions } from "./sandbox.ts";
 
 let IDLE_MS = 5 * 60 * 1000;
 
-/** @internal Indirection for testability — avoids circular import at call time. */
-export const _deps = {
-  createSandbox: null as unknown as (opts: SandboxOptions) => Promise<Sandbox>,
-};
-
 export type AgentSlot = {
   slug: string;
   keyHash: string;
@@ -29,6 +24,7 @@ export type AgentSlot = {
 };
 
 type EnsureOpts = {
+  createSandbox: (opts: SandboxOptions) => Promise<Sandbox>;
   getWorkerCode: (slug: string) => Promise<string | null>;
   storage: Storage;
   slug: string;
@@ -46,7 +42,7 @@ async function spawnAgent(slot: AgentSlot, opts: EnsureOpts): Promise<void> {
   if (!code) throw new Error(`Worker code not found for ${slug}`);
 
   const [apiKey, agentEnv] = await Promise.all([opts.getApiKey(), opts.getAgentEnv()]);
-  slot.sandbox = await _deps.createSandbox({
+  slot.sandbox = await opts.createSandbox({
     workerCode: code,
     apiKey,
     agentEnv,
@@ -122,6 +118,7 @@ export function registerSlot(slots: Map<string, AgentSlot>, metadata: AgentMetad
 export async function resolveSandbox(
   slug: string,
   opts: {
+    createSandbox: (opts: SandboxOptions) => Promise<Sandbox>;
     slots: Map<string, AgentSlot>;
     store: BundleStore;
     storage: Storage;
@@ -141,6 +138,7 @@ export async function resolveSandbox(
   const envPromise = opts.store.getEnv(slug);
 
   return await ensureAgent(slot, {
+    createSandbox: opts.createSandbox,
     getWorkerCode: (s: string) => opts.store.getWorkerCode(s),
     storage: opts.storage,
     slug,

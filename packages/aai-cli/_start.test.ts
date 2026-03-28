@@ -8,11 +8,7 @@ import { _startProductionServer, runStartCommand } from "./start.ts";
 describe("_startProductionServer", () => {
   test("throws when build directory is missing", async () => {
     await withTempDir(async (dir) => {
-      await expect(
-        _startProductionServer(dir, 3000, () => {
-          /* noop */
-        }),
-      ).rejects.toThrow();
+      await expect(_startProductionServer(dir, 3000)).rejects.toThrow();
     });
   });
 });

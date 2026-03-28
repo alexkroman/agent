@@ -71,6 +71,18 @@ export type S2sSessionCtx = {
   pushMessages(...msgs: Message[]): void;
   /** Sequential promise chain for filterOutput calls, ensuring ordering. */
   filterChain: Promise<void>;
+
+  // ── State transition methods ──────────────────────────────────────
+  // Per-reply mutable state (pendingTools, toolCallCount, currentReplyId,
+  // turnPromise, filterChain) is modified from multiple event handlers.
+  // These methods centralise the resets so fields stay in sync.
+
+  /** Reset per-reply state for a new reply from the S2S API. */
+  beginReply(replyId: string): void;
+  /** Invalidate the current reply (barge-in, close, or reset). */
+  cancelReply(): void;
+  /** Append a tool-call promise to the turn promise chain. */
+  chainTurn(p: Promise<void>): void;
 };
 
 const DEFAULT_MAX_HISTORY = 200;
@@ -153,6 +165,21 @@ export function buildCtx(opts: {
       if (maxHistory > 0 && ctx.conversationMessages.length > maxHistory) {
         ctx.conversationMessages = ctx.conversationMessages.slice(-maxHistory);
       }
+    },
+    beginReply(replyId: string) {
+      ctx.toolCallCount = 0;
+      ctx.currentReplyId = replyId;
+      ctx.pendingTools = [];
+      ctx.turnPromise = null;
+      ctx.filterChain = Promise.resolve();
+    },
+    cancelReply() {
+      ctx.currentReplyId = null;
+      ctx.pendingTools = [];
+      ctx.filterChain = Promise.resolve();
+    },
+    chainTurn(p: Promise<void>) {
+      ctx.turnPromise = (ctx.turnPromise ?? Promise.resolve()).then(() => p);
     },
   };
   return ctx;
@@ -391,11 +418,10 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
       client.event({ type: "cancelled" });
     },
     onReset(): void {
+      ctx.cancelReply();
       ctx.conversationMessages = [];
       ctx.toolCallCount = 0;
       ctx.turnPromise = null;
-      ctx.pendingTools = [];
-      ctx.currentReplyId = null;
       idle.clear();
       ctx.s2s?.close();
       client.event({ type: "reset" });

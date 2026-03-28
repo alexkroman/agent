@@ -97,7 +97,7 @@ export type ToolCallInterceptResult =
  *
  * @public
  */
-// biome-ignore lint/suspicious/noExplicitAny: `any` default lets state-agnostic middleware work with any agent state without requiring a generic.
+// biome-ignore lint/suspicious/noExplicitAny: `any` default is required for variance — state-agnostic Middleware must be assignable to Middleware<SpecificState>[] arrays.
 export type Middleware<S = any> = {
   /** Human-readable name for logging and debugging. */
   name: string;

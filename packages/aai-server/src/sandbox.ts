@@ -36,13 +36,18 @@ import {
   TurnConfigResultSchema,
   VoidHookResultSchema,
 } from "./_harness-protocol.ts";
+import type { BundleStore } from "./bundle-store.ts";
 import { getHarnessRuntimeJs } from "./sandbox-harness.ts";
 import { buildNetworkAdapter, buildNetworkPolicy } from "./sandbox-network.ts";
 import { startSidecarServer } from "./sandbox-sidecar.ts";
-import { _deps, _slotInternals } from "./sandbox-slots.ts";
+import {
+  resolveSandbox as _resolveSandboxCore,
+  _slotInternals,
+  type AgentSlot,
+} from "./sandbox-slots.ts";
 
 export type { AgentMetadata } from "./_schemas.ts";
-export { type AgentSlot, ensureAgent, registerSlot, resolveSandbox } from "./sandbox-slots.ts";
+export { type AgentSlot, ensureAgent, registerSlot } from "./sandbox-slots.ts";
 
 export type SandboxOptions = {
   workerCode: string;
@@ -403,6 +408,14 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
   };
 }
 
-// Register createSandbox with sandbox-slots to break the circular dependency
-// without a dynamic import (which triggers bundler warnings).
-_deps.createSandbox = createSandbox;
+/** Wrapper that injects `createSandbox` so sandbox-slots needs no back-reference. */
+export async function resolveSandbox(
+  slug: string,
+  opts: {
+    slots: Map<string, AgentSlot>;
+    store: BundleStore;
+    storage: Storage;
+  },
+): Promise<Sandbox | null> {
+  return _resolveSandboxCore(slug, { ...opts, createSandbox });
+}

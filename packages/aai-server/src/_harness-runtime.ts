@@ -15,6 +15,15 @@ import type {
   ToolCallResponse,
 } from "./_harness-protocol.ts";
 
+/** Lightweight error with HTTP status for RPC responses (no external deps). */
+class RpcError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
 const SIDECAR_URL = process.env.SIDECAR_URL ?? "";
 const HARNESS_AUTH_TOKEN = process.env.HARNESS_AUTH_TOKEN ?? "";
 
@@ -144,7 +153,7 @@ const TOOL_TIMEOUT_MS = 30_000;
 
 async function executeTool(agent: AgentDef, req: ToolCallRequest): Promise<ToolCallResponse> {
   const tool = agent.tools[req.name];
-  if (!tool) throw Object.assign(new Error(`Unknown tool: ${req.name}`), { status: 404 });
+  if (!tool) throw new RpcError(`Unknown tool: ${req.name}`, 404);
 
   const ctx: ToolContext = {
     env: agentEnv,
@@ -160,19 +169,25 @@ async function executeTool(agent: AgentDef, req: ToolCallRequest): Promise<ToolC
       ? tool.parameters.parse(req.args)
       : req.args;
 
-  const result = await Promise.race([
-    tool.execute(parsed, ctx),
-    new Promise<never>((_resolve, reject) => {
-      setTimeout(
-        () => reject(new Error(`Tool "${req.name}" timed out after ${TOOL_TIMEOUT_MS}ms`)),
-        TOOL_TIMEOUT_MS,
-      );
-    }),
-  ]);
-  return {
-    result: typeof result === "string" ? result : JSON.stringify(result),
-    state: ctx.state,
-  };
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const result = await Promise.race([
+      tool.execute(parsed, ctx),
+      new Promise<never>((_resolve, reject) => {
+        timeoutId = setTimeout(
+          () =>
+            reject(new RpcError(`Tool "${req.name}" timed out after ${TOOL_TIMEOUT_MS}ms`, 504)),
+          TOOL_TIMEOUT_MS,
+        );
+      }),
+    ]);
+    return {
+      result: typeof result === "string" ? result : JSON.stringify(result),
+      state: ctx.state,
+    };
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 function makeHookCtx(_agent: AgentDef, req: HookRequest): HookContext {
@@ -291,25 +306,19 @@ async function dispatch(agent: AgentDef, msg: RpcRequest): Promise<RpcResponse> 
       return extractConfig(agent);
     case "tool": {
       if (!msg.name || typeof msg.name !== "string" || !msg.sessionId) {
-        throw Object.assign(new Error("Invalid tool call request: missing name or sessionId"), {
-          status: 400,
-        });
+        throw new RpcError("Invalid tool call request: missing name or sessionId", 400);
       }
       return executeTool(agent, msg);
     }
     case "hook": {
       if (!msg.hook || typeof msg.hook !== "string" || !msg.sessionId) {
-        throw Object.assign(new Error("Invalid hook request: missing hook or sessionId"), {
-          status: 400,
-        });
+        throw new RpcError("Invalid hook request: missing hook or sessionId", 400);
       }
       return invokeHook(agent, msg);
     }
     default: {
       const _: never = msg;
-      throw Object.assign(new Error(`Unknown RPC type: ${(_ as { type: string }).type}`), {
-        status: 400,
-      });
+      throw new RpcError(`Unknown RPC type: ${(_ as { type: string }).type}`, 400);
     }
   }
 }
@@ -347,7 +356,7 @@ export function startHarness(agent: AgentDef): void {
       const result = await dispatch(agent, msg);
       json(res, result);
     } catch (err: unknown) {
-      const status = (err as { status?: number }).status ?? 500;
+      const status = err instanceof RpcError ? err.status : 500;
       const message = err instanceof Error ? err.message : "Internal error";
       json(res, { error: message }, status);
     }

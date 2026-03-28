@@ -2,33 +2,33 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { envFileKeys, loadAgentDef, resolveServerEnv } from "./_server-common.ts";
+import { loadAgentDef, parseEnvFile, resolveServerEnv } from "./_server-common.ts";
 import { withTempDir } from "./_test-utils.ts";
 
-describe("envFileKeys", () => {
-  test("extracts key names from KEY=VALUE lines", () => {
-    expect(envFileKeys("FOO=bar\nBAZ=qux")).toEqual(["FOO", "BAZ"]);
+describe("parseEnvFile", () => {
+  test("parses KEY=VALUE lines into entries", () => {
+    expect(parseEnvFile("FOO=bar\nBAZ=qux")).toEqual({ FOO: "bar", BAZ: "qux" });
   });
 
   test("skips comments and blank lines", () => {
-    expect(envFileKeys("# comment\n\nFOO=bar\n  # another")).toEqual(["FOO"]);
+    expect(parseEnvFile("# comment\n\nFOO=bar\n  # another")).toEqual({ FOO: "bar" });
   });
 
   test("handles empty values", () => {
-    expect(envFileKeys("KEY=")).toEqual(["KEY"]);
+    expect(parseEnvFile("KEY=")).toEqual({ KEY: "" });
   });
 
   test("trims whitespace around keys", () => {
-    expect(envFileKeys("  KEY  =  value  ")).toEqual(["KEY"]);
+    expect(parseEnvFile("  KEY  =  value  ")).toEqual({ KEY: "  value" });
   });
 
   test("skips lines without =", () => {
-    expect(envFileKeys("NOEQ\nFOO=bar")).toEqual(["FOO"]);
+    expect(parseEnvFile("NOEQ\nFOO=bar")).toEqual({ FOO: "bar" });
   });
 });
 
 describe("resolveServerEnv", () => {
-  // process.loadEnvFile mutates process.env, so clean up after .env tests
+  // Clean up env vars set directly by tests (e.g. shell-override test)
   const injectedKeys: string[] = [];
   afterEach(() => {
     for (const key of injectedKeys) delete process.env[key];
@@ -53,7 +53,6 @@ describe("resolveServerEnv", () => {
   });
 
   test("loads only declared keys from .env file", async () => {
-    injectedKeys.push("AAI_TEST_SECRET", "ASSEMBLYAI_API_KEY");
     await withTempDir(async (dir) => {
       await fs.writeFile(
         path.join(dir, ".env"),

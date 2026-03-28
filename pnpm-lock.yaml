@@ -186,6 +186,9 @@ importers:
       hono:
         specifier: ^4.12.9
         version: 4.12.9
+      lru-cache:
+        specifier: ^11.2.7
+        version: 11.2.7
       mime-types:
         specifier: ^3.0.2
         version: 3.0.2

@@ -21,7 +21,7 @@ function makeHook(overrides?: Partial<HookInvoker>): HookInvoker {
 
 function makeCtx(overrides?: Partial<S2sSessionCtx>): S2sSessionCtx {
   const conversationMessages = overrides?.conversationMessages ?? [];
-  return {
+  const ctx: Record<string, unknown> = {
     id: "session-1",
     agent: "test-agent",
     client: makeClient(),
@@ -36,12 +36,31 @@ function makeCtx(overrides?: Partial<S2sSessionCtx>): S2sSessionCtx {
     conversationMessages,
     currentReplyId: "r0",
     maxHistory: 200,
+    filterChain: Promise.resolve(),
     resolveTurnConfig: vi.fn(async () => null),
     consumeToolCallStep: vi.fn(() => null),
     pushMessages: vi.fn((...msgs: unknown[]) => conversationMessages.push(...(msgs as never[]))),
     fireHook: vi.fn(),
+    beginReply(replyId: string) {
+      ctx.toolCallCount = 0;
+      ctx.currentReplyId = replyId;
+      ctx.pendingTools = [];
+      ctx.turnPromise = null;
+      ctx.filterChain = Promise.resolve();
+    },
+    cancelReply() {
+      ctx.currentReplyId = null;
+      ctx.pendingTools = [];
+      ctx.filterChain = Promise.resolve();
+    },
+    chainTurn(p: Promise<void>) {
+      ctx.turnPromise = ((ctx.turnPromise as Promise<void> | null) ?? Promise.resolve()).then(
+        () => p,
+      );
+    },
     ...overrides,
-  } as unknown as S2sSessionCtx;
+  };
+  return ctx as unknown as S2sSessionCtx;
 }
 
 const tc = (o?: Partial<S2sToolCall>): S2sToolCall => ({

@@ -24,11 +24,25 @@ function findPkgJson(dir: string): string {
 const pkgJson = JSON.parse(findPkgJson(cliDir));
 const VERSION: string = pkgJson.version;
 
-async function ensureAgent(cwd: string, yes?: boolean): Promise<void> {
+async function ensureAgent(cwd: string, yes?: boolean): Promise<string> {
   if (!(await fileExists(path.join(cwd, "agent.ts")))) {
     const { runInitCommand } = await import("./init.ts");
-    await runInitCommand({ yes }, { quiet: true });
+    return runInitCommand({ yes }, { quiet: true });
   }
+  return cwd;
+}
+
+/** Shared command setup: resolve cwd, optionally scaffold agent and check API key. */
+async function setup(
+  args?: { yes?: boolean | undefined },
+  opts?: { agent?: boolean; apiKey?: boolean },
+): Promise<string> {
+  let cwd = resolveCwd();
+  if (opts?.agent) {
+    cwd = await ensureAgent(cwd, args?.yes);
+  }
+  if (opts?.apiKey) await ensureApiKeyInEnv();
+  return cwd;
 }
 
 const init = defineCommand({
@@ -57,14 +71,12 @@ const init = defineCommand({
 const dev = defineCommand({
   meta: { name: "dev", description: "Start a local development server" },
   args: {
-    port: { type: "string", alias: "p", description: "Port to listen on", default: "3000" },
+    port: sharedArgs.port,
     check: { type: "boolean", description: "Start server, verify health, then exit" },
-    yes: { type: "boolean", alias: "y", description: "Accept defaults (no prompts)" },
+    yes: sharedArgs.yes,
   },
   async run({ args }) {
-    const cwd = resolveCwd();
-    await ensureAgent(cwd, args.yes);
-    await ensureApiKeyInEnv();
+    const cwd = await setup(args, { agent: true, apiKey: true });
     const { runDevCommand } = await import("./dev.ts");
     await runDevCommand({ cwd, port: args.port, ...(args.check ? { check: args.check } : {}) });
   },
@@ -73,7 +85,7 @@ const dev = defineCommand({
 const test = defineCommand({
   meta: { name: "test", description: "Run agent tests" },
   async run() {
-    const cwd = resolveCwd();
+    const cwd = await setup();
     const { runTestCommand } = await import("./test.ts");
     await runTestCommand(cwd);
   },
@@ -82,12 +94,11 @@ const test = defineCommand({
 const build = defineCommand({
   meta: { name: "build", description: "Bundle and validate (no server or deploy)" },
   args: {
-    yes: { type: "boolean", alias: "y", description: "Accept defaults (no prompts)" },
+    yes: sharedArgs.yes,
     skipTests: { type: "boolean", description: "Skip running tests before build" },
   },
   async run({ args }) {
-    const cwd = resolveCwd();
-    await ensureAgent(cwd, args.yes);
+    const cwd = await setup(args, { agent: true });
     if (!args.skipTests) {
       const { runVitest } = await import("./test.ts");
       runVitest(cwd);
@@ -100,13 +111,12 @@ const build = defineCommand({
 const deploy = defineCommand({
   meta: { name: "deploy", description: "Bundle and deploy to production" },
   args: {
-    server: { type: "string", alias: "s", description: "Server URL" },
+    server: sharedArgs.server,
     dryRun: { type: "boolean", description: "Validate and bundle without deploying" },
-    yes: { type: "boolean", alias: "y", description: "Accept defaults (no prompts)" },
+    yes: sharedArgs.yes,
   },
   async run({ args }) {
-    const cwd = resolveCwd();
-    await ensureAgent(cwd, args.yes);
+    const cwd = await setup(args, { agent: true });
     const { runDeployCommand } = await import("./deploy.ts");
     await runDeployCommand({
       cwd,
@@ -119,10 +129,10 @@ const deploy = defineCommand({
 const del = defineCommand({
   meta: { name: "delete", description: "Remove a deployed agent" },
   args: {
-    server: { type: "string", alias: "s", description: "Server URL" },
+    server: sharedArgs.server,
   },
   async run({ args }) {
-    const cwd = resolveCwd();
+    const cwd = await setup();
     const { runDeleteCommand } = await import("./delete.ts");
     await runDeleteCommand({
       cwd,
@@ -134,12 +144,10 @@ const del = defineCommand({
 const start = defineCommand({
   meta: { name: "start", description: "Start production server from build" },
   args: {
-    port: { type: "string", alias: "p", description: "Port to listen on", default: "3000" },
-    yes: { type: "boolean", alias: "y", description: "Accept defaults (no prompts)" },
+    port: sharedArgs.port,
   },
   async run({ args }) {
-    const cwd = resolveCwd();
-    await ensureApiKeyInEnv();
+    const cwd = await setup(undefined, { apiKey: true });
     const { runStartCommand } = await import("./start.ts");
     await runStartCommand({ cwd, port: args.port });
   },
@@ -151,8 +159,7 @@ const secretPut = defineCommand({
     name: { type: "positional", description: "Secret name", required: true },
   },
   async run({ args }) {
-    const cwd = resolveCwd();
-    await ensureApiKeyInEnv();
+    const cwd = await setup(undefined, { apiKey: true });
     const { runSecretPut } = await import("./secret.ts");
     await runSecretPut(cwd, args.name);
   },
@@ -164,8 +171,7 @@ const secretDelete = defineCommand({
     name: { type: "positional", description: "Secret name", required: true },
   },
   async run({ args }) {
-    const cwd = resolveCwd();
-    await ensureApiKeyInEnv();
+    const cwd = await setup(undefined, { apiKey: true });
     const { runSecretDelete } = await import("./secret.ts");
     await runSecretDelete(cwd, args.name);
   },
@@ -174,8 +180,7 @@ const secretDelete = defineCommand({
 const secretList = defineCommand({
   meta: { name: "list", description: "List secret names" },
   async run() {
-    const cwd = resolveCwd();
-    await ensureApiKeyInEnv();
+    const cwd = await setup(undefined, { apiKey: true });
     const { runSecretList } = await import("./secret.ts");
     await runSecretList(cwd);
   },
@@ -192,8 +197,7 @@ const generate = defineCommand({
     prompt: { type: "positional", description: "What to generate", required: true },
   },
   async run({ args }) {
-    const cwd = resolveCwd();
-    await ensureApiKeyInEnv();
+    const cwd = await setup(undefined, { apiKey: true });
     const { runGenerateCommand } = await import("./generate.ts");
     await runGenerateCommand({ cwd, prompt: args.prompt });
   },
@@ -203,13 +207,10 @@ const run = defineCommand({
   meta: { name: "run", description: "Init, generate, and deploy in one step" },
   args: {
     prompt: { type: "positional", description: "What to build", required: true },
-    server: { type: "string", alias: "s", description: "Server URL" },
+    server: sharedArgs.server,
   },
   async run({ args }) {
-    await ensureAgent(resolveCwd(), true);
-    await ensureApiKeyInEnv();
-    // Re-resolve cwd after init (init may change process.cwd to the new project dir)
-    const cwd = resolveCwd();
+    const cwd = await setup({ yes: true }, { agent: true, apiKey: true });
     const { runGenerateCommand } = await import("./generate.ts");
     await runGenerateCommand({ cwd, prompt: args.prompt });
     const { runDeployCommand } = await import("./deploy.ts");

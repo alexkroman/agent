@@ -262,9 +262,7 @@ function handleReplyDone(ctx: S2sSessionCtx, status: string | undefined): void {
     ctx.log.info("S2S reply interrupted (barge-in)");
     bargeInCounter.add(1, { agent: ctx.agent });
     // Invalidate currentReplyId so in-flight tool calls discard their results.
-    ctx.currentReplyId = null;
-    ctx.pendingTools = [];
-    ctx.filterChain = Promise.resolve();
+    ctx.cancelReply();
     ctx.client.event({ type: "cancelled" });
     return;
   }
@@ -329,15 +327,7 @@ export function setupListeners(ctx: S2sSessionCtx, handle: S2sHandle): void {
   );
   handle.on("userTranscript", ({ text }) => handleUserTranscript(ctx, text));
   handle.on("replyStarted", ({ replyId }) => {
-    ctx.toolCallCount = 0;
-    ctx.currentReplyId = replyId;
-    ctx.pendingTools = [];
-    // Reset the turn promise chain so stale resolved promises from
-    // a previous reply don't cause sendPending to execute immediately
-    // in handleReplyDone before current-reply tool calls finish.
-    ctx.turnPromise = null;
-    // Reset filter chain so stale filter promises don't block new deltas.
-    ctx.filterChain = Promise.resolve();
+    ctx.beginReply(replyId);
   });
   handle.on("audio", ({ audio }) => ctx.client.playAudioChunk(audio));
   handle.on("agentTranscriptDelta", ({ text }) => handleAgentTranscriptDelta(ctx, text));
@@ -348,7 +338,7 @@ export function setupListeners(ctx: S2sSessionCtx, handle: S2sHandle): void {
     const p = handleToolCall(ctx, detail).catch((err: unknown) => {
       ctx.log.error("Tool call handler failed", { err: errorMessage(err) });
     });
-    ctx.turnPromise = (ctx.turnPromise ?? Promise.resolve()).then(() => p);
+    ctx.chainTurn(p);
   });
   handle.on("replyDone", ({ status }) => handleReplyDone(ctx, status));
   handle.on("error", ({ code, message }) => {
@@ -360,7 +350,6 @@ export function setupListeners(ctx: S2sSessionCtx, handle: S2sHandle): void {
     ctx.log.info("S2S closed");
     ctx.s2s = null;
     // Invalidate currentReplyId so in-flight tool calls discard their results.
-    ctx.currentReplyId = null;
-    ctx.pendingTools = [];
+    ctx.cancelReply();
   });
 }
