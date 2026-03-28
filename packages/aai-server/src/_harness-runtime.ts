@@ -49,6 +49,8 @@ async function sidecarRpc<T>(path: string, body: unknown): Promise<T> {
   });
   if (!res.ok) throw new Error(`${path} failed: ${res.status}`);
   const text = await res.text();
+  // Host-validated: the sidecar runs in the same server process and returns
+  // trusted responses. Schema validation happens host-side (see sandbox-sidecar.ts).
   return text ? (JSON.parse(text) as T) : (null as T);
 }
 
@@ -348,6 +350,9 @@ export function startHarness(agent: AgentDef): void {
       }
       let msg: RpcRequest;
       try {
+        // Host-validated: sandbox.ts validates RPC responses with Zod schemas
+        // (see callIsolate). The isolate trusts the host since both run in
+        // the same server process.
         msg = JSON.parse(await readBody(req)) as RpcRequest;
       } catch {
         json(res, { error: "Invalid JSON in request body" }, 400);
