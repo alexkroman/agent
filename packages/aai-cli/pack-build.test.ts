@@ -45,8 +45,8 @@ function installFromTarballs(projectDir: string): void {
 
 beforeAll(() => {
   // Build CLI
-  execFileSync("npx", ["tsup", "--silent"], { cwd: dir, stdio: "inherit" });
-  aaiBin = path.resolve(dir, "dist/cli.js");
+  execFileSync("npx", ["tsdown"], { cwd: dir, stdio: "inherit" });
+  aaiBin = path.resolve(dir, "dist/cli.mjs");
   tmpDir = fs.mkdtempSync("/tmp/aai-build-test-");
   const tarballDir = path.join(tmpDir, "_tarballs");
   fs.mkdirSync(tarballDir);
