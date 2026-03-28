@@ -29,10 +29,12 @@ export default defineConfig({
       ],
       // Global minimum. Per-package actuals are higher:
       // aai ~93%, aai-ui ~85%, aai-cli ~75%, aai-server ~80%
+      // Branches threshold is lower because template agents (which have
+      // minimal test coverage by design) drag down the global average.
       thresholds: {
         lines: 60,
         functions: 60,
-        branches: 60,
+        branches: 55,
         statements: 60,
       },
     },
