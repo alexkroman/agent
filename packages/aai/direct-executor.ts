@@ -6,26 +6,123 @@
  * Tools execute directly in-process — no sandbox, no RPC.
  */
 
+import pTimeout from "p-timeout";
 import { createStorage } from "unstorage";
-import { agentToolsToSchemas, type ToolSchema, toAgentConfig } from "./_internal-types.ts";
+import type { z } from "zod";
+import {
+  agentToolsToSchemas,
+  EMPTY_PARAMS,
+  type ExecuteTool,
+  type ToolSchema,
+  toAgentConfig,
+} from "./_internal-types.ts";
 import { ssrfSafeFetch } from "./_ssrf.ts";
-import { createSessionStateMap, toolError } from "./_utils.ts";
-import type { AgentRuntime, SessionStartOptions } from "./adapter.ts";
+import { errorDetail, errorMessage, toolError } from "./_utils.ts";
 import { getBuiltinToolDefs, getBuiltinToolSchemas } from "./builtin-tools.ts";
+import { TOOL_EXECUTION_TIMEOUT_MS } from "./constants.ts";
 import type { Kv } from "./kv.ts";
-import type { HookInvoker, LifecycleHooks } from "./lifecycle.ts";
-import { buildMiddlewareRunner } from "./middleware.ts";
+import { buildMiddlewareRunner, type HookInvoker, type LifecycleHooks } from "./middleware.ts";
 import type { ClientSink } from "./protocol.ts";
 import { buildReadyConfig, type ReadyConfig } from "./protocol.ts";
 import type { Logger, S2SConfig } from "./runtime.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime.ts";
 import type { CreateS2sWebSocket } from "./s2s.ts";
 import { createS2sSession, type Session } from "./session.ts";
-import type { AgentDef, HookContext } from "./types.ts";
+import type { AgentDef, HookContext, Message, ToolContext, ToolDef } from "./types.ts";
 import { createUnstorageKv } from "./unstorage-kv.ts";
-import type { ExecuteTool } from "./worker-entry.ts";
-import { executeToolCall } from "./worker-entry.ts";
 import { type SessionWebSocket, wireSessionSocket } from "./ws-handler.ts";
+
+export type { ExecuteTool } from "./_internal-types.ts";
+
+// ─── Tool execution (formerly worker-entry.ts) ─────────────────────────────
+
+const yieldTick = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
+
+export type ExecuteToolCallOptions = {
+  tool: ToolDef;
+  env: Readonly<Record<string, string>>;
+  state?: Record<string, unknown>;
+  sessionId?: string | undefined;
+  kv?: Kv | undefined;
+  messages?: readonly Message[] | undefined;
+  logger?: Logger | undefined;
+  fetch?: typeof globalThis.fetch | undefined;
+};
+
+function buildToolContext(opts: ExecuteToolCallOptions): ToolContext {
+  const { env, state, kv, messages, fetch: fetchFn, sessionId } = opts;
+  return {
+    env: { ...env },
+    state: state ?? {},
+    get kv(): Kv {
+      if (!kv) throw new Error("KV not available");
+      return kv;
+    },
+    messages: messages ?? [],
+    fetch: fetchFn ?? globalThis.fetch,
+    sessionId: sessionId ?? "",
+  };
+}
+
+export async function executeToolCall(
+  name: string,
+  args: Readonly<Record<string, unknown>>,
+  options: ExecuteToolCallOptions,
+): Promise<string> {
+  const { tool } = options;
+  const schema = tool.parameters ?? EMPTY_PARAMS;
+  const parsed = schema.safeParse(args);
+  if (!parsed.success) {
+    const issues = (parsed.error?.issues ?? [])
+      .map((i: z.ZodIssue) => `${i.path.map(String).join(".")}: ${i.message}`)
+      .join(", ");
+    return toolError(`Invalid arguments for tool "${name}": ${issues}`);
+  }
+
+  try {
+    const ctx = buildToolContext(options);
+    await yieldTick();
+    const result = await pTimeout(Promise.resolve(tool.execute(parsed.data, ctx)), {
+      milliseconds: TOOL_EXECUTION_TIMEOUT_MS,
+      message: `Tool "${name}" timed out after ${TOOL_EXECUTION_TIMEOUT_MS}ms`,
+    });
+    await yieldTick();
+    if (result == null) return "null";
+    return typeof result === "string" ? result : JSON.stringify(result);
+  } catch (err: unknown) {
+    const log = options.logger;
+    if (log) {
+      log.warn("Tool execution failed", { tool: name, error: errorDetail(err) });
+    } else {
+      console.warn(`[tool-executor] Tool execution failed: ${name}`, err);
+    }
+    return toolError(errorMessage(err));
+  }
+}
+
+// ─── Runtime adapter (formerly adapter.ts) ──────────────────────────────────
+
+/** Per-session options passed to {@link AgentRuntime.startSession}. */
+export type SessionStartOptions = {
+  skipGreeting?: boolean;
+  resumeFrom?: string;
+  logContext?: Record<string, string>;
+  onOpen?: () => void;
+  onClose?: () => void;
+};
+
+/**
+ * Common interface for agent runtimes.
+ *
+ * Implemented by the self-hosted direct executor and the platform sandbox.
+ */
+export type AgentRuntime = {
+  startSession(ws: SessionWebSocket, opts?: SessionStartOptions): void;
+  shutdown(): Promise<void>;
+  readonly readyConfig: ReadyConfig;
+};
+
+// ─── Direct executor ────────────────────────────────────────────────────────
 
 /** Create an in-memory KV store (default for self-hosted). */
 function createLocalKv(): Kv {
@@ -121,7 +218,11 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
   const toolSchemas: ToolSchema[] = [...customSchemas, ...builtinSchemas];
 
   // Per-session mutable state
-  const sessionState = createSessionStateMap(agent.state);
+  const stateMap = new Map<string, Record<string, unknown>>();
+  const getState = (sid: string) => {
+    if (!stateMap.has(sid) && agent.state) stateMap.set(sid, agent.state());
+    return stateMap.get(sid) ?? {};
+  };
   const frozenEnv = Object.freeze({ ...env });
 
   /** SSRF-safe fetch for tool/hook contexts in self-hosted mode. */
@@ -133,7 +234,7 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
   function makeHookContext(sessionId: string): HookContext {
     return {
       env: frozenEnv,
-      state: sessionState.get(sessionId),
+      state: getState(sessionId),
       sessionId,
       get kv() {
         return kv;
@@ -149,7 +250,7 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
     return executeToolCall(name, args, {
       tool,
       env: frozenEnv,
-      state: sessionState.get(sessionId ?? ""),
+      state: getState(sessionId ?? ""),
       sessionId: sessionId ?? "",
       kv,
       messages,
@@ -165,7 +266,7 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
     },
     async onDisconnect(sessionId) {
       await agent.onDisconnect?.(makeHookContext(sessionId));
-      sessionState.delete(sessionId);
+      stateMap.delete(sessionId);
     },
     async onTurn(sessionId, text) {
       await agent.onTurn?.(text, makeHookContext(sessionId));

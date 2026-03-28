@@ -1,7 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { buildAgentBundle } from "./_build.ts";
-import type { BundleOutput } from "./_bundler.ts";
+import { type BundleOutput, buildAgentBundle } from "./_bundler.ts";
 import { runDeploy } from "./_deploy.ts";
 import {
   generateSlug,

@@ -14,13 +14,6 @@ export function errorDetail(err: unknown): string {
   return String(err);
 }
 
-/** Filter out undefined values from an env record. */
-export function filterEnv(env: Record<string, string | undefined>): Record<string, string> {
-  return Object.fromEntries(
-    Object.entries(env).filter((e): e is [string, string] => e[1] !== undefined),
-  );
-}
-
 /** Set of filesystem operations that are safe for read-only access. */
 const READ_ONLY_FS_OPS = new Set(["read", "stat", "readdir", "exists"]);
 

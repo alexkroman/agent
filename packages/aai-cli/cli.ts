@@ -103,7 +103,7 @@ const build = defineCommand({
       const { runVitest } = await import("./test.ts");
       runVitest(cwd);
     }
-    const { runBuildCommand } = await import("./_build.ts");
+    const { runBuildCommand } = await import("./_bundler.ts");
     await runBuildCommand(cwd);
   },
 });

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { handleToolCall, setupListeners } from "./_session-otel.ts";
 import { makeClient, makeMockHandle, silentLogger } from "./_test-utils.ts";
 import { MAX_TOOL_RESULT_CHARS } from "./constants.ts";
-import type { HookInvoker } from "./lifecycle.ts";
+import type { HookInvoker } from "./middleware.ts";
 import type { S2sToolCall } from "./s2s.ts";
 import type { S2sSessionCtx } from "./session.ts";
 

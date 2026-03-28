@@ -547,7 +547,7 @@ name, call ID, agent, and session ID attributes).
 For custom metrics or spans in your agent code:
 
 ```ts
-import { meter, tracer } from "@alexkroman1/aai/telemetry";
+import { meter, tracer } from "@alexkroman1/aai/internal";
 
 const myCounter = meter.createCounter("my_agent.custom_event");
 

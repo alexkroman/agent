@@ -2,16 +2,24 @@
 /** Agent sandbox using secure-exec V8 isolates. */
 
 import { randomBytes } from "node:crypto";
-import type { AgentRuntime, SessionStartOptions } from "@alexkroman1/aai/adapter";
-import { HOOK_TIMEOUT_MS, TOOL_EXECUTION_TIMEOUT_MS } from "@alexkroman1/aai/constants";
-import { toAgentConfig } from "@alexkroman1/aai/internal-types";
-import { buildReadyConfig } from "@alexkroman1/aai/protocol";
-import { DEFAULT_S2S_CONFIG } from "@alexkroman1/aai/runtime";
-import { createS2sSession, type HookInvoker, type Session } from "@alexkroman1/aai/session";
-import { createUnstorageKv } from "@alexkroman1/aai/unstorage-kv";
-import { errorMessage, isReadOnlyFsOp } from "@alexkroman1/aai/utils";
-import type { ExecuteTool } from "@alexkroman1/aai/worker-entry";
-import { type SessionWebSocket, wireSessionSocket } from "@alexkroman1/aai/ws-handler";
+import {
+  type AgentRuntime,
+  buildReadyConfig,
+  createS2sSession,
+  createUnstorageKv,
+  DEFAULT_S2S_CONFIG,
+  type ExecuteTool,
+  errorMessage,
+  HOOK_TIMEOUT_MS,
+  type HookInvoker,
+  isReadOnlyFsOp,
+  type Session,
+  type SessionStartOptions,
+  type SessionWebSocket,
+  TOOL_EXECUTION_TIMEOUT_MS,
+  toAgentConfig,
+  wireSessionSocket,
+} from "@alexkroman1/aai/internal";
 import pTimeout from "p-timeout";
 import {
   createInMemoryFileSystem,

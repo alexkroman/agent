@@ -14,7 +14,6 @@ import { Hono } from "hono";
 import { html } from "hono/html";
 import { secureHeaders } from "hono/secure-headers";
 import { createStorage, type Storage } from "unstorage";
-import { filterEnv } from "./_utils.ts";
 import { createDirectExecutor } from "./direct-executor.ts";
 import type { Logger, S2SConfig } from "./runtime.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime.ts";
@@ -111,7 +110,10 @@ export function createServer(options: ServerOptions): AgentServer {
     shutdownTimeoutMs = 30_000,
   } = options;
 
-  const env = filterEnv(options.env ?? (typeof process !== "undefined" ? process.env : {}));
+  const rawEnv = options.env ?? (typeof process !== "undefined" ? process.env : {});
+  const env = Object.fromEntries(
+    Object.entries(rawEnv).filter((e): e is [string, string] => e[1] !== undefined),
+  );
   const storage = options.storage ?? createStorage();
   const kv = createUnstorageKv({ storage });
 

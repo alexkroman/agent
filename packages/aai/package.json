@@ -11,6 +11,11 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./server": {
+      "source": "./server.ts",
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
+    },
     "./types": {
       "source": "./types.ts",
       "types": "./dist/types.d.ts",
@@ -20,6 +25,11 @@
       "source": "./kv.ts",
       "types": "./dist/kv.d.ts",
       "import": "./dist/kv.js"
+    },
+    "./protocol": {
+      "source": "./protocol.ts",
+      "types": "./dist/protocol.d.ts",
+      "import": "./dist/protocol.js"
     },
     "./testing": {
       "source": "./testing.ts",
@@ -31,85 +41,20 @@
       "types": "./dist/matchers.d.ts",
       "import": "./dist/matchers.js"
     },
-    "./adapter": {
-      "source": "./adapter.ts",
-      "types": "./dist/adapter.d.ts",
-      "import": "./dist/adapter.js"
-    },
-    "./server": {
-      "source": "./server.ts",
-      "types": "./dist/server.d.ts",
-      "import": "./dist/server.js"
-    },
-    "./constants": {
-      "source": "./constants.ts",
-      "types": "./dist/constants.d.ts",
-      "import": "./dist/constants.js"
-    },
-    "./protocol": {
-      "source": "./protocol.ts",
-      "types": "./dist/protocol.d.ts",
-      "import": "./dist/protocol.js"
-    },
-    "./s2s": {
-      "source": "./s2s.ts",
-      "types": "./dist/s2s.d.ts",
-      "import": "./dist/s2s.js"
-    },
-    "./session": {
-      "source": "./session.ts",
-      "types": "./dist/session.d.ts",
-      "import": "./dist/session.js"
-    },
-    "./internal-types": {
-      "source": "./_internal-types.ts",
-      "types": "./dist/_internal-types.d.ts",
-      "import": "./dist/_internal-types.js"
-    },
-    "./runtime": {
-      "source": "./runtime.ts",
-      "types": "./dist/runtime.d.ts",
-      "import": "./dist/runtime.js"
-    },
-    "./worker-entry": {
-      "source": "./worker-entry.ts",
-      "types": "./dist/worker-entry.d.ts",
-      "import": "./dist/worker-entry.js"
-    },
-    "./ws-handler": {
-      "source": "./ws-handler.ts",
-      "types": "./dist/ws-handler.d.ts",
-      "import": "./dist/ws-handler.js"
-    },
-    "./telemetry": {
-      "source": "./telemetry.ts",
-      "types": "./dist/telemetry.d.ts",
-      "import": "./dist/telemetry.js"
-    },
-    "./utils": {
-      "source": "./_utils.ts",
-      "types": "./dist/_utils.d.ts",
-      "import": "./dist/_utils.js"
-    },
-    "./ssrf": {
-      "source": "./_ssrf.ts",
-      "types": "./dist/_ssrf.d.ts",
-      "import": "./dist/_ssrf.js"
+    "./internal": {
+      "source": "./internal.ts",
+      "types": "./dist/internal.d.ts",
+      "import": "./dist/internal.js"
     },
     "./middleware": {
       "source": "./middleware.ts",
       "types": "./dist/middleware.d.ts",
       "import": "./dist/middleware.js"
     },
-    "./unstorage-kv": {
-      "source": "./unstorage-kv.ts",
-      "types": "./dist/unstorage-kv.d.ts",
-      "import": "./dist/unstorage-kv.js"
-    },
-    "./runtime-conformance": {
-      "source": "./_runtime-conformance.ts",
-      "types": "./dist/_runtime-conformance.d.ts",
-      "import": "./dist/_runtime-conformance.js"
+    "./utils": {
+      "source": "./_utils.ts",
+      "types": "./dist/_utils.d.ts",
+      "import": "./dist/_utils.js"
     }
   },
   "scripts": {

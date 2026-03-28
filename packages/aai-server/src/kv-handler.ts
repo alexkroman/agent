@@ -1,8 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import { createUnstorageKv, errorMessage } from "@alexkroman1/aai/internal";
 import { KvRequestSchema } from "@alexkroman1/aai/protocol";
-import { createUnstorageKv } from "@alexkroman1/aai/unstorage-kv";
-import { errorMessage } from "@alexkroman1/aai/utils";
 import type { Context } from "hono";
 import type { Env } from "./context.ts";
 

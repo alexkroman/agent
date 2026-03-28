@@ -1,7 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { createUnstorageKv } from "@alexkroman1/aai/unstorage-kv";
-import { errorMessage } from "@alexkroman1/aai/utils";
+import { createUnstorageKv, errorMessage } from "@alexkroman1/aai/internal";
 import { createNodeWebSocket } from "@hono/node-ws";
 import { Hono } from "hono";
 import { cors } from "hono/cors";

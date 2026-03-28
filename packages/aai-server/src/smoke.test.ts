@@ -8,7 +8,7 @@
  */
 
 import { type AgentDef, defineAgent, defineTool } from "@alexkroman1/aai";
-import { agentToolsToSchemas, toAgentConfig } from "@alexkroman1/aai/internal-types";
+import { agentToolsToSchemas, toAgentConfig } from "@alexkroman1/aai/internal";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import { createTestOrchestrator } from "./_test-utils.ts";

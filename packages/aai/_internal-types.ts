@@ -7,7 +7,21 @@
 
 import type { JSONSchema7 } from "json-schema";
 import { z } from "zod";
+import type { Message } from "./types.ts";
 import { BuiltinToolSchema, ToolChoiceSchema, type ToolDef } from "./types.ts";
+
+/**
+ * Function signature for executing a tool by name.
+ *
+ * Used by session.ts to invoke tools, by direct-executor.ts and
+ * _harness-runtime.ts to implement the execution.
+ */
+export type ExecuteTool = (
+  name: string,
+  args: Readonly<Record<string, unknown>>,
+  sessionId?: string,
+  messages?: readonly Message[],
+) => Promise<string>;
 
 // ─── AgentConfig ────────────────────────────────────────────────────────────
 

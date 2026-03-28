@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { createUnstorageKv } from "@alexkroman1/aai/unstorage-kv";
+import { createUnstorageKv } from "@alexkroman1/aai/internal";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { describe, expect, test } from "vitest";

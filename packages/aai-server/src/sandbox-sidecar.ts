@@ -7,9 +7,8 @@
  * KV instance is pre-scoped at construction time.
  */
 
+import { getServerPort, ssrfSafeFetch } from "@alexkroman1/aai/internal";
 import type { Kv } from "@alexkroman1/aai/kv";
-import { ssrfSafeFetch } from "@alexkroman1/aai/ssrf";
-import { getServerPort } from "@alexkroman1/aai/utils";
 import { serve } from "@hono/node-server";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";

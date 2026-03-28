@@ -1,11 +1,11 @@
 // Copyright 2025 the AAI authors. MIT license.
 /** S2S session — relays audio between client and AssemblyAI S2S API. */
 
-import type { AgentConfig, ToolSchema } from "./_internal-types.ts";
+import type { AgentConfig, ExecuteTool, ToolSchema } from "./_internal-types.ts";
 import { activeSessionsUpDown, sessionCounter, setupListeners } from "./_session-otel.ts";
 import { errorDetail, errorMessage, toolError } from "./_utils.ts";
 import { DEFAULT_IDLE_TIMEOUT_MS, DEFAULT_MAX_HISTORY, HOOK_TIMEOUT_MS } from "./constants.ts";
-import type { HookInvoker } from "./lifecycle.ts";
+import type { HookInvoker } from "./middleware.ts";
 import type { ClientSink } from "./protocol.ts";
 import type { Logger, S2SConfig } from "./runtime.ts";
 import { consoleLogger } from "./runtime.ts";
@@ -19,7 +19,6 @@ import {
 import { buildSystemPrompt } from "./system-prompt.ts";
 import { idleTimeoutCounter } from "./telemetry.ts";
 import type { Message } from "./types.ts";
-import type { ExecuteTool } from "./worker-entry.ts";
 
 export type { S2sHandle } from "./s2s.ts";
 
@@ -185,8 +184,12 @@ export function buildCtx(opts: {
 
 // ─── Re-exports ─────────────────────────────────────────────────────────────
 
-export type { HookInvoker, LifecycleHooks } from "./lifecycle.ts";
-export type { MiddlewareRunner, ToolInterceptResult } from "./middleware.ts";
+export type {
+  HookInvoker,
+  LifecycleHooks,
+  MiddlewareRunner,
+  ToolInterceptResult,
+} from "./middleware.ts";
 export { buildSystemPrompt } from "./system-prompt.ts";
 
 /**

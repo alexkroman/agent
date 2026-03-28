@@ -2,7 +2,7 @@
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
-import { buildAgentBundle, runBuildCommand } from "./_build.ts";
+import { buildAgentBundle, runBuildCommand } from "./_bundler.ts";
 import { withTempDir } from "./_test-utils.ts";
 
 describe("buildAgentBundle", () => {

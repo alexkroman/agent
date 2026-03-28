@@ -1,7 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { buildAgentBundle } from "./_build.ts";
-import { createClientDevServer } from "./_bundler.ts";
+import { buildAgentBundle, createClientDevServer } from "./_bundler.ts";
 import { loadAgent } from "./_discover.ts";
 import { bootServer, loadAgentDef, resolveServerEnv } from "./_server-common.ts";
 import { consola, parsePort } from "./_ui.ts";

@@ -14,7 +14,7 @@
  * every callsite that needs to change.
  */
 
-import { AgentConfigSchema, ToolSchemaSchema } from "@alexkroman1/aai/internal-types";
+import { AgentConfigSchema, ToolSchemaSchema } from "@alexkroman1/aai/internal";
 import { z } from "zod";
 
 // ─── IsolateConfig (config RPC response) ────────────────────────────────

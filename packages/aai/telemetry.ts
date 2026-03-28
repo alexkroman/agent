@@ -13,7 +13,6 @@
  *   STT → LLM → TTS pipeline
  */
 
-import { createRequire } from "node:module";
 import {
   type Meter,
   metrics,
@@ -27,20 +26,12 @@ import { errorMessage } from "./_utils.ts";
 // ─── Scoped instances ────────────────────────────────────────────────────────
 
 const SCOPE = "aai";
-const _require = createRequire(import.meta.url);
-// "./package.json" resolves from source; "../package.json" resolves from dist/
-let VERSION = "0.0.0";
-try {
-  VERSION = (_require("./package.json") as { version: string }).version;
-} catch {
-  VERSION = (_require("../package.json") as { version: string }).version;
-}
 
 /** Tracer scoped to the AAI SDK. */
-export const tracer: Tracer = trace.getTracer(SCOPE, VERSION);
+export const tracer: Tracer = trace.getTracer(SCOPE);
 
 /** Meter scoped to the AAI SDK. */
-export const meter: Meter = metrics.getMeter(SCOPE, VERSION);
+export const meter: Meter = metrics.getMeter(SCOPE);
 
 // ─── Pre-built metrics ──────────────────────────────────────────────────────
 

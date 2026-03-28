@@ -11,7 +11,7 @@ import {
   CONFORMANCE_AGENT_BUNDLE,
   type RuntimeTestContext,
   testRuntime,
-} from "@alexkroman1/aai/runtime-conformance";
+} from "@alexkroman1/aai/internal";
 import { afterAll, beforeAll } from "vitest";
 import { _internals } from "./sandbox.ts";
 
