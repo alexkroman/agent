@@ -2,17 +2,13 @@
 
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { installMockWebSocket } from "@alexkroman1/aai/testing";
+import { flush, installMockWebSocket } from "@alexkroman1/aai/testing";
 import { batch, signal } from "@preact/signals";
 import { createVoiceSession, type VoiceSession } from "./session.ts";
 import { createSessionControls, type SessionSignals } from "./signals.ts";
 import type { AgentState, ChatMessage, SessionError, ToolCallInfo } from "./types.ts";
 
-export { installMockWebSocket, MockWebSocket } from "@alexkroman1/aai/testing";
-
-export function flush(): Promise<void> {
-  return new Promise<void>((r) => queueMicrotask(r));
-}
+export { flush, installMockWebSocket, MockWebSocket } from "@alexkroman1/aai/testing";
 
 export function delay(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
