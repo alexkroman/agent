@@ -10,6 +10,7 @@
 import type { StepInfo } from "./types.ts";
 
 export {
+  buildMiddlewareRunner,
   runAfterToolCallMiddleware,
   runAfterTurnMiddleware,
   runBeforeTurnMiddleware,

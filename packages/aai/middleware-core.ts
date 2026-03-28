@@ -14,6 +14,54 @@ import type {
   ToolCallInterceptResult,
 } from "./types.ts";
 
+// Re-import the MiddlewareRunner type from middleware.ts would create a circular
+// dependency. Define the return type inline instead — this is the source of truth
+// for what buildMiddlewareRunner produces.
+
+/**
+ * Build a MiddlewareRunner from an array of middleware and a context factory.
+ * Returns `undefined` when the middleware array is empty (no-op optimization).
+ *
+ * Shared by both self-hosted (direct-executor) and platform (_harness-runtime)
+ * to avoid duplicating the adapter logic.
+ */
+export function buildMiddlewareRunner(
+  middleware: readonly Middleware[],
+  makeCtx: (sid: string) => HookContext,
+) {
+  if (middleware.length === 0) return;
+  return {
+    async filterInput(sessionId: string, text: string) {
+      return runInputFilters(middleware, text, makeCtx(sessionId));
+    },
+    async beforeTurn(sessionId: string, text: string) {
+      const result = await runBeforeTurnMiddleware(middleware, text, makeCtx(sessionId));
+      return result?.reason;
+    },
+    async afterTurn(sessionId: string, text: string) {
+      await runAfterTurnMiddleware(middleware, text, makeCtx(sessionId));
+    },
+    async interceptToolCall(
+      sessionId: string,
+      toolName: string,
+      args: Readonly<Record<string, unknown>>,
+    ) {
+      return runToolCallInterceptors(middleware, toolName, args, makeCtx(sessionId));
+    },
+    async afterToolCall(
+      sessionId: string,
+      toolName: string,
+      args: Readonly<Record<string, unknown>>,
+      result: string,
+    ) {
+      await runAfterToolCallMiddleware(middleware, toolName, args, result, makeCtx(sessionId));
+    },
+    async filterOutput(sessionId: string, text: string) {
+      return runOutputFilters(middleware, text, makeCtx(sessionId));
+    },
+  };
+}
+
 /** Result from a middleware tool call interceptor. */
 export type ToolInterceptResult =
   | { type: "block"; reason: string }

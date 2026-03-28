@@ -10,17 +10,19 @@ import type { ClientSink } from "./protocol.ts";
 import { HOOK_TIMEOUT_MS } from "./protocol.ts";
 import type { Logger, S2SConfig } from "./runtime.ts";
 import { consoleLogger } from "./runtime.ts";
-import type { S2sHandle } from "./s2s.ts";
 import {
   type CreateS2sWebSocket,
   connectS2s,
   defaultCreateS2sWebSocket,
+  type S2sHandle,
   type S2sToolSchema,
 } from "./s2s.ts";
 import { buildSystemPrompt } from "./system-prompt.ts";
 import { idleTimeoutCounter } from "./telemetry.ts";
 import type { Message } from "./types.ts";
 import type { ExecuteTool } from "./worker-entry.ts";
+
+export type { S2sHandle } from "./s2s.ts";
 
 // ─── Session context (formerly _session-ctx.ts) ─────────────────────────────
 

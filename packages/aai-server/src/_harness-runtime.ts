@@ -2,15 +2,9 @@
 /** Sandbox harness runtime -- runs inside the secure-exec V8 isolate. */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { Kv } from "@alexkroman1/aai/kv";
-import {
-  runAfterToolCallMiddleware,
-  runAfterTurnMiddleware,
-  runBeforeTurnMiddleware,
-  runInputFilters,
-  runOutputFilters,
-  runToolCallInterceptors,
-} from "@alexkroman1/aai/middleware-core";
-import type { AgentDef, HookContext, Middleware, ToolContext } from "@alexkroman1/aai/types";
+import { buildMiddlewareRunner } from "@alexkroman1/aai/middleware-core";
+import type { AgentDef, HookContext, ToolContext } from "@alexkroman1/aai/types";
+import { createSessionStateMap } from "@alexkroman1/aai/utils";
 import type {
   HookRequest,
   HookResponse,
@@ -106,14 +100,10 @@ try {
   /* secure-exec may prevent override; ctx.fetch still works */
 }
 
-const sessionStates = new Map<string, Record<string, unknown>>();
-
-function getState(agent: AgentDef, sessionId: string): Record<string, unknown> {
-  if (!sessionStates.has(sessionId) && agent.state) {
-    sessionStates.set(sessionId, agent.state());
-  }
-  return sessionStates.get(sessionId) ?? {};
-}
+// Lazily-initialized per-session state (shared pattern with self-hosted mode).
+let sessionState: ReturnType<typeof createSessionStateMap>;
+// Middleware runner (shared builder with self-hosted mode). Undefined when no middleware.
+let middlewareRunner: ReturnType<typeof buildMiddlewareRunner>;
 
 function extractToolSchemas(agent: AgentDef): IsolateConfig["toolSchemas"] {
   return Object.entries(agent.tools).map(([name, def]) => ({
@@ -160,7 +150,7 @@ async function executeTool(agent: AgentDef, req: ToolCallRequest): Promise<ToolC
 
   const ctx: ToolContext = {
     env: agentEnv,
-    state: getState(agent, req.sessionId),
+    state: sessionState.get(req.sessionId),
     sessionId: req.sessionId,
     kv,
     messages: req.messages,
@@ -190,10 +180,10 @@ async function executeTool(agent: AgentDef, req: ToolCallRequest): Promise<ToolC
   };
 }
 
-function makeHookCtx(agent: AgentDef, req: HookRequest): HookContext {
+function makeHookCtx(_agent: AgentDef, req: HookRequest): HookContext {
   return {
     env: agentEnv,
-    state: getState(agent, req.sessionId),
+    state: sessionState.get(req.sessionId),
     sessionId: req.sessionId,
     kv,
     fetch: sidecarFetch,
@@ -211,45 +201,6 @@ async function runResolveTurnConfig(
   return null;
 }
 
-async function invokeMiddlewareHook(
-  agent: AgentDef,
-  req: HookRequest,
-  ctx: HookContext,
-): Promise<unknown> {
-  const middleware: readonly Middleware[] = agent.middleware ?? [];
-  switch (req.hook) {
-    case "filterInput":
-      return runInputFilters(middleware, req.text ?? "", ctx);
-    case "beforeTurn": {
-      const r = await runBeforeTurnMiddleware(middleware, req.text ?? "", ctx);
-      return r?.reason;
-    }
-    case "afterTurn":
-      await runAfterTurnMiddleware(middleware, req.text ?? "", ctx);
-      return;
-    case "interceptToolCall":
-      return runToolCallInterceptors(
-        middleware,
-        req.step?.toolCalls[0]?.toolName ?? "",
-        (req.step?.toolCalls[0]?.args as Record<string, unknown>) ?? {},
-        ctx,
-      );
-    case "afterToolCall":
-      await runAfterToolCallMiddleware(
-        middleware,
-        req.step?.toolCalls[0]?.toolName ?? "",
-        (req.step?.toolCalls[0]?.args as Record<string, unknown>) ?? {},
-        req.text ?? "",
-        ctx,
-      );
-      return;
-    case "filterOutput":
-      return runOutputFilters(middleware, req.text ?? "", ctx);
-    default:
-      return;
-  }
-}
-
 async function invokeHook(agent: AgentDef, req: HookRequest): Promise<HookResponse> {
   const ctx = makeHookCtx(agent, req);
   let result: unknown;
@@ -261,7 +212,7 @@ async function invokeHook(agent: AgentDef, req: HookRequest): Promise<HookRespon
         break;
       case "onDisconnect":
         await agent.onDisconnect?.(ctx);
-        sessionStates.delete(req.sessionId);
+        sessionState.delete(req.sessionId);
         break;
       case "onTurn":
         await agent.onTurn?.(req.text ?? "", ctx);
@@ -275,12 +226,39 @@ async function invokeHook(agent: AgentDef, req: HookRequest): Promise<HookRespon
       case "resolveTurnConfig":
         result = await runResolveTurnConfig(agent, ctx);
         break;
+      // Middleware hooks — dispatched to pre-built runner
+      case "filterInput":
+        result = await middlewareRunner?.filterInput(req.sessionId, req.text ?? "");
+        break;
+      case "beforeTurn":
+        result = await middlewareRunner?.beforeTurn(req.sessionId, req.text ?? "");
+        break;
+      case "afterTurn":
+        await middlewareRunner?.afterTurn(req.sessionId, req.text ?? "");
+        break;
+      case "interceptToolCall":
+        result = await middlewareRunner?.interceptToolCall(
+          req.sessionId,
+          req.step?.toolCalls[0]?.toolName ?? "",
+          (req.step?.toolCalls[0]?.args as Record<string, unknown>) ?? {},
+        );
+        break;
+      case "afterToolCall":
+        await middlewareRunner?.afterToolCall(
+          req.sessionId,
+          req.step?.toolCalls[0]?.toolName ?? "",
+          (req.step?.toolCalls[0]?.args as Record<string, unknown>) ?? {},
+          req.text ?? "",
+        );
+        break;
+      case "filterOutput":
+        result = await middlewareRunner?.filterOutput(req.sessionId, req.text ?? "");
+        break;
       default:
-        result = await invokeMiddlewareHook(agent, req, ctx);
         break;
     }
   } catch (err) {
-    sessionStates.delete(req.sessionId);
+    sessionState.delete(req.sessionId);
     throw err;
   }
 
@@ -353,6 +331,14 @@ export function startHarness(agent: AgentDef): void {
   if (!agent || typeof agent !== "object" || !agent.name) {
     throw new Error("Agent bundle must export a default agent definition");
   }
+  sessionState = createSessionStateMap(agent.state);
+  middlewareRunner = buildMiddlewareRunner(agent.middleware ?? [], (sid) => ({
+    env: agentEnv,
+    state: sessionState.get(sid),
+    sessionId: sid,
+    kv,
+    fetch: sidecarFetch,
+  }));
 
   const server = createServer(async (req, res) => {
     try {

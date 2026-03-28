@@ -12,21 +12,14 @@ import { ssrfSafeFetch } from "./_ssrf.ts";
 import { createSessionStateMap, toolError } from "./_utils.ts";
 import { getBuiltinToolDefs, getBuiltinToolSchemas } from "./builtin-tools.ts";
 import type { Kv } from "./kv.ts";
-import type { HookInvoker, LifecycleHooks, MiddlewareRunner } from "./middleware.ts";
-import {
-  runAfterToolCallMiddleware,
-  runAfterTurnMiddleware,
-  runBeforeTurnMiddleware,
-  runInputFilters,
-  runOutputFilters,
-  runToolCallInterceptors,
-} from "./middleware.ts";
+import type { HookInvoker, LifecycleHooks } from "./middleware.ts";
+import { buildMiddlewareRunner } from "./middleware.ts";
 import type { ClientSink } from "./protocol.ts";
 import type { Logger, S2SConfig } from "./runtime.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime.ts";
 import type { CreateS2sWebSocket } from "./s2s.ts";
 import { createS2sSession, type Session } from "./session.ts";
-import type { AgentDef, HookContext, Middleware, StepInfo } from "./types.ts";
+import type { AgentDef, HookContext, StepInfo } from "./types.ts";
 import { createUnstorageKv } from "./unstorage-kv.ts";
 import type { ExecuteTool } from "./worker-entry.ts";
 import { executeToolCall } from "./worker-entry.ts";
@@ -76,35 +69,6 @@ export type DirectExecutor = {
     resumeFrom?: string;
   }): Session;
 };
-
-/** Build middleware runner from agent middleware, or undefined if no middleware. */
-function buildMiddlewareRunner(
-  middleware: readonly Middleware[],
-  makeCtx: (sid: string) => HookContext,
-): MiddlewareRunner | undefined {
-  if (middleware.length === 0) return;
-  return {
-    async filterInput(sessionId, text) {
-      return runInputFilters(middleware, text, makeCtx(sessionId));
-    },
-    async beforeTurn(sessionId, text) {
-      const result = await runBeforeTurnMiddleware(middleware, text, makeCtx(sessionId));
-      return result?.reason;
-    },
-    async afterTurn(sessionId, text) {
-      await runAfterTurnMiddleware(middleware, text, makeCtx(sessionId));
-    },
-    async interceptToolCall(sessionId, toolName, args) {
-      return runToolCallInterceptors(middleware, toolName, args, makeCtx(sessionId));
-    },
-    async afterToolCall(sessionId, toolName, args, result) {
-      await runAfterToolCallMiddleware(middleware, toolName, args, result, makeCtx(sessionId));
-    },
-    async filterOutput(sessionId, text) {
-      return runOutputFilters(middleware, text, makeCtx(sessionId));
-    },
-  };
-}
 
 /**
  * Create a direct (in-process) tool executor and hook invoker for an agent.

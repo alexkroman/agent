@@ -23,6 +23,6 @@ export default defineConfig([
     platform: "node",
     target: "node22",
     outDir: "dist",
-    noExternal: [/@alexkroman1\/aai\/middleware-core/],
+    noExternal: [/@alexkroman1\/aai\/middleware-core/, /@alexkroman1\/aai\/utils/],
   },
 ]);
