@@ -84,7 +84,7 @@ Four workspace packages under `packages/`:
 Public:
 
 - `.` — `defineAgent`, `defineTool` + re-exported types
-- `./server` — `createServer` for self-hosting
+- `./server` — `createServer` + `createAgentApp` for self-hosting
 - `./types` — all type definitions
 - `./kv` — KV store interface + in-memory implementation
 - `./testing` — `MockWebSocket`, `installMockWebSocket`,

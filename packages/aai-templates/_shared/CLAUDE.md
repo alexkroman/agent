@@ -1156,6 +1156,18 @@ const server = createServer({
 await server.listen(3000);
 ```
 
+For composable usage, `createAgentApp()` returns a Hono app you can mount:
+
+```ts
+import { Hono } from "hono";
+import { createAgentApp } from "@alexkroman1/aai/server";
+
+const { app: agentApp, shutdown } = createAgentApp({ agent });
+const app = new Hono();
+app.route("/agent", agentApp);
+app.get("/custom", (c) => c.text("hello"));
+```
+
 Run with `node server.ts` (Node >=22.6 strips types natively) or bundle
 with your preferred tool. The server handles WebSocket connections, STT/TTS,
 and the agentic loop. Set `ASSEMBLYAI_API_KEY` as an environment variable.

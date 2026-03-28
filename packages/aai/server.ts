@@ -2,9 +2,9 @@
 /**
  * Self-hostable agent server.
  *
- * `createServer()` returns a server with `listen()` for HTTP + WebSocket.
- * Uses {@link createDirectExecutor} which satisfies the {@link AgentRuntime}
- * interface — the server itself is runtime-agnostic.
+ * {@link createAgentApp} returns a composable Hono app that can be mounted
+ * into a larger application. {@link createServer} wraps it with `listen()`
+ * and `close()` for standalone deployments.
  */
 
 import { serve } from "@hono/node-server";
@@ -74,28 +74,39 @@ export type AgentServer = {
 };
 
 /**
- * Create an HTTP + WebSocket server for self-hosted agent deployments.
+ * Result of {@link createAgentApp}. Contains the Hono app and a shutdown
+ * function to gracefully stop active sessions.
  *
- * Sets up a Hono HTTP server with a `/health` endpoint and WebSocket upgrade
- * handling. Agent tools execute directly in-process via {@link createDirectExecutor}.
+ * @public
+ */
+export type AgentApp = {
+  /** Hono app with agent routes. Mount it or add your own middleware. */
+  app: Hono;
+  /** Gracefully stop all active sessions and release resources. */
+  shutdown(): Promise<void>;
+};
+
+/**
+ * Create a composable Hono app with agent routes and WebSocket handling.
  *
- * @param options - Server configuration including the agent definition, optional
- *   KV store, client assets, logger, and S2S config. See {@link ServerOptions}.
- * @returns An {@link AgentServer} with `listen()` and `close()` lifecycle methods.
+ * Use this when you want to embed agent routes into a larger Hono app,
+ * add custom middleware, or compose with other services. For standalone
+ * deployments, use {@link createServer} instead.
  *
- * @example
+ * @example Mount into your own Hono app
  * ```ts
- * import { defineAgent } from "@alexkroman1/aai";
- * import { createServer } from "@alexkroman1/aai/server";
+ * import { Hono } from "hono";
+ * import { createAgentApp } from "@alexkroman1/aai/server";
  *
- * const agent = defineAgent({ name: "my-agent" });
- * const server = createServer({ agent });
- * await server.listen(3000);
+ * const { app: agentApp, shutdown } = createAgentApp({ agent });
+ * const app = new Hono();
+ * app.route("/agent", agentApp);
+ * app.get("/custom", (c) => c.text("hello"));
  * ```
  *
  * @public
  */
-export function createServer(options: ServerOptions): AgentServer {
+export function createAgentApp(options: ServerOptions): AgentApp {
   if (options.clientHtml && options.clientDir) {
     throw new Error(
       "ServerOptions: clientHtml and clientDir are mutually exclusive — provide one or the other, not both.",
@@ -127,6 +138,116 @@ export function createServer(options: ServerOptions): AgentServer {
     shutdownTimeoutMs,
   });
 
+  const app = new Hono();
+  const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
+
+  app.onError((err, c) => {
+    logger.error(`${c.req.method} ${c.req.path} error: ${err.message}`);
+    return c.json({ error: "Internal Server Error" }, 500);
+  });
+
+  app.use("/*", async (c, next) => {
+    const start = Date.now();
+    await next();
+    const ms = Date.now() - start;
+    const { status } = c.res;
+    const method = c.req.method;
+    const path = c.req.path;
+    if (status >= 400) {
+      logger.error(`${method} ${path} ${status} ${ms}ms`);
+    } else {
+      logger.info(`${method} ${path} ${status} ${ms}ms`);
+    }
+  });
+
+  app.use(
+    "*",
+    secureHeaders({
+      contentSecurityPolicy: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "blob:"],
+        styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+        connectSrc: ["'self'", "wss:", "ws:"],
+        imgSrc: ["'self'", "data:"],
+        fontSrc: ["'self'", "https://fonts.gstatic.com"],
+        objectSrc: ["'none'"],
+        baseUri: ["'self'"],
+      },
+    }),
+  );
+
+  app.get("/health", (c) => c.json({ status: "ok", name: agent.name }));
+
+  app.get("/kv", async (c) => {
+    const key = c.req.query("key");
+    if (!key) return c.json({ error: "Missing key query parameter" }, 400);
+    const value = await kv.get(key);
+    if (value === null) return c.json(null, 404);
+    return c.json(value);
+  });
+
+  if (clientDir) {
+    app.use("/*", serveStatic({ root: clientDir }));
+  }
+
+  app.get("/", (c) => {
+    if (clientHtml) return c.html(clientHtml);
+    return c.html(
+      html`<!DOCTYPE html><html><body><h1>${agent.name}</h1><p>Agent server running.</p></body></html>`,
+    );
+  });
+
+  app.get(
+    "/websocket",
+    upgradeWebSocket((c) => {
+      const resumeFrom = c.req.query("sessionId") ?? undefined;
+      const skipGreeting = c.req.query("resume") !== undefined || resumeFrom !== undefined;
+      logger.info(`WS upgrade ${c.req.path}${skipGreeting ? " (resume)" : ""}`);
+      return {
+        onOpen(_evt, ws) {
+          if (ws.raw)
+            runtime.startSession(ws.raw, {
+              skipGreeting,
+              ...(resumeFrom ? { resumeFrom } : {}),
+            });
+        },
+      };
+    }),
+  );
+
+  // Expose injectWebSocket so createServer can wire it to the Node server.
+  // biome-ignore lint/suspicious/noExplicitAny: internal plumbing
+  (app as any)._injectWebSocket = injectWebSocket;
+
+  return {
+    app,
+    shutdown: () => runtime.shutdown(),
+  };
+}
+
+/**
+ * Create an HTTP + WebSocket server for self-hosted agent deployments.
+ *
+ * For composable usage (mounting into your own Hono app), use
+ * {@link createAgentApp} instead.
+ *
+ * @example
+ * ```ts
+ * import { defineAgent } from "@alexkroman1/aai";
+ * import { createServer } from "@alexkroman1/aai/server";
+ *
+ * const agent = defineAgent({ name: "my-agent" });
+ * const server = createServer({ agent });
+ * await server.listen(3000);
+ * ```
+ *
+ * @public
+ */
+export function createServer(options: ServerOptions): AgentServer {
+  const { app, shutdown } = createAgentApp(options);
+  // biome-ignore lint/suspicious/noExplicitAny: internal plumbing from createAgentApp
+  const injectWebSocket: (server: ReturnType<typeof serve>) => void = (app as any)._injectWebSocket;
+
   let serverHandle: { shutdown(): Promise<void> } | null = null;
   let listenPort: number | undefined;
 
@@ -136,83 +257,6 @@ export function createServer(options: ServerOptions): AgentServer {
     },
     async listen(port = 3000) {
       if (serverHandle) throw new Error("Server is already listening");
-
-      const app = new Hono();
-      const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
-
-      app.onError((err, c) => {
-        logger.error(`${c.req.method} ${c.req.path} error: ${err.message}`);
-        return c.json({ error: "Internal Server Error" }, 500);
-      });
-
-      app.use("/*", async (c, next) => {
-        const start = Date.now();
-        await next();
-        const ms = Date.now() - start;
-        const { status } = c.res;
-        const method = c.req.method;
-        const path = c.req.path;
-        if (status >= 400) {
-          logger.error(`${method} ${path} ${status} ${ms}ms`);
-        } else {
-          logger.info(`${method} ${path} ${status} ${ms}ms`);
-        }
-      });
-
-      app.use(
-        "*",
-        secureHeaders({
-          contentSecurityPolicy: {
-            defaultSrc: ["'self'"],
-            scriptSrc: ["'self'", "blob:"],
-            styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
-            connectSrc: ["'self'", "wss:", "ws:"],
-            imgSrc: ["'self'", "data:"],
-            fontSrc: ["'self'", "https://fonts.gstatic.com"],
-            objectSrc: ["'none'"],
-            baseUri: ["'self'"],
-          },
-        }),
-      );
-
-      app.get("/health", (c) => c.json({ status: "ok", name: agent.name }));
-
-      app.get("/kv", async (c) => {
-        const key = c.req.query("key");
-        if (!key) return c.json({ error: "Missing key query parameter" }, 400);
-        const value = await kv.get(key);
-        if (value === null) return c.json(null, 404);
-        return c.json(value);
-      });
-
-      if (clientDir) {
-        app.use("/*", serveStatic({ root: clientDir }));
-      }
-
-      app.get("/", (c) => {
-        if (clientHtml) return c.html(clientHtml);
-        return c.html(
-          html`<!DOCTYPE html><html><body><h1>${agent.name}</h1><p>Agent server running.</p></body></html>`,
-        );
-      });
-
-      app.get(
-        "/websocket",
-        upgradeWebSocket((c) => {
-          const resumeFrom = c.req.query("sessionId") ?? undefined;
-          const skipGreeting = c.req.query("resume") !== undefined || resumeFrom !== undefined;
-          logger.info(`WS upgrade ${c.req.path}${skipGreeting ? " (resume)" : ""}`);
-          return {
-            onOpen(_evt, ws) {
-              if (ws.raw)
-                runtime.startSession(ws.raw, {
-                  skipGreeting,
-                  ...(resumeFrom ? { resumeFrom } : {}),
-                });
-            },
-          };
-        }),
-      );
 
       const nodeServer = serve({ fetch: app.fetch, port });
       injectWebSocket(nodeServer);
@@ -235,7 +279,7 @@ export function createServer(options: ServerOptions): AgentServer {
     },
 
     async close() {
-      await runtime.shutdown();
+      await shutdown();
       await serverHandle?.shutdown();
       listenPort = undefined;
     },

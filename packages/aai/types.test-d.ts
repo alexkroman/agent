@@ -27,7 +27,7 @@ import {
   type ToolResultMap,
   tool,
 } from "./index.ts";
-import { type AgentServer, createServer } from "./server.ts";
+import { type AgentApp, type AgentServer, createAgentApp, createServer } from "./server.ts";
 
 // ─── defineAgent ──────────────────────────────────────────────────────────
 
@@ -222,6 +222,15 @@ describe("createServer", () => {
   it("requires agent in options", () => {
     // @ts-expect-error — agent is required
     createServer({});
+  });
+});
+
+describe("createAgentApp", () => {
+  it("returns AgentApp with app and shutdown", () => {
+    const agent = defineAgent({ name: "test" });
+    const result = createAgentApp({ agent });
+    expectTypeOf(result).toEqualTypeOf<AgentApp>();
+    expectTypeOf(result.shutdown).toEqualTypeOf<() => Promise<void>>();
   });
 });
 
