@@ -362,7 +362,6 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
             executeTool,
             hookInvoker,
             skipGreeting: skipGreeting ?? false,
-            ...(resumeFrom ? { resumeFrom } : {}),
           }),
         readyConfig,
         ...(resumeFrom ? { resumeFrom } : {}),

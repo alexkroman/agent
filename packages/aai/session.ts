@@ -4,7 +4,6 @@
 import type { AgentConfig, ToolSchema } from "./_internal-types.ts";
 import { activeSessionsUpDown, sessionCounter, setupListeners } from "./_session-otel.ts";
 import { errorDetail, errorMessage, toolError } from "./_utils.ts";
-import type { Kv } from "./kv.ts";
 import type { HookInvoker } from "./middleware.ts";
 import type { ClientSink } from "./protocol.ts";
 import { HOOK_TIMEOUT_MS } from "./protocol.ts";
@@ -159,71 +158,6 @@ export function buildCtx(opts: {
   return ctx;
 }
 
-// ─── Session persistence (formerly _session-persist.ts) ─────────────────────
-
-const PERSIST_PREFIX = "__persist:";
-
-export function persistKey(sessionId: string): string {
-  return `${PERSIST_PREFIX}${sessionId}`;
-}
-
-export type PersistedSession = {
-  s2sSessionId: string | null;
-  messages: Message[];
-  state: Record<string, unknown>;
-};
-
-export type SessionPersistence = {
-  kv: Kv;
-  ttl: number;
-  getState: () => Record<string, unknown>;
-  setState: (state: Record<string, unknown>) => void;
-};
-
-type PersistCtx = {
-  pushMessages(...msgs: Message[]): void;
-  conversationMessages: Message[];
-};
-
-async function restorePersistedSession(
-  persistence: SessionPersistence,
-  resumeFrom: string,
-  ctx: PersistCtx,
-  log: Logger,
-): Promise<string | null> {
-  const persisted = await persistence.kv.get<PersistedSession>(persistKey(resumeFrom));
-  if (!persisted) return null;
-  log.info("Restoring persisted session", { resumeFrom });
-  persistence.setState(persisted.state);
-  if (persisted.messages.length > 0) {
-    ctx.pushMessages(...persisted.messages);
-  }
-  return persisted.s2sSessionId;
-}
-
-async function saveSessionData(
-  persistence: SessionPersistence,
-  sessionId: string,
-  ctx: PersistCtx,
-  s2sSessionId: string | null,
-  log: Logger,
-  /** Old session key to clean up (from a previous session we resumed from). */
-  cleanupKey?: string,
-): Promise<void> {
-  const data: PersistedSession = {
-    s2sSessionId,
-    messages: ctx.conversationMessages,
-    state: persistence.getState(),
-  };
-  const key = persistKey(sessionId);
-  const ops: Promise<void>[] = [persistence.kv.set(key, data, { expireIn: persistence.ttl })];
-  if (cleanupKey && cleanupKey !== sessionId) {
-    ops.push(persistence.kv.delete(persistKey(cleanupKey)));
-  }
-  await Promise.all(ops);
-  log.info("Session persisted", { sessionId });
-}
-
 // ─── Re-exports ─────────────────────────────────────────────────────────────
 
 export type {
@@ -283,11 +217,6 @@ export type S2sSessionOptions = {
    *  dropped (sliding window) to bound memory in long-running sessions.
    *  Defaults to 200. Set to 0 or Infinity to disable trimming. */
   maxHistory?: number;
-  /** Persistence configuration for auto-saving/restoring session data. */
-  persistence?: SessionPersistence;
-  /** Old session ID to resume from. Loads persisted state/messages from KV
-   *  and attempts S2S session resume. */
-  resumeFrom?: string;
 };
 
 /** @internal Not part of the public API. Exposed for testing only. */
@@ -364,8 +293,6 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
     createWebSocket = defaultCreateS2sWebSocket,
     hookInvoker,
     logger: log = consoleLogger,
-    persistence,
-    resumeFrom,
   } = opts;
   const agentConfig = opts.skipGreeting ? { ...opts.agentConfig, greeting: "" } : opts.agentConfig;
   const hasTools = toolSchemas.length > 0 || (agentConfig.builtinTools?.length ?? 0) > 0;
@@ -392,10 +319,6 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
   const rawTimeout = agentConfig.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
   const idleMs = rawTimeout === 0 || !Number.isFinite(rawTimeout) ? 0 : rawTimeout;
   const idle = createIdleTimer({ timeoutMs: idleMs, agent, log, client, ctx });
-
-  let currentS2sSessionId: string | null = null;
-  let resumeS2sId: string | null = null;
-  const pendingCleanupKey: string | undefined = resumeFrom;
 
   /** Monotonically increasing counter bumped on each connectAndSetup call.
    *  Only the most recent invocation is allowed to set ctx.s2s, preventing
@@ -424,34 +347,8 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
         return;
       }
 
-      handle.on("ready", ({ sessionId: s2sId }) => {
-        currentS2sSessionId = s2sId;
-      });
-
-      if (resumeS2sId) {
-        const s2sId = resumeS2sId;
-        resumeS2sId = null; // Only try resume once
-
-        // Set up with fallback: if S2S resume fails (session expired),
-        // fall back to a fresh session on the same connection.
-        let resumeFallbackUsed = false;
-        setupListeners(ctx, handle, {
-          onSessionExpired: () => {
-            if (!resumeFallbackUsed) {
-              resumeFallbackUsed = true;
-              log.info("S2S session resume failed, falling back to new session");
-              handle.updateSession(sessionUpdatePayload);
-            } else {
-              ctx.log.info("S2S session expired");
-              handle.close();
-            }
-          },
-        });
-        handle.resumeSession(s2sId);
-      } else {
-        setupListeners(ctx, handle);
-        handle.updateSession(sessionUpdatePayload);
-      }
+      setupListeners(ctx, handle);
+      handle.updateSession(sessionUpdatePayload);
 
       ctx.s2s = handle;
       idle.reset();
@@ -464,16 +361,6 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
 
   return {
     async start(): Promise<void> {
-      // If resuming, load persisted data before connecting
-      if (persistence && resumeFrom) {
-        try {
-          const s2sId = await restorePersistedSession(persistence, resumeFrom, ctx, log);
-          if (s2sId) resumeS2sId = s2sId;
-        } catch (err: unknown) {
-          log.warn("Failed to restore persisted session", { error: errorMessage(err) });
-        }
-      }
-
       sessionCounter.add(1, { agent });
       activeSessionsUpDown.add(1, { agent });
       ctx.fireHook("onConnect", (h) => h.onConnect(id, HOOK_TIMEOUT_MS));
@@ -488,16 +375,6 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
       // Drain in-flight hooks (onTurn, etc.) BEFORE closing
       // the S2S connection so they don't send on a closed socket.
       await ctx.drainHooks();
-
-      // Persist session data before cleanup
-      if (persistence) {
-        try {
-          await saveSessionData(persistence, id, ctx, currentS2sSessionId, log, pendingCleanupKey);
-        } catch (err: unknown) {
-          log.warn("Failed to persist session", { error: errorMessage(err) });
-        }
-      }
-
       ctx.s2s?.close();
       ctx.fireHook("onDisconnect", (h) => h.onDisconnect(id, HOOK_TIMEOUT_MS));
       // Drain again for the onDisconnect hook we just fired.
@@ -519,7 +396,6 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
       ctx.turnPromise = null;
       ctx.pendingTools = [];
       ctx.currentReplyId = null;
-      currentS2sSessionId = null;
       idle.clear();
       ctx.s2s?.close();
       client.event({ type: "reset" });

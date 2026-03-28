@@ -53,7 +53,7 @@ export function getServerPort(addr: unknown): number {
  */
 export function createSessionStateMap(initState?: () => Record<string, unknown>): {
   get(sessionId: string): Record<string, unknown>;
-  /** Explicitly set the state for a session (used by persistence restore). */
+  /** Explicitly set the state for a session. */
   set(sessionId: string, state: Record<string, unknown>): void;
   delete(sessionId: string): boolean;
 } {

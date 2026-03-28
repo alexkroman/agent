@@ -65,8 +65,6 @@ export type DirectExecutor = {
     agent: string;
     client: ClientSink;
     skipGreeting?: boolean;
-    /** Old session ID to resume from (loads persisted state from KV). */
-    resumeFrom?: string;
   }): Session;
 };
 
@@ -176,20 +174,8 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
     agent: string;
     client: ClientSink;
     skipGreeting?: boolean;
-    resumeFrom?: string;
   }): Session {
     const apiKey = frozenEnv.ASSEMBLYAI_API_KEY ?? "";
-    const persistenceOpts = agent.persistence
-      ? {
-          persistence: {
-            kv,
-            ttl: agent.persistence.ttl,
-            getState: () => sessionState.get(sessionOpts.id),
-            setState: (state: Record<string, unknown>) => sessionState.set(sessionOpts.id, state),
-          },
-          ...(sessionOpts.resumeFrom ? { resumeFrom: sessionOpts.resumeFrom } : {}),
-        }
-      : {};
     return createS2sSession({
       id: sessionOpts.id,
       agent: sessionOpts.agent,
@@ -203,7 +189,6 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
       hookInvoker,
       skipGreeting: sessionOpts.skipGreeting ?? false,
       logger,
-      ...persistenceOpts,
     });
   }
 

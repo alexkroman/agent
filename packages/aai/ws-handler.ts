@@ -47,8 +47,7 @@ export type WsSessionOptions = {
   logger?: Logger;
   /** Timeout in ms for session.start(). Defaults to 10 000 (10s). */
   sessionStartTimeoutMs?: number;
-  /** Old session ID to resume from. When set, the persisted session data
-   *  (state, messages, S2S session ID) is restored from KV. */
+  /** Old session ID to resume. When set, reuses this ID instead of generating a new UUID. */
   resumeFrom?: string;
 };
 

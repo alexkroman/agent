@@ -165,7 +165,6 @@ export function createServer(options: ServerOptions): AgentServer {
           agent: agent.name,
           client,
           skipGreeting,
-          ...(resumeFrom ? { resumeFrom } : {}),
         }),
       readyConfig,
       logger,

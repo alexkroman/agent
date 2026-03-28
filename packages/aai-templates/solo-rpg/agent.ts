@@ -611,13 +611,9 @@ VOICE:
   builtinTools: ["run_code"],
   maxSteps: 8,
 
-  persistence: true,
-
   state: () => structuredClone(defaultState),
 
   // Auto-load saved game on connect (restores game state from KV).
-  // The `persistence: true` option handles conversation history and S2S
-  // session context automatically; this hook restores game-specific state.
   onConnect: async (ctx: HookContext<GameState>) => {
     const saved = await ctx.kv.get<GameState>("save:game");
     if (saved) Object.assign(ctx.state, saved);
