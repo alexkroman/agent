@@ -4,17 +4,16 @@ import type { Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { SecretUpdatesSchema } from "./_schemas.ts";
 import type { Env } from "./context.ts";
+import { terminateSlot } from "./sandbox-slots.ts";
 
 /** Keys managed by the platform that agents must not override or delete. */
 const RESERVED_KEYS = new Set(["ASSEMBLYAI_API_KEY"]);
 
 async function restartSandbox(c: Context<Env>, slug: string, reason: string): Promise<void> {
   const slot = c.env.slots.get(slug);
-  if (slot?.sandbox) {
+  if (slot?.sandbox || slot?.initializing) {
     console.info(`Restarting sandbox for ${reason}`, { slug });
-    await slot.sandbox.terminate();
-    delete slot.sandbox;
-    delete slot.initializing;
+    await terminateSlot(slot);
   }
 }
 

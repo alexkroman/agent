@@ -108,6 +108,28 @@ export async function ensureAgent(slot: AgentSlot, opts: EnsureOpts): Promise<Sa
   return slot.initializing;
 }
 
+/**
+ * Best-effort terminate a slot's sandbox (running or initializing) and clear
+ * sandbox state. Errors are logged but never thrown.
+ */
+export async function terminateSlot(slot: AgentSlot): Promise<void> {
+  const { slug } = slot;
+  if (slot.sandbox) {
+    await slot.sandbox.terminate().catch((err: unknown) => {
+      console.warn("Failed to terminate sandbox", { slug, error: String(err) });
+    });
+    // biome-ignore lint/nursery/noMisusedPromises: checking nullability, not truthiness
+  } else if (slot.initializing) {
+    await slot.initializing
+      .then((sb) => sb.terminate())
+      .catch((err: unknown) => {
+        console.warn("Failed to terminate initializing sandbox", { slug, error: String(err) });
+      });
+  }
+  delete slot.sandbox;
+  delete slot.initializing;
+}
+
 export function registerSlot(slots: Map<string, AgentSlot>, metadata: AgentMetadata): void {
   slots.set(metadata.slug, {
     slug: metadata.slug,

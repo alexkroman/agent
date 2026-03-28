@@ -2,6 +2,7 @@
 import type { Context } from "hono";
 import { type DeployBody, DeployBodySchema, EnvSchema } from "./_schemas.ts";
 import type { Env } from "./context.ts";
+import { terminateSlot } from "./sandbox-slots.ts";
 import { withSlugLock } from "./slug-lock.ts";
 
 export function handleDeploy(c: Context<Env>): Promise<Response> {
@@ -26,19 +27,7 @@ async function handleDeployInner(c: Context<Env>): Promise<Response> {
   const existing = c.env.slots.get(slug);
   if (existing?.sandbox || existing?.initializing) {
     console.info("Replacing existing deploy", { slug });
-    if (existing.sandbox) {
-      await existing.sandbox.terminate().catch((err: unknown) => {
-        console.warn("Failed to terminate existing sandbox", { slug, error: String(err) });
-      });
-    } else if (existing.initializing) {
-      await existing.initializing
-        .then((sb) => sb.terminate())
-        .catch((err: unknown) => {
-          console.warn("Failed to terminate initializing sandbox", { slug, error: String(err) });
-        });
-    }
-    delete existing.sandbox;
-    delete existing.initializing;
+    await terminateSlot(existing);
   }
 
   // Merge the deployer's key hash into existing credential hashes rather
