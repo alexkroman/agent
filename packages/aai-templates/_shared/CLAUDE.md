@@ -42,8 +42,7 @@ aai deploy --dry-run     # Validate and bundle without deploying
 aai secret put <NAME>    # Set a secret on the server (prompts for value)
 aai secret delete <NAME> # Remove a secret
 aai secret list          # List secret names
-aai link                 # Link local workspace packages (dev only)
-aai unlink               # Restore published package versions (reverses link)
+
 ```
 
 ## Templates

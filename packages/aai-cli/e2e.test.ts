@@ -100,6 +100,7 @@ function waitForExit(child: ChildProcess, timeoutMs = 5000): Promise<void> {
 
 function initProject(template: string, projectDir: string): void {
   aai(["init", projectDir, "-t", template, "--skip-api", "--skip-deploy"], tmpDir);
+  installFromTarballs(projectDir);
 }
 
 function installFromTarballs(projectDir: string): void {
@@ -147,18 +148,12 @@ afterAll(() => {
 
 // --- Pack + build: representative templates ---
 
-describe("pack + build: dev and user workflows", () => {
+describe("pack + build: template workflows", () => {
   test.each(templates)("template %s", (template) => {
     const projectDir = path.join(tmpDir, template);
 
-    // Dev workflow: init -> link -> test -> build
+    // Init + install from tarballs + test + build
     aai(["init", projectDir, "-t", template, "--skip-api", "--skip-deploy"], tmpDir);
-    aai(["link"], projectDir);
-    aai(["test"], projectDir);
-    aai(["build", "--skip-tests"], projectDir);
-
-    // User workflow: unlink -> install tarballs -> test -> build
-    aai(["unlink"], projectDir);
     installFromTarballs(projectDir);
     aai(["test"], projectDir);
     aai(["build", "--skip-tests"], projectDir);

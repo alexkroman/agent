@@ -217,25 +217,6 @@ const run = defineCommand({
   },
 });
 
-const link = defineCommand({
-  meta: {
-    name: "link",
-    description: "Link local workspace packages into the current project (dev only)",
-  },
-  async run() {
-    const { runLinkCommand } = await import("./_link.ts");
-    runLinkCommand(resolveCwd());
-  },
-});
-
-const unlink = defineCommand({
-  meta: { name: "unlink", description: "Restore published package versions (reverses aai link)" },
-  async run() {
-    const { runUnlinkCommand } = await import("./_link.ts");
-    runUnlinkCommand(resolveCwd());
-  },
-});
-
 export const mainCommand = defineCommand({
   meta: { name: "aai", version: VERSION, description: "Voice agent development kit" },
   subCommands: {
@@ -249,8 +230,6 @@ export const mainCommand = defineCommand({
     secret,
     generate,
     run,
-    link,
-    unlink,
   },
 });
 

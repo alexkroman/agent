@@ -4,22 +4,15 @@ import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import { ensureApiKeyInEnv, fileExists, isDevMode, resolveCwd } from "./_discover.ts";
+import { ensureApiKeyInEnv, fileExists, resolveCwd } from "./_discover.ts";
 import { askText } from "./_prompts.ts";
 import { interactive, runCommand, step, warn } from "./_ui.ts";
 
 const execFileAsync = promisify(execFile);
 
-/** Install deps — uses `aai link` in dev mode, `npm install` otherwise. */
+/** Install deps via npm install. */
 async function installDeps(cwd: string, log: (msg: string) => void): Promise<void> {
   if (await fileExists(path.join(cwd, "node_modules"))) return;
-
-  if (isDevMode()) {
-    log(step("Link", "local workspace packages (dev mode)"));
-    const { runLinkCommand } = await import("./_link.ts");
-    runLinkCommand(cwd);
-    return;
-  }
 
   let pkgJson: {
     dependencies?: Record<string, string>;

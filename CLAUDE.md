@@ -71,7 +71,7 @@ Four workspace packages under `packages/`:
 | ------- | -------- | ------- |
 | `packages/aai/` | `@alexkroman1/aai` | Agent SDK: `defineAgent`, `createServer`, types, protocol, S2S orchestration, session, KV |
 | `packages/aai-ui/` | `@alexkroman1/aai-ui` | Browser client (Preact): session, audio, UI components |
-| `packages/aai-cli/` | `@alexkroman1/aai-cli` | The `aai` CLI: init, dev, test, build, deploy, start, secret, link |
+| `packages/aai-cli/` | `@alexkroman1/aai-cli` | The `aai` CLI: init, dev, test, build, deploy, start, secret, generate, run |
 | `packages/aai-server/` | `@alexkroman1/aai-server` | Managed platform server (private): sandbox, sidecar, auth, SSRF protection |
 
 **Dependency flow:** `aai-cli`, `aai-ui`, and `aai-server` depend on `aai`
@@ -126,7 +126,7 @@ Non-exported internal files (used within the package only):
 #### `@alexkroman1/aai-cli` (CLI)
 
 Binary: `aai` — subcommands: init, dev, test, build, deploy, delete,
-start, secret, link, unlink
+start, secret, generate, run
 
 ### Key Files
 
@@ -141,7 +141,7 @@ start, secret, link, unlink
 - `secret.ts` — secret management
 - `_ui.ts` — shared Ink UI components
 - `_prompts.ts` — interactive prompts
-- `_link.ts` — workspace package linking (dev only)
+
 
 #### packages/aai-ui/
 
