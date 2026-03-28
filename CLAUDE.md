@@ -142,7 +142,6 @@ start, secret, generate, run
 - `_ui.ts` — shared Ink UI components
 - `_prompts.ts` — interactive prompts
 
-
 #### packages/aai-ui/
 
 - `session.ts` — WebSocket session management, audio capture/playback
