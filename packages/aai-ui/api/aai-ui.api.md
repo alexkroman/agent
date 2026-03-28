@@ -186,7 +186,6 @@ export type ToolCallInfo = {
     args: Record<string, unknown>;
     status: "pending" | "done";
     result?: string | undefined;
-    updates: string[];
     afterMessageIndex: number;
 };
 
@@ -207,9 +206,6 @@ export function useSession(): SessionSignals;
 
 // @public
 export function useToolCallStart(callback: (toolName: string, args: Record<string, unknown>, toolCall: ToolCallInfo) => void): void;
-
-// @public
-export function useToolCallUpdate(callback: (toolName: string, data: unknown, toolCall: ToolCallInfo) => void): void;
 
 // @public
 export function useToolResult<R = unknown>(toolName: string, callback: (result: R, toolCall: ToolCallInfo) => void): void;

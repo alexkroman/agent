@@ -7,8 +7,6 @@
  * This module re-exports it and adds the HookInvoker interface.
  */
 
-import type { StepInfo } from "./types.ts";
-
 export {
   buildMiddlewareRunner,
   runAfterToolCallMiddleware,
@@ -26,7 +24,6 @@ export type LifecycleHooks = {
   onDisconnect(sessionId: string, timeoutMs?: number): Promise<void>;
   onTurn(sessionId: string, text: string, timeoutMs?: number): Promise<void>;
   onError(sessionId: string, error: { message: string }, timeoutMs?: number): Promise<void>;
-  onStep(sessionId: string, step: StepInfo, timeoutMs?: number): Promise<void>;
   resolveTurnConfig(sid: string, ms?: number): Promise<{ maxSteps?: number } | null>;
 };
 

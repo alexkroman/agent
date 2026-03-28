@@ -25,7 +25,6 @@ export const HooksSchema = z.object({
   onDisconnect: z.boolean(),
   onError: z.boolean(),
   onTurn: z.boolean(),
-  onStep: z.boolean(),
   maxStepsIsFn: z.boolean(),
   hasMiddleware: z.boolean(),
 });
@@ -75,19 +74,8 @@ export const HookRequestSchema = z.object({
   sessionId: z.string().min(1),
   text: z.string().optional(),
   error: z.object({ message: z.string() }).optional(),
-  step: z
-    .object({
-      stepNumber: z.number().int().nonnegative(),
-      toolCalls: z.array(
-        z.object({
-          toolName: z.string(),
-          args: z.record(z.string(), z.unknown()),
-        }),
-      ),
-      text: z.string(),
-    })
-    .optional(),
-  stepNumber: z.number().int().nonnegative().optional(),
+  toolName: z.string().optional(),
+  toolArgs: z.record(z.string(), z.unknown()).optional(),
 });
 
 /** Request body for hook RPC -- derived from {@link HookRequestSchema}. */

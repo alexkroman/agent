@@ -19,7 +19,7 @@ import type { Logger, S2SConfig } from "./runtime.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime.ts";
 import type { CreateS2sWebSocket } from "./s2s.ts";
 import { createS2sSession, type Session } from "./session.ts";
-import type { AgentDef, HookContext, StepInfo } from "./types.ts";
+import type { AgentDef, HookContext } from "./types.ts";
 import { createUnstorageKv } from "./unstorage-kv.ts";
 import type { ExecuteTool } from "./worker-entry.ts";
 import { executeToolCall } from "./worker-entry.ts";
@@ -125,7 +125,7 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
     };
   }
 
-  const executeTool: ExecuteTool = async (name, args, sessionId, messages, onUpdate) => {
+  const executeTool: ExecuteTool = async (name, args, sessionId, messages) => {
     const tool = allTools[name];
     if (!tool) return toolError(`Unknown tool: ${name}`);
 
@@ -137,7 +137,6 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
       kv,
       messages,
       logger,
-      onUpdate,
       fetch: safeFetch,
     });
   };
@@ -156,9 +155,6 @@ export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecuto
     },
     async onError(sessionId, error) {
       await agent.onError?.(new Error(error.message), makeHookContext(sessionId));
-    },
-    async onStep(sessionId, step: StepInfo) {
-      await agent.onStep?.(step, makeHookContext(sessionId));
     },
     async resolveTurnConfig(sessionId) {
       const ctx = makeHookContext(sessionId);

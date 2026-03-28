@@ -1,19 +1,17 @@
 import { defineAgent, defineTool } from "@alexkroman1/aai";
-import type { HookContext, StepInfo } from "@alexkroman1/aai";
+import type { HookContext } from "@alexkroman1/aai";
 import { z } from "zod";
 
 /**
- * Smart Research Agent — demonstrates all 5 advanced features:
+ * Smart Research Agent — demonstrates advanced features:
  * 1. toolChoice: "required" — forces the LLM to use tools every step
  * 2. ctx.messages — tools can read conversation history
- * 3. onStep — logs each step's tool calls
- * 4. maxSteps as function — adapts max steps based on session complexity
+ * 3. maxSteps as function — adapts max steps based on session complexity
  */
 
 type ResearchState = {
   phase: "gather" | "analyze" | "respond";
   sources: string[];
-  stepCount: number;
   complexity: "simple" | "deep";
 };
 
@@ -33,7 +31,7 @@ Always search first, then analyze, then answer. Be thorough but concise.`,
   // Feature 1: toolChoice — force the LLM to always use a tool
   toolChoice: "required",
 
-  // Feature 4: maxSteps as function — more steps for complex research
+  // Feature 3: maxSteps as function — more steps for complex research
   maxSteps: (ctx: HookContext<ResearchState>) => {
     const state = ctx.state;
     return state.complexity === "deep" ? 10 : 5;
@@ -42,20 +40,8 @@ Always search first, then analyze, then answer. Be thorough but concise.`,
   state: (): ResearchState => ({
     phase: "gather",
     sources: [],
-    stepCount: 0,
     complexity: "simple",
   }),
-
-  // Feature 3: onStep — track what tools were called each step
-  onStep: (step: StepInfo, ctx: HookContext<ResearchState>) => {
-    const state = ctx.state;
-    state.stepCount++;
-    for (const tc of step.toolCalls) {
-      console.log(
-        `[step ${step.stepNumber}] ${tc.toolName} (phase: ${state.phase})`,
-      );
-    }
-  },
 
   tools: {
     save_source: defineTool<z.ZodObject<{ url: z.ZodString; title: z.ZodString }>, ResearchState>({

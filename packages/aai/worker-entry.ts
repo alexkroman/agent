@@ -29,11 +29,10 @@ export type ExecuteTool = (
   args: Readonly<Record<string, unknown>>,
   sessionId?: string,
   messages?: readonly Message[],
-  onUpdate?: (data: unknown) => void,
 ) => Promise<string>;
 
 function buildToolContext(opts: ExecuteToolCallOptions): ToolContext {
-  const { env, state, kv, messages, onUpdate, fetch: fetchFn, sessionId } = opts;
+  const { env, state, kv, messages, fetch: fetchFn, sessionId } = opts;
   return {
     env: { ...env },
     state: state ?? {},
@@ -42,9 +41,6 @@ function buildToolContext(opts: ExecuteToolCallOptions): ToolContext {
       return kv;
     },
     messages: messages ?? [],
-    sendUpdate(data: unknown): void {
-      onUpdate?.(data);
-    },
     fetch: fetchFn ?? globalThis.fetch,
     sessionId: sessionId ?? "",
   };
@@ -59,8 +55,6 @@ export type ExecuteToolCallOptions = {
   kv?: Kv | undefined;
   messages?: readonly Message[] | undefined;
   logger?: Logger | undefined;
-  /** Callback for intermediate UI updates from `ctx.sendUpdate()`. */
-  onUpdate?: ((data: unknown) => void) | undefined;
   /** Override fetch implementation for the tool context. */
   fetch?: typeof globalThis.fetch | undefined;
 };

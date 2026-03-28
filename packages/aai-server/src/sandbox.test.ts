@@ -18,7 +18,6 @@ describe("toAgentConfig", () => {
       onDisconnect: false,
       onError: false,
       onTurn: false,
-      onStep: false,
       maxStepsIsFn: false,
       hasMiddleware: false,
     },
@@ -169,20 +168,6 @@ describe("buildHookInvoker", () => {
     );
   });
 
-  it("onStep sends step data", async () => {
-    mockHookResponse();
-    const invoker = _internals.buildHookInvoker("http://127.0.0.1:9999", "test-token");
-    const step = { stepNumber: 1, toolCalls: [{ toolName: "t", args: {} }], text: "" };
-    await invoker.onStep("s1", step);
-
-    expect(globalThis.fetch).toHaveBeenCalledWith(
-      "http://127.0.0.1:9999/rpc",
-      expect.objectContaining({
-        body: JSON.stringify({ type: "hook", hook: "onStep", sessionId: "s1", step }),
-      }),
-    );
-  });
-
   it("resolveTurnConfig returns parsed config", async () => {
     mockHookResponse({ maxSteps: 3 });
     const invoker = _internals.buildHookInvoker("http://127.0.0.1:9999", "test-token");
@@ -235,7 +220,7 @@ describe("buildHookInvoker", () => {
     );
   });
 
-  it("interceptToolCall sends tool name and args via step field", async () => {
+  it("interceptToolCall sends tool name and args", async () => {
     mockHookResponse({ type: "block", reason: "not allowed" });
     const invoker = _internals.buildHookInvoker("http://127.0.0.1:9999", "test-token");
     const result = await invoker.interceptToolCall?.("s1", "search", { q: "test" });
@@ -247,17 +232,14 @@ describe("buildHookInvoker", () => {
           type: "hook",
           hook: "interceptToolCall",
           sessionId: "s1",
-          step: {
-            stepNumber: 0,
-            toolCalls: [{ toolName: "search", args: { q: "test" } }],
-            text: "",
-          },
+          toolName: "search",
+          toolArgs: { q: "test" },
         }),
       }),
     );
   });
 
-  it("afterToolCall sends tool name, args, and result via step field", async () => {
+  it("afterToolCall sends tool name, args, and result", async () => {
     mockHookResponse();
     const invoker = _internals.buildHookInvoker("http://127.0.0.1:9999", "test-token");
     await invoker.afterToolCall?.("s1", "search", { q: "test" }, "found it");
@@ -268,11 +250,9 @@ describe("buildHookInvoker", () => {
           type: "hook",
           hook: "afterToolCall",
           sessionId: "s1",
-          step: {
-            stepNumber: 0,
-            toolCalls: [{ toolName: "search", args: { q: "test" } }],
-            text: "found it",
-          },
+          toolName: "search",
+          toolArgs: { q: "test" },
+          text: "found it",
         }),
       }),
     );
@@ -320,8 +300,6 @@ describe("getIsolateConfig", () => {
         onDisconnect: false,
         onError: false,
         onTurn: true,
-        onStep: false,
-
         maxStepsIsFn: false,
         hasMiddleware: false,
       },

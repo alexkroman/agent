@@ -33,7 +33,6 @@ export {
   type Message,
   type Middleware,
   type MiddlewareBlockResult,
-  type StepInfo,
   type ToolCallInterceptResult,
   type ToolChoice,
   type ToolContext,

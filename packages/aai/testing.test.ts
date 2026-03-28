@@ -124,17 +124,6 @@ describe("TestHarness.turn", () => {
     expect(t.turns).toEqual(["hello", "world"]);
   });
 
-  test("fires onStep hook for each tool call", async () => {
-    const t = createTestHarness(pizzaAgent);
-    await t.turn("Two pizzas please", [
-      { tool: "add_pizza", args: { size: "small", toppings: ["cheese"] } },
-      { tool: "add_pizza", args: { size: "large", toppings: ["pepperoni"] } },
-    ]);
-    expect(t.steps).toHaveLength(2);
-    expect(t.steps.at(0)?.stepNumber).toBe(1);
-    expect(t.steps.at(1)?.stepNumber).toBe(2);
-  });
-
   test("fires onConnect on first turn", async () => {
     const log: string[] = [];
     const agent = defineAgent({
@@ -257,11 +246,9 @@ describe("multi-turn conversation", () => {
     const t = createTestHarness(pizzaAgent);
     await t.turn("Add pizza", [{ tool: "add_pizza", args: { size: "small", toppings: [] } }]);
     expect(t.messages.length).toBeGreaterThan(0);
-    expect(t.steps.length).toBeGreaterThan(0);
 
     t.reset();
     expect(t.messages).toHaveLength(0);
-    expect(t.steps).toHaveLength(0);
     expect(t.turns).toHaveLength(0);
   });
 });

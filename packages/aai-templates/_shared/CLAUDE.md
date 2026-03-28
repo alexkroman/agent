@@ -90,7 +90,7 @@ export default defineAgent({
 
 ```ts
 import { createToolFactory, defineAgent, defineTool } from "@alexkroman1/aai"; // defineAgent + helpers
-import type { BuiltinTool, HookContext, Middleware, StepInfo, ToolContext } from "@alexkroman1/aai";
+import type { BuiltinTool, HookContext, Middleware, ToolContext } from "@alexkroman1/aai";
 import { z } from "zod"; // Tools with typed params (included in package.json)
 ```
 
@@ -119,7 +119,6 @@ defineAgent({
   onDisconnect?: (ctx: HookContext) => void | Promise<void>;
   onError?: (error: Error, ctx?: HookContext) => void;
   onTurn?: (text: string, ctx: HookContext) => void | Promise<void>;
-  onStep?: (step: StepInfo, ctx: HookContext) => void | Promise<void>;
 
   // Middleware
   middleware?: Middleware[];   // Composable interceptors (see below)
@@ -395,16 +394,6 @@ Keys use colon-separated prefixes (`"user:name"`, `"preference:color"`).
 
 ## Advanced patterns
 
-### Step hooks
-
-`onStep` — called after each LLM step (logging, analytics):
-
-```ts
-onStep: (step, ctx) => {
-  console.log(`Step ${step.stepNumber}: ${step.toolCalls.length} tool calls`);
-},
-```
-
 ### Tool choice
 
 Control when the LLM uses tools:
@@ -487,14 +476,6 @@ session state:
 maxSteps: (ctx) => {
   const state = ctx.state as { complexity: string };
   return state.complexity === "complex" ? 10 : 5;
-},
-```
-
-You can also monitor steps via the `onStep` hook:
-
-```ts
-onStep: (step, ctx) => {
-  console.log(`[step ${step.stepNumber}] tools: ${step.toolCalls.map(t => t.toolName).join(", ")}`);
 },
 ```
 
@@ -1284,7 +1265,6 @@ describe("my agent", () => {
 | `addUserMessage(text)` | Add a user message to conversation history |
 | `addAssistantMessage(text)` | Add an assistant message to history |
 | `messages` | Read-only conversation history |
-| `steps` | All `onStep` hook invocations recorded |
 | `turns` | All `onTurn` hook invocations recorded |
 | `connect()` / `disconnect()` | Fire lifecycle hooks manually |
 | `reset()` | Clear conversation state |

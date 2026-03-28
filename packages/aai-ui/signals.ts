@@ -251,60 +251,6 @@ export function useToolCallStart(
 }
 
 /**
- * Hook that fires a callback for each intermediate update pushed by a tool
- * via `ctx.sendUpdate()`.
- *
- * Use this to render progressive/streaming data from a tool before it
- * finishes — e.g. showing a recipe preview card while nutrition data is
- * still loading.
- *
- * The callback fires once per update. The `data` argument is the parsed
- * JSON update (or raw string if parsing fails).
- *
- * @param callback - Called once per intermediate update with the tool name,
- *   parsed data, and full {@link ToolCallInfo}.
- *
- * @public
- */
-export function useToolCallUpdate(
-  callback: (toolName: string, data: unknown, toolCall: ToolCallInfo) => void,
-): void {
-  const { session } = useSession();
-  const countRef = useRef(new Map<string, number>());
-  const cbRef = useRef(callback);
-  cbRef.current = callback;
-
-  useEffect(
-    () =>
-      effect(() => {
-        const toolCalls = session.toolCalls.value;
-        if (toolCalls.length === 0) {
-          countRef.current.clear();
-          return;
-        }
-        for (const tc of toolCalls) {
-          processNewUpdates(tc, countRef.current, cbRef.current);
-        }
-      }),
-    [session],
-  );
-}
-
-function processNewUpdates(
-  tc: ToolCallInfo,
-  seenCounts: Map<string, number>,
-  cb: (toolName: string, data: unknown, toolCall: ToolCallInfo) => void,
-): void {
-  const seen = seenCounts.get(tc.toolCallId) ?? 0;
-  if (tc.updates.length <= seen) return;
-  for (let i = seen; i < tc.updates.length; i++) {
-    const raw = tc.updates[i];
-    if (raw !== undefined) cb(tc.toolName, tryParseJSON(raw), tc);
-  }
-  seenCounts.set(tc.toolCallId, tc.updates.length);
-}
-
-/**
  * Auto-scroll a container to the bottom when messages, tool calls,
  * or utterances change. Returns a ref to attach to a sentinel `<div>`
  * at the bottom of the scrollable area.

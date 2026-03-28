@@ -145,15 +145,6 @@ describe("createDirectExecutor", () => {
     expect(err.message).toBe("boom");
   });
 
-  test("hookInvoker.onStep calls agent.onStep", async () => {
-    const onStep = vi.fn();
-    const agent = makeAgent({ onStep });
-    const exec = createDirectExecutor({ agent, env: {} });
-    const step = { stepNumber: 1, toolCalls: [{ toolName: "test", args: {} }], text: "ok" };
-    await exec.hookInvoker.onStep("s1", step);
-    expect(onStep).toHaveBeenCalledWith(step, expect.any(Object));
-  });
-
   test("session state is initialized from agent.state factory", async () => {
     const agent = makeAgent({
       state: () => ({ counter: 0 }),

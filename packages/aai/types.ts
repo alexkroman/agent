@@ -249,19 +249,6 @@ export type ToolContext<S = Record<string, unknown>> = {
   /** Read-only snapshot of conversation messages so far. */
   messages: readonly Message[];
   /**
-   * Push an intermediate update to the client UI before the tool finishes.
-   *
-   * Use this to send progressive data so the UI can render partial results
-   * immediately (e.g. a loading card, preview, or streaming data) instead
-   * of waiting for the full tool result.
-   *
-   * The data is serialized to JSON and delivered as a `tool_call_update`
-   * event on the client. Use `useToolCallUpdate` in the UI to consume it.
-   *
-   * No-op in sandbox (platform) mode.
-   */
-  sendUpdate(data: unknown): void;
-  /**
    * SSRF-safe fetch function.
    *
    * In self-hosted mode this calls the network directly (with SSRF protection).
@@ -285,10 +272,7 @@ export type ToolContext<S = Record<string, unknown>> = {
  *
  * @public
  */
-export type HookContext<S = Record<string, unknown>> = Omit<
-  ToolContext<S>,
-  "messages" | "sendUpdate"
->;
+export type HookContext<S = Record<string, unknown>> = Omit<ToolContext<S>, "messages">;
 
 /**
  * Definition of a custom tool that the agent can invoke.
@@ -453,26 +437,6 @@ export function createToolFactory<S = Record<string, unknown>>(): <
 export type ToolResultMap<T extends Record<string, unknown> = Record<string, unknown>> = T;
 
 /**
- * Information about a completed agentic step, passed to the `onStep` hook.
- *
- * Each turn may consist of multiple steps (up to `maxSteps`). A step
- * represents one LLM invocation that may include tool calls and text output.
- *
- * @public
- */
-export type StepInfo = {
-  /** 1-based step index within the current turn. */
-  stepNumber: number;
-  /** Tool calls made during this step. */
-  toolCalls: readonly {
-    toolName: string;
-    args: Readonly<Record<string, unknown>>;
-  }[];
-  /** LLM text output for this step. */
-  text: string;
-};
-
-/**
  * Options passed to {@link defineAgent} to configure an agent.
  *
  * Only `name` is required; all other fields have sensible defaults.
@@ -546,8 +510,6 @@ export type AgentOptions<S = Record<string, unknown>> = {
   onError?: (error: Error, ctx?: HookContext<S>) => void;
   /** Called after a complete turn (all steps finished). */
   onTurn?: (text: string, ctx: HookContext<S>) => void | Promise<void>;
-  /** Called after each agentic step completes. */
-  onStep?: (step: StepInfo, ctx: HookContext<S>) => void | Promise<void>;
   /**
    * Composable middleware that intercepts turns, tool calls, and output.
    *
@@ -621,7 +583,6 @@ export type AgentDef<S = Record<string, unknown>> = {
   onDisconnect?: (ctx: HookContext<S>) => void | Promise<void>;
   onError?: (error: Error, ctx?: HookContext<S>) => void;
   onTurn?: (text: string, ctx: HookContext<S>) => void | Promise<void>;
-  onStep?: (step: StepInfo, ctx: HookContext<S>) => void | Promise<void>;
   middleware?: readonly Middleware<S>[];
   idleTimeoutMs?: number;
 };
@@ -674,7 +635,6 @@ const AgentOptionsSchema = z.object({
   onDisconnect: z.function().optional(),
   onError: z.function().optional(),
   onTurn: z.function().optional(),
-  onStep: z.function().optional(),
   middleware: z
     .array(
       z.object({

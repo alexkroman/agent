@@ -485,7 +485,7 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
       idle.clear();
       activeSessionsUpDown.add(-1, { agent });
       if (ctx.turnPromise !== null) await ctx.turnPromise;
-      // Drain in-flight hooks (onTurn, onStep, etc.) BEFORE closing
+      // Drain in-flight hooks (onTurn, etc.) BEFORE closing
       // the S2S connection so they don't send on a closed socket.
       await ctx.drainHooks();
 

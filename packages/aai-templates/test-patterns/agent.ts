@@ -37,10 +37,6 @@ export default defineAgent<TaskState>({
     // Hook fires on each user turn — tracked by harness via t.turns
   },
 
-  onStep: (step, _ctx) => {
-    if (step.stepNumber < 1) throw new Error("Invalid step number");
-  },
-
   tools: {
     add_task: taskTool({
       description: "Add a new task to the list",

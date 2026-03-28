@@ -86,22 +86,10 @@ export class ClientHandler {
             toolName: e.toolName,
             args: e.args,
             status: "pending",
-            updates: [],
             afterMessageIndex: this.#messages.value.length - 1,
           },
         ];
         break;
-      case "tool_call_update": {
-        const tcs = this.#toolCalls.value;
-        const idx = tcs.findIndex((tc) => tc.toolCallId === e.toolCallId);
-        if (idx !== -1) {
-          const updated = [...tcs];
-          const existing = updated[idx];
-          if (existing) updated[idx] = { ...existing, updates: [...existing.updates, e.data] };
-          this.#toolCalls.value = updated;
-        }
-        break;
-      }
       case "tool_call_done": {
         const tcs = this.#toolCalls.value;
         const idx = tcs.findIndex((tc) => tc.toolCallId === e.toolCallId);

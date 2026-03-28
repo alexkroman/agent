@@ -20,9 +20,6 @@ export function createMockToolContext(overrides?: Partial<ToolContext>): ToolCon
     state: {},
     kv: {} as never,
     messages: [],
-    sendUpdate() {
-      // no-op in tests
-    },
     fetch: globalThis.fetch,
     sessionId: "test-session",
     ...overrides,

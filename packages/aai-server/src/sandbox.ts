@@ -171,8 +171,7 @@ async function startIsolate(
 
 const PORT_ANNOUNCE_TIMEOUT_MS = 15_000;
 const CONFIG_TIMEOUT_MS = 10_000;
-/** Host-side tool timeout — matches TOOL_EXECUTION_TIMEOUT_MS from protocol.
- *  Isolate-side is 25s (5s shorter for clean error before host timeout). */
+/** Host-side tool timeout — matches isolate-side (both 30s). */
 const TOOL_TIMEOUT_MS = TOOL_EXECUTION_TIMEOUT_MS;
 
 async function getIsolateConfig(port: number, authToken: string): Promise<IsolateConfig> {
@@ -260,9 +259,6 @@ function buildHookInvoker(
     async onError(sessionId, error) {
       VoidHookResultSchema.parse(await hook("onError", { sessionId, error }));
     },
-    async onStep(sessionId, step) {
-      VoidHookResultSchema.parse(await hook("onStep", { sessionId, step }));
-    },
     async resolveTurnConfig(sessionId) {
       const parsed = TurnConfigResultSchema.parse(await hook("resolveTurnConfig", { sessionId }));
       if (parsed == null) return null;
@@ -283,7 +279,8 @@ function buildHookInvoker(
     async interceptToolCall(sessionId, tool, args) {
       const result = await hook("interceptToolCall", {
         sessionId,
-        step: { stepNumber: 0, toolCalls: [{ toolName: tool, args }], text: "" },
+        toolName: tool,
+        toolArgs: args,
       });
       return ToolInterceptResultSchema.parse(result);
     },
@@ -291,7 +288,9 @@ function buildHookInvoker(
       VoidHookResultSchema.parse(
         await hook("afterToolCall", {
           sessionId,
-          step: { stepNumber: 0, toolCalls: [{ toolName: tool, args }], text: result },
+          toolName: tool,
+          toolArgs: args,
+          text: result,
         }),
       );
     },

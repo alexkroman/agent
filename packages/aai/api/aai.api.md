@@ -67,7 +67,7 @@ export { defineTool }
 export { defineTool as tool }
 
 // @public
-export type HookContext<S = Record<string, unknown>> = Omit<ToolContext<S>, "messages" | "sendUpdate">;
+export type HookContext<S = Record<string, unknown>> = Omit<ToolContext<S>, "messages">;
 
 // @public
 export type Kv = {
@@ -149,7 +149,6 @@ export type ToolContext<S = Record<string, unknown>> = {
     kv: Kv;
     vector: VectorStore;
     messages: readonly Message[];
-    sendUpdate(data: unknown): void;
     fetch: typeof globalThis.fetch;
     sessionId: string;
 };

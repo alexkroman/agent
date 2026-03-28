@@ -110,11 +110,6 @@ export const ClientEventSchema = z.discriminatedUnion("type", [
     args: z.record(z.string(), z.unknown()),
   }),
   z.object({
-    type: z.literal("tool_call_update"),
-    toolCallId: z.string(),
-    data: z.string().max(MAX_TOOL_RESULT_CHARS),
-  }),
-  z.object({
     type: z.literal("tool_call_done"),
     toolCallId: z.string(),
     result: z.string().max(MAX_TOOL_RESULT_CHARS),

@@ -266,44 +266,9 @@ describe("ClientHandler.event edge cases", () => {
         toolName: "search",
         args: { query: "test" },
         status: "pending",
-        updates: [],
         afterMessageIndex: 0,
       },
     ]);
-  });
-
-  test("tool_call_update appends data to updates array", () => {
-    const { target, toolCalls } = createTarget();
-    toolCalls.value = [
-      {
-        toolCallId: "tc1",
-        toolName: "search",
-        args: {},
-        status: "pending",
-        updates: [],
-        afterMessageIndex: 0,
-      },
-    ];
-    target.event({ type: "tool_call_update", toolCallId: "tc1", data: '{"preview":"partial"}' });
-    expect(toolCalls.value[0]?.updates).toEqual(['{"preview":"partial"}']);
-    target.event({ type: "tool_call_update", toolCallId: "tc1", data: '{"preview":"more"}' });
-    expect(toolCalls.value[0]?.updates).toEqual(['{"preview":"partial"}', '{"preview":"more"}']);
-  });
-
-  test("tool_call_update with unknown id is a no-op", () => {
-    const { target, toolCalls } = createTarget();
-    toolCalls.value = [
-      {
-        toolCallId: "tc1",
-        toolName: "search",
-        args: {},
-        status: "pending",
-        updates: [],
-        afterMessageIndex: 0,
-      },
-    ];
-    target.event({ type: "tool_call_update", toolCallId: "tc_unknown", data: "nope" });
-    expect(toolCalls.value[0]?.updates).toEqual([]);
   });
 
   test("tool_call_done updates matching tool call status", () => {
@@ -314,7 +279,6 @@ describe("ClientHandler.event edge cases", () => {
         toolName: "search",
         args: {},
         status: "pending",
-        updates: [],
         afterMessageIndex: 0,
       },
     ];
@@ -331,7 +295,6 @@ describe("ClientHandler.event edge cases", () => {
         toolName: "search",
         args: {},
         status: "pending",
-        updates: [],
         afterMessageIndex: 0,
       },
     ];
@@ -355,7 +318,6 @@ describe("ClientHandler.event edge cases", () => {
         args: {},
         status: "done",
         result: "x",
-        updates: [],
         afterMessageIndex: 0,
       },
     ];

@@ -226,7 +226,6 @@ describe("createS2sSession resource cleanup", () => {
       }),
       onTurn: vi.fn(),
       onError: vi.fn(),
-      onStep: vi.fn(),
       resolveTurnConfig: vi.fn(async () => null),
     };
     const { session, mockHandle } = setup({ hookInvoker });

@@ -128,7 +128,6 @@ function extractConfig(agent: AgentDef): IsolateConfig {
       onDisconnect: typeof agent.onDisconnect === "function",
       onError: typeof agent.onError === "function",
       onTurn: typeof agent.onTurn === "function",
-      onStep: typeof agent.onStep === "function",
       maxStepsIsFn: typeof agent.maxSteps === "function",
       hasMiddleware: Array.isArray(agent.middleware) && agent.middleware.length > 0,
     },
@@ -140,9 +139,8 @@ function extractConfig(agent: AgentDef): IsolateConfig {
   return config;
 }
 
-// Must equal TOOL_TIMEOUT_MS (30s) - TOOL_TIMEOUT_MARGIN_MS (5s) in sandbox.ts
-// so the isolate returns a clean error before the host-side timeout aborts.
-const ISOLATE_TOOL_TIMEOUT_MS = 25_000;
+/** Tool timeout — matches TOOL_EXECUTION_TIMEOUT_MS (30s) from protocol.ts. */
+const TOOL_TIMEOUT_MS = 30_000;
 
 async function executeTool(agent: AgentDef, req: ToolCallRequest): Promise<ToolCallResponse> {
   const tool = agent.tools[req.name];
@@ -154,9 +152,6 @@ async function executeTool(agent: AgentDef, req: ToolCallRequest): Promise<ToolC
     sessionId: req.sessionId,
     kv,
     messages: req.messages,
-    sendUpdate() {
-      /* no-op in sandbox -- no WebSocket access */
-    },
     fetch: sidecarFetch,
   };
 
@@ -169,8 +164,8 @@ async function executeTool(agent: AgentDef, req: ToolCallRequest): Promise<ToolC
     tool.execute(parsed, ctx),
     new Promise<never>((_resolve, reject) => {
       setTimeout(
-        () => reject(new Error(`Tool "${req.name}" timed out after ${ISOLATE_TOOL_TIMEOUT_MS}ms`)),
-        ISOLATE_TOOL_TIMEOUT_MS,
+        () => reject(new Error(`Tool "${req.name}" timed out after ${TOOL_TIMEOUT_MS}ms`)),
+        TOOL_TIMEOUT_MS,
       );
     }),
   ]);
@@ -205,61 +200,53 @@ async function invokeHook(agent: AgentDef, req: HookRequest): Promise<HookRespon
   const ctx = makeHookCtx(agent, req);
   let result: unknown;
 
-  try {
-    switch (req.hook) {
-      case "onConnect":
-        await agent.onConnect?.(ctx);
-        break;
-      case "onDisconnect":
-        await agent.onDisconnect?.(ctx);
-        sessionState.delete(req.sessionId);
-        break;
-      case "onTurn":
-        await agent.onTurn?.(req.text ?? "", ctx);
-        break;
-      case "onError":
-        await agent.onError?.(new Error(req.error?.message ?? "Unknown error"), ctx);
-        break;
-      case "onStep":
-        if (req.step) await agent.onStep?.(req.step, ctx);
-        break;
-      case "resolveTurnConfig":
-        result = await runResolveTurnConfig(agent, ctx);
-        break;
-      // Middleware hooks — dispatched to pre-built runner
-      case "filterInput":
-        result = await middlewareRunner?.filterInput(req.sessionId, req.text ?? "");
-        break;
-      case "beforeTurn":
-        result = await middlewareRunner?.beforeTurn(req.sessionId, req.text ?? "");
-        break;
-      case "afterTurn":
-        await middlewareRunner?.afterTurn(req.sessionId, req.text ?? "");
-        break;
-      case "interceptToolCall":
-        result = await middlewareRunner?.interceptToolCall(
-          req.sessionId,
-          req.step?.toolCalls[0]?.toolName ?? "",
-          (req.step?.toolCalls[0]?.args as Record<string, unknown>) ?? {},
-        );
-        break;
-      case "afterToolCall":
-        await middlewareRunner?.afterToolCall(
-          req.sessionId,
-          req.step?.toolCalls[0]?.toolName ?? "",
-          (req.step?.toolCalls[0]?.args as Record<string, unknown>) ?? {},
-          req.text ?? "",
-        );
-        break;
-      case "filterOutput":
-        result = await middlewareRunner?.filterOutput(req.sessionId, req.text ?? "");
-        break;
-      default:
-        break;
-    }
-  } catch (err) {
-    sessionState.delete(req.sessionId);
-    throw err;
+  switch (req.hook) {
+    case "onConnect":
+      await agent.onConnect?.(ctx);
+      break;
+    case "onDisconnect":
+      await agent.onDisconnect?.(ctx);
+      sessionState.delete(req.sessionId);
+      break;
+    case "onTurn":
+      await agent.onTurn?.(req.text ?? "", ctx);
+      break;
+    case "onError":
+      await agent.onError?.(new Error(req.error?.message ?? "Unknown error"), ctx);
+      break;
+    case "resolveTurnConfig":
+      result = await runResolveTurnConfig(agent, ctx);
+      break;
+    // Middleware hooks — dispatched to pre-built runner
+    case "filterInput":
+      result = await middlewareRunner?.filterInput(req.sessionId, req.text ?? "");
+      break;
+    case "beforeTurn":
+      result = await middlewareRunner?.beforeTurn(req.sessionId, req.text ?? "");
+      break;
+    case "afterTurn":
+      await middlewareRunner?.afterTurn(req.sessionId, req.text ?? "");
+      break;
+    case "interceptToolCall":
+      result = await middlewareRunner?.interceptToolCall(
+        req.sessionId,
+        req.toolName ?? "",
+        (req.toolArgs as Record<string, unknown>) ?? {},
+      );
+      break;
+    case "afterToolCall":
+      await middlewareRunner?.afterToolCall(
+        req.sessionId,
+        req.toolName ?? "",
+        (req.toolArgs as Record<string, unknown>) ?? {},
+        req.text ?? "",
+      );
+      break;
+    case "filterOutput":
+      result = await middlewareRunner?.filterOutput(req.sessionId, req.text ?? "");
+      break;
+    default:
+      break;
   }
 
   return { state: ctx.state, result };

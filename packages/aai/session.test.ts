@@ -111,7 +111,7 @@ describe("createS2sSession", () => {
       onDisconnect: vi.fn(),
       onTurn: vi.fn(),
       onError: vi.fn(),
-      onStep: vi.fn(),
+
       resolveTurnConfig: vi.fn(async () => null),
     };
     const { session } = setup({ hookInvoker });
@@ -152,7 +152,7 @@ describe("createS2sSession", () => {
       onDisconnect,
       onTurn: vi.fn(),
       onError: vi.fn(),
-      onStep: vi.fn(),
+
       resolveTurnConfig: vi.fn(async () => null),
     };
     const { session } = setup({ hookInvoker });
@@ -230,7 +230,7 @@ describe("createS2sSession", () => {
       onDisconnect: vi.fn(),
       onTurn,
       onError: vi.fn(),
-      onStep: vi.fn(),
+
       resolveTurnConfig: vi.fn(async () => null),
     };
     const { session, client, mockHandle } = setup({ hookInvoker });
@@ -367,7 +367,6 @@ describe("createS2sSession", () => {
       { key: "value" },
       "session-1",
       expect.any(Array),
-      expect.any(Function),
     );
     expect(client.events).toContainEqual({
       type: "tool_call_start",
@@ -426,7 +425,7 @@ describe("createS2sSession", () => {
       onDisconnect: vi.fn(),
       onTurn: vi.fn(),
       onError: vi.fn(),
-      onStep: vi.fn(),
+
       resolveTurnConfig: vi.fn(async () => ({ maxSteps: 1 })),
     };
     const { session, client, mockHandle } = setup({ executeTool, hookInvoker });
@@ -481,7 +480,7 @@ describe("createS2sSession", () => {
       onDisconnect: vi.fn(),
       onTurn: vi.fn(),
       onError: vi.fn(),
-      onStep: vi.fn(),
+
       resolveTurnConfig: vi.fn(async () => null),
     };
     const { session } = setup({ hookInvoker });
@@ -504,7 +503,7 @@ describe("createS2sSession", () => {
       onError: vi.fn(() => {
         throw new Error("onError also failed");
       }),
-      onStep: vi.fn(),
+
       resolveTurnConfig: vi.fn(async () => null),
     };
     const { session } = setup({ hookInvoker });
@@ -696,7 +695,7 @@ describe("createS2sSession", () => {
       onDisconnect: vi.fn(),
       onTurn: vi.fn(),
       onError: vi.fn(),
-      onStep: vi.fn(),
+
       resolveTurnConfig: vi.fn(async () => {
         throw new Error("config error");
       }),

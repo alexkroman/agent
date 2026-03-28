@@ -186,12 +186,10 @@ describe("conversation history", () => {
     const t = createTestHarness(agent);
     await t.turn("Add task", [{ tool: "add_task", args: { text: "Test" } }]);
     expect(t.messages.length).toBeGreaterThan(0);
-    expect(t.steps.length).toBeGreaterThan(0);
     expect(t.turns.length).toBeGreaterThan(0);
 
     t.reset();
     expect(t.messages).toHaveLength(0);
-    expect(t.steps).toHaveLength(0);
     expect(t.turns).toHaveLength(0);
   });
 });
@@ -277,19 +275,6 @@ describe("lifecycle hooks", () => {
     expect(t.turns).toEqual(["First message", "Second message"]);
   });
 
-  test("onStep hook fires for each tool call", async () => {
-    const t = createTestHarness(agent);
-    await t.turn("Do two things", [
-      { tool: "add_task", args: { text: "A" } },
-      { tool: "add_task", args: { text: "B" } },
-    ]);
-
-    // t.steps tracks onStep invocations
-    expect(t.steps).toHaveLength(2);
-    expect(t.steps.at(0)?.stepNumber).toBe(1);
-    expect(t.steps.at(1)?.stepNumber).toBe(2);
-    expect(t.steps.at(0)?.toolCalls[0]?.toolName).toBe("add_task");
-  });
 });
 
 // ─── 10. Built-in tools ─────────────────────────────────────────────────────
