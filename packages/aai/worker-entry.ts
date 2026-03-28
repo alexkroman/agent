@@ -3,6 +3,7 @@
  * Worker entry point — shared tool execution logic.
  */
 
+import pTimeout from "p-timeout";
 import type { z } from "zod";
 import { EMPTY_PARAMS } from "./_internal-types.ts";
 import { errorDetail, errorMessage, toolError } from "./_utils.ts";
@@ -88,17 +89,13 @@ export async function executeToolCall(
     return toolError(`Invalid arguments for tool "${name}": ${issues}`);
   }
 
-  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const ctx = buildToolContext(options);
     await yieldTick();
-    const timeout = new Promise<never>((_, reject) => {
-      timer = setTimeout(
-        () => reject(new Error(`Tool "${name}" timed out after ${TOOL_EXECUTION_TIMEOUT_MS}ms`)),
-        TOOL_EXECUTION_TIMEOUT_MS,
-      );
+    const result = await pTimeout(Promise.resolve(tool.execute(parsed.data, ctx)), {
+      milliseconds: TOOL_EXECUTION_TIMEOUT_MS,
+      message: `Tool "${name}" timed out after ${TOOL_EXECUTION_TIMEOUT_MS}ms`,
     });
-    const result = await Promise.race([Promise.resolve(tool.execute(parsed.data, ctx)), timeout]);
     await yieldTick();
     if (result == null) return "null";
     return typeof result === "string" ? result : JSON.stringify(result);
@@ -110,7 +107,5 @@ export async function executeToolCall(
       console.warn(`[tool-executor] Tool execution failed: ${name}`, err);
     }
     return toolError(errorMessage(err));
-  } finally {
-    clearTimeout(timer);
   }
 }
