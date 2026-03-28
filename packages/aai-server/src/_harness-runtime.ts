@@ -150,7 +150,8 @@ function extractConfig(agent: AgentDef): IsolateConfig {
   return config;
 }
 
-/** Tool timeout — matches TOOL_EXECUTION_TIMEOUT_MS (30s) from protocol.ts. */
+/** Tool timeout — must match HARNESS_TOOL_TIMEOUT_MS in constants.ts (30s).
+ *  Defined inline because the harness cannot import workspace packages at runtime. */
 const TOOL_TIMEOUT_MS = 30_000;
 
 async function executeTool(agent: AgentDef, req: ToolCallRequest): Promise<ToolCallResponse> {
@@ -269,6 +270,8 @@ async function invokeHook(agent: AgentDef, req: HookRequest): Promise<HookRespon
   return { state: ctx.state, result };
 }
 
+/** Must match HARNESS_MAX_BODY_SIZE in constants.ts (5 MB).
+ *  Defined inline because the harness cannot import workspace packages at runtime. */
 const MAX_BODY_SIZE = 5 * 1024 * 1024;
 
 function readBody(req: IncomingMessage): Promise<string> {

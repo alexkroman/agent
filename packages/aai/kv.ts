@@ -3,6 +3,10 @@
  * Key-value storage interface and shared utilities.
  */
 
+import { MAX_GLOB_PATTERN_LENGTH } from "./constants.ts";
+
+export { MAX_VALUE_SIZE } from "./constants.ts";
+
 /**
  * A single key-value entry returned by {@link Kv.list}.
  *
@@ -109,8 +113,6 @@ export type Kv = {
   close?(): void;
 };
 
-export const MAX_VALUE_SIZE = 65_536;
-
 /** Sort entries by key and apply reverse/limit options. Mutates the array. */
 export function sortAndPaginate<T extends { key: string }>(
   entries: T[],
@@ -123,9 +125,6 @@ export function sortAndPaginate<T extends { key: string }>(
   }
   return entries;
 }
-
-/** Maximum allowed glob pattern length to prevent ReDoS. */
-const MAX_GLOB_PATTERN_LENGTH = 1024;
 
 /** Simple glob matcher — supports `*` as a wildcard for any characters. */
 export function matchGlob(key: string, pattern: string): boolean {

@@ -6,11 +6,12 @@
 import type { Storage } from "unstorage";
 import type { AgentMetadata } from "./_schemas.ts";
 import type { BundleStore } from "./bundle-store.ts";
+import { DEFAULT_SLOT_IDLE_MS } from "./constants.ts";
 import type { Sandbox, SandboxOptions } from "./sandbox.ts";
 
 // ── Agent slot lifecycle ─────────────────────────────────────────────────
 
-let IDLE_MS = 5 * 60 * 1000;
+let IDLE_MS = DEFAULT_SLOT_IDLE_MS;
 
 export type AgentSlot = {
   slug: string;

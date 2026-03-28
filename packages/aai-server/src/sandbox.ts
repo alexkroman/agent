@@ -3,12 +3,9 @@
 
 import { randomBytes } from "node:crypto";
 import type { AgentRuntime, SessionStartOptions } from "@alexkroman1/aai/adapter";
+import { HOOK_TIMEOUT_MS, TOOL_EXECUTION_TIMEOUT_MS } from "@alexkroman1/aai/constants";
 import { toAgentConfig } from "@alexkroman1/aai/internal-types";
-import {
-  buildReadyConfig,
-  HOOK_TIMEOUT_MS,
-  TOOL_EXECUTION_TIMEOUT_MS,
-} from "@alexkroman1/aai/protocol";
+import { buildReadyConfig } from "@alexkroman1/aai/protocol";
 import { DEFAULT_S2S_CONFIG } from "@alexkroman1/aai/runtime";
 import { createS2sSession, type HookInvoker, type Session } from "@alexkroman1/aai/session";
 import { createUnstorageKv } from "@alexkroman1/aai/unstorage-kv";
@@ -38,6 +35,11 @@ import {
   VoidHookResultSchema,
 } from "./_harness-protocol.ts";
 import type { BundleStore } from "./bundle-store.ts";
+import {
+  CONFIG_TIMEOUT_MS,
+  PORT_ANNOUNCE_TIMEOUT_MS,
+  SANDBOX_MEMORY_LIMIT_MB,
+} from "./constants.ts";
 import { getHarnessRuntimeJs } from "./sandbox-harness.ts";
 import { buildNetworkAdapter, buildNetworkPolicy } from "./sandbox-network.ts";
 import { startSidecarServer } from "./sandbox-sidecar.ts";
@@ -120,7 +122,7 @@ async function startIsolate(
       },
     }),
     runtimeDriverFactory: createNodeRuntimeDriverFactory(),
-    memoryLimit: 128,
+    memoryLimit: SANDBOX_MEMORY_LIMIT_MB,
     onStdio(event) {
       if (event.channel === "stdout") {
         try {
@@ -168,11 +170,6 @@ async function startIsolate(
 
 // ── Isolate RPC ──────────────────────────────────────────────────────────
 
-const PORT_ANNOUNCE_TIMEOUT_MS = 15_000;
-const CONFIG_TIMEOUT_MS = 10_000;
-/** Host-side tool timeout — matches isolate-side (both 30s). */
-const TOOL_TIMEOUT_MS = TOOL_EXECUTION_TIMEOUT_MS;
-
 async function getIsolateConfig(port: number, authToken: string): Promise<IsolateConfig> {
   const res = await fetch(`http://127.0.0.1:${port}/rpc`, {
     method: "POST",
@@ -219,7 +216,7 @@ function buildExecuteTool(
     const { result } = await callIsolate(
       isolateUrl,
       { type: "tool", name, args, sessionId: sessionId ?? "", messages: [...(messages ?? [])] },
-      TOOL_TIMEOUT_MS,
+      TOOL_EXECUTION_TIMEOUT_MS,
       ToolCallResponseSchema,
       authToken,
       crashed,

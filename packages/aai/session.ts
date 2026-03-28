@@ -4,9 +4,9 @@
 import type { AgentConfig, ToolSchema } from "./_internal-types.ts";
 import { activeSessionsUpDown, sessionCounter, setupListeners } from "./_session-otel.ts";
 import { errorDetail, errorMessage, toolError } from "./_utils.ts";
+import { DEFAULT_IDLE_TIMEOUT_MS, DEFAULT_MAX_HISTORY, HOOK_TIMEOUT_MS } from "./constants.ts";
 import type { HookInvoker } from "./middleware.ts";
 import type { ClientSink } from "./protocol.ts";
-import { HOOK_TIMEOUT_MS } from "./protocol.ts";
 import type { Logger, S2SConfig } from "./runtime.ts";
 import { consoleLogger } from "./runtime.ts";
 import {
@@ -84,8 +84,6 @@ export type S2sSessionCtx = {
   /** Append a tool-call promise to the turn promise chain. */
   chainTurn(p: Promise<void>): void;
 };
-
-const DEFAULT_MAX_HISTORY = 200;
 
 export function buildCtx(opts: {
   id: string;
@@ -250,8 +248,6 @@ export type S2sSessionOptions = {
 export const _internals = {
   connectS2s,
 };
-
-const DEFAULT_IDLE_TIMEOUT_MS = 300_000; // 5 minutes
 
 type IdleTimer = { reset(): void; clear(): void };
 

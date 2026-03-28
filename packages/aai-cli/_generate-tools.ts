@@ -11,13 +11,11 @@ import { promisify } from "node:util";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import type { Tool } from "ai";
 import { z } from "zod";
+import { MAX_LINE_LENGTH, MAX_OUTPUT_BYTES, MAX_READ_LINES } from "./constants.ts";
 
 const execFileAsync = promisify(execFile);
 
 const SKIP_DIRS = new Set(["node_modules", ".git", ".aai", "dist", "coverage"]);
-const MAX_READ_LINES = 2000;
-const MAX_LINE_LENGTH = 2000;
-const MAX_OUTPUT_BYTES = 50 * 1024;
 
 function safePath(workDir: string, filePath: string): string | null {
   const abs = path.resolve(workDir, filePath);

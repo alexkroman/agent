@@ -7,6 +7,7 @@
 
 import pTimeout from "p-timeout";
 import { errorDetail, errorMessage } from "./_utils.ts";
+import { DEFAULT_SESSION_START_TIMEOUT_MS } from "./constants.ts";
 import type { ClientMessage, ClientSink, ReadyConfig } from "./protocol.ts";
 import { ClientMessageSchema } from "./protocol.ts";
 import type { Logger } from "./runtime.ts";
@@ -26,9 +27,6 @@ export type SessionWebSocket = {
   addEventListener(type: "message", listener: (event: { data: unknown }) => void): void;
   addEventListener(type: "error", listener: (event: { message?: string }) => void): void;
 };
-
-/** Default timeout for session.start() in milliseconds. */
-const DEFAULT_SESSION_START_TIMEOUT_MS = 10_000;
 
 /** Options for wiring a WebSocket to a session. */
 export type WsSessionOptions = {

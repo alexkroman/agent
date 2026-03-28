@@ -8,7 +8,7 @@
  */
 
 import { errorDetail, errorMessage, toolError } from "./_utils.ts";
-import { HOOK_TIMEOUT_MS, MAX_TOOL_RESULT_CHARS } from "./protocol.ts";
+import { HOOK_TIMEOUT_MS, MAX_TOOL_RESULT_CHARS } from "./constants.ts";
 import type { S2sHandle, S2sToolCall } from "./s2s.ts";
 import type { S2sSessionCtx } from "./session.ts";
 import {

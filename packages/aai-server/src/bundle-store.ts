@@ -59,7 +59,7 @@ export function createBundleStore(
   const store: BundleStore = {
     async putAgent(bundle) {
       try {
-        await deleteByPrefix(`agents:${bundle.slug}`);
+        await deleteByPrefix(`agents/${bundle.slug}`);
       } catch (err) {
         console.warn(
           `Failed to delete old agent files for ${bundle.slug}, proceeding with overwrite: ${errorMessage(err)}`,
@@ -104,7 +104,7 @@ export function createBundleStore(
     },
 
     async deleteAgent(slug) {
-      await deleteByPrefix(`agents:${slug}`);
+      await deleteByPrefix(`agents/${slug}`);
     },
 
     async getEnv(slug) {

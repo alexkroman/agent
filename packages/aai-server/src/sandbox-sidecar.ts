@@ -15,6 +15,11 @@ import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
+import {
+  FETCH_PROXY_TIMEOUT_MS,
+  MAX_RESPONSE_BODY_BYTES,
+  SIDECAR_STARTUP_TIMEOUT_MS,
+} from "./constants.ts";
 
 // ── Sidecar request schemas (per-endpoint, loopback only) ───────────────
 
@@ -37,15 +42,6 @@ const SidecarFetchSchema = z.object({
   headers: z.record(z.string(), z.string()).optional(),
   body: z.string().nullish(),
 });
-
-/** Per-fetch timeout — matches the built-in tool timeout in builtin-tools.ts. */
-const FETCH_PROXY_TIMEOUT_MS = 15_000;
-
-/** Maximum response body size (1 MB) to prevent the sidecar from buffering huge responses. */
-const MAX_RESPONSE_BODY_BYTES = 1_048_576;
-
-/** Timeout for sidecar server to start listening (ms). */
-const SIDECAR_STARTUP_TIMEOUT_MS = 10_000;
 
 // ── Sidecar server (per-sandbox, loopback, no auth) ─────────────────────
 

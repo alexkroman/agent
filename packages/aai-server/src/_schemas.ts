@@ -3,6 +3,7 @@
 
 import { posix } from "node:path";
 import { z } from "zod";
+import { MAX_WORKER_SIZE } from "./constants.ts";
 
 /**
  * Zod schema for a safe relative file path.
@@ -20,7 +21,7 @@ export const SafePathSchema = z
 
 export const DeployBodySchema = z.object({
   env: z.record(z.string(), z.string()).optional(),
-  worker: z.string().min(1).max(10_000_000),
+  worker: z.string().min(1).max(MAX_WORKER_SIZE),
   clientFiles: z.record(SafePathSchema, z.string()),
 });
 

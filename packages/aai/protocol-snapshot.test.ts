@@ -7,17 +7,19 @@
  * signals a potentially breaking protocol change.
  */
 import { describe, expect, test } from "vitest";
+import {
+  DEFAULT_STT_SAMPLE_RATE,
+  DEFAULT_TTS_SAMPLE_RATE,
+  HOOK_TIMEOUT_MS,
+  TOOL_EXECUTION_TIMEOUT_MS,
+} from "./constants.ts";
 import type { ClientEvent, ClientMessage, ServerMessage } from "./protocol.ts";
 import {
   AUDIO_FORMAT,
   ClientEventSchema,
   ClientMessageSchema,
-  DEFAULT_STT_SAMPLE_RATE,
-  DEFAULT_TTS_SAMPLE_RATE,
-  HOOK_TIMEOUT_MS,
   KvRequestSchema,
   SessionErrorCodeSchema,
-  TOOL_EXECUTION_TIMEOUT_MS,
 } from "./protocol.ts";
 
 // ── Constants ────────────────────────────────────────────────────────────

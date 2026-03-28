@@ -7,7 +7,7 @@
  * and the {@link S2SConfig} for Speech-to-Speech endpoint configuration.
  */
 
-import { DEFAULT_STT_SAMPLE_RATE, DEFAULT_TTS_SAMPLE_RATE } from "./protocol.ts";
+import { DEFAULT_STT_SAMPLE_RATE, DEFAULT_TTS_SAMPLE_RATE } from "./constants.ts";
 
 let _otel: typeof import("@opentelemetry/api") | undefined;
 try {

@@ -7,8 +7,8 @@ import pTimeout from "p-timeout";
 import type { z } from "zod";
 import { EMPTY_PARAMS } from "./_internal-types.ts";
 import { errorDetail, errorMessage, toolError } from "./_utils.ts";
+import { TOOL_EXECUTION_TIMEOUT_MS } from "./constants.ts";
 import type { Kv } from "./kv.ts";
-import { TOOL_EXECUTION_TIMEOUT_MS } from "./protocol.ts";
 import type { Logger } from "./runtime.ts";
 
 import type { Message, ToolContext, ToolDef } from "./types.ts";

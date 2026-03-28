@@ -41,6 +41,11 @@
       "types": "./dist/server.d.ts",
       "import": "./dist/server.js"
     },
+    "./constants": {
+      "source": "./constants.ts",
+      "types": "./dist/constants.d.ts",
+      "import": "./dist/constants.js"
+    },
     "./protocol": {
       "source": "./protocol.ts",
       "types": "./dist/protocol.d.ts",

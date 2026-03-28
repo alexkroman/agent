@@ -11,14 +11,12 @@ import { z } from "zod";
 import { EMPTY_PARAMS, type ToolSchema } from "./_internal-types.ts";
 import { createRunCode } from "./_run-code.ts";
 import { ssrfSafeFetch } from "./_ssrf.ts";
+import { FETCH_TIMEOUT_MS, MAX_HTML_BYTES, MAX_PAGE_CHARS } from "./constants.ts";
 import { memoryTools } from "./memory-tools.ts";
 import type { ToolDef } from "./types.ts";
 
 export { executeInIsolate } from "./_run-code.ts";
 export { memoryTools } from "./memory-tools.ts";
-
-/** Per-fetch timeout for network tools — tighter than the overall tool timeout. */
-const FETCH_TIMEOUT_MS = 15_000;
 
 const fetchSignal = () => AbortSignal.timeout(FETCH_TIMEOUT_MS);
 
@@ -97,9 +95,6 @@ function createWebSearch(fetchFn = globalThis.fetch): ToolDef<typeof webSearchPa
 }
 
 // ─── visit_webpage ─────────────────────────────────────────────────────────
-
-const MAX_PAGE_CHARS = 10_000;
-const MAX_HTML_BYTES = 200_000;
 
 const visitWebpageParams = z.object({
   url: z.string().describe("The full URL to fetch (e.g., 'https://example.com/page')"),

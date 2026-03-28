@@ -8,7 +8,7 @@ import {
   makeSessionOpts,
   replayFixtureMessages,
 } from "./_test-utils.ts";
-import { HOOK_TIMEOUT_MS } from "./protocol.ts";
+import { HOOK_TIMEOUT_MS } from "./constants.ts";
 import type { S2sHandle } from "./s2s.ts";
 import {
   _internals,
