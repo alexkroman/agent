@@ -1,0 +1,28 @@
+[
+  {
+    "type": "config",
+    "audioFormat": "pcm16",
+    "sampleRate": 16000,
+    "ttsSampleRate": 24000,
+    "sessionId": "sess_fixture_005"
+  },
+  { "type": "chat", "text": "Let me explain..." },
+  { "type": "tts_done" },
+
+  { "type": "speech_started" },
+  { "type": "transcript", "text": "What about", "isFinal": true },
+  { "type": "speech_stopped" },
+  { "type": "turn", "text": "What about" },
+
+  { "type": "chat_delta", "text": "Well," },
+  { "type": "chat_delta", "text": " the thing is" },
+  { "type": "cancelled" },
+
+  { "type": "speech_started" },
+  { "type": "transcript", "text": "Actually never mind", "isFinal": true },
+  { "type": "speech_stopped" },
+  { "type": "turn", "text": "Actually never mind" },
+
+  { "type": "chat", "text": "No problem!" },
+  { "type": "tts_done" }
+]

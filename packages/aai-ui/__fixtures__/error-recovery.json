@@ -1,0 +1,18 @@
+[
+  {
+    "type": "config",
+    "audioFormat": "pcm16",
+    "sampleRate": 16000,
+    "ttsSampleRate": 24000,
+    "sessionId": "sess_fixture_004"
+  },
+  { "type": "chat", "text": "Hello!" },
+  { "type": "tts_done" },
+
+  { "type": "speech_started" },
+  { "type": "transcript", "text": "Tell me something", "isFinal": true },
+  { "type": "speech_stopped" },
+  { "type": "turn", "text": "Tell me something" },
+
+  { "type": "error", "code": "stt", "message": "Speech recognition failed" }
+]

@@ -186,23 +186,6 @@ const secret = defineCommand({
   subCommands: { put: secretPut, delete: secretDelete, list: secretList },
 });
 
-const doctor = defineCommand({
-  meta: { name: "doctor", description: "Check environment health and diagnose issues" },
-  args: {
-    port: {
-      type: "string",
-      alias: "p",
-      description: "Port to check availability",
-      default: "3000",
-    },
-  },
-  async run({ args }) {
-    const cwd = resolveCwd();
-    const { runDoctorCommand } = await import("./doctor.ts");
-    await runDoctorCommand({ cwd, port: args.port });
-  },
-});
-
 const generate = defineCommand({
   meta: { name: "generate", description: "Generate or modify agent code using AI" },
   args: {
@@ -268,7 +251,6 @@ export const mainCommand = defineCommand({
     run,
     link,
     unlink,
-    doctor,
   },
 });
 

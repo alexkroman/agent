@@ -2,7 +2,7 @@
 /**
  * Slow CLI tests (formerly split across pack-build + e2e):
  *   1. Pack + build: dev & user workflows for every template
- *   2. CLI commands: doctor, dev --check, start, deploy --dry-run
+ *   2. CLI commands: dev --check, start, deploy --dry-run
  *   3. Browser tests (Playwright): UI render, WebSocket, conversation flow
  *
  * Run via: pnpm test:e2e
@@ -148,11 +148,10 @@ describe("pack + build: dev and user workflows", () => {
 
 // --- CLI commands (single template) ---
 
-describe("CLI: doctor + dev --check", () => {
-  test("init -> doctor -> dev --check", () => {
-    const projectDir = path.join(tmpDir, "_doctor-dev-check");
+describe("CLI: dev --check", () => {
+  test("init -> dev --check", () => {
+    const projectDir = path.join(tmpDir, "_dev-check");
     initProject("simple", projectDir);
-    aai(["doctor"], projectDir);
     aai(["dev", "--check", "--port", String(BASE_PORT)], projectDir);
   });
 });

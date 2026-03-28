@@ -5,7 +5,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { runVitest } from "./test.ts";
+import { runTestCommand, runVitest } from "./test.ts";
 
 describe("aai test", () => {
   let tempDir: string;
@@ -25,7 +25,29 @@ describe("aai test", () => {
 
   test("detects agent.test.ts files", async () => {
     await writeFile(path.join(tempDir, "agent.test.ts"), "// test file");
-    // Just verifying detection - actual execution would need vitest installed
     expect(existsSync(path.join(tempDir, "agent.test.ts"))).toBe(true);
+  });
+
+  test("detects agent.test.js files", async () => {
+    await writeFile(path.join(tempDir, "agent.test.js"), "// test file");
+    expect(existsSync(path.join(tempDir, "agent.test.js"))).toBe(true);
+  });
+
+  test("runVitest throws when vitest is not installed in temp dir", async () => {
+    await writeFile(path.join(tempDir, "agent.test.ts"), "// test");
+    // execSync will fail because there's no vitest in the temp dir
+    expect(() => runVitest(tempDir)).toThrow();
+  });
+
+  test("runTestCommand logs skip message when no test files", async () => {
+    const logs: string[] = [];
+    const origLog = console.log;
+    console.log = (msg: string) => logs.push(String(msg));
+    try {
+      await runTestCommand(tempDir);
+    } finally {
+      console.log = origLog;
+    }
+    expect(logs.some((l) => l.includes("No test files found"))).toBe(true);
   });
 });

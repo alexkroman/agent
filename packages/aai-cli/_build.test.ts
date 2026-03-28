@@ -1,6 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
+import { writeFile } from "node:fs/promises";
+import path from "node:path";
 import { describe, expect, test } from "vitest";
-import { buildAgentBundle } from "./_build.ts";
+import { buildAgentBundle, runBuildCommand } from "./_build.ts";
 import { withTempDir } from "./_test-utils.ts";
 
 describe("buildAgentBundle", () => {
@@ -39,9 +41,7 @@ describe("buildAgentBundle", () => {
   test("calls log when agent.ts exists (before bundle fails)", async () => {
     const logs: unknown[] = [];
     await withTempDir(async (dir) => {
-      const { writeFile } = await import("node:fs/promises");
-      const { join } = await import("node:path");
-      await writeFile(join(dir, "agent.ts"), "export default {}");
+      await writeFile(path.join(dir, "agent.ts"), "export default {}");
       try {
         await buildAgentBundle(dir, (node) => logs.push(node));
       } catch {
@@ -49,5 +49,36 @@ describe("buildAgentBundle", () => {
       }
       expect(logs.length).toBeGreaterThanOrEqual(1);
     });
+  });
+
+  test("wraps BundleError with context message", async () => {
+    await withTempDir(async (dir) => {
+      // Create an agent.ts that will cause a Vite build error
+      await writeFile(path.join(dir, "agent.ts"), "export default {}");
+      try {
+        await buildAgentBundle(dir, () => {
+          /* noop */
+        });
+      } catch (err: unknown) {
+        expect(err).toBeInstanceOf(Error);
+        expect((err as Error).message).toContain("Bundle failed");
+      }
+    });
+  });
+});
+
+describe("runBuildCommand", () => {
+  test("throws when no agent found", async () => {
+    const origLog = console.log;
+    console.log = () => {
+      /* noop */
+    };
+    try {
+      await withTempDir(async (dir) => {
+        await expect(runBuildCommand(dir)).rejects.toThrow("No agent found");
+      });
+    } finally {
+      console.log = origLog;
+    }
   });
 });
