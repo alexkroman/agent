@@ -3,7 +3,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { errorMessage } from "@alexkroman1/aai/utils";
-import { build, createServer as createViteServer, type ViteDevServer } from "vite";
+import { build } from "vite";
 import type { AgentEntry } from "./_discover.ts";
 
 export class BundleError extends Error {
@@ -53,8 +53,8 @@ async function readDirFiles(dir: string): Promise<Record<string, string>> {
 /**
  * Bundle an agent project using Vite.
  *
- * - Worker: `vite build --ssr agent.ts` → single ESM file
- * - Client: `vite build` → index.html + assets (uses project's vite.config.ts)
+ * - Worker: `vite build --ssr agent.ts` (uses project's vite.config.ts)
+ * - Client: `vite build` (uses project's vite.config.ts)
  */
 export async function bundleAgent(
   agent: AgentEntry,
@@ -64,7 +64,7 @@ export async function bundleAgent(
   const buildDir = path.join(aaiDir, "build");
   const clientDir = path.join(aaiDir, "client");
 
-  // 1. Worker — SSR build bundles agent.ts into a single file
+  // 1. Worker — SSR build
   try {
     await build({
       root: agent.dir,
@@ -82,10 +82,8 @@ export async function bundleAgent(
     throw new BundleError(errorMessage(err), { cause: err });
   }
 
-  // 2. Client — standard Vite build (uses project's vite.config.ts)
-  const skipClient = opts?.skipClient ?? !agent.clientEntry;
-
-  if (!skipClient) {
+  // 2. Client — standard Vite build
+  if (!(opts?.skipClient ?? !agent.clientEntry)) {
     try {
       await build({
         root: agent.dir,
@@ -104,12 +102,7 @@ export async function bundleAgent(
   const worker = await fs.readFile(path.join(buildDir, "worker.js"), "utf-8");
   const clientFiles = await readDirFiles(clientDir);
 
-  return {
-    worker,
-    clientFiles,
-    clientDir,
-    workerBytes: Buffer.byteLength(worker),
-  };
+  return { worker, clientFiles, clientDir, workerBytes: Buffer.byteLength(worker) };
 }
 
 export async function buildAgentBundle(cwd: string): Promise<BundleOutput> {
@@ -128,10 +121,7 @@ export async function buildAgentBundle(cwd: string): Promise<BundleOutput> {
     throw err;
   }
 
-  const kb = (bundle.workerBytes / 1024).toFixed(1);
-  const clientCount = Object.keys(bundle.clientFiles).length;
-  consola.log(`worker: ${kb} KB, client: ${clientCount} file(s)`);
-
+  consola.log(`worker: ${(bundle.workerBytes / 1024).toFixed(1)} KB, client: ${Object.keys(bundle.clientFiles).length} file(s)`);
   return bundle;
 }
 
@@ -139,21 +129,4 @@ export async function runBuildCommand(cwd: string): Promise<void> {
   const { consola } = await import("./_ui.ts");
   await buildAgentBundle(cwd);
   consola.success("Build ok");
-}
-
-/**
- * Create a Vite dev server using the project's vite.config.ts.
- * Backend port is passed via AAI_BACKEND_PORT env var for proxy config.
- */
-export async function createClientDevServer(
-  agentDir: string,
-  backendPort: number,
-  port: number,
-): Promise<ViteDevServer> {
-  process.env.AAI_BACKEND_PORT = String(backendPort);
-  const vite = await createViteServer({
-    root: agentDir,
-    server: { port, strictPort: true },
-  });
-  return vite;
 }

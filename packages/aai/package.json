@@ -55,6 +55,11 @@
       "source": "./_utils.ts",
       "types": "./dist/_utils.d.ts",
       "import": "./dist/_utils.js"
+    },
+    "./vite-plugin": {
+      "source": "./vite-plugin.ts",
+      "types": "./dist/vite-plugin.d.ts",
+      "import": "./dist/vite-plugin.js"
     }
   },
   "scripts": {
@@ -78,6 +83,7 @@
   "peerDependencies": {
     "@hono/node-server": "^1.19.11",
     "hono": "^4.12.9",
+    "vite": ">=5.0.0",
     "vitest": "^4.1.1"
   },
   "peerDependenciesMeta": {
@@ -85,6 +91,9 @@
       "optional": true
     },
     "hono": {
+      "optional": true
+    },
+    "vite": {
       "optional": true
     },
     "vitest": {
@@ -95,7 +104,8 @@
     "@types/json-schema": "^7.0.15",
     "@types/node": "^25.5.0",
     "@types/ws": "^8.18.1",
-    "tsdown": "^0.21.5"
+    "tsdown": "^0.21.5",
+    "vite": "^8.0.3"
   },
   "engines": {
     "node": ">=22.6"
