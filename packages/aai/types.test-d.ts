@@ -11,9 +11,9 @@ import { z } from "zod";
 import {
   type AgentDef,
   type BuiltinTool,
-  createToolFactory,
   defineAgent,
   defineTool,
+  defineToolFactory,
   type HookContext,
   type Kv,
   type KvEntry,
@@ -27,7 +27,14 @@ import {
   type ToolResultMap,
   tool,
 } from "./index.ts";
-import { type AgentApp, type AgentServer, createAgentApp, createServer } from "./server.ts";
+import {
+  type AgentApp,
+  type AgentServer,
+  createAgentApp,
+  createRuntime,
+  createServer,
+  type Runtime,
+} from "./server.ts";
 
 // ─── defineAgent ──────────────────────────────────────────────────────────
 
@@ -187,14 +194,14 @@ describe("tool (alias)", () => {
   });
 });
 
-// ─── createToolFactory ────────────────────────────────────────────────────
+// ─── defineToolFactory ────────────────────────────────────────────────────
 
-describe("createToolFactory", () => {
+describe("defineToolFactory", () => {
   it("returns a typed defineTool variant", () => {
     interface AppState {
       items: string[];
     }
-    const typedTool = createToolFactory<AppState>();
+    const typedTool = defineToolFactory<AppState>();
 
     typedTool({
       description: "add item",
@@ -209,18 +216,29 @@ describe("createToolFactory", () => {
 
 // ─── createServer ─────────────────────────────────────────────────────────
 
-describe("createServer", () => {
-  it("accepts ServerOptions and returns AgentServer", () => {
+describe("createRuntime", () => {
+  it("accepts RuntimeOptions and returns Runtime", () => {
     const agent = defineAgent({ name: "test" });
-    const server = createServer({ agent });
+    const runtime = createRuntime({ agent, env: {} });
+    expectTypeOf(runtime).toMatchTypeOf<Runtime>();
+    expectTypeOf(runtime.startSession).toBeFunction();
+    expectTypeOf(runtime.shutdown).toEqualTypeOf<() => Promise<void>>();
+  });
+});
+
+describe("createServer", () => {
+  it("accepts ServerOptions with runtime and returns AgentServer", () => {
+    const agent = defineAgent({ name: "test" });
+    const runtime = createRuntime({ agent, env: {} });
+    const server = createServer({ runtime });
     expectTypeOf(server).toEqualTypeOf<AgentServer>();
     expectTypeOf(server.listen).toEqualTypeOf<(port?: number) => Promise<void>>();
     expectTypeOf(server.close).toEqualTypeOf<() => Promise<void>>();
     expectTypeOf(server.port).toEqualTypeOf<number | undefined>();
   });
 
-  it("requires agent in options", () => {
-    // @ts-expect-error — agent is required
+  it("requires runtime in options", () => {
+    // @ts-expect-error — runtime is required
     createServer({});
   });
 });
@@ -228,7 +246,8 @@ describe("createServer", () => {
 describe("createAgentApp", () => {
   it("returns AgentApp with app, injectWebSocket, and shutdown", () => {
     const agent = defineAgent({ name: "test" });
-    const result = createAgentApp({ agent });
+    const runtime = createRuntime({ agent, env: {} });
+    const result = createAgentApp({ runtime });
     expectTypeOf(result).toEqualTypeOf<AgentApp>();
     expectTypeOf(result.injectWebSocket).toBeFunction();
     expectTypeOf(result.shutdown).toEqualTypeOf<() => Promise<void>>();

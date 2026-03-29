@@ -10,7 +10,7 @@ import { createStorage } from "unstorage";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import { toAgentConfig } from "./_internal-types.ts";
-import { createDirectExecutor } from "./direct-executor.ts";
+import { createRuntime } from "./direct-executor.ts";
 import { defineAgent, defineTool } from "./types.ts";
 import { createUnstorageKv } from "./unstorage-kv.ts";
 
@@ -27,7 +27,7 @@ describe("SDK integration: defineAgent → tool execution", () => {
       },
     });
 
-    const exec = createDirectExecutor({ agent, env: {} });
+    const exec = createRuntime({ agent, env: {} });
     const result = await exec.executeTool("greet", { name: "Alice" }, "s1", []);
     expect(result).toBe("Hello, Alice!");
   });
@@ -56,7 +56,7 @@ describe("SDK integration: defineAgent → tool execution", () => {
       },
     });
 
-    const exec = createDirectExecutor({ agent, env: {}, kv });
+    const exec = createRuntime({ agent, env: {}, kv });
     await exec.executeTool("save", { key: "color", value: "blue" }, "s1", []);
     const result = await exec.executeTool("load", { key: "color" }, "s1", []);
     expect(result).toBe("blue");
@@ -73,7 +73,7 @@ describe("SDK integration: defineAgent → tool execution", () => {
       },
     });
 
-    const exec = createDirectExecutor({ agent, env: { API_KEY: "sk-test-123" } });
+    const exec = createRuntime({ agent, env: { API_KEY: "sk-test-123" } });
     const result = await exec.executeTool("check_key", {}, "s1", []);
     expect(result).toBe("sk-test-123");
   });
@@ -94,7 +94,7 @@ describe("SDK integration: defineAgent → tool execution", () => {
       },
     });
 
-    const exec = createDirectExecutor({ agent, env: {} });
+    const exec = createRuntime({ agent, env: {} });
     expect(await exec.executeTool("increment", {}, "session-a", [])).toBe("1");
     expect(await exec.executeTool("increment", {}, "session-a", [])).toBe("2");
     // Different session starts fresh
@@ -103,7 +103,7 @@ describe("SDK integration: defineAgent → tool execution", () => {
 
   test("unknown tool returns error JSON", async () => {
     const agent = defineAgent({ name: "test", tools: {} });
-    const exec = createDirectExecutor({ agent, env: {} });
+    const exec = createRuntime({ agent, env: {} });
     const result = await exec.executeTool("nonexistent", {}, "s1", []);
     expect(JSON.parse(result)).toEqual({ error: "Unknown tool: nonexistent" });
   });
@@ -120,7 +120,7 @@ describe("SDK integration: defineAgent → tool execution", () => {
       },
     });
 
-    const exec = createDirectExecutor({ agent, env: {} });
+    const exec = createRuntime({ agent, env: {} });
     // Valid input
     expect(await exec.executeTool("typed", { count: 5 }, "s1", [])).toBe("10");
     // Invalid input
@@ -162,7 +162,7 @@ describe("SDK integration: defineAgent → tool execution", () => {
       },
     });
 
-    const exec = createDirectExecutor({ agent, env: {} });
+    const exec = createRuntime({ agent, env: {} });
     await exec.hookInvoker.onConnect("s1");
     await exec.hookInvoker.onTurn("s1", "Hello world");
     await exec.hookInvoker.onDisconnect("s1");
@@ -178,7 +178,7 @@ describe("SDK integration: defineAgent → tool execution", () => {
       },
     });
 
-    const exec = createDirectExecutor({ agent, env: {} });
+    const exec = createRuntime({ agent, env: {} });
     // Custom tool works
     expect(await exec.executeTool("custom", {}, "s1", [])).toBe("custom result");
     // Builtin tool works
@@ -206,7 +206,7 @@ describe("SDK integration: defineAgent → tool execution", () => {
       },
     });
 
-    const exec = createDirectExecutor({ agent, env: {} });
+    const exec = createRuntime({ agent, env: {} });
     const result = await exec.executeTool("count_msgs", {}, "s1", [
       { role: "user", content: "hi" },
       { role: "assistant", content: "hello" },

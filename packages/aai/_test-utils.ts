@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { createNanoEvents } from "nanoevents";
 import { vi } from "vitest";
 import type { AgentConfig } from "./_internal-types.ts";
-import { createDirectExecutor } from "./direct-executor.ts";
+import { createRuntime } from "./direct-executor.ts";
 import type { ClientSink } from "./protocol.ts";
 import type { S2sEvents, S2sHandle } from "./s2s.ts";
 import { _internals, type S2sSessionOptions } from "./session.ts";
@@ -211,9 +211,9 @@ export function replayFixtureMessages(
 // ─── Real-executor fixture replay ────────────────────────────────────────────
 
 /**
- * Create a real DirectExecutor-backed session for fixture replay testing.
+ * Create a real Runtime-backed session for fixture replay testing.
  *
- * Uses a real `DirectExecutor` (real tool execution, real middleware, real
+ * Uses a real `Runtime` (real tool execution, real middleware, real
  * hook invoker) but replaces the S2S WebSocket with a mock handle so fixture
  * messages can be replayed through the full orchestration layer.
  *
@@ -232,7 +232,7 @@ export function createFixtureSession(
   const connectSpy = vi.spyOn(_internals, "connectS2s").mockResolvedValue(mockHandle);
   const client = makeClient();
 
-  const executor = createDirectExecutor({
+  const executor = createRuntime({
     agent,
     env: opts?.env ?? {},
     logger: silentLogger,

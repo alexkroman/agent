@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Fixture replay tests with a REAL DirectExecutor.
+ * Fixture replay tests with a REAL Runtime.
  *
  * Replays recorded AssemblyAI S2S messages (from Kokoro TTS audio) through
  * a real agent session — real tool execution, real Zod arg validation, real

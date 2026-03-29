@@ -8,9 +8,9 @@
  *
  * @example
  * ```tsx
- * import { App, mount } from "@aai/ui";
+ * import { App, defineClient } from "@aai/ui";
  *
- * mount(App, { target: "#app" });
+ * defineClient(App, { target: "#app" });
  * ```
  */
 
@@ -28,10 +28,10 @@ export { StateIndicator } from "./_components/state-indicator.tsx";
 export { ThinkingIndicator } from "./_components/thinking-indicator.tsx";
 export { ToolCallBlock } from "./_components/tool-call-block.tsx";
 export { Transcript } from "./_components/transcript.tsx";
-export type { MountHandle, MountOptions } from "./mount.tsx";
-export { mount } from "./mount.tsx";
-export type { MountConfig, MountTheme } from "./mount-context.ts";
-export { useMountConfig } from "./mount-context.ts";
+export type { ClientConfig, ClientTheme } from "./client-context.ts";
+export { useClientConfig } from "./client-context.ts";
+export type { ClientHandle, ClientOptions } from "./define-client.tsx";
+export { defineClient } from "./define-client.tsx";
 export type { VoiceSession } from "./session.ts";
 export { createVoiceSession } from "./session.ts";
 export type { SessionSignals } from "./signals.ts";

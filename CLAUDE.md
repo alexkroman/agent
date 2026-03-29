@@ -3,10 +3,11 @@
 ## Overview
 
 AAI is a voice agent development kit. Users define agents via `defineAgent()`
-in `agent.ts`. The SDK produces a self-hostable server (`createServer()`) or
-agents can be deployed to the managed platform.
+in `agent.ts`. The SDK produces a self-hostable server
+(`createRuntime()` + `createServer()`) or agents can be deployed to
+the managed platform.
 
-- **Self-hosted**: `agent.ts` → `createServer()` → runs on Node/Docker
+- **Self-hosted**: `agent.ts` → `createRuntime()` → `createServer()` → runs on Node/Docker
 - **Platform**: `agent.ts` → CLI bundle → deploy to managed server
 
 ## Commands
@@ -84,7 +85,8 @@ Four workspace packages under `packages/`:
 Public:
 
 - `.` — `defineAgent`, `defineTool` + re-exported types
-- `./server` — `createServer` + `createAgentApp` for self-hosting
+- `./server` — `createServer`, `createAgentApp`, `createRuntime`,
+  `Runtime`, `RuntimeOptions` for self-hosting
 - `./types` — all type definitions
 - `./kv` — KV store interface + in-memory implementation
 - `./testing` — `MockWebSocket`, `installMockWebSocket`,
@@ -114,12 +116,12 @@ type test updates:
 Non-exported internal files (used within the package only):
 
 - `builtin-tools.ts` — built-in tool definitions + memory tools
-- `direct-executor.ts` — in-process tool execution (self-hosted)
+- `direct-executor.ts` — in-process runtime / tool execution (self-hosted)
 - `lifecycle.ts` — `LifecycleHooks`, `HookInvoker` (agent callback types)
 
 #### `@alexkroman1/aai-ui` (UI)
 
-- `.` — default Preact UI component + session + mount helpers
+- `.` — default Preact UI component + session + defineClient helpers
 - `./session` — session management (no Preact dependency)
 - `./styles.css` — default styles
 
@@ -359,7 +361,9 @@ Install `@opentelemetry/sdk-node` and configure before importing AAI:
 ```ts
 import { NodeSDK } from "@opentelemetry/sdk-node";
 new NodeSDK({ /* exporters */ }).start();
-// then import and use createServer()
+// then import and use createRuntime() + createServer()
+const runtime = createRuntime({ agent, env });
+const server = createServer({ runtime });
 ```
 
 ### Known Limitations

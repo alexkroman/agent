@@ -2,7 +2,7 @@
 
 import clsx from "clsx";
 import type * as preact from "preact";
-import { useMountConfig } from "../mount-context.ts";
+import { useClientConfig } from "../client-context.ts";
 import { useSession } from "../signals.ts";
 import { Controls } from "./controls.tsx";
 import { ErrorBanner } from "./error-banner.tsx";
@@ -36,7 +36,7 @@ import { StateIndicator } from "./state-indicator.tsx";
  */
 export function ChatView({ className }: { className?: string }): preact.JSX.Element {
   const { session } = useSession();
-  const { title } = useMountConfig();
+  const { title } = useClientConfig();
 
   return (
     <div

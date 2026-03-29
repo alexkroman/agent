@@ -1,4 +1,4 @@
-import { createToolFactory, defineAgent } from "@alexkroman1/aai";
+import { defineToolFactory, defineAgent } from "@alexkroman1/aai";
 import { z } from "zod";
 
 /**
@@ -14,7 +14,7 @@ interface TaskState {
   owner: string;
 }
 
-const taskTool = createToolFactory<TaskState>();
+const taskTool = defineToolFactory<TaskState>();
 
 export default defineAgent<TaskState>({
   name: "Test Patterns",

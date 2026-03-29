@@ -2,18 +2,18 @@
 /**
  * Tests for server shutdown timeout behavior.
  *
- * Mocks createDirectExecutor to return a runtime with controlled shutdown
- * behavior, then exercises the timeout and graceful paths in close().
+ * Creates a mock runtime with controlled shutdown behavior, then exercises
+ * the timeout and graceful paths in close().
  */
 
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { makeAgent } from "./_test-utils.ts";
-import type { DirectExecutor } from "./direct-executor.ts";
+import type { Runtime } from "./direct-executor.ts";
+import { createServer } from "./server.ts";
 
 let mockShutdown = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
 
-vi.mock("./direct-executor.ts", () => ({
-  createDirectExecutor: (): DirectExecutor => ({
+function createMockRuntime(): Runtime {
+  return {
     executeTool: vi.fn().mockResolvedValue(""),
     hookInvoker: {
       onConnect: vi.fn().mockResolvedValue(undefined),
@@ -23,14 +23,19 @@ vi.mock("./direct-executor.ts", () => ({
       resolveTurnConfig: vi.fn().mockResolvedValue(null),
     },
     toolSchemas: [],
-    createSession: vi.fn() as DirectExecutor["createSession"],
+    createSession: vi.fn() as Runtime["createSession"],
     readyConfig: { audioFormat: "pcm16" as const, sampleRate: 16_000, ttsSampleRate: 24_000 },
     startSession: vi.fn(),
-    shutdown: (...args: Parameters<DirectExecutor["shutdown"]>) => mockShutdown(...args),
-  }),
-}));
+    shutdown: (...args: Parameters<Runtime["shutdown"]>) => mockShutdown(...args),
+  };
+}
 
-const { createServer } = await import("./server.ts");
+const silentLogger = {
+  info: vi.fn(),
+  error: vi.fn(),
+  warn: vi.fn(),
+  debug: vi.fn(),
+};
 
 describe("server shutdown timeout", () => {
   let server: ReturnType<typeof createServer> | null = null;
@@ -41,19 +46,11 @@ describe("server shutdown timeout", () => {
   });
 
   test("close calls runtime.shutdown()", async () => {
-    const logger = {
-      info: vi.fn(),
-      error: vi.fn(),
-      warn: vi.fn(),
-      debug: vi.fn(),
-    };
-
     mockShutdown = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
 
     server = createServer({
-      agent: makeAgent(),
-      env: {},
-      logger,
+      runtime: createMockRuntime(),
+      logger: silentLogger,
     });
     await server.listen(0);
 
@@ -62,21 +59,11 @@ describe("server shutdown timeout", () => {
   }, 10_000);
 
   test("close resolves quickly when runtime.shutdown() resolves", async () => {
-    const logger = {
-      info: vi.fn(),
-      error: vi.fn(),
-      warn: vi.fn(),
-      debug: vi.fn(),
-    };
-
-    // Shutdown resolves instantly.
     mockShutdown = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
 
     server = createServer({
-      agent: makeAgent(),
-      env: {},
-      logger,
-      shutdownTimeoutMs: 5000,
+      runtime: createMockRuntime(),
+      logger: silentLogger,
     });
     await server.listen(0);
 
@@ -89,20 +76,11 @@ describe("server shutdown timeout", () => {
   }, 10_000);
 
   test("close propagates when runtime.shutdown() rejects", async () => {
-    const logger = {
-      info: vi.fn(),
-      error: vi.fn(),
-      warn: vi.fn(),
-      debug: vi.fn(),
-    };
-
     mockShutdown = vi.fn<() => Promise<void>>().mockRejectedValue(new Error("boom"));
 
     server = createServer({
-      agent: makeAgent(),
-      env: {},
-      logger,
-      shutdownTimeoutMs: 5000,
+      runtime: createMockRuntime(),
+      logger: silentLogger,
     });
     await server.listen(0);
 

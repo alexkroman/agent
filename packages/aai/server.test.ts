@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { makeAgent } from "./_test-utils.ts";
+import { createRuntime } from "./direct-executor.ts";
 import { createServer } from "./server.ts";
 
 const silentLogger = {
@@ -9,6 +10,19 @@ const silentLogger = {
   warn: vi.fn(),
   debug: vi.fn(),
 };
+
+function makeRuntime(opts: { name?: string; shutdownTimeoutMs?: number } = {}) {
+  const agent = makeAgent(opts.name ? { name: opts.name } : {});
+  return {
+    agent,
+    runtime: createRuntime({
+      agent,
+      env: {},
+      logger: silentLogger,
+      ...(opts.shutdownTimeoutMs ? { shutdownTimeoutMs: opts.shutdownTimeoutMs } : {}),
+    }),
+  };
+}
 
 describe("createServer", () => {
   let server: ReturnType<typeof createServer> | null = null;
@@ -19,32 +33,32 @@ describe("createServer", () => {
   });
 
   test("returns an object with listen and close", () => {
-    server = createServer({ agent: makeAgent(), env: {}, logger: silentLogger });
+    const { runtime } = makeRuntime();
+    server = createServer({ runtime, logger: silentLogger });
     expect(server).toHaveProperty("listen");
     expect(server).toHaveProperty("close");
   });
 
   test("/health returns ok JSON", async () => {
-    const agent = makeAgent({ name: "health-agent" });
-    server = createServer({ agent, env: {}, logger: silentLogger });
+    const { runtime } = makeRuntime({ name: "health-agent" });
+    server = createServer({ runtime, name: "health-agent", logger: silentLogger });
     await server.listen(0);
-
-    // Hono's serve binds on port 0, need to get actual port
-    // We'll use a known port for testing
     await server.close();
     server = null;
   });
 
   test("listen and close lifecycle works", async () => {
-    server = createServer({ agent: makeAgent(), env: {}, logger: silentLogger });
+    const { runtime } = makeRuntime();
+    server = createServer({ runtime, logger: silentLogger });
     await server.listen(0);
     await server.close();
     server = null;
   });
 
   test("/ returns default HTML with escaped agent name", async () => {
-    const agent = makeAgent({ name: '<script>alert("xss")</script>' });
-    server = createServer({ agent, env: {}, logger: silentLogger });
+    const name = '<script>alert("xss")</script>';
+    const { runtime } = makeRuntime({ name });
+    server = createServer({ runtime, name, logger: silentLogger });
     await server.listen(0);
 
     const res = await fetch(`http://localhost:${server.port}/`);
@@ -55,9 +69,9 @@ describe("createServer", () => {
   });
 
   test("/ returns custom clientHtml when provided", async () => {
+    const { runtime } = makeRuntime();
     server = createServer({
-      agent: makeAgent(),
-      env: {},
+      runtime,
       clientHtml: "<h1>Custom</h1>",
       logger: silentLogger,
     });
@@ -69,9 +83,10 @@ describe("createServer", () => {
   });
 
   test("/health returns JSON with agent name", async () => {
+    const { runtime } = makeRuntime({ name: "my-agent" });
     server = createServer({
-      agent: makeAgent({ name: "my-agent" }),
-      env: {},
+      runtime,
+      name: "my-agent",
       logger: silentLogger,
     });
     await server.listen(0);
@@ -82,9 +97,9 @@ describe("createServer", () => {
   });
 
   test("404 triggers error-level logging", async () => {
+    const { runtime } = makeRuntime();
     server = createServer({
-      agent: makeAgent(),
-      env: {},
+      runtime,
       logger: silentLogger,
     });
     await server.listen(0);
@@ -94,18 +109,15 @@ describe("createServer", () => {
   });
 
   test("close is safe to call without listen", async () => {
-    server = createServer({ agent: makeAgent(), env: {}, logger: silentLogger });
+    const { runtime } = makeRuntime();
+    server = createServer({ runtime, logger: silentLogger });
     await server.close();
     server = null;
   });
 
-  test("accepts shutdownTimeoutMs option", () => {
-    server = createServer({
-      agent: makeAgent(),
-      env: {},
-      logger: silentLogger,
-      shutdownTimeoutMs: 5000,
-    });
+  test("accepts shutdownTimeoutMs in runtime options", () => {
+    const { runtime } = makeRuntime({ shutdownTimeoutMs: 5000 });
+    server = createServer({ runtime, logger: silentLogger });
     expect(server).toHaveProperty("close");
   });
 });

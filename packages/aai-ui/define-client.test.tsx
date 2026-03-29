@@ -2,9 +2,9 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { delay, installMockWebSocket } from "./_test-utils.ts";
-import { mount } from "./mount.tsx";
+import { defineClient } from "./define-client.tsx";
 
-describe("mount()", () => {
+describe("defineClient()", () => {
   let mock: ReturnType<typeof installMockWebSocket>;
 
   beforeEach(() => {
@@ -24,7 +24,7 @@ describe("mount()", () => {
       return <div>test</div>;
     }
     expect(() =>
-      mount(App, {
+      defineClient(App, {
         target: "#nonexistent",
         platformUrl: "http://localhost:3000",
       }),
@@ -35,7 +35,7 @@ describe("mount()", () => {
     function App() {
       return <div class="hello">Hello Mount</div>;
     }
-    mount(App, { platformUrl: "http://localhost:3000" });
+    defineClient(App, { platformUrl: "http://localhost:3000" });
 
     const el = document.querySelector("#app");
     expect(el?.textContent).toContain("Hello Mount");
@@ -45,7 +45,7 @@ describe("mount()", () => {
     function App() {
       return <div />;
     }
-    const handle = mount(App, { platformUrl: "http://localhost:3000" });
+    const handle = defineClient(App, { platformUrl: "http://localhost:3000" });
 
     expect(handle.session).toBeDefined();
     expect(handle.signals).toBeDefined();
@@ -56,7 +56,7 @@ describe("mount()", () => {
     function App() {
       return <div>content</div>;
     }
-    const handle = mount(App, { platformUrl: "http://localhost:3000" });
+    const handle = defineClient(App, { platformUrl: "http://localhost:3000" });
 
     const el = document.querySelector("#app");
     expect(el?.textContent).toContain("content");
@@ -79,7 +79,7 @@ describe("mount()", () => {
 
     try {
       const App = () => <div />;
-      const handle = mount(App);
+      const handle = defineClient(App);
       handle.session.connect();
       await delay(0);
       const ws = mock.lastWs;

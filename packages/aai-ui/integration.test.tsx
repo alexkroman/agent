@@ -3,19 +3,19 @@
 /**
  * UI integration tests.
  *
- * Test the full lifecycle: mount → connect → server events → signal/component
+ * Test the full lifecycle: defineClient → connect → server events → signal/component
  * updates → unmount cleanup. Uses mock WebSocket to simulate server messages.
  */
 import { render, screen } from "@testing-library/preact";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { App } from "./_components/app.tsx";
 import { createMockSignals, flush, installMockWebSocket, setupSignalsEnv } from "./_test-utils.ts";
-import { mount } from "./mount.tsx";
+import { defineClient } from "./define-client.tsx";
 import { SessionProvider, useSession } from "./signals.ts";
 
 // --- Mount lifecycle integration ---
 
-describe("UI integration: mount lifecycle", () => {
+describe("UI integration: defineClient lifecycle", () => {
   let mock: ReturnType<typeof installMockWebSocket>;
 
   beforeEach(() => {
@@ -30,13 +30,13 @@ describe("UI integration: mount lifecycle", () => {
     mock.restore();
   });
 
-  test("mount → connect → receive ready → state becomes listening", async () => {
+  test("defineClient → connect → receive ready → state becomes listening", async () => {
     function TestApp() {
       const s = useSession();
       return <div data-testid="state">{s.session.state.value}</div>;
     }
 
-    const handle = mount(TestApp, { platformUrl: "http://localhost:3000" });
+    const handle = defineClient(TestApp, { platformUrl: "http://localhost:3000" });
 
     // Start the session
     handle.signals.start();
@@ -63,12 +63,12 @@ describe("UI integration: mount lifecycle", () => {
     handle.dispose();
   });
 
-  test("mount → dispose cleans up DOM and disconnects", async () => {
+  test("defineClient → dispose cleans up DOM and disconnects", async () => {
     function TestApp() {
       return <div>mounted</div>;
     }
 
-    const handle = mount(TestApp, { platformUrl: "http://localhost:3000" });
+    const handle = defineClient(TestApp, { platformUrl: "http://localhost:3000" });
     const el = document.querySelector("#app");
     expect(el?.textContent).toContain("mounted");
 
@@ -76,8 +76,8 @@ describe("UI integration: mount lifecycle", () => {
     expect(el?.textContent).toBe("");
   });
 
-  test("mount returns session and signals handles", () => {
-    const handle = mount(() => <div />, { platformUrl: "http://localhost:3000" });
+  test("defineClient returns session and signals handles", () => {
+    const handle = defineClient(() => <div />, { platformUrl: "http://localhost:3000" });
     expect(handle.session).toBeDefined();
     expect(handle.signals).toBeDefined();
     expect(handle.signals.started.value).toBe(false);

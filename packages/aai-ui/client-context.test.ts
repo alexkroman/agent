@@ -4,13 +4,13 @@
 // biome-ignore lint/suspicious/noDeprecatedImports: preact v10 render API is current
 import { h, render } from "preact";
 import { describe, expect, test } from "vitest";
-import { MountConfigProvider, useMountConfig } from "./mount-context.ts";
+import { ClientConfigProvider, useClientConfig } from "./client-context.ts";
 
-describe("mount-context", () => {
-  test("useMountConfig returns default empty config outside provider", () => {
-    let config: ReturnType<typeof useMountConfig> | undefined;
+describe("client-context", () => {
+  test("useClientConfig returns default empty config outside provider", () => {
+    let config: ReturnType<typeof useClientConfig> | undefined;
     function Probe() {
-      config = useMountConfig();
+      config = useClientConfig();
       return null;
     }
     const container = document.createElement("div");
@@ -18,16 +18,16 @@ describe("mount-context", () => {
     expect(config).toEqual({});
   });
 
-  test("MountConfigProvider provides config to children", () => {
-    let config: ReturnType<typeof useMountConfig> | undefined;
+  test("ClientConfigProvider provides config to children", () => {
+    let config: ReturnType<typeof useClientConfig> | undefined;
     function Probe() {
-      config = useMountConfig();
+      config = useClientConfig();
       return null;
     }
     const container = document.createElement("div");
     render(
       h(
-        MountConfigProvider,
+        ClientConfigProvider,
         { value: { title: "Test Agent", theme: { bg: "#fff" } } },
         h(Probe, null),
       ),

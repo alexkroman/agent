@@ -38,7 +38,7 @@
  */
 
 import { createStorage } from "unstorage";
-import { createDirectExecutor, type DirectExecutor } from "./direct-executor.ts";
+import { createRuntime, type Runtime } from "./direct-executor.ts";
 import type { Kv } from "./kv.ts";
 import type { AgentDef, Message } from "./types.ts";
 import { createUnstorageKv } from "./unstorage-kv.ts";
@@ -215,7 +215,7 @@ export type TurnToolCall = {
  */
 export class TestHarness {
   /** @internal */
-  readonly _executor: DirectExecutor;
+  readonly _executor: Runtime;
   /** @internal */
   readonly _sessionId: string;
 
@@ -224,7 +224,7 @@ export class TestHarness {
   private _connected = false;
 
   /** @internal */
-  constructor(executor: DirectExecutor, sessionId: string) {
+  constructor(executor: Runtime, sessionId: string) {
     this._executor = executor;
     this._sessionId = sessionId;
   }
@@ -399,7 +399,7 @@ export function createTestHarness(
 ): TestHarness {
   const { env = {}, kv = createUnstorageKv({ storage: createStorage() }) } = options;
 
-  const executor = createDirectExecutor({ agent, env, kv });
+  const executor = createRuntime({ agent, env, kv });
   const sessionId = `test-${Date.now()}`;
 
   return new TestHarness(executor, sessionId);

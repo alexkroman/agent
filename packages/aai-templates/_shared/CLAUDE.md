@@ -88,7 +88,7 @@ export default defineAgent({
 ### Imports
 
 ```ts
-import { createToolFactory, defineAgent, defineTool } from "@alexkroman1/aai"; // defineAgent + helpers
+import { defineAgent, defineTool, defineToolFactory } from "@alexkroman1/aai"; // defineAgent + helpers
 import type { BuiltinTool, HookContext, Middleware, ToolContext } from "@alexkroman1/aai";
 import { z } from "zod"; // Tools with typed params (included in package.json)
 ```
@@ -227,14 +227,14 @@ inferred from the Zod `parameters` schema. Without `defineTool()`, args are
 untyped.
 
 **Typed state in tools:** When your agent uses typed session state, use
-`createToolFactory` to avoid verbose generics on every tool:
+`defineToolFactory` to avoid verbose generics on every tool:
 
 ```ts
-import { createToolFactory, defineAgent } from "@alexkroman1/aai";
+import { defineAgent, defineToolFactory } from "@alexkroman1/aai";
 import { z } from "zod";
 
 interface MyState { items: string[] }
-const tool = createToolFactory<MyState>();
+const tool = defineToolFactory<MyState>();
 
 export default defineAgent<MyState>({
   name: "my-agent",
@@ -572,11 +572,11 @@ overhead.
 > `"react"`. Importing from `"react"` will cause bundler errors.
 
 Add `client.tsx` alongside `agent.ts`. Define a Preact component and call
-`mount()` to render it. Use JSX syntax:
+`defineClient()` to render it. Use JSX syntax:
 
 ```tsx
 import "aai-ui/styles.css";
-import { mount, useSession } from "@alexkroman1/aai-ui";
+import { defineClient, useSession } from "@alexkroman1/aai-ui";
 
 function App() {
   const { session, started, running, start, toggle, reset } = useSession();
@@ -596,14 +596,14 @@ function App() {
   );
 }
 
-mount(App);
+defineClient(App);
 ```
 
 **Rules:**
 
 - Always import `"aai-ui/styles.css"` at the top — without it, default styles
   won't load
-- Call `mount(YourComponent)` at the end of the file
+- Call `defineClient(YourComponent)` at the end of the file
 - Use `.tsx` file extension for JSX syntax
 - Import hooks from `preact/hooks` (`useEffect`, `useRef`, `useState`, etc.)
 - Style with Tailwind classes (`class="bg-aai-surface text-aai-text"`),
@@ -612,10 +612,10 @@ mount(App);
 - Do **not** add a `tailwind.config.js` — Tailwind v4 is configured via CSS
   in `styles.css`, not a JS config file
 
-### `mount()` options
+### `defineClient()` options
 
 ```ts
-mount(App, {
+defineClient(App, {
   target: "#app", // CSS selector or DOM element (default: "#app")
   platformUrl: "...", // Server URL (auto-derived from location.href)
   title: "My Agent", // Shown in header and start screen
@@ -629,7 +629,7 @@ mount(App, {
 });
 ```
 
-`mount()` returns a `MountHandle` with `session`, `signals`, and `dispose()`.
+`defineClient()` returns a `ClientHandle` with `session`, `signals`, and `dispose()`.
 
 ### Built-in components
 
@@ -664,7 +664,7 @@ Import from `aai-ui`:
 
 - `useAutoScroll()` — returns a `RefObject<HTMLDivElement>` to attach to a
   sentinel div. Auto-scrolls when messages or utterances change.
-- `useMountConfig()` — returns the `title` and `theme` passed to `mount()`.
+- `useClientConfig()` — returns the `title` and `theme` passed to `defineClient()`.
 
 **Important:** Components that accept `Signal<T>` props (like `StateIndicator`,
 `Transcript`, `ErrorBanner`) expect the Signal object itself, NOT `.value`. Pass
@@ -759,7 +759,7 @@ type ToolCallInfo = {
 ```tsx
 import "aai-ui/styles.css";
 import { useState } from "preact/hooks";
-import { ChatView, mount, useSession, useToolResult } from "@alexkroman1/aai-ui";
+import { ChatView, defineClient, useSession, useToolResult } from "@alexkroman1/aai-ui";
 
 interface Recipe { name: string; ingredients: string[]; steps: string[] }
 
@@ -795,7 +795,7 @@ function RecipeAgent() {
   );
 }
 
-mount(RecipeAgent);
+defineClient(RecipeAgent);
 ```
 
 #### Handling multiple tool calls of the same name
@@ -855,7 +855,7 @@ useToolResult((toolName, result) => {
 
 ```tsx
 import "aai-ui/styles.css";
-import { mount, ToolCallBlock, useSession } from "@alexkroman1/aai-ui";
+import { defineClient, ToolCallBlock, useSession } from "@alexkroman1/aai-ui";
 
 function App() {
   const { session, started, start } = useSession();
@@ -878,7 +878,7 @@ function App() {
   );
 }
 
-mount(App);
+defineClient(App);
 ```
 
 ### Building dynamic UI from tool results
@@ -908,7 +908,7 @@ export type ShopToolResults = ToolResultMap<{
 // client.tsx — typed tool results, no duplication
 import "aai-ui/styles.css";
 import { useState } from "preact/hooks";
-import { ChatView, SidebarLayout, StartScreen, mount, useToolResult } from "@alexkroman1/aai-ui";
+import { ChatView, SidebarLayout, StartScreen, defineClient, useToolResult } from "@alexkroman1/aai-ui";
 import type { CartItem, ShopToolResults } from "./shared.ts";
 
 function ShopAgent() {
@@ -940,7 +940,7 @@ function ShopAgent() {
   );
 }
 
-mount(ShopAgent);
+defineClient(ShopAgent);
 ```
 
 ### Reacting to agent state
@@ -948,7 +948,7 @@ mount(ShopAgent);
 ```tsx
 import "aai-ui/styles.css";
 import { useEffect } from "preact/hooks";
-import { mount, StateIndicator, useSession } from "@alexkroman1/aai-ui";
+import { defineClient, StateIndicator, useSession } from "@alexkroman1/aai-ui";
 
 function App() {
   const { session, started, start } = useSession();
@@ -968,7 +968,7 @@ function App() {
   );
 }
 
-mount(App);
+defineClient(App);
 ```
 
 ### Styling custom UIs
@@ -977,7 +977,7 @@ mount(App);
 
 The SDK has three styling layers, from simplest to most flexible:
 
-1. **Theme props** — pass 5 core colors to `mount()` for quick branding
+1. **Theme props** — pass 5 core colors to `defineClient()` for quick branding
 2. **CSS custom property overrides** — override any `--color-aai-*` token in
    your own CSS for full control over the design system
 3. **Tailwind classes + custom CSS** — use Tailwind utility classes for layout
@@ -996,11 +996,11 @@ below).
 
 #### Layer 1: Theme props (quick branding)
 
-Pass colors to `mount()` to override the 5 core design tokens without writing
+Pass colors to `defineClient()` to override the 5 core design tokens without writing
 any CSS:
 
 ```ts
-mount(App, {
+defineClient(App, {
   theme: {
     bg: "#1a1a2e",       // Background color
     primary: "#e94560",  // Accent color (buttons, links)
@@ -1097,7 +1097,7 @@ State colors: `disconnected`, `connecting`, `ready`, `listening`, `thinking`,
 `speaking`, `error`.
 
 The 5 core colors (`bg`, `primary`, `text`, `surface`, `border`) can be
-overridden via `mount()` theme props. All tokens can be overridden via CSS
+overridden via `defineClient()` theme props. All tokens can be overridden via CSS
 custom properties.
 
 ### Common UI patterns
@@ -1141,17 +1141,15 @@ Agents can run anywhere (Node, Docker) without the managed platform:
 
 ```ts
 import { defineAgent } from "@alexkroman1/aai";
-import { createServer } from "@alexkroman1/aai/server";
+import { createRuntime, createServer } from "@alexkroman1/aai/server";
 
 const agent = defineAgent({
   name: "My Agent",
   instructions: "You are a helpful assistant.",
 });
 
-const server = createServer({
-  agent,
-  clientDir: "public", // optional: serve static files
-});
+const runtime = createRuntime({ agent, env: process.env });
+const server = createServer({ runtime, name: agent.name });
 
 await server.listen(3000);
 ```
@@ -1160,9 +1158,10 @@ For composable usage, `createAgentApp()` returns a Hono app you can mount:
 
 ```ts
 import { Hono } from "hono";
-import { createAgentApp } from "@alexkroman1/aai/server";
+import { createAgentApp, createRuntime } from "@alexkroman1/aai/server";
 
-const { app: agentApp, shutdown } = createAgentApp({ agent });
+const runtime = createRuntime({ agent, env: process.env });
+const { app: agentApp, shutdown } = createAgentApp({ runtime });
 const app = new Hono();
 app.route("/agent", agentApp);
 app.get("/custom", (c) => c.text("hello"));
@@ -1173,18 +1172,20 @@ with your preferred tool. The server handles WebSocket connections, STT/TTS,
 and the agentic loop. Set `ASSEMBLYAI_API_KEY` as an environment variable.
 
 **Env in self-hosted mode:** `ctx.env` is exactly the `env` record you pass to
-`createServer({ env })`. If omitted, it defaults to `process.env`. There is no
+`createRuntime({ agent, env })`. If omitted, it defaults to
+`process.env`. There is no
 `AAI_ENV_*` prefixing — that only applies to the managed platform. Pass only the
 keys your agent needs:
 
 ```ts
-const server = createServer({
+const runtime = createRuntime({
   agent,
   env: {
     ASSEMBLYAI_API_KEY: process.env.ASSEMBLYAI_API_KEY!,
     MY_API_KEY: process.env.MY_API_KEY!,
   },
 });
+const server = createServer({ runtime, name: agent.name });
 ```
 
 ## Useful free API endpoints
@@ -1220,7 +1221,7 @@ After scaffolding, your project directory looks like:
 my-agent/
   agent.ts          # Agent definition
   agent.test.ts     # Agent tests (vitest)
-  client.tsx        # UI component (calls mount() to render into #app)
+  client.tsx        # UI component (calls defineClient() to render into #app)
   styles.css        # Tailwind CSS entry point
   package.json      # Dependencies, scripts, and config
   tsconfig.json     # TypeScript configuration

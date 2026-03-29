@@ -7,7 +7,7 @@ import { useContext } from "preact/hooks";
  *
  * @public
  */
-export type MountTheme = {
+export type ClientTheme = {
   /** Background color. Default: `#101010`. */
   bg?: string;
   /** Primary accent color. Default: `#fab283`. */
@@ -21,24 +21,24 @@ export type MountTheme = {
 };
 
 /**
- * Resolved mount-level configuration available to default UI components.
+ * Resolved client-level configuration available to default UI components.
  *
  * @public
  */
-export type MountConfig = {
+export type ClientConfig = {
   title?: string | undefined;
-  theme?: MountTheme | undefined;
+  theme?: ClientTheme | undefined;
 };
 
-const Ctx = createContext<MountConfig>({});
+const Ctx = createContext<ClientConfig>({});
 
-export const MountConfigProvider = Ctx.Provider;
+export const ClientConfigProvider = Ctx.Provider;
 
 /**
- * Read mount config (title, theme) from the nearest provider.
+ * Read client config (title, theme) from the nearest provider.
  *
  * @public
  */
-export function useMountConfig(): MountConfig {
+export function useClientConfig(): ClientConfig {
   return useContext(Ctx);
 }

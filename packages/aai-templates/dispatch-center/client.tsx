@@ -1,5 +1,5 @@
 import "@alexkroman1/aai-ui/styles.css";
-import { mount, useSession } from "@alexkroman1/aai-ui";
+import { defineClient, useSession } from "@alexkroman1/aai-ui";
 import type { ChatMessage } from "@alexkroman1/aai-ui";
 import { useEffect, useMemo, useRef } from "preact/hooks";
 
@@ -502,4 +502,4 @@ function App() {
   );
 }
 
-mount(App);
+defineClient(App);

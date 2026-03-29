@@ -1,4 +1,4 @@
-import { createToolFactory, defineAgent } from "@alexkroman1/aai";
+import { defineToolFactory, defineAgent } from "@alexkroman1/aai";
 import { z } from "zod";
 import type { HookContext, ToolContext } from "@alexkroman1/aai";
 
@@ -70,7 +70,7 @@ interface DispatchState {
   mutualAidRequested: boolean;
 }
 
-const dispatchTool = createToolFactory<DispatchState>();
+const dispatchTool = defineToolFactory<DispatchState>();
 
 // ─── Session state ───────────────────────────────────────────────────────────
 

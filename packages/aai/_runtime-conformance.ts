@@ -13,7 +13,7 @@
  * import { testRuntime } from "./_runtime-conformance.ts";
  *
  * testRuntime("direct", () => {
- *   const exec = createDirectExecutor({ agent: CONFORMANCE_AGENT, env: { MY_VAR: "test-value" } });
+ *   const exec = createRuntime({ agent: CONFORMANCE_AGENT, env: { MY_VAR: "test-value" } });
  *   return { executeTool: exec.executeTool, hookInvoker: exec.hookInvoker };
  * });
  * ```
@@ -40,7 +40,7 @@ import { type AgentDef, defineTool } from "./types.ts";
 /**
  * Minimal runtime surface needed for conformance tests.
  *
- * Both `DirectExecutor` and `buildExecuteTool`/`buildHookInvoker` from the
+ * Both `Runtime` and `buildExecuteTool`/`buildHookInvoker` from the
  * sandbox produce objects that satisfy this interface.
  */
 export type RuntimeTestContext = {
