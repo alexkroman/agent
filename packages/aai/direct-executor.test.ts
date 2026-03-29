@@ -6,7 +6,7 @@ import { z } from "zod";
 import { toAgentConfig } from "./_internal-types.ts";
 import { CONFORMANCE_AGENT, testRuntime } from "./_runtime-conformance.ts";
 import { makeAgent } from "./_test-utils.ts";
-import { createDirectExecutor } from "./direct-executor.ts";
+import { createRuntime } from "./direct-executor.ts";
 import { defineTool } from "./types.ts";
 import { createUnstorageKv } from "./unstorage-kv.ts";
 
@@ -54,15 +54,15 @@ describe("toAgentConfig", () => {
   });
 });
 
-describe("createDirectExecutor", () => {
+describe("createRuntime", () => {
   test("executeTool returns error for unknown tool", async () => {
-    const exec = createDirectExecutor({ agent: makeAgent(), env: {} });
+    const exec = createRuntime({ agent: makeAgent(), env: {} });
     const result = await exec.executeTool("nonexistent", {}, "session-1", []);
     expect(result).toBe(JSON.stringify({ error: "Unknown tool: nonexistent" }));
   });
 
   test("hookInvoker.onConnect can be called without error", async () => {
-    const exec = createDirectExecutor({ agent: makeAgent(), env: {} });
+    const exec = createRuntime({ agent: makeAgent(), env: {} });
     await expect(exec.hookInvoker.onConnect("session-1")).resolves.toBeUndefined();
   });
 
@@ -76,7 +76,7 @@ describe("createDirectExecutor", () => {
         }),
       },
     });
-    const exec = createDirectExecutor({ agent, env: {} });
+    const exec = createRuntime({ agent, env: {} });
     expect(await exec.executeTool("add", { a: 3, b: 4 }, "s1", [])).toBe("7");
   });
 
@@ -91,7 +91,7 @@ describe("createDirectExecutor", () => {
         },
       },
     });
-    const exec = createDirectExecutor({ agent, env: {}, kv });
+    const exec = createRuntime({ agent, env: {}, kv });
     expect(await exec.executeTool("read_kv", {}, "s1", [])).toBe("value1");
   });
 
@@ -102,20 +102,20 @@ describe("createDirectExecutor", () => {
         custom: { description: "Custom", execute: () => "ok" },
       },
     });
-    const exec = createDirectExecutor({ agent, env: {} });
+    const exec = createRuntime({ agent, env: {} });
     const names = exec.toolSchemas.map((s) => s.name);
     expect(names).toContain("custom");
     expect(names).toContain("run_code");
   });
 
   test("resolveTurnConfig returns null when no dynamic config", async () => {
-    const exec = createDirectExecutor({ agent: makeAgent(), env: {} });
+    const exec = createRuntime({ agent: makeAgent(), env: {} });
     expect(await exec.hookInvoker.resolveTurnConfig("s1")).toBe(null);
   });
 
   test("resolveTurnConfig resolves dynamic maxSteps", async () => {
     const agent = makeAgent({ maxSteps: () => 15 });
-    const exec = createDirectExecutor({ agent, env: {} });
+    const exec = createRuntime({ agent, env: {} });
     const config = await exec.hookInvoker.resolveTurnConfig("s1");
     expect(config?.maxSteps).toBe(15);
   });
@@ -123,7 +123,7 @@ describe("createDirectExecutor", () => {
   test("hookInvoker.onDisconnect calls agent.onDisconnect", async () => {
     const onDisconnect = vi.fn();
     const agent = makeAgent({ onDisconnect });
-    const exec = createDirectExecutor({ agent, env: {} });
+    const exec = createRuntime({ agent, env: {} });
     await exec.hookInvoker.onDisconnect("session-1");
     expect(onDisconnect).toHaveBeenCalledOnce();
   });
@@ -131,7 +131,7 @@ describe("createDirectExecutor", () => {
   test("hookInvoker.onTurn calls agent.onTurn with text", async () => {
     const onTurn = vi.fn();
     const agent = makeAgent({ onTurn });
-    const exec = createDirectExecutor({ agent, env: {} });
+    const exec = createRuntime({ agent, env: {} });
     await exec.hookInvoker.onTurn("s1", "hello world");
     expect(onTurn).toHaveBeenCalledWith("hello world", expect.any(Object));
   });
@@ -139,7 +139,7 @@ describe("createDirectExecutor", () => {
   test("hookInvoker.onError calls agent.onError with Error", async () => {
     const onError = vi.fn();
     const agent = makeAgent({ onError });
-    const exec = createDirectExecutor({ agent, env: {} });
+    const exec = createRuntime({ agent, env: {} });
     await exec.hookInvoker.onError("s1", { message: "boom" });
     expect(onError).toHaveBeenCalledWith(expect.any(Error), expect.any(Object));
     const err = onError.mock.calls[0]?.[0] as Error;
@@ -156,7 +156,7 @@ describe("createDirectExecutor", () => {
         },
       },
     });
-    const exec = createDirectExecutor({ agent, env: {} });
+    const exec = createRuntime({ agent, env: {} });
     const result = await exec.executeTool("get_state", {}, "s1", []);
     expect(JSON.parse(result)).toEqual({ counter: 0 });
   });
@@ -170,7 +170,7 @@ describe("createDirectExecutor", () => {
         },
       },
     });
-    const exec = createDirectExecutor({ agent, env: {} });
+    const exec = createRuntime({ agent, env: {} });
     const msgs = [{ role: "user" as const, content: "hi" }];
     const result = await exec.executeTool("echo_messages", {}, "s1", msgs);
     expect(JSON.parse(result)).toEqual(msgs);
@@ -185,7 +185,7 @@ describe("createDirectExecutor", () => {
         },
       },
     });
-    const exec = createDirectExecutor({ agent, env: {} });
+    const exec = createRuntime({ agent, env: {} });
     const result = await exec.executeTool("check_fetch", {}, "s1", []);
     expect(result).toBe("function");
   });
@@ -206,7 +206,7 @@ describe("createDirectExecutor", () => {
         },
       },
     });
-    const exec = createDirectExecutor({ agent, env: {} });
+    const exec = createRuntime({ agent, env: {} });
     const result = await exec.executeTool("fetch_private", {}, "s1", []);
     expect(result).toContain("private address");
   });
@@ -218,7 +218,7 @@ describe("createDirectExecutor", () => {
         hookFetch = ctx.fetch;
       },
     });
-    const exec = createDirectExecutor({ agent, env: {} });
+    const exec = createRuntime({ agent, env: {} });
     await exec.hookInvoker.onConnect("s1");
     expect(typeof hookFetch).toBe("function");
   });
@@ -232,32 +232,32 @@ describe("createDirectExecutor", () => {
         },
       },
     });
-    const exec = createDirectExecutor({ agent, env: { MY_VAR: "hello" } });
+    const exec = createRuntime({ agent, env: { MY_VAR: "hello" } });
     const result = await exec.executeTool("get_env", {}, "s1", []);
     expect(result).toBe("hello");
   });
 
   test("readyConfig is present with audio format", () => {
-    const exec = createDirectExecutor({ agent: makeAgent(), env: {} });
+    const exec = createRuntime({ agent: makeAgent(), env: {} });
     expect(exec.readyConfig).toEqual(
       expect.objectContaining({ audioFormat: "pcm16", sampleRate: expect.any(Number) }),
     );
   });
 
   test("shutdown resolves immediately when no sessions exist", async () => {
-    const exec = createDirectExecutor({ agent: makeAgent(), env: {} });
+    const exec = createRuntime({ agent: makeAgent(), env: {} });
     await expect(exec.shutdown()).resolves.toBeUndefined();
   });
 
   test("startSession is a function", () => {
-    const exec = createDirectExecutor({ agent: makeAgent(), env: {} });
+    const exec = createRuntime({ agent: makeAgent(), env: {} });
     expect(typeof exec.startSession).toBe("function");
   });
 });
 
 // ── Shared conformance suite (same tests run against sandbox in integration) ─
 
-const directExec = createDirectExecutor({
+const directExec = createRuntime({
   agent: CONFORMANCE_AGENT,
   env: { MY_VAR: "test-value" },
 });

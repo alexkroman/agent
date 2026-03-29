@@ -5,6 +5,9 @@
  * {@link createAgentApp} returns a composable Hono app that can be mounted
  * into a larger application. {@link createServer} wraps it with `listen()`
  * and `close()` for standalone deployments.
+ *
+ * Both accept a pre-built {@link Runtime} from {@link createRuntime}, keeping
+ * the execution engine separate from the HTTP transport layer.
  */
 
 import { serve } from "@hono/node-server";
@@ -14,54 +17,35 @@ import { Hono } from "hono";
 import { html } from "hono/html";
 import { logger as honoLogger } from "hono/logger";
 import { secureHeaders } from "hono/secure-headers";
-import { createStorage, type Storage } from "unstorage";
-import {
-  AGENT_CSP,
-  DEFAULT_SESSION_START_TIMEOUT_MS,
-  DEFAULT_SHUTDOWN_TIMEOUT_MS,
-} from "./constants.ts";
-import { createDirectExecutor } from "./direct-executor.ts";
-import type { Logger, S2SConfig } from "./runtime.ts";
-import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime.ts";
-import type { AgentDef } from "./types.ts";
-import { createUnstorageKv } from "./unstorage-kv.ts";
+import { AGENT_CSP } from "./constants.ts";
+import type { Runtime } from "./direct-executor.ts";
+import type { Kv } from "./kv.ts";
+import type { Logger } from "./runtime.ts";
+import { consoleLogger } from "./runtime.ts";
+
+export { createRuntime, type Runtime, type RuntimeOptions } from "./direct-executor.ts";
 
 /**
- * Configuration for a self-hosted agent server created by {@link createServer}.
+ * Configuration for the server layer ({@link createServer} / {@link createAgentApp}).
+ *
+ * The agent runtime must be created separately via `createRuntime()` and
+ * passed in. This keeps execution concerns separate from transport concerns.
  *
  * @public
  */
 export type ServerOptions = {
-  /** The agent definition returned by `defineAgent()`. */
-  // biome-ignore lint/suspicious/noExplicitAny: accepts any state type
-  agent: AgentDef<any>;
-  /** Environment variables. Defaults to `process.env`. */
-  env?: Record<string, string>;
-  /**
-   * Unstorage instance for KV storage. Defaults to in-memory.
-   * Configure with an S3/R2/filesystem driver for persistence.
-   */
-  storage?: Storage;
+  /** The agent runtime created by `createRuntime()`. */
+  runtime: Runtime;
+  /** Agent name shown in health endpoint and default HTML. */
+  name?: string;
+  /** KV store for the optional `GET /kv` endpoint. */
+  kv?: Kv;
   /** HTML to serve at `GET /`. */
   clientHtml?: string;
   /** Directory containing built client files (index.html + assets/). */
   clientDir?: string;
   /** Logger. Defaults to console. */
   logger?: Logger;
-  /** S2S configuration. Defaults to AssemblyAI production. */
-  s2sConfig?: S2SConfig;
-  /**
-   * Timeout in ms for `session.start()` (S2S connection setup).
-   * Defaults to 10 000 (10 s). If the session doesn't initialize within
-   * this window the connection is cleaned up.
-   */
-  sessionStartTimeoutMs?: number;
-  /**
-   * Maximum time in milliseconds to wait for sessions to stop during
-   * {@link AgentServer.close | close()}. Sessions still running after this
-   * deadline are force-closed. Defaults to `30_000` (30 seconds).
-   */
-  shutdownTimeoutMs?: number;
 };
 
 /**
@@ -104,9 +88,11 @@ export type AgentApp = {
  * @example Mount into your own Hono app
  * ```ts
  * import { Hono } from "hono";
+ * import { createRuntime } from "@alexkroman1/aai/server";
  * import { createAgentApp } from "@alexkroman1/aai/server";
  *
- * const { app: agentApp, shutdown } = createAgentApp({ agent });
+ * const runtime = createRuntime({ agent, env: process.env });
+ * const { app: agentApp, shutdown } = createAgentApp({ runtime });
  * const app = new Hono();
  * app.route("/agent", agentApp);
  * app.get("/custom", (c) => c.text("hello"));
@@ -120,31 +106,8 @@ export function createAgentApp(options: ServerOptions): AgentApp {
       "ServerOptions: clientHtml and clientDir are mutually exclusive — provide one or the other, not both.",
     );
   }
-  const {
-    agent,
-    clientHtml,
-    clientDir,
-    logger = consoleLogger,
-    s2sConfig = DEFAULT_S2S_CONFIG,
-    shutdownTimeoutMs = DEFAULT_SHUTDOWN_TIMEOUT_MS,
-  } = options;
-
-  const rawEnv = options.env ?? (typeof process !== "undefined" ? process.env : {});
-  const env = Object.fromEntries(
-    Object.entries(rawEnv).filter((e): e is [string, string] => e[1] !== undefined),
-  );
-  const storage = options.storage ?? createStorage();
-  const kv = createUnstorageKv({ storage });
-
-  const runtime = createDirectExecutor({
-    agent,
-    env,
-    kv,
-    logger,
-    s2sConfig,
-    sessionStartTimeoutMs: options.sessionStartTimeoutMs ?? DEFAULT_SESSION_START_TIMEOUT_MS,
-    shutdownTimeoutMs,
-  });
+  const { runtime, clientHtml, clientDir, logger = consoleLogger, kv } = options;
+  const name = options.name ?? "agent";
 
   const app = new Hono();
   const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
@@ -179,15 +142,17 @@ export function createAgentApp(options: ServerOptions): AgentApp {
     return next();
   });
 
-  app.get("/health", (c) => c.json({ status: "ok", name: agent.name }));
+  app.get("/health", (c) => c.json({ status: "ok", name }));
 
-  app.get("/kv", async (c) => {
-    const key = c.req.query("key");
-    if (!key) return c.json({ error: "Missing key query parameter" }, 400);
-    const value = await kv.get(key);
-    if (value === null) return c.json(null, 404);
-    return c.json(value);
-  });
+  if (kv) {
+    app.get("/kv", async (c) => {
+      const key = c.req.query("key");
+      if (!key) return c.json({ error: "Missing key query parameter" }, 400);
+      const value = await kv.get(key);
+      if (value === null) return c.json(null, 404);
+      return c.json(value);
+    });
+  }
 
   if (clientDir) {
     app.use("*", serveStatic({ root: clientDir }));
@@ -196,7 +161,7 @@ export function createAgentApp(options: ServerOptions): AgentApp {
   app.get("/", (c) => {
     if (clientHtml) return c.html(clientHtml);
     return c.html(
-      html`<!DOCTYPE html><html><body><h1>${agent.name}</h1><p>Agent server running.</p></body></html>`,
+      html`<!DOCTYPE html><html><body><h1>${name}</h1><p>Agent server running.</p></body></html>`,
     );
   });
 
@@ -234,10 +199,11 @@ export function createAgentApp(options: ServerOptions): AgentApp {
  * @example
  * ```ts
  * import { defineAgent } from "@alexkroman1/aai";
- * import { createServer } from "@alexkroman1/aai/server";
+ * import { createRuntime, createServer } from "@alexkroman1/aai/server";
  *
  * const agent = defineAgent({ name: "my-agent" });
- * const server = createServer({ agent });
+ * const runtime = createRuntime({ agent });
+ * const server = createServer({ runtime, name: agent.name });
  * await server.listen(3000);
  * ```
  *

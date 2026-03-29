@@ -1,4 +1,4 @@
-import { createToolFactory, defineAgent } from "@alexkroman1/aai";
+import { defineToolFactory, defineAgent } from "@alexkroman1/aai";
 import type { HookContext } from "@alexkroman1/aai";
 import { z } from "zod";
 
@@ -289,7 +289,7 @@ const defaultState: GameState = {
   kidMode: false,
 };
 
-const gameTool = createToolFactory<GameState>();
+const gameTool = defineToolFactory<GameState>();
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function d(sides: number): number {

@@ -380,17 +380,17 @@ export { defineTool as tool };
  * Create a typed `defineTool` helper with the session state type baked in.
  *
  * When tools need access to typed session state, you'd normally have to write
- * verbose generics on every `defineTool` call. `createToolFactory` eliminates
+ * verbose generics on every `defineTool` call. `defineToolFactory` eliminates
  * that boilerplate by returning a `defineTool` variant that already knows `S`.
  *
  * @example
  * ```ts
- * import { createToolFactory, defineAgent } from "aai";
+ * import { defineToolFactory, defineAgent } from "aai";
  * import { z } from "zod";
  *
  * interface PortfolioState { holdings: Map<string, number> }
  *
- * const tool = createToolFactory<PortfolioState>();
+ * const tool = defineToolFactory<PortfolioState>();
  *
  * export default defineAgent<PortfolioState>({
  *   name: "portfolio",
@@ -410,7 +410,7 @@ export { defineTool as tool };
  *
  * @public
  */
-export function createToolFactory<S = Record<string, unknown>>(): <
+export function defineToolFactory<S = Record<string, unknown>>(): <
   P extends z.ZodObject<z.ZodRawShape>,
 >(
   def: ToolDef<P, S>,

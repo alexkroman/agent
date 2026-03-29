@@ -4,7 +4,7 @@ import {
   ChatView,
   SidebarLayout,
   StartScreen,
-  mount,
+  defineClient,
   useToolResult,
 } from "@alexkroman1/aai-ui";
 
@@ -703,7 +703,7 @@ function SoloRPGApp() {
 
 const SESSION_KEY = "solo-rpg:sessionId";
 
-mount(SoloRPGApp, {
+defineClient(SoloRPGApp, {
   title: "Solo RPG",
   theme: {
     bg: C.bg,

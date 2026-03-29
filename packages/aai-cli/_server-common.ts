@@ -116,11 +116,12 @@ export async function bootServer(
   env: Record<string, string>,
   port: number,
 ): Promise<AgentServer> {
-  const { createServer } = await import("@alexkroman1/aai/server");
+  const { createRuntime, createServer } = await import("@alexkroman1/aai/server");
+  const runtime = createRuntime({ agent: agentDef, env });
   const server = createServer({
-    agent: agentDef,
+    runtime,
+    name: agentDef.name,
     ...(clientDir ? { clientDir } : {}),
-    env,
   });
   await server.listen(port);
   return server;

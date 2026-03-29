@@ -1,6 +1,6 @@
 import "@alexkroman1/aai-ui/styles.css";
 import { useState } from "preact/hooks";
-import { ChatView, SidebarLayout, StartScreen, mount, useSession, useToolResult } from "@alexkroman1/aai-ui";
+import { ChatView, SidebarLayout, StartScreen, defineClient, useSession, useToolResult } from "@alexkroman1/aai-ui";
 import { type Pizza, type PizzaToolResults, pizzaPrice } from "./shared.ts";
 
 interface OrderInfo {
@@ -204,7 +204,7 @@ function PizzaAgent() {
   );
 }
 
-mount(PizzaAgent, {
+defineClient(PizzaAgent, {
   title: "Pizza Palace",
   theme: {
     bg: "#1a1008",

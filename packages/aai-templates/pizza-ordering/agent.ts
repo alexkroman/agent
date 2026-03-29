@@ -1,4 +1,4 @@
-import { createToolFactory, defineAgent } from "@alexkroman1/aai";
+import { defineToolFactory, defineAgent } from "@alexkroman1/aai";
 import { z } from "zod";
 import { type Pizza, calculateTotal, MENU } from "./shared.ts";
 
@@ -9,7 +9,7 @@ interface OrderState {
   orderPlaced: boolean;
 }
 
-const orderTool = createToolFactory<OrderState>();
+const orderTool = defineToolFactory<OrderState>();
 
 export default defineAgent({
   name: "Pizza Palace",

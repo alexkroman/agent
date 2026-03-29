@@ -1,5 +1,5 @@
 import "@alexkroman1/aai-ui/styles.css";
-import { ChatView, StartScreen, mount } from "@alexkroman1/aai-ui";
+import { ChatView, StartScreen, defineClient } from "@alexkroman1/aai-ui";
 
 function NightOwl() {
   return (
@@ -9,4 +9,4 @@ function NightOwl() {
   );
 }
 
-mount(NightOwl);
+defineClient(NightOwl);

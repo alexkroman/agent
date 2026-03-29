@@ -34,7 +34,7 @@ describe("published exports", () => {
     const expectedValues = [
       "App",
       "Button",
-      "mount",
+      "defineClient",
       "createVoiceSession",
       "createSessionControls",
       "SessionProvider",

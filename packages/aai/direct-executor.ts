@@ -1,9 +1,10 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Direct tool execution for self-hosted mode.
+ * Agent runtime — the execution engine for voice agents.
  *
- * In self-hosted mode, agent code is trusted (you're running your own code).
- * Tools execute directly in-process — no sandbox, no RPC.
+ * {@link createRuntime} builds the single execution engine used by both
+ * self-hosted servers and the platform sandbox. It wires up tool execution,
+ * lifecycle hooks, middleware, and session management.
  */
 
 import pTimeout from "p-timeout";
@@ -114,7 +115,7 @@ export type SessionStartOptions = {
 /**
  * Common interface for agent runtimes.
  *
- * Implemented by the self-hosted direct executor and the platform sandbox.
+ * Implemented by {@link createRuntime} and the platform sandbox.
  */
 export type AgentRuntime = {
   startSession(ws: SessionWebSocket, opts?: SessionStartOptions): void;
@@ -130,12 +131,13 @@ function createLocalKv(): Kv {
 }
 
 /**
- * Configuration for creating a direct (in-process) tool executor for self-hosted mode.
+ * Configuration for {@link createRuntime}.
  *
- * In self-hosted mode, agent tools run directly in the Node process — no sandbox or
- * RPC layer. This type configures the agent, environment, stores, and logging.
+ * Configures the agent, environment, KV store, logging, and S2S connection.
+ *
+ * @public
  */
-export type DirectExecutorOptions = {
+export type RuntimeOptions = {
   // biome-ignore lint/suspicious/noExplicitAny: accepts any state type
   agent: AgentDef<any>;
   env: Record<string, string>;
@@ -157,13 +159,15 @@ export type DirectExecutorOptions = {
 };
 
 /**
- * The direct (in-process) executor returned by {@link createDirectExecutor}.
+ * The agent runtime returned by {@link createRuntime}.
  *
  * Satisfies {@link AgentRuntime} for use by transport code, and also exposes
  * lower-level helpers (`executeTool`, `hookInvoker`, `toolSchemas`,
  * `createSession`) for testing and advanced usage.
+ *
+ * @public
  */
-export type DirectExecutor = AgentRuntime & {
+export type Runtime = AgentRuntime & {
   /** Execute a named tool with the given args, returning a JSON result string. */
   executeTool: ExecuteTool;
   /** Hook invoker wired to the agent's lifecycle hooks and middleware. */
@@ -181,16 +185,18 @@ export type DirectExecutor = AgentRuntime & {
 };
 
 /**
- * Create a direct (in-process) tool executor and hook invoker for an agent.
+ * Create an agent runtime — the execution engine for a voice agent.
  *
  * Merges built-in and custom tool definitions, builds tool schemas for the
  * S2S API, and wires up middleware and lifecycle hooks.
  *
- * @param opts - Executor configuration. See {@link DirectExecutorOptions}.
- * @returns A {@link DirectExecutor} with tool execution, hook invocation,
- *   schemas, and session creation.
+ * @param opts - Runtime configuration. See {@link RuntimeOptions}.
+ * @returns A {@link Runtime} with tool execution, hook invocation,
+ *   schemas, and session management.
+ *
+ * @public
  */
-export function createDirectExecutor(opts: DirectExecutorOptions): DirectExecutor {
+export function createRuntime(opts: RuntimeOptions): Runtime {
   const {
     agent,
     env,

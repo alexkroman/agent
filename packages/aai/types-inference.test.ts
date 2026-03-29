@@ -10,7 +10,7 @@
 import { describe, expectTypeOf, test } from "vitest";
 import { z } from "zod";
 import type { AgentDef, HookContext, Message, ToolContext, ToolDef } from "./types.ts";
-import { createToolFactory, defineAgent, defineTool } from "./types.ts";
+import { defineAgent, defineTool, defineToolFactory } from "./types.ts";
 
 describe("defineTool() type inference", () => {
   test("infers parameter types in execute args", () => {
@@ -62,10 +62,10 @@ describe("defineTool() type inference", () => {
   });
 });
 
-describe("createToolFactory() type inference", () => {
+describe("defineToolFactory() type inference", () => {
   test("bakes state type into returned helper", () => {
     type MyState = { count: number };
-    const tool = createToolFactory<MyState>();
+    const tool = defineToolFactory<MyState>();
 
     const _t = tool({
       description: "inc",
@@ -82,7 +82,7 @@ describe("createToolFactory() type inference", () => {
 
   test("works with defineAgent tools field", () => {
     type MyState = { items: string[] };
-    const tool = createToolFactory<MyState>();
+    const tool = defineToolFactory<MyState>();
 
     defineAgent<MyState>({
       name: "factory-test",
@@ -103,7 +103,7 @@ describe("createToolFactory() type inference", () => {
 
   test("tool without parameters still works", () => {
     type MyState = { ready: boolean };
-    const tool = createToolFactory<MyState>();
+    const tool = defineToolFactory<MyState>();
 
     const _t = tool({
       description: "reset",
