@@ -1,7 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { HTTPException } from "hono/http-exception";
-import { SecretUpdatesSchema } from "./_schemas.ts";
 import type { AppContext } from "./factory.ts";
 import { terminateSlot } from "./sandbox-slots.ts";
 
@@ -27,7 +26,9 @@ export async function handleSecretList(c: AppContext): Promise<Response> {
 
 export async function handleSecretSet(c: AppContext): Promise<Response> {
   const slug = c.var.slug;
-  const updates = SecretUpdatesSchema.parse(await c.req.json());
+  // Pre-validated by zValidator("json", SecretUpdatesSchema) in orchestrator
+  // biome-ignore lint/suspicious/noExplicitAny: validated upstream by zValidator middleware
+  const updates = (c.req as any).valid("json") as Record<string, string>;
 
   const reserved = Object.keys(updates).filter((k) => RESERVED_KEYS.has(k));
   if (reserved.length > 0) {

@@ -11,6 +11,7 @@
 
 import type { Kv } from "@alexkroman1/aai/kv";
 import { createDefaultNetworkAdapter } from "secure-exec";
+import { z } from "zod";
 
 const KV_ORIGIN = "http://kv.internal";
 const HOST_ORIGIN = "http://host.internal";
@@ -35,7 +36,7 @@ export function buildNetworkPolicy() {
  * 2. Host push channel at `http://host.internal/`
  * 3. Default adapter with SSRF checks for everything else
  */
-export function buildNetworkAdapter(kv: Kv, onHostEvent: HostEventHandler) {
+export function buildNetworkAdapter(kv: Kv, onHostEvent?: HostEventHandler) {
   const defaultAdapter = createDefaultNetworkAdapter();
 
   return {
@@ -48,6 +49,9 @@ export function buildNetworkAdapter(kv: Kv, onHostEvent: HostEventHandler) {
         return handleKvRequest(kv, url, options.body ?? null);
       }
       if (url.startsWith(HOST_ORIGIN)) {
+        if (!onHostEvent) {
+          return jsonResponse({ error: "Host event handler not configured" }, 500);
+        }
         const path = new URL(url).pathname;
         onHostEvent(path, options.body ?? null, options.headers ?? {});
         return jsonResponse({ ok: true });
@@ -79,32 +83,91 @@ function jsonResponse(data: unknown, status = 200): AdapterResponse {
   };
 }
 
+// ── KV bridge request schemas (validates isolate → host payloads) ──────
+
+const KvGetSchema = z.object({ key: z.string() });
+const KvSetSchema = z.object({
+  key: z.string(),
+  value: z.unknown(),
+  options: z.object({ expireIn: z.number().int().positive() }).optional(),
+});
+const KvDelSchema = z.object({ key: z.string() });
+const KvListSchema = z.object({
+  prefix: z.string(),
+  limit: z.number().int().positive().optional(),
+  reverse: z.boolean().optional(),
+});
+const KvKeysSchema = z.object({ pattern: z.string().optional() });
+
+/** @internal Exposed for testing schema validation. */
+export const _kvSchemas = { KvGetSchema, KvSetSchema, KvDelSchema, KvListSchema, KvKeysSchema };
+
+function validationError(result: z.ZodSafeParseError<unknown>): AdapterResponse {
+  return jsonResponse({ error: result.error.message }, 400);
+}
+
+async function handleKvGet(kv: Kv, raw: unknown): Promise<AdapterResponse> {
+  const parsed = KvGetSchema.safeParse(raw);
+  if (!parsed.success) return validationError(parsed);
+  return jsonResponse((await kv.get(parsed.data.key)) ?? null);
+}
+
+async function handleKvSet(kv: Kv, raw: unknown): Promise<AdapterResponse> {
+  const parsed = KvSetSchema.safeParse(raw);
+  if (!parsed.success) return validationError(parsed);
+  await kv.set(
+    parsed.data.key,
+    parsed.data.value,
+    parsed.data.options?.expireIn != null ? { expireIn: parsed.data.options.expireIn } : undefined,
+  );
+  return jsonResponse(null);
+}
+
+async function handleKvDel(kv: Kv, raw: unknown): Promise<AdapterResponse> {
+  const parsed = KvDelSchema.safeParse(raw);
+  if (!parsed.success) return validationError(parsed);
+  await kv.delete(parsed.data.key);
+  return jsonResponse(null);
+}
+
+async function handleKvList(kv: Kv, raw: unknown): Promise<AdapterResponse> {
+  const parsed = KvListSchema.safeParse(raw);
+  if (!parsed.success) return validationError(parsed);
+  return jsonResponse(
+    await kv.list(parsed.data.prefix, {
+      ...(parsed.data.limit != null && { limit: parsed.data.limit }),
+      ...(parsed.data.reverse != null && { reverse: parsed.data.reverse }),
+    }),
+  );
+}
+
+async function handleKvKeys(kv: Kv, raw: unknown): Promise<AdapterResponse> {
+  const parsed = KvKeysSchema.safeParse(raw);
+  if (!parsed.success) return validationError(parsed);
+  return jsonResponse(await kv.keys(parsed.data.pattern));
+}
+
 async function handleKvRequest(kv: Kv, url: string, body: string | null): Promise<AdapterResponse> {
   const path = new URL(url).pathname;
-  const payload = body ? JSON.parse(body) : {};
+
+  let raw: unknown;
+  try {
+    raw = body ? JSON.parse(body) : {};
+  } catch {
+    return jsonResponse({ error: "Invalid JSON in KV request body" }, 400);
+  }
 
   switch (path) {
     case "/get":
-      return jsonResponse((await kv.get(payload.key)) ?? null);
+      return handleKvGet(kv, raw);
     case "/set":
-      await kv.set(
-        payload.key,
-        payload.value,
-        payload.options?.expireIn != null ? { expireIn: payload.options.expireIn } : undefined,
-      );
-      return jsonResponse(null);
+      return handleKvSet(kv, raw);
     case "/del":
-      await kv.delete(payload.key);
-      return jsonResponse(null);
+      return handleKvDel(kv, raw);
     case "/list":
-      return jsonResponse(
-        await kv.list(payload.prefix, {
-          ...(payload.limit != null && { limit: payload.limit }),
-          ...(payload.reverse != null && { reverse: payload.reverse }),
-        }),
-      );
+      return handleKvList(kv, raw);
     case "/keys":
-      return jsonResponse(await kv.keys(payload.pattern));
+      return handleKvKeys(kv, raw);
     default:
       return jsonResponse({ error: `Unknown KV path: ${path}` }, 400);
   }

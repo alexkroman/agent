@@ -10,32 +10,17 @@
 
 import { randomBytes } from "node:crypto";
 
-// Suppress "Isolate is disposed" rejections from secure-exec internals.
-// These fire asynchronously when an isolate is terminated while its ESM
-// compiler has pending promises. They're harmless and expected during
-// sandbox shutdown/eviction.
-process.on("unhandledRejection", (reason: unknown) => {
-  if (reason instanceof Error && reason.message.includes("disposed")) return;
-  // Re-throw non-disposal rejections so they're not silently swallowed
-  throw reason;
-});
 import {
   type AgentHookMap,
   type AgentHooks,
   type AgentRuntime,
-  buildReadyConfig,
-  callResolveTurnConfig,
   createRuntime,
   createUnstorageKv,
-  DEFAULT_S2S_CONFIG,
   type ExecuteTool,
   errorMessage,
   HOOK_TIMEOUT_MS,
   isReadOnlyFsOp,
-  type SessionStartOptions,
-  type SessionWebSocket,
   TOOL_EXECUTION_TIMEOUT_MS,
-  toAgentConfig,
 } from "@alexkroman1/aai/internal";
 import { createHooks } from "hookable";
 import pTimeout from "p-timeout";
@@ -56,6 +41,16 @@ import {
   _slotInternals,
   type AgentSlot,
 } from "./sandbox-slots.ts";
+
+// Suppress "Isolate is disposed" rejections from secure-exec internals.
+// These fire asynchronously when an isolate is terminated while its ESM
+// compiler has pending promises. They're harmless and expected during
+// sandbox shutdown/eviction.
+process.on("unhandledRejection", (reason: unknown) => {
+  if (reason instanceof Error && reason.message.includes("disposed")) return;
+  // Re-throw non-disposal rejections so they're not silently swallowed
+  throw reason;
+});
 
 export type { AgentMetadata } from "./_schemas.ts";
 export { type AgentSlot, ensureAgent, registerSlot } from "./sandbox-slots.ts";
@@ -95,7 +90,9 @@ const IsolateConfigSchema = z.object({
   greeting: z.string().optional(),
   sttPrompt: z.string().optional(),
   maxSteps: z.number().optional(),
-  toolChoice: z.string().optional(),
+  toolChoice: z
+    .union([z.string(), z.object({ type: z.literal("tool"), toolName: z.string() })])
+    .optional(),
   builtinTools: z.array(z.string()).optional(),
   toolSchemas: z.array(ToolSchemaSchema),
   hasState: z.boolean(),
@@ -190,7 +187,9 @@ async function startIsolate(
       { cwd: "/app" },
     )
     .then(
-      () => {},
+      () => {
+        /* normal exit — nothing to do */
+      },
       (err: unknown) => {
         // Before port: propagate as boot failure. After port: swallow
         // (expected during shutdown when isolate is disposed).
@@ -279,13 +278,13 @@ function buildHookInvoker(port: number, authToken: string, crashed?: AbortSignal
   hooks.hook("error", async (sessionId, error) => {
     await rpc("onError", { sessionId, error });
   });
-  // biome-ignore lint/suspicious/noExplicitAny: hookable void-return constraint
   hooks.hook("resolveTurnConfig", (async (sessionId: string) => {
     const parsed = TurnConfigResultSchema.parse(await rpc("resolveTurnConfig", { sessionId }));
     if (parsed == null) return null;
     const config: { maxSteps?: number } = {};
     if (parsed.maxSteps != null) config.maxSteps = parsed.maxSteps;
     return config;
+    // biome-ignore lint/suspicious/noExplicitAny: hookable void-return constraint requires cast
   }) as any);
   return hooks;
 }
@@ -331,12 +330,16 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
     agent: {
       name: config.name,
       instructions: config.instructions,
-      greeting: config.greeting,
+      greeting: config.greeting ?? "",
+      maxSteps: config.maxSteps ?? 5,
       tools: {},
       ...(config.sttPrompt ? { sttPrompt: config.sttPrompt } : {}),
-      ...(config.maxSteps != null ? { maxSteps: config.maxSteps } : {}),
-      ...(config.toolChoice ? { toolChoice: config.toolChoice } : {}),
-      ...(config.builtinTools ? { builtinTools: config.builtinTools } : {}),
+      ...(config.toolChoice
+        ? { toolChoice: config.toolChoice as import("@alexkroman1/aai/types").ToolChoice }
+        : {}),
+      ...(config.builtinTools
+        ? { builtinTools: config.builtinTools as import("@alexkroman1/aai/types").BuiltinTool[] }
+        : {}),
     },
     env: { ...agentEnv, ASSEMBLYAI_API_KEY: apiKey },
     executeTool,

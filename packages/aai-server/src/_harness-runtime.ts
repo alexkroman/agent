@@ -70,7 +70,7 @@ type IsolateConfig = {
   greeting?: string;
   sttPrompt?: string;
   maxSteps?: number;
-  toolChoice?: string;
+  toolChoice?: string | { type: "tool"; toolName: string };
   builtinTools?: string[];
   toolSchemas: { name: string; description: string; parameters: Record<string, unknown> }[];
   hasState: boolean;
@@ -125,7 +125,7 @@ type ToolCallRequest = {
   name: string;
   args: Record<string, unknown>;
   sessionId: string;
-  messages: { role: string; content: string }[];
+  messages: { role: "user" | "assistant" | "tool"; content: string }[];
 };
 type ToolCallResponse = { result: string; state: Record<string, unknown> };
 
@@ -243,7 +243,7 @@ type RpcRequest =
       name: string;
       args: Record<string, unknown>;
       sessionId: string;
-      messages: { role: string; content: string }[];
+      messages: { role: "user" | "assistant" | "tool"; content: string }[];
     }
   | { type: "hook"; hook: string; sessionId: string; text?: string; error?: { message: string } };
 
