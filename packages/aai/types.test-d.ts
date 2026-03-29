@@ -19,8 +19,6 @@ import {
   type KvEntry,
   type KvListOptions,
   type Message,
-  type MiddlewareBlockResult,
-  type ToolCallInterceptResult,
   type ToolChoice,
   type ToolContext,
   type ToolDef,
@@ -117,22 +115,6 @@ describe("defineAgent", () => {
     defineAgent({ name: "b", toolChoice: "required" });
     defineAgent({ name: "c", toolChoice: "none" });
     defineAgent({ name: "d", toolChoice: { type: "tool", toolName: "greet" } });
-  });
-
-  it("accepts middleware array", () => {
-    defineAgent<{ count: number }>({
-      name: "test",
-      state: () => ({ count: 0 }),
-      middleware: [
-        {
-          name: "logger",
-          beforeTurn: (ctx) => {
-            expectTypeOf(ctx.text).toEqualTypeOf<string | undefined>();
-            expectTypeOf(ctx.state).toEqualTypeOf<{ count: number }>();
-          },
-        },
-      ],
-    });
   });
 });
 
@@ -276,19 +258,6 @@ describe("exported types", () => {
     >();
   });
 
-  it("MiddlewareBlockResult has expected shape", () => {
-    expectTypeOf<MiddlewareBlockResult>().toEqualTypeOf<{ block: true; reason: string }>();
-  });
-
-  it("ToolCallInterceptResult is a discriminated union", () => {
-    expectTypeOf<ToolCallInterceptResult>().toEqualTypeOf<
-      | { type: "result"; result: string }
-      | { type: "block"; reason: string }
-      | { type: "args"; args: Record<string, unknown> }
-      | undefined
-    >();
-  });
-
   it("ToolResultMap passes through its generic", () => {
     type MyResults = ToolResultMap<{ add: { id: number }; remove: { ok: boolean } }>;
     expectTypeOf<MyResults>().toEqualTypeOf<{ add: { id: number }; remove: { ok: boolean } }>();
@@ -303,9 +272,6 @@ describe("exported types", () => {
     expectTypeOf<HC["kv"]>().toEqualTypeOf<TC["kv"]>();
     expectTypeOf<HC["fetch"]>().toEqualTypeOf<TC["fetch"]>();
     expectTypeOf<HC["sessionId"]>().toEqualTypeOf<TC["sessionId"]>();
-    // Plus per-hook optional fields
-    expectTypeOf<HC["text"]>().toEqualTypeOf<string | undefined>();
-    expectTypeOf<HC["tool"]>().toEqualTypeOf<string | undefined>();
   });
 
   it("KvEntry has expected shape", () => {

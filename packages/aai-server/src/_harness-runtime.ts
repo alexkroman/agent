@@ -1,9 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
 /** Sandbox harness runtime -- runs inside the secure-exec V8 isolate. */
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { type AgentHooks, callResolveTurnConfig, createAgentHooks } from "@alexkroman1/aai/hooks";
 import type { Kv } from "@alexkroman1/aai/kv";
-import { buildMiddlewareRunner } from "@alexkroman1/aai/middleware";
-import type { AgentDef, HookContext, ToolContext } from "@alexkroman1/aai/types";
+import type { AgentDef, ToolContext } from "@alexkroman1/aai/types";
 import { createSessionStateMap } from "@alexkroman1/aai/utils";
 import type {
   HookRequest,
@@ -113,8 +113,8 @@ try {
 
 // Lazily-initialized per-session state (shared pattern with self-hosted mode).
 let sessionState: ReturnType<typeof createSessionStateMap>;
-// Middleware runner (shared builder with self-hosted mode). Undefined when no middleware.
-let middlewareRunner: ReturnType<typeof buildMiddlewareRunner>;
+// Hookable-based lifecycle hooks (same system as self-hosted mode).
+let hooks: AgentHooks;
 
 function extractToolSchemas(agent: AgentDef): IsolateConfig["toolSchemas"] {
   return Object.entries(agent.tools).map(([name, def]) => ({
@@ -140,7 +140,6 @@ function extractConfig(agent: AgentDef): IsolateConfig {
       onError: typeof agent.onError === "function",
       onTurn: typeof agent.onTurn === "function",
       maxStepsIsFn: typeof agent.maxSteps === "function",
-      hasMiddleware: Array.isArray(agent.middleware) && agent.middleware.length > 0,
     },
   };
   if (agent.sttPrompt !== undefined) config.sttPrompt = agent.sttPrompt;
@@ -193,81 +192,33 @@ async function executeTool(agent: AgentDef, req: ToolCallRequest): Promise<ToolC
   }
 }
 
-function makeHookCtx(_agent: AgentDef, req: HookRequest): HookContext {
-  return {
-    env: agentEnv,
-    state: sessionState.get(req.sessionId),
-    sessionId: req.sessionId,
-    kv,
-    fetch: sidecarFetch,
-  };
-}
-
-async function runResolveTurnConfig(
-  agent: AgentDef,
-  ctx: HookContext,
-): Promise<{ maxSteps?: number } | null> {
-  if (typeof agent.maxSteps === "function") {
-    const maxSteps = (await agent.maxSteps(ctx)) ?? undefined;
-    if (maxSteps !== undefined) return { maxSteps };
-  }
-  return null;
-}
-
-async function invokeHook(agent: AgentDef, req: HookRequest): Promise<HookResponse> {
-  const ctx = makeHookCtx(agent, req);
+async function invokeHook(req: HookRequest): Promise<HookResponse> {
   let result: unknown;
 
   switch (req.hook) {
     case "onConnect":
-      await agent.onConnect?.(ctx);
+      await hooks.callHook("connect", req.sessionId);
       break;
     case "onDisconnect":
-      await agent.onDisconnect?.(ctx);
+      await hooks.callHook("disconnect", req.sessionId);
       sessionState.delete(req.sessionId);
       break;
     case "onTurn":
-      await agent.onTurn?.(req.text ?? "", ctx);
+      await hooks.callHook("turn", req.sessionId, req.text ?? "");
       break;
     case "onError":
-      await agent.onError?.(new Error(req.error?.message ?? "Unknown error"), ctx);
+      await hooks.callHook("error", req.sessionId, {
+        message: req.error?.message ?? "Unknown error",
+      });
       break;
     case "resolveTurnConfig":
-      result = await runResolveTurnConfig(agent, ctx);
-      break;
-    // Middleware hooks — dispatched to pre-built runner
-    case "filterInput":
-      result = await middlewareRunner?.filterInput(req.sessionId, req.text ?? "");
-      break;
-    case "beforeTurn":
-      result = await middlewareRunner?.beforeTurn(req.sessionId, req.text ?? "");
-      break;
-    case "afterTurn":
-      await middlewareRunner?.afterTurn(req.sessionId, req.text ?? "");
-      break;
-    case "interceptToolCall":
-      result = await middlewareRunner?.interceptToolCall(
-        req.sessionId,
-        req.toolName ?? "",
-        (req.toolArgs as Record<string, unknown>) ?? {},
-      );
-      break;
-    case "afterToolCall":
-      await middlewareRunner?.afterToolCall(
-        req.sessionId,
-        req.toolName ?? "",
-        (req.toolArgs as Record<string, unknown>) ?? {},
-        req.text ?? "",
-      );
-      break;
-    case "filterOutput":
-      result = await middlewareRunner?.filterOutput(req.sessionId, req.text ?? "");
+      result = await callResolveTurnConfig(hooks, req.sessionId);
       break;
     default:
       break;
   }
 
-  return { state: ctx.state, result };
+  return { state: sessionState.get(req.sessionId), result };
 }
 
 /** Must match HARNESS_MAX_BODY_SIZE in constants.ts (5 MB).
@@ -319,7 +270,7 @@ async function dispatch(agent: AgentDef, msg: RpcRequest): Promise<RpcResponse> 
       if (!msg.hook || typeof msg.hook !== "string" || !msg.sessionId) {
         throw new RpcError("Invalid hook request: missing hook or sessionId", 400);
       }
-      return invokeHook(agent, msg);
+      return invokeHook(msg);
     }
     default: {
       const _: never = msg;
@@ -333,13 +284,16 @@ export function startHarness(agent: AgentDef): void {
     throw new Error("Agent bundle must export a default agent definition");
   }
   sessionState = createSessionStateMap(agent.state);
-  middlewareRunner = buildMiddlewareRunner(agent.middleware ?? [], (sid) => ({
-    env: agentEnv,
-    state: sessionState.get(sid),
-    sessionId: sid,
-    kv,
-    fetch: sidecarFetch,
-  }));
+  hooks = createAgentHooks({
+    agent,
+    makeCtx: (sid) => ({
+      env: agentEnv,
+      state: sessionState.get(sid),
+      sessionId: sid,
+      kv,
+      fetch: sidecarFetch,
+    }),
+  });
 
   const server = createServer(async (req, res) => {
     try {

@@ -7,165 +7,6 @@ import { z } from "zod";
 import type { Kv } from "./kv.ts";
 
 /**
- * Result returned by a `beforeTurn` middleware to block a turn.
- * @public
- */
-export type MiddlewareBlockResult = { block: true; reason: string };
-
-/**
- * Result returned by a `beforeToolCall` middleware hook to short-circuit tool execution.
- *
- * Return `{ type: "result", result: string }` to skip execution and use a cached/synthetic result.
- * Return `{ type: "block", reason: string }` to deny the tool call.
- * Return `{ type: "args", args: Record<string, unknown> }` to transform the arguments.
- * Return `undefined` to proceed normally.
- *
- * @public
- */
-export type ToolCallInterceptResult =
-  | { type: "result"; result: string }
-  | { type: "block"; reason: string }
-  | { type: "args"; args: Record<string, unknown> }
-  | undefined;
-
-/**
- * Composable middleware for the agent lifecycle.
- *
- * Middleware can intercept turns, tool calls, and output at well-defined
- * points. Multiple middleware compose in array order: the first middleware
- * in the array runs first for "before" hooks and last for "after" hooks.
- *
- * ## Middleware Composition Order
- *
- * **"Before" hooks** run in array order (first middleware → last):
- * `beforeInput` → `beforeTurn` → `beforeToolCall` → `beforeOutput`
- *
- * **"After" hooks** run in reverse array order (last middleware → first):
- * `afterToolCall` → `afterTurn`
- *
- * ### Execution flow for a user turn
- *
- * ```
- * User text arrives
- *   │
- *   ▼
- * beforeInput  — transform/redact input text (piped through each middleware)
- *   │
- *   ▼
- * beforeTurn   — block or allow the turn (short-circuits on first block)
- *   │
- *   ▼  (if not blocked)
- * LLM reasoning + tool calls
- *   │  ┌─ beforeToolCall (per call, short-circuits on block/result)
- *   │  └─ afterToolCall  (per call, reverse order)
- *   │
- *   ▼
- * beforeOutput — transform/redact LLM output text (piped through each middleware)
- *   │
- *   ▼
- * afterTurn    — cleanup/logging (reverse order)
- * ```
- *
- * ### Short-circuit behavior
- *
- * - **`beforeTurn`**: If *any* middleware returns `{ block: true, reason }`,
- *   the turn is blocked and subsequent `beforeTurn` hooks do **not** run.
- *   When a turn is blocked, `afterTurn` hooks do **not** fire (the turn
- *   never started).
- * - **`beforeToolCall`**: If *any* middleware blocks or returns a cached
- *   result, subsequent `beforeToolCall` hooks do **not** run. Arg transforms
- *   accumulate across middleware.
- * - **`beforeInput`** / **`beforeOutput`**: These *always* run all middleware
- *   in sequence (no short-circuit). Each receives the output of the previous.
- *
- * ### Ordering example
- *
- * ```ts
- * middleware: [auditTrail, hipaaGuardrails]
- * ```
- * - `beforeInput`: auditTrail runs first, then hipaaGuardrails
- * - `beforeTurn`: auditTrail runs first; if it blocks, hipaaGuardrails is skipped
- * - `afterTurn`: hipaaGuardrails runs first (reverse), then auditTrail
- *
- * If you want the guardrail to run *before* the audit trail logs, place it
- * first in the array: `[hipaaGuardrails, auditTrail]`.
- *
- * @typeParam S - The shape of per-session state. Defaults to `any` so that
- *   reusable, state-agnostic middleware (e.g. loggers, rate-limiters) can be
- *   authored without threading a state generic. Use an explicit generic
- *   (`Middleware<MyState>`) when the middleware reads or writes session state.
- *
- * @public
- */
-// biome-ignore lint/suspicious/noExplicitAny: `any` default is required for variance — state-agnostic Middleware must be assignable to Middleware<SpecificState>[] arrays.
-export type Middleware<S = any> = {
-  /** Human-readable name for logging and debugging. */
-  name: string;
-
-  /**
-   * Filters user input text before it reaches the LLM. Return the
-   * (possibly modified) text. Runs on every user transcript, before
-   * `beforeTurn`.
-   *
-   * Use this to redact PII (SSNs, emails, patient IDs) from speech
-   * transcripts so the LLM never sees sensitive data.
-   *
-   * Middleware is piped in array order: the output of one filter becomes
-   * the input of the next.
-   *
-   * `ctx.text` contains the current text (after prior filters).
-   *
-   * @example
-   * ```ts
-   * beforeInput: (ctx) =>
-   *   (ctx.text ?? "").replace(/\b\d{3}[-.]?\d{2}[-.]?\d{4}\b/g, "[SSN REDACTED]")
-   * ```
-   */
-  beforeInput?: (ctx: HookContext<S>) => string | Promise<string>;
-
-  /**
-   * Runs before each user turn. Can block the turn by returning
-   * `{ block: true, reason: "..." }`. Return `undefined` to proceed.
-   *
-   * `ctx.text` contains the text *after* `beforeInput` filtering.
-   *
-   * When a turn is blocked, subsequent `beforeTurn` middleware is skipped,
-   * and `afterTurn` hooks do **not** fire.
-   */
-  beforeTurn?: (
-    ctx: HookContext<S>,
-    // biome-ignore lint/suspicious/noConfusingVoidType: void allows callbacks to omit return
-  ) => MiddlewareBlockResult | void | undefined | Promise<MiddlewareBlockResult | void | undefined>;
-
-  /**
-   * Runs after each user turn completes (after all steps finish).
-   * `ctx.text` contains the turn text. Runs in reverse array order.
-   */
-  afterTurn?: (ctx: HookContext<S>) => void | Promise<void>;
-
-  /**
-   * Runs before each tool call. Can approve, deny, transform args, or
-   * return a cached result. `ctx.tool` and `ctx.args` are set.
-   */
-  beforeToolCall?: (
-    ctx: HookContext<S>,
-  ) => ToolCallInterceptResult | undefined | Promise<ToolCallInterceptResult | undefined>;
-
-  /**
-   * Runs after each tool call completes. Useful for caching results,
-   * logging, or analytics. `ctx.tool`, `ctx.args`, and `ctx.result` are set.
-   * Runs in reverse array order.
-   */
-  afterToolCall?: (ctx: HookContext<S>) => void | Promise<void>;
-
-  /**
-   * Filters agent text output before it is sent to TTS. Return the
-   * (possibly modified) text. `ctx.text` contains the current text.
-   */
-  beforeOutput?: (ctx: HookContext<S>) => string | Promise<string>;
-};
-
-/**
  * Identifier for a built-in server-side tool.
  *
  * Built-in tools run on the host process (not inside the sandboxed worker)
@@ -257,13 +98,7 @@ export type ToolContext<S = Record<string, unknown>> = {
 };
 
 /**
- * Context passed to lifecycle hooks and middleware.
- *
- * Base fields (`env`, `state`, `kv`, `fetch`, `sessionId`) are always set.
- * Per-phase fields are set by the middleware runner for the current hook:
- * - `text` — set for text-based hooks (beforeInput, beforeTurn, afterTurn, beforeOutput)
- * - `tool`, `args` — set for tool hooks (beforeToolCall, afterToolCall)
- * - `result` — set for afterToolCall
+ * Context passed to lifecycle hooks.
  *
  * @typeParam S - The shape of per-session state created by the agent's
  *   `state` factory. Defaults to `Record<string, unknown>`.
@@ -285,14 +120,6 @@ export type HookContext<S = Record<string, unknown>> = {
   fetch: typeof globalThis.fetch;
   /** Unique identifier for the current session. */
   sessionId: string;
-  /** Turn or filter text. Set for text-based hooks. */
-  text?: string;
-  /** Tool name. Set for tool call hooks. */
-  tool?: string;
-  /** Tool arguments. Set for tool call hooks. */
-  args?: Readonly<Record<string, unknown>>;
-  /** Tool call result. Set for afterToolCall. */
-  result?: string;
 };
 
 /**
@@ -518,13 +345,6 @@ export type AgentOptions<S = Record<string, unknown>> = {
   onError?: (error: Error, ctx?: HookContext<S>) => void;
   /** Called after a complete turn (all steps finished). */
   onTurn?: (text: string, ctx: HookContext<S>) => void | Promise<void>;
-  /**
-   * Composable middleware that intercepts turns, tool calls, and output.
-   *
-   * Middleware runs in array order for "before" hooks (first to last)
-   * and reverse order for "after" hooks (last to first).
-   */
-  middleware?: readonly Middleware<S>[];
 
   /**
    * Close the S2S connection after this many milliseconds of inactivity.
@@ -570,8 +390,8 @@ export const DEFAULT_GREETING: string =
  *
  * Core fields (`name`, `instructions`, `greeting`, `maxSteps`, `tools`)
  * are resolved to their final values with defaults applied. Optional
- * behavioral fields (hooks, middleware, `sttPrompt`, etc.) remain
- * optional — `undefined` means "not configured."
+ * behavioral fields (hooks, `sttPrompt`, etc.) remain optional —
+ * `undefined` means "not configured."
  *
  * @public
  */
@@ -589,7 +409,6 @@ export type AgentDef<S = Record<string, unknown>> = {
   onDisconnect?: (ctx: HookContext<S>) => void | Promise<void>;
   onError?: (error: Error, ctx?: HookContext<S>) => void;
   onTurn?: (text: string, ctx: HookContext<S>) => void | Promise<void>;
-  middleware?: readonly Middleware<S>[];
   idleTimeoutMs?: number;
 };
 
@@ -635,19 +454,6 @@ const AgentOptionsSchema = z.object({
   onDisconnect: z.function().optional(),
   onError: z.function().optional(),
   onTurn: z.function().optional(),
-  middleware: z
-    .array(
-      z.object({
-        name: z.string().min(1, "Middleware name must be non-empty"),
-        beforeInput: z.function().optional(),
-        beforeTurn: z.function().optional(),
-        afterTurn: z.function().optional(),
-        beforeToolCall: z.function().optional(),
-        afterToolCall: z.function().optional(),
-        beforeOutput: z.function().optional(),
-      }),
-    )
-    .optional(),
   idleTimeoutMs: z.number().nonnegative().optional(),
 });
 

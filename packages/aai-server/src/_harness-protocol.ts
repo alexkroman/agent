@@ -26,7 +26,6 @@ export const HooksSchema = z.object({
   onError: z.boolean(),
   onTurn: z.boolean(),
   maxStepsIsFn: z.boolean(),
-  hasMiddleware: z.boolean(),
 });
 
 /** Zod schema for agent metadata returned by the isolate for `{type:"config"}` RPC. */
@@ -106,24 +105,6 @@ export type TurnConfigResult = z.infer<typeof TurnConfigResultSchema>;
 
 /** Schema for void hook results -- must be undefined/null. */
 export const VoidHookResultSchema = z.unknown().transform(() => undefined);
-
-/** Schema for beforeTurn hook result -- string or undefined. */
-export const BeforeTurnResultSchema = z.unknown().pipe(z.string().optional());
-
-/** Schema for filterInput hook result -- string or undefined. */
-export const FilterInputResultSchema = z.unknown().pipe(z.string().optional());
-
-/** Schema for filterOutput hook result -- string or undefined. */
-export const FilterOutputResultSchema = z.unknown().pipe(z.string().optional());
-
-/** Schema for interceptToolCall hook result -- discriminated union or undefined. */
-export const ToolInterceptResultSchema = z
-  .union([
-    z.object({ type: z.literal("block"), reason: z.string() }),
-    z.object({ type: z.literal("result"), result: z.string() }),
-    z.object({ type: z.literal("args"), args: z.record(z.string(), z.unknown()) }),
-  ])
-  .optional();
 
 // ─── RPC discriminated union ────────────────────────────────────────────
 

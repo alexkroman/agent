@@ -59,7 +59,6 @@ export type S2sSessionCtx = SessionDeps & {
   reply: ReplyState;
   turnPromise: Promise<void> | null;
   conversationMessages: Message[];
-  filterChain: Promise<void>;
 
   resolveTurnConfig(): Promise<{ maxSteps?: number } | null>;
   consumeToolCallStep(
@@ -96,7 +95,6 @@ export function buildCtx(opts: {
     turnPromise: null,
     conversationMessages: [],
     maxHistory,
-    filterChain: Promise.resolve(),
     resolveTurnConfig() {
       return callResolveTurnConfig(hooks, id, HOOK_TIMEOUT_MS);
     },
@@ -151,11 +149,9 @@ export function buildCtx(opts: {
     beginReply(replyId: string) {
       ctx.reply = { pendingTools: [], toolCallCount: 0, currentReplyId: replyId };
       ctx.turnPromise = null;
-      ctx.filterChain = Promise.resolve();
     },
     cancelReply() {
       ctx.reply = { pendingTools: [], toolCallCount: 0, currentReplyId: null };
-      ctx.filterChain = Promise.resolve();
     },
     chainTurn(p: Promise<void>) {
       ctx.turnPromise = (ctx.turnPromise ?? Promise.resolve()).then(() => p);
@@ -167,13 +163,7 @@ export function buildCtx(opts: {
 // ─── Re-exports ─────────────────────────────────────────────────────────────
 
 export type { AgentHookMap, AgentHooks } from "./hooks.ts";
-export {
-  callBeforeTurn,
-  callInterceptToolCall,
-  callResolveTurnConfig,
-  callTextHook,
-  createAgentHooks,
-} from "./hooks.ts";
+export { callResolveTurnConfig, createAgentHooks } from "./hooks.ts";
 export { buildSystemPrompt } from "./system-prompt.ts";
 
 /**
@@ -225,6 +215,7 @@ function createIdleTimer(opts: {
   client: ClientSink;
   ctx: { s2s: { close(): void } | null };
 }): IdleTimer {
+  // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op timer
   if (opts.timeoutMs <= 0) return { reset() {}, clear() {} };
   let timer: ReturnType<typeof setTimeout> | null = null;
   return {

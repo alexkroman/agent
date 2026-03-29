@@ -66,10 +66,9 @@ with `aai init -t <template_name>`.
 | `dispatch-center`   | 911 dispatch with incident triage and resource assignment. **Has custom UI.**      |
 | `infocom-adventure` | Zork-style text adventure with state, puzzles, inventory. **Has custom UI.**       |
 | `solo-rpg`          | Solo dark-fantasy RPG with dice, oaths, combat, save/load. **Has custom UI.**      |
-| `middleware`        | Middleware demo: rate limiting, PII redaction, caching, analytics                  |
 | `embedded-assets`   | FAQ bot using embedded JSON knowledge (no web search)                              |
 | `support`           | Support agent for AssemblyAI docs                                                  |
-| `test-patterns`     | Demonstrates every testable agent pattern (tools, hooks, middleware, state)        |
+| `test-patterns`     | Demonstrates every testable agent pattern (tools, hooks, state)                    |
 
 ## Minimal agent
 
@@ -89,7 +88,7 @@ export default defineAgent({
 
 ```ts
 import { defineAgent, defineTool, defineToolFactory } from "@alexkroman1/aai"; // defineAgent + helpers
-import type { BuiltinTool, HookContext, Middleware, ToolContext } from "@alexkroman1/aai";
+import type { BuiltinTool, HookContext, ToolContext } from "@alexkroman1/aai";
 import { z } from "zod"; // Tools with typed params (included in package.json)
 ```
 
@@ -118,9 +117,6 @@ defineAgent({
   onDisconnect?: (ctx: HookContext) => void | Promise<void>;
   onError?: (error: Error, ctx?: HookContext) => void;
   onTurn?: (text: string, ctx: HookContext) => void | Promise<void>;
-
-  // Middleware
-  middleware?: Middleware[];   // Composable interceptors (see below)
 });
 ```
 
@@ -403,57 +399,6 @@ toolChoice: "required", // Force a tool call every step (useful for research pip
 toolChoice: "none",     // Disable all tool use
 toolChoice: { type: "tool", toolName: "search" }, // Force a specific tool
 ```
-
-### Middleware / interceptors
-
-Middleware provides composable hooks for turns, tool calls, and output
-filtering. Runs in array order for "before" hooks and reverse for "after".
-
-```ts
-import type { Middleware } from "@alexkroman1/aai";
-
-const rateLimiter: Middleware = {
-  name: "rate-limiter",
-  beforeTurn: (ctx) => {
-    // ctx.text has the user's input
-    // Return { block: true, reason: "..." } to block the turn
-    // Return void to proceed
-  },
-  afterTurn: (ctx) => {
-    // Run after a turn completes (ctx.text has the turn text)
-  },
-};
-
-const piiRedactor: Middleware = {
-  name: "pii-redactor",
-  beforeOutput: (ctx) => {
-    // Transform agent text before TTS. Return the filtered text.
-    return (ctx.text ?? "").replace(/\d{3}-\d{2}-\d{4}/g, "[SSN REDACTED]");
-  },
-};
-
-const cacheMiddleware: Middleware = {
-  name: "tool-cache",
-  beforeToolCall: (ctx) => {
-    // ctx.tool has the tool name, ctx.args has the arguments
-    // Return { type: "result", result: "cached" } to skip execution
-    // Return { type: "block", reason: "denied" } to deny the call
-    // Return { type: "args", args: { ...modified } } to transform arguments
-    // Return void to proceed normally
-  },
-  afterToolCall: (ctx) => {
-    // ctx.tool, ctx.args, ctx.result are set
-    // Run after tool execution (e.g. cache the result)
-  },
-};
-
-export default defineAgent({
-  name: "My Agent",
-  middleware: [rateLimiter, piiRedactor, cacheMiddleware],
-});
-```
-
-See the `middleware` template (`aai init -t middleware`) for a full example.
 
 ### `maxSteps` — controlling the agentic loop
 

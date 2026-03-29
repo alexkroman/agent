@@ -4,7 +4,7 @@
  *
  * {@link createRuntime} builds the single execution engine used by both
  * self-hosted servers and the platform sandbox. It wires up tool execution,
- * lifecycle hooks, middleware, and session management.
+ * lifecycle hooks, and session management.
  */
 
 import pTimeout from "p-timeout";
@@ -170,7 +170,7 @@ export type RuntimeOptions = {
 export type Runtime = AgentRuntime & {
   /** Execute a named tool with the given args, returning a JSON result string. */
   executeTool: ExecuteTool;
-  /** Hookable instance wired to the agent's lifecycle hooks and middleware. */
+  /** Hookable instance wired to the agent's lifecycle hooks. */
   hooks: AgentHooks;
   /** Tool schemas registered with the S2S API (custom + built-in). */
   toolSchemas: ToolSchema[];
@@ -188,7 +188,7 @@ export type Runtime = AgentRuntime & {
  * Create an agent runtime — the execution engine for a voice agent.
  *
  * Merges built-in and custom tool definitions, builds tool schemas for the
- * S2S API, and wires up middleware and lifecycle hooks.
+ * S2S API, and wires up lifecycle hooks.
  *
  * @param opts - Runtime configuration. See {@link RuntimeOptions}.
  * @returns A {@link Runtime} with tool execution, hook invocation,
@@ -265,7 +265,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     });
   };
 
-  // ── Agent hooks (lifecycle + middleware via hookable) ─────────────────
+  // ── Agent hooks (lifecycle via hookable) ──────────────────────────────
   const hooks = createAgentHooks({ agent, makeCtx: makeHookContext });
 
   // Clean up session state when a session disconnects.

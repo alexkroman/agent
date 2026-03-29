@@ -32,15 +32,11 @@ import {
 import type { Storage } from "unstorage";
 import { z } from "zod";
 import {
-  BeforeTurnResultSchema,
-  FilterInputResultSchema,
-  FilterOutputResultSchema,
   HookResponseSchema,
   type IsolateConfig,
   IsolateConfigSchema,
   type RpcRequest,
   ToolCallResponseSchema,
-  ToolInterceptResultSchema,
   TurnConfigResultSchema,
   VoidHookResultSchema,
 } from "./_harness-protocol.ts";
@@ -268,43 +264,13 @@ function buildHookInvoker(
   });
   // Value-returning hooks need `as any` because hookable types all hooks as void-returning.
   // Actual return values are extracted via callHookWith callers.
-  // biome-ignore lint/suspicious/noExplicitAny: hookable void-return constraint
   hooks.hook("resolveTurnConfig", (async (sessionId: string) => {
     const parsed = TurnConfigResultSchema.parse(await rpc("resolveTurnConfig", { sessionId }));
     if (parsed == null) return null;
     const config: { maxSteps?: number } = {};
     if (parsed.maxSteps != null) config.maxSteps = parsed.maxSteps;
     return config;
-  }) as any);
-  // biome-ignore lint/suspicious/noExplicitAny: hookable void-return constraint
-  hooks.hook("filterInput", (async (sessionId: string, text: string) => {
-    const result = FilterInputResultSchema.parse(await rpc("filterInput", { sessionId, text }));
-    return result ?? text;
-  }) as any);
-  // biome-ignore lint/suspicious/noExplicitAny: hookable void-return constraint
-  hooks.hook("beforeTurn", (async (sessionId: string, text: string) =>
-    BeforeTurnResultSchema.parse(await rpc("beforeTurn", { sessionId, text }))) as any);
-  hooks.hook("afterTurn", async (sessionId, text) => {
-    VoidHookResultSchema.parse(await rpc("afterTurn", { sessionId, text }));
-  });
-  // biome-ignore lint/suspicious/noExplicitAny: hookable void-return constraint
-  hooks.hook("interceptToolCall", (async (
-    sessionId: string,
-    tool: string,
-    args: Readonly<Record<string, unknown>>,
-  ) => {
-    const result = await rpc("interceptToolCall", { sessionId, toolName: tool, toolArgs: args });
-    return ToolInterceptResultSchema.parse(result);
-  }) as any);
-  hooks.hook("afterToolCall", async (sessionId, tool, args, result) => {
-    VoidHookResultSchema.parse(
-      await rpc("afterToolCall", { sessionId, toolName: tool, toolArgs: args, text: result }),
-    );
-  });
-  // biome-ignore lint/suspicious/noExplicitAny: hookable void-return constraint
-  hooks.hook("filterOutput", (async (sessionId: string, text: string) => {
-    const result = FilterOutputResultSchema.parse(await rpc("filterOutput", { sessionId, text }));
-    return result ?? text;
+    // biome-ignore lint/suspicious/noExplicitAny: hookable void-return constraint
   }) as any);
 
   return hooks;

@@ -213,13 +213,13 @@ export function replayFixtureMessages(
 /**
  * Create a real Runtime-backed session for fixture replay testing.
  *
- * Uses a real `Runtime` (real tool execution, real middleware, real
- * hook invoker) but replaces the S2S WebSocket with a mock handle so fixture
- * messages can be replayed through the full orchestration layer.
+ * Uses a real `Runtime` (real tool execution, real hooks) but replaces the
+ * S2S WebSocket with a mock handle so fixture messages can be replayed
+ * through the full orchestration layer.
  *
  * Exercises: defineAgent → toAgentConfig → tool schemas → Zod arg validation
- * → executeToolCall → middleware beforeToolCall/afterToolCall → session
- * orchestration (reply guards, tool buffering, turnPromise chaining).
+ * → executeToolCall → session orchestration (reply guards, tool buffering,
+ * turnPromise chaining).
  *
  * Call `cleanup()` when done to restore the connectS2s spy.
  */

@@ -1,28 +1,14 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Hookable-based lifecycle and middleware hook system.
+ * Hookable-based lifecycle hook system.
  *
  * Provides a unified hook registry built on {@link https://github.com/unjs/hookable | hookable}.
- * Lifecycle hooks (connect, disconnect, turn, error) and middleware pipeline
- * hooks (filterInput, beforeTurn, interceptToolCall, etc.) are all registered
- * on a single `Hookable<AgentHookMap>` instance.
- *
- * The low-level middleware pipeline functions in `middleware.ts` remain
- * dependency-free for use inside the secure-exec V8 isolate. This module
- * wraps them for host-side code (self-hosted runtime, platform sandbox).
+ * Lifecycle hooks (connect, disconnect, turn, error, resolveTurnConfig) are
+ * registered on a single `Hookable<AgentHookMap>` instance.
  */
 
 import { createHooks, type Hookable } from "hookable";
-import {
-  type MiddlewareErrorHandler,
-  runAfterToolCallMiddleware,
-  runAfterTurnMiddleware,
-  runBeforeTurnMiddleware,
-  runInputFilters,
-  runOutputFilters,
-  runToolCallInterceptors,
-} from "./middleware.ts";
-import type { AgentDef, HookContext, Middleware, ToolCallInterceptResult } from "./types.ts";
+import type { AgentDef, HookContext } from "./types.ts";
 
 // ─── Hook map ───────────────────────────────────────────────────────────────
 
@@ -30,9 +16,8 @@ import type { AgentDef, HookContext, Middleware, ToolCallInterceptResult } from 
  * Map of all agent hook names to their function signatures.
  *
  * All hooks are typed as void-returning for hookable compatibility.
- * Value-returning hooks (filterInput, beforeTurn, interceptToolCall, etc.)
- * are invoked via {@link callHookWith} with custom callers that extract
- * the return value from the underlying handler.
+ * Value-returning hooks (resolveTurnConfig) are invoked via
+ * {@link callHookWith} with a custom caller that extracts the return value.
  */
 export interface AgentHookMap {
   connect: (sessionId: string, timeoutMs?: number) => void | Promise<void>;
@@ -44,21 +29,6 @@ export interface AgentHookMap {
     timeoutMs?: number,
   ) => void | Promise<void>;
   resolveTurnConfig: (sessionId: string, timeoutMs?: number) => void | Promise<void>;
-  filterInput: (sessionId: string, text: string) => void | Promise<void>;
-  beforeTurn: (sessionId: string, text: string) => void | Promise<void>;
-  afterTurn: (sessionId: string, text: string) => void | Promise<void>;
-  interceptToolCall: (
-    sessionId: string,
-    tool: string,
-    args: Readonly<Record<string, unknown>>,
-  ) => void | Promise<void>;
-  afterToolCall: (
-    sessionId: string,
-    tool: string,
-    args: Readonly<Record<string, unknown>>,
-    result: string,
-  ) => void | Promise<void>;
-  filterOutput: (sessionId: string, text: string) => void | Promise<void>;
 }
 
 /** A hookable instance typed to the agent hook map. */
@@ -78,59 +48,7 @@ function firstResultCaller<T>(fallback: T): (fns: any[], args: any[], name: stri
   };
 }
 
-/** Caller for text-returning hooks. Falls back to the original text (second arg). */
-// biome-ignore lint/suspicious/noExplicitAny: hookable caller signature
-async function textResultCaller(fns: any[], args: any[], _name: string): Promise<string> {
-  if (fns.length === 0) return args[1] as string;
-  return (await fns[0](...args)) ?? (args[1] as string);
-}
-
 // ─── Convenience wrappers ───────────────────────────────────────────────────
-
-/**
- * Call a text-returning hook (filterInput, filterOutput).
- * Returns the original text when no handler is registered.
- */
-export async function callTextHook(
-  hooks: AgentHooks | undefined,
-  name: "filterInput" | "filterOutput",
-  sessionId: string,
-  text: string,
-): Promise<string> {
-  if (!hooks) return text;
-  return hooks.callHookWith(textResultCaller, name, [sessionId, text]);
-}
-
-/**
- * Call the beforeTurn hook.
- * Returns the block reason string, or undefined to proceed.
- */
-export async function callBeforeTurn(
-  hooks: AgentHooks | undefined,
-  sessionId: string,
-  text: string,
-): Promise<string | undefined> {
-  if (!hooks) return;
-  return hooks.callHookWith(firstResultCaller(undefined), "beforeTurn", [sessionId, text]);
-}
-
-/**
- * Call the interceptToolCall hook.
- * Returns the intercept result, or undefined to proceed normally.
- */
-export async function callInterceptToolCall(
-  hooks: AgentHooks | undefined,
-  sessionId: string,
-  tool: string,
-  args: Readonly<Record<string, unknown>>,
-): Promise<ToolCallInterceptResult> {
-  if (!hooks) return;
-  return hooks.callHookWith(firstResultCaller(undefined), "interceptToolCall", [
-    sessionId,
-    tool,
-    args,
-  ]);
-}
 
 /**
  * Call the resolveTurnConfig hook.
@@ -147,26 +65,19 @@ export async function callResolveTurnConfig(
 
 // ─── Factory ────────────────────────────────────────────────────────────────
 
-const defaultOnError: MiddlewareErrorHandler = ({ middleware, hook, error }) => {
-  console.warn(`Middleware ${middleware} ${hook} failed:`, error);
-};
-
 /**
  * Create an {@link AgentHooks} instance from an agent definition.
  *
  * Registers lifecycle hooks from the agent's `onConnect`, `onDisconnect`,
- * `onTurn`, `onError` callbacks, and wraps the middleware pipeline via the
- * low-level runner functions from `middleware.ts`.
+ * `onTurn`, `onError` callbacks.
  */
 export function createAgentHooks(opts: {
   // biome-ignore lint/suspicious/noExplicitAny: accepts any state type
   agent: AgentDef<any>;
   makeCtx: (sessionId: string) => HookContext;
-  onError?: MiddlewareErrorHandler;
 }): AgentHooks {
-  const { agent, makeCtx, onError = defaultOnError } = opts;
+  const { agent, makeCtx } = opts;
   const hooks = createHooks<AgentHookMap>();
-  const middleware: readonly Middleware[] = agent.middleware ?? [];
 
   // ── Lifecycle hooks ─────────────────────────────────────────────────
   hooks.hook("connect", async (sessionId) => {
@@ -192,46 +103,6 @@ export function createAgentHooks(opts: {
     return { maxSteps };
     // biome-ignore lint/suspicious/noExplicitAny: handler returns value extracted via callHookWith
   }) as any);
-
-  // ── Middleware pipeline hooks ────────────────────────────────────────
-  if (middleware.length > 0) {
-    hooks.hook(
-      "filterInput",
-      // biome-ignore lint/suspicious/noExplicitAny: hookable types all hooks as void-returning
-      ((sid: string, text: string) =>
-        runInputFilters(middleware, { ...makeCtx(sid), text }, onError)) as any,
-    );
-    hooks.hook("beforeTurn", (async (sessionId: string, text: string) => {
-      const result = await runBeforeTurnMiddleware(
-        middleware,
-        { ...makeCtx(sessionId), text },
-        onError,
-      );
-      return result?.reason;
-    }) as any);
-    hooks.hook("afterTurn", async (sessionId, text) =>
-      runAfterTurnMiddleware(middleware, { ...makeCtx(sessionId), text }, onError),
-    );
-    hooks.hook("interceptToolCall", (async (
-      sessionId: string,
-      tool: string,
-      args: Readonly<Record<string, unknown>>,
-    ) =>
-      runToolCallInterceptors(middleware, { ...makeCtx(sessionId), tool, args }, onError)) as any);
-    hooks.hook("afterToolCall", async (sessionId, tool, args, result) =>
-      runAfterToolCallMiddleware(
-        middleware,
-        { ...makeCtx(sessionId), tool, args, result },
-        onError,
-      ),
-    );
-    hooks.hook(
-      "filterOutput",
-      // biome-ignore lint/suspicious/noExplicitAny: hookable types all hooks as void-returning
-      ((sid: string, text: string) =>
-        runOutputFilters(middleware, { ...makeCtx(sid), text }, onError)) as any,
-    );
-  }
 
   return hooks;
 }

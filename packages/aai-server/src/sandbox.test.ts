@@ -1,11 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import {
-  callBeforeTurn,
-  callInterceptToolCall,
-  callResolveTurnConfig,
-  callTextHook,
-} from "@alexkroman1/aai/internal";
+import { callResolveTurnConfig } from "@alexkroman1/aai/internal";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { IsolateConfig } from "./_harness-protocol.ts";
 import { _internals } from "./sandbox.ts";
@@ -25,7 +20,6 @@ describe("toAgentConfig", () => {
       onError: false,
       onTurn: false,
       maxStepsIsFn: false,
-      hasMiddleware: false,
     },
   };
 
@@ -192,92 +186,6 @@ describe("buildHookInvoker", () => {
     const config = await callResolveTurnConfig(hooks, "s1");
     expect(config).toEqual({});
   });
-
-  it("beforeTurn sends text and returns result", async () => {
-    mockHookResponse("blocked");
-    const hooks = _internals.buildHookInvoker("http://127.0.0.1:9999", "test-token");
-    const result = await callBeforeTurn(hooks, "s1", "hello");
-    expect(result).toBe("blocked");
-    expect(globalThis.fetch).toHaveBeenCalledWith(
-      "http://127.0.0.1:9999/rpc",
-      expect.objectContaining({
-        body: JSON.stringify({ type: "hook", hook: "beforeTurn", sessionId: "s1", text: "hello" }),
-      }),
-    );
-  });
-
-  it("afterTurn sends text", async () => {
-    mockHookResponse();
-    const hooks = _internals.buildHookInvoker("http://127.0.0.1:9999", "test-token");
-    await hooks.callHook("afterTurn", "s1", "response");
-    expect(globalThis.fetch).toHaveBeenCalledWith(
-      "http://127.0.0.1:9999/rpc",
-      expect.objectContaining({
-        body: JSON.stringify({
-          type: "hook",
-          hook: "afterTurn",
-          sessionId: "s1",
-          text: "response",
-        }),
-      }),
-    );
-  });
-
-  it("interceptToolCall sends tool name and args", async () => {
-    mockHookResponse({ type: "block", reason: "not allowed" });
-    const hooks = _internals.buildHookInvoker("http://127.0.0.1:9999", "test-token");
-    const result = await callInterceptToolCall(hooks, "s1", "search", { q: "test" });
-    expect(result).toEqual({ type: "block", reason: "not allowed" });
-    expect(globalThis.fetch).toHaveBeenCalledWith(
-      "http://127.0.0.1:9999/rpc",
-      expect.objectContaining({
-        body: JSON.stringify({
-          type: "hook",
-          hook: "interceptToolCall",
-          sessionId: "s1",
-          toolName: "search",
-          toolArgs: { q: "test" },
-        }),
-      }),
-    );
-  });
-
-  it("afterToolCall sends tool name, args, and result", async () => {
-    mockHookResponse();
-    const hooks = _internals.buildHookInvoker("http://127.0.0.1:9999", "test-token");
-    await hooks.callHook("afterToolCall", "s1", "search", { q: "test" }, "found it");
-    expect(globalThis.fetch).toHaveBeenCalledWith(
-      "http://127.0.0.1:9999/rpc",
-      expect.objectContaining({
-        body: JSON.stringify({
-          type: "hook",
-          hook: "afterToolCall",
-          sessionId: "s1",
-          toolName: "search",
-          toolArgs: { q: "test" },
-          text: "found it",
-        }),
-      }),
-    );
-  });
-
-  it("filterOutput sends text and returns filtered result", async () => {
-    mockHookResponse("sanitized text");
-    const hooks = _internals.buildHookInvoker("http://127.0.0.1:9999", "test-token");
-    const result = await callTextHook(hooks, "filterOutput", "s1", "raw text");
-    expect(result).toBe("sanitized text");
-    expect(globalThis.fetch).toHaveBeenCalledWith(
-      "http://127.0.0.1:9999/rpc",
-      expect.objectContaining({
-        body: JSON.stringify({
-          type: "hook",
-          hook: "filterOutput",
-          sessionId: "s1",
-          text: "raw text",
-        }),
-      }),
-    );
-  });
 });
 
 // ── getIsolateConfig ─────────────────────────────────────────────────────
@@ -304,7 +212,6 @@ describe("getIsolateConfig", () => {
         onError: false,
         onTurn: true,
         maxStepsIsFn: false,
-        hasMiddleware: false,
       },
     };
     globalThis.fetch = vi.fn(async () => Response.json(config));

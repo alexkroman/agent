@@ -46,10 +46,10 @@
       "types": "./dist/internal.d.ts",
       "import": "./dist/internal.js"
     },
-    "./middleware": {
-      "source": "./middleware.ts",
-      "types": "./dist/middleware.d.ts",
-      "import": "./dist/middleware.js"
+    "./hooks": {
+      "source": "./hooks.ts",
+      "types": "./dist/hooks.d.ts",
+      "import": "./dist/hooks.js"
     },
     "./utils": {
       "source": "./_utils.ts",
