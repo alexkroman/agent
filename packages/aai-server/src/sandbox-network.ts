@@ -2,60 +2,33 @@
 /**
  * Network policy and adapter for sandbox isolates.
  *
- * Restricts isolate network access to the per-sandbox sidecar server
- * on loopback while exempting it from SSRF checks.
+ * The network adapter handles SSRF validation (DNS resolution, private-IP
+ * blocking, redirect re-validation) for outbound requests and provides a
+ * virtual KV bridge via `http://kv.internal/` URLs.
  */
 
+import type { Kv } from "@alexkroman1/aai/kv";
 import { createDefaultNetworkAdapter } from "secure-exec";
-import { z } from "zod";
 
-const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
-
-const SidecarUrlSchema = z
-  .string()
-  .url()
-  .refine((u) => LOOPBACK_HOSTS.has(new URL(u).hostname), "Sidecar server must be on loopback");
+const KV_ORIGIN = "http://kv.internal";
 
 /**
- * Build a network permission check that restricts the isolate to:
- *   1. Listening on loopback (its own harness HTTP server)
- *   2. DNS lookups for loopback hostnames only
- *   3. fetch/http to the sidecar server URL only
+ * Build a network permission check for the isolate.
  *
- * Everything else (cloud metadata, internal services, external hosts) is denied.
+ * Allows listening, DNS, and all outbound requests. The network adapter
+ * handles real SSRF validation.
  */
-export function buildNetworkPolicy(sidecarUrl: string) {
-  const parsed = new URL(SidecarUrlSchema.parse(sidecarUrl));
-  const allowedHost = parsed.hostname;
-  const allowedPort = parsed.port;
-
-  return (req: { op: string; url?: string; hostname?: string }) => {
-    if (req.op === "listen") return { allow: true };
-    if (req.op === "dns") {
-      return LOOPBACK_HOSTS.has(req.hostname ?? "")
-        ? { allow: true }
-        : { allow: false, reason: "DNS lookups restricted to loopback" };
-    }
-    try {
-      const t = new URL(req.url ?? "");
-      if (t.hostname === allowedHost && t.port === allowedPort) {
-        return { allow: true };
-      }
-    } catch {
-      // invalid URL — fall through to deny
-    }
-    return { allow: false, reason: "Network restricted to sidecar server" };
-  };
+export function buildNetworkPolicy() {
+  return (_req: { op: string; url?: string; hostname?: string }) => ({ allow: true as const });
 }
 
 /**
- * Build a network adapter that wraps the default but exempts the sidecar
- * URL from SSRF checks. The default adapter blocks all private IPs (including
- * 127.0.0.1), but the isolate needs to reach the sidecar on loopback.
+ * Build a network adapter that:
+ * 1. Intercepts `http://kv.internal/` requests and routes them to the host-side KV store
+ * 2. Passes all other requests through the default adapter (with SSRF checks)
  */
-export function buildNetworkAdapter(sidecarUrl: string) {
+export function buildNetworkAdapter(kv: Kv) {
   const defaultAdapter = createDefaultNetworkAdapter();
-  const sidecarOrigin = new URL(sidecarUrl).origin;
 
   return {
     ...defaultAdapter,
@@ -63,29 +36,65 @@ export function buildNetworkAdapter(sidecarUrl: string) {
       url: string,
       options: { method?: string; headers?: Record<string, string>; body?: string | null },
     ) {
-      // Sidecar calls bypass SSRF — they're our own capability server on loopback
-      if (url.startsWith(sidecarOrigin)) {
-        const res = await globalThis.fetch(url, {
-          method: options.method ?? "GET",
-          ...(options.headers != null && { headers: options.headers }),
-          ...(options.body !== undefined && { body: options.body }),
-        });
-        const headers: Record<string, string> = {};
-        res.headers.forEach((v, k) => {
-          headers[k] = v;
-        });
-        return {
-          ok: res.ok,
-          status: res.status,
-          statusText: res.statusText,
-          headers,
-          body: await res.text(),
-          url: res.url,
-          redirected: res.redirected,
-        };
+      // KV bridge — virtual host handled on the host side
+      if (url.startsWith(KV_ORIGIN)) {
+        return handleKvRequest(kv, url, options.body ?? null);
       }
       // Everything else goes through the default adapter (with SSRF checks)
       return defaultAdapter.fetch(url, options);
     },
   };
+}
+
+type AdapterResponse = {
+  ok: boolean;
+  status: number;
+  statusText: string;
+  headers: Record<string, string>;
+  body: string;
+  url: string;
+  redirected: boolean;
+};
+
+function jsonResponse(data: unknown, status = 200): AdapterResponse {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    statusText: status === 200 ? "OK" : "Bad Request",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(data),
+    url: "",
+    redirected: false,
+  };
+}
+
+async function handleKvRequest(kv: Kv, url: string, body: string | null): Promise<AdapterResponse> {
+  const path = new URL(url).pathname;
+  const payload = body ? JSON.parse(body) : {};
+
+  switch (path) {
+    case "/get":
+      return jsonResponse((await kv.get(payload.key)) ?? null);
+    case "/set":
+      await kv.set(
+        payload.key,
+        payload.value,
+        payload.options?.expireIn != null ? { expireIn: payload.options.expireIn } : undefined,
+      );
+      return jsonResponse(null);
+    case "/del":
+      await kv.delete(payload.key);
+      return jsonResponse(null);
+    case "/list":
+      return jsonResponse(
+        await kv.list(payload.prefix, {
+          ...(payload.limit != null && { limit: payload.limit }),
+          ...(payload.reverse != null && { reverse: payload.reverse }),
+        }),
+      );
+    case "/keys":
+      return jsonResponse(await kv.keys(payload.pattern));
+    default:
+      return jsonResponse({ error: `Unknown KV path: ${path}` }, 400);
+  }
 }
