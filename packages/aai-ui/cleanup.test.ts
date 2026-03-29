@@ -144,6 +144,10 @@ describe("VoiceSession resource cleanup", () => {
   let mock: ReturnType<typeof installMockWebSocket>;
   let loc: ReturnType<typeof installMockLocation>;
 
+  function makeSession(url = "http://localhost:3000") {
+    return createVoiceSession({ platformUrl: url, WebSocket: globalThis.WebSocket });
+  }
+
   beforeEach(() => {
     mock = installMockWebSocket();
     loc = installMockLocation();
@@ -162,7 +166,7 @@ describe("VoiceSession resource cleanup", () => {
   }
 
   test("disconnect() closes WebSocket and nullifies reference", async () => {
-    const session = createVoiceSession({ platformUrl: "http://localhost:3000" });
+    const session = makeSession();
     session.connect();
     await flush();
 
@@ -177,7 +181,7 @@ describe("VoiceSession resource cleanup", () => {
   });
 
   test("disconnect() sets intentional disconnection info", async () => {
-    const session = createVoiceSession({ platformUrl: "http://localhost:3000" });
+    const session = makeSession();
     session.connect();
     await flush();
 
@@ -187,7 +191,7 @@ describe("VoiceSession resource cleanup", () => {
   });
 
   test("server-initiated close sets unintentional disconnection", async () => {
-    const session = createVoiceSession({ platformUrl: "http://localhost:3000" });
+    const session = makeSession();
     session.connect();
     await flush();
 
@@ -200,7 +204,7 @@ describe("VoiceSession resource cleanup", () => {
   });
 
   test("Symbol.dispose calls disconnect", async () => {
-    const session = createVoiceSession({ platformUrl: "http://localhost:3000" });
+    const session = makeSession();
     session.connect();
     await flush();
 
@@ -211,7 +215,7 @@ describe("VoiceSession resource cleanup", () => {
   });
 
   test("connect() cleans up previous connection before creating new one", async () => {
-    const session = createVoiceSession({ platformUrl: "http://localhost:3000" });
+    const session = makeSession();
     session.connect();
     await flush();
 
@@ -227,7 +231,7 @@ describe("VoiceSession resource cleanup", () => {
   });
 
   test("disconnect before open event does not throw", () => {
-    const session = createVoiceSession({ platformUrl: "http://localhost:3000" });
+    const session = makeSession();
     session.connect();
     // Don't flush — WebSocket is still CONNECTING
     session.disconnect();
@@ -235,7 +239,7 @@ describe("VoiceSession resource cleanup", () => {
   });
 
   test("external AbortSignal triggers disconnect", async () => {
-    const session = createVoiceSession({ platformUrl: "http://localhost:3000" });
+    const session = makeSession();
     const controller = new AbortController();
 
     session.connect({ signal: controller.signal });
@@ -250,7 +254,7 @@ describe("VoiceSession resource cleanup", () => {
   });
 
   test("resetState clears messages, toolCalls, utterances, and error", async () => {
-    const session = createVoiceSession({ platformUrl: "http://localhost:3000" });
+    const session = makeSession();
     session.connect();
     await flush();
 
@@ -270,7 +274,7 @@ describe("VoiceSession resource cleanup", () => {
   });
 
   test("multiple rapid disconnects don't throw", async () => {
-    const session = createVoiceSession({ platformUrl: "http://localhost:3000" });
+    const session = makeSession();
     session.connect();
     await flush();
 
@@ -282,7 +286,7 @@ describe("VoiceSession resource cleanup", () => {
   });
 
   test("connect after disconnect creates fresh connection", async () => {
-    const session = createVoiceSession({ platformUrl: "http://localhost:3000" });
+    const session = makeSession();
     session.connect();
     await flush();
 
@@ -296,7 +300,7 @@ describe("VoiceSession resource cleanup", () => {
   });
 
   test("reset with open socket sends reset message instead of reconnecting", async () => {
-    const session = createVoiceSession({ platformUrl: "http://localhost:3000" });
+    const session = makeSession();
     session.connect();
     await flush();
 
@@ -310,7 +314,7 @@ describe("VoiceSession resource cleanup", () => {
   });
 
   test("reset with closed socket reconnects", async () => {
-    const session = createVoiceSession({ platformUrl: "http://localhost:3000" });
+    const session = makeSession();
     session.connect();
     await flush();
 

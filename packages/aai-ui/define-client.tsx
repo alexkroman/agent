@@ -5,7 +5,7 @@ import type { ComponentType } from "preact";
 // biome-ignore lint/suspicious/noDeprecatedImports: preact v10 render API is current
 import { render } from "preact";
 import { ClientConfigProvider, type ClientTheme } from "./client-context.ts";
-import { createVoiceSession, type VoiceSession } from "./session.ts";
+import { createVoiceSession, type VoiceSession, type WebSocketConstructor } from "./session.ts";
 import { createSessionControls, SessionProvider, type SessionSignals } from "./signals.ts";
 
 /**
@@ -26,6 +26,8 @@ export type ClientOptions = {
   onSessionId?: ((sessionId: string) => void) | undefined;
   /** Session ID from a previous connection for resuming persisted state. */
   resumeSessionId?: string | undefined;
+  /** WebSocket constructor override. Passed through to VoiceSessionOptions. */
+  WebSocket?: WebSocketConstructor | undefined;
 };
 
 /**
@@ -79,6 +81,7 @@ export function defineClient(Component: ComponentType<any>, options?: ClientOpti
     batch,
     onSessionId: options?.onSessionId,
     resumeSessionId: options?.resumeSessionId,
+    ...(options?.WebSocket ? { WebSocket: options.WebSocket } : {}),
   });
   const signals = createSessionControls(session);
 

@@ -66,6 +66,8 @@ describe("defineClient()", () => {
   });
 
   test("derives platformUrl from location.href when not explicitly provided", async () => {
+    // biome-ignore lint/suspicious/noExplicitAny: test needs to pass mocked WebSocket
+    const WS = globalThis.WebSocket as any;
     const origLocation = globalThis.location;
     Object.defineProperty(globalThis, "location", {
       value: {
@@ -79,7 +81,7 @@ describe("defineClient()", () => {
 
     try {
       const App = () => <div />;
-      const handle = defineClient(App);
+      const handle = defineClient(App, { WebSocket: WS });
       handle.session.connect();
       await delay(0);
       const ws = mock.lastWs;

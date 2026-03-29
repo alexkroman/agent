@@ -72,13 +72,12 @@ const dev = defineCommand({
   meta: { name: "dev", description: "Start a local development server" },
   args: {
     port: sharedArgs.port,
-    check: { type: "boolean", description: "Start server, verify health, then exit" },
     yes: sharedArgs.yes,
   },
   async run({ args }) {
     const cwd = await setup(args, { agent: true, apiKey: true });
     const { runDevCommand } = await import("./dev.ts");
-    await runDevCommand({ cwd, port: args.port, ...(args.check ? { check: args.check } : {}) });
+    await runDevCommand({ cwd, port: args.port });
   },
 });
 
@@ -138,18 +137,6 @@ const del = defineCommand({
       cwd,
       ...(args.server ? { server: args.server } : {}),
     });
-  },
-});
-
-const start = defineCommand({
-  meta: { name: "start", description: "Start production server from build" },
-  args: {
-    port: sharedArgs.port,
-  },
-  async run({ args }) {
-    const cwd = await setup(undefined, { apiKey: true });
-    const { runStartCommand } = await import("./start.ts");
-    await runStartCommand({ cwd, port: args.port });
   },
 });
 
@@ -227,7 +214,6 @@ export const mainCommand = defineCommand({
     build,
     deploy,
     delete: del,
-    start,
     secret,
     generate,
     run,

@@ -14,7 +14,7 @@
  *
  * testRuntime("direct", () => {
  *   const exec = createRuntime({ agent: CONFORMANCE_AGENT, env: { MY_VAR: "test-value" } });
- *   return { executeTool: exec.executeTool, hookInvoker: exec.hookInvoker };
+ *   return { executeTool: exec.executeTool, hooks: exec.hooks };
  * });
  * ```
  *
@@ -24,7 +24,7 @@
  *
  * testRuntime("sandbox", async () => {
  *   // ... start isolate with CONFORMANCE_AGENT_BUNDLE
- *   return { executeTool: buildExecuteTool(...), hookInvoker: buildHookInvoker(...) };
+ *   return { executeTool: buildExecuteTool(...), hooks: buildHookInvoker(...) };
  * });
  * ```
  */
@@ -32,7 +32,8 @@
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import type { ExecuteTool } from "./_internal-types.ts";
-import type { HookInvoker } from "./middleware.ts";
+import type { AgentHooks } from "./hooks.ts";
+import { callResolveTurnConfig } from "./hooks.ts";
 import { type AgentDef, defineTool } from "./types.ts";
 
 // ── Shared context type ────────────────────────────────────────────────────
@@ -45,7 +46,7 @@ import { type AgentDef, defineTool } from "./types.ts";
  */
 export type RuntimeTestContext = {
   executeTool: ExecuteTool;
-  hookInvoker: HookInvoker;
+  hooks: AgentHooks;
 };
 
 // ── Conformance agent ──────────────────────────────────────────────────────
@@ -194,17 +195,17 @@ export function testRuntime(label: string, getContext: () => RuntimeTestContext)
     });
 
     test("onConnect hook updates session state", async () => {
-      const { executeTool, hookInvoker } = getContext();
+      const { executeTool, hooks } = getContext();
       const sid = "state-connect";
-      await hookInvoker.onConnect(sid);
+      await hooks.callHook("connect", sid);
       const result = await executeTool("get_state", {}, sid, []);
       expect(JSON.parse(result).count).toBe(1);
     });
 
     test("onTurn hook updates session state", async () => {
-      const { executeTool, hookInvoker } = getContext();
+      const { executeTool, hooks } = getContext();
       const sid = "state-turn";
-      await hookInvoker.onTurn(sid, "user said something");
+      await hooks.callHook("turn", sid, "user said something");
       const result = await executeTool("get_state", {}, sid, []);
       expect(JSON.parse(result).lastTurn).toBe("user said something");
     });
@@ -212,28 +213,28 @@ export function testRuntime(label: string, getContext: () => RuntimeTestContext)
     // ── Lifecycle hooks ──────────────────────────────────────────────
 
     test("onConnect resolves without error", async () => {
-      const { hookInvoker } = getContext();
-      await expect(hookInvoker.onConnect("hook-1")).resolves.toBeUndefined();
+      const { hooks } = getContext();
+      await expect(hooks.callHook("connect", "hook-1")).resolves.toBeUndefined();
     });
 
     test("onDisconnect resolves without error", async () => {
-      const { hookInvoker } = getContext();
-      await expect(hookInvoker.onDisconnect("hook-2")).resolves.toBeUndefined();
+      const { hooks } = getContext();
+      await expect(hooks.callHook("disconnect", "hook-2")).resolves.toBeUndefined();
     });
 
     test("onTurn resolves without error", async () => {
-      const { hookInvoker } = getContext();
-      await expect(hookInvoker.onTurn("hook-3", "test")).resolves.toBeUndefined();
+      const { hooks } = getContext();
+      await expect(hooks.callHook("turn", "hook-3", "test")).resolves.toBeUndefined();
     });
 
     test("onError resolves without error", async () => {
-      const { hookInvoker } = getContext();
-      await expect(hookInvoker.onError("hook-4", { message: "boom" })).resolves.toBeUndefined();
+      const { hooks } = getContext();
+      await expect(hooks.callHook("error", "hook-4", { message: "boom" })).resolves.toBeUndefined();
     });
 
     test("resolveTurnConfig returns null for static maxSteps", async () => {
-      const { hookInvoker } = getContext();
-      const config = await hookInvoker.resolveTurnConfig("hook-5");
+      const { hooks } = getContext();
+      const config = await callResolveTurnConfig(hooks, "hook-5");
       expect(config).toBeNull();
     });
   });

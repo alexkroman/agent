@@ -4,7 +4,7 @@
  *
  * {@link createRuntime} builds the single execution engine used by both
  * self-hosted servers and the platform sandbox. It wires up tool execution,
- * lifecycle hooks, middleware, and session management.
+ * lifecycle hooks, and session management.
  */
 
 import pTimeout from "p-timeout";
@@ -17,12 +17,11 @@ import {
   type ToolSchema,
   toAgentConfig,
 } from "./_internal-types.ts";
-import { ssrfSafeFetch } from "./_ssrf.ts";
 import { errorDetail, errorMessage, toolError } from "./_utils.ts";
 import { getBuiltinToolDefs, getBuiltinToolSchemas } from "./builtin-tools.ts";
 import { DEFAULT_SHUTDOWN_TIMEOUT_MS, TOOL_EXECUTION_TIMEOUT_MS } from "./constants.ts";
+import { type AgentHooks, createAgentHooks } from "./hooks.ts";
 import type { Kv } from "./kv.ts";
-import { buildMiddlewareRunner, type HookInvoker, type LifecycleHooks } from "./middleware.ts";
 import type { ClientSink } from "./protocol.ts";
 import { buildReadyConfig, type ReadyConfig } from "./protocol.ts";
 import type { Logger, S2SConfig } from "./runtime.ts";
@@ -156,13 +155,30 @@ export type RuntimeOptions = {
    * {@link AgentRuntime.shutdown | shutdown()}. Defaults to `30_000` (30 s).
    */
   shutdownTimeoutMs?: number | undefined;
+  /**
+   * Override tool execution. When provided, `createRuntime` skips building
+   * in-process tool definitions and uses this function instead. Used by the
+   * platform sandbox to RPC tool calls to the isolate.
+   */
+  executeTool?: ExecuteTool | undefined;
+  /**
+   * Override lifecycle hooks. When provided, `createRuntime` skips building
+   * in-process hooks and uses these instead. Used by the platform sandbox
+   * to RPC hook calls to the isolate.
+   */
+  hooks?: AgentHooks | undefined;
+  /**
+   * Override tool schemas sent to the S2S API. Required when `executeTool`
+   * is provided (the host doesn't have the tool definitions to derive schemas).
+   */
+  toolSchemas?: ToolSchema[] | undefined;
 };
 
 /**
  * The agent runtime returned by {@link createRuntime}.
  *
  * Satisfies {@link AgentRuntime} for use by transport code, and also exposes
- * lower-level helpers (`executeTool`, `hookInvoker`, `toolSchemas`,
+ * lower-level helpers (`executeTool`, `hooks`, `toolSchemas`,
  * `createSession`) for testing and advanced usage.
  *
  * @public
@@ -170,8 +186,8 @@ export type RuntimeOptions = {
 export type Runtime = AgentRuntime & {
   /** Execute a named tool with the given args, returning a JSON result string. */
   executeTool: ExecuteTool;
-  /** Hook invoker wired to the agent's lifecycle hooks and middleware. */
-  hookInvoker: HookInvoker;
+  /** Hookable instance wired to the agent's lifecycle hooks. */
+  hooks: AgentHooks;
   /** Tool schemas registered with the S2S API (custom + built-in). */
   toolSchemas: ToolSchema[];
   /** Create a new voice session for a connected client (lower-level than startSession). */
@@ -188,7 +204,7 @@ export type Runtime = AgentRuntime & {
  * Create an agent runtime — the execution engine for a voice agent.
  *
  * Merges built-in and custom tool definitions, builds tool schemas for the
- * S2S API, and wires up middleware and lifecycle hooks.
+ * S2S API, and wires up lifecycle hooks.
  *
  * @param opts - Runtime configuration. See {@link RuntimeOptions}.
  * @returns A {@link Runtime} with tool execution, hook invocation,
@@ -211,89 +227,66 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   const sessions = new Map<string, Session>();
   const readyConfig: ReadyConfig = buildReadyConfig(s2sConfig);
 
-  // Merge custom + builtin tool definitions
-  const builtinDefs = getBuiltinToolDefs(agent.builtinTools ?? []);
-  const allTools: Record<string, AgentDef["tools"][string]> = {
-    ...builtinDefs,
-    ...agent.tools,
-  };
+  // When overrides are provided (sandbox mode), skip in-process tool/hook setup
+  let executeTool: ExecuteTool;
+  let hooks: AgentHooks;
+  let toolSchemas: ToolSchema[];
 
-  // Build tool schemas for the S2S API
-  const customSchemas = agentToolsToSchemas(agent.tools ?? {});
-  const builtinSchemas = getBuiltinToolSchemas(agent.builtinTools ?? []);
-  const toolSchemas: ToolSchema[] = [...customSchemas, ...builtinSchemas];
-
-  // Per-session mutable state
-  const stateMap = new Map<string, Record<string, unknown>>();
-  const getState = (sid: string) => {
-    if (!stateMap.has(sid) && agent.state) stateMap.set(sid, agent.state());
-    return stateMap.get(sid) ?? {};
-  };
-  const frozenEnv = Object.freeze({ ...env });
-
-  /** SSRF-safe fetch for tool/hook contexts in self-hosted mode. */
-  const safeFetch: typeof globalThis.fetch = (input, init) => {
-    const req = new Request(input, init);
-    return ssrfSafeFetch(req.url, { ...init, method: req.method }, globalThis.fetch);
-  };
-
-  function makeHookContext(sessionId: string): HookContext {
-    return {
-      env: frozenEnv,
-      state: getState(sessionId),
-      sessionId,
-      get kv() {
-        return kv;
-      },
-      fetch: safeFetch,
+  if (opts.executeTool && opts.hooks && opts.toolSchemas) {
+    // Sandbox mode — tools/hooks are RPC-backed
+    executeTool = opts.executeTool;
+    hooks = opts.hooks;
+    toolSchemas = opts.toolSchemas;
+  } else {
+    // Self-hosted mode — in-process tool execution
+    const builtinDefs = getBuiltinToolDefs(agent.builtinTools ?? []);
+    const allTools: Record<string, AgentDef["tools"][string]> = {
+      ...builtinDefs,
+      ...agent.tools,
     };
-  }
+    const customSchemas = agentToolsToSchemas(agent.tools ?? {});
+    const builtinSchemas = getBuiltinToolSchemas(agent.builtinTools ?? []);
+    toolSchemas = [...customSchemas, ...builtinSchemas];
 
-  const executeTool: ExecuteTool = async (name, args, sessionId, messages) => {
-    const tool = allTools[name];
-    if (!tool) return toolError(`Unknown tool: ${name}`);
+    const stateMap = new Map<string, Record<string, unknown>>();
+    const getState = (sid: string) => {
+      if (!stateMap.has(sid) && agent.state) stateMap.set(sid, agent.state());
+      return stateMap.get(sid) ?? {};
+    };
+    const frozenEnv = Object.freeze({ ...env });
 
-    return executeToolCall(name, args, {
-      tool,
-      env: frozenEnv,
-      state: getState(sessionId ?? ""),
-      sessionId: sessionId ?? "",
-      kv,
-      messages,
-      logger,
-      fetch: safeFetch,
-    });
-  };
+    function makeHookContext(sessionId: string): HookContext {
+      return {
+        env: frozenEnv,
+        state: getState(sessionId),
+        sessionId,
+        get kv() {
+          return kv;
+        },
+        fetch: globalThis.fetch,
+      };
+    }
 
-  // ── Lifecycle hooks (always present) ─────────────────────────────────
-  const lifecycleHooks: LifecycleHooks = {
-    async onConnect(sessionId) {
-      await agent.onConnect?.(makeHookContext(sessionId));
-    },
-    async onDisconnect(sessionId) {
-      await agent.onDisconnect?.(makeHookContext(sessionId));
+    executeTool = async (name, args, sessionId, messages) => {
+      const tool = allTools[name];
+      if (!tool) return toolError(`Unknown tool: ${name}`);
+      return executeToolCall(name, args, {
+        tool,
+        env: frozenEnv,
+        state: getState(sessionId ?? ""),
+        sessionId: sessionId ?? "",
+        kv,
+        messages,
+        logger,
+        fetch: globalThis.fetch,
+      });
+    };
+
+    hooks = createAgentHooks({ agent, makeCtx: makeHookContext });
+    hooks.hook("disconnect", async (sessionId) => {
       stateMap.delete(sessionId);
-    },
-    async onTurn(sessionId, text) {
-      await agent.onTurn?.(text, makeHookContext(sessionId));
-    },
-    async onError(sessionId, error) {
-      await agent.onError?.(new Error(error.message), makeHookContext(sessionId));
-    },
-    async resolveTurnConfig(sessionId) {
-      const ctx = makeHookContext(sessionId);
-      const maxSteps =
-        typeof agent.maxSteps === "function"
-          ? ((await agent.maxSteps(ctx)) ?? undefined)
-          : undefined;
-      if (maxSteps === undefined) return null;
-      return { maxSteps };
-    },
-  };
-
-  // ── Middleware runner (only built when middleware exists) ────────────
-  const middlewareRunner = buildMiddlewareRunner(agent.middleware ?? [], makeHookContext);
-  const hookInvoker: HookInvoker = { ...lifecycleHooks, ...middlewareRunner };
+    });
+  }
 
   function createSession(sessionOpts: {
     id: string;
@@ -302,7 +295,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     skipGreeting?: boolean;
     resumeFrom?: string;
   }): Session {
-    const apiKey = frozenEnv.ASSEMBLYAI_API_KEY ?? "";
+    const apiKey = env.ASSEMBLYAI_API_KEY ?? "";
     return createS2sSession({
       id: sessionOpts.id,
       agent: sessionOpts.agent,
@@ -313,7 +306,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       s2sConfig,
       executeTool,
       ...(createWebSocket ? { createWebSocket } : {}),
-      hookInvoker,
+      hooks,
       skipGreeting: sessionOpts.skipGreeting ?? false,
       logger,
       ...(sessionOpts.resumeFrom ? { resumeFrom: sessionOpts.resumeFrom } : {}),
@@ -371,7 +364,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
 
   return {
     executeTool,
-    hookInvoker,
+    hooks,
     toolSchemas,
     createSession,
     startSession,

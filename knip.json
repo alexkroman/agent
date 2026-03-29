@@ -3,6 +3,7 @@
   "ignoreUnresolved": ["./_jsdom-setup.ts", "./matchers.ts", "../aai/matchers.ts"],
   "ignoreExportsUsedInFile": true,
   "exclude": ["exports", "types", "optionalPeerDependencies"],
+  "ignoreWorkspaces": ["tmp/*"],
   "workspaces": {
     ".": {},
     "packages/aai": {

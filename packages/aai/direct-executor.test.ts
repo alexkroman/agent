@@ -7,6 +7,7 @@ import { toAgentConfig } from "./_internal-types.ts";
 import { CONFORMANCE_AGENT, testRuntime } from "./_runtime-conformance.ts";
 import { makeAgent } from "./_test-utils.ts";
 import { createRuntime } from "./direct-executor.ts";
+import { callResolveTurnConfig } from "./hooks.ts";
 import { defineTool } from "./types.ts";
 import { createUnstorageKv } from "./unstorage-kv.ts";
 
@@ -61,9 +62,9 @@ describe("createRuntime", () => {
     expect(result).toBe(JSON.stringify({ error: "Unknown tool: nonexistent" }));
   });
 
-  test("hookInvoker.onConnect can be called without error", async () => {
+  test("hooks.callHook('connect') can be called without error", async () => {
     const exec = createRuntime({ agent: makeAgent(), env: {} });
-    await expect(exec.hookInvoker.onConnect("session-1")).resolves.toBeUndefined();
+    await expect(exec.hooks.callHook("connect", "session-1")).resolves.toBeUndefined();
   });
 
   test("executeTool with a real tool returns result", async () => {
@@ -110,37 +111,37 @@ describe("createRuntime", () => {
 
   test("resolveTurnConfig returns null when no dynamic config", async () => {
     const exec = createRuntime({ agent: makeAgent(), env: {} });
-    expect(await exec.hookInvoker.resolveTurnConfig("s1")).toBe(null);
+    expect(await callResolveTurnConfig(exec.hooks, "s1")).toBe(null);
   });
 
   test("resolveTurnConfig resolves dynamic maxSteps", async () => {
     const agent = makeAgent({ maxSteps: () => 15 });
     const exec = createRuntime({ agent, env: {} });
-    const config = await exec.hookInvoker.resolveTurnConfig("s1");
+    const config = await callResolveTurnConfig(exec.hooks, "s1");
     expect(config?.maxSteps).toBe(15);
   });
 
-  test("hookInvoker.onDisconnect calls agent.onDisconnect", async () => {
+  test("hooks.callHook('disconnect') calls agent.onDisconnect", async () => {
     const onDisconnect = vi.fn();
     const agent = makeAgent({ onDisconnect });
     const exec = createRuntime({ agent, env: {} });
-    await exec.hookInvoker.onDisconnect("session-1");
+    await exec.hooks.callHook("disconnect", "session-1");
     expect(onDisconnect).toHaveBeenCalledOnce();
   });
 
-  test("hookInvoker.onTurn calls agent.onTurn with text", async () => {
+  test("hooks.callHook('turn') calls agent.onTurn with text", async () => {
     const onTurn = vi.fn();
     const agent = makeAgent({ onTurn });
     const exec = createRuntime({ agent, env: {} });
-    await exec.hookInvoker.onTurn("s1", "hello world");
+    await exec.hooks.callHook("turn", "s1", "hello world");
     expect(onTurn).toHaveBeenCalledWith("hello world", expect.any(Object));
   });
 
-  test("hookInvoker.onError calls agent.onError with Error", async () => {
+  test("hooks.callHook('error') calls agent.onError with Error", async () => {
     const onError = vi.fn();
     const agent = makeAgent({ onError });
     const exec = createRuntime({ agent, env: {} });
-    await exec.hookInvoker.onError("s1", { message: "boom" });
+    await exec.hooks.callHook("error", "s1", { message: "boom" });
     expect(onError).toHaveBeenCalledWith(expect.any(Error), expect.any(Object));
     const err = onError.mock.calls[0]?.[0] as Error;
     expect(err.message).toBe("boom");
@@ -190,27 +191,6 @@ describe("createRuntime", () => {
     expect(result).toBe("function");
   });
 
-  test("ctx.fetch blocks private IPs (SSRF protection)", async () => {
-    const agent = makeAgent({
-      tools: {
-        fetch_private: {
-          description: "Attempt to fetch a private IP",
-          execute: async (_args, ctx) => {
-            try {
-              await ctx.fetch("http://169.254.169.254/latest/meta-data/");
-              return "should not reach here";
-            } catch (err) {
-              return (err as Error).message;
-            }
-          },
-        },
-      },
-    });
-    const exec = createRuntime({ agent, env: {} });
-    const result = await exec.executeTool("fetch_private", {}, "s1", []);
-    expect(result).toContain("private address");
-  });
-
   test("hook context includes fetch", async () => {
     let hookFetch: unknown;
     const agent = makeAgent({
@@ -219,7 +199,7 @@ describe("createRuntime", () => {
       },
     });
     const exec = createRuntime({ agent, env: {} });
-    await exec.hookInvoker.onConnect("s1");
+    await exec.hooks.callHook("connect", "s1");
     expect(typeof hookFetch).toBe("function");
   });
 
@@ -264,5 +244,5 @@ const directExec = createRuntime({
 
 testRuntime("direct", () => ({
   executeTool: directExec.executeTool,
-  hookInvoker: directExec.hookInvoker,
+  hooks: directExec.hooks,
 }));
