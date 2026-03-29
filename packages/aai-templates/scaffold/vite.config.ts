@@ -20,4 +20,8 @@ export default defineConfig({
     target: "es2022",
     minify: true,
   },
+  // SSR config — used by `aai build` for the worker bundle (agent.ts → worker.js)
+  ssr: {
+    noExternal: true,
+  },
 });

@@ -6,9 +6,6 @@ import { errorMessage } from "@alexkroman1/aai/utils";
 import { build, createServer as createViteServer, type ViteDevServer } from "vite";
 import type { AgentEntry } from "./_discover.ts";
 
-/**
- * Error thrown when bundling fails.
- */
 export class BundleError extends Error {
   constructor(message: string, options?: ErrorOptions) {
     super(message, options);
@@ -16,7 +13,6 @@ export class BundleError extends Error {
   }
 }
 
-/** Output artifacts produced by {@link bundleAgent}. */
 export type BundleOutput = {
   worker: string;
   clientFiles: Record<string, string>;
@@ -24,13 +20,11 @@ export type BundleOutput = {
   workerBytes: number;
 };
 
-/** File extensions that are safe to read as UTF-8 text. */
 const TEXT_EXTENSIONS = new Set([
   ".html", ".htm", ".css", ".js", ".mjs", ".cjs", ".ts", ".mts",
   ".json", ".map", ".svg", ".xml", ".txt", ".md",
 ]);
 
-/** Read all files in a directory as a map of relative paths to contents. */
 async function readDirFiles(dir: string): Promise<Record<string, string>> {
   let entries: import("node:fs").Dirent[];
   try {
@@ -57,10 +51,10 @@ async function readDirFiles(dir: string): Promise<Record<string, string>> {
 }
 
 /**
- * Bundle an agent project into deployable artifacts using Vite.
+ * Bundle an agent project using Vite.
  *
- * Uses the project's own `vite.config.ts` for client builds.
- * Worker build (agent.ts → worker.js) uses a minimal inline config.
+ * - Worker: `vite build --ssr agent.ts` → single ESM file
+ * - Client: `vite build` → index.html + assets (uses project's vite.config.ts)
  */
 export async function bundleAgent(
   agent: AgentEntry,
@@ -70,29 +64,25 @@ export async function bundleAgent(
   const buildDir = path.join(aaiDir, "build");
   const clientDir = path.join(aaiDir, "client");
 
-  // 1. Worker build — agent.ts → single ESM file (no vite.config needed)
+  // 1. Worker — SSR build bundles agent.ts into a single file
   try {
     await build({
-      configFile: false,
       root: agent.dir,
       logLevel: "warn",
       build: {
-        lib: {
-          entry: path.join(agent.dir, "agent.ts"),
-          formats: ["es"],
-          fileName: () => "worker.js",
-        },
+        ssr: path.join(agent.dir, "agent.ts"),
         outDir: buildDir,
         emptyOutDir: true,
-        minify: true,
-        target: "es2022",
+        rollupOptions: {
+          output: { entryFileNames: "worker.js" },
+        },
       },
     });
   } catch (err: unknown) {
     throw new BundleError(errorMessage(err), { cause: err });
   }
 
-  // 2. Client build — uses the project's vite.config.ts
+  // 2. Client — standard Vite build (uses project's vite.config.ts)
   const skipClient = opts?.skipClient ?? !agent.clientEntry;
 
   if (!skipClient) {
@@ -122,9 +112,6 @@ export async function bundleAgent(
   };
 }
 
-/**
- * Discover the agent and bundle both worker and client.
- */
 export async function buildAgentBundle(cwd: string): Promise<BundleOutput> {
   const { loadAgent } = await import("./_discover.ts");
   const { consola } = await import("./_ui.ts");
@@ -137,9 +124,7 @@ export async function buildAgentBundle(cwd: string): Promise<BundleOutput> {
   try {
     bundle = await bundleAgent(agent);
   } catch (err: unknown) {
-    if (err instanceof BundleError) {
-      throw new Error(`Bundle failed: ${err.message}`, { cause: err });
-    }
+    if (err instanceof BundleError) throw new Error(`Bundle failed: ${err.message}`, { cause: err });
     throw err;
   }
 
@@ -150,7 +135,6 @@ export async function buildAgentBundle(cwd: string): Promise<BundleOutput> {
   return bundle;
 }
 
-/** Bundle and report success. Used by `aai build`. */
 export async function runBuildCommand(cwd: string): Promise<void> {
   const { consola } = await import("./_ui.ts");
   await buildAgentBundle(cwd);
@@ -159,9 +143,7 @@ export async function runBuildCommand(cwd: string): Promise<void> {
 
 /**
  * Create a Vite dev server using the project's vite.config.ts.
- *
- * The backend port is passed via AAI_BACKEND_PORT env var so the
- * project's vite.config.ts can configure the proxy.
+ * Backend port is passed via AAI_BACKEND_PORT env var for proxy config.
  */
 export async function createClientDevServer(
   agentDir: string,
@@ -171,10 +153,7 @@ export async function createClientDevServer(
   process.env.AAI_BACKEND_PORT = String(backendPort);
   const vite = await createViteServer({
     root: agentDir,
-    server: {
-      port,
-      strictPort: true,
-    },
+    server: { port, strictPort: true },
   });
   return vite;
 }
