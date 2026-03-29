@@ -70,7 +70,6 @@
     "check:attw": "attw --pack --profile esm-only"
   },
   "dependencies": {
-    "@opentelemetry/api": "^1.9.1",
     "crossws": "^0.4.4",
     "hookable": "^6.1.0",
     "nanoevents": "^9.1.0",

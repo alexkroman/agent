@@ -19,6 +19,5 @@ export * from "./protocol.ts";
 export * from "./runtime.ts";
 export * from "./s2s.ts";
 export * from "./session.ts";
-export * from "./telemetry.ts";
 export * from "./unstorage-kv.ts";
 export * from "./ws-handler.ts";

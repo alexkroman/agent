@@ -9,13 +9,6 @@
 
 import { DEFAULT_STT_SAMPLE_RATE, DEFAULT_TTS_SAMPLE_RATE } from "./constants.ts";
 
-let _otel: typeof import("@opentelemetry/api") | undefined;
-try {
-  _otel = await import("@opentelemetry/api");
-} catch {
-  // @opentelemetry/api is an optional peer dependency
-}
-
 /** Structured context attached to log messages. */
 export type LogContext = Record<string, unknown>;
 
@@ -52,8 +45,7 @@ export const consoleLogger: Logger = {
 /**
  * Structured JSON logger for production diagnostics. Each log entry is a
  * single-line JSON object with `timestamp`, `level`, `msg`, and any
- * caller-provided context fields. When an active OpenTelemetry span exists,
- * `trace_id` and `span_id` are included automatically.
+ * caller-provided context fields.
  */
 function jsonLog(level: string) {
   return (msg: string, ctx?: LogContext): void => {
@@ -62,16 +54,6 @@ function jsonLog(level: string) {
       level,
       msg,
     };
-
-    // Attach OTel trace context when available.
-    if (_otel) {
-      const span = _otel.trace.getSpan(_otel.context.active());
-      if (span) {
-        const sc = span.spanContext();
-        entry.trace_id = sc.traceId;
-        entry.span_id = sc.spanId;
-      }
-    }
 
     if (ctx) {
       Object.assign(entry, ctx);

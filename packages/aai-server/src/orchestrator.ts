@@ -13,8 +13,7 @@ import { handleDeploy } from "./deploy.ts";
 import { createErrorHandler } from "./error-handler.ts";
 import { factory } from "./factory.ts";
 import { handleKv } from "./kv-handler.ts";
-import { serialize, serializeForAgent } from "./metrics.ts";
-import { requireInternal, requireOwner, validateSlug } from "./middleware.ts";
+import { requireOwner, validateSlug } from "./middleware.ts";
 import type { AgentSlot } from "./sandbox.ts";
 import { resolveSandbox } from "./sandbox.ts";
 import { handleSecretDelete, handleSecretList, handleSecretSet } from "./secret-handler.ts";
@@ -51,11 +50,6 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     await next();
   });
 
-  const internalMw = factory.createMiddleware(async (c, next) => {
-    requireInternal(c.req.raw);
-    await next();
-  });
-
   const allowedOrigins = opts.allowedOrigins;
   app.use(
     "*",
@@ -89,12 +83,6 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
 
   app.get("/health", (c) => c.json({ status: "ok" }));
 
-  app.get("/metrics", internalMw, async (c) =>
-    c.text(await serialize(), 200, {
-      "Content-Type": "text/plain; version=0.0.4",
-    }),
-  );
-
   // Bare-slug redirect (before sub-router so it takes priority)
   app.get("/:slug{[a-z0-9][a-z0-9_-]*[a-z0-9]}", (c) => {
     const url = new URL(c.req.url);
@@ -113,11 +101,6 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   agents.put("/secret", ownerMw, handleSecretSet);
   agents.delete("/secret/:key", ownerMw, handleSecretDelete);
   agents.post("/kv", ownerMw, handleKv);
-  agents.get("/metrics", ownerMw, async (c) =>
-    c.text(await serializeForAgent(c.var.slug), 200, {
-      "Content-Type": "text/plain; version=0.0.4",
-    }),
-  );
   agents.get("/kv", ownerMw, async (c) => {
     const key = c.req.query("key");
     if (!key) return c.json({ error: "Missing key query parameter" }, 400);

@@ -2,7 +2,7 @@
 /**
  * Resource cleanup and leak detection tests for server-side components.
  *
- * Verifies that WebSocket connections, S2S handles, timers, telemetry spans,
+ * Verifies that WebSocket connections, S2S handles, timers,
  * message buffers, and hook promises are properly cleaned up on disconnect,
  * error, and reset to prevent memory leaks in long-running processes.
  */

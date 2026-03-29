@@ -2,9 +2,13 @@
 /** S2S session — relays audio between client and AssemblyAI S2S API. */
 
 import type { AgentConfig, ExecuteTool, ToolSchema } from "./_internal-types.ts";
-import { activeSessionsUpDown, sessionCounter, setupListeners } from "./_session-otel.ts";
 import { errorDetail, errorMessage, toolError } from "./_utils.ts";
-import { DEFAULT_IDLE_TIMEOUT_MS, DEFAULT_MAX_HISTORY, HOOK_TIMEOUT_MS } from "./constants.ts";
+import {
+  DEFAULT_IDLE_TIMEOUT_MS,
+  DEFAULT_MAX_HISTORY,
+  HOOK_TIMEOUT_MS,
+  MAX_TOOL_RESULT_CHARS,
+} from "./constants.ts";
 import type { AgentHookMap, AgentHooks } from "./hooks.ts";
 import { callResolveTurnConfig } from "./hooks.ts";
 import type { ClientSink } from "./protocol.ts";
@@ -15,10 +19,10 @@ import {
   connectS2s,
   defaultCreateS2sWebSocket,
   type S2sHandle,
+  type S2sToolCall,
   type S2sToolSchema,
 } from "./s2s.ts";
 import { buildSystemPrompt } from "./system-prompt.ts";
-import { idleTimeoutCounter } from "./telemetry.ts";
 import type { Message } from "./types.ts";
 
 export type { S2sHandle } from "./s2s.ts";
@@ -223,7 +227,6 @@ function createIdleTimer(opts: {
       if (timer !== null) clearTimeout(timer);
       timer = setTimeout(() => {
         opts.log.info("S2S idle timeout", { timeoutMs: opts.timeoutMs, agent: opts.agent });
-        idleTimeoutCounter.add(1, { agent: opts.agent });
         opts.client.event({ type: "idle_timeout" });
         opts.ctx.s2s?.close();
       }, opts.timeoutMs);
@@ -235,6 +238,158 @@ function createIdleTimer(opts: {
       }
     },
   };
+}
+
+// ─── Session event handlers ─────────────────────────────────────────────────
+
+/**
+ * Complete a tool call by truncating the result, emitting a `tool_call_done` event,
+ * and accumulating the result in `ctx.reply.pendingTools` — but only if the reply that
+ * initiated this call is still active.
+ */
+function finishToolCall(
+  ctx: S2sSessionCtx,
+  callId: string,
+  result: string,
+  replyId: string | null,
+): void {
+  const truncatedResult =
+    result.length > MAX_TOOL_RESULT_CHARS ? result.slice(0, MAX_TOOL_RESULT_CHARS) : result;
+  ctx.client.event({ type: "tool_call_done", toolCallId: callId, result: truncatedResult });
+  if (replyId !== null && replyId === ctx.reply.currentReplyId) {
+    ctx.reply.pendingTools.push({ callId, result });
+    if (ctx.maxHistory > 0 && ctx.reply.pendingTools.length > ctx.maxHistory) {
+      ctx.reply.pendingTools.shift();
+    }
+  }
+}
+
+async function handleToolCall(ctx: S2sSessionCtx, detail: S2sToolCall): Promise<void> {
+  const { callId, name, args: parsedArgs } = detail;
+  const replyId = ctx.reply.currentReplyId;
+
+  ctx.client.event({
+    type: "tool_call_start",
+    toolCallId: callId,
+    toolName: name,
+    args: parsedArgs,
+  });
+
+  let turnConfig: { maxSteps?: number } | null;
+  try {
+    turnConfig = await ctx.resolveTurnConfig();
+  } catch (err: unknown) {
+    const msg = `resolveTurnConfig hook error: ${errorMessage(err)}`;
+    ctx.log.error(msg);
+    finishToolCall(ctx, callId, toolError(msg), replyId);
+    return;
+  }
+
+  const refused = ctx.consumeToolCallStep(turnConfig, name, replyId);
+  if (refused !== null) {
+    finishToolCall(ctx, callId, refused, replyId);
+    return;
+  }
+
+  ctx.log.info("S2S tool call", { tool: name, callId, args: parsedArgs, agent: ctx.agent });
+
+  let result: string;
+  try {
+    result = await ctx.executeTool(name, parsedArgs, ctx.id, ctx.conversationMessages);
+  } catch (err: unknown) {
+    const msg = errorMessage(err);
+    ctx.log.error("Tool execution failed", { tool: name, error: errorDetail(err) });
+    result = toolError(msg);
+  }
+
+  ctx.log.info("S2S tool result", { tool: name, callId, resultLength: result.length });
+  finishToolCall(ctx, callId, result, replyId);
+}
+
+function handleUserTranscript(ctx: S2sSessionCtx, text: string): void {
+  ctx.log.info("S2S user transcript", { text });
+  ctx.client.event({ type: "transcript", text, isFinal: true });
+  ctx.client.event({ type: "turn", text });
+  ctx.pushMessages({ role: "user", content: text });
+  ctx.fireHook("turn", ctx.id, text, HOOK_TIMEOUT_MS);
+}
+
+function handleAgentTranscript(ctx: S2sSessionCtx, text: string, interrupted: boolean): void {
+  ctx.client.event({ type: "chat", text });
+  if (!interrupted) {
+    ctx.pushMessages({ role: "assistant", content: text });
+  }
+}
+
+function handleReplyDone(ctx: S2sSessionCtx, status: string | undefined): void {
+  if (status === "interrupted") {
+    ctx.log.info("S2S reply interrupted (barge-in)");
+    ctx.cancelReply();
+    ctx.client.event({ type: "cancelled" });
+    return;
+  }
+  const doneReplyId = ctx.reply.currentReplyId;
+  const sendPending = () => {
+    if (ctx.reply.currentReplyId !== doneReplyId) {
+      ctx.reply.pendingTools = [];
+      return;
+    }
+    if (ctx.reply.pendingTools.length > 0) {
+      for (const tool of ctx.reply.pendingTools) ctx.s2s?.sendToolResult(tool.callId, tool.result);
+      ctx.reply.pendingTools = [];
+    } else {
+      const stepsUsed = ctx.reply.toolCallCount;
+      if (stepsUsed > 0) {
+        ctx.log.info("Turn complete", { steps: stepsUsed, agent: ctx.agent });
+      }
+      ctx.client.playAudioDone();
+      ctx.client.event({ type: "tts_done" });
+    }
+  };
+  if (ctx.turnPromise !== null) {
+    void ctx.turnPromise.then(sendPending);
+  } else {
+    sendPending();
+  }
+}
+
+function setupListeners(ctx: S2sSessionCtx, handle: S2sHandle): void {
+  handle.on("ready", ({ sessionId }) => ctx.log.info("S2S session ready", { sessionId }));
+  handle.on("sessionExpired", () => {
+    ctx.log.info("S2S session expired");
+    handle.close();
+  });
+  handle.on("speechStarted", () => ctx.client.event({ type: "speech_started" }));
+  handle.on("speechStopped", () => ctx.client.event({ type: "speech_stopped" }));
+  handle.on("userTranscriptDelta", ({ text }) =>
+    ctx.client.event({ type: "transcript", text, isFinal: false }),
+  );
+  handle.on("userTranscript", ({ text }) => handleUserTranscript(ctx, text));
+  handle.on("replyStarted", ({ replyId }) => {
+    ctx.beginReply(replyId);
+  });
+  handle.on("audio", ({ audio }) => ctx.client.playAudioChunk(audio));
+  handle.on("agentTranscriptDelta", ({ text }) => ctx.client.event({ type: "chat_delta", text }));
+  handle.on("agentTranscript", ({ text, interrupted }) =>
+    handleAgentTranscript(ctx, text, interrupted),
+  );
+  handle.on("toolCall", (detail) => {
+    const p = handleToolCall(ctx, detail).catch((err: unknown) => {
+      ctx.log.error("Tool call handler failed", { err: errorMessage(err) });
+    });
+    ctx.chainTurn(p);
+  });
+  handle.on("replyDone", ({ status }) => handleReplyDone(ctx, status));
+  handle.on("error", ({ code, message }) => {
+    ctx.log.error("S2S error", { code, message });
+    ctx.client.event({ type: "error", code: "internal", message });
+    handle.close();
+  });
+  handle.on("close", () => {
+    ctx.log.info("S2S closed");
+    ctx.s2s = null;
+    ctx.cancelReply();
+  });
 }
 
 // ─── Main session factory ────────────────────────────────────────────────────
@@ -311,8 +466,6 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
 
   return {
     async start(): Promise<void> {
-      sessionCounter.add(1, { agent });
-      activeSessionsUpDown.add(1, { agent });
       ctx.fireHook("connect", id, HOOK_TIMEOUT_MS);
       await connectAndSetup();
     },
@@ -320,7 +473,6 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
       if (sessionAbort.signal.aborted) return;
       sessionAbort.abort();
       idle.clear();
-      activeSessionsUpDown.add(-1, { agent });
       if (ctx.turnPromise !== null) await ctx.turnPromise;
       await ctx.drainHooks();
       ctx.s2s?.close();
