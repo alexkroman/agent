@@ -2,7 +2,7 @@
 /**
  * End-to-end CLI tests (Vite builds, real servers, Playwright browser):
  *   1. Template builds: dev & user workflows for representative templates
- *   2. CLI commands: dev --check, start, deploy --dry-run
+ *   2. CLI commands: deploy --dry-run
  *   3. Browser tests (Playwright): UI render, WebSocket, conversation flow
  *
  * Run via: pnpm test:e2e
@@ -162,34 +162,6 @@ describe("pack + build: template workflows", () => {
 
 // --- CLI commands (single template) ---
 
-describe("CLI: dev --check", () => {
-  test("init -> dev --check", () => {
-    const projectDir = path.join(tmpDir, "_dev-check");
-    initProject("simple", projectDir);
-    aai(["dev", "--check", "--port", String(BASE_PORT)], projectDir);
-  });
-});
-
-describe("CLI: build -> start serves health", () => {
-  test("start responds to /health after build", async () => {
-    const projectDir = path.join(tmpDir, "_start-test");
-    const port = BASE_PORT + 100;
-    initProject("simple", projectDir);
-    aai(["build"], projectDir);
-
-    const child = aaiSpawn(["start", "--port", String(port)], projectDir);
-    try {
-      await waitForHealth(`http://localhost:${port}/health`, child);
-      const res = await fetch(`http://localhost:${port}/health`);
-      expect(res.ok).toBe(true);
-      const body = (await res.json()) as { status: string };
-      expect(body.status).toBe("ok");
-    } finally {
-      child.kill();
-      await waitForExit(child);
-    }
-  });
-});
 
 describe("CLI: deploy --dry-run", () => {
   test("init -> deploy --dry-run succeeds without a server", () => {
@@ -260,7 +232,9 @@ async function setupEventInjector(browser: Browser, port: number) {
   return { page, inject, replayFixture, clientFrames };
 }
 
-describe.skipIf(!playwrightAvailable)("browser: build -> start", () => {
+// Browser tests disabled — they require `aai start` which was removed.
+// TODO: rewrite to use `vite preview` or a standalone node server.
+describe.skip("browser: build -> start", () => {
   let browser: Browser;
   let child: ChildProcess;
   const port = BASE_PORT + 200;

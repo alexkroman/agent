@@ -82,8 +82,10 @@ describe("isolate boot", () => {
     expect(port).toBeGreaterThan(0);
   });
 
-  test("isolate HTTP server responds with 404 for non-WS requests", async () => {
-    const res = await fetch(`http://127.0.0.1:${port}/health`);
+  test("isolate HTTP server responds with 404 for non-RPC requests", async () => {
+    const res = await fetch(`http://127.0.0.1:${port}/health`, {
+      headers: { "x-harness-token": "test-token" },
+    });
     expect(res.status).toBe(404);
   });
 });
