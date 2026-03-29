@@ -48,9 +48,9 @@ beforeAll(async () => {
 
   const isolateUrl = `http://127.0.0.1:${isolate.port}`;
   const executeTool = _internals.buildExecuteTool(isolateUrl, AUTH_TOKEN, isolate.crashed);
-  const hookInvoker = _internals.buildHookInvoker(isolateUrl, AUTH_TOKEN, isolate.crashed);
+  const hooks = _internals.buildHookInvoker(isolateUrl, AUTH_TOKEN, isolate.crashed);
 
-  ctx = { executeTool, hookInvoker };
+  ctx = { executeTool, hooks };
   cleanup = async () => {
     await isolate.runtime.terminate();
     sidecar.close();

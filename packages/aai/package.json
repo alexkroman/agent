@@ -66,6 +66,7 @@
   },
   "dependencies": {
     "@opentelemetry/api": "^1.9.1",
+    "hookable": "^6.1.0",
     "html-to-text": "^9.0.5",
     "nanoevents": "^9.1.0",
     "p-timeout": "^7.0.1",

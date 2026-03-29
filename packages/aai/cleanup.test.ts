@@ -7,9 +7,11 @@
  * error, and reset to prevent memory leaks in long-running processes.
  */
 
+import { createHooks } from "hookable";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { MockWebSocket } from "./_mock-ws.ts";
 import { makeClient, makeMockHandle, makeSessionOpts, silentLogger } from "./_test-utils.ts";
+import type { AgentHookMap } from "./hooks.ts";
 import type { S2sHandle } from "./s2s.ts";
 import type { Session } from "./session.ts";
 import { _internals, createS2sSession, type S2sSessionOptions } from "./session.ts";
@@ -214,21 +216,18 @@ describe("createS2sSession resource cleanup", () => {
 
   test("stop() drains all in-flight hook promises before completing", async () => {
     let resolveOnConnect!: () => void;
-    const hookInvoker = {
-      onConnect: vi.fn(
-        () =>
-          new Promise<void>((r) => {
-            resolveOnConnect = r;
-          }),
-      ),
-      onDisconnect: vi.fn(async () => {
-        /* noop */
-      }),
-      onTurn: vi.fn(),
-      onError: vi.fn(),
-      resolveTurnConfig: vi.fn(async () => null),
-    };
-    const { session, mockHandle } = setup({ hookInvoker });
+    const hooks = createHooks<AgentHookMap>();
+    hooks.hook(
+      "connect",
+      () =>
+        new Promise<void>((r) => {
+          resolveOnConnect = r;
+        }),
+    );
+    hooks.hook("disconnect", async () => {
+      /* noop */
+    });
+    const { session, mockHandle } = setup({ hooks });
 
     // start() fires onConnect hook asynchronously — don't await it fully
     const startPromise = session.start();

@@ -3,6 +3,8 @@
 
 import { randomBytes } from "node:crypto";
 import {
+  type AgentHookMap,
+  type AgentHooks,
   type AgentRuntime,
   buildReadyConfig,
   createS2sSession,
@@ -11,7 +13,6 @@ import {
   type ExecuteTool,
   errorMessage,
   HOOK_TIMEOUT_MS,
-  type HookInvoker,
   isReadOnlyFsOp,
   type Session,
   type SessionStartOptions,
@@ -20,6 +21,7 @@ import {
   toAgentConfig,
   wireSessionSocket,
 } from "@alexkroman1/aai/internal";
+import { createHooks } from "hookable";
 import pTimeout from "p-timeout";
 import {
   createInMemoryFileSystem,
@@ -237,8 +239,8 @@ function buildHookInvoker(
   isolateUrl: string,
   authToken: string,
   crashed?: AbortSignal,
-): HookInvoker {
-  const hook = async (name: string, extra: Record<string, unknown> = {}): Promise<unknown> =>
+): AgentHooks {
+  const rpc = async (name: string, extra: Record<string, unknown> = {}): Promise<unknown> =>
     (
       await callIsolate(
         isolateUrl,
@@ -250,61 +252,62 @@ function buildHookInvoker(
       )
     ).result;
 
-  return {
-    async onConnect(sessionId) {
-      VoidHookResultSchema.parse(await hook("onConnect", { sessionId }));
-    },
-    async onDisconnect(sessionId) {
-      VoidHookResultSchema.parse(await hook("onDisconnect", { sessionId }));
-    },
-    async onTurn(sessionId, text) {
-      VoidHookResultSchema.parse(await hook("onTurn", { sessionId, text }));
-    },
-    async onError(sessionId, error) {
-      VoidHookResultSchema.parse(await hook("onError", { sessionId, error }));
-    },
-    async resolveTurnConfig(sessionId) {
-      const parsed = TurnConfigResultSchema.parse(await hook("resolveTurnConfig", { sessionId }));
-      if (parsed == null) return null;
-      const config: { maxSteps?: number } = {};
-      if (parsed.maxSteps != null) config.maxSteps = parsed.maxSteps;
-      return config;
-    },
-    async filterInput(sessionId, text) {
-      const result = FilterInputResultSchema.parse(await hook("filterInput", { sessionId, text }));
-      return result ?? text;
-    },
-    async beforeTurn(sessionId, text) {
-      return BeforeTurnResultSchema.parse(await hook("beforeTurn", { sessionId, text }));
-    },
-    async afterTurn(sessionId, text) {
-      VoidHookResultSchema.parse(await hook("afterTurn", { sessionId, text }));
-    },
-    async interceptToolCall(sessionId, tool, args) {
-      const result = await hook("interceptToolCall", {
-        sessionId,
-        toolName: tool,
-        toolArgs: args,
-      });
-      return ToolInterceptResultSchema.parse(result);
-    },
-    async afterToolCall(sessionId, tool, args, result) {
-      VoidHookResultSchema.parse(
-        await hook("afterToolCall", {
-          sessionId,
-          toolName: tool,
-          toolArgs: args,
-          text: result,
-        }),
-      );
-    },
-    async filterOutput(sessionId, text) {
-      const result = FilterOutputResultSchema.parse(
-        await hook("filterOutput", { sessionId, text }),
-      );
-      return result ?? text;
-    },
-  };
+  const hooks = createHooks<AgentHookMap>();
+
+  hooks.hook("connect", async (sessionId) => {
+    VoidHookResultSchema.parse(await rpc("onConnect", { sessionId }));
+  });
+  hooks.hook("disconnect", async (sessionId) => {
+    VoidHookResultSchema.parse(await rpc("onDisconnect", { sessionId }));
+  });
+  hooks.hook("turn", async (sessionId, text) => {
+    VoidHookResultSchema.parse(await rpc("onTurn", { sessionId, text }));
+  });
+  hooks.hook("error", async (sessionId, error) => {
+    VoidHookResultSchema.parse(await rpc("onError", { sessionId, error }));
+  });
+  // Value-returning hooks need `as any` because hookable types all hooks as void-returning.
+  // Actual return values are extracted via callHookWith callers.
+  // biome-ignore lint/suspicious/noExplicitAny: hookable void-return constraint
+  hooks.hook("resolveTurnConfig", (async (sessionId: string) => {
+    const parsed = TurnConfigResultSchema.parse(await rpc("resolveTurnConfig", { sessionId }));
+    if (parsed == null) return null;
+    const config: { maxSteps?: number } = {};
+    if (parsed.maxSteps != null) config.maxSteps = parsed.maxSteps;
+    return config;
+  }) as any);
+  // biome-ignore lint/suspicious/noExplicitAny: hookable void-return constraint
+  hooks.hook("filterInput", (async (sessionId: string, text: string) => {
+    const result = FilterInputResultSchema.parse(await rpc("filterInput", { sessionId, text }));
+    return result ?? text;
+  }) as any);
+  // biome-ignore lint/suspicious/noExplicitAny: hookable void-return constraint
+  hooks.hook("beforeTurn", (async (sessionId: string, text: string) =>
+    BeforeTurnResultSchema.parse(await rpc("beforeTurn", { sessionId, text }))) as any);
+  hooks.hook("afterTurn", async (sessionId, text) => {
+    VoidHookResultSchema.parse(await rpc("afterTurn", { sessionId, text }));
+  });
+  // biome-ignore lint/suspicious/noExplicitAny: hookable void-return constraint
+  hooks.hook("interceptToolCall", (async (
+    sessionId: string,
+    tool: string,
+    args: Readonly<Record<string, unknown>>,
+  ) => {
+    const result = await rpc("interceptToolCall", { sessionId, toolName: tool, toolArgs: args });
+    return ToolInterceptResultSchema.parse(result);
+  }) as any);
+  hooks.hook("afterToolCall", async (sessionId, tool, args, result) => {
+    VoidHookResultSchema.parse(
+      await rpc("afterToolCall", { sessionId, toolName: tool, toolArgs: args, text: result }),
+    );
+  });
+  // biome-ignore lint/suspicious/noExplicitAny: hookable void-return constraint
+  hooks.hook("filterOutput", (async (sessionId: string, text: string) => {
+    const result = FilterOutputResultSchema.parse(await rpc("filterOutput", { sessionId, text }));
+    return result ?? text;
+  }) as any);
+
+  return hooks;
 }
 
 /** @internal Exposed for testing only. */
@@ -343,7 +346,7 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
   const isolateUrl = `http://127.0.0.1:${isolatePort}`;
   const agentConfig = toAgentConfig(config);
   const executeTool = buildExecuteTool(isolateUrl, authToken, crashed);
-  const hookInvoker = buildHookInvoker(isolateUrl, authToken, crashed);
+  const hooks = buildHookInvoker(isolateUrl, authToken, crashed);
   const s2sConfig = DEFAULT_S2S_CONFIG;
   const readyConfig = buildReadyConfig(s2sConfig);
 
@@ -390,7 +393,7 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
             apiKey,
             s2sConfig,
             executeTool,
-            hookInvoker,
+            hooks,
             skipGreeting: startOpts?.skipGreeting ?? false,
             ...(resumeFrom ? { resumeFrom } : {}),
           }),

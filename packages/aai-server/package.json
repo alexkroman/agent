@@ -25,6 +25,7 @@
     "async-lock": "^1.4.1",
     "aws4fetch": "^1.0.20",
     "hono": "^4.12.9",
+    "hookable": "^6.1.0",
     "lru-cache": "^11.2.7",
     "mime-types": "^3.0.2",
     "p-timeout": "^7.0.1",
