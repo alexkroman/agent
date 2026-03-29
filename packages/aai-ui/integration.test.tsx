@@ -36,7 +36,10 @@ describe("UI integration: defineClient lifecycle", () => {
       return <div data-testid="state">{s.session.state.value}</div>;
     }
 
-    const handle = defineClient(TestApp, { platformUrl: "http://localhost:3000" });
+    const handle = defineClient(TestApp, {
+      platformUrl: "http://localhost:3000",
+      WebSocket: globalThis.WebSocket,
+    });
 
     // Start the session
     handle.signals.start();
@@ -68,7 +71,10 @@ describe("UI integration: defineClient lifecycle", () => {
       return <div>mounted</div>;
     }
 
-    const handle = defineClient(TestApp, { platformUrl: "http://localhost:3000" });
+    const handle = defineClient(TestApp, {
+      platformUrl: "http://localhost:3000",
+      WebSocket: globalThis.WebSocket,
+    });
     const el = document.querySelector("#app");
     expect(el?.textContent).toContain("mounted");
 
@@ -77,7 +83,10 @@ describe("UI integration: defineClient lifecycle", () => {
   });
 
   test("defineClient returns session and signals handles", () => {
-    const handle = defineClient(() => <div />, { platformUrl: "http://localhost:3000" });
+    const handle = defineClient(() => <div />, {
+      platformUrl: "http://localhost:3000",
+      WebSocket: globalThis.WebSocket,
+    });
     expect(handle.session).toBeDefined();
     expect(handle.signals).toBeDefined();
     expect(handle.signals.started.value).toBe(false);

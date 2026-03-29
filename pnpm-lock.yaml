@@ -229,6 +229,9 @@ importers:
       clsx:
         specifier: ^2.1.1
         version: 2.1.1
+      crossws:
+        specifier: ^0.4.4
+        version: 0.4.4
       tailwindcss:
         specifier: ^4.2.1
         version: 4.2.2

@@ -28,7 +28,8 @@
   },
   "dependencies": {
     "@alexkroman1/aai": "workspace:*",
-    "clsx": "^2.1.1"
+    "clsx": "^2.1.1",
+    "crossws": "^0.4.4"
   },
   "peerDependencies": {
     "@preact/signals": "^2.8.2",

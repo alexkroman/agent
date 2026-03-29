@@ -2,6 +2,7 @@
 
 import type { ClientMessage, ReadyConfig } from "@alexkroman1/aai/protocol";
 import { errorMessage } from "@alexkroman1/aai/utils";
+import CrossWebSocket from "crossws/websocket";
 import type { VoiceIO } from "./audio.ts";
 import { ClientHandler } from "./client-handler.ts";
 import type {
@@ -11,6 +12,7 @@ import type {
   SessionError,
   ToolCallInfo,
   VoiceSessionOptions,
+  WebSocketConstructor,
 } from "./types.ts";
 
 export { ClientHandler } from "./client-handler.ts";
@@ -22,7 +24,10 @@ export type {
   SessionErrorCode,
   ToolCallInfo,
   VoiceSessionOptions,
+  WebSocketConstructor,
 } from "./types.ts";
+
+const WS_OPEN = 1;
 
 // ─── Audio initialization (extracted for function-length limit) ──────────────
 
@@ -34,7 +39,7 @@ export type {
  * assigning their results to a newer connection after a reconnect.
  */
 type ConnState = {
-  ws: WebSocket | null;
+  ws: InstanceType<WebSocketConstructor> | null;
   voiceIO: VoiceIO | null;
   audioSetupInFlight: boolean;
   /** Monotonically increasing counter bumped on each connect(). Prevents a stale
@@ -101,7 +106,7 @@ async function initAudioCapture(
         }
       },
     });
-    if (conn.generation !== gen || !conn.ws || conn.ws.readyState !== WebSocket.OPEN) {
+    if (conn.generation !== gen || !conn.ws || conn.ws.readyState !== WS_OPEN) {
       io.close();
       return;
     }
@@ -109,7 +114,7 @@ async function initAudioCapture(
     deps.send({ type: "audio_ready" });
     deps.state.value = "listening";
   } catch (err: unknown) {
-    if (conn.generation !== gen || !conn.ws || conn.ws.readyState !== WebSocket.OPEN) return;
+    if (conn.generation !== gen || !conn.ws || conn.ws.readyState !== WS_OPEN) return;
     deps.batch(() => {
       deps.error.value = {
         code: "audio",
@@ -197,6 +202,7 @@ function buildWsUrl(platformUrl: string, resume: boolean, sessionId?: string): U
  * @public
  */
 export function createVoiceSession(options: VoiceSessionOptions): VoiceSession {
+  const WS: WebSocketConstructor = options.WebSocket ?? (CrossWebSocket as WebSocketConstructor);
   const reactive =
     options.reactiveFactory ?? (<T>(initial: T): Reactive<T> => ({ value: initial }));
   const batchFn = options.batch ?? ((fn: () => void) => fn());
@@ -230,13 +236,13 @@ export function createVoiceSession(options: VoiceSessionOptions): VoiceSession {
   }
 
   function send(msg: ClientMessage): void {
-    if (conn.ws && conn.ws.readyState === WebSocket.OPEN) {
+    if (conn.ws && conn.ws.readyState === WS_OPEN) {
       conn.ws.send(JSON.stringify(msg));
     }
   }
 
   function sendBinary(data: ArrayBuffer): void {
-    if (conn.ws && conn.ws.readyState === WebSocket.OPEN) {
+    if (conn.ws && conn.ws.readyState === WS_OPEN) {
       conn.ws.send(data);
     }
   }
@@ -264,7 +270,7 @@ export function createVoiceSession(options: VoiceSessionOptions): VoiceSession {
     const resumeId = !hasConnected ? options.resumeSessionId : undefined;
     const wsUrl = buildWsUrl(options.platformUrl, hasConnected, resumeId);
 
-    const socket = new WebSocket(wsUrl.toString());
+    const socket = new WS(wsUrl.toString());
     socket.binaryType = "arraybuffer";
     conn.ws = socket;
 
@@ -340,7 +346,7 @@ export function createVoiceSession(options: VoiceSessionOptions): VoiceSession {
 
   function reset(): void {
     conn.voiceIO?.flush();
-    if (conn.ws && conn.ws.readyState === WebSocket.OPEN) {
+    if (conn.ws && conn.ws.readyState === WS_OPEN) {
       send({ type: "reset" });
       return;
     }
