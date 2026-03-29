@@ -99,4 +99,19 @@ export type VoiceSessionOptions = {
    * `persistence` enabled).
    */
   resumeSessionId?: string | undefined;
+  /**
+   * WebSocket constructor override. Defaults to the native `WebSocket`.
+   * Primarily useful for testing with a mock WebSocket.
+   */
+  WebSocket?: WebSocketConstructor | undefined;
+};
+
+/**
+ * Minimal WebSocket constructor type accepted by {@link VoiceSessionOptions}.
+ *
+ * @public
+ */
+export type WebSocketConstructor = {
+  new (url: string | URL, protocols?: string | string[]): WebSocket;
+  readonly OPEN: number;
 };

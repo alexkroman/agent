@@ -7,7 +7,7 @@ describe("cli", () => {
   test("main command has expected subcommands", () => {
     const subs = mainCommand.subCommands as Record<string, unknown>;
     expect(subs).toBeDefined();
-    for (const cmd of ["init", "dev", "test", "build", "deploy", "start", "secret"]) {
+    for (const cmd of ["init", "dev", "test", "build", "deploy", "delete", "secret", "generate", "run"]) {
       expect(subs[cmd]).toBeDefined();
     }
   });

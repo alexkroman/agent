@@ -66,10 +66,9 @@ with `aai init -t <template_name>`.
 | `dispatch-center`   | 911 dispatch with incident triage and resource assignment. **Has custom UI.**      |
 | `infocom-adventure` | Zork-style text adventure with state, puzzles, inventory. **Has custom UI.**       |
 | `solo-rpg`          | Solo dark-fantasy RPG with dice, oaths, combat, save/load. **Has custom UI.**      |
-| `middleware`        | Middleware demo: rate limiting, PII redaction, caching, analytics                  |
 | `embedded-assets`   | FAQ bot using embedded JSON knowledge (no web search)                              |
 | `support`           | Support agent for AssemblyAI docs                                                  |
-| `test-patterns`     | Demonstrates every testable agent pattern (tools, hooks, middleware, state)        |
+| `test-patterns`     | Demonstrates every testable agent pattern (tools, hooks, state)                    |
 
 ## Minimal agent
 
@@ -89,7 +88,7 @@ export default defineAgent({
 
 ```ts
 import { defineAgent, defineTool, defineToolFactory } from "@alexkroman1/aai"; // defineAgent + helpers
-import type { BuiltinTool, HookContext, Middleware, ToolContext } from "@alexkroman1/aai";
+import type { BuiltinTool, HookContext, ToolContext } from "@alexkroman1/aai";
 import { z } from "zod"; // Tools with typed params (included in package.json)
 ```
 
@@ -118,9 +117,6 @@ defineAgent({
   onDisconnect?: (ctx: HookContext) => void | Promise<void>;
   onError?: (error: Error, ctx?: HookContext) => void;
   onTurn?: (text: string, ctx: HookContext) => void | Promise<void>;
-
-  // Middleware
-  middleware?: Middleware[];   // Composable interceptors (see below)
 });
 ```
 
@@ -404,57 +400,6 @@ toolChoice: "none",     // Disable all tool use
 toolChoice: { type: "tool", toolName: "search" }, // Force a specific tool
 ```
 
-### Middleware / interceptors
-
-Middleware provides composable hooks for turns, tool calls, and output
-filtering. Runs in array order for "before" hooks and reverse for "after".
-
-```ts
-import type { Middleware } from "@alexkroman1/aai";
-
-const rateLimiter: Middleware = {
-  name: "rate-limiter",
-  beforeTurn: (ctx) => {
-    // ctx.text has the user's input
-    // Return { block: true, reason: "..." } to block the turn
-    // Return void to proceed
-  },
-  afterTurn: (ctx) => {
-    // Run after a turn completes (ctx.text has the turn text)
-  },
-};
-
-const piiRedactor: Middleware = {
-  name: "pii-redactor",
-  beforeOutput: (ctx) => {
-    // Transform agent text before TTS. Return the filtered text.
-    return (ctx.text ?? "").replace(/\d{3}-\d{2}-\d{4}/g, "[SSN REDACTED]");
-  },
-};
-
-const cacheMiddleware: Middleware = {
-  name: "tool-cache",
-  beforeToolCall: (ctx) => {
-    // ctx.tool has the tool name, ctx.args has the arguments
-    // Return { type: "result", result: "cached" } to skip execution
-    // Return { type: "block", reason: "denied" } to deny the call
-    // Return { type: "args", args: { ...modified } } to transform arguments
-    // Return void to proceed normally
-  },
-  afterToolCall: (ctx) => {
-    // ctx.tool, ctx.args, ctx.result are set
-    // Run after tool execution (e.g. cache the result)
-  },
-};
-
-export default defineAgent({
-  name: "My Agent",
-  middleware: [rateLimiter, piiRedactor, cacheMiddleware],
-});
-```
-
-See the `middleware` template (`aai init -t middleware`) for a full example.
-
 ### `maxSteps` — controlling the agentic loop
 
 The `maxSteps` option limits how many tool calls the LLM can make in a single
@@ -516,54 +461,6 @@ Add packages to `package.json` dependencies:
 ```sh
 npm install some-package
 ```
-
-### Telemetry (OpenTelemetry)
-
-The SDK automatically emits OpenTelemetry traces and metrics for the
-STT→LLM→TTS pipeline. To collect them, install an OTel SDK and
-configure it **before** importing aai:
-
-```ts
-// instrument.ts — import first in your entry point
-import { NodeSDK } from "@opentelemetry/sdk-node";
-import { PrometheusExporter } from "@opentelemetry/exporter-prometheus";
-
-new NodeSDK({
-  metricReader: new PrometheusExporter({ port: 9091 }),
-}).start();
-```
-
-Pre-built metrics (all prefixed `aai.`):
-
-- `aai.session.count` / `aai.session.active` — session lifecycle
-- `aai.turn.count` / `aai.turn.bargein.count` — user turns
-- `aai.tool.call.count` / `aai.tool.call.duration` — tool execution
-- `aai.tool.call.error.count` — tool errors
-- `aai.s2s.connection.duration` / `aai.s2s.error.count` — S2S health
-
-Trace spans: `ws.session`, `s2s.connection`, `tool.call` (with tool
-name, call ID, agent, and session ID attributes).
-
-For custom metrics or spans in your agent code:
-
-```ts
-import { meter, tracer } from "@alexkroman1/aai/internal";
-
-const myCounter = meter.createCounter("my_agent.custom_event");
-
-// In a tool:
-execute: (args, ctx) => {
-  myCounter.add(1, { tool: "my_tool" });
-  return tracer.startActiveSpan("my_tool.work", (span) => {
-    // ... do work ...
-    span.end();
-    return result;
-  });
-},
-```
-
-When no OTel SDK is configured, all calls are no-ops with zero
-overhead.
 
 ## Custom UI (`client.tsx`)
 

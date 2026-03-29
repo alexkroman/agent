@@ -1,25 +1,33 @@
 // Copyright 2025 the AAI authors. MIT license.
-/** Agent sandbox using secure-exec V8 isolates. */
+/**
+ * Agent sandbox using secure-exec V8 isolates.
+ *
+ * The isolate runs agent code (tools + hooks) via an RPC server. The host
+ * runs `createRuntime()` with RPC-backed `executeTool` and `hooks` overrides,
+ * giving it the same session/S2S/WebSocket handling as self-hosted mode
+ * without duplicating any of that logic.
+ */
 
 import { randomBytes } from "node:crypto";
 import {
+  type AgentHookMap,
+  type AgentHooks,
   type AgentRuntime,
   buildReadyConfig,
-  createS2sSession,
+  callResolveTurnConfig,
+  createRuntime,
   createUnstorageKv,
   DEFAULT_S2S_CONFIG,
   type ExecuteTool,
   errorMessage,
   HOOK_TIMEOUT_MS,
-  type HookInvoker,
   isReadOnlyFsOp,
-  type Session,
   type SessionStartOptions,
   type SessionWebSocket,
   TOOL_EXECUTION_TIMEOUT_MS,
   toAgentConfig,
-  wireSessionSocket,
 } from "@alexkroman1/aai/internal";
+import { createHooks } from "hookable";
 import pTimeout from "p-timeout";
 import {
   createInMemoryFileSystem,
@@ -29,28 +37,10 @@ import {
 } from "secure-exec";
 import type { Storage } from "unstorage";
 import { z } from "zod";
-import {
-  BeforeTurnResultSchema,
-  FilterInputResultSchema,
-  FilterOutputResultSchema,
-  HookResponseSchema,
-  type IsolateConfig,
-  IsolateConfigSchema,
-  type RpcRequest,
-  ToolCallResponseSchema,
-  ToolInterceptResultSchema,
-  TurnConfigResultSchema,
-  VoidHookResultSchema,
-} from "./_harness-protocol.ts";
 import type { BundleStore } from "./bundle-store.ts";
-import {
-  CONFIG_TIMEOUT_MS,
-  PORT_ANNOUNCE_TIMEOUT_MS,
-  SANDBOX_MEMORY_LIMIT_MB,
-} from "./constants.ts";
-import { getHarnessRuntimeJs } from "./sandbox-harness.ts";
+import { PORT_ANNOUNCE_TIMEOUT_MS, SANDBOX_MEMORY_LIMIT_MB } from "./constants.ts";
+import { getHarnessFiles } from "./sandbox-harness.ts";
 import { buildNetworkAdapter, buildNetworkPolicy } from "./sandbox-network.ts";
-import { startSidecarServer } from "./sandbox-sidecar.ts";
 import {
   resolveSandbox as _resolveSandboxCore,
   _slotInternals,
@@ -62,42 +52,80 @@ export { type AgentSlot, ensureAgent, registerSlot } from "./sandbox-slots.ts";
 
 export type SandboxOptions = {
   workerCode: string;
-  /** Platform API key (e.g. AssemblyAI) — used by the host only, never sent to the isolate. */
   apiKey: string;
-  /** Agent-defined secrets — forwarded to the isolate via AAI_ENV_ prefixed process env. */
   agentEnv: Record<string, string>;
   storage: Storage;
   slug: string;
 };
 
 export type Sandbox = AgentRuntime & {
-  /** @deprecated Use {@link AgentRuntime.shutdown} instead. Kept for existing callers. */
+  /** @deprecated Use {@link AgentRuntime.shutdown} instead. */
   terminate(): Promise<void>;
 };
 
-// ── Isolate lifecycle ────────────────────────────────────────────────────
+// ── Isolate config schema ───────────────────────────────────────────────
+
+const HooksSchema = z.object({
+  onConnect: z.boolean(),
+  onDisconnect: z.boolean(),
+  onError: z.boolean(),
+  onTurn: z.boolean(),
+  maxStepsIsFn: z.boolean(),
+});
+
+const ToolSchemaSchema = z.object({
+  name: z.string(),
+  description: z.string(),
+  parameters: z.record(z.string(), z.unknown()),
+});
+
+const IsolateConfigSchema = z.object({
+  name: z.string(),
+  instructions: z.string(),
+  greeting: z.string().optional(),
+  sttPrompt: z.string().optional(),
+  maxSteps: z.number().optional(),
+  toolChoice: z.string().optional(),
+  builtinTools: z.array(z.string()).optional(),
+  toolSchemas: z.array(ToolSchemaSchema),
+  hasState: z.boolean(),
+  hooks: HooksSchema,
+});
+
+type IsolateConfig = z.infer<typeof IsolateConfigSchema>;
+
+const ToolCallResponseSchema = z.object({
+  result: z.string(),
+  state: z.record(z.string(), z.unknown()),
+});
+const HookResponseSchema = z.object({
+  state: z.record(z.string(), z.unknown()),
+  result: z.unknown().optional(),
+});
+const TurnConfigResultSchema = z
+  .object({ maxSteps: z.number().int().positive().optional() })
+  .nullable();
+
+// ── Isolate lifecycle ───────────────────────────────────────────────────
 
 async function startIsolate(
   workerCode: string,
-  sidecarUrl: string,
+  kv: import("@alexkroman1/aai/kv").Kv,
   agentEnv: Record<string, string>,
   authToken: string,
 ): Promise<{ port: number; runtime: NodeRuntime; crashed: AbortSignal }> {
-  const harnessJs = await getHarnessRuntimeJs();
+  const harnessFiles = await getHarnessFiles();
   const fs = createInMemoryFileSystem();
   await fs.writeFile("/app/agent_bundle.js", workerCode);
-  await fs.writeFile("/app/_harness-runtime.js", harnessJs);
+  for (const file of harnessFiles) {
+    await fs.writeFile(`/app/${file.name}`, file.content);
+  }
 
-  // Prefix agent env vars with AAI_ENV_ so the harness can identify them.
-  const prefixedEnv: Record<string, string> = {
-    SIDECAR_URL: sidecarUrl,
-    HARNESS_AUTH_TOKEN: authToken,
-  };
+  const prefixedEnv: Record<string, string> = { HARNESS_AUTH_TOKEN: authToken };
   for (const [k, v] of Object.entries(agentEnv)) {
     prefixedEnv[`AAI_ENV_${k}`] = v;
   }
   const allowedKeys = new Set(Object.keys(prefixedEnv));
-
   const crashController = new AbortController();
 
   let resolvePort: (port: number) => void;
@@ -116,18 +144,15 @@ async function startIsolate(
           isReadOnlyFsOp(req.op)
             ? { allow: true }
             : { allow: false, reason: "Filesystem is read-only" },
-        network: buildNetworkPolicy(sidecarUrl),
+        network: buildNetworkPolicy(),
         childProcess: () => ({ allow: false, reason: "Subprocess spawning is disabled" }),
         env: (req) =>
           req.op === "read" && allowedKeys.has(req.key ?? "")
             ? { allow: true }
             : { allow: false, reason: "Env access restricted" },
       },
-      networkAdapter: buildNetworkAdapter(sidecarUrl),
-      processConfig: {
-        env: prefixedEnv,
-        timingMitigation: "freeze",
-      },
+      networkAdapter: buildNetworkAdapter(kv),
+      processConfig: { env: prefixedEnv, timingMitigation: "freeze" },
     }),
     runtimeDriverFactory: createNodeRuntimeDriverFactory(),
     memoryLimit: SANDBOX_MEMORY_LIMIT_MB,
@@ -135,13 +160,12 @@ async function startIsolate(
       if (event.channel === "stdout") {
         try {
           const parsed = z.object({ port: z.number() }).safeParse(JSON.parse(event.message));
-          // Guard: only resolve once. Subsequent port announcements are ignored.
           if (parsed.success && !portResolved) {
             portResolved = true;
             resolvePort(parsed.data.port);
           }
         } catch {
-          // Not the port announcement, ignore
+          /* not the port announcement */
         }
       }
       if (event.channel === "stderr") {
@@ -150,10 +174,9 @@ async function startIsolate(
     },
   });
 
-  // Exec lives as long as the isolate. Pre-port rejections propagate as boot failures.
-  const execPromise = runtime
+  runtime
     .exec(
-      'import agent from "/app/agent_bundle.js";\nimport { startHarness } from "/app/_harness-runtime.js";\nstartHarness(agent);',
+      'import agent from "/app/agent_bundle.js";\nimport { startHarness } from "/app/_harness-runtime.mjs";\nstartHarness(agent);',
       { cwd: "/app" },
     )
     .catch((err: unknown) => {
@@ -165,9 +188,7 @@ async function startIsolate(
     message: `Isolate failed to announce port within ${PORT_ANNOUNCE_TIMEOUT_MS}ms`,
   });
 
-  // After port is resolved, let exec run in background. If it rejects
-  // unexpectedly (crash), abort the crash signal so in-flight calls fail fast.
-  execPromise.catch((err) => {
+  runtime.exec("").catch((err) => {
     if (!crashController.signal.aborted) {
       crashController.abort(new Error(`Isolate crashed: ${errorMessage(err)}`));
     }
@@ -176,25 +197,11 @@ async function startIsolate(
   return { port, runtime, crashed: crashController.signal };
 }
 
-// ── Isolate RPC ──────────────────────────────────────────────────────────
-
-async function getIsolateConfig(port: number, authToken: string): Promise<IsolateConfig> {
-  const res = await fetch(`http://127.0.0.1:${port}/rpc`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-harness-token": authToken },
-    body: JSON.stringify({ type: "config" }),
-    signal: AbortSignal.timeout(CONFIG_TIMEOUT_MS),
-  });
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`Isolate /rpc (config) failed (${res.status}): ${body}`);
-  }
-  return IsolateConfigSchema.parse(await res.json());
-}
+// ── Isolate RPC ─────────────────────────────────────────────────────────
 
 async function callIsolate<T>(
-  isolateUrl: string,
-  message: RpcRequest,
+  port: number,
+  message: Record<string, unknown>,
   timeoutMs: number,
   schema: z.ZodType<T>,
   authToken: string,
@@ -202,7 +209,7 @@ async function callIsolate<T>(
 ): Promise<T> {
   const signals = [AbortSignal.timeout(timeoutMs)];
   if (crashed) signals.push(crashed);
-  const res = await fetch(`${isolateUrl}/rpc`, {
+  const res = await fetch(`http://127.0.0.1:${port}/rpc`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-harness-token": authToken },
     body: JSON.stringify(message),
@@ -215,14 +222,10 @@ async function callIsolate<T>(
   return schema.parse(await res.json());
 }
 
-function buildExecuteTool(
-  isolateUrl: string,
-  authToken: string,
-  crashed?: AbortSignal,
-): ExecuteTool {
+function buildExecuteTool(port: number, authToken: string, crashed?: AbortSignal): ExecuteTool {
   return async (name, args, sessionId, messages) => {
     const { result } = await callIsolate(
-      isolateUrl,
+      port,
       { type: "tool", name, args, sessionId: sessionId ?? "", messages: [...(messages ?? [])] },
       TOOL_EXECUTION_TIMEOUT_MS,
       ToolCallResponseSchema,
@@ -233,16 +236,12 @@ function buildExecuteTool(
   };
 }
 
-function buildHookInvoker(
-  isolateUrl: string,
-  authToken: string,
-  crashed?: AbortSignal,
-): HookInvoker {
-  const hook = async (name: string, extra: Record<string, unknown> = {}): Promise<unknown> =>
+function buildHookInvoker(port: number, authToken: string, crashed?: AbortSignal): AgentHooks {
+  const rpc = async (name: string, extra: Record<string, unknown> = {}): Promise<unknown> =>
     (
       await callIsolate(
-        isolateUrl,
-        { type: "hook", hook: name, ...extra } as RpcRequest & { type: "hook" },
+        port,
+        { type: "hook", hook: name, ...extra },
         HOOK_TIMEOUT_MS,
         HookResponseSchema,
         authToken,
@@ -250,73 +249,36 @@ function buildHookInvoker(
       )
     ).result;
 
-  return {
-    async onConnect(sessionId) {
-      VoidHookResultSchema.parse(await hook("onConnect", { sessionId }));
-    },
-    async onDisconnect(sessionId) {
-      VoidHookResultSchema.parse(await hook("onDisconnect", { sessionId }));
-    },
-    async onTurn(sessionId, text) {
-      VoidHookResultSchema.parse(await hook("onTurn", { sessionId, text }));
-    },
-    async onError(sessionId, error) {
-      VoidHookResultSchema.parse(await hook("onError", { sessionId, error }));
-    },
-    async resolveTurnConfig(sessionId) {
-      const parsed = TurnConfigResultSchema.parse(await hook("resolveTurnConfig", { sessionId }));
-      if (parsed == null) return null;
-      const config: { maxSteps?: number } = {};
-      if (parsed.maxSteps != null) config.maxSteps = parsed.maxSteps;
-      return config;
-    },
-    async filterInput(sessionId, text) {
-      const result = FilterInputResultSchema.parse(await hook("filterInput", { sessionId, text }));
-      return result ?? text;
-    },
-    async beforeTurn(sessionId, text) {
-      return BeforeTurnResultSchema.parse(await hook("beforeTurn", { sessionId, text }));
-    },
-    async afterTurn(sessionId, text) {
-      VoidHookResultSchema.parse(await hook("afterTurn", { sessionId, text }));
-    },
-    async interceptToolCall(sessionId, tool, args) {
-      const result = await hook("interceptToolCall", {
-        sessionId,
-        toolName: tool,
-        toolArgs: args,
-      });
-      return ToolInterceptResultSchema.parse(result);
-    },
-    async afterToolCall(sessionId, tool, args, result) {
-      VoidHookResultSchema.parse(
-        await hook("afterToolCall", {
-          sessionId,
-          toolName: tool,
-          toolArgs: args,
-          text: result,
-        }),
-      );
-    },
-    async filterOutput(sessionId, text) {
-      const result = FilterOutputResultSchema.parse(
-        await hook("filterOutput", { sessionId, text }),
-      );
-      return result ?? text;
-    },
-  };
+  const hooks = createHooks<AgentHookMap>();
+  hooks.hook("connect", async (sessionId) => {
+    await rpc("onConnect", { sessionId });
+  });
+  hooks.hook("disconnect", async (sessionId) => {
+    await rpc("onDisconnect", { sessionId });
+  });
+  hooks.hook("turn", async (sessionId, text) => {
+    await rpc("onTurn", { sessionId, text });
+  });
+  hooks.hook("error", async (sessionId, error) => {
+    await rpc("onError", { sessionId, error });
+  });
+  // biome-ignore lint/suspicious/noExplicitAny: hookable void-return constraint
+  hooks.hook("resolveTurnConfig", (async (sessionId: string) => {
+    const parsed = TurnConfigResultSchema.parse(await rpc("resolveTurnConfig", { sessionId }));
+    if (parsed == null) return null;
+    const config: { maxSteps?: number } = {};
+    if (parsed.maxSteps != null) config.maxSteps = parsed.maxSteps;
+    return config;
+  }) as any);
+  return hooks;
 }
+
+// ── Public API ───────────────────────────────────────────────────────────
 
 /** @internal Exposed for testing only. */
 export const _internals = {
-  startSidecarServer,
   startIsolate,
-  getIsolateConfig,
-  buildNetworkPolicy,
   createSandbox,
-  toAgentConfig,
-  buildExecuteTool,
-  buildHookInvoker,
   get IDLE_MS() {
     return _slotInternals.IDLE_MS;
   },
@@ -326,94 +288,66 @@ export const _internals = {
   resetIdleTimer: _slotInternals.resetIdleTimer,
 };
 
-// ── Public API ───────────────────────────────────────────────────────────
-
 export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
   const { workerCode, apiKey, agentEnv, storage, slug } = opts;
 
   const kv = createUnstorageKv({ storage, prefix: `agents/${slug}/kv` });
-  const sidecar = await startSidecarServer(kv);
   const authToken = randomBytes(32).toString("hex");
-  const {
-    port: isolatePort,
-    runtime,
-    crashed,
-  } = await startIsolate(workerCode, sidecar.url, agentEnv, authToken);
-  const config = await getIsolateConfig(isolatePort, authToken);
-  const isolateUrl = `http://127.0.0.1:${isolatePort}`;
-  const agentConfig = toAgentConfig(config);
-  const executeTool = buildExecuteTool(isolateUrl, authToken, crashed);
-  const hookInvoker = buildHookInvoker(isolateUrl, authToken, crashed);
-  const s2sConfig = DEFAULT_S2S_CONFIG;
-  const readyConfig = buildReadyConfig(s2sConfig);
+  const { port, runtime, crashed } = await startIsolate(workerCode, kv, agentEnv, authToken);
 
-  const sessions = new Map<string, Session>();
+  // Get agent config from isolate
+  const configRes = await fetch(`http://127.0.0.1:${port}/rpc`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-harness-token": authToken },
+    body: JSON.stringify({ type: "config" }),
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!configRes.ok) throw new Error(`Config RPC failed: ${configRes.status}`);
+  const config: IsolateConfig = IsolateConfigSchema.parse(await configRes.json());
 
-  console.info("Sandbox initialized", { slug, isolatePort });
+  // Build RPC-backed tool execution and hooks
+  const executeTool = buildExecuteTool(port, authToken, crashed);
+  const hooks = buildHookInvoker(port, authToken, crashed);
+
+  // Create a runtime with RPC overrides — same startSession/shutdown as self-hosted
+  const agentRuntime = createRuntime({
+    agent: {
+      name: config.name,
+      instructions: config.instructions,
+      greeting: config.greeting,
+      tools: {},
+      ...(config.sttPrompt ? { sttPrompt: config.sttPrompt } : {}),
+      ...(config.maxSteps != null ? { maxSteps: config.maxSteps } : {}),
+      ...(config.toolChoice ? { toolChoice: config.toolChoice } : {}),
+      ...(config.builtinTools ? { builtinTools: config.builtinTools } : {}),
+    },
+    env: { ...agentEnv, ASSEMBLYAI_API_KEY: apiKey },
+    executeTool,
+    hooks,
+    toolSchemas: config.toolSchemas,
+  });
+
+  console.info("Sandbox initialized", { slug, isolatePort: port, agent: config.name });
 
   async function shutdownSandbox(): Promise<void> {
-    // Stop all sessions before disposing runtime/sidecar.
-    const stops = [...sessions.values()].map((s) =>
-      s.stop().catch((err) => {
-        console.warn("Session stop failed during sandbox terminate:", err);
-      }),
-    );
-    await Promise.all(stops);
-    sessions.clear();
+    await agentRuntime.shutdown();
     await runtime.terminate().catch((err: unknown) => {
-      // "Isolate is already disposed" is expected during shutdown — ignore it.
       const msg = errorMessage(err);
-      if (!msg.includes("already disposed")) {
-        console.warn("Runtime terminate failed:", err);
-      }
+      if (!msg.includes("already disposed")) console.warn("Runtime terminate failed:", err);
     });
-    try {
-      sidecar.close();
-    } catch {
-      /* already closed */
-    }
   }
 
   return {
-    readyConfig,
-    startSession(socket: SessionWebSocket, startOpts?: SessionStartOptions): void {
-      const resumeFrom = startOpts?.resumeFrom;
-      wireSessionSocket(socket, {
-        sessions,
-        createSession: (sid, client) =>
-          createS2sSession({
-            id: sid,
-            agent: agentConfig.name,
-            client,
-            agentConfig,
-            toolSchemas: config.toolSchemas,
-            apiKey,
-            s2sConfig,
-            executeTool,
-            hookInvoker,
-            skipGreeting: startOpts?.skipGreeting ?? false,
-            ...(resumeFrom ? { resumeFrom } : {}),
-          }),
-        readyConfig,
-        ...(startOpts?.logContext ? { logContext: startOpts.logContext } : {}),
-        ...(startOpts?.onOpen ? { onOpen: startOpts.onOpen } : {}),
-        ...(startOpts?.onClose ? { onClose: startOpts.onClose } : {}),
-        ...(resumeFrom ? { resumeFrom } : {}),
-      });
-    },
+    readyConfig: agentRuntime.readyConfig,
+    startSession: agentRuntime.startSession.bind(agentRuntime),
     shutdown: shutdownSandbox,
     terminate: shutdownSandbox,
   };
 }
 
-/** Wrapper that injects `createSandbox` so sandbox-slots needs no back-reference. */
 export async function resolveSandbox(
   slug: string,
-  opts: {
-    slots: Map<string, AgentSlot>;
-    store: BundleStore;
-    storage: Storage;
-  },
+  opts: { slots: Map<string, AgentSlot>; store: BundleStore; storage: Storage },
 ): Promise<Sandbox | null> {
   return _resolveSandboxCore(slug, { ...opts, createSandbox });
 }

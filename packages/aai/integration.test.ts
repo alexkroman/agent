@@ -163,9 +163,9 @@ describe("SDK integration: defineAgent → tool execution", () => {
     });
 
     const exec = createRuntime({ agent, env: {} });
-    await exec.hookInvoker.onConnect("s1");
-    await exec.hookInvoker.onTurn("s1", "Hello world");
-    await exec.hookInvoker.onDisconnect("s1");
+    await exec.hooks.callHook("connect", "s1");
+    await exec.hooks.callHook("turn", "s1", "Hello world");
+    await exec.hooks.callHook("disconnect", "s1");
     expect(log).toEqual(["connected", "turn:Hello world", "disconnected"]);
   });
 

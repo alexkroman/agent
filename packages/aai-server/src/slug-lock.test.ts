@@ -26,11 +26,11 @@ test("concurrent deploy and delete are serialized", async () => {
   expect(deployResp.status).toBe(200);
   expect(deleteResp.status).toBe(200);
 
-  // Whichever ran last wins — the important thing is no crash / corruption.
-  // Since they're serialized, the delete runs after the deploy, so the agent
-  // should be gone.
+  // Whichever acquired the lock first wins — the important thing is no
+  // crash / corruption. The final state depends on execution order:
+  // deploy-then-delete → null, delete-then-deploy → manifest exists.
   const manifest = await store.getManifest("my-agent");
-  expect(manifest).toBeNull();
+  expect(manifest === null || manifest.slug === "my-agent").toBe(true);
 });
 
 test("concurrent deletes don't throw", async () => {

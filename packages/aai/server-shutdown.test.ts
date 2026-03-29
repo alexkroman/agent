@@ -6,8 +6,10 @@
  * the timeout and graceful paths in close().
  */
 
+import { createHooks } from "hookable";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { Runtime } from "./direct-executor.ts";
+import type { AgentHookMap } from "./hooks.ts";
 import { createServer } from "./server.ts";
 
 let mockShutdown = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
@@ -15,13 +17,7 @@ let mockShutdown = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
 function createMockRuntime(): Runtime {
   return {
     executeTool: vi.fn().mockResolvedValue(""),
-    hookInvoker: {
-      onConnect: vi.fn().mockResolvedValue(undefined),
-      onDisconnect: vi.fn().mockResolvedValue(undefined),
-      onTurn: vi.fn().mockResolvedValue(undefined),
-      onError: vi.fn().mockResolvedValue(undefined),
-      resolveTurnConfig: vi.fn().mockResolvedValue(null),
-    },
+    hooks: createHooks<AgentHookMap>(),
     toolSchemas: [],
     createSession: vi.fn() as Runtime["createSession"],
     readyConfig: { audioFormat: "pcm16" as const, sampleRate: 16_000, ttsSampleRate: 24_000 },

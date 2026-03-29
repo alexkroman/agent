@@ -183,6 +183,9 @@ export function setupSignalsEnv() {
     platformUrl: "http://localhost:3000",
     reactiveFactory: signal,
     batch,
+    // Pass the mocked globalThis.WebSocket so session.ts uses the mock
+    // instead of the crossws/websocket module import.
+    WebSocket: globalThis.WebSocket,
   });
   const signals = createSessionControls(session);
 

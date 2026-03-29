@@ -1,6 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { type Span, type SpanContext, TraceFlags, trace } from "@opentelemetry/api";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { jsonLogger } from "./runtime.ts";
 
@@ -81,30 +80,4 @@ describe("jsonLogger", () => {
     expect(stderrChunks).toHaveLength(0);
   });
 
-  it("includes trace_id and span_id from active OTel span", () => {
-    setup();
-
-    const fakeSpanCtx: SpanContext = {
-      traceId: "aaaabbbbccccdddd1111222233334444",
-      spanId: "eeee5555ffff6666",
-      traceFlags: TraceFlags.SAMPLED,
-    };
-    const fakeSpan = { spanContext: () => fakeSpanCtx } as Span;
-    const getSpanSpy = vi.spyOn(trace, "getSpan").mockReturnValue(fakeSpan);
-
-    jsonLogger.info("inside span");
-    const entry = parseEntry(stdoutChunks, 0);
-    expect(entry.trace_id).toBe("aaaabbbbccccdddd1111222233334444");
-    expect(entry.span_id).toBe("eeee5555ffff6666");
-
-    getSpanSpy.mockRestore();
-  });
-
-  it("omits trace_id and span_id when no active span", () => {
-    setup();
-    jsonLogger.info("no span");
-    const entry = parseEntry(stdoutChunks, 0);
-    expect(entry.trace_id).toBeUndefined();
-    expect(entry.span_id).toBeUndefined();
-  });
 });

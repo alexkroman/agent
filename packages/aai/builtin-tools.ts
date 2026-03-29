@@ -10,7 +10,6 @@
 import { z } from "zod";
 import { EMPTY_PARAMS, type ToolSchema } from "./_internal-types.ts";
 import { createRunCode } from "./_run-code.ts";
-import { ssrfSafeFetch } from "./_ssrf.ts";
 import { FETCH_TIMEOUT_MS, MAX_HTML_BYTES, MAX_PAGE_CHARS } from "./constants.ts";
 import { memoryTools } from "./memory-tools.ts";
 import type { ToolDef } from "./types.ts";
@@ -22,16 +21,20 @@ const fetchSignal = () => AbortSignal.timeout(FETCH_TIMEOUT_MS);
 
 // ─── HTML to text ──────────────────────────────────────────────────────────
 
-/** Lazily import html-to-text to avoid loading 824KB dep tree at startup. */
-let _htmlToTextPromise: Promise<typeof import("html-to-text")> | undefined;
-function getHtmlToText() {
-  _htmlToTextPromise ??= import("html-to-text");
-  return _htmlToTextPromise;
-}
-
-async function htmlToText(html: string): Promise<string> {
-  const { convert } = await getHtmlToText();
-  return convert(html, { wordwrap: false });
+/** Strip HTML tags and decode common entities. */
+function htmlToText(html: string): string {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<style[\s\S]*?<\/style>/gi, "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
 }
 
 // ─── web_search ────────────────────────────────────────────────────────────
@@ -107,25 +110,21 @@ function createVisitWebpage(fetchFn = globalThis.fetch): ToolDef<typeof visitWeb
     parameters: visitWebpageParams,
     async execute(args, _ctx) {
       const { url } = args;
-      const resp = await ssrfSafeFetch(
-        url,
-        {
-          headers: {
-            "User-Agent":
-              "Mozilla/5.0 (compatible; VoiceAgent/1.0; +https://github.com/AssemblyAI/aai)",
-            Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-          },
-          signal: fetchSignal(),
+      const resp = await fetchFn(url, {
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (compatible; VoiceAgent/1.0; +https://github.com/AssemblyAI/aai)",
+          Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         },
-        fetchFn,
-      );
+        signal: fetchSignal(),
+      });
       if (!resp.ok) {
         return { error: `Failed to fetch: ${resp.status} ${resp.statusText}`, url };
       }
       const htmlContent = await resp.text();
       const trimmedHtml =
         htmlContent.length > MAX_HTML_BYTES ? htmlContent.slice(0, MAX_HTML_BYTES) : htmlContent;
-      const text = await htmlToText(trimmedHtml);
+      const text = htmlToText(trimmedHtml);
       const truncated = text.length > MAX_PAGE_CHARS;
       const content = truncated ? text.slice(0, MAX_PAGE_CHARS) : text;
       return {
@@ -183,11 +182,10 @@ function createFetchJson(fetchFn = globalThis.fetch): ToolDef<typeof fetchJsonPa
     async execute(args, _ctx) {
       const { url, headers } = args;
       const safeHeaders = sanitizeHeaders(headers);
-      const resp = await ssrfSafeFetch(
-        url,
-        { ...(safeHeaders && { headers: safeHeaders }), signal: fetchSignal() },
-        fetchFn,
-      );
+      const resp = await fetchFn(url, {
+        ...(safeHeaders && { headers: safeHeaders }),
+        signal: fetchSignal(),
+      });
       if (!resp.ok) {
         return { error: `HTTP ${resp.status} ${resp.statusText}`, url };
       }

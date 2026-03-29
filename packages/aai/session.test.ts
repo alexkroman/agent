@@ -1,3 +1,4 @@
+import { createHooks } from "hookable";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   flush,
@@ -9,6 +10,7 @@ import {
   replayFixtureMessages,
 } from "./_test-utils.ts";
 import { HOOK_TIMEOUT_MS } from "./constants.ts";
+import type { AgentHookMap } from "./hooks.ts";
 import type { S2sHandle } from "./s2s.ts";
 import {
   _internals,
@@ -17,6 +19,18 @@ import {
   type S2sSessionOptions,
 } from "./session.ts";
 import { DEFAULT_INSTRUCTIONS } from "./types.ts";
+
+// biome-ignore lint/complexity/noBannedTypes: test helper accepts arbitrary mock functions
+function makeTestHooks(handlers?: Record<string, Function>) {
+  const hooks = createHooks<AgentHookMap>();
+  if (handlers) {
+    for (const [name, fn] of Object.entries(handlers)) {
+      // biome-ignore lint/suspicious/noExplicitAny: test mock registration
+      hooks.hook(name as keyof AgentHookMap, fn as any);
+    }
+  }
+  return hooks;
+}
 
 // ─── buildSystemPrompt tests (existing) ─────────────────────────────────────
 
@@ -114,15 +128,8 @@ describe("createS2sSession", () => {
 
   test("start() calls connectS2s and invokes onConnect hook", async () => {
     const onConnect = vi.fn();
-    const hookInvoker = {
-      onConnect,
-      onDisconnect: vi.fn(),
-      onTurn: vi.fn(),
-      onError: vi.fn(),
-
-      resolveTurnConfig: vi.fn(async () => null),
-    };
-    const { session } = setup({ hookInvoker });
+    const hooks = makeTestHooks({ connect: onConnect });
+    const { session } = setup({ hooks });
 
     await session.start();
     expect(connectSpy).toHaveBeenCalledOnce();
@@ -155,15 +162,8 @@ describe("createS2sSession", () => {
 
   test("stop() invokes onDisconnect hook", async () => {
     const onDisconnect = vi.fn();
-    const hookInvoker = {
-      onConnect: vi.fn(),
-      onDisconnect,
-      onTurn: vi.fn(),
-      onError: vi.fn(),
-
-      resolveTurnConfig: vi.fn(async () => null),
-    };
-    const { session } = setup({ hookInvoker });
+    const hooks = makeTestHooks({ disconnect: onDisconnect });
+    const { session } = setup({ hooks });
     await session.start();
     await session.stop();
     expect(onDisconnect).toHaveBeenCalledWith("session-1", HOOK_TIMEOUT_MS);
@@ -233,18 +233,12 @@ describe("createS2sSession", () => {
 
   test("user_transcript event emits transcript and turn events", async () => {
     const onTurn = vi.fn();
-    const hookInvoker = {
-      onConnect: vi.fn(),
-      onDisconnect: vi.fn(),
-      onTurn,
-      onError: vi.fn(),
-
-      resolveTurnConfig: vi.fn(async () => null),
-    };
-    const { session, client, mockHandle } = setup({ hookInvoker });
+    const hooks = makeTestHooks({ turn: onTurn });
+    const { session, client, mockHandle } = setup({ hooks });
     await session.start();
 
     mockHandle._fire("userTranscript", { itemId: "item-1", text: "Hello there" });
+    await flush();
 
     expect(client.events).toContainEqual({
       type: "transcript",
@@ -252,7 +246,9 @@ describe("createS2sSession", () => {
       isFinal: true,
     });
     expect(client.events).toContainEqual({ type: "turn", text: "Hello there" });
-    expect(onTurn).toHaveBeenCalledWith("session-1", "Hello there", HOOK_TIMEOUT_MS);
+    await vi.waitFor(() =>
+      expect(onTurn).toHaveBeenCalledWith("session-1", "Hello there", HOOK_TIMEOUT_MS),
+    );
   });
 
   test("user_transcript_delta emits non-final transcript", async () => {
@@ -428,15 +424,10 @@ describe("createS2sSession", () => {
 
   test("consumeToolCallStep refuses tool when maxSteps exceeded", async () => {
     const executeTool = vi.fn(async () => "ok");
-    const hookInvoker = {
-      onConnect: vi.fn(),
-      onDisconnect: vi.fn(),
-      onTurn: vi.fn(),
-      onError: vi.fn(),
-
+    const hooks = makeTestHooks({
       resolveTurnConfig: vi.fn(async () => ({ maxSteps: 1 })),
-    };
-    const { session, client, mockHandle } = setup({ executeTool, hookInvoker });
+    });
+    const { session, client, mockHandle } = setup({ executeTool, hooks });
     await session.start();
 
     mockHandle._fire("replyStarted", { replyId: "r1" });
@@ -481,46 +472,40 @@ describe("createS2sSession", () => {
   // ─── Hook error handling ───────────────────────────────────────────────
 
   test("hook failure does not crash session", async () => {
-    const hookInvoker = {
-      onConnect: vi.fn(() => {
+    const onError = vi.fn();
+    const hooks = makeTestHooks({
+      connect: vi.fn(() => {
         throw new Error("hook error");
       }),
-      onDisconnect: vi.fn(),
-      onTurn: vi.fn(),
-      onError: vi.fn(),
-
-      resolveTurnConfig: vi.fn(async () => null),
-    };
-    const { session } = setup({ hookInvoker });
+      error: onError,
+    });
+    const { session } = setup({ hooks });
 
     // invokeHook catches errors, so this should not throw
     await session.start();
     await flush();
 
-    // onError should be invoked when onConnect fails
-    expect(hookInvoker.onError).toHaveBeenCalledWith(expect.any(String), { message: "hook error" });
+    // error hook should be invoked when connect fails
+    expect(onError).toHaveBeenCalledWith(expect.any(String), { message: "hook error" });
   });
 
   test("hook failure in onError does not recurse", async () => {
-    const hookInvoker = {
-      onConnect: vi.fn(() => {
+    const onError = vi.fn(() => {
+      throw new Error("onError also failed");
+    });
+    const hooks = makeTestHooks({
+      connect: vi.fn(() => {
         throw new Error("connect failed");
       }),
-      onDisconnect: vi.fn(),
-      onTurn: vi.fn(),
-      onError: vi.fn(() => {
-        throw new Error("onError also failed");
-      }),
+      error: onError,
+    });
+    const { session } = setup({ hooks });
 
-      resolveTurnConfig: vi.fn(async () => null),
-    };
-    const { session } = setup({ hookInvoker });
-
-    // Should not throw even when both onConnect and onError fail
+    // Should not throw even when both connect and error hooks fail
     await session.start();
     await flush();
 
-    expect(hookInvoker.onError).toHaveBeenCalledWith(expect.any(String), {
+    expect(onError).toHaveBeenCalledWith(expect.any(String), {
       message: "connect failed",
     });
   });
@@ -698,18 +683,13 @@ describe("createS2sSession", () => {
   });
 
   test("resolveTurnConfig failure returns error and skips tool execution", async () => {
-    const hookInvoker = {
-      onConnect: vi.fn(),
-      onDisconnect: vi.fn(),
-      onTurn: vi.fn(),
-      onError: vi.fn(),
-
+    const hooks = makeTestHooks({
       resolveTurnConfig: vi.fn(async () => {
         throw new Error("config error");
       }),
-    };
+    });
     const executeTool = vi.fn(async () => "ok");
-    const { session, mockHandle, client } = setup({ hookInvoker, executeTool });
+    const { session, mockHandle, client } = setup({ hooks, executeTool });
     await session.start();
 
     mockHandle._fire("replyStarted", { replyId: "r1" });
@@ -853,14 +833,8 @@ describe("fixture replay through session", () => {
 
   test("simple question: user transcript triggers onTurn and builds conversation history", async () => {
     const onTurn = vi.fn();
-    const hookInvoker = {
-      onConnect: vi.fn(),
-      onDisconnect: vi.fn(),
-      onTurn,
-      onError: vi.fn(),
-      resolveTurnConfig: vi.fn(async () => null),
-    };
-    const { session, client, mockHandle } = setupReplay({ hookInvoker });
+    const hooks = makeTestHooks({ turn: onTurn });
+    const { session, client, mockHandle } = setupReplay({ hooks });
     await session.start();
 
     const messages = loadFixture("simple-question-sequence.json");

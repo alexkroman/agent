@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { assertPublicUrl, isPrivateIp } from "@alexkroman1/aai/internal";
 import { expect, test } from "vitest";
+import { assertPublicUrl, isPrivateIp } from "./_ssrf.ts";
 
 test("assertPublicUrl blocks localhost", async () => {
   await expect(assertPublicUrl("http://127.0.0.1/")).rejects.toThrow(

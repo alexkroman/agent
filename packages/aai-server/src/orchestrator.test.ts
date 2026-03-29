@@ -146,13 +146,6 @@ test("client asset falls back to octet-stream for unknown extension", async () =
   expect(res.headers.get("Content-Type")).toBe("application/octet-stream");
 });
 
-// ── Metrics ────────────────────────────────────────────────────────────
-
-test("per-agent metrics rejects without auth", async () => {
-  const { fetch } = await createTestOrchestrator();
-  expect((await fetch("/test-agent/metrics")).status).toBe(401);
-});
-
 function kvReq(slug: string, apiKey: string, body: Record<string, unknown>): [string, RequestInit] {
   return [
     `/${slug}/kv`,

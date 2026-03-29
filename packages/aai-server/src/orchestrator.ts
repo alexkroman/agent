@@ -1,8 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { createUnstorageKv } from "@alexkroman1/aai/internal";
-import { createNodeWebSocket } from "@hono/node-ws";
+import { createUnstorageKv, type SessionWebSocket } from "@alexkroman1/aai/internal";
 import { Hono } from "hono";
+import { WebSocketServer } from "ws";
 import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
 import type { Storage } from "unstorage";
@@ -13,8 +13,7 @@ import { handleDeploy } from "./deploy.ts";
 import { createErrorHandler } from "./error-handler.ts";
 import { factory } from "./factory.ts";
 import { handleKv } from "./kv-handler.ts";
-import { serialize, serializeForAgent } from "./metrics.ts";
-import { requireInternal, requireOwner, validateSlug } from "./middleware.ts";
+import { requireOwner, validateSlug } from "./middleware.ts";
 import type { AgentSlot } from "./sandbox.ts";
 import { resolveSandbox } from "./sandbox.ts";
 import { handleSecretDelete, handleSecretList, handleSecretSet } from "./secret-handler.ts";
@@ -35,7 +34,6 @@ export type Orchestrator = {
 
 export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   const app = new Hono<Env>();
-  const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
 
   const slugMw = factory.createMiddleware(async (c, next) => {
     // biome-ignore lint/style/noNonNullAssertion: slug param guaranteed by route pattern
@@ -49,11 +47,6 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
       store: c.env.store,
     });
     c.set("keyHash", keyHash);
-    await next();
-  });
-
-  const internalMw = factory.createMiddleware(async (c, next) => {
-    requireInternal(c.req.raw);
     await next();
   });
 
@@ -90,12 +83,6 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
 
   app.get("/health", (c) => c.json({ status: "ok" }));
 
-  app.get("/metrics", internalMw, async (c) =>
-    c.text(await serialize(), 200, {
-      "Content-Type": "text/plain; version=0.0.4",
-    }),
-  );
-
   // Bare-slug redirect (before sub-router so it takes priority)
   app.get("/:slug{[a-z0-9][a-z0-9_-]*[a-z0-9]}", (c) => {
     const url = new URL(c.req.url);
@@ -114,11 +101,6 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   agents.put("/secret", ownerMw, handleSecretSet);
   agents.delete("/secret/:key", ownerMw, handleSecretDelete);
   agents.post("/kv", ownerMw, handleKv);
-  agents.get("/metrics", ownerMw, async (c) =>
-    c.text(await serializeForAgent(c.var.slug), 200, {
-      "Content-Type": "text/plain; version=0.0.4",
-    }),
-  );
   agents.get("/kv", ownerMw, async (c) => {
     const key = c.req.query("key");
     if (!key) return c.json({ error: "Missing key query parameter" }, 400);
@@ -136,38 +118,6 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   agents.get("/assets/:path{.+}", handleClientAsset);
   // Agent page (GET /:slug/) stays on top-level app because Hono's
   // mergePath("/:slug", "/") collapses the trailing slash.
-  agents.get(
-    "/websocket",
-    upgradeWebSocket((c) => {
-      const slug = c.var.slug;
-      return {
-        async onOpen(_evt, ws) {
-          try {
-            const sandbox = await resolveSandbox(slug, {
-              slots: opts.slots,
-              store: opts.store,
-              storage: opts.storage,
-            });
-            if (!sandbox) {
-              ws.close(1008, "Agent not found");
-              return;
-            }
-            const resumeFrom = c.req.query("sessionId") ?? undefined;
-            const skipGreeting = c.req.query("resume") !== undefined || resumeFrom !== undefined;
-            if (ws.raw)
-              sandbox.startSession(ws.raw, {
-                skipGreeting,
-                ...(resumeFrom ? { resumeFrom } : {}),
-              });
-          } catch (err: unknown) {
-            console.error("WebSocket open error:", err);
-            ws.close(1011, "Internal error");
-          }
-        },
-      };
-    }),
-  );
-
   app.route("/:slug", agents);
   app.get("/:slug/", slugMw, handleAgentPage);
 
@@ -181,6 +131,46 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   const original = app.fetch.bind(app);
   app.fetch = (req: Request, env?: Record<string, unknown>) =>
     original(req, { ...bindings, ...env });
+
+  // WebSocket upgrade — URL pattern: /:slug/websocket
+  const wss = new WebSocketServer({ noServer: true });
+
+  const injectWebSocket = (server: import("node:http").Server) => {
+    server.on("upgrade", async (req, socket, head) => {
+      const pathOnly = req.url?.split("?")[0] ?? "";
+      if (!/^\/[a-z0-9][a-z0-9_-]*[a-z0-9]\/websocket$/.test(pathOnly)) return;
+
+      try {
+        const url = new URL(req.url ?? "/", "http://localhost");
+        const match = url.pathname.match(/^\/([a-z0-9][a-z0-9_-]*[a-z0-9])\/websocket$/);
+        if (!match) {
+          socket.destroy();
+          return;
+        }
+        const slug = validateSlug(match[1] as string);
+        const sandbox = await resolveSandbox(slug, {
+          slots: opts.slots,
+          store: opts.store,
+          storage: opts.storage,
+        });
+        if (!sandbox) {
+          socket.destroy();
+          return;
+        }
+        wss.handleUpgrade(req, socket, head, (ws) => {
+          const resumeFrom = url.searchParams.get("sessionId") ?? undefined;
+          const skipGreeting = url.searchParams.has("resume") || resumeFrom !== undefined;
+          sandbox.startSession(ws as unknown as SessionWebSocket, {
+            skipGreeting,
+            ...(resumeFrom ? { resumeFrom } : {}),
+          });
+        });
+      } catch (err: unknown) {
+        console.error("WebSocket open error:", err);
+        socket.destroy();
+      }
+    });
+  };
 
   return { app, injectWebSocket };
 }

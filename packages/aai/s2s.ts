@@ -5,10 +5,9 @@
 
 import type { JSONSchema7 } from "json-schema";
 import { createNanoEvents, type Emitter, type Unsubscribe } from "nanoevents";
-import { WebSocket } from "ws";
+import WsWebSocket from "ws";
 import type { Logger, S2SConfig } from "./runtime.ts";
 import { consoleLogger } from "./runtime.ts";
-import { s2sConnectionDuration, s2sErrorCounter, tracer } from "./telemetry.ts";
 
 const uint8ToBase64 = (bytes: Uint8Array): string => Buffer.from(bytes).toString("base64");
 const base64ToUint8 = (base64: string): Uint8Array => new Uint8Array(Buffer.from(base64, "base64"));
@@ -33,8 +32,10 @@ export type CreateS2sWebSocket = (
   opts: { headers: Record<string, string> },
 ) => S2sWebSocket;
 
+// Node's native WebSocket doesn't support custom headers.
+// Use the `ws` package which accepts { headers } in the constructor.
 export const defaultCreateS2sWebSocket: CreateS2sWebSocket = (url, opts) =>
-  new WebSocket(url, { headers: opts.headers });
+  new WsWebSocket(url, { headers: opts.headers }) as unknown as S2sWebSocket;
 
 type S2sServerMessage =
   | { type: "session.ready"; session_id: string }
@@ -246,11 +247,6 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
   return new Promise((resolve, reject) => {
     log.info("S2S connecting", { url: config.wssUrl });
 
-    const connectionSpan = tracer.startSpan("s2s.connection", {
-      attributes: { "aai.s2s.url": config.wssUrl },
-    });
-    const connectStart = performance.now();
-
     const ws = createWebSocket(config.wssUrl, {
       headers: { Authorization: `Bearer ${apiKey}` },
     });
@@ -308,7 +304,6 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
     ws.addEventListener("open", () => {
       opened = true;
       log.info("S2S WebSocket open");
-      connectionSpan.addEvent("ws.open");
       resolve(handle);
     });
 
@@ -367,13 +362,6 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
         code: ev.code ?? 0,
         reason: ev.reason ?? "",
       });
-      const elapsed = (performance.now() - connectStart) / 1000;
-      s2sConnectionDuration.record(elapsed);
-      connectionSpan.addEvent("ws.closed", {
-        "ws.close.code": ev.code ?? 0,
-        "ws.close.reason": ev.reason ?? "",
-      });
-      connectionSpan.end();
       if (!opened) {
         reject(new Error(`WebSocket closed before open (code: ${ev.code ?? 0})`));
       }
@@ -384,11 +372,7 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
       const message = typeof ev.message === "string" ? ev.message : "WebSocket error";
       const errObj = new Error(message);
       log.error("S2S WebSocket error", { error: errObj.message });
-      s2sErrorCounter.add(1);
-      connectionSpan.setStatus({ code: 2, message: errObj.message }); // ERROR
-      connectionSpan.recordException(errObj);
       if (!opened) {
-        connectionSpan.end();
         reject(errObj);
       } else {
         emitter.emit("error", { code: "ws_error", message: errObj.message });

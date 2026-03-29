@@ -13,7 +13,6 @@ import { ClientMessageSchema } from "./protocol.ts";
 import type { Logger } from "./runtime.ts";
 import { consoleLogger } from "./runtime.ts";
 import type { Session } from "./session.ts";
-import { tracer, wsSendDroppedCounter } from "./telemetry.ts";
 
 /**
  * Minimal WebSocket interface accepted by {@link wireSessionSocket}.
@@ -66,7 +65,6 @@ function createClientSink(ws: SessionWebSocket, log: Logger): ClientSink {
       log.debug?.("safeSend: socket closed between readyState check and send", {
         error: errorMessage(err),
       });
-      wsSendDroppedCounter.add(1);
     }
   }
 
@@ -161,9 +159,6 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
    *  preventing audio/text from being dispatched to a half-initialized session. */
   let sessionReady = false;
   let messageBuffer: { data: unknown }[] | null = [];
-  const sessionSpan = tracer.startSpan("ws.session", {
-    attributes: { "aai.session.id": sessionId },
-  });
 
   function drainBuffer(): void {
     if (!(session && messageBuffer)) return;
@@ -179,7 +174,6 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
   function onOpen(): void {
     opts.onOpen?.();
     log.info("Session connected", { ...ctx, sid });
-    sessionSpan.addEvent("ws.open");
 
     const client = createClientSink(ws, log);
     session = opts.createSession(sessionId, client);
@@ -198,13 +192,11 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
     startWithTimeout
       .then(() => {
         log.info("Session ready", { ...ctx, sid });
-        sessionSpan.addEvent("session.ready");
         sessionReady = true;
         drainBuffer();
       })
       .catch((err: unknown) => {
         log.error("Session start failed", { ...ctx, sid, error: errorDetail(err) });
-        sessionSpan.setStatus({ code: 2, message: errorMessage(err) });
         sessions.delete(sessionId);
         session = null;
         messageBuffer = null;
@@ -234,8 +226,6 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
 
   ws.addEventListener("close", () => {
     log.info("Session disconnected", { ...ctx, sid });
-    sessionSpan.addEvent("ws.close");
-    sessionSpan.end();
     if (session) {
       void session
         .stop()
@@ -252,6 +242,5 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
   ws.addEventListener("error", (ev) => {
     const msg = typeof ev.message === "string" ? ev.message : "WebSocket error";
     log.error("WebSocket error", { ...ctx, sid, error: msg });
-    sessionSpan.recordException(new Error(msg));
   });
 }

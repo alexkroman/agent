@@ -70,7 +70,7 @@ export const RUN_CODE_MEMORY_MB = 32;
  * and per-response CSP headers.
  */
 export const AGENT_CSP =
-  "default-src 'self'; script-src 'self' blob:; " +
+  "default-src 'self'; script-src 'self' 'unsafe-eval' blob:; " +
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
   "connect-src 'self' wss: ws:; img-src 'self' data:; " +
   "font-src 'self' https://fonts.gstatic.com; " +

@@ -1,8 +1,8 @@
 {
   "type": "module",
   "scripts": {
-    "dev": "aai dev",
-    "build": "aai deploy --dry-run",
+    "dev": "vite",
+    "build": "vite build && vite build --ssr agent.ts --outDir .aai/build",
     "test": "vitest run",
     "deploy": "aai deploy",
     "lint": "biome check .",
@@ -18,8 +18,11 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.9",
+    "@preact/preset-vite": "^2.9.6",
+    "@tailwindcss/vite": "^4.2.1",
     "@types/node": "^25.5.0",
     "typescript": "^6.0.2",
+    "vite": "^6.3.5",
     "vitest": "^4.1.1"
   }
 }

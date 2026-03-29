@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
-import { BundleError, createClientDevServer } from "./_bundler.ts";
+import { BundleError } from "./_bundler.ts";
 
 describe("BundleError", () => {
   test("creates error with BundleError name", () => {
@@ -121,24 +121,3 @@ describe("bundleAgent: readDirFiles coverage", () => {
   });
 });
 
-describe("createClientDevServer", () => {
-  test("creates a Vite dev server with proxy config", async () => {
-    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "aai_dev_"));
-    await fs.writeFile(path.join(tmpDir, "index.html"), "<html><body></body></html>");
-    try {
-      const vite = await createClientDevServer(tmpDir, 9999, 0);
-      try {
-        expect(vite).toBeDefined();
-        expect(vite.config.root).toBe(tmpDir);
-        expect(vite.config.server.proxy).toBeDefined();
-        const proxy = vite.config.server.proxy as Record<string, unknown>;
-        expect(proxy["/health"]).toBeDefined();
-        expect(proxy["/websocket"]).toBeDefined();
-      } finally {
-        await vite.close();
-      }
-    } finally {
-      await fs.rm(tmpDir, { recursive: true });
-    }
-  });
-});

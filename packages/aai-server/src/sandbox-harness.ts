@@ -5,6 +5,10 @@
  * The actual harness logic lives in `_harness-runtime.ts` (type-checked at
  * compile time). This module reads the compiled `.js` output so it can be
  * written to the isolate's virtual filesystem.
+ *
+ * The harness bundle may include code-split chunks (e.g. for lazy-loaded
+ * dependencies like secure-exec and html-to-text). All chunks are loaded
+ * and written to the isolate's virtual filesystem.
  */
 
 import fs from "node:fs/promises";
@@ -13,36 +17,64 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-let cachedHarnessJs: string | null = null;
+export type HarnessFiles = { name: string; content: string }[];
+
+let cached: HarnessFiles | null = null;
 
 /**
- * Get the compiled harness runtime JS code.
- *
- * Reads from the compiled `dist/` output (sibling `_harness-runtime.mjs`).
+ * Get all compiled harness runtime files (main entry + code-split chunks).
  * Cached after first read.
  */
-export async function getHarnessRuntimeJs(): Promise<string> {
-  if (cachedHarnessJs) return cachedHarnessJs;
+export async function getHarnessFiles(): Promise<HarnessFiles> {
+  if (cached) return cached;
 
-  // In production (running from dist/), read sibling file
-  // In dev mode (running from src/), read from dist/
-  const candidates = [
-    path.join(__dirname, "_harness-runtime.mjs"),
-    path.join(__dirname, "_harness-runtime.js"),
-    path.join(__dirname, "..", "dist", "_harness-runtime.mjs"),
-    path.join(__dirname, "..", "dist", "_harness-runtime.js"),
-  ];
+  // Determine the dist directory
+  const distCandidates = [__dirname, path.join(__dirname, "..", "dist")];
 
-  for (const candidate of candidates) {
+  for (const dir of distCandidates) {
     try {
-      cachedHarnessJs = await fs.readFile(candidate, "utf-8");
-      return cachedHarnessJs;
+      const entries = await fs.readdir(dir);
+      const mainEntry = entries.find(
+        (e) => e === "_harness-runtime.mjs" || e === "_harness-runtime.js",
+      );
+      if (!mainEntry) continue;
+
+      // Read the main entry
+      const mainContent = await fs.readFile(path.join(dir, mainEntry), "utf-8");
+
+      // Find and read all code-split chunks referenced by the harness
+      // (esm-*.mjs, html-to-text-*.mjs, etc.)
+      const chunkFiles = entries.filter(
+        (e) => e !== mainEntry && e !== "index.mjs" && e !== "index.js" && e.endsWith(".mjs"),
+      );
+
+      const files: HarnessFiles = [{ name: mainEntry, content: mainContent }];
+      for (const chunk of chunkFiles) {
+        const content = await fs.readFile(path.join(dir, chunk), "utf-8");
+        files.push({ name: chunk, content });
+      }
+
+      cached = files;
+      return files;
     } catch {
-      // Try next candidate path
+      // Try next candidate
     }
   }
 
   throw new Error(
     "Harness runtime JS not found. Run `pnpm --filter @alexkroman1/aai-server build` first.",
   );
+}
+
+/**
+ * Get just the main harness runtime JS code.
+ * @deprecated Use {@link getHarnessFiles} to load all chunks.
+ */
+export async function getHarnessRuntimeJs(): Promise<string> {
+  const files = await getHarnessFiles();
+  const main = files.find(
+    (f) => f.name === "_harness-runtime.mjs" || f.name === "_harness-runtime.js",
+  );
+  if (!main) throw new Error("Main harness entry not found in loaded files");
+  return main.content;
 }
