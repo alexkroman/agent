@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { createUnstorageKv } from "@alexkroman1/aai/internal";
-import { createNodeWebSocket } from "@hono/node-ws";
+import nodeAdapter from "crossws/adapters/node";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
@@ -35,7 +35,6 @@ export type Orchestrator = {
 
 export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   const app = new Hono<Env>();
-  const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
 
   const slugMw = factory.createMiddleware(async (c, next) => {
     // biome-ignore lint/style/noNonNullAssertion: slug param guaranteed by route pattern
@@ -136,38 +135,6 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   agents.get("/assets/:path{.+}", handleClientAsset);
   // Agent page (GET /:slug/) stays on top-level app because Hono's
   // mergePath("/:slug", "/") collapses the trailing slash.
-  agents.get(
-    "/websocket",
-    upgradeWebSocket((c) => {
-      const slug = c.var.slug;
-      return {
-        async onOpen(_evt, ws) {
-          try {
-            const sandbox = await resolveSandbox(slug, {
-              slots: opts.slots,
-              store: opts.store,
-              storage: opts.storage,
-            });
-            if (!sandbox) {
-              ws.close(1008, "Agent not found");
-              return;
-            }
-            const resumeFrom = c.req.query("sessionId") ?? undefined;
-            const skipGreeting = c.req.query("resume") !== undefined || resumeFrom !== undefined;
-            if (ws.raw)
-              sandbox.startSession(ws.raw, {
-                skipGreeting,
-                ...(resumeFrom ? { resumeFrom } : {}),
-              });
-          } catch (err: unknown) {
-            console.error("WebSocket open error:", err);
-            ws.close(1011, "Internal error");
-          }
-        },
-      };
-    }),
-  );
-
   app.route("/:slug", agents);
   app.get("/:slug/", slugMw, handleAgentPage);
 
@@ -181,6 +148,53 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   const original = app.fetch.bind(app);
   app.fetch = (req: Request, env?: Record<string, unknown>) =>
     original(req, { ...bindings, ...env });
+
+  // WebSocket upgrade handled by crossws node adapter instead of Hono middleware.
+  // URL pattern: /:slug/websocket
+  const wsAdapter = nodeAdapter({
+    hooks: {
+      async open(peer) {
+        try {
+          const url = new URL(peer.request?.url ?? "/", "http://localhost");
+          // Extract slug from URL path: /:slug/websocket
+          const match = url.pathname.match(/^\/([a-z0-9][a-z0-9_-]*[a-z0-9])\/websocket$/);
+          if (!match) {
+            peer.close(1008, "Invalid path");
+            return;
+          }
+          const slug = validateSlug(match[1]);
+          const sandbox = await resolveSandbox(slug, {
+            slots: opts.slots,
+            store: opts.store,
+            storage: opts.storage,
+          });
+          if (!sandbox) {
+            peer.close(1008, "Agent not found");
+            return;
+          }
+          const resumeFrom = url.searchParams.get("sessionId") ?? undefined;
+          const skipGreeting = url.searchParams.has("resume") || resumeFrom !== undefined;
+          const rawWs = peer.websocket as unknown as Parameters<typeof sandbox.startSession>[0];
+          sandbox.startSession(rawWs, {
+            skipGreeting,
+            ...(resumeFrom ? { resumeFrom } : {}),
+          });
+        } catch (err: unknown) {
+          console.error("WebSocket open error:", err);
+          peer.close(1011, "Internal error");
+        }
+      },
+    },
+  });
+
+  const injectWebSocket = (server: import("node:http").Server) => {
+    server.on("upgrade", (req, socket, head) => {
+      // Match /:slug/websocket paths
+      if (req.url && /^\/[a-z0-9][a-z0-9_-]*[a-z0-9]\/websocket/.test(req.url.split("?")[0])) {
+        wsAdapter.handleUpgrade(req, socket, head);
+      }
+    });
+  };
 
   return { app, injectWebSocket };
 }

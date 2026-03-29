@@ -12,7 +12,7 @@
 
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
-import { createNodeWebSocket } from "@hono/node-ws";
+import nodeAdapter from "crossws/adapters/node";
 import { Hono } from "hono";
 import { html } from "hono/html";
 import { logger as honoLogger } from "hono/logger";
@@ -110,7 +110,6 @@ export function createAgentApp(options: ServerOptions): AgentApp {
   const name = options.name ?? "agent";
 
   const app = new Hono();
-  const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
 
   app.notFound((c) => c.json({ error: "Not found" }, 404));
 
@@ -165,27 +164,41 @@ export function createAgentApp(options: ServerOptions): AgentApp {
     );
   });
 
-  app.get(
-    "/websocket",
-    upgradeWebSocket((c) => {
-      const resumeFrom = c.req.query("sessionId") ?? undefined;
-      const skipGreeting = c.req.query("resume") !== undefined || resumeFrom !== undefined;
-      logger.info(`WS upgrade ${c.req.path}${skipGreeting ? " (resume)" : ""}`);
-      return {
-        onOpen(_evt, ws) {
-          if (ws.raw)
-            runtime.startSession(ws.raw, {
-              skipGreeting,
-              ...(resumeFrom ? { resumeFrom } : {}),
-            });
-        },
-      };
-    }),
-  );
+  const wsAdapter = nodeAdapter({
+    hooks: {
+      open(peer) {
+        const reqUrl = peer.request?.url ?? "/";
+        const qIdx = reqUrl.indexOf("?");
+        const search = qIdx >= 0 ? reqUrl.slice(qIdx + 1) : "";
+        const getParam = (key: string): string | undefined => {
+          const re = new RegExp(`(?:^|&)${key}=([^&]*)`);
+          const m = search.match(re);
+          return m ? decodeURIComponent(m[1]) : undefined;
+        };
+        const hasParam = (key: string): boolean => search.includes(key);
+        const resumeFrom = getParam("sessionId");
+        const skipGreeting = hasParam("resume") || resumeFrom !== undefined;
+        const pathname = qIdx >= 0 ? reqUrl.slice(0, qIdx) : reqUrl;
+        logger.info(`WS upgrade ${pathname}${skipGreeting ? " (resume)" : ""}`);
+        const rawWs = peer.websocket as unknown as import("./ws-handler.ts").SessionWebSocket;
+        runtime.startSession(rawWs, {
+          skipGreeting,
+          ...(resumeFrom ? { resumeFrom } : {}),
+        });
+      },
+    },
+  });
 
   return {
     app,
-    injectWebSocket,
+    injectWebSocket: (server: ReturnType<typeof serve>) => {
+      // biome-ignore lint/suspicious/noExplicitAny: ReturnType<typeof serve> is an HTTP server with upgrade event
+      (server as any).on("upgrade", (req: { url?: string }, socket: unknown, head: unknown) => {
+        if (req.url?.startsWith("/websocket")) {
+          wsAdapter.handleUpgrade(req as never, socket as never, head as never);
+        }
+      });
+    },
     shutdown: () => runtime.shutdown(),
   };
 }

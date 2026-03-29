@@ -10,8 +10,9 @@
 import http from "node:http";
 import { type Session, wireSessionSocket } from "@alexkroman1/aai/internal";
 import type { ReadyConfig, ServerMessage } from "@alexkroman1/aai/protocol";
+import nodeAdapter from "crossws/adapters/node";
+import WebSocket from "crossws/websocket";
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest";
-import { WebSocket, WebSocketServer } from "ws";
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -40,7 +41,7 @@ type SessionCapture = { session: Session; sessionId: string };
 function startTestServer(): Promise<{
   port: number;
   server: http.Server;
-  wss: WebSocketServer;
+  wsAdapter: ReturnType<typeof nodeAdapter>;
   captures: SessionCapture[];
   makeSession: (factory?: () => Session) => void;
   close: () => void;
@@ -54,21 +55,26 @@ function startTestServer(): Promise<{
       res.end();
     });
 
-    const wss = new WebSocketServer({ noServer: true });
+    const wsAdapter = nodeAdapter({
+      hooks: {
+        open(peer) {
+          const sessions = new Map<string, Session>();
+          const rawWs = peer.websocket as unknown as Parameters<typeof wireSessionSocket>[0];
+          wireSessionSocket(rawWs, {
+            sessions,
+            createSession: (sid, _client) => {
+              const session = sessionFactory();
+              captures.push({ session, sessionId: sid });
+              return session;
+            },
+            readyConfig: READY_CONFIG,
+          });
+        },
+      },
+    });
 
     server.on("upgrade", (req, socket, head) => {
-      wss.handleUpgrade(req, socket, head, (ws) => {
-        const sessions = new Map<string, Session>();
-        wireSessionSocket(ws as unknown as Parameters<typeof wireSessionSocket>[0], {
-          sessions,
-          createSession: (sid, _client) => {
-            const session = sessionFactory();
-            captures.push({ session, sessionId: sid });
-            return session;
-          },
-          readyConfig: READY_CONFIG,
-        });
-      });
+      wsAdapter.handleUpgrade(req, socket, head);
     });
 
     server.listen(0, "127.0.0.1", () => {
@@ -76,13 +82,13 @@ function startTestServer(): Promise<{
       resolve({
         port: addr.port,
         server,
-        wss,
+        wsAdapter,
         captures,
         makeSession: (factory) => {
           if (factory) sessionFactory = factory;
         },
         close: () => {
-          wss.close();
+          wsAdapter.closeAll();
           server.close();
         },
       });
@@ -103,9 +109,10 @@ function connect(port: number): Promise<{
     const ws = new WebSocket(`ws://127.0.0.1:${port}/agent/websocket`);
     const messages: ServerMessage[] = [];
 
-    ws.on("message", (data: Buffer) => {
+    ws.addEventListener("message", (event: MessageEvent) => {
       try {
-        const msg = JSON.parse(data.toString()) as ServerMessage;
+        const data = typeof event.data === "string" ? event.data : String(event.data);
+        const msg = JSON.parse(data) as ServerMessage;
         messages.push(msg);
         // Resolve on first message (config)
         if (messages.length === 1) {
@@ -116,11 +123,11 @@ function connect(port: number): Promise<{
       }
     });
 
-    ws.on("error", reject);
+    ws.addEventListener("error", () => reject(new Error("WebSocket error")));
 
     // Timeout safety — cleared on success to avoid dangling handles
     const timer = setTimeout(() => reject(new Error("connect timeout")), 5000);
-    ws.on("open", () => clearTimeout(timer));
+    ws.addEventListener("open", () => clearTimeout(timer));
   });
 }
 
@@ -130,7 +137,7 @@ function waitForClose(ws: WebSocket): Promise<void> {
       resolve();
       return;
     }
-    ws.on("close", () => resolve());
+    ws.addEventListener("close", () => resolve());
   });
 }
 
@@ -221,8 +228,8 @@ describe("WebSocket server integration", () => {
 
   test("binary data is forwarded to session.onAudio", async () => {
     const { ws } = await connect(ctx.port);
-    const audio = Buffer.from([1, 2, 3, 4]);
-    ws.send(audio);
+    const audio = new Uint8Array([1, 2, 3, 4]);
+    ws.send(audio.buffer);
     await vi.waitFor(() => {
       expect(ctx.captures[0]?.session.onAudio).toHaveBeenCalledOnce();
     });
