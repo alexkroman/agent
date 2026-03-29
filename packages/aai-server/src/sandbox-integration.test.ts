@@ -63,14 +63,12 @@ function createMockKv(): Kv {
 
 describe("isolate boot", () => {
   let port: number;
-  let name: string;
   let cleanup: () => Promise<void>;
 
   beforeAll(async () => {
     const kv = createMockKv();
-    const isolate = await _internals.startIsolate(AGENT_BUNDLE, kv, {});
+    const isolate = await _internals.startIsolate(AGENT_BUNDLE, kv, {}, "test-token");
     port = isolate.port;
-    name = isolate.name;
     cleanup = async () => {
       await isolate.runtime.terminate();
     };
@@ -80,9 +78,8 @@ describe("isolate boot", () => {
     await cleanup?.();
   });
 
-  test("isolate announces port and agent name", () => {
+  test("isolate announces port", () => {
     expect(port).toBeGreaterThan(0);
-    expect(name).toBe("integration-test");
   });
 
   test("isolate HTTP server responds with 404 for non-WS requests", async () => {
@@ -150,8 +147,8 @@ describe("WebSocket session lifecycle", () => {
 // ── Multiple concurrent agents ───────────────────────────────────────────
 
 describe("multiple concurrent agents", () => {
-  let isolate1: { port: number; name: string; runtime: { terminate(): Promise<void> } };
-  let isolate2: { port: number; name: string; runtime: { terminate(): Promise<void> } };
+  let isolate1: { port: number; runtime: { terminate(): Promise<void> } };
+  let isolate2: { port: number; runtime: { terminate(): Promise<void> } };
 
   const BUNDLE_A = `
 export default {
@@ -177,8 +174,8 @@ export default {
     const kv1 = createMockKv();
     const kv2 = createMockKv();
     [isolate1, isolate2] = await Promise.all([
-      _internals.startIsolate(BUNDLE_A, kv1, {}),
-      _internals.startIsolate(BUNDLE_B, kv2, {}),
+      _internals.startIsolate(BUNDLE_A, kv1, {}, "test-token"),
+      _internals.startIsolate(BUNDLE_B, kv2, {}, "test-token"),
     ]);
   });
 
@@ -187,9 +184,9 @@ export default {
     await isolate2?.runtime.terminate();
   });
 
-  test("two isolates boot independently with correct names", () => {
-    expect(isolate1.name).toBe("agent-a");
-    expect(isolate2.name).toBe("agent-b");
+  test("two isolates boot independently on different ports", () => {
+    expect(isolate1.port).toBeGreaterThan(0);
+    expect(isolate2.port).toBeGreaterThan(0);
     expect(isolate1.port).not.toBe(isolate2.port);
   });
 });
