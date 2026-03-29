@@ -21,8 +21,8 @@ import { ssrfSafeFetch } from "./_ssrf.ts";
 import { errorDetail, errorMessage, toolError } from "./_utils.ts";
 import { getBuiltinToolDefs, getBuiltinToolSchemas } from "./builtin-tools.ts";
 import { DEFAULT_SHUTDOWN_TIMEOUT_MS, TOOL_EXECUTION_TIMEOUT_MS } from "./constants.ts";
+import { type AgentHooks, createAgentHooks } from "./hooks.ts";
 import type { Kv } from "./kv.ts";
-import { buildMiddlewareRunner, type HookInvoker, type LifecycleHooks } from "./middleware.ts";
 import type { ClientSink } from "./protocol.ts";
 import { buildReadyConfig, type ReadyConfig } from "./protocol.ts";
 import type { Logger, S2SConfig } from "./runtime.ts";
@@ -162,7 +162,7 @@ export type RuntimeOptions = {
  * The agent runtime returned by {@link createRuntime}.
  *
  * Satisfies {@link AgentRuntime} for use by transport code, and also exposes
- * lower-level helpers (`executeTool`, `hookInvoker`, `toolSchemas`,
+ * lower-level helpers (`executeTool`, `hooks`, `toolSchemas`,
  * `createSession`) for testing and advanced usage.
  *
  * @public
@@ -170,8 +170,8 @@ export type RuntimeOptions = {
 export type Runtime = AgentRuntime & {
   /** Execute a named tool with the given args, returning a JSON result string. */
   executeTool: ExecuteTool;
-  /** Hook invoker wired to the agent's lifecycle hooks and middleware. */
-  hookInvoker: HookInvoker;
+  /** Hookable instance wired to the agent's lifecycle hooks and middleware. */
+  hooks: AgentHooks;
   /** Tool schemas registered with the S2S API (custom + built-in). */
   toolSchemas: ToolSchema[];
   /** Create a new voice session for a connected client (lower-level than startSession). */
@@ -265,35 +265,13 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     });
   };
 
-  // ── Lifecycle hooks (always present) ─────────────────────────────────
-  const lifecycleHooks: LifecycleHooks = {
-    async onConnect(sessionId) {
-      await agent.onConnect?.(makeHookContext(sessionId));
-    },
-    async onDisconnect(sessionId) {
-      await agent.onDisconnect?.(makeHookContext(sessionId));
-      stateMap.delete(sessionId);
-    },
-    async onTurn(sessionId, text) {
-      await agent.onTurn?.(text, makeHookContext(sessionId));
-    },
-    async onError(sessionId, error) {
-      await agent.onError?.(new Error(error.message), makeHookContext(sessionId));
-    },
-    async resolveTurnConfig(sessionId) {
-      const ctx = makeHookContext(sessionId);
-      const maxSteps =
-        typeof agent.maxSteps === "function"
-          ? ((await agent.maxSteps(ctx)) ?? undefined)
-          : undefined;
-      if (maxSteps === undefined) return null;
-      return { maxSteps };
-    },
-  };
+  // ── Agent hooks (lifecycle + middleware via hookable) ─────────────────
+  const hooks = createAgentHooks({ agent, makeCtx: makeHookContext });
 
-  // ── Middleware runner (only built when middleware exists) ────────────
-  const middlewareRunner = buildMiddlewareRunner(agent.middleware ?? [], makeHookContext);
-  const hookInvoker: HookInvoker = { ...lifecycleHooks, ...middlewareRunner };
+  // Clean up session state when a session disconnects.
+  hooks.hook("disconnect", async (sessionId) => {
+    stateMap.delete(sessionId);
+  });
 
   function createSession(sessionOpts: {
     id: string;
@@ -313,7 +291,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       s2sConfig,
       executeTool,
       ...(createWebSocket ? { createWebSocket } : {}),
-      hookInvoker,
+      hooks,
       skipGreeting: sessionOpts.skipGreeting ?? false,
       logger,
       ...(sessionOpts.resumeFrom ? { resumeFrom: sessionOpts.resumeFrom } : {}),
@@ -371,7 +349,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
 
   return {
     executeTool,
-    hookInvoker,
+    hooks,
     toolSchemas,
     createSession,
     startSession,

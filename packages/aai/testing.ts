@@ -247,7 +247,7 @@ export class TestHarness {
   async connect(): Promise<void> {
     if (this._connected) return;
     this._connected = true;
-    await this._executor.hookInvoker.onConnect(this._sessionId);
+    await this._executor.hooks.callHook("connect", this._sessionId);
   }
 
   /**
@@ -256,7 +256,7 @@ export class TestHarness {
   async disconnect(): Promise<void> {
     if (!this._connected) return;
     this._connected = false;
-    await this._executor.hookInvoker.onDisconnect(this._sessionId);
+    await this._executor.hooks.callHook("disconnect", this._sessionId);
   }
 
   /**
@@ -313,7 +313,7 @@ export class TestHarness {
 
     // Fire onTurn hook
     this._onTurnCalls.push(text);
-    await this._executor.hookInvoker.onTurn(this._sessionId, text);
+    await this._executor.hooks.callHook("turn", this._sessionId, text);
 
     // Execute tool calls
     const recorded: RecordedToolCall[] = [];

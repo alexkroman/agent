@@ -1,5 +1,11 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import {
+  callBeforeTurn,
+  callInterceptToolCall,
+  callResolveTurnConfig,
+  callTextHook,
+} from "@alexkroman1/aai/internal";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { IsolateConfig } from "./_harness-protocol.ts";
 import { _internals } from "./sandbox.ts";
@@ -132,21 +138,20 @@ describe("buildHookInvoker", () => {
         }),
     );
     const controller = new AbortController();
-    const invoker = _internals.buildHookInvoker(
+    const hooks = _internals.buildHookInvoker(
       "http://127.0.0.1:9999",
       "test-token",
       controller.signal,
     );
-    const promise = invoker.onConnect("s1");
+    const promise = hooks.callHook("connect", "s1");
     controller.abort(new Error("Isolate crashed"));
     await expect(promise).rejects.toThrow("Isolate crashed");
   });
 
-  it("onConnect sends correct hook name via /rpc", async () => {
+  it("connect sends correct hook name via /rpc", async () => {
     mockHookResponse();
-    const invoker = _internals.buildHookInvoker("http://127.0.0.1:9999", "test-token");
-    await invoker.onConnect("session-1");
-
+    const hooks = _internals.buildHookInvoker("http://127.0.0.1:9999", "test-token");
+    await hooks.callHook("connect", "session-1");
     expect(globalThis.fetch).toHaveBeenCalledWith(
       "http://127.0.0.1:9999/rpc",
       expect.objectContaining({
@@ -155,11 +160,10 @@ describe("buildHookInvoker", () => {
     );
   });
 
-  it("onTurn sends text", async () => {
+  it("turn sends text", async () => {
     mockHookResponse();
-    const invoker = _internals.buildHookInvoker("http://127.0.0.1:9999", "test-token");
-    await invoker.onTurn("s1", "Hello");
-
+    const hooks = _internals.buildHookInvoker("http://127.0.0.1:9999", "test-token");
+    await hooks.callHook("turn", "s1", "Hello");
     expect(globalThis.fetch).toHaveBeenCalledWith(
       "http://127.0.0.1:9999/rpc",
       expect.objectContaining({
@@ -170,30 +174,29 @@ describe("buildHookInvoker", () => {
 
   it("resolveTurnConfig returns parsed config", async () => {
     mockHookResponse({ maxSteps: 3 });
-    const invoker = _internals.buildHookInvoker("http://127.0.0.1:9999", "test-token");
-    const config = await invoker.resolveTurnConfig("s1");
-
+    const hooks = _internals.buildHookInvoker("http://127.0.0.1:9999", "test-token");
+    const config = await callResolveTurnConfig(hooks, "s1");
     expect(config).toEqual({ maxSteps: 3 });
   });
 
   it("resolveTurnConfig returns null when hook returns null", async () => {
     mockHookResponse(null);
-    const invoker = _internals.buildHookInvoker("http://127.0.0.1:9999", "test-token");
-    const config = await invoker.resolveTurnConfig("s1");
+    const hooks = _internals.buildHookInvoker("http://127.0.0.1:9999", "test-token");
+    const config = await callResolveTurnConfig(hooks, "s1");
     expect(config).toBeNull();
   });
 
   it("resolveTurnConfig omits undefined fields", async () => {
     mockHookResponse({});
-    const invoker = _internals.buildHookInvoker("http://127.0.0.1:9999", "test-token");
-    const config = await invoker.resolveTurnConfig("s1");
+    const hooks = _internals.buildHookInvoker("http://127.0.0.1:9999", "test-token");
+    const config = await callResolveTurnConfig(hooks, "s1");
     expect(config).toEqual({});
   });
 
   it("beforeTurn sends text and returns result", async () => {
     mockHookResponse("blocked");
-    const invoker = _internals.buildHookInvoker("http://127.0.0.1:9999", "test-token");
-    const result = await invoker.beforeTurn?.("s1", "hello");
+    const hooks = _internals.buildHookInvoker("http://127.0.0.1:9999", "test-token");
+    const result = await callBeforeTurn(hooks, "s1", "hello");
     expect(result).toBe("blocked");
     expect(globalThis.fetch).toHaveBeenCalledWith(
       "http://127.0.0.1:9999/rpc",
@@ -205,8 +208,8 @@ describe("buildHookInvoker", () => {
 
   it("afterTurn sends text", async () => {
     mockHookResponse();
-    const invoker = _internals.buildHookInvoker("http://127.0.0.1:9999", "test-token");
-    await invoker.afterTurn?.("s1", "response");
+    const hooks = _internals.buildHookInvoker("http://127.0.0.1:9999", "test-token");
+    await hooks.callHook("afterTurn", "s1", "response");
     expect(globalThis.fetch).toHaveBeenCalledWith(
       "http://127.0.0.1:9999/rpc",
       expect.objectContaining({
@@ -222,8 +225,8 @@ describe("buildHookInvoker", () => {
 
   it("interceptToolCall sends tool name and args", async () => {
     mockHookResponse({ type: "block", reason: "not allowed" });
-    const invoker = _internals.buildHookInvoker("http://127.0.0.1:9999", "test-token");
-    const result = await invoker.interceptToolCall?.("s1", "search", { q: "test" });
+    const hooks = _internals.buildHookInvoker("http://127.0.0.1:9999", "test-token");
+    const result = await callInterceptToolCall(hooks, "s1", "search", { q: "test" });
     expect(result).toEqual({ type: "block", reason: "not allowed" });
     expect(globalThis.fetch).toHaveBeenCalledWith(
       "http://127.0.0.1:9999/rpc",
@@ -241,8 +244,8 @@ describe("buildHookInvoker", () => {
 
   it("afterToolCall sends tool name, args, and result", async () => {
     mockHookResponse();
-    const invoker = _internals.buildHookInvoker("http://127.0.0.1:9999", "test-token");
-    await invoker.afterToolCall?.("s1", "search", { q: "test" }, "found it");
+    const hooks = _internals.buildHookInvoker("http://127.0.0.1:9999", "test-token");
+    await hooks.callHook("afterToolCall", "s1", "search", { q: "test" }, "found it");
     expect(globalThis.fetch).toHaveBeenCalledWith(
       "http://127.0.0.1:9999/rpc",
       expect.objectContaining({
@@ -260,8 +263,8 @@ describe("buildHookInvoker", () => {
 
   it("filterOutput sends text and returns filtered result", async () => {
     mockHookResponse("sanitized text");
-    const invoker = _internals.buildHookInvoker("http://127.0.0.1:9999", "test-token");
-    const result = await invoker.filterOutput?.("s1", "raw text");
+    const hooks = _internals.buildHookInvoker("http://127.0.0.1:9999", "test-token");
+    const result = await callTextHook(hooks, "filterOutput", "s1", "raw text");
     expect(result).toBe("sanitized text");
     expect(globalThis.fetch).toHaveBeenCalledWith(
       "http://127.0.0.1:9999/rpc",

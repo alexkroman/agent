@@ -1,22 +1,24 @@
+import { createHooks } from "hookable";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { handleToolCall, setupListeners } from "./_session-otel.ts";
 import { makeClient, makeMockHandle, silentLogger } from "./_test-utils.ts";
 import { MAX_TOOL_RESULT_CHARS } from "./constants.ts";
-import type { HookInvoker } from "./middleware.ts";
+import type { AgentHookMap } from "./hooks.ts";
 import type { S2sToolCall } from "./s2s.ts";
 import type { S2sSessionCtx } from "./session.ts";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function makeHook(overrides?: Partial<HookInvoker>): HookInvoker {
-  return {
-    onConnect: vi.fn(),
-    onDisconnect: vi.fn(),
-    onTurn: vi.fn(),
-    onError: vi.fn(),
-    resolveTurnConfig: vi.fn(async () => null),
-    ...overrides,
-  } as HookInvoker;
+// biome-ignore lint/complexity/noBannedTypes: test helper accepts arbitrary mock functions
+function makeTestHooks(handlers?: Record<string, Function>) {
+  const hooks = createHooks<AgentHookMap>();
+  if (handlers) {
+    for (const [name, fn] of Object.entries(handlers)) {
+      // biome-ignore lint/suspicious/noExplicitAny: test mock registration
+      hooks.hook(name as keyof AgentHookMap, fn as any);
+    }
+  }
+  return hooks;
 }
 
 function makeCtx(overrides?: Partial<S2sSessionCtx>): S2sSessionCtx {
@@ -33,7 +35,7 @@ function makeCtx(overrides?: Partial<S2sSessionCtx>): S2sSessionCtx {
     client: makeClient(),
     agentConfig: { name: "test-agent", instructions: "", greeting: "Hi" },
     executeTool: vi.fn(async () => "tool-result"),
-    hookInvoker: undefined,
+    hooks: undefined,
     log: silentLogger,
     s2s: null,
     turnPromise: null,
@@ -137,35 +139,38 @@ describe("handleToolCall", () => {
   });
 
   test("middleware block: returns error JSON without executing", async () => {
-    const ctx = makeCtx({
-      hookInvoker: makeHook({
-        interceptToolCall: vi.fn(async () => ({ type: "block" as const, reason: "blocked!" })),
-      }),
+    const hooks = makeTestHooks({
+      interceptToolCall: vi.fn(async () => ({ type: "block" as const, reason: "blocked!" })),
     });
+    const ctx = makeCtx({ hooks });
     await handleToolCall(ctx, tc());
     expect(ctx.executeTool).not.toHaveBeenCalled();
     expect(findEvent(ctx, "tool_call_done")?.result).toBe(JSON.stringify({ error: "blocked!" }));
   });
 
   test("middleware cached result: returns cached value and fires afterToolCall", async () => {
-    const ctx = makeCtx({
-      hookInvoker: makeHook({
-        interceptToolCall: vi.fn(async () => ({ type: "result" as const, result: "cached" })),
-        afterToolCall: vi.fn(async () => undefined),
-      }),
+    const hooks = makeTestHooks({
+      interceptToolCall: vi.fn(async () => ({ type: "result" as const, result: "cached" })),
+      afterToolCall: vi.fn(async () => undefined),
     });
+    const ctx = makeCtx({ hooks });
     await handleToolCall(ctx, tc());
     expect(ctx.executeTool).not.toHaveBeenCalled();
     expect(findEvent(ctx, "tool_call_done")?.result).toBe("cached");
-    expect(ctx.fireHook).toHaveBeenCalledWith("afterToolCall", expect.any(Function));
+    expect(ctx.fireHook).toHaveBeenCalledWith(
+      "afterToolCall",
+      "session-1",
+      "myTool",
+      { foo: "bar" },
+      "cached",
+    );
   });
 
   test("middleware arg transform: passes modified args to executeTool", async () => {
-    const ctx = makeCtx({
-      hookInvoker: makeHook({
-        interceptToolCall: vi.fn(async () => ({ type: "args" as const, args: { modified: true } })),
-      }),
+    const hooks = makeTestHooks({
+      interceptToolCall: vi.fn(async () => ({ type: "args" as const, args: { modified: true } })),
     });
+    const ctx = makeCtx({ hooks });
     await handleToolCall(ctx, tc());
     expect(ctx.executeTool).toHaveBeenCalledWith(
       "myTool",
@@ -209,13 +214,12 @@ describe("handleToolCall", () => {
   });
 
   test("interceptToolCall error: logs warning and still executes tool", async () => {
-    const ctx = makeCtx({
-      hookInvoker: makeHook({
-        interceptToolCall: vi.fn(async () => {
-          throw new Error("middleware broke");
-        }),
+    const hooks = makeTestHooks({
+      interceptToolCall: vi.fn(async () => {
+        throw new Error("middleware broke");
       }),
     });
+    const ctx = makeCtx({ hooks });
     await handleToolCall(ctx, tc());
     expect(ctx.log.warn).toHaveBeenCalledWith(
       "interceptToolCall middleware failed (fail-open, tool call proceeds)",
@@ -337,16 +341,17 @@ describe("setupListeners", () => {
   });
 
   test("reply_done without pending tools fires afterTurn hook", () => {
+    const hooks = makeTestHooks({ afterTurn: vi.fn(async () => undefined) });
     const ctx = makeCtx({
       reply: { pendingTools: [], toolCallCount: 0, currentReplyId: "r0" },
       turnPromise: null,
-      hookInvoker: makeHook({ afterTurn: vi.fn(async () => undefined) }),
+      hooks,
       conversationMessages: [{ role: "assistant", content: "hello" }],
     });
     const h = makeMockHandle();
     setupListeners(ctx, h);
     h._fire("replyDone", { status: "done" });
-    expect(ctx.fireHook).toHaveBeenCalledWith("afterTurn", expect.any(Function));
+    expect(ctx.fireHook).toHaveBeenCalledWith("afterTurn", "session-1", "hello");
   });
 
   test("reply_done stale reply: clears pendingTools to free memory", () => {
@@ -385,15 +390,16 @@ describe("setupListeners", () => {
     expect(ctx.conversationMessages).toEqual([{ role: "user", content: "hello" }]);
     expect(allEvents(ctx)).toContainEqual({ type: "transcript", text: "hello", isFinal: true });
     expect(allEvents(ctx)).toContainEqual({ type: "turn", text: "hello" });
-    expect(ctx.fireHook).toHaveBeenCalledWith("onTurn", expect.any(Function));
+    expect(ctx.fireHook).toHaveBeenCalledWith("turn", "session-1", "hello", expect.any(Number));
   });
 
   test("user_transcript with filterInput: pushes filtered text to messages", async () => {
-    const ctx = makeCtx({
-      hookInvoker: makeHook({
-        filterInput: vi.fn(async (_sid, text) => text.replace(/secret/g, "[REDACTED]")),
-      }),
+    const hooks = makeTestHooks({
+      filterInput: vi.fn(async (_sid: string, text: string) =>
+        text.replace(/secret/g, "[REDACTED]"),
+      ),
     });
+    const ctx = makeCtx({ hooks });
     const h = makeMockHandle();
     setupListeners(ctx, h);
     h._fire("userTranscript", { itemId: "i1", text: "the secret code" });
@@ -409,9 +415,10 @@ describe("setupListeners", () => {
   });
 
   test("user_transcript with beforeTurn block: emits chat + tts_done", async () => {
-    const ctx = makeCtx({
-      hookInvoker: makeHook({ beforeTurn: vi.fn(async () => "not allowed") }),
+    const hooks = makeTestHooks({
+      beforeTurn: vi.fn(async () => "not allowed"),
     });
+    const ctx = makeCtx({ hooks });
     const h = makeMockHandle();
     setupListeners(ctx, h);
     h._fire("userTranscript", { itemId: "i1", text: "hello" });

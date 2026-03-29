@@ -15,6 +15,7 @@ export * from "./_ssrf.ts";
 export * from "./_utils.ts";
 export * from "./constants.ts";
 export * from "./direct-executor.ts";
+export * from "./hooks.ts";
 export * from "./protocol.ts";
 export * from "./runtime.ts";
 export * from "./s2s.ts";

@@ -9,6 +9,7 @@
 
 import { errorDetail, errorMessage, toolError } from "./_utils.ts";
 import { HOOK_TIMEOUT_MS, MAX_TOOL_RESULT_CHARS } from "./constants.ts";
+import { callBeforeTurn, callInterceptToolCall, callTextHook } from "./hooks.ts";
 import type { S2sHandle, S2sToolCall } from "./s2s.ts";
 import type { S2sSessionCtx } from "./session.ts";
 import {
@@ -39,31 +40,14 @@ function finishToolCall(
   ctx.client.event({ type: "tool_call_done", toolCallId: callId, result: truncatedResult });
   if (replyId !== null && replyId === ctx.reply.currentReplyId) {
     ctx.reply.pendingTools.push({ callId, result });
-    // Defensive cap: drop the oldest entry if the array exceeds maxHistory.
-    // In practice pendingTools is bounded by maxSteps (default 5), but if
-    // maxSteps is disabled or set very high this prevents unbounded growth.
     if (ctx.maxHistory > 0 && ctx.reply.pendingTools.length > ctx.maxHistory) {
       ctx.reply.pendingTools.shift();
     }
   }
 }
 
-/**
- * Orchestrate the full tool call pipeline for a single S2S tool invocation.
- *
- * Steps: resolve per-turn config → check step/tool limits → run middleware
- * `interceptToolCall` (which may block, return a cached result, or modify args)
- * → execute the tool → run `afterToolCall` middleware → record metrics and
- * finish via {@link finishToolCall}. Each step is wrapped in an OpenTelemetry
- * span (`tool.call`) with agent/session/tool attributes.
- *
- * @param ctx - The shared mutable session context (see {@link S2sSessionCtx}).
- * @param detail - The tool call details from the S2S API (call ID, name, parsed args).
- */
 export async function handleToolCall(ctx: S2sSessionCtx, detail: S2sToolCall): Promise<void> {
   const { callId, name, args: parsedArgs } = detail;
-  // Capture the reply ID at call start so finishToolCall can detect
-  // whether this tool call's reply was interrupted while we were executing.
   const replyId = ctx.reply.currentReplyId;
   const span = tracer.startSpan("tool.call", {
     attributes: {
@@ -107,34 +91,27 @@ export async function handleToolCall(ctx: S2sSessionCtx, detail: S2sToolCall): P
 
   // Run middleware tool call interceptors
   let effectiveArgs = parsedArgs;
-  if (ctx.hookInvoker?.interceptToolCall) {
-    try {
-      const ic = await ctx.hookInvoker.interceptToolCall(ctx.id, name, parsedArgs);
-      if (ic?.type === "block") {
-        span.setAttribute("aai.tool.blocked", true);
-        span.end();
-        finishToolCall(ctx, callId, toolError(ic.reason), replyId);
-        return;
-      }
-      if (ic?.type === "result") {
-        span.setAttribute("aai.tool.cached", true);
-        span.end();
-        finishToolCall(ctx, callId, ic.result, replyId);
-        ctx.fireHook(
-          "afterToolCall",
-          (h) => h.afterToolCall?.(ctx.id, name, parsedArgs, ic.result) ?? Promise.resolve(),
-        );
-        return;
-      }
-      if (ic?.type === "args") effectiveArgs = ic.args;
-    } catch (err: unknown) {
-      // Fail-open: middleware error does not block the tool call. The tool
-      // proceeds with its original (or partially transformed) args.
-      ctx.log.warn("interceptToolCall middleware failed (fail-open, tool call proceeds)", {
-        err: errorMessage(err),
-        tool: name,
-      });
+  try {
+    const ic = await callInterceptToolCall(ctx.hooks, ctx.id, name, parsedArgs);
+    if (ic?.type === "block") {
+      span.setAttribute("aai.tool.blocked", true);
+      span.end();
+      finishToolCall(ctx, callId, toolError(ic.reason), replyId);
+      return;
     }
+    if (ic?.type === "result") {
+      span.setAttribute("aai.tool.cached", true);
+      span.end();
+      finishToolCall(ctx, callId, ic.result, replyId);
+      ctx.fireHook("afterToolCall", ctx.id, name, parsedArgs, ic.result);
+      return;
+    }
+    if (ic?.type === "args") effectiveArgs = ic.args;
+  } catch (err: unknown) {
+    ctx.log.warn("interceptToolCall middleware failed (fail-open, tool call proceeds)", {
+      err: errorMessage(err),
+      tool: name,
+    });
   }
 
   let result: string;
@@ -150,12 +127,7 @@ export async function handleToolCall(ctx: S2sSessionCtx, detail: S2sToolCall): P
   }
 
   // Run middleware afterToolCall hooks
-  if (ctx.hookInvoker?.afterToolCall) {
-    ctx.fireHook(
-      "afterToolCall",
-      (h) => h.afterToolCall?.(ctx.id, name, effectiveArgs, result) ?? Promise.resolve(),
-    );
-  }
+  ctx.fireHook("afterToolCall", ctx.id, name, effectiveArgs, result);
 
   toolCallDuration.record((performance.now() - startTime) / 1000, { agent: ctx.agent, tool: name });
   ctx.log.info("S2S tool result", { tool: name, callId, resultLength: result.length });
@@ -172,16 +144,19 @@ function handleUserTranscript(ctx: S2sSessionCtx, text: string): void {
   // Apply input filters (PII redaction etc.) before the text reaches the LLM.
   // The original text is shown in transcript/turn events; the filtered text
   // is what gets pushed to conversation messages and sent to beforeTurn/LLM.
+  // biome-ignore lint/suspicious/noExplicitAny: accessing hookable internals for fast-path
+  const hooksInternal = (ctx.hooks as any)?._hooks;
+  const hasFilterInput = hooksInternal?.filterInput?.length > 0;
+  const hasBeforeTurn = hooksInternal?.beforeTurn?.length > 0;
+
   const processFiltered = (filtered: string) => {
     ctx.pushMessages({ role: "user", content: filtered });
-    const fireTurn = () =>
-      ctx.fireHook("onTurn", (h) => h.onTurn(ctx.id, filtered, HOOK_TIMEOUT_MS));
-    if (!ctx.hookInvoker?.beforeTurn) {
+    const fireTurn = () => ctx.fireHook("turn", ctx.id, filtered, HOOK_TIMEOUT_MS);
+    if (!hasBeforeTurn) {
       fireTurn();
       return;
     }
-    ctx.hookInvoker
-      .beforeTurn(ctx.id, filtered)
+    callBeforeTurn(ctx.hooks, ctx.id, filtered)
       .then((reason) => {
         if (reason) {
           ctx.log.info("Turn blocked by middleware", { reason });
@@ -195,12 +170,11 @@ function handleUserTranscript(ctx: S2sSessionCtx, text: string): void {
       });
   };
 
-  if (!ctx.hookInvoker?.filterInput) {
+  if (!hasFilterInput) {
     processFiltered(text);
     return;
   }
-  ctx.hookInvoker
-    .filterInput(ctx.id, text)
+  callTextHook(ctx.hooks, "filterInput", ctx.id, text)
     .then((filtered) => processFiltered(filtered))
     .catch((err: unknown) => {
       ctx.log.warn("filterInput hook failed", { error: errorMessage(err) });
@@ -208,24 +182,22 @@ function handleUserTranscript(ctx: S2sSessionCtx, text: string): void {
     });
 }
 
-/**
- * Chain a filterOutput call onto `ctx.filterChain` to preserve ordering.
- * On success the filtered text is passed to `emit`; on failure the raw
- * `text` is passed instead (fail-open).
- */
 function chainFilterOutput(
   ctx: S2sSessionCtx,
   text: string,
   emit: (filtered: string) => void,
 ): void {
-  const filterOutput = ctx.hookInvoker?.filterOutput;
-  if (!filterOutput) {
+  // Fast synchronous path when no filterOutput hooks are registered.
+  // hookable stores handlers in _hooks; if the key is absent/empty, skip.
+  // biome-ignore lint/suspicious/noExplicitAny: accessing hookable internals for fast-path
+  const hasFilterOutput = (ctx.hooks as any)?._hooks?.filterOutput?.length > 0;
+  if (!hasFilterOutput) {
     emit(text);
     return;
   }
   ctx.filterChain = ctx.filterChain.then(async () => {
     try {
-      const f = await filterOutput.call(ctx.hookInvoker, ctx.id, text);
+      const f = await callTextHook(ctx.hooks, "filterOutput", ctx.id, text);
       emit(f);
     } catch (err: unknown) {
       ctx.log.warn("filterOutput hook failed", { error: errorMessage(err) });
@@ -241,8 +213,6 @@ function handleAgentTranscriptDelta(ctx: S2sSessionCtx, text: string): void {
 }
 
 function handleAgentTranscript(ctx: S2sSessionCtx, text: string, interrupted: boolean): void {
-  // Chain after any pending deltas to ensure the final transcript
-  // is emitted after all deltas are processed.
   chainFilterOutput(ctx, text, (filtered) => {
     ctx.client.event({ type: "chat", text: filtered });
     if (!interrupted) {
@@ -255,18 +225,13 @@ function handleReplyDone(ctx: S2sSessionCtx, status: string | undefined): void {
   if (status === "interrupted") {
     ctx.log.info("S2S reply interrupted (barge-in)");
     bargeInCounter.add(1, { agent: ctx.agent });
-    // Invalidate currentReplyId so in-flight tool calls discard their results.
     ctx.cancelReply();
     ctx.client.event({ type: "cancelled" });
     return;
   }
   const doneReplyId = ctx.reply.currentReplyId;
-  // Wait for all in-flight tool calls to complete before sending results.
-  // Without this, reply_done can fire while async tool execution is still
-  // in progress, causing pendingTools to be empty → results never sent → deadlock.
   const sendPending = () => {
     if (ctx.reply.currentReplyId !== doneReplyId) {
-      // Stale reply — discard accumulated results to free memory.
       ctx.reply.pendingTools = [];
       return;
     }
@@ -279,13 +244,8 @@ function handleReplyDone(ctx: S2sSessionCtx, status: string | undefined): void {
         ctx.log.info("Turn complete", { steps: stepsUsed, agent: ctx.agent });
         turnStepsHistogram.record(stepsUsed, { agent: ctx.agent });
       }
-      if (ctx.hookInvoker?.afterTurn) {
-        const last = ctx.conversationMessages.at(-1);
-        ctx.fireHook(
-          "afterTurn",
-          (h) => h.afterTurn?.(ctx.id, last?.content ?? "") ?? Promise.resolve(),
-        );
-      }
+      const last = ctx.conversationMessages.at(-1);
+      ctx.fireHook("afterTurn", ctx.id, last?.content ?? "");
       ctx.client.playAudioDone();
       ctx.client.event({ type: "tts_done" });
     }
@@ -297,17 +257,6 @@ function handleReplyDone(ctx: S2sSessionCtx, status: string | undefined): void {
   }
 }
 
-/**
- * Wire all S2S events to the client sink, hooks, and session state.
- *
- * Registers listeners on the S2S handle for: ready, session expiry, speech
- * start/stop, user/agent transcripts, reply lifecycle, tool calls, audio
- * chunks, errors, and close. Each listener delegates to a focused handler
- * function that updates `ctx` and emits client events.
- *
- * @param ctx - The shared mutable session context.
- * @param handle - The S2S WebSocket handle to listen on.
- */
 export function setupListeners(ctx: S2sSessionCtx, handle: S2sHandle): void {
   handle.on("ready", ({ sessionId }) => ctx.log.info("S2S session ready", { sessionId }));
   handle.on("sessionExpired", () => {
@@ -343,7 +292,6 @@ export function setupListeners(ctx: S2sSessionCtx, handle: S2sHandle): void {
   handle.on("close", () => {
     ctx.log.info("S2S closed");
     ctx.s2s = null;
-    // Invalidate currentReplyId so in-flight tool calls discard their results.
     ctx.cancelReply();
   });
 }

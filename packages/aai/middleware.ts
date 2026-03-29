@@ -14,50 +14,7 @@ import type {
   ToolCallInterceptResult,
 } from "./types.ts";
 
-// ─── Lifecycle hooks (formerly lifecycle.ts) ────────────────────────────────
-
-/** Agent lifecycle hooks — direct pass-throughs to agent callbacks. */
-export type LifecycleHooks = {
-  onConnect(sessionId: string, timeoutMs?: number): Promise<void>;
-  onDisconnect(sessionId: string, timeoutMs?: number): Promise<void>;
-  onTurn(sessionId: string, text: string, timeoutMs?: number): Promise<void>;
-  onError(sessionId: string, error: { message: string }, timeoutMs?: number): Promise<void>;
-  resolveTurnConfig(sid: string, ms?: number): Promise<{ maxSteps?: number } | null>;
-};
-
-/**
- * Combined interface for invoking agent lifecycle hooks and middleware.
- *
- * Lifecycle methods are always present. Middleware methods (filterInput,
- * beforeTurn, etc.) are only present when middleware is configured.
- */
-export type HookInvoker = LifecycleHooks & Partial<MiddlewareRunner>;
-
 // ─── Middleware runner ───────────────────────────────────────────────────────
-
-/** Middleware interceptor methods — only present when middleware is configured. */
-export type MiddlewareRunner = {
-  filterInput(sid: string, text: string): Promise<string>;
-  beforeTurn(sid: string, text: string): Promise<string | undefined>;
-  afterTurn(sid: string, text: string): Promise<void>;
-  interceptToolCall(
-    sid: string,
-    tool: string,
-    args: Readonly<Record<string, unknown>>,
-  ): Promise<
-    | { type: "block"; reason: string }
-    | { type: "result"; result: string }
-    | { type: "args"; args: Record<string, unknown> }
-    | undefined
-  >;
-  afterToolCall(
-    sid: string,
-    tool: string,
-    args: Readonly<Record<string, unknown>>,
-    result: string,
-  ): Promise<void>;
-  filterOutput(sid: string, text: string): Promise<string>;
-};
 
 /**
  * Called when a middleware hook throws. Receives the middleware name, the hook

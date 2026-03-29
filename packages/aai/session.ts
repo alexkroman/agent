@@ -5,7 +5,8 @@ import type { AgentConfig, ExecuteTool, ToolSchema } from "./_internal-types.ts"
 import { activeSessionsUpDown, sessionCounter, setupListeners } from "./_session-otel.ts";
 import { errorDetail, errorMessage, toolError } from "./_utils.ts";
 import { DEFAULT_IDLE_TIMEOUT_MS, DEFAULT_MAX_HISTORY, HOOK_TIMEOUT_MS } from "./constants.ts";
-import type { HookInvoker } from "./middleware.ts";
+import type { AgentHookMap, AgentHooks } from "./hooks.ts";
+import { callResolveTurnConfig } from "./hooks.ts";
 import type { ClientSink } from "./protocol.ts";
 import type { Logger, S2SConfig } from "./runtime.ts";
 import { consoleLogger } from "./runtime.ts";
@@ -40,7 +41,7 @@ export type SessionDeps = {
   readonly client: ClientSink;
   readonly agentConfig: AgentConfig;
   readonly executeTool: ExecuteTool;
-  readonly hookInvoker: HookInvoker | undefined;
+  readonly hooks: AgentHooks | undefined;
   readonly log: Logger;
   readonly maxHistory: number;
 };
@@ -66,7 +67,7 @@ export type S2sSessionCtx = SessionDeps & {
     name: string,
     replyId: string | null,
   ): string | null;
-  fireHook(name: string, fn: (h: HookInvoker) => Promise<void>): void;
+  fireHook(name: keyof AgentHookMap, ...args: unknown[]): void;
   drainHooks(): Promise<void>;
   pushMessages(...msgs: Message[]): void;
   beginReply(replyId: string): void;
@@ -80,11 +81,11 @@ export function buildCtx(opts: {
   client: ClientSink;
   agentConfig: AgentConfig;
   executeTool: ExecuteTool;
-  hookInvoker: HookInvoker | undefined;
+  hooks: AgentHooks | undefined;
   log: Logger;
   maxHistory?: number | undefined;
 }): S2sSessionCtx {
-  const { id, agentConfig, hookInvoker, log } = opts;
+  const { id, agentConfig, hooks, log } = opts;
   const maxHistory = opts.maxHistory ?? DEFAULT_MAX_HISTORY;
   /** Track in-flight hook promises so they can be awaited during shutdown. */
   const pendingHooks = new Set<Promise<void>>();
@@ -97,8 +98,7 @@ export function buildCtx(opts: {
     maxHistory,
     filterChain: Promise.resolve(),
     resolveTurnConfig() {
-      if (!hookInvoker) return Promise.resolve(null);
-      return hookInvoker.resolveTurnConfig(id, HOOK_TIMEOUT_MS);
+      return callResolveTurnConfig(hooks, id, HOOK_TIMEOUT_MS);
     },
     consumeToolCallStep(turnConfig, _name, replyId) {
       if (replyId === null || replyId !== ctx.reply.currentReplyId) {
@@ -115,27 +115,25 @@ export function buildCtx(opts: {
       }
       return null;
     },
-    fireHook(name, fn) {
-      if (!hookInvoker) return;
+    fireHook(name, ...args) {
+      if (!hooks) return;
       const notifyOnError = (err: unknown) => {
         log.warn(`${name} hook failed`, { err: errorMessage(err) });
-        if (name !== "onError") {
-          try {
-            const r = hookInvoker.onError(id, { message: errorMessage(err) });
-            if (r && typeof r.catch === "function") {
-              r.catch((e: unknown) => {
-                log.warn("onError hook failed", { err: errorMessage(e) });
-              });
-            }
-          } catch (e: unknown) {
-            log.warn("onError hook failed", { err: errorMessage(e) });
+        if (name !== "error") {
+          const ep = hooks.callHook("error", id, { message: errorMessage(err) });
+          if (ep && typeof (ep as Promise<void>).catch === "function") {
+            (ep as Promise<void>).catch((e: unknown) => {
+              log.warn("error hook failed", { err: errorMessage(e) });
+            });
           }
         }
       };
       try {
-        const p = fn(hookInvoker)
-          .catch(notifyOnError)
-          .finally(() => pendingHooks.delete(p));
+        // biome-ignore lint/suspicious/noExplicitAny: hookable callHook is generic over hook args
+        const result = (hooks.callHook as any)(name, ...args);
+        // hookable returns undefined when no hooks are registered for the given name
+        if (result == null) return;
+        const p = result.catch(notifyOnError).finally(() => pendingHooks.delete(p));
         pendingHooks.add(p);
       } catch (err: unknown) {
         notifyOnError(err);
@@ -168,7 +166,14 @@ export function buildCtx(opts: {
 
 // ─── Re-exports ─────────────────────────────────────────────────────────────
 
-export type { HookInvoker, LifecycleHooks, MiddlewareRunner } from "./middleware.ts";
+export type { AgentHookMap, AgentHooks } from "./hooks.ts";
+export {
+  callBeforeTurn,
+  callInterceptToolCall,
+  callResolveTurnConfig,
+  callTextHook,
+  createAgentHooks,
+} from "./hooks.ts";
 export { buildSystemPrompt } from "./system-prompt.ts";
 
 /**
@@ -180,24 +185,13 @@ export { buildSystemPrompt } from "./system-prompt.ts";
  * @internal Exported for use by `ws-handler.ts`, `server.ts`, and `direct-executor.ts`.
  */
 export type Session = {
-  /** Open the S2S connection and fire the `onConnect` hook. */
   start(): Promise<void>;
-  /** Gracefully shut down: wait for in-flight turns, close the S2S socket, fire `onDisconnect`. */
   stop(): Promise<void>;
-  /** Forward raw PCM audio from the client microphone to the S2S connection. */
   onAudio(data: Uint8Array): void;
-  /** Called when the client has finished setting up its audio pipeline. For S2S sessions this is a no-op since the greeting comes automatically. */
   onAudioReady(): void;
-  /** Handle a client-initiated cancellation (barge-in). Sends a `cancelled` event. */
   onCancel(): void;
-  /** Reset the session: clear conversation history, bump generation counters, reconnect S2S. */
   onReset(): void;
-  /**
-   * Inject conversation history from the client (e.g. on reconnect).
-   * @param incoming - Messages with `{role, content}` fields.
-   */
   onHistory(incoming: readonly { role: "user" | "assistant"; content: string }[]): void;
-  /** Returns a promise that resolves when the current in-flight turn completes, or resolves immediately if no turn is active. */
   waitForTurn(): Promise<void>;
 };
 
@@ -213,19 +207,14 @@ export type S2sSessionOptions = {
   executeTool: ExecuteTool;
   createWebSocket?: CreateS2sWebSocket;
   env?: Record<string, string | undefined>;
-  hookInvoker?: HookInvoker;
+  hooks?: AgentHooks;
   skipGreeting?: boolean;
   logger?: Logger;
-  /** Maximum number of conversation messages to retain. Older messages are
-   *  dropped (sliding window) to bound memory in long-running sessions.
-   *  Defaults to 200. Set to 0 or Infinity to disable trimming. */
   maxHistory?: number;
 };
 
 /** @internal Not part of the public API. Exposed for testing only. */
-export const _internals = {
-  connectS2s,
-};
+export const _internals = { connectS2s };
 
 type IdleTimer = { reset(): void; clear(): void };
 
@@ -236,15 +225,7 @@ function createIdleTimer(opts: {
   client: ClientSink;
   ctx: { s2s: { close(): void } | null };
 }): IdleTimer {
-  if (opts.timeoutMs <= 0)
-    return {
-      reset() {
-        /* no-op: idle timeout disabled */
-      },
-      clear() {
-        /* no-op: idle timeout disabled */
-      },
-    };
+  if (opts.timeoutMs <= 0) return { reset() {}, clear() {} };
   let timer: ReturnType<typeof setTimeout> | null = null;
   return {
     reset() {
@@ -267,21 +248,6 @@ function createIdleTimer(opts: {
 
 // ─── Main session factory ────────────────────────────────────────────────────
 
-/**
- * Create a Speech-to-Speech backed session implementing the {@link Session} interface.
- *
- * Connects to AssemblyAI's S2S WebSocket, configures the system prompt and tools,
- * and wires up event listeners for user transcripts, agent replies, tool calls,
- * barge-ins, and session lifecycle. Manages reconnection on `onReset` via a
- * `connectGeneration` guard that prevents stale connection attempts from overwriting
- * newer ones during rapid resets. A `sessionAbort` AbortController is used to
- * coordinate cleanup on `stop()`.
- *
- * @param opts - Session configuration. See {@link S2sSessionOptions} for all fields
- *   including the agent config, tool schemas, API key, and optional hooks.
- * @returns A {@link Session} with `start`, `stop`, `onAudio`, `onReset`, and other
- *   lifecycle methods.
- */
 export function createS2sSession(opts: S2sSessionOptions): Session {
   const {
     id,
@@ -292,7 +258,7 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
     s2sConfig,
     executeTool,
     createWebSocket = defaultCreateS2sWebSocket,
-    hookInvoker,
+    hooks,
     logger: log = consoleLogger,
   } = opts;
   const agentConfig = opts.skipGreeting ? { ...opts.agentConfig, greeting: "" } : opts.agentConfig;
@@ -312,7 +278,7 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
     client,
     agentConfig,
     executeTool,
-    hookInvoker,
+    hooks,
     log,
     maxHistory: opts.maxHistory,
   });
@@ -321,12 +287,7 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
   const idleMs = rawTimeout === 0 || !Number.isFinite(rawTimeout) ? 0 : rawTimeout;
   const idle = createIdleTimer({ timeoutMs: idleMs, agent, log, client, ctx });
 
-  /** Monotonically increasing counter bumped on each connectAndSetup call.
-   *  Only the most recent invocation is allowed to set ctx.s2s, preventing
-   *  earlier completions from overwriting a newer connection during rapid resets. */
   let connectGeneration = 0;
-
-  /** The session.update payload shared by fresh and fallback paths. */
   const sessionUpdatePayload = {
     systemPrompt,
     tools: s2sTools,
@@ -342,15 +303,12 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
         createWebSocket,
         logger: log,
       });
-      // Stale if session was stopped or a newer connectAndSetup was launched.
       if (sessionAbort.signal.aborted || generation !== connectGeneration) {
         handle.close();
         return;
       }
-
       setupListeners(ctx, handle);
       handle.updateSession(sessionUpdatePayload);
-
       ctx.s2s = handle;
       idle.reset();
     } catch (err: unknown) {
@@ -364,7 +322,7 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
     async start(): Promise<void> {
       sessionCounter.add(1, { agent });
       activeSessionsUpDown.add(1, { agent });
-      ctx.fireHook("onConnect", (h) => h.onConnect(id, HOOK_TIMEOUT_MS));
+      ctx.fireHook("connect", id, HOOK_TIMEOUT_MS);
       await connectAndSetup();
     },
     async stop(): Promise<void> {
@@ -373,12 +331,9 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
       idle.clear();
       activeSessionsUpDown.add(-1, { agent });
       if (ctx.turnPromise !== null) await ctx.turnPromise;
-      // Drain in-flight hooks (onTurn, etc.) BEFORE closing
-      // the S2S connection so they don't send on a closed socket.
       await ctx.drainHooks();
       ctx.s2s?.close();
-      ctx.fireHook("onDisconnect", (h) => h.onDisconnect(id, HOOK_TIMEOUT_MS));
-      // Drain again for the onDisconnect hook we just fired.
+      ctx.fireHook("disconnect", id, HOOK_TIMEOUT_MS);
       await ctx.drainHooks();
     },
     onAudio(data: Uint8Array): void {
