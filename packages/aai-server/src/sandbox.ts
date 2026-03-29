@@ -174,7 +174,7 @@ async function startIsolate(
     },
   });
 
-  runtime
+  const execPromise = runtime
     .exec(
       'import agent from "/app/agent_bundle.js";\nimport { startHarness } from "/app/_harness-runtime.mjs";\nstartHarness(agent);',
       { cwd: "/app" },
@@ -182,6 +182,9 @@ async function startIsolate(
     .catch((err: unknown) => {
       rejectPort(new Error(`Isolate exited before announcing port: ${err}`));
     });
+
+  // Prevent unhandled rejection when isolate is disposed during shutdown.
+  execPromise.catch(() => {});
 
   const port = await pTimeout(portPromise, {
     milliseconds: PORT_ANNOUNCE_TIMEOUT_MS,
