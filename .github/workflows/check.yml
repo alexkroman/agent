@@ -5,6 +5,7 @@ on:
     branches-ignore: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch: {}
 
 concurrency:
   group: check-${{ github.event.pull_request.number || github.ref }}

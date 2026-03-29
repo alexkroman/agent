@@ -52,6 +52,15 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: true
 
+      # PRs created by GITHUB_TOKEN don't trigger pull_request events,
+      # so the Check workflow never runs on the changeset version PR.
+      # Dispatch it explicitly so branch protection checks pass.
+      - name: Trigger CI on version PR branch
+        if: steps.changesets.outputs.hasChangesets == 'true'
+        run: gh workflow run check.yml --ref changeset-release/main
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   detect-deploy:
     runs-on: ubuntu-latest
     outputs:
