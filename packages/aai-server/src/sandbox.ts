@@ -9,6 +9,16 @@
  */
 
 import { randomBytes } from "node:crypto";
+
+// Suppress "Isolate is disposed" rejections from secure-exec internals.
+// These fire asynchronously when an isolate is terminated while its ESM
+// compiler has pending promises. They're harmless and expected during
+// sandbox shutdown/eviction.
+process.on("unhandledRejection", (reason: unknown) => {
+  if (reason instanceof Error && reason.message.includes("disposed")) return;
+  // Re-throw non-disposal rejections so they're not silently swallowed
+  throw reason;
+});
 import {
   type AgentHookMap,
   type AgentHooks,

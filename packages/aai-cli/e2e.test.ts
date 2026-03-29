@@ -111,7 +111,7 @@ function installFromTarballs(projectDir: string): void {
     if (deps[name]) deps[name] = `file:${tarball}`;
   }
   fs.writeFileSync(pkgJsonPath, `${JSON.stringify(pkgJson, null, 2)}\n`);
-  execFileSync("npm", ["install"], { cwd: projectDir, stdio: "inherit" });
+  execFileSync("pnpm", ["install", "--no-frozen-lockfile"], { cwd: projectDir, stdio: "inherit" });
 }
 
 beforeAll(() => {
