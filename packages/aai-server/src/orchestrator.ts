@@ -1,17 +1,20 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { createUnstorageKv, type SessionWebSocket } from "@alexkroman1/aai/internal";
+import { KvRequestSchema } from "@alexkroman1/aai/protocol";
+import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
-import { WebSocketServer } from "ws";
 import { cors } from "hono/cors";
+import { createFactory } from "hono/factory";
 import { secureHeaders } from "hono/secure-headers";
 import type { Storage } from "unstorage";
+import { WebSocketServer } from "ws";
+import { DeployBodySchema, SecretUpdatesSchema } from "./_schemas.ts";
 import type { BundleStore } from "./bundle-store.ts";
 import type { Env } from "./context.ts";
 import { handleDelete } from "./delete.ts";
 import { handleDeploy } from "./deploy.ts";
 import { createErrorHandler } from "./error-handler.ts";
-import { factory } from "./factory.ts";
 import { handleKv } from "./kv-handler.ts";
 import { requireOwner, validateSlug } from "./middleware.ts";
 import type { AgentSlot } from "./sandbox.ts";
@@ -34,6 +37,7 @@ export type Orchestrator = {
 
 export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   const app = new Hono<Env>();
+  const factory = createFactory<Env>();
 
   const slugMw = factory.createMiddleware(async (c, next) => {
     // biome-ignore lint/style/noNonNullAssertion: slug param guaranteed by route pattern
@@ -94,13 +98,13 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   const agents = new Hono<Env>();
   agents.use("*", slugMw);
 
-  // Owner-protected routes
-  agents.post("/deploy", ownerMw, handleDeploy);
+  // Owner-protected routes — request bodies validated by zValidator before handlers
+  agents.post("/deploy", ownerMw, zValidator("json", DeployBodySchema), handleDeploy);
   agents.delete("/", ownerMw, handleDelete);
   agents.get("/secret", ownerMw, handleSecretList);
-  agents.put("/secret", ownerMw, handleSecretSet);
+  agents.put("/secret", ownerMw, zValidator("json", SecretUpdatesSchema), handleSecretSet);
   agents.delete("/secret/:key", ownerMw, handleSecretDelete);
-  agents.post("/kv", ownerMw, handleKv);
+  agents.post("/kv", ownerMw, zValidator("json", KvRequestSchema), handleKv);
   agents.get("/kv", ownerMw, async (c) => {
     const key = c.req.query("key");
     if (!key) return c.json({ error: "Missing key query parameter" }, 400);

@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
-import { type DeployBody, DeployBodySchema, EnvSchema } from "./_schemas.ts";
-import type { AppContext } from "./factory.ts";
+import type { DeployBody } from "./_schemas.ts";
+import { EnvSchema } from "./_schemas.ts";
+import type { AppContext } from "./context.ts";
 import { terminateSlot } from "./sandbox-slots.ts";
 import { withSlugLock } from "./slug-lock.ts";
 
@@ -13,7 +14,9 @@ async function handleDeployInner(c: AppContext): Promise<Response> {
   const slug = c.var.slug;
   const keyHash = c.var.keyHash;
 
-  const body: DeployBody = DeployBodySchema.parse(await c.req.json());
+  // Pre-validated by zValidator("json", DeployBodySchema) in orchestrator
+  // biome-ignore lint/suspicious/noExplicitAny: validated upstream by zValidator middleware
+  const body = (c.req as any).valid("json") as DeployBody;
 
   const storedEnv = (await c.env.store.getEnv(slug)) ?? {};
   const env = body.env ? { ...storedEnv, ...body.env } : storedEnv;

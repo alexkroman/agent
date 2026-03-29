@@ -148,4 +148,94 @@ describe("buildNetworkAdapter", () => {
     expect(result.ok).toBe(false);
     expect(result.status).toBe(400);
   });
+
+  // ── Host event handling ────────────────────────────────────────────
+
+  test("host.internal routes to onHostEvent handler", async () => {
+    const kv = createMockKv();
+    const handler = vi.fn();
+    const adapter = buildNetworkAdapter(kv, handler);
+
+    const result = await adapter.fetch("http://host.internal/session/event", {
+      method: "POST",
+      headers: { "x-session-id": "sess-1" },
+      body: JSON.stringify({ type: "turn" }),
+    });
+
+    expect(result.ok).toBe(true);
+    expect(handler).toHaveBeenCalledWith("/session/event", JSON.stringify({ type: "turn" }), {
+      "x-session-id": "sess-1",
+    });
+  });
+
+  test("host.internal returns 500 when no handler configured", async () => {
+    const kv = createMockKv();
+    // No onHostEvent handler provided
+    const adapter = buildNetworkAdapter(kv);
+
+    const result = await adapter.fetch("http://host.internal/event", {
+      method: "POST",
+      body: "{}",
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe(500);
+    expect(JSON.parse(result.body)).toEqual({
+      error: "Host event handler not configured",
+    });
+  });
+
+  test("host.internal passes null body when not provided", async () => {
+    const kv = createMockKv();
+    const handler = vi.fn();
+    const adapter = buildNetworkAdapter(kv, handler);
+
+    await adapter.fetch("http://host.internal/ping", {
+      method: "POST",
+    });
+
+    expect(handler).toHaveBeenCalledWith("/ping", null, {});
+  });
+
+  // ── KV isolation via adapter ────────────────────────────────────────
+
+  test("KV adapter does not allow access outside its scoped instance", async () => {
+    // Two adapters with different KV instances simulate two agents
+    const kvAlpha = createMockKv();
+    const kvBeta = createMockKv();
+
+    const adapterAlpha = buildNetworkAdapter(kvAlpha);
+    const adapterBeta = buildNetworkAdapter(kvBeta);
+
+    // Alpha writes
+    await adapterAlpha.fetch("http://kv.internal/set", {
+      method: "POST",
+      body: JSON.stringify({ key: "shared-name", value: "alpha-data" }),
+    });
+
+    // Beta reads the same key name — should hit beta's KV, not alpha's
+    const result = await adapterBeta.fetch("http://kv.internal/get", {
+      method: "POST",
+      body: JSON.stringify({ key: "shared-name" }),
+    });
+
+    // Beta's KV was never written to, so it returns null
+    expect(JSON.parse(result.body)).toBeNull();
+    // Alpha's KV got the set call
+    expect(kvAlpha.set).toHaveBeenCalledWith("shared-name", "alpha-data", undefined);
+    // Beta's KV only got the get call
+    expect(kvBeta.set).not.toHaveBeenCalled();
+  });
+
+  test("KV set with expireIn passes options through", async () => {
+    const kv = createMockKv();
+    const adapter = buildNetworkAdapter(kv);
+
+    await adapter.fetch("http://kv.internal/set", {
+      method: "POST",
+      body: JSON.stringify({ key: "ttl-key", value: "data", options: { expireIn: 60_000 } }),
+    });
+
+    expect(kv.set).toHaveBeenCalledWith("ttl-key", "data", { expireIn: 60_000 });
+  });
 });

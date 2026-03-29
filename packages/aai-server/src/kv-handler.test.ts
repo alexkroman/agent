@@ -1,6 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { createUnstorageKv } from "@alexkroman1/aai/internal";
+import { KvRequestSchema } from "@alexkroman1/aai/protocol";
+import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { describe, expect, test } from "vitest";
@@ -24,7 +26,7 @@ function createTestApp() {
     if (err instanceof z.ZodError) return c.json({ error: err.message }, 400);
     return c.json({ error: "unexpected" }, 500);
   });
-  app.post("/kv", handleKv);
+  app.post("/kv", zValidator("json", KvRequestSchema), handleKv);
   return { app, storage };
 }
 
