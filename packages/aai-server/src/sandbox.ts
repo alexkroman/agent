@@ -174,17 +174,21 @@ async function startIsolate(
     },
   });
 
-  const execPromise = runtime
+  runtime
     .exec(
       'import agent from "/app/agent_bundle.js";\nimport { startHarness } from "/app/_harness-runtime.mjs";\nstartHarness(agent);',
       { cwd: "/app" },
     )
-    .catch((err: unknown) => {
-      rejectPort(new Error(`Isolate exited before announcing port: ${err}`));
-    });
-
-  // Prevent unhandled rejection when isolate is disposed during shutdown.
-  execPromise.catch(() => {});
+    .then(
+      () => {},
+      (err: unknown) => {
+        // Before port: propagate as boot failure. After port: swallow
+        // (expected during shutdown when isolate is disposed).
+        if (!portResolved) {
+          rejectPort(new Error(`Isolate exited before announcing port: ${err}`));
+        }
+      },
+    );
 
   const port = await pTimeout(portPromise, {
     milliseconds: PORT_ANNOUNCE_TIMEOUT_MS,

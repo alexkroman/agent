@@ -79,13 +79,9 @@
     "zod": "^4.3.6"
   },
   "peerDependencies": {
-    "vite": "^8.0.3",
     "vitest": "^4.1.1"
   },
   "peerDependenciesMeta": {
-    "vite": {
-      "optional": true
-    },
     "vitest": {
       "optional": true
     }
