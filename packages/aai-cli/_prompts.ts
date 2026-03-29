@@ -1,9 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { createInterface } from "node:readline";
-import { consola as _consola } from "consola";
-
-const consola = _consola.create({ formatOptions: { date: false } });
 
 /**
  * Prompt the user for a password (masked input).
@@ -45,18 +42,4 @@ function readMasked(stdin: NodeJS.ReadStream): Promise<string> {
     };
     stdin.on("data", onData);
   });
-}
-
-/**
- * Prompt the user for text input with a default value.
- * Returns the entered string, or the default if empty.
- */
-export async function askText(message: string, defaultValue: string): Promise<string> {
-  const value = await consola.prompt(message, {
-    type: "text",
-    placeholder: defaultValue,
-    initial: defaultValue,
-    cancel: "reject",
-  });
-  return (value as string) || defaultValue;
 }
