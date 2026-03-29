@@ -173,7 +173,7 @@ export function createAgentApp(options: ServerOptions): AgentApp {
         const getParam = (key: string): string | undefined => {
           const re = new RegExp(`(?:^|&)${key}=([^&]*)`);
           const m = search.match(re);
-          return m ? decodeURIComponent(m[1]) : undefined;
+          return m?.[1] ? decodeURIComponent(m[1]) : undefined;
         };
         const hasParam = (key: string): boolean => search.includes(key);
         const resumeFrom = getParam("sessionId");

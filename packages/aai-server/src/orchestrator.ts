@@ -162,7 +162,8 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
             peer.close(1008, "Invalid path");
             return;
           }
-          const slug = validateSlug(match[1]);
+          // match[1] is always defined when the regex matches (captured group 1)
+          const slug = validateSlug(match[1] as string);
           const sandbox = await resolveSandbox(slug, {
             slots: opts.slots,
             store: opts.store,
@@ -190,7 +191,10 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   const injectWebSocket = (server: import("node:http").Server) => {
     server.on("upgrade", (req, socket, head) => {
       // Match /:slug/websocket paths
-      if (req.url && /^\/[a-z0-9][a-z0-9_-]*[a-z0-9]\/websocket/.test(req.url.split("?")[0])) {
+      if (
+        req.url &&
+        /^\/[a-z0-9][a-z0-9_-]*[a-z0-9]\/websocket/.test(req.url.split("?")[0] ?? "")
+      ) {
         wsAdapter.handleUpgrade(req, socket, head);
       }
     });
