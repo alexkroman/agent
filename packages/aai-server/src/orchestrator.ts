@@ -5,6 +5,7 @@ import { KvRequestSchema } from "@alexkroman1/aai/protocol";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { createFactory } from "hono/factory";
 import { secureHeaders } from "hono/secure-headers";
 import type { Storage } from "unstorage";
 import { WebSocketServer } from "ws";
@@ -14,7 +15,6 @@ import type { Env } from "./context.ts";
 import { handleDelete } from "./delete.ts";
 import { handleDeploy } from "./deploy.ts";
 import { createErrorHandler } from "./error-handler.ts";
-import { factory } from "./factory.ts";
 import { handleKv } from "./kv-handler.ts";
 import { requireOwner, validateSlug } from "./middleware.ts";
 import type { AgentSlot } from "./sandbox.ts";
@@ -37,6 +37,7 @@ export type Orchestrator = {
 
 export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   const app = new Hono<Env>();
+  const factory = createFactory<Env>();
 
   const slugMw = factory.createMiddleware(async (c, next) => {
     // biome-ignore lint/style/noNonNullAssertion: slug param guaranteed by route pattern

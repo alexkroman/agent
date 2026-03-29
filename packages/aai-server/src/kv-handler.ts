@@ -2,7 +2,7 @@
 
 import { createUnstorageKv, errorMessage } from "@alexkroman1/aai/internal";
 import type { KvRequest } from "@alexkroman1/aai/protocol";
-import type { AppContext } from "./factory.ts";
+import type { AppContext } from "./context.ts";
 
 export async function handleKv(c: AppContext): Promise<Response> {
   const slug = c.var.slug;

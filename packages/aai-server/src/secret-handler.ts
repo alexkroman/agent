@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { HTTPException } from "hono/http-exception";
-import type { AppContext } from "./factory.ts";
+import type { AppContext } from "./context.ts";
 import { terminateSlot } from "./sandbox-slots.ts";
 
 /** Keys managed by the platform that agents must not override or delete. */
