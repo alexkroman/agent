@@ -1,5 +1,21 @@
 # @alexkroman1/aai-server
 
+## 0.9.9
+
+### Patch Changes
+
+- 6f6a43e: Harden platform security and refactor to @hono/zod-validator
+
+  - Fix crash in sandbox-network when host.internal hit without handler
+  - Add Zod validation to KV bridge (isolate→host) replacing raw JSON.parse
+  - Refactor deploy, secret, and KV handlers to use @hono/zod-validator middleware
+  - Fix type errors in \_harness-runtime.ts and sandbox.ts
+  - Remove factory.ts, inline into orchestrator
+  - Add 185 new security tests for cross-agent isolation, SSRF, and trust boundaries
+
+- Updated dependencies [6f6a43e]
+  - @alexkroman1/aai@0.10.4
+
 ## 0.9.8
 
 ### Patch Changes
