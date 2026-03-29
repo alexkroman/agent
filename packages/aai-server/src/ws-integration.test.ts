@@ -8,9 +8,9 @@
  * so the test runs without external dependencies.
  */
 import http from "node:http";
-import { type Session, wireSessionSocket } from "@alexkroman1/aai/internal";
+import { type Session, type SessionWebSocket, wireSessionSocket } from "@alexkroman1/aai/internal";
 import type { ReadyConfig, ServerMessage } from "@alexkroman1/aai/protocol";
-import nodeAdapter from "crossws/adapters/node";
+import { WebSocketServer } from "ws";
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 
 // ── Helpers ──────────────────────────────────────────────────────────────
@@ -53,26 +53,21 @@ function startTestServer(): Promise<{
       res.end();
     });
 
-    const wsAdapter = nodeAdapter({
-      hooks: {
-        open(peer) {
-          const sessions = new Map<string, Session>();
-          const rawWs = peer.websocket as unknown as Parameters<typeof wireSessionSocket>[0];
-          wireSessionSocket(rawWs, {
-            sessions,
-            createSession: (sid, _client) => {
-              const session = sessionFactory();
-              captures.push({ session, sessionId: sid });
-              return session;
-            },
-            readyConfig: READY_CONFIG,
-          });
-        },
-      },
-    });
+    const wss = new WebSocketServer({ noServer: true });
 
     server.on("upgrade", (req, socket, head) => {
-      wsAdapter.handleUpgrade(req, socket, head);
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        const sessions = new Map<string, Session>();
+        wireSessionSocket(ws as unknown as SessionWebSocket, {
+          sessions,
+          createSession: (sid, _client) => {
+            const session = sessionFactory();
+            captures.push({ session, sessionId: sid });
+            return session;
+          },
+          readyConfig: READY_CONFIG,
+        });
+      });
     });
 
     server.listen(0, "127.0.0.1", () => {

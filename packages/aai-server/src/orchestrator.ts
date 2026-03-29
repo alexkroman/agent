@@ -1,8 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { createUnstorageKv } from "@alexkroman1/aai/internal";
-import nodeAdapter from "crossws/adapters/node";
+import { createUnstorageKv, type SessionWebSocket } from "@alexkroman1/aai/internal";
 import { Hono } from "hono";
+import { WebSocketServer } from "ws";
 import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
 import type { Storage } from "unstorage";
@@ -133,48 +133,41 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     original(req, { ...bindings, ...env });
 
   // WebSocket upgrade — URL pattern: /:slug/websocket
-  const wsAdapter = nodeAdapter({
-    hooks: {
-      async open(peer) {
-        try {
-          const url = new URL(peer.request?.url ?? "/", "http://localhost");
-          const match = url.pathname.match(/^\/([a-z0-9][a-z0-9_-]*[a-z0-9])\/websocket$/);
-          if (!match) {
-            peer.close(1008, "Invalid path");
-            return;
-          }
-          const slug = validateSlug(match[1] as string);
-          const sandbox = await resolveSandbox(slug, {
-            slots: opts.slots,
-            store: opts.store,
-            storage: opts.storage,
-          });
-          if (!sandbox) {
-            peer.close(1008, "Agent not found");
-            return;
-          }
+  const wss = new WebSocketServer({ noServer: true });
+
+  const injectWebSocket = (server: import("node:http").Server) => {
+    server.on("upgrade", async (req, socket, head) => {
+      const pathOnly = req.url?.split("?")[0] ?? "";
+      if (!/^\/[a-z0-9][a-z0-9_-]*[a-z0-9]\/websocket$/.test(pathOnly)) return;
+
+      try {
+        const url = new URL(req.url ?? "/", "http://localhost");
+        const match = url.pathname.match(/^\/([a-z0-9][a-z0-9_-]*[a-z0-9])\/websocket$/);
+        if (!match) {
+          socket.destroy();
+          return;
+        }
+        const slug = validateSlug(match[1] as string);
+        const sandbox = await resolveSandbox(slug, {
+          slots: opts.slots,
+          store: opts.store,
+          storage: opts.storage,
+        });
+        if (!sandbox) {
+          socket.destroy();
+          return;
+        }
+        wss.handleUpgrade(req, socket, head, (ws) => {
           const resumeFrom = url.searchParams.get("sessionId") ?? undefined;
           const skipGreeting = url.searchParams.has("resume") || resumeFrom !== undefined;
-          const rawWs = peer.websocket as unknown as Parameters<typeof sandbox.startSession>[0];
-          sandbox.startSession(rawWs, {
+          sandbox.startSession(ws as unknown as SessionWebSocket, {
             skipGreeting,
             ...(resumeFrom ? { resumeFrom } : {}),
           });
-        } catch (err: unknown) {
-          console.error("WebSocket open error:", err);
-          peer.close(1011, "Internal error");
-        }
-      },
-    },
-  });
-
-  const injectWebSocket = (server: import("node:http").Server) => {
-    server.on("upgrade", (req, socket, head) => {
-      if (
-        req.url &&
-        /^\/[a-z0-9][a-z0-9_-]*[a-z0-9]\/websocket/.test(req.url.split("?")[0] ?? "")
-      ) {
-        wsAdapter.handleUpgrade(req, socket, head);
+        });
+      } catch (err: unknown) {
+        console.error("WebSocket open error:", err);
+        socket.destroy();
       }
     });
   };

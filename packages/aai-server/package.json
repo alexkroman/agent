@@ -17,9 +17,7 @@
   "dependencies": {
     "@alexkroman1/aai": "workspace:*",
     "@hono/node-server": "^1.19.11",
-    "@hono/zod-validator": "^0.7.6",
     "async-lock": "^1.4.1",
-    "crossws": "^0.4.4",
     "hono": "^4.12.9",
     "hookable": "^6.1.0",
     "lru-cache": "^11.2.7",
@@ -27,6 +25,7 @@
     "p-timeout": "^7.0.1",
     "secure-exec": "^0.1.0",
     "unstorage": "^1.17.5",
+    "ws": "^8.20.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
