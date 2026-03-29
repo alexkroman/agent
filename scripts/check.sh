@@ -80,7 +80,6 @@ run_step "check:syncpack"   pnpm run check:syncpack
 
 if [ "$MODE" != "--local" ]; then
   run_step "check:attw"       pnpm $PNPM_FILTER run --if-present check:attw
-  run_step "check:templates"  pnpm $PNPM_FILTER run --if-present check:templates
   run_step "check:knip"       pnpm run check:knip
   run_step "check:markdown"   pnpm run check:markdown
 fi

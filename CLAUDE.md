@@ -188,13 +188,13 @@ start, secret, generate, run
 - **Exports**: In dev mode, package.json exports point to `.ts` source for
   seamless workspace resolution. Update to compiled `.js` dist paths before
   publishing.
-- **Agent API docs**: `packages/aai-cli/templates/_shared/CLAUDE.md` is the
+- **Agent API docs**: `packages/aai-templates/scaffold/CLAUDE.md` is the
   agent API reference installed into user projects. When modifying the agent
   API surface (`packages/aai/types.ts`), update it to match.
-- **Templates**: `packages/aai-cli/templates/` contains 18 agent scaffolding
-  templates (simple, memory-agent, web-researcher, etc.). Each is
-  self-contained with its own `agent.ts` and `client.tsx`. `_shared/` has
-  non-code files common to all templates.
+- **Templates**: `packages/aai-templates/templates/` contains 18 agent
+  scaffolding templates (simple, memory-agent, web-researcher, etc.). Each is
+  self-contained with its own `agent.ts` and `client.tsx`. `scaffold/` has
+  base project files (package.json, tsconfig, etc.) layered underneath.
 - **Git hooks** (lefthook): pre-commit runs `biome check --write` on staged
   files and `syncpack lint` when package.json changes; pre-push blocks pushes
   to main/master, checks for merge conflicts with main, and runs `pnpm check`.
@@ -218,7 +218,7 @@ Run `pnpm check:local` **before your first commit** on a PR branch. This
 catches the most common issues that historically required follow-up commits:
 
 1. **Syncpack version drift**: When bumping a dependency, also update
-   `packages/aai-cli/templates/_shared/package.json` if it has the same dep.
+   `packages/aai-templates/scaffold/package.json` if it has the same dep.
    `pnpm check:syncpack` catches this.
 2. **Test assertion mismatches**: After changing output formats or error
    messages, run `pnpm test` and update affected assertions.

@@ -58,20 +58,20 @@ const { runInit } = await import("./_init.ts");
 
 describe("CLI integration: init creates working project", () => {
   async function createFakeTemplates(dir: string): Promise<string> {
-    const templatesDir = path.join(dir, "templates");
-    const shared = path.join(templatesDir, "_shared");
-    await fs.mkdir(shared, { recursive: true });
-    await fs.writeFile(path.join(shared, "shared.txt"), "from shared");
-    await fs.writeFile(path.join(shared, ".env.example"), "MY_KEY=");
-    await fs.writeFile(path.join(shared, "package.json"), '{"name":"test"}');
+    const rootDir = path.join(dir, "fake-templates");
+    const scaffold = path.join(rootDir, "scaffold");
+    await fs.mkdir(scaffold, { recursive: true });
+    await fs.writeFile(path.join(scaffold, "shared.txt"), "from shared");
+    await fs.writeFile(path.join(scaffold, ".env.example"), "MY_KEY=");
+    await fs.writeFile(path.join(scaffold, "package.json"), '{"name":"test"}');
 
-    const simple = path.join(templatesDir, "simple");
+    const simple = path.join(rootDir, "templates", "simple");
     await fs.mkdir(simple, { recursive: true });
     await fs.writeFile(
       path.join(simple, "agent.ts"),
       'export default defineAgent({\n  name: "Default Name",\n});',
     );
-    return templatesDir;
+    return rootDir;
   }
 
   test("init creates all expected files from template + shared", async () => {
@@ -92,12 +92,11 @@ describe("CLI integration: init creates working project", () => {
     );
   });
 
-  test("listTemplates returns only non-underscore directories", async () => {
+  test("listTemplates returns template directories", async () => {
     await withTempDir(async (dir) => {
       fakeTemplatesDir = await createFakeTemplates(dir);
       const templates = await listTemplates();
       expect(templates).toEqual(["simple"]);
-      expect(templates).not.toContain("_shared");
     });
   });
 

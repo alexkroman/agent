@@ -83,7 +83,6 @@ jobs:
           key: workspace-node${{ hashFiles('.node-version') }}-${{ github.sha }}
       - run: |
           pnpm --filter "...[origin/main]" run --if-present check:attw
-          pnpm --filter "...[origin/main]" run --if-present check:templates
           pnpm run check:knip
           pnpm run check:syncpack
           pnpm run check:markdown
