@@ -26,9 +26,7 @@ import {
   tool,
 } from "./index.ts";
 import {
-  type AgentApp,
   type AgentServer,
-  createAgentApp,
   createRuntime,
   createServer,
   type Runtime,
@@ -222,17 +220,6 @@ describe("createServer", () => {
   it("requires runtime in options", () => {
     // @ts-expect-error — runtime is required
     createServer({});
-  });
-});
-
-describe("createAgentApp", () => {
-  it("returns AgentApp with app, injectWebSocket, and shutdown", () => {
-    const agent = defineAgent({ name: "test" });
-    const runtime = createRuntime({ agent, env: {} });
-    const result = createAgentApp({ runtime });
-    expectTypeOf(result).toEqualTypeOf<AgentApp>();
-    expectTypeOf(result.injectWebSocket).toBeFunction();
-    expectTypeOf(result.shutdown).toEqualTypeOf<() => Promise<void>>();
   });
 });
 

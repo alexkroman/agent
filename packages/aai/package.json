@@ -70,7 +70,6 @@
     "check:attw": "attw --pack --profile esm-only"
   },
   "dependencies": {
-    "crossws": "^0.4.4",
     "hookable": "^6.1.0",
     "nanoevents": "^9.1.0",
     "p-timeout": "^7.0.1",
@@ -80,18 +79,10 @@
     "zod": "^4.3.6"
   },
   "peerDependencies": {
-    "@hono/node-server": "^1.19.11",
-    "hono": "^4.12.9",
     "vite": "^8.0.3",
     "vitest": "^4.1.1"
   },
   "peerDependenciesMeta": {
-    "@hono/node-server": {
-      "optional": true
-    },
-    "hono": {
-      "optional": true
-    },
     "vite": {
       "optional": true
     },
