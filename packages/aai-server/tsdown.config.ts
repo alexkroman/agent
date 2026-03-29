@@ -5,14 +5,41 @@ import { defineConfig, type Rolldown } from "tsdown";
  * Source: @secure-exec/core POLYFILL_CODE_MAP keys.
  */
 const SECURE_EXEC_BUILTINS = new Set([
-  "node:assert", "node:buffer", "node:child_process", "node:cluster",
-  "node:console", "node:constants", "node:crypto", "node:dgram", "node:dns",
-  "node:domain", "node:events", "node:fs", "node:http", "node:https",
-  "node:http2", "node:module", "node:net", "node:os", "node:path",
-  "node:punycode", "node:process", "node:querystring", "node:readline",
-  "node:repl", "node:stream", "node:string_decoder", "node:sys",
-  "node:timers", "node:timers/promises", "node:tls", "node:tty",
-  "node:url", "node:util", "node:vm", "node:zlib",
+  "node:assert",
+  "node:buffer",
+  "node:child_process",
+  "node:cluster",
+  "node:console",
+  "node:constants",
+  "node:crypto",
+  "node:dgram",
+  "node:dns",
+  "node:domain",
+  "node:events",
+  "node:fs",
+  "node:http",
+  "node:https",
+  "node:http2",
+  "node:module",
+  "node:net",
+  "node:os",
+  "node:path",
+  "node:punycode",
+  "node:process",
+  "node:querystring",
+  "node:readline",
+  "node:repl",
+  "node:stream",
+  "node:string_decoder",
+  "node:sys",
+  "node:timers",
+  "node:timers/promises",
+  "node:tls",
+  "node:tty",
+  "node:url",
+  "node:util",
+  "node:vm",
+  "node:zlib",
 ]);
 
 /** Fails the build if the harness bundle imports anything unavailable in secure-exec. */
@@ -23,13 +50,13 @@ function isolateGuardPlugin(): Rolldown.Plugin {
       for (const chunk of Object.values(bundle)) {
         if (chunk.type !== "chunk") continue;
         const illegal = [...chunk.imports, ...chunk.dynamicImports].filter(
-          (id) => !id.startsWith("node:") || !SECURE_EXEC_BUILTINS.has(id),
+          (id) => !(id.startsWith("node:") && SECURE_EXEC_BUILTINS.has(id)),
         );
         // Filter to only actual externals (not node: builtins)
         const bad = illegal.filter((id) => !SECURE_EXEC_BUILTINS.has(id));
         if (bad.length > 0) {
           throw new Error(
-            `[isolate-guard] Harness bundle contains imports unavailable in secure-exec.\n` +
+            "[isolate-guard] Harness bundle contains imports unavailable in secure-exec.\n" +
               `Found: ${bad.join(", ")}`,
           );
         }

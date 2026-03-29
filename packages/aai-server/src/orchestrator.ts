@@ -156,14 +156,20 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
         try {
           const url = new URL(peer.request?.url ?? "/", "http://localhost");
           const match = url.pathname.match(/^\/([a-z0-9][a-z0-9_-]*[a-z0-9])\/websocket$/);
-          if (!match) { peer.close(1008, "Invalid path"); return; }
+          if (!match) {
+            peer.close(1008, "Invalid path");
+            return;
+          }
           const slug = validateSlug(match[1] as string);
           const sandbox = await resolveSandbox(slug, {
             slots: opts.slots,
             store: opts.store,
             storage: opts.storage,
           });
-          if (!sandbox) { peer.close(1008, "Agent not found"); return; }
+          if (!sandbox) {
+            peer.close(1008, "Agent not found");
+            return;
+          }
           const resumeFrom = url.searchParams.get("sessionId") ?? undefined;
           const skipGreeting = url.searchParams.has("resume") || resumeFrom !== undefined;
           const rawWs = peer.websocket as unknown as Parameters<typeof sandbox.startSession>[0];
@@ -181,7 +187,10 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
 
   const injectWebSocket = (server: import("node:http").Server) => {
     server.on("upgrade", (req, socket, head) => {
-      if (req.url && /^\/[a-z0-9][a-z0-9_-]*[a-z0-9]\/websocket/.test(req.url.split("?")[0] ?? "")) {
+      if (
+        req.url &&
+        /^\/[a-z0-9][a-z0-9_-]*[a-z0-9]\/websocket/.test(req.url.split("?")[0] ?? "")
+      ) {
         wsAdapter.handleUpgrade(req, socket, head);
       }
     });

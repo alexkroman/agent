@@ -21,8 +21,20 @@ export type BundleOutput = {
 };
 
 const TEXT_EXTENSIONS = new Set([
-  ".html", ".htm", ".css", ".js", ".mjs", ".cjs", ".ts", ".mts",
-  ".json", ".map", ".svg", ".xml", ".txt", ".md",
+  ".html",
+  ".htm",
+  ".css",
+  ".js",
+  ".mjs",
+  ".cjs",
+  ".ts",
+  ".mts",
+  ".json",
+  ".map",
+  ".svg",
+  ".xml",
+  ".txt",
+  ".md",
 ]);
 
 async function readDirFiles(dir: string): Promise<Record<string, string>> {
@@ -35,17 +47,19 @@ async function readDirFiles(dir: string): Promise<Record<string, string>> {
   }
   const files: Record<string, string> = {};
   await Promise.all(
-    entries.filter((e) => e.isFile()).map(async (e) => {
-      const full = path.join(e.parentPath, e.name);
-      const ext = path.extname(e.name).toLowerCase();
-      const rel = path.relative(dir, full);
-      if (TEXT_EXTENSIONS.has(ext)) {
-        files[rel] = await fs.readFile(full, "utf-8");
-      } else {
-        const buf = await fs.readFile(full);
-        files[rel] = `base64:${buf.toString("base64")}`;
-      }
-    }),
+    entries
+      .filter((e) => e.isFile())
+      .map(async (e) => {
+        const full = path.join(e.parentPath, e.name);
+        const ext = path.extname(e.name).toLowerCase();
+        const rel = path.relative(dir, full);
+        if (TEXT_EXTENSIONS.has(ext)) {
+          files[rel] = await fs.readFile(full, "utf-8");
+        } else {
+          const buf = await fs.readFile(full);
+          files[rel] = `base64:${buf.toString("base64")}`;
+        }
+      }),
   );
   return files;
 }
@@ -117,11 +131,14 @@ export async function buildAgentBundle(cwd: string): Promise<BundleOutput> {
   try {
     bundle = await bundleAgent(agent);
   } catch (err: unknown) {
-    if (err instanceof BundleError) throw new Error(`Bundle failed: ${err.message}`, { cause: err });
+    if (err instanceof BundleError)
+      throw new Error(`Bundle failed: ${err.message}`, { cause: err });
     throw err;
   }
 
-  consola.log(`worker: ${(bundle.workerBytes / 1024).toFixed(1)} KB, client: ${Object.keys(bundle.clientFiles).length} file(s)`);
+  consola.log(
+    `worker: ${(bundle.workerBytes / 1024).toFixed(1)} KB, client: ${Object.keys(bundle.clientFiles).length} file(s)`,
+  );
   return bundle;
 }
 

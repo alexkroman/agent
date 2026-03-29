@@ -17,13 +17,7 @@ MODE="${1:-full}"
 
 # Use pnpm --filter to only run on changed packages when possible.
 # Falls back to -r (all packages) when on main or origin/main is unavailable.
-if git rev-parse --verify origin/main &>/dev/null \
-   && [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]; then
-  PNPM_FILTER='--filter ...[origin/main]'
-  echo "Using pnpm filter: $PNPM_FILTER"
-else
-  PNPM_FILTER='-r'
-fi
+PNPM_FILTER="--filter './packages/*'"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -68,7 +62,7 @@ wait_all() {
 
 # ── Phase 1: Build (sequential, required by later steps) ──
 echo -e "\n${YELLOW}Phase 1: Build${NC}"
-pnpm -r run build
+pnpm -r --filter './packages/*' run build
 
 # ── Phase 2: Checks (parallel) ──
 echo -e "\n${YELLOW}Phase 2: Checks (parallel)${NC}"

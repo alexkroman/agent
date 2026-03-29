@@ -42,11 +42,21 @@ async function kvRpc<T>(path: string, body: unknown): Promise<T> {
 }
 
 const kv: Kv = {
-  get<T = unknown>(key: string) { return kvRpc<T | null>("/get", { key }); },
-  set(key: string, value: unknown, options?: { expireIn?: number }) { return kvRpc<void>("/set", { key, value, options }); },
-  delete(key: string) { return kvRpc<void>("/del", { key }); },
-  list<T = unknown>(prefix: string, options?: { limit?: number; reverse?: boolean }) { return kvRpc<{ key: string; value: T }[]>("/list", { prefix, ...options }); },
-  keys(pattern?: string) { return kvRpc<string[]>("/keys", { pattern }); },
+  get<T = unknown>(key: string) {
+    return kvRpc<T | null>("/get", { key });
+  },
+  set(key: string, value: unknown, options?: { expireIn?: number }) {
+    return kvRpc<void>("/set", { key, value, options });
+  },
+  delete(key: string) {
+    return kvRpc<void>("/del", { key });
+  },
+  list<T = unknown>(prefix: string, options?: { limit?: number; reverse?: boolean }) {
+    return kvRpc<{ key: string; value: T }[]>("/list", { prefix, ...options });
+  },
+  keys(pattern?: string) {
+    return kvRpc<string[]>("/keys", { pattern });
+  },
 };
 
 // ── Agent introspection ─────────────────────────────────────────────────
@@ -64,7 +74,13 @@ type IsolateConfig = {
   builtinTools?: string[];
   toolSchemas: { name: string; description: string; parameters: Record<string, unknown> }[];
   hasState: boolean;
-  hooks: { onConnect: boolean; onDisconnect: boolean; onError: boolean; onTurn: boolean; maxStepsIsFn: boolean };
+  hooks: {
+    onConnect: boolean;
+    onDisconnect: boolean;
+    onError: boolean;
+    onTurn: boolean;
+    maxStepsIsFn: boolean;
+  };
 };
 
 function extractToolSchemas(agent: AgentDef): IsolateConfig["toolSchemas"] {
@@ -105,7 +121,12 @@ function extractConfig(agent: AgentDef): IsolateConfig {
 /** Must match HARNESS_TOOL_TIMEOUT_MS in constants.ts (30s). */
 const TOOL_TIMEOUT_MS = 30_000;
 
-type ToolCallRequest = { name: string; args: Record<string, unknown>; sessionId: string; messages: { role: string; content: string }[] };
+type ToolCallRequest = {
+  name: string;
+  args: Record<string, unknown>;
+  sessionId: string;
+  messages: { role: string; content: string }[];
+};
 type ToolCallResponse = { result: string; state: Record<string, unknown> };
 
 async function executeTool(agent: AgentDef, req: ToolCallRequest): Promise<ToolCallResponse> {
@@ -132,7 +153,8 @@ async function executeTool(agent: AgentDef, req: ToolCallRequest): Promise<ToolC
       tool.execute(parsed, ctx),
       new Promise<never>((_resolve, reject) => {
         timeoutId = setTimeout(
-          () => reject(new RpcError(`Tool "${req.name}" timed out after ${TOOL_TIMEOUT_MS}ms`, 504)),
+          () =>
+            reject(new RpcError(`Tool "${req.name}" timed out after ${TOOL_TIMEOUT_MS}ms`, 504)),
           TOOL_TIMEOUT_MS,
         );
       }),
@@ -165,7 +187,9 @@ async function invokeHook(req: HookRequest): Promise<HookResponse> {
       await hooks.callHook("turn", req.sessionId, req.text ?? "");
       break;
     case "onError":
-      await hooks.callHook("error", req.sessionId, { message: req.error?.message ?? "Unknown error" });
+      await hooks.callHook("error", req.sessionId, {
+        message: req.error?.message ?? "Unknown error",
+      });
       break;
     case "resolveTurnConfig":
       result = await callResolveTurnConfig(hooks, req.sessionId);
@@ -201,7 +225,10 @@ function readBody(req: IncomingMessage): Promise<string> {
 
 function json(res: ServerResponse, data: unknown, status = 200): void {
   const body = JSON.stringify(data);
-  res.writeHead(status, { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) });
+  res.writeHead(status, {
+    "Content-Type": "application/json",
+    "Content-Length": Buffer.byteLength(body),
+  });
   res.end(body);
 }
 
@@ -211,15 +238,25 @@ function isAuthorized(req: IncomingMessage): boolean {
 
 type RpcRequest =
   | { type: "config" }
-  | { type: "tool"; name: string; args: Record<string, unknown>; sessionId: string; messages: { role: string; content: string }[] }
+  | {
+      type: "tool";
+      name: string;
+      args: Record<string, unknown>;
+      sessionId: string;
+      messages: { role: string; content: string }[];
+    }
   | { type: "hook"; hook: string; sessionId: string; text?: string; error?: { message: string } };
 
 async function dispatch(agent: AgentDef, msg: RpcRequest): Promise<unknown> {
   switch (msg.type) {
-    case "config": return extractConfig(agent);
-    case "tool": return executeTool(agent, msg);
-    case "hook": return invokeHook(msg);
-    default: throw new RpcError("Unknown RPC type", 400);
+    case "config":
+      return extractConfig(agent);
+    case "tool":
+      return executeTool(agent, msg);
+    case "hook":
+      return invokeHook(msg);
+    default:
+      throw new RpcError("Unknown RPC type", 400);
   }
 }
 
@@ -235,10 +272,21 @@ export function startHarness(agent: AgentDef): void {
 
   const server = createServer(async (req, res) => {
     try {
-      if (!isAuthorized(req)) { json(res, { error: "Unauthorized" }, 401); return; }
-      if (req.method !== "POST" || req.url !== "/rpc") { json(res, { error: "Not found" }, 404); return; }
+      if (!isAuthorized(req)) {
+        json(res, { error: "Unauthorized" }, 401);
+        return;
+      }
+      if (req.method !== "POST" || req.url !== "/rpc") {
+        json(res, { error: "Not found" }, 404);
+        return;
+      }
       let msg: RpcRequest;
-      try { msg = JSON.parse(await readBody(req)) as RpcRequest; } catch { json(res, { error: "Invalid JSON" }, 400); return; }
+      try {
+        msg = JSON.parse(await readBody(req)) as RpcRequest;
+      } catch {
+        json(res, { error: "Invalid JSON" }, 400);
+        return;
+      }
       const result = await dispatch(agent, msg);
       json(res, result);
     } catch (err: unknown) {

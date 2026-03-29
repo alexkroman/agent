@@ -260,7 +260,9 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
         env: frozenEnv,
         state: getState(sessionId),
         sessionId,
-        get kv() { return kv; },
+        get kv() {
+          return kv;
+        },
         fetch: globalThis.fetch,
       };
     }

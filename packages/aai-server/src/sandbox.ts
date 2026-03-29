@@ -24,8 +24,8 @@ import {
   isReadOnlyFsOp,
   type SessionStartOptions,
   type SessionWebSocket,
-  toAgentConfig,
   TOOL_EXECUTION_TIMEOUT_MS,
+  toAgentConfig,
 } from "@alexkroman1/aai/internal";
 import { createHooks } from "hookable";
 import pTimeout from "p-timeout";
@@ -94,9 +94,17 @@ const IsolateConfigSchema = z.object({
 
 type IsolateConfig = z.infer<typeof IsolateConfigSchema>;
 
-const ToolCallResponseSchema = z.object({ result: z.string(), state: z.record(z.string(), z.unknown()) });
-const HookResponseSchema = z.object({ state: z.record(z.string(), z.unknown()), result: z.unknown().optional() });
-const TurnConfigResultSchema = z.object({ maxSteps: z.number().int().positive().optional() }).nullable();
+const ToolCallResponseSchema = z.object({
+  result: z.string(),
+  state: z.record(z.string(), z.unknown()),
+});
+const HookResponseSchema = z.object({
+  state: z.record(z.string(), z.unknown()),
+  result: z.unknown().optional(),
+});
+const TurnConfigResultSchema = z
+  .object({ maxSteps: z.number().int().positive().optional() })
+  .nullable();
 
 // ── Isolate lifecycle ───────────────────────────────────────────────────
 
@@ -156,7 +164,9 @@ async function startIsolate(
             portResolved = true;
             resolvePort(parsed.data.port);
           }
-        } catch { /* not the port announcement */ }
+        } catch {
+          /* not the port announcement */
+        }
       }
       if (event.channel === "stderr") {
         console.error("[isolate stderr]", event.message);
@@ -228,13 +238,30 @@ function buildExecuteTool(port: number, authToken: string, crashed?: AbortSignal
 
 function buildHookInvoker(port: number, authToken: string, crashed?: AbortSignal): AgentHooks {
   const rpc = async (name: string, extra: Record<string, unknown> = {}): Promise<unknown> =>
-    (await callIsolate(port, { type: "hook", hook: name, ...extra }, HOOK_TIMEOUT_MS, HookResponseSchema, authToken, crashed)).result;
+    (
+      await callIsolate(
+        port,
+        { type: "hook", hook: name, ...extra },
+        HOOK_TIMEOUT_MS,
+        HookResponseSchema,
+        authToken,
+        crashed,
+      )
+    ).result;
 
   const hooks = createHooks<AgentHookMap>();
-  hooks.hook("connect", async (sessionId) => { await rpc("onConnect", { sessionId }); });
-  hooks.hook("disconnect", async (sessionId) => { await rpc("onDisconnect", { sessionId }); });
-  hooks.hook("turn", async (sessionId, text) => { await rpc("onTurn", { sessionId, text }); });
-  hooks.hook("error", async (sessionId, error) => { await rpc("onError", { sessionId, error }); });
+  hooks.hook("connect", async (sessionId) => {
+    await rpc("onConnect", { sessionId });
+  });
+  hooks.hook("disconnect", async (sessionId) => {
+    await rpc("onDisconnect", { sessionId });
+  });
+  hooks.hook("turn", async (sessionId, text) => {
+    await rpc("onTurn", { sessionId, text });
+  });
+  hooks.hook("error", async (sessionId, error) => {
+    await rpc("onError", { sessionId, error });
+  });
   // biome-ignore lint/suspicious/noExplicitAny: hookable void-return constraint
   hooks.hook("resolveTurnConfig", (async (sessionId: string) => {
     const parsed = TurnConfigResultSchema.parse(await rpc("resolveTurnConfig", { sessionId }));
@@ -252,8 +279,12 @@ function buildHookInvoker(port: number, authToken: string, crashed?: AbortSignal
 export const _internals = {
   startIsolate,
   createSandbox,
-  get IDLE_MS() { return _slotInternals.IDLE_MS; },
-  set IDLE_MS(ms: number) { _slotInternals.IDLE_MS = ms; },
+  get IDLE_MS() {
+    return _slotInternals.IDLE_MS;
+  },
+  set IDLE_MS(ms: number) {
+    _slotInternals.IDLE_MS = ms;
+  },
   resetIdleTimer: _slotInternals.resetIdleTimer,
 };
 
@@ -280,7 +311,16 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
 
   // Create a runtime with RPC overrides — same startSession/shutdown as self-hosted
   const agentRuntime = createRuntime({
-    agent: { name: config.name, instructions: config.instructions, greeting: config.greeting, tools: {}, ...(config.sttPrompt ? { sttPrompt: config.sttPrompt } : {}), ...(config.maxSteps != null ? { maxSteps: config.maxSteps } : {}), ...(config.toolChoice ? { toolChoice: config.toolChoice } : {}), ...(config.builtinTools ? { builtinTools: config.builtinTools } : {}) },
+    agent: {
+      name: config.name,
+      instructions: config.instructions,
+      greeting: config.greeting,
+      tools: {},
+      ...(config.sttPrompt ? { sttPrompt: config.sttPrompt } : {}),
+      ...(config.maxSteps != null ? { maxSteps: config.maxSteps } : {}),
+      ...(config.toolChoice ? { toolChoice: config.toolChoice } : {}),
+      ...(config.builtinTools ? { builtinTools: config.builtinTools } : {}),
+    },
     env: { ...agentEnv, ASSEMBLYAI_API_KEY: apiKey },
     executeTool,
     hooks,

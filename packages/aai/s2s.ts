@@ -5,6 +5,7 @@
 
 import type { JSONSchema7 } from "json-schema";
 import { createNanoEvents, type Emitter, type Unsubscribe } from "nanoevents";
+import WsWebSocket from "ws";
 import type { Logger, S2SConfig } from "./runtime.ts";
 import { consoleLogger } from "./runtime.ts";
 import { s2sConnectionDuration, s2sErrorCounter, tracer } from "./telemetry.ts";
@@ -34,8 +35,6 @@ export type CreateS2sWebSocket = (
 
 // Node's native WebSocket doesn't support custom headers.
 // Use the `ws` package which accepts { headers } in the constructor.
-import WsWebSocket from "ws";
-
 export const defaultCreateS2sWebSocket: CreateS2sWebSocket = (url, opts) =>
   new WsWebSocket(url, { headers: opts.headers }) as unknown as S2sWebSocket;
 
