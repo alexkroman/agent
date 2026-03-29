@@ -85,19 +85,23 @@ export type AgentApp = {
 };
 ```
 
-Key migrations:
+Key migrations (Hono → h3):
 
-| Hono                                           | h3                                                                    |
-| ---------------------------------------------- | --------------------------------------------------------------------- |
-| `new Hono()`                                   | `createApp()` + `createRouter()`                                      |
-| `app.get("/health", (c) => c.json(...))`       | `router.get("/health", defineEventHandler(() => ({ status: "ok" })))` |
-| `app.use("*", secureHeaders())`                | Custom h3 middleware or `setHeaders(event, {...})` in a global handler |
-| `app.use("*", honoLogger(...))`                | h3 `onRequest` / `onAfterResponse` hooks                             |
-| `serveStatic({ root })`                        | `serveStatic({ dir })` from h3 or `sirv` package                     |
-| `c.html(...)`                                  | `setResponseHeader(event, "content-type", "text/html"); return html`  |
-| `c.header("CSP", ...)`                         | `setResponseHeader(event, "Content-Security-Policy", AGENT_CSP)`      |
-| `c.req.query("key")`                           | `getQuery(event).key`                                                 |
-| `upgradeWebSocket(...)`                         | `defineWebSocketHandler(...)` via crossws (h3 built-in)               |
+- `new Hono()` → `createApp()` + `createRouter()`
+- `app.get("/health", (c) => c.json(...))` →
+  `router.get("/health", defineEventHandler(...))`
+- `app.use("*", secureHeaders())` →
+  Custom h3 middleware or `setHeaders(event, {...})`
+- `app.use("*", honoLogger(...))` →
+  h3 `onRequest` / `onAfterResponse` hooks
+- `serveStatic({ root })` →
+  `serveStatic({ dir })` from h3 or `sirv` package
+- `c.html(...)` →
+  `setResponseHeader(event, "content-type", "text/html")`
+- `c.header("CSP", ...)` →
+  `setResponseHeader(event, "Content-Security-Policy", ...)`
+- `c.req.query("key")` → `getQuery(event).key`
+- `upgradeWebSocket(...)` → `defineWebSocketHandler(...)` via crossws (h3 built-in)
 
 ### WebSocket migration
 
@@ -458,21 +462,17 @@ unify the dev server with Nitro (optional future improvement).
 
 ### Add
 
-| Package            | Where                                             |
-| ------------------ | ------------------------------------------------- |
-| `h3`               | `aai` (dep), `aai-server` (dep)                   |
-| `crossws`          | `aai` (dep), `aai-server` (dep) — h3 WebSocket    |
-| `nitropack`        | `aai-server` (dep) — if using Nitro build/dev      |
-| `h3-cors` or inline | `aai-server` — CORS middleware                    |
+- `h3` — `aai` (dep), `aai-server` (dep)
+- `crossws` — `aai` (dep), `aai-server` (dep) — h3 WebSocket
+- `nitropack` — `aai-server` (dep) — if using Nitro build/dev
+- `h3-cors` or inline — `aai-server` — CORS middleware
 
 ### Remove
 
-| Package              | Where                                                    |
-| -------------------- | -------------------------------------------------------- |
-| `hono`               | `aai` (peer dep), `aai-server` (dep), `aai-cli` (dep)    |
-| `@hono/node-server`  | `aai` (peer dep), `aai-server` (dep), `aai-cli` (dep)    |
-| `@hono/node-ws`      | `aai` (peer dep), `aai-server` (dep)                      |
-| `@hono/zod-validator` | `aai-server` (dep)                                       |
+- `hono` — `aai` (peer dep), `aai-server` (dep), `aai-cli` (dep)
+- `@hono/node-server` — `aai` (peer dep), `aai-server` (dep), `aai-cli` (dep)
+- `@hono/node-ws` — `aai` (peer dep), `aai-server` (dep)
+- `@hono/zod-validator` — `aai-server` (dep)
 
 ### Update
 
