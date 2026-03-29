@@ -64,11 +64,7 @@ export type MiddlewareRunner = {
  * that failed, and the original error. The runner always continues (fail-open)
  * regardless of what this callback does.
  */
-export type MiddlewareErrorHandler = (info: {
-  middleware: string;
-  hook: string;
-  error: unknown;
-}) => void;
+type MiddlewareErrorHandler = (info: { middleware: string; hook: string; error: unknown }) => void;
 
 const defaultOnError: MiddlewareErrorHandler = ({ middleware, hook, error }) => {
   console.warn(`Middleware ${middleware} ${hook} failed:`, error);
