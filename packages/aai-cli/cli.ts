@@ -72,13 +72,12 @@ const dev = defineCommand({
   meta: { name: "dev", description: "Start a local development server" },
   args: {
     port: sharedArgs.port,
-    check: { type: "boolean", description: "Start server, verify health, then exit" },
     yes: sharedArgs.yes,
   },
   async run({ args }) {
     const cwd = await setup(args, { agent: true, apiKey: true });
     const { runDevCommand } = await import("./dev.ts");
-    await runDevCommand({ cwd, port: args.port, ...(args.check ? { check: args.check } : {}) });
+    await runDevCommand({ cwd, port: args.port });
   },
 });
 

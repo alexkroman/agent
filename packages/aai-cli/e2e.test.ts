@@ -2,7 +2,7 @@
 /**
  * End-to-end CLI tests (Vite builds, real servers, Playwright browser):
  *   1. Template builds: dev & user workflows for representative templates
- *   2. CLI commands: dev --check, start, deploy --dry-run
+ *   2. CLI commands: start, deploy --dry-run
  *   3. Browser tests (Playwright): UI render, WebSocket, conversation flow
  *
  * Run via: pnpm test:e2e
@@ -161,14 +161,6 @@ describe("pack + build: template workflows", () => {
 });
 
 // --- CLI commands (single template) ---
-
-describe("CLI: dev --check", () => {
-  test("init -> dev --check", () => {
-    const projectDir = path.join(tmpDir, "_dev-check");
-    initProject("simple", projectDir);
-    aai(["dev", "--check", "--port", String(BASE_PORT)], projectDir);
-  });
-});
 
 describe("CLI: build -> start serves health", () => {
   test("start responds to /health after build", async () => {

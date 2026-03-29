@@ -11,9 +11,12 @@
   "dependencies": {
     "@alexkroman1/aai": "^0.10.1",
     "@alexkroman1/aai-ui": "^0.10.1",
+    "@preact/preset-vite": "^2.10.5",
     "@preact/signals": "^2.8.2",
+    "@tailwindcss/vite": "^4.2.2",
     "preact": "^10.29.0",
     "tailwindcss": "^4.2.1",
+    "vite": "^8.0.3",
     "zod": "^4.3.6"
   },
   "devDependencies": {

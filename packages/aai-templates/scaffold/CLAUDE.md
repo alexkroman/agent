@@ -1222,6 +1222,7 @@ my-agent/
   agent.ts          # Agent definition
   agent.test.ts     # Agent tests (vitest)
   client.tsx        # UI component (calls defineClient() to render into #app)
+  vite.config.ts    # Vite config with aai() plugin (dev server + build)
   styles.css        # Tailwind CSS entry point
   package.json      # Dependencies, scripts, and config
   tsconfig.json     # TypeScript configuration

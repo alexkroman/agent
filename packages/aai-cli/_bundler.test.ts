@@ -122,18 +122,14 @@ describe("bundleAgent: readDirFiles coverage", () => {
 });
 
 describe("createClientDevServer", () => {
-  test("creates a Vite dev server with proxy config", async () => {
+  test("creates a Vite dev server", async () => {
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "aai_dev_"));
     await fs.writeFile(path.join(tmpDir, "index.html"), "<html><body></body></html>");
     try {
-      const vite = await createClientDevServer(tmpDir, 9999, 0);
+      const vite = await createClientDevServer(tmpDir, 0);
       try {
         expect(vite).toBeDefined();
         expect(vite.config.root).toBe(tmpDir);
-        expect(vite.config.server.proxy).toBeDefined();
-        const proxy = vite.config.server.proxy as Record<string, unknown>;
-        expect(proxy["/health"]).toBeDefined();
-        expect(proxy["/websocket"]).toBeDefined();
       } finally {
         await vite.close();
       }

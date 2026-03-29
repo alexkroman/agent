@@ -92,6 +92,8 @@ Public:
 - `./testing` — `MockWebSocket`, `installMockWebSocket`,
   `createTestHarness`, `TestHarness`, `TurnResult`
 - `./testing/matchers` — Vitest custom matchers (`toHaveCalledTool`)
+- `./vite` — `aai()` Vite plugin (bundles Preact, Tailwind, and agent
+  dev server middleware into a single plugin for `vite.config.ts`)
 
 Internal (exported in package.json but not part of public API — do **not**
 depend on these from consumer code; they may change without notice).
@@ -118,6 +120,8 @@ Non-exported internal files (used within the package only):
 - `builtin-tools.ts` — built-in tool definitions + memory tools
 - `direct-executor.ts` — in-process runtime / tool execution (self-hosted)
 - `lifecycle.ts` — `LifecycleHooks`, `HookInvoker` (agent callback types)
+- `vite.ts` — `aai()` Vite plugin: dev server middleware (WebSocket +
+  health via `configureServer`), worker build hook, env isolation
 
 #### `@alexkroman1/aai-ui` (UI)
 
@@ -137,8 +141,8 @@ start, secret, generate, run
 - `cli.ts` — arg parsing, subcommand dispatch
 - `init.ts` / `dev.ts` / `deploy.ts` / `start.ts` — subcommand entry points
 - `_init.ts` / `_deploy.ts` / `_bundler.ts` / `_build.ts` — internal logic
-- `_bundler.ts` — generates Vite config, bundles `agent.ts`/`client.tsx`
-  into `worker.js`/`index.html`
+- `_bundler.ts` — bundles `agent.ts`/`client.tsx` into
+  `worker.js`/`index.html`; delegates to `vite.config.ts` when present
 - `_discover.ts` — agent discovery, auth config, project config
 - `secret.ts` — secret management
 - `_ui.ts` — shared Ink UI components
@@ -156,6 +160,33 @@ start, secret, generate, run
 - `_harness-runtime.ts` — code that runs inside the isolate
 - `_harness-protocol.ts` — shared types between host and isolate
 - `_net.ts` — SSRF protection, URL validation
+
+### Vite Plugin Architecture
+
+The `aai()` Vite plugin (`packages/aai/vite.ts`, exported as
+`@alexkroman1/aai/vite`) provides a single-plugin developer experience.
+User projects create a `vite.config.ts`:
+
+```ts
+import aai from "@alexkroman1/aai/vite";
+import { defineConfig } from "vite";
+export default defineConfig({ plugins: [aai()] });
+```
+
+The plugin returns `[preact(), tailwindcss(), aaiAgentPlugin()]` and:
+
+- **Dev mode** (`configureServer`): loads `agent.ts` via dynamic import,
+  calls `createRuntime()`, serves `/health` as Connect middleware, handles
+  WebSocket upgrades on `/websocket` via the `ws` library — all in a
+  single Vite process (no port+1 proxy).
+- **Build mode** (`buildStart`): runs the worker lib build (ESM bundle of
+  `agent.ts` → `.aai/build/worker.js`) alongside the standard Vite client
+  build.
+- **Env handling**: parses `.env` with declared-keys-only isolation
+  (matching platform sandbox behavior).
+
+The CLI delegates to the project's `vite.config.ts` for both dev and
+build. Projects must have a `vite.config.ts` with the `aai()` plugin.
 
 ### Data Flow
 

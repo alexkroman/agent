@@ -3,8 +3,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { errorMessage } from "@alexkroman1/aai/utils";
-import preact from "@preact/preset-vite";
-import tailwindcss from "@tailwindcss/vite";
 import { build, createServer as createViteServer, type ViteDevServer } from "vite";
 import type { AgentEntry } from "./_discover.ts";
 
@@ -84,11 +82,13 @@ async function readDirFiles(dir: string): Promise<Record<string, string>> {
 /**
  * Bundles an agent project into deployable artifacts using Vite.
  *
+ * Uses the project's `vite.config.ts` (which includes the aai plugin) for
+ * the client build. The aai plugin's `buildStart` hook handles the worker
+ * build automatically.
+ *
  * Writes all output to `.aai/` on disk:
  * - `.aai/build/worker.js` — the platform worker bundle
  * - `.aai/client/` — standard Vite multi-file output (index.html + assets/)
- *
- * Both `aai dev` and `aai deploy` use this function identically.
  */
 export async function bundleAgent(
   agent: AgentEntry,
@@ -120,19 +120,17 @@ export async function bundleAgent(
     throw new BundleError(errorMessage(err), { cause: err });
   }
 
-  // 2. Client build — standard Vite multi-file output (index.html + assets/)
+  // 2. Client build — uses vite.config.ts (with aai plugin) for Preact + Tailwind.
+  //    The aai plugin's buildStart hook would also run the worker build, but we
+  //    already did that above, so set the env flag to skip the nested build.
   const skipClient = opts?.skipClient ?? !agent.clientEntry;
 
   if (!skipClient) {
+    process.env.__AAI_WORKER_BUILD = "1";
     try {
       await build({
         root: agent.dir,
-        base: "./",
         logLevel: "warn",
-        plugins: [preact(), tailwindcss()],
-        resolve: {
-          dedupe: ["preact", "@preact/signals"],
-        },
         build: {
           outDir: clientDir,
           emptyOutDir: true,
@@ -142,6 +140,8 @@ export async function bundleAgent(
       });
     } catch (err: unknown) {
       throw new BundleError(errorMessage(err), { cause: err });
+    } finally {
+      delete process.env.__AAI_WORKER_BUILD;
     }
   }
 
@@ -198,29 +198,19 @@ export async function runBuildCommand(cwd: string): Promise<void> {
 /**
  * Create a Vite dev server for client HMR during development.
  *
- * The dev server serves client files with hot module replacement enabled and
- * proxies backend requests (`/health`, `/websocket`) to the agent server.
+ * Uses the project's `vite.config.ts` (with aai plugin) to create a
+ * single-process server where the agent runtime runs as Vite middleware.
+ * No separate backend process or proxy needed.
  */
 export async function createClientDevServer(
   agentDir: string,
-  backendPort: number,
   port: number,
 ): Promise<ViteDevServer> {
-  const target = `http://localhost:${backendPort}`;
   const vite = await createViteServer({
-    configFile: false,
     root: agentDir,
-    plugins: [preact(), tailwindcss()],
-    resolve: {
-      dedupe: ["preact", "@preact/signals"],
-    },
     server: {
       port,
       strictPort: true,
-      proxy: {
-        "/health": target,
-        "/websocket": { target, ws: true },
-      },
     },
   });
   return vite;
