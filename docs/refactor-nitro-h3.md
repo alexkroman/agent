@@ -22,10 +22,12 @@ eliminating the adapter layer. The client (`aai-ui`) is unchanged.
 ## Phase 1: Sandbox Sidecar → h3 (Isolated, Low Risk)
 
 **Files:**
+
 - `packages/aai-server/src/sandbox-sidecar.ts`
 - `packages/aai-server/src/sandbox-sidecar.test.ts`
 
 **What changes:**
+
 - Replace `new Hono()` with `createApp()` + `createRouter()` from h3
 - Replace `@hono/node-server.serve()` with `createServer(toNodeHandler(app))`
   from `node:http` + h3
@@ -36,6 +38,7 @@ eliminating the adapter layer. The client (`aai-ui`) is unchanged.
 - Replace `app.onError()` with h3 error handler
 
 **API mapping:**
+
 ```ts
 // Before (Hono)
 app.post("/kv/get", zValidator("json", schema), (c) => {
@@ -58,6 +61,7 @@ local server (same pattern as current tests, which already use real HTTP).
 ## Phase 2: SDK Server → h3 (`packages/aai/server.ts`)
 
 **Files:**
+
 - `packages/aai/server.ts`
 - `packages/aai/package.json` (peer deps: hono → h3)
 
@@ -82,17 +86,18 @@ export type AgentApp = {
 ```
 
 Key migrations:
-| Hono | h3 |
-|------|-----|
-| `new Hono()` | `createApp()` + `createRouter()` |
-| `app.get("/health", (c) => c.json(...))` | `router.get("/health", defineEventHandler(() => ({ status: "ok" })))` |
-| `app.use("*", secureHeaders())` | Custom h3 middleware or `setHeaders(event, {...})` in a global handler |
-| `app.use("*", honoLogger(...))` | h3 `onRequest` / `onAfterResponse` hooks |
-| `serveStatic({ root })` | `serveStatic({ dir })` from h3 or `sirv` package |
-| `c.html(...)` | `setResponseHeader(event, "content-type", "text/html"); return html` |
-| `c.header("CSP", ...)` | `setResponseHeader(event, "Content-Security-Policy", AGENT_CSP)` |
-| `c.req.query("key")` | `getQuery(event).key` |
-| `upgradeWebSocket(...)` | `defineWebSocketHandler(...)` via crossws (h3 built-in) |
+
+| Hono                                           | h3                                                                    |
+| ---------------------------------------------- | --------------------------------------------------------------------- |
+| `new Hono()`                                   | `createApp()` + `createRouter()`                                      |
+| `app.get("/health", (c) => c.json(...))`       | `router.get("/health", defineEventHandler(() => ({ status: "ok" })))` |
+| `app.use("*", secureHeaders())`                | Custom h3 middleware or `setHeaders(event, {...})` in a global handler |
+| `app.use("*", honoLogger(...))`                | h3 `onRequest` / `onAfterResponse` hooks                             |
+| `serveStatic({ root })`                        | `serveStatic({ dir })` from h3 or `sirv` package                     |
+| `c.html(...)`                                  | `setResponseHeader(event, "content-type", "text/html"); return html`  |
+| `c.header("CSP", ...)`                         | `setResponseHeader(event, "Content-Security-Policy", AGENT_CSP)`      |
+| `c.req.query("key")`                           | `getQuery(event).key`                                                 |
+| `upgradeWebSocket(...)`                         | `defineWebSocketHandler(...)` via crossws (h3 built-in)               |
 
 ### WebSocket migration
 
@@ -163,7 +168,7 @@ Nitro application.
 
 ### 3a: Project Structure
 
-```
+```text
 packages/aai-server/
   nitro.config.ts           ← NEW: Nitro configuration
   src/
@@ -283,7 +288,7 @@ export function createOrchestrator(opts): { app: App; handler: NodeHandler } {
   // Global middleware
   app.use(defineEventHandler((event) => {
     // CORS
-    handleCors(event, { origin: opts.allowedOrigins ?? ["*"], ... });
+    handleCors(event, { origin: opts.allowedOrigins ?? ["*"] });
     // Security headers
     setResponseHeaders(event, {
       "Cross-Origin-Opener-Policy": "same-origin",
@@ -316,7 +321,7 @@ export function createOrchestrator(opts): { app: App; handler: NodeHandler } {
       const slug = peer.request.context.slug;
       const sandbox = await resolveSandbox(slug, opts);
       if (!sandbox) { peer.close(1008, "Agent not found"); return; }
-      sandbox.startSession(peer, { ... });
+      sandbox.startSession(peer, {});
     }
   }));
 
@@ -335,7 +340,7 @@ app.onError(createErrorHandler());
 // After (h3)
 throw createError({ statusCode: 401, statusMessage: "Unauthorized" });
 // h3 handles errors automatically, or add:
-app.use(defineEventHandler({ onError(error, event) { ... } }));
+app.use(defineEventHandler({ onError(error, event) { /* ... */ } }));
 ```
 
 ### 3g: Handler Migration
@@ -386,7 +391,9 @@ server.listen(port);
 export default defineNitroPlugin((nitro) => {
   nitro.hooks.hook("close", async () => {
     for (const [, slot] of slots) clearTimeout(slot.idleTimer);
-    await Promise.allSettled([...slots.values()].map(s => s.sandbox?.terminate()));
+    await Promise.allSettled(
+      [...slots.values()].map(s => s.sandbox?.terminate())
+    );
   });
 });
 ```
@@ -412,6 +419,7 @@ const res = await app.handler(new Request("http://localhost/health"));
 ```
 
 **Files to update (13 test files):**
+
 - `orchestrator.test.ts` — heaviest, tests all routes
 - `kv-handler.test.ts` — uses `new Hono<Env>()` in setup
 - `sandbox-sidecar.test.ts` — uses real HTTP (minimal changes)
@@ -429,6 +437,7 @@ app used by most tests. Migrate this and most tests follow.
 ## Phase 5: CLI Updates (`packages/aai-cli`)
 
 **Files:**
+
 - `packages/aai-cli/_server-common.ts` — calls `createServer()` from SDK
 - `packages/aai-cli/dev.ts` — dev server setup
 - `packages/aai-cli/package.json` — drop hono deps
@@ -448,31 +457,35 @@ unify the dev server with Nitro (optional future improvement).
 ## Phase 6: Dependency Cleanup
 
 ### Add
-| Package | Where |
-|---------|-------|
-| `h3` | `aai` (dep), `aai-server` (dep) |
-| `crossws` | `aai` (dep), `aai-server` (dep) — h3 WebSocket support |
-| `nitropack` | `aai-server` (dep) — if using Nitro build/dev |
-| `h3-cors` or inline | `aai-server` — CORS middleware |
+
+| Package            | Where                                             |
+| ------------------ | ------------------------------------------------- |
+| `h3`               | `aai` (dep), `aai-server` (dep)                   |
+| `crossws`          | `aai` (dep), `aai-server` (dep) — h3 WebSocket    |
+| `nitropack`        | `aai-server` (dep) — if using Nitro build/dev      |
+| `h3-cors` or inline | `aai-server` — CORS middleware                    |
 
 ### Remove
-| Package | Where |
-|---------|-------|
-| `hono` | `aai` (peer dep), `aai-server` (dep), `aai-cli` (dep) |
-| `@hono/node-server` | `aai` (peer dep), `aai-server` (dep), `aai-cli` (dep) |
-| `@hono/node-ws` | `aai` (peer dep), `aai-server` (dep) |
-| `@hono/zod-validator` | `aai-server` (dep) |
+
+| Package              | Where                                                    |
+| -------------------- | -------------------------------------------------------- |
+| `hono`               | `aai` (peer dep), `aai-server` (dep), `aai-cli` (dep)    |
+| `@hono/node-server`  | `aai` (peer dep), `aai-server` (dep), `aai-cli` (dep)    |
+| `@hono/node-ws`      | `aai` (peer dep), `aai-server` (dep)                      |
+| `@hono/zod-validator` | `aai-server` (dep)                                       |
 
 ### Update
+
 - `packages/aai/package.json` — peer deps: remove hono, add h3
-- `packages/aai-server/package.json` — deps: remove hono/*, add h3/nitro
-- `packages/aai-cli/package.json` — deps: remove hono/*
+- `packages/aai-server/package.json` — deps: remove hono/\*, add h3/nitro
+- `packages/aai-cli/package.json` — deps: remove hono/\*
 
 ---
 
 ## Phase 7: Build Config Updates
 
 **`packages/aai-server/tsdown.config.ts`:**
+
 - Main bundle: replace Hono externals with h3 externals
 - Harness runtime: **no changes** (already avoids Hono — uses `node:http`)
 - Note from existing code: "@hono/node-server redefines globalThis.Request
@@ -480,6 +493,7 @@ unify the dev server with Nitro (optional future improvement).
   have this problem. If it does, use the same isolation strategy.
 
 **`packages/aai/tsdown.config.ts`:**
+
 - Entry points unchanged (server.ts still exports same public API)
 - External deps change from hono to h3
 
@@ -520,7 +534,7 @@ The migration's riskiest part is WebSocket handling. Verify:
 
 ## Migration Order
 
-```
+```text
 Phase 1  ──►  Phase 2  ──►  Phase 3  ──►  Phase 4  ──►  Phase 5  ──►  Phase 6  ──►  Phase 7
 sidecar       SDK server     platform      tests         CLI           deps          build
 (isolated)    (public API)   (biggest)     (13 files)    (minimal)     (cleanup)     (verify)
@@ -554,6 +568,7 @@ pnpm test:e2e             # full process spawn + browser
 ```
 
 Specifically verify:
+
 - [ ] WebSocket connects and streams audio bidirectionally
 - [ ] Session resume works (`?sessionId=X`)
 - [ ] Tool calls execute and return results
