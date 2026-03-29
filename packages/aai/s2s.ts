@@ -3,7 +3,6 @@
  * Speech-to-Speech WebSocket client for AssemblyAI's S2S API.
  */
 
-import WebSocket from "crossws/websocket";
 import type { JSONSchema7 } from "json-schema";
 import { createNanoEvents, type Emitter, type Unsubscribe } from "nanoevents";
 import type { Logger, S2SConfig } from "./runtime.ts";
@@ -33,16 +32,12 @@ export type CreateS2sWebSocket = (
   opts: { headers: Record<string, string> },
 ) => S2sWebSocket;
 
-// crossws/websocket types the constructor as standard WebSocket(url, protocols?)
-// but on Node.js it delegates to `ws` which accepts { headers } options.
-// Cast to allow passing headers for the S2S API authentication.
+// Node's native WebSocket doesn't support custom headers.
+// Use the `ws` package which accepts { headers } in the constructor.
+import WsWebSocket from "ws";
+
 export const defaultCreateS2sWebSocket: CreateS2sWebSocket = (url, opts) =>
-  new (
-    WebSocket as unknown as new (
-      url: string,
-      opts: { headers: Record<string, string> },
-    ) => S2sWebSocket
-  )(url, { headers: opts.headers });
+  new WsWebSocket(url, { headers: opts.headers }) as unknown as S2sWebSocket;
 
 type S2sServerMessage =
   | { type: "session.ready"; session_id: string }

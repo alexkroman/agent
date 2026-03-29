@@ -100,8 +100,7 @@ export type VoiceSessionOptions = {
    */
   resumeSessionId?: string | undefined;
   /**
-   * WebSocket constructor override. Defaults to crossws/websocket which
-   * provides a cross-platform WebSocket (native in browsers, `ws` in Node).
+   * WebSocket constructor override. Defaults to the native `WebSocket`.
    * Primarily useful for testing with a mock WebSocket.
    */
   WebSocket?: WebSocketConstructor | undefined;

@@ -1,17 +1,22 @@
 // Copyright 2025 the AAI authors. MIT license.
-/**
- * Sandbox harness runtime — runs inside the secure-exec V8 isolate.
- *
- * Boots the same `createRuntime()` + WebSocket server as self-hosted mode.
- * The host just proxies client WebSocket connections to this server.
- */
-import { createServer } from "node:http";
-import { createRuntime, type SessionWebSocket } from "@alexkroman1/aai/internal";
+/** Sandbox harness runtime — runs inside the secure-exec V8 isolate. */
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { type AgentHooks, callResolveTurnConfig, createAgentHooks } from "@alexkroman1/aai/hooks";
 import type { Kv } from "@alexkroman1/aai/kv";
-import type { AgentDef } from "@alexkroman1/aai/types";
-import nodeAdapter from "crossws/adapters/node";
+import type { AgentDef, ToolContext } from "@alexkroman1/aai/types";
+import { createSessionStateMap } from "@alexkroman1/aai/utils";
 
-// Strip AAI_ENV_ prefix so tools/hooks see original key names.
+/** Lightweight error with HTTP status for RPC responses. */
+class RpcError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
+const HARNESS_AUTH_TOKEN = process.env.HARNESS_AUTH_TOKEN ?? "";
+
 const AAI_ENV_PREFIX = "AAI_ENV_";
 const agentEnv: Record<string, string> = Object.freeze(
   Object.fromEntries(
@@ -37,74 +42,215 @@ async function kvRpc<T>(path: string, body: unknown): Promise<T> {
 }
 
 const kv: Kv = {
-  get<T = unknown>(key: string) {
-    return kvRpc<T | null>("/get", { key });
-  },
-  set(key: string, value: unknown, options?: { expireIn?: number }) {
-    return kvRpc<void>("/set", { key, value, options });
-  },
-  delete(key: string) {
-    return kvRpc<void>("/del", { key });
-  },
-  list<T = unknown>(prefix: string, options?: { limit?: number; reverse?: boolean }) {
-    return kvRpc<{ key: string; value: T }[]>("/list", { prefix, ...options });
-  },
-  keys(pattern?: string) {
-    return kvRpc<string[]>("/keys", { pattern });
-  },
+  get<T = unknown>(key: string) { return kvRpc<T | null>("/get", { key }); },
+  set(key: string, value: unknown, options?: { expireIn?: number }) { return kvRpc<void>("/set", { key, value, options }); },
+  delete(key: string) { return kvRpc<void>("/del", { key }); },
+  list<T = unknown>(prefix: string, options?: { limit?: number; reverse?: boolean }) { return kvRpc<{ key: string; value: T }[]>("/list", { prefix, ...options }); },
+  keys(pattern?: string) { return kvRpc<string[]>("/keys", { pattern }); },
 };
 
-// ── Harness entry point ─────────────────────────────────────────────────
+// ── Agent introspection ─────────────────────────────────────────────────
+
+let sessionState: ReturnType<typeof createSessionStateMap>;
+let hooks: AgentHooks;
+
+type IsolateConfig = {
+  name: string;
+  instructions: string;
+  greeting?: string;
+  sttPrompt?: string;
+  maxSteps?: number;
+  toolChoice?: string;
+  builtinTools?: string[];
+  toolSchemas: { name: string; description: string; parameters: Record<string, unknown> }[];
+  hasState: boolean;
+  hooks: { onConnect: boolean; onDisconnect: boolean; onError: boolean; onTurn: boolean; maxStepsIsFn: boolean };
+};
+
+function extractToolSchemas(agent: AgentDef): IsolateConfig["toolSchemas"] {
+  return Object.entries(agent.tools).map(([name, def]) => ({
+    name,
+    description: def.description,
+    parameters:
+      def.parameters && "toJSON" in def.parameters && typeof def.parameters.toJSON === "function"
+        ? (def.parameters.toJSON() as Record<string, unknown>)
+        : ({ type: "object", properties: {} } as Record<string, unknown>),
+  }));
+}
+
+function extractConfig(agent: AgentDef): IsolateConfig {
+  const config: IsolateConfig = {
+    name: agent.name,
+    instructions: agent.instructions,
+    greeting: agent.greeting,
+    toolSchemas: extractToolSchemas(agent),
+    hasState: typeof agent.state === "function",
+    hooks: {
+      onConnect: typeof agent.onConnect === "function",
+      onDisconnect: typeof agent.onDisconnect === "function",
+      onError: typeof agent.onError === "function",
+      onTurn: typeof agent.onTurn === "function",
+      maxStepsIsFn: typeof agent.maxSteps === "function",
+    },
+  };
+  if (agent.sttPrompt !== undefined) config.sttPrompt = agent.sttPrompt;
+  if (typeof agent.maxSteps !== "function") config.maxSteps = agent.maxSteps;
+  if (agent.toolChoice !== undefined) config.toolChoice = agent.toolChoice;
+  if (agent.builtinTools) config.builtinTools = [...agent.builtinTools];
+  return config;
+}
+
+// ── Tool execution ──────────────────────────────────────────────────────
+
+/** Must match HARNESS_TOOL_TIMEOUT_MS in constants.ts (30s). */
+const TOOL_TIMEOUT_MS = 30_000;
+
+type ToolCallRequest = { name: string; args: Record<string, unknown>; sessionId: string; messages: { role: string; content: string }[] };
+type ToolCallResponse = { result: string; state: Record<string, unknown> };
+
+async function executeTool(agent: AgentDef, req: ToolCallRequest): Promise<ToolCallResponse> {
+  const tool = agent.tools[req.name];
+  if (!tool) throw new RpcError(`Unknown tool: ${req.name}`, 404);
+
+  const ctx: ToolContext = {
+    env: agentEnv,
+    state: sessionState.get(req.sessionId),
+    sessionId: req.sessionId,
+    kv,
+    messages: req.messages,
+    fetch,
+  };
+
+  const parsed =
+    tool.parameters && typeof tool.parameters.parse === "function"
+      ? tool.parameters.parse(req.args)
+      : req.args;
+
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const result = await Promise.race([
+      tool.execute(parsed, ctx),
+      new Promise<never>((_resolve, reject) => {
+        timeoutId = setTimeout(
+          () => reject(new RpcError(`Tool "${req.name}" timed out after ${TOOL_TIMEOUT_MS}ms`, 504)),
+          TOOL_TIMEOUT_MS,
+        );
+      }),
+    ]);
+    return {
+      result: typeof result === "string" ? result : JSON.stringify(result),
+      state: ctx.state,
+    };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+// ── Hook invocation ─────────────────────────────────────────────────────
+
+type HookRequest = { hook: string; sessionId: string; text?: string; error?: { message: string } };
+type HookResponse = { state: Record<string, unknown>; result?: unknown };
+
+async function invokeHook(req: HookRequest): Promise<HookResponse> {
+  let result: unknown;
+  switch (req.hook) {
+    case "onConnect":
+      await hooks.callHook("connect", req.sessionId);
+      break;
+    case "onDisconnect":
+      await hooks.callHook("disconnect", req.sessionId);
+      sessionState.delete(req.sessionId);
+      break;
+    case "onTurn":
+      await hooks.callHook("turn", req.sessionId, req.text ?? "");
+      break;
+    case "onError":
+      await hooks.callHook("error", req.sessionId, { message: req.error?.message ?? "Unknown error" });
+      break;
+    case "resolveTurnConfig":
+      result = await callResolveTurnConfig(hooks, req.sessionId);
+      break;
+    default:
+      break;
+  }
+  return { state: sessionState.get(req.sessionId), result };
+}
+
+// ── HTTP RPC server ─────────────────────────────────────────────────────
+
+/** Must match HARNESS_MAX_BODY_SIZE in constants.ts (5 MB). */
+const MAX_BODY_SIZE = 5 * 1024 * 1024;
+
+function readBody(req: IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let totalSize = 0;
+    req.on("data", (c: Buffer) => {
+      totalSize += c.length;
+      if (totalSize > MAX_BODY_SIZE) {
+        req.destroy(new Error("Request body too large"));
+        reject(new Error("Request body too large"));
+        return;
+      }
+      chunks.push(c);
+    });
+    req.on("end", () => resolve(Buffer.concat(chunks).toString()));
+    req.on("error", reject);
+  });
+}
+
+function json(res: ServerResponse, data: unknown, status = 200): void {
+  const body = JSON.stringify(data);
+  res.writeHead(status, { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) });
+  res.end(body);
+}
+
+function isAuthorized(req: IncomingMessage): boolean {
+  return !HARNESS_AUTH_TOKEN || req.headers["x-harness-token"] === HARNESS_AUTH_TOKEN;
+}
+
+type RpcRequest =
+  | { type: "config" }
+  | { type: "tool"; name: string; args: Record<string, unknown>; sessionId: string; messages: { role: string; content: string }[] }
+  | { type: "hook"; hook: string; sessionId: string; text?: string; error?: { message: string } };
+
+async function dispatch(agent: AgentDef, msg: RpcRequest): Promise<unknown> {
+  switch (msg.type) {
+    case "config": return extractConfig(agent);
+    case "tool": return executeTool(agent, msg);
+    case "hook": return invokeHook(msg);
+    default: throw new RpcError("Unknown RPC type", 400);
+  }
+}
 
 export function startHarness(agent: AgentDef): void {
   if (!agent || typeof agent !== "object" || !agent.name) {
     throw new Error("Agent bundle must export a default agent definition");
   }
-
-  const runtime = createRuntime({
+  sessionState = createSessionStateMap(agent.state);
+  hooks = createAgentHooks({
     agent,
-    env: agentEnv,
-    kv,
+    makeCtx: (sid) => ({ env: agentEnv, state: sessionState.get(sid), sessionId: sid, kv, fetch }),
   });
 
-  // WebSocket server using crossws + node:http (same as self-hosted mode)
-  const wsAdapter = nodeAdapter({
-    hooks: {
-      open(peer) {
-        const reqUrl = peer.request?.url ?? "/";
-        const qIdx = reqUrl.indexOf("?");
-        const search = qIdx >= 0 ? reqUrl.slice(qIdx + 1) : "";
-        const getParam = (key: string): string | undefined => {
-          const re = new RegExp(`(?:^|&)${key}=([^&]*)`);
-          const m = search.match(re);
-          return m?.[1] ? decodeURIComponent(m[1]) : undefined;
-        };
-        const hasParam = (key: string): boolean => search.includes(key);
-        const resumeFrom = getParam("sessionId");
-        const skipGreeting = hasParam("resume") || resumeFrom !== undefined;
-        const rawWs = peer.websocket as unknown as SessionWebSocket;
-        runtime.startSession(rawWs, {
-          skipGreeting,
-          ...(resumeFrom ? { resumeFrom } : {}),
-        });
-      },
-    },
-  });
-
-  const server = createServer((_req, res) => {
-    res.writeHead(404, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "Not found" }));
-  });
-
-  server.on("upgrade", (req, socket, head) => {
-    wsAdapter.handleUpgrade(req as never, socket as never, head as never);
+  const server = createServer(async (req, res) => {
+    try {
+      if (!isAuthorized(req)) { json(res, { error: "Unauthorized" }, 401); return; }
+      if (req.method !== "POST" || req.url !== "/rpc") { json(res, { error: "Not found" }, 404); return; }
+      let msg: RpcRequest;
+      try { msg = JSON.parse(await readBody(req)) as RpcRequest; } catch { json(res, { error: "Invalid JSON" }, 400); return; }
+      const result = await dispatch(agent, msg);
+      json(res, result);
+    } catch (err: unknown) {
+      const status = err instanceof RpcError ? err.status : 500;
+      const message = err instanceof Error ? err.message : "Internal error";
+      json(res, { error: message }, status);
+    }
   });
 
   server.listen(0, "127.0.0.1", () => {
     const addr = server.address();
-    if (!addr || typeof addr === "string") {
-      throw new Error(`Expected server address with numeric port, got: ${JSON.stringify(addr)}`);
-    }
-    process.stdout.write(`${JSON.stringify({ port: addr.port, name: agent.name })}\n`);
+    if (!addr || typeof addr === "string") throw new Error("Bad server address");
+    process.stdout.write(`${JSON.stringify({ port: addr.port })}\n`);
   });
 }

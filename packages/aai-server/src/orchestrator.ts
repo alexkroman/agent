@@ -149,30 +149,21 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   app.fetch = (req: Request, env?: Record<string, unknown>) =>
     original(req, { ...bindings, ...env });
 
-  // WebSocket upgrade handled by crossws node adapter instead of Hono middleware.
-  // URL pattern: /:slug/websocket
+  // WebSocket upgrade — URL pattern: /:slug/websocket
   const wsAdapter = nodeAdapter({
     hooks: {
       async open(peer) {
         try {
           const url = new URL(peer.request?.url ?? "/", "http://localhost");
-          // Extract slug from URL path: /:slug/websocket
           const match = url.pathname.match(/^\/([a-z0-9][a-z0-9_-]*[a-z0-9])\/websocket$/);
-          if (!match) {
-            peer.close(1008, "Invalid path");
-            return;
-          }
-          // match[1] is always defined when the regex matches (captured group 1)
+          if (!match) { peer.close(1008, "Invalid path"); return; }
           const slug = validateSlug(match[1] as string);
           const sandbox = await resolveSandbox(slug, {
             slots: opts.slots,
             store: opts.store,
             storage: opts.storage,
           });
-          if (!sandbox) {
-            peer.close(1008, "Agent not found");
-            return;
-          }
+          if (!sandbox) { peer.close(1008, "Agent not found"); return; }
           const resumeFrom = url.searchParams.get("sessionId") ?? undefined;
           const skipGreeting = url.searchParams.has("resume") || resumeFrom !== undefined;
           const rawWs = peer.websocket as unknown as Parameters<typeof sandbox.startSession>[0];
@@ -190,11 +181,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
 
   const injectWebSocket = (server: import("node:http").Server) => {
     server.on("upgrade", (req, socket, head) => {
-      // Match /:slug/websocket paths
-      if (
-        req.url &&
-        /^\/[a-z0-9][a-z0-9_-]*[a-z0-9]\/websocket/.test(req.url.split("?")[0] ?? "")
-      ) {
+      if (req.url && /^\/[a-z0-9][a-z0-9_-]*[a-z0-9]\/websocket/.test(req.url.split("?")[0] ?? "")) {
         wsAdapter.handleUpgrade(req, socket, head);
       }
     });

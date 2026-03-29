@@ -17,7 +17,6 @@ import {
   type ToolSchema,
   toAgentConfig,
 } from "./_internal-types.ts";
-import { ssrfSafeFetch } from "./_ssrf.ts";
 import { errorDetail, errorMessage, toolError } from "./_utils.ts";
 import { getBuiltinToolDefs, getBuiltinToolSchemas } from "./builtin-tools.ts";
 import { DEFAULT_SHUTDOWN_TIMEOUT_MS, TOOL_EXECUTION_TIMEOUT_MS } from "./constants.ts";
@@ -156,6 +155,23 @@ export type RuntimeOptions = {
    * {@link AgentRuntime.shutdown | shutdown()}. Defaults to `30_000` (30 s).
    */
   shutdownTimeoutMs?: number | undefined;
+  /**
+   * Override tool execution. When provided, `createRuntime` skips building
+   * in-process tool definitions and uses this function instead. Used by the
+   * platform sandbox to RPC tool calls to the isolate.
+   */
+  executeTool?: ExecuteTool | undefined;
+  /**
+   * Override lifecycle hooks. When provided, `createRuntime` skips building
+   * in-process hooks and uses these instead. Used by the platform sandbox
+   * to RPC hook calls to the isolate.
+   */
+  hooks?: AgentHooks | undefined;
+  /**
+   * Override tool schemas sent to the S2S API. Required when `executeTool`
+   * is provided (the host doesn't have the tool definitions to derive schemas).
+   */
+  toolSchemas?: ToolSchema[] | undefined;
 };
 
 /**
@@ -211,67 +227,64 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   const sessions = new Map<string, Session>();
   const readyConfig: ReadyConfig = buildReadyConfig(s2sConfig);
 
-  // Merge custom + builtin tool definitions
-  const builtinDefs = getBuiltinToolDefs(agent.builtinTools ?? []);
-  const allTools: Record<string, AgentDef["tools"][string]> = {
-    ...builtinDefs,
-    ...agent.tools,
-  };
+  // When overrides are provided (sandbox mode), skip in-process tool/hook setup
+  let executeTool: ExecuteTool;
+  let hooks: AgentHooks;
+  let toolSchemas: ToolSchema[];
 
-  // Build tool schemas for the S2S API
-  const customSchemas = agentToolsToSchemas(agent.tools ?? {});
-  const builtinSchemas = getBuiltinToolSchemas(agent.builtinTools ?? []);
-  const toolSchemas: ToolSchema[] = [...customSchemas, ...builtinSchemas];
-
-  // Per-session mutable state
-  const stateMap = new Map<string, Record<string, unknown>>();
-  const getState = (sid: string) => {
-    if (!stateMap.has(sid) && agent.state) stateMap.set(sid, agent.state());
-    return stateMap.get(sid) ?? {};
-  };
-  const frozenEnv = Object.freeze({ ...env });
-
-  /** SSRF-safe fetch for tool/hook contexts in self-hosted mode. */
-  const safeFetch: typeof globalThis.fetch = (input, init) => {
-    const req = new Request(input, init);
-    return ssrfSafeFetch(req.url, { ...init, method: req.method }, globalThis.fetch);
-  };
-
-  function makeHookContext(sessionId: string): HookContext {
-    return {
-      env: frozenEnv,
-      state: getState(sessionId),
-      sessionId,
-      get kv() {
-        return kv;
-      },
-      fetch: safeFetch,
+  if (opts.executeTool && opts.hooks && opts.toolSchemas) {
+    // Sandbox mode — tools/hooks are RPC-backed
+    executeTool = opts.executeTool;
+    hooks = opts.hooks;
+    toolSchemas = opts.toolSchemas;
+  } else {
+    // Self-hosted mode — in-process tool execution
+    const builtinDefs = getBuiltinToolDefs(agent.builtinTools ?? []);
+    const allTools: Record<string, AgentDef["tools"][string]> = {
+      ...builtinDefs,
+      ...agent.tools,
     };
-  }
+    const customSchemas = agentToolsToSchemas(agent.tools ?? {});
+    const builtinSchemas = getBuiltinToolSchemas(agent.builtinTools ?? []);
+    toolSchemas = [...customSchemas, ...builtinSchemas];
 
-  const executeTool: ExecuteTool = async (name, args, sessionId, messages) => {
-    const tool = allTools[name];
-    if (!tool) return toolError(`Unknown tool: ${name}`);
+    const stateMap = new Map<string, Record<string, unknown>>();
+    const getState = (sid: string) => {
+      if (!stateMap.has(sid) && agent.state) stateMap.set(sid, agent.state());
+      return stateMap.get(sid) ?? {};
+    };
+    const frozenEnv = Object.freeze({ ...env });
 
-    return executeToolCall(name, args, {
-      tool,
-      env: frozenEnv,
-      state: getState(sessionId ?? ""),
-      sessionId: sessionId ?? "",
-      kv,
-      messages,
-      logger,
-      fetch: safeFetch,
+    function makeHookContext(sessionId: string): HookContext {
+      return {
+        env: frozenEnv,
+        state: getState(sessionId),
+        sessionId,
+        get kv() { return kv; },
+        fetch: globalThis.fetch,
+      };
+    }
+
+    executeTool = async (name, args, sessionId, messages) => {
+      const tool = allTools[name];
+      if (!tool) return toolError(`Unknown tool: ${name}`);
+      return executeToolCall(name, args, {
+        tool,
+        env: frozenEnv,
+        state: getState(sessionId ?? ""),
+        sessionId: sessionId ?? "",
+        kv,
+        messages,
+        logger,
+        fetch: globalThis.fetch,
+      });
+    };
+
+    hooks = createAgentHooks({ agent, makeCtx: makeHookContext });
+    hooks.hook("disconnect", async (sessionId) => {
+      stateMap.delete(sessionId);
     });
-  };
-
-  // ── Agent hooks (lifecycle via hookable) ──────────────────────────────
-  const hooks = createAgentHooks({ agent, makeCtx: makeHookContext });
-
-  // Clean up session state when a session disconnects.
-  hooks.hook("disconnect", async (sessionId) => {
-    stateMap.delete(sessionId);
-  });
+  }
 
   function createSession(sessionOpts: {
     id: string;
@@ -280,7 +293,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     skipGreeting?: boolean;
     resumeFrom?: string;
   }): Session {
-    const apiKey = frozenEnv.ASSEMBLYAI_API_KEY ?? "";
+    const apiKey = env.ASSEMBLYAI_API_KEY ?? "";
     return createS2sSession({
       id: sessionOpts.id,
       agent: sessionOpts.agent,

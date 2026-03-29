@@ -2,7 +2,6 @@
 
 import type { ClientMessage, ReadyConfig } from "@alexkroman1/aai/protocol";
 import { errorMessage } from "@alexkroman1/aai/utils";
-import CrossWebSocket from "crossws/websocket";
 import type { VoiceIO } from "./audio.ts";
 import { ClientHandler } from "./client-handler.ts";
 import type {
@@ -202,7 +201,8 @@ function buildWsUrl(platformUrl: string, resume: boolean, sessionId?: string): U
  * @public
  */
 export function createVoiceSession(options: VoiceSessionOptions): VoiceSession {
-  const WS: WebSocketConstructor = options.WebSocket ?? (CrossWebSocket as WebSocketConstructor);
+  const WS: WebSocketConstructor =
+    options.WebSocket ?? (WebSocket as unknown as WebSocketConstructor);
   const reactive =
     options.reactiveFactory ?? (<T>(initial: T): Reactive<T> => ({ value: initial }));
   const batchFn = options.batch ?? ((fn: () => void) => fn());

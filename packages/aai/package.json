@@ -66,13 +66,13 @@
   },
   "dependencies": {
     "@opentelemetry/api": "^1.9.1",
+    "crossws": "^0.4.4",
     "hookable": "^6.1.0",
-    "html-to-text": "^9.0.5",
     "nanoevents": "^9.1.0",
     "p-timeout": "^7.0.1",
     "secure-exec": "^0.1.0",
     "unstorage": "^1.17.5",
-    "crossws": "^0.4.4",
+    "ws": "^8.20.0",
     "zod": "^4.3.6"
   },
   "peerDependencies": {
@@ -92,9 +92,9 @@
     }
   },
   "devDependencies": {
-    "@types/html-to-text": "^9.0.4",
     "@types/json-schema": "^7.0.15",
     "@types/node": "^25.5.0",
+    "@types/ws": "^8.18.1",
     "tsdown": "^0.21.5"
   },
   "engines": {

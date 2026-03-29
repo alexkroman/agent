@@ -2,32 +2,40 @@
 /**
  * Network policy and adapter for sandbox isolates.
  *
- * The network adapter handles SSRF validation (DNS resolution, private-IP
- * blocking, redirect re-validation) for outbound requests and provides a
- * virtual KV bridge via `http://kv.internal/` URLs.
+ * Provides virtual hosts for:
+ * - `http://kv.internal/` — KV store bridge
+ * - `http://host.internal/` — push channel for session events back to host
+ *
+ * All other outbound requests go through the default adapter (SSRF checks).
  */
 
 import type { Kv } from "@alexkroman1/aai/kv";
 import { createDefaultNetworkAdapter } from "secure-exec";
 
 const KV_ORIGIN = "http://kv.internal";
+const HOST_ORIGIN = "http://host.internal";
+
+export type HostEventHandler = (
+  path: string,
+  body: string | null,
+  headers: Record<string, string>,
+) => void;
 
 /**
  * Build a network permission check for the isolate.
- *
- * Allows listening, DNS, and all outbound requests. The network adapter
- * handles real SSRF validation.
+ * Allows all — the adapter handles SSRF validation.
  */
 export function buildNetworkPolicy() {
   return (_req: { op: string; url?: string; hostname?: string }) => ({ allow: true as const });
 }
 
 /**
- * Build a network adapter that:
- * 1. Intercepts `http://kv.internal/` requests and routes them to the host-side KV store
- * 2. Passes all other requests through the default adapter (with SSRF checks)
+ * Build a network adapter with:
+ * 1. KV bridge at `http://kv.internal/`
+ * 2. Host push channel at `http://host.internal/`
+ * 3. Default adapter with SSRF checks for everything else
  */
-export function buildNetworkAdapter(kv: Kv) {
+export function buildNetworkAdapter(kv: Kv, onHostEvent: HostEventHandler) {
   const defaultAdapter = createDefaultNetworkAdapter();
 
   return {
@@ -36,11 +44,14 @@ export function buildNetworkAdapter(kv: Kv) {
       url: string,
       options: { method?: string; headers?: Record<string, string>; body?: string | null },
     ) {
-      // KV bridge — virtual host handled on the host side
       if (url.startsWith(KV_ORIGIN)) {
         return handleKvRequest(kv, url, options.body ?? null);
       }
-      // Everything else goes through the default adapter (with SSRF checks)
+      if (url.startsWith(HOST_ORIGIN)) {
+        const path = new URL(url).pathname;
+        onHostEvent(path, options.body ?? null, options.headers ?? {});
+        return jsonResponse({ ok: true });
+      }
       return defaultAdapter.fetch(url, options);
     },
   };

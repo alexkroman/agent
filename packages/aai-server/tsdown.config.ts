@@ -1,37 +1,36 @@
 import { defineConfig, type Rolldown } from "tsdown";
 
 /**
- * Fails the build if the harness bundle contains external imports that aren't
- * node: built-ins or explicitly allowed lazy-loaded externals.
- *
- * The secure-exec isolate has no access to node_modules, so any non-built-in
- * external would cause a silent boot failure (15s timeout).
- *
- * Allowed dynamic externals are packages that are lazily imported and fail
- * gracefully at runtime (e.g. secure-exec for run_code, html-to-text for
- * visit_webpage). They never execute at boot time.
+ * Node builtins available in secure-exec isolates.
+ * Source: @secure-exec/core POLYFILL_CODE_MAP keys.
  */
-function isolateGuardPlugin(): Rolldown.Plugin {
-  // Dynamic imports that are OK to remain external — they're lazy-loaded
-  // and fail gracefully at runtime (never evaluated at boot time).
-  const ALLOWED_DYNAMIC_EXTERNALS = new Set(["secure-exec", "html-to-text"]);
+const SECURE_EXEC_BUILTINS = new Set([
+  "node:assert", "node:buffer", "node:child_process", "node:cluster",
+  "node:console", "node:constants", "node:crypto", "node:dgram", "node:dns",
+  "node:domain", "node:events", "node:fs", "node:http", "node:https",
+  "node:http2", "node:module", "node:net", "node:os", "node:path",
+  "node:punycode", "node:process", "node:querystring", "node:readline",
+  "node:repl", "node:stream", "node:string_decoder", "node:sys",
+  "node:timers", "node:timers/promises", "node:tls", "node:tty",
+  "node:url", "node:util", "node:vm", "node:zlib",
+]);
 
+/** Fails the build if the harness bundle imports anything unavailable in secure-exec. */
+function isolateGuardPlugin(): Rolldown.Plugin {
   return {
     name: "isolate-guard",
     generateBundle(_options, bundle) {
-      const chunkNames = new Set(Object.keys(bundle));
       for (const chunk of Object.values(bundle)) {
         if (chunk.type !== "chunk") continue;
-        const isAllowed = (id: string) =>
-          id.startsWith("node:") || chunkNames.has(id) || ALLOWED_DYNAMIC_EXTERNALS.has(id);
-        const illegal = [...chunk.imports, ...chunk.dynamicImports].filter((id) => !isAllowed(id));
-        if (illegal.length > 0) {
+        const illegal = [...chunk.imports, ...chunk.dynamicImports].filter(
+          (id) => !id.startsWith("node:") || !SECURE_EXEC_BUILTINS.has(id),
+        );
+        // Filter to only actual externals (not node: builtins)
+        const bad = illegal.filter((id) => !SECURE_EXEC_BUILTINS.has(id));
+        if (bad.length > 0) {
           throw new Error(
-            "[isolate-guard] _harness-runtime.ts must not import external packages " +
-              "(the isolate has no node_modules).\n" +
-              `Found: ${illegal.join(", ")}\n` +
-              "Use `import type` for type-only imports, or add the package to " +
-              "noExternal if it has zero runtime dependencies.",
+            `[isolate-guard] Harness bundle contains imports unavailable in secure-exec.\n` +
+              `Found: ${bad.join(", ")}`,
           );
         }
       }
@@ -40,7 +39,6 @@ function isolateGuardPlugin(): Rolldown.Plugin {
 }
 
 export default defineConfig([
-  // Main server bundle — bundle workspace packages, externalize npm deps
   {
     entry: ["src/index.ts"],
     format: "esm",
@@ -49,28 +47,13 @@ export default defineConfig([
     outDir: "dist",
     noExternal: [/@alexkroman1/],
   },
-  // Harness runtime — loaded into secure-exec isolates.
-  // Runs createRuntime() + WebSocket server (same code path as self-hosted).
-  // IMPORTANT: All runtime dependencies must be bundled — the isolate has
-  // no access to node_modules. Only node: builtins are available externally.
   {
     entry: ["src/_harness-runtime.ts"],
     format: "esm",
     platform: "node",
     target: "node22",
     outDir: "dist",
-    noExternal: [
-      /@alexkroman1\/aai\/(internal|hooks|utils|kv|types)/,
-      /^hookable$/,
-      /^p-timeout$/,
-      /^zod$/,
-      /^nanoevents$/,
-      /^@opentelemetry\/api$/,
-      /^crossws/,
-      /^unstorage$/,
-      /^defu$/,
-      /^json-schema$/,
-    ],
+    noExternal: [/@alexkroman1\/aai\/hooks/, /@alexkroman1\/aai\/utils/, /^hookable$/],
     plugins: [isolateGuardPlugin()],
   },
 ]);

@@ -17,12 +17,12 @@
   "dependencies": {
     "@alexkroman1/aai": "workspace:*",
     "@hono/node-server": "^1.19.11",
-    "crossws": "^0.4.4",
     "@hono/zod-validator": "^0.7.6",
     "@opentelemetry/api": "^1.9.1",
     "@opentelemetry/exporter-prometheus": "^0.214.0",
     "@opentelemetry/sdk-metrics": "^2.6.1",
     "async-lock": "^1.4.1",
+    "crossws": "^0.4.4",
     "hono": "^4.12.9",
     "hookable": "^6.1.0",
     "lru-cache": "^11.2.7",

@@ -191,27 +191,6 @@ describe("createRuntime", () => {
     expect(result).toBe("function");
   });
 
-  test("ctx.fetch blocks private IPs (SSRF protection)", async () => {
-    const agent = makeAgent({
-      tools: {
-        fetch_private: {
-          description: "Attempt to fetch a private IP",
-          execute: async (_args, ctx) => {
-            try {
-              await ctx.fetch("http://169.254.169.254/latest/meta-data/");
-              return "should not reach here";
-            } catch (err) {
-              return (err as Error).message;
-            }
-          },
-        },
-      },
-    });
-    const exec = createRuntime({ agent, env: {} });
-    const result = await exec.executeTool("fetch_private", {}, "s1", []);
-    expect(result).toContain("private address");
-  });
-
   test("hook context includes fetch", async () => {
     let hookFetch: unknown;
     const agent = makeAgent({

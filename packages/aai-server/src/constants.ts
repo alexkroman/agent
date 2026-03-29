@@ -12,7 +12,7 @@
 export const SANDBOX_MEMORY_LIMIT_MB = 128;
 
 /** Timeout for isolate to announce its port after boot (ms). */
-export const PORT_ANNOUNCE_TIMEOUT_MS = 15_000;
+export const PORT_ANNOUNCE_TIMEOUT_MS = 5000;
 
 // ─── Slot lifecycle ──────────────────────────────────────────────────────
 
