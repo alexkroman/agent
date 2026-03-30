@@ -66,14 +66,15 @@ vitest (no coverage).
 
 ## Architecture
 
-Four workspace packages under `packages/`:
+Five workspace packages under `packages/`:
 
 | Package | npm name | Purpose |
 | ------- | -------- | ------- |
 | `packages/aai/` | `@alexkroman1/aai` | Agent SDK: `defineAgent`, `createServer`, types, protocol, S2S orchestration, session, KV |
 | `packages/aai-ui/` | `@alexkroman1/aai-ui` | Browser client (Preact): session, audio, UI components |
-| `packages/aai-cli/` | `@alexkroman1/aai-cli` | The `aai` CLI: init, dev, test, build, deploy, start, secret, generate, run |
+| `packages/aai-cli/` | `@alexkroman1/aai-cli` | The `aai` CLI: init, dev, test, build, deploy, delete, secret |
 | `packages/aai-server/` | `@alexkroman1/aai-server` | Managed platform server (private): sandbox, sidecar, auth, SSRF protection |
+| `packages/aai-templates/` | `@alexkroman1/aai-templates` | Agent templates + scaffold (private): 17 starter templates |
 
 **Dependency flow:** `aai-cli`, `aai-ui`, and `aai-server` depend on `aai`
 (via `workspace:*`) but never on each other.
@@ -99,25 +100,26 @@ Type-level tests (`.test-d.ts`) cover only the **public** entry points
 (`.`, `./types`, `./server`). Changes to internal exports do not require
 type test updates:
 
-- `./runtime` — `Logger`, `LogContext`, `S2SConfig`, `consoleLogger`,
-  `DEFAULT_S2S_CONFIG`
-- `./s2s` — AssemblyAI S2S WebSocket client
-- `./session` — S2S session management
-- `./ws-handler` — WebSocket lifecycle handler
 - `./protocol` — wire-format types, Zod schemas, constants
-- `./internal-types` — `AgentConfig`, `ToolSchema`, `DeployBody`
-- `./worker-entry` — tool execution logic
-- `./telemetry` — OpenTelemetry tracer, meter, pre-built metrics, `withSpan` helper
+- `./internal` — `AgentConfig`, `ToolSchema`, `DeployBody`
+- `./hooks` — hook definitions for lifecycle events
 - `./utils` — shared utility functions
-- `./ssrf` — SSRF protection (`assertPublicUrl`, `isPrivateIp`, `ssrfSafeFetch`)
-- `./middleware` — pure middleware runner functions (zero runtime deps,
-  isolate-safe; bundled into the harness runtime)
+- `./vite-plugin` — Vite integration plugin for agent bundling
 
 Non-exported internal files (used within the package only):
 
-- `builtin-tools.ts` — built-in tool definitions + memory tools
+- `builtin-tools.ts` — built-in tool definitions
+- `memory-tools.ts` — KV-backed memory tools (`save_memory`, `recall_memory`,
+  `list_memories`, `forget_memory`)
 - `direct-executor.ts` — in-process runtime / tool execution (self-hosted)
-- `lifecycle.ts` — `LifecycleHooks`, `HookInvoker` (agent callback types)
+- `runtime.ts` — `Logger`, `S2SConfig`, `consoleLogger`
+- `s2s.ts` — AssemblyAI S2S WebSocket client
+- `session.ts` — S2S session management
+- `ws-handler.ts` — WebSocket lifecycle handler
+- `system-prompt.ts` — system prompt generation
+- `_run-code.ts` — `run_code` sandbox implementation (`node:vm`)
+- `_internal-types.ts` — internal type definitions
+- `unstorage-kv.ts` — unstorage KV implementation
 
 #### `@alexkroman1/aai-ui` (UI)
 
@@ -128,34 +130,56 @@ Non-exported internal files (used within the package only):
 #### `@alexkroman1/aai-cli` (CLI)
 
 Binary: `aai` — subcommands: init, dev, test, build, deploy, delete,
-start, secret, generate, run
+secret
 
 ### Key Files
 
 #### packages/aai-cli/
 
 - `cli.ts` — arg parsing, subcommand dispatch
-- `init.ts` / `dev.ts` / `deploy.ts` / `start.ts` — subcommand entry points
-- `_init.ts` / `_deploy.ts` / `_bundler.ts` / `_build.ts` — internal logic
+- `init.ts` / `dev.ts` / `test.ts` / `deploy.ts` / `delete.ts` /
+  `secret.ts` — subcommand entry points
+- `start.ts` — production server launcher (used internally)
+- `_init.ts` / `_deploy.ts` / `_delete.ts` / `_bundler.ts` — internal logic
 - `_bundler.ts` — generates Vite config, bundles `agent.ts`/`client.tsx`
   into `worker.js`/`index.html`
+- `_api-client.ts` — platform API client
 - `_discover.ts` — agent discovery, auth config, project config
-- `secret.ts` — secret management
-- `_ui.ts` — shared Ink UI components
+- `_server-common.ts` — shared server utilities
+- `_templates.ts` — template handling
+- `_ui.ts` — shared UI components
 - `_prompts.ts` — interactive prompts
 
 #### packages/aai-ui/
 
-- `session.ts` — WebSocket session management, audio capture/playback
+- `index.ts` — main exports, Preact UI component
+- `session.ts` — WebSocket session management
 - `audio.ts` — PCM encoding/decoding, AudioWorklet management
-- `index.ts` — default Preact UI component
+- `client-handler.ts` — WebSocket client handler
+- `client-context.ts` — Preact context for client config
+- `signals.ts` — signal state management
+- `types.ts` — UI type definitions
+- `_components/` — UI components (app, chat-view, controls, message-bubble,
+  message-list, start-screen, sidebar-layout, state-indicator,
+  thinking-indicator, tool-call-block, transcript, error-banner, button,
+  tool-icons)
 
 #### packages/aai-server/src/
 
-- `sandbox.ts` — secure-exec V8 isolate management
+- `orchestrator.ts` — HTTP + WebSocket routing
+- `sandbox.ts` — V8 isolate management
+- `sandbox-harness.ts` — sandbox execution environment
+- `sandbox-network.ts` — network proxying for sandbox
+- `sandbox-slots.ts` — slot allocation for concurrent sessions
 - `_harness-runtime.ts` — code that runs inside the isolate
-- `_harness-protocol.ts` — shared types between host and isolate
-- `_net.ts` — SSRF protection, URL validation
+- `transport-websocket.ts` — WebSocket transport layer
+- `auth.ts` — authentication/authorization
+- `credentials.ts` — credential derivation
+- `bundle-store.ts` — agent bundle storage (S3/memory)
+- `deploy.ts` / `delete.ts` — deployment lifecycle
+- `secret-handler.ts` — secret management
+- `kv-handler.ts` — KV store HTTP API
+- `_ssrf.ts` — SSRF protection, URL validation
 
 ### Data Flow
 
@@ -191,7 +215,7 @@ start, secret, generate, run
 - **Agent API docs**: `packages/aai-templates/scaffold/CLAUDE.md` is the
   agent API reference installed into user projects. When modifying the agent
   API surface (`packages/aai/types.ts`), update it to match.
-- **Templates**: `packages/aai-templates/templates/` contains 18 agent
+- **Templates**: `packages/aai-templates/templates/` contains 17 agent
   scaffolding templates (simple, memory-agent, web-researcher, etc.). Each is
   self-contained with its own `agent.ts` and `client.tsx`. `scaffold/` has
   base project files (package.json, tsconfig, etc.) layered underneath.
@@ -247,14 +271,14 @@ Rules for `_harness-runtime.ts`:
   `zod`) external and unresolvable in the isolate.
 - Host-side validation (in `sandbox.ts`) is sufficient. The isolate trusts
   the host since they run in the same server process.
-- `_harness-protocol.ts` is dual-purpose: type-checked at compile time for
-  both host and isolate, but only the host side can use its runtime Zod schemas.
+- `sandbox-harness.ts` manages the sandbox execution environment on the
+  host side.
 
 ### Platform Sandbox (aai-server)
 
 Agent code runs in **secure-exec V8 isolates** with strict permission
 boundaries. Key files: `packages/aai-server/src/sandbox.ts`,
-`_harness-runtime.ts`, `_harness-protocol.ts`.
+`sandbox-harness.ts`, `_harness-runtime.ts`.
 
 **Isolation layers:**
 
@@ -296,7 +320,7 @@ a denylist.
 
 - HTML output uses `escapeHtml()` to prevent XSS from agent names.
 
-**SSRF protection (aai-server/_net.ts):**
+**SSRF protection (aai-server/_ssrf.ts):**
 
 - `assertPublicUrl()` uses `BlockList` for private IP ranges.
 - Handles IPv4-mapped IPv6 bypass (`::ffff:127.0.0.1`).
@@ -318,53 +342,10 @@ a denylist.
   chain bypass, cross-invocation isolation).
 - `pentest.test.ts` — penetration tests verifying sandbox prevents
   previously-exploitable constructor chain bypasses.
-- `_net.test.ts` — SSRF bypass prevention (IPv4-mapped IPv6, cloud metadata,
-  `.internal` domains).
-- `scope-token.test.ts` — token expiration enforcement.
-
-### Observability: OpenTelemetry
-
-Unified traces + metrics + logs via OpenTelemetry, replacing the former
-prom-client setup.
-
-**SDK layer (`packages/aai/telemetry.ts`):**
-
-Uses `@opentelemetry/api` only — consumers bring their own SDK and exporters.
-When no SDK is configured, the API returns no-op instances (zero overhead).
-
-Pre-built metrics (`aai.*`):
-
-- `aai.session.count` / `aai.session.active` — session lifecycle
-- `aai.turn.count` / `aai.turn.bargein.count` — user turns
-- `aai.tool.call.count` / `aai.tool.call.duration` — tool execution
-- `aai.tool.call.error.count` — tool errors
-- `aai.turn.steps` — agentic loop steps (tool calls) per completed turn
-- `aai.s2s.connection.duration` / `aai.s2s.error.count` — S2S health
-
-Trace spans:
-
-- `ws.session` — WebSocket session lifecycle (ws-handler.ts)
-- `s2s.connection` — S2S WebSocket connection (s2s.ts)
-- `tool.call` — tool call with name, call_id, agent, session ID
-
-**Platform layer (`packages/aai-server/src/metrics.ts`):**
-
-Configures `MeterProvider` with `PrometheusExporter` and registers it as the
-global meter provider. SDK-level meters automatically flow through.
-`GET /:slug/metrics` endpoint still serves Prometheus text format, filtered
-by agent label.
-
-**Instrumenting a self-hosted server:**
-
-Install `@opentelemetry/sdk-node` and configure before importing AAI:
-
-```ts
-import { NodeSDK } from "@opentelemetry/sdk-node";
-new NodeSDK({ /* exporters */ }).start();
-// then import and use createRuntime() + createServer()
-const runtime = createRuntime({ agent, env });
-const server = createServer({ runtime });
-```
+- `_net.test.ts` / `ssrf-extended.test.ts` — SSRF bypass prevention
+  (IPv4-mapped IPv6, cloud metadata, `.internal` domains).
+- `security-boundary.test.ts` / `trust-boundary-validation.test.ts` —
+  security boundary enforcement.
 
 ### Known Limitations
 
