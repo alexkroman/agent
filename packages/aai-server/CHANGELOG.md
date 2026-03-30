@@ -4,6 +4,12 @@
 
 ### Patch Changes
 
+- 8816cfe: Increase isolate boot timeout to 15s for Fly.io cold starts
+
+## 0.9.9
+
+### Patch Changes
+
 - 6f6a43e: Harden platform security and refactor to @hono/zod-validator
 
   - Fix crash in sandbox-network when host.internal hit without handler
