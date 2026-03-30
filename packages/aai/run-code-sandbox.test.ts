@@ -1,11 +1,10 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Integration tests for run_code secure-exec V8 isolate.
+ * Integration tests for run_code node:vm sandbox.
  *
- * Verifies that each run_code invocation runs in a fresh, disposable isolate
- * with proper security boundaries: no host access, no network, no filesystem
- * writes, no child processes, no env vars, memory limits, and cross-invocation
- * isolation.
+ * Verifies that each run_code invocation runs in a fresh VM context with
+ * proper security boundaries: no host access, no network, no filesystem
+ * writes, no child processes, no env vars, and cross-invocation isolation.
  */
 
 import { describe, expect, test } from "vitest";
@@ -62,7 +61,7 @@ describe("run_code isolate: functional", () => {
 // ── Security: network isolation ────────────────────────────────────────────
 
 describe("run_code isolate: network isolation", () => {
-  test("fetch to external URL is blocked", async () => {
+  test("fetch is not available", async () => {
     const result = await executeInIsolate(`
       try {
         await fetch("https://example.com");
@@ -74,22 +73,10 @@ describe("run_code isolate: network isolation", () => {
     expect(result as string).toMatch(/BLOCKED/);
   });
 
-  test("fetch to cloud metadata is blocked", async () => {
+  test("http module is not available", async () => {
     const result = await executeInIsolate(`
       try {
-        await fetch("http://169.254.169.254/latest/meta-data/");
-        console.log("ESCAPED");
-      } catch(e) {
-        console.log("BLOCKED:" + e.message);
-      }
-    `);
-    expect(result as string).toMatch(/BLOCKED/);
-  });
-
-  test("fetch to localhost is blocked", async () => {
-    const result = await executeInIsolate(`
-      try {
-        await fetch("http://127.0.0.1:8080/");
+        const http = require("http");
         console.log("ESCAPED");
       } catch(e) {
         console.log("BLOCKED:" + e.message);
@@ -102,10 +89,10 @@ describe("run_code isolate: network isolation", () => {
 // ── Security: filesystem isolation ──────────────────────────────────────────
 
 describe("run_code isolate: filesystem isolation", () => {
-  test("filesystem writes are blocked", async () => {
+  test("filesystem modules are not available", async () => {
     const result = await executeInIsolate(`
       try {
-        const fs = await import("node:fs");
+        const fs = require("fs");
         fs.writeFileSync("/tmp/pwned.txt", "owned");
         console.log("ESCAPED");
       } catch(e) {
@@ -115,7 +102,7 @@ describe("run_code isolate: filesystem isolation", () => {
     expect(result as string).toMatch(/BLOCKED/);
   });
 
-  test("reading host filesystem is blocked", async () => {
+  test("dynamic import of node:fs is blocked", async () => {
     const result = await executeInIsolate(`
       try {
         const fs = await import("node:fs");
@@ -132,10 +119,10 @@ describe("run_code isolate: filesystem isolation", () => {
 // ── Security: process isolation ──────────────────────────────────────────
 
 describe("run_code isolate: process isolation", () => {
-  test("child process spawning is blocked", async () => {
+  test("child process modules are not available", async () => {
     const result = await executeInIsolate(`
       try {
-        const cp = await import("node:child_process");
+        const cp = require("child_process");
         cp.execSync("id");
         console.log("ESCAPED");
       } catch(e) {
@@ -145,7 +132,7 @@ describe("run_code isolate: process isolation", () => {
     expect(result as string).toMatch(/BLOCKED/);
   });
 
-  test("process.exit is not available or has no effect", async () => {
+  test("process object is not available", async () => {
     const result = await executeInIsolate(`
       try {
         process.exit(1);
@@ -154,8 +141,7 @@ describe("run_code isolate: process isolation", () => {
         console.log("BLOCKED:" + e.message);
       }
     `);
-    // Either blocked or the isolate exits without affecting host
-    expect(typeof result).toBe("string");
+    expect(result as string).toMatch(/BLOCKED/);
   });
 });
 
@@ -177,7 +163,7 @@ describe("run_code isolate: env var isolation", () => {
   });
 });
 
-// ── Security: constructor chain bypass (previously critical vuln) ─────────
+// ── Security: constructor chain bypass ─────────────────────────────────
 
 describe("run_code isolate: constructor chain attacks", () => {
   test("string concatenation constructor bypass cannot leak host env", async () => {

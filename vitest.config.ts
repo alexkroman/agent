@@ -15,7 +15,7 @@ export default defineConfig({
         "**/_test-utils.ts",
         "**/dist/**",
         "**/__snapshots__/**",
-        // Sandbox harness: runs inside secure-exec V8 isolates, not vitest.
+        // Sandbox harness: runs inside V8 isolates on the platform, not vitest.
         // Covered by integration tests (pnpm test:integration).
         "packages/aai-server/src/sandbox*.ts",
         "packages/aai-server/src/_harness-runtime.ts",
@@ -44,7 +44,7 @@ export default defineConfig({
           include: ["**/*.test.ts"],
           exclude: [
             "pentest.test.ts",
-            "run-code-isolate.test.ts",
+            "run-code-sandbox.test.ts",
             "integration.test.ts",
             "node_modules",
             "dist",

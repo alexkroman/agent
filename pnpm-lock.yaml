@@ -64,9 +64,6 @@ importers:
       p-timeout:
         specifier: ^7.0.1
         version: 7.0.1
-      secure-exec:
-        specifier: ^0.1.0
-        version: 0.1.0
       unstorage:
         specifier: ^1.17.5
         version: 1.17.5(@upstash/redis@1.37.0)(aws4fetch@1.0.20)
