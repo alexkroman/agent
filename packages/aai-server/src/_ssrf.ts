@@ -7,62 +7,11 @@
  */
 
 import { lookup } from "node:dns/promises";
-import { BlockList } from "node:net";
+import bogon from "bogon";
 import pTimeout from "p-timeout";
 
-const privateBlocks = new BlockList();
-
-for (const [prefix, bits] of [
-  ["0.0.0.0", 8],
-  ["10.0.0.0", 8],
-  ["100.64.0.0", 10],
-  ["127.0.0.0", 8],
-  ["169.254.0.0", 16],
-  ["172.16.0.0", 12],
-  ["192.0.0.0", 24],
-  ["192.168.0.0", 16],
-  ["198.18.0.0", 15],
-  ["224.0.0.0", 4],
-  ["240.0.0.0", 4],
-] as const) {
-  privateBlocks.addSubnet(prefix, bits, "ipv4");
-}
-
-for (const [prefix, bits] of [
-  ["::1", 128],
-  ["::", 128],
-  ["fc00::", 7],
-  ["fe80::", 10],
-  ["ff00::", 8],
-] as const) {
-  privateBlocks.addSubnet(prefix, bits, "ipv6");
-}
-
 export function isPrivateIp(ip: string): boolean {
-  const type = ip.includes(":") ? "ipv6" : "ipv4";
-  return privateBlocks.check(ip, type);
-}
-
-function extractMappedIp(ip: string): string {
-  const mappedDotted = ip.match(/^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/i);
-  if (mappedDotted) return mappedDotted[1] as string;
-  const mappedHex = ip.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i);
-  if (mappedHex) {
-    const hi = Number.parseInt(mappedHex[1] as string, 16);
-    const lo = Number.parseInt(mappedHex[2] as string, 16);
-    return `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`;
-  }
-  return ip;
-}
-
-function isBlockedHostname(hostname: string): boolean {
-  const lower = hostname.toLowerCase();
-  return (
-    lower === "localhost" ||
-    lower.endsWith(".local") ||
-    lower.endsWith(".internal") ||
-    lower === "169.254.169.254"
-  );
+  return bogon(ip);
 }
 
 function isLiteralIp(hostname: string): boolean {
@@ -75,8 +24,7 @@ async function assertDnsResolvesPublic(hostname: string): Promise<void> {
       milliseconds: 2000,
       message: "DNS lookup timed out",
     });
-    const resolved = extractMappedIp(address);
-    if (isPrivateIp(address) || isPrivateIp(resolved)) {
+    if (isPrivateIp(address)) {
       throw new Error(`Blocked request: ${hostname} resolves to private address ${address}`);
     }
   } catch (err) {
@@ -87,16 +35,12 @@ async function assertDnsResolvesPublic(hostname: string): Promise<void> {
 export async function assertPublicUrl(url: string): Promise<void> {
   const parsed = new URL(url);
   const hostname = parsed.hostname.replace(/^\[|\]$/g, "");
-  const effective = extractMappedIp(hostname);
 
-  if (isPrivateIp(hostname) || isPrivateIp(effective)) {
-    throw new Error(`Blocked request to private address: ${hostname}`);
-  }
-  if (isBlockedHostname(hostname)) {
-    throw new Error(`Blocked request to private address: ${hostname}`);
-  }
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
     throw new Error(`Blocked request with disallowed protocol: ${parsed.protocol}`);
+  }
+  if (isPrivateIp(hostname)) {
+    throw new Error(`Blocked request to private address: ${hostname}`);
   }
   if (!isLiteralIp(hostname)) {
     await assertDnsResolvesPublic(hostname);

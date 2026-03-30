@@ -136,6 +136,9 @@ importers:
       '@hono/zod-validator':
         specifier: ^0.7.6
         version: 0.7.6(hono@4.12.9)(zod@4.3.6)
+      bogon:
+        specifier: ^1.2.0
+        version: 1.2.0
       hono:
         specifier: ^4.12.9
         version: 4.12.9
@@ -1362,6 +1365,14 @@ packages:
   aws4fetch@1.0.20:
     resolution: {integrity: sha512-/djoAN709iY65ETD6LKCtyyEI04XIBP5xVvfmNxsEP0uJB5tyaGBztSryRr4HqMStr9R06PisQE7m9zDTXKu6g==}
 
+  b4a@1.8.0:
+    resolution: {integrity: sha512-qRuSmNSkGQaHwNbM7J78Wwy+ghLEYF1zNrSeMxj4Kgw6y33O3mXcQ6Ie9fRvfU/YnxWkOchPXbaLb73TkIsfdg==}
+    peerDependencies:
+      react-native-b4a: '*'
+    peerDependenciesMeta:
+      react-native-b4a:
+        optional: true
+
   base64-js@1.5.1:
     resolution: {integrity: sha512-AKpaYlHn8t4SVbOHCy+b5+KKgvR4vrsD8vbvrbiQJps7fKDTkjkDry6ji0rUJjC0kzbNePLwzxq8iypo41qeWA==}
 
@@ -1380,6 +1391,9 @@ packages:
 
   bn.js@5.2.3:
     resolution: {integrity: sha512-EAcmnPkxpntVL+DS7bO1zhcZNvCkxqtkd0ZY53h06GNQ3DEkkGZ/gKgmDv6DdZQGj9BgfSPKtJJ7Dp1GPP8f7w==}
+
+  bogon@1.2.0:
+    resolution: {integrity: sha512-FqOBr/1VMzCOsoJd+fzNUMarUYki2+TKt07A2+xaulsNx4r53iJ7MV5k0jbqg7W2U0CsLqxCZOrFibdG6h6HSg==}
 
   braces@3.0.3:
     resolution: {integrity: sha512-yQbXgO/OSZVD2IsiLlro+7Hf6Q18EJrKSEsdoMzKePKXct3gvD8oLcOQdIzGupr5Fj+EDe8gO/lxc1BzfMpxvA==}
@@ -1518,6 +1532,12 @@ packages:
   commander@8.3.0:
     resolution: {integrity: sha512-OkTL9umf+He2DZkUq8f8J9of7yL6RJKI24dVITBmNfZBmri9zYZQrKkuXiKhyfPSu8tUhnVBB1iKXevvnlR4Ww==}
     engines: {node: '>= 12'}
+
+  compact-encoding-net@1.2.0:
+    resolution: {integrity: sha512-LVXpNpF7PGQeHRVVLGgYWzuVoYAaDZvKUsUxRioGfkotzvOh4AzoQF1HBH3zMNaSnx7gJXuUr3hkjnijaH/Eng==}
+
+  compact-encoding@2.19.2:
+    resolution: {integrity: sha512-/YjhHQE/5L4F7l5Bht69dRbP9RV6zoJPeowi8bMKQxNKe3Nh6hOY8pBGoVE9fz5GaWfEd8fWJ2aU9sB4KZuMYg==}
 
   consola@3.4.2:
     resolution: {integrity: sha512-5IKcdX0nnYavi6G7TtOhwkYzyjfJlatbjMjuLSfE2kYT5pMDOilZ4OvMhi637CcDICTmz3wARPoyhqyX1Y+XvA==}
@@ -4407,6 +4427,8 @@ snapshots:
   aws4fetch@1.0.20:
     optional: true
 
+  b4a@1.8.0: {}
+
   base64-js@1.5.1: {}
 
   better-path-resolve@1.0.0:
@@ -4422,6 +4444,13 @@ snapshots:
   bn.js@4.12.3: {}
 
   bn.js@5.2.3: {}
+
+  bogon@1.2.0:
+    dependencies:
+      compact-encoding: 2.19.2
+      compact-encoding-net: 1.2.0
+    transitivePeerDependencies:
+      - react-native-b4a
 
   braces@3.0.3:
     dependencies:
@@ -4581,6 +4610,18 @@ snapshots:
   commander@4.1.1: {}
 
   commander@8.3.0: {}
+
+  compact-encoding-net@1.2.0:
+    dependencies:
+      compact-encoding: 2.19.2
+    transitivePeerDependencies:
+      - react-native-b4a
+
+  compact-encoding@2.19.2:
+    dependencies:
+      b4a: 1.8.0
+    transitivePeerDependencies:
+      - react-native-b4a
 
   consola@3.4.2: {}
 

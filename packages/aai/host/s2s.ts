@@ -6,6 +6,7 @@
 import type { JSONSchema7 } from "json-schema";
 import { createNanoEvents, type Emitter, type Unsubscribe } from "nanoevents";
 import WsWebSocket from "ws";
+import { z } from "zod";
 import type { Logger, S2SConfig } from "./runtime.ts";
 import { consoleLogger } from "./runtime.ts";
 
@@ -37,94 +38,42 @@ export type CreateS2sWebSocket = (
 export const defaultCreateS2sWebSocket: CreateS2sWebSocket = (url, opts) =>
   new WsWebSocket(url, { headers: opts.headers }) as unknown as S2sWebSocket;
 
-type S2sServerMessage =
-  | { type: "session.ready"; session_id: string }
-  | { type: "session.updated"; [k: string]: unknown }
-  | { type: "input.speech.started" }
-  | { type: "input.speech.stopped" }
-  | { type: "transcript.user.delta"; text: string }
-  | { type: "transcript.user"; item_id: string; text: string }
-  | { type: "reply.started"; reply_id: string }
-  | { type: "transcript.agent.delta"; delta: string; [k: string]: unknown }
-  | {
-      type: "transcript.agent";
-      text: string;
-      reply_id: string;
-      item_id: string;
-      interrupted: boolean;
-    }
-  | { type: "reply.content_part.started"; [k: string]: unknown }
-  | { type: "reply.content_part.done"; [k: string]: unknown }
-  | { type: "tool.call"; call_id: string; name: string; args: Record<string, unknown> }
-  | { type: "reply.done"; status?: string }
-  | { type: "session.error"; code: string; message: string }
-  | { type: "error"; message: string };
+// ── Zod schemas for S2S server messages ─────────────────────────────────
 
-function hasStringFields(obj: Record<string, unknown>, ...keys: string[]): boolean {
-  for (const k of keys) if (typeof obj[k] !== "string") return false;
-  return true;
-}
-
-function parseAgentTranscript(obj: Record<string, unknown>): S2sServerMessage | undefined {
-  if (typeof obj.text !== "string") return;
-  return {
-    type: "transcript.agent" as const,
-    text: obj.text,
-    reply_id: typeof obj.reply_id === "string" ? obj.reply_id : "",
-    item_id: typeof obj.item_id === "string" ? obj.item_id : "",
-    interrupted: obj.interrupted === true,
-  };
-}
-
-function parseToolCall(obj: Record<string, unknown>): S2sServerMessage | undefined {
-  if (typeof obj.call_id !== "string" || typeof obj.name !== "string") return;
-  const args =
-    obj.args != null && typeof obj.args === "object" && !Array.isArray(obj.args)
-      ? (obj.args as Record<string, unknown>)
-      : {};
-  return { type: "tool.call", call_id: obj.call_id, name: obj.name, args };
-}
-
-type MessageValidator = (obj: Record<string, unknown>) => S2sServerMessage | undefined;
-
-function passthrough(obj: Record<string, unknown>): S2sServerMessage {
-  return obj as S2sServerMessage;
-}
-
-function requireFields(
-  ...keys: string[]
-): (obj: Record<string, unknown>) => S2sServerMessage | undefined {
-  return (obj) => (hasStringFields(obj, ...keys) ? (obj as S2sServerMessage) : undefined);
-}
-
-const MESSAGE_VALIDATORS = new Map<string, MessageValidator>([
-  ["session.ready", requireFields("session_id")],
-  ["session.updated", passthrough],
-  ["input.speech.started", passthrough],
-  ["input.speech.stopped", passthrough],
-  ["reply.content_part.started", passthrough],
-  ["reply.content_part.done", passthrough],
-  ["transcript.user.delta", requireFields("text")],
-  ["transcript.user", requireFields("item_id", "text")],
-  ["reply.started", requireFields("reply_id")],
-  ["transcript.agent.delta", requireFields("delta")],
-  ["transcript.agent", parseAgentTranscript],
-  ["tool.call", parseToolCall],
-  [
-    "reply.done",
-    (obj) => ({
-      type: "reply.done" as const,
-      ...(typeof obj.status === "string" ? { status: obj.status } : {}),
-    }),
-  ],
-  ["session.error", requireFields("code", "message")],
-  ["error", requireFields("message")],
+const S2sMessageSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("session.ready"), session_id: z.string() }).passthrough(),
+  z.object({ type: z.literal("session.updated") }).passthrough(),
+  z.object({ type: z.literal("input.speech.started") }),
+  z.object({ type: z.literal("input.speech.stopped") }),
+  z.object({ type: z.literal("transcript.user.delta"), text: z.string() }),
+  z.object({ type: z.literal("transcript.user"), item_id: z.string(), text: z.string() }),
+  z.object({ type: z.literal("reply.started"), reply_id: z.string() }),
+  z.object({ type: z.literal("transcript.agent.delta"), delta: z.string() }).passthrough(),
+  z.object({
+    type: z.literal("transcript.agent"),
+    text: z.string(),
+    reply_id: z.string().optional().default(""),
+    item_id: z.string().optional().default(""),
+    interrupted: z.boolean().optional().default(false),
+  }),
+  z.object({ type: z.literal("reply.content_part.started") }).passthrough(),
+  z.object({ type: z.literal("reply.content_part.done") }).passthrough(),
+  z.object({
+    type: z.literal("tool.call"),
+    call_id: z.string(),
+    name: z.string(),
+    args: z.record(z.string(), z.unknown()).optional().default({}),
+  }),
+  z.object({ type: z.literal("reply.done"), status: z.string().optional() }),
+  z.object({ type: z.literal("session.error"), code: z.string(), message: z.string() }),
+  z.object({ type: z.literal("error"), message: z.string() }),
 ]);
 
+type S2sServerMessage = z.infer<typeof S2sMessageSchema>;
+
 function parseS2sMessage(obj: Record<string, unknown>): S2sServerMessage | undefined {
-  const type = obj.type;
-  if (typeof type !== "string") return;
-  return MESSAGE_VALIDATORS.get(type)?.(obj);
+  const result = S2sMessageSchema.safeParse(obj);
+  return result.success ? result.data : undefined;
 }
 
 function dispatchS2sMessage(emitter: Emitter<S2sEvents>, msg: S2sServerMessage): void {
