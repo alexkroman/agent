@@ -6,7 +6,7 @@
 import { execSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { consola } from "./_ui.ts";
+import { log } from "./_ui.ts";
 
 /**
  * Run vitest in the given project directory.
@@ -34,11 +34,11 @@ export function runVitest(cwd: string): boolean {
 
 /** Run agent tests. Used by `aai test`. */
 export async function runTestCommand(cwd: string): Promise<void> {
-  consola.start("Running agent tests");
+  log.step("Running agent tests");
   const ran = runVitest(cwd);
   if (!ran) {
-    consola.info("No test file found. Create agent.test.ts to add tests.");
+    log.info("No test file found. Create agent.test.ts to add tests.");
     return;
   }
-  consola.success("Tests passed");
+  log.success("Tests passed");
 }

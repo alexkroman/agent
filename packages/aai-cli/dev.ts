@@ -1,10 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import path from "node:path";
-import * as p from "@clack/prompts";
 import { colorize } from "consola/utils";
 import { createServer as createViteServer } from "vite";
-import { consola, parsePort } from "./_ui.ts";
+import { fmtUrl, log, parsePort } from "./_ui.ts";
 
 export async function runDevCommand(opts: { cwd: string; port: string }): Promise<void> {
   const port = parsePort(opts.port);
@@ -15,7 +14,6 @@ export async function runDevCommand(opts: { cwd: string; port: string }): Promis
   });
   await vite.listen();
 
-  const url = colorize("blueBright", `http://localhost:${port}`);
-  p.note(`Agent:  ${colorize("bold", agentName)}\nLocal:  ${url}`, "aai dev");
-  consola.info("Press Ctrl-C to stop");
+  log.success(`${colorize("bold", agentName)} running at ${fmtUrl(`http://localhost:${port}`)}`);
+  log.info("Press Ctrl-C to stop");
 }

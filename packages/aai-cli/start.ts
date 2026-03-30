@@ -3,17 +3,17 @@
 import path from "node:path";
 import { fileExists } from "./_discover.ts";
 import { bootServer, loadAgentDef, resolveServerEnv } from "./_server-common.ts";
-import { consola, parsePort } from "./_ui.ts";
+import { fmtUrl, log, parsePort } from "./_ui.ts";
 
 export async function _startProductionServer(cwd: string, port: number): Promise<void> {
   const clientDir = path.join(cwd, ".aai", "client");
 
-  consola.start("Loading agent");
+  log.step("Loading agent");
   const agentDef = await loadAgentDef(cwd);
   const env = await resolveServerEnv(cwd);
 
   await bootServer(agentDef, clientDir, env, port);
-  consola.success(`Listening on http://localhost:${port}`);
+  log.success(`Listening on ${fmtUrl(`http://localhost:${port}`)}`);
 }
 
 export async function runStartCommand(opts: { cwd: string; port: string }): Promise<void> {
@@ -24,6 +24,6 @@ export async function runStartCommand(opts: { cwd: string; port: string }): Prom
     throw new Error("No build found — run `aai build` first");
   }
 
-  consola.start(`Starting server on port ${port}`);
+  log.step(`Starting server on port ${port}`);
   await _startProductionServer(opts.cwd, port);
 }

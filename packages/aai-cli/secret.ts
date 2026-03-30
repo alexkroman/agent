@@ -2,7 +2,7 @@
 
 import { getServerInfo } from "./_discover.ts";
 import { askPassword } from "./_prompts.ts";
-import { consola } from "./_ui.ts";
+import { log } from "./_ui.ts";
 
 async function apiFetch(
   cwd: string,
@@ -30,23 +30,23 @@ export async function runSecretPut(cwd: string, name: string): Promise<void> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ [name]: value }),
   });
-  consola.success(`Set ${name} for ${slug}`);
+  log.success(`Set ${name} for ${slug}`);
 }
 
 export async function runSecretDelete(cwd: string, name: string): Promise<void> {
   const { slug } = await apiFetch(cwd, `/${name}`, { method: "DELETE" });
-  consola.success(`Deleted ${name} from ${slug}`);
+  log.success(`Deleted ${name} from ${slug}`);
 }
 
 export async function runSecretList(cwd: string): Promise<void> {
   const { resp } = await apiFetch(cwd, "");
   const { vars } = (await resp.json()) as { vars: string[] };
   if (vars.length === 0) {
-    consola.info("No secrets set. Use `aai secret put <name>` to add one.");
+    log.info("No secrets set. Use `aai secret put <name>` to add one.");
   } else {
-    consola.log(`${vars.length} secret${vars.length === 1 ? "" : "s"}:`);
+    log.message(`${vars.length} secret${vars.length === 1 ? "" : "s"}:`);
     for (const name of vars) {
-      consola.log(`  ${name}`);
+      log.message(`  ${name}`);
     }
   }
 }

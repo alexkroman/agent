@@ -43,13 +43,15 @@ export function silenced<T>(fn: (dir: string) => Promise<T>) {
 }
 
 /** List template names from a templates/ subdirectory. */
-export async function fakeListTemplates(rootDir: string): Promise<string[]> {
+export async function fakeListTemplates(
+  rootDir: string,
+): Promise<{ name: string; description: string }[]> {
   const dir = path.join(rootDir, "templates");
   const entries = await fs.readdir(dir, { withFileTypes: true });
   return entries
     .filter((e) => e.isDirectory())
-    .map((e) => e.name)
-    .sort((a, b) => a.localeCompare(b));
+    .map((e) => ({ name: e.name, description: "" }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /** Copy template + scaffold layer from a fake templates dir to targetDir. */
@@ -58,7 +60,8 @@ export async function fakeDownloadAndMerge(
   template: string,
   targetDir: string,
 ): Promise<void> {
-  const names = await fakeListTemplates(rootDir);
+  const templates = await fakeListTemplates(rootDir);
+  const names = templates.map((t) => t.name);
   if (!names.includes(template)) {
     throw new Error(`Unknown template "${template}". Available templates: ${names.join(", ")}`);
   }
@@ -92,6 +95,7 @@ async function copyScaffoldNoOverwrite(scaffoldDir: string, dest: string): Promi
 /** Create a minimal BundleOutput for deploy tests. */
 export function makeBundle(overrides?: Partial<BundleOutput>): BundleOutput {
   return {
+    slug: "test-agent",
     worker: "// worker",
     clientFiles: { "index.html": "<html></html>" },
     clientDir: "/tmp/test-client",

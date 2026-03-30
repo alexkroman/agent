@@ -28,9 +28,7 @@ export async function apiRequest(
   try {
     return await fetchFn(url, { ...rest, headers });
   } catch (err: unknown) {
-    const hint = url.startsWith("http://localhost")
-      ? "Is the local dev server running? Start it with `aai dev`."
-      : "Check your network connection and verify the server URL is correct.";
+    const hint = "Check your network connection and verify the server URL is correct.";
     throw new Error(`${action} failed: could not reach ${url}\n  ${hint}`, { cause: err });
   }
 }

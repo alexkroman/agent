@@ -14,6 +14,7 @@ export class BundleError extends Error {
 }
 
 export type BundleOutput = {
+  slug: string;
   worker: string;
   clientFiles: Record<string, string>;
   clientDir: string;
@@ -116,17 +117,23 @@ export async function bundleAgent(
   const worker = await fs.readFile(path.join(buildDir, "worker.js"), "utf-8");
   const clientFiles = await readDirFiles(clientDir);
 
-  return { worker, clientFiles, clientDir, workerBytes: Buffer.byteLength(worker) };
+  return {
+    slug: agent.slug,
+    worker,
+    clientFiles,
+    clientDir,
+    workerBytes: Buffer.byteLength(worker),
+  };
 }
 
 export async function buildAgentBundle(cwd: string): Promise<BundleOutput> {
   const { loadAgent } = await import("./_discover.ts");
-  const { consola } = await import("./_ui.ts");
+  const { log } = await import("./_ui.ts");
 
   const agent = await loadAgent(cwd);
   if (!agent) throw new Error("No agent found — run `aai init` first");
 
-  consola.start(`Bundling ${agent.slug}`);
+  log.step(`Bundling ${agent.slug}`);
   let bundle: BundleOutput;
   try {
     bundle = await bundleAgent(agent);
@@ -135,14 +142,11 @@ export async function buildAgentBundle(cwd: string): Promise<BundleOutput> {
     throw err;
   }
 
-  consola.log(
-    `worker: ${(bundle.workerBytes / 1024).toFixed(1)} KB, client: ${Object.keys(bundle.clientFiles).length} file(s)`,
-  );
   return bundle;
 }
 
 export async function runBuildCommand(cwd: string): Promise<void> {
-  const { consola } = await import("./_ui.ts");
+  const { log } = await import("./_ui.ts");
   await buildAgentBundle(cwd);
-  consola.success("Build complete");
+  log.success("Build complete");
 }

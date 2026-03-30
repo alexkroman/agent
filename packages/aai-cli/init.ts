@@ -9,7 +9,7 @@ import * as p from "@clack/prompts";
 import { colorize } from "consola/utils";
 import { ensureApiKeyInEnv, fileExists, resolveCwd } from "./_discover.ts";
 import { listTemplates } from "./_templates.ts";
-import { consola } from "./_ui.ts";
+import { log } from "./_ui.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -46,7 +46,11 @@ async function promptTemplate(yes?: boolean): Promise<string> {
   const templates = await listTemplates();
   const result = await p.select({
     message: "Which template would you like to use?",
-    options: templates.map((name) => ({ value: name, label: name })),
+    options: templates.map((t) => ({
+      value: t.name,
+      label: t.name,
+      hint: t.description,
+    })),
     initialValue: DEFAULT_TEMPLATE,
   });
   if (p.isCancel(result)) {
@@ -83,8 +87,8 @@ async function installDeps(cwd: string, pm: string): Promise<void> {
   } catch (err: unknown) {
     const msg = errorMessage(err);
     s.stop("Dependency install failed");
-    consola.warn(`${pm} install failed: ${msg}`);
-    consola.warn(`Run \`${pm} install\` manually in the project directory.`);
+    log.warn(`${pm} install failed: ${msg}`);
+    log.warn(`Run \`${pm} install\` manually in the project directory.`);
   }
 }
 
@@ -107,7 +111,7 @@ export async function runInitCommand(
   const pm = detectPackageManager();
 
   if (!extra?.quiet) {
-    p.intro(colorize("blueBright", "Create a new voice agent"));
+    p.intro(colorize("cyanBright", "Create a new voice agent"));
   }
 
   if (!opts.skipApi) {
@@ -119,7 +123,7 @@ export async function runInitCommand(
 
   if (!opts.force && (await fileExists(path.join(cwd, "agent.ts")))) {
     throw new Error(
-      `agent.ts already exists in this directory. Use ${colorize("blueBright", "--force")} to overwrite.`,
+      `agent.ts already exists in this directory. Use ${colorize("cyanBright", "--force")} to overwrite.`,
     );
   }
 
@@ -140,8 +144,8 @@ export async function runInitCommand(
   }
 
   if (!extra?.quiet) {
-    p.note(`cd ${dir}\n${devCommand()}`, "Next steps");
-    p.outro("Happy building!");
+    log.success(`Created ${dir}`);
+    log.info(`Next: cd ${dir} && ${devCommand()}`);
   }
 
   return cwd;
