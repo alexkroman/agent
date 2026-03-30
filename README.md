@@ -3,7 +3,7 @@
 Voice agent development kit. Define agents in TypeScript, deploy anywhere.
 
 ```sh
-npx @alexkroman1/aai@latest init my-agent
+npx @alexkroman1/aai@latest
 ```
 
 ## Documentation
