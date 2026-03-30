@@ -49,19 +49,12 @@ jobs:
           version: pnpm changeset version
           publish: pnpm release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Use RELEASE_TOKEN (PAT or GitHub App token) so the PR
+          # push/update triggers the Check workflow normally.
+          # GITHUB_TOKEN cannot trigger other workflows.
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: true
-
-      # PRs created by GITHUB_TOKEN don't trigger pull_request events,
-      # so the Check workflow never runs on the changeset version PR.
-      # Dispatch it explicitly so branch protection checks pass.
-      - name: Trigger CI on version PR branch
-        if: steps.changesets.outputs.hasChangesets == 'true'
-        continue-on-error: true
-        run: gh workflow run check.yml --ref changeset-release/main
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   detect-deploy:
     runs-on: ubuntu-latest
