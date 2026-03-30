@@ -1,6 +1,6 @@
 {
   "name": "@alexkroman1/aai",
-  "version": "0.10.4",
+  "version": "0.11.0",
   "type": "module",
   "files": [
     "dist"
@@ -73,7 +73,6 @@
     "hookable": "^6.1.0",
     "nanoevents": "^9.1.0",
     "p-timeout": "^7.0.1",
-
     "unstorage": "^1.17.5",
     "ws": "^8.20.0",
     "zod": "^4.3.6"
