@@ -22,35 +22,6 @@ export function isReadOnlyFsOp(op: string): boolean {
   return READ_ONLY_FS_OPS.has(op);
 }
 
-/**
- * Lazily initialized per-session state manager.
- *
- * On first access for a given session, calls `initState()` (if provided) to
- * create the initial state. Returns `{}` if no initializer and no prior state.
- */
-export function createSessionStateMap(initState?: () => Record<string, unknown>): {
-  get(sessionId: string): Record<string, unknown>;
-  /** Explicitly set the state for a session. */
-  set(sessionId: string, state: Record<string, unknown>): void;
-  delete(sessionId: string): boolean;
-} {
-  const map = new Map<string, Record<string, unknown>>();
-  return {
-    get(sessionId: string): Record<string, unknown> {
-      if (!map.has(sessionId) && initState) {
-        map.set(sessionId, initState());
-      }
-      return map.get(sessionId) ?? {};
-    },
-    set(sessionId: string, state: Record<string, unknown>): void {
-      map.set(sessionId, state);
-    },
-    delete(sessionId: string): boolean {
-      return map.delete(sessionId);
-    },
-  };
-}
-
 /** Return a JSON error string for the LLM: `'{"error":"<message>"}'`. */
 export function toolError(message: string): string {
   return JSON.stringify({ error: message });
