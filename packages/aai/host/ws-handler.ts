@@ -5,7 +5,6 @@
  * Audio validation is handled at the host transport layer (see server.ts).
  */
 
-import pTimeout from "p-timeout";
 import { errorDetail, errorMessage } from "../isolate/_utils.ts";
 import { DEFAULT_SESSION_START_TIMEOUT_MS } from "../isolate/constants.ts";
 import type { ClientMessage, ClientSink, ReadyConfig } from "../isolate/protocol.ts";
@@ -184,10 +183,15 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
     ws.send(JSON.stringify({ type: "config", ...opts.readyConfig, sessionId }));
 
     const timeoutMs = opts.sessionStartTimeoutMs ?? DEFAULT_SESSION_START_TIMEOUT_MS;
-    const startWithTimeout = pTimeout(session.start(), {
-      milliseconds: timeoutMs,
-      message: `session.start() timed out after ${timeoutMs}ms`,
-    });
+    const startWithTimeout = Promise.race([
+      session.start(),
+      new Promise<never>((_, reject) => {
+        setTimeout(
+          () => reject(new Error(`session.start() timed out after ${timeoutMs}ms`)),
+          timeoutMs,
+        );
+      }),
+    ]);
 
     startWithTimeout
       .then(() => {

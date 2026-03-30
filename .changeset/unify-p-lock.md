@@ -1,5 +1,6 @@
 ---
 "@alexkroman1/aai-server": patch
+"@alexkroman1/aai": patch
 ---
 
-Replace async-lock with p-lock for all per-slug concurrency control. Consolidate slug-lock.ts into sandbox-slots.ts with two named lock layers (slotLock for sandbox lifecycle, apiLock for deploy/delete serialization). Use AbortController to cancel stale idle-eviction callbacks. Use Promise.withResolvers() in sandbox.ts.
+Replace async-lock and p-timeout with p-lock and platform APIs. Consolidate slug-lock.ts into sandbox-slots.ts with two named lock layers. Use AbortController for idle-eviction cancellation and try/finally for teardown resilience in server.ts and sandbox.ts. Drop p-timeout in favor of setTimeout race for arbitrary promises and AbortSignal.timeout for fetch calls.

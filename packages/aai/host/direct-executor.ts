@@ -7,7 +7,6 @@
  * lifecycle hooks, and session management.
  */
 
-import pTimeout from "p-timeout";
 import { createStorage } from "unstorage";
 import type { z } from "zod";
 import {
@@ -82,10 +81,15 @@ export async function executeToolCall(
   try {
     const ctx = buildToolContext(options);
     await yieldTick();
-    const result = await pTimeout(Promise.resolve(tool.execute(parsed.data, ctx)), {
-      milliseconds: TOOL_EXECUTION_TIMEOUT_MS,
-      message: `Tool "${name}" timed out after ${TOOL_EXECUTION_TIMEOUT_MS}ms`,
-    });
+    const result = await Promise.race([
+      Promise.resolve(tool.execute(parsed.data, ctx)),
+      new Promise<never>((_, reject) => {
+        setTimeout(
+          () => reject(new Error(`Tool "${name}" timed out after ${TOOL_EXECUTION_TIMEOUT_MS}ms`)),
+          TOOL_EXECUTION_TIMEOUT_MS,
+        );
+      }),
+    ]);
     await yieldTick();
     if (result == null) return "null";
     return typeof result === "string" ? result : JSON.stringify(result);

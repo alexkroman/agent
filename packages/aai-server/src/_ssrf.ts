@@ -8,7 +8,6 @@
 
 import { lookup } from "node:dns/promises";
 import { BlockList } from "node:net";
-import pTimeout from "p-timeout";
 
 const privateBlocks = new BlockList();
 
@@ -71,10 +70,12 @@ function isLiteralIp(hostname: string): boolean {
 
 async function assertDnsResolvesPublic(hostname: string): Promise<void> {
   try {
-    const { address } = await pTimeout(lookup(hostname), {
-      milliseconds: 2000,
-      message: "DNS lookup timed out",
-    });
+    const { address } = await Promise.race([
+      lookup(hostname),
+      new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error("DNS lookup timed out")), 2000);
+      }),
+    ]);
     const resolved = extractMappedIp(address);
     if (isPrivateIp(address) || isPrivateIp(resolved)) {
       throw new Error(`Blocked request: ${hostname} resolves to private address ${address}`);

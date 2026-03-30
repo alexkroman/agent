@@ -212,14 +212,23 @@ export function createServer(options: ServerOptions): AgentServer {
     },
 
     async close() {
-      await runtime.shutdown();
-      wss.close();
-      if (listenPort !== undefined) {
-        await new Promise<void>((resolve, reject) => {
-          httpServer.close((err) => (err ? reject(err) : resolve()));
-        });
+      try {
+        await runtime.shutdown();
+      } finally {
+        try {
+          wss.close();
+        } finally {
+          try {
+            if (listenPort !== undefined) {
+              await new Promise<void>((resolve, reject) => {
+                httpServer.close((err) => (err ? reject(err) : resolve()));
+              });
+            }
+          } finally {
+            listenPort = undefined;
+          }
+        }
       }
-      listenPort = undefined;
     },
   };
 }

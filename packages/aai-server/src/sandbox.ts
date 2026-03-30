@@ -22,7 +22,6 @@ import {
   TOOL_EXECUTION_TIMEOUT_MS,
 } from "@alexkroman1/aai/host";
 import { createHooks } from "hookable";
-import pTimeout from "p-timeout";
 import {
   createInMemoryFileSystem,
   createNodeDriver,
@@ -104,8 +103,6 @@ const IsolateConfigSchema = z.object({
   hasState: z.boolean(),
   hooks: HooksSchema,
 });
-
-type IsolateConfig = z.infer<typeof IsolateConfigSchema>;
 
 const ToolCallResponseSchema = z.object({
   result: z.string(),
@@ -204,10 +201,16 @@ async function startIsolate(
       },
     );
 
-  const port = await pTimeout(portPromise, {
-    milliseconds: PORT_ANNOUNCE_TIMEOUT_MS,
-    message: `Isolate failed to announce port within ${PORT_ANNOUNCE_TIMEOUT_MS}ms`,
-  });
+  const port = await Promise.race([
+    portPromise,
+    new Promise<never>((_, reject) => {
+      setTimeout(
+        () =>
+          reject(new Error(`Isolate failed to announce port within ${PORT_ANNOUNCE_TIMEOUT_MS}ms`)),
+        PORT_ANNOUNCE_TIMEOUT_MS,
+      );
+    }),
+  ]);
 
   runtime.exec("").catch((err) => {
     if (!crashController.signal.aborted) {
@@ -317,14 +320,14 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
   const { port, runtime, crashed } = await startIsolate(workerCode, kv, agentEnv, authToken);
 
   // Get agent config from isolate
-  const configRes = await fetch(`http://127.0.0.1:${port}/rpc`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-harness-token": authToken },
-    body: JSON.stringify({ type: "config" }),
-    signal: AbortSignal.timeout(10_000),
-  });
-  if (!configRes.ok) throw new Error(`Config RPC failed: ${configRes.status}`);
-  const config: IsolateConfig = IsolateConfigSchema.parse(await configRes.json());
+  const config = await callIsolate(
+    port,
+    { type: "config" },
+    10_000,
+    IsolateConfigSchema,
+    authToken,
+    crashed,
+  );
 
   // Build RPC-backed tool execution and hooks
   const executeTool = buildExecuteTool(port, authToken, crashed);
@@ -355,11 +358,14 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
   console.info("Sandbox initialized", { slug, isolatePort: port, agent: config.name });
 
   async function shutdownSandbox(): Promise<void> {
-    await agentRuntime.shutdown();
-    await runtime.terminate().catch((err: unknown) => {
-      const msg = errorMessage(err);
-      if (!msg.includes("already disposed")) console.warn("Runtime terminate failed:", err);
-    });
+    try {
+      await agentRuntime.shutdown();
+    } finally {
+      await runtime.terminate().catch((err: unknown) => {
+        const msg = errorMessage(err);
+        if (!msg.includes("already disposed")) console.warn("Runtime terminate failed:", err);
+      });
+    }
   }
 
   return {
