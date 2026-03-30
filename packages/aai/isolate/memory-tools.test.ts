@@ -2,9 +2,9 @@
 
 import { createStorage } from "unstorage";
 import { describe, expect, test } from "vitest";
-import { createMockToolContext } from "./_test-utils.ts";
+import { createMockToolContext } from "../host/_test-utils.ts";
+import { createUnstorageKv } from "../host/unstorage-kv.ts";
 import { memoryTools } from "./memory-tools.ts";
-import { createUnstorageKv } from "./unstorage-kv.ts";
 
 function setup() {
   const kv = createUnstorageKv({ storage: createStorage() });

@@ -10,9 +10,9 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { WebSocketServer } from "ws";
-import { AGENT_CSP } from "./constants.ts";
+import { AGENT_CSP } from "../isolate/constants.ts";
+import type { Kv } from "../isolate/kv.ts";
 import type { Runtime } from "./direct-executor.ts";
-import type { Kv } from "./kv.ts";
 import type { Logger } from "./runtime.ts";
 import { consoleLogger } from "./runtime.ts";
 import type { SessionWebSocket } from "./ws-handler.ts";
@@ -59,11 +59,7 @@ const MIME_TYPES: Record<string, string> = {
   ".map": "application/json",
 };
 
-function serveStatic(
-  dir: string,
-  req: http.IncomingMessage,
-  res: http.ServerResponse,
-): boolean {
+function serveStatic(dir: string, req: http.IncomingMessage, res: http.ServerResponse): boolean {
   const url = req.url?.split("?")[0] ?? "/";
   const filePath = path.join(dir, url === "/" ? "index.html" : url);
 
@@ -101,6 +97,30 @@ function serveStatic(
  *
  * @public
  */
+function handleKvGet(kv: Kv, req: http.IncomingMessage, res: http.ServerResponse): void {
+  const fullUrl = new URL(req.url ?? "/", "http://localhost");
+  const key = fullUrl.searchParams.get("key");
+  if (!key) {
+    res.writeHead(400, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Missing key query parameter" }));
+    return;
+  }
+  kv.get(key)
+    .then((value) => {
+      if (value === null) {
+        res.writeHead(404, { "Content-Type": "application/json" });
+        res.end("null");
+      } else {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(value));
+      }
+    })
+    .catch(() => {
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "KV error" }));
+    });
+}
+
 export function createServer(options: ServerOptions): AgentServer {
   const { runtime, clientHtml, clientDir, logger = consoleLogger, kv } = options;
   const name = options.name ?? "agent";
@@ -127,25 +147,7 @@ export function createServer(options: ServerOptions): AgentServer {
 
     // KV endpoint
     if (kv && method === "GET" && url === "/kv") {
-      const fullUrl = new URL(req.url ?? "/", "http://localhost");
-      const key = fullUrl.searchParams.get("key");
-      if (!key) {
-        res.writeHead(400, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "Missing key query parameter" }));
-        return;
-      }
-      kv.get(key).then((value) => {
-        if (value === null) {
-          res.writeHead(404, { "Content-Type": "application/json" });
-          res.end("null");
-        } else {
-          res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(JSON.stringify(value));
-        }
-      }).catch(() => {
-        res.writeHead(500, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: "KV error" }));
-      });
+      handleKvGet(kv, req, res);
       return;
     }
 
@@ -155,7 +157,9 @@ export function createServer(options: ServerOptions): AgentServer {
     // Default HTML
     if (method === "GET" && url === "/") {
       const escaped = name.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-      const body = clientHtml ?? `<!DOCTYPE html><html><body><h1>${escaped}</h1><p>Agent server running.</p></body></html>`;
+      const body =
+        clientHtml ??
+        `<!DOCTYPE html><html><body><h1>${escaped}</h1><p>Agent server running.</p></body></html>`;
       res.writeHead(200, { "Content-Type": "text/html" });
       res.end(body);
       return;
@@ -175,7 +179,7 @@ export function createServer(options: ServerOptions): AgentServer {
     if (!url.startsWith("/websocket")) return;
 
     wss.handleUpgrade(req, socket, head, (ws) => {
-      const search = req.url?.includes("?") ? req.url.split("?")[1] ?? "" : "";
+      const search = req.url?.includes("?") ? (req.url.split("?")[1] ?? "") : "";
       const params = new URLSearchParams(search);
       const resumeFrom = params.get("sessionId") ?? undefined;
       const skipGreeting = params.has("resume") || resumeFrom !== undefined;

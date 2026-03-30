@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { makeConfig } from "./_test-utils.ts";
+import { makeConfig } from "../host/_test-utils.ts";
 import { buildSystemPrompt } from "./system-prompt.ts";
 import { DEFAULT_INSTRUCTIONS } from "./types.ts";
 

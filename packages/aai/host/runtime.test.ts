@@ -79,5 +79,4 @@ describe("jsonLogger", () => {
     expect(parseEntry(stdoutChunks, 1).level).toBe("debug");
     expect(stderrChunks).toHaveLength(0);
   });
-
 });

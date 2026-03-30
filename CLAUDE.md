@@ -101,25 +101,30 @@ Type-level tests (`.test-d.ts`) cover only the **public** entry points
 type test updates:
 
 - `./protocol` — wire-format types, Zod schemas, constants
-- `./internal` — `AgentConfig`, `ToolSchema`, `DeployBody`
+- `./isolate` — isolate-safe barrel: all modules safe for secure-exec V8 isolates
+- `./host` — host barrel: isolate kernel + host-only modules (replaces `./internal`)
 - `./hooks` — hook definitions for lifecycle events
 - `./utils` — shared utility functions
 - `./vite-plugin` — Vite integration plugin for agent bundling
 
-Non-exported internal files (used within the package only):
+### Isolate / Host Boundary
 
-- `builtin-tools.ts` — built-in tool definitions
-- `memory-tools.ts` — KV-backed memory tools (`save_memory`, `recall_memory`,
-  `list_memories`, `forget_memory`)
-- `direct-executor.ts` — in-process runtime / tool execution (self-hosted)
-- `runtime.ts` — `Logger`, `S2SConfig`, `consoleLogger`
-- `s2s.ts` — AssemblyAI S2S WebSocket client
-- `session.ts` — S2S session management
-- `ws-handler.ts` — WebSocket lifecycle handler
-- `system-prompt.ts` — system prompt generation
-- `_run-code.ts` — `run_code` sandbox implementation (`node:vm`)
-- `_internal-types.ts` — internal type definitions
-- `unstorage-kv.ts` — unstorage KV implementation
+The SDK is split into two compilation zones:
+
+- **`isolate/`** — modules that run inside secure-exec V8 isolates.
+  Compiled under a restricted `tsconfig.json` (`"types": []`, no
+  `@types/node`). Any `node:*` import is a **type error**. Contains:
+  `types.ts`, `kv.ts`, `hooks.ts`, `_utils.ts`, `constants.ts`,
+  `protocol.ts`, `memory-tools.ts`, `system-prompt.ts`,
+  `_internal-types.ts`.
+- **`host/`** — host-only modules that require Node.js APIs. Contains:
+  `server.ts`, `direct-executor.ts`, `session.ts`, `s2s.ts`,
+  `ws-handler.ts`, `runtime.ts`, `builtin-tools.ts`, `_run-code.ts`,
+  `unstorage-kv.ts`, `vite-plugin.ts`, `testing.ts`, `matchers.ts`.
+
+When adding new SDK code, place it in `isolate/` if it has no `node:`
+dependencies. The isolate typecheck (`tsc -p isolate/tsconfig.json`)
+runs as part of `pnpm typecheck` and will catch violations.
 
 #### `@alexkroman1/aai-ui` (UI)
 

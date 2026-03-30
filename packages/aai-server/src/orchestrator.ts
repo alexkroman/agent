@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { createUnstorageKv, type SessionWebSocket } from "@alexkroman1/aai/internal";
+import { createUnstorageKv, type SessionWebSocket } from "@alexkroman1/aai/host";
 import { KvRequestSchema } from "@alexkroman1/aai/protocol";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";

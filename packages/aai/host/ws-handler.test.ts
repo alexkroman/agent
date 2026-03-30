@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
+import type { ClientSink } from "../isolate/protocol.ts";
 import { MockWebSocket } from "./_mock-ws.ts";
-import type { ClientSink } from "./protocol.ts";
 import type { Session } from "./session.ts";
 import { wireSessionSocket } from "./ws-handler.ts";
 

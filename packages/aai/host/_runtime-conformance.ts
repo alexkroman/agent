@@ -20,7 +20,7 @@
  *
  * @example Sandbox (integration test in aai-server)
  * ```ts
- * import { testRuntime } from "@alexkroman1/aai/internal";
+ * import { testRuntime } from "@alexkroman1/aai/host";
  *
  * testRuntime("sandbox", async () => {
  *   // ... start isolate with a bundled agent
@@ -31,10 +31,10 @@
 
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
-import type { ExecuteTool } from "./_internal-types.ts";
-import type { AgentHooks } from "./hooks.ts";
-import { callResolveTurnConfig } from "./hooks.ts";
-import { type AgentDef, defineTool } from "./types.ts";
+import type { ExecuteTool } from "../isolate/_internal-types.ts";
+import type { AgentHooks } from "../isolate/hooks.ts";
+import { callResolveTurnConfig } from "../isolate/hooks.ts";
+import { type AgentDef, defineTool } from "../isolate/types.ts";
 
 // ── Shared context type ────────────────────────────────────────────────────
 

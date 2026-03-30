@@ -16,23 +16,23 @@ import {
   type ExecuteTool,
   type ToolSchema,
   toAgentConfig,
-} from "./_internal-types.ts";
-import { errorDetail, errorMessage, toolError } from "./_utils.ts";
+} from "../isolate/_internal-types.ts";
+import { errorDetail, errorMessage, toolError } from "../isolate/_utils.ts";
+import { DEFAULT_SHUTDOWN_TIMEOUT_MS, TOOL_EXECUTION_TIMEOUT_MS } from "../isolate/constants.ts";
+import { type AgentHooks, createAgentHooks } from "../isolate/hooks.ts";
+import type { Kv } from "../isolate/kv.ts";
+import type { ClientSink } from "../isolate/protocol.ts";
+import { buildReadyConfig, type ReadyConfig } from "../isolate/protocol.ts";
+import type { AgentDef, HookContext, Message, ToolContext, ToolDef } from "../isolate/types.ts";
 import { getBuiltinToolDefs, getBuiltinToolSchemas } from "./builtin-tools.ts";
-import { DEFAULT_SHUTDOWN_TIMEOUT_MS, TOOL_EXECUTION_TIMEOUT_MS } from "./constants.ts";
-import { type AgentHooks, createAgentHooks } from "./hooks.ts";
-import type { Kv } from "./kv.ts";
-import type { ClientSink } from "./protocol.ts";
-import { buildReadyConfig, type ReadyConfig } from "./protocol.ts";
 import type { Logger, S2SConfig } from "./runtime.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime.ts";
 import type { CreateS2sWebSocket } from "./s2s.ts";
 import { createS2sSession, type Session } from "./session.ts";
-import type { AgentDef, HookContext, Message, ToolContext, ToolDef } from "./types.ts";
 import { createUnstorageKv } from "./unstorage-kv.ts";
 import { type SessionWebSocket, wireSessionSocket } from "./ws-handler.ts";
 
-export type { ExecuteTool } from "./_internal-types.ts";
+export type { ExecuteTool } from "../isolate/_internal-types.ts";
 
 // ─── Tool execution (formerly worker-entry.ts) ─────────────────────────────
 

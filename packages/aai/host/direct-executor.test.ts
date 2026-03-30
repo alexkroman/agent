@@ -3,12 +3,12 @@
 import { createStorage } from "unstorage";
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
-import { toAgentConfig } from "./_internal-types.ts";
+import { toAgentConfig } from "../isolate/_internal-types.ts";
+import { callResolveTurnConfig } from "../isolate/hooks.ts";
+import { defineTool } from "../isolate/types.ts";
 import { CONFORMANCE_AGENT, testRuntime } from "./_runtime-conformance.ts";
 import { makeAgent } from "./_test-utils.ts";
 import { createRuntime } from "./direct-executor.ts";
-import { callResolveTurnConfig } from "./hooks.ts";
-import { defineTool } from "./types.ts";
 import { createUnstorageKv } from "./unstorage-kv.ts";
 
 describe("toAgentConfig", () => {

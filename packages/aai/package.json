@@ -11,60 +11,65 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./isolate": {
+      "@dev/source": "./isolate/index.ts",
+      "types": "./dist/isolate/index.d.ts",
+      "import": "./dist/isolate/index.js"
+    },
+    "./host": {
+      "@dev/source": "./host/index.ts",
+      "types": "./dist/host/index.d.ts",
+      "import": "./dist/host/index.js"
+    },
     "./server": {
-      "@dev/source": "./server.ts",
-      "types": "./dist/server.d.ts",
-      "import": "./dist/server.js"
+      "@dev/source": "./host/server.ts",
+      "types": "./dist/host/server.d.ts",
+      "import": "./dist/host/server.js"
     },
     "./types": {
-      "@dev/source": "./types.ts",
-      "types": "./dist/types.d.ts",
-      "import": "./dist/types.js"
+      "@dev/source": "./isolate/types.ts",
+      "types": "./dist/isolate/types.d.ts",
+      "import": "./dist/isolate/types.js"
     },
     "./kv": {
-      "@dev/source": "./kv.ts",
-      "types": "./dist/kv.d.ts",
-      "import": "./dist/kv.js"
+      "@dev/source": "./isolate/kv.ts",
+      "types": "./dist/isolate/kv.d.ts",
+      "import": "./dist/isolate/kv.js"
     },
     "./protocol": {
-      "@dev/source": "./protocol.ts",
-      "types": "./dist/protocol.d.ts",
-      "import": "./dist/protocol.js"
+      "@dev/source": "./isolate/protocol.ts",
+      "types": "./dist/isolate/protocol.d.ts",
+      "import": "./dist/isolate/protocol.js"
     },
     "./testing": {
-      "@dev/source": "./testing.ts",
-      "types": "./dist/testing.d.ts",
-      "import": "./dist/testing.js"
+      "@dev/source": "./host/testing.ts",
+      "types": "./dist/host/testing.d.ts",
+      "import": "./dist/host/testing.js"
     },
     "./testing/matchers": {
-      "@dev/source": "./matchers.ts",
-      "types": "./dist/matchers.d.ts",
-      "import": "./dist/matchers.js"
-    },
-    "./internal": {
-      "@dev/source": "./internal.ts",
-      "types": "./dist/internal.d.ts",
-      "import": "./dist/internal.js"
+      "@dev/source": "./host/matchers.ts",
+      "types": "./dist/host/matchers.d.ts",
+      "import": "./dist/host/matchers.js"
     },
     "./hooks": {
-      "@dev/source": "./hooks.ts",
-      "types": "./dist/hooks.d.ts",
-      "import": "./dist/hooks.js"
+      "@dev/source": "./isolate/hooks.ts",
+      "types": "./dist/isolate/hooks.d.ts",
+      "import": "./dist/isolate/hooks.js"
     },
     "./utils": {
-      "@dev/source": "./_utils.ts",
-      "types": "./dist/_utils.d.ts",
-      "import": "./dist/_utils.js"
+      "@dev/source": "./isolate/_utils.ts",
+      "types": "./dist/isolate/_utils.d.ts",
+      "import": "./dist/isolate/_utils.js"
     },
     "./vite-plugin": {
-      "@dev/source": "./vite-plugin.ts",
-      "types": "./dist/vite-plugin.d.ts",
-      "import": "./dist/vite-plugin.js"
+      "@dev/source": "./host/vite-plugin.ts",
+      "types": "./dist/host/vite-plugin.d.ts",
+      "import": "./dist/host/vite-plugin.js"
     }
   },
   "scripts": {
     "build": "tsdown && tsc -p tsconfig.build.json",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p isolate/tsconfig.json",
     "lint": "biome check .",
     "check:publint": "publint",
     "check:attw": "attw --pack --profile esm-only"

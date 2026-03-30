@@ -1,5 +1,8 @@
 import { createHooks } from "hookable";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { HOOK_TIMEOUT_MS } from "../isolate/constants.ts";
+import type { AgentHookMap } from "../isolate/hooks.ts";
+import { DEFAULT_INSTRUCTIONS } from "../isolate/types.ts";
 import {
   flush,
   loadFixture,
@@ -9,8 +12,6 @@ import {
   makeSessionOpts,
   replayFixtureMessages,
 } from "./_test-utils.ts";
-import { HOOK_TIMEOUT_MS } from "./constants.ts";
-import type { AgentHookMap } from "./hooks.ts";
 import type { S2sHandle } from "./s2s.ts";
 import {
   _internals,
@@ -18,7 +19,6 @@ import {
   createS2sSession,
   type S2sSessionOptions,
 } from "./session.ts";
-import { DEFAULT_INSTRUCTIONS } from "./types.ts";
 
 // biome-ignore lint/complexity/noBannedTypes: test helper accepts arbitrary mock functions
 function makeTestHooks(handlers?: Record<string, Function>) {
