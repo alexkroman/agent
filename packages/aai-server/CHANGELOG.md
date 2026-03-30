@@ -1,5 +1,13 @@
 # @alexkroman1/aai-server
 
+## 0.9.11
+
+### Patch Changes
+
+- c25ee7e: Trigger deploy for SDK and server
+- Updated dependencies [c25ee7e]
+  - @alexkroman1/aai@0.11.1
+
 ## 0.9.10
 
 ### Patch Changes

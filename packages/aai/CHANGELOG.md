@@ -1,5 +1,11 @@
 # @alexkroman1/aai
 
+## 0.11.1
+
+### Patch Changes
+
+- c25ee7e: Trigger deploy for SDK and server
+
 ## 0.11.0
 
 ### Patch Changes
