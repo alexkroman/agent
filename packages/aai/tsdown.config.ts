@@ -7,8 +7,11 @@ const pkg = JSON.parse(readFileSync("package.json", "utf-8"));
 const entry = [
   ...new Set(
     Object.values(pkg.exports as Record<string, Record<string, string>>)
-      .filter((v): v is { source: string } => typeof v === "object" && typeof v.source === "string")
-      .map((v) => basename(v.source)),
+      .filter(
+        (v): v is { "@dev/source": string } =>
+          typeof v === "object" && typeof v["@dev/source"] === "string",
+      )
+      .map((v) => basename(v["@dev/source"])),
   ),
 ];
 

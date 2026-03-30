@@ -4,11 +4,6 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
-patchedDependencies:
-  eventsource-parser@3.0.6:
-    hash: b3e18a4c67a62d1645fbe93860f8f0f79b821715cfcb370f79e3244e348fb979
-    path: patches/eventsource-parser@3.0.6.patch
-
 importers:
 
   .:
@@ -3508,7 +3503,7 @@ snapshots:
     dependencies:
       '@ai-sdk/provider': 3.0.8
       '@standard-schema/spec': 1.1.0
-      eventsource-parser: 3.0.6(patch_hash=b3e18a4c67a62d1645fbe93860f8f0f79b821715cfcb370f79e3244e348fb979)
+      eventsource-parser: 3.0.6
       zod: 4.3.6
 
   '@ai-sdk/provider@3.0.8':
@@ -4903,7 +4898,7 @@ snapshots:
 
   events@3.3.0: {}
 
-  eventsource-parser@3.0.6(patch_hash=b3e18a4c67a62d1645fbe93860f8f0f79b821715cfcb370f79e3244e348fb979): {}
+  eventsource-parser@3.0.6: {}
 
   evp_bytestokey@1.0.3:
     dependencies:
