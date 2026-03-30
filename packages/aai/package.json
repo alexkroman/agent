@@ -80,7 +80,6 @@
     "p-timeout": "^7.0.1",
     "unstorage": "^1.17.5",
     "ws": "^8.20.0",
-    "xstate": "^5.30.0",
     "zod": "^4.3.6"
   },
   "peerDependencies": {
