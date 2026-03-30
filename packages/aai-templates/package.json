@@ -8,6 +8,8 @@
   },
   "devDependencies": {
     "@alexkroman1/aai": "workspace:*",
+    "@secure-exec/typescript": "^0.1.0",
+    "secure-exec": "^0.1.0",
     "zod": "^4.3.6"
   }
 }

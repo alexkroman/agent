@@ -3,7 +3,8 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build && vite build --ssr agent.ts --outDir .aai/build",
-    "test": "vitest run",
+    "test": "node --experimental-strip-types typecheck.ts && vitest run",
+    "typecheck": "node --experimental-strip-types typecheck.ts",
     "deploy": "aai deploy",
     "lint": "biome check .",
     "lint:fix": "biome check --write ."
@@ -20,8 +21,10 @@
     "@alexkroman1/aai-cli": "^0.10.4",
     "@biomejs/biome": "^2.4.9",
     "@preact/preset-vite": "^2.9.6",
+    "@secure-exec/typescript": "^0.1.0",
     "@tailwindcss/vite": "^4.2.1",
     "@types/node": "^25.5.0",
+    "secure-exec": "^0.1.0",
     "typescript": "^6.0.2",
     "vite": "^8.0.3",
     "vitest": "^4.1.1"
