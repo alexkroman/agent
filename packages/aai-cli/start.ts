@@ -13,7 +13,7 @@ export async function _startProductionServer(cwd: string, port: number): Promise
   const env = await resolveServerEnv(cwd);
 
   await bootServer(agentDef, clientDir, env, port);
-  consola.success(`Ready http://localhost:${port}`);
+  consola.success(`Listening on http://localhost:${port}`);
 }
 
 export async function runStartCommand(opts: { cwd: string; port: string }): Promise<void> {

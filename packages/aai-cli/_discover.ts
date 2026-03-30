@@ -136,7 +136,7 @@ export async function writeProjectConfig(agentDir: string, data: ProjectConfig):
 export async function getServerInfo(cwd: string, explicitServer?: string, explicitApiKey?: string) {
   const config = await readProjectConfig(cwd);
   if (!config) {
-    throw new Error("No .aai/project.json found — deploy first with `aai deploy`");
+    throw new Error("No .aai/project.json found — run `aai deploy` first");
   }
   const apiKey = explicitApiKey ?? (await getApiKey());
   const serverUrl = resolveServerUrl(explicitServer, config.serverUrl);

@@ -126,7 +126,7 @@ export async function buildAgentBundle(cwd: string): Promise<BundleOutput> {
   const agent = await loadAgent(cwd);
   if (!agent) throw new Error("No agent found — run `aai init` first");
 
-  consola.start(`Bundle ${agent.slug}`);
+  consola.start(`Bundling ${agent.slug}`);
   let bundle: BundleOutput;
   try {
     bundle = await bundleAgent(agent);
