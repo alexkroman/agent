@@ -178,7 +178,7 @@ export { buildSystemPrompt } from "../isolate/system-prompt.ts";
  *
  * @internal Exported for use by `ws-handler.ts`, `server.ts`, and `direct-executor.ts`.
  */
-export type Session = {
+export type Session = AsyncDisposable & {
   start(): Promise<void>;
   stop(): Promise<void>;
   onAudio(data: Uint8Array): void;
@@ -506,6 +506,9 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
     },
     waitForTurn(): Promise<void> {
       return ctx.turnPromise ?? Promise.resolve();
+    },
+    async [Symbol.asyncDispose](): Promise<void> {
+      await this.stop();
     },
   };
 }

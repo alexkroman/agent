@@ -56,7 +56,7 @@ export function makeConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
 
 /** Create a stub Session with all methods as vi.fn() spies. */
 export function makeStubSession(overrides?: Partial<Session>): Session {
-  return {
+  const session: Session = {
     start: vi.fn(() => Promise.resolve()),
     stop: vi.fn(() => Promise.resolve()),
     onAudio: vi.fn(),
@@ -65,8 +65,12 @@ export function makeStubSession(overrides?: Partial<Session>): Session {
     onReset: vi.fn(),
     onHistory: vi.fn(),
     waitForTurn: vi.fn(() => Promise.resolve()),
+    async [Symbol.asyncDispose]() {
+      await session.stop();
+    },
     ...overrides,
   };
+  return session;
 }
 
 // ─── Session test helpers ───────────────────────────────────────────────────

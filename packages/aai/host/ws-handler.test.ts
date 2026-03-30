@@ -5,7 +5,7 @@ import type { Session } from "./session.ts";
 import { wireSessionSocket } from "./ws-handler.ts";
 
 function makeStubSession(startDelay?: number): Session {
-  return {
+  const session: Session = {
     start: vi.fn(() =>
       startDelay ? new Promise<void>((r) => setTimeout(r, startDelay)) : Promise.resolve(),
     ),
@@ -16,7 +16,11 @@ function makeStubSession(startDelay?: number): Session {
     onReset: vi.fn(),
     onHistory: vi.fn(),
     waitForTurn: vi.fn(() => Promise.resolve()),
+    async [Symbol.asyncDispose]() {
+      await session.stop();
+    },
   };
+  return session;
 }
 
 const silentLogger = {

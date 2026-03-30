@@ -47,16 +47,6 @@ function isReadOnlyFsOp(op: string): boolean {
   return READ_ONLY_FS_OPS.has(op);
 }
 
-// Suppress "Isolate is disposed" rejections from secure-exec internals.
-// These fire asynchronously when an isolate is terminated while its ESM
-// compiler has pending promises. They're harmless and expected during
-// sandbox shutdown/eviction.
-process.on("unhandledRejection", (reason: unknown) => {
-  if (reason instanceof Error && reason.message.includes("disposed")) return;
-  // Re-throw non-disposal rejections so they're not silently swallowed
-  throw reason;
-});
-
 export type { AgentMetadata } from "./_schemas.ts";
 export { type AgentSlot, ensureAgent, registerSlot } from "./sandbox-slots.ts";
 
@@ -71,6 +61,7 @@ export type SandboxOptions = {
 export type Sandbox = AgentRuntime & {
   /** @deprecated Use {@link AgentRuntime.shutdown} instead. */
   terminate(): Promise<void>;
+  [Symbol.asyncDispose](): Promise<void>;
 };
 
 // ── Isolate config schema ───────────────────────────────────────────────
@@ -373,6 +364,9 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
     startSession: agentRuntime.startSession.bind(agentRuntime),
     shutdown: shutdownSandbox,
     terminate: shutdownSandbox,
+    async [Symbol.asyncDispose](): Promise<void> {
+      await shutdownSandbox();
+    },
   };
 }
 

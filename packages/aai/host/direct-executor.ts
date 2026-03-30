@@ -120,7 +120,7 @@ export type SessionStartOptions = {
  *
  * Implemented by {@link createRuntime} and the platform sandbox.
  */
-export type AgentRuntime = {
+export type AgentRuntime = AsyncDisposable & {
   startSession(ws: SessionWebSocket, opts?: SessionStartOptions): void;
   shutdown(): Promise<void>;
   readonly readyConfig: ReadyConfig;
@@ -374,5 +374,8 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     startSession,
     shutdown,
     readyConfig,
+    async [Symbol.asyncDispose](): Promise<void> {
+      await shutdown();
+    },
   };
 }

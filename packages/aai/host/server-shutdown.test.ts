@@ -15,7 +15,7 @@ import { createServer } from "./server.ts";
 let mockShutdown = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
 
 function createMockRuntime(): Runtime {
-  return {
+  const rt: Runtime = {
     executeTool: vi.fn().mockResolvedValue(""),
     hooks: createHooks<AgentHookMap>(),
     toolSchemas: [],
@@ -23,7 +23,11 @@ function createMockRuntime(): Runtime {
     readyConfig: { audioFormat: "pcm16" as const, sampleRate: 16_000, ttsSampleRate: 24_000 },
     startSession: vi.fn(),
     shutdown: (...args: Parameters<Runtime["shutdown"]>) => mockShutdown(...args),
+    async [Symbol.asyncDispose]() {
+      await rt.shutdown();
+    },
   };
+  return rt;
 }
 
 const silentLogger = {

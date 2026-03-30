@@ -36,7 +36,7 @@ export type ServerOptions = {
  * Handle returned by {@link createServer}.
  * @public
  */
-export type AgentServer = {
+export type AgentServer = AsyncDisposable & {
   listen(port?: number): Promise<void>;
   close(): Promise<void>;
   port: number | undefined;
@@ -229,6 +229,9 @@ export function createServer(options: ServerOptions): AgentServer {
           }
         }
       }
+    },
+    async [Symbol.asyncDispose](): Promise<void> {
+      await this.close();
     },
   };
 }

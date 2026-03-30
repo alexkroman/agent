@@ -20,6 +20,9 @@ function makeMockSandbox(): Sandbox {
     shutdown,
     terminate: shutdown,
     readyConfig: { audioFormat: "pcm16", sampleRate: 16_000, ttsSampleRate: 24_000 },
+    async [Symbol.asyncDispose]() {
+      await shutdown();
+    },
   };
 }
 
