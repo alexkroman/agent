@@ -30,8 +30,8 @@ A voice agent built with [aai](https://github.com/anthropics/aai).
 
 \`\`\`sh
 npm install        # Install dependencies
-npm run dev        # Run locally (opens browser)
-npm run deploy     # Deploy to production
+aai dev            # Run locally (opens browser)
+aai deploy         # Deploy to production
 \`\`\`
 
 ## Secrets

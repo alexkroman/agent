@@ -21,7 +21,7 @@ async function deployBundle(opts: {
   const { bundle, serverUrl, apiKey, cwd } = opts;
   let { slug } = opts;
 
-  consola.start(`Deploy ${slug}`);
+  consola.start(`Deploying ${slug}`);
   const deployed = await runDeploy({
     url: serverUrl,
     bundle,
@@ -34,7 +34,7 @@ async function deployBundle(opts: {
   await writeProjectConfig(cwd, { slug, serverUrl });
 
   const agentUrl = `${serverUrl}/${slug}`;
-  consola.success(`Ready ${agentUrl}`);
+  consola.success(`Deployed ${agentUrl}`);
   return agentUrl;
 }
 
@@ -53,7 +53,7 @@ export async function runDeployCommand(opts: {
   const bundle = await buildAgentBundle(cwd);
 
   if (dryRun) {
-    consola.info(`Dry run: would deploy as ${slug}`);
+    consola.info(`Dry run complete — would deploy as ${slug}`);
     return;
   }
 

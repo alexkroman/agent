@@ -26,7 +26,7 @@ describe("buildAgentBundle", () => {
         await buildAgentBundle(dir);
       } catch (err: unknown) {
         expect(err).toBeInstanceOf(Error);
-        expect((err as Error).message).toContain("Bundle failed");
+        expect((err as Error).message).toContain("Build failed");
       }
     });
   });

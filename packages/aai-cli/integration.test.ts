@@ -106,7 +106,7 @@ describe("CLI integration: init creates working project", () => {
         fakeTemplatesDir = await createFakeTemplates(dir);
         await expect(
           runInit({ targetDir: path.join(dir, "out"), template: "nope" }),
-        ).rejects.toThrow("unknown template");
+        ).rejects.toThrow("Unknown template");
       }),
     );
   });

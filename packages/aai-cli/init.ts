@@ -34,7 +34,7 @@ async function promptProjectName(yes?: boolean): Promise<string> {
     defaultValue: DEFAULT_PROJECT_NAME,
   });
   if (p.isCancel(result)) {
-    p.cancel("Setup cancelled.");
+    p.cancel("Setup cancelled");
     process.exit(0);
   }
   return result || DEFAULT_PROJECT_NAME;
@@ -50,7 +50,7 @@ async function promptTemplate(yes?: boolean): Promise<string> {
     initialValue: DEFAULT_TEMPLATE,
   });
   if (p.isCancel(result)) {
-    p.cancel("Setup cancelled.");
+    p.cancel("Setup cancelled");
     process.exit(0);
   }
   return result;
@@ -88,9 +88,9 @@ async function installDeps(cwd: string, pm: string): Promise<void> {
   }
 }
 
-/** Format the run command for the detected package manager. */
-function devCommand(pm: string): string {
-  return pm === "npm" ? `${pm} run dev` : `${pm} dev`;
+/** Format the dev command for the "Next steps" note. */
+function devCommand(): string {
+  return "aai dev";
 }
 
 export async function runInitCommand(
@@ -140,7 +140,7 @@ export async function runInitCommand(
   }
 
   if (!extra?.quiet) {
-    p.note(`cd ${dir}\n${devCommand(pm)}`, "Next steps");
+    p.note(`cd ${dir}\n${devCommand()}`, "Next steps");
     p.outro("Happy building!");
   }
 

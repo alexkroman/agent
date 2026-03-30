@@ -126,13 +126,12 @@ export async function buildAgentBundle(cwd: string): Promise<BundleOutput> {
   const agent = await loadAgent(cwd);
   if (!agent) throw new Error("No agent found — run `aai init` first");
 
-  consola.start(`Bundle ${agent.slug}`);
+  consola.start(`Bundling ${agent.slug}`);
   let bundle: BundleOutput;
   try {
     bundle = await bundleAgent(agent);
   } catch (err: unknown) {
-    if (err instanceof BundleError)
-      throw new Error(`Bundle failed: ${err.message}`, { cause: err });
+    if (err instanceof BundleError) throw new Error(`Build failed: ${err.message}`, { cause: err });
     throw err;
   }
 
@@ -145,5 +144,5 @@ export async function buildAgentBundle(cwd: string): Promise<BundleOutput> {
 export async function runBuildCommand(cwd: string): Promise<void> {
   const { consola } = await import("./_ui.ts");
   await buildAgentBundle(cwd);
-  consola.success("Build ok");
+  consola.success("Build complete");
 }

@@ -47,7 +47,7 @@ export async function downloadAndMergeTemplate(template: string, targetDir: stri
   const available = await fs.readdir(templatesDir, { withFileTypes: true });
   const names = available.filter((e) => e.isDirectory()).map((e) => e.name);
   if (!names.includes(template)) {
-    throw new Error(`unknown template '${template}' -- available: ${names.join(", ")}`);
+    throw new Error(`Unknown template "${template}". Available templates: ${names.join(", ")}`);
   }
 
   // Copy template-specific files first
