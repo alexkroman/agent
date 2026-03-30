@@ -10,29 +10,18 @@
 import { createHooks } from "hookable";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { MockWebSocket } from "./_mock-ws.ts";
-import { makeClient, makeMockHandle, makeSessionOpts, silentLogger } from "./_test-utils.ts";
+import {
+  makeClient,
+  makeMockHandle,
+  makeSessionOpts,
+  makeStubSession,
+  silentLogger,
+} from "./_test-utils.ts";
 import type { AgentHookMap } from "./hooks.ts";
 import type { S2sHandle } from "./s2s.ts";
 import type { Session } from "./session.ts";
 import { _internals, createS2sSession, type S2sSessionOptions } from "./session.ts";
 import { wireSessionSocket } from "./ws-handler.ts";
-
-// ─── Shared helpers ──────────────────────────────────────────────────────────
-
-function makeStubSession(startDelay?: number): Session {
-  return {
-    start: vi.fn(() =>
-      startDelay ? new Promise<void>((r) => setTimeout(r, startDelay)) : Promise.resolve(),
-    ),
-    stop: vi.fn(() => Promise.resolve()),
-    onAudio: vi.fn(),
-    onAudioReady: vi.fn(),
-    onCancel: vi.fn(),
-    onReset: vi.fn(),
-    onHistory: vi.fn(),
-    waitForTurn: vi.fn(() => Promise.resolve()),
-  };
-}
 
 const defaultConfig = { audioFormat: "pcm16" as const, sampleRate: 16_000, ttsSampleRate: 24_000 };
 

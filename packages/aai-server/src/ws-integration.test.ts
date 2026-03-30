@@ -10,8 +10,9 @@
 import http from "node:http";
 import { type Session, type SessionWebSocket, wireSessionSocket } from "@alexkroman1/aai/internal";
 import type { ReadyConfig, ServerMessage } from "@alexkroman1/aai/protocol";
-import { WebSocketServer } from "ws";
+import { makeStubSession } from "@alexkroman1/aai/testing";
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest";
+import { WebSocketServer } from "ws";
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -20,20 +21,6 @@ const READY_CONFIG: ReadyConfig = {
   sampleRate: 16_000,
   ttsSampleRate: 24_000,
 };
-
-function makeStubSession(overrides?: Partial<Session>): Session {
-  return {
-    start: vi.fn(() => Promise.resolve()),
-    stop: vi.fn(() => Promise.resolve()),
-    onAudio: vi.fn(),
-    onAudioReady: vi.fn(),
-    onCancel: vi.fn(),
-    onReset: vi.fn(),
-    onHistory: vi.fn(),
-    waitForTurn: vi.fn(() => Promise.resolve()),
-    ...overrides,
-  };
-}
 
 type SessionCapture = { session: Session; sessionId: string };
 
@@ -169,7 +156,7 @@ describe("WebSocket server integration", () => {
     const { ws } = await connect(ctx.port);
     await delay(100);
     expect(ctx.captures).toHaveLength(1);
-    expect(ctx.captures[0]!.session.start).toHaveBeenCalled();
+    expect(ctx.captures[0]?.session.start).toHaveBeenCalled();
     ws.close();
     await waitForClose(ws);
   });
@@ -179,7 +166,7 @@ describe("WebSocket server integration", () => {
     await delay(100);
     ws.send(JSON.stringify({ type: "audio_ready" }));
     await delay(100);
-    expect(ctx.captures[0]!.session.onAudioReady).toHaveBeenCalled();
+    expect(ctx.captures[0]?.session.onAudioReady).toHaveBeenCalled();
     ws.close();
     await waitForClose(ws);
   });
@@ -189,7 +176,7 @@ describe("WebSocket server integration", () => {
     await delay(100);
     ws.send(JSON.stringify({ type: "cancel" }));
     await delay(100);
-    expect(ctx.captures[0]!.session.onCancel).toHaveBeenCalled();
+    expect(ctx.captures[0]?.session.onCancel).toHaveBeenCalled();
     ws.close();
     await waitForClose(ws);
   });
@@ -200,7 +187,7 @@ describe("WebSocket server integration", () => {
     const pcm = new Uint8Array([1, 2, 3, 4]);
     ws.send(pcm);
     await delay(100);
-    expect(ctx.captures[0]!.session.onAudio).toHaveBeenCalled();
+    expect(ctx.captures[0]?.session.onAudio).toHaveBeenCalled();
     ws.close();
     await waitForClose(ws);
   });
@@ -211,14 +198,14 @@ describe("WebSocket server integration", () => {
     ws.close();
     await waitForClose(ws);
     await delay(200);
-    expect(ctx.captures[0]!.session.stop).toHaveBeenCalled();
+    expect(ctx.captures[0]?.session.stop).toHaveBeenCalled();
   });
 
   test("multiple concurrent connections get independent sessions", async () => {
     const [c1, c2] = await Promise.all([connect(ctx.port), connect(ctx.port)]);
     await delay(100);
     expect(ctx.captures).toHaveLength(2);
-    expect(ctx.captures[0]!.sessionId).not.toBe(ctx.captures[1]!.sessionId);
+    expect(ctx.captures[0]?.sessionId).not.toBe(ctx.captures[1]?.sessionId);
     c1.ws.close();
     c2.ws.close();
     await Promise.all([waitForClose(c1.ws), waitForClose(c2.ws)]);

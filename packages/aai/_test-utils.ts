@@ -8,6 +8,7 @@ import type { AgentConfig } from "./_internal-types.ts";
 import { createRuntime } from "./direct-executor.ts";
 import type { ClientSink } from "./protocol.ts";
 import type { S2sEvents, S2sHandle } from "./s2s.ts";
+import type { Session } from "./session.ts";
 import { _internals, type S2sSessionOptions } from "./session.ts";
 import type { AgentDef, ToolContext, ToolDef } from "./types.ts";
 import { DEFAULT_INSTRUCTIONS } from "./types.ts";
@@ -49,6 +50,21 @@ export function makeConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
     name: "test-agent",
     instructions: DEFAULT_INSTRUCTIONS,
     greeting: "Hello",
+    ...overrides,
+  };
+}
+
+/** Create a stub Session with all methods as vi.fn() spies. */
+export function makeStubSession(overrides?: Partial<Session>): Session {
+  return {
+    start: vi.fn(() => Promise.resolve()),
+    stop: vi.fn(() => Promise.resolve()),
+    onAudio: vi.fn(),
+    onAudioReady: vi.fn(),
+    onCancel: vi.fn(),
+    onReset: vi.fn(),
+    onHistory: vi.fn(),
+    waitForTurn: vi.fn(() => Promise.resolve()),
     ...overrides,
   };
 }

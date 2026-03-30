@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { loadFixture } from "./_test-utils.ts";
+import { loadFixture, silentLogger } from "./_test-utils.ts";
 import type { S2sWebSocket } from "./s2s.ts";
 import { connectS2s } from "./s2s.ts";
 
@@ -35,7 +35,6 @@ function createWebSocketStub() {
   });
 }
 
-const silentLogger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
 const s2sConfig = { wssUrl: "wss://fake", inputSampleRate: 16_000, outputSampleRate: 16_000 };
 
 function createTestS2s() {
@@ -64,12 +63,15 @@ async function setupHandle() {
 describe("connectS2s", () => {
   test("resolves with handle after open", async () => {
     const { handle } = await setupHandle();
-    expect(handle).toBeDefined();
-    expect(typeof handle.sendAudio).toBe("function");
-    expect(typeof handle.sendToolResult).toBe("function");
-    expect(typeof handle.updateSession).toBe("function");
-    expect(typeof handle.resumeSession).toBe("function");
-    expect(typeof handle.close).toBe("function");
+    expect(handle).toEqual(
+      expect.objectContaining({
+        sendAudio: expect.any(Function),
+        sendToolResult: expect.any(Function),
+        updateSession: expect.any(Function),
+        resumeSession: expect.any(Function),
+        close: expect.any(Function),
+      }),
+    );
   });
 
   test("rejects when error fires before open", async () => {
