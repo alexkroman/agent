@@ -1,6 +1,6 @@
 {
   "name": "@alexkroman1/aai-server",
-  "version": "0.9.9",
+  "version": "0.9.8",
   "private": true,
   "type": "module",
   "main": "dist/index.mjs",

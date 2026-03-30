@@ -137,9 +137,6 @@ jobs:
   e2e:
     needs: setup
     runs-on: ubuntu-latest
-    # E2E packs tarballs and installs them — fails on changeset version PRs
-    # because bumped workspace deps (e.g. aai@0.10.4) aren't published yet.
-    if: ${{ !startsWith(github.head_ref || github.ref_name, 'changeset-release/') }}
     steps:
       - uses: actions/checkout@v6
         with:
