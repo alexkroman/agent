@@ -19,6 +19,7 @@
     "@alexkroman1/aai": "workspace:*",
     "@hono/node-server": "^1.19.11",
     "@hono/zod-validator": "^0.7.6",
+    "bogon": "^1.2.0",
     "hono": "^4.12.9",
     "hookable": "^6.1.0",
     "lru-cache": "^11.2.7",

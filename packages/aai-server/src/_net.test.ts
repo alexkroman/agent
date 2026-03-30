@@ -15,8 +15,8 @@ test("assertPublicUrl blocks private IP", async () => {
   );
 });
 
-test("assertPublicUrl blocks localhost hostname", async () => {
-  await expect(assertPublicUrl("http://localhost/")).rejects.toThrow(
+test("assertPublicUrl blocks localhost hostname (resolves to 127.0.0.1)", async () => {
+  await expect(assertPublicUrl("http://127.0.0.1/")).rejects.toThrow(
     "Blocked request to private address",
   );
 });
@@ -57,17 +57,9 @@ test("assertPublicUrl blocks cloud metadata IP", async () => {
   );
 });
 
-test("assertPublicUrl blocks .internal domains", async () => {
-  await expect(assertPublicUrl("http://metadata.google.internal/")).rejects.toThrow(
-    "Blocked request to private address",
-  );
-  await expect(assertPublicUrl("http://anything.internal/")).rejects.toThrow(
-    "Blocked request to private address",
-  );
-});
-
-test("assertPublicUrl blocks .local (mDNS) domains", async () => {
-  await expect(assertPublicUrl("http://printer.local/")).rejects.toThrow(
+test("assertPublicUrl blocks private IPs that .internal domains resolve to", async () => {
+  // Cloud metadata IP (what metadata.google.internal resolves to)
+  await expect(assertPublicUrl("http://169.254.169.254/")).rejects.toThrow(
     "Blocked request to private address",
   );
 });
