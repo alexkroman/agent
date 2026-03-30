@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 /** S2S session — relays audio between client and AssemblyAI S2S API. */
 
+import { createActor, fromCallback, fromPromise, setup } from "xstate";
 import type { AgentConfig, ExecuteTool, ToolSchema } from "../isolate/_internal-types.ts";
 import { errorDetail, errorMessage, toolError } from "../isolate/_utils.ts";
 import {
@@ -321,15 +322,9 @@ function handleAgentTranscript(ctx: S2sSessionCtx, text: string, interrupted: bo
   }
 }
 
-function handleReplyDone(ctx: S2sSessionCtx, status: string | undefined): void {
-  if (status === "interrupted") {
-    ctx.log.info("S2S reply interrupted (barge-in)");
-    ctx.cancelReply();
-    ctx.client.event({ type: "cancelled" });
-    return;
-  }
+function sendPendingToolResults(ctx: S2sSessionCtx): void {
   const doneReplyId = ctx.reply.currentReplyId;
-  const sendPending = () => {
+  const doSend = () => {
     if (ctx.reply.currentReplyId !== doneReplyId) {
       ctx.reply.pendingTools = [];
       return;
@@ -347,50 +342,352 @@ function handleReplyDone(ctx: S2sSessionCtx, status: string | undefined): void {
     }
   };
   if (ctx.turnPromise !== null) {
-    void ctx.turnPromise.then(sendPending);
+    void ctx.turnPromise.then(doSend);
   } else {
-    sendPending();
+    doSend();
   }
 }
 
-function setupListeners(ctx: S2sSessionCtx, handle: S2sHandle): void {
-  handle.on("ready", ({ sessionId }) => ctx.log.info("S2S session ready", { sessionId }));
-  handle.on("sessionExpired", () => {
-    ctx.log.info("S2S session expired");
-    handle.close();
-  });
-  handle.on("speechStarted", () => ctx.client.event({ type: "speech_started" }));
-  handle.on("speechStopped", () => ctx.client.event({ type: "speech_stopped" }));
-  handle.on("userTranscriptDelta", ({ text }) =>
-    ctx.client.event({ type: "transcript", text, isFinal: false }),
-  );
-  handle.on("userTranscript", ({ text }) => handleUserTranscript(ctx, text));
-  handle.on("replyStarted", ({ replyId }) => {
-    ctx.beginReply(replyId);
-  });
-  handle.on("audio", ({ audio }) => ctx.client.playAudioChunk(audio));
-  handle.on("agentTranscriptDelta", ({ text }) => ctx.client.event({ type: "chat_delta", text }));
-  handle.on("agentTranscript", ({ text, interrupted }) =>
-    handleAgentTranscript(ctx, text, interrupted),
-  );
-  handle.on("toolCall", (detail) => {
-    const p = handleToolCall(ctx, detail).catch((err: unknown) => {
-      ctx.log.error("Tool call handler failed", { err: errorMessage(err) });
-    });
-    ctx.chainTurn(p);
-  });
-  handle.on("replyDone", ({ status }) => handleReplyDone(ctx, status));
-  handle.on("error", ({ code, message }) => {
-    ctx.log.error("S2S error", { code, message });
-    ctx.client.event({ type: "error", code: "internal", message });
-    handle.close();
-  });
-  handle.on("close", () => {
-    ctx.log.info("S2S closed");
-    ctx.s2s = null;
-    ctx.cancelReply();
-  });
-}
+// ─── XState machine events ─────────────────────────────────────────────────
+
+type SessionMachineEvent =
+  | { type: "START" }
+  | { type: "STOP" }
+  | { type: "RESET" }
+  | { type: "SEND_AUDIO"; data: Uint8Array }
+  | { type: "CANCEL" }
+  | { type: "HISTORY"; messages: readonly { role: "user" | "assistant"; content: string }[] }
+  | { type: "S2S_READY"; sessionId: string }
+  | { type: "S2S_SESSION_EXPIRED" }
+  | { type: "S2S_SPEECH_STARTED" }
+  | { type: "S2S_SPEECH_STOPPED" }
+  | { type: "S2S_USER_TRANSCRIPT_DELTA"; text: string }
+  | { type: "S2S_USER_TRANSCRIPT"; itemId: string; text: string }
+  | { type: "S2S_REPLY_STARTED"; replyId: string }
+  | { type: "S2S_AUDIO"; audio: Uint8Array }
+  | { type: "S2S_AGENT_TRANSCRIPT_DELTA"; text: string }
+  | { type: "S2S_AGENT_TRANSCRIPT"; text: string; interrupted: boolean }
+  | { type: "S2S_TOOL_CALL"; detail: S2sToolCall }
+  | { type: "S2S_REPLY_DONE"; status?: string }
+  | { type: "S2S_ERROR"; code: string; message: string }
+  | { type: "S2S_CLOSE" };
+
+// ─── XState machine ────────────────────────────────────────────────────────
+
+type SessionMachineContext = {
+  ctx: S2sSessionCtx;
+  idle: IdleTimer;
+  sessionAbort: AbortController;
+  connectOpts: {
+    apiKey: string;
+    s2sConfig: S2SConfig;
+    createWebSocket: CreateS2sWebSocket;
+    log: Logger;
+  };
+  sessionUpdatePayload: {
+    systemPrompt: string;
+    tools: S2sToolSchema[];
+    greeting?: string;
+  };
+  getConnectGeneration: () => number;
+  incrementConnectGeneration: () => number;
+};
+
+const sessionMachine = setup({
+  types: {
+    context: {} as SessionMachineContext,
+    events: {} as SessionMachineEvent,
+    input: {} as SessionMachineContext,
+  },
+  actors: {
+    /** Connect to S2S and return the handle. Tracks generation to close stale connections. */
+    connect: fromPromise(
+      async ({
+        input,
+      }: {
+        input: SessionMachineContext["connectOpts"] & {
+          generation: number;
+          getConnectGeneration: () => number;
+        };
+      }) => {
+        const handle = await _internals.connectS2s({
+          apiKey: input.apiKey,
+          config: input.s2sConfig,
+          createWebSocket: input.createWebSocket,
+          logger: input.log,
+        });
+        // If a newer connect was started while we were awaiting, close this stale handle.
+        if (input.generation !== input.getConnectGeneration()) {
+          handle.close();
+          throw new Error("Connection superseded by newer attempt");
+        }
+        return handle;
+      },
+    ),
+    /** Bridge S2S handle events to machine events via `sendBack`. */
+    s2sListener: fromCallback<SessionMachineEvent, { handle: S2sHandle; ctx: S2sSessionCtx }>(
+      ({ sendBack, input: { handle, ctx } }) => {
+        handle.on("ready", ({ sessionId }) => {
+          ctx.log.info("S2S session ready", { sessionId });
+          sendBack({ type: "S2S_READY", sessionId });
+        });
+        handle.on("sessionExpired", () => sendBack({ type: "S2S_SESSION_EXPIRED" }));
+        handle.on("speechStarted", () => sendBack({ type: "S2S_SPEECH_STARTED" }));
+        handle.on("speechStopped", () => sendBack({ type: "S2S_SPEECH_STOPPED" }));
+        handle.on("userTranscriptDelta", ({ text }) =>
+          sendBack({ type: "S2S_USER_TRANSCRIPT_DELTA", text }),
+        );
+        handle.on("userTranscript", ({ itemId, text }) =>
+          sendBack({ type: "S2S_USER_TRANSCRIPT", itemId, text }),
+        );
+        handle.on("replyStarted", ({ replyId }) =>
+          sendBack({ type: "S2S_REPLY_STARTED", replyId }),
+        );
+        handle.on("audio", ({ audio }) => sendBack({ type: "S2S_AUDIO", audio }));
+        handle.on("agentTranscriptDelta", ({ text }) =>
+          sendBack({ type: "S2S_AGENT_TRANSCRIPT_DELTA", text }),
+        );
+        handle.on("agentTranscript", ({ text, interrupted }) =>
+          sendBack({ type: "S2S_AGENT_TRANSCRIPT", text, interrupted }),
+        );
+        handle.on("toolCall", (detail) => sendBack({ type: "S2S_TOOL_CALL", detail }));
+        handle.on("replyDone", ({ status }) => sendBack({ type: "S2S_REPLY_DONE", status }));
+        handle.on("error", ({ code, message }) => sendBack({ type: "S2S_ERROR", code, message }));
+        handle.on("close", () => sendBack({ type: "S2S_CLOSE" }));
+      },
+    ),
+  },
+}).createMachine({
+  id: "session",
+  initial: "disconnected",
+  context: ({ input }) => input,
+
+  states: {
+    // ─── Disconnected ────────────────────────────────────────────────
+    disconnected: {
+      on: {
+        START: {
+          target: "connecting",
+          actions: ({ context }) =>
+            context.ctx.fireHook("connect", context.ctx.id, HOOK_TIMEOUT_MS),
+        },
+      },
+    },
+
+    // ─── Connecting (invoke auto-cancels on exit) ────────────────────
+    connecting: {
+      entry: ({ context }) => {
+        context.incrementConnectGeneration();
+      },
+      invoke: {
+        src: "connect",
+        input: ({ context }) => ({
+          ...context.connectOpts,
+          generation: context.getConnectGeneration(),
+          getConnectGeneration: context.getConnectGeneration,
+        }),
+        onDone: {
+          target: "connected",
+          actions: ({ context, event }) => {
+            const handle = event.output;
+            context.ctx.s2s = handle;
+            handle.updateSession(context.sessionUpdatePayload);
+            context.idle.reset();
+          },
+        },
+        onError: {
+          target: "disconnected",
+          actions: ({ context, event }) => {
+            // "Connection superseded" errors are expected during rapid resets
+            if (event.error instanceof Error && event.error.message.includes("superseded")) return;
+            const msg = errorMessage(event.error);
+            context.ctx.log.error("S2S connect failed", { error: errorDetail(event.error) });
+            context.ctx.client.event({ type: "error", code: "internal", message: msg });
+          },
+        },
+      },
+      // RESET during connecting: re-enter to start a fresh connection
+      on: {
+        RESET: {
+          target: "connecting",
+          reenter: true,
+          actions: ({ context }) => {
+            context.ctx.cancelReply();
+            context.ctx.conversationMessages = [];
+            context.ctx.reply.toolCallCount = 0;
+            context.ctx.turnPromise = null;
+            context.idle.clear();
+            context.ctx.s2s?.close();
+            context.ctx.client.event({ type: "reset" });
+          },
+        },
+      },
+    },
+
+    // ─── Connected (S2S handle active) ───────────────────────────────
+    connected: {
+      initial: "idle",
+
+      // Bridge S2S handle events into the machine while connected.
+      invoke: {
+        src: "s2sListener",
+        // biome-ignore lint/style/noNonNullAssertion: s2s is always set when entering connected state
+        input: ({ context }) => ({ handle: context.ctx.s2s!, ctx: context.ctx }),
+      },
+
+      // Events handled in any connected substate
+      on: {
+        SEND_AUDIO: {
+          actions: ({ context, event }) => {
+            context.idle.reset();
+            context.ctx.s2s?.sendAudio(event.data);
+          },
+        },
+        S2S_SPEECH_STARTED: {
+          actions: ({ context }) => context.ctx.client.event({ type: "speech_started" }),
+        },
+        S2S_SPEECH_STOPPED: {
+          actions: ({ context }) => context.ctx.client.event({ type: "speech_stopped" }),
+        },
+        S2S_USER_TRANSCRIPT_DELTA: {
+          actions: ({ context, event }) =>
+            context.ctx.client.event({ type: "transcript", text: event.text, isFinal: false }),
+        },
+        S2S_USER_TRANSCRIPT: {
+          actions: ({ context, event }) => handleUserTranscript(context.ctx, event.text),
+        },
+        S2S_AUDIO: {
+          actions: ({ context, event }) => context.ctx.client.playAudioChunk(event.audio),
+        },
+        S2S_AGENT_TRANSCRIPT_DELTA: {
+          actions: ({ context, event }) =>
+            context.ctx.client.event({ type: "chat_delta", text: event.text }),
+        },
+        S2S_AGENT_TRANSCRIPT: {
+          actions: ({ context, event }) =>
+            handleAgentTranscript(context.ctx, event.text, event.interrupted),
+        },
+        S2S_SESSION_EXPIRED: {
+          target: "disconnected",
+          actions: ({ context }) => {
+            context.ctx.log.info("S2S session expired");
+            context.ctx.s2s?.close();
+          },
+        },
+        S2S_ERROR: {
+          target: "disconnected",
+          actions: ({ context, event }) => {
+            context.ctx.log.error("S2S error", { code: event.code, message: event.message });
+            context.ctx.client.event({ type: "error", code: "internal", message: event.message });
+            context.ctx.s2s?.close();
+          },
+        },
+        S2S_CLOSE: {
+          target: "disconnected",
+          actions: ({ context }) => {
+            context.ctx.log.info("S2S closed");
+            context.ctx.s2s = null;
+            context.ctx.cancelReply();
+          },
+        },
+        RESET: {
+          target: "connecting",
+          actions: ({ context }) => {
+            context.ctx.cancelReply();
+            context.ctx.conversationMessages = [];
+            context.ctx.reply.toolCallCount = 0;
+            context.ctx.turnPromise = null;
+            context.idle.clear();
+            context.ctx.s2s?.close();
+            context.ctx.client.event({ type: "reset" });
+          },
+        },
+        CANCEL: {
+          actions: ({ context }) => context.ctx.client.event({ type: "cancelled" }),
+        },
+        HISTORY: {
+          actions: ({ context, event }) =>
+            context.ctx.pushMessages(
+              ...event.messages.map((m) => ({ role: m.role, content: m.content })),
+            ),
+        },
+      },
+
+      states: {
+        // ─── Idle: waiting for a reply ─────────────────────────
+        idle: {
+          on: {
+            S2S_REPLY_STARTED: {
+              target: "replying",
+              actions: ({ context, event }) => context.ctx.beginReply(event.replyId),
+            },
+            S2S_REPLY_DONE: [
+              {
+                guard: ({ event }) => event.status === "interrupted",
+                actions: ({ context }) => {
+                  context.ctx.log.info("S2S reply interrupted (barge-in)");
+                  context.ctx.cancelReply();
+                  context.ctx.client.event({ type: "cancelled" });
+                },
+              },
+              {
+                actions: ({ context }) => sendPendingToolResults(context.ctx),
+              },
+            ],
+          },
+        },
+
+        // ─── Replying: processing a reply from S2S ────────────
+        replying: {
+          on: {
+            S2S_TOOL_CALL: {
+              actions: ({ context, event }) => {
+                const p = handleToolCall(context.ctx, event.detail).catch((err: unknown) => {
+                  context.ctx.log.error("Tool call handler failed", {
+                    err: errorMessage(err),
+                  });
+                });
+                context.ctx.chainTurn(p);
+              },
+            },
+            S2S_REPLY_DONE: [
+              {
+                guard: ({ event }) => event.status === "interrupted",
+                target: "idle",
+                actions: ({ context }) => {
+                  context.ctx.log.info("S2S reply interrupted (barge-in)");
+                  context.ctx.cancelReply();
+                  context.ctx.client.event({ type: "cancelled" });
+                },
+              },
+              {
+                target: "idle",
+                actions: ({ context }) => sendPendingToolResults(context.ctx),
+              },
+            ],
+            // A new reply can start while previous is still active
+            S2S_REPLY_STARTED: {
+              actions: ({ context, event }) => context.ctx.beginReply(event.replyId),
+            },
+          },
+        },
+      },
+    },
+
+    // ─── Stopped (final) ─────────────────────────────────────────────
+    stopped: {
+      type: "final",
+    },
+  },
+
+  // Global events (any state)
+  on: {
+    STOP: {
+      target: ".stopped",
+      actions: ({ context }) => context.incrementConnectGeneration(),
+    },
+  },
+});
 
 // ─── Main session factory ────────────────────────────────────────────────────
 
@@ -417,7 +714,6 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
     parameters: ts.parameters,
   }));
 
-  const sessionAbort = new AbortController();
   const ctx = buildCtx({
     id,
     agent,
@@ -433,77 +729,76 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
   const idleMs = rawTimeout === 0 || !Number.isFinite(rawTimeout) ? 0 : rawTimeout;
   const idle = createIdleTimer({ timeoutMs: idleMs, agent, log, client, ctx });
 
-  let connectGeneration = 0;
   const sessionUpdatePayload = {
     systemPrompt,
     tools: s2sTools,
     ...(agentConfig.greeting ? { greeting: agentConfig.greeting } : {}),
   };
 
-  async function connectAndSetup(): Promise<void> {
-    const generation = ++connectGeneration;
-    try {
-      const handle = await _internals.connectS2s({
-        apiKey,
-        config: s2sConfig,
-        createWebSocket,
-        logger: log,
-      });
-      if (sessionAbort.signal.aborted || generation !== connectGeneration) {
-        handle.close();
-        return;
-      }
-      setupListeners(ctx, handle);
-      handle.updateSession(sessionUpdatePayload);
-      ctx.s2s = handle;
-      idle.reset();
-    } catch (err: unknown) {
-      const msg = errorMessage(err);
-      log.error("S2S connect failed", { error: errorDetail(err) });
-      client.event({ type: "error", code: "internal", message: msg });
-    }
-  }
+  let connectGeneration = 0;
+
+  const actor = createActor(sessionMachine, {
+    input: {
+      ctx,
+      idle,
+      sessionAbort: new AbortController(),
+      connectOpts: { apiKey, s2sConfig, createWebSocket, log },
+      sessionUpdatePayload,
+      getConnectGeneration: () => connectGeneration,
+      incrementConnectGeneration: () => ++connectGeneration,
+    },
+  });
+  actor.start();
+
+  let stopped = false;
 
   return {
     async start(): Promise<void> {
-      ctx.fireHook("connect", id, HOOK_TIMEOUT_MS);
-      await connectAndSetup();
+      actor.send({ type: "START" });
+      // Wait for the connection attempt to finish (success, error, or stop).
+      await new Promise<void>((resolve) => {
+        const sub = actor.subscribe((snapshot) => {
+          const state = snapshot.value;
+          if (state !== "connecting") {
+            sub.unsubscribe();
+            resolve();
+          }
+        });
+      });
     },
+
     async stop(): Promise<void> {
-      if (sessionAbort.signal.aborted) return;
-      sessionAbort.abort();
+      if (stopped) return;
+      stopped = true;
       idle.clear();
       if (ctx.turnPromise !== null) await ctx.turnPromise;
       await ctx.drainHooks();
       ctx.s2s?.close();
-      ctx.fireHook("disconnect", id, HOOK_TIMEOUT_MS);
+      actor.send({ type: "STOP" });
+      ctx.fireHook("disconnect", ctx.id, HOOK_TIMEOUT_MS);
       await ctx.drainHooks();
     },
+
     onAudio(data: Uint8Array): void {
-      idle.reset();
-      ctx.s2s?.sendAudio(data);
+      actor.send({ type: "SEND_AUDIO", data });
     },
+
     onAudioReady(): void {
       /* S2S greeting comes automatically */
     },
+
     onCancel(): void {
-      client.event({ type: "cancelled" });
+      actor.send({ type: "CANCEL" });
     },
+
     onReset(): void {
-      ctx.cancelReply();
-      ctx.conversationMessages = [];
-      ctx.reply.toolCallCount = 0;
-      ctx.turnPromise = null;
-      idle.clear();
-      ctx.s2s?.close();
-      client.event({ type: "reset" });
-      connectAndSetup().catch((err: unknown) =>
-        log.error("S2S reset reconnect failed", { error: errorMessage(err) }),
-      );
+      actor.send({ type: "RESET" });
     },
+
     onHistory(incoming: readonly { role: "user" | "assistant"; content: string }[]): void {
-      ctx.pushMessages(...incoming.map((m) => ({ role: m.role, content: m.content })));
+      actor.send({ type: "HISTORY", messages: incoming });
     },
+
     waitForTurn(): Promise<void> {
       return ctx.turnPromise ?? Promise.resolve();
     },
