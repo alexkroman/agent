@@ -355,11 +355,14 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
   console.info("Sandbox initialized", { slug, isolatePort: port, agent: config.name });
 
   async function shutdownSandbox(): Promise<void> {
-    await agentRuntime.shutdown();
-    await runtime.terminate().catch((err: unknown) => {
-      const msg = errorMessage(err);
-      if (!msg.includes("already disposed")) console.warn("Runtime terminate failed:", err);
-    });
+    try {
+      await agentRuntime.shutdown();
+    } finally {
+      await runtime.terminate().catch((err: unknown) => {
+        const msg = errorMessage(err);
+        if (!msg.includes("already disposed")) console.warn("Runtime terminate failed:", err);
+      });
+    }
   }
 
   return {
