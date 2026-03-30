@@ -8,14 +8,14 @@
  */
 
 import { z } from "zod";
-import { EMPTY_PARAMS, type ToolSchema } from "./_internal-types.ts";
+import { EMPTY_PARAMS, type ToolSchema } from "../isolate/_internal-types.ts";
+import { FETCH_TIMEOUT_MS, MAX_HTML_BYTES, MAX_PAGE_CHARS } from "../isolate/constants.ts";
+import { memoryTools } from "../isolate/memory-tools.ts";
+import type { ToolDef } from "../isolate/types.ts";
 import { createRunCode } from "./_run-code.ts";
-import { FETCH_TIMEOUT_MS, MAX_HTML_BYTES, MAX_PAGE_CHARS } from "./constants.ts";
-import { memoryTools } from "./memory-tools.ts";
-import type { ToolDef } from "./types.ts";
 
+export { memoryTools } from "../isolate/memory-tools.ts";
 export { executeInIsolate } from "./_run-code.ts";
-export { memoryTools } from "./memory-tools.ts";
 
 const fetchSignal = () => AbortSignal.timeout(FETCH_TIMEOUT_MS);
 

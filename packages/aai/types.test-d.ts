@@ -8,6 +8,7 @@
 
 import { describe, expectTypeOf, it } from "vitest";
 import { z } from "zod";
+import { type AgentServer, createRuntime, createServer, type Runtime } from "./host/server.ts";
 import {
   type AgentDef,
   type BuiltinTool,
@@ -25,12 +26,6 @@ import {
   type ToolResultMap,
   tool,
 } from "./index.ts";
-import {
-  type AgentServer,
-  createRuntime,
-  createServer,
-  type Runtime,
-} from "./server.ts";
 
 // ─── defineAgent ──────────────────────────────────────────────────────────
 

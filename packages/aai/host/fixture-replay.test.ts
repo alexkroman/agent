@@ -13,8 +13,8 @@
 
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { z } from "zod";
+import { defineAgent, defineTool } from "../isolate/types.ts";
 import { createFixtureSession, flush } from "./_test-utils.ts";
-import { defineAgent, defineTool } from "./types.ts";
 
 // ─── Test agents with deterministic tools ────────────────────────────────────
 

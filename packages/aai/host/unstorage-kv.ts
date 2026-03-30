@@ -6,8 +6,8 @@
  */
 
 import { prefixStorage, type Storage } from "unstorage";
-import type { Kv, KvEntry, KvListOptions } from "./kv.ts";
-import { MAX_VALUE_SIZE, matchGlob, sortAndPaginate } from "./kv.ts";
+import type { Kv, KvEntry, KvListOptions } from "../isolate/kv.ts";
+import { MAX_VALUE_SIZE, matchGlob, sortAndPaginate } from "../isolate/kv.ts";
 
 /**
  * Options for creating an unstorage-backed KV store.

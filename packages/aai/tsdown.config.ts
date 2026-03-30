@@ -1,5 +1,4 @@
 import { readFileSync } from "node:fs";
-import { basename } from "node:path";
 import { defineConfig } from "tsdown";
 
 // Derive build entries from package.json exports so they can never drift.
@@ -11,7 +10,7 @@ const entry = [
         (v): v is { "@dev/source": string } =>
           typeof v === "object" && typeof v["@dev/source"] === "string",
       )
-      .map((v) => basename(v["@dev/source"])),
+      .map((v) => v["@dev/source"].replace(/^\.\//, "")),
   ),
 ];
 

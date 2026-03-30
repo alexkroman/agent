@@ -8,7 +8,7 @@
  * so the test runs without external dependencies.
  */
 import http from "node:http";
-import { type Session, type SessionWebSocket, wireSessionSocket } from "@alexkroman1/aai/internal";
+import { type Session, type SessionWebSocket, wireSessionSocket } from "@alexkroman1/aai/host";
 import type { ReadyConfig, ServerMessage } from "@alexkroman1/aai/protocol";
 import { makeStubSession } from "@alexkroman1/aai/testing";
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest";

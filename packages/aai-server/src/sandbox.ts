@@ -19,9 +19,8 @@ import {
   type ExecuteTool,
   errorMessage,
   HOOK_TIMEOUT_MS,
-  isReadOnlyFsOp,
   TOOL_EXECUTION_TIMEOUT_MS,
-} from "@alexkroman1/aai/internal";
+} from "@alexkroman1/aai/host";
 import { createHooks } from "hookable";
 import pTimeout from "p-timeout";
 import {
@@ -41,6 +40,13 @@ import {
   _slotInternals,
   type AgentSlot,
 } from "./sandbox-slots.ts";
+
+/** Set of filesystem operations that are safe for read-only access. */
+const READ_ONLY_FS_OPS = new Set(["read", "stat", "readdir", "exists"]);
+
+function isReadOnlyFsOp(op: string): boolean {
+  return READ_ONLY_FS_OPS.has(op);
+}
 
 // Suppress "Isolate is disposed" rejections from secure-exec internals.
 // These fire asynchronously when an isolate is terminated while its ESM

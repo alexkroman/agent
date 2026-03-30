@@ -38,9 +38,9 @@
  */
 
 import { createStorage } from "unstorage";
+import type { Kv } from "../isolate/kv.ts";
+import type { AgentDef, Message } from "../isolate/types.ts";
 import { createRuntime, type Runtime } from "./direct-executor.ts";
-import type { Kv } from "./kv.ts";
-import type { AgentDef, Message } from "./types.ts";
 import { createUnstorageKv } from "./unstorage-kv.ts";
 
 export { installMockWebSocket, MockWebSocket } from "./_mock-ws.ts";

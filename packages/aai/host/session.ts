@@ -1,17 +1,19 @@
 // Copyright 2025 the AAI authors. MIT license.
 /** S2S session — relays audio between client and AssemblyAI S2S API. */
 
-import type { AgentConfig, ExecuteTool, ToolSchema } from "./_internal-types.ts";
-import { errorDetail, errorMessage, toolError } from "./_utils.ts";
+import type { AgentConfig, ExecuteTool, ToolSchema } from "../isolate/_internal-types.ts";
+import { errorDetail, errorMessage, toolError } from "../isolate/_utils.ts";
 import {
   DEFAULT_IDLE_TIMEOUT_MS,
   DEFAULT_MAX_HISTORY,
   HOOK_TIMEOUT_MS,
   MAX_TOOL_RESULT_CHARS,
-} from "./constants.ts";
-import type { AgentHookMap, AgentHooks } from "./hooks.ts";
-import { callResolveTurnConfig } from "./hooks.ts";
-import type { ClientSink } from "./protocol.ts";
+} from "../isolate/constants.ts";
+import type { AgentHookMap, AgentHooks } from "../isolate/hooks.ts";
+import { callResolveTurnConfig } from "../isolate/hooks.ts";
+import type { ClientSink } from "../isolate/protocol.ts";
+import { buildSystemPrompt } from "../isolate/system-prompt.ts";
+import type { Message } from "../isolate/types.ts";
 import type { Logger, S2SConfig } from "./runtime.ts";
 import { consoleLogger } from "./runtime.ts";
 import {
@@ -22,8 +24,6 @@ import {
   type S2sToolCall,
   type S2sToolSchema,
 } from "./s2s.ts";
-import { buildSystemPrompt } from "./system-prompt.ts";
-import type { Message } from "./types.ts";
 
 export type { S2sHandle } from "./s2s.ts";
 
@@ -166,9 +166,9 @@ export function buildCtx(opts: {
 
 // ─── Re-exports ─────────────────────────────────────────────────────────────
 
-export type { AgentHookMap, AgentHooks } from "./hooks.ts";
-export { callResolveTurnConfig, createAgentHooks } from "./hooks.ts";
-export { buildSystemPrompt } from "./system-prompt.ts";
+export type { AgentHookMap, AgentHooks } from "../isolate/hooks.ts";
+export { callResolveTurnConfig, createAgentHooks } from "../isolate/hooks.ts";
+export { buildSystemPrompt } from "../isolate/system-prompt.ts";
 
 /**
  * A voice session managing the Speech-to-Speech connection for one client.

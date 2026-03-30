@@ -21,7 +21,7 @@
  * ```
  */
 
-export type { Kv, KvEntry, KvListOptions } from "./kv.ts";
+export type { Kv, KvEntry, KvListOptions } from "./isolate/kv.ts";
 export {
   type AgentDef,
   type AgentOptions,
@@ -36,4 +36,4 @@ export {
   type ToolDef,
   type ToolResultMap,
   tool,
-} from "./types.ts";
+} from "./isolate/types.ts";

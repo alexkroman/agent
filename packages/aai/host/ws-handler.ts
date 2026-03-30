@@ -6,10 +6,10 @@
  */
 
 import pTimeout from "p-timeout";
-import { errorDetail, errorMessage } from "./_utils.ts";
-import { DEFAULT_SESSION_START_TIMEOUT_MS } from "./constants.ts";
-import type { ClientMessage, ClientSink, ReadyConfig } from "./protocol.ts";
-import { ClientMessageSchema } from "./protocol.ts";
+import { errorDetail, errorMessage } from "../isolate/_utils.ts";
+import { DEFAULT_SESSION_START_TIMEOUT_MS } from "../isolate/constants.ts";
+import type { ClientMessage, ClientSink, ReadyConfig } from "../isolate/protocol.ts";
+import { ClientMessageSchema } from "../isolate/protocol.ts";
 import type { Logger } from "./runtime.ts";
 import { consoleLogger } from "./runtime.ts";
 import type { Session } from "./session.ts";

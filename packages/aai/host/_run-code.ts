@@ -6,9 +6,9 @@
 
 import vm from "node:vm";
 import { z } from "zod";
-import { errorMessage } from "./_utils.ts";
-import { RUN_CODE_TIMEOUT_MS } from "./constants.ts";
-import type { ToolDef } from "./types.ts";
+import { errorMessage } from "../isolate/_utils.ts";
+import { RUN_CODE_TIMEOUT_MS } from "../isolate/constants.ts";
+import type { ToolDef } from "../isolate/types.ts";
 
 const runCodeParams = z.object({
   code: z.string().describe("JavaScript code to execute. Use console.log() for output."),

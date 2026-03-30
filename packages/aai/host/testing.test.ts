@@ -3,8 +3,8 @@
 
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
+import { defineAgent, defineTool } from "../isolate/types.ts";
 import { createTestHarness } from "./testing.ts";
-import { defineAgent, defineTool } from "./types.ts";
 
 const pizzaAgent = defineAgent({
   name: "Pizza Agent",

@@ -4,14 +4,14 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { createNanoEvents } from "nanoevents";
 import { vi } from "vitest";
-import type { AgentConfig } from "./_internal-types.ts";
+import type { AgentConfig } from "../isolate/_internal-types.ts";
+import type { ClientSink } from "../isolate/protocol.ts";
+import type { AgentDef, ToolContext, ToolDef } from "../isolate/types.ts";
+import { DEFAULT_INSTRUCTIONS } from "../isolate/types.ts";
 import { createRuntime } from "./direct-executor.ts";
-import type { ClientSink } from "./protocol.ts";
 import type { S2sEvents, S2sHandle } from "./s2s.ts";
 import type { Session } from "./session.ts";
 import { _internals, type S2sSessionOptions } from "./session.ts";
-import type { AgentDef, ToolContext, ToolDef } from "./types.ts";
-import { DEFAULT_INSTRUCTIONS } from "./types.ts";
 
 /** Yield to the microtask queue so pending promises settle. */
 export function flush(): Promise<void> {

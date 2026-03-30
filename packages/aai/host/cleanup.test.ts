@@ -9,6 +9,7 @@
 
 import { createHooks } from "hookable";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import type { AgentHookMap } from "../isolate/hooks.ts";
 import { MockWebSocket } from "./_mock-ws.ts";
 import {
   makeClient,
@@ -17,7 +18,6 @@ import {
   makeStubSession,
   silentLogger,
 } from "./_test-utils.ts";
-import type { AgentHookMap } from "./hooks.ts";
 import type { S2sHandle } from "./s2s.ts";
 import type { Session } from "./session.ts";
 import { _internals, createS2sSession, type S2sSessionOptions } from "./session.ts";
