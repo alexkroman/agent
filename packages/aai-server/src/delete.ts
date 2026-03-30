@@ -1,7 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 import type { AppContext } from "./context.ts";
-import { terminateSlot } from "./sandbox-slots.ts";
-import { withSlugLock } from "./slug-lock.ts";
+import { terminateSlot, withSlugLock } from "./sandbox-slots.ts";
 
 export function handleDelete(c: AppContext): Promise<Response> {
   const slug = c.var.slug;

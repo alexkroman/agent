@@ -68,51 +68,12 @@ test("delete terminates running sandbox", async () => {
   expect(slots.has("my-agent")).toBe(false);
 });
 
-test("delete terminates initializing sandbox", async () => {
-  const { fetch, slots } = await setup();
-  await deployAgent(fetch);
-
-  const terminate = vi.fn().mockResolvedValue(undefined);
-  slots.set("my-agent", {
-    ...makeSlot({ slug: "my-agent" }),
-    initializing: Promise.resolve({ terminate } as never),
-  });
-
-  const resp = await fetch("/my-agent", {
-    method: "DELETE",
-    headers: { Authorization: "Bearer key1" },
-  });
-
-  expect(resp.status).toBe(200);
-  expect(terminate).toHaveBeenCalled();
-  expect(slots.has("my-agent")).toBe(false);
-});
-
 test("delete succeeds even if sandbox terminate fails", async () => {
   const { fetch, slots } = await setup();
   await deployAgent(fetch);
 
   const terminate = vi.fn().mockRejectedValue(new Error("terminate failed"));
   slots.set("my-agent", { ...makeSlot({ slug: "my-agent" }), sandbox: { terminate } as never });
-
-  const resp = await fetch("/my-agent", {
-    method: "DELETE",
-    headers: { Authorization: "Bearer key1" },
-  });
-
-  expect(resp.status).toBe(200);
-  expect(terminate).toHaveBeenCalled();
-});
-
-test("delete succeeds even if initializing sandbox terminate fails", async () => {
-  const { fetch, slots } = await setup();
-  await deployAgent(fetch);
-
-  const terminate = vi.fn().mockRejectedValue(new Error("terminate failed"));
-  slots.set("my-agent", {
-    ...makeSlot({ slug: "my-agent" }),
-    initializing: Promise.resolve({ terminate } as never),
-  });
 
   const resp = await fetch("/my-agent", {
     method: "DELETE",

@@ -2,7 +2,7 @@
 // Bundle store backed by unstorage (S3-compatible storage via Tigris, R2, etc.).
 
 import { errorMessage } from "@alexkroman1/aai/host";
-import AsyncLock from "async-lock";
+import { getLock } from "p-lock";
 import type { Storage } from "unstorage";
 import { z } from "zod";
 import type { AgentMetadata } from "./_schemas.ts";
@@ -42,7 +42,7 @@ export function createBundleStore(
 ): BundleStore {
   const { credentialKey } = opts;
 
-  const manifestLock = new AsyncLock();
+  const manifestLock = getLock();
 
   async function deleteByPrefix(prefix: string): Promise<void> {
     const keys = await storage.getKeys(prefix);
@@ -114,7 +114,8 @@ export function createBundleStore(
     },
 
     async putEnv(slug, env) {
-      await manifestLock.acquire(slug, async () => {
+      const release = await manifestLock(slug);
+      try {
         const raw = await getRawManifest(slug);
         if (!raw) throw new Error(`Agent ${slug} not found`);
         const updated = {
@@ -123,7 +124,9 @@ export function createBundleStore(
           envEncrypted: true,
         };
         await storage.setItem(objectKey(slug, "manifest.json"), JSON.stringify(updated));
-      });
+      } finally {
+        release();
+      }
     },
   };
 
