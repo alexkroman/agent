@@ -9,7 +9,7 @@ const RESERVED_KEYS = new Set(["ASSEMBLYAI_API_KEY"]);
 
 async function restartSandbox(c: AppContext, slug: string, reason: string): Promise<void> {
   const slot = c.env.slots.get(slug);
-  if (slot?.sandbox || slot?.initializing) {
+  if (slot?.sandbox) {
     console.info(`Restarting sandbox for ${reason}`, { slug });
     await terminateSlot(slot);
   }

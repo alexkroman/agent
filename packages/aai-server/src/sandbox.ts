@@ -141,13 +141,12 @@ async function startIsolate(
   const allowedKeys = new Set(Object.keys(prefixedEnv));
   const crashController = new AbortController();
 
-  let resolvePort: (port: number) => void;
-  let rejectPort: (err: Error) => void;
   let portResolved = false;
-  const portPromise = new Promise<number>((resolve, reject) => {
-    resolvePort = resolve;
-    rejectPort = reject;
-  });
+  const {
+    promise: portPromise,
+    resolve: resolvePort,
+    reject: rejectPort,
+  } = Promise.withResolvers<number>();
 
   const runtime = new NodeRuntime({
     systemDriver: createNodeDriver({

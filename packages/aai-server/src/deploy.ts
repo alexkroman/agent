@@ -2,8 +2,7 @@
 import type { DeployBody } from "./_schemas.ts";
 import { EnvSchema } from "./_schemas.ts";
 import type { AppContext } from "./context.ts";
-import { terminateSlot } from "./sandbox-slots.ts";
-import { withSlugLock } from "./slug-lock.ts";
+import { terminateSlot, withSlugLock } from "./sandbox-slots.ts";
 
 export function handleDeploy(c: AppContext): Promise<Response> {
   const slug = c.var.slug;
@@ -27,7 +26,7 @@ async function handleDeployInner(c: AppContext): Promise<Response> {
   }
 
   const existing = c.env.slots.get(slug);
-  if (existing?.sandbox || existing?.initializing) {
+  if (existing?.sandbox) {
     console.info("Replacing existing deploy", { slug });
     await terminateSlot(existing);
   }

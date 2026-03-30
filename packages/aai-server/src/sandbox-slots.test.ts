@@ -110,13 +110,12 @@ describe("ensureAgent", () => {
     expect(mockCreateSandbox).toHaveBeenCalledOnce();
   });
 
-  it("clears initializing on failure so retry is possible", async () => {
+  it("allows retry after failure", async () => {
     const slot = makeSlot();
     mockCreateSandbox.mockRejectedValueOnce(new Error("boom"));
     const opts = makeEnsureOpts();
 
     await expect(ensureAgent(slot, opts)).rejects.toThrow("boom");
-    expect(slot.initializing).toBeUndefined();
 
     // Retry should work
     mockCreateSandbox.mockResolvedValueOnce(makeMockSandbox());
@@ -131,13 +130,13 @@ describe("ensureAgent", () => {
     const sandbox = await ensureAgent(slot, opts);
     expect(slot.sandbox).toBeDefined();
 
-    vi.advanceTimersByTime(_slotInternals.IDLE_MS + 1);
+    await vi.advanceTimersByTimeAsync(_slotInternals.IDLE_MS + 1);
 
     expect(slot.sandbox).toBeUndefined();
     expect(sandbox.terminate).toHaveBeenCalledOnce();
   });
 
-  it("concurrent calls during termination share the same new sandbox", async () => {
+  it("concurrent calls during eviction share the same new sandbox", async () => {
     const slot = makeSlot();
     const opts = makeEnsureOpts();
 
@@ -153,16 +152,16 @@ describe("ensureAgent", () => {
     // biome-ignore lint/style/noNonNullAssertion: sandbox is set above
     slot.sandbox!.terminate = vi.fn(() => terminatePromise);
 
-    // Trigger idle eviction — sandbox is deleted, termination starts
+    // Fire the idle timer — evictSlot acquires the lock and awaits terminate
     vi.advanceTimersByTime(_slotInternals.IDLE_MS + 1);
-    expect(slot.sandbox).toBeUndefined();
-    expect(slot.terminating).toBeDefined();
+    // Yield so evictSlot acquires the lock (uncontested at this point)
+    await vi.advanceTimersByTimeAsync(0);
 
-    // Two concurrent ensureAgent calls while termination is in progress
+    // Two concurrent ensureAgent calls queue behind the eviction lock
     const p1 = ensureAgent(slot, opts);
     const p2 = ensureAgent(slot, opts);
 
-    // Let termination complete
+    // Let termination complete — releases the lock
     resolveTerminate();
     const [sb1, sb2] = await Promise.all([p1, p2]);
 
@@ -178,18 +177,18 @@ describe("ensureAgent", () => {
     await ensureAgent(slot, opts);
 
     // Advance partway through the idle timeout
-    vi.advanceTimersByTime(_slotInternals.IDLE_MS - 50);
+    await vi.advanceTimersByTimeAsync(_slotInternals.IDLE_MS - 50);
     expect(slot.sandbox).toBeDefined();
 
     // Call again to reset timer
     await ensureAgent(slot, opts);
 
     // Advance partway again — should NOT have evicted
-    vi.advanceTimersByTime(_slotInternals.IDLE_MS - 50);
+    await vi.advanceTimersByTimeAsync(_slotInternals.IDLE_MS - 50);
     expect(slot.sandbox).toBeDefined();
 
     // Now advance past the full idle period — should evict
-    vi.advanceTimersByTime(51);
+    await vi.advanceTimersByTimeAsync(51);
     expect(slot.sandbox).toBeUndefined();
   });
 });
