@@ -185,16 +185,17 @@ describe("SSRF: redirect chain validation", () => {
 
   test("ssrfSafeFetch enforces max redirect limit", async () => {
     let callCount = 0;
+    // Use a public IP literal to avoid DNS lookups that cause timeouts
     const mockFetch = vi.fn(async () => {
       callCount++;
       return new Response("", {
         status: 302,
-        headers: { Location: `https://public.example.com/hop-${callCount}` },
+        headers: { Location: `https://93.184.216.34/hop-${callCount}` },
       });
     });
 
     await expect(
-      ssrfSafeFetch("https://public.example.com/start", {}, mockFetch as typeof globalThis.fetch),
+      ssrfSafeFetch("https://93.184.216.34/start", {}, mockFetch as typeof globalThis.fetch),
     ).rejects.toThrow("Too many redirects");
 
     // MAX_REDIRECTS = 5, so at most 6 fetch calls (initial + 5 redirects)
@@ -203,12 +204,13 @@ describe("SSRF: redirect chain validation", () => {
 
   test("ssrfSafeFetch re-validates each hop in redirect chain", async () => {
     let callCount = 0;
+    // Use a public IP literal to avoid DNS lookups that cause timeouts
     const mockFetch = vi.fn(async (_url: string) => {
       callCount++;
       if (callCount <= 2) {
         return new Response("", {
           status: 302,
-          headers: { Location: "https://public.example.com/safe-hop" },
+          headers: { Location: "https://93.184.216.34/safe-hop" },
         });
       }
       // Third redirect goes to private IP
@@ -222,7 +224,7 @@ describe("SSRF: redirect chain validation", () => {
     });
 
     await expect(
-      ssrfSafeFetch("https://public.example.com/start", {}, mockFetch as typeof globalThis.fetch),
+      ssrfSafeFetch("https://93.184.216.34/start", {}, mockFetch as typeof globalThis.fetch),
     ).rejects.toThrow("Blocked");
   });
 
