@@ -1,10 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { createStorage } from "unstorage";
 import { describe, expect, test, vi } from "vitest";
 import { createMockToolContext } from "./_test-utils.ts";
-import { getBuiltinToolDefs, getBuiltinToolSchemas, memoryTools } from "./builtin-tools.ts";
-import { createUnstorageKv } from "./unstorage-kv.ts";
+import { getBuiltinToolDefs, getBuiltinToolSchemas } from "./builtin-tools.ts";
 
 describe("getBuiltinToolSchemas", () => {
   test("returns requested tools", () => {
@@ -25,16 +23,6 @@ describe("getBuiltinToolSchemas", () => {
   test("returns empty for no tools", () => {
     const schemas = getBuiltinToolSchemas([]);
     expect(schemas).toHaveLength(0);
-  });
-
-  test("memory expands to 4 tools", () => {
-    const schemas = getBuiltinToolSchemas(["memory"]);
-    expect(schemas).toHaveLength(4);
-    const names = schemas.map((s) => s.name);
-    expect(names).toContain("save_memory");
-    expect(names).toContain("recall_memory");
-    expect(names).toContain("list_memories");
-    expect(names).toContain("forget_memory");
   });
 
   test("unknown tool name returns empty", () => {
@@ -395,81 +383,5 @@ describe("getBuiltinToolDefs", () => {
     expect((result.content as string).length).toBeLessThanOrEqual(10_000);
     expect(result.truncated).toBe(true);
     expect(typeof result.totalChars).toBe("number");
-  });
-});
-
-// ─── Memory tools ────────────────────────────────────────────────────────────
-
-describe("memoryTools", () => {
-  test("save_memory saves to kv and returns key", async () => {
-    const kv = createUnstorageKv({ storage: createStorage() });
-    const tools = memoryTools();
-    const ctx = createMockToolContext({ kv });
-
-    const result = await tools.save_memory.execute({ key: "user:name", value: "Alice" }, ctx);
-    expect(result).toEqual({ saved: "user:name" });
-    expect(await kv.get("user:name")).toBe("Alice");
-  });
-
-  test("recall_memory returns found value", async () => {
-    const kv = createUnstorageKv({ storage: createStorage() });
-    await kv.set("test:key", "test-value");
-    const tools = memoryTools();
-    const ctx = createMockToolContext({ kv });
-
-    const result = await tools.recall_memory.execute({ key: "test:key" }, ctx);
-    expect(result).toEqual({ found: true, key: "test:key", value: "test-value" });
-  });
-
-  test("recall_memory returns not found for missing key", async () => {
-    const kv = createUnstorageKv({ storage: createStorage() });
-    const tools = memoryTools();
-    const ctx = createMockToolContext({ kv });
-
-    const result = await tools.recall_memory.execute({ key: "missing" }, ctx);
-    expect(result).toEqual({ found: false, key: "missing" });
-  });
-
-  test("list_memories lists keys with prefix filter", async () => {
-    const kv = createUnstorageKv({ storage: createStorage() });
-    await kv.set("user:name", "Alice");
-    await kv.set("user:age", "30");
-    await kv.set("project:id", "123");
-    const tools = memoryTools();
-    const ctx = createMockToolContext({ kv });
-
-    const result = (await tools.list_memories.execute({ prefix: "user:" }, ctx)) as {
-      count: number;
-      keys: string[];
-    };
-    expect(result.count).toBe(2);
-    expect(result.keys).toContain("user:name");
-    expect(result.keys).toContain("user:age");
-    expect(result.keys).not.toContain("project:id");
-  });
-
-  test("list_memories lists all keys with empty prefix", async () => {
-    const kv = createUnstorageKv({ storage: createStorage() });
-    await kv.set("a", "1");
-    await kv.set("b", "2");
-    const tools = memoryTools();
-    const ctx = createMockToolContext({ kv });
-
-    const result = (await tools.list_memories.execute({}, ctx)) as {
-      count: number;
-      keys: string[];
-    };
-    expect(result.count).toBe(2);
-  });
-
-  test("forget_memory deletes from kv", async () => {
-    const kv = createUnstorageKv({ storage: createStorage() });
-    await kv.set("to-delete", "val");
-    const tools = memoryTools();
-    const ctx = createMockToolContext({ kv });
-
-    const result = await tools.forget_memory.execute({ key: "to-delete" }, ctx);
-    expect(result).toEqual({ deleted: "to-delete" });
-    expect(await kv.get("to-delete")).toBeNull();
   });
 });
