@@ -4,7 +4,9 @@
   "ignoreExportsUsedInFile": true,
   "exclude": ["exports", "types", "optionalPeerDependencies"],
   "workspaces": {
-    ".": {},
+    ".": {
+      "entry": ["scripts/*.mjs"]
+    },
     "packages/aai": {
       "entry": ["**/*.test.ts", "host/_test-utils.ts"],
       "includeEntryExports": true
