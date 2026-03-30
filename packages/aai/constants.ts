@@ -57,11 +57,6 @@ export const MAX_GLOB_PATTERN_LENGTH = 1024;
 /** Maximum conversation messages to retain (sliding window). */
 export const DEFAULT_MAX_HISTORY = 200;
 
-// ─── Isolate resource limits ─────────────────────────────────────────────
-
-/** Memory limit for run_code isolates (MB). */
-export const RUN_CODE_MEMORY_MB = 32;
-
 // ─── Security ───────────────────────────────────────────────────────────
 
 /**
