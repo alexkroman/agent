@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 import type { Kv } from "@alexkroman1/aai/kv";
 import { beforeEach, describe, expect, test, vi } from "vitest";
+import { createMockKv } from "./_test-utils.ts";
 import { buildNetworkAdapter, buildNetworkPolicy } from "./sandbox-network.ts";
 
 vi.mock("secure-exec", () => ({
@@ -16,21 +17,6 @@ vi.mock("secure-exec", () => ({
     }),
   }),
 }));
-
-function createMockKv(): Kv {
-  const store = new Map<string, unknown>();
-  return {
-    get: vi.fn(async (key: string) => store.get(key) ?? null) as Kv["get"],
-    set: vi.fn(async (key: string, value: unknown) => {
-      store.set(key, value);
-    }),
-    delete: vi.fn(async (key: string) => {
-      store.delete(key);
-    }),
-    keys: vi.fn(async () => ["k1", "k2"]),
-    list: vi.fn(async () => [{ key: "k1", value: "v1" }]) as Kv["list"],
-  };
-}
 
 // ── buildNetworkPolicy ──────────────────────────────────────────────────
 
@@ -115,6 +101,7 @@ describe("buildNetworkAdapter", () => {
 
   test("KV keys returns list", async () => {
     const kv = createMockKv();
+    (kv.keys as ReturnType<typeof vi.fn>).mockResolvedValue(["k1", "k2"]);
     const adapter = buildNetworkAdapter(kv);
     const result = await adapter.fetch("http://kv.internal/keys", {
       method: "POST",
@@ -127,6 +114,7 @@ describe("buildNetworkAdapter", () => {
 
   test("KV list returns entries", async () => {
     const kv = createMockKv();
+    (kv.list as ReturnType<typeof vi.fn>).mockResolvedValue([{ key: "k1", value: "v1" }]);
     const adapter = buildNetworkAdapter(kv);
     const result = await adapter.fetch("http://kv.internal/list", {
       method: "POST",

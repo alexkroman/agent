@@ -10,6 +10,7 @@
  */
 
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
+import { createMockKv } from "./_test-utils.ts";
 import { _internals } from "./sandbox.ts";
 
 // ── Agent bundle ─────────────────────────────────────────────────────────
@@ -39,25 +40,6 @@ export default {
   onTurn: (text, ctx) => { ctx.state.lastTurn = text; },
 };
 `;
-
-// ── Mocks ────────────────────────────────────────────────────────────────
-
-type Kv = import("@alexkroman1/aai/kv").Kv;
-
-function createMockKv(): Kv {
-  const store = new Map<string, unknown>();
-  return {
-    get: (async (key: string) => store.get(key) ?? null) as Kv["get"],
-    set: async (key: string, value: unknown, _options?: { expireIn?: number }) => {
-      store.set(key, value);
-    },
-    delete: async (key: string) => {
-      store.delete(key);
-    },
-    list: (async () => []) as Kv["list"],
-    keys: async (_pattern?: string): Promise<string[]> => [],
-  };
-}
 
 // ── Isolate boot tests ──────────────────────────────────────────────────
 
