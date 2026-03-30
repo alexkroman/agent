@@ -35,7 +35,10 @@ COPY patches/ patches/
 COPY packages/aai/package.json packages/aai/
 COPY packages/aai-server/package.json packages/aai-server/
 
-RUN pnpm install --frozen-lockfile --ignore-scripts --prod
+# esbuild needs its install script to set up the platform-specific binary.
+# secure-exec uses esbuild at runtime to compile isolate code.
+RUN pnpm install --frozen-lockfile --ignore-scripts --prod && \
+    node node_modules/.pnpm/esbuild@*/node_modules/esbuild/install.js
 
 COPY --from=build /app/packages/aai/dist/ packages/aai/dist/
 COPY --from=build /app/packages/aai-server/dist/ packages/aai-server/dist/
