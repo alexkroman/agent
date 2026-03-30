@@ -91,9 +91,9 @@ describe("getBuiltinToolDefs", () => {
     expect(result).toBe("w\ne\nd\ni");
   });
 
-  // ─── run_code security: isolate prevents host access ──────────────
+  // ─── run_code security: vm sandbox prevents host access ──────────────
 
-  test("run_code isolate blocks network access", async () => {
+  test("run_code sandbox blocks network access", async () => {
     const defs = getBuiltinToolDefs(["run_code"]);
     const ctx = createMockToolContext();
     const result = await defs.run_code?.execute(
@@ -113,7 +113,7 @@ describe("getBuiltinToolDefs", () => {
     expect(result as string).toMatch(/BLOCKED/);
   });
 
-  test("run_code isolate blocks filesystem writes", async () => {
+  test("run_code sandbox blocks filesystem writes", async () => {
     const defs = getBuiltinToolDefs(["run_code"]);
     const ctx = createMockToolContext();
     const result = await defs.run_code?.execute(
@@ -134,7 +134,7 @@ describe("getBuiltinToolDefs", () => {
     expect(result as string).toMatch(/BLOCKED/);
   });
 
-  test("run_code isolate blocks child process spawning", async () => {
+  test("run_code sandbox blocks child process spawning", async () => {
     const defs = getBuiltinToolDefs(["run_code"]);
     const ctx = createMockToolContext();
     const result = await defs.run_code?.execute(
@@ -155,7 +155,7 @@ describe("getBuiltinToolDefs", () => {
     expect(result as string).toMatch(/BLOCKED/);
   });
 
-  test("run_code isolate blocks env var access", async () => {
+  test("run_code sandbox blocks env var access", async () => {
     const defs = getBuiltinToolDefs(["run_code"]);
     const ctx = createMockToolContext();
     const result = await defs.run_code?.execute(
@@ -177,11 +177,11 @@ describe("getBuiltinToolDefs", () => {
     expect(result as string).not.toMatch(/LEAKED_ENV/);
   });
 
-  test("run_code isolate prevents constructor chain escape", async () => {
+  test("run_code sandbox prevents constructor chain escape", async () => {
     const defs = getBuiltinToolDefs(["run_code"]);
     const ctx = createMockToolContext();
-    // This was the critical bypass in the old regex approach — now the isolate
-    // blocks env access so host secrets can't be exfiltrated.
+    // This was the critical bypass in the old regex approach — the VM context
+    // doesn't expose `process` so host secrets can't be exfiltrated.
     const result = await defs.run_code?.execute(
       {
         code: `

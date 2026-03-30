@@ -1,19 +1,19 @@
-[
-  "code-interpreter",
-  "dispatch-center",
-  "embedded-assets",
-  "health-assistant",
-  "infocom-adventure",
-  "math-buddy",
-  "memory-agent",
-  "night-owl",
-  "personal-finance",
-  "pizza-ordering",
-  "simple",
-  "smart-research",
-  "solo-rpg",
-  "support",
-  "test-patterns",
-  "travel-concierge",
-  "web-researcher"
-]
+{
+  "simple": "Minimal starter — web search, fetch, run code",
+  "web-researcher": "Research assistant — search + page visits for detailed answers",
+  "smart-research": "Multi-phase research — gather, analyze, respond with dynamic tools",
+  "memory-agent": "Persistent memory — remembers facts across conversations via KV",
+  "code-interpreter": "JavaScript sandbox — math, data processing, calculations",
+  "math-buddy": "Calculations, unit conversions, dice rolls via run_code",
+  "health-assistant": "Medication lookup, drug interactions, BMI, symptom guidance",
+  "personal-finance": "Currency, crypto prices, loan calculations, savings projections",
+  "travel-concierge": "Trip planning — weather, flights, hotels, currency conversion",
+  "night-owl": "Movie/music/book recs by mood, sleep calculator — custom UI",
+  "pizza-ordering": "Pizza order-taker with dynamic cart sidebar — custom UI",
+  "dispatch-center": "911 dispatch with triage and resource assignment — custom UI",
+  "infocom-adventure": "Zork-style text adventure with puzzles and inventory — custom UI",
+  "solo-rpg": "Dark-fantasy RPG with dice, combat, save/load — custom UI",
+  "embedded-assets": "FAQ bot using embedded JSON knowledge (no web search)",
+  "support": "Support agent for AssemblyAI docs",
+  "test-patterns": "Reference — demonstrates every testable agent pattern"
+}

@@ -73,8 +73,9 @@ export async function getApiKey(): Promise<string> {
     return config.assemblyai_api_key;
   }
 
-  consola.info("Get your API key at https://www.assemblyai.com/dashboard/signup");
-  consola.info("Or set the ASSEMBLYAI_API_KEY environment variable to skip this prompt.\n");
+  const { log } = await import("./_ui.ts");
+  log.info("Get your API key at https://www.assemblyai.com/dashboard/signup");
+  log.info("Or set the ASSEMBLYAI_API_KEY environment variable to skip this prompt.");
 
   let key: string | undefined;
   while (!key) {

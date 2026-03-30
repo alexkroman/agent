@@ -25,7 +25,7 @@ import { mainCommand } from "./cli.ts";
 describe("CLI integration: arg parsing", () => {
   test("all subcommands are registered", () => {
     const subs = mainCommand.subCommands as Record<string, unknown>;
-    for (const cmd of ["init", "dev", "build", "deploy", "delete", "secret", "generate", "run"]) {
+    for (const cmd of ["init", "dev", "build", "deploy", "delete", "secret"]) {
       expect(subs[cmd]).toBeDefined();
     }
   });
@@ -96,7 +96,7 @@ describe("CLI integration: init creates working project", () => {
     await withTempDir(async (dir) => {
       fakeTemplatesDir = await createFakeTemplates(dir);
       const templates = await listTemplates();
-      expect(templates).toEqual(["simple"]);
+      expect(templates).toEqual([{ name: "simple", description: "" }]);
     });
   });
 

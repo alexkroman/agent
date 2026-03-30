@@ -27,14 +27,26 @@ async function resolveTemplatesDir(): Promise<string> {
   return dir;
 }
 
-/** List available template names. */
-export async function listTemplates(): Promise<string[]> {
-  const dir = path.join(await resolveTemplatesDir(), "templates");
+export type TemplateInfo = { name: string; description: string };
+
+/** List available templates with descriptions. */
+export async function listTemplates(): Promise<TemplateInfo[]> {
+  const root = await resolveTemplatesDir();
+  const dir = path.join(root, "templates");
   const entries = await fs.readdir(dir, { withFileTypes: true });
-  return entries
+  const names = entries
     .filter((e) => e.isDirectory())
     .map((e) => e.name)
     .sort((a, b) => a.localeCompare(b));
+
+  let descriptions: Record<string, string> = {};
+  try {
+    descriptions = JSON.parse(await fs.readFile(path.join(root, "templates.json"), "utf-8"));
+  } catch {
+    /* no descriptions file */
+  }
+
+  return names.map((name) => ({ name, description: descriptions[name] ?? "" }));
 }
 
 /**

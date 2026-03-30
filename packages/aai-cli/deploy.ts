@@ -2,14 +2,8 @@
 
 import { type BundleOutput, buildAgentBundle } from "./_bundler.ts";
 import { runDeploy } from "./_deploy.ts";
-import {
-  generateSlug,
-  getApiKey,
-  readProjectConfig,
-  resolveServerUrl,
-  writeProjectConfig,
-} from "./_discover.ts";
-import { consola } from "./_ui.ts";
+import { getApiKey, readProjectConfig, resolveServerUrl, writeProjectConfig } from "./_discover.ts";
+import { fmtUrl, log } from "./_ui.ts";
 
 async function deployBundle(opts: {
   bundle: BundleOutput;
@@ -21,7 +15,7 @@ async function deployBundle(opts: {
   const { bundle, serverUrl, apiKey, cwd } = opts;
   let { slug } = opts;
 
-  consola.start(`Deploying ${slug}`);
+  log.step(`Deploying ${slug}`);
   const deployed = await runDeploy({
     url: serverUrl,
     bundle,
@@ -34,7 +28,7 @@ async function deployBundle(opts: {
   await writeProjectConfig(cwd, { slug, serverUrl });
 
   const agentUrl = `${serverUrl}/${slug}`;
-  consola.success(`Deployed ${agentUrl}`);
+  log.success(`Deployed ${fmtUrl(agentUrl)}`);
   return agentUrl;
 }
 
@@ -48,12 +42,11 @@ export async function runDeployCommand(opts: {
   const apiKey = dryRun ? "" : await getApiKey();
   const projectConfig = await readProjectConfig(cwd);
   const serverUrl = resolveServerUrl(opts.server, projectConfig?.serverUrl);
-  const slug = projectConfig?.slug ?? generateSlug();
-
   const bundle = await buildAgentBundle(cwd);
+  const slug = projectConfig?.slug ?? bundle.slug;
 
   if (dryRun) {
-    consola.info(`Dry run complete — would deploy as ${slug}`);
+    log.info(`Dry run complete — would deploy as ${slug}`);
     return;
   }
 

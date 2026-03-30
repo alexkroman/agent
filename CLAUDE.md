@@ -285,11 +285,11 @@ a denylist.
 
 **`run_code` built-in tool (aai/builtin-tools.ts):**
 
-- Each invocation runs in a **fresh secure-exec V8 isolate** — fully
-  isolated from the host process and from other invocations.
-- No network, no filesystem writes, no child processes, no env vars.
-- 32 MB memory limit, 5-second execution timeout.
-- Isolate is disposed immediately after execution — no state leaks.
+- Each invocation runs in a **fresh `node:vm` context** — isolated from
+  the host process and from other invocations.
+- No network, no filesystem access, no child processes, no env vars.
+- 5-second execution timeout.
+- Context is discarded after execution — no state leaks.
 - Works identically in both self-hosted and platform modes.
 
 **Self-hosted server (aai/server.ts):**
@@ -312,11 +312,11 @@ a denylist.
 
 - `sandbox-integration.test.ts` — network, filesystem, process, env
   isolation e2e. Run: `pnpm --filter @alexkroman1/aai-server test:integration`
-- `builtin-tools.test.ts` — `run_code` isolate security boundaries.
-- `run-code-isolate.test.ts` — comprehensive integration tests for
-  run_code V8 isolate (network, filesystem, process, env, constructor
+- `builtin-tools.test.ts` — `run_code` sandbox security boundaries.
+- `run-code-sandbox.test.ts` — comprehensive tests for run_code
+  `node:vm` sandbox (network, filesystem, process, env, constructor
   chain bypass, cross-invocation isolation).
-- `pentest.test.ts` — penetration tests verifying isolate prevents
+- `pentest.test.ts` — penetration tests verifying sandbox prevents
   previously-exploitable constructor chain bypasses.
 - `_net.test.ts` — SSRF bypass prevention (IPv4-mapped IPv6, cloud metadata,
   `.internal` domains).

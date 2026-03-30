@@ -17,6 +17,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@alexkroman1/aai-cli": "^0.10.4",
     "@biomejs/biome": "^2.4.9",
     "@preact/preset-vite": "^2.9.6",
     "@tailwindcss/vite": "^4.2.1",

@@ -18,12 +18,12 @@
  * });
  * ```
  *
- * @example Sandbox (integration test)
+ * @example Sandbox (integration test in aai-server)
  * ```ts
- * import { testRuntime, CONFORMANCE_AGENT_BUNDLE } from "@alexkroman1/aai/runtime-conformance";
+ * import { testRuntime } from "@alexkroman1/aai/internal";
  *
  * testRuntime("sandbox", async () => {
- *   // ... start isolate with CONFORMANCE_AGENT_BUNDLE
+ *   // ... start isolate with a bundled agent
  *   return { executeTool: buildExecuteTool(...), hooks: buildHookInvoker(...) };
  * });
  * ```
@@ -51,11 +51,7 @@ export type RuntimeTestContext = {
 
 // ── Conformance agent ──────────────────────────────────────────────────────
 
-/**
- * Agent definition used by the conformance suite (direct executor path).
- *
- * Must be kept in sync with {@link CONFORMANCE_AGENT_BUNDLE}.
- */
+/** Agent definition used by the conformance suite (direct executor path). */
 export const CONFORMANCE_AGENT: AgentDef = {
   name: "conformance-test",
   instructions: "Conformance test agent.",
@@ -97,48 +93,6 @@ export const CONFORMANCE_AGENT: AgentDef = {
     (ctx.state as { lastTurn: string }).lastTurn = text;
   },
 };
-
-/**
- * JavaScript bundle equivalent of {@link CONFORMANCE_AGENT} for the sandbox
- * isolate path. Must be kept in sync with the AgentDef above.
- */
-export const CONFORMANCE_AGENT_BUNDLE = `
-export default {
-  name: "conformance-test",
-  instructions: "Conformance test agent.",
-  greeting: "Hello!",
-  maxSteps: 5,
-  state: () => ({ count: 0, lastTurn: "" }),
-  tools: {
-    echo: {
-      description: "Echo input",
-      execute(args) { return "echo:" + args.text; },
-    },
-    get_env: {
-      description: "Get MY_VAR from env",
-      execute(_args, ctx) { return ctx.env.MY_VAR ?? "missing"; },
-    },
-    get_state: {
-      description: "Get session state",
-      execute(_args, ctx) { return JSON.stringify(ctx.state); },
-    },
-    echo_messages: {
-      description: "Return messages as JSON",
-      execute(_args, ctx) { return JSON.stringify(ctx.messages); },
-    },
-    kv_roundtrip: {
-      description: "KV set then get",
-      async execute(args, ctx) {
-        await ctx.kv.set("test-key", args.value);
-        const result = await ctx.kv.get("test-key");
-        return "stored:" + JSON.stringify(result);
-      },
-    },
-  },
-  onConnect: (ctx) => { ctx.state.count = 1; },
-  onTurn: (text, ctx) => { ctx.state.lastTurn = text; },
-};
-`;
 
 // ── Shared conformance suite ───────────────────────────────────────────────
 

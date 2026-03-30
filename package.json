@@ -54,7 +54,6 @@
       "isolated-vm",
       "lefthook"
     ],
-    "onlyBuiltDependencies": [],
-    "patchedDependencies": {}
+    "onlyBuiltDependencies": []
   }
 }

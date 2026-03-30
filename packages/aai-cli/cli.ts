@@ -117,11 +117,17 @@ const deploy = defineCommand({
   async run({ args }) {
     const cwd = await setup(args, { agent: true });
     const { runDeployCommand } = await import("./deploy.ts");
-    await runDeployCommand({
-      cwd,
-      ...(args.server ? { server: args.server } : {}),
-      ...(args.dryRun ? { dryRun: args.dryRun } : {}),
-    });
+    try {
+      await runDeployCommand({
+        cwd,
+        ...(args.server ? { server: args.server } : {}),
+        ...(args.dryRun ? { dryRun: args.dryRun } : {}),
+      });
+    } catch (err: unknown) {
+      const { log } = await import("./_ui.ts");
+      log.error(err instanceof Error ? err.message : String(err));
+      process.exit(1);
+    }
   },
 });
 
@@ -178,33 +184,6 @@ const secret = defineCommand({
   subCommands: { put: secretPut, delete: secretDelete, list: secretList },
 });
 
-const generate = defineCommand({
-  meta: { name: "generate", description: "Generate or update agent code with AI" },
-  args: {
-    prompt: { type: "positional", description: "Describe the agent to generate", required: true },
-  },
-  async run({ args }) {
-    const cwd = await setup(undefined, { apiKey: true });
-    const { runGenerateCommand } = await import("./generate.ts");
-    await runGenerateCommand({ cwd, prompt: args.prompt });
-  },
-});
-
-const run = defineCommand({
-  meta: { name: "run", description: "Build and deploy an agent from a prompt" },
-  args: {
-    prompt: { type: "positional", description: "Describe the agent to build", required: true },
-    server: sharedArgs.server,
-  },
-  async run({ args }) {
-    const cwd = await setup({ yes: true }, { agent: true, apiKey: true });
-    const { runGenerateCommand } = await import("./generate.ts");
-    await runGenerateCommand({ cwd, prompt: args.prompt });
-    const { runDeployCommand } = await import("./deploy.ts");
-    await runDeployCommand({ cwd, ...(args.server ? { server: args.server } : {}) });
-  },
-});
-
 export const mainCommand = defineCommand({
   meta: { name: "aai", version: VERSION, description: "Voice agent development kit" },
   subCommands: {
@@ -215,41 +194,16 @@ export const mainCommand = defineCommand({
     deploy,
     delete: del,
     secret,
-    generate,
-    run,
   },
 });
 
 if (process.env.VITEST !== "true") {
   const sub = process.argv[2];
-  const knownCommands = new Set(Object.keys(mainCommand.subCommands ?? {}));
   const helpFlags = new Set(["--help", "--version", "-h", "-V"]);
 
   if (!sub || (sub.startsWith("-") && !helpFlags.has(sub))) {
     // No argument or unknown flag → default to init
     process.argv.splice(2, 0, "init");
-  } else if (!(sub.startsWith("-") || knownCommands.has(sub))) {
-    // Bare prompt: aai "build me a flower shop agent" → run
-    // Collect all non-flag args into a single prompt string
-    const promptParts: string[] = [];
-    const flagArgs: string[] = [];
-    for (let i = 2; i < process.argv.length; i++) {
-      if (process.argv[i]?.startsWith("-")) {
-        flagArgs.push(process.argv[i] as string);
-        if (i + 1 < process.argv.length && !process.argv[i + 1]?.startsWith("-")) {
-          flagArgs.push(process.argv[++i] as string);
-        }
-      } else {
-        promptParts.push(process.argv[i] as string);
-      }
-    }
-    process.argv = [
-      process.argv[0] as string,
-      process.argv[1] as string,
-      "run",
-      promptParts.join(" "),
-      ...flagArgs,
-    ];
   }
   void runMain(mainCommand);
 }

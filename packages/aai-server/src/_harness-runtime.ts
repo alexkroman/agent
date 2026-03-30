@@ -4,7 +4,29 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { type AgentHooks, callResolveTurnConfig, createAgentHooks } from "@alexkroman1/aai/hooks";
 import type { Kv } from "@alexkroman1/aai/kv";
 import type { AgentDef, ToolContext } from "@alexkroman1/aai/types";
-import { createSessionStateMap } from "@alexkroman1/aai/utils";
+
+/** Lazily initialized per-session state manager. */
+function createSessionStateMap(initState?: () => Record<string, unknown>): {
+  get(sessionId: string): Record<string, unknown>;
+  set(sessionId: string, state: Record<string, unknown>): void;
+  delete(sessionId: string): boolean;
+} {
+  const map = new Map<string, Record<string, unknown>>();
+  return {
+    get(sessionId: string): Record<string, unknown> {
+      if (!map.has(sessionId) && initState) {
+        map.set(sessionId, initState());
+      }
+      return map.get(sessionId) ?? {};
+    },
+    set(sessionId: string, state: Record<string, unknown>): void {
+      map.set(sessionId, state);
+    },
+    delete(sessionId: string): boolean {
+      return map.delete(sessionId);
+    },
+  };
+}
 
 /** Lightweight error with HTTP status for RPC responses. */
 class RpcError extends Error {

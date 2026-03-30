@@ -57,7 +57,11 @@ describe("listTemplates", () => {
   test("returns sorted template directory names", async () => {
     await withTempDir(async (dir) => {
       fakeTemplatesDir = await createFakeTemplates(dir);
-      expect(await listTemplates()).toEqual(["advanced", "simple", "with-env"]);
+      expect(await listTemplates()).toEqual([
+        { name: "advanced", description: "" },
+        { name: "simple", description: "" },
+        { name: "with-env", description: "" },
+      ]);
     });
   });
 

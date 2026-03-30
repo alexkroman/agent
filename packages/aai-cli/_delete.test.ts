@@ -53,10 +53,10 @@ describe("_delete", () => {
   });
 
   describe("network error handling", () => {
-    test("network error on localhost includes dev server hint", async () => {
+    test("network error includes network hint", async () => {
       const mockFetch = vi.fn().mockRejectedValue(new Error("ECONNREFUSED"));
       await expect(runDelete(deleteOpts(mockFetch))).rejects.toThrow(
-        "Is the local dev server running?",
+        "Check your network connection",
       );
     });
 
