@@ -37,7 +37,7 @@ export async function runTestCommand(cwd: string): Promise<void> {
   consola.start("Running agent tests");
   const ran = runVitest(cwd);
   if (!ran) {
-    consola.info("No test files found (agent.test.ts). Skipping.");
+    consola.info("No test file found. Create agent.test.ts to add tests.");
     return;
   }
   consola.success("Tests passed");

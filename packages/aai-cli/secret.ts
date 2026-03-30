@@ -42,8 +42,9 @@ export async function runSecretList(cwd: string): Promise<void> {
   const { resp } = await apiFetch(cwd, "");
   const { vars } = (await resp.json()) as { vars: string[] };
   if (vars.length === 0) {
-    consola.info("Secrets: none set");
+    consola.info("No secrets set. Use `aai secret put <name>` to add one.");
   } else {
+    consola.log(`${vars.length} secret${vars.length === 1 ? "" : "s"}:`);
     for (const name of vars) {
       consola.log(`  ${name}`);
     }

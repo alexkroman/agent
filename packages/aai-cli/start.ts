@@ -24,6 +24,6 @@ export async function runStartCommand(opts: { cwd: string; port: string }): Prom
     throw new Error("No build found — run `aai build` first");
   }
 
-  consola.start(`Starting production server on port ${port}`);
+  consola.start(`Starting server on port ${port}`);
   await _startProductionServer(opts.cwd, port);
 }

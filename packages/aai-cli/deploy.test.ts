@@ -97,7 +97,7 @@ describe("runDeploy", () => {
       ),
     );
     await expect(runDeploy(deployOpts(mockFetch))).rejects.toThrow(
-      "could not find an available agent slug after 20 attempts",
+      "Could not find an available slug after 20 attempts",
     );
     expect(mockFetch).toHaveBeenCalledTimes(20);
   });

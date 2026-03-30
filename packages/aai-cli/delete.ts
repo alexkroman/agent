@@ -8,7 +8,7 @@ export async function runDeleteCommand(opts: { cwd: string; server?: string }): 
   const { cwd } = opts;
   const { serverUrl, slug, apiKey } = await getServerInfo(cwd, opts.server);
 
-  consola.start(`Delete ${slug}`);
+  consola.start(`Deleting ${slug}`);
   await runDelete({ url: serverUrl, slug, apiKey });
   consola.success(`Deleted ${serverUrl}/${slug}`);
 }

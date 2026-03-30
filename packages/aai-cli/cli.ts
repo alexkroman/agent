@@ -9,7 +9,7 @@ import { ensureApiKeyInEnv, fileExists, resolveCwd } from "./_discover.ts";
 /** Shared arg definitions for citty commands. */
 const sharedArgs = {
   port: { type: "string", alias: "p", description: "Port to listen on", default: "3000" },
-  server: { type: "string", alias: "s", description: "Server URL" },
+  server: { type: "string", alias: "s", description: "Platform server URL" },
   yes: { type: "boolean", alias: "y", description: "Accept defaults (no prompts)" },
 } as const;
 
@@ -50,10 +50,10 @@ const init = defineCommand({
   args: {
     dir: { type: "positional", description: "Project directory", required: false },
     template: { type: "string", alias: "t", description: "Template to use" },
-    force: { type: "boolean", alias: "f", description: "Overwrite existing agent.ts" },
+    force: { type: "boolean", alias: "f", description: "Overwrite existing files" },
     yes: sharedArgs.yes,
     skipApi: { type: "boolean", description: "Skip API key check" },
-    skipDeploy: { type: "boolean", description: "Skip post-init deploy" },
+    skipDeploy: { type: "boolean", description: "Skip deploy after scaffolding" },
   },
   async run({ args }) {
     const { runInitCommand } = await import("./init.ts");
@@ -91,7 +91,7 @@ const test = defineCommand({
 });
 
 const build = defineCommand({
-  meta: { name: "build", description: "Bundle and validate (no server or deploy)" },
+  meta: { name: "build", description: "Bundle agent without deploying" },
   args: {
     yes: sharedArgs.yes,
     skipTests: { type: "boolean", description: "Skip running tests before build" },
@@ -165,7 +165,7 @@ const secretDelete = defineCommand({
 });
 
 const secretList = defineCommand({
-  meta: { name: "list", description: "List secret names" },
+  meta: { name: "list", description: "List all secrets" },
   async run() {
     const cwd = await setup(undefined, { apiKey: true });
     const { runSecretList } = await import("./secret.ts");
@@ -174,14 +174,14 @@ const secretList = defineCommand({
 });
 
 const secret = defineCommand({
-  meta: { name: "secret", description: "Manage secrets" },
+  meta: { name: "secret", description: "Manage agent secrets" },
   subCommands: { put: secretPut, delete: secretDelete, list: secretList },
 });
 
 const generate = defineCommand({
-  meta: { name: "generate", description: "Generate or modify agent code using AI" },
+  meta: { name: "generate", description: "Generate or update agent code with AI" },
   args: {
-    prompt: { type: "positional", description: "What to generate", required: true },
+    prompt: { type: "positional", description: "Describe the agent to generate", required: true },
   },
   async run({ args }) {
     const cwd = await setup(undefined, { apiKey: true });
@@ -191,9 +191,9 @@ const generate = defineCommand({
 });
 
 const run = defineCommand({
-  meta: { name: "run", description: "Init, generate, and deploy in one step" },
+  meta: { name: "run", description: "Build and deploy an agent from a prompt" },
   args: {
-    prompt: { type: "positional", description: "What to build", required: true },
+    prompt: { type: "positional", description: "Describe the agent to build", required: true },
     server: sharedArgs.server,
   },
   async run({ args }) {

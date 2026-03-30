@@ -74,5 +74,7 @@ export async function runDeploy(opts: DeployOpts): Promise<DeployResult> {
     slug = generateSlug();
   }
 
-  throw new Error(`could not find an available agent slug after ${MAX_SLUG_RETRIES} attempts`);
+  throw new Error(
+    `Could not find an available slug after ${MAX_SLUG_RETRIES} attempts. Set one manually in .aai/project.json.`,
+  );
 }

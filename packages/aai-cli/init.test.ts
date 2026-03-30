@@ -139,7 +139,7 @@ describe("runInit", () => {
         fakeTemplatesDir = await createFakeTemplates(dir);
         const target = path.join(dir, "output");
         await expect(runInit({ targetDir: target, template: "nonexistent" })).rejects.toThrow(
-          "unknown template",
+          "Unknown template",
         );
       }),
     );

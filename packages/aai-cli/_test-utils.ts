@@ -60,7 +60,7 @@ export async function fakeDownloadAndMerge(
 ): Promise<void> {
   const names = await fakeListTemplates(rootDir);
   if (!names.includes(template)) {
-    throw new Error(`unknown template '${template}' -- available: ${names.join(", ")}`);
+    throw new Error(`Unknown template "${template}". Available templates: ${names.join(", ")}`);
   }
   await fs.cp(path.join(rootDir, "templates", template), targetDir, {
     recursive: true,
