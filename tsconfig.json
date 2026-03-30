@@ -15,7 +15,7 @@
     "erasableSyntaxOnly": true,
     "allowImportingTsExtensions": true,
     "noEmit": true,
-    "customConditions": ["source"],
+    "customConditions": ["@dev/source"],
     "lib": ["ESNext"]
   }
 }

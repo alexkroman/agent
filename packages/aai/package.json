@@ -7,57 +7,57 @@
   ],
   "exports": {
     ".": {
-      "source": "./index.ts",
+      "@dev/source": "./index.ts",
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
     "./server": {
-      "source": "./server.ts",
+      "@dev/source": "./server.ts",
       "types": "./dist/server.d.ts",
       "import": "./dist/server.js"
     },
     "./types": {
-      "source": "./types.ts",
+      "@dev/source": "./types.ts",
       "types": "./dist/types.d.ts",
       "import": "./dist/types.js"
     },
     "./kv": {
-      "source": "./kv.ts",
+      "@dev/source": "./kv.ts",
       "types": "./dist/kv.d.ts",
       "import": "./dist/kv.js"
     },
     "./protocol": {
-      "source": "./protocol.ts",
+      "@dev/source": "./protocol.ts",
       "types": "./dist/protocol.d.ts",
       "import": "./dist/protocol.js"
     },
     "./testing": {
-      "source": "./testing.ts",
+      "@dev/source": "./testing.ts",
       "types": "./dist/testing.d.ts",
       "import": "./dist/testing.js"
     },
     "./testing/matchers": {
-      "source": "./matchers.ts",
+      "@dev/source": "./matchers.ts",
       "types": "./dist/matchers.d.ts",
       "import": "./dist/matchers.js"
     },
     "./internal": {
-      "source": "./internal.ts",
+      "@dev/source": "./internal.ts",
       "types": "./dist/internal.d.ts",
       "import": "./dist/internal.js"
     },
     "./hooks": {
-      "source": "./hooks.ts",
+      "@dev/source": "./hooks.ts",
       "types": "./dist/hooks.d.ts",
       "import": "./dist/hooks.js"
     },
     "./utils": {
-      "source": "./_utils.ts",
+      "@dev/source": "./_utils.ts",
       "types": "./dist/_utils.d.ts",
       "import": "./dist/_utils.js"
     },
     "./vite-plugin": {
-      "source": "./vite-plugin.ts",
+      "@dev/source": "./vite-plugin.ts",
       "types": "./dist/vite-plugin.d.ts",
       "import": "./dist/vite-plugin.js"
     }

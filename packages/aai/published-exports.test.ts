@@ -17,7 +17,7 @@ const exports: Record<string, Record<string, string> | string> = pkg.exports;
 describe("published exports", () => {
   for (const [entrypoint, value] of Object.entries(exports)) {
     if (typeof value === "string") continue; // e.g. CSS files
-    const source = value.source;
+    const source = value["@dev/source"];
     if (!source) continue;
 
     it(`${entrypoint} → ${source} exists and is importable`, async () => {
@@ -38,11 +38,11 @@ describe("published exports", () => {
     }
   });
 
-  it("every public export entry has a 'source' field pointing to a .ts file", () => {
+  it("every public export entry has a '@dev/source' field pointing to a .ts file", () => {
     for (const [entrypoint, value] of Object.entries(exports)) {
       if (typeof value === "string") continue;
-      expect(value.source, `${entrypoint} missing 'source' field`).toBeDefined();
-      expect(value.source, `${entrypoint} source should be .ts`).toMatch(/\.ts$/);
+      expect(value["@dev/source"], `${entrypoint} missing '@dev/source' field`).toBeDefined();
+      expect(value["@dev/source"], `${entrypoint} source should be .ts`).toMatch(/\.ts$/);
     }
   });
 
