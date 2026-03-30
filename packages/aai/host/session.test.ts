@@ -20,8 +20,7 @@ import {
   type S2sSessionOptions,
 } from "./session.ts";
 
-// biome-ignore lint/complexity/noBannedTypes: test helper accepts arbitrary mock functions
-function makeTestHooks(handlers?: Record<string, Function>) {
+function makeTestHooks(handlers?: Record<string, (...args: unknown[]) => unknown>) {
   const hooks = createHooks<AgentHookMap>();
   if (handlers) {
     for (const [name, fn] of Object.entries(handlers)) {

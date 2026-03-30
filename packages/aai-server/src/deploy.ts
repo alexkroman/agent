@@ -1,21 +1,19 @@
 // Copyright 2025 the AAI authors. MIT license.
 import type { DeployBody } from "./_schemas.ts";
 import { EnvSchema } from "./_schemas.ts";
-import type { AppContext } from "./context.ts";
+import type { ValidatedAppContext } from "./context.ts";
 import { terminateSlot, withSlugLock } from "./sandbox-slots.ts";
 
-export function handleDeploy(c: AppContext): Promise<Response> {
+export function handleDeploy(c: ValidatedAppContext<DeployBody>): Promise<Response> {
   const slug = c.var.slug;
   return withSlugLock(slug, () => handleDeployInner(c));
 }
 
-async function handleDeployInner(c: AppContext): Promise<Response> {
+async function handleDeployInner(c: ValidatedAppContext<DeployBody>): Promise<Response> {
   const slug = c.var.slug;
   const keyHash = c.var.keyHash;
 
-  // Pre-validated by zValidator("json", DeployBodySchema) in orchestrator
-  // biome-ignore lint/suspicious/noExplicitAny: validated upstream by zValidator middleware
-  const body = (c.req as any).valid("json") as DeployBody;
+  const body = c.req.valid("json");
 
   const storedEnv = (await c.env.store.getEnv(slug)) ?? {};
   const env = body.env ? { ...storedEnv, ...body.env } : storedEnv;

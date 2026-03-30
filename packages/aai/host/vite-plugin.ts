@@ -94,8 +94,8 @@ export function aai(options?: AaiPluginOptions): Plugin {
       const env = await resolveAgentEnv(root);
       const runtime = createRuntime({ agent: agentDef, env });
       const agentServer = createServer({ runtime, name: agentDef.name });
-      // biome-ignore lint/style/noNonNullAssertion: backendPort is set in config hook
-      await agentServer.listen(backendPort!);
+      if (backendPort == null) throw new Error("backendPort was not resolved during config phase");
+      await agentServer.listen(backendPort);
       server = agentServer;
 
       viteServer.config.logger.info(`Agent backend on port ${backendPort}`);

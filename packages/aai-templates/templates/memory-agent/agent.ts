@@ -16,5 +16,5 @@ Keep responses concise and conversational. Never say "I saved that to my \
 database" — just confirm naturally, like "Got it, I'll remember that."`,
   greeting:
     "Hey there. I'm an assistant with a long-term memory. Tell me things you want me to remember, and I'll recall them in future conversations.",
-  builtinTools: ["web_search", "memory"],
+  builtinTools: ["web_search"],
 });

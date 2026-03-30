@@ -2,15 +2,13 @@
 
 import { createUnstorageKv, errorMessage } from "@alexkroman1/aai/host";
 import type { KvRequest } from "@alexkroman1/aai/protocol";
-import type { AppContext } from "./context.ts";
+import type { ValidatedAppContext } from "./context.ts";
 
-export async function handleKv(c: AppContext): Promise<Response> {
+export async function handleKv(c: ValidatedAppContext<KvRequest>): Promise<Response> {
   const slug = c.var.slug;
   const kv = createUnstorageKv({ storage: c.env.storage, prefix: `agents/${slug}/kv` });
 
-  // Pre-validated by zValidator("json", KvRequestSchema) in orchestrator
-  // biome-ignore lint/suspicious/noExplicitAny: validated upstream by zValidator middleware
-  const msg = (c.req as any).valid("json") as KvRequest;
+  const msg = c.req.valid("json");
 
   try {
     switch (msg.op) {

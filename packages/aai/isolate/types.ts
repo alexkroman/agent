@@ -20,7 +20,7 @@ import type { Kv } from "./kv.ts";
  *
  * @public
  */
-export type BuiltinTool = "web_search" | "visit_webpage" | "fetch_json" | "run_code" | "memory";
+export type BuiltinTool = "web_search" | "visit_webpage" | "fetch_json" | "run_code";
 
 /**
  * How the LLM should select tools during a turn.
@@ -415,13 +415,7 @@ export type AgentDef<S = Record<string, unknown>> = {
 // ─── Zod schemas ────────────────────────────────────────────────────────────
 
 /** @internal Zod schema for {@link BuiltinTool}. Exported for reuse in internal schemas. */
-export const BuiltinToolSchema = z.enum([
-  "web_search",
-  "visit_webpage",
-  "fetch_json",
-  "run_code",
-  "memory",
-]);
+export const BuiltinToolSchema = z.enum(["web_search", "visit_webpage", "fetch_json", "run_code"]);
 
 /** @internal Zod schema for {@link ToolChoice}. Exported for reuse in internal schemas. */
 export const ToolChoiceSchema = z.union([
