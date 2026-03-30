@@ -18,3 +18,6 @@ export type Env = {
 
 /** Typed context for route handlers using the platform {@link Env}. */
 export type AppContext = Context<Env>;
+
+/** Context for handlers whose JSON body was pre-validated by `zValidator`. */
+export type ValidatedAppContext<T> = Context<Env, string, { in: { json: T }; out: { json: T } }>;
