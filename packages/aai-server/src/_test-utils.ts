@@ -1,10 +1,28 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import type { Kv } from "@alexkroman1/aai/kv";
 import { createStorage, type Storage } from "unstorage";
+import { vi } from "vitest";
 import { type AgentMetadata, AgentMetadataSchema } from "./_schemas.ts";
 import type { BundleStore } from "./bundle-store.ts";
 import { createOrchestrator } from "./orchestrator.ts";
 import type { AgentSlot } from "./sandbox.ts";
+
+/** In-memory mock KV store backed by a Map. All methods are vi.fn() spies. */
+export function createMockKv(): Kv {
+  const store = new Map<string, unknown>();
+  return {
+    get: vi.fn(async (key: string) => store.get(key) ?? null) as Kv["get"],
+    set: vi.fn(async (key: string, value: unknown) => {
+      store.set(key, value);
+    }),
+    delete: vi.fn(async (key: string) => {
+      store.delete(key);
+    }),
+    keys: vi.fn(async () => [] as string[]),
+    list: vi.fn(async () => []) as Kv["list"],
+  };
+}
 
 export const VALID_ENV = {
   ASSEMBLYAI_API_KEY: "test-key",
