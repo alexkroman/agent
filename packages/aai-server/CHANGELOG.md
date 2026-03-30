@@ -1,5 +1,12 @@
 # @alexkroman1/aai-server
 
+## 0.9.10
+
+### Patch Changes
+
+- 3a86d28: Fix isolate boot: run esbuild install script in Docker prod image
+- 0fc9bb8: Fix isolate boot failure: run esbuild install script in Docker prod image
+
 ## 0.9.9
 
 ### Patch Changes
