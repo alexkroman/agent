@@ -91,7 +91,7 @@ describe("defineAgent", () => {
   it("accepts all BuiltinTool values", () => {
     defineAgent({
       name: "test",
-      builtinTools: ["web_search", "visit_webpage", "fetch_json", "run_code", "memory"],
+      builtinTools: ["web_search", "visit_webpage", "fetch_json", "run_code"],
     });
   });
 
@@ -230,7 +230,7 @@ describe("exported types", () => {
 
   it("BuiltinTool is a union of known tool names", () => {
     expectTypeOf<BuiltinTool>().toEqualTypeOf<
-      "web_search" | "visit_webpage" | "fetch_json" | "run_code" | "memory"
+      "web_search" | "visit_webpage" | "fetch_json" | "run_code"
     >();
   });
 

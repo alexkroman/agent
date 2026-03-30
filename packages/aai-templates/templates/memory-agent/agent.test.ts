@@ -8,9 +8,8 @@ describe("Memory Agent", () => {
     expect(agent.name).toBe("Memory Agent");
   });
 
-  test("enables web_search and memory builtin tools", () => {
+  test("enables web_search builtin tool", () => {
     expect(agent.builtinTools).toContain("web_search");
-    expect(agent.builtinTools).toContain("memory");
   });
 
   test("harness can be created", () => {
