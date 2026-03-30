@@ -16,6 +16,7 @@ jobs:
   release:
     runs-on: ubuntu-latest
     permissions:
+      actions: write
       contents: write
       pull-requests: write
       id-token: write
@@ -57,6 +58,7 @@ jobs:
       # Dispatch it explicitly so branch protection checks pass.
       - name: Trigger CI on version PR branch
         if: steps.changesets.outputs.hasChangesets == 'true'
+        continue-on-error: true
         run: gh workflow run check.yml --ref changeset-release/main
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
