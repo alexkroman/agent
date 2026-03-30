@@ -352,8 +352,12 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
         return "done" as const;
       },
     );
-    const outcome = await Promise.race([graceful, timeout]);
-    if (timer) clearTimeout(timer);
+    let outcome: "done" | "timeout";
+    try {
+      outcome = await Promise.race([graceful, timeout]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
     if (outcome === "timeout") {
       logger.warn(
         `Shutdown timeout (${shutdownTimeoutMs}ms) exceeded — force-closing ${sessions.size} remaining session(s)`,
