@@ -1,5 +1,6 @@
 {
   "type": "module",
+  "packageManager": "pnpm@10.29.3",
   "scripts": {
     "dev": "vite",
     "build": "vite build && vite build --ssr agent.ts --outDir .aai/build",
