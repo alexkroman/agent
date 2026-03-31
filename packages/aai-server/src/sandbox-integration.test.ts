@@ -298,19 +298,51 @@ describe("template isolate boot", () => {
     const { worker, tmpDir } = await bundleTemplate(template);
     const kv = createMockKv();
     let isolate: { port: number; runtime: { terminate(): Promise<void> } } | undefined;
+    const rpc = async (body: Record<string, unknown>) => {
+      const res = await fetch(`http://127.0.0.1:${isolate?.port}/rpc`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-harness-token": "test-token" },
+        body: JSON.stringify(body),
+      });
+      return { status: res.status, data: (await res.json()) as Record<string, unknown> };
+    };
+
     try {
       isolate = await _internals.startIsolate(worker, kv, {}, "test-token");
       expect(isolate.port).toBeGreaterThan(0);
 
-      // Verify config RPC works (agent name + tools)
-      const res = await fetch(`http://127.0.0.1:${isolate.port}/rpc`, {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-harness-token": "test-token" },
-        body: JSON.stringify({ type: "config" }),
-      });
-      expect(res.status).toBe(200);
-      const config = (await res.json()) as { name: string };
-      expect(config.name).toBeTruthy();
+      // 1. Config RPC — agent name + tools
+      const config = await rpc({ type: "config" });
+      expect(config.status).toBe(200);
+      expect(config.data.name).toBeTruthy();
+
+      const schemas = config.data.toolSchemas as { name: string }[];
+
+      // 2. Hook lifecycle — connect a session
+      const connect = await rpc({ type: "hook", hook: "onConnect", sessionId: "s1" });
+      expect(connect.status).toBe(200);
+
+      // 3. Tool execution — call the first custom tool (if any)
+      // Tools that call external APIs will fail with a fetch error, but
+      // we verify the harness dispatches correctly (status 200 or 500,
+      // never 400/404 which would mean the tool wasn't found).
+      const firstTool = schemas[0];
+      if (firstTool) {
+        const toolRes = await rpc({
+          type: "tool",
+          name: firstTool.name,
+          sessionId: "s1",
+          args: {},
+          messages: [],
+        });
+        // 200 = success, 500 = tool threw (e.g. missing API key / network)
+        // 404 = tool not found (would be a bug)
+        expect(toolRes.status).not.toBe(404);
+      }
+
+      // 4. Hook lifecycle — disconnect
+      const disconnect = await rpc({ type: "hook", hook: "onDisconnect", sessionId: "s1" });
+      expect(disconnect.status).toBe(200);
     } finally {
       await isolate?.runtime.terminate();
       await fs.rm(tmpDir, { recursive: true, force: true });
