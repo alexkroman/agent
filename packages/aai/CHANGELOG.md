@@ -1,5 +1,11 @@
 # @alexkroman1/aai
 
+## 0.12.0
+
+### Minor Changes
+
+- 99e62c3: Remove `memoryTools()` and the `"memory"` builtin tool. Users who need KV-backed memory tools should define them directly in their agent's `tools` record.
+
 ## 0.11.1
 
 ### Patch Changes
