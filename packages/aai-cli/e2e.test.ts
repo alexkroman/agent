@@ -106,12 +106,16 @@ function initProject(template: string, projectDir: string): void {
 function installFromTarballs(projectDir: string): void {
   const pkgJsonPath = path.join(projectDir, "package.json");
   const pkgJson = JSON.parse(fs.readFileSync(pkgJsonPath, "utf-8"));
-  for (const section of ["dependencies", "devDependencies"] as const) {
-    const deps = pkgJson[section] ?? {};
-    for (const [name, tarball] of Object.entries(tarballs)) {
-      if (deps[name]) deps[name] = `file:${tarball}`;
+  // Replace direct deps AND add pnpm overrides so transitive deps
+  // (e.g. aai-cli depending on aai) also resolve to local tarballs.
+  const overrides: Record<string, string> = {};
+  for (const [name, tarball] of Object.entries(tarballs)) {
+    overrides[name] = `file:${tarball}`;
+    for (const section of ["dependencies", "devDependencies"] as const) {
+      if (pkgJson[section]?.[name]) pkgJson[section][name] = `file:${tarball}`;
     }
   }
+  pkgJson.pnpm = { ...pkgJson.pnpm, overrides };
   fs.writeFileSync(pkgJsonPath, `${JSON.stringify(pkgJson, null, 2)}\n`);
   execFileSync("pnpm", ["install", "--no-frozen-lockfile"], { cwd: projectDir, stdio: "inherit" });
 }
