@@ -459,12 +459,12 @@ export default defineAgent({
 });
 ```
 
-### Using npm packages
+### Adding packages
 
 Add packages to `package.json` dependencies:
 
 ```sh
-npm install some-package
+pnpm add some-package
 ```
 
 ## Custom UI (`client.tsx`)
