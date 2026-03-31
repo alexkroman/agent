@@ -24,9 +24,7 @@ export async function handleSecretList(c: AppContext): Promise<Response> {
   return c.json({ vars: Object.keys(env) });
 }
 
-export function handleSecretSet(
-  c: ValidatedAppContext<Record<string, string>>,
-): Promise<Response> {
+export function handleSecretSet(c: ValidatedAppContext<Record<string, string>>): Promise<Response> {
   const slug = c.var.slug;
   return withSlugLock(slug, async () => {
     const updates = c.req.valid("json");

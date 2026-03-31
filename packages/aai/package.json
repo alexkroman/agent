@@ -7,69 +7,69 @@
   ],
   "exports": {
     ".": {
-      "@dev/source": "./index.ts",
+      "@dev/source": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
     "./isolate": {
-      "@dev/source": "./isolate/index.ts",
+      "@dev/source": "./src/isolate/index.ts",
       "types": "./dist/isolate/index.d.ts",
       "import": "./dist/isolate/index.js"
     },
     "./host": {
-      "@dev/source": "./host/index.ts",
+      "@dev/source": "./src/host/index.ts",
       "types": "./dist/host/index.d.ts",
       "import": "./dist/host/index.js"
     },
     "./server": {
-      "@dev/source": "./host/server.ts",
+      "@dev/source": "./src/host/server.ts",
       "types": "./dist/host/server.d.ts",
       "import": "./dist/host/server.js"
     },
     "./types": {
-      "@dev/source": "./isolate/types.ts",
+      "@dev/source": "./src/isolate/types.ts",
       "types": "./dist/isolate/types.d.ts",
       "import": "./dist/isolate/types.js"
     },
     "./kv": {
-      "@dev/source": "./isolate/kv.ts",
+      "@dev/source": "./src/isolate/kv.ts",
       "types": "./dist/isolate/kv.d.ts",
       "import": "./dist/isolate/kv.js"
     },
     "./protocol": {
-      "@dev/source": "./isolate/protocol.ts",
+      "@dev/source": "./src/isolate/protocol.ts",
       "types": "./dist/isolate/protocol.d.ts",
       "import": "./dist/isolate/protocol.js"
     },
     "./testing": {
-      "@dev/source": "./host/testing.ts",
+      "@dev/source": "./src/host/testing.ts",
       "types": "./dist/host/testing.d.ts",
       "import": "./dist/host/testing.js"
     },
     "./testing/matchers": {
-      "@dev/source": "./host/matchers.ts",
+      "@dev/source": "./src/host/matchers.ts",
       "types": "./dist/host/matchers.d.ts",
       "import": "./dist/host/matchers.js"
     },
     "./hooks": {
-      "@dev/source": "./isolate/hooks.ts",
+      "@dev/source": "./src/isolate/hooks.ts",
       "types": "./dist/isolate/hooks.d.ts",
       "import": "./dist/isolate/hooks.js"
     },
     "./utils": {
-      "@dev/source": "./isolate/_utils.ts",
-      "types": "./dist/isolate/_utils.d.ts",
-      "import": "./dist/isolate/_utils.js"
+      "@dev/source": "./src/isolate/lib/utils.ts",
+      "types": "./dist/isolate/lib/utils.d.ts",
+      "import": "./dist/isolate/lib/utils.js"
     },
     "./vite-plugin": {
-      "@dev/source": "./host/vite-plugin.ts",
+      "@dev/source": "./src/host/vite-plugin.ts",
       "types": "./dist/host/vite-plugin.d.ts",
       "import": "./dist/host/vite-plugin.js"
     }
   },
   "scripts": {
     "build": "tsdown && tsc -p tsconfig.build.json",
-    "typecheck": "tsc --noEmit && tsc -p isolate/tsconfig.json",
+    "typecheck": "tsc --noEmit && tsc -p src/isolate/tsconfig.json",
     "lint": "biome check .",
     "check:publint": "publint",
     "check:attw": "attw --pack --profile esm-only"

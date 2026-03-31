@@ -5,12 +5,12 @@
     "jsxImportSource": "preact",
     "noEmit": true,
     "paths": {
-      "@alexkroman1/aai": ["../aai/index.ts"],
-      "@alexkroman1/aai/types": ["../aai/types.ts"],
-      "@alexkroman1/aai-ui": ["../aai-ui/index.ts"],
-      "@alexkroman1/aai-ui/session": ["../aai-ui/session.ts"],
+      "@alexkroman1/aai": ["../aai/src/index.ts"],
+      "@alexkroman1/aai/types": ["../aai/src/isolate/types.ts"],
+      "@alexkroman1/aai-ui": ["../aai-ui/src/index.ts"],
+      "@alexkroman1/aai-ui/session": ["../aai-ui/src/session.ts"],
       "@alexkroman1/aai-ui/styles.css": ["../aai-ui/styles.css"]
     }
   },
-  "include": ["css.d.ts", "templates/*/agent.ts", "templates/*/client.tsx"]
+  "include": ["src/css.d.ts", "templates/*/agent.ts", "templates/*/client.tsx"]
 }

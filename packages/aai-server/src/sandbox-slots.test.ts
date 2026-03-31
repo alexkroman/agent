@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createTestStorage, createTestStore, makeSlot } from "./_test-utils.ts";
+import { createTestStorage, createTestStore, makeSlot } from "./lib/test-utils.ts";
 import type { Sandbox } from "./sandbox.ts";
 import {
   _slotInternals,

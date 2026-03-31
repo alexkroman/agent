@@ -1,6 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "ignoreUnresolved": ["./_jsdom-setup.ts", "./host/matchers.ts", "../aai/host/matchers.ts"],
+  "ignoreUnresolved": ["./src/lib/jsdom-setup.ts", "./src/host/matchers.ts", "../aai/src/host/matchers.ts"],
   "ignoreExportsUsedInFile": true,
   "exclude": ["exports", "types", "optionalPeerDependencies"],
   "workspaces": {
@@ -8,15 +8,15 @@
       "entry": ["scripts/*.mjs"]
     },
     "packages/aai": {
-      "entry": ["**/*.test.ts", "host/_test-utils.ts"],
+      "entry": ["**/*.test.ts", "src/host/lib/test-utils.ts"],
       "includeEntryExports": true
     },
     "packages/aai-ui": {
-      "entry": ["**/*.test.{ts,tsx}", "_test-utils.ts"],
+      "entry": ["**/*.test.{ts,tsx}", "src/lib/test-utils.ts"],
       "includeEntryExports": true
     },
     "packages/aai-cli": {
-      "entry": ["**/*.test.ts", "_test-utils.ts"]
+      "entry": ["**/*.test.ts", "src/lib/test-utils.ts"]
     },
     "packages/aai-templates": {
       "ignore": ["**"]

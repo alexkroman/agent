@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
-import { createTestOrchestrator, deployAgent } from "./_test-utils.ts";
+import { createTestOrchestrator, deployAgent } from "./lib/test-utils.ts";
 
 describe("handleAgentHealth", () => {
   test("returns 404 for non-existent agent", async () => {

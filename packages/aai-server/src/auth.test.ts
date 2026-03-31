@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { expect, test } from "vitest";
-import { createTestStore } from "./_test-utils.ts";
 import { _clearHashCache, hashApiKey, verifySlugOwner } from "./auth.ts";
+import { createTestStore } from "./lib/test-utils.ts";
 
 test("hashApiKey produces consistent 64-char hex", async () => {
   const h1 = await hashApiKey("key");

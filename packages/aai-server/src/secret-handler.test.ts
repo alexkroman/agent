@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { expect, test } from "vitest";
-import { createTestOrchestrator, deployAgent } from "./_test-utils.ts";
+import { createTestOrchestrator, deployAgent } from "./lib/test-utils.ts";
 
 async function deployAndAuth(slug = "my-agent", key = "key1") {
   const orch = await createTestOrchestrator();

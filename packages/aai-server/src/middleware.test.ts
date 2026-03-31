@@ -5,7 +5,7 @@ import {
   createTestStorage,
   createTestStore,
   deployAgent,
-} from "./_test-utils.ts";
+} from "./lib/test-utils.ts";
 import { createOrchestrator } from "./orchestrator.ts";
 
 test("orchestrator adds Cross-Origin-Isolation headers", async () => {

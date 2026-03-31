@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 import type { Kv } from "@alexkroman1/aai/kv";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { createMockKv } from "./_test-utils.ts";
+import { createMockKv } from "./lib/test-utils.ts";
 import { buildNetworkAdapter, buildNetworkPolicy } from "./sandbox-network.ts";
 
 vi.mock("secure-exec", () => ({

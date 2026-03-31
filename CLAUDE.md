@@ -120,41 +120,48 @@ Binary: `aai` — subcommands: init, dev, test, build, deploy, delete, secret
 
 ### Isolate / host boundary
 
-The SDK is split into two compilation zones:
+The SDK is split into two compilation zones under `src/`:
 
-- **`isolate/`** — modules that run inside secure-exec V8 isolates.
+- **`src/isolate/`** — modules that run inside secure-exec V8 isolates.
   Compiled under a restricted `tsconfig.json` (`"types": []`, no
   `@types/node`). Any `node:*` import is a **type error**. Contains:
-  `types.ts`, `kv.ts`, `_kv-utils.ts`, `hooks.ts`, `_utils.ts`,
-  `constants.ts`, `protocol.ts`, `system-prompt.ts`, `_internal-types.ts`.
-- **`host/`** — host-only modules that require Node.js APIs. Contains:
+  `types.ts`, `kv.ts`, `hooks.ts`, `constants.ts`, `protocol.ts`,
+  `system-prompt.ts`. Internal utilities in `lib/`: `internal-types.ts`,
+  `utils.ts`, `kv-utils.ts`.
+- **`src/host/`** — host-only modules that require Node.js APIs. Contains:
   `server.ts`, `direct-executor.ts`, `session.ts`, `s2s.ts`,
-  `ws-handler.ts`, `runtime.ts`, `builtin-tools.ts`, `_run-code.ts`,
+  `ws-handler.ts`, `runtime.ts`, `builtin-tools.ts`,
   `unstorage-kv.ts`, `vite-plugin.ts`, `testing.ts`, `matchers.ts`.
+  Internal utilities in `lib/`: `run-code.ts`, `mock-ws.ts`,
+  `runtime-conformance.ts`, `test-utils.ts`.
 
-When adding new SDK code, place it in `isolate/` if it has no `node:`
-dependencies. The isolate typecheck (`tsc -p isolate/tsconfig.json`)
+When adding new SDK code, place it in `src/isolate/` if it has no `node:`
+dependencies. The isolate typecheck (`tsc -p src/isolate/tsconfig.json`)
 runs as part of `pnpm typecheck` and will catch violations.
 
 ### Key files
 
-#### packages/aai-cli/
+All packages use `src/` for source files. Internal utilities live in
+`lib/` subdirectories (no `_` prefix convention).
+
+#### packages/aai-cli/src/
 
 - `cli.ts` — arg parsing, subcommand dispatch
 - `init.ts` / `dev.ts` / `test.ts` / `deploy.ts` / `delete.ts` /
   `secret.ts` — subcommand entry points
 - `start.ts` — production server launcher (used internally)
-- `_init.ts` / `_deploy.ts` / `_delete.ts` / `_bundler.ts` — internal logic
-- `_bundler.ts` — generates Vite config, bundles `agent.ts`/`client.tsx`
+- `lib/init.ts` / `lib/deploy.ts` / `lib/delete.ts` /
+  `lib/bundler.ts` — internal logic
+- `lib/bundler.ts` — generates Vite config, bundles `agent.ts`/`client.tsx`
   into `worker.js`/`index.html`
-- `_api-client.ts` — platform API client
-- `_discover.ts` — agent discovery, auth config, project config
-- `_server-common.ts` — shared server utilities
-- `_templates.ts` — template handling
-- `_ui.ts` — shared UI components
-- `_prompts.ts` — interactive prompts
+- `lib/api-client.ts` — platform API client
+- `lib/discover.ts` — agent discovery, auth config, project config
+- `lib/server-common.ts` — shared server utilities
+- `lib/templates.ts` — template handling
+- `lib/ui.ts` — shared UI components
+- `lib/prompts.ts` — interactive prompts
 
-#### packages/aai-ui/
+#### packages/aai-ui/src/
 
 - `index.ts` — main exports, Preact UI component
 - `session.ts` — WebSocket session management
@@ -163,7 +170,7 @@ runs as part of `pnpm typecheck` and will catch violations.
 - `client-context.ts` — Preact context for client config
 - `signals.ts` — signal state management
 - `types.ts` — UI type definitions
-- `_components/` — UI components (app, chat-view, controls, message-bubble,
+- `components/` — UI components (app, chat-view, controls, message-bubble,
   message-list, start-screen, sidebar-layout, state-indicator,
   thinking-indicator, tool-call-block, transcript, error-banner, button,
   tool-icons)
@@ -175,7 +182,7 @@ runs as part of `pnpm typecheck` and will catch violations.
 - `sandbox-harness.ts` — sandbox execution environment
 - `sandbox-network.ts` — network proxying for sandbox
 - `sandbox-slots.ts` — slot allocation for concurrent sessions
-- `_harness-runtime.ts` — code that runs inside the isolate
+- `lib/harness-runtime.ts` — code that runs inside the isolate
 - `transport-websocket.ts` — WebSocket transport layer
 - `auth.ts` — authentication/authorization
 - `credentials.ts` — credential derivation
@@ -183,7 +190,7 @@ runs as part of `pnpm typecheck` and will catch violations.
 - `deploy.ts` / `delete.ts` — deployment lifecycle
 - `secret-handler.ts` — secret management
 - `kv-handler.ts` — KV store HTTP API
-- `_ssrf.ts` — SSRF protection, URL validation
+- `lib/ssrf.ts` — SSRF protection, URL validation
 
 ### Data flow
 
@@ -210,7 +217,7 @@ runs as part of `pnpm typecheck` and will catch violations.
 - Slow/integration tests have separate per-package configs
   (`vitest.slow.config.ts`, `vitest.integration.config.ts`) to avoid running
   during `vitest run`.
-- In tests, use `flush()` from `_test-utils.ts` instead of
+- In tests, use `flush()` from `lib/test-utils.ts` instead of
   `await new Promise(r => setTimeout(r, 0))` to yield to microtasks.
 - Use `vi.waitFor()` instead of arbitrary delays when polling for async results.
 - Type-level tests use `.test-d.ts` files with `typecheck: { only: true }`
@@ -225,7 +232,7 @@ runs as part of `pnpm typecheck` and will catch violations.
 
 - **Agent API docs**: `packages/aai-templates/scaffold/CLAUDE.md` is the
   agent API reference installed into user projects. When modifying the agent
-  API surface (`packages/aai/types.ts`), update it to match.
+  API surface (`packages/aai/src/isolate/types.ts`), update it to match.
 - **Templates**: `packages/aai-templates/templates/` contains agent
   scaffolding templates (simple, web-researcher, etc.). Each is
   self-contained with its own `agent.ts` and `client.tsx`. `scaffold/` has
@@ -275,11 +282,11 @@ catches the most common issues that historically required follow-up commits:
 
 ### Secure-exec isolate constraint
 
-`_harness-runtime.ts` runs inside a secure-exec V8 isolate with **no access
+`lib/harness-runtime.ts` runs inside a secure-exec V8 isolate with **no access
 to `node_modules`**. Only `node:*` built-ins and the virtual filesystem
 files (harness JS + agent bundle) are available.
 
-Rules for `_harness-runtime.ts`:
+Rules for `lib/harness-runtime.ts`:
 
 - **Only use `import type`** from workspace packages and npm deps — never
   runtime imports. Any runtime import (e.g. Zod schemas) will cause the
@@ -296,7 +303,7 @@ Rules for `_harness-runtime.ts`:
 
 Agent code runs in **secure-exec V8 isolates** with strict permission
 boundaries. Key files: `packages/aai-server/src/sandbox.ts`,
-`sandbox-harness.ts`, `_harness-runtime.ts`.
+`sandbox-harness.ts`, `lib/harness-runtime.ts`.
 
 **Isolation layers:**
 
@@ -325,7 +332,7 @@ a denylist.
 - Sessions are per-sandbox (`Map<string, Session>`).
 - No shared mutable state between sandboxes.
 
-**`run_code` built-in tool (aai/builtin-tools.ts):**
+**`run_code` built-in tool (aai/src/host/builtin-tools.ts):**
 
 - Each invocation runs in a **fresh `node:vm` context** — isolated from
   the host process and from other invocations.
@@ -334,11 +341,11 @@ a denylist.
 - Context is discarded after execution — no state leaks.
 - Works identically in both self-hosted and platform modes.
 
-**Self-hosted server (aai/server.ts):**
+**Self-hosted server (aai/src/host/server.ts):**
 
 - HTML output uses `escapeHtml()` to prevent XSS from agent names.
 
-**SSRF protection (aai-server/_ssrf.ts):**
+**SSRF protection (aai-server/src/lib/ssrf.ts):**
 
 - `assertPublicUrl()` uses `BlockList` for private IP ranges.
 - Handles IPv4-mapped IPv6 bypass (`::ffff:127.0.0.1`).
@@ -360,7 +367,7 @@ a denylist.
   chain bypass, cross-invocation isolation).
 - `pentest.test.ts` — penetration tests verifying sandbox prevents
   previously-exploitable constructor chain bypasses.
-- `_net.test.ts` / `ssrf-extended.test.ts` — SSRF bypass prevention
+- `lib/net.test.ts` / `ssrf-extended.test.ts` — SSRF bypass prevention
   (IPv4-mapped IPv6, cloud metadata, `.internal` domains).
 - `security-boundary.test.ts` / `trust-boundary-validation.test.ts` —
   security boundary enforcement.

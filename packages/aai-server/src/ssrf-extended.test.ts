@@ -11,7 +11,7 @@
  */
 
 import { describe, expect, test, vi } from "vitest";
-import { assertPublicUrl, isPrivateIp, ssrfSafeFetch } from "./_ssrf.ts";
+import { assertPublicUrl, isPrivateIp, ssrfSafeFetch } from "./lib/ssrf.ts";
 
 // ── IP Encoding Bypass Attempts ────────────────────────────────────────
 

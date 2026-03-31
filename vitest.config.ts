@@ -12,19 +12,19 @@ export default defineConfig({
         // Test infrastructure
         "**/*.test.{ts,tsx}",
         "**/*.test-d.ts",
-        "**/_test-utils.ts",
+        "**/lib/test-utils.ts",
         "**/dist/**",
         "**/__snapshots__/**",
         // Sandbox harness: runs inside V8 isolates on the platform, not vitest.
         // Covered by integration tests (pnpm test:integration).
         "packages/aai-server/src/sandbox*.ts",
-        "packages/aai-server/src/_harness-runtime.ts",
+        "packages/aai-server/src/lib/harness-runtime.ts",
         "packages/aai-server/src/build-harness.ts",
         // CLI entry point and interactive prompts can't be unit tested.
-        "packages/aai-cli/cli.ts",
-        "packages/aai-cli/_prompts.ts",
+        "packages/aai-cli/src/cli.ts",
+        "packages/aai-cli/src/lib/prompts.ts",
         // OTel session wiring — tested via integration tests, not unit tests.
-        "packages/aai/_session-otel.ts",
+        "packages/aai/src/_session-otel.ts",
       ],
       // Global minimum. Per-package actuals are higher:
       // aai ~93%, aai-ui ~85%, aai-cli ~75%, aai-server ~80%
@@ -49,7 +49,7 @@ export default defineConfig({
             "node_modules",
             "dist",
           ],
-          setupFiles: ["./host/matchers.ts"],
+          setupFiles: ["./src/host/matchers.ts"],
         },
       },
       {
@@ -68,7 +68,7 @@ export default defineConfig({
           root: "packages/aai-ui",
           globals: true,
           include: ["**/*.test.{ts,tsx}"],
-          setupFiles: ["./_jsdom-setup.ts"],
+          setupFiles: ["./src/lib/jsdom-setup.ts"],
         },
       },
       {
@@ -87,7 +87,7 @@ export default defineConfig({
           root: "packages/aai-cli",
           include: ["**/*.test.ts"],
           exclude: [
-            "e2e.test.ts",
+            "src/e2e.test.ts",
             "node_modules",
             "dist",
           ],
@@ -113,8 +113,8 @@ export default defineConfig({
         test: {
           name: "templates",
           root: "packages/aai-templates",
-          include: ["templates/*/agent.test.ts", "typecheck.test.ts"],
-          setupFiles: ["../aai/host/matchers.ts"],
+          include: ["templates/*/agent.test.ts", "src/typecheck.test.ts"],
+          setupFiles: ["../aai/src/host/matchers.ts"],
         },
       },
     ],

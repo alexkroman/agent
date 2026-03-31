@@ -172,8 +172,8 @@
       "includes": [
         "**/*.test.ts",
         "**/*.test.tsx",
-        "**/_test-utils.ts",
-        "**/_jsdom-setup.ts",
+        "**/lib/test-utils.ts",
+        "**/lib/jsdom-setup.ts",
         "**/vitest*.config.ts"
       ],
       "linter": {
