@@ -49,6 +49,42 @@ describe("bundleAgent", () => {
   });
 });
 
+describe("bundleAgent: zod externalization", () => {
+  test("worker bundle must not contain zod — it crashes secure-exec isolates", async () => {
+    const { bundleAgent } = await import("./_bundler.ts");
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "aai_bundle_"));
+    try {
+      await fs.writeFile(
+        path.join(tmpDir, "agent.ts"),
+        `import { z } from "zod";
+         export default { name: "test", instructions: "t", greeting: "hi", maxSteps: 1,
+           tools: { echo: { description: "echo", parameters: z.object({ text: z.string() }),
+             execute: (args) => args.text } } };`,
+      );
+      await fs.writeFile(
+        path.join(tmpDir, "package.json"),
+        JSON.stringify({ name: "test", type: "module", dependencies: { zod: "^4.0.0" } }),
+      );
+
+      const result = await bundleAgent({
+        slug: "test",
+        dir: tmpDir,
+        entryPoint: path.join(tmpDir, "agent.ts"),
+        clientEntry: "",
+      });
+
+      // Zod must be external — the worker should import from /app/_zod.mjs
+      expect(result.worker).toContain("/app/_zod.mjs");
+      // Must NOT contain zod internals (ZodString, ZodObject, etc.)
+      expect(result.worker).not.toMatch(/\bZodString\b/);
+      expect(result.worker).not.toMatch(/\bZodObject\b/);
+      expect(result.worker).not.toMatch(/\$ZodCheck\b/);
+    } finally {
+      await fs.rm(tmpDir, { recursive: true });
+    }
+  });
+});
+
 describe("bundleAgent: readDirFiles coverage", () => {
   test("handles missing client directory gracefully", async () => {
     const { bundleAgent } = await import("./_bundler.ts");
@@ -120,4 +156,3 @@ describe("bundleAgent: readDirFiles coverage", () => {
     }
   });
 });
-

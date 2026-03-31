@@ -17,4 +17,11 @@ export default defineConfig([
     outDir: "dist",
     noExternal: [/@alexkroman1\/aai\/hooks/, /@alexkroman1\/aai\/utils/, /^hookable$/],
   },
+  {
+    entry: { _zod: "src/_zod-shim.ts" },
+    format: "esm",
+    platform: "node",
+    target: "node22",
+    outDir: "dist",
+  },
 ]);
