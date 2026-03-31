@@ -54,6 +54,7 @@ pre-push:
         if [ "$branch" = "main" ] || [ "$branch" = "master" ]; then
           exit 0
         fi
+        case "$branch" in changeset-release/*) exit 0 ;; esac
         pnpm changeset status --since=origin/main
     check:
       run: pnpm check
