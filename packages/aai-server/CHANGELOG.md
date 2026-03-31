@@ -1,5 +1,13 @@
 # @alexkroman1/aai-server
 
+## 0.9.14
+
+### Patch Changes
+
+- 1b8b757: Fix changesets version command and sync scaffold versions during release
+- 1b960da: Remove zod dependency
+  - @alexkroman1/aai@0.12.1
+
 ## 0.9.13
 
 ### Patch Changes
