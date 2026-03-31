@@ -106,9 +106,11 @@ function initProject(template: string, projectDir: string): void {
 function installFromTarballs(projectDir: string): void {
   const pkgJsonPath = path.join(projectDir, "package.json");
   const pkgJson = JSON.parse(fs.readFileSync(pkgJsonPath, "utf-8"));
-  const deps = pkgJson.dependencies ?? {};
-  for (const [name, tarball] of Object.entries(tarballs)) {
-    if (deps[name]) deps[name] = `file:${tarball}`;
+  for (const section of ["dependencies", "devDependencies"] as const) {
+    const deps = pkgJson[section] ?? {};
+    for (const [name, tarball] of Object.entries(tarballs)) {
+      if (deps[name]) deps[name] = `file:${tarball}`;
+    }
   }
   fs.writeFileSync(pkgJsonPath, `${JSON.stringify(pkgJson, null, 2)}\n`);
   execFileSync("pnpm", ["install", "--no-frozen-lockfile"], { cwd: projectDir, stdio: "inherit" });
@@ -126,7 +128,7 @@ beforeAll(() => {
   const tarballDir = path.join(tmpDir, "_tarballs");
   fs.mkdirSync(tarballDir);
   tarballs = {};
-  for (const pkgDir of ["aai", "aai-ui"]) {
+  for (const pkgDir of ["aai", "aai-ui", "aai-cli"]) {
     const pkgPath = path.join(packagesDir, pkgDir);
     execFileSync("pnpm", ["run", "build"], { cwd: pkgPath, stdio: "inherit" });
     const output = execFileSync("pnpm", ["pack", "--pack-destination", tarballDir], {
@@ -161,7 +163,6 @@ describe("pack + build: template workflows", () => {
 });
 
 // --- CLI commands (single template) ---
-
 
 describe("CLI: deploy --dry-run", () => {
   test("init -> deploy --dry-run succeeds without a server", () => {
@@ -232,19 +233,16 @@ async function setupEventInjector(browser: Browser, port: number) {
   return { page, inject, replayFixture, clientFrames };
 }
 
-// Browser tests disabled — they require `aai start` which was removed.
-// TODO: rewrite to use `vite preview` or a standalone node server.
-describe.skip("browser: build -> start", () => {
+describe.skipIf(!playwrightAvailable)("browser: dev server", () => {
   let browser: Browser;
   let child: ChildProcess;
   const port = BASE_PORT + 200;
 
   beforeAll(async () => {
-    const projectDir = path.join(tmpDir, "_browser-start");
+    const projectDir = path.join(tmpDir, "_browser-dev");
     initProject("simple", projectDir);
-    aai(["build"], projectDir);
-    child = aaiSpawn(["start", "--port", String(port)], projectDir);
-    await waitForHealth(`http://localhost:${port}/health`, child);
+    child = aaiSpawn(["dev", "--port", String(port)], projectDir);
+    await waitForHealth(`http://localhost:${port}`, child);
     // biome-ignore lint/style/noNonNullAssertion: guarded by describe.skipIf(!playwrightAvailable)
     browser = await chromium!.launch();
   });
