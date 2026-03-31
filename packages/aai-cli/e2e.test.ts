@@ -246,9 +246,18 @@ describe.skipIf(!playwrightAvailable)("browser: dev server", () => {
       [
         "-e",
         `const http = require("http"); const fs = require("fs"); const path = require("path");
+       const mimes = { ".html": "text/html", ".js": "application/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml" };
+       const root = ${JSON.stringify(clientDir)};
        const s = http.createServer((req, res) => {
-         const f = path.join(${JSON.stringify(clientDir)}, req.url === "/" ? "index.html" : req.url);
-         try { res.end(fs.readFileSync(f)); } catch { res.writeHead(404); res.end("not found"); }
+         const url = new URL(req.url, "http://localhost");
+         const f = path.join(root, url.pathname === "/" ? "index.html" : url.pathname);
+         if (!f.startsWith(root)) { res.writeHead(403); res.end(); return; }
+         try {
+           const data = fs.readFileSync(f);
+           const ct = mimes[path.extname(f)] || "application/octet-stream";
+           res.writeHead(200, { "Content-Type": ct });
+           res.end(data);
+         } catch { res.writeHead(404); res.end("not found"); }
        });
        s.listen(${port}, () => console.log("ready"));`,
       ],
