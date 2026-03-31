@@ -21,16 +21,16 @@ pnpm lint:fix            # Auto-fix lint issues
 pnpm check:local         # Fast pre-commit gate (parallel: build → typecheck + lint + publint + syncpack → test)
 ```
 
-**Test tiers:**
+### Test tiers
 
 | Tier | Command | Scope | Timeout |
-| ---- | ------- | ----- | ------- |
+| --- | --- | --- | --- |
 | Unit | `pnpm test` | Fast, mocked, co-located | 5s |
 | Integration | `pnpm test:integration` | Real subsystems (V8 isolates, HTTP servers) | 30s |
 | E2E | `pnpm test:e2e` | Full process spawn + Playwright browser | 300s |
 | Templates | `pnpm test:templates` | Template agent example tests | 5s |
 
-**Single-package shortcuts:**
+### Single-package shortcuts
 
 ```sh
 pnpm test:aai            # Run only aai unit tests
@@ -41,7 +41,7 @@ pnpm test:templates      # Run template agent tests
 pnpm dev:aai-server      # Start aai-server in dev mode
 ```
 
-**Running specific tests:**
+### Running specific tests
 
 ```sh
 pnpm vitest run --project aai              # Single package via --project
@@ -50,7 +50,7 @@ pnpm vitest run session                    # All files matching "session"
 pnpm --filter @alexkroman1/aai test        # Single package via pnpm filter
 ```
 
-**Full CI check** (`pnpm check`):
+### Full CI check (`pnpm check`)
 
 Runs via `scripts/check.sh` in three parallelized phases:
 
@@ -69,21 +69,21 @@ vitest (no coverage).
 Five workspace packages under `packages/`:
 
 | Package | npm name | Purpose |
-| ------- | -------- | ------- |
-| `packages/aai/` | `@alexkroman1/aai` | Agent SDK: `defineAgent`, `createServer`, types, protocol, S2S orchestration, session, KV |
+| --- | --- | --- |
+| `packages/aai/` | `@alexkroman1/aai` | Agent SDK: `defineAgent`, `createServer`, types, protocol, S2S, session, KV |
 | `packages/aai-ui/` | `@alexkroman1/aai-ui` | Browser client (Preact): session, audio, UI components |
 | `packages/aai-cli/` | `@alexkroman1/aai-cli` | The `aai` CLI: init, dev, test, build, deploy, delete, secret |
-| `packages/aai-server/` | `@alexkroman1/aai-server` | Managed platform server (private): sandbox, sidecar, auth, SSRF protection |
-| `packages/aai-templates/` | `@alexkroman1/aai-templates` | Agent templates + scaffold (private): 17 starter templates |
+| `packages/aai-server/` | `@alexkroman1/aai-server` | Managed platform server (private): sandbox, sidecar, auth, SSRF |
+| `packages/aai-templates/` | `@alexkroman1/aai-templates` | Agent templates + scaffold (private): starter templates |
 
 **Dependency flow:** `aai-cli`, `aai-ui`, and `aai-server` depend on `aai`
 (via `workspace:*`) but never on each other.
 
-### Package Exports
+### Package exports
 
 #### `@alexkroman1/aai` (SDK)
 
-Public:
+**Public:**
 
 - `.` — `defineAgent`, `defineTool` + re-exported types
 - `./server` — `createServer`, `createAgentApp`, `createRuntime`,
@@ -94,37 +94,19 @@ Public:
   `createTestHarness`, `TestHarness`, `TurnResult`
 - `./testing/matchers` — Vitest custom matchers (`toHaveCalledTool`)
 
-Internal (exported in package.json but not part of public API — do **not**
-depend on these from consumer code; they may change without notice).
-Type-level tests (`.test-d.ts`) cover only the **public** entry points
-(`.`, `./types`, `./server`). Changes to internal exports do not require
-type test updates:
+**Internal** (exported in package.json but not part of public API — do **not**
+depend on these from consumer code; they may change without notice):
 
 - `./protocol` — wire-format types, Zod schemas, constants
 - `./isolate` — isolate-safe barrel: all modules safe for secure-exec V8 isolates
-- `./host` — host barrel: isolate kernel + host-only modules (replaces `./internal`)
+- `./host` — host barrel: isolate kernel + host-only modules
 - `./hooks` — hook definitions for lifecycle events
 - `./utils` — shared utility functions
 - `./vite-plugin` — Vite integration plugin for agent bundling
 
-### Isolate / Host Boundary
-
-The SDK is split into two compilation zones:
-
-- **`isolate/`** — modules that run inside secure-exec V8 isolates.
-  Compiled under a restricted `tsconfig.json` (`"types": []`, no
-  `@types/node`). Any `node:*` import is a **type error**. Contains:
-  `types.ts`, `kv.ts`, `hooks.ts`, `_utils.ts`, `constants.ts`,
-  `protocol.ts`, `memory-tools.ts`, `system-prompt.ts`,
-  `_internal-types.ts`.
-- **`host/`** — host-only modules that require Node.js APIs. Contains:
-  `server.ts`, `direct-executor.ts`, `session.ts`, `s2s.ts`,
-  `ws-handler.ts`, `runtime.ts`, `builtin-tools.ts`, `_run-code.ts`,
-  `unstorage-kv.ts`, `vite-plugin.ts`, `testing.ts`, `matchers.ts`.
-
-When adding new SDK code, place it in `isolate/` if it has no `node:`
-dependencies. The isolate typecheck (`tsc -p isolate/tsconfig.json`)
-runs as part of `pnpm typecheck` and will catch violations.
+Type-level tests (`.test-d.ts`) cover only the **public** entry points
+(`.`, `./types`, `./server`). Changes to internal exports do not require
+type test updates.
 
 #### `@alexkroman1/aai-ui` (UI)
 
@@ -134,10 +116,27 @@ runs as part of `pnpm typecheck` and will catch violations.
 
 #### `@alexkroman1/aai-cli` (CLI)
 
-Binary: `aai` — subcommands: init, dev, test, build, deploy, delete,
-secret
+Binary: `aai` — subcommands: init, dev, test, build, deploy, delete, secret
 
-### Key Files
+### Isolate / host boundary
+
+The SDK is split into two compilation zones:
+
+- **`isolate/`** — modules that run inside secure-exec V8 isolates.
+  Compiled under a restricted `tsconfig.json` (`"types": []`, no
+  `@types/node`). Any `node:*` import is a **type error**. Contains:
+  `types.ts`, `kv.ts`, `_kv-utils.ts`, `hooks.ts`, `_utils.ts`,
+  `constants.ts`, `protocol.ts`, `system-prompt.ts`, `_internal-types.ts`.
+- **`host/`** — host-only modules that require Node.js APIs. Contains:
+  `server.ts`, `direct-executor.ts`, `session.ts`, `s2s.ts`,
+  `ws-handler.ts`, `runtime.ts`, `builtin-tools.ts`, `_run-code.ts`,
+  `unstorage-kv.ts`, `vite-plugin.ts`, `testing.ts`, `matchers.ts`.
+
+When adding new SDK code, place it in `isolate/` if it has no `node:`
+dependencies. The isolate typecheck (`tsc -p isolate/tsconfig.json`)
+runs as part of `pnpm typecheck` and will catch violations.
+
+### Key files
 
 #### packages/aai-cli/
 
@@ -186,7 +185,7 @@ secret
 - `kv-handler.ts` — KV store HTTP API
 - `_ssrf.ts` — SSRF protection, URL validation
 
-### Data Flow
+### Data flow
 
 1. User speaks → browser captures PCM audio → WebSocket → server
 2. Server forwards audio to AssemblyAI STT → receives transcript
@@ -198,39 +197,53 @@ secret
 
 - **Runtime**: Node
 - **Frameworks**: Preact (client UI), Tailwind CSS v4 (compiled at bundle time)
-- **Testing**: Vitest. Test files co-located: `foo.ts` → `foo.test.ts`.
-  Unit test projects (aai, aai-ui, aai-cli, aai-server) are defined in the
+- **Linting**: Biome. Auto-runs on staged files via lefthook pre-commit hook.
+- **Exports**: In dev mode, package.json exports point to `.ts` source for
+  seamless workspace resolution. Update to compiled `.js` dist paths before
+  publishing.
+
+### Testing
+
+- **Vitest**. Test files co-located: `foo.ts` → `foo.test.ts`.
+- Unit test projects (aai, aai-ui, aai-cli, aai-server) are defined in the
   root `vitest.config.ts`. Use `--project <name>` to run a specific project.
-  Slow/integration tests have separate per-package configs (`vitest.slow.config.ts`,
-  `vitest.integration.config.ts`) to avoid running during `vitest run`.
-  In tests, use `flush()` from `_test-utils.ts` instead of
+- Slow/integration tests have separate per-package configs
+  (`vitest.slow.config.ts`, `vitest.integration.config.ts`) to avoid running
+  during `vitest run`.
+- In tests, use `flush()` from `_test-utils.ts` instead of
   `await new Promise(r => setTimeout(r, 0))` to yield to microtasks.
-  Use `vi.waitFor()` instead of arbitrary delays when polling for async results.
-  Type-level tests use `.test-d.ts` files with `typecheck: { only: true }`
+- Use `vi.waitFor()` instead of arbitrary delays when polling for async results.
+- Type-level tests use `.test-d.ts` files with `typecheck: { only: true }`
   — they are checked by tsc but never executed at runtime. Use
   `expectTypeOf` from vitest to assert on type shapes. Projects:
   `aai-types`, `aai-ui-types`.
 - **Package validation**: `publint` runs post-build to verify package.json
   exports resolve to real files. `attw` validates export types. Both run
   in the check pipeline.
-- **Linting**: Biome. Auto-runs on staged files via lefthook pre-commit hook.
-- **Exports**: In dev mode, package.json exports point to `.ts` source for
-  seamless workspace resolution. Update to compiled `.js` dist paths before
-  publishing.
+
+### Related docs
+
 - **Agent API docs**: `packages/aai-templates/scaffold/CLAUDE.md` is the
   agent API reference installed into user projects. When modifying the agent
   API surface (`packages/aai/types.ts`), update it to match.
-- **Templates**: `packages/aai-templates/templates/` contains 17 agent
-  scaffolding templates (simple, memory-agent, web-researcher, etc.). Each is
+- **Templates**: `packages/aai-templates/templates/` contains agent
+  scaffolding templates (simple, web-researcher, etc.). Each is
   self-contained with its own `agent.ts` and `client.tsx`. `scaffold/` has
   base project files (package.json, tsconfig, etc.) layered underneath.
-- **Git hooks** (lefthook): pre-commit runs `biome check --write` on staged
-  files and `syncpack lint` when package.json changes; pre-push blocks pushes
-  to main/master, checks for merge conflicts with main, and runs `pnpm check`.
-- **Updating CLAUDE.md**: When you make changes that affect architecture,
-  security model, conventions, or gotchas, update this file.
 
-## PR Workflow (reducing fix-up commits)
+### Git hooks (lefthook)
+
+- **pre-commit**: runs `biome check --write` on staged files and
+  `syncpack lint` when package.json changes.
+- **pre-push**: blocks pushes to main/master, checks for merge conflicts
+  with main, and runs `pnpm check`.
+
+### Updating CLAUDE.md
+
+When you make changes that affect architecture, security model, conventions,
+or gotchas, update this file.
+
+## PR workflow
 
 **Before pushing**, rebase on the latest `main` to avoid merge conflicts:
 
@@ -258,9 +271,9 @@ catches the most common issues that historically required follow-up commits:
    to verify type contracts haven't regressed. Update `.test-d.ts` files
    if the change is intentional.
 
-## Security Architecture
+## Security architecture
 
-### Secure-exec Isolate Constraint
+### Secure-exec isolate constraint
 
 `_harness-runtime.ts` runs inside a secure-exec V8 isolate with **no access
 to `node_modules`**. Only `node:*` built-ins and the virtual filesystem
@@ -279,7 +292,7 @@ Rules for `_harness-runtime.ts`:
 - `sandbox-harness.ts` manages the sandbox execution environment on the
   host side.
 
-### Platform Sandbox (aai-server)
+### Platform sandbox (aai-server)
 
 Agent code runs in **secure-exec V8 isolates** with strict permission
 boundaries. Key files: `packages/aai-server/src/sandbox.ts`,
@@ -337,7 +350,7 @@ a denylist.
 - Scope tokens are HS256 JWTs with 1-hour expiry.
 - Stored credentials are AES-256-GCM encrypted with HKDF-derived keys.
 
-### Testing Security Boundaries
+### Testing security boundaries
 
 - `sandbox-integration.test.ts` — network, filesystem, process, env
   isolation e2e. Run: `pnpm --filter @alexkroman1/aai-server test:integration`
@@ -352,7 +365,7 @@ a denylist.
 - `security-boundary.test.ts` / `trust-boundary-validation.test.ts` —
   security boundary enforcement.
 
-### Known Limitations
+### Known limitations
 
 - **E2E tests**: Playwright/Chromium may not be installed in all environments.
   The `aai-cli` e2e test (`test:e2e`) may fail locally. CI handles this.
