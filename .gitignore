@@ -5,6 +5,7 @@ dist/
 .env.*
 !.env.example
 .DS_Store
+tmp/
 .claude/*
 !.claude/settings.json
 !.claude/plans/
