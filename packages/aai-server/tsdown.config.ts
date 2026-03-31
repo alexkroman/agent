@@ -10,7 +10,7 @@ export default defineConfig([
     noExternal: [/@alexkroman1/],
   },
   {
-    entry: ["src/_harness-runtime.ts"],
+    entry: ["src/lib/harness-runtime.ts"],
     format: "esm",
     platform: "node",
     target: "node22",
@@ -18,7 +18,7 @@ export default defineConfig([
     noExternal: [/@alexkroman1\/aai\/hooks/, /@alexkroman1\/aai\/utils/, /^hookable$/],
   },
   {
-    entry: { _zod: "src/_zod-shim.ts" },
+    entry: { _zod: "src/lib/zod-shim.ts" },
     format: "esm",
     platform: "node",
     target: "node22",

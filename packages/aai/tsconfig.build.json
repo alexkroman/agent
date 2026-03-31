@@ -2,7 +2,7 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "outDir": "dist",
-    "rootDir": ".",
+    "rootDir": "src",
     "noEmit": false,
     "declaration": true,
     "emitDeclarationOnly": true,
@@ -10,5 +10,5 @@
     "allowImportingTsExtensions": false,
     "rewriteRelativeImportExtensions": true
   },
-  "exclude": ["node_modules", "dist", "**/*.test.ts", "**/_test-utils.ts"]
+  "exclude": ["node_modules", "dist", "**/*.test.ts", "**/lib/test-utils.ts"]
 }

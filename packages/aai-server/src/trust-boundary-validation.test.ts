@@ -38,8 +38,8 @@ import {
   EnvSchema,
   SafePathSchema,
   SecretUpdatesSchema,
-} from "./_schemas.ts";
-import { createTestOrchestrator, deployAgent } from "./_test-utils.ts";
+} from "./lib/schemas.ts";
+import { createTestOrchestrator, deployAgent } from "./lib/test-utils.ts";
 import { _kvSchemas } from "./sandbox-network.ts";
 
 // ═══════════════════════════════════════════════════════════════════════════

@@ -8,13 +8,13 @@
   ],
   "exports": {
     ".": {
-      "@dev/source": "./index.ts",
+      "@dev/source": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
     "./styles.css": "./styles.css",
     "./session": {
-      "@dev/source": "./session.ts",
+      "@dev/source": "./src/session.ts",
       "types": "./dist/session.d.ts",
       "import": "./dist/session.js"
     }

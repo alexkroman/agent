@@ -58,7 +58,7 @@ process.on("unhandledRejection", (reason: unknown) => {
   throw reason;
 });
 
-export type { AgentMetadata } from "./_schemas.ts";
+export type { AgentMetadata } from "./lib/schemas.ts";
 export { type AgentSlot, ensureAgent, registerSlot } from "./sandbox-slots.ts";
 
 export type SandboxOptions = {

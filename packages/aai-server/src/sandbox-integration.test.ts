@@ -14,7 +14,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
-import { createMockKv } from "./_test-utils.ts";
+import { createMockKv } from "./lib/test-utils.ts";
 import { _internals } from "./sandbox.ts";
 
 // ── Agent bundle ─────────────────────────────────────────────────────────
@@ -82,7 +82,7 @@ describe("WebSocket session lifecycle", () => {
   let sandbox: Awaited<ReturnType<typeof _internals.createSandbox>>;
 
   beforeAll(async () => {
-    const { createTestStorage } = await import("./_test-utils.ts");
+    const { createTestStorage } = await import("./lib/test-utils.ts");
     sandbox = await _internals.createSandbox({
       workerCode: AGENT_BUNDLE,
       apiKey: "test-key",
@@ -191,7 +191,7 @@ describe("idle eviction", () => {
   test("sandbox is evicted after idle timeout", async () => {
     _internals.IDLE_MS = 200;
 
-    const { createTestStorage } = await import("./_test-utils.ts");
+    const { createTestStorage } = await import("./lib/test-utils.ts");
     const storage = createTestStorage();
 
     const slot = {
@@ -220,7 +220,7 @@ describe("idle eviction", () => {
 
 describe("redeploy replaces sandbox", () => {
   test("deploying same slug terminates old sandbox", async () => {
-    const { createTestStorage } = await import("./_test-utils.ts");
+    const { createTestStorage } = await import("./lib/test-utils.ts");
     const storage = createTestStorage();
 
     const sandbox1 = await _internals.createSandbox({
@@ -356,7 +356,7 @@ describe("template isolate boot", () => {
     await fs.mkdir(scope, { recursive: true });
     await fs.symlink(path.resolve(import.meta.dirname, "../..", "aai"), path.join(scope, "aai"));
 
-    const { bundleAgent } = await import("../../aai-cli/_bundler.ts");
+    const { bundleAgent } = await import("../../aai-cli/src/lib/bundler.ts");
     const bundle = await bundleAgent({
       slug: `tpl-${template}`,
       dir: tmpDir,
@@ -461,7 +461,7 @@ export default defineAgent({
     await fs.symlink(pkgsDir, path.join(scope, "aai"));
 
     // Bundle via the CLI bundler (same path as `aai build` / `aai deploy`)
-    const { bundleAgent } = await import("../../aai-cli/_bundler.ts");
+    const { bundleAgent } = await import("../../aai-cli/src/lib/bundler.ts");
     const bundle = await bundleAgent({
       slug: "integ-bundle-test",
       dir: tmpDir,
