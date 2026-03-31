@@ -1,5 +1,13 @@
 # @alexkroman1/aai-cli
 
+## 0.12.0
+
+### Patch Changes
+
+- e2f72a2: Auto-sync scaffold package.json versions with workspace packages during release
+- Updated dependencies [99e62c3]
+  - @alexkroman1/aai@0.12.0
+
 ## 0.11.1
 
 ### Patch Changes
