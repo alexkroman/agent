@@ -56,14 +56,6 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: true
 
-      # GitHub sometimes fails to fire pull_request:synchronize on
-      # rapid back-to-back force-pushes, leaving the PR with no checks.
-      # Explicitly dispatch the Check workflow to guarantee it runs.
-      - name: Trigger checks for release PR
-        if: steps.changesets.outputs.pullRequestNumber && steps.changesets.outputs.published != 'true'
-        run: gh workflow run check.yml --ref changeset-release/main
-        env:
-          GH_TOKEN: ${{ github.token }}
 
   detect-deploy:
     runs-on: ubuntu-latest
