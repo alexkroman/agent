@@ -1,5 +1,15 @@
 # @alexkroman1/aai-cli
 
+## 0.12.1
+
+### Patch Changes
+
+- 1b8b757: Fix changesets version command and sync scaffold versions during release
+- f4762a1: Externalize zod from agent bundles, remove storage cache, improve CI reliability
+- 1b960da: Remove zod dependency
+- Updated dependencies [f4762a1]
+  - @alexkroman1/aai@0.12.1
+
 ## 0.12.0
 
 ### Patch Changes
