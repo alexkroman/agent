@@ -1,5 +1,14 @@
 # @alexkroman1/aai-cli
 
+## 0.12.2
+
+### Patch Changes
+
+- 5900685: Add centralized error handling to CLI commands
+- 5e3538c: Skip changeset-status pre-push hook on changeset-release branches to fix release workflow
+- 59a9a10: Use pnpm for scaffolded projects and accept --server flag on all commands
+  - @alexkroman1/aai@0.12.2
+
 ## 0.12.1
 
 ### Patch Changes
