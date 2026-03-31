@@ -62,6 +62,7 @@ const init = defineCommand({
     dir: { type: "positional", description: "Project directory", required: false },
     template: { type: "string", alias: "t", description: "Template to use" },
     force: { type: "boolean", alias: "f", description: "Overwrite existing files" },
+    server: sharedArgs.server,
     yes: sharedArgs.yes,
     skipApi: { type: "boolean", description: "Skip API key check" },
     skipDeploy: { type: "boolean", description: "Skip deploy after scaffolding" },
@@ -76,6 +77,7 @@ const init = defineCommand({
         yes: args.yes,
         skipApi: args.skipApi,
         skipDeploy: args.skipDeploy,
+        server: args.server,
       });
     });
   },
@@ -85,6 +87,7 @@ const dev = defineCommand({
   meta: { name: "dev", description: "Start a local development server" },
   args: {
     port: sharedArgs.port,
+    server: sharedArgs.server,
     yes: sharedArgs.yes,
   },
   async run({ args }) {
@@ -110,6 +113,7 @@ const test = defineCommand({
 const build = defineCommand({
   meta: { name: "build", description: "Bundle agent without deploying" },
   args: {
+    server: sharedArgs.server,
     yes: sharedArgs.yes,
     skipTests: { type: "boolean", description: "Skip running tests before build" },
   },

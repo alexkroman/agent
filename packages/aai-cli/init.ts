@@ -110,6 +110,7 @@ export async function runInitCommand(
     yes?: boolean | undefined;
     skipApi?: boolean | undefined;
     skipDeploy?: boolean | undefined;
+    server?: string | undefined;
   },
   extra?: { quiet?: boolean | undefined },
 ): Promise<string> {
@@ -143,7 +144,7 @@ export async function runInitCommand(
 
   if (!(opts.skipDeploy || extra?.quiet)) {
     const { runDeployCommand } = await import("./deploy.ts");
-    await runDeployCommand({ cwd });
+    await runDeployCommand({ cwd, ...(opts.server ? { server: opts.server } : {}) });
   }
 
   if (!extra?.quiet) {
