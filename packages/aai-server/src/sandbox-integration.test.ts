@@ -9,6 +9,9 @@
  * createRuntime() with identical permission config.
  */
 
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { createMockKv } from "./_test-utils.ts";
 import { _internals } from "./sandbox.ts";
@@ -240,5 +243,104 @@ describe("redeploy replaces sandbox", () => {
     expect(sandbox2).toBeTruthy();
 
     sandbox2.terminate();
+  });
+});
+
+// ── Vite-bundled template agent boots in isolate ────────────────────────
+
+describe("bundled template agent", () => {
+  let tmpDir: string;
+  let isolate: { port: number; runtime: { terminate(): Promise<void> } };
+
+  beforeAll(async () => {
+    // Scaffold a simple template project with defineAgent + zod
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "aai-integ-"));
+    const agentCode = `
+import { defineAgent, defineTool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default defineAgent({
+  name: "Bundled Test Agent",
+  tools: {
+    greet: defineTool({
+      description: "Greet someone",
+      parameters: z.object({ name: z.string() }),
+      execute: ({ name }) => "hello " + name,
+    }),
+  },
+});
+`;
+    await fs.writeFile(path.join(tmpDir, "agent.ts"), agentCode);
+    await fs.writeFile(
+      path.join(tmpDir, "package.json"),
+      JSON.stringify({ name: "test", type: "module", dependencies: { zod: "^4.0.0" } }),
+    );
+
+    // Symlink workspace packages so Vite can resolve them
+    const nodeModules = path.join(tmpDir, "node_modules");
+    const scope = path.join(nodeModules, "@alexkroman1");
+    await fs.mkdir(scope, { recursive: true });
+    const pkgsDir = path.resolve(import.meta.dirname, "../..", "aai");
+    await fs.symlink(pkgsDir, path.join(scope, "aai"));
+
+    // Bundle via the CLI bundler (same path as `aai build` / `aai deploy`)
+    const { bundleAgent } = await import("../../aai-cli/_bundler.ts");
+    const bundle = await bundleAgent({
+      slug: "integ-bundle-test",
+      dir: tmpDir,
+      entryPoint: path.join(tmpDir, "agent.ts"),
+      clientEntry: "",
+    });
+
+    // Boot the bundled worker in a real isolate
+    const kv = createMockKv();
+    isolate = await _internals.startIsolate(bundle.worker, kv, {}, "test-token");
+  }, 30_000);
+
+  afterAll(async () => {
+    await isolate?.runtime.terminate();
+    if (tmpDir) await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  test("isolate boots and announces port", () => {
+    expect(isolate.port).toBeGreaterThan(0);
+  });
+
+  test("config RPC returns agent name and tool schemas", async () => {
+    const res = await fetch(`http://127.0.0.1:${isolate.port}/rpc`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-harness-token": "test-token" },
+      body: JSON.stringify({ type: "config" }),
+    });
+    expect(res.status).toBe(200);
+    const config = (await res.json()) as { name: string; toolSchemas: { name: string }[] };
+    expect(config.name).toBe("Bundled Test Agent");
+    expect(config.toolSchemas.find((t) => t.name === "greet")).toBeTruthy();
+  });
+
+  test("tool RPC executes bundled tool", async () => {
+    // Connect a session first
+    const connectRes = await fetch(`http://127.0.0.1:${isolate.port}/rpc`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-harness-token": "test-token" },
+      body: JSON.stringify({ type: "hook", hook: "onConnect", sessionId: "s1" }),
+    });
+    expect(connectRes.status).toBe(200);
+
+    // Execute the tool
+    const toolRes = await fetch(`http://127.0.0.1:${isolate.port}/rpc`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-harness-token": "test-token" },
+      body: JSON.stringify({
+        type: "tool",
+        name: "greet",
+        sessionId: "s1",
+        args: { name: "World" },
+        messages: [],
+      }),
+    });
+    expect(toolRes.status).toBe(200);
+    const result = (await toolRes.json()) as { result: string };
+    expect(result.result).toBe("hello World");
   });
 });
