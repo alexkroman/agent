@@ -46,7 +46,7 @@ jobs:
         id: changesets
         uses: changesets/action@v1
         with:
-          version: pnpm changeset version && node scripts/sync-scaffold-versions.mjs
+          version: pnpm run version
           publish: pnpm release
         env:
           # Use RELEASE_TOKEN (PAT or GitHub App token) so the PR
