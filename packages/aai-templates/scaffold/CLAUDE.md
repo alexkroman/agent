@@ -43,7 +43,6 @@ aai delete               # Remove a deployed agent
 aai secret put <NAME>    # Set a secret on the server (prompts for value)
 aai secret delete <NAME> # Remove a secret
 aai secret list          # List secret names
-
 ```
 
 ## Templates
@@ -51,25 +50,46 @@ aai secret list          # List secret names
 Before writing an agent from scratch, choose the closest template and scaffold
 with `aai init -t <template_name>`.
 
-| Template            | Description                                                                        |
-| ------------------- | ---------------------------------------------------------------------------------- |
-| `simple`            | Minimal starter with web_search, visit_webpage, fetch_json, run_code. **Default.** |
-| `web-researcher`    | Research assistant — web search + page visits for detailed answers                 |
-| `smart-research`    | Phase-based research (gather → analyze → respond) with dynamic tool filtering      |
-| `memory-agent`      | Persistent KV storage — remembers facts and preferences across conversations       |
-| `code-interpreter`  | Writes and runs JavaScript for math, calculations, data processing                 |
-| `math-buddy`        | Calculations, unit conversions, dice rolls via run_code                            |
-| `health-assistant`  | Medication lookup, drug interactions, BMI, symptom guidance                        |
-| `personal-finance`  | Currency conversion, crypto prices, loan calculations, savings projections         |
-| `travel-concierge`  | Trip planning, weather, flights, hotels, currency conversion                       |
-| `night-owl`         | Movie/music/book recs by mood, sleep calculator. **Has custom UI.**                |
-| `pizza-ordering`    | Pizza order-taker with dynamic cart sidebar. **Has custom UI.**                    |
-| `dispatch-center`   | 911 dispatch with incident triage and resource assignment. **Has custom UI.**      |
-| `infocom-adventure` | Zork-style text adventure with state, puzzles, inventory. **Has custom UI.**       |
-| `solo-rpg`          | Solo dark-fantasy RPG with dice, oaths, combat, save/load. **Has custom UI.**      |
-| `embedded-assets`   | FAQ bot using embedded JSON knowledge (no web search)                              |
-| `support`           | Support agent for AssemblyAI docs                                                  |
-| `test-patterns`     | Demonstrates every testable agent pattern (tools, hooks, state)                    |
+**Starter / utility:**
+
+| Template           | Description                                                                        |
+| ------------------ | ---------------------------------------------------------------------------------- |
+| `simple`           | Minimal starter with web_search, visit_webpage, fetch_json, run_code. **Default.** |
+| `embedded-assets`  | FAQ bot using embedded JSON knowledge (no web search)                              |
+| `test-patterns`    | Demonstrates every testable agent pattern (tools, hooks, state)                    |
+
+**Research / knowledge:**
+
+| Template           | Description                                                                        |
+| ------------------ | ---------------------------------------------------------------------------------- |
+| `web-researcher`   | Research assistant — web search + page visits for detailed answers                 |
+| `smart-research`   | Phase-based research (gather → analyze → respond) with dynamic tool filtering      |
+| `support`          | Support agent for AssemblyAI docs                                                  |
+
+**Tools / computation:**
+
+| Template           | Description                                                                        |
+| ------------------ | ---------------------------------------------------------------------------------- |
+| `code-interpreter` | Writes and runs JavaScript for math, calculations, data processing                 |
+| `math-buddy`       | Calculations, unit conversions, dice rolls via run_code                            |
+
+**Domain-specific:**
+
+| Template           | Description                                                                        |
+| ------------------ | ---------------------------------------------------------------------------------- |
+| `health-assistant` | Medication lookup, drug interactions, BMI, symptom guidance                        |
+| `personal-finance` | Currency conversion, crypto prices, loan calculations, savings projections         |
+| `travel-concierge` | Trip planning, weather, flights, hotels, currency conversion                       |
+
+**Custom UI examples** (include `client.tsx`):
+
+| Template            | Description                                                  |
+| ------------------- | ------------------------------------------------------------ |
+| `night-owl`         | Movie/music/book recs by mood, sleep calculator              |
+| `pizza-ordering`    | Pizza order-taker with dynamic cart sidebar                  |
+| `dispatch-center`   | 911 dispatch with incident triage and resource assignment    |
+| `infocom-adventure` | Zork-style text adventure with state, puzzles, inventory     |
+| `solo-rpg`          | Solo dark-fantasy RPG with dice, oaths, combat, save/load    |
 
 ## Minimal agent
 
@@ -269,7 +289,6 @@ Enable via `builtinTools`.
 | `visit_webpage` | Fetch URL → plain text                         | `url`                               |
 | `fetch_json`    | HTTP GET a JSON API                            | `url`, `headers?`                   |
 | `run_code`      | Execute JS in sandbox (no net/fs, 5s timeout)  | `code`                              |
-| `memory`        | Persistent KV memory (4 tools, see below)      | —                                   |
 
 The agentic loop runs up to `maxSteps` iterations (default 5) and stops when the
 LLM produces a text response.
@@ -316,18 +335,19 @@ For data that lasts only one connection (games, workflows, multi-step
 processes). Fresh state is created per session and cleaned up on disconnect:
 
 ```ts
-export default defineAgent({
+interface QuizState { score: number; question: number }
+
+export default defineAgent<QuizState>({
   state: () => ({ score: 0, question: 0 }),
   tools: {
-    answer: {
+    answer: defineTool({
       description: "Submit an answer",
       parameters: z.object({ answer: z.string() }),
       execute: (args, ctx) => {
-        const state = ctx.state as { score: number; question: number };
-        state.question++;
-        return state;
+        ctx.state.question++;
+        return ctx.state;
       },
-    },
+    }),
   },
 });
 ```
@@ -371,22 +391,6 @@ Keys are strings; use colon-separated prefixes (`"user:123"`). Max value: 64 KB.
 
 `kv.list()` returns `KvEntry[]` where each entry has
 `{ key: string, value: T }`.
-
-### Memory tools (pre-built KV tools)
-
-Add `"memory"` to `builtinTools` to give the agent four persistent KV tools:
-`save_memory`, `recall_memory`, `list_memories`, and `forget_memory`.
-
-```ts
-import { defineAgent } from "@alexkroman1/aai";
-
-export default defineAgent({
-  name: "My Agent",
-  builtinTools: ["memory"],
-});
-```
-
-Keys use colon-separated prefixes (`"user:name"`, `"preference:color"`).
 
 ## Advanced patterns
 
