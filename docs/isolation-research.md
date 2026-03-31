@@ -10,7 +10,7 @@ The platform runs untrusted agent code in `secure-exec` V8 isolates. The
 connections, STT/TTS integration (AssemblyAI S2S), and LLM orchestration.
 The **sandbox** only handles tool execution and hook invocation via RPC.
 
-```
+```text
 Browser <--WebSocket--> Host (Node.js / Fly.io)
                             |
                             |-- STT/TTS/LLM via AssemblyAI S2S
@@ -23,17 +23,17 @@ Browser <--WebSocket--> Host (Node.js / Fly.io)
 
 ### Current isolation infrastructure (~1,500 lines)
 
-| File | Lines | Purpose |
-|------|-------|---------|
-| `sandbox.ts` | ~382 | V8 isolate orchestration, permissions, RPC client |
-| `_harness-runtime.ts` | ~327 | RPC server inside isolate (tool/hook dispatch) |
-| `sandbox-slots.ts` | ~212 | Lifecycle management, dual-lock, idle eviction |
-| `sandbox-network.ts` | ~175 | Virtual hosts (kv.internal, host.internal) |
-| `_bundler.ts` | ~137 | Vite build with Zod externalization for isolate |
-| `_run-code.ts` | ~100 | `run_code` tool sandbox (node:vm) |
-| `_ssrf.ts` | ~69 | SSRF protection (DNS, bogon, redirect chains) |
-| `credentials.ts` | ~63 | AES-256-GCM secret encryption at rest |
-| `isolate/tsconfig.json` | config | Compile-time enforcement (no @types/node) |
+| File                    | Lines  | Purpose                                            |
+| ----------------------- | ------ | -------------------------------------------------- |
+| `sandbox.ts`            | ~382   | V8 isolate orchestration, permissions, RPC client  |
+| `_harness-runtime.ts`   | ~327   | RPC server inside isolate (tool/hook dispatch)     |
+| `sandbox-slots.ts`      | ~212   | Lifecycle management, dual-lock, idle eviction     |
+| `sandbox-network.ts`    | ~175   | Virtual hosts (kv.internal, host.internal)         |
+| `_bundler.ts`           | ~137   | Vite build with Zod externalization for isolate    |
+| `_run-code.ts`          | ~100   | `run_code` tool sandbox (node:vm)                  |
+| `_ssrf.ts`              | ~69    | SSRF protection (DNS, bogon, redirect chains)      |
+| `credentials.ts`        | ~63    | AES-256-GCM secret encryption at rest              |
+| `isolate/tsconfig.json` | config | Compile-time enforcement (no @types/node)          |
 
 ### Key pain points
 
@@ -61,6 +61,7 @@ Browser <--WebSocket--> Host (Node.js / Fly.io)
 `@deno/sandbox` SDK. Same tech as AWS Lambda (Firecracker). Sub-second boot.
 
 **What it would replace:**
+
 - `sandbox.ts`, `_harness-runtime.ts`, `sandbox-network.ts` (RPC bridge)
 - `credentials.ts` (secrets never enter VM -- injected at network proxy)
 - `_ssrf.ts` (replaced by `allowNet` whitelist)
@@ -68,6 +69,7 @@ Browser <--WebSocket--> Host (Node.js / Fly.io)
 - Zod shim in bundler (no `Function()` restriction)
 
 **What it would add:**
+
 - Deno KV (replaces unstorage + S3 for agent data)
 - Deno Queues (background task processing)
 - Deno.cron (scheduled tasks)
@@ -80,11 +82,13 @@ need persistent WebSocket connections for real-time audio streaming. The host
 orchestrator cannot run on Deno Deploy.
 
 **Viable architecture:**
+
 - Deno runtime on Fly.io (or similar) for the WebSocket orchestrator
 - `@deno/sandbox` SDK to spin up microVMs for agent code execution
 - Deno KV for agent storage (isolated per agent via separate databases)
 
 **Trade-offs:**
+
 - Vendor dependency on Deno's managed infrastructure
 - Runtime change from Node.js to Deno for the host process
 - Self-hosted users would need Deno instead of Node
@@ -123,6 +127,7 @@ implementation bugs. When using workerd to run possibly-malicious code, you
 must run it inside an appropriate secure sandbox, such as a virtual machine."*
 
 **Trade-offs:**
+
 - Requires wrapping in a VM for security (negates the lightweight benefit)
 - Different programming model (Workers API, not Node.js)
 - Agents would need to target Web Workers API
@@ -153,6 +158,7 @@ running on a different cloud provider.
 mode (bug fixes only).
 
 **Trade-offs:**
+
 - No npm compatibility (agents can't use npm packages in tools)
 - No network adapter (would rebuild kv.internal bridge manually)
 - No filesystem virtualization
@@ -169,6 +175,7 @@ Strictly worse for this use case.
 **What it is:** V8 context in a separate Node.js process, JSON-only IPC.
 
 **Trade-offs:**
+
 - Separate process = better isolation but IPC latency on every call
 - JSON-only communication (no structured clone)
 - No npm compatibility (pure V8 context)
@@ -185,6 +192,7 @@ latency. Would require rebuilding all bridging infrastructure.
 processes. Used by Claude Code.
 
 **Trade-offs:**
+
 - Process-level sandboxing, not in-process JS isolation
 - Designed for CLI tools / full programs, not agent tool functions
 - Had CVE-2025-66479 (empty allowedDomains left network wide open)
@@ -207,15 +215,15 @@ within a host process.
 
 No alternative matches all requirements without significant trade-offs:
 
-| Requirement | secure-exec | Deno Sandbox | isolated-vm | v8-sandbox | workerd |
-|---|---|---|---|---|---|
-| In-process (no network hop) | Yes | No (cloud) | Yes | No (IPC) | Yes |
-| npm compatibility | Yes | Yes | No | No | Partial |
-| Deny-by-default permissions | Yes | Yes | Manual | Manual | Yes |
-| Network virtualization | Yes | Built-in | No | No | Yes |
-| Filesystem virtualization | Yes | Built-in | No | No | Yes |
-| Active development | Yes | Yes | Maintenance | Yes | Yes |
-| No VM wrapper needed | Yes | N/A | Yes | Yes | No |
+| Requirement                 | secure-exec | Deno Sandbox | isolated-vm | v8-sandbox | workerd |
+| --------------------------- | ----------- | ------------ | ----------- | ---------- | ------- |
+| In-process (no network hop) | Yes         | No (cloud)   | Yes         | No (IPC)   | Yes     |
+| npm compatibility           | Yes         | Yes          | No          | No         | Partial |
+| Deny-by-default permissions | Yes         | Yes          | Manual      | Manual     | Yes     |
+| Network virtualization      | Yes         | Built-in     | No          | No         | Yes     |
+| Filesystem virtualization   | Yes         | Built-in     | No          | No         | Yes     |
+| Active development          | Yes         | Yes          | Maintenance | Yes        | Yes     |
+| No VM wrapper needed        | Yes         | N/A          | Yes         | Yes        | No      |
 
 ### Improvement areas (with secure-exec)
 
