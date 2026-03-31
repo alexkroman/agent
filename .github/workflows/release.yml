@@ -63,7 +63,7 @@ jobs:
         if: steps.changesets.outputs.pullRequestNumber && steps.changesets.outputs.published != 'true'
         run: gh workflow run check.yml --ref changeset-release/main
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
 
   detect-deploy:
     runs-on: ubuntu-latest
