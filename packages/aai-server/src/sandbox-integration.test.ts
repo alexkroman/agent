@@ -247,6 +247,57 @@ describe("redeploy replaces sandbox", () => {
   });
 });
 
+// ── Deploy → serve client files round-trip ───────────────────────────────
+
+describe("deploy serves client files", () => {
+  test("deploy → GET / returns HTML, GET /assets/* returns JS", async () => {
+    const { createTestOrchestrator, deployAgent } = await import("./_test-utils.ts");
+    const { fetch } = await createTestOrchestrator();
+    await deployAgent(fetch, "rt-agent");
+
+    // HTML page
+    const htmlRes = await fetch("/rt-agent/");
+    expect(htmlRes.status).toBe(200);
+    const html = await htmlRes.text();
+    expect(html).toContain("<!DOCTYPE html>");
+
+    // JS asset
+    const jsRes = await fetch("/rt-agent/assets/index.js");
+    expect(jsRes.status).toBe(200);
+    const js = await jsRes.text();
+    expect(js).toContain("console.log");
+  });
+
+  test("redeploy updates served HTML", async () => {
+    const { createTestOrchestrator } = await import("./_test-utils.ts");
+    const { fetch, store } = await createTestOrchestrator();
+
+    await store.putAgent({
+      slug: "update-agent",
+      env: { ASSEMBLYAI_API_KEY: "k" },
+      worker: "w",
+      clientFiles: { "index.html": "<!DOCTYPE html><html>v1</html>" },
+      credential_hashes: ["h"],
+    });
+
+    const v1 = await fetch("/update-agent/");
+    expect(v1.status).toBe(200);
+    expect(await v1.text()).toContain("v1");
+
+    await store.putAgent({
+      slug: "update-agent",
+      env: { ASSEMBLYAI_API_KEY: "k" },
+      worker: "w",
+      clientFiles: { "index.html": "<!DOCTYPE html><html>v2</html>" },
+      credential_hashes: ["h"],
+    });
+
+    const v2 = await fetch("/update-agent/");
+    expect(v2.status).toBe(200);
+    expect(await v2.text()).toContain("v2");
+  });
+});
+
 // ── Every template boots in the isolate ─────────────────────────────────
 
 describe("template isolate boot", () => {

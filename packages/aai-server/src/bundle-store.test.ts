@@ -98,6 +98,55 @@ describe("bundle store (unstorage)", () => {
     expect(code).toBe("console.log('hello');");
   });
 
+  test("getClientFile returns deployed HTML and assets", async () => {
+    const storage = createStorage();
+    const credentialKey = await deriveCredentialKey("test-secret");
+    const store = createBundleStore(storage, { credentialKey });
+
+    const html = "<!DOCTYPE html><html><body>hello</body></html>";
+    const js = 'console.log("app");';
+
+    await store.putAgent({
+      slug: "test-agent",
+      env: {},
+      worker: "w",
+      clientFiles: { "index.html": html, "assets/index.js": js },
+      credential_hashes: ["hash1"],
+    });
+
+    expect(await store.getClientFile("test-agent", "index.html")).toBe(html);
+    expect(await store.getClientFile("test-agent", "assets/index.js")).toBe(js);
+    expect(await store.getClientFile("test-agent", "missing.html")).toBeNull();
+  });
+
+  test("redeploy replaces client files", async () => {
+    const storage = createStorage();
+    const credentialKey = await deriveCredentialKey("test-secret");
+    const store = createBundleStore(storage, { credentialKey });
+
+    await store.putAgent({
+      slug: "test-agent",
+      env: {},
+      worker: "v1",
+      clientFiles: { "index.html": "<html>v1</html>", "assets/old.js": "old" },
+      credential_hashes: ["hash1"],
+    });
+
+    await store.putAgent({
+      slug: "test-agent",
+      env: {},
+      worker: "v2",
+      clientFiles: { "index.html": "<html>v2</html>", "assets/new.js": "new" },
+      credential_hashes: ["hash1"],
+    });
+
+    expect(await store.getClientFile("test-agent", "index.html")).toBe("<html>v2</html>");
+    expect(await store.getClientFile("test-agent", "assets/new.js")).toBe("new");
+    // Old asset should be gone after redeploy
+    expect(await store.getClientFile("test-agent", "assets/old.js")).toBeNull();
+    expect(await store.getWorkerCode("test-agent")).toBe("v2");
+  });
+
   test("deleteAgent removes all files", async () => {
     const storage = createStorage();
     const credentialKey = await deriveCredentialKey("test-secret");
