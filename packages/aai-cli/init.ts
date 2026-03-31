@@ -16,15 +16,6 @@ const execFileAsync = promisify(execFile);
 const DEFAULT_PROJECT_NAME = "my-voice-agent";
 const DEFAULT_TEMPLATE = "simple";
 
-/** Detect the package manager from the environment. */
-function detectPackageManager(): "pnpm" | "yarn" | "bun" | "npm" {
-  const ua = process.env.npm_config_user_agent ?? "";
-  if (ua.startsWith("pnpm")) return "pnpm";
-  if (ua.startsWith("yarn")) return "yarn";
-  if (ua.startsWith("bun")) return "bun";
-  return "npm";
-}
-
 /** Prompt for project name or return default when --yes is set. */
 async function promptProjectName(yes?: boolean): Promise<string> {
   if (yes) return DEFAULT_PROJECT_NAME;
@@ -60,8 +51,18 @@ async function promptTemplate(yes?: boolean): Promise<string> {
   return result;
 }
 
-/** Install deps via the detected package manager. */
-async function installDeps(cwd: string, pm: string): Promise<void> {
+/** Enable corepack so pnpm is available (scaffold declares packageManager: pnpm). */
+async function ensurePnpm(): Promise<void> {
+  try {
+    await execFileAsync("corepack", ["enable"]);
+  } catch {
+    // corepack not available or already enabled — pnpm install will fail
+    // with a clear error if pnpm isn't available
+  }
+}
+
+/** Install deps with pnpm (scaffold declares packageManager: pnpm). */
+async function installDeps(cwd: string): Promise<void> {
   if (await fileExists(path.join(cwd, "node_modules"))) return;
 
   let pkgJson: {
@@ -78,17 +79,21 @@ async function installDeps(cwd: string, pm: string): Promise<void> {
   const devDeps = Object.keys(pkgJson.devDependencies ?? {});
   if (deps.length === 0 && devDeps.length === 0) return;
 
+  await ensurePnpm();
+
   const s = p.spinner();
-  s.start(`Installing dependencies with ${pm}`);
+  s.start("Installing dependencies with pnpm");
 
   try {
-    await execFileAsync(pm, ["install"], { cwd });
+    // --ignore-workspace prevents pnpm from hoisting to a parent workspace
+    // (e.g. when scaffolding inside the monorepo during development).
+    await execFileAsync("pnpm", ["install", "--ignore-workspace"], { cwd });
     s.stop("Dependencies installed");
   } catch (err: unknown) {
     const msg = errorMessage(err);
     s.stop("Dependency install failed");
-    log.warn(`${pm} install failed: ${msg}`);
-    log.warn(`Run \`${pm} install\` manually in the project directory.`);
+    log.warn(`pnpm install failed: ${msg}`);
+    log.warn("Run `corepack enable && pnpm install` manually in the project directory.");
   }
 }
 
@@ -105,11 +110,10 @@ export async function runInitCommand(
     yes?: boolean | undefined;
     skipApi?: boolean | undefined;
     skipDeploy?: boolean | undefined;
+    server?: string | undefined;
   },
   extra?: { quiet?: boolean | undefined },
 ): Promise<string> {
-  const pm = detectPackageManager();
-
   if (!extra?.quiet) {
     p.intro(colorize("cyanBright", "Create a new voice agent"));
   }
@@ -136,11 +140,11 @@ export async function runInitCommand(
   await runInit({ targetDir: cwd, template });
   s.stop("Project created");
 
-  await installDeps(cwd, pm);
+  await installDeps(cwd);
 
   if (!(opts.skipDeploy || extra?.quiet)) {
     const { runDeployCommand } = await import("./deploy.ts");
-    await runDeployCommand({ cwd });
+    await runDeployCommand({ cwd, ...(opts.server ? { server: opts.server } : {}) });
   }
 
   if (!extra?.quiet) {
