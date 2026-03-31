@@ -48,5 +48,12 @@ pre-push:
           exit 1
         fi
         echo "No conflicts with main detected."
+    changeset-status:
+      run: |
+        branch=$(git rev-parse --abbrev-ref HEAD)
+        if [ "$branch" = "main" ] || [ "$branch" = "master" ]; then
+          exit 0
+        fi
+        pnpm changeset status --since=origin/main
     check:
       run: pnpm check
