@@ -9,6 +9,7 @@
  * createRuntime() with identical permission config.
  */
 
+import { readdirSync, statSync } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -244,6 +245,77 @@ describe("redeploy replaces sandbox", () => {
 
     sandbox2.terminate();
   });
+});
+
+// ── Every template boots in the isolate ─────────────────────────────────
+
+describe("template isolate boot", () => {
+  const templatesDir = path.resolve(import.meta.dirname, "../../aai-templates/templates");
+  const templateNames = readdirSync(templatesDir).filter((d) =>
+    statSync(path.join(templatesDir, d)).isDirectory(),
+  );
+
+  // Shared: bundle helper that copies a template, symlinks workspace deps, and bundles
+  async function bundleTemplate(template: string): Promise<{
+    worker: string;
+    tmpDir: string;
+  }> {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), `aai-tpl-${template}-`));
+    const srcDir = path.join(templatesDir, template);
+
+    // Copy all template files
+    for (const entry of readdirSync(srcDir, { withFileTypes: true })) {
+      const src = path.join(srcDir, entry.name);
+      const dest = path.join(tmpDir, entry.name);
+      if (entry.isFile()) {
+        await fs.copyFile(src, dest);
+      }
+    }
+
+    // Minimal package.json
+    await fs.writeFile(
+      path.join(tmpDir, "package.json"),
+      JSON.stringify({ name: `test-${template}`, type: "module", dependencies: { zod: "^4.0.0" } }),
+    );
+
+    // Symlink workspace packages so Vite can resolve them
+    const scope = path.join(tmpDir, "node_modules", "@alexkroman1");
+    await fs.mkdir(scope, { recursive: true });
+    await fs.symlink(path.resolve(import.meta.dirname, "../..", "aai"), path.join(scope, "aai"));
+
+    const { bundleAgent } = await import("../../aai-cli/_bundler.ts");
+    const bundle = await bundleAgent({
+      slug: `tpl-${template}`,
+      dir: tmpDir,
+      entryPoint: path.join(tmpDir, "agent.ts"),
+      clientEntry: "",
+    });
+
+    return { worker: bundle.worker, tmpDir };
+  }
+
+  test.each(templateNames)("template %s boots in isolate", async (template) => {
+    const { worker, tmpDir } = await bundleTemplate(template);
+    const kv = createMockKv();
+    let isolate: { port: number; runtime: { terminate(): Promise<void> } } | undefined;
+    try {
+      isolate = await _internals.startIsolate(worker, kv, {}, "test-token");
+      expect(isolate.port).toBeGreaterThan(0);
+
+      // Verify config RPC works (agent name + tools)
+      const res = await fetch(`http://127.0.0.1:${isolate.port}/rpc`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-harness-token": "test-token" },
+        body: JSON.stringify({ type: "config" }),
+      });
+      expect(res.status).toBe(200);
+      const config = (await res.json()) as { name: string };
+      expect(config.name).toBeTruthy();
+    } finally {
+      await isolate?.runtime.terminate();
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  }, 30_000);
 });
 
 // ── Vite-bundled template agent boots in isolate ────────────────────────
