@@ -9,6 +9,10 @@
  * createRuntime() with identical permission config.
  */
 
+import { readdirSync, statSync } from "node:fs";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { createMockKv } from "./_test-utils.ts";
 import { _internals } from "./sandbox.ts";
@@ -240,5 +244,280 @@ describe("redeploy replaces sandbox", () => {
     expect(sandbox2).toBeTruthy();
 
     sandbox2.terminate();
+  });
+});
+
+// ── Deploy → serve client files round-trip ───────────────────────────────
+
+describe("deploy serves client files", () => {
+  // Use real createBundleStore + unstorage memory driver (not the mock).
+  async function createRealOrchestrator() {
+    const { createStorage } = await import("unstorage");
+    const { createBundleStore } = await import("./bundle-store.ts");
+    const { deriveCredentialKey } = await import("./credentials.ts");
+    const { createOrchestrator } = await import("./orchestrator.ts");
+
+    const storage = createStorage();
+    const credentialKey = await deriveCredentialKey("test-secret");
+    const store = createBundleStore(storage, { credentialKey });
+    const { app } = createOrchestrator({ slots: new Map(), store, storage });
+    const fetch = async (input: string | Request, init?: RequestInit) => app.request(input, init);
+    return { fetch, store };
+  }
+
+  test("deploy → GET / returns HTML, GET /assets/* returns JS", async () => {
+    const { fetch, store } = await createRealOrchestrator();
+
+    await store.putAgent({
+      slug: "rt-agent",
+      env: { ASSEMBLYAI_API_KEY: "k" },
+      worker: "w",
+      clientFiles: {
+        "index.html":
+          '<!DOCTYPE html><html><body><script src="./assets/index.js"></script></body></html>',
+        "assets/index.js": 'console.log("app");',
+      },
+      credential_hashes: ["h"],
+    });
+
+    const htmlRes = await fetch("/rt-agent/");
+    expect(htmlRes.status).toBe(200);
+    const html = await htmlRes.text();
+    expect(html).toContain("<!DOCTYPE html>");
+
+    const jsRes = await fetch("/rt-agent/assets/index.js");
+    expect(jsRes.status).toBe(200);
+    const js = await jsRes.text();
+    expect(js).toContain("console.log");
+  });
+
+  test("redeploy updates served HTML", async () => {
+    const { fetch, store } = await createRealOrchestrator();
+
+    await store.putAgent({
+      slug: "update-agent",
+      env: { ASSEMBLYAI_API_KEY: "k" },
+      worker: "w",
+      clientFiles: { "index.html": "<!DOCTYPE html><html>v1</html>" },
+      credential_hashes: ["h"],
+    });
+
+    const v1 = await fetch("/update-agent/");
+    expect(v1.status).toBe(200);
+    expect(await v1.text()).toContain("v1");
+
+    await store.putAgent({
+      slug: "update-agent",
+      env: { ASSEMBLYAI_API_KEY: "k" },
+      worker: "w",
+      clientFiles: { "index.html": "<!DOCTYPE html><html>v2</html>" },
+      credential_hashes: ["h"],
+    });
+
+    const v2 = await fetch("/update-agent/");
+    expect(v2.status).toBe(200);
+    expect(await v2.text()).toContain("v2");
+  });
+});
+
+// ── Every template boots in the isolate ─────────────────────────────────
+
+describe("template isolate boot", () => {
+  const templatesDir = path.resolve(import.meta.dirname, "../../aai-templates/templates");
+  const templateNames = readdirSync(templatesDir).filter((d) =>
+    statSync(path.join(templatesDir, d)).isDirectory(),
+  );
+
+  // Shared: bundle helper that copies a template, symlinks workspace deps, and bundles
+  async function bundleTemplate(template: string): Promise<{
+    worker: string;
+    tmpDir: string;
+  }> {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), `aai-tpl-${template}-`));
+    const srcDir = path.join(templatesDir, template);
+
+    // Copy all template files
+    for (const entry of readdirSync(srcDir, { withFileTypes: true })) {
+      const src = path.join(srcDir, entry.name);
+      const dest = path.join(tmpDir, entry.name);
+      if (entry.isFile()) {
+        await fs.copyFile(src, dest);
+      }
+    }
+
+    // Minimal package.json
+    await fs.writeFile(
+      path.join(tmpDir, "package.json"),
+      JSON.stringify({ name: `test-${template}`, type: "module", dependencies: { zod: "^4.0.0" } }),
+    );
+
+    // Symlink workspace packages so Vite can resolve them
+    const scope = path.join(tmpDir, "node_modules", "@alexkroman1");
+    await fs.mkdir(scope, { recursive: true });
+    await fs.symlink(path.resolve(import.meta.dirname, "../..", "aai"), path.join(scope, "aai"));
+
+    const { bundleAgent } = await import("../../aai-cli/_bundler.ts");
+    const bundle = await bundleAgent({
+      slug: `tpl-${template}`,
+      dir: tmpDir,
+      entryPoint: path.join(tmpDir, "agent.ts"),
+      clientEntry: "",
+    });
+
+    return { worker: bundle.worker, tmpDir };
+  }
+
+  test.each(templateNames)("template %s boots in isolate", async (template) => {
+    const { worker, tmpDir } = await bundleTemplate(template);
+    const kv = createMockKv();
+    let isolate: { port: number; runtime: { terminate(): Promise<void> } } | undefined;
+    const rpc = async (body: Record<string, unknown>) => {
+      const res = await fetch(`http://127.0.0.1:${isolate?.port}/rpc`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-harness-token": "test-token" },
+        body: JSON.stringify(body),
+      });
+      return { status: res.status, data: (await res.json()) as Record<string, unknown> };
+    };
+
+    try {
+      isolate = await _internals.startIsolate(worker, kv, {}, "test-token");
+      expect(isolate.port).toBeGreaterThan(0);
+
+      // 1. Config RPC — agent name + tools
+      const config = await rpc({ type: "config" });
+      expect(config.status).toBe(200);
+      expect(config.data.name).toBeTruthy();
+
+      const schemas = config.data.toolSchemas as { name: string }[];
+
+      // 2. Hook lifecycle — connect a session
+      const connect = await rpc({ type: "hook", hook: "onConnect", sessionId: "s1" });
+      expect(connect.status).toBe(200);
+
+      // 3. Tool execution — call the first custom tool (if any)
+      // Tools that call external APIs will fail with a fetch error, but
+      // we verify the harness dispatches correctly (status 200 or 500,
+      // never 400/404 which would mean the tool wasn't found).
+      const firstTool = schemas[0];
+      if (firstTool) {
+        const toolRes = await rpc({
+          type: "tool",
+          name: firstTool.name,
+          sessionId: "s1",
+          args: {},
+          messages: [],
+        });
+        // 200 = success, 500 = tool threw (e.g. missing API key / network)
+        // 404 = tool not found (would be a bug)
+        expect(toolRes.status).not.toBe(404);
+      }
+
+      // 4. Hook lifecycle — disconnect
+      const disconnect = await rpc({ type: "hook", hook: "onDisconnect", sessionId: "s1" });
+      expect(disconnect.status).toBe(200);
+    } finally {
+      await isolate?.runtime.terminate();
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
+  }, 30_000);
+});
+
+// ── Vite-bundled template agent boots in isolate ────────────────────────
+
+describe("bundled template agent", () => {
+  let tmpDir: string;
+  let isolate: { port: number; runtime: { terminate(): Promise<void> } };
+
+  beforeAll(async () => {
+    // Scaffold a simple template project with defineAgent + zod
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "aai-integ-"));
+    const agentCode = `
+import { defineAgent, defineTool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default defineAgent({
+  name: "Bundled Test Agent",
+  tools: {
+    greet: defineTool({
+      description: "Greet someone",
+      parameters: z.object({ name: z.string() }),
+      execute: ({ name }) => "hello " + name,
+    }),
+  },
+});
+`;
+    await fs.writeFile(path.join(tmpDir, "agent.ts"), agentCode);
+    await fs.writeFile(
+      path.join(tmpDir, "package.json"),
+      JSON.stringify({ name: "test", type: "module", dependencies: { zod: "^4.0.0" } }),
+    );
+
+    // Symlink workspace packages so Vite can resolve them
+    const nodeModules = path.join(tmpDir, "node_modules");
+    const scope = path.join(nodeModules, "@alexkroman1");
+    await fs.mkdir(scope, { recursive: true });
+    const pkgsDir = path.resolve(import.meta.dirname, "../..", "aai");
+    await fs.symlink(pkgsDir, path.join(scope, "aai"));
+
+    // Bundle via the CLI bundler (same path as `aai build` / `aai deploy`)
+    const { bundleAgent } = await import("../../aai-cli/_bundler.ts");
+    const bundle = await bundleAgent({
+      slug: "integ-bundle-test",
+      dir: tmpDir,
+      entryPoint: path.join(tmpDir, "agent.ts"),
+      clientEntry: "",
+    });
+
+    // Boot the bundled worker in a real isolate
+    const kv = createMockKv();
+    isolate = await _internals.startIsolate(bundle.worker, kv, {}, "test-token");
+  }, 30_000);
+
+  afterAll(async () => {
+    await isolate?.runtime.terminate();
+    if (tmpDir) await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  test("isolate boots and announces port", () => {
+    expect(isolate.port).toBeGreaterThan(0);
+  });
+
+  test("config RPC returns agent name and tool schemas", async () => {
+    const res = await fetch(`http://127.0.0.1:${isolate.port}/rpc`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-harness-token": "test-token" },
+      body: JSON.stringify({ type: "config" }),
+    });
+    expect(res.status).toBe(200);
+    const config = (await res.json()) as { name: string; toolSchemas: { name: string }[] };
+    expect(config.name).toBe("Bundled Test Agent");
+    expect(config.toolSchemas.find((t) => t.name === "greet")).toBeTruthy();
+  });
+
+  test("tool RPC executes bundled tool", async () => {
+    // Connect a session first
+    const connectRes = await fetch(`http://127.0.0.1:${isolate.port}/rpc`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-harness-token": "test-token" },
+      body: JSON.stringify({ type: "hook", hook: "onConnect", sessionId: "s1" }),
+    });
+    expect(connectRes.status).toBe(200);
+
+    // Execute the tool
+    const toolRes = await fetch(`http://127.0.0.1:${isolate.port}/rpc`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-harness-token": "test-token" },
+      body: JSON.stringify({
+        type: "tool",
+        name: "greet",
+        sessionId: "s1",
+        args: { name: "World" },
+        messages: [],
+      }),
+    });
+    expect(toolRes.status).toBe(200);
+    const result = (await toolRes.json()) as { result: string };
+    expect(result.result).toBe("hello World");
   });
 });

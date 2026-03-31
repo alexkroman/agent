@@ -80,6 +80,9 @@ export async function bundleAgent(
   const clientDir = path.join(aaiDir, "client");
 
   // 1. Worker — SSR build
+  // Zod must be external: its JIT compiler uses Function() which is blocked
+  // in secure-exec isolates. The platform server provides a safe zod build
+  // in the isolate's virtual filesystem at /app/_zod.mjs.
   try {
     await build({
       root: agent.dir,
@@ -89,8 +92,15 @@ export async function bundleAgent(
         outDir: buildDir,
         emptyOutDir: true,
         rollupOptions: {
-          output: { entryFileNames: "worker.js" },
+          external: ["zod"],
+          output: {
+            entryFileNames: "worker.js",
+            paths: { zod: "/app/_zod.mjs" },
+          },
         },
+      },
+      ssr: {
+        external: ["zod"],
       },
     });
   } catch (err: unknown) {

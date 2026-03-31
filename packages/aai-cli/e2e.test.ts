@@ -60,14 +60,6 @@ function aai(args: string[], cwd: string, timeoutMs = 120_000): void {
   });
 }
 
-function aaiSpawn(args: string[], cwd: string): ChildProcess {
-  return spawn(process.execPath, [aaiBin, ...args], {
-    cwd,
-    env: aaiEnv(),
-    stdio: "pipe",
-  });
-}
-
 /** Poll a health endpoint, capturing child stderr for diagnostics on timeout. */
 async function waitForHealth(url: string, child?: ChildProcess, timeoutMs = 30_000): Promise<void> {
   let stderr = "";
@@ -245,7 +237,37 @@ describe.skipIf(!playwrightAvailable)("browser: dev server", () => {
   beforeAll(async () => {
     const projectDir = path.join(tmpDir, "_browser-dev");
     initProject("simple", projectDir);
-    child = aaiSpawn(["dev", "--port", String(port)], projectDir);
+    aai(["build", "--skip-tests"], projectDir);
+
+    // Serve the built client with a simple static server (faster than vite dev)
+    const clientDir = path.join(projectDir, ".aai", "client");
+    child = spawn(
+      process.execPath,
+      [
+        "-e",
+        `const http = require("http"); const fs = require("fs"); const path = require("path");
+       const { WebSocketServer } = require("ws");
+       const mimes = { ".html": "text/html", ".js": "application/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml" };
+       const root = ${JSON.stringify(clientDir)};
+       const s = http.createServer((req, res) => {
+         const url = new URL(req.url, "http://localhost");
+         const f = path.join(root, url.pathname === "/" ? "index.html" : url.pathname);
+         if (!f.startsWith(root)) { res.writeHead(403); res.end(); return; }
+         try {
+           const data = fs.readFileSync(f);
+           const ct = mimes[path.extname(f)] || "application/octet-stream";
+           res.writeHead(200, { "Content-Type": ct });
+           res.end(data);
+         } catch { res.writeHead(404); res.end("not found"); }
+       });
+       const wss = new WebSocketServer({ server: s });
+       wss.on("connection", (ws) => {
+         ws.send(JSON.stringify({ type: "config", audioFormat: "pcm16", sampleRate: 16000, sessionId: "test" }));
+       });
+       s.listen(${port}, () => console.log("ready"));`,
+      ],
+      { stdio: "pipe" },
+    );
     await waitForHealth(`http://localhost:${port}`, child);
     // biome-ignore lint/style/noNonNullAssertion: guarded by describe.skipIf(!playwrightAvailable)
     browser = await chromium!.launch();

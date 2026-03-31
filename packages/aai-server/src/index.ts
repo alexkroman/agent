@@ -8,8 +8,6 @@
 
 import { serve } from "@hono/node-server";
 import { createStorage } from "unstorage";
-import memoryDriver from "unstorage/drivers/memory";
-import overlayDriver from "unstorage/drivers/overlay";
 import s3Driver from "unstorage/drivers/s3";
 import { createBundleStore } from "./bundle-store.ts";
 import { DEFAULT_CREDENTIAL_SCOPE, DEFAULT_PORT } from "./constants.ts";
@@ -52,20 +50,13 @@ async function buildOpts(env: NodeJS.ProcessEnv): Promise<OrchestratorOpts> {
     ? await deriveCredentialKey(env.KV_SCOPE_SECRET)
     : await deriveCredentialKey(DEFAULT_CREDENTIAL_SCOPE);
 
-  // Single unstorage instance with overlay (memory cache + S3 persistence).
-  // Used for bundles and KV storage — all in the same Tigris bucket.
   const storage = createStorage({
-    driver: overlayDriver({
-      layers: [
-        memoryDriver(),
-        s3Driver({
-          bucket: required.BUCKET_NAME,
-          endpoint: env.AWS_ENDPOINT_URL_S3 ?? "https://fly.storage.tigris.dev",
-          region: "auto",
-          accessKeyId: required.AWS_ACCESS_KEY_ID,
-          secretAccessKey: required.AWS_SECRET_ACCESS_KEY,
-        }),
-      ],
+    driver: s3Driver({
+      bucket: required.BUCKET_NAME,
+      endpoint: env.AWS_ENDPOINT_URL_S3 ?? "https://fly.storage.tigris.dev",
+      region: "auto",
+      accessKeyId: required.AWS_ACCESS_KEY_ID,
+      secretAccessKey: required.AWS_SECRET_ACCESS_KEY,
     }),
   });
 
