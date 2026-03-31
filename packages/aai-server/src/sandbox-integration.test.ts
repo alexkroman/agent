@@ -250,18 +250,41 @@ describe("redeploy replaces sandbox", () => {
 // ── Deploy → serve client files round-trip ───────────────────────────────
 
 describe("deploy serves client files", () => {
-  test("deploy → GET / returns HTML, GET /assets/* returns JS", async () => {
-    const { createTestOrchestrator, deployAgent } = await import("./_test-utils.ts");
-    const { fetch } = await createTestOrchestrator();
-    await deployAgent(fetch, "rt-agent");
+  // Use real createBundleStore + unstorage memory driver (not the mock).
+  async function createRealOrchestrator() {
+    const { createStorage } = await import("unstorage");
+    const { createBundleStore } = await import("./bundle-store.ts");
+    const { deriveCredentialKey } = await import("./credentials.ts");
+    const { createOrchestrator } = await import("./orchestrator.ts");
 
-    // HTML page
+    const storage = createStorage();
+    const credentialKey = await deriveCredentialKey("test-secret");
+    const store = createBundleStore(storage, { credentialKey });
+    const { app } = createOrchestrator({ slots: new Map(), store, storage });
+    const fetch = async (input: string | Request, init?: RequestInit) => app.request(input, init);
+    return { fetch, store };
+  }
+
+  test("deploy → GET / returns HTML, GET /assets/* returns JS", async () => {
+    const { fetch, store } = await createRealOrchestrator();
+
+    await store.putAgent({
+      slug: "rt-agent",
+      env: { ASSEMBLYAI_API_KEY: "k" },
+      worker: "w",
+      clientFiles: {
+        "index.html":
+          '<!DOCTYPE html><html><body><script src="./assets/index.js"></script></body></html>',
+        "assets/index.js": 'console.log("app");',
+      },
+      credential_hashes: ["h"],
+    });
+
     const htmlRes = await fetch("/rt-agent/");
     expect(htmlRes.status).toBe(200);
     const html = await htmlRes.text();
     expect(html).toContain("<!DOCTYPE html>");
 
-    // JS asset
     const jsRes = await fetch("/rt-agent/assets/index.js");
     expect(jsRes.status).toBe(200);
     const js = await jsRes.text();
@@ -269,8 +292,7 @@ describe("deploy serves client files", () => {
   });
 
   test("redeploy updates served HTML", async () => {
-    const { createTestOrchestrator } = await import("./_test-utils.ts");
-    const { fetch, store } = await createTestOrchestrator();
+    const { fetch, store } = await createRealOrchestrator();
 
     await store.putAgent({
       slug: "update-agent",
