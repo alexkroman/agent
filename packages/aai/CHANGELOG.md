@@ -1,5 +1,11 @@
 # @alexkroman1/aai
 
+## 0.12.1
+
+### Patch Changes
+
+- f4762a1: Externalize zod from agent bundles, remove storage cache, improve CI reliability
+
 ## 0.12.0
 
 ### Minor Changes
