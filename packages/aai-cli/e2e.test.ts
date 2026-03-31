@@ -60,14 +60,6 @@ function aai(args: string[], cwd: string, timeoutMs = 120_000): void {
   });
 }
 
-function aaiSpawn(args: string[], cwd: string): ChildProcess {
-  return spawn(process.execPath, [aaiBin, ...args], {
-    cwd,
-    env: aaiEnv(),
-    stdio: "pipe",
-  });
-}
-
 /** Poll a health endpoint, capturing child stderr for diagnostics on timeout. */
 async function waitForHealth(url: string, child?: ChildProcess, timeoutMs = 30_000): Promise<void> {
   let stderr = "";
@@ -245,7 +237,23 @@ describe.skipIf(!playwrightAvailable)("browser: dev server", () => {
   beforeAll(async () => {
     const projectDir = path.join(tmpDir, "_browser-dev");
     initProject("simple", projectDir);
-    child = aaiSpawn(["dev", "--port", String(port)], projectDir);
+    aai(["build", "--skip-tests"], projectDir);
+
+    // Serve the built client with a simple static server (faster than vite dev)
+    const clientDir = path.join(projectDir, ".aai", "client");
+    child = spawn(
+      process.execPath,
+      [
+        "-e",
+        `const http = require("http"); const fs = require("fs"); const path = require("path");
+       const s = http.createServer((req, res) => {
+         const f = path.join(${JSON.stringify(clientDir)}, req.url === "/" ? "index.html" : req.url);
+         try { res.end(fs.readFileSync(f)); } catch { res.writeHead(404); res.end("not found"); }
+       });
+       s.listen(${port}, () => console.log("ready"));`,
+      ],
+      { stdio: "pipe" },
+    );
     await waitForHealth(`http://localhost:${port}`, child);
     // biome-ignore lint/style/noNonNullAssertion: guarded by describe.skipIf(!playwrightAvailable)
     browser = await chromium!.launch();
