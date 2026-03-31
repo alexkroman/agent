@@ -45,6 +45,17 @@ async function setup(
   return cwd;
 }
 
+/** Catch command errors and display a clean message instead of a raw stack trace. */
+async function handleErrors(fn: () => Promise<void>): Promise<void> {
+  try {
+    await fn();
+  } catch (err: unknown) {
+    const { log } = await import("./_ui.ts");
+    log.error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  }
+}
+
 const init = defineCommand({
   meta: { name: "init", description: "Scaffold a new agent project" },
   args: {
@@ -56,14 +67,16 @@ const init = defineCommand({
     skipDeploy: { type: "boolean", description: "Skip deploy after scaffolding" },
   },
   async run({ args }) {
-    const { runInitCommand } = await import("./init.ts");
-    await runInitCommand({
-      dir: args.dir,
-      template: args.template,
-      force: args.force,
-      yes: args.yes,
-      skipApi: args.skipApi,
-      skipDeploy: args.skipDeploy,
+    await handleErrors(async () => {
+      const { runInitCommand } = await import("./init.ts");
+      await runInitCommand({
+        dir: args.dir,
+        template: args.template,
+        force: args.force,
+        yes: args.yes,
+        skipApi: args.skipApi,
+        skipDeploy: args.skipDeploy,
+      });
     });
   },
 });
@@ -75,18 +88,22 @@ const dev = defineCommand({
     yes: sharedArgs.yes,
   },
   async run({ args }) {
-    const cwd = await setup(args, { agent: true, apiKey: true });
-    const { runDevCommand } = await import("./dev.ts");
-    await runDevCommand({ cwd, port: args.port });
+    await handleErrors(async () => {
+      const cwd = await setup(args, { agent: true, apiKey: true });
+      const { runDevCommand } = await import("./dev.ts");
+      await runDevCommand({ cwd, port: args.port });
+    });
   },
 });
 
 const test = defineCommand({
   meta: { name: "test", description: "Run agent tests" },
   async run() {
-    const cwd = await setup();
-    const { runTestCommand } = await import("./test.ts");
-    await runTestCommand(cwd);
+    await handleErrors(async () => {
+      const cwd = await setup();
+      const { runTestCommand } = await import("./test.ts");
+      await runTestCommand(cwd);
+    });
   },
 });
 
@@ -97,13 +114,15 @@ const build = defineCommand({
     skipTests: { type: "boolean", description: "Skip running tests before build" },
   },
   async run({ args }) {
-    const cwd = await setup(args, { agent: true });
-    if (!args.skipTests) {
-      const { runVitest } = await import("./test.ts");
-      runVitest(cwd);
-    }
-    const { runBuildCommand } = await import("./_bundler.ts");
-    await runBuildCommand(cwd);
+    await handleErrors(async () => {
+      const cwd = await setup(args, { agent: true });
+      if (!args.skipTests) {
+        const { runVitest } = await import("./test.ts");
+        runVitest(cwd);
+      }
+      const { runBuildCommand } = await import("./_bundler.ts");
+      await runBuildCommand(cwd);
+    });
   },
 });
 
@@ -115,19 +134,15 @@ const deploy = defineCommand({
     yes: sharedArgs.yes,
   },
   async run({ args }) {
-    const cwd = await setup(args, { agent: true });
-    const { runDeployCommand } = await import("./deploy.ts");
-    try {
+    await handleErrors(async () => {
+      const cwd = await setup(args, { agent: true });
+      const { runDeployCommand } = await import("./deploy.ts");
       await runDeployCommand({
         cwd,
         ...(args.server ? { server: args.server } : {}),
         ...(args.dryRun ? { dryRun: args.dryRun } : {}),
       });
-    } catch (err: unknown) {
-      const { log } = await import("./_ui.ts");
-      log.error(err instanceof Error ? err.message : String(err));
-      process.exit(1);
-    }
+    });
   },
 });
 
@@ -137,11 +152,13 @@ const del = defineCommand({
     server: sharedArgs.server,
   },
   async run({ args }) {
-    const cwd = await setup();
-    const { runDeleteCommand } = await import("./delete.ts");
-    await runDeleteCommand({
-      cwd,
-      ...(args.server ? { server: args.server } : {}),
+    await handleErrors(async () => {
+      const cwd = await setup();
+      const { runDeleteCommand } = await import("./delete.ts");
+      await runDeleteCommand({
+        cwd,
+        ...(args.server ? { server: args.server } : {}),
+      });
     });
   },
 });
@@ -152,9 +169,11 @@ const secretPut = defineCommand({
     name: { type: "positional", description: "Secret name", required: true },
   },
   async run({ args }) {
-    const cwd = await setup(undefined, { apiKey: true });
-    const { runSecretPut } = await import("./secret.ts");
-    await runSecretPut(cwd, args.name);
+    await handleErrors(async () => {
+      const cwd = await setup(undefined, { apiKey: true });
+      const { runSecretPut } = await import("./secret.ts");
+      await runSecretPut(cwd, args.name);
+    });
   },
 });
 
@@ -164,18 +183,22 @@ const secretDelete = defineCommand({
     name: { type: "positional", description: "Secret name", required: true },
   },
   async run({ args }) {
-    const cwd = await setup(undefined, { apiKey: true });
-    const { runSecretDelete } = await import("./secret.ts");
-    await runSecretDelete(cwd, args.name);
+    await handleErrors(async () => {
+      const cwd = await setup(undefined, { apiKey: true });
+      const { runSecretDelete } = await import("./secret.ts");
+      await runSecretDelete(cwd, args.name);
+    });
   },
 });
 
 const secretList = defineCommand({
   meta: { name: "list", description: "List all secrets" },
   async run() {
-    const cwd = await setup(undefined, { apiKey: true });
-    const { runSecretList } = await import("./secret.ts");
-    await runSecretList(cwd);
+    await handleErrors(async () => {
+      const cwd = await setup(undefined, { apiKey: true });
+      const { runSecretList } = await import("./secret.ts");
+      await runSecretList(cwd);
+    });
   },
 });
 
