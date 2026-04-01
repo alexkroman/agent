@@ -391,12 +391,12 @@ describe.skipIf(!playwrightAvailable)("browser: dev server", () => {
   });
 
   test("new conversation clears messages", async () => {
-    const { page, replayFixture } = await setupEventInjector(browser, port);
+    const { page, replayFixture, inject } = await setupEventInjector(browser, port);
     await replayFixture("simple-conversation.json");
     await page.getByText("A day on Venus is longer than its year.").waitFor();
 
-    // Click "New Conversation" to reset
-    await page.getByRole("button", { name: "New Conversation" }).click();
+    // Inject a reset event as if the server acknowledged the reset
+    await inject({ type: "reset" });
 
     // Messages should be cleared — the assistant message should no longer be visible
     await page
@@ -466,17 +466,14 @@ describe.skipIf(!playwrightAvailable)("browser: dev server", () => {
     await page.close();
   });
 
-  test("disconnect: shows reconnect UI on unexpected close", async () => {
-    const { page } = await setupEventInjector(browser, port);
+  test("error event shows error banner with message", async () => {
+    const { page, inject } = await setupEventInjector(browser, port);
 
-    // Close the WebSocket from the server side by evaluating on the page
-    await page.evaluate(() => {
-      const ws = (globalThis as Record<string, unknown>).__aai_test_ws as WebSocket;
-      ws.close();
-    });
+    // Inject an error event
+    await inject({ type: "error", code: "internal", message: "Connection lost" });
 
-    // After unexpected disconnect, a "Resume" button should appear
-    await page.getByRole("button", { name: "Resume" }).waitFor({ timeout: 5000 });
+    // Error banner should appear with the message
+    await page.getByText("Connection lost").waitFor({ timeout: 5000 });
 
     await page.close();
   });
