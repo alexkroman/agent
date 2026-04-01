@@ -19,7 +19,6 @@ export default defineConfig({
         // Covered by integration tests (pnpm test:integration).
         "packages/aai-server/sandbox*.ts",
         "packages/aai-server/harness-runtime.ts",
-        "packages/aai-server/build-harness.ts",
         // CLI entry point and interactive prompts can't be unit tested.
         "packages/aai-cli/cli.ts",
         "packages/aai-cli/_prompts.ts",
@@ -101,7 +100,6 @@ export default defineConfig({
           include: ["**/*.test.ts"],
           exclude: [
             "sandbox-integration.test.ts",
-            "sandbox-conformance.test.ts",
             "ws-integration.test.ts",
             "node_modules",
             "dist",

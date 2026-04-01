@@ -3,26 +3,26 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "inputs": ["src/**", "isolate/**", "host/**", "*.ts", "tsconfig*.json", "tsdown.config.ts"],
+      "inputs": ["**/*.ts", "**/*.tsx", "!**/*.test.ts", "!**/*.test.tsx", "!**/*.test-d.ts", "tsconfig*.json", "tsdown.config.ts"],
       "outputs": ["dist/**"]
     },
     "test": {
       "dependsOn": ["build"],
-      "inputs": ["src/**", "isolate/**", "host/**", "**/*.test.ts", "**/*.test.tsx", "vitest.config.ts"],
+      "inputs": ["**/*.ts", "**/*.tsx", "vitest.config.ts", "../../vitest.shared.ts"],
       "cache": false
     },
     "test:coverage": {
       "dependsOn": ["build"],
-      "inputs": ["src/**", "isolate/**", "host/**", "**/*.test.ts", "**/*.test.tsx", "vitest.config.ts"],
+      "inputs": ["**/*.ts", "**/*.tsx", "vitest.config.ts", "../../vitest.shared.ts"],
       "outputs": ["coverage/**"],
       "cache": false
     },
     "typecheck": {
       "dependsOn": ["build"],
-      "inputs": ["src/**", "isolate/**", "host/**", "*.ts", "tsconfig*.json"]
+      "inputs": ["**/*.ts", "**/*.tsx", "!**/*.test.ts", "!**/*.test.tsx", "tsconfig*.json"]
     },
     "lint": {
-      "inputs": ["src/**", "isolate/**", "host/**", "*.ts", "*.tsx", "biome.json"]
+      "inputs": ["**/*.ts", "**/*.tsx", "biome.json"]
     },
     "check:publint": {
       "dependsOn": ["build"],
@@ -34,11 +34,11 @@
     },
     "check:integration": {
       "dependsOn": ["build"],
-      "inputs": ["src/**", "isolate/**", "host/**", "*.ts"]
+      "inputs": ["**/*.ts", "vitest.integration.config.ts", "../../vitest.shared.ts"]
     },
     "check:e2e": {
       "dependsOn": ["build"],
-      "inputs": ["src/**", "*.ts"]
+      "inputs": ["**/*.ts", "**/*.tsx"]
     },
     "check:harness": {
       "dependsOn": ["build"]

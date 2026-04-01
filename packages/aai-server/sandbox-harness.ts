@@ -65,16 +65,3 @@ export async function getHarnessFiles(): Promise<HarnessFiles> {
     "Harness runtime JS not found. Run `pnpm --filter @alexkroman1/aai-server build` first.",
   );
 }
-
-/**
- * Get just the main harness runtime JS code.
- * @deprecated Use {@link getHarnessFiles} to load all chunks.
- */
-export async function getHarnessRuntimeJs(): Promise<string> {
-  const files = await getHarnessFiles();
-  const main = files.find(
-    (f) => f.name === "harness-runtime.mjs" || f.name === "harness-runtime.js",
-  );
-  if (!main) throw new Error("Main harness entry not found in loaded files");
-  return main.content;
-}

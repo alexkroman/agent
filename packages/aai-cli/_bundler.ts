@@ -108,7 +108,7 @@ export async function bundleAgent(
   }
 
   // 2. Client — standard Vite build
-  if (!(opts?.skipClient ?? !agent.clientEntry)) {
+  if (!opts?.skipClient && agent.clientEntry) {
     try {
       await build({
         root: agent.dir,
