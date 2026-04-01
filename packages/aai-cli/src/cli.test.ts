@@ -1,4 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { renderUsage } from "citty";
 import { describe, expect, test } from "vitest";
 import { mainCommand } from "./cli.ts";
@@ -44,5 +47,17 @@ describe("cli", () => {
     expect(secretCmd?.subCommands?.put).toBeDefined();
     expect(secretCmd?.subCommands?.delete).toBeDefined();
     expect(secretCmd?.subCommands?.list).toBeDefined();
+  });
+
+  test("ensureAgent checks for agent.toml not agent.ts", async () => {
+    // Create a temp dir with agent.toml — ensureAgent should NOT trigger init
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "aai-cli-test-"));
+    fs.writeFileSync(path.join(tmpDir, "agent.toml"), 'name = "test"');
+
+    const { fileExists } = await import("./lib/discover.ts");
+    expect(await fileExists(path.join(tmpDir, "agent.toml"))).toBe(true);
+    expect(await fileExists(path.join(tmpDir, "agent.ts"))).toBe(false);
+
+    fs.rmSync(tmpDir, { recursive: true });
   });
 });

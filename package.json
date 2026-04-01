@@ -12,7 +12,7 @@
     "test:aai-ui": "vitest run --project aai-ui",
     "test:aai-cli": "vitest run --project aai-cli",
     "test:aai-server": "vitest run --project aai-server",
-    "aai": "node --experimental-strip-types packages/aai-cli/cli.ts",
+    "aai": "node --experimental-strip-types packages/aai-cli/src/cli.ts",
     "dev:aai-server": "pnpm --filter @alexkroman1/aai-server dev",
     "typecheck": "pnpm -r run typecheck",
     "lint": "pnpm -r run lint",

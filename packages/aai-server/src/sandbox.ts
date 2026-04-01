@@ -188,7 +188,7 @@ async function startIsolate(
 
   runtime
     .exec(
-      'import agent from "/app/agent_bundle.js";\nimport { startHarness } from "/app/_harness-runtime.mjs";\nstartHarness(agent);',
+      'import agent from "/app/agent_bundle.js";\nimport { startHarness } from "/app/harness-runtime.mjs";\nstartHarness(agent);',
       { cwd: "/app" },
     )
     .then(
