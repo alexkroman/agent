@@ -99,3 +99,33 @@ test("verifySlugOwner rejects when credential_hashes is empty", async () => {
   });
   expect((await verifySlugOwner("any-key", { slug: "my-agent", store })).status).toBe("forbidden");
 });
+
+// ── Auth Timing Safety ─────────────────────────────────────────────────
+
+import { describe } from "vitest";
+
+describe("auth timing safety", () => {
+  test("API key hashes are always 64 hex chars (constant length)", async () => {
+    // Timing-safe comparison only works when both strings have the same
+    // length. Since we compare SHA-256 hashes, they should always be 64
+    // chars, making the early length-check exit harmless.
+    const shortKey = await hashApiKey("a");
+    const longKey = await hashApiKey("a".repeat(1000));
+    const emptyKey = await hashApiKey("");
+
+    expect(shortKey).toHaveLength(64);
+    expect(longKey).toHaveLength(64);
+    expect(emptyKey).toHaveLength(64);
+
+    // All hashes are distinct
+    expect(shortKey).not.toBe(longKey);
+    expect(shortKey).not.toBe(emptyKey);
+    expect(longKey).not.toBe(emptyKey);
+  });
+
+  test("different keys with same prefix produce different hashes", async () => {
+    const h1 = await hashApiKey("key-prefix-1");
+    const h2 = await hashApiKey("key-prefix-2");
+    expect(h1).not.toBe(h2);
+  });
+});

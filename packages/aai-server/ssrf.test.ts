@@ -1,13 +1,15 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Extended SSRF protection tests.
+ * SSRF protection tests.
  *
- * Tests additional bypass vectors beyond the basic net.test.ts coverage:
+ * Covers:
  * - Decimal/octal/hex IP encoding
  * - DNS rebinding patterns
  * - Protocol smuggling
  * - Redirect chain limits
  * - IPv6 shorthand notation
+ * - Cloud metadata endpoints
+ * - Comprehensive private IP range detection
  */
 
 import { describe, expect, test, vi } from "vitest";
@@ -54,9 +56,16 @@ describe("SSRF: IP encoding bypass attempts", () => {
     await expect(assertPublicUrl("http://[::ffff:169.254.169.254]/")).rejects.toThrow("Blocked");
   });
 
+  test("blocks link-local IPv4 range", async () => {
+    await expect(assertPublicUrl("http://169.254.1.1/")).rejects.toThrow(
+      "Blocked request to private address",
+    );
+  });
+
   test("blocks IPv6 unique-local addresses (fc00::/7)", () => {
     expect(isPrivateIp("fc00::1")).toBe(true);
     expect(isPrivateIp("fd00::1")).toBe(true);
+    expect(isPrivateIp("fd12:3456::1")).toBe(true);
     expect(isPrivateIp("fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff")).toBe(true);
   });
 
@@ -112,6 +121,11 @@ describe("SSRF: protocol validation", () => {
 
   test("allows https:// protocol", async () => {
     await expect(assertPublicUrl("https://example.com/")).resolves.toBeUndefined();
+  }, 15_000);
+
+  test("allows valid public URLs", async () => {
+    // DNS resolution may be slow in sandboxed environments
+    await expect(assertPublicUrl("https://api.brave.com/search")).resolves.toBeUndefined();
   }, 15_000);
 });
 
