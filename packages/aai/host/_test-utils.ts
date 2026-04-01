@@ -157,9 +157,9 @@ export function makeSessionOpts(overrides?: Partial<S2sSessionOptions>): S2sSess
 
 // ─── Fixture replay helpers ──────────────────────────────────────────────────
 
-const FIXTURE_DIR = resolve(import.meta.dirname, "__fixtures__");
+const FIXTURE_DIR = resolve(import.meta.dirname, "fixtures");
 
-/** Load a JSON fixture from __fixtures__/. */
+/** Load a JSON fixture from fixtures/. */
 export function loadFixture<T = Record<string, unknown>[]>(name: string): T {
   return JSON.parse(readFileSync(resolve(FIXTURE_DIR, name), "utf-8"));
 }
@@ -209,7 +209,7 @@ const FIXTURE_DISPATCH: Record<string, FireFn> = {
 /**
  * Replay recorded S2S API messages through a MockS2sHandle.
  *
- * Converts raw wire-format JSON (from __fixtures__/) into typed `_fire()` calls.
+ * Converts raw wire-format JSON (from fixtures/) into typed `_fire()` calls.
  * This is the inverse of `dispatchS2sMessage` in s2s.ts — it translates
  * snake_case API fields to camelCase event payloads.
  *

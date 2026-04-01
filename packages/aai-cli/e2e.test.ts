@@ -217,9 +217,9 @@ async function setupEventInjector(browser: Browser, port: number) {
       ws.dispatchEvent(new MessageEvent("message", { data: JSON.stringify(json) }));
     }, msg);
 
-  /** Replay a fixture file (from aai-ui/__fixtures__/). */
+  /** Replay a fixture file (from aai-ui/fixtures/). */
   const replayFixture = async (fixtureName: string) => {
-    const fixturePath = path.resolve(dir, "../aai-ui/__fixtures__", fixtureName);
+    const fixturePath = path.resolve(dir, "../aai-ui/fixtures", fixtureName);
     const messages = JSON.parse(fs.readFileSync(fixturePath, "utf-8")) as Record<string, unknown>[];
     for (const msg of messages) {
       await inject(msg);

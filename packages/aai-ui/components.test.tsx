@@ -4,13 +4,13 @@
 import { signal } from "@preact/signals";
 import { render, screen } from "@testing-library/preact";
 import { describe, expect, test } from "vitest";
-import { App } from "./_components/app.tsx";
-import { ChatView } from "./_components/chat-view.tsx";
-import { ErrorBanner } from "./_components/error-banner.tsx";
-import { MessageBubble } from "./_components/message-bubble.tsx";
-import { StateIndicator } from "./_components/state-indicator.tsx";
-import { Transcript } from "./_components/transcript.tsx";
 import { createMockSignals } from "./_test-utils.ts";
+import { App } from "./components/app.tsx";
+import { ChatView } from "./components/chat-view.tsx";
+import { ErrorBanner } from "./components/error-banner.tsx";
+import { MessageBubble } from "./components/message-bubble.tsx";
+import { StateIndicator } from "./components/state-indicator.tsx";
+import { Transcript } from "./components/transcript.tsx";
 import { SessionProvider, type SessionSignals } from "./signals.ts";
 import type { AgentState, ChatMessage } from "./types.ts";
 

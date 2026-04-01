@@ -28,6 +28,17 @@
       },
       "style": {
         "recommended": true,
+        "noRestrictedImports": {
+          "level": "error",
+          "options": {
+            "patterns": [
+              {
+                "group": ["../**/aai/*", "../**/aai-cli/*", "../**/aai-ui/*", "../**/aai-server/*", "../**/aai-templates/*"],
+                "message": "Cross-package relative imports are forbidden. Use the workspace package name (e.g. @alexkroman1/aai) instead."
+              }
+            ]
+          }
+        },
         "noNonNullAssertion": "error",
         "useNodejsImportProtocol": "error",
         "useConsistentBuiltinInstantiation": "error",

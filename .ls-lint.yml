@@ -1,0 +1,45 @@
+ls:
+  # Top-level directories
+  packages/*:
+    .dir: kebab-case
+  apps/*:
+    .dir: kebab-case
+
+  # Package source (tests live alongside implementation, flat at package root)
+  packages/**:
+    .dir: kebab-case
+    .ts: kebab-case
+    .test.ts: kebab-case
+    .bench.ts: kebab-case
+    .tsx: kebab-case | PascalCase
+    .d.ts: kebab-case
+
+  apps/**:
+    .dir: kebab-case
+    .ts: kebab-case
+    .test.ts: kebab-case
+    .tsx: kebab-case | PascalCase
+    .d.ts: kebab-case
+
+  # Test fixtures
+  packages/**/fixtures:
+    .dir: kebab-case
+
+  # Shared fixtures at monorepo root
+  fixtures:
+    .dir: kebab-case
+
+  fixtures/**:
+    .dir: kebab-case
+
+ignore:
+  - "**/node_modules"
+  - "**/.git"
+  - "**/dist"
+  - "**/build"
+  - "**/.turbo"
+  - "**/.next"
+  - "**/coverage"
+  - "**/target"
+  - "**/.deno"
+  - "**/.aai"

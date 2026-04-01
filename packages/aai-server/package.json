@@ -6,7 +6,7 @@
   "main": "dist/index.mjs",
   "scripts": {
     "predev": "node -e \"const [maj,min] = process.versions.node.split('.').map(Number); if (maj < 22 || (maj === 22 && min < 6)) { console.error('Node >=22.6 required (got ' + process.version + '). Run: fnm use 22'); process.exit(1); }\"",
-    "dev": "node --watch src/index.ts",
+    "dev": "node --watch index.ts",
     "start": "node dist/index.mjs",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",

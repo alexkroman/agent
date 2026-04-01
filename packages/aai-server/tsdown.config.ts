@@ -2,7 +2,7 @@ import { defineConfig } from "tsdown";
 
 export default defineConfig([
   {
-    entry: ["src/index.ts"],
+    entry: ["index.ts"],
     format: "esm",
     platform: "node",
     target: "node22",
@@ -10,7 +10,7 @@ export default defineConfig([
     noExternal: [/@alexkroman1/],
   },
   {
-    entry: ["src/_harness-runtime.ts"],
+    entry: ["harness-runtime.ts"],
     format: "esm",
     platform: "node",
     target: "node22",
@@ -18,7 +18,7 @@ export default defineConfig([
     noExternal: [/@alexkroman1\/aai\/hooks/, /@alexkroman1\/aai\/utils/, /^hookable$/],
   },
   {
-    entry: { _zod: "src/_zod-shim.ts" },
+    entry: { _zod: "zod-shim.ts" },
     format: "esm",
     platform: "node",
     target: "node22",

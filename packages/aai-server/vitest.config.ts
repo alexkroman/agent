@@ -7,9 +7,9 @@ export default defineConfig({
     restoreMocks: true,
     include: ["**/*.test.ts"],
     exclude: [
-      "src/sandbox-integration.test.ts",
-      "src/sandbox-conformance.test.ts",
-      "src/ws-integration.test.ts",
+      "sandbox-integration.test.ts",
+      "sandbox-conformance.test.ts",
+      "ws-integration.test.ts",
       "node_modules",
       "dist",
     ],

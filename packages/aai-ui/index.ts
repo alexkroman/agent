@@ -14,22 +14,22 @@
  * ```
  */
 
-export { App } from "./_components/app.tsx";
-export type { ButtonSize, ButtonVariant } from "./_components/button.tsx";
-export { Button } from "./_components/button.tsx";
-export { ChatView } from "./_components/chat-view.tsx";
-export { Controls } from "./_components/controls.tsx";
-export { ErrorBanner } from "./_components/error-banner.tsx";
-export { MessageBubble } from "./_components/message-bubble.tsx";
-export { MessageList } from "./_components/message-list.tsx";
-export { SidebarLayout } from "./_components/sidebar-layout.tsx";
-export { StartScreen } from "./_components/start-screen.tsx";
-export { StateIndicator } from "./_components/state-indicator.tsx";
-export { ThinkingIndicator } from "./_components/thinking-indicator.tsx";
-export { ToolCallBlock } from "./_components/tool-call-block.tsx";
-export { Transcript } from "./_components/transcript.tsx";
 export type { ClientConfig, ClientTheme } from "./client-context.ts";
 export { useClientConfig } from "./client-context.ts";
+export { App } from "./components/app.tsx";
+export type { ButtonSize, ButtonVariant } from "./components/button.tsx";
+export { Button } from "./components/button.tsx";
+export { ChatView } from "./components/chat-view.tsx";
+export { Controls } from "./components/controls.tsx";
+export { ErrorBanner } from "./components/error-banner.tsx";
+export { MessageBubble } from "./components/message-bubble.tsx";
+export { MessageList } from "./components/message-list.tsx";
+export { SidebarLayout } from "./components/sidebar-layout.tsx";
+export { StartScreen } from "./components/start-screen.tsx";
+export { StateIndicator } from "./components/state-indicator.tsx";
+export { ThinkingIndicator } from "./components/thinking-indicator.tsx";
+export { ToolCallBlock } from "./components/tool-call-block.tsx";
+export { Transcript } from "./components/transcript.tsx";
 export type { ClientHandle, ClientOptions } from "./define-client.tsx";
 export { defineClient } from "./define-client.tsx";
 export type { VoiceSession } from "./session.ts";
