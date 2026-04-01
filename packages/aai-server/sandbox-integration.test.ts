@@ -356,6 +356,7 @@ describe("template isolate boot", () => {
     await fs.mkdir(scope, { recursive: true });
     await fs.symlink(path.resolve(import.meta.dirname, "..", "aai"), path.join(scope, "aai"));
 
+    // biome-ignore lint/style/noRestrictedImports: integration test needs CLI bundler internals
     const { bundleAgent } = await import("../aai-cli/_bundler.ts");
     const bundle = await bundleAgent({
       slug: `tpl-${template}`,
@@ -461,6 +462,7 @@ export default defineAgent({
     await fs.symlink(pkgsDir, path.join(scope, "aai"));
 
     // Bundle via the CLI bundler (same path as `aai build` / `aai deploy`)
+    // biome-ignore lint/style/noRestrictedImports: integration test needs CLI bundler internals
     const { bundleAgent } = await import("../aai-cli/_bundler.ts");
     const bundle = await bundleAgent({
       slug: "integ-bundle-test",
