@@ -5,7 +5,7 @@ import { KvRequestSchema } from "@alexkroman1/aai/protocol";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { createTestStorage } from "./_test-utils.ts";
 import type { Env } from "./context.ts";
@@ -111,5 +111,26 @@ describe("kv handler", () => {
     const result = json.result as { key: string; value: unknown }[];
     expect(result.length).toBe(2);
     expect(result.every((r) => r.key.startsWith("note:"))).toBe(true);
+  });
+
+  test("returns 500 when storage throws", async () => {
+    const { app, storage } = createTestApp();
+    vi.spyOn(storage, "getItem").mockRejectedValue(new Error("storage down"));
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { status, json } = await postKv(app, storage, { op: "get", key: "k" });
+    expect(status).toBe(500);
+    expect(json.error).toMatch(/KV get failed/);
+  });
+
+  test("set with expireIn forwards option", async () => {
+    const { app, storage } = createTestApp();
+    const { status, json } = await postKv(app, storage, {
+      op: "set",
+      key: "ttl",
+      value: "v",
+      expireIn: 60_000,
+    });
+    expect(status).toBe(200);
+    expect(json.result).toBe("OK");
   });
 });

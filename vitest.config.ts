@@ -113,7 +113,7 @@ export default defineConfig({
         test: {
           name: "templates",
           root: "packages/aai-templates",
-          include: ["templates/*/agent.test.ts", "typecheck.test.ts"],
+          include: ["templates/*/agent.test.ts"],
           setupFiles: ["../aai/host/matchers.ts"],
         },
       },

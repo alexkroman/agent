@@ -20,6 +20,8 @@
     }
   },
   "scripts": {
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "build": "tsdown && tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
@@ -31,7 +33,7 @@
     "clsx": "^2.1.1"
   },
   "peerDependencies": {
-    "@preact/signals": "^2.8.2",
+    "@preact/signals": "^2.9.0",
     "preact": "^10.29.0",
     "tailwindcss": "^4.2.1"
   },
@@ -41,12 +43,12 @@
     }
   },
   "devDependencies": {
-    "@preact/signals": "^2.8.2",
+    "@preact/signals": "^2.9.0",
     "@testing-library/preact": "^3.2.4",
     "jsdom": "^29.0.1",
     "preact": "^10.29.0",
-    "tsdown": "^0.21.5",
-    "vitest": "^4.1.1"
+    "tsdown": "^0.21.7",
+    "vitest": "^4.1.2"
   },
   "engines": {
     "node": ">=22.6"

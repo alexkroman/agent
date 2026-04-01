@@ -10,5 +10,12 @@
     "allowImportingTsExtensions": false,
     "rewriteRelativeImportExtensions": true
   },
-  "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.test.tsx", "**/_test-utils.ts"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/_test-utils.ts",
+    "vitest*.config.ts"
+  ]
 }

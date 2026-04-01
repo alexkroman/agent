@@ -8,6 +8,8 @@
     "predev": "node -e \"const [maj,min] = process.versions.node.split('.').map(Number); if (maj < 22 || (maj === 22 && min < 6)) { console.error('Node >=22.6 required (got ' + process.version + '). Run: fnm use 22'); process.exit(1); }\"",
     "dev": "node --watch src/index.ts",
     "start": "node dist/index.mjs",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "build": "tsdown",
     "check:harness": "node --experimental-strip-types scripts/check-harness.ts",
     "typecheck": "tsc --noEmit",
@@ -17,7 +19,7 @@
   },
   "dependencies": {
     "@alexkroman1/aai": "workspace:*",
-    "@hono/node-server": "^1.19.11",
+    "@hono/node-server": "^1.19.12",
     "@hono/zod-validator": "^0.7.6",
     "bogon": "^1.2.0",
     "hono": "^4.12.9",
@@ -35,9 +37,9 @@
     "@secure-exec/typescript": "^0.1.0",
     "@types/mime-types": "^3.0.1",
     "@types/ws": "^8.18.1",
-    "tsdown": "^0.21.5",
+    "tsdown": "^0.21.7",
     "typescript": "^6.0.2",
-    "vitest": "^4.1.1"
+    "vitest": "^4.1.2"
   },
   "engines": {
     "node": ">=22.6"

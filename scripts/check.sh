@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Parallelized check script.
+# Parallelized check script using Turborepo.
 # Usage:
 #   bash scripts/check.sh          # Full CI check
 #   bash scripts/check.sh --local  # Fast pre-commit gate (subset of checks)
@@ -14,10 +14,6 @@ ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || {
 cd "$ROOT"
 
 MODE="${1:-full}"
-
-# Use pnpm --filter to only run on changed packages when possible.
-# Falls back to -r (all packages) when on main or origin/main is unavailable.
-PNPM_FILTER="--filter './packages/*'"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -60,49 +56,41 @@ wait_all() {
   STEP_LABELS=()
 }
 
-# ── Phase 1: Build (sequential, required by later steps) ──
-echo -e "\n${YELLOW}Phase 1: Build${NC}"
-pnpm -r --filter './packages/*' run build
+if [ "$MODE" = "--local" ]; then
+  # ── Local mode: build → typecheck + lint + publint (turbo) + syncpack ──
+  echo -e "\n${YELLOW}Phase 1: Build + Checks (via turbo)${NC}"
+  run_step "turbo"            turbo run build typecheck lint check:publint
+  run_step "check:syncpack"   pnpm run check:syncpack
+  run_step "check:sherif"     pnpm run check:sherif
+  wait_all
 
-# ── Phase 2: Checks (parallel) ──
-echo -e "\n${YELLOW}Phase 2: Checks (parallel)${NC}"
+  if [ "$FAILED" -ne 0 ]; then
+    echo -e "\n${RED}Phase 1 failed. Skipping Phase 2.${NC}"
+    exit 1
+  fi
 
-run_step "typecheck"        pnpm $PNPM_FILTER run typecheck
-run_step "lint"             pnpm $PNPM_FILTER run lint
-run_step "check:publint"    pnpm $PNPM_FILTER run --if-present check:publint
-run_step "check:syncpack"   pnpm run check:syncpack
-
-if [ "$MODE" != "--local" ]; then
-  run_step "check:attw"       pnpm $PNPM_FILTER run --if-present check:attw
+  # ── Local tests: turbo parallelizes across packages ──
+  echo -e "\n${YELLOW}Phase 2: Tests (via turbo)${NC}"
+  turbo run test || FAILED=1
+else
+  # ── Full CI: build → all checks (turbo) + root checks ──
+  echo -e "\n${YELLOW}Phase 1: Build + Checks (via turbo)${NC}"
+  run_step "turbo"            turbo run build typecheck lint check:publint check:attw check:harness check:typecheck
+  run_step "check:syncpack"   pnpm run check:syncpack
+  run_step "check:sherif"     pnpm run check:sherif
   run_step "check:knip"       pnpm run check:knip
   run_step "check:markdown"   pnpm run check:markdown
+  wait_all
+
+  if [ "$FAILED" -ne 0 ]; then
+    echo -e "\n${RED}Phase 1 failed. Skipping Phase 2.${NC}"
+    exit 1
+  fi
+
+  # ── Full CI tests: unit + integration + e2e (all via turbo) ──
+  echo -e "\n${YELLOW}Phase 2: Tests (via turbo)${NC}"
+  turbo run test check:integration check:e2e || FAILED=1
 fi
-
-wait_all
-
-if [ "$FAILED" -ne 0 ]; then
-  echo -e "\n${RED}Phase 2 failed. Skipping Phase 3.${NC}"
-  exit 1
-fi
-
-# ── Phase 3: Tests (parallel, sharded by package) ──
-echo -e "\n${YELLOW}Phase 3: Tests (parallel)${NC}"
-
-if [ "$MODE" = "--local" ]; then
-  # Shard unit tests by package for faster local feedback
-  run_step "vitest:aai"        npx vitest run --project aai
-  run_step "vitest:aai-ui"     npx vitest run --project aai-ui
-  run_step "vitest:aai-cli"    npx vitest run --project aai-cli
-  run_step "vitest:aai-server" npx vitest run --project aai-server
-  run_step "vitest:templates"  npx vitest run --project templates
-else
-  run_step "integration"       pnpm $PNPM_FILTER run --if-present check:integration
-  run_step "e2e"               pnpm $PNPM_FILTER run --if-present check:e2e
-  # Coverage runs all projects together to avoid temp-dir race conditions
-  run_step "vitest"            npx vitest run --coverage
-fi
-
-wait_all
 
 if [ "$FAILED" -ne 0 ]; then
   echo -e "\n${RED}Some checks failed.${NC}"
