@@ -11,7 +11,7 @@ import { type AgentDef, defineAgent, defineTool } from "@alexkroman1/aai";
 import { agentToolsToSchemas, toAgentConfig } from "@alexkroman1/aai/host";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
-import { createTestOrchestrator } from "./_test-utils.ts";
+import { createTestOrchestrator } from "./test-utils.ts";
 
 /**
  * Build a deploy body from an SDK-defined agent, mimicking what the CLI does.

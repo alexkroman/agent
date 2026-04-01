@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { expect, test } from "vitest";
-import { createTestOrchestrator, deployAgent, deployBody } from "./_test-utils.ts";
+import { createTestOrchestrator, deployAgent, deployBody } from "./test-utils.ts";
 
 test("concurrent deploy and delete are serialized", async () => {
   const { fetch, store } = await createTestOrchestrator();

@@ -7,9 +7,9 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
-import { createTestStorage } from "./_test-utils.ts";
 import type { Env } from "./context.ts";
 import { handleKv } from "./kv-handler.ts";
+import { createTestStorage } from "./test-utils.ts";
 
 const SLUG = "test-agent";
 

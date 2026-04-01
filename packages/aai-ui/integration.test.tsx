@@ -8,8 +8,8 @@
  */
 import { render, screen } from "@testing-library/preact";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { App } from "./_components/app.tsx";
 import { createMockSignals, flush, installMockWebSocket, setupSignalsEnv } from "./_test-utils.ts";
+import { App } from "./components/app.tsx";
 import { defineClient } from "./define-client.tsx";
 import { SessionProvider, useSession } from "./signals.ts";
 

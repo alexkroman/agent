@@ -2,7 +2,7 @@
 // Uses Web Crypto API (available in workerd) for AES-256-GCM + HKDF.
 
 import { z } from "zod";
-import { fromBase64Url, toBase64Url } from "./_base64url.ts";
+import { fromBase64Url, toBase64Url } from "./base64url.ts";
 
 const EnvSchema = z.record(z.string(), z.string());
 

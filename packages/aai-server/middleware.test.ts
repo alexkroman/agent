@@ -1,12 +1,12 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
+import { createOrchestrator } from "./orchestrator.ts";
 import {
   createTestOrchestrator,
   createTestStorage,
   createTestStore,
   deployAgent,
-} from "./_test-utils.ts";
-import { createOrchestrator } from "./orchestrator.ts";
+} from "./test-utils.ts";
 
 test("orchestrator adds Cross-Origin-Isolation headers", async () => {
   const store = createTestStore();

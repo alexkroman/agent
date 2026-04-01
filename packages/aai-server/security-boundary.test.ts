@@ -10,15 +10,15 @@
  */
 
 import { describe, expect, test } from "vitest";
+import { hashApiKey } from "./auth.ts";
+import { createOrchestrator } from "./orchestrator.ts";
 import {
   createTestOrchestrator,
   createTestStorage,
   createTestStore,
   deployAgent,
   deployBody,
-} from "./_test-utils.ts";
-import { hashApiKey } from "./auth.ts";
-import { createOrchestrator } from "./orchestrator.ts";
+} from "./test-utils.ts";
 
 // ── Cross-Agent KV Isolation ───────────────────────────────────────────
 

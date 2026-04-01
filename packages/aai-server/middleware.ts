@@ -1,9 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { HTTPException } from "hono/http-exception";
-import { isPrivateIp } from "./_ssrf.ts";
 import { verifySlugOwner } from "./auth.ts";
 import type { BundleStore } from "./bundle-store.ts";
+import { isPrivateIp } from "./ssrf.ts";
 
 const VALID_SLUG_REGEXP = /^[a-z0-9][a-z0-9_-]{0,62}[a-z0-9]$/;
 

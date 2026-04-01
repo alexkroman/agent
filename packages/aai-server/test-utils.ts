@@ -3,10 +3,10 @@
 import type { Kv } from "@alexkroman1/aai/kv";
 import { createStorage, type Storage } from "unstorage";
 import { vi } from "vitest";
-import { type AgentMetadata, AgentMetadataSchema } from "./_schemas.ts";
 import type { BundleStore } from "./bundle-store.ts";
 import { createOrchestrator } from "./orchestrator.ts";
 import type { AgentSlot } from "./sandbox.ts";
+import { type AgentMetadata, AgentMetadataSchema } from "./schemas.ts";
 
 /** In-memory mock KV store backed by a Map. All methods are vi.fn() spies. */
 export function createMockKv(): Kv {
@@ -118,6 +118,7 @@ export function deployBody(overrides?: Record<string, unknown>): string {
     worker: "console.log('w');",
     clientFiles: {
       "index.html":
+        // biome-ignore lint/security/noSecrets: HTML template, not a secret
         '<!DOCTYPE html><html><body><script type="module" src="./assets/index.js"></script></body></html>',
       "assets/index.js": 'console.log("c");',
     },

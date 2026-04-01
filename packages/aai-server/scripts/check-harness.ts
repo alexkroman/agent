@@ -2,7 +2,7 @@
  * Typecheck the harness runtime using @secure-exec/typescript.
  *
  * Replaces the former Rolldown isolate-guard plugin. Runs the TypeScript
- * compiler inside a secure-exec sandbox to validate _harness-runtime.ts.
+ * compiler inside a secure-exec sandbox to validate harness-runtime.ts.
  */
 
 import { createRequire } from "node:module";

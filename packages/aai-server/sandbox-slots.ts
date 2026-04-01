@@ -16,10 +16,10 @@
 
 import { getLock } from "p-lock";
 import type { Storage } from "unstorage";
-import type { AgentMetadata } from "./_schemas.ts";
 import type { BundleStore } from "./bundle-store.ts";
 import { DEFAULT_SLOT_IDLE_MS } from "./constants.ts";
 import type { Sandbox, SandboxOptions } from "./sandbox.ts";
+import type { AgentMetadata } from "./schemas.ts";
 
 // ── Locks ───────────────────────────────────────────────────────────────
 

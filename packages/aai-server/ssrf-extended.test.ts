@@ -2,7 +2,7 @@
 /**
  * Extended SSRF protection tests.
  *
- * Tests additional bypass vectors beyond the basic _net.test.ts coverage:
+ * Tests additional bypass vectors beyond the basic net.test.ts coverage:
  * - Decimal/octal/hex IP encoding
  * - DNS rebinding patterns
  * - Protocol smuggling
@@ -11,7 +11,7 @@
  */
 
 import { describe, expect, test, vi } from "vitest";
-import { assertPublicUrl, isPrivateIp, ssrfSafeFetch } from "./_ssrf.ts";
+import { assertPublicUrl, isPrivateIp, ssrfSafeFetch } from "./ssrf.ts";
 
 // ── IP Encoding Bypass Attempts ────────────────────────────────────────
 

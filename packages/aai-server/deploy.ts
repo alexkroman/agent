@@ -1,8 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
-import type { DeployBody } from "./_schemas.ts";
-import { EnvSchema } from "./_schemas.ts";
+
 import type { ValidatedAppContext } from "./context.ts";
 import { terminateSlot, withSlugLock } from "./sandbox-slots.ts";
+import type { DeployBody } from "./schemas.ts";
+import { EnvSchema } from "./schemas.ts";
 
 export function handleDeploy(c: ValidatedAppContext<DeployBody>): Promise<Response> {
   const slug = c.var.slug;

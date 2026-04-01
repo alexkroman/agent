@@ -58,8 +58,8 @@ process.on("unhandledRejection", (reason: unknown) => {
   throw reason;
 });
 
-export type { AgentMetadata } from "./_schemas.ts";
 export { type AgentSlot, ensureAgent, registerSlot } from "./sandbox-slots.ts";
+export type { AgentMetadata } from "./schemas.ts";
 
 export type SandboxOptions = {
   workerCode: string;
@@ -188,7 +188,7 @@ async function startIsolate(
 
   runtime
     .exec(
-      'import agent from "/app/agent_bundle.js";\nimport { startHarness } from "/app/_harness-runtime.mjs";\nstartHarness(agent);',
+      'import agent from "/app/agent_bundle.js";\nimport { startHarness } from "/app/harness-runtime.mjs";\nstartHarness(agent);',
       { cwd: "/app" },
     )
     .then(

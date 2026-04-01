@@ -1,8 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { expect, test, vi } from "vitest";
-import { createTestStorage, createTestStore, deployAgent, makeSlot } from "./_test-utils.ts";
 import { createOrchestrator } from "./orchestrator.ts";
 import type { AgentSlot } from "./sandbox.ts";
+import { createTestStorage, createTestStore, deployAgent, makeSlot } from "./test-utils.ts";
 
 async function setup() {
   const store = createTestStore();

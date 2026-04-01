@@ -16,8 +16,8 @@ export default defineConfig({
       "packages/aai/host/pentest.test.ts",
       "packages/aai/host/run-code-isolate.test.ts",
       "packages/aai/host/integration.test.ts",
-      "packages/aai-server/src/sandbox-integration.test.ts",
-      "packages/aai-server/src/ws-integration.test.ts",
+      "packages/aai-server/sandbox-integration.test.ts",
+      "packages/aai-server/ws-integration.test.ts",
     ],
   },
 });

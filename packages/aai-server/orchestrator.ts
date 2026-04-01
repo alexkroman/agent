@@ -9,7 +9,6 @@ import { createFactory } from "hono/factory";
 import { secureHeaders } from "hono/secure-headers";
 import type { Storage } from "unstorage";
 import { WebSocketServer } from "ws";
-import { DeployBodySchema, SecretUpdatesSchema } from "./_schemas.ts";
 import type { BundleStore } from "./bundle-store.ts";
 import type { Env } from "./context.ts";
 import { handleDelete } from "./delete.ts";
@@ -19,6 +18,7 @@ import { handleKv } from "./kv-handler.ts";
 import { requireOwner, validateSlug } from "./middleware.ts";
 import type { AgentSlot } from "./sandbox.ts";
 import { resolveSandbox } from "./sandbox.ts";
+import { DeployBodySchema, SecretUpdatesSchema } from "./schemas.ts";
 import { handleSecretDelete, handleSecretList, handleSecretSet } from "./secret-handler.ts";
 import { handleAgentHealth, handleAgentPage, handleClientAsset } from "./transport-websocket.ts";
 

@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
-import { fromBase64Url, toBase64Url } from "./_base64url.ts";
+import { fromBase64Url, toBase64Url } from "./base64url.ts";
 
 describe("toBase64Url", () => {
   test("encodes known bytes correctly", () => {

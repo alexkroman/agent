@@ -19,7 +19,7 @@
  * 10. Bundle manifest (AgentMetadataSchema)
  * 11. Isolate port announcement (z.object({ port: z.number() }))
  *
- * Note: _harness-runtime.ts runs inside a V8 isolate where Zod is unavailable.
+ * Note: harness-runtime.ts runs inside a V8 isolate where Zod is unavailable.
  * RPC request validation inside the isolate uses type assertions (`as RpcRequest`),
  * which is acceptable because the host side validates all responses with Zod.
  */
@@ -32,15 +32,15 @@ import {
   ServerMessageSchema,
 } from "@alexkroman1/aai/protocol";
 import { describe, expect, test } from "vitest";
+import { _kvSchemas } from "./sandbox-network.ts";
 import {
   AgentMetadataSchema,
   DeployBodySchema,
   EnvSchema,
   SafePathSchema,
   SecretUpdatesSchema,
-} from "./_schemas.ts";
-import { createTestOrchestrator, deployAgent } from "./_test-utils.ts";
-import { _kvSchemas } from "./sandbox-network.ts";
+} from "./schemas.ts";
+import { createTestOrchestrator, deployAgent } from "./test-utils.ts";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // 1. Deploy Body (DeployBodySchema) — Client → Server

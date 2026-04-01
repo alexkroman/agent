@@ -5,9 +5,9 @@ import { errorMessage } from "@alexkroman1/aai/host";
 import { getLock } from "p-lock";
 import type { Storage } from "unstorage";
 import { z } from "zod";
-import type { AgentMetadata } from "./_schemas.ts";
-import { AgentMetadataSchema } from "./_schemas.ts";
 import { type CredentialKey, decryptEnv, encryptEnv } from "./credentials.ts";
+import type { AgentMetadata } from "./schemas.ts";
+import { AgentMetadataSchema } from "./schemas.ts";
 
 const ManifestSchema = z.object({
   slug: z.string(),

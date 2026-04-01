@@ -3,7 +3,7 @@
 import { createUnstorageKv } from "@alexkroman1/aai/host";
 import type { Storage } from "unstorage";
 import { beforeEach, describe, expect, test } from "vitest";
-import { createTestStorage } from "./_test-utils.ts";
+import { createTestStorage } from "./test-utils.ts";
 
 describe("createUnstorageKv (scoped)", () => {
   let storage: Storage;

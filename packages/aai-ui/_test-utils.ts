@@ -209,9 +209,9 @@ export function setupSignalsEnv() {
 
 // ─── Fixture replay helpers ──────────────────────────────────────────────────
 
-/** Load a JSON fixture from __fixtures__/. */
+/** Load a JSON fixture from fixtures/. */
 export function loadFixture<T = Record<string, unknown>[]>(name: string): T {
-  return JSON.parse(readFileSync(resolve(import.meta.dirname, "__fixtures__", name), "utf-8"));
+  return JSON.parse(readFileSync(resolve(import.meta.dirname, "fixtures", name), "utf-8"));
 }
 
 /**

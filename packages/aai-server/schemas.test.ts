@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
-import { AgentMetadataSchema, DeployBodySchema, EnvSchema } from "./_schemas.ts";
+import { AgentMetadataSchema, DeployBodySchema, EnvSchema } from "./schemas.ts";
 
 describe("DeployBodySchema", () => {
   test("accepts valid deploy body", () => {

@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { expect, test } from "vitest";
-import { createTestOrchestrator, deployAgent, deployBody } from "./_test-utils.ts";
 import { hashApiKey } from "./auth.ts";
+import { createTestOrchestrator, deployAgent, deployBody } from "./test-utils.ts";
 
 test("returns health check", async () => {
   const { fetch } = await createTestOrchestrator();

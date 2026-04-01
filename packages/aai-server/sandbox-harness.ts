@@ -2,7 +2,7 @@
 /**
  * Loads the compiled harness runtime JS for injection into secure-exec isolates.
  *
- * The actual harness logic lives in `_harness-runtime.ts` (type-checked at
+ * The actual harness logic lives in `harness-runtime.ts` (type-checked at
  * compile time). This module reads the compiled `.js` output so it can be
  * written to the isolate's virtual filesystem.
  *
@@ -35,7 +35,7 @@ export async function getHarnessFiles(): Promise<HarnessFiles> {
     try {
       const entries = await fs.readdir(dir);
       const mainEntry = entries.find(
-        (e) => e === "_harness-runtime.mjs" || e === "_harness-runtime.js",
+        (e) => e === "harness-runtime.mjs" || e === "harness-runtime.js",
       );
       if (!mainEntry) continue;
 
@@ -73,7 +73,7 @@ export async function getHarnessFiles(): Promise<HarnessFiles> {
 export async function getHarnessRuntimeJs(): Promise<string> {
   const files = await getHarnessFiles();
   const main = files.find(
-    (f) => f.name === "_harness-runtime.mjs" || f.name === "_harness-runtime.js",
+    (f) => f.name === "harness-runtime.mjs" || f.name === "harness-runtime.js",
   );
   if (!main) throw new Error("Main harness entry not found in loaded files");
   return main.content;

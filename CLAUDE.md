@@ -163,19 +163,19 @@ runs as part of `pnpm typecheck` and will catch violations.
 - `client-context.ts` — Preact context for client config
 - `signals.ts` — signal state management
 - `types.ts` — UI type definitions
-- `_components/` — UI components (app, chat-view, controls, message-bubble,
+- `components/` — UI components (app, chat-view, controls, message-bubble,
   message-list, start-screen, sidebar-layout, state-indicator,
   thinking-indicator, tool-call-block, transcript, error-banner, button,
   tool-icons)
 
-#### packages/aai-server/src/
+#### packages/aai-server/
 
 - `orchestrator.ts` — HTTP + WebSocket routing
 - `sandbox.ts` — V8 isolate management
 - `sandbox-harness.ts` — sandbox execution environment
 - `sandbox-network.ts` — network proxying for sandbox
 - `sandbox-slots.ts` — slot allocation for concurrent sessions
-- `_harness-runtime.ts` — code that runs inside the isolate
+- `harness-runtime.ts` — code that runs inside the isolate
 - `transport-websocket.ts` — WebSocket transport layer
 - `auth.ts` — authentication/authorization
 - `credentials.ts` — credential derivation
@@ -183,7 +183,7 @@ runs as part of `pnpm typecheck` and will catch violations.
 - `deploy.ts` / `delete.ts` — deployment lifecycle
 - `secret-handler.ts` — secret management
 - `kv-handler.ts` — KV store HTTP API
-- `_ssrf.ts` — SSRF protection, URL validation
+- `ssrf.ts` — SSRF protection, URL validation
 
 ### Data flow
 
@@ -275,11 +275,11 @@ catches the most common issues that historically required follow-up commits:
 
 ### Secure-exec isolate constraint
 
-`_harness-runtime.ts` runs inside a secure-exec V8 isolate with **no access
+`harness-runtime.ts` runs inside a secure-exec V8 isolate with **no access
 to `node_modules`**. Only `node:*` built-ins and the virtual filesystem
 files (harness JS + agent bundle) are available.
 
-Rules for `_harness-runtime.ts`:
+Rules for `harness-runtime.ts`:
 
 - **Only use `import type`** from workspace packages and npm deps — never
   runtime imports. Any runtime import (e.g. Zod schemas) will cause the
@@ -295,8 +295,8 @@ Rules for `_harness-runtime.ts`:
 ### Platform sandbox (aai-server)
 
 Agent code runs in **secure-exec V8 isolates** with strict permission
-boundaries. Key files: `packages/aai-server/src/sandbox.ts`,
-`sandbox-harness.ts`, `_harness-runtime.ts`.
+boundaries. Key files: `packages/aai-server/sandbox.ts`,
+`sandbox-harness.ts`, `harness-runtime.ts`.
 
 **Isolation layers:**
 
@@ -338,7 +338,7 @@ a denylist.
 
 - HTML output uses `escapeHtml()` to prevent XSS from agent names.
 
-**SSRF protection (aai-server/_ssrf.ts):**
+**SSRF protection (aai-server/ssrf.ts):**
 
 - `assertPublicUrl()` uses `BlockList` for private IP ranges.
 - Handles IPv4-mapped IPv6 bypass (`::ffff:127.0.0.1`).
@@ -360,7 +360,7 @@ a denylist.
   chain bypass, cross-invocation isolation).
 - `pentest.test.ts` — penetration tests verifying sandbox prevents
   previously-exploitable constructor chain bypasses.
-- `_net.test.ts` / `ssrf-extended.test.ts` — SSRF bypass prevention
+- `net.test.ts` / `ssrf-extended.test.ts` — SSRF bypass prevention
   (IPv4-mapped IPv6, cloud metadata, `.internal` domains).
 - `security-boundary.test.ts` / `trust-boundary-validation.test.ts` —
   security boundary enforcement.

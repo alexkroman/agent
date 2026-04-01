@@ -3,9 +3,9 @@
 import { AGENT_CSP } from "@alexkroman1/aai/host";
 import { HTTPException } from "hono/http-exception";
 import mime from "mime-types";
-import { SafePathSchema } from "./_schemas.ts";
 import type { AppContext } from "./context.ts";
 import { resolveSandbox } from "./sandbox.ts";
+import { SafePathSchema } from "./schemas.ts";
 
 /** @internal Not part of the public API. Exposed for testing only. */
 export const _internals = { resolveSandbox };
