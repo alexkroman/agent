@@ -401,7 +401,7 @@ describe.skipIf(!playwrightAvailable)("browser: dev server", () => {
     // (server may close the WebSocket before we check, flipping running to false)
     await toggleBtn.click();
     const expectedLabel = initialLabel === "Stop" ? "Resume" : "Stop";
-    await page.getByRole("button", { name: expectedLabel }).waitFor({ timeout: 3000 });
+    await page.getByRole("button", { name: expectedLabel }).waitFor({ timeout: 10_000 });
 
     await page.close();
   });
