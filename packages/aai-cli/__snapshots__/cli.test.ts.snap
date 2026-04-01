@@ -1,0 +1,97 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`cli usage snapshots > aai --help 1`] = `
+"Voice agent development kit (aai vX.X.X)
+USAGE aai init|dev|test|build|deploy|delete|secret
+COMMANDS
+    init    Scaffold a new agent project
+     dev    Start a local development server
+    test    Run agent tests
+   build    Bundle agent without deploying
+  deploy    Bundle and deploy to production
+  delete    Remove a deployed agent
+  secret    Manage agent secrets
+Use aai <command> --help for more information about a command."
+`;
+
+exports[`cli usage snapshots > aai build --help 1`] = `
+"Bundle agent without deploying (build)
+USAGE build [OPTIONS]
+OPTIONS
+  -s, --server    Platform server URL
+     -y, --yes    Accept defaults (no prompts)
+   --skipTests    Skip running tests before build"
+`;
+
+exports[`cli usage snapshots > aai delete --help 1`] = `
+"Remove a deployed agent (delete)
+USAGE delete [OPTIONS]
+OPTIONS
+  -s, --server    Platform server URL"
+`;
+
+exports[`cli usage snapshots > aai deploy --help 1`] = `
+"Bundle and deploy to production (deploy)
+USAGE deploy [OPTIONS]
+OPTIONS
+  -s, --server    Platform server URL
+      --dryRun    Validate and bundle without deploying
+     -y, --yes    Accept defaults (no prompts)"
+`;
+
+exports[`cli usage snapshots > aai dev --help 1`] = `
+"Start a local development server (dev)
+USAGE dev [OPTIONS]
+OPTIONS
+  -p, --port="3000"    Port to listen on
+       -s, --server    Platform server URL
+          -y, --yes    Accept defaults (no prompts)"
+`;
+
+exports[`cli usage snapshots > aai init --help 1`] = `
+"Scaffold a new agent project (init)
+USAGE init [OPTIONS] [DIR]
+ARGUMENTS
+  DIR    Project directory
+OPTIONS
+  -t, --template    Template to use
+     -f, --force    Overwrite existing files
+    -s, --server    Platform server URL
+       -y, --yes    Accept defaults (no prompts)
+       --skipApi    Skip API key check
+    --skipDeploy    Skip deploy after scaffolding"
+`;
+
+exports[`cli usage snapshots > aai secret --help 1`] = `
+"Manage agent secrets (secret)
+USAGE secret put|delete|list
+COMMANDS
+     put    Create or update a secret
+  delete    Delete a secret
+    list    List all secrets
+Use secret <command> --help for more information about a command."
+`;
+
+exports[`cli usage snapshots > aai secret delete --help 1`] = `
+"Delete a secret (delete)
+USAGE delete [OPTIONS] <NAME>
+ARGUMENTS
+  NAME    Secret name"
+`;
+
+exports[`cli usage snapshots > aai secret list --help 1`] = `
+"List all secrets (list)
+USAGE list"
+`;
+
+exports[`cli usage snapshots > aai secret put --help 1`] = `
+"Create or update a secret (put)
+USAGE put [OPTIONS] <NAME>
+ARGUMENTS
+  NAME    Secret name"
+`;
+
+exports[`cli usage snapshots > aai test --help 1`] = `
+"Run agent tests (test)
+USAGE test"
+`;
