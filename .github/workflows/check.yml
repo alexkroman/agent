@@ -38,7 +38,7 @@ jobs:
           path: .turbo
           key: turbo-${{ runner.os }}-${{ github.sha }}
           restore-keys: turbo-${{ runner.os }}-
-      - run: turbo run build
+      - run: pnpm exec turbo run build
       - uses: actions/cache/save@v5
         with:
           path: |
@@ -69,7 +69,7 @@ jobs:
             .tsbuildinfo
             .turbo
           key: workspace-node${{ hashFiles('.node-version') }}-${{ github.sha }}
-      - run: turbo run lint typecheck
+      - run: pnpm exec turbo run lint typecheck
 
   checks:
     needs: setup
@@ -95,7 +95,7 @@ jobs:
         if: github.event_name == 'pull_request' && github.head_ref != 'changeset-release/main' && !contains(github.event.pull_request.labels.*.name, 'no-release')
         run: pnpm changeset status --since=origin/main
       - run: |
-          turbo run check:attw check:typecheck
+          pnpm exec turbo run check:attw check:typecheck
           pnpm run check:knip
           pnpm run check:syncpack
           pnpm run check:sherif
@@ -148,7 +148,7 @@ jobs:
             .tsbuildinfo
             .turbo
           key: workspace-node${{ hashFiles('.node-version') }}-${{ github.sha }}
-      - run: turbo run check:integration
+      - run: pnpm exec turbo run check:integration
 
   e2e:
     needs: setup
@@ -175,7 +175,7 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('packages/aai-cli/package.json') }}
       - run: pnpm --filter @alexkroman1/aai-cli exec playwright install --with-deps chromium
-      - run: turbo run check:e2e
+      - run: pnpm exec turbo run check:e2e
 
   # Single gate job for branch protection — add only "ci" as a required check
   ci:

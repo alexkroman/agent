@@ -59,7 +59,7 @@ wait_all() {
 if [ "$MODE" = "--local" ]; then
   # ── Local mode: build → typecheck + lint + publint (turbo) + syncpack ──
   echo -e "\n${YELLOW}Phase 1: Build + Checks (via turbo)${NC}"
-  run_step "turbo"            turbo run build typecheck lint check:publint
+  run_step "turbo"            pnpm exec turbo run build typecheck lint check:publint
   run_step "check:syncpack"   pnpm run check:syncpack
   run_step "check:sherif"     pnpm run check:sherif
   wait_all
@@ -71,11 +71,11 @@ if [ "$MODE" = "--local" ]; then
 
   # ── Local tests: turbo parallelizes across packages ──
   echo -e "\n${YELLOW}Phase 2: Tests (via turbo)${NC}"
-  turbo run test || FAILED=1
+  pnpm exec turbo run test || FAILED=1
 else
   # ── Full CI: build → all checks (turbo) + root checks ──
   echo -e "\n${YELLOW}Phase 1: Build + Checks (via turbo)${NC}"
-  run_step "turbo"            turbo run build typecheck lint check:publint check:attw check:harness
+  run_step "turbo"            pnpm exec turbo run build typecheck lint check:publint check:attw check:harness
   run_step "check:syncpack"   pnpm run check:syncpack
   run_step "check:sherif"     pnpm run check:sherif
   run_step "check:knip"       pnpm run check:knip
@@ -89,7 +89,7 @@ else
 
   # ── Full CI tests: unit + integration + e2e (all via turbo) ──
   echo -e "\n${YELLOW}Phase 2: Tests (via turbo)${NC}"
-  turbo run test check:typecheck check:integration check:e2e || FAILED=1
+  pnpm exec turbo run test check:typecheck check:integration check:e2e || FAILED=1
 fi
 
 if [ "$FAILED" -ne 0 ]; then
