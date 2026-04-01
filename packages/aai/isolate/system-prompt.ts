@@ -42,7 +42,7 @@ const VOICE_RULES =
  */
 export function buildSystemPrompt(
   config: AgentConfig,
-  opts: { hasTools: boolean; voice?: boolean },
+  opts: { hasTools: boolean; voice?: boolean; toolGuidance?: readonly string[] | undefined },
 ): string {
   const { hasTools } = opts;
   const agentInstructions =
@@ -56,6 +56,11 @@ export function buildSystemPrompt(
       "This fills silence while the tool executes. Keep preambles to one short sentence."
     : "";
 
+  const guidance =
+    opts.toolGuidance && opts.toolGuidance.length > 0
+      ? `\n\nBuilt-in Tool Usage:\n${opts.toolGuidance.join("\n")}`
+      : "";
+
   const today = getFormattedDate();
 
   return (
@@ -63,6 +68,7 @@ export function buildSystemPrompt(
     `\n\nToday's date is ${today}.` +
     agentInstructions +
     toolPreamble +
+    guidance +
     (opts.voice ? VOICE_RULES : "")
   );
 }

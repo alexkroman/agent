@@ -24,7 +24,11 @@ import type { Kv } from "../isolate/kv.ts";
 import type { ClientSink } from "../isolate/protocol.ts";
 import { buildReadyConfig, type ReadyConfig } from "../isolate/protocol.ts";
 import type { AgentDef, HookContext, Message, ToolContext, ToolDef } from "../isolate/types.ts";
-import { getBuiltinToolDefs, getBuiltinToolSchemas } from "./builtin-tools.ts";
+import {
+  getBuiltinToolDefs,
+  getBuiltinToolGuidance,
+  getBuiltinToolSchemas,
+} from "./builtin-tools.ts";
 import type { Logger, S2SConfig } from "./runtime.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime.ts";
 import type { CreateS2sWebSocket } from "./s2s.ts";
@@ -172,6 +176,8 @@ export type RuntimeOptions = {
    * is provided (the host doesn't have the tool definitions to derive schemas).
    */
   toolSchemas?: ToolSchema[] | undefined;
+  /** System prompt guidance for builtin tools. Passed through in sandbox mode. */
+  toolGuidance?: string[] | undefined;
 };
 
 /**
@@ -231,12 +237,14 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   let executeTool: ExecuteTool;
   let hooks: AgentHooks;
   let toolSchemas: ToolSchema[];
+  let toolGuidance: string[] = [];
 
   if (opts.executeTool && opts.hooks && opts.toolSchemas) {
     // Sandbox mode — tools/hooks are RPC-backed
     executeTool = opts.executeTool;
     hooks = opts.hooks;
     toolSchemas = opts.toolSchemas;
+    toolGuidance = opts.toolGuidance ?? [];
   } else {
     // Self-hosted mode — in-process tool execution
     const builtinDefs = getBuiltinToolDefs(agent.builtinTools ?? []);
@@ -247,6 +255,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     const customSchemas = agentToolsToSchemas(agent.tools ?? {});
     const builtinSchemas = getBuiltinToolSchemas(agent.builtinTools ?? []);
     toolSchemas = [...customSchemas, ...builtinSchemas];
+    toolGuidance = getBuiltinToolGuidance(agent.builtinTools ?? []);
 
     const stateMap = new Map<string, Record<string, unknown>>();
     const getState = (sid: string) => {
@@ -302,6 +311,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       client: sessionOpts.client,
       agentConfig,
       toolSchemas,
+      toolGuidance,
       apiKey,
       s2sConfig,
       executeTool,

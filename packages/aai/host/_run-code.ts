@@ -27,8 +27,12 @@ const runCodeParams = z.object({
  * The context is discarded after execution, so no state leaks between
  * invocations or across sessions.
  */
-export function createRunCode(): ToolDef<typeof runCodeParams> {
+export function createRunCode(): ToolDef<typeof runCodeParams> & { guidance: string } {
   return {
+    guidance:
+      "You MUST use the run_code tool for ANY question involving math, counting, calculations, " +
+      "data processing, or code. NEVER do mental math or recite code verbally. " +
+      "run_code executes JavaScript (not Python). Always write JavaScript.",
     description:
       "Execute JavaScript code in a sandbox and return the output. Use this for calculations, data transformations, string manipulation, or any task that benefits from running code. Output is captured from console.log(). No network or filesystem access.",
     parameters: runCodeParams,

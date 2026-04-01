@@ -18,6 +18,8 @@ import {
   createUnstorageKv,
   type ExecuteTool,
   errorMessage,
+  getBuiltinToolGuidance,
+  getBuiltinToolSchemas,
   HOOK_TIMEOUT_MS,
   TOOL_EXECUTION_TIMEOUT_MS,
 } from "@alexkroman1/aai/host";
@@ -349,7 +351,8 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
     env: { ...agentEnv, ASSEMBLYAI_API_KEY: apiKey },
     executeTool,
     hooks,
-    toolSchemas: config.toolSchemas,
+    toolSchemas: [...config.toolSchemas, ...getBuiltinToolSchemas(config.builtinTools ?? [])],
+    toolGuidance: getBuiltinToolGuidance(config.builtinTools ?? []),
   });
 
   console.info("Sandbox initialized", { slug, isolatePort: port, agent: config.name });
