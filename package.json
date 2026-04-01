@@ -22,7 +22,7 @@
     "check:local": "bash scripts/check.sh --local",
     "check:knip": "knip",
     "check:publint": "turbo run check:publint",
-    "check:sherif": "pnpm dlx sherif@latest",
+    "check:sherif": "pnpm dlx sherif@1.11.1",
     "check:syncpack": "syncpack lint",
     "check:ls-lint": "ls-lint",
     "check:markdown": "markdownlint-cli2 '**/*.md' '#**/node_modules' '#.aai' '#.claude'",
@@ -59,6 +59,10 @@
       "isolated-vm",
       "lefthook"
     ],
-    "onlyBuiltDependencies": []
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "isolated-vm",
+      "lefthook"
+    ]
   }
 }
