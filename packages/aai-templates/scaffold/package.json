@@ -11,15 +11,15 @@
     "lint:fix": "biome check --write ."
   },
   "dependencies": {
-    "@alexkroman1/aai": "^0.12.2",
-    "@alexkroman1/aai-ui": "^0.12.2",
+    "@alexkroman1/aai": "^0.12.3",
+    "@alexkroman1/aai-ui": "^0.12.3",
     "@preact/signals": "^2.8.2",
     "preact": "^10.29.0",
     "tailwindcss": "^4.2.1",
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@alexkroman1/aai-cli": "^0.12.2",
+    "@alexkroman1/aai-cli": "^0.12.3",
     "@biomejs/biome": "^2.4.9",
     "@preact/preset-vite": "^2.9.6",
     "@secure-exec/typescript": "^0.1.0",

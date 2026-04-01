@@ -1,5 +1,15 @@
 # @alexkroman1/aai-cli
 
+## 0.12.3
+
+### Patch Changes
+
+- 55afc5c: Fix release workflow to trigger CI on version PRs
+- 68f4d84: Make more cross platform
+- Updated dependencies [4ebd7b6]
+- Updated dependencies [68f4d84]
+  - @alexkroman1/aai@0.12.3
+
 ## 0.12.2
 
 ### Patch Changes
