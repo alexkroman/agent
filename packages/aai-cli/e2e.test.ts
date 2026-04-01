@@ -35,7 +35,7 @@ const templates = ["simple", "memory-agent", "web-researcher"];
 
 let aaiBin: string;
 let tmpDir: string;
-let tarballs: Record<string, string>;
+let registry: Awaited<ReturnType<typeof StartMockRegistry>>;
 
 const pm = (process.env.AAI_TEST_PM ?? "pnpm") as "pnpm" | "npm" | "yarn";
 
