@@ -134,7 +134,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        # Windows excluded: tsdown/rolldown can't resolve .ts exports in aai dist
+        os: [ubuntu-latest, macos-latest]
         node: [22, 24]
     steps:
       - uses: actions/checkout@v6
@@ -165,7 +166,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        # Windows excluded: tsdown/rolldown can't resolve .ts exports in aai dist
+        os: [ubuntu-latest, macos-latest]
         node: [22, 24]
         pm: [pnpm, npm, yarn]
     env:
