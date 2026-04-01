@@ -47,7 +47,7 @@ jobs:
             packages/*/dist
             .tsbuildinfo
             .turbo
-          key: workspace-node${{ hashFiles('.node-version') }}-${{ github.sha }}
+          key: workspace-${{ runner.os }}-node${{ hashFiles('.node-version') }}-${{ github.sha }}
 
   lint-and-typecheck:
     needs: setup
@@ -68,7 +68,7 @@ jobs:
             packages/*/dist
             .tsbuildinfo
             .turbo
-          key: workspace-node${{ hashFiles('.node-version') }}-${{ github.sha }}
+          key: workspace-${{ runner.os }}-node${{ hashFiles('.node-version') }}-${{ github.sha }}
       - run: pnpm exec turbo run lint typecheck
 
   checks:
@@ -90,7 +90,7 @@ jobs:
             packages/*/dist
             .tsbuildinfo
             .turbo
-          key: workspace-node${{ hashFiles('.node-version') }}-${{ github.sha }}
+          key: workspace-${{ runner.os }}-node${{ hashFiles('.node-version') }}-${{ github.sha }}
       - name: Check for changeset
         if: github.event_name == 'pull_request' && github.head_ref != 'changeset-release/main' && !contains(github.event.pull_request.labels.*.name, 'no-release')
         run: pnpm changeset status --since=origin/main
@@ -125,7 +125,7 @@ jobs:
             packages/*/dist
             .tsbuildinfo
             .turbo
-          key: workspace-node${{ hashFiles('.node-version') }}-${{ github.sha }}
+          key: workspace-${{ runner.os }}-node${{ hashFiles('.node-version') }}-${{ github.sha }}
       - run: pnpm --filter @alexkroman1/${{ matrix.package }} test:coverage
 
   integration:
@@ -153,7 +153,7 @@ jobs:
             packages/*/dist
             .tsbuildinfo
             .turbo
-          key: workspace-node${{ hashFiles('.node-version') }}-${{ github.sha }}
+          key: workspace-${{ runner.os }}-node${{ hashFiles('.node-version') }}-${{ github.sha }}
       - if: steps.workspace-cache.outputs.cache-hit != 'true'
         run: pnpm install --frozen-lockfile
       - run: pnpm exec turbo run build
@@ -187,7 +187,7 @@ jobs:
             packages/*/dist
             .tsbuildinfo
             .turbo
-          key: workspace-node${{ hashFiles('.node-version') }}-${{ github.sha }}
+          key: workspace-${{ runner.os }}-node${{ hashFiles('.node-version') }}-${{ github.sha }}
       - if: steps.workspace-cache.outputs.cache-hit != 'true'
         run: pnpm install --frozen-lockfile
       - run: pnpm exec turbo run build
