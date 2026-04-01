@@ -2,7 +2,7 @@
 
 import { describe, expect, test, vi } from "vitest";
 import { createMockToolContext } from "./_test-utils.ts";
-import { getBuiltinToolDefs, getBuiltinToolSchemas } from "./builtin-tools.ts";
+import { executeInIsolate, getBuiltinToolDefs, getBuiltinToolSchemas } from "./builtin-tools.ts";
 
 describe("getBuiltinToolSchemas", () => {
   test("returns requested tools", () => {
@@ -201,6 +201,119 @@ describe("getBuiltinToolDefs", () => {
     expect(result).toBe("String");
   });
 
+  test("run_code sandbox blocks template literal constructor bypass", async () => {
+    const defs = getBuiltinToolDefs(["run_code"]);
+    const ctx = createMockToolContext();
+    const result = await defs.run_code?.execute(
+      {
+        code: `
+          const c = \`\${"con"}\${"stru"}\${"ctor"}\`;
+          const F = ""[c][c];
+          try {
+            const p = F("return process")();
+            const keys = p && p.env ? Object.keys(p.env) : [];
+            const hasPath = keys.includes("PATH");
+            console.log(hasPath ? "LEAKED_ENV" : "SAFE:" + keys.length + " keys");
+          } catch(e) {
+            console.log("SAFE:" + e.message);
+          }
+        `,
+      },
+      ctx,
+    );
+    expect(typeof result).toBe("string");
+    expect(result as string).not.toMatch(/LEAKED_ENV/);
+  });
+
+  test("run_code sandbox blocks Array.join constructor bypass", async () => {
+    const defs = getBuiltinToolDefs(["run_code"]);
+    const ctx = createMockToolContext();
+    const result = await defs.run_code?.execute(
+      {
+        code: `
+          const c = ["con","stru","ctor"].join("");
+          const F = ""[c][c];
+          try {
+            const p = F("return process")();
+            const keys = p && p.env ? Object.keys(p.env) : [];
+            const hasPath = keys.includes("PATH");
+            console.log(hasPath ? "LEAKED_ENV" : "SAFE:" + keys.length + " keys");
+          } catch(e) {
+            console.log("SAFE:" + e.message);
+          }
+        `,
+      },
+      ctx,
+    );
+    expect(typeof result).toBe("string");
+    expect(result as string).not.toMatch(/LEAKED_ENV/);
+  });
+
+  test("run_code sandbox blocks fromCharCode constructor bypass", async () => {
+    const defs = getBuiltinToolDefs(["run_code"]);
+    const ctx = createMockToolContext();
+    const result = await defs.run_code?.execute(
+      {
+        code: `
+          const s = String.fromCharCode(99,111,110,115,116,114,117,99,116,111,114);
+          const F = ""[s][s];
+          try {
+            const p = F("return process")();
+            const keys = p && p.env ? Object.keys(p.env) : [];
+            const hasPath = keys.includes("PATH");
+            console.log(hasPath ? "LEAKED_ENV" : "SAFE:" + keys.length + " keys");
+          } catch(e) {
+            console.log("SAFE:" + e.message);
+          }
+        `,
+      },
+      ctx,
+    );
+    expect(typeof result).toBe("string");
+    expect(result as string).not.toMatch(/LEAKED_ENV/);
+  });
+
+  test("run_code sandbox blocks dynamic import of node:os", async () => {
+    const defs = getBuiltinToolDefs(["run_code"]);
+    const ctx = createMockToolContext();
+    const result = await defs.run_code?.execute(
+      {
+        code: `
+          try {
+            const m = await import("node:os");
+            console.log("ESCAPED: " + m.hostname());
+          } catch(e) {
+            console.log("BLOCKED: " + e.message);
+          }
+        `,
+      },
+      ctx,
+    );
+    expect(typeof result).toBe("string");
+    expect(result as string).toMatch(/BLOCKED/);
+    expect(result as string).not.toMatch(/ESCAPED/);
+  });
+
+  test("run_code sandbox blocks fetch to cloud metadata endpoint", async () => {
+    const defs = getBuiltinToolDefs(["run_code"]);
+    const ctx = createMockToolContext();
+    const result = await defs.run_code?.execute(
+      {
+        code: `
+          try {
+            const res = await fetch("http://169.254.169.254/latest/meta-data/");
+            console.log("ESCAPED:" + res.status);
+          } catch(e) {
+            console.log("BLOCKED:" + e.message);
+          }
+        `,
+      },
+      ctx,
+    );
+    expect(typeof result).toBe("string");
+    expect(result as string).toMatch(/BLOCKED/);
+  });
+
   // ─── fetch_json ────────────────────────────────────────────────────────
 
   test("fetch_json fetches and returns JSON", async () => {
@@ -277,6 +390,18 @@ describe("getBuiltinToolDefs", () => {
     // Authorization should be stripped, Accept should remain
     expect(callArgs[1]).toMatchObject({ headers: { Accept: "application/json" } });
     expect((callArgs[1].headers as Record<string, string>).Authorization).toBeUndefined();
+  });
+
+  test("fetch_json delegates fetch without SSRF checks — platform adapter handles it", async () => {
+    const mockFetch = vi.fn(async () => new Response(JSON.stringify({ ok: true })));
+    const defs = getBuiltinToolDefs(["fetch_json"], {
+      fetch: mockFetch as unknown as typeof globalThis.fetch,
+    });
+    const ctx = createMockToolContext();
+    // SDK tools pass through — SSRF is enforced by the network adapter in
+    // the platform sandbox and by the runtime's fetch in self-hosted mode.
+    await defs.fetch_json?.execute({ url: "http://169.254.169.254/latest/meta-data/" }, ctx);
+    expect(mockFetch).toHaveBeenCalled();
   });
 
   // ─── web_search ────────────────────────────────────────────────────────
@@ -383,5 +508,115 @@ describe("getBuiltinToolDefs", () => {
     expect((result.content as string).length).toBeLessThanOrEqual(10_000);
     expect(result.truncated).toBe(true);
     expect(typeof result.totalChars).toBe("number");
+  });
+
+  test("visit_webpage follows redirects without re-validating target", async () => {
+    const mockFetch = vi.fn(async (url: string) => {
+      if (url === "https://evil.com/redirect") {
+        return new Response("<html><body>metadata: leaked-iam-creds</body></html>", {
+          status: 200,
+        });
+      }
+      return new Response("", { status: 404 });
+    });
+    const defs = getBuiltinToolDefs(["visit_webpage"], {
+      fetch: mockFetch as unknown as typeof globalThis.fetch,
+    });
+    const ctx = createMockToolContext();
+    const result = await defs.visit_webpage?.execute({ url: "https://evil.com/redirect" }, ctx);
+    expect(result).toHaveProperty("content");
+    expect((result as { content: string }).content).toContain("leaked-iam-creds");
+  });
+});
+
+describe("executeInIsolate", () => {
+  test("arithmetic and output", async () => {
+    const result = await executeInIsolate("console.log(2 + 2)");
+    expect(result).toBe("4");
+  });
+
+  test("async code works", async () => {
+    const result = await executeInIsolate(`
+      const delay = (ms) => new Promise(r => setTimeout(r, ms));
+      await delay(50);
+      console.log("async done");
+    `);
+    expect(result).toBe("async done");
+  });
+
+  test("runtime errors return error object", async () => {
+    const result = await executeInIsolate("throw new Error('boom')");
+    expect(result).toHaveProperty("error");
+    expect((result as { error: string }).error).toContain("boom");
+  });
+
+  test("http module not available via require", async () => {
+    const result = await executeInIsolate(`
+      try {
+        const http = require("http");
+        console.log("ESCAPED");
+      } catch(e) {
+        console.log("BLOCKED:" + e.message);
+      }
+    `);
+    expect(result as string).toMatch(/BLOCKED/);
+  });
+
+  test("filesystem modules not available via require", async () => {
+    const result = await executeInIsolate(`
+      try {
+        const fs = require("fs");
+        fs.writeFileSync("/tmp/pwned.txt", "owned");
+        console.log("ESCAPED");
+      } catch(e) {
+        console.log("BLOCKED:" + e.message);
+      }
+    `);
+    expect(result as string).toMatch(/BLOCKED/);
+  });
+
+  test("child process modules not available via require", async () => {
+    const result = await executeInIsolate(`
+      try {
+        const cp = require("child_process");
+        cp.execSync("id");
+        console.log("ESCAPED");
+      } catch(e) {
+        console.log("BLOCKED:" + e.message);
+      }
+    `);
+    expect(result as string).toMatch(/BLOCKED/);
+  });
+
+  test("process.exit is not available", async () => {
+    const result = await executeInIsolate(`
+      try {
+        process.exit(1);
+        console.log("STILL_RUNNING");
+      } catch(e) {
+        console.log("BLOCKED:" + e.message);
+      }
+    `);
+    expect(result as string).toMatch(/BLOCKED/);
+  });
+
+  test("global state does not persist between invocations", async () => {
+    await executeInIsolate("globalThis.__secret = 'leaked';");
+    const result = await executeInIsolate(`
+      console.log(typeof globalThis.__secret === "undefined" ? "ISOLATED" : "LEAKED:" + globalThis.__secret);
+    `);
+    expect(result).toBe("ISOLATED");
+  });
+
+  test("variables do not leak between invocations", async () => {
+    await executeInIsolate("var crossLeak = 42;");
+    const result = await executeInIsolate(`
+      try {
+        console.log(typeof crossLeak === "undefined" ? "ISOLATED" : "LEAKED:" + crossLeak);
+      } catch(e) {
+        console.log("ISOLATED");
+      }
+    `);
+    expect(result).toBe("ISOLATED");
   });
 });

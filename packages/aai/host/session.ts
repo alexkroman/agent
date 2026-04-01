@@ -196,6 +196,7 @@ export type S2sSessionOptions = {
   client: ClientSink;
   agentConfig: AgentConfig;
   toolSchemas: readonly ToolSchema[];
+  toolGuidance?: readonly string[];
   apiKey: string;
   s2sConfig: S2SConfig;
   executeTool: ExecuteTool;
@@ -409,7 +410,11 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
   } = opts;
   const agentConfig = opts.skipGreeting ? { ...opts.agentConfig, greeting: "" } : opts.agentConfig;
   const hasTools = toolSchemas.length > 0 || (agentConfig.builtinTools?.length ?? 0) > 0;
-  const systemPrompt = buildSystemPrompt(agentConfig, { hasTools, voice: true });
+  const systemPrompt = buildSystemPrompt(agentConfig, {
+    hasTools,
+    voice: true,
+    toolGuidance: opts.toolGuidance,
+  });
   const s2sTools: S2sToolSchema[] = toolSchemas.map((ts) => ({
     type: "function" as const,
     name: ts.name,

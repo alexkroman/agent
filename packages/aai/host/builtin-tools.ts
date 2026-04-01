@@ -58,8 +58,13 @@ const BraveSearchResponseSchema = z.object({
     .optional(),
 });
 
-function createWebSearch(fetchFn = globalThis.fetch): ToolDef<typeof webSearchParams> {
+function createWebSearch(
+  fetchFn = globalThis.fetch,
+): ToolDef<typeof webSearchParams> & { guidance: string } {
   return {
+    guidance:
+      "Use web_search for factual questions, current events, or anything you are unsure about. " +
+      "Search first rather than guessing.",
     description:
       "Search the web for current information, facts, news, or answers to questions. Returns a list of results with title, URL, and description. Use this when the user asks about something you don't know, need up-to-date information, or want to verify facts.",
     parameters: webSearchParams,
@@ -101,8 +106,12 @@ const visitWebpageParams = z.object({
   url: z.string().describe("The full URL to fetch (e.g., 'https://example.com/page')"),
 });
 
-function createVisitWebpage(fetchFn = globalThis.fetch): ToolDef<typeof visitWebpageParams> {
+function createVisitWebpage(
+  fetchFn = globalThis.fetch,
+): ToolDef<typeof visitWebpageParams> & { guidance: string } {
   return {
+    guidance:
+      "Use visit_webpage to read the full content of a URL when search snippets are not detailed enough.",
     description:
       "Fetch a webpage and return its content as clean text. Use this to read the full content of a URL found via web_search, or any link the user shares. Good for reading articles, documentation, blog posts, or product pages.",
     parameters: visitWebpageParams,
@@ -172,8 +181,11 @@ function sanitizeHeaders(
   return Object.keys(safe).length > 0 ? safe : undefined;
 }
 
-function createFetchJson(fetchFn = globalThis.fetch): ToolDef<typeof fetchJsonParams> {
+function createFetchJson(
+  fetchFn = globalThis.fetch,
+): ToolDef<typeof fetchJsonParams> & { guidance: string } {
   return {
+    guidance: "Use fetch_json to call REST APIs and retrieve structured JSON data.",
     description:
       "Call a REST API endpoint via HTTP GET and return the JSON response. Use this to fetch structured data from APIs — for example, weather data, stock prices, exchange rates, or any public JSON API. Supports custom headers for authenticated APIs.",
     parameters: fetchJsonParams,
@@ -235,6 +247,15 @@ export function getBuiltinToolDefs(
     for (const [k, v] of resolveBuiltin(name, opts)) defs[k] = v;
   }
   return defs;
+}
+
+/** Returns system prompt guidance strings for the specified builtin tools. */
+export function getBuiltinToolGuidance(names: readonly string[]): string[] {
+  return names.flatMap((name) =>
+    resolveBuiltin(name)
+      .map(([, def]) => (def as { guidance?: string }).guidance)
+      .filter((g): g is string => Boolean(g)),
+  );
 }
 
 /** Returns JSON tool schemas for the specified builtin tools. */

@@ -8,7 +8,12 @@
  */
 
 import { type AgentDef, defineAgent, defineTool } from "@alexkroman1/aai";
-import { agentToolsToSchemas, toAgentConfig } from "@alexkroman1/aai/host";
+import {
+  agentToolsToSchemas,
+  getBuiltinToolGuidance,
+  getBuiltinToolSchemas,
+  toAgentConfig,
+} from "@alexkroman1/aai/host";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import { createTestOrchestrator } from "./test-utils.ts";
@@ -106,6 +111,40 @@ describe("cross-package smoke: SDK → server deploy", () => {
     expect(roundTripped.maxSteps).toBe(10);
     expect(roundTripped.toolChoice).toBe("required");
     expect(roundTripped.builtinTools).toEqual(["web_search", "run_code"]);
+  });
+
+  test("builtin tool schemas are resolved for sandbox mode", () => {
+    const builtinNames = ["web_search", "visit_webpage", "fetch_json", "run_code"] as const;
+    const schemas = getBuiltinToolSchemas(builtinNames);
+
+    expect(schemas).toHaveLength(4);
+    expect(schemas.map((s) => s.name).sort()).toEqual([
+      "fetch_json",
+      "run_code",
+      "visit_webpage",
+      "web_search",
+    ]);
+
+    // Each schema must have the fields the S2S API expects
+    for (const schema of schemas) {
+      expect(schema.description).toBeTruthy();
+      expect(schema.parameters).toBeDefined();
+      expect(schema.parameters).toHaveProperty("type", "object");
+    }
+  });
+
+  test("builtin tool guidance is generated for system prompt", () => {
+    const guidance = getBuiltinToolGuidance(["run_code", "web_search"]);
+
+    expect(guidance.length).toBe(2);
+    // run_code guidance must tell the LLM to use the tool, not answer verbally
+    const runCodeGuidance = guidance.find((g) => g.includes("run_code"));
+    expect(runCodeGuidance).toBeDefined();
+    expect(runCodeGuidance).toContain("MUST");
+    expect(runCodeGuidance).toContain("JavaScript");
+    // web_search guidance
+    const searchGuidance = guidance.find((g) => g.includes("web_search"));
+    expect(searchGuidance).toBeDefined();
   });
 
   test("tool schemas from SDK match expected server format", () => {

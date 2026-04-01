@@ -6,7 +6,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import ci from "ci-info";
 import { consola } from "consola";
-import { humanId } from "human-id";
 import { z } from "zod";
 import { askPassword } from "./_prompts.ts";
 
@@ -23,13 +22,6 @@ const ProjectConfigSchema = z.object({
 /** Resolve the working directory from INIT_CWD or process.cwd(). */
 export function resolveCwd(): string {
   return process.env.INIT_CWD || process.cwd();
-}
-
-/**
- * Generates a human-readable slug using human-id.
- */
-export function generateSlug(): string {
-  return humanId({ separator: "-", capitalize: false });
 }
 
 // --- Global auth config ---
@@ -222,7 +214,7 @@ export async function loadAgent(dir: string): Promise<AgentEntry | null> {
   if (!hasAgentTs) return null;
 
   const config = await readProjectConfig(dir);
-  const slug = config?.slug ?? generateSlug();
+  const slug = config?.slug ?? "";
 
   const clientEntry = (await fileExists(path.join(dir, "client.tsx")))
     ? path.join(dir, "client.tsx")

@@ -6,7 +6,6 @@ import {
   DEFAULT_SERVER,
   ensureApiKeyInEnv,
   fileExists,
-  generateSlug,
   getServerInfo,
   isDevMode,
   loadAgent,
@@ -44,20 +43,6 @@ describe("resolveCwd", () => {
         process.env.INIT_CWD = orig;
       }
     }
-  });
-});
-
-// --- generateSlug ---
-
-describe("generateSlug", () => {
-  test("returns a lowercase hyphenated string", () => {
-    const slug = generateSlug();
-    expect(slug).toMatch(/^[a-z]+-[a-z]+-[a-z]+$/);
-  });
-
-  test("generates different slugs on each call", () => {
-    const slugs = new Set(Array.from({ length: 10 }, () => generateSlug()));
-    expect(slugs.size > 1).toBe(true);
   });
 });
 
@@ -225,7 +210,7 @@ describe("loadAgent", () => {
       expect(result).not.toBeNull();
       expect(result?.dir).toBe(dir);
       expect(result?.entryPoint).toBe(path.join(dir, "agent.ts"));
-      expect(result?.slug).toMatch(/^[a-z]+-[a-z]+-[a-z]+$/);
+      expect(result?.slug).toBe("");
     });
   });
 

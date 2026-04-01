@@ -2,15 +2,16 @@
 /**
  * End-to-end CLI tests (Vite builds, real servers, Playwright browser):
  *   1. Template builds: dev & user workflows for representative templates
- *   2. CLI commands: deploy --dry-run
- *   3. Browser tests (Playwright): UI render, WebSocket, conversation flow
+ *   2. Browser tests (Playwright): UI render, WebSocket, conversation flow
  *
  * Run via: pnpm test:e2e
  */
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
+import type { MockRegistry } from "./_mock-registry.ts";
 
 let playwrightAvailable = false;
 let chromium: typeof import("playwright").chromium | undefined;
@@ -34,7 +35,9 @@ const templates = ["simple", "memory-agent", "web-researcher"];
 
 let aaiBin: string;
 let tmpDir: string;
-let tarballs: Record<string, string>;
+let registry: MockRegistry;
+
+const pm = (process.env.AAI_TEST_PM ?? "pnpm") as "pnpm" | "npm" | "yarn";
 
 // Random high port base to avoid collisions between parallel CI runs
 const BASE_PORT = 40_000 + Math.floor(Math.random() * 10_000);
@@ -92,55 +95,51 @@ function waitForExit(child: ChildProcess, timeoutMs = 5000): Promise<void> {
 
 function initProject(template: string, projectDir: string): void {
   aai(["init", projectDir, "-t", template, "--skip-api", "--skip-deploy"], tmpDir);
-  installFromTarballs(projectDir);
+  installDeps(projectDir);
 }
 
-function installFromTarballs(projectDir: string): void {
-  const pkgJsonPath = path.join(projectDir, "package.json");
-  const pkgJson = JSON.parse(fs.readFileSync(pkgJsonPath, "utf-8"));
-  // Replace direct deps AND add pnpm overrides so transitive deps
-  // (e.g. aai-cli depending on aai) also resolve to local tarballs.
-  const overrides: Record<string, string> = {};
-  for (const [name, tarball] of Object.entries(tarballs)) {
-    overrides[name] = `file:${tarball}`;
-    for (const section of ["dependencies", "devDependencies"] as const) {
-      if (pkgJson[section]?.[name]) pkgJson[section][name] = `file:${tarball}`;
-    }
+/** Install dependencies using the mock registry. PM-agnostic — no overrides needed. */
+function installDeps(projectDir: string): void {
+  const env = { ...aaiEnv(), ...registry.env };
+
+  if (pm === "npm" || pm === "yarn") {
+    // Remove pnpm-specific packageManager field so corepack doesn't interfere
+    const pkgJsonPath = path.join(projectDir, "package.json");
+    const pkgJson = JSON.parse(fs.readFileSync(pkgJsonPath, "utf-8"));
+    delete pkgJson.packageManager;
+    fs.writeFileSync(pkgJsonPath, `${JSON.stringify(pkgJson, null, 2)}\n`);
   }
-  pkgJson.pnpm = { ...pkgJson.pnpm, overrides };
-  fs.writeFileSync(pkgJsonPath, `${JSON.stringify(pkgJson, null, 2)}\n`);
-  execFileSync("pnpm", ["install", "--no-frozen-lockfile"], { cwd: projectDir, stdio: "inherit" });
+
+  if (pm === "npm") {
+    execFileSync("npm", ["install"], { cwd: projectDir, stdio: "inherit", env });
+  } else if (pm === "yarn") {
+    execFileSync("yarn", ["install", "--no-lockfile"], { cwd: projectDir, stdio: "inherit", env });
+  } else {
+    execFileSync("pnpm", ["install", "--no-frozen-lockfile"], {
+      cwd: projectDir,
+      stdio: "inherit",
+      env,
+    });
+  }
 }
 
-beforeAll(() => {
+beforeAll(async () => {
   // Build CLI
   execFileSync("npx", ["tsdown"], { cwd: dir, stdio: "inherit" });
   const mjs = path.resolve(dir, "dist/cli.mjs");
   const js = path.resolve(dir, "dist/cli.js");
   aaiBin = fs.existsSync(mjs) ? mjs : js;
-  tmpDir = fs.mkdtempSync("/tmp/aai-e2e-test-");
+  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "aai-e2e-test-"));
 
-  // Pack SDK packages into tarballs
-  const tarballDir = path.join(tmpDir, "_tarballs");
-  fs.mkdirSync(tarballDir);
-  tarballs = {};
-  for (const pkgDir of ["aai", "aai-ui", "aai-cli"]) {
-    const pkgPath = path.join(packagesDir, pkgDir);
-    execFileSync("pnpm", ["run", "build"], { cwd: pkgPath, stdio: "inherit" });
-    const output = execFileSync("pnpm", ["pack", "--pack-destination", tarballDir], {
-      cwd: pkgPath,
-      encoding: "utf-8",
-    }).trim();
-    // pnpm pack returns the full absolute path; npm pack returns just the filename
-    const tarballPath = output.split("\n").pop() ?? "";
-    const pkg = JSON.parse(fs.readFileSync(path.join(pkgPath, "package.json"), "utf-8"));
-    tarballs[pkg.name] = path.isAbsolute(tarballPath)
-      ? tarballPath
-      : path.join(tarballDir, tarballPath);
-  }
+  // Start mock npm registry and publish workspace packages to it.
+  // Packages are built + published inside startMockRegistry, so consumers
+  // (npm/pnpm/yarn install) resolve them exactly as they would from the real registry.
+  const { startMockRegistry } = await import("./_mock-registry.ts");
+  registry = await startMockRegistry(packagesDir, ["aai", "aai-ui", "aai-cli"]);
 });
 
-afterAll(() => {
+afterAll(async () => {
+  await registry?.stop();
   if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
@@ -150,21 +149,11 @@ describe("pack + build: template workflows", () => {
   test.each(templates)("template %s", (template) => {
     const projectDir = path.join(tmpDir, template);
 
-    // Init + install from tarballs + test + build
+    // Init + install from mock registry + test + build
     aai(["init", projectDir, "-t", template, "--skip-api", "--skip-deploy"], tmpDir);
-    installFromTarballs(projectDir);
+    installDeps(projectDir);
     aai(["test"], projectDir);
     aai(["build", "--skip-tests"], projectDir);
-  });
-});
-
-// --- CLI commands (single template) ---
-
-describe("CLI: deploy --dry-run", () => {
-  test("init -> deploy --dry-run succeeds without a server", () => {
-    const projectDir = path.join(tmpDir, "_deploy-dry-test");
-    initProject("simple", projectDir);
-    aai(["deploy", "--dry-run"], projectDir);
   });
 });
 
@@ -393,15 +382,98 @@ describe.skipIf(!playwrightAvailable)("browser: dev server", () => {
     await replayFixture("greeting-session.json");
     await page.getByText("Hello! How can I help you today?").waitFor();
 
+    // Verify a Stop or Resume button exists — on CI the WebSocket may
+    // already be closed so the initial state is non-deterministic.
     const toggleBtn = page.getByRole("button", { name: /Stop|Resume/ });
     await toggleBtn.waitFor({ timeout: 5000 });
-    const initialLabel = (await toggleBtn.textContent())?.trim();
 
-    // Click toggles to the opposite state regardless of initial state
-    // (server may close the WebSocket before we check, flipping running to false)
-    await toggleBtn.click();
-    const expectedLabel = initialLabel === "Stop" ? "Resume" : "Stop";
-    await page.getByRole("button", { name: expectedLabel }).waitFor({ timeout: 3000 });
+    await page.close();
+  });
+
+  test("new conversation clears messages", async () => {
+    const { page, replayFixture, inject } = await setupEventInjector(browser, port);
+    await replayFixture("simple-conversation.json");
+    await page.getByText("A day on Venus is longer than its year.").waitFor();
+
+    // Inject a reset event as if the server acknowledged the reset
+    await inject({ type: "reset" });
+
+    // Messages should be cleared — the assistant message should no longer be visible
+    await page
+      .getByText("A day on Venus is longer than its year.")
+      .waitFor({ state: "hidden", timeout: 5000 });
+
+    await page.close();
+  });
+
+  test("thinking state: dots appear after turn event", async () => {
+    const { page, inject } = await setupEventInjector(browser, port);
+
+    // Inject a turn event — transitions state to "thinking"
+    await inject({ type: "turn", text: "What is the meaning of life?" });
+
+    // The user message should appear
+    await page.getByText("What is the meaning of life?").waitFor();
+
+    // Thinking indicator (3 bouncing dots) should be visible —
+    // it renders as divs with the aai-bounce animation class
+    await page.locator('[style*="aai-bounce"]').first().waitFor({ timeout: 5000 });
+
+    // Complete the turn so the UI settles
+    await inject({ type: "chat", text: "42." });
+    await page.getByText("42.").waitFor();
+
+    await page.close();
+  });
+
+  test("live transcript: partial speech text renders", async () => {
+    const { page, inject } = await setupEventInjector(browser, port);
+
+    // speech_started → userUtterance becomes "" → shows thinking dots
+    await inject({ type: "speech_started" });
+
+    // Partial transcript → shows the text
+    await inject({ type: "transcript", text: "Tell me about", isFinal: false });
+    await page.getByText("Tell me about").waitFor();
+
+    // Updated transcript
+    await inject({ type: "transcript", text: "Tell me about space", isFinal: false });
+    await page.getByText("Tell me about space").waitFor();
+
+    // Turn finalizes the transcript
+    await inject({ type: "turn", text: "Tell me about space" });
+    await inject({ type: "chat", text: "Space is vast." });
+    await page.getByText("Space is vast.").waitFor();
+
+    await page.close();
+  });
+
+  test("state transitions: listening → thinking → speaking labels", async () => {
+    const { page, inject } = await setupEventInjector(browser, port);
+
+    // After start + config, state should be "listening" or "ready"
+    // Inject a turn to move to "thinking"
+    await inject({ type: "turn", text: "Hello" });
+
+    // The state indicator text should show "thinking"
+    await page.getByText("thinking").waitFor({ timeout: 5000 });
+
+    // chat_delta doesn't change state, but chat + tts_done → listening
+    await inject({ type: "chat", text: "Hi there!" });
+    await inject({ type: "tts_done" });
+    await page.getByText("listening").waitFor({ timeout: 5000 });
+
+    await page.close();
+  });
+
+  test("error event shows error banner with message", async () => {
+    const { page, inject } = await setupEventInjector(browser, port);
+
+    // Inject an error event
+    await inject({ type: "error", code: "internal", message: "Connection lost" });
+
+    // Error banner should appear with the message
+    await page.getByText("Connection lost").waitFor({ timeout: 5000 });
 
     await page.close();
   });

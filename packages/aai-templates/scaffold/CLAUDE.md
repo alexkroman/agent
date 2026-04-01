@@ -38,7 +38,6 @@ aai test                 # Run agent tests (vitest)
 aai build                # Run tests, then bundle and validate (skip tests with --skipTests)
 aai deploy               # Bundle and deploy to production
 aai deploy -y            # Deploy without prompts
-aai deploy --dry-run     # Validate and bundle without deploying
 aai delete               # Remove a deployed agent
 aai secret put <NAME>    # Set a secret on the server (prompts for value)
 aai secret delete <NAME> # Remove a secret
