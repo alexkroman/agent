@@ -26,6 +26,9 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 2
+          # Use RELEASE_TOKEN so git push triggers the Check workflow.
+          # The default GITHUB_TOKEN cannot trigger other workflows.
+          token: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
 
       - uses: pnpm/action-setup@v5
 
