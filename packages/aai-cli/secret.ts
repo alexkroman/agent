@@ -1,22 +1,25 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import { apiError, apiRequest, HINT_INVALID_API_KEY } from "./_api-client.ts";
 import { getServerInfo } from "./_discover.ts";
 import { askPassword } from "./_prompts.ts";
 import { log } from "./_ui.ts";
 
-async function apiFetch(
+async function secretRequest(
   cwd: string,
   pathSuffix: string,
   init?: RequestInit,
 ): Promise<{ resp: Response; slug: string }> {
   const { serverUrl, slug, apiKey } = await getServerInfo(cwd);
-  const resp = await fetch(`${serverUrl}/${slug}/secret${pathSuffix}`, {
+  const resp = await apiRequest(`${serverUrl}/${slug}/secret${pathSuffix}`, {
     ...init,
-    headers: { Authorization: `Bearer ${apiKey}`, ...init?.headers },
+    apiKey,
+    action: "secret",
   });
   if (!resp.ok) {
     const text = await resp.text();
-    throw new Error(`Secret operation failed: ${text}`);
+    const hint = resp.status === 401 ? HINT_INVALID_API_KEY : undefined;
+    throw apiError("secret", resp.status, text, hint);
   }
   return { resp, slug };
 }
@@ -25,21 +28,20 @@ export async function runSecretPut(cwd: string, name: string): Promise<void> {
   const value = await askPassword(`Enter value for ${name}`);
   if (!value) throw new Error("No value provided");
 
-  const { slug } = await apiFetch(cwd, "", {
+  const { slug } = await secretRequest(cwd, "", {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ [name]: value }),
   });
   log.success(`Set ${name} for ${slug}`);
 }
 
 export async function runSecretDelete(cwd: string, name: string): Promise<void> {
-  const { slug } = await apiFetch(cwd, `/${name}`, { method: "DELETE" });
+  const { slug } = await secretRequest(cwd, `/${name}`, { method: "DELETE" });
   log.success(`Deleted ${name} from ${slug}`);
 }
 
 export async function runSecretList(cwd: string): Promise<void> {
-  const { resp } = await apiFetch(cwd, "");
+  const { resp } = await secretRequest(cwd, "");
   const { vars } = (await resp.json()) as { vars: string[] };
   if (vars.length === 0) {
     log.info("No secrets set. Use `aai secret put <name>` to add one.");

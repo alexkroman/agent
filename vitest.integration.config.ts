@@ -14,7 +14,7 @@ export default defineConfig({
     hookTimeout: 30_000,
     include: [
       "packages/aai/host/pentest.test.ts",
-      "packages/aai/host/run-code-isolate.test.ts",
+      "packages/aai/host/run-code-sandbox.test.ts",
       "packages/aai/host/integration.test.ts",
       "packages/aai-server/sandbox-integration.test.ts",
       "packages/aai-server/ws-integration.test.ts",
