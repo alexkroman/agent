@@ -30,26 +30,32 @@ export async function bundleAgent(agent: AgentEntry): Promise<BundleOutput> {
   const aaiDir = path.join(agent.dir, ".aai");
   const buildDir = path.join(aaiDir, "build");
 
-  // Bundle tools.ts into worker.js
-  const toolsEntry = agent.toolsEntry || path.join(agent.dir, "tools.ts");
-  try {
-    await build({
-      root: agent.dir,
-      logLevel: "warn",
-      build: {
-        ssr: toolsEntry,
-        outDir: buildDir,
-        emptyOutDir: true,
-        rollupOptions: {
-          output: { entryFileNames: "worker.js" },
+  // Bundle tools.ts into worker.js (or create empty worker if no tools)
+  let worker: string;
+  if (agent.toolsEntry) {
+    try {
+      await build({
+        root: agent.dir,
+        logLevel: "warn",
+        build: {
+          ssr: agent.toolsEntry,
+          outDir: buildDir,
+          emptyOutDir: true,
+          rollupOptions: {
+            output: { entryFileNames: "worker.js" },
+          },
         },
-      },
-    });
-  } catch (err: unknown) {
-    throw new BundleError(errorMessage(err), { cause: err });
+      });
+    } catch (err: unknown) {
+      throw new BundleError(errorMessage(err), { cause: err });
+    }
+    worker = await fs.readFile(path.join(buildDir, "worker.js"), "utf-8");
+  } else {
+    // No tools.ts — agent has no custom tools, create minimal worker
+    worker = "export default {};";
+    await fs.mkdir(buildDir, { recursive: true });
+    await fs.writeFile(path.join(buildDir, "worker.js"), worker);
   }
-
-  const worker = await fs.readFile(path.join(buildDir, "worker.js"), "utf-8");
 
   // Read static index.html if present
   const clientFiles: Record<string, string> = {};

@@ -9,7 +9,7 @@
  * createRuntime() with identical permission config.
  */
 
-import { readdirSync, statSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -348,7 +348,7 @@ describe("template isolate boot", () => {
     // Minimal package.json
     await fs.writeFile(
       path.join(tmpDir, "package.json"),
-      JSON.stringify({ name: `test-${template}`, type: "module", dependencies: { zod: "^4.0.0" } }),
+      JSON.stringify({ name: `test-${template}`, type: "module" }),
     );
 
     // Symlink workspace packages so Vite can resolve them
@@ -356,12 +356,15 @@ describe("template isolate boot", () => {
     await fs.mkdir(scope, { recursive: true });
     await fs.symlink(path.resolve(import.meta.dirname, "../..", "aai"), path.join(scope, "aai"));
 
+    // Detect if template has tools.ts
+    const hasTools = existsSync(path.join(tmpDir, "tools.ts"));
+
     const { bundleAgent } = await import("../../aai-cli/src/lib/bundler.ts");
     const bundle = await bundleAgent({
       slug: `tpl-${template}`,
       dir: tmpDir,
       tomlPath: path.join(tmpDir, "agent.toml"),
-      toolsEntry: path.join(tmpDir, "tools.ts"),
+      toolsEntry: hasTools ? path.join(tmpDir, "tools.ts") : "",
       clientEntry: "",
     });
 
