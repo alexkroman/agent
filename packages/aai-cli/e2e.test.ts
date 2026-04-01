@@ -9,6 +9,7 @@
  */
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 
@@ -35,6 +36,8 @@ const templates = ["simple", "memory-agent", "web-researcher"];
 let aaiBin: string;
 let tmpDir: string;
 let tarballs: Record<string, string>;
+
+const pm = (process.env.AAI_TEST_PM ?? "pnpm") as "pnpm" | "npm" | "yarn";
 
 // Random high port base to avoid collisions between parallel CI runs
 const BASE_PORT = 40_000 + Math.floor(Math.random() * 10_000);
@@ -98,7 +101,7 @@ function initProject(template: string, projectDir: string): void {
 function installFromTarballs(projectDir: string): void {
   const pkgJsonPath = path.join(projectDir, "package.json");
   const pkgJson = JSON.parse(fs.readFileSync(pkgJsonPath, "utf-8"));
-  // Replace direct deps AND add pnpm overrides so transitive deps
+  // Replace direct deps AND add overrides so transitive deps
   // (e.g. aai-cli depending on aai) also resolve to local tarballs.
   const overrides: Record<string, string> = {};
   for (const [name, tarball] of Object.entries(tarballs)) {
@@ -107,9 +110,26 @@ function installFromTarballs(projectDir: string): void {
       if (pkgJson[section]?.[name]) pkgJson[section][name] = `file:${tarball}`;
     }
   }
-  pkgJson.pnpm = { ...pkgJson.pnpm, overrides };
-  fs.writeFileSync(pkgJsonPath, `${JSON.stringify(pkgJson, null, 2)}\n`);
-  execFileSync("pnpm", ["install", "--no-frozen-lockfile"], { cwd: projectDir, stdio: "inherit" });
+  if (pm === "npm") {
+    // npm uses top-level "overrides" and chokes on the pnpm packageManager field
+    pkgJson.overrides = { ...pkgJson.overrides, ...overrides };
+    delete pkgJson.packageManager;
+    fs.writeFileSync(pkgJsonPath, `${JSON.stringify(pkgJson, null, 2)}\n`);
+    execFileSync("npm", ["install"], { cwd: projectDir, stdio: "inherit" });
+  } else if (pm === "yarn") {
+    // yarn uses "resolutions" for dependency overrides
+    pkgJson.resolutions = { ...pkgJson.resolutions, ...overrides };
+    delete pkgJson.packageManager;
+    fs.writeFileSync(pkgJsonPath, `${JSON.stringify(pkgJson, null, 2)}\n`);
+    execFileSync("yarn", ["install", "--no-lockfile"], { cwd: projectDir, stdio: "inherit" });
+  } else {
+    pkgJson.pnpm = { ...pkgJson.pnpm, overrides };
+    fs.writeFileSync(pkgJsonPath, `${JSON.stringify(pkgJson, null, 2)}\n`);
+    execFileSync("pnpm", ["install", "--no-frozen-lockfile"], {
+      cwd: projectDir,
+      stdio: "inherit",
+    });
+  }
 }
 
 beforeAll(() => {
@@ -118,7 +138,7 @@ beforeAll(() => {
   const mjs = path.resolve(dir, "dist/cli.mjs");
   const js = path.resolve(dir, "dist/cli.js");
   aaiBin = fs.existsSync(mjs) ? mjs : js;
-  tmpDir = fs.mkdtempSync("/tmp/aai-e2e-test-");
+  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "aai-e2e-test-"));
 
   // Pack SDK packages into tarballs
   const tarballDir = path.join(tmpDir, "_tarballs");

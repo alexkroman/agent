@@ -130,7 +130,12 @@ jobs:
 
   integration:
     needs: setup
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: [22, 24]
     steps:
       - uses: actions/checkout@v6
         with:
@@ -138,8 +143,9 @@ jobs:
       - uses: pnpm/action-setup@v5
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
-      - uses: actions/cache/restore@v5
+          node-version: ${{ matrix.node }}
+      - id: workspace-cache
+        uses: actions/cache/restore@v5
         with:
           path: |
             node_modules
@@ -148,11 +154,22 @@ jobs:
             .tsbuildinfo
             .turbo
           key: workspace-node${{ hashFiles('.node-version') }}-${{ github.sha }}
+      - if: steps.workspace-cache.outputs.cache-hit != 'true'
+        run: pnpm install --frozen-lockfile
+      - run: pnpm exec turbo run build
       - run: pnpm exec turbo run check:integration
 
   e2e:
     needs: setup
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: [22, 24]
+        pm: [pnpm, npm, yarn]
+    env:
+      AAI_TEST_PM: ${{ matrix.pm }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -160,8 +177,9 @@ jobs:
       - uses: pnpm/action-setup@v5
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
-      - uses: actions/cache/restore@v5
+          node-version: ${{ matrix.node }}
+      - id: workspace-cache
+        uses: actions/cache/restore@v5
         with:
           path: |
             node_modules
@@ -170,6 +188,9 @@ jobs:
             .tsbuildinfo
             .turbo
           key: workspace-node${{ hashFiles('.node-version') }}-${{ github.sha }}
+      - if: steps.workspace-cache.outputs.cache-hit != 'true'
+        run: pnpm install --frozen-lockfile
+      - run: pnpm exec turbo run build
       - uses: actions/cache@v5
         with:
           path: ~/.cache/ms-playwright
