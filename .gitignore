@@ -11,6 +11,7 @@ tmp/
 !.claude/plans/
 .tsbuildinfo/
 coverage/
+.turbo/
 __pycache__/
 *.pyc
 temp/

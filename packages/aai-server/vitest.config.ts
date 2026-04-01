@@ -4,12 +4,14 @@ import { sharedConfig } from "../../vitest.shared.ts";
 export default defineConfig({
   ...sharedConfig,
   test: {
-    include: [
+    restoreMocks: true,
+    include: ["**/*.test.ts"],
+    exclude: [
       "src/sandbox-integration.test.ts",
       "src/sandbox-conformance.test.ts",
       "src/ws-integration.test.ts",
+      "node_modules",
+      "dist",
     ],
-    testTimeout: 30_000,
-    hookTimeout: 30_000,
   },
 });

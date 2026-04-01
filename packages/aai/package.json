@@ -68,6 +68,10 @@
     }
   },
   "scripts": {
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "check:integration": "pnpm run test:integration",
     "build": "tsdown && tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit && tsc -p isolate/tsconfig.json",
     "lint": "biome check .",
@@ -83,7 +87,7 @@
     "zod": "^4.3.6"
   },
   "peerDependencies": {
-    "vitest": "^4.1.1"
+    "vitest": "^4.1.2"
   },
   "peerDependenciesMeta": {
     "vitest": {
@@ -94,7 +98,7 @@
     "@types/json-schema": "^7.0.15",
     "@types/node": "^25.5.0",
     "@types/ws": "^8.18.1",
-    "tsdown": "^0.21.5",
+    "tsdown": "^0.21.7",
     "vite": "^8.0.3"
   },
   "engines": {

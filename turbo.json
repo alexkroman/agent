@@ -1,0 +1,50 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "inputs": ["src/**", "isolate/**", "host/**", "*.ts", "tsconfig*.json", "tsdown.config.ts"],
+      "outputs": ["dist/**"]
+    },
+    "test": {
+      "dependsOn": ["build"],
+      "inputs": ["src/**", "isolate/**", "host/**", "**/*.test.ts", "**/*.test.tsx", "vitest.config.ts"],
+      "cache": false
+    },
+    "test:coverage": {
+      "dependsOn": ["build"],
+      "inputs": ["src/**", "isolate/**", "host/**", "**/*.test.ts", "**/*.test.tsx", "vitest.config.ts"],
+      "outputs": ["coverage/**"],
+      "cache": false
+    },
+    "typecheck": {
+      "dependsOn": ["build"],
+      "inputs": ["src/**", "isolate/**", "host/**", "*.ts", "tsconfig*.json"]
+    },
+    "lint": {
+      "inputs": ["src/**", "isolate/**", "host/**", "*.ts", "*.tsx", "biome.json"]
+    },
+    "check:publint": {
+      "dependsOn": ["build"],
+      "inputs": ["dist/**", "package.json"]
+    },
+    "check:attw": {
+      "dependsOn": ["build"],
+      "inputs": ["dist/**", "package.json"]
+    },
+    "check:integration": {
+      "dependsOn": ["build"],
+      "inputs": ["src/**", "isolate/**", "host/**", "*.ts"]
+    },
+    "check:e2e": {
+      "dependsOn": ["build"],
+      "inputs": ["src/**", "*.ts"]
+    },
+    "check:harness": {
+      "dependsOn": ["build"]
+    },
+    "check:typecheck": {
+      "dependsOn": ["^build"]
+    }
+  }
+}

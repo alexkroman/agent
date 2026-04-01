@@ -2,10 +2,8 @@ import { defineConfig } from "vitest/config";
 import { sharedConfig } from "./vitest.shared.ts";
 
 /**
- * Unified integration test config.
- *
- * Runs tests that require real subsystems (V8 isolates, HTTP servers, etc.)
- * and are excluded from the fast unit-test run.
+ * Root integration test config — kept for backward compatibility.
+ * Prefer `turbo run check:integration` which runs per-package configs in parallel.
  *
  * Usage: pnpm test:integration
  */

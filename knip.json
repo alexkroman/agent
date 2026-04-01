@@ -5,14 +5,14 @@
   "exclude": ["exports", "types", "optionalPeerDependencies"],
   "workspaces": {
     ".": {
-      "entry": ["scripts/*.mjs"]
+      "entry": ["scripts/*.mjs", "vitest.integration.config.ts"]
     },
     "packages/aai": {
-      "entry": ["**/*.test.ts", "host/_test-utils.ts"],
+      "entry": ["**/*.test.ts", "**/*.test-d.ts", "host/_test-utils.ts"],
       "includeEntryExports": true
     },
     "packages/aai-ui": {
-      "entry": ["**/*.test.{ts,tsx}", "_test-utils.ts"],
+      "entry": ["**/*.test.{ts,tsx}", "**/*.test-d.ts", "_test-utils.ts"],
       "includeEntryExports": true
     },
     "packages/aai-cli": {
