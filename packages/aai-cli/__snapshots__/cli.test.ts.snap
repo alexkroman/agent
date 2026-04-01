@@ -35,7 +35,6 @@ exports[`cli usage snapshots > aai deploy --help 1`] = `
 USAGE deploy [OPTIONS]
 OPTIONS
   -s, --server    Platform server URL
-      --dryRun    Validate and bundle without deploying
      -y, --yes    Accept defaults (no prompts)"
 `;
 
@@ -76,19 +75,25 @@ exports[`cli usage snapshots > aai secret delete --help 1`] = `
 "Delete a secret (delete)
 USAGE delete [OPTIONS] <NAME>
 ARGUMENTS
-  NAME    Secret name"
+  NAME    Secret name
+OPTIONS
+  -s, --server    Platform server URL"
 `;
 
 exports[`cli usage snapshots > aai secret list --help 1`] = `
 "List all secrets (list)
-USAGE list"
+USAGE list [OPTIONS]
+OPTIONS
+  -s, --server    Platform server URL"
 `;
 
 exports[`cli usage snapshots > aai secret put --help 1`] = `
 "Create or update a secret (put)
 USAGE put [OPTIONS] <NAME>
 ARGUMENTS
-  NAME    Secret name"
+  NAME    Secret name
+OPTIONS
+  -s, --server    Platform server URL"
 `;
 
 exports[`cli usage snapshots > aai test --help 1`] = `

@@ -19,7 +19,10 @@ export const SafePathSchema = z
   .refine((p) => !p.startsWith("/"), "Path must be relative")
   .refine((p) => !p.startsWith(".."), "Path must not traverse above root");
 
+const VALID_SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,62}[a-z0-9]$/;
+
 export const DeployBodySchema = z.object({
+  slug: z.string().regex(VALID_SLUG_RE, "Invalid slug format").optional(),
   env: z.record(z.string(), z.string()).optional(),
   worker: z.string().min(1).max(MAX_WORKER_SIZE),
   clientFiles: z.record(SafePathSchema, z.string()),

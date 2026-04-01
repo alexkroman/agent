@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { HTTPException } from "hono/http-exception";
-import { verifySlugOwner } from "./auth.ts";
+import { hashApiKey, verifySlugOwner } from "./auth.ts";
 import type { BundleStore } from "./bundle-store.ts";
 import { isPrivateIp } from "./ssrf.ts";
 
@@ -38,6 +38,20 @@ export async function requireOwner(
     });
   }
   return result.keyHash;
+}
+
+/**
+ * Authenticate the request without checking slug ownership.
+ * Used for routes where the slug may not exist yet (e.g. new deploys).
+ */
+export async function requireAuth(req: Request): Promise<string> {
+  const apiKey = bearerToken(req);
+  if (!apiKey) {
+    throw new HTTPException(401, {
+      message: "Missing Authorization header (Bearer <API_KEY>)",
+    });
+  }
+  return hashApiKey(apiKey);
 }
 
 export function requireUpgrade(req: Request): void {

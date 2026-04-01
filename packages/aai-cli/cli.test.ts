@@ -32,11 +32,10 @@ describe("cli", () => {
     expect(meta?.version).toMatch(/\d+\.\d+/);
   });
 
-  test("deploy subcommand has server and dry-run args", () => {
+  test("deploy subcommand has server arg", () => {
     const subs = mainCommand.subCommands as Record<string, { args?: Record<string, unknown> }>;
     const deployCmd = subs.deploy;
     expect(deployCmd?.args?.server).toBeDefined();
-    expect(deployCmd?.args?.dryRun).toBeDefined();
   });
 
   test("secret subcommand has nested subcommands", () => {

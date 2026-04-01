@@ -12,10 +12,10 @@ import { WebSocketServer } from "ws";
 import type { BundleStore } from "./bundle-store.ts";
 import type { Env } from "./context.ts";
 import { handleDelete } from "./delete.ts";
-import { handleDeploy } from "./deploy.ts";
+import { handleDeploy, handleDeployNew } from "./deploy.ts";
 import { createErrorHandler } from "./error-handler.ts";
 import { handleKv } from "./kv-handler.ts";
-import { requireOwner, validateSlug } from "./middleware.ts";
+import { requireAuth, requireOwner, validateSlug } from "./middleware.ts";
 import type { AgentSlot } from "./sandbox.ts";
 import { resolveSandbox } from "./sandbox.ts";
 import { DeployBodySchema, SecretUpdatesSchema } from "./schemas.ts";
@@ -54,6 +54,13 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     await next();
   });
 
+  // Auth middleware for routes where slug may not exist yet (new deploys).
+  // Accepts any valid Bearer token and sets keyHash, but skips slug ownership check.
+  const authMw = factory.createMiddleware(async (c, next) => {
+    c.set("keyHash", await requireAuth(c.req.raw));
+    await next();
+  });
+
   const allowedOrigins = opts.allowedOrigins;
   app.use(
     "*",
@@ -86,6 +93,9 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   app.onError(createErrorHandler());
 
   app.get("/health", (c) => c.json({ status: "ok" }));
+
+  // Top-level deploy — slug is optional in body, server generates one if missing
+  app.post("/deploy", authMw, zValidator("json", DeployBodySchema), handleDeployNew);
 
   // Bare-slug redirect (before sub-router so it takes priority)
   app.get("/:slug{[a-z0-9][a-z0-9_-]*[a-z0-9]}", (c) => {

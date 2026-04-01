@@ -134,7 +134,6 @@ const deploy = defineCommand({
   meta: { name: "deploy", description: "Bundle and deploy to production" },
   args: {
     server: sharedArgs.server,
-    dryRun: { type: "boolean", description: "Validate and bundle without deploying" },
     yes: sharedArgs.yes,
   },
   async run({ args }) {
@@ -144,7 +143,6 @@ const deploy = defineCommand({
       await runDeployCommand({
         cwd,
         ...(args.server ? { server: args.server } : {}),
-        ...(args.dryRun ? { dryRun: args.dryRun } : {}),
       });
     });
   },
@@ -171,12 +169,13 @@ const secretPut = defineCommand({
   meta: { name: "put", description: "Create or update a secret" },
   args: {
     name: { type: "positional", description: "Secret name", required: true },
+    server: sharedArgs.server,
   },
   async run({ args }) {
     await handleErrors(async () => {
       const cwd = await setup(undefined, { apiKey: true });
       const { runSecretPut } = await import("./secret.ts");
-      await runSecretPut(cwd, args.name);
+      await runSecretPut(cwd, args.name, args.server);
     });
   },
 });
@@ -185,23 +184,27 @@ const secretDelete = defineCommand({
   meta: { name: "delete", description: "Delete a secret" },
   args: {
     name: { type: "positional", description: "Secret name", required: true },
+    server: sharedArgs.server,
   },
   async run({ args }) {
     await handleErrors(async () => {
       const cwd = await setup(undefined, { apiKey: true });
       const { runSecretDelete } = await import("./secret.ts");
-      await runSecretDelete(cwd, args.name);
+      await runSecretDelete(cwd, args.name, args.server);
     });
   },
 });
 
 const secretList = defineCommand({
   meta: { name: "list", description: "List all secrets" },
-  async run() {
+  args: {
+    server: sharedArgs.server,
+  },
+  async run({ args }) {
     await handleErrors(async () => {
       const cwd = await setup(undefined, { apiKey: true });
       const { runSecretList } = await import("./secret.ts");
-      await runSecretList(cwd);
+      await runSecretList(cwd, args.server);
     });
   },
 });

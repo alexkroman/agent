@@ -1,17 +1,30 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import { humanId } from "human-id";
 import type { ValidatedAppContext } from "./context.ts";
 import { terminateSlot, withSlugLock } from "./sandbox-slots.ts";
 import type { DeployBody } from "./schemas.ts";
 import { EnvSchema } from "./schemas.ts";
 
-export function handleDeploy(c: ValidatedAppContext<DeployBody>): Promise<Response> {
-  const slug = c.var.slug;
-  return withSlugLock(slug, () => handleDeployInner(c));
+function generateSlug(): string {
+  return humanId({ separator: "-", capitalize: false });
 }
 
-async function handleDeployInner(c: ValidatedAppContext<DeployBody>): Promise<Response> {
+export function handleDeploy(c: ValidatedAppContext<DeployBody>): Promise<Response> {
   const slug = c.var.slug;
+  return withSlugLock(slug, () => handleDeployInner(c, slug));
+}
+
+export function handleDeployNew(c: ValidatedAppContext<DeployBody>): Promise<Response> {
+  const body = c.req.valid("json");
+  const slug = body.slug ?? generateSlug();
+  return withSlugLock(slug, () => handleDeployInner(c, slug));
+}
+
+async function handleDeployInner(
+  c: ValidatedAppContext<DeployBody>,
+  slug: string,
+): Promise<Response> {
   const keyHash = c.var.keyHash;
 
   const body = c.req.valid("json");
@@ -50,5 +63,5 @@ async function handleDeployInner(c: ValidatedAppContext<DeployBody>): Promise<Re
 
   console.info("Deploy received", { slug });
 
-  return c.json({ ok: true, message: `Deployed ${slug}` });
+  return c.json({ ok: true, slug, message: `Deployed ${slug}` });
 }

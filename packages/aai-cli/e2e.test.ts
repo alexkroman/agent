@@ -2,8 +2,7 @@
 /**
  * End-to-end CLI tests (Vite builds, real servers, Playwright browser):
  *   1. Template builds: dev & user workflows for representative templates
- *   2. CLI commands: deploy --dry-run
- *   3. Browser tests (Playwright): UI render, WebSocket, conversation flow
+ *   2. Browser tests (Playwright): UI render, WebSocket, conversation flow
  *
  * Run via: pnpm test:e2e
  */
@@ -155,16 +154,6 @@ describe("pack + build: template workflows", () => {
     installDeps(projectDir);
     aai(["test"], projectDir);
     aai(["build", "--skip-tests"], projectDir);
-  });
-});
-
-// --- CLI commands (single template) ---
-
-describe("CLI: deploy --dry-run", () => {
-  test("init -> deploy --dry-run succeeds without a server", () => {
-    const projectDir = path.join(tmpDir, "_deploy-dry-test");
-    initProject("simple", projectDir);
-    aai(["deploy", "--dry-run"], projectDir);
   });
 });
 
@@ -397,6 +386,97 @@ describe.skipIf(!playwrightAvailable)("browser: dev server", () => {
     // already be closed so the initial state is non-deterministic.
     const toggleBtn = page.getByRole("button", { name: /Stop|Resume/ });
     await toggleBtn.waitFor({ timeout: 5000 });
+
+    await page.close();
+  });
+
+  test("new conversation clears messages", async () => {
+    const { page, replayFixture } = await setupEventInjector(browser, port);
+    await replayFixture("simple-conversation.json");
+    await page.getByText("A day on Venus is longer than its year.").waitFor();
+
+    // Click "New Conversation" to reset
+    await page.getByRole("button", { name: "New Conversation" }).click();
+
+    // Messages should be cleared — the assistant message should no longer be visible
+    await page
+      .getByText("A day on Venus is longer than its year.")
+      .waitFor({ state: "hidden", timeout: 5000 });
+
+    await page.close();
+  });
+
+  test("thinking state: dots appear after turn event", async () => {
+    const { page, inject } = await setupEventInjector(browser, port);
+
+    // Inject a turn event — transitions state to "thinking"
+    await inject({ type: "turn", text: "What is the meaning of life?" });
+
+    // The user message should appear
+    await page.getByText("What is the meaning of life?").waitFor();
+
+    // Thinking indicator (3 bouncing dots) should be visible —
+    // it renders as divs with the aai-bounce animation class
+    await page.locator('[style*="aai-bounce"]').first().waitFor({ timeout: 5000 });
+
+    // Complete the turn so the UI settles
+    await inject({ type: "chat", text: "42." });
+    await page.getByText("42.").waitFor();
+
+    await page.close();
+  });
+
+  test("live transcript: partial speech text renders", async () => {
+    const { page, inject } = await setupEventInjector(browser, port);
+
+    // speech_started → userUtterance becomes "" → shows thinking dots
+    await inject({ type: "speech_started" });
+
+    // Partial transcript → shows the text
+    await inject({ type: "transcript", text: "Tell me about", isFinal: false });
+    await page.getByText("Tell me about").waitFor();
+
+    // Updated transcript
+    await inject({ type: "transcript", text: "Tell me about space", isFinal: false });
+    await page.getByText("Tell me about space").waitFor();
+
+    // Turn finalizes the transcript
+    await inject({ type: "turn", text: "Tell me about space" });
+    await inject({ type: "chat", text: "Space is vast." });
+    await page.getByText("Space is vast.").waitFor();
+
+    await page.close();
+  });
+
+  test("state transitions: listening → thinking → speaking labels", async () => {
+    const { page, inject } = await setupEventInjector(browser, port);
+
+    // After start + config, state should be "listening" or "ready"
+    // Inject a turn to move to "thinking"
+    await inject({ type: "turn", text: "Hello" });
+
+    // The state indicator text should show "thinking"
+    await page.getByText("thinking").waitFor({ timeout: 5000 });
+
+    // chat_delta doesn't change state, but chat + tts_done → listening
+    await inject({ type: "chat", text: "Hi there!" });
+    await inject({ type: "tts_done" });
+    await page.getByText("listening").waitFor({ timeout: 5000 });
+
+    await page.close();
+  });
+
+  test("disconnect: shows reconnect UI on unexpected close", async () => {
+    const { page } = await setupEventInjector(browser, port);
+
+    // Close the WebSocket from the server side by evaluating on the page
+    await page.evaluate(() => {
+      const ws = (globalThis as Record<string, unknown>).__aai_test_ws as WebSocket;
+      ws.close();
+    });
+
+    // After unexpected disconnect, a "Resume" button should appear
+    await page.getByRole("button", { name: "Resume" }).waitFor({ timeout: 5000 });
 
     await page.close();
   });

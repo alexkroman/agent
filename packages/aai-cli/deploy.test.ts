@@ -3,8 +3,8 @@ import { describe, expect, test, vi } from "vitest";
 import { runDeploy } from "./_deploy.ts";
 import { makeBundle } from "./_test-utils.ts";
 
-function deployOk(): Response {
-  return new Response(JSON.stringify({ ok: true }), {
+function deployOk(slug = "cool-cats-jump"): Response {
+  return new Response(JSON.stringify({ ok: true, slug }), {
     status: 200,
     headers: { "Content-Type": "application/json" },
   });
@@ -26,7 +26,7 @@ describe("runDeploy", () => {
     const result = await runDeploy(deployOpts(mockFetch));
     expect(mockFetch).toHaveBeenCalledTimes(1);
     const [url, init] = mockFetch.mock.calls[0] ?? [];
-    expect(String(url)).toBe("http://localhost:3000/cool-cats-jump/deploy");
+    expect(String(url)).toBe("http://localhost:3000/deploy");
     expect((init?.headers as Record<string, string>)?.Authorization).toBe("Bearer test-key");
     expect(result.slug).toBe("cool-cats-jump");
   });
@@ -48,26 +48,24 @@ describe("runDeploy", () => {
     expect(body.env).toEqual({ MY_KEY: "secret" });
   });
 
-  test("generates new slug on 403", async () => {
-    let attempt = 0;
-    const mockFetch = vi.fn().mockImplementation(() => {
-      attempt++;
-      if (attempt <= 2) {
-        return Promise.resolve(
-          new Response(JSON.stringify({ error: 'Slug "some-slug" is owned by another' }), {
-            status: 403,
-          }),
-        );
-      }
-      return Promise.resolve(deployOk());
-    });
-    const result = await runDeploy(deployOpts(mockFetch));
-    expect(mockFetch).toHaveBeenCalledTimes(3);
-    expect(String(mockFetch.mock.calls[0]?.[0])).toContain("/cool-cats-jump/");
-    expect(typeof result.slug).toBe("string");
+  test("sends slug in body when provided", async () => {
+    const mockFetch = vi.fn().mockResolvedValue(deployOk("my-slug"));
+    await runDeploy(deployOpts(mockFetch, { slug: "my-slug" }));
+    const [, init] = mockFetch.mock.calls[0] ?? [];
+    const body = JSON.parse(init?.body as string);
+    expect(body.slug).toBe("my-slug");
   });
 
-  test("throws on non-403 error response", async () => {
+  test("omits slug from body when not provided", async () => {
+    const mockFetch = vi.fn().mockResolvedValue(deployOk("server-generated"));
+    const result = await runDeploy(deployOpts(mockFetch, { slug: undefined }));
+    const [, init] = mockFetch.mock.calls[0] ?? [];
+    const body = JSON.parse(init?.body as string);
+    expect(body.slug).toBeUndefined();
+    expect(result.slug).toBe("server-generated");
+  });
+
+  test("throws on non-ok error response", async () => {
     const mockFetch = vi.fn().mockResolvedValue(new Response("server error", { status: 500 }));
     await expect(runDeploy(deployOpts(mockFetch))).rejects.toThrow("deploy failed (HTTP 500)");
   });
@@ -88,23 +86,13 @@ describe("runDeploy", () => {
     );
   });
 
-  test("exhausts retries on repeated 403 slug conflicts", async () => {
-    const mockFetch = vi.fn().mockImplementation(() =>
-      Promise.resolve(
-        new Response(JSON.stringify({ error: 'Slug "x" is owned by another' }), {
-          status: 403,
-        }),
-      ),
-    );
-    await expect(runDeploy(deployOpts(mockFetch))).rejects.toThrow(
-      "Could not find an available slug after 20 attempts",
-    );
-    expect(mockFetch).toHaveBeenCalledTimes(20);
+  test("401 throws with API key hint", async () => {
+    const mockFetch = vi.fn().mockResolvedValue(new Response("unauthorized", { status: 401 }));
+    await expect(runDeploy(deployOpts(mockFetch))).rejects.toThrow("API key may be invalid");
   });
 
-  test("403 without slug message throws immediately", async () => {
-    const mockFetch = vi.fn().mockResolvedValue(new Response("forbidden", { status: 403 }));
-    await expect(runDeploy(deployOpts(mockFetch))).rejects.toThrow("deploy failed (HTTP 403)");
-    expect(mockFetch).toHaveBeenCalledTimes(1);
+  test("413 throws with bundle size hint", async () => {
+    const mockFetch = vi.fn().mockResolvedValue(new Response("too large", { status: 413 }));
+    await expect(runDeploy(deployOpts(mockFetch))).rejects.toThrow("bundle is too large");
   });
 });
