@@ -1,6 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test, vi } from "vitest";
-import { z } from "zod";
 import type { ToolDef } from "../isolate/types.ts";
 import { executeToolCall } from "./direct-executor.ts";
 import { makeTool } from "./lib/test-utils.ts";
@@ -29,20 +28,12 @@ describe("executeToolCall", () => {
     expect(await run("test", {}, makeTool({ execute: () => null }))).toBe("null");
   });
 
-  test("validates args against parameter schema", async () => {
+  test("passes args to execute with JSON Schema parameters", async () => {
     const tool = makeTool({
-      parameters: z.object({ name: z.string() }),
+      parameters: { type: "object", properties: { name: { type: "string" } } },
       execute: (args) => `hi ${(args as { name: string }).name}`,
     });
     expect(await run("greet", { name: "alice" }, tool)).toBe("hi alice");
-  });
-
-  test("returns error for invalid args", async () => {
-    const tool = makeTool({ parameters: z.object({ name: z.string() }), execute: () => "ok" });
-    const result = await run("greet", { name: 123 }, tool);
-    const parsed = JSON.parse(result);
-    expect(parsed.error).toContain("Invalid arguments");
-    expect(parsed.error).toContain("greet");
   });
 
   test("returns error when tool throws", async () => {

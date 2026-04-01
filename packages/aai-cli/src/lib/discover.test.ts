@@ -9,7 +9,7 @@ import {
   generateSlug,
   getServerInfo,
   isDevMode,
-  loadAgent,
+  loadAgentEntry,
   readProjectConfig,
   resolveCwd,
   resolveServerUrl,
@@ -208,50 +208,67 @@ describe("isDevMode", () => {
   });
 });
 
-// --- loadAgent ---
+// --- loadAgentEntry ---
 
-describe("loadAgent", () => {
-  test("returns null when no agent.ts exists", async () => {
+describe("loadAgentEntry", () => {
+  test("returns null when no agent.toml exists", async () => {
     await withTempDir(async (dir) => {
-      const result = await loadAgent(dir);
+      const result = await loadAgentEntry(dir);
       expect(result).toBeNull();
     });
   });
 
-  test("returns agent entry when agent.ts exists", async () => {
+  test("returns agent entry when agent.toml exists", async () => {
     await withTempDir(async (dir) => {
-      await fs.writeFile(path.join(dir, "agent.ts"), "export default {}");
-      const result = await loadAgent(dir);
+      await fs.writeFile(path.join(dir, "agent.toml"), 'name = "test"');
+      const result = await loadAgentEntry(dir);
       expect(result).not.toBeNull();
       expect(result?.dir).toBe(dir);
-      expect(result?.entryPoint).toBe(path.join(dir, "agent.ts"));
+      expect(result?.tomlPath).toBe(path.join(dir, "agent.toml"));
       expect(result?.slug).toMatch(/^[a-z]+-[a-z]+-[a-z]+$/);
     });
   });
 
   test("uses slug from project config when available", async () => {
     await withTempDir(async (dir) => {
-      await fs.writeFile(path.join(dir, "agent.ts"), "export default {}");
+      await fs.writeFile(path.join(dir, "agent.toml"), 'name = "test"');
       await writeProjectConfig(dir, { slug: "my-agent", serverUrl: "https://example.com" });
-      const result = await loadAgent(dir);
+      const result = await loadAgentEntry(dir);
       expect(result?.slug).toBe("my-agent");
     });
   });
 
-  test("includes client entry when client.tsx exists", async () => {
+  test("includes client entry when index.html exists", async () => {
     await withTempDir(async (dir) => {
-      await fs.writeFile(path.join(dir, "agent.ts"), "export default {}");
-      await fs.writeFile(path.join(dir, "client.tsx"), "export default {}");
-      const result = await loadAgent(dir);
-      expect(result?.clientEntry).toBe(path.join(dir, "client.tsx"));
+      await fs.writeFile(path.join(dir, "agent.toml"), 'name = "test"');
+      await fs.writeFile(path.join(dir, "index.html"), "<html></html>");
+      const result = await loadAgentEntry(dir);
+      expect(result?.clientEntry).toBe(path.join(dir, "index.html"));
     });
   });
 
-  test("client entry is empty string when no client.tsx", async () => {
+  test("client entry is empty string when no index.html", async () => {
     await withTempDir(async (dir) => {
-      await fs.writeFile(path.join(dir, "agent.ts"), "export default {}");
-      const result = await loadAgent(dir);
+      await fs.writeFile(path.join(dir, "agent.toml"), 'name = "test"');
+      const result = await loadAgentEntry(dir);
       expect(result?.clientEntry).toBe("");
+    });
+  });
+
+  test("includes tools entry when tools.ts exists", async () => {
+    await withTempDir(async (dir) => {
+      await fs.writeFile(path.join(dir, "agent.toml"), 'name = "test"');
+      await fs.writeFile(path.join(dir, "tools.ts"), "export default {}");
+      const result = await loadAgentEntry(dir);
+      expect(result?.toolsEntry).toBe(path.join(dir, "tools.ts"));
+    });
+  });
+
+  test("tools entry is empty string when no tools.ts", async () => {
+    await withTempDir(async (dir) => {
+      await fs.writeFile(path.join(dir, "agent.toml"), 'name = "test"');
+      const result = await loadAgentEntry(dir);
+      expect(result?.toolsEntry).toBe("");
     });
   });
 });

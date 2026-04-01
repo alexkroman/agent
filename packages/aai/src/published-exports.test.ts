@@ -31,8 +31,8 @@ describe("published exports", () => {
   it("main entry (.) exports expected public symbols", async () => {
     const mod = await import(resolve(PKG_DIR, "src/index.ts"));
 
-    // Value exports (functions, consts) that consumers depend on
-    const expectedValues = ["defineAgent", "defineTool", "tool", "defineToolFactory"];
+    // Value exports (consts) that consumers depend on
+    const expectedValues = ["DEFAULT_SYSTEM_PROMPT", "DEFAULT_GREETING"];
     for (const name of expectedValues) {
       expect(mod, `Missing value export: ${name}`).toHaveProperty(name);
     }

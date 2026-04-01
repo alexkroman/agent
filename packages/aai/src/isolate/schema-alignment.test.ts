@@ -16,14 +16,13 @@ import {
   type TurnConfig,
   TurnConfigSchema,
 } from "./protocol.ts";
-import { type BuiltinTool, BuiltinToolSchema, type ToolChoice, ToolChoiceSchema } from "./types.ts";
 
 // ── AgentConfigSchema ────────────────────────────────────────────────────
 
 describe("AgentConfigSchema", () => {
   const valid: AgentConfig = {
     name: "test-agent",
-    instructions: "Be helpful",
+    systemPrompt: "Be helpful",
     greeting: "Hello",
   };
 
@@ -149,48 +148,5 @@ describe("ReadyConfigSchema", () => {
 
   test("type derived from schema matches ReadyConfig", () => {
     expectTypeOf<z.infer<typeof ReadyConfigSchema>>().toEqualTypeOf<ReadyConfig>();
-  });
-});
-
-// ── BuiltinTool / ToolChoice drift guards ────────────────────────────────
-
-describe("type ↔ schema alignment", () => {
-  test("BuiltinToolSchema values match BuiltinTool union", () => {
-    // Schema values are the source of truth; if the type adds a member
-    // without updating the schema (or vice versa), TypeScript will error
-    // on the drift guards in types.ts. This test documents the enum values.
-    expect(BuiltinToolSchema.options).toMatchInlineSnapshot(`
-      [
-        "web_search",
-        "visit_webpage",
-        "fetch_json",
-        "run_code",
-      ]
-    `);
-  });
-
-  test("BuiltinTool type equals schema inference", () => {
-    expectTypeOf<z.infer<typeof BuiltinToolSchema>>().toEqualTypeOf<BuiltinTool>();
-  });
-
-  test("ToolChoice type equals schema inference", () => {
-    expectTypeOf<z.infer<typeof ToolChoiceSchema>>().toEqualTypeOf<ToolChoice>();
-  });
-
-  test("ToolChoiceSchema accepts all ToolChoice variants", () => {
-    const variants: ToolChoice[] = [
-      "auto",
-      "required",
-      "none",
-      { type: "tool", toolName: "greet" },
-    ];
-    for (const v of variants) {
-      expect(ToolChoiceSchema.safeParse(v).success).toBe(true);
-    }
-  });
-
-  test("ToolChoiceSchema rejects invalid variants", () => {
-    expect(ToolChoiceSchema.safeParse("invalid").success).toBe(false);
-    expect(ToolChoiceSchema.safeParse({ type: "tool", toolName: "" }).success).toBe(false);
   });
 });

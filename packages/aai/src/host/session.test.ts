@@ -2,7 +2,7 @@ import { createHooks } from "hookable";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { HOOK_TIMEOUT_MS } from "../isolate/constants.ts";
 import type { AgentHookMap } from "../isolate/hooks.ts";
-import { DEFAULT_INSTRUCTIONS } from "../isolate/types.ts";
+import { DEFAULT_SYSTEM_PROMPT } from "../isolate/types.ts";
 import {
   flush,
   loadFixture,
@@ -34,19 +34,19 @@ function makeTestHooks(handlers?: Record<string, (...args: unknown[]) => unknown
 // ─── buildSystemPrompt tests (existing) ─────────────────────────────────────
 
 describe("buildSystemPrompt", () => {
-  test("starts with DEFAULT_INSTRUCTIONS when no custom instructions", () => {
+  test("starts with DEFAULT_SYSTEM_PROMPT when no custom systemPrompt", () => {
     const result = buildSystemPrompt(makeConfig(), { hasTools: false });
-    expect(result.startsWith(DEFAULT_INSTRUCTIONS)).toBe(true);
+    expect(result.startsWith(DEFAULT_SYSTEM_PROMPT)).toBe(true);
   });
 
-  test("does not include agent-specific instructions section for default instructions", () => {
+  test("does not include agent-specific instructions section for default systemPrompt", () => {
     const result = buildSystemPrompt(makeConfig(), { hasTools: false });
     expect(result).not.toContain("Agent-Specific Instructions:");
   });
 
-  test("appends custom agent instructions", () => {
+  test("appends custom agent systemPrompt", () => {
     const custom = "You are a pirate. Always speak like one.";
-    const result = buildSystemPrompt(makeConfig({ instructions: custom }), { hasTools: false });
+    const result = buildSystemPrompt(makeConfig({ systemPrompt: custom }), { hasTools: false });
     expect(result).toContain("Agent-Specific Instructions:");
     expect(result).toContain(custom);
   });
@@ -94,8 +94,8 @@ describe("buildSystemPrompt", () => {
     expect(result).toContain("ALWAYS say a brief natural phrase BEFORE the tool call");
   });
 
-  test("custom instructions + voice + tools includes all sections", () => {
-    const result = buildSystemPrompt(makeConfig({ instructions: "Be concise." }), {
+  test("custom systemPrompt + voice + tools includes all sections", () => {
+    const result = buildSystemPrompt(makeConfig({ systemPrompt: "Be concise." }), {
       hasTools: true,
       voice: true,
     });
@@ -142,7 +142,7 @@ describe("createS2sSession", () => {
     const arg = vi.mocked(mockHandle.updateSession).mock.calls[0]?.[0];
     expect(arg).toBeDefined();
     expect(arg?.greeting).toBe("Hello!");
-    expect(arg?.systemPrompt).toContain(DEFAULT_INSTRUCTIONS);
+    expect(arg?.systemPrompt).toContain(DEFAULT_SYSTEM_PROMPT);
   });
 
   test("skipGreeting clears greeting in updateSession", async () => {
@@ -718,7 +718,7 @@ describe("createS2sSession", () => {
     const { session, client, mockHandle } = setup({
       agentConfig: {
         name: "test-agent",
-        instructions: DEFAULT_INSTRUCTIONS,
+        systemPrompt: DEFAULT_SYSTEM_PROMPT,
         greeting: "Hello!",
         idleTimeoutMs: 10_000,
       },
@@ -735,7 +735,7 @@ describe("createS2sSession", () => {
     const { session, client } = setup({
       agentConfig: {
         name: "test-agent",
-        instructions: DEFAULT_INSTRUCTIONS,
+        systemPrompt: DEFAULT_SYSTEM_PROMPT,
         greeting: "Hello!",
         idleTimeoutMs: 10_000,
       },
@@ -755,7 +755,7 @@ describe("createS2sSession", () => {
     const { session, client } = setup({
       agentConfig: {
         name: "test-agent",
-        instructions: DEFAULT_INSTRUCTIONS,
+        systemPrompt: DEFAULT_SYSTEM_PROMPT,
         greeting: "Hello!",
         idleTimeoutMs: 0,
       },
@@ -771,7 +771,7 @@ describe("createS2sSession", () => {
     const { session, client } = setup({
       agentConfig: {
         name: "test-agent",
-        instructions: DEFAULT_INSTRUCTIONS,
+        systemPrompt: DEFAULT_SYSTEM_PROMPT,
         greeting: "Hello!",
         idleTimeoutMs: 10_000,
       },

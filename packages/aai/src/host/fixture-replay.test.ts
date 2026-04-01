@@ -3,63 +3,73 @@
  * Fixture replay tests with a REAL Runtime.
  *
  * Replays recorded AssemblyAI S2S messages (from Kokoro TTS audio) through
- * a real agent session — real tool execution, real Zod arg validation, real
- * hook invocation.
+ * a real agent session — real tool execution, real hook invocation.
  *
- * This exercises: defineAgent → toAgentConfig → tool schemas → Zod validation
+ * This exercises: AgentDef → toAgentConfig → tool schemas
  * → executeToolCall → session orchestration (reply guards, tool buffering,
  * turnPromise chaining, conversation history).
  */
 
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { z } from "zod";
-import { defineAgent, defineTool } from "../isolate/types.ts";
+import type { AgentDef } from "../isolate/types.ts";
 import { createFixtureSession, flush } from "./lib/test-utils.ts";
 
 // ─── Test agents with deterministic tools ────────────────────────────────────
 
-const weatherAgent = defineAgent({
+const weatherAgent: AgentDef = {
   name: "weather-agent",
-  instructions: "You are a weather assistant.",
+  systemPrompt: "You are a weather assistant.",
   greeting: "Ask me about the weather!",
+  maxSteps: 5,
   tools: {
-    get_weather: defineTool({
+    get_weather: {
       description: "Get the current weather for a city",
-      parameters: z.object({
-        city: z.string().describe("City name"),
-      }),
-      execute: ({ city }) => ({
-        city,
+      parameters: {
+        type: "object",
+        properties: {
+          city: { type: "string", description: "City name" },
+        },
+        required: ["city"],
+      },
+      execute: (args: Record<string, unknown>) => ({
+        city: args.city as string,
         temperature: "72°F",
         condition: "sunny",
         humidity: "45%",
       }),
-    }),
+    },
   },
-});
+};
 
-const simpleAgent = defineAgent({
+const simpleAgent: AgentDef = {
   name: "simple-agent",
-  instructions: "You are a helpful assistant.",
+  systemPrompt: "You are a helpful assistant.",
   greeting: "Hi!",
-});
+  maxSteps: 5,
+  tools: {},
+};
 
-const statefulAgent = defineAgent<{ callCount: number }>({
+const statefulAgent: AgentDef<{ callCount: number }> = {
   name: "stateful-agent",
-  instructions: "You are helpful.",
+  systemPrompt: "You are helpful.",
   greeting: "Hi!",
+  maxSteps: 5,
   state: () => ({ callCount: 0 }),
   tools: {
-    get_weather: defineTool<z.ZodObject<{ city: z.ZodString }>, { callCount: number }>({
+    get_weather: {
       description: "Get weather",
-      parameters: z.object({ city: z.string() }),
-      execute: ({ city }, ctx) => {
-        ctx.state.callCount++;
-        return { city, calls: ctx.state.callCount };
+      parameters: {
+        type: "object",
+        properties: { city: { type: "string" } },
+        required: ["city"],
       },
-    }),
+      execute: (args: Record<string, unknown>, ctx) => {
+        ctx.state.callCount++;
+        return { city: args.city as string, calls: ctx.state.callCount };
+      },
+    },
   },
-});
+};
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
@@ -189,7 +199,7 @@ describe("fixture replay with real executor", () => {
 
   // ── Tool schemas: real agent produces correct S2S tool schemas ─────────
 
-  test("real executor builds correct tool schemas from defineAgent", () => {
+  test("real executor builds correct tool schemas from agent definition", () => {
     const ctx = createFixtureSession(weatherAgent);
     cleanup = ctx.cleanup;
 
@@ -208,13 +218,15 @@ describe("fixture replay with real executor", () => {
   test("onConnect fires on session start, onDisconnect fires on stop", async () => {
     const onConnectSpy = vi.fn();
     const onDisconnectSpy = vi.fn();
-    const agent = defineAgent({
+    const agent: AgentDef = {
       name: "lifecycle-agent",
-      instructions: "You are helpful.",
+      systemPrompt: "You are helpful.",
       greeting: "Hi!",
+      maxSteps: 5,
+      tools: {},
       onConnect: onConnectSpy,
       onDisconnect: onDisconnectSpy,
-    });
+    };
 
     const ctx = createFixtureSession(agent);
     cleanup = ctx.cleanup;
@@ -238,12 +250,14 @@ describe("fixture replay with real executor", () => {
 
   test("onTurn hook receives user transcript text", async () => {
     const onTurnSpy = vi.fn();
-    const agent = defineAgent({
+    const agent: AgentDef = {
       name: "on-turn-agent",
-      instructions: "You are helpful.",
+      systemPrompt: "You are helpful.",
       greeting: "Hi!",
+      maxSteps: 5,
+      tools: {},
       onTurn: onTurnSpy,
-    });
+    };
 
     const ctx = createFixtureSession(agent);
     cleanup = ctx.cleanup;
@@ -264,21 +278,26 @@ describe("fixture replay with real executor", () => {
 
   test("onError fires when a tool throws", async () => {
     const onErrorSpy = vi.fn();
-    const agent = defineAgent({
+    const agent: AgentDef = {
       name: "error-agent",
-      instructions: "Weather assistant.",
+      systemPrompt: "Weather assistant.",
       greeting: "Ask about weather!",
+      maxSteps: 5,
       onError: onErrorSpy,
       tools: {
-        get_weather: defineTool({
+        get_weather: {
           description: "Get weather",
-          parameters: z.object({ city: z.string() }),
+          parameters: {
+            type: "object",
+            properties: { city: { type: "string" } },
+            required: ["city"],
+          },
           execute: () => {
             throw new Error("API key expired");
           },
-        }),
+        },
       },
-    });
+    };
 
     const ctx = createFixtureSession(agent);
     cleanup = ctx.cleanup;
@@ -299,19 +318,23 @@ describe("fixture replay with real executor", () => {
 
   test("dynamic maxSteps via resolveTurnConfig limits tool calls", async () => {
     const executeSpy = vi.fn(() => ({ result: "ok" }));
-    const agent = defineAgent({
+    const agent: AgentDef = {
       name: "maxsteps-agent",
-      instructions: "Weather assistant.",
+      systemPrompt: "Weather assistant.",
       greeting: "Ask about weather!",
       maxSteps: () => 0, // dynamic: 0 means refuse all tool calls
       tools: {
-        get_weather: defineTool({
+        get_weather: {
           description: "Get weather",
-          parameters: z.object({ city: z.string() }),
+          parameters: {
+            type: "object",
+            properties: { city: { type: "string" } },
+            required: ["city"],
+          },
           execute: executeSpy,
-        }),
+        },
       },
-    });
+    };
 
     const ctx = createFixtureSession(agent);
     cleanup = ctx.cleanup;
@@ -331,61 +354,31 @@ describe("fixture replay with real executor", () => {
     expect(resultStr).toContain("Maximum tool steps reached");
   });
 
-  // ── Zod validation: bad args rejected ──────────────────────────────────
-
-  test("Zod validation rejects malformed tool args", async () => {
-    const agent = defineAgent({
-      name: "strict-agent",
-      instructions: "Weather assistant.",
-      greeting: "Ask about weather!",
-      tools: {
-        get_weather: defineTool({
-          description: "Get weather",
-          parameters: z.object({
-            city: z.string(),
-            country: z.string(), // required but not in fixture
-          }),
-          execute: () => "should not run",
-        }),
-      },
-    });
-
-    const ctx = createFixtureSession(agent);
-    cleanup = ctx.cleanup;
-    await ctx.session.start();
-
-    ctx.replay("tool-call-sequence.json");
-    await vi.waitFor(() => expect(ctx.mockHandle.sendToolResult).toHaveBeenCalled());
-
-    // The result should contain a Zod validation error
-    const [, resultStr] = vi.mocked(ctx.mockHandle.sendToolResult).mock.calls[0] as [
-      string,
-      string,
-    ];
-    expect(resultStr).toContain("Invalid arguments");
-    expect(resultStr).toContain("country");
-  });
-
   // ── Interrupted transcript NOT added to conversation history ────────────
 
   test("interrupted agent transcript is not pushed to conversation history", async () => {
     // Use a tool that captures messages to inspect conversation history
     let capturedMessages: readonly { role: string; content: string }[] = [];
-    const agent = defineAgent({
+    const agent: AgentDef = {
       name: "interrupt-history-agent",
-      instructions: "You are helpful.",
+      systemPrompt: "You are helpful.",
       greeting: "Hi!",
+      maxSteps: 5,
       tools: {
-        check_history: defineTool({
+        check_history: {
           description: "Check history",
-          parameters: z.object({ q: z.string() }),
-          execute: (_args, ctx) => {
+          parameters: {
+            type: "object",
+            properties: { q: { type: "string" } },
+            required: ["q"],
+          },
+          execute: (_args: Record<string, unknown>, ctx) => {
             capturedMessages = [...ctx.messages];
             return "ok";
           },
-        }),
+        },
       },
-    });
+    };
 
     const ctx = createFixtureSession(agent);
     cleanup = ctx.cleanup;
@@ -440,21 +433,26 @@ describe("fixture replay with real executor", () => {
   test("conversation history has user + assistant messages after tool-call flow", async () => {
     // Use a tool that captures the messages it receives
     let capturedMessages: readonly { role: string; content: string }[] = [];
-    const agent = defineAgent({
+    const agent: AgentDef = {
       name: "history-agent",
-      instructions: "Weather assistant.",
+      systemPrompt: "Weather assistant.",
       greeting: "Ask about weather!",
+      maxSteps: 5,
       tools: {
-        get_weather: defineTool({
+        get_weather: {
           description: "Get weather",
-          parameters: z.object({ city: z.string() }),
-          execute: ({ city }, ctx) => {
-            capturedMessages = [...ctx.messages];
-            return { city, temp: "72°F" };
+          parameters: {
+            type: "object",
+            properties: { city: { type: "string" } },
+            required: ["city"],
           },
-        }),
+          execute: (args: Record<string, unknown>, ctx) => {
+            capturedMessages = [...ctx.messages];
+            return { city: args.city as string, temp: "72°F" };
+          },
+        },
       },
-    });
+    };
 
     const ctx = createFixtureSession(agent);
     cleanup = ctx.cleanup;
@@ -510,18 +508,23 @@ describe("fixture replay with real executor", () => {
   // ── Multiple tool calls in one reply: results buffered and sent together ─
 
   test("multiple tool calls in one reply: all results buffered and sent after replyDone", async () => {
-    const agent = defineAgent({
+    const agent: AgentDef = {
       name: "multi-tool-agent",
-      instructions: "Weather assistant.",
+      systemPrompt: "Weather assistant.",
       greeting: "Hi!",
+      maxSteps: 5,
       tools: {
-        get_weather: defineTool({
+        get_weather: {
           description: "Get weather",
-          parameters: z.object({ city: z.string() }),
-          execute: ({ city }) => ({ city, temp: "72°F" }),
-        }),
+          parameters: {
+            type: "object",
+            properties: { city: { type: "string" } },
+            required: ["city"],
+          },
+          execute: (args: Record<string, unknown>) => ({ city: args.city as string, temp: "72°F" }),
+        },
       },
-    });
+    };
 
     const ctx = createFixtureSession(agent);
     cleanup = ctx.cleanup;

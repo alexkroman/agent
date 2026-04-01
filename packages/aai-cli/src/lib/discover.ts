@@ -152,9 +152,11 @@ export type AgentEntry = {
   slug: string;
   /** Absolute path to the agent directory. */
   dir: string;
-  /** Absolute path to the `agent.ts` entry point. */
-  entryPoint: string;
-  /** Absolute path to the client entry point (`client.ts` or empty). */
+  /** Absolute path to `agent.toml`. */
+  tomlPath: string;
+  /** Absolute path to `tools.ts`, or empty if not present. */
+  toolsEntry: string;
+  /** Absolute path to `index.html`, or empty if not present. */
   clientEntry: string;
 };
 
@@ -195,27 +197,29 @@ export async function fileExists(p: string): Promise<boolean> {
 }
 
 /**
- * Loads agent metadata from a directory by checking for `agent.ts` and
- * resolving the client entry point.
- *
- * Env vars for deployed agents are managed on the server via
- * `aai secret put`. For local dev, `.env` is loaded by `resolveServerEnv`.
+ * Loads agent metadata from a directory by checking for `agent.toml`
+ * and resolving optional `tools.ts` and `index.html`.
  */
-export async function loadAgent(dir: string): Promise<AgentEntry | null> {
-  const hasAgentTs = await fileExists(path.join(dir, "agent.ts"));
-  if (!hasAgentTs) return null;
+export async function loadAgentEntry(dir: string): Promise<AgentEntry | null> {
+  const hasToml = await fileExists(path.join(dir, "agent.toml"));
+  if (!hasToml) return null;
 
   const config = await readProjectConfig(dir);
   const slug = config?.slug ?? generateSlug();
 
-  const clientEntry = (await fileExists(path.join(dir, "client.tsx")))
-    ? path.join(dir, "client.tsx")
+  const toolsEntry = (await fileExists(path.join(dir, "tools.ts")))
+    ? path.join(dir, "tools.ts")
+    : "";
+
+  const clientEntry = (await fileExists(path.join(dir, "index.html")))
+    ? path.join(dir, "index.html")
     : "";
 
   return {
     slug,
     dir,
-    entryPoint: path.join(dir, "agent.ts"),
+    tomlPath: path.join(dir, "agent.toml"),
+    toolsEntry,
     clientEntry,
   };
 }

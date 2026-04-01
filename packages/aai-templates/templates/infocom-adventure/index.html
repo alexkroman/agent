@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZORK I — Voice Adventure</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'VT323', 'Courier New', monospace; background: #000800; color: #00ff41; min-height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+  /* Scanlines */
+  body::before { content: ''; position: fixed; inset: 0; background: repeating-linear-gradient(0deg, rgba(0,0,0,0.15) 0px, rgba(0,0,0,0.15) 1px, transparent 1px, transparent 3px); pointer-events: none; z-index: 100; }
+  /* Vignette */
+  body::after { content: ''; position: fixed; inset: 0; background: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.7) 100%); pointer-events: none; z-index: 101; }
+  /* Flicker */
+  @keyframes flicker { 0%,100% { opacity: 1; } 92% { opacity: 1; } 93% { opacity: 0.8; } 94% { opacity: 1; } 97% { opacity: 0.9; } 98% { opacity: 1; } }
+  #app { animation: flicker 4s infinite; width: 100%; max-width: 800px; margin: 0 auto; display: flex; flex-direction: column; flex: 1; min-height: 100vh; }
+  /* Boot screen */
+  .start-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1; gap: 12px; text-align: center; padding: 24px; }
+  .ascii-logo { font-size: 14px; line-height: 1.15; white-space: pre; color: #00ff41; text-shadow: 0 0 8px #00ff41; }
+  .subtitle { font-size: 22px; letter-spacing: 4px; color: #00cc33; margin-top: 16px; }
+  .edition { font-size: 18px; color: #009922; letter-spacing: 2px; }
+  .copyright { font-size: 16px; color: #006615; margin-top: 12px; }
+  @keyframes pulse-glow { 0%,100% { box-shadow: 0 0 5px #00ff41, 0 0 10px #00ff41; } 50% { box-shadow: 0 0 12px #00ff41, 0 0 25px #00ff41, 0 0 40px #00882280; } }
+  .btn-start { margin-top: 28px; padding: 12px 36px; font-family: inherit; font-size: 22px; background: transparent; color: #00ff41; border: 2px solid #00ff41; cursor: pointer; letter-spacing: 3px; animation: pulse-glow 2s ease-in-out infinite; transition: background 0.2s; }
+  .btn-start:hover { background: rgba(0,255,65,0.1); }
+  /* Status bar */
+  .status-bar { display: flex; justify-content: space-between; align-items: center; background: #00cc33; color: #000800; padding: 4px 12px; font-size: 18px; flex-shrink: 0; }
+  /* Messages */
+  .messages { flex: 1; overflow-y: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 6px; scrollbar-width: thin; scrollbar-color: #00ff41 #001a00; }
+  .msg { font-size: 20px; line-height: 1.4; word-wrap: break-word; max-width: 100%; }
+  .msg.user { color: #00ccff; }
+  .msg.user::before { content: '> '; }
+  .msg.assistant { color: #00ff41; }
+  .transcript { font-size: 18px; color: #007720; padding: 4px 16px; min-height: 26px; flex-shrink: 0; }
+  /* Footer */
+  .footer { display: flex; align-items: center; gap: 12px; padding: 6px 12px; border-top: 1px solid #003300; flex-shrink: 0; }
+  .state-dot { width: 8px; height: 8px; border-radius: 50%; background: #004400; flex-shrink: 0; }
+  .state-dot.ready { background: #00ff41; }
+  .state-dot.listening { background: #00ccff; }
+  .state-dot.thinking { background: #ffcc00; }
+  .state-dot.speaking { background: #ff6644; }
+  .state-dot.error { background: #ff3333; }
+  .state-label { font-size: 16px; color: #00aa30; flex: 1; text-transform: uppercase; letter-spacing: 1px; }
+  .btn-ctrl { padding: 4px 14px; font-family: inherit; font-size: 18px; background: transparent; color: #00ff41; border: 1px solid #00ff41; cursor: pointer; transition: background 0.15s; }
+  .btn-ctrl:hover { background: rgba(0,255,65,0.1); }
+  .error-banner { background: rgba(255,50,50,0.1); border: 1px solid #ff3333; color: #ff3333; padding: 6px 12px; font-size: 18px; margin: 0 12px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="start-screen" class="start-screen">
+    <pre class="ascii-logo">
+ ________   ______   _______   __   __
+|        | /  __  \ |   _   | |  | /  /
+ --------| | |  | | |  |_|  | |  |/  /
+     /  /  | |  | | |   _  <  |     <
+    /  /__ | |__| | |  | \  \ |  |\  \
+   /______| \______/ |__|  \__\|__| \__\
+    </pre>
+    <div class="subtitle">INFOCOM INTERACTIVE FICTION</div>
+    <div class="edition">VOICE-ENABLED EDITION</div>
+    <div class="copyright">Copyright (c) 1981-2026 Infocom, Inc.</div>
+    <button class="btn-start" onclick="startSession()">Begin Adventure</button>
+  </div>
+  <div id="session-view" style="display:none; flex-direction:column; flex:1;">
+    <div class="status-bar">
+      <span>ZORK I</span>
+      <span id="move-counter">Moves: 0</span>
+      <span>Voice Adventure</span>
+    </div>
+    <div id="error-banner" class="error-banner" style="display:none"></div>
+    <div id="messages" class="messages"></div>
+    <div id="transcript" class="transcript"></div>
+    <div class="footer">
+      <div id="state-dot" class="state-dot"></div>
+      <span id="state-label" class="state-label">disconnected</span>
+      <button class="btn-ctrl" id="btn-toggle" onclick="toggleSession()">[P]ause</button>
+      <button class="btn-ctrl" onclick="resetSession()">[Q]uit</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// -- State --
+let ws = null, audioCtx = null, captureNode = null, playbackNode = null;
+let micStream = null, agentState = 'disconnected', agentText = '';
+let sttRate = 16000, ttsRate = 22050, generation = 0, moveCount = 0;
+
+const $ = (id) => document.getElementById(id);
+const messagesEl = $('messages'), transcriptEl = $('transcript');
+const stateDot = $('state-dot'), stateLabel = $('state-label');
+const errorBanner = $('error-banner'), startScreen = $('start-screen');
+const sessionView = $('session-view'), moveCounter = $('move-counter');
+
+// -- Capture worklet --
+const CAPTURE_WORKLET = `
+class CaptureProcessor extends AudioWorkletProcessor {
+  constructor(options) {
+    super(); this.recording = false;
+    const opts = options.processorOptions || {};
+    this.fromRate = opts.contextRate || sampleRate;
+    this.toRate = opts.sttSampleRate || sampleRate;
+    this.ratio = this.fromRate / this.toRate;
+    this.needsResample = this.fromRate !== this.toRate;
+    this.port.onmessage = (e) => {
+      if (e.data.event === 'start') this.recording = true;
+      else if (e.data.event === 'stop') this.recording = false;
+    };
+  }
+  resample(input) {
+    const ratio = this.ratio, outLen = Math.ceil(input.length / ratio);
+    const out = new Float32Array(outLen);
+    for (let i = 0; i < outLen; i++) {
+      const srcIdx = i * ratio, idx = srcIdx | 0, frac = srcIdx - idx;
+      out[i] = input[idx] + frac * ((idx + 1 < input.length ? input[idx + 1] : input[idx]) - input[idx]);
+    }
+    return out;
+  }
+  process(inputs) {
+    const input = inputs[0];
+    if (!input || !input[0] || !this.recording) return true;
+    const raw = input[0], samples = this.needsResample ? this.resample(raw) : raw;
+    const buffer = new ArrayBuffer(samples.length * 2);
+    const view = new DataView(buffer);
+    for (let i = 0; i < samples.length; i++) {
+      const s = Math.max(-1, Math.min(1, samples[i]));
+      view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+    }
+    this.port.postMessage({ event: 'chunk', buffer }, [buffer]);
+    return true;
+  }
+}
+registerProcessor('capture-processor', CaptureProcessor);`;
+
+// -- Playback worklet --
+const PLAYBACK_WORKLET = `
+class PlaybackProcessor extends AudioWorkletProcessor {
+  constructor(options) {
+    super(); this.interrupted = false; this.isDone = false; this.playing = false;
+    const rate = options.processorOptions?.sampleRate ?? 24000;
+    this.jitterSamples = Math.floor(rate * 0.4);
+    this.carry = null; this.samples = new Float32Array(rate * 60);
+    this.writePos = 0; this.readPos = 0;
+    this.progressInterval = Math.floor(rate * 0.05); this.samplesSinceProgress = 0;
+    this.port.onmessage = (e) => {
+      const d = e.data;
+      if (d.event === 'write') this.ingestBytes(d.buffer);
+      else if (d.event === 'interrupt') this.interrupted = true;
+      else if (d.event === 'done') this.isDone = true;
+    };
+  }
+  ingestBytes(uint8) {
+    let bytes = uint8;
+    if (this.carry !== null) {
+      const m = new Uint8Array(1 + bytes.length); m[0] = this.carry; m.set(bytes, 1);
+      bytes = m; this.carry = null;
+    }
+    if (bytes.length % 2 !== 0) { this.carry = bytes[bytes.length - 1]; bytes = bytes.subarray(0, bytes.length - 1); }
+    if (bytes.length === 0) return;
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.length);
+    const n = bytes.length / 2;
+    for (let i = 0; i < n; i++) this.samples[this.writePos++] = view.getInt16(i * 2, true) / 0x8000;
+  }
+  process(inputs, outputs) {
+    const out = outputs[0][0];
+    if (this.interrupted) { this.port.postMessage({ event: 'stop' }); return false; }
+    const avail = this.writePos - this.readPos;
+    if (!this.playing) {
+      if (avail >= this.jitterSamples || this.isDone) this.playing = true;
+      else { out.fill(0); return true; }
+    }
+    if (avail > 0) {
+      const n = Math.min(avail, out.length);
+      out.set(this.samples.subarray(this.readPos, this.readPos + n));
+      this.readPos += n; this.samplesSinceProgress += n;
+      if (this.samplesSinceProgress >= this.progressInterval) {
+        this.port.postMessage({ event: 'progress', readPos: this.readPos });
+        this.samplesSinceProgress = 0;
+      }
+      out.fill(0, n); return true;
+    }
+    out.fill(0);
+    if (this.isDone) { this.port.postMessage({ event: 'stop' }); return false; }
+    return true;
+  }
+}
+registerProcessor('playback-processor', PlaybackProcessor);`;
+
+// -- UI helpers --
+function setState(s) {
+  agentState = s; stateDot.className = 'state-dot ' + s; stateLabel.textContent = s;
+}
+function addMessage(role, text) {
+  const el = document.createElement('div');
+  el.className = 'msg ' + role; el.textContent = text;
+  messagesEl.appendChild(el); messagesEl.scrollTop = messagesEl.scrollHeight;
+  if (role === 'user') { moveCount++; moveCounter.textContent = 'Moves: ' + moveCount; }
+}
+function showError(msg) { errorBanner.textContent = msg; errorBanner.style.display = 'block'; setState('error'); }
+function clearError() { errorBanner.style.display = 'none'; }
+
+// -- Audio setup --
+async function setupAudio() {
+  audioCtx = new AudioContext({ sampleRate: ttsRate, latencyHint: 'playback' });
+  const capBlob = new Blob([CAPTURE_WORKLET], { type: 'application/javascript' });
+  const capUrl = URL.createObjectURL(capBlob);
+  await audioCtx.audioWorklet.addModule(capUrl); URL.revokeObjectURL(capUrl);
+  const pbBlob = new Blob([PLAYBACK_WORKLET], { type: 'application/javascript' });
+  const pbUrl = URL.createObjectURL(pbBlob);
+  await audioCtx.audioWorklet.addModule(pbUrl); URL.revokeObjectURL(pbUrl);
+  micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+  const source = audioCtx.createMediaStreamSource(micStream);
+  captureNode = new AudioWorkletNode(audioCtx, 'capture-processor', { processorOptions: { contextRate: audioCtx.sampleRate, sttSampleRate: sttRate } });
+  captureNode.port.onmessage = (e) => {
+    if (e.data.event === 'chunk' && ws && ws.readyState === WebSocket.OPEN) ws.send(new Uint8Array(e.data.buffer));
+  };
+  source.connect(captureNode); captureNode.connect(audioCtx.destination);
+  captureNode.port.postMessage({ event: 'start' });
+}
+function startPlayback() {
+  if (!audioCtx) return;
+  if (playbackNode) { playbackNode.port.postMessage({ event: 'interrupt' }); playbackNode.disconnect(); }
+  playbackNode = new AudioWorkletNode(audioCtx, 'playback-processor', { processorOptions: { sampleRate: ttsRate } });
+  const gen = generation;
+  playbackNode.port.onmessage = (e) => { if (e.data.event === 'stop' && gen === generation) setState('listening'); };
+  playbackNode.connect(audioCtx.destination);
+}
+function flushPlayback() {
+  if (playbackNode) { playbackNode.port.postMessage({ event: 'interrupt' }); playbackNode.disconnect(); playbackNode = null; }
+}
+
+// -- WebSocket --
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(`${proto}//${location.host}/websocket`);
+  ws.binaryType = 'arraybuffer'; setState('connecting');
+  ws.onopen = () => setState('ready');
+  ws.onmessage = (e) => {
+    if (e.data instanceof ArrayBuffer) {
+      if (playbackNode) playbackNode.port.postMessage({ event: 'write', buffer: new Uint8Array(e.data) });
+      if (agentState !== 'speaking') setState('speaking');
+      return;
+    }
+    const msg = JSON.parse(e.data);
+    switch (msg.type) {
+      case 'config':
+        sttRate = msg.sampleRate || 16000; ttsRate = msg.ttsSampleRate || 22050;
+        setupAudio().then(() => { setState('listening'); if (ws) ws.send(JSON.stringify({ type: 'audio_ready' })); })
+          .catch((err) => showError('Mic access denied: ' + err.message));
+        break;
+      case 'transcript':
+        transcriptEl.textContent = msg.text ? '> ' + msg.text + '_' : '';
+        break;
+      case 'turn':
+        transcriptEl.textContent = ''; addMessage('user', msg.text);
+        agentText = ''; setState('thinking'); startPlayback();
+        break;
+      case 'chat':
+        if (msg.text) { agentText = msg.text; addMessage('assistant', agentText); }
+        break;
+      case 'chat_delta':
+        agentText += msg.text || '';
+        const last = messagesEl.querySelector('.msg.assistant:last-child');
+        if (last) last.textContent = agentText; else addMessage('assistant', agentText);
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+        break;
+      case 'audio_done':
+        if (playbackNode) playbackNode.port.postMessage({ event: 'done' }); break;
+      case 'cancelled': flushPlayback(); setState('listening'); break;
+      case 'reset':
+        flushPlayback(); messagesEl.innerHTML = ''; agentText = '';
+        moveCount = 0; moveCounter.textContent = 'Moves: 0'; setState('listening'); break;
+      case 'error': showError(msg.message || 'Unknown error'); break;
+      case 'idle_timeout': showError('Session timed out due to inactivity'); break;
+      case 'tts_done': case 'tool_call_start': case 'tool_call_done':
+      case 'speech_started': case 'speech_stopped': break;
+    }
+  };
+  ws.onclose = () => { setState('disconnected'); ws = null; };
+  ws.onerror = () => showError('WebSocket connection failed');
+}
+
+// -- Session control --
+function startSession() {
+  clearError(); startScreen.style.display = 'none';
+  sessionView.style.display = 'flex'; connect();
+}
+function toggleSession() {
+  const btn = $('btn-toggle');
+  if (ws) {
+    ws.close(); ws = null; flushPlayback();
+    if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
+    if (audioCtx) { audioCtx.close(); audioCtx = null; }
+    btn.textContent = '[R]esume'; setState('disconnected');
+  } else { btn.textContent = '[P]ause'; connect(); }
+}
+function resetSession() {
+  generation++; flushPlayback(); messagesEl.innerHTML = ''; agentText = '';
+  moveCount = 0; moveCounter.textContent = 'Moves: 0'; clearError();
+  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'reset' }));
+  else connect();
+}
+</script>
+</body>
+</html>

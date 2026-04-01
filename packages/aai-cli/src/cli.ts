@@ -99,31 +99,15 @@ const dev = defineCommand({
   },
 });
 
-const test = defineCommand({
-  meta: { name: "test", description: "Run agent tests" },
-  async run() {
-    await handleErrors(async () => {
-      const cwd = await setup();
-      const { runTestCommand } = await import("./test.ts");
-      await runTestCommand(cwd);
-    });
-  },
-});
-
 const build = defineCommand({
   meta: { name: "build", description: "Bundle agent without deploying" },
   args: {
     server: sharedArgs.server,
     yes: sharedArgs.yes,
-    skipTests: { type: "boolean", description: "Skip running tests before build" },
   },
   async run({ args }) {
     await handleErrors(async () => {
       const cwd = await setup(args, { agent: true });
-      if (!args.skipTests) {
-        const { runVitest } = await import("./test.ts");
-        runVitest(cwd);
-      }
       const { runBuildCommand } = await import("./lib/bundler.ts");
       await runBuildCommand(cwd);
     });
@@ -216,7 +200,6 @@ export const mainCommand = defineCommand({
   subCommands: {
     init,
     dev,
-    test,
     build,
     deploy,
     delete: del,

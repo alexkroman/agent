@@ -2,26 +2,34 @@
 /// <reference path="./matchers.d.ts" />
 
 import { describe, expect, test } from "vitest";
-import { z } from "zod";
-import { defineAgent, defineTool } from "../isolate/types.ts";
+import type { AgentDef } from "../isolate/types.ts";
 import { createTestHarness } from "./testing.ts";
 
-const pizzaAgent = defineAgent({
+const pizzaAgent: AgentDef<{ pizzas: { size: string; toppings: string[] }[]; placed: boolean }> = {
   name: "Pizza Agent",
+  systemPrompt: "You are a pizza ordering assistant.",
+  greeting: "Welcome to the pizza shop!",
+  maxSteps: 5,
   state: () => ({ pizzas: [] as { size: string; toppings: string[] }[], placed: false }),
   tools: {
-    add_pizza: defineTool({
+    add_pizza: {
       description: "Add a pizza to the order",
-      parameters: z.object({
-        size: z.enum(["small", "medium", "large"]),
-        toppings: z.array(z.string()),
-      }),
-      execute: (args, ctx) => {
-        const state = ctx.state as { pizzas: { size: string; toppings: string[] }[] };
-        state.pizzas.push({ size: args.size, toppings: args.toppings });
-        return { added: { size: args.size, toppings: args.toppings }, count: state.pizzas.length };
+      parameters: {
+        type: "object",
+        properties: {
+          size: { type: "string", enum: ["small", "medium", "large"] },
+          toppings: { type: "array", items: { type: "string" } },
+        },
+        required: ["size", "toppings"],
       },
-    }),
+      execute: (args: Record<string, unknown>, ctx) => {
+        const state = ctx.state as { pizzas: { size: string; toppings: string[] }[] };
+        const size = args.size as string;
+        const toppings = args.toppings as string[];
+        state.pizzas.push({ size, toppings });
+        return { added: { size, toppings }, count: state.pizzas.length };
+      },
+    },
     view_order: {
       description: "View current order",
       execute: (_args, ctx) => {
@@ -42,7 +50,7 @@ const pizzaAgent = defineAgent({
       },
     },
   },
-});
+};
 
 describe("createTestHarness", () => {
   test("executeTool runs a tool and returns the result", async () => {
@@ -59,22 +67,19 @@ describe("createTestHarness", () => {
     expect(result).toContain("error");
   });
 
-  test("executeTool validates arguments", async () => {
-    const t = createTestHarness(pizzaAgent);
-    const result = await t.executeTool("add_pizza", { size: "huge", toppings: [] });
-    expect(result).toContain("error");
-  });
-
   test("env vars are passed to tool context", async () => {
-    const agent = defineAgent({
+    const agent: AgentDef = {
       name: "env-test",
+      systemPrompt: "Test agent.",
+      greeting: "Hello!",
+      maxSteps: 5,
       tools: {
         read_key: {
           description: "Read an env var",
           execute: (_args, ctx) => ctx.env.MY_KEY ?? "missing",
         },
       },
-    });
+    };
     const t = createTestHarness(agent, { env: { MY_KEY: "secret123" } });
     const result = await t.executeTool("read_key");
     expect(result).toBe("secret123");
@@ -110,13 +115,16 @@ describe("TestHarness.turn", () => {
 
   test("fires onTurn hook", async () => {
     const turnTexts: string[] = [];
-    const agent = defineAgent({
+    const agent: AgentDef = {
       name: "hook-test",
+      systemPrompt: "Test agent.",
+      greeting: "Hello!",
+      maxSteps: 5,
       onTurn: (text) => {
         turnTexts.push(text);
       },
       tools: {},
-    });
+    };
     const t = createTestHarness(agent);
     await t.turn("hello");
     await t.turn("world");
@@ -126,13 +134,16 @@ describe("TestHarness.turn", () => {
 
   test("fires onConnect on first turn", async () => {
     const log: string[] = [];
-    const agent = defineAgent({
+    const agent: AgentDef = {
       name: "connect-test",
+      systemPrompt: "Test agent.",
+      greeting: "Hello!",
+      maxSteps: 5,
       onConnect: () => {
         log.push("connected");
       },
       tools: {},
-    });
+    };
     const t = createTestHarness(agent);
     await t.turn("first");
     await t.turn("second");
@@ -223,15 +234,18 @@ describe("multi-turn conversation", () => {
   });
 
   test("conversation history is available in tool context", async () => {
-    const agent = defineAgent({
+    const agent: AgentDef = {
       name: "history-test",
+      systemPrompt: "Test agent.",
+      greeting: "Hello!",
+      maxSteps: 5,
       tools: {
         count_messages: {
           description: "Count messages",
           execute: (_args, ctx) => String(ctx.messages.length),
         },
       },
-    });
+    };
     const t = createTestHarness(agent);
 
     t.addUserMessage("Hello");
@@ -256,8 +270,11 @@ describe("multi-turn conversation", () => {
 describe("lifecycle hooks", () => {
   test("connect and disconnect fire correctly", async () => {
     const log: string[] = [];
-    const agent = defineAgent({
+    const agent: AgentDef = {
       name: "lifecycle-test",
+      systemPrompt: "Test agent.",
+      greeting: "Hello!",
+      maxSteps: 5,
       onConnect: () => {
         log.push("connect");
       },
@@ -265,7 +282,7 @@ describe("lifecycle hooks", () => {
         log.push("disconnect");
       },
       tools: {},
-    });
+    };
 
     const t = createTestHarness(agent);
     await t.connect();
@@ -275,13 +292,16 @@ describe("lifecycle hooks", () => {
 
   test("connect is idempotent", async () => {
     let count = 0;
-    const agent = defineAgent({
+    const agent: AgentDef = {
       name: "idempotent-test",
+      systemPrompt: "Test agent.",
+      greeting: "Hello!",
+      maxSteps: 5,
       onConnect: () => {
         count++;
       },
       tools: {},
-    });
+    };
 
     const t = createTestHarness(agent);
     await t.connect();
@@ -293,24 +313,36 @@ describe("lifecycle hooks", () => {
 
 describe("KV store", () => {
   test("kv store is accessible in tools", async () => {
-    const agent = defineAgent({
+    const agent: AgentDef = {
       name: "kv-test",
+      systemPrompt: "Test agent.",
+      greeting: "Hello!",
+      maxSteps: 5,
       tools: {
-        save: defineTool({
+        save: {
           description: "Save to KV",
-          parameters: z.object({ key: z.string(), value: z.string() }),
-          execute: async (args, ctx) => {
-            await ctx.kv.set(args.key, args.value);
+          parameters: {
+            type: "object",
+            properties: { key: { type: "string" }, value: { type: "string" } },
+            required: ["key", "value"],
+          },
+          execute: async (args: Record<string, unknown>, ctx) => {
+            await ctx.kv.set(args.key as string, args.value as string);
             return "saved";
           },
-        }),
-        load: defineTool({
+        },
+        load: {
           description: "Load from KV",
-          parameters: z.object({ key: z.string() }),
-          execute: async (args, ctx) => (await ctx.kv.get<string>(args.key)) ?? "not found",
-        }),
+          parameters: {
+            type: "object",
+            properties: { key: { type: "string" } },
+            required: ["key"],
+          },
+          execute: async (args: Record<string, unknown>, ctx) =>
+            (await ctx.kv.get<string>(args.key as string)) ?? "not found",
+        },
       },
-    });
+    };
 
     const t = createTestHarness(agent);
     await t.turn("Save data", [{ tool: "save", args: { key: "color", value: "blue" } }]);

@@ -7,8 +7,7 @@
 
 import type { JSONSchema7 } from "json-schema";
 import { z } from "zod";
-import type { Message } from "../types.ts";
-import { BuiltinToolSchema, ToolChoiceSchema, type ToolDef } from "../types.ts";
+import type { BuiltinTool, Message, ToolChoice, ToolDef } from "../types.ts";
 
 /**
  * Function signature for executing a tool by name.
@@ -25,6 +24,15 @@ export type ExecuteTool = (
 
 // ─── AgentConfig ────────────────────────────────────────────────────────────
 
+/** @internal Zod schema for {@link BuiltinTool}. */
+const BuiltinToolSchema = z.enum(["web_search", "visit_webpage", "fetch_json", "run_code"]);
+
+/** @internal Zod schema for {@link ToolChoice}. */
+const ToolChoiceSchema = z.union([
+  z.enum(["auto", "required", "none"]),
+  z.object({ type: z.literal("tool"), toolName: z.string().min(1) }),
+]);
+
 /**
  * Zod schema for serializable agent configuration sent over the wire.
  *
@@ -33,7 +41,7 @@ export type ExecuteTool = (
  */
 export const AgentConfigSchema = z.object({
   name: z.string().min(1),
-  instructions: z.string(),
+  systemPrompt: z.string(),
   greeting: z.string(),
   sttPrompt: z.string().optional(),
   maxSteps: z.number().int().positive().optional(),
@@ -52,7 +60,7 @@ export type AgentConfig = z.infer<typeof AgentConfigSchema>;
  */
 export interface AgentConfigSource {
   name: string;
-  instructions: string;
+  systemPrompt: string;
   greeting: string;
   sttPrompt?: string | undefined;
   maxSteps?: number | ((...args: never[]) => number) | undefined;
@@ -65,7 +73,7 @@ export interface AgentConfigSource {
 export function toAgentConfig(src: AgentConfigSource): AgentConfig {
   const config: AgentConfig = {
     name: src.name,
-    instructions: src.instructions,
+    systemPrompt: src.systemPrompt,
     greeting: src.greeting,
   };
   if (src.sttPrompt !== undefined) config.sttPrompt = src.sttPrompt;
@@ -98,19 +106,19 @@ export type ToolSchema = {
   parameters: JSONSchema7;
 };
 
-/** Empty Zod object schema used as default when tools have no parameters. */
-export const EMPTY_PARAMS = z.object({});
+/** Default empty JSON Schema for tools without parameters. */
+const EMPTY_PARAMS: JSONSchema7 = { type: "object", properties: {} };
 
 /**
  * Convert agent tool definitions to JSON Schema format for wire transport.
  *
- * Transforms the Zod-based `parameters` of each tool into a plain JSON Schema
- * object suitable for structured clone / JSON serialization.
+ * Tool parameters are already JSON Schema objects, so this just
+ * extracts them into the wire format.
  */
 export function agentToolsToSchemas(tools: Readonly<Record<string, ToolDef>>): ToolSchema[] {
   return Object.entries(tools).map(([name, def]) => ({
     name,
     description: def.description,
-    parameters: z.toJSONSchema(def.parameters ?? EMPTY_PARAMS) as JSONSchema7,
+    parameters: (def.parameters as JSONSchema7) ?? EMPTY_PARAMS,
   }));
 }

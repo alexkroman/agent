@@ -60,11 +60,6 @@
       "@dev/source": "./src/isolate/lib/utils.ts",
       "types": "./dist/isolate/lib/utils.d.ts",
       "import": "./dist/isolate/lib/utils.js"
-    },
-    "./vite-plugin": {
-      "@dev/source": "./src/host/vite-plugin.ts",
-      "types": "./dist/host/vite-plugin.d.ts",
-      "import": "./dist/host/vite-plugin.js"
     }
   },
   "scripts": {

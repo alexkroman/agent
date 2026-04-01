@@ -5,35 +5,26 @@
  */
 
 import vm from "node:vm";
-import { z } from "zod";
 import { RUN_CODE_TIMEOUT_MS } from "../../isolate/constants.ts";
 import { errorMessage } from "../../isolate/lib/utils.ts";
 import type { ToolDef } from "../../isolate/types.ts";
 
-const runCodeParams = z.object({
-  code: z.string().describe("JavaScript code to execute. Use console.log() for output."),
-});
-
-/**
- * Execute JavaScript code inside a fresh `node:vm` context.
- *
- * Each invocation creates a disposable VM context with:
- * - No filesystem access (`node:fs` and other built-ins unavailable)
- * - No network access (`fetch`, `http` unavailable)
- * - No child process spawning
- * - No environment variable access (`process` unavailable)
- * - Execution timeout (default 5 s)
- *
- * The context is discarded after execution, so no state leaks between
- * invocations or across sessions.
- */
-export function createRunCode(): ToolDef<typeof runCodeParams> {
+export function createRunCode(): ToolDef {
   return {
     description:
       "Execute JavaScript code in a sandbox and return the output. Use this for calculations, data transformations, string manipulation, or any task that benefits from running code. Output is captured from console.log(). No network or filesystem access.",
-    parameters: runCodeParams,
+    parameters: {
+      type: "object",
+      properties: {
+        code: {
+          type: "string",
+          description: "JavaScript code to execute. Use console.log() for output.",
+        },
+      },
+      required: ["code"],
+    },
     async execute(args) {
-      return executeInIsolate(args.code);
+      return executeInIsolate(args.code as string);
     },
   };
 }

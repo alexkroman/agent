@@ -9,8 +9,8 @@
 
 import { z } from "zod";
 import { FETCH_TIMEOUT_MS, MAX_HTML_BYTES, MAX_PAGE_CHARS } from "../isolate/constants.ts";
-import { EMPTY_PARAMS, type ToolSchema } from "../isolate/lib/internal-types.ts";
-import type { ToolDef } from "../isolate/types.ts";
+import type { ToolSchema } from "../isolate/lib/internal-types.ts";
+import type { JSONSchemaObject, ToolDef } from "../isolate/types.ts";
 import { createRunCode } from "./lib/run-code.ts";
 
 export { executeInIsolate } from "./lib/run-code.ts";
@@ -37,10 +37,17 @@ function htmlToText(html: string): string {
 
 // ─── web_search ────────────────────────────────────────────────────────────
 
-const webSearchParams = z.object({
-  query: z.string().describe("The search query"),
-  max_results: z.number().describe("Maximum number of results to return (default 5)").optional(),
-});
+const webSearchParams: JSONSchemaObject = {
+  type: "object",
+  properties: {
+    query: { type: "string", description: "The search query" },
+    max_results: {
+      type: "number",
+      description: "Maximum number of results to return (default 5)",
+    },
+  },
+  required: ["query"],
+};
 
 const BRAVE_SEARCH_URL = "https://api.search.brave.com/res/v1/web/search";
 
@@ -58,13 +65,14 @@ const BraveSearchResponseSchema = z.object({
     .optional(),
 });
 
-function createWebSearch(fetchFn = globalThis.fetch): ToolDef<typeof webSearchParams> {
+function createWebSearch(fetchFn = globalThis.fetch): ToolDef {
   return {
     description:
       "Search the web for current information, facts, news, or answers to questions. Returns a list of results with title, URL, and description. Use this when the user asks about something you don't know, need up-to-date information, or want to verify facts.",
     parameters: webSearchParams,
     async execute(args, ctx) {
-      const { query, max_results: maxResults = 5 } = args;
+      const query = args.query as string;
+      const maxResults = (args.max_results as number) ?? 5;
       const apiKey = ctx.env.BRAVE_API_KEY ?? "";
       if (!apiKey) {
         return { error: "BRAVE_API_KEY is not set — web search unavailable" };
@@ -97,17 +105,24 @@ function createWebSearch(fetchFn = globalThis.fetch): ToolDef<typeof webSearchPa
 
 // ─── visit_webpage ─────────────────────────────────────────────────────────
 
-const visitWebpageParams = z.object({
-  url: z.string().describe("The full URL to fetch (e.g., 'https://example.com/page')"),
-});
+const visitWebpageParams: JSONSchemaObject = {
+  type: "object",
+  properties: {
+    url: {
+      type: "string",
+      description: "The full URL to fetch (e.g., 'https://example.com/page')",
+    },
+  },
+  required: ["url"],
+};
 
-function createVisitWebpage(fetchFn = globalThis.fetch): ToolDef<typeof visitWebpageParams> {
+function createVisitWebpage(fetchFn = globalThis.fetch): ToolDef {
   return {
     description:
       "Fetch a webpage and return its content as clean text. Use this to read the full content of a URL found via web_search, or any link the user shares. Good for reading articles, documentation, blog posts, or product pages.",
     parameters: visitWebpageParams,
     async execute(args, _ctx) {
-      const { url } = args;
+      const url = args.url as string;
       const resp = await fetchFn(url, {
         headers: {
           "User-Agent":
@@ -136,15 +151,19 @@ function createVisitWebpage(fetchFn = globalThis.fetch): ToolDef<typeof visitWeb
 
 // ─── fetch_json ────────────────────────────────────────────────────────────
 
-const fetchJsonParams = z.object({
-  url: z.string().describe("The URL to fetch JSON from"),
-  headers: z
-    .record(z.string(), z.string())
-    .describe(
-      "Optional HTTP headers to include in the request (only safe headers like Accept, Content-Type are allowed)",
-    )
-    .optional(),
-});
+const fetchJsonParams: JSONSchemaObject = {
+  type: "object",
+  properties: {
+    url: { type: "string", description: "The URL to fetch JSON from" },
+    headers: {
+      type: "object",
+      description:
+        "Optional HTTP headers to include in the request (only safe headers like Accept, Content-Type are allowed)",
+      additionalProperties: { type: "string" },
+    },
+  },
+  required: ["url"],
+};
 
 /** Headers the LLM must never control — could exfiltrate credentials or manipulate routing. */
 const BLOCKED_FETCH_HEADERS = new Set([
@@ -172,13 +191,14 @@ function sanitizeHeaders(
   return Object.keys(safe).length > 0 ? safe : undefined;
 }
 
-function createFetchJson(fetchFn = globalThis.fetch): ToolDef<typeof fetchJsonParams> {
+function createFetchJson(fetchFn = globalThis.fetch): ToolDef {
   return {
     description:
       "Call a REST API endpoint via HTTP GET and return the JSON response. Use this to fetch structured data from APIs — for example, weather data, stock prices, exchange rates, or any public JSON API. Supports custom headers for authenticated APIs.",
     parameters: fetchJsonParams,
     async execute(args, _ctx) {
-      const { url, headers } = args;
+      const url = args.url as string;
+      const headers = args.headers as Record<string, string> | undefined;
       const safeHeaders = sanitizeHeaders(headers);
       const resp = await fetchFn(url, {
         ...(safeHeaders && { headers: safeHeaders }),
@@ -200,11 +220,12 @@ function createFetchJson(fetchFn = globalThis.fetch): ToolDef<typeof fetchJsonPa
 
 /** Options for creating built-in tool definitions. */
 export type BuiltinToolOptions = {
-  /** Override fetch implementation (defaults to globalThis.fetch). For testing. */
   fetch?: typeof globalThis.fetch;
 };
 
-type ToolDefRecord = Record<string, ToolDef<z.ZodObject<z.ZodRawShape>>>;
+type ToolDefRecord = Record<string, ToolDef>;
+
+const EMPTY_PARAMS: ToolSchema["parameters"] = { type: "object", properties: {} };
 
 /** Resolve a builtin name to an array of [toolName, ToolDef] pairs. */
 function resolveBuiltin(name: string, opts?: BuiltinToolOptions): [string, ToolDef][] {
@@ -243,7 +264,7 @@ export function getBuiltinToolSchemas(names: readonly string[]): ToolSchema[] {
     resolveBuiltin(name).map(([toolName, def]) => ({
       name: toolName,
       description: def.description,
-      parameters: z.toJSONSchema(def.parameters ?? EMPTY_PARAMS) as ToolSchema["parameters"],
+      parameters: (def.parameters as ToolSchema["parameters"]) ?? EMPTY_PARAMS,
     })),
   );
 }

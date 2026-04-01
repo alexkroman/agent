@@ -1,0 +1,4 @@
+name = "Simple Assistant"
+# system_prompt = "You are a helpful voice assistant."
+# greeting = "Hey there. What can I help you with?"
+# builtin_tools = ["web_search", "visit_webpage", "fetch_json", "run_code"]

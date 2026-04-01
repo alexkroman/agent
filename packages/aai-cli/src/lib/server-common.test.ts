@@ -2,7 +2,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { loadAgentDef, parseEnvFile, resolveServerEnv } from "./server-common.ts";
+import { loadAgent, parseEnvFile, resolveServerEnv } from "./server-common.ts";
 import { withTempDir } from "./test-utils.ts";
 
 describe("parseEnvFile", () => {
@@ -88,100 +88,42 @@ describe("resolveServerEnv", () => {
   });
 });
 
-describe("loadAgentDef", () => {
-  test("throws when agent.ts does not exist", async () => {
+describe("loadAgent", () => {
+  test("throws when agent.toml does not exist", async () => {
     await withTempDir(async (dir) => {
-      await expect(loadAgentDef(dir)).rejects.toThrow();
+      await expect(loadAgent(dir)).rejects.toThrow("agent.toml not found");
     });
   });
 
-  test("throws when agent.ts has no default export", async () => {
+  test("returns agent def with correct fields from agent.toml", async () => {
     await withTempDir(async (dir) => {
-      await fs.writeFile(path.join(dir, "agent.ts"), "export const foo = 42;");
-      await expect(loadAgentDef(dir)).rejects.toThrow(
-        "agent.ts must export a default agent definition",
-      );
-    });
-  });
-
-  test("throws when default export has no name", async () => {
-    await withTempDir(async (dir) => {
-      await fs.writeFile(path.join(dir, "agent.ts"), "export default { instructions: 'hi' };");
-      await expect(loadAgentDef(dir)).rejects.toThrow(
-        "agent.ts must export a default agent definition",
-      );
-    });
-  });
-
-  test("returns agent def when using defineAgent", async () => {
-    await withTempDir(async (dir) => {
-      // Use defineAgent to match real usage
       await fs.writeFile(
-        path.join(dir, "agent.ts"),
-        [
-          `import { defineAgent } from "${import.meta.resolve("@alexkroman1/aai").replace("file://", "")}";`,
-          `export default defineAgent({ name: "test-agent" });`,
-        ].join("\n"),
+        path.join(dir, "agent.toml"),
+        'name = "test-agent"\nsystem_prompt = "You are helpful."\ngreeting = "Hello!"\nmax_steps = 3',
       );
-      const def = await loadAgentDef(dir);
+      const def = await loadAgent(dir);
       expect(def.name).toBe("test-agent");
+      expect(def.systemPrompt).toBe("You are helpful.");
+      expect(def.greeting).toBe("Hello!");
+      expect(def.maxSteps).toBe(3);
     });
   });
 
-  test("throws when default export is null", async () => {
+  test("applies defaults for optional fields", async () => {
     await withTempDir(async (dir) => {
-      await fs.writeFile(path.join(dir, "agent.ts"), "export default null;");
-      await expect(loadAgentDef(dir)).rejects.toThrow(
-        "agent.ts must export a default agent definition",
-      );
+      await fs.writeFile(path.join(dir, "agent.toml"), 'name = "minimal"');
+      const def = await loadAgent(dir);
+      expect(def.name).toBe("minimal");
+      expect(def.systemPrompt).toBeDefined();
+      expect(def.greeting).toBeDefined();
+      expect(def.tools).toEqual({});
     });
   });
 
-  test("throws when default export is a string", async () => {
+  test("throws when name is missing from agent.toml", async () => {
     await withTempDir(async (dir) => {
-      await fs.writeFile(path.join(dir, "agent.ts"), 'export default "not an object";');
-      await expect(loadAgentDef(dir)).rejects.toThrow(
-        "agent.ts must export a default agent definition",
-      );
-    });
-  });
-
-  test("throws when required fields are missing from plain object", async () => {
-    await withTempDir(async (dir) => {
-      await fs.writeFile(path.join(dir, "agent.ts"), 'export default { name: "test" };');
-      await expect(loadAgentDef(dir)).rejects.toThrow("Invalid agent definition");
-      await expect(loadAgentDef(dir)).rejects.toThrow("instructions (string)");
-      await expect(loadAgentDef(dir)).rejects.toThrow("greeting (string)");
-      await expect(loadAgentDef(dir)).rejects.toThrow("maxSteps (number or function)");
-      await expect(loadAgentDef(dir)).rejects.toThrow("tools (object)");
-    });
-  });
-
-  test("throws when tools is an array instead of object", async () => {
-    await withTempDir(async (dir) => {
-      await fs.writeFile(
-        path.join(dir, "agent.ts"),
-        'export default { name: "test", instructions: "hi", greeting: "hello", maxSteps: 5, tools: [] };',
-      );
-      await expect(loadAgentDef(dir)).rejects.toThrow("tools (object)");
-    });
-  });
-
-  test("accepts valid plain object with all required fields", async () => {
-    await withTempDir(async (dir) => {
-      await fs.writeFile(
-        path.join(dir, "agent.ts"),
-        'export default { name: "test", instructions: "hi", greeting: "hello", maxSteps: 5, tools: {} };',
-      );
-      const def = await loadAgentDef(dir);
-      expect(def.name).toBe("test");
-    });
-  });
-
-  test("suggests using defineAgent in error message", async () => {
-    await withTempDir(async (dir) => {
-      await fs.writeFile(path.join(dir, "agent.ts"), 'export default { name: "test" };');
-      await expect(loadAgentDef(dir)).rejects.toThrow("Use defineAgent()");
+      await fs.writeFile(path.join(dir, "agent.toml"), 'greeting = "hi"');
+      await expect(loadAgent(dir)).rejects.toThrow("name");
     });
   });
 });

@@ -30,11 +30,10 @@
  */
 
 import { describe, expect, test } from "vitest";
-import { z } from "zod";
 import type { AgentHooks } from "../../isolate/hooks.ts";
 import { callResolveTurnConfig } from "../../isolate/hooks.ts";
 import type { ExecuteTool } from "../../isolate/lib/internal-types.ts";
-import { type AgentDef, defineTool } from "../../isolate/types.ts";
+import type { AgentDef } from "../../isolate/types.ts";
 
 // ── Shared context type ────────────────────────────────────────────────────
 
@@ -54,37 +53,45 @@ export type RuntimeTestContext = {
 /** Agent definition used by the conformance suite (direct executor path). */
 export const CONFORMANCE_AGENT: AgentDef = {
   name: "conformance-test",
-  instructions: "Conformance test agent.",
+  systemPrompt: "Conformance test agent.",
   greeting: "Hello!",
   maxSteps: 5,
   state: () => ({ count: 0, lastTurn: "" }),
   tools: {
-    echo: defineTool({
+    echo: {
       description: "Echo input",
-      parameters: z.object({ text: z.string() }),
-      execute: ({ text }) => `echo:${text}`,
-    }),
+      parameters: {
+        type: "object",
+        properties: { text: { type: "string" } },
+        required: ["text"],
+      },
+      execute: (args) => `echo:${args.text}`,
+    },
     get_env: {
       description: "Get MY_VAR from env",
-      execute: (_args: unknown, ctx) => ctx.env.MY_VAR ?? "missing",
+      execute: (_args, ctx) => ctx.env.MY_VAR ?? "missing",
     },
     get_state: {
       description: "Get session state",
-      execute: (_args: unknown, ctx) => JSON.stringify(ctx.state),
+      execute: (_args, ctx) => JSON.stringify(ctx.state),
     },
     echo_messages: {
       description: "Return messages as JSON",
-      execute: (_args: unknown, ctx) => JSON.stringify(ctx.messages),
+      execute: (_args, ctx) => JSON.stringify(ctx.messages),
     },
-    kv_roundtrip: defineTool({
+    kv_roundtrip: {
       description: "KV set then get",
-      parameters: z.object({ value: z.string() }),
-      execute: async ({ value }, ctx) => {
-        await ctx.kv.set("test-key", value);
+      parameters: {
+        type: "object",
+        properties: { value: { type: "string" } },
+        required: ["value"],
+      },
+      execute: async (args, ctx) => {
+        await ctx.kv.set("test-key", args.value as string);
         const result = await ctx.kv.get<string>("test-key");
         return `stored:${JSON.stringify(result)}`;
       },
-    }),
+    },
   },
   onConnect: (ctx) => {
     (ctx.state as { count: number }).count = 1;

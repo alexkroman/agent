@@ -4,7 +4,7 @@
  */
 
 import type { AgentConfig } from "./lib/internal-types.ts";
-import { DEFAULT_INSTRUCTIONS } from "./types.ts";
+import { DEFAULT_SYSTEM_PROMPT } from "./types.ts";
 
 function getFormattedDate(): string {
   return new Date().toLocaleDateString("en-US", {
@@ -29,25 +29,15 @@ const VOICE_RULES =
 
 /**
  * Build the system prompt sent to the LLM from the agent configuration.
- *
- * Assembles the default instructions, today's date, agent-specific instructions,
- * and optional sections for tool usage preamble and voice output rules.
- *
- * @param config - The serializable agent configuration (name, instructions, etc.).
- * @param opts.hasTools - When `true`, appends a preamble instructing the LLM to
- *   speak a brief phrase before each tool call to fill silence.
- * @param opts.voice - When `true`, appends strict voice-specific output rules
- *   (no markdown, no bullet points, conversational tone, concise responses).
- * @returns The assembled system prompt string.
  */
 export function buildSystemPrompt(
   config: AgentConfig,
   opts: { hasTools: boolean; voice?: boolean },
 ): string {
   const { hasTools } = opts;
-  const agentInstructions =
-    config.instructions && config.instructions !== DEFAULT_INSTRUCTIONS
-      ? `\n\nAgent-Specific Instructions:\n${config.instructions}`
+  const agentSystemPrompt =
+    config.systemPrompt && config.systemPrompt !== DEFAULT_SYSTEM_PROMPT
+      ? `\n\nAgent-Specific Instructions:\n${config.systemPrompt}`
       : "";
 
   const toolPreamble = hasTools
@@ -59,9 +49,9 @@ export function buildSystemPrompt(
   const today = getFormattedDate();
 
   return (
-    DEFAULT_INSTRUCTIONS +
+    DEFAULT_SYSTEM_PROMPT +
     `\n\nToday's date is ${today}.` +
-    agentInstructions +
+    agentSystemPrompt +
     toolPreamble +
     (opts.voice ? VOICE_RULES : "")
   );

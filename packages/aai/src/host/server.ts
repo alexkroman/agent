@@ -84,18 +84,7 @@ function serveStatic(dir: string, req: http.IncomingMessage, res: http.ServerRes
 /**
  * Create an HTTP + WebSocket server for self-hosted agent deployments.
  *
- * @example
- * ```ts
- * import { defineAgent } from "@alexkroman1/aai";
- * import { createRuntime, createServer } from "@alexkroman1/aai/server";
- *
- * const agent = defineAgent({ name: "my-agent" });
- * const runtime = createRuntime({ agent, env: process.env });
- * const server = createServer({ runtime, name: agent.name });
- * await server.listen(3000);
- * ```
- *
- * @public
+ * @internal
  */
 function handleKvGet(kv: Kv, req: http.IncomingMessage, res: http.ServerResponse): void {
   const fullUrl = new URL(req.url ?? "/", "http://localhost");

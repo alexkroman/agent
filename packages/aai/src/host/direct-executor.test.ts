@@ -2,20 +2,18 @@
 
 import { createStorage } from "unstorage";
 import { describe, expect, test, vi } from "vitest";
-import { z } from "zod";
 import { callResolveTurnConfig } from "../isolate/hooks.ts";
 import { toAgentConfig } from "../isolate/lib/internal-types.ts";
-import { defineTool } from "../isolate/types.ts";
 import { createRuntime } from "./direct-executor.ts";
 import { CONFORMANCE_AGENT, testRuntime } from "./lib/runtime-conformance.ts";
 import { makeAgent } from "./lib/test-utils.ts";
 import { createUnstorageKv } from "./unstorage-kv.ts";
 
 describe("toAgentConfig", () => {
-  test("maps name, instructions, greeting from AgentDef", () => {
+  test("maps name, systemPrompt, greeting from AgentDef", () => {
     const config = toAgentConfig(makeAgent());
     expect(config.name).toBe("test-agent");
-    expect(config.instructions).toBe("Be helpful.");
+    expect(config.systemPrompt).toBe("Be helpful.");
     expect(config.greeting).toBe("Hello!");
   });
 
@@ -70,11 +68,16 @@ describe("createRuntime", () => {
   test("executeTool with a real tool returns result", async () => {
     const agent = makeAgent({
       tools: {
-        add: defineTool({
+        add: {
           description: "Add two numbers",
-          parameters: z.object({ a: z.number(), b: z.number() }),
-          execute: ({ a, b }) => String(a + b),
-        }),
+          parameters: {
+            type: "object" as const,
+            properties: { a: { type: "number" }, b: { type: "number" } },
+            required: ["a", "b"],
+          },
+          execute: (args: Record<string, unknown>) =>
+            String((args.a as number) + (args.b as number)),
+        },
       },
     });
     const exec = createRuntime({ agent, env: {} });

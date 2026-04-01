@@ -88,7 +88,7 @@ let hooks: AgentHooks;
 
 type IsolateConfig = {
   name: string;
-  instructions: string;
+  systemPrompt: string;
   greeting?: string;
   sttPrompt?: string;
   maxSteps?: number;
@@ -109,17 +109,14 @@ function extractToolSchemas(agent: AgentDef): IsolateConfig["toolSchemas"] {
   return Object.entries(agent.tools).map(([name, def]) => ({
     name,
     description: def.description,
-    parameters:
-      def.parameters && "toJSON" in def.parameters && typeof def.parameters.toJSON === "function"
-        ? (def.parameters.toJSON() as Record<string, unknown>)
-        : ({ type: "object", properties: {} } as Record<string, unknown>),
+    parameters: (def.parameters as Record<string, unknown>) ?? { type: "object", properties: {} },
   }));
 }
 
 function extractConfig(agent: AgentDef): IsolateConfig {
   const config: IsolateConfig = {
     name: agent.name,
-    instructions: agent.instructions,
+    systemPrompt: agent.systemPrompt,
     greeting: agent.greeting,
     toolSchemas: extractToolSchemas(agent),
     hasState: typeof agent.state === "function",
@@ -164,15 +161,10 @@ async function executeTool(agent: AgentDef, req: ToolCallRequest): Promise<ToolC
     fetch,
   };
 
-  const parsed =
-    tool.parameters && typeof tool.parameters.parse === "function"
-      ? tool.parameters.parse(req.args)
-      : req.args;
-
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
   try {
     const result = await Promise.race([
-      tool.execute(parsed, ctx),
+      tool.execute(req.args, ctx),
       new Promise<never>((_resolve, reject) => {
         timeoutId = setTimeout(
           () =>
@@ -282,10 +274,18 @@ async function dispatch(agent: AgentDef, msg: RpcRequest): Promise<unknown> {
   }
 }
 
-export function startHarness(agent: AgentDef): void {
-  if (!agent || typeof agent !== "object" || !agent.name) {
+export function startHarness(rawAgent: AgentDef): void {
+  if (!rawAgent || typeof rawAgent !== "object" || !rawAgent.name) {
     throw new Error("Agent bundle must export a default agent definition");
   }
+  // Apply defaults for fields that may not be set
+  const agent: AgentDef = {
+    ...rawAgent,
+    systemPrompt: rawAgent.systemPrompt ?? "",
+    greeting: rawAgent.greeting ?? "",
+    maxSteps: rawAgent.maxSteps ?? 5,
+    tools: rawAgent.tools ?? {},
+  };
   sessionState = createSessionStateMap(agent.state);
   hooks = createAgentHooks({
     agent,

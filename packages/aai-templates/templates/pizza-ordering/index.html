@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pizza Palace</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, -apple-system, sans-serif; background: #1a1008; color: #f5f0e8; min-height: 100vh; display: flex; }
+
+  /* Layout */
+  .sidebar { width: 300px; background: #1a1008; border-right: 1px solid #3d2e18; display: flex; flex-direction: column; flex-shrink: 0; }
+  .sidebar-header { padding: 16px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid #3d2e18; }
+  .sidebar-header h2 { font-size: 1rem; font-weight: 700; }
+  .sidebar-body { flex: 1; overflow-y: auto; }
+  .sidebar-footer { padding: 12px; display: flex; gap: 8px; border-top: 1px solid #3d2e18; }
+  .main { flex: 1; display: flex; flex-direction: column; padding: 24px 16px; max-width: 640px; }
+
+  /* State indicator */
+  .header { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; }
+  .state-dot { width: 8px; height: 8px; border-radius: 50%; background: rgba(245,240,232,0.3); flex-shrink: 0; }
+  .state-dot.ready { background: #7fd88f; }
+  .state-dot.listening { background: #56b6c2; }
+  .state-dot.thinking { background: #E8A025; }
+  .state-dot.speaking { background: #e06c75; }
+  .state-dot.error { background: #e06c75; }
+  .state-label { font-size: 0.75rem; color: rgba(245,240,232,0.5); text-transform: capitalize; }
+
+  /* Messages */
+  .messages { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+  .msg { padding: 8px 12px; border-radius: 8px; max-width: 85%; word-wrap: break-word; font-size: 0.9rem; line-height: 1.4; }
+  .msg.user { align-self: flex-end; background: #2a1f10; border: 1px solid #3d2e18; }
+  .msg.assistant { align-self: flex-start; }
+  .transcript { font-size: 0.85rem; color: rgba(245,240,232,0.5); font-style: italic; padding: 4px 12px; }
+  .error-banner { background: rgba(224,108,117,0.15); border: 1px solid rgba(224,108,117,0.3); color: #e06c75; padding: 8px 12px; border-radius: 6px; font-size: 0.85rem; margin-bottom: 8px; }
+
+  /* Buttons */
+  button { padding: 10px 20px; border: 1px solid #3d2e18; border-radius: 6px; background: #2a1f10; color: #f5f0e8; cursor: pointer; font-size: 0.9rem; transition: background 0.15s; }
+  button:hover { background: #3d2e18; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.primary { background: #E8A025; color: #1a1008; border-color: #E8A025; font-weight: 600; }
+  button.primary:hover { background: #d49020; }
+  button.danger { background: #e06c75; color: #fff; border-color: #e06c75; }
+  button.danger:hover { background: #c85a63; }
+  .sidebar-footer button { flex: 1; padding: 8px; font-size: 0.85rem; }
+
+  /* Start screen */
+  .start-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; flex: 1; gap: 16px; width: 100%; }
+  .start-screen h2 { font-size: 1.5rem; }
+  .start-screen p { color: rgba(245,240,232,0.5); }
+
+  /* Order panel */
+  .order-empty { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 24px; text-align: center; opacity: 0.5; }
+  .order-empty p { font-size: 0.85rem; }
+  .order-section-title { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.6; padding: 16px 16px 8px; }
+  .pizza-item { display: flex; align-items: center; gap: 12px; padding: 12px 16px; margin: 0 8px 4px; border-radius: 8px; background: #2a1f10; }
+  .pizza-item .info { flex: 1; min-width: 0; }
+  .pizza-item .info .name { font-size: 0.85rem; font-weight: 500; }
+  .pizza-item .info .toppings { font-size: 0.75rem; opacity: 0.6; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pizza-item .price { font-size: 0.85rem; font-weight: 700; color: #E8A025; white-space: nowrap; }
+  .order-total { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; margin-top: 4px; border-top: 1px solid #3d2e18; }
+  .order-total .label { font-weight: 700; }
+  .order-total .amount { font-weight: 700; font-size: 1.1rem; color: #E8A025; }
+
+  /* Order placed */
+  .order-placed { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 24px; text-align: center; }
+  .order-placed .checkmark { font-size: 3rem; color: #7fd88f; }
+  .order-placed h3 { font-size: 1.1rem; font-weight: 700; }
+  .order-placed .order-num { opacity: 0.7; font-size: 0.9rem; }
+  .order-placed .total { color: #E8A025; font-weight: 700; font-size: 1.25rem; }
+  .order-placed .eta { opacity: 0.6; font-size: 0.85rem; }
+
+  .controls { display: flex; gap: 8px; }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<!-- Sidebar -->
+<div class="sidebar" id="sidebar" style="display:none">
+  <div class="sidebar-header">
+    <svg width="36" height="36" viewBox="0 0 100 100"><circle cx="50" cy="50" r="48" fill="#F4C542" stroke="#D4A017" stroke-width="3"/><circle cx="50" cy="50" r="42" fill="#E8A025"/><circle cx="35" cy="35" r="7" fill="#C0392B" opacity="0.9"/><circle cx="60" cy="30" r="6" fill="#C0392B" opacity="0.9"/><circle cx="55" cy="55" r="7" fill="#C0392B" opacity="0.9"/><circle cx="30" cy="58" r="6" fill="#C0392B" opacity="0.9"/><circle cx="65" cy="65" r="5" fill="#C0392B" opacity="0.9"/><circle cx="45" cy="68" r="4" fill="#27AE60" opacity="0.7"/><circle cx="70" cy="42" r="4" fill="#27AE60" opacity="0.7"/></svg>
+    <h2>Pizza Palace</h2>
+  </div>
+  <div class="sidebar-body" id="order-panel"></div>
+  <div class="sidebar-footer">
+    <button id="btn-toggle" class="danger" onclick="toggleSession()">Pause</button>
+    <button id="btn-reset" onclick="resetOrder()">New Order</button>
+  </div>
+</div>
+
+<!-- Main area -->
+<div class="main" id="main-area">
+  <div id="start-screen" class="start-screen">
+    <svg width="52" height="52" viewBox="0 0 100 100"><circle cx="50" cy="50" r="48" fill="#F4C542" stroke="#D4A017" stroke-width="3"/><circle cx="50" cy="50" r="42" fill="#E8A025"/><circle cx="35" cy="35" r="7" fill="#C0392B" opacity="0.9"/><circle cx="60" cy="30" r="6" fill="#C0392B" opacity="0.9"/><circle cx="55" cy="55" r="7" fill="#C0392B" opacity="0.9"/><circle cx="30" cy="58" r="6" fill="#C0392B" opacity="0.9"/><circle cx="65" cy="65" r="5" fill="#C0392B" opacity="0.9"/><circle cx="45" cy="68" r="4" fill="#27AE60" opacity="0.7"/><circle cx="70" cy="42" r="4" fill="#27AE60" opacity="0.7"/></svg>
+    <h2>Pizza Palace</h2>
+    <p>Voice-powered pizza ordering</p>
+    <button class="primary" onclick="startSession()">Start Ordering</button>
+  </div>
+  <div id="session-view" class="hidden" style="flex:1; display:flex; flex-direction:column;">
+    <div class="header">
+      <div id="state-dot" class="state-dot"></div>
+      <span id="state-label" class="state-label">disconnected</span>
+    </div>
+    <div id="error-banner" class="error-banner hidden"></div>
+    <div id="messages" class="messages"></div>
+    <div id="transcript-el" class="transcript hidden"></div>
+  </div>
+</div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────
+let ws = null, audioCtx = null, captureNode = null, playbackNode = null, micStream = null;
+let agentState = 'disconnected', agentText = '', sttRate = 16000, ttsRate = 22050, generation = 0;
+
+const order = { pizzas: [], total: '$0.00', orderPlaced: false, orderNumber: null, estimatedMinutes: null };
+const MENU_SIZES = { small: 8.99, medium: 11.99, large: 14.99 };
+const MENU_CRUSTS = { thin: 0, regular: 0, thick: 1, stuffed: 2 };
+const MENU_TOPPINGS = { pepperoni:1.5, sausage:1.5, mushrooms:1, onions:1, green_peppers:1, black_olives:1, bacon:2, ham:1.5, pineapple:1, jalapenos:1, extra_cheese:1.5, spinach:1, tomatoes:1, anchovies:1.5, chicken:2 };
+
+function pizzaPrice(p) {
+  const base = MENU_SIZES[p.size] || 11.99, crust = MENU_CRUSTS[p.crust] || 0;
+  const tops = (p.toppings || []).reduce((s, t) => s + (MENU_TOPPINGS[t] || 1), 0);
+  return (base + crust + tops) * (p.quantity || 1);
+}
+
+const $ = id => document.getElementById(id);
+
+// ── Order rendering ───────────────────────────────────────────────────
+function renderOrder() {
+  const panel = $('order-panel');
+  if (order.orderPlaced) {
+    panel.innerHTML = `<div class="order-placed">
+      <div class="checkmark">&#10003;</div><h3>Order Placed</h3>
+      ${order.orderNumber ? `<p class="order-num">Order #${order.orderNumber}</p>` : ''}
+      <p class="total">${order.total}</p>
+      ${order.estimatedMinutes ? `<p class="eta">Ready in ~${order.estimatedMinutes} minutes</p>` : ''}
+    </div>`;
+    return;
+  }
+  if (order.pizzas.length === 0) {
+    panel.innerHTML = `<div class="order-empty">
+      <svg width="52" height="52" viewBox="0 0 100 100"><circle cx="50" cy="50" r="48" fill="#F4C542" stroke="#D4A017" stroke-width="3"/><circle cx="50" cy="50" r="42" fill="#E8A025"/><circle cx="35" cy="35" r="7" fill="#C0392B" opacity="0.9"/><circle cx="60" cy="30" r="6" fill="#C0392B" opacity="0.9"/><circle cx="55" cy="55" r="7" fill="#C0392B" opacity="0.9"/><circle cx="30" cy="58" r="6" fill="#C0392B" opacity="0.9"/><circle cx="65" cy="65" r="5" fill="#C0392B" opacity="0.9"/><circle cx="45" cy="68" r="4" fill="#27AE60" opacity="0.7"/><circle cx="70" cy="42" r="4" fill="#27AE60" opacity="0.7"/></svg>
+      <p>Your order is empty. Tell me what you'd like.</p></div>`;
+    return;
+  }
+  const dims = { small: 36, medium: 44, large: 52 };
+  const items = order.pizzas.map(p => {
+    const d = dims[p.size] || 44;
+    const svg = `<svg width="${d}" height="${d}" viewBox="0 0 100 100" style="flex-shrink:0"><circle cx="50" cy="50" r="48" fill="#F4C542" stroke="#D4A017" stroke-width="3"/><circle cx="50" cy="50" r="42" fill="#E8A025"/><circle cx="35" cy="35" r="7" fill="#C0392B" opacity="0.9"/><circle cx="60" cy="30" r="6" fill="#C0392B" opacity="0.9"/><circle cx="55" cy="55" r="7" fill="#C0392B" opacity="0.9"/><circle cx="30" cy="58" r="6" fill="#C0392B" opacity="0.9"/><circle cx="65" cy="65" r="5" fill="#C0392B" opacity="0.9"/><circle cx="45" cy="68" r="4" fill="#27AE60" opacity="0.7"/><circle cx="70" cy="42" r="4" fill="#27AE60" opacity="0.7"/></svg>`;
+    const qty = (p.quantity || 1) > 1 ? `${p.quantity}x ` : '';
+    const tops = p.toppings && p.toppings.length > 0 ? p.toppings.map(t => t.replace(/_/g, ' ')).join(', ') : 'cheese only';
+    return `<div class="pizza-item">${svg}<div class="info"><div class="name">${qty}${p.size[0].toUpperCase() + p.size.slice(1)} ${p.crust} crust</div><div class="toppings">${tops}</div></div><div class="price">$${pizzaPrice(p).toFixed(2)}</div></div>`;
+  }).join('');
+  panel.innerHTML = `<div class="order-section-title">Your Order</div>${items}<div class="order-total"><span class="label">Total</span><span class="amount">${order.total}</span></div>`;
+}
+
+// ── Tool result handlers ──────────────────────────────────────────────
+function handleToolDone(name, result) {
+  if (!result) return;
+  try { result = typeof result === 'string' ? JSON.parse(result) : result; } catch { return; }
+
+  if (name === 'add_pizza' && result.added) {
+    order.pizzas.push(result.added);
+    order.total = result.orderTotal || order.total;
+  } else if (name === 'remove_pizza' && result.removed) {
+    order.pizzas = order.pizzas.filter(p => p.id !== result.removed.id);
+    order.total = result.orderTotal || order.total;
+  } else if (name === 'update_pizza' && result.updated) {
+    order.pizzas = order.pizzas.map(p => p.id === result.updated.id ? result.updated : p);
+    order.total = result.orderTotal || order.total;
+  } else if (name === 'view_order' && result.pizzas) {
+    order.total = result.orderTotal || order.total;
+  } else if (name === 'place_order' && result.orderNumber) {
+    order.orderPlaced = true;
+    order.orderNumber = result.orderNumber;
+    order.total = result.total || order.total;
+    order.estimatedMinutes = result.estimatedMinutes;
+  }
+  renderOrder();
+}
+
+// ── Capture worklet ───────────────────────────────────────────────────
+const CAPTURE_WORKLET = `
+class CaptureProcessor extends AudioWorkletProcessor {
+  constructor(o) { super(); this.recording = false;
+    const opts = o.processorOptions || {};
+    this.fromRate = opts.contextRate || sampleRate; this.toRate = opts.sttSampleRate || sampleRate;
+    this.ratio = this.fromRate / this.toRate; this.needsResample = this.fromRate !== this.toRate;
+    this.port.onmessage = e => { if (e.data.event==='start') this.recording=true; else if (e.data.event==='stop') this.recording=false; };
+  }
+  resample(input) { const r=this.ratio, len=Math.ceil(input.length/r), out=new Float32Array(len);
+    for(let i=0;i<len;i++){const s=i*r,idx=s|0,f=s-idx,a=input[idx],b=idx+1<input.length?input[idx+1]:a;out[i]=a+f*(b-a);}return out;}
+  process(inputs) { const inp=inputs[0]; if(!inp||!inp[0]||!this.recording) return true;
+    const samples=this.needsResample?this.resample(inp[0]):inp[0];
+    const buf=new ArrayBuffer(samples.length*2),v=new DataView(buf);
+    for(let i=0;i<samples.length;i++){const s=Math.max(-1,Math.min(1,samples[i]));v.setInt16(i*2,s<0?s*0x8000:s*0x7fff,true);}
+    this.port.postMessage({event:'chunk',buffer:buf},[buf]);return true;}
+} registerProcessor('capture-processor',CaptureProcessor);`;
+
+// ── Playback worklet ──────────────────────────────────────────────────
+const PLAYBACK_WORKLET = `
+class PlaybackProcessor extends AudioWorkletProcessor {
+  constructor(o) { super(); this.interrupted=false; this.isDone=false; this.playing=false;
+    const rate=o.processorOptions?.sampleRate??24000; this.jitterSamples=Math.floor(rate*0.4);
+    this.carry=null; this.samples=new Float32Array(rate*60); this.writePos=0; this.readPos=0;
+    this.progressInterval=Math.floor(rate*0.05); this.samplesSinceProgress=0;
+    this.port.onmessage=e=>{const d=e.data;
+      if(d.event==='write')this.ingestBytes(d.buffer);else if(d.event==='interrupt')this.interrupted=true;else if(d.event==='done')this.isDone=true;};
+  }
+  ingestBytes(uint8){let b=uint8;if(this.carry!==null){const m=new Uint8Array(1+b.length);m[0]=this.carry;m.set(b,1);b=m;this.carry=null;}
+    if(b.length%2!==0){this.carry=b[b.length-1];b=b.subarray(0,b.length-1);}if(b.length===0)return;
+    const v=new DataView(b.buffer,b.byteOffset,b.length),n=b.length/2;for(let i=0;i<n;i++)this.samples[this.writePos++]=v.getInt16(i*2,true)/0x8000;}
+  process(inputs,outputs){const out=outputs[0][0];
+    if(this.interrupted){this.port.postMessage({event:'stop'});return false;}
+    const avail=this.writePos-this.readPos;
+    if(!this.playing){if(avail>=this.jitterSamples||this.isDone)this.playing=true;else{out.fill(0);return true;}}
+    if(avail>0){const n=Math.min(avail,out.length);out.set(this.samples.subarray(this.readPos,this.readPos+n));this.readPos+=n;
+      this.samplesSinceProgress+=n;if(this.samplesSinceProgress>=this.progressInterval){this.port.postMessage({event:'progress',readPos:this.readPos});this.samplesSinceProgress=0;}
+      out.fill(0,n);return true;}
+    out.fill(0);if(this.isDone){this.port.postMessage({event:'stop'});return false;}return true;}
+} registerProcessor('playback-processor',PlaybackProcessor);`;
+
+// ── UI helpers ────────────────────────────────────────────────────────
+function setState(s) { agentState = s; $('state-dot').className = 'state-dot ' + s; $('state-label').textContent = s; }
+function addMessage(role, text) { const el = document.createElement('div'); el.className = 'msg ' + role; el.textContent = text; $('messages').appendChild(el); $('messages').scrollTop = $('messages').scrollHeight; }
+function showError(msg) { $('error-banner').textContent = msg; $('error-banner').classList.remove('hidden'); setState('error'); }
+function clearError() { $('error-banner').classList.add('hidden'); }
+
+// ── Audio setup ───────────────────────────────────────────────────────
+async function setupAudio() {
+  audioCtx = new AudioContext({ sampleRate: ttsRate, latencyHint: 'playback' });
+  const mkModule = src => { const b = new Blob([src], { type: 'application/javascript' }); const u = URL.createObjectURL(b); const p = audioCtx.audioWorklet.addModule(u).then(() => URL.revokeObjectURL(u)); return p; };
+  await mkModule(CAPTURE_WORKLET); await mkModule(PLAYBACK_WORKLET);
+  micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+  const source = audioCtx.createMediaStreamSource(micStream);
+  captureNode = new AudioWorkletNode(audioCtx, 'capture-processor', { processorOptions: { contextRate: audioCtx.sampleRate, sttSampleRate: sttRate } });
+  captureNode.port.onmessage = e => { if (e.data.event === 'chunk' && ws && ws.readyState === WebSocket.OPEN) ws.send(new Uint8Array(e.data.buffer)); };
+  source.connect(captureNode); captureNode.connect(audioCtx.destination); captureNode.port.postMessage({ event: 'start' });
+}
+
+function startPlayback() {
+  if (!audioCtx) return;
+  if (playbackNode) { playbackNode.port.postMessage({ event: 'interrupt' }); playbackNode.disconnect(); }
+  playbackNode = new AudioWorkletNode(audioCtx, 'playback-processor', { processorOptions: { sampleRate: ttsRate } });
+  const gen = generation;
+  playbackNode.port.onmessage = e => { if (e.data.event === 'stop' && gen === generation) setState('listening'); };
+  playbackNode.connect(audioCtx.destination);
+}
+
+function flushPlayback() { if (playbackNode) { playbackNode.port.postMessage({ event: 'interrupt' }); playbackNode.disconnect(); playbackNode = null; } }
+
+// ── WebSocket ─────────────────────────────────────────────────────────
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(`${proto}//${location.host}/websocket`);
+  ws.binaryType = 'arraybuffer'; setState('connecting');
+  ws.onopen = () => setState('ready');
+  ws.onmessage = e => {
+    if (e.data instanceof ArrayBuffer) {
+      if (playbackNode) playbackNode.port.postMessage({ event: 'write', buffer: new Uint8Array(e.data) });
+      if (agentState !== 'speaking') setState('speaking');
+      return;
+    }
+    const msg = JSON.parse(e.data);
+    switch (msg.type) {
+      case 'config':
+        sttRate = msg.sampleRate || 16000; ttsRate = msg.ttsSampleRate || 22050;
+        setupAudio().then(() => { setState('listening'); if (ws) ws.send(JSON.stringify({ type: 'audio_ready' })); }).catch(err => showError('Mic access denied: ' + err.message));
+        break;
+      case 'transcript': $('transcript-el').textContent = msg.text || ''; msg.text ? $('transcript-el').classList.remove('hidden') : $('transcript-el').classList.add('hidden'); break;
+      case 'turn': $('transcript-el').classList.add('hidden'); addMessage('user', msg.text); agentText = ''; setState('thinking'); startPlayback(); break;
+      case 'chat': if (msg.text) { agentText = msg.text; addMessage('assistant', agentText); } break;
+      case 'chat_delta':
+        agentText += msg.text || '';
+        const last = $('messages').querySelector('.msg.assistant:last-child');
+        if (last) last.textContent = agentText; else addMessage('assistant', agentText);
+        $('messages').scrollTop = $('messages').scrollHeight; break;
+      case 'audio_done': if (playbackNode) playbackNode.port.postMessage({ event: 'done' }); break;
+      case 'cancelled': flushPlayback(); setState('listening'); break;
+      case 'reset': flushPlayback(); $('messages').innerHTML = ''; agentText = ''; setState('listening'); break;
+      case 'error': showError(msg.message || 'Unknown error'); break;
+      case 'idle_timeout': showError('Session timed out due to inactivity'); break;
+      case 'tool_call_done': handleToolDone(msg.name, msg.result); break;
+    }
+  };
+  ws.onclose = () => { setState('disconnected'); ws = null; };
+  ws.onerror = () => showError('WebSocket connection failed');
+}
+
+// ── Session control ───────────────────────────────────────────────────
+function startSession() {
+  clearError(); $('start-screen').classList.add('hidden');
+  $('session-view').classList.remove('hidden'); $('session-view').style.display = 'flex';
+  $('sidebar').style.display = 'flex'; renderOrder(); connect();
+}
+
+function toggleSession() {
+  const btn = $('btn-toggle');
+  if (ws) {
+    ws.close(); ws = null; flushPlayback();
+    if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
+    if (audioCtx) { audioCtx.close(); audioCtx = null; }
+    btn.textContent = 'Resume'; btn.classList.remove('danger'); btn.classList.add('primary'); setState('disconnected');
+  } else { btn.textContent = 'Pause'; btn.classList.remove('primary'); btn.classList.add('danger'); connect(); }
+}
+
+function resetOrder() {
+  generation++; flushPlayback(); $('messages').innerHTML = ''; agentText = ''; clearError();
+  order.pizzas = []; order.total = '$0.00'; order.orderPlaced = false; order.orderNumber = null; order.estimatedMinutes = null;
+  renderOrder();
+  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'reset' })); else connect();
+}
+</script>
+</body>
+</html>

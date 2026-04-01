@@ -17,142 +17,68 @@ export type BundleOutput = {
   slug: string;
   worker: string;
   clientFiles: Record<string, string>;
-  clientDir: string;
   workerBytes: number;
 };
 
-const TEXT_EXTENSIONS = new Set([
-  ".html",
-  ".htm",
-  ".css",
-  ".js",
-  ".mjs",
-  ".cjs",
-  ".ts",
-  ".mts",
-  ".json",
-  ".map",
-  ".svg",
-  ".xml",
-  ".txt",
-  ".md",
-]);
-
-async function readDirFiles(dir: string): Promise<Record<string, string>> {
-  let entries: import("node:fs").Dirent[];
-  try {
-    entries = await fs.readdir(dir, { recursive: true, withFileTypes: true });
-  } catch (err: unknown) {
-    if (err instanceof Error && "code" in err && err.code === "ENOENT") return {};
-    throw err;
-  }
-  const files: Record<string, string> = {};
-  await Promise.all(
-    entries
-      .filter((e) => e.isFile())
-      .map(async (e) => {
-        const full = path.join(e.parentPath, e.name);
-        const ext = path.extname(e.name).toLowerCase();
-        const rel = path.relative(dir, full);
-        if (TEXT_EXTENSIONS.has(ext)) {
-          files[rel] = await fs.readFile(full, "utf-8");
-        } else {
-          const buf = await fs.readFile(full);
-          files[rel] = `base64:${buf.toString("base64")}`;
-        }
-      }),
-  );
-  return files;
-}
-
 /**
- * Bundle an agent project using Vite.
+ * Bundle an agent project.
  *
- * - Worker: `vite build --ssr agent.ts` (uses project's vite.config.ts)
- * - Client: `vite build` (uses project's vite.config.ts)
+ * - Worker: SSR build of `tools.ts` via Vite
+ * - Client: static `index.html` read as-is (no build step)
  */
-export async function bundleAgent(
-  agent: AgentEntry,
-  opts?: { skipClient?: boolean },
-): Promise<BundleOutput> {
+export async function bundleAgent(agent: AgentEntry): Promise<BundleOutput> {
   const aaiDir = path.join(agent.dir, ".aai");
   const buildDir = path.join(aaiDir, "build");
-  const clientDir = path.join(aaiDir, "client");
 
-  // 1. Worker — SSR build
-  // Zod must be external: its JIT compiler uses Function() which is blocked
-  // in secure-exec isolates. The platform server provides a safe zod build
-  // in the isolate's virtual filesystem at /app/_zod.mjs.
+  // Bundle tools.ts into worker.js
+  const toolsEntry = agent.toolsEntry || path.join(agent.dir, "tools.ts");
   try {
     await build({
       root: agent.dir,
       logLevel: "warn",
       build: {
-        ssr: path.join(agent.dir, "agent.ts"),
+        ssr: toolsEntry,
         outDir: buildDir,
         emptyOutDir: true,
         rollupOptions: {
-          external: ["zod"],
-          output: {
-            entryFileNames: "worker.js",
-            paths: { zod: "/app/_zod.mjs" },
-          },
+          output: { entryFileNames: "worker.js" },
         },
-      },
-      ssr: {
-        external: ["zod"],
       },
     });
   } catch (err: unknown) {
     throw new BundleError(errorMessage(err), { cause: err });
   }
 
-  // 2. Client — standard Vite build
-  if (!(opts?.skipClient ?? !agent.clientEntry)) {
-    try {
-      await build({
-        root: agent.dir,
-        base: "./",
-        logLevel: "warn",
-        build: {
-          outDir: clientDir,
-          emptyOutDir: true,
-        },
-      });
-    } catch (err: unknown) {
-      throw new BundleError(errorMessage(err), { cause: err });
-    }
-  }
-
   const worker = await fs.readFile(path.join(buildDir, "worker.js"), "utf-8");
-  const clientFiles = await readDirFiles(clientDir);
+
+  // Read static index.html if present
+  const clientFiles: Record<string, string> = {};
+  if (agent.clientEntry) {
+    clientFiles["index.html"] = await fs.readFile(agent.clientEntry, "utf-8");
+  }
 
   return {
     slug: agent.slug,
     worker,
     clientFiles,
-    clientDir,
     workerBytes: Buffer.byteLength(worker),
   };
 }
 
 export async function buildAgentBundle(cwd: string): Promise<BundleOutput> {
-  const { loadAgent } = await import("./discover.ts");
+  const { loadAgentEntry } = await import("./discover.ts");
   const { log } = await import("./ui.ts");
 
-  const agent = await loadAgent(cwd);
-  if (!agent) throw new Error("No agent found — run `aai init` first");
+  const agent = await loadAgentEntry(cwd);
+  if (!agent) throw new Error("No agent.toml found — run `aai init` first");
 
   log.step(`Bundling ${agent.slug}`);
-  let bundle: BundleOutput;
   try {
-    bundle = await bundleAgent(agent);
+    return await bundleAgent(agent);
   } catch (err: unknown) {
     if (err instanceof BundleError) throw new Error(`Build failed: ${err.message}`, { cause: err });
     throw err;
   }
-
-  return bundle;
 }
 
 export async function runBuildCommand(cwd: string): Promise<void> {

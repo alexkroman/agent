@@ -7,7 +7,7 @@ import { vi } from "vitest";
 import type { AgentConfig } from "../../isolate/lib/internal-types.ts";
 import type { ClientSink } from "../../isolate/protocol.ts";
 import type { AgentDef, ToolContext, ToolDef } from "../../isolate/types.ts";
-import { DEFAULT_INSTRUCTIONS } from "../../isolate/types.ts";
+import { DEFAULT_SYSTEM_PROMPT } from "../../isolate/types.ts";
 import { createRuntime } from "../direct-executor.ts";
 import type { S2sEvents, S2sHandle } from "../s2s.ts";
 import type { Session } from "../session.ts";
@@ -37,7 +37,7 @@ export function makeTool(overrides?: Partial<ToolDef>): ToolDef {
 export function makeAgent(overrides?: Partial<AgentDef>): AgentDef {
   return {
     name: "test-agent",
-    instructions: "Be helpful.",
+    systemPrompt: "Be helpful.",
     greeting: "Hello!",
     maxSteps: 5,
     tools: {},
@@ -48,7 +48,7 @@ export function makeAgent(overrides?: Partial<AgentDef>): AgentDef {
 export function makeConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
   return {
     name: "test-agent",
-    instructions: DEFAULT_INSTRUCTIONS,
+    systemPrompt: DEFAULT_SYSTEM_PROMPT,
     greeting: "Hello",
     ...overrides,
   };
@@ -138,7 +138,7 @@ export function makeSessionOpts(overrides?: Partial<S2sSessionOptions>): S2sSess
     client: makeClient(),
     agentConfig: {
       name: "test-agent",
-      instructions: DEFAULT_INSTRUCTIONS,
+      systemPrompt: DEFAULT_SYSTEM_PROMPT,
       greeting: "Hello!",
     },
     toolSchemas: [],

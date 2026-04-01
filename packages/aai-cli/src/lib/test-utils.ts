@@ -98,7 +98,6 @@ export function makeBundle(overrides?: Partial<BundleOutput>): BundleOutput {
     slug: "test-agent",
     worker: "// worker",
     clientFiles: { "index.html": "<html></html>" },
-    clientDir: "/tmp/test-client",
     workerBytes: 9,
     ...overrides,
   };

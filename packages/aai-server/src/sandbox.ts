@@ -92,7 +92,7 @@ const ToolSchemaSchema = z.object({
 
 const IsolateConfigSchema = z.object({
   name: z.string(),
-  instructions: z.string(),
+  systemPrompt: z.string(),
   greeting: z.string().optional(),
   sttPrompt: z.string().optional(),
   maxSteps: z.number().optional(),
@@ -334,7 +334,7 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
   const agentRuntime = createRuntime({
     agent: {
       name: config.name,
-      instructions: config.instructions,
+      systemPrompt: config.systemPrompt,
       greeting: config.greeting ?? "",
       maxSteps: config.maxSteps ?? 5,
       tools: {},

@@ -8,10 +8,7 @@
     "allowImportingTsExtensions": true,
     "noEmit": true,
     "skipLibCheck": true,
-    "types": ["vitest"],
     "resolveJsonModule": true,
-    "jsx": "react-jsx",
-    "jsxImportSource": "preact",
-    "lib": ["ES2024", "DOM", "DOM.Iterable"]
+    "lib": ["ES2024"]
   }
 }

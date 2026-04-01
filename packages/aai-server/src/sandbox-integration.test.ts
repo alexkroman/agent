@@ -360,7 +360,8 @@ describe("template isolate boot", () => {
     const bundle = await bundleAgent({
       slug: `tpl-${template}`,
       dir: tmpDir,
-      entryPoint: path.join(tmpDir, "agent.ts"),
+      tomlPath: path.join(tmpDir, "agent.toml"),
+      toolsEntry: path.join(tmpDir, "tools.ts"),
       clientEntry: "",
     });
 
@@ -465,7 +466,8 @@ export default defineAgent({
     const bundle = await bundleAgent({
       slug: "integ-bundle-test",
       dir: tmpDir,
-      entryPoint: path.join(tmpDir, "agent.ts"),
+      tomlPath: path.join(tmpDir, "agent.toml"),
+      toolsEntry: path.join(tmpDir, "tools.ts"),
       clientEntry: "",
     });
 

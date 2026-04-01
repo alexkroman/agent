@@ -2,16 +2,13 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { AgentServer } from "@alexkroman1/aai/server";
-import type { AgentDef } from "@alexkroman1/aai/types";
+import type { AgentDef, BuiltinTool, ToolChoice, ToolDef } from "@alexkroman1/aai/types";
+import { DEFAULT_GREETING, DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai/types";
+import { parse as parseToml } from "smol-toml";
 import { getApiKey } from "./discover.ts";
 
 /**
  * Parse a `.env` file into a key→value record.
- *
- * Used to determine *which* keys the developer intended as agent
- * secrets and their default values. Shell overrides still win because
- * callers merge with `process.env` (existing vars take precedence).
  */
 export function parseEnvFile(content: string): Record<string, string> {
   const entries: Record<string, string> = {};
@@ -26,50 +23,109 @@ export function parseEnvFile(content: string): Record<string, string> {
   return entries;
 }
 
-/** Load an AgentDef by dynamically importing agent.ts via Node's native TS support. */
-export async function loadAgentDef(cwd: string): Promise<AgentDef> {
-  const agentPath = path.resolve(cwd, "agent.ts");
-  const agentModule = await import(agentPath);
-  const agentDef = agentModule.default;
+// ── Parsed TOML config (typed) ─────────────────────────────────────────────
 
-  if (!agentDef || typeof agentDef !== "object" || !agentDef.name) {
-    throw new Error("agent.ts must export a default agent definition (from defineAgent())");
+/** The typed result of parsing agent.toml. */
+interface ParsedTomlConfig {
+  name: string;
+  systemPrompt?: string;
+  greeting?: string;
+  sttPrompt?: string;
+  maxSteps?: number;
+  toolChoice?: ToolChoice;
+  builtinTools?: readonly BuiltinTool[];
+  idleTimeoutMs?: number;
+}
+
+const TOML_KEY_MAP: Record<string, keyof ParsedTomlConfig> = {
+  name: "name",
+  system_prompt: "systemPrompt",
+  greeting: "greeting",
+  stt_prompt: "sttPrompt",
+  max_steps: "maxSteps",
+  tool_choice: "toolChoice",
+  builtin_tools: "builtinTools",
+  idle_timeout_ms: "idleTimeoutMs",
+};
+
+function parseTomlConfig(raw: Record<string, unknown>): ParsedTomlConfig {
+  const config: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(raw)) {
+    const mapped = TOML_KEY_MAP[key];
+    if (!mapped) throw new Error(`Unknown key in agent.toml: "${key}"`);
+    config[mapped] = value;
   }
 
-  const missing: string[] = [];
-  if (typeof agentDef.name !== "string") missing.push("name (string)");
-  if (typeof agentDef.instructions !== "string") missing.push("instructions (string)");
-  if (typeof agentDef.greeting !== "string") missing.push("greeting (string)");
-  if (typeof agentDef.maxSteps !== "number" && typeof agentDef.maxSteps !== "function")
-    missing.push("maxSteps (number or function)");
-  if (!agentDef.tools || typeof agentDef.tools !== "object" || Array.isArray(agentDef.tools))
-    missing.push("tools (object)");
-
-  if (missing.length > 0) {
-    throw new Error(
-      `Invalid agent definition: missing or invalid fields: ${missing.join(", ")}. ` +
-        "Use defineAgent() to create a valid agent definition.",
-    );
+  const name = config.name;
+  if (!name || typeof name !== "string") {
+    throw new Error("agent.toml must have a `name` field.");
   }
 
-  return agentDef as AgentDef;
+  const result: ParsedTomlConfig = { name };
+  if (typeof config.systemPrompt === "string") result.systemPrompt = config.systemPrompt;
+  if (typeof config.greeting === "string") result.greeting = config.greeting;
+  if (typeof config.sttPrompt === "string") result.sttPrompt = config.sttPrompt;
+  if (typeof config.maxSteps === "number") result.maxSteps = config.maxSteps;
+  if (config.toolChoice != null) result.toolChoice = config.toolChoice as ToolChoice;
+  if (Array.isArray(config.builtinTools))
+    result.builtinTools = config.builtinTools as BuiltinTool[];
+  if (typeof config.idleTimeoutMs === "number") result.idleTimeoutMs = config.idleTimeoutMs;
+  return result;
+}
+
+/**
+ * Load an agent from `agent.toml` + optional `tools.ts`.
+ *
+ * Reads the TOML config, optionally imports the tools module, merges them,
+ * and applies defaults to produce an internal AgentDef.
+ */
+export async function loadAgent(cwd: string): Promise<AgentDef> {
+  const tomlPath = path.resolve(cwd, "agent.toml");
+  let tomlContent: string;
+  try {
+    tomlContent = await fs.readFile(tomlPath, "utf-8");
+  } catch (err) {
+    throw new Error(`agent.toml not found in ${cwd}. Run \`aai init\` to create one.`, {
+      cause: err,
+    });
+  }
+
+  const config = parseTomlConfig(parseToml(tomlContent));
+
+  // Optionally load tools.ts
+  let tools: Readonly<Record<string, ToolDef>> = {};
+  let state: (() => Record<string, unknown>) | undefined;
+  const toolsPath = path.resolve(cwd, "tools.ts");
+  try {
+    await fs.access(toolsPath);
+    const mod = await import(toolsPath);
+    const exported = mod.default ?? {};
+    if (exported.tools) tools = exported.tools;
+    if (typeof exported.state === "function") state = exported.state;
+  } catch {
+    // No tools.ts — agent has no custom tools
+  }
+
+  const agentDef: AgentDef = {
+    name: config.name,
+    systemPrompt: config.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
+    greeting: config.greeting ?? DEFAULT_GREETING,
+    maxSteps: config.maxSteps ?? 5,
+    tools,
+  };
+  if (config.sttPrompt) agentDef.sttPrompt = config.sttPrompt;
+  if (config.toolChoice) agentDef.toolChoice = config.toolChoice;
+  if (config.builtinTools) agentDef.builtinTools = config.builtinTools;
+  if (config.idleTimeoutMs !== undefined) agentDef.idleTimeoutMs = config.idleTimeoutMs;
+  if (state) agentDef.state = state;
+  return agentDef;
 }
 
 /**
  * Build the `ctx.env` record that agent tools will see at runtime.
  *
  * Only variables explicitly declared in `.env` (plus `ASSEMBLYAI_API_KEY`)
- * are included — matching the platform sandbox behavior where `ctx.env`
- * contains only secrets set via `aai secret put`. This prevents agents
- * from accidentally depending on shell-level vars (PATH, HOME, etc.) that
- * won't exist in production.
- *
- * Values are resolved by merging the `.env` file with the current
- * environment — existing shell exports take precedence over `.env`
- * defaults, without mutating `process.env`.
- *
- * @param cwd - Project directory containing `.env` (optional).
- * @param baseEnv - Override the environment to read values from (tests only).
+ * are included — matching the platform sandbox behavior.
  */
 export async function resolveServerEnv(
   cwd?: string,
@@ -87,8 +143,6 @@ export async function resolveServerEnv(
 
   const source = baseEnv ?? process.env;
 
-  // Only include explicitly-declared keys (not all of process.env).
-  // Shell env takes precedence over .env file values.
   const env: Record<string, string> = {};
   for (const [key, fileVal] of Object.entries(fileEntries)) {
     const val = source[key] ?? fileVal;
@@ -100,22 +154,4 @@ export async function resolveServerEnv(
     env.ASSEMBLYAI_API_KEY = key;
   }
   return env;
-}
-
-/** Create and start an agent server, optionally with static file serving. */
-export async function bootServer(
-  agentDef: AgentDef,
-  clientDir: string | undefined,
-  env: Record<string, string>,
-  port: number,
-): Promise<AgentServer> {
-  const { createRuntime, createServer } = await import("@alexkroman1/aai/server");
-  const runtime = createRuntime({ agent: agentDef, env });
-  const server = createServer({
-    runtime,
-    name: agentDef.name,
-    ...(clientDir ? { clientDir } : {}),
-  });
-  await server.listen(port);
-  return server;
 }

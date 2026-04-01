@@ -1,39 +1,21 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * AAI SDK — build voice agents powered by STT, LLM, and TTS.
+ * AAI SDK — internal types for the voice agent runtime.
  *
- * @example
- * ```ts
- * import { defineAgent } from "aai";
- * import { z } from "zod";
- *
- * export default defineAgent({
- *   name: "my-agent",
- *   instructions: "You are a helpful voice assistant.",
- *   tools: {
- *     greet: {
- *       description: "Greet the user by name",
- *       parameters: z.object({ name: z.string() }),
- *       execute: ({ name }) => `Hello, ${name}!`,
- *     },
- *   },
- * });
- * ```
+ * Users define agents via `agent.toml` + `tools.ts` with no SDK imports.
+ * These types are used internally by the CLI and server.
  */
 
 export type { Kv, KvEntry, KvListOptions } from "./isolate/kv.ts";
-export {
-  type AgentDef,
-  type AgentOptions,
-  type BuiltinTool,
-  defineAgent,
-  defineTool,
-  defineToolFactory,
-  type HookContext,
-  type Message,
-  type ToolChoice,
-  type ToolContext,
-  type ToolDef,
-  type ToolResultMap,
-  tool,
+export type {
+  AgentDef,
+  BuiltinTool,
+  HookContext,
+  JSONSchemaObject,
+  Message,
+  ToolChoice,
+  ToolContext,
+  ToolDef,
+  ToolResultMap,
 } from "./isolate/types.ts";
+export { DEFAULT_GREETING, DEFAULT_SYSTEM_PROMPT } from "./isolate/types.ts";

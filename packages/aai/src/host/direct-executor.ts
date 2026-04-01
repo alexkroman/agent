@@ -9,13 +9,11 @@
 
 import pTimeout from "p-timeout";
 import { createStorage } from "unstorage";
-import type { z } from "zod";
 import { DEFAULT_SHUTDOWN_TIMEOUT_MS, TOOL_EXECUTION_TIMEOUT_MS } from "../isolate/constants.ts";
 import { type AgentHooks, createAgentHooks } from "../isolate/hooks.ts";
 import type { Kv } from "../isolate/kv.ts";
 import {
   agentToolsToSchemas,
-  EMPTY_PARAMS,
   type ExecuteTool,
   type ToolSchema,
   toAgentConfig,
@@ -70,19 +68,11 @@ export async function executeToolCall(
   options: ExecuteToolCallOptions,
 ): Promise<string> {
   const { tool } = options;
-  const schema = tool.parameters ?? EMPTY_PARAMS;
-  const parsed = schema.safeParse(args);
-  if (!parsed.success) {
-    const issues = (parsed.error?.issues ?? [])
-      .map((i: z.ZodIssue) => `${i.path.map(String).join(".")}: ${i.message}`)
-      .join(", ");
-    return toolError(`Invalid arguments for tool "${name}": ${issues}`);
-  }
 
   try {
     const ctx = buildToolContext(options);
     await yieldTick();
-    const result = await pTimeout(Promise.resolve(tool.execute(parsed.data, ctx)), {
+    const result = await pTimeout(Promise.resolve(tool.execute(args, ctx)), {
       milliseconds: TOOL_EXECUTION_TIMEOUT_MS,
       message: `Tool "${name}" timed out after ${TOOL_EXECUTION_TIMEOUT_MS}ms`,
     });

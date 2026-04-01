@@ -1,18 +1,30 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import fs from "node:fs";
 import path from "node:path";
+import { DEFAULT_CLIENT_HTML } from "./lib/default-client.ts";
 import { fileExists } from "./lib/discover.ts";
-import { bootServer, loadAgentDef, resolveServerEnv } from "./lib/server-common.ts";
+import { loadAgent, resolveServerEnv } from "./lib/server-common.ts";
 import { fmtUrl, log, parsePort } from "./lib/ui.ts";
 
+function resolveClientHtml(cwd: string): string {
+  const userHtml = path.join(cwd, "index.html");
+  if (fs.existsSync(userHtml)) {
+    return fs.readFileSync(userHtml, "utf-8");
+  }
+  return DEFAULT_CLIENT_HTML;
+}
+
 export async function _startProductionServer(cwd: string, port: number): Promise<void> {
-  const clientDir = path.join(cwd, ".aai", "client");
-
   log.step("Loading agent");
-  const agentDef = await loadAgentDef(cwd);
+  const agentDef = await loadAgent(cwd);
   const env = await resolveServerEnv(cwd);
+  const clientHtml = resolveClientHtml(cwd);
 
-  await bootServer(agentDef, clientDir, env, port);
+  const { createRuntime, createServer } = await import("@alexkroman1/aai/server");
+  const runtime = createRuntime({ agent: agentDef, env });
+  const server = createServer({ runtime, name: agentDef.name, clientHtml });
+  await server.listen(port);
   log.success(`Listening on ${fmtUrl(`http://localhost:${port}`)}`);
 }
 
