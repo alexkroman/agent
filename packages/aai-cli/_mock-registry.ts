@@ -71,8 +71,9 @@ function startServer(configPath: string): Promise<ChildProcess> {
   });
 }
 
-function killTree(pid: number): Promise<void> {
-  const treeKill = require("tree-kill") as typeof import("tree-kill");
+async function killTree(pid: number): Promise<void> {
+  // biome-ignore lint/correctness/noUndeclaredDependencies: tree-kill is a devDependency of the root workspace
+  const treeKill = (await import("tree-kill")).default;
   return new Promise((resolve, reject) => {
     treeKill(pid, (err?: Error) => (err ? reject(err) : resolve()));
   });
@@ -88,6 +89,7 @@ export async function startMockRegistry(
   packagesDir: string,
   packageNames: string[],
 ): Promise<MockRegistry> {
+  // biome-ignore lint/correctness/noUndeclaredDependencies: get-port is a devDependency of the root workspace
   const getPort = (await import("get-port")).default;
   const port = await getPort();
   const registryUrl = `http://localhost:${port}`;
@@ -125,6 +127,7 @@ export async function startMockRegistry(
   }
 
   // Phase 2: Restart with uplinks — install can resolve transitive deps from public npm
+  // biome-ignore lint/style/noNonNullAssertion: pid is always set after fork()
   await killTree(child.pid!);
   writeConfig(configPath, port, true);
   child = await startServer(configPath);
@@ -139,6 +142,7 @@ export async function startMockRegistry(
     registryUrl,
     env: registryEnv,
     stop: async () => {
+      // biome-ignore lint/suspicious/noEmptyBlockStatements: intentionally swallowing cleanup errors
       if (child.pid) await killTree(child.pid).catch(() => {});
       fs.rmSync(registryDir, { recursive: true, force: true });
     },

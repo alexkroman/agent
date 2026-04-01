@@ -12,6 +12,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
+import type { MockRegistry } from "./_mock-registry.ts";
 
 let playwrightAvailable = false;
 let chromium: typeof import("playwright").chromium | undefined;
@@ -35,7 +36,7 @@ const templates = ["simple", "memory-agent", "web-researcher"];
 
 let aaiBin: string;
 let tmpDir: string;
-let registry: Awaited<ReturnType<typeof StartMockRegistry>>;
+let registry: MockRegistry;
 
 const pm = (process.env.AAI_TEST_PM ?? "pnpm") as "pnpm" | "npm" | "yarn";
 
@@ -95,44 +96,35 @@ function waitForExit(child: ChildProcess, timeoutMs = 5000): Promise<void> {
 
 function initProject(template: string, projectDir: string): void {
   aai(["init", projectDir, "-t", template, "--skip-api", "--skip-deploy"], tmpDir);
-  installFromTarballs(projectDir);
+  installDeps(projectDir);
 }
 
-function installFromTarballs(projectDir: string): void {
-  const pkgJsonPath = path.join(projectDir, "package.json");
-  const pkgJson = JSON.parse(fs.readFileSync(pkgJsonPath, "utf-8"));
-  // Replace direct deps AND add overrides so transitive deps
-  // (e.g. aai-cli depending on aai) also resolve to local tarballs.
-  const overrides: Record<string, string> = {};
-  for (const [name, tarball] of Object.entries(tarballs)) {
-    overrides[name] = `file:${tarball}`;
-    for (const section of ["dependencies", "devDependencies"] as const) {
-      if (pkgJson[section]?.[name]) pkgJson[section][name] = `file:${tarball}`;
-    }
+/** Install dependencies using the mock registry. PM-agnostic — no overrides needed. */
+function installDeps(projectDir: string): void {
+  const env = { ...aaiEnv(), ...registry.env };
+
+  if (pm === "npm" || pm === "yarn") {
+    // Remove pnpm-specific packageManager field so corepack doesn't interfere
+    const pkgJsonPath = path.join(projectDir, "package.json");
+    const pkgJson = JSON.parse(fs.readFileSync(pkgJsonPath, "utf-8"));
+    delete pkgJson.packageManager;
+    fs.writeFileSync(pkgJsonPath, `${JSON.stringify(pkgJson, null, 2)}\n`);
   }
+
   if (pm === "npm") {
-    // npm uses top-level "overrides" and chokes on the pnpm packageManager field
-    pkgJson.overrides = { ...pkgJson.overrides, ...overrides };
-    delete pkgJson.packageManager;
-    fs.writeFileSync(pkgJsonPath, `${JSON.stringify(pkgJson, null, 2)}\n`);
-    execFileSync("npm", ["install"], { cwd: projectDir, stdio: "inherit" });
+    execFileSync("npm", ["install"], { cwd: projectDir, stdio: "inherit", env });
   } else if (pm === "yarn") {
-    // yarn uses "resolutions" for dependency overrides
-    pkgJson.resolutions = { ...pkgJson.resolutions, ...overrides };
-    delete pkgJson.packageManager;
-    fs.writeFileSync(pkgJsonPath, `${JSON.stringify(pkgJson, null, 2)}\n`);
-    execFileSync("yarn", ["install", "--no-lockfile"], { cwd: projectDir, stdio: "inherit" });
+    execFileSync("yarn", ["install", "--no-lockfile"], { cwd: projectDir, stdio: "inherit", env });
   } else {
-    pkgJson.pnpm = { ...pkgJson.pnpm, overrides };
-    fs.writeFileSync(pkgJsonPath, `${JSON.stringify(pkgJson, null, 2)}\n`);
     execFileSync("pnpm", ["install", "--no-frozen-lockfile"], {
       cwd: projectDir,
       stdio: "inherit",
+      env,
     });
   }
 }
 
-beforeAll(() => {
+beforeAll(async () => {
   // Build CLI
   execFileSync("npx", ["tsdown"], { cwd: dir, stdio: "inherit" });
   const mjs = path.resolve(dir, "dist/cli.mjs");
@@ -140,27 +132,15 @@ beforeAll(() => {
   aaiBin = fs.existsSync(mjs) ? mjs : js;
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "aai-e2e-test-"));
 
-  // Pack SDK packages into tarballs
-  const tarballDir = path.join(tmpDir, "_tarballs");
-  fs.mkdirSync(tarballDir);
-  tarballs = {};
-  for (const pkgDir of ["aai", "aai-ui", "aai-cli"]) {
-    const pkgPath = path.join(packagesDir, pkgDir);
-    execFileSync("pnpm", ["run", "build"], { cwd: pkgPath, stdio: "inherit" });
-    const output = execFileSync("pnpm", ["pack", "--pack-destination", tarballDir], {
-      cwd: pkgPath,
-      encoding: "utf-8",
-    }).trim();
-    // pnpm pack returns the full absolute path; npm pack returns just the filename
-    const tarballPath = output.split("\n").pop() ?? "";
-    const pkg = JSON.parse(fs.readFileSync(path.join(pkgPath, "package.json"), "utf-8"));
-    tarballs[pkg.name] = path.isAbsolute(tarballPath)
-      ? tarballPath
-      : path.join(tarballDir, tarballPath);
-  }
+  // Start mock npm registry and publish workspace packages to it.
+  // Packages are built + published inside startMockRegistry, so consumers
+  // (npm/pnpm/yarn install) resolve them exactly as they would from the real registry.
+  const { startMockRegistry } = await import("./_mock-registry.ts");
+  registry = await startMockRegistry(packagesDir, ["aai", "aai-ui", "aai-cli"]);
 });
 
-afterAll(() => {
+afterAll(async () => {
+  await registry?.stop();
   if (tmpDir) fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
@@ -170,9 +150,9 @@ describe("pack + build: template workflows", () => {
   test.each(templates)("template %s", (template) => {
     const projectDir = path.join(tmpDir, template);
 
-    // Init + install from tarballs + test + build
+    // Init + install from mock registry + test + build
     aai(["init", projectDir, "-t", template, "--skip-api", "--skip-deploy"], tmpDir);
-    installFromTarballs(projectDir);
+    installDeps(projectDir);
     aai(["test"], projectDir);
     aai(["build", "--skip-tests"], projectDir);
   });
