@@ -29,7 +29,7 @@ export async function getHarnessFiles(): Promise<HarnessFiles> {
   if (cached) return cached;
 
   // Determine the dist directory
-  const distCandidates = [__dirname, path.join(__dirname, "..", "dist")];
+  const distCandidates = [__dirname, path.join(__dirname, "dist")];
 
   for (const dir of distCandidates) {
     try {
