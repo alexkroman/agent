@@ -1,23 +1,30 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { createInterface } from "node:readline";
+import ci from "ci-info";
 
 /**
  * Prompt the user for a password (masked input).
- * Returns the entered string.
+ * Throws in CI or non-TTY environments instead of hanging.
  */
 export async function askPassword(message: string): Promise<string> {
+  if (ci.isCI || !process.stdin.isTTY) {
+    throw new Error(
+      `Interactive prompt requires a terminal. Set ${message} as an environment variable in CI.`,
+    );
+  }
+
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   process.stdout.write(`${message}: `);
 
   const stdin = process.stdin;
   const wasRaw = stdin.isRaw;
-  if (stdin.isTTY) stdin.setRawMode(true);
+  stdin.setRawMode(true);
 
   try {
     return await readMasked(stdin);
   } finally {
-    if (stdin.isTTY) stdin.setRawMode(wasRaw ?? false);
+    stdin.setRawMode(wasRaw ?? false);
     rl.close();
   }
 }

@@ -1,8 +1,10 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import ci from "ci-info";
 import { consola } from "consola";
 import { humanId } from "human-id";
 import { z } from "zod";
@@ -30,10 +32,18 @@ export function generateSlug(): string {
   return humanId({ separator: "-", capitalize: false });
 }
 
-// --- Global auth config (~/.config/aai/config.json) ---
-// Only stores the AssemblyAI API key, like Vercel stores auth in ~/.vercel/auth.json
+// --- Global auth config ---
+// Only stores the AssemblyAI API key, like Vercel stores auth in ~/.vercel/auth.json.
+// Uses platform-aware config directories: %APPDATA%\aai on Windows, ~/.config/aai on Unix.
 
-const CONFIG_DIR = path.join(process.env.HOME ?? process.env.USERPROFILE ?? ".", ".config", "aai");
+export function getConfigDir(): string {
+  if (process.platform === "win32") {
+    return path.join(process.env.APPDATA ?? path.join(os.homedir(), "AppData", "Roaming"), "aai");
+  }
+  return path.join(process.env.XDG_CONFIG_HOME ?? path.join(os.homedir(), ".config"), "aai");
+}
+
+const CONFIG_DIR = getConfigDir();
 const CONFIG_FILE = path.join(CONFIG_DIR, "config.json");
 
 type AuthConfig = z.infer<typeof AuthConfigSchema>;
@@ -71,6 +81,12 @@ export async function getApiKey(): Promise<string> {
   const config = await readAuthConfig();
   if (config.assemblyai_api_key) {
     return config.assemblyai_api_key;
+  }
+
+  if (ci.isCI || !process.stdin.isTTY) {
+    throw new Error(
+      "No ASSEMBLYAI_API_KEY found. Set the ASSEMBLYAI_API_KEY environment variable in CI or non-interactive environments.",
+    );
   }
 
   const { log } = await import("./_ui.ts");
