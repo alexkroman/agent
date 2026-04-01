@@ -150,7 +150,8 @@ All packages use `src/` for source files. Internal utilities live in
 - `init.ts` / `dev.ts` / `test.ts` / `deploy.ts` / `delete.ts` /
   `secret.ts` — subcommand entry points
 - `start.ts` — production server launcher (used internally)
-- `lib/init.ts` / `lib/deploy.ts` / `lib/delete.ts` / `lib/bundler.ts` — internal logic
+- `lib/init.ts` / `lib/deploy.ts` / `lib/delete.ts` /
+  `lib/bundler.ts` — internal logic
 - `lib/bundler.ts` — generates Vite config, bundles `agent.ts`/`client.tsx`
   into `worker.js`/`index.html`
 - `lib/api-client.ts` — platform API client

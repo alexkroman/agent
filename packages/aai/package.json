@@ -89,8 +89,7 @@
     "@types/json-schema": "^7.0.15",
     "@types/node": "^25.5.0",
     "@types/ws": "^8.18.1",
-    "tsdown": "^0.21.5",
-    "vite": "^8.0.3"
+    "tsdown": "^0.21.5"
   },
   "engines": {
     "node": ">=22.6"
