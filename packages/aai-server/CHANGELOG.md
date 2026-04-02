@@ -1,5 +1,22 @@
 # @alexkroman1/aai-server
 
+## 0.9.16
+
+### Patch Changes
+
+- 4ebd7b6: Standardize file and directory naming to idiomatic kebab-case conventions
+
+  - Add ls-lint for file naming enforcement
+  - Drop underscore prefix from internal files in aai-server (e.g. `_schemas.ts` → `schemas.ts`)
+  - Rename `_components` → `components` and `__fixtures__` → `fixtures` in aai-ui
+  - Rename `__fixtures__` → `fixtures` in aai/host
+  - Flatten aai-server by removing `src/` directory
+
+- 68f4d84: Make more cross platform
+- Updated dependencies [4ebd7b6]
+- Updated dependencies [68f4d84]
+  - @alexkroman1/aai@0.12.3
+
 ## 0.9.15
 
 ### Patch Changes
