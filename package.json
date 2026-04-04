@@ -40,6 +40,7 @@
     "@types/node": "^25.5.0",
     "@vitest/coverage-v8": "^4.1.2",
     "knip": "^6.1.1",
+    "kokoro-js": "^1.2.1",
     "lefthook": "^2.1.4",
     "markdownlint-cli2": "^0.22.0",
     "preact": "^10.29.0",
@@ -62,7 +63,10 @@
     "onlyBuiltDependencies": [
       "esbuild",
       "isolated-vm",
-      "lefthook"
+      "lefthook",
+      "onnxruntime-node",
+      "protobufjs",
+      "sharp"
     ]
   }
 }

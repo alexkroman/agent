@@ -5,7 +5,7 @@
   "exclude": ["exports", "types", "optionalPeerDependencies"],
   "workspaces": {
     ".": {
-      "entry": ["scripts/*.mjs", "vitest.integration.config.ts"]
+      "entry": ["scripts/*.{mjs,ts}", "vitest.integration.config.ts"]
     },
     "packages/aai": {
       "entry": ["**/*.test.ts", "**/*.test-d.ts", "host/_test-utils.ts"],
