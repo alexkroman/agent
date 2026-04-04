@@ -226,6 +226,7 @@ type SessionMetrics = {
   errors: string[];
   connectMs: number;
   firstGreetingMs: number;
+  /** End-of-speech → first agent transcript delta (user-perceived latency). */
   turnLatenciesMs: number[];
   totalMs: number;
 };
@@ -360,6 +361,7 @@ async function runSession(
   let waitingForReply = false;
   let greetingReceived = false;
   let gotAgentReplyThisTurn = false;
+  let recordedLatencyThisTurn = false;
   let lastEvent = "init";
   let done = false;
 
@@ -452,6 +454,28 @@ async function runSession(
       log(`tool result sent for ${name}`);
     });
 
+    handle.on("speechStopped", () => {
+      lastEvent = "speechStopped";
+      if (waitingForReply) {
+        // Start latency timer at end-of-speech — this is when the user
+        // stops talking and begins waiting for a response.
+        turnStart = Date.now();
+        log(`turn ${currentTurn} speech stopped, waiting for response...`);
+      }
+    });
+
+    handle.on("agentTranscriptDelta", ({ text }) => {
+      lastEvent = "agentTranscriptDelta";
+      // Record latency on the first delta — this is when the user would
+      // first hear the agent (TTS streams from the first text token).
+      if (waitingForReply && !recordedLatencyThisTurn && turnStart > 0) {
+        recordedLatencyThisTurn = true;
+        const latency = Date.now() - turnStart;
+        metrics.turnLatenciesMs.push(latency);
+        log(`first agent token [turn ${currentTurn}]: "${text.slice(0, 40)}" (${latency}ms)`);
+      }
+    });
+
     handle.on("agentTranscript", ({ text }) => {
       lastEvent = "agentTranscript";
       metrics.agentTranscripts.push(text);
@@ -462,9 +486,7 @@ async function runSession(
         log(`greeting: "${text.slice(0, 60)}" (${metrics.firstGreetingMs}ms)`);
       } else if (waitingForReply) {
         gotAgentReplyThisTurn = true;
-        const latency = Date.now() - turnStart;
-        metrics.turnLatenciesMs.push(latency);
-        log(`agent reply [turn ${currentTurn}]: "${text.slice(0, 60)}" (${latency}ms)`);
+        log(`agent reply [turn ${currentTurn}]: "${text.slice(0, 60)}"`);
       }
     });
 
@@ -538,16 +560,18 @@ async function runSession(
       );
       waitingForReply = true;
       gotAgentReplyThisTurn = false;
+      recordedLatencyThisTurn = false;
+      // turnStart will be set by the speechStopped handler — that marks
+      // the moment the user stops talking, which is when perceived latency
+      // begins. Reset to 0 so we don't accidentally use a stale value.
+      turnStart = 0;
 
       for (let offset = 0; offset < pcm.length; offset += chunkBytes) {
         if (done) return;
         handle.sendAudio(pcm.slice(offset, offset + chunkBytes));
         await sleep(CHUNK_MS);
       }
-      // Start latency timer after audio is fully sent — measures API processing
-      // time (STT + LLM + tool calls + TTS) without streaming overhead.
-      turnStart = Date.now();
-      log(`turn ${currentTurn} audio sent, waiting for response...`);
+      log(`turn ${currentTurn} audio sent`);
     }
   });
 }
