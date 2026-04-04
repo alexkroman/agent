@@ -7,14 +7,15 @@
  *   npx tsx scripts/s2s-load-test.ts [options]
  *
  * Options:
- *   --concurrency, -c   Number of concurrent sessions (default: 1)
- *   --url               S2S WebSocket URL (default: wss://speech-to-speech.us.assemblyai.com/v1/realtime)
- *   --api-key           AssemblyAI API key (default: $ASSEMBLYAI_API_KEY)
- *   --greeting          Agent greeting text (default: "Hello, how can I help?")
- *   --voice             Kokoro voice preset (default: af_heart)
- *   --turns             Number of user turns per session (default: 3)
- *   --chunk-ms          Audio chunk size in ms when streaming (default: 100)
- *   --pause-ms          Pause between turns in ms (default: 2000)
+ *   --sessions, -n       Total number of sessions to run (default: 1)
+ *   --concurrency, -c    Max simultaneous sessions (default: 1)
+ *   --url                S2S WebSocket URL (default: wss://speech-to-speech.us.assemblyai.com/v1/realtime)
+ *   --api-key            AssemblyAI API key (default: $ASSEMBLYAI_API_KEY)
+ *   --greeting           Agent greeting text (default: "Hello, how can I help?")
+ *   --voice              Kokoro voice preset (default: af_heart)
+ *   --turns              Number of user turns per session (default: 3)
+ *   --chunk-ms           Audio chunk size in ms when streaming (default: 100)
+ *   --pause-ms           Pause between turns in ms (default: 2000)
  */
 
 import { createRequire } from "node:module";
@@ -30,6 +31,7 @@ import {
 
 const { values: args } = parseArgs({
   options: {
+    sessions: { type: "string", short: "n", default: "1" },
     concurrency: { type: "string", short: "c", default: "1" },
     url: {
       type: "string",
@@ -45,6 +47,7 @@ const { values: args } = parseArgs({
   strict: true,
 });
 
+const TOTAL_SESSIONS = Number(args.sessions);
 const CONCURRENCY = Number(args.concurrency);
 const WSS_URL = args.url!;
 const API_KEY = args["api-key"]!;
@@ -536,6 +539,7 @@ async function main(): Promise<void> {
   console.log("S2S Load Test");
   console.log("=".repeat(70));
   console.log(`  URL:         ${WSS_URL}`);
+  console.log(`  Sessions:    ${TOTAL_SESSIONS}`);
   console.log(`  Concurrency: ${CONCURRENCY}`);
   console.log(`  Turns/sess:  ${TURNS}`);
   console.log(`  Chunk size:  ${CHUNK_MS}ms`);
@@ -556,12 +560,29 @@ async function main(): Promise<void> {
   const audioBuffers = await generateAudioBuffers(tts as unknown as TTS);
   console.log(`Generated ${audioBuffers.length} audio buffers\n`);
 
-  console.log(`Launching ${CONCURRENCY} concurrent session(s)...\n`);
+  console.log(
+    `Running ${TOTAL_SESSIONS} session(s), ${CONCURRENCY} at a time...\n`,
+  );
   const startTime = Date.now();
 
-  const results = await Promise.all(
-    Array.from({ length: CONCURRENCY }, (_, i) => runSession(i, audioBuffers)),
+  // Worker pool: keep CONCURRENCY slots filled until all sessions are done
+  const results: SessionMetrics[] = [];
+  let nextId = 0;
+
+  async function worker(): Promise<void> {
+    while (nextId < TOTAL_SESSIONS) {
+      const id = nextId++;
+      const result = await runSession(id, audioBuffers);
+      results.push(result);
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(CONCURRENCY, TOTAL_SESSIONS) }, () => worker()),
   );
+
+  // Sort by session ID for stable output
+  results.sort((a, b) => a.sessionId - b.sessionId);
 
   console.log(`\nAll sessions finished in ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
   printMetrics(results);
