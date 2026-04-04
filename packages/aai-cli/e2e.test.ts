@@ -212,6 +212,7 @@ async function setupEventInjector(browser: Browser, port: number) {
     const messages = JSON.parse(fs.readFileSync(fixturePath, "utf-8")) as Record<string, unknown>[];
     for (const msg of messages) {
       await inject(msg);
+      await new Promise((r) => setTimeout(r, 50));
     }
   };
 
