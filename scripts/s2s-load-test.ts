@@ -348,7 +348,7 @@ function runSession(
     let currentTurn = 0;
     let waitingForReply = false;
     let greetingReceived = false;
-    let agentRepliedThisTurn = false;
+    let lastEvent = "init";
     let done = false;
 
     function finish(): void {
@@ -388,7 +388,15 @@ function runSession(
 
     // Timeout: 2 min per session max
     const timeout = setTimeout(() => {
-      metrics.errors.push("session timeout (120s)");
+      const state = [
+        `turn=${currentTurn}/${TURNS}`,
+        `greeting=${greetingReceived}`,
+        `waitingForReply=${waitingForReply}`,
+        `lastEvent=${lastEvent}`,
+      ].join(", ");
+      const msg = `session timeout (120s) [${state}]`;
+      metrics.errors.push(msg);
+      log(msg);
       finish();
     }, 120_000);
 
@@ -423,6 +431,8 @@ function runSession(
       } catch {
         return;
       }
+
+      lastEvent = msg.type as string;
 
       switch (msg.type) {
         case "session.ready":
@@ -525,8 +535,12 @@ function runSession(
       finish();
     });
 
-    ws.on("close", () => {
-      log("ws closed");
+    ws.on("close", (code: number, reason: Buffer) => {
+      const reasonStr = reason.toString() || "none";
+      log(`ws closed (code: ${code}, reason: ${reasonStr})`);
+      if (code !== 1000 && code !== 1005) {
+        metrics.errors.push(`ws close: code=${code} reason=${reasonStr}`);
+      }
       clearTimeout(timeout);
       finish();
     });
@@ -604,12 +618,12 @@ async function main(): Promise<void> {
 
   printMetrics(results);
 
-  // Exit with failure if any validation errors
+  // Exit with failure if any validation errors.
   const hasFailures = results.some((r) => r.errors.some((e) => e.startsWith("FAIL:")));
-  if (hasFailures) process.exit(1);
+  process.exitCode = hasFailures ? 1 : 0;
 }
 
 main().catch((err) => {
   console.error(err);
-  process.exit(1);
+  process.exitCode = 1;
 });
