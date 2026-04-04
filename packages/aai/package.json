@@ -96,7 +96,7 @@
   },
   "devDependencies": {
     "@types/json-schema": "^7.0.15",
-    "@types/node": "^25.5.0",
+    "@types/node": "^25.5.2",
     "@types/ws": "^8.18.1",
     "tsdown": "^0.21.7",
     "vite": "^8.0.3"
