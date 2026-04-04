@@ -7,31 +7,24 @@
  *   npx tsx scripts/s2s-load-test.ts [options]
  *
  * Options:
- *   --sessions, -n       Total number of sessions to run (default: 1)
- *   --concurrency, -c    Max simultaneous sessions (default: 1)
- *   --url                S2S WebSocket URL (default: wss://speech-to-speech.us.assemblyai.com/v1/realtime)
- *   --api-key            AssemblyAI API key (default: $ASSEMBLYAI_API_KEY)
- *   --greeting           Agent greeting text (default: "Hello, how can I help?")
- *   --voice              Kokoro voice preset (default: af_heart)
- *   --turns              Number of user turns per session (default: 3)
- *   --chunk-ms           Audio chunk size in ms when streaming (default: 100)
- *   --pause-ms           Pause between turns in ms (default: 2000)
+ *   --concurrency, -c   Number of concurrent sessions (default: 1)
+ *   --url               S2S WebSocket URL (default: wss://speech-to-speech.us.assemblyai.com/v1/realtime)
+ *   --api-key           AssemblyAI API key (default: $ASSEMBLYAI_API_KEY)
+ *   --greeting          Agent greeting text (default: "Hello, how can I help?")
+ *   --voice             Kokoro voice preset (default: af_heart)
+ *   --turns             Number of user turns per session (default: 3)
+ *   --chunk-ms          Audio chunk size in ms when streaming (default: 100)
+ *   --pause-ms          Pause between turns in ms (default: 2000)
  */
 
 import { createRequire } from "node:module";
 import { parseArgs } from "node:util";
-import {
-  connectS2s,
-  defaultCreateS2sWebSocket,
-  type S2sHandle,
-  type S2sToolSchema,
-} from "../packages/aai/host/s2s.ts";
+import WebSocket from "ws";
 
 // ── CLI args ──────────────────────────────────────────────────────────────────
 
 const { values: args } = parseArgs({
   options: {
-    sessions: { type: "string", short: "n", default: "1" },
     concurrency: { type: "string", short: "c", default: "1" },
     url: {
       type: "string",
@@ -47,7 +40,6 @@ const { values: args } = parseArgs({
   strict: true,
 });
 
-const TOTAL_SESSIONS = Number(args.sessions);
 const CONCURRENCY = Number(args.concurrency);
 const WSS_URL = args.url!;
 const API_KEY = args["api-key"]!;
@@ -65,29 +57,35 @@ if (!API_KEY) {
 
 // ── Tools & utterances ────────────────────────────────────────────────────────
 
-const TOOLS: S2sToolSchema[] = [
+// Tools registered with the S2S session. The system prompt instructs the agent
+// to use them, so most turns should trigger at least one tool call.
+const TOOLS = [
   {
-    type: "function",
+    type: "function" as const,
     name: "get_weather",
     description: "Get the current weather for a location.",
     parameters: {
       type: "object",
-      properties: { location: { type: "string", description: "City name" } },
+      properties: {
+        location: { type: "string", description: "City name" },
+      },
       required: ["location"],
     },
   },
   {
-    type: "function",
+    type: "function" as const,
     name: "search_web",
     description: "Search the web for information.",
     parameters: {
       type: "object",
-      properties: { query: { type: "string", description: "Search query" } },
+      properties: {
+        query: { type: "string", description: "Search query" },
+      },
       required: ["query"],
     },
   },
   {
-    type: "function",
+    type: "function" as const,
     name: "book_appointment",
     description: "Book an appointment at a given date and time.",
     parameters: {
@@ -101,23 +99,28 @@ const TOOLS: S2sToolSchema[] = [
     },
   },
   {
-    type: "function",
+    type: "function" as const,
     name: "get_store_hours",
     description: "Get store hours for a given day of the week.",
     parameters: {
       type: "object",
-      properties: { day: { type: "string", description: "Day of the week" } },
+      properties: {
+        day: { type: "string", description: "Day of the week" },
+      },
       required: ["day"],
     },
   },
 ];
 
+/** Mock responses keyed by tool name. */
 const TOOL_RESPONSES: Record<string, (args: Record<string, unknown>) => string> = {
   get_weather: (a) =>
     JSON.stringify({ temperature: "72F", condition: "sunny", location: a.location ?? "unknown" }),
   search_web: (a) =>
     JSON.stringify({
-      results: [{ title: `Result for: ${a.query}`, snippet: "Here is some useful information." }],
+      results: [
+        { title: `Result for: ${a.query}`, snippet: "Here is some useful information." },
+      ],
     }),
   book_appointment: (a) =>
     JSON.stringify({ confirmed: true, date: a.date, time: a.time, name: a.name }),
@@ -125,6 +128,7 @@ const TOOL_RESPONSES: Record<string, (args: Record<string, unknown>) => string> 
     JSON.stringify({ day: a.day, open: "9:00 AM", close: "9:00 PM" }),
 };
 
+// Utterances designed to trigger tool calls.
 const UTTERANCES = [
   "What's the weather like in San Francisco right now?",
   "Can you search the web for the best Italian restaurants nearby?",
@@ -134,8 +138,6 @@ const UTTERANCES = [
   "Search for how to make sourdough bread.",
   "Book me an appointment next Monday at 10 AM, name is Jordan.",
   "What are the store hours on Sunday?",
-  "Search for tips on growing tomatoes in a small garden.",
-  "What's the weather like in Chicago this weekend?",
 ];
 
 const SYSTEM_PROMPT = `You are a helpful voice assistant. Keep responses brief — one or two sentences.
@@ -145,21 +147,15 @@ You MUST use the provided tools to answer questions. Always call the appropriate
 - For booking requests, use book_appointment.
 - For store hours questions, use get_store_hours.`;
 
-// Suppress S2S client logging — we do our own.
-const silentLogger = {
-  info: () => {},
-  warn: () => {},
-  error: () => {},
-  debug: () => {},
-};
-
 // ── TTS generation ────────────────────────────────────────────────────────────
 
+/** Resolve the kokoro-js voices/ directory from the installed package. */
 function resolveVoicesPath(): string {
   const require = createRequire(import.meta.url);
   return require.resolve("kokoro-js").replace(/dist.*/, "voices/");
 }
 
+/** Downsample Float32 audio from srcRate to dstRate via linear interpolation. */
 function resample(samples: Float32Array, srcRate: number, dstRate: number): Float32Array {
   if (srcRate === dstRate) return samples;
   const ratio = srcRate / dstRate;
@@ -175,6 +171,7 @@ function resample(samples: Float32Array, srcRate: number, dstRate: number): Floa
   return out;
 }
 
+/** Convert Float32 [-1,1] to 16-bit signed PCM little-endian. */
 function float32ToPcm16(samples: Float32Array): Uint8Array {
   const buf = new ArrayBuffer(samples.length * 2);
   const view = new DataView(buf);
@@ -201,7 +198,8 @@ async function generateAudioBuffers(tts: TTS): Promise<Uint8Array[]> {
     const result = await tts.generate(text, { voice: VOICE });
     const resampled = resample(result.audio, result.sampling_rate, INPUT_SAMPLE_RATE);
     const pcm = float32ToPcm16(resampled);
-    console.log(`${(resampled.length / INPUT_SAMPLE_RATE).toFixed(2)}s (${pcm.length} bytes)`);
+    const durationSec = resampled.length / INPUT_SAMPLE_RATE;
+    console.log(`${durationSec.toFixed(2)}s (${pcm.length} bytes)`);
     buffers.push(pcm);
   }
   return buffers;
@@ -213,6 +211,7 @@ type ToolCallMetric = {
   turn: number;
   name: string;
   args: Record<string, unknown>;
+  responseMs: number;
 };
 
 type SessionMetrics = {
@@ -245,18 +244,26 @@ function printMetrics(results: SessionMetrics[]): void {
     console.log(`  Connected:        ${r.connected}`);
     console.log(`  Session ready:    ${r.sessionReady}`);
     console.log(`  Connect time:     ${r.connectMs}ms`);
-    console.log(`  First greeting:   ${r.firstGreetingMs > 0 ? `${r.firstGreetingMs}ms` : "n/a"}`);
+    console.log(
+      `  First greeting:   ${r.firstGreetingMs > 0 ? `${r.firstGreetingMs}ms` : "n/a"}`,
+    );
     console.log(`  Turns completed:  ${r.turnsCompleted}/${TURNS}`);
     if (r.turnLatenciesMs.length > 0) {
-      console.log(`  Turn latencies:   ${r.turnLatenciesMs.map((l) => `${l}ms`).join(", ")}`);
+      console.log(
+        `  Turn latencies:   ${r.turnLatenciesMs.map((l) => `${l}ms`).join(", ")}`,
+      );
     }
     console.log(`  Tool calls:       ${r.toolCalls.length}`);
     for (const tc of r.toolCalls) {
-      console.log(`    [turn ${tc.turn}] ${tc.name}(${JSON.stringify(tc.args)})`);
+      console.log(
+        `    [turn ${tc.turn}] ${tc.name}(${JSON.stringify(tc.args)}) -> responded in ${tc.responseMs}ms`,
+      );
     }
     console.log(`  Total time:       ${r.totalMs}ms`);
     if (r.userTranscripts.length > 0) {
-      console.log(`  User transcripts: ${r.userTranscripts.map((t) => `"${t}"`).join(", ")}`);
+      console.log(
+        `  User transcripts: ${r.userTranscripts.map((t) => `"${t}"`).join(", ")}`,
+      );
     }
     if (r.agentTranscripts.length > 0) {
       console.log(
@@ -270,18 +277,35 @@ function printMetrics(results: SessionMetrics[]): void {
 
   // Aggregate
   const succeeded = results.filter((r) => r.connected && r.sessionReady);
-  const allLatencies = results.flatMap((r) => r.turnLatenciesMs).sort((a, b) => a - b);
+  const allLatencies = results
+    .flatMap((r) => r.turnLatenciesMs)
+    .sort((a, b) => a - b);
   const greetingLatencies = results
     .map((r) => r.firstGreetingMs)
     .filter((l) => l > 0)
     .sort((a, b) => a - b);
+  const totalToolCalls = results.reduce((s, r) => s + r.toolCalls.length, 0);
 
   console.log("\n" + "=".repeat(70));
   console.log("AGGREGATE");
   console.log("=".repeat(70));
-  console.log(`  Sessions:         ${results.length} total, ${succeeded.length} connected`);
-  console.log(`  Total turns:      ${results.reduce((s, r) => s + r.turnsCompleted, 0)}`);
-  console.log(`  Total tool calls: ${results.reduce((s, r) => s + r.toolCalls.length, 0)}`);
+  console.log(
+    `  Sessions:         ${results.length} total, ${succeeded.length} connected`,
+  );
+  console.log(
+    `  Total turns:      ${results.reduce((s, r) => s + r.turnsCompleted, 0)}`,
+  );
+  console.log(`  Total tool calls: ${totalToolCalls}`);
+  const allErrors = results.flatMap((r) => r.errors);
+  const failures = allErrors.filter((e) => e.startsWith("FAIL:"));
+  console.log(`  Total errors:     ${allErrors.length}`);
+  if (failures.length > 0) {
+    console.log(`  Validation fails: ${failures.length}`);
+    for (const f of failures) {
+      console.log(`    - ${f}`);
+    }
+  }
+
   if (greetingLatencies.length > 0) {
     console.log(`  Greeting p50:     ${percentile(greetingLatencies, 50)}ms`);
     console.log(`  Greeting p95:     ${percentile(greetingLatencies, 95)}ms`);
@@ -291,42 +315,6 @@ function printMetrics(results: SessionMetrics[]): void {
     console.log(`  Turn latency p95: ${percentile(allLatencies, 95)}ms`);
     console.log(`  Turn latency p99: ${percentile(allLatencies, 99)}ms`);
   }
-
-  // Errors section
-  const allErrors = results.flatMap((r) =>
-    r.errors.map((e) => ({ session: r.sessionId, error: e })),
-  );
-  const wsErrors = allErrors.filter((e) => e.error.startsWith("ws "));
-  const apiErrors = allErrors.filter(
-    (e) => e.error.startsWith("s2s error:") || e.error.startsWith("s2s expired:"),
-  );
-  const timeouts = allErrors.filter((e) => e.error.startsWith("session timeout"));
-  const validationFails = allErrors.filter((e) => e.error.startsWith("FAIL:"));
-
-  console.log("\n" + "=".repeat(70));
-  console.log("ERRORS");
-  console.log("=".repeat(70));
-  if (allErrors.length === 0) {
-    console.log("  (none)");
-  } else {
-    console.log(`  Total:            ${allErrors.length}`);
-    if (wsErrors.length > 0) {
-      console.log(`  WebSocket:        ${wsErrors.length}`);
-      for (const e of wsErrors) console.log(`    [s${e.session}] ${e.error}`);
-    }
-    if (apiErrors.length > 0) {
-      console.log(`  API:              ${apiErrors.length}`);
-      for (const e of apiErrors) console.log(`    [s${e.session}] ${e.error}`);
-    }
-    if (timeouts.length > 0) {
-      console.log(`  Timeouts:         ${timeouts.length}`);
-      for (const e of timeouts) console.log(`    [s${e.session}] ${e.error}`);
-    }
-    if (validationFails.length > 0) {
-      console.log(`  Validation:       ${validationFails.length}`);
-      for (const e of validationFails) console.log(`    [s${e.session}] ${e.error}`);
-    }
-  }
 }
 
 // ── S2S session driver ────────────────────────────────────────────────────────
@@ -335,176 +323,212 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function runSession(
+function runSession(
   sessionId: number,
   audioBuffers: Uint8Array[],
 ): Promise<SessionMetrics> {
-  const metrics: SessionMetrics = {
-    sessionId,
-    connected: false,
-    sessionReady: false,
-    turnsCompleted: 0,
-    userTranscripts: [],
-    agentTranscripts: [],
-    toolCalls: [],
-    errors: [],
-    connectMs: 0,
-    firstGreetingMs: 0,
-    turnLatenciesMs: [],
-    totalMs: 0,
-  };
-
-  const sessionStart = Date.now();
-  let turnStart = 0;
-  let currentTurn = 0;
-  let waitingForReply = false;
-  let greetingReceived = false;
-  let lastEvent = "init";
-  let done = false;
-
-  const log = (msg: string) => console.log(`  [s${sessionId}] ${msg}`);
-
-  // Connect via SDK client
-  let handle: S2sHandle;
-  try {
-    handle = await connectS2s({
-      apiKey: API_KEY,
-      config: { wssUrl: WSS_URL, inputSampleRate: INPUT_SAMPLE_RATE, outputSampleRate: 24_000 },
-      createWebSocket: defaultCreateS2sWebSocket,
-      logger: silentLogger,
-    });
-    metrics.connected = true;
-    metrics.connectMs = Date.now() - sessionStart;
-    log(`connected (${metrics.connectMs}ms)`);
-  } catch (err: unknown) {
-    const msg = `ws error: ${(err as Error).message}`;
-    metrics.errors.push(msg);
-    log(msg);
-    metrics.totalMs = Date.now() - sessionStart;
-    return metrics;
-  }
-
   return new Promise((resolve) => {
-    const timeout = setTimeout(() => {
-      const state = `turn=${currentTurn}/${TURNS}, greeting=${greetingReceived}, waitingForReply=${waitingForReply}, lastEvent=${lastEvent}`;
-      const msg = `session timeout (120s) [${state}]`;
-      metrics.errors.push(msg);
-      log(msg);
-      finish();
-    }, 120_000);
+    const metrics: SessionMetrics = {
+      sessionId,
+      connected: false,
+      sessionReady: false,
+      turnsCompleted: 0,
+      userTranscripts: [],
+      agentTranscripts: [],
+      toolCalls: [],
+      errors: [],
+      connectMs: 0,
+      firstGreetingMs: 0,
+      turnLatenciesMs: [],
+      totalMs: 0,
+    };
+
+    const sessionStart = Date.now();
+    let turnStart = 0;
+    let currentTurn = 0;
+    let waitingForReply = false;
+    let greetingReceived = false;
+    let agentRepliedThisTurn = false;
+    let done = false;
 
     function finish(): void {
       if (done) return;
       done = true;
-      clearTimeout(timeout);
       metrics.totalMs = Date.now() - sessionStart;
 
+      // Validate: greeting must have been received
       if (metrics.connected && metrics.sessionReady && !greetingReceived) {
         const msg = "FAIL: no greeting received from agent";
         metrics.errors.push(msg);
         log(msg);
       }
+
+      // Validate: if we started a turn but got no agent reply
       if (waitingForReply && currentTurn > 0) {
         const msg = `FAIL: turn ${currentTurn} got no agent reply`;
         metrics.errors.push(msg);
         log(msg);
       }
+
+      // Validate: every completed turn should have an agent transcript
+      // agentTranscripts[0] is the greeting, so turns start at index 1
       const expectedReplies = metrics.turnsCompleted;
-      const actualReplies = Math.max(
-        0,
-        metrics.agentTranscripts.length - (greetingReceived ? 1 : 0),
-      );
+      const actualReplies = Math.max(0, metrics.agentTranscripts.length - (greetingReceived ? 1 : 0));
       if (actualReplies < expectedReplies) {
         const msg = `FAIL: expected ${expectedReplies} agent replies but got ${actualReplies}`;
         metrics.errors.push(msg);
         log(msg);
       }
 
-      handle.close();
+      try {
+        ws.close();
+      } catch {}
       resolve(metrics);
     }
 
-    handle.on("ready", ({ sessionId: sid }) => {
-      metrics.sessionReady = true;
-      lastEvent = "ready";
-      log(`session ready (id: ${sid})`);
+    // Timeout: 2 min per session max
+    const timeout = setTimeout(() => {
+      metrics.errors.push("session timeout (120s)");
+      finish();
+    }, 120_000);
+
+    const log = (msg: string) => console.log(`  [s${sessionId}] ${msg}`);
+
+    const ws = new WebSocket(WSS_URL, {
+      headers: { Authorization: `Bearer ${API_KEY}` },
     });
 
-    handle.on("sessionUpdated", () => {
-      lastEvent = "sessionUpdated";
-      log("session updated, waiting for greeting...");
+    ws.on("open", () => {
+      metrics.connected = true;
+      metrics.connectMs = Date.now() - sessionStart;
+      log(`connected (${metrics.connectMs}ms)`);
+
+      // Send session.update with tools
+      ws.send(
+        JSON.stringify({
+          type: "session.update",
+          session: {
+            system_prompt: SYSTEM_PROMPT,
+            greeting: GREETING,
+            tools: TOOLS,
+          },
+        }),
+      );
     });
 
-    handle.on("toolCall", ({ callId, name, args: toolArgs }) => {
-      lastEvent = "toolCall";
-      log(`tool call [turn ${currentTurn}]: ${name}(${JSON.stringify(toolArgs)})`);
+    ws.on("message", (data: Buffer) => {
+      let msg: { type: string; [k: string]: unknown };
+      try {
+        msg = JSON.parse(data.toString());
+      } catch {
+        return;
+      }
 
-      const responder = TOOL_RESPONSES[name];
-      const result = responder
-        ? responder(toolArgs)
-        : JSON.stringify({ error: `unknown tool: ${name}` });
-      handle.sendToolResult(callId, result);
+      switch (msg.type) {
+        case "session.ready":
+          metrics.sessionReady = true;
+          log(`session ready (id: ${msg.session_id})`);
+          break;
 
-      metrics.toolCalls.push({ turn: currentTurn, name, args: toolArgs });
-      log(`tool result sent for ${name}`);
-    });
+        case "session.updated":
+          log("session updated, waiting for greeting...");
+          break;
 
-    handle.on("agentTranscript", ({ text }) => {
-      lastEvent = "agentTranscript";
-      metrics.agentTranscripts.push(text);
+        case "tool.call": {
+          const callId = msg.call_id as string;
+          const name = msg.name as string;
+          const toolArgs = (msg.args as Record<string, unknown>) ?? {};
+          log(`tool call [turn ${currentTurn}]: ${name}(${JSON.stringify(toolArgs)})`);
 
-      if (!greetingReceived) {
-        greetingReceived = true;
-        metrics.firstGreetingMs = Date.now() - sessionStart;
-        log(`greeting: "${text.slice(0, 60)}" (${metrics.firstGreetingMs}ms)`);
-      } else if (waitingForReply) {
-        const latency = Date.now() - turnStart;
-        metrics.turnLatenciesMs.push(latency);
-        log(`agent reply [turn ${currentTurn}]: "${text.slice(0, 60)}" (${latency}ms)`);
+          const callStart = Date.now();
+
+          // Generate mock tool response
+          const responder = TOOL_RESPONSES[name];
+          const result = responder
+            ? responder(toolArgs)
+            : JSON.stringify({ error: `unknown tool: ${name}` });
+
+          // Send tool.result back
+          ws.send(
+            JSON.stringify({
+              type: "tool.result",
+              call_id: callId,
+              result,
+            }),
+          );
+
+          metrics.toolCalls.push({
+            turn: currentTurn,
+            name,
+            args: toolArgs,
+            responseMs: Date.now() - callStart,
+          });
+          log(`tool result sent for ${name} (call_id: ${callId})`);
+          break;
+        }
+
+        case "transcript.agent": {
+          const text = msg.text as string;
+          metrics.agentTranscripts.push(text);
+
+          if (!greetingReceived) {
+            greetingReceived = true;
+            metrics.firstGreetingMs = Date.now() - sessionStart;
+            log(
+              `greeting: "${text.slice(0, 60)}" (${metrics.firstGreetingMs}ms)`,
+            );
+          } else if (waitingForReply) {
+            const latency = Date.now() - turnStart;
+            metrics.turnLatenciesMs.push(latency);
+            log(
+              `agent reply [turn ${currentTurn}]: "${text.slice(0, 60)}" (${latency}ms)`,
+            );
+          }
+          break;
+        }
+
+        case "transcript.user": {
+          const text = msg.text as string;
+          metrics.userTranscripts.push(text);
+          log(`user transcript [turn ${currentTurn}]: "${text}"`);
+          break;
+        }
+
+        case "reply.done":
+          if (waitingForReply) {
+            waitingForReply = false;
+            metrics.turnsCompleted++;
+          }
+
+          // After greeting or a completed turn, start next turn
+          if (currentTurn < TURNS) {
+            streamNextTurn();
+          } else {
+            log("all turns completed");
+            clearTimeout(timeout);
+            finish();
+          }
+          break;
+
+        case "session.error":
+        case "error":
+          metrics.errors.push(`${msg.type}: ${msg.message ?? msg.code}`);
+          log(`error: ${msg.message ?? msg.code}`);
+          break;
       }
     });
 
-    handle.on("userTranscript", ({ text }) => {
-      lastEvent = "userTranscript";
-      metrics.userTranscripts.push(text);
-      log(`user transcript [turn ${currentTurn}]: "${text}"`);
-    });
-
-    handle.on("replyDone", () => {
-      lastEvent = "replyDone";
-      if (waitingForReply) {
-        waitingForReply = false;
-        metrics.turnsCompleted++;
-      }
-      if (currentTurn < TURNS) {
-        streamNextTurn();
-      } else {
-        log("all turns completed");
-        finish();
-      }
-    });
-
-    handle.on("error", ({ code, message }) => {
-      metrics.errors.push(`s2s error: ${code} ${message}`);
-      log(`error: ${code} ${message}`);
-    });
-
-    handle.on("sessionExpired", ({ code, message }) => {
-      metrics.errors.push(`s2s expired: ${code} ${message}`);
-      log(`session expired: ${code} ${message}`);
+    ws.on("error", (err: Error) => {
+      metrics.errors.push(`ws error: ${err.message}`);
+      log(`ws error: ${err.message}`);
+      clearTimeout(timeout);
       finish();
     });
 
-    handle.on("close", () => {
+    ws.on("close", () => {
       log("ws closed");
+      clearTimeout(timeout);
       finish();
-    });
-
-    // Send session.update to kick off
-    handle.updateSession({
-      systemPrompt: SYSTEM_PROMPT,
-      tools: TOOLS,
-      greeting: GREETING,
     });
 
     async function streamNextTurn(): Promise<void> {
@@ -514,18 +538,23 @@ async function runSession(
       await sleep(PAUSE_MS);
       if (done) return;
 
-      const pcm = audioBuffers[(currentTurn - 1) % audioBuffers.length]!;
-      const chunkBytes = Math.floor((INPUT_SAMPLE_RATE * CHUNK_MS) / 1000) * 2;
+      const audioIdx = (currentTurn - 1) % audioBuffers.length;
+      const pcm = audioBuffers[audioIdx]!;
+      const chunkBytes = Math.floor((INPUT_SAMPLE_RATE * CHUNK_MS) / 1000) * 2; // 2 bytes per sample
+      const totalChunks = Math.ceil(pcm.length / chunkBytes);
 
       log(
-        `streaming turn ${currentTurn}/${TURNS} (${(pcm.length / (INPUT_SAMPLE_RATE * 2)).toFixed(2)}s)`,
+        `streaming turn ${currentTurn}/${TURNS} (${(pcm.length / (INPUT_SAMPLE_RATE * 2)).toFixed(2)}s, ${totalChunks} chunks)`,
       );
       turnStart = Date.now();
       waitingForReply = true;
 
       for (let offset = 0; offset < pcm.length; offset += chunkBytes) {
         if (done) return;
-        handle.sendAudio(pcm.slice(offset, offset + chunkBytes));
+        const chunk = pcm.slice(offset, offset + chunkBytes);
+        const b64 = Buffer.from(chunk).toString("base64");
+        ws.send(JSON.stringify({ type: "input.audio", audio: b64 }));
+        // Pace audio at roughly real-time
         await sleep(CHUNK_MS);
       }
       log(`turn ${currentTurn} audio sent, waiting for response...`);
@@ -539,7 +568,6 @@ async function main(): Promise<void> {
   console.log("S2S Load Test");
   console.log("=".repeat(70));
   console.log(`  URL:         ${WSS_URL}`);
-  console.log(`  Sessions:    ${TOTAL_SESSIONS}`);
   console.log(`  Concurrency: ${CONCURRENCY}`);
   console.log(`  Turns/sess:  ${TURNS}`);
   console.log(`  Chunk size:  ${CHUNK_MS}ms`);
@@ -549,6 +577,7 @@ async function main(): Promise<void> {
   console.log(`  Tools:       ${TOOLS.map((t) => t.name).join(", ")}`);
   console.log();
 
+  // Generate TTS audio fresh each run
   console.log("Generating TTS audio with Kokoro...");
   const { KokoroTTS } = await import("kokoro-js");
   const voicesPath = resolveVoicesPath();
@@ -560,38 +589,27 @@ async function main(): Promise<void> {
   const audioBuffers = await generateAudioBuffers(tts as unknown as TTS);
   console.log(`Generated ${audioBuffers.length} audio buffers\n`);
 
-  console.log(
-    `Running ${TOTAL_SESSIONS} session(s), ${CONCURRENCY} at a time...\n`,
-  );
+  // Launch concurrent sessions
+  console.log(`Launching ${CONCURRENCY} concurrent session(s)...\n`);
   const startTime = Date.now();
 
-  // Worker pool: keep CONCURRENCY slots filled until all sessions are done
-  const results: SessionMetrics[] = [];
-  let nextId = 0;
-
-  async function worker(): Promise<void> {
-    while (nextId < TOTAL_SESSIONS) {
-      const id = nextId++;
-      const result = await runSession(id, audioBuffers);
-      results.push(result);
-    }
+  const promises: Promise<SessionMetrics>[] = [];
+  for (let i = 0; i < CONCURRENCY; i++) {
+    promises.push(runSession(i, audioBuffers));
   }
+  const results = await Promise.all(promises);
 
-  await Promise.all(
-    Array.from({ length: Math.min(CONCURRENCY, TOTAL_SESSIONS) }, () => worker()),
-  );
+  const elapsed = Date.now() - startTime;
+  console.log(`\nAll sessions finished in ${(elapsed / 1000).toFixed(1)}s`);
 
-  // Sort by session ID for stable output
-  results.sort((a, b) => a.sessionId - b.sessionId);
-
-  console.log(`\nAll sessions finished in ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
   printMetrics(results);
 
+  // Exit with failure if any validation errors
   const hasFailures = results.some((r) => r.errors.some((e) => e.startsWith("FAIL:")));
-  process.exitCode = hasFailures ? 1 : 0;
+  if (hasFailures) process.exit(1);
 }
 
 main().catch((err) => {
   console.error(err);
-  process.exitCode = 1;
+  process.exit(1);
 });
