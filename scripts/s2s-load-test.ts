@@ -536,7 +536,6 @@ async function runSession(
       log(
         `streaming turn ${currentTurn}/${TURNS} (${(pcm.length / (INPUT_SAMPLE_RATE * 2)).toFixed(2)}s)`,
       );
-      turnStart = Date.now();
       waitingForReply = true;
       gotAgentReplyThisTurn = false;
 
@@ -545,6 +544,9 @@ async function runSession(
         handle.sendAudio(pcm.slice(offset, offset + chunkBytes));
         await sleep(CHUNK_MS);
       }
+      // Start latency timer after audio is fully sent — measures API processing
+      // time (STT + LLM + tool calls + TTS) without streaming overhead.
+      turnStart = Date.now();
       log(`turn ${currentTurn} audio sent, waiting for response...`);
     }
   });
