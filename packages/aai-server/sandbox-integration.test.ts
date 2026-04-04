@@ -368,7 +368,7 @@ describe("template isolate boot", () => {
     return { worker: bundle.worker, tmpDir };
   }
 
-  test.each(templateNames)("template %s boots in isolate", async (template) => {
+  test.each(templateNames)("template %s boots in isolate", async (template: string) => {
     const { worker, tmpDir } = await bundleTemplate(template);
     const kv = createMockKv();
     let isolate: { port: number; runtime: { terminate(): Promise<void> } } | undefined;

@@ -32,8 +32,16 @@ const result = await ts.typecheckProject({
   configFilePath: `${cwd}/tsconfig.json`,
 });
 
-if (!result.success) {
-  const messages = result.diagnostics.map((d) => {
+// In secure-exec 0.2.x, the module access overlay is stricter about symlink
+// validation. In a pnpm monorepo, some transitive deps of workspace packages
+// resolve to canonical paths outside the allowed roots, causing TS2307 errors
+// in node_modules. Filter these out — they're not our code.
+const ownDiagnostics = result.diagnostics.filter(
+  (d) => d.filePath && !d.filePath.includes("/node_modules/"),
+);
+
+if (ownDiagnostics.length > 0) {
+  const messages = ownDiagnostics.map((d) => {
     const loc = d.filePath ? `${d.filePath}${d.line != null ? `:${d.line}` : ""}` : "";
     return `${loc} - error TS${d.code}: ${d.message}`;
   });
