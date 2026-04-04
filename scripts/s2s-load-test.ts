@@ -359,6 +359,7 @@ async function runSession(
   let currentTurn = 0;
   let waitingForReply = false;
   let greetingReceived = false;
+  let gotAgentReplyThisTurn = false;
   let lastEvent = "init";
   let done = false;
 
@@ -385,13 +386,15 @@ async function runSession(
   }
 
   return new Promise((resolve) => {
+    // ~30s per turn (pause + streaming + API processing) + 30s buffer for greeting
+    const timeoutMs = TURNS * 30_000 + 30_000;
     const timeout = setTimeout(() => {
       const state = `turn=${currentTurn}/${TURNS}, greeting=${greetingReceived}, waitingForReply=${waitingForReply}, lastEvent=${lastEvent}`;
-      const msg = `session timeout (120s) [${state}]`;
+      const msg = `session timeout (${timeoutMs / 1000}s) [${state}]`;
       metrics.errors.push(msg);
       log(msg);
       finish();
-    }, 120_000);
+    }, timeoutMs);
 
     function finish(): void {
       if (done) return;
@@ -458,6 +461,7 @@ async function runSession(
         metrics.firstGreetingMs = Date.now() - sessionStart;
         log(`greeting: "${text.slice(0, 60)}" (${metrics.firstGreetingMs}ms)`);
       } else if (waitingForReply) {
+        gotAgentReplyThisTurn = true;
         const latency = Date.now() - turnStart;
         metrics.turnLatenciesMs.push(latency);
         log(`agent reply [turn ${currentTurn}]: "${text.slice(0, 60)}" (${latency}ms)`);
@@ -472,16 +476,28 @@ async function runSession(
 
     handle.on("replyDone", () => {
       lastEvent = "replyDone";
-      if (waitingForReply) {
+
+      // Tool calls produce intermediate reply.done events before the final
+      // agent transcript. Only complete the turn when we got an actual
+      // agentTranscript for it — otherwise this is a tool sub-reply.
+      if (waitingForReply && gotAgentReplyThisTurn) {
         waitingForReply = false;
+        gotAgentReplyThisTurn = false;
         metrics.turnsCompleted++;
+
+        if (currentTurn < TURNS) {
+          streamNextTurn();
+        } else {
+          log("all turns completed");
+          finish();
+        }
+      } else if (!waitingForReply) {
+        // Greeting reply done — start first turn
+        if (currentTurn < TURNS) {
+          streamNextTurn();
+        }
       }
-      if (currentTurn < TURNS) {
-        streamNextTurn();
-      } else {
-        log("all turns completed");
-        finish();
-      }
+      // else: intermediate tool sub-reply, wait for agentTranscript + final replyDone
     });
 
     handle.on("error", ({ code, message }) => {
@@ -522,6 +538,7 @@ async function runSession(
       );
       turnStart = Date.now();
       waitingForReply = true;
+      gotAgentReplyThisTurn = false;
 
       for (let offset = 0; offset < pcm.length; offset += chunkBytes) {
         if (done) return;
