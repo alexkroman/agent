@@ -138,6 +138,8 @@ const UTTERANCES = [
   "Search for how to make sourdough bread.",
   "Book me an appointment next Monday at 10 AM, name is Jordan.",
   "What are the store hours on Sunday?",
+  "Search for tips on growing tomatoes in a small garden.",
+  "What's the weather like in Chicago this weekend?",
 ];
 
 const SYSTEM_PROMPT = `You are a helpful voice assistant. Keep responses brief — one or two sentences.
@@ -296,16 +298,6 @@ function printMetrics(results: SessionMetrics[]): void {
     `  Total turns:      ${results.reduce((s, r) => s + r.turnsCompleted, 0)}`,
   );
   console.log(`  Total tool calls: ${totalToolCalls}`);
-  const allErrors = results.flatMap((r) => r.errors);
-  const failures = allErrors.filter((e) => e.startsWith("FAIL:"));
-  console.log(`  Total errors:     ${allErrors.length}`);
-  if (failures.length > 0) {
-    console.log(`  Validation fails: ${failures.length}`);
-    for (const f of failures) {
-      console.log(`    - ${f}`);
-    }
-  }
-
   if (greetingLatencies.length > 0) {
     console.log(`  Greeting p50:     ${percentile(greetingLatencies, 50)}ms`);
     console.log(`  Greeting p95:     ${percentile(greetingLatencies, 95)}ms`);
@@ -314,6 +306,38 @@ function printMetrics(results: SessionMetrics[]): void {
     console.log(`  Turn latency p50: ${percentile(allLatencies, 50)}ms`);
     console.log(`  Turn latency p95: ${percentile(allLatencies, 95)}ms`);
     console.log(`  Turn latency p99: ${percentile(allLatencies, 99)}ms`);
+  }
+
+  // Errors section
+  const allErrors = results.flatMap((r) => r.errors.map((e) => ({ session: r.sessionId, error: e })));
+  const wsErrors = allErrors.filter((e) => e.error.startsWith("ws "));
+  const apiErrors = allErrors.filter((e) => e.error.startsWith("session.error:") || e.error.startsWith("error:"));
+  const timeouts = allErrors.filter((e) => e.error.startsWith("session timeout"));
+  const validationFails = allErrors.filter((e) => e.error.startsWith("FAIL:"));
+
+  console.log("\n" + "=".repeat(70));
+  console.log("ERRORS");
+  console.log("=".repeat(70));
+  if (allErrors.length === 0) {
+    console.log("  (none)");
+  } else {
+    console.log(`  Total:            ${allErrors.length}`);
+    if (wsErrors.length > 0) {
+      console.log(`  WebSocket:        ${wsErrors.length}`);
+      for (const e of wsErrors) console.log(`    [s${e.session}] ${e.error}`);
+    }
+    if (apiErrors.length > 0) {
+      console.log(`  API:              ${apiErrors.length}`);
+      for (const e of apiErrors) console.log(`    [s${e.session}] ${e.error}`);
+    }
+    if (timeouts.length > 0) {
+      console.log(`  Timeouts:         ${timeouts.length}`);
+      for (const e of timeouts) console.log(`    [s${e.session}] ${e.error}`);
+    }
+    if (validationFails.length > 0) {
+      console.log(`  Validation:       ${validationFails.length}`);
+      for (const e of validationFails) console.log(`    [s${e.session}] ${e.error}`);
+    }
   }
 }
 
