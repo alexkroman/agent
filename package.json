@@ -38,7 +38,6 @@
     "@changesets/cli": "^2.30.0",
     "@ls-lint/ls-lint": "^2.3.1",
     "@types/node": "^25.5.0",
-    "@types/ws": "^8.18.1",
     "@vitest/coverage-v8": "^4.1.2",
     "knip": "^6.1.1",
     "kokoro-js": "^1.2.1",
@@ -49,8 +48,7 @@
     "syncpack": "^14.3.0",
     "turbo": "^2.9.3",
     "typescript": "^6.0.2",
-    "vitest": "^4.1.2",
-    "ws": "^8.20.0"
+    "vitest": "^4.1.2"
   },
   "packageManager": "pnpm@10.29.3",
   "engines": {
