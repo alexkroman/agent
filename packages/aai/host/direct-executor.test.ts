@@ -138,16 +138,6 @@ describe("createRuntime", () => {
     expect(onTurn).toHaveBeenCalledWith("hello world", expect.any(Object));
   });
 
-  test("hooks.callHook('error') calls agent.onError with Error", async () => {
-    const onError = vi.fn();
-    const agent = makeAgent({ onError });
-    const exec = createRuntime({ agent, env: {} });
-    await exec.hooks.callHook("error", "s1", { message: "boom" });
-    expect(onError).toHaveBeenCalledWith(expect.any(Error), expect.any(Object));
-    const err = onError.mock.calls[0]?.[0] as Error;
-    expect(err.message).toBe("boom");
-  });
-
   test("session state is initialized from agent.state factory", async () => {
     const agent = makeAgent({
       state: () => ({ counter: 0 }),
@@ -176,32 +166,6 @@ describe("createRuntime", () => {
     const msgs = [{ role: "user" as const, content: "hi" }];
     const result = await exec.executeTool("echo_messages", {}, "s1", msgs);
     expect(JSON.parse(result)).toEqual(msgs);
-  });
-
-  test("ctx.fetch is available in tool context", async () => {
-    const agent = makeAgent({
-      tools: {
-        check_fetch: {
-          description: "Check fetch exists",
-          execute: (_args, ctx) => typeof ctx.fetch,
-        },
-      },
-    });
-    const exec = createRuntime({ agent, env: {} });
-    const result = await exec.executeTool("check_fetch", {}, "s1", []);
-    expect(result).toBe("function");
-  });
-
-  test("hook context includes fetch", async () => {
-    let hookFetch: unknown;
-    const agent = makeAgent({
-      onConnect: (ctx) => {
-        hookFetch = ctx.fetch;
-      },
-    });
-    const exec = createRuntime({ agent, env: {} });
-    await exec.hooks.callHook("connect", "s1");
-    expect(typeof hookFetch).toBe("function");
   });
 
   test("env is frozen and passed to tools", async () => {
@@ -378,24 +342,6 @@ describe("executeToolCall", () => {
     expect(result).toBe("");
   });
 
-  test("passes custom fetch to tool context", async () => {
-    const customFetch = vi.fn();
-    const tool = defineTool({
-      description: "Check fetch",
-      execute: (_args, ctx) => (ctx.fetch === customFetch ? "custom" : "default"),
-    });
-    const result = await executeToolCall(
-      "fetchTool",
-      {},
-      {
-        tool,
-        env: {},
-        fetch: customFetch as unknown as typeof globalThis.fetch,
-      },
-    );
-    expect(result).toBe("custom");
-  });
-
   test("tool with no parameters schema accepts any args", async () => {
     const tool: Parameters<typeof executeToolCall>[2]["tool"] = {
       description: "No params",
@@ -418,7 +364,6 @@ describe("createRuntime sandbox mode", () => {
         get kv(): never {
           throw new Error("no kv");
         },
-        fetch: globalThis.fetch,
       }),
     });
     const mockToolSchemas = [{ name: "mock_tool", description: "A mock tool", parameters: {} }];

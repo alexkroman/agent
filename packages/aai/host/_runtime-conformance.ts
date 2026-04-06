@@ -181,11 +181,6 @@ export function testRuntime(label: string, getContext: () => RuntimeTestContext)
       await expect(hooks.callHook("turn", "hook-3", "test")).resolves.toBeUndefined();
     });
 
-    test("onError resolves without error", async () => {
-      const { hooks } = getContext();
-      await expect(hooks.callHook("error", "hook-4", { message: "boom" })).resolves.toBeUndefined();
-    });
-
     test("resolveTurnConfig returns null for static maxSteps", async () => {
       const { hooks } = getContext();
       const config = await callResolveTurnConfig(hooks, "hook-5");

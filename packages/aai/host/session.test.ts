@@ -471,42 +471,16 @@ describe("createS2sSession", () => {
   // ─── Hook error handling ───────────────────────────────────────────────
 
   test("hook failure does not crash session", async () => {
-    const onError = vi.fn();
     const hooks = makeTestHooks({
       connect: vi.fn(() => {
         throw new Error("hook error");
       }),
-      error: onError,
     });
     const { session } = setup({ hooks });
 
     // invokeHook catches errors, so this should not throw
     await session.start();
     await flush();
-
-    // error hook should be invoked when connect fails
-    expect(onError).toHaveBeenCalledWith(expect.any(String), { message: "hook error" });
-  });
-
-  test("hook failure in onError does not recurse", async () => {
-    const onError = vi.fn(() => {
-      throw new Error("onError also failed");
-    });
-    const hooks = makeTestHooks({
-      connect: vi.fn(() => {
-        throw new Error("connect failed");
-      }),
-      error: onError,
-    });
-    const { session } = setup({ hooks });
-
-    // Should not throw even when both connect and error hooks fail
-    await session.start();
-    await flush();
-
-    expect(onError).toHaveBeenCalledWith(expect.any(String), {
-      message: "connect failed",
-    });
   });
 
   // ─── Concurrency bug regression tests ─────────────────────────────────

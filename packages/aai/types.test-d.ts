@@ -24,7 +24,6 @@ import {
   type ToolContext,
   type ToolDef,
   type ToolResultMap,
-  tool,
 } from "./index.ts";
 
 // ─── defineAgent ──────────────────────────────────────────────────────────
@@ -81,10 +80,6 @@ describe("defineAgent", () => {
         expectTypeOf(text).toEqualTypeOf<string>();
         expectTypeOf(ctx.state).toEqualTypeOf<{ userId: string }>();
       },
-      onError: (error, ctx) => {
-        expectTypeOf(error).toEqualTypeOf<Error>();
-        expectTypeOf(ctx).toEqualTypeOf<HookContext<{ userId: string }> | undefined>();
-      },
     });
   });
 
@@ -106,8 +101,6 @@ describe("defineAgent", () => {
   it("accepts all ToolChoice values", () => {
     defineAgent({ name: "a", toolChoice: "auto" });
     defineAgent({ name: "b", toolChoice: "required" });
-    defineAgent({ name: "c", toolChoice: "none" });
-    defineAgent({ name: "d", toolChoice: { type: "tool", toolName: "greet" } });
   });
 });
 
@@ -142,7 +135,6 @@ describe("defineTool", () => {
         expectTypeOf(ctx.env).toEqualTypeOf<Readonly<Record<string, string>>>();
         expectTypeOf(ctx.kv).toEqualTypeOf<Kv>();
         expectTypeOf(ctx.messages).toEqualTypeOf<readonly Message[]>();
-        expectTypeOf(ctx.fetch).toEqualTypeOf<typeof globalThis.fetch>();
         expectTypeOf(ctx.sessionId).toEqualTypeOf<string>();
       },
     });
@@ -152,20 +144,12 @@ describe("defineTool", () => {
     const t = defineTool({
       description: "async",
       parameters: z.object({ url: z.string() }),
-      execute: async ({ url }, ctx) => {
-        const res = await ctx.fetch(url);
+      execute: async ({ url }) => {
+        const res = await fetch(url);
         return res.json();
       },
     });
     expectTypeOf(t).toMatchTypeOf<ToolDef>();
-  });
-});
-
-// ─── tool alias ───────────────────────────────────────────────────────────
-
-describe("tool (alias)", () => {
-  it("is the same function as defineTool", () => {
-    expectTypeOf(tool).toEqualTypeOf(defineTool);
   });
 });
 
@@ -235,9 +219,7 @@ describe("exported types", () => {
   });
 
   it("ToolChoice includes all variants", () => {
-    expectTypeOf<ToolChoice>().toEqualTypeOf<
-      "auto" | "required" | "none" | { type: "tool"; toolName: string }
-    >();
+    expectTypeOf<ToolChoice>().toEqualTypeOf<"auto" | "required">();
   });
 
   it("ToolResultMap passes through its generic", () => {
@@ -252,7 +234,6 @@ describe("exported types", () => {
     expectTypeOf<HC["env"]>().toEqualTypeOf<TC["env"]>();
     expectTypeOf<HC["state"]>().toEqualTypeOf<TC["state"]>();
     expectTypeOf<HC["kv"]>().toEqualTypeOf<TC["kv"]>();
-    expectTypeOf<HC["fetch"]>().toEqualTypeOf<TC["fetch"]>();
     expectTypeOf<HC["sessionId"]>().toEqualTypeOf<TC["sessionId"]>();
   });
 

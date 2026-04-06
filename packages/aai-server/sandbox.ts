@@ -82,7 +82,6 @@ export type Sandbox = AgentRuntime & {
 const HooksSchema = z.object({
   onConnect: z.boolean(),
   onDisconnect: z.boolean(),
-  onError: z.boolean(),
   onTurn: z.boolean(),
   maxStepsIsFn: z.boolean(),
 });
@@ -99,9 +98,7 @@ const IsolateConfigSchema = z.object({
   greeting: z.string().optional(),
   sttPrompt: z.string().optional(),
   maxSteps: z.number().optional(),
-  toolChoice: z
-    .union([z.string(), z.object({ type: z.literal("tool"), toolName: z.string() })])
-    .optional(),
+  toolChoice: z.enum(["auto", "required"]).optional(),
   builtinTools: z.array(z.string()).optional(),
   toolSchemas: z.array(ToolSchemaSchema),
   hasState: z.boolean(),
@@ -289,9 +286,6 @@ function buildHookInvoker(port: number, authToken: string, crashed?: AbortSignal
   });
   hooks.hook("turn", async (sessionId, text) => {
     await rpc("onTurn", { sessionId, text });
-  });
-  hooks.hook("error", async (sessionId, error) => {
-    await rpc("onError", { sessionId, error });
   });
   hooks.hook("resolveTurnConfig", (async (sessionId: string) => {
     const parsed = TurnConfigResultSchema.parse(await rpc("resolveTurnConfig", { sessionId }));

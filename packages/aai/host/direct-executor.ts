@@ -50,11 +50,10 @@ export type ExecuteToolCallOptions = {
   kv?: Kv | undefined;
   messages?: readonly Message[] | undefined;
   logger?: Logger | undefined;
-  fetch?: typeof globalThis.fetch | undefined;
 };
 
 function buildToolContext(opts: ExecuteToolCallOptions): ToolContext {
-  const { env, state, kv, messages, fetch: fetchFn, sessionId } = opts;
+  const { env, state, kv, messages, sessionId } = opts;
   return {
     env: { ...env },
     state: state ?? {},
@@ -63,7 +62,6 @@ function buildToolContext(opts: ExecuteToolCallOptions): ToolContext {
       return kv;
     },
     messages: messages ?? [],
-    fetch: fetchFn ?? globalThis.fetch,
     sessionId: sessionId ?? "",
   };
 }
@@ -272,7 +270,6 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
         get kv() {
           return kv;
         },
-        fetch: globalThis.fetch,
       };
     }
 
@@ -287,7 +284,6 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
         kv,
         messages,
         logger,
-        fetch: globalThis.fetch,
       });
     };
 

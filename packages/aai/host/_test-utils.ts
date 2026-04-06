@@ -24,7 +24,6 @@ export function createMockToolContext(overrides?: Partial<ToolContext>): ToolCon
     state: {},
     kv: {} as never,
     messages: [],
-    fetch: globalThis.fetch,
     sessionId: "test-session",
     ...overrides,
   };

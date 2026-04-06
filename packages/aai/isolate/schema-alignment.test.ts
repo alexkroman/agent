@@ -178,12 +178,7 @@ describe("type ↔ schema alignment", () => {
   });
 
   test("ToolChoiceSchema accepts all ToolChoice variants", () => {
-    const variants: ToolChoice[] = [
-      "auto",
-      "required",
-      "none",
-      { type: "tool", toolName: "greet" },
-    ];
+    const variants: ToolChoice[] = ["auto", "required"];
     for (const v of variants) {
       expect(ToolChoiceSchema.safeParse(v).success).toBe(true);
     }
@@ -191,6 +186,6 @@ describe("type ↔ schema alignment", () => {
 
   test("ToolChoiceSchema rejects invalid variants", () => {
     expect(ToolChoiceSchema.safeParse("invalid").success).toBe(false);
-    expect(ToolChoiceSchema.safeParse({ type: "tool", toolName: "" }).success).toBe(false);
+    expect(ToolChoiceSchema.safeParse("none").success).toBe(false);
   });
 });

@@ -126,7 +126,7 @@ defineAgent({
   // Tools
   builtinTools?: BuiltinTool[];
   tools?: Record<string, ToolDef>;
-  toolChoice?: ToolChoice;   // "auto" | "required" | "none" | { type: "tool", toolName }
+  toolChoice?: ToolChoice;   // "auto" | "required"
   maxSteps?: number | ((ctx: HookContext) => number);
 
   // State
@@ -135,7 +135,6 @@ defineAgent({
   // Lifecycle hooks
   onConnect?: (ctx: HookContext) => void | Promise<void>;
   onDisconnect?: (ctx: HookContext) => void | Promise<void>;
-  onError?: (error: Error, ctx?: HookContext) => void;
   onTurn?: (text: string, ctx: HookContext) => void | Promise<void>;
 });
 ```
@@ -400,8 +399,6 @@ Control when the LLM uses tools:
 ```ts
 toolChoice: "auto",     // Default — LLM decides when to use tools
 toolChoice: "required", // Force a tool call every step (useful for research pipelines)
-toolChoice: "none",     // Disable all tool use
-toolChoice: { type: "tool", toolName: "search" }, // Force a specific tool
 ```
 
 ### `maxSteps` — controlling the agentic loop

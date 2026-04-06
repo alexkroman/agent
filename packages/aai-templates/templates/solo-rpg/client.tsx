@@ -7,71 +7,7 @@ import {
   defineClient,
   useToolResult,
 } from "@alexkroman1/aai-ui";
-
-// ── Types ────────────────────────────────────────────────────────────────────
-
-type Disposition = "hostile" | "distrustful" | "neutral" | "friendly" | "loyal";
-
-interface NPC {
-  id: string;
-  name: string;
-  description: string;
-  disposition: Disposition;
-  bond: number;
-  agenda: string;
-  status: "active" | "background" | "deceased";
-}
-
-interface ClockData {
-  id: string;
-  name: string;
-  clockType: "threat" | "progress" | "scheme";
-  segments: number;
-  filled: number;
-  triggerDescription: string;
-}
-
-interface StoryInfo {
-  structureType: string;
-  currentAct: number;
-  totalActs: number;
-  centralConflict: string;
-  thematicThread: string;
-  storyComplete: boolean;
-  currentPhase: string;
-}
-
-interface SessionLogEntry {
-  scene: number;
-  summary: string;
-  location: string;
-}
-
-interface GameState {
-  initialized: boolean;
-  phase: string;
-  settingGenre: string;
-  settingTone: string;
-  settingArchetype: string;
-  settingDescription: string;
-  playerName: string;
-  characterConcept: string;
-  edge: number; heart: number; iron: number; shadow: number; wits: number;
-  health: number; spirit: number; supply: number;
-  momentum: number; maxMomentum: number;
-  currentLocation: string;
-  currentSceneContext: string;
-  timeOfDay: string;
-  chaosFactor: number;
-  crisisMode: boolean;
-  gameOver: boolean;
-  sceneCount: number;
-  npcs: NPC[];
-  clocks: ClockData[];
-  storyBlueprint: StoryInfo | null;
-  kidMode: boolean;
-  sessionLog: SessionLogEntry[];
-}
+import type { Disposition, ClockData, NPC, StoryInfo, GameState, SoloRpgToolResults } from "./shared.ts";
 
 const INITIAL: GameState = {
   initialized: false,
@@ -622,67 +558,45 @@ function SoloRPGApp() {
   }, []);
 
   // Merge a full-state result into the game
-  const mergeState = (result: any, prev: GameState): GameState => ({
-    initialized: result.initialized ?? prev.initialized,
-    phase: result.phase ?? prev.phase,
-    settingGenre: result.settingGenre ?? prev.settingGenre,
-    settingTone: result.settingTone ?? prev.settingTone,
-    settingArchetype: result.settingArchetype ?? prev.settingArchetype,
-    settingDescription: result.settingDescription ?? prev.settingDescription,
-    playerName: result.playerName ?? prev.playerName,
-    characterConcept: result.characterConcept ?? prev.characterConcept,
-    edge: result.edge ?? result.stats?.edge ?? prev.edge,
-    heart: result.heart ?? result.stats?.heart ?? prev.heart,
-    iron: result.iron ?? result.stats?.iron ?? prev.iron,
-    shadow: result.shadow ?? result.stats?.shadow ?? prev.shadow,
-    wits: result.wits ?? result.stats?.wits ?? prev.wits,
-    health: result.health ?? prev.health,
-    spirit: result.spirit ?? prev.spirit,
-    supply: result.supply ?? prev.supply,
-    momentum: result.momentum ?? prev.momentum,
-    maxMomentum: result.maxMomentum ?? prev.maxMomentum,
-    currentLocation: result.currentLocation ?? prev.currentLocation,
-    currentSceneContext: result.currentSceneContext ?? prev.currentSceneContext,
-    timeOfDay: result.timeOfDay ?? prev.timeOfDay,
-    chaosFactor: result.chaosFactor ?? prev.chaosFactor,
-    crisisMode: result.crisisMode ?? prev.crisisMode,
-    gameOver: result.gameOver ?? prev.gameOver,
-    sceneCount: result.sceneCount ?? prev.sceneCount,
-    npcs: result.npcs ?? prev.npcs,
-    clocks: result.clocks ?? prev.clocks,
-    storyBlueprint: result.storyBlueprint ?? prev.storyBlueprint,
-    kidMode: result.kidMode ?? prev.kidMode,
-    sessionLog: result.sessionLog ?? prev.sessionLog,
+  const mergeState = (result: Partial<GameState>, prev: GameState): GameState => ({
+    ...prev,
+    ...Object.fromEntries(Object.entries(result).filter(([, v]) => v !== undefined)),
   });
 
-  useToolResult((toolName, result: any) => {
-    // setup_character and update_state both return full state
-    if ((toolName === "setup_character" || toolName === "update_state") && result.success) {
-      setGame((prev) => mergeState(result, prev));
-    }
+  // setup_character and update_state both return full state
+  useToolResult<SoloRpgToolResults["setup_character"]>("setup_character", (result) => {
+    if (result.success) setGame((prev) => mergeState(result, prev));
+  });
 
-    // action_roll auto-applies consequences — sync sidebar
-    if (toolName === "action_roll" && result.currentHealth !== undefined) {
-      setGame((prev) => ({
-        ...prev,
-        health: result.currentHealth,
-        spirit: result.currentSpirit ?? prev.spirit,
-        supply: result.currentSupply ?? prev.supply,
-        momentum: result.currentMomentum ?? prev.momentum,
-        chaosFactor: result.chaosFactor ?? prev.chaosFactor,
-        crisisMode: result.crisisMode ?? prev.crisisMode,
-        gameOver: result.gameOver ?? prev.gameOver,
-        sceneCount: result.sceneCount ?? prev.sceneCount,
-      }));
-    }
+  useToolResult<SoloRpgToolResults["update_state"]>("update_state", (result) => {
+    if (result.success) setGame((prev) => mergeState(result, prev));
+  });
 
-    // burn_momentum resets momentum
-    if (toolName === "burn_momentum" && result.burned) {
+  // action_roll auto-applies consequences — sync sidebar
+  useToolResult<SoloRpgToolResults["action_roll"]>("action_roll", (result) => {
+    setGame((prev) => ({
+      ...prev,
+      health: result.currentHealth,
+      spirit: result.currentSpirit,
+      supply: result.currentSupply,
+      momentum: result.currentMomentum,
+      chaosFactor: result.chaosFactor,
+      crisisMode: result.crisisMode,
+      gameOver: result.gameOver,
+      sceneCount: result.sceneCount,
+    }));
+  });
+
+  // burn_momentum resets momentum
+  useToolResult<SoloRpgToolResults["burn_momentum"]>("burn_momentum", (result) => {
+    if ("burned" in result && result.burned) {
       setGame((prev) => ({ ...prev, momentum: result.newMomentum }));
     }
+  });
 
-    // load_game restores full state
-    if (toolName === "load_game" && result.loaded) {
+  // load_game restores full state
+  useToolResult<SoloRpgToolResults["load_game"]>("load_game", (result) => {
+    if ("loaded" in result && result.loaded) {
       setGame((prev) => mergeState(result, prev));
     }
   });
