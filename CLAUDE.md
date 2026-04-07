@@ -157,9 +157,8 @@ runs as part of `pnpm typecheck` and will catch violations.
 #### packages/aai-ui/
 
 - `index.ts` — main exports, Preact UI component
-- `session.ts` — WebSocket session management
+- `session.ts` — WebSocket session management + message handling
 - `audio.ts` — PCM encoding/decoding, AudioWorklet management
-- `client-handler.ts` — WebSocket client handler
 - `client-context.ts` — Preact context for client config
 - `signals.ts` — signal state management
 - `types.ts` — UI type definitions

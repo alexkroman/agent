@@ -1,10 +1,15 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import type { ClientMessage, ReadyConfig } from "@alexkroman1/aai/protocol";
+import type {
+  ClientEvent,
+  ClientMessage,
+  ReadyConfig,
+  ServerMessage,
+} from "@alexkroman1/aai/protocol";
+import { lenientParse, ReadyConfigSchema, ServerMessageSchema } from "@alexkroman1/aai/protocol";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import { batch, type Signal, signal } from "@preact/signals";
 import type { VoiceIO } from "./audio.ts";
-import { ClientHandler } from "./client-handler.ts";
 import type {
   AgentState,
   ChatMessage,
@@ -244,6 +249,201 @@ export function createVoiceSession(options: VoiceSessionOptions): VoiceSession {
 
   const audioDeps = { send, sendBinary, state, error, batch };
 
+  // ─── Inlined message handling (formerly ClientHandler) ──────────────────────
+
+  /** Incremented on each turn boundary — stale async callbacks compare against this. */
+  let handlerGeneration = 0;
+  /** Accumulated agent_transcript_delta text for real-time display. */
+  let deltaAccum = "";
+
+  /** Single entry point for all server→client session events. */
+  function handleEvent(e: ClientEvent): void {
+    switch (e.type) {
+      case "speech_started":
+        userUtterance.value = "";
+        break;
+      case "speech_stopped":
+        // VAD detected end of speech — processing will follow.
+        break;
+      case "user_transcript_delta":
+        userUtterance.value = e.text;
+        break;
+      case "user_transcript":
+        handlerGeneration++;
+        deltaAccum = "";
+        batch(() => {
+          userUtterance.value = null;
+          messages.value = [...messages.value, { role: "user", content: e.text }];
+          state.value = "thinking";
+        });
+        break;
+      case "agent_transcript_delta":
+        deltaAccum += (deltaAccum ? " " : "") + e.text;
+        agentUtterance.value = deltaAccum;
+        break;
+      case "agent_transcript":
+        deltaAccum = "";
+        batch(() => {
+          agentUtterance.value = null;
+          messages.value = [...messages.value, { role: "assistant", content: e.text }];
+        });
+        break;
+      case "tool_call":
+        toolCalls.value = [
+          ...toolCalls.value,
+          {
+            toolCallId: e.toolCallId,
+            toolName: e.toolName,
+            args: e.args,
+            status: "pending",
+            afterMessageIndex: messages.value.length - 1,
+          },
+        ];
+        break;
+      case "tool_call_done": {
+        const tcs = toolCalls.value;
+        const idx = tcs.findIndex((tc) => tc.toolCallId === e.toolCallId);
+        if (idx !== -1) {
+          const updated = [...tcs];
+          const existing = updated[idx];
+          if (existing) updated[idx] = { ...existing, status: "done", result: e.result };
+          toolCalls.value = updated;
+        }
+        break;
+      }
+      case "reply_done":
+        state.value = "listening";
+        break;
+      case "cancelled":
+        handlerGeneration++;
+        conn.voiceIO?.flush();
+        batch(() => {
+          userUtterance.value = null;
+          agentUtterance.value = null;
+          state.value = "listening";
+        });
+        break;
+      case "reset": {
+        handlerGeneration++;
+        conn.voiceIO?.flush();
+        batch(() => {
+          messages.value = [];
+          toolCalls.value = [];
+          userUtterance.value = null;
+          agentUtterance.value = null;
+          error.value = null;
+          state.value = "listening";
+        });
+        break;
+      }
+      case "error":
+        console.error("Agent error:", e.message);
+        batch(() => {
+          error.value = {
+            code: e.code,
+            message: e.message,
+          };
+          state.value = "error";
+        });
+        break;
+      default:
+        break;
+    }
+  }
+
+  /** Enqueue a PCM16 audio chunk for playback. Transitions state to `"speaking"` on the first chunk. */
+  function playAudioChunk(chunk: Uint8Array): void {
+    if (state.value === "error") return;
+    if (state.value !== "speaking") {
+      state.value = "speaking";
+    }
+    if (chunk.buffer instanceof ArrayBuffer) {
+      conn.voiceIO?.enqueue(chunk.buffer);
+    }
+  }
+
+  /**
+   * Signal that the server has finished sending audio for this turn.
+   * Waits for the audio queue to drain, then transitions state to `"listening"`.
+   * Uses the `handlerGeneration` counter to discard stale completions from interrupted turns.
+   */
+  function playAudioDone(): void {
+    const gen = handlerGeneration;
+    const io = conn.voiceIO;
+    if (io) {
+      void io
+        .done()
+        .then(() => {
+          if (handlerGeneration !== gen) return;
+          state.value = "listening";
+        })
+        .catch((err: unknown) => {
+          console.warn("Audio playback done failed:", err);
+        });
+    } else {
+      state.value = "listening";
+    }
+  }
+
+  /** Parse a JSON text frame into a ServerMessage, or null if invalid/unknown. */
+  function parseTextFrame(data: string): ServerMessage | null {
+    try {
+      const result = lenientParse(ServerMessageSchema, JSON.parse(data));
+      if (!result.ok) {
+        if (result.malformed) console.warn("Ignoring invalid server message:", result.error);
+        return null;
+      }
+      return result.data;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Try to extract a ReadyConfig from a config message, or null. */
+  function parseConfig(
+    msg: ServerMessage & { type: "config" },
+  ): (ReadyConfig & { sessionId?: string }) | null {
+    const { type: _, sessionId, ...config } = msg;
+    const parsed = ReadyConfigSchema.safeParse(config);
+    if (!parsed.success) {
+      console.warn("Unsupported server config:", parsed.error.message);
+      return null;
+    }
+    return sessionId ? { ...parsed.data, sessionId } : parsed.data;
+  }
+
+  /**
+   * Dispatch an incoming WebSocket message (text or binary).
+   *
+   * Returns the parsed config if the message is a `config` message,
+   * otherwise `null`.
+   */
+  function handleMessage(
+    data: string | ArrayBuffer,
+  ): (ReadyConfig & { sessionId?: string }) | null {
+    // Binary frame → raw PCM16 TTS audio
+    if (data instanceof ArrayBuffer) {
+      playAudioChunk(new Uint8Array(data));
+      return null;
+    }
+
+    const msg = parseTextFrame(data);
+    if (!msg) return null;
+
+    if (msg.type === "config") return parseConfig(msg);
+
+    if (msg.type === "audio_done") {
+      playAudioDone();
+      return null;
+    }
+
+    // All other messages are ClientEvent
+    handleEvent(msg);
+    return null;
+  }
+
+  // ─── Connection management ──────────────────────────────────────────────────
+
   function connect(opts?: { signal?: AbortSignal }): void {
     disconnected.value = null;
     state.value = "connecting";
@@ -269,17 +469,6 @@ export function createVoiceSession(options: VoiceSessionOptions): VoiceSession {
     socket.binaryType = "arraybuffer";
     conn.ws = socket;
 
-    const handler = new ClientHandler({
-      state,
-      messages,
-      toolCalls,
-      userUtterance,
-      agentUtterance,
-      error,
-      voiceIO: () => conn.voiceIO,
-      batch,
-    });
-
     socket.addEventListener(
       "open",
       () => {
@@ -291,7 +480,7 @@ export function createVoiceSession(options: VoiceSessionOptions): VoiceSession {
     socket.addEventListener(
       "message",
       (event: MessageEvent) => {
-        const config = handler.handleMessage(event.data);
+        const config = handleMessage(event.data);
         if (config) {
           if (config.sessionId) options.onSessionId?.(config.sessionId);
           const isReconnect = hasConnected;
