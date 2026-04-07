@@ -6,6 +6,12 @@ export default defineConfig({
   test: {
     restoreMocks: true,
     include: ["**/*.test.ts"],
-    exclude: ["sandbox-integration.test.ts", "ws-integration.test.ts", "node_modules", "dist"],
+    exclude: [
+      "docker-build.test.ts",
+      "sandbox-integration.test.ts",
+      "ws-integration.test.ts",
+      "node_modules",
+      "dist",
+    ],
   },
 });

@@ -15,7 +15,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
     "test:e2e": "vitest run e2e.test.ts -c vitest.slow.config.ts",
-    "check:e2e": "pnpm run test:e2e"
+    "check:e2e": "pnpm run test:e2e",
+    "test:docker": "vitest run --config vitest.docker.config.ts"
   },
   "dependencies": {
     "@alexkroman1/aai": "workspace:*",
