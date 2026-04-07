@@ -2,19 +2,10 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
-import {
-  DEFAULT_SERVER,
-  ensureApiKeyInEnv,
-  fileExists,
-  getServerInfo,
-  isDevMode,
-  loadAgent,
-  readProjectConfig,
-  resolveCwd,
-  resolveServerUrl,
-  writeProjectConfig,
-} from "./_discover.ts";
+import { DEFAULT_SERVER, getServerInfo, isDevMode, loadAgent, resolveServerUrl } from "./_agent.ts";
+import { ensureApiKeyInEnv, readProjectConfig, writeProjectConfig } from "./_config.ts";
 import { withTempDir } from "./_test-utils.ts";
+import { fileExists, resolveCwd } from "./_utils.ts";
 
 // --- resolveCwd ---
 

@@ -7,16 +7,11 @@ import { promisify } from "node:util";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import * as p from "@clack/prompts";
 import { colorize } from "consola/utils";
-import {
-  DEFAULT_DEV_SERVER,
-  ensureApiKeyInEnv,
-  fileExists,
-  getMonorepoRoot,
-  isDevMode,
-  resolveCwd,
-} from "./_discover.ts";
+import { DEFAULT_DEV_SERVER, getMonorepoRoot, isDevMode } from "./_agent.ts";
+import { ensureApiKeyInEnv } from "./_config.ts";
 import { listTemplates } from "./_templates.ts";
 import { log } from "./_ui.ts";
+import { fileExists, resolveCwd } from "./_utils.ts";
 
 const execFileAsync = promisify(execFile);
 

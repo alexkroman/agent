@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 import fs from "node:fs/promises";
 import path from "node:path";
-import { isDevMode } from "./_discover.ts";
+import { isDevMode } from "./_agent.ts";
 import { downloadAndMergeTemplate } from "./_templates.ts";
 
 const WORKSPACE_SCOPE = "@alexkroman1/";

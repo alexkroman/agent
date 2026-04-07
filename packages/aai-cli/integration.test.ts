@@ -9,9 +9,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest";
+import { readProjectConfig, writeProjectConfig } from "./_config.ts";
 import { runDelete } from "./_delete.ts";
 import { runDeploy } from "./_deploy.ts";
-import { fileExists, readProjectConfig, writeProjectConfig } from "./_discover.ts";
 import type { MockApi } from "./_mock-api.ts";
 import { startMockApi } from "./_mock-api.ts";
 import {
@@ -21,12 +21,18 @@ import {
   silenced,
   withTempDir,
 } from "./_test-utils.ts";
+import { fileExists } from "./_utils.ts";
 import { runSecretDelete, runSecretList, runSecretPut } from "./secret.ts";
 
-// Mock the password prompt to avoid interactive input
-vi.mock("./_prompts.ts", () => ({
-  askPassword: vi.fn(() => Promise.resolve("super-secret")),
-}));
+// Mock @clack/prompts to avoid interactive input in tests
+vi.mock("@clack/prompts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@clack/prompts")>();
+  return {
+    ...actual,
+    password: vi.fn(() => Promise.resolve("super-secret")),
+    isCancel: actual.isCancel,
+  };
+});
 
 /** Get a request from the recorded list, throwing if it doesn't exist. */
 function getReq(index: number) {
@@ -317,8 +323,8 @@ describe("secrets edge cases", () => {
   });
 
   test("secret put with empty value throws", async () => {
-    const { askPassword } = await import("./_prompts.ts");
-    vi.mocked(askPassword).mockResolvedValueOnce("");
+    const clack = await import("@clack/prompts");
+    vi.mocked(clack.password).mockResolvedValueOnce("");
 
     await withProjectDir(async (dir) => {
       await expect(runSecretPut(dir, "EMPTY_KEY", api.url)).rejects.toThrow("No value provided");
@@ -358,7 +364,7 @@ describe("network failure", () => {
 
 describe("missing project config", () => {
   test("delete with no .aai/project.json throws", async () => {
-    const { getServerInfo } = await import("./_discover.ts");
+    const { getServerInfo } = await import("./_agent.ts");
     await withTempDir(async (dir) => {
       await expect(getServerInfo(dir)).rejects.toThrow("No .aai/project.json found");
     });

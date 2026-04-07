@@ -5,7 +5,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { downloadTemplate } from "giget";
-import { isDevMode } from "./_discover.ts";
+import { isDevMode } from "./_agent.ts";
 
 const GIGET_SOURCE = "github:alexkroman/agent/packages/aai-templates";
 const GIGET_REF = process.env.AAI_TEMPLATES_REF ?? "main";
