@@ -53,7 +53,7 @@ describe("DeployBodySchema", () => {
       { worker: "code", clientFiles: { "dir\\file.html": "content" } },
       false,
     ],
-  ] as const)("rejects/accepts %s → %s", (_label, input, expected) => {
+  ] as const)("rejects/accepts %s → %s", (_label: string, input: unknown, expected: boolean) => {
     expect(DeployBodySchema.safeParse(input).success).toBe(expected);
   });
 
@@ -71,7 +71,7 @@ describe("SecretUpdatesSchema", () => {
     ["valid secret key names", { MY_SECRET: "value", _HIDDEN: "secret", camelCase: "val" }, true],
     ["empty record", {}, true],
     ["secret key starting with digit", { "1KEY": "val" }, false],
-  ] as const)("rejects/accepts %s → %s", (_label, input, expected) => {
+  ] as const)("rejects/accepts %s → %s", (_label: string, input: unknown, expected: boolean) => {
     expect(SecretUpdatesSchema.safeParse(input).success).toBe(expected);
   });
 
@@ -97,7 +97,7 @@ describe("SafePathSchema", () => {
     ["null bytes", "file\0.txt", false],
     ["backslashes", "dir\\file.txt", false],
     ["empty string", "", false],
-  ] as const)("rejects %s → %s", (_label, input, expected) => {
+  ] as const)("rejects %s → %s", (_label: string, input: unknown, expected: boolean) => {
     expect(SafePathSchema.safeParse(input).success).toBe(expected);
   });
 
@@ -130,7 +130,7 @@ describe("EnvSchema", () => {
     ["missing ASSEMBLYAI_API_KEY", { MY_SECRET: "val" }, false],
     ["empty ASSEMBLYAI_API_KEY", { ASSEMBLYAI_API_KEY: "" }, false],
     ["non-string values", { ASSEMBLYAI_API_KEY: "key", BAD: 42 }, false],
-  ] as const)("rejects/accepts %s → %s", (_label, input, expected) => {
+  ] as const)("rejects/accepts %s → %s", (_label: string, input: unknown, expected: boolean) => {
     expect(EnvSchema.safeParse(input).success).toBe(expected);
   });
 });
@@ -146,7 +146,7 @@ describe("AgentMetadataSchema", () => {
     ],
     ["missing slug", { env: {} }, false],
     ["non-string slug", { slug: 42 }, false],
-  ] as const)("rejects/accepts %s → %s", (_label, input, expected) => {
+  ] as const)("rejects/accepts %s → %s", (_label: string, input: unknown, expected: boolean) => {
     expect(AgentMetadataSchema.safeParse(input).success).toBe(expected);
   });
 
@@ -187,7 +187,7 @@ describe("KvRequestSchema", () => {
     ["valid del request", { op: "del", key: "k" }, true],
     ["list with negative limit", { op: "list", prefix: "", limit: -1 }, false],
     ["unknown op", { op: "drop_table" }, false],
-  ] as const)("rejects/accepts %s → %s", (_label, input, expected) => {
+  ] as const)("rejects/accepts %s → %s", (_label: string, input: unknown, expected: boolean) => {
     expect(KvRequestSchema.safeParse(input).success).toBe(expected);
   });
 
@@ -244,7 +244,7 @@ describe("ClientMessageSchema", () => {
       false,
     ],
     ["unknown message type", { type: "execute_code" }, false],
-  ] as const)("rejects/accepts %s → %s", (_label, input, expected) => {
+  ] as const)("rejects/accepts %s → %s", (_label: string, input: unknown, expected: boolean) => {
     expect(ClientMessageSchema.safeParse(input).success).toBe(expected);
   });
 
@@ -284,7 +284,7 @@ describe("ServerMessageSchema", () => {
     ["agent_transcript event", { type: "agent_transcript", text: "hi" }, true],
     ["speech_started event", { type: "speech_started" }, true],
     ["unknown event type", { type: "malicious" }, false],
-  ] as const)("rejects/accepts %s → %s", (_label, input, expected) => {
+  ] as const)("rejects/accepts %s → %s", (_label: string, input: unknown, expected: boolean) => {
     expect(ServerMessageSchema.safeParse(input).success).toBe(expected);
   });
 });
@@ -311,7 +311,7 @@ describe("ReadyConfigSchema", () => {
       false,
     ],
     ["zero ttsSampleRate", { audioFormat: "pcm16", sampleRate: 16_000, ttsSampleRate: 0 }, false],
-  ] as const)("rejects/accepts %s → %s", (_label, input, expected) => {
+  ] as const)("rejects/accepts %s → %s", (_label: string, input: unknown, expected: boolean) => {
     expect(ReadyConfigSchema.safeParse(input).success).toBe(expected);
   });
 });
