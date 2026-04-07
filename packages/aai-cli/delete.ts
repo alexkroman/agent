@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import { getServerInfo } from "./_agent.ts";
 import { runDelete } from "./_delete.ts";
-import { getServerInfo } from "./_discover.ts";
 import { log } from "./_ui.ts";
 
 export async function runDeleteCommand(opts: { cwd: string; server?: string }): Promise<void> {
