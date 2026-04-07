@@ -1,26 +1,14 @@
-import { createHooks } from "hookable";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import type { AgentHookMap } from "../isolate/hooks.ts";
 import {
   flush,
   loadFixture,
   makeClient,
   makeMockHandle,
   makeSessionOpts,
+  makeTestHooks,
   replayFixtureMessages,
 } from "./_test-utils.ts";
 import { _internals, createS2sSession, type S2sSessionOptions } from "./session.ts";
-
-function makeTestHooks(handlers?: Record<string, (...args: unknown[]) => unknown>) {
-  const hooks = createHooks<AgentHookMap>();
-  if (handlers) {
-    for (const [name, fn] of Object.entries(handlers)) {
-      // biome-ignore lint/suspicious/noExplicitAny: test mock registration
-      hooks.hook(name as keyof AgentHookMap, fn as any);
-    }
-  }
-  return hooks;
-}
 
 // ─── Session-level fixture replay tests ─────────────────────────────────────
 //

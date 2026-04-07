@@ -9,6 +9,7 @@
 import { createHooks } from "hookable";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { AgentHookMap } from "../isolate/hooks.ts";
+import { silentLogger } from "./_test-utils.ts";
 import type { Runtime } from "./direct-executor.ts";
 import { createServer } from "./server.ts";
 
@@ -25,13 +26,6 @@ function createMockRuntime(): Runtime {
     shutdown: (...args: Parameters<Runtime["shutdown"]>) => mockShutdown(...args),
   };
 }
-
-const silentLogger = {
-  info: vi.fn(),
-  error: vi.fn(),
-  warn: vi.fn(),
-  debug: vi.fn(),
-};
 
 describe("server shutdown timeout", () => {
   let server: ReturnType<typeof createServer> | null = null;
