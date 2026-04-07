@@ -29,7 +29,7 @@ rely on secure-exec's existing isolation.
 ### Why nsjail over alternatives
 
 | Tool | Verdict | Reason |
-|------|---------|--------|
+| ------ | --------- | -------- |
 | **nsjail** | Chosen | Built by Google for server-side sandboxing of untrusted code. Native cgroup v2, seccomp policy language, process monitoring. Battle-tested in production. |
 | **Bubblewrap (bwrap)** | Rejected | Desktop-first (Flatpak). Relies on user namespaces (`CLONE_NEWUSER`), which are disabled on some hardened servers. No built-in cgroup support. |
 | **Custom Rust wrapper** | Rejected | Duplicates what nsjail does. High implementation/maintenance burden for security-critical code. |
@@ -45,7 +45,7 @@ internals.
 
 ## Architecture
 
-```
+```text
 Host Node.js process
   └── sandbox.ts → startIsolate()
         └── process-jail.ts (NEW)
@@ -72,10 +72,12 @@ if (process.env.SECURE_EXEC_V8_WRAPPER) return process.env.SECURE_EXEC_V8_WRAPPE
 Then `process-jail.ts`:
 
 1. Writes a temporary wrapper shell script:
+
    ```sh
    #!/bin/sh
    exec nsjail --config /tmp/<sandbox-id>/jail.cfg -- /path/to/real-binary
    ```
+
 2. Writes the nsjail config file (`jail.cfg`) to the same temp directory.
 3. Sets `process.env.SECURE_EXEC_V8_WRAPPER` to the wrapper script path.
 4. secure-exec's patched `resolveBinaryPath()` picks up the wrapper.
@@ -86,6 +88,7 @@ On macOS, no env var is set; secure-exec resolves the binary normally.
 
 **Upstream migration path:** When secure-exec ships the `v8Runtime` option on
 `createNodeRuntimeDriverFactory`, remove the patch and use the clean API:
+
 ```ts
 const jailed = await createV8Runtime({ binaryPath: wrapperScript });
 createNodeRuntimeDriverFactory({ v8Runtime: jailed });
@@ -153,7 +156,7 @@ The nsjail configuration enforces six restriction layers:
 ## New Files
 
 | File | Purpose |
-|------|---------|
+| ------ | --------- |
 | `packages/aai-server/process-jail.ts` | Core module: platform detection, `createJailedLauncher()`, `isJailAvailable()` |
 | `packages/aai-server/jail-config.ts` | Builds nsjail protobuf text config from `JailOptions` |
 | `packages/aai-server/seccomp-policy.ts` | Generates the seccomp-bpf syscall allowlist |
@@ -223,9 +226,11 @@ nsjail is **not** bundled as an npm dependency. It is discovered on `$PATH`
 at runtime.
 
 - **Production (Docker/K8s):** Add to Dockerfile:
+
   ```dockerfile
   RUN apt-get update && apt-get install -y nsjail && rm -rf /var/lib/apt/lists/*
   ```
+
 - **Development (macOS):** Not available, jail is skipped with warning.
 - **CI (Linux runners):** Install nsjail in the CI image or as a setup step.
 
@@ -237,7 +242,9 @@ is found on `$PATH`. Returns `false` on macOS or when nsjail is not installed.
 On macOS (or any non-Linux platform, or Linux without nsjail installed):
 
 1. `isJailAvailable()` returns `false`
-2. `startIsolate()` logs: `"OS-level process jail unavailable (platform: darwin). Relying on secure-exec isolation only."`
+2. `startIsolate()` logs:
+   `"OS-level process jail unavailable (platform: darwin).`
+   `Relying on secure-exec isolation only."`
 3. `createV8Runtime()` is called with the original binary path, no wrapping
 4. All existing secure-exec isolation continues to apply
 
@@ -249,7 +256,7 @@ Run only on Linux CI. Spawn a jailed test process (shell script, not the real
 Rust binary) and verify each restriction:
 
 | Test | Verification |
-|------|-------------|
+| ------ | ------------- |
 | Filesystem read-only | Attempt `touch /file` → EROFS or EPERM |
 | Filesystem restricted | Attempt `cat /etc/passwd` → ENOENT |
 | PID namespace | `/proc` shows only PID 1 |

@@ -1,10 +1,19 @@
 # Process Jail Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use
+> superpowers:subagent-driven-development (recommended) or
+> superpowers:executing-plans to implement this plan task-by-task.
+> Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Wrap the secure-exec Rust V8 child process in an nsjail sandbox on Linux to provide OS-level defense-in-depth against V8 exploits.
+**Goal:** Wrap the secure-exec Rust V8 child process in an nsjail
+sandbox on Linux to provide OS-level defense-in-depth against V8
+exploits.
 
-**Architecture:** A `pnpm patch` on `@secure-exec/v8` adds a `SECURE_EXEC_V8_WRAPPER` env var check to `resolveBinaryPath()`. New modules in `aai-server` build nsjail config, write a wrapper script, and set the env var before the first sandbox boots. On macOS, the jail is skipped with a warning.
+**Architecture:** A `pnpm patch` on `@secure-exec/v8` adds a
+`SECURE_EXEC_V8_WRAPPER` env var check to `resolveBinaryPath()`.
+New modules in `aai-server` build nsjail config, write a wrapper
+script, and set the env var before the first sandbox boots. On
+macOS, the jail is skipped with a warning.
 
 **Tech Stack:** nsjail (external binary on Linux), pnpm patch, TypeScript, Vitest
 
@@ -15,7 +24,7 @@
 ## File Map
 
 | File | Action | Responsibility |
-|------|--------|---------------|
+| ------ | -------- | --------------- |
 | `patches/@secure-exec__v8@0.2.1.patch` | Create | One-line env var check in `resolveBinaryPath()` |
 | `packages/aai-server/seccomp-policy.ts` | Create | Syscall allowlist → nsjail seccomp policy string |
 | `packages/aai-server/seccomp-allowlist.json` | Create | Checked-in syscall allowlist |
@@ -33,6 +42,7 @@
 ### Task 1: Patch secure-exec to support SECURE_EXEC_V8_WRAPPER env var
 
 **Files:**
+
 - Create: `patches/@secure-exec__v8@0.2.1.patch`
 - Modify: `package.json` (pnpm patch metadata)
 
@@ -47,7 +57,9 @@ This creates a temp directory with the package contents. Note the path it prints
 
 - [ ] **Step 2: Edit the runtime.js in the temp directory**
 
-Open the file at `<temp-dir>/dist/runtime.js`. Find the `resolveBinaryPath()` function (around line 49) and add the env var check as the very first line inside it:
+Open the file at `<temp-dir>/dist/runtime.js`. Find the
+`resolveBinaryPath()` function (around line 49) and add the env var
+check as the very first line inside it:
 
 ```js
 function resolveBinaryPath() {
@@ -62,7 +74,8 @@ function resolveBinaryPath() {
 pnpm patch-commit <temp-dir>
 ```
 
-This generates `patches/@secure-exec__v8@0.2.1.patch` and adds a `pnpm.patchedDependencies` entry to `package.json`.
+This generates `patches/@secure-exec__v8@0.2.1.patch` and adds a
+`pnpm.patchedDependencies` entry to `package.json`.
 
 - [ ] **Step 4: Verify the patch applies**
 
@@ -92,9 +105,11 @@ git commit -m "patch: add SECURE_EXEC_V8_WRAPPER env var to secure-exec binary r
 ### Task 2: Create seccomp allowlist and policy builder
 
 **Files:**
+
 - Create: `packages/aai-server/seccomp-allowlist.json`
 - Create: `packages/aai-server/seccomp-policy.ts`
-- Create: `packages/aai-server/seccomp-policy.test.ts` (in `process-jail.test.ts`, but start here)
+- Create: `packages/aai-server/seccomp-policy.test.ts`
+  (in `process-jail.test.ts`, but start here)
 
 - [ ] **Step 1: Write the seccomp allowlist JSON**
 
@@ -270,6 +285,7 @@ git commit -m "feat: add seccomp syscall allowlist and policy builder for proces
 ### Task 3: Create nsjail config builder
 
 **Files:**
+
 - Create: `packages/aai-server/jail-config.ts`
 - Modify: `packages/aai-server/process-jail.test.ts`
 
@@ -504,6 +520,7 @@ git commit -m "feat: add nsjail config builder for process jail"
 ### Task 4: Create process-jail module (core logic)
 
 **Files:**
+
 - Create: `packages/aai-server/process-jail.ts`
 - Modify: `packages/aai-server/process-jail.test.ts`
 - Modify: `packages/aai-server/constants.ts`
@@ -726,6 +743,7 @@ git commit -m "feat: add process-jail module with nsjail launcher and platform d
 ### Task 5: Integrate process jail into sandbox.ts
 
 **Files:**
+
 - Modify: `packages/aai-server/sandbox.ts`
 
 - [ ] **Step 1: Add import and jail state to sandbox.ts**
@@ -745,7 +763,10 @@ let jailInitialized = false;
 
 - [ ] **Step 2: Add jail initialization to startIsolate**
 
-In the `startIsolate()` function, add jail initialization **before** the `new NodeRuntime(...)` constructor call (around line 95). The jail must be set up before secure-exec first resolves the binary path:
+In the `startIsolate()` function, add jail initialization **before**
+the `new NodeRuntime(...)` constructor call (around line 95). The
+jail must be set up before secure-exec first resolves the binary
+path:
 
 ```ts
 // Initialize process jail on first isolate boot (Linux only)
@@ -764,9 +785,12 @@ if (!jailInitialized) {
 }
 ```
 
-Wait — we need to resolve the binary path the same way secure-exec does. But we can't import their internal function. Instead, we can resolve it ourselves by looking up the platform package:
+Wait — we need to resolve the binary path the same way secure-exec
+does. But we can't import their internal function. Instead, we can
+resolve it ourselves by looking up the platform package:
 
-Replace the above with this simpler approach — detect the binary from the `@secure-exec/v8-<platform>` package:
+Replace the above with this simpler approach — detect the binary
+from the `@secure-exec/v8-<platform>` package:
 
 ```ts
 import { JAIL_MEMORY_LIMIT_MB } from "./constants.ts";
@@ -792,7 +816,12 @@ if (!jailInitialized) {
 
 - [ ] **Step 3: Add cleanup to shutdownSandbox**
 
-In the `createSandbox()` function, modify `shutdownSandbox()` to clean up the jail. But since the jail is shared across all sandboxes (one Rust process), cleanup should only happen when the last sandbox shuts down. For now, we skip jail cleanup on individual sandbox shutdown — the jail process exits when the Rust binary exits, and temp files are cleaned on process exit.
+In the `createSandbox()` function, modify `shutdownSandbox()` to
+clean up the jail. But since the jail is shared across all sandboxes
+(one Rust process), cleanup should only happen when the last sandbox
+shuts down. For now, we skip jail cleanup on individual sandbox
+shutdown — the jail process exits when the Rust binary exits, and
+temp files are cleaned on process exit.
 
 Add a process exit handler after jail initialization instead:
 
@@ -824,6 +853,7 @@ git commit -m "feat: integrate process jail into sandbox isolate startup"
 ### Task 6: Add integration tests for jail enforcement
 
 **Files:**
+
 - Create: `packages/aai-server/process-jail.integration.test.ts`
 - Modify: `packages/aai-server/vitest.integration.config.ts`
 
@@ -983,7 +1013,8 @@ describe("macOS fallback", () => {
 pnpm --filter @alexkroman1/aai-server test:integration
 ```
 
-Expected: On Linux with nsjail, all jail enforcement tests PASS. On macOS, jail tests are skipped, macOS fallback test PASSES.
+Expected: On Linux with nsjail, all jail enforcement tests PASS.
+On macOS, jail tests are skipped, macOS fallback test PASSES.
 
 - [ ] **Step 4: Commit**
 
@@ -997,7 +1028,9 @@ git commit -m "test: add nsjail enforcement integration tests for process jail"
 ### Task 7: Update CLAUDE.md and run full check
 
 **Files:**
-- Modify: `CLAUDE.md` (root-level, `packages/aai-server` section reference)
+
+- Modify: `CLAUDE.md` (root-level,
+  `packages/aai-server` section reference)
 
 - [ ] **Step 1: Update security architecture section in CLAUDE.md**
 

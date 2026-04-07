@@ -335,6 +335,7 @@ on Linux production deployments. This provides defense-in-depth against
 V8 engine exploits that could escape the isolate boundary.
 
 nsjail enforces:
+
 - **Mount namespace**: read-only root, only the Rust binary and shared
   libraries bind-mounted. UDS socket dir is the sole writable mount.
 - **PID namespace**: process sees only itself.
