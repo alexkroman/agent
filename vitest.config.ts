@@ -96,6 +96,7 @@ export default defineConfig({
         test: {
           name: "aai-server",
           root: "packages/aai-server",
+          pool: "forks",
           include: ["**/*.test.ts"],
           exclude: [
             "sandbox-integration.test.ts",

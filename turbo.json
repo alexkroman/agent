@@ -7,15 +7,13 @@
       "outputs": ["dist/**"]
     },
     "test": {
-      "dependsOn": ["build"],
-      "inputs": ["**/*.ts", "**/*.tsx", "vitest.config.ts", "../../vitest.shared.ts"],
-      "cache": false
+      "dependsOn": [],
+      "inputs": ["**/*.ts", "**/*.tsx", "vitest.config.ts", "../../vitest.shared.ts"]
     },
     "test:coverage": {
-      "dependsOn": ["build"],
+      "dependsOn": [],
       "inputs": ["**/*.ts", "**/*.tsx", "vitest.config.ts", "../../vitest.shared.ts"],
-      "outputs": ["coverage/**"],
-      "cache": false
+      "outputs": ["coverage/**"]
     },
     "typecheck": {
       "dependsOn": ["build"],

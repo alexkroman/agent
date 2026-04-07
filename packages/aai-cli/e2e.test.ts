@@ -29,9 +29,6 @@ let registry: MockRegistry;
 
 const pm = (process.env.AAI_TEST_PM ?? "pnpm") as "pnpm" | "npm" | "yarn";
 
-// Random high port base to avoid collisions between parallel CI runs
-const BASE_PORT = 40_000 + Math.floor(Math.random() * 10_000);
-
 function aaiEnv(): NodeJS.ProcessEnv {
   return {
     ...process.env,
@@ -226,7 +223,7 @@ async function setupEventInjector(browser: Browser, port: number) {
 describe("browser: dev server", () => {
   let browser: Browser;
   let child: ChildProcess;
-  const port = BASE_PORT + 200;
+  let port: number;
 
   beforeAll(async () => {
     const projectDir = path.join(tmpDir, "_browser-dev");
@@ -258,10 +255,25 @@ describe("browser: dev server", () => {
        wss.on("connection", (ws) => {
          ws.send(JSON.stringify({ type: "config", audioFormat: "pcm16", sampleRate: 16000, ttsSampleRate: 24000, sessionId: "test" }));
        });
-       s.listen(${port}, () => console.log("ready"));`,
+       s.listen(0, () => console.log("PORT:" + s.address().port));`,
       ],
       { stdio: "pipe" },
     );
+
+    // Read the OS-assigned port from child stdout to avoid EADDRINUSE
+    port = await new Promise<number>((resolve, reject) => {
+      let buf = "";
+      child.stdout?.on("data", (chunk: Buffer) => {
+        buf += chunk.toString();
+        const match = buf.match(/PORT:(\d+)/);
+        if (match) resolve(Number(match[1]));
+      });
+      child.on("error", reject);
+      child.on("exit", (code) =>
+        reject(new Error(`Child exited with code ${code} before reporting port`)),
+      );
+    });
+
     await waitForHealth(`http://localhost:${port}`, child);
     browser = await chromium.launch();
   });
