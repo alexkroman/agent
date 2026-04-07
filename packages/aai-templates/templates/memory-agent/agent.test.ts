@@ -1,4 +1,3 @@
-import { createTestHarness } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
 import "@alexkroman1/aai/testing/matchers";
 import agent from "./agent.ts";
@@ -10,10 +9,5 @@ describe("Memory Agent", () => {
 
   test("enables web_search builtin tool", () => {
     expect(agent.builtinTools).toContain("web_search");
-  });
-
-  test("harness can be created", () => {
-    const t = createTestHarness(agent);
-    expect(t).toBeDefined();
   });
 });

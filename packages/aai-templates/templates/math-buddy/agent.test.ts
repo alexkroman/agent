@@ -12,11 +12,6 @@ describe("Math Buddy", () => {
     expect(agent.builtinTools).toContain("run_code");
   });
 
-  test("harness can be created", () => {
-    const t = createTestHarness(agent);
-    expect(t).toBeDefined();
-  });
-
   test("run_code can do calculations", async () => {
     const t = createTestHarness(agent);
     const turn = await t.turn("Calculate 15% tip on $85", [

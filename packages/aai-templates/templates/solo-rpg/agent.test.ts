@@ -13,12 +13,16 @@ describe("Solo RPG", () => {
   });
 
   test("has rpg tools", () => {
-    expect(agent.tools).toHaveProperty("check_state");
-    expect(agent.tools).toHaveProperty("setup_character");
-    expect(agent.tools).toHaveProperty("action_roll");
-    expect(agent.tools).toHaveProperty("burn_momentum");
-    expect(agent.tools).toHaveProperty("oracle");
-    expect(agent.tools).toHaveProperty("update_state");
+    expect(Object.keys(agent.tools ?? {})).toEqual(
+      expect.arrayContaining([
+        "check_state",
+        "setup_character",
+        "action_roll",
+        "burn_momentum",
+        "oracle",
+        "update_state",
+      ]),
+    );
   });
 
   test("check_state returns initial game state", async () => {
