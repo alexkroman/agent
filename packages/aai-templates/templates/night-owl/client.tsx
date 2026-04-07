@@ -1,16 +1,10 @@
 import "@alexkroman1/aai-ui/styles.css";
 import {
   Button,
-  Controls,
+  ChatView,
   defineClient,
-  ErrorBanner,
-  MessageList,
   SidebarLayout,
   StartScreen,
-  StateIndicator,
-  ThinkingIndicator,
-  useClientConfig,
-  useSession,
   useToolCallStart,
   useToolResult,
 } from "@alexkroman1/aai-ui";
@@ -32,23 +26,27 @@ const CAT_EMOJI: Record<string, string> = {
   book: "\u{1F4DA}",
 };
 
-function ChatPanel() {
-  const { session } = useSession();
-  const { title } = useClientConfig();
+const BOUNCE_CSS = `
+@keyframes owl-bounce {
+  0%, 80%, 100% { transform: scale(0); }
+  40% { transform: scale(1); }
+}
+`;
 
+function BouncingDots() {
   return (
-    <div class="flex flex-col h-screen bg-aai-bg text-aai-text font-aai text-sm">
-      <div class="flex items-center gap-3 px-4 py-3 border-b border-aai-border shrink-0">
-        <span class="text-lg">{"\u{1F989}"}</span>
-        <span class="text-sm font-semibold text-aai-primary">{title}</span>
-        <div class="ml-auto">
-          <StateIndicator state={session.state} />
-        </div>
+    <>
+      <style>{BOUNCE_CSS}</style>
+      <div class="flex gap-1.5">
+        {[0, 1, 2].map((i) => (
+          <div
+            key={i}
+            class="w-2 h-2 rounded-full bg-aai-primary"
+            style={{ animation: `owl-bounce 1.4s ${i * 0.16}s infinite ease-in-out both` }}
+          />
+        ))}
       </div>
-      <ErrorBanner error={session.error} />
-      <MessageList />
-      <Controls />
-    </div>
+    </>
   );
 }
 
@@ -90,7 +88,7 @@ function RecSidebar({
       <div class="flex-1 overflow-y-auto px-3 py-2">
         {loading && (
           <div class="flex justify-center py-4">
-            <ThinkingIndicator />
+            <BouncingDots />
           </div>
         )}
         {filtered.length === 0 && !loading && (
@@ -166,7 +164,7 @@ function NightOwl() {
       buttonText="Start Conversation"
     >
       <SidebarLayout sidebar={sidebar} side="right" width="18rem">
-        <ChatPanel />
+        <ChatView icon={<span class="text-lg">{"\u{1F989}"}</span>} />
       </SidebarLayout>
     </StartScreen>
   );

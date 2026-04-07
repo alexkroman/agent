@@ -1,12 +1,10 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { batch, signal } from "@preact/signals";
 import type { ComponentType } from "preact";
 // biome-ignore lint/suspicious/noDeprecatedImports: preact v10 render API is current
 import { render } from "preact";
-import { ClientConfigProvider, type ClientTheme } from "./client-context.ts";
+import { ClientConfigProvider, type ClientTheme, SessionProvider } from "./context.ts";
 import { createVoiceSession, type VoiceSession, type WebSocketConstructor } from "./session.ts";
-import { createSessionControls, SessionProvider, type SessionSignals } from "./signals.ts";
 
 /**
  * Options for {@link defineClient}.
@@ -40,8 +38,6 @@ export type ClientOptions = {
 export type ClientHandle = {
   /** The underlying voice session. */
   session: VoiceSession;
-  /** Reactive session controls for the mounted UI. */
-  signals: SessionSignals;
   /** Unmount the UI, remove injected styles, and disconnect the session. */
   dispose(): void;
   /** Alias for `dispose` for use with `using`. */
@@ -58,8 +54,7 @@ function resolveContainer(target: string | HTMLElement = "#app"): HTMLElement {
 /**
  * Define and mount a client UI for a voice agent.
  *
- * Creates a {@link VoiceSession}, wraps it in
- * {@link SessionSignals}, and renders the component
+ * Creates a {@link VoiceSession} and renders the component
  * inside a {@link SessionProvider}.
  *
  * @param Component - The Preact component to render.
@@ -77,13 +72,10 @@ export function defineClient(Component: ComponentType<any>, options?: ClientOpti
     options?.platformUrl ?? globalThis.location.origin + globalThis.location.pathname;
   const session = createVoiceSession({
     platformUrl,
-    reactiveFactory: signal,
-    batch,
     onSessionId: options?.onSessionId,
     resumeSessionId: options?.resumeSessionId,
     ...(options?.WebSocket ? { WebSocket: options.WebSocket } : {}),
   });
-  const signals = createSessionControls(session);
 
   const clientConfig = { title: options?.title, theme: options?.theme };
 
@@ -100,7 +92,7 @@ export function defineClient(Component: ComponentType<any>, options?: ClientOpti
 
   render(
     <ClientConfigProvider value={clientConfig}>
-      <SessionProvider value={signals}>
+      <SessionProvider value={session}>
         <Component />
       </SessionProvider>
     </ClientConfigProvider>,
@@ -109,11 +101,9 @@ export function defineClient(Component: ComponentType<any>, options?: ClientOpti
 
   const handle: ClientHandle = {
     session,
-    signals,
     dispose() {
       render(null, container);
-      signals.dispose();
-      session.disconnect();
+      session[Symbol.dispose]();
     },
     [Symbol.dispose]() {
       handle.dispose();

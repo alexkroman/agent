@@ -32,17 +32,57 @@ describe("published exports", () => {
 
     // Value exports (functions, components) that consumers depend on
     const expectedValues = [
+      // Context
+      "ClientConfigProvider",
+      "SessionProvider",
+      "useClientConfig",
+      "useSession",
+      // Components
       "App",
       "Button",
+      "ChatView",
+      "Controls",
+      "MessageList",
+      "SidebarLayout",
+      "StartScreen",
+      "ToolCallBlock",
+      // Hooks
+      "useAutoScroll",
+      "useToolCallStart",
+      "useToolResult",
+      // Session
       "defineClient",
       "createVoiceSession",
-      "createSessionControls",
-      "SessionProvider",
-      "useSession",
     ];
     for (const name of expectedValues) {
       expect(mod, `Missing value export: ${name}`).toHaveProperty(name);
     }
+  });
+
+  it("main entry (.) does NOT export removed/internal symbols", async () => {
+    const mod = await import(resolve(PKG_DIR, "index.ts"));
+
+    const removedExports = [
+      "createSessionControls",
+      "SessionSignals",
+      "Reactive",
+      "ButtonVariant",
+      "ButtonSize",
+      "MessageBubble",
+      "ErrorBanner",
+      "StateIndicator",
+      "ThinkingIndicator",
+      "Transcript",
+      "WebSocketConstructor",
+      "ClientHandler",
+    ];
+    for (const name of removedExports) {
+      expect(mod, `Should NOT export removed symbol: ${name}`).not.toHaveProperty(name);
+    }
+  });
+
+  it("./session subpath is NOT in package.json exports", () => {
+    expect(exports).not.toHaveProperty("./session");
   });
 
   it("every public export entry has a '@dev/source' field pointing to a .ts file", () => {

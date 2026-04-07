@@ -3,14 +3,14 @@
 
 import { render, screen } from "@testing-library/preact";
 import { describe, expect, test } from "vitest";
-import { createMockSignals } from "../_test-utils.ts";
-import { SessionProvider } from "../signals.ts";
+import { createMockSession } from "../_test-utils.ts";
+import { SessionProvider } from "../context.ts";
 import { Controls } from "./controls.tsx";
 
-function renderControls(overrides?: Parameters<typeof createMockSignals>[0]) {
-  const signals = createMockSignals(overrides);
+function renderControls(overrides?: Parameters<typeof createMockSession>[0]) {
+  const session = createMockSession(overrides);
   return render(
-    <SessionProvider value={signals}>
+    <SessionProvider value={session}>
       <Controls />
     </SessionProvider>,
   );

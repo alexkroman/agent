@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 import type * as preact from "preact";
-import { useClientConfig } from "../client-context.ts";
+import { useClientConfig } from "../context.ts";
 import { ChatView } from "./chat-view.tsx";
 import { StartScreen } from "./start-screen.tsx";
 

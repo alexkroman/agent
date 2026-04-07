@@ -1,5 +1,6 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "cacheDir": "node_modules/.cache/turbo",
   "globalDependencies": ["pnpm-lock.yaml"],
   "tasks": {
     "build": {

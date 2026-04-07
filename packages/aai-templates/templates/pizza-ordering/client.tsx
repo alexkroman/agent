@@ -92,7 +92,7 @@ function OrderPanel({ order }: { order: OrderInfo }) {
 }
 
 function PizzaAgent() {
-  const { session, running, toggle, reset } = useSession();
+  const session = useSession();
   const scrollRef = useAutoScroll();
   const [order, setOrder] = useState<OrderInfo>({
     pizzas: [],
@@ -163,11 +163,11 @@ function PizzaAgent() {
       <div class="p-3 flex flex-col gap-2 border-t border-aai-border">
         <div class="flex gap-2">
           <Button
-            variant={running.value ? "default" : "secondary"}
+            variant={session.running.value ? "default" : "secondary"}
             className="flex-1"
-            onClick={toggle}
+            onClick={session.toggle}
           >
-            {running.value ? "Pause" : "Resume"}
+            {session.running.value ? "Pause" : "Resume"}
           </Button>
           <Button variant="ghost" onClick={() => session.cancel()}>
             Stop
@@ -187,7 +187,7 @@ function PizzaAgent() {
           <Button
             variant="ghost"
             onClick={() => {
-              reset();
+              session.reset();
               setOrder({ pizzas: [], total: "$0.00", orderPlaced: false });
             }}
           >

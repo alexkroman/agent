@@ -478,17 +478,17 @@ import "aai-ui/styles.css";
 import { defineClient, useSession } from "@alexkroman1/aai-ui";
 
 function App() {
-  const { session, started, running, start, toggle, reset } = useSession();
+  const session = useSession();
   const msgs = session.messages.value;
   const tx = session.userUtterance.value;
   return (
     <div>
       {msgs.map((m, i) => <p key={i}>{m.content}</p>)}
       {tx !== null && <p>{tx || "..."}</p>}
-      {!started.value ? <button onClick={start}>Start</button> : (
+      {!session.started.value ? <button onClick={() => session.start()}>Start</button> : (
         <>
-          <button onClick={toggle}>{running.value ? "Stop" : "Resume"}</button>
-          <button onClick={reset}>Reset</button>
+          <button onClick={() => session.toggle()}>{session.running.value ? "Stop" : "Resume"}</button>
+          <button onClick={() => session.reset()}>Reset</button>
         </>
       )}
     </div>
@@ -528,7 +528,7 @@ defineClient(App, {
 });
 ```
 
-`defineClient()` returns a `ClientHandle` with `session`, `signals`, and `dispose()`.
+`defineClient()` returns a `ClientHandle` with `session` and `dispose()`.
 
 ### Built-in components
 
@@ -546,18 +546,18 @@ Import from `aai-ui`:
 | `MessageList`   | Messages with auto-scroll, tool calls, transcript    |
 
 `StartScreen` props: `{ children, icon?, title?, subtitle?, buttonText? }`
+`ChatView` props: `{ icon? }` — optional element rendered
+before the title in the header
 `SidebarLayout` props: `{ sidebar, children, width?, side? }`
 
 **Atomic components:**
 
-| Component           | Props                                   | Description                     |
-| ------------------- | --------------------------------------- | ------------------------------- |
-| `MessageBubble`     | `{ message: Message }`                  | Single message bubble           |
-| `Transcript`        | `{ userUtterance: Signal<str\|null> }`  | Live STT text display           |
-| `StateIndicator`    | `{ state: Signal<AgentState> }`         | Colored dot + state label       |
-| `ErrorBanner`       | `{ error: Signal<SessionError\|null> }` | Red error box with message      |
-| `ThinkingIndicator` | none                                    | Animated dots during processing |
-| `ToolCallBlock`     | `{ toolCall: ToolCallInfo }`            | Collapsible tool call display   |
+| Component           | Props                          | Description                     |
+| ------------------- | ------------------------------ | ------------------------------- |
+| `ToolCallBlock`     | `{ toolCall: ToolCallInfo }`   | Collapsible tool call display   |
+
+State indicator, error banner, transcript, and thinking indicator are built
+into `ChatView` and `MessageList` — no standalone imports needed.
 
 **Hooks:**
 
@@ -565,16 +565,15 @@ Import from `aai-ui`:
   sentinel div. Auto-scrolls when messages or utterances change.
 - `useClientConfig()` — returns the `title` and `theme` passed to `defineClient()`.
 
-**Important:** Components that accept `Signal<T>` props (like `StateIndicator`,
-`Transcript`, `ErrorBanner`) expect the Signal object itself, NOT `.value`. Pass
-`session.state`, not `session.state.value`. Passing `.value` compiles but breaks
-reactivity silently.
+### Session API (`useSession()`)
 
-### Session signals (`useSession()`)
+`useSession()` returns a `VoiceSession` object with reactive signals and
+control methods:
 
-`useSession()` returns
-`{ session, started, running, start, toggle, reset, dispose }`. Reactive agent
-data lives on `session` (a `VoiceSession`); UI-only controls are top-level.
+```ts
+const session = useSession();
+// session.state, session.started, session.running, session.start(), session.toggle(), etc.
+```
 
 | Signal / field                 | Type                   | Description                                                     |
 | ------------------------------ | ---------------------- | --------------------------------------------------------------- |
@@ -585,10 +584,14 @@ data lives on `session` (a `VoiceSession`); UI-only controls are top-level.
 | `session.agentUtterance.value` | `string \| null`       | `null` = not speaking, string = streaming agent response text   |
 | `session.error.value`          | `SessionError \| null` | `{ code, message }`                                             |
 | `session.disconnected.value`   | `object \| null`       | `{ intentional: boolean }` when disconnected, `null` otherwise  |
-| `started.value`                | `boolean`              | Whether session has been started                                |
-| `running.value`                | `boolean`              | Whether session is active                                       |
+| `session.started.value`        | `boolean`              | Whether session has been started                                |
+| `session.running.value`        | `boolean`              | Whether session is active                                       |
 
-**Methods:** `start()`, `toggle()`, `reset()`, `dispose()`
+**Methods:** `session.start()`, `session.toggle()`,
+`session.reset()`, `session.disconnect()`, `session.cancel()`
+
+All signals are `Signal<T>` from `@preact/signals`. Read `.value` to get the
+current value; Preact re-renders automatically when signals change.
 
 **Hooks:**
 
@@ -663,7 +666,7 @@ import { ChatView, defineClient, useSession, useToolResult } from "@alexkroman1/
 interface Recipe { name: string; ingredients: string[]; steps: string[] }
 
 function RecipeAgent() {
-  const { session, started, start } = useSession();
+  const session = useSession();
   const [recipe, setRecipe] = useState<Recipe | null>(null);
 
   useToolResult((toolName, result: any) => {
@@ -672,7 +675,7 @@ function RecipeAgent() {
     }
   });
 
-  if (!started.value) return <button onClick={start}>Start</button>;
+  if (!session.started.value) return <button onClick={() => session.start()}>Start</button>;
 
   return (
     <div class="flex gap-4 h-full">
@@ -757,8 +760,8 @@ import "aai-ui/styles.css";
 import { defineClient, ToolCallBlock, useSession } from "@alexkroman1/aai-ui";
 
 function App() {
-  const { session, started, start } = useSession();
-  if (!started.value) return <button onClick={start}>Start</button>;
+  const session = useSession();
+  if (!session.started.value) return <button onClick={() => session.start()}>Start</button>;
 
   const msgs = session.messages.value;
   const toolCalls = session.toolCalls.value;
@@ -847,10 +850,10 @@ defineClient(ShopAgent);
 ```tsx
 import "aai-ui/styles.css";
 import { useEffect } from "preact/hooks";
-import { defineClient, StateIndicator, useSession } from "@alexkroman1/aai-ui";
+import { ChatView, defineClient, StartScreen, useSession } from "@alexkroman1/aai-ui";
 
 function App() {
-  const { session, started, start } = useSession();
+  const session = useSession();
 
   useEffect(() => {
     // Run side effects when state changes
@@ -860,15 +863,17 @@ function App() {
   }, [session.state.value]);
 
   return (
-    <div>
-      <StateIndicator />
-      {!started.value && <button onClick={start}>Start</button>}
-    </div>
+    <StartScreen>
+      <ChatView icon={<span class="text-lg">🤖</span>} />
+    </StartScreen>
   );
 }
 
 defineClient(App);
 ```
+
+The `ChatView` component includes a built-in state indicator in its header.
+Pass an `icon` prop to customize the icon shown next to the title.
 
 ### Styling custom UIs
 
@@ -1007,7 +1012,7 @@ custom properties.
 import { useAutoScroll, useSession } from "@alexkroman1/aai-ui";
 
 function MyChat() {
-  const { session } = useSession();
+  const session = useSession();
   const bottomRef = useAutoScroll();
 
   return (
@@ -1027,7 +1032,7 @@ component to avoid redundant signal subscriptions:
 
 ```tsx
 function MyComponent() {
-  const { session } = useSession();
+  const session = useSession();
   const state = session.state.value;
   const msgs = session.messages.value;
   // Use `state` and `msgs` as plain values throughout the render
@@ -1077,10 +1082,10 @@ const server = createServer({ runtime, name: agent.name });
 ### Headless voice session (no UI)
 
 For custom frontends (React Native, vanilla JS, etc.), use `createVoiceSession`
-from `@alexkroman1/aai-ui/session` directly instead of `defineClient`:
+from `@alexkroman1/aai-ui` directly instead of `defineClient`:
 
 ```ts
-import { createVoiceSession } from "@alexkroman1/aai-ui/session";
+import { createVoiceSession } from "@alexkroman1/aai-ui";
 
 const session = createVoiceSession({
   platformUrl: "https://your-agent.example.com",
@@ -1088,7 +1093,7 @@ const session = createVoiceSession({
 
 session.connect();
 
-// Reactive state — read .value to get current state
+// Signal state — read .value to get current state
 session.state.value;          // "disconnected" | "connecting" | "listening" | ...
 session.messages.value;       // ChatMessage[]
 session.toolCalls.value;      // ToolCallInfo[]

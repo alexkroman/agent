@@ -159,15 +159,14 @@ runs as part of `pnpm typecheck` and will catch violations.
 #### packages/aai-ui/
 
 - `index.ts` — main exports, Preact UI component
-- `session.ts` — WebSocket session management
+- `session.ts` — WebSocket session management, message handling, reactive state
+- `context.ts` — SessionProvider, useSession, ClientConfigProvider, useClientConfig
+- `hooks.ts` — useToolResult, useToolCallStart, useAutoScroll
 - `audio.ts` — PCM encoding/decoding, AudioWorklet management
-- `client-handler.ts` — WebSocket client handler
-- `client-context.ts` — Preact context for client config
-- `signals.ts` — signal state management
+- `define-client.tsx` — defineClient mount helper
 - `types.ts` — UI type definitions
-- `components/` — UI components (app, chat-view, controls, message-bubble,
-  message-list, start-screen, sidebar-layout, state-indicator,
-  thinking-indicator, tool-call-block, transcript, error-banner, button,
+- `components/` — UI components (app, chat-view, controls,
+  message-list, start-screen, sidebar-layout, tool-call-block, button,
   tool-icons)
 
 #### packages/aai-server/
@@ -454,5 +453,5 @@ var support. When secure-exec ships the `v8Runtime` option on
 ### Known limitations
 
 - **Type-level tests**: Cover public entry points of `aai` (`.`, `./types`,
-  `./server`) and `aai-ui` (`./session`). Subpath exports (e.g. `./kv`,
+  `./server`) and `aai-ui` (`.`). Subpath exports (e.g. `./kv`,
   `./protocol`) are not covered by type tests.

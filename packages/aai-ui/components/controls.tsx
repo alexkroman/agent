@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 import clsx from "clsx";
-import { useSession } from "../signals.ts";
+import { useSession } from "../context.ts";
 import { Button } from "./button.tsx";
 
 /**

@@ -8,10 +8,10 @@
  */
 import { render, screen } from "@testing-library/preact";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { createMockSignals, flush, installMockWebSocket, setupSignalsEnv } from "./_test-utils.ts";
+import { createMockSession, flush, installMockWebSocket, setupSignalsEnv } from "./_test-utils.ts";
 import { App } from "./components/app.tsx";
+import { SessionProvider, useSession } from "./context.ts";
 import { defineClient } from "./define-client.tsx";
-import { SessionProvider, useSession } from "./signals.ts";
 
 // --- Mount lifecycle integration ---
 
@@ -33,7 +33,7 @@ describe("UI integration: defineClient lifecycle", () => {
   test("defineClient → connect → receive ready → state becomes listening", async () => {
     function TestApp() {
       const s = useSession();
-      return <div data-testid="state">{s.session.state.value}</div>;
+      return <div data-testid="state">{s.state.value}</div>;
     }
 
     const handle = defineClient(TestApp, {
@@ -42,7 +42,7 @@ describe("UI integration: defineClient lifecycle", () => {
     });
 
     // Start the session
-    handle.signals.start();
+    handle.session.start();
     await flush();
 
     // Mock WS should be created
@@ -82,14 +82,13 @@ describe("UI integration: defineClient lifecycle", () => {
     expect(el?.textContent).toBe("");
   });
 
-  test("defineClient returns session and signals handles", () => {
+  test("defineClient returns session handle", () => {
     const handle = defineClient(() => <div />, {
       platformUrl: "http://localhost:3000",
       WebSocket: globalThis.WebSocket,
     });
     expect(handle.session).toBeDefined();
-    expect(handle.signals).toBeDefined();
-    expect(handle.signals.started.value).toBe(false);
+    expect(handle.session.started.value).toBe(false);
     expect(typeof handle.dispose).toBe("function");
     handle.dispose();
   });
@@ -108,13 +107,13 @@ describe("UI integration: signals → component rendering", () => {
     env.restore();
   });
 
-  test("start → connect → events flow through to signals", async () => {
+  test("start → connect → events flow through to session", async () => {
     // Start session
-    env.signals.start();
+    env.session.start();
     await flush();
 
-    expect(env.signals.started.value).toBe(true);
-    expect(env.signals.running.value).toBe(true);
+    expect(env.session.started.value).toBe(true);
+    expect(env.session.running.value).toBe(true);
     expect(env.mock.lastWs).not.toBeNull();
 
     // Simulate ready — state is "ready" (transitions to "listening" with real audio)
@@ -145,7 +144,7 @@ describe("UI integration: signals → component rendering", () => {
 
   test("error event sets error state and stops running", async () => {
     await env.connect();
-    expect(env.signals.running.value).toBe(true);
+    expect(env.session.running.value).toBe(true);
 
     env.send({ type: "error", code: "stt", message: "Speech recognition failed" });
     expect(env.session.state.value).toBe("error");
@@ -153,24 +152,24 @@ describe("UI integration: signals → component rendering", () => {
       code: "stt",
       message: "Speech recognition failed",
     });
-    expect(env.signals.running.value).toBe(false);
+    expect(env.session.running.value).toBe(false);
 
     env.session.disconnect();
   });
 
   test("toggle disconnects and reconnects", async () => {
-    env.signals.start();
+    env.session.start();
     await flush();
-    expect(env.signals.running.value).toBe(true);
+    expect(env.session.running.value).toBe(true);
 
     // Toggle off
-    env.signals.toggle();
-    expect(env.signals.running.value).toBe(false);
+    env.session.toggle();
+    expect(env.session.running.value).toBe(false);
 
     // Toggle back on
-    env.signals.toggle();
+    env.session.toggle();
     await flush();
-    expect(env.signals.running.value).toBe(true);
+    expect(env.session.running.value).toBe(true);
 
     env.session.disconnect();
   });
@@ -178,7 +177,7 @@ describe("UI integration: signals → component rendering", () => {
   test("reset sends reset message to server", async () => {
     await env.connect();
 
-    env.signals.reset();
+    env.session.reset();
     const sent = env.mock.lastWs?.sent.filter((d): d is string => typeof d === "string") ?? [];
     const resetMsg = sent.find((s) => JSON.parse(s).type === "reset");
     expect(resetMsg).toBeDefined();
@@ -191,10 +190,10 @@ describe("UI integration: signals → component rendering", () => {
 
 describe("UI integration: App component full flow", () => {
   test("App shows Start button, then chat view after start", () => {
-    const signals = createMockSignals({ started: false });
+    const session = createMockSession({ started: false });
 
     const { rerender } = render(
-      <SessionProvider value={signals}>
+      <SessionProvider value={session}>
         <App />
       </SessionProvider>,
     );
@@ -203,10 +202,10 @@ describe("UI integration: App component full flow", () => {
     expect(screen.getByText("Start")).toBeDefined();
 
     // Simulate starting
-    signals.started.value = true;
-    signals.session.state.value = "listening";
+    session.started.value = true;
+    session.state.value = "listening";
     rerender(
-      <SessionProvider value={signals}>
+      <SessionProvider value={session}>
         <App />
       </SessionProvider>,
     );
@@ -218,7 +217,7 @@ describe("UI integration: App component full flow", () => {
   });
 
   test("App shows messages and error state", () => {
-    const signals = createMockSignals({
+    const session = createMockSession({
       started: true,
       state: "error",
       running: false,
@@ -230,7 +229,7 @@ describe("UI integration: App component full flow", () => {
     });
 
     render(
-      <SessionProvider value={signals}>
+      <SessionProvider value={session}>
         <App />
       </SessionProvider>,
     );
@@ -241,14 +240,14 @@ describe("UI integration: App component full flow", () => {
   });
 
   test("App shows Resume button when not running", () => {
-    const signals = createMockSignals({
+    const session = createMockSession({
       started: true,
       state: "disconnected",
       running: false,
     });
 
     render(
-      <SessionProvider value={signals}>
+      <SessionProvider value={session}>
         <App />
       </SessionProvider>,
     );
@@ -257,7 +256,7 @@ describe("UI integration: App component full flow", () => {
   });
 
   test("multiple messages render in DOM order", () => {
-    const signals = createMockSignals({
+    const session = createMockSession({
       started: true,
       state: "listening",
       running: true,
@@ -269,7 +268,7 @@ describe("UI integration: App component full flow", () => {
     });
 
     render(
-      <SessionProvider value={signals}>
+      <SessionProvider value={session}>
         <App />
       </SessionProvider>,
     );

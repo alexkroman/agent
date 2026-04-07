@@ -3,12 +3,9 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { flush, installMockWebSocket } from "@alexkroman1/aai/testing";
-import { batch, signal } from "@preact/signals";
-import type { createVoiceIO } from "./audio.ts";
-import { ClientHandler } from "./client-handler.ts";
+import { signal } from "@preact/signals";
 import { createVoiceSession, type VoiceSession } from "./session.ts";
-import { createSessionControls, type SessionSignals } from "./signals.ts";
-import type { AgentState, ChatMessage, Reactive, SessionError, ToolCallInfo } from "./types.ts";
+import type { AgentState, ChatMessage, SessionError, ToolCallInfo } from "./types.ts";
 
 export { flush, installMockWebSocket, MockWebSocket } from "@alexkroman1/aai/testing";
 
@@ -21,7 +18,7 @@ function noop() {
 }
 
 /** Default voice options for tests. */
-export function voiceOpts(overrides?: Partial<Parameters<typeof createVoiceIO>[0]>) {
+export function voiceOpts(overrides?: Partial<import("./audio.ts").VoiceIOOptions>) {
   return {
     sttSampleRate: 16_000,
     ttsSampleRate: 24_000,
@@ -199,18 +196,14 @@ export function setupSignalsEnv() {
   const loc = installMockLocation();
   const session = createVoiceSession({
     platformUrl: "http://localhost:3000",
-    reactiveFactory: signal,
-    batch,
     // Pass the mocked globalThis.WebSocket so session.ts uses the mock
     // instead of the crossws/websocket module import.
     WebSocket: globalThis.WebSocket,
   });
-  const signals = createSessionControls(session);
 
   return {
     mock,
     session,
-    signals,
     async connect() {
       session.connect();
       await flush();
@@ -247,66 +240,7 @@ export async function replayFixture(
   }
 }
 
-export function reactive<T>(initial: T): Reactive<T> {
-  return { value: initial };
-}
-
-export function makeVoiceIO(overrides?: Partial<Record<string, (...args: never[]) => unknown>>) {
-  let flushed = false;
-  const chunks: ArrayBuffer[] = [];
-  let doneCalled = false;
-  return {
-    factory: () => ({
-      enqueue(buf: ArrayBuffer) {
-        chunks.push(buf);
-      },
-      done() {
-        doneCalled = true;
-        return Promise.resolve();
-      },
-      flush() {
-        flushed = true;
-      },
-      close() {
-        return Promise.resolve();
-      },
-      async [Symbol.asyncDispose]() {
-        /* noop */
-      },
-      ...overrides,
-    }),
-    wasFlushed: () => flushed,
-    chunks: () => chunks,
-    wasDone: () => doneCalled,
-  };
-}
-
-export function createTarget(
-  voiceOverrides?: Partial<Record<string, (...args: never[]) => unknown>>,
-) {
-  const state = reactive<AgentState>("connecting");
-  const messages = reactive<ChatMessage[]>([]);
-  const toolCalls = reactive<ToolCallInfo[]>([]);
-  const userUtterance = reactive<string | null>(null);
-  const agentUtterance = reactive<string | null>(null);
-  const error = reactive<SessionError | null>(null);
-  const io = makeVoiceIO(voiceOverrides);
-
-  const target = new ClientHandler({
-    state,
-    messages,
-    toolCalls,
-    userUtterance,
-    agentUtterance,
-    error,
-    voiceIO: io.factory,
-    batch: (fn) => fn(),
-  });
-
-  return { target, state, messages, toolCalls, userUtterance, agentUtterance, error, ...io };
-}
-
-export function createMockSignals(
+export function createMockSession(
   overrides?: Partial<{
     state: AgentState;
     messages: ChatMessage[];
@@ -315,8 +249,8 @@ export function createMockSignals(
     started: boolean;
     running: boolean;
   }>,
-): SessionSignals {
-  const mockSession = {
+): VoiceSession {
+  const session = {
     state: signal<AgentState>(overrides?.state ?? "disconnected"),
     messages: signal<ChatMessage[]>(overrides?.messages ?? []),
     toolCalls: signal<ToolCallInfo[]>([]),
@@ -324,6 +258,8 @@ export function createMockSignals(
     agentUtterance: signal<string | null>(null),
     error: signal<SessionError | null>(overrides?.error ?? null),
     disconnected: signal<{ intentional: boolean } | null>(null),
+    started: signal<boolean>(overrides?.started ?? false),
+    running: signal<boolean>(overrides?.running ?? true),
     connect() {
       /* noop */
     },
@@ -339,32 +275,17 @@ export function createMockSignals(
     disconnect() {
       /* noop */
     },
+    start() {
+      session.started.value = true;
+      session.running.value = true;
+    },
+    toggle() {
+      session.running.value = !session.running.value;
+    },
     [Symbol.dispose]() {
       /* noop */
     },
   } satisfies VoiceSession;
 
-  const signals: SessionSignals = {
-    session: mockSession,
-    started: signal<boolean>(overrides?.started ?? false),
-    running: signal<boolean>(overrides?.running ?? true),
-    dispose() {
-      /* noop */
-    },
-    [Symbol.dispose]() {
-      /* noop */
-    },
-    start() {
-      signals.started.value = true;
-      signals.running.value = true;
-    },
-    toggle() {
-      signals.running.value = !signals.running.value;
-    },
-    reset() {
-      /* noop */
-    },
-  };
-
-  return signals;
+  return session;
 }

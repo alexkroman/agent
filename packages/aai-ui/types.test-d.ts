@@ -6,19 +6,23 @@
  * A failure here means a public type contract has regressed.
  */
 
-// biome-ignore lint/correctness/noUndeclaredDependencies: vitest is a root workspace devDependency
+import type { Signal } from "@preact/signals";
 import { describe, expectTypeOf, it } from "vitest";
 import {
   type AgentState,
   type ChatMessage,
   createVoiceSession,
+  // @ts-expect-error — Reactive is not exported from the public API
   type Reactive,
   type SessionError,
   type SessionErrorCode,
   type ToolCallInfo,
   type VoiceSession,
   type VoiceSessionOptions,
-} from "./session.ts";
+} from "./index.ts";
+
+// Suppress unused type warning — the @ts-expect-error above is the actual test.
+type _ReactiveNotExported = Reactive;
 
 // ─── createVoiceSession ───────────────────────────────────────────────────
 
@@ -37,16 +41,26 @@ describe("createVoiceSession", () => {
     expectTypeOf<VoiceSessionOptions>().toHaveProperty("platformUrl");
     expectTypeOf<VoiceSessionOptions["platformUrl"]>().toEqualTypeOf<string>();
   });
+
+  it("does not accept reactiveFactory or batch options", () => {
+    expectTypeOf<VoiceSessionOptions>().not.toHaveProperty("reactiveFactory");
+    expectTypeOf<VoiceSessionOptions>().not.toHaveProperty("batch");
+  });
 });
 
 // ─── VoiceSession shape ───────────────────────────────────────────────────
 
 describe("VoiceSession", () => {
   it("has reactive state signals", () => {
-    expectTypeOf<VoiceSession["state"]>().toEqualTypeOf<Reactive<AgentState>>();
-    expectTypeOf<VoiceSession["messages"]>().toEqualTypeOf<Reactive<ChatMessage[]>>();
-    expectTypeOf<VoiceSession["toolCalls"]>().toEqualTypeOf<Reactive<ToolCallInfo[]>>();
-    expectTypeOf<VoiceSession["error"]>().toEqualTypeOf<Reactive<SessionError | null>>();
+    expectTypeOf<VoiceSession["state"]>().toEqualTypeOf<Signal<AgentState>>();
+    expectTypeOf<VoiceSession["messages"]>().toEqualTypeOf<Signal<ChatMessage[]>>();
+    expectTypeOf<VoiceSession["toolCalls"]>().toEqualTypeOf<Signal<ToolCallInfo[]>>();
+    expectTypeOf<VoiceSession["error"]>().toEqualTypeOf<Signal<SessionError | null>>();
+  });
+
+  it("has started and running as Signal<boolean>", () => {
+    expectTypeOf<VoiceSession["started"]>().toEqualTypeOf<Signal<boolean>>();
+    expectTypeOf<VoiceSession["running"]>().toEqualTypeOf<Signal<boolean>>();
   });
 
   it("has lifecycle methods", () => {
@@ -56,6 +70,8 @@ describe("VoiceSession", () => {
     expectTypeOf<VoiceSession["disconnect"]>().toEqualTypeOf<() => void>();
     expectTypeOf<VoiceSession["cancel"]>().toEqualTypeOf<() => void>();
     expectTypeOf<VoiceSession["reset"]>().toEqualTypeOf<() => void>();
+    expectTypeOf<VoiceSession["start"]>().toEqualTypeOf<() => void>();
+    expectTypeOf<VoiceSession["toggle"]>().toEqualTypeOf<() => void>();
   });
 });
 
@@ -84,10 +100,6 @@ describe("exported types", () => {
       result?: string | undefined;
       afterMessageIndex: number;
     }>();
-  });
-
-  it("Reactive is a value wrapper", () => {
-    expectTypeOf<Reactive<number>>().toEqualTypeOf<{ value: number }>();
   });
 
   it("SessionError has expected shape", () => {

@@ -91,14 +91,8 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
   mic.connect(capNode);
 
   // Worklet outputs PCM16 at the STT rate — just batch and send.
-  // Double-buffer: swap between two pre-allocated buffers so we avoid
-  // allocating a new Uint8Array on every send. We still need an
-  // ArrayBuffer.slice() for the send (WebSocket needs its own copy),
-  // but skip the intermediate Uint8Array allocation.
   const chunkSizeBytes = Math.floor(sttSampleRate * MIC_BUFFER_SECONDS) * 2;
-  const capBufA = new Uint8Array(chunkSizeBytes * 2);
-  const capBufB = new Uint8Array(chunkSizeBytes * 2);
-  let capBuf = capBufA;
+  let capBuf = new Uint8Array(chunkSizeBytes * 2);
   let capOffset = 0;
 
   capNode.port.postMessage({ event: "start" });
@@ -111,13 +105,9 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
     capOffset += chunk.byteLength;
 
     if (capOffset >= chunkSizeBytes) {
-      const sendBuf = capBuf;
-      const filled = capOffset;
-      // Swap to the other buffer before invoking the callback so incoming
-      // chunks don't conflict with the data being sent.
-      capBuf = capBuf === capBufA ? capBufB : capBufA;
+      onMicData(capBuf.buffer.slice(0, capOffset));
+      capBuf = new Uint8Array(chunkSizeBytes * 2);
       capOffset = 0;
-      onMicData(sendBuf.buffer.slice(0, filled));
     }
   };
 
