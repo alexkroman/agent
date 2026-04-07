@@ -51,12 +51,12 @@ test("delete returns 401 without auth", async () => {
   expect(resp.status).toBe(401);
 });
 
-test("delete terminates running sandbox", async () => {
+test("delete shuts down running sandbox", async () => {
   const { fetch, slots } = await setup();
   await deployAgent(fetch);
 
-  const terminate = vi.fn().mockResolvedValue(undefined);
-  slots.set("my-agent", { ...makeSlot({ slug: "my-agent" }), sandbox: { terminate } as never });
+  const shutdown = vi.fn().mockResolvedValue(undefined);
+  slots.set("my-agent", { ...makeSlot({ slug: "my-agent" }), sandbox: { shutdown } as never });
 
   const resp = await fetch("/my-agent", {
     method: "DELETE",
@@ -64,16 +64,16 @@ test("delete terminates running sandbox", async () => {
   });
 
   expect(resp.status).toBe(200);
-  expect(terminate).toHaveBeenCalled();
+  expect(shutdown).toHaveBeenCalled();
   expect(slots.has("my-agent")).toBe(false);
 });
 
-test("delete succeeds even if sandbox terminate fails", async () => {
+test("delete succeeds even if sandbox shutdown fails", async () => {
   const { fetch, slots } = await setup();
   await deployAgent(fetch);
 
-  const terminate = vi.fn().mockRejectedValue(new Error("terminate failed"));
-  slots.set("my-agent", { ...makeSlot({ slug: "my-agent" }), sandbox: { terminate } as never });
+  const shutdown = vi.fn().mockRejectedValue(new Error("shutdown failed"));
+  slots.set("my-agent", { ...makeSlot({ slug: "my-agent" }), sandbox: { shutdown } as never });
 
   const resp = await fetch("/my-agent", {
     method: "DELETE",
@@ -81,5 +81,5 @@ test("delete succeeds even if sandbox terminate fails", async () => {
   });
 
   expect(resp.status).toBe(200);
-  expect(terminate).toHaveBeenCalled();
+  expect(shutdown).toHaveBeenCalled();
 });
