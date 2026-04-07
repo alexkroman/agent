@@ -546,7 +546,8 @@ Import from `aai-ui`:
 | `MessageList`   | Messages with auto-scroll, tool calls, transcript    |
 
 `StartScreen` props: `{ children, icon?, title?, subtitle?, buttonText? }`
-`ChatView` props: `{ icon? }` — optional element rendered before the title in the header
+`ChatView` props: `{ icon? }` — optional element rendered
+before the title in the header
 `SidebarLayout` props: `{ sidebar, children, width?, side? }`
 
 **Atomic components:**
@@ -586,7 +587,8 @@ const session = useSession();
 | `session.started.value`        | `boolean`              | Whether session has been started                                |
 | `session.running.value`        | `boolean`              | Whether session is active                                       |
 
-**Methods:** `session.start()`, `session.toggle()`, `session.reset()`, `session.disconnect()`, `session.cancel()`
+**Methods:** `session.start()`, `session.toggle()`,
+`session.reset()`, `session.disconnect()`, `session.cancel()`
 
 All signals are `Signal<T>` from `@preact/signals`. Read `.value` to get the
 current value; Preact re-renders automatically when signals change.
