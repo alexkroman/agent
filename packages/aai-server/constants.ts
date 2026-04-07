@@ -30,7 +30,7 @@ export const AUTH_HASH_CACHE_MAX = 100;
 // ─── Server ─────────────────────────────────────────────────────────────
 
 /** Default HTTP server listen port. */
-export const DEFAULT_PORT = 8787;
+export const DEFAULT_PORT = 8080;
 
 /** Default credential key derivation scope when KV_SCOPE_SECRET is unset. */
 export const DEFAULT_CREDENTIAL_SCOPE = "default-credential-key";

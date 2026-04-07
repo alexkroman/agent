@@ -13,7 +13,7 @@ export type AgentEntry = {
 };
 
 export const DEFAULT_SERVER = "https://aai-agent.fly.dev";
-export const DEFAULT_DEV_SERVER = "http://localhost:8787";
+export const DEFAULT_DEV_SERVER = "http://localhost:8080";
 
 export function getMonorepoRoot(): string | null {
   const cliDir = path.dirname(fileURLToPath(import.meta.url));
