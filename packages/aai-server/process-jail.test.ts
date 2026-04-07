@@ -39,7 +39,7 @@ describe("buildJailConfig", () => {
   test("bind-mounts binary read-only", () => {
     const config = buildJailConfig(TEST_OPTIONS);
     expect(config).toContain('src: "/usr/local/bin/secure-exec-v8"');
-    expect(config).toContain("is_ro: true");
+    expect(config).toContain("rw: false");
   });
 
   test("bind-mounts socket dir read-write", () => {

@@ -71,7 +71,7 @@ mount {
   src: "/lib"
   dst: "/lib"
   is_bind: true
-  is_ro: true
+  rw: false
   mandatory: false
 }
 
@@ -79,7 +79,7 @@ mount {
   src: "/lib64"
   dst: "/lib64"
   is_bind: true
-  is_ro: true
+  rw: false
   mandatory: false
 }
 
@@ -87,7 +87,7 @@ mount {
   src: "/usr/lib"
   dst: "/usr/lib"
   is_bind: true
-  is_ro: true
+  rw: false
   mandatory: false
 }
 
@@ -95,26 +95,26 @@ mount {
   src: "${binaryPath}"
   dst: "/bin/secure-exec-v8"
   is_bind: true
-  is_ro: true
+  rw: false
 }
 
 mount {
   src: "${socketDir}"
   dst: "${socketDir}"
   is_bind: true
-  is_ro: false
+  rw: true
 }
 
 mount {
   dst: "/proc"
   fstype: "proc"
-  is_ro: true
+  rw: false
 }
 
 mount {
   dst: "/tmp"
   fstype: "tmpfs"
-  is_ro: false
+  rw: true
 }
 
 exec_bin {
