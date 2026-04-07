@@ -1053,19 +1053,6 @@ const server = createServer({ runtime, name: agent.name });
 await server.listen(3000);
 ```
 
-For composable usage, `createAgentApp()` returns a Hono app you can mount:
-
-```ts
-import { Hono } from "hono";
-import { createAgentApp, createRuntime } from "@alexkroman1/aai/server";
-
-const runtime = createRuntime({ agent, env: process.env });
-const { app: agentApp, shutdown } = createAgentApp({ runtime });
-const app = new Hono();
-app.route("/agent", agentApp);
-app.get("/custom", (c) => c.text("hello"));
-```
-
 Run with `node server.ts` (Node >=22.6 strips types natively) or bundle
 with your preferred tool. The server handles WebSocket connections, STT/TTS,
 and the agentic loop. Set `ASSEMBLYAI_API_KEY` as an environment variable.
@@ -1086,6 +1073,37 @@ const runtime = createRuntime({
 });
 const server = createServer({ runtime, name: agent.name });
 ```
+
+### Headless voice session (no UI)
+
+For custom frontends (React Native, vanilla JS, etc.), use `createVoiceSession`
+from `@alexkroman1/aai-ui/session` directly instead of `defineClient`:
+
+```ts
+import { createVoiceSession } from "@alexkroman1/aai-ui/session";
+
+const session = createVoiceSession({
+  platformUrl: "https://your-agent.example.com",
+});
+
+session.connect();
+
+// Reactive state — read .value to get current state
+session.state.value;          // "disconnected" | "connecting" | "listening" | ...
+session.messages.value;       // ChatMessage[]
+session.toolCalls.value;      // ToolCallInfo[]
+session.userUtterance.value;  // live STT transcript or null
+session.error.value;          // SessionError | null
+
+// Session controls
+session.cancel();             // cancel current agent turn
+session.resetState();         // clear messages without disconnecting
+session.reset();              // full reset: clear + reconnect
+session.disconnect();         // close connection
+```
+
+This gives you full control over the voice session lifecycle without Preact or
+the default UI components.
 
 ## Useful free API endpoints
 

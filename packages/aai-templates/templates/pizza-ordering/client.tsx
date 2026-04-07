@@ -5,6 +5,7 @@ import {
   defineClient,
   SidebarLayout,
   StartScreen,
+  useAutoScroll,
   useSession,
   useToolResult,
 } from "@alexkroman1/aai-ui";
@@ -91,7 +92,8 @@ function OrderPanel({ order }: { order: OrderInfo }) {
 }
 
 function PizzaAgent() {
-  const { running, toggle, reset } = useSession();
+  const { session, running, toggle, reset } = useSession();
+  const scrollRef = useAutoScroll();
   const [order, setOrder] = useState<OrderInfo>({
     pizzas: [],
     total: "$0.00",
@@ -158,27 +160,40 @@ function PizzaAgent() {
       <div class="flex-1">
         <OrderPanel order={order} />
       </div>
-      <div class="p-3 flex gap-2 border-t border-aai-border">
-        <Button
-          variant={running.value ? "default" : "secondary"}
-          className="flex-1"
-          onClick={toggle}
-        >
-          {running.value ? "Pause" : "Resume"}
-        </Button>
-        <Button
-          variant="ghost"
-          onClick={() => {
-            reset();
-            setOrder({
-              pizzas: [],
-              total: "$0.00",
-              orderPlaced: false,
-            });
-          }}
-        >
-          New Order
-        </Button>
+      <div class="p-3 flex flex-col gap-2 border-t border-aai-border">
+        <div class="flex gap-2">
+          <Button
+            variant={running.value ? "default" : "secondary"}
+            className="flex-1"
+            onClick={toggle}
+          >
+            {running.value ? "Pause" : "Resume"}
+          </Button>
+          <Button variant="ghost" onClick={() => session.cancel()}>
+            Stop
+          </Button>
+        </div>
+        <div class="flex gap-2">
+          <Button
+            variant="ghost"
+            className="flex-1"
+            onClick={() => {
+              session.resetState();
+              setOrder({ pizzas: [], total: "$0.00", orderPlaced: false });
+            }}
+          >
+            Clear Chat
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={() => {
+              reset();
+              setOrder({ pizzas: [], total: "$0.00", orderPlaced: false });
+            }}
+          >
+            New Order
+          </Button>
+        </div>
       </div>
     </>
   );
@@ -192,6 +207,7 @@ function PizzaAgent() {
     >
       <SidebarLayout sidebar={sidebar}>
         <ChatView />
+        <div ref={scrollRef} />
       </SidebarLayout>
     </StartScreen>
   );

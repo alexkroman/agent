@@ -12,6 +12,7 @@ interface TaskState {
   tasks: { id: number; text: string; done: boolean }[];
   nextId: number;
   owner: string;
+  lastError?: string;
 }
 
 const taskTool = defineToolFactory<TaskState>();
@@ -20,6 +21,8 @@ export default defineAgent<TaskState>({
   name: "Test Patterns",
   systemPrompt: "You are a task manager that demonstrates testable agent patterns.",
   greeting: "Hey, I'm your task manager. Try adding a task.",
+  sttPrompt: "Task management: add task, complete task, list tasks, save note, delete note",
+  idleTimeoutMs: 120_000,
 
   state: (): TaskState => ({
     tasks: [],
@@ -31,6 +34,14 @@ export default defineAgent<TaskState>({
 
   onConnect: (ctx) => {
     ctx.state.owner = "connected-user";
+  },
+
+  onDisconnect: async (ctx) => {
+    await ctx.kv.set("session:tasks", ctx.state.tasks);
+  },
+
+  onError: (error, ctx) => {
+    if (ctx) ctx.state.lastError = error.message;
   },
 
   onUserTranscript: (_text, _ctx) => {
@@ -77,13 +88,14 @@ export default defineAgent<TaskState>({
     },
 
     save_note: taskTool({
-      description: "Save a note to persistent KV storage",
+      description: "Save a note to persistent KV storage with optional TTL",
       parameters: z.object({
         key: z.string().min(1),
         value: z.string(),
+        ttl_ms: z.number().optional().describe("Time-to-live in milliseconds"),
       }),
-      execute: async ({ key, value }, ctx) => {
-        await ctx.kv.set(key, value);
+      execute: async ({ key, value, ttl_ms }, ctx) => {
+        await ctx.kv.set(`note:${key}`, value, ttl_ms ? { expireIn: ttl_ms } : undefined);
         return { saved: true, key };
       },
     }),
@@ -94,10 +106,53 @@ export default defineAgent<TaskState>({
         key: z.string().min(1),
       }),
       execute: async ({ key }, ctx) => {
-        const value = await ctx.kv.get<string>(key);
+        const value = await ctx.kv.get<string>(`note:${key}`);
         return value ?? "not found";
       },
     }),
+
+    delete_note: taskTool({
+      description: "Delete a note from persistent KV storage",
+      parameters: z.object({
+        key: z.string().min(1),
+      }),
+      execute: async ({ key }, ctx) => {
+        await ctx.kv.delete(`note:${key}`);
+        return { deleted: true, key };
+      },
+    }),
+
+    list_notes: taskTool({
+      description: "List all saved notes by prefix",
+      parameters: z.object({
+        limit: z.number().optional().describe("Max entries to return"),
+      }),
+      execute: async ({ limit }, ctx) => {
+        const entries = await ctx.kv.list<string>("note:", { limit: limit ?? 20 });
+        return { notes: entries, total: entries.length };
+      },
+    }),
+
+    search_notes: taskTool({
+      description: "Search note keys by glob pattern",
+      parameters: z.object({
+        pattern: z.string().describe("Glob pattern to match keys"),
+      }),
+      execute: async ({ pattern }, ctx) => {
+        const keys = await ctx.kv.keys(pattern);
+        return { keys, total: keys.length };
+      },
+    }),
+
+    session_info: {
+      description: "Get current session metadata",
+      execute: (_args, ctx) => ({
+        sessionId: ctx.sessionId,
+        owner: ctx.state.owner,
+        taskCount: ctx.state.tasks.length,
+        lastError: ctx.state.lastError ?? null,
+      }),
+    },
 
     check_env: {
       description: "Check if an environment variable is set",

@@ -445,6 +445,14 @@ async function saveState(ctx: { kv: ToolContext["kv"]; state: unknown }): Promis
   await ctx.kv.set(STATE_KEY, ctx.state);
 }
 
+async function saveIncidentSnapshot(kv: ToolContext["kv"], incident: Incident): Promise<void> {
+  await kv.set(`incident:${incident.id}`, incident);
+}
+
+async function deleteIncidentSnapshot(kv: ToolContext["kv"], incidentId: string): Promise<void> {
+  await kv.delete(`incident:${incidentId}`);
+}
+
 async function loadState(ctx: HookContext<DispatchState>): Promise<void> {
   const saved = await ctx.kv.get<DispatchState>(STATE_KEY);
   if (saved) {
@@ -506,6 +514,10 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
 
   onConnect: async (ctx) => {
     await loadState(ctx);
+  },
+
+  onDisconnect: async (ctx) => {
+    await saveState(ctx);
   },
 
   tools: {
@@ -575,6 +587,7 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
         state.incidents[id] = incident;
         recalculateAlertLevel(state);
         await saveState(ctx);
+        await saveIncidentSnapshot(ctx.kv, incident);
 
         const protocols = getApplicableProtocols(recType, recSeverity);
         const recommended = recommendResources(recType, recSeverity, state);
@@ -738,6 +751,8 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
             time: now(),
             event: "All resources released — incident closed",
           });
+          // Clean up KV snapshot for resolved incidents
+          await deleteIncidentSnapshot(ctx.kv, incidentId);
         }
 
         // Update resource statuses for en_route/on_scene
@@ -1096,8 +1111,12 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
     ops_dashboard: {
       description:
         "Get the full operational dashboard: alert level, resource utilization, active incidents, and available resources.",
-      execute: (_args, ctx) => {
+      execute: async (_args, ctx) => {
         const state = ctx.state;
+
+        // Query KV for persisted incident snapshots
+        const persistedIncidentKeys = await ctx.kv.keys("incident:*");
+        const persistedSnapshots = await ctx.kv.list<Incident>("incident:");
 
         const activeIncidents = Object.values(state.incidents)
           .filter((i) => i.status !== "resolved")
@@ -1145,6 +1164,12 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
               type: r.type,
               capabilities: r.capabilities,
             })),
+          persistedIncidentCount: persistedIncidentKeys.length,
+          persistedSnapshots: persistedSnapshots.map((s) => ({
+            id: s.value.id,
+            severity: s.value.severity,
+            status: s.value.status,
+          })),
         };
       },
     },
