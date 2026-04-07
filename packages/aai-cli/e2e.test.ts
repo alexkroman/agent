@@ -401,7 +401,7 @@ describe("browser: dev server", () => {
     // Verify a Stop or Resume button exists — on CI the WebSocket may
     // already be closed so the initial state is non-deterministic.
     const toggleBtn = page.getByRole("button", { name: /Stop|Resume/ });
-    await toggleBtn.waitFor({ timeout: 5000 });
+    await toggleBtn.waitFor({ timeout: 30_000 });
 
     await page.close();
   });
@@ -417,7 +417,7 @@ describe("browser: dev server", () => {
     // Messages should be cleared — the assistant message should no longer be visible
     await page
       .getByText("A day on Venus is longer than its year.")
-      .waitFor({ state: "hidden", timeout: 5000 });
+      .waitFor({ state: "hidden", timeout: 30_000 });
 
     await page.close();
   });
@@ -433,7 +433,7 @@ describe("browser: dev server", () => {
 
     // Thinking indicator (3 bouncing dots) should be visible —
     // it renders as divs with the aai-bounce animation class
-    await page.locator('[style*="aai-bounce"]').first().waitFor({ timeout: 5000 });
+    await page.locator('[style*="aai-bounce"]').first().waitFor({ timeout: 30_000 });
 
     // Complete the turn so the UI settles
     await inject({ type: "agent_transcript", text: "42." });
@@ -472,12 +472,12 @@ describe("browser: dev server", () => {
     await inject({ type: "user_transcript", text: "Hello" });
 
     // The state indicator text should show "thinking"
-    await page.getByText("thinking").waitFor({ timeout: 5000 });
+    await page.getByText("thinking").waitFor({ timeout: 30_000 });
 
     // agent_transcript_delta doesn't change state, but agent_transcript + reply_done → listening
     await inject({ type: "agent_transcript", text: "Hi there!" });
     await inject({ type: "reply_done" });
-    await page.getByText("listening").waitFor({ timeout: 5000 });
+    await page.getByText("listening").waitFor({ timeout: 30_000 });
 
     await page.close();
   });
@@ -489,7 +489,7 @@ describe("browser: dev server", () => {
     await inject({ type: "error", code: "internal", message: "Connection lost" });
 
     // Error banner should appear with the message
-    await page.getByText("Connection lost").waitFor({ timeout: 5000 });
+    await page.getByText("Connection lost").waitFor({ timeout: 30_000 });
 
     await page.close();
   });

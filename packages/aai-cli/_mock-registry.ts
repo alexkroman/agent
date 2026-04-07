@@ -145,11 +145,15 @@ export async function startMockRegistry(
 
     try {
       execFileSync("pnpm", ["run", "build"], { cwd: pkgPath, stdio: "inherit" });
-      execFileSync("pnpm", ["publish", "--no-git-checks", "--registry", registryUrl], {
-        cwd: pkgPath,
-        stdio: "inherit",
-        env: { ...process.env, ...registryEnv },
-      });
+      execFileSync(
+        "pnpm",
+        ["publish", "--no-git-checks", "--tag", "e2e", "--registry", registryUrl],
+        {
+          cwd: pkgPath,
+          stdio: "inherit",
+          env: { ...process.env, ...registryEnv },
+        },
+      );
     } finally {
       fs.writeFileSync(pkgJsonPath, originalPkg);
     }
