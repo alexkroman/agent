@@ -4,7 +4,8 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineCommand, runMain } from "citty";
-import { ensureApiKeyInEnv, fileExists, resolveCwd } from "./_discover.ts";
+import { ensureApiKeyInEnv } from "./_config.ts";
+import { fileExists, resolveCwd } from "./_utils.ts";
 
 /** Shared arg definitions for citty commands. */
 const sharedArgs = {

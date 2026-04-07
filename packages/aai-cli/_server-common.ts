@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { AgentServer } from "@alexkroman1/aai/server";
 import type { AgentDef } from "@alexkroman1/aai/types";
-import { getApiKey } from "./_discover.ts";
+import { getApiKey } from "./_config.ts";
 
 /**
  * Parse a `.env` file into a key→value record.
