@@ -14,8 +14,6 @@
  * ```
  */
 
-export type { ClientConfig, ClientTheme } from "./client-context.ts";
-export { useClientConfig } from "./client-context.ts";
 export { App } from "./components/app.tsx";
 export type { ButtonSize, ButtonVariant } from "./components/button.tsx";
 export { Button } from "./components/button.tsx";
@@ -30,19 +28,13 @@ export { StateIndicator } from "./components/state-indicator.tsx";
 export { ThinkingIndicator } from "./components/thinking-indicator.tsx";
 export { ToolCallBlock } from "./components/tool-call-block.tsx";
 export { Transcript } from "./components/transcript.tsx";
+export type { ClientConfig, ClientTheme } from "./context.ts";
+export { ClientConfigProvider, SessionProvider, useClientConfig, useSession } from "./context.ts";
 export type { ClientHandle, ClientOptions } from "./define-client.tsx";
 export { defineClient } from "./define-client.tsx";
+export { useAutoScroll, useToolCallStart, useToolResult } from "./hooks.ts";
 export type { VoiceSession } from "./session.ts";
 export { createVoiceSession } from "./session.ts";
-export type { SessionSignals } from "./signals.ts";
-export {
-  createSessionControls,
-  SessionProvider,
-  useAutoScroll,
-  useSession,
-  useToolCallStart,
-  useToolResult,
-} from "./signals.ts";
 export type {
   AgentState,
   ChatMessage,

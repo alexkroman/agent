@@ -4,7 +4,8 @@
 import { render } from "@testing-library/preact";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createMockSession, flush, setupSignalsEnv } from "./_test-utils.ts";
-import { SessionProvider, useSession, useToolResult } from "./signals.ts";
+import { SessionProvider, useSession } from "./context.ts";
+import { useToolResult } from "./hooks.ts";
 import type { ToolCallInfo } from "./types.ts";
 
 describe("VoiceSession controls", () => {

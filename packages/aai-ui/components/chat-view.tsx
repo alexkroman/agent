@@ -2,8 +2,7 @@
 
 import clsx from "clsx";
 import type * as preact from "preact";
-import { useClientConfig } from "../client-context.ts";
-import { useSession } from "../signals.ts";
+import { useClientConfig, useSession } from "../context.ts";
 import { Controls } from "./controls.tsx";
 import { ErrorBanner } from "./error-banner.tsx";
 import { MessageList } from "./message-list.tsx";

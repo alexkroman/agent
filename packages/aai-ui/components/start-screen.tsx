@@ -2,7 +2,7 @@
 
 import clsx from "clsx";
 import type { ComponentChildren } from "preact";
-import { useSession } from "../signals.ts";
+import { useSession } from "../context.ts";
 import { Button } from "./button.tsx";
 
 /**

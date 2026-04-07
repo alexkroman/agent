@@ -3,7 +3,8 @@
 import { useComputed } from "@preact/signals";
 import clsx from "clsx";
 import type { VNode } from "preact";
-import { useAutoScroll, useSession } from "../signals.ts";
+import { useSession } from "../context.ts";
+import { useAutoScroll } from "../hooks.ts";
 import { MessageBubble } from "./message-bubble.tsx";
 import { ThinkingIndicator } from "./thinking-indicator.tsx";
 import { ToolCallBlock } from "./tool-call-block.tsx";

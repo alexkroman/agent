@@ -10,8 +10,8 @@
 import { fireEvent, render, screen } from "@testing-library/preact";
 import { describe, expect, test } from "vitest";
 import { createMockSession } from "../_test-utils.ts";
+import { SessionProvider } from "../context.ts";
 import type { VoiceSession } from "../session.ts";
-import { SessionProvider } from "../signals.ts";
 import { App } from "./app.tsx";
 import { Controls } from "./controls.tsx";
 import { MessageList } from "./message-list.tsx";

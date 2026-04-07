@@ -3,9 +3,8 @@
 import type { ComponentType } from "preact";
 // biome-ignore lint/suspicious/noDeprecatedImports: preact v10 render API is current
 import { render } from "preact";
-import { ClientConfigProvider, type ClientTheme } from "./client-context.ts";
+import { ClientConfigProvider, type ClientTheme, SessionProvider } from "./context.ts";
 import { createVoiceSession, type VoiceSession, type WebSocketConstructor } from "./session.ts";
-import { SessionProvider } from "./signals.ts";
 
 /**
  * Options for {@link defineClient}.

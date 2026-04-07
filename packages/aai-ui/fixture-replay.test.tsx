@@ -13,7 +13,7 @@ import { render, screen } from "@testing-library/preact";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { flush, loadFixture, replayFixture, setupSignalsEnv } from "./_test-utils.ts";
 import { App } from "./components/app.tsx";
-import { SessionProvider } from "./signals.ts";
+import { SessionProvider } from "./context.ts";
 
 // ─── Test harness ────────────────────────────────────────────────────────────
 

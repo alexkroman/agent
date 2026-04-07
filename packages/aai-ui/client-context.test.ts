@@ -4,7 +4,7 @@
 // biome-ignore lint/suspicious/noDeprecatedImports: preact v10 render API is current
 import { h, render } from "preact";
 import { describe, expect, test } from "vitest";
-import { ClientConfigProvider, useClientConfig } from "./client-context.ts";
+import { ClientConfigProvider, useClientConfig } from "./context.ts";
 
 describe("client-context", () => {
   test("useClientConfig returns default empty config outside provider", () => {

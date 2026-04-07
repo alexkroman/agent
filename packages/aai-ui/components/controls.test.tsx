@@ -4,7 +4,7 @@
 import { render, screen } from "@testing-library/preact";
 import { describe, expect, test } from "vitest";
 import { createMockSession } from "../_test-utils.ts";
-import { SessionProvider } from "../signals.ts";
+import { SessionProvider } from "../context.ts";
 import { Controls } from "./controls.tsx";
 
 function renderControls(overrides?: Parameters<typeof createMockSession>[0]) {

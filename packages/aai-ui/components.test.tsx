@@ -11,8 +11,8 @@ import { ErrorBanner } from "./components/error-banner.tsx";
 import { MessageBubble } from "./components/message-bubble.tsx";
 import { StateIndicator } from "./components/state-indicator.tsx";
 import { Transcript } from "./components/transcript.tsx";
+import { SessionProvider } from "./context.ts";
 import type { VoiceSession } from "./session.ts";
-import { SessionProvider } from "./signals.ts";
 import type { AgentState, ChatMessage } from "./types.ts";
 
 function renderWithProvider(vnode: preact.ComponentChildren, session: VoiceSession) {

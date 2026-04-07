@@ -10,8 +10,8 @@ import { render, screen } from "@testing-library/preact";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { createMockSession, flush, installMockWebSocket, setupSignalsEnv } from "./_test-utils.ts";
 import { App } from "./components/app.tsx";
+import { SessionProvider, useSession } from "./context.ts";
 import { defineClient } from "./define-client.tsx";
-import { SessionProvider, useSession } from "./signals.ts";
 
 // --- Mount lifecycle integration ---
 

@@ -36,9 +36,13 @@ describe("published exports", () => {
       "Button",
       "defineClient",
       "createVoiceSession",
-      "createSessionControls",
       "SessionProvider",
       "useSession",
+      "useClientConfig",
+      "ClientConfigProvider",
+      "useAutoScroll",
+      "useToolCallStart",
+      "useToolResult",
     ];
     for (const name of expectedValues) {
       expect(mod, `Missing value export: ${name}`).toHaveProperty(name);
