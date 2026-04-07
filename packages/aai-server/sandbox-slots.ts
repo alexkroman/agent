@@ -16,10 +16,10 @@
 
 import { getLock } from "p-lock";
 import type { Storage } from "unstorage";
-import type { BundleStore } from "./bundle-store.ts";
 import { DEFAULT_SLOT_IDLE_MS, MAX_SLOTS } from "./constants.ts";
 import type { Sandbox, SandboxOptions } from "./sandbox.ts";
 import type { AgentMetadata } from "./schemas.ts";
+import type { BundleStore } from "./store-types.ts";
 
 /** Thrown when the active sandbox slot count has reached MAX_SLOTS. */
 export class SlotCapacityError extends Error {

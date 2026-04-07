@@ -2,7 +2,7 @@
 
 import type { Context } from "hono";
 import type { Storage } from "unstorage";
-import type { BundleStore } from "./bundle-store.ts";
+import type { BundleStore } from "./store-types.ts";
 
 export type Env = {
   Bindings: {
