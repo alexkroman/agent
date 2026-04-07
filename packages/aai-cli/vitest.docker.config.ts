@@ -4,8 +4,8 @@ import { sharedConfig } from "../../vitest.shared.ts";
 export default defineConfig({
   ...sharedConfig,
   test: {
-    restoreMocks: true,
-    include: ["**/*.test.ts"],
-    exclude: ["docker-build.test.ts", "e2e.test.ts", "node_modules", "dist"],
+    include: ["docker-build.test.ts"],
+    testTimeout: 600_000,
+    hookTimeout: 120_000,
   },
 });

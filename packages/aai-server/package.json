@@ -15,7 +15,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
     "test:integration": "vitest run --config vitest.integration.config.ts",
-    "check:integration": "pnpm run test:integration"
+    "check:integration": "pnpm run test:integration",
+    "test:docker": "vitest run --config vitest.docker.config.ts"
   },
   "dependencies": {
     "@alexkroman1/aai": "workspace:*",
