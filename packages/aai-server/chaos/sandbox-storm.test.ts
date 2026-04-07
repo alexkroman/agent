@@ -23,7 +23,7 @@ afterAll(async () => {
 
 describe("sandbox spawn storm", () => {
   test("server caps slot count and rejects excess spawns", async () => {
-    const MAX_AGENTS = 8; // MAX_SLOTS is 5 in chaos defaults
+    const MAX_AGENTS = 14; // MAX_SLOTS is 10 in chaos defaults
     const allConnections: import("ws").default[] = [];
     const deployedSlugs: string[] = [];
     let rejectedCount = 0;
@@ -56,7 +56,7 @@ describe("sandbox spawn storm", () => {
         expect(mem.percent).toBeLessThan(90);
       }
 
-      // Some connections should have been rejected (MAX_SLOTS=5)
+      // Some connections should have been rejected (MAX_SLOTS=10)
       expect(rejectedCount).toBeGreaterThan(0);
 
       // Health should still be responsive
@@ -66,7 +66,7 @@ describe("sandbox spawn storm", () => {
       // At least some connections should be working
       const aliveCount = allConnections.filter((ws) => ws.readyState === ws.OPEN).length;
       expect(aliveCount).toBeGreaterThan(0);
-      expect(aliveCount).toBeLessThanOrEqual(5); // MAX_SLOTS
+      expect(aliveCount).toBeLessThanOrEqual(10); // MAX_SLOTS
 
       console.log(`Result: ${aliveCount} active, ${rejectedCount} rejected`);
     } finally {

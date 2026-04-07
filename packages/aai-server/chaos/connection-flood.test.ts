@@ -27,7 +27,7 @@ describe("connection flood", () => {
   test("server rejects connections before OOM and stays healthy", async () => {
     const allConnections: import("ws").default[] = [];
     const BATCH_SIZE = 10;
-    const MAX_BATCHES = 10; // Up to 100 connections (MAX_CONNECTIONS is 50 in chaos defaults)
+    const MAX_BATCHES = 15; // Up to 150 connections (MAX_CONNECTIONS is 100 in chaos defaults)
     let rejectedTotal = 0;
 
     try {
@@ -50,7 +50,7 @@ describe("connection flood", () => {
         expect(mem.percent).toBeLessThan(90);
       }
 
-      // We should have seen some rejections (MAX_CONNECTIONS=50 in chaos defaults)
+      // We should have seen some rejections (MAX_CONNECTIONS=100 in chaos defaults)
       expect(rejectedTotal).toBeGreaterThan(0);
 
       // Health endpoint should still respond
