@@ -202,7 +202,7 @@ describe("resolveAllBuiltins defs", () => {
   });
 
   test("run_code sandbox blocks console.log.constructor code generation", async () => {
-    const defs = getBuiltinToolDefs(["run_code"]);
+    const { defs } = resolveAllBuiltins(["run_code"]);
     const ctx = createMockToolContext();
     const result = await defs.run_code?.execute(
       {
@@ -223,7 +223,7 @@ describe("resolveAllBuiltins defs", () => {
   });
 
   test("run_code sandbox blocks URL.constructor.constructor code generation", async () => {
-    const defs = getBuiltinToolDefs(["run_code"]);
+    const { defs } = resolveAllBuiltins(["run_code"]);
     const ctx = createMockToolContext();
     const result = await defs.run_code?.execute(
       {
