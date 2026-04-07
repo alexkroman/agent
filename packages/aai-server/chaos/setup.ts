@@ -19,9 +19,16 @@ const DEPLOY_KEY = "chaos-test-key";
 
 export { DEPLOY_KEY };
 
+/** Default env overrides for chaos tests — tighter limits for faster, targeted testing. */
+const CHAOS_DEFAULTS: Record<string, string> = {
+  MAX_CONNECTIONS: "50",
+  MAX_SLOTS: "5",
+  SLOT_IDLE_MS: "10000",
+};
+
 export async function startChaosEnv(envOverrides: Record<string, string> = {}): Promise<ChaosEnv> {
   const environment = await new DockerComposeEnvironment(REPO_ROOT, "docker-compose.yml")
-    .withEnvironment(envOverrides)
+    .withEnvironment({ ...CHAOS_DEFAULTS, ...envOverrides })
     .withBuild()
     .withWaitStrategy("server-1", Wait.forHttp("/health", 8080).forStatusCode(200))
     .up();
