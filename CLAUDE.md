@@ -202,6 +202,9 @@ runs as part of `pnpm typecheck` and will catch violations.
 - **Exports**: In dev mode, package.json exports point to `.ts` source for
   seamless workspace resolution. Update to compiled `.js` dist paths before
   publishing.
+- **No generated plans in `docs/`**: Do not save superpowers plans, specs,
+  or other generated artifacts to `docs/`. Keep them in worktrees or
+  discard after use.
 
 ### Testing
 
