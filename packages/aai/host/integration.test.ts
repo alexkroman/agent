@@ -11,7 +11,7 @@ import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import { toAgentConfig } from "../isolate/_internal-types.ts";
 import { defineAgent, defineTool } from "../isolate/types.ts";
-import { createRuntime } from "./direct-executor.ts";
+import { createRuntime } from "./runtime.ts";
 import { createUnstorageKv } from "./unstorage-kv.ts";
 
 describe("SDK integration: defineAgent → tool execution", () => {
