@@ -2,7 +2,7 @@ import { defineAgent } from "@alexkroman1/aai";
 
 export default defineAgent({
   name: "Aria",
-  instructions:
+  systemPrompt:
     `You are Aria, a luxury travel concierge. You help customers plan trips,
 find flights and hotels, check weather at destinations, and convert currencies.
 

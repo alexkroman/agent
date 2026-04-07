@@ -3,7 +3,7 @@
  * Hookable-based lifecycle hook system.
  *
  * Provides a unified hook registry built on {@link https://github.com/unjs/hookable | hookable}.
- * Lifecycle hooks (connect, disconnect, turn, resolveTurnConfig) are
+ * Lifecycle hooks (connect, disconnect, userTranscript, error, resolveTurnConfig) are
  * registered on a single `Hookable<AgentHookMap>` instance.
  */
 
@@ -22,7 +22,12 @@ import type { AgentDef, HookContext } from "./types.ts";
 export interface AgentHookMap {
   connect: (sessionId: string, timeoutMs?: number) => void | Promise<void>;
   disconnect: (sessionId: string, timeoutMs?: number) => void | Promise<void>;
-  turn: (sessionId: string, text: string, timeoutMs?: number) => void | Promise<void>;
+  userTranscript: (sessionId: string, text: string, timeoutMs?: number) => void | Promise<void>;
+  error: (
+    sessionId: string,
+    error: { message: string },
+    timeoutMs?: number,
+  ) => void | Promise<void>;
   resolveTurnConfig: (sessionId: string, timeoutMs?: number) => void | Promise<void>;
 }
 
@@ -64,7 +69,7 @@ export async function callResolveTurnConfig(
  * Create an {@link AgentHooks} instance from an agent definition.
  *
  * Registers lifecycle hooks from the agent's `onConnect`, `onDisconnect`,
- * `onTurn` callbacks.
+ * `onUserTranscript`, `onError` callbacks.
  */
 export function createAgentHooks(opts: {
   // biome-ignore lint/suspicious/noExplicitAny: accepts any state type
@@ -81,8 +86,8 @@ export function createAgentHooks(opts: {
   hooks.hook("disconnect", async (sessionId) => {
     await agent.onDisconnect?.(makeCtx(sessionId));
   });
-  hooks.hook("turn", async (sessionId, text) => {
-    await agent.onTurn?.(text, makeCtx(sessionId));
+  hooks.hook("userTranscript", async (sessionId, text) => {
+    await agent.onUserTranscript?.(text, makeCtx(sessionId));
   });
 
   // resolveTurnConfig — returns a value but hookable types it as void.

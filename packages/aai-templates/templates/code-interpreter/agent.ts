@@ -2,7 +2,7 @@ import { defineAgent } from "@alexkroman1/aai";
 
 export default defineAgent({
   name: "Coda",
-  instructions:
+  systemPrompt:
     `You are Coda, a problem-solving assistant who answers questions by writing and running JavaScript code.
 
 CRITICAL RULES:

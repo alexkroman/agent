@@ -279,7 +279,7 @@ export type ToolResultMap<T extends Record<string, unknown> = Record<string, unk
  *
  * export default defineAgent({
  *   name: "research-bot",
- *   instructions: "You help users research topics.",
+ *   systemPrompt: "You help users research topics.",
  *   builtinTools: ["web_search"],
  *   tools: {
  *     summarize: {
@@ -297,7 +297,7 @@ export type AgentOptions<S = Record<string, unknown>> = {
   /** Display name for the agent. */
   name: string;
   /** System prompt for the LLM. Defaults to a built-in voice-optimized prompt. */
-  instructions?: string;
+  systemPrompt?: string;
   /** Initial spoken greeting when a session starts. */
   greeting?: string;
   /** Prompt hint for the STT model to improve transcription accuracy. */
@@ -321,8 +321,10 @@ export type AgentOptions<S = Record<string, unknown>> = {
   onConnect?: (ctx: HookContext<S>) => void | Promise<void>;
   /** Called when a session disconnects. */
   onDisconnect?: (ctx: HookContext<S>) => void | Promise<void>;
-  /** Called after a complete turn (all steps finished). */
-  onTurn?: (text: string, ctx: HookContext<S>) => void | Promise<void>;
+  /** Called when an unhandled error occurs. */
+  onError?: (error: Error, ctx?: HookContext<S>) => void;
+  /** Called when a final user transcript is received. */
+  onUserTranscript?: (text: string, ctx: HookContext<S>) => void | Promise<void>;
 
   /**
    * Close the S2S connection after this many milliseconds of inactivity.
@@ -338,12 +340,12 @@ export type AgentOptions<S = Record<string, unknown>> = {
 };
 
 /**
- * Default system prompt used when `instructions` is not provided.
+ * Default system prompt used when `systemPrompt` is not provided.
  *
  * Optimized for voice-first interactions: short sentences, no visual
  * formatting, confident tone, and concise answers.
  */
-export const DEFAULT_INSTRUCTIONS: string = `\
+export const DEFAULT_SYSTEM_PROMPT: string = `\
 You are AAI, a helpful AI assistant.
 
 Voice-First Rules:
@@ -366,7 +368,7 @@ export const DEFAULT_GREETING: string =
 /**
  * Agent definition returned by {@link defineAgent}.
  *
- * Core fields (`name`, `instructions`, `greeting`, `maxSteps`, `tools`)
+ * Core fields (`name`, `systemPrompt`, `greeting`, `maxSteps`, `tools`)
  * are resolved to their final values with defaults applied. Optional
  * behavioral fields (hooks, `sttPrompt`, etc.) remain optional —
  * `undefined` means "not configured."
@@ -375,7 +377,7 @@ export const DEFAULT_GREETING: string =
  */
 export type AgentDef<S = Record<string, unknown>> = {
   name: string;
-  instructions: string;
+  systemPrompt: string;
   greeting: string;
   sttPrompt?: string;
   maxSteps: number | ((ctx: HookContext<S>) => number);
@@ -385,7 +387,8 @@ export type AgentDef<S = Record<string, unknown>> = {
   state?: () => S;
   onConnect?: (ctx: HookContext<S>) => void | Promise<void>;
   onDisconnect?: (ctx: HookContext<S>) => void | Promise<void>;
-  onTurn?: (text: string, ctx: HookContext<S>) => void | Promise<void>;
+  onError?: (error: Error, ctx?: HookContext<S>) => void;
+  onUserTranscript?: (text: string, ctx: HookContext<S>) => void | Promise<void>;
   idleTimeoutMs?: number;
 };
 
@@ -410,7 +413,7 @@ const ToolDefSchema = z.object({
 
 const AgentOptionsSchema = z.object({
   name: z.string().min(1, "Agent name must be non-empty"),
-  instructions: z.string().optional(),
+  systemPrompt: z.string().optional(),
   greeting: z.string().optional(),
   sttPrompt: z.string().optional(),
   maxSteps: z.union([z.number().int().positive(), z.function()]).optional(),
@@ -420,7 +423,8 @@ const AgentOptionsSchema = z.object({
   state: z.function().optional(),
   onConnect: z.function().optional(),
   onDisconnect: z.function().optional(),
-  onTurn: z.function().optional(),
+  onError: z.function().optional(),
+  onUserTranscript: z.function().optional(),
   idleTimeoutMs: z.number().nonnegative().optional(),
 });
 
@@ -432,7 +436,7 @@ const AgentOptionsSchema = z.object({
  * This is the main entry point for defining a voice agent. The returned
  * `AgentDef` is consumed by the AAI server at deploy time.
  *
- * @param options - Configuration for the agent including name, instructions,
+ * @param options - Configuration for the agent including name, systemPrompt,
  *   tools, hooks, and other settings.
  * @returns A fully resolved agent definition with all defaults applied.
  *
@@ -445,7 +449,7 @@ const AgentOptionsSchema = z.object({
  *
  * export default defineAgent({
  *   name: "greeter",
- *   instructions: "You greet people warmly.",
+ *   systemPrompt: "You greet people warmly.",
  *   tools: {
  *     greet: {
  *       description: "Greet a user by name",
@@ -460,7 +464,7 @@ export function defineAgent<S = Record<string, unknown>>(options: AgentOptions<S
   AgentOptionsSchema.parse(options);
   return {
     ...options,
-    instructions: options.instructions ?? DEFAULT_INSTRUCTIONS,
+    systemPrompt: options.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
     greeting: options.greeting ?? DEFAULT_GREETING,
     maxSteps: options.maxSteps ?? 5,
     tools: options.tools ?? {},

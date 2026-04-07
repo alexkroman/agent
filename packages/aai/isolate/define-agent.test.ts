@@ -1,13 +1,13 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
-import { DEFAULT_GREETING, DEFAULT_INSTRUCTIONS, defineAgent } from "./types.ts";
+import { DEFAULT_GREETING, DEFAULT_SYSTEM_PROMPT, defineAgent } from "./types.ts";
 
 describe("defineAgent", () => {
   test("applies defaults", () => {
     const agent = defineAgent({ name: "Test" });
     expect(agent.name).toBe("Test");
-    expect(agent.instructions).toBe(DEFAULT_INSTRUCTIONS);
+    expect(agent.systemPrompt).toBe(DEFAULT_SYSTEM_PROMPT);
     expect(agent.greeting).toBe(DEFAULT_GREETING);
     expect(agent.tools).toEqual({});
   });
@@ -15,10 +15,10 @@ describe("defineAgent", () => {
   test("preserves custom values", () => {
     const agent = defineAgent({
       name: "Custom",
-      instructions: "Be a pirate",
+      systemPrompt: "Be a pirate",
       greeting: "Ahoy",
     });
-    expect(agent.instructions).toBe("Be a pirate");
+    expect(agent.systemPrompt).toBe("Be a pirate");
     expect(agent.greeting).toBe("Ahoy");
   });
 
@@ -42,18 +42,23 @@ describe("defineAgent", () => {
     const onDisconnect = () => {
       /* noop */
     };
-    const onTurn = () => {
+    const onError = () => {
+      /* noop */
+    };
+    const onUserTranscript = () => {
       /* noop */
     };
     const agent = defineAgent({
       name: "Test",
       onConnect,
       onDisconnect,
-      onTurn,
+      onError,
+      onUserTranscript,
     });
     expect(agent.onConnect).toBe(onConnect);
     expect(agent.onDisconnect).toBe(onDisconnect);
-    expect(agent.onTurn).toBe(onTurn);
+    expect(agent.onError).toBe(onError);
+    expect(agent.onUserTranscript).toBe(onUserTranscript);
   });
 
   test("preserves sttPrompt, maxSteps, and builtinTools", () => {

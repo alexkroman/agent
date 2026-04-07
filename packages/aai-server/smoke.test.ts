@@ -43,7 +43,7 @@ describe("cross-package smoke: SDK → server deploy", () => {
   test("defineAgent config is accepted by server deploy endpoint", async () => {
     const agent = defineAgent({
       name: "smoke-test",
-      instructions: "Test agent for cross-package validation.",
+      systemPrompt: "Test agent for cross-package validation.",
       greeting: "Hello from smoke test",
       maxSteps: 3,
       builtinTools: ["web_search"],
@@ -88,7 +88,7 @@ describe("cross-package smoke: SDK → server deploy", () => {
   test("toAgentConfig produces JSON-safe config from SDK agent", () => {
     const agent = defineAgent({
       name: "json-safe",
-      instructions: "Custom instructions",
+      systemPrompt: "Custom instructions",
       greeting: "Hi",
       maxSteps: 10,
       toolChoice: "required",
@@ -106,7 +106,7 @@ describe("cross-package smoke: SDK → server deploy", () => {
     // Must survive JSON round-trip (no functions, no class instances)
     const roundTripped = JSON.parse(JSON.stringify(config));
     expect(roundTripped.name).toBe("json-safe");
-    expect(roundTripped.instructions).toBe("Custom instructions");
+    expect(roundTripped.systemPrompt).toBe("Custom instructions");
     expect(roundTripped.greeting).toBe("Hi");
     expect(roundTripped.maxSteps).toBe(10);
     expect(roundTripped.toolChoice).toBe("required");

@@ -76,7 +76,7 @@ describe("defineAgent", () => {
       onDisconnect: (ctx) => {
         expectTypeOf(ctx.state).toEqualTypeOf<{ userId: string }>();
       },
-      onTurn: (text, ctx) => {
+      onUserTranscript: (text, ctx) => {
         expectTypeOf(text).toEqualTypeOf<string>();
         expectTypeOf(ctx.state).toEqualTypeOf<{ userId: string }>();
       },

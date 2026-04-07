@@ -33,7 +33,7 @@ export type ExecuteTool = (
  */
 export const AgentConfigSchema = z.object({
   name: z.string().min(1),
-  instructions: z.string(),
+  systemPrompt: z.string(),
   greeting: z.string(),
   sttPrompt: z.string().optional(),
   maxSteps: z.number().int().positive().optional(),
@@ -52,7 +52,7 @@ export type AgentConfig = z.infer<typeof AgentConfigSchema>;
  */
 export interface AgentConfigSource {
   name: string;
-  instructions: string;
+  systemPrompt: string;
   greeting: string;
   sttPrompt?: string | undefined;
   maxSteps?: number | ((...args: never[]) => number) | undefined;
@@ -65,7 +65,7 @@ export interface AgentConfigSource {
 export function toAgentConfig(src: AgentConfigSource): AgentConfig {
   const config: AgentConfig = {
     name: src.name,
-    instructions: src.instructions,
+    systemPrompt: src.systemPrompt,
     greeting: src.greeting,
   };
   if (src.sttPrompt !== undefined) config.sttPrompt = src.sttPrompt;

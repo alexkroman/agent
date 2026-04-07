@@ -6,13 +6,13 @@
     "ttsSampleRate": 24000,
     "sessionId": "sess_fixture_004"
   },
-  { "type": "chat", "text": "Hello!" },
-  { "type": "tts_done" },
+  { "type": "agent_transcript", "text": "Hello!" },
+  { "type": "reply_done" },
 
   { "type": "speech_started" },
-  { "type": "transcript", "text": "Tell me something", "isFinal": true },
+  { "type": "user_transcript_delta", "text": "Tell me something", "isFinal": true },
   { "type": "speech_stopped" },
-  { "type": "turn", "text": "Tell me something" },
+  { "type": "user_transcript", "text": "Tell me something" },
 
   { "type": "error", "code": "stt", "message": "Speech recognition failed" }
 ]

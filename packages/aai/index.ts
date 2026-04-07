@@ -9,7 +9,7 @@
  *
  * export default defineAgent({
  *   name: "my-agent",
- *   instructions: "You are a helpful voice assistant.",
+ *   systemPrompt: "You are a helpful voice assistant.",
  *   tools: {
  *     greet: {
  *       description: "Greet the user by name",

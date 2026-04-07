@@ -20,7 +20,7 @@ import { createFixtureSession, flush } from "./_test-utils.ts";
 
 const weatherAgent = defineAgent({
   name: "weather-agent",
-  instructions: "You are a weather assistant.",
+  systemPrompt: "You are a weather assistant.",
   greeting: "Ask me about the weather!",
   tools: {
     get_weather: defineTool({
@@ -40,13 +40,13 @@ const weatherAgent = defineAgent({
 
 const simpleAgent = defineAgent({
   name: "simple-agent",
-  instructions: "You are a helpful assistant.",
+  systemPrompt: "You are a helpful assistant.",
   greeting: "Hi!",
 });
 
 const statefulAgent = defineAgent<{ callCount: number }>({
   name: "stateful-agent",
-  instructions: "You are helpful.",
+  systemPrompt: "You are helpful.",
   greeting: "Hi!",
   state: () => ({ callCount: 0 }),
   tools: {
@@ -94,7 +94,7 @@ describe("fixture replay with real executor", () => {
     expect(result.condition).toBe("sunny");
   });
 
-  test("tool call fixture: client receives tool_call_start with validated args", async () => {
+  test("tool call fixture: client receives tool_call with validated args", async () => {
     const ctx = createFixtureSession(weatherAgent);
     cleanup = ctx.cleanup;
     await ctx.session.start();
@@ -102,9 +102,9 @@ describe("fixture replay with real executor", () => {
     ctx.replay("tool-call-sequence.json");
     await vi.waitFor(() => expect(ctx.mockHandle.sendToolResult).toHaveBeenCalled());
 
-    const toolStart = ctx.client.events.find(
-      (e) => (e as { type: string }).type === "tool_call_start",
-    ) as { toolName: string; args: Record<string, unknown> } | undefined;
+    const toolStart = ctx.client.events.find((e) => (e as { type: string }).type === "tool_call") as
+      | { toolName: string; args: Record<string, unknown> }
+      | undefined;
     expect(toolStart?.toolName).toBe("get_weather");
     expect(toolStart?.args).toEqual({ city: "San Francisco" });
   });
@@ -119,7 +119,9 @@ describe("fixture replay with real executor", () => {
     await flush();
 
     // Client received user transcript
-    const turns = ctx.client.events.filter((e) => (e as { type: string }).type === "turn");
+    const turns = ctx.client.events.filter(
+      (e) => (e as { type: string }).type === "user_transcript",
+    );
     expect(turns.length).toBeGreaterThan(0);
     const userText = (turns.at(-1) as { text: string }).text;
     expect(userText.toLowerCase()).toContain("weather");
@@ -135,7 +137,9 @@ describe("fixture replay with real executor", () => {
     ctx.replay("simple-question-sequence.json");
     await flush();
 
-    const chats = ctx.client.events.filter((e) => (e as { type: string }).type === "chat");
+    const chats = ctx.client.events.filter(
+      (e) => (e as { type: string }).type === "agent_transcript",
+    );
     expect(chats.length).toBeGreaterThanOrEqual(2); // greeting + answer
   });
 
@@ -150,8 +154,8 @@ describe("fixture replay with real executor", () => {
     const types = ctx.client.events.map((e) => (e as { type: string }).type);
     expect(types).toContain("speech_started");
     expect(types).toContain("speech_stopped");
-    expect(types).toContain("transcript");
-    expect(types).toContain("turn");
+    expect(types).toContain("user_transcript_delta");
+    expect(types).toContain("user_transcript");
   });
 
   // ── Stateful agent: session state persists across tool calls ───────────
@@ -183,8 +187,8 @@ describe("fixture replay with real executor", () => {
     await flush();
 
     const types = ctx.client.events.map((e) => (e as { type: string }).type);
-    expect(types).toContain("chat");
-    expect(types).toContain("tts_done");
+    expect(types).toContain("agent_transcript");
+    expect(types).toContain("reply_done");
   });
 
   // ── Tool schemas: real agent produces correct S2S tool schemas ─────────
@@ -210,7 +214,7 @@ describe("fixture replay with real executor", () => {
     const onDisconnectSpy = vi.fn();
     const agent = defineAgent({
       name: "lifecycle-agent",
-      instructions: "You are helpful.",
+      systemPrompt: "You are helpful.",
       greeting: "Hi!",
       onConnect: onConnectSpy,
       onDisconnect: onDisconnectSpy,
@@ -234,15 +238,15 @@ describe("fixture replay with real executor", () => {
     await vi.waitFor(() => expect(onDisconnectSpy).toHaveBeenCalledOnce());
   });
 
-  // ── onTurn: fires with correct text ────────────────────────────────────
+  // ── onUserTranscript: fires with correct text ──────────────────────────
 
-  test("onTurn hook receives user transcript text", async () => {
-    const onTurnSpy = vi.fn();
+  test("onUserTranscript hook receives user transcript text", async () => {
+    const onUserTranscriptSpy = vi.fn();
     const agent = defineAgent({
       name: "on-turn-agent",
-      instructions: "You are helpful.",
+      systemPrompt: "You are helpful.",
       greeting: "Hi!",
-      onTurn: onTurnSpy,
+      onUserTranscript: onUserTranscriptSpy,
     });
 
     const ctx = createFixtureSession(agent);
@@ -250,9 +254,9 @@ describe("fixture replay with real executor", () => {
     await ctx.session.start();
 
     ctx.replay("simple-question-sequence.json");
-    await vi.waitFor(() => expect(onTurnSpy).toHaveBeenCalled());
+    await vi.waitFor(() => expect(onUserTranscriptSpy).toHaveBeenCalled());
 
-    const [text, hookCtx] = onTurnSpy.mock.calls[0] as [
+    const [text, hookCtx] = onUserTranscriptSpy.mock.calls[0] as [
       string,
       { sessionId: string; state: Record<string, unknown> },
     ];
@@ -265,7 +269,7 @@ describe("fixture replay with real executor", () => {
   test("tool throw is surfaced as error result", async () => {
     const agent = defineAgent({
       name: "error-agent",
-      instructions: "Weather assistant.",
+      systemPrompt: "Weather assistant.",
       greeting: "Ask about weather!",
       tools: {
         get_weather: defineTool({
@@ -299,7 +303,7 @@ describe("fixture replay with real executor", () => {
     const executeSpy = vi.fn(() => ({ result: "ok" }));
     const agent = defineAgent({
       name: "maxsteps-agent",
-      instructions: "Weather assistant.",
+      systemPrompt: "Weather assistant.",
       greeting: "Ask about weather!",
       maxSteps: () => 0, // dynamic: 0 means refuse all tool calls
       tools: {
@@ -334,7 +338,7 @@ describe("fixture replay with real executor", () => {
   test("Zod validation rejects malformed tool args", async () => {
     const agent = defineAgent({
       name: "strict-agent",
-      instructions: "Weather assistant.",
+      systemPrompt: "Weather assistant.",
       greeting: "Ask about weather!",
       tools: {
         get_weather: defineTool({
@@ -371,7 +375,7 @@ describe("fixture replay with real executor", () => {
     let capturedMessages: readonly { role: string; content: string }[] = [];
     const agent = defineAgent({
       name: "interrupt-history-agent",
-      instructions: "You are helpful.",
+      systemPrompt: "You are helpful.",
       greeting: "Hi!",
       tools: {
         check_history: defineTool({
@@ -402,9 +406,9 @@ describe("fixture replay with real executor", () => {
     h._fire("replyDone", { status: "interrupted" });
     await flush();
 
-    // Client sees both chat and cancelled events
+    // Client sees both agent_transcript and cancelled events
     const types = ctx.client.events.map((e) => (e as { type: string }).type);
-    expect(types).toContain("chat");
+    expect(types).toContain("agent_transcript");
     expect(types).toContain("cancelled");
 
     // Fire a non-interrupted transcript — SHOULD go into conversation history
@@ -440,7 +444,7 @@ describe("fixture replay with real executor", () => {
     let capturedMessages: readonly { role: string; content: string }[] = [];
     const agent = defineAgent({
       name: "history-agent",
-      instructions: "Weather assistant.",
+      systemPrompt: "Weather assistant.",
       greeting: "Ask about weather!",
       tools: {
         get_weather: defineTool({
@@ -480,7 +484,7 @@ describe("fixture replay with real executor", () => {
 
     const partials = ctx.client.events.filter(
       (e) =>
-        (e as { type: string }).type === "transcript" &&
+        (e as { type: string }).type === "user_transcript_delta" &&
         (e as { isFinal: boolean }).isFinal === false,
     );
     expect(partials.length).toBe(2);
@@ -510,7 +514,7 @@ describe("fixture replay with real executor", () => {
   test("multiple tool calls in one reply: all results buffered and sent after replyDone", async () => {
     const agent = defineAgent({
       name: "multi-tool-agent",
-      instructions: "Weather assistant.",
+      systemPrompt: "Weather assistant.",
       greeting: "Hi!",
       tools: {
         get_weather: defineTool({
@@ -532,9 +536,7 @@ describe("fixture replay with real executor", () => {
 
     // Wait for both tool calls to execute
     await vi.waitFor(() => {
-      const starts = ctx.client.events.filter(
-        (e) => (e as { type: string }).type === "tool_call_start",
-      );
+      const starts = ctx.client.events.filter((e) => (e as { type: string }).type === "tool_call");
       expect(starts.length).toBe(2);
     });
 

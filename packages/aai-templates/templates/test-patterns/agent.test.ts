@@ -266,12 +266,12 @@ describe("lifecycle hooks", () => {
     await t.disconnect();
   });
 
-  test("onTurn hook fires and is tracked", async () => {
+  test("onUserTranscript hook fires and is tracked", async () => {
     const t = createTestHarness(agent);
     await t.turn("First message");
     await t.turn("Second message");
 
-    // t.turns tracks onTurn invocations
+    // t.turns tracks onUserTranscript invocations
     expect(t.turns).toEqual(["First message", "Second message"]);
   });
 

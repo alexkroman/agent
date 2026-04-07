@@ -67,7 +67,7 @@ const PICKS: Record<string, Record<string, string[]>> = {
 
 export default defineAgent({
   name: "Night Owl",
-  instructions:
+  systemPrompt:
     `You are Night Owl, a cozy evening companion. You help people wind down, recommend entertainment, and share interesting facts about the night sky. Keep your tone warm and relaxed. Use short, conversational responses.
 
 Use run_code for sleep calculations:

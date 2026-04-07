@@ -163,12 +163,14 @@ describe("createSidecar", () => {
     const handler = vi.fn();
     const sidecar = await startSidecar(undefined, handler);
 
-    const { status, data } = await post(sidecar, "/host/session/event", { type: "turn" });
+    const { status, data } = await post(sidecar, "/host/session/event", {
+      type: "user_transcript",
+    });
     expect(status).toBe(200);
     expect(data).toEqual({ ok: true });
     expect(handler).toHaveBeenCalledWith(
       "/session/event",
-      JSON.stringify({ type: "turn" }),
+      JSON.stringify({ type: "user_transcript" }),
       expect.objectContaining({ "x-harness-token": AUTH_TOKEN }),
     );
   });

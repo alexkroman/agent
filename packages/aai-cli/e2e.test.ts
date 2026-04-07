@@ -410,8 +410,8 @@ describe.skipIf(!playwrightAvailable)("browser: dev server", () => {
   test("thinking state: dots appear after turn event", async () => {
     const { page, inject } = await setupEventInjector(browser, port);
 
-    // Inject a turn event — transitions state to "thinking"
-    await inject({ type: "turn", text: "What is the meaning of life?" });
+    // Inject a user_transcript event — transitions state to "thinking"
+    await inject({ type: "user_transcript", text: "What is the meaning of life?" });
 
     // The user message should appear
     await page.getByText("What is the meaning of life?").waitFor();
@@ -421,7 +421,7 @@ describe.skipIf(!playwrightAvailable)("browser: dev server", () => {
     await page.locator('[style*="aai-bounce"]').first().waitFor({ timeout: 5000 });
 
     // Complete the turn so the UI settles
-    await inject({ type: "chat", text: "42." });
+    await inject({ type: "agent_transcript", text: "42." });
     await page.getByText("42.").waitFor();
 
     await page.close();
@@ -433,17 +433,17 @@ describe.skipIf(!playwrightAvailable)("browser: dev server", () => {
     // speech_started → userUtterance becomes "" → shows thinking dots
     await inject({ type: "speech_started" });
 
-    // Partial transcript → shows the text
-    await inject({ type: "transcript", text: "Tell me about", isFinal: false });
+    // Partial user_transcript_delta → shows the text
+    await inject({ type: "user_transcript_delta", text: "Tell me about", isFinal: false });
     await page.getByText("Tell me about").waitFor();
 
-    // Updated transcript
-    await inject({ type: "transcript", text: "Tell me about space", isFinal: false });
+    // Updated user_transcript_delta
+    await inject({ type: "user_transcript_delta", text: "Tell me about space", isFinal: false });
     await page.getByText("Tell me about space").waitFor();
 
-    // Turn finalizes the transcript
-    await inject({ type: "turn", text: "Tell me about space" });
-    await inject({ type: "chat", text: "Space is vast." });
+    // user_transcript finalizes the transcript
+    await inject({ type: "user_transcript", text: "Tell me about space" });
+    await inject({ type: "agent_transcript", text: "Space is vast." });
     await page.getByText("Space is vast.").waitFor();
 
     await page.close();
@@ -453,15 +453,15 @@ describe.skipIf(!playwrightAvailable)("browser: dev server", () => {
     const { page, inject } = await setupEventInjector(browser, port);
 
     // After start + config, state should be "listening" or "ready"
-    // Inject a turn to move to "thinking"
-    await inject({ type: "turn", text: "Hello" });
+    // Inject a user_transcript to move to "thinking"
+    await inject({ type: "user_transcript", text: "Hello" });
 
     // The state indicator text should show "thinking"
     await page.getByText("thinking").waitFor({ timeout: 5000 });
 
-    // chat_delta doesn't change state, but chat + tts_done → listening
-    await inject({ type: "chat", text: "Hi there!" });
-    await inject({ type: "tts_done" });
+    // agent_transcript_delta doesn't change state, but agent_transcript + reply_done → listening
+    await inject({ type: "agent_transcript", text: "Hi there!" });
+    await inject({ type: "reply_done" });
     await page.getByText("listening").waitFor({ timeout: 5000 });
 
     await page.close();

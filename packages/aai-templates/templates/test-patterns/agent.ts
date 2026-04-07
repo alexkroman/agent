@@ -18,7 +18,7 @@ const taskTool = defineToolFactory<TaskState>();
 
 export default defineAgent<TaskState>({
   name: "Test Patterns",
-  instructions: "You are a task manager that demonstrates testable agent patterns.",
+  systemPrompt: "You are a task manager that demonstrates testable agent patterns.",
   greeting: "Hey, I'm your task manager. Try adding a task.",
 
   state: (): TaskState => ({
@@ -33,8 +33,8 @@ export default defineAgent<TaskState>({
     ctx.state.owner = "connected-user";
   },
 
-  onTurn: (_text, _ctx) => {
-    // Hook fires on each user turn — tracked by harness via t.turns
+  onUserTranscript: (_text, _ctx) => {
+    // Hook fires on each user transcript — tracked by harness via t.turns
   },
 
   tools: {

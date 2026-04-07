@@ -69,40 +69,45 @@ describe("ClientHandler event handling", () => {
     expect(userUtterance.value).toBe("");
   });
 
-  test("transcript partial updates userUtterance signal", () => {
+  test("user_transcript_delta partial updates userUtterance signal", () => {
     const { target, userUtterance, state } = createTarget();
     state.value = "listening";
-    target.event({ type: "transcript", text: "hello wor", isFinal: false });
+    target.event({ type: "user_transcript_delta", text: "hello wor", isFinal: false });
     expect(userUtterance.value).toBe("hello wor");
     expect(state.value).toBe("listening");
   });
 
-  test("transcript final updates userUtterance signal", () => {
+  test("user_transcript_delta final updates userUtterance signal", () => {
     const { target, userUtterance } = createTarget();
-    target.event({ type: "transcript", text: "hello world", isFinal: true, turnOrder: 1 });
+    target.event({
+      type: "user_transcript_delta",
+      text: "hello world",
+      isFinal: true,
+      turnOrder: 1,
+    });
     expect(userUtterance.value).toBe("hello world");
   });
 
-  test("turn adds user message and sets thinking", () => {
+  test("user_transcript adds user message and sets thinking", () => {
     const { target, state, messages, userUtterance } = createTarget();
     userUtterance.value = "partial text";
-    target.event({ type: "turn", text: "What is the weather?" });
+    target.event({ type: "user_transcript", text: "What is the weather?" });
     expect(state.value).toBe("thinking");
     expect(userUtterance.value).toBe(null);
     expect(messages.value).toEqual([{ role: "user", content: "What is the weather?" }]);
   });
 
-  test("chat adds assistant message without changing state", () => {
+  test("agent_transcript adds assistant message without changing state", () => {
     const { target, state, messages } = createTarget();
-    target.event({ type: "chat", text: "It's sunny today" });
+    target.event({ type: "agent_transcript", text: "It's sunny today" });
     expect(state.value).toBe("connecting");
     expect(messages.value).toEqual([{ role: "assistant", content: "It's sunny today" }]);
   });
 
-  test("tts_done sets state to listening", () => {
+  test("reply_done sets state to listening", () => {
     const { target, state } = createTarget();
     state.value = "speaking";
-    target.event({ type: "tts_done" });
+    target.event({ type: "reply_done" });
     expect(state.value).toBe("listening");
   });
 

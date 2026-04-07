@@ -54,7 +54,7 @@ export type RuntimeTestContext = {
 /** Agent definition used by the conformance suite (direct executor path). */
 export const CONFORMANCE_AGENT: AgentDef = {
   name: "conformance-test",
-  instructions: "Conformance test agent.",
+  systemPrompt: "Conformance test agent.",
   greeting: "Hello!",
   maxSteps: 5,
   state: () => ({ count: 0, lastTurn: "" }),
@@ -89,7 +89,7 @@ export const CONFORMANCE_AGENT: AgentDef = {
   onConnect: (ctx) => {
     (ctx.state as { count: number }).count = 1;
   },
-  onTurn: (text: string, ctx) => {
+  onUserTranscript: (text: string, ctx) => {
     (ctx.state as { lastTurn: string }).lastTurn = text;
   },
 };
@@ -156,10 +156,10 @@ export function testRuntime(label: string, getContext: () => RuntimeTestContext)
       expect(JSON.parse(result).count).toBe(1);
     });
 
-    test("onTurn hook updates session state", async () => {
+    test("onUserTranscript hook updates session state", async () => {
       const { executeTool, hooks } = getContext();
       const sid = "state-turn";
-      await hooks.callHook("turn", sid, "user said something");
+      await hooks.callHook("userTranscript", sid, "user said something");
       const result = await executeTool("get_state", {}, sid, []);
       expect(JSON.parse(result).lastTurn).toBe("user said something");
     });
@@ -176,9 +176,9 @@ export function testRuntime(label: string, getContext: () => RuntimeTestContext)
       await expect(hooks.callHook("disconnect", "hook-2")).resolves.toBeUndefined();
     });
 
-    test("onTurn resolves without error", async () => {
+    test("onUserTranscript resolves without error", async () => {
       const { hooks } = getContext();
-      await expect(hooks.callHook("turn", "hook-3", "test")).resolves.toBeUndefined();
+      await expect(hooks.callHook("userTranscript", "hook-3", "test")).resolves.toBeUndefined();
     });
 
     test("resolveTurnConfig returns null for static maxSteps", async () => {

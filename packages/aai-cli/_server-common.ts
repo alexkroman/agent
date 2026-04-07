@@ -38,7 +38,7 @@ export async function loadAgentDef(cwd: string): Promise<AgentDef> {
 
   const missing: string[] = [];
   if (typeof agentDef.name !== "string") missing.push("name (string)");
-  if (typeof agentDef.instructions !== "string") missing.push("instructions (string)");
+  if (typeof agentDef.systemPrompt !== "string") missing.push("systemPrompt (string)");
   if (typeof agentDef.greeting !== "string") missing.push("greeting (string)");
   if (typeof agentDef.maxSteps !== "number" && typeof agentDef.maxSteps !== "function")
     missing.push("maxSteps (number or function)");

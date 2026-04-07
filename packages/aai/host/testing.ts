@@ -220,7 +220,7 @@ export class TestHarness {
   readonly _sessionId: string;
 
   private _messages: Message[] = [];
-  private _onTurnCalls: string[] = [];
+  private _onUserTranscriptCalls: string[] = [];
   private _connected = false;
 
   /** @internal */
@@ -234,15 +234,15 @@ export class TestHarness {
     return this._messages;
   }
 
-  /** All `onTurn` hook invocations (the text argument) recorded so far. */
+  /** All `onUserTranscript` hook invocations (the text argument) recorded so far. */
   get turns(): readonly string[] {
-    return this._onTurnCalls;
+    return this._onUserTranscriptCalls;
   }
 
   /**
    * Fire the `onConnect` lifecycle hook.
    *
-   * Called automatically on the first {@link turn} call if not called manually.
+   * Called automatically on the first `turn()` call if not called manually.
    */
   async connect(): Promise<void> {
     if (this._connected) return;
@@ -288,7 +288,7 @@ export class TestHarness {
    * This is the primary method for testing agent behavior. It:
    * 1. Fires `onConnect` if this is the first turn
    * 2. Adds the user message to conversation history
-   * 3. Fires the `onTurn` hook
+   * 3. Fires the `onUserTranscript` hook
    * 4. Executes each tool call in order
    * 5. Returns a {@link TurnResult} with assertion helpers
    *
@@ -311,9 +311,9 @@ export class TestHarness {
     // Record user message
     this._messages.push({ role: "user", content: text });
 
-    // Fire onTurn hook
-    this._onTurnCalls.push(text);
-    await this._executor.hooks.callHook("turn", this._sessionId, text);
+    // Fire onUserTranscript hook
+    this._onUserTranscriptCalls.push(text);
+    await this._executor.hooks.callHook("userTranscript", this._sessionId, text);
 
     // Execute tool calls
     const recorded: RecordedToolCall[] = [];
@@ -359,7 +359,7 @@ export class TestHarness {
    */
   reset(): void {
     this._messages = [];
-    this._onTurnCalls = [];
+    this._onUserTranscriptCalls = [];
   }
 }
 

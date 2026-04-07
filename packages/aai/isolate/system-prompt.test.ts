@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { makeConfig } from "../host/_test-utils.ts";
 import { buildSystemPrompt } from "./system-prompt.ts";
-import { DEFAULT_INSTRUCTIONS } from "./types.ts";
+import { DEFAULT_SYSTEM_PROMPT } from "./types.ts";
 
 describe("buildSystemPrompt", () => {
   beforeEach(() => {
@@ -16,9 +16,9 @@ describe("buildSystemPrompt", () => {
     vi.useRealTimers();
   });
 
-  test("starts with DEFAULT_INSTRUCTIONS when no custom instructions", () => {
+  test("starts with DEFAULT_SYSTEM_PROMPT when no custom instructions", () => {
     const result = buildSystemPrompt(makeConfig(), { hasTools: false });
-    expect(result.startsWith(DEFAULT_INSTRUCTIONS)).toBe(true);
+    expect(result.startsWith(DEFAULT_SYSTEM_PROMPT)).toBe(true);
   });
 
   test("does not include agent-specific instructions section for default instructions", () => {
@@ -28,7 +28,7 @@ describe("buildSystemPrompt", () => {
 
   test("appends custom agent instructions", () => {
     const custom = "You are a pirate. Always speak like one.";
-    const result = buildSystemPrompt(makeConfig({ instructions: custom }), { hasTools: false });
+    const result = buildSystemPrompt(makeConfig({ systemPrompt: custom }), { hasTools: false });
     expect(result).toContain("Agent-Specific Instructions:");
     expect(result).toContain(custom);
   });
@@ -78,7 +78,7 @@ describe("buildSystemPrompt", () => {
   });
 
   test("custom instructions + voice + tools includes all sections", () => {
-    const result = buildSystemPrompt(makeConfig({ instructions: "Be concise." }), {
+    const result = buildSystemPrompt(makeConfig({ systemPrompt: "Be concise." }), {
       hasTools: true,
       voice: true,
     });
@@ -89,7 +89,7 @@ describe("buildSystemPrompt", () => {
   });
 
   test("sections appear in correct order", () => {
-    const result = buildSystemPrompt(makeConfig({ instructions: "Custom rules." }), {
+    const result = buildSystemPrompt(makeConfig({ systemPrompt: "Custom rules." }), {
       hasTools: true,
       voice: true,
     });
@@ -105,7 +105,7 @@ describe("buildSystemPrompt", () => {
   });
 
   test("empty custom instructions treated same as default", () => {
-    const result = buildSystemPrompt(makeConfig({ instructions: "" }), { hasTools: false });
+    const result = buildSystemPrompt(makeConfig({ systemPrompt: "" }), { hasTools: false });
     expect(result).not.toContain("Agent-Specific Instructions:");
   });
 });

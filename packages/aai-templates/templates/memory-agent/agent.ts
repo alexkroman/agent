@@ -2,7 +2,7 @@ import { defineAgent } from "@alexkroman1/aai";
 
 export default defineAgent({
   name: "Memory Agent",
-  instructions: `You are a helpful assistant with persistent memory. You can \
+  systemPrompt: `You are a helpful assistant with persistent memory. You can \
 remember facts, preferences, and notes across conversations.
 
 When the user tells you something worth remembering, save it with a descriptive \

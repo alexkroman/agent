@@ -6,19 +6,19 @@
     "ttsSampleRate": 24000,
     "sessionId": "sess_fixture_002"
   },
-  { "type": "chat", "text": "Hi there!" },
-  { "type": "tts_done" },
+  { "type": "agent_transcript", "text": "Hi there!" },
+  { "type": "reply_done" },
 
   { "type": "speech_started" },
-  { "type": "transcript", "text": "Tell me", "isFinal": false },
-  { "type": "transcript", "text": "Tell me a fun", "isFinal": false },
-  { "type": "transcript", "text": "Tell me a fun fact about space.", "isFinal": true },
+  { "type": "user_transcript_delta", "text": "Tell me", "isFinal": false },
+  { "type": "user_transcript_delta", "text": "Tell me a fun", "isFinal": false },
+  { "type": "user_transcript_delta", "text": "Tell me a fun fact about space.", "isFinal": true },
   { "type": "speech_stopped" },
-  { "type": "turn", "text": "Tell me a fun fact about space." },
+  { "type": "user_transcript", "text": "Tell me a fun fact about space." },
 
-  { "type": "chat_delta", "text": "A day" },
-  { "type": "chat_delta", "text": " on Venus" },
-  { "type": "chat_delta", "text": " is longer than its year." },
-  { "type": "chat", "text": "A day on Venus is longer than its year." },
-  { "type": "tts_done" }
+  { "type": "agent_transcript_delta", "text": "A day" },
+  { "type": "agent_transcript_delta", "text": " on Venus" },
+  { "type": "agent_transcript_delta", "text": " is longer than its year." },
+  { "type": "agent_transcript", "text": "A day on Venus is longer than its year." },
+  { "type": "reply_done" }
 ]

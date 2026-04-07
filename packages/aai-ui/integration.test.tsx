@@ -126,14 +126,14 @@ describe("UI integration: signals → component rendering", () => {
     });
     expect(env.session.state.value).toBe("ready");
 
-    // Simulate turn (user said something)
-    env.send({ type: "turn", text: "hello world" });
+    // Simulate user_transcript (user said something)
+    env.send({ type: "user_transcript", text: "hello world" });
     expect(env.session.state.value).toBe("thinking");
     expect(env.session.userUtterance.value).toBe(null);
     expect(env.session.messages.value).toEqual([{ role: "user", content: "hello world" }]);
 
-    // Simulate chat response
-    env.send({ type: "chat", text: "Hi there!" });
+    // Simulate agent_transcript response
+    env.send({ type: "agent_transcript", text: "Hi there!" });
     expect(env.session.messages.value).toHaveLength(2);
     expect(env.session.messages.value[1]).toEqual({
       role: "assistant",

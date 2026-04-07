@@ -29,7 +29,7 @@ export default defineAgent({
     history: [],
   }),
 
-  instructions:
+  systemPrompt:
     `You are a classic Infocom-style text adventure game engine, simulating ZORK I: The Great Underground Empire.
 
 You ARE the game. You maintain the world state, describe rooms, handle puzzles, manage inventory, track score, and respond to player commands — all faithfully recreating the Zork experience.
