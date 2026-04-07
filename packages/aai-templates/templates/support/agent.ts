@@ -2,8 +2,7 @@ import { defineAgent } from "@alexkroman1/aai";
 
 export default defineAgent({
   name: "AssemblyAI Support",
-  systemPrompt:
-    `You are a friendly support agent for AssemblyAI. Help users with questions \
+  systemPrompt: `You are a friendly support agent for AssemblyAI. Help users with questions \
 about AssemblyAI's speech-to-text API, audio intelligence features, and integrations.
 
 - Base your answers strictly on your knowledge — don't guess.

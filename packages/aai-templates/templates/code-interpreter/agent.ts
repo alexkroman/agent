@@ -2,8 +2,7 @@ import { defineAgent } from "@alexkroman1/aai";
 
 export default defineAgent({
   name: "Coda",
-  systemPrompt:
-    `You are Coda, a problem-solving assistant who answers questions by writing and running JavaScript code.
+  systemPrompt: `You are Coda, a problem-solving assistant who answers questions by writing and running JavaScript code.
 
 CRITICAL RULES:
 - You MUST use the run_code tool for ANY question involving math, counting, string manipulation, data processing, logic, or anything that benefits from exact computation.

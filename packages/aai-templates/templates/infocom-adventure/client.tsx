@@ -1,6 +1,6 @@
 import "@alexkroman1/aai-ui/styles.css";
-import { defineClient, useSession } from "@alexkroman1/aai-ui";
 import type { ChatMessage } from "@alexkroman1/aai-ui";
+import { defineClient, useSession } from "@alexkroman1/aai-ui";
 import { useEffect, useRef } from "preact/hooks";
 
 const CSS = `
@@ -84,28 +84,29 @@ function InfocomAdventure() {
   }, [totalMessages, utterance]);
 
   const stateVal = session.state.value;
-  const stateLabel = stateVal === "listening"
-    ? "Listening"
-    : stateVal === "speaking"
-    ? "Narrating"
-    : stateVal === "thinking"
-    ? "Thinking"
-    : stateVal === "connecting"
-    ? "Connecting"
-    : stateVal === "ready"
-    ? "Ready"
-    : "Idle";
+  const stateLabel =
+    stateVal === "listening"
+      ? "Listening"
+      : stateVal === "speaking"
+        ? "Narrating"
+        : stateVal === "thinking"
+          ? "Thinking"
+          : stateVal === "connecting"
+            ? "Connecting"
+            : stateVal === "ready"
+              ? "Ready"
+              : "Idle";
 
-  const msgCount =
-    session.messages.value.filter((m: ChatMessage) => m.role === "user").length;
+  const msgCount = session.messages.value.filter((m: ChatMessage) => m.role === "user").length;
 
-  const dotColor = stateVal === "listening"
-    ? "#00ff41"
-    : stateVal === "speaking"
-    ? "#ffaa00"
-    : stateVal === "thinking"
-    ? "#00ccff"
-    : "#003300";
+  const dotColor =
+    stateVal === "listening"
+      ? "#00ff41"
+      : stateVal === "speaking"
+        ? "#ffaa00"
+        : stateVal === "thinking"
+          ? "#00ccff"
+          : "#003300";
 
   if (!started.value) {
     return (
@@ -200,10 +201,7 @@ function InfocomAdventure() {
           </div>
 
           {session.error.value && (
-            <div
-              class="px-5 py-2 text-xs"
-              style={{ background: "#3a0000", color: "#ff4141" }}
-            >
+            <div class="px-5 py-2 text-xs" style={{ background: "#3a0000", color: "#ff4141" }}>
               ERROR: {session.error.value.message}
             </div>
           )}
@@ -221,9 +219,10 @@ function InfocomAdventure() {
                 key={i}
                 class={`mb-4 ${msg.role === "user" ? "ic-user-msg" : ""}`}
                 style={{
-                  textShadow: msg.role === "user"
-                    ? "0 0 5px rgba(0, 204, 255, 0.3)"
-                    : "0 0 5px rgba(0, 255, 65, 0.3)",
+                  textShadow:
+                    msg.role === "user"
+                      ? "0 0 5px rgba(0, 204, 255, 0.3)"
+                      : "0 0 5px rgba(0, 255, 65, 0.3)",
                   color: msg.role === "user" ? "#00ccff" : "#00ff41",
                 }}
               >
@@ -260,9 +259,7 @@ function InfocomAdventure() {
                 class="w-2 h-2 rounded-full"
                 style={{
                   background: dotColor,
-                  boxShadow: dotColor !== "#003300"
-                    ? `0 0 6px ${dotColor}`
-                    : "none",
+                  boxShadow: dotColor !== "#003300" ? `0 0 6px ${dotColor}` : "none",
                 }}
               />
               <span>{stateLabel}</span>

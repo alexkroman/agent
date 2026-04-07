@@ -1,6 +1,6 @@
-import { defineToolFactory, defineAgent } from "@alexkroman1/aai";
-import { z } from "zod";
 import type { HookContext, ToolContext } from "@alexkroman1/aai";
+import { defineAgent, defineToolFactory } from "@alexkroman1/aai";
+import { z } from "zod";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -101,7 +101,13 @@ const RESOURCE_DEFS: [string, Resource["type"], string, string[]][] = [
 
 function generateResources(): Resource[] {
   return RESOURCE_DEFS.map(([id, type, callsign, capabilities]) => ({
-    id, type, callsign, capabilities, status: "available" as const, assignedIncident: null, eta: null,
+    id,
+    type,
+    callsign,
+    capabilities,
+    status: "available" as const,
+    assignedIncident: null,
+    eta: null,
   }));
 }
 
@@ -120,7 +126,7 @@ const TYPE_MULTIPLIERS: Record<IncidentType, number> = {
   hazmat: 1.5,
   traffic: 1.0,
   crime: 1.1,
-  "natural_disaster": 1.8,
+  natural_disaster: 1.8,
   utility: 0.8,
   other: 0.7,
 };
@@ -138,8 +144,32 @@ function calculateTriageScore(
 }
 
 const SEVERITY_KEYWORDS: [Severity, string[]][] = [
-  ["critical", ["unconscious", "not breathing", "cardiac arrest", "trapped", "collapse", "explosion", "active shooter", "mass casualty"]],
-  ["urgent", ["bleeding", "chest pain", "difficulty breathing", "fire", "hazmat", "shooting", "stabbing", "multi-vehicle"]],
+  [
+    "critical",
+    [
+      "unconscious",
+      "not breathing",
+      "cardiac arrest",
+      "trapped",
+      "collapse",
+      "explosion",
+      "active shooter",
+      "mass casualty",
+    ],
+  ],
+  [
+    "urgent",
+    [
+      "bleeding",
+      "chest pain",
+      "difficulty breathing",
+      "fire",
+      "hazmat",
+      "shooting",
+      "stabbing",
+      "multi-vehicle",
+    ],
+  ],
   ["moderate", ["fall", "broken", "fracture", "smoke", "minor fire", "assault", "theft"]],
 ];
 
@@ -152,12 +182,51 @@ function recommendSeverity(description: string): Severity {
 }
 
 const TYPE_KEYWORDS: Record<IncidentType, string[]> = {
-  medical: ["chest pain", "breathing", "unconscious", "seizure", "allergic", "overdose", "cardiac", "stroke", "diabetic", "bleeding", "fall", "injury"],
+  medical: [
+    "chest pain",
+    "breathing",
+    "unconscious",
+    "seizure",
+    "allergic",
+    "overdose",
+    "cardiac",
+    "stroke",
+    "diabetic",
+    "bleeding",
+    "fall",
+    "injury",
+  ],
   fire: ["fire", "smoke", "flames", "burning", "arson"],
   hazmat: ["chemical", "spill", "gas leak", "fumes", "radiation", "contamination", "hazmat"],
-  traffic: ["accident", "crash", "collision", "vehicle", "rollover", "pedestrian struck", "hit and run"],
-  crime: ["robbery", "assault", "shooting", "stabbing", "burglar", "theft", "domestic", "hostage", "active shooter"],
-  natural_disaster: ["earthquake", "flood", "tornado", "hurricane", "landslide", "wildfire", "tsunami"],
+  traffic: [
+    "accident",
+    "crash",
+    "collision",
+    "vehicle",
+    "rollover",
+    "pedestrian struck",
+    "hit and run",
+  ],
+  crime: [
+    "robbery",
+    "assault",
+    "shooting",
+    "stabbing",
+    "burglar",
+    "theft",
+    "domestic",
+    "hostage",
+    "active shooter",
+  ],
+  natural_disaster: [
+    "earthquake",
+    "flood",
+    "tornado",
+    "hurricane",
+    "landslide",
+    "wildfire",
+    "tsunami",
+  ],
   utility: ["power outage", "downed line", "water main", "gas main", "transformer"],
   other: [],
 };
@@ -168,7 +237,10 @@ function recommendType(description: string): IncidentType {
   let bestCount = 0;
   for (const [type, keywords] of Object.entries(TYPE_KEYWORDS)) {
     const count = keywords.filter((k) => d.includes(k)).length;
-    if (count > bestCount) { bestCount = count; best = type as IncidentType; }
+    if (count > bestCount) {
+      bestCount = count;
+      best = type as IncidentType;
+    }
   }
   return best;
 }
@@ -183,45 +255,103 @@ interface Protocol {
 }
 
 const PROTOCOLS: Protocol[] = [
-  { name: "Mass Casualty Incident (MCI)",
-    triggers: { types: ["medical", "fire", "natural_disaster", "traffic"], minSeverity: "critical" },
-    steps: ["Establish Incident Command", "Request mutual aid if >10 casualties", "Set up triage: Immediate (red), Delayed (yellow), Minor (green), Deceased (black)", "Assign triage lead (EMS supervisor)", "Establish patient collection point", "Coordinate helicopter landing zone if needed", "Notify receiving hospitals and activate surge protocols"],
-    requiredResources: ["ambulance", "ems_supervisor", "fire_engine"] },
-  { name: "Structure Fire - Working Fire",
+  {
+    name: "Mass Casualty Incident (MCI)",
+    triggers: {
+      types: ["medical", "fire", "natural_disaster", "traffic"],
+      minSeverity: "critical",
+    },
+    steps: [
+      "Establish Incident Command",
+      "Request mutual aid if >10 casualties",
+      "Set up triage: Immediate (red), Delayed (yellow), Minor (green), Deceased (black)",
+      "Assign triage lead (EMS supervisor)",
+      "Establish patient collection point",
+      "Coordinate helicopter landing zone if needed",
+      "Notify receiving hospitals and activate surge protocols",
+    ],
+    requiredResources: ["ambulance", "ems_supervisor", "fire_engine"],
+  },
+  {
+    name: "Structure Fire - Working Fire",
     triggers: { types: ["fire"], minSeverity: "urgent" },
-    steps: ["Dispatch minimum 2 engines and 1 ladder", "Establish incident command and 360-degree size-up", "Confirm water supply", "Search and rescue primary sweep", "Ventilation operations", "Establish RIT (Rapid Intervention Team)", "Request additional alarms if not contained in 10 min"],
-    requiredResources: ["fire_engine"] },
-  { name: "Hazardous Materials Response",
+    steps: [
+      "Dispatch minimum 2 engines and 1 ladder",
+      "Establish incident command and 360-degree size-up",
+      "Confirm water supply",
+      "Search and rescue primary sweep",
+      "Ventilation operations",
+      "Establish RIT (Rapid Intervention Team)",
+      "Request additional alarms if not contained in 10 min",
+    ],
+    requiredResources: ["fire_engine"],
+  },
+  {
+    name: "Hazardous Materials Response",
     triggers: { types: ["hazmat"], minSeverity: "moderate" },
-    steps: ["Identify substance via placard numbers or SDS", "Establish hot, warm, and cold zones", "Evacuate downwind 1000+ feet for unknowns", "Deploy HazMat team in appropriate PPE", "Set up decontamination corridor", "Monitor air quality and wind continuously", "Coordinate with poison control"],
-    requiredResources: ["hazmat_team", "fire_engine", "ambulance"] },
-  { name: "Active Threat / Active Shooter",
+    steps: [
+      "Identify substance via placard numbers or SDS",
+      "Establish hot, warm, and cold zones",
+      "Evacuate downwind 1000+ feet for unknowns",
+      "Deploy HazMat team in appropriate PPE",
+      "Set up decontamination corridor",
+      "Monitor air quality and wind continuously",
+      "Coordinate with poison control",
+    ],
+    requiredResources: ["hazmat_team", "fire_engine", "ambulance"],
+  },
+  {
+    name: "Active Threat / Active Shooter",
     triggers: { types: ["crime"], minSeverity: "critical" },
-    steps: ["Dispatch SWAT and multiple patrol units", "Establish inner and outer perimeters", "Activate Rescue Task Force — police escort EMS into warm zone", "Stage ambulances outside hot zone", "Request LifeFlight on standby", "Get building floor plans", "Establish family reunification point"],
-    requiredResources: ["swat", "police", "ambulance", "ems_supervisor"] },
-  { name: "Multi-Vehicle Accident",
+    steps: [
+      "Dispatch SWAT and multiple patrol units",
+      "Establish inner and outer perimeters",
+      "Activate Rescue Task Force — police escort EMS into warm zone",
+      "Stage ambulances outside hot zone",
+      "Request LifeFlight on standby",
+      "Get building floor plans",
+      "Establish family reunification point",
+    ],
+    requiredResources: ["swat", "police", "ambulance", "ems_supervisor"],
+  },
+  {
+    name: "Multi-Vehicle Accident",
     triggers: { types: ["traffic"], minSeverity: "urgent" },
-    steps: ["Dispatch engine for extrication", "Request traffic control to shut lanes", "Triage using START protocol", "Check for fuel/hazmat spills", "Establish helicopter landing zone if needed", "Coordinate with DOT for road closures"],
-    requiredResources: ["fire_engine", "ambulance", "police"] },
-  { name: "Cardiac Arrest Protocol",
+    steps: [
+      "Dispatch engine for extrication",
+      "Request traffic control to shut lanes",
+      "Triage using START protocol",
+      "Check for fuel/hazmat spills",
+      "Establish helicopter landing zone if needed",
+      "Coordinate with DOT for road closures",
+    ],
+    requiredResources: ["fire_engine", "ambulance", "police"],
+  },
+  {
+    name: "Cardiac Arrest Protocol",
     triggers: { types: ["medical"], minSeverity: "critical" },
-    steps: ["Instruct caller: CPR — 30 compressions, 2 breaths", "Dispatch closest ALS unit and fire engine", "Guide caller through AED use if available", "Target first defibrillation under 8 minutes", "Prepare for advanced airway management"],
-    requiredResources: ["ambulance", "fire_engine"] },
+    steps: [
+      "Instruct caller: CPR — 30 compressions, 2 breaths",
+      "Dispatch closest ALS unit and fire engine",
+      "Guide caller through AED use if available",
+      "Target first defibrillation under 8 minutes",
+      "Prepare for advanced airway management",
+    ],
+    requiredResources: ["ambulance", "fire_engine"],
+  },
 ];
 
-function getApplicableProtocols(
-  type: IncidentType,
-  severity: Severity,
-): Protocol[] {
+function getApplicableProtocols(type: IncidentType, severity: Severity): Protocol[] {
   const severityRank: Record<Severity, number> = {
     critical: 4,
     urgent: 3,
     moderate: 2,
     minor: 1,
   };
-  return PROTOCOLS.filter((p) =>
-    p.triggers.types.includes(type) &&
-    severityRank[severity] >= severityRank[p.triggers.minSeverity]
+  return PROTOCOLS.filter(
+    (p) =>
+      p.triggers.types.includes(type) &&
+      severityRank[severity] >= severityRank[p.triggers.minSeverity],
   );
 }
 
@@ -241,7 +371,7 @@ function recommendResources(
     hazmat: ["hazmat_team", "fire_engine", "ambulance"],
     traffic: ["police", "ambulance", "fire_engine"],
     crime: ["police"],
-    "natural_disaster": ["fire_engine", "ambulance", "police"],
+    natural_disaster: ["fire_engine", "ambulance", "police"],
     utility: ["fire_engine"],
     other: [],
   };
@@ -264,8 +394,7 @@ function recommendResources(
 
   for (const needType of needed) {
     const available = state.resources.find(
-      (r) =>
-        r.type === needType && r.status === "available" && !usedIds.has(r.id),
+      (r) => r.type === needType && r.status === "available" && !usedIds.has(r.id),
     );
     if (available) {
       recommended.push(available);
@@ -279,26 +408,20 @@ function recommendResources(
 // ─── System alert level calculation ──────────────────────────────────────────
 
 function recalculateAlertLevel(state: DispatchState): void {
-  const activeIncidents = Object.values(state.incidents).filter((i) =>
-    !["resolved"].includes(i.status)
+  const activeIncidents = Object.values(state.incidents).filter(
+    (i) => !["resolved"].includes(i.status),
   );
-  const criticalCount =
-    activeIncidents.filter((i) => i.severity === "critical").length;
+  const criticalCount = activeIncidents.filter((i) => i.severity === "critical").length;
   const totalActive = activeIncidents.length;
-  const availableResources =
-    state.resources.filter((r) => r.status === "available").length;
+  const availableResources = state.resources.filter((r) => r.status === "available").length;
   const totalResources = state.resources.length;
-  const resourceUtilization = 1 - (availableResources / totalResources);
+  const resourceUtilization = 1 - availableResources / totalResources;
 
   if (criticalCount >= 3 || resourceUtilization > 0.85 || totalActive >= 8) {
     state.alertLevel = "red";
-  } else if (
-    criticalCount >= 2 || resourceUtilization > 0.65 || totalActive >= 5
-  ) {
+  } else if (criticalCount >= 2 || resourceUtilization > 0.65 || totalActive >= 5) {
     state.alertLevel = "orange";
-  } else if (
-    criticalCount >= 1 || resourceUtilization > 0.4 || totalActive >= 3
-  ) {
+  } else if (criticalCount >= 1 || resourceUtilization > 0.4 || totalActive >= 3) {
     state.alertLevel = "yellow";
   } else {
     state.alertLevel = "green";
@@ -318,9 +441,7 @@ function now(): number {
 
 const STATE_KEY = "dispatch:state";
 
-async function saveState(
-  ctx: { kv: ToolContext["kv"]; state: unknown },
-): Promise<void> {
+async function saveState(ctx: { kv: ToolContext["kv"]; state: unknown }): Promise<void> {
   await ctx.kv.set(STATE_KEY, ctx.state);
 }
 
@@ -339,8 +460,7 @@ export default defineAgent({
   greeting:
     "Dispatch Command Center online. Restoring operational state. I'm ready to take incoming calls, manage active incidents, or run dispatch operations. Say 'dashboard' for a full status report. What do we have.",
 
-  systemPrompt:
-    `You are the AI-powered Emergency Dispatch Command Center. You coordinate emergency response for a metropolitan area. You manage incidents from initial 911 call through resolution.
+  systemPrompt: `You are the AI-powered Emergency Dispatch Command Center. You coordinate emergency response for a metropolitan area. You manage incidents from initial 911 call through resolution.
 
 Your role combines call-taker, dispatcher, and incident commander. You speak like an experienced dispatcher: calm, precise, and authoritative. Never panic. Use brevity codes and dispatch terminology naturally.
 
@@ -393,27 +513,20 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
       description: "Create a new incident from an incoming emergency call.",
       parameters: z.object({
         location: z.string().describe("Address or location description"),
-        description: z.string().describe(
-          "Nature of the emergency as described by caller",
-        ),
+        description: z.string().describe("Nature of the emergency as described by caller"),
         callerName: z.string().describe("Caller's name").optional(),
         callerPhone: z.string().describe("Callback number").optional(),
-        estimatedCasualties: z.number().describe(
-          "Estimated number of casualties if known",
-        ).optional(),
-        hazards: z.array(z.string()).describe(
-          "Known hazards: fire, chemical, electrical, structural, weapons",
-        ).optional(),
+        estimatedCasualties: z
+          .number()
+          .describe("Estimated number of casualties if known")
+          .optional(),
+        hazards: z
+          .array(z.string())
+          .describe("Known hazards: fire, chemical, electrical, structural, weapons")
+          .optional(),
       }),
       execute: async (
-        {
-          location,
-          description,
-          callerName,
-          callerPhone,
-          estimatedCasualties,
-          hazards,
-        },
+        { location, description, callerName, callerPhone, estimatedCasualties, hazards },
         ctx,
       ) => {
         const state = ctx.state;
@@ -440,10 +553,12 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
           callerPhone: callerPhone || "Unknown",
           triageScore,
           assignedResources: [],
-          timeline: [{
-            time: now(),
-            event: `Incident created: ${description}`,
-          }],
+          timeline: [
+            {
+              time: now(),
+              event: `Incident created: ${description}`,
+            },
+          ],
           notes: [],
           createdAt: now(),
           updatedAt: now(),
@@ -462,11 +577,7 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
         await saveState(ctx);
 
         const protocols = getApplicableProtocols(recType, recSeverity);
-        const recommended = recommendResources(
-          recType,
-          recSeverity,
-          state,
-        );
+        const recommended = recommendResources(recType, recSeverity, state);
 
         return {
           incidentId: id,
@@ -480,9 +591,10 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
             capabilities: r.capabilities,
           })),
           systemAlertLevel: state.alertLevel,
-          message: recSeverity === "critical"
-            ? `PRIORITY ONE — ${id} created. Immediate dispatch recommended. ${protocols.length} protocol(s) applicable.`
-            : `${id} created. Triage score ${triageScore}. ${recommended.length} resource(s) recommended.`,
+          message:
+            recSeverity === "critical"
+              ? `PRIORITY ONE — ${id} created. Immediate dispatch recommended. ${protocols.length} protocol(s) applicable.`
+              : `${id} created. Triage score ${triageScore}. ${recommended.length} resource(s) recommended.`,
         };
       },
     }),
@@ -492,34 +604,32 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
         "Triage an incident — confirm or override severity, type, hazards, and casualty count.",
       parameters: z.object({
         incidentId: z.string().describe("The incident ID"),
-        severity: z.enum(["critical", "urgent", "moderate", "minor"])
-          .describe("Confirmed severity after triage").optional(),
-        type: z.enum([
-          "medical",
-          "fire",
-          "hazmat",
-          "traffic",
-          "crime",
-          "natural_disaster",
-          "utility",
-          "other",
-        ]).describe("Confirmed incident type").optional(),
-        additionalHazards: z.array(z.string()).describe(
-          "Any additional hazards identified",
-        ).optional(),
-        casualtyUpdate: z.number().describe("Updated casualty count")
+        severity: z
+          .enum(["critical", "urgent", "moderate", "minor"])
+          .describe("Confirmed severity after triage")
           .optional(),
+        type: z
+          .enum([
+            "medical",
+            "fire",
+            "hazmat",
+            "traffic",
+            "crime",
+            "natural_disaster",
+            "utility",
+            "other",
+          ])
+          .describe("Confirmed incident type")
+          .optional(),
+        additionalHazards: z
+          .array(z.string())
+          .describe("Any additional hazards identified")
+          .optional(),
+        casualtyUpdate: z.number().describe("Updated casualty count").optional(),
         notes: z.string().describe("Triage notes").optional(),
       }),
       execute: async (
-        {
-          incidentId,
-          severity,
-          type,
-          additionalHazards,
-          casualtyUpdate,
-          notes,
-        },
+        { incidentId, severity, type, additionalHazards, casualtyUpdate, notes },
         ctx,
       ) => {
         const state = ctx.state;
@@ -544,19 +654,14 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
         inc.updatedAt = now();
         inc.timeline.push({
           time: now(),
-          event:
-            `Triaged: ${inc.severity} ${inc.type}, score ${inc.triageScore}`,
+          event: `Triaged: ${inc.severity} ${inc.type}, score ${inc.triageScore}`,
         });
 
         recalculateAlertLevel(state);
         await saveState(ctx);
 
         const protocols = getApplicableProtocols(inc.type, inc.severity);
-        const recommended = recommendResources(
-          inc.type,
-          inc.severity,
-          state,
-        );
+        const recommended = recommendResources(inc.type, inc.severity, state);
 
         return {
           incidentId,
@@ -580,22 +685,20 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
     }),
 
     incident_update_status: dispatchTool({
-      description:
-        "Update an incident's status (en_route, on_scene, resolved, escalated).",
+      description: "Update an incident's status (en_route, on_scene, resolved, escalated).",
       parameters: z.object({
         incidentId: z.string().describe("The incident ID"),
-        status: z.enum(["en_route", "on_scene", "resolved", "escalated"])
-          .describe("New status"),
+        status: z.enum(["en_route", "on_scene", "resolved", "escalated"]).describe("New status"),
         notes: z.string().describe("Status update notes").optional(),
-        casualtyUpdate: z.object({
-          confirmed: z.number().optional(),
-          treated: z.number().optional(),
-        }).describe("Updated casualty numbers").optional(),
+        casualtyUpdate: z
+          .object({
+            confirmed: z.number().optional(),
+            treated: z.number().optional(),
+          })
+          .describe("Updated casualty numbers")
+          .optional(),
       }),
-      execute: async (
-        { incidentId, status, notes, casualtyUpdate },
-        ctx,
-      ) => {
+      execute: async ({ incidentId, status, notes, casualtyUpdate }, ctx) => {
         const state = ctx.state;
         const inc = state.incidents[incidentId];
         if (!inc) return { error: `Incident ${incidentId} not found` };
@@ -659,22 +762,17 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
     }),
 
     incident_escalate: dispatchTool({
-      description:
-        "Escalate an incident when it exceeds current capacity or severity increases.",
+      description: "Escalate an incident when it exceeds current capacity or severity increases.",
       parameters: z.object({
         incidentId: z.string().describe("The incident ID"),
         reason: z.string().describe("Reason for escalation"),
-        requestMutualAid: z.boolean().describe(
-          "Whether to request mutual aid from neighboring jurisdictions",
-        ).optional(),
-        newSeverity: z.enum(["critical", "urgent"]).describe(
-          "Escalated severity level",
-        ).optional(),
+        requestMutualAid: z
+          .boolean()
+          .describe("Whether to request mutual aid from neighboring jurisdictions")
+          .optional(),
+        newSeverity: z.enum(["critical", "urgent"]).describe("Escalated severity level").optional(),
       }),
-      execute: async (
-        { incidentId, reason, requestMutualAid, newSeverity },
-        ctx,
-      ) => {
+      execute: async ({ incidentId, reason, requestMutualAid, newSeverity }, ctx) => {
         const state = ctx.state;
         const inc = state.incidents[incidentId];
         if (!inc) return { error: `Incident ${incidentId} not found` };
@@ -727,11 +825,7 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
         recalculateAlertLevel(state);
         await saveState(ctx);
 
-        const additionalResources = recommendResources(
-          inc.type,
-          inc.severity,
-          state,
-        ).filter(
+        const additionalResources = recommendResources(inc.type, inc.severity, state).filter(
           (r) => !inc.assignedResources.includes(r.id),
         );
 
@@ -740,14 +834,13 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
           escalationLevel: inc.escalationLevel,
           newSeverity: inc.severity,
           newTriageScore: inc.triageScore,
-          mutualAidRequested: requestMutualAid || false,
+          mutualAidRequested: requestMutualAid,
           additionalResourcesAvailable: additionalResources.map((r) => ({
             callsign: r.callsign,
             type: r.type,
           })),
           systemAlertLevel: state.alertLevel,
-          message:
-            `ESCALATION CONFIRMED — ${incidentId} now Level ${inc.escalationLevel}. ${additionalResources.length} additional resource(s) available for dispatch.`,
+          message: `ESCALATION CONFIRMED — ${incidentId} now Level ${inc.escalationLevel}. ${additionalResources.length} additional resource(s) available for dispatch.`,
         };
       },
     }),
@@ -763,31 +856,27 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
         const inc = state.incidents[incidentId];
         if (!inc) return { error: `Incident ${incidentId} not found` };
 
-        const assignedResourceDetails = inc.assignedResources.map(
-          (rId) => {
+        const assignedResourceDetails = inc.assignedResources
+          .map((rId) => {
             const r = state.resources.find((r) => r.id === rId);
             return r
               ? {
-                callsign: r.callsign,
-                type: r.type,
-                status: r.status,
-                eta: r.eta,
-              }
+                  callsign: r.callsign,
+                  type: r.type,
+                  status: r.status,
+                  eta: r.eta,
+                }
               : null;
-          },
-        ).filter(Boolean);
+          })
+          .filter(Boolean);
 
-        const ageMinutes = Math.round((now() - inc.createdAt) / 60000);
+        const ageMinutes = Math.round((now() - inc.createdAt) / 60_000);
 
         return {
           ...inc,
           ageMinutes,
           assignedResourceDetails,
-          applicableProtocols: getApplicableProtocols(
-            inc.type,
-            inc.severity,
-          )
-            .map((p) => p.name),
+          applicableProtocols: getApplicableProtocols(inc.type, inc.severity).map((p) => p.name),
         };
       },
     }),
@@ -797,9 +886,7 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
       parameters: z.object({
         incidentId: z.string().describe("The incident ID"),
         note: z.string().describe("The note to add"),
-        source: z.string().describe(
-          "Who reported this — unit callsign or caller",
-        ).optional(),
+        source: z.string().describe("Who reported this — unit callsign or caller").optional(),
       }),
       execute: async ({ incidentId, note, source }, ctx) => {
         const state = ctx.state;
@@ -825,20 +912,20 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
         "Dispatch units to an incident. Can auto-dispatch recommended resources or manually specify callsigns.",
       parameters: z.object({
         incidentId: z.string().describe("The incident ID"),
-        callsigns: z.array(z.string()).describe(
-          "Resource callsigns to dispatch. Use 'auto' for system-recommended resources.",
-        ).optional(),
-        autoDispatch: z.boolean().describe(
-          "If true, automatically dispatch recommended resources",
-        ).optional(),
-        priority: z.enum(["routine", "priority", "emergency"]).describe(
-          "Dispatch priority — affects simulated ETA",
-        ).optional(),
+        callsigns: z
+          .array(z.string())
+          .describe("Resource callsigns to dispatch. Use 'auto' for system-recommended resources.")
+          .optional(),
+        autoDispatch: z
+          .boolean()
+          .describe("If true, automatically dispatch recommended resources")
+          .optional(),
+        priority: z
+          .enum(["routine", "priority", "emergency"])
+          .describe("Dispatch priority — affects simulated ETA")
+          .optional(),
       }),
-      execute: async (
-        { incidentId, callsigns, autoDispatch, priority },
-        ctx,
-      ) => {
+      execute: async ({ incidentId, callsigns, autoDispatch, priority }, ctx) => {
         const state = ctx.state;
         const inc = state.incidents[incidentId];
         if (!inc) return { error: `Incident ${incidentId} not found` };
@@ -853,16 +940,10 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
         let resourcesToDispatch: Resource[] = [];
 
         if (autoDispatch) {
-          resourcesToDispatch = recommendResources(
-            inc.type,
-            inc.severity,
-            state,
-          );
+          resourcesToDispatch = recommendResources(inc.type, inc.severity, state);
         } else if (callsigns) {
           for (const cs of callsigns) {
-            const r = state.resources.find((r) =>
-              r.callsign.toLowerCase() === cs.toLowerCase()
-            );
+            const r = state.resources.find((r) => r.callsign.toLowerCase() === cs.toLowerCase());
             if (!r) {
               failed.push({ callsign: cs, reason: "Not found" });
               continue;
@@ -878,11 +959,7 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
           }
         }
 
-        const etaBase = priority === "emergency"
-          ? 3
-          : priority === "priority"
-          ? 6
-          : 10;
+        const etaBase = priority === "emergency" ? 3 : priority === "priority" ? 6 : 10;
 
         for (const r of resourcesToDispatch) {
           const eta = etaBase + Math.floor(Math.random() * 5);
@@ -905,9 +982,7 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
         recalculateAlertLevel(state);
         await saveState(ctx);
 
-        const availableCount = state.resources.filter((r) =>
-          r.status === "available"
-        ).length;
+        const availableCount = state.resources.filter((r) => r.status === "available").length;
 
         return {
           incidentId,
@@ -916,9 +991,10 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
           totalAssignedToIncident: inc.assignedResources.length,
           remainingAvailableResources: availableCount,
           systemAlertLevel: state.alertLevel,
-          capacityWarning: availableCount <= 3
-            ? "WARNING: Resource capacity critically low. Consider mutual aid."
-            : undefined,
+          capacityWarning:
+            availableCount <= 3
+              ? "WARNING: Resource capacity critically low. Consider mutual aid."
+              : undefined,
         };
       },
     }),
@@ -926,17 +1002,20 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
     resources_get_available: dispatchTool({
       description: "List available resources, optionally filtered by type.",
       parameters: z.object({
-        type: z.enum([
-          "ambulance",
-          "fire_engine",
-          "police",
-          "hazmat_team",
-          "helicopter",
-          "k9_unit",
-          "swat",
-          "ems_supervisor",
-          "all",
-        ]).describe("Filter by resource type, or 'all'").optional(),
+        type: z
+          .enum([
+            "ambulance",
+            "fire_engine",
+            "police",
+            "hazmat_team",
+            "helicopter",
+            "k9_unit",
+            "swat",
+            "ems_supervisor",
+            "all",
+          ])
+          .describe("Filter by resource type, or 'all'")
+          .optional(),
       }),
       execute: ({ type }, ctx) => {
         const state = ctx.state;
@@ -956,10 +1035,8 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
           })),
           summary: {
             total: resources.length,
-            available: resources.filter((r) => r.status === "available")
-              .length,
-            committed: resources.filter((r) => r.status !== "available")
-              .length,
+            available: resources.filter((r) => r.status === "available").length,
+            committed: resources.filter((r) => r.status !== "available").length,
           },
         };
       },
@@ -969,19 +1046,15 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
       description: "Update a resource unit's status when it radios in.",
       parameters: z.object({
         callsign: z.string().describe("The resource callsign"),
-        status: z.enum([
-          "available",
-          "dispatched",
-          "en_route",
-          "on_scene",
-          "returning",
-        ]).describe("New status"),
+        status: z
+          .enum(["available", "dispatched", "en_route", "on_scene", "returning"])
+          .describe("New status"),
         notes: z.string().describe("Status notes").optional(),
       }),
       execute: async ({ callsign, status, notes }, ctx) => {
         const state = ctx.state;
-        const resource = state.resources.find((r) =>
-          r.callsign.toLowerCase() === callsign.toLowerCase()
+        const resource = state.resources.find(
+          (r) => r.callsign.toLowerCase() === callsign.toLowerCase(),
         );
         if (!resource) {
           return { error: `Resource ${callsign} not found` };
@@ -1001,9 +1074,7 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
           if (inc) {
             inc.timeline.push({
               time: now(),
-              event: `${callsign}: ${previousStatus} → ${status}${
-                notes ? ` (${notes})` : ""
-              }`,
+              event: `${callsign}: ${previousStatus} → ${status}${notes ? ` (${notes})` : ""}`,
             });
             inc.updatedAt = now();
           }
@@ -1032,22 +1103,17 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
           .filter((i) => i.status !== "resolved")
           .sort((a, b) => b.triageScore - a.triageScore);
 
-        const resolvedCount =
-          Object.values(state.incidents).filter((i) => i.status === "resolved")
-            .length;
+        const resolvedCount = Object.values(state.incidents).filter(
+          (i) => i.status === "resolved",
+        ).length;
 
         const resourceSummary = {
           total: state.resources.length,
-          available:
-            state.resources.filter((r) => r.status === "available").length,
-          dispatched:
-            state.resources.filter((r) => r.status === "dispatched").length,
-          enRoute:
-            state.resources.filter((r) => r.status === "en_route").length,
-          onScene:
-            state.resources.filter((r) => r.status === "on_scene").length,
-          returning:
-            state.resources.filter((r) => r.status === "returning").length,
+          available: state.resources.filter((r) => r.status === "available").length,
+          dispatched: state.resources.filter((r) => r.status === "dispatched").length,
+          enRoute: state.resources.filter((r) => r.status === "en_route").length,
+          onScene: state.resources.filter((r) => r.status === "on_scene").length,
+          returning: state.resources.filter((r) => r.status === "returning").length,
         };
 
         const utilization = Math.round(
@@ -1069,16 +1135,16 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
             location: i.location,
             triageScore: i.triageScore,
             assignedResourceCount: i.assignedResources.length,
-            ageMinutes: Math.round((now() - i.createdAt) / 60000),
+            ageMinutes: Math.round((now() - i.createdAt) / 60_000),
             casualties: i.casualties,
           })),
-          availableResources: state.resources.filter((r) =>
-            r.status === "available"
-          ).map((r) => ({
-            callsign: r.callsign,
-            type: r.type,
-            capabilities: r.capabilities,
-          })),
+          availableResources: state.resources
+            .filter((r) => r.status === "available")
+            .map((r) => ({
+              callsign: r.callsign,
+              type: r.type,
+              capabilities: r.capabilities,
+            })),
         };
       },
     },
@@ -1087,24 +1153,22 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
       description:
         "Look up step-by-step response protocols for a given incident type and severity.",
       parameters: z.object({
-        incidentType: z.enum([
-          "medical",
-          "fire",
-          "hazmat",
-          "traffic",
-          "crime",
-          "natural_disaster",
-          "utility",
-          "other",
-        ]).describe("Type of incident"),
-        severity: z.enum(["critical", "urgent", "moderate", "minor"])
-          .describe("Severity level"),
+        incidentType: z
+          .enum([
+            "medical",
+            "fire",
+            "hazmat",
+            "traffic",
+            "crime",
+            "natural_disaster",
+            "utility",
+            "other",
+          ])
+          .describe("Type of incident"),
+        severity: z.enum(["critical", "urgent", "moderate", "minor"]).describe("Severity level"),
       }),
       execute: ({ incidentType, severity }) => {
-        const protocols = getApplicableProtocols(
-          incidentType,
-          severity,
-        );
+        const protocols = getApplicableProtocols(incidentType, severity);
         if (protocols.length === 0) {
           return {
             message:
@@ -1126,47 +1190,123 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
       description:
         "Run a training scenario that creates simulated incidents for dispatch practice.",
       parameters: z.object({
-        scenario: z.enum([
-          "mass_casualty",
-          "multi_alarm_fire",
-          "active_shooter",
-          "natural_disaster",
-          "highway_pileup",
-        ]).describe("Scenario type to simulate"),
+        scenario: z
+          .enum([
+            "mass_casualty",
+            "multi_alarm_fire",
+            "active_shooter",
+            "natural_disaster",
+            "highway_pileup",
+          ])
+          .describe("Scenario type to simulate"),
       }),
       execute: async ({ scenario }, ctx) => {
         const state = ctx.state;
         type ScenarioDef = { narrative: string; incidents: Partial<Incident>[] };
-        const inc = (location: string, description: string, type: IncidentType, severity: Severity): Partial<Incident> =>
-          ({ location, description, type, severity });
+        const inc = (
+          location: string,
+          description: string,
+          type: IncidentType,
+          severity: Severity,
+        ): Partial<Incident> => ({ location, description, type, severity });
 
         const scenarios: Record<string, ScenarioDef> = {
-          mass_casualty: { narrative: "Bus crash at Main and 5th. School bus vs delivery truck. Multiple pediatric patients. Fuel spill.",
+          mass_casualty: {
+            narrative:
+              "Bus crash at Main and 5th. School bus vs delivery truck. Multiple pediatric patients. Fuel spill.",
             incidents: [
-              inc("Main St and 5th Ave intersection", "School bus collision with delivery truck, multiple children injured, bus on its side, fuel leaking", "traffic", "critical"),
-              inc("Main St and 5th Ave — fuel spill", "Diesel fuel spill from delivery truck spreading toward storm drain, ~50 gallons", "hazmat", "urgent"),
-            ] },
-          multi_alarm_fire: { narrative: "Working structure fire at 200 Industrial Parkway. 3-story warehouse, heavy smoke. Workers possibly trapped.",
+              inc(
+                "Main St and 5th Ave intersection",
+                "School bus collision with delivery truck, multiple children injured, bus on its side, fuel leaking",
+                "traffic",
+                "critical",
+              ),
+              inc(
+                "Main St and 5th Ave — fuel spill",
+                "Diesel fuel spill from delivery truck spreading toward storm drain, ~50 gallons",
+                "hazmat",
+                "urgent",
+              ),
+            ],
+          },
+          multi_alarm_fire: {
+            narrative:
+              "Working structure fire at 200 Industrial Parkway. 3-story warehouse, heavy smoke. Workers possibly trapped.",
             incidents: [
-              inc("200 Industrial Parkway", "3-story warehouse fully involved, possible trapped occupants on 2nd/3rd floor", "fire", "critical"),
-              inc("200 Industrial Parkway — medical", "2 workers with smoke inhalation, one with burns", "medical", "urgent"),
-            ] },
-          active_shooter: { narrative: "Active shooter at Riverside Mall. Multiple shots fired, crowds fleeing. At least 3 victims down in food court.",
+              inc(
+                "200 Industrial Parkway",
+                "3-story warehouse fully involved, possible trapped occupants on 2nd/3rd floor",
+                "fire",
+                "critical",
+              ),
+              inc(
+                "200 Industrial Parkway — medical",
+                "2 workers with smoke inhalation, one with burns",
+                "medical",
+                "urgent",
+              ),
+            ],
+          },
+          active_shooter: {
+            narrative:
+              "Active shooter at Riverside Mall. Multiple shots fired, crowds fleeing. At least 3 victims down in food court.",
             incidents: [
-              inc("Riverside Mall, 1500 River Road — food court", "Active shooter, multiple shots, at least 3 victims down, shooter moving toward west entrance", "crime", "critical"),
-              inc("Riverside Mall parking lot", "Crowd crush injuries, several trampled near east exit", "medical", "urgent"),
-            ] },
-          natural_disaster: { narrative: "EF-3 tornado in residential area. Oak Street corridor. Multiple structures collapsed. Power lines down.",
+              inc(
+                "Riverside Mall, 1500 River Road — food court",
+                "Active shooter, multiple shots, at least 3 victims down, shooter moving toward west entrance",
+                "crime",
+                "critical",
+              ),
+              inc(
+                "Riverside Mall parking lot",
+                "Crowd crush injuries, several trampled near east exit",
+                "medical",
+                "urgent",
+              ),
+            ],
+          },
+          natural_disaster: {
+            narrative:
+              "EF-3 tornado in residential area. Oak Street corridor. Multiple structures collapsed. Power lines down.",
             incidents: [
-              inc("Oak Street between 10th and 15th", "Tornado damage, homes collapsed, people trapped, gas lines ruptured", "natural_disaster", "critical"),
-              inc("Oak Street Elementary School", "School roof partially collapsed, staff sheltering students", "natural_disaster", "critical"),
-              inc("Oak Street and 12th — utility", "Downed power lines sparking, gas main rupture, area needs isolation", "utility", "urgent"),
-            ] },
-          highway_pileup: { narrative: "20+ vehicle pileup on I-95 southbound mile marker 42. Fog. Multiple entrapments. Tanker truck involved.",
+              inc(
+                "Oak Street between 10th and 15th",
+                "Tornado damage, homes collapsed, people trapped, gas lines ruptured",
+                "natural_disaster",
+                "critical",
+              ),
+              inc(
+                "Oak Street Elementary School",
+                "School roof partially collapsed, staff sheltering students",
+                "natural_disaster",
+                "critical",
+              ),
+              inc(
+                "Oak Street and 12th — utility",
+                "Downed power lines sparking, gas main rupture, area needs isolation",
+                "utility",
+                "urgent",
+              ),
+            ],
+          },
+          highway_pileup: {
+            narrative:
+              "20+ vehicle pileup on I-95 southbound mile marker 42. Fog. Multiple entrapments. Tanker truck involved.",
             incidents: [
-              inc("I-95 southbound mile marker 42", "Multi-vehicle pileup, 20+ vehicles, multiple entrapments, tanker with unknown cargo, heavy fog", "traffic", "critical"),
-              inc("I-95 southbound — hazmat", "Tanker leaking unknown liquid, placards not visible, exclusion zone being set up", "hazmat", "critical"),
-            ] },
+              inc(
+                "I-95 southbound mile marker 42",
+                "Multi-vehicle pileup, 20+ vehicles, multiple entrapments, tanker with unknown cargo, heavy fog",
+                "traffic",
+                "critical",
+              ),
+              inc(
+                "I-95 southbound — hazmat",
+                "Tanker leaking unknown liquid, placards not visible, exclusion zone being set up",
+                "hazmat",
+                "critical",
+              ),
+            ],
+          },
         };
 
         const s = scenarios[scenario];
@@ -1192,10 +1332,12 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
               0,
             ),
             assignedResources: [],
-            timeline: [{
-              time: now(),
-              event: `SCENARIO: ${inc.description}`,
-            }],
+            timeline: [
+              {
+                time: now(),
+                event: `SCENARIO: ${inc.description}`,
+              },
+            ],
             notes: [],
             createdAt: now(),
             updatedAt: now(),
@@ -1216,8 +1358,7 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
           narrative: s.narrative,
           incidentsCreated: created,
           systemAlertLevel: state.alertLevel,
-          message:
-            `SCENARIO ACTIVE: ${s.narrative}. ${created.length} incidents created. Awaiting dispatch orders.`,
+          message: `SCENARIO ACTIVE: ${s.narrative}. ${created.length} incidents created. Awaiting dispatch orders.`,
         };
       },
     }),

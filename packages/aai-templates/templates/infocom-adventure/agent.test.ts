@@ -1,5 +1,5 @@
-import { describe, expect, test } from "vitest";
 import { createTestHarness } from "@alexkroman1/aai/testing";
+import { describe, expect, test } from "vitest";
 import "@alexkroman1/aai/testing/matchers";
 import agent from "./agent.ts";
 
@@ -20,9 +20,7 @@ describe("Infocom Adventure", () => {
 
   test("game_state_get returns initial state", async () => {
     const t = createTestHarness(agent);
-    const turn = await t.turn("look around", [
-      { tool: "game_state_get", args: {} },
-    ]);
+    const turn = await t.turn("look around", [{ tool: "game_state_get", args: {} }]);
     expect(turn).toHaveCalledTool("game_state_get");
     const state = turn.toolResult("game_state_get");
     expect(state.inventory).toEqual([]);
@@ -58,9 +56,7 @@ describe("Infocom Adventure", () => {
 
   test("score points", async () => {
     const t = createTestHarness(agent);
-    const turn = await t.turn("solve puzzle", [
-      { tool: "game_state_score", args: { value: 10 } },
-    ]);
+    const turn = await t.turn("solve puzzle", [{ tool: "game_state_score", args: { value: 10 } }]);
     const result = turn.toolResult("game_state_score");
     expect(result.score).toBe(10);
   });

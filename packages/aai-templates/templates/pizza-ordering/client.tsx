@@ -1,6 +1,14 @@
 import "@alexkroman1/aai-ui/styles.css";
+import {
+  Button,
+  ChatView,
+  defineClient,
+  SidebarLayout,
+  StartScreen,
+  useSession,
+  useToolResult,
+} from "@alexkroman1/aai-ui";
 import { useState } from "preact/hooks";
-import { ChatView, SidebarLayout, StartScreen, defineClient, useSession, useToolResult } from "@alexkroman1/aai-ui";
 import { type Pizza, type PizzaToolResults, pizzaPrice } from "./shared.ts";
 
 interface OrderInfo {
@@ -14,12 +22,7 @@ interface OrderInfo {
 function PizzaIcon({ size }: { size: string }) {
   const dim = size === "small" ? 36 : size === "large" ? 52 : 44;
   return (
-    <svg
-      width={dim}
-      height={dim}
-      viewBox="0 0 100 100"
-      class="shrink-0"
-    >
+    <svg width={dim} height={dim} viewBox="0 0 100 100" class="shrink-0">
       <circle cx="50" cy="50" r="48" fill="#F4C542" stroke="#D4A017" stroke-width="3" />
       <circle cx="50" cy="50" r="42" fill="#E8A025" />
       <circle cx="35" cy="35" r="7" fill="#C0392B" opacity="0.9" />
@@ -39,16 +42,10 @@ function OrderPanel({ order }: { order: OrderInfo }) {
       <div class="flex flex-col items-center gap-4 p-6 text-center">
         <div class="text-5xl">&#10003;</div>
         <h2 class="text-lg font-bold text-aai-text">Order Placed</h2>
-        {order.orderNumber && (
-          <p class="text-aai-text opacity-70">
-            Order #{order.orderNumber}
-          </p>
-        )}
+        {order.orderNumber && <p class="text-aai-text opacity-70">Order #{order.orderNumber}</p>}
         <p class="text-aai-primary font-bold text-xl">{order.total}</p>
         {order.estimatedMinutes && (
-          <p class="text-aai-text opacity-60 text-sm">
-            Ready in ~{order.estimatedMinutes} minutes
-          </p>
+          <p class="text-aai-text opacity-60 text-sm">Ready in ~{order.estimatedMinutes} minutes</p>
         )}
       </div>
     );
@@ -58,29 +55,21 @@ function OrderPanel({ order }: { order: OrderInfo }) {
     return (
       <div class="flex flex-col items-center gap-3 p-6 text-center opacity-50">
         <PizzaIcon size="large" />
-        <p class="text-aai-text text-sm">
-          Your order is empty. Tell me what you'd like.
-        </p>
+        <p class="text-aai-text text-sm">Your order is empty. Tell me what you'd like.</p>
       </div>
     );
   }
 
   return (
     <div class="flex flex-col gap-3 p-4">
-      <h3 class="text-sm font-bold text-aai-text opacity-60 uppercase tracking-wide">
-        Your Order
-      </h3>
+      <h3 class="text-sm font-bold text-aai-text opacity-60 uppercase tracking-wide">Your Order</h3>
       {order.pizzas.map((p) => (
-        <div
-          key={p.id}
-          class="flex items-center gap-3 p-3 rounded-lg bg-aai-surface"
-        >
+        <div key={p.id} class="flex items-center gap-3 p-3 rounded-lg bg-aai-surface">
           <PizzaIcon size={p.size} />
           <div class="flex-1 min-w-0">
             <p class="text-aai-text text-sm font-medium">
               {p.quantity > 1 ? `${p.quantity}x ` : ""}
-              {p.size.charAt(0).toUpperCase() + p.size.slice(1)}{" "}
-              {p.crust} crust
+              {p.size.charAt(0).toUpperCase() + p.size.slice(1)} {p.crust} crust
             </p>
             <p class="text-aai-text opacity-60 text-xs truncate">
               {p.toppings.length > 0
@@ -133,9 +122,7 @@ function PizzaAgent() {
     if (result.updated) {
       setOrder((prev) => ({
         ...prev,
-        pizzas: prev.pizzas.map((p) =>
-          p.id === result.updated.id ? result.updated : p,
-        ),
+        pizzas: prev.pizzas.map((p) => (p.id === result.updated.id ? result.updated : p)),
         total: result.orderTotal,
       }));
     }
@@ -172,14 +159,15 @@ function PizzaAgent() {
         <OrderPanel order={order} />
       </div>
       <div class="p-3 flex gap-2 border-t border-aai-border">
-        <button
-          class={`flex-1 py-2 rounded-lg text-sm border-none cursor-pointer text-white ${running.value ? "bg-aai-error" : "bg-aai-primary"}`}
+        <Button
+          variant={running.value ? "default" : "secondary"}
+          className="flex-1"
           onClick={toggle}
         >
           {running.value ? "Pause" : "Resume"}
-        </button>
-        <button
-          class="py-2 px-4 rounded-lg text-sm cursor-pointer text-aai-text bg-aai-surface border border-aai-border"
+        </Button>
+        <Button
+          variant="ghost"
           onClick={() => {
             reset();
             setOrder({
@@ -190,13 +178,18 @@ function PizzaAgent() {
           }}
         >
           New Order
-        </button>
+        </Button>
       </div>
     </>
   );
 
   return (
-    <StartScreen icon={<PizzaIcon size="large" />} title="Pizza Palace" subtitle="Voice-powered pizza ordering" buttonText="Start Ordering">
+    <StartScreen
+      icon={<PizzaIcon size="large" />}
+      title="Pizza Palace"
+      subtitle="Voice-powered pizza ordering"
+      buttonText="Start Ordering"
+    >
       <SidebarLayout sidebar={sidebar}>
         <ChatView />
       </SidebarLayout>

@@ -1,5 +1,5 @@
-import { describe, expect, test } from "vitest";
 import { createTestHarness } from "@alexkroman1/aai/testing";
+import { describe, expect, test } from "vitest";
 import "@alexkroman1/aai/testing/matchers";
 import agent from "./agent.ts";
 
@@ -27,9 +27,7 @@ describe("FAQ Bot (Embedded Assets)", () => {
   test("search_knowledge finds matching FAQ", async () => {
     const t = createTestHarness(agent);
     // First find out what topics exist
-    const listTurn = await t.turn("List topics", [
-      { tool: "list_topics", args: {} },
-    ]);
+    const listTurn = await t.turn("List topics", [{ tool: "list_topics", args: {} }]);
     const topics = listTurn.toolResult<string[]>("list_topics");
     const firstTopic = topics[0]!;
 

@@ -1,5 +1,5 @@
-import { defineAgent, defineTool } from "@alexkroman1/aai";
 import type { ToolContext } from "@alexkroman1/aai";
+import { defineAgent, defineTool } from "@alexkroman1/aai";
 import { z } from "zod";
 
 type GameState = {
@@ -29,8 +29,7 @@ export default defineAgent({
     history: [],
   }),
 
-  systemPrompt:
-    `You are a classic Infocom-style text adventure game engine, simulating ZORK I: The Great Underground Empire.
+  systemPrompt: `You are a classic Infocom-style text adventure game engine, simulating ZORK I: The Great Underground Empire.
 
 You ARE the game. You maintain the world state, describe rooms, handle puzzles, manage inventory, track score, and respond to player commands — all faithfully recreating the Zork experience.
 
@@ -90,8 +89,7 @@ ATMOSPHERE:
       },
     },
     game_state_move: defineTool({
-      description:
-        "Move the player to a new room and increment the move counter.",
+      description: "Move the player to a new room and increment the move counter.",
       parameters: z.object({
         value: z.string().describe("Room name to move to"),
       }),
@@ -136,8 +134,7 @@ ATMOSPHERE:
       },
     }),
     game_state_flag: defineTool({
-      description:
-        "Set a game flag to true, used for tracking puzzle and event state.",
+      description: "Set a game flag to true, used for tracking puzzle and event state.",
       parameters: z.object({
         value: z.string().describe("Flag name to set"),
       }),
@@ -148,8 +145,7 @@ ATMOSPHERE:
       },
     }),
     game_state_history: defineTool({
-      description:
-        "Log a player command to the history and increment the move counter.",
+      description: "Log a player command to the history and increment the move counter.",
       parameters: z.object({
         value: z.string().describe("Command text to log"),
       }),

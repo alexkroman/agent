@@ -5,13 +5,13 @@
  * Usage: node --experimental-strip-types scripts/check-typecheck.ts
  */
 import { createRequire } from "node:module";
+import { createTypeScriptTools } from "@secure-exec/typescript";
 import {
-  NodeFileSystem,
   allowAllFs,
   createNodeDriver,
   createNodeRuntimeDriverFactory,
+  NodeFileSystem,
 } from "secure-exec";
-import { createTypeScriptTools } from "@secure-exec/typescript";
 
 const require = createRequire(import.meta.url);
 const compilerSpecifier = require.resolve("typescript/lib/typescript.js");

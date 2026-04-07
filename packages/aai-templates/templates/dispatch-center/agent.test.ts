@@ -1,5 +1,5 @@
-import { describe, expect, test } from "vitest";
 import { createTestHarness } from "@alexkroman1/aai/testing";
+import { describe, expect, test } from "vitest";
 import "@alexkroman1/aai/testing/matchers";
 import agent from "./agent.ts";
 
@@ -37,9 +37,7 @@ describe("Dispatch Command Center", () => {
 
   test("ops_dashboard returns current status", async () => {
     const t = createTestHarness(agent);
-    const turn = await t.turn("Show me the dashboard", [
-      { tool: "ops_dashboard", args: {} },
-    ]);
+    const turn = await t.turn("Show me the dashboard", [{ tool: "ops_dashboard", args: {} }]);
     expect(turn).toHaveCalledTool("ops_dashboard");
     const dashboard = turn.toolResult("ops_dashboard");
     expect(dashboard).toHaveProperty("systemAlertLevel");
