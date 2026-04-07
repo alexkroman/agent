@@ -9,7 +9,7 @@ describe("Pizza Palace", () => {
   });
 
   test("has all pizza tools", () => {
-    expect(Object.keys(agent.tools ?? {})).toEqual(
+    expect(Object.keys(agent.tools!)).toEqual(
       expect.arrayContaining([
         "add_pizza",
         "remove_pizza",

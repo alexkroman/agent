@@ -9,7 +9,7 @@ describe("Infocom Adventure", () => {
   });
 
   test("has game state tools", () => {
-    expect(Object.keys(agent.tools ?? {})).toEqual(
+    expect(Object.keys(agent.tools!)).toEqual(
       expect.arrayContaining([
         "game_state_get",
         "game_state_move",

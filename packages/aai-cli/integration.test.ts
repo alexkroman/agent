@@ -47,12 +47,13 @@ async function withProjectDir(fn: (dir: string) => Promise<void>): Promise<void>
   });
 }
 
-async function withCapturedLogs<T>(fn: (logs: string[]) => Promise<T>): Promise<T> {
-  const logs: string[] = [];
+async function withCapturedLogs<T>(fn: () => Promise<T>): Promise<T> {
   const origLog = console.log;
-  console.log = (...args: unknown[]) => logs.push(args.join(" "));
+  console.log = () => {
+    /* suppress output */
+  };
   try {
-    return await fn(logs);
+    return await fn();
   } finally {
     console.log = origLog;
   }

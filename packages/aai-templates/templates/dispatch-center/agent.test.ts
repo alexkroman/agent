@@ -9,7 +9,7 @@ describe("Dispatch Command Center", () => {
   });
 
   test("has dispatch tools", () => {
-    expect(Object.keys(agent.tools ?? {})).toEqual(
+    expect(Object.keys(agent.tools!)).toEqual(
       expect.arrayContaining([
         "incident_create",
         "incident_triage",

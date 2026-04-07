@@ -13,7 +13,7 @@ describe("Smart Research Agent", () => {
   });
 
   test("has research-phase tools", () => {
-    expect(Object.keys(agent.tools ?? {})).toEqual(
+    expect(Object.keys(agent.tools!)).toEqual(
       expect.arrayContaining([
         "save_source",
         "mark_complex",

@@ -13,7 +13,7 @@ describe("Solo RPG", () => {
   });
 
   test("has rpg tools", () => {
-    expect(Object.keys(agent.tools ?? {})).toEqual(
+    expect(Object.keys(agent.tools!)).toEqual(
       expect.arrayContaining([
         "check_state",
         "setup_character",
