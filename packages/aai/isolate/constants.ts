@@ -60,6 +60,9 @@ export const DEFAULT_MAX_HISTORY = 200;
 /** Maximum WebSocket message payload size (bytes, 1 MiB). */
 export const MAX_WS_PAYLOAD_BYTES = 1 * 1024 * 1024;
 
+/** Maximum messages buffered while session.start() is pending. */
+export const MAX_MESSAGE_BUFFER_SIZE = 100;
+
 // ─── Security ───────────────────────────────────────────────────────────
 
 /**

@@ -7,7 +7,7 @@
 
 import pTimeout from "p-timeout";
 import { errorDetail, errorMessage } from "../isolate/_utils.ts";
-import { DEFAULT_SESSION_START_TIMEOUT_MS } from "../isolate/constants.ts";
+import { DEFAULT_SESSION_START_TIMEOUT_MS, MAX_MESSAGE_BUFFER_SIZE } from "../isolate/constants.ts";
 import type { ClientMessage, ClientSink, ReadyConfig } from "../isolate/protocol.ts";
 import { ClientMessageSchema, lenientParse } from "../isolate/protocol.ts";
 import type { Logger } from "./runtime.ts";
@@ -215,7 +215,9 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
     // Buffer messages until session.start() completes to avoid dispatching
     // to a session whose S2S connection isn't established yet.
     if (!sessionReady) {
-      messageBuffer?.push(event);
+      if (messageBuffer && messageBuffer.length < MAX_MESSAGE_BUFFER_SIZE) {
+        messageBuffer.push(event);
+      }
       return;
     }
     const { data } = event;
