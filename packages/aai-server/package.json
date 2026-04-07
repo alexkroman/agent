@@ -17,7 +17,8 @@
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "check:integration": "pnpm run test:integration",
     "test:docker": "vitest run --config vitest.docker.config.ts",
-    "test:chaos": "vitest run --config chaos/vitest.chaos.config.ts"
+    "test:chaos": "vitest run --config chaos/vitest.chaos.config.ts",
+    "check:chaos": "pnpm run test:chaos"
   },
   "dependencies": {
     "@alexkroman1/aai": "workspace:*",
