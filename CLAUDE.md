@@ -370,8 +370,6 @@ a denylist.
 
 ### Known limitations
 
-- **E2E tests**: Playwright/Chromium may not be installed in all environments.
-  The `aai-cli` e2e test (`test:e2e`) may fail locally. CI handles this.
 - **Type-level tests**: Cover public entry points of `aai` (`.`, `./types`,
   `./server`) and `aai-ui` (`./session`). Subpath exports (e.g. `./kv`,
   `./protocol`) are not covered by type tests.
