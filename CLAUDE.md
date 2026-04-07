@@ -289,6 +289,15 @@ bumped automatically.
   with main, **verifies changeset exists for changed packages**, and runs
   `pnpm check`.
 
+### Worktree gotchas
+
+- Run `unset GIT_DIR` before `pnpm changeset status` in worktrees
+  (lefthook sets GIT_DIR which confuses changeset's repo detection).
+- Always use `pnpm install --frozen-lockfile` in worktrees to avoid
+  modifying the lockfile. Fall back to `pnpm install` only if frozen
+  fails (new deps added on the branch).
+- Never edit `pnpm-lock.yaml` directly — always use `pnpm install`.
+
 ### Updating CLAUDE.md
 
 When you make changes that affect architecture, security model, conventions,
