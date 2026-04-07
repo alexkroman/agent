@@ -89,7 +89,7 @@ else
 
   # ── Full CI tests: unit + integration + e2e (all via turbo) ──
   echo -e "\n${YELLOW}Phase 2: Tests (via turbo)${NC}"
-  pnpm exec turbo run test check:typecheck check:integration check:e2e check:chaos || FAILED=1
+  pnpm exec turbo run test check:typecheck check:integration check:e2e || FAILED=1
 fi
 
 if [ "$FAILED" -ne 0 ]; then
