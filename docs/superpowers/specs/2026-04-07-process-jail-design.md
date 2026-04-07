@@ -56,22 +56,40 @@ Host Node.js process
 
 ### Integration point
 
-`createV8Runtime()` accepts a `binaryPath` option but hardcodes an empty args
-array (`spawn(binaryPath, [])`). We cannot pass nsjail arguments through
-`binaryPath` alone. The solution is a **wrapper shell script**:
+`createV8Runtime()` accepts a `binaryPath` option, but the `NodeRuntime` →
+`createNodeRuntimeDriverFactory` → `getSharedV8Runtime()` chain does not
+expose it. The upstream `v8Runtime` option (pass-your-own process handle) is
+specced but not yet implemented in v0.2.1.
 
-1. `createJailedLauncher()` writes a temporary shell script:
+**Solution: `pnpm patch` on `@secure-exec/v8`** — add a one-line env var
+check to `resolveBinaryPath()`:
+
+```js
+// At the top of resolveBinaryPath():
+if (process.env.SECURE_EXEC_V8_WRAPPER) return process.env.SECURE_EXEC_V8_WRAPPER;
+```
+
+Then `process-jail.ts`:
+
+1. Writes a temporary wrapper shell script:
    ```sh
    #!/bin/sh
    exec nsjail --config /tmp/<sandbox-id>/jail.cfg -- /path/to/real-binary
    ```
-2. The nsjail config file (`jail.cfg`) is also written to the temp directory.
-3. `binaryPath` is set to this wrapper script.
-4. secure-exec spawns the script, which `exec`s nsjail, which `exec`s the
-   Rust binary inside the jail.
-5. Cleanup: the wrapper script and config file are removed on sandbox shutdown.
+2. Writes the nsjail config file (`jail.cfg`) to the same temp directory.
+3. Sets `process.env.SECURE_EXEC_V8_WRAPPER` to the wrapper script path.
+4. secure-exec's patched `resolveBinaryPath()` picks up the wrapper.
+5. The wrapper `exec`s nsjail, which `exec`s the Rust binary inside the jail.
+6. Cleanup: the wrapper script and config file are removed on sandbox shutdown.
 
-On macOS, the original binary path passes through unchanged.
+On macOS, no env var is set; secure-exec resolves the binary normally.
+
+**Upstream migration path:** When secure-exec ships the `v8Runtime` option on
+`createNodeRuntimeDriverFactory`, remove the patch and use the clean API:
+```ts
+const jailed = await createV8Runtime({ binaryPath: wrapperScript });
+createNodeRuntimeDriverFactory({ v8Runtime: jailed });
+```
 
 ## Restriction Layers
 
