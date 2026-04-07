@@ -234,37 +234,37 @@ function resolveBuiltin(name: string, opts?: BuiltinToolOptions): [string, ToolD
   }
 }
 
+/** Resolved builtins with defs, schemas, and guidance computed in a single pass. */
+export type ResolvedBuiltins = {
+  defs: ToolDefRecord;
+  schemas: ToolSchema[];
+  guidance: string[];
+};
+
 /**
- * Create built-in tool definitions for the given tool names.
- * For runtime use.
+ * Resolve all builtin tools in one pass, returning defs, schemas, and guidance.
+ * Avoids redundant calls to `resolveBuiltin` and `z.toJSONSchema`.
  */
-export function getBuiltinToolDefs(
+export function resolveAllBuiltins(
   names: readonly string[],
   opts?: BuiltinToolOptions,
-): ToolDefRecord {
+): ResolvedBuiltins {
   const defs: ToolDefRecord = {};
+  const schemas: ToolSchema[] = [];
+  const guidance: string[] = [];
+
   for (const name of names) {
-    for (const [k, v] of resolveBuiltin(name, opts)) defs[k] = v;
+    for (const [toolName, def] of resolveBuiltin(name, opts)) {
+      defs[toolName] = def;
+      schemas.push({
+        name: toolName,
+        description: def.description,
+        parameters: z.toJSONSchema(def.parameters ?? EMPTY_PARAMS) as ToolSchema["parameters"],
+      });
+      const g = (def as { guidance?: string }).guidance;
+      if (g) guidance.push(g);
+    }
   }
-  return defs;
-}
 
-/** Returns system prompt guidance strings for the specified builtin tools. */
-export function getBuiltinToolGuidance(names: readonly string[]): string[] {
-  return names.flatMap((name) =>
-    resolveBuiltin(name)
-      .map(([, def]) => (def as { guidance?: string }).guidance)
-      .filter((g): g is string => Boolean(g)),
-  );
-}
-
-/** Returns JSON tool schemas for the specified builtin tools. */
-export function getBuiltinToolSchemas(names: readonly string[]): ToolSchema[] {
-  return names.flatMap((name) =>
-    resolveBuiltin(name).map(([toolName, def]) => ({
-      name: toolName,
-      description: def.description,
-      parameters: z.toJSONSchema(def.parameters ?? EMPTY_PARAMS) as ToolSchema["parameters"],
-    })),
-  );
+  return { defs, schemas, guidance };
 }

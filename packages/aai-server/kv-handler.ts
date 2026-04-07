@@ -2,11 +2,12 @@
 
 import { createUnstorageKv, errorMessage } from "@alexkroman1/aai/host";
 import type { KvRequest } from "@alexkroman1/aai/protocol";
+import { agentKvPrefix } from "./constants.ts";
 import type { ValidatedAppContext } from "./context.ts";
 
 export async function handleKv(c: ValidatedAppContext<KvRequest>): Promise<Response> {
   const slug = c.var.slug;
-  const kv = createUnstorageKv({ storage: c.env.storage, prefix: `agents/${slug}/kv` });
+  const kv = createUnstorageKv({ storage: c.env.storage, prefix: agentKvPrefix(slug) });
 
   const msg = c.req.valid("json");
 

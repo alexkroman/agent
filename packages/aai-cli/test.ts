@@ -15,13 +15,11 @@ import { log } from "./_ui.ts";
  * Throws on test failure.
  */
 export function runVitest(cwd: string): boolean {
-  // Check for any test files
-  const hasTests =
-    existsSync(path.join(cwd, "agent.test.ts")) || existsSync(path.join(cwd, "agent.test.js"));
+  let testFile: string | null = null;
+  if (existsSync(path.join(cwd, "agent.test.ts"))) testFile = "agent.test.ts";
+  else if (existsSync(path.join(cwd, "agent.test.js"))) testFile = "agent.test.js";
 
-  if (!hasTests) return false;
-
-  const testFile = existsSync(path.join(cwd, "agent.test.ts")) ? "agent.test.ts" : "agent.test.js";
+  if (!testFile) return false;
 
   execFileSync("npx", ["vitest", "run", "--root", ".", testFile], {
     cwd,

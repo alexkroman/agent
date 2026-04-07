@@ -8,12 +8,7 @@
  */
 
 import { type AgentDef, defineAgent, defineTool } from "@alexkroman1/aai";
-import {
-  agentToolsToSchemas,
-  getBuiltinToolGuidance,
-  getBuiltinToolSchemas,
-  toAgentConfig,
-} from "@alexkroman1/aai/host";
+import { agentToolsToSchemas, resolveAllBuiltins, toAgentConfig } from "@alexkroman1/aai/host";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import { createTestOrchestrator } from "./test-utils.ts";
@@ -115,7 +110,7 @@ describe("cross-package smoke: SDK → server deploy", () => {
 
   test("builtin tool schemas are resolved for sandbox mode", () => {
     const builtinNames = ["web_search", "visit_webpage", "fetch_json", "run_code"] as const;
-    const schemas = getBuiltinToolSchemas(builtinNames);
+    const { schemas } = resolveAllBuiltins(builtinNames);
 
     expect(schemas).toHaveLength(4);
     expect(schemas.map((s) => s.name).sort()).toEqual([
@@ -134,7 +129,7 @@ describe("cross-package smoke: SDK → server deploy", () => {
   });
 
   test("builtin tool guidance is generated for system prompt", () => {
-    const guidance = getBuiltinToolGuidance(["run_code", "web_search"]);
+    const { guidance } = resolveAllBuiltins(["run_code", "web_search"]);
 
     expect(guidance.length).toBe(2);
     // run_code guidance must tell the LLM to use the tool, not answer verbally

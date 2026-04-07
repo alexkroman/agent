@@ -121,7 +121,7 @@ export function buildCtx(opts: {
     pushMessages(...msgs: Message[]) {
       ctx.conversationMessages.push(...msgs);
       if (maxHistory > 0 && ctx.conversationMessages.length > maxHistory) {
-        ctx.conversationMessages = ctx.conversationMessages.slice(-maxHistory);
+        ctx.conversationMessages.splice(0, ctx.conversationMessages.length - maxHistory);
       }
     },
     beginReply(replyId: string) {

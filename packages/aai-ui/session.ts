@@ -31,7 +31,7 @@ export type {
 
 const WS_OPEN = 1;
 
-// ─── Audio initialization (extracted for function-length limit) ──────────────
+// ─── Audio initialization ────────────────────────────────────────────────────
 
 /**
  * Shared mutable connection state for audio initialization.
@@ -264,7 +264,7 @@ export function createVoiceSession(options: VoiceSessionOptions): VoiceSession {
 
   const audioDeps = { send, sendBinary, state, error, batch };
 
-  // ─── Inlined message handling (formerly ClientHandler) ──────────────────────
+  // ─── Message handling ───────────────────────────────────────────────────────
 
   /** Incremented on each turn boundary — stale async callbacks compare against this. */
   let handlerGeneration = 0;

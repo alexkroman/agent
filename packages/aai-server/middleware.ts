@@ -4,10 +4,9 @@ import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
 import { hashApiKey, verifySlugOwner } from "./auth.ts";
 import type { Env } from "./context.ts";
+import { VALID_SLUG_RE } from "./schemas.ts";
 import { isPrivateIp } from "./ssrf.ts";
 import type { BundleStore } from "./store-types.ts";
-
-const VALID_SLUG_REGEXP = /^[a-z0-9][a-z0-9_-]{0,62}[a-z0-9]$/;
 
 function bearerToken(req: Request): string | null {
   const header = req.headers.get("Authorization");
@@ -16,7 +15,7 @@ function bearerToken(req: Request): string | null {
 }
 
 export function validateSlug(slug: string): string {
-  if (!VALID_SLUG_REGEXP.test(slug)) {
+  if (!VALID_SLUG_RE.test(slug)) {
     throw new HTTPException(400, { message: "Invalid slug" });
   }
   return slug;
