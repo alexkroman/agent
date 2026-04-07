@@ -243,6 +243,20 @@ describe("SSRF: redirect chain validation", () => {
   });
 });
 
+// ── Hostname-Based Blocking ────────────────────────────────────────────
+
+describe("hostname-based blocking", () => {
+  test.each([
+    "http://metadata.google.internal/computeMetadata/v1/",
+    "http://instance-data.ec2.internal/latest/meta-data/",
+    "http://evil.internal/",
+    "http://evil.local/",
+    "http://evil.localhost/",
+  ])("blocks reserved hostname: %s", async (url) => {
+    await expect(assertPublicUrl(url)).rejects.toThrow(/Blocked request.*reserved hostname/);
+  });
+});
+
 // ── Private IP Detection Completeness ──────────────────────────────────
 
 describe("isPrivateIp: comprehensive private range coverage", () => {

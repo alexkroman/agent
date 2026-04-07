@@ -10,6 +10,9 @@ import { lookup } from "node:dns/promises";
 import bogon from "bogon";
 import pTimeout from "p-timeout";
 
+const BLOCKED_TLDS = [".internal", ".local", ".localhost"];
+const BLOCKED_HOSTS = new Set(["metadata.google.internal", "instance-data.ec2.internal"]);
+
 export function isPrivateIp(ip: string): boolean {
   return bogon(ip);
 }
@@ -39,6 +42,9 @@ export async function assertPublicUrl(url: string): Promise<void> {
 
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
     throw new Error(`Blocked request with disallowed protocol: ${parsed.protocol}`);
+  }
+  if (BLOCKED_HOSTS.has(hostname) || BLOCKED_TLDS.some((tld) => hostname.endsWith(tld))) {
+    throw new Error(`Blocked request to reserved hostname: ${hostname}`);
   }
   if (isPrivateIp(hostname)) {
     throw new Error(`Blocked request to private address: ${hostname}`);
