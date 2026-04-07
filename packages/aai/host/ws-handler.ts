@@ -9,7 +9,7 @@ import pTimeout from "p-timeout";
 import { errorDetail, errorMessage } from "../isolate/_utils.ts";
 import { DEFAULT_SESSION_START_TIMEOUT_MS } from "../isolate/constants.ts";
 import type { ClientMessage, ClientSink, ReadyConfig } from "../isolate/protocol.ts";
-import { ClientMessageSchema } from "../isolate/protocol.ts";
+import { ClientMessageSchema, lenientParse } from "../isolate/protocol.ts";
 import type { Logger } from "./runtime.ts";
 import { consoleLogger } from "./runtime.ts";
 import type { Session } from "./session.ts";
@@ -113,9 +113,9 @@ function handleTextMessage(
     return;
   }
 
-  const parsed = ClientMessageSchema.safeParse(json);
-  if (!parsed.success) {
-    log.warn("Invalid client message", { ...ctx, sid, error: parsed.error.message });
+  const parsed = lenientParse(ClientMessageSchema, json);
+  if (!parsed.ok) {
+    if (parsed.malformed) log.warn("Invalid client message", { ...ctx, sid, error: parsed.error });
     return;
   }
 

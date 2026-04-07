@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import type { ReadyConfig, ServerMessage } from "@alexkroman1/aai/protocol";
-import { ReadyConfigSchema, ServerMessageSchema } from "@alexkroman1/aai/protocol";
+import { lenientParse, ReadyConfigSchema, ServerMessageSchema } from "@alexkroman1/aai/protocol";
 import type { VoiceIO } from "./audio.ts";
 import type { AgentState, ChatMessage, Reactive, SessionError, ToolCallInfo } from "./types.ts";
 
@@ -190,15 +190,16 @@ export class ClientHandler {
       return null;
     }
 
-    // Text frame → JSON message
+    // Two-phase parse: unknown event types are silently ignored during
+    // rolling upgrades; only genuinely malformed messages produce a warning.
     let msg: ServerMessage;
     try {
-      const parsed = ServerMessageSchema.safeParse(JSON.parse(data));
-      if (!parsed.success) {
-        console.warn("Ignoring invalid server message:", parsed.error.message);
+      const result = lenientParse(ServerMessageSchema, JSON.parse(data));
+      if (!result.ok) {
+        if (result.malformed) console.warn("Ignoring invalid server message:", result.error);
         return null;
       }
-      msg = parsed.data;
+      msg = result.data;
     } catch {
       return null;
     }

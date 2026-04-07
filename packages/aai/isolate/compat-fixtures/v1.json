@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "created": "2026-04-07",
+  "description": "Initial baseline: all WebSocket message types and KV operations",
+  "ServerMessage": [
+    { "type": "config", "audioFormat": "pcm16", "sampleRate": 16000, "ttsSampleRate": 24000 },
+    {
+      "type": "config",
+      "audioFormat": "pcm16",
+      "sampleRate": 16000,
+      "ttsSampleRate": 24000,
+      "sessionId": "sess_abc"
+    },
+    { "type": "audio_done" },
+    { "type": "speech_started" },
+    { "type": "speech_stopped" },
+    { "type": "user_transcript_delta", "text": "hello", "isFinal": true },
+    { "type": "user_transcript_delta", "text": "hel", "isFinal": false, "turnOrder": 0 },
+    { "type": "user_transcript", "text": "hello world" },
+    { "type": "user_transcript", "text": "hello", "turnOrder": 1 },
+    { "type": "agent_transcript", "text": "response" },
+    { "type": "agent_transcript_delta", "text": "resp" },
+    {
+      "type": "tool_call",
+      "toolCallId": "tc1",
+      "toolName": "web_search",
+      "args": { "query": "weather" }
+    },
+    { "type": "tool_call_done", "toolCallId": "tc1", "result": "72F" },
+    { "type": "reply_done" },
+    { "type": "cancelled" },
+    { "type": "reset" },
+    { "type": "idle_timeout" },
+    { "type": "error", "code": "stt", "message": "Speech recognition failed" },
+    { "type": "error", "code": "internal", "message": "something went wrong" }
+  ],
+  "ClientMessage": [
+    { "type": "audio_ready" },
+    { "type": "cancel" },
+    { "type": "reset" },
+    {
+      "type": "history",
+      "messages": [{ "role": "user", "content": "Hello" }, { "role": "assistant", "content": "Hi" }]
+    },
+    { "type": "history", "messages": [] }
+  ],
+  "KvRequest": [
+    { "op": "get", "key": "k1" },
+    { "op": "set", "key": "k1", "value": "v1" },
+    { "op": "set", "key": "k1", "value": "v1", "expireIn": 60000 },
+    { "op": "del", "key": "k1" },
+    { "op": "list", "prefix": "user:" },
+    { "op": "list", "prefix": "", "limit": 10, "reverse": true },
+    { "op": "keys" },
+    { "op": "keys", "pattern": "user:*" }
+  ],
+  "constants": {
+    "AUDIO_FORMAT": "pcm16",
+    "DEFAULT_STT_SAMPLE_RATE": 16000,
+    "DEFAULT_TTS_SAMPLE_RATE": 24000,
+    "MAX_TOOL_RESULT_CHARS": 4000,
+    "SessionErrorCodes": [
+      "stt",
+      "llm",
+      "tts",
+      "tool",
+      "protocol",
+      "connection",
+      "audio",
+      "internal"
+    ]
+  }
+}
