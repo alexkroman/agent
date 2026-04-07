@@ -1,28 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import * as p from "@clack/prompts";
 import { colorize } from "consola/utils";
 
-/**
- * Unified CLI output using @clack/prompts style (◐ ◇ │).
- *
- * All commands should use these helpers instead of consola directly
- * so the output is visually consistent.
- */
-export const log = {
-  /** Step starting (spinner-like prefix). */
-  step: (msg: string) => p.log.step(msg),
-  /** Success (checkmark). */
-  success: (msg: string) => p.log.success(msg),
-  /** Info (dimmed). */
-  info: (msg: string) => p.log.info(msg),
-  /** Warning. */
-  warn: (msg: string) => p.log.warn(msg),
-  /** Error. */
-  error: (msg: string) => p.log.error(msg),
-  /** Plain message. */
-  message: (msg: string) => p.log.message(msg),
-};
+export { log } from "@clack/prompts";
 
 /** Format a URL for display. */
 export function fmtUrl(url: string): string {

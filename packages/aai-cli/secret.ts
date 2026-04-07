@@ -2,7 +2,7 @@
 
 import * as p from "@clack/prompts";
 import { getServerInfo } from "./_agent.ts";
-import { apiError, apiRequest, HINT_INVALID_API_KEY } from "./_api-client.ts";
+import { apiRequestOrThrow } from "./_api-client.ts";
 import { log } from "./_ui.ts";
 
 async function secretRequest(
@@ -12,16 +12,11 @@ async function secretRequest(
   server?: string,
 ): Promise<{ resp: Response; slug: string }> {
   const { serverUrl, slug, apiKey } = await getServerInfo(cwd, server);
-  const resp = await apiRequest(`${serverUrl}/${slug}/secret${pathSuffix}`, {
+  const resp = await apiRequestOrThrow(`${serverUrl}/${slug}/secret${pathSuffix}`, {
     ...init,
     apiKey,
     action: "secret",
   });
-  if (!resp.ok) {
-    const text = await resp.text();
-    const hint = resp.status === 401 ? HINT_INVALID_API_KEY : undefined;
-    throw apiError("secret", resp.status, text, hint);
-  }
   return { resp, slug };
 }
 
