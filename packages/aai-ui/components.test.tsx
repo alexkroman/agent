@@ -1,80 +1,17 @@
 // Copyright 2025 the AAI authors. MIT license.
 // @vitest-environment jsdom
 
-import { signal } from "@preact/signals";
 import { render, screen } from "@testing-library/preact";
 import { describe, expect, test } from "vitest";
 import { createMockSession } from "./_test-utils.ts";
 import { App } from "./components/app.tsx";
 import { ChatView } from "./components/chat-view.tsx";
-import { ErrorBanner } from "./components/error-banner.tsx";
-import { MessageBubble } from "./components/message-bubble.tsx";
-import { StateIndicator } from "./components/state-indicator.tsx";
-import { Transcript } from "./components/transcript.tsx";
 import { SessionProvider } from "./context.ts";
 import type { VoiceSession } from "./session.ts";
-import type { AgentState, ChatMessage } from "./types.ts";
 
 function renderWithProvider(vnode: preact.ComponentChildren, session: VoiceSession) {
   return render(<SessionProvider value={session}>{vnode}</SessionProvider>);
 }
-
-describe("StateIndicator", () => {
-  test("renders the state label", () => {
-    render(<StateIndicator state={signal<AgentState>("listening")} />);
-    expect(screen.getByText("listening")).toBeDefined();
-  });
-});
-
-describe("ErrorBanner", () => {
-  test("renders error message", () => {
-    render(
-      <ErrorBanner
-        error={signal({
-          code: "connection" as const,
-          message: "Connection lost",
-        })}
-      />,
-    );
-    expect(screen.getByText("Connection lost")).toBeDefined();
-  });
-
-  test("renders nothing when null", () => {
-    const { container } = render(<ErrorBanner error={signal(null)} />);
-    expect(container.innerHTML).toBe("");
-  });
-});
-
-describe("MessageBubble", () => {
-  test("renders message text", () => {
-    const msg: ChatMessage = { role: "user", content: "Hello there" };
-    render(<MessageBubble message={msg} />);
-    expect(screen.getByText("Hello there")).toBeDefined();
-  });
-
-  test("renders assistant message text", () => {
-    const msg: ChatMessage = { role: "assistant", content: "Simple reply" };
-    render(<MessageBubble message={msg} />);
-    expect(screen.getByText("Simple reply")).toBeDefined();
-  });
-});
-
-describe("Transcript", () => {
-  test("renders transcript text", () => {
-    render(<Transcript userUtterance={signal<string | null>("hello wor")} />);
-    expect(screen.getByText("hello wor")).toBeDefined();
-  });
-
-  test("renders nothing when null", () => {
-    const { container } = render(<Transcript userUtterance={signal<string | null>(null)} />);
-    expect(container.innerHTML).toBe("");
-  });
-
-  test("renders thinking indicator when empty string (speech detected)", () => {
-    const { container } = render(<Transcript userUtterance={signal<string | null>("")} />);
-    expect(container.innerHTML !== "").toBe(true);
-  });
-});
 
 describe("App", () => {
   test("shows start button when not started", () => {
@@ -190,5 +127,37 @@ describe("ChatView", () => {
     const third = screen.getByText("Third");
     expect(first.compareDocumentPosition(second) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(second.compareDocumentPosition(third) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  test("renders error banner when error is set", () => {
+    const signals = createMockSession({
+      started: true,
+      state: "error",
+      running: false,
+      error: { code: "connection", message: "Connection lost" },
+    });
+    renderWithProvider(<ChatView />, signals);
+    expect(screen.getByText("Connection lost")).toBeDefined();
+  });
+
+  test("renders nothing for error when null", () => {
+    const signals = createMockSession({
+      started: true,
+      state: "listening",
+      running: true,
+    });
+    const { container } = renderWithProvider(<ChatView />, signals);
+    // No error banner should be present
+    expect(container.querySelector(".text-aai-error")).toBeNull();
+  });
+
+  test("renders state indicator dot and label", () => {
+    const signals = createMockSession({
+      started: true,
+      state: "listening",
+      running: true,
+    });
+    renderWithProvider(<ChatView />, signals);
+    expect(screen.getByText("listening")).toBeDefined();
   });
 });

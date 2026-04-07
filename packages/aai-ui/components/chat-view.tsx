@@ -2,16 +2,15 @@
 
 import clsx from "clsx";
 import type * as preact from "preact";
+import type { ComponentChildren } from "preact";
 import { useClientConfig, useSession } from "../context.ts";
 import { Controls } from "./controls.tsx";
-import { ErrorBanner } from "./error-banner.tsx";
 import { MessageList } from "./message-list.tsx";
-import { StateIndicator } from "./state-indicator.tsx";
 
 /**
  * The main chat interface for a voice agent session.
- * Displays a header (with title and {@link StateIndicator}), an
- * {@link ErrorBanner}, the {@link MessageList}, and session {@link Controls}.
+ * Displays a header (with optional icon, title, and state indicator), an
+ * inline error banner, the {@link MessageList}, and session {@link Controls}.
  *
  * Must be rendered inside a {@link SessionProvider}.
  *
@@ -29,11 +28,23 @@ import { StateIndicator } from "./state-indicator.tsx";
  * </SidebarLayout>
  * ```
  *
+ * @example Custom header icon
+ * ```tsx
+ * <ChatView icon={<img src="/logo.svg" />} />
+ * ```
+ *
+ * @param icon - Optional element rendered before the title in the header.
  * @param className - Additional CSS class names applied to the root element.
  *
  * @public
  */
-export function ChatView({ className }: { className?: string }): preact.JSX.Element {
+export function ChatView({
+  icon,
+  className,
+}: {
+  icon?: ComponentChildren;
+  className?: string;
+}): preact.JSX.Element {
   const session = useSession();
   const { title } = useClientConfig();
 
@@ -46,19 +57,34 @@ export function ChatView({ className }: { className?: string }): preact.JSX.Elem
     >
       {/* Header */}
       <div class="flex items-center gap-3 px-4 py-3 border-b border-aai-border shrink-0">
+        {icon}
         {title ? (
           <span class="text-sm font-semibold text-aai-primary">{title}</span>
         ) : (
-          <pre class="font-aai-mono text-[10px] leading-[1.1] font-bold text-aai-primary m-0">
-            {/* biome-ignore lint/style/useConsistentCurlyBraces: string contains escape sequence */}
-            {"▄▀█ ▄▀█ █\n█▀█ █▀█ █"}
-          </pre>
+          !icon && (
+            <pre class="font-aai-mono text-[10px] leading-[1.1] font-bold text-aai-primary m-0">
+              {/* biome-ignore lint/style/useConsistentCurlyBraces: string contains escape sequence */}
+              {"▄▀█ ▄▀█ █\n█▀█ █▀█ █"}
+            </pre>
+          )
         )}
+        {/* State indicator */}
         <div class="ml-auto">
-          <StateIndicator state={session.state} />
+          <div class="inline-flex items-center justify-center gap-1.5 text-[13px] font-medium leading-[130%] text-aai-text-muted capitalize">
+            <div
+              data-state={session.state.value}
+              class="w-2 h-2 rounded-full data-[state=disconnected]:bg-aai-state-disconnected data-[state=connecting]:bg-aai-state-connecting data-[state=ready]:bg-aai-state-ready data-[state=listening]:bg-aai-state-listening data-[state=thinking]:bg-aai-state-thinking data-[state=speaking]:bg-aai-state-speaking data-[state=error]:bg-aai-state-error"
+            />
+            {session.state.value}
+          </div>
         </div>
       </div>
-      <ErrorBanner error={session.error} />
+      {/* Error banner */}
+      {session.error.value && (
+        <div class="mx-4 mt-3 px-3 py-2 rounded-aai border border-aai-error/40 bg-aai-error/8 text-[13px] leading-[130%] text-aai-error">
+          {session.error.value.message}
+        </div>
+      )}
       <MessageList />
       <Controls />
     </div>
