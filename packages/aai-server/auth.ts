@@ -1,8 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { timingSafeEqual } from "node:crypto";
 import { LRUCache } from "lru-cache";
-import type { BundleStore } from "./bundle-store.ts";
 import { AUTH_HASH_CACHE_MAX } from "./constants.ts";
+import type { BundleStore } from "./store-types.ts";
 
 const textEncoder = new TextEncoder();
 

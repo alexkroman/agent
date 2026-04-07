@@ -6,8 +6,10 @@ import { getLock } from "p-lock";
 import type { Storage } from "unstorage";
 import { z } from "zod";
 import { type CredentialKey, decryptEnv, encryptEnv } from "./credentials.ts";
-import type { AgentMetadata } from "./schemas.ts";
 import { AgentMetadataSchema } from "./schemas.ts";
+import type { BundleStore } from "./store-types.ts";
+
+export type { BundleStore } from "./store-types.ts";
 
 const ManifestSchema = z.object({
   slug: z.string(),
@@ -15,22 +17,6 @@ const ManifestSchema = z.object({
   credential_hashes: z.array(z.string()).optional(),
   envEncrypted: z.boolean().optional(),
 });
-
-export type BundleStore = {
-  putAgent(bundle: {
-    slug: string;
-    env: Record<string, string>;
-    worker: string;
-    clientFiles: Record<string, string>;
-    credential_hashes: string[];
-  }): Promise<void>;
-  getManifest(slug: string): Promise<AgentMetadata | null>;
-  getWorkerCode(slug: string): Promise<string | null>;
-  getClientFile(slug: string, filePath: string): Promise<string | null>;
-  deleteAgent(slug: string): Promise<void>;
-  getEnv(slug: string): Promise<Record<string, string> | null>;
-  putEnv(slug: string, env: Record<string, string>): Promise<void>;
-};
 
 function objectKey(slug: string, file: string): string {
   return `agents/${slug}/${file}`;
