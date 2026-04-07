@@ -129,6 +129,17 @@ describe("SSRF: protocol validation", () => {
   }, 15_000);
 });
 
+// ── DNS Failure Handling ───────────────────────────────────────────────
+
+describe("SSRF: DNS failure handling", () => {
+  test("assertPublicUrl rejects when DNS resolution fails", async () => {
+    // Use a subdomain of example.com (IANA reserved, no DNS) that bogon doesn't classify as private
+    await expect(assertPublicUrl("http://nxdomain-test.example.com/")).rejects.toThrow(
+      /Blocked request.*DNS/,
+    );
+  }, 10_000);
+});
+
 // ── Redirect Chain Validation ──────────────────────────────────────────
 
 describe("SSRF: redirect chain validation", () => {

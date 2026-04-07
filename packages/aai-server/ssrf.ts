@@ -29,6 +29,7 @@ async function assertDnsResolvesPublic(hostname: string): Promise<void> {
     }
   } catch (err) {
     if (err instanceof Error && err.message.startsWith("Blocked request")) throw err;
+    throw new Error(`Blocked request: DNS resolution failed for ${hostname}`, { cause: err });
   }
 }
 
