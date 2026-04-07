@@ -7,22 +7,22 @@ function first(arr: string[] | undefined): string | undefined {
 
 const FdaOpenfdaSchema = z.record(z.string(), z.array(z.string()));
 
-const FdaDrugSchema = z.object({
-  openfda: FdaOpenfdaSchema.optional(),
-  purpose: z.array(z.string()).optional(),
-  indications_and_usage: z.array(z.string()).optional(),
-  warnings: z.array(z.string()).optional(),
-  dosage_and_administration: z.array(z.string()).optional(),
-  adverse_reactions: z.array(z.string()).optional(),
-}).passthrough();
+const FdaDrugSchema = z
+  .object({
+    openfda: FdaOpenfdaSchema.optional(),
+    purpose: z.array(z.string()).optional(),
+    indications_and_usage: z.array(z.string()).optional(),
+    warnings: z.array(z.string()).optional(),
+    dosage_and_administration: z.array(z.string()).optional(),
+    adverse_reactions: z.array(z.string()).optional(),
+  })
+  .passthrough();
 
 const FdaResponseSchema = z.object({
   results: z.array(FdaDrugSchema).optional(),
 });
 
-async function lookupDrug(
-  name: string,
-): Promise<Record<string, unknown>> {
+async function lookupDrug(name: string): Promise<Record<string, unknown>> {
   const q = encodeURIComponent(name.toLowerCase());
   let raw: unknown;
   try {
@@ -35,20 +35,20 @@ async function lookupDrug(
   }
 
   const parsed = FdaResponseSchema.safeParse(raw);
-  if (!parsed.success || !parsed.data.results?.length) {
+  if (!(parsed.success && (parsed.data.results?.length ?? 0) > 0)) {
     return { error: `No FDA data found for: ${name}` };
   }
 
-  const drug = parsed.data.results[0]!;
+  const drug = parsed.data.results![0]!;
   const openfda = drug.openfda ?? {};
   return {
-    name: openfda["generic_name"]?.[0] ?? name,
-    brand_names: openfda["brand_name"] ?? [],
+    name: openfda.generic_name?.[0] ?? name,
+    brand_names: openfda.brand_name ?? [],
     purpose: first(drug.purpose) ?? first(drug.indications_and_usage) ?? "N/A",
     warnings: first(drug.warnings)?.slice(0, 500) ?? "N/A",
     dosage: first(drug.dosage_and_administration)?.slice(0, 500) ?? "N/A",
     side_effects: first(drug.adverse_reactions)?.slice(0, 500) ?? "N/A",
-    manufacturer: openfda["manufacturer_name"]?.[0] ?? "N/A",
+    manufacturer: openfda.manufacturer_name?.[0] ?? "N/A",
   };
 }
 
@@ -57,15 +57,11 @@ type RxCui = {
   rxcui: string;
 };
 
-async function resolveRxCui(
-  name: string,
-): Promise<RxCui | null> {
+async function resolveRxCui(name: string): Promise<RxCui | null> {
   let raw: { idGroup: { rxnormId?: string[] } } | null;
   try {
     const resp = await fetch(
-      `https://rxnav.nlm.nih.gov/REST/rxcui.json?name=${
-        encodeURIComponent(name)
-      }`,
+      `https://rxnav.nlm.nih.gov/REST/rxcui.json?name=${encodeURIComponent(name)}`,
     );
     raw = resp.ok ? await resp.json() : null;
   } catch {
@@ -76,13 +72,12 @@ async function resolveRxCui(
   return id ? { name, rxcui: id } : null;
 }
 
-async function checkInteractions(
-  drugs: string,
-): Promise<Record<string, unknown>> {
+async function checkInteractions(drugs: string): Promise<Record<string, unknown>> {
   const names = drugs.split(",").map((d) => d.trim().toLowerCase());
 
-  const resolved = (await Promise.all(names.map((n) => resolveRxCui(n))))
-    .filter((r): r is RxCui => r !== null);
+  const resolved = (await Promise.all(names.map((n) => resolveRxCui(n)))).filter(
+    (r): r is RxCui => r !== null,
+  );
 
   if (resolved.length < 2) {
     return {
@@ -106,14 +101,26 @@ async function checkInteractions(
   if ("error" in raw) return raw;
 
   const InteractionResponseSchema = z.object({
-    fullInteractionTypeGroup: z.array(z.object({
-      fullInteractionType: z.array(z.object({
-        interactionPair: z.array(z.object({
-          description: z.string(),
-          severity: z.string(),
-        })).optional(),
-      })).optional(),
-    })).optional(),
+    fullInteractionTypeGroup: z
+      .array(
+        z.object({
+          fullInteractionType: z
+            .array(
+              z.object({
+                interactionPair: z
+                  .array(
+                    z.object({
+                      description: z.string(),
+                      severity: z.string(),
+                    }),
+                  )
+                  .optional(),
+              }),
+            )
+            .optional(),
+        }),
+      )
+      .optional(),
   });
 
   const parsed = InteractionResponseSchema.safeParse(raw);
@@ -132,8 +139,7 @@ async function checkInteractions(
 
 export default defineAgent({
   name: "Dr. Sage",
-  systemPrompt:
-    `You are Dr. Sage, a friendly health information assistant. You help people \
+  systemPrompt: `You are Dr. Sage, a friendly health information assistant. You help people \
 understand symptoms, look up medication details, check drug interactions, and calculate \
 basic health metrics.
 
@@ -162,9 +168,9 @@ Use run_code for health calculations:
       description:
         "Look up detailed information about a single medication, including purpose, warnings, dosage, side effects, and manufacturer. Works with both generic and brand names.",
       parameters: z.object({
-        name: z.string().describe(
-          "Medication name (generic or brand, e.g. 'ibuprofen' or 'Advil')",
-        ),
+        name: z
+          .string()
+          .describe("Medication name (generic or brand, e.g. 'ibuprofen' or 'Advil')"),
       }),
       execute: ({ name }) => lookupDrug(name),
     }),
@@ -172,9 +178,7 @@ Use run_code for health calculations:
       description:
         "Check for known interactions between two or more medications. Resolves drug names via RxNorm and returns interaction details with severity levels.",
       parameters: z.object({
-        drugs: z.string().describe(
-          "Comma-separated medication names (e.g. 'ibuprofen, warfarin')",
-        ),
+        drugs: z.string().describe("Comma-separated medication names (e.g. 'ibuprofen, warfarin')"),
       }),
       execute: ({ drugs }) => checkInteractions(drugs),
     }),

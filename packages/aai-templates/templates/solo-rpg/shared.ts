@@ -48,9 +48,16 @@ export interface GameState {
   settingDescription: string;
   playerName: string;
   characterConcept: string;
-  edge: number; heart: number; iron: number; shadow: number; wits: number;
-  health: number; spirit: number; supply: number;
-  momentum: number; maxMomentum: number;
+  edge: number;
+  heart: number;
+  iron: number;
+  shadow: number;
+  wits: number;
+  health: number;
+  spirit: number;
+  supply: number;
+  momentum: number;
+  maxMomentum: number;
   currentLocation: string;
   currentSceneContext: string;
   timeOfDay: string;
@@ -90,7 +97,25 @@ export type SoloRpgToolResults = ToolResultMap<{
     sceneCount: number;
     canBurnMomentum: boolean;
   };
-  burn_momentum: { burned: true; previousMomentum: number; newMomentum: number; newResult: string; challengeDice: [number, number] } | { error: string };
-  load_game: { loaded: true; playerName: string; characterConcept: string; settingGenre: string; sceneCount: number; currentLocation: string; initialized: boolean } | { error: string };
+  burn_momentum:
+    | {
+        burned: true;
+        previousMomentum: number;
+        newMomentum: number;
+        newResult: string;
+        challengeDice: [number, number];
+      }
+    | { error: string };
+  load_game:
+    | {
+        loaded: true;
+        playerName: string;
+        characterConcept: string;
+        settingGenre: string;
+        sceneCount: number;
+        currentLocation: string;
+        initialized: boolean;
+      }
+    | { error: string };
   save_game: { saved: true; slot: string; name: string; scene: number };
 }>;

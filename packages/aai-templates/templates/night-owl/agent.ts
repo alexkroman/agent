@@ -10,16 +10,8 @@ const PICKS: Record<string, Record<string, string[]>> = {
     funny: ["The Big Lebowski", "Airplane!", "Superbad"],
   },
   music: {
-    chill: [
-      "Khruangbin — Con Todo El Mundo",
-      "Tycho — Dive",
-      "Bonobo — Migration",
-    ],
-    intense: [
-      "Radiohead — OK Computer",
-      "Tool — Lateralus",
-      "Deftones — White Pony",
-    ],
+    chill: ["Khruangbin — Con Todo El Mundo", "Tycho — Dive", "Bonobo — Migration"],
+    intense: ["Radiohead — OK Computer", "Tool — Lateralus", "Deftones — White Pony"],
     cozy: [
       "Norah Jones — Come Away with Me",
       "Iron & Wine — Our Endless Numbered Days",
@@ -37,16 +29,8 @@ const PICKS: Record<string, Record<string, string[]>> = {
     ],
   },
   book: {
-    chill: [
-      "Norwegian Wood — Murakami",
-      "The Alchemist — Coelho",
-      "Siddhartha — Hesse",
-    ],
-    intense: [
-      "Blood Meridian — McCarthy",
-      "House of Leaves — Danielewski",
-      "Neuromancer — Gibson",
-    ],
+    chill: ["Norwegian Wood — Murakami", "The Alchemist — Coelho", "Siddhartha — Hesse"],
+    intense: ["Blood Meridian — McCarthy", "House of Leaves — Danielewski", "Neuromancer — Gibson"],
     cozy: [
       "The House in the Cerulean Sea — Klune",
       "A Man Called Ove — Backman",
@@ -57,18 +41,13 @@ const PICKS: Record<string, Record<string, string[]>> = {
       "Mexican Gothic — Moreno-Garcia",
       "The Turn of the Screw — James",
     ],
-    funny: [
-      "Good Omens — Pratchett & Gaiman",
-      "Hitchhiker's Guide — Adams",
-      "Catch-22 — Heller",
-    ],
+    funny: ["Good Omens — Pratchett & Gaiman", "Hitchhiker's Guide — Adams", "Catch-22 — Heller"],
   },
 };
 
 export default defineAgent({
   name: "Night Owl",
-  systemPrompt:
-    `You are Night Owl, a cozy evening companion. You help people wind down, recommend entertainment, and share interesting facts about the night sky. Keep your tone warm and relaxed. Use short, conversational responses.
+  systemPrompt: `You are Night Owl, a cozy evening companion. You help people wind down, recommend entertainment, and share interesting facts about the night sky. Keep your tone warm and relaxed. Use short, conversational responses.
 
 Use run_code for sleep calculations:
 - Each sleep cycle is 90 minutes, plus 15 minutes to fall asleep
@@ -80,19 +59,16 @@ Use run_code for sleep calculations:
   builtinTools: ["run_code"],
   tools: {
     recommend: defineTool({
-      description:
-        "Get recommendations for movies, music, or books based on mood.",
+      description: "Get recommendations for movies, music, or books based on mood.",
       parameters: z.object({
         category: z.enum(["movie", "music", "book"]),
         mood: z.enum(["chill", "intense", "cozy", "spooky", "funny"]),
       }),
-      execute: ({ category, mood }) => {
-        return {
-          category,
-          mood,
-          picks: PICKS[category]?.[mood] ?? [],
-        };
-      },
+      execute: ({ category, mood }) => ({
+        category,
+        mood,
+        picks: PICKS[category]?.[mood] ?? [],
+      }),
     }),
   },
 });

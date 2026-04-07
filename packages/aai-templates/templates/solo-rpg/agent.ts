@@ -1,20 +1,46 @@
-import { defineToolFactory, defineAgent } from "@alexkroman1/aai";
 import type { HookContext } from "@alexkroman1/aai";
+import { defineAgent, defineToolFactory } from "@alexkroman1/aai";
 import { z } from "zod";
 
 // ── Tuning Constants ─────────────────────────────────────────────────────────
-const STAT_TARGET_SUM = 7;
+const _STAT_TARGET_SUM = 7;
 const MAX_ACTIVE_NPCS = 12;
 const MAX_SESSION_LOG = 50;
-const MAX_NARRATION_HISTORY = 6;
+const _MAX_NARRATION_HISTORY = 6;
 const DIRECTOR_INTERVAL = 3;
 
 // ── Creativity Seeds ─────────────────────────────────────────────────────────
 const SEED_WORDS = [
-  "amber","coyote","furnace","silk","glacier","compass","terracotta","jasmine",
-  "anvil","cobalt","driftwood","saffron","limestone","falcon","obsidian","cedar",
-  "mercury","lantern","basalt","thistle","copper","monsoon","flint","orchid",
-  "pewter","canyon","quartz","ember","mahogany","coral",
+  "amber",
+  "coyote",
+  "furnace",
+  "silk",
+  "glacier",
+  "compass",
+  "terracotta",
+  "jasmine",
+  "anvil",
+  "cobalt",
+  "driftwood",
+  "saffron",
+  "limestone",
+  "falcon",
+  "obsidian",
+  "cedar",
+  "mercury",
+  "lantern",
+  "basalt",
+  "thistle",
+  "copper",
+  "monsoon",
+  "flint",
+  "orchid",
+  "pewter",
+  "canyon",
+  "quartz",
+  "ember",
+  "mahogany",
+  "coral",
 ];
 
 function creativitySeed(n = 3): string {
@@ -67,33 +93,61 @@ const ARCHETYPES = {
 
 // ── Moves (from engine engine.py BRAIN_OUTPUT_SCHEMA) ─────────────────────
 const MOVES = [
-  "face_danger","compel","gather_information","secure_advantage",
-  "clash","strike","endure_harm","endure_stress",
-  "make_connection","test_bond","resupply","world_shaping","dialog",
+  "face_danger",
+  "compel",
+  "gather_information",
+  "secure_advantage",
+  "clash",
+  "strike",
+  "endure_harm",
+  "endure_stress",
+  "make_connection",
+  "test_bond",
+  "resupply",
+  "world_shaping",
+  "dialog",
 ] as const;
 
 const COMBAT_MOVES = new Set(["clash", "strike"]);
 const SOCIAL_MOVES = new Set(["compel", "make_connection", "test_bond"]);
 
 const MOVE_LABELS: Record<string, string> = {
-  face_danger: "Face Danger", compel: "Compel",
-  gather_information: "Gather Information", secure_advantage: "Secure Advantage",
-  clash: "Clash", strike: "Strike",
-  endure_harm: "Endure Harm", endure_stress: "Endure Stress",
-  make_connection: "Make Connection", test_bond: "Test Bond",
-  resupply: "Resupply", world_shaping: "World Shaping", dialog: "Dialog",
+  face_danger: "Face Danger",
+  compel: "Compel",
+  gather_information: "Gather Information",
+  secure_advantage: "Secure Advantage",
+  clash: "Clash",
+  strike: "Strike",
+  endure_harm: "Endure Harm",
+  endure_stress: "Endure Stress",
+  make_connection: "Make Connection",
+  test_bond: "Test Bond",
+  resupply: "Resupply",
+  world_shaping: "World Shaping",
+  dialog: "Dialog",
 };
 
 // ── Time Phases (from engine engine.py) ───────────────────────────────────
 const TIME_PHASES = [
-  "early_morning","morning","midday","afternoon",
-  "evening","late_evening","night","deep_night",
+  "early_morning",
+  "morning",
+  "midday",
+  "afternoon",
+  "evening",
+  "late_evening",
+  "night",
+  "deep_night",
 ] as const;
 
-const TIME_LABELS: Record<string, string> = {
-  early_morning: "Early Morning", morning: "Morning", midday: "Midday",
-  afternoon: "Afternoon", evening: "Evening", late_evening: "Late Evening",
-  night: "Night", deep_night: "Deep Night",
+const _TIME_LABELS: Record<string, string> = {
+  early_morning: "Early Morning",
+  morning: "Morning",
+  midday: "Midday",
+  afternoon: "Afternoon",
+  evening: "Evening",
+  late_evening: "Late Evening",
+  night: "Night",
+  deep_night: "Deep Night",
 };
 
 // ── Chaos Interrupt Types (from engine engine.py) ─────────────────────────
@@ -109,12 +163,15 @@ const CHAOS_INTERRUPT_TYPES = [
 ];
 
 // ── Disposition System (from engine engine.py) ────────────────────────────
-const DISPOSITIONS = ["hostile","distrustful","neutral","friendly","loyal"] as const;
-type Disposition = typeof DISPOSITIONS[number];
+const DISPOSITIONS = ["hostile", "distrustful", "neutral", "friendly", "loyal"] as const;
+type Disposition = (typeof DISPOSITIONS)[number];
 
-const DISPOSITION_LABELS: Record<Disposition, string> = {
-  hostile: "Hostile", distrustful: "Distrustful", neutral: "Neutral",
-  friendly: "Friendly", loyal: "Loyal",
+const _DISPOSITION_LABELS: Record<Disposition, string> = {
+  hostile: "Hostile",
+  distrustful: "Distrustful",
+  neutral: "Neutral",
+  friendly: "Friendly",
+  loyal: "Loyal",
 };
 
 // ── NPC Interface (from engine engine.py GameState.npcs) ──────────────────
@@ -123,7 +180,7 @@ interface NPC {
   name: string;
   description: string;
   disposition: Disposition;
-  bond: number;        // -3 to +4
+  bond: number; // -3 to +4
   agenda: string;
   instinct: string;
   status: "active" | "background" | "deceased";
@@ -136,10 +193,10 @@ interface Clock {
   id: string;
   name: string;
   clockType: "threat" | "progress" | "scheme";
-  segments: number;    // 4, 6, 8, 10, or 12
+  segments: number; // 4, 6, 8, 10, or 12
   filled: number;
   triggerDescription: string;
-  owner: string;       // NPC id or "world"
+  owner: string; // NPC id or "world"
 }
 
 // ── Story Blueprint (from engine STORY_ARCHITECT_OUTPUT_SCHEMA) ───────────
@@ -267,9 +324,16 @@ const defaultState: GameState = {
   backstory: "",
   playerWishes: "",
   contentLines: "",
-  edge: 1, heart: 2, iron: 1, shadow: 1, wits: 2,
-  health: 5, spirit: 5, supply: 5,
-  momentum: 2, maxMomentum: 10,
+  edge: 1,
+  heart: 2,
+  iron: 1,
+  shadow: 1,
+  wits: 2,
+  health: 5,
+  spirit: 5,
+  supply: 5,
+  momentum: 2,
+  maxMomentum: 10,
   sceneCount: 0,
   currentLocation: "",
   currentSceneContext: "",
@@ -304,7 +368,7 @@ function nextNpcId(npcs: NPC[]): string {
   let max = 0;
   for (const n of npcs) {
     const m = n.id.match(/^npc_(\d+)$/);
-    if (m) max = Math.max(max, parseInt(m[1]!));
+    if (m) max = Math.max(max, Number.parseInt(m[1]!, 10));
   }
   return `npc_${max + 1}`;
 }
@@ -312,8 +376,10 @@ function nextNpcId(npcs: NPC[]): string {
 // ── Dice System (from engine engine.py roll_action) ───────────────────────
 // 2d6 + stat (capped at 10) vs 2d10
 function rollAction(statName: string, statValue: number, move: string) {
-  const d1 = d(6), d2 = d(6);
-  const c1 = d(10), c2 = d(10);
+  const d1 = d(6),
+    d2 = d(6);
+  const c1 = d(10),
+    c2 = d(10);
   const actionScore = Math.min(d1 + d2 + statValue, 10);
   let result: "STRONG_HIT" | "WEAK_HIT" | "MISS";
   if (actionScore > c1 && actionScore > c2) result = "STRONG_HIT";
@@ -343,7 +409,7 @@ function checkChaosInterrupt(game: GameState): string | null {
 }
 
 // ── Time Advancement (from engine engine.py) ──────────────────────────────
-function advanceTime(game: GameState, progression: string) {
+function _advanceTime(game: GameState, progression: string) {
   if (!game.timeOfDay || progression === "none" || progression === "short") return;
   const idx = (TIME_PHASES as readonly string[]).indexOf(game.timeOfDay);
   if (idx === -1) return;
@@ -364,7 +430,7 @@ function applyConsequences(
 ): { consequences: string[]; clockEvents: { clock: string; trigger: string }[] } {
   const consequences: string[] = [];
   const clockEvents: { clock: string; trigger: string }[] = [];
-  const target = targetNpcId ? game.npcs.find(n => n.id === targetNpcId) : null;
+  const target = targetNpcId ? game.npcs.find((n) => n.id === targetNpcId) : null;
 
   if (roll.result === "MISS") {
     // Damage based on move type and position
@@ -439,8 +505,10 @@ function applyConsequences(
       target.bond = Math.min(4, target.bond + 1);
       // Disposition shift on strong social hit
       const shifts: Record<string, Disposition> = {
-        hostile: "distrustful", distrustful: "neutral",
-        neutral: "friendly", friendly: "loyal",
+        hostile: "distrustful",
+        distrustful: "neutral",
+        neutral: "friendly",
+        friendly: "loyal",
       };
       const nextDisposition = shifts[target.disposition];
       if (nextDisposition) target.disposition = nextDisposition;
@@ -463,16 +531,24 @@ function applyConsequences(
 // ── Momentum Burn (from engine engine.py can_burn_momentum) ───────────────
 function canBurnMomentum(game: GameState, roll: RollResult): string | null {
   if (game.momentum <= 0) return null;
-  if (roll.result === "MISS" && game.momentum > roll.c1 && game.momentum > roll.c2) return "STRONG_HIT";
-  if (roll.result === "MISS" && (game.momentum > roll.c1 || game.momentum > roll.c2)) return "WEAK_HIT";
-  if (roll.result === "WEAK_HIT" && game.momentum > roll.c1 && game.momentum > roll.c2) return "STRONG_HIT";
+  if (roll.result === "MISS" && game.momentum > roll.c1 && game.momentum > roll.c2)
+    return "STRONG_HIT";
+  if (roll.result === "MISS" && (game.momentum > roll.c1 || game.momentum > roll.c2))
+    return "WEAK_HIT";
+  if (roll.result === "WEAK_HIT" && game.momentum > roll.c1 && game.momentum > roll.c2)
+    return "STRONG_HIT";
   return null;
 }
 
 // ── Kishotenketsu Probability (from engine engine.py) ─────────────────────
 const KISHOTENKETSU_PROB: Record<string, number> = {
-  melancholic: 0.5, cozy: 0.4, romantic: 0.35, tragicomic: 0.3,
-  slow_burn_horror: 0.25, cheerful_funny: 0.2, absurd_grotesque: 0.2,
+  melancholic: 0.5,
+  cozy: 0.4,
+  romantic: 0.35,
+  tragicomic: 0.3,
+  slow_burn_horror: 0.25,
+  cheerful_funny: 0.2,
+  absurd_grotesque: 0.2,
 };
 
 function chooseStoryStructure(tone: string): "3act" | "kishotenketsu" {
@@ -640,29 +716,48 @@ VOICE:
           settingArchetype: s.settingArchetype,
           playerName: s.playerName,
           characterConcept: s.characterConcept,
-          edge: s.edge, heart: s.heart, iron: s.iron, shadow: s.shadow, wits: s.wits,
-          health: s.health, spirit: s.spirit, supply: s.supply,
-          momentum: s.momentum, maxMomentum: s.maxMomentum,
+          edge: s.edge,
+          heart: s.heart,
+          iron: s.iron,
+          shadow: s.shadow,
+          wits: s.wits,
+          health: s.health,
+          spirit: s.spirit,
+          supply: s.supply,
+          momentum: s.momentum,
+          maxMomentum: s.maxMomentum,
           sceneCount: s.sceneCount,
           currentLocation: s.currentLocation,
           timeOfDay: s.timeOfDay,
           chaosFactor: s.chaosFactor,
           crisisMode: s.crisisMode,
           gameOver: s.gameOver,
-          npcs: s.npcs.filter(n => n.status !== "deceased").map(n => ({
-            id: n.id, name: n.name, disposition: n.disposition,
-            bond: n.bond, agenda: n.agenda, status: n.status,
-          })),
-          clocks: s.clocks.filter(c => c.filled < c.segments).map(c => ({
-            name: c.name, type: c.clockType,
-            filled: c.filled, segments: c.segments,
-          })),
-          storyAct: s.storyBlueprint ? {
-            current: s.storyBlueprint.currentAct,
-            total: s.storyBlueprint.acts.length,
-            phase: s.storyBlueprint.acts[s.storyBlueprint.currentAct - 1]?.phase,
-            complete: s.storyBlueprint.storyComplete,
-          } : null,
+          npcs: s.npcs
+            .filter((n) => n.status !== "deceased")
+            .map((n) => ({
+              id: n.id,
+              name: n.name,
+              disposition: n.disposition,
+              bond: n.bond,
+              agenda: n.agenda,
+              status: n.status,
+            })),
+          clocks: s.clocks
+            .filter((c) => c.filled < c.segments)
+            .map((c) => ({
+              name: c.name,
+              type: c.clockType,
+              filled: c.filled,
+              segments: c.segments,
+            })),
+          storyAct: s.storyBlueprint
+            ? {
+                current: s.storyBlueprint.currentAct,
+                total: s.storyBlueprint.acts.length,
+                phase: s.storyBlueprint.acts[s.storyBlueprint.currentAct - 1]?.phase,
+                complete: s.storyBlueprint.storyComplete,
+              }
+            : null,
           kidMode: s.kidMode,
           directorGuidance: s.directorGuidance,
           recentLog: s.sessionLog.slice(-3),
@@ -682,7 +777,18 @@ VOICE:
         settingDescription: z.string().describe("Two to three sentence setting description"),
         startingLocation: z.string().describe("Name of starting location"),
         locationDesc: z.string().describe("One sentence description of starting location"),
-        timeOfDay: z.enum(["early_morning","morning","midday","afternoon","evening","late_evening","night","deep_night"]).describe("Starting time of day"),
+        timeOfDay: z
+          .enum([
+            "early_morning",
+            "morning",
+            "midday",
+            "afternoon",
+            "evening",
+            "late_evening",
+            "night",
+            "deep_night",
+          ])
+          .describe("Starting time of day"),
         openingSituation: z.string().describe("One sentence dramatic hook for the opening scene"),
         npc1Name: z.string().describe("First NPC name"),
         npc1Desc: z.string().describe("First NPC one-line description"),
@@ -709,7 +815,7 @@ VOICE:
         state.backstory = args.backstory || "";
         state.playerWishes = args.wishes || "";
         state.contentLines = args.contentLines || "";
-        state.kidMode = args.kidMode || false;
+        state.kidMode = args.kidMode ?? false;
 
         // Generate stats: one at 3, two at 2, two at 1 (total = 7)
         const statValues = [3, 2, 2, 1, 1];
@@ -718,9 +824,15 @@ VOICE:
           [statValues[i], statValues[j]] = [statValues[j]!, statValues[i]!];
         }
         const archetypeBias: Record<string, number> = {
-          outsider_loner: 0, investigator: 4, trickster: 3,
-          protector: 2, hardboiled: 2, scholar: 4,
-          healer: 1, inventor: 4, artist: 1,
+          outsider_loner: 0,
+          investigator: 4,
+          trickster: 3,
+          protector: 2,
+          hardboiled: 2,
+          scholar: 4,
+          healer: 1,
+          inventor: 4,
+          artist: 1,
         };
         const biasIdx = archetypeBias[args.archetype] ?? Math.floor(Math.random() * 5);
         const highIdx = statValues.indexOf(3);
@@ -770,18 +882,61 @@ VOICE:
           centralConflict: args.openingSituation,
           antagonistForce: "",
           thematicThread: "",
-          acts: structure === "3act"
-            ? [
-              { phase: "setup", title: "The Hook", goal: "Establish the world and the conflict", mood: args.tone, transitionTrigger: "Player engages with the central conflict" },
-              { phase: "confrontation", title: "Rising Stakes", goal: "Escalate tension and complications", mood: args.tone, transitionTrigger: "A major setback or revelation" },
-              { phase: "climax", title: "The Reckoning", goal: "Resolve the central conflict", mood: args.tone, transitionTrigger: "Story reaches its conclusion" },
-            ]
-            : [
-              { phase: "ki_introduction", title: "Ki", goal: "Introduce the world and characters", mood: args.tone, transitionTrigger: "World is established" },
-              { phase: "sho_development", title: "Sho", goal: "Develop relationships and deepen the world", mood: args.tone, transitionTrigger: "Relationships are tested" },
-              { phase: "ten_twist", title: "Ten", goal: "An unexpected twist changes everything", mood: args.tone, transitionTrigger: "The twist lands" },
-              { phase: "ketsu_resolution", title: "Ketsu", goal: "Resolve and reflect", mood: args.tone, transitionTrigger: "Story reaches its conclusion" },
-            ],
+          acts:
+            structure === "3act"
+              ? [
+                  {
+                    phase: "setup",
+                    title: "The Hook",
+                    goal: "Establish the world and the conflict",
+                    mood: args.tone,
+                    transitionTrigger: "Player engages with the central conflict",
+                  },
+                  {
+                    phase: "confrontation",
+                    title: "Rising Stakes",
+                    goal: "Escalate tension and complications",
+                    mood: args.tone,
+                    transitionTrigger: "A major setback or revelation",
+                  },
+                  {
+                    phase: "climax",
+                    title: "The Reckoning",
+                    goal: "Resolve the central conflict",
+                    mood: args.tone,
+                    transitionTrigger: "Story reaches its conclusion",
+                  },
+                ]
+              : [
+                  {
+                    phase: "ki_introduction",
+                    title: "Ki",
+                    goal: "Introduce the world and characters",
+                    mood: args.tone,
+                    transitionTrigger: "World is established",
+                  },
+                  {
+                    phase: "sho_development",
+                    title: "Sho",
+                    goal: "Develop relationships and deepen the world",
+                    mood: args.tone,
+                    transitionTrigger: "Relationships are tested",
+                  },
+                  {
+                    phase: "ten_twist",
+                    title: "Ten",
+                    goal: "An unexpected twist changes everything",
+                    mood: args.tone,
+                    transitionTrigger: "The twist lands",
+                  },
+                  {
+                    phase: "ketsu_resolution",
+                    title: "Ketsu",
+                    goal: "Resolve and reflect",
+                    mood: args.tone,
+                    transitionTrigger: "Story reaches its conclusion",
+                  },
+                ],
           revelations: [],
           possibleEndings: [],
           currentAct: 1,
@@ -802,15 +957,47 @@ VOICE:
           settingTone: TONES[args.tone as keyof typeof TONES] || args.tone,
           settingArchetype: ARCHETYPES[args.archetype as keyof typeof ARCHETYPES] || args.archetype,
           settingDescription: state.settingDescription,
-          stats: { edge: state.edge, heart: state.heart, iron: state.iron, shadow: state.shadow, wits: state.wits },
-          health: 5, spirit: 5, supply: 5, momentum: 2,
+          stats: {
+            edge: state.edge,
+            heart: state.heart,
+            iron: state.iron,
+            shadow: state.shadow,
+            wits: state.wits,
+          },
+          health: 5,
+          spirit: 5,
+          supply: 5,
+          momentum: 2,
           currentLocation: state.currentLocation,
           currentSceneContext: state.currentSceneContext,
           timeOfDay: state.timeOfDay,
           chaosFactor: 5,
-          npcs: state.npcs.map(n => ({ id: n.id, name: n.name, disposition: n.disposition, bond: n.bond, agenda: n.agenda, status: n.status, description: n.description })),
-          clocks: state.clocks.map(c => ({ id: c.id, name: c.name, clockType: c.clockType, segments: c.segments, filled: c.filled, triggerDescription: c.triggerDescription })),
-          storyBlueprint: { structureType: state.storyBlueprint.structureType, currentAct: 1, totalActs: state.storyBlueprint.acts.length, centralConflict: state.storyBlueprint.centralConflict, thematicThread: "", storyComplete: false, currentPhase: state.storyBlueprint.acts[0]!.phase },
+          npcs: state.npcs.map((n) => ({
+            id: n.id,
+            name: n.name,
+            disposition: n.disposition,
+            bond: n.bond,
+            agenda: n.agenda,
+            status: n.status,
+            description: n.description,
+          })),
+          clocks: state.clocks.map((c) => ({
+            id: c.id,
+            name: c.name,
+            clockType: c.clockType,
+            segments: c.segments,
+            filled: c.filled,
+            triggerDescription: c.triggerDescription,
+          })),
+          storyBlueprint: {
+            structureType: state.storyBlueprint.structureType,
+            currentAct: 1,
+            totalActs: state.storyBlueprint.acts.length,
+            centralConflict: state.storyBlueprint.centralConflict,
+            thematicThread: "",
+            storyComplete: false,
+            currentPhase: state.storyBlueprint.acts[0]?.phase,
+          },
           openingSituation: args.openingSituation,
           creativitySeed: creativitySeed(),
           phase: "playing",
@@ -825,9 +1012,13 @@ VOICE:
         "Core mechanic. Roll 2d6 + stat (capped at 10) vs 2d10 challenge dice. Also applies consequences (health/spirit/supply/momentum changes, clock advancement) based on move type, position, and result. Call for ANY risky action.",
       parameters: z.object({
         move: z.enum(MOVES).describe("Which move the player is making"),
-        stat: z.enum(["edge","heart","iron","shadow","wits"]).describe("Which stat to roll"),
-        position: z.enum(["controlled","risky","desperate"]).describe("How dangerous the situation is"),
-        effect: z.enum(["limited","standard","great"]).describe("What can realistically be achieved"),
+        stat: z.enum(["edge", "heart", "iron", "shadow", "wits"]).describe("Which stat to roll"),
+        position: z
+          .enum(["controlled", "risky", "desperate"])
+          .describe("How dangerous the situation is"),
+        effect: z
+          .enum(["limited", "standard", "great"])
+          .describe("What can realistically be achieved"),
         purpose: z.string().describe("What the character is attempting"),
         targetNpcId: z.string().optional().describe("Target NPC id for social moves"),
       }),
@@ -838,7 +1029,11 @@ VOICE:
 
         // Apply consequences
         const { consequences, clockEvents } = applyConsequences(
-          state, roll, position, effect, targetNpcId || null,
+          state,
+          roll,
+          position,
+          effect,
+          targetNpcId || null,
         );
 
         // Update chaos factor
@@ -855,7 +1050,9 @@ VOICE:
 
         // Result labels
         const resultLabels: Record<string, string> = {
-          STRONG_HIT: "Strong Hit", WEAK_HIT: "Weak Hit", MISS: "Miss",
+          STRONG_HIT: "Strong Hit",
+          WEAK_HIT: "Weak Hit",
+          MISS: "Miss",
         };
 
         return {
@@ -871,9 +1068,9 @@ VOICE:
           resultCode: roll.result,
           match: roll.match,
           matchNote: roll.match
-            ? (roll.result === "STRONG_HIT" || roll.result === "WEAK_HIT"
+            ? roll.result === "STRONG_HIT" || roll.result === "WEAK_HIT"
               ? "Fateful roll. Both challenge dice match. An unexpected advantage or twist."
-              : "Fateful roll. Both challenge dice match. A dire and dramatic escalation.")
+              : "Fateful roll. Both challenge dice match. A dire and dramatic escalation."
             : undefined,
           position,
           effect,
@@ -888,7 +1085,7 @@ VOICE:
           crisisMode: state.crisisMode,
           gameOver: state.gameOver,
           sceneCount: state.sceneCount,
-          canBurnMomentum: !!burnTarget,
+          canBurnMomentum: Boolean(burnTarget),
           burnWouldYield: burnTarget ? resultLabels[burnTarget] : undefined,
         };
       },
@@ -915,7 +1112,8 @@ VOICE:
         state.momentum = 2; // Reset to starting value
 
         const labels: Record<string, string> = {
-          STRONG_HIT: "Strong Hit", WEAK_HIT: "Weak Hit",
+          STRONG_HIT: "Strong Hit",
+          WEAK_HIT: "Weak Hit",
         };
 
         return {
@@ -933,7 +1131,9 @@ VOICE:
       description:
         "Consult the oracle for narrative inspiration. Generates random prompts from thematic tables.",
       parameters: z.object({
-        type: z.enum(["action_theme","npc_reaction","scene_twist","yes_no","chaos_check"]).describe("Type of oracle consultation"),
+        type: z
+          .enum(["action_theme", "npc_reaction", "scene_twist", "yes_no", "chaos_check"])
+          .describe("Type of oracle consultation"),
       }),
       execute: ({ type }, ctx) => {
         const state = ctx.state;
@@ -949,16 +1149,22 @@ VOICE:
           return {
             type: "chaos_check",
             chaosFactor: state.chaosFactor,
-            interrupted: !!interrupt,
+            interrupted: Boolean(interrupt),
             interruptType: interrupt,
           };
         }
 
         if (type === "npc_reaction") {
           const reactions = [
-            "Acts on their agenda","Reveals a secret","Makes a demand",
-            "Offers unexpected help","Betrays expectations","Shows vulnerability",
-            "Escalates the conflict","Withdraws or retreats","Changes their stance",
+            "Acts on their agenda",
+            "Reveals a secret",
+            "Makes a demand",
+            "Offers unexpected help",
+            "Betrays expectations",
+            "Shows vulnerability",
+            "Escalates the conflict",
+            "Withdraws or retreats",
+            "Changes their stance",
             "Introduces a new complication",
           ];
           return { type: "npc_reaction", reaction: pick(reactions) };
@@ -966,43 +1172,192 @@ VOICE:
 
         if (type === "scene_twist") {
           const twists = [
-            "A hidden connection is revealed","The environment shifts dramatically",
-            "An NPC's true motives surface","Time pressure intensifies",
-            "An old enemy reappears","A resource is discovered or lost",
-            "The rules of the world bend","An alliance fractures",
-            "A prophecy or omen manifests","The stakes escalate unexpectedly",
+            "A hidden connection is revealed",
+            "The environment shifts dramatically",
+            "An NPC's true motives surface",
+            "Time pressure intensifies",
+            "An old enemy reappears",
+            "A resource is discovered or lost",
+            "The rules of the world bend",
+            "An alliance fractures",
+            "A prophecy or omen manifests",
+            "The stakes escalate unexpectedly",
           ];
           return { type: "scene_twist", twist: pick(twists) };
         }
 
         // action_theme (default)
         const actions = [
-          "Abandon","Advance","Assault","Betray","Block","Bolster","Breach",
-          "Capture","Challenge","Change","Clash","Command","Compel","Conceal",
-          "Confront","Control","Corrupt","Create","Deceive","Defend","Defy",
-          "Deliver","Demand","Depart","Destroy","Distract","Endure","Escape",
-          "Explore","Falter","Find","Follow","Forge","Forsake","Gather","Guard",
-          "Guide","Harm","Hide","Hold","Hunt","Investigate","Journey","Learn",
-          "Leave","Locate","Lose","Manipulate","Move","Oppose","Overwhelm",
-          "Persevere","Plunder","Preserve","Protect","Rage","Reach","Reclaim",
-          "Refuse","Reject","Release","Repair","Resist","Restore","Reveal",
-          "Risk","Salvage","Scheme","Search","Secure","Seize","Serve","Share",
-          "Shatter","Shelter","Strengthen","Summon","Surrender","Surround",
-          "Survive","Swear","Threaten","Track","Transform","Trap","Traverse",
-          "Uncover","Uphold","Weaken","Withdraw",
+          "Abandon",
+          "Advance",
+          "Assault",
+          "Betray",
+          "Block",
+          "Bolster",
+          "Breach",
+          "Capture",
+          "Challenge",
+          "Change",
+          "Clash",
+          "Command",
+          "Compel",
+          "Conceal",
+          "Confront",
+          "Control",
+          "Corrupt",
+          "Create",
+          "Deceive",
+          "Defend",
+          "Defy",
+          "Deliver",
+          "Demand",
+          "Depart",
+          "Destroy",
+          "Distract",
+          "Endure",
+          "Escape",
+          "Explore",
+          "Falter",
+          "Find",
+          "Follow",
+          "Forge",
+          "Forsake",
+          "Gather",
+          "Guard",
+          "Guide",
+          "Harm",
+          "Hide",
+          "Hold",
+          "Hunt",
+          "Investigate",
+          "Journey",
+          "Learn",
+          "Leave",
+          "Locate",
+          "Lose",
+          "Manipulate",
+          "Move",
+          "Oppose",
+          "Overwhelm",
+          "Persevere",
+          "Plunder",
+          "Preserve",
+          "Protect",
+          "Rage",
+          "Reach",
+          "Reclaim",
+          "Refuse",
+          "Reject",
+          "Release",
+          "Repair",
+          "Resist",
+          "Restore",
+          "Reveal",
+          "Risk",
+          "Salvage",
+          "Scheme",
+          "Search",
+          "Secure",
+          "Seize",
+          "Serve",
+          "Share",
+          "Shatter",
+          "Shelter",
+          "Strengthen",
+          "Summon",
+          "Surrender",
+          "Surround",
+          "Survive",
+          "Swear",
+          "Threaten",
+          "Track",
+          "Transform",
+          "Trap",
+          "Traverse",
+          "Uncover",
+          "Uphold",
+          "Weaken",
+          "Withdraw",
         ];
         const themes = [
-          "Ancestor","Ash","Beast","Blood","Bone","Burden","Communion",
-          "Corruption","Crown","Darkness","Death","Debt","Decay","Despair",
-          "Divinity","Doom","Dream","Dynasty","Eclipse","Exile","Faith","Fate",
-          "Flesh","Fury","Grace","Grief","Guilt","Heritage","Hollow","Honor",
-          "Horror","Hunger","Iron","Judgment","Kingdom","Knowledge","Legacy",
-          "Loss","Madness","Memory","Mercy","Monster","Mystery","Night","Oath",
-          "Omen","Order","Passage","Peril","Plague","Power","Pride","Prophecy",
-          "Rebirth","Relic","Rot","Ruin","Sacrifice","Scar","Secret","Shadow",
-          "Shard","Silence","Sorrow","Spirit","Splendor","Storm","Throne",
-          "Time","Treachery","Truth","Valor","Vengeance","War","Waste","Winter",
-          "Wisdom","Wound",
+          "Ancestor",
+          "Ash",
+          "Beast",
+          "Blood",
+          "Bone",
+          "Burden",
+          "Communion",
+          "Corruption",
+          "Crown",
+          "Darkness",
+          "Death",
+          "Debt",
+          "Decay",
+          "Despair",
+          "Divinity",
+          "Doom",
+          "Dream",
+          "Dynasty",
+          "Eclipse",
+          "Exile",
+          "Faith",
+          "Fate",
+          "Flesh",
+          "Fury",
+          "Grace",
+          "Grief",
+          "Guilt",
+          "Heritage",
+          "Hollow",
+          "Honor",
+          "Horror",
+          "Hunger",
+          "Iron",
+          "Judgment",
+          "Kingdom",
+          "Knowledge",
+          "Legacy",
+          "Loss",
+          "Madness",
+          "Memory",
+          "Mercy",
+          "Monster",
+          "Mystery",
+          "Night",
+          "Oath",
+          "Omen",
+          "Order",
+          "Passage",
+          "Peril",
+          "Plague",
+          "Power",
+          "Pride",
+          "Prophecy",
+          "Rebirth",
+          "Relic",
+          "Rot",
+          "Ruin",
+          "Sacrifice",
+          "Scar",
+          "Secret",
+          "Shadow",
+          "Shard",
+          "Silence",
+          "Sorrow",
+          "Spirit",
+          "Splendor",
+          "Storm",
+          "Throne",
+          "Time",
+          "Treachery",
+          "Truth",
+          "Valor",
+          "Vengeance",
+          "War",
+          "Waste",
+          "Winter",
+          "Wisdom",
+          "Wound",
         ];
         return {
           type: "action_theme",
@@ -1035,10 +1390,10 @@ VOICE:
         updateNpcId: z.string().optional().describe("NPC id to update"),
         updateNpcDisposition: z.enum(DISPOSITIONS).optional(),
         updateNpcBond: z.number().optional(),
-        updateNpcStatus: z.enum(["active","background","deceased"]).optional(),
+        updateNpcStatus: z.enum(["active", "background", "deceased"]).optional(),
         // Add a new clock
         addClockName: z.string().optional().describe("New clock name"),
-        addClockType: z.enum(["threat","progress","scheme"]).optional(),
+        addClockType: z.enum(["threat", "progress", "scheme"]).optional(),
         addClockSegments: z.number().optional().describe("Number of segments, default 6"),
         addClockTrigger: z.string().optional().describe("What happens when clock fills"),
         // Advance or remove clock
@@ -1057,13 +1412,15 @@ VOICE:
         if (args.health !== undefined) state.health = Math.max(0, Math.min(5, args.health));
         if (args.spirit !== undefined) state.spirit = Math.max(0, Math.min(5, args.spirit));
         if (args.supply !== undefined) state.supply = Math.max(0, Math.min(5, args.supply));
-        if (args.momentum !== undefined) state.momentum = Math.max(-6, Math.min(state.maxMomentum, args.momentum));
+        if (args.momentum !== undefined)
+          state.momentum = Math.max(-6, Math.min(state.maxMomentum, args.momentum));
 
         // Location
         if (args.location !== undefined) {
           if (state.currentLocation && state.currentLocation !== args.location) {
             state.locationHistory.push(state.currentLocation);
-            if (state.locationHistory.length > 5) state.locationHistory = state.locationHistory.slice(-5);
+            if (state.locationHistory.length > 5)
+              state.locationHistory = state.locationHistory.slice(-5);
           }
           state.currentLocation = args.location;
         }
@@ -1074,20 +1431,30 @@ VOICE:
         if (args.addNpcName) {
           const id = nextNpcId(state.npcs);
           state.npcs.push({
-            id, name: args.addNpcName,
+            id,
+            name: args.addNpcName,
             description: args.addNpcDesc || "",
             disposition: args.addNpcDisposition || "neutral",
-            bond: (args.addNpcDisposition === "friendly") ? 1 : (args.addNpcDisposition === "loyal") ? 2 : 0,
-            agenda: args.addNpcAgenda || "", instinct: "",
-            status: "active", aliases: [], lastMentionScene: state.sceneCount,
+            bond:
+              args.addNpcDisposition === "friendly"
+                ? 1
+                : args.addNpcDisposition === "loyal"
+                  ? 2
+                  : 0,
+            agenda: args.addNpcAgenda || "",
+            instinct: "",
+            status: "active",
+            aliases: [],
+            lastMentionScene: state.sceneCount,
           });
         }
 
         // Update NPC
         if (args.updateNpcId) {
-          const npc = state.npcs.find(n => n.id === args.updateNpcId);
+          const npc = state.npcs.find((n) => n.id === args.updateNpcId);
           if (npc) {
-            if (args.updateNpcDisposition !== undefined) npc.disposition = args.updateNpcDisposition;
+            if (args.updateNpcDisposition !== undefined)
+              npc.disposition = args.updateNpcDisposition;
             if (args.updateNpcBond !== undefined) npc.bond = args.updateNpcBond;
             if (args.updateNpcStatus !== undefined) npc.status = args.updateNpcStatus;
             npc.lastMentionScene = state.sceneCount;
@@ -1109,13 +1476,13 @@ VOICE:
 
         // Advance clock
         if (args.advanceClockName) {
-          const clock = state.clocks.find(c => c.name === args.advanceClockName);
+          const clock = state.clocks.find((c) => c.name === args.advanceClockName);
           if (clock) clock.filled = Math.min(clock.segments, clock.filled + 1);
         }
 
         // Remove clock
         if (args.removeClockName) {
-          state.clocks = state.clocks.filter(c => c.name !== args.removeClockName);
+          state.clocks = state.clocks.filter((c) => c.name !== args.removeClockName);
         }
 
         // Story arc
@@ -1143,7 +1510,8 @@ VOICE:
 
         // Crisis check
         if (state.health <= 0 && state.spirit <= 0) {
-          state.gameOver = true; state.crisisMode = true;
+          state.gameOver = true;
+          state.crisisMode = true;
         } else if (state.health <= 0 || state.spirit <= 0) {
           state.crisisMode = true;
         } else {
@@ -1160,10 +1528,16 @@ VOICE:
           settingDescription: state.settingDescription,
           playerName: state.playerName,
           characterConcept: state.characterConcept,
-          edge: state.edge, heart: state.heart, iron: state.iron,
-          shadow: state.shadow, wits: state.wits,
-          health: state.health, spirit: state.spirit, supply: state.supply,
-          momentum: state.momentum, maxMomentum: state.maxMomentum,
+          edge: state.edge,
+          heart: state.heart,
+          iron: state.iron,
+          shadow: state.shadow,
+          wits: state.wits,
+          health: state.health,
+          spirit: state.spirit,
+          supply: state.supply,
+          momentum: state.momentum,
+          maxMomentum: state.maxMomentum,
           currentLocation: state.currentLocation,
           currentSceneContext: state.currentSceneContext,
           timeOfDay: state.timeOfDay,
@@ -1171,25 +1545,34 @@ VOICE:
           crisisMode: state.crisisMode,
           gameOver: state.gameOver,
           sceneCount: state.sceneCount,
-          npcs: state.npcs.map(n => ({
-            id: n.id, name: n.name, disposition: n.disposition,
-            bond: n.bond, agenda: n.agenda, status: n.status,
+          npcs: state.npcs.map((n) => ({
+            id: n.id,
+            name: n.name,
+            disposition: n.disposition,
+            bond: n.bond,
+            agenda: n.agenda,
+            status: n.status,
             description: n.description,
           })),
-          clocks: state.clocks.map(c => ({
-            id: c.id, name: c.name, clockType: c.clockType,
-            segments: c.segments, filled: c.filled,
+          clocks: state.clocks.map((c) => ({
+            id: c.id,
+            name: c.name,
+            clockType: c.clockType,
+            segments: c.segments,
+            filled: c.filled,
             triggerDescription: c.triggerDescription,
           })),
-          storyBlueprint: state.storyBlueprint ? {
-            structureType: state.storyBlueprint.structureType,
-            currentAct: state.storyBlueprint.currentAct,
-            totalActs: state.storyBlueprint.acts.length,
-            centralConflict: state.storyBlueprint.centralConflict,
-            thematicThread: state.storyBlueprint.thematicThread,
-            storyComplete: state.storyBlueprint.storyComplete,
-            currentPhase: state.storyBlueprint.acts[state.storyBlueprint.currentAct - 1]?.phase,
-          } : null,
+          storyBlueprint: state.storyBlueprint
+            ? {
+                structureType: state.storyBlueprint.structureType,
+                currentAct: state.storyBlueprint.currentAct,
+                totalActs: state.storyBlueprint.acts.length,
+                centralConflict: state.storyBlueprint.centralConflict,
+                thematicThread: state.storyBlueprint.thematicThread,
+                storyComplete: state.storyBlueprint.storyComplete,
+                currentPhase: state.storyBlueprint.acts[state.storyBlueprint.currentAct - 1]?.phase,
+              }
+            : null,
           kidMode: state.kidMode,
           sessionLog: state.sessionLog.slice(-5),
         };
@@ -1204,7 +1587,12 @@ VOICE:
       execute: async (args, ctx) => {
         const state = ctx.state;
         await ctx.kv.set(`save:${args.slot || "autosave"}`, state);
-        return { saved: true, slot: args.slot || "autosave", name: state.playerName, scene: state.sceneCount };
+        return {
+          saved: true,
+          slot: args.slot || "autosave",
+          name: state.playerName,
+          scene: state.sceneCount,
+        };
       },
     }),
 

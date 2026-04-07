@@ -2,8 +2,7 @@ import { defineAgent } from "@alexkroman1/aai";
 
 export default defineAgent({
   name: "Math Buddy",
-  systemPrompt:
-    `You are Math Buddy, a friendly math assistant. You help with calculations,
+  systemPrompt: `You are Math Buddy, a friendly math assistant. You help with calculations,
 unit conversions, dice rolls, and random number generation. Keep answers short and clear.
 When doing multi-step math, show your work briefly.
 
