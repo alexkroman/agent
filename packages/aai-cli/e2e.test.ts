@@ -19,25 +19,9 @@ const { chromium } = await import("playwright");
 const dir = import.meta.dirname ?? path.dirname(new URL(import.meta.url).pathname);
 const packagesDir = path.resolve(dir, "..");
 
-const templates = [
-  "code-interpreter",
-  "dispatch-center",
-  "embedded-assets",
-  "health-assistant",
-  "infocom-adventure",
-  "math-buddy",
-  "memory-agent",
-  "night-owl",
-  "personal-finance",
-  "pizza-ordering",
-  "simple",
-  "smart-research",
-  "solo-rpg",
-  "support",
-  "test-patterns",
-  "travel-concierge",
-  "web-researcher",
-];
+// Representative subset: minimal baseline, stateful + tools, external tools + custom UI.
+// Full template coverage is handled by the templates unit test tier (pnpm test:templates).
+const templates = ["simple", "memory-agent", "web-researcher"];
 
 let aaiBin: string;
 let tmpDir: string;
