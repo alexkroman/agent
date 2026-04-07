@@ -33,7 +33,7 @@ export { buildCtx } from "./session-ctx.ts";
  * Created by {@link createS2sSession}. Each session owns a single S2S WebSocket
  * connection and relays audio between the browser client and AssemblyAI.
  *
- * @internal Exported for use by `ws-handler.ts`, `server.ts`, and `direct-executor.ts`.
+ * @internal Exported for use by `ws-handler.ts`, `server.ts`, and `runtime.ts`.
  */
 export type Session = {
   start(): Promise<void>;

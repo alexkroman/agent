@@ -8,8 +8,9 @@ import { callResolveTurnConfig, createAgentHooks } from "../isolate/hooks.ts";
 import { defineTool } from "../isolate/types.ts";
 import { CONFORMANCE_AGENT, testRuntime } from "./_runtime-conformance.ts";
 import { flush, makeAgent, makeMockHandle, silentLogger } from "./_test-utils.ts";
-import { createRuntime, executeToolCall } from "./direct-executor.ts";
+import { createRuntime } from "./runtime.ts";
 import { _internals } from "./session.ts";
+import { executeToolCall } from "./tool-executor.ts";
 import { createUnstorageKv } from "./unstorage-kv.ts";
 
 describe("toAgentConfig", () => {

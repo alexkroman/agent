@@ -53,7 +53,7 @@ export type AgentRuntime = {
   readonly readyConfig: ReadyConfig;
 };
 
-// ─── Direct executor ────────────────────────────────────────────────────────
+// ─── Runtime implementation ──────────────────────────────────────────────────
 
 /** Create an in-memory KV store (default for self-hosted). */
 function createLocalKv(): Kv {
