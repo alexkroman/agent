@@ -6,7 +6,7 @@
  * they are always served from verdaccio's local storage. Consumer projects
  * use a fresh pnpm store-dir to avoid stale content-addressable cache hits.
  */
-import { type ChildProcess, execFileSync, fork } from "node:child_process";
+import { type ChildProcess, execFile, execFileSync, fork } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -78,11 +78,27 @@ function startServer(configPath: string): Promise<ChildProcess> {
 }
 
 async function killTree(pid: number): Promise<void> {
-  // biome-ignore lint/correctness/noUndeclaredDependencies: tree-kill is a devDependency of the root workspace
   const treeKill = (await import("tree-kill")).default;
   return new Promise((resolve, reject) => {
     treeKill(pid, (err?: Error) => (err ? reject(err) : resolve()));
   });
+}
+
+/** Rewrite workspace dep versions in a package.json and return the original content. */
+function stampVersion(pkgJsonPath: string, testVersion: string): string {
+  const original = fs.readFileSync(pkgJsonPath, "utf-8");
+  const pkg = JSON.parse(original);
+  pkg.version = testVersion;
+  for (const depField of ["dependencies", "devDependencies", "peerDependencies"]) {
+    if (!pkg[depField]) continue;
+    for (const [dep, ver] of Object.entries(pkg[depField])) {
+      if (typeof ver === "string" && ver.startsWith("workspace:")) {
+        pkg[depField][dep] = testVersion;
+      }
+    }
+  }
+  fs.writeFileSync(pkgJsonPath, `${JSON.stringify(pkg, null, 2)}\n`);
+  return original;
 }
 
 /**
@@ -95,7 +111,6 @@ export async function startMockRegistry(
   packagesDir: string,
   packageNames: string[],
 ): Promise<MockRegistry> {
-  // biome-ignore lint/correctness/noUndeclaredDependencies: get-port is a devDependency of the root workspace
   const getPort = (await import("get-port")).default;
   const port = await getPort();
   const registryUrl = `http://localhost:${port}`;
@@ -125,37 +140,39 @@ export async function startMockRegistry(
   writeConfig(configPath, port);
   const child = await startServer(configPath);
 
+  // Rewrite all package.json versions upfront, then build+publish in parallel
+  // where the dependency graph allows (aai has no workspace deps; aai-ui and
+  // aai-cli both depend only on aai).
+  const originals = new Map<string, string>();
   for (const pkgName of packageNames) {
+    const pkgJsonPath = path.join(packagesDir, pkgName, "package.json");
+    originals.set(pkgName, stampVersion(pkgJsonPath, testVersion));
+  }
+
+  const execAsync = (cmd: string, args: string[], opts: Parameters<typeof execFile>[2]) =>
+    new Promise<void>((resolve, reject) => {
+      execFile(cmd, args, opts, (err) => (err ? reject(err) : resolve()));
+    });
+
+  const buildAndPublish = async (pkgName: string) => {
     const pkgPath = path.join(packagesDir, pkgName);
-    const pkgJsonPath = path.join(pkgPath, "package.json");
-    const originalPkg = fs.readFileSync(pkgJsonPath, "utf-8");
+    execFileSync("pnpm", ["run", "build"], { cwd: pkgPath, stdio: "inherit" });
+    await execAsync(
+      "pnpm",
+      ["publish", "--no-git-checks", "--tag", "e2e", "--registry", registryUrl],
+      { cwd: pkgPath, env: { ...process.env, ...registryEnv } },
+    );
+  };
 
-    // Temporarily set a unique version so pnpm never hits a stale cache
-    const pkg = JSON.parse(originalPkg);
-    pkg.version = testVersion;
-    for (const depField of ["dependencies", "devDependencies", "peerDependencies"]) {
-      if (!pkg[depField]) continue;
-      for (const [dep, ver] of Object.entries(pkg[depField])) {
-        if (typeof ver === "string" && ver.startsWith("workspace:")) {
-          pkg[depField][dep] = testVersion;
-        }
-      }
-    }
-    fs.writeFileSync(pkgJsonPath, JSON.stringify(pkg, null, 2) + "\n");
-
-    try {
-      execFileSync("pnpm", ["run", "build"], { cwd: pkgPath, stdio: "inherit" });
-      execFileSync(
-        "pnpm",
-        ["publish", "--no-git-checks", "--tag", "e2e", "--registry", registryUrl],
-        {
-          cwd: pkgPath,
-          stdio: "inherit",
-          env: { ...process.env, ...registryEnv },
-        },
-      );
-    } finally {
-      fs.writeFileSync(pkgJsonPath, originalPkg);
+  try {
+    // aai must build first (aai-ui and aai-cli depend on it)
+    await buildAndPublish("aai");
+    // aai-ui and aai-cli are independent — build+publish in parallel
+    const rest = packageNames.filter((n) => n !== "aai");
+    await Promise.all(rest.map(buildAndPublish));
+  } finally {
+    for (const [pkgName, original] of originals) {
+      fs.writeFileSync(path.join(packagesDir, pkgName, "package.json"), original);
     }
   }
 
