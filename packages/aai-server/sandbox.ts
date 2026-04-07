@@ -25,6 +25,7 @@ import {
 } from "@alexkroman1/aai/host";
 import { createHooks } from "hookable";
 import pTimeout from "p-timeout";
+import type { StdioEvent } from "secure-exec";
 import {
   createInMemoryFileSystem,
   createNodeDriver,
@@ -36,7 +37,7 @@ import { z } from "zod";
 import type { BundleStore } from "./bundle-store.ts";
 import { PORT_ANNOUNCE_TIMEOUT_MS, SANDBOX_MEMORY_LIMIT_MB } from "./constants.ts";
 import { getHarnessFiles } from "./sandbox-harness.ts";
-import { buildNetworkAdapter, buildNetworkPolicy } from "./sandbox-network.ts";
+import { createSidecar, type Sidecar } from "./sandbox-sidecar.ts";
 import {
   resolveSandbox as _resolveSandboxCore,
   _slotInternals,
@@ -128,7 +129,7 @@ async function startIsolate(
   kv: import("@alexkroman1/aai/kv").Kv,
   agentEnv: Record<string, string>,
   authToken: string,
-): Promise<{ port: number; runtime: NodeRuntime; crashed: AbortSignal }> {
+): Promise<{ port: number; runtime: NodeRuntime; crashed: AbortSignal; sidecar: Sidecar }> {
   const harnessFiles = await getHarnessFiles();
   const fs = createInMemoryFileSystem();
   await fs.writeFile("/app/agent_bundle.js", workerCode);
@@ -136,7 +137,13 @@ async function startIsolate(
     await fs.writeFile(`/app/${file.name}`, file.content);
   }
 
-  const prefixedEnv: Record<string, string> = { HARNESS_AUTH_TOKEN: authToken };
+  // Start a real HTTP sidecar for KV bridge before booting the isolate
+  const sidecar = await createSidecar(kv, authToken);
+
+  const prefixedEnv: Record<string, string> = {
+    HARNESS_AUTH_TOKEN: authToken,
+    SIDECAR_URL: sidecar.url,
+  };
   for (const [k, v] of Object.entries(agentEnv)) {
     prefixedEnv[`AAI_ENV_${k}`] = v;
   }
@@ -154,23 +161,24 @@ async function startIsolate(
     systemDriver: createNodeDriver({
       filesystem: fs,
       permissions: {
-        fs: (req) =>
+        fs: (req: { op: string; path: string }) =>
           isReadOnlyFsOp(req.op)
             ? { allow: true }
             : { allow: false, reason: "Filesystem is read-only" },
-        network: buildNetworkPolicy(),
+        network: () => ({ allow: true as const }),
         childProcess: () => ({ allow: false, reason: "Subprocess spawning is disabled" }),
-        env: (req) =>
+        env: (req: { op: string; key: string }) =>
           req.op === "read" && allowedKeys.has(req.key ?? "")
             ? { allow: true }
             : { allow: false, reason: "Env access restricted" },
       },
-      networkAdapter: buildNetworkAdapter(kv),
+      useDefaultNetwork: true,
+      loopbackExemptPorts: [sidecar.port],
       processConfig: { env: prefixedEnv, timingMitigation: "freeze" },
     }),
     runtimeDriverFactory: createNodeRuntimeDriverFactory(),
     memoryLimit: SANDBOX_MEMORY_LIMIT_MB,
-    onStdio(event) {
+    onStdio(event: StdioEvent) {
       if (event.channel === "stdout") {
         try {
           const parsed = z.object({ port: z.number() }).safeParse(JSON.parse(event.message));
@@ -217,7 +225,7 @@ async function startIsolate(
     }
   });
 
-  return { port, runtime, crashed: crashController.signal };
+  return { port, runtime, crashed: crashController.signal, sidecar };
 }
 
 // ── Isolate RPC ─────────────────────────────────────────────────────────
@@ -316,7 +324,12 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
 
   const kv = createUnstorageKv({ storage, prefix: `agents/${slug}/kv` });
   const authToken = randomBytes(32).toString("hex");
-  const { port, runtime, crashed } = await startIsolate(workerCode, kv, agentEnv, authToken);
+  const { port, runtime, crashed, sidecar } = await startIsolate(
+    workerCode,
+    kv,
+    agentEnv,
+    authToken,
+  );
 
   // Get agent config from isolate
   const configRes = await fetch(`http://127.0.0.1:${port}/rpc`, {
@@ -361,6 +374,9 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
     try {
       await agentRuntime.shutdown();
     } finally {
+      await sidecar.close().catch(() => {
+        /* ignore */
+      });
       await runtime.terminate().catch((err: unknown) => {
         const msg = errorMessage(err);
         if (!msg.includes("already disposed")) console.warn("Runtime terminate failed:", err);

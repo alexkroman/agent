@@ -48,14 +48,17 @@ const agentEnv: Record<string, string> = Object.freeze(
   ),
 );
 
-// ── KV bridge via network adapter ───────────────────────────────────────
+// ── KV bridge via sidecar server ────────────────────────────────────────
 
-const KV_ORIGIN = "http://kv.internal";
+const SIDECAR_URL = process.env.SIDECAR_URL ?? "";
 
 async function kvRpc<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(`${KV_ORIGIN}${path}`, {
+  const res = await fetch(`${SIDECAR_URL}/kv${path}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "x-harness-token": HARNESS_AUTH_TOKEN,
+    },
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`kv${path} failed: ${res.status}`);
