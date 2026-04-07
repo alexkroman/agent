@@ -2,9 +2,9 @@ services:
   minio:
     image: minio/minio
     command: server /data --console-address ":9001"
-    ports:
-      - "9000:9000"
-      - "9001:9001"
+    expose:
+      - "9000"
+      - "9001"
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
@@ -33,7 +33,7 @@ services:
       context: .
       dockerfile: packages/aai-server/Dockerfile
     ports:
-      - "8080:8080"
+      - "8080"
     depends_on:
       minio-init:
         condition: service_completed_successfully
@@ -44,6 +44,12 @@ services:
       AWS_ACCESS_KEY_ID: minioadmin
       AWS_SECRET_ACCESS_KEY: minioadmin
       KV_SCOPE_SECRET: docker-dev-secret
+      MAX_CONNECTIONS: "100"
+      MAX_SLOTS: "10"
+    # Match Fly.io performance-cpu-1x@2048MB
+    mem_limit: 2048m
+    memswap_limit: 2048m
+    cpus: 1
 
 volumes:
   minio-data:

@@ -6,6 +6,8 @@ primary_region = 'sjc'
 
 [env]
   PORT = "8080"
+  MAX_CONNECTIONS = "100"
+  MAX_SLOTS = "10"
 
 [http_service]
   internal_port = 8080

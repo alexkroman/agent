@@ -8,15 +8,17 @@
     "predev": "node -e \"const [maj,min] = process.versions.node.split('.').map(Number); if (maj < 22 || (maj === 22 && min < 6)) { console.error('Node >=22.6 required (got ' + process.version + '). Run: fnm use 22'); process.exit(1); }\"",
     "dev": "node --watch index.ts",
     "start": "node dist/index.mjs",
-    "test": "vitest run",
-    "test:coverage": "vitest run --coverage",
+    "test": "vitest run --exclude 'chaos/**'",
+    "test:coverage": "vitest run --coverage --exclude 'chaos/**'",
     "build": "tsdown",
     "check:harness": "node --experimental-strip-types scripts/check-harness.ts",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "check:integration": "pnpm run test:integration",
-    "test:docker": "vitest run --config vitest.docker.config.ts"
+    "test:docker": "vitest run --config vitest.docker.config.ts",
+    "test:chaos": "vitest run --config chaos/vitest.chaos.config.ts",
+    "check:chaos": "pnpm run test:chaos"
   },
   "dependencies": {
     "@alexkroman1/aai": "workspace:*",
@@ -39,6 +41,7 @@
     "@secure-exec/typescript": "^0.2.1",
     "@types/mime-types": "^3.0.1",
     "@types/ws": "^8.18.1",
+    "testcontainers": "^11.13.0",
     "tsdown": "^0.21.7",
     "typescript": "^6.0.2",
     "vitest": "^4.1.3"

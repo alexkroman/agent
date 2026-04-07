@@ -191,6 +191,37 @@ describe("ensureAgent", () => {
     await vi.advanceTimersByTimeAsync(51);
     expect(slot.sandbox).toBeUndefined();
   });
+
+  it("throws SlotCapacityError when active slots exceed MAX_SLOTS", async () => {
+    const { SlotCapacityError } = await import("./sandbox-slots.ts");
+    const { MAX_SLOTS } = await import("./constants.ts");
+
+    // Create MAX_SLOTS slots that all have active sandboxes
+    const slots = new Map<string, AgentSlot>();
+    for (let i = 0; i < MAX_SLOTS; i++) {
+      const s = makeSlot({ slug: `agent-${i}`, sandbox: makeMockSandbox() });
+      slots.set(s.slug, s);
+    }
+
+    // Try to spawn one more
+    const extraSlot = makeSlot({ slug: "one-too-many" });
+    slots.set(extraSlot.slug, extraSlot);
+    const opts = makeEnsureOpts({ slug: "one-too-many" });
+
+    await expect(ensureAgent(extraSlot, opts, slots)).rejects.toThrow(SlotCapacityError);
+    expect(mockCreateSandbox).not.toHaveBeenCalled();
+  });
+
+  it("allows spawn when active slots are below MAX_SLOTS", async () => {
+    const slots = new Map<string, AgentSlot>();
+    const slot = makeSlot({ slug: "ok-agent" });
+    slots.set(slot.slug, slot);
+    const opts = makeEnsureOpts({ slug: "ok-agent" });
+
+    const result = await ensureAgent(slot, opts, slots);
+    expect(result).toBeDefined();
+    expect(mockCreateSandbox).toHaveBeenCalledOnce();
+  });
 });
 
 describe("resolveSandbox", () => {

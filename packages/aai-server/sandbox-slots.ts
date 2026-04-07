@@ -17,9 +17,17 @@
 import { getLock } from "p-lock";
 import type { Storage } from "unstorage";
 import type { BundleStore } from "./bundle-store.ts";
-import { DEFAULT_SLOT_IDLE_MS } from "./constants.ts";
+import { DEFAULT_SLOT_IDLE_MS, MAX_SLOTS } from "./constants.ts";
 import type { Sandbox, SandboxOptions } from "./sandbox.ts";
 import type { AgentMetadata } from "./schemas.ts";
+
+/** Thrown when the active sandbox slot count has reached MAX_SLOTS. */
+export class SlotCapacityError extends Error {
+  constructor(activeCount: number, max: number) {
+    super(`Slot capacity reached: ${activeCount}/${max} active slots`);
+    this.name = "SlotCapacityError";
+  }
+}
 
 // ── Locks ───────────────────────────────────────────────────────────────
 
@@ -105,12 +113,24 @@ async function evictSlot(slot: AgentSlot, signal: AbortSignal): Promise<void> {
   }
 }
 
-export async function ensureAgent(slot: AgentSlot, opts: EnsureOpts): Promise<Sandbox> {
+export async function ensureAgent(
+  slot: AgentSlot,
+  opts: EnsureOpts,
+  slots?: Map<string, AgentSlot>,
+): Promise<Sandbox> {
   const release = await slotLock(slot.slug);
   try {
     if (slot.sandbox) {
       resetIdleTimer(slot);
       return slot.sandbox;
+    }
+
+    // Check slot cap before spawning a new sandbox
+    if (slots) {
+      const activeCount = [...slots.values()].filter((s) => s.sandbox).length;
+      if (activeCount >= MAX_SLOTS) {
+        throw new SlotCapacityError(activeCount, MAX_SLOTS);
+      }
     }
 
     const t0 = performance.now();
@@ -180,23 +200,27 @@ export async function resolveSandbox(
 
   const envPromise = opts.store.getEnv(slug);
 
-  return await ensureAgent(slot, {
-    createSandbox: opts.createSandbox,
-    getWorkerCode: (s: string) => opts.store.getWorkerCode(s),
-    storage: opts.storage,
-    slug,
-    getApiKey: async () => {
-      const env = await envPromise;
-      return env?.ASSEMBLYAI_API_KEY ?? "";
+  return await ensureAgent(
+    slot,
+    {
+      createSandbox: opts.createSandbox,
+      getWorkerCode: (s: string) => opts.store.getWorkerCode(s),
+      storage: opts.storage,
+      slug,
+      getApiKey: async () => {
+        const env = await envPromise;
+        return env?.ASSEMBLYAI_API_KEY ?? "";
+      },
+      getAgentEnv: async () => {
+        const env = await envPromise;
+        if (!env) return {};
+        // Only forward agent-defined secrets; platform keys stay host-side
+        const { ASSEMBLYAI_API_KEY: _, ...agentEnv } = env;
+        return agentEnv;
+      },
     },
-    getAgentEnv: async () => {
-      const env = await envPromise;
-      if (!env) return {};
-      // Only forward agent-defined secrets; platform keys stay host-side
-      const { ASSEMBLYAI_API_KEY: _, ...agentEnv } = env;
-      return agentEnv;
-    },
-  });
+    opts.slots,
+  );
 }
 
 /** @internal Exposed for tests. */
