@@ -13,11 +13,15 @@ describe("Smart Research Agent", () => {
   });
 
   test("has research-phase tools", () => {
-    expect(agent.tools).toHaveProperty("save_source");
-    expect(agent.tools).toHaveProperty("mark_complex");
-    expect(agent.tools).toHaveProperty("advance_phase");
-    expect(agent.tools).toHaveProperty("analyze");
-    expect(agent.tools).toHaveProperty("conversation_summary");
+    expect(Object.keys(agent.tools!)).toEqual(
+      expect.arrayContaining([
+        "save_source",
+        "mark_complex",
+        "advance_phase",
+        "analyze",
+        "conversation_summary",
+      ]),
+    );
   });
 
   test("save_source tracks URLs", async () => {

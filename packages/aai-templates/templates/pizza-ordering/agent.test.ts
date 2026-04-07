@@ -9,12 +9,16 @@ describe("Pizza Palace", () => {
   });
 
   test("has all pizza tools", () => {
-    expect(agent.tools).toHaveProperty("add_pizza");
-    expect(agent.tools).toHaveProperty("remove_pizza");
-    expect(agent.tools).toHaveProperty("update_pizza");
-    expect(agent.tools).toHaveProperty("view_order");
-    expect(agent.tools).toHaveProperty("set_customer_name");
-    expect(agent.tools).toHaveProperty("place_order");
+    expect(Object.keys(agent.tools!)).toEqual(
+      expect.arrayContaining([
+        "add_pizza",
+        "remove_pizza",
+        "update_pizza",
+        "view_order",
+        "set_customer_name",
+        "place_order",
+      ]),
+    );
   });
 
   test("add a pizza and view order", async () => {

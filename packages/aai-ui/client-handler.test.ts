@@ -1,66 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { describe, expect, test, vi } from "vitest";
-import { flush } from "./_test-utils.ts";
+import { createTarget, flush, reactive } from "./_test-utils.ts";
 import { ClientHandler } from "./client-handler.ts";
-import type { AgentState, ChatMessage, Reactive, SessionError, ToolCallInfo } from "./types.ts";
-
-function reactive<T>(initial: T): Reactive<T> {
-  return { value: initial };
-}
-
-function makeVoiceIO(overrides?: Partial<Record<string, (...args: never[]) => unknown>>) {
-  let flushed = false;
-  const chunks: ArrayBuffer[] = [];
-  let doneCalled = false;
-  return {
-    factory: () => ({
-      enqueue(buf: ArrayBuffer) {
-        chunks.push(buf);
-      },
-      done() {
-        doneCalled = true;
-        return Promise.resolve();
-      },
-      flush() {
-        flushed = true;
-      },
-      close() {
-        return Promise.resolve();
-      },
-      async [Symbol.asyncDispose]() {
-        /* noop */
-      },
-      ...overrides,
-    }),
-    wasFlushed: () => flushed,
-    chunks: () => chunks,
-    wasDone: () => doneCalled,
-  };
-}
-
-function createTarget(voiceOverrides?: Partial<Record<string, (...args: never[]) => unknown>>) {
-  const state = reactive<AgentState>("connecting");
-  const messages = reactive<ChatMessage[]>([]);
-  const toolCalls = reactive<ToolCallInfo[]>([]);
-  const userUtterance = reactive<string | null>(null);
-  const agentUtterance = reactive<string | null>(null);
-  const error = reactive<SessionError | null>(null);
-  const io = makeVoiceIO(voiceOverrides);
-
-  const target = new ClientHandler({
-    state,
-    messages,
-    toolCalls,
-    userUtterance,
-    agentUtterance,
-    error,
-    voiceIO: io.factory,
-    batch: (fn) => fn(),
-  });
-
-  return { target, state, messages, toolCalls, userUtterance, agentUtterance, error, ...io };
-}
+import type { AgentState, ChatMessage, SessionError, ToolCallInfo } from "./types.ts";
 
 describe("ClientHandler.handleMessage", () => {
   test("binary ArrayBuffer dispatches audio chunk", () => {

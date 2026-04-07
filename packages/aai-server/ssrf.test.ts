@@ -62,21 +62,26 @@ describe("SSRF: IP encoding bypass attempts", () => {
     );
   });
 
-  test("blocks IPv6 unique-local addresses (fc00::/7)", () => {
-    expect(isPrivateIp("fc00::1")).toBe(true);
-    expect(isPrivateIp("fd00::1")).toBe(true);
-    expect(isPrivateIp("fd12:3456::1")).toBe(true);
-    expect(isPrivateIp("fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff")).toBe(true);
+  test.each([
+    ["fc00::1"],
+    ["fd00::1"],
+    ["fd12:3456::1"],
+    ["fdff:ffff:ffff:ffff:ffff:ffff:ffff:ffff"],
+  ])("blocks IPv6 unique-local addresses (fc00::/7): isPrivateIp(%s)", (ip: string) => {
+    expect(isPrivateIp(ip)).toBe(true);
   });
 
   test("blocks IPv6 link-local addresses (fe80::/10)", () => {
     expect(isPrivateIp("fe80::1")).toBe(true);
+    // fe80::1%eth0 with zone ID stripped is also fe80::1
     expect(isPrivateIp("fe80::1%eth0".split("%")[0] as string)).toBe(true);
   });
 
-  test("blocks IPv6 multicast addresses (ff00::/8)", () => {
-    expect(isPrivateIp("ff00::1")).toBe(true);
-    expect(isPrivateIp("ff02::1")).toBe(true); // link-local all nodes
+  test.each([
+    ["ff00::1"],
+    ["ff02::1"], // link-local all nodes
+  ])("blocks IPv6 multicast addresses (ff00::/8): isPrivateIp(%s)", (ip: string) => {
+    expect(isPrivateIp(ip)).toBe(true);
   });
 });
 
@@ -260,72 +265,79 @@ describe("hostname-based blocking", () => {
 // ── Private IP Detection Completeness ──────────────────────────────────
 
 describe("isPrivateIp: comprehensive private range coverage", () => {
-  test("blocks all RFC 1918 private ranges", () => {
+  test.each([
     // 10.0.0.0/8
-    expect(isPrivateIp("10.0.0.0")).toBe(true);
-    expect(isPrivateIp("10.255.255.255")).toBe(true);
-    expect(isPrivateIp("10.50.100.200")).toBe(true);
-
+    ["10.0.0.0", true],
+    ["10.255.255.255", true],
+    ["10.50.100.200", true],
     // 172.16.0.0/12
-    expect(isPrivateIp("172.16.0.0")).toBe(true);
-    expect(isPrivateIp("172.31.255.255")).toBe(true);
-    expect(isPrivateIp("172.20.0.1")).toBe(true);
-    // 172.32.x.x is public
-    expect(isPrivateIp("172.32.0.1")).toBe(false);
-
+    ["172.16.0.0", true],
+    ["172.31.255.255", true],
+    ["172.20.0.1", true],
+    ["172.32.0.1", false], // 172.32.x.x is public
     // 192.168.0.0/16
-    expect(isPrivateIp("192.168.0.0")).toBe(true);
-    expect(isPrivateIp("192.168.255.255")).toBe(true);
+    ["192.168.0.0", true],
+    ["192.168.255.255", true],
+  ] as const)("blocks all RFC 1918 private ranges: isPrivateIp(%s) === %s", (ip: string, expected: boolean) => {
+    expect(isPrivateIp(ip)).toBe(expected);
   });
 
-  test("blocks carrier-grade NAT range (100.64.0.0/10)", () => {
-    expect(isPrivateIp("100.64.0.0")).toBe(true);
-    expect(isPrivateIp("100.127.255.255")).toBe(true);
-    // 100.128.x.x is public
-    expect(isPrivateIp("100.128.0.1")).toBe(false);
+  test.each([
+    ["100.64.0.0", true],
+    ["100.127.255.255", true],
+    ["100.128.0.1", false], // 100.128.x.x is public
+  ] as const)("blocks carrier-grade NAT range (100.64.0.0/10): isPrivateIp(%s) === %s", (ip: string, expected: boolean) => {
+    expect(isPrivateIp(ip)).toBe(expected);
   });
 
-  test("blocks loopback range (127.0.0.0/8)", () => {
-    expect(isPrivateIp("127.0.0.1")).toBe(true);
-    expect(isPrivateIp("127.255.255.255")).toBe(true);
-    expect(isPrivateIp("127.0.0.0")).toBe(true);
+  test.each([
+    ["127.0.0.1", true],
+    ["127.255.255.255", true],
+    ["127.0.0.0", true],
+  ] as const)("blocks loopback range (127.0.0.0/8): isPrivateIp(%s) === %s", (ip: string, expected: boolean) => {
+    expect(isPrivateIp(ip)).toBe(expected);
   });
 
-  test("blocks link-local range (169.254.0.0/16)", () => {
-    expect(isPrivateIp("169.254.0.0")).toBe(true);
-    expect(isPrivateIp("169.254.169.254")).toBe(true);
-    expect(isPrivateIp("169.254.255.255")).toBe(true);
+  test.each([
+    ["169.254.0.0", true],
+    ["169.254.169.254", true],
+    ["169.254.255.255", true],
+  ] as const)("blocks link-local range (169.254.0.0/16): isPrivateIp(%s) === %s", (ip: string, expected: boolean) => {
+    expect(isPrivateIp(ip)).toBe(expected);
   });
 
-  test("blocks benchmarking range (198.18.0.0/15)", () => {
-    expect(isPrivateIp("198.18.0.0")).toBe(true);
-    expect(isPrivateIp("198.19.255.255")).toBe(true);
-    // 198.20.x.x is public
-    expect(isPrivateIp("198.20.0.1")).toBe(false);
+  test.each([
+    ["198.18.0.0", true],
+    ["198.19.255.255", true],
+    ["198.20.0.1", false], // 198.20.x.x is public
+  ] as const)("blocks benchmarking range (198.18.0.0/15): isPrivateIp(%s) === %s", (ip: string, expected: boolean) => {
+    expect(isPrivateIp(ip)).toBe(expected);
   });
 
-  test("blocks IANA special-purpose (192.0.0.0/24)", () => {
-    expect(isPrivateIp("192.0.0.1")).toBe(true);
-    expect(isPrivateIp("192.0.0.255")).toBe(true);
-    // 192.0.1.x is public
-    expect(isPrivateIp("192.0.1.1")).toBe(false);
+  test.each([
+    ["192.0.0.1", true],
+    ["192.0.0.255", true],
+    ["192.0.1.1", false], // 192.0.1.x is public
+  ] as const)("blocks IANA special-purpose (192.0.0.0/24): isPrivateIp(%s) === %s", (ip: string, expected: boolean) => {
+    expect(isPrivateIp(ip)).toBe(expected);
   });
 
-  test("blocks multicast and reserved ranges", () => {
-    // 224.0.0.0/4 — multicast
-    expect(isPrivateIp("224.0.0.1")).toBe(true);
-    expect(isPrivateIp("239.255.255.255")).toBe(true);
-
-    // 240.0.0.0/4 — reserved for future use
-    expect(isPrivateIp("240.0.0.1")).toBe(true);
-    expect(isPrivateIp("255.255.255.254")).toBe(true);
+  test.each([
+    ["224.0.0.1", true], // 224.0.0.0/4 — multicast
+    ["239.255.255.255", true],
+    ["240.0.0.1", true], // 240.0.0.0/4 — reserved for future use
+    ["255.255.255.254", true],
+  ] as const)("blocks multicast and reserved ranges: isPrivateIp(%s) === %s", (ip: string, expected: boolean) => {
+    expect(isPrivateIp(ip)).toBe(expected);
   });
 
-  test("correctly identifies public IPs", () => {
-    expect(isPrivateIp("8.8.8.8")).toBe(false); // Google DNS
-    expect(isPrivateIp("1.1.1.1")).toBe(false); // Cloudflare DNS
-    expect(isPrivateIp("208.67.222.222")).toBe(false); // OpenDNS
-    expect(isPrivateIp("93.184.216.34")).toBe(false); // example.com
-    expect(isPrivateIp("151.101.1.140")).toBe(false); // Reddit
+  test.each([
+    ["8.8.8.8", false], // Google DNS
+    ["1.1.1.1", false], // Cloudflare DNS
+    ["208.67.222.222", false], // OpenDNS
+    ["93.184.216.34", false], // example.com
+    ["151.101.1.140", false], // Reddit
+  ] as const)("correctly identifies public IPs: isPrivateIp(%s) === %s", (ip: string, expected: boolean) => {
+    expect(isPrivateIp(ip)).toBe(expected);
   });
 });

@@ -4,14 +4,32 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { flush, installMockWebSocket } from "@alexkroman1/aai/testing";
 import { batch, signal } from "@preact/signals";
+import type { createVoiceIO } from "./audio.ts";
+import { ClientHandler } from "./client-handler.ts";
 import { createVoiceSession, type VoiceSession } from "./session.ts";
 import { createSessionControls, type SessionSignals } from "./signals.ts";
-import type { AgentState, ChatMessage, SessionError, ToolCallInfo } from "./types.ts";
+import type { AgentState, ChatMessage, Reactive, SessionError, ToolCallInfo } from "./types.ts";
 
 export { flush, installMockWebSocket, MockWebSocket } from "@alexkroman1/aai/testing";
 
 export function delay(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+function noop() {
+  /* intentional no-op */
+}
+
+/** Default voice options for tests. */
+export function voiceOpts(overrides?: Partial<Parameters<typeof createVoiceIO>[0]>) {
+  return {
+    sttSampleRate: 16_000,
+    ttsSampleRate: 24_000,
+    captureWorkletSrc: "cap",
+    playbackWorkletSrc: "play",
+    onMicData: noop,
+    ...overrides,
+  };
 }
 
 // Test helpers assign incomplete mocks to global properties (e.g. a plain
@@ -227,6 +245,65 @@ export async function replayFixture(
     env.send(msg);
     await flush();
   }
+}
+
+export function reactive<T>(initial: T): Reactive<T> {
+  return { value: initial };
+}
+
+export function makeVoiceIO(overrides?: Partial<Record<string, (...args: never[]) => unknown>>) {
+  let flushed = false;
+  const chunks: ArrayBuffer[] = [];
+  let doneCalled = false;
+  return {
+    factory: () => ({
+      enqueue(buf: ArrayBuffer) {
+        chunks.push(buf);
+      },
+      done() {
+        doneCalled = true;
+        return Promise.resolve();
+      },
+      flush() {
+        flushed = true;
+      },
+      close() {
+        return Promise.resolve();
+      },
+      async [Symbol.asyncDispose]() {
+        /* noop */
+      },
+      ...overrides,
+    }),
+    wasFlushed: () => flushed,
+    chunks: () => chunks,
+    wasDone: () => doneCalled,
+  };
+}
+
+export function createTarget(
+  voiceOverrides?: Partial<Record<string, (...args: never[]) => unknown>>,
+) {
+  const state = reactive<AgentState>("connecting");
+  const messages = reactive<ChatMessage[]>([]);
+  const toolCalls = reactive<ToolCallInfo[]>([]);
+  const userUtterance = reactive<string | null>(null);
+  const agentUtterance = reactive<string | null>(null);
+  const error = reactive<SessionError | null>(null);
+  const io = makeVoiceIO(voiceOverrides);
+
+  const target = new ClientHandler({
+    state,
+    messages,
+    toolCalls,
+    userUtterance,
+    agentUtterance,
+    error,
+    voiceIO: io.factory,
+    batch: (fn) => fn(),
+  });
+
+  return { target, state, messages, toolCalls, userUtterance, agentUtterance, error, ...io };
 }
 
 export function createMockSignals(

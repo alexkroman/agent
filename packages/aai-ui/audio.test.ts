@@ -5,23 +5,9 @@ import {
   findWorkletNode,
   installAudioMocks,
   MockAudioContext,
+  voiceOpts,
 } from "./_test-utils.ts";
 import { createVoiceIO } from "./audio.ts";
-
-function noop() {
-  /* intentional no-op */
-}
-
-function voiceOpts(overrides?: Partial<Parameters<typeof createVoiceIO>[0]>) {
-  return {
-    sttSampleRate: 16_000,
-    ttsSampleRate: 24_000,
-    captureWorkletSrc: "cap",
-    playbackWorkletSrc: "play",
-    onMicData: noop,
-    ...overrides,
-  };
-}
 
 describe("createVoiceIO", () => {
   let audio: AudioMockContext & { restore: () => void };

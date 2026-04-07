@@ -35,6 +35,30 @@ function getReq(index: number) {
   return r;
 }
 
+async function withProjectDir(fn: (dir: string) => Promise<void>): Promise<void> {
+  await withTempDir(async (dir) => {
+    await writeProjectConfig(dir, { slug: "my-agent", serverUrl: api.url });
+    process.env.ASSEMBLYAI_API_KEY = "test-key";
+    try {
+      await fn(dir);
+    } finally {
+      delete process.env.ASSEMBLYAI_API_KEY;
+    }
+  });
+}
+
+async function withCapturedLogs<T>(fn: () => Promise<T>): Promise<T> {
+  const origLog = console.log;
+  console.log = () => {
+    /* suppress output */
+  };
+  try {
+    return await fn();
+  } finally {
+    console.log = origLog;
+  }
+}
+
 let api: MockApi;
 
 beforeAll(async () => {
@@ -166,18 +190,6 @@ describe("delete against mock API", () => {
 describe("secrets against mock API", () => {
   // Secret commands use getServerInfo which reads .aai/project.json.
   // We need a real temp directory with a project config pointing at the mock API.
-  async function withProjectDir(fn: (dir: string) => Promise<void>): Promise<void> {
-    await withTempDir(async (dir) => {
-      await writeProjectConfig(dir, { slug: "my-agent", serverUrl: api.url });
-      // Override getApiKey to avoid prompts
-      process.env.ASSEMBLYAI_API_KEY = "test-key";
-      try {
-        await fn(dir);
-      } finally {
-        delete process.env.ASSEMBLYAI_API_KEY;
-      }
-    });
-  }
 
   test("secret put sends PUT with name/value body", async () => {
     await withProjectDir(async (dir) => {
@@ -200,14 +212,9 @@ describe("secrets against mock API", () => {
 
     await withProjectDir(async (dir) => {
       // runSecretList logs to console — capture it
-      const logs: string[] = [];
-      const origLog = console.log;
-      console.log = (...args: unknown[]) => logs.push(args.join(" "));
-      try {
+      await withCapturedLogs(async () => {
         await runSecretList(dir, api.url);
-      } finally {
-        console.log = origLog;
-      }
+      });
     });
 
     const listReq = api.requests.find((r) => r.method === "GET" && r.path.includes("/secret"));
@@ -294,32 +301,15 @@ describe("deploy config persistence", () => {
 // ── Secrets: edge cases ──────────────────────────────────────────────────────
 
 describe("secrets edge cases", () => {
-  async function withProjectDir(fn: (dir: string) => Promise<void>): Promise<void> {
-    await withTempDir(async (dir) => {
-      await writeProjectConfig(dir, { slug: "my-agent", serverUrl: api.url });
-      process.env.ASSEMBLYAI_API_KEY = "test-key";
-      try {
-        await fn(dir);
-      } finally {
-        delete process.env.ASSEMBLYAI_API_KEY;
-      }
-    });
-  }
-
   test("secret list with no secrets shows empty message", async () => {
     // Ensure no secrets in mock
     for (const key of Object.keys(api.secrets)) delete api.secrets[key];
 
-    const logs: string[] = [];
-    const origLog = console.log;
-    console.log = (...args: unknown[]) => logs.push(args.join(" "));
-    try {
+    await withCapturedLogs(async () => {
       await withProjectDir(async (dir) => {
         await runSecretList(dir, api.url);
       });
-    } finally {
-      console.log = origLog;
-    }
+    });
 
     // The function should have made the GET request
     const listReq = api.requests.find((r) => r.method === "GET");

@@ -9,11 +9,15 @@ describe("Dispatch Command Center", () => {
   });
 
   test("has dispatch tools", () => {
-    expect(agent.tools).toHaveProperty("incident_create");
-    expect(agent.tools).toHaveProperty("incident_triage");
-    expect(agent.tools).toHaveProperty("resources_dispatch");
-    expect(agent.tools).toHaveProperty("resources_get_available");
-    expect(agent.tools).toHaveProperty("ops_dashboard");
+    expect(Object.keys(agent.tools!)).toEqual(
+      expect.arrayContaining([
+        "incident_create",
+        "incident_triage",
+        "resources_dispatch",
+        "resources_get_available",
+        "ops_dashboard",
+      ]),
+    );
   });
 
   test("create and triage an incident", async () => {

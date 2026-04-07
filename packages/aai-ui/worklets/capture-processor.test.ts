@@ -1,15 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
 
-// Mock browser APIs before importing the module
-globalThis.Blob = class Blob {
-  parts: string[];
-  constructor(parts: string[]) {
-    this.parts = parts;
-  }
-} as unknown as typeof Blob;
-globalThis.URL.createObjectURL = () => "blob:mock";
-
 const { default: src } = await import("./capture-processor.ts");
 
 describe("capture-processor worklet", () => {

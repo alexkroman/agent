@@ -13,11 +13,6 @@ describe("Scout (Web Researcher)", () => {
     expect(agent.builtinTools).toContain("visit_webpage");
   });
 
-  test("harness can be created", () => {
-    const t = createTestHarness(agent);
-    expect(t).toBeDefined();
-  });
-
   test("conversation tracks messages across turns", async () => {
     const t = createTestHarness(agent);
     await t.turn("What is TypeScript?");

@@ -3,6 +3,8 @@ import { describe, expect, test } from "vitest";
 import { hashApiKey } from "./auth.ts";
 import { createOrchestrator } from "./orchestrator.ts";
 import {
+  authFetch,
+  authHeaders,
   createTestOrchestrator,
   createTestStorage,
   createTestStore,
@@ -21,13 +23,9 @@ describe("cross-agent KV isolation", () => {
     await deployAgent(fetch, "agent-beta", "key-beta");
 
     // Agent alpha writes a KV entry
-    await fetch("/agent-alpha/kv", {
-      method: "POST",
-      headers: {
-        Authorization: "Bearer key-alpha",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ op: "set", key: "secret", value: "alpha-secret-data" }),
+    await authFetch(fetch, "/agent-alpha/kv", {
+      key: "key-alpha",
+      body: { op: "set", key: "secret", value: "alpha-secret-data" },
     });
 
     // Agent alpha can read its own data
@@ -39,13 +37,9 @@ describe("cross-agent KV isolation", () => {
     expect(alphaData).toBe("alpha-secret-data");
 
     // Agent beta writes a KV entry with the same key name
-    await fetch("/agent-beta/kv", {
-      method: "POST",
-      headers: {
-        Authorization: "Bearer key-beta",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ op: "set", key: "secret", value: "beta-secret-data" }),
+    await authFetch(fetch, "/agent-beta/kv", {
+      key: "key-beta",
+      body: { op: "set", key: "secret", value: "beta-secret-data" },
     });
 
     // Agent beta reads its own data — should get beta's value, not alpha's
@@ -70,13 +64,9 @@ describe("cross-agent KV isolation", () => {
     await deployAgent(fetch, "agent-beta", "key-beta");
 
     // Agent alpha's key should be rejected on agent beta's KV endpoint
-    const res = await fetch("/agent-beta/kv", {
-      method: "POST",
-      headers: {
-        Authorization: "Bearer key-alpha",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ op: "get", key: "test" }),
+    const res = await authFetch(fetch, "/agent-beta/kv", {
+      key: "key-alpha",
+      body: { op: "get", key: "test" },
     });
     expect(res.status).toBe(403);
   });
@@ -88,32 +78,20 @@ describe("cross-agent KV isolation", () => {
     await deployAgent(fetch, "agent-beta", "key-beta");
 
     // Both agents write keys
-    await fetch("/agent-alpha/kv", {
-      method: "POST",
-      headers: {
-        Authorization: "Bearer key-alpha",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ op: "set", key: "alpha-key-1", value: "a1" }),
+    await authFetch(fetch, "/agent-alpha/kv", {
+      key: "key-alpha",
+      body: { op: "set", key: "alpha-key-1", value: "a1" },
     });
 
-    await fetch("/agent-beta/kv", {
-      method: "POST",
-      headers: {
-        Authorization: "Bearer key-beta",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ op: "set", key: "beta-key-1", value: "b1" }),
+    await authFetch(fetch, "/agent-beta/kv", {
+      key: "key-beta",
+      body: { op: "set", key: "beta-key-1", value: "b1" },
     });
 
     // Alpha lists its keys — should not see beta's keys
-    const alphaKeys = await fetch("/agent-alpha/kv", {
-      method: "POST",
-      headers: {
-        Authorization: "Bearer key-alpha",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ op: "keys" }),
+    const alphaKeys = await authFetch(fetch, "/agent-alpha/kv", {
+      key: "key-alpha",
+      body: { op: "keys" },
     });
     const alphaResult = (await alphaKeys.json()) as { result: string[] };
     expect(alphaResult.result).toContain("alpha-key-1");
@@ -133,10 +111,7 @@ describe("cross-agent auth isolation", () => {
     // Alpha's key tries to redeploy over beta
     const res = await fetch("/agent-beta/deploy", {
       method: "POST",
-      headers: {
-        Authorization: "Bearer key-alpha",
-        "Content-Type": "application/json",
-      },
+      headers: authHeaders("key-alpha"),
       body: deployBody(),
     });
     expect(res.status).toBe(403);
@@ -170,10 +145,7 @@ describe("cross-agent auth isolation", () => {
     // Try to set a secret on agent B with agent A's key
     const setRes = await fetch("/agent-beta/secret", {
       method: "PUT",
-      headers: {
-        Authorization: "Bearer key-alpha",
-        "Content-Type": "application/json",
-      },
+      headers: authHeaders("key-alpha"),
       body: JSON.stringify({ MY_SECRET: "injected" }),
     });
     expect(setRes.status).toBe(403);
@@ -194,10 +166,7 @@ describe("cross-agent auth isolation", () => {
     // Use wrong key — error message should not confirm agent exists
     const res = await fetch("/agent-alpha/deploy", {
       method: "POST",
-      headers: {
-        Authorization: "Bearer wrong-key",
-        "Content-Type": "application/json",
-      },
+      headers: authHeaders("wrong-key"),
       body: deployBody(),
     });
     expect(res.status).toBe(403);
@@ -246,10 +215,7 @@ describe("platform credential separation", () => {
 
     const res = await fetch("/my-agent/secret", {
       method: "PUT",
-      headers: {
-        Authorization: "Bearer key1",
-        "Content-Type": "application/json",
-      },
+      headers: authHeaders(),
       body: JSON.stringify({ ASSEMBLYAI_API_KEY: "attacker-key" }),
     });
     expect(res.status).toBe(400);
@@ -507,22 +473,15 @@ describe("multi-tenant deploy isolation", () => {
     await deployAgent(fetch, "agent-beta", "key-beta");
 
     // Store data in beta's KV
-    await fetch("/agent-beta/kv", {
-      method: "POST",
-      headers: {
-        Authorization: "Bearer key-beta",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ op: "set", key: "persist-test", value: "should-survive" }),
+    await authFetch(fetch, "/agent-beta/kv", {
+      key: "key-beta",
+      body: { op: "set", key: "persist-test", value: "should-survive" },
     });
 
     // Redeploy agent alpha
     await fetch("/agent-alpha/deploy", {
       method: "POST",
-      headers: {
-        Authorization: "Bearer key-alpha",
-        "Content-Type": "application/json",
-      },
+      headers: authHeaders("key-alpha"),
       body: deployBody(),
     });
 
