@@ -15,13 +15,17 @@ export type AgentEntry = {
 export const DEFAULT_SERVER = "https://aai-agent.fly.dev";
 export const DEFAULT_DEV_SERVER = "http://localhost:8080";
 
+let _cachedMonorepoRoot: string | null | undefined;
+
 export function getMonorepoRoot(): string | null {
+  if (_cachedMonorepoRoot !== undefined) return _cachedMonorepoRoot;
   const cliDir = path.dirname(fileURLToPath(import.meta.url));
   const root1 = path.resolve(cliDir, "../..");
   const root2 = path.resolve(cliDir, "../../..");
-  if (existsSync(path.join(root1, "pnpm-workspace.yaml"))) return root1;
-  if (existsSync(path.join(root2, "pnpm-workspace.yaml"))) return root2;
-  return null;
+  if (existsSync(path.join(root1, "pnpm-workspace.yaml"))) _cachedMonorepoRoot = root1;
+  else if (existsSync(path.join(root2, "pnpm-workspace.yaml"))) _cachedMonorepoRoot = root2;
+  else _cachedMonorepoRoot = null;
+  return _cachedMonorepoRoot;
 }
 
 export function isDevMode(): boolean {

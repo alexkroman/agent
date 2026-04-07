@@ -10,7 +10,7 @@ import { secureHeaders } from "hono/secure-headers";
 import type { Storage } from "unstorage";
 import { WebSocketServer } from "ws";
 import { createConnectionTracker } from "./connection-tracker.ts";
-import { MAX_CONNECTIONS } from "./constants.ts";
+import { agentKvPrefix, MAX_CONNECTIONS } from "./constants.ts";
 import type { Env } from "./context.ts";
 import { handleDelete } from "./delete.ts";
 import { handleDeploy, handleDeployNew } from "./deploy.ts";
@@ -100,7 +100,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     const slug = c.var.slug;
     const manifest = await c.env.store.getManifest(slug);
     if (!manifest) return c.json(null, 404);
-    const kv = createUnstorageKv({ storage: c.env.storage, prefix: `agents/${slug}/kv` });
+    const kv = createUnstorageKv({ storage: c.env.storage, prefix: agentKvPrefix(slug) });
     const value = await kv.get(key);
     if (value === null) return c.json(null, 404);
     return c.json(value);

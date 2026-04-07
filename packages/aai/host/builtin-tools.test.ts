@@ -2,11 +2,11 @@
 
 import { describe, expect, test, vi } from "vitest";
 import { createMockToolContext } from "./_test-utils.ts";
-import { executeInIsolate, getBuiltinToolDefs, getBuiltinToolSchemas } from "./builtin-tools.ts";
+import { executeInIsolate, resolveAllBuiltins } from "./builtin-tools.ts";
 
-describe("getBuiltinToolSchemas", () => {
+describe("resolveAllBuiltins schemas", () => {
   test("returns requested tools", () => {
-    const schemas = getBuiltinToolSchemas([
+    const { schemas } = resolveAllBuiltins([
       "web_search",
       "visit_webpage",
       "run_code",
@@ -21,54 +21,54 @@ describe("getBuiltinToolSchemas", () => {
   });
 
   test("returns empty for no tools", () => {
-    const schemas = getBuiltinToolSchemas([]);
+    const { schemas } = resolveAllBuiltins([]);
     expect(schemas).toHaveLength(0);
   });
 
   test("unknown tool name returns empty", () => {
-    const schemas = getBuiltinToolSchemas(["nonexistent_tool"]);
+    const { schemas } = resolveAllBuiltins(["nonexistent_tool"]);
     expect(schemas).toHaveLength(0);
   });
 });
 
-describe("getBuiltinToolDefs", () => {
+describe("resolveAllBuiltins defs", () => {
   test("returns tool defs with execute functions", () => {
-    const defs = getBuiltinToolDefs(["web_search", "fetch_json"]);
+    const { defs } = resolveAllBuiltins(["web_search", "fetch_json"]);
     expect(Object.keys(defs)).toEqual(["web_search", "fetch_json"]);
     expect(typeof defs.web_search?.execute).toBe("function");
     expect(typeof defs.fetch_json?.execute).toBe("function");
   });
 
   test("unknown tool name is skipped", () => {
-    const defs = getBuiltinToolDefs(["nonexistent_tool"]);
+    const { defs } = resolveAllBuiltins(["nonexistent_tool"]);
     expect(Object.keys(defs)).toHaveLength(0);
   });
 
   // ─── run_code ──────────────────────────────────────────────────────────
 
   test("run_code executes and returns stdout", async () => {
-    const defs = getBuiltinToolDefs(["run_code"]);
+    const { defs } = resolveAllBuiltins(["run_code"]);
     const ctx = createMockToolContext();
     const result = await defs.run_code?.execute({ code: 'console.log("hello")' }, ctx);
     expect(result).toBe("hello");
   });
 
   test("run_code returns error for syntax errors", async () => {
-    const defs = getBuiltinToolDefs(["run_code"]);
+    const { defs } = resolveAllBuiltins(["run_code"]);
     const ctx = createMockToolContext();
     const result = await defs.run_code?.execute({ code: "%%%" }, ctx);
     expect(result).toHaveProperty("error");
   });
 
   test("run_code returns no-output message for silent code", async () => {
-    const defs = getBuiltinToolDefs(["run_code"]);
+    const { defs } = resolveAllBuiltins(["run_code"]);
     const ctx = createMockToolContext();
     const result = await defs.run_code?.execute({ code: "const x = 1 + 1;" }, ctx);
     expect(result).toBe("Code ran successfully (no output)");
   });
 
   test("run_code captures console.warn and console.error", async () => {
-    const defs = getBuiltinToolDefs(["run_code"]);
+    const { defs } = resolveAllBuiltins(["run_code"]);
     const ctx = createMockToolContext();
     const result = await defs.run_code?.execute(
       {
@@ -82,7 +82,7 @@ describe("getBuiltinToolDefs", () => {
   // ─── run_code security: vm sandbox prevents host access ──────────────
 
   test("run_code sandbox blocks network access", async () => {
-    const defs = getBuiltinToolDefs(["run_code"]);
+    const { defs } = resolveAllBuiltins(["run_code"]);
     const ctx = createMockToolContext();
     const result = await defs.run_code?.execute(
       {
@@ -102,7 +102,7 @@ describe("getBuiltinToolDefs", () => {
   });
 
   test("run_code sandbox blocks filesystem writes", async () => {
-    const defs = getBuiltinToolDefs(["run_code"]);
+    const { defs } = resolveAllBuiltins(["run_code"]);
     const ctx = createMockToolContext();
     const result = await defs.run_code?.execute(
       {
@@ -123,7 +123,7 @@ describe("getBuiltinToolDefs", () => {
   });
 
   test("run_code sandbox blocks child process spawning", async () => {
-    const defs = getBuiltinToolDefs(["run_code"]);
+    const { defs } = resolveAllBuiltins(["run_code"]);
     const ctx = createMockToolContext();
     const result = await defs.run_code?.execute(
       {
@@ -144,7 +144,7 @@ describe("getBuiltinToolDefs", () => {
   });
 
   test("run_code sandbox blocks env var access", async () => {
-    const defs = getBuiltinToolDefs(["run_code"]);
+    const { defs } = resolveAllBuiltins(["run_code"]);
     const ctx = createMockToolContext();
     const result = await defs.run_code?.execute(
       {
@@ -166,7 +166,7 @@ describe("getBuiltinToolDefs", () => {
   });
 
   test("run_code sandbox prevents constructor chain escape", async () => {
-    const defs = getBuiltinToolDefs(["run_code"]);
+    const { defs } = resolveAllBuiltins(["run_code"]);
     const ctx = createMockToolContext();
     // This was the critical bypass in the old regex approach — the VM context
     // doesn't expose `process` so host secrets can't be exfiltrated.
@@ -192,7 +192,7 @@ describe("getBuiltinToolDefs", () => {
   });
 
   test("run_code allows normal .constructor property check", async () => {
-    const defs = getBuiltinToolDefs(["run_code"]);
+    const { defs } = resolveAllBuiltins(["run_code"]);
     const ctx = createMockToolContext();
     const result = await defs.run_code?.execute(
       { code: 'console.log("hello".constructor.name)' },
@@ -202,7 +202,7 @@ describe("getBuiltinToolDefs", () => {
   });
 
   test("run_code sandbox blocks template literal constructor bypass", async () => {
-    const defs = getBuiltinToolDefs(["run_code"]);
+    const { defs } = resolveAllBuiltins(["run_code"]);
     const ctx = createMockToolContext();
     const result = await defs.run_code?.execute(
       {
@@ -226,7 +226,7 @@ describe("getBuiltinToolDefs", () => {
   });
 
   test("run_code sandbox blocks Array.join constructor bypass", async () => {
-    const defs = getBuiltinToolDefs(["run_code"]);
+    const { defs } = resolveAllBuiltins(["run_code"]);
     const ctx = createMockToolContext();
     const result = await defs.run_code?.execute(
       {
@@ -250,7 +250,7 @@ describe("getBuiltinToolDefs", () => {
   });
 
   test("run_code sandbox blocks fromCharCode constructor bypass", async () => {
-    const defs = getBuiltinToolDefs(["run_code"]);
+    const { defs } = resolveAllBuiltins(["run_code"]);
     const ctx = createMockToolContext();
     const result = await defs.run_code?.execute(
       {
@@ -274,7 +274,7 @@ describe("getBuiltinToolDefs", () => {
   });
 
   test("run_code sandbox blocks dynamic import of node:os", async () => {
-    const defs = getBuiltinToolDefs(["run_code"]);
+    const { defs } = resolveAllBuiltins(["run_code"]);
     const ctx = createMockToolContext();
     const result = await defs.run_code?.execute(
       {
@@ -295,7 +295,7 @@ describe("getBuiltinToolDefs", () => {
   });
 
   test("run_code sandbox blocks fetch to cloud metadata endpoint", async () => {
-    const defs = getBuiltinToolDefs(["run_code"]);
+    const { defs } = resolveAllBuiltins(["run_code"]);
     const ctx = createMockToolContext();
     const result = await defs.run_code?.execute(
       {
@@ -319,7 +319,7 @@ describe("getBuiltinToolDefs", () => {
   test("fetch_json fetches and returns JSON", async () => {
     const mockData = { name: "test", value: 42 };
     const mockFetch = () => Promise.resolve(new Response(JSON.stringify(mockData)));
-    const defs = getBuiltinToolDefs(["fetch_json"], {
+    const { defs } = resolveAllBuiltins(["fetch_json"], {
       fetch: mockFetch as typeof globalThis.fetch,
     });
     const ctx = createMockToolContext();
@@ -330,7 +330,7 @@ describe("getBuiltinToolDefs", () => {
   test("fetch_json returns error for non-ok response", async () => {
     const mockFetch = () =>
       Promise.resolve(new Response("", { status: 500, statusText: "Internal Server Error" }));
-    const defs = getBuiltinToolDefs(["fetch_json"], {
+    const { defs } = resolveAllBuiltins(["fetch_json"], {
       fetch: mockFetch as typeof globalThis.fetch,
     });
     const ctx = createMockToolContext();
@@ -343,7 +343,7 @@ describe("getBuiltinToolDefs", () => {
 
   test("fetch_json returns error for invalid JSON response", async () => {
     const mockFetch = () => Promise.resolve(new Response("not-json"));
-    const defs = getBuiltinToolDefs(["fetch_json"], {
+    const { defs } = resolveAllBuiltins(["fetch_json"], {
       fetch: mockFetch as typeof globalThis.fetch,
     });
     const ctx = createMockToolContext();
@@ -356,7 +356,7 @@ describe("getBuiltinToolDefs", () => {
 
   test("fetch_json passes allowed custom headers to fetch", async () => {
     const mockFetch = vi.fn(() => Promise.resolve(new Response(JSON.stringify({ ok: true }))));
-    const defs = getBuiltinToolDefs(["fetch_json"], {
+    const { defs } = resolveAllBuiltins(["fetch_json"], {
       fetch: mockFetch as typeof globalThis.fetch,
     });
     const ctx = createMockToolContext();
@@ -375,7 +375,7 @@ describe("getBuiltinToolDefs", () => {
 
   test("fetch_json blocks dangerous headers like Authorization", async () => {
     const mockFetch = vi.fn(() => Promise.resolve(new Response(JSON.stringify({ ok: true }))));
-    const defs = getBuiltinToolDefs(["fetch_json"], {
+    const { defs } = resolveAllBuiltins(["fetch_json"], {
       fetch: mockFetch as typeof globalThis.fetch,
     });
     const ctx = createMockToolContext();
@@ -394,7 +394,7 @@ describe("getBuiltinToolDefs", () => {
 
   test("fetch_json delegates fetch without SSRF checks — platform adapter handles it", async () => {
     const mockFetch = vi.fn(async () => new Response(JSON.stringify({ ok: true })));
-    const defs = getBuiltinToolDefs(["fetch_json"], {
+    const { defs } = resolveAllBuiltins(["fetch_json"], {
       fetch: mockFetch as unknown as typeof globalThis.fetch,
     });
     const ctx = createMockToolContext();
@@ -407,7 +407,7 @@ describe("getBuiltinToolDefs", () => {
   // ─── web_search ────────────────────────────────────────────────────────
 
   test("web_search returns error when BRAVE_API_KEY is not set", async () => {
-    const defs = getBuiltinToolDefs(["web_search"]);
+    const { defs } = resolveAllBuiltins(["web_search"]);
     const ctx = createMockToolContext({ env: {} });
     const result = await defs.web_search?.execute({ query: "test" }, ctx);
     expect(result).toEqual({ error: "BRAVE_API_KEY is not set — web search unavailable" });
@@ -416,7 +416,7 @@ describe("getBuiltinToolDefs", () => {
   test("web_search returns error on non-ok response", async () => {
     const mockFetch = () =>
       Promise.resolve(new Response("", { status: 500, statusText: "Internal Server Error" }));
-    const defs = getBuiltinToolDefs(["web_search"], {
+    const { defs } = resolveAllBuiltins(["web_search"], {
       fetch: mockFetch as typeof globalThis.fetch,
     });
     const ctx = createMockToolContext({ env: { BRAVE_API_KEY: "key123" } });
@@ -426,7 +426,7 @@ describe("getBuiltinToolDefs", () => {
 
   test("web_search returns empty results when response has no web results", async () => {
     const mockFetch = () => Promise.resolve(new Response(JSON.stringify({ invalid: true })));
-    const defs = getBuiltinToolDefs(["web_search"], {
+    const { defs } = resolveAllBuiltins(["web_search"], {
       fetch: mockFetch as typeof globalThis.fetch,
     });
     const ctx = createMockToolContext({ env: { BRAVE_API_KEY: "key123" } });
@@ -444,7 +444,7 @@ describe("getBuiltinToolDefs", () => {
       },
     };
     const mockFetch = vi.fn(() => Promise.resolve(new Response(JSON.stringify(braveResponse))));
-    const defs = getBuiltinToolDefs(["web_search"], {
+    const { defs } = resolveAllBuiltins(["web_search"], {
       fetch: mockFetch as typeof globalThis.fetch,
     });
     const ctx = createMockToolContext({ env: { BRAVE_API_KEY: "key123" } });
@@ -464,7 +464,7 @@ describe("getBuiltinToolDefs", () => {
   test("visit_webpage returns content for successful fetch", async () => {
     const html = "<html><body><p>Hello World</p></body></html>";
     const mockFetch = () => Promise.resolve(new Response(html));
-    const defs = getBuiltinToolDefs(["visit_webpage"], {
+    const { defs } = resolveAllBuiltins(["visit_webpage"], {
       fetch: mockFetch as typeof globalThis.fetch,
     });
     const ctx = createMockToolContext();
@@ -480,7 +480,7 @@ describe("getBuiltinToolDefs", () => {
   test("visit_webpage returns error for non-ok response", async () => {
     const mockFetch = () =>
       Promise.resolve(new Response("", { status: 404, statusText: "Not Found" }));
-    const defs = getBuiltinToolDefs(["visit_webpage"], {
+    const { defs } = resolveAllBuiltins(["visit_webpage"], {
       fetch: mockFetch as typeof globalThis.fetch,
     });
     const ctx = createMockToolContext();
@@ -497,7 +497,7 @@ describe("getBuiltinToolDefs", () => {
     const longText = "A".repeat(15_000);
     const html = `<html><body><p>${longText}</p></body></html>`;
     const mockFetch = () => Promise.resolve(new Response(html));
-    const defs = getBuiltinToolDefs(["visit_webpage"], {
+    const { defs } = resolveAllBuiltins(["visit_webpage"], {
       fetch: mockFetch as typeof globalThis.fetch,
     });
     const ctx = createMockToolContext();
@@ -519,7 +519,7 @@ describe("getBuiltinToolDefs", () => {
       }
       return new Response("", { status: 404 });
     });
-    const defs = getBuiltinToolDefs(["visit_webpage"], {
+    const { defs } = resolveAllBuiltins(["visit_webpage"], {
       fetch: mockFetch as unknown as typeof globalThis.fetch,
     });
     const ctx = createMockToolContext();

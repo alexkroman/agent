@@ -32,7 +32,7 @@ export type ExecuteToolCallOptions = {
 function buildToolContext(opts: ExecuteToolCallOptions): ToolContext {
   const { env, state, kv, messages, sessionId } = opts;
   return {
-    env: { ...env },
+    env,
     state: state ?? {},
     get kv(): Kv {
       if (!kv) throw new Error("KV not available");

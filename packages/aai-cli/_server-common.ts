@@ -4,27 +4,10 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { AgentServer } from "@alexkroman1/aai/server";
 import type { AgentDef } from "@alexkroman1/aai/types";
+import { parseEnvFile } from "@alexkroman1/aai/utils";
 import { getApiKey } from "./_config.ts";
 
-/**
- * Parse a `.env` file into a key→value record.
- *
- * Used to determine *which* keys the developer intended as agent
- * secrets and their default values. Shell overrides still win because
- * callers merge with `process.env` (existing vars take precedence).
- */
-export function parseEnvFile(content: string): Record<string, string> {
-  const entries: Record<string, string> = {};
-  for (const raw of content.split("\n")) {
-    const line = raw.trim();
-    if (!line || line.startsWith("#")) continue;
-    const eq = line.indexOf("=");
-    if (eq === -1) continue;
-    const key = line.slice(0, eq).trim();
-    if (key) entries[key] = line.slice(eq + 1);
-  }
-  return entries;
-}
+export { parseEnvFile } from "@alexkroman1/aai/utils";
 
 /** Load an AgentDef by dynamically importing agent.ts via Node's native TS support. */
 export async function loadAgentDef(cwd: string): Promise<AgentDef> {

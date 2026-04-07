@@ -122,6 +122,7 @@ export async function executeInIsolate(code: string): Promise<string | { error: 
     queueMicrotask,
   });
 
+  let raceTimer: ReturnType<typeof setTimeout> | undefined;
   try {
     // Wrap user code in an async IIFE so top-level `await` works.
     const wrapped = `(async () => {\n${code}\n})()`;
@@ -133,9 +134,12 @@ export async function executeInIsolate(code: string): Promise<string | { error: 
 
     await Promise.race([
       promise,
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("Code execution timed out")), RUN_CODE_TIMEOUT_MS),
-      ),
+      new Promise<never>((_, reject) => {
+        raceTimer = setTimeout(
+          () => reject(new Error("Code execution timed out")),
+          RUN_CODE_TIMEOUT_MS,
+        );
+      }),
     ]);
 
     const text = output.join("\n").trim();
@@ -143,6 +147,7 @@ export async function executeInIsolate(code: string): Promise<string | { error: 
   } catch (err: unknown) {
     return { error: errorMessage(err) };
   } finally {
+    if (raceTimer) clearTimeout(raceTimer);
     // Cancel all sandbox timers that are still pending. This prevents
     // setInterval/setTimeout callbacks from running in the host event loop
     // after the sandbox execution has completed or timed out.

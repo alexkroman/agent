@@ -18,9 +18,8 @@ import {
   createUnstorageKv,
   type ExecuteTool,
   errorMessage,
-  getBuiltinToolGuidance,
-  getBuiltinToolSchemas,
   HOOK_TIMEOUT_MS,
+  resolveAllBuiltins,
   TOOL_EXECUTION_TIMEOUT_MS,
 } from "@alexkroman1/aai/host";
 import { createHooks } from "hookable";
@@ -35,6 +34,7 @@ import {
 import type { Storage } from "unstorage";
 import { z } from "zod";
 import {
+  agentKvPrefix,
   JAIL_MEMORY_LIMIT_MB,
   PORT_ANNOUNCE_TIMEOUT_MS,
   SANDBOX_MEMORY_LIMIT_MB,
@@ -312,7 +312,7 @@ export const _internals = {
 export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
   const { workerCode, apiKey, agentEnv, storage, slug } = opts;
 
-  const kv = createUnstorageKv({ storage, prefix: `agents/${slug}/kv` });
+  const kv = createUnstorageKv({ storage, prefix: agentKvPrefix(slug) });
   const authToken = randomBytes(32).toString("hex");
   const { port, runtime, crashed, sidecar } = await startIsolate(
     workerCode,
@@ -336,6 +336,7 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
   const hooks = buildHookInvoker(port, authToken, crashed);
 
   // Create a runtime with RPC overrides — same startSession/shutdown as self-hosted
+  const builtins = resolveAllBuiltins(config.builtinTools ?? []);
   const agentRuntime = createRuntime({
     agent: {
       name: config.name,
@@ -354,8 +355,8 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
     env: { ...agentEnv, ASSEMBLYAI_API_KEY: apiKey },
     executeTool,
     hooks,
-    toolSchemas: [...config.toolSchemas, ...getBuiltinToolSchemas(config.builtinTools ?? [])],
-    toolGuidance: getBuiltinToolGuidance(config.builtinTools ?? []),
+    toolSchemas: [...config.toolSchemas, ...builtins.schemas],
+    toolGuidance: builtins.guidance,
   });
 
   console.info("Sandbox initialized", { slug, isolatePort: port, agent: config.name });
