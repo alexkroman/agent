@@ -25,7 +25,7 @@ export function _clearHashCache(): void {
 }
 
 /** Constant-time string comparison to prevent timing attacks on credential hashes. */
-function timingSafeCompare(a: string, b: string): boolean {
+export function timingSafeCompare(a: string, b: string): boolean {
   const bufA = textEncoder.encode(a);
   const bufB = textEncoder.encode(b);
   if (bufA.length !== bufB.length) return false;

@@ -121,16 +121,18 @@ describe("SSRF: protocol validation", () => {
 
   test("allows http:// protocol", async () => {
     // Public URL, should not throw for protocol (may throw for DNS)
-    await expect(assertPublicUrl("http://example.com/")).resolves.toBeUndefined();
+    await expect(assertPublicUrl("http://example.com/")).resolves.toEqual(expect.any(String));
   }, 15_000);
 
   test("allows https:// protocol", async () => {
-    await expect(assertPublicUrl("https://example.com/")).resolves.toBeUndefined();
+    await expect(assertPublicUrl("https://example.com/")).resolves.toEqual(expect.any(String));
   }, 15_000);
 
   test("allows valid public URLs", async () => {
     // DNS resolution may be slow in sandboxed environments
-    await expect(assertPublicUrl("https://api.brave.com/search")).resolves.toBeUndefined();
+    await expect(assertPublicUrl("https://api.brave.com/search")).resolves.toEqual(
+      expect.any(String),
+    );
   }, 15_000);
 });
 

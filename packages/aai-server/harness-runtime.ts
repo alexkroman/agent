@@ -255,7 +255,7 @@ function json(res: ServerResponse, data: unknown, status = 200): void {
 }
 
 function isAuthorized(req: IncomingMessage): boolean {
-  if (!HARNESS_AUTH_TOKEN_BUF) return true;
+  if (!HARNESS_AUTH_TOKEN_BUF) return false;
   const token = req.headers["x-harness-token"];
   if (typeof token !== "string" || token.length !== HARNESS_AUTH_TOKEN.length) return false;
   return timingSafeEqual(Buffer.from(token), HARNESS_AUTH_TOKEN_BUF);

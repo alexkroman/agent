@@ -201,6 +201,48 @@ describe("resolveAllBuiltins defs", () => {
     expect(result).toBe("String");
   });
 
+  test("run_code sandbox blocks console.log.constructor code generation", async () => {
+    const defs = getBuiltinToolDefs(["run_code"]);
+    const ctx = createMockToolContext();
+    const result = await defs.run_code?.execute(
+      {
+        code: `
+          try {
+            const fn = console.log.constructor('return 1')();
+            console.log("ESCAPED:" + fn);
+          } catch(e) {
+            console.log("BLOCKED:" + e.message);
+          }
+        `,
+      },
+      ctx,
+    );
+    expect(typeof result).toBe("string");
+    expect(result as string).toMatch(/BLOCKED/);
+    expect(result as string).not.toMatch(/ESCAPED/);
+  });
+
+  test("run_code sandbox blocks URL.constructor.constructor code generation", async () => {
+    const defs = getBuiltinToolDefs(["run_code"]);
+    const ctx = createMockToolContext();
+    const result = await defs.run_code?.execute(
+      {
+        code: `
+          try {
+            const fn = URL.constructor.constructor('return 1')();
+            console.log("ESCAPED:" + fn);
+          } catch(e) {
+            console.log("BLOCKED:" + e.message);
+          }
+        `,
+      },
+      ctx,
+    );
+    expect(typeof result).toBe("string");
+    expect(result as string).toMatch(/BLOCKED/);
+    expect(result as string).not.toMatch(/ESCAPED/);
+  });
+
   test("run_code sandbox blocks template literal constructor bypass", async () => {
     const { defs } = resolveAllBuiltins(["run_code"]);
     const ctx = createMockToolContext();

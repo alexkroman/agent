@@ -10,7 +10,7 @@ import { serve } from "@hono/node-server";
 import { createStorage } from "unstorage";
 import s3Driver from "unstorage/drivers/s3";
 import { createBundleStore } from "./bundle-store.ts";
-import { DEFAULT_CREDENTIAL_SCOPE, DEFAULT_PORT } from "./constants.ts";
+import { DEFAULT_PORT } from "./constants.ts";
 import { deriveCredentialKey } from "./credentials.ts";
 import { createOrchestrator, type OrchestratorOpts } from "./orchestrator.ts";
 import type { AgentSlot } from "./sandbox.ts";
@@ -44,11 +44,14 @@ async function buildLocalOpts(_env: NodeJS.ProcessEnv): Promise<OrchestratorOpts
 async function buildOpts(env: NodeJS.ProcessEnv): Promise<OrchestratorOpts> {
   if (isLocalDev(env)) return buildLocalOpts(env);
 
-  const required = requireEnv(env, ["BUCKET_NAME", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"]);
+  const required = requireEnv(env, [
+    "BUCKET_NAME",
+    "AWS_ACCESS_KEY_ID",
+    "AWS_SECRET_ACCESS_KEY",
+    "KV_SCOPE_SECRET",
+  ]);
 
-  const credentialKey = env.KV_SCOPE_SECRET
-    ? await deriveCredentialKey(env.KV_SCOPE_SECRET)
-    : await deriveCredentialKey(DEFAULT_CREDENTIAL_SCOPE);
+  const credentialKey = await deriveCredentialKey(required.KV_SCOPE_SECRET);
 
   const storage = createStorage({
     driver: s3Driver({

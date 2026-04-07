@@ -99,6 +99,15 @@ export type RuntimeOptions = {
   toolSchemas?: ToolSchema[] | undefined;
   /** System prompt guidance for builtin tools. Passed through in sandbox mode. */
   toolGuidance?: string[] | undefined;
+  /**
+   * Override the fetch implementation used by built-in tools (web_search,
+   * visit_webpage, fetch_json). Defaults to `globalThis.fetch`.
+   *
+   * In platform mode, pass an SSRF-safe fetch to prevent requests to
+   * private/internal networks. In self-hosted mode, users may provide
+   * their own fetch wrapper.
+   */
+  fetch?: typeof globalThis.fetch | undefined;
 };
 
 /**
@@ -160,15 +169,36 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   let toolSchemas: ToolSchema[];
   let toolGuidance: string[] = [];
 
+  const builtinFetchOpt = opts.fetch ? { fetch: opts.fetch } : undefined;
+
   if (opts.executeTool && opts.hooks && opts.toolSchemas) {
-    // Sandbox mode — tools/hooks are RPC-backed
-    executeTool = opts.executeTool;
+    // Sandbox mode — custom tools are RPC-backed; builtins run host-side
+    const builtins = resolveAllBuiltins(agent.builtinTools ?? [], builtinFetchOpt);
+    const rpcExecuteTool = opts.executeTool;
+
+    executeTool = async (name, args, sessionId, messages) => {
+      // Handle builtins on the host (where SSRF-safe fetch lives)
+      if (builtins.defs[name]) {
+        const tool = builtins.defs[name];
+        return executeToolCall(name, args, {
+          tool,
+          env: Object.freeze({ ...env }),
+          sessionId: sessionId ?? "",
+          kv,
+          messages,
+          logger,
+        });
+      }
+      // Delegate custom tools to the isolate via RPC
+      return rpcExecuteTool(name, args, sessionId, messages);
+    };
+
     hooks = opts.hooks;
     toolSchemas = opts.toolSchemas;
     toolGuidance = opts.toolGuidance ?? [];
   } else {
     // Self-hosted mode — in-process tool execution
-    const builtins = resolveAllBuiltins(agent.builtinTools ?? []);
+    const builtins = resolveAllBuiltins(agent.builtinTools ?? [], builtinFetchOpt);
     const allTools: Record<string, AgentDef["tools"][string]> = {
       ...builtins.defs,
       ...agent.tools,
