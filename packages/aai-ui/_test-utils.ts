@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { flush, installMockWebSocket } from "@alexkroman1/aai/testing";
 import { batch, signal } from "@preact/signals";
+import type { createVoiceIO } from "./audio.ts";
 import { ClientHandler } from "./client-handler.ts";
 import { createVoiceSession, type VoiceSession } from "./session.ts";
 import { createSessionControls, type SessionSignals } from "./signals.ts";
@@ -13,6 +14,22 @@ export { flush, installMockWebSocket, MockWebSocket } from "@alexkroman1/aai/tes
 
 export function delay(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+function noop() {
+  /* intentional no-op */
+}
+
+/** Default voice options for tests. */
+export function voiceOpts(overrides?: Partial<Parameters<typeof createVoiceIO>[0]>) {
+  return {
+    sttSampleRate: 16_000,
+    ttsSampleRate: 24_000,
+    captureWorkletSrc: "cap",
+    playbackWorkletSrc: "play",
+    onMicData: noop,
+    ...overrides,
+  };
 }
 
 // Test helpers assign incomplete mocks to global properties (e.g. a plain

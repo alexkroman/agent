@@ -16,24 +16,10 @@ import {
   installMockLocation,
   installMockWebSocket,
   MockAudioContext,
+  voiceOpts,
 } from "./_test-utils.ts";
 import { createVoiceIO } from "./audio.ts";
 import { createVoiceSession } from "./session.ts";
-
-function noop() {
-  /* intentional no-op */
-}
-
-function voiceOpts(overrides?: Partial<Parameters<typeof createVoiceIO>[0]>) {
-  return {
-    sttSampleRate: 16_000,
-    ttsSampleRate: 24_000,
-    captureWorkletSrc: "cap",
-    playbackWorkletSrc: "play",
-    onMicData: noop,
-    ...overrides,
-  };
-}
 
 // ─── Audio resource cleanup tests ────────────────────────────────────────────
 
