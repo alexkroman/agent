@@ -25,7 +25,9 @@ export const DeployBodySchema = z.object({
   slug: z.string().regex(VALID_SLUG_RE, "Invalid slug format").optional(),
   env: z.record(z.string(), z.string()).optional(),
   worker: z.string().min(1).max(MAX_WORKER_SIZE),
-  clientFiles: z.record(SafePathSchema, z.string()),
+  clientFiles: z
+    .record(SafePathSchema, z.string().max(MAX_WORKER_SIZE))
+    .refine((files) => Object.keys(files).length <= 100, "Too many client files (max 100)"),
 });
 
 export type DeployBody = z.infer<typeof DeployBodySchema>;

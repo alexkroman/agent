@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.git/
+.aai/
+.env
+.env.*
+!.env.example
+.DS_Store
+.turbo/
+.tsbuildinfo/
+coverage/
+tmp/
+temp/
+.worktrees/
+.claude/
+docs/

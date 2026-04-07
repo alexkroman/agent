@@ -2,9 +2,11 @@
 
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { createHooks } from "hookable";
 import { createNanoEvents } from "nanoevents";
 import { vi } from "vitest";
 import type { AgentConfig } from "../isolate/_internal-types.ts";
+import type { AgentHookMap } from "../isolate/hooks.ts";
 import type { ClientSink } from "../isolate/protocol.ts";
 import type { AgentDef, ToolContext, ToolDef } from "../isolate/types.ts";
 import { DEFAULT_SYSTEM_PROMPT } from "../isolate/types.ts";
@@ -221,6 +223,18 @@ export function replayFixtureMessages(
   for (const msg of messages) {
     FIXTURE_DISPATCH[msg.type as string]?.(handle, msg);
   }
+}
+
+/** Create test hooks with optional handlers pre-registered. */
+export function makeTestHooks(handlers?: Record<string, (...args: unknown[]) => unknown>) {
+  const hooks = createHooks<AgentHookMap>();
+  if (handlers) {
+    for (const [name, fn] of Object.entries(handlers)) {
+      // biome-ignore lint/suspicious/noExplicitAny: test mock registration
+      hooks.hook(name as keyof AgentHookMap, fn as any);
+    }
+  }
+  return hooks;
 }
 
 // ─── Real-executor fixture replay ────────────────────────────────────────────

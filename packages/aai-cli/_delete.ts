@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { apiError, apiRequest, HINT_INVALID_API_KEY } from "./_api-client.ts";
+import { apiRequestOrThrow } from "./_api-client.ts";
 
 export type DeleteOpts = {
   url: string;
@@ -11,23 +11,14 @@ export type DeleteOpts = {
 };
 
 export async function runDelete(opts: DeleteOpts): Promise<void> {
-  const fetchFn = opts.fetch ?? globalThis.fetch.bind(globalThis);
-
-  const resp = await apiRequest(
+  await apiRequestOrThrow(
     `${opts.url}/${opts.slug}`,
     { method: "DELETE", apiKey: opts.apiKey, action: "delete" },
-    fetchFn,
+    {
+      hints: {
+        404: "The agent may not be deployed. Check `.aai/project.json` for the correct slug.",
+      },
+      fetch: opts.fetch,
+    },
   );
-
-  if (resp.ok) return;
-
-  const text = await resp.text();
-
-  let hint: string | undefined;
-  if (resp.status === 401) {
-    hint = HINT_INVALID_API_KEY;
-  } else if (resp.status === 404) {
-    hint = "The agent may not be deployed. Check `.aai/project.json` for the correct slug.";
-  }
-  throw apiError("delete", resp.status, text, hint);
 }

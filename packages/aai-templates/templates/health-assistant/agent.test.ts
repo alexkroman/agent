@@ -18,11 +18,6 @@ describe("Dr. Sage (Health Assistant)", () => {
     expect(agent.tools).toHaveProperty("check_drug_interaction");
   });
 
-  test("harness can be created", () => {
-    const t = createTestHarness(agent);
-    expect(t).toBeDefined();
-  });
-
   test("BMI calculation via run_code", async () => {
     const t = createTestHarness(agent);
     const turn = await t.turn("Calculate BMI for 70kg and 1.75m", [

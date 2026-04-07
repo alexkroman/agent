@@ -1,15 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { makeAgent } from "./_test-utils.ts";
+import { makeAgent, silentLogger } from "./_test-utils.ts";
 import { createRuntime } from "./direct-executor.ts";
 import { createServer } from "./server.ts";
-
-const silentLogger = {
-  info: vi.fn(),
-  error: vi.fn(),
-  warn: vi.fn(),
-  debug: vi.fn(),
-};
 
 function makeRuntime(opts: { name?: string; shutdownTimeoutMs?: number } = {}) {
   const agent = makeAgent(opts.name ? { name: opts.name } : {});

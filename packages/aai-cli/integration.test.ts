@@ -9,9 +9,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest";
+import { readProjectConfig, writeProjectConfig } from "./_config.ts";
 import { runDelete } from "./_delete.ts";
 import { runDeploy } from "./_deploy.ts";
-import { fileExists, readProjectConfig, writeProjectConfig } from "./_discover.ts";
 import type { MockApi } from "./_mock-api.ts";
 import { startMockApi } from "./_mock-api.ts";
 import {
@@ -21,18 +21,48 @@ import {
   silenced,
   withTempDir,
 } from "./_test-utils.ts";
+import { fileExists } from "./_utils.ts";
 import { runSecretDelete, runSecretList, runSecretPut } from "./secret.ts";
 
-// Mock the password prompt to avoid interactive input
-vi.mock("./_prompts.ts", () => ({
-  askPassword: vi.fn(() => Promise.resolve("super-secret")),
-}));
+// Mock @clack/prompts to avoid interactive input in tests
+vi.mock("@clack/prompts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@clack/prompts")>();
+  return {
+    ...actual,
+    password: vi.fn(() => Promise.resolve("super-secret")),
+    isCancel: actual.isCancel,
+  };
+});
 
 /** Get a request from the recorded list, throwing if it doesn't exist. */
 function getReq(index: number) {
   const r = api.requests[index];
   if (!r) throw new Error(`No request at index ${index}`);
   return r;
+}
+
+async function withProjectDir(fn: (dir: string) => Promise<void>): Promise<void> {
+  await withTempDir(async (dir) => {
+    await writeProjectConfig(dir, { slug: "my-agent", serverUrl: api.url });
+    process.env.ASSEMBLYAI_API_KEY = "test-key";
+    try {
+      await fn(dir);
+    } finally {
+      delete process.env.ASSEMBLYAI_API_KEY;
+    }
+  });
+}
+
+async function withCapturedLogs<T>(fn: () => Promise<T>): Promise<T> {
+  const origLog = console.log;
+  console.log = () => {
+    /* suppress output */
+  };
+  try {
+    return await fn();
+  } finally {
+    console.log = origLog;
+  }
 }
 
 let api: MockApi;
@@ -166,18 +196,6 @@ describe("delete against mock API", () => {
 describe("secrets against mock API", () => {
   // Secret commands use getServerInfo which reads .aai/project.json.
   // We need a real temp directory with a project config pointing at the mock API.
-  async function withProjectDir(fn: (dir: string) => Promise<void>): Promise<void> {
-    await withTempDir(async (dir) => {
-      await writeProjectConfig(dir, { slug: "my-agent", serverUrl: api.url });
-      // Override getApiKey to avoid prompts
-      process.env.ASSEMBLYAI_API_KEY = "test-key";
-      try {
-        await fn(dir);
-      } finally {
-        delete process.env.ASSEMBLYAI_API_KEY;
-      }
-    });
-  }
 
   test("secret put sends PUT with name/value body", async () => {
     await withProjectDir(async (dir) => {
@@ -200,14 +218,9 @@ describe("secrets against mock API", () => {
 
     await withProjectDir(async (dir) => {
       // runSecretList logs to console — capture it
-      const logs: string[] = [];
-      const origLog = console.log;
-      console.log = (...args: unknown[]) => logs.push(args.join(" "));
-      try {
+      await withCapturedLogs(async () => {
         await runSecretList(dir, api.url);
-      } finally {
-        console.log = origLog;
-      }
+      });
     });
 
     const listReq = api.requests.find((r) => r.method === "GET" && r.path.includes("/secret"));
@@ -294,32 +307,15 @@ describe("deploy config persistence", () => {
 // ── Secrets: edge cases ──────────────────────────────────────────────────────
 
 describe("secrets edge cases", () => {
-  async function withProjectDir(fn: (dir: string) => Promise<void>): Promise<void> {
-    await withTempDir(async (dir) => {
-      await writeProjectConfig(dir, { slug: "my-agent", serverUrl: api.url });
-      process.env.ASSEMBLYAI_API_KEY = "test-key";
-      try {
-        await fn(dir);
-      } finally {
-        delete process.env.ASSEMBLYAI_API_KEY;
-      }
-    });
-  }
-
   test("secret list with no secrets shows empty message", async () => {
     // Ensure no secrets in mock
     for (const key of Object.keys(api.secrets)) delete api.secrets[key];
 
-    const logs: string[] = [];
-    const origLog = console.log;
-    console.log = (...args: unknown[]) => logs.push(args.join(" "));
-    try {
+    await withCapturedLogs(async () => {
       await withProjectDir(async (dir) => {
         await runSecretList(dir, api.url);
       });
-    } finally {
-      console.log = origLog;
-    }
+    });
 
     // The function should have made the GET request
     const listReq = api.requests.find((r) => r.method === "GET");
@@ -327,8 +323,8 @@ describe("secrets edge cases", () => {
   });
 
   test("secret put with empty value throws", async () => {
-    const { askPassword } = await import("./_prompts.ts");
-    vi.mocked(askPassword).mockResolvedValueOnce("");
+    const clack = await import("@clack/prompts");
+    vi.mocked(clack.password).mockResolvedValueOnce("");
 
     await withProjectDir(async (dir) => {
       await expect(runSecretPut(dir, "EMPTY_KEY", api.url)).rejects.toThrow("No value provided");
@@ -368,7 +364,7 @@ describe("network failure", () => {
 
 describe("missing project config", () => {
   test("delete with no .aai/project.json throws", async () => {
-    const { getServerInfo } = await import("./_discover.ts");
+    const { getServerInfo } = await import("./_agent.ts");
     await withTempDir(async (dir) => {
       await expect(getServerInfo(dir)).rejects.toThrow("No .aai/project.json found");
     });

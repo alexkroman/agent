@@ -1,8 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import { resolveServerUrl } from "./_agent.ts";
 import { buildAgentBundle } from "./_bundler.ts";
+import { getApiKey, readProjectConfig, writeProjectConfig } from "./_config.ts";
 import { runDeploy } from "./_deploy.ts";
-import { getApiKey, readProjectConfig, resolveServerUrl, writeProjectConfig } from "./_discover.ts";
 import { fmtUrl, log } from "./_ui.ts";
 
 export async function runDeployCommand(opts: { cwd: string; server?: string }): Promise<void> {

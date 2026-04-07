@@ -26,6 +26,8 @@
     "check:syncpack": "syncpack lint",
     "check:ls-lint": "ls-lint",
     "check:markdown": "markdownlint-cli2 '**/*.md' '#**/node_modules' '#.aai' '#.claude'",
+    "docker:down": "docker compose down",
+    "docker:up": "docker compose up --build",
     "syncpack": "syncpack",
     "changeset": "changeset",
     "version": "changeset version && node scripts/sync-scaffold-versions.mjs",

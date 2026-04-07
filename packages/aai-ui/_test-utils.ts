@@ -13,6 +13,22 @@ export function delay(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+function noop() {
+  /* intentional no-op */
+}
+
+/** Default voice options for tests. */
+export function voiceOpts(overrides?: Partial<Parameters<typeof createVoiceIO>[0]>) {
+  return {
+    sttSampleRate: 16_000,
+    ttsSampleRate: 24_000,
+    captureWorkletSrc: "cap",
+    playbackWorkletSrc: "play",
+    onMicData: noop,
+    ...overrides,
+  };
+}
+
 // Test helpers assign incomplete mocks to global properties (e.g. a plain
 // {origin} for `location` instead of the full DOM Location interface).
 // The double-cast is required because `typeof globalThis & Record<string, unknown>`

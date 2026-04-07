@@ -10,7 +10,7 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { WebSocketServer } from "ws";
-import { AGENT_CSP } from "../isolate/constants.ts";
+import { AGENT_CSP, MAX_WS_PAYLOAD_BYTES } from "../isolate/constants.ts";
 import type { Kv } from "../isolate/kv.ts";
 import type { Runtime } from "./direct-executor.ts";
 import type { Logger } from "./runtime.ts";
@@ -156,7 +156,12 @@ export function createServer(options: ServerOptions): AgentServer {
 
     // Default HTML
     if (method === "GET" && url === "/") {
-      const escaped = name.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      const escaped = name
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
       const body =
         clientHtml ??
         `<!DOCTYPE html><html><body><h1>${escaped}</h1><p>Agent server running.</p></body></html>`;
@@ -172,7 +177,7 @@ export function createServer(options: ServerOptions): AgentServer {
   });
 
   // WebSocket upgrade via ws
-  const wss = new WebSocketServer({ noServer: true });
+  const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_WS_PAYLOAD_BYTES });
 
   httpServer.on("upgrade", (req, socket, head) => {
     const url = req.url?.split("?")[0] ?? "";

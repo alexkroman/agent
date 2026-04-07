@@ -9,13 +9,17 @@ describe("Infocom Adventure", () => {
   });
 
   test("has game state tools", () => {
-    expect(agent.tools).toHaveProperty("game_state_get");
-    expect(agent.tools).toHaveProperty("game_state_move");
-    expect(agent.tools).toHaveProperty("game_state_take");
-    expect(agent.tools).toHaveProperty("game_state_drop");
-    expect(agent.tools).toHaveProperty("game_state_score");
-    expect(agent.tools).toHaveProperty("game_state_flag");
-    expect(agent.tools).toHaveProperty("game_state_history");
+    expect(Object.keys(agent.tools!)).toEqual(
+      expect.arrayContaining([
+        "game_state_get",
+        "game_state_move",
+        "game_state_take",
+        "game_state_drop",
+        "game_state_score",
+        "game_state_flag",
+        "game_state_history",
+      ]),
+    );
   });
 
   test("game_state_get returns initial state", async () => {

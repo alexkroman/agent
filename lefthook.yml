@@ -6,9 +6,6 @@ pre-commit:
     syncpack:
       glob: "**/package.json"
       run: pnpm run check:syncpack
-    typecheck:
-      glob: "packages/**/*.{ts,tsx}"
-      run: pnpm -r run build && pnpm typecheck
 
 pre-push:
   commands:
@@ -55,6 +52,9 @@ pre-push:
           exit 0
         fi
         case "$branch" in changeset-release/*) exit 0 ;; esac
+        # Unset GIT_DIR so changeset resolves the repo correctly in worktrees.
+        # Git sets GIT_DIR during hooks, which confuses changeset's repo detection.
+        unset GIT_DIR
         pnpm changeset status --since=origin/main
     check:
       run: pnpm check

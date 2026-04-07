@@ -3,9 +3,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, test, vi } from "vitest";
-import { fileExists } from "./_discover.ts";
 import { patchPackageJsonForWorkspace } from "./_init.ts";
 import { fakeDownloadAndMerge, fakeListTemplates, silenced, withTempDir } from "./_test-utils.ts";
+import { fileExists } from "./_utils.ts";
 
 async function createFakeTemplates(dir: string): Promise<string> {
   const rootDir = path.join(dir, "fake-root");

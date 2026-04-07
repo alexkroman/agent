@@ -12,11 +12,6 @@ describe("Coda (Code Interpreter)", () => {
     expect(agent.builtinTools).toContain("run_code");
   });
 
-  test("harness can be created", () => {
-    const t = createTestHarness(agent);
-    expect(t).toBeDefined();
-  });
-
   test("run_code executes JavaScript", async () => {
     const t = createTestHarness(agent);
     const turn = await t.turn("What is 2 + 2?", [

@@ -18,7 +18,15 @@ export function handleDeploy(c: ValidatedAppContext<DeployBody>): Promise<Respon
 export function handleDeployNew(c: ValidatedAppContext<DeployBody>): Promise<Response> {
   const body = c.req.valid("json");
   const slug = body.slug ?? generateSlug();
-  return withSlugLock(slug, () => handleDeployInner(c, slug));
+  return withSlugLock(slug, async () => {
+    if (body.slug) {
+      const existing = await c.env.store.getManifest(slug);
+      if (existing && !existing.credential_hashes.includes(c.var.keyHash)) {
+        return c.json({ error: "Forbidden: slug already owned by another user" }, 403);
+      }
+    }
+    return handleDeployInner(c, slug);
+  });
 }
 
 async function handleDeployInner(

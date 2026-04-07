@@ -140,6 +140,27 @@ export async function createTestOrchestrator(): Promise<{
   return { fetch, store, storage };
 }
 
+/** Standard auth + JSON headers for test requests. */
+export function authHeaders(key = "key1"): Record<string, string> {
+  return {
+    Authorization: `Bearer ${key}`,
+    "Content-Type": "application/json",
+  };
+}
+
+/** Convenience: authenticated JSON request via test fetch. */
+export async function authFetch(
+  fetch: TestFetch,
+  path: string,
+  opts: { method?: string; key?: string; body?: unknown } = {},
+): Promise<Response> {
+  return fetch(path, {
+    method: opts.method ?? "POST",
+    headers: authHeaders(opts.key),
+    ...(opts.body !== undefined ? { body: JSON.stringify(opts.body) } : {}),
+  });
+}
+
 export async function deployAgent(
   fetch: TestFetch,
   slug = "my-agent",
@@ -147,10 +168,7 @@ export async function deployAgent(
 ): Promise<void> {
   await fetch(`/${slug}/deploy`, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json",
-    },
+    headers: authHeaders(key),
     body: deployBody(),
   });
 }
