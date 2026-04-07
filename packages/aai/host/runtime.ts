@@ -29,8 +29,6 @@ import { type ExecuteTool, executeToolCall } from "./tool-executor.ts";
 import { createUnstorageKv } from "./unstorage-kv.ts";
 import { type SessionWebSocket, wireSessionSocket } from "./ws-handler.ts";
 
-export { type ExecuteTool, type ExecuteToolCallOptions, executeToolCall } from "./tool-executor.ts";
-
 // ─── Runtime adapter (formerly adapter.ts) ──────────────────────────────────
 
 /** Per-session options passed to {@link AgentRuntime.startSession}. */
