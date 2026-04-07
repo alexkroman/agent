@@ -36,3 +36,8 @@ export const DEFAULT_CREDENTIAL_SCOPE = "default-credential-key";
 
 /** Maximum worker bundle size (bytes, 10 MB). */
 export const MAX_WORKER_SIZE = 10_000_000;
+
+// ─── Process jail ───────────────────────────────────────────────────────
+
+/** Total memory limit for nsjail cgroup (V8 heap + Rust runtime overhead, MB). */
+export const JAIL_MEMORY_LIMIT_MB = 256;

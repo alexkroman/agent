@@ -1,6 +1,11 @@
 // Copyright 2025 the AAI authors. MIT license.
+import { existsSync } from "node:fs";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, test } from "vitest";
 import { buildJailConfig, type JailOptions } from "./jail-config.ts";
+import { createJailedLauncher, isJailAvailable } from "./process-jail.ts";
 import { buildSeccompPolicy } from "./seccomp-policy.ts";
 
 describe("buildSeccompPolicy", () => {
@@ -73,5 +78,41 @@ describe("buildJailConfig", () => {
   test("includes seccomp policy", () => {
     const config = buildJailConfig(TEST_OPTIONS);
     expect(config).toContain("seccomp_string:");
+  });
+});
+
+describe("isJailAvailable", () => {
+  test("returns false on non-linux platforms", () => {
+    if (process.platform === "linux") return;
+    expect(isJailAvailable()).toBe(false);
+  });
+});
+
+describe("createJailedLauncher", () => {
+  test("writes wrapper script and config to temp dir", async () => {
+    if (process.platform !== "linux") return;
+
+    const socketDir = await fs.mkdtemp(path.join(os.tmpdir(), "aai-jail-test-"));
+    try {
+      const launcher = await createJailedLauncher({
+        binaryPath: "/usr/bin/true",
+        socketDir,
+        memoryLimitMb: 256,
+        sandboxId: "test01",
+      });
+
+      expect(launcher.binaryPath).toContain("aai-jail-test01");
+      expect(existsSync(launcher.binaryPath)).toBe(true);
+
+      const script = await fs.readFile(launcher.binaryPath, "utf-8");
+      expect(script).toContain("#!/bin/sh");
+      expect(script).toContain("nsjail");
+      expect(script).toContain("jail.cfg");
+
+      await launcher.cleanup();
+      expect(existsSync(launcher.binaryPath)).toBe(false);
+    } finally {
+      await fs.rm(socketDir, { recursive: true, force: true });
+    }
   });
 });
