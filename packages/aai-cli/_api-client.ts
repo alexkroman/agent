@@ -37,3 +37,19 @@ export async function apiRequest(
 export function apiError(action: string, status: number, body: string, hint?: string): Error {
   return new Error(`${action} failed (HTTP ${status}): ${body}${hint ? `\n  ${hint}` : ""}`);
 }
+
+/**
+ * Like `apiRequest`, but throws on non-ok responses with status-specific hints.
+ * The 401 hint is always included. Pass additional hints via `opts.hints`.
+ */
+export async function apiRequestOrThrow(
+  url: string,
+  init: RequestInit & { apiKey: string; action: string },
+  opts?: { hints?: Record<number, string>; fetch?: typeof globalThis.fetch | undefined },
+): Promise<Response> {
+  const resp = await apiRequest(url, init, opts?.fetch);
+  if (resp.ok) return resp;
+  const text = await resp.text();
+  const hint = resp.status === 401 ? HINT_INVALID_API_KEY : opts?.hints?.[resp.status];
+  throw apiError(init.action, resp.status, text, hint);
+}

@@ -1,8 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { apiError, apiRequest, HINT_INVALID_API_KEY } from "./_api-client.ts";
-import { getServerInfo } from "./_discover.ts";
-import { askPassword } from "./_prompts.ts";
+import * as p from "@clack/prompts";
+import { getServerInfo } from "./_agent.ts";
+import { apiRequestOrThrow } from "./_api-client.ts";
 import { log } from "./_ui.ts";
 
 async function secretRequest(
@@ -12,27 +12,23 @@ async function secretRequest(
   server?: string,
 ): Promise<{ resp: Response; slug: string }> {
   const { serverUrl, slug, apiKey } = await getServerInfo(cwd, server);
-  const resp = await apiRequest(`${serverUrl}/${slug}/secret${pathSuffix}`, {
+  const resp = await apiRequestOrThrow(`${serverUrl}/${slug}/secret${pathSuffix}`, {
     ...init,
     apiKey,
     action: "secret",
   });
-  if (!resp.ok) {
-    const text = await resp.text();
-    const hint = resp.status === 401 ? HINT_INVALID_API_KEY : undefined;
-    throw apiError("secret", resp.status, text, hint);
-  }
   return { resp, slug };
 }
 
 export async function runSecretPut(cwd: string, name: string, server?: string): Promise<void> {
-  const value = await askPassword(`Enter value for ${name}`);
-  if (!value) throw new Error("No value provided");
+  const result = await p.password({ message: `Enter value for ${name}` });
+  if (p.isCancel(result)) process.exit(0);
+  if (!result) throw new Error("No value provided");
 
   const { slug } = await secretRequest(
     cwd,
     "",
-    { method: "PUT", body: JSON.stringify({ [name]: value }) },
+    { method: "PUT", body: JSON.stringify({ [name]: result }) },
     server,
   );
   log.success(`Set ${name} for ${slug}`);

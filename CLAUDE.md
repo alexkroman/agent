@@ -148,12 +148,13 @@ runs as part of `pnpm typecheck` and will catch violations.
 - `_init.ts` / `_deploy.ts` / `_delete.ts` / `_bundler.ts` — internal logic
 - `_bundler.ts` — generates Vite config, bundles `agent.ts`/`client.tsx`
   into `worker.js`/`index.html`
-- `_api-client.ts` — platform API client
-- `_discover.ts` — agent discovery, auth config, project config
+- `_api-client.ts` — platform API client (`apiRequest`, `apiRequestOrThrow`)
+- `_config.ts` — auth config, project config, API key management
+- `_agent.ts` — agent discovery, dev mode detection, server URL resolution
+- `_utils.ts` — shared utilities (`resolveCwd`, `fileExists`)
 - `_server-common.ts` — shared server utilities
 - `_templates.ts` — template handling
-- `_ui.ts` — shared UI components
-- `_prompts.ts` — interactive prompts
+- `_ui.ts` — CLI output helpers (`log`, `fmtUrl`, `parsePort`)
 
 #### packages/aai-ui/
 
@@ -371,8 +372,6 @@ a denylist.
 
 ### Known limitations
 
-- **E2E tests**: Playwright/Chromium may not be installed in all environments.
-  The `aai-cli` e2e test (`test:e2e`) may fail locally. CI handles this.
 - **Type-level tests**: Cover public entry points of `aai` (`.`, `./types`,
   `./server`) and `aai-ui` (`./session`). Subpath exports (e.g. `./kv`,
   `./protocol`) are not covered by type tests.
