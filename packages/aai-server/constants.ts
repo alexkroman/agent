@@ -51,4 +51,4 @@ export function agentKvPrefix(slug: string): string {
 // ─── Process jail ───────────────────────────────────────────────────────
 
 /** Total memory limit for nsjail cgroup (V8 heap + Rust runtime overhead, MB). */
-export const JAIL_MEMORY_LIMIT_MB = 256;
+export const JAIL_MEMORY_LIMIT_MB = 192;
