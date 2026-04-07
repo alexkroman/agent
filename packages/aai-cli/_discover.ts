@@ -172,17 +172,21 @@ export const DEFAULT_SERVER = "https://aai-agent.fly.dev";
 /** Default local dev server URL. */
 export const DEFAULT_DEV_SERVER = "http://localhost:8787";
 
-/** Check if the CLI is running from the monorepo (dev mode). */
-export function isDevMode(): boolean {
+/** Return the monorepo root path when the CLI is running from within it, or null. */
+export function getMonorepoRoot(): string | null {
   const cliDir = path.dirname(fileURLToPath(import.meta.url));
   // From source: cliDir is packages/aai-cli/, workspace root is ../..
   // From dist:   cliDir is packages/aai-cli/dist/, workspace root is ../../..
   const root1 = path.resolve(cliDir, "../..");
   const root2 = path.resolve(cliDir, "../../..");
-  return (
-    existsSync(path.join(root1, "pnpm-workspace.yaml")) ||
-    existsSync(path.join(root2, "pnpm-workspace.yaml"))
-  );
+  if (existsSync(path.join(root1, "pnpm-workspace.yaml"))) return root1;
+  if (existsSync(path.join(root2, "pnpm-workspace.yaml"))) return root2;
+  return null;
+}
+
+/** Check if the CLI is running from the monorepo (dev mode). */
+export function isDevMode(): boolean {
+  return getMonorepoRoot() !== null;
 }
 
 /** Resolve the server URL from an explicit value, project config, or default. */

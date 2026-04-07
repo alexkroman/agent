@@ -7,7 +7,14 @@ import { promisify } from "node:util";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import * as p from "@clack/prompts";
 import { colorize } from "consola/utils";
-import { ensureApiKeyInEnv, fileExists, resolveCwd } from "./_discover.ts";
+import {
+  DEFAULT_DEV_SERVER,
+  ensureApiKeyInEnv,
+  fileExists,
+  getMonorepoRoot,
+  isDevMode,
+  resolveCwd,
+} from "./_discover.ts";
 import { listTemplates } from "./_templates.ts";
 import { log } from "./_ui.ts";
 
@@ -85,9 +92,10 @@ async function installDeps(cwd: string): Promise<void> {
   s.start("Installing dependencies with pnpm");
 
   try {
-    // --ignore-workspace prevents pnpm from hoisting to a parent workspace
-    // (e.g. when scaffolding inside the monorepo during development).
-    await execFileAsync("pnpm", ["install", "--ignore-workspace"], { cwd });
+    // In dev mode, allow workspace resolution so @alexkroman1/* deps link to local source.
+    // In production, --ignore-workspace prevents pnpm from hoisting to a parent workspace.
+    const args = isDevMode() ? ["install"] : ["install", "--ignore-workspace"];
+    await execFileAsync("pnpm", args, { cwd });
     s.stop("Dependencies installed");
   } catch (err: unknown) {
     const msg = errorMessage(err);
@@ -97,9 +105,17 @@ async function installDeps(cwd: string): Promise<void> {
   }
 }
 
-/** Format the dev command for the "Next steps" note. */
-function devCommand(): string {
-  return "aai dev";
+/** Resolve target directory — in dev mode, place under monorepo tmp/. */
+function resolveTargetDir(dir: string, monorepoRoot: string | null): string {
+  return monorepoRoot ? path.resolve(monorepoRoot, "tmp", dir) : path.resolve(resolveCwd(), dir);
+}
+
+/** Resolve the deploy server — in dev mode, default to localhost. */
+function resolveDeployServer(
+  explicit: string | undefined,
+  monorepoRoot: string | null,
+): string | undefined {
+  return explicit ?? (monorepoRoot ? DEFAULT_DEV_SERVER : undefined);
 }
 
 export async function runInitCommand(
@@ -123,7 +139,8 @@ export async function runInitCommand(
   }
 
   const dir = opts.dir ?? (await promptProjectName(opts.yes));
-  const cwd = path.resolve(resolveCwd(), dir);
+  const monorepoRoot = getMonorepoRoot();
+  const cwd = resolveTargetDir(dir, monorepoRoot);
 
   if (!opts.force && (await fileExists(path.join(cwd, "agent.ts")))) {
     throw new Error(
@@ -143,13 +160,16 @@ export async function runInitCommand(
   await installDeps(cwd);
 
   if (!(opts.skipDeploy || extra?.quiet)) {
+    const server = resolveDeployServer(opts.server, monorepoRoot);
     const { runDeployCommand } = await import("./deploy.ts");
-    await runDeployCommand({ cwd, ...(opts.server ? { server: opts.server } : {}) });
+    await runDeployCommand({ cwd, ...(server ? { server } : {}) });
   }
 
   if (!extra?.quiet) {
     log.success(`Created ${dir}`);
-    log.info(`Next: cd ${dir} && ${devCommand()}`);
+    const cdTarget = monorepoRoot ? `tmp/${dir}` : dir;
+    if (monorepoRoot) log.info("Dev mode: project linked to workspace packages");
+    log.info(`Next: cd ${cdTarget} && aai dev`);
   }
 
   return cwd;

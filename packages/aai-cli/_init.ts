@@ -1,17 +1,57 @@
 // Copyright 2025 the AAI authors. MIT license.
 import fs from "node:fs/promises";
 import path from "node:path";
+import { isDevMode } from "./_discover.ts";
 import { downloadAndMergeTemplate } from "./_templates.ts";
+
+const WORKSPACE_SCOPE = "@alexkroman1/";
 
 export type InitOptions = {
   targetDir: string;
   template: string;
 };
 
+/** Rewrite @alexkroman1/* deps to workspace:* so pnpm links to local source. */
+export async function patchPackageJsonForWorkspace(targetDir: string): Promise<void> {
+  const pkgPath = path.join(targetDir, "package.json");
+  let raw: string;
+  try {
+    raw = await fs.readFile(pkgPath, "utf-8");
+  } catch {
+    return; // no package.json to patch
+  }
+  const pkgJson = JSON.parse(raw);
+
+  pkgJson.name = path.basename(targetDir);
+  delete pkgJson.packageManager;
+
+  for (const field of ["dependencies", "devDependencies"] as const) {
+    const deps = pkgJson[field];
+    if (!deps) continue;
+    for (const key of Object.keys(deps)) {
+      if (key.startsWith(WORKSPACE_SCOPE)) {
+        deps[key] = "workspace:*";
+      }
+    }
+  }
+
+  await fs.writeFile(pkgPath, `${JSON.stringify(pkgJson, null, 2)}\n`);
+}
+
 export async function runInit(opts: InitOptions): Promise<string> {
   const { targetDir, template } = opts;
 
   await downloadAndMergeTemplate(template, targetDir);
+
+  if (isDevMode()) {
+    await patchPackageJsonForWorkspace(targetDir);
+    // Remove standalone .npmrc — workspace root .npmrc governs
+    try {
+      await fs.unlink(path.join(targetDir, ".npmrc"));
+    } catch {
+      /* ok if missing */
+    }
+  }
 
   try {
     await fs.copyFile(path.join(targetDir, ".env.example"), path.join(targetDir, ".env"));
