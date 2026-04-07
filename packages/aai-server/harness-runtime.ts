@@ -70,6 +70,7 @@ class RpcError extends Error {
 }
 
 const HARNESS_AUTH_TOKEN = process.env.HARNESS_AUTH_TOKEN ?? "";
+const HARNESS_AUTH_TOKEN_BUF = HARNESS_AUTH_TOKEN ? Buffer.from(HARNESS_AUTH_TOKEN) : null;
 
 const AAI_ENV_PREFIX = "AAI_ENV_";
 const agentEnv: Record<string, string> = Object.freeze(
@@ -254,10 +255,10 @@ function json(res: ServerResponse, data: unknown, status = 200): void {
 }
 
 function isAuthorized(req: IncomingMessage): boolean {
-  if (!HARNESS_AUTH_TOKEN) return true;
+  if (!HARNESS_AUTH_TOKEN_BUF) return true;
   const token = req.headers["x-harness-token"];
   if (typeof token !== "string" || token.length !== HARNESS_AUTH_TOKEN.length) return false;
-  return timingSafeEqual(Buffer.from(token), Buffer.from(HARNESS_AUTH_TOKEN));
+  return timingSafeEqual(Buffer.from(token), HARNESS_AUTH_TOKEN_BUF);
 }
 
 type RpcRequest =

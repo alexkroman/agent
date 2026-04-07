@@ -126,12 +126,13 @@ export async function createSidecar(
   authToken: string,
   onHostEvent?: HostEventHandler,
 ): Promise<Sidecar> {
+  const authTokenBuf = Buffer.from(authToken);
   const server = createServer(async (req, res) => {
     const token = req.headers["x-harness-token"];
     if (
       typeof token !== "string" ||
       token.length !== authToken.length ||
-      !timingSafeEqual(Buffer.from(token), Buffer.from(authToken))
+      !timingSafeEqual(Buffer.from(token), authTokenBuf)
     ) {
       json(res, { error: "Unauthorized" }, 401);
       return;

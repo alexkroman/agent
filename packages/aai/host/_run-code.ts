@@ -54,9 +54,7 @@ export async function executeInIsolate(code: string): Promise<string | { error: 
   const output: string[] = [];
   const capture = (...args: unknown[]) => output.push(args.map(String).join(" "));
 
-  // Track all timer IDs created inside the sandbox so we can clear them in
-  // the finally block. Without this, setInterval/setTimeout callbacks can
-  // outlive the Promise.race timeout and leak into the host event loop.
+  // Prevent timer callbacks from leaking into host event loop after execution.
   const activeTimers = new Set<ReturnType<typeof setTimeout>>();
 
   const sandboxSetTimeout = (
