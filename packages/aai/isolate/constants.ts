@@ -57,6 +57,9 @@ export const MAX_GLOB_PATTERN_LENGTH = 1024;
 /** Maximum conversation messages to retain (sliding window). */
 export const DEFAULT_MAX_HISTORY = 200;
 
+/** Maximum WebSocket message payload size (bytes, 1 MiB). */
+export const MAX_WS_PAYLOAD_BYTES = 1 * 1024 * 1024;
+
 // ─── Security ───────────────────────────────────────────────────────────
 
 /**
