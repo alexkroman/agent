@@ -6,6 +6,6 @@ export const sharedConfig = {
   resolve: { conditions: ["@dev/source"] },
   ssr: { resolve: { conditions: ["@dev/source"] } },
   test: {
-    reporters: process.env.CI ? ["dot"] : ["default"],
+    reporters: process.env.CI ? ["dot", "github-actions"] : ["default"],
   },
 };
