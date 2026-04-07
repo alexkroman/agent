@@ -14,11 +14,9 @@ import { createTestStorage, createTestStore, makeSlot } from "./test-utils.ts";
 // ── Mock createSandbox ──────────────────────────────────────────────────
 
 function makeMockSandbox(): Sandbox {
-  const shutdown = vi.fn().mockResolvedValue(undefined);
   return {
     startSession: vi.fn(),
-    shutdown,
-    terminate: shutdown,
+    shutdown: vi.fn().mockResolvedValue(undefined),
     readyConfig: { audioFormat: "pcm16", sampleRate: 16_000, ttsSampleRate: 24_000 },
   };
 }
@@ -133,7 +131,7 @@ describe("ensureAgent", () => {
     await vi.advanceTimersByTimeAsync(_slotInternals.IDLE_MS + 1);
 
     expect(slot.sandbox).toBeUndefined();
-    expect(sandbox.terminate).toHaveBeenCalledOnce();
+    expect(sandbox.shutdown).toHaveBeenCalledOnce();
   });
 
   it("concurrent calls during eviction share the same new sandbox", async () => {
@@ -144,15 +142,15 @@ describe("ensureAgent", () => {
     await ensureAgent(slot, opts);
     expect(mockCreateSandbox).toHaveBeenCalledTimes(1);
 
-    // Use a deferred promise so we control when terminate() resolves
-    let resolveTerminate!: () => void;
-    const terminatePromise = new Promise<void>((r) => {
-      resolveTerminate = r;
+    // Use a deferred promise so we control when shutdown() resolves
+    let resolveShutdown!: () => void;
+    const shutdownPromise = new Promise<void>((r) => {
+      resolveShutdown = r;
     });
     // biome-ignore lint/style/noNonNullAssertion: sandbox is set above
-    slot.sandbox!.terminate = vi.fn(() => terminatePromise);
+    slot.sandbox!.shutdown = vi.fn(() => shutdownPromise);
 
-    // Fire the idle timer — evictSlot acquires the lock and awaits terminate
+    // Fire the idle timer — evictSlot acquires the lock and awaits shutdown
     vi.advanceTimersByTime(_slotInternals.IDLE_MS + 1);
     // Yield so evictSlot acquires the lock (uncontested at this point)
     await vi.advanceTimersByTimeAsync(0);
@@ -161,8 +159,8 @@ describe("ensureAgent", () => {
     const p1 = ensureAgent(slot, opts);
     const p2 = ensureAgent(slot, opts);
 
-    // Let termination complete — releases the lock
-    resolveTerminate();
+    // Let shutdown complete — releases the lock
+    resolveShutdown();
     const [sb1, sb2] = await Promise.all([p1, p2]);
 
     // Both should get the same sandbox, only one new createSandbox call
