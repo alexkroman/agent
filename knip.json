@@ -8,7 +8,22 @@
       "entry": ["scripts/*.{mjs,ts}", "vitest.integration.config.ts"]
     },
     "packages/aai": {
-      "entry": ["**/*.test.ts", "**/*.test-d.ts", "host/_test-utils.ts"],
+      "entry": [
+        "index.ts",
+        "isolate/index.ts",
+        "host/index.ts",
+        "host/server.ts",
+        "host/testing.ts",
+        "host/vite-plugin.ts",
+        "host/_test-utils.ts",
+        "isolate/types.ts",
+        "isolate/kv.ts",
+        "isolate/protocol.ts",
+        "isolate/hooks.ts",
+        "isolate/_utils.ts",
+        "**/*.test.ts",
+        "**/*.test-d.ts"
+      ],
       "includeEntryExports": true
     },
     "packages/aai-ui": {
