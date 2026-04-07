@@ -1,9 +1,10 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "globalDependencies": ["pnpm-lock.yaml"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "inputs": ["**/*.ts", "**/*.tsx", "!**/*.test.ts", "!**/*.test.tsx", "!**/*.test-d.ts", "tsconfig*.json", "tsdown.config.ts"],
+      "inputs": ["**/*.ts", "**/*.tsx", "!**/*.test.ts", "!**/*.test.tsx", "!**/*.test-d.ts", "tsconfig*.json", "tsdown.config.ts", "package.json"],
       "outputs": ["dist/**"]
     },
     "test": {

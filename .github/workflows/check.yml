@@ -49,7 +49,7 @@ jobs:
             .turbo
           key: workspace-${{ runner.os }}-node${{ hashFiles('.node-version') }}-${{ github.sha }}
 
-  lint-and-typecheck:
+  lint-typecheck-and-checks:
     needs: setup
     runs-on: ubuntu-latest
     steps:
@@ -70,27 +70,6 @@ jobs:
             .turbo
           key: workspace-${{ runner.os }}-node${{ hashFiles('.node-version') }}-${{ github.sha }}
       - run: pnpm exec turbo run lint typecheck
-
-  checks:
-    needs: setup
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-      - uses: pnpm/action-setup@v5
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 22
-      - uses: actions/cache/restore@v5
-        with:
-          path: |
-            node_modules
-            packages/*/node_modules
-            packages/*/dist
-            .tsbuildinfo
-            .turbo
-          key: workspace-${{ runner.os }}-node${{ hashFiles('.node-version') }}-${{ github.sha }}
       - name: Check for changeset
         if: github.event_name == 'pull_request' && github.head_ref != 'changeset-release/main' && !contains(github.event.pull_request.labels.*.name, 'no-release')
         run: pnpm changeset status --since=origin/main
@@ -204,11 +183,11 @@ jobs:
   ci:
     runs-on: ubuntu-latest
     if: always()
-    needs: [lint-and-typecheck, checks, test, integration, e2e]
+    needs: [lint-typecheck-and-checks, test, integration, e2e]
     steps:
       - name: Check results
         run: |
-          results="${{ needs.lint-and-typecheck.result }} ${{ needs.checks.result }} ${{ needs.test.result }} ${{ needs.integration.result }} ${{ needs.e2e.result }}"
+          results="${{ needs.lint-typecheck-and-checks.result }} ${{ needs.test.result }} ${{ needs.integration.result }} ${{ needs.e2e.result }}"
           for r in $results; do
             if [ "$r" != "success" ] && [ "$r" != "skipped" ]; then
               echo "CI failed: one or more jobs did not succeed"
