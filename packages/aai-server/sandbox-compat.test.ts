@@ -52,13 +52,13 @@ function compatError(fixture: string, schema: string, msg: unknown, zodError: st
 
 // ── Tests ─────────────────────────────────────────────────────────────────
 
-describe.each(fixtureFiles)("compat fixture: %s", (filename) => {
+describe.each(fixtureFiles)("compat fixture: %s", (filename: string) => {
   const fixture = loadFixture(filename);
 
   describe("IsolateConfig backward compat", () => {
     test.each(
       fixture.IsolateConfig.map((m, i) => [`${(m as { name: string }).name}#${i}`, m]),
-    )("%s parses against current schema", (_label, msg) => {
+    )("%s parses against current schema", (_label: string, msg: unknown) => {
       const result = IsolateConfigSchema.safeParse(msg);
       if (!result.success) {
         throw new Error(compatError(filename, "IsolateConfig", msg, result.error.message));
@@ -69,7 +69,7 @@ describe.each(fixtureFiles)("compat fixture: %s", (filename) => {
   describe("ToolCallResponse backward compat", () => {
     test.each(
       fixture.ToolCallResponse.map((m, i) => [`#${i}`, m]),
-    )("%s parses against current schema", (_label, msg) => {
+    )("%s parses against current schema", (_label: string, msg: unknown) => {
       const result = ToolCallResponseSchema.safeParse(msg);
       if (!result.success) {
         throw new Error(compatError(filename, "ToolCallResponse", msg, result.error.message));
@@ -80,7 +80,7 @@ describe.each(fixtureFiles)("compat fixture: %s", (filename) => {
   describe("HookResponse backward compat", () => {
     test.each(
       fixture.HookResponse.map((m, i) => [`#${i}`, m]),
-    )("%s parses against current schema", (_label, msg) => {
+    )("%s parses against current schema", (_label: string, msg: unknown) => {
       const result = HookResponseSchema.safeParse(msg);
       if (!result.success) {
         throw new Error(compatError(filename, "HookResponse", msg, result.error.message));
@@ -91,7 +91,7 @@ describe.each(fixtureFiles)("compat fixture: %s", (filename) => {
   describe("TurnConfigResult backward compat", () => {
     test.each(
       fixture.TurnConfigResult.map((m, i) => [`#${i}`, m]),
-    )("%s parses against current schema", (_label, msg) => {
+    )("%s parses against current schema", (_label: string, msg: unknown) => {
       const result = TurnConfigResultSchema.safeParse(msg);
       if (!result.success) {
         throw new Error(compatError(filename, "TurnConfigResult", msg, result.error.message));
