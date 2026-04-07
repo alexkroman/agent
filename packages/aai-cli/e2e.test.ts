@@ -197,6 +197,11 @@ async function setupEventInjector(browser: Browser, port: number) {
     if (ready) break;
     await new Promise((r) => setTimeout(r, 50));
   }
+  // Wait for the session to settle after the config message. In headless
+  // Chromium, initAudioCapture fails (no microphone), which sets state to
+  // "error" asynchronously. If we inject events before that completes, the
+  // audio error can overwrite test-driven state transitions.
+  await page.locator('[data-state="error"]').waitFor({ timeout: 10_000 });
 
   /** Inject a server->client event via the captured WebSocket. */
   const inject = (msg: Record<string, unknown>) =>
