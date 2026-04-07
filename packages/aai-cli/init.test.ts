@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, test, vi } from "vitest";
 import { fileExists } from "./_discover.ts";
+import { patchPackageJsonForWorkspace } from "./_init.ts";
 import { fakeDownloadAndMerge, fakeListTemplates, silenced, withTempDir } from "./_test-utils.ts";
 
 async function createFakeTemplates(dir: string): Promise<string> {
@@ -147,5 +148,40 @@ describe("runInit", () => {
         );
       }),
     );
+  });
+});
+
+describe("patchPackageJsonForWorkspace", () => {
+  test("rewrites @alexkroman1/* deps to workspace:*", async () => {
+    await withTempDir(async (dir) => {
+      const target = path.join(dir, "my-agent");
+      await fs.mkdir(target, { recursive: true });
+      await fs.writeFile(
+        path.join(target, "package.json"),
+        JSON.stringify({
+          packageManager: "pnpm@10.29.3",
+          dependencies: {
+            "@alexkroman1/aai": "^0.12.3",
+            "@alexkroman1/aai-ui": "^0.12.3",
+            preact: "^10.29.0",
+          },
+          devDependencies: {
+            "@alexkroman1/aai-cli": "^0.12.3",
+            vitest: "^4.1.1",
+          },
+        }),
+      );
+
+      await patchPackageJsonForWorkspace(target);
+
+      const result = JSON.parse(await fs.readFile(path.join(target, "package.json"), "utf-8"));
+      expect(result.name).toBe("my-agent");
+      expect(result.packageManager).toBeUndefined();
+      expect(result.dependencies["@alexkroman1/aai"]).toBe("workspace:*");
+      expect(result.dependencies["@alexkroman1/aai-ui"]).toBe("workspace:*");
+      expect(result.dependencies.preact).toBe("^10.29.0");
+      expect(result.devDependencies["@alexkroman1/aai-cli"]).toBe("workspace:*");
+      expect(result.devDependencies.vitest).toBe("^4.1.1");
+    });
   });
 });
