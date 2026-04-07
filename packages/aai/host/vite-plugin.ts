@@ -10,6 +10,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { Plugin, ViteDevServer } from "vite";
+import { parseEnvFile } from "../isolate/_utils.ts";
 
 export type AaiPluginOptions = {
   /** Path to agent entry (default: "agent.ts") */
@@ -17,19 +18,6 @@ export type AaiPluginOptions = {
   /** Backend port (default: Vite port + 1) */
   backendPort?: number;
 };
-
-function parseEnvFile(content: string): Record<string, string> {
-  const entries: Record<string, string> = {};
-  for (const raw of content.split("\n")) {
-    const line = raw.trim();
-    if (!line || line.startsWith("#")) continue;
-    const eq = line.indexOf("=");
-    if (eq === -1) continue;
-    const key = line.slice(0, eq).trim();
-    if (key) entries[key] = line.slice(eq + 1);
-  }
-  return entries;
-}
 
 async function resolveAgentEnv(root: string): Promise<Record<string, string>> {
   let fileEntries: Record<string, string> = {};

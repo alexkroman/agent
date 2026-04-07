@@ -43,6 +43,11 @@ export const MAX_CONNECTIONS = Number(process.env.MAX_CONNECTIONS) || 100;
 /** Maximum worker bundle size (bytes, 10 MB). */
 export const MAX_WORKER_SIZE = 10_000_000;
 
+/** KV storage prefix for a given agent slug. */
+export function agentKvPrefix(slug: string): string {
+  return `agents/${slug}/kv`;
+}
+
 // ─── Process jail ───────────────────────────────────────────────────────
 
 /** Total memory limit for nsjail cgroup (V8 heap + Rust runtime overhead, MB). */

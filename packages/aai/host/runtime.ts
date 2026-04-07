@@ -16,11 +16,7 @@ import type { Kv } from "../isolate/kv.ts";
 import type { ClientSink } from "../isolate/protocol.ts";
 import { buildReadyConfig, type ReadyConfig } from "../isolate/protocol.ts";
 import type { AgentDef, HookContext } from "../isolate/types.ts";
-import {
-  getBuiltinToolDefs,
-  getBuiltinToolGuidance,
-  getBuiltinToolSchemas,
-} from "./builtin-tools.ts";
+import { resolveAllBuiltins } from "./builtin-tools.ts";
 import type { Logger, S2SConfig } from "./runtime-config.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime-config.ts";
 import type { CreateS2sWebSocket } from "./s2s.ts";
@@ -172,15 +168,14 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     toolGuidance = opts.toolGuidance ?? [];
   } else {
     // Self-hosted mode — in-process tool execution
-    const builtinDefs = getBuiltinToolDefs(agent.builtinTools ?? []);
+    const builtins = resolveAllBuiltins(agent.builtinTools ?? []);
     const allTools: Record<string, AgentDef["tools"][string]> = {
-      ...builtinDefs,
+      ...builtins.defs,
       ...agent.tools,
     };
     const customSchemas = agentToolsToSchemas(agent.tools ?? {});
-    const builtinSchemas = getBuiltinToolSchemas(agent.builtinTools ?? []);
-    toolSchemas = [...customSchemas, ...builtinSchemas];
-    toolGuidance = getBuiltinToolGuidance(agent.builtinTools ?? []);
+    toolSchemas = [...customSchemas, ...builtins.schemas];
+    toolGuidance = builtins.guidance;
 
     const stateMap = new Map<string, Record<string, unknown>>();
     const getState = (sid: string) => {

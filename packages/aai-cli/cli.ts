@@ -3,6 +3,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { errorMessage } from "@alexkroman1/aai/utils";
 import { defineCommand, runMain } from "citty";
 import { ensureApiKeyInEnv } from "./_config.ts";
 import { fileExists, resolveCwd } from "./_utils.ts";
@@ -52,7 +53,7 @@ async function handleErrors(fn: () => Promise<void>): Promise<void> {
     await fn();
   } catch (err: unknown) {
     const { log } = await import("./_ui.ts");
-    log.error(err instanceof Error ? err.message : String(err));
+    log.error(errorMessage(err));
     process.exit(1);
   }
 }

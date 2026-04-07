@@ -68,14 +68,16 @@ export function createUnstorageKv(options: UnstorageKvOptions): Kv {
       listOptions?: KvListOptions,
     ): Promise<KvEntry<T>[]> {
       const allKeys = await store.getKeys(listPrefix);
-      const entries: KvEntry<T>[] = [];
-
-      for (const key of allKeys) {
-        const value = await store.getItem<T>(key);
-        if (value != null) entries.push({ key, value });
-      }
-
-      return sortAndPaginate(entries, listOptions);
+      const results = await Promise.all(
+        allKeys.map(async (key) => {
+          const value = await store.getItem<T>(key);
+          return value != null ? ({ key, value } as KvEntry<T>) : null;
+        }),
+      );
+      return sortAndPaginate(
+        results.filter((e): e is KvEntry<T> => e !== null),
+        listOptions,
+      );
     },
 
     async keys(pattern?: string): Promise<string[]> {

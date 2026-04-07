@@ -59,7 +59,11 @@ const MIME_TYPES: Record<string, string> = {
   ".map": "application/json",
 };
 
-function serveStatic(dir: string, req: http.IncomingMessage, res: http.ServerResponse): boolean {
+async function serveStatic(
+  dir: string,
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+): Promise<boolean> {
   const url = req.url?.split("?")[0] ?? "/";
   const filePath = path.join(dir, url === "/" ? "index.html" : url);
 
@@ -67,7 +71,7 @@ function serveStatic(dir: string, req: http.IncomingMessage, res: http.ServerRes
   if (!filePath.startsWith(dir)) return false;
 
   try {
-    const stat = fs.statSync(filePath);
+    const stat = await fs.promises.stat(filePath);
     if (!stat.isFile()) return false;
     const ext = path.extname(filePath).toLowerCase();
     const mime = MIME_TYPES[ext] ?? "application/octet-stream";
@@ -129,6 +133,17 @@ export function createServer(options: ServerOptions): AgentServer {
     throw new Error("clientHtml and clientDir are mutually exclusive");
   }
 
+  // Pre-compute the default HTML page once (the agent name never changes).
+  const escapedName = name
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+  const defaultHtml =
+    clientHtml ??
+    `<!DOCTYPE html><html><body><h1>${escapedName}</h1><p>Agent server running.</p></body></html>`;
+
   const httpServer = http.createServer((req, res) => {
     const url = req.url?.split("?")[0] ?? "/";
     const method = req.method ?? "GET";
@@ -151,22 +166,23 @@ export function createServer(options: ServerOptions): AgentServer {
       return;
     }
 
+    // Routes that may need async handling
+    void handleRequest(req, res, url, method);
+  });
+
+  async function handleRequest(
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    url: string,
+    method: string,
+  ): Promise<void> {
     // Static files from client dir
-    if (clientDir && serveStatic(clientDir, req, res)) return;
+    if (clientDir && (await serveStatic(clientDir, req, res))) return;
 
     // Default HTML
     if (method === "GET" && url === "/") {
-      const escaped = name
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#39;");
-      const body =
-        clientHtml ??
-        `<!DOCTYPE html><html><body><h1>${escaped}</h1><p>Agent server running.</p></body></html>`;
       res.writeHead(200, { "Content-Type": "text/html" });
-      res.end(body);
+      res.end(defaultHtml);
       return;
     }
 
@@ -174,7 +190,7 @@ export function createServer(options: ServerOptions): AgentServer {
     logger.error(`${method} ${url} 404`);
     res.writeHead(404, { "Content-Type": "application/json" });
     res.end(JSON.stringify({ error: "Not found" }));
-  });
+  }
 
   // WebSocket upgrade via ws
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_WS_PAYLOAD_BYTES });
