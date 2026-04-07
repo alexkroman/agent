@@ -406,20 +406,15 @@ describe("browser: dev server", () => {
     await page.close();
   });
 
-  test.concurrent("thinking state: dots appear after turn event", async () => {
+  test.concurrent("thinking state: user message appears after user_transcript", async () => {
     const { page, inject } = await setupEventInjector(browser, port);
 
-    // Inject a user_transcript event — transitions state to "thinking"
     await inject({ type: "user_transcript", text: "What is the meaning of life?" });
-
-    // The user message should appear
     await page.getByText("What is the meaning of life?").waitFor();
 
-    // Thinking indicator (3 bouncing dots) should be visible —
-    // it renders as divs with the aai-bounce animation class
-    await page.locator('[style*="aai-bounce"]').first().waitFor({ timeout: 30_000 });
+    // State indicator should show "thinking"
+    await page.locator('[data-state="thinking"]').waitFor({ timeout: 30_000 });
 
-    // Complete the turn so the UI settles
     await inject({ type: "agent_transcript", text: "42." });
     await page.getByText("42.").waitFor();
 
@@ -448,20 +443,15 @@ describe("browser: dev server", () => {
     await page.close();
   });
 
-  test.concurrent("state transitions: listening → thinking → speaking labels", async () => {
+  test.concurrent("state transitions: thinking → listening after reply_done", async () => {
     const { page, inject } = await setupEventInjector(browser, port);
 
-    // After start + config, state should be "listening" or "ready"
-    // Inject a user_transcript to move to "thinking"
     await inject({ type: "user_transcript", text: "Hello" });
+    await page.locator('[data-state="thinking"]').waitFor({ timeout: 30_000 });
 
-    // The state indicator text should show "thinking"
-    await page.getByText("thinking").waitFor({ timeout: 30_000 });
-
-    // agent_transcript_delta doesn't change state, but agent_transcript + reply_done → listening
     await inject({ type: "agent_transcript", text: "Hi there!" });
     await inject({ type: "reply_done" });
-    await page.getByText("listening").waitFor({ timeout: 30_000 });
+    await page.locator('[data-state="listening"]').waitFor({ timeout: 30_000 });
 
     await page.close();
   });
