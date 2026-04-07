@@ -23,7 +23,7 @@ import { type BuiltinTool, BuiltinToolSchema, type ToolChoice, ToolChoiceSchema 
 describe("AgentConfigSchema", () => {
   const valid: AgentConfig = {
     name: "test-agent",
-    instructions: "Be helpful",
+    systemPrompt: "Be helpful",
     greeting: "Hello",
   };
 

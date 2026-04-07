@@ -24,7 +24,7 @@ export class ClientHandler {
   #batch: BatchFn;
   /** Incremented on each turn boundary — stale async callbacks compare against this. */
   #generation = 0;
-  /** Accumulated chat_delta text for real-time display. */
+  /** Accumulated agent_transcript_delta text for real-time display. */
   #deltaAccum = "";
   constructor(opts: {
     state: Reactive<AgentState>;
@@ -55,10 +55,10 @@ export class ClientHandler {
       case "speech_stopped":
         // VAD detected end of speech — processing will follow.
         break;
-      case "transcript":
+      case "user_transcript_delta":
         this.#userUtterance.value = e.text;
         break;
-      case "turn":
+      case "user_transcript":
         this.#generation++;
         this.#deltaAccum = "";
         this.#batch(() => {
@@ -67,18 +67,18 @@ export class ClientHandler {
           this.#state.value = "thinking";
         });
         break;
-      case "chat_delta":
+      case "agent_transcript_delta":
         this.#deltaAccum += (this.#deltaAccum ? " " : "") + e.text;
         this.#agentUtterance.value = this.#deltaAccum;
         break;
-      case "chat":
+      case "agent_transcript":
         this.#deltaAccum = "";
         this.#batch(() => {
           this.#agentUtterance.value = null;
           this.#messages.value = [...this.#messages.value, { role: "assistant", content: e.text }];
         });
         break;
-      case "tool_call_start":
+      case "tool_call":
         this.#toolCalls.value = [
           ...this.#toolCalls.value,
           {
@@ -101,7 +101,7 @@ export class ClientHandler {
         }
         break;
       }
-      case "tts_done":
+      case "reply_done":
         // No-audio turns (empty LLM result) still use this event
         // to transition back to listening. Audio turns signal via stream end.
         this.#state.value = "listening";

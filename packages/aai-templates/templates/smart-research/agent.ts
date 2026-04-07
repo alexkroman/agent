@@ -17,7 +17,7 @@ type ResearchState = {
 
 export default defineAgent({
   name: "Smart Research Agent",
-  instructions: `You are a research assistant that gathers information, \
+  systemPrompt: `You are a research assistant that gathers information, \
 analyzes it, then responds. You work in three phases:
 1. Gather: Use search and fetch tools to collect information.
 2. Analyze: Use the analyze tool to synthesize your findings.

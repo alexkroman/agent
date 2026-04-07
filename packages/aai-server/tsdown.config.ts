@@ -7,7 +7,7 @@ export default defineConfig([
     platform: "node",
     target: "node22",
     outDir: "dist",
-    noExternal: [/@alexkroman1/],
+    deps: { alwaysBundle: [/@alexkroman1/] },
   },
   {
     entry: ["harness-runtime.ts"],
@@ -15,7 +15,7 @@ export default defineConfig([
     platform: "node",
     target: "node22",
     outDir: "dist",
-    noExternal: [/@alexkroman1\/aai\/hooks/, /@alexkroman1\/aai\/utils/, /^hookable$/],
+    deps: { alwaysBundle: [/@alexkroman1\/aai\/hooks/, /@alexkroman1\/aai\/utils/, /^hookable$/] },
   },
   {
     entry: { _zod: "zod-shim.ts" },

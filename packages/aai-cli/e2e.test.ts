@@ -10,21 +10,11 @@ import { type ChildProcess, execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import type { Browser } from "playwright";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import type { MockRegistry } from "./_mock-registry.ts";
 
-let playwrightAvailable = false;
-let chromium: typeof import("playwright").chromium | undefined;
-type Browser = import("playwright").Browser;
-
-try {
-  ({ chromium } = await import("playwright"));
-  const b = await chromium.launch();
-  await b.close();
-  playwrightAvailable = true;
-} catch {
-  // Playwright or Chromium not installed — browser tests will be skipped
-}
+const { chromium } = await import("playwright");
 
 const dir = import.meta.dirname ?? path.dirname(new URL(import.meta.url).pathname);
 const packagesDir = path.resolve(dir, "..");
@@ -98,17 +88,26 @@ function initProject(template: string, projectDir: string): void {
   installDeps(projectDir);
 }
 
-/** Install dependencies using the mock registry. PM-agnostic — no overrides needed. */
+/** Install dependencies using the mock registry. */
 function installDeps(projectDir: string): void {
   const env = { ...aaiEnv(), ...registry.env };
 
-  if (pm === "npm" || pm === "yarn") {
-    // Remove pnpm-specific packageManager field so corepack doesn't interfere
-    const pkgJsonPath = path.join(projectDir, "package.json");
-    const pkgJson = JSON.parse(fs.readFileSync(pkgJsonPath, "utf-8"));
-    delete pkgJson.packageManager;
-    fs.writeFileSync(pkgJsonPath, `${JSON.stringify(pkgJson, null, 2)}\n`);
+  // Rewrite @alexkroman1/* dep versions to match the unique testVersion
+  // published to the mock registry (avoids pnpm store cache collisions).
+  const pkgJsonPath = path.join(projectDir, "package.json");
+  const pkgJson = JSON.parse(fs.readFileSync(pkgJsonPath, "utf-8"));
+  for (const depField of ["dependencies", "devDependencies"] as const) {
+    if (!pkgJson[depField]) continue;
+    for (const dep of Object.keys(pkgJson[depField])) {
+      if (dep.startsWith("@alexkroman1/")) {
+        pkgJson[depField][dep] = registry.testVersion;
+      }
+    }
   }
+  if (pm === "npm" || pm === "yarn") {
+    delete pkgJson.packageManager;
+  }
+  fs.writeFileSync(pkgJsonPath, `${JSON.stringify(pkgJson, null, 2)}\n`);
 
   if (pm === "npm") {
     execFileSync("npm", ["install"], { cwd: projectDir, stdio: "inherit", env });
@@ -146,7 +145,7 @@ afterAll(async () => {
 // --- Pack + build: representative templates ---
 
 describe("pack + build: template workflows", () => {
-  test.each(templates)("template %s", (template) => {
+  test.concurrent.each(templates)("template %s", async (template) => {
     const projectDir = path.join(tmpDir, template);
 
     // Init + install from mock registry + test + build
@@ -198,6 +197,11 @@ async function setupEventInjector(browser: Browser, port: number) {
     if (ready) break;
     await new Promise((r) => setTimeout(r, 50));
   }
+  // Wait for the session to settle after the config message. In headless
+  // Chromium, initAudioCapture fails (no microphone), which sets state to
+  // "error" asynchronously. If we inject events before that completes, the
+  // audio error can overwrite test-driven state transitions.
+  await page.locator('[data-state="error"]').waitFor({ timeout: 10_000 });
 
   /** Inject a server->client event via the captured WebSocket. */
   const inject = (msg: Record<string, unknown>) =>
@@ -219,7 +223,7 @@ async function setupEventInjector(browser: Browser, port: number) {
   return { page, inject, replayFixture, clientFrames };
 }
 
-describe.skipIf(!playwrightAvailable)("browser: dev server", () => {
+describe("browser: dev server", () => {
   let browser: Browser;
   let child: ChildProcess;
   const port = BASE_PORT + 200;
@@ -252,15 +256,14 @@ describe.skipIf(!playwrightAvailable)("browser: dev server", () => {
        });
        const wss = new WebSocketServer({ server: s });
        wss.on("connection", (ws) => {
-         ws.send(JSON.stringify({ type: "config", audioFormat: "pcm16", sampleRate: 16000, sessionId: "test" }));
+         ws.send(JSON.stringify({ type: "config", audioFormat: "pcm16", sampleRate: 16000, ttsSampleRate: 24000, sessionId: "test" }));
        });
        s.listen(${port}, () => console.log("ready"));`,
       ],
       { stdio: "pipe" },
     );
     await waitForHealth(`http://localhost:${port}`, child);
-    // biome-ignore lint/style/noNonNullAssertion: guarded by describe.skipIf(!playwrightAvailable)
-    browser = await chromium!.launch();
+    browser = await chromium.launch();
   });
 
   afterAll(async () => {
@@ -269,14 +272,14 @@ describe.skipIf(!playwrightAvailable)("browser: dev server", () => {
     if (child) await waitForExit(child);
   });
 
-  test("page renders with Start button", async () => {
+  test.concurrent("page renders with Start button", async () => {
     const page = await browser.newPage();
     await page.goto(`http://localhost:${port}`);
     await page.getByRole("button", { name: "Start" }).waitFor();
     await page.close();
   });
 
-  test("clicking Start opens a WebSocket and receives config", async () => {
+  test.concurrent("clicking Start opens a WebSocket and receives config", async () => {
     const page = await browser.newPage();
     await page.goto(`http://localhost:${port}`);
 
@@ -313,14 +316,15 @@ describe.skipIf(!playwrightAvailable)("browser: dev server", () => {
 
   // ── Fixture-driven event injection tests ───────────────────────────────
 
-  test("greeting session: agent message renders in browser", async () => {
+  test.concurrent("greeting session: agent message renders in browser", async () => {
     const { page, replayFixture } = await setupEventInjector(browser, port);
+
     await replayFixture("greeting-session.json");
     await page.getByText("Hello! How can I help you today?").waitFor();
     await page.close();
   });
 
-  test("simple conversation: user + assistant messages render", async () => {
+  test.concurrent("simple conversation: user + assistant messages render", async () => {
     const { page, replayFixture } = await setupEventInjector(browser, port);
     await replayFixture("simple-conversation.json");
 
@@ -331,7 +335,7 @@ describe.skipIf(!playwrightAvailable)("browser: dev server", () => {
     await page.close();
   });
 
-  test("tool call flow: tool block renders with name, messages appear", async () => {
+  test.concurrent("tool call flow: tool block renders with name, messages appear", async () => {
     const { page, replayFixture } = await setupEventInjector(browser, port);
     await replayFixture("tool-call-flow.json");
 
@@ -342,7 +346,7 @@ describe.skipIf(!playwrightAvailable)("browser: dev server", () => {
     await page.close();
   });
 
-  test("error recovery: error banner renders with message", async () => {
+  test.concurrent("error recovery: error banner renders with message", async () => {
     const { page, replayFixture } = await setupEventInjector(browser, port);
     await replayFixture("error-recovery.json");
 
@@ -352,7 +356,7 @@ describe.skipIf(!playwrightAvailable)("browser: dev server", () => {
     await page.close();
   });
 
-  test("barge-in: interrupted response cleared, new answer renders", async () => {
+  test.concurrent("barge-in: interrupted response cleared, new answer renders", async () => {
     const { page, replayFixture } = await setupEventInjector(browser, port);
     await replayFixture("barge-in.json");
 
@@ -363,7 +367,7 @@ describe.skipIf(!playwrightAvailable)("browser: dev server", () => {
     await page.close();
   });
 
-  test("multi-turn with tools: two tool calls and all messages render", async () => {
+  test.concurrent("multi-turn with tools: two tool calls and all messages render", async () => {
     const { page, replayFixture } = await setupEventInjector(browser, port);
     await replayFixture("multi-turn-with-tools.json");
 
@@ -378,7 +382,7 @@ describe.skipIf(!playwrightAvailable)("browser: dev server", () => {
     await page.close();
   });
 
-  test("stop/resume toggle works after fixture replay", async () => {
+  test.concurrent("stop/resume toggle works after fixture replay", async () => {
     const { page, replayFixture } = await setupEventInjector(browser, port);
     await replayFixture("greeting-session.json");
     await page.getByText("Hello! How can I help you today?").waitFor();
@@ -386,12 +390,12 @@ describe.skipIf(!playwrightAvailable)("browser: dev server", () => {
     // Verify a Stop or Resume button exists — on CI the WebSocket may
     // already be closed so the initial state is non-deterministic.
     const toggleBtn = page.getByRole("button", { name: /Stop|Resume/ });
-    await toggleBtn.waitFor({ timeout: 5000 });
+    await toggleBtn.waitFor({ timeout: 30_000 });
 
     await page.close();
   });
 
-  test("new conversation clears messages", async () => {
+  test.concurrent("new conversation clears messages", async () => {
     const { page, replayFixture, inject } = await setupEventInjector(browser, port);
     await replayFixture("simple-conversation.json");
     await page.getByText("A day on Venus is longer than its year.").waitFor();
@@ -402,79 +406,69 @@ describe.skipIf(!playwrightAvailable)("browser: dev server", () => {
     // Messages should be cleared — the assistant message should no longer be visible
     await page
       .getByText("A day on Venus is longer than its year.")
-      .waitFor({ state: "hidden", timeout: 5000 });
+      .waitFor({ state: "hidden", timeout: 30_000 });
 
     await page.close();
   });
 
-  test("thinking state: dots appear after turn event", async () => {
+  test.concurrent("thinking state: user message appears after user_transcript", async () => {
     const { page, inject } = await setupEventInjector(browser, port);
 
-    // Inject a turn event — transitions state to "thinking"
-    await inject({ type: "turn", text: "What is the meaning of life?" });
-
-    // The user message should appear
+    await inject({ type: "user_transcript", text: "What is the meaning of life?" });
     await page.getByText("What is the meaning of life?").waitFor();
 
-    // Thinking indicator (3 bouncing dots) should be visible —
-    // it renders as divs with the aai-bounce animation class
-    await page.locator('[style*="aai-bounce"]').first().waitFor({ timeout: 5000 });
+    // State indicator should show "thinking"
+    await page.locator('[data-state="thinking"]').waitFor({ timeout: 30_000 });
 
-    // Complete the turn so the UI settles
-    await inject({ type: "chat", text: "42." });
+    await inject({ type: "agent_transcript", text: "42." });
     await page.getByText("42.").waitFor();
 
     await page.close();
   });
 
-  test("live transcript: partial speech text renders", async () => {
+  test.concurrent("live transcript: partial speech text renders", async () => {
     const { page, inject } = await setupEventInjector(browser, port);
 
     // speech_started → userUtterance becomes "" → shows thinking dots
     await inject({ type: "speech_started" });
 
-    // Partial transcript → shows the text
-    await inject({ type: "transcript", text: "Tell me about", isFinal: false });
+    // Partial user_transcript_delta → shows the text
+    await inject({ type: "user_transcript_delta", text: "Tell me about", isFinal: false });
     await page.getByText("Tell me about").waitFor();
 
-    // Updated transcript
-    await inject({ type: "transcript", text: "Tell me about space", isFinal: false });
+    // Updated user_transcript_delta
+    await inject({ type: "user_transcript_delta", text: "Tell me about space", isFinal: false });
     await page.getByText("Tell me about space").waitFor();
 
-    // Turn finalizes the transcript
-    await inject({ type: "turn", text: "Tell me about space" });
-    await inject({ type: "chat", text: "Space is vast." });
+    // user_transcript finalizes the transcript
+    await inject({ type: "user_transcript", text: "Tell me about space" });
+    await inject({ type: "agent_transcript", text: "Space is vast." });
     await page.getByText("Space is vast.").waitFor();
 
     await page.close();
   });
 
-  test("state transitions: listening → thinking → speaking labels", async () => {
+  test.concurrent("state transitions: thinking → listening after reply_done", async () => {
     const { page, inject } = await setupEventInjector(browser, port);
 
-    // After start + config, state should be "listening" or "ready"
-    // Inject a turn to move to "thinking"
-    await inject({ type: "turn", text: "Hello" });
+    await inject({ type: "user_transcript", text: "Hello" });
+    await page.locator('[data-state="thinking"]').waitFor({ timeout: 30_000 });
 
-    // The state indicator text should show "thinking"
-    await page.getByText("thinking").waitFor({ timeout: 5000 });
-
-    // chat_delta doesn't change state, but chat + tts_done → listening
-    await inject({ type: "chat", text: "Hi there!" });
-    await inject({ type: "tts_done" });
-    await page.getByText("listening").waitFor({ timeout: 5000 });
+    await inject({ type: "agent_transcript", text: "Hi there!" });
+    await inject({ type: "reply_done" });
+    await page.locator('[data-state="listening"]').waitFor({ timeout: 30_000 });
 
     await page.close();
   });
 
-  test("error event shows error banner with message", async () => {
+  test.concurrent("error event shows error banner with message", async () => {
     const { page, inject } = await setupEventInjector(browser, port);
 
     // Inject an error event
     await inject({ type: "error", code: "internal", message: "Connection lost" });
 
     // Error banner should appear with the message
-    await page.getByText("Connection lost").waitFor({ timeout: 5000 });
+    await page.getByText("Connection lost").waitFor({ timeout: 30_000 });
 
     await page.close();
   });

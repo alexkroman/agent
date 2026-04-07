@@ -260,7 +260,7 @@ describe("VoiceSession resource cleanup", () => {
 
     // Simulate some state accumulation
     const ws = lastWs();
-    ws.simulateMessage(JSON.stringify({ type: "turn", text: "hello" }));
+    ws.simulateMessage(JSON.stringify({ type: "user_transcript", text: "hello" }));
     ws.simulateMessage(
       JSON.stringify({ type: "error", code: "stt", message: "recognition failed" }),
     );

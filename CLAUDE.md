@@ -189,7 +189,7 @@ runs as part of `pnpm typecheck` and will catch violations.
 
 1. User speaks → browser captures PCM audio → WebSocket → server
 2. Server forwards audio to AssemblyAI STT → receives transcript
-3. STT fires `onTurn` → agentic loop (LLM + tools)
+3. STT fires `onUserTranscript` → agentic loop (LLM + tools)
 4. LLM response text → TTS → audio chunks → WebSocket → browser
 5. Browser plays audio; user can interrupt at any time (cancels in-flight turn)
 

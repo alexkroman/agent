@@ -108,11 +108,11 @@ describe("TestHarness.turn", () => {
     expect(t.messages.at(1)?.role).toBe("tool");
   });
 
-  test("fires onTurn hook", async () => {
+  test("fires onUserTranscript hook", async () => {
     const turnTexts: string[] = [];
     const agent = defineAgent({
       name: "hook-test",
-      onTurn: (text) => {
+      onUserTranscript: (text) => {
         turnTexts.push(text);
       },
       tools: {},

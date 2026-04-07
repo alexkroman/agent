@@ -132,7 +132,7 @@ async function checkInteractions(
 
 export default defineAgent({
   name: "Dr. Sage",
-  instructions:
+  systemPrompt:
     `You are Dr. Sage, a friendly health information assistant. You help people \
 understand symptoms, look up medication details, check drug interactions, and calculate \
 basic health metrics.

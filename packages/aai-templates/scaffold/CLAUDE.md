@@ -20,7 +20,7 @@ You are helping a user build a voice agent using the **aai** framework.
 - Every agent lives in `agent.ts` and exports a default `defineAgent()` call
 - Custom UI goes in `client.tsx` alongside `agent.ts` — **uses Preact, not
   React** (import from `preact/hooks`, not `react`)
-- Optimize `instructions` for spoken conversation — short sentences, no visual
+- Optimize `systemPrompt` for spoken conversation — short sentences, no visual
   formatting, no exclamation points
 - Never hardcode secrets — use `aai secret put` and access via `ctx.env`
 - Tool `execute` return values go into LLM context — filter and truncate large
@@ -99,7 +99,7 @@ import { defineAgent } from "@alexkroman1/aai";
 
 export default defineAgent({
   name: "My Agent",
-  instructions: "You are a helpful assistant that...",
+  systemPrompt: "You are a helpful assistant that...",
   greeting: "Hey there. What can I help you with?",
 });
 ```
@@ -118,7 +118,7 @@ import { z } from "zod"; // Tools with typed params (included in package.json)
 defineAgent({
   // Core
   name: string;              // Required: display name
-  instructions?: string;     // System prompt (default: general voice assistant)
+  systemPrompt?: string;     // System prompt (default: general voice assistant)
   greeting?: string;         // Spoken on connect (default: "Hey, how can I help you?")
   // Speech
   sttPrompt?: string;        // STT guidance for jargon, names, acronyms
@@ -135,7 +135,8 @@ defineAgent({
   // Lifecycle hooks
   onConnect?: (ctx: HookContext) => void | Promise<void>;
   onDisconnect?: (ctx: HookContext) => void | Promise<void>;
-  onTurn?: (text: string, ctx: HookContext) => void | Promise<void>;
+  onError?: (error: Error, ctx?: HookContext) => void;
+  onUserTranscript?: (text: string, ctx: HookContext) => void | Promise<void>;
 });
 ```
 
@@ -148,7 +149,7 @@ export default defineAgent({
 });
 ```
 
-### Writing good `instructions`
+### Writing good `systemPrompt`
 
 Optimize for spoken conversation:
 
@@ -169,7 +170,7 @@ Optimize for spoken conversation:
 - **Research** — "Search first. Never guess or rely on memory for factual
   questions. Use visit_webpage when search snippets aren't detailed enough."
 - **FAQ/support** — "Base answers strictly on your knowledge — don't guess."
-- **API-calling** — List endpoints directly in instructions so the LLM knows
+- **API-calling** — List endpoints directly in systemPrompt so the LLM knows
   what's available and what each returns.
 - **Game/interactive** — "You ARE the game. Keep descriptions to two to four
   sentences. No visual formatting."
@@ -306,7 +307,7 @@ ctx.messages; // readonly Message[] — conversation history (tools only)
 Hooks get `HookContext` (same but without `messages`).
 
 **Timeouts:** Tool execution times out after **30 seconds**. Lifecycle hooks
-(`onConnect`, `onTurn`, etc.) time out after **5 seconds**.
+(`onConnect`, `onUserTranscript`, etc.) time out after **5 seconds**.
 
 ### Fetching external APIs
 
@@ -361,7 +362,7 @@ export default defineAgent({
     const saved = await ctx.kv.get("save:game");
     if (saved) Object.assign(ctx.state, saved);
   },
-  onTurn: async (_text, ctx) => {
+  onUserTranscript: async (_text, ctx) => {
     await ctx.kv.set("save:game", ctx.state);
   },
 });
@@ -602,7 +603,7 @@ When a tool executes on the server, the result flows to the UI as follows:
 
 ```text
 Tool returns object on server
-  → server sends "tool_call_start" (status: "pending", no result)
+  → server sends "tool_call" (status: "pending", no result)
   → server sends "tool_call_done"  (status: "done", result as JSON string)
   → session.toolCalls signal updates
   → useToolResult fires callback with (toolName, parsedResult, toolCallInfo)
@@ -742,7 +743,7 @@ useToolResult((toolName, result) => {
 - `userUtterance`: `null` = user is not speaking, `""` = speech detected but
   no text yet (show "..."), non-empty string = partial/final transcript
 - `agentUtterance`: `null` = agent is not speaking, non-empty string =
-  streaming response text (cleared when final `chat` message arrives)
+  streaming response text (cleared when final `agent_transcript` message arrives)
 - `disconnected`: `null` = connected, `{ intentional: true }` = user
   disconnected, `{ intentional: false }` = unexpected disconnect (show
   reconnect UI)
@@ -1043,7 +1044,7 @@ import { createRuntime, createServer } from "@alexkroman1/aai/server";
 
 const agent = defineAgent({
   name: "My Agent",
-  instructions: "You are a helpful assistant.",
+  systemPrompt: "You are a helpful assistant.",
 });
 
 const runtime = createRuntime({ agent, env: process.env });
@@ -1178,7 +1179,7 @@ describe("my agent", () => {
 | `addUserMessage(text)` | Add a user message to conversation history |
 | `addAssistantMessage(text)` | Add an assistant message to history |
 | `messages` | Read-only conversation history |
-| `turns` | All `onTurn` hook invocations recorded |
+| `turns` | All `onUserTranscript` hook invocations recorded |
 | `connect()` / `disconnect()` | Fire lifecycle hooks manually |
 | `reset()` | Clear conversation state |
 
@@ -1274,11 +1275,11 @@ const turn = await t.turn("What is my name?", [
 - **Using `useEffect` to build state from tool calls** — Use `useToolResult`
   instead. It fires once per completed tool call with deduplication. Iterating
   `session.toolCalls.value` in `useEffect` causes duplicates.
-- **Visual formatting in `instructions`** — Bullets, bold, numbered lists sound
+- **Visual formatting in `systemPrompt`** — Bullets, bold, numbered lists sound
   terrible when spoken. Use "First", "Next", "Finally" transitions instead.
 - **Returning huge payloads from tools** — Tool returns go into LLM context.
   Filter and truncate API responses to only what the agent needs.
-- **Verbose instructions** — Voice responses should be 1-3 sentences. Don't
+- **Verbose systemPrompt** — Voice responses should be 1-3 sentences. Don't
   say "provide detailed explanations" — the agent will monologue.
 - **Hardcoding secrets** — Use `.env` for local dev, `aai secret put` for
   production. Access via `ctx.env` in both cases. Never inline keys.

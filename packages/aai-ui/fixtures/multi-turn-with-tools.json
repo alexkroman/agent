@@ -6,16 +6,16 @@
     "ttsSampleRate": 24000,
     "sessionId": "sess_fixture_006"
   },
-  { "type": "chat", "text": "Hi! I can help with weather and more." },
-  { "type": "tts_done" },
+  { "type": "agent_transcript", "text": "Hi! I can help with weather and more." },
+  { "type": "reply_done" },
 
   { "type": "speech_started" },
-  { "type": "transcript", "text": "Weather in NYC?", "isFinal": true },
+  { "type": "user_transcript_delta", "text": "Weather in NYC?", "isFinal": true },
   { "type": "speech_stopped" },
-  { "type": "turn", "text": "Weather in NYC?" },
+  { "type": "user_transcript", "text": "Weather in NYC?" },
 
   {
-    "type": "tool_call_start",
+    "type": "tool_call",
     "toolCallId": "tc_010",
     "toolName": "get_weather",
     "args": { "city": "New York" }
@@ -26,16 +26,16 @@
     "result": "{\"city\":\"New York\",\"temperature\":\"65°F\",\"condition\":\"cloudy\"}"
   },
 
-  { "type": "chat", "text": "It's 65°F and cloudy in New York." },
-  { "type": "tts_done" },
+  { "type": "agent_transcript", "text": "It's 65°F and cloudy in New York." },
+  { "type": "reply_done" },
 
   { "type": "speech_started" },
-  { "type": "transcript", "text": "And in London?", "isFinal": true },
+  { "type": "user_transcript_delta", "text": "And in London?", "isFinal": true },
   { "type": "speech_stopped" },
-  { "type": "turn", "text": "And in London?" },
+  { "type": "user_transcript", "text": "And in London?" },
 
   {
-    "type": "tool_call_start",
+    "type": "tool_call",
     "toolCallId": "tc_011",
     "toolName": "get_weather",
     "args": { "city": "London" }
@@ -46,6 +46,6 @@
     "result": "{\"city\":\"London\",\"temperature\":\"55°F\",\"condition\":\"rainy\"}"
   },
 
-  { "type": "chat", "text": "London is 55°F and rainy." },
-  { "type": "tts_done" }
+  { "type": "agent_transcript", "text": "London is 55°F and rainy." },
+  { "type": "reply_done" }
 ]

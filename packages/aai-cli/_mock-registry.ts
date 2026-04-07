@@ -2,9 +2,9 @@
  * Starts a local Verdaccio npm registry, publishes workspace packages to it,
  * and configures the environment so npm/pnpm/yarn resolve from it.
  *
- * Follows the two-phase pattern from Cloudflare's workers-sdk:
- *   Phase 1: Start with no uplinks → publish local packages (avoids "already exists" errors)
- *   Phase 2: Restart with uplinks → install resolves missing deps from public npm
+ * @alexkroman1/* packages are never proxied to the real npm registry —
+ * they are always served from verdaccio's local storage. Consumer projects
+ * use a fresh pnpm store-dir to avoid stale content-addressable cache hits.
  */
 import { type ChildProcess, execFileSync, fork } from "node:child_process";
 import fs from "node:fs";
@@ -14,23 +14,29 @@ import path from "node:path";
 export interface MockRegistry {
   /** Local registry URL (http://localhost:<port>) */
   registryUrl: string;
+  /** The unique version string used for published workspace packages */
+  testVersion: string;
   /** Environment variables to set for child processes using this registry */
   env: Record<string, string>;
   /** Stop the registry and clean up */
   stop: () => Promise<void>;
 }
 
-function writeConfig(configPath: string, port: number, withUplinks: boolean): void {
+function writeConfig(configPath: string, port: number): void {
+  // @alexkroman1/* packages are never proxied — always served from local storage.
   const yaml = `
 storage: ./storage
 uplinks:
   npmjs:
     url: https://registry.npmjs.org/
 packages:
+  "@alexkroman1/*":
+    access: $all
+    publish: $all
   "**":
     access: $all
     publish: $all
-    ${withUplinks ? "proxy: npmjs" : ""}
+    proxy: npmjs
 log:
   type: stdout
   format: pretty
@@ -98,12 +104,7 @@ export async function startMockRegistry(
   const configPath = path.join(registryDir, "config.yaml");
   fs.mkdirSync(path.join(registryDir, "storage"), { recursive: true });
 
-  // Phase 1: No uplinks — publish local packages without "already exists" errors
-  writeConfig(configPath, port, false);
-  let child = await startServer(configPath);
-
-  const publishEnv = {
-    ...process.env,
+  const registryEnv: Record<string, string> = {
     npm_config_registry: registryUrl,
     npm_config_userconfig: path.join(registryDir, ".npmrc"),
     NPM_CONFIG_USERCONFIG: path.join(registryDir, ".npmrc"),
@@ -115,31 +116,52 @@ export async function startMockRegistry(
     `registry=${registryUrl}\n//localhost:${port}/:_authToken=test-token\n`,
   );
 
-  // Build and publish each package
+  // Use a unique version to avoid pnpm store cache collisions — the global
+  // content-addressable store caches tarballs by name+version, so publishing
+  // new content under the same version (e.g. 0.12.3) silently serves stale bytes.
+  const testVersion = `0.0.0-e2e.${Date.now()}`;
+
+  // Start verdaccio, then build and publish each workspace package
+  writeConfig(configPath, port);
+  const child = await startServer(configPath);
+
   for (const pkgName of packageNames) {
     const pkgPath = path.join(packagesDir, pkgName);
-    execFileSync("pnpm", ["run", "build"], { cwd: pkgPath, stdio: "inherit" });
-    execFileSync("pnpm", ["publish", "--no-git-checks", "--registry", registryUrl], {
-      cwd: pkgPath,
-      stdio: "inherit",
-      env: publishEnv,
-    });
+    const pkgJsonPath = path.join(pkgPath, "package.json");
+    const originalPkg = fs.readFileSync(pkgJsonPath, "utf-8");
+
+    // Temporarily set a unique version so pnpm never hits a stale cache
+    const pkg = JSON.parse(originalPkg);
+    pkg.version = testVersion;
+    for (const depField of ["dependencies", "devDependencies", "peerDependencies"]) {
+      if (!pkg[depField]) continue;
+      for (const [dep, ver] of Object.entries(pkg[depField])) {
+        if (typeof ver === "string" && ver.startsWith("workspace:")) {
+          pkg[depField][dep] = testVersion;
+        }
+      }
+    }
+    fs.writeFileSync(pkgJsonPath, JSON.stringify(pkg, null, 2) + "\n");
+
+    try {
+      execFileSync("pnpm", ["run", "build"], { cwd: pkgPath, stdio: "inherit" });
+      execFileSync(
+        "pnpm",
+        ["publish", "--no-git-checks", "--tag", "e2e", "--registry", registryUrl],
+        {
+          cwd: pkgPath,
+          stdio: "inherit",
+          env: { ...process.env, ...registryEnv },
+        },
+      );
+    } finally {
+      fs.writeFileSync(pkgJsonPath, originalPkg);
+    }
   }
-
-  // Phase 2: Restart with uplinks — install can resolve transitive deps from public npm
-  // biome-ignore lint/style/noNonNullAssertion: pid is always set after fork()
-  await killTree(child.pid!);
-  writeConfig(configPath, port, true);
-  child = await startServer(configPath);
-
-  const registryEnv: Record<string, string> = {
-    npm_config_registry: registryUrl,
-    npm_config_userconfig: path.join(registryDir, ".npmrc"),
-    NPM_CONFIG_USERCONFIG: path.join(registryDir, ".npmrc"),
-  };
 
   return {
     registryUrl,
+    testVersion,
     env: registryEnv,
     stop: async () => {
       // biome-ignore lint/suspicious/noEmptyBlockStatements: intentionally swallowing cleanup errors

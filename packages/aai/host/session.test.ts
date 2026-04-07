@@ -2,7 +2,7 @@ import { createHooks } from "hookable";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { HOOK_TIMEOUT_MS } from "../isolate/constants.ts";
 import type { AgentHookMap } from "../isolate/hooks.ts";
-import { DEFAULT_INSTRUCTIONS } from "../isolate/types.ts";
+import { DEFAULT_SYSTEM_PROMPT } from "../isolate/types.ts";
 import {
   flush,
   loadFixture,
@@ -34,9 +34,9 @@ function makeTestHooks(handlers?: Record<string, (...args: unknown[]) => unknown
 // ─── buildSystemPrompt tests (existing) ─────────────────────────────────────
 
 describe("buildSystemPrompt", () => {
-  test("starts with DEFAULT_INSTRUCTIONS when no custom instructions", () => {
+  test("starts with DEFAULT_SYSTEM_PROMPT when no custom instructions", () => {
     const result = buildSystemPrompt(makeConfig(), { hasTools: false });
-    expect(result.startsWith(DEFAULT_INSTRUCTIONS)).toBe(true);
+    expect(result.startsWith(DEFAULT_SYSTEM_PROMPT)).toBe(true);
   });
 
   test("does not include agent-specific instructions section for default instructions", () => {
@@ -46,7 +46,7 @@ describe("buildSystemPrompt", () => {
 
   test("appends custom agent instructions", () => {
     const custom = "You are a pirate. Always speak like one.";
-    const result = buildSystemPrompt(makeConfig({ instructions: custom }), { hasTools: false });
+    const result = buildSystemPrompt(makeConfig({ systemPrompt: custom }), { hasTools: false });
     expect(result).toContain("Agent-Specific Instructions:");
     expect(result).toContain(custom);
   });
@@ -95,7 +95,7 @@ describe("buildSystemPrompt", () => {
   });
 
   test("custom instructions + voice + tools includes all sections", () => {
-    const result = buildSystemPrompt(makeConfig({ instructions: "Be concise." }), {
+    const result = buildSystemPrompt(makeConfig({ systemPrompt: "Be concise." }), {
       hasTools: true,
       voice: true,
     });
@@ -142,7 +142,7 @@ describe("createS2sSession", () => {
     const arg = vi.mocked(mockHandle.updateSession).mock.calls[0]?.[0];
     expect(arg).toBeDefined();
     expect(arg?.greeting).toBe("Hello!");
-    expect(arg?.systemPrompt).toContain(DEFAULT_INSTRUCTIONS);
+    expect(arg?.systemPrompt).toContain(DEFAULT_SYSTEM_PROMPT);
   });
 
   test("skipGreeting clears greeting in updateSession", async () => {
@@ -230,9 +230,9 @@ describe("createS2sSession", () => {
 
   // ─── S2S event handling tests ───────────────────────────────────────────
 
-  test("user_transcript event emits transcript and turn events", async () => {
-    const onTurn = vi.fn();
-    const hooks = makeTestHooks({ turn: onTurn });
+  test("user_transcript event emits user_transcript_delta and user_transcript events", async () => {
+    const onUserTranscript = vi.fn();
+    const hooks = makeTestHooks({ userTranscript: onUserTranscript });
     const { session, client, mockHandle } = setup({ hooks });
     await session.start();
 
@@ -240,24 +240,24 @@ describe("createS2sSession", () => {
     await flush();
 
     expect(client.events).toContainEqual({
-      type: "transcript",
+      type: "user_transcript_delta",
       text: "Hello there",
       isFinal: true,
     });
-    expect(client.events).toContainEqual({ type: "turn", text: "Hello there" });
+    expect(client.events).toContainEqual({ type: "user_transcript", text: "Hello there" });
     await vi.waitFor(() =>
-      expect(onTurn).toHaveBeenCalledWith("session-1", "Hello there", HOOK_TIMEOUT_MS),
+      expect(onUserTranscript).toHaveBeenCalledWith("session-1", "Hello there", HOOK_TIMEOUT_MS),
     );
   });
 
-  test("user_transcript_delta emits non-final transcript", async () => {
+  test("user_transcript_delta emits non-final user_transcript_delta", async () => {
     const { session, client, mockHandle } = setup();
     await session.start();
 
     mockHandle._fire("userTranscriptDelta", { text: "Hel" });
 
     expect(client.events).toContainEqual({
-      type: "transcript",
+      type: "user_transcript_delta",
       text: "Hel",
       isFinal: false,
     });
@@ -273,16 +273,16 @@ describe("createS2sSession", () => {
     expect(client.audioChunks).toContainEqual(chunk);
   });
 
-  test("agent_transcript_delta emits chat_delta", async () => {
+  test("agent_transcript_delta emits agent_transcript_delta", async () => {
     const { session, client, mockHandle } = setup();
     await session.start();
 
     mockHandle._fire("agentTranscriptDelta", { text: "I think" });
 
-    expect(client.events).toContainEqual({ type: "chat_delta", text: "I think" });
+    expect(client.events).toContainEqual({ type: "agent_transcript_delta", text: "I think" });
   });
 
-  test("agent_transcript emits chat event", async () => {
+  test("agent_transcript emits agent_transcript event", async () => {
     const { session, client, mockHandle } = setup();
     await session.start();
 
@@ -293,7 +293,7 @@ describe("createS2sSession", () => {
       interrupted: false,
     });
 
-    expect(client.events).toContainEqual({ type: "chat", text: "Full response" });
+    expect(client.events).toContainEqual({ type: "agent_transcript", text: "Full response" });
   });
 
   test("speech_started and speech_stopped events are forwarded", async () => {
@@ -322,7 +322,7 @@ describe("createS2sSession", () => {
     mockHandle._fire("replyDone", { status: "completed" });
 
     expect(client.audioDoneCount).toBe(1);
-    expect(client.events).toContainEqual({ type: "tts_done" });
+    expect(client.events).toContainEqual({ type: "reply_done" });
   });
 
   test("reply_done with interrupted status emits cancelled", async () => {
@@ -372,7 +372,7 @@ describe("createS2sSession", () => {
       expect.any(Array),
     );
     expect(client.events).toContainEqual({
-      type: "tool_call_start",
+      type: "tool_call",
       toolCallId: "call-1",
       toolName: "my_tool",
       args: { key: "value" },
@@ -692,7 +692,7 @@ describe("createS2sSession", () => {
     const { session, client, mockHandle } = setup({
       agentConfig: {
         name: "test-agent",
-        instructions: DEFAULT_INSTRUCTIONS,
+        systemPrompt: DEFAULT_SYSTEM_PROMPT,
         greeting: "Hello!",
         idleTimeoutMs: 10_000,
       },
@@ -709,7 +709,7 @@ describe("createS2sSession", () => {
     const { session, client } = setup({
       agentConfig: {
         name: "test-agent",
-        instructions: DEFAULT_INSTRUCTIONS,
+        systemPrompt: DEFAULT_SYSTEM_PROMPT,
         greeting: "Hello!",
         idleTimeoutMs: 10_000,
       },
@@ -729,7 +729,7 @@ describe("createS2sSession", () => {
     const { session, client } = setup({
       agentConfig: {
         name: "test-agent",
-        instructions: DEFAULT_INSTRUCTIONS,
+        systemPrompt: DEFAULT_SYSTEM_PROMPT,
         greeting: "Hello!",
         idleTimeoutMs: 0,
       },
@@ -745,7 +745,7 @@ describe("createS2sSession", () => {
     const { session, client } = setup({
       agentConfig: {
         name: "test-agent",
-        instructions: DEFAULT_INSTRUCTIONS,
+        systemPrompt: DEFAULT_SYSTEM_PROMPT,
         greeting: "Hello!",
         idleTimeoutMs: 10_000,
       },
@@ -800,13 +800,13 @@ describe("fixture replay through session", () => {
 
     // Client should have received speech_started/stopped for the greeting
     const types = client.events.map((e) => (e as { type: string }).type);
-    expect(types).toContain("chat"); // final agent transcript
-    expect(types).toContain("tts_done"); // reply completed
+    expect(types).toContain("agent_transcript"); // final agent transcript
+    expect(types).toContain("reply_done"); // reply completed
   });
 
-  test("simple question: user transcript triggers onTurn and builds conversation history", async () => {
-    const onTurn = vi.fn();
-    const hooks = makeTestHooks({ turn: onTurn });
+  test("simple question: user transcript triggers onUserTranscript and builds conversation history", async () => {
+    const onUserTranscript = vi.fn();
+    const hooks = makeTestHooks({ userTranscript: onUserTranscript });
     const { session, client, mockHandle } = setupReplay({ hooks });
     await session.start();
 
@@ -814,13 +814,15 @@ describe("fixture replay through session", () => {
     replayFixtureMessages(mockHandle, messages);
     await flush();
 
-    // onTurn should have been called with the user's speech transcript
-    await vi.waitFor(() => expect(onTurn).toHaveBeenCalled());
-    const turnText = onTurn.mock.calls[0]?.[1] as string;
+    // onUserTranscript should have been called with the user's speech transcript
+    await vi.waitFor(() => expect(onUserTranscript).toHaveBeenCalled());
+    const turnText = onUserTranscript.mock.calls[0]?.[1] as string;
     expect(turnText.toLowerCase()).toContain("space");
 
-    // Client should see both greeting and answer as chat events
-    const chatEvents = client.events.filter((e) => (e as { type: string }).type === "chat");
+    // Client should see both greeting and answer as agent_transcript events
+    const chatEvents = client.events.filter(
+      (e) => (e as { type: string }).type === "agent_transcript",
+    );
     expect(chatEvents.length).toBe(2); // greeting + answer
   });
 
@@ -847,10 +849,10 @@ describe("fixture replay through session", () => {
       expect.any(Array), // messages
     );
 
-    // Client received tool_call_start and tool_call_done events
-    const toolStart = client.events.find(
-      (e) => (e as { type: string }).type === "tool_call_start",
-    ) as { toolName: string; args: Record<string, unknown> } | undefined;
+    // Client received tool_call and tool_call_done events
+    const toolStart = client.events.find((e) => (e as { type: string }).type === "tool_call") as
+      | { toolName: string; args: Record<string, unknown> }
+      | undefined;
     expect(toolStart).toBeDefined();
     expect(toolStart?.toolName).toBe("get_weather");
 
@@ -896,7 +898,7 @@ describe("fixture replay through session", () => {
     const types = client.events.map((e) => (e as { type: string }).type);
     expect(types).toContain("speech_started");
     expect(types).toContain("speech_stopped");
-    expect(types).toContain("transcript"); // isFinal: true
-    expect(types).toContain("turn"); // triggers orchestration
+    expect(types).toContain("user_transcript_delta"); // isFinal: true
+    expect(types).toContain("user_transcript"); // triggers orchestration
   });
 });

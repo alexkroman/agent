@@ -91,7 +91,7 @@ let hooks: AgentHooks;
 
 type IsolateConfig = {
   name: string;
-  instructions: string;
+  systemPrompt: string;
   greeting?: string;
   sttPrompt?: string;
   maxSteps?: number;
@@ -102,7 +102,8 @@ type IsolateConfig = {
   hooks: {
     onConnect: boolean;
     onDisconnect: boolean;
-    onTurn: boolean;
+    onError: boolean;
+    onUserTranscript: boolean;
     maxStepsIsFn: boolean;
   };
 };
@@ -121,14 +122,15 @@ function extractToolSchemas(agent: AgentDef): IsolateConfig["toolSchemas"] {
 function extractConfig(agent: AgentDef): IsolateConfig {
   const config: IsolateConfig = {
     name: agent.name,
-    instructions: agent.instructions,
+    systemPrompt: agent.systemPrompt,
     greeting: agent.greeting,
     toolSchemas: extractToolSchemas(agent),
     hasState: typeof agent.state === "function",
     hooks: {
       onConnect: typeof agent.onConnect === "function",
       onDisconnect: typeof agent.onDisconnect === "function",
-      onTurn: typeof agent.onTurn === "function",
+      onError: typeof agent.onError === "function",
+      onUserTranscript: typeof agent.onUserTranscript === "function",
       maxStepsIsFn: typeof agent.maxSteps === "function",
     },
   };
@@ -205,8 +207,8 @@ async function invokeHook(req: HookRequest): Promise<HookResponse> {
       await hooks.callHook("disconnect", req.sessionId);
       sessionState.delete(req.sessionId);
       break;
-    case "onTurn":
-      await hooks.callHook("turn", req.sessionId, req.text ?? "");
+    case "onUserTranscript":
+      await hooks.callHook("userTranscript", req.sessionId, req.text ?? "");
       break;
     case "resolveTurnConfig":
       result = await callResolveTurnConfig(hooks, req.sessionId);

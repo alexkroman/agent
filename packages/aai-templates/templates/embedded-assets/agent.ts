@@ -7,7 +7,7 @@ const faqs: FaqEntry[] = knowledge.faqs;
 
 export default defineAgent({
   name: "FAQ Bot",
-  instructions:
+  systemPrompt:
     `You are a friendly FAQ assistant. Answer questions using ONLY the information \
 from your embedded knowledge base. If the user asks something not covered by your \
 knowledge base, say you don't have that information and suggest they check the official \

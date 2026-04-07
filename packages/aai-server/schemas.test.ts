@@ -426,9 +426,13 @@ describe("ServerMessageSchema", () => {
     expect(ServerMessageSchema.safeParse({ type: "audio_done" }).success).toBe(true);
   });
 
-  test("accepts client event types (turn, chat, etc.)", () => {
-    expect(ServerMessageSchema.safeParse({ type: "turn", text: "hello" }).success).toBe(true);
-    expect(ServerMessageSchema.safeParse({ type: "chat", text: "hi" }).success).toBe(true);
+  test("accepts client event types (user_transcript, agent_transcript, etc.)", () => {
+    expect(ServerMessageSchema.safeParse({ type: "user_transcript", text: "hello" }).success).toBe(
+      true,
+    );
+    expect(ServerMessageSchema.safeParse({ type: "agent_transcript", text: "hi" }).success).toBe(
+      true,
+    );
     expect(ServerMessageSchema.safeParse({ type: "speech_started" }).success).toBe(true);
   });
 

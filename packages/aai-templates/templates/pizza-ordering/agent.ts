@@ -15,7 +15,7 @@ export default defineAgent({
   name: "Pizza Palace",
   greeting:
     "Welcome to Pizza Palace. I can help you build your perfect pizza. What would you like to order?",
-  instructions: `You are a friendly pizza order-taker at Pizza Palace. Keep responses short and conversational, optimized for voice.
+  systemPrompt: `You are a friendly pizza order-taker at Pizza Palace. Keep responses short and conversational, optimized for voice.
 
 Your job is to help customers build their pizza order step by step. Guide them through size, crust, and toppings.
 

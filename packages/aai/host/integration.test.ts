@@ -131,7 +131,7 @@ describe("SDK integration: defineAgent → tool execution", () => {
   test("toAgentConfig produces serializable config", () => {
     const agent = defineAgent({
       name: "config-test",
-      instructions: "Custom instructions",
+      systemPrompt: "Custom instructions",
       builtinTools: ["web_search"],
       maxSteps: 10,
       toolChoice: "required",
@@ -141,7 +141,7 @@ describe("SDK integration: defineAgent → tool execution", () => {
     // Should survive JSON round-trip
     const parsed = JSON.parse(JSON.stringify(config));
     expect(parsed.name).toBe("config-test");
-    expect(parsed.instructions).toBe("Custom instructions");
+    expect(parsed.systemPrompt).toBe("Custom instructions");
     expect(parsed.builtinTools).toEqual(["web_search"]);
     expect(parsed.maxSteps).toBe(10);
     expect(parsed.toolChoice).toBe("required");
@@ -157,14 +157,14 @@ describe("SDK integration: defineAgent → tool execution", () => {
       onDisconnect: () => {
         log.push("disconnected");
       },
-      onTurn: (text) => {
+      onUserTranscript: (text) => {
         log.push(`turn:${text}`);
       },
     });
 
     const exec = createRuntime({ agent, env: {} });
     await exec.hooks.callHook("connect", "s1");
-    await exec.hooks.callHook("turn", "s1", "Hello world");
+    await exec.hooks.callHook("userTranscript", "s1", "Hello world");
     await exec.hooks.callHook("disconnect", "s1");
     expect(log).toEqual(["connected", "turn:Hello world", "disconnected"]);
   });

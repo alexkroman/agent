@@ -22,7 +22,7 @@ import { createMockKv } from "./test-utils.ts";
 const AGENT_BUNDLE = `
 export default {
   name: "integration-test",
-  instructions: "You are a test agent.",
+  systemPrompt: "You are a test agent.",
   greeting: "Hello from the isolate",
   maxSteps: 3,
   tools: {
@@ -41,7 +41,7 @@ export default {
   },
   state: () => ({ count: 0 }),
   onConnect: (ctx) => { ctx.state.count = 1; },
-  onTurn: (text, ctx) => { ctx.state.lastTurn = text; },
+  onUserTranscript: (text, ctx) => { ctx.state.lastTurn = text; },
 };
 `;
 
@@ -141,7 +141,7 @@ describe("multiple concurrent agents", () => {
   const BUNDLE_A = `
 export default {
   name: "agent-a",
-  instructions: "A",
+  systemPrompt: "A",
   greeting: "Hi from A",
   maxSteps: 1,
   tools: { id: { description: "Return agent name", execute() { return "agent-a"; } } },
@@ -151,7 +151,7 @@ export default {
   const BUNDLE_B = `
 export default {
   name: "agent-b",
-  instructions: "B",
+  systemPrompt: "B",
   greeting: "Hi from B",
   maxSteps: 2,
   tools: { id: { description: "Return agent name", execute() { return "agent-b"; } } },
@@ -224,7 +224,7 @@ describe("redeploy replaces sandbox", () => {
     const storage = createTestStorage();
 
     const sandbox1 = await _internals.createSandbox({
-      workerCode: `export default { name: "v1", instructions: "v1", greeting: "v1", maxSteps: 1, tools: {} };`,
+      workerCode: `export default { name: "v1", systemPrompt: "v1", greeting: "v1", maxSteps: 1, tools: {} };`,
       apiKey: "test-key",
       agentEnv: {},
       storage,
@@ -232,7 +232,7 @@ describe("redeploy replaces sandbox", () => {
     });
 
     const sandbox2 = await _internals.createSandbox({
-      workerCode: `export default { name: "v2", instructions: "v2", greeting: "v2", maxSteps: 1, tools: {} };`,
+      workerCode: `export default { name: "v2", systemPrompt: "v2", greeting: "v2", maxSteps: 1, tools: {} };`,
       apiKey: "test-key",
       agentEnv: {},
       storage,

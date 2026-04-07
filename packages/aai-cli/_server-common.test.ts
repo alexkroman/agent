@@ -106,7 +106,7 @@ describe("loadAgentDef", () => {
 
   test("throws when default export has no name", async () => {
     await withTempDir(async (dir) => {
-      await fs.writeFile(path.join(dir, "agent.ts"), "export default { instructions: 'hi' };");
+      await fs.writeFile(path.join(dir, "agent.ts"), "export default { systemPrompt: 'hi' };");
       await expect(loadAgentDef(dir)).rejects.toThrow(
         "agent.ts must export a default agent definition",
       );
@@ -150,7 +150,7 @@ describe("loadAgentDef", () => {
     await withTempDir(async (dir) => {
       await fs.writeFile(path.join(dir, "agent.ts"), 'export default { name: "test" };');
       await expect(loadAgentDef(dir)).rejects.toThrow("Invalid agent definition");
-      await expect(loadAgentDef(dir)).rejects.toThrow("instructions (string)");
+      await expect(loadAgentDef(dir)).rejects.toThrow("systemPrompt (string)");
       await expect(loadAgentDef(dir)).rejects.toThrow("greeting (string)");
       await expect(loadAgentDef(dir)).rejects.toThrow("maxSteps (number or function)");
       await expect(loadAgentDef(dir)).rejects.toThrow("tools (object)");
@@ -161,7 +161,7 @@ describe("loadAgentDef", () => {
     await withTempDir(async (dir) => {
       await fs.writeFile(
         path.join(dir, "agent.ts"),
-        'export default { name: "test", instructions: "hi", greeting: "hello", maxSteps: 5, tools: [] };',
+        'export default { name: "test", systemPrompt: "hi", greeting: "hello", maxSteps: 5, tools: [] };',
       );
       await expect(loadAgentDef(dir)).rejects.toThrow("tools (object)");
     });
@@ -171,7 +171,7 @@ describe("loadAgentDef", () => {
     await withTempDir(async (dir) => {
       await fs.writeFile(
         path.join(dir, "agent.ts"),
-        'export default { name: "test", instructions: "hi", greeting: "hello", maxSteps: 5, tools: {} };',
+        'export default { name: "test", systemPrompt: "hi", greeting: "hello", maxSteps: 5, tools: {} };',
       );
       const def = await loadAgentDef(dir);
       expect(def.name).toBe("test");

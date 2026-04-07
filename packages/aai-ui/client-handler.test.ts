@@ -138,7 +138,7 @@ describe("ClientHandler.handleMessage", () => {
 
   test("event messages are dispatched to event()", () => {
     const { target, state, messages } = createTarget();
-    target.handleMessage(JSON.stringify({ type: "turn", text: "hello" }));
+    target.handleMessage(JSON.stringify({ type: "user_transcript", text: "hello" }));
     expect(state.value).toBe("thinking");
     expect(messages.value).toEqual([{ role: "user", content: "hello" }]);
   });
@@ -188,8 +188,8 @@ describe("ClientHandler.playAudioDone generation tracking", () => {
     const { target, state } = createTarget();
     state.value = "speaking";
     target.playAudioDone();
-    // A new turn increments generation
-    target.event({ type: "turn", text: "new input" });
+    // A new user_transcript increments generation
+    target.event({ type: "user_transcript", text: "new input" });
     expect(state.value).toBe("thinking");
     await flush();
     // Stale callback should not change state back to listening
@@ -235,27 +235,27 @@ describe("ClientHandler.playAudioDone generation tracking", () => {
 });
 
 describe("ClientHandler.event edge cases", () => {
-  test("chat_delta appends to existing agentUtterance", () => {
+  test("agent_transcript_delta appends to existing agentUtterance", () => {
     const { target, agentUtterance } = createTarget();
-    target.event({ type: "chat_delta", text: "Hello" });
+    target.event({ type: "agent_transcript_delta", text: "Hello" });
     expect(agentUtterance.value).toBe("Hello");
-    target.event({ type: "chat_delta", text: "world" });
+    target.event({ type: "agent_transcript_delta", text: "world" });
     expect(agentUtterance.value).toBe("Hello world");
   });
 
-  test("chat clears agentUtterance and adds message", () => {
+  test("agent_transcript clears agentUtterance and adds message", () => {
     const { target, agentUtterance, messages } = createTarget();
     agentUtterance.value = "partial text";
-    target.event({ type: "chat", text: "full response" });
+    target.event({ type: "agent_transcript", text: "full response" });
     expect(agentUtterance.value).toBe(null);
     expect(messages.value).toEqual([{ role: "assistant", content: "full response" }]);
   });
 
-  test("tool_call_start adds pending tool call", () => {
+  test("tool_call adds pending tool call", () => {
     const { target, toolCalls, messages } = createTarget();
     messages.value = [{ role: "user", content: "do something" }];
     target.event({
-      type: "tool_call_start",
+      type: "tool_call",
       toolCallId: "tc1",
       toolName: "search",
       args: { query: "test" },

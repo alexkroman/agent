@@ -57,7 +57,7 @@ describe("bundleAgent: zod externalization", () => {
       await fs.writeFile(
         path.join(tmpDir, "agent.ts"),
         `import { z } from "zod";
-         export default { name: "test", instructions: "t", greeting: "hi", maxSteps: 1,
+         export default { name: "test", systemPrompt: "t", greeting: "hi", maxSteps: 1,
            tools: { echo: { description: "echo", parameters: z.object({ text: z.string() }),
              execute: (args) => args.text } } };`,
       );
@@ -93,7 +93,7 @@ describe("bundleAgent: readDirFiles coverage", () => {
       // Create a minimal agent.ts that Vite can build
       await fs.writeFile(
         path.join(tmpDir, "agent.ts"),
-        'export default { name: "test", instructions: "test", greeting: "hi", maxSteps: 1, tools: {} };',
+        'export default { name: "test", systemPrompt: "test", greeting: "hi", maxSteps: 1, tools: {} };',
       );
       // Package.json needed for Vite resolution
       await fs.writeFile(
@@ -123,7 +123,7 @@ describe("bundleAgent: readDirFiles coverage", () => {
     try {
       await fs.writeFile(
         path.join(tmpDir, "agent.ts"),
-        'export default { name: "test", instructions: "test", greeting: "hi", maxSteps: 1, tools: {} };',
+        'export default { name: "test", systemPrompt: "test", greeting: "hi", maxSteps: 1, tools: {} };',
       );
       await fs.writeFile(
         path.join(tmpDir, "package.json"),

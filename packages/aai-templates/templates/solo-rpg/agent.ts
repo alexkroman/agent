@@ -487,7 +487,7 @@ function chooseStoryStructure(tone: string): "3act" | "kishotenketsu" {
 export default defineAgent({
   name: "Solo RPG",
 
-  instructions: `You are the Narrator of a solo tabletop RPG engine. You guide the player through a narrative adventure using proven game mechanics adapted from Ironsworn/Starforged, Mythic GME, and Blades in the Dark.
+  systemPrompt: `You are the Narrator of a solo tabletop RPG engine. You guide the player through a narrative adventure using proven game mechanics adapted from Ironsworn/Starforged, Mythic GME, and Blades in the Dark.
 
 CHARACTER CREATION — ONE TURN SETUP:
 The player only needs to give you ONE thing to start: a name, a genre, a character idea, or just say "go". That is enough. You fill in the rest.
@@ -620,7 +620,7 @@ VOICE:
   },
 
   // Auto-save after every turn so progress persists across browser refreshes.
-  onTurn: async (_text: string, ctx: HookContext<GameState>) => {
+  onUserTranscript: async (_text: string, ctx: HookContext<GameState>) => {
     if (ctx.state.initialized) {
       await ctx.kv.set("save:game", ctx.state);
     }

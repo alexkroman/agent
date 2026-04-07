@@ -13,10 +13,10 @@ import { _internals } from "./session.ts";
 import { createUnstorageKv } from "./unstorage-kv.ts";
 
 describe("toAgentConfig", () => {
-  test("maps name, instructions, greeting from AgentDef", () => {
+  test("maps name, systemPrompt, greeting from AgentDef", () => {
     const config = toAgentConfig(makeAgent());
     expect(config.name).toBe("test-agent");
-    expect(config.instructions).toBe("Be helpful.");
+    expect(config.systemPrompt).toBe("Be helpful.");
     expect(config.greeting).toBe("Hello!");
   });
 
@@ -130,12 +130,12 @@ describe("createRuntime", () => {
     expect(onDisconnect).toHaveBeenCalledOnce();
   });
 
-  test("hooks.callHook('turn') calls agent.onTurn with text", async () => {
-    const onTurn = vi.fn();
-    const agent = makeAgent({ onTurn });
+  test("hooks.callHook('userTranscript') calls agent.onUserTranscript with text", async () => {
+    const onUserTranscript = vi.fn();
+    const agent = makeAgent({ onUserTranscript });
     const exec = createRuntime({ agent, env: {} });
-    await exec.hooks.callHook("turn", "s1", "hello world");
-    expect(onTurn).toHaveBeenCalledWith("hello world", expect.any(Object));
+    await exec.hooks.callHook("userTranscript", "s1", "hello world");
+    expect(onUserTranscript).toHaveBeenCalledWith("hello world", expect.any(Object));
   });
 
   test("session state is initialized from agent.state factory", async () => {

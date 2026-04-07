@@ -50,7 +50,7 @@ describe("fixture replay: greeting session", () => {
     expect(env.session.state.value).toBe("ready");
   });
 
-  test("greeting chat message appears in messages", async () => {
+  test("greeting agent_transcript message appears in messages", async () => {
     env.signals.start();
     await flush();
 
@@ -62,7 +62,7 @@ describe("fixture replay: greeting session", () => {
     expect(msgs[0]?.role).toBe("assistant");
   });
 
-  test("chat_delta accumulates in agentUtterance during streaming", async () => {
+  test("agent_transcript_delta accumulates in agentUtterance during streaming", async () => {
     env.signals.start();
     await flush();
 
@@ -81,18 +81,18 @@ describe("fixture replay: greeting session", () => {
     const after2 = env.session.agentUtterance.value;
     expect(after2).toContain("How can");
 
-    // After final chat, agentUtterance clears
+    // After final agent_transcript, agentUtterance clears
     env.send(fixture[7] as Record<string, unknown>);
     expect(env.session.agentUtterance.value).toBe(null);
   });
 
-  test("tts_done transitions state to listening", async () => {
+  test("reply_done transitions state to listening", async () => {
     env.signals.start();
     await flush();
 
     await replayFixture(env, "greeting-session.json");
 
-    // After tts_done, state should be "listening" (ready to hear user)
+    // After reply_done, state should be "listening" (ready to hear user)
     expect(env.session.state.value).toBe("listening");
   });
 });
@@ -103,7 +103,7 @@ describe("fixture replay: simple conversation", () => {
   });
   afterEach(() => env.restore());
 
-  test("user speech → transcript → turn → agent response accumulates messages", async () => {
+  test("user speech → user_transcript_delta → user_transcript → agent response accumulates messages", async () => {
     env.signals.start();
     await flush();
 
@@ -133,24 +133,24 @@ describe("fixture replay: simple conversation", () => {
     env.send(fixture[3] as Record<string, unknown>);
     expect(env.session.userUtterance.value).toBe("");
 
-    // partial transcript
+    // partial user_transcript_delta
     env.send(fixture[4] as Record<string, unknown>); // "Tell me"
     expect(env.session.userUtterance.value).toBe("Tell me");
 
     env.send(fixture[5] as Record<string, unknown>); // "Tell me a fun"
     expect(env.session.userUtterance.value).toBe("Tell me a fun");
 
-    // turn clears userUtterance
-    env.send(fixture[8] as Record<string, unknown>); // turn
+    // user_transcript clears userUtterance
+    env.send(fixture[8] as Record<string, unknown>); // user_transcript
     expect(env.session.userUtterance.value).toBe(null);
   });
 
-  test("turn event transitions state to thinking", async () => {
+  test("user_transcript event transitions state to thinking", async () => {
     env.signals.start();
     await flush();
 
     const fixture = loadFixture("simple-conversation.json");
-    // Send up through the turn event
+    // Send up through the user_transcript event
     for (let i = 0; i <= 8; i++) {
       env.send(fixture[i] as Record<string, unknown>);
       await flush();
@@ -179,12 +179,12 @@ describe("fixture replay: tool call flow", () => {
   });
   afterEach(() => env.restore());
 
-  test("tool_call_start creates pending tool call", async () => {
+  test("tool_call creates pending tool call", async () => {
     env.signals.start();
     await flush();
 
     const fixture = loadFixture("tool-call-flow.json");
-    // Send through tool_call_start
+    // Send through tool_call
     for (let i = 0; i <= 8; i++) {
       env.send(fixture[i] as Record<string, unknown>);
       await flush();
@@ -318,15 +318,15 @@ describe("fixture replay: barge-in (cancellation)", () => {
     expect(msgs[3]?.content).toBe("No problem!");
   });
 
-  test("cancelled chat_delta text clears from agentUtterance, not persisted in messages", async () => {
+  test("cancelled agent_transcript_delta text clears from agentUtterance, not persisted in messages", async () => {
     env.signals.start();
     await flush();
 
     const fixture = loadFixture("barge-in.json");
 
-    // Send events up through the two chat_deltas (before cancelled)
-    // config[0], chat[1], tts_done[2], speech[3], transcript[4], speech[5],
-    // turn[6], chat_delta[7], chat_delta[8]
+    // Send events up through the two agent_transcript_deltas (before cancelled)
+    // config[0], agent_transcript[1], reply_done[2], speech[3], user_transcript_delta[4], speech[5],
+    // user_transcript[6], agent_transcript_delta[7], agent_transcript_delta[8]
     for (let i = 0; i <= 8; i++) {
       env.send(fixture[i] as Record<string, unknown>);
       await flush();
@@ -335,7 +335,7 @@ describe("fixture replay: barge-in (cancellation)", () => {
     // agentUtterance should have accumulated delta text
     expect(env.session.agentUtterance.value).toContain("Well,");
 
-    // Now send cancelled[9]
+    // Now send cancelled[9] (index 9 in fixture)
     env.send(fixture[9] as Record<string, unknown>);
     await flush();
 
@@ -401,7 +401,7 @@ describe("fixture replay: multi-turn with tools", () => {
     r.unmount();
   });
 
-  test("final state is listening after last tts_done", async () => {
+  test("final state is listening after last reply_done", async () => {
     env.signals.start();
     await flush();
 

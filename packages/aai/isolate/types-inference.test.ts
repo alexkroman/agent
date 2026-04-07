@@ -124,14 +124,14 @@ describe("defineAgent type inference", () => {
     type MyState = { counter: number; name: string };
 
     // This should compile without errors — state type flows
-    // through to onConnect, onTurn, and tool execute context
+    // through to onConnect, onUserTranscript, and tool execute context
     defineAgent<MyState>({
       name: "typed-state",
       state: () => ({ counter: 0, name: "test" }),
       onConnect: (ctx) => {
         expectTypeOf(ctx.state).toEqualTypeOf<MyState>();
       },
-      onTurn: (_text, ctx) => {
+      onUserTranscript: (_text, ctx) => {
         expectTypeOf(ctx.state).toEqualTypeOf<MyState>();
       },
       tools: {
@@ -162,7 +162,7 @@ describe("defineAgent type inference", () => {
 
   test("default values are applied", () => {
     const agent = defineAgent({ name: "defaults" });
-    expectTypeOf(agent.instructions).toBeString();
+    expectTypeOf(agent.systemPrompt).toBeString();
     expectTypeOf(agent.greeting).toBeString();
     expectTypeOf(agent.tools).toBeObject();
   });
