@@ -16,8 +16,8 @@ export const PORT_ANNOUNCE_TIMEOUT_MS = 15_000;
 
 // ─── Slot lifecycle ──────────────────────────────────────────────────────
 
-/** Default idle timeout before an agent slot is evicted (ms, 5 min). */
-export const DEFAULT_SLOT_IDLE_MS = Number(process.env.SLOT_IDLE_MS) || 5 * 60 * 1000;
+/** Default idle timeout before an agent slot is evicted (ms, 1 min). */
+export const DEFAULT_SLOT_IDLE_MS = Number(process.env.SLOT_IDLE_MS) || 60_000;
 
 /** Max active sandbox slots before the server rejects new sandbox spawns. */
 export const MAX_SLOTS = Number(process.env.MAX_SLOTS) || 10;
