@@ -28,7 +28,7 @@ import { Transcript } from "./transcript.tsx";
  * @public
  */
 export function MessageList({ className }: { className?: string }) {
-  const { session } = useSession();
+  const session = useSession();
   const scrollRef = useAutoScroll();
 
   const showThinking = useComputed(() => {

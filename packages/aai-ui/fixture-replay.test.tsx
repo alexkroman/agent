@@ -21,7 +21,7 @@ let env: ReturnType<typeof setupSignalsEnv>;
 
 function renderApp() {
   return render(
-    <SessionProvider value={env.signals}>
+    <SessionProvider value={env.session}>
       <App />
     </SessionProvider>,
   );
@@ -36,7 +36,7 @@ describe("fixture replay: greeting session", () => {
   afterEach(() => env.restore());
 
   test("config message sets session to ready state", async () => {
-    env.signals.start();
+    env.session.start();
     await flush();
 
     env.send({
@@ -51,7 +51,7 @@ describe("fixture replay: greeting session", () => {
   });
 
   test("greeting agent_transcript message appears in messages", async () => {
-    env.signals.start();
+    env.session.start();
     await flush();
 
     await replayFixture(env, "greeting-session.json");
@@ -63,7 +63,7 @@ describe("fixture replay: greeting session", () => {
   });
 
   test("agent_transcript_delta accumulates in agentUtterance during streaming", async () => {
-    env.signals.start();
+    env.session.start();
     await flush();
 
     const fixture = loadFixture("greeting-session.json");
@@ -87,7 +87,7 @@ describe("fixture replay: greeting session", () => {
   });
 
   test("reply_done transitions state to listening", async () => {
-    env.signals.start();
+    env.session.start();
     await flush();
 
     await replayFixture(env, "greeting-session.json");
@@ -104,7 +104,7 @@ describe("fixture replay: simple conversation", () => {
   afterEach(() => env.restore());
 
   test("user speech → user_transcript_delta → user_transcript → agent response accumulates messages", async () => {
-    env.signals.start();
+    env.session.start();
     await flush();
 
     await replayFixture(env, "simple-conversation.json");
@@ -120,7 +120,7 @@ describe("fixture replay: simple conversation", () => {
   });
 
   test("partial transcripts update userUtterance progressively", async () => {
-    env.signals.start();
+    env.session.start();
     await flush();
 
     const fixture = loadFixture("simple-conversation.json");
@@ -146,7 +146,7 @@ describe("fixture replay: simple conversation", () => {
   });
 
   test("user_transcript event transitions state to thinking", async () => {
-    env.signals.start();
+    env.session.start();
     await flush();
 
     const fixture = loadFixture("simple-conversation.json");
@@ -160,7 +160,7 @@ describe("fixture replay: simple conversation", () => {
   });
 
   test("renders messages in App component", async () => {
-    env.signals.start();
+    env.session.start();
     await flush();
 
     await replayFixture(env, "simple-conversation.json");
@@ -180,7 +180,7 @@ describe("fixture replay: tool call flow", () => {
   afterEach(() => env.restore());
 
   test("tool_call creates pending tool call", async () => {
-    env.signals.start();
+    env.session.start();
     await flush();
 
     const fixture = loadFixture("tool-call-flow.json");
@@ -198,7 +198,7 @@ describe("fixture replay: tool call flow", () => {
   });
 
   test("tool_call_done updates status and adds result", async () => {
-    env.signals.start();
+    env.session.start();
     await flush();
 
     const fixture = loadFixture("tool-call-flow.json");
@@ -214,7 +214,7 @@ describe("fixture replay: tool call flow", () => {
   });
 
   test("tool call renders in MessageList with tool name", async () => {
-    env.signals.start();
+    env.session.start();
     await flush();
 
     await replayFixture(env, "tool-call-flow.json");
@@ -229,7 +229,7 @@ describe("fixture replay: tool call flow", () => {
   });
 
   test("full tool call flow produces correct message history", async () => {
-    env.signals.start();
+    env.session.start();
     await flush();
 
     await replayFixture(env, "tool-call-flow.json");
@@ -248,7 +248,7 @@ describe("fixture replay: error recovery", () => {
   afterEach(() => env.restore());
 
   test("error event sets error state", async () => {
-    env.signals.start();
+    env.session.start();
     await flush();
 
     await replayFixture(env, "error-recovery.json");
@@ -261,16 +261,16 @@ describe("fixture replay: error recovery", () => {
   });
 
   test("error stops the running signal", async () => {
-    env.signals.start();
+    env.session.start();
     await flush();
 
     await replayFixture(env, "error-recovery.json");
 
-    expect(env.signals.running.value).toBe(false);
+    expect(env.session.running.value).toBe(false);
   });
 
   test("error banner renders in App", async () => {
-    env.signals.start();
+    env.session.start();
     await flush();
 
     await replayFixture(env, "error-recovery.json");
@@ -289,7 +289,7 @@ describe("fixture replay: barge-in (cancellation)", () => {
   afterEach(() => env.restore());
 
   test("cancelled event clears agent utterance and resets to listening", async () => {
-    env.signals.start();
+    env.session.start();
     await flush();
 
     const fixture = loadFixture("barge-in.json");
@@ -305,7 +305,7 @@ describe("fixture replay: barge-in (cancellation)", () => {
   });
 
   test("full barge-in flow: interrupted response → new question → answer", async () => {
-    env.signals.start();
+    env.session.start();
     await flush();
 
     await replayFixture(env, "barge-in.json");
@@ -319,7 +319,7 @@ describe("fixture replay: barge-in (cancellation)", () => {
   });
 
   test("cancelled agent_transcript_delta text clears from agentUtterance, not persisted in messages", async () => {
-    env.signals.start();
+    env.session.start();
     await flush();
 
     const fixture = loadFixture("barge-in.json");
@@ -355,7 +355,7 @@ describe("fixture replay: multi-turn with tools", () => {
   afterEach(() => env.restore());
 
   test("two turns with tool calls accumulate correctly", async () => {
-    env.signals.start();
+    env.session.start();
     await flush();
 
     await replayFixture(env, "multi-turn-with-tools.json");
@@ -371,7 +371,7 @@ describe("fixture replay: multi-turn with tools", () => {
   });
 
   test("both tool calls tracked with correct names and results", async () => {
-    env.signals.start();
+    env.session.start();
     await flush();
 
     await replayFixture(env, "multi-turn-with-tools.json");
@@ -387,7 +387,7 @@ describe("fixture replay: multi-turn with tools", () => {
   });
 
   test("renders full multi-turn conversation in App", async () => {
-    env.signals.start();
+    env.session.start();
     await flush();
 
     await replayFixture(env, "multi-turn-with-tools.json");
@@ -402,7 +402,7 @@ describe("fixture replay: multi-turn with tools", () => {
   });
 
   test("final state is listening after last reply_done", async () => {
-    env.signals.start();
+    env.session.start();
     await flush();
 
     await replayFixture(env, "multi-turn-with-tools.json");

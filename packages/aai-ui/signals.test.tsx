@@ -3,11 +3,11 @@
 
 import { render } from "@testing-library/preact";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { createMockSignals, flush, setupSignalsEnv } from "./_test-utils.ts";
+import { createMockSession, flush, setupSignalsEnv } from "./_test-utils.ts";
 import { SessionProvider, useSession, useToolResult } from "./signals.ts";
 import type { ToolCallInfo } from "./types.ts";
 
-describe("createSessionControls", () => {
+describe("VoiceSession controls", () => {
   let env: ReturnType<typeof setupSignalsEnv>;
 
   beforeEach(() => {
@@ -19,43 +19,43 @@ describe("createSessionControls", () => {
   });
 
   test("has correct defaults", () => {
-    expect(env.signals.session.state.value).toBe("disconnected");
-    expect(env.signals.session.messages.value).toEqual([]);
-    expect(env.signals.session.userUtterance.value).toBe(null);
-    expect(env.signals.session.error.value).toBe(null);
-    expect(env.signals.started.value).toBe(false);
-    expect(env.signals.running.value).toBe(true);
+    expect(env.session.state.value).toBe("disconnected");
+    expect(env.session.messages.value).toEqual([]);
+    expect(env.session.userUtterance.value).toBe(null);
+    expect(env.session.error.value).toBe(null);
+    expect(env.session.started.value).toBe(false);
+    expect(env.session.running.value).toBe(true);
   });
 
   test("sets running to false on error state", async () => {
     await env.connect();
-    expect(env.signals.running.value).toBe(true);
+    expect(env.session.running.value).toBe(true);
     env.send({ type: "error", code: "internal", message: "fatal" });
-    expect(env.signals.running.value).toBe(false);
+    expect(env.session.running.value).toBe(false);
     env.session.disconnect();
   });
 
   test("start() sets started/running and connects", async () => {
-    expect(env.signals.started.value).toBe(false);
-    env.signals.start();
+    expect(env.session.started.value).toBe(false);
+    env.session.start();
     await flush();
 
-    expect(env.signals.started.value).toBe(true);
-    expect(env.signals.running.value).toBe(true);
+    expect(env.session.started.value).toBe(true);
+    expect(env.session.running.value).toBe(true);
     expect(env.mock.lastWs !== null).toBe(true);
     env.session.disconnect();
   });
 
   test("toggle() disconnects then reconnects", async () => {
-    env.signals.start();
+    env.session.start();
     await flush();
 
-    env.signals.toggle();
-    expect(env.signals.running.value).toBe(false);
+    env.session.toggle();
+    expect(env.session.running.value).toBe(false);
 
-    env.signals.toggle();
+    env.session.toggle();
     await flush();
-    expect(env.signals.running.value).toBe(true);
+    expect(env.session.running.value).toBe(true);
     env.session.disconnect();
   });
 
@@ -63,7 +63,7 @@ describe("createSessionControls", () => {
     await env.connect();
 
     const before = env.mock.lastWs?.sent.length;
-    env.signals.reset();
+    env.session.reset();
 
     const sent =
       env.mock.lastWs?.sent.slice(before).filter((d): d is string => typeof d === "string") ?? [];
@@ -108,7 +108,7 @@ describe("useToolResult", () => {
   afterEach(() => vi.useRealTimers());
 
   test("fires callback once per completed tool call", async () => {
-    const signals = createMockSignals({ started: true, state: "listening" });
+    const session = createMockSession({ started: true, state: "listening" });
     const calls: [string, unknown][] = [];
 
     function Harness() {
@@ -119,13 +119,13 @@ describe("useToolResult", () => {
     }
 
     render(
-      <SessionProvider value={signals}>
+      <SessionProvider value={session}>
         <Harness />
       </SessionProvider>,
     );
     await vi.advanceTimersByTimeAsync(0);
 
-    signals.session.toolCalls.value = [
+    session.toolCalls.value = [
       makeTc({
         toolCallId: "tc1",
         toolName: "add_pizza",
@@ -136,7 +136,7 @@ describe("useToolResult", () => {
 
     expect(calls).toEqual([["add_pizza", { added: true }]]);
 
-    signals.session.toolCalls.value = [
+    session.toolCalls.value = [
       makeTc({
         toolCallId: "tc1",
         toolName: "add_pizza",
@@ -157,7 +157,7 @@ describe("useToolResult", () => {
   });
 
   test("skips pending tool calls", async () => {
-    const signals = createMockSignals({ started: true, state: "listening" });
+    const session = createMockSession({ started: true, state: "listening" });
     const calls: string[] = [];
 
     function Harness() {
@@ -168,20 +168,20 @@ describe("useToolResult", () => {
     }
 
     render(
-      <SessionProvider value={signals}>
+      <SessionProvider value={session}>
         <Harness />
       </SessionProvider>,
     );
     await vi.advanceTimersByTimeAsync(0);
 
-    signals.session.toolCalls.value = [
+    session.toolCalls.value = [
       makeTc({ toolCallId: "tc1", toolName: "search", status: "pending", result: undefined }),
     ];
     await vi.advanceTimersByTimeAsync(0);
 
     expect(calls).toEqual([]);
 
-    signals.session.toolCalls.value = [
+    session.toolCalls.value = [
       makeTc({ toolCallId: "tc1", toolName: "search", result: JSON.stringify({ found: true }) }),
     ];
     await vi.advanceTimersByTimeAsync(0);
@@ -190,7 +190,7 @@ describe("useToolResult", () => {
   });
 
   test("resets tracking when tool calls are cleared", async () => {
-    const signals = createMockSignals({ started: true, state: "listening" });
+    const session = createMockSession({ started: true, state: "listening" });
     const calls: string[] = [];
 
     function Harness() {
@@ -201,27 +201,27 @@ describe("useToolResult", () => {
     }
 
     render(
-      <SessionProvider value={signals}>
+      <SessionProvider value={session}>
         <Harness />
       </SessionProvider>,
     );
     await vi.advanceTimersByTimeAsync(0);
 
-    signals.session.toolCalls.value = [makeTc({ toolCallId: "tc1", toolName: "add_pizza" })];
+    session.toolCalls.value = [makeTc({ toolCallId: "tc1", toolName: "add_pizza" })];
     await vi.advanceTimersByTimeAsync(0);
     expect(calls).toEqual(["add_pizza"]);
 
-    signals.session.toolCalls.value = [];
+    session.toolCalls.value = [];
     await vi.advanceTimersByTimeAsync(0);
     expect(calls).toEqual(["add_pizza"]);
 
-    signals.session.toolCalls.value = [makeTc({ toolCallId: "tc2", toolName: "add_pizza" })];
+    session.toolCalls.value = [makeTc({ toolCallId: "tc2", toolName: "add_pizza" })];
     await vi.advanceTimersByTimeAsync(0);
     expect(calls).toEqual(["add_pizza", "add_pizza"]);
   });
 
   test("filters by tool name when first argument is a string", async () => {
-    const signals = createMockSignals({ started: true, state: "listening" });
+    const session = createMockSession({ started: true, state: "listening" });
     const results: unknown[] = [];
 
     function Harness() {
@@ -232,13 +232,13 @@ describe("useToolResult", () => {
     }
 
     render(
-      <SessionProvider value={signals}>
+      <SessionProvider value={session}>
         <Harness />
       </SessionProvider>,
     );
     await vi.advanceTimersByTimeAsync(0);
 
-    signals.session.toolCalls.value = [
+    session.toolCalls.value = [
       makeTc({
         toolCallId: "tc1",
         toolName: "add_pizza",
@@ -256,7 +256,7 @@ describe("useToolResult", () => {
   });
 
   test("passes raw string when result is not valid JSON", async () => {
-    const signals = createMockSignals({ started: true, state: "listening" });
+    const session = createMockSession({ started: true, state: "listening" });
     const results: unknown[] = [];
 
     function Harness() {
@@ -267,13 +267,13 @@ describe("useToolResult", () => {
     }
 
     render(
-      <SessionProvider value={signals}>
+      <SessionProvider value={session}>
         <Harness />
       </SessionProvider>,
     );
     await vi.advanceTimersByTimeAsync(0);
 
-    signals.session.toolCalls.value = [
+    session.toolCalls.value = [
       makeTc({ toolCallId: "tc1", toolName: "broken", result: "not json{" }),
     ];
     await vi.advanceTimersByTimeAsync(0);

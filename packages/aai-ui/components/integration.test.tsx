@@ -9,22 +9,23 @@
  */
 import { fireEvent, render, screen } from "@testing-library/preact";
 import { describe, expect, test } from "vitest";
-import { createMockSignals } from "../_test-utils.ts";
-import { SessionProvider, type SessionSignals } from "../signals.ts";
+import { createMockSession } from "../_test-utils.ts";
+import type { VoiceSession } from "../session.ts";
+import { SessionProvider } from "../signals.ts";
 import { App } from "./app.tsx";
 import { Controls } from "./controls.tsx";
 import { MessageList } from "./message-list.tsx";
 import { StartScreen } from "./start-screen.tsx";
 
-function renderWithProvider(vnode: preact.ComponentChildren, signals: SessionSignals) {
-  return render(<SessionProvider value={signals}>{vnode}</SessionProvider>);
+function renderWithProvider(vnode: preact.ComponentChildren, session: VoiceSession) {
+  return render(<SessionProvider value={session}>{vnode}</SessionProvider>);
 }
 
 // --- Button click interactions ---
 
 describe("Controls: click interactions", () => {
   test("clicking Stop calls toggle and switches to Resume", () => {
-    const signals = createMockSignals({ started: true, running: true });
+    const signals = createMockSession({ started: true, running: true });
     const origToggle = signals.toggle;
     const calls: string[] = [];
     signals.toggle = () => {
@@ -48,7 +49,7 @@ describe("Controls: click interactions", () => {
   });
 
   test("clicking New Conversation calls reset", () => {
-    const signals = createMockSignals({ started: true, running: true });
+    const signals = createMockSession({ started: true, running: true });
     const calls: string[] = [];
     signals.reset = () => calls.push("reset");
 
@@ -62,7 +63,7 @@ describe("Controls: click interactions", () => {
 
 describe("StartScreen: start flow", () => {
   test("clicking Start button triggers start and shows children", () => {
-    const signals = createMockSignals({ started: false });
+    const signals = createMockSession({ started: false });
 
     const { rerender } = render(
       <SessionProvider value={signals}>
@@ -93,7 +94,7 @@ describe("StartScreen: start flow", () => {
   });
 
   test("renders custom button text", () => {
-    const signals = createMockSignals({ started: false });
+    const signals = createMockSession({ started: false });
     renderWithProvider(
       <StartScreen buttonText="Begin Session">
         <div />
@@ -104,7 +105,7 @@ describe("StartScreen: start flow", () => {
   });
 
   test("renders title and subtitle", () => {
-    const signals = createMockSignals({ started: false });
+    const signals = createMockSession({ started: false });
     renderWithProvider(
       <StartScreen title="Pizza Bot" subtitle="Order by voice">
         <div />
@@ -120,7 +121,7 @@ describe("StartScreen: start flow", () => {
 
 describe("MessageList: messages + tool calls interleaved", () => {
   test("renders tool calls after their associated message", () => {
-    const signals = createMockSignals({
+    const signals = createMockSession({
       started: true,
       state: "listening",
       messages: [
@@ -128,7 +129,7 @@ describe("MessageList: messages + tool calls interleaved", () => {
         { role: "assistant", content: "It's sunny and 72°F." },
       ],
     });
-    signals.session.toolCalls.value = [
+    signals.toolCalls.value = [
       {
         toolCallId: "tc1",
         toolName: "web_search",
@@ -156,7 +157,7 @@ describe("MessageList: messages + tool calls interleaved", () => {
   });
 
   test("shows thinking indicator when state is thinking and no pending tool", () => {
-    const signals = createMockSignals({
+    const signals = createMockSession({
       started: true,
       state: "thinking",
       messages: [{ role: "user", content: "Tell me a joke" }],
@@ -169,12 +170,12 @@ describe("MessageList: messages + tool calls interleaved", () => {
   });
 
   test("hides thinking indicator when a tool call is pending", () => {
-    const signals = createMockSignals({
+    const signals = createMockSession({
       started: true,
       state: "thinking",
       messages: [{ role: "user", content: "Search for AI news" }],
     });
-    signals.session.toolCalls.value = [
+    signals.toolCalls.value = [
       {
         toolCallId: "tc1",
         toolName: "web_search",
@@ -192,12 +193,12 @@ describe("MessageList: messages + tool calls interleaved", () => {
   });
 
   test("shows pending tool call with shimmer animation", () => {
-    const signals = createMockSignals({
+    const signals = createMockSession({
       started: true,
       state: "thinking",
       messages: [{ role: "user", content: "Search" }],
     });
-    signals.session.toolCalls.value = [
+    signals.toolCalls.value = [
       {
         toolCallId: "tc1",
         toolName: "web_search",
@@ -214,19 +215,19 @@ describe("MessageList: messages + tool calls interleaved", () => {
   });
 
   test("shows streaming agent utterance as bubble", () => {
-    const signals = createMockSignals({
+    const signals = createMockSession({
       started: true,
       state: "speaking",
       messages: [],
     });
-    signals.session.agentUtterance.value = "I'm thinking about...";
+    signals.agentUtterance.value = "I'm thinking about...";
 
     renderWithProvider(<MessageList />, signals);
     expect(screen.getByText("I'm thinking about...")).toBeDefined();
   });
 
   test("shows user transcript while speaking", () => {
-    const signals = createMockSignals({
+    const signals = createMockSession({
       started: true,
       state: "listening",
       messages: [],
@@ -242,7 +243,7 @@ describe("MessageList: messages + tool calls interleaved", () => {
 
 describe("App: full component tree integration", () => {
   test("start → messages → tool calls → error → recovery flow", () => {
-    const signals = createMockSignals({ started: false });
+    const signals = createMockSession({ started: false });
 
     const { rerender } = render(
       <SessionProvider value={signals}>
@@ -255,7 +256,7 @@ describe("App: full component tree integration", () => {
 
     // 2. Click start → chat view
     signals.started.value = true;
-    signals.session.state.value = "listening";
+    signals.state.value = "listening";
     rerender(
       <SessionProvider value={signals}>
         <App />
@@ -265,8 +266,8 @@ describe("App: full component tree integration", () => {
     expect(screen.getByText("Stop")).toBeDefined();
 
     // 3. User message
-    signals.session.messages.value = [{ role: "user", content: "What time is it?" }];
-    signals.session.state.value = "thinking";
+    signals.messages.value = [{ role: "user", content: "What time is it?" }];
+    signals.state.value = "thinking";
     rerender(
       <SessionProvider value={signals}>
         <App />
@@ -276,11 +277,11 @@ describe("App: full component tree integration", () => {
     expect(screen.getByText("thinking")).toBeDefined();
 
     // 4. Assistant responds
-    signals.session.messages.value = [
+    signals.messages.value = [
       { role: "user", content: "What time is it?" },
       { role: "assistant", content: "It's 3pm." },
     ];
-    signals.session.state.value = "listening";
+    signals.state.value = "listening";
     rerender(
       <SessionProvider value={signals}>
         <App />
@@ -289,8 +290,8 @@ describe("App: full component tree integration", () => {
     expect(screen.getByText("It's 3pm.")).toBeDefined();
 
     // 5. Error occurs
-    signals.session.state.value = "error";
-    signals.session.error.value = { code: "connection", message: "Lost connection" };
+    signals.state.value = "error";
+    signals.error.value = { code: "connection", message: "Lost connection" };
     signals.running.value = false;
     rerender(
       <SessionProvider value={signals}>

@@ -35,7 +35,7 @@ import { StateIndicator } from "./state-indicator.tsx";
  * @public
  */
 export function ChatView({ className }: { className?: string }): preact.JSX.Element {
-  const { session } = useSession();
+  const session = useSession();
   const { title } = useClientConfig();
 
   return (

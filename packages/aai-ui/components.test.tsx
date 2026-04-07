@@ -4,18 +4,19 @@
 import { signal } from "@preact/signals";
 import { render, screen } from "@testing-library/preact";
 import { describe, expect, test } from "vitest";
-import { createMockSignals } from "./_test-utils.ts";
+import { createMockSession } from "./_test-utils.ts";
 import { App } from "./components/app.tsx";
 import { ChatView } from "./components/chat-view.tsx";
 import { ErrorBanner } from "./components/error-banner.tsx";
 import { MessageBubble } from "./components/message-bubble.tsx";
 import { StateIndicator } from "./components/state-indicator.tsx";
 import { Transcript } from "./components/transcript.tsx";
-import { SessionProvider, type SessionSignals } from "./signals.ts";
+import type { VoiceSession } from "./session.ts";
+import { SessionProvider } from "./signals.ts";
 import type { AgentState, ChatMessage } from "./types.ts";
 
-function renderWithProvider(vnode: preact.ComponentChildren, signals: SessionSignals) {
-  return render(<SessionProvider value={signals}>{vnode}</SessionProvider>);
+function renderWithProvider(vnode: preact.ComponentChildren, session: VoiceSession) {
+  return render(<SessionProvider value={session}>{vnode}</SessionProvider>);
 }
 
 describe("StateIndicator", () => {
@@ -77,13 +78,13 @@ describe("Transcript", () => {
 
 describe("App", () => {
   test("shows start button when not started", () => {
-    const signals = createMockSignals({ started: false });
+    const signals = createMockSession({ started: false });
     renderWithProvider(<App />, signals);
     expect(screen.getByText("Start")).toBeDefined();
   });
 
   test("shows ChatView when started", () => {
-    const signals = createMockSignals({
+    const signals = createMockSession({
       started: true,
       state: "listening",
       running: true,
@@ -94,18 +95,18 @@ describe("App", () => {
   });
 
   test("transitions from start screen to chat", () => {
-    const signals = createMockSignals({ started: false });
+    const session = createMockSession({ started: false });
     const { rerender } = render(
-      <SessionProvider value={signals}>
+      <SessionProvider value={session}>
         <App />
       </SessionProvider>,
     );
     expect(screen.getByText("Start")).toBeDefined();
 
-    signals.started.value = true;
-    signals.session.state.value = "listening";
+    session.started.value = true;
+    session.state.value = "listening";
     rerender(
-      <SessionProvider value={signals}>
+      <SessionProvider value={session}>
         <App />
       </SessionProvider>,
     );
@@ -117,7 +118,7 @@ describe("App", () => {
 
 describe("ChatView", () => {
   test("renders state and messages", () => {
-    const signals = createMockSignals({
+    const signals = createMockSession({
       started: true,
       state: "thinking",
       running: true,
@@ -134,7 +135,7 @@ describe("ChatView", () => {
   });
 
   test("renders transcript and error", () => {
-    const signals = createMockSignals({
+    const signals = createMockSession({
       started: true,
       state: "error",
       running: false,
@@ -148,7 +149,7 @@ describe("ChatView", () => {
   });
 
   test("shows Stop when running, Resume when not", () => {
-    const signals = createMockSignals({
+    const signals = createMockSession({
       started: true,
       state: "listening",
       running: true,
@@ -172,7 +173,7 @@ describe("ChatView", () => {
   });
 
   test("renders messages in order", () => {
-    const signals = createMockSignals({
+    const signals = createMockSession({
       started: true,
       state: "listening",
       running: true,

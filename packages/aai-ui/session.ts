@@ -8,7 +8,7 @@ import type {
 } from "@alexkroman1/aai/protocol";
 import { lenientParse, ReadyConfigSchema, ServerMessageSchema } from "@alexkroman1/aai/protocol";
 import { errorMessage } from "@alexkroman1/aai/utils";
-import { batch, type Signal, signal } from "@preact/signals";
+import { batch, effect, type Signal, signal } from "@preact/signals";
 import type { VoiceIO } from "./audio.ts";
 import type {
   AgentState,
@@ -165,6 +165,10 @@ export type VoiceSession = {
   readonly error: Signal<SessionError | null>;
   /** Disconnection info, or `null` if connected. */
   readonly disconnected: Signal<{ intentional: boolean } | null>;
+  /** Whether the session has been started by the user. */
+  readonly started: Signal<boolean>;
+  /** Whether the session is currently running (connected or connecting). */
+  readonly running: Signal<boolean>;
   /**
    * Open a WebSocket connection to the server and begin audio capture.
    *
@@ -179,6 +183,10 @@ export type VoiceSession = {
   reset(): void;
   /** Close the WebSocket and release all audio resources. */
   disconnect(): void;
+  /** Start the session for the first time (sets `started` and `running`). */
+  start(): void;
+  /** Toggle between connected and disconnected states. */
+  toggle(): void;
   /** Alias for `disconnect` for use with `using`. */
   [Symbol.dispose](): void;
 };
@@ -214,6 +222,13 @@ export function createVoiceSession(options: VoiceSessionOptions): VoiceSession {
   const agentUtterance = signal<string | null>(null);
   const error = signal<SessionError | null>(null);
   const disconnected = signal<{ intentional: boolean } | null>(null);
+  const started = signal(false);
+  const running = signal(true);
+
+  // Track error state to auto-clear running
+  const disposeEffect = effect(() => {
+    if (state.value === "error") running.value = false;
+  });
 
   const conn: ConnState = { ws: null, voiceIO: null, audioSetupInFlight: false, generation: 0 };
   let connectionController: AbortController | null = null;
@@ -549,6 +564,24 @@ export function createVoiceSession(options: VoiceSessionOptions): VoiceSession {
     disconnected.value = { intentional: true };
   }
 
+  function start(): void {
+    batch(() => {
+      started.value = true;
+      running.value = true;
+    });
+    connect();
+  }
+
+  function toggle(): void {
+    if (running.value) {
+      cancel();
+      disconnect();
+    } else {
+      connect();
+    }
+    running.value = !running.value;
+  }
+
   return {
     state,
     messages,
@@ -557,12 +590,17 @@ export function createVoiceSession(options: VoiceSessionOptions): VoiceSession {
     agentUtterance,
     error,
     disconnected,
+    started,
+    running,
     connect,
     cancel,
     resetState,
     reset,
     disconnect,
+    start,
+    toggle,
     [Symbol.dispose]() {
+      disposeEffect();
       disconnect();
     },
   };

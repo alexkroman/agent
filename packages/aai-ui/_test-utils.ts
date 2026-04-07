@@ -5,7 +5,6 @@ import { resolve } from "node:path";
 import { flush, installMockWebSocket } from "@alexkroman1/aai/testing";
 import { signal } from "@preact/signals";
 import { createVoiceSession, type VoiceSession } from "./session.ts";
-import { createSessionControls, type SessionSignals } from "./signals.ts";
 import type { AgentState, ChatMessage, SessionError, ToolCallInfo } from "./types.ts";
 
 export { flush, installMockWebSocket, MockWebSocket } from "@alexkroman1/aai/testing";
@@ -185,12 +184,10 @@ export function setupSignalsEnv() {
     // instead of the crossws/websocket module import.
     WebSocket: globalThis.WebSocket,
   });
-  const signals = createSessionControls(session);
 
   return {
     mock,
     session,
-    signals,
     async connect() {
       session.connect();
       await flush();
@@ -227,7 +224,7 @@ export async function replayFixture(
   }
 }
 
-export function createMockSignals(
+export function createMockSession(
   overrides?: Partial<{
     state: AgentState;
     messages: ChatMessage[];
@@ -236,8 +233,8 @@ export function createMockSignals(
     started: boolean;
     running: boolean;
   }>,
-): SessionSignals {
-  const mockSession = {
+): VoiceSession {
+  const session = {
     state: signal<AgentState>(overrides?.state ?? "disconnected"),
     messages: signal<ChatMessage[]>(overrides?.messages ?? []),
     toolCalls: signal<ToolCallInfo[]>([]),
@@ -245,6 +242,8 @@ export function createMockSignals(
     agentUtterance: signal<string | null>(null),
     error: signal<SessionError | null>(overrides?.error ?? null),
     disconnected: signal<{ intentional: boolean } | null>(null),
+    started: signal<boolean>(overrides?.started ?? false),
+    running: signal<boolean>(overrides?.running ?? true),
     connect() {
       /* noop */
     },
@@ -260,32 +259,17 @@ export function createMockSignals(
     disconnect() {
       /* noop */
     },
+    start() {
+      session.started.value = true;
+      session.running.value = true;
+    },
+    toggle() {
+      session.running.value = !session.running.value;
+    },
     [Symbol.dispose]() {
       /* noop */
     },
   } satisfies VoiceSession;
 
-  const signals: SessionSignals = {
-    session: mockSession,
-    started: signal<boolean>(overrides?.started ?? false),
-    running: signal<boolean>(overrides?.running ?? true),
-    dispose() {
-      /* noop */
-    },
-    [Symbol.dispose]() {
-      /* noop */
-    },
-    start() {
-      signals.started.value = true;
-      signals.running.value = true;
-    },
-    toggle() {
-      signals.running.value = !signals.running.value;
-    },
-    reset() {
-      /* noop */
-    },
-  };
-
-  return signals;
+  return session;
 }

@@ -85,13 +85,13 @@ export function createSessionControls(session: VoiceSession): SessionSignals {
   };
 }
 
-const Ctx = createContext<SessionSignals | null>(null);
+const Ctx = createContext<VoiceSession | null>(null);
 
 /**
- * Preact context provider that makes session signals available to descendant
+ * Preact context provider that makes the voice session available to descendant
  * components via {@link useSession}.
  *
- * @param props - Provider props. `value` is the session signals to provide. `children` are child components that may consume the context.
+ * @param props - Provider props. `value` is the voice session to provide. `children` are child components that may consume the context.
  * @returns A Preact VNode wrapping children in the session context.
  *
  * @public
@@ -100,21 +100,21 @@ export function SessionProvider({
   value,
   children,
 }: {
-  value: SessionSignals;
+  value: VoiceSession;
   children?: ComponentChildren;
 }): JSX.Element {
   return h(Ctx.Provider, { value }, children);
 }
 
 /**
- * Hook to access session signals from within a {@link SessionProvider}.
+ * Hook to access the voice session from within a {@link SessionProvider}.
  *
- * @returns The {@link SessionSignals} from the nearest provider.
+ * @returns The {@link VoiceSession} from the nearest provider.
  * @throws If called outside of a `SessionProvider`.
  *
  * @public
  */
-export function useSession(): SessionSignals {
+export function useSession(): VoiceSession {
   const ctx = useContext(Ctx);
   if (!ctx) throw new Error("Hook useSession() requires a SessionProvider");
   return ctx;
@@ -231,7 +231,7 @@ export function useToolResult<R = unknown>(
       ? toolNameOrCallback
       : (_name: string, result: unknown, tc: ToolCallInfo) => maybeCallback?.(result as R, tc);
 
-  const { session } = useSession();
+  const session = useSession();
 
   useToolCallEffect(
     session,
@@ -255,7 +255,7 @@ export function useToolResult<R = unknown>(
 export function useToolCallStart(
   callback: (toolName: string, args: Record<string, unknown>, toolCall: ToolCallInfo) => void,
 ): void {
-  const { session } = useSession();
+  const session = useSession();
 
   useToolCallEffect(
     session,
@@ -272,7 +272,7 @@ export function useToolCallStart(
  * @public
  */
 export function useAutoScroll(): RefObject<HTMLDivElement> {
-  const { session } = useSession();
+  const session = useSession();
   const ref = useRef<HTMLDivElement>(null);
 
   useSignalEffect(() => {

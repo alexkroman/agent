@@ -41,14 +41,14 @@ describe("defineClient()", () => {
     expect(el?.textContent).toContain("Hello Mount");
   });
 
-  test("returns session, signals, and dispose", () => {
+  test("returns session and dispose", () => {
     function App() {
       return <div />;
     }
     const handle = defineClient(App, { platformUrl: "http://localhost:3000" });
 
     expect(handle.session).toBeDefined();
-    expect(handle.signals).toBeDefined();
+    expect(handle.session.started.value).toBe(false);
     expect(typeof handle.dispose).toBe("function");
   });
 
