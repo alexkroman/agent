@@ -2,9 +2,9 @@ services:
   minio:
     image: minio/minio
     command: server /data --console-address ":9001"
-    ports:
-      - "9000:9000"
-      - "9001:9001"
+    expose:
+      - "9000"
+      - "9001"
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
@@ -33,7 +33,7 @@ services:
       context: .
       dockerfile: packages/aai-server/Dockerfile
     ports:
-      - "8080:8080"
+      - "8080"
     depends_on:
       minio-init:
         condition: service_completed_successfully
