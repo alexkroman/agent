@@ -7,8 +7,8 @@ import type { JSONSchema7 } from "json-schema";
 import { createNanoEvents, type Emitter, type Unsubscribe } from "nanoevents";
 import WsWebSocket from "ws";
 import { z } from "zod";
-import type { Logger, S2SConfig } from "./runtime.ts";
-import { consoleLogger } from "./runtime.ts";
+import type { Logger, S2SConfig } from "./runtime-config.ts";
+import { consoleLogger } from "./runtime-config.ts";
 
 const uint8ToBase64 = (bytes: Uint8Array): string => Buffer.from(bytes).toString("base64");
 const base64ToUint8 = (base64: string): Uint8Array => new Uint8Array(Buffer.from(base64, "base64"));

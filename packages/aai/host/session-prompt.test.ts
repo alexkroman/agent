@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
+import { buildSystemPrompt } from "../isolate/system-prompt.ts";
 import { DEFAULT_SYSTEM_PROMPT } from "../isolate/types.ts";
 import { makeConfig } from "./_test-utils.ts";
-import { buildSystemPrompt } from "./session.ts";
 
 describe("buildSystemPrompt", () => {
   test("starts with DEFAULT_SYSTEM_PROMPT when no custom instructions", () => {

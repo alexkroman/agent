@@ -3,7 +3,7 @@ import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import type { ToolDef } from "../isolate/types.ts";
 import { makeTool } from "./_test-utils.ts";
-import { executeToolCall } from "./direct-executor.ts";
+import { executeToolCall } from "./tool-executor.ts";
 
 function run(
   name: string,

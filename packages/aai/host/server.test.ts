@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { makeAgent, silentLogger } from "./_test-utils.ts";
-import { createRuntime } from "./direct-executor.ts";
+import { createRuntime } from "./runtime.ts";
 import { createServer } from "./server.ts";
 
 function makeRuntime(opts: { name?: string; shutdownTimeoutMs?: number } = {}) {

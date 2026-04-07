@@ -128,9 +128,10 @@ The SDK is split into two compilation zones:
   `types.ts`, `kv.ts`, `_kv-utils.ts`, `hooks.ts`, `_utils.ts`,
   `constants.ts`, `protocol.ts`, `system-prompt.ts`, `_internal-types.ts`.
 - **`host/`** — host-only modules that require Node.js APIs. Contains:
-  `server.ts`, `direct-executor.ts`, `session.ts`, `s2s.ts`,
-  `ws-handler.ts`, `runtime.ts`, `builtin-tools.ts`, `_run-code.ts`,
-  `unstorage-kv.ts`, `vite-plugin.ts`, `testing.ts`, `matchers.ts`.
+  `server.ts`, `runtime.ts`, `runtime-config.ts`, `tool-executor.ts`,
+  `session.ts`, `session-ctx.ts`, `s2s.ts`, `ws-handler.ts`,
+  `builtin-tools.ts`, `_run-code.ts`, `unstorage-kv.ts`,
+  `vite-plugin.ts`, `testing.ts`, `matchers.ts`.
 
 When adding new SDK code, place it in `isolate/` if it has no `node:`
 dependencies. The isolate typecheck (`tsc -p isolate/tsconfig.json`)
