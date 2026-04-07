@@ -31,6 +31,7 @@
     "test:chaos": "pnpm --filter @alexkroman1/aai-server test:chaos",
     "syncpack": "syncpack",
     "changeset": "changeset",
+    "changeset:create": "bash scripts/create-changeset.sh",
     "version": "changeset version && node scripts/sync-scaffold-versions.mjs",
     "release": "turbo run build && changeset publish",
     "prepare": "lefthook install"

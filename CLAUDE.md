@@ -223,6 +223,55 @@ runs as part of `pnpm typecheck` and will catch violations.
   exports resolve to real files. `attw` validates export types. Both run
   in the check pipeline.
 
+### Changesets
+
+This repo uses [@changesets/cli](https://github.com/changesets/changesets)
+to track version bumps. Every PR that changes code in `packages/` **must**
+include a changeset file (enforced by the pre-push hook).
+
+**Creating a changeset (interactive — preferred for humans):**
+
+```sh
+pnpm changeset          # Prompts for packages + bump type + summary
+```
+
+**Creating a changeset (non-interactive — for agents/CI):**
+
+```sh
+pnpm changeset:create --pkg @alexkroman1/aai --bump patch --summary "Fix typo in error message"
+```
+
+Multiple packages:
+
+```sh
+pnpm changeset:create --pkg @alexkroman1/aai --pkg @alexkroman1/aai-ui --bump minor --summary "Add new session API"
+```
+
+If the change doesn't need a release (docs-only, config, tests):
+
+```sh
+pnpm changeset add --empty
+```
+
+**Changeset file format** (`.changeset/<random-name>.md`):
+
+```yaml
+---
+"@alexkroman1/aai": patch
+---
+
+Short summary of the change for the changelog.
+```
+
+Valid bump types: `patch` (bug fixes), `minor` (new features), `major`
+(breaking changes).
+
+**Fixed packages:** `aai`, `aai-ui`, and `aai-cli` release together (configured
+in `.changeset/config.json`). You only need to list one; the others are
+bumped automatically.
+
+**Checking status:** `pnpm changeset status --since=origin/main`
+
 ### Related docs
 
 - **Agent API docs**: `packages/aai-templates/scaffold/CLAUDE.md` is the
@@ -238,7 +287,8 @@ runs as part of `pnpm typecheck` and will catch violations.
 - **pre-commit**: runs `biome check --write` on staged files and
   `syncpack lint` when package.json changes.
 - **pre-push**: blocks pushes to main/master, checks for merge conflicts
-  with main, and runs `pnpm check`.
+  with main, **verifies changeset exists for changed packages**, and runs
+  `pnpm check`.
 
 ### Updating CLAUDE.md
 
