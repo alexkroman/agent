@@ -87,10 +87,7 @@ export type SandboxOptions = {
   slug: string;
 };
 
-export type Sandbox = AgentRuntime & {
-  /** @deprecated Use {@link AgentRuntime.shutdown} instead. */
-  terminate(): Promise<void>;
-};
+export type Sandbox = AgentRuntime;
 
 // ── Isolate lifecycle ───────────────────────────────────────────────────
 
@@ -381,7 +378,6 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
     readyConfig: agentRuntime.readyConfig,
     startSession: agentRuntime.startSession.bind(agentRuntime),
     shutdown: shutdownSandbox,
-    terminate: shutdownSandbox,
   };
 }
 

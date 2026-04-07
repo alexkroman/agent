@@ -93,7 +93,7 @@ describe("WebSocket session lifecycle", () => {
   });
 
   afterAll(async () => {
-    await sandbox?.terminate();
+    await sandbox?.shutdown();
   });
 
   test("startSession proxies config message from isolate", async () => {
@@ -239,11 +239,11 @@ describe("redeploy replaces sandbox", () => {
       slug: "redeploy-test",
     });
 
-    sandbox1.terminate();
+    sandbox1.shutdown();
 
     expect(sandbox2).toBeTruthy();
 
-    sandbox2.terminate();
+    sandbox2.shutdown();
   });
 });
 

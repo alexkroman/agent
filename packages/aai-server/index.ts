@@ -89,7 +89,7 @@ async function main(): Promise<void> {
     const stops = [...opts.slots.values()]
       .map((slot) => {
         if (slot.idleTimer) clearTimeout(slot.idleTimer);
-        return slot.sandbox?.terminate();
+        return slot.sandbox?.shutdown();
       })
       .filter(Boolean);
     const results = await Promise.allSettled(stops);

@@ -105,8 +105,8 @@ async function evictSlot(slot: AgentSlot, signal: AbortSignal): Promise<void> {
     const sb = slot.sandbox;
     delete slot.sandbox;
     delete slot.idleTimer;
-    await sb.terminate().catch((err) => {
-      console.warn("Idle sandbox terminate failed:", { slug: slot.slug, error: err });
+    await sb.shutdown().catch((err) => {
+      console.warn("Idle sandbox shutdown failed:", { slug: slot.slug, error: err });
     });
   } finally {
     release();
@@ -162,8 +162,8 @@ export async function terminateSlot(slot: AgentSlot): Promise<void> {
         clearTimeout(slot.idleTimer);
         delete slot.idleTimer;
       }
-      await sb.terminate().catch((err: unknown) => {
-        console.warn("Failed to terminate sandbox", { slug, error: String(err) });
+      await sb.shutdown().catch((err: unknown) => {
+        console.warn("Failed to shut down sandbox", { slug, error: String(err) });
       });
     }
   } finally {
