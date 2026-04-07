@@ -330,6 +330,37 @@ a denylist.
 - Sessions are per-sandbox (`Map<string, Session>`).
 - No shared mutable state between sandboxes.
 
+**OS-level process jail (aai-server, Linux only):**
+
+The secure-exec Rust V8 child process runs inside an **nsjail** sandbox
+on Linux production deployments. This provides defense-in-depth against
+V8 engine exploits that could escape the isolate boundary.
+
+nsjail enforces:
+
+- **Mount namespace**: read-only root, only the Rust binary and shared
+  libraries bind-mounted. UDS socket dir is the sole writable mount.
+- **PID namespace**: process sees only itself.
+- **Network namespace**: empty (no interfaces). UDS still works via
+  bind-mounted socket dir.
+- **seccomp-bpf**: syscall allowlist in `seccomp-allowlist.json`.
+- **Capabilities**: all dropped.
+- **cgroups v2**: memory and PID limits.
+
+On macOS (dev), the jail is skipped with a warning. Requires `nsjail`
+on `$PATH` (installed via `apt-get install nsjail` in the Dockerfile).
+
+Key files: `process-jail.ts`, `jail-config.ts`, `seccomp-policy.ts`,
+`seccomp-allowlist.json`.
+
+When upgrading secure-exec, run `pnpm --filter @alexkroman1/aai-server
+test:integration` on Linux to verify the seccomp allowlist is still
+sufficient. Update `seccomp-allowlist.json` if new syscalls are needed.
+
+A `pnpm patch` on `@secure-exec/v8` adds `SECURE_EXEC_V8_WRAPPER` env
+var support. When secure-exec ships the `v8Runtime` option on
+`createNodeRuntimeDriverFactory`, remove the patch and use the clean API.
+
 **`run_code` built-in tool (aai/builtin-tools.ts):**
 
 - Each invocation runs in a **fresh `node:vm` context** — isolated from

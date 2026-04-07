@@ -139,6 +139,52 @@ jobs:
       - run: pnpm exec turbo run build
       - run: pnpm exec turbo run check:integration
 
+  docker-jail:
+    needs: setup
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build production image (includes nsjail)
+        run: docker build -f packages/aai-server/Dockerfile -t aai-server-test .
+      - name: Verify nsjail is installed
+        run: docker run --rm aai-server-test which nsjail
+      - name: Test jail enforcement
+        run: |
+          docker run --rm --privileged aai-server-test bash -c '
+          cat > /tmp/jail.cfg << "EOF"
+          name: "ci-test"
+          mode: ONCE
+          hostname: "sandbox"
+          cwd: "/tmp"
+          clone_newuser: true
+          clone_newns: true
+          clone_newpid: true
+          clone_newipc: true
+          clone_newnet: true
+          clone_newuts: true
+          keep_caps: false
+          mount { src: "/lib" dst: "/lib" is_bind: true rw: false mandatory: false }
+          mount { src: "/lib64" dst: "/lib64" is_bind: true rw: false mandatory: false }
+          mount { src: "/usr/lib" dst: "/usr/lib" is_bind: true rw: false mandatory: false }
+          mount { src: "/bin/sh" dst: "/bin/sh" is_bind: true rw: false }
+          mount { src: "/usr/bin" dst: "/usr/bin" is_bind: true rw: false mandatory: false }
+          mount { dst: "/proc" fstype: "proc" rw: false }
+          mount { dst: "/tmp" fstype: "tmpfs" rw: true }
+          exec_bin { path: "/bin/sh" }
+          EOF
+
+          echo "--- Filesystem isolation ---"
+          nsjail -q --config /tmp/jail.cfg -- /bin/sh -c "cat /etc/passwd" 2>/dev/null && exit 1 || echo "PASS: host files blocked"
+
+          echo "--- Write protection ---"
+          nsjail -q --config /tmp/jail.cfg -- /bin/sh -c "touch /x" 2>/dev/null && exit 1 || echo "PASS: writes blocked"
+
+          echo "--- Network isolation ---"
+          nsjail -q --config /tmp/jail.cfg -- /bin/sh -c "echo x > /dev/tcp/1.1.1.1/80" 2>/dev/null && exit 1 || echo "PASS: network blocked"
+
+          echo "--- All jail tests passed ---"
+          '
+
   e2e:
     needs: setup
     runs-on: ${{ matrix.os }}
@@ -183,11 +229,11 @@ jobs:
   ci:
     runs-on: ubuntu-latest
     if: always()
-    needs: [lint-typecheck-and-checks, test, integration, e2e]
+    needs: [lint-typecheck-and-checks, test, integration, e2e, docker-jail]
     steps:
       - name: Check results
         run: |
-          results="${{ needs.lint-typecheck-and-checks.result }} ${{ needs.test.result }} ${{ needs.integration.result }} ${{ needs.e2e.result }}"
+          results="${{ needs.lint-typecheck-and-checks.result }} ${{ needs.test.result }} ${{ needs.integration.result }} ${{ needs.e2e.result }} ${{ needs.docker-jail.result }}"
           for r in $results; do
             if [ "$r" != "success" ] && [ "$r" != "skipped" ]; then
               echo "CI failed: one or more jobs did not succeed"
