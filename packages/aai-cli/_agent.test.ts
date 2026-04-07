@@ -17,7 +17,7 @@ describe("resolveServerUrl", () => {
 
   test("dev mode takes priority over config URL", () => {
     // Tests run from the monorepo, so isDevMode() returns true
-    expect(resolveServerUrl(undefined, "https://config.com")).toBe("http://localhost:8787");
+    expect(resolveServerUrl(undefined, "https://config.com")).toBe("http://localhost:8080");
   });
 });
 
@@ -43,7 +43,7 @@ describe("getServerInfo", () => {
       const info = await getServerInfo(dir, undefined, "test-key-123");
       expect(info.slug).toBe("my-agent");
       // Dev mode (monorepo) takes priority over config serverUrl
-      expect(info.serverUrl).toBe("http://localhost:8787");
+      expect(info.serverUrl).toBe("http://localhost:8080");
       expect(info.apiKey).toBe("test-key-123");
     });
   });

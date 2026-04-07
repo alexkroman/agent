@@ -34,7 +34,7 @@
     "changeset:create": "bash scripts/create-changeset.sh",
     "version": "changeset version && node scripts/sync-scaffold-versions.mjs",
     "release": "turbo run build && changeset publish",
-    "prepare": "lefthook install"
+    "prepare": "[ \"$(git rev-parse --git-dir 2>/dev/null)\" != \"$(git rev-parse --git-common-dir 2>/dev/null)\" ] || lefthook install"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.2",

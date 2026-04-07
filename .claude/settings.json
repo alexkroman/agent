@@ -21,6 +21,17 @@
             "command": "echo 'IMPORTANT: Subscribe to this PR using subscribe_pr_activity and monitor for CI failures and review comments. If CI fails, investigate the failure, fix the code, commit, and push. Continue monitoring until CI passes.'"
           }
         ]
+      },
+      {
+        "matcher": "EnterWorktree",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pnpm install --frozen-lockfile 2>/dev/null || pnpm install",
+            "timeout": 120,
+            "statusMessage": "Installing worktree dependencies..."
+          }
+        ]
       }
     ],
     "SessionStart": [
@@ -29,7 +40,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "npx lefthook install"
+            "command": "[ \"$(git rev-parse --git-dir 2>/dev/null)\" != \"$(git rev-parse --git-common-dir 2>/dev/null)\" ] || npx lefthook install"
           },
           {
             "type": "command",
