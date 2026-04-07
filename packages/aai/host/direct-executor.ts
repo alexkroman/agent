@@ -7,23 +7,15 @@
  * lifecycle hooks, and session management.
  */
 
-import pTimeout from "p-timeout";
 import { createStorage } from "unstorage";
-import type { z } from "zod";
-import {
-  agentToolsToSchemas,
-  EMPTY_PARAMS,
-  type ExecuteTool,
-  type ToolSchema,
-  toAgentConfig,
-} from "../isolate/_internal-types.ts";
-import { errorDetail, errorMessage, toolError } from "../isolate/_utils.ts";
-import { DEFAULT_SHUTDOWN_TIMEOUT_MS, TOOL_EXECUTION_TIMEOUT_MS } from "../isolate/constants.ts";
+import { agentToolsToSchemas, type ToolSchema, toAgentConfig } from "../isolate/_internal-types.ts";
+import { toolError } from "../isolate/_utils.ts";
+import { DEFAULT_SHUTDOWN_TIMEOUT_MS } from "../isolate/constants.ts";
 import { type AgentHooks, createAgentHooks } from "../isolate/hooks.ts";
 import type { Kv } from "../isolate/kv.ts";
 import type { ClientSink } from "../isolate/protocol.ts";
 import { buildReadyConfig, type ReadyConfig } from "../isolate/protocol.ts";
-import type { AgentDef, HookContext, Message, ToolContext, ToolDef } from "../isolate/types.ts";
+import type { AgentDef, HookContext } from "../isolate/types.ts";
 import {
   getBuiltinToolDefs,
   getBuiltinToolGuidance,
@@ -33,74 +25,11 @@ import type { Logger, S2SConfig } from "./runtime.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime.ts";
 import type { CreateS2sWebSocket } from "./s2s.ts";
 import { createS2sSession, type Session } from "./session.ts";
+import { type ExecuteTool, executeToolCall } from "./tool-executor.ts";
 import { createUnstorageKv } from "./unstorage-kv.ts";
 import { type SessionWebSocket, wireSessionSocket } from "./ws-handler.ts";
 
-export type { ExecuteTool } from "../isolate/_internal-types.ts";
-
-// ─── Tool execution (formerly worker-entry.ts) ─────────────────────────────
-
-const yieldTick = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
-
-export type ExecuteToolCallOptions = {
-  tool: ToolDef;
-  env: Readonly<Record<string, string>>;
-  state?: Record<string, unknown>;
-  sessionId?: string | undefined;
-  kv?: Kv | undefined;
-  messages?: readonly Message[] | undefined;
-  logger?: Logger | undefined;
-};
-
-function buildToolContext(opts: ExecuteToolCallOptions): ToolContext {
-  const { env, state, kv, messages, sessionId } = opts;
-  return {
-    env: { ...env },
-    state: state ?? {},
-    get kv(): Kv {
-      if (!kv) throw new Error("KV not available");
-      return kv;
-    },
-    messages: messages ?? [],
-    sessionId: sessionId ?? "",
-  };
-}
-
-export async function executeToolCall(
-  name: string,
-  args: Readonly<Record<string, unknown>>,
-  options: ExecuteToolCallOptions,
-): Promise<string> {
-  const { tool } = options;
-  const schema = tool.parameters ?? EMPTY_PARAMS;
-  const parsed = schema.safeParse(args);
-  if (!parsed.success) {
-    const issues = (parsed.error?.issues ?? [])
-      .map((i: z.ZodIssue) => `${i.path.map(String).join(".")}: ${i.message}`)
-      .join(", ");
-    return toolError(`Invalid arguments for tool "${name}": ${issues}`);
-  }
-
-  try {
-    const ctx = buildToolContext(options);
-    await yieldTick();
-    const result = await pTimeout(Promise.resolve(tool.execute(parsed.data, ctx)), {
-      milliseconds: TOOL_EXECUTION_TIMEOUT_MS,
-      message: `Tool "${name}" timed out after ${TOOL_EXECUTION_TIMEOUT_MS}ms`,
-    });
-    await yieldTick();
-    if (result == null) return "null";
-    return typeof result === "string" ? result : JSON.stringify(result);
-  } catch (err: unknown) {
-    const log = options.logger;
-    if (log) {
-      log.warn("Tool execution failed", { tool: name, error: errorDetail(err) });
-    } else {
-      console.warn(`[tool-executor] Tool execution failed: ${name}`, err);
-    }
-    return toolError(errorMessage(err));
-  }
-}
+export { type ExecuteTool, type ExecuteToolCallOptions, executeToolCall } from "./tool-executor.ts";
 
 // ─── Runtime adapter (formerly adapter.ts) ──────────────────────────────────
 
