@@ -44,6 +44,11 @@ services:
       AWS_ACCESS_KEY_ID: minioadmin
       AWS_SECRET_ACCESS_KEY: minioadmin
       KV_SCOPE_SECRET: docker-dev-secret
+      MAX_CONNECTIONS: "50"
+      MAX_SLOTS: "5"
+      SLOT_IDLE_MS: "10000"
+    mem_limit: 512m
+    memswap_limit: 512m
 
 volumes:
   minio-data:

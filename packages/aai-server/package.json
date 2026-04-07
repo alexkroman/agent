@@ -16,7 +16,8 @@
     "lint": "biome check .",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "check:integration": "pnpm run test:integration",
-    "test:docker": "vitest run --config vitest.docker.config.ts"
+    "test:docker": "vitest run --config vitest.docker.config.ts",
+    "test:chaos": "vitest run --config chaos/vitest.chaos.config.ts"
   },
   "dependencies": {
     "@alexkroman1/aai": "workspace:*",
@@ -39,6 +40,7 @@
     "@secure-exec/typescript": "^0.2.1",
     "@types/mime-types": "^3.0.1",
     "@types/ws": "^8.18.1",
+    "testcontainers": "^11.13.0",
     "tsdown": "^0.21.7",
     "typescript": "^6.0.2",
     "vitest": "^4.1.3"

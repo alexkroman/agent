@@ -32,7 +32,10 @@
     "changeset": "changeset",
     "version": "changeset version && node scripts/sync-scaffold-versions.mjs",
     "release": "turbo run build && changeset publish",
-    "prepare": "lefthook install"
+    "prepare": "lefthook install",
+    "docker:up": "docker compose up --build",
+    "docker:down": "docker compose down -v",
+    "test:chaos": "pnpm --filter @alexkroman1/aai-server test:chaos"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.2",
