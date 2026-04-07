@@ -21,8 +21,8 @@ import {
   getBuiltinToolGuidance,
   getBuiltinToolSchemas,
 } from "./builtin-tools.ts";
-import type { Logger, S2SConfig } from "./runtime.ts";
-import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime.ts";
+import type { Logger, S2SConfig } from "./runtime-config.ts";
+import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime-config.ts";
 import type { CreateS2sWebSocket } from "./s2s.ts";
 import { createS2sSession, type Session } from "./session.ts";
 import { type ExecuteTool, executeToolCall } from "./tool-executor.ts";

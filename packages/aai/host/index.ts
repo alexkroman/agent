@@ -19,7 +19,7 @@ export * from "../isolate/index.ts";
 export * from "./_runtime-conformance.ts";
 export * from "./builtin-tools.ts";
 export * from "./direct-executor.ts";
-export * from "./runtime.ts";
+export * from "./runtime-config.ts";
 export * from "./s2s.ts";
 export * from "./session.ts";
 export * from "./unstorage-kv.ts";

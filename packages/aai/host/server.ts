@@ -13,8 +13,8 @@ import { WebSocketServer } from "ws";
 import { AGENT_CSP, MAX_WS_PAYLOAD_BYTES } from "../isolate/constants.ts";
 import type { Kv } from "../isolate/kv.ts";
 import type { Runtime } from "./direct-executor.ts";
-import type { Logger } from "./runtime.ts";
-import { consoleLogger } from "./runtime.ts";
+import type { Logger } from "./runtime-config.ts";
+import { consoleLogger } from "./runtime-config.ts";
 import type { SessionWebSocket } from "./ws-handler.ts";
 
 export { createRuntime, type Runtime, type RuntimeOptions } from "./direct-executor.ts";

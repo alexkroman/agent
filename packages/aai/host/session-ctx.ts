@@ -7,7 +7,7 @@ import { DEFAULT_MAX_HISTORY, HOOK_TIMEOUT_MS } from "../isolate/constants.ts";
 import type { AgentHookMap, AgentHooks } from "../isolate/hooks.ts";
 import { callResolveTurnConfig } from "../isolate/hooks.ts";
 import type { Message } from "../isolate/types.ts";
-import type { Logger } from "./runtime.ts";
+import type { Logger } from "./runtime-config.ts";
 import type { S2sHandle } from "./s2s.ts";
 
 // ─── Session context (formerly _session-ctx.ts) ─────────────────────────────

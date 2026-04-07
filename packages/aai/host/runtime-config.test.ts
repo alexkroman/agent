@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { jsonLogger } from "./runtime.ts";
+import { jsonLogger } from "./runtime-config.ts";
 
 /** Parse the JSON line at `index` from `chunks`, failing if missing. */
 function parseEntry(chunks: string[], index: number): Record<string, unknown> {

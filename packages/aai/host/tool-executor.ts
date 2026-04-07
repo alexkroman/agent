@@ -13,7 +13,7 @@ import { errorDetail, errorMessage, toolError } from "../isolate/_utils.ts";
 import { TOOL_EXECUTION_TIMEOUT_MS } from "../isolate/constants.ts";
 import type { Kv } from "../isolate/kv.ts";
 import type { Message, ToolContext, ToolDef } from "../isolate/types.ts";
-import type { Logger } from "./runtime.ts";
+import type { Logger } from "./runtime-config.ts";
 
 export type { ExecuteTool } from "../isolate/_internal-types.ts";
 

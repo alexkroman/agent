@@ -11,8 +11,8 @@ import {
 import type { AgentHooks } from "../isolate/hooks.ts";
 import type { ClientSink } from "../isolate/protocol.ts";
 import { buildSystemPrompt } from "../isolate/system-prompt.ts";
-import type { Logger, S2SConfig } from "./runtime.ts";
-import { consoleLogger } from "./runtime.ts";
+import type { Logger, S2SConfig } from "./runtime-config.ts";
+import { consoleLogger } from "./runtime-config.ts";
 import {
   type CreateS2sWebSocket,
   connectS2s,
