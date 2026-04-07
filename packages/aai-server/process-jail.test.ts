@@ -90,7 +90,7 @@ describe("isJailAvailable", () => {
 
 describe("createJailedLauncher", () => {
   test("writes wrapper script and config to temp dir", async () => {
-    if (process.platform !== "linux") return;
+    if (!isJailAvailable()) return;
 
     const socketDir = await fs.mkdtemp(path.join(os.tmpdir(), "aai-jail-test-"));
     try {
