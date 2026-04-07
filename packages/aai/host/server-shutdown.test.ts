@@ -10,7 +10,7 @@ import { createHooks } from "hookable";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { AgentHookMap } from "../isolate/hooks.ts";
 import { silentLogger } from "./_test-utils.ts";
-import type { Runtime } from "./direct-executor.ts";
+import type { Runtime } from "./runtime.ts";
 import { createServer } from "./server.ts";
 
 let mockShutdown = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);

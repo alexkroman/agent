@@ -1,95 +1,311 @@
 // Copyright 2025 the AAI authors. MIT license.
-
 /**
- * Runtime dependencies injected into the session pipeline.
+ * Agent runtime — the execution engine for voice agents.
  *
- * Defines the {@link Logger} interface, a default {@link consoleLogger},
- * and the {@link S2SConfig} for Speech-to-Speech endpoint configuration.
+ * {@link createRuntime} builds the single execution engine used by both
+ * self-hosted servers and the platform sandbox. It wires up tool execution,
+ * lifecycle hooks, and session management.
  */
 
-import { DEFAULT_STT_SAMPLE_RATE, DEFAULT_TTS_SAMPLE_RATE } from "../isolate/constants.ts";
+import { createStorage } from "unstorage";
+import { agentToolsToSchemas, type ToolSchema, toAgentConfig } from "../isolate/_internal-types.ts";
+import { toolError } from "../isolate/_utils.ts";
+import { DEFAULT_SHUTDOWN_TIMEOUT_MS } from "../isolate/constants.ts";
+import { type AgentHooks, createAgentHooks } from "../isolate/hooks.ts";
+import type { Kv } from "../isolate/kv.ts";
+import type { ClientSink } from "../isolate/protocol.ts";
+import { buildReadyConfig, type ReadyConfig } from "../isolate/protocol.ts";
+import type { AgentDef, HookContext } from "../isolate/types.ts";
+import {
+  getBuiltinToolDefs,
+  getBuiltinToolGuidance,
+  getBuiltinToolSchemas,
+} from "./builtin-tools.ts";
+import type { Logger, S2SConfig } from "./runtime-config.ts";
+import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime-config.ts";
+import type { CreateS2sWebSocket } from "./s2s.ts";
+import { createS2sSession, type Session } from "./session.ts";
+import { type ExecuteTool, executeToolCall } from "./tool-executor.ts";
+import { createUnstorageKv } from "./unstorage-kv.ts";
+import { type SessionWebSocket, wireSessionSocket } from "./ws-handler.ts";
 
-/** Structured context attached to log messages. */
-export type LogContext = Record<string, unknown>;
+// ─── Runtime adapter (formerly adapter.ts) ──────────────────────────────────
 
-/**
- * Structured logger interface. Used by tests to suppress output and by
- * consumers to plug in custom logging backends.
- *
- * @example
- * ```ts
- * const myLogger: Logger = {
- *   info: (msg, ctx) => myBackend.log("info", msg, ctx),
- *   warn: (msg, ctx) => myBackend.log("warn", msg, ctx),
- *   error: (msg, ctx) => myBackend.log("error", msg, ctx),
- *   debug: (msg, ctx) => myBackend.log("debug", msg, ctx),
- * };
- * createServer({ agent, logger: myLogger });
- * ```
- */
-export type Logger = {
-  info(msg: string, ctx?: LogContext): void;
-  warn(msg: string, ctx?: LogContext): void;
-  error(msg: string, ctx?: LogContext): void;
-  debug(msg: string, ctx?: LogContext): void;
+/** Per-session options passed to {@link AgentRuntime.startSession}. */
+export type SessionStartOptions = {
+  skipGreeting?: boolean;
+  resumeFrom?: string;
+  logContext?: Record<string, string>;
+  onOpen?: () => void;
+  onClose?: () => void;
 };
 
-/** Default console-backed logger. */
-export const consoleLogger: Logger = {
-  info: (msg, ctx?) => (ctx ? console.log(msg, ctx) : console.log(msg)),
-  warn: (msg, ctx?) => (ctx ? console.warn(msg, ctx) : console.warn(msg)),
-  error: (msg, ctx?) => (ctx ? console.error(msg, ctx) : console.error(msg)),
-  debug: (msg, ctx?) => (ctx ? console.debug(msg, ctx) : console.debug(msg)),
+/**
+ * Common interface for agent runtimes.
+ *
+ * Implemented by {@link createRuntime} and the platform sandbox.
+ */
+export type AgentRuntime = {
+  startSession(ws: SessionWebSocket, opts?: SessionStartOptions): void;
+  shutdown(): Promise<void>;
+  readonly readyConfig: ReadyConfig;
 };
 
-/**
- * Structured JSON logger for production diagnostics. Each log entry is a
- * single-line JSON object with `timestamp`, `level`, `msg`, and any
- * caller-provided context fields.
- */
-function jsonLog(level: string) {
-  return (msg: string, ctx?: LogContext): void => {
-    const entry: Record<string, unknown> = {
-      timestamp: new Date().toISOString(),
-      level,
-      msg,
-    };
+// ─── Runtime implementation ──────────────────────────────────────────────────
 
-    if (ctx) {
-      Object.assign(entry, ctx);
-    }
-
-    // Single-line JSON to stdout/stderr based on level.
-    const out = level === "error" || level === "warn" ? process.stderr : process.stdout;
-    out.write(`${JSON.stringify(entry)}\n`);
-  };
+/** Create an in-memory KV store (default for self-hosted). */
+function createLocalKv(): Kv {
+  return createUnstorageKv({ storage: createStorage() });
 }
 
-export const jsonLogger: Logger = {
-  info: jsonLog("info"),
-  warn: jsonLog("warn"),
-  error: jsonLog("error"),
-  debug: jsonLog("debug"),
+/**
+ * Configuration for {@link createRuntime}.
+ *
+ * Configures the agent, environment, KV store, logging, and S2S connection.
+ *
+ * @public
+ */
+export type RuntimeOptions = {
+  // biome-ignore lint/suspicious/noExplicitAny: accepts any state type
+  agent: AgentDef<any>;
+  env: Record<string, string>;
+  kv?: Kv | undefined;
+  /** Custom WebSocket factory for the S2S connection (useful for testing). */
+  createWebSocket?: CreateS2sWebSocket | undefined;
+  logger?: Logger | undefined;
+  s2sConfig?: S2SConfig | undefined;
+  /**
+   * Timeout in ms for `session.start()` (S2S connection setup).
+   * Defaults to 10 000 (10 s).
+   */
+  sessionStartTimeoutMs?: number | undefined;
+  /**
+   * Maximum time in milliseconds to wait for sessions to stop during
+   * {@link AgentRuntime.shutdown | shutdown()}. Defaults to `30_000` (30 s).
+   */
+  shutdownTimeoutMs?: number | undefined;
+  /**
+   * Override tool execution. When provided, `createRuntime` skips building
+   * in-process tool definitions and uses this function instead. Used by the
+   * platform sandbox to RPC tool calls to the isolate.
+   */
+  executeTool?: ExecuteTool | undefined;
+  /**
+   * Override lifecycle hooks. When provided, `createRuntime` skips building
+   * in-process hooks and uses these instead. Used by the platform sandbox
+   * to RPC hook calls to the isolate.
+   */
+  hooks?: AgentHooks | undefined;
+  /**
+   * Override tool schemas sent to the S2S API. Required when `executeTool`
+   * is provided (the host doesn't have the tool definitions to derive schemas).
+   */
+  toolSchemas?: ToolSchema[] | undefined;
+  /** System prompt guidance for builtin tools. Passed through in sandbox mode. */
+  toolGuidance?: string[] | undefined;
 };
 
 /**
- * Speech-to-Speech (S2S) endpoint configuration.
+ * The agent runtime returned by {@link createRuntime}.
  *
- * Controls which AssemblyAI real-time WebSocket endpoint to connect to and
- * the audio sample rates for input (microphone → STT) and output (TTS → speaker).
+ * Satisfies {@link AgentRuntime} for use by transport code, and also exposes
+ * lower-level helpers (`executeTool`, `hooks`, `toolSchemas`,
+ * `createSession`) for testing and advanced usage.
+ *
+ * @public
  */
-export type S2SConfig = {
-  /** The WebSocket URL of the S2S real-time endpoint. */
-  wssUrl: string;
-  /** Sample rate in Hz for audio sent to STT (microphone capture). */
-  inputSampleRate: number;
-  /** Sample rate in Hz for TTS audio received from the server. */
-  outputSampleRate: number;
+export type Runtime = AgentRuntime & {
+  /** Execute a named tool with the given args, returning a JSON result string. */
+  executeTool: ExecuteTool;
+  /** Hookable instance wired to the agent's lifecycle hooks. */
+  hooks: AgentHooks;
+  /** Tool schemas registered with the S2S API (custom + built-in). */
+  toolSchemas: ToolSchema[];
+  /** Create a new voice session for a connected client (lower-level than startSession). */
+  createSession(opts: {
+    id: string;
+    agent: string;
+    client: ClientSink;
+    skipGreeting?: boolean;
+    resumeFrom?: string;
+  }): Session;
 };
 
-/** Default S2S endpoint configuration. */
-export const DEFAULT_S2S_CONFIG: S2SConfig = {
-  wssUrl: "wss://speech-to-speech.us.assemblyai.com/v1/realtime",
-  inputSampleRate: DEFAULT_STT_SAMPLE_RATE,
-  outputSampleRate: DEFAULT_TTS_SAMPLE_RATE,
-};
+/**
+ * Create an agent runtime — the execution engine for a voice agent.
+ *
+ * Merges built-in and custom tool definitions, builds tool schemas for the
+ * S2S API, and wires up lifecycle hooks.
+ *
+ * @param opts - Runtime configuration. See {@link RuntimeOptions}.
+ * @returns A {@link Runtime} with tool execution, hook invocation,
+ *   schemas, and session management.
+ *
+ * @public
+ */
+export function createRuntime(opts: RuntimeOptions): Runtime {
+  const {
+    agent,
+    env,
+    kv = createLocalKv(),
+    createWebSocket,
+    logger = consoleLogger,
+    s2sConfig = DEFAULT_S2S_CONFIG,
+    sessionStartTimeoutMs,
+    shutdownTimeoutMs = DEFAULT_SHUTDOWN_TIMEOUT_MS,
+  } = opts;
+  const agentConfig = toAgentConfig(agent);
+  const sessions = new Map<string, Session>();
+  const readyConfig: ReadyConfig = buildReadyConfig(s2sConfig);
+
+  // When overrides are provided (sandbox mode), skip in-process tool/hook setup
+  let executeTool: ExecuteTool;
+  let hooks: AgentHooks;
+  let toolSchemas: ToolSchema[];
+  let toolGuidance: string[] = [];
+
+  if (opts.executeTool && opts.hooks && opts.toolSchemas) {
+    // Sandbox mode — tools/hooks are RPC-backed
+    executeTool = opts.executeTool;
+    hooks = opts.hooks;
+    toolSchemas = opts.toolSchemas;
+    toolGuidance = opts.toolGuidance ?? [];
+  } else {
+    // Self-hosted mode — in-process tool execution
+    const builtinDefs = getBuiltinToolDefs(agent.builtinTools ?? []);
+    const allTools: Record<string, AgentDef["tools"][string]> = {
+      ...builtinDefs,
+      ...agent.tools,
+    };
+    const customSchemas = agentToolsToSchemas(agent.tools ?? {});
+    const builtinSchemas = getBuiltinToolSchemas(agent.builtinTools ?? []);
+    toolSchemas = [...customSchemas, ...builtinSchemas];
+    toolGuidance = getBuiltinToolGuidance(agent.builtinTools ?? []);
+
+    const stateMap = new Map<string, Record<string, unknown>>();
+    const getState = (sid: string) => {
+      if (!stateMap.has(sid) && agent.state) stateMap.set(sid, agent.state());
+      return stateMap.get(sid) ?? {};
+    };
+    const frozenEnv = Object.freeze({ ...env });
+
+    function makeHookContext(sessionId: string): HookContext {
+      return {
+        env: frozenEnv,
+        state: getState(sessionId),
+        sessionId,
+        get kv() {
+          return kv;
+        },
+      };
+    }
+
+    executeTool = async (name, args, sessionId, messages) => {
+      const tool = allTools[name];
+      if (!tool) return toolError(`Unknown tool: ${name}`);
+      return executeToolCall(name, args, {
+        tool,
+        env: frozenEnv,
+        state: getState(sessionId ?? ""),
+        sessionId: sessionId ?? "",
+        kv,
+        messages,
+        logger,
+      });
+    };
+
+    hooks = createAgentHooks({ agent, makeCtx: makeHookContext });
+    hooks.hook("disconnect", async (sessionId) => {
+      stateMap.delete(sessionId);
+    });
+  }
+
+  function createSession(sessionOpts: {
+    id: string;
+    agent: string;
+    client: ClientSink;
+    skipGreeting?: boolean;
+    resumeFrom?: string;
+  }): Session {
+    const apiKey = env.ASSEMBLYAI_API_KEY ?? "";
+    return createS2sSession({
+      id: sessionOpts.id,
+      agent: sessionOpts.agent,
+      client: sessionOpts.client,
+      agentConfig,
+      toolSchemas,
+      toolGuidance,
+      apiKey,
+      s2sConfig,
+      executeTool,
+      ...(createWebSocket ? { createWebSocket } : {}),
+      hooks,
+      skipGreeting: sessionOpts.skipGreeting ?? false,
+      logger,
+      ...(sessionOpts.resumeFrom ? { resumeFrom: sessionOpts.resumeFrom } : {}),
+    });
+  }
+
+  // ── AgentRuntime methods ──────────────────────────────────────────────
+
+  function startSession(ws: SessionWebSocket, startOpts?: SessionStartOptions): void {
+    const resumeFrom = startOpts?.resumeFrom;
+    wireSessionSocket(ws, {
+      sessions,
+      createSession: (sid, client) =>
+        createSession({
+          id: sid,
+          agent: agent.name,
+          client,
+          skipGreeting: startOpts?.skipGreeting ?? false,
+          ...(resumeFrom ? { resumeFrom } : {}),
+        }),
+      readyConfig,
+      logger,
+      ...(startOpts?.logContext ? { logContext: startOpts.logContext } : {}),
+      ...(startOpts?.onOpen ? { onOpen: startOpts.onOpen } : {}),
+      ...(startOpts?.onClose ? { onClose: startOpts.onClose } : {}),
+      ...(sessionStartTimeoutMs !== undefined ? { sessionStartTimeoutMs } : {}),
+      ...(resumeFrom ? { resumeFrom } : {}),
+    });
+  }
+
+  async function shutdown(): Promise<void> {
+    if (sessions.size === 0) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<"timeout">((resolve) => {
+      timer = setTimeout(resolve, shutdownTimeoutMs, "timeout");
+    });
+    const graceful = Promise.allSettled([...sessions.values()].map((s) => s.stop())).then(
+      (results) => {
+        for (const r of results) {
+          if (r.status === "rejected")
+            logger.warn(`Session stop failed during shutdown: ${r.reason}`);
+        }
+        return "done" as const;
+      },
+    );
+    let outcome: "done" | "timeout";
+    try {
+      outcome = await Promise.race([graceful, timeout]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+    if (outcome === "timeout") {
+      logger.warn(
+        `Shutdown timeout (${shutdownTimeoutMs}ms) exceeded — force-closing ${sessions.size} remaining session(s)`,
+      );
+    }
+    sessions.clear();
+  }
+
+  return {
+    executeTool,
+    hooks,
+    toolSchemas,
+    createSession,
+    startSession,
+    shutdown,
+    readyConfig,
+  };
+}

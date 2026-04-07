@@ -11,6 +11,8 @@ import { secureHeaders } from "hono/secure-headers";
 import type { Storage } from "unstorage";
 import { WebSocketServer } from "ws";
 import type { BundleStore } from "./bundle-store.ts";
+import { createConnectionTracker } from "./connection-tracker.ts";
+import { MAX_CONNECTIONS } from "./constants.ts";
 import type { Env } from "./context.ts";
 import { handleDelete } from "./delete.ts";
 import { handleDeploy, handleDeployNew } from "./deploy.ts";
@@ -148,31 +150,46 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     original(req, { ...bindings, ...env });
 
   // WebSocket upgrade — URL pattern: /:slug/websocket
+  const connections = createConnectionTracker(MAX_CONNECTIONS);
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_WS_PAYLOAD_BYTES });
+
+  const SLUG_WS_RE = /^\/([a-z0-9][a-z0-9_-]*[a-z0-9])\/websocket$/;
+
+  /** Parse the upgrade URL and resolve the matching sandbox (or null). */
+  async function resolveUpgrade(rawUrl: string) {
+    const url = new URL(rawUrl, "http://localhost");
+    const match = url.pathname.match(SLUG_WS_RE);
+    if (!match) return null;
+    const slug = validateSlug(match[1] as string);
+    const sandbox = await resolveSandbox(slug, {
+      slots: opts.slots,
+      store: opts.store,
+      storage: opts.storage,
+    });
+    return sandbox ? { sandbox, url } : null;
+  }
 
   const injectWebSocket = (server: import("node:http").Server) => {
     server.on("upgrade", async (req, socket, head) => {
       const pathOnly = req.url?.split("?")[0] ?? "";
-      if (!/^\/[a-z0-9][a-z0-9_-]*[a-z0-9]\/websocket$/.test(pathOnly)) return;
+      if (!SLUG_WS_RE.test(pathOnly)) return;
+
+      if (!connections.tryAcquire()) {
+        console.warn("WebSocket connection limit reached, rejecting upgrade");
+        socket.destroy();
+        return;
+      }
 
       try {
-        const url = new URL(req.url ?? "/", "http://localhost");
-        const match = url.pathname.match(/^\/([a-z0-9][a-z0-9_-]*[a-z0-9])\/websocket$/);
-        if (!match) {
+        const result = await resolveUpgrade(req.url ?? "/");
+        if (!result) {
+          connections.release();
           socket.destroy();
           return;
         }
-        const slug = validateSlug(match[1] as string);
-        const sandbox = await resolveSandbox(slug, {
-          slots: opts.slots,
-          store: opts.store,
-          storage: opts.storage,
-        });
-        if (!sandbox) {
-          socket.destroy();
-          return;
-        }
+        const { sandbox, url } = result;
         wss.handleUpgrade(req, socket, head, (ws) => {
+          ws.on("close", () => connections.release());
           const resumeFrom = url.searchParams.get("sessionId") ?? undefined;
           const skipGreeting = url.searchParams.has("resume") || resumeFrom !== undefined;
           sandbox.startSession(ws as unknown as SessionWebSocket, {
@@ -181,6 +198,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
           });
         });
       } catch (err: unknown) {
+        connections.release();
         console.error("WebSocket open error:", err);
         socket.destroy();
       }

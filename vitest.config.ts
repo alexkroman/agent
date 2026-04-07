@@ -103,6 +103,7 @@ export default defineConfig({
             "docker-build.test.ts",
             "sandbox-integration.test.ts",
             "ws-integration.test.ts",
+            "chaos/**",
             "node_modules",
             "dist",
           ],
