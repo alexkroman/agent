@@ -25,14 +25,12 @@ export type BuiltinTool = "web_search" | "visit_webpage" | "fetch_json" | "run_c
 /**
  * How the LLM should select tools during a turn.
  *
- * - `"auto"` — The model decides whether to call a tool.
- * - `"required"` — The model must call at least one tool.
- * - `"none"` — Tool calling is disabled.
- * - `{ type: "tool"; toolName: string }` — Force a specific tool.
+ * - `"auto"` — The model decides whether to call a tool (default).
+ * - `"required"` — The model must call at least one tool each step.
  *
  * @public
  */
-export type ToolChoice = "auto" | "required" | "none" | { type: "tool"; toolName: string };
+export type ToolChoice = "auto" | "required";
 
 /**
  * A single message in the conversation history.
@@ -84,15 +82,6 @@ export type ToolContext<S = Record<string, unknown>> = {
   kv: Kv;
   /** Read-only snapshot of conversation messages so far. */
   messages: readonly Message[];
-  /**
-   * SSRF-safe fetch function.
-   *
-   * In self-hosted mode this calls the network directly (with SSRF protection).
-   * In platform mode this is proxied through the sidecar so it works inside
-   * the sandbox. Always use `ctx.fetch` instead of the global `fetch` in tool
-   * code to ensure portability across both deployment modes.
-   */
-  fetch: typeof globalThis.fetch;
   /** Unique identifier for the current session. Useful for correlating logs across concurrent sessions. */
   sessionId: string;
 };
@@ -112,12 +101,6 @@ export type HookContext<S = Record<string, unknown>> = {
   state: S;
   /** Key-value store scoped to this agent deployment. */
   kv: Kv;
-  /**
-   * SSRF-safe fetch function.
-   * In self-hosted mode this calls the network directly (with SSRF protection).
-   * In platform mode this is proxied through the sidecar.
-   */
-  fetch: typeof globalThis.fetch;
   /** Unique identifier for the current session. */
   sessionId: string;
 };
@@ -199,9 +182,6 @@ export function defineTool<P extends z.ZodObject<z.ZodRawShape>, S = Record<stri
 ): ToolDef<P, S> {
   return def;
 }
-
-/** Alias for {@link defineTool}. Prefer `defineTool` for clarity. */
-export { defineTool as tool };
 
 /**
  * Create a typed `defineTool` helper with the session state type baked in.
@@ -341,8 +321,6 @@ export type AgentOptions<S = Record<string, unknown>> = {
   onConnect?: (ctx: HookContext<S>) => void | Promise<void>;
   /** Called when a session disconnects. */
   onDisconnect?: (ctx: HookContext<S>) => void | Promise<void>;
-  /** Called when an unhandled error occurs. */
-  onError?: (error: Error, ctx?: HookContext<S>) => void;
   /** Called after a complete turn (all steps finished). */
   onTurn?: (text: string, ctx: HookContext<S>) => void | Promise<void>;
 
@@ -407,7 +385,6 @@ export type AgentDef<S = Record<string, unknown>> = {
   state?: () => S;
   onConnect?: (ctx: HookContext<S>) => void | Promise<void>;
   onDisconnect?: (ctx: HookContext<S>) => void | Promise<void>;
-  onError?: (error: Error, ctx?: HookContext<S>) => void;
   onTurn?: (text: string, ctx: HookContext<S>) => void | Promise<void>;
   idleTimeoutMs?: number;
 };
@@ -418,10 +395,7 @@ export type AgentDef<S = Record<string, unknown>> = {
 export const BuiltinToolSchema = z.enum(["web_search", "visit_webpage", "fetch_json", "run_code"]);
 
 /** @internal Zod schema for {@link ToolChoice}. Exported for reuse in internal schemas. */
-export const ToolChoiceSchema = z.union([
-  z.enum(["auto", "required", "none"]),
-  z.object({ type: z.literal("tool"), toolName: z.string().min(1) }),
-]);
+export const ToolChoiceSchema = z.enum(["auto", "required"]);
 
 const ToolDefSchema = z.object({
   description: z.string().min(1, "Tool description must be non-empty"),
@@ -446,7 +420,6 @@ const AgentOptionsSchema = z.object({
   state: z.function().optional(),
   onConnect: z.function().optional(),
   onDisconnect: z.function().optional(),
-  onError: z.function().optional(),
   onTurn: z.function().optional(),
   idleTimeoutMs: z.number().nonnegative().optional(),
 });

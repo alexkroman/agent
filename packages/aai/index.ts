@@ -35,5 +35,4 @@ export {
   type ToolContext,
   type ToolDef,
   type ToolResultMap,
-  tool,
 } from "./isolate/types.ts";

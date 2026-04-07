@@ -260,15 +260,13 @@ describe("fixture replay with real executor", () => {
     expect(hookCtx.sessionId).toBe("fixture-session");
   });
 
-  // ── onError: fires when tool throws ────────────────────────────────────
+  // ── Tool errors are surfaced as tool results ───────────────────────────
 
-  test("onError fires when a tool throws", async () => {
-    const onErrorSpy = vi.fn();
+  test("tool throw is surfaced as error result", async () => {
     const agent = defineAgent({
       name: "error-agent",
       instructions: "Weather assistant.",
       greeting: "Ask about weather!",
-      onError: onErrorSpy,
       tools: {
         get_weather: defineTool({
           description: "Get weather",

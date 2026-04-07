@@ -121,25 +121,4 @@ describe("executeToolCall", () => {
     expect(result).toBe(JSON.stringify({ error: 'Tool "slow" timed out after 30000ms' }));
     vi.useRealTimers();
   });
-
-  test("ctx.fetch uses provided fetch override", async () => {
-    const mockFetch = vi.fn().mockResolvedValue(new Response("ok"));
-    const tool = makeTool({
-      execute: async (_args, ctx) => typeof ctx.fetch,
-    });
-    const result = await executeToolCall("test", {}, { tool, env: {}, fetch: mockFetch });
-    expect(result).toBe("function");
-  });
-
-  test("ctx.fetch defaults to globalThis.fetch when not provided", async () => {
-    let capturedFetch: unknown;
-    const tool = makeTool({
-      execute: async (_args, ctx) => {
-        capturedFetch = ctx.fetch;
-        return "ok";
-      },
-    });
-    await executeToolCall("test", {}, { tool, env: {} });
-    expect(capturedFetch).toBe(globalThis.fetch);
-  });
 });

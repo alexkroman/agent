@@ -121,14 +121,6 @@ export function buildCtx(opts: {
       if (!hooks) return;
       const notifyOnError = (err: unknown) => {
         log.warn(`${name} hook failed`, { err: errorMessage(err) });
-        if (name !== "error") {
-          const ep = hooks.callHook("error", id, { message: errorMessage(err) });
-          if (ep && typeof (ep as Promise<void>).catch === "function") {
-            (ep as Promise<void>).catch((e: unknown) => {
-              log.warn("error hook failed", { err: errorMessage(e) });
-            });
-          }
-        }
       };
       try {
         // biome-ignore lint/suspicious/noExplicitAny: hookable callHook is generic over hook args

@@ -95,14 +95,13 @@ type IsolateConfig = {
   greeting?: string;
   sttPrompt?: string;
   maxSteps?: number;
-  toolChoice?: string | { type: "tool"; toolName: string };
+  toolChoice?: "auto" | "required";
   builtinTools?: string[];
   toolSchemas: { name: string; description: string; parameters: Record<string, unknown> }[];
   hasState: boolean;
   hooks: {
     onConnect: boolean;
     onDisconnect: boolean;
-    onError: boolean;
     onTurn: boolean;
     maxStepsIsFn: boolean;
   };
@@ -129,7 +128,6 @@ function extractConfig(agent: AgentDef): IsolateConfig {
     hooks: {
       onConnect: typeof agent.onConnect === "function",
       onDisconnect: typeof agent.onDisconnect === "function",
-      onError: typeof agent.onError === "function",
       onTurn: typeof agent.onTurn === "function",
       maxStepsIsFn: typeof agent.maxSteps === "function",
     },
@@ -164,7 +162,6 @@ async function executeTool(agent: AgentDef, req: ToolCallRequest): Promise<ToolC
     sessionId: req.sessionId,
     kv,
     messages: req.messages,
-    fetch,
   };
 
   const parsed =
@@ -210,11 +207,6 @@ async function invokeHook(req: HookRequest): Promise<HookResponse> {
       break;
     case "onTurn":
       await hooks.callHook("turn", req.sessionId, req.text ?? "");
-      break;
-    case "onError":
-      await hooks.callHook("error", req.sessionId, {
-        message: req.error?.message ?? "Unknown error",
-      });
       break;
     case "resolveTurnConfig":
       result = await callResolveTurnConfig(hooks, req.sessionId);
@@ -292,7 +284,7 @@ export function startHarness(agent: AgentDef): void {
   sessionState = createSessionStateMap(agent.state);
   hooks = createAgentHooks({
     agent,
-    makeCtx: (sid) => ({ env: agentEnv, state: sessionState.get(sid), sessionId: sid, kv, fetch }),
+    makeCtx: (sid) => ({ env: agentEnv, state: sessionState.get(sid), sessionId: sid, kv }),
   });
 
   const server = createServer(async (req, res) => {

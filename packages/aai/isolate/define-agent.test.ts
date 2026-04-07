@@ -42,9 +42,6 @@ describe("defineAgent", () => {
     const onDisconnect = () => {
       /* noop */
     };
-    const onError = () => {
-      /* noop */
-    };
     const onTurn = () => {
       /* noop */
     };
@@ -52,12 +49,10 @@ describe("defineAgent", () => {
       name: "Test",
       onConnect,
       onDisconnect,
-      onError,
       onTurn,
     });
     expect(agent.onConnect).toBe(onConnect);
     expect(agent.onDisconnect).toBe(onDisconnect);
-    expect(agent.onError).toBe(onError);
     expect(agent.onTurn).toBe(onTurn);
   });
 
