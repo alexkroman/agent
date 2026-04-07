@@ -1,5 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 /** Sandbox harness runtime — runs inside the secure-exec V8 isolate. */
+import { timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { type AgentHooks, callResolveTurnConfig, createAgentHooks } from "@alexkroman1/aai/hooks";
 import type { Kv } from "@alexkroman1/aai/kv";
@@ -253,7 +254,10 @@ function json(res: ServerResponse, data: unknown, status = 200): void {
 }
 
 function isAuthorized(req: IncomingMessage): boolean {
-  return !HARNESS_AUTH_TOKEN || req.headers["x-harness-token"] === HARNESS_AUTH_TOKEN;
+  if (!HARNESS_AUTH_TOKEN) return true;
+  const token = req.headers["x-harness-token"];
+  if (typeof token !== "string" || token.length !== HARNESS_AUTH_TOKEN.length) return false;
+  return timingSafeEqual(Buffer.from(token), Buffer.from(HARNESS_AUTH_TOKEN));
 }
 
 type RpcRequest =
