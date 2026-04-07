@@ -12,12 +12,7 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
-    "./styles.css": "./styles.css",
-    "./session": {
-      "@dev/source": "./session.ts",
-      "types": "./dist/session.d.ts",
-      "import": "./dist/session.js"
-    }
+    "./styles.css": "./styles.css"
   },
   "scripts": {
     "test": "vitest run",
@@ -26,7 +21,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
     "check:publint": "publint",
-    "check:attw": "attw --pack --profile esm-only --entrypoints . ./session"
+    "check:attw": "attw --pack --profile esm-only --entrypoints ."
   },
   "dependencies": {
     "@alexkroman1/aai": "workspace:*",
