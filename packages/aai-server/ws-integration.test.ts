@@ -119,10 +119,6 @@ function waitForClose(ws: WebSocket): Promise<void> {
   });
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
 // ── Tests ────────────────────────────────────────────────────────────────
 
 describe("WebSocket server integration", () => {
@@ -154,57 +150,71 @@ describe("WebSocket server integration", () => {
 
   test("session.start() is called on connect", async () => {
     const { ws } = await connect(ctx.port);
-    await delay(100);
-    expect(ctx.captures).toHaveLength(1);
-    expect(ctx.captures[0]?.session.start).toHaveBeenCalled();
+    await vi.waitFor(() => {
+      expect(ctx.captures).toHaveLength(1);
+      expect(ctx.captures[0]?.session.start).toHaveBeenCalled();
+    });
     ws.close();
     await waitForClose(ws);
   });
 
   test("audio_ready message triggers session.onAudioReady()", async () => {
     const { ws } = await connect(ctx.port);
-    await delay(100);
+    await vi.waitFor(() => {
+      expect(ctx.captures).toHaveLength(1);
+    });
     ws.send(JSON.stringify({ type: "audio_ready" }));
-    await delay(100);
-    expect(ctx.captures[0]?.session.onAudioReady).toHaveBeenCalled();
+    await vi.waitFor(() => {
+      expect(ctx.captures[0]?.session.onAudioReady).toHaveBeenCalled();
+    });
     ws.close();
     await waitForClose(ws);
   });
 
   test("cancel message triggers session.onCancel()", async () => {
     const { ws } = await connect(ctx.port);
-    await delay(100);
+    await vi.waitFor(() => {
+      expect(ctx.captures).toHaveLength(1);
+    });
     ws.send(JSON.stringify({ type: "cancel" }));
-    await delay(100);
-    expect(ctx.captures[0]?.session.onCancel).toHaveBeenCalled();
+    await vi.waitFor(() => {
+      expect(ctx.captures[0]?.session.onCancel).toHaveBeenCalled();
+    });
     ws.close();
     await waitForClose(ws);
   });
 
   test("binary audio data triggers session.onAudio()", async () => {
     const { ws } = await connect(ctx.port);
-    await delay(100);
+    await vi.waitFor(() => {
+      expect(ctx.captures).toHaveLength(1);
+    });
     const pcm = new Uint8Array([1, 2, 3, 4]);
     ws.send(pcm);
-    await delay(100);
-    expect(ctx.captures[0]?.session.onAudio).toHaveBeenCalled();
+    await vi.waitFor(() => {
+      expect(ctx.captures[0]?.session.onAudio).toHaveBeenCalled();
+    });
     ws.close();
     await waitForClose(ws);
   });
 
   test("session.stop() is called on client disconnect", async () => {
     const { ws } = await connect(ctx.port);
-    await delay(100);
+    await vi.waitFor(() => {
+      expect(ctx.captures).toHaveLength(1);
+    });
     ws.close();
     await waitForClose(ws);
-    await delay(200);
-    expect(ctx.captures[0]?.session.stop).toHaveBeenCalled();
+    await vi.waitFor(() => {
+      expect(ctx.captures[0]?.session.stop).toHaveBeenCalled();
+    });
   });
 
   test("multiple concurrent connections get independent sessions", async () => {
     const [c1, c2] = await Promise.all([connect(ctx.port), connect(ctx.port)]);
-    await delay(100);
-    expect(ctx.captures).toHaveLength(2);
+    await vi.waitFor(() => {
+      expect(ctx.captures).toHaveLength(2);
+    });
     expect(ctx.captures[0]?.sessionId).not.toBe(ctx.captures[1]?.sessionId);
     c1.ws.close();
     c2.ws.close();
@@ -219,8 +229,10 @@ describe("WebSocket server integration", () => {
     await new Promise<void>((resolve) => {
       ws.addEventListener("open", () => resolve());
     });
-    // Should get config before start fails
-    await delay(300);
+    // Wait for the connection to be established and processed
+    await vi.waitFor(() => {
+      expect(ctx.captures).toHaveLength(1);
+    });
     ws.close();
     await waitForClose(ws);
     // Server should still accept new connections

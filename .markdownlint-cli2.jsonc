@@ -1,7 +1,8 @@
 {
   "ignores": [
     ".changeset/**",
-"**/CHANGELOG.md",
-    "plans/**"
+    "**/CHANGELOG.md",
+    "plans/**",
+    "docs/superpowers/**"
   ]
 }

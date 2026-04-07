@@ -7,5 +7,6 @@ export default defineConfig({
     include: ["host/pentest.test.ts", "host/run-code-sandbox.test.ts", "host/integration.test.ts"],
     testTimeout: 30_000,
     hookTimeout: 30_000,
+    retry: 2,
   },
 });

@@ -246,6 +246,9 @@ or gotchas, update this file.
 
 ## PR workflow
 
+**Default:** When finishing a development branch, always push and create a
+Pull Request (don't ask — just do it).
+
 **Before pushing**, rebase on the latest `main` to avoid merge conflicts:
 
 ```sh
