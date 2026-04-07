@@ -34,7 +34,6 @@ import {
 } from "secure-exec";
 import type { Storage } from "unstorage";
 import { z } from "zod";
-import type { BundleStore } from "./bundle-store.ts";
 import {
   JAIL_MEMORY_LIMIT_MB,
   PORT_ANNOUNCE_TIMEOUT_MS,
@@ -55,6 +54,7 @@ import {
   _slotInternals,
   type AgentSlot,
 } from "./sandbox-slots.ts";
+import type { BundleStore } from "./store-types.ts";
 
 let jailLauncher: JailedLauncher | null = null;
 let jailInitialized = false;

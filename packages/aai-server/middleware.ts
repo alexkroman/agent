@@ -2,8 +2,8 @@
 
 import { HTTPException } from "hono/http-exception";
 import { hashApiKey, verifySlugOwner } from "./auth.ts";
-import type { BundleStore } from "./bundle-store.ts";
 import { isPrivateIp } from "./ssrf.ts";
+import type { BundleStore } from "./store-types.ts";
 
 const VALID_SLUG_REGEXP = /^[a-z0-9][a-z0-9_-]{0,62}[a-z0-9]$/;
 
