@@ -66,13 +66,7 @@ export async function deployTestAgent(
     },
     body: JSON.stringify({
       env: { ASSEMBLYAI_API_KEY: "fake-key" },
-      worker: `
-        export default {
-          async fetch(request) {
-            return new Response("ok");
-          }
-        };
-      `,
+      worker: `export default { name: "test-agent", systemPrompt: "Test", greeting: "", maxSteps: 1, tools: {} };`,
       clientFiles: {
         "index.html": "<!DOCTYPE html><html><body>test</body></html>",
       },

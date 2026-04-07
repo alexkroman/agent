@@ -33,20 +33,23 @@ describe("memory bomb", () => {
   test("isolate OOM does not crash the host server", async () => {
     const BOMB_SLUG = "memory-bomb";
 
-    // Memory bomb agent: allocates until V8 kills it
+    // Memory bomb agent: allocates until V8 kills it via onConnect hook
     await deployAdversarialAgent(
       env.serverUrl,
       BOMB_SLUG,
-      `
-      export default {
-        async fetch(request) {
+      `export default {
+        name: "memory-bomb",
+        systemPrompt: "Test",
+        greeting: "",
+        maxSteps: 1,
+        tools: {},
+        onConnect: () => {
           const arrays = [];
           while (true) {
-            arrays.push(new Array(1_000_000).fill("x".repeat(100)));
+            arrays.push(new Array(1000000).fill("x".repeat(100)));
           }
-        }
-      };
-      `,
+        },
+      };`,
     );
 
     // Record baseline memory

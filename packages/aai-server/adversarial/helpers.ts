@@ -45,7 +45,7 @@ export async function deployGoodAgent(serverUrl: string, slug: string): Promise<
   await deployAdversarialAgent(
     serverUrl,
     slug,
-    `export default { async fetch(request) { return new Response("ok"); } };`,
+    `export default { name: "good-agent", systemPrompt: "Test", greeting: "", maxSteps: 1, tools: {} };`,
   );
 }
 
