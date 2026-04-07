@@ -54,6 +54,50 @@ export async function executeInIsolate(code: string): Promise<string | { error: 
   const output: string[] = [];
   const capture = (...args: unknown[]) => output.push(args.map(String).join(" "));
 
+  // Prevent timer callbacks from leaking into host event loop after execution.
+  const activeTimers = new Set<ReturnType<typeof setTimeout>>();
+
+  const sandboxSetTimeout = (
+    fn: (...args: unknown[]) => void,
+    delay?: number,
+    ...args: unknown[]
+  ): ReturnType<typeof setTimeout> => {
+    const id = setTimeout(
+      (...a: unknown[]) => {
+        activeTimers.delete(id);
+        fn(...a);
+      },
+      delay,
+      ...args,
+    );
+    activeTimers.add(id);
+    return id;
+  };
+
+  const sandboxClearTimeout = (id?: ReturnType<typeof setTimeout>): void => {
+    if (id !== undefined) {
+      activeTimers.delete(id);
+      clearTimeout(id);
+    }
+  };
+
+  const sandboxSetInterval = (
+    fn: (...args: unknown[]) => void,
+    delay?: number,
+    ...args: unknown[]
+  ): ReturnType<typeof setInterval> => {
+    const id = setInterval(fn, delay, ...args);
+    activeTimers.add(id);
+    return id;
+  };
+
+  const sandboxClearInterval = (id?: ReturnType<typeof setInterval>): void => {
+    if (id !== undefined) {
+      activeTimers.delete(id);
+      clearInterval(id);
+    }
+  };
+
   const context = vm.createContext({
     console: {
       log: capture,
@@ -62,12 +106,11 @@ export async function executeInIsolate(code: string): Promise<string | { error: 
       error: capture,
       debug: capture,
     },
-    // Timers — safe to expose (they run in the host event loop but the
-    // timeout on the script prevents abuse).
-    setTimeout,
-    clearTimeout,
-    setInterval,
-    clearInterval,
+    // Wrapped timers that track IDs for cleanup in the finally block.
+    setTimeout: sandboxSetTimeout,
+    clearTimeout: sandboxClearTimeout,
+    setInterval: sandboxSetInterval,
+    clearInterval: sandboxClearInterval,
     // Standard web-compat globals
     URL,
     URLSearchParams,
@@ -99,5 +142,14 @@ export async function executeInIsolate(code: string): Promise<string | { error: 
     return text || "Code ran successfully (no output)";
   } catch (err: unknown) {
     return { error: errorMessage(err) };
+  } finally {
+    // Cancel all sandbox timers that are still pending. This prevents
+    // setInterval/setTimeout callbacks from running in the host event loop
+    // after the sandbox execution has completed or timed out.
+    for (const id of activeTimers) {
+      clearTimeout(id);
+      clearInterval(id);
+    }
+    activeTimers.clear();
   }
 }

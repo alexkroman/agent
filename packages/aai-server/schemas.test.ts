@@ -62,6 +62,24 @@ describe("DeployBodySchema", () => {
     expect(DeployBodySchema.safeParse(null).success).toBe(false);
     expect(DeployBodySchema.safeParse([]).success).toBe(false);
   });
+
+  test("rejects too many client files", () => {
+    const tooMany: Record<string, string> = {};
+    for (let i = 0; i < 101; i++) tooMany[`file${i}.js`] = "content";
+    const result = DeployBodySchema.safeParse({
+      worker: "code",
+      clientFiles: tooMany,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  test("rejects oversized client file", () => {
+    const result = DeployBodySchema.safeParse({
+      worker: "code",
+      clientFiles: { "huge.js": "x".repeat(10_000_001) },
+    });
+    expect(result.success).toBe(false);
+  });
 });
 
 // ── SecretUpdatesSchema ────────────────────────────────────────────────

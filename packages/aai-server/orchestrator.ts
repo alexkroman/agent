@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { createUnstorageKv, type SessionWebSocket } from "@alexkroman1/aai/host";
+import { MAX_WS_PAYLOAD_BYTES } from "@alexkroman1/aai/isolate";
 import { KvRequestSchema } from "@alexkroman1/aai/protocol";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
@@ -147,7 +148,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     original(req, { ...bindings, ...env });
 
   // WebSocket upgrade — URL pattern: /:slug/websocket
-  const wss = new WebSocketServer({ noServer: true });
+  const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_WS_PAYLOAD_BYTES });
 
   const injectWebSocket = (server: import("node:http").Server) => {
     server.on("upgrade", async (req, socket, head) => {

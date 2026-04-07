@@ -12,6 +12,7 @@
  * secure-exec network adapter allows the isolate to reach it.
  */
 
+import { timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { Kv } from "@alexkroman1/aai/kv";
 import { KvRequestSchema } from "@alexkroman1/aai/protocol";
@@ -125,8 +126,14 @@ export async function createSidecar(
   authToken: string,
   onHostEvent?: HostEventHandler,
 ): Promise<Sidecar> {
+  const authTokenBuf = Buffer.from(authToken);
   const server = createServer(async (req, res) => {
-    if (req.headers["x-harness-token"] !== authToken) {
+    const token = req.headers["x-harness-token"];
+    if (
+      typeof token !== "string" ||
+      token.length !== authToken.length ||
+      !timingSafeEqual(Buffer.from(token), authTokenBuf)
+    ) {
       json(res, { error: "Unauthorized" }, 401);
       return;
     }

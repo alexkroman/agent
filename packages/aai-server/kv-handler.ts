@@ -39,6 +39,6 @@ export async function handleKv(c: ValidatedAppContext<KvRequest>): Promise<Respo
       slug,
       error: errorMessage(err),
     });
-    return c.json({ error: `KV ${msg.op} failed: ${errorMessage(err)}` }, 500);
+    return c.json({ error: `KV ${msg.op} failed` }, 500);
   }
 }
