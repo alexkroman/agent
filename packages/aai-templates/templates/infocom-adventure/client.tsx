@@ -74,7 +74,7 @@ const ASCII_LOGO = `
 `;
 
 function InfocomAdventure() {
-  const { session, started, running, start, toggle, reset } = useSession();
+  const session = useSession();
   const bottom = useRef<HTMLDivElement>(null);
 
   const totalMessages = session.messages.value.length;
@@ -108,7 +108,7 @@ function InfocomAdventure() {
           ? "#00ccff"
           : "#003300";
 
-  if (!started.value) {
+  if (!session.started.value) {
     return (
       <>
         <style>{CSS}</style>
@@ -156,7 +156,7 @@ function InfocomAdventure() {
                 border: "1px solid #00ff41",
                 animation: "ic-pulse 2s ease-in-out infinite",
               }}
-              onClick={start}
+              onClick={session.start}
             >
               Begin Adventure
             </button>
@@ -269,15 +269,15 @@ function InfocomAdventure() {
                 type="button"
                 class="px-4 py-1 bg-transparent cursor-pointer uppercase tracking-wider font-mono text-[11px]"
                 style={{ color: "#00aa2a", border: "1px solid #003300" }}
-                onClick={toggle}
+                onClick={session.toggle}
               >
-                {running.value ? "[P]ause" : "[R]esume"}
+                {session.running.value ? "[P]ause" : "[R]esume"}
               </button>
               <button
                 type="button"
                 class="px-4 py-1 bg-transparent cursor-pointer uppercase tracking-wider font-mono text-[11px]"
                 style={{ color: "#00aa2a", border: "1px solid #003300" }}
-                onClick={reset}
+                onClick={session.reset}
               >
                 [Q]uit
               </button>

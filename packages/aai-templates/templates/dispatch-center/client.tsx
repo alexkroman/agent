@@ -151,8 +151,7 @@ function StatRow({ label, value, color }: { label: string; value: number; color?
 }
 
 function App() {
-  const ctrl = useSession();
-  const { session } = ctrl;
+  const session = useSession();
   const msgs = session.messages.value;
   const tx = session.userUtterance.value;
   const state = session.state.value;
@@ -308,12 +307,12 @@ function App() {
               class="flex items-center gap-2.5 px-4 py-3"
               style={{ background: "#111827", borderTop: "1px solid #1e293b" }}
             >
-              {!ctrl.started.value ? (
+              {!session.started.value ? (
                 <button
                   type="button"
                   class="px-4 py-2 border-none rounded-md font-mono text-xs font-semibold uppercase tracking-wider cursor-pointer text-white"
                   style={{ background: "#2563eb" }}
-                  onClick={() => ctrl.start()}
+                  onClick={() => session.start()}
                 >
                   Start Dispatch
                 </button>
@@ -323,18 +322,18 @@ function App() {
                     type="button"
                     class="px-4 py-2 border-none rounded-md font-mono text-xs font-semibold uppercase tracking-wider cursor-pointer"
                     style={{
-                      background: ctrl.running.value ? "#334155" : "#2563eb",
-                      color: ctrl.running.value ? "#e2e8f0" : "white",
+                      background: session.running.value ? "#334155" : "#2563eb",
+                      color: session.running.value ? "#e2e8f0" : "white",
                     }}
-                    onClick={() => ctrl.toggle()}
+                    onClick={() => session.toggle()}
                   >
-                    {ctrl.running.value ? "Pause" : "Resume"}
+                    {session.running.value ? "Pause" : "Resume"}
                   </button>
                   <button
                     type="button"
                     class="px-4 py-2 border-none rounded-md font-mono text-xs font-semibold uppercase tracking-wider cursor-pointer text-white"
                     style={{ background: "#dc2626" }}
-                    onClick={() => ctrl.reset()}
+                    onClick={() => session.reset()}
                   >
                     Reset
                   </button>
