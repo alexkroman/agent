@@ -252,7 +252,7 @@ describe("hostname-based blocking", () => {
     "http://evil.internal/",
     "http://evil.local/",
     "http://evil.localhost/",
-  ])("blocks reserved hostname: %s", async (url) => {
+  ])("blocks reserved hostname: %s", async (url: string) => {
     await expect(assertPublicUrl(url)).rejects.toThrow(/Blocked request.*reserved hostname/);
   });
 });
