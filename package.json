@@ -25,7 +25,7 @@
     "check:sherif": "pnpm dlx sherif@1.11.1",
     "check:syncpack": "syncpack lint",
     "check:ls-lint": "ls-lint",
-    "check:markdown": "markdownlint-cli2 '**/*.md' '#**/node_modules' '#.aai' '#.claude'",
+    "check:markdown": "markdownlint-cli2 '**/*.md' '#**/node_modules' '#.aai' '#.claude' '#.worktrees'",
     "docker:up": "docker compose up --build",
     "docker:down": "docker compose down -v",
     "test:chaos": "pnpm --filter @alexkroman1/aai-server test:chaos",
