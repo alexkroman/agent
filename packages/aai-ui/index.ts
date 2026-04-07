@@ -46,7 +46,6 @@ export {
 export type {
   AgentState,
   ChatMessage,
-  Reactive,
   SessionError,
   SessionErrorCode,
   ToolCallInfo,

@@ -1,13 +1,10 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import { signal } from "@preact/signals";
 import { describe, expect, test } from "vitest";
 import { flush } from "./_test-utils.ts";
-import { ClientHandler, type Reactive } from "./session.ts";
+import { ClientHandler } from "./client-handler.ts";
 import type { AgentState, ChatMessage, SessionError, ToolCallInfo } from "./types.ts";
-
-function reactive<T>(initial: T): Reactive<T> {
-  return { value: initial };
-}
 
 function makeVoiceIO(overrides?: Partial<Record<string, (...args: never[]) => unknown>>) {
   let flushed = false;
@@ -40,12 +37,12 @@ function makeVoiceIO(overrides?: Partial<Record<string, (...args: never[]) => un
 }
 
 function createTarget(voiceOverrides?: Partial<Record<string, (...args: never[]) => unknown>>) {
-  const state = reactive<AgentState>("connecting");
-  const messages = reactive<ChatMessage[]>([]);
-  const toolCalls = reactive<ToolCallInfo[]>([]);
-  const userUtterance = reactive<string | null>(null);
-  const agentUtterance = reactive<string | null>(null);
-  const error = reactive<SessionError | null>(null);
+  const state = signal<AgentState>("connecting");
+  const messages = signal<ChatMessage[]>([]);
+  const toolCalls = signal<ToolCallInfo[]>([]);
+  const userUtterance = signal<string | null>(null);
+  const agentUtterance = signal<string | null>(null);
+  const error = signal<SessionError | null>(null);
   const io = makeVoiceIO(voiceOverrides);
 
   const target = new ClientHandler({

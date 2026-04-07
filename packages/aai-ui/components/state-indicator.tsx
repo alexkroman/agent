@@ -1,8 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import type { Signal } from "@preact/signals";
 import clsx from "clsx";
 import type * as preact from "preact";
-import type { AgentState, Reactive } from "../types.ts";
+import type { AgentState } from "../types.ts";
 
 /**
  * Colored dot + label showing the current {@link AgentState}.
@@ -31,7 +32,7 @@ export function StateIndicator({
   state,
   className,
 }: {
-  state: Reactive<AgentState>;
+  state: Signal<AgentState>;
   className?: string;
 }): preact.JSX.Element {
   return (

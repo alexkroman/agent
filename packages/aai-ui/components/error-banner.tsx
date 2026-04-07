@@ -1,8 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import type { Signal } from "@preact/signals";
 import clsx from "clsx";
 import type * as preact from "preact";
-import type { Reactive, SessionError } from "../types.ts";
+import type { SessionError } from "../types.ts";
 
 /**
  * Displays a session error as a styled inline banner.
@@ -23,7 +24,7 @@ export function ErrorBanner({
   error,
   className,
 }: {
-  error: Reactive<SessionError | null>;
+  error: Signal<SessionError | null>;
   className?: string;
 }): preact.JSX.Element | null {
   if (!error.value) return null;

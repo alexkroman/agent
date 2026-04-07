@@ -61,13 +61,6 @@ export type SessionError = {
 };
 
 /**
- * Minimal reactive container. Compatible with `@preact/signals` `Signal<T>`.
- *
- * @public
- */
-export type Reactive<T> = { value: T };
-
-/**
  * Options for creating a voice session.
  *
  * @public
@@ -75,18 +68,6 @@ export type Reactive<T> = { value: T };
 export type VoiceSessionOptions = {
   /** Base URL of the AAI platform server. */
   platformUrl: string;
-  /**
-   * Factory for creating reactive state containers.
-   * Defaults to a plain mutable wrapper. Pass `signal` from
-   * `@preact/signals` for automatic Preact component re-rendering.
-   */
-  reactiveFactory?: <T>(initial: T) => Reactive<T>;
-  /**
-   * Function to batch multiple reactive updates.
-   * Defaults to calling the function directly. Pass `batch` from
-   * `@preact/signals` for optimized batched updates.
-   */
-  batch?: (fn: () => void) => void;
   /**
    * Called when the server sends a session ID in the config message.
    * Use this to store the ID (e.g. in localStorage) for reconnection

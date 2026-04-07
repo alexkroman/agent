@@ -2,23 +2,21 @@
 
 import type { ClientMessage, ReadyConfig } from "@alexkroman1/aai/protocol";
 import { errorMessage } from "@alexkroman1/aai/utils";
+import { batch, type Signal, signal } from "@preact/signals";
 import type { VoiceIO } from "./audio.ts";
 import { ClientHandler } from "./client-handler.ts";
 import type {
   AgentState,
   ChatMessage,
-  Reactive,
   SessionError,
   ToolCallInfo,
   VoiceSessionOptions,
   WebSocketConstructor,
 } from "./types.ts";
 
-export { ClientHandler } from "./client-handler.ts";
 export type {
   AgentState,
   ChatMessage,
-  Reactive,
   SessionError,
   SessionErrorCode,
   ToolCallInfo,
@@ -74,8 +72,8 @@ async function initAudioCapture(
   deps: {
     send: (msg: ClientMessage) => void;
     sendBinary: (data: ArrayBuffer) => void;
-    state: Reactive<AgentState>;
-    error: Reactive<SessionError | null>;
+    state: Signal<AgentState>;
+    error: Signal<SessionError | null>;
     batch: (fn: () => void) => void;
   },
 ): Promise<void> {
@@ -141,27 +139,27 @@ async function initAudioCapture(
  */
 export type VoiceSession = {
   /** Current agent state (connecting, listening, thinking, etc.). */
-  readonly state: Reactive<AgentState>;
+  readonly state: Signal<AgentState>;
   /** Chat message history for the session. */
-  readonly messages: Reactive<ChatMessage[]>;
+  readonly messages: Signal<ChatMessage[]>;
   /** Active tool calls for the current turn. */
-  readonly toolCalls: Reactive<ToolCallInfo[]>;
+  readonly toolCalls: Signal<ToolCallInfo[]>;
   /**
    * Live user utterance from STT/VAD.
    * `null` = not speaking, `""` = speech detected but no text yet,
    * non-empty string = partial/final transcript text.
    */
-  readonly userUtterance: Reactive<string | null>;
+  readonly userUtterance: Signal<string | null>;
   /**
    * Streaming agent response text.
    * `null` = not speaking, non-empty string = accumulated delta text.
    * Cleared when the final `chat` message arrives.
    */
-  readonly agentUtterance: Reactive<string | null>;
+  readonly agentUtterance: Signal<string | null>;
   /** Current session error, or `null` if no error. */
-  readonly error: Reactive<SessionError | null>;
+  readonly error: Signal<SessionError | null>;
   /** Disconnection info, or `null` if connected. */
-  readonly disconnected: Reactive<{ intentional: boolean } | null>;
+  readonly disconnected: Signal<{ intentional: boolean } | null>;
   /**
    * Open a WebSocket connection to the server and begin audio capture.
    *
@@ -203,17 +201,14 @@ function buildWsUrl(platformUrl: string, resume: boolean, sessionId?: string): U
 export function createVoiceSession(options: VoiceSessionOptions): VoiceSession {
   const WS: WebSocketConstructor =
     options.WebSocket ?? (WebSocket as unknown as WebSocketConstructor);
-  const reactive =
-    options.reactiveFactory ?? (<T>(initial: T): Reactive<T> => ({ value: initial }));
-  const batchFn = options.batch ?? ((fn: () => void) => fn());
 
-  const state = reactive<AgentState>("disconnected");
-  const messages = reactive<ChatMessage[]>([]);
-  const toolCalls = reactive<ToolCallInfo[]>([]);
-  const userUtterance = reactive<string | null>(null);
-  const agentUtterance = reactive<string | null>(null);
-  const error = reactive<SessionError | null>(null);
-  const disconnected = reactive<{ intentional: boolean } | null>(null);
+  const state = signal<AgentState>("disconnected");
+  const messages = signal<ChatMessage[]>([]);
+  const toolCalls = signal<ToolCallInfo[]>([]);
+  const userUtterance = signal<string | null>(null);
+  const agentUtterance = signal<string | null>(null);
+  const error = signal<SessionError | null>(null);
+  const disconnected = signal<{ intentional: boolean } | null>(null);
 
   const conn: ConnState = { ws: null, voiceIO: null, audioSetupInFlight: false, generation: 0 };
   let connectionController: AbortController | null = null;
@@ -226,7 +221,7 @@ export function createVoiceSession(options: VoiceSessionOptions): VoiceSession {
   }
 
   function resetState(): void {
-    batchFn(() => {
+    batch(() => {
       messages.value = [];
       toolCalls.value = [];
       userUtterance.value = null;
@@ -247,7 +242,7 @@ export function createVoiceSession(options: VoiceSessionOptions): VoiceSession {
     }
   }
 
-  const audioDeps = { send, sendBinary, state, error, batch: batchFn };
+  const audioDeps = { send, sendBinary, state, error, batch };
 
   function connect(opts?: { signal?: AbortSignal }): void {
     disconnected.value = null;
@@ -282,7 +277,7 @@ export function createVoiceSession(options: VoiceSessionOptions): VoiceSession {
       agentUtterance,
       error,
       voiceIO: () => conn.voiceIO,
-      batch: batchFn,
+      batch,
     });
 
     socket.addEventListener(

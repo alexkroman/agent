@@ -1,6 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { batch, signal } from "@preact/signals";
 import type { ComponentType } from "preact";
 // biome-ignore lint/suspicious/noDeprecatedImports: preact v10 render API is current
 import { render } from "preact";
@@ -77,8 +76,6 @@ export function defineClient(Component: ComponentType<any>, options?: ClientOpti
     options?.platformUrl ?? globalThis.location.origin + globalThis.location.pathname;
   const session = createVoiceSession({
     platformUrl,
-    reactiveFactory: signal,
-    batch,
     onSessionId: options?.onSessionId,
     resumeSessionId: options?.resumeSessionId,
     ...(options?.WebSocket ? { WebSocket: options.WebSocket } : {}),

@@ -2,8 +2,9 @@
 
 import type { ReadyConfig, ServerMessage } from "@alexkroman1/aai/protocol";
 import { lenientParse, ReadyConfigSchema, ServerMessageSchema } from "@alexkroman1/aai/protocol";
+import type { Signal } from "@preact/signals";
 import type { VoiceIO } from "./audio.ts";
-import type { AgentState, ChatMessage, Reactive, SessionError, ToolCallInfo } from "./types.ts";
+import type { AgentState, ChatMessage, SessionError, ToolCallInfo } from "./types.ts";
 
 type BatchFn = (fn: () => void) => void;
 
@@ -14,12 +15,12 @@ type BatchFn = (fn: () => void) => void;
  * @internal Exported for testing only.
  */
 export class ClientHandler {
-  #state: Reactive<AgentState>;
-  #messages: Reactive<ChatMessage[]>;
-  #toolCalls: Reactive<ToolCallInfo[]>;
-  #userUtterance: Reactive<string | null>;
-  #agentUtterance: Reactive<string | null>;
-  #error: Reactive<SessionError | null>;
+  #state: Signal<AgentState>;
+  #messages: Signal<ChatMessage[]>;
+  #toolCalls: Signal<ToolCallInfo[]>;
+  #userUtterance: Signal<string | null>;
+  #agentUtterance: Signal<string | null>;
+  #error: Signal<SessionError | null>;
   #voiceIO: () => VoiceIO | null;
   #batch: BatchFn;
   /** Incremented on each turn boundary — stale async callbacks compare against this. */
@@ -27,12 +28,12 @@ export class ClientHandler {
   /** Accumulated agent_transcript_delta text for real-time display. */
   #deltaAccum = "";
   constructor(opts: {
-    state: Reactive<AgentState>;
-    messages: Reactive<ChatMessage[]>;
-    toolCalls: Reactive<ToolCallInfo[]>;
-    userUtterance: Reactive<string | null>;
-    agentUtterance: Reactive<string | null>;
-    error: Reactive<SessionError | null>;
+    state: Signal<AgentState>;
+    messages: Signal<ChatMessage[]>;
+    toolCalls: Signal<ToolCallInfo[]>;
+    userUtterance: Signal<string | null>;
+    agentUtterance: Signal<string | null>;
+    error: Signal<SessionError | null>;
     voiceIO: () => VoiceIO | null;
     batch: BatchFn;
   }) {

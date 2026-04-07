@@ -6,13 +6,12 @@
  * A failure here means a public type contract has regressed.
  */
 
-// biome-ignore lint/correctness/noUndeclaredDependencies: vitest is a root workspace devDependency
+import type { Signal } from "@preact/signals";
 import { describe, expectTypeOf, it } from "vitest";
 import {
   type AgentState,
   type ChatMessage,
   createVoiceSession,
-  type Reactive,
   type SessionError,
   type SessionErrorCode,
   type ToolCallInfo,
@@ -43,10 +42,10 @@ describe("createVoiceSession", () => {
 
 describe("VoiceSession", () => {
   it("has reactive state signals", () => {
-    expectTypeOf<VoiceSession["state"]>().toEqualTypeOf<Reactive<AgentState>>();
-    expectTypeOf<VoiceSession["messages"]>().toEqualTypeOf<Reactive<ChatMessage[]>>();
-    expectTypeOf<VoiceSession["toolCalls"]>().toEqualTypeOf<Reactive<ToolCallInfo[]>>();
-    expectTypeOf<VoiceSession["error"]>().toEqualTypeOf<Reactive<SessionError | null>>();
+    expectTypeOf<VoiceSession["state"]>().toEqualTypeOf<Signal<AgentState>>();
+    expectTypeOf<VoiceSession["messages"]>().toEqualTypeOf<Signal<ChatMessage[]>>();
+    expectTypeOf<VoiceSession["toolCalls"]>().toEqualTypeOf<Signal<ToolCallInfo[]>>();
+    expectTypeOf<VoiceSession["error"]>().toEqualTypeOf<Signal<SessionError | null>>();
   });
 
   it("has lifecycle methods", () => {
@@ -84,10 +83,6 @@ describe("exported types", () => {
       result?: string | undefined;
       afterMessageIndex: number;
     }>();
-  });
-
-  it("Reactive is a value wrapper", () => {
-    expectTypeOf<Reactive<number>>().toEqualTypeOf<{ value: number }>();
   });
 
   it("SessionError has expected shape", () => {

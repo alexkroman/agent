@@ -3,7 +3,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { flush, installMockWebSocket } from "@alexkroman1/aai/testing";
-import { batch, signal } from "@preact/signals";
+import { signal } from "@preact/signals";
 import { createVoiceSession, type VoiceSession } from "./session.ts";
 import { createSessionControls, type SessionSignals } from "./signals.ts";
 import type { AgentState, ChatMessage, SessionError, ToolCallInfo } from "./types.ts";
@@ -181,8 +181,6 @@ export function setupSignalsEnv() {
   const loc = installMockLocation();
   const session = createVoiceSession({
     platformUrl: "http://localhost:3000",
-    reactiveFactory: signal,
-    batch,
     // Pass the mocked globalThis.WebSocket so session.ts uses the mock
     // instead of the crossws/websocket module import.
     WebSocket: globalThis.WebSocket,
