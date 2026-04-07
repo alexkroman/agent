@@ -3,8 +3,8 @@
  * and package-specific configs (slow tests, integration tests).
  */
 export const sharedConfig = {
-  resolve: { conditions: ["source"] },
-  ssr: { resolve: { conditions: ["source"] } },
+  resolve: { conditions: ["@dev/source"] },
+  ssr: { resolve: { conditions: ["@dev/source"] } },
   test: {
     reporters: process.env.CI ? ["dot"] : ["default"],
   },
