@@ -18,7 +18,7 @@ function noop() {
 }
 
 /** Default voice options for tests. */
-export function voiceOpts(overrides?: Partial<Parameters<typeof createVoiceIO>[0]>) {
+export function voiceOpts(overrides?: Partial<import("./audio.ts").VoiceIOOptions>) {
   return {
     sttSampleRate: 16_000,
     ttsSampleRate: 24_000,
