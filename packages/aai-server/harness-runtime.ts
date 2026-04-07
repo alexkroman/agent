@@ -4,13 +4,37 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { type AgentHooks, callResolveTurnConfig, createAgentHooks } from "@alexkroman1/aai/hooks";
 import type { Kv } from "@alexkroman1/aai/kv";
 import type { AgentDef, ToolContext } from "@alexkroman1/aai/types";
-import type {
-  HookRequest,
-  HookResponse,
-  IsolateConfig,
-  ToolCallRequest,
-  ToolCallResponse,
-} from "./rpc-schemas.ts";
+
+// Types duplicated from rpc-schemas.ts — the harness runs in a secure-exec
+// isolate where the bundler cannot resolve ./rpc-schemas.ts (it imports zod).
+// Keep these in sync with the Zod schemas in rpc-schemas.ts.
+type IsolateConfig = {
+  name: string;
+  systemPrompt: string;
+  greeting?: string;
+  sttPrompt?: string;
+  maxSteps?: number;
+  toolChoice?: "auto" | "required";
+  builtinTools?: string[];
+  toolSchemas: { name: string; description: string; parameters: Record<string, unknown> }[];
+  hasState: boolean;
+  hooks: {
+    onConnect: boolean;
+    onDisconnect: boolean;
+    onError: boolean;
+    onUserTranscript: boolean;
+    maxStepsIsFn: boolean;
+  };
+};
+type ToolCallRequest = {
+  name: string;
+  args: Record<string, unknown>;
+  sessionId: string;
+  messages: { role: "user" | "assistant" | "tool"; content: string }[];
+};
+type ToolCallResponse = { result: string; state: Record<string, unknown> };
+type HookRequest = { hook: string; sessionId: string; text?: string; error?: { message: string } };
+type HookResponse = { state: Record<string, unknown>; result?: unknown };
 
 /** Lazily initialized per-session state manager. */
 function createSessionStateMap(initState?: () => Record<string, unknown>): {

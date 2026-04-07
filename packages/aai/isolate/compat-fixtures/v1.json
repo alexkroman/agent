@@ -47,6 +47,7 @@
   "KvRequest": [
     { "op": "get", "key": "k1" },
     { "op": "set", "key": "k1", "value": "v1" },
+    { "op": "set", "key": "k1", "value": { "nested": true } },
     { "op": "set", "key": "k1", "value": "v1", "expireIn": 60000 },
     { "op": "del", "key": "k1" },
     { "op": "list", "prefix": "user:" },
