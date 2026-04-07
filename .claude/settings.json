@@ -40,7 +40,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[ \"$(git rev-parse --git-dir 2>/dev/null)\" != \"$(git rev-parse --git-common-dir 2>/dev/null)\" ] || npx lefthook install"
+            "command": "[ \"$(git rev-parse --git-dir 2>/dev/null)\" != \"$(git rev-parse --git-common-dir 2>/dev/null)\" ] || npx lefthook install --force"
           },
           {
             "type": "command",
