@@ -55,6 +55,27 @@ pre-push:
         # Unset GIT_DIR so changeset resolves the repo correctly in worktrees.
         # Git sets GIT_DIR during hooks, which confuses changeset's repo detection.
         unset GIT_DIR
-        pnpm changeset status --since=origin/main
+        if pnpm changeset status --since=origin/main 2>&1; then
+          exit 0
+        fi
+        echo ""
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "  Changeset required!"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        echo "  Packages were changed but no changeset was found."
+        echo ""
+        echo "  Interactive (humans):"
+        echo "    pnpm changeset"
+        echo ""
+        echo "  Non-interactive (agents/CI):"
+        echo "    pnpm changeset:create --pkg <package> --bump patch --summary \"description\""
+        echo ""
+        echo "  No release needed (docs/tests/config only):"
+        echo "    pnpm changeset add --empty"
+        echo ""
+        echo "  Then commit the changeset file and push again."
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        exit 1
     check:
       run: pnpm check

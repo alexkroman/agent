@@ -17,7 +17,10 @@ export const PORT_ANNOUNCE_TIMEOUT_MS = 15_000;
 // ─── Slot lifecycle ──────────────────────────────────────────────────────
 
 /** Default idle timeout before an agent slot is evicted (ms, 5 min). */
-export const DEFAULT_SLOT_IDLE_MS = 5 * 60 * 1000;
+export const DEFAULT_SLOT_IDLE_MS = Number(process.env.SLOT_IDLE_MS) || 5 * 60 * 1000;
+
+/** Max active sandbox slots before the server rejects new sandbox spawns. */
+export const MAX_SLOTS = Number(process.env.MAX_SLOTS) || 10;
 
 // ─── Auth ────────────────────────────────────────────────────────────────
 
@@ -32,7 +35,15 @@ export const DEFAULT_PORT = 8787;
 /** Default credential key derivation scope when KV_SCOPE_SECRET is unset. */
 export const DEFAULT_CREDENTIAL_SCOPE = "default-credential-key";
 
+/** Max concurrent WebSocket connections before the server rejects new upgrades. */
+export const MAX_CONNECTIONS = Number(process.env.MAX_CONNECTIONS) || 100;
+
 // ─── Deploy ──────────────────────────────────────────────────────────────
 
 /** Maximum worker bundle size (bytes, 10 MB). */
 export const MAX_WORKER_SIZE = 10_000_000;
+
+// ─── Process jail ───────────────────────────────────────────────────────
+
+/** Total memory limit for nsjail cgroup (V8 heap + Rust runtime overhead, MB). */
+export const JAIL_MEMORY_LIMIT_MB = 256;

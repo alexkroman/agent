@@ -40,6 +40,10 @@
       "dependsOn": ["build"],
       "inputs": ["**/*.ts", "**/*.tsx"]
     },
+    "check:chaos": {
+      "dependsOn": ["build"],
+      "inputs": ["**/*.ts", "chaos/**/*.ts", "../../docker-compose.yml", "Dockerfile"]
+    },
     "check:harness": {
       "dependsOn": ["build"]
     },

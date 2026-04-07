@@ -128,9 +128,10 @@ The SDK is split into two compilation zones:
   `types.ts`, `kv.ts`, `_kv-utils.ts`, `hooks.ts`, `_utils.ts`,
   `constants.ts`, `protocol.ts`, `system-prompt.ts`, `_internal-types.ts`.
 - **`host/`** — host-only modules that require Node.js APIs. Contains:
-  `server.ts`, `direct-executor.ts`, `session.ts`, `s2s.ts`,
-  `ws-handler.ts`, `runtime.ts`, `builtin-tools.ts`, `_run-code.ts`,
-  `unstorage-kv.ts`, `vite-plugin.ts`, `testing.ts`, `matchers.ts`.
+  `server.ts`, `runtime.ts`, `runtime-config.ts`, `tool-executor.ts`,
+  `session.ts`, `session-ctx.ts`, `s2s.ts`, `ws-handler.ts`,
+  `builtin-tools.ts`, `_run-code.ts`, `unstorage-kv.ts`,
+  `vite-plugin.ts`, `testing.ts`, `matchers.ts`.
 
 When adding new SDK code, place it in `isolate/` if it has no `node:`
 dependencies. The isolate typecheck (`tsc -p isolate/tsconfig.json`)
@@ -221,6 +222,55 @@ runs as part of `pnpm typecheck` and will catch violations.
   exports resolve to real files. `attw` validates export types. Both run
   in the check pipeline.
 
+### Changesets
+
+This repo uses [@changesets/cli](https://github.com/changesets/changesets)
+to track version bumps. Every PR that changes code in `packages/` **must**
+include a changeset file (enforced by the pre-push hook).
+
+**Creating a changeset (interactive — preferred for humans):**
+
+```sh
+pnpm changeset          # Prompts for packages + bump type + summary
+```
+
+**Creating a changeset (non-interactive — for agents/CI):**
+
+```sh
+pnpm changeset:create --pkg @alexkroman1/aai --bump patch --summary "Fix typo in error message"
+```
+
+Multiple packages:
+
+```sh
+pnpm changeset:create --pkg @alexkroman1/aai --pkg @alexkroman1/aai-ui --bump minor --summary "Add new session API"
+```
+
+If the change doesn't need a release (docs-only, config, tests):
+
+```sh
+pnpm changeset add --empty
+```
+
+**Changeset file format** (`.changeset/<random-name>.md`):
+
+```yaml
+---
+"@alexkroman1/aai": patch
+---
+
+Short summary of the change for the changelog.
+```
+
+Valid bump types: `patch` (bug fixes), `minor` (new features), `major`
+(breaking changes).
+
+**Fixed packages:** `aai`, `aai-ui`, and `aai-cli` release together (configured
+in `.changeset/config.json`). You only need to list one; the others are
+bumped automatically.
+
+**Checking status:** `pnpm changeset status --since=origin/main`
+
 ### Related docs
 
 - **Agent API docs**: `packages/aai-templates/scaffold/CLAUDE.md` is the
@@ -236,7 +286,8 @@ runs as part of `pnpm typecheck` and will catch violations.
 - **pre-commit**: runs `biome check --write` on staged files and
   `syncpack lint` when package.json changes.
 - **pre-push**: blocks pushes to main/master, checks for merge conflicts
-  with main, and runs `pnpm check`.
+  with main, **verifies changeset exists for changed packages**, and runs
+  `pnpm check`.
 
 ### Updating CLAUDE.md
 
@@ -327,6 +378,37 @@ a denylist.
 - Each sandbox gets its own sidecar on an ephemeral loopback port.
 - Sessions are per-sandbox (`Map<string, Session>`).
 - No shared mutable state between sandboxes.
+
+**OS-level process jail (aai-server, Linux only):**
+
+The secure-exec Rust V8 child process runs inside an **nsjail** sandbox
+on Linux production deployments. This provides defense-in-depth against
+V8 engine exploits that could escape the isolate boundary.
+
+nsjail enforces:
+
+- **Mount namespace**: read-only root, only the Rust binary and shared
+  libraries bind-mounted. UDS socket dir is the sole writable mount.
+- **PID namespace**: process sees only itself.
+- **Network namespace**: empty (no interfaces). UDS still works via
+  bind-mounted socket dir.
+- **seccomp-bpf**: syscall allowlist in `seccomp-allowlist.json`.
+- **Capabilities**: all dropped.
+- **cgroups v2**: memory and PID limits.
+
+On macOS (dev), the jail is skipped with a warning. Requires `nsjail`
+on `$PATH` (installed via `apt-get install nsjail` in the Dockerfile).
+
+Key files: `process-jail.ts`, `jail-config.ts`, `seccomp-policy.ts`,
+`seccomp-allowlist.json`.
+
+When upgrading secure-exec, run `pnpm --filter @alexkroman1/aai-server
+test:integration` on Linux to verify the seccomp allowlist is still
+sufficient. Update `seccomp-allowlist.json` if new syscalls are needed.
+
+A `pnpm patch` on `@secure-exec/v8` adds `SECURE_EXEC_V8_WRAPPER` env
+var support. When secure-exec ships the `v8Runtime` option on
+`createNodeRuntimeDriverFactory`, remove the patch and use the clean API.
 
 **`run_code` built-in tool (aai/builtin-tools.ts):**
 
