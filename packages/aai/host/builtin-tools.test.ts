@@ -619,4 +619,114 @@ describe("executeInIsolate", () => {
     `);
     expect(result).toBe("ISOLATED");
   });
+
+  // ─── timer leak prevention ────────────────────────────────────────────
+
+  test("setInterval timers created in sandbox are cleaned up after execution", async () => {
+    // The sandbox wraps setInterval and clears all pending timers in the
+    // finally block. We verify this by having the interval callback mutate
+    // a variable captured in the host closure — if the interval fires after
+    // executeInIsolate returns, we'd see the count increment.
+    let hostCallbackCount = 0;
+
+    // Temporarily wrap the real setInterval so the callback can signal the host.
+    const origSetInterval = globalThis.setInterval;
+    const origClearInterval = globalThis.clearInterval;
+    const cancelIds: ReturnType<typeof setInterval>[] = [];
+
+    // Intercept: wrap the interval the sandbox creates so the fn also bumps our host counter.
+    globalThis.setInterval = ((fn: () => void, delay?: number) => {
+      const wrapped = () => {
+        hostCallbackCount++;
+        fn();
+      };
+      const id = origSetInterval(wrapped, delay);
+      cancelIds.push(id);
+      return id;
+    }) as typeof globalThis.setInterval;
+
+    try {
+      await executeInIsolate(`
+        setInterval(() => {}, 10);
+        console.log("started");
+      `);
+    } finally {
+      globalThis.setInterval = origSetInterval;
+      globalThis.clearInterval = origClearInterval;
+    }
+
+    const countAfterReturn = hostCallbackCount;
+
+    // Wait longer than the interval delay — if the timer leaked, the counter
+    // would increment here.
+    await new Promise<void>((r) => setTimeout(r, 80));
+
+    // Cleanup any ids that slipped through (shouldn't be needed if fix works)
+    for (const id of cancelIds) {
+      origClearInterval(id);
+    }
+
+    // Counter must not have increased after executeInIsolate returned
+    expect(hostCallbackCount).toBe(countAfterReturn);
+  });
+
+  test("setTimeout created in sandbox does not fire after execution completes", async () => {
+    // A setTimeout with a short delay should be cancelled by the finally block
+    // before it has a chance to run after executeInIsolate resolves.
+    let firedAfterReturn = false;
+    const origSetTimeout = globalThis.setTimeout;
+    const origClearTimeout = globalThis.clearTimeout;
+    const cancelIds: ReturnType<typeof setTimeout>[] = [];
+
+    globalThis.setTimeout = ((fn: () => void, delay?: number) => {
+      const wrapped = () => {
+        firedAfterReturn = true;
+        fn();
+      };
+      const id = origSetTimeout(wrapped, delay);
+      cancelIds.push(id);
+      return id;
+    }) as typeof globalThis.setTimeout;
+
+    try {
+      // The code schedules a timer with 20 ms delay then returns immediately.
+      await executeInIsolate(`
+        setTimeout(() => {}, 20);
+        console.log("scheduled");
+      `);
+    } finally {
+      globalThis.setTimeout = origSetTimeout;
+      globalThis.clearTimeout = origClearTimeout;
+    }
+
+    // Reset after the function returned — any fire from this point is a leak.
+    firedAfterReturn = false;
+
+    // Wait longer than the 20 ms delay to confirm no leak.
+    await new Promise<void>((r) => origSetTimeout(r, 80));
+
+    for (const id of cancelIds) {
+      origClearTimeout(id);
+    }
+
+    expect(firedAfterReturn).toBe(false);
+  });
+
+  test("setInterval cleanup does not prevent synchronous timer use during execution", async () => {
+    // Ensure wrapping timers doesn't break legitimate async usage
+    const result = await executeInIsolate(`
+      let ticks = 0;
+      await new Promise((resolve) => {
+        const id = setInterval(() => {
+          ticks++;
+          if (ticks >= 3) {
+            clearInterval(id);
+            resolve(undefined);
+          }
+        }, 10);
+      });
+      console.log("ticks:" + ticks);
+    `);
+    expect(result).toBe("ticks:3");
+  });
 });

@@ -129,6 +129,17 @@ describe("SSRF: protocol validation", () => {
   }, 15_000);
 });
 
+// ── DNS Failure Handling ───────────────────────────────────────────────
+
+describe("SSRF: DNS failure handling", () => {
+  test("assertPublicUrl rejects when DNS resolution fails", async () => {
+    // Use a subdomain of example.com (IANA reserved, no DNS) that bogon doesn't classify as private
+    await expect(assertPublicUrl("http://nxdomain-test.example.com/")).rejects.toThrow(
+      /Blocked request.*DNS/,
+    );
+  }, 10_000);
+});
+
 // ── Redirect Chain Validation ──────────────────────────────────────────
 
 describe("SSRF: redirect chain validation", () => {
@@ -229,6 +240,20 @@ describe("SSRF: redirect chain validation", () => {
     expect(res.status).toBe(200);
     // The relative URL should resolve to the same origin
     expect(mockFetch).toHaveBeenCalledWith("https://93.184.216.34/other-page", expect.anything());
+  });
+});
+
+// ── Hostname-Based Blocking ────────────────────────────────────────────
+
+describe("hostname-based blocking", () => {
+  test.each([
+    "http://metadata.google.internal/computeMetadata/v1/",
+    "http://instance-data.ec2.internal/latest/meta-data/",
+    "http://evil.internal/",
+    "http://evil.local/",
+    "http://evil.localhost/",
+  ])("blocks reserved hostname: %s", async (url: string) => {
+    await expect(assertPublicUrl(url)).rejects.toThrow(/Blocked request.*reserved hostname/);
   });
 });
 
