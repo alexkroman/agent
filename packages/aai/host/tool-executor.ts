@@ -17,8 +17,6 @@ import type { Logger } from "./runtime-config.ts";
 
 export type { ExecuteTool } from "../isolate/_internal-types.ts";
 
-// ─── Tool execution (formerly worker-entry.ts) ─────────────────────────────
-
 const yieldTick = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 
 export type ExecuteToolCallOptions = {

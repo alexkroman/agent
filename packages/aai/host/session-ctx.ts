@@ -1,16 +1,15 @@
 // Copyright 2025 the AAI authors. MIT license.
 /** Session context builder — extracted from session.ts. */
 
-import type { AgentConfig } from "../isolate/_internal-types.ts";
+import type { AgentConfig, ExecuteTool } from "../isolate/_internal-types.ts";
 import { errorMessage, toolError } from "../isolate/_utils.ts";
 import { DEFAULT_MAX_HISTORY, HOOK_TIMEOUT_MS } from "../isolate/constants.ts";
 import type { AgentHookMap, AgentHooks } from "../isolate/hooks.ts";
 import { callResolveTurnConfig } from "../isolate/hooks.ts";
+import type { ClientSink } from "../isolate/protocol.ts";
 import type { Message } from "../isolate/types.ts";
 import type { Logger } from "./runtime-config.ts";
 import type { S2sHandle } from "./s2s.ts";
-
-// ─── Session context (formerly _session-ctx.ts) ─────────────────────────────
 
 type PendingTool = { callId: string; result: string };
 
@@ -25,9 +24,9 @@ export type ReplyState = {
 export type SessionDeps = {
   readonly id: string;
   readonly agent: string;
-  readonly client: import("../isolate/protocol.ts").ClientSink;
+  readonly client: ClientSink;
   readonly agentConfig: AgentConfig;
-  readonly executeTool: import("../isolate/_internal-types.ts").ExecuteTool;
+  readonly executeTool: ExecuteTool;
   readonly hooks: AgentHooks | undefined;
   readonly log: Logger;
   readonly maxHistory: number;
@@ -64,9 +63,9 @@ export type S2sSessionCtx = SessionDeps & {
 export function buildCtx(opts: {
   id: string;
   agent: string;
-  client: import("../isolate/protocol.ts").ClientSink;
+  client: ClientSink;
   agentConfig: AgentConfig;
-  executeTool: import("../isolate/_internal-types.ts").ExecuteTool;
+  executeTool: ExecuteTool;
   hooks: AgentHooks | undefined;
   log: Logger;
   maxHistory?: number | undefined;
