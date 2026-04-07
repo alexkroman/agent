@@ -156,7 +156,12 @@ export function createServer(options: ServerOptions): AgentServer {
 
     // Default HTML
     if (method === "GET" && url === "/") {
-      const escaped = name.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      const escaped = name
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
       const body =
         clientHtml ??
         `<!DOCTYPE html><html><body><h1>${escaped}</h1><p>Agent server running.</p></body></html>`;
