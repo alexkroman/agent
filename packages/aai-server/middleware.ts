@@ -1,7 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
 import { hashApiKey, verifySlugOwner } from "./auth.ts";
+import type { Env } from "./context.ts";
 import { isPrivateIp } from "./ssrf.ts";
 import type { BundleStore } from "./store-types.ts";
 
@@ -78,3 +80,30 @@ export function requireInternal(req: Request): void {
     throw new HTTPException(403, { message: "Forbidden" });
   }
 }
+
+/** Sets `c.var.slug` from the `:slug` route param. */
+export const slugMw = createMiddleware<Env>(async (c, next) => {
+  // biome-ignore lint/style/noNonNullAssertion: slug param guaranteed by route pattern
+  c.set("slug", validateSlug(c.req.param("slug")!));
+  await next();
+});
+
+/** Verifies the Bearer token owns the slug and sets `c.var.keyHash`. */
+export const ownerMw = createMiddleware<Env>(async (c, next) => {
+  const keyHash = await requireOwner(c.req.raw, {
+    slug: c.var.slug,
+    store: c.env.store,
+  });
+  c.set("keyHash", keyHash);
+  await next();
+});
+
+/**
+ * Authenticates the Bearer token without checking slug ownership.
+ * Used for routes where the slug may not exist yet (new deploys).
+ * Sets `c.var.keyHash`.
+ */
+export const authMw = createMiddleware<Env>(async (c, next) => {
+  c.set("keyHash", await requireAuth(c.req.raw));
+  await next();
+});

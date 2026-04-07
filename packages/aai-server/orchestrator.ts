@@ -6,7 +6,6 @@ import { KvRequestSchema } from "@alexkroman1/aai/protocol";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { createFactory } from "hono/factory";
 import { secureHeaders } from "hono/secure-headers";
 import type { Storage } from "unstorage";
 import { WebSocketServer } from "ws";
@@ -17,7 +16,7 @@ import { handleDelete } from "./delete.ts";
 import { handleDeploy, handleDeployNew } from "./deploy.ts";
 import { createErrorHandler } from "./error-handler.ts";
 import { handleKv } from "./kv-handler.ts";
-import { requireAuth, requireOwner, validateSlug } from "./middleware.ts";
+import { authMw, ownerMw, slugMw, validateSlug } from "./middleware.ts";
 import type { AgentSlot } from "./sandbox.ts";
 import { resolveSandbox } from "./sandbox.ts";
 import { DeployBodySchema, SecretUpdatesSchema } from "./schemas.ts";
@@ -40,29 +39,6 @@ export type Orchestrator = {
 
 export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   const app = new Hono<Env>();
-  const factory = createFactory<Env>();
-
-  const slugMw = factory.createMiddleware(async (c, next) => {
-    // biome-ignore lint/style/noNonNullAssertion: slug param guaranteed by route pattern
-    c.set("slug", validateSlug(c.req.param("slug")!));
-    await next();
-  });
-
-  const ownerMw = factory.createMiddleware(async (c, next) => {
-    const keyHash = await requireOwner(c.req.raw, {
-      slug: c.var.slug,
-      store: c.env.store,
-    });
-    c.set("keyHash", keyHash);
-    await next();
-  });
-
-  // Auth middleware for routes where slug may not exist yet (new deploys).
-  // Accepts any valid Bearer token and sets keyHash, but skips slug ownership check.
-  const authMw = factory.createMiddleware(async (c, next) => {
-    c.set("keyHash", await requireAuth(c.req.raw));
-    await next();
-  });
 
   const allowedOrigins = opts.allowedOrigins;
   app.use(
