@@ -1,0 +1,12 @@
+diff --git a/dist/runtime.js b/dist/runtime.js
+index abebf93416c108aec8a12f5fd024cee88d42fb89..125f6c310b4bb3837586ad635104bb5111f99465 100644
+--- a/dist/runtime.js
++++ b/dist/runtime.js
+@@ -47,6 +47,7 @@ const PLATFORM_PACKAGES = {
+ };
+ /** Resolve the platform-specific binary path. */
+ function resolveBinaryPath() {
++    if (process.env.SECURE_EXEC_V8_WRAPPER) return process.env.SECURE_EXEC_V8_WRAPPER;
+     const binaryName = process.platform === "win32" ? "secure-exec-v8.exe" : "secure-exec-v8";
+     // 1. Try cargo-built binary at crate target path (development workspace)
+     const crateRelative = resolve(__dirname, "../../../native/v8-runtime/target/release/secure-exec-v8");

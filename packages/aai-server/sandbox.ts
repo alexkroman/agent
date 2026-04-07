@@ -35,7 +35,12 @@ import {
 import type { Storage } from "unstorage";
 import { z } from "zod";
 import type { BundleStore } from "./bundle-store.ts";
-import { PORT_ANNOUNCE_TIMEOUT_MS, SANDBOX_MEMORY_LIMIT_MB } from "./constants.ts";
+import {
+  JAIL_MEMORY_LIMIT_MB,
+  PORT_ANNOUNCE_TIMEOUT_MS,
+  SANDBOX_MEMORY_LIMIT_MB,
+} from "./constants.ts";
+import { initProcessJail, isJailAvailable, type JailedLauncher } from "./process-jail.ts";
 import {
   HookResponseSchema,
   type IsolateConfig,
@@ -50,6 +55,9 @@ import {
   _slotInternals,
   type AgentSlot,
 } from "./sandbox-slots.ts";
+
+let jailLauncher: JailedLauncher | null = null;
+let jailInitialized = false;
 
 /** Set of filesystem operations that are safe for read-only access. */
 const READ_ONLY_FS_OPS = new Set(["read", "stat", "readdir", "exists"]);
@@ -111,6 +119,32 @@ async function startIsolate(
   }
   const allowedKeys = new Set(Object.keys(prefixedEnv));
   const crashController = new AbortController();
+
+  // Initialize process jail on first isolate boot (Linux only).
+  // Must run before NodeRuntime construction triggers secure-exec binary resolution.
+  if (!jailInitialized) {
+    jailInitialized = true;
+    if (isJailAvailable()) {
+      const { createRequire } = await import("node:module");
+      const { dirname, join } = await import("node:path");
+      const req = createRequire(import.meta.url);
+      const platformPkg = `@secure-exec/v8-${process.platform}-${process.arch === "x64" ? "x64-gnu" : "arm64-gnu"}`;
+      try {
+        const pkgDir = dirname(req.resolve(`${platformPkg}/package.json`));
+        const binaryPath = join(pkgDir, "secure-exec-v8");
+        jailLauncher = await initProcessJail({ binaryPath, memoryLimitMb: JAIL_MEMORY_LIMIT_MB });
+        if (jailLauncher) {
+          process.once("beforeExit", () => {
+            jailLauncher?.cleanup().catch(() => {
+              /* ignore cleanup errors during shutdown */
+            });
+          });
+        }
+      } catch (err) {
+        console.warn("Failed to initialize process jail:", err);
+      }
+    }
+  }
 
   let portResolved = false;
   const {
