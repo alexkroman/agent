@@ -63,6 +63,14 @@ describe("KvRequestSchema", () => {
     expect(result.success).toBe(true);
   });
 
+  test("set accepts non-string values (objects, arrays, null)", () => {
+    // The Kv interface accepts `value: unknown` — ensure the schema matches.
+    for (const value of [{ nested: true }, [1, 2, 3], null, 42]) {
+      const result = KvRequestSchema.safeParse({ op: "set", key: "k", value });
+      expect(result.success, `set should accept value: ${JSON.stringify(value)}`).toBe(true);
+    }
+  });
+
   test("rejects empty key on get", () => {
     const result = KvRequestSchema.safeParse({
       op: "get",

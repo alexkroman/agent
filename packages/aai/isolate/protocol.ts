@@ -16,13 +16,38 @@ import { MAX_TOOL_RESULT_CHARS } from "./constants.ts";
  */
 export const AUDIO_FORMAT = "pcm16";
 
+/**
+ * Minimal envelope schema for two-phase message parsing.
+ *
+ * When a strict schema (ServerMessageSchema / ClientMessageSchema) rejects a
+ * message, this schema determines whether the message is a valid but
+ * *unrecognised* type (safe to ignore during rolling upgrades) or genuinely
+ * malformed (should be warned about).
+ */
+export const MessageEnvelopeSchema = z.object({ type: z.string() }).passthrough();
+
+/**
+ * Two-phase message parse: tries the strict schema first, then falls back to
+ * the envelope to distinguish unknown-but-valid types (safe to ignore during
+ * rolling upgrades) from genuinely malformed messages.
+ */
+export function lenientParse<T>(
+  schema: z.ZodType<T>,
+  json: unknown,
+): { ok: true; data: T } | { ok: false; malformed: boolean; error: string } {
+  const result = schema.safeParse(json);
+  if (result.success) return { ok: true, data: result.data };
+  const malformed = !MessageEnvelopeSchema.safeParse(json).success;
+  return { ok: false, malformed, error: result.error.message };
+}
+
 /** Zod schema for KV operation requests from the worker to the host. */
 export const KvRequestSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("get"), key: z.string().min(1) }),
   z.object({
     op: z.literal("set"),
     key: z.string().min(1),
-    value: z.string(),
+    value: z.unknown(),
     /** Time-to-live in **milliseconds**. */
     expireIn: z.number().int().positive().optional(),
   }),

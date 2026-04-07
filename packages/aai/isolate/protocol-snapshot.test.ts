@@ -189,7 +189,7 @@ describe("KvRequest wire format", () => {
   const valid = [
     ["get", { op: "get", key: "k1" }],
     ["set", { op: "set", key: "k1", value: "v1" }],
-    ["set with ttl", { op: "set", key: "k1", value: "v1", ttl: 60 }],
+    ["set with expireIn", { op: "set", key: "k1", value: "v1", expireIn: 60_000 }],
     ["del", { op: "del", key: "k1" }],
     ["list", { op: "list", prefix: "user:" }],
     ["list with options", { op: "list", prefix: "", limit: 10, reverse: true }],

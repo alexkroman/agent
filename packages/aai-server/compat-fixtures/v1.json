@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "created": "2026-04-07",
+  "description": "Initial baseline: RPC response schemas for server-isolate boundary",
+  "IsolateConfig": [
+    {
+      "name": "minimal-agent",
+      "systemPrompt": "Be helpful",
+      "toolSchemas": [],
+      "hasState": false,
+      "hooks": {
+        "onConnect": false,
+        "onDisconnect": false,
+        "onError": false,
+        "onUserTranscript": false,
+        "maxStepsIsFn": false
+      }
+    },
+    {
+      "name": "full-agent",
+      "systemPrompt": "You are a helpful assistant",
+      "greeting": "Hello!",
+      "sttPrompt": "Transcribe accurately",
+      "maxSteps": 10,
+      "toolChoice": "auto",
+      "builtinTools": ["web_search"],
+      "toolSchemas": [
+        {
+          "name": "get_weather",
+          "description": "Get the current weather",
+          "parameters": { "type": "object", "properties": { "city": { "type": "string" } } }
+        }
+      ],
+      "hasState": true,
+      "hooks": {
+        "onConnect": true,
+        "onDisconnect": true,
+        "onError": true,
+        "onUserTranscript": true,
+        "maxStepsIsFn": true
+      }
+    }
+  ],
+  "ToolCallResponse": [
+    { "result": "72F", "state": {} },
+    { "result": "done", "state": { "count": 1 } }
+  ],
+  "HookResponse": [
+    { "state": {} },
+    { "state": { "count": 1 }, "result": "some_value" },
+    { "state": {}, "result": null }
+  ],
+  "TurnConfigResult": [null, { "maxSteps": 3 }]
+}

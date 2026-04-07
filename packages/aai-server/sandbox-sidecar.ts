@@ -5,7 +5,7 @@
  * Runs on the host process at `127.0.0.1:<ephemeral>`, reachable from the
  * isolate via the SIDECAR_URL env var. Routes:
  *
- * - `POST /kv/get|set|del|list|keys` — KV store bridge
+ * - `POST /kv`                        — KV store bridge (uses KvRequestSchema)
  * - `POST /host/*`                   — push channel for session events
  *
  * The sidecar port is added to `loopbackExemptPorts` so the default
@@ -14,7 +14,7 @@
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { Kv } from "@alexkroman1/aai/kv";
-import { z } from "zod";
+import { KvRequestSchema } from "@alexkroman1/aai/protocol";
 
 export type HostEventHandler = (
   path: string,
@@ -29,25 +29,6 @@ export interface Sidecar {
 }
 
 const MAX_BODY_SIZE = 5 * 1024 * 1024; // 5 MB
-
-// ── KV bridge request schemas (validates isolate → host payloads) ──────
-
-const KvGetSchema = z.object({ key: z.string() });
-const KvSetSchema = z.object({
-  key: z.string(),
-  value: z.unknown(),
-  options: z.object({ expireIn: z.number().int().positive() }).optional(),
-});
-const KvDelSchema = z.object({ key: z.string() });
-const KvListSchema = z.object({
-  prefix: z.string(),
-  limit: z.number().int().positive().optional(),
-  reverse: z.boolean().optional(),
-});
-const KvKeysSchema = z.object({ pattern: z.string().optional() });
-
-/** @internal Exposed for testing schema validation. */
-export const _kvSchemas = { KvGetSchema, KvSetSchema, KvDelSchema, KvListSchema, KvKeysSchema };
 
 // ── HTTP helpers ───────────────────────────────────────────────────────
 
@@ -77,53 +58,9 @@ function readBody(req: IncomingMessage): Promise<string> {
   });
 }
 
-// ── KV handlers ────────────────────────────────────────────────────────
+// ── KV handler (uses KvRequestSchema from protocol.ts) ────────────────
 
-async function handleKvGet(kv: Kv, raw: unknown): Promise<{ data: unknown; status: number }> {
-  const parsed = KvGetSchema.safeParse(raw);
-  if (!parsed.success) return { data: { error: parsed.error.message }, status: 400 };
-  return { data: (await kv.get(parsed.data.key)) ?? null, status: 200 };
-}
-
-async function handleKvSet(kv: Kv, raw: unknown): Promise<{ data: unknown; status: number }> {
-  const parsed = KvSetSchema.safeParse(raw);
-  if (!parsed.success) return { data: { error: parsed.error.message }, status: 400 };
-  await kv.set(
-    parsed.data.key,
-    parsed.data.value,
-    parsed.data.options?.expireIn != null ? { expireIn: parsed.data.options.expireIn } : undefined,
-  );
-  return { data: null, status: 200 };
-}
-
-async function handleKvDel(kv: Kv, raw: unknown): Promise<{ data: unknown; status: number }> {
-  const parsed = KvDelSchema.safeParse(raw);
-  if (!parsed.success) return { data: { error: parsed.error.message }, status: 400 };
-  await kv.delete(parsed.data.key);
-  return { data: null, status: 200 };
-}
-
-async function handleKvList(kv: Kv, raw: unknown): Promise<{ data: unknown; status: number }> {
-  const parsed = KvListSchema.safeParse(raw);
-  if (!parsed.success) return { data: { error: parsed.error.message }, status: 400 };
-  const entries = await kv.list(parsed.data.prefix, {
-    ...(parsed.data.limit != null && { limit: parsed.data.limit }),
-    ...(parsed.data.reverse != null && { reverse: parsed.data.reverse }),
-  });
-  return { data: entries, status: 200 };
-}
-
-async function handleKvKeys(kv: Kv, raw: unknown): Promise<{ data: unknown; status: number }> {
-  const parsed = KvKeysSchema.safeParse(raw);
-  if (!parsed.success) return { data: { error: parsed.error.message }, status: 400 };
-  return { data: await kv.keys(parsed.data.pattern), status: 200 };
-}
-
-async function handleKvRequest(
-  kv: Kv,
-  op: string,
-  body: string,
-): Promise<{ data: unknown; status: number }> {
+async function handleKvRequest(kv: Kv, body: string): Promise<{ data: unknown; status: number }> {
   let raw: unknown;
   try {
     raw = body ? JSON.parse(body) : {};
@@ -131,19 +68,29 @@ async function handleKvRequest(
     return { data: { error: "Invalid JSON in KV request body" }, status: 400 };
   }
 
-  switch (op) {
+  const parsed = KvRequestSchema.safeParse(raw);
+  if (!parsed.success) return { data: { error: parsed.error.message }, status: 400 };
+  const msg = parsed.data;
+
+  switch (msg.op) {
     case "get":
-      return handleKvGet(kv, raw);
+      return { data: (await kv.get(msg.key)) ?? null, status: 200 };
     case "set":
-      return handleKvSet(kv, raw);
+      await kv.set(msg.key, msg.value, msg.expireIn ? { expireIn: msg.expireIn } : undefined);
+      return { data: null, status: 200 };
     case "del":
-      return handleKvDel(kv, raw);
-    case "list":
-      return handleKvList(kv, raw);
+      await kv.delete(msg.key);
+      return { data: null, status: 200 };
+    case "list": {
+      const opts: { limit?: number; reverse?: boolean } = {};
+      if (msg.limit !== undefined) opts.limit = msg.limit;
+      if (msg.reverse !== undefined) opts.reverse = msg.reverse;
+      return { data: await kv.list(msg.prefix, opts), status: 200 };
+    }
     case "keys":
-      return handleKvKeys(kv, raw);
+      return { data: await kv.keys(msg.pattern), status: 200 };
     default:
-      return { data: { error: `Unknown KV op: ${op}` }, status: 400 };
+      return { data: { error: `Unknown KV op: ${(msg as { op: string }).op}` }, status: 400 };
   }
 }
 
@@ -156,9 +103,8 @@ async function routeRequest(
   req: IncomingMessage,
   onHostEvent?: HostEventHandler,
 ): Promise<{ data: unknown; status: number }> {
-  // KV routes: /kv/<op>
-  const kvMatch = path.match(/^\/kv\/(\w+)$/);
-  if (kvMatch?.[1]) return handleKvRequest(kv, kvMatch[1], body);
+  // KV route: /kv (op is in the request body via KvRequestSchema)
+  if (path === "/kv") return handleKvRequest(kv, body);
 
   // Host event routes: /host/*
   if (path.startsWith("/host/")) {

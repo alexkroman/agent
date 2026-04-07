@@ -5,6 +5,37 @@ import { type AgentHooks, callResolveTurnConfig, createAgentHooks } from "@alexk
 import type { Kv } from "@alexkroman1/aai/kv";
 import type { AgentDef, ToolContext } from "@alexkroman1/aai/types";
 
+// Types duplicated from rpc-schemas.ts — the harness runs in a secure-exec
+// isolate where the bundler cannot resolve ./rpc-schemas.ts (it imports zod).
+// Keep these in sync with the Zod schemas in rpc-schemas.ts.
+type IsolateConfig = {
+  name: string;
+  systemPrompt: string;
+  greeting?: string;
+  sttPrompt?: string;
+  maxSteps?: number;
+  toolChoice?: "auto" | "required";
+  builtinTools?: string[];
+  toolSchemas: { name: string; description: string; parameters: Record<string, unknown> }[];
+  hasState: boolean;
+  hooks: {
+    onConnect: boolean;
+    onDisconnect: boolean;
+    onError: boolean;
+    onUserTranscript: boolean;
+    maxStepsIsFn: boolean;
+  };
+};
+type ToolCallRequest = {
+  name: string;
+  args: Record<string, unknown>;
+  sessionId: string;
+  messages: { role: "user" | "assistant" | "tool"; content: string }[];
+};
+type ToolCallResponse = { result: string; state: Record<string, unknown> };
+type HookRequest = { hook: string; sessionId: string; text?: string; error?: { message: string } };
+type HookResponse = { state: Record<string, unknown>; result?: unknown };
+
 /** Lazily initialized per-session state manager. */
 function createSessionStateMap(initState?: () => Record<string, unknown>): {
   get(sessionId: string): Record<string, unknown>;
@@ -52,8 +83,8 @@ const agentEnv: Record<string, string> = Object.freeze(
 
 const SIDECAR_URL = process.env.SIDECAR_URL ?? "";
 
-async function kvRpc<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(`${SIDECAR_URL}/kv${path}`, {
+async function kvRpc<T>(body: unknown): Promise<T> {
+  const res = await fetch(`${SIDECAR_URL}/kv`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -61,26 +92,26 @@ async function kvRpc<T>(path: string, body: unknown): Promise<T> {
     },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`kv${path} failed: ${res.status}`);
+  if (!res.ok) throw new Error(`kv failed: ${res.status}`);
   const text = await res.text();
   return text ? (JSON.parse(text) as T) : (null as T);
 }
 
 const kv: Kv = {
   get<T = unknown>(key: string) {
-    return kvRpc<T | null>("/get", { key });
+    return kvRpc<T | null>({ op: "get", key });
   },
   set(key: string, value: unknown, options?: { expireIn?: number }) {
-    return kvRpc<void>("/set", { key, value, options });
+    return kvRpc<void>({ op: "set", key, value, ...options });
   },
   delete(key: string) {
-    return kvRpc<void>("/del", { key });
+    return kvRpc<void>({ op: "del", key });
   },
   list<T = unknown>(prefix: string, options?: { limit?: number; reverse?: boolean }) {
-    return kvRpc<{ key: string; value: T }[]>("/list", { prefix, ...options });
+    return kvRpc<{ key: string; value: T }[]>({ op: "list", prefix, ...options });
   },
   keys(pattern?: string) {
-    return kvRpc<string[]>("/keys", { pattern });
+    return kvRpc<string[]>({ op: "keys", pattern });
   },
 };
 
@@ -88,25 +119,6 @@ const kv: Kv = {
 
 let sessionState: ReturnType<typeof createSessionStateMap>;
 let hooks: AgentHooks;
-
-type IsolateConfig = {
-  name: string;
-  systemPrompt: string;
-  greeting?: string;
-  sttPrompt?: string;
-  maxSteps?: number;
-  toolChoice?: "auto" | "required";
-  builtinTools?: string[];
-  toolSchemas: { name: string; description: string; parameters: Record<string, unknown> }[];
-  hasState: boolean;
-  hooks: {
-    onConnect: boolean;
-    onDisconnect: boolean;
-    onError: boolean;
-    onUserTranscript: boolean;
-    maxStepsIsFn: boolean;
-  };
-};
 
 function extractToolSchemas(agent: AgentDef): IsolateConfig["toolSchemas"] {
   return Object.entries(agent.tools).map(([name, def]) => ({
@@ -145,14 +157,6 @@ function extractConfig(agent: AgentDef): IsolateConfig {
 
 /** Must match HARNESS_TOOL_TIMEOUT_MS in constants.ts (30s). */
 const TOOL_TIMEOUT_MS = 30_000;
-
-type ToolCallRequest = {
-  name: string;
-  args: Record<string, unknown>;
-  sessionId: string;
-  messages: { role: "user" | "assistant" | "tool"; content: string }[];
-};
-type ToolCallResponse = { result: string; state: Record<string, unknown> };
 
 async function executeTool(agent: AgentDef, req: ToolCallRequest): Promise<ToolCallResponse> {
   const tool = agent.tools[req.name];
@@ -193,9 +197,6 @@ async function executeTool(agent: AgentDef, req: ToolCallRequest): Promise<ToolC
 }
 
 // ── Hook invocation ─────────────────────────────────────────────────────
-
-type HookRequest = { hook: string; sessionId: string; text?: string; error?: { message: string } };
-type HookResponse = { state: Record<string, unknown>; result?: unknown };
 
 async function invokeHook(req: HookRequest): Promise<HookResponse> {
   let result: unknown;
@@ -257,14 +258,8 @@ function isAuthorized(req: IncomingMessage): boolean {
 
 type RpcRequest =
   | { type: "config" }
-  | {
-      type: "tool";
-      name: string;
-      args: Record<string, unknown>;
-      sessionId: string;
-      messages: { role: "user" | "assistant" | "tool"; content: string }[];
-    }
-  | { type: "hook"; hook: string; sessionId: string; text?: string; error?: { message: string } };
+  | ({ type: "tool" } & ToolCallRequest)
+  | ({ type: "hook" } & HookRequest);
 
 async function dispatch(agent: AgentDef, msg: RpcRequest): Promise<unknown> {
   switch (msg.type) {

@@ -36,6 +36,13 @@ import type { Storage } from "unstorage";
 import { z } from "zod";
 import type { BundleStore } from "./bundle-store.ts";
 import { PORT_ANNOUNCE_TIMEOUT_MS, SANDBOX_MEMORY_LIMIT_MB } from "./constants.ts";
+import {
+  HookResponseSchema,
+  type IsolateConfig,
+  IsolateConfigSchema,
+  ToolCallResponseSchema,
+  TurnConfigResultSchema,
+} from "./rpc-schemas.ts";
 import { getHarnessFiles } from "./sandbox-harness.ts";
 import { createSidecar, type Sidecar } from "./sandbox-sidecar.ts";
 import {
@@ -76,49 +83,6 @@ export type Sandbox = AgentRuntime & {
   /** @deprecated Use {@link AgentRuntime.shutdown} instead. */
   terminate(): Promise<void>;
 };
-
-// ── Isolate config schema ───────────────────────────────────────────────
-
-const HooksSchema = z.object({
-  onConnect: z.boolean(),
-  onDisconnect: z.boolean(),
-  onError: z.boolean(),
-  onUserTranscript: z.boolean(),
-  maxStepsIsFn: z.boolean(),
-});
-
-const ToolSchemaSchema = z.object({
-  name: z.string(),
-  description: z.string(),
-  parameters: z.record(z.string(), z.unknown()),
-});
-
-const IsolateConfigSchema = z.object({
-  name: z.string(),
-  systemPrompt: z.string(),
-  greeting: z.string().optional(),
-  sttPrompt: z.string().optional(),
-  maxSteps: z.number().optional(),
-  toolChoice: z.enum(["auto", "required"]).optional(),
-  builtinTools: z.array(z.string()).optional(),
-  toolSchemas: z.array(ToolSchemaSchema),
-  hasState: z.boolean(),
-  hooks: HooksSchema,
-});
-
-type IsolateConfig = z.infer<typeof IsolateConfigSchema>;
-
-const ToolCallResponseSchema = z.object({
-  result: z.string(),
-  state: z.record(z.string(), z.unknown()),
-});
-const HookResponseSchema = z.object({
-  state: z.record(z.string(), z.unknown()),
-  result: z.unknown().optional(),
-});
-const TurnConfigResultSchema = z
-  .object({ maxSteps: z.number().int().positive().optional() })
-  .nullable();
 
 // ── Isolate lifecycle ───────────────────────────────────────────────────
 

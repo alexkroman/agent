@@ -321,8 +321,10 @@ describe("wireSessionSocket", () => {
 
     await waitForSessionReady(logger);
 
+    // Unknown but well-formed message types are silently ignored (two-phase
+    // parsing: additive protocol changes should not produce warnings).
     ws.simulateMessage(JSON.stringify({ type: "unknown_type" }));
-    expect(logger.warn).toHaveBeenCalledWith("Invalid client message", expect.any(Object));
+    expect(logger.warn).not.toHaveBeenCalled();
   });
 
   // ─── ClientSink (indirect testing via createSession capture) ────────────

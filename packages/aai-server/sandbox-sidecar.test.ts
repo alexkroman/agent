@@ -1,7 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 import type { Kv } from "@alexkroman1/aai/kv";
+import { KvRequestSchema } from "@alexkroman1/aai/protocol";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { _kvSchemas, createSidecar, type Sidecar } from "./sandbox-sidecar.ts";
+import { createSidecar, type Sidecar } from "./sandbox-sidecar.ts";
 import { createMockKv } from "./test-utils.ts";
 
 const AUTH_TOKEN = "test-sidecar-token";
@@ -46,23 +47,23 @@ describe("createSidecar", () => {
 
   test("rejects requests without auth token", async () => {
     const sidecar = await startSidecar();
-    const res = await fetch(`${sidecar.url}/kv/get`, {
+    const res = await fetch(`${sidecar.url}/kv`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ key: "test" }),
+      body: JSON.stringify({ op: "get", key: "test" }),
     });
     expect(res.status).toBe(401);
   });
 
   test("rejects requests with wrong auth token", async () => {
     const sidecar = await startSidecar();
-    const { status } = await post(sidecar, "/kv/get", { key: "test" }, "wrong-token");
+    const { status } = await post(sidecar, "/kv", { op: "get", key: "test" }, "wrong-token");
     expect(status).toBe(401);
   });
 
   test("rejects non-POST requests", async () => {
     const sidecar = await startSidecar();
-    const res = await fetch(`${sidecar.url}/kv/get`, {
+    const res = await fetch(`${sidecar.url}/kv`, {
       method: "GET",
       headers: { "x-harness-token": AUTH_TOKEN },
     });
@@ -82,7 +83,7 @@ describe("createSidecar", () => {
     kv.get = vi.fn(async () => ({ saved: true })) as Kv["get"];
     const sidecar = await startSidecar(kv);
 
-    const { status, data } = await post(sidecar, "/kv/get", { key: "test-key" });
+    const { status, data } = await post(sidecar, "/kv", { op: "get", key: "test-key" });
     expect(status).toBe(200);
     expect(data).toEqual({ saved: true });
     expect(kv.get).toHaveBeenCalledWith("test-key");
@@ -91,7 +92,7 @@ describe("createSidecar", () => {
   test("KV get returns null for missing key", async () => {
     const kv = createMockKv();
     const sidecar = await startSidecar(kv);
-    const { status, data } = await post(sidecar, "/kv/get", { key: "missing" });
+    const { status, data } = await post(sidecar, "/kv", { op: "get", key: "missing" });
     expect(status).toBe(200);
     expect(data).toBeNull();
   });
@@ -99,7 +100,7 @@ describe("createSidecar", () => {
   test("KV set stores value", async () => {
     const kv = createMockKv();
     const sidecar = await startSidecar(kv);
-    const { status } = await post(sidecar, "/kv/set", { key: "k", value: "v" });
+    const { status } = await post(sidecar, "/kv", { op: "set", key: "k", value: "v" });
     expect(status).toBe(200);
     expect(kv.set).toHaveBeenCalledWith("k", "v", undefined);
   });
@@ -107,10 +108,11 @@ describe("createSidecar", () => {
   test("KV set with expireIn passes options through", async () => {
     const kv = createMockKv();
     const sidecar = await startSidecar(kv);
-    await post(sidecar, "/kv/set", {
+    await post(sidecar, "/kv", {
+      op: "set",
       key: "ttl-key",
       value: "data",
-      options: { expireIn: 60_000 },
+      expireIn: 60_000,
     });
     expect(kv.set).toHaveBeenCalledWith("ttl-key", "data", { expireIn: 60_000 });
   });
@@ -118,7 +120,7 @@ describe("createSidecar", () => {
   test("KV del removes key", async () => {
     const kv = createMockKv();
     const sidecar = await startSidecar(kv);
-    const { status } = await post(sidecar, "/kv/del", { key: "k" });
+    const { status } = await post(sidecar, "/kv", { op: "del", key: "k" });
     expect(status).toBe(200);
     expect(kv.delete).toHaveBeenCalledWith("k");
   });
@@ -127,7 +129,7 @@ describe("createSidecar", () => {
     const kv = createMockKv();
     (kv.list as ReturnType<typeof vi.fn>).mockResolvedValue([{ key: "k1", value: "v1" }]);
     const sidecar = await startSidecar(kv);
-    const { status, data } = await post(sidecar, "/kv/list", { prefix: "" });
+    const { status, data } = await post(sidecar, "/kv", { op: "list", prefix: "" });
     expect(status).toBe(200);
     expect(data).toEqual([{ key: "k1", value: "v1" }]);
   });
@@ -136,20 +138,20 @@ describe("createSidecar", () => {
     const kv = createMockKv();
     (kv.keys as ReturnType<typeof vi.fn>).mockResolvedValue(["k1", "k2"]);
     const sidecar = await startSidecar(kv);
-    const { status, data } = await post(sidecar, "/kv/keys", {});
+    const { status, data } = await post(sidecar, "/kv", { op: "keys" });
     expect(status).toBe(200);
     expect(data).toEqual(["k1", "k2"]);
   });
 
   test("unknown KV op returns 400", async () => {
     const sidecar = await startSidecar();
-    const { status } = await post(sidecar, "/kv/unknown", {});
+    const { status } = await post(sidecar, "/kv", { op: "unknown" });
     expect(status).toBe(400);
   });
 
   test("invalid JSON body returns 400", async () => {
     const sidecar = await startSidecar();
-    const res = await fetch(`${sidecar.url}/kv/get`, {
+    const res = await fetch(`${sidecar.url}/kv`, {
       method: "POST",
       headers: { "content-type": "application/json", "x-harness-token": AUTH_TOKEN },
       body: "not json{",
@@ -190,8 +192,8 @@ describe("createSidecar", () => {
     const sidecarAlpha = await startSidecar(kvAlpha);
     const sidecarBeta = await startSidecar(kvBeta);
 
-    await post(sidecarAlpha, "/kv/set", { key: "shared", value: "alpha-data" });
-    const { data } = await post(sidecarBeta, "/kv/get", { key: "shared" });
+    await post(sidecarAlpha, "/kv", { op: "set", key: "shared", value: "alpha-data" });
+    const { data } = await post(sidecarBeta, "/kv", { op: "get", key: "shared" });
 
     expect(data).toBeNull();
     expect(kvAlpha.set).toHaveBeenCalledWith("shared", "alpha-data", undefined);
@@ -208,10 +210,10 @@ describe("createSidecar", () => {
     sidecars.splice(sidecars.indexOf(sidecar), 1);
 
     await expect(
-      fetch(`${url}/kv/get`, {
+      fetch(`${url}/kv`, {
         method: "POST",
         headers: { "content-type": "application/json", "x-harness-token": AUTH_TOKEN },
-        body: JSON.stringify({ key: "k" }),
+        body: JSON.stringify({ op: "get", key: "k" }),
       }),
     ).rejects.toThrow();
   });
@@ -223,7 +225,7 @@ describe("createSidecar", () => {
     (kv.get as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("storage offline"));
     const sidecar = await startSidecar(kv);
 
-    const { status, data } = await post(sidecar, "/kv/get", { key: "k" });
+    const { status, data } = await post(sidecar, "/kv", { op: "get", key: "k" });
     expect(status).toBe(500);
     expect(data).toEqual({ error: "storage offline" });
   });
@@ -233,7 +235,7 @@ describe("createSidecar", () => {
     (kv.set as ReturnType<typeof vi.fn>).mockRejectedValue(new Error("write failed"));
     const sidecar = await startSidecar(kv);
 
-    const { status, data } = await post(sidecar, "/kv/set", { key: "k", value: "v" });
+    const { status, data } = await post(sidecar, "/kv", { op: "set", key: "k", value: "v" });
     expect(status).toBe(500);
     expect(data).toEqual({ error: "write failed" });
   });
@@ -252,142 +254,108 @@ describe("createSidecar", () => {
   });
 });
 
-// ── KV Bridge Schemas (isolate -> host) ────────────────────────────────
+// ── KV Bridge Schema (KvRequestSchema from protocol.ts) ─────────────────
 
-describe("KV bridge schemas", () => {
-  const { KvGetSchema, KvSetSchema, KvDelSchema, KvListSchema, KvKeysSchema } = _kvSchemas;
-
-  // ── KvGetSchema ──
-
-  test("KvGetSchema accepts valid key", () => {
-    expect(KvGetSchema.safeParse({ key: "mykey" }).success).toBe(true);
+describe("KV bridge schema validation", () => {
+  test("get accepts valid key", () => {
+    expect(KvRequestSchema.safeParse({ op: "get", key: "mykey" }).success).toBe(true);
   });
 
-  test("KvGetSchema rejects missing key", () => {
-    expect(KvGetSchema.safeParse({}).success).toBe(false);
+  test("get rejects missing key", () => {
+    expect(KvRequestSchema.safeParse({ op: "get" }).success).toBe(false);
   });
 
-  test("KvGetSchema rejects non-string key", () => {
-    expect(KvGetSchema.safeParse({ key: 42 }).success).toBe(false);
-    expect(KvGetSchema.safeParse({ key: null }).success).toBe(false);
+  test("get rejects empty key", () => {
+    expect(KvRequestSchema.safeParse({ op: "get", key: "" }).success).toBe(false);
   });
 
-  test("KvGetSchema rejects non-object", () => {
-    expect(KvGetSchema.safeParse("key").success).toBe(false);
+  test("get rejects non-string key", () => {
+    expect(KvRequestSchema.safeParse({ op: "get", key: 42 }).success).toBe(false);
   });
 
-  // ── KvSetSchema ──
-
-  test("KvSetSchema accepts key + value", () => {
-    expect(KvSetSchema.safeParse({ key: "k", value: "v" }).success).toBe(true);
+  test("set accepts key + value", () => {
+    expect(KvRequestSchema.safeParse({ op: "set", key: "k", value: "v" }).success).toBe(true);
   });
 
-  test("KvSetSchema accepts complex values", () => {
-    expect(KvSetSchema.safeParse({ key: "k", value: { nested: true } }).success).toBe(true);
-    expect(KvSetSchema.safeParse({ key: "k", value: [1, 2, 3] }).success).toBe(true);
-    expect(KvSetSchema.safeParse({ key: "k", value: null }).success).toBe(true);
+  test("set accepts complex values", () => {
+    expect(KvRequestSchema.safeParse({ op: "set", key: "k", value: "str" }).success).toBe(true);
   });
 
-  test("KvSetSchema accepts options with expireIn", () => {
+  test("set accepts expireIn", () => {
     expect(
-      KvSetSchema.safeParse({ key: "k", value: "v", options: { expireIn: 5000 } }).success,
+      KvRequestSchema.safeParse({ op: "set", key: "k", value: "v", expireIn: 5000 }).success,
     ).toBe(true);
   });
 
-  test("KvSetSchema rejects non-positive expireIn", () => {
-    expect(KvSetSchema.safeParse({ key: "k", value: "v", options: { expireIn: 0 } }).success).toBe(
-      false,
-    );
-    expect(KvSetSchema.safeParse({ key: "k", value: "v", options: { expireIn: -1 } }).success).toBe(
-      false,
-    );
-  });
-
-  test("KvSetSchema rejects non-integer expireIn", () => {
+  test("set rejects non-positive expireIn", () => {
     expect(
-      KvSetSchema.safeParse({ key: "k", value: "v", options: { expireIn: 1.5 } }).success,
+      KvRequestSchema.safeParse({ op: "set", key: "k", value: "v", expireIn: 0 }).success,
+    ).toBe(false);
+    expect(
+      KvRequestSchema.safeParse({ op: "set", key: "k", value: "v", expireIn: -1 }).success,
     ).toBe(false);
   });
 
-  test("KvSetSchema rejects missing key", () => {
-    expect(KvSetSchema.safeParse({ value: "v" }).success).toBe(false);
+  test("set rejects non-integer expireIn", () => {
+    expect(
+      KvRequestSchema.safeParse({ op: "set", key: "k", value: "v", expireIn: 1.5 }).success,
+    ).toBe(false);
   });
 
-  // ── KvDelSchema ──
-
-  test("KvDelSchema accepts valid key", () => {
-    expect(KvDelSchema.safeParse({ key: "k" }).success).toBe(true);
+  test("set rejects missing key", () => {
+    expect(KvRequestSchema.safeParse({ op: "set", value: "v" }).success).toBe(false);
   });
 
-  test("KvDelSchema rejects missing key", () => {
-    expect(KvDelSchema.safeParse({}).success).toBe(false);
+  test("del accepts valid key", () => {
+    expect(KvRequestSchema.safeParse({ op: "del", key: "k" }).success).toBe(true);
   });
 
-  // ── KvListSchema ──
-
-  test("KvListSchema accepts prefix only", () => {
-    expect(KvListSchema.safeParse({ prefix: "ns:" }).success).toBe(true);
-    expect(KvListSchema.safeParse({ prefix: "" }).success).toBe(true);
+  test("del rejects missing key", () => {
+    expect(KvRequestSchema.safeParse({ op: "del" }).success).toBe(false);
   });
 
-  test("KvListSchema accepts all options", () => {
-    expect(KvListSchema.safeParse({ prefix: "", limit: 100, reverse: true }).success).toBe(true);
+  test("list accepts prefix only", () => {
+    expect(KvRequestSchema.safeParse({ op: "list", prefix: "ns:" }).success).toBe(true);
+    expect(KvRequestSchema.safeParse({ op: "list", prefix: "" }).success).toBe(true);
   });
 
-  test("KvListSchema rejects missing prefix", () => {
-    expect(KvListSchema.safeParse({}).success).toBe(false);
+  test("list accepts all options", () => {
+    expect(
+      KvRequestSchema.safeParse({ op: "list", prefix: "", limit: 100, reverse: true }).success,
+    ).toBe(true);
   });
 
-  test("KvListSchema rejects non-positive limit", () => {
-    expect(KvListSchema.safeParse({ prefix: "", limit: 0 }).success).toBe(false);
-    expect(KvListSchema.safeParse({ prefix: "", limit: -5 }).success).toBe(false);
+  test("list rejects missing prefix", () => {
+    expect(KvRequestSchema.safeParse({ op: "list" }).success).toBe(false);
   });
 
-  test("KvListSchema rejects non-boolean reverse", () => {
-    expect(KvListSchema.safeParse({ prefix: "", reverse: "yes" }).success).toBe(false);
+  test("list rejects non-positive limit", () => {
+    expect(KvRequestSchema.safeParse({ op: "list", prefix: "", limit: 0 }).success).toBe(false);
   });
 
-  // ── KvKeysSchema ──
-
-  test("KvKeysSchema accepts empty object", () => {
-    expect(KvKeysSchema.safeParse({}).success).toBe(true);
+  test("list rejects non-boolean reverse", () => {
+    expect(KvRequestSchema.safeParse({ op: "list", prefix: "", reverse: "yes" }).success).toBe(
+      false,
+    );
   });
 
-  test("KvKeysSchema accepts pattern", () => {
-    expect(KvKeysSchema.safeParse({ pattern: "user:*" }).success).toBe(true);
+  test("keys accepts empty (no pattern)", () => {
+    expect(KvRequestSchema.safeParse({ op: "keys" }).success).toBe(true);
   });
 
-  test("KvKeysSchema rejects non-string pattern", () => {
-    expect(KvKeysSchema.safeParse({ pattern: 42 }).success).toBe(false);
-  });
-});
-
-// ── KV Bridge Invalid Payload Rejection ────────────────────────────────
-
-describe("KV bridge rejects invalid payloads", () => {
-  const { KvGetSchema, KvSetSchema, KvDelSchema, KvListSchema } = _kvSchemas;
-
-  test("KV get rejects malformed body (missing key)", () => {
-    expect(KvGetSchema.safeParse({}).success).toBe(false);
+  test("keys accepts pattern", () => {
+    expect(KvRequestSchema.safeParse({ op: "keys", pattern: "user:*" }).success).toBe(true);
   });
 
-  test("KV set rejects missing key field", () => {
-    expect(KvSetSchema.safeParse({ value: "data" }).success).toBe(false);
+  test("keys rejects non-string pattern", () => {
+    expect(KvRequestSchema.safeParse({ op: "keys", pattern: 42 }).success).toBe(false);
   });
 
-  test("KV del rejects missing key field", () => {
-    expect(KvDelSchema.safeParse({}).success).toBe(false);
+  test("unknown op rejected", () => {
+    expect(KvRequestSchema.safeParse({ op: "update", key: "k" }).success).toBe(false);
   });
 
-  test("KV list rejects missing prefix", () => {
-    expect(KvListSchema.safeParse({}).success).toBe(false);
-  });
-
-  test("KV set rejects non-string key", () => {
-    expect(KvSetSchema.safeParse({ key: 42, value: "v" }).success).toBe(false);
-  });
-
-  test("KV list rejects non-integer limit", () => {
-    expect(KvListSchema.safeParse({ prefix: "", limit: 1.5 }).success).toBe(false);
+  test("non-object rejected", () => {
+    expect(KvRequestSchema.safeParse("key").success).toBe(false);
   });
 });

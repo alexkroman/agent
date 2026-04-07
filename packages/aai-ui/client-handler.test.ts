@@ -83,14 +83,16 @@ describe("ClientHandler.handleMessage", () => {
     warn.mockRestore();
   });
 
-  test("valid JSON that fails schema validation returns null", () => {
+  test("unknown but well-formed message type is silently ignored", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const { target, state } = createTarget();
     state.value = "listening";
+    // Two-phase parsing: unknown types are ignored (additive protocol change),
+    // only genuinely malformed messages produce a warning.
     const result = target.handleMessage(JSON.stringify({ type: "unknown_event_type", data: 123 }));
     expect(result).toBe(null);
     expect(state.value).toBe("listening");
-    expect(warn).toHaveBeenCalledWith("Ignoring invalid server message:", expect.any(String));
+    expect(warn).not.toHaveBeenCalled();
     warn.mockRestore();
   });
 
