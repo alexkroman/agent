@@ -157,7 +157,8 @@ describe("HTTP endpoint schema validation", () => {
       },
       body: JSON.stringify({
         env: { ONLY_USER_SECRET: "val" },
-        worker: "console.log('w');",
+        worker:
+          'module.exports = { name: "test", systemPrompt: "Test", greeting: "", maxSteps: 1, tools: {} };',
         clientFiles: {},
       }),
     });
