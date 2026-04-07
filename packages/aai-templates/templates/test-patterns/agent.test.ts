@@ -226,6 +226,58 @@ describe("KV store", () => {
     ]);
     expect(turn.toolResults[0]).toBe("not found");
   });
+
+  test("save_note with TTL accepts expireIn option", async () => {
+    const t = createTestHarness(agent);
+    const turn = await t.turn("Save temp note", [
+      { tool: "save_note", args: { key: "temp", value: "expires soon", ttl_ms: 60_000 } },
+    ]);
+    expect(turn).toHaveCalledTool("save_note", { key: "temp", ttl_ms: 60_000 });
+    const result = turn.toolResult<{ saved: boolean; key: string }>("save_note");
+    expect(result.saved).toBe(true);
+  });
+
+  test("delete_note removes a key from KV", async () => {
+    const t = createTestHarness(agent);
+
+    await t.turn("Save", [{ tool: "save_note", args: { key: "deleteme", value: "gone soon" } }]);
+    await t.turn("Delete", [{ tool: "delete_note", args: { key: "deleteme" } }]);
+
+    const turn = await t.turn("Load deleted", [{ tool: "load_note", args: { key: "deleteme" } }]);
+    expect(turn.toolResults[0]).toBe("not found");
+  });
+
+  test("list_notes returns saved entries by prefix", async () => {
+    const t = createTestHarness(agent);
+
+    await t.turn("Save notes", [
+      { tool: "save_note", args: { key: "a", value: "alpha" } },
+      { tool: "save_note", args: { key: "b", value: "beta" } },
+    ]);
+
+    const turn = await t.turn("List notes", [{ tool: "list_notes", args: {} }]);
+    const result = turn.toolResult<{ notes: { key: string; value: string }[]; total: number }>(
+      "list_notes",
+    );
+    expect(result.total).toBe(2);
+    expect(result.notes.map((n) => n.value)).toContain("alpha");
+    expect(result.notes.map((n) => n.value)).toContain("beta");
+  });
+
+  test("search_notes finds keys by pattern", async () => {
+    const t = createTestHarness(agent);
+
+    await t.turn("Save notes", [
+      { tool: "save_note", args: { key: "project:x", value: "data x" } },
+      { tool: "save_note", args: { key: "project:y", value: "data y" } },
+    ]);
+
+    const turn = await t.turn("Search", [
+      { tool: "search_notes", args: { pattern: "note:project:*" } },
+    ]);
+    const result = turn.toolResult<{ keys: string[]; total: number }>("search_notes");
+    expect(result.total).toBe(2);
+  });
 });
 
 // ─── 9. Lifecycle hooks ─────────────────────────────────────────────────────
@@ -249,6 +301,21 @@ describe("lifecycle hooks", () => {
     await t.disconnect();
   });
 
+  test("onDisconnect saves tasks to KV", async () => {
+    const t = createTestHarness(agent);
+
+    // Add tasks then disconnect
+    await t.turn("Add tasks", [{ tool: "add_task", args: { text: "Saved task" } }]);
+    await t.disconnect();
+
+    // Verify onDisconnect persisted tasks to KV via load
+    const turn = await t.turn("Search KV", [
+      { tool: "search_notes", args: { pattern: "session:*" } },
+    ]);
+    const result = turn.toolResult<{ keys: string[]; total: number }>("search_notes");
+    expect(result.keys).toContain("session:tasks");
+  });
+
   test("onUserTranscript hook fires and is tracked", async () => {
     const t = createTestHarness(agent);
     await t.turn("First message");
@@ -269,5 +336,27 @@ describe("built-in tools", () => {
     ]);
     expect(turn).toHaveCalledTool("run_code");
     expect(turn.toolResults[0]).toBe("12");
+  });
+});
+
+// ─── 11. Session metadata (ctx.sessionId) ──────────────────────────────────
+
+describe("session metadata", () => {
+  test("session_info returns sessionId and state summary", async () => {
+    const t = createTestHarness(agent);
+    await t.turn("Add task", [{ tool: "add_task", args: { text: "Item" } }]);
+
+    const turn = await t.turn("Session info", [{ tool: "session_info", args: {} }]);
+    const info = turn.toolResult<{
+      sessionId: string;
+      owner: string;
+      taskCount: number;
+      lastError: string | null;
+    }>("session_info");
+
+    expect(info.sessionId).toBeTruthy();
+    expect(info.owner).toBe("connected-user");
+    expect(info.taskCount).toBe(1);
+    expect(info.lastError).toBeNull();
   });
 });
