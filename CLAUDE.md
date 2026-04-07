@@ -285,7 +285,8 @@ bumped automatically.
 - **pre-commit**: runs `biome check --write` on staged files and
   `syncpack lint` when package.json changes.
 - **pre-push**: blocks pushes to main/master, checks for merge conflicts
-  with main, and runs `pnpm check`.
+  with main, **verifies changeset exists for changed packages**, and runs
+  `pnpm check`.
 
 ### Updating CLAUDE.md
 
