@@ -19,9 +19,8 @@ export default defineConfig({
         // Covered by integration tests (pnpm test:integration).
         "packages/aai-server/sandbox*.ts",
         "packages/aai-server/harness-runtime.ts",
-        // CLI entry point and interactive prompts can't be unit tested.
+        // CLI entry point can't be unit tested.
         "packages/aai-cli/cli.ts",
-        "packages/aai-cli/_prompts.ts",
         // OTel session wiring — tested via integration tests, not unit tests.
         "packages/aai/_session-otel.ts",
       ],
@@ -87,6 +86,7 @@ export default defineConfig({
           include: ["**/*.test.ts"],
           exclude: [
             "docker-build.test.ts",
+            "e2e.test.ts",
             "node_modules",
             "dist",
           ],

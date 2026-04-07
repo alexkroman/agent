@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import { build } from "vite";
-import type { AgentEntry } from "./_discover.ts";
+import type { AgentEntry } from "./_agent.ts";
 
 export class BundleError extends Error {
   constructor(message: string, options?: ErrorOptions) {
@@ -137,7 +137,7 @@ export async function bundleAgent(
 }
 
 export async function buildAgentBundle(cwd: string): Promise<BundleOutput> {
-  const { loadAgent } = await import("./_discover.ts");
+  const { loadAgent } = await import("./_agent.ts");
   const { log } = await import("./_ui.ts");
 
   const agent = await loadAgent(cwd);
