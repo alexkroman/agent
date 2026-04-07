@@ -7,8 +7,7 @@
       "!**/dist",
       "!**/.aai",
       "!**/__snapshots__",
-      "!**/templates",
-      "!packages/aai-templates",
+      "!**/scaffold",
       "!tmp"
     ]
   },
@@ -175,6 +174,33 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    {
+      "includes": [
+        "packages/aai-templates/templates/**/*.ts",
+        "packages/aai-templates/templates/**/*.tsx",
+        "packages/aai-templates/scripts/**/*.ts"
+      ],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noUndeclaredDependencies": "off",
+            "useImportExtensions": "off"
+          },
+          "style": {
+            "noNestedTernary": "off",
+            "noNonNullAssertion": "off",
+            "useExplicitLengthCheck": "off"
+          },
+          "complexity": {
+            "noExcessiveCognitiveComplexity": "off"
+          },
+          "suspicious": {
+            "noEvolvingTypes": "off",
+            "noEmptyBlockStatements": "off"
           }
         }
       }

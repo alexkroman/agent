@@ -1,5 +1,5 @@
-import { describe, expect, test } from "vitest";
 import { createTestHarness } from "@alexkroman1/aai/testing";
+import { describe, expect, test } from "vitest";
 import "@alexkroman1/aai/testing/matchers";
 import agent from "./agent.ts";
 
@@ -34,15 +34,11 @@ describe("Smart Research Agent", () => {
   test("advance_phase moves through research phases", async () => {
     const t = createTestHarness(agent);
 
-    const turn1 = await t.turn("Move to analysis", [
-      { tool: "advance_phase", args: {} },
-    ]);
+    const turn1 = await t.turn("Move to analysis", [{ tool: "advance_phase", args: {} }]);
     const result1 = turn1.toolResult("advance_phase");
     expect(result1.phase).toBe("analyze");
 
-    const turn2 = await t.turn("Ready to respond", [
-      { tool: "advance_phase", args: {} },
-    ]);
+    const turn2 = await t.turn("Ready to respond", [{ tool: "advance_phase", args: {} }]);
     const result2 = turn2.toolResult("advance_phase");
     expect(result2.phase).toBe("respond");
   });

@@ -1,6 +1,6 @@
-import { defineToolFactory, defineAgent } from "@alexkroman1/aai";
+import { defineAgent, defineToolFactory } from "@alexkroman1/aai";
 import { z } from "zod";
-import { type Pizza, calculateTotal, MENU } from "./shared.ts";
+import { calculateTotal, type Pizza } from "./shared.ts";
 
 interface OrderState {
   pizzas: Pizza[];
@@ -45,8 +45,7 @@ Behavior:
 
   tools: {
     add_pizza: orderTool({
-      description:
-        "Add a pizza to the order. Use when the customer has decided on a pizza.",
+      description: "Add a pizza to the order. Use when the customer has decided on a pizza.",
       parameters: z.object({
         size: z.enum(["small", "medium", "large"]),
         crust: z.enum(["thin", "regular", "thick", "stuffed"]),
@@ -94,8 +93,7 @@ Behavior:
     }),
 
     update_pizza: orderTool({
-      description:
-        "Update an existing pizza in the order. Only provided fields are changed.",
+      description: "Update an existing pizza in the order. Only provided fields are changed.",
       parameters: z.object({
         pizza_id: z.number(),
         size: z.enum(["small", "medium", "large"]).optional(),
@@ -120,12 +118,10 @@ Behavior:
     }),
 
     view_order: {
-      description:
-        "View the current order summary with all pizzas and total price.",
+      description: "View the current order summary with all pizzas and total price.",
       execute: (_args, ctx) => {
         const state = ctx.state;
-        if (state.pizzas.length === 0)
-          return { message: "The order is empty." };
+        if (state.pizzas.length === 0) return { message: "The order is empty." };
         const total = calculateTotal(state.pizzas);
         return {
           pizzas: state.pizzas.map((p) => ({
@@ -156,8 +152,7 @@ Behavior:
         "Place the final order. Use when the customer confirms they are done and ready to order.",
       execute: (_args, ctx) => {
         const state = ctx.state;
-        if (state.pizzas.length === 0)
-          return { error: "Cannot place an empty order." };
+        if (state.pizzas.length === 0) return { error: "Cannot place an empty order." };
         state.orderPlaced = true;
         const total = calculateTotal(state.pizzas);
         const orderNumber = Math.floor(1000 + Math.random() * 9000);

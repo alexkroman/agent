@@ -1,4 +1,4 @@
-import { defineToolFactory, defineAgent } from "@alexkroman1/aai";
+import { defineAgent, defineToolFactory } from "@alexkroman1/aai";
 import { z } from "zod";
 
 /**

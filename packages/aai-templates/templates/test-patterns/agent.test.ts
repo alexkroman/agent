@@ -3,8 +3,9 @@
  *
  * Use this as a reference when writing tests for your own agent.
  */
-import { describe, expect, test } from "vitest";
+
 import { createTestHarness } from "@alexkroman1/aai/testing";
+import { describe, expect, test } from "vitest";
 import "@alexkroman1/aai/testing/matchers";
 import agent from "./agent.ts";
 
@@ -72,9 +73,7 @@ describe("turn simulation", () => {
 describe("typed tool results", () => {
   test("toolResult<T>() parses JSON and returns typed data", async () => {
     const t = createTestHarness(agent);
-    const turn = await t.turn("Add a task", [
-      { tool: "add_task", args: { text: "Deploy app" } },
-    ]);
+    const turn = await t.turn("Add a task", [{ tool: "add_task", args: { text: "Deploy app" } }]);
 
     // No JSON.parse needed — get typed result directly
     const result = turn.toolResult<{ added: { id: number; text: string }; total: number }>(
@@ -87,9 +86,7 @@ describe("typed tool results", () => {
 
   test("toolResult() throws for tools that were not called", async () => {
     const t = createTestHarness(agent);
-    const turn = await t.turn("Add task", [
-      { tool: "add_task", args: { text: "Something" } },
-    ]);
+    const turn = await t.turn("Add task", [{ tool: "add_task", args: { text: "Something" } }]);
     expect(() => turn.toolResult("list_tasks")).toThrow("was not called");
   });
 });
@@ -126,14 +123,10 @@ describe("multi-turn state persistence", () => {
     ]);
 
     // Turn 2: complete one
-    await t.turn("Complete task 1", [
-      { tool: "complete_task", args: { id: 1 } },
-    ]);
+    await t.turn("Complete task 1", [{ tool: "complete_task", args: { id: 1 } }]);
 
     // Turn 3: verify state
-    const turn = await t.turn("Show tasks", [
-      { tool: "list_tasks", args: {} },
-    ]);
+    const turn = await t.turn("Show tasks", [{ tool: "list_tasks", args: {} }]);
     const list = turn.toolResult<{
       tasks: { id: number; text: string; done: boolean }[];
       total: number;
@@ -170,9 +163,7 @@ describe("conversation history", () => {
     t.addAssistantMessage("Hi there");
     t.addUserMessage("How are you?");
 
-    const turn = await t.turn("Count messages", [
-      { tool: "count_messages", args: {} },
-    ]);
+    const turn = await t.turn("Count messages", [{ tool: "count_messages", args: {} }]);
     const result = turn.toolResult<{ total: number; byRole: Record<string, number> }>(
       "count_messages",
     );
@@ -199,9 +190,7 @@ describe("conversation history", () => {
 describe("environment variables", () => {
   test("env vars are available in tool context via ctx.env", async () => {
     const t = createTestHarness(agent, { env: { API_KEY: "sk-test-1234" } });
-    const turn = await t.turn("Check env", [
-      { tool: "check_env", args: {} },
-    ]);
+    const turn = await t.turn("Check env", [{ tool: "check_env", args: {} }]);
     const result = turn.toolResult<{ hasApiKey: boolean; keyPreview: string }>("check_env");
     expect(result.hasApiKey).toBe(true);
     expect(result.keyPreview).toBe("sk-t");
@@ -209,9 +198,7 @@ describe("environment variables", () => {
 
   test("missing env vars are handled gracefully", async () => {
     const t = createTestHarness(agent); // no env
-    const turn = await t.turn("Check env", [
-      { tool: "check_env", args: {} },
-    ]);
+    const turn = await t.turn("Check env", [{ tool: "check_env", args: {} }]);
     const result = turn.toolResult<{ hasApiKey: boolean; keyPreview: string }>("check_env");
     expect(result.hasApiKey).toBe(false);
     expect(result.keyPreview).toBe("none");
@@ -228,9 +215,7 @@ describe("KV store", () => {
       { tool: "save_note", args: { key: "meeting", value: "Tuesday 3pm" } },
     ]);
 
-    const turn = await t.turn("Load the note", [
-      { tool: "load_note", args: { key: "meeting" } },
-    ]);
+    const turn = await t.turn("Load the note", [{ tool: "load_note", args: { key: "meeting" } }]);
     expect(turn.toolResults[0]).toBe("Tuesday 3pm");
   });
 
@@ -250,9 +235,7 @@ describe("lifecycle hooks", () => {
     const t = createTestHarness(agent);
 
     // onConnect sets owner = "connected-user"
-    const turn = await t.turn("Who owns this?", [
-      { tool: "get_owner", args: {} },
-    ]);
+    const turn = await t.turn("Who owns this?", [{ tool: "get_owner", args: {} }]);
     const result = turn.toolResult<{ owner: string }>("get_owner");
     expect(result.owner).toBe("connected-user");
   });
@@ -274,7 +257,6 @@ describe("lifecycle hooks", () => {
     // t.turns tracks onUserTranscript invocations
     expect(t.turns).toEqual(["First message", "Second message"]);
   });
-
 });
 
 // ─── 10. Built-in tools ─────────────────────────────────────────────────────

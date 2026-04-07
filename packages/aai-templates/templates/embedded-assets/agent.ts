@@ -7,8 +7,7 @@ const faqs: FaqEntry[] = knowledge.faqs;
 
 export default defineAgent({
   name: "FAQ Bot",
-  systemPrompt:
-    `You are a friendly FAQ assistant. Answer questions using ONLY the information \
+  systemPrompt: `You are a friendly FAQ assistant. Answer questions using ONLY the information \
 from your embedded knowledge base. If the user asks something not covered by your \
 knowledge base, say you don't have that information and suggest they check the official \
 documentation.
@@ -31,17 +30,17 @@ Rules:
       }),
       execute: ({ query }) => {
         const q = query.toLowerCase();
-        const match = faqs.find((f) =>
-          f.question.toLowerCase().includes(q) ||
-          q.includes(f.question.toLowerCase()) ||
-          f.answer.toLowerCase().includes(q)
+        const match = faqs.find(
+          (f) =>
+            f.question.toLowerCase().includes(q) ||
+            q.includes(f.question.toLowerCase()) ||
+            f.answer.toLowerCase().includes(q),
         );
         return match ?? { result: "No matching FAQ found." };
       },
     }),
     list_topics: {
-      description:
-        "List all available topics in the embedded FAQ knowledge base.",
+      description: "List all available topics in the embedded FAQ knowledge base.",
       execute: () => faqs.map((f) => f.question),
     },
   },

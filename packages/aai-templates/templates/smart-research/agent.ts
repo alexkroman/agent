@@ -1,5 +1,5 @@
-import { defineAgent, defineTool } from "@alexkroman1/aai";
 import type { HookContext } from "@alexkroman1/aai";
+import { defineAgent, defineTool } from "@alexkroman1/aai";
 import { z } from "zod";
 
 /**
@@ -24,8 +24,7 @@ analyzes it, then responds. You work in three phases:
 3. Respond: Deliver your final answer.
 
 Always search first, then analyze, then answer. Be thorough but concise.`,
-  greeting:
-    "I'm your research assistant. Ask me anything and I'll dig into it.",
+  greeting: "I'm your research assistant. Ask me anything and I'll dig into it.",
   builtinTools: ["web_search"],
 
   // Feature 1: toolChoice — force the LLM to always use a tool
@@ -58,8 +57,7 @@ Always search first, then analyze, then answer. Be thorough but concise.`,
     }),
 
     mark_complex: {
-      description:
-        "Mark this research query as complex, allowing more search steps",
+      description: "Mark this research query as complex, allowing more search steps",
       execute: (_args, ctx) => {
         const state = ctx.state;
         state.complexity = "deep";
@@ -68,8 +66,7 @@ Always search first, then analyze, then answer. Be thorough but concise.`,
     },
 
     advance_phase: {
-      description:
-        "Move to the next research phase (gather -> analyze -> respond)",
+      description: "Move to the next research phase (gather -> analyze -> respond)",
       execute: (_args, ctx) => {
         const state = ctx.state;
         if (state.phase === "gather") {
@@ -83,8 +80,7 @@ Always search first, then analyze, then answer. Be thorough but concise.`,
 
     // Feature 2: ctx.messages — access conversation history in tools
     analyze: defineTool<z.ZodObject<{ focus: z.ZodString }>, ResearchState>({
-      description:
-        "Analyze all gathered sources and conversation context to form a conclusion",
+      description: "Analyze all gathered sources and conversation context to form a conclusion",
       parameters: z.object({
         focus: z.string().describe("What aspect to focus the analysis on"),
       }),

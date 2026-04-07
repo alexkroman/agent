@@ -1,5 +1,5 @@
-import { describe, expect, test } from "vitest";
 import { createTestHarness } from "@alexkroman1/aai/testing";
+import { describe, expect, test } from "vitest";
 import "@alexkroman1/aai/testing/matchers";
 import agent from "./agent.ts";
 
@@ -18,6 +18,6 @@ describe("Simple Assistant", () => {
     const t = createTestHarness(agent);
     await t.turn("Hello");
     expect(t.messages).toHaveLength(1);
-    expect(t.messages[0]!.content).toBe("Hello");
+    expect(t.messages[0]?.content).toBe("Hello");
   });
 });

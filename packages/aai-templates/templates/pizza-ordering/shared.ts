@@ -35,8 +35,7 @@ export function calculateTotal(pizzas: Pizza[]): number {
     const base = MENU.sizes[pizza.size];
     const crust = MENU.crusts[pizza.crust];
     const toppingsPrice = pizza.toppings.reduce(
-      (sum, t) =>
-        sum + (MENU.toppings[t as keyof typeof MENU.toppings] ?? 1.0),
+      (sum, t) => sum + (MENU.toppings[t as keyof typeof MENU.toppings] ?? 1.0),
       0,
     );
     return total + (base + crust + toppingsPrice) * pizza.quantity;
