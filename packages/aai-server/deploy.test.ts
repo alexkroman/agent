@@ -163,6 +163,33 @@ describe("POST /deploy", () => {
     expect(manifest?.slug).toBe("test-agent");
   });
 
+  test("returns 403 when different user tries to deploy to an owned slug", async () => {
+    const { fetch, store } = await createTestOrchestrator();
+
+    // First deploy by key1
+    const first = await fetch("/deploy", {
+      method: "POST",
+      headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
+      body: deployBody({ slug: "stolen-agent" }),
+    });
+    expect(first.status).toBe(200);
+
+    const originalManifest = await store.getManifest("stolen-agent");
+    const originalHashes = originalManifest?.credential_hashes ?? [];
+
+    // Second deploy attempt by a different key (key2)
+    const second = await fetch("/deploy", {
+      method: "POST",
+      headers: { Authorization: "Bearer key2", "Content-Type": "application/json" },
+      body: deployBody({ slug: "stolen-agent" }),
+    });
+    expect(second.status).toBe(403);
+
+    // Original owner's credential_hashes should not be modified
+    const afterManifest = await store.getManifest("stolen-agent");
+    expect(afterManifest?.credential_hashes).toEqual(originalHashes);
+  });
+
   test("redeploy to same slug preserves ownership", async () => {
     const { fetch, store } = await createTestOrchestrator();
 
