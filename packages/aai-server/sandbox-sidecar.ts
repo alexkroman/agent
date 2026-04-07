@@ -153,6 +153,9 @@ export async function createSidecar(
     }
   });
 
+  // Disable keep-alive so connections don't linger after close()
+  server.keepAliveTimeout = 0;
+
   const { promise, resolve } = Promise.withResolvers<void>();
   server.listen(0, "127.0.0.1", () => resolve());
   await promise;
@@ -165,8 +168,9 @@ export async function createSidecar(
     port,
     url: `http://127.0.0.1:${port}`,
     close: () =>
-      new Promise<void>((resolve, reject) =>
-        server.close((err) => (err ? reject(err) : resolve())),
-      ),
+      new Promise<void>((resolve, reject) => {
+        server.closeAllConnections();
+        server.close((err) => (err ? reject(err) : resolve()));
+      }),
   };
 }

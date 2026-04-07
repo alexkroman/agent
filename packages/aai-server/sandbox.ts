@@ -375,6 +375,7 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
 
   async function shutdownSandbox(): Promise<void> {
     try {
+      hooks.removeAllHooks();
       await agentRuntime.shutdown();
     } finally {
       await sidecar.close().catch(() => {
