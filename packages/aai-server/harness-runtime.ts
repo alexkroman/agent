@@ -3,7 +3,7 @@
  * Sandbox harness runtime — runs inside the secure-exec V8 isolate.
  *
  * Communicates with the host via secure-exec bindings (V8 bridge IPC):
- * - KV operations: `SecureExec.bindings.kv.*` (get, set, del, list, keys)
+ * - KV operations: `SecureExec.bindings.kv.*` (get, set, del)
  * - RPC work queue: `SecureExec.bindings.rpc.recv()` blocks until the host
  *   enqueues a tool/hook/config request, then `.rpc.send()` returns the result.
  *
@@ -34,12 +34,6 @@ declare const SecureExec: {
       get(key: string): Promise<unknown>;
       set(key: string, value: unknown, expireIn?: number): Promise<void>;
       del(key: string): Promise<void>;
-      list(
-        prefix: string,
-        limit?: number,
-        reverse?: boolean,
-      ): Promise<{ key: string; value: unknown }[]>;
-      keys(pattern?: string): Promise<string[]>;
     };
     rpc: {
       /** Blocks until the host enqueues a request. Returns null on shutdown. */
@@ -96,14 +90,6 @@ const kv: Kv = {
   },
   delete(key: string) {
     return SecureExec.bindings.kv.del(key);
-  },
-  list<T = unknown>(prefix: string, options?: { limit?: number; reverse?: boolean }) {
-    return SecureExec.bindings.kv.list(prefix, options?.limit, options?.reverse) as Promise<
-      { key: string; value: T }[]
-    >;
-  },
-  keys(pattern?: string) {
-    return SecureExec.bindings.kv.keys(pattern);
   },
 };
 

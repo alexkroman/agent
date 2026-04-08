@@ -6,6 +6,7 @@ export default defineConfig({
   test: {
     include: [
       "sandbox-integration.test.ts",
+      "sandbox-lifecycle.test.ts",
       "ws-integration.test.ts",
       "process-jail.integration.test.ts",
     ],

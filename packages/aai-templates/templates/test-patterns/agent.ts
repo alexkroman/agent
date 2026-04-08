@@ -122,28 +122,6 @@ export default defineAgent<TaskState>({
       },
     }),
 
-    list_notes: taskTool({
-      description: "List all saved notes by prefix",
-      parameters: z.object({
-        limit: z.number().optional().describe("Max entries to return"),
-      }),
-      execute: async ({ limit }, ctx) => {
-        const entries = await ctx.kv.list<string>("note:", { limit: limit ?? 20 });
-        return { notes: entries, total: entries.length };
-      },
-    }),
-
-    search_notes: taskTool({
-      description: "Search note keys by glob pattern",
-      parameters: z.object({
-        pattern: z.string().describe("Glob pattern to match keys"),
-      }),
-      execute: async ({ pattern }, ctx) => {
-        const keys = await ctx.kv.keys(pattern);
-        return { keys, total: keys.length };
-      },
-    }),
-
     session_info: {
       description: "Get current session metadata",
       execute: (_args, ctx) => ({

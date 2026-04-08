@@ -42,6 +42,7 @@
     "@types/json-schema": "^7.0.15",
     "@types/mime-types": "^3.0.1",
     "@types/ws": "^8.18.1",
+    "esbuild": "^0.28.0",
     "testcontainers": "^11.13.0",
     "tsdown": "^0.21.7",
     "typescript": "^6.0.2",

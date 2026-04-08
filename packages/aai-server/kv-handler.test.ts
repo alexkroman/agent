@@ -90,29 +90,6 @@ describe("kv handler", () => {
     expect(await kv.get("k1")).toBeNull();
   });
 
-  test("keys returns all keys", async () => {
-    const { app, storage } = createTestApp();
-    const kv = createUnstorageKv({ storage, prefix: `agents/${SLUG}/kv` });
-    await kv.set("a", "1");
-    await kv.set("b", "2");
-    const { status, json } = await postKv(app, storage, { op: "keys" });
-    expect(status).toBe(200);
-    expect(json.result).toEqual(expect.arrayContaining(["a", "b"]));
-  });
-
-  test("list returns entries matching prefix", async () => {
-    const { app, storage } = createTestApp();
-    const kv = createUnstorageKv({ storage, prefix: `agents/${SLUG}/kv` });
-    await kv.set("note:1", "a");
-    await kv.set("note:2", "b");
-    await kv.set("other:1", "c");
-    const { status, json } = await postKv(app, storage, { op: "list", prefix: "note:" });
-    expect(status).toBe(200);
-    const result = json.result as { key: string; value: unknown }[];
-    expect(result.length).toBe(2);
-    expect(result.every((r) => r.key.startsWith("note:"))).toBe(true);
-  });
-
   test("returns 500 when storage throws", async () => {
     const { app, storage } = createTestApp();
     vi.spyOn(storage, "getItem").mockRejectedValue(new Error("storage down"));

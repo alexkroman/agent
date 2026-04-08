@@ -21,7 +21,7 @@
  * ```
  */
 
-export type { Kv, KvEntry, KvListOptions } from "./isolate/kv.ts";
+export type { Kv } from "./isolate/kv.ts";
 export {
   type AgentDef,
   type AgentOptions,

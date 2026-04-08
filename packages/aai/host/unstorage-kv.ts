@@ -6,9 +6,8 @@
  */
 
 import { prefixStorage, type Storage } from "unstorage";
-import { matchGlob, sortAndPaginate } from "../isolate/_kv-utils.ts";
 import { MAX_VALUE_SIZE } from "../isolate/constants.ts";
-import type { Kv, KvEntry, KvListOptions } from "../isolate/kv.ts";
+import type { Kv } from "../isolate/kv.ts";
 
 /**
  * Options for creating an unstorage-backed KV store.
@@ -61,29 +60,6 @@ export function createUnstorageKv(options: UnstorageKvOptions): Kv {
     async delete(keys: string | string[]): Promise<void> {
       const keyArray = Array.isArray(keys) ? keys : [keys];
       await Promise.all(keyArray.map((k) => store.removeItem(k)));
-    },
-
-    async list<T = unknown>(
-      listPrefix: string,
-      listOptions?: KvListOptions,
-    ): Promise<KvEntry<T>[]> {
-      const allKeys = await store.getKeys(listPrefix);
-      const results = await Promise.all(
-        allKeys.map(async (key) => {
-          const value = await store.getItem<T>(key);
-          return value != null ? ({ key, value } as KvEntry<T>) : null;
-        }),
-      );
-      return sortAndPaginate(
-        results.filter((e): e is KvEntry<T> => e !== null),
-        listOptions,
-      );
-    },
-
-    async keys(pattern?: string): Promise<string[]> {
-      const allKeys = await store.getKeys();
-      if (!pattern) return allKeys.sort((a, b) => a.localeCompare(b));
-      return allKeys.filter((key) => matchGlob(key, pattern)).sort((a, b) => a.localeCompare(b));
     },
 
     close() {

@@ -23,7 +23,7 @@ afterAll(async () => {
 
 describe("sandbox spawn storm", () => {
   test("server caps slot count and rejects excess spawns", async () => {
-    const MAX_AGENTS = 14; // MAX_SLOTS is 10 in load defaults
+    const MAX_AGENTS = 14;
     const allConnections: import("ws").default[] = [];
     const deployedSlugs: string[] = [];
     let rejectedCount = 0;

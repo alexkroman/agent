@@ -17,8 +17,6 @@ import {
   defineToolFactory,
   type HookContext,
   type Kv,
-  type KvEntry,
-  type KvListOptions,
   type Message,
   type ToolChoice,
   type ToolContext,
@@ -235,16 +233,5 @@ describe("exported types", () => {
     expectTypeOf<HC["state"]>().toEqualTypeOf<TC["state"]>();
     expectTypeOf<HC["kv"]>().toEqualTypeOf<TC["kv"]>();
     expectTypeOf<HC["sessionId"]>().toEqualTypeOf<TC["sessionId"]>();
-  });
-
-  it("KvEntry has expected shape", () => {
-    expectTypeOf<KvEntry<string>>().toEqualTypeOf<{ key: string; value: string }>();
-  });
-
-  it("KvListOptions has expected shape", () => {
-    expectTypeOf<KvListOptions>().toEqualTypeOf<{
-      limit?: number;
-      reverse?: boolean;
-    }>();
   });
 });

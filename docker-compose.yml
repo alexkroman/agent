@@ -45,7 +45,7 @@ services:
       AWS_SECRET_ACCESS_KEY: minioadmin
       KV_SCOPE_SECRET: docker-dev-secret
       MAX_CONNECTIONS: "100"
-      MAX_SLOTS: "10"
+      SECURE_EXEC_V8_MAX_SESSIONS: "128"
     # Match Fly.io performance-cpu-1x@2048MB
     mem_limit: 2048m
     memswap_limit: 2048m

@@ -1,15 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { IsolateConfig } from "./rpc-schemas.ts";
 import type { Sandbox } from "./sandbox.ts";
-import {
-  _slotInternals,
-  createSlotCache,
-  ensureAgent,
-  registerSlot,
-  resolveSandbox,
-} from "./sandbox-slots.ts";
+import { createSlotCache, ensureAgent, registerSlot, resolveSandbox } from "./sandbox-slots.ts";
 import { createTestStorage, createTestStore, makeSlot, TEST_AGENT_CONFIG } from "./test-utils.ts";
 
 // ── Mock createSandbox ──────────────────────────────────────────────────
@@ -60,18 +54,8 @@ describe("registerSlot", () => {
 });
 
 describe("ensureAgent", () => {
-  let savedIdleMs: number;
-
   beforeEach(() => {
-    vi.useFakeTimers();
-    savedIdleMs = _slotInternals.IDLE_MS;
-    _slotInternals.IDLE_MS = 200;
     mockCreateSandbox.mockClear();
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-    _slotInternals.IDLE_MS = savedIdleMs;
   });
 
   it("returns existing sandbox without calling createSandbox", async () => {
@@ -123,115 +107,49 @@ describe("ensureAgent", () => {
     expect(result).toBeDefined();
   });
 
-  it("evicts sandbox after idle timeout", async () => {
-    const slot = makeSlot();
-    const opts = makeEnsureOpts();
-
-    const sandbox = await ensureAgent(slot, opts);
-    expect(slot.sandbox).toBeDefined();
-
-    await vi.advanceTimersByTimeAsync(_slotInternals.IDLE_MS + 1);
-
-    expect(slot.sandbox).toBeUndefined();
-    expect(sandbox.shutdown).toHaveBeenCalledOnce();
-  });
-
-  it("concurrent calls during eviction share the same new sandbox", async () => {
-    const slot = makeSlot();
-    const opts = makeEnsureOpts();
-
-    // Create initial sandbox
-    await ensureAgent(slot, opts);
-    expect(mockCreateSandbox).toHaveBeenCalledTimes(1);
-
-    // Use a deferred promise so we control when shutdown() resolves
-    let resolveShutdown!: () => void;
-    const shutdownPromise = new Promise<void>((r) => {
-      resolveShutdown = r;
-    });
-    // biome-ignore lint/style/noNonNullAssertion: sandbox is set above
-    slot.sandbox!.shutdown = vi.fn(() => shutdownPromise);
-
-    // Fire the idle timer — evictSlot acquires the lock and awaits shutdown
-    vi.advanceTimersByTime(_slotInternals.IDLE_MS + 1);
-    // Yield so evictSlot acquires the lock (uncontested at this point)
-    await vi.advanceTimersByTimeAsync(0);
-
-    // Two concurrent ensureAgent calls queue behind the eviction lock
-    const p1 = ensureAgent(slot, opts);
-    const p2 = ensureAgent(slot, opts);
-
-    // Let shutdown complete — releases the lock
-    resolveShutdown();
-    const [sb1, sb2] = await Promise.all([p1, p2]);
-
-    // Both should get the same sandbox, only one new createSandbox call
-    expect(sb1).toBe(sb2);
-    expect(mockCreateSandbox).toHaveBeenCalledTimes(2);
-  });
-
-  it("resets idle timer on subsequent ensureAgent calls", async () => {
-    const slot = makeSlot();
-    const opts = makeEnsureOpts();
-
-    await ensureAgent(slot, opts);
-
-    // Advance partway through the idle timeout
-    await vi.advanceTimersByTimeAsync(_slotInternals.IDLE_MS - 50);
-    expect(slot.sandbox).toBeDefined();
-
-    // Call again to reset timer
-    await ensureAgent(slot, opts);
-
-    // Advance partway again — should NOT have evicted
-    await vi.advanceTimersByTimeAsync(_slotInternals.IDLE_MS - 50);
-    expect(slot.sandbox).toBeDefined();
-
-    // Now advance past the full idle period — should evict
-    await vi.advanceTimersByTimeAsync(51);
-    expect(slot.sandbox).toBeUndefined();
-  });
-
-  it("evicts LRU slot at capacity instead of throwing", async () => {
-    const { MAX_SLOTS } = await import("./constants.ts");
-
-    // Create a cache and fill it to MAX_SLOTS with active sandboxes
+  it("evicts coldest slot when RSS exceeds limit", async () => {
     const slots = createSlotCache();
-    const shutdowns: ReturnType<typeof vi.fn>[] = [];
-    for (let i = 0; i < MAX_SLOTS; i++) {
-      const sb = makeMockSandbox();
-      shutdowns.push(sb.shutdown as ReturnType<typeof vi.fn>);
-      const s = makeSlot({ slug: `agent-${i}`, sandbox: sb });
-      slots.set(s.slug, s);
+
+    // Fill cache with some agents
+    const coldSandbox = makeMockSandbox();
+    const coldSlot = makeSlot({ slug: "cold-agent", sandbox: coldSandbox });
+    slots.set(coldSlot.slug, coldSlot);
+
+    const warmSandbox = makeMockSandbox();
+    const warmSlot = makeSlot({ slug: "warm-agent", sandbox: warmSandbox });
+    slots.set(warmSlot.slug, warmSlot);
+
+    // Access warm-agent so cold-agent is LRU
+    slots.get("warm-agent");
+
+    // New agent arrives while RSS is over the limit
+    const newSlot = makeSlot({ slug: "new-agent" });
+    slots.set(newSlot.slug, newSlot);
+    const opts = makeEnsureOpts({ slug: "new-agent" });
+
+    const orig = process.memoryUsage;
+    let callCount = 0;
+    process.memoryUsage = Object.assign(() => {
+      callCount++;
+      // First call: over limit (triggers eviction), second call: under limit
+      const rss = callCount <= 1 ? 2000 * 1024 * 1024 : 500 * 1024 * 1024;
+      return { ...orig(), rss };
+    }, orig);
+
+    try {
+      const result = await ensureAgent(newSlot, opts, slots);
+      expect(result).toBeDefined();
+      // cold-agent should have been evicted
+      expect(slots.has("cold-agent")).toBe(false);
+      expect(coldSandbox.shutdown).toHaveBeenCalled();
+      // warm-agent should still be there
+      expect(slots.has("warm-agent")).toBe(true);
+    } finally {
+      process.memoryUsage = orig;
     }
-
-    // The LRU-oldest is agent-0. Adding one more should evict it.
-    const extraSlot = makeSlot({ slug: "one-too-many" });
-    slots.set(extraSlot.slug, extraSlot);
-    const opts = makeEnsureOpts({ slug: "one-too-many" });
-
-    const result = await ensureAgent(extraSlot, opts, slots);
-    expect(result).toBeDefined();
-    expect(mockCreateSandbox).toHaveBeenCalledOnce();
-
-    // agent-0 should have been evicted by LRU
-    expect(slots.has("agent-0")).toBe(false);
-    // Its sandbox should have been shut down via the dispose callback
-    expect(shutdowns[0]).toHaveBeenCalled();
   });
 
-  it("allows spawn when active slots are below MAX_SLOTS", async () => {
-    const slots = createSlotCache();
-    const slot = makeSlot({ slug: "ok-agent" });
-    slots.set(slot.slug, slot);
-    const opts = makeEnsureOpts({ slug: "ok-agent" });
-
-    const result = await ensureAgent(slot, opts, slots);
-    expect(result).toBeDefined();
-    expect(mockCreateSandbox).toHaveBeenCalledOnce();
-  });
-
-  it("rejects spawn when RSS exceeds MAX_RSS_MB", async () => {
+  it("throws MemoryPressureError when no slots to evict", async () => {
     const slot = makeSlot();
     const opts = makeEnsureOpts();
     const orig = process.memoryUsage;
@@ -244,7 +162,7 @@ describe("ensureAgent", () => {
     }
   });
 
-  it("allows spawn when RSS is below MAX_RSS_MB", async () => {
+  it("allows spawn when RSS is below limit", async () => {
     const slot = makeSlot();
     const opts = makeEnsureOpts();
     const orig = process.memoryUsage;
@@ -260,12 +178,7 @@ describe("ensureAgent", () => {
 
 describe("resolveSandbox", () => {
   beforeEach(() => {
-    vi.useFakeTimers();
     mockCreateSandbox.mockClear();
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
   });
 
   it("returns null when slug not found in slots or store", async () => {
@@ -410,12 +323,7 @@ describe("resolveSandbox with agentConfig", () => {
   };
 
   beforeEach(() => {
-    vi.useFakeTimers();
     mockCreateSandbox.mockClear();
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
   });
 
   it("passes stored agentConfig to createSandbox", async () => {
@@ -470,14 +378,5 @@ describe("resolveSandbox with agentConfig", () => {
         agentConfig: testConfig,
       }),
     );
-  });
-});
-
-describe("_slotInternals", () => {
-  it("gets and sets IDLE_MS", () => {
-    const original = _slotInternals.IDLE_MS;
-    _slotInternals.IDLE_MS = 999;
-    expect(_slotInternals.IDLE_MS).toBe(999);
-    _slotInternals.IDLE_MS = original;
   });
 });

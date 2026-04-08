@@ -231,6 +231,33 @@
           }
         }
       }
+    },
+    {
+      "includes": ["**/load/*.test.ts"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noUndeclaredDependencies": "off"
+          },
+          "complexity": {
+            "noExcessiveCognitiveComplexity": "off"
+          },
+          "style": {
+            "noNonNullAssertion": "off"
+          },
+          "suspicious": {
+            "noEvolvingTypes": "off",
+            "noExportsInTest": "off"
+          },
+          "nursery": {
+            "noConditionalExpect": "off",
+            "useImportsFirst": "off"
+          },
+          "security": {
+            "noSecrets": "off"
+          }
+        }
+      }
     }
   ],
   "formatter": {

@@ -51,9 +51,6 @@ export const MAX_HTML_BYTES = 200_000;
 /** Maximum value size for KV store entries (bytes). */
 export const MAX_VALUE_SIZE = 65_536;
 
-/** Maximum glob pattern length to prevent ReDoS. */
-export const MAX_GLOB_PATTERN_LENGTH = 1024;
-
 /** Maximum conversation messages to retain (sliding window). */
 export const DEFAULT_MAX_HISTORY = 200;
 

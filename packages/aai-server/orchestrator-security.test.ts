@@ -73,31 +73,37 @@ describe("cross-agent KV isolation", () => {
     expect(res.status).toBe(403);
   });
 
-  test("KV keys list is scoped per agent", async () => {
+  test("KV data is scoped per agent", async () => {
     const { fetch } = await createTestOrchestrator();
 
     await deployAgent(fetch, "agent-alpha", "key-alpha");
     await deployAgent(fetch, "agent-beta", "key-beta");
 
-    // Both agents write keys
+    // Both agents write to the same key name
     await authFetch(fetch, "/agent-alpha/kv", {
       key: "key-alpha",
-      body: { op: "set", key: "alpha-key-1", value: "a1" },
+      body: { op: "set", key: "shared-key", value: "alpha-value" },
     });
 
     await authFetch(fetch, "/agent-beta/kv", {
       key: "key-beta",
-      body: { op: "set", key: "beta-key-1", value: "b1" },
+      body: { op: "set", key: "shared-key", value: "beta-value" },
     });
 
-    // Alpha lists its keys — should not see beta's keys
-    const alphaKeys = await authFetch(fetch, "/agent-alpha/kv", {
+    // Each agent reads its own value — no cross-contamination
+    const alphaGet = await authFetch(fetch, "/agent-alpha/kv", {
       key: "key-alpha",
-      body: { op: "keys" },
+      body: { op: "get", key: "shared-key" },
     });
-    const alphaResult = (await alphaKeys.json()) as { result: string[] };
-    expect(alphaResult.result).toContain("alpha-key-1");
-    expect(alphaResult.result).not.toContain("beta-key-1");
+    const alphaResult = (await alphaGet.json()) as { result: string };
+    expect(alphaResult.result).toBe("alpha-value");
+
+    const betaGet = await authFetch(fetch, "/agent-beta/kv", {
+      key: "key-beta",
+      body: { op: "get", key: "shared-key" },
+    });
+    const betaResult = (await betaGet.json()) as { result: string };
+    expect(betaResult.result).toBe("beta-value");
   });
 });
 

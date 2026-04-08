@@ -440,6 +440,7 @@ function now(): number {
 // ─── KV persistence ─────────────────────────────────────────────────────────
 
 const STATE_KEY = "dispatch:state";
+const INCIDENT_INDEX_KEY = "incident-index";
 
 async function saveState(ctx: { kv: ToolContext["kv"]; state: unknown }): Promise<void> {
   await ctx.kv.set(STATE_KEY, ctx.state);
@@ -447,10 +448,18 @@ async function saveState(ctx: { kv: ToolContext["kv"]; state: unknown }): Promis
 
 async function saveIncidentSnapshot(kv: ToolContext["kv"], incident: Incident): Promise<void> {
   await kv.set(`incident:${incident.id}`, incident);
+  const index = (await kv.get<string[]>(INCIDENT_INDEX_KEY)) ?? [];
+  if (!index.includes(incident.id)) {
+    index.push(incident.id);
+    await kv.set(INCIDENT_INDEX_KEY, index);
+  }
 }
 
 async function deleteIncidentSnapshot(kv: ToolContext["kv"], incidentId: string): Promise<void> {
   await kv.delete(`incident:${incidentId}`);
+  const index = (await kv.get<string[]>(INCIDENT_INDEX_KEY)) ?? [];
+  const updated = index.filter((id) => id !== incidentId);
+  await kv.set(INCIDENT_INDEX_KEY, updated);
 }
 
 async function loadState(ctx: HookContext<DispatchState>): Promise<void> {
@@ -1114,9 +1123,16 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
       execute: async (_args, ctx) => {
         const state = ctx.state;
 
-        // Query KV for persisted incident snapshots
-        const persistedIncidentKeys = await ctx.kv.keys("incident:*");
-        const persistedSnapshots = await ctx.kv.list<Incident>("incident:");
+        // Query KV for persisted incident snapshots via index
+        const incidentIndex = (await ctx.kv.get<string[]>(INCIDENT_INDEX_KEY)) ?? [];
+        const persistedSnapshots = (
+          await Promise.all(
+            incidentIndex.map(async (id) => {
+              const value = await ctx.kv.get<Incident>(`incident:${id}`);
+              return value ? { key: `incident:${id}`, value } : null;
+            }),
+          )
+        ).filter((s): s is { key: string; value: Incident } => s !== null);
 
         const activeIncidents = Object.values(state.incidents)
           .filter((i) => i.status !== "resolved")
@@ -1164,7 +1180,7 @@ Radio style: "Medic-1, respond priority one to 400 Oak Street, report of cardiac
               type: r.type,
               capabilities: r.capabilities,
             })),
-          persistedIncidentCount: persistedIncidentKeys.length,
+          persistedIncidentCount: incidentIndex.length,
           persistedSnapshots: persistedSnapshots.map((s) => ({
             id: s.value.id,
             severity: s.value.severity,
