@@ -724,7 +724,7 @@ async function main(cfg: Config): Promise<void> {
 const loadTestCommand = defineCommand({
   meta: { name: "s2s-load-test", description: "S2S API load test with realistic traffic simulation" },
   args: {
-    sessions: { type: "string", alias: "n", description: "Total number of sessions to run", default: "5000" },
+    sessions: { type: "string", alias: "n", description: "Total number of sessions to run", default: "10000" },
     concurrency: { type: "string", alias: "c", description: "Max simultaneous sessions", default: "2500" },
     url: { type: "string", description: "S2S WebSocket URL", default: "wss://speech-to-speech.us.assemblyai.com/v1/realtime" },
     greeting: { type: "string", description: "Agent greeting text", default: "Hello, how can I help?" },
