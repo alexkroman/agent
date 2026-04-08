@@ -95,6 +95,13 @@ describe("transformBundleForEval", () => {
     expect(result).not.toMatch(/\bexport\s/);
   });
 
+  test("replaces minified named zod import (no spaces)", () => {
+    const code = `import{z as e}from"/app/_zod.mjs";var t="hello";__exports__.default = { name: "test" };`;
+    const result = transformBundleForEval(code);
+    expect(result).toContain('var e = __zod__["z"];');
+    expect(result).not.toMatch(/\bimport\s*\{/);
+  });
+
   test("replaces namespace zod import", () => {
     const code = `import * as z from "/app/_zod.mjs";\nexport default {};`;
     const result = transformBundleForEval(code);

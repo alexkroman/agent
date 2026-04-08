@@ -102,9 +102,9 @@ async function readDirFiles(dir: string): Promise<Record<string, string>> {
  */
 export function transformBundleForEval(code: string): string {
   let transformed = code;
-  // Replace: import { z } from "/app/_zod.mjs"
+  // Replace: import { z } from "/app/_zod.mjs"  (handles minified: import{z}from"...")
   transformed = transformed.replace(
-    /import\s+\{([^}]+)\}\s+from\s+["'][^"']*_zod[^"']*["'];?\n?/g,
+    /import\s*\{([^}]+)\}\s*from\s*["'][^"']*_zod[^"']*["'];?\n?/g,
     (_, imports: string) => {
       const bindings = imports.split(",").map((s: string) => s.trim());
       return `${bindings
@@ -118,12 +118,12 @@ export function transformBundleForEval(code: string): string {
   );
   // Replace: import z from "/app/_zod.mjs"
   transformed = transformed.replace(
-    /import\s+(\w+)\s+from\s+["'][^"']*_zod[^"']*["'];?\n?/g,
+    /import\s+(\w+)\s+from\s*["'][^"']*_zod[^"']*["'];?\n?/g,
     "var $1 = __zod__;\n",
   );
   // Replace: import * as z from "/app/_zod.mjs"
   transformed = transformed.replace(
-    /import\s+\*\s+as\s+(\w+)\s+from\s+["'][^"']*_zod[^"']*["'];?\n?/g,
+    /import\s*\*\s*as\s+(\w+)\s+from\s*["'][^"']*_zod[^"']*["'];?\n?/g,
     "var $1 = __zod__;\n",
   );
   // Replace: export default X  (anywhere in the file)
