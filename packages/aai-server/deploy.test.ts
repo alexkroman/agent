@@ -40,20 +40,21 @@ describe("POST /:slug/deploy", () => {
     expect(res.status).toBe(400);
   });
 
-  test("rejects invalid agent bundle (missing name)", async () => {
+  test("accepts ESM bundle (validation deferred to isolate)", async () => {
     const { fetch } = await createTestOrchestrator();
+    // Real Vite SSR output: minified zod import + named re-export
+    const esmWorker = `import{z as e}from"/app/_zod.mjs";var s={name:"test-agent",systemPrompt:"Test"};export{s as default};`;
     const res = await fetch("/my-agent/deploy", {
       method: "POST",
       headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
       body: JSON.stringify({
         env: { ASSEMBLYAI_API_KEY: "k" },
-        worker: "module.exports = {};",
+        worker: esmWorker,
         clientFiles: { "index.html": "<html></html>" },
         agentConfig: TEST_AGENT_CONFIG,
       }),
     });
-    expect(res.status).toBe(400);
-    expect(((await res.json()) as Record<string, unknown>).error).toContain("Invalid agent bundle");
+    expect(res.status).toBe(200);
   });
 
   test("rejects invalid env (missing ASSEMBLYAI_API_KEY)", async () => {
