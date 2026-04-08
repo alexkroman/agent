@@ -21,6 +21,18 @@ describe("buildSeccompPolicy", () => {
     const policy = buildSeccompPolicy();
     expect(policy).toContain("DEFAULT KILL");
   });
+
+  test("restricts socket to AF_UNIX only", () => {
+    const policy = buildSeccompPolicy();
+    expect(policy).toContain("socket { arg0 == 1 }");
+    // socket should NOT appear in the unfiltered ALLOW list
+    const allowBlock = policy.match(/ALLOW \{([^}]+)\}/)?.[1] ?? "";
+    const bareSocket = allowBlock
+      .split(",")
+      .map((s) => s.trim())
+      .find((s) => s === "socket");
+    expect(bareSocket).toBeUndefined();
+  });
 });
 
 const TEST_OPTIONS: JailOptions = {
