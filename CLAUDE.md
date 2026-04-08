@@ -402,9 +402,22 @@ nsjail enforces:
 - **PID namespace**: process sees only itself.
 - **Network namespace**: empty (no interfaces). UDS still works via
   bind-mounted socket dir.
+- **IPC namespace**: isolated inter-process communication.
+- **UTS namespace**: hostname set to "sandbox".
+- **Cgroup namespace**: isolates cgroup tree visibility.
 - **seccomp-bpf**: syscall allowlist in `seccomp-allowlist.json`.
+  Supports argument filtering (e.g. `socket()` restricted to
+  `AF_UNIX` only via Kafel `arg0 == 1`).
 - **Capabilities**: all dropped.
 - **cgroups v2**: memory and PID limits.
+- **rlimits**: all set to HARD (including `nproc` as a second
+  enforcement layer on top of cgroup PID limits).
+
+**Important:** All sandboxes share a single Rust V8 runtime process
+(secure-exec singleton). The nsjail jail wraps this one shared process.
+Cross-sandbox isolation within the process is enforced at the V8
+session/context level, not at the OS level. Per-sandbox OS jails are
+not possible with the current secure-exec architecture.
 
 On macOS (dev), the jail is skipped with a warning. Requires `nsjail`
 on `$PATH` (installed via `apt-get install nsjail` in the Dockerfile).
@@ -451,6 +464,10 @@ var support. When secure-exec ships the `v8Runtime` option on
 
 ### Testing security boundaries
 
+- `process-jail.integration.test.ts` — post-V8-escape nsjail hardening:
+  process spawning, env isolation, filesystem read-only, cgroup/PID/network/
+  IPC namespace isolation, seccomp enforcement, capability dropping.
+  Run: `pnpm --filter @alexkroman1/aai-server test:integration` (Linux only)
 - `sandbox-integration.test.ts` — network, filesystem, process, env
   isolation e2e. Run: `pnpm --filter @alexkroman1/aai-server test:integration`
 - `builtin-tools.test.ts` — `run_code` sandbox security boundaries
