@@ -122,14 +122,13 @@ async function spawnAgent(slot: AgentSlot, opts: EnsureOpts): Promise<Sandbox> {
   const { slug } = slot;
   console.info("Loading agent sandbox", { slug });
 
-  const code = await opts.getWorkerCode(slug);
-  if (!code) throw new Error(`Worker code not found for ${slug}`);
-
-  const [apiKey, agentEnv, agentConfig] = await Promise.all([
+  const [code, apiKey, agentEnv, agentConfig] = await Promise.all([
+    opts.getWorkerCode(slug),
     opts.getApiKey(),
     opts.getAgentEnv(),
     opts.getAgentConfig?.() ?? Promise.resolve(null),
   ]);
+  if (!code) throw new Error(`Worker code not found for ${slug}`);
   const sandbox = await opts.createSandbox({
     workerCode: code,
     apiKey,
