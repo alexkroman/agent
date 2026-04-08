@@ -21,7 +21,7 @@ function isLiteralIp(hostname: string): boolean {
   return /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname) || hostname.includes(":");
 }
 
-async function assertDnsResolvesPublic(hostname: string): Promise<void> {
+async function assertDnsResolvesPublic(hostname: string): Promise<string> {
   try {
     const { address } = await pTimeout(lookup(hostname), {
       milliseconds: 2000,
@@ -30,13 +30,14 @@ async function assertDnsResolvesPublic(hostname: string): Promise<void> {
     if (isPrivateIp(address)) {
       throw new Error(`Blocked request: ${hostname} resolves to private address ${address}`);
     }
+    return address;
   } catch (err) {
     if (err instanceof Error && err.message.startsWith("Blocked request")) throw err;
     throw new Error(`Blocked request: DNS resolution failed for ${hostname}`, { cause: err });
   }
 }
 
-export async function assertPublicUrl(url: string): Promise<void> {
+export async function assertPublicUrl(url: string): Promise<string | null> {
   const parsed = new URL(url);
   const hostname = parsed.hostname.replace(/^\[|\]$/g, "");
 
@@ -50,26 +51,46 @@ export async function assertPublicUrl(url: string): Promise<void> {
     throw new Error(`Blocked request to private address: ${hostname}`);
   }
   if (!isLiteralIp(hostname)) {
-    await assertDnsResolvesPublic(hostname);
+    return assertDnsResolvesPublic(hostname);
   }
+  return null;
 }
 
 const MAX_REDIRECTS = 5;
+
+/**
+ * Replace the hostname in a URL with a resolved IP to pin DNS resolution
+ * and prevent TOCTOU DNS rebinding attacks.
+ */
+function pinResolvedIp(url: string, resolvedIp: string): { pinnedUrl: string; host: string } {
+  const parsed = new URL(url);
+  const host = parsed.host;
+  const isIpv6 = resolvedIp.includes(":");
+  parsed.hostname = isIpv6 ? `[${resolvedIp}]` : resolvedIp;
+  return { pinnedUrl: parsed.href, host };
+}
 
 export async function ssrfSafeFetch(
   url: string,
   init: RequestInit,
   fetchFn: typeof globalThis.fetch,
 ): Promise<Response> {
-  await assertPublicUrl(url);
+  let resolvedIp = await assertPublicUrl(url);
   let currentUrl = url;
   for (let i = 0; i <= MAX_REDIRECTS; i++) {
-    const resp = await fetchFn(currentUrl, { ...init, redirect: "manual" });
+    let fetchUrl = currentUrl;
+    const headers = new Headers(init.headers);
+    if (resolvedIp) {
+      const { pinnedUrl, host } = pinResolvedIp(currentUrl, resolvedIp);
+      fetchUrl = pinnedUrl;
+      headers.set("Host", host);
+    }
+    const resp = await fetchFn(fetchUrl, { ...init, headers, redirect: "manual" });
     if (resp.status < 300 || resp.status >= 400) return resp;
     const location = resp.headers.get("location");
     if (!location) return resp;
     currentUrl = new URL(location, currentUrl).href;
-    await assertPublicUrl(currentUrl);
+    resolvedIp = await assertPublicUrl(currentUrl);
   }
   throw new Error("Too many redirects");
 }

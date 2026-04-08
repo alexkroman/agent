@@ -54,6 +54,7 @@ import {
   _slotInternals,
   type AgentSlot,
 } from "./sandbox-slots.ts";
+import { ssrfSafeFetch } from "./ssrf.ts";
 import type { BundleStore } from "./store-types.ts";
 
 let jailLauncher: JailedLauncher | null = null;
@@ -335,6 +336,16 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
   const executeTool = buildExecuteTool(port, authToken, crashed);
   const hooks = buildHookInvoker(port, authToken, crashed);
 
+  // SSRF-safe fetch wrapper for built-in tools (web_search, visit_webpage, fetch_json).
+  // Validates each URL (and redirect target) against private/reserved IP ranges.
+  const safeFetch: typeof globalThis.fetch = (input, init?) => {
+    let url: string;
+    if (typeof input === "string") url = input;
+    else if (input instanceof URL) url = input.href;
+    else url = input.url;
+    return ssrfSafeFetch(url, init ?? {}, globalThis.fetch);
+  };
+
   // Create a runtime with RPC overrides — same startSession/shutdown as self-hosted
   const builtins = resolveAllBuiltins(config.builtinTools ?? []);
   const agentRuntime = createRuntime({
@@ -353,6 +364,7 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
         : {}),
     },
     env: { ...agentEnv, ASSEMBLYAI_API_KEY: apiKey },
+    fetch: safeFetch,
     executeTool,
     hooks,
     toolSchemas: [...config.toolSchemas, ...builtins.schemas],

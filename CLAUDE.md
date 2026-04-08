@@ -423,7 +423,9 @@ var support. When secure-exec ships the `v8Runtime` option on
 **`run_code` built-in tool (aai/builtin-tools.ts):**
 
 - Each invocation runs in a **fresh `node:vm` context** — isolated from
-  the host process and from other invocations.
+  other invocations. Note: `node:vm` is not a security sandbox; in
+  platform mode, the secure-exec V8 isolate provides the security
+  boundary.
 - No network, no filesystem access, no child processes, no env vars.
 - 5-second execution timeout.
 - Context is discarded after execution — no state leaks.
@@ -435,30 +437,27 @@ var support. When secure-exec ships the `v8Runtime` option on
 
 **SSRF protection (aai-server/ssrf.ts):**
 
-- `assertPublicUrl()` uses `BlockList` for private IP ranges.
+- `assertPublicUrl()` uses the `bogon` library for private IP ranges.
 - Handles IPv4-mapped IPv6 bypass (`::ffff:127.0.0.1`).
 - Blocks `.internal`, `.local`, cloud metadata hostnames.
 
 **Auth:**
 
 - API key hashes compared with `timingSafeEqual` (constant-time).
-- Scope tokens are HS256 JWTs with 1-hour expiry.
-- Stored credentials are AES-256-GCM encrypted with HKDF-derived keys.
+  Keys are SHA-256 hashed and cached; slug ownership is verified
+  against stored credential hashes.
+- Stored credentials (agent env vars / secrets) are AES-256-GCM
+  encrypted with HKDF-derived keys.
 
 ### Testing security boundaries
 
 - `sandbox-integration.test.ts` — network, filesystem, process, env
   isolation e2e. Run: `pnpm --filter @alexkroman1/aai-server test:integration`
-- `builtin-tools.test.ts` — `run_code` sandbox security boundaries.
-- `run-code-sandbox.test.ts` — comprehensive tests for run_code
-  `node:vm` sandbox (network, filesystem, process, env, constructor
-  chain bypass, cross-invocation isolation).
-- `pentest.test.ts` — penetration tests verifying sandbox prevents
-  previously-exploitable constructor chain bypasses.
+- `builtin-tools.test.ts` — `run_code` sandbox security boundaries
+  (network, filesystem, process, env, constructor chain bypass,
+  cross-invocation isolation).
 - `net.test.ts` / `ssrf-extended.test.ts` — SSRF bypass prevention
   (IPv4-mapped IPv6, cloud metadata, `.internal` domains).
-- `security-boundary.test.ts` / `trust-boundary-validation.test.ts` —
-  security boundary enforcement.
 
 ### Known limitations
 

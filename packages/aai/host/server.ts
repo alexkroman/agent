@@ -67,8 +67,10 @@ async function serveStatic(
   const url = req.url?.split("?")[0] ?? "/";
   const filePath = path.join(dir, url === "/" ? "index.html" : url);
 
-  // Prevent path traversal
-  if (!filePath.startsWith(dir)) return false;
+  // Prevent path traversal — use resolved dir + separator to avoid prefix
+  // collisions (e.g. dir="/app/static" matching "/app/static-secrets/…").
+  const resolved = path.resolve(dir);
+  if (!filePath.startsWith(resolved + path.sep) && filePath !== resolved) return false;
 
   try {
     const stat = await fs.promises.stat(filePath);

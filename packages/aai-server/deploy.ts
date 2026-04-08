@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { humanId } from "human-id";
+import { timingSafeCompare } from "./auth.ts";
 import type { ValidatedAppContext } from "./context.ts";
 import { terminateSlot, withSlugLock } from "./sandbox-slots.ts";
 import type { DeployBody } from "./schemas.ts";
@@ -21,7 +22,10 @@ export function handleDeployNew(c: ValidatedAppContext<DeployBody>): Promise<Res
   return withSlugLock(slug, async () => {
     if (body.slug) {
       const existing = await c.env.store.getManifest(slug);
-      if (existing && !existing.credential_hashes.includes(c.var.keyHash)) {
+      if (
+        existing &&
+        !existing.credential_hashes.some((h) => timingSafeCompare(h, c.var.keyHash))
+      ) {
         return c.json({ error: "Forbidden: slug already owned by another user" }, 403);
       }
     }
@@ -55,7 +59,7 @@ async function handleDeployInner(
   // than replacing them, so multi-user ownership is preserved across deploys.
   const existingManifest = await c.env.store.getManifest(slug);
   const existingHashes = existingManifest?.credential_hashes ?? [];
-  const mergedHashes = existingHashes.includes(keyHash)
+  const mergedHashes = existingHashes.some((h) => timingSafeCompare(h, keyHash))
     ? existingHashes
     : [...existingHashes, keyHash];
 

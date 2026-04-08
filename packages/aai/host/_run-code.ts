@@ -10,6 +10,56 @@ import { errorMessage } from "../isolate/_utils.ts";
 import { RUN_CODE_TIMEOUT_MS } from "../isolate/constants.ts";
 import type { ToolDef } from "../isolate/types.ts";
 
+/**
+ * Wrap a host function so its `.constructor` property is neutered.
+ * This prevents sandbox code from reaching the host `Function` constructor
+ * via `fn.constructor('return process')()`.
+ */
+function safeFunction<T extends (...args: never[]) => unknown>(fn: T): T {
+  const wrapped = (...args: Parameters<T>) => fn(...args);
+  Object.defineProperty(wrapped, "constructor", {
+    value: undefined,
+    writable: false,
+    configurable: false,
+  });
+  return wrapped as unknown as T;
+}
+
+/**
+ * Wrap a host class constructor so its `.constructor` chain is neutered.
+ * The returned wrapper can be used with `new` and retains static methods,
+ * but `.constructor.constructor` no longer exposes the host `Function`.
+ */
+// biome-ignore lint/complexity/noBannedTypes: wrapping arbitrary class constructors
+function safeClass<T extends Function>(Cls: T): T {
+  function Wrapper(this: unknown, ...args: unknown[]) {
+    return new (Cls as unknown as new (...a: unknown[]) => unknown)(...args);
+  }
+  for (const key of Object.getOwnPropertyNames(Cls)) {
+    if (key === "constructor" || key === "prototype" || key === "length" || key === "name")
+      continue;
+    try {
+      const desc = Object.getOwnPropertyDescriptor(Cls, key);
+      if (desc) Object.defineProperty(Wrapper, key, desc);
+    } catch {
+      // Skip non-configurable properties
+    }
+  }
+  Object.defineProperty(Wrapper, "constructor", {
+    value: undefined,
+    writable: false,
+    configurable: false,
+  });
+  if (Wrapper.prototype) {
+    Object.defineProperty(Wrapper.prototype, "constructor", {
+      value: undefined,
+      writable: false,
+      configurable: false,
+    });
+  }
+  return Wrapper as unknown as T;
+}
+
 const runCodeParams = z.object({
   code: z.string().describe("JavaScript code to execute. Use console.log() for output."),
 });
@@ -98,29 +148,35 @@ export async function executeInIsolate(code: string): Promise<string | { error: 
     }
   };
 
-  const context = vm.createContext({
-    console: {
-      log: capture,
-      info: capture,
-      warn: capture,
-      error: capture,
-      debug: capture,
+  const context = vm.createContext(
+    {
+      // Console methods wrapped to prevent .constructor escape to host Function.
+      console: Object.freeze({
+        log: safeFunction(capture),
+        info: safeFunction(capture),
+        warn: safeFunction(capture),
+        error: safeFunction(capture),
+        debug: safeFunction(capture),
+      }),
+      // Wrapped timers — safe-wrapped to prevent .constructor escape.
+      setTimeout: safeFunction(sandboxSetTimeout),
+      clearTimeout: safeFunction(sandboxClearTimeout),
+      setInterval: safeFunction(sandboxSetInterval),
+      clearInterval: safeFunction(sandboxClearInterval),
+      // Standard web-compat globals — classes wrapped to neuter constructor chain.
+      URL: safeClass(URL),
+      URLSearchParams: safeClass(URLSearchParams),
+      TextEncoder: safeClass(TextEncoder),
+      TextDecoder: safeClass(TextDecoder),
+      atob: safeFunction(atob),
+      btoa: safeFunction(btoa),
+      structuredClone: safeFunction(structuredClone),
     },
-    // Wrapped timers that track IDs for cleanup in the finally block.
-    setTimeout: sandboxSetTimeout,
-    clearTimeout: sandboxClearTimeout,
-    setInterval: sandboxSetInterval,
-    clearInterval: sandboxClearInterval,
-    // Standard web-compat globals
-    URL,
-    URLSearchParams,
-    TextEncoder,
-    TextDecoder,
-    atob,
-    btoa,
-    structuredClone,
-    queueMicrotask,
-  });
+    {
+      // Block string-based code generation within the sandbox realm.
+      codeGeneration: { strings: false, wasm: false },
+    },
+  );
 
   let raceTimer: ReturnType<typeof setTimeout> | undefined;
   try {
