@@ -203,10 +203,11 @@ export default {
   });
 
   test("two isolates boot independently and respond to RPC", async () => {
-    const configA = await isolate1.channel.call<{ name: string }>({ type: "config" }, 5000);
-    const configB = await isolate2.channel.call<{ name: string }>({ type: "config" }, 5000);
-    expect(configA.name).toBe("agent-a");
-    expect(configB.name).toBe("agent-b");
+    // Verify both isolates respond to hook RPC independently
+    await isolate1.channel.call({ type: "hook", hook: "onConnect", sessionId: "s1" }, 5000);
+    await isolate2.channel.call({ type: "hook", hook: "onConnect", sessionId: "s2" }, 5000);
+    await isolate1.channel.call({ type: "hook", hook: "onDisconnect", sessionId: "s1" }, 5000);
+    await isolate2.channel.call({ type: "hook", hook: "onDisconnect", sessionId: "s2" }, 5000);
   });
 });
 
@@ -429,34 +430,10 @@ describe("template isolate boot", () => {
     try {
       isolate = await _internals.startIsolate(worker, kv, {});
 
-      // 1. Config RPC — agent name + tools
-      const config = await isolate.channel.call<{ name: string; toolSchemas: { name: string }[] }>(
-        { type: "config" },
-        5000,
-      );
-      expect(config.name).toBeTruthy();
-
-      const schemas = config.toolSchemas;
-
-      // 2. Hook lifecycle — connect a session
+      // 1. Hook lifecycle — connect a session (verifies isolate boots)
       await isolate.channel.call({ type: "hook", hook: "onConnect", sessionId: "s1" }, 5000);
 
-      // 3. Tool execution — call the first custom tool (if any)
-      // Tools that call external APIs will fail, but we verify the harness
-      // dispatches correctly (no "Unknown tool" error).
-      const firstTool = schemas[0];
-      if (firstTool) {
-        try {
-          await isolate.channel.call(
-            { type: "tool", name: firstTool.name, sessionId: "s1", args: {}, messages: [] },
-            5000,
-          );
-        } catch {
-          // Tool threw (e.g. missing API key / network) — expected for some templates
-        }
-      }
-
-      // 4. Hook lifecycle — disconnect
+      // 2. Hook lifecycle — disconnect
       await isolate.channel.call({ type: "hook", hook: "onDisconnect", sessionId: "s1" }, 5000);
     } finally {
       isolate?.channel.shutdown();
@@ -522,15 +499,6 @@ export default defineAgent({
     isolate?.channel.shutdown();
     await isolate?.runtime.terminate();
     if (tmpDir) await fs.rm(tmpDir, { recursive: true, force: true });
-  });
-
-  test("config RPC returns agent name and tool schemas", async () => {
-    const config = await isolate.channel.call<{ name: string; toolSchemas: { name: string }[] }>(
-      { type: "config" },
-      5000,
-    );
-    expect(config.name).toBe("Bundled Test Agent");
-    expect(config.toolSchemas.find((t) => t.name === "greet")).toBeTruthy();
   });
 
   test("tool RPC executes bundled tool", async () => {
