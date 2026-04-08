@@ -13,7 +13,7 @@ import { createBundleStore } from "./bundle-store.ts";
 import { DEFAULT_PORT } from "./constants.ts";
 import { deriveCredentialKey } from "./credentials.ts";
 import { createOrchestrator, type OrchestratorOpts } from "./orchestrator.ts";
-import type { AgentSlot } from "./sandbox.ts";
+import { createSlotCache } from "./sandbox-slots.ts";
 
 function requireEnv<const K extends string>(
   env: NodeJS.ProcessEnv,
@@ -35,7 +35,7 @@ async function buildLocalOpts(_env: NodeJS.ProcessEnv): Promise<OrchestratorOpts
   const storage = createStorage();
   const credentialKey = await deriveCredentialKey("local-dev-secret");
   return {
-    slots: new Map<string, AgentSlot>(),
+    slots: createSlotCache(),
     store: createBundleStore(storage, { credentialKey }),
     storage,
   };
@@ -66,7 +66,7 @@ async function buildOpts(env: NodeJS.ProcessEnv): Promise<OrchestratorOpts> {
   const store = createBundleStore(storage, { credentialKey });
 
   return {
-    slots: new Map<string, AgentSlot>(),
+    slots: createSlotCache(),
     store,
     storage,
   };

@@ -5,8 +5,11 @@ import { createStorage, type Storage } from "unstorage";
 import { vi } from "vitest";
 import { createOrchestrator } from "./orchestrator.ts";
 import type { AgentSlot } from "./sandbox.ts";
+import { createSlotCache } from "./sandbox-slots.ts";
 import { type AgentMetadata, AgentMetadataSchema } from "./schemas.ts";
 import type { BundleStore } from "./store-types.ts";
+
+export { createSlotCache } from "./sandbox-slots.ts";
 
 /** In-memory mock KV store backed by a Map. All methods are vi.fn() spies. */
 export function createMockKv(): Kv {
@@ -115,7 +118,8 @@ export function makeSlot(overrides?: Partial<AgentSlot>): AgentSlot {
 export function deployBody(overrides?: Record<string, unknown>): string {
   return JSON.stringify({
     env: VALID_ENV,
-    worker: "console.log('w');",
+    worker:
+      'module.exports = { name: "test-agent", systemPrompt: "Test", greeting: "", maxSteps: 1, tools: {} };',
     clientFiles: {
       "index.html":
         // biome-ignore lint/security/noSecrets: HTML template, not a secret
@@ -135,7 +139,7 @@ export async function createTestOrchestrator(): Promise<{
 }> {
   const store = createTestStore();
   const storage = createTestStorage();
-  const { app } = createOrchestrator({ slots: new Map(), store, storage });
+  const { app } = createOrchestrator({ slots: createSlotCache(), store, storage });
   const fetch: TestFetch = async (input, init) => app.request(input, init);
   return { fetch, store, storage };
 }

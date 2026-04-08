@@ -260,7 +260,8 @@ describe("deploy serves client files", () => {
     const storage = createStorage();
     const credentialKey = await deriveCredentialKey("test-secret");
     const store = createBundleStore(storage, { credentialKey });
-    const { app } = createOrchestrator({ slots: new Map(), store, storage });
+    const { createSlotCache } = await import("./sandbox-slots.ts");
+    const { app } = createOrchestrator({ slots: createSlotCache(), store, storage });
     const fetch = async (input: string | Request, init?: RequestInit) => app.request(input, init);
     return { fetch, store };
   }

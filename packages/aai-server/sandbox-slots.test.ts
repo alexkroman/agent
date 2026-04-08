@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Sandbox } from "./sandbox.ts";
 import {
   _slotInternals,
-  type AgentSlot,
+  createSlotCache,
   ensureAgent,
   registerSlot,
   resolveSandbox,
@@ -42,7 +42,7 @@ function makeEnsureOpts(overrides?: Record<string, unknown>) {
 
 describe("registerSlot", () => {
   it("registers a slot from agent metadata", () => {
-    const slots = new Map<string, AgentSlot>();
+    const slots = createSlotCache();
     registerSlot(slots, { slug: "my-agent", env: {}, credential_hashes: ["hash1"] });
     expect(slots.get("my-agent")).toEqual({
       slug: "my-agent",
@@ -51,7 +51,7 @@ describe("registerSlot", () => {
   });
 
   it("uses empty string when no credential hashes", () => {
-    const slots = new Map<string, AgentSlot>();
+    const slots = createSlotCache();
     registerSlot(slots, { slug: "agent", env: {}, credential_hashes: [] });
     expect(slots.get("agent")?.keyHash).toBe("");
   });
@@ -190,28 +190,36 @@ describe("ensureAgent", () => {
     expect(slot.sandbox).toBeUndefined();
   });
 
-  it("throws SlotCapacityError when active slots exceed MAX_SLOTS", async () => {
-    const { SlotCapacityError } = await import("./sandbox-slots.ts");
+  it("evicts LRU slot at capacity instead of throwing", async () => {
     const { MAX_SLOTS } = await import("./constants.ts");
 
-    // Create MAX_SLOTS slots that all have active sandboxes
-    const slots = new Map<string, AgentSlot>();
+    // Create a cache and fill it to MAX_SLOTS with active sandboxes
+    const slots = createSlotCache();
+    const shutdowns: ReturnType<typeof vi.fn>[] = [];
     for (let i = 0; i < MAX_SLOTS; i++) {
-      const s = makeSlot({ slug: `agent-${i}`, sandbox: makeMockSandbox() });
+      const sb = makeMockSandbox();
+      shutdowns.push(sb.shutdown as ReturnType<typeof vi.fn>);
+      const s = makeSlot({ slug: `agent-${i}`, sandbox: sb });
       slots.set(s.slug, s);
     }
 
-    // Try to spawn one more
+    // The LRU-oldest is agent-0. Adding one more should evict it.
     const extraSlot = makeSlot({ slug: "one-too-many" });
     slots.set(extraSlot.slug, extraSlot);
     const opts = makeEnsureOpts({ slug: "one-too-many" });
 
-    await expect(ensureAgent(extraSlot, opts, slots)).rejects.toThrow(SlotCapacityError);
-    expect(mockCreateSandbox).not.toHaveBeenCalled();
+    const result = await ensureAgent(extraSlot, opts, slots);
+    expect(result).toBeDefined();
+    expect(mockCreateSandbox).toHaveBeenCalledOnce();
+
+    // agent-0 should have been evicted by LRU
+    expect(slots.has("agent-0")).toBe(false);
+    // Its sandbox should have been shut down via the dispose callback
+    expect(shutdowns[0]).toHaveBeenCalled();
   });
 
   it("allows spawn when active slots are below MAX_SLOTS", async () => {
-    const slots = new Map<string, AgentSlot>();
+    const slots = createSlotCache();
     const slot = makeSlot({ slug: "ok-agent" });
     slots.set(slot.slug, slot);
     const opts = makeEnsureOpts({ slug: "ok-agent" });
@@ -219,6 +227,32 @@ describe("ensureAgent", () => {
     const result = await ensureAgent(slot, opts, slots);
     expect(result).toBeDefined();
     expect(mockCreateSandbox).toHaveBeenCalledOnce();
+  });
+
+  it("rejects spawn when RSS exceeds MAX_RSS_MB", async () => {
+    const slot = makeSlot();
+    const opts = makeEnsureOpts();
+    const orig = process.memoryUsage;
+    process.memoryUsage = Object.assign(() => ({ ...orig(), rss: 2000 * 1024 * 1024 }), orig);
+    try {
+      await expect(ensureAgent(slot, opts)).rejects.toThrow("Memory pressure");
+      expect(mockCreateSandbox).not.toHaveBeenCalled();
+    } finally {
+      process.memoryUsage = orig;
+    }
+  });
+
+  it("allows spawn when RSS is below MAX_RSS_MB", async () => {
+    const slot = makeSlot();
+    const opts = makeEnsureOpts();
+    const orig = process.memoryUsage;
+    process.memoryUsage = Object.assign(() => ({ ...orig(), rss: 500 * 1024 * 1024 }), orig);
+    try {
+      const result = await ensureAgent(slot, opts);
+      expect(result).toBeDefined();
+    } finally {
+      process.memoryUsage = orig;
+    }
   });
 });
 
@@ -237,7 +271,7 @@ describe("resolveSandbox", () => {
     const storage = createTestStorage();
     const result = await resolveSandbox("unknown", {
       createSandbox: mockCreateSandbox,
-      slots: new Map(),
+      slots: createSlotCache(),
       store,
       storage,
     });
@@ -255,7 +289,7 @@ describe("resolveSandbox", () => {
       clientFiles: {},
     });
 
-    const slots = new Map<string, AgentSlot>();
+    const slots = createSlotCache();
     const result = await resolveSandbox("lazy-agent", {
       createSandbox: mockCreateSandbox,
       slots,
@@ -279,7 +313,7 @@ describe("resolveSandbox", () => {
       clientFiles: {},
     });
 
-    const slots = new Map<string, AgentSlot>();
+    const slots = createSlotCache();
     await resolveSandbox("env-agent", {
       createSandbox: mockCreateSandbox,
       slots,
@@ -306,7 +340,7 @@ describe("resolveSandbox", () => {
       clientFiles: {},
     });
 
-    const slots = new Map<string, AgentSlot>();
+    const slots = createSlotCache();
     registerSlot(slots, { slug: "reuse", env: {}, credential_hashes: ["hash"] });
 
     await resolveSandbox("reuse", {
@@ -338,7 +372,7 @@ describe("resolveSandbox", () => {
       clientFiles: {},
     });
 
-    const slots = new Map<string, AgentSlot>();
+    const slots = createSlotCache();
 
     await resolveSandbox("vec-agent", {
       createSandbox: mockCreateSandbox,

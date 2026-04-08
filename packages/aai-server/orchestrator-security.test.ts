@@ -2,6 +2,7 @@
 import { describe, expect, test } from "vitest";
 import { hashApiKey } from "./auth.ts";
 import { createOrchestrator } from "./orchestrator.ts";
+import { createSlotCache } from "./sandbox-slots.ts";
 import {
   authFetch,
   authHeaders,
@@ -306,7 +307,7 @@ describe("security headers on all response types", () => {
   test("health endpoint includes security headers", async () => {
     const store = createTestStore();
     const storage = createTestStorage();
-    const { app } = createOrchestrator({ slots: new Map(), store, storage });
+    const { app } = createOrchestrator({ slots: createSlotCache(), store, storage });
     const res = await app.fetch(new Request("http://localhost/health"));
 
     expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
@@ -317,7 +318,7 @@ describe("security headers on all response types", () => {
   test("404 responses include security headers", async () => {
     const store = createTestStore();
     const storage = createTestStorage();
-    const { app } = createOrchestrator({ slots: new Map(), store, storage });
+    const { app } = createOrchestrator({ slots: createSlotCache(), store, storage });
     const res = await app.fetch(new Request("http://localhost/nonexistent"));
 
     expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
@@ -346,7 +347,7 @@ describe("security headers on all response types", () => {
     const store = createTestStore();
     const storage = createTestStorage();
     const { app } = createOrchestrator({
-      slots: new Map(),
+      slots: createSlotCache(),
       store,
       storage,
       allowedOrigins: ["https://trusted.example.com"],
@@ -374,7 +375,7 @@ describe("security headers on all response types", () => {
   test("CORS rejects cross-origin when no origins configured", async () => {
     const store = createTestStore();
     const storage = createTestStorage();
-    const { app } = createOrchestrator({ slots: new Map(), store, storage });
+    const { app } = createOrchestrator({ slots: createSlotCache(), store, storage });
 
     const res = await app.fetch(
       new Request("http://localhost/health", {

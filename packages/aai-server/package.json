@@ -8,8 +8,8 @@
     "predev": "node -e \"const [maj,min] = process.versions.node.split('.').map(Number); if (maj < 22 || (maj === 22 && min < 6)) { console.error('Node >=22.6 required (got ' + process.version + '). Run: fnm use 22'); process.exit(1); }\"",
     "dev": "node --watch index.ts",
     "start": "node dist/index.mjs",
-    "test": "vitest run --exclude 'chaos/**'",
-    "test:coverage": "vitest run --coverage --exclude 'chaos/**'",
+    "test": "vitest run --exclude 'load/**' --exclude 'adversarial/**'",
+    "test:coverage": "vitest run --coverage --exclude 'load/**' --exclude 'adversarial/**'",
     "build": "tsdown",
     "check:harness": "node --experimental-strip-types scripts/check-harness.ts",
     "typecheck": "tsc --noEmit",
@@ -17,8 +17,8 @@
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "check:integration": "pnpm run test:integration",
     "test:docker": "vitest run --config vitest.docker.config.ts",
-    "test:chaos": "vitest run --config chaos/vitest.chaos.config.ts",
-    "check:chaos": "pnpm run test:chaos"
+    "test:load": "vitest run --config load/vitest.load.config.ts",
+    "check:load": "pnpm run test:load"
   },
   "dependencies": {
     "@alexkroman1/aai": "workspace:*",

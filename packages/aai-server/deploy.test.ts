@@ -34,6 +34,21 @@ describe("POST /:slug/deploy", () => {
     expect(res.status).toBe(400);
   });
 
+  test("rejects invalid agent bundle (missing name)", async () => {
+    const { fetch } = await createTestOrchestrator();
+    const res = await fetch("/my-agent/deploy", {
+      method: "POST",
+      headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
+      body: JSON.stringify({
+        env: { ASSEMBLYAI_API_KEY: "k" },
+        worker: "module.exports = {};",
+        clientFiles: { "index.html": "<html></html>" },
+      }),
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as Record<string, unknown>).error).toContain("Invalid agent bundle");
+  });
+
   test("rejects invalid env (missing ASSEMBLYAI_API_KEY)", async () => {
     const { fetch } = await createTestOrchestrator();
     const res = await fetch("/my-agent/deploy", {
@@ -92,7 +107,8 @@ describe("POST /:slug/deploy", () => {
       method: "POST",
       headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
       body: JSON.stringify({
-        worker: "console.log('w');",
+        worker:
+          'module.exports = { name: "pre-stored", systemPrompt: "Test", greeting: "", maxSteps: 1, tools: {} };',
         clientFiles: { "index.html": "<html></html>" },
       }),
     });
