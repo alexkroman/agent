@@ -92,6 +92,8 @@ export type SandboxOptions = {
   agentEnv: Record<string, string>;
   storage: Storage;
   slug: string;
+  /** Pre-extracted agent config. When provided, skips V8 isolate boot for config extraction. */
+  agentConfig?: IsolateConfig;
 };
 
 export type Sandbox = AgentRuntime;
@@ -321,6 +323,153 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
 
   const kv = createUnstorageKv({ storage, prefix: agentKvPrefix(slug) });
   const authToken = randomBytes(32).toString("hex");
+
+  // SSRF-safe fetch wrapper for built-in tools (web_search, visit_webpage, fetch_json).
+  // Validates each URL (and redirect target) against private/reserved IP ranges.
+  const safeFetch: typeof globalThis.fetch = (input, init?) => {
+    let url: string;
+    if (typeof input === "string") url = input;
+    else if (input instanceof URL) url = input.href;
+    else url = input.url;
+    return ssrfSafeFetch(url, init ?? {}, globalThis.fetch);
+  };
+
+  // When pre-extracted config is available, use it directly and defer isolate boot
+  // until custom tool execution or hook invocation is actually needed.
+  if (opts.agentConfig) {
+    return createSandboxWithPreExtractedConfig({
+      config: opts.agentConfig,
+      workerCode,
+      kv,
+      authToken,
+      apiKey,
+      agentEnv,
+      slug,
+      safeFetch,
+    });
+  }
+
+  // Fallback: boot isolate eagerly and extract config via RPC (old deploy without agentConfig)
+  return createSandboxWithIsolate({
+    workerCode,
+    kv,
+    authToken,
+    apiKey,
+    agentEnv,
+    slug,
+    safeFetch,
+  });
+}
+
+/** Determine whether the agent needs the V8 isolate for runtime operations. */
+function needsIsolate(config: IsolateConfig): boolean {
+  const hasCustomTools = config.toolSchemas.length > 0;
+  const hasHooks =
+    config.hooks.onConnect ||
+    config.hooks.onDisconnect ||
+    config.hooks.onError ||
+    config.hooks.onUserTranscript ||
+    config.hooks.maxStepsIsFn;
+  const hasState = config.hasState;
+  return hasCustomTools || hasHooks || hasState;
+}
+
+type SandboxInternalOpts = {
+  workerCode: string;
+  kv: import("@alexkroman1/aai/kv").Kv;
+  authToken: string;
+  apiKey: string;
+  agentEnv: Record<string, string>;
+  slug: string;
+  safeFetch: typeof globalThis.fetch;
+};
+
+/**
+ * Create a sandbox using a pre-extracted config, deferring isolate boot
+ * until custom tool/hook execution is needed (or never, for builtin-only agents).
+ */
+async function createSandboxWithPreExtractedConfig(
+  opts: SandboxInternalOpts & { config: IsolateConfig },
+): Promise<Sandbox> {
+  const { config, workerCode, kv, authToken, apiKey, agentEnv, slug, safeFetch } = opts;
+
+  // Lazy isolate: only booted when custom tools/hooks are actually invoked
+  type IsolateHandle = {
+    port: number;
+    runtime: NodeRuntime;
+    crashed: AbortSignal;
+    sidecar: Sidecar;
+  };
+  let isolate: IsolateHandle | null = null;
+  let isolatePromise: Promise<IsolateHandle> | null = null;
+
+  async function ensureIsolate(): Promise<IsolateHandle> {
+    if (isolate) return isolate;
+    if (!isolatePromise) {
+      isolatePromise = startIsolate(workerCode, kv, agentEnv, authToken).then((result) => {
+        isolate = result;
+        return result;
+      });
+    }
+    return await isolatePromise;
+  }
+
+  // Build RPC-backed tool execution that lazily boots the isolate
+  const executeTool: ExecuteTool = async (name, args, sessionId, messages) => {
+    const { port, crashed } = await ensureIsolate();
+    return buildExecuteTool(port, authToken, crashed)(name, args, sessionId, messages);
+  };
+
+  // Build RPC-backed hooks that lazily boot the isolate
+  const hooks = buildLazyHookInvoker(ensureIsolate, authToken, config.hooks);
+
+  const builtins = resolveAllBuiltins(config.builtinTools ?? []);
+  const agentRuntime = createRuntime({
+    agent: buildAgentFromConfig(config),
+    env: { ...agentEnv, ASSEMBLYAI_API_KEY: apiKey },
+    fetch: safeFetch,
+    executeTool,
+    hooks,
+    toolSchemas: [...config.toolSchemas, ...builtins.schemas],
+    toolGuidance: builtins.guidance,
+  });
+
+  const isolateNeeded = needsIsolate(config);
+  console.info("Sandbox initialized", {
+    slug,
+    agent: config.name,
+    isolateDeferred: isolateNeeded,
+    isolateSkipped: !isolateNeeded,
+  });
+
+  async function shutdownSandbox(): Promise<void> {
+    try {
+      hooks.removeAllHooks();
+      await agentRuntime.shutdown();
+    } finally {
+      if (isolate) {
+        await isolate.sidecar.close().catch(() => {
+          /* ignore */
+        });
+        await isolate.runtime.terminate().catch((err: unknown) => {
+          const msg = errorMessage(err);
+          if (!msg.includes("already disposed")) console.warn("Runtime terminate failed:", err);
+        });
+      }
+    }
+  }
+
+  return {
+    readyConfig: agentRuntime.readyConfig,
+    startSession: agentRuntime.startSession.bind(agentRuntime),
+    shutdown: shutdownSandbox,
+  };
+}
+
+/** Fallback: boot isolate eagerly and extract config via RPC. */
+async function createSandboxWithIsolate(opts: SandboxInternalOpts): Promise<Sandbox> {
+  const { workerCode, kv, authToken, apiKey, agentEnv, slug, safeFetch } = opts;
+
   const { port, runtime, crashed, sidecar } = await startIsolate(
     workerCode,
     kv,
@@ -342,33 +491,9 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
   const executeTool = buildExecuteTool(port, authToken, crashed);
   const hooks = buildHookInvoker(port, authToken, crashed);
 
-  // SSRF-safe fetch wrapper for built-in tools (web_search, visit_webpage, fetch_json).
-  // Validates each URL (and redirect target) against private/reserved IP ranges.
-  const safeFetch: typeof globalThis.fetch = (input, init?) => {
-    let url: string;
-    if (typeof input === "string") url = input;
-    else if (input instanceof URL) url = input.href;
-    else url = input.url;
-    return ssrfSafeFetch(url, init ?? {}, globalThis.fetch);
-  };
-
-  // Create a runtime with RPC overrides — same startSession/shutdown as self-hosted
   const builtins = resolveAllBuiltins(config.builtinTools ?? []);
   const agentRuntime = createRuntime({
-    agent: {
-      name: config.name,
-      systemPrompt: config.systemPrompt,
-      greeting: config.greeting ?? "",
-      maxSteps: config.maxSteps ?? 5,
-      tools: {},
-      ...(config.sttPrompt ? { sttPrompt: config.sttPrompt } : {}),
-      ...(config.toolChoice
-        ? { toolChoice: config.toolChoice as import("@alexkroman1/aai/types").ToolChoice }
-        : {}),
-      ...(config.builtinTools
-        ? { builtinTools: config.builtinTools as import("@alexkroman1/aai/types").BuiltinTool[] }
-        : {}),
-    },
+    agent: buildAgentFromConfig(config),
     env: { ...agentEnv, ASSEMBLYAI_API_KEY: apiKey },
     fetch: safeFetch,
     executeTool,
@@ -399,6 +524,81 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
     startSession: agentRuntime.startSession.bind(agentRuntime),
     shutdown: shutdownSandbox,
   };
+}
+
+/** Build the agent definition object expected by createRuntime from an IsolateConfig. */
+function buildAgentFromConfig(config: IsolateConfig) {
+  return {
+    name: config.name,
+    systemPrompt: config.systemPrompt,
+    greeting: config.greeting ?? "",
+    maxSteps: config.maxSteps ?? 5,
+    tools: {},
+    ...(config.sttPrompt ? { sttPrompt: config.sttPrompt } : {}),
+    ...(config.toolChoice
+      ? { toolChoice: config.toolChoice as import("@alexkroman1/aai/types").ToolChoice }
+      : {}),
+    ...(config.builtinTools
+      ? { builtinTools: config.builtinTools as import("@alexkroman1/aai/types").BuiltinTool[] }
+      : {}),
+  };
+}
+
+type IsolateProvider = () => Promise<{ port: number; crashed: AbortSignal }>;
+
+/**
+ * Build a hook invoker that lazily boots the isolate only for hooks the agent
+ * actually has. For hooks the agent doesn't define, no-ops are registered
+ * (avoiding isolate boot).
+ */
+function buildLazyHookInvoker(
+  ensureIsolate: IsolateProvider,
+  authToken: string,
+  hookFlags: IsolateConfig["hooks"],
+): AgentHooks {
+  const rpc = async (name: string, extra: Record<string, unknown> = {}): Promise<unknown> => {
+    const { port, crashed } = await ensureIsolate();
+    return (
+      await callIsolate(
+        port,
+        { type: "hook", hook: name, ...extra },
+        HOOK_TIMEOUT_MS,
+        HookResponseSchema,
+        authToken,
+        crashed,
+      )
+    ).result;
+  };
+
+  const hooks = createHooks<AgentHookMap>();
+
+  if (hookFlags.onConnect) {
+    hooks.hook("connect", async (sessionId) => {
+      await rpc("onConnect", { sessionId });
+    });
+  }
+  if (hookFlags.onDisconnect) {
+    hooks.hook("disconnect", async (sessionId) => {
+      await rpc("onDisconnect", { sessionId });
+    });
+  }
+  if (hookFlags.onUserTranscript) {
+    hooks.hook("userTranscript", async (sessionId, text) => {
+      await rpc("onUserTranscript", { sessionId, text });
+    });
+  }
+  if (hookFlags.maxStepsIsFn) {
+    hooks.hook("resolveTurnConfig", (async (sessionId: string) => {
+      const parsed = TurnConfigResultSchema.parse(await rpc("resolveTurnConfig", { sessionId }));
+      if (parsed == null) return null;
+      const config: { maxSteps?: number } = {};
+      if (parsed.maxSteps != null) config.maxSteps = parsed.maxSteps;
+      return config;
+      // biome-ignore lint/suspicious/noExplicitAny: hookable void-return constraint requires cast
+    }) as any);
+  }
+
+  return hooks;
 }
 
 export async function resolveSandbox(

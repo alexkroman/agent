@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
-import { BundleError } from "./_bundler.ts";
+import { BundleError, extractAgentConfig, transformBundleForEval } from "./_bundler.ts";
 
 describe("BundleError", () => {
   test("creates error with BundleError name", () => {
@@ -82,6 +82,91 @@ describe("bundleAgent: zod externalization", () => {
     } finally {
       await fs.rm(tmpDir, { recursive: true });
     }
+  });
+});
+
+describe("transformBundleForEval", () => {
+  test("replaces named zod import from /app/_zod.mjs", () => {
+    const code = `import { z } from "/app/_zod.mjs";\nexport default { name: "test" };`;
+    const result = transformBundleForEval(code);
+    expect(result).toContain('var z = __zod__["z"];');
+    expect(result).toContain('__exports__.default = { name: "test" }');
+    expect(result).not.toMatch(/\bimport\s/);
+    expect(result).not.toMatch(/\bexport\s/);
+  });
+
+  test("replaces namespace zod import", () => {
+    const code = `import * as z from "/app/_zod.mjs";\nexport default {};`;
+    const result = transformBundleForEval(code);
+    expect(result).toContain("var z = __zod__;");
+  });
+
+  test("replaces default zod import", () => {
+    const code = `import z from "/app/_zod.mjs";\nexport default {};`;
+    const result = transformBundleForEval(code);
+    expect(result).toContain("var z = __zod__;");
+  });
+
+  test("replaces export { X as default }", () => {
+    const code = `var agent = { name: "x" };\nexport { agent as default };`;
+    const result = transformBundleForEval(code);
+    expect(result).toContain("__exports__.default = agent;");
+  });
+
+  test("handles multiple named imports", () => {
+    const code = `import { z, ZodError } from "/app/_zod.mjs";\nexport default {};`;
+    const result = transformBundleForEval(code);
+    expect(result).toContain('var z = __zod__["z"];');
+    expect(result).toContain('var ZodError = __zod__["ZodError"];');
+  });
+
+  test("handles aliased import", () => {
+    const code = `import { z as zod } from "/app/_zod.mjs";\nexport default {};`;
+    const result = transformBundleForEval(code);
+    expect(result).toContain('var zod = __zod__["z"];');
+  });
+});
+
+describe("extractAgentConfig", () => {
+  test("extracts config from simple CJS agent", () => {
+    const code = `export default { name: "test-agent", systemPrompt: "Be helpful", greeting: "Hi", maxSteps: 3, tools: {}, builtinTools: ["web_search"] };`;
+    const config = extractAgentConfig(code);
+    expect(config).toBeDefined();
+    expect(config?.name).toBe("test-agent");
+    expect(config?.systemPrompt).toBe("Be helpful");
+    expect(config?.greeting).toBe("Hi");
+    expect(config?.maxSteps).toBe(3);
+    expect(config?.builtinTools).toEqual(["web_search"]);
+    expect(config?.toolSchemas).toEqual([]);
+    expect(config?.hasState).toBe(false);
+    expect(config?.hooks.onConnect).toBe(false);
+  });
+
+  test("detects hooks and state", () => {
+    const code = `export default { name: "test", systemPrompt: "s", tools: {}, state: () => ({ count: 0 }), onConnect: () => {}, onDisconnect: () => {}, maxSteps: () => 5 };`;
+    const config = extractAgentConfig(code);
+    expect(config).toBeDefined();
+    expect(config?.hasState).toBe(true);
+    expect(config?.hooks.onConnect).toBe(true);
+    expect(config?.hooks.onDisconnect).toBe(true);
+    expect(config?.hooks.maxStepsIsFn).toBe(true);
+    // maxSteps is a function, so the number should not be included
+    expect(config?.maxSteps).toBeUndefined();
+  });
+
+  test("returns undefined for invalid bundle", () => {
+    const config = extractAgentConfig("this is not valid javascript {{{");
+    expect(config).toBeUndefined();
+  });
+
+  test("returns undefined when no default export", () => {
+    const config = extractAgentConfig("var x = 1;");
+    expect(config).toBeUndefined();
+  });
+
+  test("returns undefined when export is missing name", () => {
+    const config = extractAgentConfig("export default { systemPrompt: 's' };");
+    expect(config).toBeUndefined();
   });
 });
 

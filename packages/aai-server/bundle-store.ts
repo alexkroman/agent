@@ -6,6 +6,7 @@ import { getLock } from "p-lock";
 import type { Storage } from "unstorage";
 import { z } from "zod";
 import { type CredentialKey, decryptEnv, encryptEnv } from "./credentials.ts";
+import { IsolateConfigSchema } from "./rpc-schemas.ts";
 import { AgentMetadataSchema } from "./schemas.ts";
 import type { BundleStore } from "./store-types.ts";
 
@@ -61,11 +62,18 @@ export function createBundleStore(
       await storage.setItem(objectKey(bundle.slug, "manifest.json"), JSON.stringify(manifest));
       await storage.setItem(objectKey(bundle.slug, "worker.js"), bundle.worker);
 
-      await Promise.all(
-        Object.entries(bundle.clientFiles).map(([filePath, content]) =>
-          storage.setItem(objectKey(bundle.slug, `client/${filePath}`), content),
-        ),
+      const writes = Object.entries(bundle.clientFiles).map(([filePath, content]) =>
+        storage.setItem(objectKey(bundle.slug, `client/${filePath}`), content),
       );
+      if (bundle.agentConfig) {
+        writes.push(
+          storage.setItem(
+            objectKey(bundle.slug, "config.json"),
+            JSON.stringify(bundle.agentConfig),
+          ),
+        );
+      }
+      await Promise.all(writes);
     },
 
     async getManifest(slug) {
@@ -112,6 +120,17 @@ export function createBundleStore(
         await storage.setItem(objectKey(slug, "manifest.json"), JSON.stringify(updated));
       } finally {
         release();
+      }
+    },
+
+    async getAgentConfig(slug) {
+      const data = await storage.getItem<string>(objectKey(slug, "config.json"));
+      if (data == null) return null;
+      try {
+        const raw = typeof data === "string" ? data : JSON.stringify(data);
+        return IsolateConfigSchema.parse(JSON.parse(raw));
+      } catch {
+        return null;
       }
     },
   };

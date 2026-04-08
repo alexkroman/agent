@@ -25,6 +25,7 @@ export async function runDeploy(opts: DeployOpts): Promise<DeployResult> {
     env: opts.env,
     worker: opts.bundle.worker,
     clientFiles: opts.bundle.clientFiles,
+    ...(opts.bundle.agentConfig ? { agentConfig: opts.bundle.agentConfig } : {}),
   });
 
   const resp = await apiRequestOrThrow(

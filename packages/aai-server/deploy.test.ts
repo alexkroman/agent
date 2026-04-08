@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
 import { hashApiKey } from "./auth.ts";
+import type { IsolateConfig } from "./rpc-schemas.ts";
 import { createTestOrchestrator, deployAgent, deployBody } from "./test-utils.ts";
 
 test("hashApiKey produces consistent hex output", async () => {
@@ -204,6 +205,47 @@ describe("POST /deploy", () => {
     // Original owner's credential_hashes should not be modified
     const afterManifest = await store.getManifest("stolen-agent");
     expect(afterManifest?.credential_hashes).toEqual(originalHashes);
+  });
+
+  test("stores agentConfig when provided in deploy body", async () => {
+    const { fetch, store } = await createTestOrchestrator();
+    const agentConfig: IsolateConfig = {
+      name: "config-agent",
+      systemPrompt: "Be helpful",
+      toolSchemas: [],
+      hasState: false,
+      hooks: {
+        onConnect: false,
+        onDisconnect: false,
+        onError: false,
+        onUserTranscript: false,
+        maxStepsIsFn: false,
+      },
+    };
+
+    const res = await fetch("/deploy", {
+      method: "POST",
+      headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
+      body: deployBody({ slug: "config-test", agentConfig }),
+    });
+    expect(res.status).toBe(200);
+
+    const stored = await store.getAgentConfig("config-test");
+    expect(stored).toEqual(agentConfig);
+  });
+
+  test("deploy without agentConfig returns null from getAgentConfig", async () => {
+    const { fetch, store } = await createTestOrchestrator();
+
+    const res = await fetch("/deploy", {
+      method: "POST",
+      headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
+      body: deployBody({ slug: "no-config-test" }),
+    });
+    expect(res.status).toBe(200);
+
+    const stored = await store.getAgentConfig("no-config-test");
+    expect(stored).toBeNull();
   });
 
   test("redeploy to same slug preserves ownership", async () => {
