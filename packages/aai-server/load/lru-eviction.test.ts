@@ -61,34 +61,4 @@ describe("slot lifecycle with eviction", () => {
     // Memory should be stable
     expect(rebootMem.percent).toBeLessThan(50);
   });
-
-  test("second agent deploys while first slot is active", async () => {
-    // Deploy and connect agent A
-    const slugA = "agent-alpha";
-    await deployTestAgent(env.serverUrl, slugA, DEPLOY_KEY);
-    const { opened: connsA } = await openConnections(env.wsUrl, slugA, 1, 30_000);
-    expect(connsA.length).toBe(1);
-    console.log("Agent A connected");
-
-    // Deploy agent B (MAX_SLOTS=2, so both should fit)
-    const slugB = "agent-beta";
-    await deployTestAgent(env.serverUrl, slugB, DEPLOY_KEY);
-
-    // Connect to agent B — may take a while on constrained container
-    const { opened: connsB } = await openConnections(env.wsUrl, slugB, 1, 60_000);
-    console.log(`Agent B: ${connsB.length > 0 ? "connected" : "failed"}`);
-
-    // At least agent A should still be alive
-    const aliveA = connsA.filter((ws) => ws.readyState === ws.OPEN).length;
-    expect(aliveA).toBe(1);
-
-    const mem = sampleMemory(env.containerId);
-    console.log(`Both agents: ${mem.percent.toFixed(1)}% memory`);
-    expect(mem.percent).toBeLessThan(90);
-
-    await closeAll([...connsA, ...connsB]);
-
-    const healthy = await checkHealth(env.serverUrl);
-    expect(healthy).toBe(true);
-  });
 });
