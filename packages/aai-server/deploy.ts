@@ -105,7 +105,7 @@ async function handleDeployInner(
     worker: body.worker,
     clientFiles: body.clientFiles,
     credential_hashes: mergedHashes,
-    ...(body.agentConfig ? { agentConfig: body.agentConfig } : {}),
+    agentConfig: body.agentConfig,
   });
 
   c.env.slots.set(slug, { slug, keyHash });

@@ -19,11 +19,23 @@ import { createTestOrchestrator } from "./test-utils.ts";
 // biome-ignore lint/suspicious/noExplicitAny: accepts any state type
 function buildDeployBodyFromAgent(agent: AgentDef<any>): string {
   const config = toAgentConfig(agent);
-  const _schemas = agentToolsToSchemas(agent.tools);
+  const toolSchemas = agentToolsToSchemas(agent.tools);
+
+  const agentConfig = {
+    ...config,
+    toolSchemas,
+    hasState: typeof agent.state === "function",
+    hooks: {
+      onConnect: typeof agent.onConnect === "function",
+      onDisconnect: typeof agent.onDisconnect === "function",
+      onError: typeof agent.onError === "function",
+      onUserTranscript: typeof agent.onUserTranscript === "function",
+      maxStepsIsFn: typeof agent.maxSteps === "function",
+    },
+  };
 
   // The deploy body contains the bundled worker code (JS string),
-  // client files, and env. We simulate the worker code as a string
-  // that exports the agent config — the real CLI bundles agent.ts.
+  // client files, env, and pre-extracted agentConfig.
   return JSON.stringify({
     env: { ASSEMBLYAI_API_KEY: "test-key" },
     worker: `export default ${JSON.stringify(config)};`,
@@ -31,6 +43,7 @@ function buildDeployBodyFromAgent(agent: AgentDef<any>): string {
       "index.html": "<html><body>test</body></html>",
       "assets/index.js": "console.log('client');",
     },
+    agentConfig,
   });
 }
 

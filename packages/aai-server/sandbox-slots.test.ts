@@ -10,7 +10,7 @@ import {
   registerSlot,
   resolveSandbox,
 } from "./sandbox-slots.ts";
-import { createTestStorage, createTestStore, makeSlot } from "./test-utils.ts";
+import { createTestStorage, createTestStore, makeSlot, TEST_AGENT_CONFIG } from "./test-utils.ts";
 
 // ── Mock createSandbox ──────────────────────────────────────────────────
 
@@ -35,6 +35,7 @@ function makeEnsureOpts(overrides?: Record<string, unknown>) {
     slug: "test",
     getApiKey: vi.fn(async () => "api-key"),
     getAgentEnv: vi.fn(async () => ({ SECRET: "val" })),
+    getAgentConfig: vi.fn(async () => TEST_AGENT_CONFIG),
     ...overrides,
   };
 }
@@ -288,6 +289,7 @@ describe("resolveSandbox", () => {
       credential_hashes: ["hash"],
       worker: "console.log('w');",
       clientFiles: {},
+      agentConfig: TEST_AGENT_CONFIG,
     });
 
     const slots = createSlotCache();
@@ -312,6 +314,7 @@ describe("resolveSandbox", () => {
       credential_hashes: ["hash"],
       worker: "console.log('w');",
       clientFiles: {},
+      agentConfig: TEST_AGENT_CONFIG,
     });
 
     const slots = createSlotCache();
@@ -339,6 +342,7 @@ describe("resolveSandbox", () => {
       credential_hashes: ["hash"],
       worker: "console.log('w');",
       clientFiles: {},
+      agentConfig: TEST_AGENT_CONFIG,
     });
 
     const slots = createSlotCache();
@@ -371,6 +375,7 @@ describe("resolveSandbox", () => {
       credential_hashes: ["hash"],
       worker: "console.log('w');",
       clientFiles: {},
+      agentConfig: TEST_AGENT_CONFIG,
     });
 
     const slots = createSlotCache();
@@ -440,19 +445,20 @@ describe("resolveSandbox with agentConfig", () => {
     );
   });
 
-  it("omits agentConfig when not stored", async () => {
+  it("always passes agentConfig to createSandbox", async () => {
     const store = createTestStore();
     const storage = createTestStorage();
     await store.putAgent({
-      slug: "no-config-agent",
+      slug: "config-agent2",
       env: { ASSEMBLYAI_API_KEY: "key" },
       credential_hashes: ["hash"],
       worker: "console.log('w');",
       clientFiles: {},
+      agentConfig: testConfig,
     });
 
     const slots = createSlotCache();
-    await resolveSandbox("no-config-agent", {
+    await resolveSandbox("config-agent2", {
       createSandbox: mockCreateSandbox,
       slots,
       store,
@@ -460,8 +466,8 @@ describe("resolveSandbox with agentConfig", () => {
     });
 
     expect(mockCreateSandbox).toHaveBeenCalledWith(
-      expect.not.objectContaining({
-        agentConfig: expect.anything(),
+      expect.objectContaining({
+        agentConfig: testConfig,
       }),
     );
   });

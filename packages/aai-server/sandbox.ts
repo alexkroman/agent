@@ -39,7 +39,7 @@ import {
 import type { Storage } from "unstorage";
 import { agentKvPrefix, JAIL_MEMORY_LIMIT_MB, SANDBOX_MEMORY_LIMIT_MB } from "./constants.ts";
 import { initProcessJail, isJailAvailable, type JailedLauncher } from "./process-jail.ts";
-import { type IsolateConfig, IsolateConfigSchema, TurnConfigResultSchema } from "./rpc-schemas.ts";
+import { type IsolateConfig, TurnConfigResultSchema } from "./rpc-schemas.ts";
 import { getHarnessFiles } from "./sandbox-harness.ts";
 import {
   resolveSandbox as _resolveSandboxCore,
@@ -78,8 +78,8 @@ export type SandboxOptions = {
   agentEnv: Record<string, string>;
   storage: Storage;
   slug: string;
-  /** Pre-extracted agent config. When provided, skips V8 isolate boot for config extraction. */
-  agentConfig?: IsolateConfig;
+  /** Pre-extracted agent config from CLI build. */
+  agentConfig: IsolateConfig;
 };
 
 export type Sandbox = AgentRuntime;
@@ -279,13 +279,12 @@ async function startIsolate(
 // ── Hook invoker ────────────────────────────────────────────────────────
 
 /**
- * Build an RPC-backed hook invoker. When `hookFlags` is provided, only hooks
- * the agent actually defines are registered (avoiding unnecessary isolate boot
- * in the lazy path). When omitted, all hooks are registered (eager path).
+ * Build an RPC-backed hook invoker. Only hooks the agent actually defines
+ * are registered, avoiding unnecessary isolate boot.
  */
 function buildHookInvoker(
   getChannel: () => Promise<RpcChannel>,
-  hookFlags?: IsolateConfig["hooks"],
+  hookFlags: IsolateConfig["hooks"],
 ): AgentHooks {
   const rpc = async (name: string, extra: Record<string, unknown> = {}): Promise<unknown> =>
     (
@@ -295,22 +294,22 @@ function buildHookInvoker(
     ).result;
 
   const hooks = createHooks<AgentHookMap>();
-  if (!hookFlags || hookFlags.onConnect) {
+  if (hookFlags.onConnect) {
     hooks.hook("connect", async (sessionId) => {
       await rpc("onConnect", { sessionId });
     });
   }
-  if (!hookFlags || hookFlags.onDisconnect) {
+  if (hookFlags.onDisconnect) {
     hooks.hook("disconnect", async (sessionId) => {
       await rpc("onDisconnect", { sessionId });
     });
   }
-  if (!hookFlags || hookFlags.onUserTranscript) {
+  if (hookFlags.onUserTranscript) {
     hooks.hook("userTranscript", async (sessionId, text) => {
       await rpc("onUserTranscript", { sessionId, text });
     });
   }
-  if (!hookFlags || hookFlags.maxStepsIsFn) {
+  if (hookFlags.maxStepsIsFn) {
     hooks.hook("resolveTurnConfig", (async (sessionId: string) => {
       const parsed = TurnConfigResultSchema.parse(await rpc("resolveTurnConfig", { sessionId }));
       if (parsed == null) return null;
@@ -351,40 +350,28 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
   };
 
   // ── Resolve config + channel provider ─────────────────────────────
-  let config: IsolateConfig;
+  const config = opts.agentConfig;
   let isolate: IsolateHandle | null = null;
-  let getChannel: () => Promise<RpcChannel>;
+  let isolatePromise: Promise<IsolateHandle> | null = null;
 
-  if (opts.agentConfig) {
-    // Lazy path: config known upfront, defer isolate boot until needed
-    config = opts.agentConfig;
-    let isolatePromise: Promise<IsolateHandle> | null = null;
+  const ensureIsolate = async (): Promise<IsolateHandle> => {
+    if (isolate) return isolate;
+    if (!isolatePromise) {
+      isolatePromise = startIsolate(workerCode, kv, agentEnv).then(
+        (result) => {
+          isolate = result;
+          return result;
+        },
+        (err) => {
+          isolatePromise = null;
+          throw err;
+        },
+      );
+    }
+    return await isolatePromise;
+  };
 
-    const ensureIsolate = async (): Promise<IsolateHandle> => {
-      if (isolate) return isolate;
-      if (!isolatePromise) {
-        isolatePromise = startIsolate(workerCode, kv, agentEnv).then(
-          (result) => {
-            isolate = result;
-            return result;
-          },
-          (err) => {
-            isolatePromise = null;
-            throw err;
-          },
-        );
-      }
-      return await isolatePromise;
-    };
-
-    getChannel = async () => (await ensureIsolate()).channel;
-  } else {
-    // Eager path: boot isolate now, extract config via RPC
-    const handle = await startIsolate(workerCode, kv, agentEnv);
-    isolate = handle;
-    config = IsolateConfigSchema.parse(await handle.channel.call({ type: "config" }, 10_000));
-    getChannel = async () => handle.channel;
-  }
+  const getChannel = async () => (await ensureIsolate()).channel;
 
   // ── Build tool executor + hooks from channel ──────────────────────
   const executeTool: ExecuteTool = async (name, args, sessionId, messages) => {
@@ -396,7 +383,7 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
     return result;
   };
 
-  const hooks = buildHookInvoker(getChannel, opts.agentConfig ? config.hooks : undefined);
+  const hooks = buildHookInvoker(getChannel, config.hooks);
 
   // ── Assemble runtime ──────────────────────────────────────────────
   const builtins = resolveAllBuiltins(config.builtinTools ?? []);

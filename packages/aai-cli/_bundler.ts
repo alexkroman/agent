@@ -6,7 +6,7 @@ import { runInNewContext } from "node:vm";
 import { agentToolsToSchemas } from "@alexkroman1/aai/isolate";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import { build } from "vite";
-import { z } from "zod";
+import * as zod from "zod";
 import type { AgentEntry } from "./_agent.ts";
 
 export class BundleError extends Error {
@@ -43,8 +43,8 @@ export type BundleOutput = {
   clientFiles: Record<string, string>;
   clientDir: string;
   workerBytes: number;
-  /** Pre-extracted agent config. Undefined if extraction failed (server falls back to isolate). */
-  agentConfig?: AgentBundleConfig;
+  /** Pre-extracted agent config from the built bundle. */
+  agentConfig: AgentBundleConfig;
 };
 
 const TEXT_EXTENSIONS = new Set([
@@ -102,9 +102,9 @@ async function readDirFiles(dir: string): Promise<Record<string, string>> {
  */
 export function transformBundleForEval(code: string): string {
   let transformed = code;
-  // Replace: import { z } from "/app/_zod.mjs"
+  // Replace: import { z } from "/app/_zod.mjs"  (handles minified: import{z}from"...")
   transformed = transformed.replace(
-    /import\s+\{([^}]+)\}\s+from\s+["'][^"']*_zod[^"']*["'];?\n?/g,
+    /import\s*\{([^}]+)\}\s*from\s*["'][^"']*_zod[^"']*["'];?\n?/g,
     (_, imports: string) => {
       const bindings = imports.split(",").map((s: string) => s.trim());
       return `${bindings
@@ -118,12 +118,12 @@ export function transformBundleForEval(code: string): string {
   );
   // Replace: import z from "/app/_zod.mjs"
   transformed = transformed.replace(
-    /import\s+(\w+)\s+from\s+["'][^"']*_zod[^"']*["'];?\n?/g,
+    /import\s+(\w+)\s+from\s*["'][^"']*_zod[^"']*["'];?\n?/g,
     "var $1 = __zod__;\n",
   );
   // Replace: import * as z from "/app/_zod.mjs"
   transformed = transformed.replace(
-    /import\s+\*\s+as\s+(\w+)\s+from\s+["'][^"']*_zod[^"']*["'];?\n?/g,
+    /import\s*\*\s*as\s+(\w+)\s+from\s*["'][^"']*_zod[^"']*["'];?\n?/g,
     "var $1 = __zod__;\n",
   );
   // Replace: export default X  (anywhere in the file)
@@ -142,60 +142,64 @@ export function transformBundleForEval(code: string): string {
  * Evaluates the bundle in `node:vm` with real zod provided, then extracts
  * the serializable config (same shape as IsolateConfig from rpc-schemas.ts).
  *
- * Returns `undefined` if extraction fails — the server will fall back to
- * extracting config from the V8 isolate at boot time.
+ * Throws if extraction fails — the server requires pre-extracted config.
  */
-export function extractAgentConfig(workerCode: string): AgentBundleConfig | undefined {
+export function extractAgentConfig(workerCode: string): AgentBundleConfig {
+  const transformed = transformBundleForEval(workerCode);
+  const exports: { default?: Record<string, unknown> } = {};
   try {
-    const transformed = transformBundleForEval(workerCode);
-    const exports: { default?: Record<string, unknown> } = {};
-    runInNewContext(transformed, { __zod__: z, __exports__: exports }, { timeout: 5000 });
-
-    const agent = exports.default;
-    if (!agent || typeof agent !== "object" || typeof agent.name !== "string") return;
-
-    // Extract tool schemas using the SDK's agentToolsToSchemas (real Zod → JSON Schema)
-    const tools = (agent.tools ?? {}) as Record<
-      string,
-      { description: string; parameters?: unknown }
-    >;
-    let toolSchemas: AgentBundleConfig["toolSchemas"];
-    try {
-      toolSchemas = agentToolsToSchemas(
-        tools as Parameters<typeof agentToolsToSchemas>[0],
-      ) as AgentBundleConfig["toolSchemas"];
-    } catch {
-      // If Zod schema conversion fails, fall back to manual extraction
-      toolSchemas = Object.entries(tools).map(([name, def]) => ({
-        name,
-        description: def.description ?? "",
-        parameters: { type: "object", properties: {} },
-      }));
-    }
-
-    const config: AgentBundleConfig = {
-      name: agent.name as string,
-      systemPrompt: agent.systemPrompt as string,
-      toolSchemas,
-      hasState: typeof agent.state === "function",
-      hooks: {
-        onConnect: typeof agent.onConnect === "function",
-        onDisconnect: typeof agent.onDisconnect === "function",
-        onError: typeof agent.onError === "function",
-        onUserTranscript: typeof agent.onUserTranscript === "function",
-        maxStepsIsFn: typeof agent.maxSteps === "function",
-      },
-    };
-    if (typeof agent.greeting === "string") config.greeting = agent.greeting;
-    if (agent.sttPrompt !== undefined) config.sttPrompt = agent.sttPrompt as string;
-    if (typeof agent.maxSteps !== "function" && agent.maxSteps !== undefined)
-      config.maxSteps = agent.maxSteps as number;
-    if (agent.toolChoice !== undefined) config.toolChoice = agent.toolChoice as "auto" | "required";
-    if (agent.builtinTools) config.builtinTools = [...(agent.builtinTools as string[])];
-    return config;
-  } catch {
-    // Extraction is best-effort; server falls back to isolate-based extraction
+    runInNewContext(transformed, { __zod__: zod, __exports__: exports }, { timeout: 5000 });
+  } catch (err) {
+    throw new BundleError(
+      `Failed to extract agent config from bundle: ${err instanceof Error ? err.message : String(err)}`,
+      { cause: err },
+    );
   }
+
+  const agent = exports.default;
+  if (!agent || typeof agent !== "object" || typeof agent.name !== "string") {
+    throw new BundleError("Agent bundle must export a valid agent definition with a name");
+  }
+
+  // Extract tool schemas using the SDK's agentToolsToSchemas (real Zod → JSON Schema)
+  const tools = (agent.tools ?? {}) as Record<
+    string,
+    { description: string; parameters?: unknown }
+  >;
+  let toolSchemas: AgentBundleConfig["toolSchemas"];
+  try {
+    toolSchemas = agentToolsToSchemas(
+      tools as Parameters<typeof agentToolsToSchemas>[0],
+    ) as AgentBundleConfig["toolSchemas"];
+  } catch {
+    // If Zod schema conversion fails, fall back to manual extraction
+    toolSchemas = Object.entries(tools).map(([name, def]) => ({
+      name,
+      description: def.description ?? "",
+      parameters: { type: "object", properties: {} },
+    }));
+  }
+
+  const config: AgentBundleConfig = {
+    name: agent.name as string,
+    systemPrompt: agent.systemPrompt as string,
+    toolSchemas,
+    hasState: typeof agent.state === "function",
+    hooks: {
+      onConnect: typeof agent.onConnect === "function",
+      onDisconnect: typeof agent.onDisconnect === "function",
+      onError: typeof agent.onError === "function",
+      onUserTranscript: typeof agent.onUserTranscript === "function",
+      maxStepsIsFn: typeof agent.maxSteps === "function",
+    },
+  };
+  if (typeof agent.greeting === "string") config.greeting = agent.greeting;
+  if (agent.sttPrompt !== undefined) config.sttPrompt = agent.sttPrompt as string;
+  if (typeof agent.maxSteps !== "function" && agent.maxSteps !== undefined)
+    config.maxSteps = agent.maxSteps as number;
+  if (agent.toolChoice !== undefined) config.toolChoice = agent.toolChoice as "auto" | "required";
+  if (agent.builtinTools) config.builtinTools = [...(agent.builtinTools as string[])];
+  return config;
 }
 
 /**
@@ -216,6 +220,7 @@ export async function bundleAgent(
   // Zod must be external: its JIT compiler uses Function() which is blocked
   // in secure-exec isolates. The platform server provides a safe zod build
   // in the isolate's virtual filesystem at /app/_zod.mjs.
+  // Everything else is bundled (noExternal: true) so the worker is self-contained.
   try {
     await build({
       root: agent.dir,
@@ -225,7 +230,7 @@ export async function bundleAgent(
         outDir: buildDir,
         emptyOutDir: true,
         rollupOptions: {
-          external: ["zod"],
+          external: (id) => id === "zod",
           output: {
             entryFileNames: "worker.js",
             paths: { zod: "/app/_zod.mjs" },
@@ -233,6 +238,7 @@ export async function bundleAgent(
         },
       },
       ssr: {
+        noExternal: true,
         external: ["zod"],
       },
     });
@@ -268,7 +274,7 @@ export async function bundleAgent(
     clientFiles,
     clientDir,
     workerBytes: Buffer.byteLength(worker),
-    ...(agentConfig ? { agentConfig } : {}),
+    agentConfig,
   };
 }
 

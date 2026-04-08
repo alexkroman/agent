@@ -115,7 +115,7 @@ type EnsureOpts = {
   /** Agent-defined secrets — forwarded to the isolate. */
   getAgentEnv: () => Promise<Record<string, string>>;
   /** Pre-extracted agent config from build time. */
-  getAgentConfig?: () => Promise<IsolateConfig | null>;
+  getAgentConfig: () => Promise<IsolateConfig | null>;
 };
 
 async function spawnAgent(slot: AgentSlot, opts: EnsureOpts): Promise<Sandbox> {
@@ -126,16 +126,17 @@ async function spawnAgent(slot: AgentSlot, opts: EnsureOpts): Promise<Sandbox> {
     opts.getWorkerCode(slug),
     opts.getApiKey(),
     opts.getAgentEnv(),
-    opts.getAgentConfig?.() ?? Promise.resolve(null),
+    opts.getAgentConfig(),
   ]);
   if (!code) throw new Error(`Worker code not found for ${slug}`);
+  if (!agentConfig) throw new Error(`Agent config not found for ${slug}`);
   const sandbox = await opts.createSandbox({
     workerCode: code,
     apiKey,
     agentEnv,
     storage: opts.storage,
     slug: opts.slug,
-    ...(agentConfig ? { agentConfig } : {}),
+    agentConfig,
   });
   slot.sandbox = sandbox;
   return sandbox;

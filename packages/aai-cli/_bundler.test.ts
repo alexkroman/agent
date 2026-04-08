@@ -95,6 +95,13 @@ describe("transformBundleForEval", () => {
     expect(result).not.toMatch(/\bexport\s/);
   });
 
+  test("replaces minified named zod import (no spaces)", () => {
+    const code = `import{z as e}from"/app/_zod.mjs";var t="hello";__exports__.default = { name: "test" };`;
+    const result = transformBundleForEval(code);
+    expect(result).toContain('var e = __zod__["z"];');
+    expect(result).not.toMatch(/\bimport\s*\{/);
+  });
+
   test("replaces namespace zod import", () => {
     const code = `import * as z from "/app/_zod.mjs";\nexport default {};`;
     const result = transformBundleForEval(code);
@@ -131,42 +138,37 @@ describe("extractAgentConfig", () => {
   test("extracts config from simple CJS agent", () => {
     const code = `export default { name: "test-agent", systemPrompt: "Be helpful", greeting: "Hi", maxSteps: 3, tools: {}, builtinTools: ["web_search"] };`;
     const config = extractAgentConfig(code);
-    expect(config).toBeDefined();
-    expect(config?.name).toBe("test-agent");
-    expect(config?.systemPrompt).toBe("Be helpful");
-    expect(config?.greeting).toBe("Hi");
-    expect(config?.maxSteps).toBe(3);
-    expect(config?.builtinTools).toEqual(["web_search"]);
-    expect(config?.toolSchemas).toEqual([]);
-    expect(config?.hasState).toBe(false);
-    expect(config?.hooks.onConnect).toBe(false);
+    expect(config.name).toBe("test-agent");
+    expect(config.systemPrompt).toBe("Be helpful");
+    expect(config.greeting).toBe("Hi");
+    expect(config.maxSteps).toBe(3);
+    expect(config.builtinTools).toEqual(["web_search"]);
+    expect(config.toolSchemas).toEqual([]);
+    expect(config.hasState).toBe(false);
+    expect(config.hooks.onConnect).toBe(false);
   });
 
   test("detects hooks and state", () => {
     const code = `export default { name: "test", systemPrompt: "s", tools: {}, state: () => ({ count: 0 }), onConnect: () => {}, onDisconnect: () => {}, maxSteps: () => 5 };`;
     const config = extractAgentConfig(code);
-    expect(config).toBeDefined();
-    expect(config?.hasState).toBe(true);
-    expect(config?.hooks.onConnect).toBe(true);
-    expect(config?.hooks.onDisconnect).toBe(true);
-    expect(config?.hooks.maxStepsIsFn).toBe(true);
+    expect(config.hasState).toBe(true);
+    expect(config.hooks.onConnect).toBe(true);
+    expect(config.hooks.onDisconnect).toBe(true);
+    expect(config.hooks.maxStepsIsFn).toBe(true);
     // maxSteps is a function, so the number should not be included
-    expect(config?.maxSteps).toBeUndefined();
+    expect(config.maxSteps).toBeUndefined();
   });
 
-  test("returns undefined for invalid bundle", () => {
-    const config = extractAgentConfig("this is not valid javascript {{{");
-    expect(config).toBeUndefined();
+  test("throws for invalid bundle", () => {
+    expect(() => extractAgentConfig("this is not valid javascript {{{")).toThrow();
   });
 
-  test("returns undefined when no default export", () => {
-    const config = extractAgentConfig("var x = 1;");
-    expect(config).toBeUndefined();
+  test("throws when no default export", () => {
+    expect(() => extractAgentConfig("var x = 1;")).toThrow(BundleError);
   });
 
-  test("returns undefined when export is missing name", () => {
-    const config = extractAgentConfig("export default { systemPrompt: 's' };");
-    expect(config).toBeUndefined();
+  test("throws when export is missing name", () => {
+    expect(() => extractAgentConfig("export default { systemPrompt: 's' };")).toThrow(BundleError);
   });
 });
 
