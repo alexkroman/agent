@@ -65,7 +65,7 @@ describe("cpu starvation", () => {
     const t0 = Date.now();
     const healthy = await checkHealth(env.serverUrl, 5000);
     const healthLatency = Date.now() - t0;
-    console.log("Health check: " + (healthy ? "OK" : "FAILED") + " in " + healthLatency + "ms");
+    console.log(`Health check: ${healthy ? "OK" : "FAILED"} in ${healthLatency}ms`);
     expect(healthy).toBe(true);
 
     // Good agent must still accept a NEW connection while hog is spinning
