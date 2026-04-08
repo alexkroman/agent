@@ -54,7 +54,7 @@ describe("memory bomb", () => {
 
     // Record baseline memory
     const baseline = sampleMemory(env.containerId);
-    console.log("Baseline: " + (baseline.usageBytes / 1024 / 1024).toFixed(1) + " MB");
+    console.log(`Baseline: ${(baseline.usageBytes / 1024 / 1024).toFixed(1)} MB`);
 
     // Open connection to good agent first — should work
     const { opened: goodConns } = await openConnections(env.wsUrl, GOOD_AGENT_SLUG, 1, 10_000);
@@ -68,20 +68,20 @@ describe("memory bomb", () => {
       15_000,
     );
 
-    console.log("Bomb: " + bombConns.length + " opened, " + bombRejected + " rejected");
+    console.log(`Bomb: ${bombConns.length} opened, ${bombRejected} rejected`);
 
     // Wait for the isolate to crash and cleanup to happen
     await new Promise((r) => setTimeout(r, 10_000));
 
     const postBomb = sampleMemory(env.containerId);
-    console.log("Post-bomb: " + (postBomb.usageBytes / 1024 / 1024).toFixed(1) + " MB");
+    console.log(`Post-bomb: ${(postBomb.usageBytes / 1024 / 1024).toFixed(1)} MB`);
 
     // Container memory must stay safe
     expect(postBomb.percent).toBeLessThan(90);
 
     // Good agent connection should still be alive
     const goodAlive = goodConns.filter((ws) => ws.readyState === ws.OPEN).length;
-    console.log("Good agent connections still alive: " + goodAlive);
+    console.log(`Good agent connections still alive: ${goodAlive}`);
 
     // Close all connections
     for (const ws of goodConns) ws.close();
@@ -93,6 +93,6 @@ describe("memory bomb", () => {
     // Wait for slot cleanup, then verify memory recovered
     await new Promise((r) => setTimeout(r, 5000));
     const postCleanup = sampleMemory(env.containerId);
-    console.log("Post-cleanup: " + (postCleanup.usageBytes / 1024 / 1024).toFixed(1) + " MB");
+    console.log(`Post-cleanup: ${(postCleanup.usageBytes / 1024 / 1024).toFixed(1)} MB`);
   });
 });

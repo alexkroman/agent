@@ -48,7 +48,7 @@ describe("cpu starvation", () => {
 
     // Record baseline
     const baseline = sampleMemory(env.containerId);
-    console.log("Baseline: " + (baseline.usageBytes / 1024 / 1024).toFixed(1) + " MB");
+    console.log(`Baseline: ${(baseline.usageBytes / 1024 / 1024).toFixed(1)} MB`);
 
     // Open connection to good agent first
     const { opened: goodConns } = await openConnections(env.wsUrl, GOOD_AGENT_SLUG, 1, 10_000);
@@ -56,7 +56,7 @@ describe("cpu starvation", () => {
 
     // Trigger the CPU hog
     const { opened: hogConns } = await openConnections(env.wsUrl, HOG_SLUG, 1, 15_000);
-    console.log("CPU hog: " + hogConns.length + " connections opened");
+    console.log(`CPU hog: ${hogConns.length} connections opened`);
 
     // Wait a few seconds for the hog to be spinning
     await new Promise((r) => setTimeout(r, 5000));
@@ -75,15 +75,13 @@ describe("cpu starvation", () => {
       1,
       10_000,
     );
-    console.log(
-      "New good agent conn: " + newGoodConns.length + " opened, " + rejected + " rejected",
-    );
+    console.log(`New good agent conn: ${newGoodConns.length} opened, ${rejected} rejected`);
     expect(newGoodConns.length).toBe(1);
 
     // Memory should be stable (CPU attack should not grow memory)
     const underLoad = sampleMemory(env.containerId);
     const memGrowthMB = (underLoad.usageBytes - baseline.usageBytes) / (1024 * 1024);
-    console.log("Memory growth under CPU load: " + memGrowthMB.toFixed(1) + " MB");
+    console.log(`Memory growth under CPU load: ${memGrowthMB.toFixed(1)} MB`);
     expect(underLoad.percent).toBeLessThan(90);
 
     // Close the hog connections to trigger idle eviction
@@ -99,6 +97,6 @@ describe("cpu starvation", () => {
     await assertServerSurvived(env.serverUrl, env.wsUrl, GOOD_AGENT_SLUG, env.containerId);
 
     const postEviction = sampleMemory(env.containerId);
-    console.log("Post-eviction: " + (postEviction.usageBytes / 1024 / 1024).toFixed(1) + " MB");
+    console.log(`Post-eviction: ${(postEviction.usageBytes / 1024 / 1024).toFixed(1)} MB`);
   });
 });
