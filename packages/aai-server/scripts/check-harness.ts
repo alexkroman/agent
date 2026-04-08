@@ -34,9 +34,13 @@ const result = await ts.typecheckProject({
 // In secure-exec 0.2.x, the module access overlay is stricter about symlink
 // validation. In a pnpm monorepo, some transitive deps of workspace packages
 // resolve to canonical paths outside the allowed roots, causing TS2307 errors
-// in node_modules. Filter these out — they're not our code.
+// in node_modules. Also filter TS2307 in workspace deps (packages/aai/) since
+// their type-only imports (e.g. json-schema) can't resolve in the sandbox.
 const ownDiagnostics = result.diagnostics.filter(
-  (d) => d.filePath && !d.filePath.includes("/node_modules/"),
+  (d) =>
+    d.filePath &&
+    !d.filePath.includes("/node_modules/") &&
+    !(d.code === 2307 && d.filePath.includes("/packages/aai/")),
 );
 
 if (ownDiagnostics.length > 0) {

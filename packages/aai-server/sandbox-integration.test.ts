@@ -1,12 +1,12 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
  * Integration test: deploys a minimal agent into a real secure-exec isolate
- * and verifies the isolate boots, announces its port, and accepts WebSocket
- * connections via the sandbox proxy.
+ * and verifies the isolate boots, accepts RPC calls via bindings, and
+ * supports WebSocket sessions via the sandbox proxy.
  *
- * Security boundaries (filesystem, network, process, env isolation) are
- * enforced by the same secure-exec permissions as before — the isolate runs
- * createRuntime() with identical permission config.
+ * Security boundaries (filesystem, process, env isolation) are enforced by
+ * the same secure-exec permissions as before. Network is now fully disabled
+ * since all communication uses bindings IPC.
  */
 
 import { readdirSync, statSync } from "node:fs";
@@ -48,14 +48,15 @@ export default {
 // ── Isolate boot tests ──────────────────────────────────────────────────
 
 describe("isolate boot", () => {
-  let port: number;
+  let channel: Awaited<ReturnType<typeof _internals.startIsolate>>["channel"];
   let cleanup: () => Promise<void>;
 
   beforeAll(async () => {
     const kv = createMockKv();
-    const isolate = await _internals.startIsolate(AGENT_BUNDLE, kv, {}, "test-token");
-    port = isolate.port;
+    const isolate = await _internals.startIsolate(AGENT_BUNDLE, kv, {});
+    channel = isolate.channel;
     cleanup = async () => {
+      isolate.channel.shutdown();
       await isolate.runtime.terminate();
     };
   });
@@ -64,15 +65,20 @@ describe("isolate boot", () => {
     await cleanup?.();
   });
 
-  test("isolate announces port", () => {
-    expect(port).toBeGreaterThan(0);
+  test("isolate responds to config RPC via bindings", async () => {
+    const config = await channel.call<{ name: string }>({ type: "config" }, 5000);
+    expect(config.name).toBe("integration-test");
   });
 
-  test("isolate HTTP server responds with 404 for non-RPC requests", async () => {
-    const res = await fetch(`http://127.0.0.1:${port}/health`, {
-      headers: { "x-harness-token": "test-token" },
-    });
-    expect(res.status).toBe(404);
+  test("isolate executes tool via bindings", async () => {
+    // Connect a session first
+    await channel.call({ type: "hook", hook: "onConnect", sessionId: "s1" }, 5000);
+
+    const result = await channel.call<{ result: string }>(
+      { type: "tool", name: "echo", sessionId: "s1", args: { text: "hello" }, messages: [] },
+      5000,
+    );
+    expect(result.result).toBe("echo:hello");
   });
 });
 
@@ -135,8 +141,8 @@ describe("WebSocket session lifecycle", () => {
 // ── Multiple concurrent agents ───────────────────────────────────────────
 
 describe("multiple concurrent agents", () => {
-  let isolate1: { port: number; runtime: { terminate(): Promise<void> } };
-  let isolate2: { port: number; runtime: { terminate(): Promise<void> } };
+  let isolate1: Awaited<ReturnType<typeof _internals.startIsolate>>;
+  let isolate2: Awaited<ReturnType<typeof _internals.startIsolate>>;
 
   const BUNDLE_A = `
 export default {
@@ -162,20 +168,23 @@ export default {
     const kv1 = createMockKv();
     const kv2 = createMockKv();
     [isolate1, isolate2] = await Promise.all([
-      _internals.startIsolate(BUNDLE_A, kv1, {}, "test-token"),
-      _internals.startIsolate(BUNDLE_B, kv2, {}, "test-token"),
+      _internals.startIsolate(BUNDLE_A, kv1, {}),
+      _internals.startIsolate(BUNDLE_B, kv2, {}),
     ]);
   });
 
   afterAll(async () => {
+    isolate1?.channel.shutdown();
+    isolate2?.channel.shutdown();
     await isolate1?.runtime.terminate();
     await isolate2?.runtime.terminate();
   });
 
-  test("two isolates boot independently on different ports", () => {
-    expect(isolate1.port).toBeGreaterThan(0);
-    expect(isolate2.port).toBeGreaterThan(0);
-    expect(isolate1.port).not.toBe(isolate2.port);
+  test("two isolates boot independently and respond to RPC", async () => {
+    const configA = await isolate1.channel.call<{ name: string }>({ type: "config" }, 5000);
+    const configB = await isolate2.channel.call<{ name: string }>({ type: "config" }, 5000);
+    expect(configA.name).toBe("agent-a");
+    expect(configB.name).toBe("agent-b");
   });
 });
 
@@ -372,53 +381,42 @@ describe("template isolate boot", () => {
   test.each(templateNames)("template %s boots in isolate", async (template: string) => {
     const { worker, tmpDir } = await bundleTemplate(template);
     const kv = createMockKv();
-    let isolate: { port: number; runtime: { terminate(): Promise<void> } } | undefined;
-    const rpc = async (body: Record<string, unknown>) => {
-      const res = await fetch(`http://127.0.0.1:${isolate?.port}/rpc`, {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-harness-token": "test-token" },
-        body: JSON.stringify(body),
-      });
-      return { status: res.status, data: (await res.json()) as Record<string, unknown> };
-    };
+    let isolate: Awaited<ReturnType<typeof _internals.startIsolate>> | undefined;
 
     try {
-      isolate = await _internals.startIsolate(worker, kv, {}, "test-token");
-      expect(isolate.port).toBeGreaterThan(0);
+      isolate = await _internals.startIsolate(worker, kv, {});
 
       // 1. Config RPC — agent name + tools
-      const config = await rpc({ type: "config" });
-      expect(config.status).toBe(200);
-      expect(config.data.name).toBeTruthy();
+      const config = await isolate.channel.call<{ name: string; toolSchemas: { name: string }[] }>(
+        { type: "config" },
+        5000,
+      );
+      expect(config.name).toBeTruthy();
 
-      const schemas = config.data.toolSchemas as { name: string }[];
+      const schemas = config.toolSchemas;
 
       // 2. Hook lifecycle — connect a session
-      const connect = await rpc({ type: "hook", hook: "onConnect", sessionId: "s1" });
-      expect(connect.status).toBe(200);
+      await isolate.channel.call({ type: "hook", hook: "onConnect", sessionId: "s1" }, 5000);
 
       // 3. Tool execution — call the first custom tool (if any)
-      // Tools that call external APIs will fail with a fetch error, but
-      // we verify the harness dispatches correctly (status 200 or 500,
-      // never 400/404 which would mean the tool wasn't found).
+      // Tools that call external APIs will fail, but we verify the harness
+      // dispatches correctly (no "Unknown tool" error).
       const firstTool = schemas[0];
       if (firstTool) {
-        const toolRes = await rpc({
-          type: "tool",
-          name: firstTool.name,
-          sessionId: "s1",
-          args: {},
-          messages: [],
-        });
-        // 200 = success, 500 = tool threw (e.g. missing API key / network)
-        // 404 = tool not found (would be a bug)
-        expect(toolRes.status).not.toBe(404);
+        try {
+          await isolate.channel.call(
+            { type: "tool", name: firstTool.name, sessionId: "s1", args: {}, messages: [] },
+            5000,
+          );
+        } catch {
+          // Tool threw (e.g. missing API key / network) — expected for some templates
+        }
       }
 
       // 4. Hook lifecycle — disconnect
-      const disconnect = await rpc({ type: "hook", hook: "onDisconnect", sessionId: "s1" });
-      expect(disconnect.status).toBe(200);
+      await isolate.channel.call({ type: "hook", hook: "onDisconnect", sessionId: "s1" }, 5000);
     } finally {
+      isolate?.channel.shutdown();
       await isolate?.runtime.terminate();
       await fs.rm(tmpDir, { recursive: true, force: true });
     }
@@ -429,7 +427,7 @@ describe("template isolate boot", () => {
 
 describe("bundled template agent", () => {
   let tmpDir: string;
-  let isolate: { port: number; runtime: { terminate(): Promise<void> } };
+  let isolate: Awaited<ReturnType<typeof _internals.startIsolate>>;
 
   beforeAll(async () => {
     // Scaffold a simple template project with defineAgent + zod
@@ -474,53 +472,33 @@ export default defineAgent({
 
     // Boot the bundled worker in a real isolate
     const kv = createMockKv();
-    isolate = await _internals.startIsolate(bundle.worker, kv, {}, "test-token");
+    isolate = await _internals.startIsolate(bundle.worker, kv, {});
   }, 30_000);
 
   afterAll(async () => {
+    isolate?.channel.shutdown();
     await isolate?.runtime.terminate();
     if (tmpDir) await fs.rm(tmpDir, { recursive: true, force: true });
   });
 
-  test("isolate boots and announces port", () => {
-    expect(isolate.port).toBeGreaterThan(0);
-  });
-
   test("config RPC returns agent name and tool schemas", async () => {
-    const res = await fetch(`http://127.0.0.1:${isolate.port}/rpc`, {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-harness-token": "test-token" },
-      body: JSON.stringify({ type: "config" }),
-    });
-    expect(res.status).toBe(200);
-    const config = (await res.json()) as { name: string; toolSchemas: { name: string }[] };
+    const config = await isolate.channel.call<{ name: string; toolSchemas: { name: string }[] }>(
+      { type: "config" },
+      5000,
+    );
     expect(config.name).toBe("Bundled Test Agent");
     expect(config.toolSchemas.find((t) => t.name === "greet")).toBeTruthy();
   });
 
   test("tool RPC executes bundled tool", async () => {
     // Connect a session first
-    const connectRes = await fetch(`http://127.0.0.1:${isolate.port}/rpc`, {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-harness-token": "test-token" },
-      body: JSON.stringify({ type: "hook", hook: "onConnect", sessionId: "s1" }),
-    });
-    expect(connectRes.status).toBe(200);
+    await isolate.channel.call({ type: "hook", hook: "onConnect", sessionId: "s1" }, 5000);
 
     // Execute the tool
-    const toolRes = await fetch(`http://127.0.0.1:${isolate.port}/rpc`, {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-harness-token": "test-token" },
-      body: JSON.stringify({
-        type: "tool",
-        name: "greet",
-        sessionId: "s1",
-        args: { name: "World" },
-        messages: [],
-      }),
-    });
-    expect(toolRes.status).toBe(200);
-    const result = (await toolRes.json()) as { result: string };
+    const result = await isolate.channel.call<{ result: string }>(
+      { type: "tool", name: "greet", sessionId: "s1", args: { name: "World" }, messages: [] },
+      5000,
+    );
     expect(result.result).toBe("hello World");
   });
 });

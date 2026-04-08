@@ -365,12 +365,12 @@ boundaries. Key files: `packages/aai-server/sandbox.ts`,
 **Isolation layers:**
 
 - **Filesystem**: Read-only in-memory virtual FS. No write/delete/mkdir.
-- **Network**: Isolate can only reach its own per-sandbox sidecar on
-  loopback (exact host+port enforced via Zod-validated network policy).
-  No external URLs, no cloud metadata, no port scanning.
+- **Network**: Fully disabled. All host↔isolate communication uses
+  secure-exec bindings (V8 bridge IPC). No loopback ports, no HTTP
+  servers, no TCP connections.
 - **Child processes**: All subprocess spawning disabled.
-- **Env vars**: Only `SIDECAR_URL` and `AAI_ENV_*` prefixed vars are
-  readable. Platform secrets (e.g. `ASSEMBLYAI_API_KEY`) stay host-side.
+- **Env vars**: Only `AAI_ENV_*` prefixed vars are readable. Platform
+  secrets (e.g. `ASSEMBLYAI_API_KEY`) stay host-side.
 - **Memory**: 128 MB limit per isolate.
 - **Timing**: `timingMitigation: "freeze"` prevents side-channel attacks.
 
@@ -385,7 +385,7 @@ a denylist.
 
 - KV keys prefixed `kv:{keyHash}:{slug}:{key}` — agents cannot access
   each other's data.
-- Each sandbox gets its own sidecar on an ephemeral loopback port.
+- Each sandbox communicates via isolated bindings (V8 bridge IPC).
 - Sessions are per-sandbox (`Map<string, Session>`).
 - No shared mutable state between sandboxes.
 
