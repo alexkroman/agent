@@ -16,6 +16,8 @@
  *   --turns              Number of user turns per session (default: 3)
  *   --chunk-ms           Audio chunk size in ms when streaming (default: 100)
  *   --pause-ms           Pause between turns in ms (default: 2000)
+ *   --ramp-ms            Stagger session starts over this many ms (default: 0, all at once)
+ *   --quiet, -q          Suppress per-session event logs, only show progress + summary
  */
 
 import { createRequire } from "node:module";
@@ -40,9 +42,11 @@ const { values: args } = parseArgs({
     "api-key": { type: "string", default: process.env.ASSEMBLYAI_API_KEY ?? "" },
     greeting: { type: "string", default: "Hello, how can I help?" },
     voice: { type: "string", default: "af_heart" },
-    turns: { type: "string", default: "3" },
+    turns: { type: "string", default: "5" },
     "chunk-ms": { type: "string", default: "100" },
     "pause-ms": { type: "string", default: "2000" },
+    "ramp-ms": { type: "string", default: "10000" },
+    quiet: { type: "boolean", short: "q", default: true },
   },
   strict: true,
 });
@@ -56,6 +60,8 @@ const VOICE = args.voice!;
 const TURNS = Number(args.turns);
 const CHUNK_MS = Number(args["chunk-ms"]);
 const PAUSE_MS = Number(args["pause-ms"]);
+const RAMP_MS = Number(args["ramp-ms"]);
+const QUIET = args.quiet!;
 const INPUT_SAMPLE_RATE = 16_000;
 
 if (!API_KEY) {
@@ -365,7 +371,7 @@ async function runSession(
   let lastEvent = "init";
   let done = false;
 
-  const log = (msg: string) => console.log(`  [s${sessionId}] ${msg}`);
+  const log = QUIET ? () => {} : (msg: string) => console.log(`  [s${sessionId}] ${msg}`);
 
   // Connect via SDK client
   let handle: S2sHandle;
@@ -568,7 +574,7 @@ async function runSession(
 
       for (let offset = 0; offset < pcm.length; offset += chunkBytes) {
         if (done) return;
-        handle.sendAudio(pcm.slice(offset, offset + chunkBytes));
+        handle.sendAudio(pcm.subarray(offset, offset + chunkBytes));
         await sleep(CHUNK_MS);
       }
       log(`turn ${currentTurn} audio sent`);
@@ -587,6 +593,8 @@ async function main(): Promise<void> {
   console.log(`  Turns/sess:  ${TURNS}`);
   console.log(`  Chunk size:  ${CHUNK_MS}ms`);
   console.log(`  Pause:       ${PAUSE_MS}ms`);
+  console.log(`  Ramp-up:     ${RAMP_MS > 0 ? `${RAMP_MS}ms` : "off (all at once)"}`);
+  console.log(`  Quiet:       ${QUIET}`);
   console.log(`  Voice:       ${VOICE}`);
   console.log(`  Greeting:    "${GREETING}"`);
   console.log(`  Tools:       ${TOOLS.map((t) => t.name).join(", ")}`);
@@ -608,21 +616,50 @@ async function main(): Promise<void> {
   );
   const startTime = Date.now();
 
-  // Worker pool: keep CONCURRENCY slots filled until all sessions are done
+  // Worker pool: keep CONCURRENCY slots filled until all sessions are done.
+  // With --ramp-ms, stagger worker launches to avoid thundering herd.
   const results: SessionMetrics[] = [];
   let nextId = 0;
+  let completed = 0;
+
+  // Progress ticker — print completion rate without per-session noise
+  const progressInterval = QUIET
+    ? setInterval(() => {
+        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+        const active = Math.min(CONCURRENCY, TOTAL_SESSIONS - completed);
+        process.stdout.write(
+          `\r  Progress: ${completed}/${TOTAL_SESSIONS} done, ${active} active, ${elapsed}s elapsed`,
+        );
+      }, 1000)
+    : null;
 
   async function worker(): Promise<void> {
     while (nextId < TOTAL_SESSIONS) {
       const id = nextId++;
       const result = await runSession(id, audioBuffers);
       results.push(result);
+      completed++;
     }
   }
 
-  await Promise.all(
-    Array.from({ length: Math.min(CONCURRENCY, TOTAL_SESSIONS) }, () => worker()),
-  );
+  const numWorkers = Math.min(CONCURRENCY, TOTAL_SESSIONS);
+  if (RAMP_MS > 0 && numWorkers > 1) {
+    // Stagger worker launches over RAMP_MS to avoid thundering herd
+    const delayPerWorker = RAMP_MS / numWorkers;
+    const workers: Promise<void>[] = [];
+    for (let i = 0; i < numWorkers; i++) {
+      if (i > 0) await sleep(delayPerWorker);
+      workers.push(worker());
+    }
+    await Promise.all(workers);
+  } else {
+    await Promise.all(Array.from({ length: numWorkers }, () => worker()));
+  }
+
+  if (progressInterval) {
+    clearInterval(progressInterval);
+    process.stdout.write("\n");
+  }
 
   // Sort by session ID for stable output
   results.sort((a, b) => a.sessionId - b.sessionId);
