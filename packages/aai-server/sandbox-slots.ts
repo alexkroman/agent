@@ -18,6 +18,7 @@ import { LRUCache } from "lru-cache";
 import { getLock } from "p-lock";
 import type { Storage } from "unstorage";
 import { DEFAULT_SLOT_IDLE_MS, MAX_RSS_MB, MAX_SLOTS } from "./constants.ts";
+import type { IsolateConfig } from "./rpc-schemas.ts";
 import type { Sandbox, SandboxOptions } from "./sandbox.ts";
 import type { AgentMetadata } from "./schemas.ts";
 import type { BundleStore } from "./store-types.ts";
@@ -113,22 +114,28 @@ type EnsureOpts = {
   getApiKey: () => Promise<string>;
   /** Agent-defined secrets — forwarded to the isolate. */
   getAgentEnv: () => Promise<Record<string, string>>;
+  /** Pre-extracted agent config from build time. */
+  getAgentConfig?: () => Promise<IsolateConfig | null>;
 };
 
 async function spawnAgent(slot: AgentSlot, opts: EnsureOpts): Promise<Sandbox> {
   const { slug } = slot;
   console.info("Loading agent sandbox", { slug });
 
-  const code = await opts.getWorkerCode(slug);
+  const [code, apiKey, agentEnv, agentConfig] = await Promise.all([
+    opts.getWorkerCode(slug),
+    opts.getApiKey(),
+    opts.getAgentEnv(),
+    opts.getAgentConfig?.() ?? Promise.resolve(null),
+  ]);
   if (!code) throw new Error(`Worker code not found for ${slug}`);
-
-  const [apiKey, agentEnv] = await Promise.all([opts.getApiKey(), opts.getAgentEnv()]);
   const sandbox = await opts.createSandbox({
     workerCode: code,
     apiKey,
     agentEnv,
     storage: opts.storage,
     slug: opts.slug,
+    ...(agentConfig ? { agentConfig } : {}),
   });
   slot.sandbox = sandbox;
   return sandbox;
@@ -268,6 +275,7 @@ export async function resolveSandbox(
         const { ASSEMBLYAI_API_KEY: _, ...agentEnv } = env;
         return agentEnv;
       },
+      getAgentConfig: () => opts.store.getAgentConfig(slug),
     },
     opts.slots,
   );

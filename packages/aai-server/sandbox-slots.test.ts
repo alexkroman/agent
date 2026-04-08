@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { IsolateConfig } from "./rpc-schemas.ts";
 import type { Sandbox } from "./sandbox.ts";
 import {
   _slotInternals,
@@ -383,6 +384,85 @@ describe("resolveSandbox", () => {
 
     expect(mockCreateSandbox).toHaveBeenCalledWith(
       expect.objectContaining({ storage, slug: "vec-agent" }),
+    );
+  });
+});
+
+describe("resolveSandbox with agentConfig", () => {
+  const testConfig: IsolateConfig = {
+    name: "config-agent",
+    systemPrompt: "Be helpful",
+    greeting: "Hello",
+    toolSchemas: [],
+    hasState: false,
+    hooks: {
+      onConnect: false,
+      onDisconnect: false,
+      onError: false,
+      onUserTranscript: false,
+      maxStepsIsFn: false,
+    },
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    mockCreateSandbox.mockClear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("passes stored agentConfig to createSandbox", async () => {
+    const store = createTestStore();
+    const storage = createTestStorage();
+    await store.putAgent({
+      slug: "config-agent",
+      env: { ASSEMBLYAI_API_KEY: "key" },
+      credential_hashes: ["hash"],
+      worker: "console.log('w');",
+      clientFiles: {},
+      agentConfig: testConfig,
+    });
+
+    const slots = createSlotCache();
+    await resolveSandbox("config-agent", {
+      createSandbox: mockCreateSandbox,
+      slots,
+      store,
+      storage,
+    });
+
+    expect(mockCreateSandbox).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentConfig: testConfig,
+      }),
+    );
+  });
+
+  it("omits agentConfig when not stored", async () => {
+    const store = createTestStore();
+    const storage = createTestStorage();
+    await store.putAgent({
+      slug: "no-config-agent",
+      env: { ASSEMBLYAI_API_KEY: "key" },
+      credential_hashes: ["hash"],
+      worker: "console.log('w');",
+      clientFiles: {},
+    });
+
+    const slots = createSlotCache();
+    await resolveSandbox("no-config-agent", {
+      createSandbox: mockCreateSandbox,
+      slots,
+      store,
+      storage,
+    });
+
+    expect(mockCreateSandbox).toHaveBeenCalledWith(
+      expect.not.objectContaining({
+        agentConfig: expect.anything(),
+      }),
     );
   });
 });

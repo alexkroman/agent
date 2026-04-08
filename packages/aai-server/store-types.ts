@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 // Shared type definitions for the bundle store.
 
+import type { IsolateConfig } from "./rpc-schemas.ts";
 import type { AgentMetadata } from "./schemas.ts";
 
 export type BundleStore = {
@@ -10,6 +11,8 @@ export type BundleStore = {
     worker: string;
     clientFiles: Record<string, string>;
     credential_hashes: string[];
+    /** Pre-extracted agent config from CLI build. */
+    agentConfig?: IsolateConfig;
   }): Promise<void>;
   getManifest(slug: string): Promise<AgentMetadata | null>;
   getWorkerCode(slug: string): Promise<string | null>;
@@ -17,4 +20,6 @@ export type BundleStore = {
   deleteAgent(slug: string): Promise<void>;
   getEnv(slug: string): Promise<Record<string, string> | null>;
   putEnv(slug: string, env: Record<string, string>): Promise<void>;
+  /** Retrieve the pre-extracted agent config, or null if not available. */
+  getAgentConfig(slug: string): Promise<IsolateConfig | null>;
 };

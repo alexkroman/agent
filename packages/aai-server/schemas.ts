@@ -4,6 +4,7 @@
 import { posix } from "node:path";
 import { z } from "zod";
 import { MAX_WORKER_SIZE } from "./constants.ts";
+import { IsolateConfigSchema } from "./rpc-schemas.ts";
 
 /**
  * Zod schema for a safe relative file path.
@@ -28,6 +29,8 @@ export const DeployBodySchema = z.object({
   clientFiles: z
     .record(SafePathSchema, z.string().max(MAX_WORKER_SIZE))
     .refine((files) => Object.keys(files).length <= 100, "Too many client files (max 100)"),
+  /** Pre-extracted agent config from CLI build. Optional for backward compat with older CLIs. */
+  agentConfig: IsolateConfigSchema.optional(),
 });
 
 export type DeployBody = z.infer<typeof DeployBodySchema>;

@@ -63,6 +63,9 @@ export function createTestStore(): BundleStore {
       for (const [filePath, content] of Object.entries(bundle.clientFiles)) {
         objects.set(objectKey(bundle.slug, `client/${filePath}`), content);
       }
+      if (bundle.agentConfig) {
+        objects.set(objectKey(bundle.slug, "config.json"), JSON.stringify(bundle.agentConfig));
+      }
       return Promise.resolve();
     },
 
@@ -99,6 +102,16 @@ export function createTestStore(): BundleStore {
       raw.env = env;
       objects.set(objectKey(slug, "manifest.json"), JSON.stringify(raw));
       return Promise.resolve();
+    },
+
+    getAgentConfig(slug) {
+      const data = objects.get(objectKey(slug, "config.json"));
+      if (data == null) return Promise.resolve(null);
+      try {
+        return Promise.resolve(JSON.parse(data));
+      } catch {
+        return Promise.resolve(null);
+      }
     },
   };
 }
