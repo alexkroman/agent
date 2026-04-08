@@ -12,7 +12,6 @@ import { createRequire } from "node:module";
 import { defineCommand, runMain } from "citty";
 import {
   connectS2s,
-  defaultCreateS2sWebSocket,
   type CreateS2sWebSocket,
   type S2sHandle,
   type S2sToolSchema,
@@ -31,7 +30,6 @@ type Config = {
   chunkMs: number;
   rampMs: number;
   quiet: boolean;
-  toxiproxy: boolean;
   toxicLatency: number;
   toxicJitter: number;
   toxicBandwidth: number;
@@ -538,27 +536,49 @@ type ToxiproxyState = {
   cleanup: () => Promise<void>;
 };
 
+let toxiproxyPid: number | null = null;
+
+async function ensureToxiproxyServer(): Promise<void> {
+  const { Toxiproxy } = await import("toxiproxy-node-client");
+  const toxiproxy = new Toxiproxy("http://localhost:8474");
+  try {
+    await toxiproxy.getVersion();
+    return; // already running
+  } catch {
+    // not running — try to start it
+  }
+
+  const { execFileSync, spawn } = await import("node:child_process");
+  try {
+    execFileSync("which", ["toxiproxy-server"], { stdio: "ignore" });
+  } catch {
+    throw new Error("toxiproxy-server not found. Install: brew install toxiproxy");
+  }
+
+  console.log("  Toxiproxy: starting server...");
+  const proc = spawn("toxiproxy-server", [], { stdio: "ignore", detached: true });
+  proc.unref();
+  toxiproxyPid = proc.pid ?? null;
+
+  // Wait for it to be ready
+  for (let i = 0; i < 20; i++) {
+    await sleep(250);
+    try { await toxiproxy.getVersion(); return; } catch {}
+  }
+  throw new Error("Toxiproxy server failed to start within 5 seconds");
+}
+
 async function setupToxiproxy(wssUrl: string, cfg: Config): Promise<ToxiproxyState> {
   const { Toxiproxy } = await import("toxiproxy-node-client");
   const require = createRequire(import.meta.url);
   const WsWebSocket = require("ws") as typeof import("ws").default;
 
+  await ensureToxiproxyServer();
+
   const toxiproxy = new Toxiproxy("http://localhost:8474");
   const url = new URL(wssUrl);
   const upstreamHost = url.hostname;
   const upstreamPort = url.port || "443";
-
-  // Verify toxiproxy-server is running
-  try {
-    await toxiproxy.getVersion();
-  } catch {
-    throw new Error(
-      "Toxiproxy server not reachable at http://localhost:8474.\n" +
-      "  Install: brew install toxiproxy\n" +
-      "  Start:   toxiproxy-server &\n" +
-      "  Or disable: --no-toxiproxy",
-    );
-  }
 
   const proxy = await toxiproxy.createProxy({
     name: `s2s-loadtest-${Date.now()}`,
@@ -603,7 +623,13 @@ async function setupToxiproxy(wssUrl: string, cfg: Config): Promise<ToxiproxySta
 
   return {
     createWebSocket,
-    cleanup: async () => { try { await proxy.remove(); console.log("  Toxiproxy: proxy removed"); } catch {} },
+    cleanup: async () => {
+      try { await proxy.remove(); } catch {}
+      if (toxiproxyPid) {
+        try { process.kill(toxiproxyPid); console.log("  Toxiproxy: server stopped"); } catch {}
+        toxiproxyPid = null;
+      }
+    },
   };
 }
 
@@ -622,17 +648,12 @@ async function main(cfg: Config): Promise<void> {
   console.log(`  Voice:       ${cfg.voice}`);
   console.log(`  Greeting:    "${cfg.greeting}"`);
   console.log(`  Tools:       ${TOOLS.map((t) => t.name).join(", ")}`);
-  console.log(`  Toxiproxy:   ${cfg.toxiproxy ? "auto (Docker)" : "off"}`);
   console.log();
 
-  // Toxiproxy
-  let toxiState: ToxiproxyState | null = null;
-  let wsFactory: CreateS2sWebSocket = defaultCreateS2sWebSocket;
-  if (cfg.toxiproxy) {
-    toxiState = await setupToxiproxy(cfg.wssUrl, cfg);
-    wsFactory = toxiState.createWebSocket;
-    console.log();
-  }
+  // Toxiproxy — always enabled, auto-starts server if needed
+  const toxiState = await setupToxiproxy(cfg.wssUrl, cfg);
+  const wsFactory = toxiState.createWebSocket;
+  console.log();
 
   // TTS
   console.log("Generating TTS audio with Kokoro...");
@@ -694,7 +715,7 @@ async function main(cfg: Config): Promise<void> {
   console.log(`\nAll sessions finished in ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
   printMetrics(results, peakConcurrency);
 
-  if (toxiState) await toxiState.cleanup();
+  await toxiState.cleanup();
   process.exitCode = results.some((r) => r.errors.some((e) => e.startsWith("FAIL:"))) ? 1 : 0;
 }
 
@@ -710,9 +731,8 @@ const loadTestCommand = defineCommand({
     voice: { type: "string", description: "Kokoro voice preset", default: "af_heart" },
     turns: { type: "string", description: "Max user turns per session (randomized, avg ~8)", default: "20" },
     chunkMs: { type: "string", description: "Audio chunk size in ms", default: "100" },
-    rampMs: { type: "string", description: "Stagger session starts over this many ms", default: "60000" },
+    rampMs: { type: "string", description: "Stagger session starts over this many ms", default: "300000" },
     verbose: { type: "boolean", alias: "v", description: "Show per-session event logs", default: false },
-    toxiproxy: { type: "boolean", description: "Enable network chaos via Docker (Toxiproxy)", default: true },
     toxicLatency: { type: "string", description: "Added latency in ms (real-world ~40ms, default 20% worse)", default: "50" },
     toxicJitter: { type: "string", description: "Latency jitter in ms (real-world ~15ms, default 20% worse)", default: "20" },
     toxicBandwidth: { type: "string", description: "Bandwidth limit in KB/s (0 = unlimited)", default: "0" },
@@ -735,7 +755,6 @@ const loadTestCommand = defineCommand({
       chunkMs: Number(args.chunkMs),
       rampMs: Number(args.rampMs),
       quiet: !args.verbose,
-      toxiproxy: args.toxiproxy,
       toxicLatency: Number(args.toxicLatency),
       toxicJitter: Number(args.toxicJitter),
       toxicBandwidth: Number(args.toxicBandwidth),
