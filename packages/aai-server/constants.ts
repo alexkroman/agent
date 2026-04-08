@@ -27,6 +27,9 @@ export const DEFAULT_SLOT_IDLE_MS = Number(process.env.SLOT_IDLE_MS) || 60_000;
  */
 export const MAX_SLOTS = Number(process.env.MAX_SLOTS) || 10;
 
+/** Max RSS in MB before rejecting new sandbox spawns (85% of 2048 MB). */
+export const MAX_RSS_MB = Number(process.env.MAX_RSS_MB) || 1740;
+
 // ─── Auth ────────────────────────────────────────────────────────────────
 
 /** Maximum entries in the API key hash LRU cache. */
