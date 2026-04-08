@@ -1,41 +1,11 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { runInNewContext } from "node:vm";
 import { humanId } from "human-id";
-import { z } from "zod";
 import { timingSafeCompare } from "./auth.ts";
 import type { ValidatedAppContext } from "./context.ts";
 import { terminateSlot, withSlugLock } from "./sandbox-slots.ts";
 import type { DeployBody } from "./schemas.ts";
 import { EnvSchema } from "./schemas.ts";
-
-/** Minimal schema for a valid agent bundle default export.
- *  Accepts both raw AgentDef (has `tools`) and toAgentConfig output (has `toolSchemas`). */
-const AgentBundleSchema = z.object({
-  name: z.string().min(1),
-  systemPrompt: z.string(),
-});
-
-/**
- * Validate that a worker bundle exports a valid agent definition.
- * Evaluates the bundle in an isolated vm context with a 2s timeout.
- * Returns null if valid, or an error message string.
- */
-function validateWorkerBundle(code: string): string | null {
-  try {
-    // Wrap ESM default export into a CJS-compatible evaluation
-    const wrapped = code.replace(/^export default/, "module.exports =");
-    const mod = { exports: {} as Record<string, unknown> };
-    runInNewContext(wrapped, { module: mod }, { timeout: 2000 });
-    const result = AgentBundleSchema.safeParse(mod.exports);
-    if (!result.success) {
-      return `Invalid agent bundle: ${result.error.issues.map((i) => i.message).join(", ")}`;
-    }
-    return null;
-  } catch (err) {
-    return `Agent bundle evaluation failed: ${err instanceof Error ? err.message : String(err)}`;
-  }
-}
 
 function generateSlug(): string {
   return humanId({ separator: "-", capitalize: false });
@@ -77,12 +47,6 @@ async function handleDeployInner(
   const envParsed = EnvSchema.safeParse(env);
   if (!envParsed.success) {
     return c.json({ error: `Invalid platform config: ${envParsed.error.message}` }, 400);
-  }
-
-  // Validate agent bundle before storing — catches missing name/systemPrompt/tools
-  const bundleError = validateWorkerBundle(body.worker);
-  if (bundleError) {
-    return c.json({ error: bundleError }, 400);
   }
 
   const existing = c.env.slots.get(slug);
