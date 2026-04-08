@@ -91,6 +91,16 @@ describe("buildJailConfig", () => {
     const config = buildJailConfig(TEST_OPTIONS);
     expect(config).toContain("seccomp_string:");
   });
+
+  test("enables cgroup namespace", () => {
+    const config = buildJailConfig(TEST_OPTIONS);
+    expect(config).toContain("clone_newcgroup: true");
+  });
+
+  test("sets explicit rlimit_nproc", () => {
+    const config = buildJailConfig(TEST_OPTIONS);
+    expect(config).toContain("rlimit_nproc_type: HARD");
+  });
 });
 
 describe("isJailAvailable", () => {
