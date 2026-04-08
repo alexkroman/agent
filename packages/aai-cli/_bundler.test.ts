@@ -125,6 +125,21 @@ describe("transformBundleForEval", () => {
     const result = transformBundleForEval(code);
     expect(result).toContain('var zod = __zod__["z"];');
   });
+
+  test("strips non-zod named imports", () => {
+    const code = `import { createHooks } from "hookable";\nimport { foo } from "bar";\nexport default { name: "test" };`;
+    const result = transformBundleForEval(code);
+    expect(result).not.toContain("hookable");
+    expect(result).not.toContain('"bar"');
+    expect(result).toContain('__exports__.default = { name: "test" }');
+  });
+
+  test("strips bare side-effect imports", () => {
+    const code = `import "node:process";\nexport default { name: "test" };`;
+    const result = transformBundleForEval(code);
+    expect(result).not.toContain("node:process");
+    expect(result).toContain('__exports__.default = { name: "test" }');
+  });
 });
 
 describe("extractAgentConfig", () => {
@@ -150,6 +165,12 @@ describe("extractAgentConfig", () => {
     expect(config.hooks.maxStepsIsFn).toBe(true);
     // maxSteps is a function, so the number should not be included
     expect(config.maxSteps).toBeUndefined();
+  });
+
+  test("handles bundles with non-zod ESM imports", () => {
+    const code = `import { createHooks } from "hookable";\nexport default { name: "ext-agent", systemPrompt: "test", tools: {} };`;
+    const config = extractAgentConfig(code);
+    expect(config.name).toBe("ext-agent");
   });
 
   test("throws for invalid bundle", () => {

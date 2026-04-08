@@ -126,6 +126,11 @@ export function transformBundleForEval(code: string): string {
     /import\s+\*\s+as\s+(\w+)\s+from\s+["'][^"']*_zod[^"']*["'];?\n?/g,
     "var $1 = __zod__;\n",
   );
+  // Strip remaining import statements (non-zod externals from Vite SSR output).
+  // Only the agent config (name, systemPrompt, etc.) is needed — runtime code
+  // from other modules is irrelevant for config extraction.
+  transformed = transformed.replace(/^import\s+.*?from\s+["'][^"']+["'];?\s*$/gm, "");
+  transformed = transformed.replace(/^import\s+["'][^"']+["'];?\s*$/gm, "");
   // Replace: export default X  (anywhere in the file)
   transformed = transformed.replace(/export\s+default\s+/, "__exports__.default = ");
   // Replace: export { X as default }
@@ -147,7 +152,14 @@ export function transformBundleForEval(code: string): string {
 export function extractAgentConfig(workerCode: string): AgentBundleConfig {
   const transformed = transformBundleForEval(workerCode);
   const exports: { default?: Record<string, unknown> } = {};
-  runInNewContext(transformed, { __zod__: zod, __exports__: exports }, { timeout: 5000 });
+  try {
+    runInNewContext(transformed, { __zod__: zod, __exports__: exports }, { timeout: 5000 });
+  } catch (err) {
+    throw new BundleError(
+      `Failed to extract agent config from bundle: ${err instanceof Error ? err.message : String(err)}`,
+      { cause: err },
+    );
+  }
 
   const agent = exports.default;
   if (!agent || typeof agent !== "object" || typeof agent.name !== "string") {
