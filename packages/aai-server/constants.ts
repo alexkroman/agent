@@ -19,7 +19,12 @@ export const PORT_ANNOUNCE_TIMEOUT_MS = 15_000;
 /** Default idle timeout before an agent slot is evicted (ms, 1 min). */
 export const DEFAULT_SLOT_IDLE_MS = Number(process.env.SLOT_IDLE_MS) || 60_000;
 
-/** Max active sandbox slots before the server rejects new sandbox spawns. */
+/**
+ * Max active sandbox slots before the server rejects new sandbox spawns.
+ * Tuned for 85% max utilization on shared-cpu-2x@2048MB:
+ * ~93 MB baseline + ~130 MB V8 residual + (10 × ~70 MB/slot) ≈ 923 MB (45%).
+ * Headroom covers real agents with LLM/STT sessions using more than minimal test agents.
+ */
 export const MAX_SLOTS = Number(process.env.MAX_SLOTS) || 10;
 
 // ─── Auth ────────────────────────────────────────────────────────────────
