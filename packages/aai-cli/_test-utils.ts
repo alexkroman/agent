@@ -100,6 +100,19 @@ export function makeBundle(overrides?: Partial<BundleOutput>): BundleOutput {
     clientFiles: { "index.html": "<html></html>" },
     clientDir: "/tmp/test-client",
     workerBytes: 9,
+    agentConfig: {
+      name: "test-agent",
+      systemPrompt: "Test",
+      toolSchemas: [],
+      hasState: false,
+      hooks: {
+        onConnect: false,
+        onDisconnect: false,
+        onError: false,
+        onUserTranscript: false,
+        maxStepsIsFn: false,
+      },
+    },
     ...overrides,
   };
 }

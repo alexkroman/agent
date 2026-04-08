@@ -14,8 +14,34 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
+import type { IsolateConfig } from "./rpc-schemas.ts";
 import { _internals } from "./sandbox.ts";
-import { createMockKv } from "./test-utils.ts";
+import { createMockKv, TEST_AGENT_CONFIG } from "./test-utils.ts";
+
+// ── Agent config matching AGENT_BUNDLE ────────────────────────────────────
+
+const AGENT_CONFIG: IsolateConfig = {
+  name: "integration-test",
+  systemPrompt: "You are a test agent.",
+  greeting: "Hello from the isolate",
+  maxSteps: 3,
+  toolSchemas: [
+    { name: "echo", description: "Echo the input", parameters: { type: "object", properties: {} } },
+    {
+      name: "kv_roundtrip",
+      description: "Store then read from KV",
+      parameters: { type: "object", properties: {} },
+    },
+  ],
+  hasState: true,
+  hooks: {
+    onConnect: true,
+    onDisconnect: false,
+    onError: false,
+    onUserTranscript: true,
+    maxStepsIsFn: false,
+  },
+};
 
 // ── Agent bundle ─────────────────────────────────────────────────────────
 
@@ -65,11 +91,6 @@ describe("isolate boot", () => {
     await cleanup?.();
   });
 
-  test("isolate responds to config RPC via bindings", async () => {
-    const config = await channel.call<{ name: string }>({ type: "config" }, 5000);
-    expect(config.name).toBe("integration-test");
-  });
-
   test("isolate executes tool via bindings", async () => {
     // Connect a session first
     await channel.call({ type: "hook", hook: "onConnect", sessionId: "s1" }, 5000);
@@ -95,6 +116,7 @@ describe("WebSocket session lifecycle", () => {
       agentEnv: {},
       storage: createTestStorage(),
       slug: "ws-test",
+      agentConfig: AGENT_CONFIG,
     });
   });
 
@@ -181,10 +203,11 @@ export default {
   });
 
   test("two isolates boot independently and respond to RPC", async () => {
-    const configA = await isolate1.channel.call<{ name: string }>({ type: "config" }, 5000);
-    const configB = await isolate2.channel.call<{ name: string }>({ type: "config" }, 5000);
-    expect(configA.name).toBe("agent-a");
-    expect(configB.name).toBe("agent-b");
+    // Verify both isolates respond to hook RPC independently
+    await isolate1.channel.call({ type: "hook", hook: "onConnect", sessionId: "s1" }, 5000);
+    await isolate2.channel.call({ type: "hook", hook: "onConnect", sessionId: "s2" }, 5000);
+    await isolate1.channel.call({ type: "hook", hook: "onDisconnect", sessionId: "s1" }, 5000);
+    await isolate2.channel.call({ type: "hook", hook: "onDisconnect", sessionId: "s2" }, 5000);
   });
 });
 
@@ -214,6 +237,7 @@ describe("idle eviction", () => {
       agentEnv: {},
       storage,
       slug: "idle-test",
+      agentConfig: AGENT_CONFIG,
     });
 
     slot.sandbox = sandbox;
@@ -232,12 +256,28 @@ describe("redeploy replaces sandbox", () => {
     const { createTestStorage } = await import("./test-utils.ts");
     const storage = createTestStorage();
 
+    const minimalConfig: IsolateConfig = {
+      name: "v1",
+      systemPrompt: "v1",
+      greeting: "v1",
+      toolSchemas: [],
+      hasState: false,
+      hooks: {
+        onConnect: false,
+        onDisconnect: false,
+        onError: false,
+        onUserTranscript: false,
+        maxStepsIsFn: false,
+      },
+    };
+
     const sandbox1 = await _internals.createSandbox({
       workerCode: `export default { name: "v1", systemPrompt: "v1", greeting: "v1", maxSteps: 1, tools: {} };`,
       apiKey: "test-key",
       agentEnv: {},
       storage,
       slug: "redeploy-test",
+      agentConfig: minimalConfig,
     });
 
     const sandbox2 = await _internals.createSandbox({
@@ -246,6 +286,7 @@ describe("redeploy replaces sandbox", () => {
       agentEnv: {},
       storage,
       slug: "redeploy-test",
+      agentConfig: { ...minimalConfig, name: "v2", systemPrompt: "v2", greeting: "v2" },
     });
 
     sandbox1.shutdown();
@@ -288,6 +329,7 @@ describe("deploy serves client files", () => {
         "assets/index.js": 'console.log("app");',
       },
       credential_hashes: ["h"],
+      agentConfig: TEST_AGENT_CONFIG,
     });
 
     const htmlRes = await fetch("/rt-agent/");
@@ -310,6 +352,7 @@ describe("deploy serves client files", () => {
       worker: "w",
       clientFiles: { "index.html": "<!DOCTYPE html><html>v1</html>" },
       credential_hashes: ["h"],
+      agentConfig: TEST_AGENT_CONFIG,
     });
 
     const v1 = await fetch("/update-agent/");
@@ -322,6 +365,7 @@ describe("deploy serves client files", () => {
       worker: "w",
       clientFiles: { "index.html": "<!DOCTYPE html><html>v2</html>" },
       credential_hashes: ["h"],
+      agentConfig: TEST_AGENT_CONFIG,
     });
 
     const v2 = await fetch("/update-agent/");
@@ -386,34 +430,10 @@ describe("template isolate boot", () => {
     try {
       isolate = await _internals.startIsolate(worker, kv, {});
 
-      // 1. Config RPC — agent name + tools
-      const config = await isolate.channel.call<{ name: string; toolSchemas: { name: string }[] }>(
-        { type: "config" },
-        5000,
-      );
-      expect(config.name).toBeTruthy();
-
-      const schemas = config.toolSchemas;
-
-      // 2. Hook lifecycle — connect a session
+      // 1. Hook lifecycle — connect a session (verifies isolate boots)
       await isolate.channel.call({ type: "hook", hook: "onConnect", sessionId: "s1" }, 5000);
 
-      // 3. Tool execution — call the first custom tool (if any)
-      // Tools that call external APIs will fail, but we verify the harness
-      // dispatches correctly (no "Unknown tool" error).
-      const firstTool = schemas[0];
-      if (firstTool) {
-        try {
-          await isolate.channel.call(
-            { type: "tool", name: firstTool.name, sessionId: "s1", args: {}, messages: [] },
-            5000,
-          );
-        } catch {
-          // Tool threw (e.g. missing API key / network) — expected for some templates
-        }
-      }
-
-      // 4. Hook lifecycle — disconnect
+      // 2. Hook lifecycle — disconnect
       await isolate.channel.call({ type: "hook", hook: "onDisconnect", sessionId: "s1" }, 5000);
     } finally {
       isolate?.channel.shutdown();
@@ -479,15 +499,6 @@ export default defineAgent({
     isolate?.channel.shutdown();
     await isolate?.runtime.terminate();
     if (tmpDir) await fs.rm(tmpDir, { recursive: true, force: true });
-  });
-
-  test("config RPC returns agent name and tool schemas", async () => {
-    const config = await isolate.channel.call<{ name: string; toolSchemas: { name: string }[] }>(
-      { type: "config" },
-      5000,
-    );
-    expect(config.name).toBe("Bundled Test Agent");
-    expect(config.toolSchemas.find((t) => t.name === "greet")).toBeTruthy();
   });
 
   test("tool RPC executes bundled tool", async () => {

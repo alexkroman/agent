@@ -3,6 +3,7 @@ import { createStorage } from "unstorage";
 import { describe, expect, test } from "vitest";
 import { createBundleStore } from "./bundle-store.ts";
 import { deriveCredentialKey } from "./credentials.ts";
+import { TEST_AGENT_CONFIG } from "./test-utils.ts";
 
 describe("bundle store (unstorage)", () => {
   test("putAgent + getManifest round-trip", async () => {
@@ -16,6 +17,7 @@ describe("bundle store (unstorage)", () => {
       worker: "console.log('w');",
       clientFiles: { "index.html": "<html></html>" },
       credential_hashes: ["hash1"],
+      agentConfig: TEST_AGENT_CONFIG,
     });
 
     const manifest = await store.getManifest("test-agent");
@@ -34,6 +36,7 @@ describe("bundle store (unstorage)", () => {
       worker: "console.log('w');",
       clientFiles: { "index.html": "<html></html>" },
       credential_hashes: ["hash1"],
+      agentConfig: TEST_AGENT_CONFIG,
     });
 
     const first = await store.getManifest("test-agent");
@@ -65,6 +68,7 @@ describe("bundle store (unstorage)", () => {
       worker: "console.log('w');",
       clientFiles: { "index.html": "<html></html>" },
       credential_hashes: ["hash1"],
+      agentConfig: TEST_AGENT_CONFIG,
     });
 
     // Fire two concurrent putEnv calls — without locking, one would overwrite the other
@@ -92,6 +96,7 @@ describe("bundle store (unstorage)", () => {
       worker: "console.log('hello');",
       clientFiles: {},
       credential_hashes: ["hash1"],
+      agentConfig: TEST_AGENT_CONFIG,
     });
 
     const code = await store.getWorkerCode("test-agent");
@@ -112,6 +117,7 @@ describe("bundle store (unstorage)", () => {
       worker: "w",
       clientFiles: { "index.html": html, "assets/index.js": js },
       credential_hashes: ["hash1"],
+      agentConfig: TEST_AGENT_CONFIG,
     });
 
     expect(await store.getClientFile("test-agent", "index.html")).toBe(html);
@@ -130,6 +136,7 @@ describe("bundle store (unstorage)", () => {
       worker: "v1",
       clientFiles: { "index.html": "<html>v1</html>", "assets/old.js": "old" },
       credential_hashes: ["hash1"],
+      agentConfig: TEST_AGENT_CONFIG,
     });
 
     await store.putAgent({
@@ -138,6 +145,7 @@ describe("bundle store (unstorage)", () => {
       worker: "v2",
       clientFiles: { "index.html": "<html>v2</html>", "assets/new.js": "new" },
       credential_hashes: ["hash1"],
+      agentConfig: TEST_AGENT_CONFIG,
     });
 
     expect(await store.getClientFile("test-agent", "index.html")).toBe("<html>v2</html>");
@@ -158,6 +166,7 @@ describe("bundle store (unstorage)", () => {
       worker: "w",
       clientFiles: { "index.html": "<html></html>" },
       credential_hashes: ["hash1"],
+      agentConfig: TEST_AGENT_CONFIG,
     });
 
     await store.deleteAgent("test-agent");

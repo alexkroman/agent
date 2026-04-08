@@ -62,18 +62,12 @@ export function createBundleStore(
       await storage.setItem(objectKey(bundle.slug, "manifest.json"), JSON.stringify(manifest));
       await storage.setItem(objectKey(bundle.slug, "worker.js"), bundle.worker);
 
-      const writes = Object.entries(bundle.clientFiles).map(([filePath, content]) =>
-        storage.setItem(objectKey(bundle.slug, `client/${filePath}`), content),
-      );
-      if (bundle.agentConfig) {
-        writes.push(
-          storage.setItem(
-            objectKey(bundle.slug, "config.json"),
-            JSON.stringify(bundle.agentConfig),
-          ),
-        );
-      }
-      await Promise.all(writes);
+      await Promise.all([
+        ...Object.entries(bundle.clientFiles).map(([filePath, content]) =>
+          storage.setItem(objectKey(bundle.slug, `client/${filePath}`), content),
+        ),
+        storage.setItem(objectKey(bundle.slug, "config.json"), JSON.stringify(bundle.agentConfig)),
+      ]);
     },
 
     async getManifest(slug) {

@@ -29,8 +29,8 @@ export const DeployBodySchema = z.object({
   clientFiles: z
     .record(SafePathSchema, z.string().max(MAX_WORKER_SIZE))
     .refine((files) => Object.keys(files).length <= 100, "Too many client files (max 100)"),
-  /** Pre-extracted agent config from CLI build. Optional for backward compat with older CLIs. */
-  agentConfig: IsolateConfigSchema.optional(),
+  /** Pre-extracted agent config from CLI build. */
+  agentConfig: IsolateConfigSchema,
 });
 
 export type DeployBody = z.infer<typeof DeployBodySchema>;

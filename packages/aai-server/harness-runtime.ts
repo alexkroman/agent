@@ -16,24 +16,6 @@ import type { AgentDef, ToolContext } from "@alexkroman1/aai/types";
 // Types duplicated from rpc-schemas.ts — the harness runs in a secure-exec
 // isolate where the bundler cannot resolve ./rpc-schemas.ts (it imports zod).
 // Keep these in sync with the Zod schemas in rpc-schemas.ts.
-type IsolateConfig = {
-  name: string;
-  systemPrompt: string;
-  greeting?: string;
-  sttPrompt?: string;
-  maxSteps?: number;
-  toolChoice?: "auto" | "required";
-  builtinTools?: string[];
-  toolSchemas: { name: string; description: string; parameters: Record<string, unknown> }[];
-  hasState: boolean;
-  hooks: {
-    onConnect: boolean;
-    onDisconnect: boolean;
-    onError: boolean;
-    onUserTranscript: boolean;
-    maxStepsIsFn: boolean;
-  };
-};
 type ToolCallRequest = {
   name: string;
   args: Record<string, unknown>;
@@ -125,43 +107,8 @@ const kv: Kv = {
   },
 };
 
-// ── Agent introspection ─────────────────────────────────────────────────
-
 let sessionState: ReturnType<typeof createSessionStateMap>;
 let hooks: AgentHooks;
-
-function extractToolSchemas(agent: AgentDef): IsolateConfig["toolSchemas"] {
-  return Object.entries(agent.tools).map(([name, def]) => ({
-    name,
-    description: def.description,
-    parameters:
-      def.parameters && "toJSON" in def.parameters && typeof def.parameters.toJSON === "function"
-        ? (def.parameters.toJSON() as Record<string, unknown>)
-        : ({ type: "object", properties: {} } as Record<string, unknown>),
-  }));
-}
-
-function extractConfig(agent: AgentDef): IsolateConfig {
-  const config: IsolateConfig = {
-    name: agent.name,
-    systemPrompt: agent.systemPrompt,
-    greeting: agent.greeting,
-    toolSchemas: extractToolSchemas(agent),
-    hasState: typeof agent.state === "function",
-    hooks: {
-      onConnect: typeof agent.onConnect === "function",
-      onDisconnect: typeof agent.onDisconnect === "function",
-      onError: typeof agent.onError === "function",
-      onUserTranscript: typeof agent.onUserTranscript === "function",
-      maxStepsIsFn: typeof agent.maxSteps === "function",
-    },
-  };
-  if (agent.sttPrompt !== undefined) config.sttPrompt = agent.sttPrompt;
-  if (typeof agent.maxSteps !== "function") config.maxSteps = agent.maxSteps;
-  if (agent.toolChoice !== undefined) config.toolChoice = agent.toolChoice;
-  if (agent.builtinTools) config.builtinTools = [...agent.builtinTools];
-  return config;
-}
 
 // ── Tool execution ──────────────────────────────────────────────────────
 
@@ -231,15 +178,10 @@ async function invokeHook(req: HookRequest): Promise<HookResponse> {
 
 // ── RPC dispatch ────────────────────────────────────────────────────────
 
-type RpcRequest =
-  | { type: "config" }
-  | ({ type: "tool" } & ToolCallRequest)
-  | ({ type: "hook" } & HookRequest);
+type RpcRequest = ({ type: "tool" } & ToolCallRequest) | ({ type: "hook" } & HookRequest);
 
 async function dispatch(agent: AgentDef, msg: RpcRequest): Promise<unknown> {
   switch (msg.type) {
-    case "config":
-      return extractConfig(agent);
     case "tool":
       return executeTool(agent, msg);
     case "hook":

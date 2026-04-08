@@ -12,7 +12,7 @@ export type BundleStore = {
     clientFiles: Record<string, string>;
     credential_hashes: string[];
     /** Pre-extracted agent config from CLI build. */
-    agentConfig?: IsolateConfig;
+    agentConfig: IsolateConfig;
   }): Promise<void>;
   getManifest(slug: string): Promise<AgentMetadata | null>;
   getWorkerCode(slug: string): Promise<string | null>;
@@ -20,6 +20,6 @@ export type BundleStore = {
   deleteAgent(slug: string): Promise<void>;
   getEnv(slug: string): Promise<Record<string, string> | null>;
   putEnv(slug: string, env: Record<string, string>): Promise<void>;
-  /** Retrieve the pre-extracted agent config, or null if not available. */
+  /** Retrieve the pre-extracted agent config. */
   getAgentConfig(slug: string): Promise<IsolateConfig | null>;
 };

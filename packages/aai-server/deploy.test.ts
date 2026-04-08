@@ -2,7 +2,12 @@
 import { describe, expect, test } from "vitest";
 import { hashApiKey } from "./auth.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
-import { createTestOrchestrator, deployAgent, deployBody } from "./test-utils.ts";
+import {
+  createTestOrchestrator,
+  deployAgent,
+  deployBody,
+  TEST_AGENT_CONFIG,
+} from "./test-utils.ts";
 
 test("hashApiKey produces consistent hex output", async () => {
   const hash1 = await hashApiKey("test-key");
@@ -44,6 +49,7 @@ describe("POST /:slug/deploy", () => {
         env: { ASSEMBLYAI_API_KEY: "k" },
         worker: "module.exports = {};",
         clientFiles: { "index.html": "<html></html>" },
+        agentConfig: TEST_AGENT_CONFIG,
       }),
     });
     expect(res.status).toBe(400);
@@ -103,6 +109,7 @@ describe("POST /:slug/deploy", () => {
       worker: "w",
       clientFiles: { "index.html": "<html></html>" },
       credential_hashes: [await hashApiKey("key1")],
+      agentConfig: TEST_AGENT_CONFIG,
     });
     const res = await fetch("/pre-stored/deploy", {
       method: "POST",
@@ -111,6 +118,7 @@ describe("POST /:slug/deploy", () => {
         worker:
           'module.exports = { name: "pre-stored", systemPrompt: "Test", greeting: "", maxSteps: 1, tools: {} };',
         clientFiles: { "index.html": "<html></html>" },
+        agentConfig: TEST_AGENT_CONFIG,
       }),
     });
     expect(res.status).toBe(200);
@@ -207,7 +215,7 @@ describe("POST /deploy", () => {
     expect(afterManifest?.credential_hashes).toEqual(originalHashes);
   });
 
-  test("stores agentConfig when provided in deploy body", async () => {
+  test("stores agentConfig from deploy body", async () => {
     const { fetch, store } = await createTestOrchestrator();
     const agentConfig: IsolateConfig = {
       name: "config-agent",
@@ -232,20 +240,6 @@ describe("POST /deploy", () => {
 
     const stored = await store.getAgentConfig("config-test");
     expect(stored).toEqual(agentConfig);
-  });
-
-  test("deploy without agentConfig returns null from getAgentConfig", async () => {
-    const { fetch, store } = await createTestOrchestrator();
-
-    const res = await fetch("/deploy", {
-      method: "POST",
-      headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
-      body: deployBody({ slug: "no-config-test" }),
-    });
-    expect(res.status).toBe(200);
-
-    const stored = await store.getAgentConfig("no-config-test");
-    expect(stored).toBeNull();
   });
 
   test("redeploy to same slug preserves ownership", async () => {
