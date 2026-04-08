@@ -295,10 +295,10 @@ describe.skipIf(skip)("post-V8-escape jail hardening", () => {
       // At minimum, effective and permitted should be zero.
       const capEffMatch = result.stdout.match(/CapEff:\s+(\S+)/);
       const capPrmMatch = result.stdout.match(/CapPrm:\s+(\S+)/);
-      if (capEffMatch) {
+      if (capEffMatch?.[1]) {
         expect(Number.parseInt(capEffMatch[1], 16)).toBe(0);
       }
-      if (capPrmMatch) {
+      if (capPrmMatch?.[1]) {
         expect(Number.parseInt(capPrmMatch[1], 16)).toBe(0);
       }
     }
