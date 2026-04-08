@@ -126,11 +126,6 @@ export function transformBundleForEval(code: string): string {
     /import\s+\*\s+as\s+(\w+)\s+from\s+["'][^"']*_zod[^"']*["'];?\n?/g,
     "var $1 = __zod__;\n",
   );
-  // Strip remaining import statements (non-zod externals from Vite SSR output).
-  // Only the agent config (name, systemPrompt, etc.) is needed — runtime code
-  // from other modules is irrelevant for config extraction.
-  transformed = transformed.replace(/^import\s+.*?from\s+["'][^"']+["'];?\s*$/gm, "");
-  transformed = transformed.replace(/^import\s+["'][^"']+["'];?\s*$/gm, "");
   // Replace: export default X  (anywhere in the file)
   transformed = transformed.replace(/export\s+default\s+/, "__exports__.default = ");
   // Replace: export { X as default }
@@ -225,6 +220,7 @@ export async function bundleAgent(
   // Zod must be external: its JIT compiler uses Function() which is blocked
   // in secure-exec isolates. The platform server provides a safe zod build
   // in the isolate's virtual filesystem at /app/_zod.mjs.
+  // Everything else is bundled (noExternal: true) so the worker is self-contained.
   try {
     await build({
       root: agent.dir,
@@ -234,7 +230,7 @@ export async function bundleAgent(
         outDir: buildDir,
         emptyOutDir: true,
         rollupOptions: {
-          external: ["zod"],
+          external: (id) => id === "zod",
           output: {
             entryFileNames: "worker.js",
             paths: { zod: "/app/_zod.mjs" },
@@ -242,6 +238,7 @@ export async function bundleAgent(
         },
       },
       ssr: {
+        noExternal: true,
         external: ["zod"],
       },
     });
