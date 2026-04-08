@@ -13,6 +13,7 @@ import {
   SafePathSchema,
   SecretUpdatesSchema,
 } from "./schemas.ts";
+import { TEST_AGENT_CONFIG } from "./test-utils.ts";
 
 // ── DeployBodySchema ───────────────────────────────────────────────────
 
@@ -20,37 +21,67 @@ describe("DeployBodySchema", () => {
   test.each([
     [
       "valid deploy body",
-      { worker: "console.log('hello');", clientFiles: { "index.html": "<html></html>" } },
+      {
+        worker: "console.log('hello');",
+        clientFiles: { "index.html": "<html></html>" },
+        agentConfig: TEST_AGENT_CONFIG,
+      },
       true,
     ],
     [
       "deploy body with env",
-      { env: { MY_SECRET: "value" }, worker: "console.log('hello');", clientFiles: {} },
+      {
+        env: { MY_SECRET: "value" },
+        worker: "console.log('hello');",
+        clientFiles: {},
+        agentConfig: TEST_AGENT_CONFIG,
+      },
       true,
     ],
-    ["missing worker field", { clientFiles: {} }, false],
-    ["empty worker string", { worker: "", clientFiles: {} }, false],
-    ["non-string worker", { worker: 42, clientFiles: {} }, false],
-    ["missing clientFiles", { worker: "code" }, false],
-    ["env with non-string values", { env: { KEY: 123 }, worker: "code", clientFiles: {} }, false],
+    ["missing worker field", { clientFiles: {}, agentConfig: TEST_AGENT_CONFIG }, false],
+    ["empty worker string", { worker: "", clientFiles: {}, agentConfig: TEST_AGENT_CONFIG }, false],
+    ["non-string worker", { worker: 42, clientFiles: {}, agentConfig: TEST_AGENT_CONFIG }, false],
+    ["missing clientFiles", { worker: "code", agentConfig: TEST_AGENT_CONFIG }, false],
+    ["missing agentConfig", { worker: "code", clientFiles: {} }, false],
+    [
+      "env with non-string values",
+      { env: { KEY: 123 }, worker: "code", clientFiles: {}, agentConfig: TEST_AGENT_CONFIG },
+      false,
+    ],
     [
       "clientFiles with path traversal keys",
-      { worker: "code", clientFiles: { "../../etc/passwd": "malicious" } },
+      {
+        worker: "code",
+        clientFiles: { "../../etc/passwd": "malicious" },
+        agentConfig: TEST_AGENT_CONFIG,
+      },
       false,
     ],
     [
       "clientFiles with absolute path keys",
-      { worker: "code", clientFiles: { "/etc/passwd": "malicious" } },
+      {
+        worker: "code",
+        clientFiles: { "/etc/passwd": "malicious" },
+        agentConfig: TEST_AGENT_CONFIG,
+      },
       false,
     ],
     [
       "clientFiles with null byte in keys",
-      { worker: "code", clientFiles: { "file\0.html": "malicious" } },
+      {
+        worker: "code",
+        clientFiles: { "file\0.html": "malicious" },
+        agentConfig: TEST_AGENT_CONFIG,
+      },
       false,
     ],
     [
       "clientFiles with backslash in keys",
-      { worker: "code", clientFiles: { "dir\\file.html": "content" } },
+      {
+        worker: "code",
+        clientFiles: { "dir\\file.html": "content" },
+        agentConfig: TEST_AGENT_CONFIG,
+      },
       false,
     ],
   ] as const)("rejects/accepts %s → %s", (_label: string, input: unknown, expected: boolean) => {
@@ -69,6 +100,7 @@ describe("DeployBodySchema", () => {
     const result = DeployBodySchema.safeParse({
       worker: "code",
       clientFiles: tooMany,
+      agentConfig: TEST_AGENT_CONFIG,
     });
     expect(result.success).toBe(false);
   });
@@ -77,6 +109,7 @@ describe("DeployBodySchema", () => {
     const result = DeployBodySchema.safeParse({
       worker: "code",
       clientFiles: { "huge.js": "x".repeat(10_000_001) },
+      agentConfig: TEST_AGENT_CONFIG,
     });
     expect(result.success).toBe(false);
   });

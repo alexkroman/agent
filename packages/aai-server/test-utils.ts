@@ -63,9 +63,7 @@ export function createTestStore(): BundleStore {
       for (const [filePath, content] of Object.entries(bundle.clientFiles)) {
         objects.set(objectKey(bundle.slug, `client/${filePath}`), content);
       }
-      if (bundle.agentConfig) {
-        objects.set(objectKey(bundle.slug, "config.json"), JSON.stringify(bundle.agentConfig));
-      }
+      objects.set(objectKey(bundle.slug, "config.json"), JSON.stringify(bundle.agentConfig));
       return Promise.resolve();
     },
 
@@ -128,6 +126,22 @@ export function makeSlot(overrides?: Partial<AgentSlot>): AgentSlot {
   };
 }
 
+/** Default agent config for tests. */
+export const TEST_AGENT_CONFIG = {
+  name: "test-agent",
+  systemPrompt: "Test",
+  greeting: "",
+  toolSchemas: [],
+  hasState: false,
+  hooks: {
+    onConnect: false,
+    onDisconnect: false,
+    onError: false,
+    onUserTranscript: false,
+    maxStepsIsFn: false,
+  },
+};
+
 export function deployBody(overrides?: Record<string, unknown>): string {
   return JSON.stringify({
     env: VALID_ENV,
@@ -139,6 +153,7 @@ export function deployBody(overrides?: Record<string, unknown>): string {
         '<!DOCTYPE html><html><body><script type="module" src="./assets/index.js"></script></body></html>',
       "assets/index.js": 'console.log("c");',
     },
+    agentConfig: TEST_AGENT_CONFIG,
     ...overrides,
   });
 }

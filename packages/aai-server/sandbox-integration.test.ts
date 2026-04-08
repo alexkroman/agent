@@ -15,7 +15,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { _internals } from "./sandbox.ts";
-import { createMockKv } from "./test-utils.ts";
+import { createMockKv, TEST_AGENT_CONFIG } from "./test-utils.ts";
 
 // ── Agent bundle ─────────────────────────────────────────────────────────
 
@@ -288,6 +288,7 @@ describe("deploy serves client files", () => {
         "assets/index.js": 'console.log("app");',
       },
       credential_hashes: ["h"],
+      agentConfig: TEST_AGENT_CONFIG,
     });
 
     const htmlRes = await fetch("/rt-agent/");
@@ -310,6 +311,7 @@ describe("deploy serves client files", () => {
       worker: "w",
       clientFiles: { "index.html": "<!DOCTYPE html><html>v1</html>" },
       credential_hashes: ["h"],
+      agentConfig: TEST_AGENT_CONFIG,
     });
 
     const v1 = await fetch("/update-agent/");
@@ -322,6 +324,7 @@ describe("deploy serves client files", () => {
       worker: "w",
       clientFiles: { "index.html": "<!DOCTYPE html><html>v2</html>" },
       credential_hashes: ["h"],
+      agentConfig: TEST_AGENT_CONFIG,
     });
 
     const v2 = await fetch("/update-agent/");

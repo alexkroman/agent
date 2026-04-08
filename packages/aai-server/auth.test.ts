@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { expect, test } from "vitest";
 import { _clearHashCache, hashApiKey, verifySlugOwner } from "./auth.ts";
-import { createTestStore } from "./test-utils.ts";
+import { createTestStore, TEST_AGENT_CONFIG } from "./test-utils.ts";
 
 test("hashApiKey produces consistent 64-char hex", async () => {
   const h1 = await hashApiKey("key");
@@ -53,6 +53,7 @@ test("verifySlugOwner returns owned for matching credential", async () => {
     worker: "w",
     clientFiles: { "index.html": "<html></html>" },
     credential_hashes: [hash],
+    agentConfig: TEST_AGENT_CONFIG,
   });
   const result = await verifySlugOwner("key1", { slug: "my-agent", store });
   expect(result.status).toBe("owned");
@@ -67,6 +68,7 @@ test("verifySlugOwner returns forbidden for different credential", async () => {
     worker: "w",
     clientFiles: { "index.html": "<html></html>" },
     credential_hashes: [hash],
+    agentConfig: TEST_AGENT_CONFIG,
   });
   const result = await verifySlugOwner("key2", { slug: "my-agent", store });
   expect(result.status).toBe("forbidden");
@@ -82,6 +84,7 @@ test("verifySlugOwner allows multiple credential hashes", async () => {
     worker: "w",
     clientFiles: { "index.html": "<html></html>" },
     credential_hashes: [hash1, hash2],
+    agentConfig: TEST_AGENT_CONFIG,
   });
   expect((await verifySlugOwner("key1", { slug: "my-agent", store })).status).toBe("owned");
   expect((await verifySlugOwner("key2", { slug: "my-agent", store })).status).toBe("owned");
@@ -96,6 +99,7 @@ test("verifySlugOwner rejects when credential_hashes is empty", async () => {
     worker: "w",
     clientFiles: { "index.html": "<html></html>" },
     credential_hashes: [],
+    agentConfig: TEST_AGENT_CONFIG,
   });
   expect((await verifySlugOwner("any-key", { slug: "my-agent", store })).status).toBe("forbidden");
 });

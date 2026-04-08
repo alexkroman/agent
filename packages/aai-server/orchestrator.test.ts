@@ -1,6 +1,11 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { expect, test } from "vitest";
-import { createTestOrchestrator, deployAgent, deployBody } from "./test-utils.ts";
+import {
+  createTestOrchestrator,
+  deployAgent,
+  deployBody,
+  TEST_AGENT_CONFIG,
+} from "./test-utils.ts";
 
 test("returns health check", async () => {
   const { fetch } = await createTestOrchestrator();
@@ -37,6 +42,7 @@ test("deploy rejects different owner for claimed slug", async () => {
     worker: "w",
     clientFiles: { "index.html": "<html></html>" },
     credential_hashes: [await hashApiKey("key1")],
+    agentConfig: TEST_AGENT_CONFIG,
   });
   const res = await fetch("/my-agent/deploy", {
     method: "POST",
