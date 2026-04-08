@@ -13,6 +13,7 @@ import { defineCommand, runMain } from "citty";
 import {
   connectS2s,
   type CreateS2sWebSocket,
+  defaultCreateS2sWebSocket,
   type S2sHandle,
   type S2sToolSchema,
 } from "../packages/aai/host/s2s.ts";
@@ -34,6 +35,7 @@ type Config = {
   toxicJitter: number;
   toxicBandwidth: number;
   toxicReset: number;
+  noToxiproxy: boolean;
 };
 
 const INPUT_SAMPLE_RATE = 16_000;
@@ -376,7 +378,7 @@ async function runSessionAttempt(
       apiKey: cfg.apiKey,
       config: { wssUrl: cfg.wssUrl, inputSampleRate: INPUT_SAMPLE_RATE, outputSampleRate: 24_000 },
       createWebSocket,
-      logger: silentLogger,
+      logger: cfg.quiet ? silentLogger : console,
     });
     metrics.connected = true;
     metrics.connectMs = Date.now() - sessionStart;
@@ -650,9 +652,16 @@ async function main(cfg: Config): Promise<void> {
   console.log(`  Tools:       ${TOOLS.map((t) => t.name).join(", ")}`);
   console.log();
 
-  // Toxiproxy — always enabled, auto-starts server if needed
-  const toxiState = await setupToxiproxy(cfg.wssUrl, cfg);
-  const wsFactory = toxiState.createWebSocket;
+  // Toxiproxy — enabled unless --no-toxiproxy
+  let wsFactory: CreateS2sWebSocket;
+  let toxiState: ToxiproxyState | null = null;
+  if (cfg.noToxiproxy) {
+    console.log("  Toxiproxy: SKIPPED (--no-toxiproxy)");
+    wsFactory = defaultCreateS2sWebSocket;
+  } else {
+    toxiState = await setupToxiproxy(cfg.wssUrl, cfg);
+    wsFactory = toxiState.createWebSocket;
+  }
   console.log();
 
   // TTS
@@ -716,7 +725,7 @@ async function main(cfg: Config): Promise<void> {
   console.log(`\nAll sessions finished in ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
   printMetrics(results, peakConcurrency);
 
-  await toxiState.cleanup();
+  await toxiState?.cleanup();
   process.exitCode = results.some((r) => r.errors.some((e) => e.startsWith("FAIL:"))) ? 1 : 0;
 }
 
@@ -738,6 +747,7 @@ const loadTestCommand = defineCommand({
     toxicJitter: { type: "string", description: "Latency jitter in ms (real-world ~15ms, default 20% worse)", default: "20" },
     toxicBandwidth: { type: "string", description: "Bandwidth limit in KB/s (0 = unlimited)", default: "0" },
     toxicReset: { type: "string", description: "Connection drop probability (real-world ~1-2%, default 20% worse)", default: "0.025" },
+    noToxiproxy: { type: "boolean", description: "Skip Toxiproxy, connect directly", default: false },
   },
   async run({ args }) {
     const apiKey = process.env.ASSEMBLYAI_API_KEY ?? "";
@@ -760,6 +770,7 @@ const loadTestCommand = defineCommand({
       toxicJitter: Number(args.toxicJitter),
       toxicBandwidth: Number(args.toxicBandwidth),
       toxicReset: Number(args.toxicReset),
+      noToxiproxy: args.noToxiproxy,
     });
   },
 });
