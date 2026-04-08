@@ -5,7 +5,7 @@ import { humanId } from "human-id";
 import { z } from "zod";
 import { timingSafeCompare } from "./auth.ts";
 import type { ValidatedAppContext } from "./context.ts";
-import { terminateSlot, withSlugLock } from "./sandbox-slots.ts";
+import { terminateSlot, warmAgent, withSlugLock } from "./sandbox-slots.ts";
 import type { DeployBody } from "./schemas.ts";
 import { EnvSchema } from "./schemas.ts";
 
@@ -108,6 +108,16 @@ async function handleDeployInner(
   });
 
   c.env.slots.set(slug, { slug, keyHash });
+
+  // Pre-warm sandbox so it's ready for first connection
+  void import("./sandbox.ts").then(({ createSandbox }) =>
+    warmAgent(slug, {
+      createSandbox,
+      slots: c.env.slots,
+      store: c.env.store,
+      storage: c.env.storage,
+    }),
+  );
 
   console.info("Deploy received", { slug });
 
