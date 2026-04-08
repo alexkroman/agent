@@ -8,7 +8,6 @@ import {
   ensureAgent,
   registerSlot,
   resolveSandbox,
-  warmAgent,
 } from "./sandbox-slots.ts";
 import { createTestStorage, createTestStore, makeSlot } from "./test-utils.ts";
 
@@ -385,41 +384,6 @@ describe("resolveSandbox", () => {
     expect(mockCreateSandbox).toHaveBeenCalledWith(
       expect.objectContaining({ storage, slug: "vec-agent" }),
     );
-  });
-});
-
-describe("warmAgent", () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-    mockCreateSandbox.mockClear();
-  });
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it("pre-boots sandbox for a registered slug", async () => {
-    const slots = createSlotCache();
-    const store = createTestStore();
-    const storage = createTestStorage();
-    await store.putAgent({
-      slug: "warm-me",
-      env: { ASSEMBLYAI_API_KEY: "key" },
-      credential_hashes: ["hash"],
-      worker: "w",
-      clientFiles: {},
-    });
-    registerSlot(slots, { slug: "warm-me", env: {}, credential_hashes: ["hash"] });
-    await warmAgent("warm-me", { slots, store, storage, createSandbox: mockCreateSandbox });
-    expect(mockCreateSandbox).toHaveBeenCalledOnce();
-    expect(slots.get("warm-me")?.sandbox).toBeDefined();
-  });
-
-  it("does not throw if slug is unknown", async () => {
-    const slots = createSlotCache();
-    const store = createTestStore();
-    const storage = createTestStorage();
-    await warmAgent("unknown", { slots, store, storage, createSandbox: mockCreateSandbox });
-    expect(mockCreateSandbox).not.toHaveBeenCalled();
   });
 });
 

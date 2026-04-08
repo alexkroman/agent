@@ -273,26 +273,6 @@ export async function resolveSandbox(
   );
 }
 
-/**
- * Pre-boot a sandbox for the given slug so it's ready for the first connection.
- * Best-effort — logs warning and returns if slug doesn't exist or creation fails.
- */
-export async function warmAgent(
-  slug: string,
-  opts: {
-    createSandbox: (o: SandboxOptions) => Promise<Sandbox>;
-    slots: SlotCache;
-    store: BundleStore;
-    storage: Storage;
-  },
-): Promise<void> {
-  try {
-    await resolveSandbox(slug, opts);
-  } catch (err) {
-    console.warn("Warm-up failed:", { slug, error: String(err) });
-  }
-}
-
 /** @internal Exposed for tests. */
 export const _slotInternals = {
   get IDLE_MS() {
