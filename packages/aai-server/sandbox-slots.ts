@@ -17,7 +17,7 @@
 import { LRUCache } from "lru-cache";
 import { getLock } from "p-lock";
 import type { Storage } from "unstorage";
-import { DEFAULT_SLOT_IDLE_MS, MAX_SLOTS } from "./constants.ts";
+import { DEFAULT_SLOT_IDLE_MS, MAX_RSS_MB, MAX_SLOTS } from "./constants.ts";
 import type { Sandbox, SandboxOptions } from "./sandbox.ts";
 import type { AgentMetadata } from "./schemas.ts";
 import type { BundleStore } from "./store-types.ts";
@@ -27,6 +27,14 @@ export class SlotCapacityError extends Error {
   constructor(activeCount: number, max: number) {
     super(`Slot capacity reached: ${activeCount}/${max} active slots`);
     this.name = "SlotCapacityError";
+  }
+}
+
+/** Thrown when the server's RSS exceeds MAX_RSS_MB. */
+export class MemoryPressureError extends Error {
+  constructor(rssMb: number, maxMb: number) {
+    super(`Memory pressure: RSS ${rssMb.toFixed(0)}MB exceeds ${maxMb}MB`);
+    this.name = "MemoryPressureError";
   }
 }
 
@@ -168,6 +176,11 @@ export async function ensureAgent(
     // Capacity is handled by the LRU cache — it auto-evicts the
     // least-recently-used slot when `max` is reached on `set()`.
 
+    const rssMb = process.memoryUsage().rss / (1024 * 1024);
+    if (rssMb > MAX_RSS_MB) {
+      throw new MemoryPressureError(rssMb, MAX_RSS_MB);
+    }
+
     const t0 = performance.now();
     const sandbox = await spawnAgent(slot, opts);
     resetIdleTimer(slot);
@@ -258,6 +271,26 @@ export async function resolveSandbox(
     },
     opts.slots,
   );
+}
+
+/**
+ * Pre-boot a sandbox for the given slug so it's ready for the first connection.
+ * Best-effort — logs warning and returns if slug doesn't exist or creation fails.
+ */
+export async function warmAgent(
+  slug: string,
+  opts: {
+    createSandbox: (o: SandboxOptions) => Promise<Sandbox>;
+    slots: SlotCache;
+    store: BundleStore;
+    storage: Storage;
+  },
+): Promise<void> {
+  try {
+    await resolveSandbox(slug, opts);
+  } catch (err) {
+    console.warn("Warm-up failed:", { slug, error: String(err) });
+  }
 }
 
 /** @internal Exposed for tests. */

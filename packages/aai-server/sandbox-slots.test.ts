@@ -8,6 +8,7 @@ import {
   ensureAgent,
   registerSlot,
   resolveSandbox,
+  warmAgent,
 } from "./sandbox-slots.ts";
 import { createTestStorage, createTestStore, makeSlot } from "./test-utils.ts";
 
@@ -228,6 +229,32 @@ describe("ensureAgent", () => {
     expect(result).toBeDefined();
     expect(mockCreateSandbox).toHaveBeenCalledOnce();
   });
+
+  it("rejects spawn when RSS exceeds MAX_RSS_MB", async () => {
+    const slot = makeSlot();
+    const opts = makeEnsureOpts();
+    const orig = process.memoryUsage;
+    process.memoryUsage = Object.assign(() => ({ ...orig(), rss: 2000 * 1024 * 1024 }), orig);
+    try {
+      await expect(ensureAgent(slot, opts)).rejects.toThrow("Memory pressure");
+      expect(mockCreateSandbox).not.toHaveBeenCalled();
+    } finally {
+      process.memoryUsage = orig;
+    }
+  });
+
+  it("allows spawn when RSS is below MAX_RSS_MB", async () => {
+    const slot = makeSlot();
+    const opts = makeEnsureOpts();
+    const orig = process.memoryUsage;
+    process.memoryUsage = Object.assign(() => ({ ...orig(), rss: 500 * 1024 * 1024 }), orig);
+    try {
+      const result = await ensureAgent(slot, opts);
+      expect(result).toBeDefined();
+    } finally {
+      process.memoryUsage = orig;
+    }
+  });
 });
 
 describe("resolveSandbox", () => {
@@ -358,6 +385,41 @@ describe("resolveSandbox", () => {
     expect(mockCreateSandbox).toHaveBeenCalledWith(
       expect.objectContaining({ storage, slug: "vec-agent" }),
     );
+  });
+});
+
+describe("warmAgent", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    mockCreateSandbox.mockClear();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("pre-boots sandbox for a registered slug", async () => {
+    const slots = createSlotCache();
+    const store = createTestStore();
+    const storage = createTestStorage();
+    await store.putAgent({
+      slug: "warm-me",
+      env: { ASSEMBLYAI_API_KEY: "key" },
+      credential_hashes: ["hash"],
+      worker: "w",
+      clientFiles: {},
+    });
+    registerSlot(slots, { slug: "warm-me", env: {}, credential_hashes: ["hash"] });
+    await warmAgent("warm-me", { slots, store, storage, createSandbox: mockCreateSandbox });
+    expect(mockCreateSandbox).toHaveBeenCalledOnce();
+    expect(slots.get("warm-me")?.sandbox).toBeDefined();
+  });
+
+  it("does not throw if slug is unknown", async () => {
+    const slots = createSlotCache();
+    const store = createTestStore();
+    const storage = createTestStorage();
+    await warmAgent("unknown", { slots, store, storage, createSandbox: mockCreateSandbox });
+    expect(mockCreateSandbox).not.toHaveBeenCalled();
   });
 });
 
