@@ -6,7 +6,7 @@ import type { BundleStore } from "./store-types.ts";
 
 export type Env = {
   Bindings: {
-    slots: Map<string, import("./sandbox.ts").AgentSlot>;
+    slots: import("./sandbox-slots.ts").SlotCache;
     store: BundleStore;
     storage: Storage;
   };

@@ -17,15 +17,15 @@ import { handleDeploy, handleDeployNew } from "./deploy.ts";
 import { createErrorHandler } from "./error-handler.ts";
 import { handleKv } from "./kv-handler.ts";
 import { authMw, ownerMw, slugMw, validateSlug } from "./middleware.ts";
-import type { AgentSlot } from "./sandbox.ts";
 import { resolveSandbox } from "./sandbox.ts";
+import type { SlotCache } from "./sandbox-slots.ts";
 import { DeployBodySchema, SecretUpdatesSchema } from "./schemas.ts";
 import { handleSecretDelete, handleSecretList, handleSecretSet } from "./secret-handler.ts";
 import type { BundleStore } from "./store-types.ts";
 import { handleAgentHealth, handleAgentPage, handleClientAsset } from "./transport-websocket.ts";
 
 export type OrchestratorOpts = {
-  slots: Map<string, AgentSlot>;
+  slots: SlotCache;
   store: BundleStore;
   storage: Storage;
   /** Allowed CORS origins. Defaults to `["*"]` (any origin). */

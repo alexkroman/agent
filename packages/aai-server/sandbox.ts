@@ -52,7 +52,7 @@ import { createSidecar, type Sidecar } from "./sandbox-sidecar.ts";
 import {
   resolveSandbox as _resolveSandboxCore,
   _slotInternals,
-  type AgentSlot,
+  type SlotCache,
 } from "./sandbox-slots.ts";
 import { ssrfSafeFetch } from "./ssrf.ts";
 import type { BundleStore } from "./store-types.ts";
@@ -77,7 +77,13 @@ process.on("unhandledRejection", (reason: unknown) => {
   throw reason;
 });
 
-export { type AgentSlot, ensureAgent, registerSlot } from "./sandbox-slots.ts";
+export {
+  type AgentSlot,
+  createSlotCache,
+  ensureAgent,
+  registerSlot,
+  type SlotCache,
+} from "./sandbox-slots.ts";
 export type { AgentMetadata } from "./schemas.ts";
 
 export type SandboxOptions = {
@@ -397,7 +403,7 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
 
 export async function resolveSandbox(
   slug: string,
-  opts: { slots: Map<string, AgentSlot>; store: BundleStore; storage: Storage },
+  opts: { slots: SlotCache; store: BundleStore; storage: Storage },
 ): Promise<Sandbox | null> {
   return _resolveSandboxCore(slug, { ...opts, createSandbox });
 }

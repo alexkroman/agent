@@ -1,13 +1,13 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { expect, test, vi } from "vitest";
 import { createOrchestrator } from "./orchestrator.ts";
-import type { AgentSlot } from "./sandbox.ts";
+import { createSlotCache } from "./sandbox-slots.ts";
 import { createTestStorage, createTestStore, deployAgent, makeSlot } from "./test-utils.ts";
 
 async function setup() {
   const store = createTestStore();
   const storage = createTestStorage();
-  const slots = new Map<string, AgentSlot>();
+  const slots = createSlotCache();
   const { app } = createOrchestrator({ slots, store, storage });
   const fetch = async (input: string | Request, init?: RequestInit) => app.request(input, init);
   return { fetch, store, slots };

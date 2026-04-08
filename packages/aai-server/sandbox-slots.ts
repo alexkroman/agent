@@ -14,6 +14,7 @@
  * would deadlock.
  */
 
+import { LRUCache } from "lru-cache";
 import { getLock } from "p-lock";
 import type { Storage } from "unstorage";
 import { DEFAULT_SLOT_IDLE_MS, MAX_SLOTS } from "./constants.ts";
@@ -27,6 +28,44 @@ export class SlotCapacityError extends Error {
     super(`Slot capacity reached: ${activeCount}/${max} active slots`);
     this.name = "SlotCapacityError";
   }
+}
+
+// ── LRU slot cache ─────────────────────────────────────────────────────
+
+export type SlotCache = LRUCache<string, AgentSlot>;
+
+/**
+ * Create an LRU cache for agent slots.
+ *
+ * When the cache reaches `MAX_SLOTS`, the least-recently-used slot is evicted
+ * automatically. The `dispose` callback shuts down the evicted slot's sandbox.
+ *
+ * We only shut down on `"evict"` (LRU capacity eviction). On `"set"` the
+ * caller manages the lifecycle (e.g., redeploy terminates old sandbox
+ * explicitly). On `"delete"` the caller also handles it (e.g., delete endpoint).
+ */
+export function createSlotCache(): SlotCache {
+  return new LRUCache<string, AgentSlot>({
+    max: MAX_SLOTS,
+    dispose: (slot, _key, reason) => {
+      if (reason !== "evict") return;
+      const sb = slot.sandbox;
+      if (!sb) return;
+      delete slot.sandbox;
+      if (slot.idleTimer) {
+        clearTimeout(slot.idleTimer);
+        delete slot.idleTimer;
+      }
+      slot._idleAc?.abort();
+      delete slot._idleAc;
+      sb.shutdown().catch((err) => {
+        console.warn("LRU eviction sandbox shutdown failed:", {
+          slug: slot.slug,
+          error: err,
+        });
+      });
+    },
+  });
 }
 
 // ── Locks ───────────────────────────────────────────────────────────────
@@ -117,7 +156,7 @@ async function evictSlot(slot: AgentSlot, signal: AbortSignal): Promise<void> {
 export async function ensureAgent(
   slot: AgentSlot,
   opts: EnsureOpts,
-  slots?: Map<string, AgentSlot>,
+  _slots?: SlotCache,
 ): Promise<Sandbox> {
   const release = await slotLock(slot.slug);
   try {
@@ -126,13 +165,8 @@ export async function ensureAgent(
       return slot.sandbox;
     }
 
-    // Check slot cap before spawning a new sandbox
-    if (slots) {
-      const activeCount = [...slots.values()].filter((s) => s.sandbox).length;
-      if (activeCount >= MAX_SLOTS) {
-        throw new SlotCapacityError(activeCount, MAX_SLOTS);
-      }
-    }
+    // Capacity is handled by the LRU cache — it auto-evicts the
+    // least-recently-used slot when `max` is reached on `set()`.
 
     const t0 = performance.now();
     const sandbox = await spawnAgent(slot, opts);
@@ -174,7 +208,7 @@ export async function terminateSlot(slot: AgentSlot): Promise<void> {
   }
 }
 
-export function registerSlot(slots: Map<string, AgentSlot>, metadata: AgentMetadata): void {
+export function registerSlot(slots: SlotCache, metadata: AgentMetadata): void {
   slots.set(metadata.slug, {
     slug: metadata.slug,
     keyHash: metadata.credential_hashes[0] ?? "",
@@ -185,7 +219,7 @@ export async function resolveSandbox(
   slug: string,
   opts: {
     createSandbox: (opts: SandboxOptions) => Promise<Sandbox>;
-    slots: Map<string, AgentSlot>;
+    slots: SlotCache;
     store: BundleStore;
     storage: Storage;
   },
