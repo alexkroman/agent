@@ -1,75 +1,49 @@
 /**
  * S2S API load test — drives complete sessions by streaming Kokoro TTS audio.
- * Includes tool calling: registers tools in the session and responds to tool.call
- * messages from the agent with mock tool.result responses.
+ * Includes tool calling, barge-in simulation, connection retries, and optional
+ * network chaos via Toxiproxy.
  *
  * Usage:
  *   npx tsx scripts/s2s-load-test.ts [options]
- *
- * Options:
- *   --sessions, -n       Total number of sessions to run (default: 1)
- *   --concurrency, -c    Max simultaneous sessions (default: 1)
- *   --url                S2S WebSocket URL (default: wss://speech-to-speech.us.assemblyai.com/v1/realtime)
- *   --api-key            AssemblyAI API key (default: $ASSEMBLYAI_API_KEY)
- *   --greeting           Agent greeting text (default: "Hello, how can I help?")
- *   --voice              Kokoro voice preset (default: af_heart)
- *   --turns              Number of user turns per session (default: 3)
- *   --chunk-ms           Audio chunk size in ms when streaming (default: 100)
- *   --pause-ms           Pause between turns in ms (default: 2000)
- *   --ramp-ms            Stagger session starts over this many ms (default: 0, all at once)
- *   --quiet, -q          Suppress per-session event logs, only show progress + summary
+ *   npx tsx scripts/s2s-load-test.ts --help
  */
 
 import { createRequire } from "node:module";
-import { parseArgs } from "node:util";
+import { defineCommand, runMain } from "citty";
 import {
   connectS2s,
   defaultCreateS2sWebSocket,
+  type CreateS2sWebSocket,
   type S2sHandle,
   type S2sToolSchema,
 } from "../packages/aai/host/s2s.ts";
 
-// ── CLI args ──────────────────────────────────────────────────────────────────
+// ── Config ───────────────────────────────────────────────────────────────────
 
-const { values: args } = parseArgs({
-  options: {
-    sessions: { type: "string", short: "n", default: "1" },
-    concurrency: { type: "string", short: "c", default: "1" },
-    url: {
-      type: "string",
-      default: "wss://speech-to-speech.us.assemblyai.com/v1/realtime",
-    },
-    "api-key": { type: "string", default: process.env.ASSEMBLYAI_API_KEY ?? "" },
-    greeting: { type: "string", default: "Hello, how can I help?" },
-    voice: { type: "string", default: "af_heart" },
-    turns: { type: "string", default: "5" },
-    "chunk-ms": { type: "string", default: "100" },
-    "pause-ms": { type: "string", default: "2000" },
-    "ramp-ms": { type: "string", default: "10000" },
-    quiet: { type: "boolean", short: "q", default: true },
-  },
-  strict: true,
-});
+type Config = {
+  totalSessions: number;
+  concurrency: number;
+  wssUrl: string;
+  apiKey: string;
+  greeting: string;
+  voice: string;
+  maxTurns: number;
+  chunkMs: number;
+  rampMs: number;
+  quiet: boolean;
+  toxiproxy: boolean;
+  toxicLatency: number;
+  toxicJitter: number;
+  toxicBandwidth: number;
+  toxicReset: number;
+  toxicResetTimeout: number;
+};
 
-const TOTAL_SESSIONS = Number(args.sessions);
-const CONCURRENCY = Number(args.concurrency);
-const WSS_URL = args.url!;
-const API_KEY = args["api-key"]!;
-const GREETING = args.greeting!;
-const VOICE = args.voice!;
-const TURNS = Number(args.turns);
-const CHUNK_MS = Number(args["chunk-ms"]);
-const PAUSE_MS = Number(args["pause-ms"]);
-const RAMP_MS = Number(args["ramp-ms"]);
-const QUIET = args.quiet!;
 const INPUT_SAMPLE_RATE = 16_000;
+const MAX_RETRIES = 5;
+const BARGE_IN_CHANCE = 0.2;
 
-if (!API_KEY) {
-  console.error("Error: --api-key or $ASSEMBLYAI_API_KEY is required");
-  process.exit(1);
-}
-
-// ── Tools & utterances ────────────────────────────────────────────────────────
+// ── Tools & utterances ───────────────────────────────────────────────────────
 
 const TOOLS: S2sToolSchema[] = [
   {
@@ -151,20 +125,13 @@ You MUST use the provided tools to answer questions. Always call the appropriate
 - For booking requests, use book_appointment.
 - For store hours questions, use get_store_hours.`;
 
-// Suppress S2S client logging — we do our own.
-const silentLogger = {
-  info: () => {},
-  warn: () => {},
-  error: () => {},
-  debug: () => {},
+const silentLogger = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
+
+// ── TTS generation ───────────────────────────────────────────────────────────
+
+type TTS = {
+  generate(text: string, opts: { voice: string }): Promise<{ audio: Float32Array; sampling_rate: number }>;
 };
-
-// ── TTS generation ────────────────────────────────────────────────────────────
-
-function resolveVoicesPath(): string {
-  const require = createRequire(import.meta.url);
-  return require.resolve("kokoro-js").replace(/dist.*/, "voices/");
-}
 
 function resample(samples: Float32Array, srcRate: number, dstRate: number): Float32Array {
   if (srcRate === dstRate) return samples;
@@ -186,25 +153,17 @@ function float32ToPcm16(samples: Float32Array): Uint8Array {
   const view = new DataView(buf);
   for (let i = 0; i < samples.length; i++) {
     const s = Math.max(-1, Math.min(1, samples[i]!));
-    const val = s < 0 ? s * 0x8000 : s * 0x7fff;
-    view.setInt16(i * 2, Math.round(val), true);
+    view.setInt16(i * 2, Math.round(s < 0 ? s * 0x8000 : s * 0x7fff), true);
   }
   return new Uint8Array(buf);
 }
 
-type TTS = {
-  generate(
-    text: string,
-    opts: { voice: string },
-  ): Promise<{ audio: Float32Array; sampling_rate: number }>;
-};
-
-async function generateAudioBuffers(tts: TTS): Promise<Uint8Array[]> {
+async function generateAudioBuffers(tts: TTS, voice: string): Promise<Uint8Array[]> {
   const buffers: Uint8Array[] = [];
   for (let i = 0; i < UTTERANCES.length; i++) {
     const text = UTTERANCES[i]!;
     process.stdout.write(`  TTS [${i + 1}/${UTTERANCES.length}] "${text.slice(0, 50)}..." `);
-    const result = await tts.generate(text, { voice: VOICE });
+    const result = await tts.generate(text, { voice });
     const resampled = resample(result.audio, result.sampling_rate, INPUT_SAMPLE_RATE);
     const pcm = float32ToPcm16(resampled);
     console.log(`${(resampled.length / INPUT_SAMPLE_RATE).toFixed(2)}s (${pcm.length} bytes)`);
@@ -213,47 +172,42 @@ async function generateAudioBuffers(tts: TTS): Promise<Uint8Array[]> {
   return buffers;
 }
 
-// ── Metrics ───────────────────────────────────────────────────────────────────
-
-type ToolCallMetric = {
-  turn: number;
-  name: string;
-  args: Record<string, unknown>;
-};
+// ── Metrics ──────────────────────────────────────────────────────────────────
 
 type SessionMetrics = {
   sessionId: number;
   connected: boolean;
   sessionReady: boolean;
+  turnsRequested: number;
   turnsCompleted: number;
   userTranscripts: string[];
   agentTranscripts: string[];
-  toolCalls: ToolCallMetric[];
+  toolCalls: { turn: number; name: string; args: Record<string, unknown> }[];
   errors: string[];
   connectMs: number;
   firstGreetingMs: number;
-  /** End-of-speech → first agent transcript delta (user-perceived latency). */
   turnLatenciesMs: number[];
   totalMs: number;
+  retries: number;
+  bargeIns: number;
 };
 
 function percentile(sorted: number[], p: number): number {
-  const idx = Math.ceil((p / 100) * sorted.length) - 1;
-  return sorted[Math.max(0, idx)]!;
+  return sorted[Math.max(0, Math.ceil((p / 100) * sorted.length) - 1)]!;
 }
 
-function printMetrics(results: SessionMetrics[]): void {
+function printMetrics(results: SessionMetrics[], peakConcurrency: number): void {
+  // Per-session results
   console.log("\n" + "=".repeat(70));
   console.log("RESULTS");
   console.log("=".repeat(70));
-
   for (const r of results) {
     console.log(`\n--- Session ${r.sessionId} ---`);
     console.log(`  Connected:        ${r.connected}`);
     console.log(`  Session ready:    ${r.sessionReady}`);
     console.log(`  Connect time:     ${r.connectMs}ms`);
     console.log(`  First greeting:   ${r.firstGreetingMs > 0 ? `${r.firstGreetingMs}ms` : "n/a"}`);
-    console.log(`  Turns completed:  ${r.turnsCompleted}/${TURNS}`);
+    console.log(`  Turns completed:  ${r.turnsCompleted}/${r.turnsRequested}`);
     if (r.turnLatenciesMs.length > 0) {
       console.log(`  Turn latencies:   ${r.turnLatenciesMs.map((l) => `${l}ms`).join(", ")}`);
     }
@@ -266,29 +220,52 @@ function printMetrics(results: SessionMetrics[]): void {
       console.log(`  User transcripts: ${r.userTranscripts.map((t) => `"${t}"`).join(", ")}`);
     }
     if (r.agentTranscripts.length > 0) {
-      console.log(
-        `  Agent responses:  ${r.agentTranscripts.map((t) => `"${t.slice(0, 60)}${t.length > 60 ? "..." : ""}"`).join(", ")}`,
-      );
+      console.log(`  Agent responses:  ${r.agentTranscripts.map((t) => `"${t.slice(0, 60)}${t.length > 60 ? "..." : ""}"`).join(", ")}`);
     }
     if (r.errors.length > 0) {
       console.log(`  Errors:           ${r.errors.join("; ")}`);
     }
   }
 
+  // Errors
+  const allErrors = results.flatMap((r) => r.errors.map((e) => ({ session: r.sessionId, error: e })));
+  console.log("\n" + "=".repeat(70));
+  console.log("ERRORS");
+  console.log("=".repeat(70));
+  if (allErrors.length === 0) {
+    console.log("  (none)");
+  } else {
+    const groups: Record<string, typeof allErrors> = {
+      WebSocket: allErrors.filter((e) => e.error.startsWith("ws ")),
+      API: allErrors.filter((e) => e.error.startsWith("s2s error:") || e.error.startsWith("s2s expired:")),
+      Timeouts: allErrors.filter((e) => e.error.startsWith("session timeout")),
+      Validation: allErrors.filter((e) => e.error.startsWith("FAIL:")),
+    };
+    console.log(`  Total:            ${allErrors.length}`);
+    for (const [label, errs] of Object.entries(groups)) {
+      if (errs.length === 0) continue;
+      console.log(`  ${label.padEnd(18)}${errs.length}`);
+      for (const e of errs) console.log(`    [s${e.session}] ${e.error}`);
+    }
+  }
+
   // Aggregate
-  const succeeded = results.filter((r) => r.connected && r.sessionReady);
   const allLatencies = results.flatMap((r) => r.turnLatenciesMs).sort((a, b) => a - b);
-  const greetingLatencies = results
-    .map((r) => r.firstGreetingMs)
-    .filter((l) => l > 0)
-    .sort((a, b) => a - b);
+  const greetingLatencies = results.map((r) => r.firstGreetingMs).filter((l) => l > 0).sort((a, b) => a - b);
+  const withErrors = results.filter((r) => r.errors.length > 0);
+  const clean = results.length - withErrors.length;
+  const totalTurns = results.reduce((s, r) => s + r.turnsCompleted, 0);
+  const cleanTurns = results.filter((r) => r.errors.length === 0).reduce((s, r) => s + r.turnsCompleted, 0);
 
   console.log("\n" + "=".repeat(70));
   console.log("AGGREGATE");
   console.log("=".repeat(70));
-  console.log(`  Sessions:         ${results.length} total, ${succeeded.length} connected`);
-  console.log(`  Total turns:      ${results.reduce((s, r) => s + r.turnsCompleted, 0)}`);
+  console.log(`  Sessions:         ${results.length} total, ${clean} clean, ${withErrors.length} with errors`);
+  console.log(`  Peak concurrency: ${peakConcurrency}`);
+  console.log(`  Turns:            ${totalTurns} total, ${cleanTurns} clean, ${totalTurns - cleanTurns} with errors`);
   console.log(`  Total tool calls: ${results.reduce((s, r) => s + r.toolCalls.length, 0)}`);
+  console.log(`  Retries:          ${results.reduce((s, r) => s + r.retries, 0)}`);
+  console.log(`  Barge-ins:        ${results.reduce((s, r) => s + r.bargeIns, 0)}`);
   if (greetingLatencies.length > 0) {
     console.log(`  Greeting p50:     ${percentile(greetingLatencies, 50)}ms`);
     console.log(`  Greeting p95:     ${percentile(greetingLatencies, 95)}ms`);
@@ -298,109 +275,127 @@ function printMetrics(results: SessionMetrics[]): void {
     console.log(`  Turn latency p95: ${percentile(allLatencies, 95)}ms`);
     console.log(`  Turn latency p99: ${percentile(allLatencies, 99)}ms`);
   }
-
-  // Errors section
-  const allErrors = results.flatMap((r) =>
-    r.errors.map((e) => ({ session: r.sessionId, error: e })),
-  );
-  const wsErrors = allErrors.filter((e) => e.error.startsWith("ws "));
-  const apiErrors = allErrors.filter(
-    (e) => e.error.startsWith("s2s error:") || e.error.startsWith("s2s expired:"),
-  );
-  const timeouts = allErrors.filter((e) => e.error.startsWith("session timeout"));
-  const validationFails = allErrors.filter((e) => e.error.startsWith("FAIL:"));
-
-  console.log("\n" + "=".repeat(70));
-  console.log("ERRORS");
-  console.log("=".repeat(70));
-  if (allErrors.length === 0) {
-    console.log("  (none)");
-  } else {
-    console.log(`  Total:            ${allErrors.length}`);
-    if (wsErrors.length > 0) {
-      console.log(`  WebSocket:        ${wsErrors.length}`);
-      for (const e of wsErrors) console.log(`    [s${e.session}] ${e.error}`);
-    }
-    if (apiErrors.length > 0) {
-      console.log(`  API:              ${apiErrors.length}`);
-      for (const e of apiErrors) console.log(`    [s${e.session}] ${e.error}`);
-    }
-    if (timeouts.length > 0) {
-      console.log(`  Timeouts:         ${timeouts.length}`);
-      for (const e of timeouts) console.log(`    [s${e.session}] ${e.error}`);
-    }
-    if (validationFails.length > 0) {
-      console.log(`  Validation:       ${validationFails.length}`);
-      for (const e of validationFails) console.log(`    [s${e.session}] ${e.error}`);
-    }
-  }
 }
 
-// ── S2S session driver ────────────────────────────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function shuffle<T>(arr: T[]): T[] {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j]!, arr[i]!];
+  }
+  return arr;
+}
+
+/**
+ * Random turn count with distribution averaging ~8 user turns.
+ * 10% → 1-2, 15% → 3-4, 25% → 5-7, 25% → 8-10, 15% → 11-14, 10% → 15-20
+ */
+function randomTurnCount(maxTurns: number): number {
+  const r = Math.random();
+  let turns: number;
+  if (r < 0.10) turns = 1 + Math.floor(Math.random() * 2);       // 1-2
+  else if (r < 0.25) turns = 3 + Math.floor(Math.random() * 2);  // 3-4
+  else if (r < 0.50) turns = 5 + Math.floor(Math.random() * 3);  // 5-7
+  else if (r < 0.75) turns = 8 + Math.floor(Math.random() * 3);  // 8-10
+  else if (r < 0.90) turns = 11 + Math.floor(Math.random() * 4); // 11-14
+  else turns = 15 + Math.floor(Math.random() * 6);                // 15-20
+  return Math.min(turns, maxTurns);
+}
+
+function randomPauseMs(): number {
+  return 1000 + Math.floor(Math.random() * 5000);
+}
+
+// ── Session driver ───────────────────────────────────────────────────────────
+
 async function runSession(
   sessionId: number,
   audioBuffers: Uint8Array[],
+  createWebSocket: CreateS2sWebSocket,
+  cfg: Config,
 ): Promise<SessionMetrics> {
+  const sessionTurns = randomTurnCount(cfg.maxTurns);
+  const bufferOrder = shuffle([...audioBuffers.keys()]);
+  const log = cfg.quiet ? () => {} : (msg: string) => console.log(`  [s${sessionId}] ${msg}`);
+
   const metrics: SessionMetrics = {
-    sessionId,
-    connected: false,
-    sessionReady: false,
-    turnsCompleted: 0,
-    userTranscripts: [],
-    agentTranscripts: [],
-    toolCalls: [],
-    errors: [],
-    connectMs: 0,
-    firstGreetingMs: 0,
-    turnLatenciesMs: [],
-    totalMs: 0,
+    sessionId, connected: false, sessionReady: false,
+    turnsRequested: sessionTurns, turnsCompleted: 0,
+    userTranscripts: [], agentTranscripts: [], toolCalls: [], errors: [],
+    connectMs: 0, firstGreetingMs: 0, turnLatenciesMs: [], totalMs: 0,
+    retries: 0, bargeIns: 0,
   };
 
   const sessionStart = Date.now();
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    if (attempt > 0) {
+      metrics.retries++;
+      const backoff = Math.min(1000 * 2 ** (attempt - 1), 10_000);
+      log(`retry ${attempt}/${MAX_RETRIES} after ${backoff}ms`);
+      await sleep(backoff);
+    }
+    const result = await runSessionAttempt(sessionId, sessionTurns, bufferOrder, audioBuffers, metrics, sessionStart, log, createWebSocket, cfg);
+    if (result === "done") break;
+    if (attempt === MAX_RETRIES) {
+      metrics.errors.push(`exhausted ${MAX_RETRIES} retries`);
+      log(`exhausted ${MAX_RETRIES} retries`);
+    }
+  }
+
+  metrics.totalMs = Date.now() - sessionStart;
+  return metrics;
+}
+
+async function runSessionAttempt(
+  sessionId: number,
+  sessionTurns: number,
+  bufferOrder: number[],
+  audioBuffers: Uint8Array[],
+  metrics: SessionMetrics,
+  sessionStart: number,
+  log: (msg: string) => void,
+  createWebSocket: CreateS2sWebSocket,
+  cfg: Config,
+): Promise<"done" | "retry"> {
   let turnStart = 0;
-  let currentTurn = 0;
+  let currentTurn = metrics.turnsCompleted;
   let waitingForReply = false;
-  let greetingReceived = false;
+  let greetingReceived = metrics.agentTranscripts.length > 0;
   let gotAgentReplyThisTurn = false;
   let recordedLatencyThisTurn = false;
+  let bargeInScheduled = false;
   let lastEvent = "init";
   let done = false;
+  let shouldRetry = false;
 
-  const log = QUIET ? () => {} : (msg: string) => console.log(`  [s${sessionId}] ${msg}`);
-
-  // Connect via SDK client
   let handle: S2sHandle;
   try {
     handle = await connectS2s({
-      apiKey: API_KEY,
-      config: { wssUrl: WSS_URL, inputSampleRate: INPUT_SAMPLE_RATE, outputSampleRate: 24_000 },
-      createWebSocket: defaultCreateS2sWebSocket,
+      apiKey: cfg.apiKey,
+      config: { wssUrl: cfg.wssUrl, inputSampleRate: INPUT_SAMPLE_RATE, outputSampleRate: 24_000 },
+      createWebSocket,
       logger: silentLogger,
     });
     metrics.connected = true;
     metrics.connectMs = Date.now() - sessionStart;
     log(`connected (${metrics.connectMs}ms)`);
   } catch (err: unknown) {
-    const msg = `ws error: ${(err as Error).message}`;
-    metrics.errors.push(msg);
-    log(msg);
-    metrics.totalMs = Date.now() - sessionStart;
-    return metrics;
+    metrics.errors.push(`ws error: ${(err as Error).message}`);
+    log(`ws error: ${(err as Error).message}`);
+    return "retry";
   }
 
   return new Promise((resolve) => {
-    // ~30s per turn (pause + streaming + API processing) + 30s buffer for greeting
-    const timeoutMs = TURNS * 30_000 + 30_000;
+    const timeoutMs = sessionTurns * 30_000 + 30_000;
     const timeout = setTimeout(() => {
-      const state = `turn=${currentTurn}/${TURNS}, greeting=${greetingReceived}, waitingForReply=${waitingForReply}, lastEvent=${lastEvent}`;
-      const msg = `session timeout (${timeoutMs / 1000}s) [${state}]`;
-      metrics.errors.push(msg);
-      log(msg);
+      const state = `turn=${currentTurn}/${sessionTurns}, greeting=${greetingReceived}, waitingForReply=${waitingForReply}, lastEvent=${lastEvent}`;
+      metrics.errors.push(`session timeout (${timeoutMs / 1000}s) [${state}]`);
+      log(`session timeout [${state}]`);
       finish();
     }, timeoutMs);
 
@@ -408,31 +403,16 @@ async function runSession(
       if (done) return;
       done = true;
       clearTimeout(timeout);
-      metrics.totalMs = Date.now() - sessionStart;
 
       if (metrics.connected && metrics.sessionReady && !greetingReceived) {
-        const msg = "FAIL: no greeting received from agent";
-        metrics.errors.push(msg);
-        log(msg);
+        metrics.errors.push("FAIL: no greeting received from agent");
       }
       if (waitingForReply && currentTurn > 0) {
-        const msg = `FAIL: turn ${currentTurn} got no agent reply`;
-        metrics.errors.push(msg);
-        log(msg);
-      }
-      const expectedReplies = metrics.turnsCompleted;
-      const actualReplies = Math.max(
-        0,
-        metrics.agentTranscripts.length - (greetingReceived ? 1 : 0),
-      );
-      if (actualReplies < expectedReplies) {
-        const msg = `FAIL: expected ${expectedReplies} agent replies but got ${actualReplies}`;
-        metrics.errors.push(msg);
-        log(msg);
+        metrics.errors.push(`FAIL: turn ${currentTurn} got no agent reply`);
       }
 
       handle.close();
-      resolve(metrics);
+      resolve(shouldRetry ? "retry" : "done");
     }
 
     handle.on("ready", ({ sessionId: sid }) => {
@@ -441,30 +421,20 @@ async function runSession(
       log(`session ready (id: ${sid})`);
     });
 
-    handle.on("sessionUpdated", () => {
-      lastEvent = "sessionUpdated";
-      log("session updated, waiting for greeting...");
-    });
+    handle.on("sessionUpdated", () => { lastEvent = "sessionUpdated"; log("session updated, waiting for greeting..."); });
 
     handle.on("toolCall", ({ callId, name, args: toolArgs }) => {
       lastEvent = "toolCall";
       log(`tool call [turn ${currentTurn}]: ${name}(${JSON.stringify(toolArgs)})`);
-
       const responder = TOOL_RESPONSES[name];
-      const result = responder
-        ? responder(toolArgs)
-        : JSON.stringify({ error: `unknown tool: ${name}` });
+      const result = responder ? responder(toolArgs) : JSON.stringify({ error: `unknown tool: ${name}` });
       handle.sendToolResult(callId, result);
-
       metrics.toolCalls.push({ turn: currentTurn, name, args: toolArgs });
-      log(`tool result sent for ${name}`);
     });
 
     handle.on("speechStopped", () => {
       lastEvent = "speechStopped";
       if (waitingForReply) {
-        // Start latency timer at end-of-speech — this is when the user
-        // stops talking and begins waiting for a response.
         turnStart = Date.now();
         log(`turn ${currentTurn} speech stopped, waiting for response...`);
       }
@@ -472,20 +442,29 @@ async function runSession(
 
     handle.on("agentTranscriptDelta", ({ text }) => {
       lastEvent = "agentTranscriptDelta";
-      // Record latency on the first delta — this is when the user would
-      // first hear the agent (TTS streams from the first text token).
       if (waitingForReply && !recordedLatencyThisTurn && turnStart > 0) {
         recordedLatencyThisTurn = true;
         const latency = Date.now() - turnStart;
         metrics.turnLatenciesMs.push(latency);
         log(`first agent token [turn ${currentTurn}]: "${text.slice(0, 40)}" (${latency}ms)`);
       }
+      // Barge-in: interrupt agent mid-response by sending audio
+      if (waitingForReply && bargeInScheduled && !done) {
+        bargeInScheduled = false;
+        metrics.bargeIns++;
+        log(`barge-in [turn ${currentTurn}]: interrupting agent`);
+        const bufIdx = bufferOrder[currentTurn % bufferOrder.length]!;
+        const pcm = audioBuffers[bufIdx]!;
+        const chunkBytes = Math.floor((INPUT_SAMPLE_RATE * cfg.chunkMs) / 1000) * 2;
+        for (let offset = 0; offset < Math.min(pcm.length, chunkBytes * 5); offset += chunkBytes) {
+          handle.sendAudio(pcm.subarray(offset, offset + chunkBytes));
+        }
+      }
     });
 
     handle.on("agentTranscript", ({ text }) => {
       lastEvent = "agentTranscript";
       metrics.agentTranscripts.push(text);
-
       if (!greetingReceived) {
         greetingReceived = true;
         metrics.firstGreetingMs = Date.now() - sessionStart;
@@ -504,148 +483,183 @@ async function runSession(
 
     handle.on("replyDone", () => {
       lastEvent = "replyDone";
-
-      // Tool calls produce intermediate reply.done events before the final
-      // agent transcript. Only complete the turn when we got an actual
-      // agentTranscript for it — otherwise this is a tool sub-reply.
       if (waitingForReply && gotAgentReplyThisTurn) {
         waitingForReply = false;
         gotAgentReplyThisTurn = false;
         metrics.turnsCompleted++;
-
-        if (currentTurn < TURNS) {
-          streamNextTurn();
-        } else {
-          log("all turns completed");
-          finish();
-        }
-      } else if (!waitingForReply) {
-        // Greeting reply done — start first turn
-        if (currentTurn < TURNS) {
-          streamNextTurn();
-        }
+        if (currentTurn < sessionTurns) streamNextTurn();
+        else { log("all turns completed"); finish(); }
+      } else if (!waitingForReply && currentTurn < sessionTurns) {
+        streamNextTurn();
       }
-      // else: intermediate tool sub-reply, wait for agentTranscript + final replyDone
     });
 
-    handle.on("error", ({ code, message }) => {
-      metrics.errors.push(`s2s error: ${code} ${message}`);
-      log(`error: ${code} ${message}`);
-    });
-
-    handle.on("sessionExpired", ({ code, message }) => {
-      metrics.errors.push(`s2s expired: ${code} ${message}`);
-      log(`session expired: ${code} ${message}`);
-      finish();
-    });
-
+    handle.on("error", ({ code, message }) => { metrics.errors.push(`s2s error: ${code} ${message}`); log(`error: ${code} ${message}`); });
+    handle.on("sessionExpired", ({ code, message }) => { metrics.errors.push(`s2s expired: ${code} ${message}`); finish(); });
     handle.on("close", () => {
       log("ws closed");
+      if (!done && metrics.turnsCompleted < sessionTurns) shouldRetry = true;
       finish();
     });
 
-    // Send session.update to kick off
-    handle.updateSession({
-      systemPrompt: SYSTEM_PROMPT,
-      tools: TOOLS,
-      greeting: GREETING,
-    });
+    handle.updateSession({ systemPrompt: SYSTEM_PROMPT, tools: TOOLS, greeting: cfg.greeting });
 
     async function streamNextTurn(): Promise<void> {
       currentTurn++;
-      if (currentTurn > TURNS) return;
+      if (currentTurn > sessionTurns) return;
 
-      await sleep(PAUSE_MS);
+      bargeInScheduled = Math.random() < BARGE_IN_CHANCE;
+      await sleep(randomPauseMs());
       if (done) return;
 
-      const pcm = audioBuffers[(currentTurn - 1) % audioBuffers.length]!;
-      const chunkBytes = Math.floor((INPUT_SAMPLE_RATE * CHUNK_MS) / 1000) * 2;
+      const bufIdx = bufferOrder[(currentTurn - 1) % bufferOrder.length]!;
+      const pcm = audioBuffers[bufIdx]!;
+      const chunkBytes = Math.floor((INPUT_SAMPLE_RATE * cfg.chunkMs) / 1000) * 2;
 
-      log(
-        `streaming turn ${currentTurn}/${TURNS} (${(pcm.length / (INPUT_SAMPLE_RATE * 2)).toFixed(2)}s)`,
-      );
+      log(`streaming turn ${currentTurn}/${sessionTurns}${bargeInScheduled ? " (will barge-in)" : ""} (${(pcm.length / (INPUT_SAMPLE_RATE * 2)).toFixed(2)}s)`);
       waitingForReply = true;
       gotAgentReplyThisTurn = false;
       recordedLatencyThisTurn = false;
-      // turnStart will be set by the speechStopped handler — that marks
-      // the moment the user stops talking, which is when perceived latency
-      // begins. Reset to 0 so we don't accidentally use a stale value.
       turnStart = 0;
 
       for (let offset = 0; offset < pcm.length; offset += chunkBytes) {
         if (done) return;
         handle.sendAudio(pcm.subarray(offset, offset + chunkBytes));
-        await sleep(CHUNK_MS);
+        await sleep(cfg.chunkMs);
       }
       log(`turn ${currentTurn} audio sent`);
     }
   });
 }
 
-// ── Main ──────────────────────────────────────────────────────────────────────
+// ── Toxiproxy setup ──────────────────────────────────────────────────────────
 
-async function main(): Promise<void> {
+type ToxiproxyState = {
+  createWebSocket: CreateS2sWebSocket;
+  cleanup: () => Promise<void>;
+};
+
+async function setupToxiproxy(wssUrl: string, cfg: Config): Promise<ToxiproxyState> {
+  const { ToxiProxyContainer } = await import("@testcontainers/toxiproxy");
+  const require = createRequire(import.meta.url);
+  const WsWebSocket = require("ws") as typeof import("ws").default;
+
+  const url = new URL(wssUrl);
+  const upstreamHost = url.hostname;
+  const upstreamPort = url.port || "443";
+
+  console.log("  Toxiproxy: starting Docker container...");
+  const container = await new ToxiProxyContainer("shopify/toxiproxy:latest").start();
+  console.log("  Toxiproxy: container started");
+
+  const created = await container.createProxy({
+    name: "s2s-loadtest",
+    upstream: `${upstreamHost}:${upstreamPort}`,
+  });
+  console.log(`  Toxiproxy: proxy ${created.host}:${created.port} → ${upstreamHost}:${upstreamPort}`);
+
+  // Add toxics
+  const addToxic = (body: unknown) => created.instance.addToxic(body as never);
+  if (cfg.toxicLatency > 0 || cfg.toxicJitter > 0) {
+    await addToxic({ type: "latency", name: "latency_downstream", stream: "downstream", toxicity: 1.0, attributes: { latency: cfg.toxicLatency, jitter: cfg.toxicJitter } });
+    await addToxic({ type: "latency", name: "latency_upstream", stream: "upstream", toxicity: 1.0, attributes: { latency: Math.floor(cfg.toxicLatency / 2), jitter: Math.floor(cfg.toxicJitter / 2) } });
+    console.log(`  Toxiproxy: +latency ${cfg.toxicLatency}ms ±${cfg.toxicJitter}ms`);
+  }
+  if (cfg.toxicBandwidth > 0) {
+    await addToxic({ type: "bandwidth", name: "bandwidth_downstream", stream: "downstream", toxicity: 1.0, attributes: { rate: cfg.toxicBandwidth } });
+    console.log(`  Toxiproxy: +bandwidth limit ${cfg.toxicBandwidth} KB/s`);
+  }
+  if (cfg.toxicReset > 0) {
+    await addToxic({ type: "reset_peer", name: "reset_downstream", stream: "downstream", toxicity: cfg.toxicReset, attributes: { timeout: cfg.toxicResetTimeout } });
+    console.log(`  Toxiproxy: +reset ${(cfg.toxicReset * 100).toFixed(0)}% after ${cfg.toxicResetTimeout}ms`);
+  }
+
+  const createWebSocket: CreateS2sWebSocket = ((originalUrl: string, opts: { headers: Record<string, string> }) => {
+    const parsed = new URL(originalUrl);
+    return new WsWebSocket(`wss://${created.host}:${created.port}${parsed.pathname}${parsed.search}`, {
+      headers: opts.headers,
+      rejectUnauthorized: false,
+      servername: upstreamHost,
+    });
+  }) as unknown as CreateS2sWebSocket;
+
+  return {
+    createWebSocket,
+    cleanup: async () => { try { await container.stop(); console.log("  Toxiproxy: container stopped"); } catch {} },
+  };
+}
+
+// ── Main ─────────────────────────────────────────────────────────────────────
+
+async function main(cfg: Config): Promise<void> {
   console.log("S2S Load Test");
   console.log("=".repeat(70));
-  console.log(`  URL:         ${WSS_URL}`);
-  console.log(`  Sessions:    ${TOTAL_SESSIONS}`);
-  console.log(`  Concurrency: ${CONCURRENCY}`);
-  console.log(`  Turns/sess:  ${TURNS}`);
-  console.log(`  Chunk size:  ${CHUNK_MS}ms`);
-  console.log(`  Pause:       ${PAUSE_MS}ms`);
-  console.log(`  Ramp-up:     ${RAMP_MS > 0 ? `${RAMP_MS}ms` : "off (all at once)"}`);
-  console.log(`  Quiet:       ${QUIET}`);
-  console.log(`  Voice:       ${VOICE}`);
-  console.log(`  Greeting:    "${GREETING}"`);
+  console.log(`  URL:         ${cfg.wssUrl}`);
+  console.log(`  Sessions:    ${cfg.totalSessions}`);
+  console.log(`  Concurrency: ${cfg.concurrency}`);
+  console.log(`  Max turns:   ${cfg.maxTurns} (randomized per session)`);
+  console.log(`  Chunk size:  ${cfg.chunkMs}ms`);
+  console.log(`  Ramp-up:     ${cfg.rampMs > 0 ? `${cfg.rampMs}ms` : "off (all at once)"}`);
+  console.log(`  Verbose:     ${!cfg.quiet}`);
+  console.log(`  Voice:       ${cfg.voice}`);
+  console.log(`  Greeting:    "${cfg.greeting}"`);
   console.log(`  Tools:       ${TOOLS.map((t) => t.name).join(", ")}`);
+  console.log(`  Toxiproxy:   ${cfg.toxiproxy ? "auto (Docker)" : "off"}`);
   console.log();
 
+  // Toxiproxy
+  let toxiState: ToxiproxyState | null = null;
+  let wsFactory: CreateS2sWebSocket = defaultCreateS2sWebSocket;
+  if (cfg.toxiproxy) {
+    toxiState = await setupToxiproxy(cfg.wssUrl, cfg);
+    wsFactory = toxiState.createWebSocket;
+    console.log();
+  }
+
+  // TTS
   console.log("Generating TTS audio with Kokoro...");
   const { KokoroTTS } = await import("kokoro-js");
-  const voicesPath = resolveVoicesPath();
+  const require = createRequire(import.meta.url);
+  const voicesPath = require.resolve("kokoro-js").replace(/dist.*/, "voices/");
   const tts = await KokoroTTS.from_pretrained(
     "onnx-community/Kokoro-82M-v1.0-ONNX",
     // @ts-expect-error voices_path is supported at runtime but missing from types
     { dtype: "q8", device: "cpu", voices_path: voicesPath },
   );
-  const audioBuffers = await generateAudioBuffers(tts as unknown as TTS);
+  const audioBuffers = await generateAudioBuffers(tts as unknown as TTS, cfg.voice);
   console.log(`Generated ${audioBuffers.length} audio buffers\n`);
 
-  console.log(
-    `Running ${TOTAL_SESSIONS} session(s), ${CONCURRENCY} at a time...\n`,
-  );
+  // Worker pool
+  console.log(`Running ${cfg.totalSessions} session(s), ${cfg.concurrency} at a time...\n`);
   const startTime = Date.now();
-
-  // Worker pool: keep CONCURRENCY slots filled until all sessions are done.
-  // With --ramp-ms, stagger worker launches to avoid thundering herd.
   const results: SessionMetrics[] = [];
   let nextId = 0;
   let completed = 0;
+  let active = 0;
+  let peakConcurrency = 0;
 
-  // Progress ticker — print completion rate without per-session noise
-  const progressInterval = QUIET
+  const progressInterval = cfg.quiet
     ? setInterval(() => {
         const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-        const active = Math.min(CONCURRENCY, TOTAL_SESSIONS - completed);
-        process.stdout.write(
-          `\r  Progress: ${completed}/${TOTAL_SESSIONS} done, ${active} active, ${elapsed}s elapsed`,
-        );
+        process.stdout.write(`\r  Progress: ${completed}/${cfg.totalSessions} done, ${active} active, peak ${peakConcurrency}, ${elapsed}s elapsed`);
       }, 1000)
     : null;
 
   async function worker(): Promise<void> {
-    while (nextId < TOTAL_SESSIONS) {
+    while (nextId < cfg.totalSessions) {
       const id = nextId++;
-      const result = await runSession(id, audioBuffers);
+      active++;
+      if (active > peakConcurrency) peakConcurrency = active;
+      const result = await runSession(id, audioBuffers, wsFactory, cfg);
+      active--;
       results.push(result);
       completed++;
     }
   }
 
-  const numWorkers = Math.min(CONCURRENCY, TOTAL_SESSIONS);
-  if (RAMP_MS > 0 && numWorkers > 1) {
-    // Stagger worker launches over RAMP_MS to avoid thundering herd
-    const delayPerWorker = RAMP_MS / numWorkers;
+  const numWorkers = Math.min(cfg.concurrency, cfg.totalSessions);
+  if (cfg.rampMs > 0 && numWorkers > 1) {
+    const delayPerWorker = cfg.rampMs / numWorkers;
     const workers: Promise<void>[] = [];
     for (let i = 0; i < numWorkers; i++) {
       if (i > 0) await sleep(delayPerWorker);
@@ -656,22 +670,62 @@ async function main(): Promise<void> {
     await Promise.all(Array.from({ length: numWorkers }, () => worker()));
   }
 
-  if (progressInterval) {
-    clearInterval(progressInterval);
-    process.stdout.write("\n");
-  }
+  if (progressInterval) { clearInterval(progressInterval); process.stdout.write("\n"); }
 
-  // Sort by session ID for stable output
   results.sort((a, b) => a.sessionId - b.sessionId);
-
   console.log(`\nAll sessions finished in ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
-  printMetrics(results);
+  printMetrics(results, peakConcurrency);
 
-  const hasFailures = results.some((r) => r.errors.some((e) => e.startsWith("FAIL:")));
-  process.exitCode = hasFailures ? 1 : 0;
+  if (toxiState) await toxiState.cleanup();
+  process.exitCode = results.some((r) => r.errors.some((e) => e.startsWith("FAIL:"))) ? 1 : 0;
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exitCode = 1;
+// ── CLI ──────────────────────────────────────────────────────────────────────
+
+const loadTestCommand = defineCommand({
+  meta: { name: "s2s-load-test", description: "S2S API load test with realistic traffic simulation" },
+  args: {
+    sessions: { type: "string", alias: "n", description: "Total number of sessions to run", default: "5000" },
+    concurrency: { type: "string", alias: "c", description: "Max simultaneous sessions", default: "2500" },
+    url: { type: "string", description: "S2S WebSocket URL", default: "wss://speech-to-speech.us.assemblyai.com/v1/realtime" },
+    greeting: { type: "string", description: "Agent greeting text", default: "Hello, how can I help?" },
+    voice: { type: "string", description: "Kokoro voice preset", default: "af_heart" },
+    turns: { type: "string", description: "Max user turns per session (randomized, avg ~8)", default: "20" },
+    chunkMs: { type: "string", description: "Audio chunk size in ms", default: "100" },
+    rampMs: { type: "string", description: "Stagger session starts over this many ms", default: "60000" },
+    verbose: { type: "boolean", alias: "v", description: "Show per-session event logs", default: false },
+    toxiproxy: { type: "boolean", description: "Enable network chaos via Docker (Toxiproxy)", default: true },
+    toxicLatency: { type: "string", description: "Added latency in ms (real-world ~40ms, default 20% worse)", default: "50" },
+    toxicJitter: { type: "string", description: "Latency jitter in ms (real-world ~15ms, default 20% worse)", default: "20" },
+    toxicBandwidth: { type: "string", description: "Bandwidth limit in KB/s (0 = unlimited)", default: "0" },
+    toxicReset: { type: "string", description: "TCP reset probability (real-world ~1-2%, default 20% worse)", default: "0.025" },
+    toxicResetTimeout: { type: "string", description: "Reset timeout in ms", default: "10000" },
+  },
+  async run({ args }) {
+    const apiKey = process.env.ASSEMBLYAI_API_KEY ?? "";
+    if (!apiKey) {
+      console.error("Error: $ASSEMBLYAI_API_KEY environment variable is required");
+      process.exit(1);
+    }
+    await main({
+      totalSessions: Number(args.sessions),
+      concurrency: Number(args.concurrency),
+      wssUrl: args.url,
+      apiKey,
+      greeting: args.greeting,
+      voice: args.voice,
+      maxTurns: Number(args.turns),
+      chunkMs: Number(args.chunkMs),
+      rampMs: Number(args.rampMs),
+      quiet: !args.verbose,
+      toxiproxy: args.toxiproxy,
+      toxicLatency: Number(args.toxicLatency),
+      toxicJitter: Number(args.toxicJitter),
+      toxicBandwidth: Number(args.toxicBandwidth),
+      toxicReset: Number(args.toxicReset),
+      toxicResetTimeout: Number(args.toxicResetTimeout),
+    });
+  },
 });
+
+runMain(loadTestCommand);
