@@ -60,6 +60,10 @@
     "writev"
   ],
   "filtered_syscalls": [
-    { "name": "socket", "filter": "arg0 == 1", "_comment": "AF_UNIX only -- block TCP/UDP/raw/netlink socket creation" }
+    {
+      "name": "socket",
+      "filter": "arg0 == 1",
+      "_comment": "AF_UNIX only -- block TCP/UDP/raw/netlink socket creation"
+    }
   ]
 }
