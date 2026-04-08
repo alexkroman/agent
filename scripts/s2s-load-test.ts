@@ -680,7 +680,8 @@ async function main(cfg: Config): Promise<void> {
   const progressInterval = cfg.quiet
     ? setInterval(() => {
         const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-        process.stdout.write(`\r  Progress: ${completed}/${cfg.totalSessions} done, ${active} active, peak ${peakConcurrency}, ${elapsed}s elapsed`);
+        const line = `  Progress: ${completed}/${cfg.totalSessions} done, ${active} active, peak ${peakConcurrency}, ${elapsed}s elapsed`;
+        process.stdout.write(`\r${line.padEnd(100)}`);
       }, 1000)
     : null;
 
