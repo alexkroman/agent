@@ -36,7 +36,6 @@ type Config = {
   toxicJitter: number;
   toxicBandwidth: number;
   toxicReset: number;
-  toxicResetTimeout: number;
 };
 
 const INPUT_SAMPLE_RATE = 16_000;
@@ -540,26 +539,45 @@ type ToxiproxyState = {
 };
 
 async function setupToxiproxy(wssUrl: string, cfg: Config): Promise<ToxiproxyState> {
-  const { ToxiProxyContainer } = await import("@testcontainers/toxiproxy");
+  const { Toxiproxy } = await import("toxiproxy-node-client");
   const require = createRequire(import.meta.url);
   const WsWebSocket = require("ws") as typeof import("ws").default;
 
+  const toxiproxy = new Toxiproxy("http://localhost:8474");
   const url = new URL(wssUrl);
   const upstreamHost = url.hostname;
   const upstreamPort = url.port || "443";
 
-  console.log("  Toxiproxy: starting Docker container...");
-  const container = await new ToxiProxyContainer("shopify/toxiproxy:latest").start();
-  console.log("  Toxiproxy: container started");
+  // Verify toxiproxy-server is running
+  try {
+    await toxiproxy.getVersion();
+  } catch {
+    throw new Error(
+      "Toxiproxy server not reachable at http://localhost:8474.\n" +
+      "  Install: brew install toxiproxy\n" +
+      "  Start:   toxiproxy-server &\n" +
+      "  Or disable: --no-toxiproxy",
+    );
+  }
 
-  const created = await container.createProxy({
-    name: "s2s-loadtest",
+  const proxy = await toxiproxy.createProxy({
+    name: `s2s-loadtest-${Date.now()}`,
+    listen: "localhost:0",
     upstream: `${upstreamHost}:${upstreamPort}`,
   });
-  console.log(`  Toxiproxy: proxy ${created.host}:${created.port} → ${upstreamHost}:${upstreamPort}`);
+  const [proxyHost, proxyPort] = proxy.listen.split(":");
+  console.log(`  Toxiproxy: proxy ${proxy.listen} → ${upstreamHost}:${upstreamPort}`);
 
   // Add toxics
-  const addToxic = (body: unknown) => created.instance.addToxic(body as never);
+  const addToxic = async (body: unknown) => {
+    try {
+      await proxy.addToxic(body as never);
+    } catch (err: unknown) {
+      const axErr = err as { response?: { data?: unknown; status?: number } };
+      const detail = axErr.response?.data ? JSON.stringify(axErr.response.data) : (err as Error).message;
+      throw new Error(`Toxiproxy addToxic failed for ${JSON.stringify(body)}: ${detail}`);
+    }
+  };
   if (cfg.toxicLatency > 0 || cfg.toxicJitter > 0) {
     await addToxic({ type: "latency", name: "latency_downstream", stream: "downstream", toxicity: 1.0, attributes: { latency: cfg.toxicLatency, jitter: cfg.toxicJitter } });
     await addToxic({ type: "latency", name: "latency_upstream", stream: "upstream", toxicity: 1.0, attributes: { latency: Math.floor(cfg.toxicLatency / 2), jitter: Math.floor(cfg.toxicJitter / 2) } });
@@ -570,13 +588,13 @@ async function setupToxiproxy(wssUrl: string, cfg: Config): Promise<ToxiproxySta
     console.log(`  Toxiproxy: +bandwidth limit ${cfg.toxicBandwidth} KB/s`);
   }
   if (cfg.toxicReset > 0) {
-    await addToxic({ type: "reset_peer", name: "reset_downstream", stream: "downstream", toxicity: cfg.toxicReset, attributes: { timeout: cfg.toxicResetTimeout } });
-    console.log(`  Toxiproxy: +reset ${(cfg.toxicReset * 100).toFixed(0)}% after ${cfg.toxicResetTimeout}ms`);
+    await addToxic({ type: "reset_peer", name: "reset_downstream", stream: "downstream", toxicity: cfg.toxicReset, attributes: { timeout: 5000 } });
+    console.log(`  Toxiproxy: +reset ${(cfg.toxicReset * 100).toFixed(1)}% of connections`);
   }
 
   const createWebSocket: CreateS2sWebSocket = ((originalUrl: string, opts: { headers: Record<string, string> }) => {
     const parsed = new URL(originalUrl);
-    return new WsWebSocket(`wss://${created.host}:${created.port}${parsed.pathname}${parsed.search}`, {
+    return new WsWebSocket(`wss://${proxyHost}:${proxyPort}${parsed.pathname}${parsed.search}`, {
       headers: opts.headers,
       rejectUnauthorized: false,
       servername: upstreamHost,
@@ -585,7 +603,7 @@ async function setupToxiproxy(wssUrl: string, cfg: Config): Promise<ToxiproxySta
 
   return {
     createWebSocket,
-    cleanup: async () => { try { await container.stop(); console.log("  Toxiproxy: container stopped"); } catch {} },
+    cleanup: async () => { try { await proxy.remove(); console.log("  Toxiproxy: proxy removed"); } catch {} },
   };
 }
 
@@ -698,8 +716,7 @@ const loadTestCommand = defineCommand({
     toxicLatency: { type: "string", description: "Added latency in ms (real-world ~40ms, default 20% worse)", default: "50" },
     toxicJitter: { type: "string", description: "Latency jitter in ms (real-world ~15ms, default 20% worse)", default: "20" },
     toxicBandwidth: { type: "string", description: "Bandwidth limit in KB/s (0 = unlimited)", default: "0" },
-    toxicReset: { type: "string", description: "TCP reset probability (real-world ~1-2%, default 20% worse)", default: "0.025" },
-    toxicResetTimeout: { type: "string", description: "Reset timeout in ms", default: "10000" },
+    toxicReset: { type: "string", description: "Connection drop probability (real-world ~1-2%, default 20% worse)", default: "0.025" },
   },
   async run({ args }) {
     const apiKey = process.env.ASSEMBLYAI_API_KEY ?? "";
@@ -723,7 +740,6 @@ const loadTestCommand = defineCommand({
       toxicJitter: Number(args.toxicJitter),
       toxicBandwidth: Number(args.toxicBandwidth),
       toxicReset: Number(args.toxicReset),
-      toxicResetTimeout: Number(args.toxicResetTimeout),
     });
   },
 });

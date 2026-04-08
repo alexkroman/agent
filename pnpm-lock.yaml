@@ -25,9 +25,6 @@ importers:
       '@ls-lint/ls-lint':
         specifier: ^2.3.1
         version: 2.3.1
-      '@testcontainers/toxiproxy':
-        specifier: ^11.14.0
-        version: 11.14.0
       '@types/node':
         specifier: ^25.5.2
         version: 25.5.2
@@ -61,9 +58,9 @@ importers:
       syncpack:
         specifier: ^14.3.0
         version: 14.3.0
-      testcontainers:
-        specifier: ^11.13.0
-        version: 11.13.0
+      toxiproxy-node-client:
+        specifier: ^4.0.0
+        version: 4.0.0
       turbo:
         specifier: ^2.9.4
         version: 2.9.4
@@ -1534,9 +1531,6 @@ packages:
   '@szmarczak/http-timer@4.0.6':
     resolution: {integrity: sha512-4BAffykYOgO+5nzBWYwE3W90sBgLJoUPRWWcL8wlyiM8IB8ipJz3UMJ9KXQd1RKQXpKp8Tutn80HZtWsu2u76w==}
     engines: {node: '>=10'}
-
-  '@testcontainers/toxiproxy@11.14.0':
-    resolution: {integrity: sha512-ZCt9T52FcMiadDMqyZ3oYaK6J8LNblBBWe/2uS2+jN3ag2U8mOQpW572f8MuUa5AoPeTZ+QLrWr0fhTt+gluAA==}
 
   '@testing-library/dom@8.20.1':
     resolution: {integrity: sha512-/DiOQ5xBxgdYRC8LNk7U+RWat0S3qRLeIw3ZIkMQ9kkVlRmwD/Eg8k8CqIpD6GW7u20JIUOfMKbxtiLutpjQ4g==}
@@ -4609,9 +4603,6 @@ packages:
   testcontainers@11.13.0:
     resolution: {integrity: sha512-fzTvgOtd6U/esOzgmDatJh79OSK0tU6vjDOJ3B6ICrrJf0dqCWtFdpOr6f/g/KixMxKDTDbszmZYjSORJXsVCQ==}
 
-  testcontainers@11.14.0:
-    resolution: {integrity: sha512-r9pniwv/iwzyHaI7gwAvAm4Y+IvjJg3vBWdjrUCaDMc2AXIr4jKbq7jJO18Mw2ybs73pZy1Aj7p/4RVBGMRWjg==}
-
   text-decoder@1.2.7:
     resolution: {integrity: sha512-vlLytXkeP4xvEq2otHeJfSQIRyWxo/oZGEbXrtEEF9Hnmrdly59sUbzZ/QgyWuLYHctCHxFF4tRQZNQ9k60ExQ==}
 
@@ -6183,17 +6174,6 @@ snapshots:
   '@szmarczak/http-timer@4.0.6':
     dependencies:
       defer-to-connect: 2.0.1
-
-  '@testcontainers/toxiproxy@11.14.0':
-    dependencies:
-      testcontainers: 11.14.0
-      toxiproxy-node-client: 4.0.0
-    transitivePeerDependencies:
-      - bare-abort-controller
-      - bare-buffer
-      - debug
-      - react-native-b4a
-      - supports-color
 
   '@testing-library/dom@8.20.1':
     dependencies:
@@ -9793,29 +9773,6 @@ snapshots:
   term-size@2.2.1: {}
 
   testcontainers@11.13.0:
-    dependencies:
-      '@balena/dockerignore': 1.0.2
-      '@types/dockerode': 4.0.1
-      archiver: 7.0.1
-      async-lock: 1.4.1
-      byline: 5.0.0
-      debug: 4.4.3
-      docker-compose: 1.4.2
-      dockerode: 4.0.10
-      get-port: 7.2.0
-      proper-lockfile: 4.1.2
-      properties-reader: 3.0.1
-      ssh-remote-port-forward: 1.0.4
-      tar-fs: 3.1.2
-      tmp: 0.2.5
-      undici: 7.24.7
-    transitivePeerDependencies:
-      - bare-abort-controller
-      - bare-buffer
-      - react-native-b4a
-      - supports-color
-
-  testcontainers@11.14.0:
     dependencies:
       '@balena/dockerignore': 1.0.2
       '@types/dockerode': 4.0.1
