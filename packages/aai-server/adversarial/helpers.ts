@@ -4,7 +4,7 @@
  */
 
 import WebSocket from "ws";
-import { checkHealth, openConnections, sampleMemory } from "../chaos/helpers.ts";
+import { checkHealth, openConnections, sampleMemory } from "../load/helpers.ts";
 import { DEPLOY_KEY } from "./setup.ts";
 
 /**
@@ -79,4 +79,4 @@ export async function assertServerSurvived(
   }
 }
 
-export { checkHealth, openConnections, sampleMemory } from "../chaos/helpers.ts";
+export { checkHealth, openConnections, sampleMemory } from "../load/helpers.ts";

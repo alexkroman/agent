@@ -13,14 +13,14 @@
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { checkHealth, openConnections, sampleMemory } from "../chaos/helpers.ts";
+import { checkHealth, openConnections, sampleMemory } from "../load/helpers.ts";
 import { assertServerSurvived, deployAdversarialAgent, deployGoodAgent } from "./helpers.ts";
-import { type ChaosEnv, GOOD_AGENT_SLUG, startChaosEnv } from "./setup.ts";
+import { GOOD_AGENT_SLUG, type LoadEnv, startLoadEnv } from "./setup.ts";
 
-let env: ChaosEnv;
+let env: LoadEnv;
 
 beforeAll(async () => {
-  env = await startChaosEnv();
+  env = await startLoadEnv();
   await deployGoodAgent(env.serverUrl, GOOD_AGENT_SLUG);
 }, 180_000);
 

@@ -28,7 +28,7 @@
     "check:markdown": "markdownlint-cli2 '**/*.md' '#**/node_modules' '#.aai' '#.claude'",
     "docker:up": "docker compose up --build",
     "docker:down": "docker compose down -v",
-    "test:chaos": "pnpm --filter @alexkroman1/aai-server test:chaos",
+    "test:load": "pnpm --filter @alexkroman1/aai-server test:load",
     "syncpack": "syncpack",
     "changeset": "changeset",
     "changeset:create": "bash scripts/create-changeset.sh",

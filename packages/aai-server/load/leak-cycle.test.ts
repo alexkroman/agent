@@ -1,22 +1,22 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Chaos Test 3: Sustained Load + Idle Eviction (Leak Detection)
+ * Load Test 3: Sustained Load + Idle Eviction (Leak Detection)
  *
  * Opens connections, sustains load, lets idle eviction clean up,
  * then verifies memory returns to baseline. Repeats multiple cycles
  * to detect monotonic memory ratcheting (leaks).
  *
- * SLOT_IDLE_MS is set to 10s in chaos defaults for fast eviction.
+ * SLOT_IDLE_MS is set to 10s in load defaults for fast eviction.
  */
 
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { checkHealth, closeAll, openConnections, sampleMemory } from "./helpers.ts";
-import { type ChaosEnv, DEPLOY_KEY, deployTestAgent, startChaosEnv } from "./setup.ts";
+import { DEPLOY_KEY, deployTestAgent, type LoadEnv, startLoadEnv } from "./setup.ts";
 
-let env: ChaosEnv;
+let env: LoadEnv;
 
 beforeAll(async () => {
-  env = await startChaosEnv();
+  env = await startLoadEnv();
 }, 180_000);
 
 afterAll(async () => {

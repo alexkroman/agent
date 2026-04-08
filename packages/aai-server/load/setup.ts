@@ -1,13 +1,13 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Testcontainers setup for chaos tests.
+ * Testcontainers setup for load tests.
  * Starts the server + MinIO compose stack and deploys a minimal test agent.
  */
 
 import path from "node:path";
 import { DockerComposeEnvironment, Wait } from "testcontainers";
 
-export type ChaosEnv = {
+export type LoadEnv = {
   serverUrl: string;
   wsUrl: string;
   containerId: string;
@@ -15,22 +15,22 @@ export type ChaosEnv = {
 };
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../../..");
-const DEPLOY_KEY = "chaos-test-key";
+const DEPLOY_KEY = "load-test-key";
 
 export { DEPLOY_KEY };
 
-/** Default env overrides for chaos tests — production-matching limits under constrained container. */
-const CHAOS_DEFAULTS: Record<string, string> = {
+/** Default env overrides for load tests — production-matching limits under constrained container. */
+const LOAD_DEFAULTS: Record<string, string> = {
   MAX_CONNECTIONS: "100",
   MAX_SLOTS: "10",
   SLOT_IDLE_MS: "10000",
 };
 
-const COMPOSE_FILES = ["docker-compose.yml", "docker-compose.chaos.yml"];
+const COMPOSE_FILES = ["docker-compose.yml", "docker-compose.load.yml"];
 
-export async function startChaosEnv(envOverrides: Record<string, string> = {}): Promise<ChaosEnv> {
+export async function startLoadEnv(envOverrides: Record<string, string> = {}): Promise<LoadEnv> {
   const environment = await new DockerComposeEnvironment(REPO_ROOT, COMPOSE_FILES)
-    .withEnvironment({ ...CHAOS_DEFAULTS, ...envOverrides })
+    .withEnvironment({ ...LOAD_DEFAULTS, ...envOverrides })
     .withBuild()
     .withWaitStrategy("server-1", Wait.forHttp("/health", 8080).forStatusCode(200))
     .up();

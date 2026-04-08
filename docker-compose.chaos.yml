@@ -1,8 +1,0 @@
-# docker-compose.chaos.yml
-# Override for chaos/adversarial tests — emulates Fly.io shared-cpu-2x@2048MB
-services:
-  server:
-    cpus: 2
-    cpu_shares: 512
-    mem_limit: 2048m
-    memswap_limit: 2048m

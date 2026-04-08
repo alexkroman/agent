@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Chaos Test 1: WebSocket Connection Flood
+ * Load Test 1: WebSocket Connection Flood
  *
  * Verifies the server rejects connections before OOM.
  * Opens connections in batches, monitors memory, asserts the server
@@ -9,13 +9,13 @@
 
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { checkHealth, closeAll, openConnections, sampleMemory } from "./helpers.ts";
-import { type ChaosEnv, DEPLOY_KEY, deployTestAgent, startChaosEnv } from "./setup.ts";
+import { DEPLOY_KEY, deployTestAgent, type LoadEnv, startLoadEnv } from "./setup.ts";
 
-let env: ChaosEnv;
+let env: LoadEnv;
 const SLUG = "flood-test";
 
 beforeAll(async () => {
-  env = await startChaosEnv();
+  env = await startLoadEnv();
   await deployTestAgent(env.serverUrl, SLUG, DEPLOY_KEY);
 }, 180_000);
 
@@ -27,7 +27,7 @@ describe("connection flood", () => {
   test("server rejects connections before OOM and stays healthy", async () => {
     const allConnections: import("ws").default[] = [];
     const BATCH_SIZE = 10;
-    const MAX_BATCHES = 15; // Up to 150 connections (MAX_CONNECTIONS is 100 in chaos defaults)
+    const MAX_BATCHES = 15; // Up to 150 connections (MAX_CONNECTIONS is 100 in load defaults)
     let rejectedTotal = 0;
 
     try {
@@ -50,7 +50,7 @@ describe("connection flood", () => {
         expect(mem.percent).toBeLessThan(90);
       }
 
-      // We should have seen some rejections (MAX_CONNECTIONS=100 in chaos defaults)
+      // We should have seen some rejections (MAX_CONNECTIONS=100 in load defaults)
       expect(rejectedTotal).toBeGreaterThan(0);
 
       // Health endpoint should still respond

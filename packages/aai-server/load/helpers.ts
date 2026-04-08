@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Chaos test helpers: WebSocket flooding, memory sampling, health checking.
+ * Load test helpers: WebSocket flooding, memory sampling, health checking.
  */
 
 import { execFileSync } from "node:child_process";

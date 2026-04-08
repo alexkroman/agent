@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Chaos Test 2: Concurrent Sandbox Spawn Storm
+ * Load Test 2: Concurrent Sandbox Spawn Storm
  *
  * Deploys many agents with different slugs and opens connections to each.
  * Verifies the server caps sandbox spawns with back-pressure (503/destroy)
@@ -9,12 +9,12 @@
 
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { checkHealth, closeAll, openConnections, sampleMemory } from "./helpers.ts";
-import { type ChaosEnv, DEPLOY_KEY, deployTestAgent, startChaosEnv } from "./setup.ts";
+import { DEPLOY_KEY, deployTestAgent, type LoadEnv, startLoadEnv } from "./setup.ts";
 
-let env: ChaosEnv;
+let env: LoadEnv;
 
 beforeAll(async () => {
-  env = await startChaosEnv();
+  env = await startLoadEnv();
 }, 180_000);
 
 afterAll(async () => {
@@ -23,7 +23,7 @@ afterAll(async () => {
 
 describe("sandbox spawn storm", () => {
   test("server caps slot count and rejects excess spawns", async () => {
-    const MAX_AGENTS = 14; // MAX_SLOTS is 10 in chaos defaults
+    const MAX_AGENTS = 14; // MAX_SLOTS is 10 in load defaults
     const allConnections: import("ws").default[] = [];
     const deployedSlugs: string[] = [];
     let rejectedCount = 0;
