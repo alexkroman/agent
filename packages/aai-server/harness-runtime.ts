@@ -1,7 +1,14 @@
 // Copyright 2025 the AAI authors. MIT license.
-/** Sandbox harness runtime — runs inside the secure-exec V8 isolate. */
-import { timingSafeEqual } from "node:crypto";
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+/**
+ * Sandbox harness runtime — runs inside the secure-exec V8 isolate.
+ *
+ * Communicates with the host via secure-exec bindings (V8 bridge IPC):
+ * - KV operations: `SecureExec.bindings.kv.*` (get, set, del, list, keys)
+ * - RPC work queue: `SecureExec.bindings.rpc.recv()` blocks until the host
+ *   enqueues a tool/hook/config request, then `.rpc.send()` returns the result.
+ *
+ * No HTTP servers, no auth tokens, no network access required.
+ */
 import { type AgentHooks, callResolveTurnConfig, createAgentHooks } from "@alexkroman1/aai/hooks";
 import type { Kv } from "@alexkroman1/aai/kv";
 import type { AgentDef, ToolContext } from "@alexkroman1/aai/types";
@@ -37,6 +44,30 @@ type ToolCallResponse = { result: string; state: Record<string, unknown> };
 type HookRequest = { hook: string; sessionId: string; text?: string; error?: { message: string } };
 type HookResponse = { state: Record<string, unknown>; result?: unknown };
 
+// ── SecureExec bindings type (injected by secure-exec as a runtime global) ──
+
+declare const SecureExec: {
+  bindings: {
+    kv: {
+      get(key: string): Promise<unknown>;
+      set(key: string, value: unknown, expireIn?: number): Promise<void>;
+      del(key: string): Promise<void>;
+      list(
+        prefix: string,
+        limit?: number,
+        reverse?: boolean,
+      ): Promise<{ key: string; value: unknown }[]>;
+      keys(pattern?: string): Promise<string[]>;
+    };
+    rpc: {
+      /** Blocks until the host enqueues a request. Returns null on shutdown. */
+      recv(): Promise<(RpcRequest & { id: string }) | null>;
+      /** Return a result (or error) for a given request ID. */
+      send(id: string, result: unknown, errorMsg?: string): void;
+    };
+  };
+};
+
 /** Lazily initialized per-session state manager. */
 function createSessionStateMap(initState?: () => Record<string, unknown>): {
   get(sessionId: string): Record<string, unknown>;
@@ -60,17 +91,8 @@ function createSessionStateMap(initState?: () => Record<string, unknown>): {
   };
 }
 
-/** Lightweight error with HTTP status for RPC responses. */
-class RpcError extends Error {
-  status: number;
-  constructor(message: string, status: number) {
-    super(message);
-    this.status = status;
-  }
-}
-
-const HARNESS_AUTH_TOKEN = process.env.HARNESS_AUTH_TOKEN ?? "";
-const HARNESS_AUTH_TOKEN_BUF = HARNESS_AUTH_TOKEN ? Buffer.from(HARNESS_AUTH_TOKEN) : null;
+/** Lightweight error for RPC responses. */
+class RpcError extends Error {}
 
 const AAI_ENV_PREFIX = "AAI_ENV_";
 const agentEnv: Record<string, string> = Object.freeze(
@@ -81,39 +103,25 @@ const agentEnv: Record<string, string> = Object.freeze(
   ),
 );
 
-// ── KV bridge via sidecar server ────────────────────────────────────────
-
-const SIDECAR_URL = process.env.SIDECAR_URL ?? "";
-
-async function kvRpc<T>(body: unknown): Promise<T> {
-  const res = await fetch(`${SIDECAR_URL}/kv`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-harness-token": HARNESS_AUTH_TOKEN,
-    },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error(`kv failed: ${res.status}`);
-  const text = await res.text();
-  return text ? (JSON.parse(text) as T) : (null as T);
-}
+// ── KV via secure-exec bindings ─────────────────────────────────────────
 
 const kv: Kv = {
   get<T = unknown>(key: string) {
-    return kvRpc<T | null>({ op: "get", key });
+    return SecureExec.bindings.kv.get(key) as Promise<T | null>;
   },
   set(key: string, value: unknown, options?: { expireIn?: number }) {
-    return kvRpc<void>({ op: "set", key, value, ...options });
+    return SecureExec.bindings.kv.set(key, value, options?.expireIn);
   },
   delete(key: string) {
-    return kvRpc<void>({ op: "del", key });
+    return SecureExec.bindings.kv.del(key);
   },
   list<T = unknown>(prefix: string, options?: { limit?: number; reverse?: boolean }) {
-    return kvRpc<{ key: string; value: T }[]>({ op: "list", prefix, ...options });
+    return SecureExec.bindings.kv.list(prefix, options?.limit, options?.reverse) as Promise<
+      { key: string; value: T }[]
+    >;
   },
   keys(pattern?: string) {
-    return kvRpc<string[]>({ op: "keys", pattern });
+    return SecureExec.bindings.kv.keys(pattern);
   },
 };
 
@@ -162,7 +170,7 @@ const TOOL_TIMEOUT_MS = 30_000;
 
 async function executeTool(agent: AgentDef, req: ToolCallRequest): Promise<ToolCallResponse> {
   const tool = agent.tools[req.name];
-  if (!tool) throw new RpcError(`Unknown tool: ${req.name}`, 404);
+  if (!tool) throw new RpcError(`Unknown tool: ${req.name}`);
 
   const ctx: ToolContext = {
     env: agentEnv,
@@ -183,8 +191,7 @@ async function executeTool(agent: AgentDef, req: ToolCallRequest): Promise<ToolC
       tool.execute(parsed, ctx),
       new Promise<never>((_resolve, reject) => {
         timeoutId = setTimeout(
-          () =>
-            reject(new RpcError(`Tool "${req.name}" timed out after ${TOOL_TIMEOUT_MS}ms`, 504)),
+          () => reject(new RpcError(`Tool "${req.name}" timed out after ${TOOL_TIMEOUT_MS}ms`)),
           TOOL_TIMEOUT_MS,
         );
       }),
@@ -222,44 +229,7 @@ async function invokeHook(req: HookRequest): Promise<HookResponse> {
   return { state: sessionState.get(req.sessionId), result };
 }
 
-// ── HTTP RPC server ─────────────────────────────────────────────────────
-
-/** Must match HARNESS_MAX_BODY_SIZE in constants.ts (5 MB). */
-const MAX_BODY_SIZE = 5 * 1024 * 1024;
-
-function readBody(req: IncomingMessage): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    let totalSize = 0;
-    req.on("data", (c: Buffer) => {
-      totalSize += c.length;
-      if (totalSize > MAX_BODY_SIZE) {
-        req.destroy(new Error("Request body too large"));
-        reject(new Error("Request body too large"));
-        return;
-      }
-      chunks.push(c);
-    });
-    req.on("end", () => resolve(Buffer.concat(chunks).toString()));
-    req.on("error", reject);
-  });
-}
-
-function json(res: ServerResponse, data: unknown, status = 200): void {
-  const body = JSON.stringify(data);
-  res.writeHead(status, {
-    "Content-Type": "application/json",
-    "Content-Length": Buffer.byteLength(body),
-  });
-  res.end(body);
-}
-
-function isAuthorized(req: IncomingMessage): boolean {
-  if (!HARNESS_AUTH_TOKEN_BUF) return false;
-  const token = req.headers["x-harness-token"];
-  if (typeof token !== "string" || token.length !== HARNESS_AUTH_TOKEN.length) return false;
-  return timingSafeEqual(Buffer.from(token), HARNESS_AUTH_TOKEN_BUF);
-}
+// ── RPC dispatch ────────────────────────────────────────────────────────
 
 type RpcRequest =
   | { type: "config" }
@@ -275,9 +245,11 @@ async function dispatch(agent: AgentDef, msg: RpcRequest): Promise<unknown> {
     case "hook":
       return invokeHook(msg);
     default:
-      throw new RpcError("Unknown RPC type", 400);
+      throw new RpcError("Unknown RPC type");
   }
 }
+
+// ── Harness entry point ─────────────────────────────────────────────────
 
 export function startHarness(agent: AgentDef): void {
   if (!agent || typeof agent !== "object" || !agent.name) {
@@ -289,35 +261,19 @@ export function startHarness(agent: AgentDef): void {
     makeCtx: (sid) => ({ env: agentEnv, state: sessionState.get(sid), sessionId: sid, kv }),
   });
 
-  const server = createServer(async (req, res) => {
-    try {
-      if (!isAuthorized(req)) {
-        json(res, { error: "Unauthorized" }, 401);
-        return;
-      }
-      if (req.method !== "POST" || req.url !== "/rpc") {
-        json(res, { error: "Not found" }, 404);
-        return;
-      }
-      let msg: RpcRequest;
+  // Pull-based RPC loop: blocks on recv() until the host enqueues work
+  void (async () => {
+    let msg = await SecureExec.bindings.rpc.recv();
+    while (msg) {
+      const req = msg as RpcRequest & { id: string };
       try {
-        msg = JSON.parse(await readBody(req)) as RpcRequest;
-      } catch {
-        json(res, { error: "Invalid JSON" }, 400);
-        return;
+        const result = await dispatch(agent, req);
+        SecureExec.bindings.rpc.send(req.id, result);
+      } catch (err: unknown) {
+        const errMsg = err instanceof Error ? err.message : "Internal error";
+        SecureExec.bindings.rpc.send(req.id, null, errMsg);
       }
-      const result = await dispatch(agent, msg);
-      json(res, result);
-    } catch (err: unknown) {
-      const status = err instanceof RpcError ? err.status : 500;
-      const message = err instanceof Error ? err.message : "Internal error";
-      json(res, { error: message }, status);
+      msg = await SecureExec.bindings.rpc.recv();
     }
-  });
-
-  server.listen(0, "127.0.0.1", () => {
-    const addr = server.address();
-    if (!addr || typeof addr === "string") throw new Error("Bad server address");
-    process.stdout.write(`${JSON.stringify({ port: addr.port })}\n`);
-  });
+  })();
 }

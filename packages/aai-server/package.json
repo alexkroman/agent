@@ -39,6 +39,7 @@
   },
   "devDependencies": {
     "@secure-exec/typescript": "^0.2.1",
+    "@types/json-schema": "^7.0.15",
     "@types/mime-types": "^3.0.1",
     "@types/ws": "^8.18.1",
     "testcontainers": "^11.13.0",

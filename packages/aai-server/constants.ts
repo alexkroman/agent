@@ -11,9 +11,6 @@
 /** Memory limit for sandbox isolates (MB). */
 export const SANDBOX_MEMORY_LIMIT_MB = 128;
 
-/** Timeout for isolate to announce its port after boot (ms). */
-export const PORT_ANNOUNCE_TIMEOUT_MS = 15_000;
-
 // ─── Slot lifecycle ──────────────────────────────────────────────────────
 
 /** Default idle timeout before an agent slot is evicted (ms, 1 min). */

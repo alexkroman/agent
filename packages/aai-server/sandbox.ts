@@ -2,13 +2,19 @@
 /**
  * Agent sandbox using secure-exec V8 isolates.
  *
- * The isolate runs agent code (tools + hooks) via an RPC server. The host
- * runs `createRuntime()` with RPC-backed `executeTool` and `hooks` overrides,
- * giving it the same session/S2S/WebSocket handling as self-hosted mode
- * without duplicating any of that logic.
+ * Communication between host and isolate uses secure-exec bindings (V8 bridge
+ * IPC) in both directions — no HTTP servers, no loopback ports, no auth tokens:
+ *
+ * - **Isolate → Host (KV)**: The isolate calls `SecureExec.bindings.kv.*`
+ *   which invoke host-side KV functions directly through the bridge.
+ * - **Host → Isolate (RPC)**: The isolate runs a pull-based work loop calling
+ *   `SecureExec.bindings.rpc.recv()` (which blocks until the host enqueues a
+ *   request). Results are returned via `SecureExec.bindings.rpc.send()`.
+ *
+ * The host runs `createRuntime()` with RPC-backed `executeTool` and `hooks`
+ * overrides, giving it the same session/S2S/WebSocket handling as self-hosted
+ * mode without duplicating any of that logic.
  */
-
-import { randomBytes } from "node:crypto";
 
 import {
   type AgentHookMap,
@@ -23,32 +29,18 @@ import {
   TOOL_EXECUTION_TIMEOUT_MS,
 } from "@alexkroman1/aai/host";
 import { createHooks } from "hookable";
-import pTimeout from "p-timeout";
-import type { StdioEvent } from "secure-exec";
+import type { BindingTree, NodeRuntimeDriverFactory, StdioEvent } from "secure-exec";
 import {
   createInMemoryFileSystem,
   createNodeDriver,
-  createNodeRuntimeDriverFactory,
+  NodeExecutionDriver,
   NodeRuntime,
 } from "secure-exec";
 import type { Storage } from "unstorage";
-import { z } from "zod";
-import {
-  agentKvPrefix,
-  JAIL_MEMORY_LIMIT_MB,
-  PORT_ANNOUNCE_TIMEOUT_MS,
-  SANDBOX_MEMORY_LIMIT_MB,
-} from "./constants.ts";
+import { agentKvPrefix, JAIL_MEMORY_LIMIT_MB, SANDBOX_MEMORY_LIMIT_MB } from "./constants.ts";
 import { initProcessJail, isJailAvailable, type JailedLauncher } from "./process-jail.ts";
-import {
-  HookResponseSchema,
-  type IsolateConfig,
-  IsolateConfigSchema,
-  ToolCallResponseSchema,
-  TurnConfigResultSchema,
-} from "./rpc-schemas.ts";
+import { type IsolateConfig, IsolateConfigSchema, TurnConfigResultSchema } from "./rpc-schemas.ts";
 import { getHarnessFiles } from "./sandbox-harness.ts";
-import { createSidecar, type Sidecar } from "./sandbox-sidecar.ts";
 import {
   resolveSandbox as _resolveSandboxCore,
   _slotInternals,
@@ -60,12 +52,7 @@ import type { BundleStore } from "./store-types.ts";
 let jailLauncher: JailedLauncher | null = null;
 let jailInitialized = false;
 
-/** Set of filesystem operations that are safe for read-only access. */
 const READ_ONLY_FS_OPS = new Set(["read", "stat", "readdir", "exists"]);
-
-function isReadOnlyFsOp(op: string): boolean {
-  return READ_ONLY_FS_OPS.has(op);
-}
 
 // Suppress "Isolate is disposed" rejections from secure-exec internals.
 // These fire asynchronously when an isolate is terminated while its ESM
@@ -73,7 +60,6 @@ function isReadOnlyFsOp(op: string): boolean {
 // sandbox shutdown/eviction.
 process.on("unhandledRejection", (reason: unknown) => {
   if (reason instanceof Error && reason.message.includes("disposed")) return;
-  // Re-throw non-disposal rejections so they're not silently swallowed
   throw reason;
 });
 
@@ -98,14 +84,106 @@ export type SandboxOptions = {
 
 export type Sandbox = AgentRuntime;
 
+// ── Bindings: KV (isolate → host) ──────────────────────────────────────
+
+function buildKvBindings(kv: import("@alexkroman1/aai/kv").Kv): BindingTree {
+  return {
+    get: (key: unknown) => kv.get(key as string),
+    set: (key: unknown, value: unknown, expireIn?: unknown) =>
+      kv.set(key as string, value, expireIn ? { expireIn: expireIn as number } : undefined),
+    del: (key: unknown) => kv.delete(key as string),
+    list: (prefix: unknown, limit?: unknown, reverse?: unknown) => {
+      const opts: { limit?: number; reverse?: boolean } = {};
+      if (limit != null) opts.limit = limit as number;
+      if (reverse != null) opts.reverse = reverse as boolean;
+      return kv.list(prefix as string, opts);
+    },
+    keys: (pattern?: unknown) => kv.keys(pattern as string | undefined),
+  };
+}
+
+// ── Bindings: RPC (host → isolate via pull-based work queue) ────────────
+
+type RpcChannel = {
+  call<T>(message: Record<string, unknown>, timeoutMs: number): Promise<T>;
+  shutdown(): void;
+};
+
+function buildRpcChannel(): { bindings: BindingTree; channel: RpcChannel } {
+  let pendingRecv: ((req: unknown) => void) | null = null;
+  const requestQueue: unknown[] = [];
+  const responses = new Map<
+    string,
+    { resolve: (v: unknown) => void; reject: (e: Error) => void }
+  >();
+  let nextId = 0;
+
+  const bindings: BindingTree = {
+    recv: () =>
+      new Promise((resolve) => {
+        if (requestQueue.length > 0) {
+          resolve(requestQueue.shift());
+        } else {
+          pendingRecv = resolve;
+        }
+      }),
+    send: (id: unknown, result: unknown, errorMsg?: unknown) => {
+      const entry = responses.get(id as string);
+      if (!entry) return;
+      responses.delete(id as string);
+      if (errorMsg) entry.reject(new Error(errorMsg as string));
+      else entry.resolve(result);
+    },
+  };
+
+  const channel: RpcChannel = {
+    call<T>(message: Record<string, unknown>, timeoutMs: number): Promise<T> {
+      const id = String(nextId++);
+      const { promise, resolve, reject } = Promise.withResolvers<T>();
+      responses.set(id, { resolve: resolve as (v: unknown) => void, reject });
+
+      const request = { ...message, id };
+      if (pendingRecv) {
+        const recv = pendingRecv;
+        pendingRecv = null;
+        recv(request);
+      } else {
+        requestQueue.push(request);
+      }
+
+      const timer = setTimeout(() => {
+        if (responses.delete(id)) {
+          reject(new Error(`RPC timeout after ${timeoutMs}ms`));
+        }
+      }, timeoutMs);
+
+      return promise.finally(() => clearTimeout(timer));
+    },
+
+    shutdown() {
+      if (pendingRecv) {
+        pendingRecv(null);
+        pendingRecv = null;
+      }
+      for (const [, { reject }] of responses) {
+        reject(new Error("Sandbox shutting down"));
+      }
+      responses.clear();
+    },
+  };
+
+  return { bindings, channel };
+}
+
 // ── Isolate lifecycle ───────────────────────────────────────────────────
+
+type IsolateHandle = { runtime: NodeRuntime; channel: RpcChannel };
 
 async function startIsolate(
   workerCode: string,
   kv: import("@alexkroman1/aai/kv").Kv,
   agentEnv: Record<string, string>,
-  authToken: string,
-): Promise<{ port: number; runtime: NodeRuntime; crashed: AbortSignal; sidecar: Sidecar }> {
+): Promise<IsolateHandle> {
   const harnessFiles = await getHarnessFiles();
   const fs = createInMemoryFileSystem();
   await fs.writeFile("/app/agent_bundle.js", workerCode);
@@ -113,21 +191,16 @@ async function startIsolate(
     await fs.writeFile(`/app/${file.name}`, file.content);
   }
 
-  // Start a real HTTP sidecar for KV bridge before booting the isolate
-  const sidecar = await createSidecar(kv, authToken);
+  const kvBindings = buildKvBindings(kv);
+  const { bindings: rpcBindings, channel } = buildRpcChannel();
+  const allBindings: BindingTree = { kv: kvBindings, rpc: rpcBindings };
 
-  const prefixedEnv: Record<string, string> = {
-    HARNESS_AUTH_TOKEN: authToken,
-    SIDECAR_URL: sidecar.url,
-  };
+  const prefixedEnv: Record<string, string> = {};
   for (const [k, v] of Object.entries(agentEnv)) {
     prefixedEnv[`AAI_ENV_${k}`] = v;
   }
   const allowedKeys = new Set(Object.keys(prefixedEnv));
-  const crashController = new AbortController();
 
-  // Initialize process jail on first isolate boot (Linux only).
-  // Must run before NodeRuntime construction triggers secure-exec binary resolution.
   if (!jailInitialized) {
     jailInitialized = true;
     if (isJailAvailable()) {
@@ -152,46 +225,36 @@ async function startIsolate(
     }
   }
 
-  let portResolved = false;
-  const {
-    promise: portPromise,
-    resolve: resolvePort,
-    reject: rejectPort,
-  } = Promise.withResolvers<number>();
+  const driverFactory: NodeRuntimeDriverFactory = {
+    createRuntimeDriver(options: Parameters<NodeRuntimeDriverFactory["createRuntimeDriver"]>[0]) {
+      return new NodeExecutionDriver(
+        Object.assign({}, options, { bindings: allBindings }) as ConstructorParameters<
+          typeof NodeExecutionDriver
+        >[0],
+      );
+    },
+  };
 
   const runtime = new NodeRuntime({
     systemDriver: createNodeDriver({
       filesystem: fs,
       permissions: {
         fs: (req: { op: string; path: string }) =>
-          isReadOnlyFsOp(req.op)
+          READ_ONLY_FS_OPS.has(req.op)
             ? { allow: true }
             : { allow: false, reason: "Filesystem is read-only" },
-        network: () => ({ allow: true as const }),
+        network: () => ({ allow: false, reason: "Network disabled — use bindings" }),
         childProcess: () => ({ allow: false, reason: "Subprocess spawning is disabled" }),
         env: (req: { op: string; key: string }) =>
           req.op === "read" && allowedKeys.has(req.key ?? "")
             ? { allow: true }
             : { allow: false, reason: "Env access restricted" },
       },
-      useDefaultNetwork: true,
-      loopbackExemptPorts: [sidecar.port],
       processConfig: { env: prefixedEnv, timingMitigation: "freeze" },
     }),
-    runtimeDriverFactory: createNodeRuntimeDriverFactory(),
+    runtimeDriverFactory: driverFactory,
     memoryLimit: SANDBOX_MEMORY_LIMIT_MB,
     onStdio(event: StdioEvent) {
-      if (event.channel === "stdout") {
-        try {
-          const parsed = z.object({ port: z.number() }).safeParse(JSON.parse(event.message));
-          if (parsed.success && !portResolved) {
-            portResolved = true;
-            resolvePort(parsed.data.port);
-          }
-        } catch {
-          /* not the port announcement */
-        }
-      }
       if (event.channel === "stderr") {
         console.error("[isolate stderr]", event.message);
       }
@@ -203,71 +266,17 @@ async function startIsolate(
       'import agent from "/app/agent_bundle.js";\nimport { startHarness } from "/app/harness-runtime.mjs";\nstartHarness(agent);',
       { cwd: "/app" },
     )
-    .then(
-      () => {
-        /* normal exit — nothing to do */
-      },
-      (err: unknown) => {
-        // Before port: propagate as boot failure. After port: swallow
-        // (expected during shutdown when isolate is disposed).
-        if (!portResolved) {
-          rejectPort(new Error(`Isolate exited before announcing port: ${err}`));
-        }
-      },
-    );
+    .catch((err: unknown) => {
+      const msg = errorMessage(err);
+      if (!msg.includes("disposed")) {
+        console.warn("Isolate exited unexpectedly:", msg);
+      }
+    });
 
-  const port = await pTimeout(portPromise, {
-    milliseconds: PORT_ANNOUNCE_TIMEOUT_MS,
-    message: `Isolate failed to announce port within ${PORT_ANNOUNCE_TIMEOUT_MS}ms`,
-  });
-
-  runtime.exec("").catch((err) => {
-    if (!crashController.signal.aborted) {
-      crashController.abort(new Error(`Isolate crashed: ${errorMessage(err)}`));
-    }
-  });
-
-  return { port, runtime, crashed: crashController.signal, sidecar };
+  return { runtime, channel };
 }
 
-// ── Isolate RPC ─────────────────────────────────────────────────────────
-
-async function callIsolate<T>(
-  port: number,
-  message: Record<string, unknown>,
-  timeoutMs: number,
-  schema: z.ZodType<T>,
-  authToken: string,
-  crashed?: AbortSignal,
-): Promise<T> {
-  const signals = [AbortSignal.timeout(timeoutMs)];
-  if (crashed) signals.push(crashed);
-  const res = await fetch(`http://127.0.0.1:${port}/rpc`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-harness-token": authToken },
-    body: JSON.stringify(message),
-    signal: AbortSignal.any(signals),
-  });
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`rpc (${message.type}) failed (${res.status}): ${body}`);
-  }
-  return schema.parse(await res.json());
-}
-
-function buildExecuteTool(port: number, authToken: string, crashed?: AbortSignal): ExecuteTool {
-  return async (name, args, sessionId, messages) => {
-    const { result } = await callIsolate(
-      port,
-      { type: "tool", name, args, sessionId: sessionId ?? "", messages: [...(messages ?? [])] },
-      TOOL_EXECUTION_TIMEOUT_MS,
-      ToolCallResponseSchema,
-      authToken,
-      crashed,
-    );
-    return result;
-  };
-}
+// ── Hook invoker ────────────────────────────────────────────────────────
 
 /**
  * Build an RPC-backed hook invoker. When `hookFlags` is provided, only hooks
@@ -275,23 +284,15 @@ function buildExecuteTool(port: number, authToken: string, crashed?: AbortSignal
  * in the lazy path). When omitted, all hooks are registered (eager path).
  */
 function buildHookInvoker(
-  rpcProvider: () => Promise<{ port: number; crashed?: AbortSignal }>,
-  authToken: string,
+  getChannel: () => Promise<RpcChannel>,
   hookFlags?: IsolateConfig["hooks"],
 ): AgentHooks {
-  const rpc = async (name: string, extra: Record<string, unknown> = {}): Promise<unknown> => {
-    const { port, crashed } = await rpcProvider();
-    return (
-      await callIsolate(
-        port,
-        { type: "hook", hook: name, ...extra },
-        HOOK_TIMEOUT_MS,
-        HookResponseSchema,
-        authToken,
-        crashed,
-      )
+  const rpc = async (name: string, extra: Record<string, unknown> = {}): Promise<unknown> =>
+    (
+      await (
+        await getChannel()
+      ).call<{ result?: unknown }>({ type: "hook", hook: name, ...extra }, HOOK_TIMEOUT_MS)
     ).result;
-  };
 
   const hooks = createHooks<AgentHookMap>();
   if (!hookFlags || hookFlags.onConnect) {
@@ -339,12 +340,8 @@ export const _internals = {
 
 export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
   const { workerCode, apiKey, agentEnv, storage, slug } = opts;
-
   const kv = createUnstorageKv({ storage, prefix: agentKvPrefix(slug) });
-  const authToken = randomBytes(32).toString("hex");
 
-  // SSRF-safe fetch wrapper for built-in tools (web_search, visit_webpage, fetch_json).
-  // Validates each URL (and redirect target) against private/reserved IP ranges.
   const safeFetch: typeof globalThis.fetch = (input, init?) => {
     let url: string;
     if (typeof input === "string") url = input;
@@ -353,76 +350,71 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
     return ssrfSafeFetch(url, init ?? {}, globalThis.fetch);
   };
 
-  // When pre-extracted config is available, use it directly and defer isolate boot
-  // until custom tool execution or hook invocation is actually needed.
+  // ── Resolve config + channel provider ─────────────────────────────
+  let config: IsolateConfig;
+  let isolate: IsolateHandle | null = null;
+  let getChannel: () => Promise<RpcChannel>;
+
   if (opts.agentConfig) {
-    return createSandboxWithPreExtractedConfig({
-      config: opts.agentConfig,
-      workerCode,
-      kv,
-      authToken,
-      apiKey,
-      agentEnv,
-      slug,
-      safeFetch,
-    });
+    // Lazy path: config known upfront, defer isolate boot until needed
+    config = opts.agentConfig;
+    let isolatePromise: Promise<IsolateHandle> | null = null;
+
+    const ensureIsolate = async (): Promise<IsolateHandle> => {
+      if (isolate) return isolate;
+      if (!isolatePromise) {
+        isolatePromise = startIsolate(workerCode, kv, agentEnv).then(
+          (result) => {
+            isolate = result;
+            return result;
+          },
+          (err) => {
+            isolatePromise = null;
+            throw err;
+          },
+        );
+      }
+      return await isolatePromise;
+    };
+
+    getChannel = async () => (await ensureIsolate()).channel;
+  } else {
+    // Eager path: boot isolate now, extract config via RPC
+    const handle = await startIsolate(workerCode, kv, agentEnv);
+    isolate = handle;
+    config = IsolateConfigSchema.parse(await handle.channel.call({ type: "config" }, 10_000));
+    getChannel = async () => handle.channel;
   }
 
-  // Fallback: boot isolate eagerly and extract config via RPC (old deploy without agentConfig)
-  return createSandboxWithIsolate({
-    workerCode,
-    kv,
-    authToken,
-    apiKey,
-    agentEnv,
-    slug,
-    safeFetch,
-  });
-}
-
-// ── Isolate handle type ─────────────────────────────────────────────────
-
-type IsolateHandle = {
-  port: number;
-  runtime: NodeRuntime;
-  crashed: AbortSignal;
-  sidecar: Sidecar;
-};
-
-/** Build the agent definition object expected by createRuntime from an IsolateConfig. */
-function buildAgentFromConfig(config: IsolateConfig) {
-  return {
-    name: config.name,
-    systemPrompt: config.systemPrompt,
-    greeting: config.greeting ?? "",
-    maxSteps: config.maxSteps ?? 5,
-    tools: {},
-    ...(config.sttPrompt ? { sttPrompt: config.sttPrompt } : {}),
-    ...(config.toolChoice
-      ? { toolChoice: config.toolChoice as import("@alexkroman1/aai/types").ToolChoice }
-      : {}),
-    ...(config.builtinTools
-      ? { builtinTools: config.builtinTools as import("@alexkroman1/aai/types").BuiltinTool[] }
-      : {}),
+  // ── Build tool executor + hooks from channel ──────────────────────
+  const executeTool: ExecuteTool = async (name, args, sessionId, messages) => {
+    const ch = await getChannel();
+    const { result } = await ch.call<{ result: string }>(
+      { type: "tool", name, args, sessionId: sessionId ?? "", messages: [...(messages ?? [])] },
+      TOOL_EXECUTION_TIMEOUT_MS,
+    );
+    return result;
   };
-}
 
-/** Shared: build runtime + shutdown from config and isolate handle. */
-function finalizeSandbox(opts: {
-  config: IsolateConfig;
-  apiKey: string;
-  agentEnv: Record<string, string>;
-  slug: string;
-  safeFetch: typeof globalThis.fetch;
-  executeTool: ExecuteTool;
-  hooks: AgentHooks;
-  getIsolate: () => IsolateHandle | null;
-}): Sandbox {
-  const { config, apiKey, agentEnv, safeFetch, executeTool, hooks, getIsolate } = opts;
+  const hooks = buildHookInvoker(getChannel, opts.agentConfig ? config.hooks : undefined);
 
+  // ── Assemble runtime ──────────────────────────────────────────────
   const builtins = resolveAllBuiltins(config.builtinTools ?? []);
   const agentRuntime = createRuntime({
-    agent: buildAgentFromConfig(config),
+    agent: {
+      name: config.name,
+      systemPrompt: config.systemPrompt,
+      greeting: config.greeting ?? "",
+      maxSteps: config.maxSteps ?? 5,
+      tools: {},
+      ...(config.sttPrompt ? { sttPrompt: config.sttPrompt } : {}),
+      ...(config.toolChoice
+        ? { toolChoice: config.toolChoice as import("@alexkroman1/aai/types").ToolChoice }
+        : {}),
+      ...(config.builtinTools
+        ? { builtinTools: config.builtinTools as import("@alexkroman1/aai/types").BuiltinTool[] }
+        : {}),
+    },
     env: { ...agentEnv, ASSEMBLYAI_API_KEY: apiKey },
     fetch: safeFetch,
     executeTool,
@@ -431,17 +423,16 @@ function finalizeSandbox(opts: {
     toolGuidance: builtins.guidance,
   });
 
+  console.info("Sandbox initialized", { slug, agent: config.name });
+
   async function shutdownSandbox(): Promise<void> {
     try {
       hooks.removeAllHooks();
+      isolate?.channel.shutdown();
       await agentRuntime.shutdown();
     } finally {
-      const iso = getIsolate();
-      if (iso) {
-        await iso.sidecar.close().catch(() => {
-          /* ignore */
-        });
-        await iso.runtime.terminate().catch((err: unknown) => {
+      if (isolate) {
+        await isolate.runtime.terminate().catch((err: unknown) => {
           const msg = errorMessage(err);
           if (!msg.includes("already disposed")) console.warn("Runtime terminate failed:", err);
         });
@@ -454,97 +445,6 @@ function finalizeSandbox(opts: {
     startSession: agentRuntime.startSession.bind(agentRuntime),
     shutdown: shutdownSandbox,
   };
-}
-
-type SandboxInternalOpts = {
-  workerCode: string;
-  kv: import("@alexkroman1/aai/kv").Kv;
-  authToken: string;
-  apiKey: string;
-  agentEnv: Record<string, string>;
-  slug: string;
-  safeFetch: typeof globalThis.fetch;
-};
-
-/**
- * Create a sandbox using a pre-extracted config, deferring isolate boot
- * until custom tool/hook execution is needed (or never, for builtin-only agents).
- */
-async function createSandboxWithPreExtractedConfig(
-  opts: SandboxInternalOpts & { config: IsolateConfig },
-): Promise<Sandbox> {
-  const { config, workerCode, kv, authToken, agentEnv, slug } = opts;
-
-  // Lazy isolate: only booted when custom tools/hooks are actually invoked
-  let isolate: IsolateHandle | null = null;
-  let isolatePromise: Promise<IsolateHandle> | null = null;
-  let cachedExecuteTool: ExecuteTool | null = null;
-
-  async function ensureIsolate(): Promise<IsolateHandle> {
-    if (isolate) return isolate;
-    if (!isolatePromise) {
-      isolatePromise = startIsolate(workerCode, kv, agentEnv, authToken).then(
-        (result) => {
-          isolate = result;
-          cachedExecuteTool = buildExecuteTool(result.port, authToken, result.crashed);
-          return result;
-        },
-        (err) => {
-          // Reset so subsequent calls can retry instead of replaying the cached rejection
-          isolatePromise = null;
-          throw err;
-        },
-      );
-    }
-    return await isolatePromise;
-  }
-
-  const executeTool: ExecuteTool = async (name, args, sessionId, messages) => {
-    await ensureIsolate();
-    // biome-ignore lint/style/noNonNullAssertion: set by ensureIsolate's then() handler
-    return cachedExecuteTool!(name, args, sessionId, messages);
-  };
-
-  const hooks = buildHookInvoker(ensureIsolate, authToken, config.hooks);
-
-  const hasCustomTools = config.toolSchemas.length > 0;
-  const hasHooks =
-    config.hooks.onConnect ||
-    config.hooks.onDisconnect ||
-    config.hooks.onUserTranscript ||
-    config.hooks.maxStepsIsFn;
-  console.info("Sandbox initialized", {
-    slug,
-    agent: config.name,
-    isolateDeferred: hasCustomTools || hasHooks || config.hasState,
-  });
-
-  return finalizeSandbox({ ...opts, executeTool, hooks, getIsolate: () => isolate });
-}
-
-/** Fallback: boot isolate eagerly and extract config via RPC. */
-async function createSandboxWithIsolate(opts: SandboxInternalOpts): Promise<Sandbox> {
-  const { workerCode, kv, authToken, agentEnv, slug } = opts;
-
-  const handle = await startIsolate(workerCode, kv, agentEnv, authToken);
-
-  // Get agent config from isolate
-  const configRes = await fetch(`http://127.0.0.1:${handle.port}/rpc`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-harness-token": authToken },
-    body: JSON.stringify({ type: "config" }),
-    signal: AbortSignal.timeout(10_000),
-  });
-  if (!configRes.ok) throw new Error(`Config RPC failed: ${configRes.status}`);
-  const config: IsolateConfig = IsolateConfigSchema.parse(await configRes.json());
-
-  const executeTool = buildExecuteTool(handle.port, authToken, handle.crashed);
-  const fixedProvider = async () => handle;
-  const hooks = buildHookInvoker(fixedProvider, authToken);
-
-  console.info("Sandbox initialized", { slug, isolatePort: handle.port, agent: config.name });
-
-  return finalizeSandbox({ ...opts, config, executeTool, hooks, getIsolate: () => handle });
 }
 
 export async function resolveSandbox(
