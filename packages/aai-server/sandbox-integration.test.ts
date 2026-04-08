@@ -14,8 +14,34 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
+import type { IsolateConfig } from "./rpc-schemas.ts";
 import { _internals } from "./sandbox.ts";
 import { createMockKv, TEST_AGENT_CONFIG } from "./test-utils.ts";
+
+// ── Agent config matching AGENT_BUNDLE ────────────────────────────────────
+
+const AGENT_CONFIG: IsolateConfig = {
+  name: "integration-test",
+  systemPrompt: "You are a test agent.",
+  greeting: "Hello from the isolate",
+  maxSteps: 3,
+  toolSchemas: [
+    { name: "echo", description: "Echo the input", parameters: { type: "object", properties: {} } },
+    {
+      name: "kv_roundtrip",
+      description: "Store then read from KV",
+      parameters: { type: "object", properties: {} },
+    },
+  ],
+  hasState: true,
+  hooks: {
+    onConnect: true,
+    onDisconnect: false,
+    onError: false,
+    onUserTranscript: true,
+    maxStepsIsFn: false,
+  },
+};
 
 // ── Agent bundle ─────────────────────────────────────────────────────────
 
@@ -65,11 +91,6 @@ describe("isolate boot", () => {
     await cleanup?.();
   });
 
-  test("isolate responds to config RPC via bindings", async () => {
-    const config = await channel.call<{ name: string }>({ type: "config" }, 5000);
-    expect(config.name).toBe("integration-test");
-  });
-
   test("isolate executes tool via bindings", async () => {
     // Connect a session first
     await channel.call({ type: "hook", hook: "onConnect", sessionId: "s1" }, 5000);
@@ -95,6 +116,7 @@ describe("WebSocket session lifecycle", () => {
       agentEnv: {},
       storage: createTestStorage(),
       slug: "ws-test",
+      agentConfig: AGENT_CONFIG,
     });
   });
 
@@ -214,6 +236,7 @@ describe("idle eviction", () => {
       agentEnv: {},
       storage,
       slug: "idle-test",
+      agentConfig: AGENT_CONFIG,
     });
 
     slot.sandbox = sandbox;
@@ -232,12 +255,28 @@ describe("redeploy replaces sandbox", () => {
     const { createTestStorage } = await import("./test-utils.ts");
     const storage = createTestStorage();
 
+    const minimalConfig: IsolateConfig = {
+      name: "v1",
+      systemPrompt: "v1",
+      greeting: "v1",
+      toolSchemas: [],
+      hasState: false,
+      hooks: {
+        onConnect: false,
+        onDisconnect: false,
+        onError: false,
+        onUserTranscript: false,
+        maxStepsIsFn: false,
+      },
+    };
+
     const sandbox1 = await _internals.createSandbox({
       workerCode: `export default { name: "v1", systemPrompt: "v1", greeting: "v1", maxSteps: 1, tools: {} };`,
       apiKey: "test-key",
       agentEnv: {},
       storage,
       slug: "redeploy-test",
+      agentConfig: minimalConfig,
     });
 
     const sandbox2 = await _internals.createSandbox({
@@ -246,6 +285,7 @@ describe("redeploy replaces sandbox", () => {
       agentEnv: {},
       storage,
       slug: "redeploy-test",
+      agentConfig: { ...minimalConfig, name: "v2", systemPrompt: "v2", greeting: "v2" },
     });
 
     sandbox1.shutdown();
