@@ -40,7 +40,7 @@ WORKDIR /app
 # Install pnpm and initrd build tools
 RUN corepack enable && corepack prepare pnpm@10.29.3 --activate \
     && apt-get update && apt-get install -y --no-install-recommends \
-       cpio gzip curl xz-utils \
+       ca-certificates cpio gzip curl xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
 # Download unofficial static Node.js binary (musl-linked).
