@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
-import { parsePort } from "./_ui.ts";
+import { log, parsePort, silenceOutput } from "./_ui.ts";
 
 describe("parsePort", () => {
   test("parses valid port", () => {
@@ -25,5 +25,18 @@ describe("parsePort", () => {
 
   test("throws on negative port", () => {
     expect(() => parsePort("-1")).toThrow("Invalid port: -1");
+  });
+});
+
+describe("silenceOutput", () => {
+  test("replaces log methods with no-ops after silenceOutput()", () => {
+    silenceOutput();
+    // Should not throw — all methods are now no-ops
+    expect(() => log.info("test")).not.toThrow();
+    expect(() => log.success("test")).not.toThrow();
+    expect(() => log.error("test")).not.toThrow();
+    expect(() => log.warn("test")).not.toThrow();
+    expect(() => log.step("test")).not.toThrow();
+    expect(() => log.message("test")).not.toThrow();
   });
 });
