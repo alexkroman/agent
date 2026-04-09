@@ -131,7 +131,7 @@ beforeAll(async () => {
   // Packages are built + published inside startMockRegistry, so consumers
   // (npm/pnpm/yarn install) resolve them exactly as they would from the real registry.
   const { startMockRegistry } = await import("./_mock-registry.ts");
-  registry = await startMockRegistry(packagesDir, ["aai-ui", "aai-cli"]);
+  registry = await startMockRegistry(packagesDir, ["aai-core", "aai-ui", "aai-cli"]);
 });
 
 afterAll(async () => {

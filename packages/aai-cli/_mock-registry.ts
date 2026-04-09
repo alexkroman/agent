@@ -131,6 +131,7 @@ export async function startMockRegistry(
     // Temporarily set a unique version so pnpm never hits a stale cache
     const pkg = JSON.parse(originalPkg);
     pkg.version = testVersion;
+    delete pkg.private; // Allow publishing private packages to mock registry
     for (const depField of ["dependencies", "devDependencies", "peerDependencies"]) {
       if (!pkg[depField]) continue;
       for (const [dep, ver] of Object.entries(pkg[depField])) {
