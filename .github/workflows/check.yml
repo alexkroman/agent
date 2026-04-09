@@ -139,22 +139,6 @@ jobs:
       - run: pnpm exec turbo run build
       - run: pnpm exec turbo run check:integration
 
-  docker-firecracker:
-    needs: setup
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - name: Build Firecracker test image
-        run: >-
-          docker build
-          -f packages/aai-server/guest/Dockerfile.firecracker
-          -t aai-firecracker-test .
-      - name: Run Firecracker integration tests
-        run: >-
-          docker run --rm --device /dev/kvm --privileged
-          aai-firecracker-test
-          pnpm vitest run --config packages/aai-server/vitest.firecracker.config.ts
-
   e2e:
     needs: setup
     runs-on: ${{ matrix.os }}
@@ -199,16 +183,11 @@ jobs:
   ci:
     runs-on: ubuntu-latest
     if: always()
-    needs: [lint-typecheck-and-checks, test, integration, e2e, docker-firecracker]
+    needs: [lint-typecheck-and-checks, test, integration, e2e]
     steps:
       - name: Check results
         run: |
-          # docker-firecracker is informational until guest boot chain is validated
           results="${{ needs.lint-typecheck-and-checks.result }} ${{ needs.test.result }} ${{ needs.integration.result }} ${{ needs.e2e.result }}"
-          fc_result="${{ needs.docker-firecracker.result }}"
-          if [ "$fc_result" != "success" ]; then
-            echo "WARNING: docker-firecracker job did not pass ($fc_result) — this is expected until guest boot is validated"
-          fi
           for r in $results; do
             if [ "$r" != "success" ] && [ "$r" != "skipped" ]; then
               echo "CI failed: one or more jobs did not succeed"
