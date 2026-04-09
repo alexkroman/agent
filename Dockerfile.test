@@ -13,8 +13,11 @@ FROM node:24-slim
 WORKDIR /app
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates git \
+    && apt-get install -y --no-install-recommends ca-certificates curl git unzip \
     && rm -rf /var/lib/apt/lists/*
+
+# Install Deno — needed for sandbox tests
+RUN curl -fsSL https://deno.land/install.sh | DENO_INSTALL=/usr/local sh
 
 RUN corepack enable && corepack prepare pnpm@10.29.3 --activate
 

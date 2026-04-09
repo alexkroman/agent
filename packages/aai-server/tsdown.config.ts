@@ -10,7 +10,7 @@ export default defineConfig([
     deps: { alwaysBundle: [/@alexkroman1/] },
   },
   {
-    entry: ["guest/harness.ts"],
+    entry: ["guest/deno-harness.ts"],
     format: "esm",
     target: "node22",
     outDir: "dist/guest",

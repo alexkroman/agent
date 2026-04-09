@@ -1,7 +1,7 @@
 /**
  * Fake VM for local testing on macOS (no KVM required).
  *
- * Simulates a gVisor guest by running the harness in a child process
+ * Simulates a gVisor guest by running the Deno harness in a child process
  * that communicates over a Unix domain socket instead of stdio pipes.
  *
  * The test suite connects to the socket and exercises the full integration
@@ -13,13 +13,14 @@
  * The process:
  * 1. Creates a Unix socket server at the given path
  * 2. Waits for one connection
- * 3. Passes the socket to the guest harness main() function
+ * 3. Spawns the Deno harness with the socket connected to stdin/stdout
  * 4. Exits when the harness exits (shutdown message or socket close)
  */
 
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import net from "node:net";
-import { main } from "./harness.ts";
+import path from "node:path";
 
 const socketPath = process.argv[2];
 if (!socketPath) {
@@ -38,10 +39,28 @@ const server = net.createServer((conn) => {
   // Only accept one connection, then close the server
   server.close();
 
-  // Run the guest harness with this connection as the transport.
-  // net.Socket is both Readable and Writable, so main(conn, conn) works.
-  main(conn, conn).catch((err) => {
-    console.error("Harness error:", err);
+  // Spawn the Deno harness process with the socket connected to stdin/stdout
+  const denoHarnessPath = path.resolve(import.meta.dirname, "deno-harness.ts");
+  const harness = spawn("deno", ["run", "--allow-env", "--no-prompt", denoHarnessPath], {
+    stdio: ["pipe", "pipe", "inherit"],
+  });
+
+  // Connect the socket to the harness stdin/stdout
+  if (harness.stdin) {
+    conn.pipe(harness.stdin);
+  }
+  if (harness.stdout) {
+    harness.stdout.pipe(conn);
+  }
+
+  harness.on("exit", (code) => {
+    conn.destroy();
+    process.exit(code ?? 0);
+  });
+
+  conn.on("error", (err) => {
+    console.error("Socket error:", err);
+    harness.kill();
     process.exit(1);
   });
 });

@@ -1135,48 +1135,7 @@ function MyChat() {
 }
 ```
 
-## Self-hosting with `createServer()`
-
-Agents can run anywhere (Node, Docker) without the managed platform. For
-self-hosting, you still use `defineAgent()` from the SDK to create a runtime:
-
-```ts
-import { defineAgent } from "@alexkroman1/aai";
-import { createRuntime, createServer } from "@alexkroman1/aai/server";
-
-const agent = defineAgent({
-  name: "My Agent",
-  systemPrompt: "You are a helpful assistant.",
-});
-
-const runtime = createRuntime({ agent, env: process.env });
-const server = createServer({ runtime, name: agent.name });
-
-await server.listen(3000);
-```
-
-Run with `node server.ts` (Node >=22.6 strips types natively) or bundle
-with your preferred tool. The server handles WebSocket connections, STT/TTS,
-and the agentic loop. Set `ASSEMBLYAI_API_KEY` as an environment variable.
-
-**Env in self-hosted mode:** `ctx.env` is exactly the `env` record you pass to
-`createRuntime({ agent, env })`. If omitted, it defaults to
-`process.env`. There is no
-`AAI_ENV_*` prefixing -- that only applies to the managed platform. Pass only
-the keys your agent needs:
-
-```ts
-const runtime = createRuntime({
-  agent,
-  env: {
-    ASSEMBLYAI_API_KEY: process.env.ASSEMBLYAI_API_KEY!,
-    MY_API_KEY: process.env.MY_API_KEY!,
-  },
-});
-const server = createServer({ runtime, name: agent.name });
-```
-
-### Headless voice session (no UI)
+## Headless voice session (no UI)
 
 For custom frontends (React Native, vanilla JS, etc.), pass a custom `component`
 to `defineClient()` and use `useSession()` inside it. The full session API is

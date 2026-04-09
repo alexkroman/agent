@@ -34,12 +34,13 @@ FROM node:24-slim
 
 WORKDIR /app
 
-# Install gVisor (runsc) — x86_64 only
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
+# Install gVisor (runsc) and Deno — both need curl
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl unzip \
     && curl -fsSL "https://storage.googleapis.com/gvisor/releases/release/latest/x86_64/runsc" \
        -o /usr/local/bin/runsc \
     && chmod +x /usr/local/bin/runsc \
-    && apt-get remove -y curl && apt-get autoremove -y \
+    && curl -fsSL https://deno.land/install.sh | DENO_INSTALL=/usr/local sh \
+    && apt-get remove -y curl unzip && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 
 RUN corepack enable && corepack prepare pnpm@10.29.3 --activate
@@ -54,7 +55,7 @@ COPY --from=build /app/packages/aai/dist/ packages/aai/dist/
 COPY --from=build /app/packages/aai-server/dist/ packages/aai-server/dist/
 
 ENV NODE_ENV=production
-ENV GUEST_HARNESS_PATH=/app/packages/aai-server/dist/guest/harness.mjs
+ENV GUEST_HARNESS_PATH=/app/packages/aai-server/dist/guest/deno-harness.ts
 
 EXPOSE 8080
 

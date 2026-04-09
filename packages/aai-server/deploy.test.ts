@@ -104,7 +104,7 @@ describe("POST /:slug/deploy", () => {
       headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
       body: JSON.stringify({
         worker:
-          'module.exports = { name: "pre-stored", systemPrompt: "Test", greeting: "", maxSteps: 1, tools: {} };',
+          'export default { name: "pre-stored", systemPrompt: "Test", greeting: "", maxSteps: 1, tools: {} };',
         clientFiles: { "index.html": "<html></html>" },
         agentConfig: TEST_AGENT_CONFIG,
       }),

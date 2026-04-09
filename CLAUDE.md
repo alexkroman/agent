@@ -4,11 +4,9 @@
 
 AAI is a voice agent development kit. Users define agents as directories
 containing `agent.json` + `tools/*.ts` + `hooks/*.ts`. The CLI bundles and
-deploys them to the managed platform, or they can be self-hosted.
+deploys them to the managed platform.
 
 - **Platform**: `agent.json` + tools/hooks → CLI bundle → deploy to managed server
-- **Self-hosted**: `defineAgent()` → `createRuntime()` → `createServer()`
-  → runs on Node/Docker
 
 ## Commands
 
@@ -26,7 +24,7 @@ pnpm check:local         # Fast pre-commit gate (parallel: build → typecheck +
 | Tier | Command | Scope | Timeout |
 | --- | --- | --- | --- |
 | Unit | `pnpm test` | Fast, mocked, co-located | 5s |
-| Integration | `pnpm test:integration` | Real subsystems (V8 isolates, HTTP servers) | 30s |
+| Integration | `pnpm test:integration` | Real subsystems (Deno sandboxes, HTTP servers) | 30s |
 | E2E | `pnpm test:e2e` | Full process spawn + Playwright browser | 300s |
 | Templates | `pnpm test:templates` | Template agent example tests | 5s |
 
@@ -70,7 +68,7 @@ Five workspace packages under `packages/`:
 
 | Package | npm name | Purpose |
 | --- | --- | --- |
-| `packages/aai/` | `@alexkroman1/aai` | Agent SDK: manifest, `createServer`, types, protocol, S2S, session, KV |
+| `packages/aai/` | `@alexkroman1/aai` | Agent SDK: manifest, types, protocol, S2S, session, KV |
 | `packages/aai-ui/` | `@alexkroman1/aai-ui` | Browser client (Preact): session, audio, UI components |
 | `packages/aai-cli/` | `@alexkroman1/aai-cli` | The `aai` CLI: init, dev, test, build, deploy, delete, secret |
 | `packages/aai-server/` | `@alexkroman1/aai-server` | Managed platform server (private): sandbox, sidecar, auth, SSRF |
@@ -85,10 +83,7 @@ Five workspace packages under `packages/`:
 
 **Public:**
 
-- `.` — `parseManifest`, `Manifest`, `Kv` + re-exported types (no
-  `defineAgent`/`defineTool` — those are internal to the self-hosted path)
-- `./server` — `createServer`, `createAgentApp`, `createRuntime`,
-  `Runtime`, `RuntimeOptions` for self-hosting
+- `.` — `parseManifest`, `Manifest`, `Kv` + re-exported types
 - `./types` — all type definitions
 - `./kv` — KV store interface + in-memory implementation
 - `./testing` — `MockWebSocket`, `installMockWebSocket`,
@@ -106,7 +101,7 @@ depend on these from consumer code; they may change without notice):
 - `./utils` — shared utility functions
 
 Type-level tests (`.test-d.ts`) cover only the **public** entry points
-(`.`, `./types`, `./server`). Changes to internal exports do not require
+(`.`, `./types`). Changes to internal exports do not require
 type test updates.
 
 #### `@alexkroman1/aai-ui` (UI)
@@ -134,9 +129,9 @@ The SDK is organized into two directories:
   `testing.ts`, `matchers.ts`.
 
 When adding new SDK code, place it in `isolate/` if it has no `node:`
-dependencies. The guest harness (`guest/harness.ts`) runs full Node.js
-inside each gVisor sandbox with all deps bundled by esbuild — no import
-restrictions apply there.
+dependencies. The guest harness (`guest/deno-harness.ts`) runs Deno
+inside each gVisor sandbox, loading the agent's ESM bundle directly —
+no import restrictions apply there.
 
 ### Key files
 
@@ -182,9 +177,9 @@ restrictions apply there.
 - `sandbox-network.ts` — network proxying for sandbox
 - `sandbox-slots.ts` — slot allocation for concurrent sessions
 - `gvisor.ts` — gVisor (runsc) OCI runtime integration
-- `guest/harness.ts` — guest entry point (Node.js process inside gVisor sandbox)
-- `guest/harness-logic.ts` — guest agent execution logic
-- `harness-runtime.ts` — file-per-tool RPC dispatcher that runs inside the isolate
+- `guest/deno-harness.ts` — Deno guest entry point (runs inside gVisor sandbox)
+- `guest/fake-vm.ts` — lightweight fake-VM fallback for macOS dev mode
+- `ndjson-transport.ts` — NDJSON-over-stdio transport for host↔guest RPC
 - `transport-websocket.ts` — WebSocket transport layer
 - `auth.ts` — authentication/authorization
 - `credentials.ts` — credential derivation
@@ -204,7 +199,7 @@ restrictions apply there.
 
 ## Conventions
 
-- **Runtime**: Node
+- **Runtime**: Node (host/platform server), Deno (guest sandbox runtime)
 - **Frameworks**: Preact (client UI), Tailwind CSS v4 (compiled at bundle time)
 - **Linting**: Biome. Auto-runs on staged files via lefthook pre-commit hook.
 - **Exports**: In dev mode, package.json exports point to `.ts` source for
@@ -350,7 +345,7 @@ catches the most common issues that historically required follow-up commits:
 3. **Lint in related files**: Pre-commit only lints staged files. Run
    `pnpm lint` to catch lint issues in files affected by your change.
 4. **Type-level tests**: After changing public API types (`parseManifest`,
-   `Manifest`, `createServer`, etc.), run `pnpm vitest run --project aai-types`
+   `Manifest`, etc.), run `pnpm vitest run --project aai-types`
    to verify type contracts haven't regressed. Update `.test-d.ts` files
    if the change is intentional.
 
@@ -359,8 +354,8 @@ catches the most common issues that historically required follow-up commits:
 ### gVisor sandbox isolation
 
 Each agent session runs in its own **gVisor sandbox** (runsc OCI runtime).
-The guest runs a Node.js binary executing the bundled agent code
-(`guest/harness.ts`). Host↔guest communication is via vscode-jsonrpc over
+The guest runs a Deno process executing the bundled agent code
+(`guest/deno-harness.ts`). Host↔guest communication is via NDJSON over
 stdio.
 
 Key properties:
@@ -368,37 +363,24 @@ Key properties:
 - **Userspace kernel**: gVisor Sentry intercepts all syscalls in systrap mode.
   No KVM required — works on Fly.io, any Linux.
 - **No shared memory between agents**: separate Sentry per sandbox.
-- **Minimal rootfs**: only the Node.js binary and harness are visible.
+- **Minimal rootfs**: only the Deno binary and harness are visible.
   The agent cannot see the host filesystem.
 - **cgroup limits**: 64 MB memory, 32 PIDs per sandbox.
-- **Full Node.js in guest**: esbuild bundles all npm deps into the harness.
-  No `import type` restriction — the guest can import anything.
+- **Deno guest**: the agent's ESM bundle is loaded directly by Deno.
+  Deno's permission model provides defense-in-depth: the harness runs
+  with `--allow-env --no-prompt` and no net/fs/run permissions.
 - **Dev mode (macOS)**: gVisor unavailable; sandbox falls back to a plain
   child process with no isolation.
-
-`harness-runtime.ts` is a self-contained file-per-tool RPC dispatcher with
-**no workspace imports**. It exports `createDispatcher(opts)` for building
-a dispatch function from tool/hook handler maps, and `startDispatcher(tools,
-hooks)` for the isolate entry point that wires up SecureExec bindings.
-
-Rules for `harness-runtime.ts`:
-
-- **No runtime imports** from workspace packages or npm deps. The file must
-  be entirely self-contained with inline type definitions. Any runtime import
-  will cause the isolate to fail to boot, manifesting as timeout errors in
-  integration tests.
-- Host-side validation (in `sandbox.ts`) is sufficient. The isolate trusts
-  the host since they run in the same server process.
 
 ### Platform sandbox (aai-server)
 
 Agent code runs in **per-agent gVisor sandboxes**. Key files:
 `packages/aai-server/sandbox.ts`, `sandbox-vm.ts`, `gvisor.ts`,
-`guest/harness.ts`, `guest/harness-logic.ts`.
+`guest/deno-harness.ts`, `ndjson-transport.ts`.
 
 **Isolation layers:**
 
-- **Filesystem**: minimal rootfs with only node binary + harness. No host
+- **Filesystem**: minimal rootfs with only Deno binary + harness. No host
   filesystem access.
 - **Network**: no network device in sandbox. All external calls proxy through host.
 - **Memory**: cgroup limits (64 MB per sandbox). Separate Sentry per sandbox.
@@ -417,23 +399,18 @@ stored env at sandbox creation time and kept host-side only.
 
 - KV keys prefixed `kv:{keyHash}:{slug}:{key}` — agents cannot access
   each other's data.
-- Each sandbox communicates via isolated vscode-jsonrpc over stdio.
+- Each sandbox communicates via isolated NDJSON over stdio.
 - Sessions are per-sandbox (`Map<string, Session>`).
 - No shared mutable state between sandboxes.
 
 **`run_code` built-in tool (aai/builtin-tools.ts):**
 
-- Each invocation runs in a **fresh `node:vm` context** — isolated from
-  other invocations. Note: `node:vm` is not a security sandbox; in
-  platform mode, the gVisor sandbox provides the security boundary.
+- Each invocation runs in a **fresh `node:vm` context** on the host — isolated
+  from other invocations. Note: `node:vm` is not a security sandbox; the
+  gVisor sandbox provides the actual security boundary.
 - No network, no filesystem access, no child processes, no env vars.
 - 5-second execution timeout.
 - Context is discarded after execution — no state leaks.
-- Works identically in both self-hosted and platform modes.
-
-**Self-hosted server (aai/server.ts):**
-
-- HTML output uses `escapeHtml()` to prevent XSS from agent names.
 
 **SSRF protection (aai-server/ssrf.ts):**
 
@@ -464,6 +441,6 @@ stored env at sandbox creation time and kept host-side only.
 
 ### Known limitations
 
-- **Type-level tests**: Cover public entry points of `aai` (`.`, `./types`,
-  `./server`) and `aai-ui` (`.`). Subpath exports (e.g. `./kv`,
+- **Type-level tests**: Cover public entry points of `aai` (`.`, `./types`)
+  and `aai-ui` (`.`). Subpath exports (e.g. `./kv`,
   `./protocol`) are not covered by type tests.

@@ -7,7 +7,7 @@
  * overrides, giving it the same session/S2S/WebSocket handling as self-hosted
  * mode without duplicating any of that logic.
  *
- * Communication with the guest uses vscode-jsonrpc over stdio pipes,
+ * Communication with the guest uses NDJSON over stdio pipes,
  * mediated by the `SandboxHandle` from `sandbox-vm.ts`.
  */
 
@@ -122,7 +122,8 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
 
   // ── Create sandbox VM handle ─────────────────────────────────────
   const harnessPath =
-    process.env.GUEST_HARNESS_PATH ?? path.resolve(import.meta.dirname, "dist/guest/harness.mjs");
+    process.env.GUEST_HARNESS_PATH ??
+    path.resolve(import.meta.dirname, "dist/guest/deno-harness.mjs");
 
   const sandboxHandle = await createSandboxVm({
     slug,

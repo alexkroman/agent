@@ -7,7 +7,7 @@
  */
 
 import { describe, expectTypeOf, it } from "vitest";
-import { type AgentServer, createRuntime, createServer, type Runtime } from "./host/server.ts";
+import { createRuntime, type Runtime } from "./host/runtime.ts";
 import {
   type BuiltinTool,
   type HookFlags,
@@ -73,7 +73,7 @@ describe("HookFlags", () => {
   });
 });
 
-// ─── createServer ────────────────────────────────────────────────────────
+// ─── createRuntime (internal — used by aai-cli and aai-server) ──────────
 
 describe("createRuntime", () => {
   it("accepts RuntimeOptions and returns Runtime", () => {
@@ -82,23 +82,6 @@ describe("createRuntime", () => {
     expectTypeOf(runtime).toMatchTypeOf<Runtime>();
     expectTypeOf(runtime.startSession).toBeFunction();
     expectTypeOf(runtime.shutdown).toEqualTypeOf<() => Promise<void>>();
-  });
-});
-
-describe("createServer", () => {
-  it("accepts ServerOptions with runtime and returns AgentServer", () => {
-    const agent = defineAgent({ name: "test" });
-    const runtime = createRuntime({ agent, env: {} });
-    const server = createServer({ runtime });
-    expectTypeOf(server).toEqualTypeOf<AgentServer>();
-    expectTypeOf(server.listen).toEqualTypeOf<(port?: number) => Promise<void>>();
-    expectTypeOf(server.close).toEqualTypeOf<() => Promise<void>>();
-    expectTypeOf(server.port).toEqualTypeOf<number | undefined>();
-  });
-
-  it("requires runtime in options", () => {
-    // @ts-expect-error — runtime is required
-    createServer({});
   });
 });
 

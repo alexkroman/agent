@@ -4,23 +4,18 @@
  * child processes (macOS dev mode).
  *
  * Provides the `SandboxHandle` abstraction that `sandbox.ts` delegates to.
- * Communication with the guest uses vscode-jsonrpc over stdio pipes.
+ * Communication with the guest uses NDJSON over stdio pipes.
  */
 
-import { type ChildProcess, fork } from "node:child_process";
+import { type ChildProcess, spawn } from "node:child_process";
 import type { Storage, StorageValue } from "unstorage";
-import {
-  createMessageConnection,
-  type MessageConnection,
-  StreamMessageReader,
-  StreamMessageWriter,
-} from "vscode-jsonrpc/node";
 import { createGvisorSandbox, isGvisorAvailable } from "./gvisor.ts";
+import { createNdjsonConnection, type NdjsonConnection } from "./ndjson-transport.ts";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export type SandboxHandle = {
-  conn: MessageConnection;
+  conn: NdjsonConnection;
   shutdown(): Promise<void>;
 };
 
@@ -36,11 +31,11 @@ export type SandboxVmOptions = {
 // ── Shared setup ─────────────────────────────────────────────────────────────
 
 /**
- * After establishing a jsonrpc connection, sends the bundle message and
+ * After establishing an NDJSON connection, sends the bundle message and
  * registers the KV handler. Returns the configured SandboxHandle.
  */
 async function configureSandbox(
-  conn: MessageConnection,
+  conn: NdjsonConnection,
   opts: SandboxVmOptions,
   cleanup: () => Promise<void>,
 ): Promise<SandboxHandle> {
@@ -81,27 +76,28 @@ async function configureSandbox(
 
 // ── Connection helper ────────────────────────────────────────────────────────
 
-function createConnection(child: ChildProcess): MessageConnection {
+function createConnection(child: ChildProcess): NdjsonConnection {
   if (!(child.stdout && child.stdin)) {
     throw new Error("Child process missing stdio");
   }
-  return createMessageConnection(
-    new StreamMessageReader(child.stdout),
-    new StreamMessageWriter(child.stdin),
-  );
+  return createNdjsonConnection(child.stdout, child.stdin);
 }
 
 // ── Dev sandbox (macOS / non-gVisor) ─────────────────────────────────────────
 
 /**
- * Creates a sandbox by forking the guest harness as a child process.
- * Communication uses stdio pipes with vscode-jsonrpc.
+ * Creates a sandbox by spawning the Deno guest harness as a child process.
+ * Communication uses stdio pipes with NDJSON transport.
  */
 export async function createDevSandbox(opts: SandboxVmOptions): Promise<SandboxHandle> {
-  const child: ChildProcess = fork(opts.harnessPath, [], {
-    stdio: ["pipe", "pipe", "inherit"],
-    env: { ...process.env },
-  });
+  const child: ChildProcess = spawn(
+    "deno",
+    ["run", "--allow-env", "--no-prompt", opts.harnessPath],
+    {
+      stdio: ["pipe", "pipe", "inherit"],
+      env: { ...process.env },
+    },
+  );
 
   return configureSandbox(createConnection(child), opts, async () => {
     child.kill("SIGTERM");

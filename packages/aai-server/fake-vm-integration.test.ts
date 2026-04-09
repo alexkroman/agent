@@ -16,12 +16,7 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "vitest";
-import {
-  createMessageConnection,
-  type MessageConnection,
-  StreamMessageReader,
-  StreamMessageWriter,
-} from "vscode-jsonrpc/node";
+import { createNdjsonConnection, type NdjsonConnection } from "./ndjson-transport.ts";
 
 let tmpDir: string;
 const children: ChildProcess[] = [];
@@ -92,17 +87,14 @@ async function spawnFakeVm(socketPath: string): Promise<ChildProcess> {
 }
 
 /**
- * Connect to the fake VM's Unix socket and create a vscode-jsonrpc connection.
+ * Connect to the fake VM's Unix socket and create an NDJSON connection.
  */
 async function connectToFakeVm(
   socketPath: string,
-): Promise<{ socket: net.Socket; conn: MessageConnection }> {
+): Promise<{ socket: net.Socket; conn: NdjsonConnection }> {
   return new Promise((resolve, reject) => {
     const socket = net.connect(socketPath, () => {
-      const conn = createMessageConnection(
-        new StreamMessageReader(socket),
-        new StreamMessageWriter(socket),
-      );
+      const conn = createNdjsonConnection(socket, socket);
       conn.listen();
       resolve({ socket, conn });
     });
@@ -113,47 +105,43 @@ async function connectToFakeVm(
 // ── Agent bundles ──────────────────────────────────────────────────────────
 
 const SIMPLE_BUNDLE = `
-module.exports = {
-  default: {
-    name: "test-agent",
-    systemPrompt: "Test",
-    greeting: "Hello",
-    maxSteps: 5,
-    tools: {
-      echo: {
-        description: "Echo input",
-        execute(args) { return "echo:" + JSON.stringify(args); },
-      },
-      add: {
-        description: "Add two numbers",
-        execute(args) { return String(Number(args.a) + Number(args.b)); },
-      },
+export default {
+  name: "test-agent",
+  systemPrompt: "Test",
+  greeting: "Hello",
+  maxSteps: 5,
+  tools: {
+    echo: {
+      description: "Echo input",
+      execute(args) { return "echo:" + JSON.stringify(args); },
+    },
+    add: {
+      description: "Add two numbers",
+      execute(args) { return String(Number(args.a) + Number(args.b)); },
     },
   },
 };
 `;
 
 const STATEFUL_BUNDLE = `
-module.exports = {
-  default: {
-    name: "stateful-agent",
-    systemPrompt: "Test",
-    greeting: "",
-    state: () => ({ count: 0 }),
-    maxSteps: 5,
-    tools: {
-      increment: {
-        description: "Increment counter",
-        execute(args, ctx) {
-          ctx.state.count++;
-          return "count:" + ctx.state.count;
-        },
+export default {
+  name: "stateful-agent",
+  systemPrompt: "Test",
+  greeting: "",
+  state: () => ({ count: 0 }),
+  maxSteps: 5,
+  tools: {
+    increment: {
+      description: "Increment counter",
+      execute(args, ctx) {
+        ctx.state.count++;
+        return "count:" + ctx.state.count;
       },
-      get_count: {
-        description: "Get counter value",
-        execute(args, ctx) {
-          return "count:" + ctx.state.count;
-        },
+    },
+    get_count: {
+      description: "Get counter value",
+      execute(args, ctx) {
+        return "count:" + ctx.state.count;
       },
     },
   },
@@ -296,17 +284,15 @@ describe("Fake VM integration (no KVM)", () => {
     const { socket, conn } = await connectToFakeVm(socketPath);
 
     const envBundle = `
-    module.exports = {
-      default: {
-        name: "env-agent",
-        systemPrompt: "Test",
-        greeting: "",
-        maxSteps: 1,
-        tools: {
-          read_env: {
-            description: "Read env var",
-            execute(args, ctx) { return "env:" + (ctx.env.MY_SECRET || "undefined"); },
-          },
+    export default {
+      name: "env-agent",
+      systemPrompt: "Test",
+      greeting: "",
+      maxSteps: 1,
+      tools: {
+        read_env: {
+          description: "Read env var",
+          execute(args, ctx) { return "env:" + (ctx.env.MY_SECRET || "undefined"); },
         },
       },
     };
@@ -376,20 +362,18 @@ describe("Fake VM integration (no KVM)", () => {
     });
 
     const kvBundle = `
-    module.exports = {
-      default: {
-        name: "kv-agent",
-        systemPrompt: "KV test",
-        greeting: "",
-        maxSteps: 1,
-        tools: {
-          kv_roundtrip: {
-            description: "Store then read from KV",
-            async execute(args, ctx) {
-              await ctx.kv.set("test-key", args.value);
-              const result = await ctx.kv.get("test-key");
-              return "stored:" + JSON.stringify(result);
-            },
+    export default {
+      name: "kv-agent",
+      systemPrompt: "KV test",
+      greeting: "",
+      maxSteps: 1,
+      tools: {
+        kv_roundtrip: {
+          description: "Store then read from KV",
+          async execute(args, ctx) {
+            await ctx.kv.set("test-key", args.value);
+            const result = await ctx.kv.get("test-key");
+            return "stored:" + JSON.stringify(result);
           },
         },
       },
@@ -420,17 +404,15 @@ describe("Fake VM integration (no KVM)", () => {
     const { socket, conn } = await connectToFakeVm(socketPath);
 
     const errorBundle = `
-    module.exports = {
-      default: {
-        name: "error-agent",
-        systemPrompt: "Error test",
-        greeting: "",
-        maxSteps: 1,
-        tools: {
-          fail: {
-            description: "Always throws",
-            execute() { throw new Error("intentional failure"); },
-          },
+    export default {
+      name: "error-agent",
+      systemPrompt: "Error test",
+      greeting: "",
+      maxSteps: 1,
+      tools: {
+        fail: {
+          description: "Always throws",
+          execute() { throw new Error("intentional failure"); },
         },
       },
     };
@@ -462,22 +444,20 @@ describe("Fake VM integration (no KVM)", () => {
     // Bundle with a tool that has a parameters object with a parse method.
     // The parse method transforms args (uppercases the "text" field).
     const paramsBundle = `
-    module.exports = {
-      default: {
-        name: "params-agent",
-        systemPrompt: "Params test",
-        greeting: "",
-        maxSteps: 1,
-        tools: {
-          transform: {
-            description: "Transform input via parameters.parse",
-            parameters: {
-              parse(args) {
-                return { text: String(args.text).toUpperCase() };
-              },
+    export default {
+      name: "params-agent",
+      systemPrompt: "Params test",
+      greeting: "",
+      maxSteps: 1,
+      tools: {
+        transform: {
+          description: "Transform input via parameters.parse",
+          parameters: {
+            parse(args) {
+              return { text: String(args.text).toUpperCase() };
             },
-            execute(args) { return "parsed:" + args.text; },
           },
+          execute(args) { return "parsed:" + args.text; },
         },
       },
     };
@@ -503,16 +483,17 @@ describe("Fake VM integration (no KVM)", () => {
 
   // ── Compiled harness test ───────────────────────────────────────────────────
 
-  const COMPILED_HARNESS = path.resolve(import.meta.dirname, "dist/guest/harness.mjs");
+  const COMPILED_HARNESS = path.resolve(import.meta.dirname, "dist/guest/deno-harness.mjs");
   const hasCompiledHarness = existsSync(COMPILED_HARNESS);
 
   test.skipIf(!hasCompiledHarness)(
-    "compiled harness (dist/guest/harness.mjs) injects bundle and executes tool",
+    "compiled harness (dist/guest/deno-harness.mjs) injects bundle and executes tool",
     async () => {
       const socketPath = path.join(tmpDir, "test-compiled.sock");
 
-      // Spawn fake-vm but point it at the compiled harness instead of source
+      // Spawn a Node launcher that creates a Unix socket and pipes it to Deno
       const fakeVmScript = `
+      import { spawn } from "node:child_process";
       import net from "node:net";
       import fs from "node:fs";
 
@@ -521,12 +502,19 @@ describe("Fake VM integration (no KVM)", () => {
 
       try { fs.unlinkSync(socketPath); } catch {}
 
-      const { main } = await import(harnessPath);
-
       const server = net.createServer((conn) => {
         server.close();
-        main(conn, conn).catch((err) => {
-          console.error("Harness error:", err);
+        const harness = spawn("deno", ["run", "--allow-env", "--no-prompt", harnessPath], {
+          stdio: ["pipe", "pipe", "inherit"],
+        });
+        if (harness.stdin) conn.pipe(harness.stdin);
+        if (harness.stdout) harness.stdout.pipe(conn);
+        harness.on("exit", (code) => {
+          conn.destroy();
+          process.exit(code ?? 0);
+        });
+        conn.on("error", () => {
+          harness.kill();
           process.exit(1);
         });
       });

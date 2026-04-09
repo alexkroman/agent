@@ -5,5 +5,6 @@
     "tsBuildInfoFile": "../../.tsbuildinfo/aai-server.tsbuildinfo",
     "types": ["node"]
   },
-  "include": ["."]
+  "include": ["."],
+  "exclude": ["guest/deno-harness.ts"]
 }

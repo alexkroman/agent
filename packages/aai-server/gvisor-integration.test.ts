@@ -14,17 +14,12 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import {
-  createMessageConnection,
-  type MessageConnection,
-  StreamMessageReader,
-  StreamMessageWriter,
-} from "vscode-jsonrpc/node";
 import { createGvisorSandbox, type GvisorSandbox, isGvisorAvailable } from "./gvisor.ts";
+import { createNdjsonConnection, type NdjsonConnection } from "./ndjson-transport.ts";
 
 // ── Availability check ────────────────────────────────────────────────────────
 
-const compiledHarnessPath = path.resolve(import.meta.dirname, "dist/guest/harness.mjs");
+const compiledHarnessPath = path.resolve(import.meta.dirname, "dist/guest/deno-harness.mjs");
 const canRun = isGvisorAvailable() && existsSync(compiledHarnessPath);
 
 // ── Sandbox tracking ──────────────────────────────────────────────────────────
@@ -45,11 +40,11 @@ afterEach(async () => {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 /**
- * Spawn a gVisor sandbox and create a jsonrpc connection over its stdio.
+ * Spawn a gVisor sandbox and create an NDJSON connection over its stdio.
  */
 async function spawnSandbox(slug: string): Promise<{
   sandbox: GvisorSandbox;
-  conn: MessageConnection;
+  conn: NdjsonConnection;
 }> {
   const sandbox = createGvisorSandbox({
     slug,
@@ -79,10 +74,7 @@ async function spawnSandbox(slug: string): Promise<{
   if (!(sandbox.process.stdout && sandbox.process.stdin)) {
     throw new Error("gVisor sandbox process does not have stdio streams");
   }
-  const conn = createMessageConnection(
-    new StreamMessageReader(sandbox.process.stdout),
-    new StreamMessageWriter(sandbox.process.stdin),
-  );
+  const conn = createNdjsonConnection(sandbox.process.stdout, sandbox.process.stdin);
   conn.listen();
 
   return { sandbox, conn };
@@ -91,21 +83,19 @@ async function spawnSandbox(slug: string): Promise<{
 // ── Agent bundles (reused from fake-vm-integration tests) ─────────────────────
 
 const SIMPLE_BUNDLE = `
-module.exports = {
-  default: {
-    name: "test-agent",
-    systemPrompt: "Test",
-    greeting: "Hello",
-    maxSteps: 5,
-    tools: {
-      echo: {
-        description: "Echo input",
-        execute(args) { return "echo:" + JSON.stringify(args); },
-      },
-      add: {
-        description: "Add two numbers",
-        execute(args) { return String(Number(args.a) + Number(args.b)); },
-      },
+export default {
+  name: "test-agent",
+  systemPrompt: "Test",
+  greeting: "Hello",
+  maxSteps: 5,
+  tools: {
+    echo: {
+      description: "Echo input",
+      execute(args) { return "echo:" + JSON.stringify(args); },
+    },
+    add: {
+      description: "Add two numbers",
+      execute(args) { return String(Number(args.a) + Number(args.b)); },
     },
   },
 };
@@ -156,20 +146,18 @@ describe.skipIf(!canRun)("gVisor integration (real runsc)", () => {
     });
 
     const kvBundle = `
-    module.exports = {
-      default: {
-        name: "kv-agent",
-        systemPrompt: "KV test",
-        greeting: "",
-        maxSteps: 1,
-        tools: {
-          kv_roundtrip: {
-            description: "Store then read from KV",
-            async execute(args, ctx) {
-              await ctx.kv.set("test-key", args.value);
-              const result = await ctx.kv.get("test-key");
-              return "stored:" + JSON.stringify(result);
-            },
+    export default {
+      name: "kv-agent",
+      systemPrompt: "KV test",
+      greeting: "",
+      maxSteps: 1,
+      tools: {
+        kv_roundtrip: {
+          description: "Store then read from KV",
+          async execute(args, ctx) {
+            await ctx.kv.set("test-key", args.value);
+            const result = await ctx.kv.get("test-key");
+            return "stored:" + JSON.stringify(result);
           },
         },
       },
@@ -197,19 +185,17 @@ describe.skipIf(!canRun)("gVisor integration (real runsc)", () => {
 
   test("cross-agent isolation — globalThis secret not shared", async () => {
     const secretBundle = `
-    module.exports = {
-      default: {
-        name: "secret-agent",
-        systemPrompt: "Test",
-        greeting: "",
-        maxSteps: 1,
-        tools: {
-          set_secret: {
-            description: "Store secret on globalThis",
-            execute(args) {
-              globalThis.__secret = args.value;
-              return "set";
-            },
+    export default {
+      name: "secret-agent",
+      systemPrompt: "Test",
+      greeting: "",
+      maxSteps: 1,
+      tools: {
+        set_secret: {
+          description: "Store secret on globalThis",
+          execute(args) {
+            globalThis.__secret = args.value;
+            return "set";
           },
         },
       },
@@ -217,18 +203,16 @@ describe.skipIf(!canRun)("gVisor integration (real runsc)", () => {
     `;
 
     const readerBundle = `
-    module.exports = {
-      default: {
-        name: "reader-agent",
-        systemPrompt: "Test",
-        greeting: "",
-        maxSteps: 1,
-        tools: {
-          read_secret: {
-            description: "Read secret from globalThis",
-            execute() {
-              return "secret:" + String(globalThis.__secret);
-            },
+    export default {
+      name: "reader-agent",
+      systemPrompt: "Test",
+      greeting: "",
+      maxSteps: 1,
+      tools: {
+        read_secret: {
+          description: "Read secret from globalThis",
+          execute() {
+            return "secret:" + String(globalThis.__secret);
           },
         },
       },
@@ -277,23 +261,21 @@ describe.skipIf(!canRun)("gVisor integration (real runsc)", () => {
 
   test("cannot read host filesystem", async () => {
     const fsBundle = `
-    module.exports = {
-      default: {
-        name: "fs-agent",
-        systemPrompt: "FS test",
-        greeting: "",
-        maxSteps: 1,
-        tools: {
-          read_file: {
-            description: "Try to read /etc/hostname",
-            execute() {
-              try {
-                const fs = require("fs");
-                return "read:" + fs.readFileSync("/etc/hostname", "utf8").trim();
-              } catch (err) {
-                return "error:" + err.message;
-              }
-            },
+    export default {
+      name: "fs-agent",
+      systemPrompt: "FS test",
+      greeting: "",
+      maxSteps: 1,
+      tools: {
+        read_file: {
+          description: "Try to read /etc/hostname",
+          execute() {
+            try {
+              const data = Deno.readTextFileSync("/etc/hostname");
+              return "read:" + data.trim();
+            } catch (err) {
+              return "error:" + err.message;
+            }
           },
         },
       },
@@ -324,32 +306,24 @@ describe.skipIf(!canRun)("gVisor integration (real runsc)", () => {
 
   test("cannot access network", async () => {
     const netBundle = `
-    module.exports = {
-      default: {
-        name: "net-agent",
-        systemPrompt: "Net test",
-        greeting: "",
-        maxSteps: 1,
-        tools: {
-          http_get: {
-            description: "Try to make an outbound HTTP request",
-            async execute() {
-              try {
-                const http = require("http");
-                await new Promise((resolve, reject) => {
-                  const req = http.get("http://example.com", (res) => {
-                    resolve(res.statusCode);
-                  });
-                  req.on("error", reject);
-                  req.setTimeout(3000, () => {
-                    req.destroy(new Error("timeout"));
-                  });
-                });
-                return "connected";
-              } catch (err) {
-                return "error:" + err.message;
-              }
-            },
+    export default {
+      name: "net-agent",
+      systemPrompt: "Net test",
+      greeting: "",
+      maxSteps: 1,
+      tools: {
+        http_get: {
+          description: "Try to make an outbound HTTP request",
+          async execute() {
+            try {
+              const controller = new AbortController();
+              const timer = setTimeout(() => controller.abort(), 3000);
+              const resp = await fetch("http://example.com", { signal: controller.signal });
+              clearTimeout(timer);
+              return "connected";
+            } catch (err) {
+              return "error:" + err.message;
+            }
           },
         },
       },
@@ -379,17 +353,15 @@ describe.skipIf(!canRun)("gVisor integration (real runsc)", () => {
 
   test("error propagation — tool throws returns error in response", async () => {
     const errorBundle = `
-    module.exports = {
-      default: {
-        name: "error-agent",
-        systemPrompt: "Error test",
-        greeting: "",
-        maxSteps: 1,
-        tools: {
-          fail: {
-            description: "Always throws",
-            execute() { throw new Error("intentional failure"); },
-          },
+    export default {
+      name: "error-agent",
+      systemPrompt: "Error test",
+      greeting: "",
+      maxSteps: 1,
+      tools: {
+        fail: {
+          description: "Always throws",
+          execute() { throw new Error("intentional failure"); },
         },
       },
     };
