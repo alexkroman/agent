@@ -19,6 +19,7 @@ export default defineConfig({
         // Covered by integration tests (pnpm test:integration).
         "packages/aai-server/sandbox*.ts",
         "packages/aai-server/harness-runtime.ts",
+        "packages/aai-server/harness-runtime-v2.ts",
         // CLI entry point can't be unit tested.
         "packages/aai-cli/cli.ts",
         // OTel session wiring — tested via integration tests, not unit tests.
