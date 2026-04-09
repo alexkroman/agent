@@ -326,3 +326,52 @@ export async function createTestHarness(
 
   return new TestHarness(tools, hooks, kv, sessionId, env);
 }
+
+// ─── Matchers ────────────────────────────────────────────────────────────────
+
+/**
+ * Vitest matcher implementation for `toHaveCalledTool`.
+ *
+ * Exported here so users can import everything from a single entry point:
+ * `import { createTestHarness, toHaveCalledTool } from "@alexkroman1/aai/testing"`
+ *
+ * Also registered as a side-effect when importing
+ * `@alexkroman1/aai/testing/matchers`.
+ *
+ * @example
+ * ```ts
+ * import { toHaveCalledTool } from "@alexkroman1/aai/testing";
+ * expect.extend({ toHaveCalledTool });
+ * ```
+ *
+ * @public
+ */
+export function toHaveCalledTool(
+  received: unknown,
+  toolName: string,
+  args?: Record<string, unknown>,
+) {
+  if (!(received instanceof TurnResult)) {
+    return {
+      pass: false,
+      message: () => `expected a TurnResult, got ${typeof received}`,
+      actual: received,
+      expected: "TurnResult",
+    };
+  }
+
+  const pass = received.toHaveCalledTool(toolName, args);
+
+  const calledTools = received.toolCalls.map((tc) => tc.toolName);
+  const argsHint = args ? ` with args ${JSON.stringify(args)}` : "";
+
+  return {
+    pass,
+    message: () =>
+      pass
+        ? `expected turn NOT to have called tool "${toolName}"${argsHint}, but it was called.\nCalled tools: ${JSON.stringify(calledTools)}`
+        : `expected turn to have called tool "${toolName}"${argsHint}, but it was not.\nCalled tools: ${JSON.stringify(calledTools)}`,
+    actual: calledTools,
+    expected: toolName,
+  };
+}
