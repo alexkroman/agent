@@ -1,5 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
+  "ignore": [".claude/**"],
   "ignoreUnresolved": ["./_jsdom-setup.ts", "./host/matchers.ts"],
   "ignoreExportsUsedInFile": true,
   "exclude": ["exports", "types", "optionalPeerDependencies"],
@@ -19,7 +20,7 @@
       "includeEntryExports": true
     },
     "packages/aai-ui": {
-      "entry": ["**/*.test.{ts,tsx}", "**/*.test-d.ts", "_test-utils.ts"],
+      "entry": ["**/*.test.{ts,tsx}", "**/*.test-d.ts", "_react-test-utils.ts"],
       "includeEntryExports": true
     },
     "packages/aai-cli": {
