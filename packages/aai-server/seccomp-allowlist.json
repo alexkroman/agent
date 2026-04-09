@@ -52,12 +52,18 @@
     "set_robust_list",
     "setsockopt",
     "sigaltstack",
-    "socket",
     "tgkill",
     "timerfd_create",
     "timerfd_settime",
     "wait4",
     "write",
     "writev"
+  ],
+  "filtered_syscalls": [
+    {
+      "name": "socket",
+      "filter": "arg0 == 1",
+      "_comment": "AF_UNIX only -- block TCP/UDP/raw/netlink socket creation"
+    }
   ]
 }

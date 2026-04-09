@@ -50,6 +50,7 @@ clone_newpid: true
 clone_newipc: true
 clone_newnet: true
 clone_newuts: true
+clone_newcgroup: true
 
 keep_caps: false
 disable_proc: false
@@ -59,6 +60,7 @@ rlimit_core_type: HARD
 rlimit_cpu_type: HARD
 rlimit_fsize_type: HARD
 rlimit_nofile_type: HARD
+rlimit_nproc_type: HARD
 
 cgroup_mem_max: ${memoryBytes}
 cgroup_pids_max: 1
