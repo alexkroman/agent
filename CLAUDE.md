@@ -2,13 +2,13 @@
 
 ## Overview
 
-AAI is a voice agent development kit. Users define agents via `defineAgent()`
-in `agent.ts`. The SDK produces a self-hostable server
-(`createRuntime()` + `createServer()`) or agents can be deployed to
-the managed platform.
+AAI is a voice agent development kit. Users define agents as directories
+containing `agent.json` + `tools/*.ts` + `hooks/*.ts`. The CLI bundles and
+deploys them to the managed platform, or they can be self-hosted.
 
-- **Self-hosted**: `agent.ts` → `createRuntime()` → `createServer()` → runs on Node/Docker
-- **Platform**: `agent.ts` → CLI bundle → deploy to managed server
+- **Platform**: `agent.json` + tools/hooks → CLI bundle → deploy to managed server
+- **Self-hosted**: `defineAgent()` → `createRuntime()` → `createServer()`
+  → runs on Node/Docker
 
 ## Commands
 
@@ -70,7 +70,7 @@ Five workspace packages under `packages/`:
 
 | Package | npm name | Purpose |
 | --- | --- | --- |
-| `packages/aai/` | `@alexkroman1/aai` | Agent SDK: `defineAgent`, `createServer`, types, protocol, S2S, session, KV |
+| `packages/aai/` | `@alexkroman1/aai` | Agent SDK: manifest, `createServer`, types, protocol, S2S, session, KV |
 | `packages/aai-ui/` | `@alexkroman1/aai-ui` | Browser client (Preact): session, audio, UI components |
 | `packages/aai-cli/` | `@alexkroman1/aai-cli` | The `aai` CLI: init, dev, test, build, deploy, delete, secret |
 | `packages/aai-server/` | `@alexkroman1/aai-server` | Managed platform server (private): sandbox, sidecar, auth, SSRF |
@@ -85,13 +85,14 @@ Five workspace packages under `packages/`:
 
 **Public:**
 
-- `.` — `defineAgent`, `defineTool` + re-exported types
+- `.` — `parseManifest`, `Manifest`, `Kv` + re-exported types (no
+  `defineAgent`/`defineTool` — those are internal to the self-hosted path)
 - `./server` — `createServer`, `createAgentApp`, `createRuntime`,
   `Runtime`, `RuntimeOptions` for self-hosting
 - `./types` — all type definitions
 - `./kv` — KV store interface + in-memory implementation
 - `./testing` — `MockWebSocket`, `installMockWebSocket`,
-  `createTestHarness`, `TestHarness`, `TurnResult`
+  `createTestHarness(agentDir)`, `TestHarness`, `TurnResult`
 - `./testing/matchers` — Vitest custom matchers (`toHaveCalledTool`)
 
 **Internal** (exported in package.json but not part of public API — do **not**
@@ -99,7 +100,7 @@ depend on these from consumer code; they may change without notice):
 
 - `./protocol` — wire-format types, Zod schemas, constants
 - `./isolate` — isolate-safe barrel: shared modules
-  (types, protocol, kv, hooks, utils)
+  (types, protocol, kv, hooks, manifest, utils)
 - `./host` — host barrel: host-only modules
 - `./hooks` — hook definitions for lifecycle events
 - `./utils` — shared utility functions
@@ -123,8 +124,9 @@ Binary: `aai` — subcommands: init, dev, test, build, deploy, delete, secret
 The SDK is organized into two directories:
 
 - **`isolate/`** — shared modules with no Node.js dependencies. Contains:
-  `types.ts`, `kv.ts`, `_kv-utils.ts`, `hooks.ts`, `_utils.ts`,
-  `constants.ts`, `protocol.ts`, `system-prompt.ts`, `_internal-types.ts`.
+  `types.ts`, `kv.ts`, `hooks.ts`, `_utils.ts`, `constants.ts`,
+  `protocol.ts`, `system-prompt.ts`, `manifest.ts`,
+  `_internal-types.ts`.
 - **`host/`** — host-only modules that require Node.js APIs. Contains:
   `server.ts`, `runtime.ts`, `runtime-config.ts`, `tool-executor.ts`,
   `session.ts`, `session-ctx.ts`, `s2s.ts`, `ws-handler.ts`,
@@ -143,10 +145,14 @@ restrictions apply there.
 - `cli.ts` — arg parsing, subcommand dispatch
 - `init.ts` / `dev.ts` / `test.ts` / `deploy.ts` / `delete.ts` /
   `secret.ts` — subcommand entry points
-- `start.ts` — production server launcher (used internally)
 - `_init.ts` / `_deploy.ts` / `_delete.ts` / `_bundler.ts` — internal logic
-- `_bundler.ts` — generates Vite config, bundles `agent.ts`/`client.tsx`
-  into `worker.js`/`index.html`
+- `_scanner.ts` — agent directory scanner: reads `agent.json`,
+  `tools/*.ts`, and `hooks/*.ts`; extracts static exports; produces a
+  `Manifest`
+- `_dev-server.ts` — dev server for directory-based agents: scans agent dir,
+  builds runtime, watches for file changes, optionally runs Vite for client HMR
+- `_bundler.ts` — bundles agent directory (tools + hooks + client.tsx) into
+  deployable artifacts
 - `_api-client.ts` — platform API client (`apiRequest`, `apiRequestOrThrow`)
 - `_config.ts` — auth config, project config, API key management
 - `_agent.ts` — agent discovery, dev mode detection, server URL resolution
@@ -279,11 +285,13 @@ bumped automatically.
 
 - **Agent API docs**: `packages/aai-templates/scaffold/CLAUDE.md` is the
   agent API reference installed into user projects. When modifying the agent
-  API surface (`packages/aai/types.ts`), update it to match.
+  API surface (manifest schema, tool/hook conventions, KV API), update it
+  to match.
 - **Templates**: `packages/aai-templates/templates/` contains agent
   scaffolding templates (simple, web-researcher, etc.). Each is
-  self-contained with its own `agent.ts` and `client.tsx`. `scaffold/` has
-  base project files (package.json, tsconfig, etc.) layered underneath.
+  self-contained with its own `agent.json`, `tools/`, `hooks/`, and optional
+  `client.tsx`. `scaffold/` has base project files (package.json, tsconfig,
+  etc.) layered underneath.
 
 ### Git hooks (lefthook)
 
@@ -342,8 +350,8 @@ catches the most common issues that historically required follow-up commits:
    messages, run `pnpm test` and update affected assertions.
 3. **Lint in related files**: Pre-commit only lints staged files. Run
    `pnpm lint` to catch lint issues in files affected by your change.
-4. **Type-level tests**: After changing public API types (`defineAgent`,
-   `defineTool`, `createServer`, etc.), run `pnpm vitest run --project aai-types`
+4. **Type-level tests**: After changing public API types (`parseManifest`,
+   `Manifest`, `createServer`, etc.), run `pnpm vitest run --project aai-types`
    to verify type contracts haven't regressed. Update `.test-d.ts` files
    if the change is intentional.
 
