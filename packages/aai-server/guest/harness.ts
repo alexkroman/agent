@@ -1,193 +1,57 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Guest-side harness entrypoint for Firecracker microVMs.
+ * Guest-side harness entrypoint.
  *
- * Connects to the host over vsock, receives the agent bundle, and runs a
- * concurrent RPC dispatch loop. The guest is both:
- * - A server (for tool calls and hook invocations from the host)
- * - A client (for KV operations proxied back to the host)
+ * Connects to the host over a stream (vsock in production, Unix socket in
+ * dev/test). Uses vscode-jsonrpc for request/response framing and dispatch.
  *
- * This is the mirror of vsock.ts (host-side RPC channel) but tailored for
- * the guest environment with tool/hook dispatch and KV proxy.
+ * The guest is both:
+ * - A server (responds to tool/execute, hook/invoke, bundle/load requests)
+ * - A client (sends kv/* requests back to the host for KV operations)
  */
 
-import { createInterface } from "node:readline";
-import type { Duplex } from "node:stream";
-import type { HookRequest, ToolCallRequest } from "../rpc-schemas.ts";
+import type { Readable, Writable } from "node:stream";
+import {
+  createMessageConnection,
+  StreamMessageReader,
+  StreamMessageWriter,
+} from "vscode-jsonrpc/node";
 import { executeTool, initHarness, invokeHook, resetAgentEnv } from "./harness-logic.ts";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+export type { KvInterface } from "./harness-logic.ts";
 
-type GuestHandlers = {
-  onTool(req: ToolCallRequest & { id: string }): Promise<unknown>;
-  onHook(req: HookRequest & { id: string }): Promise<unknown>;
-};
-
-type KvProxy = {
-  get(key: string): Promise<unknown>;
-  set(key: string, value: unknown, opts?: { expireIn?: number }): Promise<void>;
-  del(key: string): Promise<void>;
-  mget(keys: string[]): Promise<unknown[]>;
-};
-
-type GuestRpc = {
-  kv: KvProxy;
-};
-
-type PendingRequest = {
-  resolve: (value: Record<string, unknown>) => void;
-  reject: (err: Error) => void;
-  timer: ReturnType<typeof setTimeout>;
-};
-
-const KV_TIMEOUT_MS = 5000;
-
-// ── createGuestRpc ────────────────────────────────────────────────────────────
+// ── createGuestConnection ─────────────────────────────────────────────────────
 
 /**
- * Sets up bidirectional JSON-over-stream RPC for the guest harness.
+ * Creates a vscode-jsonrpc connection for the guest harness.
  *
- * - Reads newline-delimited JSON from `stream`
- * - Incoming messages matching a pending guest request id → resolve that pending request
- * - Incoming messages without a matching pending id → dispatch to handlers concurrently
- * - Guest-initiated ids use the `g:` prefix
- * - Returns a KV proxy that sends KV requests to the host and awaits responses
+ * Also builds a KV proxy that sends JSON-RPC requests to the host for each
+ * KV operation, awaiting the host's response before resolving.
+ *
+ * @param input  - Readable stream from the host (e.g. process.stdin, vsock)
+ * @param output - Writable stream to the host
  */
-export function createGuestRpc(stream: Duplex, handlers: GuestHandlers): GuestRpc {
-  let idCounter = 0;
-  const pending = new Map<string, PendingRequest>();
+export function createGuestConnection(input: Readable, output: Writable) {
+  const conn = createMessageConnection(
+    new StreamMessageReader(input),
+    new StreamMessageWriter(output),
+  );
 
-  const rl = createInterface({ input: stream, crlfDelay: Number.POSITIVE_INFINITY });
-
-  function sendLine(msg: Record<string, unknown>): void {
-    stream.write(`${JSON.stringify(msg)}\n`);
-  }
-
-  function handleResponse(id: string, msg: Record<string, unknown>): boolean {
-    const entry = pending.get(id);
-    if (entry === undefined) return false;
-    clearTimeout(entry.timer);
-    pending.delete(id);
-    entry.resolve(msg);
-    return true;
-  }
-
-  function handleIncomingRequest(id: string, msg: Record<string, unknown>): void {
-    const type = typeof msg.type === "string" ? msg.type : undefined;
-    if (type === undefined) return;
-
-    if (type === "shutdown") {
-      // Respond ok, then exit
-      sendLine({ id, ok: true });
-      // Allow the write to flush before exiting
-      setImmediate(() => process.exit(0));
-      return;
-    }
-
-    let handlerPromise: Promise<unknown>;
-    if (type === "tool") {
-      handlerPromise = handlers.onTool(msg as unknown as ToolCallRequest & { id: string });
-    } else if (type === "hook") {
-      handlerPromise = handlers.onHook(msg as unknown as HookRequest & { id: string });
-    } else {
-      // Unknown type — send an error response
-      sendLine({ id, error: `Unknown RPC type: ${type}` });
-      return;
-    }
-
-    // Concurrent dispatch: fire-and-forget, keep read loop non-blocking
-    void handlerPromise
-      .then((result) => {
-        sendLine({ id, ...(result as Record<string, unknown>) });
-      })
-      .catch((err: unknown) => {
-        const errMsg = err instanceof Error ? err.message : "Internal error";
-        sendLine({ id, error: errMsg });
-      });
-  }
-
-  function handleLine(line: string): void {
-    let msg: Record<string, unknown>;
-    try {
-      msg = JSON.parse(line);
-    } catch {
-      // Silently ignore malformed JSON
-      return;
-    }
-
-    const id = typeof msg.id === "string" ? msg.id : undefined;
-    if (id === undefined) return;
-
-    // If id matches a pending guest-initiated request, resolve it (KV response)
-    if (!handleResponse(id, msg)) {
-      // Otherwise it's a host-initiated request — dispatch to handlers
-      handleIncomingRequest(id, msg);
-    }
-  }
-
-  rl.on("line", handleLine);
-
-  stream.on("close", () => {
-    for (const [, entry] of pending) {
-      clearTimeout(entry.timer);
-      entry.reject(new Error("Connection closed"));
-    }
-    pending.clear();
-    rl.close();
-  });
-
-  stream.on("error", () => {
-    for (const [, entry] of pending) {
-      clearTimeout(entry.timer);
-      entry.reject(new Error("Connection closed"));
-    }
-    pending.clear();
-    rl.close();
-  });
-
-  // ── Guest-initiated request helper ─────────────────────────────────────────
-
-  function guestRequest(msg: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const id = `g:${++idCounter}`;
-
-    return new Promise<Record<string, unknown>>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        pending.delete(id);
-        reject(new Error(`KV timeout after ${KV_TIMEOUT_MS}ms`));
-      }, KV_TIMEOUT_MS);
-
-      pending.set(id, { resolve, reject, timer });
-      sendLine({ ...msg, id });
-    });
-  }
-
-  // ── KV proxy ──────────────────────────────────────────────────────────────
-
-  const kv: KvProxy = {
+  // KV proxy — guest calls host for KV operations
+  const kv: KvInterface = {
     async get(key: string): Promise<unknown> {
-      const resp = await guestRequest({ type: "kv", op: "get", key });
-      return resp.value ?? null;
+      const resp = await conn.sendRequest<{ value?: unknown }>("kv/get", { key });
+      return resp?.value ?? null;
     },
-
     async set(key: string, value: unknown, opts?: { expireIn?: number }): Promise<void> {
-      const msg: Record<string, unknown> = { type: "kv", op: "set", key, value };
-      if (opts?.expireIn !== undefined) {
-        msg.expireIn = opts.expireIn;
-      }
-      await guestRequest(msg);
+      await conn.sendRequest("kv/set", { key, value, expireIn: opts?.expireIn });
     },
-
     async del(key: string): Promise<void> {
-      await guestRequest({ type: "kv", op: "del", key });
-    },
-
-    async mget(keys: string[]): Promise<unknown[]> {
-      const resp = await guestRequest({ type: "kv", op: "mget", keys });
-      return (resp.values as unknown[]) ?? [];
+      await conn.sendRequest("kv/del", { key });
     },
   };
 
-  return { kv };
+  return { conn, kv };
 }
 
 // ── main ──────────────────────────────────────────────────────────────────────
@@ -195,96 +59,67 @@ export function createGuestRpc(stream: Duplex, handlers: GuestHandlers): GuestRp
 /**
  * Full guest harness entrypoint.
  *
- * 1. Waits for the host to send a `bundle` message
- * 2. Responds with `{id, ok: true}`
- * 3. Sets env vars from the bundle message
- * 4. Loads the agent code via `new Function()` (VM is the security boundary)
- * 5. Initializes harness logic (initHarness)
- * 6. Enters concurrent RPC dispatch loop
+ * 1. Registers bundle/load handler and waits for the host to load the agent bundle
+ * 2. Sets env vars from the bundle message (AAI_ENV_ prefix)
+ * 3. Loads the agent code via new Function() (VM/vsock is the security boundary)
+ * 4. Initializes harness logic (initHarness)
+ * 5. Registers RPC handlers and enters concurrent dispatch loop
  */
-export async function main(stream: Duplex): Promise<void> {
-  // Read the bundle message first (before setting up the full RPC loop)
-  let bundleResolve: ((msg: Record<string, unknown>) => void) | undefined;
-  const bundlePromise = new Promise<Record<string, unknown>>((resolve) => {
-    bundleResolve = resolve;
+export async function main(input: Readable, output: Writable): Promise<void> {
+  const { conn, kv } = createGuestConnection(input, output);
+
+  // Register bundle/load handler BEFORE listening so we don't miss it
+  const bundle = await new Promise<{ code: string; env: Record<string, string> }>((resolve) => {
+    conn.onRequest("bundle/load", (params: { code: string; env: Record<string, string> }) => {
+      resolve(params);
+      return { ok: true };
+    });
+    conn.listen();
   });
 
-  const rl = createInterface({ input: stream, crlfDelay: Number.POSITIVE_INFINITY });
-
-  let bundleReceived = false;
-
-  rl.on("line", (line: string) => {
-    if (bundleReceived) return;
-    let msg: Record<string, unknown>;
-    try {
-      msg = JSON.parse(line);
-    } catch {
-      return;
-    }
-    if (msg.type === "bundle" && typeof msg.id === "string") {
-      bundleReceived = true;
-      rl.close();
-      bundleResolve?.(msg);
-    }
-  });
-
-  const bundleMsg = await bundlePromise;
-
-  // Respond ok
-  stream.write(`${JSON.stringify({ id: bundleMsg.id, ok: true })}\n`);
-
-  // Set env vars from the bundle with AAI_ENV_ prefix so harness-logic.ts
-  // can find them (it filters process.env by that prefix).
-  const env = (bundleMsg.env ?? {}) as Record<string, string>;
-  for (const [k, v] of Object.entries(env)) {
+  // Set agent env vars with AAI_ENV_ prefix so harness-logic.ts can find them
+  for (const [k, v] of Object.entries(bundle.env)) {
     process.env[`AAI_ENV_${k}`] = v;
   }
   resetAgentEnv(); // Clear cached env so getAgentEnv() picks up new vars
 
-  // Load agent code — the Firecracker VM is the security boundary.
-  // Agent code is trusted within the VM; new Function() is the appropriate
-  // mechanism for loading a pre-compiled ESM bundle as a CommonJS wrapper.
-  const code = bundleMsg.code as string;
+  // Load agent code — the VM/vsock channel is the security boundary.
+  // Agent code is trusted within the VM; this evaluates the pre-compiled CJS bundle.
+  // new Function() is intentional: VM is the security boundary.
   const mod = { exports: {} as Record<string, unknown> };
-  // new Function() is intentional here: the Firecracker VM is the security
-  // boundary, and the agent bundle is a pre-compiled CJS wrapper that must be
-  // evaluated in the guest environment. No biome suppression needed because
-  // new Function() is distinct from eval() and not covered by noGlobalEval.
-  const loadFn = Function("module", "exports", code); // eslint-disable-line no-new-func
+  const loadFn = new Function("module", "exports", bundle.code);
   loadFn(mod, mod.exports);
 
   // Extract default export (the agent definition)
   const agent = (mod.exports.default ?? mod.exports) as Parameters<typeof initHarness>[0];
 
-  // Use late binding so handlers read harnessState at call time (not definition time).
-  // createGuestRpc doesn't invoke handlers until messages arrive, and no messages
-  // arrive until after main() finishes setup — so harnessState is always set by then.
-  let harnessState: ReturnType<typeof initHarness>;
+  const { sessionState, hooks } = initHarness(agent, kv);
 
-  const rpc = createGuestRpc(stream, {
-    async onTool(req): Promise<unknown> {
-      return executeTool(
-        agent,
-        req as unknown as Parameters<typeof executeTool>[1],
-        harnessState.sessionState,
-        rpc.kv,
-      );
-    },
-    async onHook(req): Promise<unknown> {
-      return invokeHook(
-        harnessState.hooks,
-        req as unknown as Parameters<typeof invokeHook>[1],
-        harnessState.sessionState,
-      );
-    },
+  // Register RPC methods for concurrent dispatch
+  conn.onRequest("tool/execute", (params: Parameters<typeof executeTool>[1]) =>
+    executeTool(agent, params, sessionState, kv),
+  );
+
+  conn.onRequest("hook/invoke", (params: Parameters<typeof invokeHook>[1]) =>
+    invokeHook(hooks, params, sessionState),
+  );
+
+  conn.onNotification("shutdown", () => {
+    conn.dispose();
+    process.exit(0);
   });
 
-  // Now init harness with the real KV proxy (not a stub)
-  harnessState = initHarness(agent, rpc.kv);
-
-  // The RPC dispatch loop is running via the readline event listener.
-  // Keep the process alive — it exits via process.exit(0) on shutdown message.
+  // Keep process alive — exits via process.exit(0) on shutdown notification
   await new Promise<never>(() => {
     // intentionally never resolves
+  });
+}
+
+// Auto-start when run directly
+const scriptName = process.argv[1] ?? "";
+if (scriptName.endsWith("harness.mjs") || scriptName.endsWith("harness.ts")) {
+  main(process.stdin, process.stdout).catch((err) => {
+    console.error("Harness error:", err);
+    process.exit(1);
   });
 }
