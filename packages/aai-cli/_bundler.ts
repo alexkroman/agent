@@ -39,6 +39,14 @@ export async function buildAgentBundle(cwd: string): Promise<DirectoryBundleOutp
     throw new Error("agent.json must have a name field");
   }
 
+  // Resolve $ref in systemPrompt (e.g. { "$ref": "system-prompt.md" })
+  if (agentConfig.systemPrompt && typeof agentConfig.systemPrompt === "object") {
+    const ref = (agentConfig.systemPrompt as { $ref?: string }).$ref;
+    if (ref) {
+      agentConfig.systemPrompt = await fs.readFile(path.join(cwd, ref), "utf-8");
+    }
+  }
+
   log.step(`Bundling ${agentConfig.name}`);
 
   // ── Bundle tools.ts with esbuild ───────────────────────────────────────

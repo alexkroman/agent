@@ -1,5 +1,3 @@
-export const description = "Move to the next research phase (gather -> analyze -> respond)";
-
 export default async function execute(
   _args: Record<string, never>,
   ctx: {

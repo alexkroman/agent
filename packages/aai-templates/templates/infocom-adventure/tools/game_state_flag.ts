@@ -1,15 +1,5 @@
 import { getGameState, saveGameState } from "../_shared.ts";
 
-export const description = "Set a game flag to true, used for tracking puzzle and event state.";
-
-export const parameters = {
-  type: "object",
-  properties: {
-    value: { type: "string", description: "Flag name to set" },
-  },
-  required: ["value"],
-};
-
 export default async function execute(
   args: { value: string },
   ctx: {

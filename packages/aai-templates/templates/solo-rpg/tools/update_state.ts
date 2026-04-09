@@ -1,57 +1,6 @@
 import type { Disposition, KV } from "../_shared.ts";
 import { getGameState, MAX_SESSION_LOG, nextNpcId, saveGameState } from "../_shared.ts";
 
-export const description =
-  "Lightweight state sync for during gameplay. Handles location changes, NPC additions, clock additions, time changes, and session log entries. Resource changes (health/spirit/supply/momentum) are auto-applied by action_roll — only use those fields here for manual adjustments like resting or trading. Pass only what changed.";
-
-export const parameters = {
-  type: "object",
-  properties: {
-    // Location & time
-    location: { type: "string", description: "New location name" },
-    locationDesc: { type: "string", description: "Short location description" },
-    timeOfDay: { type: "string", description: "New time of day" },
-    // Manual resource adjustments (resting, trading, etc.)
-    health: { type: "number" },
-    spirit: { type: "number" },
-    supply: { type: "number" },
-    momentum: { type: "number" },
-    // Add a new NPC
-    addNpcName: { type: "string", description: "New NPC name" },
-    addNpcDesc: { type: "string", description: "New NPC one-line description" },
-    addNpcDisposition: {
-      type: "string",
-      enum: ["hostile", "distrustful", "neutral", "friendly", "loyal"],
-      description: "New NPC disposition",
-    },
-    addNpcAgenda: { type: "string", description: "New NPC agenda" },
-    // Update existing NPC
-    updateNpcId: { type: "string", description: "NPC id to update" },
-    updateNpcDisposition: {
-      type: "string",
-      enum: ["hostile", "distrustful", "neutral", "friendly", "loyal"],
-    },
-    updateNpcBond: { type: "number" },
-    updateNpcStatus: {
-      type: "string",
-      enum: ["active", "background", "deceased"],
-    },
-    // Add a new clock
-    addClockName: { type: "string", description: "New clock name" },
-    addClockType: { type: "string", enum: ["threat", "progress", "scheme"] },
-    addClockSegments: { type: "number", description: "Number of segments, default 6" },
-    addClockTrigger: { type: "string", description: "What happens when clock fills" },
-    // Advance or remove clock
-    advanceClockName: { type: "string", description: "Clock name to advance by 1" },
-    removeClockName: { type: "string", description: "Clock name to remove" },
-    // Story arc
-    advanceAct: { type: "boolean", description: "Move to next story act" },
-    storyComplete: { type: "boolean", description: "Mark story as complete" },
-    // Session log
-    logEntry: { type: "string", description: "Short log entry for this scene" },
-  },
-};
-
 export default async function execute(
   args: {
     location?: string;

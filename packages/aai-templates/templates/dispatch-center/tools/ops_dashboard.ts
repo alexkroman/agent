@@ -1,9 +1,6 @@
 import type { Incident, KV } from "../_shared.ts";
 import { getState, INCIDENT_INDEX_KEY, now } from "../_shared.ts";
 
-export const description =
-  "Get the full operational dashboard: alert level, resource utilization, active incidents, and available resources.";
-
 export default async function execute(_args: unknown, ctx: { kv: KV }) {
   const state = await getState(ctx.kv);
 

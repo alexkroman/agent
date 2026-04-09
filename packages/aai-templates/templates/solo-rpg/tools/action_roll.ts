@@ -11,52 +11,6 @@ import {
   updateChaosFactor,
 } from "../_shared.ts";
 
-export const description =
-  "Core mechanic. Roll 2d6 + stat (capped at 10) vs 2d10 challenge dice. Also applies consequences (health/spirit/supply/momentum changes, clock advancement) based on move type, position, and result. Call for ANY risky action.";
-
-export const parameters = {
-  type: "object",
-  properties: {
-    move: {
-      type: "string",
-      enum: [
-        "face_danger",
-        "compel",
-        "gather_information",
-        "secure_advantage",
-        "clash",
-        "strike",
-        "endure_harm",
-        "endure_stress",
-        "make_connection",
-        "test_bond",
-        "resupply",
-        "world_shaping",
-        "dialog",
-      ],
-      description: "Which move the player is making",
-    },
-    stat: {
-      type: "string",
-      enum: ["edge", "heart", "iron", "shadow", "wits"],
-      description: "Which stat to roll",
-    },
-    position: {
-      type: "string",
-      enum: ["controlled", "risky", "desperate"],
-      description: "How dangerous the situation is",
-    },
-    effect: {
-      type: "string",
-      enum: ["limited", "standard", "great"],
-      description: "What can realistically be achieved",
-    },
-    purpose: { type: "string", description: "What the character is attempting" },
-    targetNpcId: { type: "string", description: "Target NPC id for social moves" },
-  },
-  required: ["move", "stat", "position", "effect", "purpose"],
-};
-
 export default async function execute(
   args: {
     move: string;

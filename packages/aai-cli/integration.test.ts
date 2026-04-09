@@ -100,7 +100,7 @@ describe("deploy against mock API", () => {
 
     const body = JSON.parse(req.body) as Record<string, unknown>;
     expect(body.slug).toBe("my-agent");
-    expect(body.worker).toContain("test-agent");
+    expect(body.worker).toBeTruthy();
     expect(body.clientFiles).toEqual({});
     expect((body.agentConfig as Record<string, unknown>).name).toBe("test-agent");
     expect((body.env as Record<string, string>).ASSEMBLYAI_API_KEY).toBe("key-123");

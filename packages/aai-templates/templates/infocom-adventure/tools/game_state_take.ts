@@ -1,15 +1,5 @@
 import { getGameState, saveGameState } from "../_shared.ts";
 
-export const description = "Add an item to the player's inventory.";
-
-export const parameters = {
-  type: "object",
-  properties: {
-    value: { type: "string", description: "Item name to take" },
-  },
-  required: ["value"],
-};
-
 export default async function execute(
   args: { value: string },
   ctx: {

@@ -1,13 +1,3 @@
-export const description = "Mark a task as done";
-
-export const parameters = {
-  type: "object",
-  properties: {
-    id: { type: "number", description: "Task ID to complete" },
-  },
-  required: ["id"],
-};
-
 export default async function execute(
   args: { id: number },
   ctx: {

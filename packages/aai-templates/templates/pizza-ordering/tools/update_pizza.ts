@@ -1,20 +1,5 @@
 import { calculateTotal, type Pizza } from "../shared.ts";
 
-export const description =
-  "Update an existing pizza in the order. Only provided fields are changed.";
-
-export const parameters = {
-  type: "object",
-  properties: {
-    pizza_id: { type: "number" },
-    size: { type: "string", enum: ["small", "medium", "large"] },
-    crust: { type: "string", enum: ["thin", "regular", "thick", "stuffed"] },
-    toppings: { type: "array", items: { type: "string" } },
-    quantity: { type: "number" },
-  },
-  required: ["pizza_id"],
-};
-
 export default async function execute(
   args: {
     pizza_id: number;
@@ -34,7 +19,7 @@ export default async function execute(
   const idx = pizzas.findIndex((p) => p.id === args.pizza_id);
   if (idx === -1) return { error: "Pizza not found in the order." };
 
-  const pizza = { ...pizzas[idx] };
+  const pizza: Pizza = { ...pizzas[idx]! };
   if (args.size) pizza.size = args.size;
   if (args.crust) pizza.crust = args.crust;
   if (args.toppings) pizza.toppings = args.toppings;

@@ -1,15 +1,5 @@
 import { getGameState, saveGameState } from "../_shared.ts";
 
-export const description = "Add points to the player's score.";
-
-export const parameters = {
-  type: "object",
-  properties: {
-    value: { type: "number", description: "Points to add" },
-  },
-  required: ["value"],
-};
-
 export default async function execute(
   args: { value: number },
   ctx: {

@@ -9,43 +9,6 @@ import {
   saveState,
 } from "../_shared.ts";
 
-export const description =
-  "Triage an incident — confirm or override severity, type, hazards, and casualty count.";
-
-export const parameters = {
-  type: "object",
-  properties: {
-    incidentId: { type: "string", description: "The incident ID" },
-    severity: {
-      type: "string",
-      enum: ["critical", "urgent", "moderate", "minor"],
-      description: "Confirmed severity after triage",
-    },
-    type: {
-      type: "string",
-      enum: [
-        "medical",
-        "fire",
-        "hazmat",
-        "traffic",
-        "crime",
-        "natural_disaster",
-        "utility",
-        "other",
-      ],
-      description: "Confirmed incident type",
-    },
-    additionalHazards: {
-      type: "array",
-      items: { type: "string" },
-      description: "Any additional hazards identified",
-    },
-    casualtyUpdate: { type: "number", description: "Updated casualty count" },
-    notes: { type: "string", description: "Triage notes" },
-  },
-  required: ["incidentId"],
-};
-
 export default async function execute(
   args: {
     incidentId: string;

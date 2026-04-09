@@ -1,8 +1,5 @@
 import { getGameState } from "../_shared.ts";
 
-export const description =
-  "Read the current game state including inventory, current room, score, moves, flags, and recent history.";
-
 export default async function execute(
   _args: unknown,
   ctx: { kv: { get: <T>(key: string) => Promise<T | null> } },

@@ -1,5 +1,70 @@
 {
   "name": "Pizza Palace",
   "systemPrompt": { "$ref": "system-prompt.md" },
-  "greeting": "Welcome to Pizza Palace. I can help you build your perfect pizza. What would you like to order?"
+  "greeting": "Welcome to Pizza Palace. I can help you build your perfect pizza. What would you like to order?",
+  "toolSchemas": [
+    {
+      "name": "add_pizza",
+      "description": "Add a pizza to the order. Use when the customer has decided on a pizza.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "size": { "type": "string", "enum": ["small", "medium", "large"] },
+          "crust": { "type": "string", "enum": ["thin", "regular", "thick", "stuffed"] },
+          "toppings": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "List of topping names, e.g. ['pepperoni', 'mushrooms']"
+          },
+          "quantity": { "type": "number", "default": 1 }
+        },
+        "required": ["size", "crust", "toppings"]
+      }
+    },
+    {
+      "name": "place_order",
+      "description": "Place the final order. Use when the customer confirms they are done and ready to order."
+    },
+    {
+      "name": "remove_pizza",
+      "description": "Remove a pizza from the order by its ID.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pizza_id": { "type": "number", "description": "The pizza ID to remove" }
+        },
+        "required": ["pizza_id"]
+      }
+    },
+    {
+      "name": "set_customer_name",
+      "description": "Set the customer name for the order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" }
+        },
+        "required": ["name"]
+      }
+    },
+    {
+      "name": "update_pizza",
+      "description": "Update an existing pizza in the order. Only provided fields are changed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pizza_id": { "type": "number" },
+          "size": { "type": "string", "enum": ["small", "medium", "large"] },
+          "crust": { "type": "string", "enum": ["thin", "regular", "thick", "stuffed"] },
+          "toppings": { "type": "array", "items": { "type": "string" } },
+          "quantity": { "type": "number" }
+        },
+        "required": ["pizza_id"]
+      }
+    },
+    {
+      "name": "view_order",
+      "description": "View the current order summary with all pizzas and total price."
+    }
+  ]
 }

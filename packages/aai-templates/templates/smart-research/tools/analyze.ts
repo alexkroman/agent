@@ -1,17 +1,3 @@
-export const description =
-  "Analyze all gathered sources and conversation context to form a conclusion";
-
-export const parameters = {
-  type: "object",
-  properties: {
-    focus: {
-      type: "string",
-      description: "What aspect to focus the analysis on",
-    },
-  },
-  required: ["focus"],
-};
-
 export default async function execute(
   args: { focus: string },
   ctx: {

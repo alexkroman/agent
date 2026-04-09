@@ -1,5 +1,3 @@
-export const description = "Get a summary of the conversation so far";
-
 export default async function execute(
   _args: Record<string, never>,
   ctx: { messages: { role: string }[] },

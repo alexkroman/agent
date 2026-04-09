@@ -1,15 +1,5 @@
 import { getGameState, saveGameState } from "../_shared.ts";
 
-export const description = "Move the player to a new room and increment the move counter.";
-
-export const parameters = {
-  type: "object",
-  properties: {
-    value: { type: "string", description: "Room name to move to" },
-  },
-  required: ["value"],
-};
-
 export default async function execute(
   args: { value: string },
   ctx: {

@@ -1,31 +1,6 @@
 import type { KV, Resource } from "../_shared.ts";
 import { getState, now, recalculateAlertLevel, recommendResources, saveState } from "../_shared.ts";
 
-export const description =
-  "Dispatch units to an incident. Can auto-dispatch recommended resources or manually specify callsigns.";
-
-export const parameters = {
-  type: "object",
-  properties: {
-    incidentId: { type: "string", description: "The incident ID" },
-    callsigns: {
-      type: "array",
-      items: { type: "string" },
-      description: "Resource callsigns to dispatch. Use 'auto' for system-recommended resources.",
-    },
-    autoDispatch: {
-      type: "boolean",
-      description: "If true, automatically dispatch recommended resources",
-    },
-    priority: {
-      type: "string",
-      enum: ["routine", "priority", "emergency"],
-      description: "Dispatch priority — affects simulated ETA",
-    },
-  },
-  required: ["incidentId"],
-};
-
 export default async function execute(
   args: {
     incidentId: string;

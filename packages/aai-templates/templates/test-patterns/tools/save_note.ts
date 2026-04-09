@@ -1,15 +1,3 @@
-export const description = "Save a note to persistent KV storage with optional TTL";
-
-export const parameters = {
-  type: "object",
-  properties: {
-    key: { type: "string" },
-    value: { type: "string" },
-    ttl_ms: { type: "number", description: "Time-to-live in milliseconds" },
-  },
-  required: ["key", "value"],
-};
-
 export default async function execute(
   args: { key: string; value: string; ttl_ms?: number },
   ctx: {

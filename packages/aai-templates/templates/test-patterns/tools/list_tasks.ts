@@ -1,5 +1,3 @@
-export const description = "List all tasks with their status";
-
 export default async function execute(
   _args: unknown,
   ctx: {
