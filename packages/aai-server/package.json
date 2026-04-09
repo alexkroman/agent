@@ -16,6 +16,7 @@
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "check:integration": "pnpm run test:integration",
     "test:docker": "vitest run --config vitest.docker.config.ts",
+    "test:gvisor": "vitest run --config vitest.gvisor.config.ts",
     "test:load": "vitest run --config load/vitest.load.config.ts",
     "check:load": "pnpm run test:load"
   },

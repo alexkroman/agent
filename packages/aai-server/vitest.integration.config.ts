@@ -8,6 +8,7 @@ export default defineConfig({
       "orchestrator-integration.test.ts",
       "ws-integration.test.ts",
       "fake-vm-integration.test.ts",
+      "gvisor-integration.test.ts",
     ],
     testTimeout: 30_000,
     hookTimeout: 30_000,
