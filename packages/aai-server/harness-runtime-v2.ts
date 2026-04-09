@@ -3,9 +3,9 @@
  * File-per-tool RPC dispatcher for the isolate runtime (v2).
  *
  * Unlike harness-runtime.ts which takes a monolithic AgentDef, this dispatcher
- * works with individual tool and hook handler modules — one file per tool/hook.
+ * works with individual tool handler modules — one file per tool.
  * This aligns with the directory-based agent format where tools live in
- * `tools/<name>.ts` and hooks in `hooks/<name>.ts`.
+ * `tools/<name>.ts`.
  *
  * Communicates with the host via SecureExec bindings (same V8 bridge IPC as v1).
  */
@@ -20,11 +20,6 @@ export type ToolHandler = {
   parameters?: Record<string, unknown>;
 };
 
-/** A hook handler module (one file per hook). */
-export type HookHandler = {
-  default: (...args: unknown[]) => Promise<void> | void;
-};
-
 // ── RPC message types ──────────────────────────────────────────────────
 
 type ToolCallMessage = {
@@ -35,15 +30,7 @@ type ToolCallMessage = {
   messages: Message[];
 };
 
-type HookMessage = {
-  type: "hook";
-  hook: string;
-  sessionId: string;
-  text?: string;
-  error?: { message: string };
-};
-
-export type RpcMessage = ToolCallMessage | HookMessage;
+export type RpcMessage = ToolCallMessage;
 
 // ── SecureExec bindings type (injected by secure-exec as a runtime global) ──
 
@@ -67,7 +54,6 @@ declare const SecureExec: {
 
 export type DispatcherOptions = {
   tools: Record<string, ToolHandler>;
-  hooks: Record<string, HookHandler>;
   env?: Readonly<Record<string, string>>;
   kv?: Kv;
 };
@@ -81,7 +67,7 @@ type DispatchResult = { result: string; error?: true } | Record<string, never>;
 export function createDispatcher(
   opts: DispatcherOptions,
 ): (msg: RpcMessage) => Promise<DispatchResult> {
-  const { tools, hooks, env = {}, kv } = opts;
+  const { tools, env = {}, kv } = opts;
 
   // Stub KV if not provided
   const kvStore: Kv = kv ?? {
@@ -97,9 +83,6 @@ export function createDispatcher(
   return async (msg: RpcMessage): Promise<DispatchResult> => {
     if (msg.type === "tool") {
       return dispatchTool(msg, tools, env, kvStore);
-    }
-    if (msg.type === "hook") {
-      return dispatchHook(msg, hooks, env, kvStore);
     }
     return { result: JSON.stringify({ error: "Unknown message type" }), error: true };
   };
@@ -128,35 +111,6 @@ async function dispatchTool(
   return { result: JSON.stringify(result) };
 }
 
-async function dispatchHook(
-  msg: HookMessage,
-  hooks: Record<string, HookHandler>,
-  env: Readonly<Record<string, string>>,
-  kv: Kv,
-): Promise<DispatchResult> {
-  const handler = hooks[msg.hook];
-  if (!handler) {
-    // Unknown hooks are silently ignored (forward compatibility)
-    return {};
-  }
-
-  const ctx = { env, state: {}, sessionId: msg.sessionId, kv };
-
-  switch (msg.hook) {
-    case "onUserTranscript":
-      await handler.default(msg.text ?? "", ctx);
-      break;
-    case "onError":
-      await handler.default(msg.error ?? { message: "Unknown error" }, ctx);
-      break;
-    default:
-      await handler.default(ctx);
-      break;
-  }
-
-  return {};
-}
-
 // ── Entry point for SecureExec isolate ─────────────────────────────────
 
 const AAI_ENV_PREFIX = "AAI_ENV_";
@@ -165,10 +119,7 @@ const AAI_ENV_PREFIX = "AAI_ENV_";
  * Entry point for the isolate runtime. Sets up env filtering, KV bindings,
  * creates the dispatcher, and runs the pull-based RPC loop.
  */
-export function startDispatcher(
-  tools: Record<string, ToolHandler>,
-  hooks: Record<string, HookHandler>,
-): void {
+export function startDispatcher(tools: Record<string, ToolHandler>): void {
   const agentEnv: Readonly<Record<string, string>> = Object.freeze(
     Object.fromEntries(
       Object.entries(process.env)
@@ -189,7 +140,7 @@ export function startDispatcher(
     },
   };
 
-  const dispatch = createDispatcher({ tools, hooks, env: agentEnv, kv });
+  const dispatch = createDispatcher({ tools, env: agentEnv, kv });
 
   // Pull-based RPC loop: blocks on recv() until the host enqueues work
   void (async () => {

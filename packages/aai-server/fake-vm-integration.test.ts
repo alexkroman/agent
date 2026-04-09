@@ -3,7 +3,7 @@
  * Integration tests using fake-vm (no KVM required).
  *
  * Exercises the full guest harness path: bundle injection, tool execution,
- * KV proxy, hooks, and shutdown — using a Unix socket instead of stdio pipes.
+ * KV proxy, and shutdown — using a Unix socket instead of stdio pipes.
  * Runs on macOS and Linux without gVisor or KVM.
  *
  * Run: pnpm vitest run packages/aai-server/fake-vm-integration.test.ts

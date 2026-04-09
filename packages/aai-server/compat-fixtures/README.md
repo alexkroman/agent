@@ -19,5 +19,3 @@ and have confirmed all deployed agent bundles have been updated.
 
 - `IsolateConfig` — agent config returned by the `config` RPC
 - `ToolCallResponse` — tool execution results
-- `HookResponse` — lifecycle hook results
-- `TurnConfigResult` — turn config from `resolveTurnConfig` hook

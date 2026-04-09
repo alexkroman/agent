@@ -5,7 +5,7 @@
  * that communicates over a Unix domain socket instead of stdio pipes.
  *
  * The test suite connects to the socket and exercises the full integration
- * path: bundle injection, tool execution, KV proxy, hooks, and shutdown.
+ * path: bundle injection, tool execution, KV proxy, and shutdown.
  *
  * Usage:
  *   node --experimental-strip-types guest/fake-vm.ts /tmp/test.sock

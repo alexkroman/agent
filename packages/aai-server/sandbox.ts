@@ -3,29 +3,26 @@
  * Agent sandbox backed by gVisor OCI containers (Linux) or child processes
  * (macOS dev mode).
  *
- * The host runs `createRuntime()` with VM-backed `executeTool` and `hooks`
- * overrides, giving it the same session/S2S/WebSocket handling as self-hosted
- * mode without duplicating any of that logic.
+ * The host runs `createRuntime()` with VM-backed `executeTool`, giving it
+ * the same session/S2S/WebSocket handling as self-hosted mode without
+ * duplicating any of that logic.
  *
  * Communication with the guest uses NDJSON over stdio pipes,
  * mediated by the `SandboxHandle` from `sandbox-vm.ts`.
  */
 
 import path from "node:path";
-import type { AgentHookMap, AgentHooks } from "@alexkroman1/aai-core";
 import {
   type AgentRuntime,
   createRuntime,
   type ExecuteTool,
   resolveAllBuiltins,
 } from "@alexkroman1/aai-core/runtime";
-import { createHooks } from "hookable";
 import type { Storage } from "unstorage";
 import { agentKvPrefix } from "./constants.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
-import { TurnConfigResultSchema } from "./rpc-schemas.ts";
 import { type AgentMap, isAtCapacity } from "./sandbox-slots.ts";
-import { createSandboxVm, type SandboxHandle } from "./sandbox-vm.ts";
+import { createSandboxVm } from "./sandbox-vm.ts";
 import { ssrfSafeFetch } from "./ssrf.ts";
 import type { BundleStore } from "./store-types.ts";
 
@@ -53,50 +50,6 @@ export type SandboxOptions = {
 };
 
 export type Sandbox = AgentRuntime;
-
-// ── Hook invoker ────────────────────────────────────────────────────────
-
-/**
- * Build a VM-backed hook invoker. Only hooks the agent actually defines
- * are registered, avoiding unnecessary VM calls.
- */
-function buildHookInvoker(handle: SandboxHandle, hookFlags: IsolateConfig["hooks"]): AgentHooks {
-  const rpc = async (hook: string, extra: Record<string, unknown> = {}): Promise<unknown> => {
-    const response = await handle.conn.sendRequest<{ result?: unknown }>("hook/invoke", {
-      hook,
-      ...extra,
-    });
-    return response?.result;
-  };
-
-  const hooks = createHooks<AgentHookMap>();
-  if (hookFlags.onConnect) {
-    hooks.hook("connect", async (sessionId) => {
-      await rpc("onConnect", { sessionId });
-    });
-  }
-  if (hookFlags.onDisconnect) {
-    hooks.hook("disconnect", async (sessionId) => {
-      await rpc("onDisconnect", { sessionId });
-    });
-  }
-  if (hookFlags.onUserTranscript) {
-    hooks.hook("userTranscript", async (sessionId, text) => {
-      await rpc("onUserTranscript", { sessionId, text });
-    });
-  }
-  if (hookFlags.maxStepsIsFn) {
-    hooks.hook("resolveTurnConfig", (async (sessionId: string) => {
-      const parsed = TurnConfigResultSchema.parse(await rpc("resolveTurnConfig", { sessionId }));
-      if (parsed == null) return null;
-      const config: { maxSteps?: number } = {};
-      if (parsed.maxSteps != null) config.maxSteps = parsed.maxSteps;
-      return config;
-      // biome-ignore lint/suspicious/noExplicitAny: hookable void-return constraint requires cast
-    }) as any);
-  }
-  return hooks;
-}
 
 // ── Public API ──────────────────────────────────────────────────────────
 
@@ -133,7 +86,7 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
     harnessPath,
   });
 
-  // ── Build tool executor + hooks from sandbox handle ──────────────
+  // ── Build tool executor from sandbox handle ─────────────────────
   const executeTool: ExecuteTool = async (name, args, sessionId, messages) => {
     const response = await sandboxHandle.conn.sendRequest<{ result?: string }>("tool/execute", {
       name,
@@ -143,8 +96,6 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
     });
     return (response?.result ?? "") as string;
   };
-
-  const hooks = buildHookInvoker(sandboxHandle, config.hooks);
 
   // ── Assemble runtime ─────────────────────────────────────────────
   const builtins = resolveAllBuiltins(config.builtinTools ?? []);
@@ -166,7 +117,6 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
     env: { ...agentEnv, ASSEMBLYAI_API_KEY: apiKey },
     fetch: safeFetch,
     executeTool,
-    hooks,
     toolSchemas: [...config.toolSchemas, ...builtins.schemas],
     toolGuidance: builtins.guidance,
   });
@@ -174,7 +124,6 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
   console.info("Sandbox initialized", { slug, agent: config.name });
 
   async function shutdownSandbox(): Promise<void> {
-    hooks.removeAllHooks();
     await sandboxHandle.shutdown();
     await agentRuntime.shutdown();
   }

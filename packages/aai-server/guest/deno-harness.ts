@@ -8,7 +8,7 @@
  * NDJSON responses to stdout. Designed to run inside a gVisor sandbox.
  *
  * Protocol overview:
- * - Host -> guest: bundle/load, tool/execute, hook/invoke, shutdown
+ * - Host -> guest: bundle/load, tool/execute, shutdown
  * - Guest -> host: kv/get, kv/set, kv/del (proxied KV requests)
  *
  * ZERO workspace imports -- this file is entirely self-contained.
@@ -49,21 +49,18 @@ type KvInterface = {
   del(key: string): Promise<void>;
 };
 
-// Minimal Kv-shaped adapter passed to tool/hook contexts
+// Minimal Kv-shaped adapter passed to tool contexts
 type KvAdapter = {
   get<T = unknown>(key: string): Promise<T | null>;
   set(key: string, value: unknown, options?: { expireIn?: number }): Promise<void>;
   delete(key: string | string[]): Promise<void>;
 };
 
-type HookContext = {
+type ToolContext = {
   env: Readonly<Record<string, string>>;
   state: Record<string, unknown>;
   kv: KvAdapter;
   sessionId: string;
-};
-
-type ToolContext = HookContext & {
   messages: readonly Message[];
 };
 
@@ -79,11 +76,7 @@ type AgentDef = {
   greeting: string;
   tools: Record<string, ToolDef>;
   state?: () => Record<string, unknown>;
-  onConnect?: (ctx: HookContext) => void | Promise<void>;
-  onDisconnect?: (ctx: HookContext) => void | Promise<void>;
-  onError?: (error: Error, ctx?: HookContext) => void;
-  onUserTranscript?: (text: string, ctx: HookContext) => void | Promise<void>;
-  maxSteps?: number | ((ctx: HookContext) => number);
+  maxSteps?: number;
 };
 
 // ---- JSON-RPC 2.0 message shapes --------------------------------------------
@@ -168,7 +161,7 @@ const kv: KvInterface = {
   },
 };
 
-// Adapt KvInterface to the Kv shape expected by ToolContext / HookContext
+// Adapt KvInterface to the Kv shape expected by ToolContext
 function makeKvAdapter(): KvAdapter {
   return {
     get: <T = unknown>(key: string) => kv.get(key) as Promise<T | null>,
@@ -238,7 +231,6 @@ function createSessionStateMap(initState?: () => Record<string, unknown>) {
 // ---- Tool execution ---------------------------------------------------------
 
 const TOOL_TIMEOUT_MS = 30_000;
-const HOOK_TIMEOUT_MS = 5000;
 
 type ToolCallRequest = {
   name: string;
@@ -300,106 +292,6 @@ async function executeTool(
   } finally {
     clearTimeout(timeoutId);
   }
-}
-
-// ---- Hook invocation --------------------------------------------------------
-
-type HookRequest = {
-  hook: string;
-  sessionId: string;
-  text?: string;
-  error?: { message: string };
-};
-
-type HookResponse = {
-  state: Record<string, unknown>;
-  result?: unknown;
-};
-
-async function withTimeout<T>(promise: Promise<T> | T, ms: number, label: string): Promise<T> {
-  let timeoutId: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timeoutId = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
-  });
-  try {
-    return await Promise.race([Promise.resolve(promise), timeout]);
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}
-
-/** Resolve the dynamic maxSteps value for the resolveTurnConfig hook. */
-async function resolveMaxSteps(
-  agent: AgentDef,
-  ctx: HookContext,
-): Promise<{ maxSteps: number } | null> {
-  if (typeof agent.maxSteps !== "function") return null;
-  const maxSteps = await withTimeout(
-    Promise.resolve(agent.maxSteps(ctx)),
-    HOOK_TIMEOUT_MS,
-    "resolveTurnConfig",
-  );
-  return maxSteps !== undefined ? { maxSteps } : null;
-}
-
-async function invokeHook(
-  agent: AgentDef,
-  req: HookRequest,
-  sessionState: ReturnType<typeof createSessionStateMap>,
-): Promise<HookResponse> {
-  const kvAdapter = makeKvAdapter();
-  const ctx: HookContext = {
-    env: getAgentEnv(),
-    state: sessionState.get(req.sessionId),
-    kv: kvAdapter,
-    sessionId: req.sessionId,
-  };
-
-  let result: unknown;
-
-  switch (req.hook) {
-    case "onConnect":
-      if (agent.onConnect) {
-        await withTimeout(agent.onConnect(ctx), HOOK_TIMEOUT_MS, "onConnect");
-      }
-      break;
-
-    case "onDisconnect":
-      if (agent.onDisconnect) {
-        await withTimeout(agent.onDisconnect(ctx), HOOK_TIMEOUT_MS, "onDisconnect");
-      }
-      sessionState.delete(req.sessionId);
-      break;
-
-    case "onUserTranscript":
-      if (agent.onUserTranscript) {
-        await withTimeout(
-          agent.onUserTranscript(req.text ?? "", ctx),
-          HOOK_TIMEOUT_MS,
-          "onUserTranscript",
-        );
-      }
-      break;
-
-    case "onError":
-      if (agent.onError) {
-        result = await withTimeout(
-          Promise.resolve(agent.onError(new Error(req.error?.message ?? "Unknown error"), ctx)),
-          HOOK_TIMEOUT_MS,
-          "onError",
-        );
-      }
-      break;
-
-    case "resolveTurnConfig":
-      result = await resolveMaxSteps(agent, ctx);
-      break;
-
-    default:
-      break;
-  }
-
-  return { state: sessionState.get(req.sessionId), result };
 }
 
 // ---- bundle/load ------------------------------------------------------------
@@ -464,20 +356,6 @@ async function handleRequest(req: JsonRpcRequest, state: HarnessState): Promise<
         state.sessionState,
       );
       sendResponse(req.id, toolResult);
-      break;
-    }
-
-    case "hook/invoke": {
-      if (!(state.agent && state.sessionState)) {
-        sendError(req.id, -32_000, "Agent not loaded");
-        break;
-      }
-      const hookResult = await invokeHook(
-        state.agent,
-        req.params as HookRequest,
-        state.sessionState,
-      );
-      sendResponse(req.id, hookResult);
       break;
     }
 

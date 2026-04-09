@@ -1,10 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  createDispatcher,
-  type HookHandler,
-  type RpcMessage,
-  type ToolHandler,
-} from "./harness-runtime-v2.ts";
+import { createDispatcher, type RpcMessage, type ToolHandler } from "./harness-runtime-v2.ts";
 
 describe("createDispatcher", () => {
   const stubKv = {
@@ -17,13 +12,9 @@ describe("createDispatcher", () => {
     }),
   };
 
-  function makeDispatcher(
-    tools: Record<string, ToolHandler> = {},
-    hooks: Record<string, HookHandler> = {},
-  ) {
+  function makeDispatcher(tools: Record<string, ToolHandler> = {}) {
     return createDispatcher({
       tools,
-      hooks,
       env: { API_KEY: "test-key" },
       kv: stubKv,
     });
@@ -76,99 +67,6 @@ describe("createDispatcher", () => {
       result: JSON.stringify({ error: "Unknown tool: nonexistent" }),
       error: true,
     });
-  });
-
-  it("dispatches hook to correct handler", async () => {
-    const onConnect = vi.fn(async () => {
-      /* noop */
-    });
-    const hooks: Record<string, HookHandler> = {
-      onConnect: { default: onConnect },
-    };
-    const dispatch = makeDispatcher({}, hooks);
-
-    const msg: RpcMessage = {
-      type: "hook",
-      hook: "onConnect",
-      sessionId: "s1",
-    };
-
-    const result = await dispatch(msg);
-    expect(result).toEqual({});
-    expect(onConnect).toHaveBeenCalledOnce();
-    expect(onConnect).toHaveBeenCalledWith(
-      expect.objectContaining({
-        env: { API_KEY: "test-key" },
-        sessionId: "s1",
-        kv: stubKv,
-      }),
-    );
-  });
-
-  it("dispatches onUserTranscript with text arg", async () => {
-    const onUserTranscript = vi.fn(async () => {
-      /* noop */
-    });
-    const hooks: Record<string, HookHandler> = {
-      onUserTranscript: { default: onUserTranscript },
-    };
-    const dispatch = makeDispatcher({}, hooks);
-
-    const msg: RpcMessage = {
-      type: "hook",
-      hook: "onUserTranscript",
-      sessionId: "s1",
-      text: "hello world",
-    };
-
-    const result = await dispatch(msg);
-    expect(result).toEqual({});
-    expect(onUserTranscript).toHaveBeenCalledOnce();
-    expect(onUserTranscript).toHaveBeenCalledWith(
-      "hello world",
-      expect.objectContaining({
-        env: { API_KEY: "test-key" },
-        sessionId: "s1",
-      }),
-    );
-  });
-
-  it("dispatches onError with error arg", async () => {
-    const onError = vi.fn(async () => {
-      /* noop */
-    });
-    const hooks: Record<string, HookHandler> = {
-      onError: { default: onError },
-    };
-    const dispatch = makeDispatcher({}, hooks);
-
-    const msg: RpcMessage = {
-      type: "hook",
-      hook: "onError",
-      sessionId: "s2",
-      error: { message: "something broke" },
-    };
-
-    const result = await dispatch(msg);
-    expect(result).toEqual({});
-    expect(onError).toHaveBeenCalledOnce();
-    expect(onError).toHaveBeenCalledWith(
-      { message: "something broke" },
-      expect.objectContaining({ sessionId: "s2" }),
-    );
-  });
-
-  it("silently ignores unknown hooks", async () => {
-    const dispatch = makeDispatcher();
-
-    const msg: RpcMessage = {
-      type: "hook",
-      hook: "onSomeFutureHook",
-      sessionId: "s1",
-    };
-
-    const result = await dispatch(msg);
-    expect(result).toEqual({});
   });
 
   it("passes KV store to tool context", async () => {

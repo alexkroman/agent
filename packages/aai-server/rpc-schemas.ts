@@ -11,14 +11,6 @@ import { z } from "zod";
 
 // ── Isolate config ────────────────────────────────────────────────────────
 
-export const HooksSchema = z.object({
-  onConnect: z.boolean(),
-  onDisconnect: z.boolean(),
-  onError: z.boolean(),
-  onUserTranscript: z.boolean(),
-  maxStepsIsFn: z.boolean(),
-});
-
 export const ToolSchemaSchema = z.object({
   name: z.string(),
   description: z.string(),
@@ -34,13 +26,6 @@ export const IsolateConfigSchema = z.object({
   toolChoice: z.enum(["auto", "required"]).optional(),
   builtinTools: z.array(z.string()).optional(),
   toolSchemas: z.array(ToolSchemaSchema).default([]),
-  hooks: HooksSchema.default({
-    onConnect: false,
-    onDisconnect: false,
-    onError: false,
-    onUserTranscript: false,
-    maxStepsIsFn: false,
-  }),
 });
 
 export type IsolateConfig = z.infer<typeof IsolateConfigSchema>;
@@ -52,18 +37,7 @@ export const ToolCallResponseSchema = z.object({
   state: z.record(z.string(), z.unknown()),
 });
 
-export const HookResponseSchema = z.object({
-  state: z.record(z.string(), z.unknown()),
-  result: z.unknown().optional(),
-});
-
-export const TurnConfigResultSchema = z
-  .object({ maxSteps: z.number().int().positive().optional() })
-  .nullable();
-
 export type ToolCallResponse = z.infer<typeof ToolCallResponseSchema>;
-export type HookResponse = z.infer<typeof HookResponseSchema>;
-export type TurnConfigResult = z.infer<typeof TurnConfigResultSchema>;
 
 // -- IPC message types (host <-> guest over jsonrpc) --------------------
 
@@ -123,11 +97,4 @@ export type ToolCallRequest = {
   args: Record<string, unknown>;
   sessionId: string;
   messages: { role: "user" | "assistant" | "tool"; content: string }[];
-};
-
-export type HookRequest = {
-  hook: string;
-  sessionId: string;
-  text?: string;
-  error?: { message: string };
 };

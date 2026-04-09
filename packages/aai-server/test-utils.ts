@@ -128,13 +128,6 @@ export const TEST_AGENT_CONFIG = {
   systemPrompt: "Test",
   greeting: "",
   toolSchemas: [],
-  hooks: {
-    onConnect: false,
-    onDisconnect: false,
-    onError: false,
-    onUserTranscript: false,
-    maxStepsIsFn: false,
-  },
 };
 
 export function deployBody(overrides?: Record<string, unknown>): string {
