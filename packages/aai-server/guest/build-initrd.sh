@@ -6,12 +6,14 @@
 #
 # The Node.js binary (NODE_BINARY env var or /usr/local/bin/node) and its
 # dynamic libraries are copied into the initrd. On Alpine, this produces
-# a musl-linked guest. The initrd also includes busybox for /bin/sh.
+# a musl-linked guest. The initrd also includes busybox for /bin/sh and
+# socat for bridging AF_VSOCK to node's stdio.
 #
 # Requirements:
 #   - cpio, gzip
 #   - Node.js binary (musl-linked, e.g. from Alpine)
 #   - busybox (optional but recommended for /init shell script)
+#   - socat (required for vsock ↔ stdio bridge in Firecracker guests)
 
 set -eu
 
@@ -71,6 +73,15 @@ else
   echo "WARNING: busybox not found — /init script needs /bin/sh" >&2
 fi
 
+# Copy socat (provides vsock ↔ stdio bridge)
+if command -v socat >/dev/null 2>&1; then
+  echo "==> Copying socat..."
+  cp "$(command -v socat)" "${INITRD_ROOT}/bin/socat"
+  chmod 755 "${INITRD_ROOT}/bin/socat"
+else
+  echo "WARNING: socat not found — vsock bridge will not work in Firecracker" >&2
+fi
+
 # Copy dynamic libraries needed by Node.js (musl from Alpine)
 echo "==> Copying shared libraries..."
 for lib in /lib/ld-musl-* /lib/libz.* /usr/lib/libstdc++.* /usr/lib/libgcc_s.*; do
@@ -83,11 +94,15 @@ for lib in /lib/ld-musl-* /lib/libz.* /usr/lib/libstdc++.* /usr/lib/libgcc_s.*; 
 done
 
 # Create /init script — the kernel executes this as PID 1.
+# Uses socat to listen on AF_VSOCK port 1024 and bridge the accepted
+# connection to node's stdin/stdout. The host connects to the vsock UDS,
+# sends "CONNECT 1024\n", Firecracker forwards to the guest, and socat
+# accepts the connection — giving node a bidirectional byte stream.
 cat > "${INITRD_ROOT}/init" << 'INIT_EOF'
 #!/bin/sh
 /bin/mount -t proc proc /proc 2>/dev/null || true
 /bin/mount -t devtmpfs devtmpfs /dev 2>/dev/null || true
-exec /bin/node /app/harness.mjs
+exec /bin/socat VSOCK-LISTEN:1024,reuseaddr EXEC:"/bin/node /app/harness.mjs"
 INIT_EOF
 chmod 755 "${INITRD_ROOT}/init"
 

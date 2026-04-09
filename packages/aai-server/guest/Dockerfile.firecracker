@@ -41,9 +41,9 @@ FROM node:22-alpine AS initrd-builder
 
 WORKDIR /app
 
-# Install pnpm and initrd build tools
+# Install pnpm and initrd build tools (socat bridges vsock ↔ node stdio)
 RUN corepack enable && corepack prepare pnpm@10.29.3 --activate \
-    && apk add --no-cache cpio gzip
+    && apk add --no-cache cpio gzip socat
 
 # Copy workspace config and lockfile first (layer cache)
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./

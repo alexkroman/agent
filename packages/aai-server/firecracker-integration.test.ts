@@ -182,11 +182,49 @@ async function coldBootVm(opts: { guestCid: number; vsockUdsPath: string }): Pro
  * Retries for up to `timeout` ms since the guest may take time to listen.
  */
 /**
+ * Performs the Firecracker vsock CONNECT handshake on an already-connected socket.
+ * Sends `CONNECT <port>\n` and resolves when `OK <port>\n` is received.
+ * Rejects if the handshake response is not OK.
+ */
+function performVsockHandshake(socket: net.Socket, port: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    socket.write(`CONNECT ${port}\n`);
+
+    let buf = "";
+    function onData(chunk: Buffer) {
+      buf += chunk.toString();
+      const newlineIdx = buf.indexOf("\n");
+      if (newlineIdx === -1) return; // Wait for full line
+
+      const line = buf.slice(0, newlineIdx).trim();
+      socket.removeListener("data", onData);
+
+      if (line === `OK ${port}`) {
+        // Push leftover data back so the RPC channel sees it
+        const leftover = buf.slice(newlineIdx + 1);
+        if (leftover.length > 0) {
+          socket.unshift(Buffer.from(leftover));
+        }
+        resolve();
+      } else {
+        reject(new Error(`Vsock handshake failed: ${line}`));
+      }
+    }
+
+    socket.on("data", onData);
+  });
+}
+
+/**
  * Connects to the guest over vsock UDS and creates an RPC channel.
  * Retries for up to `timeout` ms since the guest may take time to listen.
  *
  * NOTE: Firecracker creates the vsock UDS at `{uds_path}_{guest_cid}`,
  * not at `{uds_path}`. The caller passes the base path and guest CID.
+ *
+ * After connecting to the UDS, sends the Firecracker vsock CONNECT
+ * handshake: `CONNECT <port>\n`. Waits for `OK <port>\n` before
+ * creating the RPC channel on the now-bridged byte stream.
  */
 async function connectVsock(
   vsockUdsPath: string,
@@ -195,6 +233,7 @@ async function connectVsock(
 ): Promise<{ socket: net.Socket; channel: RpcChannel }> {
   // Firecracker appends _{cid} to the configured uds_path
   const actualPath = `${vsockUdsPath}_${guestCid}`;
+  const VSOCK_PORT = 1024;
   const deadline = Date.now() + timeout;
 
   return new Promise((resolve, reject) => {
@@ -205,8 +244,16 @@ async function connectVsock(
       }
 
       const socket = net.connect(actualPath, () => {
-        const channel = createRpcChannel(socket as unknown as Duplex);
-        resolve({ socket, channel });
+        performVsockHandshake(socket, VSOCK_PORT)
+          .then(() => {
+            const channel = createRpcChannel(socket as unknown as Duplex);
+            resolve({ socket, channel });
+          })
+          .catch(() => {
+            socket.destroy();
+            // Retry — guest may not be listening on the vsock port yet
+            setTimeout(tryConnect, 100);
+          });
       });
 
       socket.on("error", () => {

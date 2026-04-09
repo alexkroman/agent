@@ -16,6 +16,45 @@ import { VM_MEMORY_MIB, VM_VCPU_COUNT } from "./constants.ts";
 import { type FirecrackerVm, isFirecrackerAvailable, startVm } from "./firecracker.ts";
 import { createRpcChannel, type RpcChannel } from "./vsock.ts";
 
+// ── Vsock handshake ─────────────────────────────────────────────────────────
+
+/** The vsock port the guest harness listens on (via socat VSOCK-LISTEN). */
+const VSOCK_PORT = 1024;
+
+/**
+ * Performs the Firecracker vsock CONNECT handshake on an already-connected socket.
+ * Sends `CONNECT <port>\n` and resolves when `OK <port>\n` is received.
+ * Rejects if the handshake response is not OK.
+ */
+function performVsockHandshake(socket: net.Socket, port: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    socket.write(`CONNECT ${port}\n`);
+
+    let buf = "";
+    function onData(chunk: Buffer) {
+      buf += chunk.toString();
+      const newlineIdx = buf.indexOf("\n");
+      if (newlineIdx === -1) return; // Wait for full line
+
+      const line = buf.slice(0, newlineIdx).trim();
+      socket.removeListener("data", onData);
+
+      if (line === `OK ${port}`) {
+        // Push leftover data back so the RPC channel sees it
+        const leftover = buf.slice(newlineIdx + 1);
+        if (leftover.length > 0) {
+          socket.unshift(Buffer.from(leftover));
+        }
+        resolve();
+      } else {
+        reject(new Error(`Vsock CONNECT handshake failed: ${line}`));
+      }
+    }
+
+    socket.on("data", onData);
+  });
+}
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export type SandboxHandle = {
@@ -219,9 +258,16 @@ export async function createFirecrackerSandbox(opts: SandboxVmOptions): Promise<
   // Connect to the guest via the vsock UDS path.
   // Firecracker creates the socket at {uds_path}_{guest_cid}.
   const actualVsockPath = `${vsockUdsPath}_${guestCid}`;
+
   const socket: net.Socket = await new Promise<net.Socket>((resolve, reject) => {
     const conn = net.connect(actualVsockPath, () => {
-      resolve(conn);
+      // Perform Firecracker vsock CONNECT handshake
+      performVsockHandshake(conn, VSOCK_PORT)
+        .then(() => resolve(conn))
+        .catch((err) => {
+          conn.destroy();
+          reject(err);
+        });
     });
     conn.on("error", (err) => {
       reject(new Error(`Failed to connect to guest vsock: ${err.message}`));
