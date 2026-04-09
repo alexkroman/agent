@@ -5,7 +5,12 @@
   "bin": {
     "aai": "dist/cli.mjs"
   },
-  "exports": {},
+  "exports": {
+    "./types": {
+      "@dev/source": "./types.ts",
+      "import": "./dist/types.mjs"
+    }
+  },
   "files": [
     "dist"
   ],
