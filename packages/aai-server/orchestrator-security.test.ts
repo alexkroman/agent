@@ -218,21 +218,19 @@ describe("platform credential separation", () => {
     expect(agentEnv).toEqual({ USER_SECRET: "user-value", ANOTHER_SECRET: "another-value" });
   });
 
-  test("reserved platform key cannot be overwritten via secrets API", async () => {
+  test("ASSEMBLYAI_API_KEY can be overwritten via secrets API", async () => {
     const { fetch } = await createTestOrchestrator();
     await deployAgent(fetch, "my-agent", "key1");
 
     const res = await fetch("/my-agent/secret", {
       method: "PUT",
       headers: authHeaders(),
-      body: JSON.stringify({ ASSEMBLYAI_API_KEY: "attacker-key" }),
+      body: JSON.stringify({ ASSEMBLYAI_API_KEY: "new-key" }),
     });
-    expect(res.status).toBe(400);
-    const body = (await res.json()) as { error: string };
-    expect(body.error).toContain("reserved");
+    expect(res.status).toBe(200);
   });
 
-  test("reserved platform key cannot be deleted via secrets API", async () => {
+  test("ASSEMBLYAI_API_KEY can be deleted via secrets API", async () => {
     const { fetch } = await createTestOrchestrator();
     await deployAgent(fetch, "my-agent", "key1");
 
@@ -240,9 +238,7 @@ describe("platform credential separation", () => {
       method: "DELETE",
       headers: { Authorization: "Bearer key1" },
     });
-    expect(res.status).toBe(400);
-    const body = (await res.json()) as { error: string };
-    expect(body.error).toContain("reserved");
+    expect(res.status).toBe(200);
   });
 });
 

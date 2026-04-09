@@ -25,9 +25,7 @@ export function createMockKv(): Kv {
   };
 }
 
-export const VALID_ENV = {
-  ASSEMBLYAI_API_KEY: "test-key",
-};
+export const VALID_ENV: Record<string, string> = {};
 
 /** Sync in-memory BundleStore for tests. No encryption — stores env as plain JSON. */
 export function createTestStore(): BundleStore {
