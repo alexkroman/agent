@@ -8,7 +8,7 @@
 #   ./scripts/docker-test.sh pnpm check:local # run check:local
 #   ./scripts/docker-test.sh pnpm vitest run packages/aai-server/sandbox-vm.test.ts
 
-FROM node:22-slim
+FROM node:24-slim
 
 WORKDIR /app
 

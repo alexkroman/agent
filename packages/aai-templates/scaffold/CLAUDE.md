@@ -1130,7 +1130,7 @@ const server = createServer({ runtime, name: agent.name });
 await server.listen(3000);
 ```
 
-Run with `node server.ts` (Node >=22.6 strips types natively) or bundle
+Run with `node server.ts` (Node >=24 strips types natively) or bundle
 with your preferred tool. The server handles WebSocket connections, STT/TTS,
 and the agentic loop. Set `ASSEMBLYAI_API_KEY` as an environment variable.
 

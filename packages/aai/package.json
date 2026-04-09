@@ -96,7 +96,7 @@
     "tsdown": "^0.21.7"
   },
   "engines": {
-    "node": ">=22.6"
+    "node": ">=24"
   },
   "repository": {
     "type": "git",
