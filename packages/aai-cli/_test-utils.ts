@@ -43,7 +43,7 @@ export function silenced<T>(fn: (dir: string) => Promise<T>) {
 }
 
 /** List template names from a templates/ subdirectory. */
-export async function fakeListTemplates(
+async function fakeListTemplates(
   rootDir: string,
 ): Promise<{ name: string; description: string }[]> {
   const dir = path.join(rootDir, "templates");

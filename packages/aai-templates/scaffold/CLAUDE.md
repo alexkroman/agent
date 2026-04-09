@@ -6,10 +6,9 @@ You are helping a user build a voice agent using the **aai** framework.
 
 1. **Understand** -- Restate what the user wants to build. If the request is
    vague, ask a clarifying question before writing code.
-2. **Check existing work** -- Look for a template or built-in tool that already
-   does what the user needs before writing custom code.
-3. **Start minimal** -- Scaffold from the closest template, then layer on
-   customizations. Don't over-engineer the first version.
+2. **Check existing work** -- Look for a built-in tool that already does what
+   the user needs before writing custom code.
+3. **Start minimal** -- Don't over-engineer the first version.
 4. **Verify** -- After every change, run `aai build` to validate the bundle and
    catch errors. Fix all errors before presenting work to the user.
 5. **Iterate** -- Make small, focused changes. Verify each change works before
@@ -34,8 +33,7 @@ You are helping a user build a voice agent using the **aai** framework.
 ## CLI commands
 
 ```sh
-aai init                 # Scaffold a new agent (uses simple template)
-aai init -t <template>   # Scaffold from a specific template
+aai init                 # Scaffold a new agent
 aai dev                  # Start local dev server
 aai test                 # Run agent tests (vitest)
 aai build                # Run tests, then bundle and validate (skip tests with --skipTests)
@@ -46,52 +44,6 @@ aai secret put <NAME>    # Set a secret on the server (prompts for value)
 aai secret delete <NAME> # Remove a secret
 aai secret list          # List secret names
 ```
-
-## Templates
-
-Before writing an agent from scratch, choose the closest template and scaffold
-with `aai init -t <template_name>`.
-
-**Starter / utility:**
-
-| Template          | Description                                                                        |
-| ----------------- | ---------------------------------------------------------------------------------- |
-| `simple`          | Minimal starter with web_search, visit_webpage, fetch_json, run_code. **Default.** |
-| `embedded-assets` | FAQ bot using embedded JSON knowledge (no web search)                              |
-| `test-patterns`   | Demonstrates every testable agent pattern (tools, hooks, state)                    |
-
-**Research / knowledge:**
-
-| Template         | Description                                                          |
-| ---------------- | -------------------------------------------------------------------- |
-| `web-researcher` | Research assistant -- web search + page visits for detailed answers  |
-| `smart-research` | Phase-based research (gather, analyze, respond) with dynamic tools   |
-| `support`        | Support agent for AssemblyAI docs                                    |
-
-**Tools / computation:**
-
-| Template           | Description                                                |
-| ------------------ | ---------------------------------------------------------- |
-| `code-interpreter` | Writes and runs JavaScript for math, calculations, data    |
-| `math-buddy`       | Calculations, unit conversions, dice rolls via run_code    |
-
-**Domain-specific:**
-
-| Template           | Description                                                   |
-| ------------------ | ------------------------------------------------------------- |
-| `health-assistant` | Medication lookup, drug interactions, BMI, symptom guidance   |
-| `personal-finance` | Currency conversion, crypto prices, loan calculations         |
-| `travel-concierge` | Trip planning, weather, flights, hotels, currency conversion  |
-
-**Custom UI examples** (include `client.tsx`):
-
-| Template            | Description                                                |
-| ------------------- | ---------------------------------------------------------- |
-| `night-owl`         | Movie/music/book recs by mood, sleep calculator            |
-| `pizza-ordering`    | Pizza order-taker with dynamic cart sidebar                |
-| `dispatch-center`   | 911 dispatch with incident triage and resource assignment  |
-| `infocom-adventure` | Zork-style text adventure with state, puzzles, inventory   |
-| `solo-rpg`          | Solo dark-fantasy RPG with dice, oaths, combat, save/load  |
 
 ## Directory structure
 
