@@ -5,20 +5,7 @@
   "bin": {
     "aai": "dist/cli.mjs"
   },
-  "exports": {
-    "./testing": {
-      "@dev/source": "./testing.ts",
-      "import": "./dist/testing.mjs"
-    },
-    "./testing/matchers": {
-      "@dev/source": "./matchers.ts",
-      "import": "./dist/matchers.mjs"
-    },
-    "./types": {
-      "@dev/source": "./types.ts",
-      "import": "./dist/types.mjs"
-    }
-  },
+  "exports": {},
   "files": [
     "dist"
   ],

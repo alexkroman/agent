@@ -77,10 +77,7 @@ function safeName(name: string): string {
  * into a single ESM worker string + agentConfig.
  */
 export async function buildAgentBundle(cwd: string): Promise<DirectoryBundleOutput> {
-  const { scanAgentDirectory } = await import("./_scanner.ts");
   const { log } = await import("./_ui.ts");
-
-  const manifest = await scanAgentDirectory(cwd);
 
   log.step(`Bundling ${manifest.name}`);
 

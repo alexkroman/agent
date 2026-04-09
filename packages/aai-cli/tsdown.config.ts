@@ -1,7 +1,7 @@
 import { defineConfig } from "tsdown";
 
 export default defineConfig({
-  entry: ["cli.ts", "testing.ts", "matchers.ts", "types.ts"],
+  entry: ["cli.ts"],
   format: "esm",
   platform: "node",
   target: "node22",

@@ -187,7 +187,6 @@ export type DevServerOptions = {
 export async function startDevServer(opts: DevServerOptions): Promise<() => Promise<void>> {
   const { cwd, port } = opts;
 
-  const { scanAgentDirectory } = await import("./_scanner.ts");
   const { createRuntime, createServer } = await import("@alexkroman1/aai-core/runtime");
 
   // Check if client.tsx exists for Vite HMR
