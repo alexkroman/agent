@@ -17,6 +17,7 @@ export * from "./_utils.ts";
 export * from "./constants.ts";
 export * from "./hooks.ts";
 export * from "./kv.ts";
+export * from "./manifest.ts";
 export * from "./protocol.ts";
 export * from "./system-prompt.ts";
 export * from "./types.ts";
