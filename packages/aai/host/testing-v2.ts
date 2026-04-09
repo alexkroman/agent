@@ -197,10 +197,9 @@ export class DirTestHarness {
     if (transcriptHook) {
       if (transcriptHook.default.length >= 2) {
         // Hook expects (text, ctx)
-        await (transcriptHook.default as (text: string, ctx: HookCtx) => void | Promise<void>)(
-          text,
-          this._makeHookCtx(),
-        );
+        await (
+          transcriptHook.default as unknown as (text: string, ctx: HookCtx) => void | Promise<void>
+        )(text, this._makeHookCtx());
       } else {
         // Hook expects (ctx) only
         await transcriptHook.default(this._makeHookCtx());
