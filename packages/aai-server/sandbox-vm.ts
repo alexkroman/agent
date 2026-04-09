@@ -135,11 +135,27 @@ export async function createGvisorSandboxHandle(opts: SandboxVmOptions): Promise
 
 /**
  * Creates a sandbox using the best available backend:
- * - gVisor OCI container on Linux when available
- * - Child process (dev mode) otherwise
+ * - gVisor OCI container on Linux (production)
+ * - Child process on macOS (dev only — no isolation)
+ *
+ * In production (NODE_ENV=production), gVisor is REQUIRED. The server
+ * will refuse to start without it to prevent running untrusted agent
+ * code without sandbox isolation.
  */
 export async function createSandboxVm(opts: SandboxVmOptions): Promise<SandboxHandle> {
   if (isGvisorAvailable()) return createGvisorSandboxHandle(opts);
+
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "gVisor (runsc) is required in production but not found on PATH. " +
+        "Install runsc: https://gvisor.dev/docs/user_guide/install/ — " +
+        "Running untrusted agent code without sandbox isolation is not allowed.",
+    );
+  }
+
+  console.warn(
+    "[sandbox] WARNING: gVisor not available. Running without sandbox isolation (dev mode only).",
+  );
   return createDevSandbox(opts);
 }
 
