@@ -34,7 +34,7 @@ export function extractConstExport(source: string, exportName: string): unknown 
 
   // String literal: "..." or '...'
   const strMatch = afterEquals.match(/^("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')/);
-  if (strMatch && strMatch[1]) {
+  if (strMatch?.[1]) {
     const raw = strMatch[1];
     // Normalize single-quoted strings to double-quoted for JSON.parse
     if (raw.startsWith("'")) {
