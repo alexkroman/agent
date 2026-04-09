@@ -58,3 +58,16 @@ export function ok<T>(data: T): CommandResult<T> {
 export function fail<T>(code: string, error: string, hint?: string): CommandResult<T> {
   return hint ? { ok: false, error, code, hint } : { ok: false, error, code };
 }
+
+/** Typed CLI error that carries a structured error code and optional hint. */
+export class CliError extends Error {
+  readonly code: string;
+  readonly hint?: string;
+
+  constructor(code: string, message: string, hint?: string) {
+    super(message);
+    this.name = "CliError";
+    this.code = code;
+    this.hint = hint;
+  }
+}

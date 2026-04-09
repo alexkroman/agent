@@ -50,7 +50,7 @@ export async function executeSecretPut(
     // TTY path — interactive prompt
     const result = await p.password({ message: `Enter value for ${name}` });
     if (p.isCancel(result)) process.exit(0);
-    if (!result) return fail("no_input", "No value provided");
+    if (!result) return fail("no_input", "No value provided", "Pipe secret value to stdin");
     secretValue = result;
   }
 

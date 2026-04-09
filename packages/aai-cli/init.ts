@@ -72,10 +72,9 @@ async function ensurePnpm(): Promise<void> {
   }
 }
 
-/** Install deps with pnpm (scaffold declares packageManager: pnpm). */
-async function installDeps(cwd: string): Promise<void> {
-  if (await fileExists(path.join(cwd, "node_modules"))) return;
-
+/** Check if the project has any dependencies to install. */
+async function hasDeps(cwd: string): Promise<boolean> {
+  if (await fileExists(path.join(cwd, "node_modules"))) return false;
   let pkgJson: {
     dependencies?: Record<string, string>;
     devDependencies?: Record<string, string>;
@@ -85,26 +84,42 @@ async function installDeps(cwd: string): Promise<void> {
   } catch {
     pkgJson = {};
   }
-
   const deps = Object.keys(pkgJson.dependencies ?? {});
   const devDeps = Object.keys(pkgJson.devDependencies ?? {});
-  if (deps.length === 0 && devDeps.length === 0) return;
+  return deps.length > 0 || devDeps.length > 0;
+}
 
+/** Run pnpm install and warn on failure. */
+async function runPnpmInstall(cwd: string): Promise<void> {
+  // In dev mode, allow workspace resolution so @alexkroman1/* deps link to local source.
+  // In production, --ignore-workspace prevents pnpm from hoisting to a parent workspace.
+  const pnpmArgs = isDevMode() ? ["install"] : ["install", "--ignore-workspace"];
+  await execFileAsync("pnpm", pnpmArgs, { cwd });
+}
+
+/** Install deps with pnpm (scaffold declares packageManager: pnpm). */
+async function installDeps(cwd: string, silent?: boolean): Promise<void> {
+  if (!(await hasDeps(cwd))) return;
   await ensurePnpm();
+
+  if (silent) {
+    try {
+      await runPnpmInstall(cwd);
+    } catch (err: unknown) {
+      log.warn(`pnpm install failed: ${errorMessage(err)}`);
+      log.warn("Run `corepack enable && pnpm install` manually in the project directory.");
+    }
+    return;
+  }
 
   const s = p.spinner();
   s.start("Installing dependencies with pnpm");
-
   try {
-    // In dev mode, allow workspace resolution so @alexkroman1/* deps link to local source.
-    // In production, --ignore-workspace prevents pnpm from hoisting to a parent workspace.
-    const args = isDevMode() ? ["install"] : ["install", "--ignore-workspace"];
-    await execFileAsync("pnpm", args, { cwd });
+    await runPnpmInstall(cwd);
     s.stop("Dependencies installed");
   } catch (err: unknown) {
-    const msg = errorMessage(err);
     s.stop("Dependency install failed");
-    log.warn(`pnpm install failed: ${msg}`);
+    log.warn(`pnpm install failed: ${errorMessage(err)}`);
     log.warn("Run `corepack enable && pnpm install` manually in the project directory.");
   }
 }
@@ -137,6 +152,24 @@ async function tryDeploy(
   return result.ok ? { slug: result.data.slug, url: result.data.url } : null;
 }
 
+/** Scaffold the project, optionally showing a spinner. */
+async function scaffoldProject(
+  dir: string,
+  cwd: string,
+  template: string,
+  silent?: boolean,
+): Promise<void> {
+  const { runInit } = await import("./_init.ts");
+  if (silent) {
+    await runInit({ targetDir: cwd, template });
+    return;
+  }
+  const s = p.spinner();
+  s.start(`Creating ${dir} from ${template} template`);
+  await runInit({ targetDir: cwd, template });
+  s.stop("Project created");
+}
+
 /** Print post-init instructions. */
 function printPostInitInfo(dir: string, monorepoRoot: string | null): void {
   log.success(`Created ${dir}`);
@@ -155,9 +188,10 @@ export async function executeInit(
     skipDeploy?: boolean | undefined;
     server?: string | undefined;
   },
-  extra?: { quiet?: boolean | undefined },
+  extra?: { quiet?: boolean | undefined; silent?: boolean | undefined },
 ): Promise<CommandResult<InitData>> {
-  if (!extra?.quiet) {
+  const suppressUi = extra?.quiet ?? extra?.silent;
+  if (!suppressUi) {
     p.intro(colorize("cyanBright", "Create a new voice agent"));
   }
 
@@ -177,14 +211,8 @@ export async function executeInit(
 
   const template = opts.template ?? (await promptTemplate(opts.yes));
 
-  const s = p.spinner();
-  s.start(`Creating ${dir} from ${template} template`);
-
-  const { runInit } = await import("./_init.ts");
-  await runInit({ targetDir: cwd, template });
-  s.stop("Project created");
-
-  await installDeps(cwd);
+  await scaffoldProject(dir, cwd, template, suppressUi);
+  await installDeps(cwd, suppressUi);
 
   let deployed = false;
   let slug: string | undefined;
@@ -199,7 +227,7 @@ export async function executeInit(
     }
   }
 
-  if (!extra?.quiet) {
+  if (!suppressUi) {
     printPostInitInfo(dir, monorepoRoot);
   }
 

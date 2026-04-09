@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import { defineCommand, runMain } from "citty";
 import { ensureApiKeyInEnv } from "./_config.ts";
-import { fail, getOutputMode, type OutputMode } from "./_output.ts";
+import { CliError, fail, getOutputMode, type OutputMode } from "./_output.ts";
 import { silenceOutput } from "./_ui.ts";
 import { fileExists, resolveCwd } from "./_utils.ts";
 
@@ -57,8 +57,10 @@ async function handleErrors(mode: OutputMode, fn: () => Promise<void>): Promise<
   try {
     await fn();
   } catch (err: unknown) {
+    const code = err instanceof CliError ? err.code : "command_failed";
+    const hint = err instanceof CliError ? err.hint : undefined;
     if (mode === "json") {
-      const result = fail("command_failed", errorMessage(err));
+      const result = fail(code, errorMessage(err), hint);
       process.stdout.write(`${JSON.stringify(result)}\n`);
       process.exit(1);
     }
@@ -98,15 +100,18 @@ const init = defineCommand({
       await withOutput(
         mode,
         () =>
-          executeInit({
-            dir: args.dir,
-            template: args.template,
-            force: args.force,
-            yes: args.yes,
-            skipApi: args.skipApi,
-            skipDeploy: args.skipDeploy,
-            server: args.server,
-          }),
+          executeInit(
+            {
+              dir: args.dir,
+              template: args.template,
+              force: args.force,
+              yes: args.yes,
+              skipApi: args.skipApi,
+              skipDeploy: args.skipDeploy,
+              server: args.server,
+            },
+            mode === "json" ? { silent: true } : undefined,
+          ),
         () => {
           /* human output handled inside executeInit */
         },
@@ -256,6 +261,11 @@ const secretPut = defineCommand({
       const { withOutput } = await import("./_output.ts");
 
       const value = mode === "json" ? await readStdin() : undefined;
+      if (mode === "json" && !value) {
+        const result = fail("no_input", "No value provided", "Pipe secret value to stdin");
+        process.stdout.write(`${JSON.stringify(result)}\n`);
+        process.exit(1);
+      }
       await withOutput(
         mode,
         () => executeSecretPut(cwd, args.name, value, args.server),
