@@ -1,18 +1,11 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-// biome-ignore lint/correctness/noUndeclaredDependencies: preact migration in progress (Task 5)
-import { effect, useSignalEffect } from "@preact/signals";
-// biome-ignore lint/correctness/noUndeclaredDependencies: preact migration in progress (Task 5)
-import type { RefObject } from "preact";
-// biome-ignore lint/correctness/noUndeclaredDependencies: preact migration in progress (Task 5)
-import { useEffect, useRef } from "preact/hooks";
+import { useEffect, useRef } from "react";
 import { useSession } from "./context.ts";
-import type { VoiceSession } from "./session.ts";
 import type { ToolCallInfo } from "./types.ts";
 
-// ─── Private helpers ─────────────────────────────────────────────────────────
-
-function tryParseJSON(str: string): unknown {
+function tryParseJSON(str: string | undefined): unknown {
+  if (!str) return str;
   try {
     return JSON.parse(str);
   } catch {
@@ -20,166 +13,87 @@ function tryParseJSON(str: string): unknown {
   }
 }
 
-function isNewCompletedCall(
-  tc: ToolCallInfo,
-  seen: Set<string>,
-  filterName: string | undefined,
-): tc is ToolCallInfo & { result: string } {
-  if (tc.status !== "done" || !tc.result) return false;
-  if (seen.has(tc.callId)) return false;
-  if (filterName && tc.name !== filterName) return false;
-  return true;
-}
+type ToolCallCallback = (...args: unknown[]) => void;
 
 /**
- * Shared helper for hooks that need to fire a callback once per new tool call.
- *
- * Handles deduplication via a `Set<string>` ref, automatic reset when the
- * signal array is cleared, and a stable callback ref to avoid stale closures.
- *
- * @param session - The voice session whose `toolCalls` signal to watch.
- * @param shouldProcess - Predicate that decides whether a tool call is eligible.
- *   Called with the tool call and the seen-IDs set. Must NOT mutate the set.
- * @param onNew - Invoked for each eligible tool call that hasn't been seen yet.
+ * Shared effect loop: fires `onNew` once per tool call that passes `shouldProcess`.
+ * Clears seen IDs when toolCalls is empty (session reset).
  */
-function useToolCallEffect(
-  session: VoiceSession,
-  shouldProcess: (tc: ToolCallInfo, seen: Set<string>) => boolean,
+function processToolCalls(
+  toolCalls: ToolCallInfo[],
+  seen: Set<string>,
+  shouldProcess: (tc: ToolCallInfo) => boolean,
   onNew: (tc: ToolCallInfo) => void,
 ): void {
-  const seenRef = useRef(new Set<string>());
-  const cbRef = useRef(onNew);
-  cbRef.current = onNew;
-  const predicateRef = useRef(shouldProcess);
-  predicateRef.current = shouldProcess;
-
-  useEffect(
-    () =>
-      effect(() => {
-        const toolCalls = session.toolCalls.value;
-        if (toolCalls.length === 0) {
-          seenRef.current.clear();
-          return;
-        }
-        for (const tc of toolCalls) {
-          if (!predicateRef.current(tc, seenRef.current)) continue;
-          if (seenRef.current.has(tc.callId)) continue;
-          seenRef.current.add(tc.callId);
-          cbRef.current(tc);
-        }
-      }),
-    [session],
-  );
+  if (toolCalls.length === 0) {
+    seen.clear();
+    return;
+  }
+  for (const tc of toolCalls) {
+    if (!shouldProcess(tc)) continue;
+    if (seen.has(tc.callId)) continue;
+    seen.add(tc.callId);
+    onNew(tc);
+  }
 }
 
-// ─── Public hooks ────────────────────────────────────────────────────────────
-
-/**
- * Hook that fires a callback exactly once for each newly completed tool call.
- *
- * Handles deduplication internally — safe to use with `useState` setters
- * without worrying about duplicates. The `result` argument is the parsed
- * JSON result from the tool (or the raw string if parsing fails).
- *
- * Automatically resets tracking when the session is reset (toolCalls cleared).
- *
- * @example
- * ```tsx
- * // Filter by tool name with a typed result:
- * useToolResult<Recipe>("get_recipe", (result, toolCall) => {
- *   setRecipe(result);
- * });
- *
- * // Receive all tool results (untyped):
- * useToolResult((toolName, result, toolCall) => {
- *   console.log(toolName, result);
- * });
- * ```
- *
- * @public
- */
 export function useToolResult<R = unknown>(
   toolName: string,
   callback: (result: R, toolCall: ToolCallInfo) => void,
 ): void;
-/**
- * Hook that fires a callback exactly once for each newly completed tool call.
- *
- * @param callback - Called once per completed tool call with the tool name,
- *   parsed result, and full {@link ToolCallInfo}.
- *
- * @public
- */
 export function useToolResult(
-  callback: (toolName: string, result: unknown, toolCall: ToolCallInfo) => void,
+  callback: (name: string, result: unknown, toolCall: ToolCallInfo) => void,
 ): void;
-export function useToolResult<R = unknown>(
-  toolNameOrCallback:
-    | string
-    | ((toolName: string, result: unknown, toolCall: ToolCallInfo) => void),
-  maybeCallback?: (result: R, toolCall: ToolCallInfo) => void,
-): void {
-  const filterName = typeof toolNameOrCallback === "string" ? toolNameOrCallback : undefined;
-  const callback =
-    typeof toolNameOrCallback === "function"
-      ? toolNameOrCallback
-      : (_name: string, result: unknown, tc: ToolCallInfo) => maybeCallback?.(result as R, tc);
+export function useToolResult(...args: unknown[]): void {
+  const filterName = typeof args[0] === "string" ? (args[0] as string) : null;
+  const callback = (typeof args[0] === "string" ? args[1] : args[0]) as ToolCallCallback;
 
   const session = useSession();
+  const seenRef = useRef(new Set<string>());
+  const callbackRef = useRef(callback);
+  callbackRef.current = callback;
 
-  useToolCallEffect(
-    session,
-    (tc, seen) => isNewCompletedCall(tc, seen, filterName),
-    (tc) => callback(tc.name, tryParseJSON((tc as ToolCallInfo & { result: string }).result), tc),
-  );
+  useEffect(() => {
+    processToolCalls(
+      session.toolCalls,
+      seenRef.current,
+      (tc) => tc.status === "done" && (!filterName || tc.name === filterName),
+      (tc) => {
+        const parsed = tryParseJSON(tc.result);
+        if (filterName) {
+          (callbackRef.current as (r: unknown, tc: ToolCallInfo) => void)(parsed, tc);
+        } else {
+          (callbackRef.current as (n: string, r: unknown, tc: ToolCallInfo) => void)(
+            tc.name,
+            parsed,
+            tc,
+          );
+        }
+      },
+    );
+  }, [session.toolCalls, filterName]);
 }
 
-/**
- * Hook that fires a callback when a new tool call starts (status: "pending").
- *
- * Use this to show a loading/skeleton UI immediately when the agent invokes
- * a tool, rather than waiting for the full result. The callback receives the
- * tool name, parsed arguments, and the full {@link ToolCallInfo}.
- *
- * @param callback - Called once per new tool call at start time.
- *
- * @public
- */
 export function useToolCallStart(
-  callback: (toolName: string, args: Record<string, unknown>, toolCall: ToolCallInfo) => void,
-): void {
+  toolName: string,
+  callback: (toolCall: ToolCallInfo) => void,
+): void;
+export function useToolCallStart(callback: (toolCall: ToolCallInfo) => void): void;
+export function useToolCallStart(...args: unknown[]): void {
+  const filterName = typeof args[0] === "string" ? (args[0] as string) : null;
+  const callback = (typeof args[0] === "string" ? args[1] : args[0]) as ToolCallCallback;
+
   const session = useSession();
+  const seenRef = useRef(new Set<string>());
+  const callbackRef = useRef(callback);
+  callbackRef.current = callback;
 
-  useToolCallEffect(
-    session,
-    () => true,
-    (tc) => callback(tc.name, tc.args, tc),
-  );
-}
-
-/**
- * Auto-scroll a container to the bottom when messages, tool calls,
- * or utterances change. Returns a ref to attach to a sentinel `<div>`
- * at the bottom of the scrollable area.
- *
- * @public
- */
-export function useAutoScroll(): RefObject<HTMLDivElement> {
-  const session = useSession();
-  const ref = useRef<HTMLDivElement>(null);
-
-  useSignalEffect(() => {
-    // Reading signal values to subscribe to changes (Preact signals pattern)
-    // biome-ignore lint/suspicious/noUnusedExpressions: signal subscription
-    session.messages.value;
-    // biome-ignore lint/suspicious/noUnusedExpressions: signal subscription
-    session.toolCalls.value;
-    // biome-ignore lint/suspicious/noUnusedExpressions: signal subscription
-    session.userUtterance.value;
-    // biome-ignore lint/suspicious/noUnusedExpressions: signal subscription
-    session.agentUtterance.value;
-    ref.current?.scrollIntoView({ behavior: "smooth" });
-  });
-
-  return ref;
+  useEffect(() => {
+    processToolCalls(
+      session.toolCalls,
+      seenRef.current,
+      (tc) => tc.status === "pending" && (!filterName || tc.name === filterName),
+      (tc) => (callbackRef.current as (tc: ToolCallInfo) => void)(tc),
+    );
+  }, [session.toolCalls, filterName]);
 }
