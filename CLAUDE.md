@@ -135,7 +135,7 @@ The SDK is organized into two directories:
 
 When adding new SDK code, place it in `isolate/` if it has no `node:`
 dependencies. The guest harness (`guest/harness.ts`) runs full Node.js
-inside each Firecracker VM with all deps bundled by esbuild — no import
+inside each gVisor sandbox with all deps bundled by esbuild — no import
 restrictions apply there.
 
 ### Key files
@@ -177,14 +177,12 @@ restrictions apply there.
 #### packages/aai-server/
 
 - `orchestrator.ts` — HTTP + WebSocket routing
-- `sandbox.ts` — Firecracker VM management
-- `sandbox-vm.ts` — per-agent VM lifecycle (boot, snapshot restore, teardown)
+- `sandbox.ts` — gVisor sandbox management
+- `sandbox-vm.ts` — per-agent sandbox lifecycle (start, teardown)
 - `sandbox-network.ts` — network proxying for sandbox
 - `sandbox-slots.ts` — slot allocation for concurrent sessions
-- `firecracker.ts` — Firecracker API client (jailer + VMM HTTP API)
-- `vsock.ts` — JSON-over-vsock host↔guest communication
-- `snapshot.ts` — base snapshot creation and restore for fast startup
-- `guest/harness.ts` — guest entry point (runs as PID 1 in initrd)
+- `gvisor.ts` — gVisor (runsc) OCI runtime integration
+- `guest/harness.ts` — guest entry point (Node.js process inside gVisor sandbox)
 - `guest/harness-logic.ts` — guest agent execution logic
 - `harness-runtime.ts` — file-per-tool RPC dispatcher that runs inside the isolate
 - `transport-websocket.ts` — WebSocket transport layer
@@ -311,13 +309,14 @@ bumped automatically.
   fails (new deps added on the branch).
 - Never edit `pnpm-lock.yaml` directly — always use `pnpm install`.
 
-### Firecracker / KVM notes
+### gVisor notes
 
-- Firecracker integration tests require KVM access. Run via:
-  `./packages/aai-server/guest/docker-test.sh`
-- On macOS (dev), Firecracker is unavailable. The sandbox falls back to a
-  plain child process with no VM isolation. This is expected — the security
-  boundary only applies in Linux production deployments.
+- gVisor integration tests run via: `./packages/aai-server/guest/docker-test.sh`
+- No KVM required — uses systrap platform (works on Fly.io, any Linux)
+- Docker needs `--security-opt seccomp=unconfined` for gVisor
+- On macOS (dev), gVisor is unavailable; sandbox falls back to a plain child
+  process with no isolation. This is expected — the security boundary only
+  applies in Linux production deployments.
 
 ### Updating CLAUDE.md
 
@@ -357,25 +356,25 @@ catches the most common issues that historically required follow-up commits:
 
 ## Security architecture
 
-### Firecracker VM isolation
+### gVisor sandbox isolation
 
-Each agent session runs in its own **Firecracker microVM**. The guest runs
-a static Node.js binary as PID 1 in a minimal initrd, executing the bundled
-agent code (`guest/harness.ts`). Host↔guest communication is via
-JSON-over-vsock (newline-delimited JSON).
+Each agent session runs in its own **gVisor sandbox** (runsc OCI runtime).
+The guest runs a Node.js binary executing the bundled agent code
+(`guest/harness.ts`). Host↔guest communication is via vscode-jsonrpc over
+stdio.
 
 Key properties:
 
-- **Hardware isolation**: separate kernel, page tables, and memory per VM.
-  No shared memory between agents.
-- **No network device**: the VM has no network interface. Agent outbound
-  calls are proxied through the host via vsock RPC.
-- **No writable filesystem**: initrd is loaded into RAM; no persistent disk.
-- **Fast startup**: base snapshot pre-booted; sessions restore in ~100ms.
+- **Userspace kernel**: gVisor Sentry intercepts all syscalls in systrap mode.
+  No KVM required — works on Fly.io, any Linux.
+- **No shared memory between agents**: separate Sentry per sandbox.
+- **Minimal rootfs**: only the Node.js binary and harness are visible.
+  The agent cannot see the host filesystem.
+- **cgroup limits**: 64 MB memory, 32 PIDs per sandbox.
 - **Full Node.js in guest**: esbuild bundles all npm deps into the harness.
   No `import type` restriction — the guest can import anything.
-- **Dev mode (macOS)**: Firecracker unavailable; sandbox falls back to a
-  plain child process with no VM isolation.
+- **Dev mode (macOS)**: gVisor unavailable; sandbox falls back to a plain
+  child process with no isolation.
 
 `harness-runtime.ts` is a self-contained file-per-tool RPC dispatcher with
 **no workspace imports**. It exports `createDispatcher(opts)` for building
@@ -393,15 +392,16 @@ Rules for `harness-runtime.ts`:
 
 ### Platform sandbox (aai-server)
 
-Agent code runs in **per-agent Firecracker microVMs**. Key files:
-`packages/aai-server/sandbox.ts`, `sandbox-vm.ts`, `firecracker.ts`,
-`vsock.ts`, `snapshot.ts`, `guest/harness.ts`, `guest/harness-logic.ts`.
+Agent code runs in **per-agent gVisor sandboxes**. Key files:
+`packages/aai-server/sandbox.ts`, `sandbox-vm.ts`, `gvisor.ts`,
+`guest/harness.ts`, `guest/harness-logic.ts`.
 
 **Isolation layers:**
 
-- **Filesystem**: initrd in RAM, no writable mounts.
-- **Network**: no network device in VM. All external calls proxy through host.
-- **Memory**: separate physical pages per VM (KVM hardware isolation).
+- **Filesystem**: minimal rootfs with only node binary + harness. No host
+  filesystem access.
+- **Network**: no network device in sandbox. All external calls proxy through host.
+- **Memory**: cgroup limits (64 MB per sandbox). Separate Sentry per sandbox.
 - **Env vars**: only `AAI_ENV_*` prefixed vars forwarded to guest. Platform
   secrets stay host-side.
 
@@ -409,21 +409,21 @@ Agent code runs in **per-agent Firecracker microVMs**. Key files:
 
 `SandboxOptions` has separate `apiKey` (platform, host-only) and `agentEnv`
 (user secrets, forwarded to guest) fields. Platform keys are structurally
-prevented from entering VMs — separate fields in the type system, not a denylist.
+prevented from entering sandboxes — separate fields in the type system, not a denylist.
 
 **Cross-agent isolation:**
 
 - KV keys prefixed `kv:{keyHash}:{slug}:{key}` — agents cannot access
   each other's data.
-- Each VM communicates via an isolated vsock channel.
-- Sessions are per-VM (`Map<string, Session>`).
-- No shared mutable state between VMs.
+- Each sandbox communicates via isolated vscode-jsonrpc over stdio.
+- Sessions are per-sandbox (`Map<string, Session>`).
+- No shared mutable state between sandboxes.
 
 **`run_code` built-in tool (aai/builtin-tools.ts):**
 
 - Each invocation runs in a **fresh `node:vm` context** — isolated from
   other invocations. Note: `node:vm` is not a security sandbox; in
-  platform mode, the Firecracker microVM provides the security boundary.
+  platform mode, the gVisor sandbox provides the security boundary.
 - No network, no filesystem access, no child processes, no env vars.
 - 5-second execution timeout.
 - Context is discarded after execution — no state leaks.
@@ -449,8 +449,8 @@ prevented from entering VMs — separate fields in the type system, not a denyli
 
 ### Testing security boundaries
 
-- `firecracker-integration.test.ts` — VM isolation e2e: network, filesystem,
-  process, env isolation inside Firecracker VMs. Requires KVM (Linux).
+- `gvisor-integration.test.ts` — sandbox isolation e2e: network, filesystem,
+  process, env isolation inside gVisor sandboxes. No KVM required.
   Run via: `./packages/aai-server/guest/docker-test.sh`
 - `sandbox-integration.test.ts` — sandbox lifecycle and slot management e2e.
   Run: `pnpm --filter @alexkroman1/aai-server test:integration`

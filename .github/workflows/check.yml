@@ -139,6 +139,21 @@ jobs:
       - run: pnpm exec turbo run build
       - run: pnpm exec turbo run check:integration
 
+  docker-gvisor:
+    needs: setup
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build gVisor test image
+        run: >-
+          docker build
+          -f packages/aai-server/guest/Dockerfile.gvisor
+          -t aai-gvisor-test .
+      - name: Run gVisor integration tests
+        run: >-
+          docker run --rm --security-opt seccomp=unconfined
+          aai-gvisor-test
+
   e2e:
     needs: setup
     runs-on: ${{ matrix.os }}
@@ -183,11 +198,11 @@ jobs:
   ci:
     runs-on: ubuntu-latest
     if: always()
-    needs: [lint-typecheck-and-checks, test, integration, e2e]
+    needs: [lint-typecheck-and-checks, test, integration, e2e, docker-gvisor]
     steps:
       - name: Check results
         run: |
-          results="${{ needs.lint-typecheck-and-checks.result }} ${{ needs.test.result }} ${{ needs.integration.result }} ${{ needs.e2e.result }}"
+          results="${{ needs.lint-typecheck-and-checks.result }} ${{ needs.test.result }} ${{ needs.integration.result }} ${{ needs.e2e.result }} ${{ needs.docker-gvisor.result }}"
           for r in $results; do
             if [ "$r" != "success" ] && [ "$r" != "skipped" ]; then
               echo "CI failed: one or more jobs did not succeed"
