@@ -8,18 +8,15 @@
   "exports": {
     "./testing": {
       "@dev/source": "./testing.ts",
-      "types": "./dist/testing.d.ts",
-      "import": "./dist/testing.js"
+      "import": "./dist/testing.mjs"
     },
     "./testing/matchers": {
       "@dev/source": "./matchers.ts",
-      "types": "./dist/matchers.d.ts",
-      "import": "./dist/matchers.js"
+      "import": "./dist/matchers.mjs"
     },
     "./types": {
       "@dev/source": "./types.ts",
-      "types": "./dist/types.d.ts",
-      "import": "./dist/types.js"
+      "import": "./dist/types.mjs"
     }
   },
   "files": [
