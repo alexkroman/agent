@@ -219,8 +219,17 @@ const secretPut = defineCommand({
     if (mode === "json") silenceOutput();
     await handleErrors(mode, async () => {
       const cwd = await setup(undefined, { apiKey: true });
-      const { runSecretPut } = await import("./secret.ts");
-      await runSecretPut(cwd, args.name, args.server);
+      const { executeSecretPut, readStdin } = await import("./secret.ts");
+      const { withOutput } = await import("./_output.ts");
+
+      const value = mode === "json" ? await readStdin() : undefined;
+      await withOutput(
+        mode,
+        () => executeSecretPut(cwd, args.name, value, args.server),
+        () => {
+          /* human output handled inside executeSecretPut */
+        },
+      );
     });
   },
 });
@@ -237,8 +246,15 @@ const secretDelete = defineCommand({
     if (mode === "json") silenceOutput();
     await handleErrors(mode, async () => {
       const cwd = await setup(undefined, { apiKey: true });
-      const { runSecretDelete } = await import("./secret.ts");
-      await runSecretDelete(cwd, args.name, args.server);
+      const { executeSecretDelete } = await import("./secret.ts");
+      const { withOutput } = await import("./_output.ts");
+      await withOutput(
+        mode,
+        () => executeSecretDelete(cwd, args.name, args.server),
+        () => {
+          /* human output handled inside */
+        },
+      );
     });
   },
 });
@@ -254,8 +270,15 @@ const secretList = defineCommand({
     if (mode === "json") silenceOutput();
     await handleErrors(mode, async () => {
       const cwd = await setup(undefined, { apiKey: true });
-      const { runSecretList } = await import("./secret.ts");
-      await runSecretList(cwd, args.server);
+      const { executeSecretList } = await import("./secret.ts");
+      const { withOutput } = await import("./_output.ts");
+      await withOutput(
+        mode,
+        () => executeSecretList(cwd, args.server),
+        () => {
+          /* human output handled inside */
+        },
+      );
     });
   },
 });
