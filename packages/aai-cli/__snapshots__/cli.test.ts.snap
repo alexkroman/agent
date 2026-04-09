@@ -57,13 +57,12 @@ USAGE init [OPTIONS] [DIR]
 ARGUMENTS
   DIR    Project directory
 OPTIONS
-  -t, --template=<template>    Template to use
-                -f, --force    Overwrite existing files
-      -s, --server=<server>    Platform server URL
-                  -y, --yes    Accept defaults (no prompts)
-                     --json    Output JSON (auto-detected in non-TTY)
-                  --skipApi    Skip API key check
-               --skipDeploy    Skip deploy after scaffolding"
+            -f, --force    Overwrite existing files
+  -s, --server=<server>    Platform server URL
+              -y, --yes    Accept defaults (no prompts)
+                 --json    Output JSON (auto-detected in non-TTY)
+              --skipApi    Skip API key check
+           --skipDeploy    Skip deploy after scaffolding"
 `;
 
 exports[`cli usage snapshots > aai secret --help 1`] = `

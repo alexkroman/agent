@@ -14,13 +14,7 @@ import { runDelete } from "./_delete.ts";
 import { runDeploy } from "./_deploy.ts";
 import type { MockApi } from "./_mock-api.ts";
 import { startMockApi } from "./_mock-api.ts";
-import {
-  fakeDownloadAndMerge,
-  fakeListTemplates,
-  makeBundle,
-  silenced,
-  withTempDir,
-} from "./_test-utils.ts";
+import { fakeDownloadAndMerge, makeBundle, silenced, withTempDir } from "./_test-utils.ts";
 import { fileExists } from "./_utils.ts";
 import { runSecretDelete, runSecretList, runSecretPut } from "./secret.ts";
 
@@ -376,12 +370,10 @@ describe("missing project config", () => {
 let fakeTemplatesDir: string;
 
 vi.mock("./_templates.ts", () => ({
-  listTemplates: () => fakeListTemplates(fakeTemplatesDir),
   downloadAndMergeTemplate: (template: string, targetDir: string) =>
     fakeDownloadAndMerge(fakeTemplatesDir, template, targetDir),
 }));
 
-const { listTemplates } = await import("./_templates.ts");
 const { runInit } = await import("./_init.ts");
 
 describe("init creates working project", () => {
@@ -407,7 +399,7 @@ describe("init creates working project", () => {
       silenced(async (dir) => {
         fakeTemplatesDir = await createFakeTemplates(dir);
         const target = path.join(dir, "my-project");
-        await runInit({ targetDir: target, template: "simple" });
+        await runInit({ targetDir: target });
 
         expect(await fileExists(path.join(target, "agent.ts"))).toBe(true);
         const agentContent = await fs.readFile(path.join(target, "agent.ts"), "utf-8");
@@ -416,25 +408,6 @@ describe("init creates working project", () => {
         expect(await fileExists(path.join(target, ".env"))).toBe(true);
         expect(await fs.readFile(path.join(target, ".env"), "utf-8")).toBe("MY_KEY=");
         expect(await fileExists(path.join(target, "package.json"))).toBe(true);
-      }),
-    );
-  });
-
-  test("listTemplates returns template directories", async () => {
-    await withTempDir(async (dir) => {
-      fakeTemplatesDir = await createFakeTemplates(dir);
-      const templates = await listTemplates();
-      expect(templates).toEqual([{ name: "simple", description: "" }]);
-    });
-  });
-
-  test("init rejects unknown template", async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        fakeTemplatesDir = await createFakeTemplates(dir);
-        await expect(
-          runInit({ targetDir: path.join(dir, "out"), template: "nope" }),
-        ).rejects.toThrow("Unknown template");
       }),
     );
   });

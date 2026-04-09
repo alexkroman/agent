@@ -82,7 +82,6 @@ const init = defineCommand({
   meta: { name: "init", description: "Scaffold a new agent project" },
   args: {
     dir: { type: "positional", description: "Project directory", required: false },
-    template: { type: "string", alias: "t", description: "Template to use" },
     force: { type: "boolean", alias: "f", description: "Overwrite existing files" },
     server: sharedArgs.server,
     yes: sharedArgs.yes,
@@ -101,7 +100,6 @@ const init = defineCommand({
           executeInit(
             {
               dir: args.dir,
-              template: args.template,
               force: args.force,
               yes: args.yes,
               skipApi: args.skipApi,

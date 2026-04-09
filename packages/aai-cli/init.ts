@@ -9,7 +9,6 @@ import * as p from "@clack/prompts";
 import { colorize } from "consola/utils";
 import { DEFAULT_DEV_SERVER, getMonorepoRoot, isDevMode } from "./_agent.ts";
 import { type CommandResult, ok } from "./_output.ts";
-import { listTemplates } from "./_templates.ts";
 import { log } from "./_ui.ts";
 import { fileExists, resolveCwd } from "./_utils.ts";
 
@@ -24,7 +23,6 @@ type InitData = {
 const execFileAsync = promisify(execFile);
 
 const DEFAULT_PROJECT_NAME = "my-voice-agent";
-const DEFAULT_TEMPLATE = "simple";
 
 /** Prompt for project name or return default when --yes is set. */
 async function promptProjectName(yes?: boolean): Promise<string> {
@@ -39,26 +37,6 @@ async function promptProjectName(yes?: boolean): Promise<string> {
     process.exit(0);
   }
   return result || DEFAULT_PROJECT_NAME;
-}
-
-/** Prompt for template selection or return default when --yes is set. */
-async function promptTemplate(yes?: boolean): Promise<string> {
-  if (yes) return DEFAULT_TEMPLATE;
-  const templates = await listTemplates();
-  const result = await p.select({
-    message: "Which template would you like to use?",
-    options: templates.map((t) => ({
-      value: t.name,
-      label: t.name,
-      hint: t.description,
-    })),
-    initialValue: DEFAULT_TEMPLATE,
-  });
-  if (p.isCancel(result)) {
-    p.cancel("Setup cancelled");
-    process.exit(0);
-  }
-  return result;
 }
 
 /** Enable corepack so pnpm is available (scaffold declares packageManager: pnpm). */
@@ -152,20 +130,15 @@ async function tryDeploy(
 }
 
 /** Scaffold the project, optionally showing a spinner. */
-async function scaffoldProject(
-  dir: string,
-  cwd: string,
-  template: string,
-  silent?: boolean,
-): Promise<void> {
+async function scaffoldProject(dir: string, cwd: string, silent?: boolean): Promise<void> {
   const { runInit } = await import("./_init.ts");
   if (silent) {
-    await runInit({ targetDir: cwd, template });
+    await runInit({ targetDir: cwd });
     return;
   }
   const s = p.spinner();
-  s.start(`Creating ${dir} from ${template} template`);
-  await runInit({ targetDir: cwd, template });
+  s.start(`Creating ${dir}`);
+  await runInit({ targetDir: cwd });
   s.stop("Project created");
 }
 
@@ -180,7 +153,6 @@ function printPostInitInfo(dir: string, monorepoRoot: string | null): void {
 export async function executeInit(
   opts: {
     dir?: string | undefined;
-    template?: string | undefined;
     force?: boolean | undefined;
     yes?: boolean | undefined;
     skipApi?: boolean | undefined;
@@ -204,9 +176,9 @@ export async function executeInit(
     );
   }
 
-  const template = opts.template ?? (await promptTemplate(opts.yes));
+  const template = "simple";
 
-  await scaffoldProject(dir, cwd, template, suppressUi);
+  await scaffoldProject(dir, cwd, suppressUi);
   await installDeps(cwd, suppressUi);
 
   let deployed = false;
