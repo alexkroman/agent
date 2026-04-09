@@ -256,8 +256,8 @@ export async function createFirecrackerSandbox(opts: SandboxVmOptions): Promise<
   });
 
   // Connect to the guest via the vsock UDS path.
-  // Firecracker creates the socket at {uds_path}_{guest_cid}.
-  const actualVsockPath = `${vsockUdsPath}_${guestCid}`;
+  // Firecracker creates the socket at the exact configured uds_path.
+  const actualVsockPath = vsockUdsPath;
 
   const socket: net.Socket = await new Promise<net.Socket>((resolve, reject) => {
     const conn = net.connect(actualVsockPath, () => {

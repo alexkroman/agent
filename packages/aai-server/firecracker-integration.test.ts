@@ -246,8 +246,9 @@ async function connectVsock(
   guestCid: number,
   timeout: number,
 ): Promise<{ socket: net.Socket; channel: RpcChannel }> {
-  // Firecracker appends _{cid} to the configured uds_path
-  const actualPath = `${vsockUdsPath}_${guestCid}`;
+  // Firecracker creates the vsock UDS at the exact configured path.
+  // The guest CID is used in the CONNECT handshake, not the socket filename.
+  const actualPath = vsockUdsPath;
   const VSOCK_PORT = 1024;
   const deadline = Date.now() + timeout;
 
