@@ -48,7 +48,7 @@ describe("createNdjsonConnection", () => {
     // Wait for request to be written
     await vi.waitFor(() => writtenLines.length > 0);
 
-    const sent = JSON.parse(writtenLines[0]);
+    const sent = JSON.parse(writtenLines.at(0) ?? "");
     expect(sent.jsonrpc).toBe("2.0");
     expect(sent.method).toBe("ping");
     expect(sent.params).toEqual({ foo: "bar" });
@@ -70,8 +70,8 @@ describe("createNdjsonConnection", () => {
 
     await vi.waitFor(() => writtenLines.length >= 2);
 
-    const msg1 = JSON.parse(writtenLines[0]);
-    const msg2 = JSON.parse(writtenLines[1]);
+    const msg1 = JSON.parse(writtenLines.at(0) ?? "");
+    const msg2 = JSON.parse(writtenLines.at(1) ?? "");
 
     expect(msg1.id).not.toBe(msg2.id);
 
@@ -90,7 +90,7 @@ describe("createNdjsonConnection", () => {
     const resultPromise = conn.sendRequest("fail");
 
     await vi.waitFor(() => writtenLines.length > 0);
-    const sent = JSON.parse(writtenLines[0]);
+    const sent = JSON.parse(writtenLines.at(0) ?? "");
 
     writeMessage(readable, {
       jsonrpc: "2.0",
@@ -122,7 +122,7 @@ describe("createNdjsonConnection", () => {
     // Host should write back a response
     await vi.waitFor(() => writtenLines.length > 0);
 
-    const response = JSON.parse(writtenLines[0]);
+    const response = JSON.parse(writtenLines.at(0) ?? "");
     expect(response.jsonrpc).toBe("2.0");
     expect(response.id).toBe(42);
     expect(response.result).toEqual({ value: "got:x" });
@@ -141,7 +141,7 @@ describe("createNdjsonConnection", () => {
 
     await vi.waitFor(() => writtenLines.length > 0);
 
-    const response = JSON.parse(writtenLines[0]);
+    const response = JSON.parse(writtenLines.at(0) ?? "");
     expect(response.jsonrpc).toBe("2.0");
     expect(response.id).toBe(7);
     expect(response.error).toBeDefined();
@@ -157,7 +157,7 @@ describe("createNdjsonConnection", () => {
     conn.sendNotification("shutdown");
 
     expect(writtenLines.length).toBe(1);
-    const sent = JSON.parse(writtenLines[0]);
+    const sent = JSON.parse(writtenLines.at(0) ?? "");
     expect(sent.jsonrpc).toBe("2.0");
     expect(sent.method).toBe("shutdown");
     expect(sent.id).toBeUndefined();
@@ -169,7 +169,7 @@ describe("createNdjsonConnection", () => {
 
     conn.sendNotification("event", { type: "ping" });
 
-    const sent = JSON.parse(writtenLines[0]);
+    const sent = JSON.parse(writtenLines.at(0) ?? "");
     expect(sent.params).toEqual({ type: "ping" });
     expect(sent.id).toBeUndefined();
   });

@@ -54,6 +54,7 @@ export interface NdjsonConnection {
 export function createNdjsonConnection(readable: Readable, writable: Writable): NdjsonConnection {
   let nextId = 1;
   let disposed = false;
+  let rl: ReturnType<typeof createInterface> | null = null;
 
   const pending = new Map<number, PendingRequest>();
   const requestHandlers = new Map<string, (params: unknown) => unknown | Promise<unknown>>();
@@ -135,6 +136,7 @@ export function createNdjsonConnection(readable: Readable, writable: Writable): 
     },
 
     sendNotification(method: string, params?: unknown): void {
+      if (disposed) return;
       const msg: JsonRpcNotification = { jsonrpc: "2.0", method };
       if (params !== undefined) msg.params = params;
       send(msg);
@@ -152,9 +154,19 @@ export function createNdjsonConnection(readable: Readable, writable: Writable): 
     },
 
     listen(): void {
-      const rl = createInterface({ input: readable, crlfDelay: Number.POSITIVE_INFINITY });
+      rl = createInterface({ input: readable, crlfDelay: Number.POSITIVE_INFINITY });
       rl.on("line", (line) => {
         handleLine(line);
+      });
+      rl.on("close", () => {
+        if (!disposed) {
+          disposed = true;
+          const err = new Error("Connection closed");
+          for (const pend of pending.values()) {
+            pend.reject(err);
+          }
+          pending.clear();
+        }
       });
     },
 
@@ -165,6 +177,7 @@ export function createNdjsonConnection(readable: Readable, writable: Writable): 
         pend.reject(err);
       }
       pending.clear();
+      rl?.close();
     },
   };
 }
