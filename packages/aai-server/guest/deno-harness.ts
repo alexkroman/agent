@@ -365,7 +365,11 @@ async function invokeHook(
 
     case "onError":
       if (agent.onError) {
-        agent.onError(new Error(req.error?.message ?? "Unknown error"), ctx);
+        result = await withTimeout(
+          Promise.resolve(agent.onError(new Error(req.error?.message ?? "Unknown error"), ctx)),
+          HOOK_TIMEOUT_MS,
+          "onError",
+        );
       }
       break;
 
@@ -418,6 +422,10 @@ type HarnessState = {
 async function handleRequest(req: JsonRpcRequest, state: HarnessState): Promise<void> {
   switch (req.method) {
     case "bundle/load": {
+      if (!req.params || typeof (req.params as Record<string, unknown>).code !== "string") {
+        sendError(req.id, -32_602, "bundle/load requires { code: string, env: {} }");
+        break;
+      }
       const params = req.params as { code: string; env: Record<string, string> };
       state.agent = await loadBundle(params.code, params.env ?? {});
       state.sessionState = createSessionStateMap(
