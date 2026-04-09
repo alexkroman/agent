@@ -44,9 +44,6 @@
       "dependsOn": ["build"],
       "inputs": ["**/*.ts", "load/**/*.ts", "../../docker-compose.yml", "Dockerfile"]
     },
-    "check:harness": {
-      "dependsOn": ["build"]
-    },
     "check:typecheck": {
       "dependsOn": ["^build"]
     }

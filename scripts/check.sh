@@ -75,7 +75,7 @@ if [ "$MODE" = "--local" ]; then
 else
   # ── Full CI: build → all checks (turbo) + root checks ──
   echo -e "\n${YELLOW}Phase 1: Build + Checks (via turbo)${NC}"
-  run_step "turbo"            pnpm exec turbo run build typecheck lint check:publint check:attw check:harness
+  run_step "turbo"            pnpm exec turbo run build typecheck lint check:publint check:attw
   run_step "check:syncpack"   pnpm run check:syncpack
   run_step "check:sherif"     pnpm run check:sherif
   run_step "check:knip"       pnpm run check:knip

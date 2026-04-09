@@ -10,12 +10,11 @@ export default defineConfig([
     deps: { alwaysBundle: [/@alexkroman1/] },
   },
   {
-    entry: ["harness-runtime.ts"],
+    entry: ["guest/harness.ts"],
     format: "esm",
-    platform: "node",
     target: "node22",
-    outDir: "dist",
-    deps: { alwaysBundle: [/@alexkroman1\/aai\/hooks/, /@alexkroman1\/aai\/utils/, /^hookable$/] },
+    outDir: "dist/guest",
+    noExternal: [/.*/], // Bundle everything -- guest has no node_modules
   },
   {
     entry: { _zod: "zod-shim.ts" },
