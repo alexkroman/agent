@@ -194,11 +194,15 @@ const del = defineCommand({
     if (mode === "json") silenceOutput();
     await handleErrors(mode, async () => {
       const cwd = await setup();
-      const { runDeleteCommand } = await import("./delete.ts");
-      await runDeleteCommand({
-        cwd,
-        ...(args.server ? { server: args.server } : {}),
-      });
+      const { executeDelete } = await import("./delete.ts");
+      const { withOutput } = await import("./_output.ts");
+      await withOutput(
+        mode,
+        () => executeDelete({ cwd, ...(args.server ? { server: args.server } : {}) }),
+        () => {
+          /* human output handled inside executeDelete */
+        },
+      );
     });
   },
 });
