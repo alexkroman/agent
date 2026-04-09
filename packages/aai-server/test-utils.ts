@@ -142,7 +142,7 @@ export function deployBody(overrides?: Record<string, unknown>): string {
   return JSON.stringify({
     env: VALID_ENV,
     worker:
-      'module.exports = { name: "test-agent", systemPrompt: "Test", greeting: "", maxSteps: 1, tools: {} };',
+      'export default { name: "test-agent", systemPrompt: "Test", greeting: "", maxSteps: 1, tools: {} };',
     clientFiles: {
       "index.html":
         // biome-ignore lint/security/noSecrets: HTML template, not a secret

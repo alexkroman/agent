@@ -144,4 +144,27 @@ describe("HTTP endpoint schema validation", () => {
     });
     expect(res.status).toBe(400);
   });
+
+  test("deploy rejects missing ASSEMBLYAI_API_KEY", async () => {
+    const { fetch } = await createTestOrchestrator();
+
+    // First deploy (unclaimed slug) with no ASSEMBLYAI_API_KEY
+    const res = await fetch("/my-agent/deploy", {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer key1",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        env: { ONLY_USER_SECRET: "val" },
+        worker:
+          'export default { name: "test", systemPrompt: "Test", greeting: "", maxSteps: 1, tools: {} };',
+        clientFiles: {},
+        agentConfig: TEST_AGENT_CONFIG,
+      }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain("Invalid platform config");
+  });
 });
