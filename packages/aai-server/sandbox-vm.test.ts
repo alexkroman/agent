@@ -11,13 +11,11 @@ vi.mock("./gvisor.ts", () => ({
 }));
 
 vi.mock("node:child_process", () => ({
-  fork: vi.fn(),
+  spawn: vi.fn(),
 }));
 
-vi.mock("vscode-jsonrpc/node", () => ({
-  createMessageConnection: vi.fn(),
-  StreamMessageReader: vi.fn(),
-  StreamMessageWriter: vi.fn(),
+vi.mock("./ndjson-transport.ts", () => ({
+  createNdjsonConnection: vi.fn(),
 }));
 
 import type { Storage } from "unstorage";
@@ -161,11 +159,11 @@ describe("createSandboxVm", () => {
     const { isGvisorAvailable } = await import("./gvisor.ts");
     (isGvisorAvailable as ReturnType<typeof vi.fn>).mockReturnValue(false);
 
-    const { fork } = await import("node:child_process");
-    const { createMessageConnection } = await import("vscode-jsonrpc/node");
+    const { spawn } = await import("node:child_process");
+    const { createNdjsonConnection } = await import("./ndjson-transport.ts");
 
     // Create mock child process
-    const mockChild = new EventEmitter() as ReturnType<typeof import("node:child_process").fork>;
+    const mockChild = new EventEmitter() as ReturnType<typeof import("node:child_process").spawn>;
     Object.assign(mockChild, {
       stdout: new PassThrough(),
       stdin: new PassThrough(),
@@ -177,18 +175,18 @@ describe("createSandboxVm", () => {
       signalCode: null,
     });
 
-    (fork as ReturnType<typeof vi.fn>).mockReturnValue(mockChild);
+    (spawn as unknown as ReturnType<typeof vi.fn>).mockReturnValue(mockChild);
 
-    // Mock the jsonrpc connection
+    // Mock the NDJSON connection
     const mockConn = createMockConnection();
-    (createMessageConnection as ReturnType<typeof vi.fn>).mockReturnValue(mockConn);
+    (createNdjsonConnection as ReturnType<typeof vi.fn>).mockReturnValue(mockConn);
 
     const { createSandboxVm } = await import("./sandbox-vm.ts");
     const handle = await createSandboxVm({
       slug: "test",
       workerCode: "",
       agentEnv: {},
-      harnessPath: "/tmp/harness.js",
+      harnessPath: "/tmp/harness.ts",
     });
 
     // Should succeed via dev sandbox path
@@ -196,17 +194,17 @@ describe("createSandboxVm", () => {
     expect(handle.conn).toBe(mockConn);
     expect(handle.shutdown).toBeTypeOf("function");
 
-    // Verify fork was called (dev mode path)
-    expect(fork).toHaveBeenCalledWith(
-      "/tmp/harness.js",
-      [],
+    // Verify spawn was called with Deno args (dev mode path)
+    expect(spawn).toHaveBeenCalledWith(
+      "deno",
+      ["run", "--allow-env", "--no-prompt", "/tmp/harness.ts"],
       expect.objectContaining({ stdio: ["pipe", "pipe", "inherit"] }),
     );
   });
 
   it("routes to gVisor sandbox when available", async () => {
     const { isGvisorAvailable, createGvisorSandbox } = await import("./gvisor.ts");
-    const { createMessageConnection } = await import("vscode-jsonrpc/node");
+    const { createNdjsonConnection } = await import("./ndjson-transport.ts");
 
     (isGvisorAvailable as ReturnType<typeof vi.fn>).mockReturnValue(true);
 
@@ -228,21 +226,21 @@ describe("createSandboxVm", () => {
     });
 
     const mockConn = createMockConnection();
-    (createMessageConnection as ReturnType<typeof vi.fn>).mockReturnValue(mockConn);
+    (createNdjsonConnection as ReturnType<typeof vi.fn>).mockReturnValue(mockConn);
 
     const { createSandboxVm } = await import("./sandbox-vm.ts");
     const handle = await createSandboxVm({
       slug: "test",
       workerCode: "",
       agentEnv: {},
-      harnessPath: "/tmp/harness.js",
+      harnessPath: "/tmp/harness.ts",
     });
 
     expect(handle).toBeDefined();
     expect(handle.conn).toBe(mockConn);
     expect(createGvisorSandbox).toHaveBeenCalledWith({
       slug: "test",
-      harnessPath: "/tmp/harness.js",
+      harnessPath: "/tmp/harness.ts",
     });
   });
 });

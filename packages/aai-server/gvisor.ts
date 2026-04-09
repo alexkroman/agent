@@ -2,14 +2,14 @@
 /**
  * gVisor sandbox for running agent code in isolation.
  *
- * Uses `runsc do` to run Node.js inside a gVisor sandbox. The host
+ * Uses `runsc do` to run Deno inside a gVisor sandbox. The host
  * filesystem is mounted read-only with a tmpfs overlay (writes go to
  * memory, not disk). Network is disabled (--network=none).
  *
  * Agent code is injected over stdio (not from disk), so even though
  * the host FS is readable, the agent has no network to exfiltrate data.
  *
- * Communication uses stdio pipes (stdin/stdout) with vscode-jsonrpc.
+ * Communication uses stdio pipes (stdin/stdout) with NDJSON transport.
  */
 
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
@@ -46,13 +46,13 @@ export type GvisorSandbox = {
 };
 
 /**
- * Creates a gVisor sandbox running the given Node.js harness script.
+ * Creates a gVisor sandbox running the given Deno harness script.
  *
  * Security layers:
  * - Syscall interception: gVisor Sentry reimplements syscalls in Go
  * - Network: disabled (--network=none)
  * - Filesystem: host FS mounted read-only with tmpfs overlay (writes go to memory)
- * - Env vars: empty (secrets delivered over jsonrpc, not process.env)
+ * - Env vars: empty (secrets delivered over NDJSON RPC, not process.env)
  * - Agent code: injected over stdio, not from disk
  * - CWD: /tmp (not host working directory)
  *
@@ -75,12 +75,15 @@ export function createGvisorSandbox(opts: { slug: string; harnessPath: string })
       "-cwd",
       "/tmp",
       "--",
-      process.execPath,
+      "deno",
+      "run",
+      "--allow-env",
+      "--no-prompt",
       opts.harnessPath,
     ],
     {
       stdio: ["pipe", "pipe", "pipe"],
-      // Empty env: agent gets env vars over jsonrpc (bundle message),
+      // Empty env: agent gets env vars over NDJSON RPC (bundle message),
       // not from host process.env. Prevents platform secrets from
       // leaking into the sandbox even via V8 exploits.
       env: {},

@@ -7,7 +7,7 @@
  * overrides, giving it the same session/S2S/WebSocket handling as self-hosted
  * mode without duplicating any of that logic.
  *
- * Communication with the guest uses vscode-jsonrpc over stdio pipes,
+ * Communication with the guest uses NDJSON over stdio pipes,
  * mediated by the `SandboxHandle` from `sandbox-vm.ts`.
  */
 
