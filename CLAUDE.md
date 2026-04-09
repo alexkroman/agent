@@ -383,8 +383,6 @@ Rules for `harness-runtime.ts`:
   integration tests.
 - Host-side validation (in `sandbox.ts`) is sufficient. The isolate trusts
   the host since they run in the same server process.
-- `sandbox-harness.ts` manages the sandbox execution environment on the
-  host side.
 
 ### Platform sandbox (aai-server)
 
