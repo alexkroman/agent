@@ -1,19 +1,14 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Agent sandbox using secure-exec V8 isolates.
+ * Agent sandbox backed by Firecracker microVMs (Linux) or child processes
+ * (macOS dev mode).
  *
- * Communication between host and isolate uses secure-exec bindings (V8 bridge
- * IPC) in both directions — no HTTP servers, no loopback ports, no auth tokens:
- *
- * - **Isolate → Host (KV)**: The isolate calls `SecureExec.bindings.kv.*`
- *   which invoke host-side KV functions directly through the bridge.
- * - **Host → Isolate (RPC)**: The isolate runs a pull-based work loop calling
- *   `SecureExec.bindings.rpc.recv()` (which blocks until the host enqueues a
- *   request). Results are returned via `SecureExec.bindings.rpc.send()`.
- *
- * The host runs `createRuntime()` with RPC-backed `executeTool` and `hooks`
+ * The host runs `createRuntime()` with VM-backed `executeTool` and `hooks`
  * overrides, giving it the same session/S2S/WebSocket handling as self-hosted
  * mode without duplicating any of that logic.
+ *
+ * Communication with the guest uses the newline-delimited JSON RPC channel
+ * from `vsock.ts`, mediated by the `SandboxHandle` from `sandbox-vm.ts`.
  */
 
 import {
@@ -21,70 +16,33 @@ import {
   type AgentHooks,
   type AgentRuntime,
   createRuntime,
-  createUnstorageKv,
   type ExecuteTool,
-  errorMessage,
   HOOK_TIMEOUT_MS,
   resolveAllBuiltins,
   TOOL_EXECUTION_TIMEOUT_MS,
 } from "@alexkroman1/aai/host";
 import { createHooks } from "hookable";
-import type { BindingTree, NodeRuntimeDriverFactory, StdioEvent } from "secure-exec";
-import {
-  createInMemoryFileSystem,
-  createNodeDriver,
-  NodeExecutionDriver,
-  NodeRuntime,
-} from "secure-exec";
 import type { Storage } from "unstorage";
 import { agentKvPrefix } from "./constants.ts";
-import { initProcessJail, isJailAvailable, type JailedLauncher } from "./process-jail.ts";
-import { type IsolateConfig, TurnConfigResultSchema } from "./rpc-schemas.ts";
-import { getHarnessFiles } from "./sandbox-harness.ts";
-import { resolveSandbox as _resolveSandboxCore, type SlotCache } from "./sandbox-slots.ts";
+import type { IsolateConfig } from "./rpc-schemas.ts";
+import { TurnConfigResultSchema } from "./rpc-schemas.ts";
+import { type AgentMap, isAtCapacity } from "./sandbox-slots.ts";
+import { createSandboxVm, type SandboxHandle } from "./sandbox-vm.ts";
 import { ssrfSafeFetch } from "./ssrf.ts";
 import type { BundleStore } from "./store-types.ts";
 
-let jailLauncher: JailedLauncher | null = null;
-let jailInitialized = false;
-
-/**
- * IMPORTANT: Do NOT call `runtime.terminate()` or `runtime.dispose()` during
- * normal sandbox shutdown.
- *
- * secure-exec's NodeExecutionDriver uses reference counting — when all drivers
- * are terminated/disposed, `releaseSharedV8Runtime()` kills the shared Rust V8
- * process. In a long-lived server this is catastrophic: terminating the last
- * active isolate kills the Rust process, causing "broken pipe" errors for
- * subsequent boots.
- *
- * Instead, `channel.shutdown()` stops the RPC loop and the V8 session is
- * cleaned up when the Rust process eventually reclaims it. The memory cost
- * is negligible (~1MB per session per our load tests).
- *
- * `runtime.terminate()` should ONLY be called during full server shutdown
- * (process exit) when we want to clean up the Rust process.
- */
-
-const READ_ONLY_FS_OPS = new Set(["read", "stat", "readdir", "exists"]);
-
-// Suppress "Isolate is disposed" rejections from secure-exec internals.
-// These fire asynchronously when an isolate is terminated while its ESM
-// compiler has pending promises. They're harmless and expected during
-// sandbox shutdown/eviction.
-process.on("unhandledRejection", (reason: unknown) => {
-  if (reason instanceof Error && reason.message.includes("disposed")) return;
-  throw reason;
-});
+// ── Re-exports consumed by orchestrator / handlers / tests ──────────────
 
 export {
   type AgentSlot,
   createSlotCache,
-  ensureAgent,
-  registerSlot,
   type SlotCache,
+  terminateSlot,
+  withSlugLock,
 } from "./sandbox-slots.ts";
 export type { AgentMetadata } from "./schemas.ts";
+
+// ── Types ───────────────────────────────────────────────────────────────
 
 export type SandboxOptions = {
   workerCode: string;
@@ -98,210 +56,20 @@ export type SandboxOptions = {
 
 export type Sandbox = AgentRuntime;
 
-// ── Bindings: KV (isolate → host) ──────────────────────────────────────
-
-function buildKvBindings(kv: import("@alexkroman1/aai/kv").Kv): BindingTree {
-  return {
-    get: (key: unknown) => kv.get(key as string),
-    set: (key: unknown, value: unknown, expireIn?: unknown) =>
-      kv.set(key as string, value, expireIn ? { expireIn: expireIn as number } : undefined),
-    del: (key: unknown) => kv.delete(key as string),
-  };
-}
-
-// ── Bindings: RPC (host → isolate via pull-based work queue) ────────────
-
-type RpcChannel = {
-  call<T>(message: Record<string, unknown>, timeoutMs: number): Promise<T>;
-  shutdown(): void;
-};
-
-function buildRpcChannel(): { bindings: BindingTree; channel: RpcChannel } {
-  let pendingRecv: ((req: unknown) => void) | null = null;
-  const requestQueue: unknown[] = [];
-  const responses = new Map<
-    string,
-    { resolve: (v: unknown) => void; reject: (e: Error) => void }
-  >();
-  let nextId = 0;
-
-  const bindings: BindingTree = {
-    recv: () =>
-      new Promise((resolve) => {
-        if (requestQueue.length > 0) {
-          resolve(requestQueue.shift());
-        } else {
-          pendingRecv = resolve;
-        }
-      }),
-    send: (id: unknown, result: unknown, errorMsg?: unknown) => {
-      const entry = responses.get(id as string);
-      if (!entry) return;
-      responses.delete(id as string);
-      if (errorMsg) entry.reject(new Error(errorMsg as string));
-      else entry.resolve(result);
-    },
-  };
-
-  const channel: RpcChannel = {
-    call<T>(message: Record<string, unknown>, timeoutMs: number): Promise<T> {
-      const id = String(nextId++);
-      const { promise, resolve, reject } = Promise.withResolvers<T>();
-      responses.set(id, { resolve: resolve as (v: unknown) => void, reject });
-
-      const request = { ...message, id };
-      if (pendingRecv) {
-        const recv = pendingRecv;
-        pendingRecv = null;
-        recv(request);
-      } else {
-        requestQueue.push(request);
-      }
-
-      const timer = setTimeout(() => {
-        if (responses.delete(id)) {
-          reject(new Error(`RPC timeout after ${timeoutMs}ms`));
-        }
-      }, timeoutMs);
-
-      return promise.finally(() => clearTimeout(timer));
-    },
-
-    shutdown() {
-      if (pendingRecv) {
-        pendingRecv(null);
-        pendingRecv = null;
-      }
-      for (const [, { reject }] of responses) {
-        reject(new Error("Sandbox shutting down"));
-      }
-      responses.clear();
-    },
-  };
-
-  return { bindings, channel };
-}
-
-// ── Isolate lifecycle ───────────────────────────────────────────────────
-
-type IsolateHandle = { runtime: NodeRuntime; channel: RpcChannel };
-
-async function startIsolate(
-  workerCode: string,
-  kv: import("@alexkroman1/aai/kv").Kv,
-  agentEnv: Record<string, string>,
-): Promise<IsolateHandle> {
-  const harnessFiles = await getHarnessFiles();
-  const fs = createInMemoryFileSystem();
-  await fs.writeFile("/app/agent_bundle.js", workerCode);
-  for (const file of harnessFiles) {
-    await fs.writeFile(`/app/${file.name}`, file.content);
-  }
-
-  const kvBindings = buildKvBindings(kv);
-  const { bindings: rpcBindings, channel } = buildRpcChannel();
-  const allBindings: BindingTree = { kv: kvBindings, rpc: rpcBindings };
-
-  const prefixedEnv: Record<string, string> = {};
-  for (const [k, v] of Object.entries(agentEnv)) {
-    prefixedEnv[`AAI_ENV_${k}`] = v;
-  }
-  const allowedKeys = new Set(Object.keys(prefixedEnv));
-
-  if (!jailInitialized) {
-    jailInitialized = true;
-    if (isJailAvailable()) {
-      const { createRequire } = await import("node:module");
-      const { dirname, join } = await import("node:path");
-      const req = createRequire(import.meta.url);
-      const platformPkg = `@secure-exec/v8-${process.platform}-${process.arch === "x64" ? "x64-gnu" : "arm64-gnu"}`;
-      try {
-        const pkgDir = dirname(req.resolve(`${platformPkg}/package.json`));
-        const binaryPath = join(pkgDir, "secure-exec-v8");
-        jailLauncher = await initProcessJail({
-          binaryPath,
-          memoryLimitMb: 128 /* TODO: remove with nsjail */,
-        });
-        if (jailLauncher) {
-          process.once("beforeExit", () => {
-            jailLauncher?.cleanup().catch(() => {
-              /* ignore cleanup errors during shutdown */
-            });
-          });
-        }
-      } catch (err) {
-        console.warn("Failed to initialize process jail:", err);
-      }
-    }
-  }
-
-  const driverFactory: NodeRuntimeDriverFactory = {
-    createRuntimeDriver(options: Parameters<NodeRuntimeDriverFactory["createRuntimeDriver"]>[0]) {
-      return new NodeExecutionDriver(
-        Object.assign({}, options, { bindings: allBindings }) as ConstructorParameters<
-          typeof NodeExecutionDriver
-        >[0],
-      );
-    },
-  };
-
-  const runtime = new NodeRuntime({
-    systemDriver: createNodeDriver({
-      filesystem: fs,
-      permissions: {
-        fs: (req: { op: string; path: string }) =>
-          READ_ONLY_FS_OPS.has(req.op)
-            ? { allow: true }
-            : { allow: false, reason: "Filesystem is read-only" },
-        network: () => ({ allow: false, reason: "Network disabled — use bindings" }),
-        childProcess: () => ({ allow: false, reason: "Subprocess spawning is disabled" }),
-        env: (req: { op: string; key: string }) =>
-          req.op === "read" && allowedKeys.has(req.key ?? "")
-            ? { allow: true }
-            : { allow: false, reason: "Env access restricted" },
-      },
-      processConfig: { env: prefixedEnv, timingMitigation: "freeze" },
-    }),
-    runtimeDriverFactory: driverFactory,
-    memoryLimit: 64, // TODO: remove with secure-exec
-    onStdio(event: StdioEvent) {
-      if (event.channel === "stderr") {
-        console.error("[isolate stderr]", event.message);
-      }
-    },
-  });
-
-  runtime
-    .exec(
-      'import agent from "/app/agent_bundle.js";\nimport { startHarness } from "/app/harness-runtime.mjs";\nstartHarness(agent);',
-      { cwd: "/app" },
-    )
-    .catch((err: unknown) => {
-      const msg = errorMessage(err);
-      if (!msg.includes("disposed")) {
-        console.warn("Isolate exited unexpectedly:", msg);
-      }
-    });
-
-  return { runtime, channel };
-}
-
 // ── Hook invoker ────────────────────────────────────────────────────────
 
 /**
- * Build an RPC-backed hook invoker. Only hooks the agent actually defines
- * are registered, avoiding unnecessary isolate boot.
+ * Build a VM-backed hook invoker. Only hooks the agent actually defines
+ * are registered, avoiding unnecessary VM calls.
  */
-function buildHookInvoker(
-  getChannel: () => Promise<RpcChannel>,
-  hookFlags: IsolateConfig["hooks"],
-): AgentHooks {
-  const rpc = async (name: string, extra: Record<string, unknown> = {}): Promise<unknown> =>
-    (
-      await (
-        await getChannel()
-      ).call<{ result?: unknown }>({ type: "hook", hook: name, ...extra }, HOOK_TIMEOUT_MS)
-    ).result;
+function buildHookInvoker(handle: SandboxHandle, hookFlags: IsolateConfig["hooks"]): AgentHooks {
+  const rpc = async (name: string, extra: Record<string, unknown> = {}): Promise<unknown> => {
+    const response = await handle.request(
+      { type: "hook", hook: name, ...extra },
+      { timeout: HOOK_TIMEOUT_MS },
+    );
+    return response.result;
+  };
 
   const hooks = createHooks<AgentHookMap>();
   if (hookFlags.onConnect) {
@@ -332,17 +100,15 @@ function buildHookInvoker(
   return hooks;
 }
 
-// ── Public API ───────────────────────────────────────────────────────────
+// ── Public API ──────────────────────────────────────────────────────────
 
 /** @internal Exposed for testing only. */
 export const _internals = {
-  startIsolate,
   createSandbox,
 };
 
 export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
   const { workerCode, apiKey, agentEnv, storage, slug } = opts;
-  const kv = createUnstorageKv({ storage, prefix: agentKvPrefix(slug) });
 
   const safeFetch: typeof globalThis.fetch = (input, init?) => {
     let url: string;
@@ -352,43 +118,39 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
     return ssrfSafeFetch(url, init ?? {}, globalThis.fetch);
   };
 
-  // ── Resolve config + channel provider ─────────────────────────────
+  // ── Resolve config ───────────────────────────────────────────────
   const config = opts.agentConfig;
-  let isolate: IsolateHandle | null = null;
-  let isolatePromise: Promise<IsolateHandle> | null = null;
 
-  const ensureIsolate = async (): Promise<IsolateHandle> => {
-    if (isolate) return isolate;
-    if (!isolatePromise) {
-      isolatePromise = startIsolate(workerCode, kv, agentEnv).then(
-        (result) => {
-          isolate = result;
-          return result;
-        },
-        (err) => {
-          isolatePromise = null;
-          throw err;
-        },
-      );
-    }
-    return await isolatePromise;
-  };
+  // ── Create sandbox VM handle ─────────────────────────────────────
+  const sandboxHandle = await createSandboxVm({
+    slug,
+    workerCode,
+    agentEnv,
+    kvStorage: storage,
+    kvPrefix: agentKvPrefix(slug),
+    // Dev mode uses a harness path; Firecracker uses snapshots.
+    // The sandbox-vm factory selects the right backend automatically.
+    ...(process.env.GUEST_HARNESS_PATH ? { harnessPath: process.env.GUEST_HARNESS_PATH } : {}),
+  });
 
-  const getChannel = async () => (await ensureIsolate()).channel;
-
-  // ── Build tool executor + hooks from channel ──────────────────────
+  // ── Build tool executor + hooks from sandbox handle ──────────────
   const executeTool: ExecuteTool = async (name, args, sessionId, messages) => {
-    const ch = await getChannel();
-    const { result } = await ch.call<{ result: string }>(
-      { type: "tool", name, args, sessionId: sessionId ?? "", messages: [...(messages ?? [])] },
-      TOOL_EXECUTION_TIMEOUT_MS,
+    const response = await sandboxHandle.request(
+      {
+        type: "tool",
+        name,
+        args,
+        sessionId: sessionId ?? "",
+        messages: [...(messages ?? [])],
+      },
+      { timeout: TOOL_EXECUTION_TIMEOUT_MS },
     );
-    return result;
+    return response.result as string;
   };
 
-  const hooks = buildHookInvoker(getChannel, config.hooks);
+  const hooks = buildHookInvoker(sandboxHandle, config.hooks);
 
-  // ── Assemble runtime ──────────────────────────────────────────────
+  // ── Assemble runtime ─────────────────────────────────────────────
   const builtins = resolveAllBuiltins(config.builtinTools ?? []);
   const agentRuntime = createRuntime({
     agent: {
@@ -417,10 +179,8 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
 
   async function shutdownSandbox(): Promise<void> {
     hooks.removeAllHooks();
-    isolate?.channel.shutdown();
+    await sandboxHandle.shutdown();
     await agentRuntime.shutdown();
-    // Note: we intentionally do NOT call runtime.terminate() here.
-    // See the comment above startIsolate for why.
   }
 
   return {
@@ -430,9 +190,140 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
   };
 }
 
+// ── Resolve sandbox (AgentMap-based) ────────────────────────────────────
+
 export async function resolveSandbox(
   slug: string,
-  opts: { slots: SlotCache; store: BundleStore; storage: Storage },
+  opts: {
+    slots: import("./sandbox-slots.ts").SlotCache;
+    store: BundleStore;
+    storage: Storage;
+    agents?: AgentMap;
+  },
 ): Promise<Sandbox | null> {
-  return _resolveSandboxCore(slug, { ...opts, createSandbox });
+  // If an AgentMap is provided, use the new VM-based flow.
+  // Otherwise fall back to the legacy slot-based flow for backward compat.
+  const agents = opts.agents;
+  if (agents) {
+    return resolveSandboxVm(slug, { agents, store: opts.store, storage: opts.storage });
+  }
+
+  // Legacy path: slot-based resolution
+  return resolveSandboxLegacy(slug, opts);
+}
+
+/**
+ * New VM-based sandbox resolution using AgentMap.
+ *
+ * - If the agent already exists in the map, return its runtime
+ * - If not, fetch from bundle store, create sandbox VM, add to map
+ * - Track sessions and manage idle timers
+ * - Reject when at capacity
+ */
+async function resolveSandboxVm(
+  slug: string,
+  opts: { agents: AgentMap; store: BundleStore; storage: Storage },
+): Promise<Sandbox | null> {
+  const { agents, store, storage } = opts;
+
+  const existing = agents.get(slug);
+  if (existing) {
+    agents.cancelIdleTimer(slug);
+    return existing.sandbox as unknown as Sandbox;
+  }
+
+  // Check capacity before creating a new VM
+  if (isAtCapacity(agents)) {
+    console.warn("VM capacity reached, rejecting new sandbox", { slug });
+    return null;
+  }
+
+  // Fetch manifest and worker code from bundle store
+  const [manifest, workerCode, agentConfig] = await Promise.all([
+    store.getManifest(slug),
+    store.getWorkerCode(slug),
+    store.getAgentConfig(slug),
+  ]);
+
+  if (!(manifest && workerCode && agentConfig)) {
+    return null;
+  }
+
+  // Extract env: platform key stays host-side, agent secrets go to VM
+  const env = (await store.getEnv(slug)) ?? {};
+  const { ASSEMBLYAI_API_KEY: apiKey = "", ...agentEnv } = env;
+
+  const sandbox = await createSandbox({
+    workerCode,
+    apiKey,
+    agentEnv,
+    storage,
+    slug,
+    agentConfig,
+  });
+
+  agents.set(slug, {
+    slug,
+    sandbox,
+    sessions: new Set(),
+    idleTimer: null,
+  });
+
+  // Start idle timer — will be cancelled when a session connects
+  agents.startIdleTimer(slug);
+
+  return sandbox;
+}
+
+/**
+ * Legacy slot-based resolution. Used when no AgentMap is provided.
+ * This preserves backward compatibility with existing orchestrator code.
+ */
+async function resolveSandboxLegacy(
+  slug: string,
+  opts: { slots: import("./sandbox-slots.ts").SlotCache; store: BundleStore; storage: Storage },
+): Promise<Sandbox | null> {
+  const { slots, store, storage } = opts;
+
+  let slot = slots.get(slug);
+
+  if (!slot) {
+    const manifest = await store.getManifest(slug);
+    if (!manifest) return null;
+    slot = {
+      slug: manifest.slug,
+      keyHash: manifest.credential_hashes[0] ?? "",
+    };
+    slots.set(slug, slot);
+    console.info("Lazy-discovered agent from store", { slug });
+  }
+
+  if (slot.sandbox) {
+    return slot.sandbox as Sandbox;
+  }
+
+  // Fetch worker code and config
+  const [workerCode, agentConfig] = await Promise.all([
+    store.getWorkerCode(slug),
+    store.getAgentConfig(slug),
+  ]);
+
+  if (!(workerCode && agentConfig)) {
+    return null;
+  }
+
+  const env = (await store.getEnv(slug)) ?? {};
+  const { ASSEMBLYAI_API_KEY: apiKey = "", ...agentEnv } = env;
+
+  const sandbox = await createSandbox({
+    workerCode,
+    apiKey,
+    agentEnv,
+    storage,
+    slug,
+    agentConfig,
+  });
+
+  slot.sandbox = sandbox;
+  return sandbox;
 }
