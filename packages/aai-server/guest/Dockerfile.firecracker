@@ -60,9 +60,8 @@ RUN ARCH=$(uname -m) \
     && rm -rf /tmp/node-static /tmp/node-static.tar.xz \
     && chmod +x /usr/local/bin/node-static
 
-# Copy workspace config, lockfile, and patches first (layer cache)
+# Copy workspace config and lockfile first (layer cache)
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY patches/ patches/
 COPY packages/aai/package.json packages/aai/
 COPY packages/aai-server/package.json packages/aai-server/
 
@@ -111,9 +110,8 @@ RUN mkdir -p /app/packages/aai-server/guest/dist
 COPY --from=kernel-builder /build/out/vmlinux /app/packages/aai-server/guest/dist/vmlinux
 COPY --from=initrd-builder /build/out/initrd.cpio.gz /app/packages/aai-server/guest/dist/initrd.cpio.gz
 
-# Copy workspace config, lockfile, and patches (layer cache)
+# Copy workspace config and lockfile (layer cache)
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY patches/ patches/
 COPY packages/aai/package.json packages/aai/
 COPY packages/aai-server/package.json packages/aai-server/
 

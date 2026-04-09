@@ -217,9 +217,8 @@ export async function bundleAgent(
   const clientDir = path.join(aaiDir, "client");
 
   // 1. Worker — SSR build
-  // Zod must be external: its JIT compiler uses Function() which is blocked
-  // in secure-exec isolates. The platform server provides a safe zod build
-  // in the isolate's virtual filesystem at /app/_zod.mjs.
+  // Zod must be external: the platform server provides a lightweight zod shim
+  // in the guest VM's virtual filesystem at /app/_zod.mjs.
   // Everything else is bundled (noExternal: true) so the worker is self-contained.
   try {
     await build({

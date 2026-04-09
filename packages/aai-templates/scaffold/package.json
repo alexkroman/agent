@@ -22,10 +22,8 @@
     "@alexkroman1/aai-cli": "^0.12.3",
     "@biomejs/biome": "^2.4.9",
     "@preact/preset-vite": "^2.9.6",
-    "@secure-exec/typescript": "^0.2.1",
     "@tailwindcss/vite": "^4.2.1",
     "@types/node": "^25.5.0",
-    "secure-exec": "^0.2.1",
     "typescript": "^6.0.2",
     "vite": "^8.0.3",
     "vitest": "^4.1.1"

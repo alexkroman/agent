@@ -161,17 +161,17 @@
               "level": "error",
               "options": {
                 "paths": {
-                  "node:dns/promises": "Not available in secure-exec isolates. SSRF validation lives in aai-server.",
-                  "node:child_process": "Not available in secure-exec isolates (subprocess spawning disabled).",
-                  "node:worker_threads": "Not available in secure-exec isolates.",
-                  "node:cluster": "Not available in secure-exec isolates.",
-                  "node:dgram": "Not available in secure-exec isolates.",
-                  "node:inspector": "Not available in secure-exec isolates.",
-                  "node:perf_hooks": "Not available in secure-exec isolates. Use @opentelemetry/api instead.",
-                  "node:trace_events": "Not available in secure-exec isolates.",
-                  "node:v8": "Not available in secure-exec isolates.",
-                  "node:wasi": "Not available in secure-exec isolates.",
-                  "node:async_hooks": "Not available in secure-exec isolates."
+                  "node:dns/promises": "SSRF validation lives in aai-server.",
+                  "node:child_process": "Not available in Firecracker guest VMs.",
+                  "node:worker_threads": "Not available in Firecracker guest VMs.",
+                  "node:cluster": "Not available in Firecracker guest VMs.",
+                  "node:dgram": "Not available in Firecracker guest VMs.",
+                  "node:inspector": "Not available in Firecracker guest VMs.",
+                  "node:perf_hooks": "Use @opentelemetry/api instead.",
+                  "node:trace_events": "Not available in Firecracker guest VMs.",
+                  "node:v8": "Not available in Firecracker guest VMs.",
+                  "node:wasi": "Not available in Firecracker guest VMs.",
+                  "node:async_hooks": "Not available in Firecracker guest VMs."
                 }
               }
             }
