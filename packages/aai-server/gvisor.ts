@@ -1,19 +1,18 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * gVisor sandbox for running agent code with filesystem isolation.
+ * gVisor sandbox for running agent code in isolation.
  *
- * Uses `runsc do --rootfs` to run Node.js inside a gVisor sandbox with
- * a minimal rootfs containing only the node binary and harness script.
- * Communication uses stdio pipes (stdin/stdout).
+ * Uses `runsc do` to run Node.js inside a gVisor sandbox. The host
+ * filesystem is mounted read-only with a tmpfs overlay (writes go to
+ * memory, not disk). Network is disabled (--network=none).
  *
- * `runsc do` is simpler than `runsc run` (OCI mode) and works inside
- * Docker containers without special capabilities.
+ * Agent code is injected over stdio (not from disk), so even though
+ * the host FS is readable, the agent has no network to exfiltrate data.
+ *
+ * Communication uses stdio pipes (stdin/stdout) with vscode-jsonrpc.
  */
 
 import { type ChildProcess, execFileSync, spawn } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 
 /**
  * Returns true if gVisor's `runsc` runtime is available on this system.
@@ -35,17 +34,19 @@ export type GvisorSandbox = {
 };
 
 /**
- * Creates a gVisor sandbox with a minimal rootfs.
- * Only the node binary and harness script are accessible.
+ * Creates a gVisor sandbox running the given Node.js harness script.
+ *
+ * Security layers:
+ * - Syscall interception: gVisor Sentry reimplements syscalls in Go
+ * - Network: disabled (--network=none)
+ * - Filesystem: host FS is read-only with tmpfs overlay
+ * - Agent code: injected over stdio, not from disk
+ *
+ * Resource limits (memory, PIDs) should be enforced by the container
+ * orchestrator (Docker, Fly.io) since --ignore-cgroups is used for
+ * compatibility with cgroup v1/v2 hybrid environments.
  */
 export function createGvisorSandbox(opts: { slug: string; harnessPath: string }): GvisorSandbox {
-  const rootfsDir = mkdtempSync(join(tmpdir(), `aai-gvisor-${opts.slug}-`));
-
-  // Create minimal rootfs with only node + harness
-  mkdirSync(join(rootfsDir, "app"), { recursive: true });
-  cpSync(process.execPath, join(rootfsDir, "node"));
-  cpSync(opts.harnessPath, join(rootfsDir, "app", "harness.mjs"));
-
   const child = spawn(
     "runsc",
     [
@@ -53,12 +54,10 @@ export function createGvisorSandbox(opts: { slug: string; harnessPath: string })
       "--network=none",
       "--ignore-cgroups",
       "do",
-      "-root",
-      rootfsDir,
       "-quiet",
       "--",
-      "/node",
-      "/app/harness.mjs",
+      process.execPath,
+      opts.harnessPath,
     ],
     { stdio: ["pipe", "pipe", "pipe"] },
   );
@@ -74,7 +73,6 @@ export function createGvisorSandbox(opts: { slug: string; harnessPath: string })
         }
         child.on("exit", () => resolve());
       });
-      rmSync(rootfsDir, { recursive: true, force: true });
     },
   };
 }
