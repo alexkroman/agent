@@ -53,7 +53,7 @@ describe("parseManifest", () => {
     const result = parseManifest(input);
     expect(result.name).toBe("Weather Agent");
     expect(result.systemPrompt).toBe("You are a weather bot.");
-    expect(result.tools.get_weather.description).toBe("Get weather");
+    expect(result.tools.get_weather?.description).toBe("Get weather");
     expect(result.hooks.onConnect).toBe(true);
     expect(result.maxSteps).toBe(10);
     expect(result.toolChoice).toBe("required");

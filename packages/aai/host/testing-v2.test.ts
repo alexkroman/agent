@@ -207,9 +207,9 @@ describe("turn", () => {
     ]);
 
     expect(turn1.toolCalls).toHaveLength(2);
-    expect(turn1.toolCalls[0].name).toBe("add-item");
-    expect(turn1.toolCalls[0].result).toEqual({ added: "apple", count: 1 });
-    expect(turn1.toolCalls[1].result).toEqual({ added: "banana", count: 2 });
+    expect(turn1.toolCalls[0]?.name).toBe("add-item");
+    expect(turn1.toolCalls[0]?.result).toEqual({ added: "apple", count: 1 });
+    expect(turn1.toolCalls[1]?.result).toEqual({ added: "banana", count: 2 });
 
     const turn2 = await t.turn("Show items", [{ tool: "get-items", args: {} }]);
     const items = turn2.toolResult<string[]>("get-items");

@@ -11,7 +11,7 @@ import { DEFAULT_GREETING, DEFAULT_SYSTEM_PROMPT } from "./types.ts";
 
 export type ToolManifest = {
   description: string;
-  parameters?: Record<string, unknown>;
+  parameters?: Record<string, unknown> | undefined;
 };
 
 export type HookFlags = {
@@ -25,12 +25,12 @@ export type Manifest = {
   name: string;
   systemPrompt: string;
   greeting: string;
-  sttPrompt?: string;
+  sttPrompt?: string | undefined;
   builtinTools: string[];
   maxSteps: number;
   toolChoice: "auto" | "required";
-  idleTimeoutMs?: number;
-  theme?: Record<string, string>;
+  idleTimeoutMs?: number | undefined;
+  theme?: Record<string, string> | undefined;
   tools: Record<string, ToolManifest>;
   hooks: HookFlags;
 };
