@@ -27,4 +27,4 @@ fi
 echo "Building gVisor test image..."
 docker build -f "$DOCKERFILE" -t "$IMAGE_NAME" .
 echo "Running gVisor integration tests..."
-docker run --rm --security-opt seccomp=unconfined "$IMAGE_NAME"
+docker run --rm --privileged "$IMAGE_NAME"

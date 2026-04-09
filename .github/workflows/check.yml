@@ -151,7 +151,7 @@ jobs:
           -t aai-gvisor-test .
       - name: Run gVisor integration tests
         run: >-
-          docker run --rm --security-opt seccomp=unconfined
+          docker run --rm --privileged
           aai-gvisor-test
 
   e2e:
