@@ -9,9 +9,18 @@ import * as p from "@clack/prompts";
 import { colorize } from "consola/utils";
 import { DEFAULT_DEV_SERVER, getMonorepoRoot, isDevMode } from "./_agent.ts";
 import { ensureApiKeyInEnv } from "./_config.ts";
+import { type CommandResult, ok } from "./_output.ts";
 import { listTemplates } from "./_templates.ts";
 import { log } from "./_ui.ts";
 import { fileExists, resolveCwd } from "./_utils.ts";
+
+type InitData = {
+  dir: string;
+  template: string;
+  deployed: boolean;
+  slug?: string;
+  url?: string;
+};
 
 const execFileAsync = promisify(execFile);
 
@@ -113,7 +122,30 @@ function resolveDeployServer(
   return explicit ?? (monorepoRoot ? DEFAULT_DEV_SERVER : undefined);
 }
 
-export async function runInitCommand(
+/** Run deploy after init and return deploy metadata if successful. */
+async function tryDeploy(
+  cwd: string,
+  server: string | undefined,
+  monorepoRoot: string | null,
+): Promise<{ slug: string; url: string } | null> {
+  const resolvedServer = resolveDeployServer(server, monorepoRoot);
+  const { executeDeploy } = await import("./deploy.ts");
+  const result = await executeDeploy({
+    cwd,
+    ...(resolvedServer ? { server: resolvedServer } : {}),
+  });
+  return result.ok ? { slug: result.data.slug, url: result.data.url } : null;
+}
+
+/** Print post-init instructions. */
+function printPostInitInfo(dir: string, monorepoRoot: string | null): void {
+  log.success(`Created ${dir}`);
+  const cdTarget = monorepoRoot ? `tmp/${dir}` : dir;
+  if (monorepoRoot) log.info("Dev mode: project linked to workspace packages");
+  log.info(`Next: cd ${cdTarget} && aai dev`);
+}
+
+export async function executeInit(
   opts: {
     dir?: string | undefined;
     template?: string | undefined;
@@ -124,7 +156,7 @@ export async function runInitCommand(
     server?: string | undefined;
   },
   extra?: { quiet?: boolean | undefined },
-): Promise<string> {
+): Promise<CommandResult<InitData>> {
   if (!extra?.quiet) {
     p.intro(colorize("cyanBright", "Create a new voice agent"));
   }
@@ -154,18 +186,34 @@ export async function runInitCommand(
 
   await installDeps(cwd);
 
+  let deployed = false;
+  let slug: string | undefined;
+  let url: string | undefined;
+
   if (!(opts.skipDeploy || extra?.quiet)) {
-    const server = resolveDeployServer(opts.server, monorepoRoot);
-    const { runDeployCommand } = await import("./deploy.ts");
-    await runDeployCommand({ cwd, ...(server ? { server } : {}) });
+    const deployInfo = await tryDeploy(cwd, opts.server, monorepoRoot);
+    if (deployInfo) {
+      deployed = true;
+      slug = deployInfo.slug;
+      url = deployInfo.url;
+    }
   }
 
   if (!extra?.quiet) {
-    log.success(`Created ${dir}`);
-    const cdTarget = monorepoRoot ? `tmp/${dir}` : dir;
-    if (monorepoRoot) log.info("Dev mode: project linked to workspace packages");
-    log.info(`Next: cd ${cdTarget} && aai dev`);
+    printPostInitInfo(dir, monorepoRoot);
   }
 
-  return cwd;
+  const data: InitData = { dir: cwd, template, deployed };
+  if (slug) data.slug = slug;
+  if (url) data.url = url;
+  return ok(data);
+}
+
+export async function runInitCommand(
+  opts: Parameters<typeof executeInit>[0],
+  extra?: Parameters<typeof executeInit>[1],
+): Promise<string> {
+  const result = await executeInit(opts, extra);
+  if (!result.ok) throw new Error(result.error);
+  return result.data.dir;
 }

@@ -93,16 +93,24 @@ const init = defineCommand({
   async run({ args }) {
     const mode = resolveMode(args);
     await handleErrors(mode, async () => {
-      const { runInitCommand } = await import("./init.ts");
-      await runInitCommand({
-        dir: args.dir,
-        template: args.template,
-        force: args.force,
-        yes: args.yes,
-        skipApi: args.skipApi,
-        skipDeploy: args.skipDeploy,
-        server: args.server,
-      });
+      const { executeInit } = await import("./init.ts");
+      const { withOutput } = await import("./_output.ts");
+      await withOutput(
+        mode,
+        () =>
+          executeInit({
+            dir: args.dir,
+            template: args.template,
+            force: args.force,
+            yes: args.yes,
+            skipApi: args.skipApi,
+            skipDeploy: args.skipDeploy,
+            server: args.server,
+          }),
+        () => {
+          /* human output handled inside executeInit */
+        },
+      );
     });
   },
 });
