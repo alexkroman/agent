@@ -14,7 +14,7 @@
 import { createInterface } from "node:readline";
 import type { Duplex } from "node:stream";
 import type { HookRequest, ToolCallRequest } from "../rpc-schemas.ts";
-import { executeTool, initHarness, invokeHook } from "./harness-logic.ts";
+import { executeTool, initHarness, invokeHook, resetAgentEnv } from "./harness-logic.ts";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -233,11 +233,13 @@ export async function main(stream: Duplex): Promise<void> {
   // Respond ok
   stream.write(`${JSON.stringify({ id: bundleMsg.id, ok: true })}\n`);
 
-  // Set env vars from the bundle
+  // Set env vars from the bundle with AAI_ENV_ prefix so harness-logic.ts
+  // can find them (it filters process.env by that prefix).
   const env = (bundleMsg.env ?? {}) as Record<string, string>;
   for (const [k, v] of Object.entries(env)) {
-    process.env[k] = v;
+    process.env[`AAI_ENV_${k}`] = v;
   }
+  resetAgentEnv(); // Clear cached env so getAgentEnv() picks up new vars
 
   // Load agent code — the Firecracker VM is the security boundary.
   // Agent code is trusted within the VM; new Function() is the appropriate

@@ -10,6 +10,7 @@ export default defineConfig({
       "docker-build.test.ts",
       "orchestrator-integration.test.ts",
       "ws-integration.test.ts",
+      "fake-vm-integration.test.ts",
       "node_modules",
       "dist",
     ],

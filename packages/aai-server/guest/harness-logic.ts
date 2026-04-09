@@ -109,7 +109,7 @@ export async function executeTool(
   };
 
   const ctx: ToolContext = {
-    env: agentEnv,
+    env: getAgentEnv(),
     state: sessionState.get(req.sessionId),
     sessionId: req.sessionId,
     kv: kvAdapter,
@@ -191,13 +191,30 @@ const AAI_ENV_PREFIX = "AAI_ENV_";
  * Agent environment variables, filtered from process.env by the AAI_ENV_ prefix.
  * The prefix is stripped before the map is frozen and exposed to tools/hooks.
  */
-export const agentEnv: Readonly<Record<string, string>> = Object.freeze(
-  Object.fromEntries(
-    Object.entries(process.env)
-      .filter(([k]) => k.startsWith(AAI_ENV_PREFIX))
-      .map(([k, v]) => [k.slice(AAI_ENV_PREFIX.length), v ?? ""]),
-  ),
-);
+/**
+ * Agent environment variables, filtered from process.env by the AAI_ENV_ prefix.
+ * Computed lazily on first access so that env vars set after module load
+ * (e.g. from bundle injection) are included.
+ */
+let _agentEnv: Readonly<Record<string, string>> | null = null;
+
+export function getAgentEnv(): Readonly<Record<string, string>> {
+  if (!_agentEnv) {
+    _agentEnv = Object.freeze(
+      Object.fromEntries(
+        Object.entries(process.env)
+          .filter(([k]) => k.startsWith(AAI_ENV_PREFIX))
+          .map(([k, v]) => [k.slice(AAI_ENV_PREFIX.length), v ?? ""]),
+      ),
+    );
+  }
+  return _agentEnv;
+}
+
+/** Reset cached env (call after setting new AAI_ENV_ vars). */
+export function resetAgentEnv(): void {
+  _agentEnv = null;
+}
 
 // ── Harness initializer ───────────────────────────────────────────────────────
 
@@ -239,7 +256,7 @@ export function initHarness(
   const hooks = createAgentHooks({
     agent,
     makeCtx: (sid) => ({
-      env: agentEnv,
+      env: getAgentEnv(),
       state: sessionState.get(sid),
       sessionId: sid,
       kv: kvAdapter,
