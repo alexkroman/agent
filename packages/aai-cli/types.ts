@@ -9,7 +9,6 @@
 export type {
   AgentDef,
   BuiltinTool,
-  HookContext,
   Kv,
   Message,
   ToolChoice,

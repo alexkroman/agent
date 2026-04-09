@@ -10,7 +10,6 @@ import { describe, expect, test } from "vitest";
 import {
   DEFAULT_STT_SAMPLE_RATE,
   DEFAULT_TTS_SAMPLE_RATE,
-  HOOK_TIMEOUT_MS,
   TOOL_EXECUTION_TIMEOUT_MS,
 } from "./constants.ts";
 import type { ClientEvent, ClientMessage, ServerMessage } from "./protocol.ts";
@@ -35,7 +34,6 @@ describe("protocol constants", () => {
   });
 
   test("timeout constants", () => {
-    expect(HOOK_TIMEOUT_MS).toMatchInlineSnapshot("5000");
     expect(TOOL_EXECUTION_TIMEOUT_MS).toMatchInlineSnapshot("30000");
   });
 

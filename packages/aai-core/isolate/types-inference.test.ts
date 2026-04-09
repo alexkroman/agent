@@ -9,7 +9,7 @@
  */
 import { describe, expectTypeOf, test } from "vitest";
 import { z } from "zod";
-import type { AgentDef, HookContext, Message, ToolContext, ToolDef } from "./types.ts";
+import type { AgentDef, Message, ToolContext, ToolDef } from "./types.ts";
 
 describe("ToolDef type inference", () => {
   test("infers parameter types in execute args", () => {
@@ -53,12 +53,6 @@ describe("ToolDef type inference", () => {
     expectTypeOf<ToolContext["messages"]>().toEqualTypeOf<readonly Message[]>();
     expectTypeOf<ToolContext["env"]>().toEqualTypeOf<Readonly<Record<string, string>>>();
   });
-
-  test("HookContext omits messages", () => {
-    expectTypeOf<HookContext>().toHaveProperty("kv");
-    expectTypeOf<HookContext>().toHaveProperty("env");
-    expectTypeOf<HookContext>().not.toHaveProperty("messages");
-  });
 });
 
 describe("AgentDef type inference", () => {
@@ -73,23 +67,17 @@ describe("AgentDef type inference", () => {
     expectTypeOf(agent).toMatchTypeOf<AgentDef>();
   });
 
-  test("typed state flows through to hooks and tools", () => {
+  test("typed state flows through to tools", () => {
     type MyState = { counter: number; name: string };
 
     // This should compile without errors — state type flows
-    // through to onConnect, onUserTranscript, and tool execute context
+    // through to tool execute context
     const _agent: AgentDef<MyState> = {
       name: "typed-state",
       systemPrompt: "Be helpful.",
       greeting: "Hello!",
       maxSteps: 5,
       state: () => ({ counter: 0, name: "test" }),
-      onConnect: (ctx) => {
-        expectTypeOf(ctx.state).toEqualTypeOf<MyState>();
-      },
-      onUserTranscript: (_text, ctx) => {
-        expectTypeOf(ctx.state).toEqualTypeOf<MyState>();
-      },
       tools: {
         inc: {
           description: "Increment",

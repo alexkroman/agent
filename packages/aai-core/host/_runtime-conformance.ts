@@ -32,8 +32,6 @@
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import type { ExecuteTool } from "../isolate/_internal-types.ts";
-import type { AgentHooks } from "../isolate/hooks.ts";
-import { callResolveTurnConfig } from "../isolate/hooks.ts";
 import type { AgentDef } from "../isolate/types.ts";
 
 // ── Shared context type ────────────────────────────────────────────────────
@@ -46,7 +44,6 @@ import type { AgentDef } from "../isolate/types.ts";
  */
 export type RuntimeTestContext = {
   executeTool: ExecuteTool;
-  hooks: AgentHooks;
 };
 
 // ── Conformance agent ──────────────────────────────────────────────────────
@@ -85,12 +82,6 @@ export const CONFORMANCE_AGENT: AgentDef = {
         return `stored:${JSON.stringify(result)}`;
       },
     },
-  },
-  onConnect: (ctx) => {
-    (ctx.state as { count: number }).count = 1;
-  },
-  onUserTranscript: (text: string, ctx) => {
-    (ctx.state as { lastTurn: string }).lastTurn = text;
   },
 };
 
@@ -146,45 +137,6 @@ export function testRuntime(label: string, getContext: () => RuntimeTestContext)
       const state = JSON.parse(result);
       expect(state).toHaveProperty("count", 0);
       expect(state).toHaveProperty("lastTurn", "");
-    });
-
-    test("onConnect hook updates session state", async () => {
-      const { executeTool, hooks } = getContext();
-      const sid = "state-connect";
-      await hooks.callHook("connect", sid);
-      const result = await executeTool("get_state", {}, sid, []);
-      expect(JSON.parse(result).count).toBe(1);
-    });
-
-    test("onUserTranscript hook updates session state", async () => {
-      const { executeTool, hooks } = getContext();
-      const sid = "state-turn";
-      await hooks.callHook("userTranscript", sid, "user said something");
-      const result = await executeTool("get_state", {}, sid, []);
-      expect(JSON.parse(result).lastTurn).toBe("user said something");
-    });
-
-    // ── Lifecycle hooks ──────────────────────────────────────────────
-
-    test("onConnect resolves without error", async () => {
-      const { hooks } = getContext();
-      await expect(hooks.callHook("connect", "hook-1")).resolves.toBeUndefined();
-    });
-
-    test("onDisconnect resolves without error", async () => {
-      const { hooks } = getContext();
-      await expect(hooks.callHook("disconnect", "hook-2")).resolves.toBeUndefined();
-    });
-
-    test("onUserTranscript resolves without error", async () => {
-      const { hooks } = getContext();
-      await expect(hooks.callHook("userTranscript", "hook-3", "test")).resolves.toBeUndefined();
-    });
-
-    test("resolveTurnConfig returns null for static maxSteps", async () => {
-      const { hooks } = getContext();
-      const config = await callResolveTurnConfig(hooks, "hook-5");
-      expect(config).toBeNull();
     });
   });
 }

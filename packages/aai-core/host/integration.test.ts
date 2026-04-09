@@ -169,32 +169,6 @@ describe("SDK integration: AgentDef → tool execution", () => {
     expect(parsed.toolChoice).toBe("required");
   });
 
-  test("lifecycle hooks fire correctly", async () => {
-    const log: string[] = [];
-    const agent: AgentDef = {
-      name: "hooks-agent",
-      systemPrompt: "Be helpful.",
-      greeting: "Hello!",
-      maxSteps: 5,
-      tools: {},
-      onConnect: () => {
-        log.push("connected");
-      },
-      onDisconnect: () => {
-        log.push("disconnected");
-      },
-      onUserTranscript: (text) => {
-        log.push(`turn:${text}`);
-      },
-    };
-
-    const exec = createRuntime({ agent, env: {} });
-    await exec.hooks.callHook("connect", "s1");
-    await exec.hooks.callHook("userTranscript", "s1", "Hello world");
-    await exec.hooks.callHook("disconnect", "s1");
-    expect(log).toEqual(["connected", "turn:Hello world", "disconnected"]);
-  });
-
   test("builtin tools are available alongside custom tools", async () => {
     const agent: AgentDef = {
       name: "mixed-tools",

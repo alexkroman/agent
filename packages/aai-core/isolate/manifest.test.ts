@@ -13,12 +13,6 @@ describe("parseManifest", () => {
       toolChoice: "auto",
       builtinTools: [],
       tools: {},
-      hooks: {
-        onConnect: false,
-        onDisconnect: false,
-        onUserTranscript: false,
-        onError: false,
-      },
     });
   });
 
@@ -43,18 +37,11 @@ describe("parseManifest", () => {
           },
         },
       },
-      hooks: {
-        onConnect: true,
-        onDisconnect: false,
-        onUserTranscript: true,
-        onError: false,
-      },
     };
     const result = parseManifest(input);
     expect(result.name).toBe("Weather Agent");
     expect(result.systemPrompt).toBe("You are a weather bot.");
     expect(result.tools.get_weather?.description).toBe("Get weather");
-    expect(result.hooks.onConnect).toBe(true);
     expect(result.maxSteps).toBe(10);
     expect(result.toolChoice).toBe("required");
   });

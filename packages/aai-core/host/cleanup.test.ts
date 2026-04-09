@@ -7,9 +7,7 @@
  * error, and reset to prevent memory leaks in long-running processes.
  */
 
-import { createHooks } from "hookable";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import type { AgentHookMap } from "../isolate/hooks.ts";
 import { MockWebSocket } from "./_mock-ws.ts";
 import {
   makeClient,
@@ -200,36 +198,6 @@ describe("createS2sSession resource cleanup", () => {
     resolveToolCall("done");
     await stopPromise;
 
-    expect(mockHandle.close).toHaveBeenCalled();
-  });
-
-  test("stop() drains all in-flight hook promises before completing", async () => {
-    let resolveOnConnect!: () => void;
-    const hooks = createHooks<AgentHookMap>();
-    hooks.hook(
-      "connect",
-      () =>
-        new Promise<void>((r) => {
-          resolveOnConnect = r;
-        }),
-    );
-    hooks.hook("disconnect", async () => {
-      /* noop */
-    });
-    const { session, mockHandle } = setup({ hooks });
-
-    // start() fires onConnect hook asynchronously — don't await it fully
-    const startPromise = session.start();
-    await startPromise;
-
-    // onConnect is still pending
-    const stopPromise = session.stop();
-
-    // Resolve the pending hook
-    resolveOnConnect();
-    await stopPromise;
-
-    // If we got here without hanging, drainHooks worked correctly
     expect(mockHandle.close).toHaveBeenCalled();
   });
 

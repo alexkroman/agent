@@ -16,9 +16,6 @@ export const DEFAULT_TTS_SAMPLE_RATE = 24_000;
 
 // ─── Timeouts (ms) ───────────────────────────────────────────────────────
 
-/** Default timeout for agent lifecycle hooks (onConnect, onUserTranscript, etc). */
-export const HOOK_TIMEOUT_MS = 5000;
-
 /** Default timeout for tool execution in the worker. */
 export const TOOL_EXECUTION_TIMEOUT_MS = 30_000;
 

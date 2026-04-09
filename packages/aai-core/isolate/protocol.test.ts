@@ -2,7 +2,6 @@ import { describe, expect, test } from "vitest";
 import {
   DEFAULT_STT_SAMPLE_RATE,
   DEFAULT_TTS_SAMPLE_RATE,
-  HOOK_TIMEOUT_MS,
   TOOL_EXECUTION_TIMEOUT_MS,
 } from "./constants.ts";
 import {
@@ -25,10 +24,6 @@ describe("protocol constants", () => {
 
   test('AUDIO_FORMAT is "pcm16"', () => {
     expect(AUDIO_FORMAT).toBe("pcm16");
-  });
-
-  test("HOOK_TIMEOUT_MS is 5000", () => {
-    expect(HOOK_TIMEOUT_MS).toBe(5000);
   });
 
   test("TOOL_EXECUTION_TIMEOUT_MS is 30000", () => {

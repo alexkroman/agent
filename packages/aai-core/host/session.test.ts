@@ -1,13 +1,6 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { HOOK_TIMEOUT_MS } from "../isolate/constants.ts";
 import { DEFAULT_SYSTEM_PROMPT } from "../isolate/types.ts";
-import {
-  flush,
-  makeClient,
-  makeMockHandle,
-  makeSessionOpts,
-  makeTestHooks,
-} from "./_test-utils.ts";
+import { flush, makeClient, makeMockHandle, makeSessionOpts } from "./_test-utils.ts";
 import type { S2sHandle } from "./s2s.ts";
 import { _internals, createS2sSession, type S2sSessionOptions } from "./session.ts";
 
@@ -30,14 +23,11 @@ describe("createS2sSession", () => {
     connectSpy?.mockRestore();
   });
 
-  test("start() calls connectS2s and invokes onConnect hook", async () => {
-    const onConnect = vi.fn();
-    const hooks = makeTestHooks({ connect: onConnect });
-    const { session } = setup({ hooks });
+  test("start() calls connectS2s", async () => {
+    const { session } = setup();
 
     await session.start();
     expect(connectSpy).toHaveBeenCalledOnce();
-    expect(onConnect).toHaveBeenCalledWith("session-1", HOOK_TIMEOUT_MS);
   });
 
   test("start() sends updateSession with greeting on initial connect", async () => {
@@ -62,15 +52,6 @@ describe("createS2sSession", () => {
     await session.start();
     await session.stop();
     expect(mockHandle.close).toHaveBeenCalled();
-  });
-
-  test("stop() invokes onDisconnect hook", async () => {
-    const onDisconnect = vi.fn();
-    const hooks = makeTestHooks({ disconnect: onDisconnect });
-    const { session } = setup({ hooks });
-    await session.start();
-    await session.stop();
-    expect(onDisconnect).toHaveBeenCalledWith("session-1", HOOK_TIMEOUT_MS);
   });
 
   test("stop() is idempotent", async () => {
@@ -136,9 +117,7 @@ describe("createS2sSession", () => {
   // ─── S2S event handling tests ───────────────────────────────────────────
 
   test("user_transcript event emits user_transcript_delta and user_transcript events", async () => {
-    const onUserTranscript = vi.fn();
-    const hooks = makeTestHooks({ userTranscript: onUserTranscript });
-    const { session, client, mockHandle } = setup({ hooks });
+    const { session, client, mockHandle } = setup();
     await session.start();
 
     mockHandle._fire("userTranscript", { itemId: "item-1", text: "Hello there" });
@@ -150,9 +129,6 @@ describe("createS2sSession", () => {
       isFinal: true,
     });
     expect(client.events).toContainEqual({ type: "user_transcript", text: "Hello there" });
-    await vi.waitFor(() =>
-      expect(onUserTranscript).toHaveBeenCalledWith("session-1", "Hello there", HOOK_TIMEOUT_MS),
-    );
   });
 
   test("user_transcript_delta emits non-final user_transcript_delta", async () => {
@@ -328,10 +304,15 @@ describe("createS2sSession", () => {
 
   test("consumeToolCallStep refuses tool when maxSteps exceeded", async () => {
     const executeTool = vi.fn(async () => "ok");
-    const hooks = makeTestHooks({
-      resolveTurnConfig: vi.fn(async () => ({ maxSteps: 1 })),
+    const { session, client, mockHandle } = setup({
+      executeTool,
+      agentConfig: {
+        name: "test-agent",
+        systemPrompt: DEFAULT_SYSTEM_PROMPT,
+        greeting: "Hello!",
+        maxSteps: 1,
+      },
     });
-    const { session, client, mockHandle } = setup({ executeTool, hooks });
     await session.start();
 
     mockHandle._fire("replyStarted", { replyId: "r1" });
@@ -371,21 +352,6 @@ describe("createS2sSession", () => {
     );
 
     spy.mockRestore();
-  });
-
-  // ─── Hook error handling ───────────────────────────────────────────────
-
-  test("hook failure does not crash session", async () => {
-    const hooks = makeTestHooks({
-      connect: vi.fn(() => {
-        throw new Error("hook error");
-      }),
-    });
-    const { session } = setup({ hooks });
-
-    // invokeHook catches errors, so this should not throw
-    await session.start();
-    await flush();
   });
 
   // ─── Concurrency bug regression tests ─────────────────────────────────
@@ -558,32 +524,6 @@ describe("createS2sSession", () => {
     expect(handles[2]?.close).not.toHaveBeenCalled();
 
     spy.mockRestore();
-  });
-
-  test("resolveTurnConfig failure returns error and skips tool execution", async () => {
-    const hooks = makeTestHooks({
-      resolveTurnConfig: vi.fn(async () => {
-        throw new Error("config error");
-      }),
-    });
-    const executeTool = vi.fn(async () => "ok");
-    const { session, mockHandle, client } = setup({ hooks, executeTool });
-    await session.start();
-
-    mockHandle._fire("replyStarted", { replyId: "r1" });
-    mockHandle._fire("toolCall", { callId: "c1", name: "t1", args: {} });
-    await session.waitForTurn();
-
-    // executeTool should NOT be called — resolveTurnConfig failure short-circuits
-    expect(executeTool).not.toHaveBeenCalled();
-    // Client should receive tool_call_done with error message
-    const doneEvent = client.events.find(
-      (e) =>
-        (e as Record<string, unknown>).type === "tool_call_done" &&
-        (e as Record<string, unknown>).toolCallId === "c1",
-    ) as Record<string, unknown> | undefined;
-    expect(doneEvent).toBeDefined();
-    expect(doneEvent?.result).toContain("resolveTurnConfig hook error");
   });
 
   // ─── Idle timeout tests ──────────────────────────────────────────────

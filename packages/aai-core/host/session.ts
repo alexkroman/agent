@@ -3,12 +3,7 @@
 
 import type { AgentConfig, ExecuteTool, ToolSchema } from "../isolate/_internal-types.ts";
 import { errorDetail, errorMessage, toolError } from "../isolate/_utils.ts";
-import {
-  DEFAULT_IDLE_TIMEOUT_MS,
-  HOOK_TIMEOUT_MS,
-  MAX_TOOL_RESULT_CHARS,
-} from "../isolate/constants.ts";
-import type { AgentHooks } from "../isolate/hooks.ts";
+import { DEFAULT_IDLE_TIMEOUT_MS, MAX_TOOL_RESULT_CHARS } from "../isolate/constants.ts";
 import type { ClientSink } from "../isolate/protocol.ts";
 import { buildSystemPrompt } from "../isolate/system-prompt.ts";
 import type { Logger, S2SConfig } from "./runtime-config.ts";
@@ -59,7 +54,6 @@ export type S2sSessionOptions = {
   executeTool: ExecuteTool;
   createWebSocket?: CreateS2sWebSocket;
   env?: Record<string, string | undefined>;
-  hooks?: AgentHooks;
   skipGreeting?: boolean;
   logger?: Logger;
   maxHistory?: number;
@@ -133,17 +127,7 @@ async function handleToolCall(ctx: S2sSessionCtx, detail: S2sToolCall): Promise<
     args: parsedArgs,
   });
 
-  let turnConfig: { maxSteps?: number } | null;
-  try {
-    turnConfig = await ctx.resolveTurnConfig();
-  } catch (err: unknown) {
-    const msg = `resolveTurnConfig hook error: ${errorMessage(err)}`;
-    ctx.log.error(msg);
-    finishToolCall(ctx, callId, toolError(msg), replyId);
-    return;
-  }
-
-  const refused = ctx.consumeToolCallStep(turnConfig, name, replyId);
+  const refused = ctx.consumeToolCallStep(name, replyId);
   if (refused !== null) {
     finishToolCall(ctx, callId, refused, replyId);
     return;
@@ -169,7 +153,6 @@ function handleUserTranscript(ctx: S2sSessionCtx, text: string): void {
   ctx.client.event({ type: "user_transcript_delta", text, isFinal: true });
   ctx.client.event({ type: "user_transcript", text });
   ctx.pushMessages({ role: "user", content: text });
-  ctx.fireHook("userTranscript", ctx.id, text, HOOK_TIMEOUT_MS);
 }
 
 function handleAgentTranscript(ctx: S2sSessionCtx, text: string, interrupted: boolean): void {
@@ -264,7 +247,6 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
     s2sConfig,
     executeTool,
     createWebSocket = defaultCreateS2sWebSocket,
-    hooks,
     logger: log = consoleLogger,
   } = opts;
   const agentConfig = opts.skipGreeting ? { ...opts.agentConfig, greeting: "" } : opts.agentConfig;
@@ -288,7 +270,6 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
     client,
     agentConfig,
     executeTool,
-    hooks,
     log,
     maxHistory: opts.maxHistory,
   });
@@ -330,7 +311,6 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
 
   return {
     async start(): Promise<void> {
-      ctx.fireHook("connect", id, HOOK_TIMEOUT_MS);
       await connectAndSetup();
     },
     async stop(): Promise<void> {
@@ -338,10 +318,7 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
       sessionAbort.abort();
       idle.clear();
       if (ctx.turnPromise !== null) await ctx.turnPromise;
-      await ctx.drainHooks();
       ctx.s2s?.close();
-      ctx.fireHook("disconnect", id, HOOK_TIMEOUT_MS);
-      await ctx.drainHooks();
     },
     onAudio(data: Uint8Array): void {
       idle.reset();
