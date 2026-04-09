@@ -1,6 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
+
+/** @jsxImportSource react */
+
 import clsx from "clsx";
-import { useSession } from "../context.ts";
+import { useSession, useTheme } from "../context.ts";
 import { Button } from "./button.tsx";
 
 /**
@@ -20,11 +23,15 @@ import { Button } from "./button.tsx";
  */
 export function Controls({ className }: { className?: string }) {
   const { running, toggle, reset } = useSession();
+  const theme = useTheme();
 
   return (
-    <div class={clsx("flex gap-2 px-4 py-3 border-t border-aai-border shrink-0", className)}>
+    <div
+      className={clsx("flex gap-2 px-4 py-3 border-t shrink-0", className)}
+      style={{ borderColor: theme.border }}
+    >
       <Button variant="secondary" onClick={toggle}>
-        {running.value ? "Stop" : "Resume"}
+        {running ? "Stop" : "Resume"}
       </Button>
       <Button variant="ghost" onClick={reset}>
         New Conversation

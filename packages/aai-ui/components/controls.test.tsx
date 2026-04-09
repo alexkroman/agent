@@ -1,18 +1,22 @@
 // Copyright 2025 the AAI authors. MIT license.
 // @vitest-environment jsdom
 
-import { render, screen } from "@testing-library/preact";
+/** @jsxImportSource react */
+
+import { render, screen } from "@testing-library/react";
 import { describe, expect, test } from "vitest";
-import { createMockSession } from "../_test-utils.ts";
-import { SessionProvider } from "../context.ts";
+import { createMockSessionCore } from "../_react-test-utils.ts";
+import { SessionProvider, ThemeProvider } from "../context.ts";
 import { Controls } from "./controls.tsx";
 
-function renderControls(overrides?: Parameters<typeof createMockSession>[0]) {
-  const session = createMockSession(overrides);
+function renderControls(overrides?: Parameters<typeof createMockSessionCore>[0]) {
+  const session = createMockSessionCore(overrides);
   return render(
-    <SessionProvider value={session}>
-      <Controls />
-    </SessionProvider>,
+    <ThemeProvider>
+      <SessionProvider value={session}>
+        <Controls />
+      </SessionProvider>
+    </ThemeProvider>,
   );
 }
 

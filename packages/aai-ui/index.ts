@@ -1,43 +1,40 @@
 // Copyright 2025 the AAI authors. MIT license.
-/**
- * Browser client library for AAI voice agents.
- *
- * Provides WebSocket session management, audio capture/playback,
- * and Preact UI components.
- *
- * @example
- * ```tsx
- * import { App, defineClient } from "@aai/ui";
- *
- * defineClient(App, { target: "#app" });
- * ```
- */
 
 // Components
-export { App } from "./components/app.tsx";
 export { Button } from "./components/button.tsx";
 export { ChatView } from "./components/chat-view.tsx";
-export { Controls } from "./components/controls.tsx";
 export { MessageList } from "./components/message-list.tsx";
 export { SidebarLayout } from "./components/sidebar-layout.tsx";
 export { StartScreen } from "./components/start-screen.tsx";
-export { ToolCallBlock } from "./components/tool-call-block.tsx";
-// Context
-export type { ClientConfig, ClientTheme } from "./context.ts";
-export { ClientConfigProvider, SessionProvider, useClientConfig, useSession } from "./context.ts";
-// Session
-export type { ClientHandle, ClientOptions } from "./define-client.tsx";
+export type { ToolDisplayConfig } from "./components/tool-config-context.ts";
+// Tool config (for component-tier custom UIs)
+export { ToolConfigContext } from "./components/tool-config-context.ts";
+export type { Session } from "./context.ts";
+// Context & hooks
+export { SessionProvider, ThemeProvider, useSession, useTheme } from "./context.ts";
+export type {
+  ClientConfig,
+  ClientHandle,
+} from "./define-client.tsx";
+// Entry
 export { defineClient } from "./define-client.tsx";
-// Hooks
-export { useAutoScroll, useToolCallStart, useToolResult } from "./hooks.ts";
-export type { VoiceSession, VoiceSessionOptions } from "./session.ts";
-export { createVoiceSession } from "./session.ts";
+export { useToolCallStart, useToolResult } from "./hooks.ts";
+export type {
+  SessionCore,
+  SessionCoreOptions,
+  SessionSnapshot,
+} from "./session-core.ts";
+// Session core (for advanced use)
+export { createSessionCore } from "./session-core.ts";
 
 // Types
 export type {
   AgentState,
   ChatMessage,
+  ClientTheme,
   SessionError,
   SessionErrorCode,
   ToolCallInfo,
+  VoiceSessionOptions,
+  WebSocketConstructor,
 } from "./types.ts";

@@ -6,7 +6,7 @@ import {
   installAudioMocks,
   MockAudioContext,
   voiceOpts,
-} from "./_test-utils.ts";
+} from "./_react-test-utils.ts";
 import { createVoiceIO } from "./audio.ts";
 
 describe("createVoiceIO", () => {

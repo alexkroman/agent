@@ -1,11 +1,23 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+/** @jsxImportSource react */
+
 import clsx from "clsx";
-import type * as preact from "preact";
-import type { ComponentChildren } from "preact";
-import { useClientConfig, useSession } from "../context.ts";
+import type { ReactNode } from "react";
+import { useSession, useTheme } from "../context.ts";
 import { Controls } from "./controls.tsx";
 import { MessageList } from "./message-list.tsx";
+
+// State indicator dot color map
+const STATE_COLORS: Record<string, string> = {
+  disconnected: "rgba(255,255,255,0.422)",
+  connecting: "rgba(255,255,255,0.422)",
+  ready: "#7fd88f",
+  listening: "#56b6c2",
+  thinking: "#f5a742",
+  speaking: "#e06c75",
+  error: "#e06c75",
+};
 
 /**
  * The main chat interface for a voice agent session.
@@ -30,59 +42,78 @@ import { MessageList } from "./message-list.tsx";
  *
  * @example Custom header icon
  * ```tsx
- * <ChatView icon={<img src="/logo.svg" />} />
+ * <ChatView icon={<img src="/logo.svg" />} title="My Agent" />
  * ```
  *
  * @param icon - Optional element rendered before the title in the header.
+ * @param title - Optional title string for the header.
  * @param className - Additional CSS class names applied to the root element.
  *
  * @public
  */
 export function ChatView({
   icon,
+  title,
   className,
 }: {
-  icon?: ComponentChildren;
+  icon?: ReactNode;
+  title?: string;
   className?: string;
-}): preact.JSX.Element {
+}): ReactNode {
   const session = useSession();
-  const { title } = useClientConfig();
+  const theme = useTheme();
 
   return (
     <div
-      class={clsx(
-        "flex flex-col h-screen max-w-130 mx-auto bg-aai-bg text-aai-text font-aai text-sm",
-        className,
-      )}
+      className={clsx("flex flex-col h-screen max-w-130 mx-auto font-aai text-sm", className)}
+      style={{ background: theme.bg, color: theme.text }}
     >
       {/* Header */}
-      <div class="flex items-center gap-3 px-4 py-3 border-b border-aai-border shrink-0">
+      <div
+        className="flex items-center gap-3 px-4 py-3 border-b shrink-0"
+        style={{ borderColor: theme.border }}
+      >
         {icon}
         {title ? (
-          <span class="text-sm font-semibold text-aai-primary">{title}</span>
+          <span className="text-sm font-semibold" style={{ color: theme.primary }}>
+            {title}
+          </span>
         ) : (
           !icon && (
-            <pre class="font-aai-mono text-[10px] leading-[1.1] font-bold text-aai-primary m-0">
+            <pre
+              className="font-aai-mono text-[10px] leading-[1.1] font-bold m-0"
+              style={{ color: theme.primary }}
+            >
               {/* biome-ignore lint/style/useConsistentCurlyBraces: string contains escape sequence */}
               {"▄▀█ ▄▀█ █\n█▀█ █▀█ █"}
             </pre>
           )
         )}
         {/* State indicator */}
-        <div class="ml-auto">
-          <div class="inline-flex items-center justify-center gap-1.5 text-[13px] font-medium leading-[130%] text-aai-text-muted capitalize">
+        <div className="ml-auto">
+          <div
+            className="inline-flex items-center justify-center gap-1.5 text-[13px] font-medium leading-[130%] capitalize"
+            style={{ color: "rgba(255,255,255,0.284)" }}
+          >
             <div
-              data-state={session.state.value}
-              class="w-2 h-2 rounded-full data-[state=disconnected]:bg-aai-state-disconnected data-[state=connecting]:bg-aai-state-connecting data-[state=ready]:bg-aai-state-ready data-[state=listening]:bg-aai-state-listening data-[state=thinking]:bg-aai-state-thinking data-[state=speaking]:bg-aai-state-speaking data-[state=error]:bg-aai-state-error"
+              className="w-2 h-2 rounded-full"
+              style={{ background: STATE_COLORS[session.state] ?? STATE_COLORS.disconnected }}
             />
-            {session.state.value}
+            {session.state}
           </div>
         </div>
       </div>
       {/* Error banner */}
-      {session.error.value && (
-        <div class="mx-4 mt-3 px-3 py-2 rounded-aai border border-aai-error/40 bg-aai-error/8 text-[13px] leading-[130%] text-aai-error">
-          {session.error.value.message}
+      {session.error && (
+        <div
+          className="mx-4 mt-3 px-3 py-2 rounded-aai border text-[13px] leading-[130%]"
+          style={{
+            borderColor: "rgba(224,108,117,0.4)",
+            background: "rgba(224,108,117,0.08)",
+            color: "#e06c75",
+          }}
+        >
+          {session.error.message}
         </div>
       )}
       <MessageList />
