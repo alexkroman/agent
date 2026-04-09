@@ -2,15 +2,14 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "jsx": "react-jsx",
-    "jsxImportSource": "preact",
+    "jsxImportSource": "react",
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "noEmit": true,
     "paths": {
       "@alexkroman1/aai": ["../aai/index.ts"],
       "@alexkroman1/aai/types": ["../aai/types.ts"],
-      "@alexkroman1/aai-ui": ["../aai-ui/index.ts"],
-      "@alexkroman1/aai-ui/session": ["../aai-ui/session.ts"],
-      "@alexkroman1/aai-ui/styles.css": ["../aai-ui/styles.css"]
+      "@alexkroman1/aai-ui": ["../aai-ui/index.ts"]
     }
   },
-  "include": ["css.d.ts", "templates/*/agent.ts", "templates/*/client.tsx"]
+  "include": ["css.d.ts", "templates/*/agent.ts", "templates/*/client.tsx", "templates/*/shared.ts", "templates/*/_shared.ts"]
 }

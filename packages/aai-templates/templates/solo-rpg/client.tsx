@@ -1,4 +1,5 @@
-import "@alexkroman1/aai-ui/styles.css";
+/** @jsxImportSource react */
+
 import {
   ChatView,
   defineClient,
@@ -6,7 +7,7 @@ import {
   StartScreen,
   useToolResult,
 } from "@alexkroman1/aai-ui";
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useState } from "react";
 import type {
   ClockData,
   Disposition,
@@ -56,7 +57,7 @@ const C = {
   surfaceLight: "#16161b",
   border: "#1e1e26",
   borderLight: "#2a2a36",
-  accent: "#c9a84c", // gold
+  accent: "#c9a84c",
   accentDim: "#8a7232",
   accentGlow: "rgba(201,168,76,0.15)",
   text: "#e0dcd0",
@@ -68,12 +69,7 @@ const C = {
   spiritBright: "#5a8acd",
   supply: "#4a6a3a",
   supplyBright: "#6a9a4a",
-  chaos: {
-    low: "#3a6a3a",
-    mid: "#8a7a3a",
-    high: "#8a4a2a",
-    critical: "#8b2020",
-  },
+  chaos: { low: "#3a6a3a", mid: "#8a7a3a", high: "#8a4a2a", critical: "#8b2020" },
   disposition: {
     hostile: "#c44040",
     distrustful: "#c47a30",
@@ -86,7 +82,6 @@ const C = {
   scheme: "#7a4a8a",
 };
 
-// ── Disposition Icons ────────────────────────────────────────────────────────
 const DISP_ICON: Record<Disposition, string> = {
   hostile: "\u2620",
   distrustful: "\u26A0",
@@ -95,7 +90,6 @@ const DISP_ICON: Record<Disposition, string> = {
   loyal: "\u2726",
 };
 
-// ── Time Labels ──────────────────────────────────────────────────────────────
 const TIME_LABELS: Record<string, string> = {
   early_morning: "Dawn",
   morning: "Morning",
@@ -107,7 +101,6 @@ const TIME_LABELS: Record<string, string> = {
   deep_night: "Witching Hour",
 };
 
-// ── Genre Labels ─────────────────────────────────────────────────────────────
 const GENRE_LABELS: Record<string, string> = {
   dark_fantasy: "Dark Fantasy",
   high_fantasy: "High Fantasy",
@@ -123,7 +116,6 @@ const GENRE_LABELS: Record<string, string> = {
   outdoor_survival: "Survival",
 };
 
-// ── Phase Labels ─────────────────────────────────────────────────────────────
 const PHASE_LABELS: Record<string, string> = {
   setup: "Act I",
   confrontation: "Act II",
@@ -513,29 +505,22 @@ function Sidebar({ game }: { game: GameState }) {
         fontFamily: "'Crimson Text', 'Georgia', serif",
       }}
     >
-      <style>
-        {`
-          @import url('https://fonts.googleapis.com/css2?family=Crimson+Text:ital,wght@0,400;0,600;0,700;1,400&display=swap');
-          .et-section { border-bottom: 1px solid ${C.border}; padding: 10px 12px; }
-          .et-section:last-child { border-bottom: none; }
-          .et-label {
-            font-size: 9px; text-transform: uppercase; letter-spacing: 0.14em;
-            color: ${C.textDim}; margin-bottom: 6px; font-family: sans-serif;
-          }
-          .et-gold { color: ${C.accent}; text-shadow: 0 0 8px ${C.accentGlow}; }
-          .et-crisis-pulse { animation: crisisPulse 2s ease-in-out infinite; }
-          @keyframes crisisPulse {
-            0%,100% { opacity: 0.6; } 50% { opacity: 1; }
-          }
-          .et-scroll::-webkit-scrollbar { width: 3px; }
-          .et-scroll::-webkit-scrollbar-thumb { background: ${C.borderLight}; border-radius: 3px; }
-          .et-scroll::-webkit-scrollbar-track { background: transparent; }
-        `}
-      </style>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Crimson+Text:ital,wght@0,400;0,600;0,700;1,400&display=swap');
+        .et-section { border-bottom: 1px solid ${C.border}; padding: 10px 12px; }
+        .et-section:last-child { border-bottom: none; }
+        .et-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.14em; color: ${C.textDim}; margin-bottom: 6px; font-family: sans-serif; }
+        .et-gold { color: ${C.accent}; text-shadow: 0 0 8px ${C.accentGlow}; }
+        .et-crisis-pulse { animation: crisisPulse 2s ease-in-out infinite; }
+        @keyframes crisisPulse { 0%,100% { opacity: 0.6; } 50% { opacity: 1; } }
+        .et-scroll::-webkit-scrollbar { width: 3px; }
+        .et-scroll::-webkit-scrollbar-thumb { background: ${C.borderLight}; border-radius: 3px; }
+        .et-scroll::-webkit-scrollbar-track { background: transparent; }
+      `}</style>
 
       {/* Header */}
       <div
-        class="et-section"
+        className="et-section"
         style={{ textAlign: "center", paddingTop: "16px", paddingBottom: "12px" }}
       >
         <div
@@ -551,7 +536,10 @@ function Sidebar({ game }: { game: GameState }) {
         </div>
         {game.initialized ? (
           <>
-            <div class="et-gold" style={{ fontSize: "16px", fontWeight: 700, marginTop: "4px" }}>
+            <div
+              className="et-gold"
+              style={{ fontSize: "16px", fontWeight: 700, marginTop: "4px" }}
+            >
               {game.playerName}
             </div>
             {game.characterConcept && (
@@ -592,8 +580,9 @@ function Sidebar({ game }: { game: GameState }) {
 
       {/* Pre-init placeholder */}
       {!game.initialized && (
-        <div class="et-section" style={{ textAlign: "center", padding: "32px 12px" }}>
-          <div style={{ fontSize: "36px", opacity: 0.08 }}>\u2726</div>
+        <div className="et-section" style={{ textAlign: "center", padding: "32px 12px" }}>
+          {/* biome-ignore lint/style/useConsistentCurlyBraces: unicode escape */}
+          <div style={{ fontSize: "36px", opacity: 0.08 }}>{"\u2726"}</div>
           <div
             style={{
               fontSize: "10px",
@@ -617,7 +606,7 @@ function Sidebar({ game }: { game: GameState }) {
           {/* Crisis / Game Over Banner */}
           {(game.crisisMode || game.gameOver) && (
             <div
-              class="et-section et-crisis-pulse"
+              className="et-section et-crisis-pulse"
               style={{
                 textAlign: "center",
                 padding: "8px 12px",
@@ -647,8 +636,8 @@ function Sidebar({ game }: { game: GameState }) {
           )}
 
           {/* Stats */}
-          <div class="et-section">
-            <div class="et-label">Attributes</div>
+          <div className="et-section">
+            <div className="et-label">Attributes</div>
             <div style={{ display: "flex", justifyContent: "space-between", padding: "0 4px" }}>
               <StatPip label="Edge" value={game.edge} />
               <StatPip label="Heart" value={game.heart} />
@@ -659,7 +648,7 @@ function Sidebar({ game }: { game: GameState }) {
           </div>
 
           {/* Resources */}
-          <div class="et-section">
+          <div className="et-section">
             <ResourceBar
               label="Health"
               current={game.health}
@@ -689,9 +678,9 @@ function Sidebar({ game }: { game: GameState }) {
           </div>
 
           {/* Location & Time */}
-          <div class="et-section">
-            <div class="et-label">Location</div>
-            <div class="et-gold" style={{ fontSize: "13px", fontWeight: 600 }}>
+          <div className="et-section">
+            <div className="et-label">Location</div>
+            <div className="et-gold" style={{ fontSize: "13px", fontWeight: 600 }}>
               {game.currentLocation || "Unknown"}
             </div>
             {game.currentSceneContext && (
@@ -725,15 +714,15 @@ function Sidebar({ game }: { game: GameState }) {
 
           {/* Story Arc */}
           {game.storyBlueprint && (
-            <div class="et-section">
+            <div className="et-section">
               <StoryArc story={game.storyBlueprint} />
             </div>
           )}
 
           {/* Clocks */}
           {game.clocks.length > 0 && (
-            <div class="et-section">
-              <div class="et-label">Clocks</div>
+            <div className="et-section">
+              <div className="et-label">Clocks</div>
               {game.clocks.map((clock) => (
                 <ClockDisplay key={clock.id || clock.name} clock={clock} />
               ))}
@@ -746,8 +735,8 @@ function Sidebar({ game }: { game: GameState }) {
             const background = game.npcs.filter((n) => n.status === "background");
             if (active.length === 0 && background.length === 0) return null;
             return (
-              <div class="et-section">
-                <div class="et-label">Characters</div>
+              <div className="et-section">
+                <div className="et-label">Characters</div>
                 {active.map((npc) => (
                   <NpcCard key={npc.id} npc={npc} />
                 ))}
@@ -790,8 +779,8 @@ function Sidebar({ game }: { game: GameState }) {
 
           {/* Session Log */}
           {game.sessionLog.length > 0 && (
-            <div class="et-section">
-              <div class="et-label">Chronicle</div>
+            <div className="et-section">
+              <div className="et-label">Chronicle</div>
               {game.sessionLog.slice(-5).map((entry, i) => (
                 <div
                   key={i}
@@ -815,7 +804,7 @@ function Sidebar({ game }: { game: GameState }) {
           )}
 
           {/* Scene Counter */}
-          <div class="et-section" style={{ textAlign: "center", padding: "8px 12px" }}>
+          <div className="et-section" style={{ textAlign: "center", padding: "8px 12px" }}>
             <span
               style={{
                 fontSize: "8px",
@@ -849,13 +838,11 @@ function SoloRPGApp() {
       .catch(() => {});
   }, []);
 
-  // Merge a full-state result into the game
   const mergeState = (result: Partial<GameState>, prev: GameState): GameState => ({
     ...prev,
     ...Object.fromEntries(Object.entries(result).filter(([, v]) => v !== undefined)),
   });
 
-  // setup_character and update_state both return full state
   useToolResult<SoloRpgToolResults["setup_character"]>("setup_character", (result) => {
     if (result.success) setGame((prev) => mergeState(result, prev));
   });
@@ -864,7 +851,6 @@ function SoloRPGApp() {
     if (result.success) setGame((prev) => mergeState(result, prev));
   });
 
-  // action_roll auto-applies consequences — sync sidebar
   useToolResult<SoloRpgToolResults["action_roll"]>("action_roll", (result) => {
     setGame((prev) => ({
       ...prev,
@@ -879,14 +865,12 @@ function SoloRPGApp() {
     }));
   });
 
-  // burn_momentum resets momentum
   useToolResult<SoloRpgToolResults["burn_momentum"]>("burn_momentum", (result) => {
     if ("burned" in result && result.burned) {
       setGame((prev) => ({ ...prev, momentum: result.newMomentum }));
     }
   });
 
-  // load_game restores full state
   useToolResult<SoloRpgToolResults["load_game"]>("load_game", (result) => {
     if ("loaded" in result && result.loaded) {
       setGame((prev) => mergeState(result, prev));
@@ -895,12 +879,17 @@ function SoloRPGApp() {
 
   return (
     <StartScreen
-      icon={<span style={{ fontSize: "28px", color: C.accent }}>\u2726</span>}
+      icon={
+        <span style={{ fontSize: "28px", color: C.accent }}>
+          {/* biome-ignore lint/style/useConsistentCurlyBraces: unicode escape */}
+          {"\u2726"}
+        </span>
+      }
       title="Solo RPG"
       subtitle="A Narrative Solo-RPG Engine"
       buttonText="Begin Your Story"
     >
-      <SidebarLayout sidebar={<Sidebar game={game} />} width="260px" side="right">
+      <SidebarLayout sidebar={<Sidebar game={game} />} sidebarWidth="260px" sidebarPosition="right">
         <ChatView />
       </SidebarLayout>
     </StartScreen>
@@ -908,9 +897,10 @@ function SoloRPGApp() {
 }
 
 const SESSION_KEY = "solo-rpg:sessionId";
+const savedSessionId = localStorage.getItem(SESSION_KEY);
 
-defineClient(SoloRPGApp, {
-  title: "Solo RPG",
+defineClient({
+  component: SoloRPGApp,
   theme: {
     bg: C.bg,
     primary: C.accent,
@@ -919,5 +909,5 @@ defineClient(SoloRPGApp, {
     border: C.border,
   },
   onSessionId: (id: string) => localStorage.setItem(SESSION_KEY, id),
-  resumeSessionId: localStorage.getItem(SESSION_KEY) ?? undefined,
+  ...(savedSessionId ? { resumeSessionId: savedSessionId } : {}),
 });

@@ -1,7 +1,9 @@
-import "@alexkroman1/aai-ui/styles.css";
+/** @jsxImportSource react */
+
 import type { ChatMessage } from "@alexkroman1/aai-ui";
-import { defineClient, useSession } from "@alexkroman1/aai-ui";
-import { useEffect, useMemo, useRef } from "preact/hooks";
+import { defineClient, useSession, useToolResult } from "@alexkroman1/aai-ui";
+import { useEffect, useMemo, useRef } from "react";
+import type { DispatchState, Incident, Severity } from "./_shared.ts";
 
 const CSS = `
 @keyframes dc-pulse {
@@ -47,68 +49,13 @@ const statusColors: Record<string, string> = {
   escalated: "#ef4444",
 };
 
-interface Incident {
-  id: string;
-  mentioned: number;
-  severity?: string;
-  status?: string;
-  location?: string;
-}
-
-function extractIncidents(messages: { role: string; content: string }[]): Map<string, Incident> {
-  const incidents = new Map<string, Incident>();
-  for (const msg of messages) {
-    const incMatches = msg.content.matchAll(/INC-\d{4}/g);
-    for (const m of incMatches) {
-      const id = m[0];
-      if (!incidents.has(id)) {
-        incidents.set(id, { id, mentioned: 0 });
-      }
-      incidents.get(id)!.mentioned++;
-    }
-
-    const lines = msg.content.split("\n");
-    for (const line of lines) {
-      const idMatch = line.match(/INC-\d{4}/);
-      if (!idMatch) continue;
-      const id = idMatch[0];
-      const inc = incidents.get(id) || { id, mentioned: 0 };
-
-      for (const sev of ["critical", "urgent", "moderate", "minor"]) {
-        if (line.toLowerCase().includes(sev)) inc.severity = sev;
-      }
-      for (const st of [
-        "incoming",
-        "triaged",
-        "dispatched",
-        "en_route",
-        "on_scene",
-        "resolved",
-        "escalated",
-      ]) {
-        if (line.toLowerCase().includes(st.replace("_", " ")) || line.toLowerCase().includes(st))
-          inc.status = st;
-      }
-      const locMatch = line.match(/(?:at|to|location:?)\s+([^,.\n]{5,50})/i);
-      if (locMatch) inc.location = locMatch[1]!.trim();
-
-      incidents.set(id, inc);
-    }
-  }
-  return incidents;
-}
-
-function extractAlertLevel(messages: { role: string; content: string }[]): string {
-  let level = "green";
-  for (const msg of messages) {
-    const match = msg.content.match(/alert level[:\s]+(\w+)/i);
-    if (match) level = match[1]!.toLowerCase();
-    if (msg.content.includes("alert level is red") || msg.content.includes("ALERT: RED"))
-      level = "red";
-    if (msg.content.includes("alert level is orange")) level = "orange";
-    if (msg.content.includes("alert level is yellow")) level = "yellow";
-  }
-  return level;
+// Track dashboard state from tool results
+interface DashboardState {
+  alertLevel: string;
+  incidents: Record<
+    string,
+    { id: string; severity?: Severity; status?: string; location?: string }
+  >;
 }
 
 function stateColor(state: string): string {
@@ -120,16 +67,14 @@ function stateColor(state: string): string {
         ? "#3b82f6"
         : state === "ready"
           ? "#22c55e"
-          : state === "error"
-            ? "#ef4444"
-            : "#6b7280";
+          : "#6b7280";
 }
 
-function Panel({ title, children }: { title: string; children: preact.ComponentChildren }) {
+function Panel({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div class="rounded-lg p-3" style={{ background: "#1a1a2e", border: "1px solid #1e293b" }}>
+    <div className="rounded-lg p-3" style={{ background: "#1a1a2e", border: "1px solid #1e293b" }}>
       <div
-        class="text-[10px] font-bold uppercase tracking-[1.5px] mb-2.5"
+        className="text-[10px] font-bold uppercase tracking-[1.5px] mb-2.5"
         style={{ color: "#64748b" }}
       >
         {title}
@@ -141,9 +86,9 @@ function Panel({ title, children }: { title: string; children: preact.ComponentC
 
 function StatRow({ label, value, color }: { label: string; value: number; color?: string }) {
   return (
-    <div class="flex justify-between items-center py-1 text-xs">
+    <div className="flex justify-between items-center py-1 text-xs">
       <span style={{ color: "#94a3b8" }}>{label}</span>
-      <span class="font-bold" style={{ color: color ?? "#e2e8f0" }}>
+      <span className="font-bold" style={{ color: color ?? "#e2e8f0" }}>
         {value}
       </span>
     </div>
@@ -152,23 +97,72 @@ function StatRow({ label, value, color }: { label: string; value: number; color?
 
 function App() {
   const session = useSession();
-  const msgs = session.messages.value;
-  const tx = session.userUtterance.value;
-  const state = session.state.value;
-  const error = session.error.value;
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const dashRef = useRef<DashboardState>({ alertLevel: "green", incidents: {} });
 
-  const incidents = useMemo(() => extractIncidents(msgs), [msgs]);
-  const alertLevel = useMemo(() => extractAlertLevel(msgs), [msgs]);
+  // Track incidents and alert level from tool results
+  useToolResult("incident_create", (result: unknown) => {
+    const r = result as { incident?: Incident };
+    if (r.incident) {
+      dashRef.current.incidents[r.incident.id] = {
+        id: r.incident.id,
+        severity: r.incident.severity,
+        status: r.incident.status,
+        location: r.incident.location,
+      };
+    }
+  });
+
+  useToolResult("incident_triage", (result: unknown) => {
+    const r = result as { incident?: Incident };
+    if (r.incident) {
+      dashRef.current.incidents[r.incident.id] = {
+        ...dashRef.current.incidents[r.incident.id],
+        id: r.incident.id,
+        severity: r.incident.severity,
+        status: r.incident.status,
+      };
+    }
+  });
+
+  useToolResult("incident_update_status", (result: unknown) => {
+    const r = result as { incident?: Incident };
+    if (r.incident) {
+      dashRef.current.incidents[r.incident.id] = {
+        ...dashRef.current.incidents[r.incident.id],
+        id: r.incident.id,
+        status: r.incident.status,
+      };
+    }
+  });
+
+  useToolResult("ops_dashboard", (result: unknown) => {
+    const r = result as { state?: DispatchState };
+    if (r.state) {
+      dashRef.current.alertLevel = r.state.alertLevel;
+      for (const inc of Object.values(r.state.incidents)) {
+        dashRef.current.incidents[inc.id] = {
+          id: inc.id,
+          severity: inc.severity,
+          status: inc.status,
+          location: inc.location,
+        };
+      }
+    }
+  });
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [msgs.length]);
+  }, [session.messages.length]);
 
-  const incidentList = Array.from(incidents.values()).reverse();
+  const incidentList = useMemo(
+    () => Object.values(dashRef.current.incidents).reverse(),
+    [session.toolCalls],
+  );
   const activeIncidents = incidentList.filter((i) => i.status !== "resolved");
   const resolvedCount = incidentList.filter((i) => i.status === "resolved").length;
 
+  const alertLevel = dashRef.current.alertLevel;
   const alertBg = alertColors[alertLevel] || "#6b7280";
   const alertTextColor = alertLevel === "yellow" ? "#000" : "#fff";
 
@@ -176,52 +170,52 @@ function App() {
     <>
       <style>{CSS}</style>
       <div
-        class="flex flex-col min-h-screen m-0 p-0 font-mono"
+        className="flex flex-col min-h-screen m-0 p-0 font-mono"
         style={{ background: "#0a0a0f", color: "#e2e8f0" }}
       >
         {/* Header */}
         <div
-          class="flex items-center justify-between px-6 py-4 gap-4 flex-wrap shrink-0"
+          className="flex items-center justify-between px-6 py-4 gap-4 flex-wrap shrink-0"
           style={{
             background: "linear-gradient(135deg, #1a1a2e, #16213e)",
             borderBottom: "1px solid #1e293b",
           }}
         >
           <div
-            class="flex items-center gap-2.5 text-lg font-bold uppercase tracking-wider"
+            className="flex items-center gap-2.5 text-lg font-bold uppercase tracking-wider"
             style={{ color: "#f1f5f9" }}
           >
             <span style={{ color: "#3b82f6" }}>&#9670;</span>
             Dispatch Command Center
             <span
-              class="w-2.5 h-2.5 rounded-full inline-block"
+              className="w-2.5 h-2.5 rounded-full inline-block"
               style={{
-                background: stateColor(state),
+                background: stateColor(session.state),
                 animation:
-                  state === "listening"
+                  session.state === "listening"
                     ? "dc-pulse 1.5s ease-in-out infinite"
-                    : state === "thinking"
+                    : session.state === "thinking"
                       ? "dc-pulse 0.8s ease-in-out infinite"
                       : "none",
               }}
-              title={state}
+              title={session.state}
             />
-            <span class="text-[11px] font-normal normal-case" style={{ color: "#64748b" }}>
-              {state === "listening"
+            <span className="text-[11px] font-normal normal-case" style={{ color: "#64748b" }}>
+              {session.state === "listening"
                 ? "LISTENING"
-                : state === "thinking"
+                : session.state === "thinking"
                   ? "PROCESSING"
-                  : state === "speaking"
+                  : session.state === "speaking"
                     ? "TRANSMITTING"
-                    : state.toUpperCase()}
+                    : session.state.toUpperCase()}
             </span>
           </div>
-          <div class="flex gap-2 items-center">
-            <span class="text-[10px] tracking-wider" style={{ color: "#64748b" }}>
+          <div className="flex gap-2 items-center">
+            <span className="text-[10px] tracking-wider" style={{ color: "#64748b" }}>
               SYSTEM ALERT:
             </span>
             <span
-              class="px-3 py-1 rounded text-[11px] font-bold uppercase tracking-wider"
+              className="px-3 py-1 rounded text-[11px] font-bold uppercase tracking-wider"
               style={{
                 background: alertBg,
                 color: alertTextColor,
@@ -235,21 +229,24 @@ function App() {
 
         {/* Main content */}
         <div
-          class="dc-main flex-1 grid overflow-hidden"
+          className="dc-main flex-1 grid overflow-hidden"
           style={{ gridTemplateColumns: "1fr 320px" }}
         >
           {/* Left: conversation feed */}
-          <div class="flex flex-col overflow-hidden" style={{ borderRight: "1px solid #1e293b" }}>
-            <div class="dc-messages flex-1 overflow-y-auto p-4 flex flex-col gap-2">
-              {msgs.length === 0 && (
-                <div class="text-center p-10 text-[13px]" style={{ color: "#475569" }}>
+          <div
+            className="flex flex-col overflow-hidden"
+            style={{ borderRight: "1px solid #1e293b" }}
+          >
+            <div className="dc-messages flex-1 overflow-y-auto p-4 flex flex-col gap-2">
+              {session.messages.length === 0 && (
+                <div className="text-center p-10 text-[13px]" style={{ color: "#475569" }}>
                   Dispatch Command Center standing by. Click START to begin operations.
                 </div>
               )}
-              {msgs.map((m: ChatMessage, i: number) => (
+              {session.messages.map((m: ChatMessage, i: number) => (
                 <div
                   key={i}
-                  class="rounded-lg text-[13px] max-w-[85%] px-3.5 py-2.5"
+                  className="rounded-lg text-[13px] max-w-[85%] px-3.5 py-2.5"
                   style={{
                     lineHeight: 1.6,
                     alignSelf: m.role === "assistant" ? "flex-start" : "flex-end",
@@ -260,7 +257,7 @@ function App() {
                   }}
                 >
                   <div
-                    class="text-[10px] uppercase tracking-wider mb-1"
+                    className="text-[10px] uppercase tracking-wider mb-1"
                     style={{ color: "#64748b" }}
                   >
                     {m.role === "assistant" ? "DISPATCH" : "OPERATOR"}
@@ -271,46 +268,35 @@ function App() {
               <div ref={messagesEndRef} />
             </div>
 
-            {tx !== null && (
+            {session.userTranscript !== null && (
               <div
-                class="flex items-center px-4 py-2 text-xs italic min-h-8"
-                style={{
-                  background: "#111827",
-                  borderTop: "1px solid #1e293b",
-                  color: "#64748b",
-                }}
+                className="flex items-center px-4 py-2 text-xs italic min-h-8"
+                style={{ background: "#111827", borderTop: "1px solid #1e293b", color: "#64748b" }}
               >
                 <span
-                  class="w-2.5 h-2.5 rounded-full inline-block mr-2"
-                  style={{
-                    background: "#22c55e",
-                    animation: "dc-pulse 1.5s ease-in-out infinite",
-                  }}
+                  className="w-2.5 h-2.5 rounded-full inline-block mr-2"
+                  style={{ background: "#22c55e", animation: "dc-pulse 1.5s ease-in-out infinite" }}
                 />
-                {tx || "..."}
+                {session.userTranscript || "..."}
               </div>
             )}
-            {error && (
+            {session.error && (
               <div
-                class="px-4 py-2 text-xs"
-                style={{
-                  background: "#450a0a",
-                  color: "#fca5a5",
-                  borderTop: "1px solid #991b1b",
-                }}
+                className="px-4 py-2 text-xs"
+                style={{ background: "#450a0a", color: "#fca5a5", borderTop: "1px solid #991b1b" }}
               >
-                ERROR: {error.message} ({error.code})
+                ERROR: {session.error.message} ({session.error.code})
               </div>
             )}
 
             <div
-              class="flex items-center gap-2.5 px-4 py-3"
+              className="flex items-center gap-2.5 px-4 py-3"
               style={{ background: "#111827", borderTop: "1px solid #1e293b" }}
             >
-              {!session.started.value ? (
+              {!session.started ? (
                 <button
                   type="button"
-                  class="px-4 py-2 border-none rounded-md font-mono text-xs font-semibold uppercase tracking-wider cursor-pointer text-white"
+                  className="px-4 py-2 border-none rounded-md font-mono text-xs font-semibold uppercase tracking-wider cursor-pointer text-white"
                   style={{ background: "#2563eb" }}
                   onClick={() => session.start()}
                 >
@@ -320,18 +306,18 @@ function App() {
                 <>
                   <button
                     type="button"
-                    class="px-4 py-2 border-none rounded-md font-mono text-xs font-semibold uppercase tracking-wider cursor-pointer"
+                    className="px-4 py-2 border-none rounded-md font-mono text-xs font-semibold uppercase tracking-wider cursor-pointer"
                     style={{
-                      background: session.running.value ? "#334155" : "#2563eb",
-                      color: session.running.value ? "#e2e8f0" : "white",
+                      background: session.running ? "#334155" : "#2563eb",
+                      color: session.running ? "#e2e8f0" : "white",
                     }}
                     onClick={() => session.toggle()}
                   >
-                    {session.running.value ? "Pause" : "Resume"}
+                    {session.running ? "Pause" : "Resume"}
                   </button>
                   <button
                     type="button"
-                    class="px-4 py-2 border-none rounded-md font-mono text-xs font-semibold uppercase tracking-wider cursor-pointer text-white"
+                    className="px-4 py-2 border-none rounded-md font-mono text-xs font-semibold uppercase tracking-wider cursor-pointer text-white"
                     style={{ background: "#dc2626" }}
                     onClick={() => session.reset()}
                   >
@@ -339,17 +325,16 @@ function App() {
                   </button>
                 </>
               )}
-              <div class="flex-1" />
-              <span class="text-[10px]" style={{ color: "#475569" }}>
-                {incidentList.length} incident
-                {incidentList.length !== 1 ? "s" : ""} logged
+              <div className="flex-1" />
+              <span className="text-[10px]" style={{ color: "#475569" }}>
+                {incidentList.length} incident{incidentList.length !== 1 ? "s" : ""} logged
               </span>
             </div>
           </div>
 
           {/* Right: sidebar dashboard */}
           <div
-            class="dc-sidebar overflow-y-auto p-4 flex flex-col gap-4"
+            className="dc-sidebar overflow-y-auto p-4 flex flex-col gap-4"
             style={{ background: "#111827" }}
           >
             <Panel title="Operations Summary">
@@ -364,14 +349,14 @@ function App() {
 
             <Panel title="Active Incidents">
               {activeIncidents.length === 0 ? (
-                <div class="text-xs text-center py-2" style={{ color: "#475569" }}>
+                <div className="text-xs text-center py-2" style={{ color: "#475569" }}>
                   No active incidents
                 </div>
               ) : (
                 activeIncidents.map((inc) => (
                   <div
                     key={inc.id}
-                    class="rounded-md p-2.5 mb-2"
+                    className="rounded-md p-2.5 mb-2"
                     style={{
                       background: "#0f172a",
                       animation: "dc-slide-in 0.3s ease-out",
@@ -379,13 +364,13 @@ function App() {
                       borderLeft: `3px solid ${severityColors[inc.severity ?? ""] || "#334155"}`,
                     }}
                   >
-                    <div class="flex justify-between items-center mb-1">
-                      <span class="text-xs font-bold" style={{ color: "#f1f5f9" }}>
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="text-xs font-bold" style={{ color: "#f1f5f9" }}>
                         {inc.id}
                       </span>
                       {inc.severity && (
                         <span
-                          class="text-[9px] px-1.5 py-0.5 rounded font-bold uppercase"
+                          className="text-[9px] px-1.5 py-0.5 rounded font-bold uppercase"
                           style={{
                             background: `${severityColors[inc.severity ?? ""]}30`,
                             color: severityColors[inc.severity ?? ""],
@@ -396,13 +381,13 @@ function App() {
                       )}
                     </div>
                     {inc.location && (
-                      <div class="text-[11px] mb-0.5" style={{ color: "#94a3b8" }}>
+                      <div className="text-[11px] mb-0.5" style={{ color: "#94a3b8" }}>
                         {inc.location}
                       </div>
                     )}
                     {inc.status && (
                       <div
-                        class="text-[10px] uppercase tracking-wider"
+                        className="text-[10px] uppercase tracking-wider"
                         style={{ color: statusColors[inc.status] || "#6b7280" }}
                       >
                         {inc.status.replace("_", " ")}
@@ -415,9 +400,9 @@ function App() {
 
             <Panel title="Severity Legend">
               {Object.entries(severityColors).map(([sev, color]) => (
-                <div key={sev} class="flex items-center gap-2 py-0.5">
-                  <span class="w-2.5 h-2.5 rounded-sm" style={{ background: color }} />
-                  <span class="text-[11px] capitalize" style={{ color: "#94a3b8" }}>
+                <div key={sev} className="flex items-center gap-2 py-0.5">
+                  <span className="w-2.5 h-2.5 rounded-sm" style={{ background: color }} />
+                  <span className="text-[11px] capitalize" style={{ color: "#94a3b8" }}>
                     {sev}
                   </span>
                 </div>
@@ -425,7 +410,7 @@ function App() {
             </Panel>
 
             <Panel title="Training Scenarios">
-              <div class="text-[11px] leading-relaxed" style={{ color: "#64748b" }}>
+              <div className="text-[11px] leading-relaxed" style={{ color: "#64748b" }}>
                 Say "run mass casualty scenario" or "simulate active shooter" to test dispatch
                 operations with complex multi-incident drills.
               </div>
@@ -437,4 +422,13 @@ function App() {
   );
 }
 
-defineClient(App);
+defineClient({
+  component: App,
+  theme: {
+    bg: "#0a0a0f",
+    primary: "#3b82f6",
+    text: "#e2e8f0",
+    surface: "#1a1a2e",
+    border: "#1e293b",
+  },
+});

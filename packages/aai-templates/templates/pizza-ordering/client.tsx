@@ -1,15 +1,7 @@
-import "@alexkroman1/aai-ui/styles.css";
-import {
-  Button,
-  ChatView,
-  defineClient,
-  SidebarLayout,
-  StartScreen,
-  useAutoScroll,
-  useSession,
-  useToolResult,
-} from "@alexkroman1/aai-ui";
-import { useState } from "preact/hooks";
+/** @jsxImportSource react */
+
+import { defineClient, useTheme, useToolResult } from "@alexkroman1/aai-ui";
+import { useState } from "react";
 import { type Pizza, type PizzaToolResults, pizzaPrice } from "./shared.ts";
 
 interface OrderInfo {
@@ -23,8 +15,8 @@ interface OrderInfo {
 function PizzaIcon({ size }: { size: string }) {
   const dim = size === "small" ? 36 : size === "large" ? 52 : 44;
   return (
-    <svg width={dim} height={dim} viewBox="0 0 100 100" class="shrink-0">
-      <circle cx="50" cy="50" r="48" fill="#F4C542" stroke="#D4A017" stroke-width="3" />
+    <svg width={dim} height={dim} viewBox="0 0 100 100" className="shrink-0">
+      <circle cx="50" cy="50" r="48" fill="#F4C542" stroke="#D4A017" strokeWidth="3" />
       <circle cx="50" cy="50" r="42" fill="#E8A025" />
       <circle cx="35" cy="35" r="7" fill="#C0392B" opacity="0.9" />
       <circle cx="60" cy="30" r="6" fill="#C0392B" opacity="0.9" />
@@ -37,63 +29,8 @@ function PizzaIcon({ size }: { size: string }) {
   );
 }
 
-function OrderPanel({ order }: { order: OrderInfo }) {
-  if (order.orderPlaced) {
-    return (
-      <div class="flex flex-col items-center gap-4 p-6 text-center">
-        <div class="text-5xl">&#10003;</div>
-        <h2 class="text-lg font-bold text-aai-text">Order Placed</h2>
-        {order.orderNumber && <p class="text-aai-text opacity-70">Order #{order.orderNumber}</p>}
-        <p class="text-aai-primary font-bold text-xl">{order.total}</p>
-        {order.estimatedMinutes && (
-          <p class="text-aai-text opacity-60 text-sm">Ready in ~{order.estimatedMinutes} minutes</p>
-        )}
-      </div>
-    );
-  }
-
-  if (order.pizzas.length === 0) {
-    return (
-      <div class="flex flex-col items-center gap-3 p-6 text-center opacity-50">
-        <PizzaIcon size="large" />
-        <p class="text-aai-text text-sm">Your order is empty. Tell me what you'd like.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div class="flex flex-col gap-3 p-4">
-      <h3 class="text-sm font-bold text-aai-text opacity-60 uppercase tracking-wide">Your Order</h3>
-      {order.pizzas.map((p) => (
-        <div key={p.id} class="flex items-center gap-3 p-3 rounded-lg bg-aai-surface">
-          <PizzaIcon size={p.size} />
-          <div class="flex-1 min-w-0">
-            <p class="text-aai-text text-sm font-medium">
-              {p.quantity > 1 ? `${p.quantity}x ` : ""}
-              {p.size.charAt(0).toUpperCase() + p.size.slice(1)} {p.crust} crust
-            </p>
-            <p class="text-aai-text opacity-60 text-xs truncate">
-              {p.toppings.length > 0
-                ? p.toppings.map((t) => t.replace("_", " ")).join(", ")
-                : "cheese only"}
-            </p>
-          </div>
-          <p class="text-aai-primary text-sm font-bold whitespace-nowrap">
-            ${pizzaPrice(p).toFixed(2)}
-          </p>
-        </div>
-      ))}
-      <div class="flex justify-between items-center pt-3 mt-1 border-t border-aai-border">
-        <span class="text-aai-text font-bold">Total</span>
-        <span class="text-aai-primary font-bold text-lg">{order.total}</span>
-      </div>
-    </div>
-  );
-}
-
-function PizzaAgent() {
-  const session = useSession();
-  const scrollRef = useAutoScroll();
+function OrderSidebar() {
+  const theme = useTheme();
   const [order, setOrder] = useState<OrderInfo>({
     pizzas: [],
     total: "$0.00",
@@ -151,75 +88,89 @@ function PizzaAgent() {
     }
   });
 
-  const sidebar = (
-    <>
-      <div class="p-4 flex items-center gap-3 border-b border-aai-border">
-        <PizzaIcon size="small" />
-        <h2 class="text-base font-bold text-aai-text">Pizza Palace</h2>
+  if (order.orderPlaced) {
+    return (
+      <div
+        className="flex flex-col items-center gap-4 p-6 text-center"
+        style={{ color: theme.text }}
+      >
+        <div className="text-5xl">&#10003;</div>
+        <h2 className="text-lg font-bold">Order Placed</h2>
+        {order.orderNumber && <p className="opacity-70">Order #{order.orderNumber}</p>}
+        <p className="font-bold text-xl" style={{ color: theme.primary }}>
+          {order.total}
+        </p>
+        {order.estimatedMinutes && (
+          <p className="opacity-60 text-sm">Ready in ~{order.estimatedMinutes} minutes</p>
+        )}
       </div>
-      <div class="flex-1">
-        <OrderPanel order={order} />
+    );
+  }
+
+  if (order.pizzas.length === 0) {
+    return (
+      <div className="flex flex-col items-center gap-3 p-6 text-center opacity-50">
+        <PizzaIcon size="large" />
+        <p className="text-sm" style={{ color: theme.text }}>
+          Your order is empty. Tell me what you'd like.
+        </p>
       </div>
-      <div class="p-3 flex flex-col gap-2 border-t border-aai-border">
-        <div class="flex gap-2">
-          <Button
-            variant={session.running.value ? "default" : "secondary"}
-            className="flex-1"
-            onClick={session.toggle}
-          >
-            {session.running.value ? "Pause" : "Resume"}
-          </Button>
-          <Button variant="ghost" onClick={() => session.cancel()}>
-            Stop
-          </Button>
-        </div>
-        <div class="flex gap-2">
-          <Button
-            variant="ghost"
-            className="flex-1"
-            onClick={() => {
-              session.resetState();
-              setOrder({ pizzas: [], total: "$0.00", orderPlaced: false });
-            }}
-          >
-            Clear Chat
-          </Button>
-          <Button
-            variant="ghost"
-            onClick={() => {
-              session.reset();
-              setOrder({ pizzas: [], total: "$0.00", orderPlaced: false });
-            }}
-          >
-            New Order
-          </Button>
-        </div>
-      </div>
-    </>
-  );
+    );
+  }
 
   return (
-    <StartScreen
-      icon={<PizzaIcon size="large" />}
-      title="Pizza Palace"
-      subtitle="Voice-powered pizza ordering"
-      buttonText="Start Ordering"
-    >
-      <SidebarLayout sidebar={sidebar}>
-        <ChatView />
-        <div ref={scrollRef} />
-      </SidebarLayout>
-    </StartScreen>
+    <div className="flex flex-col gap-3 p-4" style={{ color: theme.text }}>
+      <h3 className="text-sm font-bold opacity-60 uppercase tracking-wide">Your Order</h3>
+      {order.pizzas.map((p) => (
+        <div
+          key={p.id}
+          className="flex items-center gap-3 p-3 rounded-lg"
+          style={{ background: theme.surface }}
+        >
+          <PizzaIcon size={p.size} />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium">
+              {p.quantity > 1 ? `${p.quantity}x ` : ""}
+              {p.size.charAt(0).toUpperCase() + p.size.slice(1)} {p.crust} crust
+            </p>
+            <p className="opacity-60 text-xs truncate">
+              {p.toppings.length > 0
+                ? p.toppings.map((t) => t.replace("_", " ")).join(", ")
+                : "cheese only"}
+            </p>
+          </div>
+          <p className="text-sm font-bold whitespace-nowrap" style={{ color: theme.primary }}>
+            ${pizzaPrice(p).toFixed(2)}
+          </p>
+        </div>
+      ))}
+      <div
+        className="flex justify-between items-center pt-3 mt-1 border-t"
+        style={{ borderColor: theme.border }}
+      >
+        <span className="font-bold">Total</span>
+        <span className="font-bold text-lg" style={{ color: theme.primary }}>
+          {order.total}
+        </span>
+      </div>
+    </div>
   );
 }
 
-defineClient(PizzaAgent, {
+defineClient({
   title: "Pizza Palace",
+  sidebar: OrderSidebar,
   theme: {
     bg: "#1a1008",
     primary: "#E8A025",
     text: "#f5f0e8",
     surface: "#2a1f10",
     border: "#3d2e18",
+  },
+  tools: {
+    add_pizza: { icon: "\u{1F355}", label: "Adding pizza" },
+    remove_pizza: { icon: "\u{1F5D1}", label: "Removing pizza" },
+    update_pizza: { icon: "\u{270F}", label: "Updating pizza" },
+    place_order: { icon: "\u{2705}", label: "Placing order" },
   },
 });
