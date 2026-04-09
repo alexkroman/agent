@@ -23,6 +23,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
     && apt-get remove -y curl && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 
+# Install Deno — guest harness runtime
+RUN curl -fsSL https://deno.land/install.sh | DENO_INSTALL=/usr/local sh \
+    && deno --version
+
 # Install pnpm
 RUN corepack enable && corepack prepare pnpm@10.29.3 --activate
 

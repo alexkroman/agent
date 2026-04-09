@@ -42,6 +42,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
     && apt-get remove -y curl && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 
+# Install Deno — guest harness runtime
+RUN curl -fsSL https://deno.land/install.sh | DENO_INSTALL=/usr/local sh
+
 RUN corepack enable && corepack prepare pnpm@10.29.3 --activate
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
@@ -54,7 +57,7 @@ COPY --from=build /app/packages/aai/dist/ packages/aai/dist/
 COPY --from=build /app/packages/aai-server/dist/ packages/aai-server/dist/
 
 ENV NODE_ENV=production
-ENV GUEST_HARNESS_PATH=/app/packages/aai-server/dist/guest/harness.mjs
+ENV GUEST_HARNESS_PATH=/app/packages/aai-server/dist/guest/deno-harness.ts
 
 EXPOSE 8080
 
