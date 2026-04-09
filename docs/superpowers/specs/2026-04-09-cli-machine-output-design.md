@@ -80,10 +80,13 @@ async function withOutput<T>(
 ### `aai init`
 
 ```json
-{ "ok": true, "data": { "dir": "/path/to/my-agent", "template": "simple", "slug": "my-agent-xyz" } }
+{ "ok": true, "data": { "dir": "/path/to/my-agent", "template": "simple", "deployed": true, "slug": "my-agent-xyz", "url": "https://aai-agent.fly.dev/my-agent-xyz" } }
 ```
 
-Error codes: `"dir_exists"` (hint: use `--force`)
+When `--skipDeploy` is set or deploy is skipped, `deployed` is `false` and
+`slug`/`url` are omitted.
+
+Error codes: `"dir_exists"` (hint: use `--force`), `"deploy_failed"`
 
 ### `aai build`
 
