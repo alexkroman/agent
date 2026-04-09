@@ -20,6 +20,7 @@ USAGE build [OPTIONS]
 OPTIONS
   -s, --server=<server>    Platform server URL
               -y, --yes    Accept defaults (no prompts)
+                 --json    Output JSON (auto-detected in non-TTY)
             --skipTests    Skip running tests before build"
 `;
 
@@ -27,7 +28,8 @@ exports[`cli usage snapshots > aai delete --help 1`] = `
 "Remove a deployed agent (delete)
 USAGE delete [OPTIONS]
 OPTIONS
-  -s, --server=<server>    Platform server URL"
+  -s, --server=<server>    Platform server URL
+                 --json    Output JSON (auto-detected in non-TTY)"
 `;
 
 exports[`cli usage snapshots > aai deploy --help 1`] = `
@@ -35,7 +37,8 @@ exports[`cli usage snapshots > aai deploy --help 1`] = `
 USAGE deploy [OPTIONS]
 OPTIONS
   -s, --server=<server>    Platform server URL
-              -y, --yes    Accept defaults (no prompts)"
+              -y, --yes    Accept defaults (no prompts)
+                 --json    Output JSON (auto-detected in non-TTY)"
 `;
 
 exports[`cli usage snapshots > aai dev --help 1`] = `
@@ -44,7 +47,8 @@ USAGE dev [OPTIONS]
 OPTIONS
       -p, --port=<port>    Port to listen on (Default: 3000)
   -s, --server=<server>    Platform server URL
-              -y, --yes    Accept defaults (no prompts)"
+              -y, --yes    Accept defaults (no prompts)
+                 --json    Output JSON (auto-detected in non-TTY)"
 `;
 
 exports[`cli usage snapshots > aai init --help 1`] = `
@@ -57,6 +61,7 @@ OPTIONS
                 -f, --force    Overwrite existing files
       -s, --server=<server>    Platform server URL
                   -y, --yes    Accept defaults (no prompts)
+                     --json    Output JSON (auto-detected in non-TTY)
                   --skipApi    Skip API key check
                --skipDeploy    Skip deploy after scaffolding"
 `;
@@ -77,14 +82,16 @@ USAGE delete [OPTIONS] <NAME>
 ARGUMENTS
   NAME    Secret name (Required)
 OPTIONS
-  -s, --server=<server>    Platform server URL"
+  -s, --server=<server>    Platform server URL
+                 --json    Output JSON (auto-detected in non-TTY)"
 `;
 
 exports[`cli usage snapshots > aai secret list --help 1`] = `
 "List all secrets (list)
 USAGE list [OPTIONS]
 OPTIONS
-  -s, --server=<server>    Platform server URL"
+  -s, --server=<server>    Platform server URL
+                 --json    Output JSON (auto-detected in non-TTY)"
 `;
 
 exports[`cli usage snapshots > aai secret put --help 1`] = `
@@ -93,10 +100,13 @@ USAGE put [OPTIONS] <NAME>
 ARGUMENTS
   NAME    Secret name (Required)
 OPTIONS
-  -s, --server=<server>    Platform server URL"
+  -s, --server=<server>    Platform server URL
+                 --json    Output JSON (auto-detected in non-TTY)"
 `;
 
 exports[`cli usage snapshots > aai test --help 1`] = `
 "Run agent tests (test)
-USAGE test"
+USAGE test [OPTIONS]
+OPTIONS
+  --json    Output JSON (auto-detected in non-TTY)"
 `;

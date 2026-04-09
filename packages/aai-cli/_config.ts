@@ -6,6 +6,7 @@ import * as p from "@clack/prompts";
 import ci from "ci-info";
 import { consola } from "consola";
 import { z } from "zod";
+import { CliError } from "./_output.ts";
 
 const AuthConfigSchema = z.object({
   assemblyai_api_key: z.string().optional(),
@@ -57,8 +58,10 @@ export async function getApiKey(): Promise<string> {
   }
 
   if (ci.isCI || !process.stdin.isTTY) {
-    throw new Error(
-      "No ASSEMBLYAI_API_KEY found. Set the ASSEMBLYAI_API_KEY environment variable in CI or non-interactive environments.",
+    throw new CliError(
+      "auth_failed",
+      "No ASSEMBLYAI_API_KEY found",
+      "Set the ASSEMBLYAI_API_KEY environment variable",
     );
   }
 

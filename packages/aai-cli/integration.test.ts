@@ -451,3 +451,66 @@ describe("init creates working project", () => {
     );
   });
 });
+
+// ── JSON output mode ────────────────────────────────────────────────────────
+
+describe("JSON output mode", () => {
+  test("executeDelete returns structured result", async () => {
+    const { executeDelete } = await import("./delete.ts");
+    await withProjectDir(
+      silenced(async (dir) => {
+        const result = await executeDelete({ cwd: dir, server: api.url });
+        expect(result).toEqual({ ok: true, data: { slug: "my-agent" } });
+      }),
+    );
+  });
+
+  test("executeSecretList returns structured result", async () => {
+    api.secrets.KEY_A = "a";
+    api.secrets.KEY_B = "b";
+
+    const { executeSecretList } = await import("./secret.ts");
+    await withProjectDir(
+      silenced(async (dir) => {
+        const result = await executeSecretList(dir, api.url);
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.data.secrets).toContain("KEY_A");
+          expect(result.data.secrets).toContain("KEY_B");
+        }
+      }),
+    );
+  });
+
+  test("executeSecretPut with value returns structured result", async () => {
+    const { executeSecretPut } = await import("./secret.ts");
+    await withProjectDir(
+      silenced(async (dir) => {
+        const result = await executeSecretPut(dir, "NEW_KEY", "new-value", api.url);
+        expect(result).toEqual({ ok: true, data: { name: "NEW_KEY" } });
+        expect(api.secrets.NEW_KEY).toBe("new-value");
+      }),
+    );
+  });
+
+  test("executeSecretDelete returns structured result", async () => {
+    api.secrets.DEL_KEY = "to-delete";
+    const { executeSecretDelete } = await import("./secret.ts");
+    await withProjectDir(
+      silenced(async (dir) => {
+        const result = await executeSecretDelete(dir, "DEL_KEY", api.url);
+        expect(result).toEqual({ ok: true, data: { name: "DEL_KEY" } });
+        expect(api.secrets.DEL_KEY).toBeUndefined();
+      }),
+    );
+  });
+
+  test("CliError carries structured code and hint", async () => {
+    const { CliError } = await import("./_output.ts");
+
+    const err = new CliError("auth_failed", "No key", "Set env var");
+    expect(err.code).toBe("auth_failed");
+    expect(err.hint).toBe("Set env var");
+    expect(err.message).toBe("No key");
+  });
+});

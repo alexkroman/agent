@@ -6,7 +6,10 @@
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
+import { type CommandResult, fail, ok } from "./_output.ts";
 import { log } from "./_ui.ts";
+
+type TestData = { passed: boolean; skipped?: boolean };
 
 /**
  * Run vitest in the given project directory.
@@ -30,13 +33,24 @@ export function runVitest(cwd: string): boolean {
   return true;
 }
 
+/** Execute agent tests and return structured result. */
+export async function executeTest(cwd: string): Promise<CommandResult<TestData>> {
+  log.step("Running agent tests");
+  try {
+    const ran = runVitest(cwd);
+    if (!ran) {
+      log.info("No test file found. Create agent.test.ts to add tests.");
+      return ok({ passed: true, skipped: true });
+    }
+    log.success("Tests passed");
+    return ok({ passed: true });
+  } catch {
+    return fail("test_failed", "Tests failed");
+  }
+}
+
 /** Run agent tests. Used by `aai test`. */
 export async function runTestCommand(cwd: string): Promise<void> {
-  log.step("Running agent tests");
-  const ran = runVitest(cwd);
-  if (!ran) {
-    log.info("No test file found. Create agent.test.ts to add tests.");
-    return;
-  }
-  log.success("Tests passed");
+  const result = await executeTest(cwd);
+  if (!result.ok) throw new Error(result.error);
 }

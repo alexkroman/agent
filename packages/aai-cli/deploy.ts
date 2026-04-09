@@ -4,9 +4,15 @@ import { resolveServerUrl } from "./_agent.ts";
 import { buildAgentBundle } from "./_bundler.ts";
 import { getApiKey, readProjectConfig, writeProjectConfig } from "./_config.ts";
 import { runDeploy } from "./_deploy.ts";
+import { type CommandResult, ok } from "./_output.ts";
 import { fmtUrl, log } from "./_ui.ts";
 
-export async function runDeployCommand(opts: { cwd: string; server?: string }): Promise<void> {
+type DeployData = { slug: string; url: string };
+
+export async function executeDeploy(opts: {
+  cwd: string;
+  server?: string;
+}): Promise<CommandResult<DeployData>> {
   const { cwd } = opts;
   const apiKey = await getApiKey();
   const projectConfig = await readProjectConfig(cwd);
@@ -27,4 +33,10 @@ export async function runDeployCommand(opts: { cwd: string; server?: string }): 
 
   const agentUrl = `${serverUrl}/${deployed.slug}`;
   log.success(`Deployed ${fmtUrl(agentUrl)}`);
+
+  return ok({ slug: deployed.slug, url: agentUrl });
+}
+
+export async function runDeployCommand(opts: { cwd: string; server?: string }): Promise<void> {
+  await executeDeploy(opts);
 }

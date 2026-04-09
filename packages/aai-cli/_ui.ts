@@ -1,8 +1,35 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import { log as clackLog } from "@clack/prompts";
 import { colorize } from "consola/utils";
 
-export { log } from "@clack/prompts";
+type Log = typeof clackLog;
+
+const noop = () => {
+  /* no-op */
+};
+let _delegate: Log = clackLog;
+
+const logHandler: ProxyHandler<Log> = {
+  get(_target, prop, receiver) {
+    return Reflect.get(_delegate, prop, receiver);
+  },
+};
+
+/** Log instance that delegates to clack (human mode) or no-ops (JSON mode). */
+export const log: Log = new Proxy(clackLog, logHandler);
+
+/** Replace all log methods with no-ops. Call once in JSON mode. */
+export function silenceOutput(): void {
+  _delegate = {
+    info: noop,
+    success: noop,
+    error: noop,
+    warn: noop,
+    step: noop,
+    message: noop,
+  } as unknown as Log;
+}
 
 /** Format a URL for display. */
 export function fmtUrl(url: string): string {
