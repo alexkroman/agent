@@ -357,8 +357,33 @@ export async function buildAgentBundle(cwd: string): Promise<DirectoryBundleOutp
   };
 }
 
+/**
+ * Build the client SPA using Vite if client.tsx exists.
+ * Outputs to .aai/client/ for static serving.
+ */
+async function buildClient(cwd: string): Promise<void> {
+  const clientEntry = path.join(cwd, "client.tsx");
+  try {
+    await fs.access(clientEntry);
+  } catch {
+    return; // No client.tsx — skip client build
+  }
+
+  const clientDir = path.join(cwd, ".aai", "client");
+  await build({
+    root: cwd,
+    base: "./",
+    logLevel: "warn",
+    build: {
+      outDir: clientDir,
+      emptyOutDir: true,
+    },
+  });
+}
+
 export async function runBuildCommand(cwd: string): Promise<void> {
   const { log } = await import("./_ui.ts");
   await buildAgentBundle(cwd);
+  await buildClient(cwd);
   log.success("Build complete");
 }

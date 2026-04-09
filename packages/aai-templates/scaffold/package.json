@@ -2,9 +2,9 @@
   "type": "module",
   "packageManager": "pnpm@10.29.3",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build && vite build --ssr agent.ts --outDir .aai/build",
-    "test": "node --experimental-strip-types typecheck.ts && vitest run",
+    "dev": "aai dev",
+    "build": "aai build",
+    "test": "aai test",
     "typecheck": "node --experimental-strip-types typecheck.ts",
     "deploy": "aai deploy",
     "lint": "biome check .",
@@ -15,8 +15,7 @@
     "@alexkroman1/aai-ui": "^0.12.3",
     "@preact/signals": "^2.8.2",
     "preact": "^10.29.0",
-    "tailwindcss": "^4.2.1",
-    "zod": "^4.3.6"
+    "tailwindcss": "^4.2.1"
   },
   "devDependencies": {
     "@alexkroman1/aai-cli": "^0.12.3",
