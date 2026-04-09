@@ -23,7 +23,7 @@
       "includeEntryExports": true
     },
     "packages/aai-cli": {
-      "entry": ["**/*.test.ts", "_test-utils.ts", "testing.ts", "matchers.ts", "types.ts"]
+      "entry": ["**/*.test.ts", "_test-utils.ts", "types.ts"]
     },
     "packages/aai-templates": {
       "ignore": ["**"]
