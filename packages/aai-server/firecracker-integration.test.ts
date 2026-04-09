@@ -181,25 +181,36 @@ async function coldBootVm(opts: { guestCid: number; vsockUdsPath: string }): Pro
  * Connects to the guest over vsock UDS and creates an RPC channel.
  * Retries for up to `timeout` ms since the guest may take time to listen.
  */
+/**
+ * Connects to the guest over vsock UDS and creates an RPC channel.
+ * Retries for up to `timeout` ms since the guest may take time to listen.
+ *
+ * NOTE: Firecracker creates the vsock UDS at `{uds_path}_{guest_cid}`,
+ * not at `{uds_path}`. The caller passes the base path and guest CID.
+ */
 async function connectVsock(
   vsockUdsPath: string,
+  guestCid: number,
   timeout: number,
 ): Promise<{ socket: net.Socket; channel: RpcChannel }> {
+  // Firecracker appends _{cid} to the configured uds_path
+  const actualPath = `${vsockUdsPath}_${guestCid}`;
   const deadline = Date.now() + timeout;
 
   return new Promise((resolve, reject) => {
     function tryConnect() {
       if (Date.now() >= deadline) {
-        reject(new Error(`Could not connect to vsock within ${timeout}ms`));
+        reject(new Error(`Could not connect to vsock within ${timeout}ms: ${actualPath}`));
         return;
       }
 
-      const socket = net.connect(vsockUdsPath, () => {
+      const socket = net.connect(actualPath, () => {
         const channel = createRpcChannel(socket as unknown as Duplex);
         resolve({ socket, channel });
       });
 
       socket.on("error", () => {
+        socket.destroy();
         // Retry after a short delay
         setTimeout(tryConnect, 100);
       });
@@ -349,7 +360,7 @@ describe.skipIf(!canRun)("Firecracker integration", () => {
     });
 
     // Connect to guest over vsock
-    const { socket, channel } = await connectVsock(vsockUdsPath, 30_000);
+    const { socket, channel } = await connectVsock(vsockUdsPath, cid, 30_000);
 
     try {
       // Send bundle first (harness expects bundle as first message)
@@ -392,7 +403,7 @@ describe.skipIf(!canRun)("Firecracker integration", () => {
     });
 
     // Wait for guest to be ready (connect over vsock)
-    const { socket: sock1, channel: chan1 } = await connectVsock(vsockUdsPath, 30_000);
+    const { socket: sock1, channel: chan1 } = await connectVsock(vsockUdsPath, cid, 30_000);
 
     // Send bundle to mark guest as ready
     const bundleResp = await chan1.request(
@@ -452,7 +463,7 @@ describe.skipIf(!canRun)("Firecracker integration", () => {
     });
 
     // Verify the restored VM is reachable over vsock
-    const { socket: sock2, channel: chan2 } = await connectVsock(vsockUdsPath2, 30_000);
+    const { socket: sock2, channel: chan2 } = await connectVsock(vsockUdsPath2, cid2, 30_000);
 
     try {
       // The restored VM should still have the agent loaded
@@ -479,7 +490,7 @@ describe.skipIf(!canRun)("Firecracker integration", () => {
       action_type: "InstanceStart",
     });
 
-    const { socket, channel } = await connectVsock(vsockUdsPath, 30_000);
+    const { socket, channel } = await connectVsock(vsockUdsPath, cid, 30_000);
 
     try {
       // Inject bundle
@@ -525,7 +536,7 @@ describe.skipIf(!canRun)("Firecracker integration", () => {
       action_type: "InstanceStart",
     });
 
-    const { socket, channel } = await connectVsock(vsockUdsPath, 30_000);
+    const { socket, channel } = await connectVsock(vsockUdsPath, cid, 30_000);
 
     // Set up a KV handler on the host side to respond to guest KV requests
     const kvStore = new Map<string, unknown>();
@@ -628,8 +639,8 @@ module.exports = {
     await firecrackerApi(api1, "PUT", "/actions", { action_type: "InstanceStart" });
     await firecrackerApi(api2, "PUT", "/actions", { action_type: "InstanceStart" });
 
-    const { socket: sock1, channel: chan1 } = await connectVsock(vsock1, 30_000);
-    const { socket: sock2, channel: chan2 } = await connectVsock(vsock2, 30_000);
+    const { socket: sock1, channel: chan1 } = await connectVsock(vsock1, cid1, 30_000);
+    const { socket: sock2, channel: chan2 } = await connectVsock(vsock2, cid2, 30_000);
 
     try {
       // Inject bundles
@@ -690,7 +701,7 @@ module.exports = {
       action_type: "InstanceStart",
     });
 
-    const { socket, channel } = await connectVsock(vsockUdsPath, 30_000);
+    const { socket, channel } = await connectVsock(vsockUdsPath, cid, 30_000);
 
     try {
       await channel.request(
@@ -733,7 +744,7 @@ module.exports = {
       action_type: "InstanceStart",
     });
 
-    const { socket, channel } = await connectVsock(vsockUdsPath, 30_000);
+    const { socket, channel } = await connectVsock(vsockUdsPath, cid, 30_000);
 
     try {
       await channel.request(
@@ -779,7 +790,7 @@ module.exports = {
       action_type: "InstanceStart",
     });
 
-    const { socket, channel } = await connectVsock(vsockUdsPath, 30_000);
+    const { socket, channel } = await connectVsock(vsockUdsPath, cid, 30_000);
 
     // Inject bundle
     await channel.request(
