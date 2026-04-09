@@ -37,13 +37,11 @@ async function ensureAgent(cwd: string, yes?: boolean): Promise<string> {
   return cwd;
 }
 
-/** Shared command setup: resolve cwd, ensure API key, optionally scaffold agent. */
+/** Shared command setup: resolve cwd, optionally scaffold agent. */
 async function setup(
   args?: { yes?: boolean | undefined },
   opts?: { agent?: boolean },
 ): Promise<string> {
-  const { ensureApiKey } = await import("./_config.ts");
-  await ensureApiKey();
   let cwd = resolveCwd();
   if (opts?.agent) {
     cwd = await ensureAgent(cwd, args?.yes);
@@ -349,5 +347,11 @@ if (process.env.VITEST !== "true") {
     // No argument or unknown flag → default to init
     process.argv.splice(2, 0, "init");
   }
-  void runMain(mainCommand);
+
+  // Prompt for API key before any command runs (skipped for help/version/test/build)
+  const skipApiKey = helpFlags.has(sub ?? "") || sub === "test" || sub === "build";
+  const boot = skipApiKey
+    ? Promise.resolve()
+    : import("./_config.ts").then((m) => m.ensureApiKey());
+  void boot.then(() => runMain(mainCommand));
 }
