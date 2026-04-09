@@ -51,6 +51,7 @@ export function createGvisorSandbox(opts: { slug: string; harnessPath: string })
     [
       "--rootless",
       "--network=none",
+      "--ignore-cgroups",
       "do",
       "-root",
       rootfsDir,
