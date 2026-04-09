@@ -94,17 +94,13 @@ export function ChatView({
           <div
             className="inline-flex items-center justify-center gap-1.5 text-[13px] font-medium leading-[130%] capitalize"
             style={{ color: "rgba(255,255,255,0.284)" }}
-            data-state={session.error ? "error" : session.state}
+            data-state={session.state}
           >
             <div
               className="w-2 h-2 rounded-full"
-              style={{
-                background: session.error
-                  ? STATE_COLORS.error
-                  : (STATE_COLORS[session.state] ?? STATE_COLORS.disconnected),
-              }}
+              style={{ background: STATE_COLORS[session.state] ?? STATE_COLORS.disconnected }}
             />
-            {session.error ? "error" : session.state}
+            {session.state}
           </div>
         </div>
       </div>

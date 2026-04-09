@@ -28,7 +28,7 @@ describe("ToolCallInfo", () => {
 });
 
 describe("AgentState", () => {
-  it("does not include error as a state", () => {
+  it("includes all expected states", () => {
     const states: AgentState[] = [
       "disconnected",
       "connecting",
@@ -36,8 +36,9 @@ describe("AgentState", () => {
       "listening",
       "thinking",
       "speaking",
+      "error",
     ];
-    expect(states).toHaveLength(6);
+    expect(states).toHaveLength(7);
   });
 });
 

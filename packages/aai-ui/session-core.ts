@@ -173,7 +173,7 @@ async function initAudioCapture(
   } catch (err: unknown) {
     if (conn.generation !== gen || !conn.ws || conn.ws.readyState !== WS_OPEN) return;
     deps.updateState({
-      state: "disconnected",
+      state: "error",
       error: {
         code: "audio",
         message: `Microphone access failed: ${errorMessage(err)}`,
@@ -297,11 +297,10 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
 
   /** Single entry point for all server->client session events. */
   function handleEvent(e: ClientEvent): void {
-    // Clear any prior error when the session is actively processing events.
-    // This handles the case where audio init fails but the WebSocket is still
-    // functional — subsequent events prove the session is working.
-    if (currentSnapshot.error && e.type !== "error") {
-      updateState({ error: null });
+    // Clear error state when a non-error event arrives — proves the session
+    // is functional (e.g. audio init failed but WebSocket still works).
+    if (currentSnapshot.state === "error" && e.type !== "error") {
+      updateState({ state: "disconnected", error: null });
     }
 
     switch (e.type) {
@@ -387,9 +386,8 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
       case "error":
         console.error("Agent error:", e.message);
         updateState({
-          state: "disconnected",
+          state: "error",
           error: { code: e.code, message: e.message },
-          // Mirror the old effect(() => { if (state === "error") running = false })
           running: false,
         });
         break;
@@ -533,7 +531,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
           hasConnected = true;
           initAudioCapture(conn, config, audioDeps).catch((err) => {
             audioDeps.updateState({
-              state: "disconnected",
+              state: "error",
               error: {
                 code: "audio",
                 message: `Audio capture failed: ${errorMessage(err)}`,

@@ -16,7 +16,8 @@ export type AgentState =
   | "ready"
   | "listening"
   | "thinking"
-  | "speaking";
+  | "speaking"
+  | "error";
 
 /**
  * A chat message exchanged between user and assistant.

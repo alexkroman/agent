@@ -17,7 +17,7 @@ import type { AgentState, ChatMessage, SessionError, ToolCallInfo } from "./type
  */
 export function createMockSessionCore(
   overrides?: Partial<{
-    state: AgentState | "error";
+    state: AgentState;
     messages: ChatMessage[];
     toolCalls: ToolCallInfo[];
     userTranscript: string | null;
@@ -28,7 +28,7 @@ export function createMockSessionCore(
   }>,
 ): SessionCore & { update(partial: Partial<SessionSnapshot>): void } {
   let snapshot: SessionSnapshot = {
-    state: (overrides?.state ?? "disconnected") as AgentState,
+    state: overrides?.state ?? "disconnected",
     messages: overrides?.messages ?? [],
     toolCalls: overrides?.toolCalls ?? [],
     userTranscript: overrides?.userTranscript ?? null,
