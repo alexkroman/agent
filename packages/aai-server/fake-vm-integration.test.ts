@@ -52,7 +52,7 @@ async function spawnFakeVm(socketPath: string): Promise<ChildProcess> {
   const fakeVmPath = path.resolve(import.meta.dirname, "guest/fake-vm.ts");
 
   const child = fork(fakeVmPath, [socketPath], {
-    execArgv: ["--experimental-strip-types"],
+    execArgv: ["--experimental-strip-types", "--conditions", "@dev/source"],
     stdio: ["pipe", "pipe", "pipe", "ipc"],
     silent: true,
   });

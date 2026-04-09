@@ -1,4 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
+/// <reference path="./matchers.d.ts" />
 import { describe, expect, test } from "vitest";
 import { TurnResult } from "./testing.ts";
 
