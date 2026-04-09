@@ -48,7 +48,7 @@
     "kokoro-js": "^1.2.1",
     "lefthook": "^2.1.5",
     "markdownlint-cli2": "^0.22.0",
-    "preact": "^10.29.1",
+    "react": "^19.0.0",
     "publint": "^0.3.18",
     "sherif": "1.11.1",
     "syncpack": "^14.3.0",
