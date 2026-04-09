@@ -13,19 +13,19 @@ RUN corepack enable && corepack prepare pnpm@10.29.3 --activate
 
 # Copy workspace config and lockfile (layer cache)
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY packages/aai/package.json packages/aai/
+COPY packages/aai-core/package.json packages/aai-core/
 COPY packages/aai-server/package.json packages/aai-server/
 
 # Install all deps (dev too — needed for build)
 RUN pnpm install --frozen-lockfile --ignore-scripts --prod=false
 
 # Copy source
-COPY packages/aai/ packages/aai/
+COPY packages/aai-core/ packages/aai-core/
 COPY packages/aai-server/ packages/aai-server/
 COPY tsconfig.json ./
 
 # Build SDK + server
-RUN pnpm --filter @alexkroman1/aai build \
+RUN pnpm --filter @alexkroman1/aai-core build \
     && pnpm --filter @alexkroman1/aai-server build
 
 # ── Production stage ─────────────────────────────────────────────────────────
@@ -46,12 +46,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 RUN corepack enable && corepack prepare pnpm@10.29.3 --activate
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY packages/aai/package.json packages/aai/
+COPY packages/aai-core/package.json packages/aai-core/
 COPY packages/aai-server/package.json packages/aai-server/
 
 RUN pnpm install --frozen-lockfile --ignore-scripts --prod
 
-COPY --from=build /app/packages/aai/dist/ packages/aai/dist/
+COPY --from=build /app/packages/aai-core/dist/ packages/aai-core/dist/
 COPY --from=build /app/packages/aai-server/dist/ packages/aai-server/dist/
 
 ENV NODE_ENV=production
