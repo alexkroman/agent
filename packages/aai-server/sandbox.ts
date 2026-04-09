@@ -37,7 +37,7 @@ import {
   NodeRuntime,
 } from "secure-exec";
 import type { Storage } from "unstorage";
-import { agentKvPrefix, JAIL_MEMORY_LIMIT_MB, SANDBOX_MEMORY_LIMIT_MB } from "./constants.ts";
+import { agentKvPrefix } from "./constants.ts";
 import { initProcessJail, isJailAvailable, type JailedLauncher } from "./process-jail.ts";
 import { type IsolateConfig, TurnConfigResultSchema } from "./rpc-schemas.ts";
 import { getHarnessFiles } from "./sandbox-harness.ts";
@@ -218,7 +218,10 @@ async function startIsolate(
       try {
         const pkgDir = dirname(req.resolve(`${platformPkg}/package.json`));
         const binaryPath = join(pkgDir, "secure-exec-v8");
-        jailLauncher = await initProcessJail({ binaryPath, memoryLimitMb: JAIL_MEMORY_LIMIT_MB });
+        jailLauncher = await initProcessJail({
+          binaryPath,
+          memoryLimitMb: 128 /* TODO: remove with nsjail */,
+        });
         if (jailLauncher) {
           process.once("beforeExit", () => {
             jailLauncher?.cleanup().catch(() => {
@@ -260,7 +263,7 @@ async function startIsolate(
       processConfig: { env: prefixedEnv, timingMitigation: "freeze" },
     }),
     runtimeDriverFactory: driverFactory,
-    memoryLimit: SANDBOX_MEMORY_LIMIT_MB,
+    memoryLimit: 64, // TODO: remove with secure-exec
     onStdio(event: StdioEvent) {
       if (event.channel === "stderr") {
         console.error("[isolate stderr]", event.message);

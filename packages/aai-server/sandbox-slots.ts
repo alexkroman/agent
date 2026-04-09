@@ -17,13 +17,12 @@
 import { LRUCache } from "lru-cache";
 import { getLock } from "p-lock";
 import type { Storage } from "unstorage";
-import { MAX_RSS_MB } from "./constants.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
 import type { Sandbox, SandboxOptions } from "./sandbox.ts";
 import type { AgentMetadata } from "./schemas.ts";
 import type { BundleStore } from "./store-types.ts";
 
-/** Thrown when the server's RSS exceeds MAX_RSS_MB and no slots can be evicted. */
+/** Thrown when the server's RSS exceeds the memory limit and no slots can be evicted. */
 export class MemoryPressureError extends Error {
   constructor(rssMb: number, maxMb: number) {
     super(`Memory pressure: RSS ${rssMb.toFixed(0)}MB exceeds ${maxMb}MB`);
@@ -157,9 +156,11 @@ export async function ensureAgent(
     }
 
     // RSS-based admission: evict coldest slots until under the limit
-    while (rssMb() > MAX_RSS_MB) {
+    // TODO: remove with secure-exec (Task 7 rewrites this file)
+    const maxRssMb = Number(process.env.MAX_RSS_MB) || 1740;
+    while (rssMb() > maxRssMb) {
       if (!(slots && slots.size > 0 && evictColdest(slots))) {
-        throw new MemoryPressureError(rssMb(), MAX_RSS_MB);
+        throw new MemoryPressureError(rssMb(), maxRssMb);
       }
     }
 
