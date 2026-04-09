@@ -52,13 +52,6 @@ export const KvRequestSchema = z.discriminatedUnion("op", [
     expireIn: z.number().int().positive().optional(),
   }),
   z.object({ op: z.literal("del"), key: z.string().min(1) }),
-  z.object({
-    op: z.literal("list"),
-    prefix: z.string(),
-    limit: z.number().int().positive().optional(),
-    reverse: z.boolean().optional(),
-  }),
-  z.object({ op: z.literal("keys"), pattern: z.string().optional() }),
 ]);
 
 /** KV operation request — discriminated union on the `op` field. */

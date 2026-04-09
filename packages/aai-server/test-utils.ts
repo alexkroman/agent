@@ -22,8 +22,6 @@ export function createMockKv(): Kv {
     delete: vi.fn(async (key: string) => {
       store.delete(key);
     }),
-    keys: vi.fn(async () => [] as string[]),
-    list: vi.fn(async () => []) as Kv["list"],
   };
 }
 

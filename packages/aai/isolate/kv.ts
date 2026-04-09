@@ -4,35 +4,6 @@
  */
 
 /**
- * A single key-value entry returned by {@link Kv.list}.
- *
- * @typeParam T - The type of the stored value. Defaults to `unknown`.
- *
- * @public
- */
-export type KvEntry<T = unknown> = {
-  /** The key under which the value is stored. */
-  key: string;
-  /** The deserialized value. */
-  value: T;
-};
-
-/**
- * Options for listing keys from the KV store.
- *
- * Used with {@link Kv.list} and {@link Kv.keys} to control filtering,
- * ordering, and pagination.
- *
- * @public
- */
-export type KvListOptions = {
-  /** Maximum number of entries to return. */
-  limit?: number;
-  /** Return entries in reverse key order. */
-  reverse?: boolean;
-};
-
-/**
  * Async key-value store interface used by agents.
  *
  * Agents access the KV store via `ToolContext.kv` or
@@ -80,26 +51,6 @@ export type Kv = {
    * @param keys - A single key or array of keys to delete. No-op for keys that do not exist.
    */
   delete(keys: string | string[]): Promise<void>;
-  /**
-   * List entries whose keys start with the given prefix.
-   *
-   * Results are sorted by key in ascending lexicographic order by default.
-   *
-   * @typeParam T - The expected type of the stored values.
-   * @param prefix - Key prefix to filter by. Use `""` to list all entries.
-   * @param options - Optional pagination and ordering settings.
-   * @returns An array of matching {@link KvEntry} objects.
-   */
-  list<T = unknown>(prefix: string, options?: KvListOptions): Promise<KvEntry<T>[]>;
-  /**
-   * List all keys, optionally filtered by a prefix or glob-style pattern.
-   *
-   * @param pattern - Optional prefix string or glob pattern (e.g. `"user:*"`).
-   *   A pattern without wildcards (`*`) is treated as a prefix match.
-   *   If omitted, all keys are returned.
-   * @returns An array of matching key strings.
-   */
-  keys(pattern?: string): Promise<string[]>;
   /**
    * Close the KV store, releasing any resources (intervals, database handles).
    *

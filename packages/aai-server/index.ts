@@ -89,12 +89,7 @@ async function main(): Promise<void> {
 
   async function shutdown() {
     console.info("Shutting down...");
-    const stops = [...opts.slots.values()]
-      .map((slot) => {
-        if (slot.idleTimer) clearTimeout(slot.idleTimer);
-        return slot.sandbox?.shutdown();
-      })
-      .filter(Boolean);
+    const stops = [...opts.slots.values()].map((slot) => slot.sandbox?.shutdown()).filter(Boolean);
     const results = await Promise.allSettled(stops);
     for (const r of results) {
       if (r.status === "rejected") {

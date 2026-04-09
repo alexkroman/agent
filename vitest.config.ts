@@ -102,6 +102,7 @@ export default defineConfig({
           exclude: [
             "docker-build.test.ts",
             "sandbox-integration.test.ts",
+            "sandbox-lifecycle.test.ts",
             "ws-integration.test.ts",
             "load/**",
             "adversarial/**",

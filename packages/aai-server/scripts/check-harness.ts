@@ -34,9 +34,12 @@ const result = await ts.typecheckProject({
 // In secure-exec 0.2.x, the module access overlay is stricter about symlink
 // validation. In a pnpm monorepo, some transitive deps of workspace packages
 // resolve to canonical paths outside the allowed roots, causing TS2307 errors
-// in node_modules. Filter these out — they're not our code.
+// in both node_modules and workspace source files (e.g. aai/host/s2s.ts
+// importing nanoevents). Only report errors from aai-server's own source
+// files — workspace dependencies have their own typecheck.
+const serverDir = `${process.cwd()}/`;
 const ownDiagnostics = result.diagnostics.filter(
-  (d) => d.filePath && !d.filePath.includes("/node_modules/"),
+  (d) => d.filePath && d.filePath.startsWith(serverDir) && !d.filePath.includes("/node_modules/"),
 );
 
 if (ownDiagnostics.length > 0) {

@@ -211,44 +211,6 @@ export default {
   });
 });
 
-// ── Idle eviction ────────────────────────────────────────────────────────
-
-describe("idle eviction", () => {
-  const originalIdleMs = _internals.IDLE_MS;
-
-  afterAll(() => {
-    _internals.IDLE_MS = originalIdleMs;
-  });
-
-  test("sandbox is evicted after idle timeout", async () => {
-    _internals.IDLE_MS = 200;
-
-    const { createTestStorage } = await import("./test-utils.ts");
-    const storage = createTestStorage();
-
-    const slot = {
-      slug: "idle-test",
-      keyHash: "test",
-    } as import("./sandbox.ts").AgentSlot;
-
-    const sandbox = await _internals.createSandbox({
-      workerCode: AGENT_BUNDLE,
-      apiKey: "test-key",
-      agentEnv: {},
-      storage,
-      slug: "idle-test",
-      agentConfig: AGENT_CONFIG,
-    });
-
-    slot.sandbox = sandbox;
-    _internals.resetIdleTimer(slot);
-
-    expect(slot.sandbox).toBeTruthy();
-
-    await vi.waitFor(() => expect(slot.sandbox).toBeUndefined(), { timeout: 5000, interval: 50 });
-  });
-});
-
 // ── Redeploy replaces sandbox ────────────────────────────────────────────
 
 describe("redeploy replaces sandbox", () => {

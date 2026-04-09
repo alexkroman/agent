@@ -8,23 +8,19 @@
 
 // ─── Sandbox isolate ─────────────────────────────────────────────────────
 
-/** Memory limit for sandbox isolates (MB). */
-export const SANDBOX_MEMORY_LIMIT_MB = 128;
+/** Memory limit for sandbox isolates (MB). Most templates use 0.3–26 MB at boot. */
+export const SANDBOX_MEMORY_LIMIT_MB = 64;
 
 // ─── Slot lifecycle ──────────────────────────────────────────────────────
 
-/** Default idle timeout before an agent slot is evicted (ms, 1 min). */
-export const DEFAULT_SLOT_IDLE_MS = Number(process.env.SLOT_IDLE_MS) || 60_000;
-
 /**
- * Max active sandbox slots before the server rejects new sandbox spawns.
- * Tuned for 85% max utilization on shared-cpu-2x@2048MB:
- * ~93 MB baseline + ~130 MB V8 residual + (10 × ~70 MB/slot) ≈ 923 MB (45%).
- * Headroom covers real agents with LLM/STT sessions using more than minimal test agents.
+ * Max RSS in MB before evicting cold slots / rejecting new spawns.
+ * Set to 85% of 2048 MB. This is the sole admission gate — isolates are
+ * cheap (~1 MB each), so a fixed slot count is unnecessary.
+ *
+ * Note: SECURE_EXEC_V8_MAX_SESSIONS env var must be set high enough in
+ * production to avoid session creation failures in the Rust V8 runtime.
  */
-export const MAX_SLOTS = Number(process.env.MAX_SLOTS) || 10;
-
-/** Max RSS in MB before rejecting new sandbox spawns (85% of 2048 MB). */
 export const MAX_RSS_MB = Number(process.env.MAX_RSS_MB) || 1740;
 
 // ─── Auth ────────────────────────────────────────────────────────────────
@@ -56,4 +52,4 @@ export function agentKvPrefix(slug: string): string {
 // ─── Process jail ───────────────────────────────────────────────────────
 
 /** Total memory limit for nsjail cgroup (V8 heap + Rust runtime overhead, MB). */
-export const JAIL_MEMORY_LIMIT_MB = 192;
+export const JAIL_MEMORY_LIMIT_MB = 128;

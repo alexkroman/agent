@@ -22,8 +22,7 @@ export { DEPLOY_KEY };
 /** Default env overrides for load tests — production-matching limits under constrained container. */
 const LOAD_DEFAULTS: Record<string, string> = {
   MAX_CONNECTIONS: "100",
-  MAX_SLOTS: "10",
-  SLOT_IDLE_MS: "10000",
+  SECURE_EXEC_V8_MAX_SESSIONS: "128",
 };
 
 const COMPOSE_FILES = ["docker-compose.yml", "docker-compose.load.yml"];

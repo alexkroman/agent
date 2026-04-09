@@ -40,70 +40,6 @@ describe("createUnstorageKv", () => {
     expect(await kv.get("k1")).toBe(null);
   });
 
-  test("list returns entries matching prefix", async () => {
-    const kv = makeKv();
-    await kv.set("user:1", { name: "alice" });
-    await kv.set("user:2", { name: "bob" });
-    await kv.set("post:1", { title: "hello" });
-    const entries = await kv.list("user:");
-    expect(entries.length).toBe(2);
-    expect(entries[0]).toEqual({ key: "user:1", value: { name: "alice" } });
-    expect(entries[1]).toEqual({ key: "user:2", value: { name: "bob" } });
-  });
-
-  test("list returns entries sorted by key", async () => {
-    const kv = makeKv();
-    await kv.set("c", 3);
-    await kv.set("a", 1);
-    await kv.set("b", 2);
-    const entries = await kv.list("");
-    expect(entries.map((e) => e.key)).toEqual(["a", "b", "c"]);
-  });
-
-  test("list with reverse", async () => {
-    const kv = makeKv();
-    await kv.set("a", 1);
-    await kv.set("b", 2);
-    await kv.set("c", 3);
-    const entries = await kv.list("", { reverse: true });
-    expect(entries.map((e) => e.key)).toEqual(["c", "b", "a"]);
-  });
-
-  test("list with limit", async () => {
-    const kv = makeKv();
-    await kv.set("a", 1);
-    await kv.set("b", 2);
-    await kv.set("c", 3);
-    const entries = await kv.list("", { limit: 2 });
-    expect(entries.length).toBe(2);
-    expect(entries.map((e) => e.key)).toEqual(["a", "b"]);
-  });
-
-  test("list with reverse and limit", async () => {
-    const kv = makeKv();
-    await kv.set("a", 1);
-    await kv.set("b", 2);
-    await kv.set("c", 3);
-    const entries = await kv.list("", { limit: 2, reverse: true });
-    expect(entries.map((e) => e.key)).toEqual(["c", "b"]);
-  });
-
-  test("keys returns all keys sorted", async () => {
-    const kv = makeKv();
-    await kv.set("b", 2);
-    await kv.set("a", 1);
-    await kv.set("c", 3);
-    expect(await kv.keys()).toEqual(["a", "b", "c"]);
-  });
-
-  test("keys with glob pattern", async () => {
-    const kv = makeKv();
-    await kv.set("user:1", "alice");
-    await kv.set("user:2", "bob");
-    await kv.set("post:1", "hello");
-    expect(await kv.keys("user:*")).toEqual(["user:1", "user:2"]);
-  });
-
   test("rejects oversized values", async () => {
     const kv = makeKv();
     const big = "x".repeat(65_537);
@@ -138,48 +74,6 @@ describe("createUnstorageKv", () => {
     expect(user?.age).toBe(30);
   });
 
-  test("list with generic type", async () => {
-    const kv = makeKv();
-    await kv.set("item:1", { title: "first" });
-    await kv.set("item:2", { title: "second" });
-    const entries = await kv.list<{ title: string }>("item:");
-    expect(entries[0]?.value.title).toBe("first");
-    expect(entries[1]?.value.title).toBe("second");
-  });
-
-  test("keys glob rejects key shorter than pattern literal segments", async () => {
-    const kv = makeKv();
-    await kv.set("a", "1");
-    await kv.set("abc:xyz", "2");
-    expect(await kv.keys("abc*xyz")).toEqual(["abc:xyz"]);
-    expect(await kv.keys("abcdef*")).toEqual([]);
-  });
-
-  test("keys glob handles multi-wildcard patterns", async () => {
-    const kv = makeKv();
-    await kv.set("a:b:c", "1");
-    await kv.set("a:x:c", "2");
-    await kv.set("b:x:c", "3");
-    expect(await kv.keys("a*c")).toEqual(["a:b:c", "a:x:c"]);
-    expect(await kv.keys("a*b*c")).toEqual(["a:b:c"]);
-  });
-
-  test("keys glob starting with wildcard scans all keys", async () => {
-    const kv = makeKv();
-    await kv.set("foo:bar", "1");
-    await kv.set("baz:bar", "2");
-    await kv.set("foo:qux", "3");
-    expect(await kv.keys("*:bar")).toEqual(["baz:bar", "foo:bar"]);
-  });
-
-  test("keys with plain prefix (no glob) returns matching keys", async () => {
-    const kv = makeKv();
-    await kv.set("app:config:a", "1");
-    await kv.set("app:config:b", "2");
-    await kv.set("app:data:x", "3");
-    expect(await kv.keys("app:config:*")).toEqual(["app:config:a", "app:config:b"]);
-  });
-
   describe("with prefix", () => {
     test("prefix isolates keys", async () => {
       const storage = createStorage();
@@ -189,24 +83,6 @@ describe("createUnstorageKv", () => {
       await kv2.set("key", "from-ns2");
       expect(await kv1.get("key")).toBe("from-ns1");
       expect(await kv2.get("key")).toBe("from-ns2");
-    });
-
-    test("list with prefix scopes correctly", async () => {
-      const storage = createStorage();
-      const kv = createUnstorageKv({ storage, prefix: "agents/my-agent/kv" });
-      await kv.set("user:1", "alice");
-      await kv.set("user:2", "bob");
-      const entries = await kv.list("user:");
-      expect(entries.length).toBe(2);
-      expect(entries[0]?.key).toBe("user:1");
-    });
-
-    test("keys with prefix strips prefix from results", async () => {
-      const storage = createStorage();
-      const kv = createUnstorageKv({ storage, prefix: "myprefix" });
-      await kv.set("a", 1);
-      await kv.set("b", 2);
-      expect(await kv.keys()).toEqual(["a", "b"]);
     });
   });
 

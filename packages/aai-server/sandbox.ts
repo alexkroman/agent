@@ -41,16 +41,30 @@ import { agentKvPrefix, JAIL_MEMORY_LIMIT_MB, SANDBOX_MEMORY_LIMIT_MB } from "./
 import { initProcessJail, isJailAvailable, type JailedLauncher } from "./process-jail.ts";
 import { type IsolateConfig, TurnConfigResultSchema } from "./rpc-schemas.ts";
 import { getHarnessFiles } from "./sandbox-harness.ts";
-import {
-  resolveSandbox as _resolveSandboxCore,
-  _slotInternals,
-  type SlotCache,
-} from "./sandbox-slots.ts";
+import { resolveSandbox as _resolveSandboxCore, type SlotCache } from "./sandbox-slots.ts";
 import { ssrfSafeFetch } from "./ssrf.ts";
 import type { BundleStore } from "./store-types.ts";
 
 let jailLauncher: JailedLauncher | null = null;
 let jailInitialized = false;
+
+/**
+ * IMPORTANT: Do NOT call `runtime.terminate()` or `runtime.dispose()` during
+ * normal sandbox shutdown.
+ *
+ * secure-exec's NodeExecutionDriver uses reference counting — when all drivers
+ * are terminated/disposed, `releaseSharedV8Runtime()` kills the shared Rust V8
+ * process. In a long-lived server this is catastrophic: terminating the last
+ * active isolate kills the Rust process, causing "broken pipe" errors for
+ * subsequent boots.
+ *
+ * Instead, `channel.shutdown()` stops the RPC loop and the V8 session is
+ * cleaned up when the Rust process eventually reclaims it. The memory cost
+ * is negligible (~1MB per session per our load tests).
+ *
+ * `runtime.terminate()` should ONLY be called during full server shutdown
+ * (process exit) when we want to clean up the Rust process.
+ */
 
 const READ_ONLY_FS_OPS = new Set(["read", "stat", "readdir", "exists"]);
 
@@ -92,13 +106,6 @@ function buildKvBindings(kv: import("@alexkroman1/aai/kv").Kv): BindingTree {
     set: (key: unknown, value: unknown, expireIn?: unknown) =>
       kv.set(key as string, value, expireIn ? { expireIn: expireIn as number } : undefined),
     del: (key: unknown) => kv.delete(key as string),
-    list: (prefix: unknown, limit?: unknown, reverse?: unknown) => {
-      const opts: { limit?: number; reverse?: boolean } = {};
-      if (limit != null) opts.limit = limit as number;
-      if (reverse != null) opts.reverse = reverse as boolean;
-      return kv.list(prefix as string, opts);
-    },
-    keys: (pattern?: unknown) => kv.keys(pattern as string | undefined),
   };
 }
 
@@ -328,13 +335,6 @@ function buildHookInvoker(
 export const _internals = {
   startIsolate,
   createSandbox,
-  get IDLE_MS() {
-    return _slotInternals.IDLE_MS;
-  },
-  set IDLE_MS(ms: number) {
-    _slotInternals.IDLE_MS = ms;
-  },
-  resetIdleTimer: _slotInternals.resetIdleTimer,
 };
 
 export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
@@ -413,18 +413,11 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
   console.info("Sandbox initialized", { slug, agent: config.name });
 
   async function shutdownSandbox(): Promise<void> {
-    try {
-      hooks.removeAllHooks();
-      isolate?.channel.shutdown();
-      await agentRuntime.shutdown();
-    } finally {
-      if (isolate) {
-        await isolate.runtime.terminate().catch((err: unknown) => {
-          const msg = errorMessage(err);
-          if (!msg.includes("already disposed")) console.warn("Runtime terminate failed:", err);
-        });
-      }
-    }
+    hooks.removeAllHooks();
+    isolate?.channel.shutdown();
+    await agentRuntime.shutdown();
+    // Note: we intentionally do NOT call runtime.terminate() here.
+    // See the comment above startIsolate for why.
   }
 
   return {

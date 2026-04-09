@@ -242,16 +242,6 @@ describe("KvRequestSchema", () => {
     expect(KvRequestSchema.safeParse(input).success).toBe(expected);
   });
 
-  test("accepts valid list request", () => {
-    expect(KvRequestSchema.safeParse({ op: "list", prefix: "" }).success).toBe(true);
-    expect(KvRequestSchema.safeParse({ op: "list", prefix: "ns:", limit: 10 }).success).toBe(true);
-  });
-
-  test("accepts valid keys request", () => {
-    expect(KvRequestSchema.safeParse({ op: "keys" }).success).toBe(true);
-    expect(KvRequestSchema.safeParse({ op: "keys", pattern: "user:*" }).success).toBe(true);
-  });
-
   test("rejects non-object", () => {
     expect(KvRequestSchema.safeParse("get").success).toBe(false);
     expect(KvRequestSchema.safeParse(null).success).toBe(false);

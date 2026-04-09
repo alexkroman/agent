@@ -40,24 +40,6 @@ describe("createUnstorageKv (scoped)", () => {
     expect(result).toBeNull();
   });
 
-  test("keys returns stored keys", async () => {
-    const kv = createUnstorageKv({ storage, prefix: "agents/test-agent/kv" });
-    await kv.set("note:1", "a");
-    await kv.set("note:2", "b");
-    const keys = await kv.keys();
-    expect(keys).toEqual(expect.arrayContaining(["note:1", "note:2"]));
-  });
-
-  test("list returns entries matching prefix", async () => {
-    const kv = createUnstorageKv({ storage, prefix: "agents/test-agent/kv" });
-    await kv.set("note:1", "a");
-    await kv.set("note:2", "b");
-    await kv.set("other:1", "c");
-    const entries = await kv.list("note:");
-    expect(entries).toHaveLength(2);
-    expect(entries.every((e) => e.key.startsWith("note:"))).toBe(true);
-  });
-
   test("scoping isolates different agents", async () => {
     const kvA = createUnstorageKv({ storage, prefix: "agents/agent-a/kv" });
     const kvB = createUnstorageKv({ storage, prefix: "agents/agent-b/kv" });
@@ -67,15 +49,5 @@ describe("createUnstorageKv (scoped)", () => {
 
     expect(await kvA.get("key")).toBe("val-a");
     expect(await kvB.get("key")).toBe("val-b");
-  });
-
-  test("list respects limit option", async () => {
-    const kv = createUnstorageKv({ storage, prefix: "agents/test-agent/kv" });
-    await kv.set("item:a", "v1");
-    await kv.set("item:b", "v2");
-    await kv.set("item:c", "v3");
-
-    const entries = await kv.list("item:", { limit: 2 });
-    expect(entries).toHaveLength(2);
   });
 });

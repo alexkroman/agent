@@ -380,16 +380,13 @@ auto-serialized as JSON.
 await ctx.kv.set("user:123", { name: "Alice" }); // save
 await ctx.kv.set("temp:x", value, { expireIn: 60_000 }); // save with TTL (ms)
 const user = await ctx.kv.get<User>("user:123"); // read (or null)
-const notes = await ctx.kv.list("note:", { limit: 10, reverse: true }); // list by prefix
-const allKeys = await ctx.kv.keys(); // all keys
-const userKeys = await ctx.kv.keys("user:*"); // keys matching glob pattern
 await ctx.kv.delete("user:123"); // delete
 ```
 
 Keys are strings; use colon-separated prefixes (`"user:123"`). Max value: 64 KB.
 
-`kv.list()` returns `KvEntry[]` where each entry has
-`{ key: string, value: T }`.
+To enumerate keys, maintain your own index key (e.g. store an array of IDs
+under a known key and update it when you add or remove entries).
 
 ## Advanced patterns
 

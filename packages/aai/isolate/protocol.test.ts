@@ -55,14 +55,6 @@ describe("KvRequestSchema", () => {
     expect(result.success).toBe(true);
   });
 
-  test("accepts valid list request", () => {
-    const result = KvRequestSchema.safeParse({
-      op: "list",
-      prefix: "my-prefix",
-    });
-    expect(result.success).toBe(true);
-  });
-
   test("set accepts non-string values (objects, arrays, null)", () => {
     // The Kv interface accepts `value: unknown` — ensure the schema matches.
     for (const value of [{ nested: true }, [1, 2, 3], null, 42]) {

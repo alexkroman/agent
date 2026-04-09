@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Agent slot lifecycle — lazy-loading, idle eviction, and slot registry.
+ * Agent slot lifecycle — lazy-loading, RSS-based eviction, and slot registry.
  *
  * Two per-slug lock layers, both backed by p-lock:
  *
@@ -17,21 +17,13 @@
 import { LRUCache } from "lru-cache";
 import { getLock } from "p-lock";
 import type { Storage } from "unstorage";
-import { DEFAULT_SLOT_IDLE_MS, MAX_RSS_MB, MAX_SLOTS } from "./constants.ts";
+import { MAX_RSS_MB } from "./constants.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
 import type { Sandbox, SandboxOptions } from "./sandbox.ts";
 import type { AgentMetadata } from "./schemas.ts";
 import type { BundleStore } from "./store-types.ts";
 
-/** Thrown when the active sandbox slot count has reached MAX_SLOTS. */
-export class SlotCapacityError extends Error {
-  constructor(activeCount: number, max: number) {
-    super(`Slot capacity reached: ${activeCount}/${max} active slots`);
-    this.name = "SlotCapacityError";
-  }
-}
-
-/** Thrown when the server's RSS exceeds MAX_RSS_MB. */
+/** Thrown when the server's RSS exceeds MAX_RSS_MB and no slots can be evicted. */
 export class MemoryPressureError extends Error {
   constructor(rssMb: number, maxMb: number) {
     super(`Memory pressure: RSS ${rssMb.toFixed(0)}MB exceeds ${maxMb}MB`);
@@ -44,10 +36,16 @@ export class MemoryPressureError extends Error {
 export type SlotCache = LRUCache<string, AgentSlot>;
 
 /**
+ * High watermark for the LRU cache. Not a capacity constraint — RSS
+ * pressure is the real admission gate. This just prevents unbounded
+ * Map growth.
+ */
+const LRU_MAX = 500;
+
+/**
  * Create an LRU cache for agent slots.
  *
- * When the cache reaches `MAX_SLOTS`, the least-recently-used slot is evicted
- * automatically. The `dispose` callback shuts down the evicted slot's sandbox.
+ * The `dispose` callback shuts down evicted slots' sandboxes.
  *
  * We only shut down on `"evict"` (LRU capacity eviction). On `"set"` the
  * caller manages the lifecycle (e.g., redeploy terminates old sandbox
@@ -55,18 +53,12 @@ export type SlotCache = LRUCache<string, AgentSlot>;
  */
 export function createSlotCache(): SlotCache {
   return new LRUCache<string, AgentSlot>({
-    max: MAX_SLOTS,
+    max: LRU_MAX,
     dispose: (slot, _key, reason) => {
       if (reason !== "evict") return;
       const sb = slot.sandbox;
       if (!sb) return;
       delete slot.sandbox;
-      if (slot.idleTimer) {
-        clearTimeout(slot.idleTimer);
-        delete slot.idleTimer;
-      }
-      slot._idleAc?.abort();
-      delete slot._idleAc;
       sb.shutdown().catch((err) => {
         console.warn("LRU eviction sandbox shutdown failed:", {
           slug: slot.slug,
@@ -94,15 +86,10 @@ export const withSlugLock = <T>(slug: string, fn: () => Promise<T>): Promise<T> 
 
 // ── Agent slot lifecycle ─────────────────────────────────────────────────
 
-let IDLE_MS = DEFAULT_SLOT_IDLE_MS;
-
 export type AgentSlot = {
   slug: string;
   keyHash: string;
   sandbox?: Sandbox;
-  idleTimer?: ReturnType<typeof setTimeout>;
-  /** Aborted when the idle timer is reset, cancelling any in-flight eviction. */
-  _idleAc?: AbortController;
 };
 
 type EnsureOpts = {
@@ -142,56 +129,42 @@ async function spawnAgent(slot: AgentSlot, opts: EnsureOpts): Promise<Sandbox> {
   return sandbox;
 }
 
-function resetIdleTimer(slot: AgentSlot): void {
-  if (slot.idleTimer) clearTimeout(slot.idleTimer);
-  slot._idleAc?.abort();
-  slot._idleAc = new AbortController();
-  const ac = slot._idleAc;
-  slot.idleTimer = setTimeout(() => {
-    void evictSlot(slot, ac.signal);
-  }, IDLE_MS);
+function rssMb(): number {
+  return process.memoryUsage().rss / (1024 * 1024);
 }
 
-async function evictSlot(slot: AgentSlot, signal: AbortSignal): Promise<void> {
-  const release = await slotLock(slot.slug);
-  try {
-    if (signal.aborted || !slot.sandbox) return;
-    console.info("Evicting idle sandbox", { slug: slot.slug });
-    const sb = slot.sandbox;
-    delete slot.sandbox;
-    delete slot.idleTimer;
-    delete slot._idleAc;
-    await sb.shutdown().catch((err) => {
-      console.warn("Idle sandbox shutdown failed:", { slug: slot.slug, error: err });
-    });
-  } finally {
-    release();
-  }
+/**
+ * Evict the coldest slot to relieve memory pressure.
+ * `slots.pop()` removes the LRU entry and fires the dispose callback
+ * which shuts down the sandbox.
+ */
+function evictColdest(slots: SlotCache): boolean {
+  const evicted = slots.pop();
+  if (!evicted) return false;
+  console.info("Evicted coldest slot for memory pressure", { slug: evicted.slug });
+  return true;
 }
 
 export async function ensureAgent(
   slot: AgentSlot,
   opts: EnsureOpts,
-  _slots?: SlotCache,
+  slots?: SlotCache,
 ): Promise<Sandbox> {
   const release = await slotLock(slot.slug);
   try {
     if (slot.sandbox) {
-      resetIdleTimer(slot);
       return slot.sandbox;
     }
 
-    // Capacity is handled by the LRU cache — it auto-evicts the
-    // least-recently-used slot when `max` is reached on `set()`.
-
-    const rssMb = process.memoryUsage().rss / (1024 * 1024);
-    if (rssMb > MAX_RSS_MB) {
-      throw new MemoryPressureError(rssMb, MAX_RSS_MB);
+    // RSS-based admission: evict coldest slots until under the limit
+    while (rssMb() > MAX_RSS_MB) {
+      if (!(slots && slots.size > 0 && evictColdest(slots))) {
+        throw new MemoryPressureError(rssMb(), MAX_RSS_MB);
+      }
     }
 
     const t0 = performance.now();
     const sandbox = await spawnAgent(slot, opts);
-    resetIdleTimer(slot);
     console.info("Agent sandbox ready", {
       slug: slot.slug,
       durationMs: Math.round(performance.now() - t0),
@@ -214,12 +187,6 @@ export async function terminateSlot(slot: AgentSlot): Promise<void> {
     if (slot.sandbox) {
       const sb = slot.sandbox;
       delete slot.sandbox;
-      if (slot.idleTimer) {
-        clearTimeout(slot.idleTimer);
-        delete slot.idleTimer;
-      }
-      slot._idleAc?.abort();
-      delete slot._idleAc;
       await sb.shutdown().catch((err: unknown) => {
         console.warn("Failed to shut down sandbox", { slug, error: String(err) });
       });
@@ -281,14 +248,3 @@ export async function resolveSandbox(
     opts.slots,
   );
 }
-
-/** @internal Exposed for tests. */
-export const _slotInternals = {
-  get IDLE_MS() {
-    return IDLE_MS;
-  },
-  set IDLE_MS(ms: number) {
-    IDLE_MS = ms;
-  },
-  resetIdleTimer,
-};

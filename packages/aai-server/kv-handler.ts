@@ -21,14 +21,6 @@ export async function handleKv(c: ValidatedAppContext<KvRequest>): Promise<Respo
       case "del":
         await kv.delete(msg.key);
         return c.json({ result: "OK" });
-      case "keys":
-        return c.json({ result: await kv.keys(msg.pattern) });
-      case "list": {
-        const opts: { limit?: number; reverse?: boolean } = {};
-        if (msg.limit !== undefined) opts.limit = msg.limit;
-        if (msg.reverse !== undefined) opts.reverse = msg.reverse;
-        return c.json({ result: await kv.list(msg.prefix, opts) });
-      }
       default: {
         const _: never = msg;
         return c.json({ error: `Unknown KV op: ${(_ as { op: string }).op}` }, 400);
