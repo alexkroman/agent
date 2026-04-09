@@ -49,4 +49,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends git \
     && git init && git add -A \
     && git commit -m "docker" --author="d <d@d>" --allow-empty 2>/dev/null || true
 
+# Verify runsc is available at runtime
+RUN runsc --version && which runsc && ls -la /usr/local/bin/runsc
+
 CMD ["pnpm", "vitest", "run", "--config", "packages/aai-server/vitest.gvisor.config.ts"]
