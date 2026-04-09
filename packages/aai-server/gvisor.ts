@@ -21,7 +21,7 @@ import { type ChildProcess, execFileSync, spawn } from "node:child_process";
 export function isGvisorAvailable(): boolean {
   if (process.platform !== "linux") return false;
   try {
-    execFileSync("which", ["runsc"], { stdio: "ignore" });
+    execFileSync("runsc", ["--version"], { stdio: "ignore" });
     return true;
   } catch {
     return false;
