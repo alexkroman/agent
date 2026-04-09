@@ -82,7 +82,7 @@ RUN pnpm --filter @alexkroman1/aai build \
 COPY packages/aai-server/guest/build-initrd.sh /build/build-initrd.sh
 RUN chmod +x /build/build-initrd.sh \
     && NODE_BINARY=/usr/local/bin/node-static \
-       /build/build-initrd.sh /build/out /app/packages/aai-server/dist/guest/harness.js
+       /build/build-initrd.sh /build/out /app/packages/aai-server/dist/guest/harness.mjs
 
 # ── Stage 3: Test environment ────────────────────────────────────────────────
 
