@@ -55,11 +55,19 @@ export function createGvisorSandbox(opts: { slug: string; harnessPath: string })
       "--ignore-cgroups",
       "do",
       "-quiet",
+      "-cwd",
+      "/tmp",
       "--",
       process.execPath,
       opts.harnessPath,
     ],
-    { stdio: ["pipe", "pipe", "pipe"] },
+    {
+      stdio: ["pipe", "pipe", "pipe"],
+      // Empty env: agent gets env vars over jsonrpc (bundle message),
+      // not from host process.env. Prevents platform secrets from
+      // leaking into the sandbox even via V8 exploits.
+      env: {},
+    },
   );
 
   return {
