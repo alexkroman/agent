@@ -2,19 +2,14 @@
 /**
  * Cross-package smoke test.
  *
- * Verifies that the SDK's defineAgent + toAgentConfig output is accepted
+ * Verifies that the SDK's AgentDef + toAgentConfig output is accepted
  * by the server's deploy endpoint, and that tool schemas survive the
  * SDK → deploy body → server round trip without interface mismatch.
  */
 
-import {
-  type AgentDef,
-  agentToolsToSchemas,
-  defineAgent,
-  defineTool,
-  resolveAllBuiltins,
-  toAgentConfig,
-} from "@alexkroman1/aai/host";
+import type { AgentDef } from "@alexkroman1/aai-core";
+import { agentToolsToSchemas, toAgentConfig } from "@alexkroman1/aai-core/manifest";
+import { resolveAllBuiltins } from "@alexkroman1/aai-core/runtime";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import { createTestOrchestrator } from "./test-utils.ts";
@@ -54,21 +49,21 @@ function buildDeployBodyFromAgent(agent: AgentDef<any>): string {
 }
 
 describe("cross-package smoke: SDK → server deploy", () => {
-  test("defineAgent config is accepted by server deploy endpoint", async () => {
-    const agent = defineAgent({
+  test("agent config is accepted by server deploy endpoint", async () => {
+    const agent: AgentDef = {
       name: "smoke-test",
       systemPrompt: "Test agent for cross-package validation.",
       greeting: "Hello from smoke test",
       maxSteps: 3,
       builtinTools: ["web_search"],
       tools: {
-        echo: defineTool({
+        echo: {
           description: "Echo the input",
           parameters: z.object({ text: z.string() }),
           execute: ({ text }) => `echo:${text}`,
-        }),
+        },
       },
-    });
+    };
 
     const { fetch } = await createTestOrchestrator();
     const body = buildDeployBodyFromAgent(agent);
@@ -81,7 +76,13 @@ describe("cross-package smoke: SDK → server deploy", () => {
   });
 
   test("deployed agent is accessible via health and page endpoints", async () => {
-    const agent = defineAgent({ name: "accessible-agent" });
+    const agent: AgentDef = {
+      name: "accessible-agent",
+      systemPrompt: "",
+      greeting: "",
+      maxSteps: 5,
+      tools: {},
+    };
     const { fetch } = await createTestOrchestrator();
 
     await fetch("/accessible-agent/deploy", {
@@ -100,7 +101,7 @@ describe("cross-package smoke: SDK → server deploy", () => {
   });
 
   test("toAgentConfig produces JSON-safe config from SDK agent", () => {
-    const agent = defineAgent({
+    const agent: AgentDef = {
       name: "json-safe",
       systemPrompt: "Custom instructions",
       greeting: "Hi",
@@ -108,13 +109,13 @@ describe("cross-package smoke: SDK → server deploy", () => {
       toolChoice: "required",
       builtinTools: ["web_search", "run_code"],
       tools: {
-        search: defineTool({
+        search: {
           description: "Search",
           parameters: z.object({ query: z.string() }),
           execute: ({ query }) => query,
-        }),
+        },
       },
-    });
+    };
 
     const config = toAgentConfig(agent);
     // Must survive JSON round-trip (no functions, no class instances)
@@ -162,20 +163,23 @@ describe("cross-package smoke: SDK → server deploy", () => {
   });
 
   test("tool schemas from SDK match expected server format", () => {
-    const agent = defineAgent({
+    const agent: AgentDef = {
       name: "schema-check",
+      systemPrompt: "",
+      greeting: "",
+      maxSteps: 5,
       tools: {
-        greet: defineTool({
+        greet: {
           description: "Greet by name",
           parameters: z.object({ name: z.string(), formal: z.boolean().optional() }),
           execute: ({ name }) => `Hello, ${name}!`,
-        }),
+        },
         noParams: {
           description: "No params tool",
           execute: () => "done",
         },
       },
-    });
+    };
 
     const schemas = agentToolsToSchemas(agent.tools);
 

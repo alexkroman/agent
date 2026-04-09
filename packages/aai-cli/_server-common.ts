@@ -2,40 +2,9 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { AgentServer } from "@alexkroman1/aai/host";
-import type { AgentDef } from "@alexkroman1/aai/types";
-import { parseEnvFile } from "@alexkroman1/aai/utils";
+import { parseEnvFile } from "@alexkroman1/aai-core";
 
-export { parseEnvFile } from "@alexkroman1/aai/utils";
-
-/** Load an AgentDef by dynamically importing agent.ts via Node's native TS support. */
-export async function loadAgentDef(cwd: string): Promise<AgentDef> {
-  const agentPath = path.resolve(cwd, "agent.ts");
-  const agentModule = await import(agentPath);
-  const agentDef = agentModule.default;
-
-  if (!agentDef || typeof agentDef !== "object" || !agentDef.name) {
-    throw new Error("agent.ts must export a default agent definition (from defineAgent())");
-  }
-
-  const missing: string[] = [];
-  if (typeof agentDef.name !== "string") missing.push("name (string)");
-  if (typeof agentDef.systemPrompt !== "string") missing.push("systemPrompt (string)");
-  if (typeof agentDef.greeting !== "string") missing.push("greeting (string)");
-  if (typeof agentDef.maxSteps !== "number" && typeof agentDef.maxSteps !== "function")
-    missing.push("maxSteps (number or function)");
-  if (!agentDef.tools || typeof agentDef.tools !== "object" || Array.isArray(agentDef.tools))
-    missing.push("tools (object)");
-
-  if (missing.length > 0) {
-    throw new Error(
-      `Invalid agent definition: missing or invalid fields: ${missing.join(", ")}. ` +
-        "Use defineAgent() to create a valid agent definition.",
-    );
-  }
-
-  return agentDef as AgentDef;
-}
+export { parseEnvFile } from "@alexkroman1/aai-core";
 
 /**
  * Build the `ctx.env` record that agent tools will see at runtime.
@@ -78,22 +47,4 @@ export async function resolveServerEnv(
   }
 
   return env;
-}
-
-/** Create and start an agent server, optionally with static file serving. */
-export async function bootServer(
-  agentDef: AgentDef,
-  clientDir: string | undefined,
-  env: Record<string, string>,
-  port: number,
-): Promise<AgentServer> {
-  const { createRuntime, createServer } = await import("@alexkroman1/aai/host");
-  const runtime = createRuntime({ agent: agentDef, env });
-  const server = createServer({
-    runtime,
-    name: agentDef.name,
-    ...(clientDir ? { clientDir } : {}),
-  });
-  await server.listen(port);
-  return server;
 }

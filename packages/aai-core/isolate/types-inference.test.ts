@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Type-level tests for defineAgent and defineTool() type inference.
+ * Type-level tests for AgentDef and ToolDef type inference.
  *
  * These use vitest's expectTypeOf to verify that TypeScript correctly
  * infers parameter types, state types, and context types without
@@ -10,22 +10,21 @@
 import { describe, expectTypeOf, test } from "vitest";
 import { z } from "zod";
 import type { AgentDef, HookContext, Message, ToolContext, ToolDef } from "./types.ts";
-import { defineAgent, defineTool, defineToolFactory } from "./types.ts";
 
-describe("defineTool() type inference", () => {
+describe("ToolDef type inference", () => {
   test("infers parameter types in execute args", () => {
-    const _t = defineTool({
+    const _t: ToolDef<z.ZodObject<{ name: z.ZodString; count: z.ZodNumber }>> = {
       description: "test",
       parameters: z.object({ name: z.string(), count: z.number() }),
       execute: (args) => args,
-    });
+    };
 
     // The execute function should receive typed args
     type Args = Parameters<typeof _t.execute>[0];
     expectTypeOf<Args>().toEqualTypeOf<{ name: string; count: number }>();
   });
 
-  test("defineTool without parameters has unknown args", () => {
+  test("ToolDef without parameters has unknown args", () => {
     const _t: ToolDef = {
       description: "test",
       execute: (args) => args,
@@ -37,11 +36,11 @@ describe("defineTool() type inference", () => {
   });
 
   test("execute receives ToolContext as second arg", () => {
-    const _t = defineTool({
+    const _t: ToolDef<z.ZodObject<{ x: z.ZodString }>> = {
       description: "test",
       parameters: z.object({ x: z.string() }),
       execute: (_args, ctx) => ctx,
-    });
+    };
 
     type Ctx = Parameters<typeof _t.execute>[1];
     expectTypeOf<Ctx>().toMatchTypeOf<ToolContext>();
@@ -62,61 +61,15 @@ describe("defineTool() type inference", () => {
   });
 });
 
-describe("defineToolFactory() type inference", () => {
-  test("bakes state type into returned helper", () => {
-    type MyState = { count: number };
-    const tool = defineToolFactory<MyState>();
-
-    const _t = tool({
-      description: "inc",
-      parameters: z.object({ by: z.number() }),
-      execute: (args, ctx) => {
-        expectTypeOf(args).toEqualTypeOf<{ by: number }>();
-        expectTypeOf(ctx.state).toEqualTypeOf<MyState>();
-      },
-    });
-
-    type Args = Parameters<typeof _t.execute>[0];
-    expectTypeOf<Args>().toEqualTypeOf<{ by: number }>();
-  });
-
-  test("works with defineAgent tools field", () => {
-    type MyState = { items: string[] };
-    const tool = defineToolFactory<MyState>();
-
-    defineAgent<MyState>({
-      name: "factory-test",
-      state: () => ({ items: [] }),
-      tools: {
-        add: tool({
-          description: "Add item",
-          parameters: z.object({ item: z.string() }),
-          execute: ({ item }, ctx) => {
-            expectTypeOf(item).toBeString();
-            expectTypeOf(ctx.state).toEqualTypeOf<MyState>();
-            ctx.state.items.push(item);
-          },
-        }),
-      },
-    });
-  });
-
-  test("tool without parameters still works", () => {
-    type MyState = { ready: boolean };
-    const tool = defineToolFactory<MyState>();
-
-    const _t = tool({
-      description: "reset",
-      execute: (_args, ctx) => {
-        expectTypeOf(ctx.state).toEqualTypeOf<MyState>();
-      },
-    });
-  });
-});
-
-describe("defineAgent type inference", () => {
-  test("returns AgentDef", () => {
-    const agent = defineAgent({ name: "test" });
+describe("AgentDef type inference", () => {
+  test("satisfies AgentDef type", () => {
+    const agent: AgentDef = {
+      name: "test",
+      systemPrompt: "Be helpful.",
+      greeting: "Hello!",
+      maxSteps: 5,
+      tools: {},
+    };
     expectTypeOf(agent).toMatchTypeOf<AgentDef>();
   });
 
@@ -125,8 +78,11 @@ describe("defineAgent type inference", () => {
 
     // This should compile without errors — state type flows
     // through to onConnect, onUserTranscript, and tool execute context
-    defineAgent<MyState>({
+    const _agent: AgentDef<MyState> = {
       name: "typed-state",
+      systemPrompt: "Be helpful.",
+      greeting: "Hello!",
+      maxSteps: 5,
       state: () => ({ counter: 0, name: "test" }),
       onConnect: (ctx) => {
         expectTypeOf(ctx.state).toEqualTypeOf<MyState>();
@@ -142,26 +98,35 @@ describe("defineAgent type inference", () => {
           },
         },
       },
-    });
+    };
   });
 
-  test("tools field accepts defineTool() wrapped definitions", () => {
-    const greet = defineTool({
+  test("tools field accepts ToolDef objects", () => {
+    const greet: ToolDef<z.ZodObject<{ name: z.ZodString }>> = {
       description: "Greet",
       parameters: z.object({ name: z.string() }),
-      execute: ({ name }) => `Hello, ${name}!`,
-    });
+      execute: ({ name }: { name: string }) => `Hello, ${name}!`,
+    };
 
-    const agent = defineAgent({
+    const agent: AgentDef = {
       name: "with-tool",
+      systemPrompt: "Be helpful.",
+      greeting: "Hello!",
+      maxSteps: 5,
       tools: { greet },
-    });
+    };
 
     expectTypeOf(agent.tools).toHaveProperty("greet");
   });
 
-  test("default values are applied", () => {
-    const agent = defineAgent({ name: "defaults" });
+  test("required fields are present", () => {
+    const agent: AgentDef = {
+      name: "defaults",
+      systemPrompt: "Be helpful.",
+      greeting: "Hello!",
+      maxSteps: 5,
+      tools: {},
+    };
     expectTypeOf(agent.systemPrompt).toBeString();
     expectTypeOf(agent.greeting).toBeString();
     expectTypeOf(agent.tools).toBeObject();

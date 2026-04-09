@@ -20,7 +20,7 @@
  *
  * @example Sandbox (integration test in aai-server)
  * ```ts
- * import { testRuntime } from "@alexkroman1/aai/host";
+ * import { testRuntime } from "@alexkroman1/aai-core/host";
  *
  * testRuntime("sandbox", async () => {
  *   // ... start isolate with a bundled agent
@@ -34,7 +34,7 @@ import { z } from "zod";
 import type { ExecuteTool } from "../isolate/_internal-types.ts";
 import type { AgentHooks } from "../isolate/hooks.ts";
 import { callResolveTurnConfig } from "../isolate/hooks.ts";
-import { type AgentDef, defineTool } from "../isolate/types.ts";
+import type { AgentDef } from "../isolate/types.ts";
 
 // ── Shared context type ────────────────────────────────────────────────────
 
@@ -59,11 +59,11 @@ export const CONFORMANCE_AGENT: AgentDef = {
   maxSteps: 5,
   state: () => ({ count: 0, lastTurn: "" }),
   tools: {
-    echo: defineTool({
+    echo: {
       description: "Echo input",
       parameters: z.object({ text: z.string() }),
-      execute: ({ text }) => `echo:${text}`,
-    }),
+      execute: ({ text }: { text: string }) => `echo:${text}`,
+    },
     get_env: {
       description: "Get MY_VAR from env",
       execute: (_args: unknown, ctx) => ctx.env.MY_VAR ?? "missing",
@@ -76,15 +76,15 @@ export const CONFORMANCE_AGENT: AgentDef = {
       description: "Return messages as JSON",
       execute: (_args: unknown, ctx) => JSON.stringify(ctx.messages),
     },
-    kv_roundtrip: defineTool({
+    kv_roundtrip: {
       description: "KV set then get",
       parameters: z.object({ value: z.string() }),
-      execute: async ({ value }, ctx) => {
+      execute: async ({ value }: { value: string }, ctx) => {
         await ctx.kv.set("test-key", value);
         const result = await ctx.kv.get<string>("test-key");
         return `stored:${JSON.stringify(result)}`;
       },
-    }),
+    },
   },
   onConnect: (ctx) => {
     (ctx.state as { count: number }).count = 1;

@@ -5,7 +5,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { toAgentConfig } from "../isolate/_internal-types.ts";
 import { callResolveTurnConfig, createAgentHooks } from "../isolate/hooks.ts";
-import { defineTool } from "../isolate/types.ts";
+import type { ToolDef } from "../isolate/types.ts";
 import { CONFORMANCE_AGENT, testRuntime } from "./_runtime-conformance.ts";
 import { flush, makeAgent, makeMockHandle, silentLogger } from "./_test-utils.ts";
 import { createRuntime } from "./runtime.ts";
@@ -72,11 +72,11 @@ describe("createRuntime", () => {
   test("executeTool with a real tool returns result", async () => {
     const agent = makeAgent({
       tools: {
-        add: defineTool({
+        add: {
           description: "Add two numbers",
           parameters: z.object({ a: z.number(), b: z.number() }),
-          execute: ({ a, b }) => String(a + b),
-        }),
+          execute: ({ a, b }: { a: number; b: number }) => String(a + b),
+        },
       },
     });
     const exec = createRuntime({ agent, env: {} });
@@ -203,47 +203,47 @@ describe("createRuntime", () => {
 
 describe("executeToolCall", () => {
   test("returns 'null' when tool execute returns null", async () => {
-    const tool = defineTool({
+    const tool: ToolDef = {
       description: "Returns null",
       execute: () => null as unknown as string,
-    });
+    };
     const result = await executeToolCall("nullTool", {}, { tool, env: {} });
     expect(result).toBe("null");
   });
 
   test("returns 'null' when tool execute returns undefined", async () => {
-    const tool = defineTool({
+    const tool: ToolDef = {
       description: "Returns undefined",
       execute: () => undefined as unknown as string,
-    });
+    };
     const result = await executeToolCall("undefinedTool", {}, { tool, env: {} });
     expect(result).toBe("null");
   });
 
   test("JSON.stringifies non-string results", async () => {
-    const tool = defineTool({
+    const tool: ToolDef = {
       description: "Returns object",
       execute: () => ({ count: 42 }) as unknown as string,
-    });
+    };
     const result = await executeToolCall("objTool", {}, { tool, env: {} });
     expect(result).toBe(JSON.stringify({ count: 42 }));
   });
 
   test("JSON.stringifies numeric results", async () => {
-    const tool = defineTool({
+    const tool: ToolDef = {
       description: "Returns number",
       execute: () => 123 as unknown as string,
-    });
+    };
     const result = await executeToolCall("numTool", {}, { tool, env: {} });
     expect(result).toBe("123");
   });
 
   test("returns validation error for invalid args", async () => {
-    const tool = defineTool({
+    const tool: ToolDef = {
       description: "Requires number",
       parameters: z.object({ n: z.number() }),
-      execute: ({ n }) => String(n),
-    });
+      execute: ({ n }: { n: number }) => String(n),
+    };
     const result = await executeToolCall("typedTool", { n: "not-a-number" }, { tool, env: {} });
     expect(result).toContain("error");
     expect(result).toContain("Invalid arguments");
@@ -251,11 +251,11 @@ describe("executeToolCall", () => {
   });
 
   test("returns validation error with path info for nested args", async () => {
-    const tool = defineTool({
+    const tool: ToolDef = {
       description: "Requires nested object",
       parameters: z.object({ config: z.object({ port: z.number() }) }),
       execute: () => "ok",
-    });
+    };
     const result = await executeToolCall(
       "nestedTool",
       { config: { port: "abc" } },
@@ -265,12 +265,12 @@ describe("executeToolCall", () => {
   });
 
   test("logs error with logger when tool throws", async () => {
-    const tool = defineTool({
+    const tool: ToolDef = {
       description: "Throws error",
       execute: () => {
         throw new Error("boom");
       },
-    });
+    };
     const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
     const result = await executeToolCall("failTool", {}, { tool, env: {}, logger });
     expect(result).toContain("error");
@@ -282,12 +282,12 @@ describe("executeToolCall", () => {
   });
 
   test("logs to console.warn when no logger provided", async () => {
-    const tool = defineTool({
+    const tool: ToolDef = {
       description: "Throws error",
       execute: () => {
         throw new Error("no-logger-boom");
       },
-    });
+    };
     const spy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     try {
       const result = await executeToolCall("failTool", {}, { tool, env: {} });
@@ -303,13 +303,13 @@ describe("executeToolCall", () => {
   });
 
   test("throws KV not available when kv is not provided and tool accesses it", async () => {
-    const tool = defineTool({
+    const tool: ToolDef = {
       description: "Access KV",
       execute: async (_args, ctx) => {
         await ctx.kv.get("key");
         return "ok";
       },
-    });
+    };
     const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
     const result = await executeToolCall("kvTool", {}, { tool, env: {}, logger });
     expect(result).toContain("error");
@@ -317,28 +317,28 @@ describe("executeToolCall", () => {
   });
 
   test("uses default empty state when state not provided", async () => {
-    const tool = defineTool({
+    const tool: ToolDef = {
       description: "Get state",
       execute: (_args, ctx) => JSON.stringify(ctx.state),
-    });
+    };
     const result = await executeToolCall("stateTool", {}, { tool, env: {} });
     expect(JSON.parse(result)).toEqual({});
   });
 
   test("uses default empty messages when messages not provided", async () => {
-    const tool = defineTool({
+    const tool: ToolDef = {
       description: "Get messages",
       execute: (_args, ctx) => JSON.stringify(ctx.messages),
-    });
+    };
     const result = await executeToolCall("msgTool", {}, { tool, env: {} });
     expect(JSON.parse(result)).toEqual([]);
   });
 
   test("uses default empty sessionId when not provided", async () => {
-    const tool = defineTool({
+    const tool: ToolDef = {
       description: "Get sessionId",
       execute: (_args, ctx) => ctx.sessionId,
-    });
+    };
     const result = await executeToolCall("sidTool", {}, { tool, env: {} });
     expect(result).toBe("");
   });

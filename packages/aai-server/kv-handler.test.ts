@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { createUnstorageKv } from "@alexkroman1/aai/host";
-import { KvRequestSchema } from "@alexkroman1/aai/protocol";
+import { KvRequestSchema } from "@alexkroman1/aai-core/protocol";
+import { createUnstorageKv } from "@alexkroman1/aai-core/runtime";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";

@@ -3,7 +3,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { errorMessage } from "@alexkroman1/aai/utils";
+import { errorMessage } from "@alexkroman1/aai-core";
 import { defineCommand, runMain } from "citty";
 import { CliError, fail, getOutputMode, type OutputMode } from "./_output.ts";
 import { silenceOutput } from "./_ui.ts";
@@ -29,9 +29,8 @@ const pkgJson = JSON.parse(findPkgJson(cliDir));
 const VERSION: string = pkgJson.version;
 
 async function ensureAgent(cwd: string, yes?: boolean): Promise<string> {
-  const hasAgentTs = await fileExists(path.join(cwd, "agent.ts"));
   const hasAgentJson = await fileExists(path.join(cwd, "agent.json"));
-  if (!(hasAgentTs || hasAgentJson)) {
+  if (!hasAgentJson) {
     const { runInitCommand } = await import("./init.ts");
     return runInitCommand({ yes }, { quiet: true });
   }

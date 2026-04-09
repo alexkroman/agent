@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { AGENT_CSP } from "@alexkroman1/aai/host";
+import { AGENT_CSP } from "@alexkroman1/aai-core";
 import { HTTPException } from "hono/http-exception";
 import mime from "mime-types";
 import type { AppContext } from "./context.ts";

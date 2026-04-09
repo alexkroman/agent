@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Agent HTTP + WebSocket server.
+ * Agent HTTP+WebSocket server.
  *
  * {@link createServer} wraps a {@link Runtime} with an HTTP + WebSocket
  * server using only `node:http` and `ws` (no framework dependencies).
@@ -26,7 +26,7 @@ export { createRuntime, type Runtime, type RuntimeOptions } from "./runtime.ts";
  * Configuration for {@link createServer}.
  * @internal
  */
-export type ServerOptions = {
+type ServerOptions = {
   runtime: Runtime;
   name?: string;
   kv?: Kv;
@@ -90,12 +90,6 @@ async function serveStatic(
 
 // ── Server ──────────────────────────────────────────────────────────────
 
-/**
- * Create an HTTP + WebSocket server for self-hosted agent deployments.
- *
- * @example
- * @internal — used by aai-cli dev server.
- */
 function handleKvGet(kv: Kv, req: http.IncomingMessage, res: http.ServerResponse): void {
   const fullUrl = new URL(req.url ?? "/", "http://localhost");
   const key = fullUrl.searchParams.get("key");
@@ -120,6 +114,11 @@ function handleKvGet(kv: Kv, req: http.IncomingMessage, res: http.ServerResponse
     });
 }
 
+/**
+ * Create an HTTP + WebSocket server for an agent.
+ *
+ * @internal Used by aai-cli dev server.
+ */
 export function createServer(options: ServerOptions): AgentServer {
   const { runtime, clientHtml, clientDir, logger = consoleLogger, kv } = options;
   const name = options.name ?? "agent";

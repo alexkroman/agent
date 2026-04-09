@@ -7,13 +7,13 @@
  * ```ts
  * // vitest.config.ts
  * export default defineConfig({
- *   test: { setupFiles: ["@alexkroman1/aai/testing/matchers"] },
+ *   test: { setupFiles: ["@alexkroman1/aai-cli/testing/matchers"] },
  * });
  * ```
  *
  * Or import directly in your test file:
  * ```ts
- * import "@alexkroman1/aai/testing/matchers";
+ * import "@alexkroman1/aai-cli/testing/matchers";
  * ```
  *
  * @packageDocumentation

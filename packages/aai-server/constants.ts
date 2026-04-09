@@ -3,7 +3,7 @@
  * Centralised numeric constants for the platform server.
  *
  * SDK-level constants (HOOK_TIMEOUT_MS, TOOL_EXECUTION_TIMEOUT_MS, etc.)
- * live in @alexkroman1/aai/constants. This file holds server-specific values.
+ * live in @alexkroman1/aai-core. This file holds server-specific values.
  */
 
 // -- Firecracker VM ---------------------------------------------------

@@ -31,7 +31,7 @@ pnpm check:local         # Fast pre-commit gate (parallel: build → typecheck +
 ### Single-package shortcuts
 
 ```sh
-pnpm test:aai            # Run only aai unit tests
+pnpm test:aai-core       # Run only aai-core unit tests
 pnpm test:aai-ui         # Run only aai-ui unit tests
 pnpm test:aai-cli        # Run only aai-cli unit tests
 pnpm test:aai-server     # Run only aai-server unit tests
@@ -42,10 +42,10 @@ pnpm dev:aai-server      # Start aai-server in dev mode
 ### Running specific tests
 
 ```sh
-pnpm vitest run --project aai              # Single package via --project
-pnpm vitest run packages/aai/types.test.ts # Single file
-pnpm vitest run session                    # All files matching "session"
-pnpm --filter @alexkroman1/aai test        # Single package via pnpm filter
+pnpm vitest run --project aai-core              # Single package via --project
+pnpm vitest run packages/aai-core/types.test.ts # Single file
+pnpm vitest run session                         # All files matching "session"
+pnpm --filter @alexkroman1/aai-core test        # Single package via pnpm filter
 ```
 
 ### Full CI check (`pnpm check`)
@@ -68,41 +68,30 @@ Five workspace packages under `packages/`:
 
 | Package | npm name | Purpose |
 | --- | --- | --- |
-| `packages/aai/` | `@alexkroman1/aai` | Agent SDK: manifest, types, protocol, S2S, session, KV |
+| `packages/aai-core/` | `@alexkroman1/aai-core` | Shared core (private): manifest, types, protocol, S2S, session, KV |
 | `packages/aai-ui/` | `@alexkroman1/aai-ui` | Browser client (Preact): session, audio, UI components |
 | `packages/aai-cli/` | `@alexkroman1/aai-cli` | The `aai` CLI: init, dev, test, build, deploy, delete, secret |
 | `packages/aai-server/` | `@alexkroman1/aai-server` | Managed platform server (private): sandbox, sidecar, auth, SSRF |
 | `packages/aai-templates/` | `@alexkroman1/aai-templates` | Agent templates + scaffold (private): starter templates |
 
-**Dependency flow:** `aai-cli`, `aai-ui`, and `aai-server` depend on `aai`
+**Dependency flow:** `aai-cli`, `aai-ui`, and `aai-server` depend on `aai-core`
 (via `workspace:*`) but never on each other.
 
 ### Package exports
 
-#### `@alexkroman1/aai` (SDK)
+#### `@alexkroman1/aai-core` (private shared core)
 
-**Public:**
+Not published to npm. Internal subpath exports consumed by sibling packages:
 
 - `.` — `parseManifest`, `Manifest`, `Kv` + re-exported types
-- `./types` — all type definitions
-- `./kv` — KV store interface + in-memory implementation
-- `./testing` — `MockWebSocket`, `installMockWebSocket`,
-  `createTestHarness(agentDir)`, `TestHarness`, `TurnResult`
-- `./testing/matchers` — Vitest custom matchers (`toHaveCalledTool`)
-
-**Internal** (exported in package.json but not part of public API — do **not**
-depend on these from consumer code; they may change without notice):
-
+- `./runtime` — `createRuntime`, `Runtime`, `RuntimeOptions`
 - `./protocol` — wire-format types, Zod schemas, constants
 - `./isolate` — isolate-safe barrel: shared modules
   (types, protocol, kv, hooks, manifest, utils)
 - `./host` — host barrel: host-only modules
 - `./hooks` — hook definitions for lifecycle events
-- `./utils` — shared utility functions
-
-Type-level tests (`.test-d.ts`) cover only the **public** entry points
-(`.`, `./types`). Changes to internal exports do not require
-type test updates.
+- `./kv` — KV store interface + in-memory implementation
+- `./utils` — shared utility functions.
 
 #### `@alexkroman1/aai-ui` (UI)
 

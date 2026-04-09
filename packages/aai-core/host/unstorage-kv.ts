@@ -28,7 +28,7 @@ export type UnstorageKvOptions = {
  * @example
  * ```ts
  * import { createStorage } from "unstorage";
- * import { createUnstorageKv } from "@alexkroman1/aai/unstorage-kv";
+ * import { createUnstorageKv } from "@alexkroman1/aai-core/unstorage-kv";
  *
  * const kv = createUnstorageKv({ storage: createStorage() });
  * await kv.set("greeting", "hello");

@@ -1135,15 +1135,6 @@ function MyChat() {
 }
 ```
 
-## Headless voice session (no UI)
-
-For custom frontends (React Native, vanilla JS, etc.), pass a custom `component`
-to `defineClient()` and use `useSession()` inside it. The full session API is
-available inside any React component rendered by `defineClient`.
-
-Alternatively, call `defineClient({ component: MyApp })` where `MyApp` renders
-no default UI but uses `useSession()` for full control over the session lifecycle.
-
 ## Useful free API endpoints
 
 These public APIs require no auth and work well in voice agents:
@@ -1172,7 +1163,7 @@ Use `fetch_json` builtin tool or `fetch` in custom tools to call these.
 ## Testing agents
 
 Test your agent's tools and conversation flows without audio, network, or an
-LLM using the test harness from `@alexkroman1/aai/testing`.
+LLM using the test harness from `@alexkroman1/aai-cli/testing`.
 
 ```sh
 pnpm test       # Run all tests (vitest)
@@ -1191,7 +1182,7 @@ them in-process with an in-memory KV store.
 ```ts
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createTestHarness } from "@alexkroman1/aai/testing";
+import { createTestHarness } from "@alexkroman1/aai-cli/testing";
 import { describe, expect, test } from "vitest";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));

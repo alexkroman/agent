@@ -8,7 +8,7 @@
     "test:coverage": "turbo run test:coverage",
     "test:integration": "turbo run check:integration",
     "test:e2e": "turbo run check:e2e",
-    "test:aai": "pnpm --filter @alexkroman1/aai test",
+    "test:aai-core": "pnpm --filter @alexkroman1/aai-core test",
     "test:aai-ui": "pnpm --filter @alexkroman1/aai-ui test",
     "test:aai-cli": "pnpm --filter @alexkroman1/aai-cli test",
     "test:aai-server": "pnpm --filter @alexkroman1/aai-server test",

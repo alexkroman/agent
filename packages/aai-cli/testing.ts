@@ -4,11 +4,11 @@
  *
  * Loads tool and hook files from an agent directory and executes them
  * in-process with an in-memory KV store. Designed for agents defined via
- * `agent.json` + `tools/` + `hooks/` rather than `defineAgent()`.
+ * `agent.json` + `tools/` + `hooks/` directory structure.
  *
  * @example
  * ```ts
- * import { createTestHarness } from "@alexkroman1/aai/testing";
+ * import { createTestHarness } from "@alexkroman1/aai-cli/testing";
  *
  * const t = await createTestHarness("./my-agent");
  * const result = await t.executeTool("greet", { name: "Alice" });
@@ -20,13 +20,12 @@
 import { existsSync, readdirSync } from "node:fs";
 import { basename, join } from "node:path";
 import { pathToFileURL } from "node:url";
+import type { Kv, Message } from "@alexkroman1/aai-core";
+import { createUnstorageKv } from "@alexkroman1/aai-core/runtime";
 import { createStorage } from "unstorage";
-import type { Kv } from "../isolate/kv.ts";
-import type { Message } from "../isolate/types.ts";
-import { createUnstorageKv } from "./unstorage-kv.ts";
 
+export { flush, makeStubSession } from "@alexkroman1/aai-core/runtime";
 export { installMockWebSocket, MockWebSocket } from "./_mock-ws.ts";
-export { flush, makeStubSession } from "./_test-utils.ts";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -333,14 +332,14 @@ export async function createTestHarness(
  * Vitest matcher implementation for `toHaveCalledTool`.
  *
  * Exported here so users can import everything from a single entry point:
- * `import { createTestHarness, toHaveCalledTool } from "@alexkroman1/aai/testing"`
+ * `import { createTestHarness, toHaveCalledTool } from "@alexkroman1/aai-cli/testing"`
  *
  * Also registered as a side-effect when importing
- * `@alexkroman1/aai/testing/matchers`.
+ * `@alexkroman1/aai-cli/testing/matchers`.
  *
  * @example
  * ```ts
- * import { toHaveCalledTool } from "@alexkroman1/aai/testing";
+ * import { toHaveCalledTool } from "@alexkroman1/aai-cli/testing";
  * expect.extend({ toHaveCalledTool });
  * ```
  *

@@ -4,7 +4,7 @@ import {
   KvRequestSchema,
   ReadyConfigSchema,
   ServerMessageSchema,
-} from "@alexkroman1/aai/protocol";
+} from "@alexkroman1/aai-core/protocol";
 import { describe, expect, test } from "vitest";
 import {
   AgentMetadataSchema,

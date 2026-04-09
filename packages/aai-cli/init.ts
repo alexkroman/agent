@@ -4,7 +4,7 @@ import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import { errorMessage } from "@alexkroman1/aai/utils";
+import { errorMessage } from "@alexkroman1/aai-core";
 import * as p from "@clack/prompts";
 import { colorize } from "consola/utils";
 import { DEFAULT_DEV_SERVER, getMonorepoRoot, isDevMode } from "./_agent.ts";
@@ -170,9 +170,9 @@ export async function executeInit(
   const monorepoRoot = getMonorepoRoot();
   const cwd = resolveTargetDir(dir, monorepoRoot);
 
-  if (!opts.force && (await fileExists(path.join(cwd, "agent.ts")))) {
+  if (!opts.force && (await fileExists(path.join(cwd, "agent.json")))) {
     throw new Error(
-      `agent.ts already exists in this directory. Use ${colorize("cyanBright", "--force")} to overwrite.`,
+      `agent.json already exists in this directory. Use ${colorize("cyanBright", "--force")} to overwrite.`,
     );
   }
 

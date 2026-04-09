@@ -84,7 +84,7 @@ describe("patchPackageJsonForWorkspace", () => {
         JSON.stringify({
           packageManager: "pnpm@10.29.3",
           dependencies: {
-            "@alexkroman1/aai": "^0.12.3",
+            "@alexkroman1/aai-core": "^0.12.3",
             "@alexkroman1/aai-ui": "^0.12.3",
             preact: "^10.29.0",
           },
@@ -100,7 +100,7 @@ describe("patchPackageJsonForWorkspace", () => {
       const result = JSON.parse(await fs.readFile(path.join(target, "package.json"), "utf-8"));
       expect(result.name).toBe("my-agent");
       expect(result.packageManager).toBeUndefined();
-      expect(result.dependencies["@alexkroman1/aai"]).toBe("workspace:*");
+      expect(result.dependencies["@alexkroman1/aai-core"]).toBe("workspace:*");
       expect(result.dependencies["@alexkroman1/aai-ui"]).toBe("workspace:*");
       expect(result.dependencies.preact).toBe("^10.29.0");
       expect(result.devDependencies["@alexkroman1/aai-cli"]).toBe("workspace:*");

@@ -154,7 +154,7 @@
   },
   "overrides": [
     {
-      "includes": ["packages/aai/**/*.ts", "packages/aai/**/*.tsx"],
+      "includes": ["packages/aai-core/**/*.ts", "packages/aai-core/**/*.tsx"],
       "linter": {
         "rules": {
           "style": {

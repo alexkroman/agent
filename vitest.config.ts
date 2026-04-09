@@ -23,7 +23,7 @@ export default defineConfig({
         // CLI entry point can't be unit tested.
         "packages/aai-cli/cli.ts",
         // OTel session wiring — tested via integration tests, not unit tests.
-        "packages/aai/_session-otel.ts",
+        "packages/aai-core/_session-otel.ts",
       ],
       // Global minimum. Per-package actuals are higher:
       // aai ~93%, aai-ui ~85%, aai-cli ~75%, aai-server ~80%
@@ -38,8 +38,8 @@ export default defineConfig({
       {
         ...sharedConfig,
         test: {
-          name: "aai",
-          root: "packages/aai",
+          name: "aai-core",
+          root: "packages/aai-core",
           include: ["**/*.test.ts"],
           exclude: [
             "**/pentest.test.ts",
@@ -49,15 +49,6 @@ export default defineConfig({
             "dist",
           ],
           setupFiles: ["./host/matchers.ts"],
-        },
-      },
-      {
-        ...sharedConfig,
-        test: {
-          name: "aai-types",
-          root: "packages/aai",
-          include: ["**/*.test-d.ts"],
-          typecheck: { enabled: true, only: true },
         },
       },
       {
