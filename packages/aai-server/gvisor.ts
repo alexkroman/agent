@@ -18,14 +18,26 @@ import { type ChildProcess, execFileSync, spawn } from "node:child_process";
  * Returns true if gVisor's `runsc` runtime is available on this system.
  * Always returns false on non-Linux platforms since gVisor only supports Linux.
  */
-export function isGvisorAvailable(): boolean {
-  if (process.platform !== "linux") return false;
-  try {
-    execFileSync("runsc", ["--version"], { stdio: "ignore" });
-    return true;
-  } catch {
-    return false;
+/** Cached absolute path to runsc binary, or null if not found. */
+let runscPath: string | null | undefined;
+
+function findRunsc(): string | null {
+  if (runscPath !== undefined) return runscPath;
+  if (process.platform !== "linux") {
+    runscPath = null;
+    return null;
   }
+  try {
+    runscPath = execFileSync("which", ["runsc"], { encoding: "utf-8" }).trim();
+    return runscPath;
+  } catch {
+    runscPath = null;
+    return null;
+  }
+}
+
+export function isGvisorAvailable(): boolean {
+  return findRunsc() !== null;
 }
 
 export type GvisorSandbox = {
@@ -49,8 +61,11 @@ export type GvisorSandbox = {
  * compatibility with cgroup v1/v2 hybrid environments.
  */
 export function createGvisorSandbox(opts: { slug: string; harnessPath: string }): GvisorSandbox {
+  const runsc = findRunsc();
+  if (!runsc) throw new Error("runsc not found on PATH");
+
   const child = spawn(
-    "runsc",
+    runsc,
     [
       "--rootless",
       "--network=none",
