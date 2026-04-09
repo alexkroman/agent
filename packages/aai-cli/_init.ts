@@ -46,7 +46,6 @@ See \`CLAUDE.md\` for the full agent API reference.
 
 export type InitOptions = {
   targetDir: string;
-  template: string;
 };
 
 /** Rewrite @alexkroman1/* deps to workspace:* so pnpm links to local source. */
@@ -77,9 +76,9 @@ export async function patchPackageJsonForWorkspace(targetDir: string): Promise<v
 }
 
 export async function runInit(opts: InitOptions): Promise<string> {
-  const { targetDir, template } = opts;
+  const { targetDir } = opts;
 
-  await downloadAndMergeTemplate(template, targetDir);
+  await downloadAndMergeTemplate("simple", targetDir);
 
   if (isDevMode()) {
     await patchPackageJsonForWorkspace(targetDir);

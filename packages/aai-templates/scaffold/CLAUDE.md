@@ -6,10 +6,9 @@ You are helping a user build a voice agent using the **aai** framework.
 
 1. **Understand** -- Restate what the user wants to build. If the request is
    vague, ask a clarifying question before writing code.
-2. **Check existing work** -- Look for a template or built-in tool that already
-   does what the user needs before writing custom code.
-3. **Start minimal** -- Scaffold from the closest template, then layer on
-   customizations. Don't over-engineer the first version.
+2. **Check existing work** -- Look for a built-in tool that already does what
+   the user needs before writing custom code.
+3. **Start minimal** -- Don't over-engineer the first version.
 4. **Verify** -- After every change, run `aai build` to validate the bundle and
    catch errors. Fix all errors before presenting work to the user.
 5. **Iterate** -- Make small, focused changes. Verify each change works before
@@ -31,11 +30,22 @@ You are helping a user build a voice agent using the **aai** framework.
 - Agent code runs in a sandboxed worker -- use `fetch` (proxied) for HTTP,
   `ctx.env` for secrets
 
+## Minimal agent
+
+The simplest agent is just an `agent.json` file:
+
+```json
+{
+  "name": "My Agent"
+}
+```
+
+No imports needed. No build step for the configuration.
+
 ## CLI commands
 
 ```sh
-aai init                 # Scaffold a new agent (uses simple template)
-aai init -t <template>   # Scaffold from a specific template
+aai init                 # Scaffold a new agent
 aai dev                  # Start local dev server
 aai test                 # Run agent tests (vitest)
 aai build                # Run tests, then bundle and validate (skip tests with --skipTests)
@@ -46,52 +56,6 @@ aai secret put <NAME>    # Set a secret on the server (prompts for value)
 aai secret delete <NAME> # Remove a secret
 aai secret list          # List secret names
 ```
-
-## Templates
-
-Before writing an agent from scratch, choose the closest template and scaffold
-with `aai init -t <template_name>`.
-
-**Starter / utility:**
-
-| Template          | Description                                                                        |
-| ----------------- | ---------------------------------------------------------------------------------- |
-| `simple`          | Minimal starter with web_search, visit_webpage, fetch_json, run_code. **Default.** |
-| `embedded-assets` | FAQ bot using embedded JSON knowledge (no web search)                              |
-| `test-patterns`   | Demonstrates every testable agent pattern (tools, hooks, state)                    |
-
-**Research / knowledge:**
-
-| Template         | Description                                                          |
-| ---------------- | -------------------------------------------------------------------- |
-| `web-researcher` | Research assistant -- web search + page visits for detailed answers  |
-| `smart-research` | Phase-based research (gather, analyze, respond) with dynamic tools   |
-| `support`        | Support agent for AssemblyAI docs                                    |
-
-**Tools / computation:**
-
-| Template           | Description                                                |
-| ------------------ | ---------------------------------------------------------- |
-| `code-interpreter` | Writes and runs JavaScript for math, calculations, data    |
-| `math-buddy`       | Calculations, unit conversions, dice rolls via run_code    |
-
-**Domain-specific:**
-
-| Template           | Description                                                   |
-| ------------------ | ------------------------------------------------------------- |
-| `health-assistant` | Medication lookup, drug interactions, BMI, symptom guidance   |
-| `personal-finance` | Currency conversion, crypto prices, loan calculations         |
-| `travel-concierge` | Trip planning, weather, flights, hotels, currency conversion  |
-
-**Custom UI examples** (include `client.tsx`):
-
-| Template            | Description                                                |
-| ------------------- | ---------------------------------------------------------- |
-| `night-owl`         | Movie/music/book recs by mood, sleep calculator            |
-| `pizza-ordering`    | Pizza order-taker with dynamic cart sidebar                |
-| `dispatch-center`   | 911 dispatch with incident triage and resource assignment  |
-| `infocom-adventure` | Zork-style text adventure with state, puzzles, inventory   |
-| `solo-rpg`          | Solo dark-fantasy RPG with dice, oaths, combat, save/load  |
 
 ## Directory structure
 
@@ -121,18 +85,6 @@ my-agent/
     project.json      # Deploy target (slug, server URL)
     build/            # Bundle output
 ```
-
-## Minimal agent
-
-The simplest agent is just an `agent.json` file:
-
-```json
-{
-  "name": "My Agent"
-}
-```
-
-No imports needed. No build step for the configuration.
 
 ## `agent.json` format
 
@@ -208,32 +160,6 @@ Optimize for spoken conversation:
   what's available and what each returns.
 - **Game/interactive** -- "You ARE the game. Keep descriptions to two to four
   sentences. No visual formatting."
-
-### Secrets / environment variables
-
-Never hardcode secrets in agent code. Access them at runtime via `ctx.env`.
-
-`ctx.env` contains **only** the secrets you explicitly declare -- not all of
-`process.env`. This keeps behavior consistent between local dev and production.
-
-**Local development** -- add secrets to `.env` in your project root. Only keys
-listed here are available via `ctx.env` (shell exports override `.env` values):
-
-```sh
-# .env (gitignored)
-ALPHA_VANTAGE_KEY=sk-abc123
-MY_API_KEY=secret-value
-```
-
-**Production** -- set the same keys on the deployed server:
-
-```sh
-aai secret put MY_API_KEY    # Set (prompts for value)
-aai secret list              # List names
-aai secret delete MY_API_KEY # Remove
-```
-
-Access in tool code: `ctx.env.MY_API_KEY` (see "Fetching external APIs" below).
 
 ## Tools
 
@@ -364,6 +290,50 @@ export default async function execute(
 `fetch` is proxied through the host -- the worker has no direct network access.
 Only public URLs are allowed (private/internal IPs are blocked by SSRF rules).
 
+### Error handling in tools
+
+When a tool's `execute` function throws an error, the error message is sent
+to the LLM as the tool result. The LLM can then explain the error to the
+user or retry with different arguments.
+
+Return structured errors instead of throwing when you want the LLM to handle
+the failure gracefully:
+
+```ts
+export default async function execute(
+  args: { city: string },
+  ctx: { env: Record<string, string> },
+) {
+  const resp = await fetch(
+    `https://api.weather.com/v1?q=${args.city}&key=${ctx.env.WEATHER_KEY}`,
+  );
+  if (!resp.ok) {
+    return { error: `Weather API returned ${resp.status}` };
+  }
+  const data = await resp.json();
+  // Return only what the LLM needs -- not the full API response
+  return { temp: data.main.temp, conditions: data.weather[0].description };
+}
+```
+
+For unrecoverable errors (missing secrets, invalid config), throwing is fine --
+the LLM will tell the user something went wrong.
+
+### Filtering tool returns
+
+Tool return values go into the LLM's context window. Large responses waste
+tokens and can cause the LLM to lose focus. Always extract only the fields
+the agent needs:
+
+```ts
+// BAD -- returns entire API response (may be 10KB+)
+return await resp.json();
+
+// GOOD -- returns only what the LLM needs to answer
+const data = await resp.json();
+return { temp: data.main.temp, humidity: data.main.humidity };
+```
+
 ## Hooks
 
 Lifecycle hooks are `.ts` files in the `hooks/` directory. Each file exports
@@ -376,7 +346,23 @@ a `default` function.
 | `on-user-transcript.ts`   | STT produces a transcript         | `(text, ctx) => void \| Promise<void>`     |
 | `on-error.ts`             | An error occurs                   | `(error, ctx?) => void`                    |
 
-Hook context is the same as tool context but without `messages`.
+Hook context is the same as tool context but without `messages`. See the
+**Tool context** section above for the `kv` and `env` type signatures.
+
+### Hook execution order
+
+Hooks fire in this order during a session:
+
+1. **on-connect** -- fires once when user connects. Use for initialization.
+2. **on-user-transcript** -- fires after each STT result, before the LLM
+   processes it. Use for logging, state updates, or modifying behavior.
+3. **on-error** -- fires on unhandled errors in tools or hooks.
+4. **on-disconnect** -- fires when user disconnects. Use for cleanup.
+
+Hooks run sequentially -- each hook completes before the next event is
+processed. Hook timeout is **5 seconds**.
+
+### Hook examples
 
 Example -- save state on every user turn:
 
@@ -407,6 +393,32 @@ export default async function onConnect(ctx: {
 }
 ```
 
+## Secrets / environment variables
+
+Never hardcode secrets in agent code. Access them at runtime via `ctx.env`.
+
+`ctx.env` contains **only** the secrets you explicitly declare -- not all of
+`process.env`. This keeps behavior consistent between local dev and production.
+
+**Local development** -- add secrets to `.env` in your project root. Only keys
+listed here are available via `ctx.env` (shell exports override `.env` values):
+
+```sh
+# .env (gitignored)
+ALPHA_VANTAGE_KEY=sk-abc123
+MY_API_KEY=secret-value
+```
+
+**Production** -- set the same keys on the deployed server:
+
+```sh
+aai secret put MY_API_KEY    # Set (prompts for value)
+aai secret list              # List names
+aai secret delete MY_API_KEY # Remove
+```
+
+Access in tool code: `ctx.env.MY_API_KEY` (see "Fetching external APIs" above).
+
 ## Persistent storage (KV)
 
 `ctx.kv` is a persistent key-value store scoped per agent. Values are
@@ -429,6 +441,29 @@ Keys are strings; use colon-separated prefixes (`"user:123"`). Max value: 64 KB.
 
 To enumerate keys, maintain your own index key (e.g. store an array of IDs
 under a known key and update it when you add or remove entries).
+
+### KV naming conventions
+
+Use colon-separated prefixes to organize keys:
+
+```ts
+await ctx.kv.set("user:name", "Alice");        // user data
+await ctx.kv.set("order:items", [pizza1]);      // domain data
+await ctx.kv.set("session:turn-count", 5);      // session metadata
+```
+
+**Listing entries:** KV has no scan/list operation. Maintain your own index:
+
+```ts
+// When adding an item
+const ids = (await ctx.kv.get<string[]>("order:index")) ?? [];
+ids.push(newId);
+await ctx.kv.set("order:index", ids);
+await ctx.kv.set(`order:${newId}`, itemData);
+```
+
+**Size limit:** Max 64 KB per value. If your data might exceed this, split
+it across multiple keys or store only essential fields.
 
 ### Persisting state across reconnects
 
@@ -460,75 +495,124 @@ export default async function onUserTranscript(
 This works for games, workflows, or any agent where users expect to resume
 where they left off.
 
-## Advanced patterns
+## Testing agents
 
-### Tool choice
-
-Control when the LLM uses tools via `toolChoice` in `agent.json`:
-
-- `"auto"` (default) -- LLM decides when to use tools
-- `"required"` -- Force a tool call every step (useful for research pipelines)
-
-### `maxSteps` -- controlling the agentic loop
-
-The `maxSteps` option in `agent.json` limits how many tool calls the LLM can
-make in a single turn before being forced to respond. Default is **5**.
-
-**Choosing a value:** Count the maximum number of sequential tool calls your
-agent needs in its longest workflow. For example, if a health-check workflow
-calls `check_status`, `query_metrics`, `acknowledge_alert` -- that's 3 steps.
-Add a small buffer (1-2) for the LLM to self-correct or call an extra tool,
-giving `maxSteps: 5`. Multi-tool workflows that chain 5+ calls may need 8-10.
-
-### Conversation history in tools
-
-```ts
-// tools/count_messages.ts
-export const description = "Count conversation messages by role";
-
-export default async function execute(
-  _args: unknown,
-  ctx: { messages: { role: string }[] },
-) {
-  const byRole: Record<string, number> = {};
-  for (const msg of ctx.messages) {
-    byRole[msg.role] = (byRole[msg.role] ?? 0) + 1;
-  }
-  return { total: ctx.messages.length, byRole };
-}
-```
-
-### Embedded knowledge
-
-Import JSON data directly in a tool file:
-
-```ts
-// tools/search_faq.ts
-import knowledge from "../knowledge.json" with { type: "json" };
-
-export const description = "Search the knowledge base";
-
-export const parameters = {
-  type: "object",
-  properties: {
-    query: { type: "string" },
-  },
-  required: ["query"],
-};
-
-export default async function execute(args: { query: string }) {
-  return knowledge.faqs.filter((f: { question: string }) =>
-    f.question.toLowerCase().includes(args.query.toLowerCase()),
-  );
-}
-```
-
-### Adding packages
-
-Add packages to `package.json` dependencies:
+Test your agent's tools and conversation flows without audio, network, or an
+LLM using the test harness from `@alexkroman1/aai/testing`.
 
 ```sh
-pnpm add some-package
+pnpm test       # Run all tests (vitest)
+```
+
+### Setup
+
+Tests live in `agent.test.ts` alongside `agent.json`. The project includes
+vitest as a dev dependency.
+
+### Test harness
+
+The test harness loads tools and hooks from your agent directory and executes
+them in-process with an in-memory KV store.
+
+```ts
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { createTestHarness } from "@alexkroman1/aai/testing";
+import { describe, expect, test } from "vitest";
+
+const __dirname = fileURLToPath(new URL(".", import.meta.url));
+
+describe("my agent", () => {
+  test("tool returns expected result", async () => {
+    const t = await createTestHarness(join(__dirname));
+    const result = await t.executeTool("my_tool", { key: "value" });
+    expect(result).toBe("expected");
+  });
+});
+```
+
+`await createTestHarness(agentDir, options?)` scans `tools/` and `hooks/`
+subdirectories and provides:
+
+| Method / Property              | Description                                       |
+| ------------------------------ | ------------------------------------------------- |
+| `executeTool(name, args)`      | Execute a single tool with full agent context     |
+| `turn(text, toolCalls?)`       | Simulate a user turn with optional tool calls     |
+| `messages`                     | Read-only conversation history                    |
+| `kv`                           | The KV store used by the harness (for assertions) |
+| `connect()` / `disconnect()`   | Fire lifecycle hooks manually                     |
+
+Options:
+
+```ts
+await createTestHarness(join(__dirname), {
+  env: { API_KEY: "test-key" },  // mock environment variables
+  kv: myKvStore,                  // custom KV store (default: in-memory)
+  sessionId: "test-session",      // custom session ID
+});
+```
+
+### Simulating turns with tool calls
+
+```ts
+test("multi-turn pizza ordering", async () => {
+  const t = await createTestHarness(join(__dirname));
+
+  const turn1 = await t.turn("I want a large pepperoni", [
+    { tool: "add_pizza", args: { size: "large", toppings: ["pepperoni"] } },
+  ]);
+
+  // Check tool calls by name
+  expect(turn1.toolCalls.some(tc => tc.name === "add_pizza")).toBe(true);
+
+  // Typed tool results
+  const result = turn1.toolResult<{ added: { size: string }; orderTotal: string }>("add_pizza");
+  expect(result.orderTotal).toContain("$14.99");
+
+  // State persists across turns via KV
+  const turn2 = await t.turn("Show my order", [
+    { tool: "view_order", args: {} },
+  ]);
+  const order = turn2.toolResult<{ pizzas: unknown[] }>("view_order");
+  expect(order.pizzas).toHaveLength(1);
+});
+```
+
+### TurnResult API
+
+| Method / Property      | Description                                     |
+| ---------------------- | ----------------------------------------------- |
+| `toolResult<T>(name)`  | Get result of first call to named tool          |
+| `toolCalls`            | All recorded tool calls with name, args, result |
+
+### Testing patterns
+
+**Environment variables:**
+
+```ts
+const t = await createTestHarness(join(__dirname), { env: { MY_KEY: "test-123" } });
+const result = await t.executeTool("check_key", {});
+expect(result).toBe("test-123");
+```
+
+**KV persistence across turns:**
+
+```ts
+const t = await createTestHarness(join(__dirname));
+await t.turn("first action", [{ tool: "increment", args: {} }]);
+await t.turn("second action", [{ tool: "increment", args: {} }]);
+const turn = await t.turn("check", [{ tool: "get_count", args: {} }]);
+expect(turn.toolResult("get_count")).toBe(2);
+```
+
+**Conversation history:**
+
+```ts
+const t = await createTestHarness(join(__dirname));
+await t.turn("Hello");
+await t.turn("How are you?");
+const turn = await t.turn("Count messages", [{ tool: "count_messages", args: {} }]);
+// Tool has access to full message history via ctx.messages
 ```
 
 ## Custom UI (`client.tsx`)
@@ -585,13 +669,7 @@ defineClient(App, {
   target: "#app", // CSS selector or DOM element (default: "#app")
   platformUrl: "...", // Server URL (auto-derived from location.href)
   title: "My Agent", // Shown in header and start screen
-  theme: { // CSS custom property overrides
-    bg: "#101010", // Background color
-    primary: "#fab283", // Accent color
-    text: "#ffffff", // Text color
-    surface: "#1a1a1a", // Card/surface color
-    border: "#333333", // Border color
-  },
+  theme: { /* see "Styling custom UIs" section below */ },
 });
 ```
 
@@ -1110,7 +1188,114 @@ function MyComponent() {
 }
 ```
 
-## Self-hosting with `createServer()`
+## Advanced
+
+### Tool choice
+
+Control when the LLM uses tools via `toolChoice` in `agent.json`:
+
+- `"auto"` (default) -- LLM decides when to use tools
+- `"required"` -- Force a tool call every step (useful for research pipelines)
+
+### `maxSteps` -- controlling the agentic loop
+
+The `maxSteps` option in `agent.json` limits how many tool calls the LLM can
+make in a single turn before being forced to respond. Default is **5**.
+
+**Choosing a value:** Count the maximum number of sequential tool calls your
+agent needs in its longest workflow. For example, if a health-check workflow
+calls `check_status`, `query_metrics`, `acknowledge_alert` -- that's 3 steps.
+Add a small buffer (1-2) for the LLM to self-correct or call an extra tool,
+giving `maxSteps: 5`. Multi-tool workflows that chain 5+ calls may need 8-10.
+
+### Conversation history in tools
+
+```ts
+// tools/count_messages.ts
+export const description = "Count conversation messages by role";
+
+export default async function execute(
+  _args: unknown,
+  ctx: { messages: { role: string }[] },
+) {
+  const byRole: Record<string, number> = {};
+  for (const msg of ctx.messages) {
+    byRole[msg.role] = (byRole[msg.role] ?? 0) + 1;
+  }
+  return { total: ctx.messages.length, byRole };
+}
+```
+
+### Embedded knowledge
+
+Import JSON data directly in a tool file:
+
+```ts
+// tools/search_faq.ts
+import knowledge from "../knowledge.json" with { type: "json" };
+
+export const description = "Search the knowledge base";
+
+export const parameters = {
+  type: "object",
+  properties: {
+    query: { type: "string" },
+  },
+  required: ["query"],
+};
+
+export default async function execute(args: { query: string }) {
+  return knowledge.faqs.filter((f: { question: string }) =>
+    f.question.toLowerCase().includes(args.query.toLowerCase()),
+  );
+}
+```
+
+### Adding packages
+
+Add packages to `package.json` dependencies:
+
+```sh
+pnpm add some-package
+```
+
+### Debugging agents
+
+`aai dev` prints tool calls, LLM responses, and errors to the terminal.
+This is your primary debugging tool.
+
+**Common debugging flow:**
+
+1. Run `aai dev` and talk to the agent
+2. Watch the terminal for tool calls -- check that the right tool fires
+   with the right args
+3. Check tool return values -- are they what you expect?
+4. If a tool isn't being called, check its `description` -- the LLM uses
+   this to decide when to call it
+5. Use `console.log` in tool code -- output appears in the `aai dev` terminal
+
+**KV debugging:** Add a temporary tool that reads KV state:
+
+```ts
+// tools/debug_kv.ts (remove before deploying)
+export const description = "Show current KV state for debugging";
+
+export default async function execute(
+  _args: unknown,
+  ctx: {
+    kv: {
+      get: <T>(key: string) => Promise<T | null>;
+    };
+  },
+) {
+  return {
+    items: await ctx.kv.get("order:items"),
+    count: await ctx.kv.get("session:turn-count"),
+  };
+}
+```
+
+### Self-hosting with `createServer()`
 
 Agents can run anywhere (Node, Docker) without the managed platform. For
 self-hosting, you still use `defineAgent()` from the SDK to create a runtime:
@@ -1182,151 +1367,6 @@ session.disconnect();         // close connection
 
 This gives you full control over the voice session lifecycle without Preact or
 the default UI components.
-
-## Useful free API endpoints
-
-These public APIs require no auth and work well in voice agents:
-
-```text
-Weather (Open-Meteo):
-  Geocode: https://geocoding-api.open-meteo.com/v1/search?name={city}&count=1&language=en
-  Forecast: https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,weathercode&timezone=auto&forecast_days=7
-
-Currency (ExchangeRate):
-  Rates: https://open.er-api.com/v6/latest/{CODE}  ->  { rates: { USD: 1.0, EUR: 0.85, ... } }
-
-Crypto (CoinGecko):
-  Price: https://api.coingecko.com/api/v3/simple/price?ids={coin}&vs_currencies={cur}&include_24hr_change=true
-
-Drug info (FDA):
-  Label: https://api.fda.gov/drug/label.json?search=openfda.generic_name:"{name}"&limit=1
-
-Drug interactions (RxNorm):
-  RxCUI: https://rxnav.nlm.nih.gov/REST/rxcui.json?name={name}
-  Interactions: https://rxnav.nlm.nih.gov/REST/interaction/list.json?rxcuis={id1}+{id2}
-```
-
-Use `fetch_json` builtin tool or `fetch` in custom tools to call these.
-
-## Testing agents
-
-Test your agent's tools and conversation flows without audio, network, or an
-LLM using the test harness from `@alexkroman1/aai/testing`.
-
-```sh
-pnpm test       # Run all tests (vitest)
-```
-
-### Setup
-
-Tests live in `agent.test.ts` alongside `agent.json`. The project includes
-vitest as a dev dependency.
-
-### Test harness
-
-The test harness loads tools and hooks from your agent directory and executes
-them in-process with an in-memory KV store.
-
-```ts
-import { join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { createTestHarness } from "@alexkroman1/aai/testing";
-import { describe, expect, test } from "vitest";
-
-const __dirname = fileURLToPath(new URL(".", import.meta.url));
-
-describe("my agent", () => {
-  test("tool returns expected result", async () => {
-    const t = await createTestHarness(join(__dirname));
-    const result = await t.executeTool("my_tool", { key: "value" });
-    expect(result).toBe("expected");
-  });
-});
-```
-
-`await createTestHarness(agentDir, options?)` scans `tools/` and `hooks/`
-subdirectories and provides:
-
-| Method / Property              | Description                                       |
-| ------------------------------ | ------------------------------------------------- |
-| `executeTool(name, args)`      | Execute a single tool with full agent context     |
-| `turn(text, toolCalls?)`       | Simulate a user turn with optional tool calls     |
-| `messages`                     | Read-only conversation history                    |
-| `kv`                           | The KV store used by the harness (for assertions) |
-| `connect()` / `disconnect()`   | Fire lifecycle hooks manually                     |
-
-Options:
-
-```ts
-await createTestHarness(join(__dirname), {
-  env: { API_KEY: "test-key" },  // mock environment variables
-  kv: myKvStore,                  // custom KV store (default: in-memory)
-  sessionId: "test-session",      // custom session ID
-});
-```
-
-### Simulating turns with tool calls
-
-```ts
-test("multi-turn pizza ordering", async () => {
-  const t = await createTestHarness(join(__dirname));
-
-  const turn1 = await t.turn("I want a large pepperoni", [
-    { tool: "add_pizza", args: { size: "large", toppings: ["pepperoni"] } },
-  ]);
-
-  // Check tool calls by name
-  expect(turn1.toolCalls.some(tc => tc.name === "add_pizza")).toBe(true);
-
-  // Typed tool results
-  const result = turn1.toolResult<{ added: { size: string }; orderTotal: string }>("add_pizza");
-  expect(result.orderTotal).toContain("$14.99");
-
-  // State persists across turns via KV
-  const turn2 = await t.turn("Show my order", [
-    { tool: "view_order", args: {} },
-  ]);
-  const order = turn2.toolResult<{ pizzas: unknown[] }>("view_order");
-  expect(order.pizzas).toHaveLength(1);
-});
-```
-
-### TurnResult API
-
-| Method / Property      | Description                                     |
-| ---------------------- | ----------------------------------------------- |
-| `toolResult<T>(name)`  | Get result of first call to named tool          |
-| `toolCalls`            | All recorded tool calls with name, args, result |
-
-### Testing patterns
-
-**Environment variables:**
-
-```ts
-const t = await createTestHarness(join(__dirname), { env: { MY_KEY: "test-123" } });
-const result = await t.executeTool("check_key", {});
-expect(result).toBe("test-123");
-```
-
-**KV persistence across turns:**
-
-```ts
-const t = await createTestHarness(join(__dirname));
-await t.turn("first action", [{ tool: "increment", args: {} }]);
-await t.turn("second action", [{ tool: "increment", args: {} }]);
-const turn = await t.turn("check", [{ tool: "get_count", args: {} }]);
-expect(turn.toolResult("get_count")).toBe(2);
-```
-
-**Conversation history:**
-
-```ts
-const t = await createTestHarness(join(__dirname));
-await t.turn("Hello");
-await t.turn("How are you?");
-const turn = await t.turn("Count messages", [{ tool: "count_messages", args: {} }]);
-// Tool has access to full message history via ctx.messages
-```
 
 ## Common pitfalls
 
