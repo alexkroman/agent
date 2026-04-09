@@ -297,6 +297,13 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
 
   /** Single entry point for all server->client session events. */
   function handleEvent(e: ClientEvent): void {
+    // Clear any prior error when the session is actively processing events.
+    // This handles the case where audio init fails but the WebSocket is still
+    // functional — subsequent events prove the session is working.
+    if (currentSnapshot.error && e.type !== "error") {
+      updateState({ error: null });
+    }
+
     switch (e.type) {
       case "speech_started":
         updateState({ userTranscript: "" });
