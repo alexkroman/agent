@@ -503,11 +503,11 @@ describe("Fake VM integration (no KVM)", () => {
 
   // ── Compiled harness test ───────────────────────────────────────────────────
 
-  const COMPILED_HARNESS = path.resolve(import.meta.dirname, "dist/guest/harness.mjs");
+  const COMPILED_HARNESS = path.resolve(import.meta.dirname, "dist/guest/deno-harness.mjs");
   const hasCompiledHarness = existsSync(COMPILED_HARNESS);
 
   test.skipIf(!hasCompiledHarness)(
-    "compiled harness (dist/guest/harness.mjs) injects bundle and executes tool",
+    "compiled harness (dist/guest/deno-harness.mjs) injects bundle and executes tool",
     async () => {
       const socketPath = path.join(tmpDir, "test-compiled.sock");
 

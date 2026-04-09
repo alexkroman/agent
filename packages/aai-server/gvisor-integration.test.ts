@@ -24,7 +24,7 @@ import { createGvisorSandbox, type GvisorSandbox, isGvisorAvailable } from "./gv
 
 // ── Availability check ────────────────────────────────────────────────────────
 
-const compiledHarnessPath = path.resolve(import.meta.dirname, "dist/guest/harness.mjs");
+const compiledHarnessPath = path.resolve(import.meta.dirname, "dist/guest/deno-harness.mjs");
 const canRun = isGvisorAvailable() && existsSync(compiledHarnessPath);
 
 // ── Sandbox tracking ──────────────────────────────────────────────────────────
