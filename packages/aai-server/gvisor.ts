@@ -39,7 +39,9 @@ export type GvisorSandbox = {
  * Security layers:
  * - Syscall interception: gVisor Sentry reimplements syscalls in Go
  * - Network: disabled (--network=none)
- * - Filesystem: host FS is read-only with tmpfs overlay
+ * - Filesystem: only /node and /harness.mjs mounted (no host FS access)
+ * - Env vars: empty (secrets delivered over jsonrpc)
+ * - UID/GID: runs as nobody (65534)
  * - Agent code: injected over stdio, not from disk
  *
  * Resource limits (memory, PIDs) should be enforced by the container
@@ -56,10 +58,21 @@ export function createGvisorSandbox(opts: { slug: string; harnessPath: string })
       "do",
       "-quiet",
       "-cwd",
-      "/tmp",
+      "/",
+      // Mount only the node binary and harness — not the entire host FS
+      "-force-overlay=false",
+      "-volume",
+      `${process.execPath}:/node:ro`,
+      "-volume",
+      `${opts.harnessPath}:/harness.mjs:ro`,
+      // Run as nobody (uid/gid 65534)
+      "-uid-map",
+      "65534:65534:1",
+      "-gid-map",
+      "65534:65534:1",
       "--",
-      process.execPath,
-      opts.harnessPath,
+      "/node",
+      "/harness.mjs",
     ],
     {
       stdio: ["pipe", "pipe", "pipe"],
