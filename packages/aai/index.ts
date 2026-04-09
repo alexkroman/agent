@@ -2,37 +2,23 @@
 /**
  * AAI SDK — build voice agents powered by STT, LLM, and TTS.
  *
+ * Agents are defined as directories with `agent.json` + `tools/*.ts` +
+ * `hooks/*.ts`. Use {@link parseManifest} to validate `agent.json` at
+ * build time.
+ *
  * @example
  * ```ts
- * import { defineAgent } from "aai";
- * import { z } from "zod";
+ * import { parseManifest } from "aai";
  *
- * export default defineAgent({
- *   name: "my-agent",
- *   systemPrompt: "You are a helpful voice assistant.",
- *   tools: {
- *     greet: {
- *       description: "Greet the user by name",
- *       parameters: z.object({ name: z.string() }),
- *       execute: ({ name }) => `Hello, ${name}!`,
- *     },
- *   },
- * });
+ * const manifest = parseManifest(JSON.parse(fs.readFileSync("agent.json", "utf-8")));
  * ```
  */
 
 export type { Kv } from "./isolate/kv.ts";
 export {
-  type AgentDef,
-  type AgentOptions,
-  type BuiltinTool,
-  defineAgent,
-  defineTool,
-  defineToolFactory,
-  type HookContext,
-  type Message,
-  type ToolChoice,
-  type ToolContext,
-  type ToolDef,
-  type ToolResultMap,
-} from "./isolate/types.ts";
+  type HookFlags,
+  type Manifest,
+  parseManifest,
+  type ToolManifest,
+} from "./isolate/manifest.ts";
+export type { BuiltinTool, Message, ToolResultMap } from "./isolate/types.ts";

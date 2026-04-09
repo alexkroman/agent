@@ -115,11 +115,11 @@ describe("loadAgentDef", () => {
 
   test("returns agent def when using defineAgent", async () => {
     await withTempDir(async (dir) => {
-      // Use defineAgent to match real usage
+      // Use defineAgent from internal types path (no longer in public API)
       await fs.writeFile(
         path.join(dir, "agent.ts"),
         [
-          `import { defineAgent } from "${import.meta.resolve("@alexkroman1/aai").replace("file://", "")}";`,
+          `import { defineAgent } from "${import.meta.resolve("@alexkroman1/aai/types").replace("file://", "")}";`,
           `export default defineAgent({ name: "test-agent" });`,
         ].join("\n"),
       );

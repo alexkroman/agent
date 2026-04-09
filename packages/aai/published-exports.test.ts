@@ -32,7 +32,7 @@ describe("published exports", () => {
     const mod = await import(resolve(PKG_DIR, "index.ts"));
 
     // Value exports (functions, consts) that consumers depend on
-    const expectedValues = ["defineAgent", "defineTool", "defineToolFactory"];
+    const expectedValues = ["parseManifest"];
     for (const name of expectedValues) {
       expect(mod, `Missing value export: ${name}`).toHaveProperty(name);
     }

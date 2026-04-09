@@ -7,171 +7,73 @@
  */
 
 import { describe, expectTypeOf, it } from "vitest";
-import { z } from "zod";
 import { type AgentServer, createRuntime, createServer, type Runtime } from "./host/server.ts";
 import {
-  type AgentDef,
   type BuiltinTool,
-  defineAgent,
-  defineTool,
-  defineToolFactory,
-  type HookContext,
-  type Kv,
+  type HookFlags,
+  type Manifest,
   type Message,
-  type ToolChoice,
-  type ToolContext,
-  type ToolDef,
+  parseManifest,
+  type ToolManifest,
   type ToolResultMap,
 } from "./index.ts";
+// Internal import — createRuntime still uses AgentDef internally.
+import { defineAgent } from "./isolate/types.ts";
 
-// ─── defineAgent ──────────────────────────────────────────────────────────
+// ─── parseManifest ───────────────────────────────────────────────────────
 
-describe("defineAgent", () => {
-  it("accepts minimal options and returns AgentDef", () => {
-    const agent = defineAgent({ name: "test" });
-    expectTypeOf(agent).toEqualTypeOf<AgentDef<Record<string, unknown>>>();
+describe("parseManifest", () => {
+  it("accepts valid input and returns Manifest", () => {
+    const manifest = parseManifest({ name: "test" });
+    expectTypeOf(manifest).toEqualTypeOf<Manifest>();
   });
 
-  it("infers state generic from options", () => {
-    interface MyState {
-      count: number;
-    }
-    const agent = defineAgent<MyState>({
-      name: "test",
-      state: () => ({ count: 0 }),
-      onConnect: (ctx) => {
-        expectTypeOf(ctx.state).toEqualTypeOf<MyState>();
-      },
-    });
-    expectTypeOf(agent).toEqualTypeOf<AgentDef<MyState>>();
-  });
-
-  it("requires name to be a string", () => {
-    // @ts-expect-error — name must be a string
-    defineAgent({ name: 123 });
-  });
-
-  it("requires name property", () => {
-    // @ts-expect-error — name is required
-    defineAgent({});
-  });
-
-  it("rejects unknown options", () => {
-    // @ts-expect-error — unknown property
-    defineAgent({ name: "test", unknownProp: true });
-  });
-
-  it("types hooks with correct state parameter", () => {
-    defineAgent<{ userId: string }>({
-      name: "test",
-      state: () => ({ userId: "abc" }),
-      onConnect: (ctx) => {
-        expectTypeOf(ctx.state).toEqualTypeOf<{ userId: string }>();
-        expectTypeOf(ctx.env).toEqualTypeOf<Readonly<Record<string, string>>>();
-        expectTypeOf(ctx.kv).toEqualTypeOf<Kv>();
-        expectTypeOf(ctx.sessionId).toEqualTypeOf<string>();
-      },
-      onDisconnect: (ctx) => {
-        expectTypeOf(ctx.state).toEqualTypeOf<{ userId: string }>();
-      },
-      onUserTranscript: (text, ctx) => {
-        expectTypeOf(text).toEqualTypeOf<string>();
-        expectTypeOf(ctx.state).toEqualTypeOf<{ userId: string }>();
-      },
-    });
-  });
-
-  it("accepts all BuiltinTool values", () => {
-    defineAgent({
-      name: "test",
-      builtinTools: ["web_search", "visit_webpage", "fetch_json", "run_code"],
-    });
-  });
-
-  it("rejects invalid builtin tool names", () => {
-    defineAgent({
-      name: "test",
-      // @ts-expect-error — invalid builtin tool
-      builtinTools: ["not_a_tool"],
-    });
-  });
-
-  it("accepts all ToolChoice values", () => {
-    defineAgent({ name: "a", toolChoice: "auto" });
-    defineAgent({ name: "b", toolChoice: "required" });
+  it("returns an object with expected fields", () => {
+    const manifest = parseManifest({ name: "test" });
+    expectTypeOf(manifest.name).toBeString();
+    expectTypeOf(manifest.systemPrompt).toBeString();
+    expectTypeOf(manifest.greeting).toBeString();
+    expectTypeOf(manifest.builtinTools).toEqualTypeOf<string[]>();
+    expectTypeOf(manifest.maxSteps).toBeNumber();
+    expectTypeOf(manifest.toolChoice).toEqualTypeOf<"auto" | "required">();
+    expectTypeOf(manifest.tools).toEqualTypeOf<Record<string, ToolManifest>>();
+    expectTypeOf(manifest.hooks).toEqualTypeOf<HookFlags>();
   });
 });
 
-// ─── defineTool ───────────────────────────────────────────────────────────
+// ─── Manifest types ──────────────────────────────────────────────────────
 
-describe("defineTool", () => {
-  it("infers parameter types from Zod schema", () => {
-    const t = defineTool({
-      description: "greet",
-      parameters: z.object({ name: z.string() }),
-      execute: (args) => {
-        expectTypeOf(args).toEqualTypeOf<{ name: string }>();
-        return `Hello, ${args.name}`;
-      },
-    });
-    expectTypeOf(t).toMatchTypeOf<ToolDef>();
-  });
-
-  it("works without parameters", () => {
-    const t = defineTool({
-      description: "ping",
-      execute: () => "pong",
-    });
-    expectTypeOf(t).toMatchTypeOf<ToolDef>();
-  });
-
-  it("provides ToolContext to execute", () => {
-    defineTool({
-      description: "test",
-      parameters: z.object({}),
-      execute: (_args, ctx) => {
-        expectTypeOf(ctx.env).toEqualTypeOf<Readonly<Record<string, string>>>();
-        expectTypeOf(ctx.kv).toEqualTypeOf<Kv>();
-        expectTypeOf(ctx.messages).toEqualTypeOf<readonly Message[]>();
-        expectTypeOf(ctx.sessionId).toEqualTypeOf<string>();
-      },
-    });
-  });
-
-  it("allows async execute", () => {
-    const t = defineTool({
-      description: "async",
-      parameters: z.object({ url: z.string() }),
-      execute: async ({ url }) => {
-        const res = await fetch(url);
-        return res.json();
-      },
-    });
-    expectTypeOf(t).toMatchTypeOf<ToolDef>();
+describe("Manifest", () => {
+  it("has expected shape", () => {
+    expectTypeOf<Manifest>().toHaveProperty("name");
+    expectTypeOf<Manifest>().toHaveProperty("systemPrompt");
+    expectTypeOf<Manifest>().toHaveProperty("greeting");
+    expectTypeOf<Manifest>().toHaveProperty("builtinTools");
+    expectTypeOf<Manifest>().toHaveProperty("maxSteps");
+    expectTypeOf<Manifest>().toHaveProperty("toolChoice");
+    expectTypeOf<Manifest>().toHaveProperty("tools");
+    expectTypeOf<Manifest>().toHaveProperty("hooks");
   });
 });
 
-// ─── defineToolFactory ────────────────────────────────────────────────────
-
-describe("defineToolFactory", () => {
-  it("returns a typed defineTool variant", () => {
-    interface AppState {
-      items: string[];
-    }
-    const typedTool = defineToolFactory<AppState>();
-
-    typedTool({
-      description: "add item",
-      parameters: z.object({ item: z.string() }),
-      execute: (args, ctx) => {
-        expectTypeOf(ctx.state).toEqualTypeOf<AppState>();
-        ctx.state.items.push(args.item);
-      },
-    });
+describe("ToolManifest", () => {
+  it("has description and optional parameters", () => {
+    expectTypeOf<ToolManifest>().toHaveProperty("description");
+    expectTypeOf<ToolManifest["description"]>().toBeString();
+    expectTypeOf<ToolManifest["parameters"]>().toEqualTypeOf<Record<string, unknown> | undefined>();
   });
 });
 
-// ─── createServer ─────────────────────────────────────────────────────────
+describe("HookFlags", () => {
+  it("has boolean flags for each hook", () => {
+    expectTypeOf<HookFlags["onConnect"]>().toBeBoolean();
+    expectTypeOf<HookFlags["onDisconnect"]>().toBeBoolean();
+    expectTypeOf<HookFlags["onUserTranscript"]>().toBeBoolean();
+    expectTypeOf<HookFlags["onError"]>().toBeBoolean();
+  });
+});
+
+// ─── createServer ────────────────────────────────────────────────────────
 
 describe("createRuntime", () => {
   it("accepts RuntimeOptions and returns Runtime", () => {
@@ -200,7 +102,7 @@ describe("createServer", () => {
   });
 });
 
-// ─── Key types exist and have expected shapes ─────────────────────────────
+// ─── Key types exist and have expected shapes ────────────────────────────
 
 describe("exported types", () => {
   it("Message has expected shape", () => {
@@ -216,22 +118,8 @@ describe("exported types", () => {
     >();
   });
 
-  it("ToolChoice includes all variants", () => {
-    expectTypeOf<ToolChoice>().toEqualTypeOf<"auto" | "required">();
-  });
-
   it("ToolResultMap passes through its generic", () => {
     type MyResults = ToolResultMap<{ add: { id: number }; remove: { ok: boolean } }>;
     expectTypeOf<MyResults>().toEqualTypeOf<{ add: { id: number }; remove: { ok: boolean } }>();
-  });
-
-  it("HookContext extends ToolContext fields (minus messages) with per-hook data", () => {
-    type HC = HookContext<{ x: number }>;
-    type TC = ToolContext<{ x: number }>;
-    // HookContext has all ToolContext fields except messages
-    expectTypeOf<HC["env"]>().toEqualTypeOf<TC["env"]>();
-    expectTypeOf<HC["state"]>().toEqualTypeOf<TC["state"]>();
-    expectTypeOf<HC["kv"]>().toEqualTypeOf<TC["kv"]>();
-    expectTypeOf<HC["sessionId"]>().toEqualTypeOf<TC["sessionId"]>();
   });
 });
