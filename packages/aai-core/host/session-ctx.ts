@@ -2,10 +2,8 @@
 /** Session context builder — extracted from session.ts. */
 
 import type { AgentConfig, ExecuteTool } from "../isolate/_internal-types.ts";
-import { errorMessage, toolError } from "../isolate/_utils.ts";
-import { DEFAULT_MAX_HISTORY, HOOK_TIMEOUT_MS } from "../isolate/constants.ts";
-import type { AgentHookMap, AgentHooks } from "../isolate/hooks.ts";
-import { callResolveTurnConfig } from "../isolate/hooks.ts";
+import { toolError } from "../isolate/_utils.ts";
+import { DEFAULT_MAX_HISTORY } from "../isolate/constants.ts";
 import type { ClientSink } from "../isolate/protocol.ts";
 import type { Message } from "../isolate/types.ts";
 import type { Logger } from "./runtime-config.ts";
@@ -27,7 +25,6 @@ export type SessionDeps = {
   readonly client: ClientSink;
   readonly agentConfig: AgentConfig;
   readonly executeTool: ExecuteTool;
-  readonly hooks: AgentHooks | undefined;
   readonly log: Logger;
   readonly maxHistory: number;
 };
@@ -46,14 +43,7 @@ export type S2sSessionCtx = SessionDeps & {
   turnPromise: Promise<void> | null;
   conversationMessages: Message[];
 
-  resolveTurnConfig(): Promise<{ maxSteps?: number } | null>;
-  consumeToolCallStep(
-    turnConfig: { maxSteps?: number } | null,
-    name: string,
-    replyId: string | null,
-  ): string | null;
-  fireHook(name: keyof AgentHookMap, ...args: unknown[]): void;
-  drainHooks(): Promise<void>;
+  consumeToolCallStep(name: string, replyId: string | null): string | null;
   pushMessages(...msgs: Message[]): void;
   beginReply(replyId: string): void;
   cancelReply(): void;
@@ -66,14 +56,11 @@ export function buildCtx(opts: {
   client: ClientSink;
   agentConfig: AgentConfig;
   executeTool: ExecuteTool;
-  hooks: AgentHooks | undefined;
   log: Logger;
   maxHistory?: number | undefined;
 }): S2sSessionCtx {
-  const { id, agentConfig, hooks, log } = opts;
+  const { agentConfig, log } = opts;
   const maxHistory = opts.maxHistory ?? DEFAULT_MAX_HISTORY;
-  /** Track in-flight hook promises so they can be awaited during shutdown. */
-  const pendingHooks = new Set<Promise<void>>();
   const ctx: S2sSessionCtx = {
     ...opts,
     s2s: null,
@@ -81,14 +68,11 @@ export function buildCtx(opts: {
     turnPromise: null,
     conversationMessages: [],
     maxHistory,
-    resolveTurnConfig() {
-      return callResolveTurnConfig(hooks, id, HOOK_TIMEOUT_MS);
-    },
-    consumeToolCallStep(turnConfig, _name, replyId) {
+    consumeToolCallStep(_name, replyId) {
       if (replyId === null || replyId !== ctx.reply.currentReplyId) {
         return toolError("Reply was interrupted. Discarding stale tool call.");
       }
-      const maxSteps = turnConfig?.maxSteps ?? agentConfig.maxSteps;
+      const maxSteps = agentConfig.maxSteps;
       ctx.reply.toolCallCount++;
       if (maxSteps !== undefined && ctx.reply.toolCallCount > maxSteps) {
         log.info("maxSteps exceeded, refusing tool call", {
@@ -98,25 +82,6 @@ export function buildCtx(opts: {
         return toolError("Maximum tool steps reached. Please respond to the user now.");
       }
       return null;
-    },
-    fireHook(name, ...args) {
-      if (!hooks) return;
-      const notifyOnError = (err: unknown) => {
-        log.warn(`${name} hook failed`, { err: errorMessage(err) });
-      };
-      try {
-        // biome-ignore lint/suspicious/noExplicitAny: hookable callHook is generic over hook args
-        const result = (hooks.callHook as any)(name, ...args);
-        // hookable returns undefined when no hooks are registered for the given name
-        if (result == null) return;
-        const p = result.catch(notifyOnError).finally(() => pendingHooks.delete(p));
-        pendingHooks.add(p);
-      } catch (err: unknown) {
-        notifyOnError(err);
-      }
-    },
-    async drainHooks() {
-      if (pendingHooks.size > 0) await Promise.all([...pendingHooks]);
     },
     pushMessages(...msgs: Message[]) {
       ctx.conversationMessages.push(...msgs);

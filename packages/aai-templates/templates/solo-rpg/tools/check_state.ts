@@ -1,9 +1,6 @@
 import type { KV } from "../_shared.ts";
 import { getGameState } from "../_shared.ts";
 
-export const description =
-  "Returns the full current game state. This is AUTOMATICALLY forced as the first tool call every turn. Use these numbers as ground truth — never guess or remember stats from previous turns.";
-
 export default async function execute(_args: unknown, ctx: { kv: KV }) {
   const s = await getGameState(ctx.kv);
   return {

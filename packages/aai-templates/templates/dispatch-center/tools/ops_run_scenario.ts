@@ -7,27 +7,6 @@ import {
   saveState,
 } from "../_shared.ts";
 
-export const description =
-  "Run a training scenario that creates simulated incidents for dispatch practice.";
-
-export const parameters = {
-  type: "object",
-  properties: {
-    scenario: {
-      type: "string",
-      enum: [
-        "mass_casualty",
-        "multi_alarm_fire",
-        "active_shooter",
-        "natural_disaster",
-        "highway_pileup",
-      ],
-      description: "Scenario type to simulate",
-    },
-  },
-  required: ["scenario"],
-};
-
 export default async function execute(args: { scenario: string }, ctx: { kv: KV }) {
   const state = await getState(ctx.kv);
   type ScenarioDef = { narrative: string; incidents: Partial<Incident>[] };

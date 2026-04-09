@@ -1,17 +1,3 @@
-export const description =
-  "Check for known interactions between two or more medications. Resolves drug names via RxNorm and returns interaction details with severity levels.";
-
-export const parameters = {
-  type: "object",
-  properties: {
-    drugs: {
-      type: "string",
-      description: "Comma-separated medication names (e.g. 'ibuprofen, warfarin')",
-    },
-  },
-  required: ["drugs"],
-};
-
 type RxCui = { name: string; rxcui: string };
 
 async function resolveRxCui(name: string): Promise<RxCui | null> {

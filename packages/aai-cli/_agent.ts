@@ -2,8 +2,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { readProjectConfig } from "./_config.ts";
-import { resolveServerEnv } from "./_server-common.ts";
+import { ensureApiKey, readProjectConfig } from "./_config.ts";
 
 export const DEFAULT_SERVER = "https://aai-agent.fly.dev";
 export const DEFAULT_DEV_SERVER = "http://localhost:8080";
@@ -36,17 +35,7 @@ export async function getServerInfo(cwd: string, explicitServer?: string, explic
   if (!config) {
     throw new Error("No .aai/project.json found — run `aai deploy` first");
   }
-  let apiKey = explicitApiKey;
-  if (!apiKey) {
-    const env = await resolveServerEnv(cwd);
-    apiKey = env.ASSEMBLYAI_API_KEY;
-  }
-  if (!apiKey) {
-    throw new Error(
-      "No ASSEMBLYAI_API_KEY found in .env file. Add it to your agent's .env:\n\n" +
-        "  ASSEMBLYAI_API_KEY=your-key-here",
-    );
-  }
+  const apiKey = explicitApiKey ?? (await ensureApiKey());
   const serverUrl = resolveServerUrl(explicitServer, config.serverUrl);
   return { serverUrl, slug: config.slug, apiKey };
 }

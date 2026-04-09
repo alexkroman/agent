@@ -211,67 +211,6 @@ describe("fixture replay with real executor", () => {
     });
   });
 
-  // ── onConnect / onDisconnect: lifecycle hooks fire ─────────────────────
-
-  test("onConnect fires on session start, onDisconnect fires on stop", async () => {
-    const onConnectSpy = vi.fn();
-    const onDisconnectSpy = vi.fn();
-    const agent: AgentDef = {
-      name: "lifecycle-agent",
-      systemPrompt: "You are helpful.",
-      greeting: "Hi!",
-      maxSteps: 5,
-      tools: {},
-      onConnect: onConnectSpy,
-      onDisconnect: onDisconnectSpy,
-    };
-
-    const ctx = createFixtureSession(agent);
-    cleanup = ctx.cleanup;
-    await ctx.session.start();
-
-    await vi.waitFor(() => expect(onConnectSpy).toHaveBeenCalledOnce());
-
-    // HookContext should have the right shape
-    const hookCtx = onConnectSpy.mock.calls[0]?.[0] as {
-      env: Record<string, string>;
-      sessionId: string;
-    };
-    expect(hookCtx.sessionId).toBe("fixture-session");
-    expect(hookCtx.env).toBeDefined();
-
-    await ctx.session.stop();
-    await vi.waitFor(() => expect(onDisconnectSpy).toHaveBeenCalledOnce());
-  });
-
-  // ── onUserTranscript: fires with correct text ──────────────────────────
-
-  test("onUserTranscript hook receives user transcript text", async () => {
-    const onUserTranscriptSpy = vi.fn();
-    const agent: AgentDef = {
-      name: "on-turn-agent",
-      systemPrompt: "You are helpful.",
-      greeting: "Hi!",
-      maxSteps: 5,
-      tools: {},
-      onUserTranscript: onUserTranscriptSpy,
-    };
-
-    const ctx = createFixtureSession(agent);
-    cleanup = ctx.cleanup;
-    await ctx.session.start();
-
-    ctx.replay("simple-question-sequence.json");
-    await vi.waitFor(() => expect(onUserTranscriptSpy).toHaveBeenCalled());
-
-    const [text, hookCtx] = onUserTranscriptSpy.mock.calls[0] as [
-      string,
-      { sessionId: string; state: Record<string, unknown> },
-    ];
-    expect(text.toLowerCase()).toContain("space");
-    expect(hookCtx.sessionId).toBe("fixture-session");
-  });
-
   // ── Tool errors are surfaced as tool results ───────────────────────────
 
   test("tool throw is surfaced as error result", async () => {
@@ -304,42 +243,6 @@ describe("fixture replay with real executor", () => {
       string,
     ];
     expect(resultStr).toContain("API key expired");
-  });
-
-  // ── resolveTurnConfig / dynamic maxSteps ───────────────────────────────
-
-  test("dynamic maxSteps via resolveTurnConfig limits tool calls", async () => {
-    const executeSpy = vi.fn(() => ({ result: "ok" }));
-    const agent: AgentDef = {
-      name: "maxsteps-agent",
-      systemPrompt: "Weather assistant.",
-      greeting: "Ask about weather!",
-      maxSteps: () => 0, // dynamic: 0 means refuse all tool calls
-      tools: {
-        get_weather: {
-          description: "Get weather",
-          parameters: z.object({ city: z.string() }),
-          execute: executeSpy,
-        },
-      },
-    };
-
-    const ctx = createFixtureSession(agent);
-    cleanup = ctx.cleanup;
-    await ctx.session.start();
-
-    ctx.replay("tool-call-sequence.json");
-    await vi.waitFor(() => expect(ctx.mockHandle.sendToolResult).toHaveBeenCalled());
-
-    // Tool should NOT have been called — maxSteps is 0
-    expect(executeSpy).not.toHaveBeenCalled();
-
-    // The result sent back should contain the max-steps refusal
-    const [, resultStr] = vi.mocked(ctx.mockHandle.sendToolResult).mock.calls[0] as [
-      string,
-      string,
-    ];
-    expect(resultStr).toContain("Maximum tool steps reached");
   });
 
   // ── Zod validation: bad args rejected ──────────────────────────────────

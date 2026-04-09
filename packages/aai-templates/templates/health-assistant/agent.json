@@ -2,5 +2,35 @@
   "name": "Dr. Sage",
   "systemPrompt": { "$ref": "system-prompt.md" },
   "greeting": "Hey, I'm Dr. Sage. Try asking me something like, what are the side effects of ibuprofen, can I take aspirin and warfarin together, or calculate my BMI. Just remember, I'm not a real doctor, so always check with your healthcare provider.",
-  "builtinTools": ["web_search", "run_code"]
+  "builtinTools": ["web_search", "run_code"],
+  "toolSchemas": [
+    {
+      "name": "check_drug_interaction",
+      "description": "Check for known interactions between two or more medications. Resolves drug names via RxNorm and returns interaction details with severity levels.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drugs": {
+            "type": "string",
+            "description": "Comma-separated medication names (e.g. 'ibuprofen, warfarin')"
+          }
+        },
+        "required": ["drugs"]
+      }
+    },
+    {
+      "name": "medication_lookup",
+      "description": "Look up detailed information about a single medication, including purpose, warnings, dosage, side effects, and manufacturer. Works with both generic and brand names.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Medication name (generic or brand, e.g. 'ibuprofen' or 'Advil')"
+          }
+        },
+        "required": ["name"]
+      }
+    }
+  ]
 }

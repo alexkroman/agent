@@ -12,28 +12,6 @@ import {
   saveState,
 } from "../_shared.ts";
 
-export const description = "Create a new incident from an incoming emergency call.";
-
-export const parameters = {
-  type: "object",
-  properties: {
-    location: { type: "string", description: "Address or location description" },
-    description: { type: "string", description: "Nature of the emergency as described by caller" },
-    callerName: { type: "string", description: "Caller's name" },
-    callerPhone: { type: "string", description: "Callback number" },
-    estimatedCasualties: {
-      type: "number",
-      description: "Estimated number of casualties if known",
-    },
-    hazards: {
-      type: "array",
-      items: { type: "string" },
-      description: "Known hazards: fire, chemical, electrical, structural, weapons",
-    },
-  },
-  required: ["location", "description"],
-};
-
 export default async function execute(
   args: {
     location: string;

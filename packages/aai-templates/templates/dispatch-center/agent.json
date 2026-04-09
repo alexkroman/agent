@@ -1,5 +1,226 @@
 {
   "name": "Dispatch Command Center",
   "systemPrompt": { "$ref": "system-prompt.md" },
-  "greeting": "Dispatch Command Center online. Restoring operational state. I'm ready to take incoming calls, manage active incidents, or run dispatch operations. Say 'dashboard' for a full status report. What do we have."
+  "greeting": "Dispatch Command Center online. Restoring operational state. I'm ready to take incoming calls, manage active incidents, or run dispatch operations. Say 'dashboard' for a full status report. What do we have.",
+  "toolSchemas": [
+    {
+      "name": "incident_add_note",
+      "description": "Add a situational update note to an incident.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "incidentId": { "type": "string", "description": "The incident ID" },
+          "note": { "type": "string", "description": "The note to add" },
+          "source": {
+            "type": "string",
+            "description": "Who reported this — unit callsign or caller"
+          }
+        },
+        "required": ["incidentId", "note"]
+      }
+    },
+    {
+      "name": "incident_create",
+      "description": "Create a new incident from an incoming emergency call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "location": { "type": "string", "description": "Address or location description" },
+          "description": { "type": "string", "description": "Nature of the emergency as described by caller" },
+          "callerName": { "type": "string", "description": "Caller's name" },
+          "callerPhone": { "type": "string", "description": "Callback number" },
+          "estimatedCasualties": {
+            "type": "number",
+            "description": "Estimated number of casualties if known"
+          },
+          "hazards": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Known hazards: fire, chemical, electrical, structural, weapons"
+          }
+        },
+        "required": ["location", "description"]
+      }
+    },
+    {
+      "name": "incident_escalate",
+      "description": "Escalate an incident when it exceeds current capacity or severity increases.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "incidentId": { "type": "string", "description": "The incident ID" },
+          "reason": { "type": "string", "description": "Reason for escalation" },
+          "requestMutualAid": {
+            "type": "boolean",
+            "description": "Whether to request mutual aid from neighboring jurisdictions"
+          },
+          "newSeverity": {
+            "type": "string",
+            "enum": ["critical", "urgent"],
+            "description": "Escalated severity level"
+          }
+        },
+        "required": ["incidentId", "reason"]
+      }
+    },
+    {
+      "name": "incident_get",
+      "description": "Get full details on a specific incident including timeline and assigned resources.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "incidentId": { "type": "string", "description": "The incident ID" }
+        },
+        "required": ["incidentId"]
+      }
+    },
+    {
+      "name": "incident_triage",
+      "description": "Triage an incident — confirm or override severity, type, hazards, and casualty count.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "incidentId": { "type": "string", "description": "The incident ID" },
+          "severity": {
+            "type": "string",
+            "enum": ["critical", "urgent", "moderate", "minor"],
+            "description": "Confirmed severity after triage"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["medical", "fire", "hazmat", "traffic", "crime", "natural_disaster", "utility", "other"],
+            "description": "Confirmed incident type"
+          },
+          "additionalHazards": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Any additional hazards identified"
+          },
+          "casualtyUpdate": { "type": "number", "description": "Updated casualty count" },
+          "notes": { "type": "string", "description": "Triage notes" }
+        },
+        "required": ["incidentId"]
+      }
+    },
+    {
+      "name": "incident_update_status",
+      "description": "Update an incident's status (en_route, on_scene, resolved, escalated).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "incidentId": { "type": "string", "description": "The incident ID" },
+          "status": {
+            "type": "string",
+            "enum": ["en_route", "on_scene", "resolved", "escalated"],
+            "description": "New status"
+          },
+          "notes": { "type": "string", "description": "Status update notes" },
+          "casualtyUpdate": {
+            "type": "object",
+            "properties": {
+              "confirmed": { "type": "number" },
+              "treated": { "type": "number" }
+            },
+            "description": "Updated casualty numbers"
+          }
+        },
+        "required": ["incidentId", "status"]
+      }
+    },
+    {
+      "name": "ops_dashboard",
+      "description": "Get the full operational dashboard: alert level, resource utilization, active incidents, and available resources."
+    },
+    {
+      "name": "ops_protocols",
+      "description": "Look up step-by-step response protocols for a given incident type and severity.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "incidentType": {
+            "type": "string",
+            "enum": ["medical", "fire", "hazmat", "traffic", "crime", "natural_disaster", "utility", "other"],
+            "description": "Type of incident"
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["critical", "urgent", "moderate", "minor"],
+            "description": "Severity level"
+          }
+        },
+        "required": ["incidentType", "severity"]
+      }
+    },
+    {
+      "name": "ops_run_scenario",
+      "description": "Run a training scenario that creates simulated incidents for dispatch practice.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "scenario": {
+            "type": "string",
+            "enum": ["mass_casualty", "multi_alarm_fire", "active_shooter", "natural_disaster", "highway_pileup"],
+            "description": "Scenario type to simulate"
+          }
+        },
+        "required": ["scenario"]
+      }
+    },
+    {
+      "name": "resources_dispatch",
+      "description": "Dispatch units to an incident. Can auto-dispatch recommended resources or manually specify callsigns.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "incidentId": { "type": "string", "description": "The incident ID" },
+          "callsigns": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Resource callsigns to dispatch. Use 'auto' for system-recommended resources."
+          },
+          "autoDispatch": {
+            "type": "boolean",
+            "description": "If true, automatically dispatch recommended resources"
+          },
+          "priority": {
+            "type": "string",
+            "enum": ["routine", "priority", "emergency"],
+            "description": "Dispatch priority — affects simulated ETA"
+          }
+        },
+        "required": ["incidentId"]
+      }
+    },
+    {
+      "name": "resources_get_available",
+      "description": "List available resources, optionally filtered by type.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["ambulance", "fire_engine", "police", "hazmat_team", "helicopter", "k9_unit", "swat", "ems_supervisor", "all"],
+            "description": "Filter by resource type, or 'all'"
+          }
+        }
+      }
+    },
+    {
+      "name": "resources_update_status",
+      "description": "Update a resource unit's status when it radios in.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "callsign": { "type": "string", "description": "The resource callsign" },
+          "status": {
+            "type": "string",
+            "enum": ["available", "dispatched", "en_route", "on_scene", "returning"],
+            "description": "New status"
+          },
+          "notes": { "type": "string", "description": "Status notes" }
+        },
+        "required": ["callsign", "status"]
+      }
+    }
+  ]
 }

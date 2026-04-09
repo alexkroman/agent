@@ -2,61 +2,19 @@
 /**
  * Dev server for directory-based agents.
  *
- * Scans the agent directory (agent.json + tools/*.ts + hooks/*.ts), builds
- * a runtime, and starts an HTTP+WebSocket server. Watches for file changes
- * and restarts automatically. Optionally runs Vite for client SPA HMR.
+ * Imports agent.ts directly (which exports an AgentDef), builds a runtime,
+ * and starts an HTTP+WebSocket server. Watches for file changes and restarts
+ * automatically. Optionally runs Vite for client SPA HMR.
  */
 
-import { existsSync, type FSWatcher, readdirSync, watch } from "node:fs";
+import { existsSync, type FSWatcher, watch } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseEnvFile } from "@alexkroman1/aai-core";
-import type { Manifest } from "@alexkroman1/aai-core/manifest";
 import type { AgentServer } from "@alexkroman1/aai-core/runtime";
+import { ensureApiKey } from "./_config.ts";
 import { log } from "./_ui.ts";
-
-// ─── Types ──────────────────────────────────────────────────────────────────
-
-type LoadedTool = {
-  default: (args: Record<string, unknown>, ctx: unknown) => unknown | Promise<unknown>;
-  description?: string;
-  parameters?: Record<string, unknown>;
-};
-
-type LoadedHook = {
-  default: (...args: unknown[]) => void | Promise<void>;
-};
-
-// ─── Dynamic importing ──────────────────────────────────────────────────────
-
-const IMPORTABLE_EXTENSIONS = [".ts", ".mjs", ".js"];
-
-/** File extensions to scan for tool/hook modules, in priority order. */
-async function scanAndImport<T>(dir: string): Promise<Map<string, T>> {
-  const result = new Map<string, T>();
-  if (!existsSync(dir)) return result;
-
-  const files = readdirSync(dir);
-  for (const file of files) {
-    const ext = IMPORTABLE_EXTENSIONS.find((e) => file.endsWith(e));
-    if (!ext) continue;
-    const name = path.basename(file, ext);
-    if (result.has(name)) continue;
-    const filePath = path.join(dir, file);
-    // Add cache-busting query to force re-import on restart
-    const url = `${pathToFileURL(filePath).href}?t=${Date.now()}`;
-    const mod = (await import(url)) as T;
-    result.set(name, mod);
-  }
-
-  return result;
-}
-
-/** Map kebab-case hook filename to camelCase hook key. */
-function hookFileNameToKey(fileName: string): string {
-  return fileName.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
-}
 
 // ─── Env loading ────────────────────────────────────────────────────────────
 
@@ -73,60 +31,11 @@ async function resolveAgentEnv(root: string): Promise<Record<string, string>> {
   for (const [key, fileVal] of Object.entries(fileEntries)) {
     env[key] = process.env[key] ?? fileVal;
   }
-  return env;
-}
-
-// ─── Bridge manifest to AgentDef ────────────────────────────────────────────
-
-/**
- * Build an AgentDef-compatible object from a Manifest and loaded tool/hook
- * modules. The runtime expects tools to have `{ description, parameters, execute }`
- * where parameters has `.parse()` and `._def.typeName`.
- */
-function buildAgentDef(
-  manifest: Manifest,
-  tools: Map<string, LoadedTool>,
-  hooks: Map<string, LoadedHook>,
-): Record<string, unknown> {
-  // Build tool definitions compatible with the runtime
-  const toolDefs: Record<string, unknown> = {};
-  for (const [name, schema] of Object.entries(manifest.tools)) {
-    const loaded = tools.get(name);
-    if (!loaded) continue;
-
-    toolDefs[name] = {
-      description: schema.description,
-      // Create a passthrough wrapper that mimics a Zod schema
-      parameters: schema.parameters
-        ? { parse: (v: unknown) => v, _def: { typeName: "ZodObject" } }
-        : undefined,
-      execute: loaded.default,
-    };
+  // Inject global API key if not already set by .env or process.env
+  if (!env.ASSEMBLYAI_API_KEY) {
+    env.ASSEMBLYAI_API_KEY = await ensureApiKey();
   }
-
-  // Build hook handlers
-  const hookHandlers: Record<string, (...args: unknown[]) => unknown> = {};
-  const onConnect = hooks.get("onConnect");
-  if (onConnect) hookHandlers.onConnect = onConnect.default;
-  const onDisconnect = hooks.get("onDisconnect");
-  if (onDisconnect) hookHandlers.onDisconnect = onDisconnect.default;
-  const onError = hooks.get("onError");
-  if (onError) hookHandlers.onError = onError.default;
-  const onUserTranscript = hooks.get("onUserTranscript");
-  if (onUserTranscript) hookHandlers.onUserTranscript = onUserTranscript.default;
-
-  return {
-    name: manifest.name,
-    systemPrompt: manifest.systemPrompt,
-    greeting: manifest.greeting,
-    sttPrompt: manifest.sttPrompt,
-    maxSteps: manifest.maxSteps,
-    toolChoice: manifest.toolChoice,
-    builtinTools: manifest.builtinTools,
-    idleTimeoutMs: manifest.idleTimeoutMs,
-    tools: toolDefs,
-    ...hookHandlers,
-  };
+  return env;
 }
 
 // ─── File watching ──────────────────────────────────────────────────────────
@@ -151,18 +60,8 @@ function watchDirectory(dir: string, onChange: () => void): FSWatcher[] {
     }, DEBOUNCE_MS);
   }
 
-  // Watch root for agent.json, .env changes
+  // Watch root for agent.ts, .env changes
   watchers.push(watch(dir, { persistent: false }, (_event, filename) => handleChange(filename)));
-
-  // Watch tools/ and hooks/ directories
-  for (const subdir of ["tools", "hooks"]) {
-    const subdirPath = path.join(dir, subdir);
-    if (existsSync(subdirPath)) {
-      watchers.push(
-        watch(subdirPath, { persistent: false }, (_event, filename) => handleChange(filename)),
-      );
-    }
-  }
 
   return watchers;
 }
@@ -182,7 +81,6 @@ export type DevServerOptions = {
 export async function startDevServer(opts: DevServerOptions): Promise<() => Promise<void>> {
   const { cwd, port } = opts;
 
-  const { scanAgentDirectory } = await import("./_scanner.ts");
   const { createRuntime, createServer } = await import("@alexkroman1/aai-core/runtime");
 
   // Check if client.tsx exists for Vite HMR
@@ -193,21 +91,14 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
   const backendPort = hasClient ? port + 1 : port;
   const vitePort = port;
 
-  // Load agent
-  const manifest = await scanAgentDirectory(cwd);
-  const tools = await scanAndImport<LoadedTool>(path.join(cwd, "tools"));
-  const rawHooks = await scanAndImport<LoadedHook>(path.join(cwd, "hooks"));
-  const hooks = new Map<string, LoadedHook>();
-  for (const [fileName, mod] of rawHooks) {
-    hooks.set(hookFileNameToKey(fileName), mod);
-  }
+  // Import agent definition directly
+  const agentUrl = `${pathToFileURL(path.join(cwd, "agent.ts")).href}?t=${Date.now()}`;
+  const mod = await import(agentUrl);
+  const agentDef = mod.default;
 
   const env = await resolveAgentEnv(cwd);
-  const agentDef = buildAgentDef(manifest, tools, hooks);
-
-  // biome-ignore lint/suspicious/noExplicitAny: bridging manifest to runtime AgentDef
-  const runtime = createRuntime({ agent: agentDef as any, env });
-  const agentServer = createServer({ runtime, name: manifest.name });
+  const runtime = createRuntime({ agent: agentDef, env });
+  const agentServer = createServer({ runtime, name: agentDef.name });
   await agentServer.listen(backendPort);
 
   // Start Vite for client HMR if client.tsx exists
@@ -241,33 +132,22 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
   });
 
   async function restart(): Promise<void> {
-    // Close current servers
     try {
       await currentServer.close();
     } catch {
-      // Ignore close errors during restart
+      /* ignore */
     }
-
-    // Re-scan and reload
     try {
-      const newManifest = await scanAgentDirectory(cwd);
-      const newTools = await scanAndImport<LoadedTool>(path.join(cwd, "tools"));
-      const rawNewHooks = await scanAndImport<LoadedHook>(path.join(cwd, "hooks"));
-      const newHooks = new Map<string, LoadedHook>();
-      for (const [fileName, mod] of rawNewHooks) {
-        newHooks.set(hookFileNameToKey(fileName), mod);
-      }
-
+      const newUrl = `${pathToFileURL(path.join(cwd, "agent.ts")).href}?t=${Date.now()}`;
+      const newMod = await import(newUrl);
+      const newAgentDef = newMod.default;
       const newEnv = await resolveAgentEnv(cwd);
-      const newAgentDef = buildAgentDef(newManifest, newTools, newHooks);
-
-      // biome-ignore lint/suspicious/noExplicitAny: bridging manifest to runtime AgentDef
-      const newRuntime = createRuntime({ agent: newAgentDef as any, env: newEnv });
-      const newServer = createServer({ runtime: newRuntime, name: newManifest.name });
+      const newRuntime = createRuntime({ agent: newAgentDef, env: newEnv });
+      const newServer = createServer({ runtime: newRuntime, name: newAgentDef.name });
       await newServer.listen(backendPort);
       currentServer = newServer;
       log.success("Restarted");
-    } catch (err: unknown) {
+    } catch (err) {
       log.error(`Restart failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   }

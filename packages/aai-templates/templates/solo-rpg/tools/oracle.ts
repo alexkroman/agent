@@ -8,21 +8,6 @@ import {
   saveGameState,
 } from "../_shared.ts";
 
-export const description =
-  "Consult the oracle for narrative inspiration. Generates random prompts from thematic tables.";
-
-export const parameters = {
-  type: "object",
-  properties: {
-    type: {
-      type: "string",
-      enum: ["action_theme", "npc_reaction", "scene_twist", "yes_no", "chaos_check"],
-      description: "Type of oracle consultation",
-    },
-  },
-  required: ["type"],
-};
-
 export default async function execute(args: { type: string }, ctx: { kv: KV }) {
   const state = await getGameState(ctx.kv);
 

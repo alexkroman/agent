@@ -35,7 +35,6 @@
     "lint": "biome check ."
   },
   "dependencies": {
-    "hookable": "^6.1.0",
     "nanoevents": "^9.1.0",
     "p-timeout": "^7.0.1",
     "unstorage": "^1.17.5",

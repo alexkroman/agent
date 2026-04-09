@@ -1,5 +1,3 @@
-export const description = "Get current session metadata";
-
 export default async function execute(
   _args: unknown,
   ctx: {

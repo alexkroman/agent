@@ -5,84 +5,77 @@ import path from "node:path";
 import { build } from "vite";
 import { type CommandResult, ok } from "./_output.ts";
 
-/** Output from the directory-based bundler (agent.json + tools/*.ts + hooks/*.ts). */
+/** Output from the bundler: agent.json (verbatim) + esbuild output of tools.ts. */
 export type DirectoryBundleOutput = {
-  manifest: import("@alexkroman1/aai-core/manifest").Manifest;
-  manifestJson: string;
-  toolBundles: Record<string, string>; // toolName -> compiled JS
-  hookBundles: Record<string, string>; // hookKey -> compiled JS
-};
-
-// ── Directory-based bundler (agent.json + tools/*.ts + hooks/*.ts) ───────────
-
-// Hook filenames (kebab-case) -> HookFlags keys (camelCase)
-const HOOK_FILENAME_MAP: Record<string, string> = {
-  "on-connect": "onConnect",
-  "on-disconnect": "onDisconnect",
-  "on-user-transcript": "onUserTranscript",
-  "on-error": "onError",
+  /** ESM bundle of tools.ts (tool execute functions + hook handlers). */
+  worker: string;
+  /** Static client files from Vite build. Empty if no client.tsx. */
+  clientFiles: Record<string, string>;
+  /** agent.json contents — sent verbatim as agentConfig to the server. */
+  agentConfig: Record<string, unknown>;
 };
 
 /**
- * Compile a single TypeScript file with esbuild.
- * Returns the compiled JS as a string.
- */
-async function compileFile(filePath: string): Promise<string> {
-  const { build: esbuild } = await import("esbuild");
-  const result = await esbuild({
-    entryPoints: [filePath],
-    bundle: true,
-    write: false,
-    format: "esm",
-    platform: "node",
-    target: "node20",
-  });
-
-  const output = result.outputFiles[0];
-  if (!output) {
-    throw new Error(`esbuild produced no output for ${filePath}`);
-  }
-
-  return output.text;
-}
-
-/**
- * Bundle an agent directory (agent.json + tools/*.ts + hooks/*.ts)
- * into a manifest + compiled handler code.
+ * Bundle an agent directory: read agent.json + esbuild tools.ts.
+ *
+ * - agent.json is the declarative config (name, systemPrompt, toolSchemas, etc.)
+ *   and is sent verbatim to the server as agentConfig.
+ * - tools.ts is the code entry point (exports tool functions + hooks)
+ *   and is bundled into a single ESM worker string.
  */
 export async function buildAgentBundle(cwd: string): Promise<DirectoryBundleOutput> {
-  const { scanAgentDirectory } = await import("./_scanner.ts");
   const { log } = await import("./_ui.ts");
 
-  const manifest = await scanAgentDirectory(cwd);
-
-  log.step(`Bundling ${manifest.name}`);
-
-  const toolBundles: Record<string, string> = {};
-  const hookBundles: Record<string, string> = {};
-
-  // Compile tool handlers
-  const toolsDir = path.join(cwd, "tools");
-  for (const toolName of Object.keys(manifest.tools)) {
-    const filePath = path.join(toolsDir, `${toolName}.ts`);
-    toolBundles[toolName] = await compileFile(filePath);
+  // ── Read agent.json ────────────────────────────────────────────────────
+  const agentJsonPath = path.join(cwd, "agent.json");
+  let agentConfig: Record<string, unknown>;
+  try {
+    agentConfig = JSON.parse(await fs.readFile(agentJsonPath, "utf-8"));
+  } catch (err) {
+    throw new Error(`Missing agent.json in ${cwd}`, { cause: err });
   }
 
-  // Compile hook handlers
-  const hooksDir = path.join(cwd, "hooks");
-  for (const [kebabName, camelName] of Object.entries(HOOK_FILENAME_MAP)) {
-    if (manifest.hooks[camelName as keyof typeof manifest.hooks]) {
-      const filePath = path.join(hooksDir, `${kebabName}.ts`);
-      hookBundles[camelName] = await compileFile(filePath);
+  if (!agentConfig.name || typeof agentConfig.name !== "string") {
+    throw new Error("agent.json must have a name field");
+  }
+
+  // Resolve $ref in systemPrompt (e.g. { "$ref": "system-prompt.md" })
+  if (agentConfig.systemPrompt && typeof agentConfig.systemPrompt === "object") {
+    const ref = (agentConfig.systemPrompt as { $ref?: string }).$ref;
+    if (ref) {
+      agentConfig.systemPrompt = await fs.readFile(path.join(cwd, ref), "utf-8");
     }
   }
 
-  return {
-    manifest,
-    manifestJson: JSON.stringify(manifest),
-    toolBundles,
-    hookBundles,
-  };
+  log.step(`Bundling ${agentConfig.name}`);
+
+  // ── Bundle tools.ts with esbuild ───────────────────────────────────────
+  const toolsEntry = path.join(cwd, "tools.ts");
+  let worker = "";
+  try {
+    await fs.access(toolsEntry);
+    const { build: esbuild } = await import("esbuild");
+    const result = await esbuild({
+      entryPoints: [toolsEntry],
+      bundle: true,
+      write: false,
+      format: "esm",
+      platform: "node",
+      target: "node20",
+    });
+    const output = result.outputFiles[0];
+    if (!output) throw new Error("esbuild produced no output for tools.ts");
+    worker = output.text;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      // No tools.ts — agent has no custom tools/hooks, just builtins
+      worker = "export const tools = {}; export const hooks = {};";
+    } else {
+      throw err;
+    }
+  }
+
+  return { worker, clientFiles: {}, agentConfig };
 }
 
 /**
@@ -110,7 +103,7 @@ async function buildClient(cwd: string): Promise<void> {
 }
 
 type BuildData = {
-  manifest: { name: string; tools: string[] };
+  name: string;
   workerBytes: number;
 };
 
@@ -120,14 +113,9 @@ export async function executeBuild(cwd: string): Promise<CommandResult<BuildData
   await buildClient(cwd);
   log.success("Build complete");
 
-  const toolNames = Object.keys(bundle.manifest.tools);
-  const totalBytes =
-    Object.values(bundle.toolBundles).reduce((sum, code) => sum + code.length, 0) +
-    Object.values(bundle.hookBundles).reduce((sum, code) => sum + code.length, 0);
-
   return ok({
-    manifest: { name: bundle.manifest.name, tools: toolNames },
-    workerBytes: totalBytes,
+    name: bundle.agentConfig.name as string,
+    workerBytes: bundle.worker.length,
   });
 }
 

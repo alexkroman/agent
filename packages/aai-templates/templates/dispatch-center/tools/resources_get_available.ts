@@ -1,29 +1,6 @@
 import type { KV } from "../_shared.ts";
 import { getState } from "../_shared.ts";
 
-export const description = "List available resources, optionally filtered by type.";
-
-export const parameters = {
-  type: "object",
-  properties: {
-    type: {
-      type: "string",
-      enum: [
-        "ambulance",
-        "fire_engine",
-        "police",
-        "hazmat_team",
-        "helicopter",
-        "k9_unit",
-        "swat",
-        "ems_supervisor",
-        "all",
-      ],
-      description: "Filter by resource type, or 'all'",
-    },
-  },
-};
-
 export default async function execute(args: { type?: string }, ctx: { kv: KV }) {
   const state = await getState(ctx.kv);
   let resources = state.resources;

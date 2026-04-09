@@ -42,23 +42,6 @@ const PICKS: Record<string, Record<string, string[]>> = {
   },
 };
 
-export const description = "Get recommendations for movies, music, or books based on mood.";
-
-export const parameters = {
-  type: "object",
-  properties: {
-    category: {
-      type: "string",
-      enum: ["movie", "music", "book"],
-    },
-    mood: {
-      type: "string",
-      enum: ["chill", "intense", "cozy", "spooky", "funny"],
-    },
-  },
-  required: ["category", "mood"],
-};
-
 export default async function execute(args: { category: string; mood: string }, _ctx: unknown) {
   return {
     category: args.category,

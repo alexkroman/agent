@@ -55,7 +55,7 @@ export interface AgentConfigSource {
   systemPrompt: string;
   greeting: string;
   sttPrompt?: string | undefined;
-  maxSteps?: number | ((...args: never[]) => number) | undefined;
+  maxSteps?: number | undefined;
   toolChoice?: AgentConfig["toolChoice"] | undefined;
   builtinTools?: Readonly<AgentConfig["builtinTools"]> | undefined;
   idleTimeoutMs?: number | undefined;
@@ -69,8 +69,7 @@ export function toAgentConfig(src: AgentConfigSource): AgentConfig {
     greeting: src.greeting,
   };
   if (src.sttPrompt !== undefined) config.sttPrompt = src.sttPrompt;
-  if (typeof src.maxSteps !== "function" && src.maxSteps !== undefined)
-    config.maxSteps = src.maxSteps;
+  if (src.maxSteps !== undefined) config.maxSteps = src.maxSteps;
   if (src.toolChoice !== undefined) config.toolChoice = src.toolChoice;
   if (src.builtinTools) config.builtinTools = [...src.builtinTools];
   if (src.idleTimeoutMs !== undefined) config.idleTimeoutMs = src.idleTimeoutMs;

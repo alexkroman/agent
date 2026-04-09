@@ -1,18 +1,6 @@
 import type { KV } from "../_shared.ts";
 import { getGameState, saveGameState } from "../_shared.ts";
 
-export const description =
-  "Burn momentum to upgrade a roll result. Only valid when current momentum beats both challenge dice for the roll being upgraded. Resets momentum to +2.";
-
-export const parameters = {
-  type: "object",
-  properties: {
-    c1: { type: "number", description: "First challenge die from the roll" },
-    c2: { type: "number", description: "Second challenge die from the roll" },
-  },
-  required: ["c1", "c2"],
-};
-
 export default async function execute(args: { c1: number; c2: number }, ctx: { kv: KV }) {
   const state = await getGameState(ctx.kv);
   const mom = state.momentum;

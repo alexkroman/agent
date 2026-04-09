@@ -87,25 +87,6 @@ export type ToolContext<S = Record<string, unknown>> = {
 };
 
 /**
- * Context passed to lifecycle hooks.
- *
- * @typeParam S - The shape of per-session state created by the agent's
- *   `state` factory. Defaults to `Record<string, unknown>`.
- *
- * @public
- */
-export type HookContext<S = Record<string, unknown>> = {
-  /** Environment variables declared in the agent config. */
-  env: Readonly<Record<string, string>>;
-  /** Mutable per-session state created by the agent's `state` factory. */
-  state: S;
-  /** Key-value store scoped to this agent deployment. */
-  kv: Kv;
-  /** Unique identifier for the current session. */
-  sessionId: string;
-};
-
-/**
  * Definition of a custom tool that the agent can invoke.
  *
  * Tools are the primary way to extend agent capabilities. Each tool has a
@@ -229,15 +210,11 @@ export type AgentDef<S = Record<string, unknown>> = {
   systemPrompt: string;
   greeting: string;
   sttPrompt?: string;
-  maxSteps: number | ((ctx: HookContext<S>) => number);
+  maxSteps: number;
   toolChoice?: ToolChoice;
   builtinTools?: readonly BuiltinTool[];
   tools: Readonly<Record<string, ToolDef<z.ZodObject<z.ZodRawShape>, S>>>;
   state?: () => S;
-  onConnect?: (ctx: HookContext<S>) => void | Promise<void>;
-  onDisconnect?: (ctx: HookContext<S>) => void | Promise<void>;
-  onError?: (error: Error, ctx?: HookContext<S>) => void;
-  onUserTranscript?: (text: string, ctx: HookContext<S>) => void | Promise<void>;
   idleTimeoutMs?: number;
 };
 

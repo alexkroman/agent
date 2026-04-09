@@ -4,7 +4,6 @@ import { createStorage } from "unstorage";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { toAgentConfig } from "../isolate/_internal-types.ts";
-import { callResolveTurnConfig, createAgentHooks } from "../isolate/hooks.ts";
 import type { ToolDef } from "../isolate/types.ts";
 import { CONFORMANCE_AGENT, testRuntime } from "./_runtime-conformance.ts";
 import { flush, makeAgent, makeMockHandle, silentLogger } from "./_test-utils.ts";
@@ -36,11 +35,6 @@ describe("toAgentConfig", () => {
     expect(config.maxSteps).toBe(10);
   });
 
-  test("excludes function maxSteps", () => {
-    const config = toAgentConfig(makeAgent({ maxSteps: () => 10 }));
-    expect(config).not.toHaveProperty("maxSteps");
-  });
-
   test("includes toolChoice when defined", () => {
     const config = toAgentConfig(makeAgent({ toolChoice: "required" }));
     expect(config.toolChoice).toBe("required");
@@ -62,11 +56,6 @@ describe("createRuntime", () => {
     const exec = createRuntime({ agent: makeAgent(), env: {} });
     const result = await exec.executeTool("nonexistent", {}, "session-1", []);
     expect(result).toBe(JSON.stringify({ error: "Unknown tool: nonexistent" }));
-  });
-
-  test("hooks.callHook('connect') can be called without error", async () => {
-    const exec = createRuntime({ agent: makeAgent(), env: {} });
-    await expect(exec.hooks.callHook("connect", "session-1")).resolves.toBeUndefined();
   });
 
   test("executeTool with a real tool returns result", async () => {
@@ -109,34 +98,6 @@ describe("createRuntime", () => {
     const names = exec.toolSchemas.map((s) => s.name);
     expect(names).toContain("custom");
     expect(names).toContain("run_code");
-  });
-
-  test("resolveTurnConfig returns null when no dynamic config", async () => {
-    const exec = createRuntime({ agent: makeAgent(), env: {} });
-    expect(await callResolveTurnConfig(exec.hooks, "s1")).toBe(null);
-  });
-
-  test("resolveTurnConfig resolves dynamic maxSteps", async () => {
-    const agent = makeAgent({ maxSteps: () => 15 });
-    const exec = createRuntime({ agent, env: {} });
-    const config = await callResolveTurnConfig(exec.hooks, "s1");
-    expect(config?.maxSteps).toBe(15);
-  });
-
-  test("hooks.callHook('disconnect') calls agent.onDisconnect", async () => {
-    const onDisconnect = vi.fn();
-    const agent = makeAgent({ onDisconnect });
-    const exec = createRuntime({ agent, env: {} });
-    await exec.hooks.callHook("disconnect", "session-1");
-    expect(onDisconnect).toHaveBeenCalledOnce();
-  });
-
-  test("hooks.callHook('userTranscript') calls agent.onUserTranscript with text", async () => {
-    const onUserTranscript = vi.fn();
-    const agent = makeAgent({ onUserTranscript });
-    const exec = createRuntime({ agent, env: {} });
-    await exec.hooks.callHook("userTranscript", "s1", "hello world");
-    expect(onUserTranscript).toHaveBeenCalledWith("hello world", expect.any(Object));
   });
 
   test("session state is initialized from agent.state factory", async () => {
@@ -354,32 +315,19 @@ describe("executeToolCall", () => {
 });
 
 describe("createRuntime sandbox mode", () => {
-  test("uses provided executeTool, hooks, and toolSchemas", async () => {
+  test("uses provided executeTool and toolSchemas", async () => {
     const mockExecuteTool = vi.fn(async () => "mocked-result");
-    const mockHooks = createAgentHooks({
-      agent: makeAgent(),
-      makeCtx: () => ({
-        env: {},
-        state: {},
-        sessionId: "s1",
-        get kv(): never {
-          throw new Error("no kv");
-        },
-      }),
-    });
     const mockToolSchemas = [{ name: "mock_tool", description: "A mock tool", parameters: {} }];
 
     const runtime = createRuntime({
       agent: makeAgent(),
       env: {},
       executeTool: mockExecuteTool,
-      hooks: mockHooks,
       toolSchemas: mockToolSchemas,
     });
 
     // Should use the provided overrides, not build its own
     expect(runtime.toolSchemas).toBe(mockToolSchemas);
-    expect(runtime.hooks).toBe(mockHooks);
     const result = await runtime.executeTool("any_tool", {}, "s1", []);
     expect(result).toBe("mocked-result");
     expect(mockExecuteTool).toHaveBeenCalledWith("any_tool", {}, "s1", []);
@@ -493,30 +441,6 @@ describe("createRuntime shutdown", () => {
     await runtime.shutdown();
     // Whether timeout warning fires depends on internal session map population
     connectSpy.mockRestore();
-  });
-
-  test("disconnect hook cleans up state for session", async () => {
-    const agent = makeAgent({
-      state: () => ({ counter: 0 }),
-      tools: {
-        get_state: {
-          description: "Get state",
-          execute: (_args, ctx) => JSON.stringify(ctx.state),
-        },
-      },
-    });
-    const runtime = createRuntime({ agent, env: {} });
-
-    // First call initializes state
-    const result1 = await runtime.executeTool("get_state", {}, "s1", []);
-    expect(JSON.parse(result1)).toEqual({ counter: 0 });
-
-    // Disconnect should clean up state
-    await runtime.hooks.callHook("disconnect", "s1");
-
-    // Next call should re-initialize state from factory
-    const result2 = await runtime.executeTool("get_state", {}, "s1", []);
-    expect(JSON.parse(result2)).toEqual({ counter: 0 });
   });
 
   test("state is not re-initialized when already present for session", async () => {
@@ -669,19 +593,6 @@ describe("createRuntime with custom options", () => {
     expect(runtime).toBeDefined();
   });
 
-  test("hook context kv getter returns the kv store", async () => {
-    const kv = createUnstorageKv({ storage: createStorage() });
-    let hookKv: unknown;
-    const agent = makeAgent({
-      onConnect: (ctx) => {
-        hookKv = ctx.kv;
-      },
-    });
-    const runtime = createRuntime({ agent, env: {}, kv });
-    await runtime.hooks.callHook("connect", "s1");
-    expect(hookKv).toBe(kv);
-  });
-
   test("uses ASSEMBLYAI_API_KEY from env for sessions", () => {
     const agent = makeAgent();
     const runtime = createRuntime({
@@ -727,5 +638,4 @@ const directExec = createRuntime({
 
 testRuntime("direct", () => ({
   executeTool: directExec.executeTool,
-  hooks: directExec.hooks,
 }));

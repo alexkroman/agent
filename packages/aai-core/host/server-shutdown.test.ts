@@ -6,9 +6,7 @@
  * the timeout and graceful paths in close().
  */
 
-import { createHooks } from "hookable";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import type { AgentHookMap } from "../isolate/hooks.ts";
 import { silentLogger } from "./_test-utils.ts";
 import type { Runtime } from "./runtime.ts";
 import { createServer } from "./server.ts";
@@ -18,7 +16,6 @@ let mockShutdown = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
 function createMockRuntime(): Runtime {
   return {
     executeTool: vi.fn().mockResolvedValue(""),
-    hooks: createHooks<AgentHookMap>(),
     toolSchemas: [],
     createSession: vi.fn() as Runtime["createSession"],
     readyConfig: { audioFormat: "pcm16" as const, sampleRate: 16_000, ttsSampleRate: 24_000 },

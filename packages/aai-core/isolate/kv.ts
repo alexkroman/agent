@@ -6,8 +6,7 @@
 /**
  * Async key-value store interface used by agents.
  *
- * Agents access the KV store via `ToolContext.kv` or
- * `HookContext.kv`. Values are JSON-serialized and stored as
+ * Agents access the KV store via `ToolContext.kv`. Values are JSON-serialized and stored as
  * strings with an optional TTL.
  *
  * @example

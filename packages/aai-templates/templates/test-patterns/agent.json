@@ -4,5 +4,84 @@
   "greeting": "Hey, I'm your task manager. Try adding a task.",
   "sttPrompt": "Task management: add task, complete task, list tasks, save note, delete note",
   "idleTimeoutMs": 120000,
-  "builtinTools": ["run_code"]
+  "builtinTools": ["run_code"],
+  "toolSchemas": [
+    {
+      "name": "add_task",
+      "description": "Add a new task to the list",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": { "type": "string", "description": "Task description" }
+        },
+        "required": ["text"]
+      }
+    },
+    {
+      "name": "check_env",
+      "description": "Check if an environment variable is set"
+    },
+    {
+      "name": "complete_task",
+      "description": "Mark a task as done",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "number", "description": "Task ID to complete" }
+        },
+        "required": ["id"]
+      }
+    },
+    {
+      "name": "count_messages",
+      "description": "Count conversation messages by role"
+    },
+    {
+      "name": "delete_note",
+      "description": "Delete a note from persistent KV storage",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "key": { "type": "string" }
+        },
+        "required": ["key"]
+      }
+    },
+    {
+      "name": "get_owner",
+      "description": "Get the session owner from KV storage"
+    },
+    {
+      "name": "list_tasks",
+      "description": "List all tasks with their status"
+    },
+    {
+      "name": "load_note",
+      "description": "Load a note from persistent KV storage",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "key": { "type": "string" }
+        },
+        "required": ["key"]
+      }
+    },
+    {
+      "name": "save_note",
+      "description": "Save a note to persistent KV storage with optional TTL",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "key": { "type": "string" },
+          "value": { "type": "string" },
+          "ttl_ms": { "type": "number", "description": "Time-to-live in milliseconds" }
+        },
+        "required": ["key", "value"]
+      }
+    },
+    {
+      "name": "session_info",
+      "description": "Get current session metadata"
+    }
+  ]
 }

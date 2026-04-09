@@ -1,23 +1,5 @@
 import { calculateTotal, type Pizza } from "../shared.ts";
 
-export const description =
-  "Add a pizza to the order. Use when the customer has decided on a pizza.";
-
-export const parameters = {
-  type: "object",
-  properties: {
-    size: { type: "string", enum: ["small", "medium", "large"] },
-    crust: { type: "string", enum: ["thin", "regular", "thick", "stuffed"] },
-    toppings: {
-      type: "array",
-      items: { type: "string" },
-      description: "List of topping names, e.g. ['pepperoni', 'mushrooms']",
-    },
-    quantity: { type: "number", default: 1 },
-  },
-  required: ["size", "crust", "toppings"],
-};
-
 export default async function execute(
   args: { size: Pizza["size"]; crust: Pizza["crust"]; toppings: string[]; quantity?: number },
   ctx: {

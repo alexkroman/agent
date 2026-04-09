@@ -209,14 +209,6 @@ describe("POST /deploy", () => {
       name: "config-agent",
       systemPrompt: "Be helpful",
       toolSchemas: [],
-      hasState: false,
-      hooks: {
-        onConnect: false,
-        onDisconnect: false,
-        onError: false,
-        onUserTranscript: false,
-        maxStepsIsFn: false,
-      },
     };
 
     const res = await fetch("/deploy", {

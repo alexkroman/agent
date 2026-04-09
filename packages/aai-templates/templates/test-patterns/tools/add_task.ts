@@ -1,13 +1,3 @@
-export const description = "Add a new task to the list";
-
-export const parameters = {
-  type: "object",
-  properties: {
-    text: { type: "string", description: "Task description" },
-  },
-  required: ["text"],
-};
-
 export default async function execute(
   args: { text: string },
   ctx: {

@@ -1,17 +1,6 @@
 import type { KV } from "../_shared.ts";
 import { getApplicableProtocols, getState, now } from "../_shared.ts";
 
-export const description =
-  "Get full details on a specific incident including timeline and assigned resources.";
-
-export const parameters = {
-  type: "object",
-  properties: {
-    incidentId: { type: "string", description: "The incident ID" },
-  },
-  required: ["incidentId"],
-};
-
 export default async function execute(args: { incidentId: string }, ctx: { kv: KV }) {
   const state = await getState(ctx.kv);
   const inc = state.incidents[args.incidentId];

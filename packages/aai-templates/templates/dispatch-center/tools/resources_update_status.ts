@@ -1,22 +1,6 @@
 import type { KV, Resource } from "../_shared.ts";
 import { getState, now, recalculateAlertLevel, saveState } from "../_shared.ts";
 
-export const description = "Update a resource unit's status when it radios in.";
-
-export const parameters = {
-  type: "object",
-  properties: {
-    callsign: { type: "string", description: "The resource callsign" },
-    status: {
-      type: "string",
-      enum: ["available", "dispatched", "en_route", "on_scene", "returning"],
-      description: "New status",
-    },
-    notes: { type: "string", description: "Status notes" },
-  },
-  required: ["callsign", "status"],
-};
-
 export default async function execute(
   args: {
     callsign: string;

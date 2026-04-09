@@ -1,14 +1,3 @@
-export const description = "Save a source URL found during research for later analysis";
-
-export const parameters = {
-  type: "object",
-  properties: {
-    url: { type: "string", description: "The source URL" },
-    title: { type: "string", description: "Brief title or description" },
-  },
-  required: ["url", "title"],
-};
-
 export default async function execute(
   args: { url: string; title: string },
   ctx: {

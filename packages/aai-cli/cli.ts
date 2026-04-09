@@ -29,8 +29,8 @@ const pkgJson = JSON.parse(findPkgJson(cliDir));
 const VERSION: string = pkgJson.version;
 
 async function ensureAgent(cwd: string, yes?: boolean): Promise<string> {
-  const hasAgentJson = await fileExists(path.join(cwd, "agent.json"));
-  if (!hasAgentJson) {
+  const hasAgent = await fileExists(path.join(cwd, "agent.json"));
+  if (!hasAgent) {
     const { runInitCommand } = await import("./init.ts");
     return runInitCommand({ yes }, { quiet: true });
   }
@@ -347,5 +347,11 @@ if (process.env.VITEST !== "true") {
     // No argument or unknown flag → default to init
     process.argv.splice(2, 0, "init");
   }
-  void runMain(mainCommand);
+
+  // Prompt for API key before any command runs (skipped for help/version/test/build)
+  const skipApiKey = helpFlags.has(sub ?? "") || sub === "test" || sub === "build";
+  const boot = skipApiKey
+    ? Promise.resolve()
+    : import("./_config.ts").then((m) => m.ensureApiKey());
+  void boot.then(() => runMain(mainCommand));
 }

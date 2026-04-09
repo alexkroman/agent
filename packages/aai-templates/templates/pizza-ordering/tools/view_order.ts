@@ -1,7 +1,5 @@
 import { calculateTotal, type Pizza } from "../shared.ts";
 
-export const description = "View the current order summary with all pizzas and total price.";
-
 export default async function execute(
   _args: Record<string, never>,
   ctx: { kv: { get: <T>(k: string) => Promise<T | undefined> } },

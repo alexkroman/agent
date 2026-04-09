@@ -1,8 +1,5 @@
 import { calculateTotal, type Pizza } from "../shared.ts";
 
-export const description =
-  "Place the final order. Use when the customer confirms they are done and ready to order.";
-
 export default async function execute(
   _args: Record<string, never>,
   ctx: {

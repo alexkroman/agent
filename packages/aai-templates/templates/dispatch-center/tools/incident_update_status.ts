@@ -7,30 +7,6 @@ import {
   saveState,
 } from "../_shared.ts";
 
-export const description = "Update an incident's status (en_route, on_scene, resolved, escalated).";
-
-export const parameters = {
-  type: "object",
-  properties: {
-    incidentId: { type: "string", description: "The incident ID" },
-    status: {
-      type: "string",
-      enum: ["en_route", "on_scene", "resolved", "escalated"],
-      description: "New status",
-    },
-    notes: { type: "string", description: "Status update notes" },
-    casualtyUpdate: {
-      type: "object",
-      properties: {
-        confirmed: { type: "number" },
-        treated: { type: "number" },
-      },
-      description: "Updated casualty numbers",
-    },
-  },
-  required: ["incidentId", "status"],
-};
-
 export default async function execute(
   args: {
     incidentId: string;

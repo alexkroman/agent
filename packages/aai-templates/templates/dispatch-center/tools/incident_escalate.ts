@@ -8,27 +8,6 @@ import {
   saveState,
 } from "../_shared.ts";
 
-export const description =
-  "Escalate an incident when it exceeds current capacity or severity increases.";
-
-export const parameters = {
-  type: "object",
-  properties: {
-    incidentId: { type: "string", description: "The incident ID" },
-    reason: { type: "string", description: "Reason for escalation" },
-    requestMutualAid: {
-      type: "boolean",
-      description: "Whether to request mutual aid from neighboring jurisdictions",
-    },
-    newSeverity: {
-      type: "string",
-      enum: ["critical", "urgent"],
-      description: "Escalated severity level",
-    },
-  },
-  required: ["incidentId", "reason"],
-};
-
 export default async function execute(
   args: {
     incidentId: string;

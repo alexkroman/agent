@@ -11,11 +11,10 @@ import { createStorage } from "unstorage";
 import { agentToolsToSchemas, type ToolSchema, toAgentConfig } from "../isolate/_internal-types.ts";
 import { toolError } from "../isolate/_utils.ts";
 import { DEFAULT_SHUTDOWN_TIMEOUT_MS } from "../isolate/constants.ts";
-import { type AgentHooks, createAgentHooks } from "../isolate/hooks.ts";
 import type { Kv } from "../isolate/kv.ts";
 import type { ClientSink } from "../isolate/protocol.ts";
 import { buildReadyConfig, type ReadyConfig } from "../isolate/protocol.ts";
-import type { AgentDef, HookContext } from "../isolate/types.ts";
+import type { AgentDef } from "../isolate/types.ts";
 import { resolveAllBuiltins } from "./builtin-tools.ts";
 import type { Logger, S2SConfig } from "./runtime-config.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime-config.ts";
@@ -87,12 +86,6 @@ export type RuntimeOptions = {
    */
   executeTool?: ExecuteTool | undefined;
   /**
-   * Override lifecycle hooks. When provided, `createRuntime` skips building
-   * in-process hooks and uses these instead. Used by the platform sandbox
-   * to RPC hook calls to the isolate.
-   */
-  hooks?: AgentHooks | undefined;
-  /**
    * Override tool schemas sent to the S2S API. Required when `executeTool`
    * is provided (the host doesn't have the tool definitions to derive schemas).
    */
@@ -122,8 +115,6 @@ export type RuntimeOptions = {
 export type Runtime = AgentRuntime & {
   /** Execute a named tool with the given args, returning a JSON result string. */
   executeTool: ExecuteTool;
-  /** Hookable instance wired to the agent's lifecycle hooks. */
-  hooks: AgentHooks;
   /** Tool schemas registered with the S2S API (custom + built-in). */
   toolSchemas: ToolSchema[];
   /** Create a new voice session for a connected client (lower-level than startSession). */
@@ -163,15 +154,14 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   const sessions = new Map<string, Session>();
   const readyConfig: ReadyConfig = buildReadyConfig(s2sConfig);
 
-  // When overrides are provided (sandbox mode), skip in-process tool/hook setup
+  // When overrides are provided (sandbox mode), skip in-process tool setup
   let executeTool: ExecuteTool;
-  let hooks: AgentHooks;
   let toolSchemas: ToolSchema[];
   let toolGuidance: string[] = [];
 
   const builtinFetchOpt = opts.fetch ? { fetch: opts.fetch } : undefined;
 
-  if (opts.executeTool && opts.hooks && opts.toolSchemas) {
+  if (opts.executeTool && opts.toolSchemas) {
     // Sandbox mode — custom tools are RPC-backed; builtins run host-side
     const builtins = resolveAllBuiltins(agent.builtinTools ?? [], builtinFetchOpt);
     const rpcExecuteTool = opts.executeTool;
@@ -193,7 +183,6 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       return rpcExecuteTool(name, args, sessionId, messages);
     };
 
-    hooks = opts.hooks;
     toolSchemas = opts.toolSchemas;
     toolGuidance = opts.toolGuidance ?? [];
   } else {
@@ -214,17 +203,6 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     };
     const frozenEnv = Object.freeze({ ...env });
 
-    function makeHookContext(sessionId: string): HookContext {
-      return {
-        env: frozenEnv,
-        state: getState(sessionId),
-        sessionId,
-        get kv() {
-          return kv;
-        },
-      };
-    }
-
     executeTool = async (name, args, sessionId, messages) => {
       const tool = allTools[name];
       if (!tool) return toolError(`Unknown tool: ${name}`);
@@ -238,11 +216,6 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
         logger,
       });
     };
-
-    hooks = createAgentHooks({ agent, makeCtx: makeHookContext });
-    hooks.hook("disconnect", async (sessionId) => {
-      stateMap.delete(sessionId);
-    });
   }
 
   function createSession(sessionOpts: {
@@ -264,7 +237,6 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       s2sConfig,
       executeTool,
       ...(createWebSocket ? { createWebSocket } : {}),
-      hooks,
       skipGreeting: sessionOpts.skipGreeting ?? false,
       logger,
       ...(sessionOpts.resumeFrom ? { resumeFrom: sessionOpts.resumeFrom } : {}),
@@ -326,7 +298,6 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
 
   return {
     executeTool,
-    hooks,
     toolSchemas,
     createSession,
     startSession,

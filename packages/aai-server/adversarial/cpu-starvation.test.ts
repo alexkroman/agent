@@ -32,7 +32,7 @@ describe("cpu starvation", () => {
   test("tight infinite loop does not starve other agents or the host", async () => {
     const HOG_SLUG = "cpu-hog";
 
-    // CPU hog agent: enters tight infinite loop on connection via onConnect hook
+    // CPU hog agent: tool enters tight infinite loop when called
     await deployAdversarialAgent(
       env.serverUrl,
       HOG_SLUG,
@@ -41,8 +41,12 @@ describe("cpu starvation", () => {
         systemPrompt: "Test",
         greeting: "",
         maxSteps: 1,
-        tools: {},
-        onConnect: () => { while (true) {} },
+        tools: {
+          spin: {
+            description: "Spin forever",
+            execute() { while (true) {} },
+          },
+        },
       };`,
     );
 

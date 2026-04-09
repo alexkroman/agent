@@ -1,17 +1,3 @@
-export const description =
-  "Look up detailed information about a single medication, including purpose, warnings, dosage, side effects, and manufacturer. Works with both generic and brand names.";
-
-export const parameters = {
-  type: "object",
-  properties: {
-    name: {
-      type: "string",
-      description: "Medication name (generic or brand, e.g. 'ibuprofen' or 'Advil')",
-    },
-  },
-  required: ["name"],
-};
-
 function first(arr: string[] | undefined): string | undefined {
   return arr?.[0];
 }

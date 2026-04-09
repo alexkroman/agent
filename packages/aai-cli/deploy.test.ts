@@ -31,14 +31,15 @@ describe("runDeploy", () => {
     expect(result.slug).toBe("cool-cats-jump");
   });
 
-  test("sends manifest and bundles in body", async () => {
+  test("sends worker, clientFiles, and agentConfig in body", async () => {
     const mockFetch = vi.fn().mockResolvedValue(deployOk());
     await runDeploy(deployOpts(mockFetch));
     const [, init] = mockFetch.mock.calls[0] ?? [];
     const body = JSON.parse(init?.body as string);
-    expect(body.manifest.name).toBe("test-agent");
-    expect(body.toolBundles).toEqual({});
-    expect(body.hookBundles).toEqual({});
+    expect(body.worker).toBeTruthy();
+    expect(body.clientFiles).toEqual({});
+    expect(body.agentConfig.name).toBe("test-agent");
+    expect(body.agentConfig.toolSchemas).toEqual([]);
   });
 
   test("sends env vars in body", async () => {
@@ -95,5 +96,21 @@ describe("runDeploy", () => {
   test("413 throws with bundle size hint", async () => {
     const mockFetch = vi.fn().mockResolvedValue(new Response("too large", { status: 413 }));
     await expect(runDeploy(deployOpts(mockFetch))).rejects.toThrow("bundle is too large");
+  });
+
+  test("deploy body conforms to server DeployBodySchema", async () => {
+    // Import the real server schema to validate CLI deploy payload.
+    // This cross-package import catches format mismatches between CLI and server.
+    // biome-ignore lint/style/noRestrictedImports: intentional cross-package contract test
+    const { DeployBodySchema } = await import("../aai-server/schemas.ts");
+    const mockFetch = vi.fn().mockResolvedValue(deployOk());
+    await runDeploy(deployOpts(mockFetch));
+    const [, init] = mockFetch.mock.calls[0] ?? [];
+    const body = JSON.parse(init?.body as string);
+    const result = DeployBodySchema.safeParse(body);
+    expect(
+      result.success,
+      `Deploy body rejected by server schema: ${JSON.stringify(result.error?.issues, null, 2)}`,
+    ).toBe(true);
   });
 });

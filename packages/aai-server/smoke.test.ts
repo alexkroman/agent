@@ -25,14 +25,6 @@ function buildDeployBodyFromAgent(agent: AgentDef<any>): string {
   const agentConfig = {
     ...config,
     toolSchemas,
-    hasState: typeof agent.state === "function",
-    hooks: {
-      onConnect: typeof agent.onConnect === "function",
-      onDisconnect: typeof agent.onDisconnect === "function",
-      onError: typeof agent.onError === "function",
-      onUserTranscript: typeof agent.onUserTranscript === "function",
-      maxStepsIsFn: typeof agent.maxSteps === "function",
-    },
   };
 
   // The deploy body contains the bundled worker code (JS string),

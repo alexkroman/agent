@@ -5,7 +5,6 @@ import {
   makeClient,
   makeMockHandle,
   makeSessionOpts,
-  makeTestHooks,
   replayFixtureMessages,
 } from "./_test-utils.ts";
 import { _internals, createS2sSession, type S2sSessionOptions } from "./session.ts";
@@ -45,20 +44,13 @@ describe("fixture replay through session", () => {
     expect(types).toContain("reply_done"); // reply completed
   });
 
-  test("simple question: user transcript triggers onUserTranscript and builds conversation history", async () => {
-    const onUserTranscript = vi.fn();
-    const hooks = makeTestHooks({ userTranscript: onUserTranscript });
-    const { session, client, mockHandle } = setupReplay({ hooks });
+  test("simple question: user transcript builds conversation history", async () => {
+    const { session, client, mockHandle } = setupReplay();
     await session.start();
 
     const messages = loadFixture("simple-question-sequence.json");
     replayFixtureMessages(mockHandle, messages);
     await flush();
-
-    // onUserTranscript should have been called with the user's speech transcript
-    await vi.waitFor(() => expect(onUserTranscript).toHaveBeenCalled());
-    const turnText = onUserTranscript.mock.calls[0]?.[1] as string;
-    expect(turnText.toLowerCase()).toContain("space");
 
     // Client should see both greeting and answer as agent_transcript events
     const chatEvents = client.events.filter(

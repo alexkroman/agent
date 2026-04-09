@@ -9,12 +9,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, test } from "vitest";
-import {
-  HookResponseSchema,
-  IsolateConfigSchema,
-  ToolCallResponseSchema,
-  TurnConfigResultSchema,
-} from "./rpc-schemas.ts";
+import { IsolateConfigSchema, ToolCallResponseSchema } from "./rpc-schemas.ts";
 
 // ── Load fixtures ─────────────────────────────────────────────────────────
 
@@ -27,8 +22,8 @@ type Fixture = {
   version: number;
   IsolateConfig: Record<string, unknown>[];
   ToolCallResponse: Record<string, unknown>[];
-  HookResponse: Record<string, unknown>[];
-  TurnConfigResult: (Record<string, unknown> | null)[];
+  HookResponse?: Record<string, unknown>[];
+  TurnConfigResult?: (Record<string, unknown> | null)[];
 };
 
 function loadFixture(filename: string): Fixture {
@@ -73,28 +68,6 @@ describe.each(fixtureFiles)("compat fixture: %s", (filename: string) => {
       const result = ToolCallResponseSchema.safeParse(msg);
       if (!result.success) {
         throw new Error(compatError(filename, "ToolCallResponse", msg, result.error.message));
-      }
-    });
-  });
-
-  describe("HookResponse backward compat", () => {
-    test.each(
-      fixture.HookResponse.map((m, i) => [`#${i}`, m]),
-    )("%s parses against current schema", (_label: string, msg: unknown) => {
-      const result = HookResponseSchema.safeParse(msg);
-      if (!result.success) {
-        throw new Error(compatError(filename, "HookResponse", msg, result.error.message));
-      }
-    });
-  });
-
-  describe("TurnConfigResult backward compat", () => {
-    test.each(
-      fixture.TurnConfigResult.map((m, i) => [`#${i}`, m]),
-    )("%s parses against current schema", (_label: string, msg: unknown) => {
-      const result = TurnConfigResultSchema.safeParse(msg);
-      if (!result.success) {
-        throw new Error(compatError(filename, "TurnConfigResult", msg, result.error.message));
       }
     });
   });
