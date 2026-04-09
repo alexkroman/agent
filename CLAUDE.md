@@ -98,8 +98,9 @@ Five workspace packages under `packages/`:
 depend on these from consumer code; they may change without notice):
 
 - `./protocol` — wire-format types, Zod schemas, constants
-- `./isolate` — isolate-safe barrel: all modules safe for secure-exec V8 isolates
-- `./host` — host barrel: isolate kernel + host-only modules
+- `./isolate` — isolate-safe barrel: shared modules
+  (types, protocol, kv, hooks, utils)
+- `./host` — host barrel: host-only modules
 - `./hooks` — hook definitions for lifecycle events
 - `./utils` — shared utility functions
 - `./vite-plugin` — Vite integration plugin for agent bundling
@@ -118,13 +119,11 @@ type test updates.
 
 Binary: `aai` — subcommands: init, dev, test, build, deploy, delete, secret
 
-### Isolate / host boundary
+### SDK structure
 
-The SDK is split into two compilation zones:
+The SDK is organized into two directories:
 
-- **`isolate/`** — modules that run inside secure-exec V8 isolates.
-  Compiled under a restricted `tsconfig.json` (`"types": []`, no
-  `@types/node`). Any `node:*` import is a **type error**. Contains:
+- **`isolate/`** — shared modules with no Node.js dependencies. Contains:
   `types.ts`, `kv.ts`, `_kv-utils.ts`, `hooks.ts`, `_utils.ts`,
   `constants.ts`, `protocol.ts`, `system-prompt.ts`, `_internal-types.ts`.
 - **`host/`** — host-only modules that require Node.js APIs. Contains:
@@ -134,8 +133,9 @@ The SDK is split into two compilation zones:
   `vite-plugin.ts`, `testing.ts`, `matchers.ts`.
 
 When adding new SDK code, place it in `isolate/` if it has no `node:`
-dependencies. The isolate typecheck (`tsc -p isolate/tsconfig.json`)
-runs as part of `pnpm typecheck` and will catch violations.
+dependencies. The guest harness (`guest/harness.ts`) runs full Node.js
+inside each Firecracker VM with all deps bundled by esbuild — no import
+restrictions apply there.
 
 ### Key files
 
@@ -172,11 +172,15 @@ runs as part of `pnpm typecheck` and will catch violations.
 #### packages/aai-server/
 
 - `orchestrator.ts` — HTTP + WebSocket routing
-- `sandbox.ts` — V8 isolate management
-- `sandbox-harness.ts` — sandbox execution environment
+- `sandbox.ts` — Firecracker VM management
+- `sandbox-vm.ts` — per-agent VM lifecycle (boot, snapshot restore, teardown)
 - `sandbox-network.ts` — network proxying for sandbox
 - `sandbox-slots.ts` — slot allocation for concurrent sessions
-- `harness-runtime.ts` — code that runs inside the isolate
+- `firecracker.ts` — Firecracker API client (jailer + VMM HTTP API)
+- `vsock.ts` — JSON-over-vsock host↔guest communication
+- `snapshot.ts` — base snapshot creation and restore for fast startup
+- `guest/harness.ts` — guest entry point (runs as PID 1 in initrd)
+- `guest/harness-logic.ts` — guest agent execution logic
 - `transport-websocket.ts` — WebSocket transport layer
 - `auth.ts` — authentication/authorization
 - `credentials.ts` — credential derivation
@@ -299,6 +303,14 @@ bumped automatically.
   fails (new deps added on the branch).
 - Never edit `pnpm-lock.yaml` directly — always use `pnpm install`.
 
+### Firecracker / KVM notes
+
+- Firecracker integration tests require KVM access. Run via:
+  `./packages/aai-server/guest/docker-test.sh`
+- On macOS (dev), Firecracker is unavailable. The sandbox falls back to a
+  plain child process with no VM isolation. This is expected — the security
+  boundary only applies in Linux production deployments.
+
 ### Updating CLAUDE.md
 
 When you make changes that affect architecture, security model, conventions,
@@ -337,108 +349,59 @@ catches the most common issues that historically required follow-up commits:
 
 ## Security architecture
 
-### Secure-exec isolate constraint
+### Firecracker VM isolation
 
-`harness-runtime.ts` runs inside a secure-exec V8 isolate with **no access
-to `node_modules`**. Only `node:*` built-ins and the virtual filesystem
-files (harness JS + agent bundle) are available.
+Each agent session runs in its own **Firecracker microVM**. The guest runs
+a static Node.js binary as PID 1 in a minimal initrd, executing the bundled
+agent code (`guest/harness.ts`). Host↔guest communication is via
+JSON-over-vsock (newline-delimited JSON).
 
-Rules for `harness-runtime.ts`:
+Key properties:
 
-- **Only use `import type`** from workspace packages and npm deps — never
-  runtime imports. Any runtime import (e.g. Zod schemas) will cause the
-  isolate to fail to boot, manifesting as timeout errors in integration tests.
-- The harness entry in `tsdown.config.ts` must **not** use `noExternal` —
-  bundling workspace packages would still leave transitive npm deps (like
-  `zod`) external and unresolvable in the isolate.
-- Host-side validation (in `sandbox.ts`) is sufficient. The isolate trusts
-  the host since they run in the same server process.
-- `sandbox-harness.ts` manages the sandbox execution environment on the
-  host side.
+- **Hardware isolation**: separate kernel, page tables, and memory per VM.
+  No shared memory between agents.
+- **No network device**: the VM has no network interface. Agent outbound
+  calls are proxied through the host via vsock RPC.
+- **No writable filesystem**: initrd is loaded into RAM; no persistent disk.
+- **Fast startup**: base snapshot pre-booted; sessions restore in ~100ms.
+- **Full Node.js in guest**: esbuild bundles all npm deps into the harness.
+  No `import type` restriction — the guest can import anything.
+- **Dev mode (macOS)**: Firecracker unavailable; sandbox falls back to a
+  plain child process with no VM isolation.
 
 ### Platform sandbox (aai-server)
 
-Agent code runs in **secure-exec V8 isolates** with strict permission
-boundaries. Key files: `packages/aai-server/sandbox.ts`,
-`sandbox-harness.ts`, `harness-runtime.ts`.
+Agent code runs in **per-agent Firecracker microVMs**. Key files:
+`packages/aai-server/sandbox.ts`, `sandbox-vm.ts`, `firecracker.ts`,
+`vsock.ts`, `snapshot.ts`, `guest/harness.ts`, `guest/harness-logic.ts`.
 
 **Isolation layers:**
 
-- **Filesystem**: Read-only in-memory virtual FS. No write/delete/mkdir.
-- **Network**: Fully disabled. All host↔isolate communication uses
-  secure-exec bindings (V8 bridge IPC). No loopback ports, no HTTP
-  servers, no TCP connections.
-- **Child processes**: All subprocess spawning disabled.
-- **Env vars**: Only `AAI_ENV_*` prefixed vars are readable. Platform
-  secrets (e.g. `ASSEMBLYAI_API_KEY`) stay host-side.
-- **Memory**: 128 MB limit per isolate.
-- **Timing**: `timingMitigation: "freeze"` prevents side-channel attacks.
+- **Filesystem**: initrd in RAM, no writable mounts.
+- **Network**: no network device in VM. All external calls proxy through host.
+- **Memory**: separate physical pages per VM (KVM hardware isolation).
+- **Env vars**: only `AAI_ENV_*` prefixed vars forwarded to guest. Platform
+  secrets stay host-side.
 
 **Credential separation:**
 
 `SandboxOptions` has separate `apiKey` (platform, host-only) and `agentEnv`
-(user secrets, forwarded to isolate) fields. Platform keys are structurally
-prevented from entering sandboxes — separate fields in the type system, not
-a denylist.
+(user secrets, forwarded to guest) fields. Platform keys are structurally
+prevented from entering VMs — separate fields in the type system, not a denylist.
 
 **Cross-agent isolation:**
 
 - KV keys prefixed `kv:{keyHash}:{slug}:{key}` — agents cannot access
   each other's data.
-- Each sandbox communicates via isolated bindings (V8 bridge IPC).
-- Sessions are per-sandbox (`Map<string, Session>`).
-- No shared mutable state between sandboxes.
-
-**OS-level process jail (aai-server, Linux only):**
-
-The secure-exec Rust V8 child process runs inside an **nsjail** sandbox
-on Linux production deployments. This provides defense-in-depth against
-V8 engine exploits that could escape the isolate boundary.
-
-nsjail enforces:
-
-- **Mount namespace**: read-only root, only the Rust binary and shared
-  libraries bind-mounted. UDS socket dir is the sole writable mount.
-- **PID namespace**: process sees only itself.
-- **Network namespace**: empty (no interfaces). UDS still works via
-  bind-mounted socket dir.
-- **IPC namespace**: isolated inter-process communication.
-- **UTS namespace**: hostname set to "sandbox".
-- **Cgroup namespace**: isolates cgroup tree visibility.
-- **seccomp-bpf**: syscall allowlist in `seccomp-allowlist.json`.
-  Supports argument filtering (e.g. `socket()` restricted to
-  `AF_UNIX` only via Kafel `arg0 == 1`).
-- **Capabilities**: all dropped.
-- **cgroups v2**: memory and PID limits.
-- **rlimits**: all set to HARD (including `nproc` as a second
-  enforcement layer on top of cgroup PID limits).
-
-**Important:** All sandboxes share a single Rust V8 runtime process
-(secure-exec singleton). The nsjail jail wraps this one shared process.
-Cross-sandbox isolation within the process is enforced at the V8
-session/context level, not at the OS level. Per-sandbox OS jails are
-not possible with the current secure-exec architecture.
-
-On macOS (dev), the jail is skipped with a warning. Requires `nsjail`
-on `$PATH` (installed via `apt-get install nsjail` in the Dockerfile).
-
-Key files: `process-jail.ts`, `jail-config.ts`, `seccomp-policy.ts`,
-`seccomp-allowlist.json`.
-
-When upgrading secure-exec, run `pnpm --filter @alexkroman1/aai-server
-test:integration` on Linux to verify the seccomp allowlist is still
-sufficient. Update `seccomp-allowlist.json` if new syscalls are needed.
-
-A `pnpm patch` on `@secure-exec/v8` adds `SECURE_EXEC_V8_WRAPPER` env
-var support. When secure-exec ships the `v8Runtime` option on
-`createNodeRuntimeDriverFactory`, remove the patch and use the clean API.
+- Each VM communicates via an isolated vsock channel.
+- Sessions are per-VM (`Map<string, Session>`).
+- No shared mutable state between VMs.
 
 **`run_code` built-in tool (aai/builtin-tools.ts):**
 
 - Each invocation runs in a **fresh `node:vm` context** — isolated from
   other invocations. Note: `node:vm` is not a security sandbox; in
-  platform mode, the secure-exec V8 isolate provides the security
-  boundary.
+  platform mode, the Firecracker microVM provides the security boundary.
 - No network, no filesystem access, no child processes, no env vars.
 - 5-second execution timeout.
 - Context is discarded after execution — no state leaks.
@@ -464,12 +427,11 @@ var support. When secure-exec ships the `v8Runtime` option on
 
 ### Testing security boundaries
 
-- `process-jail.integration.test.ts` — post-V8-escape nsjail hardening:
-  process spawning, env isolation, filesystem read-only, cgroup/PID/network/
-  IPC namespace isolation, seccomp enforcement, capability dropping.
-  Run: `pnpm --filter @alexkroman1/aai-server test:integration` (Linux only)
-- `sandbox-integration.test.ts` — network, filesystem, process, env
-  isolation e2e. Run: `pnpm --filter @alexkroman1/aai-server test:integration`
+- `firecracker-integration.test.ts` — VM isolation e2e: network, filesystem,
+  process, env isolation inside Firecracker VMs. Requires KVM (Linux).
+  Run via: `./packages/aai-server/guest/docker-test.sh`
+- `sandbox-integration.test.ts` — sandbox lifecycle and slot management e2e.
+  Run: `pnpm --filter @alexkroman1/aai-server test:integration`
 - `builtin-tools.test.ts` — `run_code` sandbox security boundaries
   (network, filesystem, process, env, constructor chain bypass,
   cross-invocation isolation).

@@ -50,7 +50,7 @@ describe("bundleAgent", () => {
 });
 
 describe("bundleAgent: zod externalization", () => {
-  test("worker bundle must not contain zod — it crashes secure-exec isolates", async () => {
+  test("worker bundle must not contain zod — guest VM uses a lightweight shim", async () => {
     const { bundleAgent } = await import("./_bundler.ts");
     const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "aai_bundle_"));
     try {

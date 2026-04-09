@@ -1,0 +1,118 @@
+# Dockerfile.firecracker — Firecracker integration test environment.
+#
+# Multi-stage build:
+#   Stage 1 (kernel-builder): Compiles minimal Linux kernel (vmlinux)
+#   Stage 2 (initrd-builder): Builds static Node.js initrd with guest harness
+#   Stage 3 (test):           Installs Firecracker, copies artifacts, runs tests
+#
+# The kernel build takes ~10-30 minutes but caches aggressively — kernel.config
+# changes rarely. Subsequent rebuilds only redo stages that changed.
+#
+# Usage:
+#   docker build -f packages/aai-server/guest/Dockerfile.firecracker \
+#     -t aai-firecracker-test .
+#   docker run --device /dev/kvm --privileged aai-firecracker-test
+
+# ── Stage 1: Download Firecracker-compatible kernel ──────────────────────────
+#
+# Uses a pre-built kernel from Firecracker's quickstart guide.
+# For production, use build-kernel.sh + kernel.config to compile a custom
+# minimal kernel. For CI/testing, the quickstart kernel is sufficient.
+
+FROM ubuntu:24.04 AS kernel-builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /build/out \
+    && ARCH=$(uname -m) \
+    && curl -fsSL \
+       "https://s3.amazonaws.com/spec.ccfc.min/img/quickstart_guide/${ARCH}/kernels/vmlinux.bin" \
+       -o /build/out/vmlinux
+
+# ── Stage 2: Build initrd ────────────────────────────────────────────────────
+#
+# Use Alpine as the base — it ships musl-linked Node.js which can run in a
+# minimal initrd without glibc. The node binary + musl libs are copied into
+# the initrd by build-initrd.sh.
+
+FROM node:22-alpine AS initrd-builder
+
+WORKDIR /app
+
+# Install pnpm and initrd build tools (socat bridges vsock ↔ node stdio)
+RUN corepack enable && corepack prepare pnpm@10.29.3 --activate \
+    && apk add --no-cache cpio gzip socat
+
+# Copy workspace config and lockfile first (layer cache)
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/aai/package.json packages/aai/
+COPY packages/aai-server/package.json packages/aai-server/
+
+# Install dependencies
+RUN pnpm install --frozen-lockfile --ignore-scripts --prod=false
+
+# Copy source
+COPY packages/aai/ packages/aai/
+COPY packages/aai-server/ packages/aai-server/
+COPY tsconfig.json ./
+
+# Build SDK + server (produces dist/guest/harness.js)
+RUN pnpm --filter @alexkroman1/aai build \
+    && pnpm --filter @alexkroman1/aai-server build
+
+# Build initrd.cpio.gz using the guest build script
+COPY packages/aai-server/guest/build-initrd.sh /build/build-initrd.sh
+RUN chmod +x /build/build-initrd.sh \
+    && NODE_BINARY=/usr/local/bin/node \
+       /build/build-initrd.sh /build/out /app/packages/aai-server/dist/guest/harness.mjs
+
+# ── Stage 3: Test environment ────────────────────────────────────────────────
+
+FROM node:22-slim AS test
+
+WORKDIR /app
+
+# Install Firecracker binary from GitHub releases
+ARG FIRECRACKER_VERSION=1.12.0
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
+    && ARCH=$(uname -m) \
+    && curl -fsSL "https://github.com/firecracker-microvm/firecracker/releases/download/v${FIRECRACKER_VERSION}/firecracker-v${FIRECRACKER_VERSION}-${ARCH}.tgz" \
+       -o /tmp/firecracker.tgz \
+    && tar -xf /tmp/firecracker.tgz -C /tmp \
+    && mv "/tmp/release-v${FIRECRACKER_VERSION}-${ARCH}/firecracker-v${FIRECRACKER_VERSION}-${ARCH}" /usr/local/bin/firecracker \
+    && chmod +x /usr/local/bin/firecracker \
+    && rm -rf /tmp/firecracker.tgz "/tmp/release-v${FIRECRACKER_VERSION}-${ARCH}" \
+    && apt-get remove -y curl && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install pnpm
+RUN corepack enable && corepack prepare pnpm@10.29.3 --activate
+
+# Copy guest artifacts from build stages
+RUN mkdir -p /app/packages/aai-server/guest/dist
+COPY --from=kernel-builder /build/out/vmlinux /app/packages/aai-server/guest/dist/vmlinux
+COPY --from=initrd-builder /build/out/initrd.cpio.gz /app/packages/aai-server/guest/dist/initrd.cpio.gz
+
+# Copy workspace config and lockfile (layer cache)
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/aai/package.json packages/aai/
+COPY packages/aai-server/package.json packages/aai-server/
+
+# Install all deps (dev too — needed for vitest)
+RUN pnpm install --frozen-lockfile --ignore-scripts --prod=false
+
+# Copy full source for running tests
+COPY packages/aai/ packages/aai/
+COPY packages/aai-server/ packages/aai-server/
+COPY tsconfig.json vitest.shared.ts ./
+
+# Build SDK (tests resolve via @dev/source but some need dist)
+RUN pnpm --filter @alexkroman1/aai build \
+    && pnpm --filter @alexkroman1/aai-server build
+
+# Verify /dev/kvm will be available at runtime (informational)
+RUN echo "Firecracker test image built. Run with: docker run --device /dev/kvm --privileged <image>"
+
+CMD ["pnpm", "--filter", "@alexkroman1/aai-server", "exec", "vitest", "run", "--config", "vitest.firecracker.config.ts"]

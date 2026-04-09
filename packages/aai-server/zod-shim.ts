@@ -1,8 +1,8 @@
 /**
- * Lightweight zod shim for secure-exec isolates.
+ * Lightweight zod shim for agent bundles.
  *
  * Agent bundles externalise zod (its 440KB module evaluation is too heavy
- * for isolates). This shim provides just enough API surface for
+ * for guest VMs). This shim provides just enough API surface for
  * `defineAgent()` and `defineTool()` to run: schema construction methods
  * return chainable proxy objects, and `.parse()` passes the input through.
  *

@@ -5,10 +5,9 @@ export default defineConfig({
   ...sharedConfig,
   test: {
     include: [
-      "sandbox-integration.test.ts",
-      "sandbox-lifecycle.test.ts",
+      "orchestrator-integration.test.ts",
       "ws-integration.test.ts",
-      "process-jail.integration.test.ts",
+      "fake-vm-integration.test.ts",
     ],
     testTimeout: 30_000,
     hookTimeout: 30_000,

@@ -38,7 +38,7 @@
       "ignore": ["**"]
     },
     "packages/aai-server": {
-      "entry": ["**/*.test.ts"],
+      "entry": ["**/*.test.ts", "guest/fake-vm.ts"],
       "includeEntryExports": true,
       "ignoreDependencies": ["@types/json-schema"]
     }

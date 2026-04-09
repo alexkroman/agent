@@ -6,11 +6,6 @@
   ],
   "versionGroups": [
     {
-      "label": "Ensure secure-exec stays in sync across aai and aai-server",
-      "dependencies": ["secure-exec"],
-      "policy": "sameRange"
-    },
-    {
       "label": "Ensure zod stays in sync across all packages",
       "dependencies": ["zod"],
       "policy": "sameRange"

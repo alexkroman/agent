@@ -6,22 +6,19 @@
  * live in @alexkroman1/aai/constants. This file holds server-specific values.
  */
 
-// ─── Sandbox isolate ─────────────────────────────────────────────────────
+// -- Firecracker VM ---------------------------------------------------
 
-/** Memory limit for sandbox isolates (MB). Most templates use 0.3–26 MB at boot. */
-export const SANDBOX_MEMORY_LIMIT_MB = 64;
+/** Memory allocated per Firecracker microVM (MiB). */
+export const VM_MEMORY_MIB = 64;
 
-// ─── Slot lifecycle ──────────────────────────────────────────────────────
+/** vCPUs per Firecracker microVM. */
+export const VM_VCPU_COUNT = 1;
 
-/**
- * Max RSS in MB before evicting cold slots / rejecting new spawns.
- * Set to 85% of 2048 MB. This is the sole admission gate — isolates are
- * cheap (~1 MB each), so a fixed slot count is unnecessary.
- *
- * Note: SECURE_EXEC_V8_MAX_SESSIONS env var must be set high enough in
- * production to avoid session creation failures in the Rust V8 runtime.
- */
-export const MAX_RSS_MB = Number(process.env.MAX_RSS_MB) || 1740;
+/** Maximum concurrent VMs. New agents rejected with 503 at this cap. */
+export const MAX_VMS = Number(process.env.MAX_VMS) || 50;
+
+/** Kill idle VMs after this many milliseconds with no active sessions. */
+export const IDLE_TIMEOUT_MS = Number(process.env.IDLE_TIMEOUT_MS) || 30_000;
 
 // ─── Auth ────────────────────────────────────────────────────────────────
 
@@ -48,8 +45,3 @@ export const MAX_WORKER_SIZE = 10_000_000;
 export function agentKvPrefix(slug: string): string {
   return `agents/${slug}/kv`;
 }
-
-// ─── Process jail ───────────────────────────────────────────────────────
-
-/** Total memory limit for nsjail cgroup (V8 heap + Rust runtime overhead, MB). */
-export const JAIL_MEMORY_LIMIT_MB = 128;
