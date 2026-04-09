@@ -135,8 +135,15 @@ const test = defineCommand({
     if (mode === "json") silenceOutput();
     await handleErrors(mode, async () => {
       const cwd = await setup();
-      const { runTestCommand } = await import("./test.ts");
-      await runTestCommand(cwd);
+      const { executeTest } = await import("./test.ts");
+      const { withOutput } = await import("./_output.ts");
+      await withOutput(
+        mode,
+        () => executeTest(cwd),
+        () => {
+          /* human output handled inside */
+        },
+      );
     });
   },
 });
