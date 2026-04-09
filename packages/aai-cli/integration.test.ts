@@ -44,12 +44,8 @@ function getReq(index: number) {
 async function withProjectDir(fn: (dir: string) => Promise<void>): Promise<void> {
   await withTempDir(async (dir) => {
     await writeProjectConfig(dir, { slug: "my-agent", serverUrl: api.url });
-    process.env.ASSEMBLYAI_API_KEY = "test-key";
-    try {
-      await fn(dir);
-    } finally {
-      delete process.env.ASSEMBLYAI_API_KEY;
-    }
+    await fs.writeFile(path.join(dir, ".env"), "ASSEMBLYAI_API_KEY=test-key\n");
+    await fn(dir);
   });
 }
 
@@ -245,12 +241,8 @@ describe("secrets against mock API", () => {
   test("secret with 401 throws API key hint", async () => {
     await withTempDir(async (dir) => {
       await writeProjectConfig(dir, { slug: "my-agent", serverUrl: api.url });
-      process.env.ASSEMBLYAI_API_KEY = "invalid-key";
-      try {
-        await expect(runSecretList(dir, api.url)).rejects.toThrow("API key may be invalid");
-      } finally {
-        delete process.env.ASSEMBLYAI_API_KEY;
-      }
+      await fs.writeFile(path.join(dir, ".env"), "ASSEMBLYAI_API_KEY=invalid-key\n");
+      await expect(runSecretList(dir, api.url)).rejects.toThrow("API key may be invalid");
     });
   });
 });
@@ -373,12 +365,8 @@ describe("missing project config", () => {
 
   test("secret list with no .aai/project.json throws", async () => {
     await withTempDir(async (dir) => {
-      process.env.ASSEMBLYAI_API_KEY = "test-key";
-      try {
-        await expect(runSecretList(dir, api.url)).rejects.toThrow("No .aai/project.json found");
-      } finally {
-        delete process.env.ASSEMBLYAI_API_KEY;
-      }
+      await fs.writeFile(path.join(dir, ".env"), "ASSEMBLYAI_API_KEY=test-key\n");
+      await expect(runSecretList(dir, api.url)).rejects.toThrow("No .aai/project.json found");
     });
   });
 });

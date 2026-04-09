@@ -5,7 +5,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import { defineCommand, runMain } from "citty";
-import { ensureApiKeyInEnv } from "./_config.ts";
 import { CliError, fail, getOutputMode, type OutputMode } from "./_output.ts";
 import { silenceOutput } from "./_ui.ts";
 import { fileExists, resolveCwd } from "./_utils.ts";
@@ -39,16 +38,15 @@ async function ensureAgent(cwd: string, yes?: boolean): Promise<string> {
   return cwd;
 }
 
-/** Shared command setup: resolve cwd, optionally scaffold agent and check API key. */
+/** Shared command setup: resolve cwd, optionally scaffold agent. */
 async function setup(
   args?: { yes?: boolean | undefined },
-  opts?: { agent?: boolean; apiKey?: boolean },
+  opts?: { agent?: boolean },
 ): Promise<string> {
   let cwd = resolveCwd();
   if (opts?.agent) {
     cwd = await ensureAgent(cwd, args?.yes);
   }
-  if (opts?.apiKey) await ensureApiKeyInEnv();
   return cwd;
 }
 
@@ -131,7 +129,7 @@ const dev = defineCommand({
   async run({ args }) {
     const mode = resolveMode(args);
     await handleErrors(mode, async () => {
-      const cwd = await setup(args, { agent: true, apiKey: true });
+      const cwd = await setup(args, { agent: true });
       const { executeDev } = await import("./dev.ts");
       const { withOutput } = await import("./_output.ts");
       await withOutput(
@@ -256,7 +254,7 @@ const secretPut = defineCommand({
     const mode = getOutputMode(args);
     if (mode === "json") silenceOutput();
     await handleErrors(mode, async () => {
-      const cwd = await setup(undefined, { apiKey: true });
+      const cwd = await setup();
       const { executeSecretPut, readStdin } = await import("./secret.ts");
       const { withOutput } = await import("./_output.ts");
 
@@ -288,7 +286,7 @@ const secretDelete = defineCommand({
     const mode = getOutputMode(args);
     if (mode === "json") silenceOutput();
     await handleErrors(mode, async () => {
-      const cwd = await setup(undefined, { apiKey: true });
+      const cwd = await setup();
       const { executeSecretDelete } = await import("./secret.ts");
       const { withOutput } = await import("./_output.ts");
       await withOutput(
@@ -312,7 +310,7 @@ const secretList = defineCommand({
     const mode = getOutputMode(args);
     if (mode === "json") silenceOutput();
     await handleErrors(mode, async () => {
-      const cwd = await setup(undefined, { apiKey: true });
+      const cwd = await setup();
       const { executeSecretList } = await import("./secret.ts");
       const { withOutput } = await import("./_output.ts");
       await withOutput(

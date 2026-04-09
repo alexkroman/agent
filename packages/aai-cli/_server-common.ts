@@ -5,7 +5,6 @@ import path from "node:path";
 import type { AgentServer } from "@alexkroman1/aai/server";
 import type { AgentDef } from "@alexkroman1/aai/types";
 import { parseEnvFile } from "@alexkroman1/aai/utils";
-import { getApiKey } from "./_config.ts";
 
 export { parseEnvFile } from "@alexkroman1/aai/utils";
 
@@ -41,8 +40,8 @@ export async function loadAgentDef(cwd: string): Promise<AgentDef> {
 /**
  * Build the `ctx.env` record that agent tools will see at runtime.
  *
- * Only variables explicitly declared in `.env` (plus `ASSEMBLYAI_API_KEY`)
- * are included — matching the platform sandbox behavior where `ctx.env`
+ * Only variables explicitly declared in `.env` are included — matching
+ * the platform sandbox behavior where `ctx.env`
  * contains only secrets set via `aai secret put`. This prevents agents
  * from accidentally depending on shell-level vars (PATH, HOME, etc.) that
  * won't exist in production.
@@ -78,10 +77,6 @@ export async function resolveServerEnv(
     if (val !== undefined) env[key] = val;
   }
 
-  if (!env.ASSEMBLYAI_API_KEY) {
-    const key = source.ASSEMBLYAI_API_KEY ?? (await getApiKey());
-    env.ASSEMBLYAI_API_KEY = key;
-  }
   return env;
 }
 
