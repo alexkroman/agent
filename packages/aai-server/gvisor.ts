@@ -84,7 +84,15 @@ export function createGvisorSandbox(opts: {
   const containerId = `aai-${opts.slug}-${Date.now()}`;
   const child = spawn(
     "runsc",
-    ["--platform=systrap", "--network=none", "run", "--bundle", bundleDir, containerId],
+    [
+      "--rootless",
+      "--platform=systrap",
+      "--network=none",
+      "run",
+      "--bundle",
+      bundleDir,
+      containerId,
+    ],
     { stdio: ["pipe", "pipe", "pipe"] },
   );
 

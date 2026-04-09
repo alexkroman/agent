@@ -1,6 +1,9 @@
 # Dockerfile.gvisor — gVisor integration test environment.
 # No KVM required. Uses runsc in systrap mode.
 #
+# gVisor only supports x86_64. Cannot run on Apple Silicon (even emulated).
+# Run on native x86_64 Linux or GitHub Actions ubuntu-latest.
+#
 # Usage:
 #   docker build -f packages/aai-server/guest/Dockerfile.gvisor -t aai-gvisor-test .
 #   docker run --rm --security-opt seccomp=unconfined aai-gvisor-test
@@ -9,13 +12,14 @@ FROM node:22-slim
 
 WORKDIR /app
 
-# Install gVisor (runsc)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      ca-certificates curl gnupg \
-    && curl -fsSL https://gvisor.dev/archive.key | gpg --dearmor -o /usr/share/keyrings/gvisor.gpg \
-    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/gvisor.gpg] https://storage.googleapis.com/gvisor/releases release main" \
-       > /etc/apt/sources.list.d/gvisor.list \
-    && apt-get update && apt-get install -y runsc \
+# Install gVisor (runsc) from GitHub releases — the apt repo ships a 2022 build
+# that doesn't support systrap. Download the latest release binary directly.
+# Install runsc from gVisor's latest release (x86_64 only)
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
+    && curl -fsSL "https://storage.googleapis.com/gvisor/releases/release/latest/x86_64/runsc" \
+       -o /usr/local/bin/runsc \
+    && chmod +x /usr/local/bin/runsc \
+    && apt-get remove -y curl && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install pnpm

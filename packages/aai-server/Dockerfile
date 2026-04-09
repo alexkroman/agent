@@ -34,15 +34,12 @@ FROM node:22-slim
 
 WORKDIR /app
 
-# Install gVisor (runsc)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      ca-certificates curl gnupg \
-    && curl -fsSL https://gvisor.dev/archive.key | gpg --dearmor -o /usr/share/keyrings/gvisor.gpg \
-    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/gvisor.gpg] https://storage.googleapis.com/gvisor/releases release main" \
-       > /etc/apt/sources.list.d/gvisor.list \
-    && apt-get update && apt-get install -y runsc \
-    && apt-get remove -y curl gnupg \
-    && apt-get autoremove -y \
+# Install gVisor (runsc) — x86_64 only
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
+    && curl -fsSL "https://storage.googleapis.com/gvisor/releases/release/latest/x86_64/runsc" \
+       -o /usr/local/bin/runsc \
+    && chmod +x /usr/local/bin/runsc \
+    && apt-get remove -y curl && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 
 RUN corepack enable && corepack prepare pnpm@10.29.3 --activate
