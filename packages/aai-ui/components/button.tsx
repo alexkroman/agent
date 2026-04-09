@@ -1,7 +1,10 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+/** @jsxImportSource react */
+
 import clsx from "clsx";
-import type * as preact from "preact";
+import type { CSSProperties, ReactNode } from "react";
+import { useTheme } from "../context.ts";
 
 /**
  * Visual style of a {@link Button}.
@@ -24,7 +27,7 @@ export type ButtonVariant = "default" | "secondary" | "ghost";
  */
 export type ButtonSize = "default" | "lg";
 
-const LG_STYLE: preact.JSX.CSSProperties = {
+const LG_STYLE: CSSProperties = {
   display: "grid",
   placeItems: "center",
   appearance: "none",
@@ -62,24 +65,45 @@ export function Button({
   size = "default",
   className,
   children,
+  style,
   ...rest
 }: {
   variant?: ButtonVariant;
   size?: ButtonSize;
   className?: string;
-  children?: preact.ComponentChildren;
-} & Omit<preact.JSX.HTMLAttributes<HTMLButtonElement>, "className">) {
+  children?: ReactNode;
+} & Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "className">) {
+  const theme = useTheme();
+
+  let variantStyle: CSSProperties;
+  if (variant === "default") {
+    variantStyle = { background: theme.primary, color: "#fff", borderColor: "transparent" };
+  } else if (variant === "secondary") {
+    variantStyle = {
+      background: "rgba(255,255,255,0.059)",
+      color: "rgba(255,255,255,0.618)",
+      borderColor: theme.border,
+    };
+  } else {
+    variantStyle = {
+      background: "transparent",
+      color: "rgba(255,255,255,0.618)",
+      borderColor: theme.border,
+    };
+  }
+
   return (
     <button
       type="button"
-      style={size === "lg" ? LG_STYLE : undefined}
-      class={clsx(
+      style={{
+        ...(size === "lg" ? LG_STYLE : undefined),
+        ...variantStyle,
+        ...style,
+      }}
+      className={clsx(
         size !== "lg" &&
           "flex items-center justify-center appearance-none m-0 h-8 px-3 py-1.5 w-fit leading-none",
         "rounded-aai text-sm font-medium cursor-pointer border outline-none",
-        variant === "secondary" && "bg-aai-surface-hover text-aai-text-secondary border-aai-border",
-        variant === "ghost" && "bg-transparent text-aai-text-secondary border-aai-border",
-        variant === "default" && "bg-aai-primary text-white border-transparent",
         className,
       )}
       {...rest}

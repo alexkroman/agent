@@ -1,32 +1,77 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import type { ComponentType } from "preact";
-// biome-ignore lint/suspicious/noDeprecatedImports: preact v10 render API is current
-import { render } from "preact";
-import { ClientConfigProvider, type ClientTheme, SessionProvider } from "./context.ts";
-import { createVoiceSession, type VoiceSession, type WebSocketConstructor } from "./session.ts";
+/** @jsxImportSource react */
+
+import { type ComponentType, createElement } from "react";
+import { flushSync } from "react-dom";
+import { createRoot } from "react-dom/client";
+import { ChatView } from "./components/chat-view.tsx";
+import { SidebarLayout } from "./components/sidebar-layout.tsx";
+import { StartScreen } from "./components/start-screen.tsx";
+import { ToolConfigContext, type ToolDisplayConfig } from "./components/tool-config-context.ts";
+import { SessionProvider, ThemeProvider } from "./context.ts";
+import { createSessionCore, type SessionCore, type WebSocketConstructor } from "./session-core.ts";
+import type { ClientTheme } from "./types.ts";
+
+// ─── Config types ─────────────────────────────────────────────────────────────
 
 /**
- * Options for {@link defineClient}.
+ * Base options shared by both defineClient tiers.
  *
  * @public
  */
-export type ClientOptions = {
+type BaseOptions = {
   /** CSS selector or DOM element to render into. Defaults to `"#app"`. */
   target?: string | HTMLElement;
   /** Base URL of the AAI platform server. Derived from `location.href` by default. */
   platformUrl?: string;
-  /** Agent title shown in the header and start screen. */
-  title?: string;
   /** Theme color overrides. */
   theme?: ClientTheme;
   /** Called when the server sends a session ID. Store it for reconnection. */
-  onSessionId?: ((sessionId: string) => void) | undefined;
+  onSessionId?: (sessionId: string) => void;
   /** Session ID from a previous connection for resuming persisted state. */
-  resumeSessionId?: string | undefined;
-  /** WebSocket constructor override. Passed through to VoiceSessionOptions. */
-  WebSocket?: WebSocketConstructor | undefined;
+  resumeSessionId?: string;
+  /** WebSocket constructor override. Passed through to session options. */
+  WebSocket?: WebSocketConstructor;
 };
+
+/**
+ * Tier 1: Config-only options. Renders the default shell (StartScreen + ChatView).
+ *
+ * @public
+ */
+type ConfigTier = BaseOptions & {
+  component?: never;
+  /** Agent title shown in the header and start screen. */
+  title?: string;
+  /** Optional sidebar component rendered alongside the chat view. */
+  sidebar?: ComponentType;
+  /** CSS width of the sidebar. Defaults to `"18rem"`. */
+  sidebarWidth?: string;
+  /** Tool display config: icon and label overrides keyed by tool name. */
+  tools?: ToolDisplayConfig;
+};
+
+/**
+ * Tier 2: Custom component. Renders the provided component inside the providers.
+ *
+ * @public
+ */
+type ComponentTier = BaseOptions & {
+  /** Full custom component to render instead of the default shell. */
+  component: ComponentType;
+  title?: never;
+  sidebar?: never;
+  sidebarWidth?: never;
+  tools?: never;
+};
+
+/**
+ * Configuration passed to {@link defineClient}.
+ *
+ * @public
+ */
+export type ClientConfig = ConfigTier | ComponentTier;
 
 /**
  * Handle returned by {@link defineClient} for cleanup.
@@ -36,13 +81,15 @@ export type ClientOptions = {
  * @public
  */
 export type ClientHandle = {
-  /** The underlying voice session. */
-  session: VoiceSession;
-  /** Unmount the UI, remove injected styles, and disconnect the session. */
+  /** The underlying session core. */
+  session: SessionCore;
+  /** Unmount the UI and disconnect the session. */
   dispose(): void;
   /** Alias for `dispose` for use with `using`. */
   [Symbol.dispose](): void;
 };
+
+// ─── Internal helpers ─────────────────────────────────────────────────────────
 
 function resolveContainer(target: string | HTMLElement = "#app"): HTMLElement {
   if (typeof target !== "string") return target;
@@ -52,57 +99,111 @@ function resolveContainer(target: string | HTMLElement = "#app"): HTMLElement {
 }
 
 /**
+ * Default shell rendered in config tier.
+ * Wraps StartScreen → (SidebarLayout →) ChatView.
+ */
+function DefaultShell({
+  title,
+  Sidebar,
+  sidebarWidth,
+}: {
+  title?: string;
+  Sidebar?: ComponentType;
+  sidebarWidth?: string;
+}) {
+  const chat = <ChatView {...(title !== undefined ? { title } : {})} />;
+
+  const inner = Sidebar ? (
+    <SidebarLayout sidebar={<Sidebar />} {...(sidebarWidth !== undefined ? { sidebarWidth } : {})}>
+      {chat}
+    </SidebarLayout>
+  ) : (
+    chat
+  );
+
+  return <StartScreen {...(title !== undefined ? { title } : {})}>{inner}</StartScreen>;
+}
+
+// ─── defineClient ─────────────────────────────────────────────────────────────
+
+/**
  * Define and mount a client UI for a voice agent.
  *
- * Creates a {@link VoiceSession} and renders the component
- * inside a {@link SessionProvider}.
+ * **Tier 1 (config-only):** Pass options without `component` to get the
+ * default shell (StartScreen + ChatView, optional sidebar).
  *
- * @param Component - The Preact component to render.
- * @param options - Client options (target element, platform URL, theme).
+ * **Tier 2 (custom component):** Pass `component` to render a fully custom
+ * root component inside the providers.
+ *
+ * @example Tier 1
+ * ```tsx
+ * defineClient({
+ *   title: "Pizza Ordering",
+ *   theme: { bg: "#1a1a1a", primary: "#e55" },
+ *   sidebar: OrderPanel,
+ *   tools: { add_pizza: { icon: "🍕", label: "Adding pizza" } },
+ * });
+ * ```
+ *
+ * @example Tier 2
+ * ```tsx
+ * defineClient({ component: MyCustomApp });
+ * ```
+ *
  * @returns A {@link ClientHandle} for cleanup.
  * @throws If the target element is not found in the DOM.
  *
  * @public
  */
-// biome-ignore lint/suspicious/noExplicitAny: defineClient accepts any component
-export function defineClient(Component: ComponentType<any>, options?: ClientOptions): ClientHandle {
-  const container = resolveContainer(options?.target);
+export function defineClient(config: ClientConfig): ClientHandle {
+  const container = resolveContainer(config.target);
 
   const platformUrl =
-    options?.platformUrl ?? globalThis.location.origin + globalThis.location.pathname;
-  const session = createVoiceSession({
+    config.platformUrl ?? globalThis.location.origin + globalThis.location.pathname;
+
+  const session = createSessionCore({
     platformUrl,
-    onSessionId: options?.onSessionId,
-    resumeSessionId: options?.resumeSessionId,
-    ...(options?.WebSocket ? { WebSocket: options.WebSocket } : {}),
+    onSessionId: config.onSessionId,
+    resumeSessionId: config.resumeSessionId,
+    ...(config.WebSocket ? { WebSocket: config.WebSocket } : {}),
   });
 
-  const clientConfig = { title: options?.title, theme: options?.theme };
-
-  // Apply theme overrides as CSS custom properties on the container.
-  if (options?.theme) {
-    const t = options.theme;
-    const el = container;
-    if (t.bg) el.style.setProperty("--color-aai-bg", t.bg);
-    if (t.primary) el.style.setProperty("--color-aai-primary", t.primary);
-    if (t.text) el.style.setProperty("--color-aai-text", t.text);
-    if (t.surface) el.style.setProperty("--color-aai-surface", t.surface);
-    if (t.border) el.style.setProperty("--color-aai-border", t.border);
+  // Determine the root component.
+  let RootComponent: ComponentType;
+  if ("component" in config && config.component) {
+    RootComponent = config.component;
+  } else {
+    const cfg = config as ConfigTier;
+    const { title, sidebar: Sidebar, sidebarWidth } = cfg;
+    RootComponent = () =>
+      createElement(DefaultShell, {
+        ...(title !== undefined ? { title } : {}),
+        ...(Sidebar !== undefined ? { Sidebar } : {}),
+        ...(sidebarWidth !== undefined ? { sidebarWidth } : {}),
+      });
   }
 
-  render(
-    <ClientConfigProvider value={clientConfig}>
-      <SessionProvider value={session}>
-        <Component />
-      </SessionProvider>
-    </ClientConfigProvider>,
-    container,
-  );
+  const toolConfig: ToolDisplayConfig = "tools" in config && config.tools ? config.tools : {};
+
+  const root = createRoot(container);
+  flushSync(() => {
+    root.render(
+      createElement(
+        ToolConfigContext.Provider,
+        { value: toolConfig },
+        createElement(
+          ThemeProvider,
+          config.theme !== undefined ? { value: config.theme } : {},
+          createElement(SessionProvider, { value: session }, createElement(RootComponent)),
+        ),
+      ),
+    );
+  });
 
   const handle: ClientHandle = {
     session,
     dispose() {
-      render(null, container);
+      root.unmount();
       session[Symbol.dispose]();
     },
     [Symbol.dispose]() {

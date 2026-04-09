@@ -13,14 +13,14 @@
   "dependencies": {
     "@alexkroman1/aai": "^0.12.3",
     "@alexkroman1/aai-ui": "^0.12.3",
-    "@preact/signals": "^2.8.2",
-    "preact": "^10.29.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
     "tailwindcss": "^4.2.1"
   },
   "devDependencies": {
     "@alexkroman1/aai-cli": "^0.12.3",
     "@biomejs/biome": "^2.4.9",
-    "@preact/preset-vite": "^2.9.6",
+    "@vitejs/plugin-react": "^6.0.1",
     "@tailwindcss/vite": "^4.2.1",
     "@types/node": "^25.5.0",
     "typescript": "^6.0.2",

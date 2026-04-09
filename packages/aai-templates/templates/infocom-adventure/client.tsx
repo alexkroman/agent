@@ -1,26 +1,18 @@
-import "@alexkroman1/aai-ui/styles.css";
+/** @jsxImportSource react */
+
 import type { ChatMessage } from "@alexkroman1/aai-ui";
 import { defineClient, useSession } from "@alexkroman1/aai-ui";
-import { useEffect, useRef } from "preact/hooks";
+import { useEffect, useRef } from "react";
 
 const CSS = `
 @keyframes ic-flicker {
-  0% { opacity: 0.97; }
-  5% { opacity: 0.95; }
-  10% { opacity: 0.98; }
-  15% { opacity: 0.96; }
-  20% { opacity: 0.99; }
-  50% { opacity: 0.96; }
-  80% { opacity: 0.98; }
-  100% { opacity: 0.97; }
+  0% { opacity: 0.97; } 5% { opacity: 0.95; } 10% { opacity: 0.98; }
+  15% { opacity: 0.96; } 20% { opacity: 0.99; } 50% { opacity: 0.96; }
+  80% { opacity: 0.98; } 100% { opacity: 0.97; }
 }
 @keyframes ic-scanline {
   0% { transform: translateY(-100%); }
   100% { transform: translateY(100vh); }
-}
-@keyframes ic-blink {
-  0%, 49% { opacity: 1; }
-  50%, 100% { opacity: 0; }
 }
 @keyframes ic-boot {
   0% { opacity: 0; transform: scaleY(0.01); }
@@ -33,30 +25,13 @@ const CSS = `
   50% { box-shadow: 0 0 20px rgba(0, 255, 65, 0.6); }
 }
 .ic-crt::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: repeating-linear-gradient(
-    0deg,
-    rgba(0, 0, 0, 0.15) 0px,
-    rgba(0, 0, 0, 0.15) 1px,
-    transparent 1px,
-    transparent 3px
-  );
-  pointer-events: none;
-  z-index: 10;
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 10;
+  background: repeating-linear-gradient(0deg, rgba(0,0,0,0.15) 0px, rgba(0,0,0,0.15) 1px, transparent 1px, transparent 3px);
 }
 .ic-crt::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 4px;
-  background: rgba(0, 255, 65, 0.08);
-  animation: ic-scanline 8s linear infinite;
-  pointer-events: none;
-  z-index: 11;
+  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 4px;
+  background: rgba(0,255,65,0.08); animation: ic-scanline 8s linear infinite;
+  pointer-events: none; z-index: 11;
 }
 .ic-messages::-webkit-scrollbar { width: 6px; }
 .ic-messages::-webkit-scrollbar-track { background: #001a00; }
@@ -73,50 +48,53 @@ const ASCII_LOGO = `
 /_/   \\___/|_| \\_\\_|\\_\\
 `;
 
+const CRT_BG = "#000800";
+const GREEN = "#00ff41";
+const GREEN_DIM = "#00aa2a";
+const GREEN_DARK = "#003300";
+const CYAN = "#00ccff";
+
 function InfocomAdventure() {
   const session = useSession();
   const bottom = useRef<HTMLDivElement>(null);
 
-  const totalMessages = session.messages.value.length;
-  const utterance = session.userUtterance.value;
   useEffect(() => {
     bottom.current?.scrollIntoView({ behavior: "smooth" });
-  }, [totalMessages, utterance]);
+  }, [session.messages.length, session.userTranscript]);
 
-  const stateVal = session.state.value;
   const stateLabel =
-    stateVal === "listening"
+    session.state === "listening"
       ? "Listening"
-      : stateVal === "speaking"
+      : session.state === "speaking"
         ? "Narrating"
-        : stateVal === "thinking"
+        : session.state === "thinking"
           ? "Thinking"
-          : stateVal === "connecting"
+          : session.state === "connecting"
             ? "Connecting"
-            : stateVal === "ready"
+            : session.state === "ready"
               ? "Ready"
               : "Idle";
 
-  const msgCount = session.messages.value.filter((m: ChatMessage) => m.role === "user").length;
+  const msgCount = session.messages.filter((m: ChatMessage) => m.role === "user").length;
 
   const dotColor =
-    stateVal === "listening"
-      ? "#00ff41"
-      : stateVal === "speaking"
+    session.state === "listening"
+      ? GREEN
+      : session.state === "speaking"
         ? "#ffaa00"
-        : stateVal === "thinking"
-          ? "#00ccff"
-          : "#003300";
+        : session.state === "thinking"
+          ? CYAN
+          : GREEN_DARK;
 
-  if (!session.started.value) {
+  if (!session.started) {
     return (
       <>
         <style>{CSS}</style>
         <div
-          class="ic-crt fixed inset-0 overflow-hidden"
+          className="ic-crt fixed inset-0 overflow-hidden"
           style={{
-            background: "#000800",
-            color: "#00ff41",
+            background: CRT_BG,
+            color: GREEN,
             fontFamily: "monospace",
             fontSize: "15px",
             lineHeight: 1.6,
@@ -124,36 +102,36 @@ function InfocomAdventure() {
           }}
         >
           <div
-            class="flex flex-col items-center justify-center h-full text-center p-10"
+            className="flex flex-col items-center justify-center h-full text-center p-10"
             style={{ animation: "ic-boot 1.5s ease-out" }}
           >
             <div
-              class="text-[11px] whitespace-pre mb-8"
-              style={{ textShadow: "0 0 10px rgba(0, 255, 65, 0.5)" }}
+              className="text-[11px] whitespace-pre mb-8"
+              style={{ textShadow: "0 0 10px rgba(0,255,65,0.5)" }}
             >
               {ASCII_LOGO}
             </div>
-            <div class="text-[13px] mb-2" style={{ color: "#00aa2a" }}>
+            <div className="text-[13px] mb-2" style={{ color: GREEN_DIM }}>
               INFOCOM INTERACTIVE FICTION
             </div>
-            <div class="text-[13px] mb-2" style={{ color: "#00aa2a" }}>
+            <div className="text-[13px] mb-2" style={{ color: GREEN_DIM }}>
               Copyright (c) 1980 Infocom, Inc.
             </div>
-            <div class="text-[13px] mb-2" style={{ color: "#00aa2a" }}>
+            <div className="text-[13px] mb-2" style={{ color: GREEN_DIM }}>
               All rights reserved.
             </div>
-            <div class="text-[13px] mt-4" style={{ color: "#00ff41" }}>
+            <div className="text-[13px] mt-4" style={{ color: GREEN }}>
               VOICE-ENABLED EDITION
             </div>
-            <div class="text-[13px] mt-6" style={{ color: "#00aa2a" }}>
+            <div className="text-[13px] mt-6" style={{ color: GREEN_DIM }}>
               Release 88 / Serial No. 840726
             </div>
             <button
               type="button"
-              class="mt-10 px-12 py-3.5 bg-transparent cursor-pointer uppercase tracking-[3px] font-mono text-base"
+              className="mt-10 px-12 py-3.5 bg-transparent cursor-pointer uppercase tracking-[3px] font-mono text-base"
               style={{
-                color: "#00ff41",
-                border: "1px solid #00ff41",
+                color: GREEN,
+                border: `1px solid ${GREEN}`,
                 animation: "ic-pulse 2s ease-in-out infinite",
               }}
               onClick={session.start}
@@ -162,10 +140,10 @@ function InfocomAdventure() {
             </button>
           </div>
           <div
-            class="fixed inset-0 pointer-events-none z-[12]"
+            className="fixed inset-0 pointer-events-none z-[12]"
             style={{
               background:
-                "radial-gradient(ellipse at center, transparent 60%, rgba(0, 0, 0, 0.4) 100%)",
+                "radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,0.4) 100%)",
             }}
           />
         </div>
@@ -177,67 +155,61 @@ function InfocomAdventure() {
     <>
       <style>{CSS}</style>
       <div
-        class="ic-crt fixed inset-0 overflow-hidden"
+        className="ic-crt fixed inset-0 overflow-hidden"
         style={{
-          background: "#000800",
-          color: "#00ff41",
+          background: CRT_BG,
+          color: GREEN,
           fontFamily: "monospace",
           fontSize: "15px",
           lineHeight: 1.6,
           animation: "ic-flicker 4s infinite",
         }}
       >
-        <div class="flex flex-col h-full">
+        <div className="flex flex-col h-full">
           {/* Status bar */}
           <div
-            class="flex items-center justify-between px-5 py-2 text-[13px] font-bold tracking-wider shrink-0"
-            style={{ background: "#00ff41", color: "#000800" }}
+            className="flex items-center justify-between px-5 py-2 text-[13px] font-bold tracking-wider shrink-0"
+            style={{ background: GREEN, color: CRT_BG }}
           >
-            <div class="flex gap-6">
+            <div className="flex gap-6">
               <span>ZORK I</span>
               <span>Moves: {msgCount}</span>
             </div>
             <span>Voice Adventure</span>
           </div>
 
-          {session.error.value && (
-            <div class="px-5 py-2 text-xs" style={{ background: "#3a0000", color: "#ff4141" }}>
-              ERROR: {session.error.value.message}
+          {session.error && (
+            <div className="px-5 py-2 text-xs" style={{ background: "#3a0000", color: "#ff4141" }}>
+              ERROR: {session.error.message}
             </div>
           )}
 
           {/* Messages */}
           <div
-            class="ic-messages flex-1 overflow-y-auto p-5"
-            style={{
-              scrollbarWidth: "thin",
-              scrollbarColor: "#00ff41 #001a00",
-            }}
+            className="ic-messages flex-1 overflow-y-auto p-5"
+            style={{ scrollbarWidth: "thin", scrollbarColor: `${GREEN} #001a00` }}
           >
-            {session.messages.value.map((msg: ChatMessage, i: number) => (
+            {session.messages.map((msg: ChatMessage, i: number) => (
               <div
                 key={i}
-                class={`mb-4 ${msg.role === "user" ? "ic-user-msg" : ""}`}
+                className={`mb-4 ${msg.role === "user" ? "ic-user-msg" : ""}`}
                 style={{
                   textShadow:
                     msg.role === "user"
-                      ? "0 0 5px rgba(0, 204, 255, 0.3)"
-                      : "0 0 5px rgba(0, 255, 65, 0.3)",
-                  color: msg.role === "user" ? "#00ccff" : "#00ff41",
+                      ? "0 0 5px rgba(0,204,255,0.3)"
+                      : "0 0 5px rgba(0,255,65,0.3)",
+                  color: msg.role === "user" ? CYAN : GREEN,
                 }}
               >
                 {msg.content}
               </div>
             ))}
-            {session.userUtterance.value !== null && (
+            {session.userTranscript !== null && (
               <div
-                class="ic-transcript italic"
-                style={{
-                  color: "#007a1e",
-                  textShadow: "0 0 5px rgba(0, 255, 65, 0.15)",
-                }}
+                className="ic-transcript italic"
+                style={{ color: "#007a1e", textShadow: "0 0 5px rgba(0,255,65,0.15)" }}
               >
-                {session.userUtterance.value || "..."}
+                {session.userTranscript || "..."}
               </div>
             )}
             <div ref={bottom} />
@@ -245,38 +217,35 @@ function InfocomAdventure() {
 
           {/* Footer controls */}
           <div
-            class="flex items-center justify-between px-5 py-2 shrink-0 gap-3"
-            style={{
-              borderTop: "1px solid #003300",
-              background: "#001100",
-            }}
+            className="flex items-center justify-between px-5 py-2 shrink-0 gap-3"
+            style={{ borderTop: `1px solid ${GREEN_DARK}`, background: "#001100" }}
           >
             <div
-              class="flex items-center gap-2.5 text-xs uppercase tracking-wider"
-              style={{ color: "#00aa2a" }}
+              className="flex items-center gap-2.5 text-xs uppercase tracking-wider"
+              style={{ color: GREEN_DIM }}
             >
               <div
-                class="w-2 h-2 rounded-full"
+                className="w-2 h-2 rounded-full"
                 style={{
                   background: dotColor,
-                  boxShadow: dotColor !== "#003300" ? `0 0 6px ${dotColor}` : "none",
+                  boxShadow: dotColor !== GREEN_DARK ? `0 0 6px ${dotColor}` : "none",
                 }}
               />
               <span>{stateLabel}</span>
             </div>
-            <div class="flex gap-2">
+            <div className="flex gap-2">
               <button
                 type="button"
-                class="px-4 py-1 bg-transparent cursor-pointer uppercase tracking-wider font-mono text-[11px]"
-                style={{ color: "#00aa2a", border: "1px solid #003300" }}
+                className="px-4 py-1 bg-transparent cursor-pointer uppercase tracking-wider font-mono text-[11px]"
+                style={{ color: GREEN_DIM, border: `1px solid ${GREEN_DARK}` }}
                 onClick={session.toggle}
               >
-                {session.running.value ? "[P]ause" : "[R]esume"}
+                {session.running ? "[P]ause" : "[R]esume"}
               </button>
               <button
                 type="button"
-                class="px-4 py-1 bg-transparent cursor-pointer uppercase tracking-wider font-mono text-[11px]"
-                style={{ color: "#00aa2a", border: "1px solid #003300" }}
+                className="px-4 py-1 bg-transparent cursor-pointer uppercase tracking-wider font-mono text-[11px]"
+                style={{ color: GREEN_DIM, border: `1px solid ${GREEN_DARK}` }}
                 onClick={session.reset}
               >
                 [Q]uit
@@ -285,10 +254,9 @@ function InfocomAdventure() {
           </div>
         </div>
         <div
-          class="fixed inset-0 pointer-events-none z-[12]"
+          className="fixed inset-0 pointer-events-none z-[12]"
           style={{
-            background:
-              "radial-gradient(ellipse at center, transparent 60%, rgba(0, 0, 0, 0.4) 100%)",
+            background: "radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,0.4) 100%)",
           }}
         />
       </div>
@@ -296,4 +264,13 @@ function InfocomAdventure() {
   );
 }
 
-defineClient(InfocomAdventure);
+defineClient({
+  component: InfocomAdventure,
+  theme: {
+    bg: CRT_BG,
+    primary: GREEN,
+    text: GREEN,
+    surface: "#001a00",
+    border: GREEN_DARK,
+  },
+});

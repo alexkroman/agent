@@ -1,59 +1,61 @@
 // Copyright 2025 the AAI authors. MIT license.
 // @vitest-environment jsdom
+
+/** @jsxImportSource react */
+
 /**
  * UI component integration tests.
  *
  * Test component interactions and state flows through the full component tree:
- * button clicks → signal changes → re-renders, tool calls interleaved with
+ * button clicks -> state changes -> re-renders, tool calls interleaved with
  * messages, thinking indicator visibility, and start screen transitions.
  */
-import { fireEvent, render, screen } from "@testing-library/preact";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { describe, expect, test } from "vitest";
-import { createMockSession } from "../_test-utils.ts";
-import { SessionProvider } from "../context.ts";
-import type { VoiceSession } from "../session.ts";
-import { App } from "./app.tsx";
+import { createMockSessionCore } from "../_react-test-utils.ts";
+import { SessionProvider, ThemeProvider } from "../context.ts";
+import type { SessionCore } from "../session-core.ts";
+import { ChatView } from "./chat-view.tsx";
 import { Controls } from "./controls.tsx";
 import { MessageList } from "./message-list.tsx";
 import { StartScreen } from "./start-screen.tsx";
 
-function renderWithProvider(vnode: preact.ComponentChildren, session: VoiceSession) {
-  return render(<SessionProvider value={session}>{vnode}</SessionProvider>);
+function renderWithProvider(children: ReactNode, session: SessionCore) {
+  return render(
+    <ThemeProvider>
+      <SessionProvider value={session}>{children}</SessionProvider>
+    </ThemeProvider>,
+  );
 }
 
 // --- Button click interactions ---
 
 describe("Controls: click interactions", () => {
   test("clicking Stop calls toggle and switches to Resume", () => {
-    const signals = createMockSession({ started: true, running: true });
-    const origToggle = signals.toggle;
+    const core = createMockSessionCore({ started: true, running: true });
     const calls: string[] = [];
-    signals.toggle = () => {
+    const origToggle = core.toggle.bind(core);
+    core.toggle = () => {
       calls.push("toggle");
-      origToggle.call(signals);
+      origToggle();
     };
 
-    const { rerender } = renderWithProvider(<Controls />, signals);
+    renderWithProvider(<Controls />, core);
     const stopBtn = screen.getByText("Stop");
     fireEvent.click(stopBtn);
 
     expect(calls).toEqual(["toggle"]);
-    expect(signals.running.value).toBe(false);
-
-    rerender(
-      <SessionProvider value={signals}>
-        <Controls />
-      </SessionProvider>,
-    );
+    expect(core.getSnapshot().running).toBe(false);
     expect(screen.getByText("Resume")).toBeDefined();
   });
 
   test("clicking New Conversation calls reset", () => {
-    const signals = createMockSession({ started: true, running: true });
+    const core = createMockSessionCore({ started: true, running: true });
     const calls: string[] = [];
-    signals.reset = () => calls.push("reset");
+    core.reset = () => calls.push("reset");
 
-    renderWithProvider(<Controls />, signals);
+    renderWithProvider(<Controls />, core);
     fireEvent.click(screen.getByText("New Conversation"));
     expect(calls).toEqual(["reset"]);
   });
@@ -63,14 +65,13 @@ describe("Controls: click interactions", () => {
 
 describe("StartScreen: start flow", () => {
   test("clicking Start button triggers start and shows children", () => {
-    const signals = createMockSession({ started: false });
+    const core = createMockSessionCore({ started: false });
 
-    const { rerender } = render(
-      <SessionProvider value={signals}>
-        <StartScreen>
-          <div data-testid="chat">Chat content</div>
-        </StartScreen>
-      </SessionProvider>,
+    renderWithProvider(
+      <StartScreen>
+        <div data-testid="chat">Chat content</div>
+      </StartScreen>,
+      core,
     );
 
     // Shows start button, not children
@@ -80,37 +81,29 @@ describe("StartScreen: start flow", () => {
     // Click start
     fireEvent.click(screen.getByText("Start"));
 
-    // start() sets started=true
-    rerender(
-      <SessionProvider value={signals}>
-        <StartScreen>
-          <div data-testid="chat">Chat content</div>
-        </StartScreen>
-      </SessionProvider>,
-    );
-
+    // start() sets started=true, which notifies subscribers and triggers re-render
     expect(screen.queryByText("Start")).toBeNull();
     expect(screen.getByTestId("chat")).toBeDefined();
   });
 
   test("renders custom button text", () => {
-    const signals = createMockSession({ started: false });
+    const core = createMockSessionCore({ started: false });
     renderWithProvider(
       <StartScreen buttonText="Begin Session">
         <div />
       </StartScreen>,
-      signals,
+      core,
     );
     expect(screen.getByText("Begin Session")).toBeDefined();
   });
 
   test("renders title and subtitle", () => {
-    const signals = createMockSession({ started: false });
+    const core = createMockSessionCore({ started: false });
     renderWithProvider(
       <StartScreen title="Pizza Bot" subtitle="Order by voice">
         <div />
       </StartScreen>,
-      signals,
+      core,
     );
     expect(screen.getByText("Pizza Bot")).toBeDefined();
     expect(screen.getByText("Order by voice")).toBeDefined();
@@ -121,31 +114,30 @@ describe("StartScreen: start flow", () => {
 
 describe("MessageList: messages + tool calls interleaved", () => {
   test("renders tool calls after their associated message", () => {
-    const signals = createMockSession({
+    const core = createMockSessionCore({
       started: true,
       state: "listening",
       messages: [
         { role: "user", content: "What's the weather?" },
-        { role: "assistant", content: "It's sunny and 72°F." },
+        { role: "assistant", content: "It's sunny and 72\u00B0F." },
+      ],
+      toolCalls: [
+        {
+          callId: "tc1",
+          name: "web_search",
+          args: { query: "weather" },
+          status: "done",
+          result: '{"temp": 72}',
+          afterMessageIndex: 0,
+        },
       ],
     });
-    signals.toolCalls.value = [
-      {
-        toolCallId: "tc1",
-        toolName: "web_search",
-        args: { query: "weather" },
-        status: "done",
-        result: '{"temp": 72}',
 
-        afterMessageIndex: 0,
-      },
-    ];
-
-    renderWithProvider(<MessageList />, signals);
+    renderWithProvider(<MessageList />, core);
 
     const userMsg = screen.getByText("What's the weather?");
-    const toolCall = screen.getByText("Web Search");
-    const assistantMsg = screen.getByText("It's sunny and 72°F.");
+    const toolCall = screen.getByText("web_search");
+    const assistantMsg = screen.getByText("It's sunny and 72\u00B0F.");
 
     // Tool call appears after user message and before assistant message
     expect(
@@ -157,146 +149,141 @@ describe("MessageList: messages + tool calls interleaved", () => {
   });
 
   test("shows thinking indicator when state is thinking and no pending tool", () => {
-    const signals = createMockSession({
+    const core = createMockSessionCore({
       started: true,
       state: "thinking",
       messages: [{ role: "user", content: "Tell me a joke" }],
     });
 
-    const { container } = renderWithProvider(<MessageList />, signals);
+    const { container } = renderWithProvider(<MessageList />, core);
     // ThinkingIndicator renders 3 dots
     const dots = container.querySelectorAll(".rounded-full");
     expect(dots.length).toBe(3);
   });
 
   test("hides thinking indicator when a tool call is pending", () => {
-    const signals = createMockSession({
+    const core = createMockSessionCore({
       started: true,
       state: "thinking",
       messages: [{ role: "user", content: "Search for AI news" }],
+      toolCalls: [
+        {
+          callId: "tc1",
+          name: "web_search",
+          args: {},
+          status: "pending",
+          afterMessageIndex: 0,
+        },
+      ],
     });
-    signals.toolCalls.value = [
-      {
-        toolCallId: "tc1",
-        toolName: "web_search",
-        args: {},
-        status: "pending",
 
-        afterMessageIndex: 0,
-      },
-    ];
-
-    const { container } = renderWithProvider(<MessageList />, signals);
+    const { container } = renderWithProvider(<MessageList />, core);
     // When a tool call is pending, thinking dots should not show
     const thinkingDots = container.querySelectorAll(".rounded-full");
     expect(thinkingDots.length).toBe(0);
   });
 
   test("shows pending tool call with shimmer animation", () => {
-    const signals = createMockSession({
+    const core = createMockSessionCore({
       started: true,
       state: "thinking",
       messages: [{ role: "user", content: "Search" }],
+      toolCalls: [
+        {
+          callId: "tc1",
+          name: "web_search",
+          args: { query: "test" },
+          status: "pending",
+          afterMessageIndex: 0,
+        },
+      ],
     });
-    signals.toolCalls.value = [
-      {
-        toolCallId: "tc1",
-        toolName: "web_search",
-        args: { query: "test" },
-        status: "pending",
 
-        afterMessageIndex: 0,
-      },
-    ];
-
-    const { container } = renderWithProvider(<MessageList />, signals);
+    const { container } = renderWithProvider(<MessageList />, core);
     expect(container.innerHTML).toContain("tool-shimmer");
-    expect(screen.getByText("Web Search")).toBeDefined();
+    expect(screen.getByText("web_search")).toBeDefined();
   });
 
   test("shows streaming agent utterance as bubble", () => {
-    const signals = createMockSession({
+    const core = createMockSessionCore({
       started: true,
       state: "speaking",
-      messages: [],
+      agentTranscript: "I'm thinking about...",
     });
-    signals.agentUtterance.value = "I'm thinking about...";
 
-    renderWithProvider(<MessageList />, signals);
+    renderWithProvider(<MessageList />, core);
     expect(screen.getByText("I'm thinking about...")).toBeDefined();
   });
 
   test("shows user transcript while speaking", () => {
-    const signals = createMockSession({
+    const core = createMockSessionCore({
       started: true,
       state: "listening",
-      messages: [],
-      userUtterance: "hello wor",
+      userTranscript: "hello wor",
     });
 
-    renderWithProvider(<MessageList />, signals);
+    renderWithProvider(<MessageList />, core);
     expect(screen.getByText("hello wor")).toBeDefined();
   });
 });
 
-// --- Full App flow ---
+// --- Full flow (replaces App tests) ---
 
-describe("App: full component tree integration", () => {
-  test("start → messages → tool calls → error → recovery flow", () => {
-    const signals = createMockSession({ started: false });
+describe("ChatView + StartScreen: full component tree integration", () => {
+  test("start -> messages -> tool calls -> error -> recovery flow", () => {
+    const core = createMockSessionCore({ started: false });
 
-    const { rerender } = render(
-      <SessionProvider value={signals}>
-        <App />
-      </SessionProvider>,
+    render(
+      <ThemeProvider>
+        <SessionProvider value={core}>
+          <StartScreen>
+            <ChatView />
+          </StartScreen>
+        </SessionProvider>
+      </ThemeProvider>,
     );
 
     // 1. Start screen
     expect(screen.getByText("Start")).toBeDefined();
 
-    // 2. Click start → chat view
-    signals.started.value = true;
-    signals.state.value = "listening";
-    rerender(
-      <SessionProvider value={signals}>
-        <App />
-      </SessionProvider>,
-    );
+    // 2. Click start -> chat view
+    fireEvent.click(screen.getByText("Start"));
+
+    // The start() call sets started=true and running=true
+    // We also need to update state to "listening"
+    act(() => core.update({ state: "listening" }));
     expect(screen.getByText("listening")).toBeDefined();
     expect(screen.getByText("Stop")).toBeDefined();
 
     // 3. User message
-    signals.messages.value = [{ role: "user", content: "What time is it?" }];
-    signals.state.value = "thinking";
-    rerender(
-      <SessionProvider value={signals}>
-        <App />
-      </SessionProvider>,
+    act(() =>
+      core.update({
+        messages: [{ role: "user", content: "What time is it?" }],
+        state: "thinking",
+      }),
     );
     expect(screen.getByText("What time is it?")).toBeDefined();
     expect(screen.getByText("thinking")).toBeDefined();
 
     // 4. Assistant responds
-    signals.messages.value = [
-      { role: "user", content: "What time is it?" },
-      { role: "assistant", content: "It's 3pm." },
-    ];
-    signals.state.value = "listening";
-    rerender(
-      <SessionProvider value={signals}>
-        <App />
-      </SessionProvider>,
+    act(() =>
+      core.update({
+        messages: [
+          { role: "user", content: "What time is it?" },
+          { role: "assistant", content: "It's 3pm." },
+        ],
+        state: "listening",
+      }),
     );
     expect(screen.getByText("It's 3pm.")).toBeDefined();
 
     // 5. Error occurs
-    signals.state.value = "error";
-    signals.error.value = { code: "connection", message: "Lost connection" };
-    signals.running.value = false;
-    rerender(
-      <SessionProvider value={signals}>
-        <App />
-      </SessionProvider>,
+    act(() =>
+      core.update({
+        state: "disconnected",
+        error: { code: "connection", message: "Lost connection" },
+        running: false,
+      }),
     );
     expect(screen.getByText("Lost connection")).toBeDefined();
     expect(screen.getByText("Resume")).toBeDefined();

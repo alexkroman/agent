@@ -37,8 +37,8 @@ export type ChatMessage = {
  * @public
  */
 export type ToolCallInfo = {
-  toolCallId: string;
-  toolName: string;
+  callId: string;
+  name: string;
   args: Record<string, unknown>;
   status: "pending" | "done";
   result?: string | undefined;
@@ -95,4 +95,22 @@ export type VoiceSessionOptions = {
 export type WebSocketConstructor = {
   new (url: string | URL, protocols?: string | string[]): WebSocket;
   readonly OPEN: number;
+};
+
+/**
+ * Theme color overrides for the AAI UI components.
+ *
+ * @public
+ */
+export type ClientTheme = {
+  /** Background color. Default: `#101010`. */
+  bg?: string;
+  /** Primary accent color. Default: `#fab283`. */
+  primary?: string;
+  /** Main text color. */
+  text?: string;
+  /** Surface/card color. */
+  surface?: string;
+  /** Border color. */
+  border?: string;
 };

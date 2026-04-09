@@ -1,7 +1,10 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+/** @jsxImportSource react */
+
 import clsx from "clsx";
-import type { ComponentChildren } from "preact";
+import type { ReactNode } from "react";
+import { useTheme } from "../context.ts";
 
 /**
  * A two-column layout with a fixed-width sidebar and a flexible main area.
@@ -19,33 +22,37 @@ import type { ComponentChildren } from "preact";
 export function SidebarLayout({
   sidebar,
   children,
-  width = "20rem",
-  side = "left",
+  sidebarWidth = "18rem",
+  sidebarPosition = "left",
   className,
 }: {
-  sidebar: ComponentChildren;
-  children: ComponentChildren;
-  width?: string | undefined;
-  side?: "left" | "right" | undefined;
+  sidebar: ReactNode;
+  children: ReactNode;
+  sidebarWidth?: string | undefined;
+  sidebarPosition?: "left" | "right" | undefined;
   className?: string;
 }) {
+  const theme = useTheme();
+
   const sidebarEl = (
     <div
-      class={clsx(
-        "flex-shrink-0 flex flex-col overflow-y-auto",
-        side === "left" ? "border-r border-aai-border" : "border-l border-aai-border",
-      )}
-      style={{ width }}
+      className="flex-shrink-0 flex flex-col overflow-y-auto"
+      style={{
+        width: sidebarWidth,
+        ...(sidebarPosition === "left"
+          ? { borderRight: `1px solid ${theme.border}` }
+          : { borderLeft: `1px solid ${theme.border}` }),
+      }}
     >
       {sidebar}
     </div>
   );
 
   return (
-    <div class={clsx("flex h-screen bg-aai-bg", className)}>
-      {side === "left" && sidebarEl}
-      <div class="flex-1 min-w-0">{children}</div>
-      {side === "right" && sidebarEl}
+    <div className={clsx("flex h-screen", className)} style={{ background: theme.bg }}>
+      {sidebarPosition === "left" && sidebarEl}
+      <div className="flex-1 min-w-0">{children}</div>
+      {sidebarPosition === "right" && sidebarEl}
     </div>
   );
 }

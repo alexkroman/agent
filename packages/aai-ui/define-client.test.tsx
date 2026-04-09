@@ -1,92 +1,133 @@
 // Copyright 2025 the AAI authors. MIT license.
 // @vitest-environment jsdom
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { delay, installMockWebSocket } from "./_test-utils.ts";
-import { defineClient } from "./define-client.tsx";
 
-describe("defineClient()", () => {
-  let mock: ReturnType<typeof installMockWebSocket>;
+/** @jsxImportSource react */
+
+import { createElement } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// Mock createSessionCore to avoid real WebSocket connections.
+vi.mock("./session-core.ts", () => {
+  const snapshot = {
+    state: "disconnected" as const,
+    messages: [],
+    toolCalls: [],
+    userTranscript: null,
+    agentTranscript: null,
+    error: null,
+    started: false,
+    running: false,
+  };
+  return {
+    createSessionCore: vi.fn(() => ({
+      getSnapshot: () => snapshot,
+      subscribe: () => () => undefined,
+      connect: vi.fn(),
+      cancel: vi.fn(),
+      resetState: vi.fn(),
+      reset: vi.fn(),
+      disconnect: vi.fn(),
+      start: vi.fn(),
+      toggle: vi.fn(),
+      [Symbol.dispose]: vi.fn(),
+    })),
+  };
+});
+
+import { defineClient } from "./define-client.tsx";
+import { createSessionCore } from "./session-core.ts";
+
+describe("defineClient", () => {
+  let container: HTMLElement;
 
   beforeEach(() => {
-    mock = installMockWebSocket();
-    document.getElementById("app")?.remove();
-    const app = document.createElement("div");
-    app.id = "app";
-    document.body.appendChild(app);
+    container = document.createElement("div");
+    container.id = "app";
+    document.body.appendChild(container);
   });
 
   afterEach(() => {
-    mock.restore();
+    document.body.textContent = "";
+    vi.clearAllMocks();
   });
 
-  test("throws when target selector does not match", () => {
-    function App() {
-      return <div>test</div>;
-    }
+  it("throws when target selector does not match", () => {
     expect(() =>
-      defineClient(App, {
-        target: "#nonexistent",
-        platformUrl: "http://localhost:3000",
-      }),
+      defineClient({ title: "Test", target: "#nonexistent", platformUrl: "http://localhost:3000" }),
     ).toThrow("Element not found: #nonexistent");
   });
 
-  test("renders a component into the default #app element", () => {
-    function App() {
-      return <div class="hello">Hello Mount</div>;
-    }
-    defineClient(App, { platformUrl: "http://localhost:3000" });
-
-    const el = document.querySelector("#app");
-    expect(el?.textContent).toContain("Hello Mount");
-  });
-
-  test("returns session and dispose", () => {
-    function App() {
-      return <div />;
-    }
-    const handle = defineClient(App, { platformUrl: "http://localhost:3000" });
-
+  it("renders with config-only (tier 1)", () => {
+    const handle = defineClient({
+      title: "Test Agent",
+      target: "#app",
+      platformUrl: "http://localhost:3000",
+    });
     expect(handle.session).toBeDefined();
-    expect(handle.session.started.value).toBe(false);
     expect(typeof handle.dispose).toBe("function");
-  });
-
-  test("dispose tears down render and disconnects session", () => {
-    function App() {
-      return <div>content</div>;
-    }
-    const handle = defineClient(App, { platformUrl: "http://localhost:3000" });
-
-    const el = document.querySelector("#app");
-    expect(el?.textContent).toContain("content");
-
+    expect(container.childNodes.length).toBeGreaterThan(0);
     handle.dispose();
-    expect(el?.textContent).toBe("");
   });
 
-  test("derives platformUrl from location.href when not explicitly provided", async () => {
-    // biome-ignore lint/suspicious/noExplicitAny: test needs to pass mocked WebSocket
-    const WS = globalThis.WebSocket as any;
+  it("renders with custom component (tier 2)", () => {
+    function MyApp() {
+      return createElement("div", { "data-testid": "custom" }, "Custom");
+    }
+    const handle = defineClient({
+      component: MyApp,
+      target: "#app",
+      platformUrl: "http://localhost:3000",
+    });
+    expect(container.querySelector("[data-testid='custom']")).not.toBeNull();
+    handle.dispose();
+  });
+
+  it("dispose unmounts and disconnects", () => {
+    const handle = defineClient({
+      title: "Test",
+      target: "#app",
+      platformUrl: "http://localhost:3000",
+    });
+    handle.dispose();
+    expect(container.childNodes.length).toBe(0);
+  });
+
+  it("Symbol.dispose aliases dispose", () => {
+    const handle = defineClient({
+      title: "Test",
+      target: "#app",
+      platformUrl: "http://localhost:3000",
+    });
+    const disposeSpy = vi.spyOn(handle, "dispose");
+    handle[Symbol.dispose]();
+    expect(disposeSpy).toHaveBeenCalledOnce();
+  });
+
+  it("accepts an HTMLElement as target", () => {
+    const el = document.createElement("div");
+    document.body.appendChild(el);
+    const handle = defineClient({ target: el, platformUrl: "http://localhost:3000" });
+    expect(el.childNodes.length).toBeGreaterThan(0);
+    handle.dispose();
+  });
+
+  it("derives platformUrl from location.href when not provided", () => {
     const origLocation = globalThis.location;
     Object.defineProperty(globalThis, "location", {
       value: {
-        origin: "https://aai-agent.fly.dev",
-        pathname: "/alex/ai-takes",
-        href: "https://aai-agent.fly.dev/alex/ai-takes",
+        origin: "https://example.com",
+        pathname: "/agent/",
+        href: "https://example.com/agent/",
       },
       writable: true,
       configurable: true,
     });
-
     try {
-      const App = () => <div />;
-      const handle = defineClient(App, { WebSocket: WS });
-      handle.session.connect();
-      await delay(0);
-      const ws = mock.lastWs;
-      expect(ws).not.toBeNull();
-      expect(ws?.url.toString()).toBe("wss://aai-agent.fly.dev/alex/ai-takes/websocket");
+      const mockedCreateSessionCore = vi.mocked(createSessionCore);
+      const handle = defineClient({ title: "Test", target: container });
+      expect(mockedCreateSessionCore).toHaveBeenCalledWith(
+        expect.objectContaining({ platformUrl: "https://example.com/agent/" }),
+      );
       handle.dispose();
     } finally {
       Object.defineProperty(globalThis, "location", {

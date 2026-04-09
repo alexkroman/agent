@@ -20,51 +20,6 @@
  */
 
 import { expect } from "vitest";
-import { TurnResult } from "./testing.ts";
+import { toHaveCalledTool } from "./testing.ts";
 
-expect.extend({
-  /**
-   * Assert that a TurnResult includes a call to the named tool.
-   *
-   * Supports partial argument matching: only the specified keys are checked,
-   * and extra keys on the actual call are ignored.
-   *
-   * @example
-   * ```ts
-   * expect(turn).toHaveCalledTool("add_pizza");
-   * expect(turn).toHaveCalledTool("add_pizza", { size: "large" });
-   * expect(turn).not.toHaveCalledTool("remove_pizza");
-   * ```
-   */
-  toHaveCalledTool(received: unknown, toolName: string, args?: Record<string, unknown>) {
-    if (!(received instanceof TurnResult)) {
-      return {
-        pass: false,
-        message: () => `expected a TurnResult, got ${typeof received}`,
-        actual: received,
-        expected: "TurnResult",
-      };
-    }
-
-    const pass = received.toolCalls.some((tc) => {
-      if (tc.name !== toolName) return false;
-      if (!args) return true;
-      return Object.entries(args).every(
-        ([key, value]) => JSON.stringify(tc.args[key]) === JSON.stringify(value),
-      );
-    });
-
-    const calledTools = received.toolCalls.map((tc) => tc.name);
-    const argsHint = args ? ` with args ${JSON.stringify(args)}` : "";
-
-    return {
-      pass,
-      message: () =>
-        pass
-          ? `expected turn NOT to have called tool "${toolName}"${argsHint}, but it was called.\nCalled tools: ${JSON.stringify(calledTools)}`
-          : `expected turn to have called tool "${toolName}"${argsHint}, but it was not.\nCalled tools: ${JSON.stringify(calledTools)}`,
-      actual: calledTools,
-      expected: toolName,
-    };
-  },
-});
+expect.extend({ toHaveCalledTool });

@@ -1,54 +1,12 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { useComputed, useSignal } from "@preact/signals";
+/** @jsxImportSource react */
+
 import clsx from "clsx";
-import type * as preact from "preact";
+import { type ReactNode, useMemo, useState } from "react";
+import { useTheme } from "../context.ts";
 import type { ToolCallInfo } from "../types.ts";
-import {
-  BoltIcon,
-  ChatBubbleIcon,
-  DownloadIcon,
-  ExternalLinkIcon,
-  SearchIcon,
-  TerminalIcon,
-} from "./tool-icons.tsx";
-
-type IconComponent = (props: { class?: string }) => preact.JSX.Element;
-
-type ToolConfig = {
-  Icon: IconComponent;
-  title: string;
-  subtitle: (args: Record<string, unknown>) => string;
-};
-
-const argField =
-  (key: string): ToolConfig["subtitle"] =>
-  (args) =>
-    String(args[key] ?? "");
-
-const TOOL_CONFIG: Record<string, ToolConfig> = {
-  web_search: { Icon: SearchIcon, title: "Web Search", subtitle: argField("query") },
-  visit_webpage: { Icon: ExternalLinkIcon, title: "Visit Page", subtitle: argField("url") },
-  run_code: {
-    Icon: TerminalIcon,
-    title: "Run Code",
-    subtitle: (args) => {
-      const firstLine = String(args.code ?? "").split("\n")[0] ?? "";
-      return firstLine.length > 80 ? `${firstLine.slice(0, 80)}...` : firstLine;
-    },
-  },
-  fetch_json: { Icon: DownloadIcon, title: "Fetch JSON", subtitle: argField("url") },
-  user_input: { Icon: ChatBubbleIcon, title: "Asking User", subtitle: argField("question") },
-};
-
-const DEFAULT_CONFIG: ToolConfig = {
-  Icon: BoltIcon,
-  title: "",
-  subtitle: (args) => {
-    const summary = JSON.stringify(args);
-    return summary.length > 80 ? `${summary.slice(0, 80)}...` : summary;
-  },
-};
+import { useToolConfig } from "./tool-config-context.ts";
 
 function formatResult(result: string): string {
   try {
@@ -59,12 +17,11 @@ function formatResult(result: string): string {
 }
 
 /**
- * Renders a tool invocation with an icon, title, subtitle, and a
+ * Renders a tool invocation with an optional icon/emoji, title, subtitle, and a
  * collapsible result viewer.
  *
- * Built-in tool types (`web_search`, `visit_webpage`, `run_code`,
- * `fetch_json`, `user_input`) get custom icons and labels. Unknown tools
- * fall back to a generic bolt icon.
+ * Tool display is configured via `ToolConfigContext`. If no config is found
+ * for a tool name, the raw tool name is shown as the title.
  *
  * While the tool call is pending a shimmer animation is shown. Once
  * complete, clicking the block expands the formatted JSON result.
@@ -85,50 +42,95 @@ export function ToolCallBlock({
 }: {
   toolCall: ToolCallInfo;
   className?: string;
-}): preact.JSX.Element {
-  const isOpen = useSignal(false);
-  const config = TOOL_CONFIG[toolCall.toolName] ?? DEFAULT_CONFIG;
+}): ReactNode {
+  const [isOpen, setIsOpen] = useState(false);
+  const theme = useTheme();
+  const toolConfig = useToolConfig();
+
+  const config = toolConfig[toolCall.name];
   const isPending = toolCall.status === "pending";
-  const title = config.title || toolCall.toolName;
+  const title = config?.label || toolCall.name;
+  const icon = config?.icon;
   const canExpand = !isPending && Boolean(toolCall.result);
-  const formatted = useComputed(() => (toolCall.result ? formatResult(toolCall.result) : ""));
+  const formatted = useMemo(
+    () => (toolCall.result ? formatResult(toolCall.result) : ""),
+    [toolCall.result],
+  );
+
+  const subtitle = useMemo(() => {
+    const args = toolCall.args;
+    if (toolCall.name === "run_code" && args.code) {
+      const firstLine = String(args.code).split("\n")[0] ?? "";
+      return firstLine.length > 80 ? `${firstLine.slice(0, 80)}...` : firstLine;
+    }
+    // For common tools, show a sensible field
+    for (const key of ["query", "url", "question"]) {
+      if (args[key]) return String(args[key]);
+    }
+    const summary = JSON.stringify(args);
+    return summary.length > 80 ? `${summary.slice(0, 80)}...` : summary;
+  }, [toolCall.name, toolCall.args]);
 
   return (
-    <div class={clsx("flex flex-col", className)}>
+    <div className={clsx("flex flex-col", className)}>
       <button
         type="button"
-        aria-expanded={canExpand ? isOpen.value : undefined}
+        aria-expanded={canExpand ? isOpen : undefined}
         disabled={isPending}
-        class={clsx(
-          "flex items-center gap-2 px-3 py-2 rounded-aai border border-aai-border bg-aai-surface-faint select-none text-left w-full",
+        className={clsx(
+          "flex items-center gap-2 px-3 py-2 rounded-aai border select-none text-left w-full",
           canExpand && "cursor-pointer",
         )}
+        style={{
+          borderColor: theme.border,
+          background: "rgba(255,255,255,0.031)",
+        }}
         onClick={() => {
-          if (canExpand) isOpen.value = !isOpen.value;
+          if (canExpand) setIsOpen(!isOpen);
         }}
       >
-        <config.Icon class="w-4 h-4 text-aai-text-dim shrink-0" />
-        <span class={clsx("text-sm font-medium text-aai-text", isPending && "tool-shimmer")}>
+        {icon && <span className="w-4 h-4 shrink-0 text-center leading-4">{icon}</span>}
+        <span
+          className={clsx("text-sm font-medium", isPending && "tool-shimmer")}
+          style={{ color: theme.text }}
+        >
           {title}
         </span>
-        <span class="text-sm text-aai-text-dim truncate flex-1 min-w-0">
-          {config.subtitle(toolCall.args)}
+        <span
+          className="text-sm truncate flex-1 min-w-0"
+          style={{ color: "rgba(255,255,255,0.422)" }}
+        >
+          {subtitle}
         </span>
         {canExpand && (
-          <span class="text-xs text-aai-text-dim shrink-0">
-            {isOpen.value ? "\u25BE" : "\u25B8"}
+          <span className="text-xs shrink-0" style={{ color: "rgba(255,255,255,0.422)" }}>
+            {isOpen ? "\u25BE" : "\u25B8"}
           </span>
         )}
       </button>
-      {isOpen.value && (
-        <div class="border-x border-b border-aai-border rounded-b-aai bg-aai-surface max-h-64 overflow-auto">
-          {toolCall.toolName === "run_code" && toolCall.args.code && (
-            <pre class="text-xs text-aai-text p-2 whitespace-pre-wrap border-b border-aai-border font-mono">
+      {isOpen && (
+        <div
+          className="border-x border-b rounded-b-aai max-h-64 overflow-auto"
+          style={{
+            borderColor: theme.border,
+            background: theme.surface,
+          }}
+        >
+          {toolCall.name === "run_code" && Boolean(toolCall.args.code) && (
+            <pre
+              className="text-xs p-2 whitespace-pre-wrap border-b font-mono"
+              style={{ color: theme.text, borderColor: theme.border }}
+            >
               {String(toolCall.args.code)}
             </pre>
           )}
-          {formatted.value && (
-            <pre class="text-xs text-aai-text-dim p-2 whitespace-pre-wrap">{formatted.value}</pre>
+          {formatted && (
+            <pre
+              className="text-xs p-2 whitespace-pre-wrap"
+              style={{ color: "rgba(255,255,255,0.422)" }}
+            >
+              {formatted}
+            </pre>
           )}
         </div>
       )}

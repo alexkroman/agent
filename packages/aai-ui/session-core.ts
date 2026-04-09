@@ -1,5 +1,15 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+/**
+ * Framework-agnostic voice session core.
+ *
+ * Manages WebSocket communication, audio capture/playback, and agent state
+ * transitions using a subscribe/getSnapshot pattern compatible with React's
+ * `useSyncExternalStore` and other external store consumers.
+ *
+ * No dependency on React, Preact, or any UI framework.
+ */
+
 import type {
   ClientEvent,
   ClientMessage,
@@ -8,7 +18,6 @@ import type {
 } from "@alexkroman1/aai/protocol";
 import { lenientParse, ReadyConfigSchema, ServerMessageSchema } from "@alexkroman1/aai/protocol";
 import { errorMessage } from "@alexkroman1/aai/utils";
-import { batch, effect, type Signal, signal } from "@preact/signals";
 import type { VoiceIO } from "./audio.ts";
 import type {
   AgentState,
@@ -31,6 +40,66 @@ export type {
 
 const WS_OPEN = 1;
 
+// ─── Snapshot type ──────────────────────────────────────────────────────────
+
+/**
+ * Immutable snapshot of the session state.
+ *
+ * Consumers (e.g. React hooks via `useSyncExternalStore`) read this to render.
+ * A new object reference is created on every state change.
+ *
+ * @public
+ */
+export type SessionSnapshot = {
+  readonly state: AgentState;
+  readonly messages: ChatMessage[];
+  readonly toolCalls: ToolCallInfo[];
+  readonly userTranscript: string | null;
+  readonly agentTranscript: string | null;
+  readonly error: SessionError | null;
+  readonly started: boolean;
+  readonly running: boolean;
+};
+
+// ─── SessionCore type ───────────────────────────────────────────────────────
+
+/**
+ * A framework-agnostic voice session that manages WebSocket communication,
+ * audio capture/playback, and agent state transitions.
+ *
+ * Uses a subscribe/getSnapshot pattern (compatible with React's
+ * `useSyncExternalStore`). Implements `Disposable` for resource cleanup.
+ *
+ * @public
+ */
+export type SessionCore = {
+  /** Return the current immutable state snapshot. */
+  getSnapshot(): SessionSnapshot;
+  /** Subscribe to state changes. Returns an unsubscribe function. */
+  subscribe(callback: () => void): () => void;
+  /**
+   * Open a WebSocket connection to the server and begin audio capture.
+   * @param options - Optional. `signal` is an AbortSignal that, when aborted, disconnects the session.
+   */
+  connect(options?: { signal?: AbortSignal }): void;
+  /** Cancel the current agent turn and discard in-flight TTS audio. */
+  cancel(): void;
+  /** Clear messages, transcript, and error state without disconnecting. */
+  resetState(): void;
+  /** Reset the session: clear state and reconnect. */
+  reset(): void;
+  /** Close the WebSocket and release all audio resources. */
+  disconnect(): void;
+  /** Start the session for the first time (sets `started` and `running`). */
+  start(): void;
+  /** Toggle between connected and disconnected states. */
+  toggle(): void;
+  /** Alias for `disconnect` for use with `using`. */
+  [Symbol.dispose](): void;
+};
+
+export type SessionCoreOptions = VoiceSessionOptions;
+
 // ─── Audio initialization ────────────────────────────────────────────────────
 
 /**
@@ -52,24 +121,16 @@ type ConnState = {
 /**
  * Initialize audio capture and playback after the server sends a ready config.
  *
- * Lifecycle: dynamically import audio modules → request microphone access →
- * register AudioWorklet processors → create a `VoiceIO` instance → send
- * `audio_ready` to the server → transition state to `"listening"`.
+ * Lifecycle: dynamically import audio modules -> request microphone access ->
+ * register AudioWorklet processors -> create a `VoiceIO` instance -> send
+ * `audio_ready` to the server -> transition state to `"listening"`.
  *
  * Uses the connection `generation` counter to detect if `connect()` was called
  * while awaiting async operations; if so, the stale VoiceIO is closed immediately
  * to prevent it from being assigned to a newer connection.
  *
  * On failure (e.g. microphone permission denied, WebSocket closed mid-setup),
- * sets the error state and transitions to `"error"`.
- *
- * @param conn - The shared mutable connection state (WebSocket, VoiceIO, generation).
- * @param msg - The `ReadyConfig` from the server containing audio sample rates.
- * @param deps.send - Send a typed client message over the WebSocket.
- * @param deps.sendBinary - Send raw binary audio data over the WebSocket.
- * @param deps.state - Reactive state signal for the agent's current state.
- * @param deps.error - Reactive signal for session errors.
- * @param deps.batch - Batching function for grouping reactive updates.
+ * sets the error state and transitions to `"disconnected"`.
  */
 async function initAudioCapture(
   conn: ConnState,
@@ -77,16 +138,11 @@ async function initAudioCapture(
   deps: {
     send: (msg: ClientMessage) => void;
     sendBinary: (data: ArrayBuffer) => void;
-    state: Signal<AgentState>;
-    error: Signal<SessionError | null>;
-    batch: (fn: () => void) => void;
+    updateState: (partial: Partial<SessionSnapshot>) => void;
   },
 ): Promise<void> {
   if (conn.audioSetupInFlight) return;
   conn.audioSetupInFlight = true;
-  // Capture the connection generation so we can detect if connect() was
-  // called while we were awaiting. Without this, a stale initAudioCapture
-  // could assign its voiceIO to a newer connection.
   const gen = conn.generation;
   try {
     const [{ createVoiceIO }, captureWorklet, playbackWorklet] = await Promise.all([
@@ -100,7 +156,6 @@ async function initAudioCapture(
       captureWorkletSrc: captureWorklet,
       playbackWorkletSrc: playbackWorklet,
       onMicData: (pcm16: ArrayBuffer) => {
-        // Always stream audio — S2S handles VAD natively.
         try {
           deps.sendBinary(pcm16);
         } catch {
@@ -114,84 +169,23 @@ async function initAudioCapture(
     }
     conn.voiceIO = io;
     deps.send({ type: "audio_ready" });
-    deps.state.value = "listening";
+    deps.updateState({ state: "listening" });
   } catch (err: unknown) {
     if (conn.generation !== gen || !conn.ws || conn.ws.readyState !== WS_OPEN) return;
-    deps.batch(() => {
-      deps.error.value = {
+    deps.updateState({
+      state: "error",
+      error: {
         code: "audio",
         message: `Microphone access failed: ${errorMessage(err)}`,
-      };
-      deps.state.value = "error";
+      },
+      running: false,
     });
   } finally {
     conn.audioSetupInFlight = false;
   }
 }
 
-// ─── Voice session type ──────────────────────────────────────────────────────
-
-/**
- * A reactive voice session that manages WebSocket communication,
- * audio capture/playback, and agent state transitions.
- *
- * Uses plain JSON text frames and binary audio frames for communication
- * and native WebSocket for the connection.
- *
- * Implements `Disposable` for resource cleanup via `using`.
- *
- * @public
- */
-export type VoiceSession = {
-  /** Current agent state (connecting, listening, thinking, etc.). */
-  readonly state: Signal<AgentState>;
-  /** Chat message history for the session. */
-  readonly messages: Signal<ChatMessage[]>;
-  /** Active tool calls for the current turn. */
-  readonly toolCalls: Signal<ToolCallInfo[]>;
-  /**
-   * Live user utterance from STT/VAD.
-   * `null` = not speaking, `""` = speech detected but no text yet,
-   * non-empty string = partial/final transcript text.
-   */
-  readonly userUtterance: Signal<string | null>;
-  /**
-   * Streaming agent response text.
-   * `null` = not speaking, non-empty string = accumulated delta text.
-   * Cleared when the final `chat` message arrives.
-   */
-  readonly agentUtterance: Signal<string | null>;
-  /** Current session error, or `null` if no error. */
-  readonly error: Signal<SessionError | null>;
-  /** Disconnection info, or `null` if connected. */
-  readonly disconnected: Signal<{ intentional: boolean } | null>;
-  /** Whether the session has been started by the user. */
-  readonly started: Signal<boolean>;
-  /** Whether the session is currently running (connected or connecting). */
-  readonly running: Signal<boolean>;
-  /**
-   * Open a WebSocket connection to the server and begin audio capture.
-   *
-   * @param options - Optional connection options. `signal` is an AbortSignal that, when aborted, disconnects the session.
-   */
-  connect(options?: { signal?: AbortSignal }): void;
-  /** Cancel the current agent turn and discard in-flight TTS audio. */
-  cancel(): void;
-  /** Clear messages, transcript, and error state without disconnecting. */
-  resetState(): void;
-  /** Reset the session: clear state and reconnect. */
-  reset(): void;
-  /** Close the WebSocket and release all audio resources. */
-  disconnect(): void;
-  /** Start the session for the first time (sets `started` and `running`). */
-  start(): void;
-  /** Toggle between connected and disconnected states. */
-  toggle(): void;
-  /** Alias for `disconnect` for use with `using`. */
-  [Symbol.dispose](): void;
-};
-
-// ─── Voice session factory ───────────────────────────────────────────────────
+// ─── URL builder ────────────────────────────────────────────────────────────
 
 function buildWsUrl(platformUrl: string, resume: boolean, sessionId?: string): URL {
   const wsUrl = new URL("websocket", platformUrl.endsWith("/") ? platformUrl : `${platformUrl}/`);
@@ -201,34 +195,60 @@ function buildWsUrl(platformUrl: string, resume: boolean, sessionId?: string): U
   return wsUrl;
 }
 
+// ─── Factory ────────────────────────────────────────────────────────────────
+
 /**
- * Create a voice session that connects to an AAI server via WebSocket.
+ * Create a framework-agnostic voice session core that connects to an AAI
+ * server via WebSocket.
  *
- * Uses plain JSON text frames and binary audio frames for communication.
+ * Uses a subscribe/getSnapshot pattern for state management, compatible with
+ * React's `useSyncExternalStore` and other external store integrations.
  *
  * @param options - Session configuration including the platform server URL.
- * @returns A {@link VoiceSession} handle for controlling the session.
+ * @returns A {@link SessionCore} handle for controlling the session.
  *
  * @public
  */
-export function createVoiceSession(options: VoiceSessionOptions): VoiceSession {
+export function createSessionCore(options: SessionCoreOptions): SessionCore {
   const WS: WebSocketConstructor =
     options.WebSocket ?? (WebSocket as unknown as WebSocketConstructor);
 
-  const state = signal<AgentState>("disconnected");
-  const messages = signal<ChatMessage[]>([]);
-  const toolCalls = signal<ToolCallInfo[]>([]);
-  const userUtterance = signal<string | null>(null);
-  const agentUtterance = signal<string | null>(null);
-  const error = signal<SessionError | null>(null);
-  const disconnected = signal<{ intentional: boolean } | null>(null);
-  const started = signal(false);
-  const running = signal(true);
+  // ─── Internal state (replaces signals) ──────────────────────────────────
 
-  // Track error state to auto-clear running
-  const disposeEffect = effect(() => {
-    if (state.value === "error") running.value = false;
-  });
+  let currentSnapshot: SessionSnapshot = {
+    state: "disconnected",
+    messages: [],
+    toolCalls: [],
+    userTranscript: null,
+    agentTranscript: null,
+    error: null,
+    started: false,
+    running: false,
+  };
+
+  const subscribers = new Set<() => void>();
+
+  function notify(): void {
+    for (const sub of subscribers) sub();
+  }
+
+  function updateState(partial: Partial<SessionSnapshot>): void {
+    currentSnapshot = { ...currentSnapshot, ...partial };
+    notify();
+  }
+
+  function getSnapshot(): SessionSnapshot {
+    return currentSnapshot;
+  }
+
+  function subscribe(callback: () => void): () => void {
+    subscribers.add(callback);
+    return () => {
+      subscribers.delete(callback);
+    };
+  }
+
+  // ─── Connection state ───────────────────────────────────────────────────
 
   const conn: ConnState = { ws: null, voiceIO: null, audioSetupInFlight: false, generation: 0 };
   let connectionController: AbortController | null = null;
@@ -241,12 +261,12 @@ export function createVoiceSession(options: VoiceSessionOptions): VoiceSession {
   }
 
   function resetState(): void {
-    batch(() => {
-      messages.value = [];
-      toolCalls.value = [];
-      userUtterance.value = null;
-      agentUtterance.value = null;
-      error.value = null;
+    updateState({
+      messages: [],
+      toolCalls: [],
+      userTranscript: null,
+      agentTranscript: null,
+      error: null,
     });
   }
 
@@ -262,103 +282,113 @@ export function createVoiceSession(options: VoiceSessionOptions): VoiceSession {
     }
   }
 
-  const audioDeps = { send, sendBinary, state, error, batch };
+  const audioDeps = {
+    send,
+    sendBinary,
+    updateState,
+  };
 
-  // ─── Message handling ───────────────────────────────────────────────────────
+  // ─── Message handling ─────────────────────────────────────────────────────
 
-  /** Incremented on each turn boundary — stale async callbacks compare against this. */
+  /** Incremented on each turn boundary -- stale async callbacks compare against this. */
   let handlerGeneration = 0;
   /** Accumulated agent_transcript_delta text for real-time display. */
   let deltaAccum = "";
 
-  /** Single entry point for all server→client session events. */
+  /** Single entry point for all server->client session events. */
   function handleEvent(e: ClientEvent): void {
+    // Clear error state when a non-error event arrives — proves the session
+    // is functional (e.g. audio init failed but WebSocket still works).
+    if (currentSnapshot.state === "error" && e.type !== "error") {
+      updateState({ state: "disconnected", error: null });
+    }
+
     switch (e.type) {
       case "speech_started":
-        userUtterance.value = "";
+        updateState({ userTranscript: "" });
         break;
       case "speech_stopped":
-        // VAD detected end of speech — processing will follow.
+        // VAD detected end of speech -- processing will follow.
         break;
       case "user_transcript_delta":
-        userUtterance.value = e.text;
+        updateState({ userTranscript: e.text });
         break;
       case "user_transcript":
         handlerGeneration++;
         deltaAccum = "";
-        batch(() => {
-          userUtterance.value = null;
-          messages.value = [...messages.value, { role: "user", content: e.text }];
-          state.value = "thinking";
+        updateState({
+          userTranscript: null,
+          messages: [...currentSnapshot.messages, { role: "user", content: e.text }],
+          state: "thinking",
         });
         break;
       case "agent_transcript_delta":
         deltaAccum += (deltaAccum ? " " : "") + e.text;
-        agentUtterance.value = deltaAccum;
+        updateState({ agentTranscript: deltaAccum });
         break;
       case "agent_transcript":
         deltaAccum = "";
-        batch(() => {
-          agentUtterance.value = null;
-          messages.value = [...messages.value, { role: "assistant", content: e.text }];
+        updateState({
+          agentTranscript: null,
+          messages: [...currentSnapshot.messages, { role: "assistant", content: e.text }],
         });
         break;
       case "tool_call":
-        toolCalls.value = [
-          ...toolCalls.value,
-          {
-            toolCallId: e.toolCallId,
-            toolName: e.toolName,
-            args: e.args,
-            status: "pending",
-            afterMessageIndex: messages.value.length - 1,
-          },
-        ];
+        updateState({
+          toolCalls: [
+            ...currentSnapshot.toolCalls,
+            {
+              callId: e.toolCallId,
+              name: e.toolName,
+              args: e.args,
+              status: "pending",
+              afterMessageIndex: currentSnapshot.messages.length - 1,
+            },
+          ],
+        });
         break;
       case "tool_call_done": {
-        const tcs = toolCalls.value;
-        const idx = tcs.findIndex((tc) => tc.toolCallId === e.toolCallId);
+        const tcs = currentSnapshot.toolCalls;
+        const idx = tcs.findIndex((tc) => tc.callId === e.toolCallId);
         if (idx !== -1) {
           const updated = [...tcs];
           const existing = updated[idx];
           if (existing) updated[idx] = { ...existing, status: "done", result: e.result };
-          toolCalls.value = updated;
+          updateState({ toolCalls: updated });
         }
         break;
       }
       case "reply_done":
-        state.value = "listening";
+        updateState({ state: "listening" });
         break;
       case "cancelled":
         handlerGeneration++;
         conn.voiceIO?.flush();
-        batch(() => {
-          userUtterance.value = null;
-          agentUtterance.value = null;
-          state.value = "listening";
+        updateState({
+          userTranscript: null,
+          agentTranscript: null,
+          state: "listening",
         });
         break;
       case "reset": {
         handlerGeneration++;
         conn.voiceIO?.flush();
-        batch(() => {
-          messages.value = [];
-          toolCalls.value = [];
-          userUtterance.value = null;
-          agentUtterance.value = null;
-          error.value = null;
-          state.value = "listening";
+        updateState({
+          messages: [],
+          toolCalls: [],
+          userTranscript: null,
+          agentTranscript: null,
+          error: null,
+          state: "listening",
         });
         break;
       }
       case "error":
         console.error("Agent error:", e.message);
-        batch(() => {
-          error.value = {
-            code: e.code,
-            message: e.message,
-          };
-          state.value = "error";
+        updateState({
+          state: "error",
+          error: { code: e.code, message: e.message },
+          running: false,
         });
         break;
       default:
@@ -368,9 +398,9 @@ export function createVoiceSession(options: VoiceSessionOptions): VoiceSession {
 
   /** Enqueue a PCM16 audio chunk for playback. Transitions state to `"speaking"` on the first chunk. */
   function playAudioChunk(chunk: Uint8Array): void {
-    if (state.value === "error") return;
-    if (state.value !== "speaking") {
-      state.value = "speaking";
+    if (currentSnapshot.state === "disconnected" && currentSnapshot.error !== null) return;
+    if (currentSnapshot.state !== "speaking") {
+      updateState({ state: "speaking" });
     }
     if (chunk.buffer instanceof ArrayBuffer) {
       conn.voiceIO?.enqueue(chunk.buffer);
@@ -390,13 +420,13 @@ export function createVoiceSession(options: VoiceSessionOptions): VoiceSession {
         .done()
         .then(() => {
           if (handlerGeneration !== gen) return;
-          state.value = "listening";
+          updateState({ state: "listening" });
         })
         .catch((err: unknown) => {
           console.warn("Audio playback done failed:", err);
         });
     } else {
-      state.value = "listening";
+      updateState({ state: "listening" });
     }
   }
 
@@ -436,7 +466,7 @@ export function createVoiceSession(options: VoiceSessionOptions): VoiceSession {
   function handleMessage(
     data: string | ArrayBuffer,
   ): (ReadyConfig & { sessionId?: string }) | null {
-    // Binary frame → raw PCM16 TTS audio
+    // Binary frame -> raw PCM16 TTS audio
     if (data instanceof ArrayBuffer) {
       playAudioChunk(new Uint8Array(data));
       return null;
@@ -457,11 +487,10 @@ export function createVoiceSession(options: VoiceSessionOptions): VoiceSession {
     return null;
   }
 
-  // ─── Connection management ──────────────────────────────────────────────────
+  // ─── Connection management ──────────────────────────────────────────────
 
   function connect(opts?: { signal?: AbortSignal }): void {
-    disconnected.value = null;
-    state.value = "connecting";
+    updateState({ state: "connecting", error: null });
     connectionController?.abort();
     cleanupAudio();
     conn.ws?.close();
@@ -487,7 +516,7 @@ export function createVoiceSession(options: VoiceSessionOptions): VoiceSession {
     socket.addEventListener(
       "open",
       () => {
-        state.value = "ready";
+        updateState({ state: "ready" });
       },
       { signal: sig },
     );
@@ -501,20 +530,21 @@ export function createVoiceSession(options: VoiceSessionOptions): VoiceSession {
           const isReconnect = hasConnected;
           hasConnected = true;
           initAudioCapture(conn, config, audioDeps).catch((err) => {
-            audioDeps.batch(() => {
-              audioDeps.error.value = {
+            audioDeps.updateState({
+              state: "error",
+              error: {
                 code: "audio",
                 message: `Audio capture failed: ${errorMessage(err)}`,
-              };
-              audioDeps.state.value = "error";
+              },
+              running: false,
             });
           });
 
           // Send history if reconnecting
-          if (isReconnect && messages.value.length > 0) {
+          if (isReconnect && currentSnapshot.messages.length > 0) {
             send({
               type: "history",
-              messages: messages.value.map((m) => ({ role: m.role, content: m.content })),
+              messages: currentSnapshot.messages.map((m) => ({ role: m.role, content: m.content })),
             });
           }
         }
@@ -529,9 +559,8 @@ export function createVoiceSession(options: VoiceSessionOptions): VoiceSession {
           return;
         }
         controller.abort();
-        disconnected.value = { intentional: false };
         cleanupAudio();
-        state.value = "disconnected";
+        updateState({ state: "disconnected", running: false });
       },
       { signal: sig },
     );
@@ -539,7 +568,7 @@ export function createVoiceSession(options: VoiceSessionOptions): VoiceSession {
 
   function cancel(): void {
     conn.voiceIO?.flush();
-    state.value = "listening";
+    updateState({ state: "listening" });
     send({ type: "cancel" });
   }
 
@@ -560,38 +589,28 @@ export function createVoiceSession(options: VoiceSessionOptions): VoiceSession {
     cleanupAudio();
     conn.ws?.close();
     conn.ws = null;
-    state.value = "disconnected";
-    disconnected.value = { intentional: true };
+    updateState({ state: "disconnected", running: false });
   }
 
   function start(): void {
-    batch(() => {
-      started.value = true;
-      running.value = true;
-    });
+    updateState({ started: true, running: true });
     connect();
   }
 
   function toggle(): void {
-    if (running.value) {
+    if (currentSnapshot.running) {
       cancel();
       disconnect();
+      updateState({ running: false });
     } else {
       connect();
+      updateState({ running: true });
     }
-    running.value = !running.value;
   }
 
   return {
-    state,
-    messages,
-    toolCalls,
-    userUtterance,
-    agentUtterance,
-    error,
-    disconnected,
-    started,
-    running,
+    getSnapshot,
+    subscribe,
     connect,
     cancel,
     resetState,
@@ -600,7 +619,6 @@ export function createVoiceSession(options: VoiceSessionOptions): VoiceSession {
     start,
     toggle,
     [Symbol.dispose]() {
-      disposeEffect();
       disconnect();
     },
   };
