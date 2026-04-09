@@ -13,22 +13,23 @@
 #     -t aai-firecracker-test .
 #   docker run --device /dev/kvm --privileged aai-firecracker-test
 
-# ── Stage 1: Build Linux kernel ──────────────────────────────────────────────
+# ── Stage 1: Download Firecracker-compatible kernel ──────────────────────────
+#
+# Uses a pre-built kernel from Firecracker's quickstart guide.
+# For production, use build-kernel.sh + kernel.config to compile a custom
+# minimal kernel. For CI/testing, the quickstart kernel is sufficient.
 
 FROM ubuntu:24.04 AS kernel-builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      bc bison build-essential cpio curl flex libelf-dev libssl-dev \
-      wget xz-utils \
+      ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy kernel config first — this layer is cached unless kernel.config changes
-COPY packages/aai-server/guest/kernel.config /build/kernel.config
-COPY packages/aai-server/guest/build-kernel.sh /build/build-kernel.sh
-RUN chmod +x /build/build-kernel.sh
-
-# Build vmlinux. The kernel source tarball is downloaded and cached in /tmp.
-RUN /build/build-kernel.sh /build/out
+RUN mkdir -p /build/out \
+    && ARCH=$(uname -m) \
+    && curl -fsSL \
+       "https://s3.amazonaws.com/spec.ccfc.min/img/quickstart_guide/${ARCH}/kernels/vmlinux.bin" \
+       -o /build/out/vmlinux
 
 # ── Stage 2: Build initrd ────────────────────────────────────────────────────
 
