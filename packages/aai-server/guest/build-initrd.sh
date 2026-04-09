@@ -1,54 +1,39 @@
-#!/usr/bin/env bash
-# Build initrd.cpio with static Node.js + harness.
+#!/bin/sh
+# Build initrd.cpio with Node.js + harness for Firecracker guests.
 # Usage: ./build-initrd.sh [output-dir] [harness-path]
 #
 # Produces initrd.cpio.gz in output-dir (default: ./out).
-# harness-path defaults to ./harness.js (relative to this script).
 #
-# NOTE: A statically-linked Node.js binary is required. Standard Node.js
-# binaries dynamically link against glibc and will not work as PID 1 in a
-# minimal initrd environment. You need a Node.js binary built with
-# --fully-static against musl libc (e.g. from an unofficial musl-static
-# distribution or built from source with:
-#   ./configure --fully-static && make -j$(nproc)
-# against a musl-based toolchain). Place the static binary at NODE_BINARY
-# or pass the path via the NODE_BINARY environment variable.
+# The Node.js binary (NODE_BINARY env var or /usr/local/bin/node) and its
+# dynamic libraries are copied into the initrd. On Alpine, this produces
+# a musl-linked guest. The initrd also includes busybox for /bin/sh.
 #
-# Requirements (host):
+# Requirements:
 #   - cpio, gzip
-#   - mknod (requires root or CAP_MKNOD for device nodes)
+#   - Node.js binary (musl-linked, e.g. from Alpine)
+#   - busybox (optional but recommended for /init shell script)
 
-set -euo pipefail
+set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 OUTPUT_DIR="${1:-${SCRIPT_DIR}/out}"
-HARNESS_PATH="${2:-${SCRIPT_DIR}/harness.js}"
-NODE_BINARY="${NODE_BINARY:-/usr/local/bin/node-static}"
+HARNESS_PATH="${2:-${SCRIPT_DIR}/harness.mjs}"
+NODE_BINARY="${NODE_BINARY:-/usr/local/bin/node}"
 
 echo "==> Output dir:   ${OUTPUT_DIR}"
 echo "==> Harness:      ${HARNESS_PATH}"
 echo "==> Node binary:  ${NODE_BINARY}"
 
 # Validate inputs
-if [[ ! -f "${NODE_BINARY}" ]]; then
-  echo "ERROR: Static Node.js binary not found at: ${NODE_BINARY}" >&2
-  echo "       Set NODE_BINARY env var to the path of a statically-linked node." >&2
-  echo "       See the comment at the top of this script for build instructions." >&2
+if [ ! -f "${NODE_BINARY}" ]; then
+  echo "ERROR: Node.js binary not found at: ${NODE_BINARY}" >&2
   exit 1
 fi
 
-if [[ ! -f "${HARNESS_PATH}" ]]; then
-  echo "ERROR: harness.js not found at: ${HARNESS_PATH}" >&2
+if [ ! -f "${HARNESS_PATH}" ]; then
+  echo "ERROR: harness not found at: ${HARNESS_PATH}" >&2
   echo "       Build the harness first (pnpm build in packages/aai-server)." >&2
   exit 1
-fi
-
-# Verify the node binary is actually static
-if command -v ldd &>/dev/null; then
-  if ldd "${NODE_BINARY}" 2>&1 | grep -qv 'not a dynamic executable'; then
-    echo "WARNING: ${NODE_BINARY} may not be statically linked." >&2
-    echo "         A dynamically linked binary will fail as PID 1 in a minimal initrd." >&2
-  fi
 fi
 
 mkdir -p "${OUTPUT_DIR}"
@@ -63,38 +48,66 @@ echo "==> Building initrd filesystem in ${INITRD_ROOT}..."
 mkdir -p "${INITRD_ROOT}/app"
 mkdir -p "${INITRD_ROOT}/dev"
 mkdir -p "${INITRD_ROOT}/tmp"
+mkdir -p "${INITRD_ROOT}/lib"
+mkdir -p "${INITRD_ROOT}/usr/lib"
+mkdir -p "${INITRD_ROOT}/bin"
+mkdir -p "${INITRD_ROOT}/proc"
 
-# Copy static Node.js binary as /init (PID 1)
-# The kernel executes /init after mounting the initramfs.
-echo "==> Copying node binary as /init..."
-cp "${NODE_BINARY}" "${INITRD_ROOT}/init"
+# Copy Node.js binary
+echo "==> Copying node binary..."
+cp "${NODE_BINARY}" "${INITRD_ROOT}/bin/node"
+chmod 755 "${INITRD_ROOT}/bin/node"
+
+# Copy busybox (provides /bin/sh, mount, etc.)
+if command -v busybox >/dev/null 2>&1; then
+  echo "==> Copying busybox..."
+  cp "$(command -v busybox)" "${INITRD_ROOT}/bin/busybox"
+  chmod 755 "${INITRD_ROOT}/bin/busybox"
+  # Create symlinks for essential commands
+  for cmd in sh mount umount mkdir cat ls; do
+    ln -sf busybox "${INITRD_ROOT}/bin/${cmd}"
+  done
+else
+  echo "WARNING: busybox not found — /init script needs /bin/sh" >&2
+fi
+
+# Copy dynamic libraries needed by Node.js (musl from Alpine)
+echo "==> Copying shared libraries..."
+for lib in /lib/ld-musl-* /lib/libz.* /usr/lib/libstdc++.* /usr/lib/libgcc_s.*; do
+  if [ -e "$lib" ]; then
+    destdir="${INITRD_ROOT}/$(dirname "$lib")"
+    mkdir -p "$destdir"
+    cp "$lib" "$destdir/"
+    echo "    $(basename "$lib")"
+  fi
+done
+
+# Create /init script — the kernel executes this as PID 1.
+cat > "${INITRD_ROOT}/init" << 'INIT_EOF'
+#!/bin/sh
+/bin/mount -t proc proc /proc 2>/dev/null || true
+/bin/mount -t devtmpfs devtmpfs /dev 2>/dev/null || true
+exec /bin/node /app/harness.mjs
+INIT_EOF
 chmod 755 "${INITRD_ROOT}/init"
 
-# Copy harness.js — /init (node) will exec this as its entry point
-# The guest kernel passes /app/harness.js as argv[1] via the kernel cmdline
-# (append="-- /app/harness.js") or the init reads it from a fixed path.
-echo "==> Copying harness.js..."
-cp "${HARNESS_PATH}" "${INITRD_ROOT}/app/harness.js"
-chmod 644 "${INITRD_ROOT}/app/harness.js"
+# Copy harness
+echo "==> Copying harness..."
+cp "${HARNESS_PATH}" "${INITRD_ROOT}/app/harness.mjs"
+chmod 644 "${INITRD_ROOT}/app/harness.mjs"
 
-# Create essential device nodes
-# These require root (mknod). In CI, run this script as root or with CAP_MKNOD.
-echo "==> Creating device nodes (requires root)..."
+# Create device nodes if we can (kernel needs /dev/console before init).
+# devtmpfs mounted by /init handles the rest.
+if [ "$(id -u)" = "0" ]; then
+  echo "==> Creating device nodes..."
+  mknod -m 666 "${INITRD_ROOT}/dev/null"    c 1 3
+  mknod -m 444 "${INITRD_ROOT}/dev/urandom" c 1 9
+  mknod -m 600 "${INITRD_ROOT}/dev/console" c 5 1
+else
+  echo "==> Skipping mknod (not root). devtmpfs will provide devices at boot."
+fi
 
-# /dev/null — character device 1:3
-mknod -m 666 "${INITRD_ROOT}/dev/null"    c 1 3
-
-# /dev/urandom — character device 1:9
-mknod -m 444 "${INITRD_ROOT}/dev/urandom" c 1 9
-
-# /dev/console — character device 5:1 (for serial console output)
-mknod -m 600 "${INITRD_ROOT}/dev/console" c 5 1
-
-# /dev/vsock — character device 10:238 (AF_VSOCK)
-mknod -m 600 "${INITRD_ROOT}/dev/vsock"   c 10 238
-
-# Pack as gzipped cpio archive
-# Using newc format (the only format supported by the Linux kernel initramfs).
+# Pack as gzipped cpio archive (newc format required by Linux initramfs)
 OUTPUT_CPIO="${OUTPUT_DIR}/initrd.cpio.gz"
 echo "==> Packing cpio archive..."
 (
