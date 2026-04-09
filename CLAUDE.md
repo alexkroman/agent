@@ -181,6 +181,7 @@ restrictions apply there.
 - `snapshot.ts` — base snapshot creation and restore for fast startup
 - `guest/harness.ts` — guest entry point (runs as PID 1 in initrd)
 - `guest/harness-logic.ts` — guest agent execution logic
+- `harness-runtime.ts` — file-per-tool RPC dispatcher that runs inside the isolate
 - `transport-websocket.ts` — WebSocket transport layer
 - `auth.ts` — authentication/authorization
 - `credentials.ts` — credential derivation
@@ -368,6 +369,22 @@ Key properties:
   No `import type` restriction — the guest can import anything.
 - **Dev mode (macOS)**: Firecracker unavailable; sandbox falls back to a
   plain child process with no VM isolation.
+
+`harness-runtime.ts` is a self-contained file-per-tool RPC dispatcher with
+**no workspace imports**. It exports `createDispatcher(opts)` for building
+a dispatch function from tool/hook handler maps, and `startDispatcher(tools,
+hooks)` for the isolate entry point that wires up SecureExec bindings.
+
+Rules for `harness-runtime.ts`:
+
+- **No runtime imports** from workspace packages or npm deps. The file must
+  be entirely self-contained with inline type definitions. Any runtime import
+  will cause the isolate to fail to boot, manifesting as timeout errors in
+  integration tests.
+- Host-side validation (in `sandbox.ts`) is sufficient. The isolate trusts
+  the host since they run in the same server process.
+- `sandbox-harness.ts` manages the sandbox execution environment on the
+  host side.
 
 ### Platform sandbox (aai-server)
 

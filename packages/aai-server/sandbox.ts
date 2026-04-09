@@ -57,6 +57,204 @@ export type SandboxOptions = {
 
 export type Sandbox = AgentRuntime;
 
+// ── Bindings: KV (isolate → host) ──────────────────────────────────────
+
+function buildKvBindings(kv: import("@alexkroman1/aai/kv").Kv): BindingTree {
+  return {
+    get: (key: unknown) => kv.get(key as string),
+    set: (key: unknown, value: unknown, expireIn?: unknown) =>
+      kv.set(key as string, value, expireIn ? { expireIn: expireIn as number } : undefined),
+    del: (key: unknown) => kv.delete(key as string),
+  };
+}
+
+// ── Bindings: RPC (host → isolate via pull-based work queue) ────────────
+
+type RpcChannel = {
+  call<T>(message: Record<string, unknown>, timeoutMs: number): Promise<T>;
+  shutdown(): void;
+};
+
+function buildRpcChannel(): { bindings: BindingTree; channel: RpcChannel } {
+  let pendingRecv: ((req: unknown) => void) | null = null;
+  const requestQueue: unknown[] = [];
+  const responses = new Map<
+    string,
+    { resolve: (v: unknown) => void; reject: (e: Error) => void }
+  >();
+  let nextId = 0;
+
+  const bindings: BindingTree = {
+    recv: () =>
+      new Promise((resolve) => {
+        if (requestQueue.length > 0) {
+          resolve(requestQueue.shift());
+        } else {
+          pendingRecv = resolve;
+        }
+      }),
+    send: (id: unknown, result: unknown, errorMsg?: unknown) => {
+      const entry = responses.get(id as string);
+      if (!entry) return;
+      responses.delete(id as string);
+      if (errorMsg) entry.reject(new Error(errorMsg as string));
+      else entry.resolve(result);
+    },
+  };
+
+  const channel: RpcChannel = {
+    call<T>(message: Record<string, unknown>, timeoutMs: number): Promise<T> {
+      const id = String(nextId++);
+      const { promise, resolve, reject } = Promise.withResolvers<T>();
+      responses.set(id, { resolve: resolve as (v: unknown) => void, reject });
+
+      const request = { ...message, id };
+      if (pendingRecv) {
+        const recv = pendingRecv;
+        pendingRecv = null;
+        recv(request);
+      } else {
+        requestQueue.push(request);
+      }
+
+      const timer = setTimeout(() => {
+        if (responses.delete(id)) {
+          reject(new Error(`RPC timeout after ${timeoutMs}ms`));
+        }
+      }, timeoutMs);
+
+      return promise.finally(() => clearTimeout(timer));
+    },
+
+    shutdown() {
+      if (pendingRecv) {
+        pendingRecv(null);
+        pendingRecv = null;
+      }
+      for (const [, { reject }] of responses) {
+        reject(new Error("Sandbox shutting down"));
+      }
+      responses.clear();
+    },
+  };
+
+  return { bindings, channel };
+}
+
+// ── Isolate lifecycle ───────────────────────────────────────────────────
+
+type IsolateHandle = { runtime: NodeRuntime; channel: RpcChannel };
+
+async function startIsolate(
+  workerCode: string,
+  kv: import("@alexkroman1/aai/kv").Kv,
+  agentEnv: Record<string, string>,
+): Promise<IsolateHandle> {
+  const harnessFiles = await getHarnessFiles();
+  const fs = createInMemoryFileSystem();
+  await fs.writeFile("/app/agent_bundle.js", workerCode);
+  for (const file of harnessFiles) {
+    await fs.writeFile(`/app/${file.name}`, file.content);
+  }
+
+  const kvBindings = buildKvBindings(kv);
+  const { bindings: rpcBindings, channel } = buildRpcChannel();
+  const allBindings: BindingTree = { kv: kvBindings, rpc: rpcBindings };
+
+  const prefixedEnv: Record<string, string> = {};
+  for (const [k, v] of Object.entries(agentEnv)) {
+    prefixedEnv[`AAI_ENV_${k}`] = v;
+  }
+  const allowedKeys = new Set(Object.keys(prefixedEnv));
+
+  if (!jailInitialized) {
+    jailInitialized = true;
+    if (isJailAvailable()) {
+      const { createRequire } = await import("node:module");
+      const { dirname, join } = await import("node:path");
+      const req = createRequire(import.meta.url);
+      const platformPkg = `@secure-exec/v8-${process.platform}-${process.arch === "x64" ? "x64-gnu" : "arm64-gnu"}`;
+      try {
+        const pkgDir = dirname(req.resolve(`${platformPkg}/package.json`));
+        const binaryPath = join(pkgDir, "secure-exec-v8");
+        jailLauncher = await initProcessJail({ binaryPath, memoryLimitMb: JAIL_MEMORY_LIMIT_MB });
+        if (jailLauncher) {
+          process.once("beforeExit", () => {
+            jailLauncher?.cleanup().catch(() => {
+              /* ignore cleanup errors during shutdown */
+            });
+          });
+        }
+      } catch (err) {
+        console.warn("Failed to initialize process jail:", err);
+      }
+    }
+  }
+
+  const driverFactory: NodeRuntimeDriverFactory = {
+    createRuntimeDriver(options: Parameters<NodeRuntimeDriverFactory["createRuntimeDriver"]>[0]) {
+      return new NodeExecutionDriver(
+        Object.assign({}, options, { bindings: allBindings }) as ConstructorParameters<
+          typeof NodeExecutionDriver
+        >[0],
+      );
+    },
+  };
+
+  const runtime = new NodeRuntime({
+    systemDriver: createNodeDriver({
+      filesystem: fs,
+      permissions: {
+        fs: (req: { op: string; path: string }) =>
+          READ_ONLY_FS_OPS.has(req.op)
+            ? { allow: true }
+            : { allow: false, reason: "Filesystem is read-only" },
+        network: () => ({ allow: false, reason: "Network disabled — use bindings" }),
+        childProcess: () => ({ allow: false, reason: "Subprocess spawning is disabled" }),
+        env: (req: { op: string; key: string }) =>
+          req.op === "read" && allowedKeys.has(req.key ?? "")
+            ? { allow: true }
+            : { allow: false, reason: "Env access restricted" },
+      },
+      processConfig: { env: prefixedEnv, timingMitigation: "freeze" },
+    }),
+    runtimeDriverFactory: driverFactory,
+    memoryLimit: SANDBOX_MEMORY_LIMIT_MB,
+    onStdio(event: StdioEvent) {
+      if (event.channel === "stderr") {
+        console.error("[isolate stderr]", event.message);
+      }
+    },
+  });
+
+  // Bridge: convert the single-bundle AgentDef format into the
+  // file-per-tool ToolHandler/HookHandler maps that startDispatcher expects.
+  // This shim will be removed when the deploy pipeline ships per-file bundles.
+  const entryScript = [
+    'import agent from "/app/agent_bundle.js";',
+    'import { startDispatcher } from "/app/harness-runtime.mjs";',
+    "const tools = {};",
+    "for (const [name, def] of Object.entries(agent.tools || {})) {",
+    "  tools[name] = { default: def.execute };",
+    "}",
+    "const hooks = {};",
+    "if (agent.onConnect) hooks.onConnect = { default: agent.onConnect };",
+    "if (agent.onDisconnect) hooks.onDisconnect = { default: agent.onDisconnect };",
+    "if (agent.onUserTranscript) hooks.onUserTranscript = { default: agent.onUserTranscript };",
+    "if (agent.onError) hooks.onError = { default: agent.onError };",
+    "startDispatcher(tools, hooks);",
+  ].join("\n");
+
+  runtime.exec(entryScript, { cwd: "/app" }).catch((err: unknown) => {
+    const msg = errorMessage(err);
+    if (!msg.includes("disposed")) {
+      console.warn("Isolate exited unexpectedly:", msg);
+    }
+  });
+
+  return { runtime, channel };
+}
+
 // ── Hook invoker ────────────────────────────────────────────────────────
 
 /**
