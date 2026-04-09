@@ -1,0 +1,37 @@
+# Dockerfile.test — Run all tests in a Linux environment.
+#
+# Fast iteration: no kernel build, no guest images. Just the full
+# project with all deps installed, ready to run any test command.
+#
+# Usage:
+#   ./scripts/docker-test.sh                  # run all tests
+#   ./scripts/docker-test.sh pnpm check:local # run check:local
+#   ./scripts/docker-test.sh pnpm vitest run packages/aai-server/sandbox-vm.test.ts
+
+FROM node:22-slim
+
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates git \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN corepack enable && corepack prepare pnpm@10.29.3 --activate
+
+# Layer 1: workspace config + lockfile (cached unless deps change)
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/aai/package.json packages/aai/
+COPY packages/aai-ui/package.json packages/aai-ui/
+COPY packages/aai-cli/package.json packages/aai-cli/
+COPY packages/aai-server/package.json packages/aai-server/
+COPY packages/aai-templates/package.json packages/aai-templates/
+
+RUN pnpm install --frozen-lockfile --ignore-scripts --prod=false
+
+# Layer 2: source (busted on any code change, but deps layer is cached)
+COPY . .
+
+# Build all packages
+RUN pnpm -r run build
+
+CMD ["pnpm", "test"]
