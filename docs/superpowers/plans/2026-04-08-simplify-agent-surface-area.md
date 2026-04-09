@@ -22,33 +22,36 @@
 | `packages/aai/isolate/manifest.test.ts` | Tests for manifest types |
 | `packages/aai-cli/_scanner.ts` | Scans agent directory → manifest object |
 | `packages/aai-cli/_scanner.test.ts` | Tests for directory scanner |
-| `packages/aai-cli/_bundler-v2.ts` | New esbuild-based bundler |
-| `packages/aai-cli/_bundler-v2.test.ts` | Tests for new bundler |
-| `packages/aai-server/harness-runtime-v2.ts` | New isolate dispatcher for file-per-tool |
-| `packages/aai-server/harness-runtime-v2.test.ts` | Tests for new dispatcher |
-| `packages/aai/host/testing-v2.ts` | Updated test harness for directory agents |
-| `packages/aai/host/testing-v2.test.ts` | Tests for new test harness |
-| `packages/aai-templates/templates/simple-v2/` | Proof-of-concept migrated template |
+| `packages/aai-cli/_dev-server.ts` | Dev server for directory-format agents |
+
+### Files to rewrite
+
+| File | Change |
+|------|--------|
+| `packages/aai-cli/_bundler.ts` | Replace Vite SSR + node:vm with esbuild + scanner |
+| `packages/aai-server/harness-runtime.ts` | Replace single-bundle dispatcher with file-per-tool RPC |
+| `packages/aai/host/testing.ts` | Replace `createTestHarness(AgentDef)` with `createTestHarness(agentDir)` |
+| `packages/aai-templates/templates/*/` | Rewrite every template from defineAgent to directory format |
+| `packages/aai-templates/scaffold/` | Rewrite scaffold for directory format |
 
 ### Files to modify
 
 | File | Change |
 |------|--------|
 | `packages/aai/isolate/index.ts` | Re-export manifest types |
-| `packages/aai/package.json` | Add `./manifest` export |
+| `packages/aai/index.ts` | Replace defineAgent/defineTool exports with manifest types |
+| `packages/aai/package.json` | Update exports map |
 | `packages/aai-cli/cli.ts` | Wire new bundler into build/deploy commands |
-| `packages/aai-cli/dev.ts` | New dev server using directory scanner |
+| `packages/aai-cli/dev.ts` | Use new dev server |
 | `packages/aai-cli/deploy.ts` | Use new bundler output |
 | `packages/aai-cli/init.ts` | Scaffold directory-format projects |
-| `packages/aai/host/vite-plugin.ts` | Load from directory instead of single agent.ts |
 
-### Files to eventually remove (after migration complete)
+### Files to remove
 
-| File | Replaced by |
-|------|-------------|
-| `packages/aai-cli/_bundler.ts` | `_bundler-v2.ts` |
-| `packages/aai-server/harness-runtime.ts` | `harness-runtime-v2.ts` |
-| `packages/aai/host/testing.ts` | `testing-v2.ts` |
+| File | Reason |
+|------|--------|
+| `packages/aai/isolate/types.ts` | `defineAgent`, `defineTool`, `defineToolFactory` replaced by file conventions |
+| `packages/aai/host/vite-plugin.ts` | Vite no longer needed for agent dev server |
 
 ---
 
@@ -1384,54 +1387,55 @@ git commit -m "feat: add test harness for directory-based agents"
 
 ---
 
-## Task 6: Proof-of-Concept Template (simple-v2)
+## Task 6: Rewrite All Templates to Directory Format
 
-Migrate the simplest template to validate the end-to-end authoring experience.
+Rewrite every existing template in-place from `defineAgent()` to the directory convention. Delete `agent.ts`, create `agent.json` + `tools/*.ts` + `hooks/*.ts`. Convert `state()` → `ctx.kv`. Remove all Zod and SDK imports from agent code.
 
 **Files:**
-- Create: `packages/aai-templates/templates/simple-v2/agent.json`
-- Create: `packages/aai-templates/templates/simple-v2/agent.test.ts`
+- Rewrite: All directories under `packages/aai-templates/templates/`
+- Rewrite: `packages/aai-templates/scaffold/`
 
 **Dependencies:** Task 5 (test harness)
 
-- [ ] **Step 1: Create the minimal directory agent**
+Each template follows this mechanical conversion:
 
+1. Read `agent.ts` → extract `name`, `systemPrompt`, `greeting`, `builtinTools`, `maxSteps`, `toolChoice`, `sttPrompt`, `idleTimeoutMs` → write `agent.json`
+2. Each entry in `tools: {}` → `tools/<name>.ts` with `description`, `parameters` (Zod → JSON Schema), `export default execute`
+3. Each lifecycle hook (`onConnect`, etc.) → `hooks/on-connect.ts` etc.
+4. All `ctx.state.X` mutations → `await ctx.kv.get/set("X", ...)` calls
+5. Delete `agent.ts`, remove `import { defineAgent, defineTool } from "@alexkroman1/aai"` and `import { z } from "zod"`
+6. Update `agent.test.ts` to use `createTestHarness(dir)` instead of `createTestHarness(agent)`
+7. Keep `client.tsx` files as-is (UI code unchanged)
+
+- [ ] **Step 1: Rewrite simple templates** (simple, math-buddy, code-interpreter)
+
+These have no custom tools — just `agent.json` with config.
+
+**simple/agent.json:**
 ```json
-// packages/aai-templates/templates/simple-v2/agent.json
 {
   "name": "Simple Assistant"
 }
 ```
 
-That's it. A deployable agent in one line of JSON.
-
-- [ ] **Step 2: Write a test proving it works with the new harness**
-
-```typescript
-// packages/aai-templates/templates/simple-v2/agent.test.ts
-import { describe, expect, test } from "vitest";
-import { createDirTestHarness } from "@alexkroman1/aai/host/testing-v2";
-import { join } from "node:path";
-
-describe("simple-v2 agent", () => {
-  test("loads without errors", async () => {
-    const dir = join(__dirname);
-    const harness = await createDirTestHarness(dir);
-    // Minimal agent has no tools or hooks — just verify it loads
-    expect(harness).toBeDefined();
-  });
-});
+**math-buddy/agent.json:**
+```json
+{
+  "name": "Math Buddy",
+  "systemPrompt": "You are Math Buddy...",
+  "greeting": "Hey, I'm Math Buddy...",
+  "builtinTools": ["run_code"]
+}
 ```
 
-- [ ] **Step 3: Run the test**
+Delete each `agent.ts`.
 
-Run: `pnpm vitest run packages/aai-templates/templates/simple-v2/agent.test.ts`
-Expected: PASS
+- [ ] **Step 2: Rewrite builtin-tool-only templates** (web-researcher, travel-concierge, health-assistant, personal-finance, support)
 
-- [ ] **Step 4: Create a more realistic template with a tool**
+These use builtin tools only — `agent.json` with `builtinTools` array. Example:
 
+**web-researcher/agent.json:**
 ```json
-// packages/aai-templates/templates/web-researcher-v2/agent.json
 {
   "name": "Web Researcher",
   "systemPrompt": "You are a research assistant. Search the web to answer questions. Cite your sources.",
@@ -1440,288 +1444,67 @@ Expected: PASS
 }
 ```
 
-- [ ] **Step 5: Create a stateful template with custom tools**
+- [ ] **Step 3: Rewrite stateful templates** (pizza-ordering, dispatch-center, solo-rpg, memory-agent, smart-research)
 
+These require converting `state()` → `ctx.kv` calls. Each tool becomes its own file.
+
+**pizza-ordering/agent.json:**
 ```json
-// packages/aai-templates/templates/pizza-v2/agent.json
 {
   "name": "Pizza Palace",
-  "systemPrompt": "You are a pizza ordering assistant for Pizza Palace. Help customers build and manage their pizza orders. Be friendly and suggest popular combinations.",
-  "greeting": "Welcome to Pizza Palace. What kind of pizza can I get started for you?",
+  "systemPrompt": "You are a pizza ordering assistant...",
+  "greeting": "Welcome to Pizza Palace...",
   "maxSteps": 8
 }
 ```
 
+**pizza-ordering/tools/add_pizza.ts:**
 ```typescript
-// packages/aai-templates/templates/pizza-v2/tools/add_pizza.ts
 export const description = "Add a pizza to the customer's order";
 
 export const parameters = {
   type: "object",
   properties: {
-    size: {
-      type: "string",
-      enum: ["small", "medium", "large"],
-      description: "Pizza size",
-    },
-    toppings: {
-      type: "array",
-      items: { type: "string" },
-      description: "List of toppings",
-    },
+    size: { type: "string", enum: ["small", "medium", "large"], description: "Pizza size" },
+    toppings: { type: "array", items: { type: "string" }, description: "List of toppings" }
   },
-  required: ["size", "toppings"],
+  required: ["size", "toppings"]
 };
 
 const PRICES = { small: 8, medium: 12, large: 16 };
 const TOPPING_PRICE = 1.5;
 
-export default async function execute(
-  args: { size: "small" | "medium" | "large"; toppings: string[] },
-  ctx: { kv: any },
-) {
+export default async function execute(args, ctx) {
   const pizzas = (await ctx.kv.get("pizzas")) ?? [];
   const nextId = (await ctx.kv.get("nextId")) ?? 1;
-
   const price = PRICES[args.size] + args.toppings.length * TOPPING_PRICE;
   const pizza = { id: nextId, ...args, price };
-
   await ctx.kv.set("pizzas", [...pizzas, pizza]);
   await ctx.kv.set("nextId", nextId + 1);
-
-  return { added: pizza, orderTotal: calculateTotal([...pizzas, pizza]) };
-}
-
-function calculateTotal(pizzas: { price: number }[]): string {
-  return "$" + pizzas.reduce((sum, p) => sum + p.price, 0).toFixed(2);
+  return { added: pizza, orderTotal: "$" + [...pizzas, pizza].reduce((s, p) => s + p.price, 0).toFixed(2) };
 }
 ```
 
-```typescript
-// packages/aai-templates/templates/pizza-v2/tools/get_order.ts
-export const description = "Get the current pizza order with all items and total";
+Repeat for `get_order.ts`, `remove_pizza.ts`, etc.
 
-export default async function execute(
-  _args: unknown,
-  ctx: { kv: any },
-) {
-  const pizzas = (await ctx.kv.get("pizzas")) ?? [];
-  const total = pizzas.reduce(
-    (sum: number, p: { price: number }) => sum + p.price,
-    0,
-  );
-  return { pizzas, total: "$" + total.toFixed(2) };
-}
-```
+- [ ] **Step 4: Rewrite UI-heavy templates** (night-owl, infocom-adventure, embedded-assets)
 
-```typescript
-// packages/aai-templates/templates/pizza-v2/tools/remove_pizza.ts
-export const description = "Remove a pizza from the order by its ID";
+Keep `client.tsx` as-is. Only rewrite the agent side (`agent.ts` → `agent.json` + `tools/`).
 
-export const parameters = {
-  type: "object",
-  properties: {
-    id: { type: "number", description: "Pizza ID to remove" },
-  },
-  required: ["id"],
-};
+- [ ] **Step 5: Rewrite test-patterns template**
 
-export default async function execute(
-  args: { id: number },
-  ctx: { kv: any },
-) {
-  const pizzas: { id: number; price: number }[] =
-    (await ctx.kv.get("pizzas")) ?? [];
-  const index = pizzas.findIndex((p) => p.id === args.id);
-  if (index === -1) return { error: `No pizza with id ${args.id}` };
-  const removed = pizzas.splice(index, 1)[0];
-  await ctx.kv.set("pizzas", pizzas);
-  return { removed, remaining: pizzas.length };
-}
-```
+This exercises all features — converts to the most complete directory-format example.
 
-- [ ] **Step 6: Write test for pizza template**
+- [ ] **Step 6: Rewrite scaffold**
 
-```typescript
-// packages/aai-templates/templates/pizza-v2/agent.test.ts
-import { describe, expect, test } from "vitest";
-import { createDirTestHarness } from "@alexkroman1/aai/host/testing-v2";
-import { join } from "node:path";
-
-describe("pizza-v2 agent", () => {
-  test("add and retrieve pizza order", async () => {
-    const harness = await createDirTestHarness(join(__dirname));
-
-    await harness.executeTool("add_pizza", {
-      size: "large",
-      toppings: ["pepperoni", "mushrooms"],
-    });
-
-    const order = await harness.executeTool("get_order", {});
-    expect(order).toEqual({
-      pizzas: [
-        {
-          id: 1,
-          size: "large",
-          toppings: ["pepperoni", "mushrooms"],
-          price: 19,
-        },
-      ],
-      total: "$19.00",
-    });
-  });
-
-  test("remove pizza from order", async () => {
-    const harness = await createDirTestHarness(join(__dirname));
-
-    await harness.executeTool("add_pizza", {
-      size: "small",
-      toppings: ["cheese"],
-    });
-    await harness.executeTool("add_pizza", {
-      size: "medium",
-      toppings: ["veggie"],
-    });
-
-    const result = await harness.executeTool("remove_pizza", { id: 1 });
-    expect(result).toEqual({ removed: expect.objectContaining({ id: 1 }), remaining: 1 });
-  });
-});
-```
-
-- [ ] **Step 7: Run all template tests**
-
-Run: `pnpm vitest run packages/aai-templates/templates/simple-v2/ packages/aai-templates/templates/pizza-v2/`
-Expected: PASS (all tests)
-
-- [ ] **Step 8: Commit**
-
-```bash
-git add packages/aai-templates/templates/simple-v2/ packages/aai-templates/templates/web-researcher-v2/ packages/aai-templates/templates/pizza-v2/
-git commit -m "feat: add proof-of-concept templates in directory agent format"
-```
-
----
-
-## Task 7: Wire New Bundler into CLI Build Command
-
-Connect `_bundler-v2.ts` to the `aai build` command, supporting both old and new formats during migration.
-
-**Files:**
-- Modify: `packages/aai-cli/_bundler-v2.ts` (add `runBuildCommandV2`)
-- Modify: `packages/aai-cli/cli.ts` (detect format, route to v2 bundler)
-
-**Dependencies:** Task 3 (bundler)
-
-- [ ] **Step 1: Add format detection function**
-
-Add to `packages/aai-cli/_bundler-v2.ts`:
-
-```typescript
-import { access } from "node:fs/promises";
-import { join } from "node:path";
-
-/**
- * Detect whether the agent directory uses the new directory format (agent.json)
- * or the legacy single-file format (agent.ts + defineAgent).
- */
-export async function detectAgentFormat(
-  cwd: string,
-): Promise<"directory" | "legacy"> {
-  try {
-    await access(join(cwd, "agent.json"));
-    return "directory";
-  } catch {
-    return "legacy";
-  }
-}
-
-export async function runBuildCommandV2(cwd: string): Promise<void> {
-  const { log } = await import("./_ui.ts");
-  const output = await bundleAgentV2(cwd);
-  // Write output files
-  const { mkdir, writeFile } = await import("node:fs/promises");
-  const buildDir = join(cwd, ".aai", "build");
-  await mkdir(join(buildDir, "tools"), { recursive: true });
-  await mkdir(join(buildDir, "hooks"), { recursive: true });
-
-  await writeFile(join(buildDir, "manifest.json"), output.manifestJson);
-
-  for (const [name, code] of Object.entries(output.toolBundles)) {
-    await writeFile(join(buildDir, "tools", `${name}.js`), code);
-  }
-  for (const [name, code] of Object.entries(output.hookBundles)) {
-    await writeFile(join(buildDir, "hooks", `${name}.js`), code);
-  }
-
-  log(`Build complete: ${output.manifest.name}`);
-  log(`  ${Object.keys(output.toolBundles).length} tools, ${Object.keys(output.hookBundles).length} hooks`);
-  log(`  Output: ${buildDir}`);
-}
-```
-
-- [ ] **Step 2: Update CLI to detect and route**
-
-In `packages/aai-cli/cli.ts`, update the build command handler to detect format:
-
-```typescript
-// In the build command handler (around line 129):
-const { detectAgentFormat } = await import("./_bundler-v2.ts");
-const format = await detectAgentFormat(cwd);
-if (format === "directory") {
-  const { runBuildCommandV2 } = await import("./_bundler-v2.ts");
-  await runBuildCommandV2(cwd);
-} else {
-  const { runBuildCommand } = await import("./_bundler.ts");
-  await runBuildCommand(cwd);
-}
-```
-
-- [ ] **Step 3: Test manually with proof-of-concept template**
-
-Run: `cd packages/aai-templates/templates/pizza-v2 && pnpm aai build`
-Expected: Build output in `.aai/build/` with `manifest.json`, `tools/add_pizza.js`, `tools/get_order.js`, `tools/remove_pizza.js`
-
-Verify: `cat .aai/build/manifest.json | jq .tools` shows tool schemas extracted correctly.
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add packages/aai-cli/_bundler-v2.ts packages/aai-cli/cli.ts
-git commit -m "feat: wire v2 bundler into CLI build command with format detection"
-```
-
----
-
-## Task 8: Update CLI Init Command for Directory Format
-
-Scaffold new projects in the directory format by default.
-
-**Files:**
-- Modify: `packages/aai-cli/init.ts`
-- Modify: `packages/aai-cli/_init.ts`
-- Modify: `packages/aai-cli/_templates.ts`
-
-**Dependencies:** Task 6 (templates exist)
-
-- [ ] **Step 1: Add v2 templates to template list**
-
-In `packages/aai-templates/templates.json`, add entries for the new format templates:
+Update `packages/aai-templates/scaffold/` to use directory format:
+- Replace `agent.ts` with `agent.json`
+- Remove `vite.config.ts` (no Vite plugin needed)
+- Update `package.json` to remove `@alexkroman1/aai` dependency (agent code needs no SDK imports)
+- Update `CLAUDE.md` with new agent API docs
 
 ```json
-{
-  "simple-v2": { "description": "Minimal voice assistant (directory format)" },
-  "web-researcher-v2": { "description": "Web research assistant (directory format)" },
-  "pizza-v2": { "description": "Pizza ordering with custom tools (directory format)" }
-}
-```
-
-- [ ] **Step 2: Update scaffold for directory format**
-
-The scaffold needs to produce a project without `vite.config.ts` importing `@alexkroman1/aai/vite-plugin`, without `agent.ts`, and with `agent.json` instead. Create a `scaffold-v2/` directory alongside the existing `scaffold/`:
-
-```json
-// packages/aai-templates/scaffold-v2/package.json
+// packages/aai-templates/scaffold/package.json
 {
   "name": "my-agent",
   "private": true,
@@ -1742,458 +1525,216 @@ The scaffold needs to produce a project without `vite.config.ts` importing `@ale
 }
 ```
 
-Note: No `@alexkroman1/aai` dependency needed for agent code. Only `aai-ui` for client and `aai-cli` for dev/build/deploy.
+- [ ] **Step 7: Update template tests to use new harness**
 
-```json
-// packages/aai-templates/scaffold-v2/tsconfig.json
-{
-  "compilerOptions": {
-    "target": "ES2022",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true
-  },
-  "include": ["**/*.ts", "**/*.tsx"]
-}
-```
+All `agent.test.ts` files use `createTestHarness(join(__dirname))` instead of `createTestHarness(agent)`.
 
-- [ ] **Step 3: Update init to detect and use v2 scaffold**
-
-In `packages/aai-cli/_init.ts`, check whether the selected template is a v2 template (has `agent.json` instead of `agent.ts`) and use `scaffold-v2/` accordingly:
-
-```typescript
-// In runInit(), after downloading template:
-const isV2 = await fileExists(join(targetDir, "agent.json"));
-const scaffoldDir = isV2 ? "scaffold-v2" : "scaffold";
-// Use the appropriate scaffold when merging files
-```
-
-- [ ] **Step 4: Test init with new template**
-
-Run: `pnpm aai init --template pizza-v2 --yes --skip-api --skip-deploy`
-Expected: Creates project with `agent.json`, `tools/add_pizza.ts`, `tools/get_order.ts`, `tools/remove_pizza.ts`, no `agent.ts`, no `vite.config.ts`
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add packages/aai-templates/ packages/aai-cli/_init.ts packages/aai-cli/init.ts
-git commit -m "feat: update CLI init to scaffold directory-format agents"
-```
-
----
-
-## Task 9: Update Dev Server for Directory Format
-
-The dev command needs to load and serve directory-format agents with file watching.
-
-**Files:**
-- Create: `packages/aai-cli/_dev-v2.ts`
-- Modify: `packages/aai-cli/dev.ts`
-
-**Dependencies:** Task 2 (scanner), Task 7 (format detection)
-
-- [ ] **Step 1: Implement the v2 dev server**
-
-```typescript
-// packages/aai-cli/_dev-v2.ts
-import { watch } from "node:fs";
-import { join } from "node:path";
-import { scanAgentDir } from "./_scanner.ts";
-import { createRuntime, createServer } from "@alexkroman1/aai/server";
-import type { Manifest } from "@alexkroman1/aai/isolate";
-
-export async function runDevCommandV2(opts: {
-  cwd: string;
-  port: number;
-}): Promise<void> {
-  const { log, fmtUrl } = await import("./_ui.ts");
-  const { cwd, port } = opts;
-
-  let server: Awaited<ReturnType<typeof createServer>> | null = null;
-
-  async function startServer() {
-    const manifest = await scanAgentDir(cwd);
-
-    // Dynamically import tool and hook handlers
-    const tools = await loadToolHandlers(cwd);
-    const hooks = await loadHookHandlers(cwd);
-
-    // Create runtime with loaded handlers
-    const runtime = createRuntime({
-      agent: manifestToAgentDef(manifest, tools, hooks),
-      env: await loadEnv(cwd),
-    });
-
-    server = await createServer({ runtime, name: manifest.name, port });
-    log(`Agent "${manifest.name}" running at ${fmtUrl(`http://localhost:${port}`)}`);
-  }
-
-  await startServer();
-
-  // Watch for changes and restart
-  const watcher = watch(cwd, { recursive: true }, async (event, filename) => {
-    if (!filename) return;
-    if (filename.startsWith(".aai")) return;
-    if (filename.startsWith("node_modules")) return;
-
-    log(`Change detected: ${filename}. Restarting...`);
-    if (server) await server.close();
-    try {
-      await startServer();
-    } catch (err) {
-      log(`Restart failed: ${err instanceof Error ? err.message : err}`);
-    }
-  });
-
-  // Keep process alive
-  process.on("SIGINT", () => {
-    watcher.close();
-    if (server) server.close();
-    process.exit(0);
-  });
-}
-
-// Helper: load tool handler modules from tools/ directory
-async function loadToolHandlers(
-  cwd: string,
-): Promise<Record<string, { default: Function; description?: string; parameters?: Record<string, unknown> }>> {
-  const { readdir } = await import("node:fs/promises");
-  const { basename, extname } = await import("node:path");
-  const { pathToFileURL } = await import("node:url");
-  const toolsDir = join(cwd, "tools");
-  const result: Record<string, any> = {};
-  try {
-    const files = await readdir(toolsDir);
-    for (const file of files) {
-      if (!file.endsWith(".ts") && !file.endsWith(".js")) continue;
-      const toolName = basename(file, extname(file));
-      result[toolName] = await import(pathToFileURL(join(toolsDir, file)).href);
-    }
-  } catch {
-    // No tools/ directory
-  }
-  return result;
-}
-
-// Helper: load hook handler modules from hooks/ directory
-async function loadHookHandlers(
-  cwd: string,
-): Promise<Record<string, { default: Function }>> {
-  const { readdir } = await import("node:fs/promises");
-  const { basename, extname } = await import("node:path");
-  const { pathToFileURL } = await import("node:url");
-  const hooksDir = join(cwd, "hooks");
-  const hookFileMap: Record<string, string> = {
-    "on-connect": "onConnect",
-    "on-disconnect": "onDisconnect",
-    "on-user-transcript": "onUserTranscript",
-    "on-error": "onError",
-  };
-  const result: Record<string, any> = {};
-  try {
-    const files = await readdir(hooksDir);
-    for (const file of files) {
-      if (!file.endsWith(".ts") && !file.endsWith(".js")) continue;
-      const hookFile = basename(file, extname(file));
-      const hookKey = hookFileMap[hookFile];
-      if (hookKey) {
-        result[hookKey] = await import(pathToFileURL(join(hooksDir, file)).href);
-      }
-    }
-  } catch {
-    // No hooks/ directory
-  }
-  return result;
-}
-
-// Helper: convert Manifest + loaded handlers to AgentDef for createRuntime
-// This bridges the new directory format with the existing runtime during migration.
-// It constructs an object matching the AgentDef shape that createRuntime expects.
-function manifestToAgentDef(
-  manifest: Manifest,
-  toolHandlers: Record<string, { default: Function; parameters?: Record<string, unknown> }>,
-  hookHandlers: Record<string, { default: Function }>,
-) {
-  // Build tools record in the shape createRuntime expects:
-  // { [name]: { description, parameters (as Zod-like .parse), execute } }
-  const tools: Record<string, any> = {};
-  for (const [name, schema] of Object.entries(manifest.tools)) {
-    const handler = toolHandlers[name];
-    if (!handler) continue;
-    tools[name] = {
-      description: schema.description,
-      // Wrap JSON Schema params as a passthrough (no Zod validation in dev mode)
-      parameters: schema.parameters
-        ? { parse: (v: unknown) => v, _def: { typeName: "ZodObject" } }
-        : undefined,
-      execute: handler.default,
-    };
-  }
-
-  return {
-    name: manifest.name,
-    systemPrompt: manifest.systemPrompt,
-    greeting: manifest.greeting,
-    sttPrompt: manifest.sttPrompt,
-    maxSteps: manifest.maxSteps,
-    toolChoice: manifest.toolChoice,
-    builtinTools: manifest.builtinTools,
-    idleTimeoutMs: manifest.idleTimeoutMs,
-    tools,
-    onConnect: hookHandlers.onConnect?.default,
-    onDisconnect: hookHandlers.onDisconnect?.default,
-    onUserTranscript: hookHandlers.onUserTranscript?.default,
-    onError: hookHandlers.onError?.default,
-  };
-}
-
-// Helper: load .env file
-async function loadEnv(cwd: string): Promise<Record<string, string>> {
-  try {
-    const { parseEnvFile } = await import("@alexkroman1/aai/isolate");
-    const { readFile } = await import("node:fs/promises");
-    const envContent = await readFile(join(cwd, ".env"), "utf-8");
-    return parseEnvFile(envContent);
-  } catch {
-    return {};
-  }
-}
-```
-
-- [ ] **Step 2: Update dev.ts to detect format**
-
-```typescript
-// packages/aai-cli/dev.ts
-import { detectAgentFormat } from "./_bundler-v2.ts";
-
-export async function runDevCommand(opts: {
-  cwd: string;
-  port: string;
-}): Promise<void> {
-  const format = await detectAgentFormat(opts.cwd);
-
-  if (format === "directory") {
-    const { runDevCommandV2 } = await import("./_dev-v2.ts");
-    await runDevCommandV2({ cwd: opts.cwd, port: parseInt(opts.port, 10) || 3000 });
-  } else {
-    // Legacy: existing Vite dev server
-    const { createServer: createViteServer } = await import("vite");
-    // ... existing implementation
-  }
-}
-```
-
-- [ ] **Step 3: Test dev server with pizza template**
-
-Run: `cd packages/aai-templates/templates/pizza-v2 && pnpm aai dev`
-Expected: Server starts, serves default UI, WebSocket endpoint available
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add packages/aai-cli/_dev-v2.ts packages/aai-cli/dev.ts
-git commit -m "feat: add dev server for directory-format agents with file watching"
-```
-
----
-
-## Task 10: Update Deploy for Directory Format
-
-The deploy command needs to use the v2 bundler output.
-
-**Files:**
-- Modify: `packages/aai-cli/deploy.ts`
-- Modify: `packages/aai-cli/_deploy.ts`
-
-**Dependencies:** Task 3 (v2 bundler), Task 7 (format detection)
-
-- [ ] **Step 1: Update deploy to use v2 bundler**
-
-In `packages/aai-cli/deploy.ts`, detect format and branch:
-
-```typescript
-import { detectAgentFormat, bundleAgentV2 } from "./_bundler-v2.ts";
-
-// In the deploy flow, after resolving CWD:
-const format = await detectAgentFormat(cwd);
-
-if (format === "directory") {
-  const v2Output = await bundleAgentV2(cwd);
-  // Convert v2 output to the format expected by runDeploy():
-  // - manifest.json serves as agentConfig
-  // - tool bundles + hook bundles become the worker payload
-  // - client files handled separately if client.tsx exists
-  await runDeploy({
-    slug,
-    manifest: v2Output.manifest,
-    toolBundles: v2Output.toolBundles,
-    hookBundles: v2Output.hookBundles,
-    clientFiles: v2Output.clientDir ? await gatherClientFiles(v2Output.clientDir) : [],
-  });
-} else {
-  // Legacy: existing buildAgentBundle + runDeploy
-  const { buildAgentBundle } = await import("./_bundler.ts");
-  const output = await buildAgentBundle(cwd);
-  await runDeploy(/* existing args */);
-}
-```
-
-- [ ] **Step 2: Update server deploy handler to accept v2 bundle format**
-
-The server (`packages/aai-server/deploy.ts`) needs to handle the new bundle format. Instead of a single `worker.js` + extracted config, it receives `manifest.json` + individual handler files.
-
-This is a server-side change that requires updating:
-- `packages/aai-server/deploy.ts` — accept new payload shape
-- `packages/aai-server/bundle-store.ts` — store manifest + handler files
-- `packages/aai-server/sandbox.ts` — load handler files into isolate
-
-**Note:** The exact server-side changes depend on how the platform handles the new bundle format. This task defines the CLI-side contract; server-side is a separate task that may involve the platform team.
-
-- [ ] **Step 3: Commit**
-
-```bash
-git add packages/aai-cli/deploy.ts packages/aai-cli/_deploy.ts
-git commit -m "feat: update deploy to support directory-format agent bundles"
-```
-
----
-
-## Task 11: Migrate Remaining Templates
-
-Convert all 18 existing templates from `defineAgent` to directory format.
-
-**Files:**
-- Modify: All directories under `packages/aai-templates/templates/`
-
-**Dependencies:** Tasks 1-6 (core infrastructure + proof of concept)
-
-This task is mechanical and can be parallelized across templates. Each template migration follows the same steps from the spec's migration section:
-
-1. Extract config fields → `agent.json`
-2. Each tool → `tools/<name>.ts` with `description`, `parameters` (Zod → JSON Schema), `export default execute`
-3. Each hook → `hooks/<name>.ts`
-4. `state` mutations → `ctx.kv.get/set` calls
-5. Delete `import { ... } from "@alexkroman1/aai"` and `import { z } from "zod"`
-6. Update tests to use `createDirTestHarness`
-
-- [ ] **Step 1: Migrate simple templates first** (simple, math-buddy, code-interpreter)
-
-These have no custom tools — just `agent.json` with config.
-
-- [ ] **Step 2: Migrate tool-using templates** (web-researcher, travel-concierge, health-assistant, personal-finance, support)
-
-These use built-in tools only — `agent.json` with `builtinTools` array.
-
-- [ ] **Step 3: Migrate stateful templates** (pizza-ordering, dispatch-center, solo-rpg, memory-agent, smart-research)
-
-These require converting `state()` → `ctx.kv` calls in every tool.
-
-- [ ] **Step 4: Migrate UI-heavy templates** (night-owl, infocom-adventure, embedded-assets)
-
-These have `client.tsx` — keep client code as-is, just migrate agent side.
-
-- [ ] **Step 5: Migrate test-patterns template**
-
-This template exercises all features — good integration test for the new format.
-
-- [ ] **Step 6: Update template tests**
-
-All `agent.test.ts` files updated to use `createDirTestHarness` instead of `createTestHarness`.
-
-- [ ] **Step 7: Run all template tests**
+- [ ] **Step 8: Run all template tests**
 
 Run: `pnpm test:templates`
 Expected: All pass
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
 git add packages/aai-templates/
-git commit -m "feat: migrate all templates to directory agent format"
+git commit -m "feat: rewrite all templates to directory agent format"
 ```
 
 ---
 
-## Task 12: Remove Legacy Code
+## Task 7: Rewrite Bundler
 
-After all templates are migrated and tests pass, remove the old code paths.
+Replace the Vite SSR + `node:vm` bundler with the scanner + esbuild approach. Rewrite `_bundler.ts` in-place.
 
 **Files:**
-- Remove: `packages/aai/isolate/types.ts` — `defineAgent`, `defineTool`, `defineToolFactory`, Zod schemas
-- Remove: `packages/aai-cli/_bundler.ts` — old Vite SSR + node:vm bundler
-- Remove: `packages/aai-server/harness-runtime.ts` — old single-bundle dispatcher
-- Remove: `packages/aai/host/testing.ts` — old test harness
-- Modify: `packages/aai/index.ts` — remove defineAgent/defineTool exports
-- Modify: `packages/aai/package.json` — update exports map
+- Rewrite: `packages/aai-cli/_bundler.ts`
+- Modify: `packages/aai-cli/cli.ts`
 
-**Dependencies:** All previous tasks complete, all tests passing
+**Dependencies:** Task 2 (scanner), Task 3 (esbuild bundler)
 
-- [ ] **Step 1: Remove old bundler**
+- [ ] **Step 1: Replace `_bundler.ts` with new implementation**
 
-Delete `packages/aai-cli/_bundler.ts`. Update any remaining imports in `cli.ts`, `deploy.ts` to use `_bundler-v2.ts` exclusively. Rename `_bundler-v2.ts` → `_bundler.ts`.
+Replace the entire file. The new bundler uses `scanAgentDir` + esbuild. Remove all Vite SSR, `node:vm`, `transformBundleForEval`, `extractAgentConfig` code.
 
-- [ ] **Step 2: Remove old harness runtime**
+Key exports to preserve (with new signatures):
+- `bundleAgent(agentDir: string): Promise<BundleOutput>` — scan + compile
+- `runBuildCommand(cwd: string): Promise<void>` — CLI entry point
+- `BundleOutput` type — now contains `manifest`, `manifestJson`, `toolBundles`, `hookBundles`
 
-Delete `packages/aai-server/harness-runtime.ts`. Rename `harness-runtime-v2.ts` → `harness-runtime.ts`.
+- [ ] **Step 2: Update cli.ts build command**
 
-- [ ] **Step 3: Remove old test harness**
+The build command handler should call the new `runBuildCommand` directly (no format detection needed — old format is gone).
 
-Delete `packages/aai/host/testing.ts`. Rename `testing-v2.ts` → `testing.ts`. Update `@alexkroman1/aai/testing` export in `package.json`.
+- [ ] **Step 3: Update deploy.ts**
 
-- [ ] **Step 4: Remove defineAgent/defineTool/Zod from SDK exports**
+Update to use new `BundleOutput` shape from the rewritten bundler.
 
-Update `packages/aai/index.ts` to export manifest types instead of defineAgent. Remove Zod dependency from `packages/aai/package.json` if no other code uses it.
+- [ ] **Step 4: Run build on a rewritten template**
 
-- [ ] **Step 5: Remove old templates**
+Run: `pnpm aai build` from a template directory.
+Expected: `.aai/build/` with `manifest.json` + `tools/*.js`
 
-Delete the original template directories (simple, pizza-ordering, etc.). Rename v2 templates to drop the `-v2` suffix.
-
-- [ ] **Step 6: Run full check**
-
-Run: `pnpm check:local`
-Expected: PASS — build, typecheck, lint, tests all green
-
-- [ ] **Step 7: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add -A
-git commit -m "chore: remove legacy defineAgent/Vite/Zod agent authoring code"
+git add packages/aai-cli/_bundler.ts packages/aai-cli/cli.ts packages/aai-cli/deploy.ts
+git commit -m "feat: rewrite bundler to use scanner + esbuild (no Vite/node:vm)"
 ```
 
 ---
 
-## Task 13: Update Documentation
+## Task 8: Rewrite Runtime Dispatcher
+
+Replace `harness-runtime.ts` with file-per-tool RPC dispatcher. Rewrite in-place.
 
 **Files:**
-- Modify: `packages/aai-templates/scaffold-v2/CLAUDE.md` (new agent API docs)
-- Modify: `CLAUDE.md` (root — update architecture section)
+- Rewrite: `packages/aai-server/harness-runtime.ts`
 
-**Dependencies:** Task 12 (legacy removal)
+**Dependencies:** Task 4 (dispatcher implementation)
 
-- [ ] **Step 1: Write new agent API docs**
+- [ ] **Step 1: Replace harness-runtime.ts**
 
-Update `packages/aai-templates/scaffold-v2/CLAUDE.md` to document:
+Replace the entire file with the `createDispatcher` + `startDispatcher` implementation from Task 4. Remove all `defineAgent`-based loading, `createSessionStateMap`, single-bundle evaluation.
+
+- [ ] **Step 2: Update sandbox.ts to load individual handler files**
+
+Update how the sandbox injects code into the isolate — load handler files individually instead of a single `worker.js` bundle.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add packages/aai-server/harness-runtime.ts packages/aai-server/sandbox.ts
+git commit -m "feat: rewrite isolate dispatcher for file-per-tool agents"
+```
+
+---
+
+## Task 9: Rewrite Test Harness
+
+Replace `testing.ts` with directory-based harness. Rewrite in-place.
+
+**Files:**
+- Rewrite: `packages/aai/host/testing.ts`
+- Modify: `packages/aai/host/testing.test.ts`
+
+**Dependencies:** Task 5 (test harness implementation)
+
+- [ ] **Step 1: Replace testing.ts**
+
+Replace `createTestHarness(AgentDef)` with `createTestHarness(agentDir: string)`. Remove dependency on `AgentDef`, `createRuntime`. Load tool/hook files directly from directory.
+
+Keep `TurnResult` class and `executeTool`/`connect`/`disconnect`/`turn` API.
+
+- [ ] **Step 2: Update existing tests**
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add packages/aai/host/testing.ts packages/aai/host/testing.test.ts
+git commit -m "feat: rewrite test harness for directory-based agents"
+```
+
+---
+
+## Task 10: Rewrite Dev Server
+
+Replace Vite-based dev server with direct directory loading + file watching.
+
+**Files:**
+- Create: `packages/aai-cli/_dev-server.ts`
+- Rewrite: `packages/aai-cli/dev.ts`
+- Remove: `packages/aai/host/vite-plugin.ts`
+
+**Dependencies:** Task 2 (scanner), Task 7 (bundler)
+
+- [ ] **Step 1: Create _dev-server.ts**
+
+New dev server that:
+- Scans agent directory with `scanAgentDir`
+- Dynamically imports tool/hook handlers
+- Creates runtime with `manifestToAgentDef` bridge
+- Watches for file changes and restarts
+- Serves default UI
+
+- [ ] **Step 2: Rewrite dev.ts**
+
+Replace Vite dev server with new `_dev-server.ts`.
+
+- [ ] **Step 3: Remove vite-plugin.ts**
+
+Delete `packages/aai/host/vite-plugin.ts` and remove from package.json exports.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add packages/aai-cli/_dev-server.ts packages/aai-cli/dev.ts
+git rm packages/aai/host/vite-plugin.ts
+git commit -m "feat: rewrite dev server for directory agents (remove Vite)"
+```
+
+---
+
+## Task 11: Remove defineAgent/defineTool/Zod from SDK
+
+Clean up the SDK to only export the new manifest types.
+
+**Files:**
+- Remove: `packages/aai/isolate/types.ts` (defineAgent, defineTool, defineToolFactory, Zod schemas)
+- Modify: `packages/aai/index.ts` — export manifest types instead
+- Modify: `packages/aai/isolate/index.ts` — remove types.ts re-export
+- Modify: `packages/aai/package.json` — update exports, remove Zod if unused elsewhere
+
+**Dependencies:** Tasks 6-10 (all templates and CLI rewritten)
+
+- [ ] **Step 1: Update SDK exports**
+
+Replace defineAgent/defineTool exports with manifest types in `packages/aai/index.ts`.
+
+- [ ] **Step 2: Remove types.ts or strip it to non-defineAgent types**
+
+Keep `Message`, `BuiltinTool`, and other types still used by the runtime. Remove `defineAgent`, `defineTool`, `defineToolFactory`, `AgentOptions`, `AgentDef`, Zod schemas.
+
+- [ ] **Step 3: Run full check**
+
+Run: `pnpm check:local`
+Expected: PASS
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add packages/aai/
+git commit -m "chore: remove defineAgent/defineTool/Zod from SDK exports"
+```
+
+---
+
+## Task 12: Update Documentation
+
+**Files:**
+- Modify: `packages/aai-templates/scaffold/CLAUDE.md`
+- Modify: `CLAUDE.md` (root)
+
+**Dependencies:** Task 11 (SDK cleanup)
+
+- [ ] **Step 1: Rewrite agent API docs**
+
+Update `packages/aai-templates/scaffold/CLAUDE.md` to document:
 - Directory structure conventions
 - `agent.json` format (all fields, defaults)
 - Tool file format (3 exports: description, parameters, default)
 - Hook file format (4 available hooks)
 - `ctx` object (env, kv, messages, sessionId)
-- Testing with `createDirTestHarness`
+- Testing with `createTestHarness`
 - Build and deploy commands
 
 - [ ] **Step 2: Update root CLAUDE.md**
 
-Update architecture section to reflect:
-- No more `defineAgent`/`defineTool`/Zod
-- Directory-convention authoring format
-- esbuild-based bundler
-- Simplified build pipeline
+Update architecture section to reflect directory-convention authoring, esbuild bundler, no Zod.
 
 - [ ] **Step 3: Commit**
 
 ```bash
-git add CLAUDE.md packages/aai-templates/scaffold-v2/CLAUDE.md
+git add CLAUDE.md packages/aai-templates/scaffold/CLAUDE.md
 git commit -m "docs: update agent authoring docs for directory format"
 ```
