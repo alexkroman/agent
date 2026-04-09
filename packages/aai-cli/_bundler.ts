@@ -8,6 +8,7 @@ import { errorMessage } from "@alexkroman1/aai/utils";
 import { build } from "vite";
 import * as zod from "zod";
 import type { AgentEntry } from "./_agent.ts";
+import { type CommandResult, ok } from "./_output.ts";
 
 export class BundleError extends Error {
   constructor(message: string, options?: ErrorOptions) {
@@ -381,9 +382,28 @@ async function buildClient(cwd: string): Promise<void> {
   });
 }
 
-export async function runBuildCommand(cwd: string): Promise<void> {
+type BuildData = {
+  manifest: { name: string; tools: string[] };
+  workerBytes: number;
+};
+
+export async function executeBuild(cwd: string): Promise<CommandResult<BuildData>> {
   const { log } = await import("./_ui.ts");
-  await buildAgentBundle(cwd);
+  const bundle = await buildAgentBundle(cwd);
   await buildClient(cwd);
   log.success("Build complete");
+
+  const toolNames = Object.keys(bundle.manifest.tools);
+  const totalBytes =
+    Object.values(bundle.toolBundles).reduce((sum, code) => sum + code.length, 0) +
+    Object.values(bundle.hookBundles).reduce((sum, code) => sum + code.length, 0);
+
+  return ok({
+    manifest: { name: bundle.manifest.name, tools: toolNames },
+    workerBytes: totalBytes,
+  });
+}
+
+export async function runBuildCommand(cwd: string): Promise<void> {
+  await executeBuild(cwd);
 }

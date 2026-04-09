@@ -157,8 +157,15 @@ const build = defineCommand({
         const { runVitest } = await import("./test.ts");
         runVitest(cwd);
       }
-      const { runBuildCommand } = await import("./_bundler.ts");
-      await runBuildCommand(cwd);
+      const { executeBuild } = await import("./_bundler.ts");
+      const { withOutput } = await import("./_output.ts");
+      await withOutput(
+        mode,
+        () => executeBuild(cwd),
+        () => {
+          /* human output handled inside */
+        },
+      );
     });
   },
 });
