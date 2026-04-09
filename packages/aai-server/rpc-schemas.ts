@@ -1,11 +1,10 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Zod schemas for the host ↔ isolate RPC boundary.
+ * Zod schemas for the host ↔ guest RPC boundary.
  *
- * The host (sandbox.ts) validates isolate responses with these schemas.
- * The isolate (harness-runtime.ts) uses `import type` to share the
- * inferred types — type-only imports are erased at compile time, so
- * the isolate never depends on Zod at runtime.
+ * Both host (sandbox.ts) and guest harness import these schemas directly.
+ * The guest harness is compiled by esbuild with all deps inlined, so Zod
+ * is bundled into the guest binary rather than resolved at runtime.
  */
 
 import { z } from "zod";
@@ -60,6 +59,57 @@ export const TurnConfigResultSchema = z
 export type ToolCallResponse = z.infer<typeof ToolCallResponseSchema>;
 export type HookResponse = z.infer<typeof HookResponseSchema>;
 export type TurnConfigResult = z.infer<typeof TurnConfigResultSchema>;
+
+// -- IPC message types (host <-> guest over vsock) --------------------
+
+export const BundleMessageSchema = z.object({
+  id: z.string(),
+  type: z.literal("bundle"),
+  code: z.string(),
+  env: z.record(z.string(), z.string()),
+});
+
+export const BundleResponseSchema = z.object({
+  id: z.string(),
+  ok: z.boolean(),
+  error: z.string().optional(),
+});
+
+export const KvRequestSchema = z.discriminatedUnion("op", [
+  z.object({ id: z.string(), type: z.literal("kv"), op: z.literal("get"), key: z.string() }),
+  z.object({
+    id: z.string(),
+    type: z.literal("kv"),
+    op: z.literal("set"),
+    key: z.string(),
+    value: z.unknown(),
+    expireIn: z.number().optional(),
+  }),
+  z.object({ id: z.string(), type: z.literal("kv"), op: z.literal("del"), key: z.string() }),
+  z.object({
+    id: z.string(),
+    type: z.literal("kv"),
+    op: z.literal("mget"),
+    keys: z.array(z.string()),
+  }),
+]);
+
+export const KvResponseSchema = z.object({
+  id: z.string(),
+  value: z.unknown().optional(),
+  values: z.array(z.unknown()).optional(),
+});
+
+export const ShutdownMessageSchema = z.object({
+  id: z.string(),
+  type: z.literal("shutdown"),
+});
+
+export type BundleMessage = z.infer<typeof BundleMessageSchema>;
+export type BundleResponse = z.infer<typeof BundleResponseSchema>;
+export type KvRequest = z.infer<typeof KvRequestSchema>;
+export type KvResponse = z.infer<typeof KvResponseSchema>;
+export type ShutdownMessage = z.infer<typeof ShutdownMessageSchema>;
 
 // ── RPC request types (no Zod — host trusts its own requests) ─────────────
 
