@@ -82,9 +82,9 @@ export function createGvisorSandbox(opts: { slug: string; harnessPath: string })
       `${opts.harnessPath}:/harness.mjs:ro`,
       // Run as nobody (uid/gid 65534)
       "-uid-map",
-      "65534:65534:1",
+      "65534 65534 1",
       "-gid-map",
-      "65534:65534:1",
+      "65534 65534 1",
       "--",
       "/node",
       "/harness.mjs",
