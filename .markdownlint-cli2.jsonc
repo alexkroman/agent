@@ -3,6 +3,7 @@
     ".changeset/**",
     "**/CHANGELOG.md",
     "plans/**",
-    "docs/superpowers/**"
+    "docs/superpowers/**",
+    "packages/aai-templates/templates/**/system-prompt.md"
   ]
 }

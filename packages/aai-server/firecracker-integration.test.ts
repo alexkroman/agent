@@ -243,7 +243,7 @@ function performVsockHandshake(socket: net.Socket, port: number): Promise<void> 
  */
 async function connectVsock(
   vsockUdsPath: string,
-  guestCid: number,
+  _guestCid: number,
   timeout: number,
 ): Promise<{ socket: net.Socket; channel: RpcChannel }> {
   // Firecracker creates the vsock UDS at the exact configured path.

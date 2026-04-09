@@ -310,11 +310,12 @@ async function compileFile(filePath: string): Promise<string> {
     target: "node20",
   });
 
-  if (result.outputFiles.length === 0) {
+  const output = result.outputFiles[0];
+  if (!output) {
     throw new Error(`esbuild produced no output for ${filePath}`);
   }
 
-  return result.outputFiles[0].text;
+  return output.text;
 }
 
 /**

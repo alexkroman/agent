@@ -34,7 +34,7 @@ export function extractConstExport(source: string, exportName: string): unknown 
 
   // String literal: "..." or '...'
   const strMatch = afterEquals.match(/^("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')/);
-  if (strMatch) {
+  if (strMatch && strMatch[1]) {
     const raw = strMatch[1];
     // Normalize single-quoted strings to double-quoted for JSON.parse
     if (raw.startsWith("'")) {
@@ -65,7 +65,7 @@ function extractBalanced(str: string): string {
   let inStr: string | null = null;
 
   for (let i = 0; i < str.length; i++) {
-    const ch = str[i];
+    const ch = str.charAt(i);
 
     if (inStr) {
       [i, inStr] = advanceInsideString(str, i, ch, inStr);
@@ -115,7 +115,7 @@ function jsObjectToJson(js: string): string {
   let inStr: string | null = null;
 
   while (i < js.length) {
-    const ch = js[i];
+    const ch = js.charAt(i);
 
     if (inStr) {
       [result, i, inStr] = processStringChar(js, result, i, ch, inStr);
@@ -182,7 +182,7 @@ function processOutsideString(
  */
 function isTrailingComma(str: string, i: number): boolean {
   for (let j = i + 1; j < str.length; j++) {
-    const ch = str[j];
+    const ch = str.charAt(j);
     if (/\s/.test(ch)) continue;
     return ch === "}" || ch === "]";
   }
@@ -195,7 +195,7 @@ function isTrailingComma(str: string, i: number): boolean {
  * and be an identifier followed by `:`.
  */
 function isUnquotedKeyStart(str: string, i: number): boolean {
-  if (!/[a-zA-Z_$]/.test(str[i])) return false;
+  if (!/[a-zA-Z_$]/.test(str.charAt(i))) return false;
 
   const prev = findPrevNonWhitespace(str, i);
   if (prev !== "{" && prev !== "," && prev !== "[") return false;
@@ -206,7 +206,8 @@ function isUnquotedKeyStart(str: string, i: number): boolean {
 /** Find the first non-whitespace character before position `i`. */
 function findPrevNonWhitespace(str: string, i: number): string {
   for (let j = i - 1; j >= 0; j--) {
-    if (!/\s/.test(str[j])) return str[j];
+    const ch = str.charAt(j);
+    if (!/\s/.test(ch)) return ch;
   }
   return "";
 }
@@ -214,9 +215,9 @@ function findPrevNonWhitespace(str: string, i: number): string {
 /** Check if an identifier starting at `i` is followed by `:`. */
 function hasColonAfterIdentifier(str: string, i: number): boolean {
   let j = i;
-  while (j < str.length && /[a-zA-Z0-9_$]/.test(str[j])) j++;
-  while (j < str.length && /\s/.test(str[j])) j++;
-  return j < str.length && str[j] === ":";
+  while (j < str.length && /[a-zA-Z0-9_$]/.test(str.charAt(j))) j++;
+  while (j < str.length && /\s/.test(str.charAt(j))) j++;
+  return j < str.length && str.charAt(j) === ":";
 }
 
 /** Check if an ENOENT error (directory does not exist). */

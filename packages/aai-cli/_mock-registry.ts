@@ -78,7 +78,6 @@ function startServer(configPath: string): Promise<ChildProcess> {
 }
 
 async function killTree(pid: number): Promise<void> {
-  // biome-ignore lint/correctness/noUndeclaredDependencies: tree-kill is a devDependency of the root workspace
   const treeKill = (await import("tree-kill")).default;
   return new Promise((resolve, reject) => {
     treeKill(pid, (err?: Error) => (err ? reject(err) : resolve()));
@@ -95,7 +94,6 @@ export async function startMockRegistry(
   packagesDir: string,
   packageNames: string[],
 ): Promise<MockRegistry> {
-  // biome-ignore lint/correctness/noUndeclaredDependencies: get-port is a devDependency of the root workspace
   const getPort = (await import("get-port")).default;
   const port = await getPort();
   const registryUrl = `http://localhost:${port}`;
@@ -141,7 +139,7 @@ export async function startMockRegistry(
         }
       }
     }
-    fs.writeFileSync(pkgJsonPath, JSON.stringify(pkg, null, 2) + "\n");
+    fs.writeFileSync(pkgJsonPath, `${JSON.stringify(pkg, null, 2)}\n`);
 
     try {
       execFileSync("pnpm", ["run", "build"], { cwd: pkgPath, stdio: "inherit" });
