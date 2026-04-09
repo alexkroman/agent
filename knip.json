@@ -15,7 +15,6 @@
         "host/index.ts",
         "host/server.ts",
         "host/testing.ts",
-        "host/vite-plugin.ts",
         "host/_test-utils.ts",
         "isolate/types.ts",
         "isolate/kv.ts",

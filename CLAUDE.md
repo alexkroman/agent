@@ -103,7 +103,6 @@ depend on these from consumer code; they may change without notice):
 - `./host` — host barrel: host-only modules
 - `./hooks` — hook definitions for lifecycle events
 - `./utils` — shared utility functions
-- `./vite-plugin` — Vite integration plugin for agent bundling
 
 Type-level tests (`.test-d.ts`) cover only the **public** entry points
 (`.`, `./types`, `./server`). Changes to internal exports do not require
@@ -130,7 +129,7 @@ The SDK is organized into two directories:
   `server.ts`, `runtime.ts`, `runtime-config.ts`, `tool-executor.ts`,
   `session.ts`, `session-ctx.ts`, `s2s.ts`, `ws-handler.ts`,
   `builtin-tools.ts`, `_run-code.ts`, `unstorage-kv.ts`,
-  `vite-plugin.ts`, `testing.ts`, `matchers.ts`.
+  `testing.ts`, `matchers.ts`.
 
 When adding new SDK code, place it in `isolate/` if it has no `node:`
 dependencies. The guest harness (`guest/harness.ts`) runs full Node.js
