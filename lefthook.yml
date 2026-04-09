@@ -2,7 +2,7 @@ pre-commit:
   commands:
     lint-staged:
       glob: "packages/**/*.{ts,tsx,js,mjs}"
-      run: npx biome check --write {staged_files} && git add {staged_files}
+      run: npx biome check --write --no-errors-on-unmatched {staged_files} && git add {staged_files}
     syncpack:
       glob: "**/package.json"
       run: pnpm run check:syncpack
