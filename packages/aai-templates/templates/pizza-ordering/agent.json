@@ -1,0 +1,5 @@
+{
+  "name": "Pizza Palace",
+  "systemPrompt": { "$ref": "system-prompt.md" },
+  "greeting": "Welcome to Pizza Palace. I can help you build your perfect pizza. What would you like to order?"
+}

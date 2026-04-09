@@ -1,0 +1,8 @@
+{
+  "name": "Test Patterns",
+  "systemPrompt": "You are a task manager that demonstrates testable agent patterns.",
+  "greeting": "Hey, I'm your task manager. Try adding a task.",
+  "sttPrompt": "Task management: add task, complete task, list tasks, save note, delete note",
+  "idleTimeoutMs": 120000,
+  "builtinTools": ["run_code"]
+}

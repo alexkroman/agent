@@ -1,5 +1,3 @@
-import type { ToolResultMap } from "@alexkroman1/aai";
-
 export interface Pizza {
   id: number;
   size: "small" | "medium" | "large";
@@ -53,7 +51,7 @@ export function pizzaPrice(p: Pizza): number {
 }
 
 /** Tool result types for this agent, keyed by tool name. */
-export type PizzaToolResults = ToolResultMap<{
+export type PizzaToolResults = {
   add_pizza: { added: Pizza; orderTotal: string; itemCount: number };
   remove_pizza: { removed: Pizza; orderTotal: string; itemCount: number };
   update_pizza: { updated: Pizza; orderTotal: string };
@@ -66,4 +64,4 @@ export type PizzaToolResults = ToolResultMap<{
     total: string;
     estimatedMinutes: number;
   };
-}>;
+};
