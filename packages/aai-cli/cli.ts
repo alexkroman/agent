@@ -37,11 +37,13 @@ async function ensureAgent(cwd: string, yes?: boolean): Promise<string> {
   return cwd;
 }
 
-/** Shared command setup: resolve cwd, optionally scaffold agent. */
+/** Shared command setup: resolve cwd, ensure API key, optionally scaffold agent. */
 async function setup(
   args?: { yes?: boolean | undefined },
   opts?: { agent?: boolean },
 ): Promise<string> {
+  const { ensureApiKey } = await import("./_config.ts");
+  await ensureApiKey();
   let cwd = resolveCwd();
   if (opts?.agent) {
     cwd = await ensureAgent(cwd, args?.yes);
