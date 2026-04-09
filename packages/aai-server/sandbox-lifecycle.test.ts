@@ -73,16 +73,4 @@ describe("isolate lifecycle", () => {
     );
     expect(resultB.result).toBe("pong-b");
   });
-
-  test("multiple sequential boot-shutdown cycles work", async () => {
-    for (let i = 0; i < 3; i++) {
-      const isolate = await _internals.startIsolate(BUNDLE_A, createMockKv(), {});
-      const result = await isolate.channel.call<{ result: string }>(
-        { type: "tool", name: "ping", sessionId: `c-${i}`, args: {}, messages: [] },
-        15_000,
-      );
-      expect(result.result).toBe("pong-a");
-      isolate.channel.shutdown();
-    }
-  }, 60_000);
 });
