@@ -35,11 +35,7 @@ export const DeployBodySchema = z.object({
 
 export type DeployBody = z.infer<typeof DeployBodySchema>;
 
-export const EnvSchema = z
-  .object({
-    ASSEMBLYAI_API_KEY: z.string().min(1),
-  })
-  .catchall(z.string());
+export const EnvSchema = z.record(z.string(), z.string());
 
 export const AgentMetadataSchema = z.object({
   slug: z.string(),

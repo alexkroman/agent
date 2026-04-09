@@ -35,21 +35,17 @@ describe("resolveServerEnv", () => {
     injectedKeys.length = 0;
   });
 
-  test("includes ASSEMBLYAI_API_KEY even without .env file", async () => {
+  test("returns empty env without .env file and no declared keys", async () => {
     const env = await resolveServerEnv(undefined, { ASSEMBLYAI_API_KEY: "test-key-123" });
-    expect(env.ASSEMBLYAI_API_KEY).toBe("test-key-123");
+    expect(env).toEqual({});
   });
 
-  test("only includes declared keys, not all of baseEnv", async () => {
+  test("only includes keys declared in .env file", async () => {
     const env = await resolveServerEnv(undefined, {
       ASSEMBLYAI_API_KEY: "key",
       PATH: "/usr/bin",
-      HOME: "/home/user",
     });
-    // Only ASSEMBLYAI_API_KEY should be present, not PATH/HOME
-    expect(env.ASSEMBLYAI_API_KEY).toBe("key");
-    expect(env).not.toHaveProperty("PATH");
-    expect(env).not.toHaveProperty("HOME");
+    expect(env).toEqual({});
   });
 
   test("loads only declared keys from .env file", async () => {
@@ -80,10 +76,10 @@ describe("resolveServerEnv", () => {
     });
   });
 
-  test("returns only ASSEMBLYAI_API_KEY when no .env file exists", async () => {
+  test("returns empty env when no .env file exists", async () => {
     await withTempDir(async (dir) => {
       const env = await resolveServerEnv(dir, { ASSEMBLYAI_API_KEY: "key", FOO: "bar" });
-      expect(env).toEqual({ ASSEMBLYAI_API_KEY: "key" });
+      expect(env).toEqual({});
     });
   });
 });

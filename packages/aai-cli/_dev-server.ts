@@ -73,9 +73,6 @@ async function resolveAgentEnv(root: string): Promise<Record<string, string>> {
   for (const [key, fileVal] of Object.entries(fileEntries)) {
     env[key] = process.env[key] ?? fileVal;
   }
-  if (!env.ASSEMBLYAI_API_KEY && process.env.ASSEMBLYAI_API_KEY) {
-    env.ASSEMBLYAI_API_KEY = process.env.ASSEMBLYAI_API_KEY;
-  }
   return env;
 }
 

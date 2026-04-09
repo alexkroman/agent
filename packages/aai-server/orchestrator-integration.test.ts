@@ -31,7 +31,7 @@ describe("deploy serves client files", () => {
 
     await store.putAgent({
       slug: "rt-agent",
-      env: { ASSEMBLYAI_API_KEY: "k" },
+      env: {},
       worker: "w",
       clientFiles: {
         "index.html":
@@ -58,7 +58,7 @@ describe("deploy serves client files", () => {
 
     await store.putAgent({
       slug: "update-agent",
-      env: { ASSEMBLYAI_API_KEY: "k" },
+      env: {},
       worker: "w",
       clientFiles: { "index.html": "<!DOCTYPE html><html>v1</html>" },
       credential_hashes: ["h"],
@@ -71,7 +71,7 @@ describe("deploy serves client files", () => {
 
     await store.putAgent({
       slug: "update-agent",
-      env: { ASSEMBLYAI_API_KEY: "k" },
+      env: {},
       worker: "w",
       clientFiles: { "index.html": "<!DOCTYPE html><html>v2</html>" },
       credential_hashes: ["h"],

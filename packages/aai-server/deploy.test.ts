@@ -48,7 +48,7 @@ describe("POST /:slug/deploy", () => {
       method: "POST",
       headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
       body: JSON.stringify({
-        env: { ASSEMBLYAI_API_KEY: "k" },
+        env: { MY_SECRET: "value" },
         worker: esmWorker,
         clientFiles: { "index.html": "<html></html>" },
         agentConfig: TEST_AGENT_CONFIG,
@@ -57,34 +57,21 @@ describe("POST /:slug/deploy", () => {
     expect(res.status).toBe(200);
   });
 
-  test("rejects invalid env (missing ASSEMBLYAI_API_KEY)", async () => {
-    const { fetch } = await createTestOrchestrator();
-    const res = await fetch("/my-agent/deploy", {
-      method: "POST",
-      headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
-      body: deployBody({ env: { NOT_VALID: "x" } }),
-    });
-    expect(res.status).toBe(400);
-    expect(((await res.json()) as Record<string, unknown>).error).toContain(
-      "Invalid platform config",
-    );
-  });
-
   test("merges env with stored env", async () => {
     const { fetch, store } = await createTestOrchestrator();
     await deployAgent(fetch);
     await store.putEnv("my-agent", {
-      ASSEMBLYAI_API_KEY: "original-key",
+      EXISTING: "original-value",
       EXTRA: "stored-value",
     });
     const res = await fetch("/my-agent/deploy", {
       method: "POST",
       headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
-      body: deployBody({ env: { ASSEMBLYAI_API_KEY: "new-key" } }),
+      body: deployBody({ env: { EXISTING: "new-value" } }),
     });
     expect(res.status).toBe(200);
     const env = await store.getEnv("my-agent");
-    expect(env?.ASSEMBLYAI_API_KEY).toBe("new-key");
+    expect(env?.EXISTING).toBe("new-value");
     expect(env?.EXTRA).toBe("stored-value");
   });
 
@@ -106,7 +93,7 @@ describe("POST /:slug/deploy", () => {
     const { fetch, store } = await createTestOrchestrator();
     await store.putAgent({
       slug: "pre-stored",
-      env: { ASSEMBLYAI_API_KEY: "stored-key" },
+      env: { MY_SECRET: "stored-secret" },
       worker: "w",
       clientFiles: { "index.html": "<html></html>" },
       credential_hashes: [await hashApiKey("key1")],

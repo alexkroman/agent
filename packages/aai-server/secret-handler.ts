@@ -4,9 +4,6 @@ import { HTTPException } from "hono/http-exception";
 import type { AppContext, ValidatedAppContext } from "./context.ts";
 import { terminateSlot, withSlugLock } from "./sandbox-slots.ts";
 
-/** Keys managed by the platform that agents must not override or delete. */
-const RESERVED_KEYS = new Set(["ASSEMBLYAI_API_KEY"]);
-
 async function restartSandbox(c: AppContext, slug: string, reason: string): Promise<void> {
   const slot = c.env.slots.get(slug);
   if (slot?.sandbox) {
@@ -29,13 +26,6 @@ export function handleSecretSet(c: ValidatedAppContext<Record<string, string>>):
   return withSlugLock(slug, async () => {
     const updates = c.req.valid("json");
 
-    const reserved = Object.keys(updates).filter((k) => RESERVED_KEYS.has(k));
-    if (reserved.length > 0) {
-      throw new HTTPException(400, {
-        message: `Cannot modify reserved platform keys: ${reserved.join(", ")}`,
-      });
-    }
-
     const existing = (await c.env.store.getEnv(slug)) ?? {};
     const merged = { ...existing, ...updates };
     await c.env.store.putEnv(slug, merged);
@@ -53,11 +43,6 @@ export function handleSecretDelete(c: AppContext): Promise<Response> {
     const key = c.req.param("key")!;
     if (!/^[a-zA-Z_]\w*$/.test(key)) {
       throw new HTTPException(400, { message: "Invalid secret key name" });
-    }
-    if (RESERVED_KEYS.has(key)) {
-      throw new HTTPException(400, {
-        message: `Cannot delete reserved platform key: ${key}`,
-      });
     }
     const existing = await c.env.store.getEnv(slug);
     if (!existing) {

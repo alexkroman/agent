@@ -36,7 +36,7 @@ test("secret list returns var names for deployed agent", async () => {
   const { fetch, key } = await deployAndAuth();
   const res = await fetch(...secretReq("my-agent", key, "GET"));
   expect(res.status).toBe(200);
-  expect(((await res.json()) as Record<string, unknown>).vars).toEqual(["ASSEMBLYAI_API_KEY"]);
+  expect(((await res.json()) as Record<string, unknown>).vars).toEqual([]);
 });
 
 test("secret set rejects without auth", async () => {
@@ -58,7 +58,7 @@ test("secret set merges new vars", async () => {
   expect(setRes.status).toBe(200);
   const setBody = (await setRes.json()) as Record<string, unknown>;
   expect(setBody.ok).toBe(true);
-  expect((setBody.keys as string[]).sort()).toEqual(["ASSEMBLYAI_API_KEY", "MY_KEY"]);
+  expect((setBody.keys as string[]).sort()).toEqual(["MY_KEY"]);
 });
 
 test("secret set rejects non-object body", async () => {
@@ -90,34 +90,24 @@ test("secret delete removes a key", async () => {
   expect(delRes.status).toBe(200);
   expect(((await delRes.json()) as Record<string, unknown>).ok).toBe(true);
   const listRes = await fetch(...secretReq("my-agent", key, "GET"));
-  expect(((await listRes.json()) as Record<string, unknown>).vars).toEqual(["ASSEMBLYAI_API_KEY"]);
+  expect(((await listRes.json()) as Record<string, unknown>).vars).toEqual([]);
 });
 
-test("secret set rejects overwriting reserved platform key", async () => {
+test("secret set allows overwriting ASSEMBLYAI_API_KEY", async () => {
   const { fetch, key } = await deployAndAuth();
-  const res = await fetch(...secretReq("my-agent", key, "PUT", { ASSEMBLYAI_API_KEY: "evil" }));
-  expect(res.status).toBe(400);
-  const text = await res.text();
-  expect(text).toMatch(/reserved platform key/i);
+  const res = await fetch(...secretReq("my-agent", key, "PUT", { ASSEMBLYAI_API_KEY: "new-key" }));
+  expect(res.status).toBe(200);
+  const listRes = await fetch(...secretReq("my-agent", key, "GET"));
+  expect(((await listRes.json()) as Record<string, unknown>).vars).toContain("ASSEMBLYAI_API_KEY");
 });
 
-test("secret set rejects reserved key mixed with valid keys", async () => {
-  const { fetch, key } = await deployAndAuth();
-  const res = await fetch(
-    ...secretReq("my-agent", key, "PUT", { MY_KEY: "ok", ASSEMBLYAI_API_KEY: "evil" }),
-  );
-  expect(res.status).toBe(400);
-});
-
-test("secret delete rejects reserved platform key", async () => {
+test("secret delete allows removing ASSEMBLYAI_API_KEY", async () => {
   const { fetch, key } = await deployAndAuth();
   const res = await fetch("/my-agent/secret/ASSEMBLYAI_API_KEY", {
     method: "DELETE",
     headers: { Authorization: `Bearer ${key}` },
   });
-  expect(res.status).toBe(400);
-  const text = await res.text();
-  expect(text).toMatch(/reserved platform key/i);
+  expect(res.status).toBe(200);
 });
 
 test("secret delete returns 404 for unknown agent", async () => {

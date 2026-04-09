@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 import path from "node:path";
 import { describe, expect, test } from "vitest";
-import { ensureApiKeyInEnv, readProjectConfig, writeProjectConfig } from "./_config.ts";
+import { readProjectConfig, writeProjectConfig } from "./_config.ts";
 import { withTempDir } from "./_test-utils.ts";
 import { fileExists } from "./_utils.ts";
 
@@ -38,23 +38,5 @@ describe("readProjectConfig / writeProjectConfig", () => {
       const result = await readProjectConfig(dir);
       expect(result?.slug).toBe("new");
     });
-  });
-});
-
-describe("ensureApiKeyInEnv", () => {
-  test("sets process.env.ASSEMBLYAI_API_KEY from env", async () => {
-    const orig = process.env.ASSEMBLYAI_API_KEY;
-    process.env.ASSEMBLYAI_API_KEY = "test-key-env";
-    try {
-      const key = await ensureApiKeyInEnv();
-      expect(key).toBe("test-key-env");
-      expect(process.env.ASSEMBLYAI_API_KEY).toBe("test-key-env");
-    } finally {
-      if (orig !== undefined) {
-        process.env.ASSEMBLYAI_API_KEY = orig;
-      } else {
-        delete process.env.ASSEMBLYAI_API_KEY;
-      }
-    }
   });
 });

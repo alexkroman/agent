@@ -21,7 +21,6 @@
   "dependencies": {
     "@alexkroman1/aai": "workspace:*",
     "@clack/prompts": "^1.2.0",
-    "ci-info": "^4.4.0",
     "citty": "^0.2.2",
     "consola": "^3.4.2",
     "esbuild": "^0.28.0",

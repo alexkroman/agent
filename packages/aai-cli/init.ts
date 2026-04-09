@@ -8,7 +8,6 @@ import { errorMessage } from "@alexkroman1/aai/utils";
 import * as p from "@clack/prompts";
 import { colorize } from "consola/utils";
 import { DEFAULT_DEV_SERVER, getMonorepoRoot, isDevMode } from "./_agent.ts";
-import { ensureApiKeyInEnv } from "./_config.ts";
 import { type CommandResult, ok } from "./_output.ts";
 import { log } from "./_ui.ts";
 import { fileExists, resolveCwd } from "./_utils.ts";
@@ -165,10 +164,6 @@ export async function executeInit(
   const suppressUi = extra?.quiet ?? extra?.silent;
   if (!suppressUi) {
     p.intro(colorize("cyanBright", "Create a new voice agent"));
-  }
-
-  if (!opts.skipApi) {
-    await ensureApiKeyInEnv();
   }
 
   const dir = opts.dir ?? (await promptProjectName(opts.yes));

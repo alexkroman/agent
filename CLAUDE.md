@@ -407,9 +407,11 @@ Agent code runs in **per-agent gVisor sandboxes**. Key files:
 
 **Credential separation:**
 
-`SandboxOptions` has separate `apiKey` (platform, host-only) and `agentEnv`
-(user secrets, forwarded to guest) fields. Platform keys are structurally
-prevented from entering sandboxes — separate fields in the type system, not a denylist.
+Each agent provides its own `ASSEMBLYAI_API_KEY` via `.env` (local dev) or
+`aai secret put` (production). There is no central/platform-owned key.
+`SandboxOptions` has separate `apiKey` (host-only, for S2S connections) and
+`agentEnv` (forwarded to guest) fields. The key is extracted from the agent's
+stored env at sandbox creation time and kept host-side only.
 
 **Cross-agent isolation:**
 

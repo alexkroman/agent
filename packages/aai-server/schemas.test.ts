@@ -176,10 +176,10 @@ describe("SafePathSchema", () => {
 
 describe("EnvSchema", () => {
   test.each([
-    ["env with required ASSEMBLYAI_API_KEY", { ASSEMBLYAI_API_KEY: "sk-123" }, true],
+    ["env with ASSEMBLYAI_API_KEY", { ASSEMBLYAI_API_KEY: "sk-123" }, true],
     ["env with additional keys", { ASSEMBLYAI_API_KEY: "sk-123", MY_SECRET: "val" }, true],
-    ["missing ASSEMBLYAI_API_KEY", { MY_SECRET: "val" }, false],
-    ["empty ASSEMBLYAI_API_KEY", { ASSEMBLYAI_API_KEY: "" }, false],
+    ["env without ASSEMBLYAI_API_KEY", { MY_SECRET: "val" }, true],
+    ["empty env", {}, true],
     ["non-string values", { ASSEMBLYAI_API_KEY: "key", BAD: 42 }, false],
   ] as const)("rejects/accepts %s → %s", (_label: string, input: unknown, expected: boolean) => {
     expect(EnvSchema.safeParse(input).success).toBe(expected);

@@ -1317,7 +1317,8 @@ await server.listen(3000);
 
 Run with `node server.ts` (Node >=24 strips types natively) or bundle
 with your preferred tool. The server handles WebSocket connections, STT/TTS,
-and the agentic loop. Set `ASSEMBLYAI_API_KEY` as an environment variable.
+and the agentic loop. Each agent provides its own `ASSEMBLYAI_API_KEY` —
+add it to your `.env` file for local dev, or set it as an environment variable.
 
 **Env in self-hosted mode:** `ctx.env` is exactly the `env` record you pass to
 `createRuntime({ agent, env })`. If omitted, it defaults to
@@ -1329,8 +1330,8 @@ the keys your agent needs:
 const runtime = createRuntime({
   agent,
   env: {
-    ASSEMBLYAI_API_KEY: process.env.ASSEMBLYAI_API_KEY!,
-    MY_API_KEY: process.env.MY_API_KEY!,
+    ASSEMBLYAI_API_KEY: process.env.ASSEMBLYAI_API_KEY ?? "",
+    MY_API_KEY: process.env.MY_API_KEY ?? "",
   },
 });
 const server = createServer({ runtime, name: agent.name });
