@@ -131,20 +131,15 @@ async function tryDeploy(
 }
 
 /** Scaffold the project, optionally showing a spinner. */
-async function scaffoldProject(
-  dir: string,
-  cwd: string,
-  template: string,
-  silent?: boolean,
-): Promise<void> {
+async function scaffoldProject(dir: string, cwd: string, silent?: boolean): Promise<void> {
   const { runInit } = await import("./_init.ts");
   if (silent) {
-    await runInit({ targetDir: cwd, template });
+    await runInit({ targetDir: cwd });
     return;
   }
   const s = p.spinner();
-  s.start(`Creating ${dir} from ${template} template`);
-  await runInit({ targetDir: cwd, template });
+  s.start(`Creating ${dir}`);
+  await runInit({ targetDir: cwd });
   s.stop("Project created");
 }
 
@@ -188,7 +183,7 @@ export async function executeInit(
 
   const template = "simple";
 
-  await scaffoldProject(dir, cwd, template, suppressUi);
+  await scaffoldProject(dir, cwd, suppressUi);
   await installDeps(cwd, suppressUi);
 
   let deployed = false;

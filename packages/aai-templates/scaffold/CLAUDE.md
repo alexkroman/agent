@@ -354,11 +354,13 @@ Hook context is the same as tool context but without `messages`. See the
 Hooks fire in this order during a session:
 
 1. **on-connect** -- fires once when user connects. Use for initialization.
-2. **on-user-transcript** -- fires after each STT result, before the LLM processes it. Use for logging, state updates, or modifying behavior.
+2. **on-user-transcript** -- fires after each STT result, before the LLM
+   processes it. Use for logging, state updates, or modifying behavior.
 3. **on-error** -- fires on unhandled errors in tools or hooks.
 4. **on-disconnect** -- fires when user disconnects. Use for cleanup.
 
-Hooks run sequentially -- each hook completes before the next event is processed. Hook timeout is **5 seconds**.
+Hooks run sequentially -- each hook completes before the next event is
+processed. Hook timeout is **5 seconds**.
 
 ### Hook examples
 
@@ -1265,9 +1267,11 @@ This is your primary debugging tool.
 **Common debugging flow:**
 
 1. Run `aai dev` and talk to the agent
-2. Watch the terminal for tool calls -- check that the right tool fires with the right args
+2. Watch the terminal for tool calls -- check that the right tool fires
+   with the right args
 3. Check tool return values -- are they what you expect?
-4. If a tool isn't being called, check its `description` -- the LLM uses this to decide when to call it
+4. If a tool isn't being called, check its `description` -- the LLM uses
+   this to decide when to call it
 5. Use `console.log` in tool code -- output appears in the `aai dev` terminal
 
 **KV debugging:** Add a temporary tool that reads KV state:
