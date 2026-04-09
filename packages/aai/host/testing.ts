@@ -360,9 +360,14 @@ export function toHaveCalledTool(
     };
   }
 
-  const pass = received.toHaveCalledTool(toolName, args);
+  const pass = received.toolCalls.some(
+    (tc) =>
+      tc.name === toolName &&
+      (args === undefined ||
+        Object.entries(args).every(([k, v]) => JSON.stringify(tc.args[k]) === JSON.stringify(v))),
+  );
 
-  const calledTools = received.toolCalls.map((tc) => tc.toolName);
+  const calledTools = received.toolCalls.map((tc) => tc.name);
   const argsHint = args ? ` with args ${JSON.stringify(args)}` : "";
 
   return {

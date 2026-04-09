@@ -111,15 +111,17 @@ function DefaultShell({
   Sidebar?: ComponentType;
   sidebarWidth?: string;
 }) {
-  const chat = createElement(ChatView, { title });
+  const chat = <ChatView {...(title !== undefined ? { title } : {})} />;
 
-  return createElement(
-    StartScreen,
-    { title },
-    Sidebar
-      ? createElement(SidebarLayout, { sidebar: createElement(Sidebar), sidebarWidth }, chat)
-      : chat,
+  const inner = Sidebar ? (
+    <SidebarLayout sidebar={<Sidebar />} {...(sidebarWidth !== undefined ? { sidebarWidth } : {})}>
+      {chat}
+    </SidebarLayout>
+  ) : (
+    chat
   );
+
+  return <StartScreen {...(title !== undefined ? { title } : {})}>{inner}</StartScreen>;
 }
 
 // ─── defineClient ─────────────────────────────────────────────────────────────
@@ -173,7 +175,12 @@ export function defineClient(config: ClientConfig): ClientHandle {
   } else {
     const cfg = config as ConfigTier;
     const { title, sidebar: Sidebar, sidebarWidth } = cfg;
-    RootComponent = () => createElement(DefaultShell, { title, Sidebar, sidebarWidth });
+    RootComponent = () =>
+      createElement(DefaultShell, {
+        ...(title !== undefined ? { title } : {}),
+        ...(Sidebar !== undefined ? { Sidebar } : {}),
+        ...(sidebarWidth !== undefined ? { sidebarWidth } : {}),
+      });
   }
 
   const toolConfig: ToolDisplayConfig = "tools" in config && config.tools ? config.tools : {};
@@ -186,7 +193,7 @@ export function defineClient(config: ClientConfig): ClientHandle {
         { value: toolConfig },
         createElement(
           ThemeProvider,
-          { value: config.theme },
+          config.theme !== undefined ? { value: config.theme } : {},
           createElement(SessionProvider, { value: session }, createElement(RootComponent)),
         ),
       ),

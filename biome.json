@@ -9,7 +9,8 @@
       "!**/__snapshots__",
       "!**/scaffold",
       "!tmp",
-      "!.worktrees"
+      "!.worktrees",
+      "!.claude"
     ]
   },
   "linter": {

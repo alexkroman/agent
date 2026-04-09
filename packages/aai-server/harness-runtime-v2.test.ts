@@ -178,7 +178,7 @@ describe("createDispatcher", () => {
         return { val };
       },
     );
-    stubKv.get.mockResolvedValueOnce("stored-value");
+    stubKv.get.mockResolvedValueOnce("stored-value" as unknown as null);
 
     const tools: Record<string, ToolHandler> = {
       lookup: { default: execute },

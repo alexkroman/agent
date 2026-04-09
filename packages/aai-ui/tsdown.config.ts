@@ -3,13 +3,12 @@ import { defineConfig } from "tsdown";
 export default defineConfig({
   entry: [
     "index.ts",
-    "session.ts",
+    "session-core.ts",
     "types.ts",
     "audio.ts",
     "define-client.tsx",
     "context.ts",
     "hooks.ts",
-    "components/app.tsx",
     "components/button.tsx",
     "components/chat-view.tsx",
     "components/controls.tsx",
@@ -17,7 +16,6 @@ export default defineConfig({
     "components/sidebar-layout.tsx",
     "components/start-screen.tsx",
     "components/tool-call-block.tsx",
-    "components/tool-icons.tsx",
     "worklets/capture-processor.ts",
     "worklets/playback-processor.ts",
   ],

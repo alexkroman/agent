@@ -116,7 +116,7 @@ export function ToolCallBlock({
             background: theme.surface,
           }}
         >
-          {toolCall.name === "run_code" && toolCall.args.code && (
+          {toolCall.name === "run_code" && Boolean(toolCall.args.code) && (
             <pre
               className="text-xs p-2 whitespace-pre-wrap border-b font-mono"
               style={{ color: theme.text, borderColor: theme.border }}

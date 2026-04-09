@@ -78,7 +78,7 @@ describe("useToolResult", () => {
       createElement(SessionProvider, { value: core }, children);
     renderHook(() => useToolResult("add_pizza", cb), { wrapper });
     expect(cb).toHaveBeenCalledOnce();
-    expect(cb.mock.calls[0][0]).toEqual({ ok: true });
+    expect(cb.mock.calls[0]?.at(0)).toEqual({ ok: true });
   });
 
   it("does not fire for non-matching tool name", () => {
