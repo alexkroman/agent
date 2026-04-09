@@ -10,6 +10,8 @@
     },
     "packages/aai": {
       "entry": [
+        "host/index.ts",
+        "isolate/index.ts",
         "host/_test-utils.ts",
         "**/*.test.ts",
         "**/*.test-d.ts"

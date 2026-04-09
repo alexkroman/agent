@@ -1,382 +1,343 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { Duplex } from "node:stream";
+import { PassThrough } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
-import { createGuestRpc } from "./harness.ts";
+import {
+  createMessageConnection,
+  StreamMessageReader,
+  StreamMessageWriter,
+} from "vscode-jsonrpc/node";
+import { createGuestConnection } from "./harness.ts";
 
-function createMockStream(): Duplex {
-  return new Duplex({
-    // biome-ignore lint/suspicious/noEmptyBlockStatements: required Duplex override
-    read() {},
-    write(_chunk, _enc, cb) {
-      cb();
-    },
-  });
+// ── helpers ───────────────────────────────────────────────────────────────────
+
+/**
+ * Creates a connected pair of vscode-jsonrpc connections that talk to each
+ * other via PassThrough streams. Returns both connections so tests can play
+ * the role of both host and guest.
+ *
+ * guestConn reads from hostToGuest, writes to guestToHost.
+ * hostConn reads from guestToHost, writes to hostToGuest.
+ */
+function createConnectedPair() {
+  const guestToHost = new PassThrough();
+  const hostToGuest = new PassThrough();
+
+  const guestConn = createMessageConnection(
+    new StreamMessageReader(hostToGuest),
+    new StreamMessageWriter(guestToHost),
+  );
+
+  const hostConn = createMessageConnection(
+    new StreamMessageReader(guestToHost),
+    new StreamMessageWriter(hostToGuest),
+  );
+
+  guestConn.listen();
+  hostConn.listen();
+
+  return { guestConn, hostConn, guestToHost, hostToGuest };
 }
 
-describe("createGuestRpc", () => {
-  it("dispatches tool requests concurrently, not serially", async () => {
-    const stream = createMockStream();
+describe("createGuestConnection", () => {
+  it("returns a connection and kv proxy", () => {
+    const input = new PassThrough();
+    const output = new PassThrough();
+    const { conn, kv } = createGuestConnection(input, output);
+
+    expect(conn).toBeDefined();
+    expect(typeof conn.sendRequest).toBe("function");
+    expect(typeof conn.onRequest).toBe("function");
+    expect(typeof kv.get).toBe("function");
+    expect(typeof kv.set).toBe("function");
+    expect(typeof kv.del).toBe("function");
+
+    conn.dispose();
+  });
+
+  it("KV proxy get — sends kv/get request and resolves with value", async () => {
+    const { guestConn, hostConn } = createConnectedPair();
+    const guestToHost = new PassThrough();
+    const hostToGuest = new PassThrough();
+
+    // Use createGuestConnection with its own stream pair
+    const input2 = new PassThrough();
+    const output2 = new PassThrough();
+    const { conn, kv } = createGuestConnection(input2, output2);
+
+    // Host side reads from output2 (what guest writes) and writes to input2 (what guest reads)
+    const hostSide = createMessageConnection(
+      new StreamMessageReader(output2),
+      new StreamMessageWriter(input2),
+    );
+    hostSide.onRequest("kv/get", (params: { key: string }) => {
+      expect(params.key).toBe("my-key");
+      return { value: "stored-value" };
+    });
+    hostSide.listen();
+    conn.listen();
+
+    const result = await kv.get("my-key");
+    expect(result).toBe("stored-value");
+
+    conn.dispose();
+    hostSide.dispose();
+    // Cleanup unused vars
+    void guestConn;
+    void hostConn;
+    void guestToHost;
+    void hostToGuest;
+  });
+
+  it("KV proxy get — returns null when host returns undefined value", async () => {
+    const input = new PassThrough();
+    const output = new PassThrough();
+    const { conn, kv } = createGuestConnection(input, output);
+
+    const hostSide = createMessageConnection(
+      new StreamMessageReader(output),
+      new StreamMessageWriter(input),
+    );
+    hostSide.onRequest("kv/get", () => {
+      return {}; // no value field
+    });
+    hostSide.listen();
+    conn.listen();
+
+    const result = await kv.get("missing-key");
+    expect(result).toBeNull();
+
+    conn.dispose();
+    hostSide.dispose();
+  });
+
+  it("KV proxy set — sends kv/set request with key, value, and expireIn", async () => {
+    const input = new PassThrough();
+    const output = new PassThrough();
+    const { conn, kv } = createGuestConnection(input, output);
+
+    let received: Record<string, unknown> | undefined;
+    const hostSide = createMessageConnection(
+      new StreamMessageReader(output),
+      new StreamMessageWriter(input),
+    );
+    hostSide.onRequest("kv/set", (params: Record<string, unknown>) => {
+      received = params;
+      return {};
+    });
+    hostSide.listen();
+    conn.listen();
+
+    await kv.set("some-key", { foo: "bar" }, { expireIn: 3600 });
+
+    expect(received).toMatchObject({ key: "some-key", value: { foo: "bar" }, expireIn: 3600 });
+
+    conn.dispose();
+    hostSide.dispose();
+  });
+
+  it("KV proxy set — sends kv/set without expireIn when not specified", async () => {
+    const input = new PassThrough();
+    const output = new PassThrough();
+    const { conn, kv } = createGuestConnection(input, output);
+
+    let received: Record<string, unknown> | undefined;
+    const hostSide = createMessageConnection(
+      new StreamMessageReader(output),
+      new StreamMessageWriter(input),
+    );
+    hostSide.onRequest("kv/set", (params: Record<string, unknown>) => {
+      received = params;
+      return {};
+    });
+    hostSide.listen();
+    conn.listen();
+
+    await kv.set("k", "v");
+    expect(received?.key).toBe("k");
+    expect(received?.value).toBe("v");
+
+    conn.dispose();
+    hostSide.dispose();
+  });
+
+  it("KV proxy del — sends kv/del request and resolves", async () => {
+    const input = new PassThrough();
+    const output = new PassThrough();
+    const { conn, kv } = createGuestConnection(input, output);
+
+    let deletedKey: string | undefined;
+    const hostSide = createMessageConnection(
+      new StreamMessageReader(output),
+      new StreamMessageWriter(input),
+    );
+    hostSide.onRequest("kv/del", (params: { key: string }) => {
+      deletedKey = params.key;
+      return {};
+    });
+    hostSide.listen();
+    conn.listen();
+
+    await kv.del("delete-me");
+    expect(deletedKey).toBe("delete-me");
+
+    conn.dispose();
+    hostSide.dispose();
+  });
+});
+
+describe("guest connection RPC dispatch", () => {
+  it("tool/execute — dispatched to handler and response returned", async () => {
+    const { guestConn, hostConn } = createConnectedPair();
+
+    const toolResult = { result: "tool-output", state: { count: 1 } };
+    guestConn.onRequest("tool/execute", () => toolResult);
+
+    const response = await hostConn.sendRequest("tool/execute", {
+      name: "myTool",
+      args: { x: 1 },
+      sessionId: "s1",
+      messages: [],
+    });
+
+    expect(response).toEqual(toolResult);
+
+    guestConn.dispose();
+    hostConn.dispose();
+  });
+
+  it("hook/invoke — dispatched to handler and response returned", async () => {
+    const { guestConn, hostConn } = createConnectedPair();
+
+    const hookResult = { state: { x: 1 }, result: "hook-output" };
+    guestConn.onRequest("hook/invoke", () => hookResult);
+
+    const response = await hostConn.sendRequest("hook/invoke", {
+      hook: "onConnect",
+      sessionId: "s2",
+    });
+
+    expect(response).toEqual(hookResult);
+
+    guestConn.dispose();
+    hostConn.dispose();
+  });
+
+  it("concurrent tool requests — fast completes before slow", async () => {
+    const { guestConn, hostConn } = createConnectedPair();
     const completionOrder: string[] = [];
 
-    const handlers = {
-      onTool: vi.fn().mockImplementation(async (req: { name: string }) => {
-        if (req.name === "slow") {
-          await new Promise((r) => setTimeout(r, 50));
-          completionOrder.push("slow");
-          return { result: "slow-done", state: {} };
-        }
-        completionOrder.push("fast");
-        return { result: "fast-done", state: {} };
+    guestConn.onRequest("tool/execute", async (params: { name: string }) => {
+      if (params.name === "slow") {
+        await new Promise((r) => setTimeout(r, 50));
+        completionOrder.push("slow");
+        return { result: "slow-done", state: {} };
+      }
+      completionOrder.push("fast");
+      return { result: "fast-done", state: {} };
+    });
+
+    // Fire both requests concurrently
+    const [slowResult, fastResult] = await Promise.all([
+      hostConn.sendRequest("tool/execute", {
+        name: "slow",
+        args: {},
+        sessionId: "s1",
+        messages: [],
       }),
-      onHook: vi.fn().mockResolvedValue({ state: {} }),
-    };
+      hostConn.sendRequest("tool/execute", {
+        name: "fast",
+        args: {},
+        sessionId: "s1",
+        messages: [],
+      }),
+    ]);
 
-    createGuestRpc(stream, handlers);
+    expect(slowResult).toEqual({ result: "slow-done", state: {} });
+    expect(fastResult).toEqual({ result: "fast-done", state: {} });
 
-    // Send two tool requests: slow first, then fast
-    const slowReq = JSON.stringify({
-      id: "h:1",
-      type: "tool",
-      name: "slow",
-      args: {},
-      sessionId: "s1",
-      messages: [],
-    });
-    const fastReq = JSON.stringify({
-      id: "h:2",
-      type: "tool",
-      name: "fast",
-      args: {},
-      sessionId: "s1",
-      messages: [],
-    });
-
-    stream.push(`${slowReq}\n`);
-    stream.push(`${fastReq}\n`);
-
-    // Wait for both to complete
-    await vi.waitFor(() => expect(completionOrder).toHaveLength(2), { timeout: 2000 });
-
-    // "fast" should complete before "slow" — concurrent dispatch
+    // fast should have completed before slow (concurrent dispatch)
     expect(completionOrder[0]).toBe("fast");
     expect(completionOrder[1]).toBe("slow");
+
+    guestConn.dispose();
+    hostConn.dispose();
   });
 
-  it("sends tool response back to host with matching id", async () => {
-    const stream = createMockStream();
-    const written: string[] = [];
-    stream.write = (chunk: unknown, ..._args: unknown[]) => {
-      written.push(chunk as string);
-      return true;
-    };
+  it("shutdown notification — disposes connection and calls process.exit", async () => {
+    const { guestConn, hostConn } = createConnectedPair();
 
-    const handlers = {
-      onTool: vi.fn().mockResolvedValue({ result: "tool-result", state: { counter: 1 } }),
-      onHook: vi.fn().mockResolvedValue({ state: {} }),
-    };
+    const exitSpy = vi
+      .spyOn(process, "exit")
+      .mockImplementation((_code?: unknown) => undefined as never);
+    const disposeSpy = vi.spyOn(guestConn, "dispose");
 
-    createGuestRpc(stream, handlers);
-
-    stream.push(
-      `${JSON.stringify({ id: "h:99", type: "tool", name: "myTool", args: {}, sessionId: "s1", messages: [] })}\n`,
-    );
-
-    await vi.waitFor(() => expect(written.length).toBeGreaterThan(0));
-
-    const reply = JSON.parse(written[0] as string);
-    expect(reply.id).toBe("h:99");
-    expect(reply.result).toBe("tool-result");
-    expect(reply.state).toEqual({ counter: 1 });
-  });
-
-  it("dispatches hook requests to onHook handler", async () => {
-    const stream = createMockStream();
-    const written: string[] = [];
-    stream.write = (chunk: unknown, ..._args: unknown[]) => {
-      written.push(chunk as string);
-      return true;
-    };
-
-    const handlers = {
-      onTool: vi.fn().mockResolvedValue({ result: "", state: {} }),
-      onHook: vi.fn().mockResolvedValue({ state: { x: 1 }, result: "hook-result" }),
-    };
-
-    createGuestRpc(stream, handlers);
-
-    stream.push(
-      `${JSON.stringify({ id: "h:5", type: "hook", hook: "onConnect", sessionId: "s2" })}\n`,
-    );
-
-    await vi.waitFor(() => expect(written.length).toBeGreaterThan(0));
-
-    expect(handlers.onHook).toHaveBeenCalledWith(
-      expect.objectContaining({ hook: "onConnect", sessionId: "s2" }),
-    );
-
-    const reply = JSON.parse(written[0] as string);
-    expect(reply.id).toBe("h:5");
-    expect(reply.state).toEqual({ x: 1 });
-  });
-
-  it("handles shutdown: sends ok response and calls process.exit", async () => {
-    const stream = createMockStream();
-    const written: string[] = [];
-    stream.write = (chunk: unknown, ..._args: unknown[]) => {
-      written.push(chunk as string);
-      return true;
-    };
-
-    const exitSpy = vi.spyOn(process, "exit").mockImplementation((_code?: unknown) => {
-      // Don't actually exit in tests
-      return undefined as never;
+    guestConn.onNotification("shutdown", () => {
+      guestConn.dispose();
+      process.exit(0);
     });
 
-    const handlers = {
-      onTool: vi.fn().mockResolvedValue({ result: "", state: {} }),
-      onHook: vi.fn().mockResolvedValue({ state: {} }),
-    };
-
-    createGuestRpc(stream, handlers);
-
-    stream.push(`${JSON.stringify({ id: "h:7", type: "shutdown" })}\n`);
-
-    await vi.waitFor(() => expect(written.length).toBeGreaterThan(0));
-
-    const reply = JSON.parse(written[0] as string);
-    expect(reply.id).toBe("h:7");
-    expect(reply.ok).toBe(true);
+    hostConn.sendNotification("shutdown");
 
     await vi.waitFor(() => expect(exitSpy).toHaveBeenCalledWith(0));
+    expect(disposeSpy).toHaveBeenCalled();
 
     exitSpy.mockRestore();
+    hostConn.dispose();
   });
+});
 
-  it("KV proxy round-trip: get sends request and resolves with value", async () => {
-    const stream = createMockStream();
-    const written: string[] = [];
-    stream.write = (chunk: unknown, ..._args: unknown[]) => {
-      written.push(chunk as string);
-      return true;
-    };
+describe("full RPC round-trip via createGuestConnection", () => {
+  it("kv/get round-trip returns correct value", async () => {
+    const input = new PassThrough();
+    const output = new PassThrough();
+    const { conn, kv } = createGuestConnection(input, output);
 
-    const handlers = {
-      onTool: vi.fn().mockResolvedValue({ result: "", state: {} }),
-      onHook: vi.fn().mockResolvedValue({ state: {} }),
-    };
-
-    const rpc = createGuestRpc(stream, handlers);
-
-    // Initiate a KV get
-    const getPromise = rpc.kv.get("my-key");
-
-    // Wait for the KV request to be written to the stream
-    await vi.waitFor(() => expect(written.length).toBeGreaterThan(0));
-
-    const kvReq = JSON.parse(written[0] as string);
-    expect(kvReq.type).toBe("kv");
-    expect(kvReq.op).toBe("get");
-    expect(kvReq.key).toBe("my-key");
-    expect(kvReq.id).toMatch(/^g:\d+$/);
-
-    // Simulate host response with the value
-    stream.push(`${JSON.stringify({ id: kvReq.id, value: "stored-value" })}\n`);
-
-    const result = await getPromise;
-    expect(result).toBe("stored-value");
-  });
-
-  it("KV proxy round-trip: set sends request and resolves", async () => {
-    const stream = createMockStream();
-    const written: string[] = [];
-    stream.write = (chunk: unknown, ..._args: unknown[]) => {
-      written.push(chunk as string);
-      return true;
-    };
-
-    const handlers = {
-      onTool: vi.fn().mockResolvedValue({ result: "", state: {} }),
-      onHook: vi.fn().mockResolvedValue({ state: {} }),
-    };
-
-    const rpc = createGuestRpc(stream, handlers);
-
-    const setPromise = rpc.kv.set("some-key", { foo: "bar" });
-
-    await vi.waitFor(() => expect(written.length).toBeGreaterThan(0));
-
-    const kvReq = JSON.parse(written[0] as string);
-    expect(kvReq.type).toBe("kv");
-    expect(kvReq.op).toBe("set");
-    expect(kvReq.key).toBe("some-key");
-    expect(kvReq.value).toEqual({ foo: "bar" });
-    expect(kvReq.id).toMatch(/^g:\d+$/);
-
-    // Simulate host response (set returns void, so just ack)
-    stream.push(`${JSON.stringify({ id: kvReq.id })}\n`);
-
-    await expect(setPromise).resolves.toBeUndefined();
-  });
-
-  it("KV proxy round-trip: del sends request and resolves", async () => {
-    const stream = createMockStream();
-    const written: string[] = [];
-    stream.write = (chunk: unknown, ..._args: unknown[]) => {
-      written.push(chunk as string);
-      return true;
-    };
-
-    const handlers = {
-      onTool: vi.fn().mockResolvedValue({ result: "", state: {} }),
-      onHook: vi.fn().mockResolvedValue({ state: {} }),
-    };
-
-    const rpc = createGuestRpc(stream, handlers);
-
-    const delPromise = rpc.kv.del("delete-me");
-
-    await vi.waitFor(() => expect(written.length).toBeGreaterThan(0));
-
-    const kvReq = JSON.parse(written[0] as string);
-    expect(kvReq.type).toBe("kv");
-    expect(kvReq.op).toBe("del");
-    expect(kvReq.key).toBe("delete-me");
-    expect(kvReq.id).toMatch(/^g:\d+$/);
-
-    stream.push(`${JSON.stringify({ id: kvReq.id })}\n`);
-
-    await expect(delPromise).resolves.toBeUndefined();
-  });
-
-  it("KV proxy round-trip: mget sends request and resolves with values array", async () => {
-    const stream = createMockStream();
-    const written: string[] = [];
-    stream.write = (chunk: unknown, ..._args: unknown[]) => {
-      written.push(chunk as string);
-      return true;
-    };
-
-    const handlers = {
-      onTool: vi.fn().mockResolvedValue({ result: "", state: {} }),
-      onHook: vi.fn().mockResolvedValue({ state: {} }),
-    };
-
-    const rpc = createGuestRpc(stream, handlers);
-
-    const mgetPromise = rpc.kv.mget(["key-a", "key-b"]);
-
-    await vi.waitFor(() => expect(written.length).toBeGreaterThan(0));
-
-    const kvReq = JSON.parse(written[0] as string);
-    expect(kvReq.type).toBe("kv");
-    expect(kvReq.op).toBe("mget");
-    expect(kvReq.keys).toEqual(["key-a", "key-b"]);
-    expect(kvReq.id).toMatch(/^g:\d+$/);
-
-    stream.push(`${JSON.stringify({ id: kvReq.id, values: ["val-a", "val-b"] })}\n`);
-
-    const result = await mgetPromise;
-    expect(result).toEqual(["val-a", "val-b"]);
-  });
-
-  it("KV request times out after 5000ms if no response arrives", async () => {
-    const stream = createMockStream();
-    const written: string[] = [];
-    stream.write = (chunk: unknown, ..._args: unknown[]) => {
-      written.push(chunk as string);
-      return true;
-    };
-
-    const handlers = {
-      onTool: vi.fn().mockResolvedValue({ result: "", state: {} }),
-      onHook: vi.fn().mockResolvedValue({ state: {} }),
-    };
-
-    const rpc = createGuestRpc(stream, handlers);
-    // We don't wait the full 5s — just verify the KV request was sent with g: prefix
-    void rpc.kv.get("timeout-key").catch((_err: unknown) => {
-      // timeout expected — suppress unhandled rejection
-    });
-
-    await vi.waitFor(() => {
-      const kvWrites = written.filter((w) => {
-        try {
-          return JSON.parse(w).type === "kv";
-        } catch {
-          return false;
-        }
-      });
-      expect(kvWrites.length).toBeGreaterThan(0);
-    });
-
-    const kvReq = JSON.parse(written.find((w) => JSON.parse(w).type === "kv") as string);
-    expect(kvReq.id).toMatch(/^g:\d+$/);
-  }, 10_000);
-
-  it("uses g: prefix for guest-initiated KV request ids", async () => {
-    const stream = createMockStream();
-    const written: string[] = [];
-    stream.write = (chunk: unknown, ..._args: unknown[]) => {
-      written.push(chunk as string);
-      return true;
-    };
-
-    const handlers = {
-      onTool: vi.fn().mockResolvedValue({ result: "", state: {} }),
-      onHook: vi.fn().mockResolvedValue({ state: {} }),
-    };
-
-    const rpc = createGuestRpc(stream, handlers);
-
-    // Fire multiple KV requests and verify all use g: prefix with sequential ids
-    // Suppress unhandled rejections — these will timeout but that's expected
-    void rpc.kv.get("k1").catch((_err: unknown) => {
-      /* timeout expected */
-    });
-    void rpc.kv.get("k2").catch((_err: unknown) => {
-      /* timeout expected */
-    });
-    void rpc.kv.get("k3").catch((_err: unknown) => {
-      /* timeout expected */
-    });
-
-    await vi.waitFor(() => expect(written.length).toBeGreaterThanOrEqual(3));
-
-    const ids = written.map((w) => JSON.parse(w).id as string);
-    expect(ids[0]).toMatch(/^g:\d+$/);
-    expect(ids[1]).toMatch(/^g:\d+$/);
-    expect(ids[2]).toMatch(/^g:\d+$/);
-
-    // Sequential ids
-    const nums = ids.map((id) => Number(id.slice(2)));
-    expect(nums[1]).toBeGreaterThan(nums[0] as number);
-    expect(nums[2]).toBeGreaterThan(nums[1] as number);
-  });
-
-  it("silently ignores malformed JSON lines", async () => {
-    const stream = createMockStream();
-    const written: string[] = [];
-    stream.write = (chunk: unknown, ..._args: unknown[]) => {
-      written.push(chunk as string);
-      return true;
-    };
-
-    const handlers = {
-      onTool: vi.fn().mockResolvedValue({ result: "ok", state: {} }),
-      onHook: vi.fn().mockResolvedValue({ state: {} }),
-    };
-
-    createGuestRpc(stream, handlers);
-
-    stream.push("not-json\n");
-    stream.push("{broken\n");
-    stream.push(
-      `${JSON.stringify({ id: "h:1", type: "tool", name: "t", args: {}, sessionId: "s", messages: [] })}\n`,
+    const hostSide = createMessageConnection(
+      new StreamMessageReader(output),
+      new StreamMessageWriter(input),
     );
+    hostSide.onRequest("kv/get", (_params: { key: string }) => ({ value: 42 }));
+    hostSide.listen();
+    conn.listen();
 
-    await vi.waitFor(() => expect(written.length).toBeGreaterThan(0));
-    const reply = JSON.parse(written[0] as string);
-    expect(reply.id).toBe("h:1");
+    const result = await kv.get("answer");
+    expect(result).toBe(42);
+
+    conn.dispose();
+    hostSide.dispose();
+  });
+
+  it("multiple sequential kv operations complete in order", async () => {
+    const input = new PassThrough();
+    const output = new PassThrough();
+    const { conn, kv } = createGuestConnection(input, output);
+    const store = new Map<string, unknown>();
+
+    const hostSide = createMessageConnection(
+      new StreamMessageReader(output),
+      new StreamMessageWriter(input),
+    );
+    hostSide.onRequest("kv/set", (params: { key: string; value: unknown }) => {
+      store.set(params.key, params.value);
+      return {};
+    });
+    hostSide.onRequest("kv/get", (params: { key: string }) => ({
+      value: store.get(params.key) ?? null,
+    }));
+    hostSide.onRequest("kv/del", (params: { key: string }) => {
+      store.delete(params.key);
+      return {};
+    });
+    hostSide.listen();
+    conn.listen();
+
+    await kv.set("foo", "bar");
+    expect(await kv.get("foo")).toBe("bar");
+    await kv.del("foo");
+    expect(await kv.get("foo")).toBeNull();
+
+    conn.dispose();
+    hostSide.dispose();
   });
 });

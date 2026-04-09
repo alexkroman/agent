@@ -5,9 +5,10 @@ primary_region = 'sjc'
   dockerfile = "packages/aai-server/Dockerfile"
 
 [env]
+  NODE_ENV = "production"
   PORT = "8080"
   MAX_CONNECTIONS = "100"
-  MAX_SLOTS = "10"
+  MAX_VMS = "10"
 
 [http_service]
   internal_port = 8080

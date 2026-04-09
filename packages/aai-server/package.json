@@ -16,7 +16,7 @@
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "check:integration": "pnpm run test:integration",
     "test:docker": "vitest run --config vitest.docker.config.ts",
-    "test:firecracker": "vitest run --config vitest.firecracker.config.ts",
+    "test:gvisor": "vitest run --config vitest.gvisor.config.ts",
     "test:load": "vitest run --config load/vitest.load.config.ts",
     "check:load": "pnpm run test:load"
   },
@@ -33,6 +33,7 @@
     "p-lock": "^4.0.1",
     "p-timeout": "^7.0.1",
     "unstorage": "^1.17.5",
+    "vscode-jsonrpc": "^8.2.1",
     "ws": "^8.20.0",
     "zod": "^4.3.6"
   },

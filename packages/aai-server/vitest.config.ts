@@ -11,6 +11,7 @@ export default defineConfig({
       "orchestrator-integration.test.ts",
       "ws-integration.test.ts",
       "fake-vm-integration.test.ts",
+      "gvisor-integration.test.ts",
       "node_modules",
       "dist",
     ],

@@ -1,0 +1,55 @@
+# Dockerfile.gvisor — gVisor integration test environment.
+# No KVM required. Uses runsc in systrap mode.
+#
+# gVisor only supports x86_64. Cannot run on Apple Silicon (even emulated).
+# Run on native x86_64 Linux or GitHub Actions ubuntu-latest.
+#
+# Usage:
+#   docker build -f packages/aai-server/guest/Dockerfile.gvisor -t aai-gvisor-test .
+#   docker run --rm --security-opt seccomp=unconfined aai-gvisor-test
+
+FROM node:22-slim
+
+WORKDIR /app
+
+# Install gVisor (runsc) from GitHub releases — the apt repo ships a 2022 build
+# that doesn't support systrap. Download the latest release binary directly.
+# Install runsc from gVisor's latest release (x86_64 only)
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
+    && curl -fsSL "https://storage.googleapis.com/gvisor/releases/release/latest/x86_64/runsc" \
+       -o /usr/local/bin/runsc \
+    && chmod +x /usr/local/bin/runsc \
+    && runsc --version \
+    && apt-get remove -y curl && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install pnpm
+RUN corepack enable && corepack prepare pnpm@10.29.3 --activate
+
+# Copy workspace config and lockfile (layer cache)
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/aai/package.json packages/aai/
+COPY packages/aai-server/package.json packages/aai-server/
+
+# Install dependencies
+RUN pnpm install --frozen-lockfile --ignore-scripts --prod=false
+
+# Copy source
+COPY packages/aai/ packages/aai/
+COPY packages/aai-server/ packages/aai-server/
+COPY tsconfig.json vitest.shared.ts ./
+
+# Build
+RUN pnpm --filter @alexkroman1/aai build \
+    && pnpm --filter @alexkroman1/aai-server build
+
+# Init git (some scripts check git state)
+RUN apt-get update && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/* \
+    && git init && git add -A \
+    && git commit -m "docker" --author="d <d@d>" --allow-empty 2>/dev/null || true
+
+# Verify runsc is available at runtime
+RUN runsc --version && which runsc && ls -la /usr/local/bin/runsc
+
+CMD ["pnpm", "vitest", "run", "--config", "packages/aai-server/vitest.gvisor.config.ts"]

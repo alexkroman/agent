@@ -4,8 +4,8 @@ import { sharedConfig } from "../../vitest.shared.ts";
 export default defineConfig({
   ...sharedConfig,
   test: {
-    include: ["packages/aai-server/firecracker-integration.test.ts"],
-    testTimeout: 120_000,
-    hookTimeout: 60_000,
+    include: ["packages/aai-server/gvisor-integration.test.ts"],
+    testTimeout: 30_000,
+    hookTimeout: 15_000,
   },
 });

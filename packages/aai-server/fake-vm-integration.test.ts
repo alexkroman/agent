@@ -3,8 +3,8 @@
  * Integration tests using fake-vm (no KVM required).
  *
  * Exercises the full guest harness path: bundle injection, tool execution,
- * KV proxy, hooks, and shutdown — using a Unix socket instead of vsock.
- * Runs on macOS and Linux without Firecracker or KVM.
+ * KV proxy, hooks, and shutdown — using a Unix socket instead of stdio pipes.
+ * Runs on macOS and Linux without gVisor or KVM.
  *
  * Run: pnpm vitest run packages/aai-server/fake-vm-integration.test.ts
  */
@@ -15,9 +15,13 @@ import fs from "node:fs/promises";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
-import type { Duplex } from "node:stream";
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "vitest";
-import { createRpcChannel, type RpcChannel } from "./vsock.ts";
+import {
+  createMessageConnection,
+  type MessageConnection,
+  StreamMessageReader,
+  StreamMessageWriter,
+} from "vscode-jsonrpc/node";
 
 let tmpDir: string;
 const children: ChildProcess[] = [];
@@ -88,15 +92,19 @@ async function spawnFakeVm(socketPath: string): Promise<ChildProcess> {
 }
 
 /**
- * Connect to the fake VM's Unix socket and create an RPC channel.
+ * Connect to the fake VM's Unix socket and create a vscode-jsonrpc connection.
  */
 async function connectToFakeVm(
   socketPath: string,
-): Promise<{ socket: net.Socket; channel: RpcChannel }> {
+): Promise<{ socket: net.Socket; conn: MessageConnection }> {
   return new Promise((resolve, reject) => {
     const socket = net.connect(socketPath, () => {
-      const channel = createRpcChannel(socket as unknown as Duplex);
-      resolve({ socket, channel });
+      const conn = createMessageConnection(
+        new StreamMessageReader(socket),
+        new StreamMessageWriter(socket),
+      );
+      conn.listen();
+      resolve({ socket, conn });
     });
     socket.on("error", reject);
   });
@@ -158,30 +166,26 @@ describe("Fake VM integration (no KVM)", () => {
   test("injects bundle and executes tool", async () => {
     const socketPath = path.join(tmpDir, "test1.sock");
     await spawnFakeVm(socketPath);
-    const { socket, channel } = await connectToFakeVm(socketPath);
+    const { socket, conn } = await connectToFakeVm(socketPath);
 
     try {
       // Send bundle
-      const bundleResp = await channel.request(
-        { type: "bundle", code: SIMPLE_BUNDLE, env: {} },
-        { timeout: 5000 },
-      );
+      const bundleResp = await conn.sendRequest<{ ok: boolean }>("bundle/load", {
+        code: SIMPLE_BUNDLE,
+        env: {},
+      });
       expect(bundleResp.ok).toBe(true);
 
       // Execute tool
-      const toolResp = await channel.request(
-        {
-          type: "tool",
-          name: "echo",
-          args: { message: "hello" },
-          sessionId: "s1",
-          messages: [],
-        },
-        { timeout: 5000 },
-      );
+      const toolResp = await conn.sendRequest<{ result: string }>("tool/execute", {
+        name: "echo",
+        args: { message: "hello" },
+        sessionId: "s1",
+        messages: [],
+      });
       expect(toolResp.result).toBe('echo:{"message":"hello"}');
     } finally {
-      channel.close();
+      conn.dispose();
       socket.destroy();
     }
   }, 15_000);
@@ -189,27 +193,31 @@ describe("Fake VM integration (no KVM)", () => {
   test("executes multiple tools concurrently", async () => {
     const socketPath = path.join(tmpDir, "test2.sock");
     await spawnFakeVm(socketPath);
-    const { socket, channel } = await connectToFakeVm(socketPath);
+    const { socket, conn } = await connectToFakeVm(socketPath);
 
     try {
-      await channel.request({ type: "bundle", code: SIMPLE_BUNDLE, env: {} }, { timeout: 5000 });
+      await conn.sendRequest("bundle/load", { code: SIMPLE_BUNDLE, env: {} });
 
       // Send two tool calls concurrently
       const [r1, r2] = await Promise.all([
-        channel.request(
-          { type: "tool", name: "add", args: { a: 1, b: 2 }, sessionId: "s1", messages: [] },
-          { timeout: 5000 },
-        ),
-        channel.request(
-          { type: "tool", name: "echo", args: { x: "y" }, sessionId: "s1", messages: [] },
-          { timeout: 5000 },
-        ),
+        conn.sendRequest<{ result: string }>("tool/execute", {
+          name: "add",
+          args: { a: 1, b: 2 },
+          sessionId: "s1",
+          messages: [],
+        }),
+        conn.sendRequest<{ result: string }>("tool/execute", {
+          name: "echo",
+          args: { x: "y" },
+          sessionId: "s1",
+          messages: [],
+        }),
       ]);
 
       expect(r1.result).toBe("3");
       expect(r2.result).toBe('echo:{"x":"y"}');
     } finally {
-      channel.close();
+      conn.dispose();
       socket.destroy();
     }
   }, 15_000);
@@ -217,29 +225,35 @@ describe("Fake VM integration (no KVM)", () => {
   test("session state persists across tool calls", async () => {
     const socketPath = path.join(tmpDir, "test3.sock");
     await spawnFakeVm(socketPath);
-    const { socket, channel } = await connectToFakeVm(socketPath);
+    const { socket, conn } = await connectToFakeVm(socketPath);
 
     try {
-      await channel.request({ type: "bundle", code: STATEFUL_BUNDLE, env: {} }, { timeout: 5000 });
+      await conn.sendRequest("bundle/load", { code: STATEFUL_BUNDLE, env: {} });
 
       // Increment twice
-      await channel.request(
-        { type: "tool", name: "increment", args: {}, sessionId: "s1", messages: [] },
-        { timeout: 5000 },
-      );
-      await channel.request(
-        { type: "tool", name: "increment", args: {}, sessionId: "s1", messages: [] },
-        { timeout: 5000 },
-      );
+      await conn.sendRequest("tool/execute", {
+        name: "increment",
+        args: {},
+        sessionId: "s1",
+        messages: [],
+      });
+      await conn.sendRequest("tool/execute", {
+        name: "increment",
+        args: {},
+        sessionId: "s1",
+        messages: [],
+      });
 
       // Check count
-      const resp = await channel.request(
-        { type: "tool", name: "get_count", args: {}, sessionId: "s1", messages: [] },
-        { timeout: 5000 },
-      );
+      const resp = await conn.sendRequest<{ result: string }>("tool/execute", {
+        name: "get_count",
+        args: {},
+        sessionId: "s1",
+        messages: [],
+      });
       expect(resp.result).toBe("count:2");
     } finally {
-      channel.close();
+      conn.dispose();
       socket.destroy();
     }
   }, 15_000);
@@ -247,27 +261,31 @@ describe("Fake VM integration (no KVM)", () => {
   test("separate sessions have independent state", async () => {
     const socketPath = path.join(tmpDir, "test4.sock");
     await spawnFakeVm(socketPath);
-    const { socket, channel } = await connectToFakeVm(socketPath);
+    const { socket, conn } = await connectToFakeVm(socketPath);
 
     try {
-      await channel.request({ type: "bundle", code: STATEFUL_BUNDLE, env: {} }, { timeout: 5000 });
+      await conn.sendRequest("bundle/load", { code: STATEFUL_BUNDLE, env: {} });
 
       // Increment session 1 three times
       for (let i = 0; i < 3; i++) {
-        await channel.request(
-          { type: "tool", name: "increment", args: {}, sessionId: "session-a", messages: [] },
-          { timeout: 5000 },
-        );
+        await conn.sendRequest("tool/execute", {
+          name: "increment",
+          args: {},
+          sessionId: "session-a",
+          messages: [],
+        });
       }
 
       // Session 2 should start at 0
-      const resp = await channel.request(
-        { type: "tool", name: "get_count", args: {}, sessionId: "session-b", messages: [] },
-        { timeout: 5000 },
-      );
+      const resp = await conn.sendRequest<{ result: string }>("tool/execute", {
+        name: "get_count",
+        args: {},
+        sessionId: "session-b",
+        messages: [],
+      });
       expect(resp.result).toBe("count:0");
     } finally {
-      channel.close();
+      conn.dispose();
       socket.destroy();
     }
   }, 15_000);
@@ -275,7 +293,7 @@ describe("Fake VM integration (no KVM)", () => {
   test("env vars from bundle are accessible in tools", async () => {
     const socketPath = path.join(tmpDir, "test5.sock");
     await spawnFakeVm(socketPath);
-    const { socket, channel } = await connectToFakeVm(socketPath);
+    const { socket, conn } = await connectToFakeVm(socketPath);
 
     const envBundle = `
     module.exports = {
@@ -295,18 +313,20 @@ describe("Fake VM integration (no KVM)", () => {
     `;
 
     try {
-      await channel.request(
-        { type: "bundle", code: envBundle, env: { MY_SECRET: "secret-123" } },
-        { timeout: 5000 },
-      );
+      await conn.sendRequest("bundle/load", {
+        code: envBundle,
+        env: { MY_SECRET: "secret-123" },
+      });
 
-      const resp = await channel.request(
-        { type: "tool", name: "read_env", args: {}, sessionId: "s1", messages: [] },
-        { timeout: 5000 },
-      );
+      const resp = await conn.sendRequest<{ result: string }>("tool/execute", {
+        name: "read_env",
+        args: {},
+        sessionId: "s1",
+        messages: [],
+      });
       expect(resp.result).toBe("env:secret-123");
     } finally {
-      channel.close();
+      conn.dispose();
       socket.destroy();
     }
   }, 15_000);
@@ -314,20 +334,16 @@ describe("Fake VM integration (no KVM)", () => {
   test("shutdown message causes process to exit", async () => {
     const socketPath = path.join(tmpDir, "test6.sock");
     const child = await spawnFakeVm(socketPath);
-    const { channel } = await connectToFakeVm(socketPath);
+    const { conn } = await connectToFakeVm(socketPath);
 
-    await channel.request({ type: "bundle", code: SIMPLE_BUNDLE, env: {} }, { timeout: 5000 });
+    await conn.sendRequest("bundle/load", { code: SIMPLE_BUNDLE, env: {} });
 
-    // Send shutdown (as a request so it has an id the guest can respond to)
+    // Send shutdown notification
     const exitPromise = new Promise<number | null>((resolve) => {
       child.on("exit", (code) => resolve(code));
     });
 
-    // The shutdown handler calls process.exit, so the request may not get a response.
-    // Use a short timeout and ignore timeout errors.
-    channel.request({ type: "shutdown" }, { timeout: 2000 }).catch(() => {
-      // Expected: process exits before responding
-    });
+    conn.sendNotification("shutdown");
 
     const exitCode = await Promise.race([
       exitPromise,
@@ -343,24 +359,20 @@ describe("Fake VM integration (no KVM)", () => {
   test("KV get/set round-trips through host proxy", async () => {
     const socketPath = path.join(tmpDir, "test-kv.sock");
     await spawnFakeVm(socketPath);
-    const { socket, channel } = await connectToFakeVm(socketPath);
+    const { socket, conn } = await connectToFakeVm(socketPath);
 
     // Set up a KV handler on the host side
     const kvStore = new Map<string, unknown>();
-    channel.onRequest("kv", async (msg) => {
-      const op = msg.op as string;
-      if (op === "get") {
-        return { value: kvStore.get(msg.key as string) ?? null };
-      }
-      if (op === "set") {
-        kvStore.set(msg.key as string, msg.value);
-        return { ok: true };
-      }
-      if (op === "del") {
-        kvStore.delete(msg.key as string);
-        return { ok: true };
-      }
-      return { error: `Unknown op: ${op}` };
+    conn.onRequest("kv/get", async (params: { key: string }) => ({
+      value: kvStore.get(params.key) ?? null,
+    }));
+    conn.onRequest("kv/set", async (params: { key: string; value: unknown }) => {
+      kvStore.set(params.key, params.value);
+      return { ok: true };
+    });
+    conn.onRequest("kv/del", async (params: { key: string }) => {
+      kvStore.delete(params.key);
+      return { ok: true };
     });
 
     const kvBundle = `
@@ -385,23 +397,19 @@ describe("Fake VM integration (no KVM)", () => {
     `;
 
     try {
-      await channel.request({ type: "bundle", code: kvBundle, env: {} }, { timeout: 5000 });
+      await conn.sendRequest("bundle/load", { code: kvBundle, env: {} });
 
-      const toolResp = await channel.request(
-        {
-          type: "tool",
-          name: "kv_roundtrip",
-          args: { value: "hello-kv" },
-          sessionId: "kv-s1",
-          messages: [],
-        },
-        { timeout: 5000 },
-      );
+      const toolResp = await conn.sendRequest<{ result: string }>("tool/execute", {
+        name: "kv_roundtrip",
+        args: { value: "hello-kv" },
+        sessionId: "kv-s1",
+        messages: [],
+      });
 
       expect(toolResp.result).toBe('stored:"hello-kv"');
       expect(kvStore.get("test-key")).toBe("hello-kv");
     } finally {
-      channel.close();
+      conn.dispose();
       socket.destroy();
     }
   }, 15_000);
@@ -409,7 +417,7 @@ describe("Fake VM integration (no KVM)", () => {
   test("tool that throws returns error in response", async () => {
     const socketPath = path.join(tmpDir, "test-error.sock");
     await spawnFakeVm(socketPath);
-    const { socket, channel } = await connectToFakeVm(socketPath);
+    const { socket, conn } = await connectToFakeVm(socketPath);
 
     const errorBundle = `
     module.exports = {
@@ -429,23 +437,19 @@ describe("Fake VM integration (no KVM)", () => {
     `;
 
     try {
-      await channel.request({ type: "bundle", code: errorBundle, env: {} }, { timeout: 5000 });
+      await conn.sendRequest("bundle/load", { code: errorBundle, env: {} });
 
-      const toolResp = await channel.request(
-        {
-          type: "tool",
-          name: "fail",
-          args: {},
-          sessionId: "err-s1",
-          messages: [],
-        },
-        { timeout: 5000 },
-      );
+      const toolResp = await conn.sendRequest<{ error: string }>("tool/execute", {
+        name: "fail",
+        args: {},
+        sessionId: "err-s1",
+        messages: [],
+      });
 
       // The error should propagate back through the RPC channel
       expect(toolResp.error).toBe("intentional failure");
     } finally {
-      channel.close();
+      conn.dispose();
       socket.destroy();
     }
   }, 15_000);
@@ -453,7 +457,7 @@ describe("Fake VM integration (no KVM)", () => {
   test("tool parameters.parse is invoked on args", async () => {
     const socketPath = path.join(tmpDir, "test-params.sock");
     await spawnFakeVm(socketPath);
-    const { socket, channel } = await connectToFakeVm(socketPath);
+    const { socket, conn } = await connectToFakeVm(socketPath);
 
     // Bundle with a tool that has a parameters object with a parse method.
     // The parse method transforms args (uppercases the "text" field).
@@ -480,23 +484,19 @@ describe("Fake VM integration (no KVM)", () => {
     `;
 
     try {
-      await channel.request({ type: "bundle", code: paramsBundle, env: {} }, { timeout: 5000 });
+      await conn.sendRequest("bundle/load", { code: paramsBundle, env: {} });
 
-      const toolResp = await channel.request(
-        {
-          type: "tool",
-          name: "transform",
-          args: { text: "hello" },
-          sessionId: "param-s1",
-          messages: [],
-        },
-        { timeout: 5000 },
-      );
+      const toolResp = await conn.sendRequest<{ result: string }>("tool/execute", {
+        name: "transform",
+        args: { text: "hello" },
+        sessionId: "param-s1",
+        messages: [],
+      });
 
       // The parse method should have uppercased the text
       expect(toolResp.result).toBe("parsed:HELLO");
     } finally {
-      channel.close();
+      conn.dispose();
       socket.destroy();
     }
   }, 15_000);
@@ -525,7 +525,7 @@ describe("Fake VM integration (no KVM)", () => {
 
       const server = net.createServer((conn) => {
         server.close();
-        main(conn).catch((err) => {
+        main(conn, conn).catch((err) => {
           console.error("Harness error:", err);
           process.exit(1);
         });
@@ -567,28 +567,24 @@ describe("Fake VM integration (no KVM)", () => {
         });
       });
 
-      const { socket, channel } = await connectToFakeVm(socketPath);
+      const { socket, conn } = await connectToFakeVm(socketPath);
 
       try {
-        const bundleResp = await channel.request(
-          { type: "bundle", code: SIMPLE_BUNDLE, env: {} },
-          { timeout: 5000 },
-        );
+        const bundleResp = await conn.sendRequest<{ ok: boolean }>("bundle/load", {
+          code: SIMPLE_BUNDLE,
+          env: {},
+        });
         expect(bundleResp.ok).toBe(true);
 
-        const toolResp = await channel.request(
-          {
-            type: "tool",
-            name: "echo",
-            args: { message: "compiled-test" },
-            sessionId: "compiled-s1",
-            messages: [],
-          },
-          { timeout: 5000 },
-        );
+        const toolResp = await conn.sendRequest<{ result: string }>("tool/execute", {
+          name: "echo",
+          args: { message: "compiled-test" },
+          sessionId: "compiled-s1",
+          messages: [],
+        });
         expect(toolResp.result).toBe('echo:{"message":"compiled-test"}');
       } finally {
-        channel.close();
+        conn.dispose();
         socket.destroy();
       }
     },
