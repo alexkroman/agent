@@ -62,12 +62,12 @@ export function fail<T>(code: string, error: string, hint?: string): CommandResu
 /** Typed CLI error that carries a structured error code and optional hint. */
 export class CliError extends Error {
   readonly code: string;
-  readonly hint?: string;
+  readonly hint?: string | undefined;
 
   constructor(code: string, message: string, hint?: string) {
     super(message);
     this.name = "CliError";
     this.code = code;
-    this.hint = hint;
+    if (hint !== undefined) this.hint = hint;
   }
 }

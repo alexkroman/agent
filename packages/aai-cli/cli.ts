@@ -71,7 +71,7 @@ async function handleErrors(mode: OutputMode, fn: () => Promise<void>): Promise<
 }
 
 /** Resolve output mode, silence output and set yes=true if JSON. */
-function resolveMode(args: { json?: boolean; yes?: boolean }): OutputMode {
+function resolveMode(args: { json?: boolean | undefined; yes?: boolean | undefined }): OutputMode {
   const mode = getOutputMode(args);
   if (mode === "json") {
     silenceOutput();
