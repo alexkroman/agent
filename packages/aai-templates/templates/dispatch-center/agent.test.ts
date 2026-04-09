@@ -1,13 +1,13 @@
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createDirTestHarness } from "@alexkroman1/aai/testing-v2";
+import { createTestHarness } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
 describe("Dispatch Command Center", () => {
   test("create and triage an incident", async () => {
-    const t = await createDirTestHarness(join(__dirname));
+    const t = await createTestHarness(join(__dirname));
     await t.connect();
 
     const createTurn = await t.turn("Car accident on Main Street", [
@@ -26,7 +26,7 @@ describe("Dispatch Command Center", () => {
   });
 
   test("ops_dashboard returns current status", async () => {
-    const t = await createDirTestHarness(join(__dirname));
+    const t = await createTestHarness(join(__dirname));
     await t.connect();
 
     const turn = await t.turn("Show me the dashboard", [{ tool: "ops_dashboard", args: {} }]);
@@ -39,7 +39,7 @@ describe("Dispatch Command Center", () => {
   });
 
   test("resources_get_available lists units", async () => {
-    const t = await createDirTestHarness(join(__dirname));
+    const t = await createTestHarness(join(__dirname));
     await t.connect();
 
     const turn = await t.turn("What units are available?", [
@@ -50,7 +50,7 @@ describe("Dispatch Command Center", () => {
   });
 
   test("onDisconnect persists state to KV", async () => {
-    const t = await createDirTestHarness(join(__dirname));
+    const t = await createTestHarness(join(__dirname));
     await t.connect();
 
     // Create an incident then disconnect
@@ -70,7 +70,7 @@ describe("Dispatch Command Center", () => {
   });
 
   test("resolved incidents are cleaned up from KV", async () => {
-    const t = await createDirTestHarness(join(__dirname));
+    const t = await createTestHarness(join(__dirname));
     await t.connect();
 
     // Create and resolve an incident
@@ -93,7 +93,7 @@ describe("Dispatch Command Center", () => {
   });
 
   test("ops_dashboard includes persisted incident snapshots", async () => {
-    const t = await createDirTestHarness(join(__dirname));
+    const t = await createTestHarness(join(__dirname));
     await t.connect();
 
     await t.turn("Incoming call", [

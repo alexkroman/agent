@@ -7,7 +7,7 @@
 
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createDirTestHarness } from "@alexkroman1/aai/testing-v2";
+import { createTestHarness } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
@@ -16,7 +16,7 @@ const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
 describe("basic tool execution", () => {
   test("executeTool runs a single tool and returns the result", async () => {
-    const t = await createDirTestHarness(join(__dirname));
+    const t = await createTestHarness(join(__dirname));
     const result = (await t.executeTool("add_task", { text: "Buy groceries" })) as {
       added: { text: string };
     };
@@ -24,7 +24,7 @@ describe("basic tool execution", () => {
   });
 
   test("executeTool throws for unknown tools", async () => {
-    const t = await createDirTestHarness(join(__dirname));
+    const t = await createTestHarness(join(__dirname));
     await expect(t.executeTool("nonexistent_tool", {})).rejects.toThrow("not found");
   });
 });
@@ -33,7 +33,7 @@ describe("basic tool execution", () => {
 
 describe("turn simulation", () => {
   test("turn() records the user message and executes tool calls", async () => {
-    const t = await createDirTestHarness(join(__dirname));
+    const t = await createTestHarness(join(__dirname));
     const turn = await t.turn("Add a task for me", [
       { tool: "add_task", args: { text: "Write tests" } },
     ]);
@@ -47,13 +47,13 @@ describe("turn simulation", () => {
   });
 
   test("turn() with no tool calls just records the user message", async () => {
-    const t = await createDirTestHarness(join(__dirname));
+    const t = await createTestHarness(join(__dirname));
     await t.turn("Just chatting");
     expect(t.messages).toHaveLength(1);
   });
 
   test("multiple tool calls in a single turn execute in order", async () => {
-    const t = await createDirTestHarness(join(__dirname));
+    const t = await createTestHarness(join(__dirname));
     const turn = await t.turn("Add two tasks", [
       { tool: "add_task", args: { text: "First" } },
       { tool: "add_task", args: { text: "Second" } },
@@ -67,7 +67,7 @@ describe("turn simulation", () => {
 
 describe("typed tool results", () => {
   test("toolResult<T>() returns typed data", async () => {
-    const t = await createDirTestHarness(join(__dirname));
+    const t = await createTestHarness(join(__dirname));
     const turn = await t.turn("Add a task", [{ tool: "add_task", args: { text: "Deploy app" } }]);
 
     const result = turn.toolResult<{ added: { id: number; text: string }; total: number }>(
@@ -79,7 +79,7 @@ describe("typed tool results", () => {
   });
 
   test("toolResult() throws for tools that were not called", async () => {
-    const t = await createDirTestHarness(join(__dirname));
+    const t = await createTestHarness(join(__dirname));
     const turn = await t.turn("Add task", [{ tool: "add_task", args: { text: "Something" } }]);
     expect(() => turn.toolResult("list_tasks")).toThrow("was not called");
   });
@@ -89,7 +89,7 @@ describe("typed tool results", () => {
 
 describe("partial argument matching", () => {
   test("toolCalls contain the full args for inspection", async () => {
-    const t = await createDirTestHarness(join(__dirname));
+    const t = await createTestHarness(join(__dirname));
     const turn = await t.turn("Save a note", [
       { tool: "save_note", args: { key: "color", value: "blue" } },
     ]);
@@ -106,7 +106,7 @@ describe("partial argument matching", () => {
 
 describe("multi-turn state persistence", () => {
   test("agent state persists across turns", async () => {
-    const t = await createDirTestHarness(join(__dirname));
+    const t = await createTestHarness(join(__dirname));
 
     // Turn 1: add tasks
     await t.turn("Add tasks", [
@@ -136,7 +136,7 @@ describe("multi-turn state persistence", () => {
 
 describe("conversation history", () => {
   test("messages accumulate across turns", async () => {
-    const t = await createDirTestHarness(join(__dirname));
+    const t = await createTestHarness(join(__dirname));
     await t.turn("First");
     await t.turn("Second");
 
@@ -147,7 +147,7 @@ describe("conversation history", () => {
   });
 
   test("tools can read conversation history via ctx.messages", async () => {
-    const t = await createDirTestHarness(join(__dirname));
+    const t = await createTestHarness(join(__dirname));
 
     // Create some history via turns
     await t.turn("Hello");
@@ -167,7 +167,7 @@ describe("conversation history", () => {
 
 describe("environment variables", () => {
   test("env vars are available in tool context via ctx.env", async () => {
-    const t = await createDirTestHarness(join(__dirname), { env: { API_KEY: "sk-test-1234" } });
+    const t = await createTestHarness(join(__dirname), { env: { API_KEY: "sk-test-1234" } });
     const turn = await t.turn("Check env", [{ tool: "check_env", args: {} }]);
     const result = turn.toolResult<{ hasApiKey: boolean; keyPreview: string }>("check_env");
     expect(result.hasApiKey).toBe(true);
@@ -175,7 +175,7 @@ describe("environment variables", () => {
   });
 
   test("missing env vars are handled gracefully", async () => {
-    const t = await createDirTestHarness(join(__dirname)); // no env
+    const t = await createTestHarness(join(__dirname)); // no env
     const turn = await t.turn("Check env", [{ tool: "check_env", args: {} }]);
     const result = turn.toolResult<{ hasApiKey: boolean; keyPreview: string }>("check_env");
     expect(result.hasApiKey).toBe(false);
@@ -187,7 +187,7 @@ describe("environment variables", () => {
 
 describe("KV store", () => {
   test("data persists in KV across turns", async () => {
-    const t = await createDirTestHarness(join(__dirname));
+    const t = await createTestHarness(join(__dirname));
 
     await t.turn("Save a note", [
       { tool: "save_note", args: { key: "meeting", value: "Tuesday 3pm" } },
@@ -198,7 +198,7 @@ describe("KV store", () => {
   });
 
   test("missing KV keys return not found", async () => {
-    const t = await createDirTestHarness(join(__dirname));
+    const t = await createTestHarness(join(__dirname));
     const turn = await t.turn("Load missing", [
       { tool: "load_note", args: { key: "nonexistent" } },
     ]);
@@ -206,7 +206,7 @@ describe("KV store", () => {
   });
 
   test("save_note with TTL accepts expireIn option", async () => {
-    const t = await createDirTestHarness(join(__dirname));
+    const t = await createTestHarness(join(__dirname));
     const turn = await t.turn("Save temp note", [
       { tool: "save_note", args: { key: "temp", value: "expires soon", ttl_ms: 60_000 } },
     ]);
@@ -218,7 +218,7 @@ describe("KV store", () => {
   });
 
   test("delete_note removes a key from KV", async () => {
-    const t = await createDirTestHarness(join(__dirname));
+    const t = await createTestHarness(join(__dirname));
 
     await t.turn("Save", [{ tool: "save_note", args: { key: "deleteme", value: "gone soon" } }]);
     await t.turn("Delete", [{ tool: "delete_note", args: { key: "deleteme" } }]);
@@ -232,7 +232,7 @@ describe("KV store", () => {
 
 describe("lifecycle hooks", () => {
   test("onConnect sets up state accessible to tools", async () => {
-    const t = await createDirTestHarness(join(__dirname));
+    const t = await createTestHarness(join(__dirname));
     await t.connect();
 
     const turn = await t.turn("Who owns this?", [{ tool: "get_owner", args: {} }]);
@@ -241,7 +241,7 @@ describe("lifecycle hooks", () => {
   });
 
   test("connect() and disconnect() can be called manually", async () => {
-    const t = await createDirTestHarness(join(__dirname));
+    const t = await createTestHarness(join(__dirname));
     await t.connect();
     // Verify onConnect ran
     const turn = await t.turn("Check owner", [{ tool: "get_owner", args: {} }]);
@@ -250,7 +250,7 @@ describe("lifecycle hooks", () => {
   });
 
   test("onDisconnect runs without error", async () => {
-    const t = await createDirTestHarness(join(__dirname));
+    const t = await createTestHarness(join(__dirname));
     await t.turn("Add tasks", [{ tool: "add_task", args: { text: "Saved task" } }]);
     // disconnect() calls onDisconnect which persists tasks to KV
     await expect(t.disconnect()).resolves.toBeUndefined();
@@ -261,7 +261,7 @@ describe("lifecycle hooks", () => {
 
 describe("session metadata", () => {
   test("session_info returns sessionId and state summary", async () => {
-    const t = await createDirTestHarness(join(__dirname));
+    const t = await createTestHarness(join(__dirname));
     await t.connect();
     await t.turn("Add task", [{ tool: "add_task", args: { text: "Item" } }]);
 

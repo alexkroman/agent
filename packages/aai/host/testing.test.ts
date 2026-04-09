@@ -1,320 +1,284 @@
 // Copyright 2025 the AAI authors. MIT license.
-/// <reference path="./matchers.d.ts" />
 
-import { describe, expect, test } from "vitest";
-import { z } from "zod";
-import { defineAgent, defineTool } from "../isolate/types.ts";
-import { createTestHarness } from "./testing.ts";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { createTestHarness, TurnResult } from "./testing.ts";
 
-const pizzaAgent = defineAgent({
-  name: "Pizza Agent",
-  state: () => ({ pizzas: [] as { size: string; toppings: string[] }[], placed: false }),
-  tools: {
-    add_pizza: defineTool({
-      description: "Add a pizza to the order",
-      parameters: z.object({
-        size: z.enum(["small", "medium", "large"]),
-        toppings: z.array(z.string()),
-      }),
-      execute: (args, ctx) => {
-        const state = ctx.state as { pizzas: { size: string; toppings: string[] }[] };
-        state.pizzas.push({ size: args.size, toppings: args.toppings });
-        return { added: { size: args.size, toppings: args.toppings }, count: state.pizzas.length };
-      },
-    }),
-    view_order: {
-      description: "View current order",
-      execute: (_args, ctx) => {
-        const state = ctx.state as { pizzas: { size: string; toppings: string[] }[] };
-        return { pizzas: state.pizzas, count: state.pizzas.length };
-      },
-    },
-    place_order: {
-      description: "Place the order",
-      execute: (_args, ctx) => {
-        const state = ctx.state as {
-          pizzas: { size: string; toppings: string[] }[];
-          placed: boolean;
-        };
-        if (state.pizzas.length === 0) return { error: "No pizzas in order" };
-        state.placed = true;
-        return { placed: true, count: state.pizzas.length };
-      },
-    },
-  },
+let agentDir: string;
+
+beforeEach(async () => {
+  agentDir = await mkdtemp(join(tmpdir(), "aai-test-harness-"));
+  await mkdir(join(agentDir, "tools"), { recursive: true });
+  await mkdir(join(agentDir, "hooks"), { recursive: true });
 });
+
+afterEach(async () => {
+  await rm(agentDir, { recursive: true, force: true });
+});
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+async function writeTool(name: string, code: string) {
+  await writeFile(join(agentDir, "tools", `${name}.mjs`), code);
+}
+
+async function writeHook(name: string, code: string) {
+  await writeFile(join(agentDir, "hooks", `${name}.mjs`), code);
+}
+
+// ── Tests ────────────────────────────────────────────────────────────────────
 
 describe("createTestHarness", () => {
-  test("executeTool runs a tool and returns the result", async () => {
-    const t = createTestHarness(pizzaAgent);
-    const result = await t.executeTool("add_pizza", { size: "large", toppings: ["pepperoni"] });
-    const parsed = JSON.parse(result);
-    expect(parsed.added.size).toBe("large");
-    expect(parsed.count).toBe(1);
+  test("executes a tool from a directory agent", async () => {
+    await writeTool(
+      "greet",
+      `
+      export default async function(args) {
+        return "Hello, " + args.name + "!";
+      }
+      `,
+    );
+
+    const t = await createTestHarness(agentDir);
+    const result = await t.executeTool("greet", { name: "Alice" });
+    expect(result).toBe("Hello, Alice!");
   });
 
-  test("executeTool returns error for unknown tool", async () => {
-    const t = createTestHarness(pizzaAgent);
-    const result = await t.executeTool("nonexistent", {});
-    expect(result).toContain("error");
+  test("tool receives ctx with kv and sessionId", async () => {
+    await writeTool(
+      "save",
+      `
+      export default async function(args, ctx) {
+        await ctx.kv.set(args.key, args.value);
+        return "saved";
+      }
+      `,
+    );
+    await writeTool(
+      "load",
+      `
+      export default async function(args, ctx) {
+        const val = await ctx.kv.get(args.key);
+        return { value: val, sessionId: ctx.sessionId };
+      }
+      `,
+    );
+
+    const t = await createTestHarness(agentDir, { sessionId: "sess-42" });
+    await t.executeTool("save", { key: "color", value: "blue" });
+    const result = await t.executeTool("load", { key: "color" });
+    expect(result).toEqual({ value: "blue", sessionId: "sess-42" });
   });
 
-  test("executeTool validates arguments", async () => {
-    const t = createTestHarness(pizzaAgent);
-    const result = await t.executeTool("add_pizza", { size: "huge", toppings: [] });
-    expect(result).toContain("error");
+  test("KV persists across tool calls", async () => {
+    await writeTool(
+      "increment",
+      `
+      export default async function(args, ctx) {
+        const current = (await ctx.kv.get("counter")) || 0;
+        const next = current + 1;
+        await ctx.kv.set("counter", next);
+        return next;
+      }
+      `,
+    );
+
+    const t = await createTestHarness(agentDir);
+    const r1 = await t.executeTool("increment");
+    const r2 = await t.executeTool("increment");
+    const r3 = await t.executeTool("increment");
+    expect(r1).toBe(1);
+    expect(r2).toBe(2);
+    expect(r3).toBe(3);
   });
 
-  test("env vars are passed to tool context", async () => {
-    const agent = defineAgent({
-      name: "env-test",
-      tools: {
-        read_key: {
-          description: "Read an env var",
-          execute: (_args, ctx) => ctx.env.MY_KEY ?? "missing",
-        },
-      },
-    });
-    const t = createTestHarness(agent, { env: { MY_KEY: "secret123" } });
-    const result = await t.executeTool("read_key");
-    expect(result).toBe("secret123");
-  });
-});
-
-describe("TestHarness.turn", () => {
-  test("records user message in conversation history", async () => {
-    const t = createTestHarness(pizzaAgent);
-    await t.turn("I want a pizza");
-    expect(t.messages).toHaveLength(1);
-    expect(t.messages[0]).toEqual({ role: "user", content: "I want a pizza" });
+  test("throws for unknown tool", async () => {
+    const t = await createTestHarness(agentDir);
+    await expect(t.executeTool("nonexistent")).rejects.toThrow('Tool "nonexistent" not found');
   });
 
-  test("executes tool calls and records results", async () => {
-    const t = createTestHarness(pizzaAgent);
-    const turn = await t.turn("Add a large pepperoni", [
-      { tool: "add_pizza", args: { size: "large", toppings: ["pepperoni"] } },
-    ]);
-    expect(turn).toHaveCalledTool("add_pizza");
-    const result = turn.toolResult<{ added: { size: string }; count: number }>("add_pizza");
-    expect(result.added.size).toBe("large");
-  });
-
-  test("records tool messages in conversation history", async () => {
-    const t = createTestHarness(pizzaAgent);
-    await t.turn("Add a pizza", [{ tool: "add_pizza", args: { size: "small", toppings: [] } }]);
-    // user message + tool result
-    expect(t.messages).toHaveLength(2);
-    expect(t.messages.at(0)?.role).toBe("user");
-    expect(t.messages.at(1)?.role).toBe("tool");
-  });
-
-  test("fires onUserTranscript hook", async () => {
-    const turnTexts: string[] = [];
-    const agent = defineAgent({
-      name: "hook-test",
-      onUserTranscript: (text) => {
-        turnTexts.push(text);
-      },
-      tools: {},
-    });
-    const t = createTestHarness(agent);
-    await t.turn("hello");
-    await t.turn("world");
-    expect(turnTexts).toEqual(["hello", "world"]);
-    expect(t.turns).toEqual(["hello", "world"]);
-  });
-
-  test("fires onConnect on first turn", async () => {
-    const log: string[] = [];
-    const agent = defineAgent({
-      name: "connect-test",
-      onConnect: () => {
-        log.push("connected");
-      },
-      tools: {},
-    });
-    const t = createTestHarness(agent);
-    await t.turn("first");
-    await t.turn("second");
-    // onConnect fires only once
-    expect(log).toEqual(["connected"]);
-  });
-});
-
-describe("TurnResult assertions", () => {
-  test("toHaveCalledTool vitest matcher checks tool name", async () => {
-    const t = createTestHarness(pizzaAgent);
-    const turn = await t.turn("Add pizza", [
-      { tool: "add_pizza", args: { size: "large", toppings: ["pepperoni"] } },
-    ]);
-    expect(turn).toHaveCalledTool("add_pizza");
-    expect(turn).not.toHaveCalledTool("view_order");
-  });
-
-  test("toHaveCalledTool vitest matcher checks partial args", async () => {
-    const t = createTestHarness(pizzaAgent);
-    const turn = await t.turn("Add pizza", [
-      { tool: "add_pizza", args: { size: "large", toppings: ["pepperoni", "mushrooms"] } },
-    ]);
-    expect(turn).toHaveCalledTool("add_pizza", { size: "large" });
-    expect(turn).not.toHaveCalledTool("add_pizza", { size: "small" });
-    expect(turn).toHaveCalledTool("add_pizza", { toppings: ["pepperoni", "mushrooms"] });
-  });
-
-  test("getToolCalls filters by name", async () => {
-    const t = createTestHarness(pizzaAgent);
-    const turn = await t.turn("Add two pizzas", [
-      { tool: "add_pizza", args: { size: "small", toppings: [] } },
-      { tool: "view_order", args: {} },
-      { tool: "add_pizza", args: { size: "large", toppings: ["pepperoni"] } },
-    ]);
-    expect(turn.getToolCalls("add_pizza")).toHaveLength(2);
-    expect(turn.getToolCalls("view_order")).toHaveLength(1);
-    expect(turn.getToolCalls("place_order")).toHaveLength(0);
-  });
-
-  test("toolResult returns typed parsed JSON", async () => {
-    const t = createTestHarness(pizzaAgent);
-    const turn = await t.turn("Add pizza", [
-      { tool: "add_pizza", args: { size: "medium", toppings: [] } },
-    ]);
-    const result = turn.toolResult<{ added: { size: string }; count: number }>("add_pizza");
-    expect(result.added.size).toBe("medium");
-    expect(result.count).toBe(1);
-  });
-
-  test("toolResult throws for uncalled tool", async () => {
-    const t = createTestHarness(pizzaAgent);
-    const turn = await t.turn("Add pizza", [
-      { tool: "add_pizza", args: { size: "small", toppings: [] } },
-    ]);
-    expect(() => turn.toolResult("view_order")).toThrow('Tool "view_order" was not called');
-  });
-});
-
-describe("multi-turn conversation", () => {
-  test("state persists across turns", async () => {
-    const t = createTestHarness(pizzaAgent);
-
-    await t.turn("Add first pizza", [
-      { tool: "add_pizza", args: { size: "small", toppings: ["cheese"] } },
-    ]);
-
-    await t.turn("Add second pizza", [
-      { tool: "add_pizza", args: { size: "large", toppings: ["pepperoni"] } },
-    ]);
-
-    const turn3 = await t.turn("Show me the order", [{ tool: "view_order", args: {} }]);
-    const order = turn3.toolResult<{ count: number; pizzas: unknown[] }>("view_order");
-    expect(order.count).toBe(2);
-    expect(order.pizzas).toHaveLength(2);
-  });
-
-  test("messages accumulate across turns", async () => {
-    const t = createTestHarness(pizzaAgent);
-    await t.turn("First message");
-    t.addAssistantMessage("Sure, I can help.");
-    await t.turn("Second message");
-
-    expect(t.messages).toHaveLength(3);
-    expect(t.messages.at(0)?.role).toBe("user");
-    expect(t.messages.at(1)?.role).toBe("assistant");
-    expect(t.messages.at(2)?.role).toBe("user");
-  });
-
-  test("conversation history is available in tool context", async () => {
-    const agent = defineAgent({
-      name: "history-test",
-      tools: {
-        count_messages: {
-          description: "Count messages",
-          execute: (_args, ctx) => String(ctx.messages.length),
-        },
-      },
-    });
-    const t = createTestHarness(agent);
-
-    t.addUserMessage("Hello");
-    t.addAssistantMessage("Hi there");
-
-    const turn = await t.turn("How many messages?", [{ tool: "count_messages", args: {} }]);
-    // 2 pre-added + 1 from this turn
-    expect(turn.toolCalls.at(0)?.result).toBe("3");
-  });
-
-  test("reset clears conversation state", async () => {
-    const t = createTestHarness(pizzaAgent);
-    await t.turn("Add pizza", [{ tool: "add_pizza", args: { size: "small", toppings: [] } }]);
-    expect(t.messages.length).toBeGreaterThan(0);
-
-    t.reset();
+  test("works with empty directories", async () => {
+    const t = await createTestHarness(agentDir);
     expect(t.messages).toHaveLength(0);
-    expect(t.turns).toHaveLength(0);
+  });
+
+  test("works when tools/ and hooks/ do not exist", async () => {
+    const emptyDir = await mkdtemp(join(tmpdir(), "aai-empty-"));
+    try {
+      const t = await createTestHarness(emptyDir);
+      expect(t.messages).toHaveLength(0);
+    } finally {
+      await rm(emptyDir, { recursive: true, force: true });
+    }
   });
 });
 
-describe("lifecycle hooks", () => {
-  test("connect and disconnect fire correctly", async () => {
-    const log: string[] = [];
-    const agent = defineAgent({
-      name: "lifecycle-test",
-      onConnect: () => {
-        log.push("connect");
-      },
-      onDisconnect: () => {
-        log.push("disconnect");
-      },
-      tools: {},
-    });
+describe("hooks", () => {
+  test("fires onConnect hook", async () => {
+    await writeHook(
+      "on-connect",
+      `
+      export default async function(ctx) {
+        await ctx.kv.set("connected", true);
+      }
+      `,
+    );
+    await writeTool(
+      "check-connected",
+      `
+      export default async function(args, ctx) {
+        return await ctx.kv.get("connected");
+      }
+      `,
+    );
 
-    const t = createTestHarness(agent);
+    const t = await createTestHarness(agentDir);
     await t.connect();
+
+    const result = await t.executeTool("check-connected");
+    expect(result).toBe(true);
+  });
+
+  test("fires onDisconnect hook", async () => {
+    await writeHook(
+      "on-disconnect",
+      `
+      export default async function(ctx) {
+        await ctx.kv.set("disconnected", true);
+      }
+      `,
+    );
+
+    const t = await createTestHarness(agentDir);
     await t.disconnect();
-    expect(log).toEqual(["connect", "disconnect"]);
+    const val = await t.kv.get("disconnected");
+    expect(val).toBe(true);
   });
 
-  test("connect is idempotent", async () => {
-    let count = 0;
-    const agent = defineAgent({
-      name: "idempotent-test",
-      onConnect: () => {
-        count++;
-      },
-      tools: {},
-    });
+  test("fires onUserTranscript hook during turn", async () => {
+    await writeHook(
+      "on-user-transcript",
+      `
+      export default async function(ctx) {
+        const count = (await ctx.kv.get("turn-count")) || 0;
+        await ctx.kv.set("turn-count", count + 1);
+      }
+      `,
+    );
 
-    const t = createTestHarness(agent);
-    await t.connect();
-    await t.connect();
-    await t.connect();
-    expect(count).toBe(1);
+    const t = await createTestHarness(agentDir);
+    await t.turn("first message");
+    await t.turn("second message");
+
+    const count = await t.kv.get("turn-count");
+    expect(count).toBe(2);
   });
 });
 
-describe("KV store", () => {
-  test("kv store is accessible in tools", async () => {
-    const agent = defineAgent({
-      name: "kv-test",
-      tools: {
-        save: defineTool({
-          description: "Save to KV",
-          parameters: z.object({ key: z.string(), value: z.string() }),
-          execute: async (args, ctx) => {
-            await ctx.kv.set(args.key, args.value);
-            return "saved";
-          },
-        }),
-        load: defineTool({
-          description: "Load from KV",
-          parameters: z.object({ key: z.string() }),
-          execute: async (args, ctx) => (await ctx.kv.get<string>(args.key)) ?? "not found",
-        }),
-      },
-    });
+describe("turn", () => {
+  test("simulates tool calls in sequence and returns TurnResult", async () => {
+    await writeTool(
+      "add-item",
+      `
+      export default async function(args, ctx) {
+        const items = (await ctx.kv.get("items")) || [];
+        items.push(args.item);
+        await ctx.kv.set("items", items);
+        return { added: args.item, count: items.length };
+      }
+      `,
+    );
+    await writeTool(
+      "get-items",
+      `
+      export default async function(args, ctx) {
+        return (await ctx.kv.get("items")) || [];
+      }
+      `,
+    );
 
-    const t = createTestHarness(agent);
-    await t.turn("Save data", [{ tool: "save", args: { key: "color", value: "blue" } }]);
-    const turn = await t.turn("Load data", [{ tool: "load", args: { key: "color" } }]);
-    expect(turn.toolCalls.at(0)?.result).toBe("blue");
+    const t = await createTestHarness(agentDir);
+
+    const turn1 = await t.turn("Add apples and bananas", [
+      { tool: "add-item", args: { item: "apple" } },
+      { tool: "add-item", args: { item: "banana" } },
+    ]);
+
+    expect(turn1.toolCalls).toHaveLength(2);
+    expect(turn1.toolCalls[0]?.name).toBe("add-item");
+    expect(turn1.toolCalls[0]?.result).toEqual({ added: "apple", count: 1 });
+    expect(turn1.toolCalls[1]?.result).toEqual({ added: "banana", count: 2 });
+
+    const turn2 = await t.turn("Show items", [{ tool: "get-items", args: {} }]);
+    const items = turn2.toolResult<string[]>("get-items");
+    expect(items).toEqual(["apple", "banana"]);
+  });
+
+  test("records user and tool messages in conversation history", async () => {
+    await writeTool(
+      "echo",
+      `
+      export default async function(args) {
+        return "echoed: " + args.text;
+      }
+      `,
+    );
+
+    const t = await createTestHarness(agentDir);
+    await t.turn("hello", [{ tool: "echo", args: { text: "hello" } }]);
+
+    expect(t.messages).toHaveLength(2);
+    expect(t.messages[0]).toEqual({ role: "user", content: "hello" });
+    expect(t.messages[1]).toEqual({ role: "tool", content: "echoed: hello" });
+  });
+
+  test("tool receives accumulated messages in ctx", async () => {
+    await writeTool(
+      "count-messages",
+      `
+      export default async function(args, ctx) {
+        return ctx.messages.length;
+      }
+      `,
+    );
+
+    const t = await createTestHarness(agentDir);
+    const turn1 = await t.turn("first", [{ tool: "count-messages", args: {} }]);
+    // 1 user message at time of tool execution
+    expect(turn1.toolResult("count-messages")).toBe(1);
+
+    const turn2 = await t.turn("second", [{ tool: "count-messages", args: {} }]);
+    // 1 user + 1 tool from turn1 + 1 user from turn2 = 3
+    expect(turn2.toolResult("count-messages")).toBe(3);
+  });
+
+  test("env is passed through to tools", async () => {
+    await writeTool(
+      "read-env",
+      `
+      export default async function(args, ctx) {
+        return ctx.env.MY_SECRET || "missing";
+      }
+      `,
+    );
+
+    const t = await createTestHarness(agentDir, { env: { MY_SECRET: "s3cr3t" } });
+    const result = await t.executeTool("read-env");
+    expect(result).toBe("s3cr3t");
+  });
+});
+
+describe("TurnResult", () => {
+  test("toolResult throws for uncalled tool", () => {
+    const result = new TurnResult([{ name: "foo", args: {}, result: "bar" }]);
+    expect(() => result.toolResult("baz")).toThrow('Tool "baz" was not called during this turn');
+  });
+
+  test("toolResult returns typed result", () => {
+    const result = new TurnResult([{ name: "calc", args: { x: 1 }, result: { sum: 42 } }]);
+    const val = result.toolResult<{ sum: number }>("calc");
+    expect(val.sum).toBe(42);
   });
 });

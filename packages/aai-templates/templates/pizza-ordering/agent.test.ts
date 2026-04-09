@@ -1,13 +1,13 @@
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createDirTestHarness } from "@alexkroman1/aai/testing-v2";
+import { createTestHarness } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
 describe("Pizza Palace", () => {
   test("add a pizza and view order", async () => {
-    const t = await createDirTestHarness(join(__dirname));
+    const t = await createTestHarness(join(__dirname));
 
     const addTurn = await t.turn("I want a large pepperoni pizza", [
       {
@@ -25,7 +25,7 @@ describe("Pizza Palace", () => {
   });
 
   test("remove a pizza from order", async () => {
-    const t = await createDirTestHarness(join(__dirname));
+    const t = await createTestHarness(join(__dirname));
 
     await t.turn("Add a pizza", [
       { tool: "add_pizza", args: { size: "small", crust: "thin", toppings: [], quantity: 1 } },
@@ -39,7 +39,7 @@ describe("Pizza Palace", () => {
   });
 
   test("update pizza toppings", async () => {
-    const t = await createDirTestHarness(join(__dirname));
+    const t = await createTestHarness(join(__dirname));
 
     await t.turn("Add a pizza", [
       {
@@ -56,14 +56,14 @@ describe("Pizza Palace", () => {
   });
 
   test("cannot place empty order", async () => {
-    const t = await createDirTestHarness(join(__dirname));
+    const t = await createTestHarness(join(__dirname));
     const turn = await t.turn("Place my order", [{ tool: "place_order", args: {} }]);
     const result = turn.toolResult<{ error: string }>("place_order");
     expect(result.error).toBe("Cannot place an empty order.");
   });
 
   test("full ordering flow", async () => {
-    const t = await createDirTestHarness(join(__dirname));
+    const t = await createTestHarness(join(__dirname));
 
     await t.turn("I'm Alex", [{ tool: "set_customer_name", args: { name: "Alex" } }]);
 

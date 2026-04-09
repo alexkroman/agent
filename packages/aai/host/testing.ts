@@ -1,232 +1,136 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Testing utilities for AAI agents.
+ * Test harness for directory-based agents.
  *
- * Provides a test harness for unit-testing agents without audio, network,
- * or an LLM. Use {@link createTestHarness} to create a harness from a
- * `defineAgent()` result, then drive tool calls and multi-turn conversations.
+ * Loads tool and hook files from an agent directory and executes them
+ * in-process with an in-memory KV store. Designed for agents defined via
+ * `agent.json` + `tools/` + `hooks/` rather than `defineAgent()`.
  *
  * @example
  * ```ts
- * import { describe, expect, test } from "vitest";
  * import { createTestHarness } from "@alexkroman1/aai/testing";
- * import agent from "./agent.ts";
  *
- * describe("my agent", () => {
- *   test("greet tool returns greeting", async () => {
- *     const t = createTestHarness(agent);
- *     const result = await t.executeTool("greet", { name: "Alice" });
- *     expect(result).toBe("Hello, Alice!");
- *   });
- *
- *   test("multi-turn conversation", async () => {
- *     const t = createTestHarness(agent);
- *     const turn1 = await t.turn("Add a pizza", [
- *       { tool: "add_pizza", args: { size: "large", crust: "regular", toppings: ["pepperoni"], quantity: 1 } },
- *     ]);
- *     expect(turn1).toHaveCalledTool("add_pizza");
- *
- *     const turn2 = await t.turn("View my order", [
- *       { tool: "view_order", args: {} },
- *     ]);
- *     expect(turn2).toHaveCalledTool("view_order");
- *   });
- * });
+ * const t = await createTestHarness("./my-agent");
+ * const result = await t.executeTool("greet", { name: "Alice" });
  * ```
  *
  * @packageDocumentation
  */
 
+import { existsSync, readdirSync } from "node:fs";
+import { basename, join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { createStorage } from "unstorage";
 import type { Kv } from "../isolate/kv.ts";
-import type { AgentDef, Message } from "../isolate/types.ts";
-import { createRuntime, type Runtime } from "./runtime.ts";
+import type { Message } from "../isolate/types.ts";
 import { createUnstorageKv } from "./unstorage-kv.ts";
 
 export { installMockWebSocket, MockWebSocket } from "./_mock-ws.ts";
 export { flush, makeStubSession } from "./_test-utils.ts";
 
-// ─── TurnResult ──────────────────────────────────────────────────────────────
+// ─── Types ───────────────────────────────────────────────────────────────────
 
 /**
  * A single tool call recorded during a turn.
- *
- * @public
  */
 export type RecordedToolCall = {
   /** The name of the tool that was called. */
-  toolName: string;
+  name: string;
   /** The arguments passed to the tool. */
   args: Readonly<Record<string, unknown>>;
-  /** The string result returned by the tool. */
-  result: string;
+  /** The result returned by the tool. */
+  result: unknown;
 };
 
 /**
- * Result of a simulated turn via {@link TestHarness.turn}.
- *
- * Contains all tool calls that were executed and provides assertion helpers
- * for verifying agent behavior in tests.
- *
- * @example
- * ```ts
- * const result = await t.turn("search for flights", [
- *   { tool: "search_flights", args: { destination: "NYC" } },
- * ]);
- *
- * // Check if a tool was called
- * expect(result).toHaveCalledTool("search_flights");
- *
- * // Check tool was called with specific args
- * expect(result).toHaveCalledTool("search_flights", { destination: "NYC" });
- *
- * // Access raw tool call data
- * expect(result.toolCalls[0].result).toContain("JFK");
- * ```
- *
- * @public
+ * A loaded tool module from the `tools/` directory.
+ */
+type LoadedTool = {
+  default: (args: Record<string, unknown>, ctx: ToolCtx) => unknown | Promise<unknown>;
+  description?: string;
+  parameters?: unknown;
+};
+
+/**
+ * A loaded hook module from the `hooks/` directory.
+ */
+type LoadedHook = {
+  default: (ctx: HookCtx) => void | Promise<void>;
+};
+
+/**
+ * Context passed to tool execute functions in directory-based agents.
+ */
+type ToolCtx = {
+  env: Readonly<Record<string, string>>;
+  kv: Kv;
+  messages: readonly Message[];
+  sessionId: string;
+};
+
+/**
+ * Context passed to hook functions in directory-based agents.
+ */
+type HookCtx = {
+  env: Readonly<Record<string, string>>;
+  kv: Kv;
+  sessionId: string;
+};
+
+// ─── TurnResult ──────────────────────────────────────────────────────────────
+
+/**
+ * Result of a simulated turn. Holds recorded tool calls and provides
+ * helpers for extracting results.
  */
 export class TurnResult {
-  /** The user text that initiated this turn. */
-  readonly text: string;
-  /** All tool calls executed during this turn, in order. */
   readonly toolCalls: readonly RecordedToolCall[];
-  /** Convenience accessor: just the result strings from each tool call. */
-  readonly toolResults: readonly string[];
 
-  /** @internal */
-  constructor(text: string, toolCalls: RecordedToolCall[]) {
-    this.text = text;
+  constructor(toolCalls: RecordedToolCall[]) {
     this.toolCalls = toolCalls;
-    this.toolResults = toolCalls.map((tc) => tc.result);
   }
 
   /**
-   * Check whether a tool was called during this turn.
-   *
-   * When `args` is provided, checks that at least one call to the named tool
-   * contains all specified key-value pairs (partial match).
-   *
-   * @param toolName - The tool name to look for.
-   * @param args - Optional partial args to match against.
-   * @returns `true` if a matching tool call was found.
-   *
-   * @example
-   * ```ts
-   * result.toHaveCalledTool("add_pizza"); // any call
-   * result.toHaveCalledTool("add_pizza", { size: "large" }); // partial match
-   * ```
-   */
-  toHaveCalledTool(toolName: string, args?: Record<string, unknown>): boolean {
-    return this.toolCalls.some((tc) => {
-      if (tc.toolName !== toolName) return false;
-      if (!args) return true;
-      return Object.entries(args).every(
-        ([key, value]) => JSON.stringify(tc.args[key]) === JSON.stringify(value),
-      );
-    });
-  }
-
-  /**
-   * Get all calls to a specific tool during this turn.
-   *
-   * @param toolName - The tool name to filter by.
-   * @returns Array of matching tool calls (may be empty).
-   */
-  getToolCalls(toolName: string): readonly RecordedToolCall[] {
-    return this.toolCalls.filter((tc) => tc.toolName === toolName);
-  }
-
-  /**
-   * Get the parsed JSON result of the first call to a specific tool.
-   *
+   * Get the result of the first call to a specific tool.
    * Throws if the tool was not called during this turn.
-   *
-   * @typeParam T - The expected shape of the parsed result.
-   * @param toolName - The tool name to look up.
-   * @returns The parsed result, cast to `T`.
-   *
-   * @example
-   * ```ts
-   * const order = turn.toolResult<{ pizzas: Pizza[]; total: string }>("view_order");
-   * expect(order.pizzas).toHaveLength(2);
-   * ```
    */
   toolResult<T = unknown>(toolName: string): T {
-    const call = this.toolCalls.find((tc) => tc.toolName === toolName);
+    const call = this.toolCalls.find((tc) => tc.name === toolName);
     if (!call) {
       throw new Error(`Tool "${toolName}" was not called during this turn`);
     }
-    return JSON.parse(call.result) as T;
+    return call.result as T;
   }
 }
 
-// ─── TestHarness ─────────────────────────────────────────────────────────────
+// ─── TestHarness ────────────────────────────────────────────────────────────
 
 /**
- * Options for creating a {@link TestHarness}.
+ * Test harness for directory-based agents.
  *
- * @public
- */
-export type TestHarnessOptions = {
-  /** Environment variables available to tools via `ctx.env`. */
-  env?: Record<string, string>;
-  /** KV store instance. Defaults to an in-memory SQLite store. */
-  kv?: Kv;
-};
-
-/**
- * A tool call to execute during a simulated turn.
- *
- * @public
- */
-export type TurnToolCall = {
-  /** The tool name to invoke. */
-  tool: string;
-  /** Arguments to pass to the tool. */
-  args: Record<string, unknown>;
-};
-
-/**
- * Test harness for unit-testing AAI agents without audio, network, or LLM.
- *
- * Created via {@link createTestHarness}. Maintains conversation state across
- * turns, executes tools against the real agent code, and records all tool
- * calls for assertions.
- *
- * @example
- * ```ts
- * import { createTestHarness } from "@alexkroman1/aai/testing";
- * import agent from "./agent.ts";
- *
- * const t = createTestHarness(agent);
- *
- * // Execute a single tool
- * const result = await t.executeTool("greet", { name: "Alice" });
- *
- * // Simulate a full turn with tool calls
- * const turn = await t.turn("hello", [
- *   { tool: "greet", args: { name: "Alice" } },
- * ]);
- * expect(turn).toHaveCalledTool("greet");
- * ```
- *
- * @public
+ * Maintains conversation state, executes tools, and fires hooks in-process
+ * with an in-memory KV store.
  */
 export class TestHarness {
-  /** @internal */
-  readonly _executor: Runtime;
-  /** @internal */
-  readonly _sessionId: string;
-
+  private readonly _tools: Map<string, LoadedTool>;
+  private readonly _hooks: Map<string, LoadedHook>;
+  private readonly _kv: Kv;
+  private readonly _sessionId: string;
+  private readonly _env: Readonly<Record<string, string>>;
   private _messages: Message[] = [];
-  private _onUserTranscriptCalls: string[] = [];
-  private _connected = false;
 
-  /** @internal */
-  constructor(executor: Runtime, sessionId: string) {
-    this._executor = executor;
+  constructor(
+    tools: Map<string, LoadedTool>,
+    hooks: Map<string, LoadedHook>,
+    kv: Kv,
+    sessionId: string,
+    env: Readonly<Record<string, string>> = {},
+  ) {
+    this._tools = tools;
+    this._hooks = hooks;
+    this._kv = kv;
     this._sessionId = sessionId;
+    this._env = env;
   }
 
   /** Conversation messages accumulated across turns. */
@@ -234,173 +138,191 @@ export class TestHarness {
     return this._messages;
   }
 
-  /** All `onUserTranscript` hook invocations (the text argument) recorded so far. */
-  get turns(): readonly string[] {
-    return this._onUserTranscriptCalls;
+  /** The KV store used by this harness (useful for assertions). */
+  get kv(): Kv {
+    return this._kv;
   }
 
   /**
    * Fire the `onConnect` lifecycle hook.
-   *
-   * Called automatically on the first `turn()` call if not called manually.
    */
   async connect(): Promise<void> {
-    if (this._connected) return;
-    this._connected = true;
-    await this._executor.hooks.callHook("connect", this._sessionId);
+    const hook = this._hooks.get("onConnect");
+    if (hook) {
+      await hook.default(this._makeHookCtx());
+    }
   }
 
   /**
-   * Fire the `onDisconnect` lifecycle hook and clean up session state.
+   * Fire the `onDisconnect` lifecycle hook.
    */
   async disconnect(): Promise<void> {
-    if (!this._connected) return;
-    this._connected = false;
-    await this._executor.hooks.callHook("disconnect", this._sessionId);
+    const hook = this._hooks.get("onDisconnect");
+    if (hook) {
+      await hook.default(this._makeHookCtx());
+    }
   }
 
   /**
    * Execute a single tool by name with the given arguments.
    *
-   * The tool runs with full agent context (env, state, kv, messages).
-   * The call is **not** recorded in conversation history — use {@link turn}
-   * for that.
-   *
-   * @param toolName - The tool to execute.
+   * @param name - The tool to execute.
    * @param args - Arguments to pass to the tool.
-   * @returns The tool's string result.
-   *
-   * @example
-   * ```ts
-   * const result = await t.executeTool("get_weather", { city: "London" });
-   * const data = JSON.parse(result);
-   * expect(data.temp).toBeDefined();
-   * ```
+   * @returns The tool's result.
    */
-  async executeTool(toolName: string, args: Record<string, unknown> = {}): Promise<string> {
-    return this._executor.executeTool(toolName, args, this._sessionId, this._messages);
+  async executeTool(name: string, args: Record<string, unknown> = {}): Promise<unknown> {
+    const tool = this._tools.get(name);
+    if (!tool) {
+      throw new Error(`Tool "${name}" not found`);
+    }
+    return tool.default(args, this._makeToolCtx());
   }
 
   /**
-   * Simulate a user turn: add the user message, execute the given tool calls
-   * in sequence, and record everything.
+   * Simulate a user turn: add the user message, fire onUserTranscript if
+   * the hook exists, execute each tool call in sequence, and return a
+   * TurnResult.
    *
-   * This is the primary method for testing agent behavior. It:
-   * 1. Fires `onConnect` if this is the first turn
-   * 2. Adds the user message to conversation history
-   * 3. Fires the `onUserTranscript` hook
-   * 4. Executes each tool call in order
-   * 5. Returns a {@link TurnResult} with assertion helpers
-   *
-   * @param text - The user's spoken/typed input.
-   * @param toolCalls - Tool calls to execute (simulating what the LLM would invoke).
-   * @returns A {@link TurnResult} with recorded tool calls and assertion methods.
-   *
-   * @example
-   * ```ts
-   * const turn = await t.turn("Add pepperoni pizza", [
-   *   { tool: "add_pizza", args: { size: "large", crust: "regular", toppings: ["pepperoni"], quantity: 1 } },
-   * ]);
-   * expect(turn).toHaveCalledTool("add_pizza", { size: "large" });
-   * expect(turn.toolCalls[0].result).toContain("$14.99");
-   * ```
+   * @param text - The user's input text.
+   * @param toolCalls - Tool calls to execute in order.
+   * @returns A TurnResult with recorded tool calls.
    */
-  async turn(text: string, toolCalls: TurnToolCall[] = []): Promise<TurnResult> {
-    await this.connect();
-
+  async turn(
+    text: string,
+    toolCalls: { tool: string; args: Record<string, unknown> }[] = [],
+  ): Promise<TurnResult> {
     // Record user message
     this._messages.push({ role: "user", content: text });
 
-    // Fire onUserTranscript hook
-    this._onUserTranscriptCalls.push(text);
-    await this._executor.hooks.callHook("userTranscript", this._sessionId, text);
-
-    // Execute tool calls
-    const recorded: RecordedToolCall[] = [];
-    for (const tc of toolCalls) {
-      const result = await this._executor.executeTool(
-        tc.tool,
-        tc.args,
-        this._sessionId,
-        this._messages,
-      );
-
-      recorded.push({ toolName: tc.tool, args: tc.args, result });
-
-      // Record tool message in conversation
-      this._messages.push({ role: "tool", content: result });
+    // Fire onUserTranscript hook if it exists.
+    // Supports both signatures: (ctx) and (text, ctx).
+    const transcriptHook = this._hooks.get("onUserTranscript");
+    if (transcriptHook) {
+      if (transcriptHook.default.length >= 2) {
+        // Hook expects (text, ctx)
+        await (
+          transcriptHook.default as unknown as (text: string, ctx: HookCtx) => void | Promise<void>
+        )(text, this._makeHookCtx());
+      } else {
+        // Hook expects (ctx) only
+        await transcriptHook.default(this._makeHookCtx());
+      }
     }
 
-    return new TurnResult(text, recorded);
+    // Execute tool calls in sequence
+    const recorded: RecordedToolCall[] = [];
+    for (const tc of toolCalls) {
+      const result = await this.executeTool(tc.tool, tc.args);
+      recorded.push({ name: tc.tool, args: tc.args, result });
+
+      // Record tool message in conversation
+      const resultStr = typeof result === "string" ? result : JSON.stringify(result);
+      this._messages.push({ role: "tool", content: resultStr });
+    }
+
+    return new TurnResult(recorded);
   }
 
-  /**
-   * Add a user message to conversation history without executing tools.
-   *
-   * Useful for setting up conversation context before a turn.
-   */
-  addUserMessage(text: string): void {
-    this._messages.push({ role: "user", content: text });
+  private _makeToolCtx(): ToolCtx {
+    return {
+      env: this._env,
+      kv: this._kv,
+      messages: this._messages,
+      sessionId: this._sessionId,
+    };
   }
 
-  /**
-   * Add an assistant message to conversation history.
-   *
-   * Useful for simulating prior assistant responses in multi-turn tests.
-   */
-  addAssistantMessage(text: string): void {
-    this._messages.push({ role: "assistant", content: text });
-  }
-
-  /**
-   * Reset conversation state: clears messages, step/turn history.
-   *
-   * Does **not** reset KV store — create a new harness for that.
-   */
-  reset(): void {
-    this._messages = [];
-    this._onUserTranscriptCalls = [];
+  private _makeHookCtx(): HookCtx {
+    return {
+      env: this._env,
+      kv: this._kv,
+      sessionId: this._sessionId,
+    };
   }
 }
 
+// ─── Factory ─────────────────────────────────────────────────────────────────
+
 /**
- * Create a test harness for unit-testing an agent.
- *
- * The harness wraps the agent's tool definitions and lifecycle hooks,
- * providing a simple API for executing tools and simulating multi-turn
- * conversations — all without audio, network, or an LLM.
- *
- * @param agent - The agent definition returned by `defineAgent()`.
- * @param options - Optional environment and KV store overrides.
- * @returns A {@link TestHarness} instance.
- *
- * @example
- * ```ts
- * import { createTestHarness } from "@alexkroman1/aai/testing";
- * import agent from "./agent.ts";
- *
- * const t = createTestHarness(agent);
- * const result = await t.executeTool("my_tool", { key: "value" });
- * ```
- *
- * @example With environment variables
- * ```ts
- * const t = createTestHarness(agent, {
- *   env: { API_KEY: "test-key" },
- * });
- * ```
- *
- * @public
+ * Options for creating a TestHarness.
  */
-export function createTestHarness(
-  // biome-ignore lint/suspicious/noExplicitAny: accepts any state type
-  agent: AgentDef<any>,
+export type TestHarnessOptions = {
+  /** Environment variables available to tools via `ctx.env`. */
+  env?: Record<string, string>;
+  /** KV store instance. Defaults to an in-memory store. */
+  kv?: Kv;
+  /** Session ID. Defaults to a generated test ID. */
+  sessionId?: string;
+};
+
+/** File extensions to scan for tool/hook modules, in priority order. */
+const IMPORTABLE_EXTENSIONS = [".ts", ".mjs", ".js"];
+
+/**
+ * Scan a directory for importable files and dynamically import each one.
+ *
+ * Returns a map of base name (without extension) to the imported module.
+ */
+async function scanAndImport<T>(dir: string): Promise<Map<string, T>> {
+  const result = new Map<string, T>();
+  if (!existsSync(dir)) return result;
+
+  const files = readdirSync(dir);
+  for (const file of files) {
+    const ext = IMPORTABLE_EXTENSIONS.find((e) => file.endsWith(e));
+    if (!ext) continue;
+    const name = basename(file, ext);
+    // Don't re-import if we already have this name (earlier extension wins)
+    if (result.has(name)) continue;
+    const filePath = join(dir, file);
+    const mod = (await import(pathToFileURL(filePath).href)) as T;
+    result.set(name, mod);
+  }
+
+  return result;
+}
+
+/**
+ * Map hook filenames to camelCase hook keys.
+ *
+ * E.g. "on-connect" -> "onConnect", "on-user-transcript" -> "onUserTranscript"
+ */
+function hookFileNameToKey(fileName: string): string {
+  return fileName.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+}
+
+/**
+ * Create a test harness for a directory-based agent.
+ *
+ * Scans the `tools/` and `hooks/` subdirectories of the given agent
+ * directory, dynamically imports each module, and wires them up with
+ * an in-memory KV store.
+ *
+ * @param agentDir - Path to the agent directory containing `tools/` and/or `hooks/`.
+ * @param options - Optional environment, KV, and session overrides.
+ * @returns A TestHarness instance.
+ */
+export async function createTestHarness(
+  agentDir: string,
   options: TestHarnessOptions = {},
-): TestHarness {
-  const { env = {}, kv = createUnstorageKv({ storage: createStorage() }) } = options;
+): Promise<TestHarness> {
+  const {
+    env = {},
+    kv = createUnstorageKv({ storage: createStorage() }),
+    sessionId = `test-${Date.now()}`,
+  } = options;
 
-  const executor = createRuntime({ agent, env, kv });
-  const sessionId = `test-${Date.now()}`;
+  // Scan and import tools
+  const toolsDir = join(agentDir, "tools");
+  const tools = await scanAndImport<LoadedTool>(toolsDir);
 
-  return new TestHarness(executor, sessionId);
+  // Scan and import hooks, mapping filenames to hook keys
+  const hooksDir = join(agentDir, "hooks");
+  const rawHooks = await scanAndImport<LoadedHook>(hooksDir);
+  const hooks = new Map<string, LoadedHook>();
+  for (const [fileName, mod] of rawHooks) {
+    hooks.set(hookFileNameToKey(fileName), mod);
+  }
+
+  return new TestHarness(tools, hooks, kv, sessionId, env);
 }

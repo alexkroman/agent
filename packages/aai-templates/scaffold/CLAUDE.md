@@ -1165,50 +1165,49 @@ pnpm test       # Run all tests (vitest)
 
 ### Setup
 
-Tests live in `agent.test.ts` alongside `agent.ts`. The project includes
-vitest as a dev dependency. Import the matchers for `expect().toHaveCalledTool()`.
-
-**Important:** `agent.test.ts` asserts the agent's `name` field (e.g.
-`expect(agent.name).toBe("Simple Assistant")`). When changing the agent's
-name in `agent.ts`, update the corresponding assertion in `agent.test.ts`
-to match.
+Tests live in `agent.test.ts` alongside `agent.json`. The project includes
+vitest as a dev dependency.
 
 ### Test harness
 
+The test harness loads tools and hooks from your agent directory and executes
+them in-process with an in-memory KV store.
+
 ```ts
-import { describe, expect, test } from "vitest";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { createTestHarness } from "@alexkroman1/aai/testing";
-import "@alexkroman1/aai/testing/matchers";
-import agent from "./agent.ts";
+import { describe, expect, test } from "vitest";
+
+const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
 describe("my agent", () => {
   test("tool returns expected result", async () => {
-    const t = createTestHarness(agent);
+    const t = await createTestHarness(join(__dirname));
     const result = await t.executeTool("my_tool", { key: "value" });
     expect(result).toBe("expected");
   });
 });
 ```
 
-`createTestHarness(agent, options?)` wraps your agent and provides:
+`await createTestHarness(agentDir, options?)` scans `tools/` and `hooks/`
+subdirectories and provides:
 
 | Method / Property | Description |
 | --- | --- |
 | `executeTool(name, args)` | Execute a single tool with full agent context |
 | `turn(text, toolCalls?)` | Simulate a user turn with optional tool calls |
-| `addUserMessage(text)` | Add a user message to conversation history |
-| `addAssistantMessage(text)` | Add an assistant message to history |
 | `messages` | Read-only conversation history |
-| `turns` | All `onUserTranscript` hook invocations recorded |
+| `kv` | The KV store used by the harness (useful for assertions) |
 | `connect()` / `disconnect()` | Fire lifecycle hooks manually |
-| `reset()` | Clear conversation state |
 
 Options:
 
 ```ts
-createTestHarness(agent, {
+await createTestHarness(join(__dirname), {
   env: { API_KEY: "test-key" },  // mock environment variables
   kv: myKvStore,                  // custom KV store (default: in-memory)
+  sessionId: "test-session",      // custom session ID
 });
 ```
 
@@ -1216,22 +1215,20 @@ createTestHarness(agent, {
 
 ```ts
 test("multi-turn pizza ordering", async () => {
-  const t = createTestHarness(agent);
+  const t = await createTestHarness(join(__dirname));
 
   const turn1 = await t.turn("I want a large pepperoni", [
-    { tool: "add_pizza", args: { size: "large", crust: "regular", toppings: ["pepperoni"], quantity: 1 } },
+    { tool: "add_pizza", args: { size: "large", toppings: ["pepperoni"] } },
   ]);
 
-  // Vitest custom matchers — natural expect() syntax
-  expect(turn1).toHaveCalledTool("add_pizza");
-  expect(turn1).toHaveCalledTool("add_pizza", { size: "large" }); // partial match
-  expect(turn1).not.toHaveCalledTool("remove_pizza");
+  // Check tool calls by name
+  expect(turn1.toolCalls.some(tc => tc.name === "add_pizza")).toBe(true);
 
-  // Typed tool results — no JSON.parse needed
+  // Typed tool results
   const result = turn1.toolResult<{ added: { size: string }; orderTotal: string }>("add_pizza");
   expect(result.orderTotal).toContain("$14.99");
 
-  // State persists across turns
+  // State persists across turns via KV
   const turn2 = await t.turn("Show my order", [
     { tool: "view_order", args: {} },
   ]);
@@ -1244,49 +1241,36 @@ test("multi-turn pizza ordering", async () => {
 
 | Method / Property | Description |
 | --- | --- |
-| `toolResult<T>(name)` | Get parsed JSON result of first call to named tool |
-| `getToolCalls(name)` | Get all calls to a specific tool |
+| `toolResult<T>(name)` | Get result of first call to named tool |
 | `toolCalls` | All recorded tool calls with name, args, result |
-| `toolResults` | Just the result strings from each tool call |
-| `text` | The user text that initiated this turn |
-
-Vitest custom matchers (import `@alexkroman1/aai/testing/matchers`):
-
-| Matcher | Description |
-| --- | --- |
-| `expect(turn).toHaveCalledTool(name)` | Assert tool was called |
-| `expect(turn).toHaveCalledTool(name, args)` | Assert with partial args |
-| `expect(turn).not.toHaveCalledTool(name)` | Assert tool was NOT called |
 
 ### Testing patterns
 
 **Environment variables:**
 
 ```ts
-const t = createTestHarness(agent, { env: { MY_KEY: "test-123" } });
+const t = await createTestHarness(join(__dirname), { env: { MY_KEY: "test-123" } });
 const result = await t.executeTool("check_key", {});
 expect(result).toBe("test-123");
 ```
 
-**State persistence across turns:**
+**KV persistence across turns:**
 
 ```ts
-const t = createTestHarness(agent);
+const t = await createTestHarness(join(__dirname));
 await t.turn("first action", [{ tool: "increment", args: {} }]);
 await t.turn("second action", [{ tool: "increment", args: {} }]);
 const turn = await t.turn("check", [{ tool: "get_count", args: {} }]);
-expect(turn.toolResults[0]).toBe("2");
+expect(turn.toolResult("get_count")).toBe(2);
 ```
 
-**Pre-loading conversation history:**
+**Conversation history:**
 
 ```ts
-const t = createTestHarness(agent);
-t.addUserMessage("My name is Alice");
-t.addAssistantMessage("Nice to meet you, Alice.");
-const turn = await t.turn("What is my name?", [
-  { tool: "recall", args: {} },
-]);
+const t = await createTestHarness(join(__dirname));
+await t.turn("Hello");
+await t.turn("How are you?");
+const turn = await t.turn("Count messages", [{ tool: "count_messages", args: {} }]);
 // Tool has access to full message history via ctx.messages
 ```
 

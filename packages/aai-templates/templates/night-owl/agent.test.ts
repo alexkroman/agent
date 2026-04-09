@@ -1,13 +1,13 @@
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createDirTestHarness } from "@alexkroman1/aai/testing-v2";
+import { createTestHarness } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
 describe("Night Owl", () => {
   test("recommend returns movie picks for a mood", async () => {
-    const t = await createDirTestHarness(join(__dirname));
+    const t = await createTestHarness(join(__dirname));
     const turn = await t.turn("Recommend a cozy movie", [
       { tool: "recommend", args: { category: "movie", mood: "cozy" } },
     ]);
@@ -17,7 +17,7 @@ describe("Night Owl", () => {
   });
 
   test("recommend returns music picks", async () => {
-    const t = await createDirTestHarness(join(__dirname));
+    const t = await createTestHarness(join(__dirname));
     const turn = await t.turn("Something chill to listen to", [
       { tool: "recommend", args: { category: "music", mood: "chill" } },
     ]);
@@ -26,7 +26,7 @@ describe("Night Owl", () => {
   });
 
   test("recommend returns book picks", async () => {
-    const t = await createDirTestHarness(join(__dirname));
+    const t = await createTestHarness(join(__dirname));
     const turn = await t.turn("A spooky book", [
       { tool: "recommend", args: { category: "book", mood: "spooky" } },
     ]);
