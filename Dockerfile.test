@@ -13,7 +13,7 @@ FROM node:24-slim
 WORKDIR /app
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl git \
+    && apt-get install -y --no-install-recommends ca-certificates curl git unzip \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Deno — needed for sandbox tests

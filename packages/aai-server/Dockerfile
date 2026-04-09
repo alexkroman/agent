@@ -34,16 +34,14 @@ FROM node:24-slim
 
 WORKDIR /app
 
-# Install gVisor (runsc) — x86_64 only
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
+# Install gVisor (runsc) and Deno — both need curl
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl unzip \
     && curl -fsSL "https://storage.googleapis.com/gvisor/releases/release/latest/x86_64/runsc" \
        -o /usr/local/bin/runsc \
     && chmod +x /usr/local/bin/runsc \
-    && apt-get remove -y curl && apt-get autoremove -y \
+    && curl -fsSL https://deno.land/install.sh | DENO_INSTALL=/usr/local sh \
+    && apt-get remove -y curl unzip && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
-
-# Install Deno — guest harness runtime
-RUN curl -fsSL https://deno.land/install.sh | DENO_INSTALL=/usr/local sh
 
 RUN corepack enable && corepack prepare pnpm@10.29.3 --activate
 
