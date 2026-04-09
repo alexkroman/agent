@@ -119,8 +119,15 @@ const dev = defineCommand({
     const mode = resolveMode(args);
     await handleErrors(mode, async () => {
       const cwd = await setup(args, { agent: true, apiKey: true });
-      const { runDevCommand } = await import("./dev.ts");
-      await runDevCommand({ cwd, port: args.port });
+      const { executeDev } = await import("./dev.ts");
+      const { withOutput } = await import("./_output.ts");
+      await withOutput(
+        mode,
+        () => executeDev({ cwd, port: args.port }),
+        () => {
+          /* human output handled inside */
+        },
+      );
     });
   },
 });
