@@ -96,6 +96,10 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 24
+      - uses: denoland/setup-deno@v2
+        if: matrix.package == 'aai-server'
+        with:
+          deno-version: v2.x
       - uses: actions/cache/restore@v5
         with:
           path: |
@@ -124,6 +128,9 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ matrix.node }}
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
       - id: workspace-cache
         uses: actions/cache/restore@v5
         with:
