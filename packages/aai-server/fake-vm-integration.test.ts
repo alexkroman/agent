@@ -10,6 +10,7 @@
  */
 
 import { type ChildProcess, fork } from "node:child_process";
+import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import net from "node:net";
 import os from "node:os";
@@ -336,4 +337,261 @@ describe("Fake VM integration (no KVM)", () => {
     // Process should have exited (exitCode is a number) or been killed
     expect(exitCode !== undefined || child.killed).toBe(true);
   }, 15_000);
+
+  // ── Gap-closing tests ─────────────────────────────────────────────────────
+
+  test("KV get/set round-trips through host proxy", async () => {
+    const socketPath = path.join(tmpDir, "test-kv.sock");
+    await spawnFakeVm(socketPath);
+    const { socket, channel } = await connectToFakeVm(socketPath);
+
+    // Set up a KV handler on the host side
+    const kvStore = new Map<string, unknown>();
+    channel.onRequest("kv", async (msg) => {
+      const op = msg.op as string;
+      if (op === "get") {
+        return { value: kvStore.get(msg.key as string) ?? null };
+      }
+      if (op === "set") {
+        kvStore.set(msg.key as string, msg.value);
+        return { ok: true };
+      }
+      if (op === "del") {
+        kvStore.delete(msg.key as string);
+        return { ok: true };
+      }
+      return { error: `Unknown op: ${op}` };
+    });
+
+    const kvBundle = `
+    module.exports = {
+      default: {
+        name: "kv-agent",
+        systemPrompt: "KV test",
+        greeting: "",
+        maxSteps: 1,
+        tools: {
+          kv_roundtrip: {
+            description: "Store then read from KV",
+            async execute(args, ctx) {
+              await ctx.kv.set("test-key", args.value);
+              const result = await ctx.kv.get("test-key");
+              return "stored:" + JSON.stringify(result);
+            },
+          },
+        },
+      },
+    };
+    `;
+
+    try {
+      await channel.request({ type: "bundle", code: kvBundle, env: {} }, { timeout: 5000 });
+
+      const toolResp = await channel.request(
+        {
+          type: "tool",
+          name: "kv_roundtrip",
+          args: { value: "hello-kv" },
+          sessionId: "kv-s1",
+          messages: [],
+        },
+        { timeout: 5000 },
+      );
+
+      expect(toolResp.result).toBe('stored:"hello-kv"');
+      expect(kvStore.get("test-key")).toBe("hello-kv");
+    } finally {
+      channel.close();
+      socket.destroy();
+    }
+  }, 15_000);
+
+  test("tool that throws returns error in response", async () => {
+    const socketPath = path.join(tmpDir, "test-error.sock");
+    await spawnFakeVm(socketPath);
+    const { socket, channel } = await connectToFakeVm(socketPath);
+
+    const errorBundle = `
+    module.exports = {
+      default: {
+        name: "error-agent",
+        systemPrompt: "Error test",
+        greeting: "",
+        maxSteps: 1,
+        tools: {
+          fail: {
+            description: "Always throws",
+            execute() { throw new Error("intentional failure"); },
+          },
+        },
+      },
+    };
+    `;
+
+    try {
+      await channel.request({ type: "bundle", code: errorBundle, env: {} }, { timeout: 5000 });
+
+      const toolResp = await channel.request(
+        {
+          type: "tool",
+          name: "fail",
+          args: {},
+          sessionId: "err-s1",
+          messages: [],
+        },
+        { timeout: 5000 },
+      );
+
+      // The error should propagate back through the RPC channel
+      expect(toolResp.error).toBe("intentional failure");
+    } finally {
+      channel.close();
+      socket.destroy();
+    }
+  }, 15_000);
+
+  test("tool parameters.parse is invoked on args", async () => {
+    const socketPath = path.join(tmpDir, "test-params.sock");
+    await spawnFakeVm(socketPath);
+    const { socket, channel } = await connectToFakeVm(socketPath);
+
+    // Bundle with a tool that has a parameters object with a parse method.
+    // The parse method transforms args (uppercases the "text" field).
+    const paramsBundle = `
+    module.exports = {
+      default: {
+        name: "params-agent",
+        systemPrompt: "Params test",
+        greeting: "",
+        maxSteps: 1,
+        tools: {
+          transform: {
+            description: "Transform input via parameters.parse",
+            parameters: {
+              parse(args) {
+                return { text: String(args.text).toUpperCase() };
+              },
+            },
+            execute(args) { return "parsed:" + args.text; },
+          },
+        },
+      },
+    };
+    `;
+
+    try {
+      await channel.request({ type: "bundle", code: paramsBundle, env: {} }, { timeout: 5000 });
+
+      const toolResp = await channel.request(
+        {
+          type: "tool",
+          name: "transform",
+          args: { text: "hello" },
+          sessionId: "param-s1",
+          messages: [],
+        },
+        { timeout: 5000 },
+      );
+
+      // The parse method should have uppercased the text
+      expect(toolResp.result).toBe("parsed:HELLO");
+    } finally {
+      channel.close();
+      socket.destroy();
+    }
+  }, 15_000);
+
+  // ── Compiled harness test ───────────────────────────────────────────────────
+
+  const COMPILED_HARNESS = path.resolve(import.meta.dirname, "dist/guest/harness.mjs");
+  const hasCompiledHarness = existsSync(COMPILED_HARNESS);
+
+  test.skipIf(!hasCompiledHarness)(
+    "compiled harness (dist/guest/harness.mjs) injects bundle and executes tool",
+    async () => {
+      const socketPath = path.join(tmpDir, "test-compiled.sock");
+
+      // Spawn fake-vm but point it at the compiled harness instead of source
+      const fakeVmScript = `
+      import net from "node:net";
+      import fs from "node:fs";
+
+      const socketPath = process.argv[2];
+      const harnessPath = process.argv[3];
+
+      try { fs.unlinkSync(socketPath); } catch {}
+
+      const { main } = await import(harnessPath);
+
+      const server = net.createServer((conn) => {
+        server.close();
+        main(conn).catch((err) => {
+          console.error("Harness error:", err);
+          process.exit(1);
+        });
+      });
+
+      server.listen(socketPath, () => {
+        console.log("FAKE_VM_READY:" + socketPath);
+      });
+      `;
+
+      const scriptPath = path.join(tmpDir, "compiled-vm-launcher.mjs");
+      await fs.writeFile(scriptPath, fakeVmScript, "utf-8");
+
+      const child = fork(scriptPath, [socketPath, COMPILED_HARNESS], {
+        stdio: ["pipe", "pipe", "pipe", "ipc"],
+        silent: true,
+      });
+
+      children.push(child);
+
+      // Wait for ready signal
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(
+          () => reject(new Error("Compiled harness did not become ready within 10s")),
+          10_000,
+        );
+        child.stdout?.on("data", (data: Buffer) => {
+          if (data.toString().includes("FAKE_VM_READY")) {
+            clearTimeout(timer);
+            resolve();
+          }
+        });
+        child.stderr?.on("data", (data: Buffer) => {
+          process.stderr.write(`[compiled-harness] ${data}`);
+        });
+        child.on("exit", (code) => {
+          clearTimeout(timer);
+          reject(new Error(`Compiled harness exited with code ${code}`));
+        });
+      });
+
+      const { socket, channel } = await connectToFakeVm(socketPath);
+
+      try {
+        const bundleResp = await channel.request(
+          { type: "bundle", code: SIMPLE_BUNDLE, env: {} },
+          { timeout: 5000 },
+        );
+        expect(bundleResp.ok).toBe(true);
+
+        const toolResp = await channel.request(
+          {
+            type: "tool",
+            name: "echo",
+            args: { message: "compiled-test" },
+            sessionId: "compiled-s1",
+            messages: [],
+          },
+          { timeout: 5000 },
+        );
+        expect(toolResp.result).toBe('echo:{"message":"compiled-test"}');
+      } finally {
+        channel.close();
+        socket.destroy();
+      }
+    },
+    15_000,
+  );
 });
