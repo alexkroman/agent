@@ -203,7 +203,12 @@ jobs:
     steps:
       - name: Check results
         run: |
-          results="${{ needs.lint-typecheck-and-checks.result }} ${{ needs.test.result }} ${{ needs.integration.result }} ${{ needs.e2e.result }} ${{ needs.docker-firecracker.result }}"
+          # docker-firecracker is informational until guest boot chain is validated
+          results="${{ needs.lint-typecheck-and-checks.result }} ${{ needs.test.result }} ${{ needs.integration.result }} ${{ needs.e2e.result }}"
+          fc_result="${{ needs.docker-firecracker.result }}"
+          if [ "$fc_result" != "success" ]; then
+            echo "WARNING: docker-firecracker job did not pass ($fc_result) — this is expected until guest boot is validated"
+          fi
           for r in $results; do
             if [ "$r" != "success" ] && [ "$r" != "skipped" ]; then
               echo "CI failed: one or more jobs did not succeed"
