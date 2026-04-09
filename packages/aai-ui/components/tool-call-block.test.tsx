@@ -8,16 +8,16 @@ import { ToolCallBlock } from "./tool-call-block.tsx";
 
 describe("ToolCallBlock", () => {
   const pendingToolCall: ToolCallInfo = {
-    toolCallId: "tc_1",
-    toolName: "web_search",
+    callId: "tc_1",
+    name: "web_search",
     args: { query: "weather today" },
     status: "pending",
     afterMessageIndex: 0,
   };
 
   const completedToolCall: ToolCallInfo = {
-    toolCallId: "tc_2",
-    toolName: "fetch_json",
+    callId: "tc_2",
+    name: "fetch_json",
     args: { url: "https://api.example.com/data" },
     status: "done",
     result: '{"temperature": 72}',

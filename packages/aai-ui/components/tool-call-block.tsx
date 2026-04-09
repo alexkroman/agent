@@ -1,7 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+// biome-ignore lint/correctness/noUndeclaredDependencies: preact migration in progress (Task 6)
 import { useComputed, useSignal } from "@preact/signals";
 import clsx from "clsx";
+// biome-ignore lint/correctness/noUndeclaredDependencies: preact migration in progress (Task 6)
 import type * as preact from "preact";
 import type { ToolCallInfo } from "../types.ts";
 import {
@@ -87,9 +89,9 @@ export function ToolCallBlock({
   className?: string;
 }): preact.JSX.Element {
   const isOpen = useSignal(false);
-  const config = TOOL_CONFIG[toolCall.toolName] ?? DEFAULT_CONFIG;
+  const config = TOOL_CONFIG[toolCall.name] ?? DEFAULT_CONFIG;
   const isPending = toolCall.status === "pending";
-  const title = config.title || toolCall.toolName;
+  const title = config.title || toolCall.name;
   const canExpand = !isPending && Boolean(toolCall.result);
   const formatted = useComputed(() => (toolCall.result ? formatResult(toolCall.result) : ""));
 
@@ -122,7 +124,7 @@ export function ToolCallBlock({
       </button>
       {isOpen.value && (
         <div class="border-x border-b border-aai-border rounded-b-aai bg-aai-surface max-h-64 overflow-auto">
-          {toolCall.toolName === "run_code" && toolCall.args.code && (
+          {toolCall.name === "run_code" && toolCall.args.code && (
             <pre class="text-xs text-aai-text p-2 whitespace-pre-wrap border-b border-aai-border font-mono">
               {String(toolCall.args.code)}
             </pre>

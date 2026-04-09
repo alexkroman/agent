@@ -1,9 +1,15 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+// biome-ignore lint/correctness/noUndeclaredDependencies: preact migration in progress (Task 4)
 import type { ComponentChildren, JSX } from "preact";
+// biome-ignore lint/correctness/noUndeclaredDependencies: preact migration in progress (Task 4)
 import { createContext, h } from "preact";
+// biome-ignore lint/correctness/noUndeclaredDependencies: preact migration in progress (Task 4)
 import { useContext } from "preact/hooks";
 import type { VoiceSession } from "./session.ts";
+import type { ClientTheme } from "./types.ts";
+
+export type { ClientTheme } from "./types.ts";
 
 // ─── Session context ─────────────────────────────────────────────────────────
 
@@ -43,24 +49,6 @@ export function useSession(): VoiceSession {
 }
 
 // ─── Client config context ───────────────────────────────────────────────────
-
-/**
- * Theme overrides for the default UI. Applied as CSS custom properties.
- *
- * @public
- */
-export type ClientTheme = {
-  /** Background color. Default: `#101010`. */
-  bg?: string;
-  /** Primary accent color. Default: `#fab283`. */
-  primary?: string;
-  /** Main text color. */
-  text?: string;
-  /** Surface/card color. */
-  surface?: string;
-  /** Border color. */
-  border?: string;
-};
 
 /**
  * Resolved client-level configuration available to default UI components.

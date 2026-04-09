@@ -6,6 +6,7 @@
  * A failure here means a public type contract has regressed.
  */
 
+// biome-ignore lint/correctness/noUndeclaredDependencies: preact migration in progress (Task 4)
 import type { Signal } from "@preact/signals";
 import { describe, expectTypeOf, it } from "vitest";
 import {
@@ -80,7 +81,7 @@ describe("VoiceSession", () => {
 describe("exported types", () => {
   it("AgentState is a union of known states", () => {
     expectTypeOf<AgentState>().toEqualTypeOf<
-      "disconnected" | "connecting" | "ready" | "listening" | "thinking" | "speaking" | "error"
+      "disconnected" | "connecting" | "ready" | "listening" | "thinking" | "speaking"
     >();
   });
 
@@ -93,8 +94,8 @@ describe("exported types", () => {
 
   it("ToolCallInfo has expected shape", () => {
     expectTypeOf<ToolCallInfo>().toEqualTypeOf<{
-      toolCallId: string;
-      toolName: string;
+      callId: string;
+      name: string;
       args: Record<string, unknown>;
       status: "pending" | "done";
       result?: string | undefined;

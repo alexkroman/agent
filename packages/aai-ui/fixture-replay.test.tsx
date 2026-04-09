@@ -192,7 +192,7 @@ describe("fixture replay: tool call flow", () => {
 
     const toolCalls = env.session.toolCalls.value;
     expect(toolCalls.length).toBe(1);
-    expect(toolCalls[0]?.toolName).toBe("get_weather");
+    expect(toolCalls[0]?.name).toBe("get_weather");
     expect(toolCalls[0]?.status).toBe("pending");
     expect(toolCalls[0]?.args).toEqual({ city: "San Francisco" });
   });
@@ -378,10 +378,10 @@ describe("fixture replay: multi-turn with tools", () => {
 
     const toolCalls = env.session.toolCalls.value;
     expect(toolCalls.length).toBe(2);
-    expect(toolCalls[0]?.toolName).toBe("get_weather");
+    expect(toolCalls[0]?.name).toBe("get_weather");
     expect(toolCalls[0]?.args).toEqual({ city: "New York" });
     expect(toolCalls[0]?.status).toBe("done");
-    expect(toolCalls[1]?.toolName).toBe("get_weather");
+    expect(toolCalls[1]?.name).toBe("get_weather");
     expect(toolCalls[1]?.args).toEqual({ city: "London" });
     expect(toolCalls[1]?.status).toBe("done");
   });

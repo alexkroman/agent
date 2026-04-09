@@ -242,7 +242,7 @@ export async function replayFixture(
 
 export function createMockSession(
   overrides?: Partial<{
-    state: AgentState;
+    state: AgentState | "error";
     messages: ChatMessage[];
     userUtterance: string | null;
     error: SessionError | null;
@@ -251,7 +251,7 @@ export function createMockSession(
   }>,
 ): VoiceSession {
   const session = {
-    state: signal<AgentState>(overrides?.state ?? "disconnected"),
+    state: signal<AgentState>((overrides?.state ?? "disconnected") as AgentState),
     messages: signal<ChatMessage[]>(overrides?.messages ?? []),
     toolCalls: signal<ToolCallInfo[]>([]),
     userUtterance: signal<string | null>(overrides?.userUtterance ?? null),

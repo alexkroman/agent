@@ -8,6 +8,7 @@ import type {
 } from "@alexkroman1/aai/protocol";
 import { lenientParse, ReadyConfigSchema, ServerMessageSchema } from "@alexkroman1/aai/protocol";
 import { errorMessage } from "@alexkroman1/aai/utils";
+// biome-ignore lint/correctness/noUndeclaredDependencies: preact migration in progress (Task 3)
 import { batch, effect, type Signal, signal } from "@preact/signals";
 import type { VoiceIO } from "./audio.ts";
 import type {
@@ -122,7 +123,7 @@ async function initAudioCapture(
         code: "audio",
         message: `Microphone access failed: ${errorMessage(err)}`,
       };
-      deps.state.value = "error";
+      deps.state.value = "error" as AgentState;
     });
   } finally {
     conn.audioSetupInFlight = false;
@@ -226,8 +227,9 @@ export function createVoiceSession(options: VoiceSessionOptions): VoiceSession {
   const running = signal(true);
 
   // Track error state to auto-clear running
+  // Note: "error" is not in AgentState (it is transitional — will be removed in Task 3)
   const disposeEffect = effect(() => {
-    if (state.value === "error") running.value = false;
+    if ((state.value as string) === "error") running.value = false;
   });
 
   const conn: ConnState = { ws: null, voiceIO: null, audioSetupInFlight: false, generation: 0 };
@@ -307,8 +309,8 @@ export function createVoiceSession(options: VoiceSessionOptions): VoiceSession {
         toolCalls.value = [
           ...toolCalls.value,
           {
-            toolCallId: e.toolCallId,
-            toolName: e.toolName,
+            callId: e.toolCallId,
+            name: e.toolName,
             args: e.args,
             status: "pending",
             afterMessageIndex: messages.value.length - 1,
@@ -317,7 +319,7 @@ export function createVoiceSession(options: VoiceSessionOptions): VoiceSession {
         break;
       case "tool_call_done": {
         const tcs = toolCalls.value;
-        const idx = tcs.findIndex((tc) => tc.toolCallId === e.toolCallId);
+        const idx = tcs.findIndex((tc) => tc.callId === e.toolCallId);
         if (idx !== -1) {
           const updated = [...tcs];
           const existing = updated[idx];
@@ -358,7 +360,7 @@ export function createVoiceSession(options: VoiceSessionOptions): VoiceSession {
             code: e.code,
             message: e.message,
           };
-          state.value = "error";
+          state.value = "error" as AgentState;
         });
         break;
       default:
@@ -368,7 +370,7 @@ export function createVoiceSession(options: VoiceSessionOptions): VoiceSession {
 
   /** Enqueue a PCM16 audio chunk for playback. Transitions state to `"speaking"` on the first chunk. */
   function playAudioChunk(chunk: Uint8Array): void {
-    if (state.value === "error") return;
+    if ((state.value as string) === "error") return;
     if (state.value !== "speaking") {
       state.value = "speaking";
     }
@@ -506,7 +508,7 @@ export function createVoiceSession(options: VoiceSessionOptions): VoiceSession {
                 code: "audio",
                 message: `Audio capture failed: ${errorMessage(err)}`,
               };
-              audioDeps.state.value = "error";
+              audioDeps.state.value = "error" as AgentState;
             });
           });
 

@@ -131,8 +131,8 @@ describe("MessageList: messages + tool calls interleaved", () => {
     });
     signals.toolCalls.value = [
       {
-        toolCallId: "tc1",
-        toolName: "web_search",
+        callId: "tc1",
+        name: "web_search",
         args: { query: "weather" },
         status: "done",
         result: '{"temp": 72}',
@@ -177,8 +177,8 @@ describe("MessageList: messages + tool calls interleaved", () => {
     });
     signals.toolCalls.value = [
       {
-        toolCallId: "tc1",
-        toolName: "web_search",
+        callId: "tc1",
+        name: "web_search",
         args: {},
         status: "pending",
 
@@ -200,8 +200,8 @@ describe("MessageList: messages + tool calls interleaved", () => {
     });
     signals.toolCalls.value = [
       {
-        toolCallId: "tc1",
-        toolName: "web_search",
+        callId: "tc1",
+        name: "web_search",
         args: { query: "test" },
         status: "pending",
 
@@ -290,7 +290,7 @@ describe("App: full component tree integration", () => {
     expect(screen.getByText("It's 3pm.")).toBeDefined();
 
     // 5. Error occurs
-    signals.state.value = "error";
+    signals.state.value = "error" as never;
     signals.error.value = { code: "connection", message: "Lost connection" };
     signals.running.value = false;
     rerender(

@@ -1,7 +1,10 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+// biome-ignore lint/correctness/noUndeclaredDependencies: preact migration in progress (Task 5)
 import { effect, useSignalEffect } from "@preact/signals";
+// biome-ignore lint/correctness/noUndeclaredDependencies: preact migration in progress (Task 5)
 import type { RefObject } from "preact";
+// biome-ignore lint/correctness/noUndeclaredDependencies: preact migration in progress (Task 5)
 import { useEffect, useRef } from "preact/hooks";
 import { useSession } from "./context.ts";
 import type { VoiceSession } from "./session.ts";
@@ -23,8 +26,8 @@ function isNewCompletedCall(
   filterName: string | undefined,
 ): tc is ToolCallInfo & { result: string } {
   if (tc.status !== "done" || !tc.result) return false;
-  if (seen.has(tc.toolCallId)) return false;
-  if (filterName && tc.toolName !== filterName) return false;
+  if (seen.has(tc.callId)) return false;
+  if (filterName && tc.name !== filterName) return false;
   return true;
 }
 
@@ -60,8 +63,8 @@ function useToolCallEffect(
         }
         for (const tc of toolCalls) {
           if (!predicateRef.current(tc, seenRef.current)) continue;
-          if (seenRef.current.has(tc.toolCallId)) continue;
-          seenRef.current.add(tc.toolCallId);
+          if (seenRef.current.has(tc.callId)) continue;
+          seenRef.current.add(tc.callId);
           cbRef.current(tc);
         }
       }),
@@ -127,8 +130,7 @@ export function useToolResult<R = unknown>(
   useToolCallEffect(
     session,
     (tc, seen) => isNewCompletedCall(tc, seen, filterName),
-    (tc) =>
-      callback(tc.toolName, tryParseJSON((tc as ToolCallInfo & { result: string }).result), tc),
+    (tc) => callback(tc.name, tryParseJSON((tc as ToolCallInfo & { result: string }).result), tc),
   );
 }
 
@@ -151,7 +153,7 @@ export function useToolCallStart(
   useToolCallEffect(
     session,
     () => true,
-    (tc) => callback(tc.toolName, tc.args, tc),
+    (tc) => callback(tc.name, tc.args, tc),
   );
 }
 

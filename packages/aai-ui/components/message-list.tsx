@@ -1,7 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+// biome-ignore lint/correctness/noUndeclaredDependencies: preact migration in progress (Task 6)
 import { useComputed } from "@preact/signals";
 import clsx from "clsx";
+// biome-ignore lint/correctness/noUndeclaredDependencies: preact migration in progress (Task 6)
 import type { JSX, VNode } from "preact";
 import { useSession } from "../context.ts";
 import { useAutoScroll } from "../hooks.ts";
@@ -20,6 +22,7 @@ function ThinkingDots(): JSX.Element {
   return (
     <div class="flex items-center gap-2 text-aai-text-dim text-sm font-medium min-h-5">
       {DOT_STYLES.map((style, i) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: static array, index as key is safe
         <div key={i} class="w-1.5 h-1.5 rounded-full bg-aai-text-dim" style={style} />
       ))}
     </div>
@@ -87,7 +90,7 @@ export function MessageList({ className }: { className?: string }) {
     items.push(<MessageBubble key={`msg-${i}`} message={msg} />);
     let tc = toolCalls[tci];
     while (tc && tc.afterMessageIndex <= i) {
-      items.push(<ToolCallBlock key={tc.toolCallId} toolCall={tc} />);
+      items.push(<ToolCallBlock key={tc.callId} toolCall={tc} />);
       tci++;
       tc = toolCalls[tci];
     }
@@ -95,7 +98,7 @@ export function MessageList({ className }: { className?: string }) {
   // Any remaining tool calls (still pending, no following message yet).
   let tc = toolCalls[tci];
   while (tc) {
-    items.push(<ToolCallBlock key={tc.toolCallId} toolCall={tc} />);
+    items.push(<ToolCallBlock key={tc.callId} toolCall={tc} />);
     tci++;
     tc = toolCalls[tci];
   }

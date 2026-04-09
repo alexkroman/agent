@@ -200,8 +200,8 @@ describe("message handling: events", () => {
     });
     expect(env.session.toolCalls.value).toEqual([
       {
-        toolCallId: "tc1",
-        toolName: "search",
+        callId: "tc1",
+        name: "search",
         args: { query: "test" },
         status: "pending",
         afterMessageIndex: 0,
@@ -212,8 +212,8 @@ describe("message handling: events", () => {
   test("tool_call_done updates matching tool call status", () => {
     env.session.toolCalls.value = [
       {
-        toolCallId: "tc1",
-        toolName: "search",
+        callId: "tc1",
+        name: "search",
         args: {},
         status: "pending",
         afterMessageIndex: 0,
@@ -227,8 +227,8 @@ describe("message handling: events", () => {
   test("tool_call_done with unknown id is a no-op", () => {
     env.session.toolCalls.value = [
       {
-        toolCallId: "tc1",
-        toolName: "search",
+        callId: "tc1",
+        name: "search",
         args: {},
         status: "pending",
         afterMessageIndex: 0,
@@ -262,8 +262,8 @@ describe("message handling: events", () => {
     ];
     env.session.toolCalls.value = [
       {
-        toolCallId: "tc1",
-        toolName: "search",
+        callId: "tc1",
+        name: "search",
         args: {},
         status: "done",
         result: "x",

@@ -92,9 +92,7 @@ describe("useSession", () => {
   });
 });
 
-function makeTc(
-  overrides: Partial<ToolCallInfo> & { toolCallId: string; toolName: string },
-): ToolCallInfo {
+function makeTc(overrides: Partial<ToolCallInfo> & { callId: string; name: string }): ToolCallInfo {
   return {
     args: {},
     status: "done",
@@ -128,8 +126,8 @@ describe("useToolResult", () => {
 
     session.toolCalls.value = [
       makeTc({
-        toolCallId: "tc1",
-        toolName: "add_pizza",
+        callId: "tc1",
+        name: "add_pizza",
         result: JSON.stringify({ added: true }),
       }),
     ];
@@ -139,13 +137,13 @@ describe("useToolResult", () => {
 
     session.toolCalls.value = [
       makeTc({
-        toolCallId: "tc1",
-        toolName: "add_pizza",
+        callId: "tc1",
+        name: "add_pizza",
         result: JSON.stringify({ added: true }),
       }),
       makeTc({
-        toolCallId: "tc2",
-        toolName: "remove_pizza",
+        callId: "tc2",
+        name: "remove_pizza",
         result: JSON.stringify({ removed: true }),
       }),
     ];
@@ -176,14 +174,14 @@ describe("useToolResult", () => {
     await vi.advanceTimersByTimeAsync(0);
 
     session.toolCalls.value = [
-      makeTc({ toolCallId: "tc1", toolName: "search", status: "pending", result: undefined }),
+      makeTc({ callId: "tc1", name: "search", status: "pending", result: undefined }),
     ];
     await vi.advanceTimersByTimeAsync(0);
 
     expect(calls).toEqual([]);
 
     session.toolCalls.value = [
-      makeTc({ toolCallId: "tc1", toolName: "search", result: JSON.stringify({ found: true }) }),
+      makeTc({ callId: "tc1", name: "search", result: JSON.stringify({ found: true }) }),
     ];
     await vi.advanceTimersByTimeAsync(0);
 
@@ -208,7 +206,7 @@ describe("useToolResult", () => {
     );
     await vi.advanceTimersByTimeAsync(0);
 
-    session.toolCalls.value = [makeTc({ toolCallId: "tc1", toolName: "add_pizza" })];
+    session.toolCalls.value = [makeTc({ callId: "tc1", name: "add_pizza" })];
     await vi.advanceTimersByTimeAsync(0);
     expect(calls).toEqual(["add_pizza"]);
 
@@ -216,7 +214,7 @@ describe("useToolResult", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(calls).toEqual(["add_pizza"]);
 
-    session.toolCalls.value = [makeTc({ toolCallId: "tc2", toolName: "add_pizza" })];
+    session.toolCalls.value = [makeTc({ callId: "tc2", name: "add_pizza" })];
     await vi.advanceTimersByTimeAsync(0);
     expect(calls).toEqual(["add_pizza", "add_pizza"]);
   });
@@ -241,13 +239,13 @@ describe("useToolResult", () => {
 
     session.toolCalls.value = [
       makeTc({
-        toolCallId: "tc1",
-        toolName: "add_pizza",
+        callId: "tc1",
+        name: "add_pizza",
         result: JSON.stringify({ added: true }),
       }),
       makeTc({
-        toolCallId: "tc2",
-        toolName: "remove_pizza",
+        callId: "tc2",
+        name: "remove_pizza",
         result: JSON.stringify({ removed: true }),
       }),
     ];
@@ -274,9 +272,7 @@ describe("useToolResult", () => {
     );
     await vi.advanceTimersByTimeAsync(0);
 
-    session.toolCalls.value = [
-      makeTc({ toolCallId: "tc1", toolName: "broken", result: "not json{" }),
-    ];
+    session.toolCalls.value = [makeTc({ callId: "tc1", name: "broken", result: "not json{" })];
     await vi.advanceTimersByTimeAsync(0);
 
     expect(results).toEqual(["not json{"]);
