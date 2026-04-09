@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
-import { createTestOrchestrator, deployAgent } from "./test-utils.ts";
+import { createTestOrchestrator, deployAgent, TEST_AGENT_CONFIG } from "./test-utils.ts";
 
 // ── E2E HTTP Malformed Payload Rejection ───────────────────────────────
 
