@@ -34,4 +34,8 @@ COPY . .
 # Build all packages
 RUN pnpm -r run build
 
+# Init a git repo so scripts that check git state don't fail
+RUN git init && git add -A && git commit -m "docker build" --allow-empty \
+    --author="docker <docker@test>" 2>/dev/null || true
+
 CMD ["pnpm", "test"]
