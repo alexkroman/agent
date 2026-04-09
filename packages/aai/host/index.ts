@@ -7,7 +7,7 @@
  * depend on Node.js APIs (server, executor, S2S, etc.).
  *
  * Consumer packages should import from the top-level `@alexkroman1/aai`
- * entry, `./server`, `./types`, `./kv`, `./protocol`, or `./testing`.
+ * entry, `./types`, `./kv`, `./protocol`, or `./testing`.
  */
 
 // biome-ignore-all lint/performance/noReExportAll: barrel file by design
@@ -21,6 +21,10 @@ export * from "./builtin-tools.ts";
 export * from "./runtime.ts";
 export * from "./runtime-config.ts";
 export * from "./s2s.ts";
+// Server (createServer, AgentServer, ServerOptions) — used by aai-cli dev server.
+// Re-export only server-specific symbols; createRuntime/Runtime/RuntimeOptions
+// are already exported above via runtime.ts.
+export { type AgentServer, createServer, type ServerOptions } from "./server.ts";
 export * from "./session.ts";
 export * from "./session-ctx.ts";
 export * from "./tool-executor.ts";

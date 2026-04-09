@@ -21,11 +21,6 @@
       "types": "./dist/host/index.d.ts",
       "import": "./dist/host/index.js"
     },
-    "./server": {
-      "@dev/source": "./host/server.ts",
-      "types": "./dist/host/server.d.ts",
-      "import": "./dist/host/server.js"
-    },
     "./types": {
       "@dev/source": "./isolate/types.ts",
       "types": "./dist/isolate/types.d.ts",

@@ -2,7 +2,7 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { AgentServer } from "@alexkroman1/aai/server";
+import type { AgentServer } from "@alexkroman1/aai/host";
 import type { AgentDef } from "@alexkroman1/aai/types";
 import { parseEnvFile } from "@alexkroman1/aai/utils";
 
@@ -87,7 +87,7 @@ export async function bootServer(
   env: Record<string, string>,
   port: number,
 ): Promise<AgentServer> {
-  const { createRuntime, createServer } = await import("@alexkroman1/aai/server");
+  const { createRuntime, createServer } = await import("@alexkroman1/aai/host");
   const runtime = createRuntime({ agent: agentDef, env });
   const server = createServer({
     runtime,

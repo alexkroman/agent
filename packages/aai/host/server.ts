@@ -1,9 +1,12 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Self-hostable agent server.
+ * Agent HTTP + WebSocket server.
  *
  * {@link createServer} wraps a {@link Runtime} with an HTTP + WebSocket
  * server using only `node:http` and `ws` (no framework dependencies).
+ *
+ * **Internal module** — used by `aai-cli` dev server. Not a public API.
+ * Import via `@alexkroman1/aai/host`.
  */
 
 import fs from "node:fs";
@@ -21,7 +24,7 @@ export { createRuntime, type Runtime, type RuntimeOptions } from "./runtime.ts";
 
 /**
  * Configuration for {@link createServer}.
- * @public
+ * @internal
  */
 export type ServerOptions = {
   runtime: Runtime;
@@ -34,7 +37,7 @@ export type ServerOptions = {
 
 /**
  * Handle returned by {@link createServer}.
- * @public
+ * @internal
  */
 export type AgentServer = {
   listen(port?: number): Promise<void>;
@@ -91,17 +94,7 @@ async function serveStatic(
  * Create an HTTP + WebSocket server for self-hosted agent deployments.
  *
  * @example
- * ```ts
- * import { defineAgent } from "@alexkroman1/aai";
- * import { createRuntime, createServer } from "@alexkroman1/aai/server";
- *
- * const agent = defineAgent({ name: "my-agent" });
- * const runtime = createRuntime({ agent, env: process.env });
- * const server = createServer({ runtime, name: agent.name });
- * await server.listen(3000);
- * ```
- *
- * @public
+ * @internal — used by aai-cli dev server.
  */
 function handleKvGet(kv: Kv, req: http.IncomingMessage, res: http.ServerResponse): void {
   const fullUrl = new URL(req.url ?? "/", "http://localhost");
