@@ -65,7 +65,7 @@ async function handleKvRequest(
       return { value };
     }
     case "set": {
-      await storage.setItem(`${prefix}:${key}`, msg.value);
+      await storage.setItem(`${prefix}:${key}`, msg.value as import("unstorage").StorageValue);
       return { ok: true };
     }
     case "del": {

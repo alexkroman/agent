@@ -76,7 +76,7 @@ export function isSnapshotValid(paths: SnapshotPaths): boolean {
  * This requires a real Firecracker binary to test against. Verify against
  * the Docker integration test (Task 12b) before removing this TODO.
  */
-export async function buildBaseSnapshot(paths: SnapshotPaths): Promise<void> {
+export async function buildBaseSnapshot(_paths: SnapshotPaths): Promise<void> {
   // TODO(cold-boot): cold boot the VM, wait for guest ready signal over vsock,
   // pause and snapshot using the Firecracker REST API, then kill the VM.
   // See function JSDoc for the full API call sequence.
