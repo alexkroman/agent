@@ -36,6 +36,20 @@ function findRunsc(): string | null {
   }
 }
 
+/** Cached absolute path to deno binary, or null if not found. */
+let denoPath: string | null | undefined;
+
+function findDeno(): string | null {
+  if (denoPath !== undefined) return denoPath;
+  try {
+    denoPath = execFileSync("which", ["deno"], { encoding: "utf-8" }).trim();
+    return denoPath;
+  } catch {
+    denoPath = null;
+    return null;
+  }
+}
+
 export function isGvisorAvailable(): boolean {
   return findRunsc() !== null;
 }
@@ -63,6 +77,8 @@ export type GvisorSandbox = {
 export function createGvisorSandbox(opts: { slug: string; harnessPath: string }): GvisorSandbox {
   const runsc = findRunsc();
   if (!runsc) throw new Error("runsc not found on PATH");
+  const deno = findDeno();
+  if (!deno) throw new Error("deno not found on PATH");
 
   const child = spawn(
     runsc,
@@ -75,7 +91,7 @@ export function createGvisorSandbox(opts: { slug: string; harnessPath: string })
       "-cwd",
       "/tmp",
       "--",
-      "deno",
+      deno,
       "run",
       "--allow-env",
       "--no-prompt",
