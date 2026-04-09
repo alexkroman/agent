@@ -11,9 +11,16 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 
+export interface FilteredSyscall {
+  name: string;
+  filter: string;
+  _comment?: string;
+}
+
 export interface SeccompAllowlist {
   _comment: string;
   syscalls: string[];
+  filtered_syscalls?: FilteredSyscall[];
 }
 
 export function loadAllowlist(): SeccompAllowlist {
@@ -25,9 +32,12 @@ export function loadAllowlist(): SeccompAllowlist {
  */
 export function buildSeccompPolicy(): string {
   const allowlist = loadAllowlist();
+  const filtered = allowlist.filtered_syscalls ?? [];
+  const filteredEntries = filtered.map((f) => `${f.name} { ${f.filter} }`);
+  const allEntries = [...allowlist.syscalls, ...filteredEntries];
   const lines = [
     "POLICY seccomp_policy {",
-    `  ALLOW { ${allowlist.syscalls.join(", ")} }`,
+    `  ALLOW { ${allEntries.join(", ")} }`,
     "}",
     "DEFAULT KILL",
     "USE seccomp_policy",
