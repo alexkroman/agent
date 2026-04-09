@@ -2,8 +2,8 @@
 /**
  * Guest-side harness entrypoint.
  *
- * Connects to the host over a stream (vsock in production, Unix socket in
- * dev/test). Uses vscode-jsonrpc for request/response framing and dispatch.
+ * Connects to the host over a stream (stdio pipes in production, Unix socket
+ * in dev/test). Uses vscode-jsonrpc for request/response framing and dispatch.
  *
  * The guest is both:
  * - A server (responds to tool/execute, hook/invoke, bundle/load requests)
@@ -15,10 +15,15 @@ import {
   createMessageConnection,
   StreamMessageReader,
   StreamMessageWriter,
-} from "vscode-jsonrpc/node";
-import { executeTool, initHarness, invokeHook, resetAgentEnv } from "./harness-logic.ts";
-
-export type { KvInterface } from "./harness-logic.ts";
+  // Use .js extension for Node's native ESM resolver (fake-vm fork)
+} from "vscode-jsonrpc/node.js";
+import {
+  executeTool,
+  initHarness,
+  invokeHook,
+  type KvInterface,
+  resetAgentEnv,
+} from "./harness-logic.ts";
 
 // ── createGuestConnection ─────────────────────────────────────────────────────
 
@@ -28,7 +33,7 @@ export type { KvInterface } from "./harness-logic.ts";
  * Also builds a KV proxy that sends JSON-RPC requests to the host for each
  * KV operation, awaiting the host's response before resolving.
  *
- * @param input  - Readable stream from the host (e.g. process.stdin, vsock)
+ * @param input  - Readable stream from the host (e.g. process.stdin, socket)
  * @param output - Writable stream to the host
  */
 export function createGuestConnection(input: Readable, output: Writable) {
@@ -61,7 +66,7 @@ export function createGuestConnection(input: Readable, output: Writable) {
  *
  * 1. Registers bundle/load handler and waits for the host to load the agent bundle
  * 2. Sets env vars from the bundle message (AAI_ENV_ prefix)
- * 3. Loads the agent code via new Function() (VM/vsock is the security boundary)
+ * 3. Loads the agent code via new Function() (sandbox container is the security boundary)
  * 4. Initializes harness logic (initHarness)
  * 5. Registers RPC handlers and enters concurrent dispatch loop
  */
@@ -83,7 +88,7 @@ export async function main(input: Readable, output: Writable): Promise<void> {
   }
   resetAgentEnv(); // Clear cached env so getAgentEnv() picks up new vars
 
-  // Load agent code — the VM/vsock channel is the security boundary.
+  // Load agent code — the sandbox container is the security boundary.
   // Agent code is trusted within the VM; this evaluates the pre-compiled CJS bundle.
   // new Function() is intentional: VM is the security boundary.
   const mod = { exports: {} as Record<string, unknown> };
@@ -95,10 +100,17 @@ export async function main(input: Readable, output: Writable): Promise<void> {
 
   const { sessionState, hooks } = initHarness(agent, kv);
 
-  // Register RPC methods for concurrent dispatch
-  conn.onRequest("tool/execute", (params: Parameters<typeof executeTool>[1]) =>
-    executeTool(agent, params, sessionState, kv),
-  );
+  // Register RPC methods for concurrent dispatch.
+  // Tool errors are caught and returned as { error } instead of propagating
+  // as JSON-RPC errors, so the host can distinguish tool failures from
+  // transport/protocol failures.
+  conn.onRequest("tool/execute", async (params: Parameters<typeof executeTool>[1]) => {
+    try {
+      return await executeTool(agent, params, sessionState, kv);
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) };
+    }
+  });
 
   conn.onRequest("hook/invoke", (params: Parameters<typeof invokeHook>[1]) =>
     invokeHook(hooks, params, sessionState),

@@ -1,25 +1,24 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Agent sandbox backed by Firecracker microVMs (Linux) or child processes
+ * Agent sandbox backed by gVisor OCI containers (Linux) or child processes
  * (macOS dev mode).
  *
  * The host runs `createRuntime()` with VM-backed `executeTool` and `hooks`
  * overrides, giving it the same session/S2S/WebSocket handling as self-hosted
  * mode without duplicating any of that logic.
  *
- * Communication with the guest uses the newline-delimited JSON RPC channel
- * from `vsock.ts`, mediated by the `SandboxHandle` from `sandbox-vm.ts`.
+ * Communication with the guest uses vscode-jsonrpc over stdio pipes,
+ * mediated by the `SandboxHandle` from `sandbox-vm.ts`.
  */
 
+import path from "node:path";
 import {
   type AgentHookMap,
   type AgentHooks,
   type AgentRuntime,
   createRuntime,
   type ExecuteTool,
-  HOOK_TIMEOUT_MS,
   resolveAllBuiltins,
-  TOOL_EXECUTION_TIMEOUT_MS,
 } from "@alexkroman1/aai/host";
 import { createHooks } from "hookable";
 import type { Storage } from "unstorage";
@@ -28,7 +27,6 @@ import type { IsolateConfig } from "./rpc-schemas.ts";
 import { TurnConfigResultSchema } from "./rpc-schemas.ts";
 import { type AgentMap, isAtCapacity } from "./sandbox-slots.ts";
 import { createSandboxVm, type SandboxHandle } from "./sandbox-vm.ts";
-import { resolveSnapshotPaths } from "./snapshot.ts";
 import { ssrfSafeFetch } from "./ssrf.ts";
 import type { BundleStore } from "./store-types.ts";
 
@@ -64,12 +62,12 @@ export type Sandbox = AgentRuntime;
  * are registered, avoiding unnecessary VM calls.
  */
 function buildHookInvoker(handle: SandboxHandle, hookFlags: IsolateConfig["hooks"]): AgentHooks {
-  const rpc = async (name: string, extra: Record<string, unknown> = {}): Promise<unknown> => {
-    const response = await handle.request(
-      { type: "hook", hook: name, ...extra },
-      { timeout: HOOK_TIMEOUT_MS },
-    );
-    return response.result;
+  const rpc = async (hook: string, extra: Record<string, unknown> = {}): Promise<unknown> => {
+    const response = await handle.conn.sendRequest<{ result?: unknown }>("hook/invoke", {
+      hook,
+      ...extra,
+    });
+    return response?.result;
   };
 
   const hooks = createHooks<AgentHookMap>();
@@ -123,8 +121,8 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
   const config = opts.agentConfig;
 
   // ── Create sandbox VM handle ─────────────────────────────────────
-  const snapshotDir = process.env.FIRECRACKER_SNAPSHOT_DIR ?? "/opt/firecracker";
-  const snapshotPaths = resolveSnapshotPaths(snapshotDir);
+  const harnessPath =
+    process.env.GUEST_HARNESS_PATH ?? path.resolve(import.meta.dirname, "dist/guest/harness.mjs");
 
   const sandboxHandle = await createSandboxVm({
     slug,
@@ -132,29 +130,18 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
     agentEnv,
     kvStorage: storage,
     kvPrefix: agentKvPrefix(slug),
-    // Firecracker snapshot paths (used on Linux; ignored in dev mode)
-    vmlinuxPath: snapshotPaths.vmlinuxPath,
-    initrdPath: snapshotPaths.initrdPath,
-    snapshotStatePath: snapshotPaths.snapshotStatePath,
-    snapshotMemPath: snapshotPaths.snapshotMemPath,
-    // Dev mode uses a harness path; Firecracker uses snapshots.
-    // The sandbox-vm factory selects the right backend automatically.
-    ...(process.env.GUEST_HARNESS_PATH ? { harnessPath: process.env.GUEST_HARNESS_PATH } : {}),
+    harnessPath,
   });
 
   // ── Build tool executor + hooks from sandbox handle ──────────────
   const executeTool: ExecuteTool = async (name, args, sessionId, messages) => {
-    const response = await sandboxHandle.request(
-      {
-        type: "tool",
-        name,
-        args,
-        sessionId: sessionId ?? "",
-        messages: [...(messages ?? [])],
-      },
-      { timeout: TOOL_EXECUTION_TIMEOUT_MS },
-    );
-    return response.result as string;
+    const response = await sandboxHandle.conn.sendRequest<{ result?: string }>("tool/execute", {
+      name,
+      args,
+      sessionId: sessionId ?? "",
+      messages: [...(messages ?? [])],
+    });
+    return (response?.result ?? "") as string;
   };
 
   const hooks = buildHookInvoker(sandboxHandle, config.hooks);

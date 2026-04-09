@@ -60,7 +60,7 @@ export type ToolCallResponse = z.infer<typeof ToolCallResponseSchema>;
 export type HookResponse = z.infer<typeof HookResponseSchema>;
 export type TurnConfigResult = z.infer<typeof TurnConfigResultSchema>;
 
-// -- IPC message types (host <-> guest over vsock) --------------------
+// -- IPC message types (host <-> guest over jsonrpc) --------------------
 
 export const BundleMessageSchema = z.object({
   id: z.string(),

@@ -2,7 +2,7 @@
 /**
  * Core harness logic — session state management, tool execution, hook invocation.
  *
- * Extracted from harness-runtime.ts for use in the guest Firecracker harness.
+ * Extracted from harness-runtime.ts for use in the guest harness.
  * Unlike harness-runtime.ts, this module:
  * - Has no SecureExec references — KV is passed as a parameter
  * - Can import Zod schemas directly (no `import type` restriction)
@@ -24,9 +24,9 @@ import type {
 /**
  * Async key-value store interface passed to the harness.
  *
- * In the guest harness, KV operations are forwarded to the host over vsock.
+ * In the guest harness, KV operations are forwarded to the host over jsonrpc.
  * This interface mirrors the relevant subset of `Kv` from `@alexkroman1/aai/kv`
- * but uses `del` instead of `delete` to match the vsock KV request schema.
+ * but uses `del` instead of `delete` to match the jsonrpc KV request schema.
  */
 export type KvInterface = {
   get(key: string): Promise<unknown>;

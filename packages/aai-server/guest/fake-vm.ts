@@ -1,8 +1,8 @@
 /**
  * Fake VM for local testing on macOS (no KVM required).
  *
- * Simulates a Firecracker guest by running the harness in a child process
- * that communicates over a Unix domain socket instead of vsock.
+ * Simulates a gVisor guest by running the harness in a child process
+ * that communicates over a Unix domain socket instead of stdio pipes.
  *
  * The test suite connects to the socket and exercises the full integration
  * path: bundle injection, tool execution, KV proxy, hooks, and shutdown.
@@ -17,6 +17,7 @@
  * 4. Exits when the harness exits (shutdown message or socket close)
  */
 
+import fs from "node:fs";
 import net from "node:net";
 import { main } from "./harness.ts";
 
@@ -27,7 +28,6 @@ if (!socketPath) {
 }
 
 // Clean up stale socket
-const fs = await import("node:fs");
 try {
   fs.unlinkSync(socketPath);
 } catch {
@@ -38,8 +38,9 @@ const server = net.createServer((conn) => {
   // Only accept one connection, then close the server
   server.close();
 
-  // Run the guest harness with this connection as the transport
-  main(conn as unknown as import("node:stream").Duplex).catch((err) => {
+  // Run the guest harness with this connection as the transport.
+  // net.Socket is both Readable and Writable, so main(conn, conn) works.
+  main(conn, conn).catch((err) => {
     console.error("Harness error:", err);
     process.exit(1);
   });
