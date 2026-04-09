@@ -16,7 +16,25 @@
  * Run with: deno run --allow-env --no-prompt deno-harness.ts
  */
 
-import { TextLineStream } from "jsr:@std/streams";
+// ---- Inline TextLineStream (avoids jsr: import that can't be bundled) -------
+
+/** Splits a text stream into lines by \n. Minimal replacement for @std/streams TextLineStream. */
+class TextLineStream extends TransformStream<string, string> {
+  constructor() {
+    let buf = "";
+    super({
+      transform(chunk, controller) {
+        buf += chunk;
+        const lines = buf.split("\n");
+        buf = lines.pop() ?? "";
+        for (const line of lines) controller.enqueue(line);
+      },
+      flush(controller) {
+        if (buf) controller.enqueue(buf);
+      },
+    });
+  }
+}
 
 // ---- Inline type definitions ------------------------------------------------
 
