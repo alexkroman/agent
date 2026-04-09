@@ -14,7 +14,7 @@
 import { createInterface } from "node:readline";
 import type { Duplex } from "node:stream";
 import type { HookRequest, ToolCallRequest } from "../rpc-schemas.ts";
-import { executeTool, initHarness, invokeHook, type KvInterface } from "./harness-logic.ts";
+import { executeTool, initHarness, invokeHook } from "./harness-logic.ts";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -254,22 +254,18 @@ export async function main(stream: Duplex): Promise<void> {
   // Extract default export (the agent definition)
   const agent = (mod.exports.default ?? mod.exports) as Parameters<typeof initHarness>[0];
 
-  // Placeholder — will be replaced after createGuestRpc wires the real proxy
-  let kvProxy: KvInterface = {
-    get: () => Promise.resolve(null),
-    set: () => Promise.resolve(),
-    del: () => Promise.resolve(),
-  };
+  // Use late binding so handlers read harnessState at call time (not definition time).
+  // createGuestRpc doesn't invoke handlers until messages arrive, and no messages
+  // arrive until after main() finishes setup — so harnessState is always set by then.
+  let harnessState: ReturnType<typeof initHarness>;
 
-  const harnessState = initHarness(agent, kvProxy);
-
-  const handlers: Parameters<typeof createGuestRpc>[1] = {
+  const rpc = createGuestRpc(stream, {
     async onTool(req): Promise<unknown> {
       return executeTool(
         agent,
         req as unknown as Parameters<typeof executeTool>[1],
         harnessState.sessionState,
-        kvProxy,
+        rpc.kv,
       );
     },
     async onHook(req): Promise<unknown> {
@@ -279,11 +275,10 @@ export async function main(stream: Duplex): Promise<void> {
         harnessState.sessionState,
       );
     },
-  };
+  });
 
-  const rpc = createGuestRpc(stream, handlers);
-  // Wire in the real KV proxy now that the RPC loop is live
-  kvProxy = rpc.kv;
+  // Now init harness with the real KV proxy (not a stub)
+  harnessState = initHarness(agent, rpc.kv);
 
   // The RPC dispatch loop is running via the readline event listener.
   // Keep the process alive — it exits via process.exit(0) on shutdown message.
