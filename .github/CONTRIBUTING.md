@@ -9,7 +9,7 @@ Thanks for your interest in contributing! This guide will help you get started.
 git clone https://github.com/<your-user>/agent.git
 cd agent
 
-# 2. Install dependencies (requires Node >=22.6, pnpm 10.x)
+# 2. Install dependencies (requires Node >=24, pnpm 10.x)
 pnpm install
 
 # 3. Run the full check suite to make sure everything works

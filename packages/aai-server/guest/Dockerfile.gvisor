@@ -8,7 +8,7 @@
 #   docker build -f packages/aai-server/guest/Dockerfile.gvisor -t aai-gvisor-test .
 #   docker run --rm --security-opt seccomp=unconfined aai-gvisor-test
 
-FROM node:22-slim
+FROM node:24-slim
 
 WORKDIR /app
 

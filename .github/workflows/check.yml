@@ -21,7 +21,7 @@ jobs:
       - uses: pnpm/action-setup@v5
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Cache TypeScript incremental build info
@@ -59,7 +59,7 @@ jobs:
       - uses: pnpm/action-setup@v5
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24
       - uses: actions/cache/restore@v5
         with:
           path: |
@@ -95,7 +95,7 @@ jobs:
       - uses: pnpm/action-setup@v5
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24
       - uses: actions/cache/restore@v5
         with:
           path: |
@@ -115,7 +115,7 @@ jobs:
       matrix:
         # Windows excluded: tsdown/rolldown can't resolve .ts exports in aai dist
         os: [ubuntu-latest, macos-latest]
-        node: [22, 24]
+        node: [24]
     steps:
       - uses: actions/checkout@v6
         with:
@@ -162,7 +162,7 @@ jobs:
       matrix:
         # Windows excluded: tsdown/rolldown can't resolve .ts exports in aai dist
         os: [ubuntu-latest, macos-latest]
-        node: [22, 24]
+        node: [24]
         pm: [pnpm, npm, yarn]
     env:
       AAI_TEST_PM: ${{ matrix.pm }}
