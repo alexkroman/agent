@@ -710,7 +710,7 @@ useToolResult(callback: (toolName: string, result: unknown, toolCall: ToolCallIn
 | ---------- | -------------- | ------------------------------------------------------------------------------------------------------------------- |
 | `toolName` | `string`       | Name of the tool that completed                                                                                     |
 | `result`   | `unknown`      | **Parsed JSON** -- the hook parses the raw JSON string for you. Falls back to the raw string if JSON parsing fails. |
-| `toolCall` | `ToolCallInfo` | Full metadata: `{ callId, name, args, status, result, afterMessageIndex }`                                  |
+| `toolCall` | `ToolCallInfo` | Full metadata: `{ callId, name, args, status, result, afterMessageIndex }`                                          |
 
 **When does it fire?** Exactly **once per completed tool call**. It tracks
 `callId` internally, so it never fires twice for the same call -- even
@@ -1032,7 +1032,8 @@ overriding them changes every component that references them.
 
 **Styling rule:** Use Tailwind for layout; use `useTheme()` for colors.
 `useTheme()` returns the active `{ bg, primary, text, surface, border }` values,
-so your component respects theme overrides set in `agent.json` or `defineClient({ theme })`.
+so your component respects theme overrides set in `agent.json`
+or `defineClient({ theme })`.
 
 ```tsx
 import { useTheme } from "@alexkroman1/aai-ui";
