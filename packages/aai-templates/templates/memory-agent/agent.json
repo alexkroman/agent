@@ -1,0 +1,6 @@
+{
+  "name": "Memory Agent",
+  "systemPrompt": { "$ref": "system-prompt.md" },
+  "greeting": "Hey there. I'm an assistant with a long-term memory. Tell me things you want me to remember, and I'll recall them in future conversations.",
+  "builtinTools": ["web_search"]
+}

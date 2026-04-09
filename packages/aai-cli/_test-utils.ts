@@ -3,7 +3,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import type { BundleOutput } from "./_bundler.ts";
+import type { DirectoryBundleOutput } from "./_bundler.ts";
 
 /** Create a temp directory, run `fn`, then clean up. */
 export async function withTempDir(fn: (dir: string) => Promise<void>): Promise<void> {
@@ -92,27 +92,27 @@ async function copyScaffoldNoOverwrite(scaffoldDir: string, dest: string): Promi
   }
 }
 
-/** Create a minimal BundleOutput for deploy tests. */
-export function makeBundle(overrides?: Partial<BundleOutput>): BundleOutput {
+/** Create a minimal DirectoryBundleOutput for deploy tests. */
+export function makeBundle(overrides?: Partial<DirectoryBundleOutput>): DirectoryBundleOutput {
   return {
-    slug: "test-agent",
-    worker: "// worker",
-    clientFiles: { "index.html": "<html></html>" },
-    clientDir: "/tmp/test-client",
-    workerBytes: 9,
-    agentConfig: {
+    manifest: {
       name: "test-agent",
       systemPrompt: "Test",
-      toolSchemas: [],
-      hasState: false,
+      greeting: "",
+      builtinTools: [],
+      maxSteps: 16,
+      toolChoice: "auto",
+      tools: {},
       hooks: {
         onConnect: false,
         onDisconnect: false,
         onError: false,
         onUserTranscript: false,
-        maxStepsIsFn: false,
       },
     },
+    manifestJson: "{}",
+    toolBundles: {},
+    hookBundles: {},
     ...overrides,
   };
 }

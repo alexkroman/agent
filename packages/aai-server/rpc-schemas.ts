@@ -2,9 +2,9 @@
 /**
  * Zod schemas for the host ↔ guest RPC boundary.
  *
- * Both host (sandbox.ts) and guest harness import these schemas directly.
- * The guest harness is compiled by esbuild with all deps inlined, so Zod
- * is bundled into the guest binary rather than resolved at runtime.
+ * The host (sandbox.ts) validates isolate responses with these schemas.
+ * The isolate (harness-runtime.ts) is self-contained and does not
+ * import these schemas — it uses inline type definitions instead.
  */
 
 import { z } from "zod";

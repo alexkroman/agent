@@ -46,9 +46,15 @@ expect.extend({
       };
     }
 
-    const pass = received.toHaveCalledTool(toolName, args);
+    const pass = received.toolCalls.some((tc) => {
+      if (tc.name !== toolName) return false;
+      if (!args) return true;
+      return Object.entries(args).every(
+        ([key, value]) => JSON.stringify(tc.args[key]) === JSON.stringify(value),
+      );
+    });
 
-    const calledTools = received.toolCalls.map((tc) => tc.toolName);
+    const calledTools = received.toolCalls.map((tc) => tc.name);
     const argsHint = args ? ` with args ${JSON.stringify(args)}` : "";
 
     return {

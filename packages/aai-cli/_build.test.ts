@@ -3,39 +3,34 @@ import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
 import { buildAgentBundle, runBuildCommand } from "./_bundler.ts";
-import { withTempDir } from "./_test-utils.ts";
+import { silenced, withTempDir } from "./_test-utils.ts";
 
 describe("buildAgentBundle", () => {
-  test("throws when no agent found in directory", async () => {
+  test("throws when no agent.json found in directory", async () => {
     await withTempDir(async (dir) => {
-      await expect(buildAgentBundle(dir)).rejects.toThrow("No agent found");
+      await expect(silenced(() => buildAgentBundle(dir))(dir)).rejects.toThrow(
+        "Missing agent.json",
+      );
     });
   });
 
-  test("throws with message suggesting aai init", async () => {
-    await withTempDir(async (dir) => {
-      await expect(buildAgentBundle(dir)).rejects.toThrow("run `aai init` first");
-    });
-  });
-
-  test("wraps BundleError with context message", async () => {
-    await withTempDir(async (dir) => {
-      // Create an agent.ts that will cause a Vite build error
-      await writeFile(path.join(dir, "agent.ts"), "export default {}");
-      try {
-        await buildAgentBundle(dir);
-      } catch (err: unknown) {
-        expect(err).toBeInstanceOf(Error);
-        expect((err as Error).message).toContain("Build failed");
-      }
-    });
+  test("bundles minimal agent directory", async () => {
+    await withTempDir(
+      silenced(async (dir) => {
+        await writeFile(path.join(dir, "agent.json"), JSON.stringify({ name: "build-test-agent" }));
+        const bundle = await buildAgentBundle(dir);
+        expect(bundle.manifest.name).toBe("build-test-agent");
+        expect(bundle.toolBundles).toEqual({});
+        expect(bundle.hookBundles).toEqual({});
+      }),
+    );
   });
 });
 
 describe("runBuildCommand", () => {
-  test("throws when no agent found", async () => {
+  test("throws when no agent.json found", async () => {
     await withTempDir(async (dir) => {
-      await expect(runBuildCommand(dir)).rejects.toThrow("No agent found");
+      await expect(silenced(() => runBuildCommand(dir))(dir)).rejects.toThrow("Missing agent.json");
     });
   });
 });

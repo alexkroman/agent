@@ -1,21 +1,19 @@
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { createTestHarness } from "@alexkroman1/aai/testing";
 import { describe, expect, test } from "vitest";
-import "@alexkroman1/aai/testing/matchers";
-import agent from "./agent.ts";
+
+const __dirname = fileURLToPath(new URL(".", import.meta.url));
 
 describe("Simple Assistant", () => {
-  test("agent is defined with correct name", () => {
-    expect(agent.name).toBe("Simple Assistant");
-  });
-
-  test("harness can be created", () => {
-    const t = createTestHarness(agent);
+  test("harness loads without errors", async () => {
+    const t = await createTestHarness(join(__dirname));
     expect(t).toBeDefined();
     expect(t.messages).toHaveLength(0);
   });
 
   test("conversation tracks messages", async () => {
-    const t = createTestHarness(agent);
+    const t = await createTestHarness(join(__dirname));
     await t.turn("Hello");
     expect(t.messages).toHaveLength(1);
     expect(t.messages[0]?.content).toBe("Hello");

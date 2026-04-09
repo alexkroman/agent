@@ -60,11 +60,6 @@
       "@dev/source": "./isolate/_utils.ts",
       "types": "./dist/isolate/_utils.d.ts",
       "import": "./dist/isolate/_utils.js"
-    },
-    "./vite-plugin": {
-      "@dev/source": "./host/vite-plugin.ts",
-      "types": "./dist/host/vite-plugin.d.ts",
-      "import": "./dist/host/vite-plugin.js"
     }
   },
   "scripts": {
@@ -98,8 +93,7 @@
     "@types/json-schema": "^7.0.15",
     "@types/node": "^25.5.2",
     "@types/ws": "^8.18.1",
-    "tsdown": "^0.21.7",
-    "vite": "^8.0.6"
+    "tsdown": "^0.21.7"
   },
   "engines": {
     "node": ">=22.6"

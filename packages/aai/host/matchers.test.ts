@@ -1,4 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
+/// <reference path="./matchers.d.ts" />
 import { describe, expect, test } from "vitest";
 import { TurnResult } from "./testing.ts";
 
@@ -6,30 +7,26 @@ import { TurnResult } from "./testing.ts";
 import "./matchers.ts";
 
 function makeTurnResult(
-  toolCalls: Array<{ toolName: string; args: Record<string, unknown>; result: string }>,
+  toolCalls: Array<{ name: string; args: Record<string, unknown>; result: unknown }>,
 ): TurnResult {
-  return new TurnResult("test input", toolCalls);
+  return new TurnResult(toolCalls);
 }
 
 describe("toHaveCalledTool", () => {
   test("passes when tool was called", () => {
-    const turn = makeTurnResult([
-      { toolName: "get_weather", args: { city: "NYC" }, result: "sunny" },
-    ]);
+    const turn = makeTurnResult([{ name: "get_weather", args: { city: "NYC" }, result: "sunny" }]);
     expect(turn).toHaveCalledTool("get_weather");
   });
 
   test("fails when tool was NOT called", () => {
-    const turn = makeTurnResult([
-      { toolName: "get_weather", args: { city: "NYC" }, result: "sunny" },
-    ]);
+    const turn = makeTurnResult([{ name: "get_weather", args: { city: "NYC" }, result: "sunny" }]);
     expect(turn).not.toHaveCalledTool("search_flights");
   });
 
   test("passes with matching partial args", () => {
     const turn = makeTurnResult([
       {
-        toolName: "add_pizza",
+        name: "add_pizza",
         args: { size: "large", crust: "thin", toppings: ["pepperoni"] },
         result: "added",
       },
@@ -38,9 +35,7 @@ describe("toHaveCalledTool", () => {
   });
 
   test("fails with wrong args", () => {
-    const turn = makeTurnResult([
-      { toolName: "add_pizza", args: { size: "small" }, result: "added" },
-    ]);
+    const turn = makeTurnResult([{ name: "add_pizza", args: { size: "small" }, result: "added" }]);
     expect(turn).not.toHaveCalledTool("add_pizza", { size: "large" });
   });
 
@@ -51,7 +46,7 @@ describe("toHaveCalledTool", () => {
   });
 
   test(".not.toHaveCalledTool on a tool that WAS called", () => {
-    const turn = makeTurnResult([{ toolName: "search", args: {}, result: "results" }]);
+    const turn = makeTurnResult([{ name: "search", args: {}, result: "results" }]);
     expect(() => {
       expect(turn).not.toHaveCalledTool("search");
     }).toThrow(/expected turn NOT to have called tool "search"/);
@@ -59,8 +54,8 @@ describe("toHaveCalledTool", () => {
 
   test("message includes called tool names for debugging", () => {
     const turn = makeTurnResult([
-      { toolName: "tool_a", args: {}, result: "" },
-      { toolName: "tool_b", args: {}, result: "" },
+      { name: "tool_a", args: {}, result: "" },
+      { name: "tool_b", args: {}, result: "" },
     ]);
     expect(() => {
       expect(turn).toHaveCalledTool("tool_c");

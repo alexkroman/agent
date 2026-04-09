@@ -1,11 +1,11 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { apiRequestOrThrow } from "./_api-client.ts";
-import type { BundleOutput } from "./_bundler.ts";
+import type { DirectoryBundleOutput } from "./_bundler.ts";
 
 export type DeployOpts = {
   url: string;
-  bundle: BundleOutput;
+  bundle: DirectoryBundleOutput;
   /** Env var values from .env to send to the server. */
   env: Record<string, string>;
   /** Existing slug for redeployment. Omit for first deploy — server generates one. */
@@ -23,9 +23,9 @@ export async function runDeploy(opts: DeployOpts): Promise<DeployResult> {
   const body = JSON.stringify({
     ...(opts.slug ? { slug: opts.slug } : {}),
     env: opts.env,
-    worker: opts.bundle.worker,
-    clientFiles: opts.bundle.clientFiles,
-    agentConfig: opts.bundle.agentConfig,
+    manifest: opts.bundle.manifest,
+    toolBundles: opts.bundle.toolBundles,
+    hookBundles: opts.bundle.hookBundles,
   });
 
   const resp = await apiRequestOrThrow(

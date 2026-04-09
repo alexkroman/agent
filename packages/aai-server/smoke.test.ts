@@ -7,8 +7,14 @@
  * SDK → deploy body → server round trip without interface mismatch.
  */
 
-import { type AgentDef, defineAgent, defineTool } from "@alexkroman1/aai";
-import { agentToolsToSchemas, resolveAllBuiltins, toAgentConfig } from "@alexkroman1/aai/host";
+import {
+  type AgentDef,
+  agentToolsToSchemas,
+  defineAgent,
+  defineTool,
+  resolveAllBuiltins,
+  toAgentConfig,
+} from "@alexkroman1/aai/host";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import { createTestOrchestrator } from "./test-utils.ts";

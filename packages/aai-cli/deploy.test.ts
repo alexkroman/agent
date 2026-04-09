@@ -31,13 +31,14 @@ describe("runDeploy", () => {
     expect(result.slug).toBe("cool-cats-jump");
   });
 
-  test("sends worker and clientFiles in body", async () => {
+  test("sends manifest and bundles in body", async () => {
     const mockFetch = vi.fn().mockResolvedValue(deployOk());
     await runDeploy(deployOpts(mockFetch));
     const [, init] = mockFetch.mock.calls[0] ?? [];
     const body = JSON.parse(init?.body as string);
-    expect(body.worker).toBe("// worker");
-    expect(body.clientFiles).toEqual({ "index.html": "<html></html>" });
+    expect(body.manifest.name).toBe("test-agent");
+    expect(body.toolBundles).toEqual({});
+    expect(body.hookBundles).toEqual({});
   });
 
   test("sends env vars in body", async () => {
