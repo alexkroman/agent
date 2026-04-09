@@ -8,7 +8,7 @@ export default defineConfig({
     include: ["**/*.test.ts"],
     exclude: [
       "docker-build.test.ts",
-      "sandbox-integration.test.ts",
+      "orchestrator-integration.test.ts",
       "ws-integration.test.ts",
       "node_modules",
       "dist",
