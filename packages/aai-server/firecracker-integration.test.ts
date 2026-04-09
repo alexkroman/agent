@@ -19,7 +19,7 @@
  *   pnpm --filter @alexkroman1/aai-server exec vitest run --config vitest.firecracker.config.ts
  */
 
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import fs from "node:fs/promises";
 import http from "node:http";
 import net from "node:net";
@@ -139,8 +139,23 @@ async function coldBootVm(opts: { guestCid: number; vsockUdsPath: string }): Pro
   const apiSocketPath = path.join(tmpDir, `fc-api-${opts.guestCid}.sock`);
 
   const fc = spawn("firecracker", ["--api-sock", apiSocketPath], {
-    stdio: "ignore",
+    stdio: ["ignore", "pipe", "pipe"],
     detached: false,
+  });
+
+  // Capture Firecracker stdout/stderr for debugging boot issues
+  let fcOutput = "";
+  fc.stdout?.on("data", (chunk: Buffer) => {
+    fcOutput += chunk.toString();
+  });
+  fc.stderr?.on("data", (chunk: Buffer) => {
+    fcOutput += chunk.toString();
+  });
+  fc.on("exit", (code) => {
+    if (code !== 0 && code !== null) {
+      console.error(`[FC cid=${opts.guestCid}] exited with code ${code}`);
+      console.error(`[FC cid=${opts.guestCid}] output:\n${fcOutput.slice(-2000)}`);
+    }
   });
 
   activeVms.push({
@@ -160,7 +175,7 @@ async function coldBootVm(opts: { guestCid: number; vsockUdsPath: string }): Pro
   await firecrackerApi(apiSocketPath, "PUT", "/boot-source", {
     kernel_image_path: VMLINUX_PATH,
     initrd_path: INITRD_PATH,
-    boot_args: "console=ttyS0 reboot=k panic=1 pci=off -- /app/harness.js",
+    boot_args: "console=ttyS0 reboot=k panic=1 pci=off init=/init",
   });
 
   await firecrackerApi(apiSocketPath, "PUT", "/machine-config", {
@@ -239,7 +254,20 @@ async function connectVsock(
   return new Promise((resolve, reject) => {
     function tryConnect() {
       if (Date.now() >= deadline) {
-        reject(new Error(`Could not connect to vsock within ${timeout}ms: ${actualPath}`));
+        // Log diagnostic info about what files exist in the socket directory
+        const dir = path.dirname(actualPath);
+        let files = "unknown";
+        try {
+          files = readdirSync(dir).join(", ");
+        } catch {
+          // directory may not exist
+        }
+        reject(
+          new Error(
+            `Could not connect to vsock within ${timeout}ms: ${actualPath}\n` +
+              `  Files in ${dir}: [${files}]`,
+          ),
+        );
         return;
       }
 
