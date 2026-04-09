@@ -64,6 +64,13 @@ export async function ensureApiKey(configDir?: string): Promise<string> {
   const config = await readGlobalConfig(dir);
   if (config.apiKey) return config.apiKey;
 
+  // Allow non-interactive usage (CI, Claude Code) via env var
+  const envKey = process.env.ASSEMBLYAI_API_KEY;
+  if (envKey) {
+    await writeGlobalConfig(dir, { ...config, apiKey: envKey });
+    return envKey;
+  }
+
   const result = await p.password({ message: "Enter your AssemblyAI API key" });
   if (p.isCancel(result)) {
     p.cancel("Setup cancelled");

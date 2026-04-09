@@ -14,6 +14,7 @@ import { pathToFileURL } from "node:url";
 import { parseEnvFile } from "@alexkroman1/aai-core";
 import type { Manifest } from "@alexkroman1/aai-core/manifest";
 import type { AgentServer } from "@alexkroman1/aai-core/runtime";
+import { ensureApiKey } from "./_config.ts";
 import { log } from "./_ui.ts";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -72,6 +73,10 @@ async function resolveAgentEnv(root: string): Promise<Record<string, string>> {
   const env: Record<string, string> = {};
   for (const [key, fileVal] of Object.entries(fileEntries)) {
     env[key] = process.env[key] ?? fileVal;
+  }
+  // Inject global API key if not already set by .env or process.env
+  if (!env.ASSEMBLYAI_API_KEY) {
+    env.ASSEMBLYAI_API_KEY = await ensureApiKey();
   }
   return env;
 }

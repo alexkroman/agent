@@ -5,7 +5,7 @@
  */
 
 export const HINT_INVALID_API_KEY =
-  "Your API key may be invalid. Check ASSEMBLYAI_API_KEY in your agent's .env file.";
+  "Your API key may be invalid. Run `aai` to re-enter your AssemblyAI API key.";
 
 /**
  * Send an authenticated request to the platform API.

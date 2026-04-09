@@ -107,6 +107,25 @@ describe("ensureApiKey", () => {
     vi.mocked(p.isCancel).mockReset();
   });
 
+  test("reads from ASSEMBLYAI_API_KEY env var and saves to config", async () => {
+    const p = await import("@clack/prompts");
+    const original = process.env.ASSEMBLYAI_API_KEY;
+    process.env.ASSEMBLYAI_API_KEY = "env-var-key";
+
+    await withTempDir(async (dir) => {
+      const { readGlobalConfig, ensureApiKey } = await import("./_config.ts");
+      const key = await ensureApiKey(dir);
+      expect(key).toBe("env-var-key");
+      expect(p.password).not.toHaveBeenCalled();
+      const saved = await readGlobalConfig(dir);
+      expect(saved.apiKey).toBe("env-var-key");
+    });
+
+    if (original === undefined) delete process.env.ASSEMBLYAI_API_KEY;
+    else process.env.ASSEMBLYAI_API_KEY = original;
+    vi.mocked(p.password).mockReset();
+  });
+
   test("calls cancel and exits when user cancels prompt", async () => {
     const p = await import("@clack/prompts");
     const cancelSymbol = Symbol("cancel");

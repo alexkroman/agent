@@ -216,8 +216,14 @@ Never hardcode secrets in agent code. Access them at runtime via `ctx.env`.
 `ctx.env` contains **only** the secrets you explicitly declare -- not all of
 `process.env`. This keeps behavior consistent between local dev and production.
 
-**Local development** -- add secrets to `.env` in your project root. Only keys
-listed here are available via `ctx.env` (shell exports override `.env` values):
+**AssemblyAI API key:** The `aai` CLI prompts for your AssemblyAI API key on
+first use and stores it globally (`~/.config/aai/config.json`). You don't need
+to add it to `.env` -- it's injected automatically in both dev and deploy.
+For non-interactive environments (CI, Claude Code), set the
+`ASSEMBLYAI_API_KEY` environment variable instead.
+
+**Local development** -- add agent-specific secrets to `.env` in your project
+root. Only keys listed here are available via `ctx.env`:
 
 ```sh
 # .env (gitignored)

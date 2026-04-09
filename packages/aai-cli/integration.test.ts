@@ -28,6 +28,15 @@ vi.mock("@clack/prompts", async (importOriginal) => {
   };
 });
 
+// Mock ensureApiKey to avoid interactive prompt and provide a test key
+vi.mock("./_config.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./_config.ts")>();
+  return {
+    ...actual,
+    ensureApiKey: vi.fn(() => Promise.resolve("test-key")),
+  };
+});
+
 /** Get a request from the recorded list, throwing if it doesn't exist. */
 function getReq(index: number) {
   const r = api.requests[index];
@@ -38,7 +47,6 @@ function getReq(index: number) {
 async function withProjectDir(fn: (dir: string) => Promise<void>): Promise<void> {
   await withTempDir(async (dir) => {
     await writeProjectConfig(dir, { slug: "my-agent", serverUrl: api.url });
-    await fs.writeFile(path.join(dir, ".env"), "ASSEMBLYAI_API_KEY=test-key\n");
     await fn(dir);
   });
 }
@@ -233,9 +241,10 @@ describe("secrets against mock API", () => {
   });
 
   test("secret with 401 throws API key hint", async () => {
+    const configMod = await import("./_config.ts");
+    vi.mocked(configMod.ensureApiKey).mockResolvedValueOnce("invalid-key");
     await withTempDir(async (dir) => {
       await writeProjectConfig(dir, { slug: "my-agent", serverUrl: api.url });
-      await fs.writeFile(path.join(dir, ".env"), "ASSEMBLYAI_API_KEY=invalid-key\n");
       await expect(runSecretList(dir, api.url)).rejects.toThrow("API key may be invalid");
     });
   });
@@ -359,7 +368,6 @@ describe("missing project config", () => {
 
   test("secret list with no .aai/project.json throws", async () => {
     await withTempDir(async (dir) => {
-      await fs.writeFile(path.join(dir, ".env"), "ASSEMBLYAI_API_KEY=test-key\n");
       await expect(runSecretList(dir, api.url)).rejects.toThrow("No .aai/project.json found");
     });
   });
