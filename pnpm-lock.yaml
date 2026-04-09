@@ -221,6 +221,9 @@ importers:
 
   packages/aai-templates:
     devDependencies:
+      '@alexkroman1/aai-cli':
+        specifier: workspace:*
+        version: link:../aai-cli
       '@alexkroman1/aai-core':
         specifier: workspace:*
         version: link:../aai-core
