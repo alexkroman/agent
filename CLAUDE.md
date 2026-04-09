@@ -98,7 +98,8 @@ Five workspace packages under `packages/`:
 depend on these from consumer code; they may change without notice):
 
 - `./protocol` — wire-format types, Zod schemas, constants
-- `./isolate` — isolate-safe barrel: shared modules (types, protocol, kv, hooks, utils)
+- `./isolate` — isolate-safe barrel: shared modules
+  (types, protocol, kv, hooks, utils)
 - `./host` — host barrel: host-only modules
 - `./hooks` — hook definitions for lifecycle events
 - `./utils` — shared utility functions

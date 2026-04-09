@@ -28,6 +28,7 @@ import type { IsolateConfig } from "./rpc-schemas.ts";
 import { TurnConfigResultSchema } from "./rpc-schemas.ts";
 import { type AgentMap, isAtCapacity } from "./sandbox-slots.ts";
 import { createSandboxVm, type SandboxHandle } from "./sandbox-vm.ts";
+import { resolveSnapshotPaths } from "./snapshot.ts";
 import { ssrfSafeFetch } from "./ssrf.ts";
 import type { BundleStore } from "./store-types.ts";
 
@@ -122,12 +123,20 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
   const config = opts.agentConfig;
 
   // ── Create sandbox VM handle ─────────────────────────────────────
+  const snapshotDir = process.env.FIRECRACKER_SNAPSHOT_DIR ?? "/opt/firecracker";
+  const snapshotPaths = resolveSnapshotPaths(snapshotDir);
+
   const sandboxHandle = await createSandboxVm({
     slug,
     workerCode,
     agentEnv,
     kvStorage: storage,
     kvPrefix: agentKvPrefix(slug),
+    // Firecracker snapshot paths (used on Linux; ignored in dev mode)
+    vmlinuxPath: snapshotPaths.vmlinuxPath,
+    initrdPath: snapshotPaths.initrdPath,
+    snapshotStatePath: snapshotPaths.snapshotStatePath,
+    snapshotMemPath: snapshotPaths.snapshotMemPath,
     // Dev mode uses a harness path; Firecracker uses snapshots.
     // The sandbox-vm factory selects the right backend automatically.
     ...(process.env.GUEST_HARNESS_PATH ? { harnessPath: process.env.GUEST_HARNESS_PATH } : {}),
