@@ -1,26 +1,16 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "ignoreUnresolved": ["./_jsdom-setup.ts", "./host/matchers.ts", "../aai/host/matchers.ts"],
+  "ignoreUnresolved": ["./_jsdom-setup.ts", "./host/matchers.ts"],
   "ignoreExportsUsedInFile": true,
   "exclude": ["exports", "types", "optionalPeerDependencies"],
   "workspaces": {
     ".": {
-      "entry": ["scripts/*.{mjs,ts}", "vitest.integration.config.ts", "vitest.adversarial.config.ts"],
+      "entry": ["scripts/*.{mjs,ts}", "vitest.adversarial.config.ts"],
       "ignoreDependencies": ["ws"]
     },
     "packages/aai": {
       "entry": [
-        "index.ts",
-        "isolate/index.ts",
-        "host/index.ts",
-        "host/server.ts",
-        "host/testing.ts",
         "host/_test-utils.ts",
-        "isolate/types.ts",
-        "isolate/kv.ts",
-        "isolate/protocol.ts",
-        "isolate/hooks.ts",
-        "isolate/_utils.ts",
         "**/*.test.ts",
         "**/*.test-d.ts"
       ],

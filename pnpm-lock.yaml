@@ -102,9 +102,6 @@ importers:
       tsdown:
         specifier: ^0.21.7
         version: 0.21.7(@arethetypeswrong/core@0.18.2)(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.2)(oxc-resolver@11.19.1(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.2))(publint@0.3.18)(typescript@6.0.2)
-      vite:
-        specifier: ^8.0.6
-        version: 8.0.6(@types/node@25.5.2)(esbuild@0.28.0)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3)
 
   packages/aai-cli:
     dependencies:
