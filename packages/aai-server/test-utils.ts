@@ -128,7 +128,6 @@ export const TEST_AGENT_CONFIG = {
   systemPrompt: "Test",
   greeting: "",
   toolSchemas: [],
-  hasState: false,
   hooks: {
     onConnect: false,
     onDisconnect: false,

@@ -33,9 +33,14 @@ export const IsolateConfigSchema = z.object({
   maxSteps: z.number().optional(),
   toolChoice: z.enum(["auto", "required"]).optional(),
   builtinTools: z.array(z.string()).optional(),
-  toolSchemas: z.array(ToolSchemaSchema),
-  hasState: z.boolean(),
-  hooks: HooksSchema,
+  toolSchemas: z.array(ToolSchemaSchema).default([]),
+  hooks: HooksSchema.default({
+    onConnect: false,
+    onDisconnect: false,
+    onError: false,
+    onUserTranscript: false,
+    maxStepsIsFn: false,
+  }),
 });
 
 export type IsolateConfig = z.infer<typeof IsolateConfigSchema>;

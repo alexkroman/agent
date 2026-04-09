@@ -2,114 +2,70 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 import { build } from "vite";
 import { type CommandResult, ok } from "./_output.ts";
 
-/** Output from the directory-based bundler (agent.ts single entry point). */
+/** Output from the bundler: agent.json (verbatim) + esbuild output of tools.ts. */
 export type DirectoryBundleOutput = {
-  /** Single ESM bundle exporting an AgentDef (tools + hooks compiled in). */
+  /** ESM bundle of tools.ts (tool execute functions + hook handlers). */
   worker: string;
-  /** Static client files from Vite build (path -> content). Empty if no client.tsx. */
+  /** Static client files from Vite build. Empty if no client.tsx. */
   clientFiles: Record<string, string>;
-  /** Pre-extracted agent config for the server (derived from manifest). */
-  agentConfig: {
-    name: string;
-    systemPrompt: string;
-    greeting?: string;
-    sttPrompt?: string;
-    maxSteps?: number;
-    toolChoice?: "auto" | "required";
-    builtinTools?: string[];
-    toolSchemas: { name: string; description: string; parameters: Record<string, unknown> }[];
-    hasState: boolean;
-    hooks: {
-      onConnect: boolean;
-      onDisconnect: boolean;
-      onError: boolean;
-      onUserTranscript: boolean;
-      maxStepsIsFn: boolean;
-    };
-  };
+  /** agent.json contents — sent verbatim as agentConfig to the server. */
+  agentConfig: Record<string, unknown>;
 };
 
-// ── Directory-based bundler (agent.ts single entry point) ───────────────────
-
 /**
- * Bundle an agent directory (agent.ts entry point) into a single ESM worker
- * string + agentConfig.
+ * Bundle an agent directory: read agent.json + esbuild tools.ts.
  *
- * 1. Dynamically imports agent.ts to extract metadata for agentConfig
- * 2. Runs esbuild to produce a single ESM bundle
- * 3. Returns { worker, clientFiles, agentConfig }
+ * - agent.json is the declarative config (name, systemPrompt, toolSchemas, etc.)
+ *   and is sent verbatim to the server as agentConfig.
+ * - tools.ts is the code entry point (exports tool functions + hooks)
+ *   and is bundled into a single ESM worker string.
  */
 export async function buildAgentBundle(cwd: string): Promise<DirectoryBundleOutput> {
   const { log } = await import("./_ui.ts");
 
-  const entryPoint = path.join(cwd, "agent.ts");
+  // ── Read agent.json ────────────────────────────────────────────────────
+  const agentJsonPath = path.join(cwd, "agent.json");
+  let agentConfig: Record<string, unknown>;
   try {
-    await fs.access(entryPoint);
+    agentConfig = JSON.parse(await fs.readFile(agentJsonPath, "utf-8"));
   } catch (err) {
-    throw new Error("Missing agent.ts in agent directory", { cause: err });
+    throw new Error(`Missing agent.json in ${cwd}`, { cause: err });
   }
 
-  // ── Import agent.ts to extract metadata ────────────────────────────────
-  const fileUrl = pathToFileURL(entryPoint).href;
-  const mod = await import(`${fileUrl}?t=${Date.now()}`);
-  const agent = mod.default;
-
-  if (!agent || typeof agent !== "object") {
-    throw new Error("agent.ts must have a default export");
+  if (!agentConfig.name || typeof agentConfig.name !== "string") {
+    throw new Error("agent.json must have a name field");
   }
 
-  log.step(`Bundling ${agent.name}`);
+  log.step(`Bundling ${agentConfig.name}`);
 
-  // ── Run esbuild to produce ESM bundle ──────────────────────────────────
-  const { build: esbuild } = await import("esbuild");
-  const result = await esbuild({
-    entryPoints: [entryPoint],
-    bundle: true,
-    write: false,
-    format: "esm",
-    platform: "node",
-    target: "node20",
-  });
-
-  const output = result.outputFiles[0];
-  if (!output) {
-    throw new Error("esbuild produced no output for agent.ts");
+  // ── Bundle tools.ts with esbuild ───────────────────────────────────────
+  const toolsEntry = path.join(cwd, "tools.ts");
+  let worker = "";
+  try {
+    await fs.access(toolsEntry);
+    const { build: esbuild } = await import("esbuild");
+    const result = await esbuild({
+      entryPoints: [toolsEntry],
+      bundle: true,
+      write: false,
+      format: "esm",
+      platform: "node",
+      target: "node20",
+    });
+    const output = result.outputFiles[0];
+    if (!output) throw new Error("esbuild produced no output for tools.ts");
+    worker = output.text;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      // No tools.ts — agent has no custom tools/hooks, just builtins
+      worker = "export const tools = {}; export const hooks = {};";
+    } else {
+      throw err;
+    }
   }
-  const worker = output.text;
-
-  // ── Derive agentConfig from the imported agent ─────────────────────────
-  const tools = agent.tools ?? {};
-  const agentConfig: DirectoryBundleOutput["agentConfig"] = {
-    name: agent.name,
-    systemPrompt: agent.systemPrompt ?? "",
-    ...(agent.greeting ? { greeting: agent.greeting } : {}),
-    ...(agent.sttPrompt ? { sttPrompt: agent.sttPrompt } : {}),
-    ...(agent.maxSteps != null
-      ? { maxSteps: typeof agent.maxSteps === "number" ? agent.maxSteps : undefined }
-      : {}),
-    ...(agent.toolChoice ? { toolChoice: agent.toolChoice } : {}),
-    ...(agent.builtinTools ? { builtinTools: agent.builtinTools } : {}),
-    toolSchemas: Object.entries(tools).map(([name, tool]) => {
-      const t = tool as Record<string, unknown>;
-      return {
-        name,
-        description: (t.description as string) ?? "",
-        parameters: (t.parameters as Record<string, unknown>) ?? {},
-      };
-    }),
-    hasState: typeof agent.state === "function",
-    hooks: {
-      onConnect: typeof agent.onConnect === "function",
-      onDisconnect: typeof agent.onDisconnect === "function",
-      onError: typeof agent.onError === "function",
-      onUserTranscript: typeof agent.onUserTranscript === "function",
-      maxStepsIsFn: typeof agent.maxSteps === "function",
-    },
-  };
 
   return { worker, clientFiles: {}, agentConfig };
 }
@@ -139,7 +95,7 @@ async function buildClient(cwd: string): Promise<void> {
 }
 
 type BuildData = {
-  manifest: { name: string; tools: string[] };
+  name: string;
   workerBytes: number;
 };
 
@@ -150,10 +106,7 @@ export async function executeBuild(cwd: string): Promise<CommandResult<BuildData
   log.success("Build complete");
 
   return ok({
-    manifest: {
-      name: bundle.agentConfig.name,
-      tools: bundle.agentConfig.toolSchemas.map((t) => t.name),
-    },
+    name: bundle.agentConfig.name as string,
     workerBytes: bundle.worker.length,
   });
 }

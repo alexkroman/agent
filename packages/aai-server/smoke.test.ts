@@ -25,7 +25,6 @@ function buildDeployBodyFromAgent(agent: AgentDef<any>): string {
   const agentConfig = {
     ...config,
     toolSchemas,
-    hasState: typeof agent.state === "function",
     hooks: {
       onConnect: typeof agent.onConnect === "function",
       onDisconnect: typeof agent.onDisconnect === "function",

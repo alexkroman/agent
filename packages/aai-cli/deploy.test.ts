@@ -36,17 +36,10 @@ describe("runDeploy", () => {
     await runDeploy(deployOpts(mockFetch));
     const [, init] = mockFetch.mock.calls[0] ?? [];
     const body = JSON.parse(init?.body as string);
-    expect(body.worker).toContain("test-agent");
+    expect(body.worker).toBeTruthy();
     expect(body.clientFiles).toEqual({});
     expect(body.agentConfig.name).toBe("test-agent");
     expect(body.agentConfig.toolSchemas).toEqual([]);
-    expect(body.agentConfig.hooks).toEqual({
-      onConnect: false,
-      onDisconnect: false,
-      onError: false,
-      onUserTranscript: false,
-      maxStepsIsFn: false,
-    });
   });
 
   test("sends env vars in body", async () => {

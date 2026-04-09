@@ -29,8 +29,8 @@ const pkgJson = JSON.parse(findPkgJson(cliDir));
 const VERSION: string = pkgJson.version;
 
 async function ensureAgent(cwd: string, yes?: boolean): Promise<string> {
-  const hasAgentTs = await fileExists(path.join(cwd, "agent.ts"));
-  if (!hasAgentTs) {
+  const hasAgent = await fileExists(path.join(cwd, "agent.json"));
+  if (!hasAgent) {
     const { runInitCommand } = await import("./init.ts");
     return runInitCommand({ yes }, { quiet: true });
   }

@@ -209,7 +209,6 @@ describe("POST /deploy", () => {
       name: "config-agent",
       systemPrompt: "Be helpful",
       toolSchemas: [],
-      hasState: false,
       hooks: {
         onConnect: false,
         onDisconnect: false,
