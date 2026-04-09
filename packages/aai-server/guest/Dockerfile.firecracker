@@ -91,7 +91,7 @@ WORKDIR /app
 
 # Install Firecracker binary from GitHub releases
 ARG FIRECRACKER_VERSION=1.12.0
-RUN apt-get update && apt-get install -y --no-install-recommends curl \
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
     && ARCH=$(uname -m) \
     && curl -fsSL "https://github.com/firecracker-microvm/firecracker/releases/download/v${FIRECRACKER_VERSION}/firecracker-v${FIRECRACKER_VERSION}-${ARCH}.tgz" \
        -o /tmp/firecracker.tgz \
