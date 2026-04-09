@@ -17,10 +17,10 @@ import {
   makeClient,
   makeMockHandle,
   silentLogger,
-} from "../../aai/host/_test-utils.ts";
-import { createRuntime } from "../../aai/host/runtime.ts";
-import type { Session } from "../../aai/host/session.ts";
-import { _internals } from "../../aai/host/session.ts";
+} from "../../aai-core/host/_test-utils.ts";
+import { createRuntime } from "../../aai-core/host/runtime.ts";
+import type { Session } from "../../aai-core/host/session.ts";
+import { _internals } from "../../aai-core/host/session.ts";
 
 // ── Stats helpers ───────────────────────────────────────────────────────
 

@@ -8,7 +8,7 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
-import { type HookFlags, type Manifest, parseManifest } from "@alexkroman1/aai/isolate";
+import { type HookFlags, type Manifest, parseManifest } from "@alexkroman1/aai-core/manifest";
 
 // Hook filenames (kebab-case) → HookFlags keys (camelCase)
 const HOOK_FILENAME_MAP: Record<string, keyof HookFlags> = {

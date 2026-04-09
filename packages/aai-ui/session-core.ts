@@ -10,14 +10,18 @@
  * No dependency on React, Preact, or any UI framework.
  */
 
+import { errorMessage } from "@alexkroman1/aai-core";
 import type {
   ClientEvent,
   ClientMessage,
   ReadyConfig,
   ServerMessage,
-} from "@alexkroman1/aai/protocol";
-import { lenientParse, ReadyConfigSchema, ServerMessageSchema } from "@alexkroman1/aai/protocol";
-import { errorMessage } from "@alexkroman1/aai/utils";
+} from "@alexkroman1/aai-core/protocol";
+import {
+  lenientParse,
+  ReadyConfigSchema,
+  ServerMessageSchema,
+} from "@alexkroman1/aai-core/protocol";
 import type { VoiceIO } from "./audio.ts";
 import type {
   AgentState,

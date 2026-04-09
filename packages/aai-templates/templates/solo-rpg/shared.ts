@@ -1,4 +1,4 @@
-import type { ToolResultMap } from "@alexkroman1/aai";
+import type { ToolResultMap } from "@alexkroman1/aai-cli/types";
 
 // ── Shared types between agent.ts and client.tsx ────────────────────────
 

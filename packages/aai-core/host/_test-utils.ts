@@ -246,7 +246,7 @@ export function makeTestHooks(handlers?: Record<string, (...args: unknown[]) => 
  * S2S WebSocket with a mock handle so fixture messages can be replayed
  * through the full orchestration layer.
  *
- * Exercises: defineAgent → toAgentConfig → tool schemas → Zod arg validation
+ * Exercises: AgentDef → toAgentConfig → tool schemas → Zod arg validation
  * → executeToolCall → session orchestration (reply guards, tool buffering,
  * turnPromise chaining).
  *

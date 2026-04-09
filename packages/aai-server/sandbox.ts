@@ -12,14 +12,13 @@
  */
 
 import path from "node:path";
+import type { AgentHookMap, AgentHooks } from "@alexkroman1/aai-core";
 import {
-  type AgentHookMap,
-  type AgentHooks,
   type AgentRuntime,
   createRuntime,
   type ExecuteTool,
   resolveAllBuiltins,
-} from "@alexkroman1/aai/host";
+} from "@alexkroman1/aai-core/runtime";
 import { createHooks } from "hookable";
 import type { Storage } from "unstorage";
 import { agentKvPrefix } from "./constants.ts";
@@ -158,10 +157,10 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
       tools: {},
       ...(config.sttPrompt ? { sttPrompt: config.sttPrompt } : {}),
       ...(config.toolChoice
-        ? { toolChoice: config.toolChoice as import("@alexkroman1/aai/types").ToolChoice }
+        ? { toolChoice: config.toolChoice as import("@alexkroman1/aai-core").ToolChoice }
         : {}),
       ...(config.builtinTools
-        ? { builtinTools: config.builtinTools as import("@alexkroman1/aai/types").BuiltinTool[] }
+        ? { builtinTools: config.builtinTools as import("@alexkroman1/aai-core").BuiltinTool[] }
         : {}),
     },
     env: { ...agentEnv, ASSEMBLYAI_API_KEY: apiKey },

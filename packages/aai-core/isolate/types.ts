@@ -150,82 +150,6 @@ export type ToolDef<
 };
 
 /**
- * Identity helper that preserves the Zod schema generic for type inference.
- *
- * When tools are defined inline in `defineAgent({ tools: { ... } })`, the
- * generic `P` gets widened to the base `ZodObject` type, so `args` in
- * `execute` loses its specific shape. Wrapping a tool definition in
- * `defineTool()` lets TypeScript infer `P` from `parameters` and type
- * `args` correctly.
- *
- * @example
- * ```ts
- * import { defineAgent, defineTool } from "aai";
- * import { z } from "zod";
- *
- * export default defineAgent({
- *   name: "my-agent",
- *   tools: {
- *     greet: defineTool({
- *       description: "Greet the user",
- *       parameters: z.object({ name: z.string() }),
- *       execute: ({ name }) => `Hello, ${name}!`, // name is string
- *     }),
- *   },
- * });
- * ```
- *
- * @public
- */
-export function defineTool<P extends z.ZodObject<z.ZodRawShape>, S = Record<string, unknown>>(
-  def: ToolDef<P, S>,
-): ToolDef<P, S> {
-  return def;
-}
-
-/**
- * Create a typed `defineTool` helper with the session state type baked in.
- *
- * When tools need access to typed session state, you'd normally have to write
- * verbose generics on every `defineTool` call. `defineToolFactory` eliminates
- * that boilerplate by returning a `defineTool` variant that already knows `S`.
- *
- * @example
- * ```ts
- * import { defineToolFactory, defineAgent } from "aai";
- * import { z } from "zod";
- *
- * interface PortfolioState { holdings: Map<string, number> }
- *
- * const tool = defineToolFactory<PortfolioState>();
- *
- * export default defineAgent<PortfolioState>({
- *   name: "portfolio",
- *   state: () => ({ holdings: new Map() }),
- *   tools: {
- *     buy: tool({
- *       description: "Buy shares",
- *       parameters: z.object({ symbol: z.string(), qty: z.number() }),
- *       execute: (args, ctx) => {
- *         // args.symbol is string, ctx.state is PortfolioState
- *         ctx.state.holdings.set(args.symbol, args.qty);
- *       },
- *     }),
- *   },
- * });
- * ```
- *
- * @public
- */
-export function defineToolFactory<S = Record<string, unknown>>(): <
-  P extends z.ZodObject<z.ZodRawShape>,
->(
-  def: ToolDef<P, S>,
-) => ToolDef<P, S> {
-  return (def) => def;
-}
-
-/**
  * A mapping of tool names to their result types.
  *
  * Define this in a shared file (e.g. `shared.ts`) that both `agent.ts` and
@@ -235,7 +159,7 @@ export function defineToolFactory<S = Record<string, unknown>>(): <
  * @example
  * ```ts
  * // shared.ts
- * import type { ToolResultMap } from "@alexkroman1/aai";
+ * import type { ToolResultMap } from "@alexkroman1/aai-cli/types";
  *
  * export interface Pizza {
  *   id: number;
@@ -265,81 +189,6 @@ export function defineToolFactory<S = Record<string, unknown>>(): <
 export type ToolResultMap<T extends Record<string, unknown> = Record<string, unknown>> = T;
 
 /**
- * Options passed to {@link defineAgent} to configure an agent.
- *
- * Only `name` is required; all other fields have sensible defaults.
- *
- * @typeParam S - The shape of per-session state returned by the `state`
- *   factory. Defaults to `Record<string, unknown>`.
- *
- * @example
- * ```ts
- * import { defineAgent } from "aai";
- * import { z } from "zod";
- *
- * export default defineAgent({
- *   name: "research-bot",
- *   systemPrompt: "You help users research topics.",
- *   builtinTools: ["web_search"],
- *   tools: {
- *     summarize: {
- *       description: "Summarize text",
- *       parameters: z.object({ text: z.string() }),
- *       execute: ({ text }) => text.slice(0, 200) + "...",
- *     },
- *   },
- * });
- * ```
- *
- * @public
- */
-export type AgentOptions<S = Record<string, unknown>> = {
-  /** Display name for the agent. */
-  name: string;
-  /** System prompt for the LLM. Defaults to a built-in voice-optimized prompt. */
-  systemPrompt?: string;
-  /** Initial spoken greeting when a session starts. */
-  greeting?: string;
-  /** Prompt hint for the STT model to improve transcription accuracy. */
-  sttPrompt?: string;
-  /**
-   * Maximum agentic loop iterations per turn. Can be a static number or
-   * a function that receives the hook context and returns a number.
-   *
-   * @defaultValue 5
-   */
-  maxSteps?: number | ((ctx: HookContext<S>) => number);
-  /** How the LLM should choose tools. */
-  toolChoice?: ToolChoice;
-  /** Built-in tools to enable (e.g. `"web_search"`, `"run_code"`). */
-  builtinTools?: readonly BuiltinTool[];
-  /** Custom tools the agent can invoke. */
-  tools?: Readonly<Record<string, ToolDef<z.ZodObject<z.ZodRawShape>, NoInfer<S>>>>;
-  /** Factory that creates fresh per-session state. Called once per connection. */
-  state?: () => S;
-  /** Called when a new session connects. */
-  onConnect?: (ctx: HookContext<S>) => void | Promise<void>;
-  /** Called when a session disconnects. */
-  onDisconnect?: (ctx: HookContext<S>) => void | Promise<void>;
-  /** Called when an unhandled error occurs. */
-  onError?: (error: Error, ctx?: HookContext<S>) => void;
-  /** Called when a final user transcript is received. */
-  onUserTranscript?: (text: string, ctx: HookContext<S>) => void | Promise<void>;
-
-  /**
-   * Close the S2S connection after this many milliseconds of inactivity.
-   * Inactivity means no audio, transcripts, or tool calls in either direction.
-   * When the timeout fires the session is stopped and the client receives an
-   * `idle_timeout` event.
-   *
-   * Set to `0` or `Infinity` to disable.
-   *
-   * @defaultValue 300_000 (5 minutes)
-   */
-  idleTimeoutMs?: number;
-};
-
-/**
  * Default system prompt used when `systemPrompt` is not provided.
  *
  * Optimized for voice-first interactions: short sentences, no visual
@@ -366,7 +215,7 @@ export const DEFAULT_GREETING: string =
   "Hey there. I'm a voice assistant. What can I help you with?";
 
 /**
- * Agent definition returned by {@link defineAgent}.
+ * Fully resolved agent definition.
  *
  * Core fields (`name`, `systemPrompt`, `greeting`, `maxSteps`, `tools`)
  * are resolved to their final values with defaults applied. Optional
@@ -399,74 +248,3 @@ export const BuiltinToolSchema = z.enum(["web_search", "visit_webpage", "fetch_j
 
 /** @internal Zod schema for {@link ToolChoice}. Exported for reuse in internal schemas. */
 export const ToolChoiceSchema = z.enum(["auto", "required"]);
-
-const ToolDefSchema = z.object({
-  description: z.string().min(1, "Tool description must be non-empty"),
-  parameters: z
-    .custom<z.ZodType>(
-      (val) => val === undefined || val instanceof z.ZodType,
-      "Expected a Zod schema",
-    )
-    .optional(),
-  execute: z.function(),
-});
-
-const AgentOptionsSchema = z.object({
-  name: z.string().min(1, "Agent name must be non-empty"),
-  systemPrompt: z.string().optional(),
-  greeting: z.string().optional(),
-  sttPrompt: z.string().optional(),
-  maxSteps: z.union([z.number().int().positive(), z.function()]).optional(),
-  toolChoice: ToolChoiceSchema.optional(),
-  builtinTools: z.array(BuiltinToolSchema).optional(),
-  tools: z.record(z.string(), ToolDefSchema).optional(),
-  state: z.function().optional(),
-  onConnect: z.function().optional(),
-  onDisconnect: z.function().optional(),
-  onError: z.function().optional(),
-  onUserTranscript: z.function().optional(),
-  idleTimeoutMs: z.number().nonnegative().optional(),
-});
-
-// ─── defineAgent ────────────────────────────────────────────────────────────
-
-/**
- * Create an agent definition from the given options, applying sensible defaults.
- *
- * This is the main entry point for defining a voice agent. The returned
- * `AgentDef` is consumed by the AAI server at deploy time.
- *
- * @param options - Configuration for the agent including name, systemPrompt,
- *   tools, hooks, and other settings.
- * @returns A fully resolved agent definition with all defaults applied.
- *
- * @public
- *
- * @example Basic agent with a custom tool
- * ```ts
- * import { defineAgent } from "aai";
- * import { z } from "zod";
- *
- * export default defineAgent({
- *   name: "greeter",
- *   systemPrompt: "You greet people warmly.",
- *   tools: {
- *     greet: {
- *       description: "Greet a user by name",
- *       parameters: z.object({ name: z.string() }),
- *       execute: ({ name }) => `Hello, ${name}!`,
- *     },
- *   },
- * });
- * ```
- */
-export function defineAgent<S = Record<string, unknown>>(options: AgentOptions<S>): AgentDef<S> {
-  AgentOptionsSchema.parse(options);
-  return {
-    ...options,
-    systemPrompt: options.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
-    greeting: options.greeting ?? DEFAULT_GREETING,
-    maxSteps: options.maxSteps ?? 5,
-    tools: options.tools ?? {},
-  } as AgentDef<S>;
-}

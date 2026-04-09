@@ -13,6 +13,5 @@ export default defineConfig({
       "node_modules",
       "dist",
     ],
-    setupFiles: ["./host/matchers.ts"],
   },
 });

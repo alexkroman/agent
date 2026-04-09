@@ -9,8 +9,7 @@
  *
  * Communicates with the host via SecureExec bindings (same V8 bridge IPC as v1).
  */
-import type { Kv } from "@alexkroman1/aai/kv";
-import type { Message, ToolContext } from "@alexkroman1/aai/types";
+import type { Kv, Message, ToolContext } from "@alexkroman1/aai-core";
 
 // ── Handler types ──────────────────────────────────────────────────────
 

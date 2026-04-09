@@ -6,6 +6,6 @@ export default defineConfig({
   test: {
     restoreMocks: true,
     include: ["templates/*/agent.test.ts"],
-    setupFiles: ["../aai/host/matchers.ts"],
+    setupFiles: ["../aai-cli/matchers.ts"],
   },
 });

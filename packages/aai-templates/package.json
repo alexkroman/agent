@@ -10,7 +10,8 @@
     "check:typecheck": "node --experimental-strip-types scripts/check-typecheck.ts"
   },
   "devDependencies": {
-    "@alexkroman1/aai": "workspace:*",
+    "@alexkroman1/aai-cli": "workspace:*",
+    "@alexkroman1/aai-core": "workspace:*",
     "@alexkroman1/aai-ui": "workspace:*",
     "@types/react": "^19.0.0",
     "zod": "^4.3.6"

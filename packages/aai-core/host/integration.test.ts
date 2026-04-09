@@ -3,29 +3,32 @@
  * Integration tests for the SDK public API surface.
  *
  * These test the connected flow as a consumer would use it:
- * defineAgent → tools → direct executor → KV in tool context.
+ * AgentDef → tools → direct executor → KV in tool context.
  */
 
 import { createStorage } from "unstorage";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import { toAgentConfig } from "../isolate/_internal-types.ts";
-import { defineAgent, defineTool } from "../isolate/types.ts";
+import type { AgentDef } from "../isolate/types.ts";
 import { createRuntime } from "./runtime.ts";
 import { createUnstorageKv } from "./unstorage-kv.ts";
 
-describe("SDK integration: defineAgent → tool execution", () => {
-  test("defineAgent + defineTool() + executeToolCall round-trip", async () => {
-    const agent = defineAgent({
+describe("SDK integration: AgentDef → tool execution", () => {
+  test("AgentDef + tools + executeToolCall round-trip", async () => {
+    const agent: AgentDef = {
       name: "test-agent",
+      systemPrompt: "Be helpful.",
+      greeting: "Hello!",
+      maxSteps: 5,
       tools: {
-        greet: defineTool({
+        greet: {
           description: "Greet by name",
           parameters: z.object({ name: z.string() }),
-          execute: ({ name }) => `Hello, ${name}!`,
-        }),
+          execute: ({ name }: { name: string }) => `Hello, ${name}!`,
+        },
       },
-    });
+    };
 
     const exec = createRuntime({ agent, env: {} });
     const result = await exec.executeTool("greet", { name: "Alice" }, "s1", []);
@@ -34,27 +37,30 @@ describe("SDK integration: defineAgent → tool execution", () => {
 
   test("tool with KV access works end-to-end", async () => {
     const kv = createUnstorageKv({ storage: createStorage() });
-    const agent = defineAgent({
+    const agent: AgentDef = {
       name: "kv-agent",
+      systemPrompt: "Be helpful.",
+      greeting: "Hello!",
+      maxSteps: 5,
       tools: {
-        save: defineTool({
+        save: {
           description: "Save a value",
           parameters: z.object({ key: z.string(), value: z.string() }),
-          execute: async ({ key, value }, ctx) => {
+          execute: async ({ key, value }: { key: string; value: string }, ctx) => {
             await ctx.kv.set(key, value);
             return "saved";
           },
-        }),
-        load: defineTool({
+        },
+        load: {
           description: "Load a value",
           parameters: z.object({ key: z.string() }),
-          execute: async ({ key }, ctx) => {
+          execute: async ({ key }: { key: string }, ctx) => {
             const val = await ctx.kv.get<string>(key);
             return val ?? "not found";
           },
-        }),
+        },
       },
-    });
+    };
 
     const exec = createRuntime({ agent, env: {}, kv });
     await exec.executeTool("save", { key: "color", value: "blue" }, "s1", []);
@@ -63,15 +69,18 @@ describe("SDK integration: defineAgent → tool execution", () => {
   });
 
   test("env vars are passed to tool context", async () => {
-    const agent = defineAgent({
+    const agent: AgentDef = {
       name: "env-agent",
+      systemPrompt: "Be helpful.",
+      greeting: "Hello!",
+      maxSteps: 5,
       tools: {
         check_key: {
           description: "Check API key",
           execute: (_args, ctx) => ctx.env.API_KEY ?? "missing",
         },
       },
-    });
+    };
 
     const exec = createRuntime({ agent, env: { API_KEY: "sk-test-123" } });
     const result = await exec.executeTool("check_key", {}, "s1", []);
@@ -79,20 +88,22 @@ describe("SDK integration: defineAgent → tool execution", () => {
   });
 
   test("per-session state isolation", async () => {
-    const agent = defineAgent({
+    const agent: AgentDef<{ count: number }> = {
       name: "state-agent",
+      systemPrompt: "Be helpful.",
+      greeting: "Hello!",
+      maxSteps: 5,
       state: () => ({ count: 0 }),
       tools: {
         increment: {
           description: "Increment counter",
           execute: (_args, ctx) => {
-            const s = ctx.state as { count: number };
-            s.count += 1;
-            return String(s.count);
+            ctx.state.count += 1;
+            return String(ctx.state.count);
           },
         },
       },
-    });
+    };
 
     const exec = createRuntime({ agent, env: {} });
     expect(await exec.executeTool("increment", {}, "session-a", [])).toBe("1");
@@ -102,23 +113,32 @@ describe("SDK integration: defineAgent → tool execution", () => {
   });
 
   test("unknown tool returns error JSON", async () => {
-    const agent = defineAgent({ name: "test", tools: {} });
+    const agent: AgentDef = {
+      name: "test",
+      systemPrompt: "Be helpful.",
+      greeting: "Hello!",
+      maxSteps: 5,
+      tools: {},
+    };
     const exec = createRuntime({ agent, env: {} });
     const result = await exec.executeTool("nonexistent", {}, "s1", []);
     expect(JSON.parse(result)).toEqual({ error: "Unknown tool: nonexistent" });
   });
 
   test("tool parameter validation rejects bad input", async () => {
-    const agent = defineAgent({
+    const agent: AgentDef = {
       name: "validation-agent",
+      systemPrompt: "Be helpful.",
+      greeting: "Hello!",
+      maxSteps: 5,
       tools: {
-        typed: defineTool({
+        typed: {
           description: "Typed tool",
           parameters: z.object({ count: z.number() }),
-          execute: ({ count }) => String(count * 2),
-        }),
+          execute: ({ count }: { count: number }) => String(count * 2),
+        },
       },
-    });
+    };
 
     const exec = createRuntime({ agent, env: {} });
     // Valid input
@@ -129,13 +149,15 @@ describe("SDK integration: defineAgent → tool execution", () => {
   });
 
   test("toAgentConfig produces serializable config", () => {
-    const agent = defineAgent({
+    const agent: AgentDef = {
       name: "config-test",
       systemPrompt: "Custom instructions",
-      builtinTools: ["web_search"],
+      greeting: "Hello!",
       maxSteps: 10,
+      tools: {},
+      builtinTools: ["web_search"],
       toolChoice: "required",
-    });
+    };
 
     const config = toAgentConfig(agent);
     // Should survive JSON round-trip
@@ -149,8 +171,12 @@ describe("SDK integration: defineAgent → tool execution", () => {
 
   test("lifecycle hooks fire correctly", async () => {
     const log: string[] = [];
-    const agent = defineAgent({
+    const agent: AgentDef = {
       name: "hooks-agent",
+      systemPrompt: "Be helpful.",
+      greeting: "Hello!",
+      maxSteps: 5,
+      tools: {},
       onConnect: () => {
         log.push("connected");
       },
@@ -160,7 +186,7 @@ describe("SDK integration: defineAgent → tool execution", () => {
       onUserTranscript: (text) => {
         log.push(`turn:${text}`);
       },
-    });
+    };
 
     const exec = createRuntime({ agent, env: {} });
     await exec.hooks.callHook("connect", "s1");
@@ -170,13 +196,16 @@ describe("SDK integration: defineAgent → tool execution", () => {
   });
 
   test("builtin tools are available alongside custom tools", async () => {
-    const agent = defineAgent({
+    const agent: AgentDef = {
       name: "mixed-tools",
+      systemPrompt: "Be helpful.",
+      greeting: "Hello!",
+      maxSteps: 5,
       builtinTools: ["run_code"],
       tools: {
         custom: { description: "Custom tool", execute: () => "custom result" },
       },
-    });
+    };
 
     const exec = createRuntime({ agent, env: {} });
     // Custom tool works
@@ -196,15 +225,18 @@ describe("SDK integration: defineAgent → tool execution", () => {
   });
 
   test("messages are passed through to tool context", async () => {
-    const agent = defineAgent({
+    const agent: AgentDef = {
       name: "messages-agent",
+      systemPrompt: "Be helpful.",
+      greeting: "Hello!",
+      maxSteps: 5,
       tools: {
         count_msgs: {
           description: "Count messages",
           execute: (_args, ctx) => String(ctx.messages.length),
         },
       },
-    });
+    };
 
     const exec = createRuntime({ agent, env: {} });
     const result = await exec.executeTool("count_msgs", {}, "s1", [

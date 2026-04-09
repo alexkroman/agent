@@ -1,8 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
-import fs from "node:fs/promises";
-import path from "node:path";
 import { describe, expect, test } from "vitest";
-import { DEFAULT_SERVER, getServerInfo, isDevMode, loadAgent, resolveServerUrl } from "./_agent.ts";
+import { DEFAULT_SERVER, getServerInfo, isDevMode, resolveServerUrl } from "./_agent.ts";
 import { writeProjectConfig } from "./_config.ts";
 import { withTempDir } from "./_test-utils.ts";
 
@@ -63,51 +61,5 @@ describe("getServerInfo", () => {
 describe("isDevMode", () => {
   test("returns true when running from monorepo", () => {
     expect(isDevMode()).toBe(true);
-  });
-});
-
-describe("loadAgent", () => {
-  test("returns null when no agent.ts exists", async () => {
-    await withTempDir(async (dir) => {
-      const result = await loadAgent(dir);
-      expect(result).toBeNull();
-    });
-  });
-
-  test("returns agent entry when agent.ts exists", async () => {
-    await withTempDir(async (dir) => {
-      await fs.writeFile(path.join(dir, "agent.ts"), "export default {}");
-      const result = await loadAgent(dir);
-      expect(result).not.toBeNull();
-      expect(result?.dir).toBe(dir);
-      expect(result?.entryPoint).toBe(path.join(dir, "agent.ts"));
-      expect(result?.slug).toBe("");
-    });
-  });
-
-  test("uses slug from project config when available", async () => {
-    await withTempDir(async (dir) => {
-      await fs.writeFile(path.join(dir, "agent.ts"), "export default {}");
-      await writeProjectConfig(dir, { slug: "my-agent", serverUrl: "https://example.com" });
-      const result = await loadAgent(dir);
-      expect(result?.slug).toBe("my-agent");
-    });
-  });
-
-  test("includes client entry when client.tsx exists", async () => {
-    await withTempDir(async (dir) => {
-      await fs.writeFile(path.join(dir, "agent.ts"), "export default {}");
-      await fs.writeFile(path.join(dir, "client.tsx"), "export default {}");
-      const result = await loadAgent(dir);
-      expect(result?.clientEntry).toBe(path.join(dir, "client.tsx"));
-    });
-  });
-
-  test("client entry is empty string when no client.tsx", async () => {
-    await withTempDir(async (dir) => {
-      await fs.writeFile(path.join(dir, "agent.ts"), "export default {}");
-      const result = await loadAgent(dir);
-      expect(result?.clientEntry).toBe("");
-    });
   });
 });

@@ -5,16 +5,9 @@ import path from "node:path";
 import { build } from "vite";
 import { type CommandResult, ok } from "./_output.ts";
 
-export class BundleError extends Error {
-  constructor(message: string, options?: ErrorOptions) {
-    super(message, options);
-    this.name = "BundleError";
-  }
-}
-
 /** Output from the directory-based bundler (agent.json + tools/*.ts + hooks/*.ts). */
 export type DirectoryBundleOutput = {
-  manifest: import("@alexkroman1/aai/isolate").Manifest;
+  manifest: import("@alexkroman1/aai-core/manifest").Manifest;
   manifestJson: string;
   toolBundles: Record<string, string>; // toolName -> compiled JS
   hookBundles: Record<string, string>; // hookKey -> compiled JS

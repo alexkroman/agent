@@ -11,9 +11,9 @@ import { existsSync, type FSWatcher, readdirSync, watch } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import type { AgentServer } from "@alexkroman1/aai/host";
-import type { Manifest } from "@alexkroman1/aai/isolate";
-import { parseEnvFile } from "@alexkroman1/aai/utils";
+import { parseEnvFile } from "@alexkroman1/aai-core";
+import type { Manifest } from "@alexkroman1/aai-core/manifest";
+import type { AgentServer } from "@alexkroman1/aai-core/runtime";
 import { log } from "./_ui.ts";
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -183,7 +183,7 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
   const { cwd, port } = opts;
 
   const { scanAgentDirectory } = await import("./_scanner.ts");
-  const { createRuntime, createServer } = await import("@alexkroman1/aai/host");
+  const { createRuntime, createServer } = await import("@alexkroman1/aai-core/runtime");
 
   // Check if client.tsx exists for Vite HMR
   const hasClient = existsSync(path.join(cwd, "client.tsx"));

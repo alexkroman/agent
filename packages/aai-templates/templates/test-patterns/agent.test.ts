@@ -7,7 +7,7 @@
 
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createTestHarness } from "@alexkroman1/aai/testing";
+import { createTestHarness } from "@alexkroman1/aai-cli/testing";
 import { describe, expect, test } from "vitest";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));

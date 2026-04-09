@@ -1,7 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "ignore": [".claude/**"],
-  "ignoreUnresolved": ["./_jsdom-setup.ts", "./host/matchers.ts"],
+  "ignoreUnresolved": ["./_jsdom-setup.ts"],
   "ignoreExportsUsedInFile": true,
   "exclude": ["exports", "types", "optionalPeerDependencies"],
   "workspaces": {
@@ -9,13 +8,13 @@
       "entry": ["scripts/*.{mjs,ts}", "vitest.adversarial.config.ts"],
       "ignoreDependencies": ["ws"]
     },
-    "packages/aai": {
+    "packages/aai-core": {
       "entry": [
-        "host/index.ts",
-        "isolate/index.ts",
+        "index.ts",
+        "host/runtime-barrel.ts",
+        "isolate/manifest-barrel.ts",
         "host/_test-utils.ts",
-        "**/*.test.ts",
-        "**/*.test-d.ts"
+        "**/*.test.ts"
       ],
       "includeEntryExports": true
     },
@@ -24,14 +23,13 @@
       "includeEntryExports": true
     },
     "packages/aai-cli": {
-      "entry": ["**/*.test.ts", "_test-utils.ts"]
+      "entry": ["**/*.test.ts", "_test-utils.ts", "testing.ts", "matchers.ts", "types.ts"]
     },
     "packages/aai-templates": {
       "ignore": ["**"]
     },
     "packages/aai-server": {
-      "entry": ["**/*.test.ts", "guest/fake-vm.ts"],
-      "ignore": ["guest/deno-harness.ts"],
+      "entry": ["**/*.test.ts", "guest/fake-vm.ts", "guest/deno-harness.ts"],
       "includeEntryExports": true,
       "ignoreDependencies": ["@types/json-schema"]
     }
