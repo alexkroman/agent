@@ -325,13 +325,7 @@ export async function buildAgentBundle(cwd: string): Promise<DirectoryBundleOutp
   const { scanAgentDirectory } = await import("./_scanner.ts");
   const { log } = await import("./_ui.ts");
 
-  let manifest: import("@alexkroman1/aai/isolate").Manifest;
-  try {
-    manifest = await scanAgentDirectory(cwd);
-  } catch (err: unknown) {
-    // Re-throw scanner errors (e.g. "Missing agent.json") directly
-    throw err;
-  }
+  const manifest = await scanAgentDirectory(cwd);
 
   log.step(`Bundling ${manifest.name}`);
 
