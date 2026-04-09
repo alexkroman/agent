@@ -46,6 +46,11 @@
       "types": "./dist/host/testing.d.ts",
       "import": "./dist/host/testing.js"
     },
+    "./testing-v2": {
+      "@dev/source": "./host/testing-v2.ts",
+      "types": "./dist/host/testing-v2.d.ts",
+      "import": "./dist/host/testing-v2.js"
+    },
     "./testing/matchers": {
       "@dev/source": "./host/matchers.ts",
       "types": "./dist/host/matchers.d.ts",

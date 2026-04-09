@@ -191,10 +191,20 @@ export class DirTestHarness {
     // Record user message
     this._messages.push({ role: "user", content: text });
 
-    // Fire onUserTranscript hook if it exists
+    // Fire onUserTranscript hook if it exists.
+    // Supports both signatures: (ctx) and (text, ctx).
     const transcriptHook = this._hooks.get("onUserTranscript");
     if (transcriptHook) {
-      await transcriptHook.default(this._makeHookCtx());
+      if (transcriptHook.default.length >= 2) {
+        // Hook expects (text, ctx)
+        await (transcriptHook.default as (text: string, ctx: HookCtx) => void | Promise<void>)(
+          text,
+          this._makeHookCtx(),
+        );
+      } else {
+        // Hook expects (ctx) only
+        await transcriptHook.default(this._makeHookCtx());
+      }
     }
 
     // Execute tool calls in sequence
