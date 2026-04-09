@@ -174,11 +174,15 @@ const deploy = defineCommand({
     const mode = resolveMode(args);
     await handleErrors(mode, async () => {
       const cwd = await setup(args, { agent: true });
-      const { runDeployCommand } = await import("./deploy.ts");
-      await runDeployCommand({
-        cwd,
-        ...(args.server ? { server: args.server } : {}),
-      });
+      const { executeDeploy } = await import("./deploy.ts");
+      const { withOutput } = await import("./_output.ts");
+      await withOutput(
+        mode,
+        () => executeDeploy({ cwd, ...(args.server ? { server: args.server } : {}) }),
+        () => {
+          /* human output handled inside executeDeploy */
+        },
+      );
     });
   },
 });
