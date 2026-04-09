@@ -23,9 +23,9 @@ export async function runDeploy(opts: DeployOpts): Promise<DeployResult> {
   const body = JSON.stringify({
     ...(opts.slug ? { slug: opts.slug } : {}),
     env: opts.env,
-    worker: opts.bundle.worker,
-    clientFiles: opts.bundle.clientFiles,
-    agentConfig: opts.bundle.agentConfig,
+    manifest: opts.bundle.manifest,
+    toolBundles: opts.bundle.toolBundles,
+    hookBundles: opts.bundle.hookBundles,
   });
 
   const resp = await apiRequestOrThrow(
