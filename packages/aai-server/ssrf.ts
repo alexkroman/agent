@@ -21,7 +21,28 @@ function isLiteralIp(hostname: string): boolean {
   return /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname) || hostname.includes(":");
 }
 
-async function assertDnsResolvesPublic(hostname: string): Promise<string> {
+/**
+ * Single-pass validation: checks hostname rules, resolves DNS if needed,
+ * validates the resolved IP, and returns the resolved IP for pinning.
+ * Returns null if the hostname is already a literal IP (already validated).
+ */
+export async function resolveAndAssertPublic(url: string): Promise<string | null> {
+  const parsed = new URL(url);
+  const hostname = parsed.hostname.replace(/^\[|\]$/g, "");
+
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error(`Blocked request with disallowed protocol: ${parsed.protocol}`);
+  }
+  if (BLOCKED_HOSTS.has(hostname) || BLOCKED_TLDS.some((tld) => hostname.endsWith(tld))) {
+    throw new Error(`Blocked request to reserved hostname: ${hostname}`);
+  }
+  if (isLiteralIp(hostname)) {
+    if (isPrivateIp(hostname)) {
+      throw new Error(`Blocked request to private address: ${hostname}`);
+    }
+    return null;
+  }
+  // Hostname is not a literal IP — resolve DNS and validate the result
   try {
     const { address } = await pTimeout(lookup(hostname), {
       milliseconds: 2000,
@@ -35,25 +56,6 @@ async function assertDnsResolvesPublic(hostname: string): Promise<string> {
     if (err instanceof Error && err.message.startsWith("Blocked request")) throw err;
     throw new Error(`Blocked request: DNS resolution failed for ${hostname}`, { cause: err });
   }
-}
-
-export async function assertPublicUrl(url: string): Promise<string | null> {
-  const parsed = new URL(url);
-  const hostname = parsed.hostname.replace(/^\[|\]$/g, "");
-
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    throw new Error(`Blocked request with disallowed protocol: ${parsed.protocol}`);
-  }
-  if (BLOCKED_HOSTS.has(hostname) || BLOCKED_TLDS.some((tld) => hostname.endsWith(tld))) {
-    throw new Error(`Blocked request to reserved hostname: ${hostname}`);
-  }
-  if (isPrivateIp(hostname)) {
-    throw new Error(`Blocked request to private address: ${hostname}`);
-  }
-  if (!isLiteralIp(hostname)) {
-    return assertDnsResolvesPublic(hostname);
-  }
-  return null;
 }
 
 const MAX_REDIRECTS = 5;
@@ -75,9 +77,9 @@ export async function ssrfSafeFetch(
   init: RequestInit,
   fetchFn: typeof globalThis.fetch,
 ): Promise<Response> {
-  let resolvedIp = await assertPublicUrl(url);
+  let resolvedIp = await resolveAndAssertPublic(url);
   let currentUrl = url;
-  for (let i = 0; i <= MAX_REDIRECTS; i++) {
+  for (let i = 0; i < MAX_REDIRECTS; i++) {
     let fetchUrl = currentUrl;
     const headers = new Headers(init.headers);
     if (resolvedIp) {
@@ -90,7 +92,7 @@ export async function ssrfSafeFetch(
     const location = resp.headers.get("location");
     if (!location) return resp;
     currentUrl = new URL(location, currentUrl).href;
-    resolvedIp = await assertPublicUrl(currentUrl);
+    resolvedIp = await resolveAndAssertPublic(currentUrl);
   }
   throw new Error("Too many redirects");
 }
