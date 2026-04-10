@@ -10,53 +10,66 @@ import { errorMessage } from "../isolate/_utils.ts";
 import { RUN_CODE_TIMEOUT_MS } from "../isolate/constants.ts";
 import type { ToolDef } from "../isolate/types.ts";
 
-/**
- * Wrap a host function so its `.constructor` property is neutered.
- * This prevents sandbox code from reaching the host `Function` constructor
- * via `fn.constructor('return process')()`.
- */
-function safeFunction<T extends (...args: never[]) => unknown>(fn: T): T {
-  const wrapped = (...args: Parameters<T>) => fn(...args);
-  Object.defineProperty(wrapped, "constructor", {
-    value: undefined,
-    writable: false,
-    configurable: false,
-  });
-  return wrapped as unknown as T;
-}
+const SKIPPED_CLASS_KEYS = new Set(["constructor", "prototype", "length", "name"]);
 
 /**
- * Wrap a host class constructor so its `.constructor` chain is neutered.
- * The returned wrapper can be used with `new` and retains static methods,
- * but `.constructor.constructor` no longer exposes the host `Function`.
+ * Copy static members from a class constructor to a wrapper function,
+ * skipping built-in keys that must not be forwarded.
  */
-// biome-ignore lint/complexity/noBannedTypes: wrapping arbitrary class constructors
-function safeClass<T extends Function>(Cls: T): T {
-  function Wrapper(this: unknown, ...args: unknown[]) {
-    return new (Cls as unknown as new (...a: unknown[]) => unknown)(...args);
-  }
-  for (const key of Object.getOwnPropertyNames(Cls)) {
-    if (key === "constructor" || key === "prototype" || key === "length" || key === "name")
-      continue;
+// biome-ignore lint/complexity/noBannedTypes: copying descriptors from arbitrary class constructors
+function copyStaticMembers(src: Function, dst: Function): void {
+  for (const key of Object.getOwnPropertyNames(src)) {
+    if (SKIPPED_CLASS_KEYS.has(key)) continue;
     try {
-      const desc = Object.getOwnPropertyDescriptor(Cls, key);
-      if (desc) Object.defineProperty(Wrapper, key, desc);
+      const desc = Object.getOwnPropertyDescriptor(src, key);
+      if (desc) Object.defineProperty(dst, key, desc);
     } catch {
       // Skip non-configurable properties
     }
   }
+}
+
+/**
+ * Neuter the `.constructor` chain on a host function or class constructor.
+ *
+ * For plain functions: wraps the function so calling `.constructor` or
+ * `.constructor.constructor` no longer exposes the host `Function`.
+ *
+ * For class constructors: additionally copies static methods and neutralizes
+ * `prototype.constructor` so instances created via `new` also cannot escape.
+ *
+ * This prevents sandbox code from reaching the host `Function` constructor
+ * via patterns like `fn.constructor.constructor('return process')()`.
+ */
+// biome-ignore lint/complexity/noBannedTypes: wrapping arbitrary functions and class constructors
+function neutralizeConstructor<T extends Function>(fn: T): T {
+  const hasPrototype = typeof fn.prototype === "object" && fn.prototype !== null;
+
+  function Wrapper(this: unknown, ...args: unknown[]) {
+    if (hasPrototype) {
+      return new (fn as unknown as new (...a: unknown[]) => unknown)(...args);
+    }
+    return (fn as unknown as (...a: unknown[]) => unknown)(...args);
+  }
+
+  if (hasPrototype) {
+    copyStaticMembers(fn, Wrapper);
+    // Neuter prototype.constructor so instances can't escape either.
+    if (Wrapper.prototype) {
+      Object.defineProperty(Wrapper.prototype, "constructor", {
+        value: undefined,
+        writable: false,
+        configurable: false,
+      });
+    }
+  }
+
   Object.defineProperty(Wrapper, "constructor", {
     value: undefined,
     writable: false,
     configurable: false,
   });
-  if (Wrapper.prototype) {
-    Object.defineProperty(Wrapper.prototype, "constructor", {
-      value: undefined,
-      writable: false,
-      configurable: false,
-    });
-  }
+
   return Wrapper as unknown as T;
 }
 
@@ -152,25 +165,25 @@ export async function executeInIsolate(code: string): Promise<string | { error: 
     {
       // Console methods wrapped to prevent .constructor escape to host Function.
       console: Object.freeze({
-        log: safeFunction(capture),
-        info: safeFunction(capture),
-        warn: safeFunction(capture),
-        error: safeFunction(capture),
-        debug: safeFunction(capture),
+        log: neutralizeConstructor(capture),
+        info: neutralizeConstructor(capture),
+        warn: neutralizeConstructor(capture),
+        error: neutralizeConstructor(capture),
+        debug: neutralizeConstructor(capture),
       }),
-      // Wrapped timers — safe-wrapped to prevent .constructor escape.
-      setTimeout: safeFunction(sandboxSetTimeout),
-      clearTimeout: safeFunction(sandboxClearTimeout),
-      setInterval: safeFunction(sandboxSetInterval),
-      clearInterval: safeFunction(sandboxClearInterval),
-      // Standard web-compat globals — classes wrapped to neuter constructor chain.
-      URL: safeClass(URL),
-      URLSearchParams: safeClass(URLSearchParams),
-      TextEncoder: safeClass(TextEncoder),
-      TextDecoder: safeClass(TextDecoder),
-      atob: safeFunction(atob),
-      btoa: safeFunction(btoa),
-      structuredClone: safeFunction(structuredClone),
+      // Wrapped timers — neutralized to prevent .constructor escape.
+      setTimeout: neutralizeConstructor(sandboxSetTimeout),
+      clearTimeout: neutralizeConstructor(sandboxClearTimeout),
+      setInterval: neutralizeConstructor(sandboxSetInterval),
+      clearInterval: neutralizeConstructor(sandboxClearInterval),
+      // Standard web-compat globals — constructor chain neutered.
+      URL: neutralizeConstructor(URL),
+      URLSearchParams: neutralizeConstructor(URLSearchParams),
+      TextEncoder: neutralizeConstructor(TextEncoder),
+      TextDecoder: neutralizeConstructor(TextDecoder),
+      atob: neutralizeConstructor(atob),
+      btoa: neutralizeConstructor(btoa),
+      structuredClone: neutralizeConstructor(structuredClone),
     },
     {
       // Block string-based code generation within the sandbox realm.
@@ -178,32 +191,20 @@ export async function executeInIsolate(code: string): Promise<string | { error: 
     },
   );
 
-  let raceTimer: ReturnType<typeof setTimeout> | undefined;
   try {
     // Wrap user code in an async IIFE so top-level `await` works.
     const wrapped = `(async () => {\n${code}\n})()`;
     const script = new vm.Script(wrapped, { filename: "run_code.js" });
 
-    // runInContext applies `timeout` to synchronous execution. For the
-    // async case we also race against a timer.
-    const promise = script.runInContext(context, { timeout: RUN_CODE_TIMEOUT_MS });
-
-    await Promise.race([
-      promise,
-      new Promise<never>((_, reject) => {
-        raceTimer = setTimeout(
-          () => reject(new Error("Code execution timed out")),
-          RUN_CODE_TIMEOUT_MS,
-        );
-      }),
-    ]);
+    // runInContext's `timeout` enforces the execution limit.
+    const result = await script.runInContext(context, { timeout: RUN_CODE_TIMEOUT_MS });
+    void result;
 
     const text = output.join("\n").trim();
     return text || "Code ran successfully (no output)";
   } catch (err: unknown) {
     return { error: errorMessage(err) };
   } finally {
-    if (raceTimer) clearTimeout(raceTimer);
     // Cancel all sandbox timers that are still pending. This prevents
     // setInterval/setTimeout callbacks from running in the host event loop
     // after the sandbox execution has completed or timed out.
