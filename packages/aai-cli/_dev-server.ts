@@ -12,7 +12,7 @@ import { existsSync, type FSWatcher, watch } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import type { AgentDef } from "@alexkroman1/aai-core";
+import { type AgentDef, errorMessage } from "@alexkroman1/aai-core";
 import type { AgentServer } from "@alexkroman1/aai-core/runtime";
 import { resolveAgentConfig } from "./_agent-config.ts";
 import { ensureApiKey } from "./_config.ts";
@@ -164,7 +164,7 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
       currentServer = newServer;
       log.success("Restarted");
     } catch (err) {
-      log.error(`Restart failed: ${err instanceof Error ? err.message : String(err)}`);
+      log.error(`Restart failed: ${errorMessage(err)}`);
     }
   }
 
