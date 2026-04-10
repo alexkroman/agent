@@ -16,10 +16,7 @@ async function createFakeTemplates(dir: string): Promise<string> {
 
   const simple = path.join(rootDir, "templates", "simple");
   await fs.mkdir(simple, { recursive: true });
-  await fs.writeFile(
-    path.join(simple, "agent.ts"),
-    'export default defineAgent({\n  name: "Default Name",\n});',
-  );
+  await fs.writeFile(path.join(simple, "agent.json"), JSON.stringify({ name: "Default Name" }));
   await fs.writeFile(path.join(simple, "readme.txt"), "hello");
   await fs.writeFile(path.join(simple, "package.json"), "{}");
 
@@ -42,7 +39,9 @@ describe("runInit", () => {
         fakeTemplatesDir = await createFakeTemplates(dir);
         const target = path.join(dir, "output");
         await runInit({ targetDir: target });
-        expect(await fs.readFile(path.join(target, "agent.ts"), "utf-8")).toContain("Default Name");
+        expect(await fs.readFile(path.join(target, "agent.json"), "utf-8")).toContain(
+          "Default Name",
+        );
         expect(await fs.readFile(path.join(target, "readme.txt"), "utf-8")).toBe("hello");
         expect(await fs.readFile(path.join(target, "shared.txt"), "utf-8")).toBe("from shared");
       }),
