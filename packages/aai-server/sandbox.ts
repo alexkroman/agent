@@ -247,17 +247,17 @@ async function resolveSandboxLegacy(
     return slot.sandbox as Sandbox;
   }
 
-  // Fetch worker code and config
-  const [workerCode, agentConfig] = await Promise.all([
+  // Fetch worker code, config, and env in parallel
+  const [workerCode, agentConfig, env] = await Promise.all([
     store.getWorkerCode(slug),
     store.getAgentConfig(slug),
+    store.getEnv(slug).then((e) => e ?? {}),
   ]);
 
   if (!(workerCode && agentConfig)) {
     return null;
   }
 
-  const env = (await store.getEnv(slug)) ?? {};
   const { ASSEMBLYAI_API_KEY: apiKey = "", ...agentEnv } = env;
 
   const sandbox = await createSandbox({
