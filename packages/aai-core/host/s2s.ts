@@ -56,8 +56,6 @@ const S2sMessageSchema = z.discriminatedUnion("type", [
     item_id: z.string().optional().default(""),
     interrupted: z.boolean().optional().default(false),
   }),
-  z.object({ type: z.literal("reply.content_part.started") }).passthrough(),
-  z.object({ type: z.literal("reply.content_part.done") }).passthrough(),
   z.object({
     type: z.literal("tool.call"),
     call_id: z.string(),
@@ -138,9 +136,6 @@ function dispatchS2sMessage(emitter: Emitter<S2sEvents>, msg: S2sServerMessage):
       break;
     case "error":
       emitter.emit("error", new Error(msg.message));
-      break;
-    case "reply.content_part.started":
-    case "reply.content_part.done":
       break;
     default:
       break;
