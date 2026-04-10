@@ -19,6 +19,10 @@
   { "type": "agent_transcript", "text": "A day", "isFinal": false },
   { "type": "agent_transcript", "text": " on Venus", "isFinal": false },
   { "type": "agent_transcript", "text": " is longer than its year.", "isFinal": false },
-  { "type": "agent_transcript", "text": "A day on Venus is longer than its year.", "isFinal": true },
+  {
+    "type": "agent_transcript",
+    "text": "A day on Venus is longer than its year.",
+    "isFinal": true
+  },
   { "type": "reply_done" }
 ]
