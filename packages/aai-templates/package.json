@@ -7,7 +7,7 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
-    "check:typecheck": "node --experimental-strip-types scripts/check-typecheck.ts"
+    "check:typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@alexkroman1/aai-cli": "workspace:*",
