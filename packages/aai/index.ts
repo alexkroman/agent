@@ -11,5 +11,6 @@
 export * from "./sdk/_utils.ts";
 export * from "./sdk/_ws-upgrade.ts";
 export * from "./sdk/constants.ts";
+export * from "./sdk/define.ts";
 export * from "./sdk/kv.ts";
 export * from "./sdk/types.ts";
