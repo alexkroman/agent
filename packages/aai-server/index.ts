@@ -11,9 +11,9 @@ import { createStorage } from "unstorage";
 import s3Driver from "unstorage/drivers/s3";
 import { createBundleStore } from "./bundle-store.ts";
 import { DEFAULT_PORT } from "./constants.ts";
-import { deriveCredentialKey } from "./credentials.ts";
 import { createOrchestrator, type OrchestratorOpts } from "./orchestrator.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
+import { deriveCredentialKey } from "./secrets.ts";
 
 function requireEnv<const K extends string>(
   env: NodeJS.ProcessEnv,

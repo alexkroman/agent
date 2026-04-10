@@ -1,8 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
-import { hashApiKey } from "./auth.ts";
 import { createOrchestrator } from "./orchestrator.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
+import { hashApiKey } from "./secrets.ts";
 import {
   authFetch,
   authHeaders,

@@ -35,7 +35,7 @@ test("deploy rejects without auth", async () => {
 
 test("deploy rejects different owner for claimed slug", async () => {
   const { fetch, store } = await createTestOrchestrator();
-  const { hashApiKey } = await import("./auth.ts");
+  const { hashApiKey } = await import("./secrets.ts");
   await store.putAgent({
     slug: "my-agent",
     env: {},
@@ -54,7 +54,7 @@ test("deploy rejects different owner for claimed slug", async () => {
 
 test("deploy succeeds and stores agent", async () => {
   const { fetch, store } = await createTestOrchestrator();
-  const { hashApiKey } = await import("./auth.ts");
+  const { hashApiKey } = await import("./secrets.ts");
   const res = await fetch("/my-agent/deploy", {
     method: "POST",
     headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },

@@ -2,9 +2,9 @@
 
 import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
-import { hashApiKey, verifySlugOwner } from "./auth.ts";
 import type { Env } from "./context.ts";
 import { VALID_SLUG_RE } from "./schemas.ts";
+import { hashApiKey, verifySlugOwner } from "./secrets.ts";
 import { isPrivateIp } from "./ssrf.ts";
 import type { BundleStore } from "./store-types.ts";
 
