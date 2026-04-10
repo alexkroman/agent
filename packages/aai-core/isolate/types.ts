@@ -16,7 +16,6 @@ import type { Kv } from "./kv.ts";
  * - `"visit_webpage"` — Fetch a URL and return its content as clean text.
  * - `"fetch_json"` — Call a REST API endpoint and return the JSON response.
  * - `"run_code"` — Execute JavaScript in a sandbox for calculations and data processing.
- * - `"memory"` — Persistent KV memory: save_memory, recall_memory, list_memories, forget_memory.
  *
  * @public
  */
