@@ -189,7 +189,6 @@
       "linter": {
         "rules": {
           "correctness": {
-            "noUndeclaredDependencies": "off",
             "useImportExtensions": "off"
           },
           "style": {
