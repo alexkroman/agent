@@ -23,13 +23,17 @@ export interface MockRegistry {
 }
 
 function writeConfig(configPath: string, port: number): void {
-  // @alexkroman1/* packages are never proxied — always served from local storage.
+  // Workspace packages (aai + @alexkroman1/*) are local-only.
+  // Everything else proxies to npmjs for third-party deps.
   const yaml = `
 storage: ./storage
 uplinks:
   npmjs:
     url: https://registry.npmjs.org/
 packages:
+  "aai":
+    access: $all
+    publish: $all
   "@alexkroman1/*":
     access: $all
     publish: $all
