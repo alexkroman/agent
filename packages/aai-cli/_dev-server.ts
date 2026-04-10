@@ -13,27 +13,16 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { AgentDef } from "@alexkroman1/aai-core";
-import { parseEnvFile } from "@alexkroman1/aai-core";
 import type { AgentServer } from "@alexkroman1/aai-core/runtime";
 import { resolveAgentConfig } from "./_agent-config.ts";
 import { ensureApiKey } from "./_config.ts";
+import { resolveServerEnv } from "./_server-common.ts";
 import { log } from "./_ui.ts";
 
 // ─── Env loading ────────────────────────────────────────────────────────────
 
 async function resolveAgentEnv(root: string): Promise<Record<string, string>> {
-  let fileEntries: Record<string, string> = {};
-  try {
-    const content = await fs.readFile(path.join(root, ".env"), "utf-8");
-    fileEntries = parseEnvFile(content);
-  } catch {
-    // No .env — fine
-  }
-
-  const env: Record<string, string> = {};
-  for (const [key, fileVal] of Object.entries(fileEntries)) {
-    env[key] = process.env[key] ?? fileVal;
-  }
+  const env = await resolveServerEnv(root);
   // Inject global API key if not already set by .env or process.env
   if (!env.ASSEMBLYAI_API_KEY) {
     env.ASSEMBLYAI_API_KEY = await ensureApiKey();
