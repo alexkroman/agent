@@ -1,7 +1,7 @@
 import { tool } from "aai";
 import { z } from "zod";
-import type { KV } from "../_shared.ts";
-import { getState, now, saveState } from "../_shared.ts";
+import type { KV } from "../shared.ts";
+import { getState, now, saveState } from "../shared.ts";
 
 export const incidentAddNote = tool({
   description: "Add a situational update note to an incident.",

@@ -1,7 +1,7 @@
 import { tool } from "aai";
 import { z } from "zod";
-import type { KV } from "../_shared.ts";
-import { getState } from "../_shared.ts";
+import type { KV } from "../shared.ts";
+import { getState } from "../shared.ts";
 
 export const resourcesGetAvailable = tool({
   description: "List available resources, optionally filtered by type.",

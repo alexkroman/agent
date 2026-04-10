@@ -1,6 +1,6 @@
 import { tool } from "aai";
 import { z } from "zod";
-import type { Incident, KV } from "../_shared.ts";
+import type { Incident, KV } from "../shared.ts";
 import {
   calculateTriageScore,
   getApplicableProtocols,
@@ -12,7 +12,7 @@ import {
   recommendType,
   saveIncidentSnapshot,
   saveState,
-} from "../_shared.ts";
+} from "../shared.ts";
 
 export const incidentCreate = tool({
   description: "Create a new incident from an incoming emergency call.",

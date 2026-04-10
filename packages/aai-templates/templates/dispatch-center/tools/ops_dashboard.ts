@@ -1,6 +1,6 @@
 import { tool } from "aai";
-import type { Incident, KV } from "../_shared.ts";
-import { getState, INCIDENT_INDEX_KEY, now } from "../_shared.ts";
+import type { Incident, KV } from "../shared.ts";
+import { getState, INCIDENT_INDEX_KEY, now } from "../shared.ts";
 
 export const opsDashboard = tool({
   description:

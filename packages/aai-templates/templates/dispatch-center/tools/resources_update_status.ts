@@ -1,7 +1,7 @@
 import { tool } from "aai";
 import { z } from "zod";
-import type { KV } from "../_shared.ts";
-import { getState, now, recalculateAlertLevel, saveState } from "../_shared.ts";
+import type { KV } from "../shared.ts";
+import { getState, now, recalculateAlertLevel, saveState } from "../shared.ts";
 
 export const resourcesUpdateStatus = tool({
   description: "Update a resource unit's status when it radios in.",

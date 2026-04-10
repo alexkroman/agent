@@ -15,7 +15,6 @@
     "templates/*/agent.ts",
     "templates/*/client.tsx",
     "templates/*/shared.ts",
-    "templates/*/_shared.ts",
     "templates/*/tools/*.ts"
   ]
 }

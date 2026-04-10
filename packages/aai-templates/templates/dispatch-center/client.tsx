@@ -3,7 +3,7 @@
 import type { ChatMessage } from "aai-ui";
 import { client, useSession, useToolResult } from "aai-ui";
 import { useEffect, useMemo, useRef } from "react";
-import type { DispatchState, Incident, Severity } from "./_shared.ts";
+import type { DispatchState, Incident, Severity } from "./shared.ts";
 
 const CSS = `
 @keyframes dc-pulse {
@@ -151,14 +151,12 @@ function App() {
     }
   });
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reads from a mutable ref; session.messages triggers the scroll
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [session.messages.length]);
+  }, [session.messages]);
 
-  const incidentList = useMemo(
-    () => Object.values(dashRef.current.incidents).reverse(),
-    [session.toolCalls],
-  );
+  const incidentList = useMemo(() => Object.values(dashRef.current.incidents).reverse(), []);
   const activeIncidents = incidentList.filter((i) => i.status !== "resolved");
   const resolvedCount = incidentList.filter((i) => i.status === "resolved").length;
 

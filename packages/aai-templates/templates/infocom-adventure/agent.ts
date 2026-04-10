@@ -1,6 +1,6 @@
 import { agent, tool } from "aai";
 import { z } from "zod";
-import { getGameState, saveGameState } from "./_shared.ts";
+import { getGameState, saveGameState } from "./shared.ts";
 import systemPrompt from "./system-prompt.md";
 
 export default agent({

@@ -1,13 +1,13 @@
 import { tool } from "aai";
 import { z } from "zod";
-import type { Incident, IncidentType, KV, Severity } from "../_shared.ts";
+import type { Incident, IncidentType, KV, Severity } from "../shared.ts";
 import {
   calculateTriageScore,
   getState,
   now,
   recalculateAlertLevel,
   saveState,
-} from "../_shared.ts";
+} from "../shared.ts";
 
 export const opsRunScenario = tool({
   description: "Run a training scenario that creates simulated incidents for dispatch practice.",

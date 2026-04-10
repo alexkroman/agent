@@ -1,7 +1,7 @@
 import { tool } from "aai";
 import { z } from "zod";
-import type { IncidentType, Severity } from "../_shared.ts";
-import { getApplicableProtocols } from "../_shared.ts";
+import type { IncidentType, Severity } from "../shared.ts";
+import { getApplicableProtocols } from "../shared.ts";
 
 export const opsProtocols = tool({
   description: "Look up step-by-step response protocols for a given incident type and severity.",

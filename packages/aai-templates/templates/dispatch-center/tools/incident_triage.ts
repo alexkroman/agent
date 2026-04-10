@@ -1,6 +1,6 @@
 import { tool } from "aai";
 import { z } from "zod";
-import type { KV } from "../_shared.ts";
+import type { KV } from "../shared.ts";
 import {
   calculateTriageScore,
   getApplicableProtocols,
@@ -9,7 +9,7 @@ import {
   recalculateAlertLevel,
   recommendResources,
   saveState,
-} from "../_shared.ts";
+} from "../shared.ts";
 
 export const incidentTriage = tool({
   description:

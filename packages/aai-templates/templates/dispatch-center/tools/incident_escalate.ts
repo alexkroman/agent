@@ -1,6 +1,6 @@
 import { tool } from "aai";
 import { z } from "zod";
-import type { KV } from "../_shared.ts";
+import type { KV } from "../shared.ts";
 import {
   calculateTriageScore,
   getState,
@@ -8,7 +8,7 @@ import {
   recalculateAlertLevel,
   recommendResources,
   saveState,
-} from "../_shared.ts";
+} from "../shared.ts";
 
 export const incidentEscalate = tool({
   description: "Escalate an incident when it exceeds current capacity or severity increases.",

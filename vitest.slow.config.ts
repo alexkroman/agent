@@ -19,6 +19,6 @@ export default defineConfig({
 		hookTimeout: profile.hookTimeout,
 		retry: profile.retry,
 		include: process.env.VITEST_INCLUDE?.split(",") ?? ["**/*.test.ts"],
-		pool: process.env.VITEST_POOL === "forks" ? "forks" : undefined,
+		pool: process.env.VITEST_POOL === "forks" ? "forks" : "threads",
 	},
 });

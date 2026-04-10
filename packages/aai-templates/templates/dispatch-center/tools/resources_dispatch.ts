@@ -1,7 +1,7 @@
 import { tool } from "aai";
 import { z } from "zod";
-import type { KV, Resource } from "../_shared.ts";
-import { getState, now, recalculateAlertLevel, recommendResources, saveState } from "../_shared.ts";
+import type { KV, Resource } from "../shared.ts";
+import { getState, now, recalculateAlertLevel, recommendResources, saveState } from "../shared.ts";
 
 export const resourcesDispatch = tool({
   description:

@@ -1,13 +1,13 @@
 import { tool } from "aai";
 import { z } from "zod";
-import type { KV } from "../_shared.ts";
+import type { KV } from "../shared.ts";
 import {
   deleteIncidentSnapshot,
   getState,
   now,
   recalculateAlertLevel,
   saveState,
-} from "../_shared.ts";
+} from "../shared.ts";
 
 export const incidentUpdateStatus = tool({
   description: "Update an incident's status (en_route, on_scene, resolved, escalated).",
