@@ -2,83 +2,147 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
+import type { AgentDef } from "aai";
+import { agentToolsToSchemas, toAgentConfig } from "aai/manifest";
 import { build, type Rollup } from "vite";
-import { resolveAgentConfig } from "./_agent-config.ts";
 import { type CommandResult, ok } from "./_output.ts";
+import { fileExists } from "./_utils.ts";
 
-/** Output from the bundler: agent.json (verbatim) + Vite output of tools.ts. */
+/** Shared Vite build base config for agent bundles. */
+function agentViteBuildBase(entry: string) {
+  return {
+    logLevel: "silent" as const,
+    build: {
+      lib: { entry, formats: ["es" as const] },
+      target: "node20" as const,
+      minify: false,
+      rollupOptions: { output: { entryFileNames: "[name].js" } },
+    },
+  };
+}
+
+/** Output from the bundler: agentConfig + worker ESM + client files. */
 export type DirectoryBundleOutput = {
-  /** ESM bundle of tools.ts (tool execute functions + hook handlers). */
+  /** ESM bundle of agent.ts (tool execute functions + hook handlers). */
   worker: string;
   /** Static client files from Vite build. Empty if no client.tsx. */
   clientFiles: Record<string, string>;
-  /** agent.json contents — sent verbatim as agentConfig to the server. */
+  /** Serializable agent config — sent as agentConfig to the server. */
   agentConfig: Record<string, unknown>;
 };
 
 /**
- * Bundle an agent directory: read agent.json + Vite-bundle tools.ts.
+ * Bundle an agent directory: build agent.ts into worker ESM + extract config.
  *
- * - agent.json is the declarative config (name, systemPrompt, toolSchemas, etc.)
- *   and is sent verbatim to the server as agentConfig.
- * - tools.ts is the code entry point (exports tool functions + hooks)
- *   and is bundled into a single ESM worker string via Vite library mode.
+ * - agent.ts is the single entry point: `export default agent({...})`
+ * - A single Vite build produces the worker ESM (with only zod externalized).
+ *   The AgentDef is extracted from that bundle via dynamic import, avoiding a
+ *   second build pass.
  */
 export async function buildAgentBundle(cwd: string): Promise<DirectoryBundleOutput> {
   const { log } = await import("./_ui.ts");
 
-  const agentConfig = await resolveAgentConfig(cwd);
-  log.step(`Bundling ${agentConfig.name}`);
+  // Single Vite build for the worker (zod externalized, aai bundled in) + client in parallel
+  const [worker, clientFiles] = await Promise.all([buildWorker(cwd), buildClient(cwd)]);
 
-  // ── Bundle tools.ts with Vite library mode ─────────────────────────────
-  const toolsEntry = path.join(cwd, "tools.ts");
-  let worker = "";
-  try {
-    await fs.access(toolsEntry);
-    const result = await build({
-      logLevel: "silent",
-      build: {
-        lib: { entry: toolsEntry, formats: ["es"], fileName: "worker" },
-        write: false,
-        target: "node20",
-        minify: false,
-        rollupOptions: {
-          output: { entryFileNames: "[name].js" },
-        },
-      },
-    });
-    // Vite returns RollupOutput or RollupOutput[] — we expect a single output
-    const output = Array.isArray(result) ? result[0] : (result as Rollup.RollupOutput);
-    if (!output) throw new Error("Vite produced no output for tools.ts");
-    const chunk = output.output.find(
-      (o): o is Rollup.OutputChunk => o.type === "chunk" && o.isEntry,
-    );
-    if (!chunk) throw new Error("Vite produced no entry chunk for tools.ts");
-    worker = chunk.code;
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-      // No tools.ts — agent has no custom tools/hooks, just builtins
-      worker = "export const tools = {}; export const hooks = {};";
-    } else {
-      throw err;
-    }
-  }
+  // Extract AgentDef from the worker bundle by eval
+  const agentDef = await evalWorkerBundle(worker, cwd);
+  log.step(`Bundling ${agentDef.name}`);
 
-  // ── Bundle client.tsx with Vite (if present) ────────────────────────────
-  const clientFiles = await buildClient(cwd);
+  // Convert to wire format
+  const config = toAgentConfig(agentDef);
+  const toolSchemas = agentToolsToSchemas(agentDef.tools ?? {});
+  const agentConfig: Record<string, unknown> = { ...config, toolSchemas };
 
   return { worker, clientFiles, agentConfig };
 }
 
 /**
+ * Write the worker ESM to a temp file inside the project's `.aai/` directory
+ * and dynamic-import it, returning the AgentDef default export.
+ *
+ * Since `aai` is bundled into the worker and the `agent()` helper is an
+ * identity function, the import works without external dependencies (only
+ * `zod` is externalized). Writing into the project directory ensures Node
+ * resolves `zod` from the project's `node_modules` rather than `/tmp/`.
+ */
+export async function evalWorkerBundle(code: string, cwd: string): Promise<AgentDef> {
+  const evalDir = path.join(cwd, ".aai", "eval");
+  await fs.mkdir(evalDir, { recursive: true });
+  // Use a unique filename per invocation to avoid Node's ESM import cache.
+  const tmpPath = path.join(
+    evalDir,
+    `agent-${Date.now()}-${Math.random().toString(36).slice(2)}.mjs`,
+  );
+  try {
+    await fs.writeFile(tmpPath, code);
+    const mod = await import(pathToFileURL(tmpPath).href);
+    const agentDef = (mod.default ?? mod) as AgentDef;
+
+    if (!agentDef?.name || typeof agentDef.name !== "string") {
+      throw new Error("agent.ts must export default agent({ name: ... })");
+    }
+
+    return agentDef;
+  } finally {
+    await fs.rm(tmpPath).catch(() => {
+      /* best-effort cleanup */
+    });
+  }
+}
+
+/**
+ * Bundle agent.ts into a single ESM string for the sandbox worker.
+ *
+ * Zod is externalized because it uses `Function()` which fails in the
+ * Deno sandbox. Tool schemas are extracted at build time — Zod is not
+ * needed at runtime in the sandbox.
+ */
+async function buildWorker(cwd: string): Promise<string> {
+  const agentEntry = path.join(cwd, "agent.ts");
+  const base = agentViteBuildBase(agentEntry);
+
+  const result = await build({
+    ...base,
+    plugins: [
+      // Transform .md imports into raw string exports so templates that do
+      // `import systemPrompt from "./system-prompt.md"` bundle correctly.
+      {
+        name: "raw-md",
+        transform(code, id) {
+          if (id.endsWith(".md")) {
+            return `export default ${JSON.stringify(code)}`;
+          }
+        },
+      },
+    ],
+    build: {
+      ...base.build,
+      lib: { ...base.build.lib, fileName: "worker" },
+      write: false,
+      rollupOptions: {
+        // Externalize zod — it uses Function() which fails in the Deno sandbox
+        external: [/^zod/],
+        output: { entryFileNames: "[name].js" },
+      },
+    },
+  });
+
+  const output = Array.isArray(result) ? result[0] : (result as Rollup.RollupOutput);
+  if (!output) throw new Error("Vite produced no output for agent.ts");
+  const chunk = output.output.find((o): o is Rollup.OutputChunk => o.type === "chunk" && o.isEntry);
+  if (!chunk) throw new Error("Vite produced no entry chunk for agent.ts");
+  return chunk.code;
+}
+
+/**
  * Build the client SPA using Vite if client.tsx exists.
- * Returns a map of relative file paths → string contents for deploy.
+ * Returns a map of relative file paths to string contents for deploy.
  */
 async function buildClient(cwd: string): Promise<Record<string, string>> {
   const clientEntry = path.join(cwd, "client.tsx");
-  try {
-    await fs.access(clientEntry);
-  } catch {
+  if (!(await fileExists(clientEntry))) {
     return {}; // No client.tsx — skip client build
   }
 

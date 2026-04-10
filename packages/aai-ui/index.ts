@@ -17,7 +17,7 @@ export type {
   ClientHandle,
 } from "./define-client.tsx";
 // Entry
-export { defineClient } from "./define-client.tsx";
+export { client, defineClient } from "./define-client.tsx";
 export { useToolCallStart, useToolResult } from "./hooks.ts";
 export type {
   SessionCore,

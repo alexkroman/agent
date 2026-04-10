@@ -22,6 +22,7 @@ function resolveLocalTemplatesDir(): string {
 
 /** Resolve the templates directory — local in dev, giget download in prod. */
 async function resolveTemplatesDir(): Promise<string> {
+  if (process.env.AAI_TEMPLATES_DIR) return process.env.AAI_TEMPLATES_DIR;
   if (isDevMode()) return resolveLocalTemplatesDir();
   const { dir } = await downloadTemplate(`${GIGET_SOURCE}#${GIGET_REF}`, { force: true });
   return dir;

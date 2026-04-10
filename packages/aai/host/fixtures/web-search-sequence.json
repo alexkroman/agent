@@ -1,0 +1,122 @@
+[
+  {
+    "type": "session.updated",
+    "timestamp": 1774669501.4762232,
+    "config": {
+      "system_prompt": "You are a research assistant. Use the web_search tool to find current information.",
+      "tools": [
+        {
+          "type": "function",
+          "name": "web_search",
+          "description": "Search the web for current information, facts, news, or answers to questions. Returns a list of results with title, URL, and description. Use this when the user asks about something you don't know, need up-to-date information, or want to verify facts.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "query": {
+                "type": "string",
+                "description": "The search query"
+              },
+              "max_results": {
+                "type": "number",
+                "description": "Maximum number of results to return (default 5)"
+              }
+            },
+            "required": ["query"]
+          }
+        }
+      ],
+      "greeting": "Hi! I can search the web for you."
+    }
+  },
+  {
+    "type": "session.ready",
+    "timestamp": 1774669501.5069516,
+    "session_id": "sess_a12c3d4e5f6789ab0cde12345f678901",
+    "config": {
+      "system_prompt": "You are a research assistant. Use the web_search tool to find current information.",
+      "tools": [
+        {
+          "type": "function",
+          "name": "web_search",
+          "description": "Search the web for current information, facts, news, or answers to questions. Returns a list of results with title, URL, and description. Use this when the user asks about something you don't know, need up-to-date information, or want to verify facts.",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "query": {
+                "type": "string",
+                "description": "The search query"
+              },
+              "max_results": {
+                "type": "number",
+                "description": "Maximum number of results to return (default 5)"
+              }
+            },
+            "required": ["query"]
+          }
+        }
+      ],
+      "greeting": "Hi! I can search the web for you."
+    }
+  },
+  {
+    "type": "reply.started",
+    "timestamp": 1774669501.5081005,
+    "reply_id": "resp_1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d"
+  },
+  {
+    "type": "transcript.agent",
+    "timestamp": 1774669503.61195,
+    "reply_id": "resp_1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d",
+    "item_id": "msg_a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
+    "text": "Hi! I can search the web for you.",
+    "interrupted": false
+  },
+  {
+    "type": "reply.done",
+    "timestamp": 1774669503.9528494,
+    "reply_id": "resp_1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d",
+    "status": "completed"
+  },
+  {
+    "type": "input.speech.started",
+    "timestamp": 1774669504.8296304
+  },
+  {
+    "type": "reply.started",
+    "timestamp": 1774669505.0349832,
+    "reply_id": "resp_2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d"
+  },
+  {
+    "type": "input.speech.stopped",
+    "timestamp": 1774669506.0299
+  },
+  {
+    "type": "transcript.user",
+    "timestamp": 1774669506.184384,
+    "item_id": "msg_b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7",
+    "text": "Search for the latest Mars rover findings"
+  },
+  {
+    "type": "tool.call",
+    "timestamp": 1774669506.466613,
+    "call_id": "chatcmpl-tool-8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d",
+    "name": "web_search",
+    "args": {
+      "query": "latest Mars rover findings"
+    }
+  },
+  {
+    "type": "transcript.agent",
+    "timestamp": 1774669517.728002,
+    "reply_id": "resp_2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d",
+    "item_id": "msg_c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8",
+    "text": "Based on my search, NASA's Perseverance rover has discovered organic molecules in Jezero Crater.",
+    "interrupted": false
+  },
+  {
+    "type": "reply.done",
+    "timestamp": 1774669517.9831085,
+    "reply_id": "resp_2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d",
+    "status": "completed"
+  }
+]

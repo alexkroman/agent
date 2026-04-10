@@ -66,14 +66,48 @@ importers:
         specifier: ^4.1.3
         version: 4.1.3(@opentelemetry/api@1.9.1)(@types/node@25.5.2)(@vitest/coverage-v8@4.1.3)(jsdom@29.0.2(@noble/hashes@1.8.0))(vite@8.0.6(@types/node@25.5.2)(esbuild@0.28.0)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))
 
+  packages/aai:
+    dependencies:
+      nanoevents:
+        specifier: ^9.1.0
+        version: 9.1.0
+      p-timeout:
+        specifier: ^7.0.1
+        version: 7.0.1
+      unstorage:
+        specifier: ^1.17.5
+        version: 1.17.5(@upstash/redis@1.37.0)(aws4fetch@1.0.20)
+      ws:
+        specifier: ^8.20.0
+        version: 8.20.0
+      zod:
+        specifier: ^4.3.6
+        version: 4.3.6
+    devDependencies:
+      '@types/json-schema':
+        specifier: ^7.0.15
+        version: 7.0.15
+      '@types/node':
+        specifier: ^25.5.2
+        version: 25.5.2
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
+      tsdown:
+        specifier: ^0.21.7
+        version: 0.21.7(@arethetypeswrong/core@0.18.2)(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.2)(oxc-resolver@11.19.1(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.2))(publint@0.3.18)(typescript@6.0.2)
+      vitest:
+        specifier: ^4.1.3
+        version: 4.1.3(@opentelemetry/api@1.9.1)(@types/node@25.5.2)(@vitest/coverage-v8@4.1.3)(jsdom@29.0.2(@noble/hashes@1.8.0))(vite@8.0.6(@types/node@25.5.2)(esbuild@0.28.0)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))
+
   packages/aai-cli:
     dependencies:
-      '@alexkroman1/aai-core':
-        specifier: workspace:*
-        version: link:../aai-core
       '@clack/prompts':
         specifier: ^1.2.0
         version: 1.2.0
+      aai:
+        specifier: workspace:*
+        version: link:../aai
       citty:
         specifier: ^0.2.2
         version: 0.2.2
@@ -109,51 +143,17 @@ importers:
         specifier: ^4.1.3
         version: 4.1.3(@opentelemetry/api@1.9.1)(@types/node@25.5.2)(@vitest/coverage-v8@4.1.3)(jsdom@29.0.2(@noble/hashes@1.8.0))(vite@8.0.6(@types/node@25.5.2)(esbuild@0.28.0)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))
 
-  packages/aai-core:
-    dependencies:
-      nanoevents:
-        specifier: ^9.1.0
-        version: 9.1.0
-      p-timeout:
-        specifier: ^7.0.1
-        version: 7.0.1
-      unstorage:
-        specifier: ^1.17.5
-        version: 1.17.5(@upstash/redis@1.37.0)(aws4fetch@1.0.20)
-      ws:
-        specifier: ^8.20.0
-        version: 8.20.0
-      zod:
-        specifier: ^4.3.6
-        version: 4.3.6
-    devDependencies:
-      '@types/json-schema':
-        specifier: ^7.0.15
-        version: 7.0.15
-      '@types/node':
-        specifier: ^25.5.2
-        version: 25.5.2
-      '@types/ws':
-        specifier: ^8.18.1
-        version: 8.18.1
-      tsdown:
-        specifier: ^0.21.7
-        version: 0.21.7(@arethetypeswrong/core@0.18.2)(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.2)(oxc-resolver@11.19.1(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.2))(publint@0.3.18)(typescript@6.0.2)
-      vitest:
-        specifier: ^4.1.3
-        version: 4.1.3(@opentelemetry/api@1.9.1)(@types/node@25.5.2)(@vitest/coverage-v8@4.1.3)(jsdom@29.0.2(@noble/hashes@1.8.0))(vite@8.0.6(@types/node@25.5.2)(esbuild@0.28.0)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))
-
   packages/aai-server:
     dependencies:
-      '@alexkroman1/aai-core':
-        specifier: workspace:*
-        version: link:../aai-core
       '@hono/node-server':
         specifier: ^1.19.13
         version: 1.19.13(hono@4.12.12)
       '@hono/zod-validator':
         specifier: ^0.7.6
         version: 0.7.6(hono@4.12.12)(zod@4.3.6)
+      aai:
+        specifier: workspace:*
+        version: link:../aai
       bogon:
         specifier: ^1.2.0
         version: 1.2.0
@@ -209,27 +209,27 @@ importers:
 
   packages/aai-templates:
     devDependencies:
-      '@alexkroman1/aai-cli':
-        specifier: workspace:*
-        version: link:../aai-cli
-      '@alexkroman1/aai-core':
-        specifier: workspace:*
-        version: link:../aai-core
-      '@alexkroman1/aai-ui':
-        specifier: workspace:*
-        version: link:../aai-ui
       '@types/react':
         specifier: ^19.0.0
         version: 19.2.14
+      aai:
+        specifier: workspace:*
+        version: link:../aai
+      aai-cli:
+        specifier: workspace:*
+        version: link:../aai-cli
+      aai-ui:
+        specifier: workspace:*
+        version: link:../aai-ui
       zod:
         specifier: ^4.3.6
         version: 4.3.6
 
   packages/aai-ui:
     dependencies:
-      '@alexkroman1/aai-core':
+      aai:
         specifier: workspace:*
-        version: link:../aai-core
+        version: link:../aai
       clsx:
         specifier: ^2.1.1
         version: 2.1.1

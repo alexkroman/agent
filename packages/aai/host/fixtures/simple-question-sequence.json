@@ -1,0 +1,73 @@
+[
+  {
+    "type": "session.updated",
+    "timestamp": 1774669390.5091305,
+    "config": {
+      "system_prompt": "You are a helpful assistant. Keep responses to one short sentence.",
+      "tools": [],
+      "greeting": "Hi!"
+    }
+  },
+  {
+    "type": "session.ready",
+    "timestamp": 1774669390.5586526,
+    "session_id": "sess_2246ce7e2eb146e08e62c9476278fbef",
+    "config": {
+      "system_prompt": "You are a helpful assistant. Keep responses to one short sentence.",
+      "tools": [],
+      "greeting": "Hi!"
+    }
+  },
+  {
+    "type": "reply.started",
+    "timestamp": 1774669390.5646203,
+    "reply_id": "resp_b202d16235bf47c39e9704df37c45e1c"
+  },
+  {
+    "type": "transcript.agent",
+    "timestamp": 1774669391.9406674,
+    "reply_id": "resp_b202d16235bf47c39e9704df37c45e1c",
+    "item_id": "msg_8c5ec0e896704aaf99db0aaa564ce98f",
+    "text": "Hi!",
+    "interrupted": false
+  },
+  {
+    "type": "reply.done",
+    "timestamp": 1774669392.302396,
+    "reply_id": "resp_b202d16235bf47c39e9704df37c45e1c",
+    "status": "completed"
+  },
+  {
+    "type": "input.speech.started",
+    "timestamp": 1774669393.0812206
+  },
+  {
+    "type": "reply.started",
+    "timestamp": 1774669393.4352796,
+    "reply_id": "resp_a3b4fed4e6d9413bbf51fd55324a5a0a"
+  },
+  {
+    "type": "input.speech.stopped",
+    "timestamp": 1774669394.1324704
+  },
+  {
+    "type": "transcript.user",
+    "timestamp": 1774669394.2344203,
+    "item_id": "msg_8ee3b8ef00ec4354ae5c084bebfc5361",
+    "text": "Tell me a fun fact about space."
+  },
+  {
+    "type": "transcript.agent",
+    "timestamp": 1774669397.911438,
+    "reply_id": "resp_a3b4fed4e6d9413bbf51fd55324a5a0a",
+    "item_id": "msg_54b36b413ce94b62a66926dbd4475508",
+    "text": "A day on Venus is longer than its year.",
+    "interrupted": false
+  },
+  {
+    "type": "reply.done",
+    "timestamp": 1774669398.1820145,
+    "reply_id": "resp_a3b4fed4e6d9413bbf51fd55324a5a0a",
+    "status": "completed"
+  }
+]

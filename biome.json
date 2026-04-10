@@ -35,7 +35,7 @@
             "patterns": [
               {
                 "group": ["../**/aai/*", "../**/aai-cli/*", "../**/aai-ui/*", "../**/aai-server/*", "../**/aai-templates/*"],
-                "message": "Cross-package relative imports are forbidden. Use the workspace package name (e.g. @alexkroman1/aai) instead."
+                "message": "Cross-package relative imports are forbidden. Use the workspace package name (e.g. aai) instead."
               }
             ]
           }
@@ -154,7 +154,7 @@
   },
   "overrides": [
     {
-      "includes": ["packages/aai-core/**/*.ts", "packages/aai-core/**/*.tsx"],
+      "includes": ["packages/aai/**/*.ts", "packages/aai/**/*.tsx"],
       "linter": {
         "rules": {
           "style": {
@@ -201,6 +201,7 @@
             "noExcessiveCognitiveComplexity": "off"
           },
           "suspicious": {
+            "noArrayIndexKey": "off",
             "noEvolvingTypes": "off",
             "noEmptyBlockStatements": "off"
           }

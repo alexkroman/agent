@@ -17,10 +17,10 @@ import {
   makeClient,
   makeMockHandle,
   silentLogger,
-} from "../../aai-core/host/_test-utils.ts";
-import { createRuntime } from "../../aai-core/host/runtime.ts";
-import type { Session } from "../../aai-core/host/session.ts";
-import { _internals } from "../../aai-core/host/session.ts";
+} from "../../aai/host/_test-utils.ts";
+import { createRuntime } from "../../aai/host/runtime.ts";
+import type { Session } from "../../aai/host/session.ts";
+import { _internals } from "../../aai/host/session.ts";
 
 // ── Stats helpers ───────────────────────────────────────────────────────
 
@@ -109,12 +109,10 @@ describe("session memory with mock S2S", () => {
           handle._fire("event", {
             type: "user_transcript",
             text: `User message ${m} from session ${i} with some reasonable length content to simulate real conversations`,
-            isFinal: true,
           });
           handle._fire("event", {
             type: "agent_transcript",
             text: `Agent response ${m} to session ${i} providing helpful information about the topic discussed`,
-            isFinal: true,
             _interrupted: false,
           });
           handle._fire("event", { type: "reply_done" });
@@ -147,12 +145,10 @@ describe("session memory with mock S2S", () => {
     lastHandle._fire("event", {
       type: "user_transcript",
       text: "Verification message",
-      isFinal: true,
     });
     lastHandle._fire("event", {
       type: "agent_transcript",
       text: "Verification response",
-      isFinal: true,
       _interrupted: false,
     });
     lastHandle._fire("event", { type: "reply_done" });

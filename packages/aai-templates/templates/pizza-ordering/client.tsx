@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 
-import { defineClient, useTheme, useToolResult } from "@alexkroman1/aai-ui";
+import { client, useTheme, useToolResult } from "aai-ui";
 import { useState } from "react";
 import { type Pizza, type PizzaToolResults, pizzaPrice } from "./shared.ts";
 
@@ -157,8 +157,8 @@ function OrderSidebar() {
   );
 }
 
-defineClient({
-  title: "Pizza Palace",
+client({
+  name: "Pizza Palace",
   sidebar: OrderSidebar,
   theme: {
     bg: "#1a1008",

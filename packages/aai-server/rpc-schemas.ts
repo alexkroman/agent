@@ -7,14 +7,14 @@
  * import these schemas — it uses inline type definitions instead.
  */
 
-import { DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai-core";
-import { ToolSchemaSchema as ToolSchemaSchema_ } from "@alexkroman1/aai-core/manifest";
-import { KvDelSchema, KvGetSchema, KvSetSchema } from "@alexkroman1/aai-core/protocol";
+import { DEFAULT_SYSTEM_PROMPT } from "aai";
+import { ToolSchemaSchema as ToolSchemaSchema_ } from "aai/manifest";
+import { KvDelSchema, KvGetSchema, KvSetSchema } from "aai/protocol";
 import { z } from "zod";
 
 // ── Isolate config ────────────────────────────────────────────────────────
 
-export { ToolSchemaSchema } from "@alexkroman1/aai-core/manifest";
+export { ToolSchemaSchema } from "aai/manifest";
 
 export const IsolateConfigSchema = z.object({
   name: z.string(),

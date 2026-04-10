@@ -6,23 +6,19 @@
     "ttsSampleRate": 24000,
     "sessionId": "sess_fixture_005"
   },
-  { "type": "agent_transcript", "text": "Let me explain...", "isFinal": true },
+  { "type": "agent_transcript", "text": "Let me explain..." },
   { "type": "reply_done" },
 
   { "type": "speech_started" },
-  { "type": "user_transcript", "text": "What about", "isFinal": false },
   { "type": "speech_stopped" },
-  { "type": "user_transcript", "text": "What about", "isFinal": true },
+  { "type": "user_transcript", "text": "What about" },
 
-  { "type": "agent_transcript", "text": "Well,", "isFinal": false },
-  { "type": "agent_transcript", "text": " the thing is", "isFinal": false },
   { "type": "cancelled" },
 
   { "type": "speech_started" },
-  { "type": "user_transcript", "text": "Actually never mind", "isFinal": false },
   { "type": "speech_stopped" },
-  { "type": "user_transcript", "text": "Actually never mind", "isFinal": true },
+  { "type": "user_transcript", "text": "Actually never mind" },
 
-  { "type": "agent_transcript", "text": "No problem!", "isFinal": true },
+  { "type": "agent_transcript", "text": "No problem!" },
   { "type": "reply_done" }
 ]

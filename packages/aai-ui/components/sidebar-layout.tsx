@@ -36,7 +36,7 @@ export function SidebarLayout({
 
   const sidebarEl = (
     <div
-      className="flex-shrink-0 flex flex-col overflow-y-auto"
+      className="shrink-0 flex flex-col overflow-y-auto"
       style={{
         width: sidebarWidth,
         ...(sidebarPosition === "left"

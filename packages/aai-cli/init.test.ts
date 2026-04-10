@@ -74,7 +74,7 @@ describe("runInit", () => {
 });
 
 describe("patchPackageJsonForWorkspace", () => {
-  test("rewrites @alexkroman1/* deps to link: paths", async () => {
+  test("rewrites workspace deps to link: paths", async () => {
     await withTempDir(async (dir) => {
       const target = path.join(dir, "my-agent");
       await fs.mkdir(target, { recursive: true });
@@ -83,12 +83,12 @@ describe("patchPackageJsonForWorkspace", () => {
         JSON.stringify({
           packageManager: "pnpm@10.29.3",
           dependencies: {
-            "@alexkroman1/aai-core": "^0.12.3",
-            "@alexkroman1/aai-ui": "^0.12.3",
+            aai: "^0.12.3",
+            "aai-ui": "^0.12.3",
             preact: "^10.29.0",
           },
           devDependencies: {
-            "@alexkroman1/aai-cli": "^0.12.3",
+            "aai-cli": "^0.12.3",
             vitest: "^4.1.1",
           },
         }),
@@ -99,11 +99,11 @@ describe("patchPackageJsonForWorkspace", () => {
       const result = JSON.parse(await fs.readFile(path.join(target, "package.json"), "utf-8"));
       expect(result.name).toBe("my-agent");
       expect(result.packageManager).toBeUndefined();
-      expect(result.dependencies["@alexkroman1/aai-core"]).toMatch(/^link:/);
-      expect(result.dependencies["@alexkroman1/aai-core"]).toContain("aai-core");
-      expect(result.dependencies["@alexkroman1/aai-ui"]).toMatch(/^link:/);
+      expect(result.dependencies.aai).toMatch(/^link:/);
+      expect(result.dependencies.aai).toContain("/aai");
+      expect(result.dependencies["aai-ui"]).toMatch(/^link:/);
       expect(result.dependencies.preact).toBe("^10.29.0");
-      expect(result.devDependencies["@alexkroman1/aai-cli"]).toMatch(/^link:/);
+      expect(result.devDependencies["aai-cli"]).toMatch(/^link:/);
       expect(result.devDependencies.vitest).toBe("^4.1.1");
     });
   });

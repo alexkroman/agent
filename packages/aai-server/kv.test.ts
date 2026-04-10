@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { createUnstorageKv } from "@alexkroman1/aai-core/runtime";
+import { createUnstorageKv } from "aai/runtime";
 import type { Storage } from "unstorage";
 import { beforeEach, describe, expect, test } from "vitest";
 import { createTestStorage } from "./test-utils.ts";

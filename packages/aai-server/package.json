@@ -1,5 +1,5 @@
 {
-  "name": "@alexkroman1/aai-server",
+  "name": "aai-server",
   "version": "0.9.16",
   "private": true,
   "type": "module",
@@ -21,9 +21,9 @@
     "check:load": "pnpm run test:load"
   },
   "dependencies": {
-    "@alexkroman1/aai-core": "workspace:*",
     "@hono/node-server": "^1.19.13",
     "@hono/zod-validator": "^0.7.6",
+    "aai": "workspace:*",
     "bogon": "^1.2.0",
     "hono": "^4.12.12",
     "human-id": "^4.1.3",

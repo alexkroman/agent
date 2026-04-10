@@ -2,9 +2,9 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
-import { parseEnvFile } from "@alexkroman1/aai-core";
+import { parseEnvFile } from "aai";
 
-export { parseEnvFile } from "@alexkroman1/aai-core";
+export { parseEnvFile } from "aai";
 
 /**
  * Build the `ctx.env` record that agent tools will see at runtime.

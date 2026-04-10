@@ -3,10 +3,9 @@
 ## Overview
 
 AAI is a voice agent development kit. Users define agents as directories
-containing `agent.json` + `tools/*.ts` + `hooks/*.ts`. The CLI bundles and
-deploys them to the managed platform.
+containing `agent.ts`. The CLI bundles and deploys them to the managed platform.
 
-- **Platform**: `agent.json` + tools/hooks → CLI bundle → deploy to managed server
+- **Platform**: `agent.ts` → CLI bundle → deploy to managed server
 
 ## Commands
 
@@ -31,7 +30,7 @@ pnpm check:local         # Fast pre-commit gate (parallel: build → typecheck +
 ### Single-package shortcuts
 
 ```sh
-pnpm test:aai-core       # Run only aai-core unit tests
+pnpm test:aai-core       # Run only aai unit tests
 pnpm test:aai-ui         # Run only aai-ui unit tests
 pnpm test:aai-cli        # Run only aai-cli unit tests
 pnpm test:aai-server     # Run only aai-server unit tests
@@ -42,10 +41,10 @@ pnpm dev:aai-server      # Start aai-server in dev mode
 ### Running specific tests
 
 ```sh
-pnpm vitest run --project aai-core              # Single package via --project
-pnpm vitest run packages/aai-core/types.test.ts # Single file
+pnpm vitest run --project aai                   # Single package via --project
+pnpm vitest run packages/aai/types.test.ts      # Single file
 pnpm vitest run session                         # All files matching "session"
-pnpm --filter @alexkroman1/aai-core test        # Single package via pnpm filter
+pnpm --filter aai test                          # Single package via pnpm filter
 ```
 
 ### Full CI check (`pnpm check`)
@@ -68,20 +67,20 @@ Five workspace packages under `packages/`:
 
 | Package | npm name | Purpose |
 | --- | --- | --- |
-| `packages/aai-core/` | `@alexkroman1/aai-core` | Shared core (private): manifest, types, protocol, S2S, session, KV |
-| `packages/aai-ui/` | `@alexkroman1/aai-ui` | Browser client (Preact): session, audio, UI components |
-| `packages/aai-cli/` | `@alexkroman1/aai-cli` | The `aai` CLI: init, dev, test, build, deploy, delete, secret |
-| `packages/aai-server/` | `@alexkroman1/aai-server` | Managed platform server (private): sandbox, sidecar, auth, SSRF |
-| `packages/aai-templates/` | `@alexkroman1/aai-templates` | Agent templates + scaffold (private): starter templates |
+| `packages/aai/` | `aai` | Shared core: manifest, types, protocol, S2S, session, KV |
+| `packages/aai-ui/` | `aai-ui` | Browser client (Preact): session, audio, UI components |
+| `packages/aai-cli/` | `aai-cli` | The `aai` CLI: init, dev, test, build, deploy, delete, secret |
+| `packages/aai-server/` | `aai-server` | Managed platform server (private): sandbox, sidecar, auth, SSRF |
+| `packages/aai-templates/` | `aai-templates` | Agent templates + scaffold (private): starter templates |
 
-**Dependency flow:** `aai-cli`, `aai-ui`, and `aai-server` depend on `aai-core`
+**Dependency flow:** `aai-cli`, `aai-ui`, and `aai-server` depend on `aai`
 (via `workspace:*`) but never on each other.
 
 ### Package exports
 
-#### `@alexkroman1/aai-core` (private shared core)
+#### `aai` (shared core SDK)
 
-Not published to npm. Internal subpath exports consumed by sibling packages:
+Subpath exports consumed by sibling packages and user agents:
 
 - `.` — `parseManifest`, `Manifest`, `Kv` + re-exported types
 - `./runtime` — `createRuntime`, `Runtime`, `RuntimeOptions`
@@ -93,13 +92,13 @@ Not published to npm. Internal subpath exports consumed by sibling packages:
 - `./kv` — KV store interface + in-memory implementation
 - `./utils` — shared utility functions.
 
-#### `@alexkroman1/aai-ui` (UI)
+#### `aai-ui` (UI)
 
-- `.` — default Preact UI component + session + defineClient helpers
+- `.` — default Preact UI component + session + client helpers
 - `./session` — session management (no Preact dependency)
 - `./styles.css` — default styles
 
-#### `@alexkroman1/aai-cli` (CLI)
+#### `aai-cli` (CLI)
 
 Binary: `aai` — subcommands: init, dev, test, build, deploy, delete, secret
 
@@ -110,7 +109,8 @@ The SDK is organized into two directories:
 - **`sdk/`** — shared modules with no Node.js dependencies. Contains:
   `types.ts`, `kv.ts`, `hooks.ts`, `_utils.ts`, `constants.ts`,
   `protocol.ts`, `system-prompt.ts`, `manifest.ts`,
-  `_internal-types.ts`.
+  `_internal-types.ts`, `define.ts` (`agent()` and `tool()` helpers for
+  authoring `agent.ts` files).
 - **`host/`** — host-only modules that require Node.js APIs. Contains:
   `server.ts`, `runtime.ts`, `runtime-config.ts`, `tool-executor.ts`,
   `session.ts`, `session-ctx.ts`, `s2s.ts`, `ws-handler.ts`,
@@ -130,12 +130,9 @@ no import restrictions apply there.
 - `init.ts` / `dev.ts` / `test.ts` / `deploy.ts` / `delete.ts` /
   `secret.ts` — subcommand entry points
 - `_init.ts` / `_deploy.ts` / `_delete.ts` / `_bundler.ts` — internal logic
-- `_scanner.ts` — agent directory scanner: reads `agent.json`,
-  `tools/*.ts`, and `hooks/*.ts`; extracts static exports; produces a
-  `Manifest`
-- `_dev-server.ts` — dev server for directory-based agents: scans agent dir,
+- `_dev-server.ts` — dev server for directory-based agents: loads `agent.ts`,
   builds runtime, watches for file changes, optionally runs Vite for client HMR
-- `_bundler.ts` — bundles agent directory (tools + hooks + client.tsx) into
+- `_bundler.ts` — bundles `agent.ts` (and optional `client.tsx`) into
   deployable artifacts
 - `_api-client.ts` — platform API client (`apiRequest`, `apiRequestOrThrow`)
 - `_config.ts` — auth config, project config, API key management
@@ -152,7 +149,7 @@ no import restrictions apply there.
 - `context.ts` — SessionProvider, useSession, ClientConfigProvider, useClientConfig
 - `hooks.ts` — useToolResult, useToolCallStart, useAutoScroll
 - `audio.ts` — PCM encoding/decoding, AudioWorklet management
-- `define-client.tsx` — defineClient mount helper
+- `define-client.tsx` — client mount helper
 - `types.ts` — UI type definitions
 - `components/` — UI components (app, chat-view, controls,
   message-list, start-screen, sidebar-layout, tool-call-block, button,
@@ -189,7 +186,7 @@ no import restrictions apply there.
 ## Conventions
 
 - **Runtime**: Node (host/platform server), Deno (guest sandbox runtime)
-- **Frameworks**: Preact (client UI), Tailwind CSS v4 (compiled at bundle time)
+- **Frameworks**: React (client UI), Tailwind CSS v4 (compiled at bundle time)
 - **Linting**: Biome. Auto-runs on staged files via lefthook pre-commit hook.
 - **Exports**: In dev mode, package.json exports point to `.ts` source for
   seamless workspace resolution. Update to compiled `.js` dist paths before
@@ -229,13 +226,13 @@ pnpm changeset          # Prompts for packages + bump type + summary
 **Creating a changeset (non-interactive — for agents/CI):**
 
 ```sh
-pnpm changeset:create --pkg @alexkroman1/aai --bump patch --summary "Fix typo in error message"
+pnpm changeset:create --pkg aai --bump patch --summary "Fix typo in error message"
 ```
 
 Multiple packages:
 
 ```sh
-pnpm changeset:create --pkg @alexkroman1/aai --pkg @alexkroman1/aai-ui --bump minor --summary "Add new session API"
+pnpm changeset:create --pkg aai --pkg aai-ui --bump minor --summary "Add new session API"
 ```
 
 If the change doesn't need a release (docs-only, config, tests):
@@ -248,7 +245,7 @@ pnpm changeset add --empty
 
 ```yaml
 ---
-"@alexkroman1/aai": patch
+"aai": patch
 ---
 
 Short summary of the change for the changelog.
@@ -267,8 +264,8 @@ bumped automatically.
 
 - **Templates**: `packages/aai-templates/templates/` contains agent
   scaffolding templates (simple, web-researcher, etc.). Each is
-  self-contained with its own `agent.json`, `tools/`, `hooks/`, and optional
-  `client.tsx`. `scaffold/` has base project files (package.json, tsconfig,
+  self-contained with its own `agent.ts` and optional `client.tsx`.
+  `scaffold/` has base project files (package.json, tsconfig,
   etc.) layered underneath.
 
 ### Git hooks (lefthook)
@@ -417,7 +414,7 @@ stored env at sandbox creation time and kept host-side only.
   process, env isolation inside gVisor sandboxes. No KVM required.
   Run via: `./packages/aai-server/guest/docker-test.sh`
 - `sandbox-integration.test.ts` — sandbox lifecycle and slot management e2e.
-  Run: `pnpm --filter @alexkroman1/aai-server test:integration`
+  Run: `pnpm --filter aai-server test:integration`
 - `builtin-tools.test.ts` — `run_code` sandbox security boundaries
   (network, filesystem, process, env, constructor chain bypass,
   cross-invocation isolation).

@@ -10,18 +10,9 @@
  * No dependency on React, Preact, or any UI framework.
  */
 
-import { errorMessage, WS_OPEN } from "@alexkroman1/aai-core";
-import type {
-  ClientEvent,
-  ClientMessage,
-  ReadyConfig,
-  ServerMessage,
-} from "@alexkroman1/aai-core/protocol";
-import {
-  lenientParse,
-  ReadyConfigSchema,
-  ServerMessageSchema,
-} from "@alexkroman1/aai-core/protocol";
+import { errorMessage, WS_OPEN } from "aai";
+import type { ClientEvent, ClientMessage, ReadyConfig, ServerMessage } from "aai/protocol";
+import { lenientParse, ReadyConfigSchema, ServerMessageSchema } from "aai/protocol";
 import type { VoiceIO } from "./audio.ts";
 import type {
   AgentState,
@@ -294,34 +285,21 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
 
   /** Incremented on each turn boundary -- stale async callbacks compare against this. */
   let handlerGeneration = 0;
-  /** Accumulated agent_transcript (isFinal: false) text for real-time display. */
-  let deltaAccum = "";
 
-  function handleUserTranscriptEvent(text: string, isFinal: boolean): void {
-    if (!isFinal) {
-      updateState({ userTranscript: text });
-    } else {
-      handlerGeneration++;
-      deltaAccum = "";
-      updateState({
-        userTranscript: null,
-        messages: [...currentSnapshot.messages, { role: "user" as const, content: text }],
-        state: "thinking",
-      });
-    }
+  function handleUserTranscriptEvent(text: string): void {
+    handlerGeneration++;
+    updateState({
+      userTranscript: null,
+      messages: [...currentSnapshot.messages, { role: "user" as const, content: text }],
+      state: "thinking",
+    });
   }
 
-  function handleAgentTranscriptEvent(text: string, isFinal: boolean): void {
-    if (!isFinal) {
-      deltaAccum = deltaAccum ? `${deltaAccum} ${text}` : text;
-      updateState({ agentTranscript: deltaAccum });
-    } else {
-      deltaAccum = "";
-      updateState({
-        agentTranscript: null,
-        messages: [...currentSnapshot.messages, { role: "assistant" as const, content: text }],
-      });
-    }
+  function handleAgentTranscriptEvent(text: string): void {
+    updateState({
+      agentTranscript: null,
+      messages: [...currentSnapshot.messages, { role: "assistant" as const, content: text }],
+    });
   }
 
   /** Single entry point for all server->client session events. */
@@ -340,10 +318,10 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
         // VAD detected end of speech -- processing will follow.
         break;
       case "user_transcript":
-        handleUserTranscriptEvent(e.text, e.isFinal);
+        handleUserTranscriptEvent(e.text);
         break;
       case "agent_transcript":
-        handleAgentTranscriptEvent(e.text, e.isFinal);
+        handleAgentTranscriptEvent(e.text);
         break;
       case "tool_call":
         updateState({
@@ -611,12 +589,10 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
 
   function toggle(): void {
     if (currentSnapshot.running) {
-      cancel();
       disconnect();
-      updateState({ running: false });
     } else {
-      connect();
       updateState({ running: true });
+      connect();
     }
   }
 

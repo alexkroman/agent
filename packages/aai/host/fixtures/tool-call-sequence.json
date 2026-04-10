@@ -1,0 +1,114 @@
+[
+  {
+    "type": "session.updated",
+    "timestamp": 1774669401.4762232,
+    "config": {
+      "system_prompt": "You are a weather assistant. Always use the get_weather tool for weather questions. After getting the result, tell the user the weather in one sentence.",
+      "tools": [
+        {
+          "type": "function",
+          "name": "get_weather",
+          "description": "Get the current weather for a city",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "city": {
+                "type": "string",
+                "description": "City name"
+              }
+            },
+            "required": ["city"]
+          }
+        }
+      ],
+      "greeting": "Ask me about the weather!"
+    }
+  },
+  {
+    "type": "session.ready",
+    "timestamp": 1774669401.5069516,
+    "session_id": "sess_b01d5d5f1865418b955dc30b00b3d52b",
+    "config": {
+      "system_prompt": "You are a weather assistant. Always use the get_weather tool for weather questions. After getting the result, tell the user the weather in one sentence.",
+      "tools": [
+        {
+          "type": "function",
+          "name": "get_weather",
+          "description": "Get the current weather for a city",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "city": {
+                "type": "string",
+                "description": "City name"
+              }
+            },
+            "required": ["city"]
+          }
+        }
+      ],
+      "greeting": "Ask me about the weather!"
+    }
+  },
+  {
+    "type": "reply.started",
+    "timestamp": 1774669401.5081005,
+    "reply_id": "resp_0c5069c8a284417696b0fb94121b5302"
+  },
+  {
+    "type": "transcript.agent",
+    "timestamp": 1774669403.61195,
+    "reply_id": "resp_0c5069c8a284417696b0fb94121b5302",
+    "item_id": "msg_f3a8a53d8cce4ad6b92607ea38131f7d",
+    "text": "Ask me about the weather!",
+    "interrupted": false
+  },
+  {
+    "type": "reply.done",
+    "timestamp": 1774669403.9528494,
+    "reply_id": "resp_0c5069c8a284417696b0fb94121b5302",
+    "status": "completed"
+  },
+  {
+    "type": "input.speech.started",
+    "timestamp": 1774669404.8296304
+  },
+  {
+    "type": "reply.started",
+    "timestamp": 1774669405.0349832,
+    "reply_id": "resp_c8b83fbfde1d4dbc8cb39318c3012981"
+  },
+  {
+    "type": "input.speech.stopped",
+    "timestamp": 1774669406.0299
+  },
+  {
+    "type": "transcript.user",
+    "timestamp": 1774669406.184384,
+    "item_id": "msg_2ff13ff4b77b46e19d2b7f20ad88d822",
+    "text": "What is the weather like in San Francisco?"
+  },
+  {
+    "type": "tool.call",
+    "timestamp": 1774669406.466613,
+    "call_id": "chatcmpl-tool-9793a062159342bb8e221cbab79229e3",
+    "name": "get_weather",
+    "args": {
+      "city": "San Francisco"
+    }
+  },
+  {
+    "type": "transcript.agent",
+    "timestamp": 1774669417.728002,
+    "reply_id": "resp_c8b83fbfde1d4dbc8cb39318c3012981",
+    "item_id": "msg_8421a07d995e4f25b07983ce420b7eca",
+    "text": "The weather in San Francisco is sunny with a temperature of 72 degrees Fahrenheit, 45 percent humidity, and winds at 8 miles per hour from the northwest.",
+    "interrupted": false
+  },
+  {
+    "type": "reply.done",
+    "timestamp": 1774669417.9831085,
+    "reply_id": "resp_c8b83fbfde1d4dbc8cb39318c3012981",
+    "status": "completed"
+  }
+]

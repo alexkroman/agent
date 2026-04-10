@@ -1,5 +1,5 @@
 {
-  "name": "@alexkroman1/aai-templates",
+  "name": "aai-templates",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -7,13 +7,13 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
-    "check:typecheck": "node --experimental-strip-types scripts/check-typecheck.ts"
+    "check:typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "@alexkroman1/aai-cli": "workspace:*",
-    "@alexkroman1/aai-core": "workspace:*",
-    "@alexkroman1/aai-ui": "workspace:*",
     "@types/react": "^19.0.0",
+    "aai": "workspace:*",
+    "aai-cli": "workspace:*",
+    "aai-ui": "workspace:*",
     "zod": "^4.3.6"
   }
 }

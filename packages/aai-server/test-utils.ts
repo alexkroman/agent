@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import type { Kv } from "@alexkroman1/aai-core";
+import type { Kv } from "aai";
 import { createStorage, type Storage } from "unstorage";
 import { vi } from "vitest";
 import { createOrchestrator } from "./orchestrator.ts";

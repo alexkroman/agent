@@ -1,5 +1,5 @@
 {
-  "name": "@alexkroman1/aai-ui",
+  "name": "aai-ui",
   "version": "0.12.3",
   "type": "module",
   "files": [
@@ -24,7 +24,7 @@
     "check:attw": "attw --pack --profile esm-only --entrypoints ."
   },
   "dependencies": {
-    "@alexkroman1/aai-core": "workspace:*",
+    "aai": "workspace:*",
     "clsx": "^2.1.1"
   },
   "peerDependencies": {

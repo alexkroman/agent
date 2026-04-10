@@ -1,0 +1,21 @@
+[
+  {
+    "type": "reply.started",
+    "timestamp": 1774669383.702049,
+    "reply_id": "resp_02ca83aad786449cadc7aab6c4e2737a"
+  },
+  {
+    "type": "transcript.agent",
+    "timestamp": 1774669386.8797214,
+    "reply_id": "resp_02ca83aad786449cadc7aab6c4e2737a",
+    "item_id": "msg_5a2edc3add16401ca99c81eb8fda72e3",
+    "text": "Hello! How can I help you today?",
+    "interrupted": false
+  },
+  {
+    "type": "reply.done",
+    "timestamp": 1774669387.1929219,
+    "reply_id": "resp_02ca83aad786449cadc7aab6c4e2737a",
+    "status": "completed"
+  }
+]

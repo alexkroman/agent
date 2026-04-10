@@ -2,7 +2,7 @@
  * Starts a local Verdaccio npm registry, publishes workspace packages to it,
  * and configures the environment so npm/pnpm/yarn resolve from it.
  *
- * @alexkroman1/* packages are never proxied to the real npm registry —
+ * Workspace packages are never proxied to the real npm registry —
  * they are always served from verdaccio's local storage. Consumer projects
  * use a fresh pnpm store-dir to avoid stale content-addressable cache hits.
  */
@@ -23,14 +23,21 @@ export interface MockRegistry {
 }
 
 function writeConfig(configPath: string, port: number): void {
-  // @alexkroman1/* packages are never proxied — always served from local storage.
+  // Workspace packages are local-only.
+  // Everything else proxies to npmjs for third-party deps.
   const yaml = `
 storage: ./storage
 uplinks:
   npmjs:
     url: https://registry.npmjs.org/
 packages:
-  "@alexkroman1/*":
+  "aai":
+    access: $all
+    publish: $all
+  "aai-ui":
+    access: $all
+    publish: $all
+  "aai-cli":
     access: $all
     publish: $all
   "**":

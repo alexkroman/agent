@@ -7,9 +7,9 @@
  * SDK → deploy body → server round trip without interface mismatch.
  */
 
-import type { AgentDef } from "@alexkroman1/aai-core";
-import { agentToolsToSchemas, toAgentConfig } from "@alexkroman1/aai-core/manifest";
-import { resolveAllBuiltins } from "@alexkroman1/aai-core/runtime";
+import type { AgentDef } from "aai";
+import { agentToolsToSchemas, toAgentConfig } from "aai/manifest";
+import { resolveAllBuiltins } from "aai/runtime";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import { createTestOrchestrator } from "./test-utils.ts";

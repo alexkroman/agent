@@ -34,10 +34,11 @@ vi.mock("./session-core.ts", () => {
   };
 });
 
-import { defineClient } from "./define-client.tsx";
+// biome-ignore lint/suspicious/noDeprecatedImports: testing deprecated alias
+import { client, defineClient } from "./define-client.tsx";
 import { createSessionCore } from "./session-core.ts";
 
-describe("defineClient", () => {
+describe("client", () => {
   let container: HTMLElement;
 
   beforeEach(() => {
@@ -53,13 +54,13 @@ describe("defineClient", () => {
 
   it("throws when target selector does not match", () => {
     expect(() =>
-      defineClient({ title: "Test", target: "#nonexistent", platformUrl: "http://localhost:3000" }),
+      client({ name: "Test", target: "#nonexistent", platformUrl: "http://localhost:3000" }),
     ).toThrow("Element not found: #nonexistent");
   });
 
   it("renders with config-only (tier 1)", () => {
-    const handle = defineClient({
-      title: "Test Agent",
+    const handle = client({
+      name: "Test Agent",
       target: "#app",
       platformUrl: "http://localhost:3000",
     });
@@ -73,7 +74,7 @@ describe("defineClient", () => {
     function MyApp() {
       return createElement("div", { "data-testid": "custom" }, "Custom");
     }
-    const handle = defineClient({
+    const handle = client({
       component: MyApp,
       target: "#app",
       platformUrl: "http://localhost:3000",
@@ -83,8 +84,8 @@ describe("defineClient", () => {
   });
 
   it("dispose unmounts and disconnects", () => {
-    const handle = defineClient({
-      title: "Test",
+    const handle = client({
+      name: "Test",
       target: "#app",
       platformUrl: "http://localhost:3000",
     });
@@ -93,8 +94,8 @@ describe("defineClient", () => {
   });
 
   it("Symbol.dispose aliases dispose", () => {
-    const handle = defineClient({
-      title: "Test",
+    const handle = client({
+      name: "Test",
       target: "#app",
       platformUrl: "http://localhost:3000",
     });
@@ -106,7 +107,7 @@ describe("defineClient", () => {
   it("accepts an HTMLElement as target", () => {
     const el = document.createElement("div");
     document.body.appendChild(el);
-    const handle = defineClient({ target: el, platformUrl: "http://localhost:3000" });
+    const handle = client({ target: el, platformUrl: "http://localhost:3000" });
     expect(el.childNodes.length).toBeGreaterThan(0);
     handle.dispose();
   });
@@ -124,7 +125,7 @@ describe("defineClient", () => {
     });
     try {
       const mockedCreateSessionCore = vi.mocked(createSessionCore);
-      const handle = defineClient({ title: "Test", target: container });
+      const handle = client({ name: "Test", target: container });
       expect(mockedCreateSessionCore).toHaveBeenCalledWith(
         expect.objectContaining({ platformUrl: "https://example.com/agent/" }),
       );
@@ -136,5 +137,9 @@ describe("defineClient", () => {
         configurable: true,
       });
     }
+  });
+
+  it("defineClient is a deprecated alias for client", () => {
+    expect(defineClient).toBe(client);
   });
 });

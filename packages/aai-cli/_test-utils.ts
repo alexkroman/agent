@@ -95,7 +95,7 @@ async function copyScaffoldNoOverwrite(scaffoldDir: string, dest: string): Promi
 /** Create a minimal DirectoryBundleOutput for deploy tests. */
 export function makeBundle(overrides?: Partial<DirectoryBundleOutput>): DirectoryBundleOutput {
   return {
-    worker: "export const tools = {};",
+    worker: "export default { name: 'test-agent', tools: {} };",
     clientFiles: {},
     agentConfig: {
       name: "test-agent",

@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 
-import type { ChatMessage } from "@alexkroman1/aai-ui";
-import { defineClient, useSession } from "@alexkroman1/aai-ui";
+import type { ChatMessage } from "aai-ui";
+import { client, useSession } from "aai-ui";
 import { useEffect, useRef } from "react";
 
 const CSS = `
@@ -60,7 +60,7 @@ function InfocomAdventure() {
 
   useEffect(() => {
     bottom.current?.scrollIntoView({ behavior: "smooth" });
-  }, [session.messages.length, session.userTranscript]);
+  }, []);
 
   const stateLabel =
     session.state === "listening"
@@ -140,7 +140,7 @@ function InfocomAdventure() {
             </button>
           </div>
           <div
-            className="fixed inset-0 pointer-events-none z-[12]"
+            className="fixed inset-0 pointer-events-none z-12"
             style={{
               background:
                 "radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,0.4) 100%)",
@@ -254,7 +254,7 @@ function InfocomAdventure() {
           </div>
         </div>
         <div
-          className="fixed inset-0 pointer-events-none z-[12]"
+          className="fixed inset-0 pointer-events-none z-12"
           style={{
             background: "radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,0.4) 100%)",
           }}
@@ -264,7 +264,7 @@ function InfocomAdventure() {
   );
 }
 
-defineClient({
+client({
   component: InfocomAdventure,
   theme: {
     bg: CRT_BG,

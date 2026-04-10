@@ -4,8 +4,8 @@ import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import { errorMessage } from "@alexkroman1/aai-core";
 import * as p from "@clack/prompts";
+import { errorMessage } from "aai";
 import { colorize } from "consola/utils";
 import { DEFAULT_DEV_SERVER, getMonorepoRoot, isDevMode } from "./_agent.ts";
 import { type CommandResult, ok } from "./_output.ts";
@@ -68,7 +68,7 @@ async function hasDeps(cwd: string): Promise<boolean> {
 
 /** Run pnpm install and warn on failure. */
 async function runPnpmInstall(cwd: string): Promise<void> {
-  // In dev mode, allow workspace resolution so @alexkroman1/* deps link to local source.
+  // In dev mode, allow workspace resolution so workspace deps link to local source.
   // In production, --ignore-workspace prevents pnpm from hoisting to a parent workspace.
   const pnpmArgs = isDevMode() ? ["install"] : ["install", "--ignore-workspace"];
   await execFileAsync("pnpm", pnpmArgs, { cwd });
@@ -130,15 +130,20 @@ async function tryDeploy(
 }
 
 /** Scaffold the project, optionally showing a spinner. */
-async function scaffoldProject(dir: string, cwd: string, silent?: boolean): Promise<void> {
+async function scaffoldProject(
+  dir: string,
+  cwd: string,
+  template: string,
+  silent?: boolean,
+): Promise<void> {
   const { runInit } = await import("./_init.ts");
   if (silent) {
-    await runInit({ targetDir: cwd });
+    await runInit({ targetDir: cwd, template });
     return;
   }
   const s = p.spinner();
   s.start(`Creating ${dir}`);
-  await runInit({ targetDir: cwd });
+  await runInit({ targetDir: cwd, template });
   s.stop("Project created");
 }
 
@@ -153,6 +158,7 @@ export async function executeInit(
   opts: {
     dir?: string | undefined;
     force?: boolean | undefined;
+    template?: string | undefined;
     yes?: boolean | undefined;
     skipApi?: boolean | undefined;
     skipDeploy?: boolean | undefined;
@@ -169,15 +175,15 @@ export async function executeInit(
   const monorepoRoot = getMonorepoRoot();
   const cwd = resolveTargetDir(dir);
 
-  if (!opts.force && (await fileExists(path.join(cwd, "agent.json")))) {
+  if (!opts.force && (await fileExists(path.join(cwd, "agent.ts")))) {
     throw new Error(
-      `agent.json already exists in this directory. Use ${colorize("cyanBright", "--force")} to overwrite.`,
+      `agent.ts already exists in this directory. Use ${colorize("cyanBright", "--force")} to overwrite.`,
     );
   }
 
-  const template = "simple";
+  const template = opts.template ?? "simple";
 
-  await scaffoldProject(dir, cwd, suppressUi);
+  await scaffoldProject(dir, cwd, template, suppressUi);
   await installDeps(cwd, suppressUi);
 
   let deployed = false;

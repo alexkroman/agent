@@ -1,5 +1,5 @@
 {
-  "name": "@alexkroman1/aai-cli",
+  "name": "aai-cli",
   "version": "0.12.3",
   "type": "module",
   "bin": {
@@ -29,8 +29,8 @@
     "check:e2e": "pnpm run test:e2e"
   },
   "dependencies": {
-    "@alexkroman1/aai-core": "workspace:*",
     "@clack/prompts": "^1.2.0",
+    "aai": "workspace:*",
     "citty": "^0.2.2",
     "consola": "^3.4.2",
     "giget": "^3.2.0",

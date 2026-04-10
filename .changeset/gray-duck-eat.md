@@ -1,5 +1,5 @@
 ---
-"@alexkroman1/aai-server": patch
+"aai-server": patch
 ---
 
 Remove deprecated terminate() backwards compat alias on Sandbox type

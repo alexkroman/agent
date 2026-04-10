@@ -3,8 +3,8 @@ set -euo pipefail
 
 # Non-interactive changeset creation for agents and CI.
 # Usage:
-#   scripts/create-changeset.sh --pkg @alexkroman1/aai --bump patch --summary "Fix bug"
-#   scripts/create-changeset.sh --pkg @alexkroman1/aai --pkg @alexkroman1/aai-ui --bump minor --summary "Add feature"
+#   scripts/create-changeset.sh --pkg aai --bump patch --summary "Fix bug"
+#   scripts/create-changeset.sh --pkg aai --pkg aai-ui --bump minor --summary "Add feature"
 #   scripts/create-changeset.sh --empty
 
 PACKAGES=()

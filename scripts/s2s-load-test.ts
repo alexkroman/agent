@@ -16,7 +16,7 @@ import {
   defaultCreateS2sWebSocket,
   type S2sHandle,
   type S2sToolSchema,
-} from "../packages/aai-core/host/s2s.ts";
+} from "../packages/aai/host/s2s.ts";
 
 // ── Config ───────────────────────────────────────────────────────────────────
 

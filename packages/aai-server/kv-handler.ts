@@ -1,8 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { errorMessage } from "@alexkroman1/aai-core";
-import type { KvRequest } from "@alexkroman1/aai-core/protocol";
-import { createUnstorageKv } from "@alexkroman1/aai-core/runtime";
+import { errorMessage } from "aai";
+import type { KvRequest } from "aai/protocol";
+import { createUnstorageKv } from "aai/runtime";
 import { agentKvPrefix } from "./constants.ts";
 import type { ValidatedAppContext } from "./context.ts";
 

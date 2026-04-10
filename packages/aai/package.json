@@ -1,0 +1,58 @@
+{
+  "name": "aai",
+  "version": "0.12.3",
+  "type": "module",
+  "exports": {
+    ".": {
+      "@dev/source": "./index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./protocol": {
+      "@dev/source": "./sdk/protocol.ts",
+      "types": "./dist/sdk/protocol.d.ts",
+      "import": "./dist/sdk/protocol.js"
+    },
+    "./runtime": {
+      "@dev/source": "./host/runtime-barrel.ts",
+      "types": "./dist/host/runtime-barrel.d.ts",
+      "import": "./dist/host/runtime-barrel.js"
+    },
+    "./manifest": {
+      "@dev/source": "./sdk/manifest-barrel.ts",
+      "types": "./dist/sdk/manifest-barrel.d.ts",
+      "import": "./dist/sdk/manifest-barrel.js"
+    }
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:integration": "VITEST_INCLUDE=host/integration.test.ts,host/pentest.test.ts,host/run-code-sandbox.test.ts vitest run -c ../../vitest.slow.config.ts",
+    "check:integration": "pnpm run test:integration",
+    "build": "tsdown && tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit && tsc -p sdk/tsconfig.json",
+    "lint": "biome check ."
+  },
+  "dependencies": {
+    "nanoevents": "^9.1.0",
+    "p-timeout": "^7.0.1",
+    "unstorage": "^1.17.5",
+    "ws": "^8.20.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/json-schema": "^7.0.15",
+    "@types/node": "^25.5.2",
+    "@types/ws": "^8.18.1",
+    "tsdown": "^0.21.7",
+    "vitest": "^4.1.3"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/alexkroman/agent.git",
+    "directory": "packages/aai"
+  }
+}

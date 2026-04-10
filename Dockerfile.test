@@ -23,7 +23,7 @@ RUN corepack enable && corepack prepare pnpm@10.29.3 --activate
 
 # Layer 1: workspace config + lockfile (cached unless deps change)
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY packages/aai-core/package.json packages/aai-core/
+COPY packages/aai/package.json packages/aai/
 COPY packages/aai-ui/package.json packages/aai-ui/
 COPY packages/aai-cli/package.json packages/aai-cli/
 COPY packages/aai-server/package.json packages/aai-server/

@@ -3,7 +3,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { errorMessage } from "@alexkroman1/aai-core";
+import { errorMessage } from "aai";
 import { defineCommand, runMain } from "citty";
 import { CliError, type CommandResult, fail, getOutputMode, type OutputMode } from "./_output.ts";
 import { silenceOutput } from "./_ui.ts";
@@ -28,13 +28,13 @@ function findPkgJson(dir: string): string {
 const pkgJson = JSON.parse(findPkgJson(cliDir));
 const VERSION: string = pkgJson.version;
 
-/** Shared command setup: resolve cwd, optionally require agent.json. */
+/** Shared command setup: resolve cwd, optionally require agent.ts. */
 async function setup(opts?: { agent?: boolean }): Promise<string> {
   const cwd = resolveCwd();
   if (opts?.agent) {
-    const hasAgent = await fileExists(path.join(cwd, "agent.json"));
+    const hasAgent = await fileExists(path.join(cwd, "agent.ts"));
     if (!hasAgent) {
-      throw new Error("No agent.json found in the current directory. Run `aai init` first.");
+      throw new Error("No agent.ts found in the current directory. Run `aai init` first.");
     }
   }
   return cwd;
@@ -89,6 +89,7 @@ const init = defineCommand({
   args: {
     dir: { type: "positional", description: "Project directory", required: false },
     force: { type: "boolean", alias: "f", description: "Overwrite existing files" },
+    template: { type: "string", alias: "t", description: "Template to use (e.g. pizza-ordering)" },
     server: sharedArgs.server,
     yes: sharedArgs.yes,
     json: sharedArgs.json,
@@ -102,6 +103,7 @@ const init = defineCommand({
         {
           dir: args.dir,
           force: args.force,
+          template: args.template,
           yes: args.yes,
           skipApi: args.skipApi,
           skipDeploy: args.skipDeploy,
@@ -292,8 +294,8 @@ if (process.env.VITEST !== "true") {
   const helpFlags = new Set(["--help", "--version", "-h", "-V"]);
 
   if (!sub || (sub.startsWith("-") && !helpFlags.has(sub))) {
-    // No subcommand: deploy if agent.json exists, otherwise init
-    const defaultCmd = existsSync(path.join(resolveCwd(), "agent.json")) ? "deploy" : "init";
+    // No subcommand: deploy if agent.ts exists, otherwise init
+    const defaultCmd = existsSync(path.join(resolveCwd(), "agent.ts")) ? "deploy" : "init";
     process.argv.splice(2, 0, defaultCmd);
   }
 

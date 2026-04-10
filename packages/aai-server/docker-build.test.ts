@@ -5,7 +5,7 @@
  * Verifies that the multi-stage production image builds successfully
  * from the repo root context.
  *
- * Run via: pnpm --filter @alexkroman1/aai-server test:docker
+ * Run via: pnpm --filter aai-server test:docker
  */
 import { execFileSync } from "node:child_process";
 import path from "node:path";

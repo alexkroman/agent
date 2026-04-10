@@ -21,7 +21,7 @@ const packagesDir = path.resolve(dir, "..");
 
 // Representative subset: minimal baseline, stateful + tools, external tools + custom UI.
 // Full template coverage is handled by the templates unit test tier (pnpm test:templates).
-const templates = ["simple", "memory-agent", "web-researcher"];
+const templates = ["simple", "web-researcher"];
 
 let aaiBin: string;
 let tmpDir: string;
@@ -37,6 +37,7 @@ function aaiEnv(): NodeJS.ProcessEnv {
     NO_COLOR: "1",
     FORCE_COLOR: "0",
     AAI_NO_DEV: "1",
+    AAI_TEMPLATES_DIR: path.resolve(dir, "../aai-templates"),
     ASSEMBLYAI_API_KEY: process.env.ASSEMBLYAI_API_KEY || "test",
     npm_config_ignore_scripts: "true", // avoid postinstall hooks in linked pkgs
   };
@@ -90,14 +91,14 @@ function initProject(template: string, projectDir: string): void {
 function installDeps(projectDir: string): void {
   const env = { ...aaiEnv(), ...registry.env };
 
-  // Rewrite @alexkroman1/* dep versions to match the unique testVersion
+  // Rewrite workspace dep versions to match the unique testVersion
   // published to the mock registry (avoids pnpm store cache collisions).
   const pkgJsonPath = path.join(projectDir, "package.json");
   const pkgJson = JSON.parse(fs.readFileSync(pkgJsonPath, "utf-8"));
   for (const depField of ["dependencies", "devDependencies"] as const) {
     if (!pkgJson[depField]) continue;
     for (const dep of Object.keys(pkgJson[depField])) {
-      if (dep.startsWith("@alexkroman1/")) {
+      if (dep === "aai" || dep === "aai-ui" || dep === "aai-cli") {
         pkgJson[depField][dep] = registry.testVersion;
       }
     }
@@ -132,7 +133,7 @@ beforeAll(async () => {
   // Packages are built + published inside startMockRegistry, so consumers
   // (npm/pnpm/yarn install) resolve them exactly as they would from the real registry.
   const { startMockRegistry } = await import("./_mock-registry.ts");
-  registry = await startMockRegistry(packagesDir, ["aai-core", "aai-ui", "aai-cli"]);
+  registry = await startMockRegistry(packagesDir, ["aai", "aai-ui", "aai-cli"]);
 });
 
 afterAll(async () => {
@@ -228,7 +229,7 @@ describe("browser: dev server", () => {
 
   beforeAll(async () => {
     const projectDir = path.join(tmpDir, "_browser-dev");
-    initProject("simple", projectDir);
+    initProject("pizza-ordering", projectDir);
     aai(["build", "--skip-tests"], projectDir);
 
     // Serve the built client with a simple static server (faster than vite dev)
@@ -427,36 +428,14 @@ describe("browser: dev server", () => {
   test.concurrent("thinking state: user message appears after user_transcript", async () => {
     const { page, inject } = await setupEventInjector(browser, port);
 
-    await inject({ type: "user_transcript", text: "What is the meaning of life?", isFinal: true });
+    await inject({ type: "user_transcript", text: "What is the meaning of life?" });
     await page.getByText("What is the meaning of life?").waitFor();
 
     // State indicator should show "thinking"
     await page.locator('[data-state="thinking"]').waitFor({ timeout: 30_000 });
 
-    await inject({ type: "agent_transcript", text: "42.", isFinal: true });
+    await inject({ type: "agent_transcript", text: "42." });
     await page.getByText("42.").waitFor();
-
-    await page.close();
-  });
-
-  test.concurrent("live transcript: partial speech text renders", async () => {
-    const { page, inject } = await setupEventInjector(browser, port);
-
-    // speech_started → userUtterance becomes "" → shows thinking dots
-    await inject({ type: "speech_started" });
-
-    // Partial user_transcript (isFinal: false) → shows the text
-    await inject({ type: "user_transcript", text: "Tell me about", isFinal: false });
-    await page.getByText("Tell me about").waitFor();
-
-    // Updated user_transcript (isFinal: false)
-    await inject({ type: "user_transcript", text: "Tell me about space", isFinal: false });
-    await page.getByText("Tell me about space").waitFor();
-
-    // user_transcript (isFinal: true) finalizes the transcript
-    await inject({ type: "user_transcript", text: "Tell me about space", isFinal: true });
-    await inject({ type: "agent_transcript", text: "Space is vast.", isFinal: true });
-    await page.getByText("Space is vast.").waitFor();
 
     await page.close();
   });
@@ -464,10 +443,10 @@ describe("browser: dev server", () => {
   test.concurrent("state transitions: thinking → listening after reply_done", async () => {
     const { page, inject } = await setupEventInjector(browser, port);
 
-    await inject({ type: "user_transcript", text: "Hello", isFinal: true });
+    await inject({ type: "user_transcript", text: "Hello" });
     await page.locator('[data-state="thinking"]').waitFor({ timeout: 30_000 });
 
-    await inject({ type: "agent_transcript", text: "Hi there!", isFinal: true });
+    await inject({ type: "agent_transcript", text: "Hi there!" });
     await inject({ type: "reply_done" });
     await page.locator('[data-state="listening"]').waitFor({ timeout: 30_000 });
 

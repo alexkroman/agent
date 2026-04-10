@@ -41,6 +41,7 @@ aai secret delete MY_KEY # Remove a secret
 
 export type InitOptions = {
   targetDir: string;
+  template?: string;
 };
 
 /**
@@ -48,14 +49,14 @@ export type InitOptions = {
  * Used to rewrite published version ranges to link: paths in dev mode.
  */
 const WORKSPACE_PKG_DIRS: Record<string, string> = {
-  "@alexkroman1/aai-core": "aai-core",
-  "@alexkroman1/aai-cli": "aai-cli",
-  "@alexkroman1/aai-ui": "aai-ui",
-  "@alexkroman1/aai-server": "aai-server",
-  "@alexkroman1/aai-templates": "aai-templates",
+  aai: "aai",
+  "aai-cli": "aai-cli",
+  "aai-ui": "aai-ui",
+  "aai-server": "aai-server",
+  "aai-templates": "aai-templates",
 };
 
-/** Rewrite @alexkroman1/* deps to link: paths so pnpm links to local source. */
+/** Rewrite workspace deps to link: paths so pnpm links to local source. */
 export async function patchPackageJsonForWorkspace(targetDir: string): Promise<void> {
   const pkgPath = path.join(targetDir, "package.json");
   let raw: string;
@@ -90,8 +91,9 @@ export async function patchPackageJsonForWorkspace(targetDir: string): Promise<v
 
 export async function runInit(opts: InitOptions): Promise<string> {
   const { targetDir } = opts;
+  const template = opts.template ?? "simple";
 
-  await downloadAndMergeTemplate("simple", targetDir);
+  await downloadAndMergeTemplate(template, targetDir);
 
   if (isDevMode()) {
     await patchPackageJsonForWorkspace(targetDir);

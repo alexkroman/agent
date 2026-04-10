@@ -1,6 +1,6 @@
 ---
-"@alexkroman1/aai-ui": major
-"@alexkroman1/aai-templates": patch
+"aai-ui": major
+"aai-templates": patch
 ---
 
 Simplify aai-ui package: remove Reactive<T> abstraction, hardcode Preact signals, inline micro-components, merge createSessionControls into createVoiceSession, remove ./session subpath export.

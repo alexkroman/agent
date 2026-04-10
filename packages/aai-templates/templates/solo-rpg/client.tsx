@@ -1,12 +1,6 @@
 /** @jsxImportSource react */
 
-import {
-  ChatView,
-  defineClient,
-  SidebarLayout,
-  StartScreen,
-  useToolResult,
-} from "@alexkroman1/aai-ui";
+import { ChatView, client, SidebarLayout, StartScreen, useToolResult } from "aai-ui";
 import { useEffect, useState } from "react";
 import type {
   ClockData,
@@ -14,7 +8,7 @@ import type {
   GameState,
   NPC,
   SoloRpgToolResults,
-  StoryInfo,
+  StoryBlueprint,
 } from "./shared.ts";
 
 const INITIAL: GameState = {
@@ -26,6 +20,9 @@ const INITIAL: GameState = {
   settingDescription: "",
   playerName: "",
   characterConcept: "",
+  backstory: "",
+  playerWishes: "",
+  contentLines: "",
   edge: 1,
   heart: 1,
   iron: 1,
@@ -39,6 +36,7 @@ const INITIAL: GameState = {
   currentLocation: "",
   currentSceneContext: "",
   timeOfDay: "",
+  locationHistory: [],
   chaosFactor: 5,
   crisisMode: false,
   gameOver: false,
@@ -46,8 +44,12 @@ const INITIAL: GameState = {
   npcs: [],
   clocks: [],
   storyBlueprint: null,
-  kidMode: false,
+  chapterNumber: 1,
+  campaignHistory: [],
   sessionLog: [],
+  narrationHistory: [],
+  directorGuidance: {},
+  kidMode: false,
 };
 
 // ── Color Palette ────────────────────────────────────────────────────────────
@@ -437,9 +439,11 @@ function NpcCard({ npc }: { npc: NPC }) {
   );
 }
 
-function StoryArc({ story }: { story: StoryInfo }) {
-  const pct = story.totalActs > 0 ? ((story.currentAct - 1) / story.totalActs) * 100 : 0;
-  const phaseLabel = PHASE_LABELS[story.currentPhase] || story.currentPhase;
+function StoryArc({ story }: { story: StoryBlueprint }) {
+  const totalActs = story.acts.length;
+  const currentPhase = story.acts[story.currentAct - 1]?.phase ?? "";
+  const pct = totalActs > 0 ? ((story.currentAct - 1) / totalActs) * 100 : 0;
+  const phaseLabel = PHASE_LABELS[currentPhase] || currentPhase;
   return (
     <div style={{ marginBottom: "8px" }}>
       <div
@@ -454,7 +458,7 @@ function StoryArc({ story }: { story: StoryInfo }) {
           Story Arc
         </span>
         <span style={{ fontSize: "9px", color: C.accent }}>
-          {phaseLabel} ({story.currentAct}/{story.totalActs})
+          {phaseLabel} ({story.currentAct}/{totalActs})
         </span>
       </div>
       <div
@@ -899,7 +903,7 @@ function SoloRPGApp() {
 const SESSION_KEY = "solo-rpg:sessionId";
 const savedSessionId = localStorage.getItem(SESSION_KEY);
 
-defineClient({
+client({
   component: SoloRPGApp,
   theme: {
     bg: C.bg,

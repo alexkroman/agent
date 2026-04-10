@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Syncs @alexkroman1/* dependency versions in the scaffold package.json
+ * Syncs workspace dependency versions in the scaffold package.json
  * to match current workspace package versions (as ^x.y.z ranges).
  *
  * Run automatically after `changeset version` in the release workflow.
@@ -17,8 +17,8 @@ const scaffoldPath = join(
 );
 
 const pkgMap = {
-  "@alexkroman1/aai-ui": "packages/aai-ui/package.json",
-  "@alexkroman1/aai-cli": "packages/aai-cli/package.json",
+  "aai-ui": "packages/aai-ui/package.json",
+  "aai-cli": "packages/aai-cli/package.json",
 };
 
 const scaffold = JSON.parse(readFileSync(scaffoldPath, "utf8"));
