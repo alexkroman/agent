@@ -12,6 +12,7 @@ import { existsSync, type FSWatcher, watch } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import type { AgentDef } from "@alexkroman1/aai-core";
 import { parseEnvFile } from "@alexkroman1/aai-core";
 import type { AgentServer } from "@alexkroman1/aai-core/runtime";
 import { resolveAgentConfig } from "./_agent-config.ts";
@@ -46,9 +47,8 @@ async function resolveAgentEnv(root: string): Promise<Record<string, string>> {
  * Load agent definition from tools.ts + agent.json.
  * Uses cache-busting query param for hot reload support.
  */
-async function loadAgentDef(
-  cwd: string,
-): Promise<{ name: string; tools: Record<string, unknown>; [key: string]: unknown }> {
+// biome-ignore lint/suspicious/noExplicitAny: agent state type varies per agent
+async function loadAgentDef(cwd: string): Promise<AgentDef<any>> {
   const agentConfig = await resolveAgentConfig(cwd);
 
   // Import tools.ts if it exists (cache-busted for hot reload)
@@ -64,11 +64,10 @@ async function loadAgentDef(
     // No tools.ts — agent has no custom tools
   }
 
-  return { ...agentConfig, tools } as {
-    name: string;
-    tools: Record<string, unknown>;
-    [key: string]: unknown;
-  };
+  // agent.json supplies name, systemPrompt, greeting, maxSteps, etc.
+  // tools.ts supplies the tool implementations (merged in)
+  // biome-ignore lint/suspicious/noExplicitAny: agent state type varies per agent
+  return { ...agentConfig, tools } as AgentDef<any>;
 }
 
 // ─── File watching ──────────────────────────────────────────────────────────

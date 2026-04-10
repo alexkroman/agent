@@ -49,6 +49,7 @@ export async function buildAgentBundle(cwd: string): Promise<DirectoryBundleOutp
     });
     // Vite returns RollupOutput or RollupOutput[] — we expect a single output
     const output = Array.isArray(result) ? result[0] : (result as Rollup.RollupOutput);
+    if (!output) throw new Error("Vite produced no output for tools.ts");
     const chunk = output.output.find(
       (o): o is Rollup.OutputChunk => o.type === "chunk" && o.isEntry,
     );
