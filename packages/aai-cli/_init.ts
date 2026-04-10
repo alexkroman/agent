@@ -41,6 +41,7 @@ aai secret delete MY_KEY # Remove a secret
 
 export type InitOptions = {
   targetDir: string;
+  template?: string;
 };
 
 /**
@@ -90,8 +91,9 @@ export async function patchPackageJsonForWorkspace(targetDir: string): Promise<v
 
 export async function runInit(opts: InitOptions): Promise<string> {
   const { targetDir } = opts;
+  const template = opts.template ?? "simple";
 
-  await downloadAndMergeTemplate("simple", targetDir);
+  await downloadAndMergeTemplate(template, targetDir);
 
   if (isDevMode()) {
     await patchPackageJsonForWorkspace(targetDir);

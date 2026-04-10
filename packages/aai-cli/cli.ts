@@ -89,6 +89,7 @@ const init = defineCommand({
   args: {
     dir: { type: "positional", description: "Project directory", required: false },
     force: { type: "boolean", alias: "f", description: "Overwrite existing files" },
+    template: { type: "string", alias: "t", description: "Template to use (e.g. pizza-ordering)" },
     server: sharedArgs.server,
     yes: sharedArgs.yes,
     json: sharedArgs.json,
@@ -102,6 +103,7 @@ const init = defineCommand({
         {
           dir: args.dir,
           force: args.force,
+          template: args.template,
           yes: args.yes,
           skipApi: args.skipApi,
           skipDeploy: args.skipDeploy,
