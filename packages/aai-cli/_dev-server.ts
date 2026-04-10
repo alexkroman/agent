@@ -40,7 +40,7 @@ async function loadAgentDef(cwd: string): Promise<AgentDef<any>> {
   const agentUrl = `${pathToFileURL(agentPath).href}?t=${Date.now()}`;
   const mod = await import(agentUrl);
   const agentDef = mod.default;
-  if (!agentDef?.name) {
+  if (!agentDef?.name || typeof agentDef.name !== "string") {
     throw new Error("agent.ts must export default agent({ name: ... })");
   }
   return agentDef;
@@ -129,15 +129,15 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
   let currentServer: AgentServer = agentServer;
   let currentVite = viteServer;
   let currentEnv = env;
-  const watchers = watchDirectory(cwd, (filename) => {
+  const watchers = watchDirectory(cwd, () => {
     if (restarting) return;
     restarting = true;
-    void restart(filename).finally(() => {
+    void restart().finally(() => {
       restarting = false;
     });
   });
 
-  async function restart(filename: string | null): Promise<void> {
+  async function restart(): Promise<void> {
     try {
       await currentServer.close();
     } catch {
@@ -145,9 +145,7 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
     }
     try {
       const newAgentDef = await loadAgentDef(cwd);
-      if (filename === ".env") {
-        currentEnv = await resolveAgentEnv(cwd);
-      }
+      currentEnv = await resolveAgentEnv(cwd);
       const newRuntime = createRuntime({ agent: newAgentDef, env: currentEnv });
       const newServer = createServer({ runtime: newRuntime, name: newAgentDef.name });
       await newServer.listen(backendPort);

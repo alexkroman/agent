@@ -186,7 +186,7 @@ no import restrictions apply there.
 ## Conventions
 
 - **Runtime**: Node (host/platform server), Deno (guest sandbox runtime)
-- **Frameworks**: Preact (client UI), Tailwind CSS v4 (compiled at bundle time)
+- **Frameworks**: React (client UI), Tailwind CSS v4 (compiled at bundle time)
 - **Linting**: Biome. Auto-runs on staged files via lefthook pre-commit hook.
 - **Exports**: In dev mode, package.json exports point to `.ts` source for
   seamless workspace resolution. Update to compiled `.js` dist paths before

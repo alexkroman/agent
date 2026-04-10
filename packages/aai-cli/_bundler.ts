@@ -8,6 +8,20 @@ import type { AgentDef } from "aai";
 import { agentToolsToSchemas, toAgentConfig } from "aai/manifest";
 import { build, type Rollup } from "vite";
 import { type CommandResult, ok } from "./_output.ts";
+import { fileExists } from "./_utils.ts";
+
+/** Shared Vite build base config for agent bundles. */
+function agentViteBuildBase(entry: string) {
+  return {
+    logLevel: "silent" as const,
+    build: {
+      lib: { entry, formats: ["es" as const] },
+      target: "node20" as const,
+      minify: false,
+      rollupOptions: { output: { entryFileNames: "[name].js" } },
+    },
+  };
+}
 
 /** Output from the bundler: agentConfig + worker ESM + client files. */
 export type DirectoryBundleOutput = {
@@ -28,30 +42,31 @@ export type DirectoryBundleOutput = {
  */
 export async function loadAgentModule(cwd: string): Promise<AgentDef> {
   const agentEntry = path.join(cwd, "agent.ts");
-  try {
-    await fs.access(agentEntry);
-  } catch (err) {
-    throw new Error(`Missing agent.ts in ${cwd}`, { cause: err });
-  }
 
   // Build agent.ts into a temp directory for dynamic import
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "aai_eval_"));
   try {
-    await build({
-      logLevel: "silent",
-      build: {
-        lib: { entry: agentEntry, formats: ["es"], fileName: "agent" },
-        outDir: tmpDir,
-        write: true,
-        target: "node20",
-        minify: false,
-        rollupOptions: {
-          // Externalize aai and zod so the real installed packages are used
-          external: [/^aai/, /^zod/],
-          output: { entryFileNames: "[name].js" },
+    const base = agentViteBuildBase(agentEntry);
+    try {
+      await build({
+        ...base,
+        build: {
+          ...base.build,
+          lib: { ...base.build.lib, fileName: "agent" },
+          outDir: tmpDir,
+          write: true,
+          rollupOptions: {
+            // Externalize aai and zod so the real installed packages are used
+            external: [/^aai/, /^zod/],
+            output: { entryFileNames: "[name].js" },
+          },
         },
-      },
-    });
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("ENOENT")) throw new Error(`Missing agent.ts in ${cwd}`, { cause: err });
+      throw err;
+    }
 
     const builtPath = path.join(tmpDir, "agent.js");
     const mod = await import(pathToFileURL(builtPath).href);
@@ -89,11 +104,8 @@ export async function buildAgentBundle(cwd: string): Promise<DirectoryBundleOutp
   const toolSchemas = agentToolsToSchemas(agentDef.tools ?? {});
   const agentConfig: Record<string, unknown> = { ...config, toolSchemas };
 
-  // Step 3: Bundle agent.ts into a worker ESM string for the sandbox
-  const worker = await buildWorker(cwd);
-
-  // Step 4: Bundle client.tsx if present
-  const clientFiles = await buildClient(cwd);
+  // Step 3+4: Bundle worker + client in parallel
+  const [worker, clientFiles] = await Promise.all([buildWorker(cwd), buildClient(cwd)]);
 
   return { worker, clientFiles, agentConfig };
 }
@@ -107,14 +119,14 @@ export async function buildAgentBundle(cwd: string): Promise<DirectoryBundleOutp
  */
 async function buildWorker(cwd: string): Promise<string> {
   const agentEntry = path.join(cwd, "agent.ts");
+  const base = agentViteBuildBase(agentEntry);
 
   const result = await build({
-    logLevel: "silent",
+    ...base,
     build: {
-      lib: { entry: agentEntry, formats: ["es"], fileName: "worker" },
+      ...base.build,
+      lib: { ...base.build.lib, fileName: "worker" },
       write: false,
-      target: "node20",
-      minify: false,
       rollupOptions: {
         // Externalize zod — it uses Function() which fails in the Deno sandbox
         external: [/^zod/],
@@ -136,9 +148,7 @@ async function buildWorker(cwd: string): Promise<string> {
  */
 async function buildClient(cwd: string): Promise<Record<string, string>> {
   const clientEntry = path.join(cwd, "client.tsx");
-  try {
-    await fs.access(clientEntry);
-  } catch {
+  if (!(await fileExists(clientEntry))) {
     return {}; // No client.tsx — skip client build
   }
 
