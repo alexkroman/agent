@@ -178,27 +178,11 @@ function makeKvAdapter(): KvAdapter {
 
 // ---- Agent env --------------------------------------------------------------
 
-const AAI_ENV_PREFIX = "AAI_ENV_";
-let _agentEnv: Readonly<Record<string, string>> | null = null;
+let _bundleEnv: Readonly<Record<string, string>> = Object.freeze({});
 
-/** Returns agent env vars (AAI_ENV_ prefix stripped). Cached after first call. */
+/** Returns agent env vars from the bundle message. */
 function getAgentEnv(): Readonly<Record<string, string>> {
-  if (!_agentEnv) {
-    _agentEnv = Object.freeze(
-      Object.fromEntries(
-        Object.entries(Deno.env.toObject())
-          .filter(([k]) => k.startsWith(AAI_ENV_PREFIX))
-          .map(([k, v]) => [k.slice(AAI_ENV_PREFIX.length), v]),
-      ),
-    ) as Readonly<Record<string, string>>;
-  }
-  // _agentEnv is guaranteed non-null after the if block above
-  return _agentEnv as Readonly<Record<string, string>>;
-}
-
-/** Reset cached env (call after setting new AAI_ENV_ vars). */
-function resetAgentEnv(): void {
-  _agentEnv = null;
+  return _bundleEnv;
 }
 
 // ---- Session state ----------------------------------------------------------
@@ -303,11 +287,11 @@ async function executeTool(
  * This avoids Function() evaluation and supports top-level await in the bundle.
  */
 async function loadBundle(code: string, env: Record<string, string>): Promise<AgentDef> {
-  // Set agent env vars before loading so the bundle can read them
+  // Store env from bundle message and set in process env for bundle access
+  _bundleEnv = Object.freeze({ ...env });
   for (const [key, value] of Object.entries(env)) {
-    Deno.env.set(`${AAI_ENV_PREFIX}${key}`, value);
+    Deno.env.set(key, value);
   }
-  resetAgentEnv();
 
   const dataUrl = `data:application/javascript,${encodeURIComponent(code)}`;
   const mod = await import(dataUrl);
