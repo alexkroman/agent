@@ -445,17 +445,17 @@ describe("browser: dev server", () => {
     // speech_started → userUtterance becomes "" → shows thinking dots
     await inject({ type: "speech_started" });
 
-    // Partial user_transcript_delta → shows the text
-    await inject({ type: "user_transcript_delta", text: "Tell me about", isFinal: false });
+    // Partial user_transcript (isFinal: false) → shows the text
+    await inject({ type: "user_transcript", text: "Tell me about", isFinal: false });
     await page.getByText("Tell me about").waitFor();
 
-    // Updated user_transcript_delta
-    await inject({ type: "user_transcript_delta", text: "Tell me about space", isFinal: false });
+    // Updated user_transcript (isFinal: false)
+    await inject({ type: "user_transcript", text: "Tell me about space", isFinal: false });
     await page.getByText("Tell me about space").waitFor();
 
-    // user_transcript finalizes the transcript
-    await inject({ type: "user_transcript", text: "Tell me about space" });
-    await inject({ type: "agent_transcript", text: "Space is vast." });
+    // user_transcript (isFinal: true) finalizes the transcript
+    await inject({ type: "user_transcript", text: "Tell me about space", isFinal: true });
+    await inject({ type: "agent_transcript", text: "Space is vast.", isFinal: true });
     await page.getByText("Space is vast.").waitFor();
 
     await page.close();

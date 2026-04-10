@@ -116,7 +116,7 @@ describe("createS2sSession", () => {
 
   // ─── S2S event handling tests ───────────────────────────────────────────
 
-  test("user_transcript event emits user_transcript_delta and user_transcript events", async () => {
+  test("user_transcript event emits user_transcript with isFinal: true", async () => {
     const { session, client, mockHandle } = setup();
     await session.start();
 
@@ -124,21 +124,20 @@ describe("createS2sSession", () => {
     await flush();
 
     expect(client.events).toContainEqual({
-      type: "user_transcript_delta",
+      type: "user_transcript",
       text: "Hello there",
       isFinal: true,
     });
-    expect(client.events).toContainEqual({ type: "user_transcript", text: "Hello there" });
   });
 
-  test("user_transcript_delta emits non-final user_transcript_delta", async () => {
+  test("user_transcript_delta emits user_transcript with isFinal: false", async () => {
     const { session, client, mockHandle } = setup();
     await session.start();
 
     mockHandle._fire("userTranscriptDelta", { text: "Hel" });
 
     expect(client.events).toContainEqual({
-      type: "user_transcript_delta",
+      type: "user_transcript",
       text: "Hel",
       isFinal: false,
     });
@@ -154,16 +153,20 @@ describe("createS2sSession", () => {
     expect(client.audioChunks).toContainEqual(chunk);
   });
 
-  test("agent_transcript_delta emits agent_transcript_delta", async () => {
+  test("agent_transcript_delta emits agent_transcript with isFinal: false", async () => {
     const { session, client, mockHandle } = setup();
     await session.start();
 
     mockHandle._fire("agentTranscriptDelta", { text: "I think" });
 
-    expect(client.events).toContainEqual({ type: "agent_transcript_delta", text: "I think" });
+    expect(client.events).toContainEqual({
+      type: "agent_transcript",
+      text: "I think",
+      isFinal: false,
+    });
   });
 
-  test("agent_transcript emits agent_transcript event", async () => {
+  test("agent_transcript emits agent_transcript with isFinal: true", async () => {
     const { session, client, mockHandle } = setup();
     await session.start();
 
@@ -174,7 +177,11 @@ describe("createS2sSession", () => {
       interrupted: false,
     });
 
-    expect(client.events).toContainEqual({ type: "agent_transcript", text: "Full response" });
+    expect(client.events).toContainEqual({
+      type: "agent_transcript",
+      text: "Full response",
+      isFinal: true,
+    });
   });
 
   test("speech_started and speech_stopped events are forwarded", async () => {

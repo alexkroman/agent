@@ -158,7 +158,6 @@ describe("fixture replay with real executor", () => {
     const types = ctx.client.events.map((e) => (e as { type: string }).type);
     expect(types).toContain("speech_started");
     expect(types).toContain("speech_stopped");
-    expect(types).toContain("user_transcript_delta");
     expect(types).toContain("user_transcript");
   });
 
@@ -399,7 +398,7 @@ describe("fixture replay with real executor", () => {
 
     const partials = ctx.client.events.filter(
       (e) =>
-        (e as { type: string }).type === "user_transcript_delta" &&
+        (e as { type: string }).type === "user_transcript" &&
         (e as { isFinal: boolean }).isFinal === false,
     );
     expect(partials.length).toBe(2);

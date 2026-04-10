@@ -334,8 +334,8 @@ describe("ServerMessageSchema", () => {
       false,
     ],
     ["audio_done event", { type: "audio_done" }, true],
-    ["user_transcript event", { type: "user_transcript", text: "hello" }, true],
-    ["agent_transcript event", { type: "agent_transcript", text: "hi" }, true],
+    ["user_transcript event", { type: "user_transcript", text: "hello", isFinal: true }, true],
+    ["agent_transcript event", { type: "agent_transcript", text: "hi", isFinal: true }, true],
     ["speech_started event", { type: "speech_started" }, true],
     ["unknown event type", { type: "malicious" }, false],
   ] as const)("rejects/accepts %s → %s", (_label: string, input: unknown, expected: boolean) => {

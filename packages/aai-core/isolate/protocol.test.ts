@@ -96,9 +96,9 @@ describe("ClientEventSchema", () => {
     expect(result.success).toBe(true);
   });
 
-  test("accepts user_transcript_delta with isFinal", () => {
+  test("accepts user_transcript with isFinal", () => {
     const result = ClientEventSchema.safeParse({
-      type: "user_transcript_delta",
+      type: "user_transcript",
       text: "hello world",
       isFinal: true,
     });

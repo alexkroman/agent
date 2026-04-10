@@ -85,8 +85,6 @@ export type SessionErrorCode = z.infer<typeof SessionErrorCodeSchema>;
 
 /** Helper: simple event with only a type field. */
 const ev = <T extends string>(t: T) => z.object({ type: z.literal(t) });
-/** Helper: event with type + text. */
-const textEv = <T extends string>(t: T) => z.object({ type: z.literal(t), text: z.string() });
 
 const turnOrder = z.number().int().nonnegative().optional();
 
@@ -95,14 +93,16 @@ export const ClientEventSchema = z.discriminatedUnion("type", [
   ev("speech_started"),
   ev("speech_stopped"),
   z.object({
-    type: z.literal("user_transcript_delta"),
+    type: z.literal("user_transcript"),
     text: z.string(),
     isFinal: z.boolean(),
     turnOrder,
   }),
-  textEv("user_transcript").extend({ turnOrder }),
-  textEv("agent_transcript"),
-  textEv("agent_transcript_delta"),
+  z.object({
+    type: z.literal("agent_transcript"),
+    text: z.string(),
+    isFinal: z.boolean(),
+  }),
   z.object({
     type: z.literal("tool_call"),
     toolCallId: z.string(),

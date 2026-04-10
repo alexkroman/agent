@@ -150,13 +150,12 @@ async function handleToolCall(ctx: S2sSessionCtx, detail: S2sToolCall): Promise<
 
 function handleUserTranscript(ctx: S2sSessionCtx, text: string): void {
   ctx.log.info("S2S user transcript", { text });
-  ctx.client.event({ type: "user_transcript_delta", text, isFinal: true });
-  ctx.client.event({ type: "user_transcript", text });
+  ctx.client.event({ type: "user_transcript", text, isFinal: true });
   ctx.pushMessages({ role: "user", content: text });
 }
 
 function handleAgentTranscript(ctx: S2sSessionCtx, text: string, interrupted: boolean): void {
-  ctx.client.event({ type: "agent_transcript", text });
+  ctx.client.event({ type: "agent_transcript", text, isFinal: true });
   if (!interrupted) {
     ctx.pushMessages({ role: "assistant", content: text });
   }
@@ -203,7 +202,7 @@ function setupListeners(ctx: S2sSessionCtx, handle: S2sHandle): void {
   handle.on("speechStarted", () => ctx.client.event({ type: "speech_started" }));
   handle.on("speechStopped", () => ctx.client.event({ type: "speech_stopped" }));
   handle.on("userTranscriptDelta", ({ text }) =>
-    ctx.client.event({ type: "user_transcript_delta", text, isFinal: false }),
+    ctx.client.event({ type: "user_transcript", text, isFinal: false }),
   );
   handle.on("userTranscript", ({ text }) => handleUserTranscript(ctx, text));
   handle.on("replyStarted", ({ replyId }) => {
@@ -211,7 +210,7 @@ function setupListeners(ctx: S2sSessionCtx, handle: S2sHandle): void {
   });
   handle.on("audio", ({ audio }) => ctx.client.playAudioChunk(audio));
   handle.on("agentTranscriptDelta", ({ text }) =>
-    ctx.client.event({ type: "agent_transcript_delta", text }),
+    ctx.client.event({ type: "agent_transcript", text, isFinal: false }),
   );
   handle.on("agentTranscript", ({ text, interrupted }) =>
     handleAgentTranscript(ctx, text, interrupted),
