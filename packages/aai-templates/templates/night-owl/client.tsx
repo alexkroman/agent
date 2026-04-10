@@ -1,12 +1,6 @@
 /** @jsxImportSource react */
 
-import {
-  Button,
-  defineClient,
-  useTheme,
-  useToolCallStart,
-  useToolResult,
-} from "@alexkroman1/aai-ui";
+import { Button, client, useTheme, useToolCallStart, useToolResult } from "@alexkroman1/aai-ui";
 import { useState } from "react";
 
 type Rec = { category: string; mood: string; picks: string[] };
@@ -121,8 +115,8 @@ function RecSidebar() {
   );
 }
 
-defineClient({
-  title: "Night Owl",
+client({
+  name: "Night Owl",
   sidebar: RecSidebar,
   theme: {
     bg: "#0c0e1a",

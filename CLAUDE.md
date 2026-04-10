@@ -94,7 +94,7 @@ Subpath exports consumed by sibling packages and user agents:
 
 #### `@alexkroman1/aai-ui` (UI)
 
-- `.` — default Preact UI component + session + defineClient helpers
+- `.` — default Preact UI component + session + client helpers
 - `./session` — session management (no Preact dependency)
 - `./styles.css` — default styles
 
@@ -149,7 +149,7 @@ no import restrictions apply there.
 - `context.ts` — SessionProvider, useSession, ClientConfigProvider, useClientConfig
 - `hooks.ts` — useToolResult, useToolCallStart, useAutoScroll
 - `audio.ts` — PCM encoding/decoding, AudioWorklet management
-- `define-client.tsx` — defineClient mount helper
+- `define-client.tsx` — client mount helper
 - `types.ts` — UI type definitions
 - `components/` — UI components (app, chat-view, controls,
   message-list, start-screen, sidebar-layout, tool-call-block, button,

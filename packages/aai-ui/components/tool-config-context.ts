@@ -11,7 +11,7 @@ export type ToolDisplayConfig = Record<string, { icon?: string; label?: string }
 
 /**
  * Context for tool display configuration.
- * Provided by `defineClient` or manually via `ToolConfigContext.Provider`.
+ * Provided by `client` or manually via `ToolConfigContext.Provider`.
  *
  * @public
  */

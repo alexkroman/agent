@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 
 import type { ChatMessage } from "@alexkroman1/aai-ui";
-import { defineClient, useSession } from "@alexkroman1/aai-ui";
+import { client, useSession } from "@alexkroman1/aai-ui";
 import { useEffect, useRef } from "react";
 
 const CSS = `
@@ -264,7 +264,7 @@ function InfocomAdventure() {
   );
 }
 
-defineClient({
+client({
   component: InfocomAdventure,
   theme: {
     bg: CRT_BG,

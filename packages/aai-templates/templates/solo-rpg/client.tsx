@@ -1,12 +1,6 @@
 /** @jsxImportSource react */
 
-import {
-  ChatView,
-  defineClient,
-  SidebarLayout,
-  StartScreen,
-  useToolResult,
-} from "@alexkroman1/aai-ui";
+import { ChatView, client, SidebarLayout, StartScreen, useToolResult } from "@alexkroman1/aai-ui";
 import { useEffect, useState } from "react";
 import type {
   ClockData,
@@ -899,7 +893,7 @@ function SoloRPGApp() {
 const SESSION_KEY = "solo-rpg:sessionId";
 const savedSessionId = localStorage.getItem(SESSION_KEY);
 
-defineClient({
+client({
   component: SoloRPGApp,
   theme: {
     bg: C.bg,

@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 
 import type { ChatMessage } from "@alexkroman1/aai-ui";
-import { defineClient, useSession, useToolResult } from "@alexkroman1/aai-ui";
+import { client, useSession, useToolResult } from "@alexkroman1/aai-ui";
 import { useEffect, useMemo, useRef } from "react";
 import type { DispatchState, Incident, Severity } from "./_shared.ts";
 
@@ -422,7 +422,7 @@ function App() {
   );
 }
 
-defineClient({
+client({
   component: App,
   theme: {
     bg: "#0a0a0f",

@@ -16,7 +16,7 @@ import type { ClientTheme } from "./types.ts";
 // ─── Config types ─────────────────────────────────────────────────────────────
 
 /**
- * Base options shared by both defineClient tiers.
+ * Base options shared by both client tiers.
  *
  * @public
  */
@@ -42,8 +42,8 @@ type BaseOptions = {
  */
 type ConfigTier = BaseOptions & {
   component?: never;
-  /** Agent title shown in the header and start screen. */
-  title?: string;
+  /** Agent name shown in the header and start screen. */
+  name?: string;
   /** Optional sidebar component rendered alongside the chat view. */
   sidebar?: ComponentType;
   /** CSS width of the sidebar. Defaults to `"18rem"`. */
@@ -60,21 +60,21 @@ type ConfigTier = BaseOptions & {
 type ComponentTier = BaseOptions & {
   /** Full custom component to render instead of the default shell. */
   component: ComponentType;
-  title?: never;
+  name?: never;
   sidebar?: never;
   sidebarWidth?: never;
   tools?: never;
 };
 
 /**
- * Configuration passed to {@link defineClient}.
+ * Configuration passed to {@link client}.
  *
  * @public
  */
 export type ClientConfig = ConfigTier | ComponentTier;
 
 /**
- * Handle returned by {@link defineClient} for cleanup.
+ * Handle returned by {@link client} for cleanup.
  *
  * Implements `Disposable` so it can be used with `using`.
  *
@@ -103,15 +103,15 @@ function resolveContainer(target: string | HTMLElement = "#app"): HTMLElement {
  * Wraps StartScreen → (SidebarLayout →) ChatView.
  */
 function DefaultShell({
-  title,
+  name,
   Sidebar,
   sidebarWidth,
 }: {
-  title?: string;
+  name?: string;
   Sidebar?: ComponentType;
   sidebarWidth?: string;
 }) {
-  const chat = <ChatView {...(title !== undefined ? { title } : {})} />;
+  const chat = <ChatView {...(name !== undefined ? { title: name } : {})} />;
 
   const inner = Sidebar ? (
     <SidebarLayout sidebar={<Sidebar />} {...(sidebarWidth !== undefined ? { sidebarWidth } : {})}>
@@ -121,10 +121,10 @@ function DefaultShell({
     chat
   );
 
-  return <StartScreen {...(title !== undefined ? { title } : {})}>{inner}</StartScreen>;
+  return <StartScreen {...(name !== undefined ? { title: name } : {})}>{inner}</StartScreen>;
 }
 
-// ─── defineClient ─────────────────────────────────────────────────────────────
+// ─── client ──────────────────────────────────────────────────────────────────
 
 /**
  * Define and mount a client UI for a voice agent.
@@ -137,8 +137,8 @@ function DefaultShell({
  *
  * @example Tier 1
  * ```tsx
- * defineClient({
- *   title: "Pizza Ordering",
+ * client({
+ *   name: "Pizza Ordering",
  *   theme: { bg: "#1a1a1a", primary: "#e55" },
  *   sidebar: OrderPanel,
  *   tools: { add_pizza: { icon: "🍕", label: "Adding pizza" } },
@@ -147,7 +147,7 @@ function DefaultShell({
  *
  * @example Tier 2
  * ```tsx
- * defineClient({ component: MyCustomApp });
+ * client({ component: MyCustomApp });
  * ```
  *
  * @returns A {@link ClientHandle} for cleanup.
@@ -155,7 +155,7 @@ function DefaultShell({
  *
  * @public
  */
-export function defineClient(config: ClientConfig): ClientHandle {
+export function client(config: ClientConfig): ClientHandle {
   const container = resolveContainer(config.target);
 
   const platformUrl =
@@ -174,10 +174,10 @@ export function defineClient(config: ClientConfig): ClientHandle {
     RootComponent = config.component;
   } else {
     const cfg = config as ConfigTier;
-    const { title, sidebar: Sidebar, sidebarWidth } = cfg;
+    const { name, sidebar: Sidebar, sidebarWidth } = cfg;
     RootComponent = () =>
       createElement(DefaultShell, {
-        ...(title !== undefined ? { title } : {}),
+        ...(name !== undefined ? { name } : {}),
         ...(Sidebar !== undefined ? { Sidebar } : {}),
         ...(sidebarWidth !== undefined ? { sidebarWidth } : {}),
       });
@@ -212,3 +212,6 @@ export function defineClient(config: ClientConfig): ClientHandle {
   };
   return handle;
 }
+
+/** @deprecated Use {@link client} instead. */
+export const defineClient = client;
