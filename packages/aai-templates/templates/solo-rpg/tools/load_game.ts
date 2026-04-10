@@ -1,7 +1,7 @@
 import { tool } from "aai";
 import { z } from "zod";
-import type { GameState, KV } from "../_shared.ts";
-import { saveGameState } from "../_shared.ts";
+import type { GameState, KV } from "../shared.ts";
+import { saveGameState } from "../shared.ts";
 
 export const loadGame = tool({
   description: "Load a previously saved game.",

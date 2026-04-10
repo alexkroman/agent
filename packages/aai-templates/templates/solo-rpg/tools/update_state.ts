@@ -1,7 +1,7 @@
 import { tool } from "aai";
 import { z } from "zod";
-import type { Disposition, KV } from "../_shared.ts";
-import { getGameState, MAX_SESSION_LOG, nextNpcId, saveGameState } from "../_shared.ts";
+import type { Disposition, KV } from "../shared.ts";
+import { getGameState, MAX_SESSION_LOG, nextNpcId, saveGameState } from "../shared.ts";
 
 export const updateState = tool({
   description:

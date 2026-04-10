@@ -1,6 +1,6 @@
 import { tool } from "aai";
 import { z } from "zod";
-import type { Disposition, KV } from "../_shared.ts";
+import type { Disposition, KV } from "../shared.ts";
 import {
   ARCHETYPES,
   chooseStoryStructure,
@@ -9,7 +9,7 @@ import {
   getGameState,
   saveGameState,
   TONES,
-} from "../_shared.ts";
+} from "../shared.ts";
 
 export const setupCharacter = tool({
   description:

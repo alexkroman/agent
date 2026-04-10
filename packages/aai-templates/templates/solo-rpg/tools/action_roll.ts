@@ -1,6 +1,6 @@
 import { tool } from "aai";
 import { z } from "zod";
-import type { GameState, KV } from "../_shared.ts";
+import type { GameState, KV } from "../shared.ts";
 import {
   applyConsequences,
   canBurnMomentum,
@@ -11,7 +11,7 @@ import {
   rollAction,
   saveGameState,
   updateChaosFactor,
-} from "../_shared.ts";
+} from "../shared.ts";
 
 export const actionRoll = tool({
   description:

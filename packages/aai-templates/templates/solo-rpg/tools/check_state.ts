@@ -1,6 +1,6 @@
 import { tool } from "aai";
-import type { KV } from "../_shared.ts";
-import { getGameState } from "../_shared.ts";
+import type { KV } from "../shared.ts";
+import { getGameState } from "../shared.ts";
 
 export const checkState = tool({
   description:

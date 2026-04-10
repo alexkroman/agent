@@ -1,7 +1,7 @@
 import { tool } from "aai";
 import { z } from "zod";
-import type { KV } from "../_shared.ts";
-import { getGameState, saveGameState } from "../_shared.ts";
+import type { KV } from "../shared.ts";
+import { getGameState, saveGameState } from "../shared.ts";
 
 export const burnMomentum = tool({
   description:

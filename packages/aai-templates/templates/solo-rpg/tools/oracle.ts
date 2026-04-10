@@ -1,6 +1,6 @@
 import { tool } from "aai";
 import { z } from "zod";
-import type { KV } from "../_shared.ts";
+import type { KV } from "../shared.ts";
 import {
   checkChaosInterrupt,
   creativitySeed,
@@ -8,7 +8,7 @@ import {
   getGameState,
   pick,
   saveGameState,
-} from "../_shared.ts";
+} from "../shared.ts";
 
 export const oracle = tool({
   description:

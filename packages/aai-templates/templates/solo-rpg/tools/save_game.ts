@@ -1,7 +1,7 @@
 import { tool } from "aai";
 import { z } from "zod";
-import type { KV } from "../_shared.ts";
-import { getGameState } from "../_shared.ts";
+import type { KV } from "../shared.ts";
+import { getGameState } from "../shared.ts";
 
 export const saveGame = tool({
   description: "Save current game to persistent storage.",
