@@ -6,7 +6,7 @@
   "main": "dist/index.mjs",
   "scripts": {
     "predev": "node -e \"const [maj] = process.versions.node.split('.').map(Number); if (maj < 24) { console.error('Node >=24 required (got ' + process.version + '). Run: fnm use 24'); process.exit(1); }\"",
-    "dev": "node --watch index.ts",
+    "dev": "node --conditions=@dev/source index.ts",
     "start": "node dist/index.mjs",
     "test": "vitest run --exclude 'load/**' --exclude 'adversarial/**'",
     "test:coverage": "vitest run --coverage --exclude 'load/**' --exclude 'adversarial/**'",
@@ -24,6 +24,7 @@
     "@hono/node-server": "^1.19.13",
     "@hono/zod-validator": "^0.7.6",
     "aai": "workspace:*",
+    "aai-ui": "workspace:*",
     "bogon": "^1.2.0",
     "hono": "^4.12.12",
     "human-id": "^4.1.3",

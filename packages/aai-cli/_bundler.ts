@@ -36,14 +36,14 @@ export type DirectoryBundleOutput = {
  * Bundle an agent directory: build agent.ts into worker ESM + extract config.
  *
  * - agent.ts is the single entry point: `export default agent({...})`
- * - A single Vite build produces the worker ESM (with only zod externalized).
+ * - A single Vite build produces the worker ESM (all deps bundled in).
  *   The AgentDef is extracted from that bundle via dynamic import, avoiding a
  *   second build pass.
  */
 export async function buildAgentBundle(cwd: string): Promise<DirectoryBundleOutput> {
   const { log } = await import("./_ui.ts");
 
-  // Single Vite build for the worker (zod externalized, aai bundled in) + client in parallel
+  // Single Vite build for the worker (all deps bundled in) + client in parallel
   const [worker, clientFiles] = await Promise.all([buildWorker(cwd), buildClient(cwd)]);
 
   // Extract AgentDef from the worker bundle by eval
@@ -59,13 +59,9 @@ export async function buildAgentBundle(cwd: string): Promise<DirectoryBundleOutp
 }
 
 /**
- * Write the worker ESM to a temp file inside the project's `.aai/` directory
- * and dynamic-import it, returning the AgentDef default export.
- *
- * Since `aai` is bundled into the worker and the `agent()` helper is an
- * identity function, the import works without external dependencies (only
- * `zod` is externalized). Writing into the project directory ensures Node
- * resolves `zod` from the project's `node_modules` rather than `/tmp/`.
+ * Write the worker ESM to a temp file and dynamic-import it, returning
+ * the AgentDef default export. All dependencies are bundled in, so the
+ * file can be evaluated from any directory.
  */
 export async function evalWorkerBundle(code: string, cwd: string): Promise<AgentDef> {
   const evalDir = path.join(cwd, ".aai", "eval");
@@ -95,9 +91,8 @@ export async function evalWorkerBundle(code: string, cwd: string): Promise<Agent
 /**
  * Bundle agent.ts into a single ESM string for the sandbox worker.
  *
- * Zod is externalized because it uses `Function()` which fails in the
- * Deno sandbox. Tool schemas are extracted at build time — Zod is not
- * needed at runtime in the sandbox.
+ * Zod is bundled in — zod 4's `Function()` usage is wrapped in try/catch
+ * and gracefully degrades in restricted environments like Deno.
  */
 async function buildWorker(cwd: string): Promise<string> {
   const agentEntry = path.join(cwd, "agent.ts");
@@ -122,8 +117,6 @@ async function buildWorker(cwd: string): Promise<string> {
       lib: { ...base.build.lib, fileName: "worker" },
       write: false,
       rollupOptions: {
-        // Externalize zod — it uses Function() which fails in the Deno sandbox
-        external: [/^zod/],
         output: { entryFileNames: "[name].js" },
       },
     },
