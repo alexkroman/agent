@@ -3,7 +3,7 @@
   "version": "0.12.3",
   "type": "module",
   "bin": {
-    "aai": "cli.ts"
+    "aai": "bin.mjs"
   },
   "publishConfig": {
     "bin": {

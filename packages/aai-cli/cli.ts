@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 // Copyright 2025 the AAI authors. MIT license.
 
 import { existsSync, readFileSync } from "node:fs";
