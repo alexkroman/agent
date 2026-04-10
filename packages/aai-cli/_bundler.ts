@@ -34,46 +34,49 @@ export type DirectoryBundleOutput = {
 };
 
 /**
- * Build agent.ts into a temp ESM module, dynamic-import it, and return
+ * Bundle an agent directory: build agent.ts into worker ESM + extract config.
+ *
+ * - agent.ts is the single entry point: `export default agent({...})`
+ * - A single Vite build produces the worker ESM (with only zod externalized).
+ *   The AgentDef is extracted from that bundle via dynamic import, avoiding a
+ *   second build pass.
+ */
+export async function buildAgentBundle(cwd: string): Promise<DirectoryBundleOutput> {
+  const { log } = await import("./_ui.ts");
+
+  // Single Vite build for the worker (zod externalized, aai bundled in) + client in parallel
+  const [worker, clientFiles] = await Promise.all([buildWorker(cwd), buildClient(cwd)]);
+
+  // Extract AgentDef from the worker bundle by eval
+  const agentDef = await evalWorkerBundle(worker);
+  log.step(`Bundling ${agentDef.name}`);
+
+  // Convert to wire format
+  const config = toAgentConfig(agentDef);
+  const toolSchemas = agentToolsToSchemas(agentDef.tools ?? {});
+  const agentConfig: Record<string, unknown> = { ...config, toolSchemas };
+
+  return { worker, clientFiles, agentConfig };
+}
+
+/**
+ * Write the worker ESM to a temp file, dynamic-import it, and return
  * the AgentDef default export.
  *
- * Vite builds agent.ts with `aai` and `zod` externalized so the real
- * installed packages are used at eval time.
+ * Since `aai` is bundled into the worker and the `agent()` helper is an
+ * identity function, the import works without external dependencies (only
+ * `zod` is externalized, and it resolves from the CLI's node_modules).
  */
-export async function loadAgentModule(cwd: string): Promise<AgentDef> {
-  const agentEntry = path.join(cwd, "agent.ts");
-
-  // Build agent.ts into a temp directory for dynamic import
+export async function evalWorkerBundle(code: string): Promise<AgentDef> {
   const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "aai_eval_"));
   try {
-    const base = agentViteBuildBase(agentEntry);
-    try {
-      await build({
-        ...base,
-        build: {
-          ...base.build,
-          lib: { ...base.build.lib, fileName: "agent" },
-          outDir: tmpDir,
-          write: true,
-          rollupOptions: {
-            // Externalize aai and zod so the real installed packages are used
-            external: [/^aai/, /^zod/],
-            output: { entryFileNames: "[name].js" },
-          },
-        },
-      });
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes("ENOENT")) throw new Error(`Missing agent.ts in ${cwd}`, { cause: err });
-      throw err;
-    }
-
-    const builtPath = path.join(tmpDir, "agent.js");
-    const mod = await import(pathToFileURL(builtPath).href);
+    const tmpPath = path.join(tmpDir, "agent.mjs");
+    await fs.writeFile(tmpPath, code);
+    const mod = await import(pathToFileURL(tmpPath).href);
     const agentDef = (mod.default ?? mod) as AgentDef;
 
-    if (!agentDef.name || typeof agentDef.name !== "string") {
-      throw new Error("agent.ts must export a default with a name field");
+    if (!agentDef?.name || typeof agentDef.name !== "string") {
+      throw new Error("agent.ts must export default agent({ name: ... })");
     }
 
     return agentDef;
@@ -82,32 +85,6 @@ export async function loadAgentModule(cwd: string): Promise<AgentDef> {
       /* best-effort cleanup */
     });
   }
-}
-
-/**
- * Bundle an agent directory: build agent.ts into worker ESM + extract config.
- *
- * - agent.ts is the single entry point: `export default agent({...})`
- * - The bundler extracts the AgentDef, converts it to serializable agentConfig
- *   (with tool schemas as JSON Schema), and also bundles agent.ts into a
- *   worker ESM string for the sandbox.
- */
-export async function buildAgentBundle(cwd: string): Promise<DirectoryBundleOutput> {
-  const { log } = await import("./_ui.ts");
-
-  // Step 1: Load agent.ts to extract the AgentDef
-  const agentDef = await loadAgentModule(cwd);
-  log.step(`Bundling ${agentDef.name}`);
-
-  // Step 2: Extract serializable config + tool schemas
-  const config = toAgentConfig(agentDef);
-  const toolSchemas = agentToolsToSchemas(agentDef.tools ?? {});
-  const agentConfig: Record<string, unknown> = { ...config, toolSchemas };
-
-  // Step 3+4: Bundle worker + client in parallel
-  const [worker, clientFiles] = await Promise.all([buildWorker(cwd), buildClient(cwd)]);
-
-  return { worker, clientFiles, agentConfig };
 }
 
 /**

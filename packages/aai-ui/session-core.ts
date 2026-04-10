@@ -589,12 +589,10 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
 
   function toggle(): void {
     if (currentSnapshot.running) {
-      cancel();
       disconnect();
-      updateState({ running: false });
     } else {
-      connect();
       updateState({ running: true });
+      connect();
     }
   }
 

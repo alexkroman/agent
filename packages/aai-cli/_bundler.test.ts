@@ -12,8 +12,8 @@ describe("buildAgentBundle", () => {
     expect(typeof mod.executeBuild).toBe("function");
   });
 
-  test("module exports loadAgentModule function", async () => {
+  test("module exports evalWorkerBundle function", async () => {
     const mod = await import("./_bundler.ts");
-    expect(typeof mod.loadAgentModule).toBe("function");
+    expect(typeof mod.evalWorkerBundle).toBe("function");
   });
 });
