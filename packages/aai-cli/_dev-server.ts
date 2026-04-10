@@ -65,7 +65,7 @@ async function loadAgentDef(cwd: string): Promise<AgentDef<any>> {
  * Watch the agent directory for changes and call `onChange` when detected.
  * Debounces to avoid rapid restarts.
  */
-function watchDirectory(dir: string, onChange: () => void): FSWatcher[] {
+function watchDirectory(dir: string, onChange: (filename: string | null) => void): FSWatcher[] {
   const watchers: FSWatcher[] = [];
   const DEBOUNCE_MS = 300;
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
@@ -77,7 +77,7 @@ function watchDirectory(dir: string, onChange: () => void): FSWatcher[] {
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
       log.info("File change detected, restarting...");
-      onChange();
+      onChange(filename);
     }, DEBOUNCE_MS);
   }
 
@@ -141,15 +141,16 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
   let restarting = false;
   let currentServer: AgentServer = agentServer;
   let currentVite = viteServer;
-  const watchers = watchDirectory(cwd, () => {
+  let currentEnv = env;
+  const watchers = watchDirectory(cwd, (filename) => {
     if (restarting) return;
     restarting = true;
-    void restart().finally(() => {
+    void restart(filename).finally(() => {
       restarting = false;
     });
   });
 
-  async function restart(): Promise<void> {
+  async function restart(filename: string | null): Promise<void> {
     try {
       await currentServer.close();
     } catch {
@@ -157,8 +158,10 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
     }
     try {
       const newAgentDef = await loadAgentDef(cwd);
-      const newEnv = await resolveAgentEnv(cwd);
-      const newRuntime = createRuntime({ agent: newAgentDef, env: newEnv });
+      if (filename === ".env") {
+        currentEnv = await resolveAgentEnv(cwd);
+      }
+      const newRuntime = createRuntime({ agent: newAgentDef, env: currentEnv });
       const newServer = createServer({ runtime: newRuntime, name: newAgentDef.name });
       await newServer.listen(backendPort);
       currentServer = newServer;
