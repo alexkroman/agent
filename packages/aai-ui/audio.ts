@@ -92,7 +92,10 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
 
   // Worklet outputs PCM16 at the STT rate — just batch and send.
   const chunkSizeBytes = Math.floor(sttSampleRate * MIC_BUFFER_SECONDS) * 2;
-  let capBuf = new Uint8Array(chunkSizeBytes * 2);
+  const bufSize = chunkSizeBytes * 2;
+  const capBufA = new Uint8Array(bufSize);
+  const capBufB = new Uint8Array(bufSize);
+  let capBuf = capBufA;
   let capOffset = 0;
 
   capNode.port.postMessage({ event: "start" });
@@ -106,7 +109,8 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
 
     if (capOffset >= chunkSizeBytes) {
       onMicData(capBuf.buffer.slice(0, capOffset));
-      capBuf = new Uint8Array(chunkSizeBytes * 2);
+      // Swap to the other pre-allocated buffer to avoid GC pressure
+      capBuf = capBuf === capBufA ? capBufB : capBufA;
       capOffset = 0;
     }
   };
