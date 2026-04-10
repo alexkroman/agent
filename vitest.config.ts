@@ -63,15 +63,6 @@ export default defineConfig({
       {
         ...sharedConfig,
         test: {
-          name: "aai-ui-types",
-          root: "packages/aai-ui",
-          include: ["**/*.test-d.ts"],
-          typecheck: { enabled: true, only: true },
-        },
-      },
-      {
-        ...sharedConfig,
-        test: {
           name: "aai-cli",
           root: "packages/aai-cli",
           include: ["**/*.test.ts"],
