@@ -1,7 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { AgentDef } from "aai";
@@ -48,7 +47,7 @@ export async function buildAgentBundle(cwd: string): Promise<DirectoryBundleOutp
   const [worker, clientFiles] = await Promise.all([buildWorker(cwd), buildClient(cwd)]);
 
   // Extract AgentDef from the worker bundle by eval
-  const agentDef = await evalWorkerBundle(worker);
+  const agentDef = await evalWorkerBundle(worker, cwd);
   log.step(`Bundling ${agentDef.name}`);
 
   // Convert to wire format
@@ -60,17 +59,23 @@ export async function buildAgentBundle(cwd: string): Promise<DirectoryBundleOutp
 }
 
 /**
- * Write the worker ESM to a temp file, dynamic-import it, and return
- * the AgentDef default export.
+ * Write the worker ESM to a temp file inside the project's `.aai/` directory
+ * and dynamic-import it, returning the AgentDef default export.
  *
  * Since `aai` is bundled into the worker and the `agent()` helper is an
  * identity function, the import works without external dependencies (only
- * `zod` is externalized, and it resolves from the CLI's node_modules).
+ * `zod` is externalized). Writing into the project directory ensures Node
+ * resolves `zod` from the project's `node_modules` rather than `/tmp/`.
  */
-export async function evalWorkerBundle(code: string): Promise<AgentDef> {
-  const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "aai_eval_"));
+export async function evalWorkerBundle(code: string, cwd: string): Promise<AgentDef> {
+  const evalDir = path.join(cwd, ".aai", "eval");
+  await fs.mkdir(evalDir, { recursive: true });
+  // Use a unique filename per invocation to avoid Node's ESM import cache.
+  const tmpPath = path.join(
+    evalDir,
+    `agent-${Date.now()}-${Math.random().toString(36).slice(2)}.mjs`,
+  );
   try {
-    const tmpPath = path.join(tmpDir, "agent.mjs");
     await fs.writeFile(tmpPath, code);
     const mod = await import(pathToFileURL(tmpPath).href);
     const agentDef = (mod.default ?? mod) as AgentDef;
@@ -81,7 +86,7 @@ export async function evalWorkerBundle(code: string): Promise<AgentDef> {
 
     return agentDef;
   } finally {
-    await fs.rm(tmpDir, { recursive: true }).catch(() => {
+    await fs.rm(tmpPath).catch(() => {
       /* best-effort cleanup */
     });
   }
@@ -100,6 +105,18 @@ async function buildWorker(cwd: string): Promise<string> {
 
   const result = await build({
     ...base,
+    plugins: [
+      // Transform .md imports into raw string exports so templates that do
+      // `import systemPrompt from "./system-prompt.md"` bundle correctly.
+      {
+        name: "raw-md",
+        transform(code, id) {
+          if (id.endsWith(".md")) {
+            return `export default ${JSON.stringify(code)}`;
+          }
+        },
+      },
+    ],
     build: {
       ...base.build,
       lib: { ...base.build.lib, fileName: "worker" },
