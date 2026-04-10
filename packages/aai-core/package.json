@@ -28,7 +28,7 @@
   "scripts": {
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:integration": "VITEST_INCLUDE=host/integration.test.ts,host/pentest.test.ts,host/run-code-sandbox.test.ts vitest run -c ../../vitest.slow.config.ts",
     "check:integration": "pnpm run test:integration",
     "build": "tsdown && tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit && tsc -p isolate/tsconfig.json",
