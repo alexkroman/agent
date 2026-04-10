@@ -88,7 +88,7 @@ async function buildClient(cwd: string): Promise<Record<string, string>> {
     base: "./",
     logLevel: "silent",
     build: {
-      outDir: clientDir,
+      outDir: ".aai/client",
       emptyOutDir: true,
     },
   });

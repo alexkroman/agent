@@ -112,7 +112,7 @@ function installDeps(projectDir: string): void {
   } else if (pm === "yarn") {
     execFileSync("yarn", ["install", "--no-lockfile"], { cwd: projectDir, stdio: "inherit", env });
   } else {
-    execFileSync("pnpm", ["install", "--no-frozen-lockfile"], {
+    execFileSync("pnpm", ["install", "--no-frozen-lockfile", "--no-strict-peer-dependencies"], {
       cwd: projectDir,
       stdio: "inherit",
       env,
