@@ -169,9 +169,9 @@ export async function executeInit(
   const monorepoRoot = getMonorepoRoot();
   const cwd = resolveTargetDir(dir);
 
-  if (!opts.force && (await fileExists(path.join(cwd, "agent.json")))) {
+  if (!opts.force && (await fileExists(path.join(cwd, "agent.ts")))) {
     throw new Error(
-      `agent.json already exists in this directory. Use ${colorize("cyanBright", "--force")} to overwrite.`,
+      `agent.ts already exists in this directory. Use ${colorize("cyanBright", "--force")} to overwrite.`,
     );
   }
 
