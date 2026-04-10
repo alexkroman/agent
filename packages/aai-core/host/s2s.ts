@@ -7,6 +7,7 @@ import type { JSONSchema7 } from "json-schema";
 import { createNanoEvents, type Emitter, type Unsubscribe } from "nanoevents";
 import WsWebSocket from "ws";
 import { z } from "zod";
+import { WS_OPEN } from "../isolate/constants.ts";
 import type { Logger, S2SConfig } from "./runtime-config.ts";
 import { consoleLogger } from "./runtime-config.ts";
 
@@ -25,8 +26,6 @@ export type S2sWebSocket = {
   ): void;
   addEventListener(type: "error", listener: (event: { message?: string }) => void): void;
 };
-
-const WS_OPEN = 1;
 
 export type CreateS2sWebSocket = (
   url: string,

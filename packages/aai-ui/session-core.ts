@@ -10,7 +10,7 @@
  * No dependency on React, Preact, or any UI framework.
  */
 
-import { errorMessage } from "@alexkroman1/aai-core";
+import { errorMessage, WS_OPEN } from "@alexkroman1/aai-core";
 import type {
   ClientEvent,
   ClientMessage,
@@ -41,8 +41,6 @@ export type {
   VoiceSessionOptions,
   WebSocketConstructor,
 } from "./types.ts";
-
-const WS_OPEN = 1;
 
 // ─── Snapshot type ──────────────────────────────────────────────────────────
 
