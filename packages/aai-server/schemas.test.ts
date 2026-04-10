@@ -88,6 +88,19 @@ describe("DeployBodySchema", () => {
     expect(DeployBodySchema.safeParse(input).success).toBe(expected);
   });
 
+  test("accepts agentConfig without systemPrompt and applies default", () => {
+    const result = DeployBodySchema.safeParse({
+      worker: "console.log('hello');",
+      clientFiles: {},
+      agentConfig: { name: "minimal-agent" },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.agentConfig.systemPrompt).toBeTypeOf("string");
+      expect(result.data.agentConfig.systemPrompt.length).toBeGreaterThan(0);
+    }
+  });
+
   test("rejects non-object body", () => {
     expect(DeployBodySchema.safeParse("string").success).toBe(false);
     expect(DeployBodySchema.safeParse(null).success).toBe(false);

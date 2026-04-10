@@ -7,6 +7,7 @@
  * import these schemas — it uses inline type definitions instead.
  */
 
+import { DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai-core";
 import { ToolSchemaSchema as ToolSchemaSchema_ } from "@alexkroman1/aai-core/manifest";
 import { z } from "zod";
 
@@ -16,7 +17,7 @@ export { ToolSchemaSchema } from "@alexkroman1/aai-core/manifest";
 
 export const IsolateConfigSchema = z.object({
   name: z.string(),
-  systemPrompt: z.string(),
+  systemPrompt: z.string().default(DEFAULT_SYSTEM_PROMPT),
   greeting: z.string().optional(),
   sttPrompt: z.string().optional(),
   maxSteps: z.number().optional(),

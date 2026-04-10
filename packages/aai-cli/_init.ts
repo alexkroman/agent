@@ -4,8 +4,6 @@ import path from "node:path";
 import { isDevMode } from "./_agent.ts";
 import { downloadAndMergeTemplate } from "./_templates.ts";
 
-const WORKSPACE_SCOPE = "@alexkroman1/";
-
 function readmeContent(slug: string): string {
   return `# ${slug}
 
@@ -38,9 +36,6 @@ aai secret list          # List secret names
 aai secret delete MY_KEY # Remove a secret
 \`\`\`
 
-## Learn more
-
-See \`CLAUDE.md\` for the full agent API reference.
 `;
 }
 
@@ -48,7 +43,19 @@ export type InitOptions = {
   targetDir: string;
 };
 
-/** Rewrite @alexkroman1/* deps to workspace:* so pnpm links to local source. */
+/**
+ * Map from npm package name to directory name under packages/.
+ * Used to rewrite published version ranges to link: paths in dev mode.
+ */
+const WORKSPACE_PKG_DIRS: Record<string, string> = {
+  "@alexkroman1/aai-core": "aai-core",
+  "@alexkroman1/aai-cli": "aai-cli",
+  "@alexkroman1/aai-ui": "aai-ui",
+  "@alexkroman1/aai-server": "aai-server",
+  "@alexkroman1/aai-templates": "aai-templates",
+};
+
+/** Rewrite @alexkroman1/* deps to link: paths so pnpm links to local source. */
 export async function patchPackageJsonForWorkspace(targetDir: string): Promise<void> {
   const pkgPath = path.join(targetDir, "package.json");
   let raw: string;
@@ -62,12 +69,18 @@ export async function patchPackageJsonForWorkspace(targetDir: string): Promise<v
   pkgJson.name = path.basename(targetDir);
   delete pkgJson.packageManager;
 
+  const { getMonorepoRoot } = await import("./_agent.ts");
+  const root = getMonorepoRoot();
+  if (!root) return; // shouldn't happen — caller checks isDevMode()
+  const packagesDir = path.join(root, "packages");
+
   for (const field of ["dependencies", "devDependencies"] as const) {
     const deps = pkgJson[field];
     if (!deps) continue;
     for (const key of Object.keys(deps)) {
-      if (key.startsWith(WORKSPACE_SCOPE)) {
-        deps[key] = "workspace:*";
+      const dir = WORKSPACE_PKG_DIRS[key];
+      if (dir) {
+        deps[key] = `link:${path.relative(targetDir, path.join(packagesDir, dir))}`;
       }
     }
   }

@@ -4,7 +4,7 @@ import { consola } from "consola";
 
 /** Resolve the working directory from INIT_CWD or process.cwd(). */
 export function resolveCwd(): string {
-  return process.env.INIT_CWD || process.cwd();
+  return process.env.INIT_CWD || process.env.PWD || process.cwd();
 }
 
 export async function fileExists(p: string): Promise<boolean> {

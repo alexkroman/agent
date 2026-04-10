@@ -101,9 +101,9 @@ async function installDeps(cwd: string, silent?: boolean): Promise<void> {
   }
 }
 
-/** Resolve target directory — in dev mode, place under monorepo tmp/. */
-function resolveTargetDir(dir: string, monorepoRoot: string | null): string {
-  return monorepoRoot ? path.resolve(monorepoRoot, "tmp", dir) : path.resolve(resolveCwd(), dir);
+/** Resolve target directory relative to the user's current directory. */
+function resolveTargetDir(dir: string): string {
+  return path.resolve(resolveCwd(), dir);
 }
 
 /** Resolve the deploy server — in dev mode, default to localhost. */
@@ -143,11 +143,10 @@ async function scaffoldProject(dir: string, cwd: string, silent?: boolean): Prom
 }
 
 /** Print post-init instructions. */
-function printPostInitInfo(dir: string, monorepoRoot: string | null): void {
-  log.success(`Created ${dir}`);
-  const cdTarget = monorepoRoot ? `tmp/${dir}` : dir;
+function printPostInitInfo(cwd: string, monorepoRoot: string | null): void {
+  log.success(`Created ${cwd}`);
   if (monorepoRoot) log.info("Dev mode: project linked to workspace packages");
-  log.info(`Next: cd ${cdTarget} && aai dev`);
+  log.info(`Next: cd ${cwd} && aai dev`);
 }
 
 export async function executeInit(
@@ -168,7 +167,7 @@ export async function executeInit(
 
   const dir = opts.dir ?? (await promptProjectName(opts.yes));
   const monorepoRoot = getMonorepoRoot();
-  const cwd = resolveTargetDir(dir, monorepoRoot);
+  const cwd = resolveTargetDir(dir);
 
   if (!opts.force && (await fileExists(path.join(cwd, "agent.json")))) {
     throw new Error(
@@ -195,7 +194,7 @@ export async function executeInit(
   }
 
   if (!suppressUi) {
-    printPostInitInfo(dir, monorepoRoot);
+    printPostInitInfo(cwd, monorepoRoot);
   }
 
   const data: InitData = { dir: cwd, template, deployed };
