@@ -11,10 +11,11 @@
     }
   },
   "include": [
-    "css.d.ts",
-    "templates/*/tools.ts",
+    "scaffold/global.d.ts",
+    "templates/*/agent.ts",
     "templates/*/client.tsx",
     "templates/*/shared.ts",
-    "templates/*/_shared.ts"
+    "templates/*/_shared.ts",
+    "templates/*/tools/*.ts"
   ]
 }
