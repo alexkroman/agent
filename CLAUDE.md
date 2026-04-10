@@ -209,7 +209,7 @@ no import restrictions apply there.
 - Type-level tests use `.test-d.ts` files with `typecheck: { only: true }`
   — they are checked by tsc but never executed at runtime. Use
   `expectTypeOf` from vitest to assert on type shapes. Projects:
-  `aai-types`, `aai-ui-types`.
+  `aai-types`.
 - **Package validation**: `publint` runs post-build to verify package.json
   exports resolve to real files. `attw` validates export types. Both run
   in the check pipeline.
