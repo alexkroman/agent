@@ -1,11 +1,11 @@
 // Copyright 2025 the AAI authors. MIT license.
 /** S2S session — relays audio between client and AssemblyAI S2S API. */
 
-import type { AgentConfig, ExecuteTool, ToolSchema } from "../isolate/_internal-types.ts";
-import { errorDetail, errorMessage, toolError } from "../isolate/_utils.ts";
-import { DEFAULT_IDLE_TIMEOUT_MS, MAX_TOOL_RESULT_CHARS } from "../isolate/constants.ts";
-import type { ClientSink } from "../isolate/protocol.ts";
-import { buildSystemPrompt } from "../isolate/system-prompt.ts";
+import type { AgentConfig, ExecuteTool, ToolSchema } from "../sdk/_internal-types.ts";
+import { errorDetail, errorMessage, toolError } from "../sdk/_utils.ts";
+import { DEFAULT_IDLE_TIMEOUT_MS, MAX_TOOL_RESULT_CHARS } from "../sdk/constants.ts";
+import type { ClientEvent, ClientSink } from "../sdk/protocol.ts";
+import { buildSystemPrompt } from "../sdk/system-prompt.ts";
 import type { Logger, S2SConfig } from "./runtime-config.ts";
 import { consoleLogger } from "./runtime-config.ts";
 import {
@@ -13,7 +13,6 @@ import {
   connectS2s,
   defaultCreateS2sWebSocket,
   type S2sHandle,
-  type S2sToolCall,
   type S2sToolSchema,
 } from "./s2s.ts";
 import { buildCtx, type S2sSessionCtx } from "./session-ctx.ts";
@@ -116,16 +115,14 @@ function finishToolCall(
   }
 }
 
-async function handleToolCall(ctx: S2sSessionCtx, detail: S2sToolCall): Promise<void> {
-  const { callId, name, args: parsedArgs } = detail;
+async function handleToolCall(
+  ctx: S2sSessionCtx,
+  event: Extract<ClientEvent, { type: "tool_call" }>,
+): Promise<void> {
+  const { toolCallId: callId, toolName: name, args: parsedArgs } = event;
   const replyId = ctx.reply.currentReplyId;
 
-  ctx.client.event({
-    type: "tool_call",
-    toolCallId: callId,
-    toolName: name,
-    args: parsedArgs,
-  });
+  ctx.client.event(event);
 
   const refused = ctx.consumeToolCallStep(name, replyId);
   if (refused !== null) {
@@ -150,25 +147,24 @@ async function handleToolCall(ctx: S2sSessionCtx, detail: S2sToolCall): Promise<
 
 function handleUserTranscript(ctx: S2sSessionCtx, text: string): void {
   ctx.log.info("S2S user transcript", { text });
-  ctx.client.event({ type: "user_transcript_delta", text, isFinal: true });
-  ctx.client.event({ type: "user_transcript", text });
+  ctx.client.event({ type: "user_transcript", text, isFinal: true });
   ctx.pushMessages({ role: "user", content: text });
 }
 
 function handleAgentTranscript(ctx: S2sSessionCtx, text: string, interrupted: boolean): void {
-  ctx.client.event({ type: "agent_transcript", text });
+  ctx.client.event({ type: "agent_transcript", text, isFinal: true });
   if (!interrupted) {
     ctx.pushMessages({ role: "assistant", content: text });
   }
 }
 
-function handleReplyDone(ctx: S2sSessionCtx, status: string | undefined): void {
-  if (status === "interrupted") {
-    ctx.log.info("S2S reply interrupted (barge-in)");
-    ctx.cancelReply();
-    ctx.client.event({ type: "cancelled" });
-    return;
-  }
+function handleReplyCancelled(ctx: S2sSessionCtx): void {
+  ctx.log.info("S2S reply interrupted (barge-in)");
+  ctx.cancelReply();
+  ctx.client.event({ type: "cancelled" });
+}
+
+function handleReplyDone(ctx: S2sSessionCtx): void {
   const doneReplyId = ctx.reply.currentReplyId;
   const sendPending = () => {
     if (ctx.reply.currentReplyId !== doneReplyId) {
@@ -196,42 +192,51 @@ function handleReplyDone(ctx: S2sSessionCtx, status: string | undefined): void {
 
 function setupListeners(ctx: S2sSessionCtx, handle: S2sHandle): void {
   handle.on("ready", ({ sessionId }) => ctx.log.info("S2S session ready", { sessionId }));
+  handle.on("replyStarted", ({ replyId }) => {
+    ctx.beginReply(replyId);
+  });
   handle.on("sessionExpired", () => {
     ctx.log.info("S2S session expired");
     handle.close();
   });
-  handle.on("speechStarted", () => ctx.client.event({ type: "speech_started" }));
-  handle.on("speechStopped", () => ctx.client.event({ type: "speech_stopped" }));
-  handle.on("userTranscriptDelta", ({ text }) =>
-    ctx.client.event({ type: "user_transcript_delta", text, isFinal: false }),
-  );
-  handle.on("userTranscript", ({ text }) => handleUserTranscript(ctx, text));
-  handle.on("replyStarted", ({ replyId }) => {
-    ctx.beginReply(replyId);
-  });
   handle.on("audio", ({ audio }) => ctx.client.playAudioChunk(audio));
-  handle.on("agentTranscriptDelta", ({ text }) =>
-    ctx.client.event({ type: "agent_transcript_delta", text }),
-  );
-  handle.on("agentTranscript", ({ text, interrupted }) =>
-    handleAgentTranscript(ctx, text, interrupted),
-  );
-  handle.on("toolCall", (detail) => {
-    const p = handleToolCall(ctx, detail).catch((err: unknown) => {
-      ctx.log.error("Tool call handler failed", { err: errorMessage(err) });
-    });
-    ctx.chainTurn(p);
-  });
-  handle.on("replyDone", ({ status }) => handleReplyDone(ctx, status));
-  handle.on("error", ({ code, message }) => {
-    ctx.log.error("S2S error", { code, message });
-    ctx.client.event({ type: "error", code: "internal", message });
+  handle.on("error", (err) => {
+    ctx.log.error("S2S error", { message: err.message });
+    ctx.client.event({ type: "error", code: "internal", message: err.message });
     handle.close();
   });
-  handle.on("close", () => {
-    ctx.log.info("S2S closed");
+  handle.on("close", (code, reason) => {
+    ctx.log.info("S2S closed", { code, reason });
     ctx.s2s = null;
     ctx.cancelReply();
+  });
+
+  handle.on("event", (event) => {
+    switch (event.type) {
+      case "user_transcript":
+        if (event.isFinal) handleUserTranscript(ctx, event.text);
+        else ctx.client.event(event);
+        break;
+      case "agent_transcript":
+        if (event.isFinal) handleAgentTranscript(ctx, event.text, event._interrupted ?? false);
+        else ctx.client.event(event);
+        break;
+      case "tool_call": {
+        const p = handleToolCall(ctx, event).catch((err: unknown) => {
+          ctx.log.error("Tool call handler failed", { err: errorMessage(err) });
+        });
+        ctx.chainTurn(p);
+        break;
+      }
+      case "reply_done":
+        handleReplyDone(ctx);
+        break;
+      case "cancelled":
+        handleReplyCancelled(ctx);
+        break;
+      default:
+        ctx.client.event(event);
+    }
   });
 }
 

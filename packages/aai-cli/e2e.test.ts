@@ -427,13 +427,13 @@ describe("browser: dev server", () => {
   test.concurrent("thinking state: user message appears after user_transcript", async () => {
     const { page, inject } = await setupEventInjector(browser, port);
 
-    await inject({ type: "user_transcript", text: "What is the meaning of life?" });
+    await inject({ type: "user_transcript", text: "What is the meaning of life?", isFinal: true });
     await page.getByText("What is the meaning of life?").waitFor();
 
     // State indicator should show "thinking"
     await page.locator('[data-state="thinking"]').waitFor({ timeout: 30_000 });
 
-    await inject({ type: "agent_transcript", text: "42." });
+    await inject({ type: "agent_transcript", text: "42.", isFinal: true });
     await page.getByText("42.").waitFor();
 
     await page.close();
@@ -445,17 +445,17 @@ describe("browser: dev server", () => {
     // speech_started → userUtterance becomes "" → shows thinking dots
     await inject({ type: "speech_started" });
 
-    // Partial user_transcript_delta → shows the text
-    await inject({ type: "user_transcript_delta", text: "Tell me about", isFinal: false });
+    // Partial user_transcript (isFinal: false) → shows the text
+    await inject({ type: "user_transcript", text: "Tell me about", isFinal: false });
     await page.getByText("Tell me about").waitFor();
 
-    // Updated user_transcript_delta
-    await inject({ type: "user_transcript_delta", text: "Tell me about space", isFinal: false });
+    // Updated user_transcript (isFinal: false)
+    await inject({ type: "user_transcript", text: "Tell me about space", isFinal: false });
     await page.getByText("Tell me about space").waitFor();
 
-    // user_transcript finalizes the transcript
-    await inject({ type: "user_transcript", text: "Tell me about space" });
-    await inject({ type: "agent_transcript", text: "Space is vast." });
+    // user_transcript (isFinal: true) finalizes the transcript
+    await inject({ type: "user_transcript", text: "Tell me about space", isFinal: true });
+    await inject({ type: "agent_transcript", text: "Space is vast.", isFinal: true });
     await page.getByText("Space is vast.").waitFor();
 
     await page.close();
@@ -464,10 +464,10 @@ describe("browser: dev server", () => {
   test.concurrent("state transitions: thinking → listening after reply_done", async () => {
     const { page, inject } = await setupEventInjector(browser, port);
 
-    await inject({ type: "user_transcript", text: "Hello" });
+    await inject({ type: "user_transcript", text: "Hello", isFinal: true });
     await page.locator('[data-state="thinking"]').waitFor({ timeout: 30_000 });
 
-    await inject({ type: "agent_transcript", text: "Hi there!" });
+    await inject({ type: "agent_transcript", text: "Hi there!", isFinal: true });
     await inject({ type: "reply_done" });
     await page.locator('[data-state="listening"]').waitFor({ timeout: 30_000 });
 

@@ -41,18 +41,23 @@ export function lenientParse<T>(
   return { ok: false, malformed, error: result.error.message };
 }
 
+/** Zod schema for the KV "get" operation. */
+export const KvGetSchema = z.object({ op: z.literal("get"), key: z.string().min(1) });
+
+/** Zod schema for the KV "set" operation. */
+export const KvSetSchema = z.object({
+  op: z.literal("set"),
+  key: z.string().min(1),
+  value: z.unknown(),
+  /** Time-to-live in **milliseconds**. */
+  expireIn: z.number().int().positive().optional(),
+});
+
+/** Zod schema for the KV "del" operation. */
+export const KvDelSchema = z.object({ op: z.literal("del"), key: z.string().min(1) });
+
 /** Zod schema for KV operation requests from the worker to the host. */
-export const KvRequestSchema = z.discriminatedUnion("op", [
-  z.object({ op: z.literal("get"), key: z.string().min(1) }),
-  z.object({
-    op: z.literal("set"),
-    key: z.string().min(1),
-    value: z.unknown(),
-    /** Time-to-live in **milliseconds**. */
-    expireIn: z.number().int().positive().optional(),
-  }),
-  z.object({ op: z.literal("del"), key: z.string().min(1) }),
-]);
+export const KvRequestSchema = z.discriminatedUnion("op", [KvGetSchema, KvSetSchema, KvDelSchema]);
 
 /** KV operation request — discriminated union on the `op` field. */
 export type KvRequest = z.infer<typeof KvRequestSchema>;
@@ -85,8 +90,6 @@ export type SessionErrorCode = z.infer<typeof SessionErrorCodeSchema>;
 
 /** Helper: simple event with only a type field. */
 const ev = <T extends string>(t: T) => z.object({ type: z.literal(t) });
-/** Helper: event with type + text. */
-const textEv = <T extends string>(t: T) => z.object({ type: z.literal(t), text: z.string() });
 
 const turnOrder = z.number().int().nonnegative().optional();
 
@@ -95,14 +98,16 @@ export const ClientEventSchema = z.discriminatedUnion("type", [
   ev("speech_started"),
   ev("speech_stopped"),
   z.object({
-    type: z.literal("user_transcript_delta"),
+    type: z.literal("user_transcript"),
     text: z.string(),
     isFinal: z.boolean(),
     turnOrder,
   }),
-  textEv("user_transcript").extend({ turnOrder }),
-  textEv("agent_transcript"),
-  textEv("agent_transcript_delta"),
+  z.object({
+    type: z.literal("agent_transcript"),
+    text: z.string(),
+    isFinal: z.boolean(),
+  }),
   z.object({
     type: z.literal("tool_call"),
     toolCallId: z.string(),

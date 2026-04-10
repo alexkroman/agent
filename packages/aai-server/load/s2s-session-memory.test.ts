@@ -114,17 +114,18 @@ describe("S2S session memory with conversation history", () => {
             const handle = mockHandles[i]!;
             for (let m = messagesSentPerSession; m < msgTier; m++) {
               handle._fire("replyStarted", { replyId: `r-${i}-${m}` });
-              handle._fire("userTranscript", {
-                itemId: `u-${i}-${m}`,
+              handle._fire("event", {
+                type: "user_transcript",
                 text: `User message ${m} with some reasonable length content to simulate real conversations and measure memory impact`,
+                isFinal: true,
               });
-              handle._fire("agentTranscript", {
+              handle._fire("event", {
+                type: "agent_transcript",
                 text: `Agent response ${m} providing helpful information about the topic discussed in this conversation turn number ${m}`,
-                replyId: `r-${i}-${m}`,
-                itemId: `a-${i}-${m}`,
-                interrupted: false,
+                isFinal: true,
+                _interrupted: false,
               });
-              handle._fire("replyDone", {});
+              handle._fire("event", { type: "reply_done" });
             }
           }
           await flush();

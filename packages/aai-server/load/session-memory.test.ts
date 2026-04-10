@@ -106,17 +106,18 @@ describe("session memory with mock S2S", () => {
         const handle = mockHandles[i]!;
         for (let m = 0; m < MESSAGES_PER_SESSION; m++) {
           handle._fire("replyStarted", { replyId: `r-${i}-${m}` });
-          handle._fire("userTranscript", {
-            itemId: `u-${i}-${m}`,
+          handle._fire("event", {
+            type: "user_transcript",
             text: `User message ${m} from session ${i} with some reasonable length content to simulate real conversations`,
+            isFinal: true,
           });
-          handle._fire("agentTranscript", {
+          handle._fire("event", {
+            type: "agent_transcript",
             text: `Agent response ${m} to session ${i} providing helpful information about the topic discussed`,
-            replyId: `r-${i}-${m}`,
-            itemId: `a-${i}-${m}`,
-            interrupted: false,
+            isFinal: true,
+            _interrupted: false,
           });
-          handle._fire("replyDone", {});
+          handle._fire("event", { type: "reply_done" });
         }
         await flush();
       }
@@ -143,14 +144,18 @@ describe("session memory with mock S2S", () => {
     console.log("\nVerifying sessions still receive events...");
     const lastHandle = mockHandles.at(-1)!;
     lastHandle._fire("replyStarted", { replyId: "verify-reply" });
-    lastHandle._fire("userTranscript", { itemId: "verify-u", text: "Verification message" });
-    lastHandle._fire("agentTranscript", {
-      text: "Verification response",
-      replyId: "verify-reply",
-      itemId: "verify-a",
-      interrupted: false,
+    lastHandle._fire("event", {
+      type: "user_transcript",
+      text: "Verification message",
+      isFinal: true,
     });
-    lastHandle._fire("replyDone", {});
+    lastHandle._fire("event", {
+      type: "agent_transcript",
+      text: "Verification response",
+      isFinal: true,
+      _interrupted: false,
+    });
+    lastHandle._fire("event", { type: "reply_done" });
     await flush();
     console.log("Event delivery verified OK");
 

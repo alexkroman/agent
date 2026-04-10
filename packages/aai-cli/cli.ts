@@ -5,7 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { errorMessage } from "@alexkroman1/aai-core";
 import { defineCommand, runMain } from "citty";
-import { CliError, fail, getOutputMode, type OutputMode } from "./_output.ts";
+import { CliError, type CommandResult, fail, getOutputMode, type OutputMode } from "./_output.ts";
 import { silenceOutput } from "./_ui.ts";
 import { fileExists, resolveCwd } from "./_utils.ts";
 
@@ -58,14 +58,30 @@ async function handleErrors(mode: OutputMode, fn: () => Promise<void>): Promise<
   }
 }
 
-/** Resolve output mode, silence output and set yes=true if JSON. */
-function resolveMode(args: { json?: boolean | undefined; yes?: boolean | undefined }): OutputMode {
+/**
+ * Run a command body with standard error handling, output mode resolution, and withOutput wrapping.
+ * `setYes` controls whether json mode sets `args.yes = true` (default true for most commands).
+ */
+async function runCommand(
+  args: { json?: boolean | undefined; yes?: boolean | undefined },
+  fn: (mode: OutputMode) => Promise<CommandResult<unknown>>,
+  opts: { setYes?: boolean } = {},
+): Promise<void> {
   const mode = getOutputMode(args);
   if (mode === "json") {
     silenceOutput();
-    args.yes = true;
+    if (opts.setYes !== false) args.yes = true;
   }
-  return mode;
+  const { withOutput } = await import("./_output.ts");
+  await handleErrors(mode, () =>
+    withOutput(
+      mode,
+      () => fn(mode),
+      () => {
+        /* human output handled inside each execute function */
+      },
+    ),
+  );
 }
 
 const init = defineCommand({
@@ -80,27 +96,18 @@ const init = defineCommand({
     skipDeploy: { type: "boolean", description: "Skip deploy after scaffolding" },
   },
   async run({ args }) {
-    const mode = resolveMode(args);
-    await handleErrors(mode, async () => {
+    await runCommand(args, async (mode) => {
       const { executeInit } = await import("./init.ts");
-      const { withOutput } = await import("./_output.ts");
-      await withOutput(
-        mode,
-        () =>
-          executeInit(
-            {
-              dir: args.dir,
-              force: args.force,
-              yes: args.yes,
-              skipApi: args.skipApi,
-              skipDeploy: args.skipDeploy,
-              server: args.server,
-            },
-            mode === "json" ? { silent: true } : undefined,
-          ),
-        () => {
-          /* human output handled inside executeInit */
+      return executeInit(
+        {
+          dir: args.dir,
+          force: args.force,
+          yes: args.yes,
+          skipApi: args.skipApi,
+          skipDeploy: args.skipDeploy,
+          server: args.server,
         },
+        mode === "json" ? { silent: true } : undefined,
       );
     });
   },
@@ -115,18 +122,10 @@ const dev = defineCommand({
     json: sharedArgs.json,
   },
   async run({ args }) {
-    const mode = resolveMode(args);
-    await handleErrors(mode, async () => {
+    await runCommand(args, async () => {
       const cwd = await setup({ agent: true });
       const { executeDev } = await import("./dev.ts");
-      const { withOutput } = await import("./_output.ts");
-      await withOutput(
-        mode,
-        () => executeDev({ cwd, port: args.port }),
-        () => {
-          /* human output handled inside */
-        },
-      );
+      return executeDev({ cwd, port: args.port });
     });
   },
 });
@@ -137,20 +136,15 @@ const test = defineCommand({
     json: sharedArgs.json,
   },
   async run({ args }) {
-    const mode = getOutputMode(args);
-    if (mode === "json") silenceOutput();
-    await handleErrors(mode, async () => {
-      const cwd = await setup();
-      const { executeTest } = await import("./test.ts");
-      const { withOutput } = await import("./_output.ts");
-      await withOutput(
-        mode,
-        () => executeTest(cwd),
-        () => {
-          /* human output handled inside */
-        },
-      );
-    });
+    await runCommand(
+      args,
+      async () => {
+        const cwd = await setup();
+        const { executeTest } = await import("./test.ts");
+        return executeTest(cwd);
+      },
+      { setYes: false },
+    );
   },
 });
 
@@ -163,22 +157,14 @@ const build = defineCommand({
     skipTests: { type: "boolean", description: "Skip running tests before build" },
   },
   async run({ args }) {
-    const mode = resolveMode(args);
-    await handleErrors(mode, async () => {
+    await runCommand(args, async () => {
       const cwd = await setup({ agent: true });
       if (!args.skipTests) {
         const { runVitest } = await import("./test.ts");
         runVitest(cwd);
       }
       const { executeBuild } = await import("./_bundler.ts");
-      const { withOutput } = await import("./_output.ts");
-      await withOutput(
-        mode,
-        () => executeBuild(cwd),
-        () => {
-          /* human output handled inside */
-        },
-      );
+      return executeBuild(cwd);
     });
   },
 });
@@ -191,18 +177,10 @@ const deploy = defineCommand({
     json: sharedArgs.json,
   },
   async run({ args }) {
-    const mode = resolveMode(args);
-    await handleErrors(mode, async () => {
+    await runCommand(args, async () => {
       const cwd = await setup({ agent: true });
       const { executeDeploy } = await import("./deploy.ts");
-      const { withOutput } = await import("./_output.ts");
-      await withOutput(
-        mode,
-        () => executeDeploy({ cwd, ...(args.server ? { server: args.server } : {}) }),
-        () => {
-          /* human output handled inside executeDeploy */
-        },
-      );
+      return executeDeploy({ cwd, ...(args.server ? { server: args.server } : {}) });
     });
   },
 });
@@ -214,20 +192,15 @@ const del = defineCommand({
     json: sharedArgs.json,
   },
   async run({ args }) {
-    const mode = getOutputMode(args);
-    if (mode === "json") silenceOutput();
-    await handleErrors(mode, async () => {
-      const cwd = await setup();
-      const { executeDelete } = await import("./delete.ts");
-      const { withOutput } = await import("./_output.ts");
-      await withOutput(
-        mode,
-        () => executeDelete({ cwd, ...(args.server ? { server: args.server } : {}) }),
-        () => {
-          /* human output handled inside executeDelete */
-        },
-      );
-    });
+    await runCommand(
+      args,
+      async () => {
+        const cwd = await setup();
+        const { executeDelete } = await import("./delete.ts");
+        return executeDelete({ cwd, ...(args.server ? { server: args.server } : {}) });
+      },
+      { setYes: false },
+    );
   },
 });
 
@@ -239,27 +212,21 @@ const secretPut = defineCommand({
     json: sharedArgs.json,
   },
   async run({ args }) {
-    const mode = getOutputMode(args);
-    if (mode === "json") silenceOutput();
-    await handleErrors(mode, async () => {
-      const cwd = await setup();
-      const { executeSecretPut, readStdin } = await import("./secret.ts");
-      const { withOutput } = await import("./_output.ts");
-
-      const value = mode === "json" ? await readStdin() : undefined;
-      if (mode === "json" && !value) {
-        const result = fail("no_input", "No value provided", "Pipe secret value to stdin");
-        process.stdout.write(`${JSON.stringify(result)}\n`);
-        process.exit(1);
-      }
-      await withOutput(
-        mode,
-        () => executeSecretPut(cwd, args.name, value, args.server),
-        () => {
-          /* human output handled inside executeSecretPut */
-        },
-      );
-    });
+    await runCommand(
+      args,
+      async (mode) => {
+        const cwd = await setup();
+        const { executeSecretPut, readStdin } = await import("./secret.ts");
+        const value = mode === "json" ? await readStdin() : undefined;
+        if (mode === "json" && !value) {
+          const result = fail("no_input", "No value provided", "Pipe secret value to stdin");
+          process.stdout.write(`${JSON.stringify(result)}\n`);
+          process.exit(1);
+        }
+        return executeSecretPut(cwd, args.name, value, args.server);
+      },
+      { setYes: false },
+    );
   },
 });
 
@@ -271,20 +238,15 @@ const secretDelete = defineCommand({
     json: sharedArgs.json,
   },
   async run({ args }) {
-    const mode = getOutputMode(args);
-    if (mode === "json") silenceOutput();
-    await handleErrors(mode, async () => {
-      const cwd = await setup();
-      const { executeSecretDelete } = await import("./secret.ts");
-      const { withOutput } = await import("./_output.ts");
-      await withOutput(
-        mode,
-        () => executeSecretDelete(cwd, args.name, args.server),
-        () => {
-          /* human output handled inside */
-        },
-      );
-    });
+    await runCommand(
+      args,
+      async () => {
+        const cwd = await setup();
+        const { executeSecretDelete } = await import("./secret.ts");
+        return executeSecretDelete(cwd, args.name, args.server);
+      },
+      { setYes: false },
+    );
   },
 });
 
@@ -295,20 +257,15 @@ const secretList = defineCommand({
     json: sharedArgs.json,
   },
   async run({ args }) {
-    const mode = getOutputMode(args);
-    if (mode === "json") silenceOutput();
-    await handleErrors(mode, async () => {
-      const cwd = await setup();
-      const { executeSecretList } = await import("./secret.ts");
-      const { withOutput } = await import("./_output.ts");
-      await withOutput(
-        mode,
-        () => executeSecretList(cwd, args.server),
-        () => {
-          /* human output handled inside */
-        },
-      );
-    });
+    await runCommand(
+      args,
+      async () => {
+        const cwd = await setup();
+        const { executeSecretList } = await import("./secret.ts");
+        return executeSecretList(cwd, args.server);
+      },
+      { setYes: false },
+    );
   },
 });
 

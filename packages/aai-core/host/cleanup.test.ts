@@ -190,7 +190,7 @@ describe("createS2sSession resource cleanup", () => {
 
     // Start a tool call
     mockHandle._fire("replyStarted", { replyId: "r1" });
-    mockHandle._fire("toolCall", { callId: "c1", name: "t1", args: {} });
+    mockHandle._fire("event", { type: "tool_call", toolCallId: "c1", toolName: "t1", args: {} });
     await vi.waitFor(() => expect(executeTool).toHaveBeenCalled());
 
     // Stop while tool is in-flight
@@ -208,11 +208,11 @@ describe("createS2sSession resource cleanup", () => {
 
     // Accumulate some tool calls
     mockHandle._fire("replyStarted", { replyId: "r1" });
-    mockHandle._fire("toolCall", { callId: "c1", name: "t1", args: {} });
+    mockHandle._fire("event", { type: "tool_call", toolCallId: "c1", toolName: "t1", args: {} });
     await session.waitForTurn();
 
     // Send a user transcript to add conversation messages
-    mockHandle._fire("userTranscript", { itemId: "i1", text: "Hello" });
+    mockHandle._fire("event", { type: "user_transcript", text: "Hello", isFinal: true });
 
     // Reset — should clear pending tools and conversation
     session.onReset();
@@ -245,7 +245,7 @@ describe("createS2sSession resource cleanup", () => {
 
     // Start a tool call on the first handle
     firstHandle._fire("replyStarted", { replyId: "r1" });
-    firstHandle._fire("toolCall", { callId: "c1", name: "t1", args: {} });
+    firstHandle._fire("event", { type: "tool_call", toolCallId: "c1", toolName: "t1", args: {} });
     await vi.waitFor(() => expect(executeTool).toHaveBeenCalled());
 
     // Reset while tool is in-flight
@@ -298,7 +298,7 @@ describe("createS2sSession resource cleanup", () => {
     const { session, client, mockHandle } = setup();
     await session.start();
 
-    mockHandle._fire("error", { code: "server_error", message: "S2S crashed" });
+    mockHandle._fire("error", new Error("S2S crashed"));
 
     expect(mockHandle.close).toHaveBeenCalled();
     expect(client.events).toContainEqual({
@@ -313,7 +313,7 @@ describe("createS2sSession resource cleanup", () => {
     await session.start();
 
     // Simulate S2S WebSocket close
-    mockHandle._fire("close");
+    mockHandle._fire("close", 1000, "normal");
 
     // Sending audio after close should not throw (no-ops via ?. on null s2s)
     session.onAudio(new Uint8Array([1, 2, 3]));
@@ -323,7 +323,7 @@ describe("createS2sSession resource cleanup", () => {
     const { session, mockHandle } = setup();
     await session.start();
 
-    mockHandle._fire("sessionExpired", { code: "expired", message: "session expired" });
+    mockHandle._fire("sessionExpired");
     // The handler calls handle.close() directly
     expect(mockHandle.close).toHaveBeenCalled();
   });
@@ -380,8 +380,8 @@ describe("createS2sSession resource cleanup", () => {
     await session.start();
 
     mockHandle._fire("replyStarted", { replyId: "r1" });
-    mockHandle._fire("toolCall", { callId: "c1", name: "t1", args: {} });
-    mockHandle._fire("toolCall", { callId: "c2", name: "t2", args: {} });
+    mockHandle._fire("event", { type: "tool_call", toolCallId: "c1", toolName: "t1", args: {} });
+    mockHandle._fire("event", { type: "tool_call", toolCallId: "c2", toolName: "t2", args: {} });
 
     await vi.waitFor(() => expect(executeTool).toHaveBeenCalledTimes(2));
 

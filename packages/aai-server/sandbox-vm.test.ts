@@ -73,7 +73,7 @@ describe("configureSandbox", () => {
       {
         slug: "test-agent",
         workerCode: "console.log('hello')",
-        agentEnv: { FOO: "bar" },
+        env: { FOO: "bar" },
         harnessPath: "/tmp/harness.js",
       },
       cleanupFn,
@@ -97,7 +97,7 @@ describe("configureSandbox", () => {
       {
         slug: "test-agent",
         workerCode: "",
-        agentEnv: {},
+        env: {},
         harnessPath: "/tmp/harness.js",
         kvStorage: mockStorage,
         kvPrefix: "agents/test-agent/kv",
@@ -120,7 +120,7 @@ describe("configureSandbox", () => {
       {
         slug: "test-agent",
         workerCode: "",
-        agentEnv: {},
+        env: {},
         harnessPath: "/tmp/harness.js",
       },
       cleanupFn,
@@ -138,7 +138,7 @@ describe("configureSandbox", () => {
       {
         slug: "test-agent",
         workerCode: "",
-        agentEnv: {},
+        env: {},
         harnessPath: "/tmp/harness.js",
       },
       cleanupFn,
@@ -185,7 +185,7 @@ describe("createSandboxVm", () => {
     const handle = await createSandboxVm({
       slug: "test",
       workerCode: "",
-      agentEnv: {},
+      env: {},
       harnessPath: "/tmp/harness.ts",
     });
 
@@ -232,7 +232,7 @@ describe("createSandboxVm", () => {
     const handle = await createSandboxVm({
       slug: "test",
       workerCode: "",
-      agentEnv: {},
+      env: {},
       harnessPath: "/tmp/harness.ts",
     });
 

@@ -21,7 +21,6 @@ import {
 import type { Storage } from "unstorage";
 import { agentKvPrefix } from "./constants.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
-import { type AgentMap, isAtCapacity } from "./sandbox-slots.ts";
 import { createSandboxVm } from "./sandbox-vm.ts";
 import { ssrfSafeFetch } from "./ssrf.ts";
 import type { BundleStore } from "./store-types.ts";
@@ -41,8 +40,7 @@ export type { AgentMetadata } from "./schemas.ts";
 
 export type SandboxOptions = {
   workerCode: string;
-  apiKey: string;
-  agentEnv: Record<string, string>;
+  env: Record<string, string>;
   storage: Storage;
   slug: string;
   /** Pre-extracted agent config from CLI build. */
@@ -59,7 +57,7 @@ export const _internals = {
 };
 
 export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
-  const { workerCode, apiKey, agentEnv, storage, slug } = opts;
+  const { workerCode, env, storage, slug } = opts;
 
   const safeFetch: typeof globalThis.fetch = (input, init?) => {
     let url: string;
@@ -80,7 +78,7 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
   const sandboxHandle = await createSandboxVm({
     slug,
     workerCode,
-    agentEnv,
+    env,
     kvStorage: storage,
     kvPrefix: agentKvPrefix(slug),
     harnessPath,
@@ -114,7 +112,7 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
         ? { builtinTools: config.builtinTools as import("@alexkroman1/aai-core").BuiltinTool[] }
         : {}),
     },
-    env: { ...agentEnv, ASSEMBLYAI_API_KEY: apiKey },
+    env,
     fetch: safeFetch,
     executeTool,
     toolSchemas: [...config.toolSchemas, ...builtins.schemas],
@@ -136,7 +134,7 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
   };
 }
 
-// ── Resolve sandbox (AgentMap-based) ────────────────────────────────────
+// ── Resolve sandbox (slot-based) ────────────────────────────────────────
 
 export async function resolveSandbox(
   slug: string,
@@ -144,90 +142,7 @@ export async function resolveSandbox(
     slots: import("./sandbox-slots.ts").SlotCache;
     store: BundleStore;
     storage: Storage;
-    agents?: AgentMap;
   },
-): Promise<Sandbox | null> {
-  // If an AgentMap is provided, use the new VM-based flow.
-  // Otherwise fall back to the legacy slot-based flow for backward compat.
-  const agents = opts.agents;
-  if (agents) {
-    return resolveSandboxVm(slug, { agents, store: opts.store, storage: opts.storage });
-  }
-
-  // Legacy path: slot-based resolution
-  return resolveSandboxLegacy(slug, opts);
-}
-
-/**
- * New VM-based sandbox resolution using AgentMap.
- *
- * - If the agent already exists in the map, return its runtime
- * - If not, fetch from bundle store, create sandbox VM, add to map
- * - Track sessions and manage idle timers
- * - Reject when at capacity
- */
-async function resolveSandboxVm(
-  slug: string,
-  opts: { agents: AgentMap; store: BundleStore; storage: Storage },
-): Promise<Sandbox | null> {
-  const { agents, store, storage } = opts;
-
-  const existing = agents.get(slug);
-  if (existing) {
-    agents.cancelIdleTimer(slug);
-    return existing.sandbox as unknown as Sandbox;
-  }
-
-  // Check capacity before creating a new VM
-  if (isAtCapacity(agents)) {
-    console.warn("VM capacity reached, rejecting new sandbox", { slug });
-    return null;
-  }
-
-  // Fetch manifest and worker code from bundle store
-  const [manifest, workerCode, agentConfig] = await Promise.all([
-    store.getManifest(slug),
-    store.getWorkerCode(slug),
-    store.getAgentConfig(slug),
-  ]);
-
-  if (!(manifest && workerCode && agentConfig)) {
-    return null;
-  }
-
-  // Extract env: platform key stays host-side, agent secrets go to VM
-  const env = (await store.getEnv(slug)) ?? {};
-  const { ASSEMBLYAI_API_KEY: apiKey = "", ...agentEnv } = env;
-
-  const sandbox = await createSandbox({
-    workerCode,
-    apiKey,
-    agentEnv,
-    storage,
-    slug,
-    agentConfig,
-  });
-
-  agents.set(slug, {
-    slug,
-    sandbox,
-    sessions: new Set(),
-    idleTimer: null,
-  });
-
-  // Start idle timer — will be cancelled when a session connects
-  agents.startIdleTimer(slug);
-
-  return sandbox;
-}
-
-/**
- * Legacy slot-based resolution. Used when no AgentMap is provided.
- * This preserves backward compatibility with existing orchestrator code.
- */
-async function resolveSandboxLegacy(
-  slug: string,
-  opts: { slots: import("./sandbox-slots.ts").SlotCache; store: BundleStore; storage: Storage },
 ): Promise<Sandbox | null> {
   const { slots, store, storage } = opts;
 
@@ -259,12 +174,9 @@ async function resolveSandboxLegacy(
     return null;
   }
 
-  const { ASSEMBLYAI_API_KEY: apiKey = "", ...agentEnv } = env;
-
   const sandbox = await createSandbox({
     workerCode,
-    apiKey,
-    agentEnv,
+    env,
     storage,
     slug,
     agentConfig,

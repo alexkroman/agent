@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
-import { hashApiKey } from "./auth.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
+import { hashApiKey } from "./secrets.ts";
 import {
   createTestOrchestrator,
   deployAgent,

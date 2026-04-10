@@ -294,8 +294,35 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
 
   /** Incremented on each turn boundary -- stale async callbacks compare against this. */
   let handlerGeneration = 0;
-  /** Accumulated agent_transcript_delta text for real-time display. */
+  /** Accumulated agent_transcript (isFinal: false) text for real-time display. */
   let deltaAccum = "";
+
+  function handleUserTranscriptEvent(text: string, isFinal: boolean): void {
+    if (!isFinal) {
+      updateState({ userTranscript: text });
+    } else {
+      handlerGeneration++;
+      deltaAccum = "";
+      updateState({
+        userTranscript: null,
+        messages: [...currentSnapshot.messages, { role: "user" as const, content: text }],
+        state: "thinking",
+      });
+    }
+  }
+
+  function handleAgentTranscriptEvent(text: string, isFinal: boolean): void {
+    if (!isFinal) {
+      deltaAccum = deltaAccum ? `${deltaAccum} ${text}` : text;
+      updateState({ agentTranscript: deltaAccum });
+    } else {
+      deltaAccum = "";
+      updateState({
+        agentTranscript: null,
+        messages: [...currentSnapshot.messages, { role: "assistant" as const, content: text }],
+      });
+    }
+  }
 
   /** Single entry point for all server->client session events. */
   function handleEvent(e: ClientEvent): void {
@@ -312,28 +339,11 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
       case "speech_stopped":
         // VAD detected end of speech -- processing will follow.
         break;
-      case "user_transcript_delta":
-        updateState({ userTranscript: e.text });
-        break;
       case "user_transcript":
-        handlerGeneration++;
-        deltaAccum = "";
-        updateState({
-          userTranscript: null,
-          messages: [...currentSnapshot.messages, { role: "user", content: e.text }],
-          state: "thinking",
-        });
-        break;
-      case "agent_transcript_delta":
-        deltaAccum += (deltaAccum ? " " : "") + e.text;
-        updateState({ agentTranscript: deltaAccum });
+        handleUserTranscriptEvent(e.text, e.isFinal);
         break;
       case "agent_transcript":
-        deltaAccum = "";
-        updateState({
-          agentTranscript: null,
-          messages: [...currentSnapshot.messages, { role: "assistant", content: e.text }],
-        });
+        handleAgentTranscriptEvent(e.text, e.isFinal);
         break;
       case "tool_call":
         updateState({

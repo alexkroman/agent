@@ -22,7 +22,7 @@ export type SandboxHandle = {
 export type SandboxVmOptions = {
   slug: string;
   workerCode: string;
-  agentEnv: Record<string, string>;
+  env: Record<string, string>;
   harnessPath: string;
   kvStorage?: Storage;
   kvPrefix?: string;
@@ -61,7 +61,7 @@ async function configureSandbox(
   // Send bundle to guest
   await conn.sendRequest("bundle/load", {
     code: opts.workerCode,
-    env: opts.agentEnv,
+    env: opts.env,
   });
 
   return {

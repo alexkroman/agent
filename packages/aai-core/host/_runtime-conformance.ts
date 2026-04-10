@@ -31,8 +31,8 @@
 
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
-import type { ExecuteTool } from "../isolate/_internal-types.ts";
-import type { AgentDef } from "../isolate/types.ts";
+import type { ExecuteTool } from "../sdk/_internal-types.ts";
+import type { AgentDef } from "../sdk/types.ts";
 
 // ── Shared context type ────────────────────────────────────────────────────
 

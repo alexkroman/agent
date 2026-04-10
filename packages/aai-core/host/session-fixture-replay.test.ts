@@ -52,9 +52,11 @@ describe("fixture replay through session", () => {
     replayFixtureMessages(mockHandle, messages);
     await flush();
 
-    // Client should see both greeting and answer as agent_transcript events
+    // Client should see both greeting and answer as final agent_transcript events
     const chatEvents = client.events.filter(
-      (e) => (e as { type: string }).type === "agent_transcript",
+      (e) =>
+        (e as { type: string }).type === "agent_transcript" &&
+        (e as { isFinal: boolean }).isFinal === true,
     );
     expect(chatEvents.length).toBe(2); // greeting + answer
   });
@@ -131,7 +133,6 @@ describe("fixture replay through session", () => {
     const types = client.events.map((e) => (e as { type: string }).type);
     expect(types).toContain("speech_started");
     expect(types).toContain("speech_stopped");
-    expect(types).toContain("user_transcript_delta"); // isFinal: true
     expect(types).toContain("user_transcript"); // triggers orchestration
   });
 });

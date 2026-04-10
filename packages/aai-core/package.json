@@ -10,9 +10,9 @@
       "import": "./dist/index.js"
     },
     "./protocol": {
-      "@dev/source": "./isolate/protocol.ts",
-      "types": "./dist/isolate/protocol.d.ts",
-      "import": "./dist/isolate/protocol.js"
+      "@dev/source": "./sdk/protocol.ts",
+      "types": "./dist/sdk/protocol.d.ts",
+      "import": "./dist/sdk/protocol.js"
     },
     "./runtime": {
       "@dev/source": "./host/runtime-barrel.ts",
@@ -20,18 +20,18 @@
       "import": "./dist/host/runtime-barrel.js"
     },
     "./manifest": {
-      "@dev/source": "./isolate/manifest-barrel.ts",
-      "types": "./dist/isolate/manifest-barrel.d.ts",
-      "import": "./dist/isolate/manifest-barrel.js"
+      "@dev/source": "./sdk/manifest-barrel.ts",
+      "types": "./dist/sdk/manifest-barrel.d.ts",
+      "import": "./dist/sdk/manifest-barrel.js"
     }
   },
   "scripts": {
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:integration": "VITEST_INCLUDE=host/integration.test.ts,host/pentest.test.ts,host/run-code-sandbox.test.ts vitest run -c ../../vitest.slow.config.ts",
     "check:integration": "pnpm run test:integration",
     "build": "tsdown && tsc -p tsconfig.build.json",
-    "typecheck": "tsc --noEmit && tsc -p isolate/tsconfig.json",
+    "typecheck": "tsc --noEmit && tsc -p sdk/tsconfig.json",
     "lint": "biome check ."
   },
   "dependencies": {

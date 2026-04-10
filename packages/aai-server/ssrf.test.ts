@@ -13,7 +13,7 @@
  */
 
 import { describe, expect, test, vi } from "vitest";
-import { assertPublicUrl, isPrivateIp, ssrfSafeFetch } from "./ssrf.ts";
+import { isPrivateIp, resolveAndAssertPublic, ssrfSafeFetch } from "./ssrf.ts";
 
 // ── IP Encoding Bypass Attempts ────────────────────────────────────────
 
@@ -24,7 +24,7 @@ describe("SSRF: IP encoding bypass attempts", () => {
     // so this may or may not resolve depending on the URL parser.
     // The important thing is it doesn't slip through as "public".
     try {
-      await assertPublicUrl("http://2130706433/");
+      await resolveAndAssertPublic("http://2130706433/");
       // If it doesn't throw, the hostname wasn't parsed as an IP
       // This is acceptable — URL parser keeps "2130706433" as hostname,
       // and DNS resolution would fail or return a public IP
@@ -34,30 +34,32 @@ describe("SSRF: IP encoding bypass attempts", () => {
   });
 
   test("blocks IPv6 compact notation for loopback", async () => {
-    await expect(assertPublicUrl("http://[::1]/")).rejects.toThrow("Blocked");
-    await expect(assertPublicUrl("http://[0:0:0:0:0:0:0:1]/")).rejects.toThrow("Blocked");
+    await expect(resolveAndAssertPublic("http://[::1]/")).rejects.toThrow("Blocked");
+    await expect(resolveAndAssertPublic("http://[0:0:0:0:0:0:0:1]/")).rejects.toThrow("Blocked");
   });
 
   test("blocks IPv6 compact notation for unspecified address", async () => {
-    await expect(assertPublicUrl("http://[::]/")).rejects.toThrow("Blocked");
+    await expect(resolveAndAssertPublic("http://[::]/")).rejects.toThrow("Blocked");
   });
 
   test("blocks IPv4-mapped IPv6 for various private ranges", async () => {
     // 172.16.x.x range
-    await expect(assertPublicUrl("http://[::ffff:172.16.0.1]/")).rejects.toThrow("Blocked");
+    await expect(resolveAndAssertPublic("http://[::ffff:172.16.0.1]/")).rejects.toThrow("Blocked");
 
     // 10.x.x.x range
-    await expect(assertPublicUrl("http://[::ffff:10.0.0.1]/")).rejects.toThrow("Blocked");
+    await expect(resolveAndAssertPublic("http://[::ffff:10.0.0.1]/")).rejects.toThrow("Blocked");
 
     // 192.168.x.x range
-    await expect(assertPublicUrl("http://[::ffff:192.168.0.1]/")).rejects.toThrow("Blocked");
+    await expect(resolveAndAssertPublic("http://[::ffff:192.168.0.1]/")).rejects.toThrow("Blocked");
 
     // Link-local (169.254.x.x)
-    await expect(assertPublicUrl("http://[::ffff:169.254.169.254]/")).rejects.toThrow("Blocked");
+    await expect(resolveAndAssertPublic("http://[::ffff:169.254.169.254]/")).rejects.toThrow(
+      "Blocked",
+    );
   });
 
   test("blocks link-local IPv4 range", async () => {
-    await expect(assertPublicUrl("http://169.254.1.1/")).rejects.toThrow(
+    await expect(resolveAndAssertPublic("http://169.254.1.1/")).rejects.toThrow(
       "Blocked request to private address",
     );
   });
@@ -90,11 +92,11 @@ describe("SSRF: IP encoding bypass attempts", () => {
 describe("SSRF: hostname bypass attempts", () => {
   test("blocks cloud metadata endpoints", async () => {
     // AWS metadata
-    await expect(assertPublicUrl("http://169.254.169.254/latest/meta-data/")).rejects.toThrow(
-      "Blocked",
-    );
+    await expect(
+      resolveAndAssertPublic("http://169.254.169.254/latest/meta-data/"),
+    ).rejects.toThrow("Blocked");
     // AWS metadata via IP
-    await expect(assertPublicUrl("http://169.254.169.254/latest/api/token")).rejects.toThrow(
+    await expect(resolveAndAssertPublic("http://169.254.169.254/latest/api/token")).rejects.toThrow(
       "Blocked",
     );
   });
@@ -104,19 +106,23 @@ describe("SSRF: hostname bypass attempts", () => {
 
 describe("SSRF: protocol validation", () => {
   test("blocks file:// protocol", async () => {
-    await expect(assertPublicUrl("file:///etc/passwd")).rejects.toThrow("disallowed protocol");
+    await expect(resolveAndAssertPublic("file:///etc/passwd")).rejects.toThrow(
+      "disallowed protocol",
+    );
   });
 
   test("blocks ftp:// protocol", async () => {
-    await expect(assertPublicUrl("ftp://example.com/")).rejects.toThrow("disallowed protocol");
+    await expect(resolveAndAssertPublic("ftp://example.com/")).rejects.toThrow(
+      "disallowed protocol",
+    );
   });
 
   test("blocks gopher:// protocol", async () => {
-    await expect(assertPublicUrl("gopher://example.com/")).rejects.toThrow();
+    await expect(resolveAndAssertPublic("gopher://example.com/")).rejects.toThrow();
   });
 
   test("blocks data: protocol", async () => {
-    await expect(assertPublicUrl("data:text/html,<h1>test</h1>")).rejects.toThrow();
+    await expect(resolveAndAssertPublic("data:text/html,<h1>test</h1>")).rejects.toThrow();
   });
 
   // These tests require real DNS resolution — skip when DNS is unavailable
@@ -135,7 +141,9 @@ describe("SSRF: protocol validation", () => {
     } catch {
       return;
     }
-    await expect(assertPublicUrl("http://example.com/")).resolves.toEqual(expect.any(String));
+    await expect(resolveAndAssertPublic("http://example.com/")).resolves.toEqual(
+      expect.any(String),
+    );
   }, 15_000);
 
   test("allows https:// protocol", async () => {
@@ -144,7 +152,9 @@ describe("SSRF: protocol validation", () => {
     } catch {
       return;
     }
-    await expect(assertPublicUrl("https://example.com/")).resolves.toEqual(expect.any(String));
+    await expect(resolveAndAssertPublic("https://example.com/")).resolves.toEqual(
+      expect.any(String),
+    );
   }, 15_000);
 
   test("allows valid public URLs", async () => {
@@ -153,7 +163,7 @@ describe("SSRF: protocol validation", () => {
     } catch {
       return;
     }
-    await expect(assertPublicUrl("https://api.brave.com/search")).resolves.toEqual(
+    await expect(resolveAndAssertPublic("https://api.brave.com/search")).resolves.toEqual(
       expect.any(String),
     );
   }, 15_000);
@@ -162,9 +172,9 @@ describe("SSRF: protocol validation", () => {
 // ── DNS Failure Handling ───────────────────────────────────────────────
 
 describe("SSRF: DNS failure handling", () => {
-  test("assertPublicUrl rejects when DNS resolution fails", async () => {
+  test("resolveAndAssertPublic rejects when DNS resolution fails", async () => {
     // Use a subdomain of example.com (IANA reserved, no DNS) that bogon doesn't classify as private
-    await expect(assertPublicUrl("http://nxdomain-test.example.com/")).rejects.toThrow(
+    await expect(resolveAndAssertPublic("http://nxdomain-test.example.com/")).rejects.toThrow(
       /Blocked request.*DNS/,
     );
   }, 10_000);
@@ -220,8 +230,8 @@ describe("SSRF: redirect chain validation", () => {
       ssrfSafeFetch("https://93.184.216.34/start", {}, mockFetch as typeof globalThis.fetch),
     ).rejects.toThrow("Too many redirects");
 
-    // MAX_REDIRECTS = 5, so at most 6 fetch calls (initial + 5 redirects)
-    expect(callCount).toBeLessThanOrEqual(6);
+    // MAX_REDIRECTS = 5, so at most 5 fetch calls
+    expect(callCount).toBeLessThanOrEqual(5);
   });
 
   test("ssrfSafeFetch re-validates each hop in redirect chain", async () => {
@@ -283,7 +293,7 @@ describe("hostname-based blocking", () => {
     "http://evil.local/",
     "http://evil.localhost/",
   ])("blocks reserved hostname: %s", async (url: string) => {
-    await expect(assertPublicUrl(url)).rejects.toThrow(/Blocked request.*reserved hostname/);
+    await expect(resolveAndAssertPublic(url)).rejects.toThrow(/Blocked request.*reserved hostname/);
   });
 });
 

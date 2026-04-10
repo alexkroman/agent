@@ -2,7 +2,7 @@
 /**
  * Canonical manifest format for directory-based agents.
  *
- * Flows from build → host → isolate. Validated via Zod at the boundary,
+ * Flows from build → host → sdk. Validated via Zod at the boundary,
  * then used as a plain typed object throughout the runtime.
  */
 

@@ -12,14 +12,14 @@
       "entry": [
         "index.ts",
         "host/runtime-barrel.ts",
-        "isolate/manifest-barrel.ts",
+        "sdk/manifest-barrel.ts",
         "host/_test-utils.ts",
         "**/*.test.ts"
       ],
       "includeEntryExports": true
     },
     "packages/aai-ui": {
-      "entry": ["**/*.test.{ts,tsx}", "**/*.test-d.ts", "_react-test-utils.ts"],
+      "entry": ["**/*.test.{ts,tsx}", "_react-test-utils.ts"],
       "includeEntryExports": true
     },
     "packages/aai-cli": {

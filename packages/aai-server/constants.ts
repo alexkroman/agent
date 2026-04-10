@@ -6,20 +6,6 @@
  * live in @alexkroman1/aai-core. This file holds server-specific values.
  */
 
-// -- Firecracker VM ---------------------------------------------------
-
-/** Memory allocated per Firecracker microVM (MiB). */
-export const VM_MEMORY_MIB = 64;
-
-/** vCPUs per Firecracker microVM. */
-export const VM_VCPU_COUNT = 1;
-
-/** Maximum concurrent VMs. New agents rejected with 503 at this cap. */
-export const MAX_VMS = Number(process.env.MAX_VMS) || 50;
-
-/** Kill idle VMs after this many milliseconds with no active sessions. */
-export const IDLE_TIMEOUT_MS = Number(process.env.IDLE_TIMEOUT_MS) || 30_000;
-
 // ─── Auth ────────────────────────────────────────────────────────────────
 
 /** Maximum entries in the API key hash LRU cache. */

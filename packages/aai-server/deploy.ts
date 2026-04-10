@@ -1,11 +1,11 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { humanId } from "human-id";
-import { timingSafeCompare } from "./auth.ts";
 import type { ValidatedAppContext } from "./context.ts";
 import { terminateSlot, withSlugLock } from "./sandbox-slots.ts";
 import type { DeployBody } from "./schemas.ts";
 import { EnvSchema } from "./schemas.ts";
+import { timingSafeCompare } from "./secrets.ts";
 
 function generateSlug(): string {
   return humanId({ separator: "-", capitalize: false });

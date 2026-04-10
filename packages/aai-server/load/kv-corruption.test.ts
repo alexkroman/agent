@@ -15,7 +15,7 @@ import { createStorage, type Storage } from "unstorage";
 import s3Driver from "unstorage/drivers/s3";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { createUnstorageKv } from "../../aai-core/host/unstorage-kv.ts";
-import type { Kv } from "../../aai-core/isolate/kv.ts";
+import type { Kv } from "../../aai-core/sdk/kv.ts";
 
 // ── MinIO setup ─────────────────────────────────────────────────────────
 

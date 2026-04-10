@@ -2,7 +2,7 @@
 import { createStorage } from "unstorage";
 import { describe, expect, test } from "vitest";
 import { createBundleStore } from "./bundle-store.ts";
-import { deriveCredentialKey } from "./credentials.ts";
+import { deriveCredentialKey } from "./secrets.ts";
 import { TEST_AGENT_CONFIG } from "./test-utils.ts";
 
 describe("bundle store (unstorage)", () => {

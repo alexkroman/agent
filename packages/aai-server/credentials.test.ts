@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
-import { decryptEnv, deriveCredentialKey, encryptEnv } from "./credentials.ts";
+import { decryptEnv, deriveCredentialKey, encryptEnv } from "./secrets.ts";
 
 describe("credentials", () => {
   test("encrypt and decrypt round-trip", async () => {

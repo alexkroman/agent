@@ -3,8 +3,8 @@
 import { createStorage } from "unstorage";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { z } from "zod";
-import { toAgentConfig } from "../isolate/_internal-types.ts";
-import type { ToolDef } from "../isolate/types.ts";
+import { toAgentConfig } from "../sdk/_internal-types.ts";
+import type { ToolDef } from "../sdk/types.ts";
 import { CONFORMANCE_AGENT, testRuntime } from "./_runtime-conformance.ts";
 import { flush, makeAgent, makeMockHandle, silentLogger } from "./_test-utils.ts";
 import { createRuntime } from "./runtime.ts";

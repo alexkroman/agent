@@ -5,9 +5,9 @@ import { errorMessage } from "@alexkroman1/aai-core";
 import { getLock } from "p-lock";
 import type { Storage } from "unstorage";
 import { z } from "zod";
-import { type CredentialKey, decryptEnv, encryptEnv } from "./credentials.ts";
 import { IsolateConfigSchema } from "./rpc-schemas.ts";
 import { AgentMetadataSchema } from "./schemas.ts";
+import { type CredentialKey, decryptEnv, encryptEnv } from "./secrets.ts";
 import type { BundleStore } from "./store-types.ts";
 
 export type { BundleStore } from "./store-types.ts";

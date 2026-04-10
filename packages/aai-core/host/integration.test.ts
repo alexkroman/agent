@@ -9,8 +9,8 @@
 import { createStorage } from "unstorage";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
-import { toAgentConfig } from "../isolate/_internal-types.ts";
-import type { AgentDef } from "../isolate/types.ts";
+import { toAgentConfig } from "../sdk/_internal-types.ts";
+import type { AgentDef } from "../sdk/types.ts";
 import { createRuntime } from "./runtime.ts";
 import { createUnstorageKv } from "./unstorage-kv.ts";
 

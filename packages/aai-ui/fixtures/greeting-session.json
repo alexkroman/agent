@@ -8,10 +8,10 @@
   },
   { "type": "speech_started" },
   { "type": "speech_stopped" },
-  { "type": "agent_transcript_delta", "text": "Hello" },
-  { "type": "agent_transcript_delta", "text": "! How can" },
-  { "type": "agent_transcript_delta", "text": " I help" },
-  { "type": "agent_transcript_delta", "text": " you today?" },
-  { "type": "agent_transcript", "text": "Hello! How can I help you today?" },
+  { "type": "agent_transcript", "text": "Hello", "isFinal": false },
+  { "type": "agent_transcript", "text": "! How can", "isFinal": false },
+  { "type": "agent_transcript", "text": " I help", "isFinal": false },
+  { "type": "agent_transcript", "text": " you today?", "isFinal": false },
+  { "type": "agent_transcript", "text": "Hello! How can I help you today?", "isFinal": true },
   { "type": "reply_done" }
 ]
