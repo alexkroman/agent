@@ -2,43 +2,24 @@
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
-import { resolveAgentConfig } from "./_agent-config.ts";
+import { loadAgentModule } from "./_bundler.ts";
 import { withTempDir } from "./_test-utils.ts";
 
-describe("resolveAgentConfig", () => {
-  test("reads agent.json and returns parsed config", async () => {
+describe("loadAgentModule", () => {
+  test("loads agent.ts default export", async () => {
     await withTempDir(async (dir) => {
       await writeFile(
-        path.join(dir, "agent.json"),
-        JSON.stringify({ name: "test-agent", systemPrompt: "Hello" }),
+        path.join(dir, "agent.ts"),
+        `export default { name: "test-agent", systemPrompt: "Hello", greeting: "Hi", maxSteps: 5, tools: {} };`,
       );
-      const config = await resolveAgentConfig(dir);
-      expect(config).toEqual({ name: "test-agent", systemPrompt: "Hello" });
+      const agentDef = await loadAgentModule(dir);
+      expect(agentDef.name).toBe("test-agent");
     });
   });
 
-  test("resolves $ref in systemPrompt", async () => {
+  test("throws when agent.ts is missing", async () => {
     await withTempDir(async (dir) => {
-      await writeFile(path.join(dir, "system-prompt.md"), "You are helpful.");
-      await writeFile(
-        path.join(dir, "agent.json"),
-        JSON.stringify({ name: "ref-agent", systemPrompt: { $ref: "system-prompt.md" } }),
-      );
-      const config = await resolveAgentConfig(dir);
-      expect(config.systemPrompt).toBe("You are helpful.");
-    });
-  });
-
-  test("throws when agent.json is missing", async () => {
-    await withTempDir(async (dir) => {
-      await expect(resolveAgentConfig(dir)).rejects.toThrow("Missing agent.json");
-    });
-  });
-
-  test("throws when name field is missing", async () => {
-    await withTempDir(async (dir) => {
-      await writeFile(path.join(dir, "agent.json"), JSON.stringify({ systemPrompt: "Hi" }));
-      await expect(resolveAgentConfig(dir)).rejects.toThrow("must have a name");
+      await expect(loadAgentModule(dir)).rejects.toThrow("agent.ts");
     });
   });
 });

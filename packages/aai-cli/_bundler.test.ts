@@ -11,4 +11,9 @@ describe("buildAgentBundle", () => {
     const mod = await import("./_bundler.ts");
     expect(typeof mod.executeBuild).toBe("function");
   });
+
+  test("module exports loadAgentModule function", async () => {
+    const mod = await import("./_bundler.ts");
+    expect(typeof mod.loadAgentModule).toBe("function");
+  });
 });
