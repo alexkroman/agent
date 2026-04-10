@@ -313,8 +313,8 @@ async function loadBundle(code: string, env: Record<string, string>): Promise<Ag
   const mod = await import(dataUrl);
   const agent = (mod.default ?? mod) as AgentDef;
 
-  if (!agent || typeof agent !== "object" || !agent.name) {
-    throw new Error("Agent bundle must export a default agent definition");
+  if (!agent || typeof agent !== "object") {
+    throw new Error("Agent bundle must export an object");
   }
 
   return agent;
