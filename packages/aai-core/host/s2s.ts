@@ -7,8 +7,8 @@ import type { JSONSchema7 } from "json-schema";
 import { createNanoEvents, type Emitter, type Unsubscribe } from "nanoevents";
 import WsWebSocket from "ws";
 import { z } from "zod";
-import { WS_OPEN } from "../isolate/constants.ts";
-import type { ClientEvent } from "../isolate/protocol.ts";
+import { WS_OPEN } from "../sdk/constants.ts";
+import type { ClientEvent } from "../sdk/protocol.ts";
 import type { Logger, S2SConfig } from "./runtime-config.ts";
 import { consoleLogger } from "./runtime-config.ts";
 

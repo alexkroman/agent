@@ -8,13 +8,13 @@
  */
 
 import { createStorage } from "unstorage";
-import { agentToolsToSchemas, type ToolSchema, toAgentConfig } from "../isolate/_internal-types.ts";
-import { toolError } from "../isolate/_utils.ts";
-import { DEFAULT_SHUTDOWN_TIMEOUT_MS } from "../isolate/constants.ts";
-import type { Kv } from "../isolate/kv.ts";
-import type { ClientSink } from "../isolate/protocol.ts";
-import { buildReadyConfig, type ReadyConfig } from "../isolate/protocol.ts";
-import type { AgentDef } from "../isolate/types.ts";
+import { agentToolsToSchemas, type ToolSchema, toAgentConfig } from "../sdk/_internal-types.ts";
+import { toolError } from "../sdk/_utils.ts";
+import { DEFAULT_SHUTDOWN_TIMEOUT_MS } from "../sdk/constants.ts";
+import type { Kv } from "../sdk/kv.ts";
+import type { ClientSink } from "../sdk/protocol.ts";
+import { buildReadyConfig, type ReadyConfig } from "../sdk/protocol.ts";
+import type { AgentDef } from "../sdk/types.ts";
 import { resolveAllBuiltins } from "./builtin-tools.ts";
 import type { Logger, S2SConfig } from "./runtime-config.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime-config.ts";
@@ -96,7 +96,7 @@ export type RuntimeOptions = {
    * Pre-resolved builtin tool definitions. When provided alongside `executeTool`
    * and `toolSchemas`, skips calling `resolveAllBuiltins` on the host.
    */
-  builtinDefs?: Record<string, import("../isolate/types.ts").ToolDef> | undefined;
+  builtinDefs?: Record<string, import("../sdk/types.ts").ToolDef> | undefined;
   /**
    * Override the fetch implementation used by built-in tools (web_search,
    * visit_webpage, fetch_json). Defaults to `globalThis.fetch`.

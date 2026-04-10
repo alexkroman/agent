@@ -6,14 +6,14 @@
  */
 
 import pTimeout from "p-timeout";
-import { errorDetail, errorMessage } from "../isolate/_utils.ts";
+import { errorDetail, errorMessage } from "../sdk/_utils.ts";
 import {
   DEFAULT_SESSION_START_TIMEOUT_MS,
   MAX_MESSAGE_BUFFER_SIZE,
   WS_OPEN,
-} from "../isolate/constants.ts";
-import type { ClientMessage, ClientSink, ReadyConfig } from "../isolate/protocol.ts";
-import { ClientMessageSchema, lenientParse } from "../isolate/protocol.ts";
+} from "../sdk/constants.ts";
+import type { ClientMessage, ClientSink, ReadyConfig } from "../sdk/protocol.ts";
+import { ClientMessageSchema, lenientParse } from "../sdk/protocol.ts";
 import type { Logger } from "./runtime-config.ts";
 import { consoleLogger } from "./runtime-config.ts";
 import type { Session } from "./session.ts";

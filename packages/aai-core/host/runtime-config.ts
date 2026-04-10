@@ -7,7 +7,7 @@
  * and the {@link S2SConfig} for Speech-to-Speech endpoint configuration.
  */
 
-import { DEFAULT_STT_SAMPLE_RATE, DEFAULT_TTS_SAMPLE_RATE } from "../isolate/constants.ts";
+import { DEFAULT_STT_SAMPLE_RATE, DEFAULT_TTS_SAMPLE_RATE } from "../sdk/constants.ts";
 
 /** Structured context attached to log messages. */
 export type LogContext = Record<string, unknown>;

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { DEFAULT_SYSTEM_PROMPT } from "../isolate/types.ts";
+import { DEFAULT_SYSTEM_PROMPT } from "../sdk/types.ts";
 import { flush, makeClient, makeMockHandle, makeSessionOpts } from "./_test-utils.ts";
 import type { S2sHandle } from "./s2s.ts";
 import { _internals, createS2sSession, type S2sSessionOptions } from "./session.ts";

@@ -86,7 +86,7 @@ Not published to npm. Internal subpath exports consumed by sibling packages:
 - `.` — `parseManifest`, `Manifest`, `Kv` + re-exported types
 - `./runtime` — `createRuntime`, `Runtime`, `RuntimeOptions`
 - `./protocol` — wire-format types, Zod schemas, constants
-- `./isolate` — isolate-safe barrel: shared modules
+- `./sdk` — sdk barrel: shared modules
   (types, protocol, kv, hooks, manifest, utils)
 - `./host` — host barrel: host-only modules
 - `./hooks` — hook definitions for lifecycle events
@@ -107,7 +107,7 @@ Binary: `aai` — subcommands: init, dev, test, build, deploy, delete, secret
 
 The SDK is organized into two directories:
 
-- **`isolate/`** — shared modules with no Node.js dependencies. Contains:
+- **`sdk/`** — shared modules with no Node.js dependencies. Contains:
   `types.ts`, `kv.ts`, `hooks.ts`, `_utils.ts`, `constants.ts`,
   `protocol.ts`, `system-prompt.ts`, `manifest.ts`,
   `_internal-types.ts`.
@@ -117,7 +117,7 @@ The SDK is organized into two directories:
   `builtin-tools.ts`, `_run-code.ts`, `unstorage-kv.ts`,
   `testing.ts`, `matchers.ts`.
 
-When adding new SDK code, place it in `isolate/` if it has no `node:`
+When adding new SDK code, place it in `sdk/` if it has no `node:`
 dependencies. The guest harness (`guest/deno-harness.ts`) runs Deno
 inside each gVisor sandbox, loading the agent's ESM bundle directly —
 no import restrictions apply there.

@@ -5,7 +5,7 @@
     "lib": ["ESNext", "DOM"],
     "noEmit": true,
     "incremental": true,
-    "tsBuildInfoFile": "../../../.tsbuildinfo/aai-isolate.tsbuildinfo"
+    "tsBuildInfoFile": "../../../.tsbuildinfo/aai-sdk.tsbuildinfo"
   },
   "include": ["./**/*.ts"],
   "exclude": ["**/*.test.ts", "**/*.test-d.ts"]

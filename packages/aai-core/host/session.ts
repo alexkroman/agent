@@ -1,11 +1,11 @@
 // Copyright 2025 the AAI authors. MIT license.
 /** S2S session — relays audio between client and AssemblyAI S2S API. */
 
-import type { AgentConfig, ExecuteTool, ToolSchema } from "../isolate/_internal-types.ts";
-import { errorDetail, errorMessage, toolError } from "../isolate/_utils.ts";
-import { DEFAULT_IDLE_TIMEOUT_MS, MAX_TOOL_RESULT_CHARS } from "../isolate/constants.ts";
-import type { ClientEvent, ClientSink } from "../isolate/protocol.ts";
-import { buildSystemPrompt } from "../isolate/system-prompt.ts";
+import type { AgentConfig, ExecuteTool, ToolSchema } from "../sdk/_internal-types.ts";
+import { errorDetail, errorMessage, toolError } from "../sdk/_utils.ts";
+import { DEFAULT_IDLE_TIMEOUT_MS, MAX_TOOL_RESULT_CHARS } from "../sdk/constants.ts";
+import type { ClientEvent, ClientSink } from "../sdk/protocol.ts";
+import { buildSystemPrompt } from "../sdk/system-prompt.ts";
 import type { Logger, S2SConfig } from "./runtime-config.ts";
 import { consoleLogger } from "./runtime-config.ts";
 import {

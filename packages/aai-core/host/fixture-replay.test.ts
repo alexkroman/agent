@@ -13,7 +13,7 @@
 
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { z } from "zod";
-import type { AgentDef } from "../isolate/types.ts";
+import type { AgentDef } from "../sdk/types.ts";
 import { createFixtureSession, flush } from "./_test-utils.ts";
 
 // ─── Test agents with deterministic tools ────────────────────────────────────

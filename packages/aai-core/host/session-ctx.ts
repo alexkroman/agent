@@ -1,11 +1,11 @@
 // Copyright 2025 the AAI authors. MIT license.
 /** Session context builder — extracted from session.ts. */
 
-import type { AgentConfig, ExecuteTool } from "../isolate/_internal-types.ts";
-import { toolError } from "../isolate/_utils.ts";
-import { DEFAULT_MAX_HISTORY } from "../isolate/constants.ts";
-import type { ClientSink } from "../isolate/protocol.ts";
-import type { Message } from "../isolate/types.ts";
+import type { AgentConfig, ExecuteTool } from "../sdk/_internal-types.ts";
+import { toolError } from "../sdk/_utils.ts";
+import { DEFAULT_MAX_HISTORY } from "../sdk/constants.ts";
+import type { ClientSink } from "../sdk/protocol.ts";
+import type { Message } from "../sdk/types.ts";
 import type { Logger } from "./runtime-config.ts";
 import type { S2sHandle } from "./s2s.ts";
 

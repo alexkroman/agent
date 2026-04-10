@@ -6,8 +6,8 @@
  */
 
 import { prefixStorage, type Storage } from "unstorage";
-import { MAX_VALUE_SIZE } from "../isolate/constants.ts";
-import type { Kv } from "../isolate/kv.ts";
+import { MAX_VALUE_SIZE } from "../sdk/constants.ts";
+import type { Kv } from "../sdk/kv.ts";
 
 /**
  * Options for creating an unstorage-backed KV store.

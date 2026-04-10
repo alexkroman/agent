@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import type { ClientSink } from "../isolate/protocol.ts";
+import type { ClientSink } from "../sdk/protocol.ts";
 import { MockWebSocket } from "./_mock-ws.ts";
 import { makeStubSession, silentLogger } from "./_test-utils.ts";
 import type { Session } from "./session.ts";

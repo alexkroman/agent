@@ -8,9 +8,9 @@
  */
 
 import { z } from "zod";
-import { EMPTY_PARAMS, type ToolSchema } from "../isolate/_internal-types.ts";
-import { FETCH_TIMEOUT_MS, MAX_HTML_BYTES, MAX_PAGE_CHARS } from "../isolate/constants.ts";
-import type { ToolDef } from "../isolate/types.ts";
+import { EMPTY_PARAMS, type ToolSchema } from "../sdk/_internal-types.ts";
+import { FETCH_TIMEOUT_MS, MAX_HTML_BYTES, MAX_PAGE_CHARS } from "../sdk/constants.ts";
+import type { ToolDef } from "../sdk/types.ts";
 import { createRunCode } from "./_run-code.ts";
 
 export { executeInIsolate } from "./_run-code.ts";
