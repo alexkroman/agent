@@ -10,10 +10,10 @@
     "check:typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "aai-cli": "workspace:*",
-    "aai-ui": "workspace:*",
     "@types/react": "^19.0.0",
     "aai": "workspace:*",
+    "aai-cli": "workspace:*",
+    "aai-ui": "workspace:*",
     "zod": "^4.3.6"
   }
 }
