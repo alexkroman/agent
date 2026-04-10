@@ -200,6 +200,7 @@
             "noExcessiveCognitiveComplexity": "off"
           },
           "suspicious": {
+            "noArrayIndexKey": "off",
             "noEvolvingTypes": "off",
             "noEmptyBlockStatements": "off"
           }
