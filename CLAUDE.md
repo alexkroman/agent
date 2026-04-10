@@ -3,10 +3,9 @@
 ## Overview
 
 AAI is a voice agent development kit. Users define agents as directories
-containing `agent.json` + `tools/*.ts` + `hooks/*.ts`. The CLI bundles and
-deploys them to the managed platform.
+containing `agent.ts`. The CLI bundles and deploys them to the managed platform.
 
-- **Platform**: `agent.json` + tools/hooks → CLI bundle → deploy to managed server
+- **Platform**: `agent.ts` → CLI bundle → deploy to managed server
 
 ## Commands
 
@@ -110,7 +109,8 @@ The SDK is organized into two directories:
 - **`sdk/`** — shared modules with no Node.js dependencies. Contains:
   `types.ts`, `kv.ts`, `hooks.ts`, `_utils.ts`, `constants.ts`,
   `protocol.ts`, `system-prompt.ts`, `manifest.ts`,
-  `_internal-types.ts`.
+  `_internal-types.ts`, `define.ts` (`agent()` and `tool()` helpers for
+  authoring `agent.ts` files).
 - **`host/`** — host-only modules that require Node.js APIs. Contains:
   `server.ts`, `runtime.ts`, `runtime-config.ts`, `tool-executor.ts`,
   `session.ts`, `session-ctx.ts`, `s2s.ts`, `ws-handler.ts`,
@@ -130,12 +130,9 @@ no import restrictions apply there.
 - `init.ts` / `dev.ts` / `test.ts` / `deploy.ts` / `delete.ts` /
   `secret.ts` — subcommand entry points
 - `_init.ts` / `_deploy.ts` / `_delete.ts` / `_bundler.ts` — internal logic
-- `_scanner.ts` — agent directory scanner: reads `agent.json`,
-  `tools/*.ts`, and `hooks/*.ts`; extracts static exports; produces a
-  `Manifest`
-- `_dev-server.ts` — dev server for directory-based agents: scans agent dir,
+- `_dev-server.ts` — dev server for directory-based agents: loads `agent.ts`,
   builds runtime, watches for file changes, optionally runs Vite for client HMR
-- `_bundler.ts` — bundles agent directory (tools + hooks + client.tsx) into
+- `_bundler.ts` — bundles `agent.ts` (and optional `client.tsx`) into
   deployable artifacts
 - `_api-client.ts` — platform API client (`apiRequest`, `apiRequestOrThrow`)
 - `_config.ts` — auth config, project config, API key management
@@ -267,8 +264,8 @@ bumped automatically.
 
 - **Templates**: `packages/aai-templates/templates/` contains agent
   scaffolding templates (simple, web-researcher, etc.). Each is
-  self-contained with its own `agent.json`, `tools/`, `hooks/`, and optional
-  `client.tsx`. `scaffold/` has base project files (package.json, tsconfig,
+  self-contained with its own `agent.ts` and optional `client.tsx`.
+  `scaffold/` has base project files (package.json, tsconfig,
   etc.) layered underneath.
 
 ### Git hooks (lefthook)

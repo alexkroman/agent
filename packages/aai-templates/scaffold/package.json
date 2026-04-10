@@ -8,6 +8,8 @@
     "deploy": "aai deploy"
   },
   "dependencies": {
+    "aai": "^0.12.3",
+    "zod": "^4.3.6",
     "@alexkroman1/aai-ui": "^0.12.3",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
