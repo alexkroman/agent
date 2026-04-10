@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 // Bundle store backed by unstorage (S3-compatible storage via Tigris, R2, etc.).
 
-import { errorMessage } from "@alexkroman1/aai-core";
+import { errorMessage } from "aai";
 import { getLock } from "p-lock";
 import type { Storage } from "unstorage";
 import { z } from "zod";

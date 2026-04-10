@@ -1,9 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { MAX_WS_PAYLOAD_BYTES, parseWsUpgradeParams } from "@alexkroman1/aai-core";
-import { KvRequestSchema } from "@alexkroman1/aai-core/protocol";
-import { createUnstorageKv, type SessionWebSocket } from "@alexkroman1/aai-core/runtime";
 import { zValidator } from "@hono/zod-validator";
+import { MAX_WS_PAYLOAD_BYTES, parseWsUpgradeParams } from "aai";
+import { KvRequestSchema } from "aai/protocol";
+import { createUnstorageKv, type SessionWebSocket } from "aai/runtime";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";

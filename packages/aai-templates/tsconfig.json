@@ -6,7 +6,7 @@
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "noEmit": true,
     "paths": {
-      "@alexkroman1/aai-core": ["../aai-core/index.ts"],
+      "aai": ["../aai/index.ts"],
       "@alexkroman1/aai-ui": ["../aai-ui/index.ts"]
     }
   },

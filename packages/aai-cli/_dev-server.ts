@@ -12,8 +12,8 @@ import { existsSync, type FSWatcher, watch } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { type AgentDef, errorMessage } from "@alexkroman1/aai-core";
-import type { AgentServer } from "@alexkroman1/aai-core/runtime";
+import { type AgentDef, errorMessage } from "aai";
+import type { AgentServer } from "aai/runtime";
 import { resolveAgentConfig } from "./_agent-config.ts";
 import { ensureApiKey } from "./_config.ts";
 import { resolveServerEnv } from "./_server-common.ts";
@@ -102,7 +102,7 @@ export type DevServerOptions = {
 export async function startDevServer(opts: DevServerOptions): Promise<() => Promise<void>> {
   const { cwd, port } = opts;
 
-  const { createRuntime, createServer } = await import("@alexkroman1/aai-core/runtime");
+  const { createRuntime, createServer } = await import("aai/runtime");
 
   // Check if client.tsx exists for Vite HMR
   const hasClient = existsSync(path.join(cwd, "client.tsx"));

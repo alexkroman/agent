@@ -8,7 +8,7 @@
       "entry": ["scripts/*.{mjs,ts}", "vitest.adversarial.config.ts"],
       "ignoreDependencies": ["ws"]
     },
-    "packages/aai-core": {
+    "packages/aai": {
       "entry": [
         "index.ts",
         "host/runtime-barrel.ts",

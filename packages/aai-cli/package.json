@@ -29,7 +29,7 @@
     "check:e2e": "pnpm run test:e2e"
   },
   "dependencies": {
-    "@alexkroman1/aai-core": "workspace:*",
+    "aai": "workspace:*",
     "@clack/prompts": "^1.2.0",
     "citty": "^0.2.2",
     "consola": "^3.4.2",

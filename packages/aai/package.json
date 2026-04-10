@@ -1,7 +1,6 @@
 {
-  "name": "@alexkroman1/aai-core",
+  "name": "aai",
   "version": "0.12.3",
-  "private": true,
   "type": "module",
   "exports": {
     ".": {
@@ -54,6 +53,6 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/alexkroman/agent.git",
-    "directory": "packages/aai-core"
+    "directory": "packages/aai"
   }
 }

@@ -20,7 +20,7 @@
  *
  * @example Sandbox (integration test in aai-server)
  * ```ts
- * import { testRuntime } from "@alexkroman1/aai-core/host";
+ * import { testRuntime } from "aai/host";
  *
  * testRuntime("sandbox", async () => {
  *   // ... start isolate with a bundled agent

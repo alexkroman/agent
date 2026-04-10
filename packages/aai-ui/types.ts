@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import type { SessionErrorCode } from "@alexkroman1/aai-core/protocol";
+import type { SessionErrorCode } from "aai/protocol";
 
 /** Microphone buffer duration in seconds before sending to the server. */
 export const MIC_BUFFER_SECONDS = 0.1;
@@ -46,7 +46,7 @@ export type ToolCallInfo = {
   afterMessageIndex: number;
 };
 
-export type { SessionErrorCode } from "@alexkroman1/aai-core/protocol";
+export type { SessionErrorCode } from "aai/protocol";
 
 /**
  * Error reported by the voice session.

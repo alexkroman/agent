@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { errorMessage } from "@alexkroman1/aai-core";
+import { errorMessage } from "aai";
 import type { ErrorHandler } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";

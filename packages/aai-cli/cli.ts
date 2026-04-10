@@ -3,7 +3,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { errorMessage } from "@alexkroman1/aai-core";
+import { errorMessage } from "aai";
 import { defineCommand, runMain } from "citty";
 import { CliError, type CommandResult, fail, getOutputMode, type OutputMode } from "./_output.ts";
 import { silenceOutput } from "./_ui.ts";

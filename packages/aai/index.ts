@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * aai-core — shared fundamentals with no Node.js dependencies.
+ * aai — shared fundamentals with no Node.js dependencies.
  *
  * Types, KV interface, utils, and constants used across
  * aai-cli, aai-server, and aai-ui.

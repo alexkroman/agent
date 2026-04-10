@@ -48,7 +48,7 @@ export type InitOptions = {
  * Used to rewrite published version ranges to link: paths in dev mode.
  */
 const WORKSPACE_PKG_DIRS: Record<string, string> = {
-  "@alexkroman1/aai-core": "aai-core",
+  aai: "aai",
   "@alexkroman1/aai-cli": "aai-cli",
   "@alexkroman1/aai-ui": "aai-ui",
   "@alexkroman1/aai-server": "aai-server",

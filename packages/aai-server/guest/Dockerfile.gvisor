@@ -29,19 +29,19 @@ RUN corepack enable && corepack prepare pnpm@10.29.3 --activate
 
 # Copy workspace config and lockfile (layer cache)
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY packages/aai-core/package.json packages/aai-core/
+COPY packages/aai/package.json packages/aai/
 COPY packages/aai-server/package.json packages/aai-server/
 
 # Install dependencies
 RUN pnpm install --frozen-lockfile --ignore-scripts --prod=false
 
 # Copy source
-COPY packages/aai-core/ packages/aai-core/
+COPY packages/aai/ packages/aai/
 COPY packages/aai-server/ packages/aai-server/
 COPY tsconfig.json vitest.shared.ts vitest.slow.config.ts ./
 
 # Build
-RUN pnpm --filter @alexkroman1/aai-core build \
+RUN pnpm --filter aai build \
     && pnpm --filter @alexkroman1/aai-server build
 
 # Init git (some scripts check git state)
