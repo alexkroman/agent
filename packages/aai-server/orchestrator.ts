@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { MAX_WS_PAYLOAD_BYTES } from "@alexkroman1/aai-core";
+import { MAX_WS_PAYLOAD_BYTES, parseWsUpgradeParams } from "@alexkroman1/aai-core";
 import { KvRequestSchema } from "@alexkroman1/aai-core/protocol";
 import { createUnstorageKv, type SessionWebSocket } from "@alexkroman1/aai-core/runtime";
 import { zValidator } from "@hono/zod-validator";
@@ -163,11 +163,10 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
           socket.destroy();
           return;
         }
-        const { sandbox, url } = result;
+        const { sandbox } = result;
         wss.handleUpgrade(req, socket, head, (ws) => {
           ws.on("close", () => connections.release());
-          const resumeFrom = url.searchParams.get("sessionId") ?? undefined;
-          const skipGreeting = url.searchParams.has("resume") || resumeFrom !== undefined;
+          const { resumeFrom, skipGreeting } = parseWsUpgradeParams(req.url ?? "");
           sandbox.startSession(ws as unknown as SessionWebSocket, {
             skipGreeting,
             ...(resumeFrom ? { resumeFrom } : {}),
