@@ -37,6 +37,7 @@ function aaiEnv(): NodeJS.ProcessEnv {
     NO_COLOR: "1",
     FORCE_COLOR: "0",
     AAI_NO_DEV: "1",
+    AAI_TEMPLATES_DIR: path.resolve(dir, "../aai-templates"),
     ASSEMBLYAI_API_KEY: process.env.ASSEMBLYAI_API_KEY || "test",
     npm_config_ignore_scripts: "true", // avoid postinstall hooks in linked pkgs
   };
@@ -228,7 +229,7 @@ describe("browser: dev server", () => {
 
   beforeAll(async () => {
     const projectDir = path.join(tmpDir, "_browser-dev");
-    initProject("simple", projectDir);
+    initProject("pizza-ordering", projectDir);
     aai(["build", "--skip-tests"], projectDir);
 
     // Serve the built client with a simple static server (faster than vite dev)
