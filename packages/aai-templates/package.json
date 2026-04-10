@@ -11,9 +11,9 @@
   },
   "devDependencies": {
     "@alexkroman1/aai-cli": "workspace:*",
-    "aai": "workspace:*",
     "@alexkroman1/aai-ui": "workspace:*",
     "@types/react": "^19.0.0",
+    "aai": "workspace:*",
     "zod": "^4.3.6"
   }
 }

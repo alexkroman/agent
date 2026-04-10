@@ -17,9 +17,7 @@
                 "description": "City name"
               }
             },
-            "required": [
-              "city"
-            ]
+            "required": ["city"]
           }
         }
       ],
@@ -45,9 +43,7 @@
                 "description": "City name"
               }
             },
-            "required": [
-              "city"
-            ]
+            "required": ["city"]
           }
         }
       ],
