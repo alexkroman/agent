@@ -92,7 +92,7 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
       name,
       args,
       sessionId: sessionId ?? "",
-      messages: [...(messages ?? [])],
+      messages: messages ?? [],
     });
     return (response?.result ?? "") as string;
   };
