@@ -395,10 +395,7 @@ describe("init creates working project", () => {
 
     const simple = path.join(rootDir, "templates", "simple");
     await fs.mkdir(simple, { recursive: true });
-    await fs.writeFile(
-      path.join(simple, "agent.ts"),
-      'export default defineAgent({\n  name: "Default Name",\n});',
-    );
+    await fs.writeFile(path.join(simple, "agent.json"), JSON.stringify({ name: "Default Name" }));
     return rootDir;
   }
 
@@ -409,9 +406,9 @@ describe("init creates working project", () => {
         const target = path.join(dir, "my-project");
         await runInit({ targetDir: target });
 
-        expect(await fileExists(path.join(target, "agent.ts"))).toBe(true);
-        const agentContent = await fs.readFile(path.join(target, "agent.ts"), "utf-8");
-        expect(agentContent).toContain("defineAgent");
+        expect(await fileExists(path.join(target, "agent.json"))).toBe(true);
+        const agentContent = await fs.readFile(path.join(target, "agent.json"), "utf-8");
+        expect(agentContent).toContain("Default Name");
         expect(await fileExists(path.join(target, "shared.txt"))).toBe(true);
         expect(await fileExists(path.join(target, ".env"))).toBe(true);
         expect(await fs.readFile(path.join(target, ".env"), "utf-8")).toBe("MY_KEY=");

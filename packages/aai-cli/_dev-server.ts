@@ -2,17 +2,20 @@
 /**
  * Dev server for directory-based agents.
  *
- * Imports agent.ts directly (which exports an AgentDef), builds a runtime,
- * and starts an HTTP+WebSocket server. Watches for file changes and restarts
- * automatically. Optionally runs Vite for client SPA HMR.
+ * Reads agent.json for config + imports tools.ts for implementations,
+ * builds a runtime, and starts an HTTP+WebSocket server. Watches for
+ * file changes and restarts automatically. Optionally runs Vite for
+ * client SPA HMR.
  */
 
 import { existsSync, type FSWatcher, watch } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import type { AgentDef } from "@alexkroman1/aai-core";
 import { parseEnvFile } from "@alexkroman1/aai-core";
 import type { AgentServer } from "@alexkroman1/aai-core/runtime";
+import { resolveAgentConfig } from "./_agent-config.ts";
 import { ensureApiKey } from "./_config.ts";
 import { log } from "./_ui.ts";
 
@@ -38,6 +41,35 @@ async function resolveAgentEnv(root: string): Promise<Record<string, string>> {
   return env;
 }
 
+// ─── Agent loading ──────────────────────────────────────────────────────────
+
+/**
+ * Load agent definition from tools.ts + agent.json.
+ * Uses cache-busting query param for hot reload support.
+ */
+// biome-ignore lint/suspicious/noExplicitAny: agent state type varies per agent
+async function loadAgentDef(cwd: string): Promise<AgentDef<any>> {
+  const agentConfig = await resolveAgentConfig(cwd);
+
+  // Import tools.ts if it exists (cache-busted for hot reload)
+  let tools: Record<string, unknown> = {};
+  const toolsPath = path.join(cwd, "tools.ts");
+  try {
+    await fs.access(toolsPath);
+    const toolsUrl = `${pathToFileURL(toolsPath).href}?t=${Date.now()}`;
+    const mod = await import(toolsUrl);
+    tools = mod.tools ?? {};
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+    // No tools.ts — agent has no custom tools
+  }
+
+  // agent.json supplies name, systemPrompt, greeting, maxSteps, etc.
+  // tools.ts supplies the tool implementations (merged in)
+  // biome-ignore lint/suspicious/noExplicitAny: agent state type varies per agent
+  return { ...agentConfig, tools } as AgentDef<any>;
+}
+
 // ─── File watching ──────────────────────────────────────────────────────────
 
 /**
@@ -60,7 +92,7 @@ function watchDirectory(dir: string, onChange: () => void): FSWatcher[] {
     }, DEBOUNCE_MS);
   }
 
-  // Watch root for agent.ts, .env changes
+  // Watch root for tools.ts, agent.json, .env changes
   watchers.push(watch(dir, { persistent: false }, (_event, filename) => handleChange(filename)));
 
   return watchers;
@@ -91,11 +123,8 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
   const backendPort = hasClient ? port + 1 : port;
   const vitePort = port;
 
-  // Import agent definition directly
-  const agentUrl = `${pathToFileURL(path.join(cwd, "agent.ts")).href}?t=${Date.now()}`;
-  const mod = await import(agentUrl);
-  const agentDef = mod.default;
-
+  // Load agent from tools.ts + agent.json
+  const agentDef = await loadAgentDef(cwd);
   const env = await resolveAgentEnv(cwd);
   const runtime = createRuntime({ agent: agentDef, env });
   const agentServer = createServer({ runtime, name: agentDef.name });
@@ -138,9 +167,7 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
       /* ignore */
     }
     try {
-      const newUrl = `${pathToFileURL(path.join(cwd, "agent.ts")).href}?t=${Date.now()}`;
-      const newMod = await import(newUrl);
-      const newAgentDef = newMod.default;
+      const newAgentDef = await loadAgentDef(cwd);
       const newEnv = await resolveAgentEnv(cwd);
       const newRuntime = createRuntime({ agent: newAgentDef, env: newEnv });
       const newServer = createServer({ runtime: newRuntime, name: newAgentDef.name });

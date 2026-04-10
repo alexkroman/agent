@@ -10,5 +10,5 @@
       "@alexkroman1/aai-ui": ["../aai-ui/index.ts"]
     }
   },
-  "include": ["css.d.ts", "templates/*/agent.ts", "templates/*/tools.ts", "templates/*/client.tsx", "templates/*/shared.ts", "templates/*/_shared.ts"]
+  "include": ["css.d.ts", "templates/*/tools.ts", "templates/*/client.tsx", "templates/*/shared.ts", "templates/*/_shared.ts"]
 }

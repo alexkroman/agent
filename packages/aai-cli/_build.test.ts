@@ -74,6 +74,33 @@ describe("buildAgentBundle", () => {
       }),
     );
   });
+
+  test("Vite-bundled worker is valid ESM with tools export", async () => {
+    await withTempDir(
+      silenced(async (dir) => {
+        await mkdir(path.join(dir, "tools"), { recursive: true });
+        await writeFile(
+          path.join(dir, "tools", "echo.ts"),
+          "export default async function(args: { msg: string }) { return args.msg; }",
+        );
+        await writeFile(
+          path.join(dir, "tools.ts"),
+          'import echo from "./tools/echo.ts";\nexport const tools = { echo };',
+        );
+        await writeFile(
+          path.join(dir, "agent.json"),
+          JSON.stringify({ name: "vite-test", systemPrompt: "Test" }),
+        );
+        const bundle = await buildAgentBundle(dir);
+        // Worker must be valid ESM — check for export syntax
+        expect(bundle.worker).toMatch(/export/);
+        // Must contain the tool name
+        expect(bundle.worker).toContain("echo");
+        // Must be a non-trivial bundle
+        expect(bundle.worker.length).toBeGreaterThan(20);
+      }),
+    );
+  });
 });
 
 describe("runBuildCommand", () => {
