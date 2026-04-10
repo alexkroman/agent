@@ -76,7 +76,6 @@ export default defineConfig({
           root: "packages/aai-cli",
           include: ["**/*.test.ts"],
           exclude: [
-            "docker-build.test.ts",
             "e2e.test.ts",
             "node_modules",
             "dist",

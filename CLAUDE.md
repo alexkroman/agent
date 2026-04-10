@@ -265,10 +265,6 @@ bumped automatically.
 
 ### Related docs
 
-- **Agent API docs**: `packages/aai-templates/scaffold/CLAUDE.md` is the
-  agent API reference installed into user projects. When modifying the agent
-  API surface (manifest schema, tool/hook conventions, KV API), update it
-  to match.
 - **Templates**: `packages/aai-templates/templates/` contains agent
   scaffolding templates (simple, web-researcher, etc.). Each is
   self-contained with its own `agent.json`, `tools/`, `hooks/`, and optional

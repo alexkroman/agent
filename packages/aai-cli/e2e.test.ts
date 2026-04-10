@@ -36,6 +36,7 @@ function aaiEnv(): NodeJS.ProcessEnv {
     INIT_CWD: undefined, // resolveCwd() prefers INIT_CWD over process.cwd()
     NO_COLOR: "1",
     FORCE_COLOR: "0",
+    AAI_NO_DEV: "1",
     ASSEMBLYAI_API_KEY: process.env.ASSEMBLYAI_API_KEY || "test",
     npm_config_ignore_scripts: "true", // avoid postinstall hooks in linked pkgs
   };
@@ -111,7 +112,7 @@ function installDeps(projectDir: string): void {
   } else if (pm === "yarn") {
     execFileSync("yarn", ["install", "--no-lockfile"], { cwd: projectDir, stdio: "inherit", env });
   } else {
-    execFileSync("pnpm", ["install", "--no-frozen-lockfile"], {
+    execFileSync("pnpm", ["install", "--no-frozen-lockfile", "--no-strict-peer-dependencies"], {
       cwd: projectDir,
       stdio: "inherit",
       env,

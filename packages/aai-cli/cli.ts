@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { errorMessage } from "@alexkroman1/aai-core";
@@ -28,23 +28,14 @@ function findPkgJson(dir: string): string {
 const pkgJson = JSON.parse(findPkgJson(cliDir));
 const VERSION: string = pkgJson.version;
 
-async function ensureAgent(cwd: string, yes?: boolean): Promise<string> {
-  const hasAgent = await fileExists(path.join(cwd, "agent.json"));
-  if (!hasAgent) {
-    const { runInitCommand } = await import("./init.ts");
-    return runInitCommand({ yes }, { quiet: true });
-  }
-  return cwd;
-}
-
-/** Shared command setup: resolve cwd, optionally scaffold agent. */
-async function setup(
-  args?: { yes?: boolean | undefined },
-  opts?: { agent?: boolean },
-): Promise<string> {
-  let cwd = resolveCwd();
+/** Shared command setup: resolve cwd, optionally require agent.json. */
+async function setup(opts?: { agent?: boolean }): Promise<string> {
+  const cwd = resolveCwd();
   if (opts?.agent) {
-    cwd = await ensureAgent(cwd, args?.yes);
+    const hasAgent = await fileExists(path.join(cwd, "agent.json"));
+    if (!hasAgent) {
+      throw new Error("No agent.json found in the current directory. Run `aai init` first.");
+    }
   }
   return cwd;
 }
@@ -126,7 +117,7 @@ const dev = defineCommand({
   async run({ args }) {
     const mode = resolveMode(args);
     await handleErrors(mode, async () => {
-      const cwd = await setup(args, { agent: true });
+      const cwd = await setup({ agent: true });
       const { executeDev } = await import("./dev.ts");
       const { withOutput } = await import("./_output.ts");
       await withOutput(
@@ -174,7 +165,7 @@ const build = defineCommand({
   async run({ args }) {
     const mode = resolveMode(args);
     await handleErrors(mode, async () => {
-      const cwd = await setup(args, { agent: true });
+      const cwd = await setup({ agent: true });
       if (!args.skipTests) {
         const { runVitest } = await import("./test.ts");
         runVitest(cwd);
@@ -202,7 +193,7 @@ const deploy = defineCommand({
   async run({ args }) {
     const mode = resolveMode(args);
     await handleErrors(mode, async () => {
-      const cwd = await setup(args, { agent: true });
+      const cwd = await setup({ agent: true });
       const { executeDeploy } = await import("./deploy.ts");
       const { withOutput } = await import("./_output.ts");
       await withOutput(
@@ -344,12 +335,14 @@ if (process.env.VITEST !== "true") {
   const helpFlags = new Set(["--help", "--version", "-h", "-V"]);
 
   if (!sub || (sub.startsWith("-") && !helpFlags.has(sub))) {
-    // No argument or unknown flag → default to init
-    process.argv.splice(2, 0, "init");
+    // No subcommand: deploy if agent.json exists, otherwise init
+    const defaultCmd = existsSync(path.join(resolveCwd(), "agent.json")) ? "deploy" : "init";
+    process.argv.splice(2, 0, defaultCmd);
   }
 
   // Prompt for API key before any command runs (skipped for help/version/test/build)
-  const skipApiKey = helpFlags.has(sub ?? "") || sub === "test" || sub === "build";
+  const cmd = process.argv[2];
+  const skipApiKey = helpFlags.has(cmd ?? "") || cmd === "test" || cmd === "build";
   const boot = skipApiKey
     ? Promise.resolve()
     : import("./_config.ts").then((m) => m.ensureApiKey());

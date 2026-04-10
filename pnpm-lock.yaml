@@ -84,7 +84,7 @@ importers:
         specifier: ^3.2.0
         version: 3.2.0
       vite:
-        specifier: ^8.0.6
+        specifier: ^8.0.3
         version: 8.0.6(@types/node@25.5.2)(esbuild@0.28.0)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3)
       zod:
         specifier: ^4.3.6

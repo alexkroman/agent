@@ -5,10 +5,7 @@
     "dev": "aai dev",
     "build": "aai build",
     "test": "aai test",
-    "typecheck": "node --experimental-strip-types typecheck.ts",
-    "deploy": "aai deploy",
-    "lint": "biome check .",
-    "lint:fix": "biome check --write ."
+    "deploy": "aai deploy"
   },
   "dependencies": {
     "@alexkroman1/aai-ui": "^0.12.3",
@@ -18,12 +15,11 @@
   },
   "devDependencies": {
     "@alexkroman1/aai-cli": "^0.12.3",
-    "@biomejs/biome": "^2.4.9",
     "@vitejs/plugin-react": "^6.0.1",
     "@tailwindcss/vite": "^4.2.1",
     "@types/node": "^25.5.0",
     "typescript": "^6.0.2",
     "vite": "^8.0.3",
-    "vitest": "^4.1.1"
+    "vitest": "^4.1.3"
   }
 }

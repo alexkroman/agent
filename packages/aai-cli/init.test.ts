@@ -74,7 +74,7 @@ describe("runInit", () => {
 });
 
 describe("patchPackageJsonForWorkspace", () => {
-  test("rewrites @alexkroman1/* deps to workspace:*", async () => {
+  test("rewrites @alexkroman1/* deps to link: paths", async () => {
     await withTempDir(async (dir) => {
       const target = path.join(dir, "my-agent");
       await fs.mkdir(target, { recursive: true });
@@ -99,10 +99,11 @@ describe("patchPackageJsonForWorkspace", () => {
       const result = JSON.parse(await fs.readFile(path.join(target, "package.json"), "utf-8"));
       expect(result.name).toBe("my-agent");
       expect(result.packageManager).toBeUndefined();
-      expect(result.dependencies["@alexkroman1/aai-core"]).toBe("workspace:*");
-      expect(result.dependencies["@alexkroman1/aai-ui"]).toBe("workspace:*");
+      expect(result.dependencies["@alexkroman1/aai-core"]).toMatch(/^link:/);
+      expect(result.dependencies["@alexkroman1/aai-core"]).toContain("aai-core");
+      expect(result.dependencies["@alexkroman1/aai-ui"]).toMatch(/^link:/);
       expect(result.dependencies.preact).toBe("^10.29.0");
-      expect(result.devDependencies["@alexkroman1/aai-cli"]).toBe("workspace:*");
+      expect(result.devDependencies["@alexkroman1/aai-cli"]).toMatch(/^link:/);
       expect(result.devDependencies.vitest).toBe("^4.1.1");
     });
   });

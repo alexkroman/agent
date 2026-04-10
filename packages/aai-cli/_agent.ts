@@ -21,6 +21,7 @@ export function getMonorepoRoot(): string | null {
 }
 
 export function isDevMode(): boolean {
+  if (process.env.AAI_NO_DEV === "1") return false;
   return getMonorepoRoot() !== null;
 }
 

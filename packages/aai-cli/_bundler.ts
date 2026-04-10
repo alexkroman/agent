@@ -64,31 +64,49 @@ export async function buildAgentBundle(cwd: string): Promise<DirectoryBundleOutp
     }
   }
 
-  return { worker, clientFiles: {}, agentConfig };
+  // ── Bundle client.tsx with Vite (if present) ────────────────────────────
+  const clientFiles = await buildClient(cwd);
+
+  return { worker, clientFiles, agentConfig };
 }
 
 /**
  * Build the client SPA using Vite if client.tsx exists.
- * Outputs to .aai/client/ for static serving.
+ * Returns a map of relative file paths → string contents for deploy.
  */
-async function buildClient(cwd: string): Promise<void> {
+async function buildClient(cwd: string): Promise<Record<string, string>> {
   const clientEntry = path.join(cwd, "client.tsx");
   try {
     await fs.access(clientEntry);
   } catch {
-    return; // No client.tsx — skip client build
+    return {}; // No client.tsx — skip client build
   }
 
   const clientDir = path.join(cwd, ".aai", "client");
   await build({
     root: cwd,
     base: "./",
-    logLevel: "warn",
+    logLevel: "silent",
     build: {
-      outDir: clientDir,
+      outDir: ".aai/client",
       emptyOutDir: true,
     },
   });
+
+  // Read built files into memory for deploy payload
+  const files: Record<string, string> = {};
+  async function walk(dir: string, prefix: string): Promise<void> {
+    for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
+      const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) {
+        await walk(path.join(dir, entry.name), rel);
+      } else {
+        files[rel] = await fs.readFile(path.join(dir, entry.name), "utf-8");
+      }
+    }
+  }
+  await walk(clientDir, "");
+  return files;
 }
 
 type BuildData = {
@@ -98,7 +116,7 @@ type BuildData = {
 
 export async function executeBuild(cwd: string): Promise<CommandResult<BuildData>> {
   const { log } = await import("./_ui.ts");
-  const [bundle] = await Promise.all([buildAgentBundle(cwd), buildClient(cwd)]);
+  const bundle = await buildAgentBundle(cwd);
   log.success("Build complete");
 
   return ok({
