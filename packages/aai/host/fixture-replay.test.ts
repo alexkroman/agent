@@ -313,7 +313,6 @@ describe("fixture replay with real executor", () => {
     h._fire("event", {
       type: "agent_transcript",
       text: "This was interrupted",
-      isFinal: true,
       _interrupted: true,
     });
     h._fire("event", { type: "cancelled" });
@@ -329,15 +328,13 @@ describe("fixture replay with real executor", () => {
     h._fire("event", {
       type: "agent_transcript",
       text: "This was completed",
-      isFinal: true,
       _interrupted: false,
     });
     h._fire("event", { type: "reply_done" });
     await flush();
 
     // Trigger a tool call to inspect conversation history.
-    // user_transcript (isFinal) starts a new turn context.
-    h._fire("event", { type: "user_transcript", text: "check", isFinal: true });
+    h._fire("event", { type: "user_transcript", text: "check" });
     await flush();
     h._fire("replyStarted", { replyId: "r3" });
     h._fire("event", {
@@ -387,32 +384,6 @@ describe("fixture replay with real executor", () => {
     // The tool should have seen the user's weather question in messages
     const userMsgs = capturedMessages.filter((m) => m.role === "user");
     expect(userMsgs.some((m) => m.content.toLowerCase().includes("weather"))).toBe(true);
-  });
-
-  // ── userTranscriptDelta → client with isFinal: false ───────────────────
-
-  test("user transcript deltas forwarded to client as partial transcripts", async () => {
-    const ctx = createFixtureSession(simpleAgent);
-    cleanup = ctx.cleanup;
-    await ctx.session.start();
-
-    // Manually fire deltas
-    ctx.mockHandle._fire("event", { type: "user_transcript", text: "Tell me", isFinal: false });
-    ctx.mockHandle._fire("event", {
-      type: "user_transcript",
-      text: "Tell me a fun",
-      isFinal: false,
-    });
-    await flush();
-
-    const partials = ctx.client.events.filter(
-      (e) =>
-        (e as { type: string }).type === "user_transcript" &&
-        (e as { isFinal: boolean }).isFinal === false,
-    );
-    expect(partials.length).toBe(2);
-    expect((partials[0] as { text: string }).text).toBe("Tell me");
-    expect((partials[1] as { text: string }).text).toBe("Tell me a fun");
   });
 
   // ── Audio chunks forwarded to client.playAudioChunk ────────────────────

@@ -100,13 +100,11 @@ export const ClientEventSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("user_transcript"),
     text: z.string(),
-    isFinal: z.boolean(),
     turnOrder,
   }),
   z.object({
     type: z.literal("agent_transcript"),
     text: z.string(),
-    isFinal: z.boolean(),
   }),
   z.object({
     type: z.literal("tool_call"),

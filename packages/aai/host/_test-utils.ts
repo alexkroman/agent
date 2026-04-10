@@ -183,22 +183,13 @@ const FIXTURE_DISPATCH: Record<string, FireFn> = {
   error: (h, m) => h._fire("error", new Error(m.message as string)),
   "input.speech.started": (h) => h._fire("event", { type: "speech_started" }),
   "input.speech.stopped": (h) => h._fire("event", { type: "speech_stopped" }),
-  "transcript.user.delta": (h, m) =>
-    h._fire("event", { type: "user_transcript", text: m.text as string, isFinal: false }),
   "transcript.user": (h, m) =>
-    h._fire("event", { type: "user_transcript", text: m.text as string, isFinal: true }),
+    h._fire("event", { type: "user_transcript", text: m.text as string }),
   "reply.started": (h, m) => h._fire("replyStarted", { replyId: (m.reply_id as string) ?? "" }),
-  "transcript.agent.delta": (h, m) =>
-    h._fire("event", {
-      type: "agent_transcript",
-      text: (m.delta as string) ?? "",
-      isFinal: false,
-    }),
   "transcript.agent": (h, m) =>
     h._fire("event", {
       type: "agent_transcript",
       text: (m.text as string) ?? "",
-      isFinal: true,
       _interrupted: m.interrupted === true,
     }),
   "tool.call": (h, m) =>

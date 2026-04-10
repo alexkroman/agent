@@ -212,7 +212,7 @@ describe("createS2sSession resource cleanup", () => {
     await session.waitForTurn();
 
     // Send a user transcript to add conversation messages
-    mockHandle._fire("event", { type: "user_transcript", text: "Hello", isFinal: true });
+    mockHandle._fire("event", { type: "user_transcript", text: "Hello" });
 
     // Reset — should clear pending tools and conversation
     session.onReset();

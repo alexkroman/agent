@@ -21,7 +21,9 @@
                 "description": "Maximum number of results to return (default 5)"
               }
             },
-            "required": ["query"]
+            "required": [
+              "query"
+            ]
           }
         }
       ],
@@ -51,7 +53,9 @@
                 "description": "Maximum number of results to return (default 5)"
               }
             },
-            "required": ["query"]
+            "required": [
+              "query"
+            ]
           }
         }
       ],
@@ -62,78 +66,6 @@
     "type": "reply.started",
     "timestamp": 1774669501.5081005,
     "reply_id": "resp_1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d"
-  },
-  {
-    "type": "transcript.agent.delta",
-    "timestamp": 1774669502.1684852,
-    "reply_id": "resp_1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d",
-    "item_id": "msg_a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
-    "delta": "Hi!",
-    "start_ms": 50,
-    "end_ms": 300
-  },
-  {
-    "type": "transcript.agent.delta",
-    "timestamp": 1774669502.174215,
-    "reply_id": "resp_1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d",
-    "item_id": "msg_a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
-    "delta": "I",
-    "start_ms": 300,
-    "end_ms": 380
-  },
-  {
-    "type": "transcript.agent.delta",
-    "timestamp": 1774669502.1841848,
-    "reply_id": "resp_1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d",
-    "item_id": "msg_a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
-    "delta": "can",
-    "start_ms": 380,
-    "end_ms": 520
-  },
-  {
-    "type": "transcript.agent.delta",
-    "timestamp": 1774669502.1846042,
-    "reply_id": "resp_1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d",
-    "item_id": "msg_a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
-    "delta": "search",
-    "start_ms": 520,
-    "end_ms": 850
-  },
-  {
-    "type": "transcript.agent.delta",
-    "timestamp": 1774669502.1852572,
-    "reply_id": "resp_1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d",
-    "item_id": "msg_a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
-    "delta": "the",
-    "start_ms": 850,
-    "end_ms": 970
-  },
-  {
-    "type": "transcript.agent.delta",
-    "timestamp": 1774669502.1858,
-    "reply_id": "resp_1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d",
-    "item_id": "msg_a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
-    "delta": "web",
-    "start_ms": 970,
-    "end_ms": 1200
-  },
-  {
-    "type": "transcript.agent.delta",
-    "timestamp": 1774669502.1862,
-    "reply_id": "resp_1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d",
-    "item_id": "msg_a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
-    "delta": "for",
-    "start_ms": 1200,
-    "end_ms": 1380
-  },
-  {
-    "type": "transcript.agent.delta",
-    "timestamp": 1774669502.1866,
-    "reply_id": "resp_1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d",
-    "item_id": "msg_a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
-    "delta": "you.",
-    "start_ms": 1380,
-    "end_ms": 1700
   },
   {
     "type": "transcript.agent",
@@ -176,132 +108,6 @@
     "args": {
       "query": "latest Mars rover findings"
     }
-  },
-  {
-    "type": "transcript.agent.delta",
-    "timestamp": 1774669507.4831357,
-    "reply_id": "resp_2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d",
-    "item_id": "msg_c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8",
-    "delta": "Based",
-    "start_ms": 60,
-    "end_ms": 300
-  },
-  {
-    "type": "transcript.agent.delta",
-    "timestamp": 1774669507.4837995,
-    "reply_id": "resp_2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d",
-    "item_id": "msg_c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8",
-    "delta": "on",
-    "start_ms": 300,
-    "end_ms": 400
-  },
-  {
-    "type": "transcript.agent.delta",
-    "timestamp": 1774669507.484151,
-    "reply_id": "resp_2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d",
-    "item_id": "msg_c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8",
-    "delta": "my",
-    "start_ms": 400,
-    "end_ms": 480
-  },
-  {
-    "type": "transcript.agent.delta",
-    "timestamp": 1774669507.4845755,
-    "reply_id": "resp_2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d",
-    "item_id": "msg_c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8",
-    "delta": "search,",
-    "start_ms": 480,
-    "end_ms": 850
-  },
-  {
-    "type": "transcript.agent.delta",
-    "timestamp": 1774669507.4865131,
-    "reply_id": "resp_2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d",
-    "item_id": "msg_c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8",
-    "delta": "NASA's",
-    "start_ms": 850,
-    "end_ms": 1250
-  },
-  {
-    "type": "transcript.agent.delta",
-    "timestamp": 1774669507.4871988,
-    "reply_id": "resp_2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d",
-    "item_id": "msg_c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8",
-    "delta": "Perseverance",
-    "start_ms": 1250,
-    "end_ms": 2100
-  },
-  {
-    "type": "transcript.agent.delta",
-    "timestamp": 1774669507.4879847,
-    "reply_id": "resp_2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d",
-    "item_id": "msg_c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8",
-    "delta": "rover",
-    "start_ms": 2100,
-    "end_ms": 2500
-  },
-  {
-    "type": "transcript.agent.delta",
-    "timestamp": 1774669507.4885712,
-    "reply_id": "resp_2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d",
-    "item_id": "msg_c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8",
-    "delta": "has",
-    "start_ms": 2500,
-    "end_ms": 2650
-  },
-  {
-    "type": "transcript.agent.delta",
-    "timestamp": 1774669507.489625,
-    "reply_id": "resp_2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d",
-    "item_id": "msg_c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8",
-    "delta": "discovered",
-    "start_ms": 2650,
-    "end_ms": 3200
-  },
-  {
-    "type": "transcript.agent.delta",
-    "timestamp": 1774669507.4898896,
-    "reply_id": "resp_2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d",
-    "item_id": "msg_c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8",
-    "delta": "organic",
-    "start_ms": 3200,
-    "end_ms": 3700
-  },
-  {
-    "type": "transcript.agent.delta",
-    "timestamp": 1774669507.490296,
-    "reply_id": "resp_2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d",
-    "item_id": "msg_c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8",
-    "delta": "molecules",
-    "start_ms": 3700,
-    "end_ms": 4300
-  },
-  {
-    "type": "transcript.agent.delta",
-    "timestamp": 1774669507.5877714,
-    "reply_id": "resp_2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d",
-    "item_id": "msg_c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8",
-    "delta": "in",
-    "start_ms": 4300,
-    "end_ms": 4400
-  },
-  {
-    "type": "transcript.agent.delta",
-    "timestamp": 1774669507.5882273,
-    "reply_id": "resp_2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d",
-    "item_id": "msg_c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8",
-    "delta": "Jezero",
-    "start_ms": 4400,
-    "end_ms": 5000
-  },
-  {
-    "type": "transcript.agent.delta",
-    "timestamp": 1774669507.7004278,
-    "reply_id": "resp_2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d",
-    "item_id": "msg_c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8",
-    "delta": "Crater.",
-    "start_ms": 5000,
-    "end_ms": 5600
   },
   {
     "type": "transcript.agent",

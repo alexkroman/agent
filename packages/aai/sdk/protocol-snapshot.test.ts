@@ -59,14 +59,9 @@ describe("server→client event wire format", () => {
   const valid: [string, ClientEvent][] = [
     ["speech_started", { type: "speech_started" }],
     ["speech_stopped", { type: "speech_stopped" }],
-    ["user_transcript (final)", { type: "user_transcript", text: "hello", isFinal: true }],
-    ["user_transcript (partial)", { type: "user_transcript", text: "hel", isFinal: false }],
-    [
-      "user_transcript (with order)",
-      { type: "user_transcript", text: "hello", isFinal: true, turnOrder: 1 },
-    ],
-    ["agent_transcript (final)", { type: "agent_transcript", text: "response", isFinal: true }],
-    ["agent_transcript (delta)", { type: "agent_transcript", text: "resp", isFinal: false }],
+    ["user_transcript", { type: "user_transcript", text: "hello" }],
+    ["user_transcript (with order)", { type: "user_transcript", text: "hello", turnOrder: 1 }],
+    ["agent_transcript", { type: "agent_transcript", text: "response" }],
     [
       "tool_call",
       {

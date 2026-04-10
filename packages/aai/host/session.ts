@@ -147,12 +147,12 @@ async function handleToolCall(
 
 function handleUserTranscript(ctx: S2sSessionCtx, text: string): void {
   ctx.log.info("S2S user transcript", { text });
-  ctx.client.event({ type: "user_transcript", text, isFinal: true });
+  ctx.client.event({ type: "user_transcript", text });
   ctx.pushMessages({ role: "user", content: text });
 }
 
 function handleAgentTranscript(ctx: S2sSessionCtx, text: string, interrupted: boolean): void {
-  ctx.client.event({ type: "agent_transcript", text, isFinal: true });
+  ctx.client.event({ type: "agent_transcript", text });
   if (!interrupted) {
     ctx.pushMessages({ role: "assistant", content: text });
   }
@@ -214,12 +214,10 @@ function setupListeners(ctx: S2sSessionCtx, handle: S2sHandle): void {
   handle.on("event", (event) => {
     switch (event.type) {
       case "user_transcript":
-        if (event.isFinal) handleUserTranscript(ctx, event.text);
-        else ctx.client.event(event);
+        handleUserTranscript(ctx, event.text);
         break;
       case "agent_transcript":
-        if (event.isFinal) handleAgentTranscript(ctx, event.text, event._interrupted ?? false);
-        else ctx.client.event(event);
+        handleAgentTranscript(ctx, event.text, event._interrupted ?? false);
         break;
       case "tool_call": {
         const p = handleToolCall(ctx, event).catch((err: unknown) => {

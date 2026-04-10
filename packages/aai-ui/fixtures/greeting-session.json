@@ -8,10 +8,6 @@
   },
   { "type": "speech_started" },
   { "type": "speech_stopped" },
-  { "type": "agent_transcript", "text": "Hello", "isFinal": false },
-  { "type": "agent_transcript", "text": "! How can", "isFinal": false },
-  { "type": "agent_transcript", "text": " I help", "isFinal": false },
-  { "type": "agent_transcript", "text": " you today?", "isFinal": false },
-  { "type": "agent_transcript", "text": "Hello! How can I help you today?", "isFinal": true },
+  { "type": "agent_transcript", "text": "Hello! How can I help you today?" },
   { "type": "reply_done" }
 ]

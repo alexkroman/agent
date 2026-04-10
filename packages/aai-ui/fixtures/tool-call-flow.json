@@ -6,21 +6,14 @@
     "ttsSampleRate": 24000,
     "sessionId": "sess_fixture_003"
   },
-  { "type": "agent_transcript", "text": "Ask me about the weather!", "isFinal": true },
+  { "type": "agent_transcript", "text": "Ask me about the weather!" },
   { "type": "reply_done" },
 
   { "type": "speech_started" },
-  { "type": "user_transcript", "text": "What is the weather", "isFinal": false },
-  {
-    "type": "user_transcript",
-    "text": "What is the weather like in San Francisco?",
-    "isFinal": false
-  },
   { "type": "speech_stopped" },
   {
     "type": "user_transcript",
-    "text": "What is the weather like in San Francisco?",
-    "isFinal": true
+    "text": "What is the weather like in San Francisco?"
   },
 
   {
@@ -35,13 +28,9 @@
     "result": "{\"city\":\"San Francisco\",\"temperature\":\"72°F\",\"condition\":\"sunny\"}"
   },
 
-  { "type": "agent_transcript", "text": "The weather", "isFinal": false },
-  { "type": "agent_transcript", "text": " in San Francisco", "isFinal": false },
-  { "type": "agent_transcript", "text": " is sunny at 72°F.", "isFinal": false },
   {
     "type": "agent_transcript",
-    "text": "The weather in San Francisco is sunny at 72°F.",
-    "isFinal": true
+    "text": "The weather in San Francisco is sunny at 72°F."
   },
   { "type": "reply_done" }
 ]

@@ -124,32 +124,16 @@ describe("real API fixtures", () => {
 
   // ── Reply lifecycle ────────────────────────────────────────────────────
 
-  test("real agent deltas include text from delta field", async () => {
+  test("real transcript.agent has _interrupted field", async () => {
     const { events } = await replayFixture("reply-lifecycle.json");
 
-    const deltas = events.filter(
-      (e) => e.type === "agent_transcript" && (e.payload as { isFinal: boolean }).isFinal === false,
-    );
-    expect(deltas.length).toBeGreaterThan(0);
-    for (const d of deltas) {
-      expect(typeof (d.payload as { text: string }).text).toBe("string");
-    }
-  });
-
-  test("real transcript.agent has isFinal:true and _interrupted field", async () => {
-    const { events } = await replayFixture("reply-lifecycle.json");
-
-    const transcripts = events.filter(
-      (e) => e.type === "agent_transcript" && (e.payload as { isFinal: boolean }).isFinal === true,
-    );
+    const transcripts = events.filter((e) => e.type === "agent_transcript");
     expect(transcripts.length).toBe(1);
     const payload = transcripts[0]?.payload as {
       type: string;
       text: string;
-      isFinal: boolean;
       _interrupted: boolean;
     };
-    expect(payload.isFinal).toBe(true);
     expect(payload._interrupted).toBe(false);
   });
 
@@ -176,9 +160,7 @@ describe("real API fixtures", () => {
     expect(types).toContain("user_transcript");
 
     // Verify the STT correctly transcribed the Kokoro audio
-    const transcripts = events.filter(
-      (e) => e.type === "user_transcript" && (e.payload as { isFinal: boolean }).isFinal === true,
-    );
+    const transcripts = events.filter((e) => e.type === "user_transcript");
     const texts = transcripts.map((e) => (e.payload as { text: string }).text);
     expect(texts.some((t) => t.toLowerCase().includes("space"))).toBe(true);
     expect(texts.some((t) => t.toLowerCase().includes("weather"))).toBe(true);
@@ -203,10 +185,8 @@ describe("real API fixtures", () => {
     expect(types).toContain("user_transcript");
 
     // Agent response
-    const finalAgentTranscripts = events.filter(
-      (e) => e.type === "agent_transcript" && (e.payload as { isFinal: boolean }).isFinal === true,
-    );
-    expect(finalAgentTranscripts.length).toBe(2); // greeting + answer
+    const agentTranscripts = events.filter((e) => e.type === "agent_transcript");
+    expect(agentTranscripts.length).toBe(2); // greeting + answer
 
     // Two complete reply cycles (greeting + answer)
     expect(types.filter((t) => t === "reply_done").length).toBe(2);
@@ -240,9 +220,7 @@ describe("real API fixtures", () => {
 
     // User speech was recognized
     expect(types).toContain("user_transcript");
-    const userTx = events.find(
-      (e) => e.type === "user_transcript" && (e.payload as { isFinal: boolean }).isFinal === true,
-    );
+    const userTx = events.find((e) => e.type === "user_transcript");
     expect((userTx?.payload as { text: string }).text.toLowerCase()).toContain("weather");
 
     // Tool was called
@@ -251,11 +229,9 @@ describe("real API fixtures", () => {
     expect((toolCall?.payload as { toolName: string }).toolName).toBe("get_weather");
 
     // Agent responded after tool result
-    const finalAgentTxs = events.filter(
-      (e) => e.type === "agent_transcript" && (e.payload as { isFinal: boolean }).isFinal === true,
-    );
-    expect(finalAgentTxs.length).toBe(2); // greeting + tool response
-    const toolResponse = finalAgentTxs.at(-1)?.payload as { text: string };
+    const agentTxs = events.filter((e) => e.type === "agent_transcript");
+    expect(agentTxs.length).toBe(2); // greeting + tool response
+    const toolResponse = agentTxs.at(-1)?.payload as { text: string };
     expect(toolResponse.text.toLowerCase()).toContain("san francisco");
   });
 });

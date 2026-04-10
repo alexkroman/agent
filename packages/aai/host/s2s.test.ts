@@ -206,30 +206,7 @@ describe("connectS2s", () => {
     expect(handler.mock.calls[0]?.[0]).toEqual({ type: "speech_stopped" });
   });
 
-  test("transcript.user.delta dispatches 'event' with user_transcript isFinal:false", async () => {
-    const { raw, handle } = await setupHandle();
-    const handler = vi.fn();
-    handle.on("event", handler);
-
-    raw.emit(
-      "message",
-      Buffer.from(
-        JSON.stringify({
-          type: "transcript.user.delta",
-          text: "Hel",
-        }),
-      ),
-    );
-
-    expect(handler).toHaveBeenCalledOnce();
-    expect(handler.mock.calls[0]?.[0]).toEqual({
-      type: "user_transcript",
-      text: "Hel",
-      isFinal: false,
-    });
-  });
-
-  test("transcript.user dispatches 'event' with user_transcript isFinal:true", async () => {
+  test("transcript.user dispatches 'event' with user_transcript", async () => {
     const { raw, handle } = await setupHandle();
     const handler = vi.fn();
     handle.on("event", handler);
@@ -249,7 +226,6 @@ describe("connectS2s", () => {
     expect(handler.mock.calls[0]?.[0]).toEqual({
       type: "user_transcript",
       text: "Hello world",
-      isFinal: true,
     });
   });
 
@@ -272,30 +248,7 @@ describe("connectS2s", () => {
     expect(handler.mock.calls[0]?.[0].replyId).toBe("r1");
   });
 
-  test("transcript.agent.delta dispatches 'event' with agent_transcript isFinal:false", async () => {
-    const { raw, handle } = await setupHandle();
-    const handler = vi.fn();
-    handle.on("event", handler);
-
-    raw.emit(
-      "message",
-      Buffer.from(
-        JSON.stringify({
-          type: "transcript.agent.delta",
-          delta: "I think",
-        }),
-      ),
-    );
-
-    expect(handler).toHaveBeenCalledOnce();
-    expect(handler.mock.calls[0]?.[0]).toEqual({
-      type: "agent_transcript",
-      text: "I think",
-      isFinal: false,
-    });
-  });
-
-  test("transcript.agent dispatches 'event' with agent_transcript isFinal:true", async () => {
+  test("transcript.agent dispatches 'event' with agent_transcript", async () => {
     const { raw, handle } = await setupHandle();
     const handler = vi.fn();
     handle.on("event", handler);
@@ -317,7 +270,6 @@ describe("connectS2s", () => {
     const payload = handler.mock.calls[0]?.[0];
     expect(payload.type).toBe("agent_transcript");
     expect(payload.text).toBe("Full response");
-    expect(payload.isFinal).toBe(true);
     expect(payload._interrupted).toBe(false);
   });
 

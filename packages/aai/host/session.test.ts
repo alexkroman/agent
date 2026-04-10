@@ -116,30 +116,16 @@ describe("createS2sSession", () => {
 
   // ─── S2S event handling tests ───────────────────────────────────────────
 
-  test("user_transcript event emits user_transcript with isFinal: true", async () => {
+  test("user_transcript event emits user_transcript", async () => {
     const { session, client, mockHandle } = setup();
     await session.start();
 
-    mockHandle._fire("event", { type: "user_transcript", text: "Hello there", isFinal: true });
+    mockHandle._fire("event", { type: "user_transcript", text: "Hello there" });
     await flush();
 
     expect(client.events).toContainEqual({
       type: "user_transcript",
       text: "Hello there",
-      isFinal: true,
-    });
-  });
-
-  test("user_transcript_delta emits user_transcript with isFinal: false", async () => {
-    const { session, client, mockHandle } = setup();
-    await session.start();
-
-    mockHandle._fire("event", { type: "user_transcript", text: "Hel", isFinal: false });
-
-    expect(client.events).toContainEqual({
-      type: "user_transcript",
-      text: "Hel",
-      isFinal: false,
     });
   });
 
@@ -153,34 +139,19 @@ describe("createS2sSession", () => {
     expect(client.audioChunks).toContainEqual(chunk);
   });
 
-  test("agent_transcript_delta emits agent_transcript with isFinal: false", async () => {
-    const { session, client, mockHandle } = setup();
-    await session.start();
-
-    mockHandle._fire("event", { type: "agent_transcript", text: "I think", isFinal: false });
-
-    expect(client.events).toContainEqual({
-      type: "agent_transcript",
-      text: "I think",
-      isFinal: false,
-    });
-  });
-
-  test("agent_transcript emits agent_transcript with isFinal: true", async () => {
+  test("agent_transcript emits agent_transcript", async () => {
     const { session, client, mockHandle } = setup();
     await session.start();
 
     mockHandle._fire("event", {
       type: "agent_transcript",
       text: "Full response",
-      isFinal: true,
       _interrupted: false,
     });
 
     expect(client.events).toContainEqual({
       type: "agent_transcript",
       text: "Full response",
-      isFinal: true,
     });
   });
 

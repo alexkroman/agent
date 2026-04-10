@@ -52,11 +52,9 @@ describe("fixture replay through session", () => {
     replayFixtureMessages(mockHandle, messages);
     await flush();
 
-    // Client should see both greeting and answer as final agent_transcript events
+    // Client should see both greeting and answer as agent_transcript events
     const chatEvents = client.events.filter(
-      (e) =>
-        (e as { type: string }).type === "agent_transcript" &&
-        (e as { isFinal: boolean }).isFinal === true,
+      (e) => (e as { type: string }).type === "agent_transcript",
     );
     expect(chatEvents.length).toBe(2); // greeting + answer
   });

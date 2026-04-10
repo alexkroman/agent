@@ -117,12 +117,10 @@ describe("S2S session memory with conversation history", () => {
               handle._fire("event", {
                 type: "user_transcript",
                 text: `User message ${m} with some reasonable length content to simulate real conversations and measure memory impact`,
-                isFinal: true,
               });
               handle._fire("event", {
                 type: "agent_transcript",
                 text: `Agent response ${m} providing helpful information about the topic discussed in this conversation turn number ${m}`,
-                isFinal: true,
                 _interrupted: false,
               });
               handle._fire("event", { type: "reply_done" });

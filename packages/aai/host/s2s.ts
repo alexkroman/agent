@@ -45,10 +45,8 @@ const S2sMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("session.updated") }).passthrough(),
   z.object({ type: z.literal("input.speech.started") }),
   z.object({ type: z.literal("input.speech.stopped") }),
-  z.object({ type: z.literal("transcript.user.delta"), text: z.string() }),
   z.object({ type: z.literal("transcript.user"), item_id: z.string(), text: z.string() }),
   z.object({ type: z.literal("reply.started"), reply_id: z.string() }),
-  z.object({ type: z.literal("transcript.agent.delta"), delta: z.string() }).passthrough(),
   z.object({
     type: z.literal("transcript.agent"),
     text: z.string(),
@@ -94,23 +92,16 @@ function dispatchS2sMessage(emitter: Emitter<S2sEvents>, msg: S2sServerMessage):
     case "input.speech.stopped":
       emitter.emit("event", { type: "speech_stopped" });
       break;
-    case "transcript.user.delta":
-      emitter.emit("event", { type: "user_transcript", text: msg.text, isFinal: false });
-      break;
     case "transcript.user":
-      emitter.emit("event", { type: "user_transcript", text: msg.text, isFinal: true });
+      emitter.emit("event", { type: "user_transcript", text: msg.text });
       break;
     case "reply.started":
       emitter.emit("replyStarted", { replyId: msg.reply_id });
-      break;
-    case "transcript.agent.delta":
-      emitter.emit("event", { type: "agent_transcript", text: msg.delta, isFinal: false });
       break;
     case "transcript.agent":
       emitter.emit("event", {
         type: "agent_transcript",
         text: msg.text,
-        isFinal: true,
         _interrupted: msg.interrupted,
       });
       break;
@@ -264,13 +255,10 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
       return false;
     }
 
-    function logIncoming(obj: { type?: unknown; delta?: unknown }): void {
+    function logIncoming(obj: { type?: unknown }): void {
       // reply.audio and input.audio are ~95% of traffic — skip logging.
       if (obj.type === "reply.audio" || obj.type === "input.audio") return;
-      log.info(
-        `S2S << ${obj.type}`,
-        obj.type === "transcript.agent.delta" ? { delta: obj.delta } : undefined,
-      );
+      log.info(`S2S << ${obj.type}`);
     }
 
     function handleS2sMessage(ev: { data: unknown }): void {
