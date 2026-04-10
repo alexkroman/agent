@@ -21,7 +21,7 @@ const packagesDir = path.resolve(dir, "..");
 
 // Representative subset: minimal baseline, stateful + tools, external tools + custom UI.
 // Full template coverage is handled by the templates unit test tier (pnpm test:templates).
-const templates = ["simple", "memory-agent", "web-researcher"];
+const templates = ["simple", "web-researcher"];
 
 let aaiBin: string;
 let tmpDir: string;
