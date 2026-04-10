@@ -38,7 +38,7 @@ RUN pnpm install --frozen-lockfile --ignore-scripts --prod=false
 # Copy source
 COPY packages/aai-core/ packages/aai-core/
 COPY packages/aai-server/ packages/aai-server/
-COPY tsconfig.json vitest.shared.ts ./
+COPY tsconfig.json vitest.shared.ts vitest.slow.config.ts ./
 
 # Build
 RUN pnpm --filter @alexkroman1/aai-core build \
