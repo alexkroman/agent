@@ -2,7 +2,7 @@
 /**
  * User-facing type re-exports from the aai package.
  *
- * Agent projects depend on @alexkroman1/aai-cli (devDependency) and can
+ * Agent projects depend on aai-cli (devDependency) and can
  * import shared types from this entry point.
  */
 

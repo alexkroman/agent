@@ -7,7 +7,7 @@
     "noEmit": true,
     "paths": {
       "aai": ["../aai/index.ts"],
-      "@alexkroman1/aai-ui": ["../aai-ui/index.ts"]
+      "aai-ui": ["../aai-ui/index.ts"]
     }
   },
   "include": [

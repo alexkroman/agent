@@ -68,7 +68,7 @@ async function hasDeps(cwd: string): Promise<boolean> {
 
 /** Run pnpm install and warn on failure. */
 async function runPnpmInstall(cwd: string): Promise<void> {
-  // In dev mode, allow workspace resolution so @alexkroman1/* deps link to local source.
+  // In dev mode, allow workspace resolution so workspace deps link to local source.
   // In production, --ignore-workspace prevents pnpm from hoisting to a parent workspace.
   const pnpmArgs = isDevMode() ? ["install"] : ["install", "--ignore-workspace"];
   await execFileAsync("pnpm", pnpmArgs, { cwd });

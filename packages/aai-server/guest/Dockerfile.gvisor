@@ -42,7 +42,7 @@ COPY tsconfig.json vitest.shared.ts vitest.slow.config.ts ./
 
 # Build
 RUN pnpm --filter aai build \
-    && pnpm --filter @alexkroman1/aai-server build
+    && pnpm --filter aai-server build
 
 # Init git (some scripts check git state)
 RUN apt-get update && apt-get install -y --no-install-recommends git \

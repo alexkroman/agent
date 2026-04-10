@@ -1,8 +1,8 @@
 ---
-"@alexkroman1/aai": patch
-"@alexkroman1/aai-ui": patch
-"@alexkroman1/aai-cli": patch
-"@alexkroman1/aai-server": patch
+"aai": patch
+"aai-ui": patch
+"aai-cli": patch
+"aai-server": patch
 ---
 
 BREAKING: Align SDK naming with S2S API

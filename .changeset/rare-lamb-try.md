@@ -1,5 +1,5 @@
 ---
-"@alexkroman1/aai-cli": minor
+"aai-cli": minor
 ---
 
 Fix deploy pipeline, streamline scaffold, improve dev CLI workflow

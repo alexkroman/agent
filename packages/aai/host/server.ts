@@ -6,7 +6,7 @@
  * server using only `node:http` and `ws` (no framework dependencies).
  *
  * **Internal module** — used by `aai-cli` dev server. Not a public API.
- * Import via `@alexkroman1/aai/host`.
+ * Import via `aai/host`.
  */
 
 import fs from "node:fs";

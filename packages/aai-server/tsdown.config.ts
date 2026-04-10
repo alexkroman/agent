@@ -7,7 +7,7 @@ export default defineConfig([
     platform: "node",
     target: "node22",
     outDir: "dist",
-    deps: { alwaysBundle: [/@alexkroman1/] },
+    deps: { alwaysBundle: [/^aai$/] },
   },
   {
     entry: ["guest/deno-harness.ts"],

@@ -50,13 +50,13 @@ export type InitOptions = {
  */
 const WORKSPACE_PKG_DIRS: Record<string, string> = {
   aai: "aai",
-  "@alexkroman1/aai-cli": "aai-cli",
-  "@alexkroman1/aai-ui": "aai-ui",
-  "@alexkroman1/aai-server": "aai-server",
-  "@alexkroman1/aai-templates": "aai-templates",
+  "aai-cli": "aai-cli",
+  "aai-ui": "aai-ui",
+  "aai-server": "aai-server",
+  "aai-templates": "aai-templates",
 };
 
-/** Rewrite @alexkroman1/* deps to link: paths so pnpm links to local source. */
+/** Rewrite workspace deps to link: paths so pnpm links to local source. */
 export async function patchPackageJsonForWorkspace(targetDir: string): Promise<void> {
   const pkgPath = path.join(targetDir, "package.json");
   let raw: string;

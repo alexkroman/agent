@@ -68,10 +68,10 @@ Five workspace packages under `packages/`:
 | Package | npm name | Purpose |
 | --- | --- | --- |
 | `packages/aai/` | `aai` | Shared core: manifest, types, protocol, S2S, session, KV |
-| `packages/aai-ui/` | `@alexkroman1/aai-ui` | Browser client (Preact): session, audio, UI components |
-| `packages/aai-cli/` | `@alexkroman1/aai-cli` | The `aai` CLI: init, dev, test, build, deploy, delete, secret |
-| `packages/aai-server/` | `@alexkroman1/aai-server` | Managed platform server (private): sandbox, sidecar, auth, SSRF |
-| `packages/aai-templates/` | `@alexkroman1/aai-templates` | Agent templates + scaffold (private): starter templates |
+| `packages/aai-ui/` | `aai-ui` | Browser client (Preact): session, audio, UI components |
+| `packages/aai-cli/` | `aai-cli` | The `aai` CLI: init, dev, test, build, deploy, delete, secret |
+| `packages/aai-server/` | `aai-server` | Managed platform server (private): sandbox, sidecar, auth, SSRF |
+| `packages/aai-templates/` | `aai-templates` | Agent templates + scaffold (private): starter templates |
 
 **Dependency flow:** `aai-cli`, `aai-ui`, and `aai-server` depend on `aai`
 (via `workspace:*`) but never on each other.
@@ -92,13 +92,13 @@ Subpath exports consumed by sibling packages and user agents:
 - `./kv` — KV store interface + in-memory implementation
 - `./utils` — shared utility functions.
 
-#### `@alexkroman1/aai-ui` (UI)
+#### `aai-ui` (UI)
 
 - `.` — default Preact UI component + session + client helpers
 - `./session` — session management (no Preact dependency)
 - `./styles.css` — default styles
 
-#### `@alexkroman1/aai-cli` (CLI)
+#### `aai-cli` (CLI)
 
 Binary: `aai` — subcommands: init, dev, test, build, deploy, delete, secret
 
@@ -226,13 +226,13 @@ pnpm changeset          # Prompts for packages + bump type + summary
 **Creating a changeset (non-interactive — for agents/CI):**
 
 ```sh
-pnpm changeset:create --pkg @alexkroman1/aai --bump patch --summary "Fix typo in error message"
+pnpm changeset:create --pkg aai --bump patch --summary "Fix typo in error message"
 ```
 
 Multiple packages:
 
 ```sh
-pnpm changeset:create --pkg @alexkroman1/aai --pkg @alexkroman1/aai-ui --bump minor --summary "Add new session API"
+pnpm changeset:create --pkg aai --pkg aai-ui --bump minor --summary "Add new session API"
 ```
 
 If the change doesn't need a release (docs-only, config, tests):
@@ -245,7 +245,7 @@ pnpm changeset add --empty
 
 ```yaml
 ---
-"@alexkroman1/aai": patch
+"aai": patch
 ---
 
 Short summary of the change for the changelog.
@@ -414,7 +414,7 @@ stored env at sandbox creation time and kept host-side only.
   process, env isolation inside gVisor sandboxes. No KVM required.
   Run via: `./packages/aai-server/guest/docker-test.sh`
 - `sandbox-integration.test.ts` — sandbox lifecycle and slot management e2e.
-  Run: `pnpm --filter @alexkroman1/aai-server test:integration`
+  Run: `pnpm --filter aai-server test:integration`
 - `builtin-tools.test.ts` — `run_code` sandbox security boundaries
   (network, filesystem, process, env, constructor chain bypass,
   cross-invocation isolation).

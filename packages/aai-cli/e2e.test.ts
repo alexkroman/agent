@@ -90,14 +90,14 @@ function initProject(template: string, projectDir: string): void {
 function installDeps(projectDir: string): void {
   const env = { ...aaiEnv(), ...registry.env };
 
-  // Rewrite @alexkroman1/* dep versions to match the unique testVersion
+  // Rewrite workspace dep versions to match the unique testVersion
   // published to the mock registry (avoids pnpm store cache collisions).
   const pkgJsonPath = path.join(projectDir, "package.json");
   const pkgJson = JSON.parse(fs.readFileSync(pkgJsonPath, "utf-8"));
   for (const depField of ["dependencies", "devDependencies"] as const) {
     if (!pkgJson[depField]) continue;
     for (const dep of Object.keys(pkgJson[depField])) {
-      if (dep.startsWith("@alexkroman1/")) {
+      if (dep === "aai" || dep === "aai-ui" || dep === "aai-cli") {
         pkgJson[depField][dep] = registry.testVersion;
       }
     }
@@ -112,11 +112,20 @@ function installDeps(projectDir: string): void {
   } else if (pm === "yarn") {
     execFileSync("yarn", ["install", "--no-lockfile"], { cwd: projectDir, stdio: "inherit", env });
   } else {
-    execFileSync("pnpm", ["install", "--no-frozen-lockfile", "--no-strict-peer-dependencies"], {
-      cwd: projectDir,
-      stdio: "inherit",
-      env,
-    });
+    execFileSync(
+      "pnpm",
+      [
+        "install",
+        "--no-frozen-lockfile",
+        "--no-strict-peer-dependencies",
+        "--safe-chain-skip-minimum-package-age",
+      ],
+      {
+        cwd: projectDir,
+        stdio: "inherit",
+        env,
+      },
+    );
   }
 }
 

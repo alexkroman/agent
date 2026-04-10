@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 
-import type { ChatMessage } from "@alexkroman1/aai-ui";
-import { client, useSession } from "@alexkroman1/aai-ui";
+import type { ChatMessage } from "aai-ui";
+import { client, useSession } from "aai-ui";
 import { useEffect, useRef } from "react";
 
 const CSS = `

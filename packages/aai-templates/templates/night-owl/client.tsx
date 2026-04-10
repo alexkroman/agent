@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 
-import { Button, client, useTheme, useToolCallStart, useToolResult } from "@alexkroman1/aai-ui";
+import { Button, client, useTheme, useToolCallStart, useToolResult } from "aai-ui";
 import { useState } from "react";
 
 type Rec = { category: string; mood: string; picks: string[] };

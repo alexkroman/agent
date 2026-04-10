@@ -26,7 +26,7 @@ COPY tsconfig.json ./
 
 # Build SDK + server
 RUN pnpm --filter aai build \
-    && pnpm --filter @alexkroman1/aai-server build
+    && pnpm --filter aai-server build
 
 # ── Production stage ─────────────────────────────────────────────────────────
 

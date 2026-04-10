@@ -109,7 +109,7 @@ jobs:
             .tsbuildinfo
             .turbo
           key: workspace-${{ runner.os }}-node${{ hashFiles('.node-version') }}-${{ github.sha }}
-      - run: pnpm --filter @alexkroman1/${{ matrix.package }} test:coverage
+      - run: pnpm --filter ${{ matrix.package }} test:coverage
 
   integration:
     needs: setup
@@ -198,7 +198,7 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('packages/aai-cli/package.json') }}
-      - run: pnpm --filter @alexkroman1/aai-cli exec playwright install --with-deps chromium
+      - run: pnpm --filter aai-cli exec playwright install --with-deps chromium
       - run: pnpm exec turbo run check:e2e
 
   # Single gate job for branch protection — add only "ci" as a required check

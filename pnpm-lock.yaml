@@ -209,18 +209,18 @@ importers:
 
   packages/aai-templates:
     devDependencies:
-      '@alexkroman1/aai-cli':
-        specifier: workspace:*
-        version: link:../aai-cli
-      '@alexkroman1/aai-ui':
-        specifier: workspace:*
-        version: link:../aai-ui
       '@types/react':
         specifier: ^19.0.0
         version: 19.2.14
       aai:
         specifier: workspace:*
         version: link:../aai
+      aai-cli:
+        specifier: workspace:*
+        version: link:../aai-cli
+      aai-ui:
+        specifier: workspace:*
+        version: link:../aai-ui
       zod:
         specifier: ^4.3.6
         version: 4.3.6

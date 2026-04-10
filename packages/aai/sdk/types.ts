@@ -139,7 +139,7 @@ export type ToolDef<
  * @example
  * ```ts
  * // shared.ts
- * import type { ToolResultMap } from "@alexkroman1/aai-cli/types";
+ * import type { ToolResultMap } from "aai-cli/types";
  *
  * export interface Pizza {
  *   id: number;
@@ -153,7 +153,7 @@ export type ToolDef<
  * }>;
  * ```
  *
- * Then use with {@link @alexkroman1/aai-ui#useToolResult | useToolResult}:
+ * Then use with {@link aai-ui#useToolResult | useToolResult}:
  *
  * ```tsx
  * // client.tsx
