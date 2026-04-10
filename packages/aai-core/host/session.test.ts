@@ -120,7 +120,7 @@ describe("createS2sSession", () => {
     const { session, client, mockHandle } = setup();
     await session.start();
 
-    mockHandle._fire("userTranscript", { itemId: "item-1", text: "Hello there" });
+    mockHandle._fire("event", { type: "user_transcript", text: "Hello there", isFinal: true });
     await flush();
 
     expect(client.events).toContainEqual({
@@ -134,7 +134,7 @@ describe("createS2sSession", () => {
     const { session, client, mockHandle } = setup();
     await session.start();
 
-    mockHandle._fire("userTranscriptDelta", { text: "Hel" });
+    mockHandle._fire("event", { type: "user_transcript", text: "Hel", isFinal: false });
 
     expect(client.events).toContainEqual({
       type: "user_transcript",
@@ -157,7 +157,7 @@ describe("createS2sSession", () => {
     const { session, client, mockHandle } = setup();
     await session.start();
 
-    mockHandle._fire("agentTranscriptDelta", { text: "I think" });
+    mockHandle._fire("event", { type: "agent_transcript", text: "I think", isFinal: false });
 
     expect(client.events).toContainEqual({
       type: "agent_transcript",
@@ -170,11 +170,11 @@ describe("createS2sSession", () => {
     const { session, client, mockHandle } = setup();
     await session.start();
 
-    mockHandle._fire("agentTranscript", {
+    mockHandle._fire("event", {
+      type: "agent_transcript",
       text: "Full response",
-      replyId: "r1",
-      itemId: "i1",
-      interrupted: false,
+      isFinal: true,
+      _interrupted: false,
     });
 
     expect(client.events).toContainEqual({
@@ -188,8 +188,8 @@ describe("createS2sSession", () => {
     const { session, client, mockHandle } = setup();
     await session.start();
 
-    mockHandle._fire("speechStarted");
-    mockHandle._fire("speechStopped");
+    mockHandle._fire("event", { type: "speech_started" });
+    mockHandle._fire("event", { type: "speech_stopped" });
 
     expect(client.events).toContainEqual({ type: "speech_started" });
     expect(client.events).toContainEqual({ type: "speech_stopped" });
@@ -207,17 +207,17 @@ describe("createS2sSession", () => {
     const { session, client, mockHandle } = setup();
     await session.start();
 
-    mockHandle._fire("replyDone", { status: "completed" });
+    mockHandle._fire("event", { type: "reply_done" });
 
     expect(client.audioDoneCount).toBe(1);
     expect(client.events).toContainEqual({ type: "reply_done" });
   });
 
-  test("reply_done with interrupted status emits cancelled", async () => {
+  test("cancelled event emits cancelled", async () => {
     const { session, client, mockHandle } = setup();
     await session.start();
 
-    mockHandle._fire("replyDone", { status: "interrupted" });
+    mockHandle._fire("event", { type: "cancelled" });
 
     expect(client.events).toContainEqual({ type: "cancelled" });
   });
@@ -226,7 +226,7 @@ describe("createS2sSession", () => {
     const { session, client, mockHandle } = setup();
     await session.start();
 
-    mockHandle._fire("error", { code: "test_error", message: "Something broke" });
+    mockHandle._fire("error", new Error("Something broke"));
 
     expect(client.events).toContainEqual({
       type: "error",
@@ -244,9 +244,10 @@ describe("createS2sSession", () => {
     await session.start();
 
     mockHandle._fire("replyStarted", { replyId: "r1" });
-    mockHandle._fire("toolCall", {
-      callId: "call-1",
-      name: "my_tool",
+    mockHandle._fire("event", {
+      type: "tool_call",
+      toolCallId: "call-1",
+      toolName: "my_tool",
       args: { key: "value" },
     });
 
@@ -278,13 +279,13 @@ describe("createS2sSession", () => {
     await session.start();
 
     mockHandle._fire("replyStarted", { replyId: "r1" });
-    mockHandle._fire("toolCall", { callId: "c1", name: "t1", args: {} });
+    mockHandle._fire("event", { type: "tool_call", toolCallId: "c1", toolName: "t1", args: {} });
     await session.waitForTurn();
 
     // Result not sent yet — S2S protocol requires waiting for reply_done
     expect(mockHandle.sendToolResult).not.toHaveBeenCalled();
 
-    mockHandle._fire("replyDone", { status: "completed" });
+    mockHandle._fire("event", { type: "reply_done" });
     // reply_done waits for turnPromise then sends
     await vi.waitFor(() => {
       expect(mockHandle.sendToolResult).toHaveBeenCalledWith("c1", "result-1");
@@ -299,7 +300,7 @@ describe("createS2sSession", () => {
     await session.start();
 
     mockHandle._fire("replyStarted", { replyId: "r1" });
-    mockHandle._fire("toolCall", { callId: "c1", name: "t1", args: {} });
+    mockHandle._fire("event", { type: "tool_call", toolCallId: "c1", toolName: "t1", args: {} });
     await session.waitForTurn();
 
     const doneEvent = client.events.find((e) => {
@@ -324,11 +325,11 @@ describe("createS2sSession", () => {
 
     mockHandle._fire("replyStarted", { replyId: "r1" });
     // First tool call — should succeed (count goes to 1, which equals maxSteps)
-    mockHandle._fire("toolCall", { callId: "c1", name: "t1", args: {} });
+    mockHandle._fire("event", { type: "tool_call", toolCallId: "c1", toolName: "t1", args: {} });
     await session.waitForTurn();
 
     // Second tool call — should be refused (count goes to 2 > maxSteps 1)
-    mockHandle._fire("toolCall", { callId: "c2", name: "t2", args: {} });
+    mockHandle._fire("event", { type: "tool_call", toolCallId: "c2", toolName: "t2", args: {} });
     await session.waitForTurn();
 
     const doneEvent = client.events.find((e) => {
@@ -376,13 +377,13 @@ describe("createS2sSession", () => {
 
     // Start a tool call (stays pending)
     mockHandle._fire("replyStarted", { replyId: "r1" });
-    mockHandle._fire("toolCall", { callId: "c1", name: "t1", args: {} });
+    mockHandle._fire("event", { type: "tool_call", toolCallId: "c1", toolName: "t1", args: {} });
 
     // Wait for executeTool to be called (handleToolCall has async steps before it)
     await vi.waitFor(() => expect(executeTool).toHaveBeenCalled());
 
     // Barge-in before tool completes — invalidates currentReplyId
-    mockHandle._fire("replyDone", { status: "interrupted" });
+    mockHandle._fire("event", { type: "cancelled" });
 
     // Now the tool finishes — its result should be discarded (generation mismatch)
     resolveToolCall("late-result");
@@ -390,7 +391,7 @@ describe("createS2sSession", () => {
 
     // Start new reply and trigger reply_done — stale result must not leak
     mockHandle._fire("replyStarted", { replyId: "r2" });
-    mockHandle._fire("replyDone", { status: "completed" });
+    mockHandle._fire("event", { type: "reply_done" });
 
     expect(mockHandle.sendToolResult).not.toHaveBeenCalled();
   });
@@ -407,13 +408,13 @@ describe("createS2sSession", () => {
     await session.start();
 
     mockHandle._fire("replyStarted", { replyId: "r1" });
-    mockHandle._fire("toolCall", { callId: "c1", name: "t1", args: {} });
+    mockHandle._fire("event", { type: "tool_call", toolCallId: "c1", toolName: "t1", args: {} });
 
     // Wait for executeTool to be called
     await vi.waitFor(() => expect(executeTool).toHaveBeenCalled());
 
     // reply_done fires while tool is still executing
-    mockHandle._fire("replyDone", { status: "completed" });
+    mockHandle._fire("event", { type: "reply_done" });
 
     // Result not sent yet — tool still running
     expect(mockHandle.sendToolResult).not.toHaveBeenCalled();
@@ -438,9 +439,9 @@ describe("createS2sSession", () => {
 
     // First reply — interrupted while tool is running
     mockHandle._fire("replyStarted", { replyId: "r1" });
-    mockHandle._fire("toolCall", { callId: "c1", name: "t1", args: {} });
+    mockHandle._fire("event", { type: "tool_call", toolCallId: "c1", toolName: "t1", args: {} });
     await vi.waitFor(() => expect(executeTool).toHaveBeenCalled());
-    mockHandle._fire("replyDone", { status: "interrupted" });
+    mockHandle._fire("event", { type: "cancelled" });
 
     // Tool from first reply finishes late
     resolveToolCall("stale-result");
@@ -449,9 +450,9 @@ describe("createS2sSession", () => {
     // Second reply has its own tool call
     executeTool.mockImplementation(async () => "fresh-result");
     mockHandle._fire("replyStarted", { replyId: "r2" });
-    mockHandle._fire("toolCall", { callId: "c2", name: "t2", args: {} });
+    mockHandle._fire("event", { type: "tool_call", toolCallId: "c2", toolName: "t2", args: {} });
     await session.waitForTurn();
-    mockHandle._fire("replyDone", { status: "completed" });
+    mockHandle._fire("event", { type: "reply_done" });
 
     // Only the fresh result should be sent, not the stale one
     await vi.waitFor(() => {

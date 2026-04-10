@@ -172,37 +172,46 @@ type FireFn = (handle: MockS2sHandle, msg: Record<string, unknown>) => void;
 
 const FIXTURE_DISPATCH: Record<string, FireFn> = {
   "session.ready": (h, m) => h._fire("ready", { sessionId: m.session_id as string }),
-  "session.updated": (h, m) => h._fire("sessionUpdated", m),
+  "session.updated": () => {
+    /* dropped — no longer dispatched */
+  },
   "session.error": (h, m) => {
     const code = m.code as string;
-    const payload = { code, message: m.message as string };
-    if (code === "session_not_found" || code === "session_forbidden")
-      h._fire("sessionExpired", payload);
-    else h._fire("error", payload);
+    if (code === "session_not_found" || code === "session_forbidden") h._fire("sessionExpired");
+    else h._fire("error", new Error(m.message as string));
   },
-  error: (h, m) => h._fire("error", { code: "connection", message: m.message as string }),
-  "input.speech.started": (h) => h._fire("speechStarted"),
-  "input.speech.stopped": (h) => h._fire("speechStopped"),
-  "transcript.user.delta": (h, m) => h._fire("userTranscriptDelta", { text: m.text as string }),
+  error: (h, m) => h._fire("error", new Error(m.message as string)),
+  "input.speech.started": (h) => h._fire("event", { type: "speech_started" }),
+  "input.speech.stopped": (h) => h._fire("event", { type: "speech_stopped" }),
+  "transcript.user.delta": (h, m) =>
+    h._fire("event", { type: "user_transcript", text: m.text as string, isFinal: false }),
   "transcript.user": (h, m) =>
-    h._fire("userTranscript", { itemId: (m.item_id as string) ?? "", text: m.text as string }),
+    h._fire("event", { type: "user_transcript", text: m.text as string, isFinal: true }),
   "reply.started": (h, m) => h._fire("replyStarted", { replyId: (m.reply_id as string) ?? "" }),
   "transcript.agent.delta": (h, m) =>
-    h._fire("agentTranscriptDelta", { text: (m.delta as string) ?? "" }),
+    h._fire("event", {
+      type: "agent_transcript",
+      text: (m.delta as string) ?? "",
+      isFinal: false,
+    }),
   "transcript.agent": (h, m) =>
-    h._fire("agentTranscript", {
+    h._fire("event", {
+      type: "agent_transcript",
       text: (m.text as string) ?? "",
-      replyId: (m.reply_id as string) ?? "",
-      itemId: (m.item_id as string) ?? "",
-      interrupted: m.interrupted === true,
+      isFinal: true,
+      _interrupted: m.interrupted === true,
     }),
   "tool.call": (h, m) =>
-    h._fire("toolCall", {
-      callId: m.call_id as string,
-      name: m.name as string,
+    h._fire("event", {
+      type: "tool_call",
+      toolCallId: m.call_id as string,
+      toolName: m.name as string,
       args: (m.args as Record<string, unknown>) ?? {},
     }),
-  "reply.done": (h, m) => h._fire("replyDone", m.status ? { status: m.status as string } : {}),
+  "reply.done": (h, m) => {
+    if (m.status === "interrupted") h._fire("event", { type: "cancelled" });
+    else h._fire("event", { type: "reply_done" });
+  },
 };
 
 /**

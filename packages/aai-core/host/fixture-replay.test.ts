@@ -310,13 +310,13 @@ describe("fixture replay with real executor", () => {
 
     // Fire an interrupted transcript — should NOT go into conversation history
     h._fire("replyStarted", { replyId: "r1" });
-    h._fire("agentTranscript", {
+    h._fire("event", {
+      type: "agent_transcript",
       text: "This was interrupted",
-      replyId: "r1",
-      itemId: "i1",
-      interrupted: true,
+      isFinal: true,
+      _interrupted: true,
     });
-    h._fire("replyDone", { status: "interrupted" });
+    h._fire("event", { type: "cancelled" });
     await flush();
 
     // Client sees both agent_transcript and cancelled events
@@ -326,21 +326,26 @@ describe("fixture replay with real executor", () => {
 
     // Fire a non-interrupted transcript — SHOULD go into conversation history
     h._fire("replyStarted", { replyId: "r2" });
-    h._fire("agentTranscript", {
+    h._fire("event", {
+      type: "agent_transcript",
       text: "This was completed",
-      replyId: "r2",
-      itemId: "i2",
-      interrupted: false,
+      isFinal: true,
+      _interrupted: false,
     });
-    h._fire("replyDone", { status: "completed" });
+    h._fire("event", { type: "reply_done" });
     await flush();
 
     // Trigger a tool call to inspect conversation history.
-    // userTranscript starts a new turn context.
-    h._fire("userTranscript", { itemId: "u1", text: "check" });
+    // user_transcript (isFinal) starts a new turn context.
+    h._fire("event", { type: "user_transcript", text: "check", isFinal: true });
     await flush();
     h._fire("replyStarted", { replyId: "r3" });
-    h._fire("toolCall", { callId: "c1", name: "check_history", args: { q: "test" } });
+    h._fire("event", {
+      type: "tool_call",
+      toolCallId: "c1",
+      toolName: "check_history",
+      args: { q: "test" },
+    });
     // Wait for tool to execute (captures messages)
     await vi.waitFor(() => expect(capturedMessages.length).toBeGreaterThan(0));
 
@@ -391,9 +396,13 @@ describe("fixture replay with real executor", () => {
     cleanup = ctx.cleanup;
     await ctx.session.start();
 
-    // Manually fire a delta then a final transcript
-    ctx.mockHandle._fire("userTranscriptDelta", { text: "Tell me" });
-    ctx.mockHandle._fire("userTranscriptDelta", { text: "Tell me a fun" });
+    // Manually fire deltas
+    ctx.mockHandle._fire("event", { type: "user_transcript", text: "Tell me", isFinal: false });
+    ctx.mockHandle._fire("event", {
+      type: "user_transcript",
+      text: "Tell me a fun",
+      isFinal: false,
+    });
     await flush();
 
     const partials = ctx.client.events.filter(
@@ -446,8 +455,18 @@ describe("fixture replay with real executor", () => {
 
     const h = ctx.mockHandle;
     h._fire("replyStarted", { replyId: "r1" });
-    h._fire("toolCall", { callId: "c1", name: "get_weather", args: { city: "NYC" } });
-    h._fire("toolCall", { callId: "c2", name: "get_weather", args: { city: "LA" } });
+    h._fire("event", {
+      type: "tool_call",
+      toolCallId: "c1",
+      toolName: "get_weather",
+      args: { city: "NYC" },
+    });
+    h._fire("event", {
+      type: "tool_call",
+      toolCallId: "c2",
+      toolName: "get_weather",
+      args: { city: "LA" },
+    });
 
     // Wait for both tool calls to execute
     await vi.waitFor(() => {
@@ -455,11 +474,11 @@ describe("fixture replay with real executor", () => {
       expect(starts.length).toBe(2);
     });
 
-    // Results NOT sent yet — replyDone hasn't fired
+    // Results NOT sent yet — reply_done hasn't fired
     expect(ctx.mockHandle.sendToolResult).not.toHaveBeenCalled();
 
-    // Fire replyDone — should flush both results
-    h._fire("replyDone", { status: "completed" });
+    // Fire reply_done — should flush both results
+    h._fire("event", { type: "reply_done" });
     await vi.waitFor(() => {
       expect(ctx.mockHandle.sendToolResult).toHaveBeenCalledTimes(2);
     });
