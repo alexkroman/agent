@@ -186,10 +186,10 @@ describe("cross-agent auth isolation", () => {
   });
 });
 
-// ── Platform Credential Separation ─────────────────────────────────────
+// ── Platform Credential Handling ────────────────────────────────────────
 
-describe("platform credential separation", () => {
-  test("ASSEMBLYAI_API_KEY is stripped from agentEnv in resolveSandbox", async () => {
+describe("platform credential handling", () => {
+  test("ASSEMBLYAI_API_KEY is passed through in env to resolveSandbox", async () => {
     const store = createTestStore();
 
     await store.putAgent({
@@ -205,17 +205,11 @@ describe("platform credential separation", () => {
       agentConfig: TEST_AGENT_CONFIG,
     });
 
-    // Verify getEnv returns everything
+    // Verify getEnv returns everything including ASSEMBLYAI_API_KEY
     const fullEnv = await store.getEnv("cred-agent");
     expect(fullEnv).toHaveProperty("ASSEMBLYAI_API_KEY", "platform-secret-key");
     expect(fullEnv).toHaveProperty("USER_SECRET", "user-value");
-
-    // Simulate what resolveSandbox does — strip platform key
-    // biome-ignore lint/style/noNonNullAssertion: fullEnv is verified non-null above
-    const { ASSEMBLYAI_API_KEY: apiKey, ...agentEnv } = fullEnv!;
-    expect(apiKey).toBe("platform-secret-key");
-    expect(agentEnv).not.toHaveProperty("ASSEMBLYAI_API_KEY");
-    expect(agentEnv).toEqual({ USER_SECRET: "user-value", ANOTHER_SECRET: "another-value" });
+    expect(fullEnv).toHaveProperty("ANOTHER_SECRET", "another-value");
   });
 
   test("ASSEMBLYAI_API_KEY can be overwritten via secrets API", async () => {

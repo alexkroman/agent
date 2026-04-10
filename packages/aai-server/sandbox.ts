@@ -40,8 +40,7 @@ export type { AgentMetadata } from "./schemas.ts";
 
 export type SandboxOptions = {
   workerCode: string;
-  apiKey: string;
-  agentEnv: Record<string, string>;
+  env: Record<string, string>;
   storage: Storage;
   slug: string;
   /** Pre-extracted agent config from CLI build. */
@@ -58,7 +57,7 @@ export const _internals = {
 };
 
 export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
-  const { workerCode, apiKey, agentEnv, storage, slug } = opts;
+  const { workerCode, env, storage, slug } = opts;
 
   const safeFetch: typeof globalThis.fetch = (input, init?) => {
     let url: string;
@@ -79,7 +78,7 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
   const sandboxHandle = await createSandboxVm({
     slug,
     workerCode,
-    agentEnv,
+    env,
     kvStorage: storage,
     kvPrefix: agentKvPrefix(slug),
     harnessPath,
@@ -113,7 +112,7 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
         ? { builtinTools: config.builtinTools as import("@alexkroman1/aai-core").BuiltinTool[] }
         : {}),
     },
-    env: { ...agentEnv, ASSEMBLYAI_API_KEY: apiKey },
+    env,
     fetch: safeFetch,
     executeTool,
     toolSchemas: [...config.toolSchemas, ...builtins.schemas],
@@ -175,12 +174,9 @@ export async function resolveSandbox(
     return null;
   }
 
-  const { ASSEMBLYAI_API_KEY: apiKey = "", ...agentEnv } = env;
-
   const sandbox = await createSandbox({
     workerCode,
-    apiKey,
-    agentEnv,
+    env,
     storage,
     slug,
     agentConfig,
