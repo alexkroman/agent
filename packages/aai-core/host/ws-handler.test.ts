@@ -1,30 +1,9 @@
 import { describe, expect, test, vi } from "vitest";
 import type { ClientSink } from "../isolate/protocol.ts";
 import { MockWebSocket } from "./_mock-ws.ts";
+import { makeStubSession, silentLogger } from "./_test-utils.ts";
 import type { Session } from "./session.ts";
 import { wireSessionSocket } from "./ws-handler.ts";
-
-function makeStubSession(startDelay?: number): Session {
-  return {
-    start: vi.fn(() =>
-      startDelay ? new Promise<void>((r) => setTimeout(r, startDelay)) : Promise.resolve(),
-    ),
-    stop: vi.fn(() => Promise.resolve()),
-    onAudio: vi.fn(),
-    onAudioReady: vi.fn(),
-    onCancel: vi.fn(),
-    onReset: vi.fn(),
-    onHistory: vi.fn(),
-    waitForTurn: vi.fn(() => Promise.resolve()),
-  };
-}
-
-const silentLogger = {
-  info: vi.fn(),
-  warn: vi.fn(),
-  error: vi.fn(),
-  debug: vi.fn(),
-};
 
 function makeLogger() {
   return { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
