@@ -1,6 +1,0 @@
-{
-  "name": "Math Buddy",
-  "systemPrompt": { "$ref": "system-prompt.md" },
-  "greeting": "Hey, I'm Math Buddy. Try asking me something like, what's 127 times 849, convert 5 miles to kilometers, or roll 3 twenty-sided dice.",
-  "builtinTools": ["run_code"]
-}

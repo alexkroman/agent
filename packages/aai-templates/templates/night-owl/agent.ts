@@ -1,3 +1,6 @@
+import { agent, tool } from "aai";
+import { z } from "zod";
+
 const PICKS: Record<string, Record<string, string[]>> = {
   movie: {
     chill: ["Lost in Translation", "The Grand Budapest Hotel", "Amelie"],
@@ -42,10 +45,28 @@ const PICKS: Record<string, Record<string, string[]>> = {
   },
 };
 
-export default async function execute(args: { category: string; mood: string }, _ctx: unknown) {
-  return {
-    category: args.category,
-    mood: args.mood,
-    picks: PICKS[args.category]?.[args.mood] ?? [],
-  };
-}
+export default agent({
+  name: "Night Owl",
+  systemPrompt:
+    "You are Night Owl, a cozy evening companion. You help people wind down, recommend entertainment, and share interesting facts about the night sky. Keep your tone warm and relaxed. Use short, conversational responses.\n\nUse run_code for sleep calculations:\n- Each sleep cycle is 90 minutes, plus 15 minutes to fall asleep\n- Bedtime = wake_time - (cycles * 90 + 15) minutes\n- If result is negative, add 1440 (24 hours in minutes)\n- Format as HH:MM",
+  greeting:
+    "Hey there, night owl. Try asking me for a cozy movie recommendation, or tell me what time you need to wake up and I'll calculate the best time to fall asleep.",
+  builtinTools: ["run_code"],
+
+  tools: {
+    recommend: tool({
+      description: "Get recommendations for movies, music, or books based on mood.",
+      parameters: z.object({
+        category: z.enum(["movie", "music", "book"]),
+        mood: z.enum(["chill", "intense", "cozy", "spooky", "funny"]),
+      }),
+      async execute(args) {
+        return {
+          category: args.category,
+          mood: args.mood,
+          picks: PICKS[args.category]?.[args.mood] ?? [],
+        };
+      },
+    }),
+  },
+});
