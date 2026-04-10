@@ -9,6 +9,7 @@
 
 import { DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai-core";
 import { ToolSchemaSchema as ToolSchemaSchema_ } from "@alexkroman1/aai-core/manifest";
+import { KvDelSchema, KvGetSchema, KvSetSchema } from "@alexkroman1/aai-core/protocol";
 import { z } from "zod";
 
 // ── Isolate config ────────────────────────────────────────────────────────
@@ -52,23 +53,13 @@ export const BundleResponseSchema = z.object({
   error: z.string().optional(),
 });
 
+const rpcEnvelope = { id: z.string(), type: z.literal("kv") };
+
 export const KvRequestSchema = z.discriminatedUnion("op", [
-  z.object({ id: z.string(), type: z.literal("kv"), op: z.literal("get"), key: z.string() }),
-  z.object({
-    id: z.string(),
-    type: z.literal("kv"),
-    op: z.literal("set"),
-    key: z.string(),
-    value: z.unknown(),
-    expireIn: z.number().optional(),
-  }),
-  z.object({ id: z.string(), type: z.literal("kv"), op: z.literal("del"), key: z.string() }),
-  z.object({
-    id: z.string(),
-    type: z.literal("kv"),
-    op: z.literal("mget"),
-    keys: z.array(z.string()),
-  }),
+  KvGetSchema.extend(rpcEnvelope),
+  KvSetSchema.extend(rpcEnvelope),
+  KvDelSchema.extend(rpcEnvelope),
+  z.object({ ...rpcEnvelope, op: z.literal("mget"), keys: z.array(z.string()) }),
 ]);
 
 export const KvResponseSchema = z.object({
