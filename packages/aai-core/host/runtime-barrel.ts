@@ -8,7 +8,6 @@
 // biome-ignore-all lint/performance/noReExportAll: barrel file by design
 
 export * from "./_runtime-conformance.ts";
-export { flush, makeStubSession } from "./_test-utils.ts";
 export * from "./builtin-tools.ts";
 export * from "./runtime.ts";
 export * from "./runtime-config.ts";
