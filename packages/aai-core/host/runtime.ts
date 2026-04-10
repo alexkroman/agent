@@ -93,6 +93,11 @@ export type RuntimeOptions = {
   /** System prompt guidance for builtin tools. Passed through in sandbox mode. */
   toolGuidance?: string[] | undefined;
   /**
+   * Pre-resolved builtin tool definitions. When provided alongside `executeTool`
+   * and `toolSchemas`, skips calling `resolveAllBuiltins` on the host.
+   */
+  builtinDefs?: Record<string, import("../isolate/types.ts").ToolDef> | undefined;
+  /**
    * Override the fetch implementation used by built-in tools (web_search,
    * visit_webpage, fetch_json). Defaults to `globalThis.fetch`.
    *
@@ -163,16 +168,18 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
 
   if (opts.executeTool && opts.toolSchemas) {
     // Sandbox mode — custom tools are RPC-backed; builtins run host-side
-    const builtins = resolveAllBuiltins(agent.builtinTools ?? [], builtinFetchOpt);
+    const builtinDefs =
+      opts.builtinDefs ?? resolveAllBuiltins(agent.builtinTools ?? [], builtinFetchOpt).defs;
     const rpcExecuteTool = opts.executeTool;
+    const frozenEnv = Object.freeze({ ...env });
 
     executeTool = async (name, args, sessionId, messages) => {
       // Handle builtins on the host (where SSRF-safe fetch lives)
-      if (builtins.defs[name]) {
-        const tool = builtins.defs[name];
+      if (builtinDefs[name]) {
+        const tool = builtinDefs[name];
         return executeToolCall(name, args, {
           tool,
-          env: Object.freeze({ ...env }),
+          env: frozenEnv,
           sessionId: sessionId ?? "",
           kv,
           messages,

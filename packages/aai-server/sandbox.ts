@@ -119,6 +119,7 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
     executeTool,
     toolSchemas: [...config.toolSchemas, ...builtins.schemas],
     toolGuidance: builtins.guidance,
+    builtinDefs: builtins.defs,
   });
 
   console.info("Sandbox initialized", { slug, agent: config.name });
