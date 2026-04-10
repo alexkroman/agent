@@ -8,7 +8,7 @@
  *
  * Skipped automatically if runsc is not available (macOS, CI without gVisor).
  *
- * Run: pnpm vitest run --config packages/aai-server/vitest.gvisor.config.ts
+ * Run: VITEST_PROFILE=gvisor VITEST_INCLUDE=packages/aai-server/gvisor-integration.test.ts pnpm vitest run -c vitest.slow.config.ts
  */
 
 import { existsSync } from "node:fs";

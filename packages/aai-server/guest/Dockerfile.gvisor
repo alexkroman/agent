@@ -53,4 +53,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends git \
 # Verify runsc is available at runtime
 RUN runsc --version && which runsc && ls -la /usr/local/bin/runsc
 
-CMD ["pnpm", "vitest", "run", "--config", "packages/aai-server/vitest.gvisor.config.ts"]
+CMD ["pnpm", "vitest", "run", "-c", "vitest.slow.config.ts"]
+ENV VITEST_PROFILE=gvisor
+ENV VITEST_INCLUDE=packages/aai-server/gvisor-integration.test.ts
