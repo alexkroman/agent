@@ -427,13 +427,13 @@ describe("browser: dev server", () => {
   test.concurrent("thinking state: user message appears after user_transcript", async () => {
     const { page, inject } = await setupEventInjector(browser, port);
 
-    await inject({ type: "user_transcript", text: "What is the meaning of life?" });
+    await inject({ type: "user_transcript", text: "What is the meaning of life?", isFinal: true });
     await page.getByText("What is the meaning of life?").waitFor();
 
     // State indicator should show "thinking"
     await page.locator('[data-state="thinking"]').waitFor({ timeout: 30_000 });
 
-    await inject({ type: "agent_transcript", text: "42." });
+    await inject({ type: "agent_transcript", text: "42.", isFinal: true });
     await page.getByText("42.").waitFor();
 
     await page.close();
@@ -464,10 +464,10 @@ describe("browser: dev server", () => {
   test.concurrent("state transitions: thinking → listening after reply_done", async () => {
     const { page, inject } = await setupEventInjector(browser, port);
 
-    await inject({ type: "user_transcript", text: "Hello" });
+    await inject({ type: "user_transcript", text: "Hello", isFinal: true });
     await page.locator('[data-state="thinking"]').waitFor({ timeout: 30_000 });
 
-    await inject({ type: "agent_transcript", text: "Hi there!" });
+    await inject({ type: "agent_transcript", text: "Hi there!", isFinal: true });
     await inject({ type: "reply_done" });
     await page.locator('[data-state="listening"]').waitFor({ timeout: 30_000 });
 
