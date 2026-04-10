@@ -13,6 +13,7 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { WebSocketServer } from "ws";
+import { parseWsUpgradeParams } from "../isolate/_ws-upgrade.ts";
 import { AGENT_CSP, MAX_WS_PAYLOAD_BYTES } from "../isolate/constants.ts";
 import type { Kv } from "../isolate/kv.ts";
 import type { Runtime } from "./runtime.ts";
@@ -194,10 +195,7 @@ export function createServer(options: ServerOptions): AgentServer {
     if (!url.startsWith("/websocket")) return;
 
     wss.handleUpgrade(req, socket, head, (ws) => {
-      const search = req.url?.includes("?") ? (req.url.split("?")[1] ?? "") : "";
-      const params = new URLSearchParams(search);
-      const resumeFrom = params.get("sessionId") ?? undefined;
-      const skipGreeting = params.has("resume") || resumeFrom !== undefined;
+      const { resumeFrom, skipGreeting } = parseWsUpgradeParams(req.url ?? "");
 
       logger.info(`WS upgrade ${url}${skipGreeting ? " (resume)" : ""}`);
 

@@ -9,6 +9,7 @@
 // biome-ignore-all lint/performance/noReExportAll: barrel file by design
 
 export * from "./isolate/_utils.ts";
+export * from "./isolate/_ws-upgrade.ts";
 export * from "./isolate/constants.ts";
 export * from "./isolate/kv.ts";
 export * from "./isolate/types.ts";

@@ -7,15 +7,12 @@
  * import these schemas — it uses inline type definitions instead.
  */
 
+import { ToolSchemaSchema as ToolSchemaSchema_ } from "@alexkroman1/aai-core/manifest";
 import { z } from "zod";
 
 // ── Isolate config ────────────────────────────────────────────────────────
 
-export const ToolSchemaSchema = z.object({
-  name: z.string(),
-  description: z.string(),
-  parameters: z.record(z.string(), z.unknown()),
-});
+export { ToolSchemaSchema } from "@alexkroman1/aai-core/manifest";
 
 export const IsolateConfigSchema = z.object({
   name: z.string(),
@@ -25,7 +22,7 @@ export const IsolateConfigSchema = z.object({
   maxSteps: z.number().optional(),
   toolChoice: z.enum(["auto", "required"]).optional(),
   builtinTools: z.array(z.string()).optional(),
-  toolSchemas: z.array(ToolSchemaSchema).default([]),
+  toolSchemas: z.array(ToolSchemaSchema_).default([]),
 });
 
 export type IsolateConfig = z.infer<typeof IsolateConfigSchema>;

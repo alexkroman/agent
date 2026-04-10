@@ -7,7 +7,11 @@
 
 import pTimeout from "p-timeout";
 import { errorDetail, errorMessage } from "../isolate/_utils.ts";
-import { DEFAULT_SESSION_START_TIMEOUT_MS, MAX_MESSAGE_BUFFER_SIZE } from "../isolate/constants.ts";
+import {
+  DEFAULT_SESSION_START_TIMEOUT_MS,
+  MAX_MESSAGE_BUFFER_SIZE,
+  WS_OPEN,
+} from "../isolate/constants.ts";
 import type { ClientMessage, ClientSink, ReadyConfig } from "../isolate/protocol.ts";
 import { ClientMessageSchema, lenientParse } from "../isolate/protocol.ts";
 import type { Logger } from "./runtime-config.ts";
@@ -59,7 +63,7 @@ function createClientSink(ws: SessionWebSocket, log: Logger): ClientSink {
   /** Send data over ws, silently dropping if the socket is not open. */
   function safeSend(data: string | ArrayBuffer | Uint8Array): void {
     try {
-      if (ws.readyState !== 1) return;
+      if (ws.readyState !== WS_OPEN) return;
       ws.send(data);
     } catch (err) {
       log.debug?.("safeSend: socket closed between readyState check and send", {
@@ -70,7 +74,7 @@ function createClientSink(ws: SessionWebSocket, log: Logger): ClientSink {
 
   return {
     get open() {
-      return ws.readyState === 1;
+      return ws.readyState === WS_OPEN;
     },
     event(e) {
       safeSend(JSON.stringify(e));
@@ -203,8 +207,8 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
       });
   }
 
-  // readyState 1 = OPEN — socket already open (e.g. from ws handleUpgrade)
-  if (ws.readyState === 1) {
+  // readyState OPEN — socket already open (e.g. from ws handleUpgrade)
+  if (ws.readyState === WS_OPEN) {
     onOpen();
   } else {
     ws.addEventListener("open", onOpen);

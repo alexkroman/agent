@@ -92,7 +92,7 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
       name,
       args,
       sessionId: sessionId ?? "",
-      messages: [...(messages ?? [])],
+      messages: messages ?? [],
     });
     return (response?.result ?? "") as string;
   };
@@ -119,6 +119,7 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
     executeTool,
     toolSchemas: [...config.toolSchemas, ...builtins.schemas],
     toolGuidance: builtins.guidance,
+    builtinDefs: builtins.defs,
   });
 
   console.info("Sandbox initialized", { slug, agent: config.name });
@@ -247,17 +248,17 @@ async function resolveSandboxLegacy(
     return slot.sandbox as Sandbox;
   }
 
-  // Fetch worker code and config
-  const [workerCode, agentConfig] = await Promise.all([
+  // Fetch worker code, config, and env in parallel
+  const [workerCode, agentConfig, env] = await Promise.all([
     store.getWorkerCode(slug),
     store.getAgentConfig(slug),
+    store.getEnv(slug).then((e) => e ?? {}),
   ]);
 
   if (!(workerCode && agentConfig)) {
     return null;
   }
 
-  const env = (await store.getEnv(slug)) ?? {};
   const { ASSEMBLYAI_API_KEY: apiKey = "", ...agentEnv } = env;
 
   const sandbox = await createSandbox({

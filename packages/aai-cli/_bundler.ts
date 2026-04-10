@@ -98,8 +98,7 @@ type BuildData = {
 
 export async function executeBuild(cwd: string): Promise<CommandResult<BuildData>> {
   const { log } = await import("./_ui.ts");
-  const bundle = await buildAgentBundle(cwd);
-  await buildClient(cwd);
+  const [bundle] = await Promise.all([buildAgentBundle(cwd), buildClient(cwd)]);
   log.success("Build complete");
 
   return ok({

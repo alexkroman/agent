@@ -12,28 +12,17 @@ import { existsSync, type FSWatcher, watch } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import type { AgentDef } from "@alexkroman1/aai-core";
-import { parseEnvFile } from "@alexkroman1/aai-core";
+import { type AgentDef, errorMessage } from "@alexkroman1/aai-core";
 import type { AgentServer } from "@alexkroman1/aai-core/runtime";
 import { resolveAgentConfig } from "./_agent-config.ts";
 import { ensureApiKey } from "./_config.ts";
+import { resolveServerEnv } from "./_server-common.ts";
 import { log } from "./_ui.ts";
 
 // ─── Env loading ────────────────────────────────────────────────────────────
 
 async function resolveAgentEnv(root: string): Promise<Record<string, string>> {
-  let fileEntries: Record<string, string> = {};
-  try {
-    const content = await fs.readFile(path.join(root, ".env"), "utf-8");
-    fileEntries = parseEnvFile(content);
-  } catch {
-    // No .env — fine
-  }
-
-  const env: Record<string, string> = {};
-  for (const [key, fileVal] of Object.entries(fileEntries)) {
-    env[key] = process.env[key] ?? fileVal;
-  }
+  const env = await resolveServerEnv(root);
   // Inject global API key if not already set by .env or process.env
   if (!env.ASSEMBLYAI_API_KEY) {
     env.ASSEMBLYAI_API_KEY = await ensureApiKey();
@@ -76,7 +65,7 @@ async function loadAgentDef(cwd: string): Promise<AgentDef<any>> {
  * Watch the agent directory for changes and call `onChange` when detected.
  * Debounces to avoid rapid restarts.
  */
-function watchDirectory(dir: string, onChange: () => void): FSWatcher[] {
+function watchDirectory(dir: string, onChange: (filename: string | null) => void): FSWatcher[] {
   const watchers: FSWatcher[] = [];
   const DEBOUNCE_MS = 300;
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
@@ -88,7 +77,7 @@ function watchDirectory(dir: string, onChange: () => void): FSWatcher[] {
     if (debounceTimer) clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
       log.info("File change detected, restarting...");
-      onChange();
+      onChange(filename);
     }, DEBOUNCE_MS);
   }
 
@@ -152,15 +141,16 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
   let restarting = false;
   let currentServer: AgentServer = agentServer;
   let currentVite = viteServer;
-  const watchers = watchDirectory(cwd, () => {
+  let currentEnv = env;
+  const watchers = watchDirectory(cwd, (filename) => {
     if (restarting) return;
     restarting = true;
-    void restart().finally(() => {
+    void restart(filename).finally(() => {
       restarting = false;
     });
   });
 
-  async function restart(): Promise<void> {
+  async function restart(filename: string | null): Promise<void> {
     try {
       await currentServer.close();
     } catch {
@@ -168,14 +158,16 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
     }
     try {
       const newAgentDef = await loadAgentDef(cwd);
-      const newEnv = await resolveAgentEnv(cwd);
-      const newRuntime = createRuntime({ agent: newAgentDef, env: newEnv });
+      if (filename === ".env") {
+        currentEnv = await resolveAgentEnv(cwd);
+      }
+      const newRuntime = createRuntime({ agent: newAgentDef, env: currentEnv });
       const newServer = createServer({ runtime: newRuntime, name: newAgentDef.name });
       await newServer.listen(backendPort);
       currentServer = newServer;
       log.success("Restarted");
     } catch (err) {
-      log.error(`Restart failed: ${err instanceof Error ? err.message : String(err)}`);
+      log.error(`Restart failed: ${errorMessage(err)}`);
     }
   }
 
