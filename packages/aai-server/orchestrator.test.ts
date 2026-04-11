@@ -11,7 +11,7 @@ test("returns health check", async () => {
   const { fetch } = await createTestOrchestrator();
   const res = await fetch("/health");
   expect(res.status).toBe(200);
-  expect(((await res.json()) as Record<string, unknown>).status).toBe("ok");
+  expect(await res.json()).toMatchObject({ status: "ok" });
 });
 
 test("returns 404 for unknown paths", async () => {
@@ -62,8 +62,7 @@ test("deploy succeeds and stores agent", async () => {
   });
   expect(res.status).toBe(200);
   const manifest = await store.getManifest("my-agent");
-  expect(manifest?.credential_hashes).toBeDefined();
-  expect(manifest?.credential_hashes?.includes(await hashApiKey("key1"))).toBe(true);
+  expect(manifest?.credential_hashes).toContain(await hashApiKey("key1"));
 });
 
 test("deploy can redeploy same slug", async () => {
@@ -87,9 +86,7 @@ test("agent health returns ok for deployed agent", async () => {
   await deployAgent(fetch);
   const res = await fetch("/my-agent/health");
   expect(res.status).toBe(200);
-  const body = (await res.json()) as Record<string, unknown>;
-  expect(body.status).toBe("ok");
-  expect(body.slug).toBe("my-agent");
+  expect(await res.json()).toMatchObject({ status: "ok", slug: "my-agent" });
 });
 
 test("agent page redirects bare slug to trailing slash", async () => {
@@ -208,9 +205,9 @@ test("kv set and get round-trip", async () => {
   const { fetch } = await createTestOrchestrator();
   await deployAgent(fetch, "my-agent");
   const setRes = await fetch(...kvReq("my-agent", "key1", { op: "set", key: "k1", value: "v1" }));
-  expect(((await setRes.json()) as Record<string, unknown>).result).toBe("OK");
+  expect(await setRes.json()).toMatchObject({ result: "OK" });
   const getRes = await fetch(...kvReq("my-agent", "key1", { op: "get", key: "k1" }));
-  expect(((await getRes.json()) as Record<string, unknown>).result).toBe("v1");
+  expect(await getRes.json()).toMatchObject({ result: "v1" });
 });
 
 test("kv scope isolation", async () => {
@@ -219,5 +216,5 @@ test("kv scope isolation", async () => {
   await deployAgent(fetch, "agent-bb", "key1");
   await fetch(...kvReq("agent-aa", "key1", { op: "set", key: "secret", value: "a-data" }));
   const res = await fetch(...kvReq("agent-bb", "key1", { op: "get", key: "secret" }));
-  expect(((await res.json()) as Record<string, unknown>).result).toBeNull();
+  expect(await res.json()).toMatchObject({ result: null });
 });

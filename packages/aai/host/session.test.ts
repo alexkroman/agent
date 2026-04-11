@@ -83,18 +83,14 @@ describe("createS2sSession", () => {
     const { session, client } = setup();
     await session.start();
     session.onCancel();
-    expect(
-      client.events.some((e: unknown) => (e as Record<string, unknown>).type === "cancelled"),
-    ).toBe(true);
+    expect(client.events).toContainEqual(expect.objectContaining({ type: "cancelled" }));
   });
 
   test("onReset clears state and emits reset event", async () => {
     const { session, client, mockHandle } = setup();
     await session.start();
     session.onReset();
-    expect(
-      client.events.some((e: unknown) => (e as Record<string, unknown>).type === "reset"),
-    ).toBe(true);
+    expect(client.events).toContainEqual(expect.objectContaining({ type: "reset" }));
     expect(mockHandle.close).toHaveBeenCalled();
   });
 

@@ -35,8 +35,8 @@ describe("resolveAllBuiltins defs", () => {
   test("returns tool defs with execute functions", () => {
     const { defs } = resolveAllBuiltins(["web_search", "fetch_json"]);
     expect(Object.keys(defs)).toEqual(["web_search", "fetch_json"]);
-    expect(typeof defs.web_search?.execute).toBe("function");
-    expect(typeof defs.fetch_json?.execute).toBe("function");
+    expect(defs.web_search?.execute).toBeTypeOf("function");
+    expect(defs.fetch_json?.execute).toBeTypeOf("function");
   });
 
   test("unknown tool name is skipped", () => {
@@ -97,7 +97,7 @@ describe("resolveAllBuiltins defs", () => {
       },
       ctx,
     );
-    expect(typeof result).toBe("string");
+    expect(result).toBeTypeOf("string");
     expect(result as string).toMatch(/BLOCKED/);
   });
 
@@ -118,7 +118,7 @@ describe("resolveAllBuiltins defs", () => {
       },
       ctx,
     );
-    expect(typeof result).toBe("string");
+    expect(result).toBeTypeOf("string");
     expect(result as string).toMatch(/BLOCKED/);
   });
 
@@ -139,7 +139,7 @@ describe("resolveAllBuiltins defs", () => {
       },
       ctx,
     );
-    expect(typeof result).toBe("string");
+    expect(result).toBeTypeOf("string");
     expect(result as string).toMatch(/BLOCKED/);
   });
 
@@ -161,7 +161,7 @@ describe("resolveAllBuiltins defs", () => {
       },
       ctx,
     );
-    expect(typeof result).toBe("string");
+    expect(result).toBeTypeOf("string");
     expect(result as string).not.toMatch(/LEAKED_ENV/);
   });
 
@@ -187,7 +187,7 @@ describe("resolveAllBuiltins defs", () => {
       },
       ctx,
     );
-    expect(typeof result).toBe("string");
+    expect(result).toBeTypeOf("string");
     expect(result as string).not.toMatch(/LEAKED_ENV/);
   });
 
@@ -217,7 +217,7 @@ describe("resolveAllBuiltins defs", () => {
       },
       ctx,
     );
-    expect(typeof result).toBe("string");
+    expect(result).toBeTypeOf("string");
     expect(result as string).toMatch(/BLOCKED/);
     expect(result as string).not.toMatch(/ESCAPED/);
   });
@@ -238,7 +238,7 @@ describe("resolveAllBuiltins defs", () => {
       },
       ctx,
     );
-    expect(typeof result).toBe("string");
+    expect(result).toBeTypeOf("string");
     expect(result as string).toMatch(/BLOCKED/);
     expect(result as string).not.toMatch(/ESCAPED/);
   });
@@ -263,7 +263,7 @@ describe("resolveAllBuiltins defs", () => {
       },
       ctx,
     );
-    expect(typeof result).toBe("string");
+    expect(result).toBeTypeOf("string");
     expect(result as string).not.toMatch(/LEAKED_ENV/);
   });
 
@@ -287,7 +287,7 @@ describe("resolveAllBuiltins defs", () => {
       },
       ctx,
     );
-    expect(typeof result).toBe("string");
+    expect(result).toBeTypeOf("string");
     expect(result as string).not.toMatch(/LEAKED_ENV/);
   });
 
@@ -311,7 +311,7 @@ describe("resolveAllBuiltins defs", () => {
       },
       ctx,
     );
-    expect(typeof result).toBe("string");
+    expect(result).toBeTypeOf("string");
     expect(result as string).not.toMatch(/LEAKED_ENV/);
   });
 
@@ -331,7 +331,7 @@ describe("resolveAllBuiltins defs", () => {
       },
       ctx,
     );
-    expect(typeof result).toBe("string");
+    expect(result).toBeTypeOf("string");
     expect(result as string).toMatch(/BLOCKED/);
     expect(result as string).not.toMatch(/ESCAPED/);
   });
@@ -352,7 +352,7 @@ describe("resolveAllBuiltins defs", () => {
       },
       ctx,
     );
-    expect(typeof result).toBe("string");
+    expect(result).toBeTypeOf("string");
     expect(result as string).toMatch(/BLOCKED/);
   });
 
@@ -515,7 +515,7 @@ describe("resolveAllBuiltins defs", () => {
       ctx,
     )) as Record<string, unknown>;
     expect(result.url).toBe("https://example.com");
-    expect(typeof result.content).toBe("string");
+    expect(result.content).toBeTypeOf("string");
     expect((result.content as string).length).toBeGreaterThan(0);
   });
 

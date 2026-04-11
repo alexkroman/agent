@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { jsonLogger } from "./runtime-config.ts";
 
 /** Parse the JSON line at `index` from `chunks`, failing if missing. */
@@ -13,33 +13,25 @@ function parseEntry(chunks: string[], index: number): Record<string, unknown> {
 describe("jsonLogger", () => {
   let stdoutChunks: string[];
   let stderrChunks: string[];
-  let stdoutSpy: ReturnType<typeof vi.spyOn>;
-  let stderrSpy: ReturnType<typeof vi.spyOn>;
 
-  function setup() {
+  beforeEach(() => {
     stdoutChunks = [];
     stderrChunks = [];
-    stdoutSpy = vi
-      .spyOn(process.stdout, "write")
-      .mockImplementation((chunk: string | Uint8Array) => {
-        stdoutChunks.push(String(chunk));
-        return true;
-      });
-    stderrSpy = vi
-      .spyOn(process.stderr, "write")
-      .mockImplementation((chunk: string | Uint8Array) => {
-        stderrChunks.push(String(chunk));
-        return true;
-      });
-  }
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
+      stdoutChunks.push(String(chunk));
+      return true;
+    });
+    vi.spyOn(process.stderr, "write").mockImplementation((chunk: string | Uint8Array) => {
+      stderrChunks.push(String(chunk));
+      return true;
+    });
+  });
 
   afterEach(() => {
-    stdoutSpy?.mockRestore();
-    stderrSpy?.mockRestore();
+    vi.restoreAllMocks();
   });
 
   it("outputs single-line JSON with timestamp, level, and msg", () => {
-    setup();
     jsonLogger.info("hello world");
     expect(stdoutChunks).toHaveLength(1);
 
@@ -50,7 +42,6 @@ describe("jsonLogger", () => {
   });
 
   it("includes caller-provided context fields", () => {
-    setup();
     jsonLogger.info("with ctx", { sessionId: "abc", count: 3 });
 
     const entry = parseEntry(stdoutChunks, 0);
@@ -59,7 +50,6 @@ describe("jsonLogger", () => {
   });
 
   it("writes warn and error to stderr", () => {
-    setup();
     jsonLogger.warn("a warning");
     jsonLogger.error("an error");
 
@@ -70,7 +60,6 @@ describe("jsonLogger", () => {
   });
 
   it("writes info and debug to stdout", () => {
-    setup();
     jsonLogger.info("info msg");
     jsonLogger.debug("debug msg");
 
