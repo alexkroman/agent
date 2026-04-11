@@ -12,6 +12,7 @@
 
 import { createInterface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
+import { z } from "zod";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -35,6 +36,28 @@ type JsonRpcResponse = {
   error?: { code: number; message: string };
 };
 
+// ── JSON-RPC envelope schemas ───────────────────────────────────────────────
+
+const JsonRpcResponseSchema = z.object({
+  jsonrpc: z.literal("2.0"),
+  id: z.number(),
+  result: z.unknown().optional(),
+  error: z.object({ code: z.number(), message: z.string() }).optional(),
+});
+
+const JsonRpcRequestSchema = z.object({
+  jsonrpc: z.literal("2.0"),
+  id: z.number(),
+  method: z.string(),
+  params: z.unknown().optional(),
+});
+
+const JsonRpcNotificationSchema = z.object({
+  jsonrpc: z.literal("2.0"),
+  method: z.string(),
+  params: z.unknown().optional(),
+});
+
 type PendingRequest = {
   resolve: (value: unknown) => void;
   reject: (reason: unknown) => void;
@@ -47,6 +70,41 @@ export interface NdjsonConnection {
   onNotification(method: string, handler: (params?: unknown) => void): void;
   listen(): void;
   dispose(): void;
+}
+
+// ── Message parsing ─────────────────────────────────────────────────────────
+
+type ParsedMessage =
+  | { kind: "response"; data: JsonRpcResponse }
+  | { kind: "request"; data: JsonRpcRequest }
+  | { kind: "notification"; data: JsonRpcNotification }
+  | null;
+
+function parseJsonRpcMessage(line: string): ParsedMessage {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(line);
+  } catch {
+    return null;
+  }
+  if (typeof raw !== "object" || raw === null) return null;
+
+  const obj = raw as Record<string, unknown>;
+  if ("result" in obj || "error" in obj) {
+    const parsed = JsonRpcResponseSchema.safeParse(obj);
+    return parsed.success ? { kind: "response", data: parsed.data as JsonRpcResponse } : null;
+  }
+  if ("id" in obj && "method" in obj) {
+    const parsed = JsonRpcRequestSchema.safeParse(obj);
+    return parsed.success ? { kind: "request", data: parsed.data as JsonRpcRequest } : null;
+  }
+  if ("method" in obj) {
+    const parsed = JsonRpcNotificationSchema.safeParse(obj);
+    return parsed.success
+      ? { kind: "notification", data: parsed.data as JsonRpcNotification }
+      : null;
+  }
+  return null;
 }
 
 // ── Implementation ───────────────────────────────────────────────────────────
@@ -99,21 +157,21 @@ export function createNdjsonConnection(readable: Readable, writable: Writable): 
   }
 
   function handleLine(line: string): void {
-    let msg: JsonRpcRequest | JsonRpcNotification | JsonRpcResponse;
-    try {
-      msg = JSON.parse(line) as JsonRpcRequest | JsonRpcNotification | JsonRpcResponse;
-    } catch {
-      // Ignore malformed lines
-      return;
-    }
+    const msg = parseJsonRpcMessage(line);
+    if (!msg) return;
 
-    if ("result" in msg || "error" in msg) {
-      handleResponse(msg as JsonRpcResponse);
-    } else if ("id" in msg && "method" in msg) {
-      void handleIncomingRequest(msg as JsonRpcRequest);
-    } else if ("method" in msg) {
-      const notif = msg as JsonRpcNotification;
-      notificationHandlers.get(notif.method)?.(notif.params);
+    switch (msg.kind) {
+      case "response":
+        handleResponse(msg.data);
+        break;
+      case "request":
+        void handleIncomingRequest(msg.data);
+        break;
+      case "notification":
+        notificationHandlers.get(msg.data.method)?.(msg.data.params);
+        break;
+      default:
+        break;
     }
   }
 

@@ -9,7 +9,7 @@
  * Run: pnpm vitest run packages/aai-server/fake-vm-integration.test.ts
  */
 
-import { type ChildProcess, fork } from "node:child_process";
+import { type ChildProcess, execFileSync, fork } from "node:child_process";
 import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import net from "node:net";
@@ -17,6 +17,17 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "vitest";
 import { createNdjsonConnection, type NdjsonConnection } from "./ndjson-transport.ts";
+
+function isDenoAvailable(): boolean {
+  try {
+    execFileSync("deno", ["--version"], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const hasDeno = isDenoAvailable();
 
 let tmpDir: string;
 const children: ChildProcess[] = [];
@@ -150,7 +161,7 @@ export default {
 
 // ── Tests ──────────────────────────────────────────────────────────────────
 
-describe("Fake VM integration (no KVM)", () => {
+describe.skipIf(!hasDeno)("Fake VM integration (no KVM)", () => {
   test("injects bundle and executes tool", async () => {
     const socketPath = path.join(tmpDir, "test1.sock");
     await spawnFakeVm(socketPath);

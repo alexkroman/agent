@@ -9,8 +9,15 @@
 
 import { type ChildProcess, spawn } from "node:child_process";
 import type { Storage, StorageValue } from "unstorage";
+import { z } from "zod";
 import { createGvisorSandbox, isGvisorAvailable } from "./gvisor.ts";
 import { createNdjsonConnection, type NdjsonConnection } from "./ndjson-transport.ts";
+
+// ── KV param schemas for guest → host validation ────────────────────────────
+
+const KvGetParamsSchema = z.object({ key: z.string().min(1) });
+const KvSetParamsSchema = z.object({ key: z.string().min(1), value: z.unknown() });
+const KvDelParamsSchema = z.object({ key: z.string().min(1) });
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -41,21 +48,22 @@ async function configureSandbox(
 ): Promise<SandboxHandle> {
   conn.listen();
 
-  // Host serves guest KV requests
+  // Host serves guest KV requests (params validated with Zod)
   if (opts.kvStorage && opts.kvPrefix) {
     const storage = opts.kvStorage;
     const prefix = opts.kvPrefix;
-    conn.onRequest(
-      "kv/get",
-      async (p: { key: string }) => await storage.getItem(`${prefix}:${p.key}`),
-    );
-    conn.onRequest("kv/set", async (p: { key: string; value: unknown }) => {
+    conn.onRequest("kv/get", async (raw: unknown) => {
+      const p = KvGetParamsSchema.parse(raw);
+      return await storage.getItem(`${prefix}:${p.key}`);
+    });
+    conn.onRequest("kv/set", async (raw: unknown) => {
+      const p = KvSetParamsSchema.parse(raw);
       await storage.setItem(`${prefix}:${p.key}`, p.value as StorageValue);
     });
-    conn.onRequest(
-      "kv/del",
-      async (p: { key: string }) => await storage.removeItem(`${prefix}:${p.key}`),
-    );
+    conn.onRequest("kv/del", async (raw: unknown) => {
+      const p = KvDelParamsSchema.parse(raw);
+      await storage.removeItem(`${prefix}:${p.key}`);
+    });
   }
 
   // Send bundle to guest

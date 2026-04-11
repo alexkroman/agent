@@ -234,4 +234,71 @@ describe("createNdjsonConnection", () => {
     await expect(p1).rejects.toThrow();
     await expect(p2).rejects.toThrow();
   });
+
+  // ── envelope validation ─────────────────────────────────────────────────
+
+  it("ignores response with non-numeric id", async () => {
+    const conn = createNdjsonConnection(readable, writable);
+    conn.listen();
+
+    const p = conn.sendRequest("test");
+    await vi.waitFor(() => writtenLines.length > 0);
+    const sent = JSON.parse(writtenLines.at(0) ?? "");
+
+    // Send malformed response (string id) — should be ignored
+    writeMessage(readable, { jsonrpc: "2.0", id: "bad", result: "nope" });
+    // Send valid response to avoid hanging promise
+    writeMessage(readable, { jsonrpc: "2.0", id: sent.id, result: "ok" });
+
+    expect(await p).toBe("ok");
+  });
+
+  it("ignores response missing jsonrpc field", async () => {
+    const conn = createNdjsonConnection(readable, writable);
+    conn.listen();
+
+    const p = conn.sendRequest("test");
+    await vi.waitFor(() => writtenLines.length > 0);
+    const sent = JSON.parse(writtenLines.at(0) ?? "");
+
+    // Missing jsonrpc field — should be ignored
+    writeMessage(readable, { id: sent.id, result: "nope" });
+    // Valid response
+    writeMessage(readable, { jsonrpc: "2.0", id: sent.id, result: "ok" });
+
+    expect(await p).toBe("ok");
+  });
+
+  it("ignores request with non-string method", async () => {
+    const conn = createNdjsonConnection(readable, writable);
+    conn.onRequest("valid", async () => "handled");
+    conn.listen();
+
+    // Malformed request (numeric method) — should be silently dropped
+    writeMessage(readable, { jsonrpc: "2.0", id: 99, method: 123, params: {} });
+
+    // Valid request
+    writeMessage(readable, { jsonrpc: "2.0", id: 100, method: "valid", params: {} });
+    await vi.waitFor(() => writtenLines.length > 0);
+
+    const response = JSON.parse(writtenLines.at(0) ?? "");
+    expect(response.id).toBe(100);
+    expect(response.result).toBe("handled");
+  });
+
+  it("ignores non-object JSON values", () => {
+    const handler = vi.fn();
+    const conn = createNdjsonConnection(readable, writable);
+    conn.onNotification("test", handler);
+    conn.listen();
+
+    // Array, number, string, null — all non-object, should be ignored
+    writeMessage(readable, [1, 2, 3]);
+    writeMessage(readable, 42);
+    writeMessage(readable, "hello");
+    writeMessage(readable, null);
+
+    expect(handler).not.toHaveBeenCalled();
+    expect(writtenLines.length).toBe(0);
+  });
 });
