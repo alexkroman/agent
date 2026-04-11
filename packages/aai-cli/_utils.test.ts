@@ -1,35 +1,23 @@
 // Copyright 2025 the AAI authors. MIT license.
 import fs from "node:fs/promises";
 import path from "node:path";
-import { describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { withTempDir } from "./_test-utils.ts";
 import { fileExists, resolveCwd } from "./_utils.ts";
 
 describe("resolveCwd", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   test("returns INIT_CWD when set", () => {
-    const orig = process.env.INIT_CWD;
-    process.env.INIT_CWD = "/custom/path";
-    try {
-      expect(resolveCwd()).toBe("/custom/path");
-    } finally {
-      if (orig !== undefined) {
-        process.env.INIT_CWD = orig;
-      } else {
-        delete process.env.INIT_CWD;
-      }
-    }
+    vi.stubEnv("INIT_CWD", "/custom/path");
+    expect(resolveCwd()).toBe("/custom/path");
   });
 
   test("falls back to process.cwd() when INIT_CWD is not set", () => {
-    const orig = process.env.INIT_CWD;
     delete process.env.INIT_CWD;
-    try {
-      expect(resolveCwd()).toBe(process.cwd());
-    } finally {
-      if (orig !== undefined) {
-        process.env.INIT_CWD = orig;
-      }
-    }
+    expect(resolveCwd()).toBe(process.cwd());
   });
 });
 

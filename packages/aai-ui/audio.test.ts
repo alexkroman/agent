@@ -22,9 +22,9 @@ describe("createVoiceIO", () => {
 
   test("returns a VoiceIO with enqueue, flush, close", async () => {
     const io = await createVoiceIO(voiceOpts());
-    expect(typeof io.enqueue).toBe("function");
-    expect(typeof io.flush).toBe("function");
-    expect(typeof io.close).toBe("function");
+    expect(io.enqueue).toBeTypeOf("function");
+    expect(io.flush).toBeTypeOf("function");
+    expect(io.close).toBeTypeOf("function");
     await io.close();
   });
 
@@ -76,7 +76,7 @@ describe("createVoiceIO", () => {
       capNode.port.simulateMessage({ event: "chunk", buffer: buf });
     }
 
-    expect(onMicData.mock.calls.length > 0).toBe(true);
+    expect(onMicData).toHaveBeenCalled();
     const firstCall = onMicData.mock.calls[0] as [ArrayBuffer];
     const pcm16 = new Int16Array(firstCall[0]);
     expect(pcm16[0]).toBe(16_384);

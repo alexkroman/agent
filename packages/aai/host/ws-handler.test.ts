@@ -81,9 +81,9 @@ describe("wireSessionSocket", () => {
     });
 
     await vi.waitFor(() => {
-      expect(logs.some((l) => l.msg === "Session start failed")).toBe(true);
+      expect(logs).toContainEqual(expect.objectContaining({ msg: "Session start failed" }));
     });
-    expect(logs.every((l) => l.msg !== "Session ready")).toBe(true);
+    expect(logs.map((l) => l.msg)).not.toContain("Session ready");
   });
 
   test("session is added to sessions map on open", () => {
@@ -325,7 +325,7 @@ describe("wireSessionSocket", () => {
 
     capturedClient.event({ type: "speech_started" });
     const sentStrings = ws.sent.filter((d): d is string => typeof d === "string");
-    expect(sentStrings.some((s) => s.includes('"speech_started"'))).toBe(true);
+    expect(sentStrings).toContainEqual(expect.stringContaining('"speech_started"'));
   });
 
   test("ClientSink.playAudioChunk sends binary data", () => {
@@ -365,7 +365,7 @@ describe("wireSessionSocket", () => {
 
     capturedClient.playAudioDone();
     const sentStrings = ws.sent.filter((d): d is string => typeof d === "string");
-    expect(sentStrings.some((s) => s.includes('"audio_done"'))).toBe(true);
+    expect(sentStrings).toContainEqual(expect.stringContaining('"audio_done"'));
   });
 
   test("ClientSink.open reflects ws.readyState", () => {
@@ -696,7 +696,7 @@ describe("wireSessionSocket", () => {
     });
 
     expect(capturedId).toBe("old-session-abc");
-    expect(sessions.has("old-session-abc")).toBe(true);
+    expect(sessions.has("old-session-abc")).toBeTruthy();
   });
 
   test("config message includes resumed session ID", () => {

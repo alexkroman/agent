@@ -73,11 +73,11 @@ describe("useSession", () => {
     const wrapper = ({ children }: { children: ReactNode }) =>
       React.createElement(SessionProvider, { value: core }, children);
     const { result } = renderHook(() => useSession(), { wrapper });
-    expect(typeof result.current.start).toBe("function");
-    expect(typeof result.current.cancel).toBe("function");
-    expect(typeof result.current.reset).toBe("function");
-    expect(typeof result.current.disconnect).toBe("function");
-    expect(typeof result.current.toggle).toBe("function");
+    expect(result.current.start).toBeTypeOf("function");
+    expect(result.current.cancel).toBeTypeOf("function");
+    expect(result.current.reset).toBeTypeOf("function");
+    expect(result.current.disconnect).toBeTypeOf("function");
+    expect(result.current.toggle).toBeTypeOf("function");
   });
 });
 

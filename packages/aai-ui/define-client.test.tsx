@@ -113,30 +113,18 @@ describe("client", () => {
   });
 
   it("derives platformUrl from location.href when not provided", () => {
-    const origLocation = globalThis.location;
-    Object.defineProperty(globalThis, "location", {
-      value: {
-        origin: "https://example.com",
-        pathname: "/agent/",
-        href: "https://example.com/agent/",
-      },
-      writable: true,
-      configurable: true,
+    vi.stubGlobal("location", {
+      origin: "https://example.com",
+      pathname: "/agent/",
+      href: "https://example.com/agent/",
     });
-    try {
-      const mockedCreateSessionCore = vi.mocked(createSessionCore);
-      const handle = client({ name: "Test", target: container });
-      expect(mockedCreateSessionCore).toHaveBeenCalledWith(
-        expect.objectContaining({ platformUrl: "https://example.com/agent/" }),
-      );
-      handle.dispose();
-    } finally {
-      Object.defineProperty(globalThis, "location", {
-        value: origLocation,
-        writable: true,
-        configurable: true,
-      });
-    }
+    const mockedCreateSessionCore = vi.mocked(createSessionCore);
+    const handle = client({ name: "Test", target: container });
+    expect(mockedCreateSessionCore).toHaveBeenCalledWith(
+      expect.objectContaining({ platformUrl: "https://example.com/agent/" }),
+    );
+    handle.dispose();
+    vi.unstubAllGlobals();
   });
 
   it("defineClient is a deprecated alias for client", () => {

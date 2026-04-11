@@ -50,12 +50,15 @@ describe("KvRequestSchema", () => {
     expect(result.success).toBe(true);
   });
 
-  test("set accepts non-string values (objects, arrays, null)", () => {
-    // The Kv interface accepts `value: unknown` — ensure the schema matches.
-    for (const value of [{ nested: true }, [1, 2, 3], null, 42]) {
-      const result = KvRequestSchema.safeParse({ op: "set", key: "k", value });
-      expect(result.success, `set should accept value: ${JSON.stringify(value)}`).toBe(true);
-    }
+  // The Kv interface accepts `value: unknown` — ensure the schema matches.
+  test.each([
+    { nested: true },
+    [1, 2, 3],
+    null,
+    42,
+  ])("set accepts non-string value: %j", (value) => {
+    const result = KvRequestSchema.safeParse({ op: "set", key: "k", value });
+    expect(result.success).toBe(true);
   });
 
   test("rejects empty key on get", () => {
@@ -68,25 +71,21 @@ describe("KvRequestSchema", () => {
 });
 
 describe("SessionErrorCodeSchema", () => {
-  test("accepts valid codes", () => {
-    for (const code of [
-      "stt",
-      "llm",
-      "tts",
-      "tool",
-      "protocol",
-      "connection",
-      "audio",
-      "internal",
-    ]) {
-      const result = SessionErrorCodeSchema.safeParse(code);
-      expect(result.success).toBe(true);
-    }
+  test.each([
+    "stt",
+    "llm",
+    "tts",
+    "tool",
+    "protocol",
+    "connection",
+    "audio",
+    "internal",
+  ])("accepts valid code: %s", (code) => {
+    expect(SessionErrorCodeSchema.safeParse(code).success).toBe(true);
   });
 
   test("rejects invalid code", () => {
-    const result = SessionErrorCodeSchema.safeParse("not_a_real_code");
-    expect(result.success).toBe(false);
+    expect(SessionErrorCodeSchema.safeParse("not_a_real_code").success).toBe(false);
   });
 });
 
