@@ -20,6 +20,7 @@
     "lint:fix": "biome check --write packages/",
     "check": "bash scripts/check.sh",
     "check:local": "bash scripts/check.sh --local",
+    "check:affected": "turbo run build typecheck lint test --affected --continue",
     "check:knip": "knip",
     "check:publint": "turbo run check:publint",
     "check:sherif": "sherif",
