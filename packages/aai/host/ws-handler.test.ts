@@ -513,6 +513,33 @@ describe("wireSessionSocket", () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
+  test("onSessionEnd is called with sessionId after session cleanup", async () => {
+    const onSessionEnd = vi.fn();
+    const ws = new MockWebSocket("ws://test");
+    ws.readyState = MockWebSocket.OPEN;
+    const sessions = new Map<string, Session>();
+
+    wireSessionSocket(ws, {
+      sessions,
+      createSession: () => makeStubSession(),
+      readyConfig: defaultConfig,
+      onSessionEnd,
+      logger: silentLogger,
+    });
+
+    // Session is now in the map
+    expect(sessions.size).toBe(1);
+    const sessionId = [...sessions.keys()][0] ?? "";
+
+    ws.close();
+
+    await vi.waitFor(() => {
+      expect(onSessionEnd).toHaveBeenCalledOnce();
+    });
+    expect(onSessionEnd).toHaveBeenCalledWith(sessionId);
+    expect(sessions.size).toBe(0);
+  });
+
   // ─── Concurrency regression tests ─────────────────────────────────────
 
   test("close during start() does not double-stop or throw", async () => {

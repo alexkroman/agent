@@ -360,6 +360,32 @@ function handleKvResponse(resp: JsonRpcResponse): void {
   }
 }
 
+function handleNotification(notif: JsonRpcNotification, state: HarnessState): void {
+  if (notif.method === "shutdown") Deno.exit(0);
+  if (notif.method === "session/end" && state.sessionState) {
+    const params = notif.params as { sessionId?: string } | undefined;
+    if (params?.sessionId) state.sessionState.delete(params.sessionId);
+  }
+}
+
+function dispatchMessage(msg: JsonRpcMessage, state: HarnessState): void {
+  // Incoming response to a kv/* request we sent
+  if ("id" in msg && !("method" in msg)) {
+    handleKvResponse(msg as JsonRpcResponse);
+    return;
+  }
+  // Notification (no id)
+  if (!("id" in msg)) {
+    handleNotification(msg as JsonRpcNotification, state);
+    return;
+  }
+  // Request -- handle concurrently so the loop reads the next line immediately
+  const req = msg as JsonRpcRequest;
+  void handleRequest(req, state).catch((err) => {
+    sendError(req.id, -32_603, err instanceof Error ? err.message : String(err));
+  });
+}
+
 async function main(): Promise<void> {
   const lineStream = Deno.stdin.readable
     .pipeThrough(new TextDecoderStream())
@@ -379,24 +405,7 @@ async function main(): Promise<void> {
       continue;
     }
 
-    // Incoming response to a kv/* request we sent
-    if ("id" in msg && !("method" in msg)) {
-      handleKvResponse(msg as JsonRpcResponse);
-      continue;
-    }
-
-    // Notification (no id)
-    if (!("id" in msg)) {
-      const notif = msg as JsonRpcNotification;
-      if (notif.method === "shutdown") Deno.exit(0);
-      continue;
-    }
-
-    // Request -- handle concurrently so the loop reads the next line immediately
-    const req = msg as JsonRpcRequest;
-    void handleRequest(req, state).catch((err) => {
-      sendError(req.id, -32_603, err instanceof Error ? err.message : String(err));
-    });
+    dispatchMessage(msg, state);
   }
 }
 

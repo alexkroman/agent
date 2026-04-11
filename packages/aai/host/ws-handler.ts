@@ -45,6 +45,8 @@ export type WsSessionOptions = {
   onOpen?: () => void;
   /** Callback invoked when the WebSocket connection closes. */
   onClose?: () => void;
+  /** Callback invoked with the session ID after session cleanup. */
+  onSessionEnd?: (sessionId: string) => void;
   /** Logger instance. Defaults to console. */
   logger?: Logger;
   /** Timeout in ms for session.start(). Defaults to 10 000 (10s). */
@@ -240,6 +242,7 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
         })
         .finally(() => {
           sessions.delete(sessionId);
+          opts.onSessionEnd?.(sessionId);
         });
     }
     opts.onClose?.();

@@ -20,7 +20,7 @@ import {
 } from "aai/runtime";
 import type { Storage } from "unstorage";
 import { agentKvPrefix } from "./constants.ts";
-import type { IsolateConfig } from "./rpc-schemas.ts";
+import { type IsolateConfig, ToolCallResponseSchema } from "./rpc-schemas.ts";
 import { createSandboxVm } from "./sandbox-vm.ts";
 import { ssrfSafeFetch } from "./ssrf.ts";
 import type { BundleStore } from "./store-types.ts";
@@ -86,13 +86,24 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
 
   // ── Build tool executor from sandbox handle ─────────────────────
   const executeTool: ExecuteTool = async (name, args, sessionId, messages) => {
-    const response = await sandboxHandle.conn.sendRequest<{ result?: string }>("tool/execute", {
+    const raw = await sandboxHandle.conn.sendRequest("tool/execute", {
       name,
       args,
       sessionId: sessionId ?? "",
       messages: messages ?? [],
     });
-    return (response?.result ?? "") as string;
+    // Guest returns { result, state } on success or { error } on failure.
+    // Validate the success shape; treat anything else as an error string.
+    const parsed = ToolCallResponseSchema.safeParse(raw);
+    if (parsed.success) {
+      return parsed.data.result;
+    }
+    // Guest returned an error object or unexpected shape
+    const errMsg =
+      typeof raw === "object" && raw !== null && "error" in raw
+        ? String((raw as { error: unknown }).error)
+        : "Tool execution failed: invalid response from sandbox";
+    return errMsg;
   };
 
   // ── Assemble runtime ─────────────────────────────────────────────
@@ -125,9 +136,24 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
     await agentRuntime.shutdown();
   }
 
+  // Wrap startSession to notify guest of session cleanup
+  const originalStartSession = agentRuntime.startSession.bind(agentRuntime);
+  function startSessionWithCleanup(
+    ws: Parameters<typeof originalStartSession>[0],
+    opts?: Parameters<typeof originalStartSession>[1],
+  ): void {
+    originalStartSession(ws, {
+      ...opts,
+      onSessionEnd(sessionId) {
+        sandboxHandle.conn.sendNotification("session/end", { sessionId });
+        opts?.onSessionEnd?.(sessionId);
+      },
+    });
+  }
+
   return {
     readyConfig: agentRuntime.readyConfig,
-    startSession: agentRuntime.startSession.bind(agentRuntime),
+    startSession: startSessionWithCleanup,
     shutdown: shutdownSandbox,
   };
 }

@@ -33,6 +33,8 @@ export type SessionStartOptions = {
   logContext?: Record<string, string>;
   onOpen?: () => void;
   onClose?: () => void;
+  /** Called with session ID after session cleanup, for guest state cleanup. */
+  onSessionEnd?: (sessionId: string) => void;
 };
 
 /**
@@ -269,6 +271,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       ...(startOpts?.logContext ? { logContext: startOpts.logContext } : {}),
       ...(startOpts?.onOpen ? { onOpen: startOpts.onOpen } : {}),
       ...(startOpts?.onClose ? { onClose: startOpts.onClose } : {}),
+      ...(startOpts?.onSessionEnd ? { onSessionEnd: startOpts.onSessionEnd } : {}),
       ...(sessionStartTimeoutMs !== undefined ? { sessionStartTimeoutMs } : {}),
       ...(resumeFrom ? { resumeFrom } : {}),
     });
