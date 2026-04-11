@@ -401,7 +401,7 @@ describe("createRuntime shutdown", () => {
     await vi.waitFor(() => {
       expect(connectSpy).toHaveBeenCalled();
     });
-    await new Promise((r) => setTimeout(r, 50));
+    await flush();
 
     await runtime.shutdown();
     // The session stop rejection should be caught and logged
@@ -436,7 +436,7 @@ describe("createRuntime shutdown", () => {
     await vi.waitFor(() => {
       expect(connectSpy).toHaveBeenCalled();
     });
-    await new Promise((r) => setTimeout(r, 50));
+    await flush();
 
     await runtime.shutdown();
     // Whether timeout warning fires depends on internal session map population

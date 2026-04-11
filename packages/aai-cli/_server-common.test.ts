@@ -18,8 +18,8 @@ describe("parseEnvFile", () => {
     expect(parseEnvFile("KEY=")).toEqual({ KEY: "" });
   });
 
-  test("trims whitespace around keys", () => {
-    expect(parseEnvFile("  KEY  =  value  ")).toEqual({ KEY: "  value" });
+  test("trims whitespace around keys and values", () => {
+    expect(parseEnvFile("  KEY  =  value  ")).toEqual({ KEY: "value" });
   });
 
   test("skips lines without =", () => {
