@@ -1,5 +1,63 @@
 # @alexkroman1/aai-server
 
+## 1.0.0
+
+### Major Changes
+
+- 874001a: Replace Firecracker with gVisor sandbox + vscode-jsonrpc (no KVM, works on Fly.io)
+- 36a8e75: Replace secure-exec V8 isolates with per-agent Firecracker microVMs for hardware-level cross-agent isolation
+
+### Minor Changes
+
+- 8ecb7d1: Add protocol compat fixtures and harden wire format for rolling upgrades
+- befca9a: Simplify agent surface area: directory-based agent format with agent.json, tools/_.ts, hooks/_.ts replacing defineAgent/Zod
+- 9211c65: Add default aai-ui client served by the server when no custom client is deployed. Remove zod externalization from the worker bundler — zod 4 works natively in Deno sandboxes. Update S2S API endpoint and fix load test event handling.
+- 1f5bbb1: Replace HTTP sidecar and RPC server with secure-exec bindings IPC
+- 7b451c7: Extract agent config at build time and defer V8 isolate boot until custom tool/hook execution
+
+### Patch Changes
+
+- 3bd18a9: Fix security vulnerabilities: run_code sandbox escape, SSRF wiring, credential key enforcement, DNS rebinding, path traversal, harness auth bypass, timing-safe hash comparison
+- b9b5c02: Deduplicate shared utilities, fix N+1 KV list, async static serving, and race timer leak
+- d890d04: Remove backward compatibility in agent config launching — agentConfig is now required
+- dc9d402: Remove deprecated terminate() backwards compat alias on Sandbox type
+- a3fde24: Remove redundant validateWorkerBundle from deploy handler
+- 5cc9550: Security hardening: deploy ownership check, SSRF DNS fail-closed + hostname blocking, timing-safe auth tokens, run_code timer cleanup, WebSocket payload limits, message buffer cap, clientFiles size limits, HTML escape completeness, KV error sanitization
+- 0da527e: Add adversarial chaos tests, lower jail memory limit, plug sandbox eviction leaks, validate agent bundles at deploy time
+- f6e7a5c: BREAKING: Align SDK naming with S2S API
+
+  - `instructions` → `systemPrompt` in AgentOptions/AgentDef
+  - `DEFAULT_INSTRUCTIONS` → `DEFAULT_SYSTEM_PROMPT`
+  - `onTurn` → `onUserTranscript` hook
+  - Protocol events renamed: `transcript` → `user_transcript_delta`, `turn` → `user_transcript`, `chat` → `agent_transcript`, `chat_delta` → `agent_transcript_delta`, `tts_done` → `reply_done`, `tool_call_start` → `tool_call`
+
+- 061a04f: Update secure-exec to 0.2.1, replace virtual hosts with real sidecar server
+- 1678546: Simplify codebase: use p-timeout for shutdown, html-to-text for HTML conversion, deduplicate secret key validation
+- d6ad61e: Harden nsjail: restrict socket() to AF_UNIX, add cgroup namespace and rlimit_nproc, add post-escape integration tests
+- fa7b928: Change default dev server port from 8787 to 8080
+- Updated dependencies [8ecb7d1]
+- Updated dependencies [3bd18a9]
+- Updated dependencies [befca9a]
+- Updated dependencies [9211c65]
+- Updated dependencies [b9b5c02]
+- Updated dependencies [99db30d]
+- Updated dependencies [5cc9550]
+- Updated dependencies [4c1cd20]
+- Updated dependencies [ab98c61]
+- Updated dependencies [837e34f]
+- Updated dependencies [f6e7a5c]
+- Updated dependencies [7669733]
+- Updated dependencies [14d0653]
+- Updated dependencies [9d2141b]
+- Updated dependencies [05f8759]
+- Updated dependencies [486fb23]
+- Updated dependencies [1678546]
+- Updated dependencies [5fd5cb3]
+- Updated dependencies [64d83b6]
+- Updated dependencies [6d3ec72]
+  - aai@1.0.0
+  - aai-ui@1.0.0
+
 ## 0.9.16
 
 ### Patch Changes
