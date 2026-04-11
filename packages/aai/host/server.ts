@@ -177,14 +177,11 @@ export function createServer(options: ServerOptions): AgentServer {
     if (!url.startsWith("/websocket")) return;
 
     wss.handleUpgrade(req, socket, head, (ws) => {
-      const { resumeFrom, skipGreeting } = parseWsUpgradeParams(req.url ?? "");
+      const startOpts = parseWsUpgradeParams(req.url ?? "");
 
-      logger.info(`WS upgrade ${url}${skipGreeting ? " (resume)" : ""}`);
+      logger.info(`WS upgrade ${url}${startOpts.skipGreeting ? " (resume)" : ""}`);
 
-      runtime.startSession(ws as unknown as SessionWebSocket, {
-        skipGreeting,
-        ...(resumeFrom ? { resumeFrom } : {}),
-      });
+      runtime.startSession(ws as unknown as SessionWebSocket, startOpts);
     });
   });
 

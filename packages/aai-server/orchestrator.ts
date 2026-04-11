@@ -166,11 +166,10 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
         const { sandbox } = result;
         wss.handleUpgrade(req, socket, head, (ws) => {
           ws.on("close", () => connections.release());
-          const { resumeFrom, skipGreeting } = parseWsUpgradeParams(req.url ?? "");
-          sandbox.startSession(ws as unknown as SessionWebSocket, {
-            skipGreeting,
-            ...(resumeFrom ? { resumeFrom } : {}),
-          });
+          sandbox.startSession(
+            ws as unknown as SessionWebSocket,
+            parseWsUpgradeParams(req.url ?? ""),
+          );
         });
       } catch (err: unknown) {
         connections.release();
