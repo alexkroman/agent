@@ -3,6 +3,7 @@
 import { HTTPException } from "hono/http-exception";
 import type { AppContext, ValidatedAppContext } from "./context.ts";
 import { terminateSlot, withSlugLock } from "./sandbox-slots.ts";
+import { SecretKeySchema } from "./schemas.ts";
 
 async function restartSandbox(c: AppContext, slug: string, reason: string): Promise<void> {
   const slot = c.env.slots.get(slug);
@@ -41,7 +42,7 @@ export function handleSecretDelete(c: AppContext): Promise<Response> {
   return withSlugLock(slug, async () => {
     // biome-ignore lint/style/noNonNullAssertion: key param guaranteed by route
     const key = c.req.param("key")!;
-    if (!/^[a-zA-Z_]\w*$/.test(key)) {
+    if (!SecretKeySchema.safeParse(key).success) {
       throw new HTTPException(400, { message: "Invalid secret key name" });
     }
     const existing = await c.env.store.getEnv(slug);
