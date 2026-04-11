@@ -40,6 +40,9 @@ packages:
   "aai-cli":
     access: $all
     publish: $all
+  "@*/*":
+    access: $all
+    proxy: npmjs
   "**":
     access: $all
     publish: $all
