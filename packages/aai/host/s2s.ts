@@ -192,10 +192,11 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
       }
       const json = JSON.stringify(msg);
       if (msg.type !== "input.audio") {
-        log.info(
-          `S2S >> ${msg.type}`,
-          msg.type === "session.update" ? { payload: json } : undefined,
-        );
+        if (msg.type === "session.update") {
+          log.info(`S2S >> ${msg.type}`, { payload: json });
+        } else {
+          log.info(`S2S >> ${msg.type}`);
+        }
       }
       ws.send(json);
     }
