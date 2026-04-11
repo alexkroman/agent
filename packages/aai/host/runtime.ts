@@ -7,6 +7,7 @@
  * lifecycle hooks, and session management.
  */
 
+import pTimeout from "p-timeout";
 import { createStorage } from "unstorage";
 import { agentToolsToSchemas, type ToolSchema, toAgentConfig } from "../sdk/_internal-types.ts";
 import { toolError } from "../sdk/_utils.ts";
@@ -279,26 +280,16 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
 
   async function shutdown(): Promise<void> {
     if (sessions.size === 0) return;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const timeout = new Promise<"timeout">((resolve) => {
-      timer = setTimeout(resolve, shutdownTimeoutMs, "timeout");
-    });
-    const graceful = Promise.allSettled([...sessions.values()].map((s) => s.stop())).then(
-      (results) => {
-        for (const r of results) {
-          if (r.status === "rejected")
-            logger.warn(`Session stop failed during shutdown: ${r.reason}`);
-        }
-        return "done" as const;
-      },
-    );
-    let outcome: "done" | "timeout";
     try {
-      outcome = await Promise.race([graceful, timeout]);
-    } finally {
-      if (timer) clearTimeout(timer);
-    }
-    if (outcome === "timeout") {
+      const results = await pTimeout(
+        Promise.allSettled([...sessions.values()].map((s) => s.stop())),
+        { milliseconds: shutdownTimeoutMs },
+      );
+      for (const r of results) {
+        if (r.status === "rejected")
+          logger.warn(`Session stop failed during shutdown: ${r.reason}`);
+      }
+    } catch {
       logger.warn(
         `Shutdown timeout (${shutdownTimeoutMs}ms) exceeded — force-closing ${sessions.size} remaining session(s)`,
       );

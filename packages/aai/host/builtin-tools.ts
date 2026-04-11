@@ -7,6 +7,7 @@
  * Network requests go through the host's fetch proxy (with SSRF protection).
  */
 
+import { convert } from "html-to-text";
 import { z } from "zod";
 import { EMPTY_PARAMS, type ToolSchema } from "../sdk/_internal-types.ts";
 import { FETCH_TIMEOUT_MS, MAX_HTML_BYTES, MAX_PAGE_CHARS } from "../sdk/constants.ts";
@@ -17,23 +18,8 @@ export { executeInIsolate } from "./_run-code.ts";
 
 const fetchSignal = () => AbortSignal.timeout(FETCH_TIMEOUT_MS);
 
-// ─── HTML to text ──────────────────────────────────────────────────────────
-
-/** Strip HTML tags and decode common entities. */
-function htmlToText(html: string): string {
-  return html
-    .replace(/<script[\s\S]*?<\/script>/gi, "")
-    .replace(/<style[\s\S]*?<\/style>/gi, "")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&nbsp;/g, " ")
-    .replace(/\s{2,}/g, " ")
-    .trim();
-}
+/** Convert HTML to plain text using html-to-text. */
+const htmlToText = (html: string): string => convert(html, { wordwrap: false });
 
 // ─── web_search ────────────────────────────────────────────────────────────
 

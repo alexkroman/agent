@@ -34,6 +34,7 @@
     "lint": "biome check ."
   },
   "dependencies": {
+    "html-to-text": "^9.0.5",
     "nanoevents": "^9.1.0",
     "p-timeout": "^7.0.1",
     "unstorage": "^1.17.5",
@@ -41,6 +42,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@types/html-to-text": "^9.0.4",
     "@types/json-schema": "^7.0.15",
     "@types/node": "^25.5.2",
     "@types/ws": "^8.18.1",
