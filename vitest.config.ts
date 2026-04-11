@@ -82,6 +82,7 @@ export default defineConfig({
           include: ["**/*.test.ts"],
           exclude: [
             "docker-build.test.ts",
+            "fake-vm-integration.test.ts",
             "sandbox-integration.test.ts",
             "sandbox-lifecycle.test.ts",
             "ws-integration.test.ts",
