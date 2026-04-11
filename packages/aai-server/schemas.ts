@@ -46,5 +46,5 @@ export const AgentMetadataSchema = z.object({
 export type AgentMetadata = z.infer<typeof AgentMetadataSchema>;
 
 // Secrets
-const SecretKeySchema = z.string().regex(/^[a-zA-Z_]\w*$/, "Invalid secret key name");
+export const SecretKeySchema = z.string().regex(/^[a-zA-Z_]\w*$/, "Invalid secret key name");
 export const SecretUpdatesSchema = z.record(SecretKeySchema, z.string());
