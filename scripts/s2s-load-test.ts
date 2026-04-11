@@ -420,34 +420,97 @@ async function runSessionAttempt(
       log(`session ready (id: ${sid})`);
     });
 
-    handle.on("sessionUpdated", () => { lastEvent = "sessionUpdated"; log("session updated, waiting for greeting..."); });
+    const pendingTools: Array<{ callId: string; result: string }> = [];
 
-    handle.on("toolCall", ({ callId, name, args: toolArgs }) => {
-      lastEvent = "toolCall";
-      log(`tool call [turn ${currentTurn}]: ${name}(${JSON.stringify(toolArgs)})`);
-      const responder = TOOL_RESPONSES[name];
-      const result = responder ? responder(toolArgs) : JSON.stringify({ error: `unknown tool: ${name}` });
-      handle.sendToolResult(callId, result);
-      metrics.toolCalls.push({ turn: currentTurn, name, args: toolArgs });
+    handle.on("replyStarted", ({ replyId }) => {
+      log(`reply started: ${replyId}`);
     });
 
-    handle.on("speechStopped", () => {
-      lastEvent = "speechStopped";
-      if (waitingForReply) {
-        turnStart = Date.now();
-        log(`turn ${currentTurn} speech stopped, waiting for response...`);
+    handle.on("event", (e) => {
+      switch (e.type) {
+        case "speech_started":
+          lastEvent = "speechStarted";
+          log(`turn ${currentTurn} speech started`);
+          break;
+        case "speech_stopped":
+          lastEvent = "speechStopped";
+          if (waitingForReply) {
+            turnStart = Date.now();
+            log(`turn ${currentTurn} speech stopped, waiting for response...`);
+          }
+          break;
+        case "tool_call": {
+          lastEvent = "toolCall";
+          log(`tool call [turn ${currentTurn}]: ${e.toolName}(${JSON.stringify(e.args)})`);
+          const responder = TOOL_RESPONSES[e.toolName];
+          const result = responder ? responder(e.args) : JSON.stringify({ error: `unknown tool: ${e.toolName}` });
+          pendingTools.push({ callId: e.toolCallId, result });
+          metrics.toolCalls.push({ turn: currentTurn, name: e.toolName, args: e.args });
+          break;
+        }
+        case "agent_transcript":
+          lastEvent = "agentTranscript";
+          metrics.agentTranscripts.push(e.text);
+          if (!greetingReceived) {
+            greetingReceived = true;
+            metrics.firstGreetingMs = Date.now() - sessionStart;
+            log(`greeting: "${e.text.slice(0, 60)}" (${metrics.firstGreetingMs}ms)`);
+          } else if (waitingForReply) {
+            gotAgentReplyThisTurn = true;
+            log(`agent reply [turn ${currentTurn}]: "${e.text.slice(0, 60)}"`);
+          }
+          break;
+        case "user_transcript":
+          lastEvent = "userTranscript";
+          metrics.userTranscripts.push(e.text);
+          log(`user transcript [turn ${currentTurn}]: "${e.text}"`);
+          break;
+        case "reply_done":
+          lastEvent = "replyDone";
+          log(`reply_done: turn=${currentTurn}/${sessionTurns}, pendingTools=${pendingTools.length}`);
+          if (pendingTools.length > 0) {
+            // Send accumulated tool results per API docs
+            for (const t of pendingTools) {
+              handle.sendToolResult(t.callId, t.result);
+            }
+            pendingTools.length = 0;
+          } else {
+            // Reply complete — advance to next turn
+            waitingForReply = false;
+            gotAgentReplyThisTurn = false;
+            if (currentTurn > 0) metrics.turnsCompleted++;
+            log(`${currentTurn === 0 ? "greeting" : `turn ${currentTurn}`} complete`);
+            if (currentTurn < sessionTurns) streamNextTurn();
+            else { log("all turns completed"); finish(); }
+          }
+          break;
+        case "cancelled":
+          lastEvent = "cancelled";
+          log(`cancelled: turn=${currentTurn}/${sessionTurns}`);
+          pendingTools.length = 0;
+          waitingForReply = false;
+          gotAgentReplyThisTurn = false;
+          // Interruption complete — advance to next turn
+          if (currentTurn < sessionTurns) streamNextTurn();
+          else if (currentTurn > 0) { log("all turns completed"); finish(); }
+          break;
+        default:
+          break;
       }
     });
 
-    handle.on("agentTranscriptDelta", ({ text }) => {
-      lastEvent = "agentTranscriptDelta";
+    let lastAudioMs = 0;
+
+    // Track latency and barge-in on agent audio (skip greeting audio)
+    handle.on("audio", () => {
+      lastAudioMs = Date.now();
+      if (currentTurn === 0) return; // ignore greeting audio
       if (waitingForReply && !recordedLatencyThisTurn && turnStart > 0) {
         recordedLatencyThisTurn = true;
         const latency = Date.now() - turnStart;
         metrics.turnLatenciesMs.push(latency);
-        log(`first agent token [turn ${currentTurn}]: "${text.slice(0, 40)}" (${latency}ms)`);
+        log(`first agent audio [turn ${currentTurn}]: ${latency}ms`);
       }
-      // Barge-in: interrupt agent mid-response by sending audio
       if (waitingForReply && bargeInScheduled && !done) {
         bargeInScheduled = false;
         metrics.bargeIns++;
@@ -461,40 +524,8 @@ async function runSessionAttempt(
       }
     });
 
-    handle.on("agentTranscript", ({ text }) => {
-      lastEvent = "agentTranscript";
-      metrics.agentTranscripts.push(text);
-      if (!greetingReceived) {
-        greetingReceived = true;
-        metrics.firstGreetingMs = Date.now() - sessionStart;
-        log(`greeting: "${text.slice(0, 60)}" (${metrics.firstGreetingMs}ms)`);
-      } else if (waitingForReply) {
-        gotAgentReplyThisTurn = true;
-        log(`agent reply [turn ${currentTurn}]: "${text.slice(0, 60)}"`);
-      }
-    });
-
-    handle.on("userTranscript", ({ text }) => {
-      lastEvent = "userTranscript";
-      metrics.userTranscripts.push(text);
-      log(`user transcript [turn ${currentTurn}]: "${text}"`);
-    });
-
-    handle.on("replyDone", () => {
-      lastEvent = "replyDone";
-      if (waitingForReply && gotAgentReplyThisTurn) {
-        waitingForReply = false;
-        gotAgentReplyThisTurn = false;
-        metrics.turnsCompleted++;
-        if (currentTurn < sessionTurns) streamNextTurn();
-        else { log("all turns completed"); finish(); }
-      } else if (!waitingForReply && currentTurn < sessionTurns) {
-        streamNextTurn();
-      }
-    });
-
-    handle.on("error", ({ code, message }) => { metrics.errors.push(`s2s error: ${code} ${message}`); log(`error: ${code} ${message}`); });
-    handle.on("sessionExpired", ({ code, message }) => { metrics.errors.push(`s2s expired: ${code} ${message}`); finish(); });
+    handle.on("error", (err) => { metrics.errors.push(`s2s error: ${err.message}`); log(`error: ${err.message}`); });
+    handle.on("sessionExpired", () => { metrics.errors.push("s2s session expired"); finish(); });
     handle.on("close", () => {
       log("ws closed");
       if (!done && metrics.turnsCompleted < sessionTurns) shouldRetry = true;
@@ -508,6 +539,11 @@ async function runSessionAttempt(
       if (currentTurn > sessionTurns) return;
 
       bargeInScheduled = Math.random() < BARGE_IN_CHANCE;
+
+      // Wait for agent audio to stop streaming before sending user audio
+      while (Date.now() - lastAudioMs < 500 && !done) {
+        await sleep(100);
+      }
       await sleep(randomPauseMs());
       if (done) return;
 
@@ -736,7 +772,7 @@ const loadTestCommand = defineCommand({
   args: {
     sessions: { type: "string", alias: "n", description: "Total number of sessions to run", default: "10000" },
     concurrency: { type: "string", alias: "c", description: "Max simultaneous sessions", default: "2500" },
-    url: { type: "string", description: "S2S WebSocket URL", default: "wss://speech-to-speech.us.assemblyai.com/v1/realtime" },
+    url: { type: "string", description: "S2S WebSocket URL", default: "wss://agents.assemblyai.com/v1/voice" },
     greeting: { type: "string", description: "Agent greeting text", default: "Hello, how can I help?" },
     voice: { type: "string", description: "Kokoro voice preset", default: "af_heart" },
     turns: { type: "string", description: "Max user turns per session (randomized, avg ~8)", default: "20" },

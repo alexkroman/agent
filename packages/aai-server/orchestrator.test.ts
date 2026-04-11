@@ -113,6 +113,43 @@ test("agent page returns HTML for deployed agent", async () => {
   expect(await res.text()).toContain("<html>");
 });
 
+test("agent page serves default aai-ui when deployed without client files", async () => {
+  const { fetch } = await createTestOrchestrator();
+  const res = await fetch("/deploy", {
+    method: "POST",
+    headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
+    body: deployBody({ slug: "no-client", clientFiles: {} }),
+  });
+  expect(res.status).toBe(200);
+
+  const pageRes = await fetch("/no-client/");
+  expect(pageRes.status).toBe(200);
+  expect(pageRes.headers.get("Content-Type")).toContain("text/html");
+  const html = await pageRes.text();
+  expect(html).toContain("<!DOCTYPE html>");
+  expect(html).toContain('<main id="app"></main>');
+});
+
+test("default aai-ui serves JS assets for agents without custom client", async () => {
+  const { fetch } = await createTestOrchestrator();
+  await fetch("/deploy", {
+    method: "POST",
+    headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
+    body: deployBody({ slug: "default-assets", clientFiles: {} }),
+  });
+
+  // The default HTML references ./assets/default-client-*.js
+  const pageRes = await fetch("/default-assets/");
+  const html = await pageRes.text();
+  const match = html.match(/src="\.\/assets\/(default-client-[^"]+\.js)"/);
+  expect(match).toBeTruthy();
+
+  // That asset should be served from the default client dist
+  const assetRes = await fetch(`/default-assets/assets/${match?.[1]}`);
+  expect(assetRes.status).toBe(200);
+  expect(assetRes.headers.get("Content-Type")).toContain("javascript");
+});
+
 // WebSocket upgrade is handled by the Node.js server in index.ts,
 // not by the Hono orchestrator — see ws_integration_test.ts.
 

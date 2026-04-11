@@ -1,5 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
-import { writeFile } from "node:fs/promises";
+import { symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
 import { buildAgentBundle, runBuildCommand } from "./_bundler.ts";
@@ -34,6 +34,11 @@ describe("buildAgentBundle", () => {
   test("bundles agent with tools and extracts schemas", async () => {
     await withTempDir(
       silenced(async (dir) => {
+        // Symlink node_modules so Vite can resolve zod when bundling
+        await symlink(
+          path.resolve(import.meta.dirname, "node_modules"),
+          path.join(dir, "node_modules"),
+        );
         await writeFile(
           path.join(dir, "agent.ts"),
           `

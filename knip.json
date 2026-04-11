@@ -16,7 +16,7 @@
       "includeEntryExports": true
     },
     "packages/aai-ui": {
-      "entry": ["**/*.test.{ts,tsx}", "_react-test-utils.ts"],
+      "entry": ["**/*.test.{ts,tsx}", "_react-test-utils.ts", "default-client.tsx", "build-default-client.ts"],
       "includeEntryExports": true
     },
     "packages/aai-cli": {
