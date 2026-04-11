@@ -2,9 +2,17 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
-import { parseEnvFile } from "aai";
+import { parse as dotenvParse } from "dotenv";
 
-export { parseEnvFile } from "aai";
+/**
+ * Parse a `.env` file into a key→value record.
+ *
+ * Delegates to `dotenv.parse()` which handles quoted values, multiline
+ * values, and comments.
+ */
+export function parseEnvFile(content: string): Record<string, string> {
+  return dotenvParse(content);
+}
 
 /**
  * Build the `ctx.env` record that agent tools will see at runtime.
@@ -30,7 +38,7 @@ export async function resolveServerEnv(
   if (cwd) {
     try {
       const content = await fs.readFile(path.join(cwd, ".env"), "utf-8");
-      fileEntries = parseEnvFile(content);
+      fileEntries = dotenvParse(content);
     } catch {
       // No .env file — that's fine
     }

@@ -34,7 +34,9 @@
     "lint": "biome check ."
   },
   "dependencies": {
+    "escape-html": "^1.0.3",
     "html-to-text": "^9.0.5",
+    "mime-types": "^3.0.2",
     "nanoevents": "^9.1.0",
     "p-timeout": "^7.0.1",
     "unstorage": "^1.17.5",
@@ -42,8 +44,10 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@types/escape-html": "^1.0.4",
     "@types/html-to-text": "^9.0.4",
     "@types/json-schema": "^7.0.15",
+    "@types/mime-types": "^3.0.1",
     "@types/node": "^25.5.2",
     "@types/ws": "^8.18.1",
     "tsdown": "^0.21.7",

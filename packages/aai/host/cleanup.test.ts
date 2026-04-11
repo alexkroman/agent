@@ -359,10 +359,11 @@ describe("createS2sSession resource cleanup", () => {
     resolvers[2]?.(handles[2]!);
 
     await startPromise;
-    await new Promise((r) => setTimeout(r, 10));
 
-    expect(handles[0]?.close).toHaveBeenCalled();
-    expect(handles[1]?.close).toHaveBeenCalled();
+    await vi.waitFor(() => {
+      expect(handles[0]?.close).toHaveBeenCalled();
+      expect(handles[1]?.close).toHaveBeenCalled();
+    });
     expect(handles[2]?.close).not.toHaveBeenCalled();
 
     spy.mockRestore();

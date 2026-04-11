@@ -13,6 +13,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { type AgentDef, errorMessage } from "aai";
 import type { AgentServer } from "aai/runtime";
+import pDebounce from "p-debounce";
 import { ensureApiKey } from "./_config.ts";
 import { resolveServerEnv } from "./_server-common.ts";
 import { log } from "./_ui.ts";
@@ -55,17 +56,17 @@ async function loadAgentDef(cwd: string): Promise<AgentDef<any>> {
 function watchDirectory(dir: string, onChange: (filename: string | null) => void): FSWatcher[] {
   const watchers: FSWatcher[] = [];
   const DEBOUNCE_MS = 300;
-  let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const debouncedChange = pDebounce((filename: string | null) => {
+    log.info("File change detected, restarting...");
+    onChange(filename);
+  }, DEBOUNCE_MS);
 
   function handleChange(filename: string | null) {
     // Ignore .aai build artifacts and node_modules
     if (filename && (filename.startsWith(".aai") || filename.includes("node_modules"))) return;
 
-    if (debounceTimer) clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => {
-      log.info("File change detected, restarting...");
-      onChange(filename);
-    }, DEBOUNCE_MS);
+    void debouncedChange(filename);
   }
 
   // Watch root for agent.ts, .env changes

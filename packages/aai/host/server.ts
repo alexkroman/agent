@@ -12,6 +12,8 @@
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
+import escapeHtml from "escape-html";
+import { lookup as mimeLookup } from "mime-types";
 import { WebSocketServer } from "ws";
 import { parseWsUpgradeParams } from "../sdk/_ws-upgrade.ts";
 import { AGENT_CSP, MAX_WS_PAYLOAD_BYTES } from "../sdk/constants.ts";
@@ -48,21 +50,6 @@ export type AgentServer = {
 
 // ── Static file serving ─────────────────────────────────────────────────
 
-const MIME_TYPES: Record<string, string> = {
-  ".html": "text/html",
-  ".js": "application/javascript",
-  ".mjs": "application/javascript",
-  ".css": "text/css",
-  ".json": "application/json",
-  ".svg": "image/svg+xml",
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".ico": "image/x-icon",
-  ".woff2": "font/woff2",
-  ".woff": "font/woff",
-  ".map": "application/json",
-};
-
 async function serveStatic(
   dir: string,
   req: http.IncomingMessage,
@@ -80,7 +67,7 @@ async function serveStatic(
     const stat = await fs.promises.stat(filePath);
     if (!stat.isFile()) return false;
     const ext = path.extname(filePath).toLowerCase();
-    const mime = MIME_TYPES[ext] ?? "application/octet-stream";
+    const mime = mimeLookup(ext) || "application/octet-stream";
     res.writeHead(200, { "Content-Type": mime, "Content-Length": stat.size });
     fs.createReadStream(filePath).pipe(res);
     return true;
@@ -129,12 +116,7 @@ export function createServer(options: ServerOptions): AgentServer {
   }
 
   // Pre-compute the default HTML page once (the agent name never changes).
-  const escapedName = name
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+  const escapedName = escapeHtml(name);
   const defaultHtml =
     clientHtml ??
     `<!DOCTYPE html><html><body><h1>${escapedName}</h1><p>Agent server running.</p></body></html>`;
