@@ -1,5 +1,41 @@
 # @alexkroman1/aai
 
+## 1.0.0
+
+### Major Changes
+
+- 837e34f: Remove self-hosted ./server API. Platform sandbox now uses Deno guest runtime with NDJSON transport.
+- 7669733: Migrate aai-ui from Preact to React 19 with simplified API: useSession, useTheme, useToolResult hooks + two-tier defineClient
+
+### Minor Changes
+
+- 8ecb7d1: Add protocol compat fixtures and harden wire format for rolling upgrades
+- befca9a: Simplify agent surface area: directory-based agent format with agent.json, tools/_.ts, hooks/_.ts replacing defineAgent/Zod
+- ab98c61: Remove unused SDK features: `tool` alias, `ctx.fetch`, `onError` hook, `toolChoice: "none"` and `toolChoice: { type: "tool" }` variants. Add `ToolResultMap` typing to solo-rpg template.
+- 14d0653: Remove kv.list() and kv.keys() from KV API — use explicit index keys instead
+- 5fd5cb3: Zod-based agent.ts authoring with agent() and tool() helpers, rename aai-core to aai
+
+### Patch Changes
+
+- 3bd18a9: Fix security vulnerabilities: run_code sandbox escape, SSRF wiring, credential key enforcement, DNS rebinding, path traversal, harness auth bypass, timing-safe hash comparison
+- 9211c65: Add default aai-ui client served by the server when no custom client is deployed. Remove zod externalization from the worker bundler — zod 4 works natively in Deno sandboxes. Update S2S API endpoint and fix load test event handling.
+- b9b5c02: Deduplicate shared utilities, fix N+1 KV list, async static serving, and race timer leak
+- 99db30d: Simplify protocol, security boundaries, and SDK structure
+- 5cc9550: Security hardening: deploy ownership check, SSRF DNS fail-closed + hostname blocking, timing-safe auth tokens, run_code timer cleanup, WebSocket payload limits, message buffer cap, clientFiles size limits, HTML escape completeness, KV error sanitization
+- 4c1cd20: Remove duplicate startSession patterns and dead resumeFrom plumbing
+- f6e7a5c: BREAKING: Align SDK naming with S2S API
+
+  - `instructions` → `systemPrompt` in AgentOptions/AgentDef
+  - `DEFAULT_INSTRUCTIONS` → `DEFAULT_SYSTEM_PROMPT`
+  - `onTurn` → `onUserTranscript` hook
+  - Protocol events renamed: `transcript` → `user_transcript_delta`, `turn` → `user_transcript`, `chat` → `agent_transcript`, `chat_delta` → `agent_transcript_delta`, `tts_done` → `reply_done`, `tool_call_start` → `tool_call`
+
+- 9d2141b: Simplify and refactor: eliminate duplicated code, fix leaky abstractions, improve hot-path efficiency
+- 05f8759: Replace hand-rolled utilities with dependencies: dotenv for .env parsing, mime-types and escape-html in dev server, p-debounce for file watcher
+- 1678546: Simplify codebase: use p-timeout for shutdown, html-to-text for HTML conversion, deduplicate secret key validation
+- 64d83b6: Add Zod validation to NDJSON guest-to-host responses, fix session state memory leak
+- 6d3ec72: Improve S2S load test concurrency: quiet mode, staggered ramp-up, zero-copy audio buffers
+
 ## 0.12.3
 
 ### Patch Changes
