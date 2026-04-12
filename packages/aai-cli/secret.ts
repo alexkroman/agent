@@ -90,15 +90,3 @@ export async function executeSecretList(
   }
   return ok({ secrets: vars });
 }
-
-function unwrapResult(result: CommandResult<unknown>): void {
-  if (!result.ok) throw new Error(result.error);
-}
-
-// Legacy exports for backward compat (human mode)
-export const runSecretPut = async (cwd: string, name: string, server?: string) =>
-  unwrapResult(await executeSecretPut(cwd, name, undefined, server));
-export const runSecretDelete = async (cwd: string, name: string, server?: string) =>
-  unwrapResult(await executeSecretDelete(cwd, name, server));
-export const runSecretList = async (cwd: string, server?: string) =>
-  unwrapResult(await executeSecretList(cwd, server));

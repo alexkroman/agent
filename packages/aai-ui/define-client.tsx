@@ -212,6 +212,3 @@ export function client(config: ClientConfig): ClientHandle {
   };
   return handle;
 }
-
-/** @deprecated Use {@link client} instead. */
-export const defineClient = client;
