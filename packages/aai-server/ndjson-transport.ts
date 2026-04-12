@@ -12,6 +12,7 @@
 
 import { createInterface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
+import { errorMessage } from "aai";
 import { z } from "zod";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -151,8 +152,7 @@ export function createNdjsonConnection(readable: Readable, writable: Writable): 
       const result = await handler(req.params);
       send({ jsonrpc: "2.0", id: req.id, result });
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      send({ jsonrpc: "2.0", id: req.id, error: { code: -32_603, message } });
+      send({ jsonrpc: "2.0", id: req.id, error: { code: -32_603, message: errorMessage(err) } });
     }
   }
 

@@ -7,6 +7,7 @@
  */
 
 import { serve } from "@hono/node-server";
+import { errorMessage } from "aai";
 import { createStorage } from "unstorage";
 import s3Driver from "unstorage/drivers/s3";
 import { createBundleStore } from "./bundle-store.ts";
@@ -93,7 +94,7 @@ async function main(): Promise<void> {
     const results = await Promise.allSettled(stops);
     for (const r of results) {
       if (r.status === "rejected") {
-        const msg = r.reason instanceof Error ? r.reason.message : String(r.reason);
+        const msg = errorMessage(r.reason);
         if (!msg.includes("already disposed")) {
           console.warn("Sandbox termination failed:", r.reason);
         }
