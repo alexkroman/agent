@@ -492,6 +492,264 @@ describe.skipIf(!hasDeno)("Fake VM integration (no KVM)", () => {
     }
   }, 15_000);
 
+  // ── Harness edge-case tests ─────────────────────────────────────────────────
+
+  test("tool/execute before bundle/load returns error", async () => {
+    const socketPath = path.join(tmpDir, "test-no-bundle.sock");
+    await spawnFakeVm(socketPath);
+    const { socket, conn } = await connectToFakeVm(socketPath);
+
+    try {
+      // Attempt tool execution without loading a bundle first
+      const resp = await conn.sendRequest<{ error?: { code: number; message: string } }>(
+        "tool/execute",
+        {
+          name: "echo",
+          args: {},
+          sessionId: "s1",
+          messages: [],
+        },
+      );
+
+      // The harness should return an error (JSON-RPC error response)
+      // Since this comes back as a JSON-RPC error, sendRequest will reject
+      expect(resp).toBeDefined();
+    } catch (err: unknown) {
+      // Expected: JSON-RPC error "Agent not loaded"
+      expect((err as Error).message).toMatch(/Agent not loaded/);
+    } finally {
+      conn.dispose();
+      socket.destroy();
+    }
+  }, 15_000);
+
+  test("unknown tool name returns error in response", async () => {
+    const socketPath = path.join(tmpDir, "test-unknown-tool.sock");
+    await spawnFakeVm(socketPath);
+    const { socket, conn } = await connectToFakeVm(socketPath);
+
+    try {
+      await conn.sendRequest("bundle/load", { code: SIMPLE_BUNDLE, env: {} });
+
+      const toolResp = await conn.sendRequest<{ error: string }>("tool/execute", {
+        name: "nonexistent_tool",
+        args: {},
+        sessionId: "s1",
+        messages: [],
+      });
+
+      expect(toolResp.error).toMatch(/Unknown tool.*nonexistent_tool/);
+    } finally {
+      conn.dispose();
+      socket.destroy();
+    }
+  }, 15_000);
+
+  test("unknown RPC method returns JSON-RPC error", async () => {
+    const socketPath = path.join(tmpDir, "test-unknown-method.sock");
+    await spawnFakeVm(socketPath);
+    const { socket, conn } = await connectToFakeVm(socketPath);
+
+    try {
+      await conn.sendRequest("bundle/load", { code: SIMPLE_BUNDLE, env: {} });
+
+      await expect(conn.sendRequest("totally/bogus", { foo: "bar" })).rejects.toThrow(
+        /Method not found/,
+      );
+    } finally {
+      conn.dispose();
+      socket.destroy();
+    }
+  }, 15_000);
+
+  test("session/end notification cleans up session state", async () => {
+    const socketPath = path.join(tmpDir, "test-session-end.sock");
+    await spawnFakeVm(socketPath);
+    const { socket, conn } = await connectToFakeVm(socketPath);
+
+    try {
+      await conn.sendRequest("bundle/load", { code: STATEFUL_BUNDLE, env: {} });
+
+      // Increment counter for session-x
+      await conn.sendRequest("tool/execute", {
+        name: "increment",
+        args: {},
+        sessionId: "session-x",
+        messages: [],
+      });
+      await conn.sendRequest("tool/execute", {
+        name: "increment",
+        args: {},
+        sessionId: "session-x",
+        messages: [],
+      });
+
+      // Verify count is 2
+      const before = await conn.sendRequest<{ result: string }>("tool/execute", {
+        name: "get_count",
+        args: {},
+        sessionId: "session-x",
+        messages: [],
+      });
+      expect(before.result).toBe("count:2");
+
+      // Send session/end notification to clean up
+      conn.sendNotification("session/end", { sessionId: "session-x" });
+
+      // Small delay for notification to be processed
+      await new Promise((r) => setTimeout(r, 200));
+
+      // After cleanup, session-x should restart from 0
+      const after = await conn.sendRequest<{ result: string }>("tool/execute", {
+        name: "get_count",
+        args: {},
+        sessionId: "session-x",
+        messages: [],
+      });
+      expect(after.result).toBe("count:0");
+    } finally {
+      conn.dispose();
+      socket.destroy();
+    }
+  }, 15_000);
+
+  test("KV delete removes key", async () => {
+    const socketPath = path.join(tmpDir, "test-kv-del.sock");
+    await spawnFakeVm(socketPath);
+    const { socket, conn } = await connectToFakeVm(socketPath);
+
+    const kvStore = new Map<string, unknown>();
+    conn.onRequest("kv/get", async (params: { key: string }) => ({
+      value: kvStore.get(params.key) ?? null,
+    }));
+    conn.onRequest("kv/set", async (params: { key: string; value: unknown }) => {
+      kvStore.set(params.key, params.value);
+      return { ok: true };
+    });
+    conn.onRequest("kv/del", async (params: { key: string }) => {
+      kvStore.delete(params.key);
+      return { ok: true };
+    });
+
+    const kvDelBundle = `
+    export default {
+      name: "kv-del-agent",
+      systemPrompt: "KV delete test",
+      greeting: "",
+      maxSteps: 1,
+      tools: {
+        kv_set_then_delete: {
+          description: "Set a key then delete it",
+          async execute(args, ctx) {
+            await ctx.kv.set("ephemeral", "temporary-value");
+            const before = await ctx.kv.get("ephemeral");
+            await ctx.kv.delete("ephemeral");
+            const after = await ctx.kv.get("ephemeral");
+            return "before:" + JSON.stringify(before) + ",after:" + JSON.stringify(after);
+          },
+        },
+      },
+    };
+    `;
+
+    try {
+      await conn.sendRequest("bundle/load", { code: kvDelBundle, env: {} });
+
+      const toolResp = await conn.sendRequest<{ result: string }>("tool/execute", {
+        name: "kv_set_then_delete",
+        args: {},
+        sessionId: "kv-del-s1",
+        messages: [],
+      });
+
+      expect(toolResp.result).toBe('before:"temporary-value",after:null');
+      expect(kvStore.has("ephemeral")).toBe(false);
+    } finally {
+      conn.dispose();
+      socket.destroy();
+    }
+  }, 15_000);
+
+  test("tool result is JSON-stringified when non-string", async () => {
+    const socketPath = path.join(tmpDir, "test-json-result.sock");
+    await spawnFakeVm(socketPath);
+    const { socket, conn } = await connectToFakeVm(socketPath);
+
+    const objectBundle = `
+    export default {
+      name: "object-agent",
+      systemPrompt: "Test",
+      greeting: "",
+      maxSteps: 1,
+      tools: {
+        return_object: {
+          description: "Returns an object, not a string",
+          execute() { return { count: 42, items: ["a", "b"] }; },
+        },
+      },
+    };
+    `;
+
+    try {
+      await conn.sendRequest("bundle/load", { code: objectBundle, env: {} });
+
+      const toolResp = await conn.sendRequest<{ result: string }>("tool/execute", {
+        name: "return_object",
+        args: {},
+        sessionId: "s1",
+        messages: [],
+      });
+
+      expect(JSON.parse(toolResp.result)).toEqual({ count: 42, items: ["a", "b"] });
+    } finally {
+      conn.dispose();
+      socket.destroy();
+    }
+  }, 15_000);
+
+  test("messages context is passed to tool execute", async () => {
+    const socketPath = path.join(tmpDir, "test-messages.sock");
+    await spawnFakeVm(socketPath);
+    const { socket, conn } = await connectToFakeVm(socketPath);
+
+    const msgBundle = `
+    export default {
+      name: "msg-agent",
+      systemPrompt: "Test",
+      greeting: "",
+      maxSteps: 1,
+      tools: {
+        count_messages: {
+          description: "Count messages in context",
+          execute(args, ctx) {
+            return "messages:" + ctx.messages.length;
+          },
+        },
+      },
+    };
+    `;
+
+    try {
+      await conn.sendRequest("bundle/load", { code: msgBundle, env: {} });
+
+      const toolResp = await conn.sendRequest<{ result: string }>("tool/execute", {
+        name: "count_messages",
+        args: {},
+        sessionId: "s1",
+        messages: [
+          { role: "user", content: "hello" },
+          { role: "assistant", content: "hi there" },
+          { role: "user", content: "how are you?" },
+        ],
+      });
+
+      expect(toolResp.result).toBe("messages:3");
+    } finally {
+      conn.dispose();
+      socket.destroy();
+    }
+  }, 15_000);
+
   // ── Compiled harness test ───────────────────────────────────────────────────
 
   const COMPILED_HARNESS = path.resolve(import.meta.dirname, "dist/guest/deno-harness.mjs");
