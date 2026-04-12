@@ -530,7 +530,6 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
             });
           });
 
-          // Send history if reconnecting
           if (isReconnect && currentSnapshot.messages.length > 0) {
             send({
               type: "history",

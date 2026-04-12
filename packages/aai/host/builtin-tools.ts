@@ -18,7 +18,6 @@ export { executeInIsolate } from "./_run-code.ts";
 
 const fetchSignal = () => AbortSignal.timeout(FETCH_TIMEOUT_MS);
 
-/** Convert HTML to plain text using html-to-text. */
 const htmlToText = (html: string): string => convert(html, { wordwrap: false });
 
 // ─── web_search ────────────────────────────────────────────────────────────
