@@ -1,4 +1,23 @@
 // Copyright 2025 the AAI authors. MIT license.
+/**
+ * HTTP + WebSocket routing for the managed platform server.
+ *
+ * Route structure:
+ * - `GET  /health`                — platform health check
+ * - `POST /deploy`                — top-level deploy (server-generated slug)
+ * - `GET  /:slug`                 — redirect to /:slug/
+ * - `GET  /:slug/`               — agent UI page
+ * - `GET  /:slug/health`         — per-agent health check
+ * - `GET  /:slug/assets/:path`   — client static assets
+ * - `POST /:slug/deploy`         — owner: re-deploy agent
+ * - `DELETE /:slug/`             — owner: delete agent
+ * - `GET/PUT/DELETE /:slug/secret` — owner: manage secrets
+ * - `GET/POST /:slug/kv`        — owner: KV store operations
+ * - `WS   /:slug/websocket`     — WebSocket upgrade for voice sessions
+ *
+ * Auth: `authMw` validates API key; `ownerMw` verifies slug ownership.
+ * Slugs: `[a-z0-9][a-z0-9_-]*[a-z0-9]` — enforced by regex for multi-tenant isolation.
+ */
 
 import { zValidator } from "@hono/zod-validator";
 import { MAX_WS_PAYLOAD_BYTES, parseWsUpgradeParams } from "aai";
@@ -11,7 +30,7 @@ import type { Storage } from "unstorage";
 import { WebSocketServer } from "ws";
 import { createConnectionTracker } from "./connection-tracker.ts";
 import { agentKvPrefix, MAX_CONNECTIONS } from "./constants.ts";
-import type { Env } from "./context.ts";
+import type { HonoEnv } from "./context.ts";
 import { handleDelete } from "./delete.ts";
 import { handleDeploy, handleDeployNew } from "./deploy.ts";
 import { createErrorHandler } from "./error-handler.ts";
@@ -33,12 +52,12 @@ export type OrchestratorOpts = {
 };
 
 export type Orchestrator = {
-  app: Hono<Env>;
+  app: Hono<HonoEnv>;
   injectWebSocket: (server: import("node:http").Server) => void;
 };
 
 export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
-  const app = new Hono<Env>();
+  const app = new Hono<HonoEnv>();
 
   const allowedOrigins = opts.allowedOrigins;
   app.use(
@@ -84,7 +103,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   });
 
   // ── Slug-scoped sub-router ──────────────────────────────────────────
-  const agents = new Hono<Env>();
+  const agents = new Hono<HonoEnv>();
   agents.use("*", slugMw);
 
   // Owner-protected routes — request bodies validated by zValidator before handlers
@@ -129,6 +148,8 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   const connections = createConnectionTracker(MAX_CONNECTIONS);
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_WS_PAYLOAD_BYTES });
 
+  // Slug format: starts/ends with alphanumeric, allows hyphens/underscores in middle.
+  // Enforced here (not just in middleware) because WebSocket upgrades bypass Hono routing.
   const SLUG_WS_RE = /^\/([a-z0-9][a-z0-9_-]*[a-z0-9])\/websocket$/;
 
   /** Parse the upgrade URL and resolve the matching sandbox (or null). */

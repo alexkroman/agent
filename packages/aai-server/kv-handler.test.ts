@@ -7,7 +7,7 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
-import type { Env } from "./context.ts";
+import type { HonoEnv } from "./context.ts";
 import { handleKv } from "./kv-handler.ts";
 import { createTestStorage } from "./test-utils.ts";
 
@@ -15,7 +15,7 @@ const SLUG = "test-agent";
 
 function createTestApp() {
   const storage = createTestStorage();
-  const app = new Hono<Env>();
+  const app = new Hono<HonoEnv>();
   app.use("*", async (c, next) => {
     c.set("slug", SLUG);
     c.set("keyHash", "abc");
@@ -31,7 +31,7 @@ function createTestApp() {
 }
 
 async function postKv(
-  app: Hono<Env>,
+  app: Hono<HonoEnv>,
   storage: ReturnType<typeof createTestStorage>,
   body: unknown,
 ): Promise<{ status: number; json: Record<string, unknown> }> {

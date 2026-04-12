@@ -6,9 +6,9 @@
 
 import vm from "node:vm";
 import { z } from "zod";
-import { errorMessage } from "../sdk/_utils.ts";
 import { RUN_CODE_TIMEOUT_MS } from "../sdk/constants.ts";
 import type { ToolDef } from "../sdk/types.ts";
+import { errorMessage } from "../sdk/utils.ts";
 
 const SKIPPED_CLASS_KEYS = new Set(["constructor", "prototype", "length", "name"]);
 
