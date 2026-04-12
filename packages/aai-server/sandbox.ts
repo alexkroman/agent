@@ -183,7 +183,6 @@ export async function resolveSandbox(
     return slot.sandbox as Sandbox;
   }
 
-  // Fetch worker code, config, and env in parallel
   const [workerCode, agentConfig, env] = await Promise.all([
     store.getWorkerCode(slug),
     store.getAgentConfig(slug),

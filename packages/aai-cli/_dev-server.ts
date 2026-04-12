@@ -23,7 +23,6 @@ import { validateAgentExport } from "./_utils.ts";
 
 async function resolveAgentEnv(root: string): Promise<Record<string, string>> {
   const env = await resolveServerEnv(root);
-  // Inject global API key if not already set by .env or process.env
   if (!env.ASSEMBLYAI_API_KEY) {
     env.ASSEMBLYAI_API_KEY = await ensureApiKey();
   }
@@ -62,13 +61,11 @@ function watchDirectory(dir: string, onChange: (filename: string | null) => void
   }, DEBOUNCE_MS);
 
   function handleChange(filename: string | null) {
-    // Ignore .aai build artifacts and node_modules
     if (filename && (filename.startsWith(".aai") || filename.includes("node_modules"))) return;
 
     void debouncedChange(filename);
   }
 
-  // Watch root for agent.ts, .env changes
   watchers.push(watch(dir, { persistent: false }, (_event, filename) => handleChange(filename)));
 
   return watchers;
@@ -92,13 +89,9 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
   const { createRuntime, createServer } = await import("aai/runtime");
 
   const hasClient = existsSync(path.join(cwd, "client.tsx"));
-
-  // Determine ports: if we have a client, Vite gets the main port and
-  // the backend gets port+1. Otherwise backend gets the main port.
   const backendPort = hasClient ? port + 1 : port;
   const vitePort = port;
 
-  // Load agent from agent.ts
   const agentDef = await loadAgentDef(cwd);
   const env = await resolveAgentEnv(cwd);
   const runtime = createRuntime({ agent: agentDef, env });

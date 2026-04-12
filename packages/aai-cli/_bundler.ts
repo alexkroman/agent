@@ -50,7 +50,6 @@ export async function buildAgentBundle(cwd: string): Promise<DirectoryBundleOutp
   const agentDef = await evalWorkerBundle(worker, cwd);
   log.step(`Bundling ${agentDef.name}`);
 
-  // Convert to wire format
   const config = toAgentConfig(agentDef);
   const toolSchemas = agentToolsToSchemas(agentDef.tools ?? {});
   const agentConfig: Record<string, unknown> = { ...config, toolSchemas };
