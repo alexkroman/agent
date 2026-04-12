@@ -34,12 +34,16 @@ export type Logger = {
   debug(msg: string, ctx?: LogContext): void;
 };
 
+function consoleLog(fn: typeof console.log): Logger[keyof Logger] {
+  return (msg: string, ctx?: LogContext) => (ctx ? fn(msg, ctx) : fn(msg));
+}
+
 /** Default console-backed logger. */
 export const consoleLogger: Logger = {
-  info: (msg, ctx?) => (ctx ? console.log(msg, ctx) : console.log(msg)),
-  warn: (msg, ctx?) => (ctx ? console.warn(msg, ctx) : console.warn(msg)),
-  error: (msg, ctx?) => (ctx ? console.error(msg, ctx) : console.error(msg)),
-  debug: (msg, ctx?) => (ctx ? console.debug(msg, ctx) : console.debug(msg)),
+  info: consoleLog(console.log),
+  warn: consoleLog(console.warn),
+  error: consoleLog(console.error),
+  debug: consoleLog(console.debug),
 };
 
 /**

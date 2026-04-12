@@ -150,7 +150,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
 
   // Slug format: starts/ends with alphanumeric, allows hyphens/underscores in middle.
   // Enforced here (not just in middleware) because WebSocket upgrades bypass Hono routing.
-  const SLUG_WS_RE = /^\/([a-z0-9][a-z0-9_-]*[a-z0-9])\/websocket$/;
+  const SLUG_WS_RE = /^\/([a-z0-9][a-z0-9_-]{0,62}[a-z0-9])\/websocket$/;
 
   /** Parse the upgrade URL and resolve the matching sandbox (or null). */
   async function resolveUpgrade(rawUrl: string) {

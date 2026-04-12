@@ -67,10 +67,8 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
     return ssrfSafeFetch(url, init ?? {}, globalThis.fetch);
   };
 
-  // ── Resolve config ───────────────────────────────────────────────
   const config = opts.agentConfig;
 
-  // ── Create sandbox VM handle ─────────────────────────────────────
   const harnessPath =
     process.env.GUEST_HARNESS_PATH ??
     path.resolve(import.meta.dirname, "dist/guest/deno-harness.mjs");
@@ -84,7 +82,6 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
     harnessPath,
   });
 
-  // ── Build tool executor from sandbox handle ─────────────────────
   const executeTool: ExecuteTool = async (name, args, sessionId, messages) => {
     const raw = await sandboxHandle.conn.sendRequest("tool/execute", {
       name,
@@ -106,8 +103,7 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
     return errMsg;
   };
 
-  // ── Assemble runtime ─────────────────────────────────────────────
-  const builtins = resolveAllBuiltins(config.builtinTools ?? []);
+  const builtins = resolveAllBuiltins(config.builtinTools ?? [], { fetch: safeFetch });
   const agentRuntime = createRuntime({
     agent: {
       name: config.name,

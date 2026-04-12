@@ -17,6 +17,7 @@ import pDebounce from "p-debounce";
 import { ensureApiKey } from "./_config.ts";
 import { resolveServerEnv } from "./_server-common.ts";
 import { log } from "./_ui.ts";
+import { validateAgentExport } from "./_utils.ts";
 
 // ─── Env loading ────────────────────────────────────────────────────────────
 
@@ -41,9 +42,7 @@ async function loadAgentDef(cwd: string): Promise<AgentDef<any>> {
   const agentUrl = `${pathToFileURL(agentPath).href}?t=${Date.now()}`;
   const mod = await import(agentUrl);
   const agentDef = mod.default;
-  if (!agentDef?.name || typeof agentDef.name !== "string") {
-    throw new Error("agent.ts must export default agent({ name: ... })");
-  }
+  validateAgentExport(agentDef);
   return agentDef;
 }
 
@@ -92,7 +91,6 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
 
   const { createRuntime, createServer } = await import("aai/runtime");
 
-  // Check if client.tsx exists for Vite HMR
   const hasClient = existsSync(path.join(cwd, "client.tsx"));
 
   // Determine ports: if we have a client, Vite gets the main port and
@@ -107,7 +105,6 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
   const agentServer = createServer({ runtime, name: agentDef.name });
   await agentServer.listen(backendPort);
 
-  // Start Vite for client HMR if client.tsx exists
   let viteServer: { close(): Promise<void> } | undefined;
   if (hasClient) {
     const { createServer: createViteServer } = await import("vite");
@@ -125,7 +122,6 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
     await (viteServer as unknown as { listen(): Promise<void> }).listen();
   }
 
-  // Set up file watching for auto-restart
   let restarting = false;
   let currentServer: AgentServer = agentServer;
   let currentVite = viteServer;
@@ -157,7 +153,6 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
     }
   }
 
-  // Return cleanup function
   return async () => {
     for (const w of watchers) w.close();
     if (currentVite) {

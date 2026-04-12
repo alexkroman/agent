@@ -7,7 +7,7 @@
  */
 
 import { z } from "zod";
-import { DEFAULT_GREETING, DEFAULT_SYSTEM_PROMPT } from "./types.ts";
+import { BuiltinToolSchema, DEFAULT_GREETING, DEFAULT_SYSTEM_PROMPT } from "./types.ts";
 
 /**
  * Tool definition as it appears in the serialized manifest JSON.
@@ -50,14 +50,12 @@ const ToolManifestSchema = z.object({
   parameters: z.record(z.string(), z.unknown()).optional(),
 });
 
-const BUILTIN_TOOLS = ["web_search", "visit_webpage", "fetch_json", "run_code"] as const;
-
 const ManifestSchema = z.object({
   name: z.string().min(1),
   systemPrompt: z.string().optional(),
   greeting: z.string().optional(),
   sttPrompt: z.string().optional(),
-  builtinTools: z.array(z.enum(BUILTIN_TOOLS)).optional(),
+  builtinTools: z.array(BuiltinToolSchema).optional(),
   maxSteps: z.number().int().positive().optional(),
   toolChoice: z.enum(["auto", "required"]).optional(),
   idleTimeoutMs: z.number().int().positive().optional(),

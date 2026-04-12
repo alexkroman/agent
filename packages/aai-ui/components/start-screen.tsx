@@ -43,7 +43,7 @@ export function StartScreen({
   const theme = useTheme();
 
   if (started) {
-    return <>{children}</>;
+    return children;
   }
 
   return (
