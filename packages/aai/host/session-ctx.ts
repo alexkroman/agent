@@ -69,9 +69,12 @@ export function buildCtx(opts: {
     conversationMessages: [],
     maxHistory,
     consumeToolCallStep(_name, replyId) {
+      // Guard 1: reject tool calls from interrupted/stale replies
       if (replyId === null || replyId !== ctx.reply.currentReplyId) {
         return toolError("Reply was interrupted. Discarding stale tool call.");
       }
+      // Guard 2: enforce maxSteps (default 5, set in manifest.ts) to prevent
+      // runaway tool-call loops within a single LLM reply
       const maxSteps = agentConfig.maxSteps;
       ctx.reply.toolCallCount++;
       if (maxSteps !== undefined && ctx.reply.toolCallCount > maxSteps) {

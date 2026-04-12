@@ -1,5 +1,11 @@
 // Copyright 2025 the AAI authors. MIT license.
-// Shared type definitions for the bundle store.
+/**
+ * Type definitions for the agent bundle store (S3 in production, in-memory for tests).
+ *
+ * Separated from `bundle-store.ts` (which has the S3 implementation) so that
+ * test utilities and handlers can depend on the interface without pulling in
+ * AWS SDK imports.
+ */
 
 import type { IsolateConfig } from "./rpc-schemas.ts";
 import type { AgentMetadata } from "./schemas.ts";

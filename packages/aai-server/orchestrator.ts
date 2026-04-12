@@ -1,4 +1,23 @@
 // Copyright 2025 the AAI authors. MIT license.
+/**
+ * HTTP + WebSocket routing for the managed platform server.
+ *
+ * Route structure:
+ * - `GET  /health`                — platform health check
+ * - `POST /deploy`                — top-level deploy (server-generated slug)
+ * - `GET  /:slug`                 — redirect to /:slug/
+ * - `GET  /:slug/`               — agent UI page
+ * - `GET  /:slug/health`         — per-agent health check
+ * - `GET  /:slug/assets/:path`   — client static assets
+ * - `POST /:slug/deploy`         — owner: re-deploy agent
+ * - `DELETE /:slug/`             — owner: delete agent
+ * - `GET/PUT/DELETE /:slug/secret` — owner: manage secrets
+ * - `GET/POST /:slug/kv`        — owner: KV store operations
+ * - `WS   /:slug/websocket`     — WebSocket upgrade for voice sessions
+ *
+ * Auth: `authMw` validates API key; `ownerMw` verifies slug ownership.
+ * Slugs: `[a-z0-9][a-z0-9_-]*[a-z0-9]` — enforced by regex for multi-tenant isolation.
+ */
 
 import { zValidator } from "@hono/zod-validator";
 import { MAX_WS_PAYLOAD_BYTES, parseWsUpgradeParams } from "aai";
@@ -129,6 +148,8 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   const connections = createConnectionTracker(MAX_CONNECTIONS);
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_WS_PAYLOAD_BYTES });
 
+  // Slug format: starts/ends with alphanumeric, allows hyphens/underscores in middle.
+  // Enforced here (not just in middleware) because WebSocket upgrades bypass Hono routing.
   const SLUG_WS_RE = /^\/([a-z0-9][a-z0-9_-]*[a-z0-9])\/websocket$/;
 
   /** Parse the upgrade URL and resolve the matching sandbox (or null). */

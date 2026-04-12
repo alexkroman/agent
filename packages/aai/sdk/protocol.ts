@@ -30,6 +30,12 @@ export const MessageEnvelopeSchema = z.object({ type: z.string() }).passthrough(
  * Two-phase message parse: tries the strict schema first, then falls back to
  * the envelope to distinguish unknown-but-valid types (safe to ignore during
  * rolling upgrades) from genuinely malformed messages.
+ *
+ * Return value when `ok: false`:
+ * - `malformed: true` — message doesn't even have a `{ type: string }` shape;
+ *   likely corrupt data, should warn
+ * - `malformed: false` — has a valid `type` field but the type is unrecognised;
+ *   safe to ignore (e.g. new message type from a newer server version)
  */
 export function lenientParse<T>(
   schema: z.ZodType<T>,
