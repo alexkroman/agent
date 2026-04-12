@@ -15,7 +15,8 @@ pnpm test                # Run all unit tests (vitest)
 pnpm lint                # Run Biome linter (all packages)
 pnpm typecheck           # Type-check all packages
 pnpm lint:fix            # Auto-fix lint issues
-pnpm check:local         # Fast pre-commit gate (parallel: build → typecheck + lint + publint + syncpack → test)
+pnpm check:local         # Fast pre-commit gate (single turbo invocation, max parallelism)
+pnpm check:affected      # Only check packages affected by changes since main
 ```
 
 ### Test tiers
@@ -49,17 +50,17 @@ pnpm --filter aai test                          # Single package via pnpm filter
 
 ### Full CI check (`pnpm check`)
 
-Runs via `scripts/check.sh` in three parallelized phases:
-
-1. **Build** (sequential): `pnpm -r run build`
-2. **Checks** (parallel): typecheck, lint, publint, attw, templates,
-   knip, syncpack, markdownlint
-3. **Tests** (parallel, sharded by package): vitest per-package (aai, aai-ui,
-   aai-cli, aai-server, templates), integration tests, e2e tests
+Runs via `scripts/check.sh` in a single turbo invocation for maximum
+parallelism. Turbo handles the dependency graph — tasks with no
+dependencies (lint, test, syncpack, sherif) start immediately while
+build-dependent tasks (typecheck, publint, attw) wait for build.
 
 `pnpm check:local` uses the same script with `--local` flag, running a
-subset: build → typecheck + lint + publint + syncpack (parallel) →
-vitest (no coverage).
+subset: build, typecheck, lint, publint, syncpack, sherif, test — all
+in one turbo call with `--continue` (shows all failures at once).
+
+`pnpm check:affected` uses turbo's `--affected` flag to only run tasks
+for packages changed since the default branch.
 
 ## Architecture
 
