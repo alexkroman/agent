@@ -6,7 +6,6 @@
  */
 
 import pTimeout from "p-timeout";
-import { errorDetail, errorMessage } from "../sdk/_utils.ts";
 import {
   DEFAULT_SESSION_START_TIMEOUT_MS,
   MAX_MESSAGE_BUFFER_SIZE,
@@ -14,6 +13,7 @@ import {
 } from "../sdk/constants.ts";
 import type { ClientMessage, ClientSink, ReadyConfig } from "../sdk/protocol.ts";
 import { ClientMessageSchema, lenientParse } from "../sdk/protocol.ts";
+import { errorDetail, errorMessage } from "../sdk/utils.ts";
 import type { Logger } from "./runtime-config.ts";
 import { consoleLogger } from "./runtime-config.ts";
 import type { Session } from "./session.ts";

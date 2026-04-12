@@ -30,7 +30,7 @@ import type { Storage } from "unstorage";
 import { WebSocketServer } from "ws";
 import { createConnectionTracker } from "./connection-tracker.ts";
 import { agentKvPrefix, MAX_CONNECTIONS } from "./constants.ts";
-import type { Env } from "./context.ts";
+import type { HonoEnv } from "./context.ts";
 import { handleDelete } from "./delete.ts";
 import { handleDeploy, handleDeployNew } from "./deploy.ts";
 import { createErrorHandler } from "./error-handler.ts";
@@ -52,12 +52,12 @@ export type OrchestratorOpts = {
 };
 
 export type Orchestrator = {
-  app: Hono<Env>;
+  app: Hono<HonoEnv>;
   injectWebSocket: (server: import("node:http").Server) => void;
 };
 
 export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
-  const app = new Hono<Env>();
+  const app = new Hono<HonoEnv>();
 
   const allowedOrigins = opts.allowedOrigins;
   app.use(
@@ -103,7 +103,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   });
 
   // ── Slug-scoped sub-router ──────────────────────────────────────────
-  const agents = new Hono<Env>();
+  const agents = new Hono<HonoEnv>();
   agents.use("*", slugMw);
 
   // Owner-protected routes — request bodies validated by zValidator before handlers

@@ -10,12 +10,12 @@
 import pTimeout from "p-timeout";
 import { createStorage } from "unstorage";
 import { agentToolsToSchemas, type ToolSchema, toAgentConfig } from "../sdk/_internal-types.ts";
-import { toolError } from "../sdk/_utils.ts";
 import { DEFAULT_SHUTDOWN_TIMEOUT_MS } from "../sdk/constants.ts";
 import type { Kv } from "../sdk/kv.ts";
 import type { ClientSink } from "../sdk/protocol.ts";
 import { buildReadyConfig, type ReadyConfig } from "../sdk/protocol.ts";
 import type { AgentDef } from "../sdk/types.ts";
+import { toolError } from "../sdk/utils.ts";
 import { resolveAllBuiltins } from "./builtin-tools.ts";
 import type { Logger, S2SConfig } from "./runtime-config.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime-config.ts";

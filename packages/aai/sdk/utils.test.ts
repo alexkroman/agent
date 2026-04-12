@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
-import { errorDetail, errorMessage } from "./_utils.ts";
+import { errorDetail, errorMessage } from "./utils.ts";
 
 describe("errorMessage", () => {
   test("extracts message from Error instance", () => {

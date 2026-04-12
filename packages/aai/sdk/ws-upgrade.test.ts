@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { describe, expect, it } from "vitest";
-import { parseWsUpgradeParams } from "./_ws-upgrade.ts";
+import { parseWsUpgradeParams } from "./ws-upgrade.ts";
 
 describe("parseWsUpgradeParams", () => {
   it("returns defaults for URL with no query params", () => {

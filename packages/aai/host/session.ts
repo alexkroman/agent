@@ -2,10 +2,10 @@
 /** S2S session — relays audio between client and AssemblyAI S2S API. */
 
 import type { AgentConfig, ExecuteTool, ToolSchema } from "../sdk/_internal-types.ts";
-import { errorDetail, errorMessage, toolError } from "../sdk/_utils.ts";
 import { DEFAULT_IDLE_TIMEOUT_MS, MAX_TOOL_RESULT_CHARS } from "../sdk/constants.ts";
 import type { ClientEvent, ClientSink } from "../sdk/protocol.ts";
 import { buildSystemPrompt } from "../sdk/system-prompt.ts";
+import { errorDetail, errorMessage, toolError } from "../sdk/utils.ts";
 import type { Logger, S2SConfig } from "./runtime-config.ts";
 import { consoleLogger } from "./runtime-config.ts";
 import {
@@ -16,10 +16,6 @@ import {
   type S2sToolSchema,
 } from "./s2s.ts";
 import { buildCtx, type S2sSessionCtx } from "./session-ctx.ts";
-
-export type { S2sHandle } from "./s2s.ts";
-export type { ReplyState, S2sSessionCtx, SessionDeps } from "./session-ctx.ts";
-export { buildCtx } from "./session-ctx.ts";
 
 /**
  * A voice session managing the Speech-to-Speech connection for one client.

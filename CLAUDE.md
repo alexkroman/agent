@@ -105,10 +105,10 @@ boundary** — this split is critical for sandbox security:
 
 - **`sdk/`** — shared modules with **zero Node.js dependencies**. Safe to
   run in browsers, Deno, and sandboxed environments. Contains:
-  `types.ts`, `kv.ts`, `hooks.ts`, `_utils.ts`, `constants.ts`,
+  `types.ts`, `kv.ts`, `hooks.ts`, `utils.ts`, `constants.ts`,
   `protocol.ts`, `system-prompt.ts`, `manifest.ts`,
-  `_internal-types.ts`, `define.ts` (`agent()` and `tool()` helpers for
-  authoring `agent.ts` files).
+  `ws-upgrade.ts`, `_internal-types.ts`, `define.ts` (`agent()` and
+  `tool()` helpers for authoring `agent.ts` files).
 - **`host/`** — host-only modules that **require Node.js APIs** (`node:vm`,
   `node:crypto`, etc.). Only runs on the platform server and CLI, never
   inside a guest sandbox. Contains:
