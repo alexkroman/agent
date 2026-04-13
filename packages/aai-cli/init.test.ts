@@ -6,11 +6,15 @@ import { describe, expect, test, vi } from "vitest";
 import { patchPackageJsonForWorkspace } from "./_init.ts";
 import { fakeDownloadAndMerge, silenced, withTempDir } from "./_test-utils.ts";
 import { fileExists } from "./_utils.ts";
+import { resolvePnpmCommand } from "./init.ts";
 
 async function createFakeTemplates(dir: string): Promise<string> {
   const rootDir = path.join(dir, "fake-root");
   const scaffold = path.join(rootDir, "scaffold");
   await fs.mkdir(scaffold, { recursive: true });
+  // Copy real scaffold files so tests validate actual scaffold content
+  const realScaffold = path.resolve(import.meta.dirname, "../aai-templates/scaffold");
+  await fs.cp(realScaffold, scaffold, { recursive: true });
   await fs.writeFile(path.join(scaffold, "shared.txt"), "from shared");
   await fs.writeFile(path.join(scaffold, ".env.example"), "MY_KEY=");
 
@@ -68,6 +72,38 @@ describe("runInit", () => {
         await runInit({ targetDir: target });
         expect(await fileExists(path.join(target, ".env"))).toBe(true);
         expect(await fs.readFile(path.join(target, ".env"), "utf-8")).toBe("MY_KEY=");
+      }),
+    );
+  });
+});
+
+describe("resolvePnpmCommand", () => {
+  test("uses safe-chain when available", async () => {
+    const result = await resolvePnpmCommand(() => Promise.resolve(true));
+    expect(result.cmd).toBe("safe-chain");
+    expect(result.args).toContain("pnpm");
+    expect(result.args).toContain("--safe-chain-skip-minimum-package-age");
+  });
+
+  test("falls back to pnpm when safe-chain is not available", async () => {
+    const result = await resolvePnpmCommand(() => Promise.resolve(false));
+    expect(result.cmd).toBe("pnpm");
+    expect(result.args).not.toContain("--safe-chain-skip-minimum-package-age");
+  });
+});
+
+describe("scaffold client.tsx", () => {
+  test("scaffold includes client.tsx that imports client from aai-ui", async () => {
+    await withTempDir(
+      silenced(async (dir) => {
+        fakeTemplatesDir = await createFakeTemplates(dir);
+        const target = path.join(dir, "output");
+        await runInit({ targetDir: target });
+        const clientPath = path.join(target, "client.tsx");
+        expect(await fileExists(clientPath)).toBe(true);
+        const content = await fs.readFile(clientPath, "utf-8");
+        expect(content).toContain("client");
+        expect(content).not.toContain("defineClient");
       }),
     );
   });

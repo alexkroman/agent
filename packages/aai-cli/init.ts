@@ -66,12 +66,33 @@ async function hasDeps(cwd: string): Promise<boolean> {
   return deps.length > 0 || devDeps.length > 0;
 }
 
+/** Check whether the safe-chain binary is on PATH. */
+async function hasSafeChain(): Promise<boolean> {
+  try {
+    await execFileAsync("safe-chain", ["--version"]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Build the command + args for running pnpm, routing through safe-chain when available. */
+export async function resolvePnpmCommand(
+  checkSafeChain: () => Promise<boolean> = hasSafeChain,
+): Promise<{ cmd: string; args: string[] }> {
+  if (await checkSafeChain()) {
+    return { cmd: "safe-chain", args: ["pnpm", "--safe-chain-skip-minimum-package-age"] };
+  }
+  return { cmd: "pnpm", args: [] };
+}
+
 /** Run pnpm install and warn on failure. */
 async function runPnpmInstall(cwd: string): Promise<void> {
+  const { cmd, args } = await resolvePnpmCommand();
   // In dev mode, allow workspace resolution so workspace deps link to local source.
   // In production, --ignore-workspace prevents pnpm from hoisting to a parent workspace.
   const pnpmArgs = isDevMode() ? ["install"] : ["install", "--ignore-workspace"];
-  await execFileAsync("pnpm", pnpmArgs, { cwd });
+  await execFileAsync(cmd, [...args, ...pnpmArgs], { cwd });
 }
 
 /** Install deps with pnpm (scaffold declares packageManager: pnpm). */
