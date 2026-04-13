@@ -1,5 +1,16 @@
 # @alexkroman1/aai-server
 
+## 1.0.1
+
+### Patch Changes
+
+- b4ff42e: Redeploy aai-server and refresh client/CLI/SDK releases
+- Updated dependencies [5517333]
+- Updated dependencies [5d55c12]
+- Updated dependencies [b4ff42e]
+  - aai@1.0.1
+  - aai-ui@1.0.1
+
 ## 1.0.0
 
 ### Major Changes

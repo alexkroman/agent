@@ -10,13 +10,13 @@
   "dependencies": {
     "aai": "^0.12.3",
     "zod": "^4.3.6",
-    "aai-ui": "^1.0.0",
+    "aai-ui": "^1.0.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "tailwindcss": "^4.2.1"
   },
   "devDependencies": {
-    "aai-cli": "^1.0.0",
+    "aai-cli": "^1.0.1",
     "@vitejs/plugin-react": "^6.0.1",
     "@tailwindcss/vite": "^4.2.1",
     "@types/node": "^25.5.0",
