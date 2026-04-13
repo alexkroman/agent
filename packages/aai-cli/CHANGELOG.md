@@ -1,5 +1,51 @@
 # @alexkroman1/aai-cli
 
+## 1.0.0
+
+### Minor Changes
+
+- befca9a: Simplify agent surface area: directory-based agent format with agent.json, tools/_.ts, hooks/_.ts replacing defineAgent/Zod
+- d06b4fd: Remove global ASSEMBLYAI_API_KEY — each agent provides its own key via .env
+- 0456e37: Replace esbuild with Vite library mode, unify dev/prod on tools.ts + agent.json
+- 94bc25a: Prompt for AssemblyAI API key once on first use, store globally in ~/.config/aai/config.json
+- 192d8ae: Fix deploy pipeline, streamline scaffold, improve dev CLI workflow
+- 7b451c7: Extract agent config at build time and defer V8 isolate boot until custom tool/hook execution
+- 26d9d44: Remove template selection from aai init — always scaffolds the simple template
+- bb87a1d: Add structured JSON output for all CLI commands (auto-detected in non-TTY, --json flag)
+
+### Patch Changes
+
+- 9211c65: Add default aai-ui client served by the server when no custom client is deployed. Remove zod externalization from the worker bundler — zod 4 works natively in Deno sandboxes. Update S2S API endpoint and fix load test event handling.
+- f6e7a5c: BREAKING: Align SDK naming with S2S API
+
+  - `instructions` → `systemPrompt` in AgentOptions/AgentDef
+  - `DEFAULT_INSTRUCTIONS` → `DEFAULT_SYSTEM_PROMPT`
+  - `onTurn` → `onUserTranscript` hook
+  - Protocol events renamed: `transcript` → `user_transcript_delta`, `turn` → `user_transcript`, `chat` → `agent_transcript`, `chat_delta` → `agent_transcript_delta`, `tts_done` → `reply_done`, `tool_call_start` → `tool_call`
+
+- 05f8759: Replace hand-rolled utilities with dependencies: dotenv for .env parsing, mime-types and escape-html in dev server, p-debounce for file watcher
+- fa7b928: Change default dev server port from 8787 to 8080
+- Updated dependencies [8ecb7d1]
+- Updated dependencies [3bd18a9]
+- Updated dependencies [befca9a]
+- Updated dependencies [9211c65]
+- Updated dependencies [b9b5c02]
+- Updated dependencies [99db30d]
+- Updated dependencies [5cc9550]
+- Updated dependencies [4c1cd20]
+- Updated dependencies [ab98c61]
+- Updated dependencies [837e34f]
+- Updated dependencies [f6e7a5c]
+- Updated dependencies [7669733]
+- Updated dependencies [14d0653]
+- Updated dependencies [9d2141b]
+- Updated dependencies [05f8759]
+- Updated dependencies [1678546]
+- Updated dependencies [5fd5cb3]
+- Updated dependencies [64d83b6]
+- Updated dependencies [6d3ec72]
+  - aai@1.0.0
+
 ## 0.12.3
 
 ### Patch Changes

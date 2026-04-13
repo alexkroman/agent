@@ -1,5 +1,59 @@
 # @alexkroman1/aai-ui
 
+## 1.0.0
+
+### Major Changes
+
+- 7669733: Migrate aai-ui from Preact to React 19 with simplified API: useSession, useTheme, useToolResult hooks + two-tier defineClient
+- 486fb23: Simplify aai-ui package: remove Reactive<T> abstraction, hardcode Preact signals, inline micro-components, merge createSessionControls into createVoiceSession, remove ./session subpath export.
+
+  BREAKING CHANGES:
+
+  - `createSessionControls` removed (merged into `createVoiceSession`)
+  - `SessionSignals` type removed
+  - `Reactive<T>` type removed
+  - `useSession()` return shape changed (returns `VoiceSession` directly)
+  - `VoiceSessionOptions` no longer accepts `reactiveFactory` or `batch`
+  - `./session` subpath export removed
+  - Components removed from exports: `ErrorBanner`, `StateIndicator`, `ThinkingIndicator`, `Transcript`, `MessageBubble`
+  - `ButtonVariant`, `ButtonSize` types removed from exports
+  - `ClientHandle.signals` removed (use `ClientHandle.session` directly)
+
+### Minor Changes
+
+- 8ecb7d1: Add protocol compat fixtures and harden wire format for rolling upgrades
+- 9211c65: Add default aai-ui client served by the server when no custom client is deployed. Remove zod externalization from the worker bundler — zod 4 works natively in Deno sandboxes. Update S2S API endpoint and fix load test event handling.
+
+### Patch Changes
+
+- f6e7a5c: BREAKING: Align SDK naming with S2S API
+
+  - `instructions` → `systemPrompt` in AgentOptions/AgentDef
+  - `DEFAULT_INSTRUCTIONS` → `DEFAULT_SYSTEM_PROMPT`
+  - `onTurn` → `onUserTranscript` hook
+  - Protocol events renamed: `transcript` → `user_transcript_delta`, `turn` → `user_transcript`, `chat` → `agent_transcript`, `chat_delta` → `agent_transcript_delta`, `tts_done` → `reply_done`, `tool_call_start` → `tool_call`
+
+- Updated dependencies [8ecb7d1]
+- Updated dependencies [3bd18a9]
+- Updated dependencies [befca9a]
+- Updated dependencies [9211c65]
+- Updated dependencies [b9b5c02]
+- Updated dependencies [99db30d]
+- Updated dependencies [5cc9550]
+- Updated dependencies [4c1cd20]
+- Updated dependencies [ab98c61]
+- Updated dependencies [837e34f]
+- Updated dependencies [f6e7a5c]
+- Updated dependencies [7669733]
+- Updated dependencies [14d0653]
+- Updated dependencies [9d2141b]
+- Updated dependencies [05f8759]
+- Updated dependencies [1678546]
+- Updated dependencies [5fd5cb3]
+- Updated dependencies [64d83b6]
+- Updated dependencies [6d3ec72]
+  - aai@1.0.0
+
 ## 0.12.3
 
 ### Patch Changes
