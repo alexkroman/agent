@@ -21,10 +21,10 @@
     "check:load": "pnpm run test:load"
   },
   "dependencies": {
+    "@alexkroman1/aai": "workspace:*",
+    "@alexkroman1/aai-ui": "workspace:*",
     "@hono/node-server": "^1.19.13",
     "@hono/zod-validator": "^0.7.6",
-    "aai": "workspace:*",
-    "aai-ui": "workspace:*",
     "bogon": "^1.2.0",
     "hono": "^4.12.12",
     "human-id": "^4.1.3",

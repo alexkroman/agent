@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 
-import type { ChatMessage } from "aai-ui";
-import { client, useSession, useToolResult } from "aai-ui";
+import type { ChatMessage } from "@alexkroman1/aai-ui";
+import { client, useSession, useToolResult } from "@alexkroman1/aai-ui";
 import { useEffect, useMemo, useRef } from "react";
 import type { DispatchState, Incident, Severity } from "./shared.ts";
 

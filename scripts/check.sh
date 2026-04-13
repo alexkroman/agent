@@ -37,6 +37,7 @@ if [ "$MODE" = "--local" ]; then
     echo -e "\n${RED}Some checks failed.${NC}"
     exit 1
   fi
+  pnpm run check:publish-names
 else
   echo -e "\n${YELLOW}Running full CI checks (via turbo)${NC}"
   if ! pnpm exec turbo run \
@@ -47,6 +48,7 @@ else
     echo -e "\n${RED}Some checks failed.${NC}"
     exit 1
   fi
+  pnpm run check:publish-names
 fi
 
 echo -e "\n${GREEN}All checks passed.${NC}"

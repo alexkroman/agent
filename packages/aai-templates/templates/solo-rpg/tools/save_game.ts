@@ -1,4 +1,4 @@
-import { tool } from "aai";
+import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
 import type { KV } from "../shared.ts";
 import { getGameState } from "../shared.ts";

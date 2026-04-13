@@ -3,8 +3,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import type { AgentDef } from "aai";
-import { agentToolsToSchemas, toAgentConfig } from "aai/manifest";
+import type { AgentDef } from "@alexkroman1/aai";
+import { agentToolsToSchemas, toAgentConfig } from "@alexkroman1/aai/manifest";
 import { build, type Rollup } from "vite";
 import { type CommandResult, ok } from "./_output.ts";
 import { fileExists, validateAgentExport } from "./_utils.ts";

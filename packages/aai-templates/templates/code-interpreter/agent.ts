@@ -1,4 +1,4 @@
-import { agent } from "aai";
+import { agent } from "@alexkroman1/aai";
 import systemPrompt from "./system-prompt.md";
 
 export default agent({

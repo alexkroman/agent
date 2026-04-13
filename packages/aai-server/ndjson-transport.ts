@@ -12,7 +12,7 @@
 
 import { createInterface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
-import { errorMessage } from "aai";
+import { errorMessage } from "@alexkroman1/aai";
 import { z } from "zod";
 
 // ── Types ────────────────────────────────────────────────────────────────────

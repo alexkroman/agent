@@ -107,7 +107,11 @@ function installDeps(projectDir: string): void {
   for (const depField of ["dependencies", "devDependencies"] as const) {
     if (!pkgJson[depField]) continue;
     for (const dep of Object.keys(pkgJson[depField])) {
-      if (dep === "aai" || dep === "aai-ui" || dep === "aai-cli") {
+      if (
+        dep === "@alexkroman1/aai" ||
+        dep === "@alexkroman1/aai-ui" ||
+        dep === "@alexkroman1/aai-cli"
+      ) {
         pkgJson[depField][dep] = registry.testVersion;
       }
     }

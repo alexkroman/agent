@@ -35,7 +35,7 @@
             "patterns": [
               {
                 "group": ["../**/aai/*", "../**/aai-cli/*", "../**/aai-ui/*", "../**/aai-server/*", "../**/aai-templates/*"],
-                "message": "Cross-package relative imports are forbidden. Use the workspace package name (e.g. aai) instead."
+                "message": "Cross-package relative imports are forbidden. Use the workspace package name (e.g. @alexkroman1/aai) instead."
               }
             ]
           }

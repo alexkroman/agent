@@ -45,7 +45,7 @@ pnpm dev:aai-server      # Start aai-server in dev mode
 pnpm vitest run --project aai                   # Single package via --project
 pnpm vitest run packages/aai/types.test.ts      # Single file
 pnpm vitest run session                         # All files matching "session"
-pnpm --filter aai test                          # Single package via pnpm filter
+pnpm --filter @alexkroman1/aai test             # Single package via pnpm filter
 ```
 
 ### Full CI check (`pnpm check`)
@@ -68,14 +68,19 @@ Five workspace packages under `packages/`:
 
 | Package | npm name | Purpose |
 | --- | --- | --- |
-| `packages/aai/` | `aai` | Shared core: manifest, types, protocol, S2S, session, KV |
-| `packages/aai-ui/` | `aai-ui` | Browser client (Preact): session, audio, UI components |
-| `packages/aai-cli/` | `aai-cli` | The `aai` CLI: init, dev, test, build, deploy, delete, secret |
+| `packages/aai/` | `@alexkroman1/aai` | Shared core: manifest, types, protocol, S2S, session, KV |
+| `packages/aai-ui/` | `@alexkroman1/aai-ui` | Browser client (Preact): session, audio, UI components |
+| `packages/aai-cli/` | `@alexkroman1/aai-cli` | The `aai` CLI: init, dev, test, build, deploy, delete, secret |
 | `packages/aai-server/` | `aai-server` | Managed platform server (private): sandbox, sidecar, auth, SSRF |
 | `packages/aai-templates/` | `aai-templates` | Agent templates + scaffold (private): starter templates |
 
-**Dependency flow:** `aai-cli`, `aai-ui`, and `aai-server` depend on `aai`
+**Dependency flow:** `aai-cli`, `aai-ui`, and `aai-server` depend on `@alexkroman1/aai`
 (via `workspace:*`) but never on each other.
+
+**Publishable packages must use the `@alexkroman1/` scope.** The unscoped
+names `aai`, `aai-ui`, `aai-cli` are taken on npm by other publishers —
+publishing under those names returns 404. The `scripts/check-publish-names.mjs`
+script enforces this at CI time.
 
 ### Package exports
 
@@ -236,13 +241,13 @@ TypeScript source (`.ts`) is resolved during development, while compiled
 ```
 
 This is enabled by `customConditions: ["@dev/source"]` in the root
-`tsconfig.json`. During dev, imports like `import { X } from "aai"`
+`tsconfig.json`. During dev, imports like `import { X } from "@alexkroman1/aai"`
 resolve directly to `.ts` source — no build step needed.
 
 ### Import rules
 
 - **Cross-package imports** must use the npm package name (e.g.
-  `import { X } from "aai/protocol"`), never relative paths between
+  `import { X } from "@alexkroman1/aai/protocol"`), never relative paths between
   packages. Biome's `noRestrictedImports` enforces this.
 - **Internal modules** (`_*.ts`) must not be imported from outside their
   own package. Biome's `noPrivateImports` enforces this.
@@ -273,10 +278,10 @@ Tracing imports through barrel files can be confusing. Here's the map
 
 | Import path | Resolves to | What it contains |
 | --- | --- | --- |
-| `aai` | `packages/aai/index.ts` → 6 modules | Types, KV, utils, constants, `agent()`/`tool()` helpers |
-| `aai/runtime` | `host/runtime-barrel.ts` → 11 modules | Full Node.js runtime: session, S2S, server, tools, WS handler |
-| `aai/protocol` | `sdk/protocol.ts` (direct, not a barrel) | Wire-format Zod schemas, `lenientParse()`, `ClientEvent`, `ServerMessage` |
-| `aai/manifest` | `sdk/manifest-barrel.ts` → 3 modules | `parseManifest()`, `toAgentConfig()`, `agentToolsToSchemas()`, system prompt builder |
+| `@alexkroman1/aai` | `packages/aai/index.ts` → 6 modules | Types, KV, utils, constants, `agent()`/`tool()` helpers |
+| `@alexkroman1/aai/runtime` | `host/runtime-barrel.ts` → 11 modules | Full Node.js runtime: session, S2S, server, tools, WS handler |
+| `@alexkroman1/aai/protocol` | `sdk/protocol.ts` (direct, not a barrel) | Wire-format Zod schemas, `lenientParse()`, `ClientEvent`, `ServerMessage` |
+| `@alexkroman1/aai/manifest` | `sdk/manifest-barrel.ts` → 3 modules | `parseManifest()`, `toAgentConfig()`, `agentToolsToSchemas()`, system prompt builder |
 
 ### Default values and magic numbers
 
@@ -364,13 +369,13 @@ pnpm changeset          # Prompts for packages + bump type + summary
 **Creating a changeset (non-interactive — for agents/CI):**
 
 ```sh
-pnpm changeset:create --pkg aai --bump patch --summary "Fix typo in error message"
+pnpm changeset:create --pkg @alexkroman1/aai --bump patch --summary "Fix typo in error message"
 ```
 
 Multiple packages:
 
 ```sh
-pnpm changeset:create --pkg aai --pkg aai-ui --bump minor --summary "Add new session API"
+pnpm changeset:create --pkg @alexkroman1/aai --pkg @alexkroman1/aai-ui --bump minor --summary "Add new session API"
 ```
 
 If the change doesn't need a release (docs-only, config, tests):
@@ -383,7 +388,7 @@ pnpm changeset add --empty
 
 ```yaml
 ---
-"aai": patch
+"@alexkroman1/aai": patch
 ---
 
 Short summary of the change for the changelog.
@@ -392,8 +397,9 @@ Short summary of the change for the changelog.
 Valid bump types: `patch` (bug fixes), `minor` (new features), `major`
 (breaking changes).
 
-**Fixed packages:** `aai`, `aai-ui`, and `aai-cli` release together (configured
-in `.changeset/config.json`). You only need to list one; the others are
+**Fixed packages:** `@alexkroman1/aai`, `@alexkroman1/aai-ui`, and
+`@alexkroman1/aai-cli` release together (configured in
+`.changeset/config.json`). You only need to list one; the others are
 bumped automatically.
 
 **Checking status:** `pnpm changeset status --since=origin/main`

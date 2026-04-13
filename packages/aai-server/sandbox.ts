@@ -17,7 +17,7 @@ import {
   createRuntime,
   type ExecuteTool,
   resolveAllBuiltins,
-} from "aai/runtime";
+} from "@alexkroman1/aai/runtime";
 import type { Storage } from "unstorage";
 import { agentKvPrefix } from "./constants.ts";
 import { type IsolateConfig, ToolCallResponseSchema } from "./rpc-schemas.ts";
@@ -112,9 +112,11 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
       maxSteps: config.maxSteps ?? 5,
       tools: {},
       ...(config.sttPrompt ? { sttPrompt: config.sttPrompt } : {}),
-      ...(config.toolChoice ? { toolChoice: config.toolChoice as import("aai").ToolChoice } : {}),
+      ...(config.toolChoice
+        ? { toolChoice: config.toolChoice as import("@alexkroman1/aai").ToolChoice }
+        : {}),
       ...(config.builtinTools
-        ? { builtinTools: config.builtinTools as import("aai").BuiltinTool[] }
+        ? { builtinTools: config.builtinTools as import("@alexkroman1/aai").BuiltinTool[] }
         : {}),
     },
     env,

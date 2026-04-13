@@ -1,4 +1,4 @@
-import { tool } from "aai";
+import { tool } from "@alexkroman1/aai";
 import type { Incident, KV } from "../shared.ts";
 import { getState, INCIDENT_INDEX_KEY, now } from "../shared.ts";
 

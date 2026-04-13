@@ -79,6 +79,7 @@ jobs:
           pnpm run check:syncpack
           pnpm run check:sherif
           pnpm run check:markdown
+          pnpm run check:publish-names
 
   # Unit tests sharded by package — run in parallel
   test:
@@ -109,7 +110,7 @@ jobs:
             .tsbuildinfo
             .turbo
           key: workspace-${{ runner.os }}-node${{ hashFiles('.node-version') }}-${{ github.sha }}
-      - run: pnpm --filter ${{ matrix.package }} test:coverage
+      - run: pnpm --filter "./packages/${{ matrix.package }}" test:coverage
 
   integration:
     needs: setup
@@ -198,7 +199,7 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('packages/aai-cli/package.json') }}
-      - run: pnpm --filter aai-cli exec playwright install --with-deps chromium
+      - run: pnpm --filter @alexkroman1/aai-cli exec playwright install --with-deps chromium
       - run: pnpm exec turbo run check:e2e
 
   # Single gate job for branch protection — add only "ci" as a required check

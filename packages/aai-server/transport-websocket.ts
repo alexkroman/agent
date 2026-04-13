@@ -3,7 +3,7 @@
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
-import { AGENT_CSP } from "aai";
+import { AGENT_CSP } from "@alexkroman1/aai";
 import { HTTPException } from "hono/http-exception";
 import mime from "mime-types";
 import type { AppContext } from "./context.ts";
@@ -18,7 +18,7 @@ let _defaultClientDir: string | undefined;
 function getDefaultClientDir(): string {
   if (!_defaultClientDir) {
     const require = createRequire(import.meta.url);
-    const pkgPath = require.resolve("aai-ui/package.json");
+    const pkgPath = require.resolve("@alexkroman1/aai-ui/package.json");
     _defaultClientDir = path.join(path.dirname(pkgPath), "dist", "default-client");
   }
   return _defaultClientDir;
