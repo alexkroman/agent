@@ -18,7 +18,7 @@ let _defaultClientDir: string | undefined;
 function getDefaultClientDir(): string {
   if (!_defaultClientDir) {
     const require = createRequire(import.meta.url);
-    const pkgPath = require.resolve("aai-ui/package.json");
+    const pkgPath = require.resolve("@alexkroman1/aai-ui/package.json");
     _defaultClientDir = path.join(path.dirname(pkgPath), "dist", "default-client");
   }
   return _defaultClientDir;
