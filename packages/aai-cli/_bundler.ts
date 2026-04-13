@@ -7,7 +7,7 @@ import type { AgentDef } from "aai";
 import { agentToolsToSchemas, toAgentConfig } from "aai/manifest";
 import { build, type Rollup } from "vite";
 import { type CommandResult, ok } from "./_output.ts";
-import { fileExists } from "./_utils.ts";
+import { fileExists, validateAgentExport } from "./_utils.ts";
 
 /** Shared Vite build base config for agent bundles. */
 function agentViteBuildBase(entry: string) {
@@ -50,7 +50,6 @@ export async function buildAgentBundle(cwd: string): Promise<DirectoryBundleOutp
   const agentDef = await evalWorkerBundle(worker, cwd);
   log.step(`Bundling ${agentDef.name}`);
 
-  // Convert to wire format
   const config = toAgentConfig(agentDef);
   const toolSchemas = agentToolsToSchemas(agentDef.tools ?? {});
   const agentConfig: Record<string, unknown> = { ...config, toolSchemas };
@@ -76,10 +75,7 @@ export async function evalWorkerBundle(code: string, cwd: string): Promise<Agent
     const mod = await import(pathToFileURL(tmpPath).href);
     const agentDef = (mod.default ?? mod) as AgentDef;
 
-    if (!agentDef?.name || typeof agentDef.name !== "string") {
-      throw new Error("agent.ts must export default agent({ name: ... })");
-    }
-
+    validateAgentExport(agentDef);
     return agentDef;
   } finally {
     await fs.rm(tmpPath).catch(() => {

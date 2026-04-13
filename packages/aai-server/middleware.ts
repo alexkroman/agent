@@ -2,7 +2,7 @@
 
 import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
-import type { Env } from "./context.ts";
+import type { HonoEnv } from "./context.ts";
 import { VALID_SLUG_RE } from "./schemas.ts";
 import { hashApiKey, verifySlugOwner } from "./secrets.ts";
 import { isPrivateIp } from "./ssrf.ts";
@@ -81,14 +81,14 @@ export function requireInternal(req: Request): void {
 }
 
 /** Sets `c.var.slug` from the `:slug` route param. */
-export const slugMw = createMiddleware<Env>(async (c, next) => {
+export const slugMw = createMiddleware<HonoEnv>(async (c, next) => {
   // biome-ignore lint/style/noNonNullAssertion: slug param guaranteed by route pattern
   c.set("slug", validateSlug(c.req.param("slug")!));
   await next();
 });
 
 /** Verifies the Bearer token owns the slug and sets `c.var.keyHash`. */
-export const ownerMw = createMiddleware<Env>(async (c, next) => {
+export const ownerMw = createMiddleware<HonoEnv>(async (c, next) => {
   const keyHash = await requireOwner(c.req.raw, {
     slug: c.var.slug,
     store: c.env.store,
@@ -102,7 +102,7 @@ export const ownerMw = createMiddleware<Env>(async (c, next) => {
  * Used for routes where the slug may not exist yet (new deploys).
  * Sets `c.var.keyHash`.
  */
-export const authMw = createMiddleware<Env>(async (c, next) => {
+export const authMw = createMiddleware<HonoEnv>(async (c, next) => {
   c.set("keyHash", await requireAuth(c.req.raw));
   await next();
 });

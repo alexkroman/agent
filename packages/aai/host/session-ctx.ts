@@ -2,10 +2,10 @@
 /** Session context builder — extracted from session.ts. */
 
 import type { AgentConfig, ExecuteTool } from "../sdk/_internal-types.ts";
-import { toolError } from "../sdk/_utils.ts";
 import { DEFAULT_MAX_HISTORY } from "../sdk/constants.ts";
 import type { ClientSink } from "../sdk/protocol.ts";
 import type { Message } from "../sdk/types.ts";
+import { toolError } from "../sdk/utils.ts";
 import type { Logger } from "./runtime-config.ts";
 import type { S2sHandle } from "./s2s.ts";
 
@@ -69,9 +69,12 @@ export function buildCtx(opts: {
     conversationMessages: [],
     maxHistory,
     consumeToolCallStep(_name, replyId) {
+      // Guard 1: reject tool calls from interrupted/stale replies
       if (replyId === null || replyId !== ctx.reply.currentReplyId) {
         return toolError("Reply was interrupted. Discarding stale tool call.");
       }
+      // Guard 2: enforce maxSteps (default 5, set in manifest.ts) to prevent
+      // runaway tool-call loops within a single LLM reply
       const maxSteps = agentConfig.maxSteps;
       ctx.reply.toolCallCount++;
       if (maxSteps !== undefined && ctx.reply.toolCallCount > maxSteps) {

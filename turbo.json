@@ -10,12 +10,14 @@
     },
     "test": {
       "dependsOn": [],
-      "inputs": ["**/*.ts", "**/*.tsx", "vitest.config.ts", "../../vitest.shared.ts"]
+      "inputs": ["**/*.ts", "**/*.tsx", "vitest.config.ts", "../../vitest.shared.ts"],
+      "env": ["CI"]
     },
     "test:coverage": {
       "dependsOn": [],
       "inputs": ["**/*.ts", "**/*.tsx", "vitest.config.ts", "../../vitest.shared.ts"],
-      "outputs": ["coverage/**"]
+      "outputs": ["coverage/**"],
+      "env": ["CI"]
     },
     "typecheck": {
       "dependsOn": ["build"],
@@ -46,6 +48,18 @@
     },
     "check:typecheck": {
       "dependsOn": ["^build"]
+    },
+    "//#check:syncpack": {
+      "inputs": ["package.json", "packages/*/package.json", ".syncpackrc.json"]
+    },
+    "//#check:sherif": {
+      "inputs": ["package.json", "packages/*/package.json", "pnpm-workspace.yaml"]
+    },
+    "//#check:knip": {
+      "inputs": ["packages/**/*.ts", "packages/**/*.tsx", "knip.json", "package.json", "packages/*/package.json"]
+    },
+    "//#check:markdown": {
+      "inputs": ["**/*.md"]
     }
   }
 }

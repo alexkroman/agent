@@ -15,7 +15,8 @@ pnpm test                # Run all unit tests (vitest)
 pnpm lint                # Run Biome linter (all packages)
 pnpm typecheck           # Type-check all packages
 pnpm lint:fix            # Auto-fix lint issues
-pnpm check:local         # Fast pre-commit gate (parallel: build → typecheck + lint + publint + syncpack → test)
+pnpm check:local         # Fast pre-commit gate (single turbo invocation, max parallelism)
+pnpm check:affected      # Only check packages affected by changes since main
 ```
 
 ### Test tiers
@@ -49,17 +50,17 @@ pnpm --filter aai test                          # Single package via pnpm filter
 
 ### Full CI check (`pnpm check`)
 
-Runs via `scripts/check.sh` in three parallelized phases:
-
-1. **Build** (sequential): `pnpm -r run build`
-2. **Checks** (parallel): typecheck, lint, publint, attw, templates,
-   knip, syncpack, markdownlint
-3. **Tests** (parallel, sharded by package): vitest per-package (aai, aai-ui,
-   aai-cli, aai-server, templates), integration tests, e2e tests
+Runs via `scripts/check.sh` in a single turbo invocation for maximum
+parallelism. Turbo handles the dependency graph — tasks with no
+dependencies (lint, test, syncpack, sherif) start immediately while
+build-dependent tasks (typecheck, publint, attw) wait for build.
 
 `pnpm check:local` uses the same script with `--local` flag, running a
-subset: build → typecheck + lint + publint + syncpack (parallel) →
-vitest (no coverage).
+subset: build, typecheck, lint, publint, syncpack, sherif, test — all
+in one turbo call with `--continue` (shows all failures at once).
+
+`pnpm check:affected` uses turbo's `--affected` flag to only run tasks
+for packages changed since the default branch.
 
 ## Architecture
 
@@ -80,17 +81,12 @@ Five workspace packages under `packages/`:
 
 #### `aai` (shared core SDK)
 
-Subpath exports consumed by sibling packages and user agents:
+Four subpath exports consumed by sibling packages and user agents:
 
-- `.` — `parseManifest`, `Manifest`, `Kv` + re-exported types
-- `./runtime` — `createRuntime`, `Runtime`, `RuntimeOptions`
-- `./protocol` — wire-format types, Zod schemas, constants
-- `./sdk` — sdk barrel: shared modules
-  (types, protocol, kv, hooks, manifest, utils)
-- `./host` — host barrel: host-only modules
-- `./hooks` — hook definitions for lifecycle events
-- `./kv` — KV store interface + in-memory implementation
-- `./utils` — shared utility functions.
+- `.` — `agent()`, `tool()` helpers, `Kv`, types, utils, constants
+- `./runtime` — full Node.js runtime engine (barrel → 11 host/ modules)
+- `./protocol` — wire-format Zod schemas, `lenientParse()`, `ClientEvent`
+- `./manifest` — `parseManifest()`, `toAgentConfig()`, `agentToolsToSchemas()`
 
 #### `aai-ui` (UI)
 
@@ -104,23 +100,30 @@ Binary: `aai` — subcommands: init, dev, test, build, deploy, delete, secret
 
 ### SDK structure
 
-The SDK is organized into two directories:
+The SDK is organized into two directories with a **hard dependency
+boundary** — this split is critical for sandbox security:
 
-- **`sdk/`** — shared modules with no Node.js dependencies. Contains:
-  `types.ts`, `kv.ts`, `hooks.ts`, `_utils.ts`, `constants.ts`,
+- **`sdk/`** — shared modules with **zero Node.js dependencies**. Safe to
+  run in browsers, Deno, and sandboxed environments. Contains:
+  `types.ts`, `kv.ts`, `hooks.ts`, `utils.ts`, `constants.ts`,
   `protocol.ts`, `system-prompt.ts`, `manifest.ts`,
-  `_internal-types.ts`, `define.ts` (`agent()` and `tool()` helpers for
-  authoring `agent.ts` files).
-- **`host/`** — host-only modules that require Node.js APIs. Contains:
+  `ws-upgrade.ts`, `_internal-types.ts`, `define.ts` (`agent()` and
+  `tool()` helpers for authoring `agent.ts` files).
+- **`host/`** — host-only modules that **require Node.js APIs** (`node:vm`,
+  `node:crypto`, etc.). Only runs on the platform server and CLI, never
+  inside a guest sandbox. Contains:
   `server.ts`, `runtime.ts`, `runtime-config.ts`, `tool-executor.ts`,
   `session.ts`, `session-ctx.ts`, `s2s.ts`, `ws-handler.ts`,
   `builtin-tools.ts`, `_run-code.ts`, `unstorage-kv.ts`,
   `testing.ts`, `matchers.ts`.
 
-When adding new SDK code, place it in `sdk/` if it has no `node:`
-dependencies. The guest harness (`guest/deno-harness.ts`) runs Deno
-inside each gVisor sandbox, loading the agent's ESM bundle directly —
-no import restrictions apply there.
+**Rule**: When adding new SDK code, place it in `sdk/` if it has no
+`node:` dependencies. Moving code from `sdk/` → `host/` is safe;
+moving `host/` → `sdk/` requires removing all Node.js imports first.
+
+The guest harness (`guest/deno-harness.ts`) runs Deno inside each
+gVisor sandbox, loading the agent's ESM bundle directly — no import
+restrictions apply there.
 
 ### Key files
 
@@ -192,6 +195,109 @@ no import restrictions apply there.
   seamless workspace resolution. Update to compiled `.js` dist paths before
   publishing.
 
+### File naming conventions
+
+| Pattern | Meaning | Example |
+| --- | --- | --- |
+| `_foo.ts` | **Internal module** — not part of the public API. Never import cross-package. Biome's `noPrivateImports` rule enforces this at lint time. | `_utils.ts`, `_bundler.ts`, `_internal-types.ts` |
+| `foo-barrel.ts` | **Barrel re-export file** — aggregates exports from multiple modules into one subpath export. Has `biome-ignore` for `noReExportAll`. | `runtime-barrel.ts`, `manifest-barrel.ts` |
+| `foo.test.ts` | **Unit test** — co-located with source. Runs via `pnpm test`. | `session.test.ts` |
+| `foo.test-d.ts` | **Type-level test** — checked by tsc, never executed at runtime. Uses `expectTypeOf`. | `types.test-d.ts` |
+| `_test-utils.ts` | **Test helpers** — each package has its own with different utilities (see below). | `host/_test-utils.ts` |
+
+### `_test-utils.ts` per package (not interchangeable)
+
+Each package has distinct test helpers tailored to its domain:
+
+- **`aai/host/_test-utils.ts`** — `flush()` (microtask yield), `makeTool()`,
+  `makeAgent()`, `makeConfig()`, fixture replay helpers for S2S mocking
+- **`aai-cli/_test-utils.ts`** — `withTempDir()` (temp dir + cleanup),
+  `silenceSteps()`, `fakeDownloadAndMerge()`, `makeBundle()`
+- **`aai-ui/_react-test-utils.ts`** — `createMockSessionCore()`,
+  `MockAudioContext`, `installAudioMocks()`
+- **`aai-server/test-utils.ts`** — (no underscore) `createMockKv()`,
+  `createTestStore()` (in-memory BundleStore)
+
+### `@dev/source` custom export condition
+
+Package.json exports use a custom `@dev/source` condition so that
+TypeScript source (`.ts`) is resolved during development, while compiled
+`.js` dist paths are used in production:
+
+```jsonc
+// package.json
+"exports": {
+  ".": {
+    "@dev/source": "./index.ts",     // ← resolved in dev (via tsconfig)
+    "types": "./dist/index.d.ts",
+    "import": "./dist/index.js"      // ← resolved in production
+  }
+}
+```
+
+This is enabled by `customConditions: ["@dev/source"]` in the root
+`tsconfig.json`. During dev, imports like `import { X } from "aai"`
+resolve directly to `.ts` source — no build step needed.
+
+### Import rules
+
+- **Cross-package imports** must use the npm package name (e.g.
+  `import { X } from "aai/protocol"`), never relative paths between
+  packages. Biome's `noRestrictedImports` enforces this.
+- **Internal modules** (`_*.ts`) must not be imported from outside their
+  own package. Biome's `noPrivateImports` enforces this.
+- **Re-exports**: barrel files use `export * from "..."` with explicit
+  `biome-ignore` comments. Follow re-export chains to find the original
+  source of a type/function.
+
+### Disambiguating "Session" types
+
+Multiple types named `Session` or `Session*` exist across packages —
+they are **not interchangeable**:
+
+| Type | Package | File | Purpose |
+| --- | --- | --- | --- |
+| `Session` | `aai` | `host/session.ts` | Server-side S2S voice session (manages one client's audio relay) |
+| `S2sSessionCtx` | `aai` | `host/session-ctx.ts` | Mutable context threaded through session event handlers |
+| `S2sSessionOptions` | `aai` | `host/session.ts` | Config for creating a server-side session |
+| `SessionCore` | `aai-ui` | `session-core.ts` | Framework-agnostic browser session (WebSocket + audio + state) |
+| `SessionSnapshot` | `aai-ui` | `session-core.ts` | Immutable snapshot of browser session state (for `useSyncExternalStore`) |
+| `SessionError` | `aai-ui` | `types.ts` | Client-side error type with error code |
+
+When searching for "Session", narrow by package to find the right one.
+
+### Subpath export → file mapping
+
+Tracing imports through barrel files can be confusing. Here's the map
+(only four subpath exports exist in `aai/package.json`):
+
+| Import path | Resolves to | What it contains |
+| --- | --- | --- |
+| `aai` | `packages/aai/index.ts` → 6 modules | Types, KV, utils, constants, `agent()`/`tool()` helpers |
+| `aai/runtime` | `host/runtime-barrel.ts` → 11 modules | Full Node.js runtime: session, S2S, server, tools, WS handler |
+| `aai/protocol` | `sdk/protocol.ts` (direct, not a barrel) | Wire-format Zod schemas, `lenientParse()`, `ClientEvent`, `ServerMessage` |
+| `aai/manifest` | `sdk/manifest-barrel.ts` → 3 modules | `parseManifest()`, `toAgentConfig()`, `agentToolsToSchemas()`, system prompt builder |
+
+### Default values and magic numbers
+
+All numeric constants live in `packages/aai/sdk/constants.ts`. Key
+defaults that affect agent behavior:
+
+| Default | Value | Where applied | Notes |
+| --- | --- | --- | --- |
+| `maxSteps` | 5 | `manifest.ts:58` | Max tool calls per reply. Prevents runaway tool loops. |
+| `toolChoice` | `"auto"` | `manifest.ts:59` | LLM decides when to use tools vs respond directly. |
+| `idleTimeoutMs` | 300,000 (5 min) | `constants.ts:26` | `0` or non-finite disables the timer entirely. |
+| `maxHistory` | 200 | `constants.ts:52` | Sliding window of conversation messages retained. |
+| `builtinTools` | `[]` | `manifest.ts:57` | No built-in tools enabled by default. |
+
+### Fixed release coupling
+
+`aai`, `aai-ui`, and `aai-cli` are in a **fixed release group** (configured
+in `.changeset/config.json`). A changeset for any one of them bumps all
+three to the same version. Keep this in mind when creating changesets —
+you only need to list one package.
+
 ### Testing
 
 - **Vitest**. Test files co-located: `foo.ts` → `foo.test.ts`.
@@ -210,6 +316,38 @@ no import restrictions apply there.
 - **Package validation**: `publint` runs post-build to verify package.json
   exports resolve to real files. `attw` validates export types. Both run
   in the check pipeline.
+
+#### Vitest config differences per package
+
+| Package | Pool | Environment | Special setup | Notes |
+| --- | --- | --- | --- | --- |
+| aai | threads (default) | node | — | Excludes pentest, sandbox, integration tests; `restoreMocks: true` |
+| aai-ui | threads | **jsdom** | `_jsdom-setup.ts` (stubs `scrollIntoView`) | `globals: true` so `describe`/`test`/`expect` don't need imports |
+| aai-cli | threads | node | — | `restoreMocks: true` |
+| aai-server | **forks** | node | — | Forks for process isolation; excludes integration/load/adversarial |
+| aai-templates | threads | node | — | Only matches `templates/*/agent.test.ts` |
+
+#### Test environment variables
+
+Tests can behave differently based on environment variables set in
+package.json scripts (not always obvious from test code alone):
+
+- `VITEST_PROFILE` — switches timeout/retry profiles in
+  `vitest.slow.config.ts`: `integration` (30s), `e2e` (300s),
+  `docker` (600s), `gvisor` (30s)
+- `VITEST_INCLUDE` — filters which test files to include
+- `VITEST_POOL` — can override pool strategy at runtime
+
+#### Fixture replay testing (aai/host)
+
+Tests in `packages/aai/host/` use a **hybrid mock** pattern: a real
+`Runtime` and tool executor with mocked S2S WebSocket connections. JSON
+fixtures in `host/fixtures/` contain recorded AssemblyAI API messages
+that are replayed through the real orchestration layer. Key helpers:
+
+- `makeMockHandle()` — creates mock S2S WebSocket using nanoevents
+- `replayFixtureMessages()` — dispatches fixture JSON as typed events
+- `createFixtureSession()` — wires a real Runtime to mocked S2S
 
 ### Changesets
 

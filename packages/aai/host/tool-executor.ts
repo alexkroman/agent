@@ -9,10 +9,10 @@
 import pTimeout from "p-timeout";
 import type { z } from "zod";
 import { EMPTY_PARAMS } from "../sdk/_internal-types.ts";
-import { errorDetail, errorMessage, toolError } from "../sdk/_utils.ts";
 import { TOOL_EXECUTION_TIMEOUT_MS } from "../sdk/constants.ts";
 import type { Kv } from "../sdk/kv.ts";
 import type { Message, ToolContext, ToolDef } from "../sdk/types.ts";
+import { errorDetail, errorMessage, toolError } from "../sdk/utils.ts";
 import type { Logger } from "./runtime-config.ts";
 
 export type { ExecuteTool } from "../sdk/_internal-types.ts";

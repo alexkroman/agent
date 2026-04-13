@@ -34,8 +34,7 @@ vi.mock("./session-core.ts", () => {
   };
 });
 
-// biome-ignore lint/suspicious/noDeprecatedImports: testing deprecated alias
-import { client, defineClient } from "./define-client.tsx";
+import { client } from "./define-client.tsx";
 import { createSessionCore } from "./session-core.ts";
 
 describe("client", () => {
@@ -125,9 +124,5 @@ describe("client", () => {
     );
     handle.dispose();
     vi.unstubAllGlobals();
-  });
-
-  it("defineClient is a deprecated alias for client", () => {
-    expect(defineClient).toBe(client);
   });
 });

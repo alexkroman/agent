@@ -66,25 +66,21 @@ export async function handleClientAsset(c: AppContext): Promise<Response> {
 
   const assetPath = parsed.data;
 
-  // Try deployed client assets first
-  const content = await c.env.store.getClientFile(slug, `assets/${assetPath}`);
-  if (content) {
+  const serveAsset = (body: string) => {
     const contentType = mime.lookup(assetPath) || "application/octet-stream";
-    return c.body(content, 200, {
+    return c.body(body, 200, {
       "Content-Type": contentType,
       "Cache-Control": "public, max-age=31536000, immutable",
     });
-  }
+  };
+
+  // Try deployed client assets first
+  const content = await c.env.store.getClientFile(slug, `assets/${assetPath}`);
+  if (content) return serveAsset(content);
 
   // Fall back to default client assets
   const defaultAsset = readDefaultClientFile(`assets/${assetPath}`);
-  if (defaultAsset) {
-    const contentType = mime.lookup(assetPath) || "application/octet-stream";
-    return c.body(defaultAsset, 200, {
-      "Content-Type": contentType,
-      "Cache-Control": "public, max-age=31536000, immutable",
-    });
-  }
+  if (defaultAsset) return serveAsset(defaultAsset);
 
   throw new HTTPException(404, { message: "Asset not found" });
 }

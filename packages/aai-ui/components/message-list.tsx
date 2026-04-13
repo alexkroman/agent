@@ -8,8 +8,6 @@ import { useSession, useTheme } from "../context.ts";
 import type { ChatMessage } from "../types.ts";
 import { ToolCallBlock } from "./tool-call-block.tsx";
 
-// --- Local helpers (inlined micro-components) --------------------------------
-
 const DOT_STYLES: CSSProperties[] = [0, 0.16, 0.32].map((delay) => ({
   animation: "aai-bounce 1.4s infinite ease-in-out both",
   animationDelay: `${delay}s`,
@@ -69,8 +67,6 @@ function MessageBubble({
   );
 }
 
-// --- Auto-scroll hook (inlined) -----------------------------------------------
-
 function useAutoScroll() {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -78,8 +74,6 @@ function useAutoScroll() {
   });
   return ref;
 }
-
-// --- MessageList --------------------------------------------------------------
 
 /**
  * Scrollable list of all chat messages, tool-call blocks, live transcript,
@@ -114,7 +108,6 @@ export function MessageList({ className }: { className?: string }) {
 
   const { messages, toolCalls } = session;
 
-  // Render each message followed by its tool calls.
   const items: ReactNode[] = [];
   let tci = 0;
   for (const [i, msg] of messages.entries()) {
@@ -126,7 +119,6 @@ export function MessageList({ className }: { className?: string }) {
       tc = toolCalls[tci];
     }
   }
-  // Any remaining tool calls (still pending, no following message yet).
   let tc = toolCalls[tci];
   while (tc) {
     items.push(<ToolCallBlock key={tc.callId} toolCall={tc} />);
@@ -150,7 +142,6 @@ export function MessageList({ className }: { className?: string }) {
             theme={theme}
           />
         )}
-        {/* Inline transcript */}
         {userTranscript !== null && (
           <div className="flex flex-col items-end w-full">
             <div

@@ -16,6 +16,16 @@ import { z } from "zod";
 
 export { ToolSchemaSchema } from "aai/manifest";
 
+/**
+ * Agent configuration as sent to the guest isolate (gVisor sandbox).
+ *
+ * This is the server-side equivalent of `AgentConfig` from `aai/manifest` —
+ * nearly identical fields, but validated independently at the RPC boundary
+ * so the guest and host can evolve schemas separately.
+ *
+ * Flow: `AgentDef` (sdk/types.ts) → `AgentConfig` (sdk/_internal-types.ts)
+ *       → stored as `IsolateConfig` → sent to guest via NDJSON RPC.
+ */
 export const IsolateConfigSchema = z.object({
   name: z.string(),
   systemPrompt: z.string().default(DEFAULT_SYSTEM_PROMPT),

@@ -2,10 +2,10 @@
 /** S2S session — relays audio between client and AssemblyAI S2S API. */
 
 import type { AgentConfig, ExecuteTool, ToolSchema } from "../sdk/_internal-types.ts";
-import { errorDetail, errorMessage, toolError } from "../sdk/_utils.ts";
 import { DEFAULT_IDLE_TIMEOUT_MS, MAX_TOOL_RESULT_CHARS } from "../sdk/constants.ts";
 import type { ClientEvent, ClientSink } from "../sdk/protocol.ts";
 import { buildSystemPrompt } from "../sdk/system-prompt.ts";
+import { errorDetail, errorMessage, toolError } from "../sdk/utils.ts";
 import type { Logger, S2SConfig } from "./runtime-config.ts";
 import { consoleLogger } from "./runtime-config.ts";
 import {
@@ -16,10 +16,6 @@ import {
   type S2sToolSchema,
 } from "./s2s.ts";
 import { buildCtx, type S2sSessionCtx } from "./session-ctx.ts";
-
-export type { S2sHandle } from "./s2s.ts";
-export type { ReplyState, S2sSessionCtx, SessionDeps } from "./session-ctx.ts";
-export { buildCtx } from "./session-ctx.ts";
 
 /**
  * A voice session managing the Speech-to-Speech connection for one client.
@@ -40,21 +36,35 @@ export type Session = {
   waitForTurn(): Promise<void>;
 };
 
-/** Configuration options for creating a new session. */
+/** Configuration options for creating a new S2S voice session. */
 export type S2sSessionOptions = {
+  /** Unique session identifier (used for KV scoping and logging). */
   id: string;
+  /** Agent slug — identifies which deployed agent this session belongs to. */
   agent: string;
+  /** Sink for pushing events and audio to the connected browser client. */
   client: ClientSink;
+  /** Serializable agent config (name, system prompt, greeting, maxSteps, etc.). */
   agentConfig: AgentConfig;
+  /** JSON Schema definitions for the agent's custom tools. */
   toolSchemas: readonly ToolSchema[];
+  /** Optional natural-language guidance appended to the system prompt for tool usage. */
   toolGuidance?: readonly string[];
+  /** AssemblyAI API key — stays host-side, never forwarded to the guest sandbox. */
   apiKey: string;
+  /** S2S connection config (sample rates, model selection). */
   s2sConfig: S2SConfig;
+  /** Function to invoke tools by name (wired to direct-executor or sandbox RPC). */
   executeTool: ExecuteTool;
+  /** Override WebSocket constructor for testing. */
   createWebSocket?: CreateS2sWebSocket;
+  /** Agent environment variables (secrets). Forwarded to tool context. */
   env?: Record<string, string | undefined>;
+  /** Skip the initial greeting audio on connect (used for session resume). */
   skipGreeting?: boolean;
+  /** Logger instance. Defaults to `consoleLogger`. */
   logger?: Logger;
+  /** Max conversation messages to retain. Defaults to DEFAULT_MAX_HISTORY (200). */
   maxHistory?: number;
 };
 
@@ -63,6 +73,11 @@ export const _internals = { connectS2s };
 
 type IdleTimer = { reset(): void; clear(): void };
 
+/**
+ * Create an idle timer that closes the S2S connection after inactivity.
+ * Convention: `timeoutMs <= 0` disables the timer entirely (returns a no-op).
+ * This allows agents to opt out of idle timeout via `idleTimeoutMs: 0` in their config.
+ */
 function createIdleTimer(opts: {
   timeoutMs: number;
   agent: string;

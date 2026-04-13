@@ -168,7 +168,6 @@ export function client(config: ClientConfig): ClientHandle {
     ...(config.WebSocket ? { WebSocket: config.WebSocket } : {}),
   });
 
-  // Determine the root component.
   let RootComponent: ComponentType;
   if ("component" in config && config.component) {
     RootComponent = config.component;
@@ -212,6 +211,3 @@ export function client(config: ClientConfig): ClientHandle {
   };
   return handle;
 }
-
-/** @deprecated Use {@link client} instead. */
-export const defineClient = client;

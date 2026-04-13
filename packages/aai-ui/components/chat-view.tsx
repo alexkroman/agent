@@ -5,11 +5,12 @@
 import clsx from "clsx";
 import type { ReactNode } from "react";
 import { useSession, useTheme } from "../context.ts";
+import type { AgentState } from "../types.ts";
 import { Controls } from "./controls.tsx";
 import { MessageList } from "./message-list.tsx";
 
 // State indicator dot color map
-const STATE_COLORS: Record<string, string> = {
+const STATE_COLORS: Record<AgentState, string> = {
   disconnected: "rgba(255,255,255,0.422)",
   connecting: "rgba(255,255,255,0.422)",
   ready: "#7fd88f",
@@ -98,7 +99,7 @@ export function ChatView({
           >
             <div
               className="w-2 h-2 rounded-full"
-              style={{ background: STATE_COLORS[session.state] ?? STATE_COLORS.disconnected }}
+              style={{ background: STATE_COLORS[session.state] }}
             />
             {session.state}
           </div>

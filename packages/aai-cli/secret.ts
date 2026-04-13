@@ -90,17 +90,3 @@ export async function executeSecretList(
   }
   return ok({ secrets: vars });
 }
-
-// Legacy exports for backward compat (human mode)
-export const runSecretPut = async (cwd: string, name: string, server?: string) => {
-  const result = await executeSecretPut(cwd, name, undefined, server);
-  if (!result.ok) throw new Error(result.error);
-};
-export const runSecretDelete = async (cwd: string, name: string, server?: string) => {
-  const result = await executeSecretDelete(cwd, name, server);
-  if (!result.ok) throw new Error(result.error);
-};
-export const runSecretList = async (cwd: string, server?: string) => {
-  const result = await executeSecretList(cwd, server);
-  if (!result.ok) throw new Error(result.error);
-};

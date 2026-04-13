@@ -17,12 +17,12 @@ import pDebounce from "p-debounce";
 import { ensureApiKey } from "./_config.ts";
 import { resolveServerEnv } from "./_server-common.ts";
 import { log } from "./_ui.ts";
+import { validateAgentExport } from "./_utils.ts";
 
 // ─── Env loading ────────────────────────────────────────────────────────────
 
 async function resolveAgentEnv(root: string): Promise<Record<string, string>> {
   const env = await resolveServerEnv(root);
-  // Inject global API key if not already set by .env or process.env
   if (!env.ASSEMBLYAI_API_KEY) {
     env.ASSEMBLYAI_API_KEY = await ensureApiKey();
   }
@@ -41,9 +41,7 @@ async function loadAgentDef(cwd: string): Promise<AgentDef<any>> {
   const agentUrl = `${pathToFileURL(agentPath).href}?t=${Date.now()}`;
   const mod = await import(agentUrl);
   const agentDef = mod.default;
-  if (!agentDef?.name || typeof agentDef.name !== "string") {
-    throw new Error("agent.ts must export default agent({ name: ... })");
-  }
+  validateAgentExport(agentDef);
   return agentDef;
 }
 
@@ -63,13 +61,11 @@ function watchDirectory(dir: string, onChange: (filename: string | null) => void
   }, DEBOUNCE_MS);
 
   function handleChange(filename: string | null) {
-    // Ignore .aai build artifacts and node_modules
     if (filename && (filename.startsWith(".aai") || filename.includes("node_modules"))) return;
 
     void debouncedChange(filename);
   }
 
-  // Watch root for agent.ts, .env changes
   watchers.push(watch(dir, { persistent: false }, (_event, filename) => handleChange(filename)));
 
   return watchers;
@@ -92,22 +88,16 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
 
   const { createRuntime, createServer } = await import("aai/runtime");
 
-  // Check if client.tsx exists for Vite HMR
   const hasClient = existsSync(path.join(cwd, "client.tsx"));
-
-  // Determine ports: if we have a client, Vite gets the main port and
-  // the backend gets port+1. Otherwise backend gets the main port.
   const backendPort = hasClient ? port + 1 : port;
   const vitePort = port;
 
-  // Load agent from agent.ts
   const agentDef = await loadAgentDef(cwd);
   const env = await resolveAgentEnv(cwd);
   const runtime = createRuntime({ agent: agentDef, env });
   const agentServer = createServer({ runtime, name: agentDef.name });
   await agentServer.listen(backendPort);
 
-  // Start Vite for client HMR if client.tsx exists
   let viteServer: { close(): Promise<void> } | undefined;
   if (hasClient) {
     const { createServer: createViteServer } = await import("vite");
@@ -125,7 +115,6 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
     await (viteServer as unknown as { listen(): Promise<void> }).listen();
   }
 
-  // Set up file watching for auto-restart
   let restarting = false;
   let currentServer: AgentServer = agentServer;
   let currentVite = viteServer;
@@ -157,7 +146,6 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
     }
   }
 
-  // Return cleanup function
   return async () => {
     for (const w of watchers) w.close();
     if (currentVite) {

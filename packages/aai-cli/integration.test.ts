@@ -16,7 +16,7 @@ import type { MockApi } from "./_mock-api.ts";
 import { startMockApi } from "./_mock-api.ts";
 import { fakeDownloadAndMerge, makeBundle, silenced, withTempDir } from "./_test-utils.ts";
 import { fileExists } from "./_utils.ts";
-import { runSecretDelete, runSecretList, runSecretPut } from "./secret.ts";
+import { executeSecretDelete, executeSecretList, executeSecretPut } from "./secret.ts";
 
 // Mock @clack/prompts to avoid interactive input in tests
 vi.mock("@clack/prompts", async (importOriginal) => {
@@ -198,7 +198,7 @@ describe("secrets against mock API", () => {
 
   test("secret put sends PUT with name/value body", async () => {
     await withProjectDir(async (dir) => {
-      await runSecretPut(dir, "MY_KEY", api.url);
+      await executeSecretPut(dir, "MY_KEY", undefined, api.url);
 
       const putReq = api.requests.find((r) => r.method === "PUT" && r.path.includes("/secret"));
       expect(putReq).toBeDefined();
@@ -216,9 +216,8 @@ describe("secrets against mock API", () => {
     api.secrets.SECRET_B = "b";
 
     await withProjectDir(async (dir) => {
-      // runSecretList logs to console — capture it
       await withCapturedLogs(async () => {
-        await runSecretList(dir, api.url);
+        await executeSecretList(dir, api.url);
       });
     });
 
@@ -230,7 +229,7 @@ describe("secrets against mock API", () => {
     api.secrets.TO_DELETE = "value";
 
     await withProjectDir(async (dir) => {
-      await runSecretDelete(dir, "TO_DELETE", api.url);
+      await executeSecretDelete(dir, "TO_DELETE", api.url);
     });
 
     const delReq = api.requests.find(
@@ -245,7 +244,7 @@ describe("secrets against mock API", () => {
     vi.mocked(configMod.ensureApiKey).mockResolvedValueOnce("invalid-key");
     await withTempDir(async (dir) => {
       await writeProjectConfig(dir, { slug: "my-agent", serverUrl: api.url });
-      await expect(runSecretList(dir, api.url)).rejects.toThrow("API key may be invalid");
+      await expect(executeSecretList(dir, api.url)).rejects.toThrow("API key may be invalid");
     });
   });
 });
@@ -309,7 +308,7 @@ describe("secrets edge cases", () => {
 
     await withCapturedLogs(async () => {
       await withProjectDir(async (dir) => {
-        await runSecretList(dir, api.url);
+        await executeSecretList(dir, api.url);
       });
     });
 
@@ -323,7 +322,9 @@ describe("secrets edge cases", () => {
     vi.mocked(clack.password).mockResolvedValueOnce("");
 
     await withProjectDir(async (dir) => {
-      await expect(runSecretPut(dir, "EMPTY_KEY", api.url)).rejects.toThrow("No value provided");
+      const result = await executeSecretPut(dir, "EMPTY_KEY", undefined, api.url);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toContain("No value provided");
     });
 
     // Should not have made any API request
@@ -368,7 +369,7 @@ describe("missing project config", () => {
 
   test("secret list with no .aai/project.json throws", async () => {
     await withTempDir(async (dir) => {
-      await expect(runSecretList(dir, api.url)).rejects.toThrow("No .aai/project.json found");
+      await expect(executeSecretList(dir, api.url)).rejects.toThrow("No .aai/project.json found");
     });
   });
 });

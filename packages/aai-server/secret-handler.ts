@@ -1,4 +1,13 @@
 // Copyright 2025 the AAI authors. MIT license.
+/**
+ * HTTP handlers for managing agent secrets (environment variables).
+ *
+ * Secrets are per-agent key/value pairs stored encrypted in the BundleStore.
+ * They are forwarded to the guest sandbox as `AAI_ENV_*` environment variables.
+ *
+ * Related but distinct: `credential-store.ts` handles API key hashing and
+ * ownership verification for platform auth — not agent secrets.
+ */
 
 import { HTTPException } from "hono/http-exception";
 import type { AppContext, ValidatedAppContext } from "./context.ts";
