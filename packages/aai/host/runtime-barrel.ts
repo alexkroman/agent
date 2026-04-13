@@ -7,7 +7,12 @@
 
 // biome-ignore-all lint/performance/noReExportAll: barrel file by design
 
-export * from "./_runtime-conformance.ts";
+// Note: ./_runtime-conformance.ts is intentionally NOT re-exported here.
+// It imports `vitest`, which is a devDependency. Re-exporting it would pull
+// `vitest` into the production bundle of this barrel and break runtime
+// imports in environments without dev deps installed (e.g. the deployed
+// platform server). It is consumed directly by sibling test files.
+
 export * from "./builtin-tools.ts";
 export * from "./runtime.ts";
 export * from "./runtime-config.ts";

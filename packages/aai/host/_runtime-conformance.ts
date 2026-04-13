@@ -20,7 +20,8 @@
  *
  * @example Sandbox (integration test in aai-server)
  * ```ts
- * import { testRuntime } from "@alexkroman1/aai/host";
+ * // Internal module — import the .ts source directly from this package.
+ * import { testRuntime } from "../../aai/host/_runtime-conformance.ts";
  *
  * testRuntime("sandbox", async () => {
  *   // ... start isolate with a bundled agent
