@@ -1,5 +1,13 @@
 # @alexkroman1/aai
 
+## 1.0.1
+
+### Patch Changes
+
+- 5517333: Simplify codebase: fix SSRF bypass in sandbox builtins, deduplicate utilities, strengthen types
+- 5d55c12: Remove unnecessary comments that restate obvious code
+- b4ff42e: Redeploy aai-server and refresh client/CLI/SDK releases
+
 ## 1.0.0
 
 ### Major Changes
