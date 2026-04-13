@@ -31,13 +31,7 @@ uplinks:
   npmjs:
     url: https://registry.npmjs.org/
 packages:
-  "aai":
-    access: $all
-    publish: $all
-  "aai-ui":
-    access: $all
-    publish: $all
-  "aai-cli":
+  "@alexkroman1/*":
     access: $all
     publish: $all
   "@*/*":

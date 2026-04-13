@@ -6,8 +6,8 @@
  * a Node.js HTTP server with WebSocket upgrade support via `ws`.
  */
 
+import { errorMessage } from "@alexkroman1/aai";
 import { serve } from "@hono/node-server";
-import { errorMessage } from "aai";
 import { createStorage } from "unstorage";
 import s3Driver from "unstorage/drivers/s3";
 import { createBundleStore } from "./bundle-store.ts";

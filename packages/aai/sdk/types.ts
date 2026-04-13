@@ -57,7 +57,7 @@ export type Message = {
  *
  * @example
  * ```ts
- * import { type ToolDef } from "aai";
+ * import { type ToolDef } from "@alexkroman1/aai";
  * import { z } from "zod";
  *
  * const myTool: ToolDef = {
@@ -98,7 +98,7 @@ export type ToolContext<S = Record<string, unknown>> = {
  *
  * @example
  * ```ts
- * import { type ToolDef } from "aai";
+ * import { type ToolDef } from "@alexkroman1/aai";
  * import { z } from "zod";
  *
  * const weatherTool: ToolDef<typeof params> = {
@@ -139,7 +139,7 @@ export type ToolDef<
  * @example
  * ```ts
  * // shared.ts
- * import type { ToolResultMap } from "aai-cli/types";
+ * import type { ToolResultMap } from "@alexkroman1/aai-cli/types";
  *
  * export interface Pizza {
  *   id: number;

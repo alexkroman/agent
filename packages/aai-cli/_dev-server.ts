@@ -11,8 +11,8 @@
 import { existsSync, type FSWatcher, watch } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { type AgentDef, errorMessage } from "aai";
-import type { AgentServer } from "aai/runtime";
+import { type AgentDef, errorMessage } from "@alexkroman1/aai";
+import type { AgentServer } from "@alexkroman1/aai/runtime";
 import pDebounce from "p-debounce";
 import { ensureApiKey } from "./_config.ts";
 import { resolveServerEnv } from "./_server-common.ts";
@@ -86,7 +86,7 @@ export type DevServerOptions = {
 export async function startDevServer(opts: DevServerOptions): Promise<() => Promise<void>> {
   const { cwd, port } = opts;
 
-  const { createRuntime, createServer } = await import("aai/runtime");
+  const { createRuntime, createServer } = await import("@alexkroman1/aai/runtime");
 
   const hasClient = existsSync(path.join(cwd, "client.tsx"));
   const backendPort = hasClient ? port + 1 : port;

@@ -120,12 +120,12 @@ importers:
 
   packages/aai-cli:
     dependencies:
+      '@alexkroman1/aai':
+        specifier: workspace:*
+        version: link:../aai
       '@clack/prompts':
         specifier: ^1.2.0
         version: 1.2.0
-      aai:
-        specifier: workspace:*
-        version: link:../aai
       citty:
         specifier: ^0.2.2
         version: 0.2.2
@@ -169,18 +169,18 @@ importers:
 
   packages/aai-server:
     dependencies:
+      '@alexkroman1/aai':
+        specifier: workspace:*
+        version: link:../aai
+      '@alexkroman1/aai-ui':
+        specifier: workspace:*
+        version: link:../aai-ui
       '@hono/node-server':
         specifier: ^1.19.13
         version: 1.19.13(hono@4.12.12)
       '@hono/zod-validator':
         specifier: ^0.7.6
         version: 0.7.6(hono@4.12.12)(zod@4.3.6)
-      aai:
-        specifier: workspace:*
-        version: link:../aai
-      aai-ui:
-        specifier: workspace:*
-        version: link:../aai-ui
       bogon:
         specifier: ^1.2.0
         version: 1.2.0
@@ -236,25 +236,25 @@ importers:
 
   packages/aai-templates:
     devDependencies:
+      '@alexkroman1/aai':
+        specifier: workspace:*
+        version: link:../aai
+      '@alexkroman1/aai-cli':
+        specifier: workspace:*
+        version: link:../aai-cli
+      '@alexkroman1/aai-ui':
+        specifier: workspace:*
+        version: link:../aai-ui
       '@types/react':
         specifier: ^19.0.0
         version: 19.2.14
-      aai:
-        specifier: workspace:*
-        version: link:../aai
-      aai-cli:
-        specifier: workspace:*
-        version: link:../aai-cli
-      aai-ui:
-        specifier: workspace:*
-        version: link:../aai-ui
       zod:
         specifier: ^4.3.6
         version: 4.3.6
 
   packages/aai-ui:
     dependencies:
-      aai:
+      '@alexkroman1/aai':
         specifier: workspace:*
         version: link:../aai
       clsx:

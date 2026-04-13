@@ -1,4 +1,4 @@
-import { agent, tool } from "aai";
+import { agent, tool } from "@alexkroman1/aai";
 import { z } from "zod";
 import { calculateTotal, type Pizza } from "./shared.ts";
 import systemPrompt from "./system-prompt.md";

@@ -19,10 +19,10 @@
  * Slugs: `[a-z0-9][a-z0-9_-]*[a-z0-9]` — enforced by regex for multi-tenant isolation.
  */
 
+import { MAX_WS_PAYLOAD_BYTES, parseWsUpgradeParams } from "@alexkroman1/aai";
+import { KvRequestSchema } from "@alexkroman1/aai/protocol";
+import { createUnstorageKv, type SessionWebSocket } from "@alexkroman1/aai/runtime";
 import { zValidator } from "@hono/zod-validator";
-import { MAX_WS_PAYLOAD_BYTES, parseWsUpgradeParams } from "aai";
-import { KvRequestSchema } from "aai/protocol";
-import { createUnstorageKv, type SessionWebSocket } from "aai/runtime";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";

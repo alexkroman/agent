@@ -22,7 +22,7 @@ import {
  *
  * @example
  * ```ts
- * import { tool } from "aai";
+ * import { tool } from "@alexkroman1/aai";
  * import { z } from "zod";
  *
  * const greet = tool({
@@ -50,7 +50,7 @@ export function tool<P extends z.ZodObject<z.ZodRawShape>>(def: {
  *
  * @example
  * ```ts
- * import { agent, tool } from "aai";
+ * import { agent, tool } from "@alexkroman1/aai";
  * import { z } from "zod";
  *
  * const myTool = tool({

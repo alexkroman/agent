@@ -15,4 +15,4 @@ export type {
   ToolContext,
   ToolDef,
   ToolResultMap,
-} from "aai";
+} from "@alexkroman1/aai";

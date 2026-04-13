@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 
-import { ChatView, client, SidebarLayout, StartScreen, useToolResult } from "aai-ui";
+import { ChatView, client, SidebarLayout, StartScreen, useToolResult } from "@alexkroman1/aai-ui";
 import { useEffect, useState } from "react";
 import type {
   ClockData,

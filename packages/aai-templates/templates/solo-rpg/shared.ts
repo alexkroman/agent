@@ -1,4 +1,4 @@
-import type { ToolResultMap } from "aai-cli/types";
+import type { ToolResultMap } from "@alexkroman1/aai-cli/types";
 
 // ── Tuning Constants ─────────────────────────────────────────────────────────
 export const MAX_ACTIVE_NPCS = 12;

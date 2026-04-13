@@ -1,4 +1,4 @@
-import { tool } from "aai";
+import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
 import type { KV, Resource } from "../shared.ts";
 import { getState, now, recalculateAlertLevel, recommendResources, saveState } from "../shared.ts";

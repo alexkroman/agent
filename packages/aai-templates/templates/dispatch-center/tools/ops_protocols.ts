@@ -1,4 +1,4 @@
-import { tool } from "aai";
+import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
 import type { IncidentType, Severity } from "../shared.ts";
 import { getApplicableProtocols } from "../shared.ts";

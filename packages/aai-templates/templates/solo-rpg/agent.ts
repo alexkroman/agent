@@ -1,4 +1,4 @@
-import { agent } from "aai";
+import { agent } from "@alexkroman1/aai";
 import systemPrompt from "./system-prompt.md";
 import { actionRoll } from "./tools/action_roll.ts";
 import { burnMomentum } from "./tools/burn_momentum.ts";
