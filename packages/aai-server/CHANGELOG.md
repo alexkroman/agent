@@ -1,5 +1,19 @@
 # @alexkroman1/aai-server
 
+## 1.0.2
+
+### Patch Changes
+
+- 76d25d4: Deploy server: picks up @alexkroman1/aai fix that stops vitest from leaking into the runtime barrel bundle.
+- a3d3835: Force all libraries and the server to publish/deploy after the 1.0.1
+  release failure. Restores the `@alexkroman1/` scope on publishable
+  packages so npm accepts the publish, and bumps `aai-server` to trigger
+  the Fly.io deploy job in the release workflow.
+- Updated dependencies [76d25d4]
+- Updated dependencies [a3d3835]
+  - @alexkroman1/aai@1.0.2
+  - @alexkroman1/aai-ui@1.0.2
+
 ## 1.0.1
 
 ### Patch Changes
