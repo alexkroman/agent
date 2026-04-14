@@ -293,10 +293,13 @@ describe("file watcher filtering", () => {
 
       // biome-ignore lint/suspicious/noEmptyBlockStatements: no-op default for watcher callback
       let watchCallback: (event: string, filename: string | null) => void = () => {};
-      vi.mocked(watch).mockImplementation((_dir, _opts, cb) => {
-        watchCallback = cb as typeof watchCallback;
-        return { close: vi.fn() } as unknown as FSWatcher;
-      });
+      vi.mocked(watch).mockImplementation(
+        // fs.watch has multiple overloads; cast to match the 3-arg variant used by _dev-server
+        ((_dir: string, _opts: unknown, cb: unknown) => {
+          watchCallback = cb as typeof watchCallback;
+          return { close: vi.fn() } as unknown as FSWatcher;
+        }) as typeof watch,
+      );
 
       const cleanup = await startDevServer({ cwd: dir, port: 3000 });
 
@@ -321,10 +324,13 @@ describe("file watcher filtering", () => {
 
       // biome-ignore lint/suspicious/noEmptyBlockStatements: no-op default for watcher callback
       let watchCallback: (event: string, filename: string | null) => void = () => {};
-      vi.mocked(watch).mockImplementation((_dir, _opts, cb) => {
-        watchCallback = cb as typeof watchCallback;
-        return { close: vi.fn() } as unknown as FSWatcher;
-      });
+      vi.mocked(watch).mockImplementation(
+        // fs.watch has multiple overloads; cast to match the 3-arg variant used by _dev-server
+        ((_dir: string, _opts: unknown, cb: unknown) => {
+          watchCallback = cb as typeof watchCallback;
+          return { close: vi.fn() } as unknown as FSWatcher;
+        }) as typeof watch,
+      );
 
       const cleanup = await startDevServer({ cwd: dir, port: 3000 });
       mockClose.mockClear();
@@ -345,10 +351,13 @@ describe("file watcher filtering", () => {
 
       // biome-ignore lint/suspicious/noEmptyBlockStatements: no-op default for watcher callback
       let watchCallback: (event: string, filename: string | null) => void = () => {};
-      vi.mocked(watch).mockImplementation((_dir, _opts, cb) => {
-        watchCallback = cb as typeof watchCallback;
-        return { close: vi.fn() } as unknown as FSWatcher;
-      });
+      vi.mocked(watch).mockImplementation(
+        // fs.watch has multiple overloads; cast to match the 3-arg variant used by _dev-server
+        ((_dir: string, _opts: unknown, cb: unknown) => {
+          watchCallback = cb as typeof watchCallback;
+          return { close: vi.fn() } as unknown as FSWatcher;
+        }) as typeof watch,
+      );
 
       const cleanup = await startDevServer({ cwd: dir, port: 3000 });
 
@@ -382,10 +391,13 @@ describe("file watcher filtering", () => {
 
       // biome-ignore lint/suspicious/noEmptyBlockStatements: no-op default for watcher callback
       let watchCallback: (event: string, filename: string | null) => void = () => {};
-      vi.mocked(watch).mockImplementation((_dir, _opts, cb) => {
-        watchCallback = cb as typeof watchCallback;
-        return { close: vi.fn() } as unknown as FSWatcher;
-      });
+      vi.mocked(watch).mockImplementation(
+        // fs.watch has multiple overloads; cast to match the 3-arg variant used by _dev-server
+        ((_dir: string, _opts: unknown, cb: unknown) => {
+          watchCallback = cb as typeof watchCallback;
+          return { close: vi.fn() } as unknown as FSWatcher;
+        }) as typeof watch,
+      );
 
       const cleanup = await startDevServer({ cwd: dir, port: 3000 });
 

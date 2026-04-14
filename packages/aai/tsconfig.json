@@ -3,15 +3,8 @@
   "compilerOptions": {
     "incremental": true,
     "tsBuildInfoFile": "../../.tsbuildinfo/aai.tsbuildinfo",
-    "types": ["node"]
+    "types": ["node", "vitest/globals"]
   },
   "include": ["./**/*.ts"],
-  "exclude": [
-    "node_modules",
-    "dist",
-    "**/__snapshots__",
-    "**/*.test.ts",
-    "**/*.test-d.ts",
-    "**/_test-*.ts"
-  ]
+  "exclude": ["node_modules", "dist", "**/__snapshots__"]
 }

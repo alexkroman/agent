@@ -13,7 +13,6 @@
  * ToolSchemaSchema), the top-level shape keys are snapshotted directly.
  */
 import { describe, expect, test } from "vitest";
-import type { z } from "zod";
 import { AgentConfigSchema, ToolSchemaSchema } from "./_internal-types.ts";
 import {
   ClientEventSchema,
@@ -42,9 +41,9 @@ function shapeKeys(schema: ZodObjectLike): string[] {
  * ZodDiscriminatedUnion. The discriminator literal may be a single value
  * or an array (Zod v4 stores it as `.values`).
  */
-function discriminatedUnionShapes(
-  schema: z.ZodDiscriminatedUnion<string, z.ZodDiscriminatedUnionOption<string>[]>,
-): Record<string, string[]> {
+function discriminatedUnionShapes(schema: {
+  options: Array<{ shape: Record<string, unknown> }>;
+}): Record<string, string[]> {
   const result: Record<string, string[]> = {};
   for (const option of schema.options) {
     const typeSchema = option.shape?.type as

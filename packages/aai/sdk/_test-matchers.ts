@@ -83,16 +83,13 @@ expect.extend({
 
 // ─── Type augmentation ──────────────────────────────────────────────────────
 
-interface AaiMatchers<R = unknown> {
-  /** Assert that the value is a valid ClientEvent (parses against ClientEventSchema). */
-  toBeValidClientEvent(): R;
-  /** Assert that the array contains an event with the given type and optional field subset. */
-  toContainEvent(type: string, fields?: Record<string, unknown>): R;
-}
-
 declare module "vitest" {
-  // eslint-disable-next-line @typescript-eslint/no-empty-interface
-  interface Assertion<T = unknown> extends AaiMatchers<T> {}
-  // eslint-disable-next-line @typescript-eslint/no-empty-interface
-  interface AsymmetricMatchersContaining extends AaiMatchers {}
+  interface Assertion<T> {
+    toBeValidClientEvent(): void;
+    toContainEvent(type: string, fields?: Record<string, unknown>): void;
+  }
+  interface AsymmetricMatchersContaining {
+    toBeValidClientEvent(): void;
+    toContainEvent(type: string, fields?: Record<string, unknown>): void;
+  }
 }

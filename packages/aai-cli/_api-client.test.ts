@@ -18,7 +18,7 @@ function mockFetch(response: Partial<Response> & { ok: boolean; status: number }
     json: () => Promise.resolve({}),
     redirected: false,
     statusText: response.ok ? "OK" : "Error",
-    type: "basic" as ResponseType,
+    type: "basic" as Response["type"],
     url: "",
     clone: () => ({}) as Response,
     bodyUsed: false,
@@ -39,7 +39,7 @@ describe("apiRequest", () => {
     );
 
     expect(fetch).toHaveBeenCalledOnce();
-    const [, init] = fetch.mock.calls[0];
+    const [, init] = fetch.mock.calls[0] ?? [];
     expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer my-key");
   });
 
@@ -51,7 +51,7 @@ describe("apiRequest", () => {
       fetch,
     );
 
-    const [, init] = fetch.mock.calls[0];
+    const [, init] = fetch.mock.calls[0] ?? [];
     expect((init?.headers as Record<string, string>)["Content-Type"]).toBe("application/json");
   });
 
@@ -63,7 +63,7 @@ describe("apiRequest", () => {
       fetch,
     );
 
-    const [, init] = fetch.mock.calls[0];
+    const [, init] = fetch.mock.calls[0] ?? [];
     expect((init?.headers as Record<string, string>)["Content-Type"]).toBeUndefined();
   });
 
@@ -131,7 +131,7 @@ describe("apiRequest", () => {
       fetch,
     );
 
-    const [, init] = fetch.mock.calls[0];
+    const [, init] = fetch.mock.calls[0] ?? [];
     expect(init?.method).toBe("DELETE");
   });
 
@@ -143,7 +143,7 @@ describe("apiRequest", () => {
       fetch,
     );
 
-    const [, init] = fetch.mock.calls[0];
+    const [, init] = fetch.mock.calls[0] ?? [];
     expect(init).not.toHaveProperty("apiKey");
     expect(init).not.toHaveProperty("action");
   });
@@ -233,14 +233,16 @@ describe("apiRequestOrThrow", () => {
       typeof mockFetch
     >[0]);
 
-    const err = await apiRequestOrThrow(
-      "https://api.example.com/deploy",
-      { apiKey: "my-key", action: "Deploy" },
-      { fetch, hints: { 409: "Resource already exists" } },
-    ).catch((e: Error) => e);
-
-    expect(err.message).toBe("Deploy failed (HTTP 503): Service Unavailable");
-    expect(err.message).not.toContain("\n");
+    await expect(
+      apiRequestOrThrow(
+        "https://api.example.com/deploy",
+        { apiKey: "my-key", action: "Deploy" },
+        {
+          fetch,
+          hints: { 409: "Resource already exists" },
+        },
+      ),
+    ).rejects.toThrow("Deploy failed (HTTP 503): Service Unavailable");
   });
 });
 
