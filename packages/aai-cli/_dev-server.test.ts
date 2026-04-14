@@ -369,17 +369,16 @@ describe("file watcher filtering", () => {
       // Trigger with a regular file change
       watchCallback("change", "agent.ts");
 
-      // Wait for the 300ms debounce + buffer
+      // Wait for the 300ms debounce + full async restart sequence
       await vi.waitFor(
         () => {
           expect(mockClose).toHaveBeenCalled();
+          expect(mockCreateRuntime).toHaveBeenCalled();
+          expect(mockCreateServer).toHaveBeenCalled();
+          expect(mockListen).toHaveBeenCalled();
         },
         { timeout: 1000 },
       );
-
-      expect(mockCreateRuntime).toHaveBeenCalled();
-      expect(mockCreateServer).toHaveBeenCalled();
-      expect(mockListen).toHaveBeenCalled();
 
       await cleanup();
     });
