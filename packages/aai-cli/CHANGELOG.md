@@ -1,5 +1,13 @@
 # @alexkroman1/aai-cli
 
+## 1.0.6
+
+### Patch Changes
+
+- 27faac9: Fix missing CSS in scaffolded agents: remove client.tsx and index.html from scaffold, serve pre-built default UI when no custom client exists, provide fallback index.html via Vite plugin for custom clients
+  - @alexkroman1/aai@1.0.6
+  - @alexkroman1/aai-ui@1.0.6
+
 ## 1.0.5
 
 ### Patch Changes
