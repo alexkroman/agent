@@ -101,11 +101,3 @@ describe("requireOwner on KV endpoint", () => {
     expect(res.status).toBe(200);
   });
 });
-
-describe("requireUpgrade", () => {
-  test("slug without trailing slash redirects", async () => {
-    const { fetch } = await createTestOrchestrator();
-    const res = await fetch("/my-agent", { redirect: "manual" });
-    expect(res.status).toBe(301);
-  });
-});

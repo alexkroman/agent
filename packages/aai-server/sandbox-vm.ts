@@ -209,11 +209,3 @@ export async function createSandboxVm(opts: SandboxVmOptions): Promise<SandboxHa
   );
   return createDevSandbox(mergedOpts);
 }
-
-// ── Internal exports for testing ─────────────────────────────────────────────
-
-/** @internal Exposed for testing only. */
-export const _internals = {
-  configureSandbox,
-  createConnection,
-};

@@ -16,9 +16,6 @@ export const AUTH_HASH_CACHE_MAX = 100;
 /** Default HTTP server listen port. */
 export const DEFAULT_PORT = 8080;
 
-/** Default credential key derivation scope when KV_SCOPE_SECRET is unset. */
-export const DEFAULT_CREDENTIAL_SCOPE = "default-credential-key";
-
 /** Max concurrent WebSocket connections before the server rejects new upgrades. */
 export const MAX_CONNECTIONS = Number(process.env.MAX_CONNECTIONS) || 100;
 

@@ -286,20 +286,3 @@ export function buildOciSpec(opts: BuildOciSpecOptions): OciRuntimeSpec {
     },
   };
 }
-
-// ---------------------------------------------------------------------------
-// Test-only internals
-// ---------------------------------------------------------------------------
-
-/** @internal Exported for tests only. */
-export const _internals = {
-  DENIED_SYSCALLS,
-  MASKED_PATHS,
-  READONLY_PATHS,
-  DEFAULT_MEMORY_BYTES,
-  DEFAULT_PID_LIMIT,
-  DEFAULT_TMPFS_BYTES,
-  DEFAULT_CPU_SECS,
-  DEFAULT_NOFILE,
-  buildSeccompProfile,
-};

@@ -7,11 +7,7 @@ import { AGENT_CSP } from "@alexkroman1/aai";
 import { HTTPException } from "hono/http-exception";
 import mime from "mime-types";
 import type { AppContext } from "./context.ts";
-import { resolveSandbox } from "./sandbox.ts";
 import { SafePathSchema } from "./schemas.ts";
-
-/** @internal Not part of the public API. Exposed for testing only. */
-export const _internals = { resolveSandbox };
 
 // Lazily resolve the default client directory from aai-ui
 let _defaultClientDir: string | undefined;
