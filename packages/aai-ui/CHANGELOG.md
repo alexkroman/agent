@@ -1,5 +1,20 @@
 # @alexkroman1/aai-ui
 
+## 1.1.0
+
+### Minor Changes
+
+- 5cda7c5: Add ctx.send for real-time tool-to-client events
+
+  Tools can now push arbitrary events to the browser client via `ctx.send(event, data)`. Events flow over the existing WebSocket as `custom_event` messages. The new `useEvent` React hook subscribes to named events. Migrated solo-rpg, pizza-ordering, dispatch-center, and night-owl templates from `useToolResult` to `ctx.send` + `useEvent`.
+
+### Patch Changes
+
+- f342260: Show AAI ANSI art logo on default start screen
+- Updated dependencies [5cda7c5]
+- Updated dependencies [41fab1a]
+  - @alexkroman1/aai@1.1.0
+
 ## 1.0.6
 
 ### Patch Changes
