@@ -24,7 +24,10 @@ function resolveLocalTemplatesDir(): string {
 async function resolveTemplatesDir(): Promise<string> {
   if (process.env.AAI_TEMPLATES_DIR) return process.env.AAI_TEMPLATES_DIR;
   if (isDevMode()) return resolveLocalTemplatesDir();
-  const { dir } = await downloadTemplate(`${GIGET_SOURCE}#${GIGET_REF}`, { force: true });
+  const { dir } = await downloadTemplate(`${GIGET_SOURCE}#${GIGET_REF}`, {
+    force: true,
+    forceClean: true,
+  });
   return dir;
 }
 
