@@ -119,10 +119,14 @@ function cleanupBundleDir(containerId: string): void {
  * - Process runs as nobody (65534:65534)
  */
 export function createGvisorSandbox(opts: GvisorSandboxOptions): GvisorSandbox {
-  const runsc = findRunsc();
-  if (!runsc) throw new Error("runsc not found on PATH");
-  const deno = findDeno();
-  if (!deno) throw new Error("deno not found on PATH");
+  const runscBin = findRunsc();
+  if (!runscBin) throw new Error("runsc not found on PATH");
+  const denoBin = findDeno();
+  if (!denoBin) throw new Error("deno not found on PATH");
+
+  // Capture as const for closure (TS can't narrow module-level let across async closures)
+  const runsc: string = runscBin;
+  const deno: string = denoBin;
 
   const containerId = `aai-${opts.slug}-${nanoid(8)}`;
 
@@ -130,7 +134,7 @@ export function createGvisorSandbox(opts: GvisorSandboxOptions): GvisorSandbox {
     rootfsPath: "/",
     harnessPath: opts.harnessPath,
     denoPath: deno,
-    limits: opts.limits,
+    ...(opts.limits && { limits: opts.limits }),
   });
 
   const bundleDir = prepareBundleDir(containerId, JSON.stringify(spec));
@@ -219,8 +223,9 @@ export function createGvisorSandbox(opts: GvisorSandboxOptions): GvisorSandbox {
  * @returns The number of stale containers reaped.
  */
 export async function reapStaleContainers(): Promise<number> {
-  const runsc = findRunsc();
-  if (!runsc) return 0;
+  const runscBin = findRunsc();
+  if (!runscBin) return 0;
+  const runsc: string = runscBin;
 
   let containers: { id: string }[];
   try {

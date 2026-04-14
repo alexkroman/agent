@@ -133,7 +133,7 @@ export async function createGvisorSandboxHandle(opts: SandboxVmOptions): Promise
   const gvisor = createGvisorSandbox({
     slug: opts.slug,
     harnessPath: opts.harnessPath,
-    limits: opts.limits,
+    ...(opts.limits && { limits: opts.limits }),
   });
   return configureSandbox(createConnection(gvisor.process), opts, () => gvisor.cleanup());
 }

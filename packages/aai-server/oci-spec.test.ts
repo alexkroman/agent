@@ -84,18 +84,22 @@ describe("buildOciSpec", () => {
 
   it("includes seccomp denylist with all expected syscalls", () => {
     const spec = buildOciSpec(baseOpts);
-    const denied = spec.linux.seccomp.syscalls[0];
-    expect(spec.linux.seccomp.defaultAction).toBe("SCMP_ACT_ALLOW");
-    expect(denied.action).toBe("SCMP_ACT_ERRNO");
-    expect(denied.errnoRet).toBe(1);
-    expect(denied.names).toContain("ptrace");
-    expect(denied.names).toContain("mount");
-    expect(denied.names).toContain("unshare");
-    expect(denied.names).toContain("setns");
-    expect(denied.names).toContain("bpf");
-    expect(denied.names).toContain("userfaultfd");
-    expect(denied.names).toContain("kexec_load");
-    expect(denied.names).toHaveLength(26);
+    const { seccomp } = spec.linux;
+    expect(seccomp.defaultAction).toBe("SCMP_ACT_ALLOW");
+    expect(seccomp.syscalls).toHaveLength(1);
+    expect(seccomp.syscalls[0]).toMatchObject({
+      action: "SCMP_ACT_ERRNO",
+      errnoRet: 1,
+    });
+    const deniedNames = seccomp.syscalls[0]?.names ?? [];
+    expect(deniedNames).toContain("ptrace");
+    expect(deniedNames).toContain("mount");
+    expect(deniedNames).toContain("unshare");
+    expect(deniedNames).toContain("setns");
+    expect(deniedNames).toContain("bpf");
+    expect(deniedNames).toContain("userfaultfd");
+    expect(deniedNames).toContain("kexec_load");
+    expect(deniedNames).toHaveLength(26);
   });
 
   it("masks sensitive /proc paths", () => {
