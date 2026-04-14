@@ -1,5 +1,12 @@
 # @alexkroman1/aai-server
 
+## 1.0.8
+
+### Patch Changes
+
+- db7a96c: Replace host / rootfs with empty directory + bind mounts in gVisor sandbox; tighten dev mode env vars and filesystem access
+- a6bf890: Defer sandbox VM startup until first tool call for faster WebSocket connections
+
 ## 1.0.7
 
 ### Patch Changes
