@@ -1,5 +1,6 @@
 /** @jsxImportSource react */
 
+import "@alexkroman1/aai-ui/styles.css";
 import type { ChatMessage } from "@alexkroman1/aai-ui";
 import { client, useSession } from "@alexkroman1/aai-ui";
 import { useEffect, useRef } from "react";
