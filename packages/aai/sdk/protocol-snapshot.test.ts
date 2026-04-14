@@ -77,6 +77,7 @@ describe("server→client event wire format", () => {
     ["reset", { type: "reset" }],
     ["idle_timeout", { type: "idle_timeout" }],
     ["error", { type: "error", code: "stt", message: "Speech recognition failed" }],
+    ["custom_event", { type: "custom_event", event: "game_state", data: { hp: 10 } }],
   ];
 
   test.each(valid)("%s parses successfully", (_label, event) => {
@@ -91,6 +92,12 @@ describe("server→client event wire format", () => {
   test("rejects invalid error code", () => {
     expect(
       ClientEventSchema.safeParse({ type: "error", code: "invalid_code", message: "x" }).success,
+    ).toBe(false);
+  });
+
+  test("rejects custom_event with empty event name", () => {
+    expect(
+      ClientEventSchema.safeParse({ type: "custom_event", event: "", data: null }).success,
     ).toBe(false);
   });
 
