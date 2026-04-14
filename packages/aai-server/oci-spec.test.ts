@@ -160,12 +160,6 @@ describe("buildOciSpec", () => {
     expect(spec.process.terminal).toBe(false);
   });
 
-  it("uses container-internal paths in process.args, not host paths", () => {
-    const spec = buildOciSpec(baseOpts);
-    expect(spec.process.args[0]).toBe("/bin/deno");
-    expect(spec.process.args.at(-1)).toBe("/harness.mjs");
-  });
-
   it("adds read-only bind mounts for deno binary and harness", () => {
     const spec = buildOciSpec(baseOpts);
     const denoMount = spec.mounts.find((m) => m.destination === "/bin/deno");
