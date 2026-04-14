@@ -83,16 +83,8 @@ describe("fixture replay through session", () => {
     );
 
     // Client received tool_call and tool_call_done events
-    const toolStart = client.events.find((e) => (e as { type: string }).type === "tool_call") as
-      | { toolName: string; args: Record<string, unknown> }
-      | undefined;
-    expect(toolStart).toBeDefined();
-    expect(toolStart?.toolName).toBe("get_weather");
-
-    const toolDone = client.events.find((e) => (e as { type: string }).type === "tool_call_done") as
-      | { result: string }
-      | undefined;
-    expect(toolDone).toBeDefined();
+    expect(client.events).toContainEvent("tool_call", { toolName: "get_weather" });
+    expect(client.events).toContainEvent("tool_call_done");
 
     // Tool result was sent back to S2S after replyDone
     await vi.waitFor(() => expect(mockHandle.sendToolResult).toHaveBeenCalled());

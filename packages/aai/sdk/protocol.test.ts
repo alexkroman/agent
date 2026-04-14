@@ -88,32 +88,23 @@ describe("SessionErrorCodeSchema", () => {
 
 describe("ClientEventSchema", () => {
   test("accepts speech_started", () => {
-    const result = ClientEventSchema.safeParse({ type: "speech_started" });
-    expect(result.success).toBe(true);
+    expect({ type: "speech_started" }).toBeValidClientEvent();
   });
 
   test("accepts user_transcript", () => {
-    const result = ClientEventSchema.safeParse({
-      type: "user_transcript",
-      text: "hello world",
-    });
-    expect(result.success).toBe(true);
+    expect({ type: "user_transcript", text: "hello world" }).toBeValidClientEvent();
   });
 
   test("accepts error event", () => {
-    const result = ClientEventSchema.safeParse({
+    expect({
       type: "error",
       code: "internal",
       message: "something went wrong",
-    });
-    expect(result.success).toBe(true);
+    }).toBeValidClientEvent();
   });
 
   test("rejects unknown type", () => {
-    const result = ClientEventSchema.safeParse({
-      type: "unknown_event_type",
-    });
-    expect(result.success).toBe(false);
+    expect({ type: "unknown_event_type" }).not.toBeValidClientEvent();
   });
 });
 
