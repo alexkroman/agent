@@ -25,7 +25,7 @@ describe("buildOciSpec", () => {
   it("sets Deno command with container-internal paths and no --allow-env flag", () => {
     const spec = buildOciSpec(baseOpts);
     expect(spec.process.args).toEqual([
-      "/bin/deno",
+      "/deno",
       "run",
       "--v8-flags=--max-heap-size=64",
       "--no-prompt",
@@ -162,9 +162,9 @@ describe("buildOciSpec", () => {
 
   it("adds read-only bind mounts for deno binary and harness", () => {
     const spec = buildOciSpec(baseOpts);
-    const denoMount = spec.mounts.find((m) => m.destination === "/bin/deno");
+    const denoMount = spec.mounts.find((m) => m.destination === "/deno");
     expect(denoMount).toEqual({
-      destination: "/bin/deno",
+      destination: "/deno",
       type: "bind",
       source: "/rootfs/bin/deno",
       options: ["ro"],

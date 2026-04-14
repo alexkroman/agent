@@ -198,7 +198,7 @@ export function buildOciSpec(opts: BuildOciSpecOptions): OciRuntimeSpec {
   const tmpfsBytes = limits.tmpfsSizeBytes ?? DEFAULT_TMPFS_BYTES;
   const cpuSecs = limits.cpuTimeLimitSecs ?? DEFAULT_CPU_SECS;
   const pidLimit = limits.pidLimit ?? DEFAULT_PID_LIMIT;
-  const containerDeno = opts.containerDenoPath ?? "/bin/deno";
+  const containerDeno = opts.containerDenoPath ?? "/deno";
   const containerHarness = opts.containerHarnessPath ?? "/harness.mjs";
   return {
     ociVersion: "1.0.2",

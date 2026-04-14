@@ -344,7 +344,7 @@ describe.skipIf(!canRun)("gVisor integration (real runsc)", () => {
       // Rootfs should contain only the bind-mounted files and OCI mounts
       expect(toolResp.result).toMatch(/^entries:/);
       const entries = toolResp.result.replace("entries:", "").split(",");
-      // Expected: bin (contains deno), dev, harness.mjs, proc, tmp
+      // Expected: deno, dev, harness.mjs, proc, tmp
       // No /etc, /usr, /lib, /app, /var, /home, etc.
       expect(entries).not.toContain("etc");
       expect(entries).not.toContain("usr");
