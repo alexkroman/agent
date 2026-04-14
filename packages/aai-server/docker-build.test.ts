@@ -123,9 +123,22 @@ describe.runIf(dockerReady())("aai-server Dockerfile", () => {
     const harnessPath = harnessEntry?.split("=")[1];
     expect(harnessPath).toBeTruthy();
 
-    // test -f exits 0 if file exists, non-zero otherwise (would throw)
-    execFileSync("docker", ["run", "--rm", imageName, "test", "-f", String(harnessPath)], {
-      timeout: 30_000,
-    });
+    // Distroless has no shell — use node to check the file exists.
+    // The distroless nodejs image uses /nodejs/bin/node as entrypoint,
+    // so we pass a -e script as the CMD.
+    execFileSync(
+      "docker",
+      [
+        "run",
+        "--rm",
+        "--entrypoint",
+        "",
+        imageName,
+        "/nodejs/bin/node",
+        "-e",
+        `require("fs").accessSync(${JSON.stringify(harnessPath)})`,
+      ],
+      { timeout: 30_000 },
+    );
   });
 });
