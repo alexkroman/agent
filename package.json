@@ -13,7 +13,6 @@
     "test:aai-cli": "pnpm --filter @alexkroman1/aai-cli test",
     "test:aai-server": "pnpm --filter aai-server test",
     "test:templates": "pnpm --filter aai-templates test",
-    "test:contract": "vitest run --project aai-types --project aai-ui-types",
     "test:mutate": "stryker run",
     "test:mutate:sdk": "stryker run stryker.sdk.config.mjs",
     "test:mutate:host": "stryker run stryker.host.config.mjs",

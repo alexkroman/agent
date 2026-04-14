@@ -1,7 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 import fc from "fast-check";
-import { describe, expect, test } from "vitest";
-import { parseManifest } from "./manifest.ts";
+import { describe, expect, expectTypeOf, test } from "vitest";
+import type { AgentConfig, Manifest, ToolSchema } from "./manifest-barrel.ts";
+import { agentToolsToSchemas, parseManifest, toAgentConfig } from "./manifest-barrel.ts";
 
 describe("parseManifest", () => {
   test("minimal manifest requires only name", () => {
@@ -93,5 +94,26 @@ describe("property: parseManifest", () => {
         expect(() => parseManifest(obj)).toThrow();
       }),
     );
+  });
+});
+
+describe("manifest type contracts", () => {
+  test("parseManifest returns Manifest", () => {
+    const result = parseManifest({ name: "test" });
+    expectTypeOf(result).toEqualTypeOf<Manifest>();
+  });
+
+  test("parseManifest accepts unknown input", () => {
+    expectTypeOf(parseManifest).parameter(0).toBeUnknown();
+  });
+
+  test("toAgentConfig returns AgentConfig", () => {
+    const config = toAgentConfig({ name: "test", systemPrompt: "p", greeting: "g" });
+    expectTypeOf(config).toEqualTypeOf<AgentConfig>();
+  });
+
+  test("agentToolsToSchemas returns ToolSchema[]", () => {
+    const schemas = agentToolsToSchemas({});
+    expectTypeOf(schemas).toEqualTypeOf<ToolSchema[]>();
   });
 });

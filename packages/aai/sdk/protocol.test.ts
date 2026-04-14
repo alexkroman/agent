@@ -1,10 +1,12 @@
 import fc from "fast-check";
-import { describe, expect, test } from "vitest";
+import { describe, expect, expectTypeOf, test } from "vitest";
+import { z } from "zod";
 import {
   DEFAULT_STT_SAMPLE_RATE,
   DEFAULT_TTS_SAMPLE_RATE,
   TOOL_EXECUTION_TIMEOUT_MS,
 } from "./constants.ts";
+import type { ClientEvent, ServerMessage } from "./protocol.ts";
 import {
   buildReadyConfig,
   ClientEventSchema,
@@ -216,5 +218,39 @@ describe("property: lenientParse", () => {
         }
       }),
     );
+  });
+});
+
+describe("protocol type contracts", () => {
+  test("ClientEvent narrows on user_transcript discriminant", () => {
+    type UserTranscript = Extract<ClientEvent, { type: "user_transcript" }>;
+    expectTypeOf<UserTranscript>().toHaveProperty("text");
+    expectTypeOf<UserTranscript["text"]>().toBeString();
+  });
+
+  test("ClientEvent narrows on tool_call discriminant", () => {
+    type ToolCall = Extract<ClientEvent, { type: "tool_call" }>;
+    expectTypeOf<ToolCall>().toHaveProperty("toolCallId");
+    expectTypeOf<ToolCall>().toHaveProperty("toolName");
+    expectTypeOf<ToolCall>().toHaveProperty("args");
+  });
+
+  test("ClientEvent narrows on error discriminant", () => {
+    type ErrorEvent = Extract<ClientEvent, { type: "error" }>;
+    expectTypeOf<ErrorEvent>().toHaveProperty("code");
+    expectTypeOf<ErrorEvent>().toHaveProperty("message");
+  });
+
+  test("ServerMessage has type property on all variants", () => {
+    expectTypeOf<ServerMessage>().toHaveProperty("type");
+  });
+
+  test("lenientParse returns ok/error discriminated union", () => {
+    const schema = z.object({ type: z.literal("test"), value: z.number() });
+    type Parsed = z.infer<typeof schema>;
+    const result = lenientParse(schema, {});
+    expectTypeOf(result).toEqualTypeOf<
+      { ok: true; data: Parsed } | { ok: false; malformed: boolean; error: string }
+    >();
   });
 });
