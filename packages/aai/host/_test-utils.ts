@@ -275,3 +275,37 @@ export function createFixtureSession(
     },
   };
 }
+
+// --- Test Data Builders ---
+
+export function buildAgent(overrides?: Partial<AgentDef>): AgentDef {
+  return { ...makeAgent(), ...overrides };
+}
+
+export function buildTool(overrides?: Partial<ToolDef>): ToolDef {
+  return { ...makeTool(), ...overrides };
+}
+
+export function buildSessionOpts(overrides?: Partial<S2sSessionOptions>): S2sSessionOptions {
+  return makeSessionOpts(overrides);
+}
+
+export function buildClientEvent(type: string, fields?: Record<string, unknown>) {
+  const base: Record<string, unknown> = { type };
+  switch (type) {
+    case "user_transcript":
+      return { ...base, text: "hello", isFinal: true, ...fields };
+    case "error":
+      return { ...base, code: "internal", message: "test error", ...fields };
+    case "tool_call":
+      return { ...base, toolCallId: "tc-1", toolName: "test", args: {}, ...fields };
+    case "tool_call_done":
+      return { ...base, toolCallId: "tc-1", result: "ok", ...fields };
+    default:
+      return { ...base, ...fields };
+  }
+}
+
+export function buildServerMessage(type: string, fields?: Record<string, unknown>) {
+  return { type, ...fields };
+}
