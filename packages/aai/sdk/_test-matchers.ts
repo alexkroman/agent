@@ -7,8 +7,7 @@
  */
 
 import { expect } from "vitest";
-import { parseManifest } from "./manifest.ts";
-import { ClientEventSchema, ServerMessageSchema } from "./protocol.ts";
+import { ClientEventSchema } from "./protocol.ts";
 
 /** Return type for custom matcher functions. */
 type MatcherResult = { pass: boolean; message: () => string };
@@ -48,33 +47,6 @@ function toBeValidClientEvent(received: unknown): MatcherResult {
   };
 }
 
-function toBeValidServerMessage(received: unknown): MatcherResult {
-  const result = ServerMessageSchema.safeParse(received);
-  return {
-    pass: result.success,
-    message: () =>
-      result.success
-        ? "expected value NOT to be a valid ServerMessage, but it parsed successfully"
-        : `expected value to be a valid ServerMessage\n\nZod errors:\n${result.error.issues.map((i) => `  - ${i.path.join(".")}: ${i.message}`).join("\n")}`,
-  };
-}
-
-function toBeValidManifest(received: unknown): MatcherResult {
-  try {
-    parseManifest(received);
-    return {
-      pass: true,
-      message: () => "expected value NOT to be a valid Manifest, but parseManifest() succeeded",
-    };
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return {
-      pass: false,
-      message: () => `expected value to be a valid Manifest\n\nparseManifest() threw:\n  ${msg}`,
-    };
-  }
-}
-
 function toContainEvent(
   received: unknown,
   type: string,
@@ -106,8 +78,6 @@ function toContainEvent(
 
 expect.extend({
   toBeValidClientEvent,
-  toBeValidServerMessage,
-  toBeValidManifest,
   toContainEvent,
 });
 
@@ -116,10 +86,6 @@ expect.extend({
 interface AaiMatchers<R = unknown> {
   /** Assert that the value is a valid ClientEvent (parses against ClientEventSchema). */
   toBeValidClientEvent(): R;
-  /** Assert that the value is a valid ServerMessage (parses against ServerMessageSchema). */
-  toBeValidServerMessage(): R;
-  /** Assert that the value is a valid agent Manifest (passes parseManifest). */
-  toBeValidManifest(): R;
   /** Assert that the array contains an event with the given type and optional field subset. */
   toContainEvent(type: string, fields?: Record<string, unknown>): R;
 }

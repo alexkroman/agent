@@ -278,18 +278,6 @@ export function createFixtureSession(
 
 // --- Test Data Builders ---
 
-export function buildAgent(overrides?: Partial<AgentDef>): AgentDef {
-  return { ...makeAgent(), ...overrides };
-}
-
-export function buildTool(overrides?: Partial<ToolDef>): ToolDef {
-  return { ...makeTool(), ...overrides };
-}
-
-export function buildSessionOpts(overrides?: Partial<S2sSessionOptions>): S2sSessionOptions {
-  return makeSessionOpts(overrides);
-}
-
 export function buildClientEvent(type: string, fields?: Record<string, unknown>) {
   const base: Record<string, unknown> = { type };
   switch (type) {
@@ -304,8 +292,4 @@ export function buildClientEvent(type: string, fields?: Record<string, unknown>)
     default:
       return { ...base, ...fields };
   }
-}
-
-export function buildServerMessage(type: string, fields?: Record<string, unknown>) {
-  return { type, ...fields };
 }

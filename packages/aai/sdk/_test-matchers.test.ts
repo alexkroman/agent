@@ -28,54 +28,6 @@ describe("toBeValidClientEvent", () => {
   });
 });
 
-describe("toBeValidServerMessage", () => {
-  it("passes for a valid server message", () => {
-    expect({ type: "audio_done" }).toBeValidServerMessage();
-  });
-
-  it("passes for a config message", () => {
-    expect({
-      type: "config",
-      audioFormat: "pcm16",
-      sampleRate: 16_000,
-      ttsSampleRate: 24_000,
-    }).toBeValidServerMessage();
-  });
-
-  it("fails for an invalid message", () => {
-    expect(() => {
-      expect({ type: "bogus_type" }).toBeValidServerMessage();
-    }).toThrow(/expected value to be a valid ServerMessage/);
-  });
-});
-
-describe("toBeValidManifest", () => {
-  it("passes for a valid manifest", () => {
-    expect({ name: "test-agent" }).toBeValidManifest();
-  });
-
-  it("passes for a manifest with optional fields", () => {
-    expect({
-      name: "test-agent",
-      greeting: "Hi there!",
-      maxSteps: 3,
-      builtinTools: ["web_search"],
-    }).toBeValidManifest();
-  });
-
-  it("fails for a manifest missing name", () => {
-    expect(() => {
-      expect({}).toBeValidManifest();
-    }).toThrow(/expected value to be a valid Manifest/);
-  });
-
-  it("fails for a manifest with empty name", () => {
-    expect(() => {
-      expect({ name: "" }).toBeValidManifest();
-    }).toThrow(/expected value to be a valid Manifest/);
-  });
-});
-
 describe("toContainEvent", () => {
   const events = [
     { type: "speech_started" },
