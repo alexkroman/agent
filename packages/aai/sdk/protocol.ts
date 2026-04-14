@@ -14,7 +14,7 @@ import { MAX_TOOL_RESULT_CHARS } from "./constants.ts";
  *
  * All audio frames are 16-bit signed PCM, little-endian, mono.
  */
-export const AUDIO_FORMAT = "pcm16";
+const AUDIO_FORMAT = "pcm16";
 
 /**
  * Minimal envelope schema for two-phase message parsing.
@@ -24,7 +24,7 @@ export const AUDIO_FORMAT = "pcm16";
  * *unrecognised* type (safe to ignore during rolling upgrades) or genuinely
  * malformed (should be warned about).
  */
-export const MessageEnvelopeSchema = z.object({ type: z.string() }).passthrough();
+const MessageEnvelopeSchema = z.object({ type: z.string() }).passthrough();
 
 /**
  * Two-phase message parse: tries the strict schema first, then falls back to
@@ -156,9 +156,6 @@ export interface ClientSink {
 
 // ─── WebSocket message types ────────────────────────────────────────────────
 
-/** Supported audio formats for the wire protocol. */
-export type AudioFormatId = "pcm16";
-
 /** Zod schema for {@link ReadyConfig}. */
 export const ReadyConfigSchema = z.object({
   audioFormat: z.enum(["pcm16"]),
@@ -216,13 +213,3 @@ export function buildReadyConfig(s2sConfig: {
     ttsSampleRate: s2sConfig.outputSampleRate,
   };
 }
-
-// ─── Worker RPC interfaces ─────────────────────────────────────────────────
-
-/** Zod schema for {@link TurnConfig}. */
-export const TurnConfigSchema = z.object({
-  maxSteps: z.number().int().positive().optional(),
-});
-
-/** Combined turn configuration resolved from the worker before a turn starts. */
-export type TurnConfig = z.infer<typeof TurnConfigSchema>;

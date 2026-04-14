@@ -15,7 +15,6 @@ import {
   MAX_TOOL_RESULT_CHARS,
 } from "./constants.ts";
 import {
-  AUDIO_FORMAT,
   ClientMessageSchema,
   KvRequestSchema,
   ServerMessageSchema,
@@ -35,7 +34,6 @@ type Fixture = {
   ClientMessage: Record<string, unknown>[];
   KvRequest: Record<string, unknown>[];
   constants: {
-    AUDIO_FORMAT: string;
     DEFAULT_STT_SAMPLE_RATE: number;
     DEFAULT_TTS_SAMPLE_RATE: number;
     MAX_TOOL_RESULT_CHARS: number;
@@ -161,10 +159,6 @@ describe.each(fixtureFiles)("compat fixture: %s", (filename) => {
   // ── Constants stability ─────────────────────────────────────────
 
   describe("constants stability", () => {
-    test("AUDIO_FORMAT unchanged", () => {
-      expect(AUDIO_FORMAT).toBe(fixture.constants.AUDIO_FORMAT);
-    });
-
     test("DEFAULT_STT_SAMPLE_RATE unchanged", () => {
       expect(DEFAULT_STT_SAMPLE_RATE).toBe(fixture.constants.DEFAULT_STT_SAMPLE_RATE);
     });

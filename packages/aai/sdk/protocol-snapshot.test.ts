@@ -14,7 +14,6 @@ import {
 } from "./constants.ts";
 import type { ClientEvent, ClientMessage, ServerMessage } from "./protocol.ts";
 import {
-  AUDIO_FORMAT,
   ClientEventSchema,
   ClientMessageSchema,
   KvRequestSchema,
@@ -24,10 +23,6 @@ import {
 // ── Constants ────────────────────────────────────────────────────────────
 
 describe("protocol constants", () => {
-  test("audio format", () => {
-    expect(AUDIO_FORMAT).toMatchInlineSnapshot(`"pcm16"`);
-  });
-
   test("sample rates", () => {
     expect(DEFAULT_STT_SAMPLE_RATE).toMatchInlineSnapshot("16000");
     expect(DEFAULT_TTS_SAMPLE_RATE).toMatchInlineSnapshot("24000");
