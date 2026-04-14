@@ -58,4 +58,74 @@ describe.runIf(dockerReady())("aai-server Dockerfile", () => {
     expect(inspected).toHaveLength(1);
     expect(inspected[0].Config.ExposedPorts).toHaveProperty("8080/tcp");
   });
+
+  test("container starts and health endpoint responds", () => {
+    // Start container in background
+    const containerId = execFileSync(
+      "docker",
+      [
+        "run",
+        "-d",
+        "--rm",
+        "-p",
+        "0:8080",
+        "-e",
+        "AAI_API_KEY=test-key",
+        "-e",
+        "ALLOWED_ORIGINS=*",
+        imageName,
+      ],
+      { encoding: "utf-8", timeout: 10_000 },
+    ).trim();
+
+    try {
+      // Find the mapped port
+      const portOutput = execFileSync("docker", ["port", containerId, "8080"], {
+        encoding: "utf-8",
+        timeout: 5000,
+      }).trim();
+      const port = portOutput.split(":").pop();
+
+      // Wait for health endpoint (up to 10s)
+      let healthy = false;
+      for (let i = 0; i < 20; i++) {
+        try {
+          const res = execFileSync("curl", ["-sf", `http://localhost:${port}/health`], {
+            encoding: "utf-8",
+            timeout: 2000,
+          });
+          if (res.includes('"ok"')) {
+            healthy = true;
+            break;
+          }
+        } catch {
+          execFileSync("sleep", ["0.5"]);
+        }
+      }
+      expect(healthy).toBe(true);
+    } finally {
+      execFileSync("docker", ["kill", containerId], {
+        stdio: "ignore",
+        timeout: 10_000,
+      });
+    }
+  });
+
+  test("GUEST_HARNESS_PATH points to an existing file", () => {
+    // Extract the configured harness path from the image's env
+    const inspectOut = execFileSync("docker", ["image", "inspect", imageName], {
+      encoding: "utf-8",
+      timeout: 10_000,
+    });
+    const env: string[] = JSON.parse(inspectOut)[0].Config.Env;
+    const harnessEntry = env.find((e: string) => e.startsWith("GUEST_HARNESS_PATH="));
+    expect(harnessEntry).toBeDefined();
+    const harnessPath = harnessEntry?.split("=")[1];
+    expect(harnessPath).toBeTruthy();
+
+    // test -f exits 0 if file exists, non-zero otherwise (would throw)
+    execFileSync("docker", ["run", "--rm", imageName, "test", "-f", String(harnessPath)], {
+      timeout: 30_000,
+    });
+  });
 });
