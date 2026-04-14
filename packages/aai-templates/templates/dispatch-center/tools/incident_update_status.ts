@@ -23,7 +23,7 @@ export const incidentUpdateStatus = tool({
       .describe("Updated casualty numbers")
       .optional(),
   }),
-  async execute(args, ctx: { kv: KV }) {
+  async execute(args, ctx: { kv: KV; send: (event: string, data: unknown) => void }) {
     const state = await getState(ctx.kv);
     const inc = state.incidents[args.incidentId];
     if (!inc) return { error: `Incident ${args.incidentId} not found` };
@@ -77,12 +77,15 @@ export const incidentUpdateStatus = tool({
     recalculateAlertLevel(state);
     await saveState(ctx.kv, state);
 
-    return {
+    const result = {
       incidentId: args.incidentId,
       newStatus: args.status,
       timeline: inc.timeline.slice(-5).map((t) => t.event),
       casualties: inc.casualties,
+      incident: inc,
       systemAlertLevel: state.alertLevel,
     };
+    ctx.send("incidents", result);
+    return result;
   },
 });

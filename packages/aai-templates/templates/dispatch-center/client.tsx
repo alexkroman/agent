@@ -2,7 +2,7 @@
 
 import "@alexkroman1/aai-ui/styles.css";
 import type { ChatMessage } from "@alexkroman1/aai-ui";
-import { client, useSession, useToolResult } from "@alexkroman1/aai-ui";
+import { client, useEvent, useSession } from "@alexkroman1/aai-ui";
 import { useEffect, useMemo, useRef } from "react";
 import type { DispatchState, Incident, Severity } from "./shared.ts";
 
@@ -101,44 +101,9 @@ function App() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const dashRef = useRef<DashboardState>({ alertLevel: "green", incidents: {} });
 
-  // Track incidents and alert level from tool results
-  useToolResult("incident_create", (result: unknown) => {
-    const r = result as { incident?: Incident };
-    if (r.incident) {
-      dashRef.current.incidents[r.incident.id] = {
-        id: r.incident.id,
-        severity: r.incident.severity,
-        status: r.incident.status,
-        location: r.incident.location,
-      };
-    }
-  });
-
-  useToolResult("incident_triage", (result: unknown) => {
-    const r = result as { incident?: Incident };
-    if (r.incident) {
-      dashRef.current.incidents[r.incident.id] = {
-        ...dashRef.current.incidents[r.incident.id],
-        id: r.incident.id,
-        severity: r.incident.severity,
-        status: r.incident.status,
-      };
-    }
-  });
-
-  useToolResult("incident_update_status", (result: unknown) => {
-    const r = result as { incident?: Incident };
-    if (r.incident) {
-      dashRef.current.incidents[r.incident.id] = {
-        ...dashRef.current.incidents[r.incident.id],
-        id: r.incident.id,
-        status: r.incident.status,
-      };
-    }
-  });
-
-  useToolResult("ops_dashboard", (result: unknown) => {
-    const r = result as { state?: DispatchState };
+  // Track incidents and alert level from events
+  useEvent("incidents", (result: unknown) => {
+    const r = result as { incident?: Incident; state?: DispatchState; systemAlertLevel?: string };
     if (r.state) {
       dashRef.current.alertLevel = r.state.alertLevel;
       for (const inc of Object.values(r.state.incidents)) {
@@ -149,6 +114,17 @@ function App() {
           location: inc.location,
         };
       }
+    } else if (r.incident) {
+      dashRef.current.incidents[r.incident.id] = {
+        ...dashRef.current.incidents[r.incident.id],
+        id: r.incident.id,
+        severity: r.incident.severity,
+        status: r.incident.status,
+        location: r.incident.location,
+      };
+    }
+    if (r.systemAlertLevel) {
+      dashRef.current.alertLevel = r.systemAlertLevel;
     }
   });
 

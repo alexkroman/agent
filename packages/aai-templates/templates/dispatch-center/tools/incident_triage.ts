@@ -37,7 +37,7 @@ export const incidentTriage = tool({
     casualtyUpdate: z.number().describe("Updated casualty count").optional(),
     notes: z.string().describe("Triage notes").optional(),
   }),
-  async execute(args, ctx: { kv: KV }) {
+  async execute(args, ctx: { kv: KV; send: (event: string, data: unknown) => void }) {
     const state = await getState(ctx.kv);
     const inc = state.incidents[args.incidentId];
     if (!inc) return { error: `Incident ${args.incidentId} not found` };
@@ -69,7 +69,7 @@ export const incidentTriage = tool({
     const protocols = getApplicableProtocols(inc.type, inc.severity);
     const recommended = recommendResources(inc.type, inc.severity, state);
 
-    return {
+    const result = {
       incidentId: args.incidentId,
       severity: inc.severity,
       type: inc.type,
@@ -85,7 +85,10 @@ export const incidentTriage = tool({
         callsign: r.callsign,
         type: r.type,
       })),
+      incident: inc,
       systemAlertLevel: state.alertLevel,
     };
+    ctx.send("incidents", result);
+    return result;
   },
 });

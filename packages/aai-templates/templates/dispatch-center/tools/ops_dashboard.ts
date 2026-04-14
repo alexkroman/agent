@@ -5,7 +5,7 @@ import { getState, INCIDENT_INDEX_KEY, now } from "../shared.ts";
 export const opsDashboard = tool({
   description:
     "Get the full operational dashboard: alert level, resource utilization, active incidents, and available resources.",
-  async execute(_args, ctx: { kv: KV }) {
+  async execute(_args, ctx: { kv: KV; send: (event: string, data: unknown) => void }) {
     const state = await getState(ctx.kv);
 
     // Query KV for persisted incident snapshots via index
@@ -38,7 +38,7 @@ export const opsDashboard = tool({
 
     const utilization = Math.round((1 - resourceSummary.available / resourceSummary.total) * 100);
 
-    return {
+    const result = {
       systemAlertLevel: state.alertLevel,
       mutualAidActive: state.mutualAidRequested,
       resourceUtilization: `${utilization}%`,
@@ -69,6 +69,9 @@ export const opsDashboard = tool({
         severity: s.value.severity,
         status: s.value.status,
       })),
+      state,
     };
+    ctx.send("incidents", result);
+    return result;
   },
 });
