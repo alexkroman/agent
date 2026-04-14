@@ -1,3 +1,4 @@
+import fc from "fast-check";
 import { describe, expect, test } from "vitest";
 import {
   DEFAULT_STT_SAMPLE_RATE,
@@ -9,6 +10,7 @@ import {
   ClientEventSchema,
   ClientMessageSchema,
   KvRequestSchema,
+  lenientParse,
   SessionErrorCodeSchema,
 } from "./protocol.ts";
 
@@ -161,5 +163,67 @@ describe("buildReadyConfig", () => {
     const config = buildReadyConfig({ inputSampleRate: 8000, outputSampleRate: 48_000 });
     expect(config.sampleRate).toBe(8000);
     expect(config.ttsSampleRate).toBe(48_000);
+  });
+});
+
+// ── Property-based tests ─────────────────────────────────────────────────
+
+describe("property: lenientParse", () => {
+  test("never throws on arbitrary input", () => {
+    fc.assert(
+      fc.property(fc.anything(), (input) => {
+        const result = lenientParse(ClientEventSchema, input);
+        expect(result).toHaveProperty("ok");
+      }),
+    );
+  });
+
+  test("valid ClientEvents round-trip through parse", () => {
+    const errorCodes = [
+      "stt",
+      "llm",
+      "tts",
+      "tool",
+      "protocol",
+      "connection",
+      "audio",
+      "internal",
+    ] as const;
+
+    const speechStartedArb = fc.constant({ type: "speech_started" as const });
+
+    const userTranscriptArb = fc.record({
+      type: fc.constant("user_transcript" as const),
+      text: fc.string(),
+    });
+
+    const errorEventArb = fc.record({
+      type: fc.constant("error" as const),
+      code: fc.constantFrom(...errorCodes),
+      message: fc.string(),
+    });
+
+    const clientEventArb = fc.oneof(speechStartedArb, userTranscriptArb, errorEventArb);
+
+    fc.assert(
+      fc.property(clientEventArb, (event) => {
+        const result = lenientParse(ClientEventSchema, event);
+        expect(result.ok).toBe(true);
+      }),
+    );
+  });
+
+  test("objects without type field are malformed", () => {
+    const noTypeArb = fc.object().filter((obj) => !("type" in obj));
+
+    fc.assert(
+      fc.property(noTypeArb, (obj) => {
+        const result = lenientParse(ClientEventSchema, obj);
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.malformed).toBe(true);
+        }
+      }),
+    );
   });
 });

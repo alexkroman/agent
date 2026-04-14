@@ -12,6 +12,7 @@
  * - Comprehensive private IP range detection
  */
 
+import fc from "fast-check";
 import { describe, expect, test, vi } from "vitest";
 import { isPrivateIp, resolveAndAssertPublic, ssrfSafeFetch } from "./ssrf.ts";
 
@@ -374,5 +375,45 @@ describe("isPrivateIp: comprehensive private range coverage", () => {
     ["151.101.1.140", false], // Reddit
   ] as const)("correctly identifies public IPs: isPrivateIp(%s) === %s", (ip: string, expected: boolean) => {
     expect(isPrivateIp(ip)).toBe(expected);
+  });
+});
+
+// ── Property-based tests ─────────────────────────────────────────────────
+
+describe("property: isPrivateIp", () => {
+  /** Generate a valid octet (0-255) */
+  const octet = fc.integer({ min: 0, max: 255 });
+
+  test("all RFC 1918 10.x.x.x addresses are private", () => {
+    fc.assert(
+      fc.property(octet, octet, octet, (b, c, d) => {
+        expect(isPrivateIp(`10.${b}.${c}.${d}`)).toBe(true);
+      }),
+    );
+  });
+
+  test("all RFC 1918 172.16-31.x.x addresses are private", () => {
+    const secondOctet = fc.integer({ min: 16, max: 31 });
+    fc.assert(
+      fc.property(secondOctet, octet, octet, (b, c, d) => {
+        expect(isPrivateIp(`172.${b}.${c}.${d}`)).toBe(true);
+      }),
+    );
+  });
+
+  test("all RFC 1918 192.168.x.x addresses are private", () => {
+    fc.assert(
+      fc.property(octet, octet, (c, d) => {
+        expect(isPrivateIp(`192.168.${c}.${d}`)).toBe(true);
+      }),
+    );
+  });
+
+  test("all loopback 127.x.x.x addresses are private", () => {
+    fc.assert(
+      fc.property(octet, octet, octet, (b, c, d) => {
+        expect(isPrivateIp(`127.${b}.${c}.${d}`)).toBe(true);
+      }),
+    );
   });
 });
