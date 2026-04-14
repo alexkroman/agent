@@ -5,5 +5,13 @@
     "tsBuildInfoFile": "../../.tsbuildinfo/aai-cli.tsbuildinfo"
   },
   "include": ["./**/*.ts"],
-  "exclude": ["node_modules", "dist", "templates", "**/__snapshots__"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    "templates",
+    "**/__snapshots__",
+    "**/*.test.ts",
+    "**/_test-*.ts",
+    "**/_mock-*.ts"
+  ]
 }
