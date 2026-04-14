@@ -10,7 +10,7 @@
  */
 
 import { type ChildProcess, execFile, execFileSync, spawn } from "node:child_process";
-import { copyFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { nanoid } from "nanoid";
@@ -93,7 +93,9 @@ const SANDBOX_ROOTFS = "/tmp/aai-sandbox-rootfs";
  */
 function prepareSandboxRootfs(denoPath: string, harnessPath: string): string {
   mkdirSync(SANDBOX_ROOTFS, { recursive: true });
-  copyFileSync(denoPath, join(SANDBOX_ROOTFS, "deno"));
+  const denoDest = join(SANDBOX_ROOTFS, "deno");
+  copyFileSync(denoPath, denoDest);
+  chmodSync(denoDest, 0o755);
   copyFileSync(harnessPath, join(SANDBOX_ROOTFS, "harness.mjs"));
   return SANDBOX_ROOTFS;
 }
