@@ -304,6 +304,63 @@ describe.skipIf(!canRun)("gVisor integration (real runsc)", () => {
     }
   }, 30_000);
 
+  test("rootfs contains only expected entries", async () => {
+    const lsBundle = `
+    export default {
+      name: "ls-agent",
+      systemPrompt: "LS test",
+      greeting: "",
+      maxSteps: 1,
+      tools: {
+        list_root: {
+          description: "List root directory entries",
+          execute() {
+            try {
+              const entries = [...Deno.readDirSync("/")]
+                .map((e) => e.name)
+                .sort();
+              return "entries:" + entries.join(",");
+            } catch (err) {
+              return "error:" + err.message;
+            }
+          },
+        },
+      },
+    };
+    `;
+
+    const { sandbox, conn } = await spawnSandbox("rootfs-test");
+
+    try {
+      await conn.sendRequest("bundle/load", { code: lsBundle, env: {} });
+
+      const toolResp = await conn.sendRequest<{ result: string }>("tool/execute", {
+        name: "list_root",
+        args: {},
+        sessionId: "rootfs-s1",
+        messages: [],
+      });
+
+      // Rootfs should contain only the bind-mounted files and OCI mounts
+      expect(toolResp.result).toMatch(/^entries:/);
+      const entries = toolResp.result.replace("entries:", "").split(",");
+      // Expected: bin (contains deno), dev, harness.mjs, proc, tmp
+      // No /etc, /usr, /lib, /app, /var, /home, etc.
+      expect(entries).not.toContain("etc");
+      expect(entries).not.toContain("usr");
+      expect(entries).not.toContain("lib");
+      expect(entries).not.toContain("app");
+      expect(entries).not.toContain("var");
+      expect(entries).toContain("tmp");
+      expect(entries).toContain("dev");
+      expect(entries).toContain("proc");
+    } finally {
+      conn.dispose();
+      await sandbox.cleanup();
+      activeSandboxes.splice(activeSandboxes.indexOf(sandbox), 1);
+    }
+  }, 30_000);
+
   test("cannot access network", async () => {
     const netBundle = `
     export default {
