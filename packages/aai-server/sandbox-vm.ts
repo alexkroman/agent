@@ -101,7 +101,7 @@ function devSandboxSpawnArgs(harnessPath: string): {
   env: Record<string, string | undefined>;
 } {
   return {
-    args: ["run", "--allow-env", "--allow-read=" + harnessPath, "--no-prompt", harnessPath],
+    args: ["run", "--allow-env", `--allow-read=${harnessPath}`, "--no-prompt", harnessPath],
     env: {
       PATH: process.env.PATH,
       HOME: process.env.HOME,
