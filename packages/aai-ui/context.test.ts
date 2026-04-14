@@ -13,6 +13,7 @@ function mockSessionCore(overrides = {}): SessionCore {
     state: "ready" as const,
     messages: [],
     toolCalls: [],
+    customEvents: [],
     userTranscript: null,
     agentTranscript: null,
     error: null,

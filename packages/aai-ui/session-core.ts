@@ -41,6 +41,17 @@ export type {
 // ─── Snapshot type ──────────────────────────────────────────────────────────
 
 /**
+ * A custom event emitted by the agent via `ctx.send`.
+ *
+ * @public
+ */
+export type CustomEvent = {
+  readonly id: number;
+  readonly event: string;
+  readonly data: unknown;
+};
+
+/**
  * Immutable snapshot of the session state.
  *
  * Consumers (e.g. React hooks via `useSyncExternalStore`) read this to render.
@@ -52,6 +63,7 @@ export type SessionSnapshot = {
   readonly state: AgentState;
   readonly messages: ChatMessage[];
   readonly toolCalls: ToolCallInfo[];
+  readonly customEvents: CustomEvent[];
   readonly userTranscript: string | null;
   readonly agentTranscript: string | null;
   readonly error: SessionError | null;
@@ -217,6 +229,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     state: "disconnected",
     messages: [],
     toolCalls: [],
+    customEvents: [],
     userTranscript: null,
     agentTranscript: null,
     error: null,
@@ -262,6 +275,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     updateState({
       messages: [],
       toolCalls: [],
+      customEvents: [],
       userTranscript: null,
       agentTranscript: null,
       error: null,
@@ -290,6 +304,9 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
 
   /** Incremented on each turn boundary -- stale async callbacks compare against this. */
   let handlerGeneration = 0;
+
+  /** Monotonically increasing counter for custom events -- used by useEvent to deduplicate. */
+  let customEventSeq = 0;
 
   function handleUserTranscriptEvent(text: string): void {
     handlerGeneration++;
@@ -371,6 +388,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
         updateState({
           messages: [],
           toolCalls: [],
+          customEvents: [],
           userTranscript: null,
           agentTranscript: null,
           error: null,
@@ -378,6 +396,14 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
         });
         break;
       }
+      case "custom_event":
+        updateState({
+          customEvents: [
+            ...currentSnapshot.customEvents,
+            { id: ++customEventSeq, event: e.event, data: e.data },
+          ],
+        });
+        break;
       case "error":
         console.error("Agent error:", e.message);
         updateState({

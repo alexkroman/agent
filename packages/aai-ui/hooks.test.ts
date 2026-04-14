@@ -14,6 +14,7 @@ function createMockCore(toolCalls: ToolCallInfo[] = []): SessionCore & {
     state: "ready" as const,
     messages: [],
     toolCalls,
+    customEvents: [],
     userTranscript: null,
     agentTranscript: null,
     error: null,
