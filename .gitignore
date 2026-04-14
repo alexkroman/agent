@@ -12,6 +12,7 @@ tmp/
 .tsbuildinfo/
 coverage/
 reports/
+.stryker-tmp/
 .worktrees/
 .turbo/
 __pycache__/

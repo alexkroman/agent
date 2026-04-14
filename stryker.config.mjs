@@ -9,10 +9,7 @@ export default {
     "!packages/aai/sdk/*-barrel.ts",
   ],
   testRunner: "vitest",
-  vitest: {
-    configFile: "vitest.config.ts",
-    project: "aai",
-  },
+  testRunnerNodeArgs: ["--experimental-vm-modules"],
   reporters: ["html", "clear-text", "progress"],
   htmlReporter: { fileName: "reports/mutation/index.html" },
   thresholds: { high: 80, low: 60, break: 50 },
