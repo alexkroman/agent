@@ -39,11 +39,13 @@ export default agent({
         await ctx.kv.set("nextId", nextId + 1);
 
         const total = calculateTotal([...pizzas, pizza]);
-        return {
+        const result = {
           added: pizza,
           orderTotal: `$${total.toFixed(2)}`,
           itemCount: pizzas.length + 1,
         };
+        ctx.send("order", result);
+        return result;
       },
     }),
 
@@ -59,13 +61,15 @@ export default agent({
         const total = calculateTotal(pizzas);
         const orderNumber = Math.floor(1000 + Math.random() * 9000);
 
-        return {
+        const result = {
           orderNumber,
           customerName,
           pizzas: pizzas.length,
           total: `$${total.toFixed(2)}`,
           estimatedMinutes: 15 + pizzas.length * 5,
         };
+        ctx.send("order", result);
+        return result;
       },
     }),
 
@@ -84,11 +88,13 @@ export default agent({
         await ctx.kv.set("pizzas", remaining);
 
         const total = calculateTotal(remaining);
-        return {
+        const result = {
           removed,
           orderTotal: `$${total.toFixed(2)}`,
           itemCount: remaining.length,
         };
+        ctx.send("order", result);
+        return result;
       },
     }),
 
@@ -128,10 +134,12 @@ export default agent({
         await ctx.kv.set("pizzas", updated);
 
         const total = calculateTotal(updated);
-        return {
+        const result = {
           updated: pizza,
           orderTotal: `$${total.toFixed(2)}`,
         };
+        ctx.send("order", result);
+        return result;
       },
     }),
 
@@ -142,7 +150,7 @@ export default agent({
         if (pizzas.length === 0) return { message: "The order is empty." };
 
         const total = calculateTotal(pizzas);
-        return {
+        const result = {
           pizzas: pizzas.map((p) => ({
             id: p.id,
             description: `${p.quantity}x ${p.size} ${p.crust} crust with ${p.toppings.length > 0 ? p.toppings.join(", ") : "cheese only"}`,
@@ -153,6 +161,8 @@ export default agent({
           })),
           orderTotal: `$${total.toFixed(2)}`,
         };
+        ctx.send("order", result);
+        return result;
       },
     }),
   },
