@@ -1,0 +1,193 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`manifest schema shapes > AgentConfigSchema shape 1`] = `
+[
+  "builtinTools",
+  "greeting",
+  "idleTimeoutMs",
+  "maxSteps",
+  "name",
+  "sttPrompt",
+  "systemPrompt",
+  "toolChoice",
+]
+`;
+
+exports[`manifest schema shapes > ToolSchemaSchema shape 1`] = `
+[
+  "description",
+  "name",
+  "parameters",
+]
+`;
+
+exports[`protocol schema shapes > ClientEventSchema option shapes 1`] = `
+{
+  "agent_transcript": [
+    "text",
+    "type",
+  ],
+  "cancelled": [
+    "type",
+  ],
+  "custom_event": [
+    "data",
+    "event",
+    "type",
+  ],
+  "error": [
+    "code",
+    "message",
+    "type",
+  ],
+  "idle_timeout": [
+    "type",
+  ],
+  "reply_done": [
+    "type",
+  ],
+  "reset": [
+    "type",
+  ],
+  "speech_started": [
+    "type",
+  ],
+  "speech_stopped": [
+    "type",
+  ],
+  "tool_call": [
+    "args",
+    "toolCallId",
+    "toolName",
+    "type",
+  ],
+  "tool_call_done": [
+    "result",
+    "toolCallId",
+    "type",
+  ],
+  "user_transcript": [
+    "text",
+    "turnOrder",
+    "type",
+  ],
+}
+`;
+
+exports[`protocol schema shapes > ClientMessageSchema option shapes 1`] = `
+{
+  "audio_ready": [
+    "type",
+  ],
+  "cancel": [
+    "type",
+  ],
+  "history": [
+    "messages",
+    "type",
+  ],
+  "reset": [
+    "type",
+  ],
+}
+`;
+
+exports[`protocol schema shapes > KvDelSchema shape 1`] = `
+[
+  "key",
+  "op",
+]
+`;
+
+exports[`protocol schema shapes > KvGetSchema shape 1`] = `
+[
+  "key",
+  "op",
+]
+`;
+
+exports[`protocol schema shapes > KvSetSchema shape 1`] = `
+[
+  "expireIn",
+  "key",
+  "op",
+  "value",
+]
+`;
+
+exports[`protocol schema shapes > ReadyConfigSchema shape 1`] = `
+[
+  "audioFormat",
+  "sampleRate",
+  "ttsSampleRate",
+]
+`;
+
+exports[`protocol schema shapes > ServerMessageSchema option shapes 1`] = `
+{
+  "agent_transcript": [
+    "text",
+    "type",
+  ],
+  "audio_done": [
+    "type",
+  ],
+  "cancelled": [
+    "type",
+  ],
+  "config": [
+    "audioFormat",
+    "sampleRate",
+    "sessionId",
+    "ttsSampleRate",
+    "type",
+  ],
+  "custom_event": [
+    "data",
+    "event",
+    "type",
+  ],
+  "error": [
+    "code",
+    "message",
+    "type",
+  ],
+  "idle_timeout": [
+    "type",
+  ],
+  "reply_done": [
+    "type",
+  ],
+  "reset": [
+    "type",
+  ],
+  "speech_started": [
+    "type",
+  ],
+  "speech_stopped": [
+    "type",
+  ],
+  "tool_call": [
+    "args",
+    "toolCallId",
+    "toolName",
+    "type",
+  ],
+  "tool_call_done": [
+    "result",
+    "toolCallId",
+    "type",
+  ],
+  "user_transcript": [
+    "text",
+    "turnOrder",
+    "type",
+  ],
+}
+`;
+
+exports[`protocol schema shapes > TurnConfigSchema shape 1`] = `
+[
+  "maxSteps",
+]
+`;
