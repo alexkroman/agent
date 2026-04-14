@@ -12,6 +12,7 @@
  */
 
 import path from "node:path";
+import { errorMessage, toolError } from "@alexkroman1/aai";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import {
   type AgentRuntime,
@@ -52,7 +53,7 @@ export type Sandbox = AgentRuntime;
 
 // ── Public API ──────────────────────────────────────────────────────────
 
-export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
+export function createSandbox(opts: SandboxOptions): Sandbox {
   const { workerCode, env, storage, slug } = opts;
 
   const safeFetch: typeof globalThis.fetch = (input, init?) => {
@@ -69,7 +70,7 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
     process.env.GUEST_HARNESS_PATH ??
     path.resolve(import.meta.dirname, "dist/guest/deno-harness.mjs");
 
-  const sandboxHandle = await createSandboxVm({
+  const vmReady = createSandboxVm({
     slug,
     workerCode,
     env,
@@ -79,6 +80,12 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
   });
 
   const executeTool: ExecuteTool = async (name, args, sessionId, messages) => {
+    let sandboxHandle: Awaited<typeof vmReady>;
+    try {
+      sandboxHandle = await vmReady;
+    } catch (err: unknown) {
+      return toolError(`Sandbox failed to start: ${errorMessage(err)}`);
+    }
     const raw = await sandboxHandle.conn.sendRequest("tool/execute", {
       name,
       args,
@@ -125,19 +132,31 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
 
   const sessionSinks = new Map<string, ClientSink>();
 
-  sandboxHandle.conn.onNotification("client/send", (raw: unknown) => {
-    const params = raw as { sessionId: string; event: string; data: unknown };
-    const sink = sessionSinks.get(params.sessionId);
-    if (sink?.open) {
-      sink.event({ type: "custom_event", event: params.event, data: params.data });
-    }
-  });
+  vmReady
+    .then((handle) => {
+      handle.conn.onNotification("client/send", (raw: unknown) => {
+        const params = raw as { sessionId: string; event: string; data: unknown };
+        const sink = sessionSinks.get(params.sessionId);
+        if (sink?.open) {
+          sink.event({ type: "custom_event", event: params.event, data: params.data });
+        }
+      });
+      console.info("Sandbox ready", { slug, agent: config.name });
+    })
+    .catch((err: unknown) => {
+      console.error("Sandbox VM failed to start", { slug, error: errorMessage(err) });
+    });
 
-  console.info("Sandbox initialized", { slug, agent: config.name });
+  console.info("Sandbox initializing", { slug, agent: config.name });
 
   async function shutdownSandbox(): Promise<void> {
     sessionSinks.clear();
-    await sandboxHandle.shutdown();
+    try {
+      const handle = await vmReady;
+      await handle.shutdown();
+    } catch {
+      // VM failed to start or already shut down
+    }
     await agentRuntime.shutdown();
   }
 
@@ -155,7 +174,11 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
       },
       onSessionEnd(sessionId) {
         sessionSinks.delete(sessionId);
-        sandboxHandle.conn.sendNotification("session/end", { sessionId });
+        vmReady
+          .then((handle) => handle.conn.sendNotification("session/end", { sessionId }))
+          .catch(() => {
+            // VM failed to start — session/end notification is best-effort
+          });
         opts?.onSessionEnd?.(sessionId);
       },
     });
@@ -207,7 +230,7 @@ export async function resolveSandbox(
     return null;
   }
 
-  const sandbox = await createSandbox({
+  const sandbox = createSandbox({
     workerCode,
     env,
     storage,
