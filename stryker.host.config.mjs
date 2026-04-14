@@ -9,6 +9,7 @@ export default {
     "!packages/aai/host/fixtures/**",
     "!packages/aai/host/testing.ts",
     "!packages/aai/host/matchers.ts",
+    "!packages/aai/host/unstorage-kv.ts",
   ],
   testRunner: "vitest",
   testRunnerNodeArgs: ["--experimental-vm-modules"],

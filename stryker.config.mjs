@@ -2,7 +2,10 @@
 export default {
   plugins: ["@stryker-mutator/vitest-runner"],
   mutate: [
-    "packages/aai/sdk/**/*.ts",
+    "packages/aai/sdk/protocol.ts",
+    "packages/aai/sdk/manifest.ts",
+    "packages/aai/sdk/_internal-types.ts",
+    "packages/aai/sdk/system-prompt.ts",
     "packages/aai/host/**/*.ts",
     "packages/aai-server/ndjson-transport.ts",
     "packages/aai-server/orchestrator.ts",

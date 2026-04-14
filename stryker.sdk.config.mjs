@@ -2,12 +2,13 @@
 export default {
   plugins: ["@stryker-mutator/vitest-runner"],
   mutate: [
-    "packages/aai/sdk/**/*.ts",
-    "!packages/aai/sdk/**/*.test.ts",
-    "!packages/aai/sdk/**/*.test-d.ts",
-    "!packages/aai/sdk/_test-*.ts",
-    "!packages/aai/sdk/*-barrel.ts",
-    "!packages/aai/sdk/index.ts",
+    // Only files with real conditional/parsing logic worth mutating
+    "packages/aai/sdk/protocol.ts",
+    "packages/aai/sdk/manifest.ts",
+    "packages/aai/sdk/_internal-types.ts",
+    "packages/aai/sdk/system-prompt.ts",
+    // Excluded: constants.ts (literals), kv.ts (types), utils.ts (trivial),
+    // define.ts (simple factories), ws-upgrade.ts (13 lines), index.ts (barrel)
   ],
   testRunner: "vitest",
   testRunnerNodeArgs: ["--experimental-vm-modules"],

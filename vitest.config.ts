@@ -22,8 +22,6 @@ export default defineConfig({
         "packages/aai-server/harness-runtime-v2.ts",
         // CLI entry point can't be unit tested.
         "packages/aai-cli/cli.ts",
-        // OTel session wiring — tested via integration tests, not unit tests.
-        "packages/aai/_session-otel.ts",
       ],
       // Global minimum. Per-package actuals are higher:
       // aai ~93%, aai-ui ~85%, aai-cli ~75%, aai-server ~80%
