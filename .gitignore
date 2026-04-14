@@ -13,6 +13,7 @@ tmp/
 coverage/
 reports/
 .stryker-tmp/
+.stryker-incremental*.json
 .worktrees/
 .turbo/
 __pycache__/
