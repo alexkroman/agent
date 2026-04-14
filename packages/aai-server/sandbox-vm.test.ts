@@ -368,3 +368,29 @@ describe("createConnection", () => {
     expect(typeof conn.dispose).toBe("function");
   });
 });
+
+describe("devSandboxSpawnArgs", () => {
+  it("restricts env to PATH, HOME, NO_COLOR only", () => {
+    const { env } = _internals.devSandboxSpawnArgs("/tmp/harness.mjs");
+    expect(Object.keys(env)).toEqual(["PATH", "HOME", "NO_COLOR"]);
+    expect(env.NO_COLOR).toBe("1");
+    expect(env.PATH).toBe(process.env.PATH);
+    expect(env.HOME).toBe(process.env.HOME);
+  });
+
+  it("includes --allow-read scoped to harness path", () => {
+    const { args } = _internals.devSandboxSpawnArgs("/tmp/harness.mjs");
+    expect(args).toContain("--allow-read=/tmp/harness.mjs");
+  });
+
+  it("includes --allow-env and --no-prompt", () => {
+    const { args } = _internals.devSandboxSpawnArgs("/tmp/harness.mjs");
+    expect(args).toContain("--allow-env");
+    expect(args).toContain("--no-prompt");
+  });
+
+  it("passes harness path as final argument", () => {
+    const { args } = _internals.devSandboxSpawnArgs("/my/path/harness.mjs");
+    expect(args.at(-1)).toBe("/my/path/harness.mjs");
+  });
+});

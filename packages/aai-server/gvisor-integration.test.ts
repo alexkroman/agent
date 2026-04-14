@@ -304,6 +304,66 @@ describe.skipIf(!canRun)("gVisor integration (real runsc)", () => {
     }
   }, 30_000);
 
+  test("host paths absent from minimal rootfs", async () => {
+    const probeBundle = `
+    export default {
+      name: "probe-agent",
+      systemPrompt: "Probe test",
+      greeting: "",
+      maxSteps: 1,
+      tools: {
+        probe_paths: {
+          description: "Check which host paths exist in the rootfs",
+          execute() {
+            // Probe sensitive host paths that should NOT exist in the
+            // minimal rootfs. Use Deno.statSync which doesn't require
+            // --allow-read (it only checks existence, not content).
+            const sensitive = [
+              "/etc/hostname",
+              "/etc/os-release",
+              "/usr/bin/node",
+              "/app",
+              "/var/log",
+              "/home",
+              "/root",
+            ];
+            const found = [];
+            for (const p of sensitive) {
+              try {
+                Deno.statSync(p);
+                found.push(p);
+              } catch {
+                // Expected — path doesn't exist
+              }
+            }
+            return found.length === 0 ? "none" : "found:" + found.join(",");
+          },
+        },
+      },
+    };
+    `;
+
+    const { sandbox, conn } = await spawnSandbox("rootfs-test");
+
+    try {
+      await conn.sendRequest("bundle/load", { code: probeBundle, env: {} });
+
+      const toolResp = await conn.sendRequest<{ result: string }>("tool/execute", {
+        name: "probe_paths",
+        args: {},
+        sessionId: "rootfs-s1",
+        messages: [],
+      });
+
+      // None of the sensitive host paths should exist in the sandbox
+      expect(toolResp.result).toBe("none");
+    } finally {
+      conn.dispose();
+      await sandbox.cleanup();
+      activeSandboxes.splice(activeSandboxes.indexOf(sandbox), 1);
+    }
+  }, 30_000);
+
   test("cannot access network", async () => {
     const netBundle = `
     export default {

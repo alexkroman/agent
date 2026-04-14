@@ -10,7 +10,7 @@
  */
 
 import { type ChildProcess, execFile, execFileSync, spawn } from "node:child_process";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { nanoid } from "nanoid";
@@ -84,6 +84,22 @@ export type GvisorSandboxOptions = {
 
 const BUNDLE_BASE = "/tmp/aai-bundles";
 
+const SANDBOX_ROOTFS = "/tmp/aai-sandbox-rootfs";
+
+/**
+ * Build a minimal rootfs containing only the Deno binary and harness script.
+ * Copies are idempotent — `copyFileSync` overwrites if the file already exists.
+ * The rootfs is shared across all sandboxes (mounted read-only in the OCI spec).
+ */
+function prepareSandboxRootfs(denoPath: string, harnessPath: string): string {
+  mkdirSync(SANDBOX_ROOTFS, { recursive: true });
+  const denoDest = join(SANDBOX_ROOTFS, "deno");
+  copyFileSync(denoPath, denoDest);
+  chmodSync(denoDest, 0o755);
+  copyFileSync(harnessPath, join(SANDBOX_ROOTFS, "harness.mjs"));
+  return SANDBOX_ROOTFS;
+}
+
 /** Create the bundle directory containing config.json for `runsc run`. */
 function prepareBundleDir(containerId: string, configJson: string): string {
   const dir = join(BUNDLE_BASE, containerId);
@@ -130,12 +146,24 @@ export function createGvisorSandbox(opts: GvisorSandboxOptions): GvisorSandbox {
 
   const containerId = `aai-${opts.slug}-${nanoid(8)}`;
 
+  const rootfs = prepareSandboxRootfs(deno, opts.harnessPath);
+
   const spec = buildOciSpec({
-    rootfsPath: "/",
-    harnessPath: opts.harnessPath,
-    denoPath: deno,
+    rootfsPath: rootfs,
+    denoPath: "/deno",
+    harnessPath: "/harness.mjs",
     ...(opts.limits && { limits: opts.limits }),
   });
+
+  // Deno is dynamically linked — it needs the system's libc and dynamic
+  // linker at runtime. Bind-mount host library directories read-only.
+  // These contain only shared libraries, no secrets or application data.
+  for (const dir of ["/lib", "/lib64", "/usr/lib"]) {
+    if (existsSync(dir)) {
+      mkdirSync(join(rootfs, dir), { recursive: true });
+      spec.mounts.push({ destination: dir, type: "bind", source: dir, options: ["ro"] });
+    }
+  }
 
   const bundleDir = prepareBundleDir(containerId, JSON.stringify(spec));
 

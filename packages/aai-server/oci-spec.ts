@@ -27,8 +27,8 @@ export type SandboxResourceLimits = {
 /** Options for building an OCI runtime spec. */
 export type BuildOciSpecOptions = {
   rootfsPath: string;
-  harnessPath: string;
   denoPath: string;
+  harnessPath: string;
   limits?: SandboxResourceLimits;
 };
 

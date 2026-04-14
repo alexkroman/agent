@@ -16,9 +16,33 @@ import type { SandboxResourceLimits } from "./oci-spec.ts";
 
 // ── KV param schemas for guest → host validation ────────────────────────────
 
-const KvGetParamsSchema = z.object({ key: z.string().min(1) });
-const KvSetParamsSchema = z.object({ key: z.string().min(1), value: z.unknown() });
-const KvDelParamsSchema = z.object({ key: z.string().min(1) });
+/** Max KV value size in bytes (matches SDK constant). */
+const MAX_KV_VALUE_SIZE = 65_536;
+
+/**
+ * Safe KV key: non-empty, no path traversal, no prefix-delimiter escape.
+ * Rejects `..`, `:`, `/`, `\`, and null bytes to prevent namespace breakout.
+ */
+const SafeKvKeySchema = z
+  .string()
+  .min(1)
+  .refine((k) => !k.includes("\0"), "Key must not contain null bytes")
+  .refine((k) => !k.includes("/"), "Key must not contain /")
+  .refine((k) => !k.includes("\\"), "Key must not contain \\")
+  .refine((k) => !k.includes(":"), "Key must not contain :")
+  .refine((k) => !k.includes(".."), "Key must not contain ..");
+
+const KvGetParamsSchema = z.object({ key: SafeKvKeySchema });
+const KvSetParamsSchema = z.object({
+  key: SafeKvKeySchema,
+  value: z
+    .unknown()
+    .refine(
+      (v) => JSON.stringify(v).length <= MAX_KV_VALUE_SIZE,
+      `Value exceeds max size of ${MAX_KV_VALUE_SIZE} bytes`,
+    ),
+});
+const KvDelParamsSchema = z.object({ key: SafeKvKeySchema });
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -95,19 +119,31 @@ function createConnection(child: ChildProcess): NdjsonConnection {
 
 // ── Dev sandbox (macOS / non-gVisor) ─────────────────────────────────────────
 
+/** Build spawn arguments for dev sandbox. Exported for testing via _internals. */
+function devSandboxSpawnArgs(harnessPath: string): {
+  args: string[];
+  env: Record<string, string | undefined>;
+} {
+  return {
+    args: ["run", "--allow-env", `--allow-read=${harnessPath}`, "--no-prompt", harnessPath],
+    env: {
+      PATH: process.env.PATH,
+      HOME: process.env.HOME,
+      NO_COLOR: "1",
+    },
+  };
+}
+
 /**
  * Creates a sandbox by spawning the Deno guest harness as a child process.
  * Communication uses stdio pipes with NDJSON transport.
  */
 export async function createDevSandbox(opts: SandboxVmOptions): Promise<SandboxHandle> {
-  const child: ChildProcess = spawn(
-    "deno",
-    ["run", "--allow-env", "--no-prompt", opts.harnessPath],
-    {
-      stdio: ["pipe", "pipe", "inherit"],
-      env: { ...process.env },
-    },
-  );
+  const spawnConfig = devSandboxSpawnArgs(opts.harnessPath);
+  const child: ChildProcess = spawn("deno", spawnConfig.args, {
+    stdio: ["pipe", "pipe", "inherit"],
+    env: spawnConfig.env,
+  });
 
   return configureSandbox(createConnection(child), opts, async () => {
     child.kill("SIGTERM");
@@ -179,7 +215,7 @@ export function parseSandboxLimitsFromEnv(
 // ── Test-only internals ─────────────────────────────────────────────────
 
 /** @internal Exposed for unit tests only. */
-export const _internals = { configureSandbox, createConnection };
+export const _internals = { configureSandbox, createConnection, devSandboxSpawnArgs };
 
 // ── Factory ──────────────────────────────────────────────────────────────────
 

@@ -9,8 +9,8 @@ const _typeCheck: SandboxResourceLimits = {};
 describe("buildOciSpec", () => {
   const baseOpts = {
     rootfsPath: "/rootfs",
-    harnessPath: "/rootfs/harness.mjs",
-    denoPath: "/rootfs/bin/deno",
+    denoPath: "/deno",
+    harnessPath: "/harness.mjs",
   };
 
   it("returns a valid OCI runtime spec with defaults", () => {
@@ -22,14 +22,14 @@ describe("buildOciSpec", () => {
     expect(spec.root).toEqual({ path: "/rootfs", readonly: true });
   });
 
-  it("sets Deno command with no --allow-env flag", () => {
+  it("sets Deno command with container-internal paths and no --allow-env flag", () => {
     const spec = buildOciSpec(baseOpts);
     expect(spec.process.args).toEqual([
-      "/rootfs/bin/deno",
+      "/deno",
       "run",
       "--v8-flags=--max-heap-size=64",
       "--no-prompt",
-      "/rootfs/harness.mjs",
+      "/harness.mjs",
     ]);
   });
 
@@ -158,5 +158,12 @@ describe("buildOciSpec", () => {
   it("sets terminal to false", () => {
     const spec = buildOciSpec(baseOpts);
     expect(spec.process.terminal).toBe(false);
+  });
+
+  it("does not add bind mounts for deno or harness (files live in rootfs)", () => {
+    const spec = buildOciSpec(baseOpts);
+    const bindMountDests = spec.mounts.filter((m) => m.type === "bind").map((m) => m.destination);
+    expect(bindMountDests).not.toContain("/deno");
+    expect(bindMountDests).not.toContain("/harness.mjs");
   });
 });
