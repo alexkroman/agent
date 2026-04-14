@@ -10,17 +10,20 @@
     },
     "packages/aai": {
       "entry": [
+        "index.ts",
+        "host/runtime-barrel.ts",
+        "sdk/manifest-barrel.ts",
         "host/_test-utils.ts",
         "**/*.test.ts"
       ],
       "includeEntryExports": true
     },
     "packages/aai-ui": {
-      "entry": ["**/*.test.{ts,tsx}", "_react-test-utils.ts", "default-client.tsx", "build-default-client.ts"],
+      "entry": ["**/*.test.{ts,tsx}", "_react-test-utils.ts", "default-client.tsx"],
       "includeEntryExports": true
     },
     "packages/aai-cli": {
-      "entry": ["**/*.test.ts", "_test-utils.ts"]
+      "entry": ["bin.mjs", "types.ts", "**/*.test.ts", "_test-utils.ts"]
     },
     "packages/aai-templates": {
       "ignore": ["**"]
