@@ -1,5 +1,12 @@
 # @alexkroman1/aai-cli
 
+## 1.0.4
+
+### Patch Changes
+
+- e6c2310: Fix giget stale template cache causing defineClient build error on repeat init
+  - @alexkroman1/aai@1.0.4
+
 ## 1.0.3
 
 ### Patch Changes
