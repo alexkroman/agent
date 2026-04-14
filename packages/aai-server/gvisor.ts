@@ -84,6 +84,14 @@ export type GvisorSandboxOptions = {
 
 const BUNDLE_BASE = "/tmp/aai-bundles";
 
+const EMPTY_ROOTFS = "/tmp/aai-empty-rootfs";
+
+/** Ensure the shared empty rootfs directory exists. Created once, reused by all sandboxes. */
+function ensureEmptyRootfs(): string {
+  mkdirSync(EMPTY_ROOTFS, { recursive: true });
+  return EMPTY_ROOTFS;
+}
+
 /** Create the bundle directory containing config.json for `runsc run`. */
 function prepareBundleDir(containerId: string, configJson: string): string {
   const dir = join(BUNDLE_BASE, containerId);
@@ -131,7 +139,7 @@ export function createGvisorSandbox(opts: GvisorSandboxOptions): GvisorSandbox {
   const containerId = `aai-${opts.slug}-${nanoid(8)}`;
 
   const spec = buildOciSpec({
-    rootfsPath: "/",
+    rootfsPath: ensureEmptyRootfs(),
     harnessPath: opts.harnessPath,
     denoPath: deno,
     ...(opts.limits && { limits: opts.limits }),
