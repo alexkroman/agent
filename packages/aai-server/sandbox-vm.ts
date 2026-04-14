@@ -95,19 +95,31 @@ function createConnection(child: ChildProcess): NdjsonConnection {
 
 // ── Dev sandbox (macOS / non-gVisor) ─────────────────────────────────────────
 
+/** Build spawn arguments for dev sandbox. Exported for testing via _internals. */
+function devSandboxSpawnArgs(harnessPath: string): {
+  args: string[];
+  env: Record<string, string | undefined>;
+} {
+  return {
+    args: ["run", "--allow-env", "--allow-read=" + harnessPath, "--no-prompt", harnessPath],
+    env: {
+      PATH: process.env.PATH,
+      HOME: process.env.HOME,
+      NO_COLOR: "1",
+    },
+  };
+}
+
 /**
  * Creates a sandbox by spawning the Deno guest harness as a child process.
  * Communication uses stdio pipes with NDJSON transport.
  */
 export async function createDevSandbox(opts: SandboxVmOptions): Promise<SandboxHandle> {
-  const child: ChildProcess = spawn(
-    "deno",
-    ["run", "--allow-env", "--no-prompt", opts.harnessPath],
-    {
-      stdio: ["pipe", "pipe", "inherit"],
-      env: { ...process.env },
-    },
-  );
+  const spawnConfig = devSandboxSpawnArgs(opts.harnessPath);
+  const child: ChildProcess = spawn("deno", spawnConfig.args, {
+    stdio: ["pipe", "pipe", "inherit"],
+    env: spawnConfig.env,
+  });
 
   return configureSandbox(createConnection(child), opts, async () => {
     child.kill("SIGTERM");
@@ -179,7 +191,7 @@ export function parseSandboxLimitsFromEnv(
 // ── Test-only internals ─────────────────────────────────────────────────
 
 /** @internal Exposed for unit tests only. */
-export const _internals = { configureSandbox, createConnection };
+export const _internals = { configureSandbox, createConnection, devSandboxSpawnArgs };
 
 // ── Factory ──────────────────────────────────────────────────────────────────
 
