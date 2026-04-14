@@ -48,9 +48,3 @@ export async function executeTest(cwd: string): Promise<CommandResult<TestData>>
     return fail("test_failed", "Tests failed");
   }
 }
-
-/** Run agent tests. Used by `aai test`. */
-export async function runTestCommand(cwd: string): Promise<void> {
-  const result = await executeTest(cwd);
-  if (!result.ok) throw new Error(result.error);
-}

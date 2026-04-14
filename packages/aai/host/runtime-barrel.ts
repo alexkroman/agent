@@ -16,7 +16,6 @@
 export * from "./builtin-tools.ts";
 export * from "./runtime.ts";
 export * from "./runtime-config.ts";
-export * from "./s2s.ts";
 export * from "./server.ts";
 export * from "./session.ts";
 export * from "./session-ctx.ts";

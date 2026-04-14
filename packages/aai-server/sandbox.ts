@@ -52,11 +52,6 @@ export type Sandbox = AgentRuntime;
 
 // ── Public API ──────────────────────────────────────────────────────────
 
-/** @internal Exposed for testing only. */
-export const _internals = {
-  createSandbox,
-};
-
 export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
   const { workerCode, env, storage, slug } = opts;
 

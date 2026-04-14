@@ -196,7 +196,6 @@ export function buildOciSpec(opts: BuildOciSpecOptions): OciRuntimeSpec {
   const tmpfsBytes = limits.tmpfsSizeBytes ?? DEFAULT_TMPFS_BYTES;
   const cpuSecs = limits.cpuTimeLimitSecs ?? DEFAULT_CPU_SECS;
   const pidLimit = limits.pidLimit ?? DEFAULT_PID_LIMIT;
-
   return {
     ociVersion: "1.0.2",
     process: {
@@ -286,20 +285,3 @@ export function buildOciSpec(opts: BuildOciSpecOptions): OciRuntimeSpec {
     },
   };
 }
-
-// ---------------------------------------------------------------------------
-// Test-only internals
-// ---------------------------------------------------------------------------
-
-/** @internal Exported for tests only. */
-export const _internals = {
-  DENIED_SYSCALLS,
-  MASKED_PATHS,
-  READONLY_PATHS,
-  DEFAULT_MEMORY_BYTES,
-  DEFAULT_PID_LIMIT,
-  DEFAULT_TMPFS_BYTES,
-  DEFAULT_CPU_SECS,
-  DEFAULT_NOFILE,
-  buildSeccompProfile,
-};

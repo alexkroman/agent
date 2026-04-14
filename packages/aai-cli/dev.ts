@@ -33,7 +33,3 @@ export async function executeDev(opts: {
 
   return ok({ url });
 }
-
-export async function runDevCommand(opts: { cwd: string; port: string }): Promise<void> {
-  await executeDev(opts);
-}

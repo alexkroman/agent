@@ -10,12 +10,7 @@
 import { describe, expect, expectTypeOf, test } from "vitest";
 import type { z } from "zod";
 import { type AgentConfig, AgentConfigSchema, ToolSchemaSchema } from "./_internal-types.ts";
-import {
-  type ReadyConfig,
-  ReadyConfigSchema,
-  type TurnConfig,
-  TurnConfigSchema,
-} from "./protocol.ts";
+import { type ReadyConfig, ReadyConfigSchema } from "./protocol.ts";
 import { type BuiltinTool, BuiltinToolSchema, type ToolChoice, ToolChoiceSchema } from "./types.ts";
 
 // ── AgentConfigSchema ────────────────────────────────────────────────────
@@ -102,27 +97,6 @@ describe("ToolSchemaSchema", () => {
     expect(parsed).toHaveProperty("name");
     expect(parsed).toHaveProperty("description");
     expect(parsed).toHaveProperty("parameters");
-  });
-});
-
-// ── TurnConfigSchema ─────────────────────────────────────────────────────
-
-describe("TurnConfigSchema", () => {
-  test("accepts empty config", () => {
-    expect(TurnConfigSchema.parse({})).toEqual({});
-  });
-
-  test("accepts full config", () => {
-    const full: TurnConfig = { maxSteps: 3 };
-    expect(TurnConfigSchema.parse(full)).toEqual(full);
-  });
-
-  test("rejects non-positive maxSteps", () => {
-    expect(TurnConfigSchema.safeParse({ maxSteps: 0 }).success).toBe(false);
-  });
-
-  test("type derived from schema matches TurnConfig", () => {
-    expectTypeOf<z.infer<typeof TurnConfigSchema>>().toEqualTypeOf<TurnConfig>();
   });
 });
 

@@ -39,7 +39,3 @@ export async function executeDeploy(opts: {
 
   return ok({ slug: deployed.slug, url: agentUrl });
 }
-
-export async function runDeployCommand(opts: { cwd: string; server?: string }): Promise<void> {
-  await executeDeploy(opts);
-}

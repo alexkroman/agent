@@ -202,53 +202,9 @@ export function createGvisorSandbox(opts: GvisorSandboxOptions): GvisorSandbox {
     // 4. Remove bundle directory
     cleanupBundleDir(containerId);
   }
-
   return {
     process: child,
     containerId,
     cleanup,
   };
-}
-
-// ---------------------------------------------------------------------------
-// Stale container reaping
-// ---------------------------------------------------------------------------
-
-/**
- * Reap stale `aai-*` containers left behind from previous runs.
- *
- * Should be called once at server startup. Uses `runsc list` to find
- * any lingering containers and force-deletes them.
- *
- * @returns The number of stale containers reaped.
- */
-export async function reapStaleContainers(): Promise<number> {
-  const runscBin = findRunsc();
-  if (!runscBin) return 0;
-  const runsc: string = runscBin;
-
-  let containers: { id: string }[];
-  try {
-    const { stdout } = await execFileAsync(runsc, ["list", "-format=json"]);
-    containers = JSON.parse(stdout);
-  } catch {
-    // runsc list may fail if no containers exist or state dir is empty
-    return 0;
-  }
-
-  if (!Array.isArray(containers)) return 0;
-
-  const stale = containers.filter((c) => c.id?.startsWith("aai-"));
-  let reaped = 0;
-
-  for (const container of stale) {
-    try {
-      await execFileAsync(runsc, ["delete", "--force", container.id]);
-      reaped++;
-    } catch {
-      // Best effort — container may resist deletion
-    }
-  }
-
-  return reaped;
 }

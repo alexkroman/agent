@@ -21,12 +21,3 @@ export async function executeDelete(opts: {
 
   return ok({ slug });
 }
-
-/** Human-mode entry point (called from cli.ts in human mode). */
-export async function runDeleteCommand(opts: { cwd: string; server?: string }): Promise<void> {
-  const result = await executeDelete(opts);
-  if (!result.ok) {
-    log.error(result.error);
-    process.exit(1);
-  }
-}

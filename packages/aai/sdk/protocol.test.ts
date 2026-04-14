@@ -5,7 +5,6 @@ import {
   TOOL_EXECUTION_TIMEOUT_MS,
 } from "./constants.ts";
 import {
-  AUDIO_FORMAT,
   buildReadyConfig,
   ClientEventSchema,
   ClientMessageSchema,
@@ -20,10 +19,6 @@ describe("protocol constants", () => {
 
   test("DEFAULT_TTS_SAMPLE_RATE is 24000", () => {
     expect(DEFAULT_TTS_SAMPLE_RATE).toBe(24_000);
-  });
-
-  test('AUDIO_FORMAT is "pcm16"', () => {
-    expect(AUDIO_FORMAT).toBe("pcm16");
   });
 
   test("TOOL_EXECUTION_TIMEOUT_MS is 30000", () => {
@@ -156,7 +151,7 @@ describe("buildReadyConfig", () => {
   test("builds config from sample rates", () => {
     const config = buildReadyConfig({ inputSampleRate: 16_000, outputSampleRate: 24_000 });
     expect(config).toEqual({
-      audioFormat: AUDIO_FORMAT,
+      audioFormat: "pcm16",
       sampleRate: 16_000,
       ttsSampleRate: 24_000,
     });
