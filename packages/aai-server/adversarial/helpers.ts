@@ -30,6 +30,13 @@ export async function deployAdversarialAgent(
         // biome-ignore lint/security/noSecrets: HTML template, not a secret
         "index.html": "<!DOCTYPE html><html><body>adversarial</body></html>",
       },
+      agentConfig: {
+        name: slug,
+        systemPrompt: "",
+        greeting: "",
+        maxSteps: 1,
+        tools: {},
+      },
     }),
   });
   if (!res.ok) {
