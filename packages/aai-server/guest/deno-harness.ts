@@ -13,7 +13,7 @@
  *
  * ZERO workspace imports -- this file is entirely self-contained.
  *
- * Run with: deno run --allow-env --no-prompt deno-harness.ts
+ * Run with: deno run --no-prompt deno-harness.ts
  */
 
 // ---- Inline TextLineStream (avoids jsr: import that can't be bundled) -------
@@ -297,11 +297,7 @@ async function executeTool(
  * This avoids Function() evaluation and supports top-level await in the bundle.
  */
 async function loadBundle(code: string, env: Record<string, string>): Promise<AgentDef> {
-  // Store env from bundle message and set in process env for bundle access
   _bundleEnv = Object.freeze({ ...env });
-  for (const [key, value] of Object.entries(env)) {
-    Deno.env.set(key, value);
-  }
 
   const dataUrl = `data:application/javascript,${encodeURIComponent(code)}`;
   const mod = await import(dataUrl);
