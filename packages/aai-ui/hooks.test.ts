@@ -3,18 +3,19 @@ import { act, renderHook } from "@testing-library/react";
 import { createElement, type ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { SessionProvider } from "./context.ts";
-import { useToolCallStart, useToolResult } from "./hooks.ts";
-import type { SessionCore } from "./session-core.ts";
+import { useEvent, useToolCallStart, useToolResult } from "./hooks.ts";
+import type { CustomEvent, SessionCore } from "./session-core.ts";
 import type { ToolCallInfo } from "./types.ts";
 
 function createMockCore(toolCalls: ToolCallInfo[] = []): SessionCore & {
   setToolCalls: (tc: ToolCallInfo[]) => void;
+  setCustomEvents: (ce: CustomEvent[]) => void;
 } {
   let snapshot = {
     state: "ready" as const,
     messages: [],
     toolCalls,
-    customEvents: [],
+    customEvents: [] as CustomEvent[],
     userTranscript: null,
     agentTranscript: null,
     error: null,
@@ -30,6 +31,10 @@ function createMockCore(toolCalls: ToolCallInfo[] = []): SessionCore & {
     },
     setToolCalls: (tc) => {
       snapshot = { ...snapshot, toolCalls: tc };
+      for (const cb of subs) cb();
+    },
+    setCustomEvents: (ce) => {
+      snapshot = { ...snapshot, customEvents: ce };
       for (const cb of subs) cb();
     },
     connect: () => {
@@ -147,5 +152,47 @@ describe("useToolCallStart", () => {
       createElement(SessionProvider, { value: core }, children);
     renderHook(() => useToolCallStart(cb), { wrapper });
     expect(cb).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("useEvent", () => {
+  it("fires callback for matching custom_event", () => {
+    const core = createMockCore();
+    act(() => core.setCustomEvents([{ id: 1, event: "score_update", data: { score: 42 } }]));
+    const cb = vi.fn();
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(SessionProvider, { value: core }, children);
+    renderHook(() => useEvent("score_update", cb), { wrapper });
+    expect(cb).toHaveBeenCalledOnce();
+    expect(cb.mock.calls[0]?.at(0)).toEqual({ score: 42 });
+  });
+
+  it("ignores non-matching events", () => {
+    const core = createMockCore();
+    act(() => core.setCustomEvents([{ id: 1, event: "other_event", data: { foo: "bar" } }]));
+    const cb = vi.fn();
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(SessionProvider, { value: core }, children);
+    renderHook(() => useEvent("score_update", cb), { wrapper });
+    expect(cb).not.toHaveBeenCalled();
+  });
+
+  it("does not re-fire for already-seen events", () => {
+    const core = createMockCore();
+    act(() => core.setCustomEvents([{ id: 1, event: "score_update", data: { score: 1 } }]));
+    const cb = vi.fn();
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(SessionProvider, { value: core }, children);
+    renderHook(() => useEvent("score_update", cb), { wrapper });
+    expect(cb).toHaveBeenCalledOnce();
+    // Add a second event — only the new one should fire
+    act(() =>
+      core.setCustomEvents([
+        { id: 1, event: "score_update", data: { score: 1 } },
+        { id: 2, event: "score_update", data: { score: 2 } },
+      ]),
+    );
+    expect(cb).toHaveBeenCalledTimes(2);
+    expect(cb.mock.calls[1]?.at(0)).toEqual({ score: 2 });
   });
 });

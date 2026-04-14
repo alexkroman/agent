@@ -74,6 +74,26 @@ export function useToolResult(...args: unknown[]): void {
   }, [session.toolCalls, filterName]);
 }
 
+export function useEvent<T = unknown>(event: string, callback: (data: T) => void): void {
+  const session = useSession();
+  const seenRef = useRef(new Set<number>());
+  const callbackRef = useRef(callback);
+  callbackRef.current = callback;
+
+  useEffect(() => {
+    if (session.customEvents.length === 0) {
+      seenRef.current.clear();
+      return;
+    }
+    for (const ce of session.customEvents) {
+      if (ce.event !== event) continue;
+      if (seenRef.current.has(ce.id)) continue;
+      seenRef.current.add(ce.id);
+      callbackRef.current(ce.data as T);
+    }
+  }, [session.customEvents, event]);
+}
+
 export function useToolCallStart(
   toolName: string,
   callback: (toolCall: ToolCallInfo) => void,
