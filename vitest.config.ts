@@ -27,11 +27,14 @@ export default defineConfig({
       ],
       // Global minimum. Per-package actuals are higher:
       // aai ~93%, aai-ui ~85%, aai-cli ~75%, aai-server ~80%
+      // Actual combined coverage (all projects): lines ~71%, branches ~64%, functions ~69%, statements ~70%
+      // Note: aai-server tests currently fail due to missing nanoid dep, lowering overall numbers.
+      // Thresholds set to targets where actuals exceed them; statements set to 64 (~5% below actual 69.57).
       thresholds: {
-        lines: 35,
-        functions: 50,
-        branches: 18,
-        statements: 33,
+        lines: 70,
+        functions: 65,
+        branches: 55,
+        statements: 64,
       },
     },
     projects: [
