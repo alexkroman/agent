@@ -51,6 +51,7 @@ export default defineConfig({
             "node_modules",
             "dist",
           ],
+          setupFiles: ["./sdk/_test-matchers.ts"],
         },
       },
       {
