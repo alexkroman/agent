@@ -16,9 +16,33 @@ import type { SandboxResourceLimits } from "./oci-spec.ts";
 
 // ── KV param schemas for guest → host validation ────────────────────────────
 
-const KvGetParamsSchema = z.object({ key: z.string().min(1) });
-const KvSetParamsSchema = z.object({ key: z.string().min(1), value: z.unknown() });
-const KvDelParamsSchema = z.object({ key: z.string().min(1) });
+/** Max KV value size in bytes (matches SDK constant). */
+const MAX_KV_VALUE_SIZE = 65_536;
+
+/**
+ * Safe KV key: non-empty, no path traversal, no prefix-delimiter escape.
+ * Rejects `..`, `:`, `/`, `\`, and null bytes to prevent namespace breakout.
+ */
+const SafeKvKeySchema = z
+  .string()
+  .min(1)
+  .refine((k) => !k.includes("\0"), "Key must not contain null bytes")
+  .refine((k) => !k.includes("/"), "Key must not contain /")
+  .refine((k) => !k.includes("\\"), "Key must not contain \\")
+  .refine((k) => !k.includes(":"), "Key must not contain :")
+  .refine((k) => !k.includes(".."), "Key must not contain ..");
+
+const KvGetParamsSchema = z.object({ key: SafeKvKeySchema });
+const KvSetParamsSchema = z.object({
+  key: SafeKvKeySchema,
+  value: z
+    .unknown()
+    .refine(
+      (v) => JSON.stringify(v).length <= MAX_KV_VALUE_SIZE,
+      `Value exceeds max size of ${MAX_KV_VALUE_SIZE} bytes`,
+    ),
+});
+const KvDelParamsSchema = z.object({ key: SafeKvKeySchema });
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
