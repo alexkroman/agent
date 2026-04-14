@@ -6,33 +6,11 @@
  * for the `aai` project so matchers are available in every test.
  */
 
+import { isDeepStrictEqual } from "node:util";
 import { expect } from "vitest";
 import { ClientEventSchema } from "./protocol.ts";
 
-/** Return type for custom matcher functions. */
 type MatcherResult = { pass: boolean; message: () => string };
-
-// ─── Helpers ────────────────────────────────────────────────────────────────
-
-/** Recursively deep-equal two values (JSON-safe subset). */
-function deepEqual(a: unknown, b: unknown): boolean {
-  if (a === b) return true;
-  if (a == null || b == null) return false;
-  if (typeof a !== typeof b) return false;
-  if (Array.isArray(a)) {
-    if (!Array.isArray(b) || a.length !== b.length) return false;
-    return a.every((v, i) => deepEqual(v, b[i]));
-  }
-  if (typeof a === "object") {
-    const aObj = a as Record<string, unknown>;
-    const bObj = b as Record<string, unknown>;
-    const aKeys = Object.keys(aObj);
-    const bKeys = Object.keys(bObj);
-    if (aKeys.length !== bKeys.length) return false;
-    return aKeys.every((k) => deepEqual(aObj[k], bObj[k]));
-  }
-  return false;
-}
 
 // ─── Matcher implementations ────────────────────────────────────────────────
 
@@ -62,7 +40,7 @@ function toContainEvent(
   const match = received.some((event: Record<string, unknown>) => {
     if (event?.type !== type) return false;
     if (!fields) return true;
-    return Object.entries(fields).every(([key, value]) => deepEqual(event[key], value));
+    return Object.entries(fields).every(([key, value]) => isDeepStrictEqual(event[key], value));
   });
 
   return {

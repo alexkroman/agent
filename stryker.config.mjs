@@ -1,6 +1,8 @@
+import { base } from "./stryker.base.config.mjs";
+
 /** @type {import('@stryker-mutator/api/core').PartialStrykerOptions} */
 export default {
-  plugins: ["@stryker-mutator/vitest-runner"],
+  ...base,
   mutate: [
     "packages/aai/sdk/protocol.ts",
     "packages/aai/sdk/manifest.ts",
@@ -9,8 +11,6 @@ export default {
     "packages/aai/host/**/*.ts",
     "packages/aai-server/ndjson-transport.ts",
     "packages/aai-server/orchestrator.ts",
-    "packages/aai-server/sandbox.ts",
-    "packages/aai-server/sandbox-vm.ts",
     "packages/aai-server/ssrf.ts",
     "packages/aai-server/secrets.ts",
     "packages/aai-server/middleware.ts",
@@ -24,21 +24,15 @@ export default {
     "packages/aai-cli/_templates.ts",
     "packages/aai-cli/secret.ts",
     "!**/*.test.ts",
-    "!**/*.test-d.ts",
     "!**/_test-*.ts",
     "!**/*-barrel.ts",
     "!**/fixtures/**",
     "!**/index.ts",
     "!packages/aai/host/testing.ts",
     "!packages/aai/host/matchers.ts",
+    "!packages/aai/host/unstorage-kv.ts",
   ],
-  testRunner: "vitest",
-  testRunnerNodeArgs: ["--experimental-vm-modules"],
-  reporters: ["html", "clear-text", "progress"],
   htmlReporter: { fileName: "reports/mutation/index.html" },
   thresholds: { high: 70, low: 50, break: 40 },
-  incremental: true,
   incrementalFile: ".stryker-incremental.json",
-  concurrency: 4,
-  timeoutMS: 60000,
 };
