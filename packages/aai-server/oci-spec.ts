@@ -220,8 +220,11 @@ export function buildOciSpec(opts: BuildOciSpecOptions): OciRuntimeSpec {
         permitted: [],
         ambient: [],
       },
+      // Note: RLIMIT_AS is intentionally omitted. It limits virtual address
+      // space, not resident memory, and V8 reserves ~1 GB of virtual memory
+      // at startup. The --max-heap-size V8 flag (in process.args) is the
+      // correct mechanism for limiting Deno/V8 memory usage.
       rlimits: [
-        { type: "RLIMIT_AS", hard: memoryBytes, soft: memoryBytes },
         { type: "RLIMIT_NPROC", hard: pidLimit, soft: pidLimit },
         { type: "RLIMIT_CPU", hard: cpuSecs, soft: cpuSecs },
         { type: "RLIMIT_NOFILE", hard: DEFAULT_NOFILE, soft: DEFAULT_NOFILE },

@@ -48,10 +48,11 @@ describe("buildOciSpec", () => {
     expect(caps.ambient).toEqual([]);
   });
 
-  it("sets default rlimits", () => {
+  it("sets default rlimits (no RLIMIT_AS — V8 max-heap-size handles memory)", () => {
     const spec = buildOciSpec(baseOpts);
     const rlimits = spec.process.rlimits;
-    expect(rlimits).toContainEqual({ type: "RLIMIT_AS", hard: 67_108_864, soft: 67_108_864 });
+    const rlimitTypes = rlimits.map((r) => r.type);
+    expect(rlimitTypes).not.toContain("RLIMIT_AS");
     expect(rlimits).toContainEqual({ type: "RLIMIT_NPROC", hard: 32, soft: 32 });
     expect(rlimits).toContainEqual({ type: "RLIMIT_CPU", hard: 60, soft: 60 });
     expect(rlimits).toContainEqual({ type: "RLIMIT_NOFILE", hard: 256, soft: 256 });
@@ -61,11 +62,6 @@ describe("buildOciSpec", () => {
     const spec = buildOciSpec({
       ...baseOpts,
       limits: { memoryLimitBytes: 134_217_728, pidLimit: 64, cpuTimeLimitSecs: 120 },
-    });
-    expect(spec.process.rlimits).toContainEqual({
-      type: "RLIMIT_AS",
-      hard: 134_217_728,
-      soft: 134_217_728,
     });
     expect(spec.process.rlimits).toContainEqual({ type: "RLIMIT_NPROC", hard: 64, soft: 64 });
     expect(spec.process.rlimits).toContainEqual({ type: "RLIMIT_CPU", hard: 120, soft: 120 });
