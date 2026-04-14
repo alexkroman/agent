@@ -60,12 +60,14 @@ export default agent({
         category: z.enum(["movie", "music", "book"]),
         mood: z.enum(["chill", "intense", "cozy", "spooky", "funny"]),
       }),
-      async execute(args) {
-        return {
+      async execute(args, ctx) {
+        const result = {
           category: args.category,
           mood: args.mood,
           picks: PICKS[args.category]?.[args.mood] ?? [],
         };
+        ctx.send("recommendations", result);
+        return result;
       },
     }),
   },
