@@ -47,6 +47,8 @@ export type WsSessionOptions = {
   onClose?: () => void;
   /** Callback invoked with the session ID after session cleanup. */
   onSessionEnd?: (sessionId: string) => void;
+  /** Callback invoked with the session ID and client sink after session setup. */
+  onSinkCreated?: (sessionId: string, sink: ClientSink) => void;
   /** Logger instance. Defaults to console. */
   logger?: Logger;
   /** Timeout in ms for session.start(). Defaults to 10 000 (10s). */
@@ -184,6 +186,7 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
     const client = createClientSink(ws, log);
     session = opts.createSession(sessionId, client);
     sessions.set(sessionId, session);
+    opts.onSinkCreated?.(sessionId, client);
 
     // Send config immediately — zero RTT. Include sessionId so the client
     // can reconnect with ?sessionId=<id> to resume a persisted session.

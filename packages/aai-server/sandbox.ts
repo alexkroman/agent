@@ -12,6 +12,7 @@
  */
 
 import path from "node:path";
+import type { ClientSink } from "@alexkroman1/aai/protocol";
 import {
   type AgentRuntime,
   createRuntime,
@@ -127,14 +128,25 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
     builtinDefs: builtins.defs,
   });
 
+  const sessionSinks = new Map<string, ClientSink>();
+
+  sandboxHandle.conn.onNotification("client/send", (raw: unknown) => {
+    const params = raw as { sessionId: string; event: string; data: unknown };
+    const sink = sessionSinks.get(params.sessionId);
+    if (sink?.open) {
+      sink.event({ type: "custom_event", event: params.event, data: params.data });
+    }
+  });
+
   console.info("Sandbox initialized", { slug, agent: config.name });
 
   async function shutdownSandbox(): Promise<void> {
+    sessionSinks.clear();
     await sandboxHandle.shutdown();
     await agentRuntime.shutdown();
   }
 
-  // Wrap startSession to notify guest of session cleanup
+  // Wrap startSession to notify guest of session cleanup and capture sinks
   const originalStartSession = agentRuntime.startSession.bind(agentRuntime);
   function startSessionWithCleanup(
     ws: Parameters<typeof originalStartSession>[0],
@@ -142,7 +154,12 @@ export async function createSandbox(opts: SandboxOptions): Promise<Sandbox> {
   ): void {
     originalStartSession(ws, {
       ...opts,
+      onSinkCreated(sessionId, sink) {
+        sessionSinks.set(sessionId, sink);
+        opts?.onSinkCreated?.(sessionId, sink);
+      },
       onSessionEnd(sessionId) {
+        sessionSinks.delete(sessionId);
         sandboxHandle.conn.sendNotification("session/end", { sessionId });
         opts?.onSessionEnd?.(sessionId);
       },

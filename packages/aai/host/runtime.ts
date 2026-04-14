@@ -36,6 +36,8 @@ export type SessionStartOptions = {
   onClose?: () => void;
   /** Called with session ID after session cleanup, for guest state cleanup. */
   onSessionEnd?: (sessionId: string) => void;
+  /** Called with session ID and client sink after session setup. Used by sandbox to route custom events. */
+  onSinkCreated?: (sessionId: string, sink: ClientSink) => void;
 };
 
 /**
@@ -277,6 +279,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       ...(startOpts?.logContext ? { logContext: startOpts.logContext } : {}),
       ...(startOpts?.onOpen ? { onOpen: startOpts.onOpen } : {}),
       ...(startOpts?.onClose ? { onClose: startOpts.onClose } : {}),
+      ...(startOpts?.onSinkCreated ? { onSinkCreated: startOpts.onSinkCreated } : {}),
       onSessionEnd: (sid) => {
         sinkMap.delete(sid);
         userOnSessionEnd?.(sid);
