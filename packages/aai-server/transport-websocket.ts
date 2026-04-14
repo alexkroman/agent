@@ -48,7 +48,7 @@ export async function handleAgentPage(c: AppContext): Promise<Response> {
   // No custom client deployed — serve the default aai-ui
   const manifest = await c.env.store.getManifest(slug);
   if (!manifest) throw new HTTPException(404, { message: "HTML not found" });
-  const html = readDefaultClientFile("default-client.html");
+  const html = readDefaultClientFile("index.html");
   if (!html) throw new HTTPException(500, { message: "Default client not built" });
   return c.html(html, 200, { "Content-Security-Policy": AGENT_CSP });
 }

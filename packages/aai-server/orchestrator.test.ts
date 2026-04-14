@@ -135,10 +135,10 @@ test("default aai-ui serves JS assets for agents without custom client", async (
     body: deployBody({ slug: "default-assets", clientFiles: {} }),
   });
 
-  // The default HTML references ./assets/default-client-*.js
+  // The default HTML references ./assets/index-*.js
   const pageRes = await fetch("/default-assets/");
   const html = await pageRes.text();
-  const match = html.match(/src="\.\/assets\/(default-client-[^"]+\.js)"/);
+  const match = html.match(/src="\.\/assets\/(index-[^"]+\.js)"/);
   expect(match).toBeTruthy();
 
   // That asset should be served from the default client dist

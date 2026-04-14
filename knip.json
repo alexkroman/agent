@@ -11,6 +11,7 @@
     "packages/aai": {
       "entry": [
         "host/_test-utils.ts",
+        "host/runtime-barrel.ts",
         "**/*.test.ts"
       ],
       "includeEntryExports": true
@@ -20,7 +21,7 @@
       "includeEntryExports": true
     },
     "packages/aai-cli": {
-      "entry": ["**/*.test.ts", "_test-utils.ts"]
+      "entry": ["**/*.test.ts", "_test-utils.ts", "bin.mjs", "types.ts"]
     },
     "packages/aai-templates": {
       "ignore": ["**"]
