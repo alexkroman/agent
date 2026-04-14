@@ -128,7 +128,6 @@ function App() {
     }
   });
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reads from a mutable ref; session.messages triggers the scroll
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [session.messages]);
