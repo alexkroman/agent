@@ -86,9 +86,15 @@ const BUNDLE_BASE = "/tmp/aai-bundles";
 
 const EMPTY_ROOTFS = "/tmp/aai-empty-rootfs";
 
-/** Ensure the shared empty rootfs directory exists. Created once, reused by all sandboxes. */
+/**
+ * Ensure the shared empty rootfs directory exists with mount point stubs.
+ * OCI bind mounts require destination files to already exist in the rootfs.
+ * Created once, reused by all sandboxes (rootfs is read-only in the OCI spec).
+ */
 function ensureEmptyRootfs(): string {
   mkdirSync(EMPTY_ROOTFS, { recursive: true });
+  writeFileSync(join(EMPTY_ROOTFS, "deno"), "");
+  writeFileSync(join(EMPTY_ROOTFS, "harness.mjs"), "");
   return EMPTY_ROOTFS;
 }
 
