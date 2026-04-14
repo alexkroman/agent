@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { NdjsonConnection } from "./ndjson-transport.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
-import { _internals, type SandboxOptions } from "./sandbox.ts";
+import { createSandbox, type SandboxOptions } from "./sandbox.ts";
 import { createTestStorage } from "./test-utils.ts";
 
 // ── Mock sandbox-vm ──────────────────────────────────────────────────────────
@@ -78,7 +78,7 @@ describe("createSandbox", () => {
   });
 
   it("creates a sandbox and returns a runtime with expected shape", async () => {
-    const sandbox = await _internals.createSandbox(makeSandboxOptions());
+    const sandbox = await createSandbox(makeSandboxOptions());
     expect(sandbox).toBeDefined();
     expect(typeof sandbox.startSession).toBe("function");
     expect(typeof sandbox.shutdown).toBe("function");
@@ -89,7 +89,7 @@ describe("createSandbox", () => {
     const { createSandboxVm } = await import("./sandbox-vm.ts");
     const opts = makeSandboxOptions();
 
-    await _internals.createSandbox(opts);
+    await createSandbox(opts);
 
     expect(createSandboxVm).toHaveBeenCalledOnce();
     expect(createSandboxVm).toHaveBeenCalledWith(
@@ -104,13 +104,13 @@ describe("createSandbox", () => {
   });
 
   it("registers client/send notification handler on the connection", async () => {
-    await _internals.createSandbox(makeSandboxOptions());
+    await createSandbox(makeSandboxOptions());
 
     expect(mockConn.onNotification).toHaveBeenCalledWith("client/send", expect.any(Function));
   });
 
   it("shutdown cleans up sandbox handle and agent runtime", async () => {
-    const sandbox = await _internals.createSandbox(makeSandboxOptions());
+    const sandbox = await createSandbox(makeSandboxOptions());
 
     await sandbox.shutdown();
 
@@ -120,7 +120,7 @@ describe("createSandbox", () => {
   it("logs sandbox initialization with slug and agent name", async () => {
     const infoSpy = vi.spyOn(console, "info");
 
-    await _internals.createSandbox(makeSandboxOptions());
+    await createSandbox(makeSandboxOptions());
 
     expect(infoSpy).toHaveBeenCalledWith("Sandbox initialized", {
       slug: "test-agent",
@@ -144,16 +144,14 @@ describe("createSandbox", () => {
       builtinTools: [],
     };
 
-    const sandbox = await _internals.createSandbox(
-      makeSandboxOptions({ agentConfig: customConfig }),
-    );
+    const sandbox = await createSandbox(makeSandboxOptions({ agentConfig: customConfig }));
 
     expect(sandbox).toBeDefined();
     expect(sandbox.readyConfig).toBeDefined();
   });
 
   it("startSession is a wrapped function (not the raw runtime version)", async () => {
-    const sandbox = await _internals.createSandbox(makeSandboxOptions());
+    const sandbox = await createSandbox(makeSandboxOptions());
 
     // startSession should be defined and callable
     expect(typeof sandbox.startSession).toBe("function");
@@ -168,7 +166,7 @@ describe("createSandbox", () => {
     process.env.GUEST_HARNESS_PATH = "/custom/harness.mjs";
 
     try {
-      await _internals.createSandbox(makeSandboxOptions());
+      await createSandbox(makeSandboxOptions());
 
       expect(createSandboxVm).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -187,7 +185,7 @@ describe("createSandbox", () => {
   it("passes kvPrefix derived from slug to createSandboxVm", async () => {
     const { createSandboxVm } = await import("./sandbox-vm.ts");
 
-    await _internals.createSandbox(makeSandboxOptions({ slug: "my-custom-agent" }));
+    await createSandbox(makeSandboxOptions({ slug: "my-custom-agent" }));
 
     expect(createSandboxVm).toHaveBeenCalledWith(
       expect.objectContaining({

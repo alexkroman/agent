@@ -3,7 +3,7 @@
 import { PassThrough } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createNdjsonConnection, type NdjsonConnection } from "./ndjson-transport.ts";
-import { _internals, type SandboxVmOptions } from "./sandbox-vm.ts";
+import { _internals, parseSandboxLimitsFromEnv, type SandboxVmOptions } from "./sandbox-vm.ts";
 import { createTestStorage } from "./test-utils.ts";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -252,6 +252,95 @@ describe("configureSandbox", () => {
 
     // Verify cleanup was called
     expect(cleanup).toHaveBeenCalledOnce();
+  });
+});
+
+describe("parseSandboxLimitsFromEnv", () => {
+  it("returns empty object when no env vars are set", () => {
+    const limits = parseSandboxLimitsFromEnv({});
+    expect(limits).toEqual({});
+  });
+
+  it("parses SANDBOX_MEMORY_LIMIT_MB", () => {
+    const limits = parseSandboxLimitsFromEnv({ SANDBOX_MEMORY_LIMIT_MB: "128" });
+    expect(limits.memoryLimitBytes).toBe(128 * 1024 * 1024);
+  });
+
+  it("clamps SANDBOX_MEMORY_LIMIT_MB to minimum 16 MB", () => {
+    const limits = parseSandboxLimitsFromEnv({ SANDBOX_MEMORY_LIMIT_MB: "1" });
+    expect(limits.memoryLimitBytes).toBe(16 * 1024 * 1024);
+  });
+
+  it("clamps SANDBOX_MEMORY_LIMIT_MB to maximum 512 MB", () => {
+    const limits = parseSandboxLimitsFromEnv({ SANDBOX_MEMORY_LIMIT_MB: "9999" });
+    expect(limits.memoryLimitBytes).toBe(512 * 1024 * 1024);
+  });
+
+  it("parses SANDBOX_PID_LIMIT", () => {
+    const limits = parseSandboxLimitsFromEnv({ SANDBOX_PID_LIMIT: "64" });
+    expect(limits.pidLimit).toBe(64);
+  });
+
+  it("clamps SANDBOX_PID_LIMIT to [8, 256]", () => {
+    expect(parseSandboxLimitsFromEnv({ SANDBOX_PID_LIMIT: "1" }).pidLimit).toBe(8);
+    expect(parseSandboxLimitsFromEnv({ SANDBOX_PID_LIMIT: "1000" }).pidLimit).toBe(256);
+  });
+
+  it("parses SANDBOX_TMPFS_LIMIT_MB", () => {
+    const limits = parseSandboxLimitsFromEnv({ SANDBOX_TMPFS_LIMIT_MB: "50" });
+    expect(limits.tmpfsSizeBytes).toBe(50 * 1024 * 1024);
+  });
+
+  it("clamps SANDBOX_TMPFS_LIMIT_MB to [1, 100]", () => {
+    expect(parseSandboxLimitsFromEnv({ SANDBOX_TMPFS_LIMIT_MB: "0" }).tmpfsSizeBytes).toBe(
+      1 * 1024 * 1024,
+    );
+    expect(parseSandboxLimitsFromEnv({ SANDBOX_TMPFS_LIMIT_MB: "999" }).tmpfsSizeBytes).toBe(
+      100 * 1024 * 1024,
+    );
+  });
+
+  it("parses SANDBOX_CPU_TIME_LIMIT_SECS", () => {
+    const limits = parseSandboxLimitsFromEnv({ SANDBOX_CPU_TIME_LIMIT_SECS: "120" });
+    expect(limits.cpuTimeLimitSecs).toBe(120);
+  });
+
+  it("clamps SANDBOX_CPU_TIME_LIMIT_SECS to [10, 300]", () => {
+    expect(parseSandboxLimitsFromEnv({ SANDBOX_CPU_TIME_LIMIT_SECS: "1" }).cpuTimeLimitSecs).toBe(
+      10,
+    );
+    expect(
+      parseSandboxLimitsFromEnv({ SANDBOX_CPU_TIME_LIMIT_SECS: "9999" }).cpuTimeLimitSecs,
+    ).toBe(300);
+  });
+
+  it("ignores non-numeric and undefined values", () => {
+    const limits = parseSandboxLimitsFromEnv({
+      SANDBOX_MEMORY_LIMIT_MB: "not-a-number",
+      SANDBOX_TMPFS_LIMIT_MB: undefined,
+    });
+    expect(limits).toEqual({});
+  });
+
+  it("treats empty string as 0 (clamped to minimum)", () => {
+    // Number("") === 0, which is finite, so it gets clamped to the minimum
+    const limits = parseSandboxLimitsFromEnv({ SANDBOX_PID_LIMIT: "" });
+    expect(limits.pidLimit).toBe(8); // clamped to min
+  });
+
+  it("parses all env vars together", () => {
+    const limits = parseSandboxLimitsFromEnv({
+      SANDBOX_MEMORY_LIMIT_MB: "64",
+      SANDBOX_PID_LIMIT: "32",
+      SANDBOX_TMPFS_LIMIT_MB: "10",
+      SANDBOX_CPU_TIME_LIMIT_SECS: "60",
+    });
+    expect(limits).toEqual({
+      memoryLimitBytes: 64 * 1024 * 1024,
+      pidLimit: 32,
+      tmpfsSizeBytes: 10 * 1024 * 1024,
+      cpuTimeLimitSecs: 60,
+    });
   });
 });
 

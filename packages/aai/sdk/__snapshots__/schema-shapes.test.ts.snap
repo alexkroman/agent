@@ -185,9 +185,3 @@ exports[`protocol schema shapes > ServerMessageSchema option shapes 1`] = `
   ],
 }
 `;
-
-exports[`protocol schema shapes > TurnConfigSchema shape 1`] = `
-[
-  "maxSteps",
-]
-`;

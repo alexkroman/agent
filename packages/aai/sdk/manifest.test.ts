@@ -1,8 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
 import fc from "fast-check";
 import { describe, expect, expectTypeOf, test } from "vitest";
-import type { AgentConfig, Manifest, ToolSchema } from "./manifest-barrel.ts";
-import { agentToolsToSchemas, parseManifest, toAgentConfig } from "./manifest-barrel.ts";
+import { type Manifest, parseManifest } from "./manifest.ts";
+import type { AgentConfig, ToolSchema } from "./manifest-barrel.ts";
+import { agentToolsToSchemas, toAgentConfig } from "./manifest-barrel.ts";
 
 describe("parseManifest", () => {
   test("minimal manifest requires only name", () => {

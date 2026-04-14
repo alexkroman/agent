@@ -38,26 +38,21 @@ exports[`export surface stability > @alexkroman1/aai/manifest export 1`] = `
   "EMPTY_PARAMS",
   "ToolSchemaSchema",
   "agentToolsToSchemas",
-  "buildSystemPrompt",
-  "parseManifest",
   "toAgentConfig",
 ]
 `;
 
 exports[`export surface stability > @alexkroman1/aai/protocol export 1`] = `
 [
-  "AUDIO_FORMAT",
   "ClientEventSchema",
   "ClientMessageSchema",
   "KvDelSchema",
   "KvGetSchema",
   "KvRequestSchema",
   "KvSetSchema",
-  "MessageEnvelopeSchema",
   "ReadyConfigSchema",
   "ServerMessageSchema",
   "SessionErrorCodeSchema",
-  "TurnConfigSchema",
   "buildReadyConfig",
   "lenientParse",
 ]
@@ -68,13 +63,11 @@ exports[`export surface stability > @alexkroman1/aai/runtime export 1`] = `
   "DEFAULT_S2S_CONFIG",
   "_internals",
   "buildCtx",
-  "connectS2s",
   "consoleLogger",
   "createRuntime",
   "createS2sSession",
   "createServer",
   "createUnstorageKv",
-  "defaultCreateS2sWebSocket",
   "executeInIsolate",
   "executeToolCall",
   "jsonLogger",

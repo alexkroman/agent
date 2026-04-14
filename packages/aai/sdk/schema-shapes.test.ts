@@ -22,7 +22,6 @@ import {
   KvSetSchema,
   ReadyConfigSchema,
   ServerMessageSchema,
-  TurnConfigSchema,
 } from "./protocol.ts";
 
 // ── Helpers ──────────────────────────────────────────────────────────────
@@ -76,10 +75,6 @@ describe("protocol schema shapes", () => {
 
   test("ReadyConfigSchema shape", () => {
     expect(shapeKeys(ReadyConfigSchema)).toMatchSnapshot();
-  });
-
-  test("TurnConfigSchema shape", () => {
-    expect(shapeKeys(TurnConfigSchema)).toMatchSnapshot();
   });
 
   test("KvGetSchema shape", () => {
