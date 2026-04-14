@@ -1,5 +1,11 @@
 # @alexkroman1/aai-ui
 
+## 1.0.5
+
+### Patch Changes
+
+- @alexkroman1/aai@1.0.5
+
 ## 1.0.4
 
 ### Patch Changes
