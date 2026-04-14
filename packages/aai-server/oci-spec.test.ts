@@ -9,8 +9,8 @@ const _typeCheck: SandboxResourceLimits = {};
 describe("buildOciSpec", () => {
   const baseOpts = {
     rootfsPath: "/rootfs",
-    harnessPath: "/rootfs/harness.mjs",
-    denoPath: "/rootfs/bin/deno",
+    denoPath: "/deno",
+    harnessPath: "/harness.mjs",
   };
 
   it("returns a valid OCI runtime spec with defaults", () => {
@@ -160,37 +160,10 @@ describe("buildOciSpec", () => {
     expect(spec.process.terminal).toBe(false);
   });
 
-  it("adds read-only bind mounts for deno binary and harness", () => {
+  it("does not add bind mounts for deno or harness (files live in rootfs)", () => {
     const spec = buildOciSpec(baseOpts);
-    const denoMount = spec.mounts.find((m) => m.destination === "/deno");
-    expect(denoMount).toEqual({
-      destination: "/deno",
-      type: "bind",
-      source: "/rootfs/bin/deno",
-      options: ["ro"],
-    });
-    const harnessMount = spec.mounts.find((m) => m.destination === "/harness.mjs");
-    expect(harnessMount).toEqual({
-      destination: "/harness.mjs",
-      type: "bind",
-      source: "/rootfs/harness.mjs",
-      options: ["ro"],
-    });
-  });
-
-  it("allows overriding container-internal paths", () => {
-    const spec = buildOciSpec({
-      ...baseOpts,
-      containerDenoPath: "/usr/bin/deno",
-      containerHarnessPath: "/app/harness.mjs",
-    });
-    expect(spec.process.args[0]).toBe("/usr/bin/deno");
-    expect(spec.process.args.at(-1)).toBe("/app/harness.mjs");
-    const denoMount = spec.mounts.find((m) => m.destination === "/usr/bin/deno");
-    expect(denoMount).toBeDefined();
-    expect(denoMount?.source).toBe("/rootfs/bin/deno");
-    const harnessMount = spec.mounts.find((m) => m.destination === "/app/harness.mjs");
-    expect(harnessMount).toBeDefined();
-    expect(harnessMount?.source).toBe("/rootfs/harness.mjs");
+    const bindMountDests = spec.mounts.filter((m) => m.type === "bind").map((m) => m.destination);
+    expect(bindMountDests).not.toContain("/deno");
+    expect(bindMountDests).not.toContain("/harness.mjs");
   });
 });

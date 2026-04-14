@@ -10,7 +10,7 @@
  */
 
 import { type ChildProcess, execFile, execFileSync, spawn } from "node:child_process";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { nanoid } from "nanoid";
@@ -84,18 +84,18 @@ export type GvisorSandboxOptions = {
 
 const BUNDLE_BASE = "/tmp/aai-bundles";
 
-const EMPTY_ROOTFS = "/tmp/aai-empty-rootfs";
+const SANDBOX_ROOTFS = "/tmp/aai-sandbox-rootfs";
 
 /**
- * Ensure the shared empty rootfs directory exists with mount point stubs.
- * OCI bind mounts require destination files to already exist in the rootfs.
- * Created once, reused by all sandboxes (rootfs is read-only in the OCI spec).
+ * Build a minimal rootfs containing only the Deno binary and harness script.
+ * Copies are idempotent — `copyFileSync` overwrites if the file already exists.
+ * The rootfs is shared across all sandboxes (mounted read-only in the OCI spec).
  */
-function ensureEmptyRootfs(): string {
-  mkdirSync(EMPTY_ROOTFS, { recursive: true });
-  writeFileSync(join(EMPTY_ROOTFS, "deno"), "");
-  writeFileSync(join(EMPTY_ROOTFS, "harness.mjs"), "");
-  return EMPTY_ROOTFS;
+function prepareSandboxRootfs(denoPath: string, harnessPath: string): string {
+  mkdirSync(SANDBOX_ROOTFS, { recursive: true });
+  copyFileSync(denoPath, join(SANDBOX_ROOTFS, "deno"));
+  copyFileSync(harnessPath, join(SANDBOX_ROOTFS, "harness.mjs"));
+  return SANDBOX_ROOTFS;
 }
 
 /** Create the bundle directory containing config.json for `runsc run`. */
@@ -144,10 +144,12 @@ export function createGvisorSandbox(opts: GvisorSandboxOptions): GvisorSandbox {
 
   const containerId = `aai-${opts.slug}-${nanoid(8)}`;
 
+  const rootfs = prepareSandboxRootfs(deno, opts.harnessPath);
+
   const spec = buildOciSpec({
-    rootfsPath: ensureEmptyRootfs(),
-    harnessPath: opts.harnessPath,
-    denoPath: deno,
+    rootfsPath: rootfs,
+    denoPath: "/deno",
+    harnessPath: "/harness.mjs",
     ...(opts.limits && { limits: opts.limits }),
   });
 

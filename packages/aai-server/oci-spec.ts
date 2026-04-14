@@ -27,10 +27,8 @@ export type SandboxResourceLimits = {
 /** Options for building an OCI runtime spec. */
 export type BuildOciSpecOptions = {
   rootfsPath: string;
-  harnessPath: string;
   denoPath: string;
-  containerDenoPath?: string;
-  containerHarnessPath?: string;
+  harnessPath: string;
   limits?: SandboxResourceLimits;
 };
 
@@ -198,18 +196,16 @@ export function buildOciSpec(opts: BuildOciSpecOptions): OciRuntimeSpec {
   const tmpfsBytes = limits.tmpfsSizeBytes ?? DEFAULT_TMPFS_BYTES;
   const cpuSecs = limits.cpuTimeLimitSecs ?? DEFAULT_CPU_SECS;
   const pidLimit = limits.pidLimit ?? DEFAULT_PID_LIMIT;
-  const containerDeno = opts.containerDenoPath ?? "/deno";
-  const containerHarness = opts.containerHarnessPath ?? "/harness.mjs";
   return {
     ociVersion: "1.0.2",
     process: {
       terminal: false,
       args: [
-        containerDeno,
+        opts.denoPath,
         "run",
         `--v8-flags=--max-heap-size=${Math.floor(memoryBytes / (1024 * 1024))}`,
         "--no-prompt",
-        containerHarness,
+        opts.harnessPath,
       ],
       env: ["PATH=/usr/bin:/bin", "HOME=/tmp", "NO_COLOR=1"],
       cwd: "/tmp",
@@ -278,18 +274,6 @@ export function buildOciSpec(opts: BuildOciSpecOptions): OciRuntimeSpec {
         destination: "/proc",
         type: "proc",
         source: "proc",
-        options: ["ro"],
-      },
-      {
-        destination: containerDeno,
-        type: "bind",
-        source: opts.denoPath,
-        options: ["ro"],
-      },
-      {
-        destination: containerHarness,
-        type: "bind",
-        source: opts.harnessPath,
         options: ["ro"],
       },
     ],
