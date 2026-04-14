@@ -99,13 +99,16 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
   const runtime = createRuntime({ agent: agentDef, env });
 
   // When no custom client.tsx, serve the pre-built default aai-ui client
-  const serverOpts: Parameters<typeof createServer>[0] = { runtime, name: agentDef.name };
-  if (!hasClient) {
+  function resolveDefaultClientDir(): string {
     const require = createRequire(import.meta.url);
     const pkgPath = require.resolve("@alexkroman1/aai-ui/package.json");
-    serverOpts.clientDir = path.join(path.dirname(pkgPath), "dist", "default-client");
+    return path.join(path.dirname(pkgPath), "dist", "default-client");
   }
-  const agentServer = createServer(serverOpts);
+  const agentServer = createServer({
+    runtime,
+    name: agentDef.name,
+    ...(hasClient ? {} : { clientDir: resolveDefaultClientDir() }),
+  });
   await agentServer.listen(backendPort);
 
   let viteServer: { close(): Promise<void> } | undefined;
@@ -148,12 +151,11 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
       const newAgentDef = await loadAgentDef(cwd);
       currentEnv = await resolveAgentEnv(cwd);
       const newRuntime = createRuntime({ agent: newAgentDef, env: currentEnv });
-      const newOpts: Parameters<typeof createServer>[0] = {
+      const newServer = createServer({
         runtime: newRuntime,
         name: newAgentDef.name,
-      };
-      if (!hasClient) newOpts.clientDir = serverOpts.clientDir;
-      const newServer = createServer(newOpts);
+        ...(hasClient ? {} : { clientDir: resolveDefaultClientDir() }),
+      });
       await newServer.listen(backendPort);
       currentServer = newServer;
       log.success("Restarted");

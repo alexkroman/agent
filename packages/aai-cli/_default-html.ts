@@ -6,11 +6,11 @@
  * Users can override by placing their own index.html in the project root.
  */
 
-import { existsSync } from "node:fs";
+import { existsSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { Plugin } from "vite";
 
-const DEFAULT_HTML = `<!DOCTYPE html>
+export const DEFAULT_HTML = `<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -26,8 +26,8 @@ const DEFAULT_HTML = `<!DOCTYPE html>
 </html>`;
 
 /**
- * Vite plugin that serves a fallback index.html when one doesn't exist on disk.
- * Allows user override — if index.html exists in the project, this plugin is a no-op.
+ * Vite plugin that serves a fallback index.html in dev mode when one doesn't
+ * exist on disk. No-op if index.html exists (user override).
  */
 export function fallbackHtmlPlugin(root: string): Plugin {
   const htmlExists = existsSync(path.join(root, "index.html"));
@@ -35,7 +35,6 @@ export function fallbackHtmlPlugin(root: string): Plugin {
     name: "aai-fallback-html",
     configureServer(server) {
       if (htmlExists) return;
-      // Pre-middleware: intercept before Vite's built-in HTML handling
       server.middlewares.use((req, res, next) => {
         if (req.url === "/" || req.url === "/index.html") {
           server.transformIndexHtml("/", DEFAULT_HTML, req.originalUrl).then((html) => {
@@ -47,11 +46,25 @@ export function fallbackHtmlPlugin(root: string): Plugin {
         next();
       });
     },
-    resolveId(id) {
-      if (!htmlExists && id.endsWith("/index.html")) return "\0fallback-index.html";
-    },
-    load(id) {
-      if (id === "\0fallback-index.html") return DEFAULT_HTML;
-    },
+  };
+}
+
+/**
+ * Write a temporary index.html for Vite build (HTML must be on disk for build).
+ * Returns a cleanup function to remove it. No-op if index.html already exists.
+ */
+export function writeTempHtml(root: string): () => void {
+  const htmlPath = path.join(root, "index.html");
+  if (existsSync(htmlPath))
+    return () => {
+      /* no-op: user-provided */
+    };
+  writeFileSync(htmlPath, DEFAULT_HTML);
+  return () => {
+    try {
+      unlinkSync(htmlPath);
+    } catch {
+      /* best-effort cleanup */
+    }
   };
 }
