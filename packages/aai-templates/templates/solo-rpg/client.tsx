@@ -1,16 +1,9 @@
 /** @jsxImportSource react */
 
 import "@alexkroman1/aai-ui/styles.css";
-import { ChatView, client, SidebarLayout, StartScreen, useToolResult } from "@alexkroman1/aai-ui";
-import { useEffect, useState } from "react";
-import type {
-  ClockData,
-  Disposition,
-  GameState,
-  NPC,
-  SoloRpgToolResults,
-  StoryBlueprint,
-} from "./shared.ts";
+import { ChatView, client, SidebarLayout, StartScreen, useEvent } from "@alexkroman1/aai-ui";
+import { useState } from "react";
+import type { ClockData, Disposition, GameState, NPC, StoryBlueprint } from "./shared.ts";
 
 const INITIAL: GameState = {
   initialized: false,
@@ -833,53 +826,13 @@ function Sidebar({ game }: { game: GameState }) {
 function SoloRPGApp() {
   const [game, setGame] = useState<GameState>(structuredClone(INITIAL));
 
-  // Load saved game state from KV on page load
-  useEffect(() => {
-    fetch(`${location.origin}${location.pathname}kv?key=${encodeURIComponent("save:game")}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((saved: GameState | null) => {
-        if (saved) setGame((prev) => ({ ...prev, ...saved }));
-      })
-      .catch(() => {});
-  }, []);
-
   const mergeState = (result: Partial<GameState>, prev: GameState): GameState => ({
     ...prev,
     ...Object.fromEntries(Object.entries(result).filter(([, v]) => v !== undefined)),
   });
 
-  useToolResult<SoloRpgToolResults["setup_character"]>("setup_character", (result) => {
-    if (result.success) setGame((prev) => mergeState(result, prev));
-  });
-
-  useToolResult<SoloRpgToolResults["update_state"]>("update_state", (result) => {
-    if (result.success) setGame((prev) => mergeState(result, prev));
-  });
-
-  useToolResult<SoloRpgToolResults["action_roll"]>("action_roll", (result) => {
-    setGame((prev) => ({
-      ...prev,
-      health: result.currentHealth,
-      spirit: result.currentSpirit,
-      supply: result.currentSupply,
-      momentum: result.currentMomentum,
-      chaosFactor: result.chaosFactor,
-      crisisMode: result.crisisMode,
-      gameOver: result.gameOver,
-      sceneCount: result.sceneCount,
-    }));
-  });
-
-  useToolResult<SoloRpgToolResults["burn_momentum"]>("burn_momentum", (result) => {
-    if ("burned" in result && result.burned) {
-      setGame((prev) => ({ ...prev, momentum: result.newMomentum }));
-    }
-  });
-
-  useToolResult<SoloRpgToolResults["load_game"]>("load_game", (result) => {
-    if ("loaded" in result && result.loaded) {
-      setGame((prev) => mergeState(result, prev));
-    }
+  useEvent<GameState>("game_state", (state) => {
+    setGame((prev) => mergeState(state, prev));
   });
 
   return (

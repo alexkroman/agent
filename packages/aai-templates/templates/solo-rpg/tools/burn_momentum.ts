@@ -10,7 +10,7 @@ export const burnMomentum = tool({
     c1: z.number().describe("First challenge die from the roll"),
     c2: z.number().describe("Second challenge die from the roll"),
   }),
-  async execute(args, ctx: { kv: KV }) {
+  async execute(args, ctx: { kv: KV; send: (event: string, data: unknown) => void }) {
     const state = await getGameState(ctx.kv);
     const mom = state.momentum;
     if (mom <= 0) return { error: "Momentum is 0 or negative. Cannot burn." };
@@ -23,6 +23,7 @@ export const burnMomentum = tool({
     const previousMomentum = mom;
     state.momentum = 2; // Reset to starting value
     await saveGameState(ctx.kv, state);
+    ctx.send("game_state", state);
 
     const labels: Record<string, string> = {
       STRONG_HIT: "Strong Hit",

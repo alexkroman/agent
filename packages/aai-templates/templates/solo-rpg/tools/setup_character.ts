@@ -50,7 +50,7 @@ export const setupCharacter = tool({
     contentLines: z.string().optional(),
     kidMode: z.boolean().optional(),
   }),
-  async execute(args, ctx: { kv: KV }) {
+  async execute(args, ctx: { kv: KV; send: (event: string, data: unknown) => void }) {
     const state = await getGameState(ctx.kv);
 
     // Store creation choices
@@ -197,6 +197,7 @@ export const setupCharacter = tool({
     state.sceneCount = 1;
 
     await saveGameState(ctx.kv, state);
+    ctx.send("game_state", state);
 
     return {
       success: true,
