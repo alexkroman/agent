@@ -20,7 +20,7 @@ await build({
     outDir: path.join(__dirname, "dist", "default-client"),
     emptyOutDir: true,
     rollupOptions: {
-      input: path.join(__dirname, "default-client.html"),
+      input: path.join(__dirname, "index.html"),
     },
   },
 });
