@@ -10,7 +10,7 @@
  */
 
 import { type ChildProcess, execFile, execFileSync, spawn } from "node:child_process";
-import { chmodSync, copyFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { nanoid } from "nanoid";
@@ -154,6 +154,16 @@ export function createGvisorSandbox(opts: GvisorSandboxOptions): GvisorSandbox {
     harnessPath: "/harness.mjs",
     ...(opts.limits && { limits: opts.limits }),
   });
+
+  // Deno is dynamically linked — it needs the system's libc and dynamic
+  // linker at runtime. Bind-mount host library directories read-only.
+  // These contain only shared libraries, no secrets or application data.
+  for (const dir of ["/lib", "/lib64", "/usr/lib"]) {
+    if (existsSync(dir)) {
+      mkdirSync(join(rootfs, dir), { recursive: true });
+      spec.mounts.push({ destination: dir, type: "bind", source: dir, options: ["ro"] });
+    }
+  }
 
   const bundleDir = prepareBundleDir(containerId, JSON.stringify(spec));
 
