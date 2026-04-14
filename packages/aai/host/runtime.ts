@@ -36,6 +36,8 @@ export type SessionStartOptions = {
   onClose?: () => void;
   /** Called with session ID after session cleanup, for guest state cleanup. */
   onSessionEnd?: (sessionId: string) => void;
+  /** Called with session ID and client sink after session setup. Used by sandbox to route custom events. */
+  onSinkCreated?: (sessionId: string, sink: ClientSink) => void;
 };
 
 /**
@@ -160,6 +162,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   } = opts;
   const agentConfig = toAgentConfig(agent);
   const sessions = new Map<string, Session>();
+  const sinkMap = new Map<string, ClientSink>();
   const readyConfig: ReadyConfig = buildReadyConfig(s2sConfig);
 
   // When overrides are provided (sandbox mode), skip in-process tool setup
@@ -216,6 +219,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     executeTool = async (name, args, sessionId, messages) => {
       const tool = allTools[name];
       if (!tool) return toolError(`Unknown tool: ${name}`);
+      const sink = sinkMap.get(sessionId ?? "");
       return executeToolCall(name, args, {
         tool,
         env: frozenEnv,
@@ -224,6 +228,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
         kv,
         messages,
         logger,
+        send: sink ? (event, data) => sink.event({ type: "custom_event", event, data }) : undefined,
       });
     };
   }
@@ -235,6 +240,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     skipGreeting?: boolean;
     resumeFrom?: string;
   }): Session {
+    sinkMap.set(sessionOpts.id, sessionOpts.client);
     const apiKey = env.ASSEMBLYAI_API_KEY ?? "";
     return createS2sSession({
       id: sessionOpts.id,
@@ -257,6 +263,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
 
   function startSession(ws: SessionWebSocket, startOpts?: SessionStartOptions): void {
     const resumeFrom = startOpts?.resumeFrom;
+    const userOnSessionEnd = startOpts?.onSessionEnd;
     wireSessionSocket(ws, {
       sessions,
       createSession: (sid, client) =>
@@ -272,7 +279,11 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       ...(startOpts?.logContext ? { logContext: startOpts.logContext } : {}),
       ...(startOpts?.onOpen ? { onOpen: startOpts.onOpen } : {}),
       ...(startOpts?.onClose ? { onClose: startOpts.onClose } : {}),
-      ...(startOpts?.onSessionEnd ? { onSessionEnd: startOpts.onSessionEnd } : {}),
+      ...(startOpts?.onSinkCreated ? { onSinkCreated: startOpts.onSinkCreated } : {}),
+      onSessionEnd: (sid) => {
+        sinkMap.delete(sid);
+        userOnSessionEnd?.(sid);
+      },
       ...(sessionStartTimeoutMs !== undefined ? { sessionStartTimeoutMs } : {}),
       ...(resumeFrom ? { resumeFrom } : {}),
     });
@@ -295,6 +306,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       );
     }
     sessions.clear();
+    sinkMap.clear();
   }
 
   return {

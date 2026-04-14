@@ -31,6 +31,7 @@ export function createMockSessionCore(
     state: overrides?.state ?? "disconnected",
     messages: overrides?.messages ?? [],
     toolCalls: overrides?.toolCalls ?? [],
+    customEvents: [],
     userTranscript: overrides?.userTranscript ?? null,
     agentTranscript: overrides?.agentTranscript ?? null,
     error: overrides?.error ?? null,

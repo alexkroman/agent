@@ -27,7 +27,7 @@ export const incidentCreate = tool({
       .describe("Known hazards: fire, chemical, electrical, structural, weapons")
       .optional(),
   }),
-  async execute(args, ctx: { kv: KV }) {
+  async execute(args, ctx: { kv: KV; send: (event: string, data: unknown) => void }) {
     const state = await getState(ctx.kv);
     state.incidentCounter++;
     const id = `INC-${String(state.incidentCounter).padStart(4, "0")}`;
@@ -79,7 +79,7 @@ export const incidentCreate = tool({
     const protocols = getApplicableProtocols(recType, recSeverity);
     const recommended = recommendResources(recType, recSeverity, state);
 
-    return {
+    const result = {
       incidentId: id,
       recommendedSeverity: recSeverity,
       recommendedType: recType,
@@ -90,11 +90,14 @@ export const incidentCreate = tool({
         type: r.type,
         capabilities: r.capabilities,
       })),
+      incident,
       systemAlertLevel: state.alertLevel,
       message:
         recSeverity === "critical"
           ? `PRIORITY ONE — ${id} created. Immediate dispatch recommended. ${protocols.length} protocol(s) applicable.`
           : `${id} created. Triage score ${triageScore}. ${recommended.length} resource(s) recommended.`,
     };
+    ctx.send("incidents", result);
+    return result;
   },
 });

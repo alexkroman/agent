@@ -8,10 +8,11 @@ export const loadGame = tool({
   parameters: z.object({
     slot: z.string().describe("Save slot name, defaults to autosave").optional(),
   }),
-  async execute(args, ctx: { kv: KV }) {
+  async execute(args, ctx: { kv: KV; send: (event: string, data: unknown) => void }) {
     const saved = await ctx.kv.get<GameState>(`save:${args.slot ?? "autosave"}`);
     if (!saved) return { error: "No save found." };
     await saveGameState(ctx.kv, saved);
+    ctx.send("game_state", saved);
     return {
       loaded: true,
       playerName: saved.playerName,

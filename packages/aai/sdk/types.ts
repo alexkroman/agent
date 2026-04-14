@@ -83,6 +83,8 @@ export type ToolContext<S = Record<string, unknown>> = {
   messages: readonly Message[];
   /** Unique identifier for the current session. Useful for correlating logs across concurrent sessions. */
   sessionId: string;
+  /** Push a custom event to the connected browser client. Fire-and-forget. */
+  send(event: string, data: unknown): void;
 };
 
 /**

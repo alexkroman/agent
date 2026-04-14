@@ -128,6 +128,11 @@ export const ClientEventSchema = z.discriminatedUnion("type", [
   ev("reset"),
   ev("idle_timeout"),
   z.object({ type: z.literal("error"), code: SessionErrorCodeSchema, message: z.string() }),
+  z.object({
+    type: z.literal("custom_event"),
+    event: z.string().min(1),
+    data: z.unknown(),
+  }),
 ]);
 
 /** Discriminated union of all server→client session events. */

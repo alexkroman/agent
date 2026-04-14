@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 
 import "@alexkroman1/aai-ui/styles.css";
-import { Button, client, useTheme, useToolCallStart, useToolResult } from "@alexkroman1/aai-ui";
+import { Button, client, useEvent, useTheme, useToolCallStart } from "@alexkroman1/aai-ui";
 import { useState } from "react";
 
 type Rec = { category: string; mood: string; picks: string[] };
@@ -29,8 +29,8 @@ function RecSidebar() {
     setActiveMood(tc.args.mood as string);
   });
 
-  useToolResult<Rec>("recommend", (result) => {
-    setRecs((prev) => [result, ...prev]);
+  useEvent("recommendations", (result) => {
+    setRecs((prev) => [result as Rec, ...prev]);
   });
 
   const filtered = activeMood ? recs.filter((r) => r.mood === activeMood) : recs;

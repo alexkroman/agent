@@ -62,6 +62,7 @@ type ToolContext = {
   kv: KvAdapter;
   sessionId: string;
   messages: readonly Message[];
+  send(event: string, data: unknown): void;
 };
 
 type ToolDef = {
@@ -161,6 +162,14 @@ const kv: KvInterface = {
   },
 };
 
+function sendToClient(sessionId: string, event: string, data: unknown): void {
+  writeMessage({
+    jsonrpc: "2.0",
+    method: "client/send",
+    params: { sessionId, event, data },
+  } as JsonRpcNotification);
+}
+
 // Adapt KvInterface to the Kv shape expected by ToolContext
 function makeKvAdapter(): KvAdapter {
   return {
@@ -249,6 +258,7 @@ async function executeTool(
     kv: kvAdapter,
     messages: req.messages,
     sessionId: req.sessionId,
+    send: (event, data) => sendToClient(req.sessionId, event, data),
   };
 
   const parsed =

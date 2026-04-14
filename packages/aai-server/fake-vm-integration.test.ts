@@ -492,6 +492,70 @@ describe.skipIf(!hasDeno)("Fake VM integration (no KVM)", () => {
     }
   }, 15_000);
 
+  test("ctx.send emits client/send notification to host", async () => {
+    const socketPath = path.join(tmpDir, "test-send.sock");
+    await spawnFakeVm(socketPath);
+    const { socket, conn } = await connectToFakeVm(socketPath);
+
+    const sendBundle = `
+    export default {
+      name: "send-agent",
+      systemPrompt: "Test",
+      greeting: "",
+      maxSteps: 1,
+      tools: {
+        emit_event: {
+          description: "Emit a custom event via ctx.send",
+          execute(args, ctx) {
+            ctx.send("test_event", { value: 42 });
+            return "sent";
+          },
+        },
+      },
+    };
+    `;
+
+    try {
+      await conn.sendRequest("bundle/load", { code: sendBundle, env: {} });
+
+      // Register handler to capture the client/send notification
+      const received = new Promise<{ sessionId: string; event: string; data: unknown }>(
+        (resolve) => {
+          conn.onNotification("client/send", (params: unknown) => {
+            resolve(params as { sessionId: string; event: string; data: unknown });
+          });
+        },
+      );
+
+      // Execute the tool — this triggers ctx.send inside the guest
+      const toolResp = await conn.sendRequest<{ result: string }>("tool/execute", {
+        name: "emit_event",
+        args: {},
+        sessionId: "send-s1",
+        messages: [],
+      });
+      expect(toolResp.result).toBe("sent");
+
+      // The notification should arrive
+      const notification = await Promise.race([
+        received,
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error("client/send notification not received within 5s")),
+            5000,
+          ),
+        ),
+      ]);
+
+      expect(notification.sessionId).toBe("send-s1");
+      expect(notification.event).toBe("test_event");
+      expect(notification.data).toEqual({ value: 42 });
+    } finally {
+      conn.dispose();
+      socket.destroy();
+    }
+  }, 15_000);
+
   // ── Compiled harness test ───────────────────────────────────────────────────
 
   const COMPILED_HARNESS = path.resolve(import.meta.dirname, "dist/guest/deno-harness.mjs");

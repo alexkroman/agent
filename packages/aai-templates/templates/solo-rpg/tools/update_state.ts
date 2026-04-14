@@ -37,7 +37,7 @@ export const updateState = tool({
     storyComplete: z.boolean().describe("Mark story as complete").optional(),
     logEntry: z.string().describe("Short log entry for this scene").optional(),
   }),
-  async execute(args, ctx: { kv: KV }) {
+  async execute(args, ctx: { kv: KV; send: (event: string, data: unknown) => void }) {
     const state = await getGameState(ctx.kv);
 
     // Resources
@@ -147,6 +147,7 @@ export const updateState = tool({
     }
 
     await saveGameState(ctx.kv, state);
+    ctx.send("game_state", state);
 
     return {
       success: true,
