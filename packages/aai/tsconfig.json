@@ -6,5 +6,12 @@
     "types": ["node"]
   },
   "include": ["./**/*.ts"],
-  "exclude": ["node_modules", "dist", "**/__snapshots__"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    "**/__snapshots__",
+    "**/*.test.ts",
+    "**/*.test-d.ts",
+    "**/_test-*.ts"
+  ]
 }

@@ -8,5 +8,5 @@
     "tsBuildInfoFile": "../../../.tsbuildinfo/aai-sdk.tsbuildinfo"
   },
   "include": ["./**/*.ts"],
-  "exclude": ["**/*.test.ts", "**/*.test-d.ts"]
+  "exclude": ["**/*.test.ts", "**/*.test-d.ts", "**/_test-*.ts"]
 }

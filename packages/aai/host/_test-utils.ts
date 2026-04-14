@@ -9,7 +9,7 @@ import type { ClientSink } from "../sdk/protocol.ts";
 import type { AgentDef, ToolContext, ToolDef } from "../sdk/types.ts";
 import { DEFAULT_SYSTEM_PROMPT } from "../sdk/types.ts";
 import { createRuntime } from "./runtime.ts";
-import type { S2sEvents, S2sHandle } from "./s2s.ts";
+import type { S2sEvent, S2sEvents, S2sHandle } from "./s2s.ts";
 import type { Session } from "./session.ts";
 import { _internals, type S2sSessionOptions } from "./session.ts";
 
@@ -278,18 +278,18 @@ export function createFixtureSession(
 
 // --- Test Data Builders ---
 
-export function buildClientEvent(type: string, fields?: Record<string, unknown>) {
+export function buildClientEvent(type: string, fields?: Record<string, unknown>): S2sEvent {
   const base: Record<string, unknown> = { type };
   switch (type) {
     case "user_transcript":
-      return { ...base, text: "hello", isFinal: true, ...fields };
+      return { ...base, text: "hello", isFinal: true, ...fields } as S2sEvent;
     case "error":
-      return { ...base, code: "internal", message: "test error", ...fields };
+      return { ...base, code: "internal", message: "test error", ...fields } as S2sEvent;
     case "tool_call":
-      return { ...base, toolCallId: "tc-1", toolName: "test", args: {}, ...fields };
+      return { ...base, toolCallId: "tc-1", toolName: "test", args: {}, ...fields } as S2sEvent;
     case "tool_call_done":
-      return { ...base, toolCallId: "tc-1", result: "ok", ...fields };
+      return { ...base, toolCallId: "tc-1", result: "ok", ...fields } as S2sEvent;
     default:
-      return { ...base, ...fields };
+      return { ...base, ...fields } as S2sEvent;
   }
 }
