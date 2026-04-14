@@ -60,7 +60,7 @@ COPY --from=build /app/packages/aai-ui/dist/ packages/aai-ui/dist/
 COPY --from=build /app/packages/aai-server/dist/ packages/aai-server/dist/
 
 ENV NODE_ENV=production
-ENV GUEST_HARNESS_PATH=/app/packages/aai-server/dist/guest/deno-harness.ts
+ENV GUEST_HARNESS_PATH=/app/packages/aai-server/dist/guest/deno-harness.mjs
 
 EXPOSE 8080
 
