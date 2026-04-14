@@ -12,6 +12,7 @@ import type { Storage, StorageValue } from "unstorage";
 import { z } from "zod";
 import { createGvisorSandbox, isGvisorAvailable } from "./gvisor.ts";
 import { createNdjsonConnection, type NdjsonConnection } from "./ndjson-transport.ts";
+import type { SandboxResourceLimits } from "./oci-spec.ts";
 
 // ── KV param schemas for guest → host validation ────────────────────────────
 
@@ -33,6 +34,7 @@ export type SandboxVmOptions = {
   harnessPath: string;
   kvStorage?: Storage;
   kvPrefix?: string;
+  limits?: SandboxResourceLimits;
 };
 
 // ── Shared setup ─────────────────────────────────────────────────────────────
@@ -131,8 +133,47 @@ export async function createGvisorSandboxHandle(opts: SandboxVmOptions): Promise
   const gvisor = createGvisorSandbox({
     slug: opts.slug,
     harnessPath: opts.harnessPath,
+    ...(opts.limits && { limits: opts.limits }),
   });
   return configureSandbox(createConnection(gvisor.process), opts, () => gvisor.cleanup());
+}
+
+// ── Operator resource limit overrides ────────────────────────────────────────
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+/**
+ * Parses sandbox resource limits from environment variables.
+ * Unset or non-numeric vars are ignored (use built-in defaults).
+ */
+export function parseSandboxLimitsFromEnv(
+  env: Record<string, string | undefined>,
+): SandboxResourceLimits {
+  const limits: SandboxResourceLimits = {};
+
+  const memMb = Number(env.SANDBOX_MEMORY_LIMIT_MB);
+  if (Number.isFinite(memMb)) {
+    limits.memoryLimitBytes = clamp(memMb, 16, 512) * 1024 * 1024;
+  }
+
+  const pids = Number(env.SANDBOX_PID_LIMIT);
+  if (Number.isFinite(pids)) {
+    limits.pidLimit = clamp(pids, 8, 256);
+  }
+
+  const tmpfsMb = Number(env.SANDBOX_TMPFS_LIMIT_MB);
+  if (Number.isFinite(tmpfsMb)) {
+    limits.tmpfsSizeBytes = clamp(tmpfsMb, 1, 100) * 1024 * 1024;
+  }
+
+  const cpuSecs = Number(env.SANDBOX_CPU_TIME_LIMIT_SECS);
+  if (Number.isFinite(cpuSecs)) {
+    limits.cpuTimeLimitSecs = clamp(cpuSecs, 10, 300);
+  }
+
+  return limits;
 }
 
 // ── Factory ──────────────────────────────────────────────────────────────────
@@ -147,7 +188,13 @@ export async function createGvisorSandboxHandle(opts: SandboxVmOptions): Promise
  * code without sandbox isolation.
  */
 export async function createSandboxVm(opts: SandboxVmOptions): Promise<SandboxHandle> {
-  if (isGvisorAvailable()) return createGvisorSandboxHandle(opts);
+  const envLimits = parseSandboxLimitsFromEnv(process.env);
+  const mergedOpts: SandboxVmOptions = {
+    ...opts,
+    limits: { ...envLimits, ...opts.limits },
+  };
+
+  if (isGvisorAvailable()) return createGvisorSandboxHandle(mergedOpts);
 
   if (process.env.NODE_ENV === "production") {
     throw new Error(
@@ -160,7 +207,7 @@ export async function createSandboxVm(opts: SandboxVmOptions): Promise<SandboxHa
   console.warn(
     "[sandbox] WARNING: gVisor not available. Running without sandbox isolation (dev mode only).",
   );
-  return createDevSandbox(opts);
+  return createDevSandbox(mergedOpts);
 }
 
 // ── Internal exports for testing ─────────────────────────────────────────────

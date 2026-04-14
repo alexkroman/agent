@@ -387,6 +387,139 @@ describe.skipIf(!canRun)("gVisor integration (real runsc)", () => {
     }
   }, 30_000);
 
+  test("tmpfs write is limited to configured size", async () => {
+    const tmpfsBundle = `
+    export default {
+      name: "tmpfs-agent",
+      systemPrompt: "Test",
+      greeting: "",
+      maxSteps: 1,
+      tools: {
+        fill_tmp: {
+          description: "Write data to /tmp until ENOSPC",
+          async execute() {
+            try {
+              const data = new Uint8Array(20 * 1024 * 1024);
+              await Deno.writeFile("/tmp/bigfile", data);
+              return "wrote:20MB";
+            } catch (err) {
+              return "error:" + err.message;
+            }
+          },
+        },
+      },
+    };
+    `;
+
+    const { sandbox, conn } = await spawnSandbox("tmpfs-test");
+
+    try {
+      await conn.sendRequest("bundle/load", { code: tmpfsBundle, env: {} });
+      const resp = await conn.sendRequest<{ result: string }>("tool/execute", {
+        name: "fill_tmp",
+        args: {},
+        sessionId: "s1",
+        messages: [],
+      });
+
+      expect(resp.result).toMatch(/^error:/);
+    } finally {
+      conn.dispose();
+      await sandbox.cleanup();
+      activeSandboxes.splice(activeSandboxes.indexOf(sandbox), 1);
+    }
+  }, 30_000);
+
+  test("no environment variables leak to guest", async () => {
+    const envBundle = `
+    export default {
+      name: "env-agent",
+      systemPrompt: "Test",
+      greeting: "",
+      maxSteps: 1,
+      tools: {
+        check_env: {
+          description: "Check environment",
+          execute() {
+            try {
+              const env = Deno.env.toObject();
+              return "env:" + JSON.stringify(env);
+            } catch (err) {
+              return "error:" + err.message;
+            }
+          },
+        },
+      },
+    };
+    `;
+
+    const { sandbox, conn } = await spawnSandbox("env-test");
+
+    try {
+      await conn.sendRequest("bundle/load", { code: envBundle, env: {} });
+      const resp = await conn.sendRequest<{ result: string }>("tool/execute", {
+        name: "check_env",
+        args: {},
+        sessionId: "s1",
+        messages: [],
+      });
+
+      // Either Deno.env throws (no --allow-env) or returns minimal env
+      if (resp.result.startsWith("error:")) {
+        expect(resp.result).toMatch(/error:/);
+      } else {
+        const env = JSON.parse(resp.result.replace("env:", ""));
+        expect(env).not.toHaveProperty("NODE_ENV");
+      }
+    } finally {
+      conn.dispose();
+      await sandbox.cleanup();
+      activeSandboxes.splice(activeSandboxes.indexOf(sandbox), 1);
+    }
+  }, 30_000);
+
+  test("cannot write to root filesystem", async () => {
+    const writeBundle = `
+    export default {
+      name: "write-agent",
+      systemPrompt: "Test",
+      greeting: "",
+      maxSteps: 1,
+      tools: {
+        write_root: {
+          description: "Try to write to /etc",
+          execute() {
+            try {
+              Deno.writeTextFileSync("/etc/evil", "pwned");
+              return "wrote";
+            } catch (err) {
+              return "error:" + err.message;
+            }
+          },
+        },
+      },
+    };
+    `;
+
+    const { sandbox, conn } = await spawnSandbox("write-test");
+
+    try {
+      await conn.sendRequest("bundle/load", { code: writeBundle, env: {} });
+      const resp = await conn.sendRequest<{ result: string }>("tool/execute", {
+        name: "write_root",
+        args: {},
+        sessionId: "s1",
+        messages: [],
+      });
+
+      expect(resp.result).toMatch(/^error:/);
+    } finally {
+      conn.dispose();
+      await sandbox.cleanup();
+      activeSandboxes.splice(activeSandboxes.indexOf(sandbox), 1);
+    }
+  }, 30_000);
+
   test("shutdown notification causes process to exit", async () => {
     const { sandbox, conn } = await spawnSandbox("shutdown-test");
 

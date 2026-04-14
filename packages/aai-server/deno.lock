@@ -28,6 +28,7 @@
         "npm:human-id@^4.1.3",
         "npm:lru-cache@^11.3.2",
         "npm:mime-types@^3.0.2",
+        "npm:nanoid@^5.1.7",
         "npm:p-lock@^4.0.1",
         "npm:p-timeout@^7.0.1",
         "npm:testcontainers@^11.13.0",
