@@ -37,4 +37,126 @@ describe("buildOciSpec", () => {
     const spec = buildOciSpec(baseOpts);
     expect(spec.process.env).toEqual(["PATH=/usr/bin:/bin", "HOME=/tmp", "NO_COLOR=1"]);
   });
+
+  it("drops all capabilities", () => {
+    const spec = buildOciSpec(baseOpts);
+    const caps = spec.process.capabilities;
+    expect(caps.bounding).toEqual([]);
+    expect(caps.effective).toEqual([]);
+    expect(caps.permitted).toEqual([]);
+    expect(caps.inheritable).toEqual([]);
+    expect(caps.ambient).toEqual([]);
+  });
+
+  it("sets default rlimits", () => {
+    const spec = buildOciSpec(baseOpts);
+    const rlimits = spec.process.rlimits;
+    expect(rlimits).toContainEqual({ type: "RLIMIT_AS", hard: 67_108_864, soft: 67_108_864 });
+    expect(rlimits).toContainEqual({ type: "RLIMIT_NPROC", hard: 32, soft: 32 });
+    expect(rlimits).toContainEqual({ type: "RLIMIT_CPU", hard: 60, soft: 60 });
+    expect(rlimits).toContainEqual({ type: "RLIMIT_NOFILE", hard: 256, soft: 256 });
+  });
+
+  it("applies operator overrides to rlimits", () => {
+    const spec = buildOciSpec({
+      ...baseOpts,
+      limits: { memoryLimitBytes: 134_217_728, pidLimit: 64, cpuTimeLimitSecs: 120 },
+    });
+    expect(spec.process.rlimits).toContainEqual({
+      type: "RLIMIT_AS",
+      hard: 134_217_728,
+      soft: 134_217_728,
+    });
+    expect(spec.process.rlimits).toContainEqual({ type: "RLIMIT_NPROC", hard: 64, soft: 64 });
+    expect(spec.process.rlimits).toContainEqual({ type: "RLIMIT_CPU", hard: 120, soft: 120 });
+  });
+
+  it("scales V8 max-heap-size with memory limit", () => {
+    const spec = buildOciSpec({ ...baseOpts, limits: { memoryLimitBytes: 134_217_728 } });
+    expect(spec.process.args).toContain("--v8-flags=--max-heap-size=128");
+  });
+
+  it("applies tmpfs size override to mount options", () => {
+    const spec = buildOciSpec({ ...baseOpts, limits: { tmpfsSizeBytes: 20_971_520 } });
+    const tmpfsMount = spec.mounts.find((m) => m.destination === "/tmp");
+    expect(tmpfsMount?.options).toContain("size=20m");
+  });
+
+  it("includes seccomp denylist with all expected syscalls", () => {
+    const spec = buildOciSpec(baseOpts);
+    const denied = spec.linux.seccomp.syscalls[0];
+    expect(spec.linux.seccomp.defaultAction).toBe("SCMP_ACT_ALLOW");
+    expect(denied.action).toBe("SCMP_ACT_ERRNO");
+    expect(denied.errnoRet).toBe(1);
+    expect(denied.names).toContain("ptrace");
+    expect(denied.names).toContain("mount");
+    expect(denied.names).toContain("unshare");
+    expect(denied.names).toContain("setns");
+    expect(denied.names).toContain("bpf");
+    expect(denied.names).toContain("userfaultfd");
+    expect(denied.names).toContain("kexec_load");
+    expect(denied.names).toHaveLength(26);
+  });
+
+  it("masks sensitive /proc paths", () => {
+    const spec = buildOciSpec(baseOpts);
+    expect(spec.linux.maskedPaths).toContain("/proc/kcore");
+    expect(spec.linux.maskedPaths).toContain("/proc/keys");
+    expect(spec.linux.readonlyPaths).toContain("/proc/sys");
+  });
+
+  it("mounts rootfs as read-only", () => {
+    const spec = buildOciSpec(baseOpts);
+    expect(spec.root.readonly).toBe(true);
+  });
+
+  it("mounts /tmp with noexec, nosuid, nodev", () => {
+    const spec = buildOciSpec(baseOpts);
+    const tmpfs = spec.mounts.find((m) => m.destination === "/tmp");
+    expect(tmpfs?.options).toContain("noexec");
+    expect(tmpfs?.options).toContain("nosuid");
+    expect(tmpfs?.options).toContain("nodev");
+  });
+
+  it("mounts only /dev/null, /dev/zero, /dev/urandom as devices", () => {
+    const spec = buildOciSpec(baseOpts);
+    const devMounts = spec.mounts
+      .filter((m) => m.destination.startsWith("/dev/") && m.type === "bind")
+      .map((m) => m.destination)
+      .sort((a, b) => a.localeCompare(b));
+    expect(devMounts).toEqual(["/dev/null", "/dev/urandom", "/dev/zero"]);
+  });
+
+  it("overlays /dev with tmpfs before device bind mounts", () => {
+    const spec = buildOciSpec(baseOpts);
+    const devTmpfs = spec.mounts.find((m) => m.destination === "/dev" && m.type === "tmpfs");
+    expect(devTmpfs).toBeDefined();
+    expect(devTmpfs?.options).toContain("noexec");
+    // /dev tmpfs must come before /dev/* bind mounts
+    const devTmpfsIdx = spec.mounts.findIndex(
+      (m) => m.destination === "/dev" && m.type === "tmpfs",
+    );
+    const devNullIdx = spec.mounts.findIndex((m) => m.destination === "/dev/null");
+    expect(devTmpfsIdx).toBeLessThan(devNullIdx);
+  });
+
+  it("sets oomScoreAdj to 1000", () => {
+    const spec = buildOciSpec(baseOpts);
+    expect(spec.process.oomScoreAdj).toBe(1000);
+  });
+
+  it("includes pid, mount, ipc, uts namespaces but not network", () => {
+    const spec = buildOciSpec(baseOpts);
+    const nsTypes = spec.linux.namespaces.map((n) => n.type);
+    expect(nsTypes).toContain("pid");
+    expect(nsTypes).toContain("mount");
+    expect(nsTypes).toContain("ipc");
+    expect(nsTypes).toContain("uts");
+    expect(nsTypes).not.toContain("network");
+  });
+
+  it("sets terminal to false", () => {
+    const spec = buildOciSpec(baseOpts);
+    expect(spec.process.terminal).toBe(false);
+  });
 });
