@@ -9,12 +9,14 @@
  */
 
 import { existsSync, type FSWatcher, watch } from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { type AgentDef, errorMessage } from "@alexkroman1/aai";
 import type { AgentServer } from "@alexkroman1/aai/runtime";
 import pDebounce from "p-debounce";
 import { ensureApiKey } from "./_config.ts";
+import { fallbackHtmlPlugin } from "./_default-html.ts";
 import { resolveServerEnv } from "./_server-common.ts";
 import { log } from "./_ui.ts";
 import { validateAgentExport } from "./_utils.ts";
@@ -95,7 +97,18 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
   const agentDef = await loadAgentDef(cwd);
   const env = await resolveAgentEnv(cwd);
   const runtime = createRuntime({ agent: agentDef, env });
-  const agentServer = createServer({ runtime, name: agentDef.name });
+
+  // When no custom client.tsx, serve the pre-built default aai-ui client
+  function resolveDefaultClientDir(): string {
+    const require = createRequire(import.meta.url);
+    const pkgPath = require.resolve("@alexkroman1/aai-ui/package.json");
+    return path.join(path.dirname(pkgPath), "dist", "default-client");
+  }
+  const agentServer = createServer({
+    runtime,
+    name: agentDef.name,
+    ...(hasClient ? {} : { clientDir: resolveDefaultClientDir() }),
+  });
   await agentServer.listen(backendPort);
 
   let viteServer: { close(): Promise<void> } | undefined;
@@ -104,6 +117,7 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
     const target = `http://localhost:${backendPort}`;
     viteServer = await createViteServer({
       root: cwd,
+      plugins: [fallbackHtmlPlugin(cwd)],
       server: {
         port: vitePort,
         proxy: {
@@ -137,7 +151,11 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
       const newAgentDef = await loadAgentDef(cwd);
       currentEnv = await resolveAgentEnv(cwd);
       const newRuntime = createRuntime({ agent: newAgentDef, env: currentEnv });
-      const newServer = createServer({ runtime: newRuntime, name: newAgentDef.name });
+      const newServer = createServer({
+        runtime: newRuntime,
+        name: newAgentDef.name,
+        ...(hasClient ? {} : { clientDir: resolveDefaultClientDir() }),
+      });
       await newServer.listen(backendPort);
       currentServer = newServer;
       log.success("Restarted");

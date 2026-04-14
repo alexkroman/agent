@@ -1,5 +1,6 @@
 /** @jsxImportSource react */
 
+import "@alexkroman1/aai-ui/styles.css";
 import { ChatView, client, SidebarLayout, StartScreen, useToolResult } from "@alexkroman1/aai-ui";
 import { useEffect, useState } from "react";
 import type {

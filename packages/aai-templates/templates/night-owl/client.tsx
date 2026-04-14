@@ -1,5 +1,6 @@
 /** @jsxImportSource react */
 
+import "@alexkroman1/aai-ui/styles.css";
 import { Button, client, useTheme, useToolCallStart, useToolResult } from "@alexkroman1/aai-ui";
 import { useState } from "react";
 

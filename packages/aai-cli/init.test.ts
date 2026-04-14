@@ -93,17 +93,14 @@ describe("resolvePnpmCommand", () => {
 });
 
 describe("scaffold client.tsx", () => {
-  test("scaffold includes client.tsx that imports client from aai-ui", async () => {
+  test("scaffold does not include client.tsx (default UI served by dev server)", async () => {
     await withTempDir(
       silenced(async (dir) => {
         fakeTemplatesDir = await createFakeTemplates(dir);
         const target = path.join(dir, "output");
         await runInit({ targetDir: target });
         const clientPath = path.join(target, "client.tsx");
-        expect(await fileExists(clientPath)).toBe(true);
-        const content = await fs.readFile(clientPath, "utf-8");
-        expect(content).toContain("client");
-        expect(content).not.toContain("defineClient");
+        expect(await fileExists(clientPath)).toBe(false);
       }),
     );
   });

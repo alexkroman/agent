@@ -123,6 +123,9 @@ importers:
       '@alexkroman1/aai':
         specifier: workspace:*
         version: link:../aai
+      '@alexkroman1/aai-ui':
+        specifier: workspace:*
+        version: link:../aai-ui
       '@clack/prompts':
         specifier: ^1.2.0
         version: 1.2.0

@@ -1,5 +1,6 @@
 /** @jsxImportSource react */
 
+import "@alexkroman1/aai-ui/styles.css";
 import { client, useTheme, useToolResult } from "@alexkroman1/aai-ui";
 import { useState } from "react";
 import { type Pizza, type PizzaToolResults, pizzaPrice } from "./shared.ts";

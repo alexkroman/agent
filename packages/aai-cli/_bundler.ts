@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 import type { AgentDef } from "@alexkroman1/aai";
 import { agentToolsToSchemas, toAgentConfig } from "@alexkroman1/aai/manifest";
 import { build, type Rollup } from "vite";
+import { writeTempHtml } from "./_default-html.ts";
 import { type CommandResult, ok } from "./_output.ts";
 import { fileExists, validateAgentExport } from "./_utils.ts";
 
@@ -136,15 +137,20 @@ async function buildClient(cwd: string): Promise<Record<string, string>> {
   }
 
   const clientDir = path.join(cwd, ".aai", "client");
-  await build({
-    root: cwd,
-    base: "./",
-    logLevel: "silent",
-    build: {
-      outDir: ".aai/client",
-      emptyOutDir: true,
-    },
-  });
+  const cleanupHtml = writeTempHtml(cwd);
+  try {
+    await build({
+      root: cwd,
+      base: "./",
+      logLevel: "silent",
+      build: {
+        outDir: ".aai/client",
+        emptyOutDir: true,
+      },
+    });
+  } finally {
+    cleanupHtml();
+  }
 
   // Read built files into memory for deploy payload
   const files: Record<string, string> = {};
