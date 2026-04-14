@@ -203,7 +203,6 @@ export async function createSandboxVm(opts: SandboxVmOptions): Promise<SandboxHa
         "Running untrusted agent code without sandbox isolation is not allowed.",
     );
   }
-
   console.warn(
     "[sandbox] WARNING: gVisor not available. Running without sandbox isolation (dev mode only).",
   );

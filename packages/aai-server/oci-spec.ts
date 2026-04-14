@@ -196,7 +196,6 @@ export function buildOciSpec(opts: BuildOciSpecOptions): OciRuntimeSpec {
   const tmpfsBytes = limits.tmpfsSizeBytes ?? DEFAULT_TMPFS_BYTES;
   const cpuSecs = limits.cpuTimeLimitSecs ?? DEFAULT_CPU_SECS;
   const pidLimit = limits.pidLimit ?? DEFAULT_PID_LIMIT;
-
   return {
     ociVersion: "1.0.2",
     process: {

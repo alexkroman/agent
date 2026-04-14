@@ -202,7 +202,6 @@ export function createGvisorSandbox(opts: GvisorSandboxOptions): GvisorSandbox {
     // 4. Remove bundle directory
     cleanupBundleDir(containerId);
   }
-
   return {
     process: child,
     containerId,
