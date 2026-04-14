@@ -1,12 +1,18 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Manifest barrel — agent manifest parsing and tool schema conversion.
+ * Manifest barrel — agent config conversion and tool schema handling.
  *
- * Used by aai-cli (scanner, bundler) and aai-server (tests).
+ * Used by aai-cli (bundler) and aai-server (rpc-schemas).
  */
 
-// biome-ignore-all lint/performance/noReExportAll: barrel file by design
-
-export * from "./_internal-types.ts";
-export * from "./manifest.ts";
-export * from "./system-prompt.ts";
+export {
+  type AgentConfig,
+  AgentConfigSchema,
+  type AgentConfigSource,
+  agentToolsToSchemas,
+  EMPTY_PARAMS,
+  type ExecuteTool,
+  type ToolSchema,
+  ToolSchemaSchema,
+  toAgentConfig,
+} from "./_internal-types.ts";
