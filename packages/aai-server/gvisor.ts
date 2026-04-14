@@ -10,7 +10,7 @@
  */
 
 import { type ChildProcess, execFile, execFileSync, spawn } from "node:child_process";
-import { copyFileSync, mkdirSync, rmSync } from "node:fs";
+import { copyFileSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { nanoid } from "nanoid";
