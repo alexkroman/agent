@@ -6,6 +6,7 @@ import clsx from "clsx";
 import type { ReactNode } from "react";
 import { useSession, useTheme } from "../context.ts";
 import type { AgentState } from "../types.ts";
+import { AaiLogo } from "./aai-logo.tsx";
 import { Controls } from "./controls.tsx";
 import { MessageList } from "./message-list.tsx";
 
@@ -80,15 +81,7 @@ export function ChatView({
             {title}
           </span>
         ) : (
-          !icon && (
-            <pre
-              className="font-aai-mono text-[10px] leading-[1.1] font-bold m-0"
-              style={{ color: theme.primary }}
-            >
-              {/* biome-ignore lint/style/useConsistentCurlyBraces: string contains escape sequence */}
-              {"▄▀█ ▄▀█ █\n█▀█ █▀█ █"}
-            </pre>
-          )
+          !icon && <AaiLogo />
         )}
         {/* State indicator */}
         <div className="ml-auto">
