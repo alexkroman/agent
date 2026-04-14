@@ -25,6 +25,7 @@ export function createMockToolContext(overrides?: Partial<ToolContext>): ToolCon
     kv: {} as never,
     messages: [],
     sessionId: "test-session",
+    send: vi.fn(),
     ...overrides,
   };
 }

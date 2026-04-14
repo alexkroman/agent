@@ -27,6 +27,7 @@ export type ExecuteToolCallOptions = {
   kv?: Kv | undefined;
   messages?: readonly Message[] | undefined;
   logger?: Logger | undefined;
+  send?: ((event: string, data: unknown) => void) | undefined;
 };
 
 function buildToolContext(opts: ExecuteToolCallOptions): ToolContext {
@@ -40,6 +41,9 @@ function buildToolContext(opts: ExecuteToolCallOptions): ToolContext {
     },
     messages: messages ?? [],
     sessionId: sessionId ?? "",
+    send(event: string, data: unknown): void {
+      opts.send?.(event, data);
+    },
   };
 }
 

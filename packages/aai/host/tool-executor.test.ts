@@ -121,4 +121,40 @@ describe("executeToolCall", () => {
     expect(result).toBe(JSON.stringify({ error: 'Tool "slow" timed out after 30000ms' }));
     vi.useRealTimers();
   });
+
+  test("ctx.send calls the send callback", async () => {
+    const sends: Array<{ event: string; data: unknown }> = [];
+    const tool: ToolDef = {
+      description: "sends an event",
+      parameters: z.object({}),
+      execute: (_args, ctx) => {
+        ctx.send("game_state", { hp: 10 });
+        return "ok";
+      },
+    };
+    const result = await executeToolCall(
+      "sender",
+      {},
+      {
+        tool,
+        env: {},
+        send: (event, data) => sends.push({ event, data }),
+      },
+    );
+    expect(result).toBe("ok");
+    expect(sends).toEqual([{ event: "game_state", data: { hp: 10 } }]);
+  });
+
+  test("ctx.send is a no-op when no send callback provided", async () => {
+    const tool: ToolDef = {
+      description: "sends an event",
+      parameters: z.object({}),
+      execute: (_args, ctx) => {
+        ctx.send("test", {});
+        return "ok";
+      },
+    };
+    const result = await executeToolCall("sender", {}, { tool, env: {} });
+    expect(result).toBe("ok");
+  });
 });
