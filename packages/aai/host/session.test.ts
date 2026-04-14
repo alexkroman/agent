@@ -573,4 +573,190 @@ describe("createS2sSession", () => {
     expect(client.events).toContainEvent("idle_timeout");
     vi.useRealTimers();
   });
+
+  test("idle timeout disabled when idleTimeoutMs is Infinity", async () => {
+    vi.useFakeTimers();
+    const { session, client } = setup({
+      agentConfig: {
+        name: "test-agent",
+        systemPrompt: DEFAULT_SYSTEM_PROMPT,
+        greeting: "Hello!",
+        idleTimeoutMs: Number.POSITIVE_INFINITY,
+      },
+    });
+    await session.start();
+    vi.advanceTimersByTime(600_000);
+    expect(client.events).not.toContainEvent("idle_timeout");
+    vi.useRealTimers();
+  });
+
+  test("idle timeout disabled when idleTimeoutMs is NaN", async () => {
+    vi.useFakeTimers();
+    const { session, client } = setup({
+      agentConfig: {
+        name: "test-agent",
+        systemPrompt: DEFAULT_SYSTEM_PROMPT,
+        greeting: "Hello!",
+        idleTimeoutMs: Number.NaN,
+      },
+    });
+    await session.start();
+    vi.advanceTimersByTime(600_000);
+    expect(client.events).not.toContainEvent("idle_timeout");
+    vi.useRealTimers();
+  });
+
+  // ─── Tool result truncation tests ───────────────────────────────────
+
+  test("tool result is truncated to MAX_TOOL_RESULT_CHARS", async () => {
+    const longResult = "x".repeat(5000);
+    const executeTool = vi.fn(async () => longResult);
+    const { session, client, mockHandle } = setup({ executeTool });
+    await session.start();
+
+    mockHandle._fire("replyStarted", { replyId: "r1" });
+    mockHandle._fire("event", buildClientEvent("tool_call", { toolCallId: "c1", toolName: "t1" }));
+    await session.waitForTurn();
+
+    const doneEvent = client.events.find((e) => {
+      const ev = e as Record<string, unknown>;
+      return ev.type === "tool_call_done" && ev.toolCallId === "c1";
+    }) as Record<string, unknown>;
+    expect(doneEvent).toBeDefined();
+    expect((doneEvent.result as string).length).toBe(4000);
+  });
+
+  test("tool result under MAX_TOOL_RESULT_CHARS is not truncated", async () => {
+    const shortResult = "x".repeat(100);
+    const executeTool = vi.fn(async () => shortResult);
+    const { session, client, mockHandle } = setup({ executeTool });
+    await session.start();
+
+    mockHandle._fire("replyStarted", { replyId: "r1" });
+    mockHandle._fire("event", buildClientEvent("tool_call", { toolCallId: "c1", toolName: "t1" }));
+    await session.waitForTurn();
+
+    const doneEvent = client.events.find((e) => {
+      const ev = e as Record<string, unknown>;
+      return ev.type === "tool_call_done" && ev.toolCallId === "c1";
+    }) as Record<string, unknown>;
+    expect(doneEvent).toBeDefined();
+    expect(doneEvent.result).toBe(shortResult);
+  });
+
+  // ─── handleReplyDone stale reply guard ──────────────────────────────
+
+  test("reply_done discards pending tools if reply changed before sendPending", async () => {
+    const executeTool = vi.fn(async () => "result-1");
+    const { session, mockHandle } = setup({ executeTool });
+    await session.start();
+
+    // Start reply r1, execute tool, accumulate pending result
+    mockHandle._fire("replyStarted", { replyId: "r1" });
+    mockHandle._fire("event", buildClientEvent("tool_call", { toolCallId: "c1", toolName: "t1" }));
+    await session.waitForTurn();
+
+    // New reply starts before reply_done fires for r1 — invalidates r1
+    mockHandle._fire("replyStarted", { replyId: "r2" });
+
+    // reply_done for the old r1 — stale pending tools should be discarded
+    // This simulates a race where reply_done arrives after replyStarted
+    mockHandle._fire("event", { type: "reply_done" });
+    await flush();
+
+    // The stale tool result from r1 should NOT have been sent
+    expect(mockHandle.sendToolResult).not.toHaveBeenCalled();
+  });
+
+  // ─── close handler cleans up state ──────────────────────────────────
+
+  test("s2s close handler nullifies ctx.s2s and cancels reply", async () => {
+    const executeTool = vi.fn(async () => "result");
+    const { session, mockHandle } = setup({ executeTool });
+    await session.start();
+
+    // Start a reply
+    mockHandle._fire("replyStarted", { replyId: "r1" });
+
+    // S2S connection closes
+    mockHandle._fire("close", 1000, "normal");
+
+    // Now trigger a tool call for the old reply — should be rejected as stale
+    mockHandle._fire("event", buildClientEvent("tool_call", { toolCallId: "c1", toolName: "t1" }));
+    await session.waitForTurn();
+
+    // Tool should not have been executed (reply was cancelled)
+    expect(executeTool).not.toHaveBeenCalled();
+  });
+
+  // ─── onHistory pushes messages correctly ────────────────────────────
+
+  test("onHistory messages are passed to tool execution context", async () => {
+    const capturedMessages: unknown[] = [];
+    const executeTool = vi.fn(
+      async (_name: string, _args: unknown, _sid: string, msgs: unknown) => {
+        capturedMessages.push(msgs);
+        return "ok";
+      },
+    );
+    const { session, mockHandle } = setup({ executeTool });
+    await session.start();
+
+    // Push history
+    session.onHistory([
+      { role: "user", content: "Earlier message" },
+      { role: "assistant", content: "Earlier response" },
+    ]);
+
+    // Trigger a tool call
+    mockHandle._fire("replyStarted", { replyId: "r1" });
+    mockHandle._fire("event", buildClientEvent("tool_call", { toolCallId: "c1", toolName: "t1" }));
+    await session.waitForTurn();
+
+    // executeTool should have received the history messages
+    const msgs = capturedMessages[0] as Array<{ role: string; content: string }>;
+    expect(msgs).toHaveLength(2);
+    expect(msgs[0]).toEqual(expect.objectContaining({ role: "user", content: "Earlier message" }));
+    expect(msgs[1]).toEqual(
+      expect.objectContaining({ role: "assistant", content: "Earlier response" }),
+    );
+  });
+
+  // ─── agent_transcript interrupted flag ──────────────────────────────
+
+  test("interrupted agent_transcript is NOT added to conversation history", async () => {
+    const capturedMessages: unknown[] = [];
+    const executeTool = vi.fn(
+      async (_name: string, _args: unknown, _sid: string, msgs: unknown) => {
+        capturedMessages.push(msgs);
+        return "ok";
+      },
+    );
+    const { session, mockHandle } = setup({ executeTool });
+    await session.start();
+
+    // Non-interrupted transcript — should be stored
+    mockHandle._fire("event", {
+      type: "agent_transcript",
+      text: "Complete response",
+      _interrupted: false,
+    });
+
+    // Interrupted transcript — should NOT be stored
+    mockHandle._fire("event", {
+      type: "agent_transcript",
+      text: "Partial respo",
+      _interrupted: true,
+    });
+
+    // Check messages via tool execution
+    mockHandle._fire("replyStarted", { replyId: "r1" });
+    mockHandle._fire("event", buildClientEvent("tool_call", { toolCallId: "c1", toolName: "t1" }));
+    await session.waitForTurn();
+
+    const msgs = capturedMessages[0] as Array<{ role: string; content: string }>;
+    // Only the non-interrupted transcript should appear
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0].content).toBe("Complete response");
+  });
 });

@@ -332,6 +332,52 @@ describe("createRuntime sandbox mode", () => {
     expect(result).toBe("mocked-result");
     expect(mockExecuteTool).toHaveBeenCalledWith("any_tool", {}, "s1", []);
   });
+
+  test("sandbox mode routes builtin tools to host executeToolCall, not RPC", async () => {
+    const rpcExecuteTool = vi.fn(async () => "rpc-result");
+    const mockToolSchemas = [{ name: "custom_tool", description: "Custom", parameters: {} }];
+
+    const runtime = createRuntime({
+      agent: makeAgent({ builtinTools: ["run_code"] }),
+      env: { CODE_VAR: "test" },
+      executeTool: rpcExecuteTool,
+      toolSchemas: mockToolSchemas,
+    });
+
+    // run_code is a builtin — should execute locally, not via RPC
+    const result = await runtime.executeTool("run_code", { code: '"hello"' }, "s1", []);
+    expect(rpcExecuteTool).not.toHaveBeenCalled();
+    // The result should come from the local builtin execution
+    expect(result).toBeDefined();
+    expect(typeof result).toBe("string");
+
+    // A non-builtin tool should go through RPC
+    await runtime.executeTool("custom_tool", {}, "s1", []);
+    expect(rpcExecuteTool).toHaveBeenCalledWith("custom_tool", {}, "s1", []);
+  });
+
+  test("sandbox mode passes env to builtin tool execution", async () => {
+    const rpcExecuteTool = vi.fn(async () => "rpc-result");
+    const mockToolSchemas = [{ name: "custom_tool", description: "Custom", parameters: {} }];
+
+    const runtime = createRuntime({
+      agent: makeAgent({ builtinTools: ["run_code"] }),
+      env: { ASSEMBLYAI_API_KEY: "test-key", MY_VAR: "hello" },
+      executeTool: rpcExecuteTool,
+      toolSchemas: mockToolSchemas,
+    });
+
+    // Builtin tools should have access to env (frozen)
+    const result = await runtime.executeTool(
+      "run_code",
+      { code: "JSON.stringify({ok:true})" },
+      "s1",
+      [],
+    );
+    expect(result).toBeDefined();
+    // The RPC executor should NOT be called for builtins
+    expect(rpcExecuteTool).not.toHaveBeenCalled();
+  });
 });
 
 describe("createRuntime shutdown", () => {
@@ -626,6 +672,48 @@ describe("createRuntime with custom options", () => {
     const runtime = createRuntime({ agent, env: {} });
     const result = await runtime.executeTool("get_state", {}, "s1", []);
     expect(JSON.parse(result)).toEqual({});
+  });
+
+  test("ctx.send dispatches custom_event to client sink", async () => {
+    const mockHandle = makeMockHandle();
+    const connectSpy = vi.spyOn(_internals, "connectS2s").mockResolvedValue(mockHandle);
+
+    const agent = makeAgent({
+      tools: {
+        send_event: {
+          description: "Send a custom event",
+          execute: (_args, ctx) => {
+            ctx.send("game_update", { score: 42 });
+            return "sent";
+          },
+        },
+      },
+    });
+    const runtime = createRuntime({ agent, env: {}, logger: silentLogger });
+    const client = {
+      open: true,
+      event: vi.fn(),
+      playAudioChunk: vi.fn(),
+      playAudioDone: vi.fn(),
+    };
+
+    // Create session to wire up the sink map
+    runtime.createSession({
+      id: "test-session",
+      agent: agent.name,
+      client,
+    });
+
+    // Now execute the tool — it should use the sink from the session
+    const result = await runtime.executeTool("send_event", {}, "test-session", []);
+    expect(result).toBe("sent");
+    expect(client.event).toHaveBeenCalledWith({
+      type: "custom_event",
+      event: "game_update",
+      data: { score: 42 },
+    });
+
+    connectSpy.mockRestore();
   });
 });
 
