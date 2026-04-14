@@ -22,14 +22,14 @@ describe("buildOciSpec", () => {
     expect(spec.root).toEqual({ path: "/rootfs", readonly: true });
   });
 
-  it("sets Deno command with no --allow-env flag", () => {
+  it("sets Deno command with container-internal paths and no --allow-env flag", () => {
     const spec = buildOciSpec(baseOpts);
     expect(spec.process.args).toEqual([
-      "/rootfs/bin/deno",
+      "/bin/deno",
       "run",
       "--v8-flags=--max-heap-size=64",
       "--no-prompt",
-      "/rootfs/harness.mjs",
+      "/harness.mjs",
     ]);
   });
 
@@ -158,5 +158,45 @@ describe("buildOciSpec", () => {
   it("sets terminal to false", () => {
     const spec = buildOciSpec(baseOpts);
     expect(spec.process.terminal).toBe(false);
+  });
+
+  it("uses container-internal paths in process.args, not host paths", () => {
+    const spec = buildOciSpec(baseOpts);
+    expect(spec.process.args[0]).toBe("/bin/deno");
+    expect(spec.process.args.at(-1)).toBe("/harness.mjs");
+  });
+
+  it("adds read-only bind mounts for deno binary and harness", () => {
+    const spec = buildOciSpec(baseOpts);
+    const denoMount = spec.mounts.find((m) => m.destination === "/bin/deno");
+    expect(denoMount).toEqual({
+      destination: "/bin/deno",
+      type: "bind",
+      source: "/rootfs/bin/deno",
+      options: ["ro"],
+    });
+    const harnessMount = spec.mounts.find((m) => m.destination === "/harness.mjs");
+    expect(harnessMount).toEqual({
+      destination: "/harness.mjs",
+      type: "bind",
+      source: "/rootfs/harness.mjs",
+      options: ["ro"],
+    });
+  });
+
+  it("allows overriding container-internal paths", () => {
+    const spec = buildOciSpec({
+      ...baseOpts,
+      containerDenoPath: "/usr/bin/deno",
+      containerHarnessPath: "/app/harness.mjs",
+    });
+    expect(spec.process.args[0]).toBe("/usr/bin/deno");
+    expect(spec.process.args.at(-1)).toBe("/app/harness.mjs");
+    const denoMount = spec.mounts.find((m) => m.destination === "/usr/bin/deno");
+    expect(denoMount).toBeDefined();
+    expect(denoMount?.source).toBe("/rootfs/bin/deno");
+    const harnessMount = spec.mounts.find((m) => m.destination === "/app/harness.mjs");
+    expect(harnessMount).toBeDefined();
+    expect(harnessMount?.source).toBe("/rootfs/harness.mjs");
   });
 });
