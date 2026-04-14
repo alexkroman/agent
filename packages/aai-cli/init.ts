@@ -229,12 +229,3 @@ export async function executeInit(
   if (url) data.url = url;
   return ok(data);
 }
-
-export async function runInitCommand(
-  opts: Parameters<typeof executeInit>[0],
-  extra?: Parameters<typeof executeInit>[1],
-): Promise<string> {
-  const result = await executeInit(opts, extra);
-  if (!result.ok) throw new Error(result.error);
-  return result.data.dir;
-}
