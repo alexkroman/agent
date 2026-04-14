@@ -83,14 +83,14 @@ describe("createS2sSession", () => {
     const { session, client } = setup();
     await session.start();
     session.onCancel();
-    expect(client.events).toContainEqual(expect.objectContaining({ type: "cancelled" }));
+    expect(client.events).toContainEvent("cancelled");
   });
 
   test("onReset clears state and emits reset event", async () => {
     const { session, client, mockHandle } = setup();
     await session.start();
     session.onReset();
-    expect(client.events).toContainEqual(expect.objectContaining({ type: "reset" }));
+    expect(client.events).toContainEvent("reset");
     expect(mockHandle.close).toHaveBeenCalled();
   });
 
@@ -119,10 +119,7 @@ describe("createS2sSession", () => {
     mockHandle._fire("event", { type: "user_transcript", text: "Hello there" });
     await flush();
 
-    expect(client.events).toContainEqual({
-      type: "user_transcript",
-      text: "Hello there",
-    });
+    expect(client.events).toContainEvent("user_transcript", { text: "Hello there" });
   });
 
   test("audio event forwards audio to client", async () => {
@@ -145,10 +142,7 @@ describe("createS2sSession", () => {
       _interrupted: false,
     });
 
-    expect(client.events).toContainEqual({
-      type: "agent_transcript",
-      text: "Full response",
-    });
+    expect(client.events).toContainEvent("agent_transcript", { text: "Full response" });
   });
 
   test("speech_started and speech_stopped events are forwarded", async () => {
@@ -158,8 +152,8 @@ describe("createS2sSession", () => {
     mockHandle._fire("event", { type: "speech_started" });
     mockHandle._fire("event", { type: "speech_stopped" });
 
-    expect(client.events).toContainEqual({ type: "speech_started" });
-    expect(client.events).toContainEqual({ type: "speech_stopped" });
+    expect(client.events).toContainEvent("speech_started");
+    expect(client.events).toContainEvent("speech_stopped");
   });
 
   test("reply_started resets tool call count", async () => {
@@ -177,7 +171,7 @@ describe("createS2sSession", () => {
     mockHandle._fire("event", { type: "reply_done" });
 
     expect(client.audioDoneCount).toBe(1);
-    expect(client.events).toContainEqual({ type: "reply_done" });
+    expect(client.events).toContainEvent("reply_done");
   });
 
   test("cancelled event emits cancelled", async () => {
@@ -186,7 +180,7 @@ describe("createS2sSession", () => {
 
     mockHandle._fire("event", { type: "cancelled" });
 
-    expect(client.events).toContainEqual({ type: "cancelled" });
+    expect(client.events).toContainEvent("cancelled");
   });
 
   test("error event emits error to client and closes handle", async () => {
@@ -195,11 +189,7 @@ describe("createS2sSession", () => {
 
     mockHandle._fire("error", new Error("Something broke"));
 
-    expect(client.events).toContainEqual({
-      type: "error",
-      code: "internal",
-      message: "Something broke",
-    });
+    expect(client.events).toContainEvent("error", { code: "internal", message: "Something broke" });
     expect(mockHandle.close).toHaveBeenCalled();
   });
 
@@ -227,14 +217,12 @@ describe("createS2sSession", () => {
       "session-1",
       expect.any(Array),
     );
-    expect(client.events).toContainEqual({
-      type: "tool_call",
+    expect(client.events).toContainEvent("tool_call", {
       toolCallId: "call-1",
       toolName: "my_tool",
       args: { key: "value" },
     });
-    expect(client.events).toContainEqual({
-      type: "tool_call_done",
+    expect(client.events).toContainEvent("tool_call_done", {
       toolCallId: "call-1",
       result: "tool-output",
     });
@@ -318,13 +306,7 @@ describe("createS2sSession", () => {
 
     await session.start();
 
-    expect(client.events).toContainEqual(
-      expect.objectContaining({
-        type: "error",
-        code: "internal",
-        message: "connect failed",
-      }),
-    );
+    expect(client.events).toContainEvent("error", { code: "internal", message: "connect failed" });
 
     spy.mockRestore();
   });
@@ -503,10 +485,6 @@ describe("createS2sSession", () => {
 
   // ─── Idle timeout tests ──────────────────────────────────────────────
 
-  function hasIdleTimeout(events: unknown[]): boolean {
-    return events.some((e) => (e as Record<string, unknown>).type === "idle_timeout");
-  }
-
   test("idle timeout fires after configured period of inactivity", async () => {
     vi.useFakeTimers();
     const { session, client, mockHandle } = setup({
@@ -519,7 +497,7 @@ describe("createS2sSession", () => {
     });
     await session.start();
     vi.advanceTimersByTime(10_000);
-    expect(hasIdleTimeout(client.events)).toBe(true);
+    expect(client.events).toContainEvent("idle_timeout");
     expect(mockHandle.close).toHaveBeenCalled();
     vi.useRealTimers();
   });
@@ -538,9 +516,9 @@ describe("createS2sSession", () => {
     vi.advanceTimersByTime(8000);
     session.onAudio(new Uint8Array([1, 2, 3]));
     vi.advanceTimersByTime(8000);
-    expect(hasIdleTimeout(client.events)).toBe(false);
+    expect(client.events).not.toContainEvent("idle_timeout");
     vi.advanceTimersByTime(2000);
-    expect(hasIdleTimeout(client.events)).toBe(true);
+    expect(client.events).toContainEvent("idle_timeout");
     vi.useRealTimers();
   });
 
@@ -556,7 +534,7 @@ describe("createS2sSession", () => {
     });
     await session.start();
     vi.advanceTimersByTime(600_000);
-    expect(hasIdleTimeout(client.events)).toBe(false);
+    expect(client.events).not.toContainEvent("idle_timeout");
     vi.useRealTimers();
   });
 
@@ -573,7 +551,7 @@ describe("createS2sSession", () => {
     await session.start();
     await session.stop();
     vi.advanceTimersByTime(20_000);
-    expect(hasIdleTimeout(client.events)).toBe(false);
+    expect(client.events).not.toContainEvent("idle_timeout");
     vi.useRealTimers();
   });
 
@@ -582,9 +560,9 @@ describe("createS2sSession", () => {
     const { session, client } = setup();
     await session.start();
     vi.advanceTimersByTime(240_000);
-    expect(hasIdleTimeout(client.events)).toBe(false);
+    expect(client.events).not.toContainEvent("idle_timeout");
     vi.advanceTimersByTime(60_000);
-    expect(hasIdleTimeout(client.events)).toBe(true);
+    expect(client.events).toContainEvent("idle_timeout");
     vi.useRealTimers();
   });
 });

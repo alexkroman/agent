@@ -69,6 +69,13 @@ export async function deployTestAgent(
       clientFiles: {
         "index.html": "<!DOCTYPE html><html><body>test</body></html>",
       },
+      agentConfig: {
+        name: "test-agent",
+        systemPrompt: "Test",
+        greeting: "",
+        maxSteps: 1,
+        tools: {},
+      },
     }),
   });
   if (!res.ok) {

@@ -2,7 +2,8 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "incremental": true,
-    "tsBuildInfoFile": "../../.tsbuildinfo/aai-cli.tsbuildinfo"
+    "tsBuildInfoFile": "../../.tsbuildinfo/aai-cli.tsbuildinfo",
+    "types": ["node", "vitest/globals"]
   },
   "include": ["./**/*.ts"],
   "exclude": ["node_modules", "dist", "templates", "**/__snapshots__"]

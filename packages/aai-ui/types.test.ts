@@ -1,6 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, expectTypeOf, it, test } from "vitest";
-import type { AgentState, ClientTheme, ToolCallInfo } from "./types.ts";
+import type { Session } from "./context.ts";
+import type { SessionCore, SessionSnapshot } from "./session-core.ts";
+import type { AgentState, ChatMessage, ClientTheme, SessionError, ToolCallInfo } from "./types.ts";
 import { MIC_BUFFER_SECONDS } from "./types.ts";
 
 describe("types", () => {
@@ -49,5 +51,41 @@ describe("ClientTheme", () => {
     expectTypeOf<ClientTheme>().toHaveProperty("text");
     expectTypeOf<ClientTheme>().toHaveProperty("surface");
     expectTypeOf<ClientTheme>().toHaveProperty("border");
+  });
+});
+
+describe("SessionCore type contract", () => {
+  test("has subscribe/getSnapshot/connect/disconnect/cancel/start/toggle", () => {
+    expectTypeOf<SessionCore["subscribe"]>().toBeFunction();
+    expectTypeOf<SessionCore["getSnapshot"]>().toBeFunction();
+    expectTypeOf<SessionCore["connect"]>().toBeFunction();
+    expectTypeOf<SessionCore["disconnect"]>().toBeFunction();
+    expectTypeOf<SessionCore["cancel"]>().toBeFunction();
+    expectTypeOf<SessionCore["start"]>().toBeFunction();
+    expectTypeOf<SessionCore["toggle"]>().toBeFunction();
+  });
+
+  test("getSnapshot returns SessionSnapshot", () => {
+    expectTypeOf<SessionCore["getSnapshot"]>().returns.toEqualTypeOf<SessionSnapshot>();
+  });
+});
+
+describe("SessionSnapshot type contract", () => {
+  test("has expected field types", () => {
+    expectTypeOf<SessionSnapshot["state"]>().toEqualTypeOf<AgentState>();
+    expectTypeOf<SessionSnapshot["messages"]>().toEqualTypeOf<ChatMessage[]>();
+    expectTypeOf<SessionSnapshot["error"]>().toEqualTypeOf<SessionError | null>();
+    expectTypeOf<SessionSnapshot["started"]>().toEqualTypeOf<boolean>();
+    expectTypeOf<SessionSnapshot["running"]>().toEqualTypeOf<boolean>();
+  });
+});
+
+describe("Session type contract", () => {
+  test("extends SessionSnapshot with control methods", () => {
+    expectTypeOf<Session>().toMatchTypeOf<SessionSnapshot>();
+    expectTypeOf<Session["start"]>().toBeFunction();
+    expectTypeOf<Session["cancel"]>().toBeFunction();
+    expectTypeOf<Session["disconnect"]>().toBeFunction();
+    expectTypeOf<Session["toggle"]>().toBeFunction();
   });
 });

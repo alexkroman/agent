@@ -1,18 +1,15 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "ignoreUnresolved": ["./_jsdom-setup.ts"],
+  "ignoreUnresolved": ["./_jsdom-setup.ts", "./sdk/_test-matchers.ts"],
   "ignoreExportsUsedInFile": true,
   "exclude": ["exports", "types", "optionalPeerDependencies", "duplicates"],
   "workspaces": {
     ".": {
-      "entry": ["scripts/*.{mjs,ts}", "vitest.adversarial.config.ts"],
-      "ignoreDependencies": ["ws"]
+      "entry": ["scripts/*.{mjs,ts}", "vitest.adversarial.config.ts", "stryker*.config.mjs"],
+      "ignoreDependencies": ["ws", "@stryker-mutator/api"]
     },
     "packages/aai": {
       "entry": [
-        "index.ts",
-        "host/runtime-barrel.ts",
-        "sdk/manifest-barrel.ts",
         "host/_test-utils.ts",
         "**/*.test.ts"
       ],
@@ -23,7 +20,7 @@
       "includeEntryExports": true
     },
     "packages/aai-cli": {
-      "entry": ["bin.mjs", "types.ts", "**/*.test.ts", "_test-utils.ts"]
+      "entry": ["**/*.test.ts", "_test-utils.ts"]
     },
     "packages/aai-templates": {
       "ignore": ["**"]

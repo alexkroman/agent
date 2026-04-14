@@ -1,0 +1,38 @@
+import { base } from "./stryker.base.config.mjs";
+
+/** @type {import('@stryker-mutator/api/core').PartialStrykerOptions} */
+export default {
+  ...base,
+  mutate: [
+    "packages/aai/sdk/protocol.ts",
+    "packages/aai/sdk/manifest.ts",
+    "packages/aai/sdk/_internal-types.ts",
+    "packages/aai/sdk/system-prompt.ts",
+    "packages/aai/host/**/*.ts",
+    "packages/aai-server/ndjson-transport.ts",
+    "packages/aai-server/orchestrator.ts",
+    "packages/aai-server/ssrf.ts",
+    "packages/aai-server/secrets.ts",
+    "packages/aai-server/middleware.ts",
+    "packages/aai-server/bundle-store.ts",
+    "packages/aai-cli/_api-client.ts",
+    "packages/aai-cli/_bundler.ts",
+    "packages/aai-cli/_config.ts",
+    "packages/aai-cli/_deploy.ts",
+    "packages/aai-cli/_init.ts",
+    "packages/aai-cli/_dev-server.ts",
+    "packages/aai-cli/_templates.ts",
+    "packages/aai-cli/secret.ts",
+    "!**/*.test.ts",
+    "!**/_test-*.ts",
+    "!**/*-barrel.ts",
+    "!**/fixtures/**",
+    "!**/index.ts",
+    "!packages/aai/host/testing.ts",
+    "!packages/aai/host/matchers.ts",
+    "!packages/aai/host/unstorage-kv.ts",
+  ],
+  htmlReporter: { fileName: "reports/mutation/index.html" },
+  thresholds: { high: 70, low: 50, break: 40 },
+  incrementalFile: ".stryker-incremental.json",
+};

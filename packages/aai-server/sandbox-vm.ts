@@ -176,6 +176,11 @@ export function parseSandboxLimitsFromEnv(
   return limits;
 }
 
+// ── Test-only internals ─────────────────────────────────────────────────
+
+/** @internal Exposed for unit tests only. */
+export const _internals = { configureSandbox, createConnection };
+
 // ── Factory ──────────────────────────────────────────────────────────────────
 
 /**

@@ -1,14 +1,18 @@
-import { describe, expect, test } from "vitest";
+import fc from "fast-check";
+import { describe, expect, expectTypeOf, test } from "vitest";
+import { z } from "zod";
 import {
   DEFAULT_STT_SAMPLE_RATE,
   DEFAULT_TTS_SAMPLE_RATE,
   TOOL_EXECUTION_TIMEOUT_MS,
 } from "./constants.ts";
+import type { ClientEvent, ServerMessage } from "./protocol.ts";
 import {
   buildReadyConfig,
   ClientEventSchema,
   ClientMessageSchema,
   KvRequestSchema,
+  lenientParse,
   SessionErrorCodeSchema,
 } from "./protocol.ts";
 
@@ -86,32 +90,23 @@ describe("SessionErrorCodeSchema", () => {
 
 describe("ClientEventSchema", () => {
   test("accepts speech_started", () => {
-    const result = ClientEventSchema.safeParse({ type: "speech_started" });
-    expect(result.success).toBe(true);
+    expect({ type: "speech_started" }).toBeValidClientEvent();
   });
 
   test("accepts user_transcript", () => {
-    const result = ClientEventSchema.safeParse({
-      type: "user_transcript",
-      text: "hello world",
-    });
-    expect(result.success).toBe(true);
+    expect({ type: "user_transcript", text: "hello world" }).toBeValidClientEvent();
   });
 
   test("accepts error event", () => {
-    const result = ClientEventSchema.safeParse({
+    expect({
       type: "error",
       code: "internal",
       message: "something went wrong",
-    });
-    expect(result.success).toBe(true);
+    }).toBeValidClientEvent();
   });
 
   test("rejects unknown type", () => {
-    const result = ClientEventSchema.safeParse({
-      type: "unknown_event_type",
-    });
-    expect(result.success).toBe(false);
+    expect({ type: "unknown_event_type" }).not.toBeValidClientEvent();
   });
 });
 
@@ -161,5 +156,101 @@ describe("buildReadyConfig", () => {
     const config = buildReadyConfig({ inputSampleRate: 8000, outputSampleRate: 48_000 });
     expect(config.sampleRate).toBe(8000);
     expect(config.ttsSampleRate).toBe(48_000);
+  });
+});
+
+// ── Property-based tests ─────────────────────────────────────────────────
+
+describe("property: lenientParse", () => {
+  test("never throws on arbitrary input", () => {
+    fc.assert(
+      fc.property(fc.anything(), (input) => {
+        const result = lenientParse(ClientEventSchema, input);
+        expect(result).toHaveProperty("ok");
+      }),
+    );
+  });
+
+  test("valid ClientEvents round-trip through parse", () => {
+    const errorCodes = [
+      "stt",
+      "llm",
+      "tts",
+      "tool",
+      "protocol",
+      "connection",
+      "audio",
+      "internal",
+    ] as const;
+
+    const speechStartedArb = fc.constant({ type: "speech_started" as const });
+
+    const userTranscriptArb = fc.record({
+      type: fc.constant("user_transcript" as const),
+      text: fc.string(),
+    });
+
+    const errorEventArb = fc.record({
+      type: fc.constant("error" as const),
+      code: fc.constantFrom(...errorCodes),
+      message: fc.string(),
+    });
+
+    const clientEventArb = fc.oneof(speechStartedArb, userTranscriptArb, errorEventArb);
+
+    fc.assert(
+      fc.property(clientEventArb, (event) => {
+        const result = lenientParse(ClientEventSchema, event);
+        expect(result.ok).toBe(true);
+      }),
+    );
+  });
+
+  test("objects without type field are malformed", () => {
+    const noTypeArb = fc.object().filter((obj) => !("type" in obj));
+
+    fc.assert(
+      fc.property(noTypeArb, (obj) => {
+        const result = lenientParse(ClientEventSchema, obj);
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.malformed).toBe(true);
+        }
+      }),
+    );
+  });
+});
+
+describe("protocol type contracts", () => {
+  test("ClientEvent narrows on user_transcript discriminant", () => {
+    type UserTranscript = Extract<ClientEvent, { type: "user_transcript" }>;
+    expectTypeOf<UserTranscript>().toHaveProperty("text");
+    expectTypeOf<UserTranscript["text"]>().toBeString();
+  });
+
+  test("ClientEvent narrows on tool_call discriminant", () => {
+    type ToolCall = Extract<ClientEvent, { type: "tool_call" }>;
+    expectTypeOf<ToolCall>().toHaveProperty("toolCallId");
+    expectTypeOf<ToolCall>().toHaveProperty("toolName");
+    expectTypeOf<ToolCall>().toHaveProperty("args");
+  });
+
+  test("ClientEvent narrows on error discriminant", () => {
+    type ErrorEvent = Extract<ClientEvent, { type: "error" }>;
+    expectTypeOf<ErrorEvent>().toHaveProperty("code");
+    expectTypeOf<ErrorEvent>().toHaveProperty("message");
+  });
+
+  test("ServerMessage has type property on all variants", () => {
+    expectTypeOf<ServerMessage>().toHaveProperty("type");
+  });
+
+  test("lenientParse returns ok/error discriminated union", () => {
+    const schema = z.object({ type: z.literal("test"), value: z.number() });
+    type Parsed = z.infer<typeof schema>;
+    const result = lenientParse(schema, {});
+    expectTypeOf(result).toEqualTypeOf<
+      { ok: true; data: Parsed } | { ok: false; malformed: boolean; error: string }
+    >();
   });
 });
