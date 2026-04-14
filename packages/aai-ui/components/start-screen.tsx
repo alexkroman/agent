@@ -5,6 +5,7 @@
 import clsx from "clsx";
 import type { ReactNode } from "react";
 import { useSession, useTheme } from "../context.ts";
+import { AaiLogo } from "./aai-logo.tsx";
 import { Button } from "./button.tsx";
 
 /**
@@ -55,7 +56,7 @@ export function StartScreen({
         className="flex flex-col items-center gap-4 border rounded-lg px-12 py-10 max-w-sm text-center"
         style={{ background: theme.surface, borderColor: theme.border }}
       >
-        {icon}
+        {icon ?? (!title && <AaiLogo size={20} />)}
         {title && (
           <h1 className="font-semibold m-0" style={{ color: theme.primary }}>
             {title}
