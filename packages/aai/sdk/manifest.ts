@@ -67,22 +67,18 @@ const ManifestSchema = z.object({
   allowedHosts: z
     .array(z.string())
     .optional()
-    .refine(
-      (hosts) => {
-        if (!hosts) return true;
-        return hosts.every((h) => validateAllowedHostPattern(h).valid);
-      },
-      (hosts) => {
-        const invalid = hosts?.find((h) => !validateAllowedHostPattern(h).valid);
-        const result = invalid ? validateAllowedHostPattern(invalid) : undefined;
-        return {
-          message:
-            result && !result.valid
-              ? `Invalid allowedHosts pattern "${invalid}": ${result.reason}`
-              : "Invalid allowedHosts pattern",
-        };
-      },
-    ),
+    .superRefine((hosts, ctx) => {
+      if (!hosts) return;
+      for (const h of hosts) {
+        const result = validateAllowedHostPattern(h);
+        if (!result.valid) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `Invalid allowedHosts pattern "${h}": ${result.reason}`,
+          });
+        }
+      }
+    }),
 });
 
 /**
