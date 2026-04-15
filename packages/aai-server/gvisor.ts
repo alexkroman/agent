@@ -9,7 +9,7 @@
  * Communication uses stdio pipes (stdin/stdout) with NDJSON transport.
  */
 
-import { type ChildProcess, execFile, execFileSync, spawn } from "node:child_process";
+import { type ChildProcess, execFile, spawn } from "node:child_process";
 import { chmodSync, copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -31,13 +31,9 @@ function findRunsc(): string | null {
     runscPath = null;
     return null;
   }
-  try {
-    runscPath = execFileSync("which", ["runsc"], { encoding: "utf-8" }).trim();
-    return runscPath;
-  } catch {
-    runscPath = null;
-    return null;
-  }
+  const p = "/usr/local/bin/runsc";
+  runscPath = existsSync(p) ? p : null;
+  return runscPath;
 }
 
 /** Cached absolute path to deno binary, or null if not found. */
@@ -45,13 +41,9 @@ let denoPath: string | null | undefined;
 
 function findDeno(): string | null {
   if (denoPath !== undefined) return denoPath;
-  try {
-    denoPath = execFileSync("which", ["deno"], { encoding: "utf-8" }).trim();
-    return denoPath;
-  } catch {
-    denoPath = null;
-    return null;
-  }
+  const p = "/usr/local/bin/deno";
+  denoPath = existsSync(p) ? p : null;
+  return denoPath;
 }
 
 /**
