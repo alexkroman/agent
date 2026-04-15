@@ -1,5 +1,15 @@
 # @alexkroman1/aai
 
+## 1.2.0
+
+### Minor Changes
+
+- ed0dfbb: Add allowedHosts manifest field and host-proxied fetch for sandbox agents
+
+### Patch Changes
+
+- 231ebc1: Fix Docker build (missing unzip, CI=true for pnpm) and add test:adversarial command with CI integration
+
 ## 1.1.0
 
 ### Minor Changes
