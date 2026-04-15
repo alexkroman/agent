@@ -202,15 +202,51 @@ jobs:
       - run: pnpm --filter @alexkroman1/aai-cli exec playwright install --with-deps chromium
       - run: pnpm exec turbo run check:e2e
 
+  load-and-adversarial:
+    needs: setup
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Check for relevant changes
+        id: changes
+        run: |
+          FILES=$(git diff --name-only origin/main...HEAD)
+          if echo "$FILES" | grep -qE '^(packages/aai-server/|.*Dockerfile|docker-compose)'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.changes.outputs.run == 'true'
+        uses: pnpm/action-setup@v5
+      - if: steps.changes.outputs.run == 'true'
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - if: steps.changes.outputs.run == 'true'
+        uses: actions/cache/restore@v5
+        with:
+          path: |
+            node_modules
+            packages/*/node_modules
+            packages/*/dist
+            .tsbuildinfo
+            .turbo
+          key: workspace-${{ runner.os }}-node${{ hashFiles('.node-version') }}-${{ github.sha }}
+      - if: steps.changes.outputs.run == 'true'
+        run: pnpm exec turbo run check:load check:adversarial
+
   # Single gate job for branch protection — add only "ci" as a required check
   ci:
     runs-on: ubuntu-latest
     if: always()
-    needs: [lint-typecheck-and-checks, test, integration, e2e, docker-gvisor]
+    needs: [lint-typecheck-and-checks, test, integration, e2e, docker-gvisor, load-and-adversarial]
     steps:
       - name: Check results
         run: |
-          results="${{ needs.lint-typecheck-and-checks.result }} ${{ needs.test.result }} ${{ needs.integration.result }} ${{ needs.e2e.result }} ${{ needs.docker-gvisor.result }}"
+          results="${{ needs.lint-typecheck-and-checks.result }} ${{ needs.test.result }} ${{ needs.integration.result }} ${{ needs.e2e.result }} ${{ needs.docker-gvisor.result }} ${{ needs.load-and-adversarial.result }}"
           for r in $results; do
             if [ "$r" != "success" ] && [ "$r" != "skipped" ]; then
               echo "CI failed: one or more jobs did not succeed"
