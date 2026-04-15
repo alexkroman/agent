@@ -36,6 +36,7 @@
     "docker:up": "docker compose up --build",
     "docker:down": "docker compose down -v",
     "test:load": "pnpm --filter aai-server test:load",
+    "test:adversarial": "pnpm --filter aai-server test:adversarial",
     "syncpack": "syncpack",
     "changeset": "changeset",
     "changeset:create": "bash scripts/create-changeset.sh",

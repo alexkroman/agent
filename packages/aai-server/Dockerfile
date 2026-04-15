@@ -36,13 +36,13 @@ RUN pnpm --filter aai build \
     && pnpm --filter aai-server build
 
 # Install production deps only (separate layer for COPY)
-RUN pnpm install --frozen-lockfile --ignore-scripts --prod
+RUN CI=true pnpm install --frozen-lockfile --ignore-scripts --prod
 
 # ── Binary stage — fetch runsc and deno ─────────────────────────────────────
 
 FROM node:24-slim AS binaries
 
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl unzip \
     && curl -fsSL "https://storage.googleapis.com/gvisor/releases/release/latest/x86_64/runsc" \
        -o /usr/local/bin/runsc \
     && chmod +x /usr/local/bin/runsc \

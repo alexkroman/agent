@@ -18,7 +18,9 @@
     "test:docker": "VITEST_PROFILE=docker VITEST_INCLUDE=docker-build.test.ts vitest run -c ../../vitest.slow.config.ts",
     "test:gvisor": "VITEST_PROFILE=gvisor VITEST_INCLUDE=packages/aai-server/gvisor-integration.test.ts vitest run -c ../../vitest.slow.config.ts",
     "test:load": "vitest run --config load/vitest.load.config.ts",
-    "check:load": "pnpm run test:load"
+    "check:load": "pnpm run test:load",
+    "test:adversarial": "vitest run --config adversarial/vitest.adversarial.config.ts",
+    "check:adversarial": "pnpm run test:adversarial"
   },
   "dependencies": {
     "@alexkroman1/aai": "workspace:*",

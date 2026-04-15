@@ -46,6 +46,10 @@
       "dependsOn": ["build"],
       "inputs": ["**/*.ts", "load/**/*.ts", "../../docker-compose.yml", "Dockerfile"]
     },
+    "check:adversarial": {
+      "dependsOn": ["build"],
+      "inputs": ["**/*.ts", "adversarial/**/*.ts", "../../docker-compose.yml", "Dockerfile"]
+    },
     "check:typecheck": {
       "dependsOn": ["^build"]
     },
