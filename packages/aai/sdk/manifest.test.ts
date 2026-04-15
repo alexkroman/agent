@@ -15,6 +15,7 @@ describe("parseManifest", () => {
       maxSteps: 5,
       toolChoice: "auto",
       builtinTools: [],
+      allowedHosts: [],
       tools: {},
     });
   });
@@ -55,6 +56,37 @@ describe("parseManifest", () => {
 
   test("rejects unknown builtinTools", () => {
     expect(() => parseManifest({ name: "X", builtinTools: ["not_a_tool"] })).toThrow();
+  });
+
+  test("allowedHosts defaults to empty array when omitted", () => {
+    const result = parseManifest({ name: "test" });
+    expect(result.allowedHosts).toEqual([]);
+  });
+
+  test("allowedHosts passes through valid patterns", () => {
+    const result = parseManifest({
+      name: "test",
+      allowedHosts: ["api.weather.com", "*.mycompany.com"],
+    });
+    expect(result.allowedHosts).toEqual(["api.weather.com", "*.mycompany.com"]);
+  });
+
+  test("rejects invalid allowedHosts pattern", () => {
+    expect(() => parseManifest({ name: "test", allowedHosts: ["*"] })).toThrow();
+  });
+
+  test("rejects allowedHosts with IP address", () => {
+    expect(() => parseManifest({ name: "test", allowedHosts: ["192.168.1.1"] })).toThrow();
+  });
+
+  test("rejects allowedHosts with private TLD", () => {
+    expect(() => parseManifest({ name: "test", allowedHosts: ["*.internal"] })).toThrow();
+  });
+
+  test("rejects allowedHosts with protocol", () => {
+    expect(() =>
+      parseManifest({ name: "test", allowedHosts: ["https://api.example.com"] }),
+    ).toThrow();
   });
 });
 
@@ -116,5 +148,10 @@ describe("manifest type contracts", () => {
   test("agentToolsToSchemas returns ToolSchema[]", () => {
     const schemas = agentToolsToSchemas({});
     expectTypeOf(schemas).toEqualTypeOf<ToolSchema[]>();
+  });
+
+  test("Manifest has allowedHosts as string[]", () => {
+    const result = parseManifest({ name: "test" });
+    expectTypeOf(result.allowedHosts).toEqualTypeOf<string[]>();
   });
 });

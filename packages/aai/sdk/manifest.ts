@@ -7,6 +7,7 @@
  */
 
 import { z } from "zod";
+import { validateAllowedHostPattern } from "./allowed-hosts.ts";
 import { BuiltinToolSchema, DEFAULT_GREETING, DEFAULT_SYSTEM_PROMPT } from "./types.ts";
 
 /**
@@ -43,6 +44,8 @@ export type Manifest = {
   theme?: Record<string, string> | undefined;
   /** Custom tool definitions keyed by tool name. */
   tools: Record<string, ToolManifest>;
+  /** Hostnames the agent is allowed to fetch. Empty = no fetch access. */
+  allowedHosts: string[];
 };
 
 const ToolManifestSchema = z.object({
@@ -61,6 +64,25 @@ const ManifestSchema = z.object({
   idleTimeoutMs: z.number().int().positive().optional(),
   theme: z.record(z.string(), z.string()).optional(),
   tools: z.record(z.string(), ToolManifestSchema).optional(),
+  allowedHosts: z
+    .array(z.string())
+    .optional()
+    .refine(
+      (hosts) => {
+        if (!hosts) return true;
+        return hosts.every((h) => validateAllowedHostPattern(h).valid);
+      },
+      (hosts) => {
+        const invalid = hosts?.find((h) => !validateAllowedHostPattern(h).valid);
+        const result = invalid ? validateAllowedHostPattern(invalid) : undefined;
+        return {
+          message:
+            result && !result.valid
+              ? `Invalid allowedHosts pattern "${invalid}": ${result.reason}`
+              : "Invalid allowedHosts pattern",
+        };
+      },
+    ),
 });
 
 /**
@@ -85,5 +107,6 @@ export function parseManifest(input: unknown): Manifest {
     idleTimeoutMs: parsed.idleTimeoutMs,
     theme: parsed.theme,
     tools: parsed.tools ?? {},
+    allowedHosts: parsed.allowedHosts ?? [],
   };
 }
