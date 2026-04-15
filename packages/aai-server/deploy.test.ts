@@ -209,6 +209,7 @@ describe("POST /deploy", () => {
       name: "config-agent",
       systemPrompt: "Be helpful",
       toolSchemas: [],
+      allowedHosts: [],
     };
 
     const res = await fetch("/deploy", {

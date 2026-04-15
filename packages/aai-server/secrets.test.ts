@@ -101,6 +101,7 @@ describe("verifySlugOwner", () => {
         systemPrompt: "test",
         greeting: "",
         toolSchemas: [],
+        allowedHosts: [],
       },
     });
     const result = await verifySlugOwner("owner-key", {
@@ -124,6 +125,7 @@ describe("verifySlugOwner", () => {
         systemPrompt: "test",
         greeting: "",
         toolSchemas: [],
+        allowedHosts: [],
       },
     });
     const result = await verifySlugOwner("intruder-key", {

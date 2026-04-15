@@ -80,13 +80,12 @@ function emitError(id: string, message: string, emit: (msg: FetchResponseMessage
 }
 
 function buildRequestInit(req: FetchRequest, signal: AbortSignal): RequestInit {
-  const bodyInit: BodyInit | undefined =
-    req.body !== null ? Buffer.from(req.body, "base64") : undefined;
+  const body: Buffer | undefined = req.body !== null ? Buffer.from(req.body, "base64") : undefined;
   return {
     method: req.method,
     headers: req.headers,
     signal,
-    ...(bodyInit !== undefined ? { body: bodyInit } : {}),
+    ...(body !== undefined ? { body } : {}),
   };
 }
 

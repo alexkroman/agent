@@ -35,6 +35,7 @@ export const IsolateConfigSchema = z.object({
   toolChoice: z.enum(["auto", "required"]).optional(),
   builtinTools: z.array(z.string()).optional(),
   toolSchemas: z.array(ToolSchemaSchema_).default([]),
+  allowedHosts: z.array(z.string()).default([]),
 });
 
 export type IsolateConfig = z.infer<typeof IsolateConfigSchema>;

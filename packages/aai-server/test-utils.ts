@@ -128,6 +128,7 @@ export const TEST_AGENT_CONFIG = {
   systemPrompt: "Test",
   greeting: "",
   toolSchemas: [],
+  allowedHosts: [] as string[],
 };
 
 export function deployBody(overrides?: Record<string, unknown>): string {
