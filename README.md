@@ -10,4 +10,5 @@ npx @alexkroman1/aai-cli@latest
 
 - [CLAUDE.md](./CLAUDE.md) — for humans and agents working on the aai
   framework itself
-- [packages/aai-templates/scaffold/CLAUDE.md](./packages/aai-templates/scaffold/CLAUDE.md) — for humans and agents building voice agents
+- [scaffold/CLAUDE.md](./packages/aai-templates/scaffold/CLAUDE.md)
+  — for humans and agents building voice agents

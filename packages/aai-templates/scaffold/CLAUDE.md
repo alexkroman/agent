@@ -153,7 +153,7 @@ export default agent({
 Enable via `builtinTools` in `agent()`.
 
 | Tool | Description | Params |
-|---|---|---|
+| --- | --- | --- |
 | `web_search` | Search the web (Brave) | `query`, `max_results?` (default 5) |
 | `visit_webpage` | Fetch URL to plain text | `url` |
 | `fetch_json` | HTTP GET a JSON API | `url`, `headers?` |
@@ -241,7 +241,7 @@ client({ component: MyApp });
 ### `client()` config
 
 | Field | Type | Default | Description |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `name` | `string` | — | Header/start screen title (tier 1) |
 | `component` | `ComponentType` | — | Custom root component (tier 2) |
 | `sidebar` | `ComponentType` | — | Sidebar alongside default chat (tier 1) |
@@ -253,7 +253,7 @@ client({ component: MyApp });
 ### `useSession()` return type
 
 | Field | Type | Description |
-|---|---|---|
+| --- | --- | --- |
 | `state` | `AgentState` | `"disconnected"` `"connecting"` `"ready"` `"listening"` `"thinking"` `"speaking"` `"error"` |
 | `messages` | `ChatMessage[]` | `{ role, content }` |
 | `toolCalls` | `ToolCallInfo[]` | `{ callId, name, args, status, result? }` |
@@ -299,7 +299,7 @@ re-processes every tool call on every render, causing duplicates.
 Available from `@alexkroman1/aai-ui`:
 
 | Component | Props | Description |
-|---|---|---|
+| --- | --- | --- |
 | `StartScreen` | `children, icon?, title?, subtitle?, buttonText?` | Centered start card; renders children after start |
 | `ChatView` | `icon?, title?` | Chat interface (header + messages + controls) |
 | `SidebarLayout` | `sidebar, children, sidebarWidth?, side?` | Two-column layout |
