@@ -19,7 +19,7 @@
 // ---- Inline TextLineStream (avoids jsr: import that can't be bundled) -------
 
 /** Splits a text stream into lines by \n. Minimal replacement for @std/streams TextLineStream. */
-class TextLineStream extends TransformStream<string, string> {
+export class TextLineStream extends TransformStream<string, string> {
   constructor() {
     let buf = "";
     super({
@@ -108,16 +108,16 @@ type JsonRpcMessage = JsonRpcRequest | JsonRpcNotification | JsonRpcResponse;
 
 const encoder = new TextEncoder();
 
-function writeMessage(msg: JsonRpcMessage): void {
+export function writeMessage(msg: JsonRpcMessage): void {
   const line = `${JSON.stringify(msg)}\n`;
   Deno.stdout.writeSync(encoder.encode(line));
 }
 
-function sendResponse(id: number | string, result: unknown): void {
+export function sendResponse(id: number | string, result: unknown): void {
   writeMessage({ jsonrpc: "2.0", id, result });
 }
 
-function sendError(id: number | string, code: number, message: string): void {
+export function sendError(id: number | string, code: number, message: string): void {
   writeMessage({ jsonrpc: "2.0", id, error: { code, message } });
 }
 
@@ -129,7 +129,7 @@ let kvRequestId = 1;
  * Pending KV responses, keyed by request id.
  * The main NDJSON loop resolves these when the host replies.
  */
-const pendingKvRequests = new Map<
+export const pendingKvRequests = new Map<
   number | string,
   { resolve: (value: unknown) => void; reject: (err: unknown) => void }
 >();
@@ -171,7 +171,7 @@ function sendToClient(sessionId: string, event: string, data: unknown): void {
 }
 
 // Adapt KvInterface to the Kv shape expected by ToolContext
-function makeKvAdapter(): KvAdapter {
+export function makeKvAdapter(): KvAdapter {
   return {
     get: <T = unknown>(key: string) => kv.get(key) as Promise<T | null>,
     set: (key: string, value: unknown, options?: { expireIn?: number }) =>
@@ -200,7 +200,7 @@ function getAgentEnv(): Readonly<Record<string, string>> {
  * Per-session state map. Lazily initialised from agent.state() factory per
  * session. Deep-cloned via JSON round-trip to ensure isolation.
  */
-function createSessionStateMap(initState?: () => Record<string, unknown>) {
+export function createSessionStateMap(initState?: () => Record<string, unknown>) {
   const map = new Map<string, Record<string, unknown>>();
   return {
     get(sessionId: string): Record<string, unknown> {
@@ -241,7 +241,7 @@ type ToolCallErrorResponse = {
   error: string;
 };
 
-async function executeTool(
+export async function executeTool(
   agent: AgentDef,
   req: ToolCallRequest,
   sessionState: ReturnType<typeof createSessionStateMap>,
@@ -319,7 +319,7 @@ type HarnessState = {
 };
 
 /** Resolve and settle a single incoming JSON-RPC request. */
-async function handleRequest(req: JsonRpcRequest, state: HarnessState): Promise<void> {
+export async function handleRequest(req: JsonRpcRequest, state: HarnessState): Promise<void> {
   switch (req.method) {
     case "bundle/load": {
       if (!req.params || typeof (req.params as Record<string, unknown>).code !== "string") {
@@ -355,7 +355,7 @@ async function handleRequest(req: JsonRpcRequest, state: HarnessState): Promise<
 }
 
 /** Dispatch an incoming response to a pending KV request. */
-function handleKvResponse(resp: JsonRpcResponse): void {
+export function handleKvResponse(resp: JsonRpcResponse): void {
   const pending = pendingKvRequests.get(resp.id);
   if (!pending) return;
   pendingKvRequests.delete(resp.id);
@@ -366,7 +366,7 @@ function handleKvResponse(resp: JsonRpcResponse): void {
   }
 }
 
-function handleNotification(notif: JsonRpcNotification, state: HarnessState): void {
+export function handleNotification(notif: JsonRpcNotification, state: HarnessState): void {
   if (notif.method === "shutdown") Deno.exit(0);
   if (notif.method === "session/end" && state.sessionState) {
     const params = notif.params as { sessionId?: string } | undefined;
@@ -374,7 +374,7 @@ function handleNotification(notif: JsonRpcNotification, state: HarnessState): vo
   }
 }
 
-function dispatchMessage(msg: JsonRpcMessage, state: HarnessState): void {
+export function dispatchMessage(msg: JsonRpcMessage, state: HarnessState): void {
   // Incoming response to a kv/* request we sent
   if ("id" in msg && !("method" in msg)) {
     handleKvResponse(msg as JsonRpcResponse);
@@ -415,7 +415,10 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((err) => {
-  console.error("Harness fatal error:", err);
-  Deno.exit(1);
-});
+// Only run main loop when executed directly by Deno (not when imported in tests).
+if (typeof Deno !== "undefined" && Deno.stdin) {
+  main().catch((err) => {
+    console.error("Harness fatal error:", err);
+    Deno.exit(1);
+  });
+}
