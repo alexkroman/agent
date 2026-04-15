@@ -1,5 +1,11 @@
 # @alexkroman1/aai
 
+## 1.2.1
+
+### Patch Changes
+
+- 7af69b8: Fix gVisor/Deno binary discovery in distroless Docker images
+
 ## 1.2.0
 
 ### Minor Changes
