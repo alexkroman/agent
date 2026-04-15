@@ -30,10 +30,10 @@ function checkStructural(pattern: string): ValidationResult | null {
     return fail("Pattern must not include a protocol (e.g. remove 'https://').");
   if (pattern.includes("/")) return fail("Pattern must not include a path component (remove '/').");
   if (pattern.includes("?")) return fail("Pattern must not include a query string (remove '?').");
+  if (pattern.startsWith("[") || pattern.includes("::"))
+    return fail("IP address literals are not allowed in allowedHosts patterns.");
   if (pattern.includes(":"))
     return fail("Pattern must not include a port number (e.g. remove ':8080').");
-  if (pattern.startsWith("["))
-    return fail("IP address literals are not allowed in allowedHosts patterns.");
   return null;
 }
 

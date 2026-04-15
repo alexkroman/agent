@@ -67,11 +67,13 @@ describe("validateAllowedHostPattern", () => {
     test("rejects IPv6 address", () => {
       const result = validateAllowedHostPattern("::1");
       expect(result.valid).toBe(false);
+      expect((result as { valid: false; reason: string }).reason).toMatch(/ip/i);
     });
 
     test("rejects full IPv6 address", () => {
       const result = validateAllowedHostPattern("2001:db8::1");
       expect(result.valid).toBe(false);
+      expect((result as { valid: false; reason: string }).reason).toMatch(/ip/i);
     });
   });
 
