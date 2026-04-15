@@ -6,5 +6,5 @@
     "types": ["node", "vitest/globals"]
   },
   "include": ["."],
-  "exclude": ["guest/deno-harness.ts"]
+  "exclude": ["guest/deno-harness.ts", "guest/deno-harness.test.ts"]
 }
