@@ -77,6 +77,7 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
     kvStorage: storage,
     kvPrefix: agentKvPrefix(slug),
     harnessPath,
+    allowedHosts: config.allowedHosts ?? [],
   });
 
   const executeTool: ExecuteTool = async (name, args, sessionId, messages) => {

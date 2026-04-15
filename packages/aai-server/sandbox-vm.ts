@@ -13,6 +13,7 @@ import { z } from "zod";
 import { createGvisorSandbox, isGvisorAvailable } from "./gvisor.ts";
 import { createNdjsonConnection, type NdjsonConnection } from "./ndjson-transport.ts";
 import type { SandboxResourceLimits } from "./oci-spec.ts";
+import { createFetchHandler, type FetchRequest } from "./sandbox-fetch.ts";
 
 // ── KV param schemas for guest → host validation ────────────────────────────
 
@@ -59,6 +60,7 @@ export type SandboxVmOptions = {
   kvStorage?: Storage;
   kvPrefix?: string;
   limits?: SandboxResourceLimits;
+  allowedHosts?: string[];
 };
 
 // ── Shared setup ─────────────────────────────────────────────────────────────
@@ -89,6 +91,20 @@ async function configureSandbox(
     conn.onRequest("kv/del", async (raw: unknown) => {
       const p = KvDelParamsSchema.parse(raw);
       await storage.removeItem(`${prefix}:${p.key}`);
+    });
+  }
+
+  // Host serves guest fetch requests (validated against allowedHosts + SSRF)
+  if (opts.allowedHosts && opts.allowedHosts.length > 0) {
+    const handleFetch = createFetchHandler({ allowedHosts: opts.allowedHosts });
+    let fetchId = 0;
+    conn.onRequest("fetch/request", (raw: unknown) => {
+      const req = raw as FetchRequest;
+      const id = String(++fetchId);
+      // Emit response messages as notifications in the background
+      void handleFetch(req, id, (msg) => conn.sendNotification(msg.type, msg));
+      // Return id immediately so guest can start collecting notifications
+      return { id };
     });
   }
 

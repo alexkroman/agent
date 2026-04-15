@@ -70,6 +70,7 @@ const TEST_AGENT_CONFIG: IsolateConfig = {
   maxSteps: 3,
   toolSchemas: [],
   builtinTools: [],
+  allowedHosts: [],
 };
 
 function makeSandboxOptions(overrides?: Partial<SandboxOptions>): SandboxOptions {
@@ -180,6 +181,7 @@ describe("createSandbox", () => {
         },
       ],
       builtinTools: [],
+      allowedHosts: [],
     };
 
     const sandbox = createSandbox(makeSandboxOptions({ agentConfig: customConfig }));

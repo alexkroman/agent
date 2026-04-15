@@ -26,9 +26,11 @@ exports[`export surface stability > @alexkroman1/aai main export 1`] = `
   "agent",
   "errorDetail",
   "errorMessage",
+  "matchesAllowedHost",
   "parseWsUpgradeParams",
   "tool",
   "toolError",
+  "validateAllowedHostPattern",
 ]
 `;
 
