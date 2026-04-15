@@ -10,6 +10,9 @@
  * Protocol overview:
  * - Host -> guest: bundle/load, tool/execute, shutdown
  * - Guest -> host: kv/get, kv/set, kv/del (proxied KV requests)
+ * - Guest -> host: fetch/request (proxied fetch via RPC)
+ * - Host -> guest: fetch/response-start, fetch/response-chunk,
+ *                  fetch/response-end, fetch/response-error (streamed response)
  *
  * ZERO workspace imports -- this file is entirely self-contained.
  *
@@ -161,6 +164,111 @@ const kv: KvInterface = {
     await kvRequest("kv/del", { key });
   },
 };
+
+// ---- Fetch proxy ---------------------------------------------------------------
+
+type PendingFetch = {
+  resolve: (response: Response) => void;
+  reject: (err: Error) => void;
+  status?: number;
+  statusText?: string;
+  headers?: Record<string, string>;
+  chunks: Uint8Array[];
+};
+
+const pendingFetches = new Map<string, PendingFetch>();
+
+const MAX_REQUEST_BODY_BYTES = 1024 * 1024; // 1 MB
+
+function base64ToBytes(b64: string): Uint8Array {
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.byteLength; i++) {
+    binary += String.fromCharCode(bytes[i] as number);
+  }
+  return btoa(binary);
+}
+
+function handleFetchNotification(method: string, params: unknown): void {
+  const p = params as { id: string; [key: string]: unknown };
+  const pending = pendingFetches.get(p.id);
+  if (!pending) return;
+
+  switch (method) {
+    case "fetch/response-start":
+      pending.status = p.status as number;
+      pending.statusText = p.statusText as string;
+      pending.headers = p.headers as Record<string, string>;
+      break;
+
+    case "fetch/response-chunk":
+      pending.chunks.push(base64ToBytes(p.data as string));
+      break;
+
+    case "fetch/response-end": {
+      pendingFetches.delete(p.id);
+      const totalLen = pending.chunks.reduce((sum, c) => sum + c.byteLength, 0);
+      const body = new Uint8Array(totalLen);
+      let offset = 0;
+      for (const chunk of pending.chunks) {
+        body.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+      pending.resolve(
+        new Response(body.length > 0 ? body : null, {
+          status: pending.status ?? 200,
+          statusText: pending.statusText ?? "",
+          headers: pending.headers ?? {},
+        }),
+      );
+      break;
+    }
+
+    case "fetch/response-error":
+      pendingFetches.delete(p.id);
+      pending.reject(new TypeError(`fetch failed: ${p.message}`));
+      break;
+
+    default:
+      break;
+  }
+}
+
+globalThis.fetch = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+  const req = new Request(input, init);
+
+  let bodyB64: string | null = null;
+  if (req.body) {
+    const buf = await req.arrayBuffer();
+    if (buf.byteLength > MAX_REQUEST_BODY_BYTES) {
+      throw new TypeError(`Request body exceeds ${MAX_REQUEST_BODY_BYTES} byte limit`);
+    }
+    bodyB64 = bytesToBase64(new Uint8Array(buf));
+  }
+
+  // Send fetch/request RPC — host returns { id }
+  const rpcResponse = (await kvRequest("fetch/request", {
+    url: req.url,
+    method: req.method,
+    headers: Object.fromEntries(req.headers),
+    body: bodyB64,
+  })) as { id: string };
+
+  // Register a pending fetch and wait for response notifications
+  return new Promise<Response>((resolve, reject) => {
+    pendingFetches.set(rpcResponse.id, { resolve, reject, chunks: [] });
+  });
+};
+
+// ---- Client send --------------------------------------------------------------
 
 function sendToClient(sessionId: string, event: string, data: unknown): void {
   writeMessage({
@@ -371,6 +479,9 @@ export function handleNotification(notif: JsonRpcNotification, state: HarnessSta
   if (notif.method === "session/end" && state.sessionState) {
     const params = notif.params as { sessionId?: string } | undefined;
     if (params?.sessionId) state.sessionState.delete(params.sessionId);
+  }
+  if (notif.method.startsWith("fetch/response-")) {
+    handleFetchNotification(notif.method, notif.params);
   }
 }
 
