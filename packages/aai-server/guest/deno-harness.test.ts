@@ -33,7 +33,6 @@ function getWrittenLines(): unknown[] {
 shimDeno();
 
 // Dynamic import after shim is in place.
-// @ts-expect-error -- deno-harness.ts uses Deno types not available in Node
 const harness = await import("./deno-harness.ts");
 const {
   TextLineStream,
