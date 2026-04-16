@@ -30,7 +30,7 @@ jobs:
           # The default GITHUB_TOKEN cannot trigger other workflows.
           token: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
 
-      - uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@v5
 
       - uses: actions/setup-node@v6
         with:
