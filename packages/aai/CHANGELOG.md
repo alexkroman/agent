@@ -1,5 +1,11 @@
 # @alexkroman1/aai
 
+## 1.2.2
+
+### Patch Changes
+
+- 534122c: Harden secrets: PBKDF2 key hashing, versioned encryption, per-agent HKDF salt, env size limit
+
 ## 1.2.1
 
 ### Patch Changes
