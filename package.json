@@ -60,7 +60,7 @@
     "lefthook": "^2.1.6",
     "markdownlint-cli2": "^0.22.0",
     "publint": "^0.3.18",
-    "react": "^19.2.5",
+    "react": "^19.0.0",
     "sherif": "1.11.1",
     "syncpack": "^14.3.0",
     "toxiproxy-node-client": "^4.0.0",
