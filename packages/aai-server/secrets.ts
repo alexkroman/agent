@@ -86,8 +86,8 @@ export async function verifySlugOwner(
 
   for (const stored of manifest.credential_hashes) {
     if (await verifyApiKeyHash(apiKey, stored)) {
-      const keyHash = await hashApiKey(apiKey);
-      return { status: "owned", keyHash };
+      // Return the matched stored hash — avoids a redundant ~100ms PBKDF2 call.
+      return { status: "owned", keyHash: stored };
     }
   }
 
