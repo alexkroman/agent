@@ -1,41 +1,67 @@
 // Copyright 2025 the AAI authors. MIT license.
-// Uses Web Crypto API for credential hashing, authentication, and AES-256-GCM + HKDF encryption.
+// Uses Web Crypto API for PBKDF2 credential hashing and AES-256-GCM + HKDF envelope encryption.
 
 import { timingSafeEqual } from "node:crypto";
-import { LRUCache } from "lru-cache";
 import { z } from "zod";
 import { fromBase64Url, toBase64Url } from "./base64url.ts";
-import { AUTH_HASH_CACHE_MAX } from "./constants.ts";
+import { MAX_ENV_SIZE } from "./constants.ts";
 import type { BundleStore } from "./store-types.ts";
 
 // ─── Hashing & Authentication ───────────────────────────────────────────────
 
-const textEncoder = new TextEncoder();
+const enc = new TextEncoder();
+const dec = new TextDecoder();
 
-// Cache keyed by hash hex. We never store the raw API key in memory;
-// instead we always re-hash and check if the result is in the cache.
-const hashCache = new LRUCache<string, true>({ max: AUTH_HASH_CACHE_MAX });
+const PBKDF2_ITERATIONS = 600_000;
+const PBKDF2_HASH = "SHA-256";
+const HASH_SALT_BYTES = 16;
+const HASH_OUTPUT_BYTES = 32;
 
+/**
+ * Hash an API key with PBKDF2-SHA-256 for storage.
+ * Returns a self-describing string: `pbkdf2:600000:<base64url-salt>:<base64url-hash>`
+ */
 export async function hashApiKey(apiKey: string): Promise<string> {
-  const hash = await crypto.subtle.digest("SHA-256", textEncoder.encode(apiKey));
-  const hex = Buffer.from(hash).toString("hex");
-  hashCache.set(hex, true);
-  return hex;
+  const salt = crypto.getRandomValues(new Uint8Array(HASH_SALT_BYTES));
+  const keyMaterial = await crypto.subtle.importKey("raw", enc.encode(apiKey), "PBKDF2", false, [
+    "deriveBits",
+  ]);
+  const derived = await crypto.subtle.deriveBits(
+    { name: "PBKDF2", hash: PBKDF2_HASH, salt, iterations: PBKDF2_ITERATIONS },
+    keyMaterial,
+    HASH_OUTPUT_BYTES * 8,
+  );
+  return `pbkdf2:${PBKDF2_ITERATIONS}:${toBase64Url(salt)}:${toBase64Url(new Uint8Array(derived))}`;
 }
 
-/** Visible for testing — clears the internal hash cache. No-op in production. */
-export function _clearHashCache(): void {
-  if (process.env.NODE_ENV === "test" || process.env.NODE_ENV === "development") {
-    hashCache.clear();
-  }
-}
+/**
+ * Verify a candidate API key against a stored PBKDF2 hash string.
+ * Parses the stored format, re-derives with the embedded salt, and
+ * compares with timing-safe equality.
+ */
+export async function verifyApiKeyHash(apiKey: string, storedHash: string): Promise<boolean> {
+  const parts = storedHash.split(":");
+  if (parts.length !== 4 || parts[0] !== "pbkdf2") return false;
 
-/** Constant-time string comparison to prevent timing attacks on credential hashes. */
-export function timingSafeCompare(a: string, b: string): boolean {
-  const bufA = textEncoder.encode(a);
-  const bufB = textEncoder.encode(b);
-  if (bufA.length !== bufB.length) return false;
-  return timingSafeEqual(bufA, bufB);
+  const iterations = Number(parts[1]);
+  if (!Number.isFinite(iterations) || iterations <= 0) return false;
+
+  const salt = fromBase64Url(parts[2]);
+  const expected = fromBase64Url(parts[3]);
+
+  const keyMaterial = await crypto.subtle.importKey("raw", enc.encode(apiKey), "PBKDF2", false, [
+    "deriveBits",
+  ]);
+  const derived = new Uint8Array(
+    await crypto.subtle.deriveBits(
+      { name: "PBKDF2", hash: PBKDF2_HASH, salt, iterations },
+      keyMaterial,
+      expected.byteLength * 8,
+    ),
+  );
+
+  if (derived.byteLength !== expected.byteLength) return false;
+  return timingSafeEqual(derived, expected);
 }
 
 export type OwnerResult =
@@ -48,16 +74,18 @@ export async function verifySlugOwner(
   opts: { slug: string; store: BundleStore },
 ): Promise<OwnerResult> {
   const { slug, store } = opts;
-  const keyHash = await hashApiKey(apiKey);
   const manifest = await store.getManifest(slug);
 
   if (!manifest) {
+    const keyHash = await hashApiKey(apiKey);
     return { status: "unclaimed", keyHash };
   }
 
-  const isOwner = manifest.credential_hashes.some((stored) => timingSafeCompare(stored, keyHash));
-  if (isOwner) {
-    return { status: "owned", keyHash };
+  for (const stored of manifest.credential_hashes) {
+    if (await verifyApiKeyHash(apiKey, stored)) {
+      const keyHash = await hashApiKey(apiKey);
+      return { status: "owned", keyHash };
+    }
   }
 
   return { status: "forbidden" };
@@ -67,54 +95,100 @@ export async function verifySlugOwner(
 
 const EnvSchema = z.record(z.string(), z.string());
 
-const enc = new TextEncoder();
-const dec = new TextDecoder();
+const ENV_VERSION = 0x01;
+const ENV_SALT_BYTES = 16;
+const ENV_IV_BYTES = 12;
 
-export type CredentialKey = CryptoKey;
+export type MasterKey = CryptoKey;
 
-export async function deriveCredentialKey(secret: string): Promise<CredentialKey> {
-  const rawKey = await crypto.subtle.importKey("raw", enc.encode(secret), "HKDF", false, [
-    "deriveKey",
-  ]);
+/**
+ * Import a master secret as HKDF key material.
+ * Called once at server startup; the returned key is passed to
+ * `encryptEnv` / `decryptEnv` for per-call key derivation.
+ */
+export async function importMasterKey(secret: string): Promise<MasterKey> {
+  return crypto.subtle.importKey("raw", enc.encode(secret), "HKDF", false, ["deriveKey"]);
+}
+
+/**
+ * Derive a per-encryption AES-256-GCM key from the master key,
+ * a random salt, and the agent slug.
+ */
+async function deriveEnvKey(
+  masterKey: MasterKey,
+  salt: Uint8Array,
+  slug: string,
+): Promise<CryptoKey> {
   return crypto.subtle.deriveKey(
     {
       name: "HKDF",
       hash: "SHA-256",
-      salt: enc.encode("aai-credentials"),
-      info: enc.encode("env-encryption"),
+      salt,
+      info: enc.encode(slug),
     },
-    rawKey,
+    masterKey,
     { name: "AES-GCM", length: 256 },
     false,
     ["encrypt", "decrypt"],
   );
 }
 
+/**
+ * Encrypt an env record. Produces:
+ * `version (1) || salt (16) || IV (12) || AES-256-GCM ciphertext`
+ * encoded as base64url.
+ *
+ * Throws if the serialized env exceeds MAX_ENV_SIZE (64 KB).
+ */
 export async function encryptEnv(
-  key: CredentialKey,
+  masterKey: MasterKey,
   opts: { env: Record<string, string>; slug: string },
 ): Promise<string> {
-  const iv = crypto.getRandomValues(new Uint8Array(12));
   const plaintext = enc.encode(JSON.stringify(opts.env));
+  if (plaintext.byteLength > MAX_ENV_SIZE) {
+    throw new Error(
+      `Env blob size (${plaintext.byteLength} bytes) exceeds maximum (${MAX_ENV_SIZE} bytes)`,
+    );
+  }
+
+  const salt = crypto.getRandomValues(new Uint8Array(ENV_SALT_BYTES));
+  const iv = crypto.getRandomValues(new Uint8Array(ENV_IV_BYTES));
+  const key = await deriveEnvKey(masterKey, salt, opts.slug);
+
   const ciphertext = await crypto.subtle.encrypt(
     { name: "AES-GCM", iv, additionalData: enc.encode(opts.slug) },
     key,
     plaintext,
   );
-  // Prepend IV to ciphertext
-  const result = new Uint8Array(iv.byteLength + ciphertext.byteLength);
-  result.set(iv, 0);
-  result.set(new Uint8Array(ciphertext), iv.byteLength);
+
+  // version || salt || IV || ciphertext
+  const result = new Uint8Array(1 + salt.byteLength + iv.byteLength + ciphertext.byteLength);
+  result[0] = ENV_VERSION;
+  result.set(salt, 1);
+  result.set(iv, 1 + salt.byteLength);
+  result.set(new Uint8Array(ciphertext), 1 + salt.byteLength + iv.byteLength);
   return toBase64Url(result);
 }
 
+/**
+ * Decrypt an env blob. Reads the version byte and dispatches accordingly.
+ */
 export async function decryptEnv(
-  key: CredentialKey,
+  masterKey: MasterKey,
   opts: { encrypted: string; slug: string },
 ): Promise<Record<string, string>> {
   const data = fromBase64Url(opts.encrypted);
-  const iv = data.slice(0, 12);
-  const ciphertext = data.slice(12);
+
+  const version = data[0];
+  if (version !== ENV_VERSION) {
+    throw new Error(`Unknown env encryption version: ${version}`);
+  }
+
+  const salt = data.slice(1, 1 + ENV_SALT_BYTES);
+  const iv = data.slice(1 + ENV_SALT_BYTES, 1 + ENV_SALT_BYTES + ENV_IV_BYTES);
+  const ciphertext = data.slice(1 + ENV_SALT_BYTES + ENV_IV_BYTES);
+
+  const key = await deriveEnvKey(masterKey, salt, opts.slug);
   const plaintext = await crypto.subtle.decrypt(
     { name: "AES-GCM", iv, additionalData: enc.encode(opts.slug) },
     key,

@@ -8,8 +8,8 @@
 
 // ─── Auth ────────────────────────────────────────────────────────────────
 
-/** Maximum entries in the API key hash LRU cache. */
-export const AUTH_HASH_CACHE_MAX = 100;
+/** Maximum serialized env blob size in bytes (64 KB). */
+export const MAX_ENV_SIZE = 65_536;
 
 // ─── Server ─────────────────────────────────────────────────────────────
 
