@@ -21,6 +21,7 @@ export type HonoEnv = {
   };
   Variables: {
     slug: string;
+    apiKey: string;
     keyHash: string;
   };
 };

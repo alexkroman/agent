@@ -14,7 +14,7 @@ import { createBundleStore } from "./bundle-store.ts";
 import { DEFAULT_PORT } from "./constants.ts";
 import { createOrchestrator, type OrchestratorOpts } from "./orchestrator.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
-import { deriveCredentialKey } from "./secrets.ts";
+import { importMasterKey } from "./secrets.ts";
 
 function requireEnv<const K extends string>(
   env: NodeJS.ProcessEnv,
@@ -34,10 +34,10 @@ function isLocalDev(env: NodeJS.ProcessEnv): boolean {
 async function buildLocalOpts(_env: NodeJS.ProcessEnv): Promise<OrchestratorOpts> {
   console.info("Local dev mode: unstorage memory driver for all storage");
   const storage = createStorage();
-  const credentialKey = await deriveCredentialKey("local-dev-secret");
+  const masterKey = await importMasterKey("local-dev-secret");
   return {
     slots: createSlotCache(),
-    store: createBundleStore(storage, { credentialKey }),
+    store: createBundleStore(storage, { masterKey }),
     storage,
   };
 }
@@ -52,7 +52,7 @@ async function buildOpts(env: NodeJS.ProcessEnv): Promise<OrchestratorOpts> {
     "KV_SCOPE_SECRET",
   ]);
 
-  const credentialKey = await deriveCredentialKey(required.KV_SCOPE_SECRET);
+  const masterKey = await importMasterKey(required.KV_SCOPE_SECRET);
 
   const storage = createStorage({
     driver: s3Driver({
@@ -64,7 +64,7 @@ async function buildOpts(env: NodeJS.ProcessEnv): Promise<OrchestratorOpts> {
     }),
   });
 
-  const store = createBundleStore(storage, { credentialKey });
+  const store = createBundleStore(storage, { masterKey });
 
   return {
     slots: createSlotCache(),
