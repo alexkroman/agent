@@ -13,12 +13,12 @@ import { TEST_AGENT_CONFIG } from "./test-utils.ts";
 async function createRealOrchestrator() {
   const { createStorage } = await import("unstorage");
   const { createBundleStore } = await import("./bundle-store.ts");
-  const { deriveCredentialKey } = await import("./secrets.ts");
+  const { importMasterKey } = await import("./secrets.ts");
   const { createOrchestrator } = await import("./orchestrator.ts");
 
   const storage = createStorage();
-  const credentialKey = await deriveCredentialKey("test-secret");
-  const store = createBundleStore(storage, { credentialKey });
+  const masterKey = await importMasterKey("test-secret");
+  const store = createBundleStore(storage, { masterKey });
   const { createSlotCache } = await import("./sandbox-slots.ts");
   const { app } = createOrchestrator({ slots: createSlotCache(), store, storage });
   const fetch = async (input: string | Request, init?: RequestInit) => app.request(input, init);
