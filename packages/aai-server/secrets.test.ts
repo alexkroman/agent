@@ -1,30 +1,25 @@
 // Copyright 2025 the AAI authors. MIT license.
-import { afterEach, describe, expect, test } from "vitest";
+import { describe, expect, test } from "vitest";
 import {
-  _clearHashCache,
   decryptEnv,
-  deriveCredentialKey,
   encryptEnv,
   hashApiKey,
-  timingSafeCompare,
+  importMasterKey,
+  verifyApiKeyHash,
   verifySlugOwner,
 } from "./secrets.ts";
 import { createTestStore } from "./test-utils.ts";
 
-afterEach(() => {
-  _clearHashCache();
-});
-
 describe("hashApiKey", () => {
-  test("produces a 64-char hex string (SHA-256)", async () => {
+  test("produces pbkdf2 format string", async () => {
     const hash = await hashApiKey("test-key");
-    expect(hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(hash).toMatch(/^pbkdf2:600000:[A-Za-z0-9_-]+:[A-Za-z0-9_-]+$/);
   });
 
-  test("same input produces same hash", async () => {
+  test("same input produces different hashes (unique salts)", async () => {
     const a = await hashApiKey("key-1");
     const b = await hashApiKey("key-1");
-    expect(a).toBe(b);
+    expect(a).not.toBe(b);
   });
 
   test("different inputs produce different hashes", async () => {
@@ -34,45 +29,27 @@ describe("hashApiKey", () => {
   });
 });
 
-describe("_clearHashCache", () => {
-  test("clears cache in test environment", async () => {
-    const hash1 = await hashApiKey("cache-key");
-    _clearHashCache();
-    const hash2 = await hashApiKey("cache-key");
-    expect(hash1).toBe(hash2);
+describe("verifyApiKeyHash", () => {
+  test("returns true for correct key", async () => {
+    const hash = await hashApiKey("my-secret-key");
+    expect(await verifyApiKeyHash("my-secret-key", hash)).toBe(true);
   });
 
-  test("is a no-op in production", async () => {
-    const original = process.env.NODE_ENV;
-    process.env.NODE_ENV = "production";
-    try {
-      await hashApiKey("prod-key");
-      _clearHashCache();
-    } finally {
-      process.env.NODE_ENV = original;
-    }
-  });
-});
-
-describe("timingSafeCompare", () => {
-  test("returns true for identical strings", () => {
-    expect(timingSafeCompare("abc", "abc")).toBe(true);
+  test("returns false for wrong key", async () => {
+    const hash = await hashApiKey("my-secret-key");
+    expect(await verifyApiKeyHash("wrong-key", hash)).toBe(false);
   });
 
-  test("returns false for different strings of same length", () => {
-    expect(timingSafeCompare("abc", "xyz")).toBe(false);
+  test("returns false for malformed stored hash", async () => {
+    expect(await verifyApiKeyHash("key", "not-a-valid-hash")).toBe(false);
   });
 
-  test("returns false for different-length strings", () => {
-    expect(timingSafeCompare("short", "longer-string")).toBe(false);
+  test("returns false for empty stored hash", async () => {
+    expect(await verifyApiKeyHash("key", "")).toBe(false);
   });
 
-  test("handles empty strings", () => {
-    expect(timingSafeCompare("", "")).toBe(true);
-  });
-
-  test("returns false when one is empty", () => {
-    expect(timingSafeCompare("", "a")).toBe(false);
+  test("returns false for wrong algorithm prefix", async () => {
+    expect(await verifyApiKeyHash("key", "bcrypt:10:abc:def")).toBe(false);
   });
 });
 
@@ -85,6 +62,9 @@ describe("verifySlugOwner", () => {
     });
     expect(result.status).toBe("unclaimed");
     expect(result).toHaveProperty("keyHash");
+    if (result.status === "unclaimed") {
+      expect(result.keyHash).toMatch(/^pbkdf2:/);
+    }
   });
 
   test("returns 'owned' when API key matches stored hash", async () => {
@@ -140,39 +120,49 @@ describe("credential encryption", () => {
   const testEnv = { API_KEY: "sk-123", DB_URL: "postgres://localhost" };
 
   test("encrypt then decrypt returns original env", async () => {
-    const key = await deriveCredentialKey("master-secret");
-    const encrypted = await encryptEnv(key, {
+    const masterKey = await importMasterKey("master-secret");
+    const encrypted = await encryptEnv(masterKey, {
       env: testEnv,
       slug: "my-agent",
     });
-    const decrypted = await decryptEnv(key, {
+    const decrypted = await decryptEnv(masterKey, {
       encrypted,
       slug: "my-agent",
     });
     expect(decrypted).toEqual(testEnv);
   });
 
-  test("encrypted output is a base64url string with IV prepended", async () => {
-    const key = await deriveCredentialKey("master-secret");
-    const encrypted = await encryptEnv(key, {
+  test("encrypted output is base64url with version byte 0x01", async () => {
+    const masterKey = await importMasterKey("master-secret");
+    const encrypted = await encryptEnv(masterKey, {
       env: testEnv,
       slug: "my-agent",
     });
     expect(encrypted).toMatch(/^[A-Za-z0-9_-]+$/);
+    const { fromBase64Url } = await import("./base64url.ts");
+    const raw = fromBase64Url(encrypted);
+    expect(raw[0]).toBe(0x01);
   });
 
-  test("different slugs cannot decrypt each other (AAD mismatch)", async () => {
-    const key = await deriveCredentialKey("master-secret");
-    const encrypted = await encryptEnv(key, {
+  test("same input produces different ciphertexts (unique salt + IV)", async () => {
+    const masterKey = await importMasterKey("master-secret");
+    const a = await encryptEnv(masterKey, { env: testEnv, slug: "s" });
+    const b = await encryptEnv(masterKey, { env: testEnv, slug: "s" });
+    expect(a).not.toBe(b);
+  });
+
+  test("different slugs cannot decrypt each other", async () => {
+    const masterKey = await importMasterKey("master-secret");
+    const encrypted = await encryptEnv(masterKey, {
       env: testEnv,
       slug: "agent-a",
     });
-    await expect(decryptEnv(key, { encrypted, slug: "agent-b" })).rejects.toThrow();
+    await expect(decryptEnv(masterKey, { encrypted, slug: "agent-b" })).rejects.toThrow();
   });
 
-  test("different keys cannot decrypt", async () => {
-    const key1 = await deriveCredentialKey("secret-1");
-    const key2 = await deriveCredentialKey("secret-2");
+  test("different master keys cannot decrypt", async () => {
+    const key1 = await importMasterKey("secret-1");
+    const key2 = await importMasterKey("secret-2");
     const encrypted = await encryptEnv(key1, {
       env: testEnv,
       slug: "my-agent",
@@ -180,14 +170,56 @@ describe("credential encryption", () => {
     await expect(decryptEnv(key2, { encrypted, slug: "my-agent" })).rejects.toThrow();
   });
 
-  test("deriveCredentialKey is deterministic for same secret", async () => {
-    const key1 = await deriveCredentialKey("same-secret");
-    const key2 = await deriveCredentialKey("same-secret");
+  test("importMasterKey is deterministic — same secret can decrypt", async () => {
+    const key1 = await importMasterKey("same-secret");
+    const key2 = await importMasterKey("same-secret");
     const encrypted = await encryptEnv(key1, {
       env: { x: "1" },
       slug: "s",
     });
     const decrypted = await decryptEnv(key2, { encrypted, slug: "s" });
     expect(decrypted).toEqual({ x: "1" });
+  });
+
+  test("empty env round-trips", async () => {
+    const masterKey = await importMasterKey("test-secret");
+    const encrypted = await encryptEnv(masterKey, { env: {}, slug: "s" });
+    expect(await decryptEnv(masterKey, { encrypted, slug: "s" })).toEqual({});
+  });
+
+  test("unrecognized version byte throws", async () => {
+    const masterKey = await importMasterKey("test-secret");
+    const encrypted = await encryptEnv(masterKey, {
+      env: testEnv,
+      slug: "s",
+    });
+    const { fromBase64Url, toBase64Url } = await import("./base64url.ts");
+    const raw = fromBase64Url(encrypted);
+    raw[0] = 0xff;
+    const corrupted = toBase64Url(raw);
+    await expect(decryptEnv(masterKey, { encrypted: corrupted, slug: "s" })).rejects.toThrow(
+      "Unknown env encryption version: 255",
+    );
+  });
+});
+
+describe("env size limit", () => {
+  test("throws when serialized env exceeds MAX_ENV_SIZE", async () => {
+    const masterKey = await importMasterKey("test-secret");
+    const largeValue = "x".repeat(70_000);
+    await expect(encryptEnv(masterKey, { env: { BIG: largeValue }, slug: "s" })).rejects.toThrow(
+      /exceeds maximum/,
+    );
+  });
+
+  test("allows env just under the limit", async () => {
+    const masterKey = await importMasterKey("test-secret");
+    const value = "x".repeat(65_529);
+    const encrypted = await encryptEnv(masterKey, {
+      env: { K: value },
+      slug: "s",
+    });
+    const decrypted = await decryptEnv(masterKey, { encrypted, slug: "s" });
+    expect(decrypted.K).toBe(value);
   });
 });
