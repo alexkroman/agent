@@ -23,7 +23,7 @@ export function validateSlug(slug: string): string {
 export async function requireOwner(
   req: Request,
   opts: { slug: string; store: BundleStore },
-): Promise<string> {
+): Promise<{ apiKey: string; keyHash: string }> {
   const apiKey = bearerToken(req);
   if (!apiKey) {
     throw new HTTPException(401, {
@@ -32,26 +32,26 @@ export async function requireOwner(
   }
   const result = await verifySlugOwner(apiKey, { slug: opts.slug, store: opts.store });
   if (result.status === "forbidden") {
-    // Generic message to avoid confirming slug existence to unauthorized users
     throw new HTTPException(403, {
       message: "Forbidden",
     });
   }
-  return result.keyHash;
+  return { apiKey, keyHash: result.keyHash };
 }
 
 /**
  * Authenticate the request without checking slug ownership.
  * Used for routes where the slug may not exist yet (e.g. new deploys).
  */
-export async function requireAuth(req: Request): Promise<string> {
+export async function requireAuth(req: Request): Promise<{ apiKey: string; keyHash: string }> {
   const apiKey = bearerToken(req);
   if (!apiKey) {
     throw new HTTPException(401, {
       message: "Missing Authorization header (Bearer <API_KEY>)",
     });
   }
-  return hashApiKey(apiKey);
+  const keyHash = await hashApiKey(apiKey);
+  return { apiKey, keyHash };
 }
 
 /** Sets `c.var.slug` from the `:slug` route param. */
@@ -61,12 +61,13 @@ export const slugMw = createMiddleware<HonoEnv>(async (c, next) => {
   await next();
 });
 
-/** Verifies the Bearer token owns the slug and sets `c.var.keyHash`. */
+/** Verifies the Bearer token owns the slug and sets `c.var.apiKey` + `c.var.keyHash`. */
 export const ownerMw = createMiddleware<HonoEnv>(async (c, next) => {
-  const keyHash = await requireOwner(c.req.raw, {
+  const { apiKey, keyHash } = await requireOwner(c.req.raw, {
     slug: c.var.slug,
     store: c.env.store,
   });
+  c.set("apiKey", apiKey);
   c.set("keyHash", keyHash);
   await next();
 });
@@ -74,9 +75,11 @@ export const ownerMw = createMiddleware<HonoEnv>(async (c, next) => {
 /**
  * Authenticates the Bearer token without checking slug ownership.
  * Used for routes where the slug may not exist yet (new deploys).
- * Sets `c.var.keyHash`.
+ * Sets `c.var.apiKey` + `c.var.keyHash`.
  */
 export const authMw = createMiddleware<HonoEnv>(async (c, next) => {
-  c.set("keyHash", await requireAuth(c.req.raw));
+  const { apiKey, keyHash } = await requireAuth(c.req.raw);
+  c.set("apiKey", apiKey);
+  c.set("keyHash", keyHash);
   await next();
 });

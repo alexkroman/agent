@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
 import type { IsolateConfig } from "./rpc-schemas.ts";
-import { hashApiKey } from "./secrets.ts";
+import { hashApiKey, verifyApiKeyHash } from "./secrets.ts";
 import {
   createTestOrchestrator,
   deployAgent,
@@ -9,11 +9,11 @@ import {
   TEST_AGENT_CONFIG,
 } from "./test-utils.ts";
 
-test("hashApiKey produces consistent hex output", async () => {
-  const hash1 = await hashApiKey("test-key");
-  const hash2 = await hashApiKey("test-key");
-  expect(hash1).toBe(hash2);
-  expect(hash1.length).toBe(64);
+test("hashApiKey produces PBKDF2 format and verifies", async () => {
+  const hash = await hashApiKey("test-key");
+  expect(hash).toMatch(/^pbkdf2:600000:/);
+  expect(await verifyApiKeyHash("test-key", hash)).toBe(true);
+  expect(await verifyApiKeyHash("wrong-key", hash)).toBe(false);
 });
 
 // ── Slug-scoped deploy (legacy: POST /:slug/deploy) ──────────────────────

@@ -5,7 +5,7 @@ import type { ValidatedAppContext } from "./context.ts";
 import { terminateSlot, withSlugLock } from "./sandbox-slots.ts";
 import type { DeployBody } from "./schemas.ts";
 import { EnvSchema } from "./schemas.ts";
-import { timingSafeCompare } from "./secrets.ts";
+import { verifyApiKeyHash } from "./secrets.ts";
 
 function generateSlug(): string {
   return humanId({ separator: "-", capitalize: false });
@@ -22,15 +22,22 @@ export function handleDeployNew(c: ValidatedAppContext<DeployBody>): Promise<Res
   return withSlugLock(slug, async () => {
     if (body.slug) {
       const existing = await c.env.store.getManifest(slug);
-      if (
-        existing &&
-        !existing.credential_hashes.some((h) => timingSafeCompare(h, c.var.keyHash))
-      ) {
-        return c.json({ error: "Forbidden: slug already owned by another user" }, 403);
+      if (existing) {
+        const isOwner = await matchesAnyHash(c.var.apiKey, existing.credential_hashes);
+        if (!isOwner) {
+          return c.json({ error: "Forbidden: slug already owned by another user" }, 403);
+        }
       }
     }
     return handleDeployInner(c, slug);
   });
+}
+
+async function matchesAnyHash(apiKey: string, hashes: string[]): Promise<boolean> {
+  for (const h of hashes) {
+    if (await verifyApiKeyHash(apiKey, h)) return true;
+  }
+  return false;
 }
 
 async function handleDeployInner(
@@ -59,9 +66,8 @@ async function handleDeployInner(
   // than replacing them, so multi-user ownership is preserved across deploys.
   const existingManifest = await c.env.store.getManifest(slug);
   const existingHashes = existingManifest?.credential_hashes ?? [];
-  const mergedHashes = existingHashes.some((h) => timingSafeCompare(h, keyHash))
-    ? existingHashes
-    : [...existingHashes, keyHash];
+  const alreadyStored = await matchesAnyHash(c.var.apiKey, existingHashes);
+  const mergedHashes = alreadyStored ? existingHashes : [...existingHashes, keyHash];
 
   await c.env.store.putAgent({
     slug,

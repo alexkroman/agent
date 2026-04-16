@@ -1,39 +1,19 @@
 // Copyright 2025 the AAI authors. MIT license.
-import { expect, test } from "vitest";
-import { _clearHashCache, hashApiKey, verifySlugOwner } from "./secrets.ts";
+import { describe, expect, test } from "vitest";
+import { hashApiKey, verifyApiKeyHash, verifySlugOwner } from "./secrets.ts";
 import { createTestStore, TEST_AGENT_CONFIG } from "./test-utils.ts";
 
-test("hashApiKey produces consistent 64-char hex", async () => {
-  const h1 = await hashApiKey("key");
+test("hashApiKey produces PBKDF2 format", async () => {
+  const h = await hashApiKey("key");
+  expect(h).toMatch(/^pbkdf2:600000:/);
+  // Same key hashes differently each time (random salt)
   const h2 = await hashApiKey("key");
-  expect(h1).toBe(h2);
-  expect(h1).toMatch(/^[0-9a-f]{64}$/);
-  expect(await hashApiKey("other")).not.toBe(h1);
-});
-
-test("hashApiKey returns consistent result on repeated calls", async () => {
-  _clearHashCache();
-  const h1 = await hashApiKey("cached-key");
-  const h2 = await hashApiKey("cached-key");
-  expect(h2).toBe(h1);
-  // Different key produces different hash
-  const h3 = await hashApiKey("new-key");
-  expect(h3).not.toBe(h1);
-  _clearHashCache();
-});
-
-test("hashApiKey produces correct hashes after many calls", async () => {
-  _clearHashCache();
-  // Fill cache beyond capacity to verify eviction doesn't break correctness
-  const hashes: string[] = [];
-  for (let i = 0; i < 110; i++) {
-    hashes.push(await hashApiKey(`evict-key-${i}`));
-  }
-  // Re-hashing the same keys should still produce the same results
-  for (let i = 0; i < 110; i++) {
-    expect(await hashApiKey(`evict-key-${i}`)).toBe(hashes[i]);
-  }
-  _clearHashCache();
+  expect(h).not.toBe(h2);
+  // But both verify against the original key
+  expect(await verifyApiKeyHash("key", h)).toBe(true);
+  expect(await verifyApiKeyHash("key", h2)).toBe(true);
+  // Different key does not verify
+  expect(await verifyApiKeyHash("other", h)).toBe(false);
 });
 
 test("verifySlugOwner returns unclaimed for missing slug", async () => {
@@ -41,7 +21,9 @@ test("verifySlugOwner returns unclaimed for missing slug", async () => {
   const result = await verifySlugOwner("key1", { slug: "my-agent", store });
   expect(result.status).toBe("unclaimed");
   expect("keyHash" in result).toBe(true);
-  expect((result as { keyHash: string }).keyHash).toBe(await hashApiKey("key1"));
+  if (result.status === "unclaimed") {
+    expect(result.keyHash).toMatch(/^pbkdf2:/);
+  }
 });
 
 test("verifySlugOwner returns owned for matching credential", async () => {
@@ -104,32 +86,19 @@ test("verifySlugOwner rejects when credential_hashes is empty", async () => {
   expect((await verifySlugOwner("any-key", { slug: "my-agent", store })).status).toBe("forbidden");
 });
 
-// ── Auth Timing Safety ─────────────────────────────────────────────────
-
-import { describe } from "vitest";
-
 describe("auth timing safety", () => {
-  test("API key hashes are always 64 hex chars (constant length)", async () => {
-    // Timing-safe comparison only works when both strings have the same
-    // length. Since we compare SHA-256 hashes, they should always be 64
-    // chars, making the early length-check exit harmless.
+  test("PBKDF2 hashes have consistent format", async () => {
     const shortKey = await hashApiKey("a");
     const longKey = await hashApiKey("a".repeat(1000));
     const emptyKey = await hashApiKey("");
 
-    expect(shortKey).toHaveLength(64);
-    expect(longKey).toHaveLength(64);
-    expect(emptyKey).toHaveLength(64);
+    const pattern = /^pbkdf2:600000:[A-Za-z0-9_-]+:[A-Za-z0-9_-]+$/;
+    expect(shortKey).toMatch(pattern);
+    expect(longKey).toMatch(pattern);
+    expect(emptyKey).toMatch(pattern);
 
-    // All hashes are distinct
-    expect(shortKey).not.toBe(longKey);
-    expect(shortKey).not.toBe(emptyKey);
-    expect(longKey).not.toBe(emptyKey);
-  });
-
-  test("different keys with same prefix produce different hashes", async () => {
-    const h1 = await hashApiKey("key-prefix-1");
-    const h2 = await hashApiKey("key-prefix-2");
-    expect(h1).not.toBe(h2);
+    expect(await verifyApiKeyHash("a", shortKey)).toBe(true);
+    expect(await verifyApiKeyHash("a".repeat(1000), longKey)).toBe(true);
+    expect(await verifyApiKeyHash("", emptyKey)).toBe(true);
   });
 });

@@ -2,14 +2,14 @@
 import { createStorage } from "unstorage";
 import { describe, expect, test } from "vitest";
 import { createBundleStore } from "./bundle-store.ts";
-import { deriveCredentialKey } from "./secrets.ts";
+import { importMasterKey } from "./secrets.ts";
 import { TEST_AGENT_CONFIG } from "./test-utils.ts";
 
 describe("bundle store (unstorage)", () => {
   test("putAgent + getManifest round-trip", async () => {
     const storage = createStorage();
-    const credentialKey = await deriveCredentialKey("test-secret");
-    const store = createBundleStore(storage, { credentialKey });
+    const masterKey = await importMasterKey("test-secret");
+    const store = createBundleStore(storage, { masterKey });
 
     await store.putAgent({
       slug: "test-agent",
@@ -27,8 +27,8 @@ describe("bundle store (unstorage)", () => {
 
   test("getManifest returns cached data on second read", async () => {
     const storage = createStorage();
-    const credentialKey = await deriveCredentialKey("test-secret");
-    const store = createBundleStore(storage, { credentialKey });
+    const masterKey = await importMasterKey("test-secret");
+    const store = createBundleStore(storage, { masterKey });
 
     await store.putAgent({
       slug: "test-agent",
@@ -50,8 +50,8 @@ describe("bundle store (unstorage)", () => {
 
   test("getManifest returns null for non-existent agent", async () => {
     const storage = createStorage();
-    const credentialKey = await deriveCredentialKey("test-secret");
-    const store = createBundleStore(storage, { credentialKey });
+    const masterKey = await importMasterKey("test-secret");
+    const store = createBundleStore(storage, { masterKey });
 
     const result = await store.getManifest("nonexistent");
     expect(result).toBeNull();
@@ -59,8 +59,8 @@ describe("bundle store (unstorage)", () => {
 
   test("concurrent putEnv calls do not lose updates", async () => {
     const storage = createStorage();
-    const credentialKey = await deriveCredentialKey("test-secret");
-    const store = createBundleStore(storage, { credentialKey });
+    const masterKey = await importMasterKey("test-secret");
+    const store = createBundleStore(storage, { masterKey });
 
     await store.putAgent({
       slug: "test-agent",
@@ -87,8 +87,8 @@ describe("bundle store (unstorage)", () => {
 
   test("getWorkerCode returns worker code", async () => {
     const storage = createStorage();
-    const credentialKey = await deriveCredentialKey("test-secret");
-    const store = createBundleStore(storage, { credentialKey });
+    const masterKey = await importMasterKey("test-secret");
+    const store = createBundleStore(storage, { masterKey });
 
     await store.putAgent({
       slug: "test-agent",
@@ -105,8 +105,8 @@ describe("bundle store (unstorage)", () => {
 
   test("getClientFile returns deployed HTML and assets", async () => {
     const storage = createStorage();
-    const credentialKey = await deriveCredentialKey("test-secret");
-    const store = createBundleStore(storage, { credentialKey });
+    const masterKey = await importMasterKey("test-secret");
+    const store = createBundleStore(storage, { masterKey });
 
     const html = "<!DOCTYPE html><html><body>hello</body></html>";
     const js = 'console.log("app");';
@@ -127,8 +127,8 @@ describe("bundle store (unstorage)", () => {
 
   test("redeploy replaces client files", async () => {
     const storage = createStorage();
-    const credentialKey = await deriveCredentialKey("test-secret");
-    const store = createBundleStore(storage, { credentialKey });
+    const masterKey = await importMasterKey("test-secret");
+    const store = createBundleStore(storage, { masterKey });
 
     await store.putAgent({
       slug: "test-agent",
@@ -157,8 +157,8 @@ describe("bundle store (unstorage)", () => {
 
   test("deleteAgent removes all files", async () => {
     const storage = createStorage();
-    const credentialKey = await deriveCredentialKey("test-secret");
-    const store = createBundleStore(storage, { credentialKey });
+    const masterKey = await importMasterKey("test-secret");
+    const store = createBundleStore(storage, { masterKey });
 
     await store.putAgent({
       slug: "test-agent",

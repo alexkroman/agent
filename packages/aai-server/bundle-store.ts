@@ -7,7 +7,7 @@ import type { Storage } from "unstorage";
 import { z } from "zod";
 import { IsolateConfigSchema } from "./rpc-schemas.ts";
 import { AgentMetadataSchema } from "./schemas.ts";
-import { type CredentialKey, decryptEnv, encryptEnv } from "./secrets.ts";
+import { decryptEnv, encryptEnv, type MasterKey } from "./secrets.ts";
 import type { BundleStore } from "./store-types.ts";
 
 export type { BundleStore } from "./store-types.ts";
@@ -23,11 +23,8 @@ function objectKey(slug: string, file: string): string {
   return `agents/${slug}/${file}`;
 }
 
-export function createBundleStore(
-  storage: Storage,
-  opts: { credentialKey: CredentialKey },
-): BundleStore {
-  const { credentialKey } = opts;
+export function createBundleStore(storage: Storage, opts: { masterKey: MasterKey }): BundleStore {
+  const { masterKey } = opts;
 
   const manifestLock = getLock();
 
@@ -55,7 +52,7 @@ export function createBundleStore(
 
       const manifest = {
         slug: bundle.slug,
-        env: await encryptEnv(credentialKey, { env: bundle.env, slug: bundle.slug }),
+        env: await encryptEnv(masterKey, { env: bundle.env, slug: bundle.slug }),
         credential_hashes: bundle.credential_hashes,
         envEncrypted: true,
       };
@@ -73,7 +70,7 @@ export function createBundleStore(
     async getManifest(slug) {
       const raw = await getRawManifest(slug);
       if (!raw) return null;
-      const env = await decryptEnv(credentialKey, { encrypted: raw.env, slug });
+      const env = await decryptEnv(masterKey, { encrypted: raw.env, slug });
       const parsed = AgentMetadataSchema.safeParse({
         ...raw,
         env,
@@ -98,7 +95,7 @@ export function createBundleStore(
     async getEnv(slug) {
       const raw = await getRawManifest(slug);
       if (!raw) return null;
-      return await decryptEnv(credentialKey, { encrypted: raw.env, slug });
+      return await decryptEnv(masterKey, { encrypted: raw.env, slug });
     },
 
     async putEnv(slug, env) {
@@ -108,7 +105,7 @@ export function createBundleStore(
         if (!raw) throw new Error(`Agent ${slug} not found`);
         const updated = {
           ...raw,
-          env: await encryptEnv(credentialKey, { env, slug }),
+          env: await encryptEnv(masterKey, { env, slug }),
           envEncrypted: true,
         };
         await storage.setItem(objectKey(slug, "manifest.json"), JSON.stringify(updated));
