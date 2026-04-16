@@ -43,11 +43,14 @@ export async function verifyApiKeyHash(apiKey: string, storedHash: string): Prom
   const parts = storedHash.split(":");
   if (parts.length !== 4 || parts[0] !== "pbkdf2") return false;
 
-  const iterations = Number(parts[1]);
+  // biome-ignore lint/style/noNonNullAssertion: length check above guarantees these exist
+  const iterations = Number(parts[1]!);
   if (!Number.isFinite(iterations) || iterations <= 0) return false;
 
-  const salt = fromBase64Url(parts[2]);
-  const expected = fromBase64Url(parts[3]);
+  // biome-ignore lint/style/noNonNullAssertion: length check above guarantees these exist
+  const salt = new Uint8Array(fromBase64Url(parts[2]!));
+  // biome-ignore lint/style/noNonNullAssertion: length check above guarantees these exist
+  const expected = new Uint8Array(fromBase64Url(parts[3]!));
 
   const keyMaterial = await crypto.subtle.importKey("raw", enc.encode(apiKey), "PBKDF2", false, [
     "deriveBits",
@@ -116,7 +119,7 @@ export async function importMasterKey(secret: string): Promise<MasterKey> {
  */
 async function deriveEnvKey(
   masterKey: MasterKey,
-  salt: Uint8Array,
+  salt: Uint8Array<ArrayBuffer>,
   slug: string,
 ): Promise<CryptoKey> {
   return crypto.subtle.deriveKey(
@@ -184,9 +187,9 @@ export async function decryptEnv(
     throw new Error(`Unknown env encryption version: ${version}`);
   }
 
-  const salt = data.slice(1, 1 + ENV_SALT_BYTES);
-  const iv = data.slice(1 + ENV_SALT_BYTES, 1 + ENV_SALT_BYTES + ENV_IV_BYTES);
-  const ciphertext = data.slice(1 + ENV_SALT_BYTES + ENV_IV_BYTES);
+  const salt = new Uint8Array(data.slice(1, 1 + ENV_SALT_BYTES));
+  const iv = new Uint8Array(data.slice(1 + ENV_SALT_BYTES, 1 + ENV_SALT_BYTES + ENV_IV_BYTES));
+  const ciphertext = new Uint8Array(data.slice(1 + ENV_SALT_BYTES + ENV_IV_BYTES));
 
   const key = await deriveEnvKey(masterKey, salt, opts.slug);
   const plaintext = await crypto.subtle.decrypt(

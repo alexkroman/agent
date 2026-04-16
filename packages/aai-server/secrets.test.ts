@@ -214,7 +214,8 @@ describe("env size limit", () => {
 
   test("allows env just under the limit", async () => {
     const masterKey = await importMasterKey("test-secret");
-    const value = "x".repeat(65_529);
+    // JSON overhead: {"K":"..."} = 8 bytes, so value can be up to 65536 - 8
+    const value = "x".repeat(65_528);
     const encrypted = await encryptEnv(masterKey, {
       env: { K: value },
       slug: "s",
