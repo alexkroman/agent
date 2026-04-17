@@ -341,22 +341,33 @@ function randomPauseMs(): number {
 }
 
 function checkFdLimit(requiredFds: number): void {
-  let softLimit = -1;
+  // We read the HARD limit, not the soft limit, because Node's libuv auto-raises
+  // the soft limit to the hard limit at startup on macOS/Linux. The hard limit is
+  // the actual ceiling for this process.
+  let hardLimit = -1;
   try {
-    softLimit = Number.parseInt(
-      execFileSync("sh", ["-c", "ulimit -Sn"], { encoding: "utf8" }).trim(),
+    hardLimit = Number.parseInt(
+      execFileSync("sh", ["-c", "ulimit -Hn"], { encoding: "utf8" }).trim(),
       10,
     );
   } catch {
     // Couldn't determine the limit (e.g. Windows) — skip rather than false-positive.
     return;
   }
-  if (!Number.isFinite(softLimit) || softLimit <= 0) return;
-  if (softLimit < requiredFds) {
+  if (!Number.isFinite(hardLimit) || hardLimit <= 0) return;
+  if (hardLimit < requiredFds) {
     console.error(
-      `Error: file descriptor limit too low (soft limit ${softLimit}, need ~${requiredFds}).`,
+      `Error: file descriptor hard limit too low (${hardLimit}, need ~${requiredFds}).`,
     );
-    console.error(`Run:   ulimit -n ${Math.max(10_240, requiredFds * 2)}`);
+    console.error(
+      `Node auto-raises the soft limit to the hard limit at startup, but cannot exceed it.`,
+    );
+    console.error(
+      `On macOS, raise the per-process cap:  sudo launchctl limit maxfiles ${Math.max(10_240, requiredFds * 2)} unlimited`,
+    );
+    console.error(
+      `On Linux, run:                        ulimit -Hn ${Math.max(10_240, requiredFds * 2)}`,
+    );
     process.exit(1);
   }
 }
