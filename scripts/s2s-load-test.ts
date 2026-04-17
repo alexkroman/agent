@@ -215,7 +215,11 @@ function percentile(sorted: number[], p: number): number {
   return sorted[Math.max(0, Math.ceil((p / 100) * sorted.length) - 1)]!;
 }
 
-function printMetrics(results: SessionMetrics[], peakConcurrency: number): void {
+function printMetrics(
+  results: SessionMetrics[],
+  peakConcurrency: number,
+  loopLagSamples: number[],
+): void {
   // Per-session results
   console.log("\n" + "=".repeat(70));
   console.log("RESULTS");
@@ -293,6 +297,11 @@ function printMetrics(results: SessionMetrics[], peakConcurrency: number): void 
     console.log(`  Turn latency p50: ${percentile(allLatencies, 50)}ms`);
     console.log(`  Turn latency p95: ${percentile(allLatencies, 95)}ms`);
     console.log(`  Turn latency p99: ${percentile(allLatencies, 99)}ms`);
+  }
+  if (loopLagSamples.length > 0) {
+    const sorted = [...loopLagSamples].sort((a, b) => a - b);
+    const max = sorted[sorted.length - 1]!;
+    console.log(`  Event-loop lag:   p50 ${percentile(sorted, 50)}ms, p95 ${percentile(sorted, 95)}ms, max ${max}ms`);
   }
 }
 
@@ -772,6 +781,13 @@ async function main(cfg: Config): Promise<void> {
       }, 1000)
     : null;
 
+  // Event-loop lag sampler — single most important signal for saturation.
+  const loopLagSamples: number[] = [];
+  const lagInterval = setInterval(() => {
+    const start = Date.now();
+    setImmediate(() => loopLagSamples.push(Date.now() - start));
+  }, 1000);
+
   async function worker(): Promise<void> {
     while (nextId < cfg.totalSessions) {
       const id = nextId++;
@@ -797,11 +813,12 @@ async function main(cfg: Config): Promise<void> {
     await Promise.all(Array.from({ length: numWorkers }, () => worker()));
   }
 
+  clearInterval(lagInterval);
   if (progressInterval) { clearInterval(progressInterval); process.stdout.write("\n"); }
 
   results.sort((a, b) => a.sessionId - b.sessionId);
   console.log(`\nAll sessions finished in ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
-  printMetrics(results, peakConcurrency);
+  printMetrics(results, peakConcurrency, loopLagSamples);
 
   await toxiState?.cleanup();
   process.exitCode = results.some((r) => r.errors.some((e) => e.startsWith("FAIL:"))) ? 1 : 0;
