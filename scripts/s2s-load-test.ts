@@ -42,6 +42,8 @@ const INPUT_SAMPLE_RATE = 16_000;
 const MAX_RETRIES = 5;
 const BARGE_IN_CHANCE = 0.2;
 
+const uint8ToBase64 = (bytes: Uint8Array): string => Buffer.from(bytes).toString("base64");
+
 // ── Tools & utterances ───────────────────────────────────────────────────────
 
 const TOOLS: S2sToolSchema[] = [
@@ -157,18 +159,36 @@ function float32ToPcm16(samples: Float32Array): Uint8Array {
   return new Uint8Array(buf);
 }
 
-async function generateAudioBuffers(tts: TTS, voice: string): Promise<Uint8Array[]> {
-  const buffers: Uint8Array[] = [];
+/**
+ * Pre-encodes audio into fully-formed wire frames (JSON strings) chunked
+ * by chunkMs. Runs once at startup; all sessions share the same frames.
+ *
+ * Returns outer[utterance][chunk] = JSON string ready for ws.send().
+ */
+async function generateAudioFrames(
+  tts: TTS,
+  voice: string,
+  chunkMs: number,
+): Promise<string[][]> {
+  const chunkBytes = Math.floor((INPUT_SAMPLE_RATE * chunkMs) / 1000) * 2;
+  const frames: string[][] = [];
   for (let i = 0; i < UTTERANCES.length; i++) {
     const text = UTTERANCES[i]!;
     process.stdout.write(`  TTS [${i + 1}/${UTTERANCES.length}] "${text.slice(0, 50)}..." `);
     const result = await tts.generate(text, { voice });
     const resampled = resample(result.audio, result.sampling_rate, INPUT_SAMPLE_RATE);
     const pcm = float32ToPcm16(resampled);
-    console.log(`${(resampled.length / INPUT_SAMPLE_RATE).toFixed(2)}s (${pcm.length} bytes)`);
-    buffers.push(pcm);
+    const utteranceFrames: string[] = [];
+    for (let offset = 0; offset < pcm.length; offset += chunkBytes) {
+      const chunk = pcm.subarray(offset, offset + chunkBytes);
+      utteranceFrames.push(`{"type":"input.audio","audio":"${uint8ToBase64(chunk)}"}`);
+    }
+    console.log(
+      `${(resampled.length / INPUT_SAMPLE_RATE).toFixed(2)}s (${pcm.length} bytes, ${utteranceFrames.length} chunks)`,
+    );
+    frames.push(utteranceFrames);
   }
-  return buffers;
+  return frames;
 }
 
 // ── Metrics ──────────────────────────────────────────────────────────────────
@@ -314,12 +334,12 @@ function randomPauseMs(): number {
 
 async function runSession(
   sessionId: number,
-  audioBuffers: Uint8Array[],
+  chunkFrames: string[][],
   createWebSocket: CreateS2sWebSocket,
   cfg: Config,
 ): Promise<SessionMetrics> {
   const sessionTurns = randomTurnCount(cfg.maxTurns);
-  const bufferOrder = shuffle([...audioBuffers.keys()]);
+  const bufferOrder = shuffle([...chunkFrames.keys()]);
   const log = cfg.quiet ? () => {} : (msg: string) => console.log(`  [s${sessionId}] ${msg}`);
 
   const metrics: SessionMetrics = {
@@ -338,7 +358,7 @@ async function runSession(
       log(`retry ${attempt}/${MAX_RETRIES} after ${backoff}ms`);
       await sleep(backoff);
     }
-    const result = await runSessionAttempt(sessionId, sessionTurns, bufferOrder, audioBuffers, metrics, sessionStart, log, createWebSocket, cfg);
+    const result = await runSessionAttempt(sessionId, sessionTurns, bufferOrder, chunkFrames, metrics, sessionStart, log, createWebSocket, cfg);
     if (result === "done") break;
     if (attempt === MAX_RETRIES) {
       metrics.errors.push(`exhausted ${MAX_RETRIES} retries`);
@@ -354,7 +374,7 @@ async function runSessionAttempt(
   sessionId: number,
   sessionTurns: number,
   bufferOrder: number[],
-  audioBuffers: Uint8Array[],
+  chunkFrames: string[][],
   metrics: SessionMetrics,
   sessionStart: number,
   log: (msg: string) => void,
@@ -516,10 +536,9 @@ async function runSessionAttempt(
         metrics.bargeIns++;
         log(`barge-in [turn ${currentTurn}]: interrupting agent`);
         const bufIdx = bufferOrder[currentTurn % bufferOrder.length]!;
-        const pcm = audioBuffers[bufIdx]!;
-        const chunkBytes = Math.floor((INPUT_SAMPLE_RATE * cfg.chunkMs) / 1000) * 2;
-        for (let offset = 0; offset < Math.min(pcm.length, chunkBytes * 5); offset += chunkBytes) {
-          handle.sendAudio(pcm.subarray(offset, offset + chunkBytes));
+        const frames = chunkFrames[bufIdx]!;
+        for (let i = 0; i < Math.min(frames.length, 5); i++) {
+          handle.sendAudioRaw(frames[i]!);
         }
       }
     });
@@ -548,18 +567,18 @@ async function runSessionAttempt(
       if (done) return;
 
       const bufIdx = bufferOrder[(currentTurn - 1) % bufferOrder.length]!;
-      const pcm = audioBuffers[bufIdx]!;
-      const chunkBytes = Math.floor((INPUT_SAMPLE_RATE * cfg.chunkMs) / 1000) * 2;
+      const frames = chunkFrames[bufIdx]!;
+      const approxSec = (frames.length * cfg.chunkMs) / 1000;
 
-      log(`streaming turn ${currentTurn}/${sessionTurns}${bargeInScheduled ? " (will barge-in)" : ""} (${(pcm.length / (INPUT_SAMPLE_RATE * 2)).toFixed(2)}s)`);
+      log(`streaming turn ${currentTurn}/${sessionTurns}${bargeInScheduled ? " (will barge-in)" : ""} (${approxSec.toFixed(2)}s)`);
       waitingForReply = true;
       gotAgentReplyThisTurn = false;
       recordedLatencyThisTurn = false;
       turnStart = 0;
 
-      for (let offset = 0; offset < pcm.length; offset += chunkBytes) {
+      for (const frame of frames) {
         if (done) return;
-        handle.sendAudio(pcm.subarray(offset, offset + chunkBytes));
+        handle.sendAudioRaw(frame);
         await sleep(cfg.chunkMs);
       }
       log(`turn ${currentTurn} audio sent`);
@@ -710,8 +729,8 @@ async function main(cfg: Config): Promise<void> {
     // @ts-expect-error voices_path is supported at runtime but missing from types
     { dtype: "q8", device: "cpu", voices_path: voicesPath },
   );
-  const audioBuffers = await generateAudioBuffers(tts as unknown as TTS, cfg.voice);
-  console.log(`Generated ${audioBuffers.length} audio buffers\n`);
+  const chunkFrames = await generateAudioFrames(tts as unknown as TTS, cfg.voice, cfg.chunkMs);
+  console.log(`Generated ${chunkFrames.length} utterances (pre-encoded frames)\n`);
 
   // Worker pool
   console.log(`Running ${cfg.totalSessions} session(s), ${cfg.concurrency} at a time...\n`);
@@ -735,7 +754,7 @@ async function main(cfg: Config): Promise<void> {
       const id = nextId++;
       active++;
       if (active > peakConcurrency) peakConcurrency = active;
-      const result = await runSession(id, audioBuffers, wsFactory, cfg);
+      const result = await runSession(id, chunkFrames, wsFactory, cfg);
       active--;
       results.push(result);
       completed++;
