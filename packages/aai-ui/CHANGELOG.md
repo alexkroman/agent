@@ -1,5 +1,13 @@
 # @alexkroman1/aai-ui
 
+## 1.2.3
+
+### Patch Changes
+
+- 6a44b5b: Republish after the 1.2.2 release workflow failed (broken lockfile under `pnpm/action-setup@v6`). Also: `aai init` now skips deploy when `pnpm install` fails, so users see the real install error instead of a cryptic Rolldown `@alexkroman1/aai` resolution failure.
+- Updated dependencies [6a44b5b]
+  - @alexkroman1/aai@1.2.3
+
 ## 1.2.2
 
 ### Patch Changes
