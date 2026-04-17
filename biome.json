@@ -228,6 +228,9 @@
           "security": {
             "noSecrets": "off"
           },
+          "style": {
+            "noRestrictedImports": "off"
+          },
           "suspicious": {
             "noExportsInTest": "off"
           }

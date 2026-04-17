@@ -12,10 +12,11 @@
  * if any bare import specifier is a devDependency.
  */
 
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, test } from "vitest";
+import { beforeAll, describe, expect, test } from "vitest";
 
 const PKG_DIR = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(resolve(PKG_DIR, "package.json"), "utf-8")) as {
@@ -41,13 +42,20 @@ describe("built exports do not import devDependencies", () => {
     .map(([subpath, val]) => ({ subpath, dist: val.import }))
     .filter((e): e is { subpath: string; dist: string } => typeof e.dist === "string");
 
+  // Self-heal so this test works from a clean checkout without a manual
+  // build step — otherwise `pnpm test` on a fresh worktree fails opaquely.
+  beforeAll(() => {
+    const missing = entries.some(({ dist }) => !existsSync(resolve(PKG_DIR, dist)));
+    if (missing) {
+      execFileSync("pnpm", ["--filter", "@alexkroman1/aai", "build"], {
+        cwd: resolve(PKG_DIR, "../.."),
+        stdio: "inherit",
+      });
+    }
+  }, 60_000);
+
   test.each(entries)("$subpath bundle has no devDependency import", ({ dist }) => {
     const file = resolve(PKG_DIR, dist);
-    if (!existsSync(file)) {
-      throw new Error(
-        `Built artifact missing: ${file}. Run \`pnpm --filter @alexkroman1/aai build\` first.`,
-      );
-    }
     const src = readFileSync(file, "utf-8");
     const leaks = new Set<string>();
     for (const match of src.matchAll(IMPORT_RE)) {
