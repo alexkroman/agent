@@ -8,6 +8,7 @@
  *   npx tsx scripts/s2s-load-test.ts --help
  */
 
+import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { defineCommand, runMain } from "citty";
 import {
@@ -41,6 +42,8 @@ type Config = {
 const INPUT_SAMPLE_RATE = 16_000;
 const MAX_RETRIES = 5;
 const BARGE_IN_CHANCE = 0.2;
+
+const uint8ToBase64 = (bytes: Uint8Array): string => Buffer.from(bytes).toString("base64");
 
 // ── Tools & utterances ───────────────────────────────────────────────────────
 
@@ -157,18 +160,36 @@ function float32ToPcm16(samples: Float32Array): Uint8Array {
   return new Uint8Array(buf);
 }
 
-async function generateAudioBuffers(tts: TTS, voice: string): Promise<Uint8Array[]> {
-  const buffers: Uint8Array[] = [];
+/**
+ * Pre-encodes audio into fully-formed wire frames (JSON strings) chunked
+ * by chunkMs. Runs once at startup; all sessions share the same frames.
+ *
+ * Returns outer[utterance][chunk] = JSON string ready for ws.send().
+ */
+async function generateAudioFrames(
+  tts: TTS,
+  voice: string,
+  chunkMs: number,
+): Promise<string[][]> {
+  const chunkBytes = Math.floor((INPUT_SAMPLE_RATE * chunkMs) / 1000) * 2;
+  const frames: string[][] = [];
   for (let i = 0; i < UTTERANCES.length; i++) {
     const text = UTTERANCES[i]!;
     process.stdout.write(`  TTS [${i + 1}/${UTTERANCES.length}] "${text.slice(0, 50)}..." `);
     const result = await tts.generate(text, { voice });
     const resampled = resample(result.audio, result.sampling_rate, INPUT_SAMPLE_RATE);
     const pcm = float32ToPcm16(resampled);
-    console.log(`${(resampled.length / INPUT_SAMPLE_RATE).toFixed(2)}s (${pcm.length} bytes)`);
-    buffers.push(pcm);
+    const utteranceFrames: string[] = [];
+    for (let offset = 0; offset < pcm.length; offset += chunkBytes) {
+      const chunk = pcm.subarray(offset, offset + chunkBytes);
+      utteranceFrames.push(`{"type":"input.audio","audio":"${uint8ToBase64(chunk)}"}`);
+    }
+    console.log(
+      `${(resampled.length / INPUT_SAMPLE_RATE).toFixed(2)}s (${pcm.length} bytes, ${utteranceFrames.length} chunks)`,
+    );
+    frames.push(utteranceFrames);
   }
-  return buffers;
+  return frames;
 }
 
 // ── Metrics ──────────────────────────────────────────────────────────────────
@@ -195,7 +216,11 @@ function percentile(sorted: number[], p: number): number {
   return sorted[Math.max(0, Math.ceil((p / 100) * sorted.length) - 1)]!;
 }
 
-function printMetrics(results: SessionMetrics[], peakConcurrency: number): void {
+function printMetrics(
+  results: SessionMetrics[],
+  peakConcurrency: number,
+  loopLagSamples: number[],
+): void {
   // Per-session results
   console.log("\n" + "=".repeat(70));
   console.log("RESULTS");
@@ -274,6 +299,11 @@ function printMetrics(results: SessionMetrics[], peakConcurrency: number): void 
     console.log(`  Turn latency p95: ${percentile(allLatencies, 95)}ms`);
     console.log(`  Turn latency p99: ${percentile(allLatencies, 99)}ms`);
   }
+  if (loopLagSamples.length > 0) {
+    const sorted = [...loopLagSamples].sort((a, b) => a - b);
+    const max = sorted[sorted.length - 1]!;
+    console.log(`  Event-loop lag:   p50 ${percentile(sorted, 50)}ms, p95 ${percentile(sorted, 95)}ms, max ${max}ms`);
+  }
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -310,16 +340,48 @@ function randomPauseMs(): number {
   return 1000 + Math.floor(Math.random() * 5000);
 }
 
+function checkFdLimit(requiredFds: number): void {
+  // We read the HARD limit, not the soft limit, because Node's libuv auto-raises
+  // the soft limit to the hard limit at startup on macOS/Linux. The hard limit is
+  // the actual ceiling for this process.
+  let hardLimit = -1;
+  try {
+    hardLimit = Number.parseInt(
+      execFileSync("sh", ["-c", "ulimit -Hn"], { encoding: "utf8" }).trim(),
+      10,
+    );
+  } catch {
+    // Couldn't determine the limit (e.g. Windows) — skip rather than false-positive.
+    return;
+  }
+  if (!Number.isFinite(hardLimit) || hardLimit <= 0) return;
+  if (hardLimit < requiredFds) {
+    console.error(
+      `Error: file descriptor hard limit too low (${hardLimit}, need ~${requiredFds}).`,
+    );
+    console.error(
+      `Node auto-raises the soft limit to the hard limit at startup, but cannot exceed it.`,
+    );
+    console.error(
+      `On macOS, raise the per-process cap:  sudo launchctl limit maxfiles ${Math.max(10_240, requiredFds * 2)} unlimited`,
+    );
+    console.error(
+      `On Linux, run:                        ulimit -Hn ${Math.max(10_240, requiredFds * 2)}`,
+    );
+    process.exit(1);
+  }
+}
+
 // ── Session driver ───────────────────────────────────────────────────────────
 
 async function runSession(
   sessionId: number,
-  audioBuffers: Uint8Array[],
+  chunkFrames: string[][],
   createWebSocket: CreateS2sWebSocket,
   cfg: Config,
 ): Promise<SessionMetrics> {
   const sessionTurns = randomTurnCount(cfg.maxTurns);
-  const bufferOrder = shuffle([...audioBuffers.keys()]);
+  const bufferOrder = shuffle([...chunkFrames.keys()]);
   const log = cfg.quiet ? () => {} : (msg: string) => console.log(`  [s${sessionId}] ${msg}`);
 
   const metrics: SessionMetrics = {
@@ -338,7 +400,7 @@ async function runSession(
       log(`retry ${attempt}/${MAX_RETRIES} after ${backoff}ms`);
       await sleep(backoff);
     }
-    const result = await runSessionAttempt(sessionId, sessionTurns, bufferOrder, audioBuffers, metrics, sessionStart, log, createWebSocket, cfg);
+    const result = await runSessionAttempt(sessionId, sessionTurns, bufferOrder, chunkFrames, metrics, sessionStart, log, createWebSocket, cfg);
     if (result === "done") break;
     if (attempt === MAX_RETRIES) {
       metrics.errors.push(`exhausted ${MAX_RETRIES} retries`);
@@ -354,7 +416,7 @@ async function runSessionAttempt(
   sessionId: number,
   sessionTurns: number,
   bufferOrder: number[],
-  audioBuffers: Uint8Array[],
+  chunkFrames: string[][],
   metrics: SessionMetrics,
   sessionStart: number,
   log: (msg: string) => void,
@@ -371,6 +433,26 @@ async function runSessionAttempt(
   let lastEvent = "init";
   let done = false;
   let shouldRetry = false;
+
+  let silenceTimer: NodeJS.Timeout | null = null;
+  let silenceWaiters: Array<() => void> = [];
+
+  function markSilent(): void {
+    silenceTimer = null;
+    const waiters = silenceWaiters;
+    silenceWaiters = [];
+    for (const w of waiters) w();
+  }
+
+  function onAudioTick(): void {
+    if (silenceTimer) clearTimeout(silenceTimer);
+    silenceTimer = setTimeout(markSilent, 500);
+  }
+
+  function waitForSilence(): Promise<void> {
+    if (silenceTimer === null) return Promise.resolve();
+    return new Promise((resolve) => silenceWaiters.push(resolve));
+  }
 
   let handle: S2sHandle;
   try {
@@ -402,6 +484,12 @@ async function runSessionAttempt(
       if (done) return;
       done = true;
       clearTimeout(timeout);
+
+      // Flush any pending silence waiters so streamNextTurn can exit cleanly.
+      if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
+      const waiters = silenceWaiters;
+      silenceWaiters = [];
+      for (const w of waiters) w();
 
       if (metrics.connected && metrics.sessionReady && !greetingReceived) {
         metrics.errors.push("FAIL: no greeting received from agent");
@@ -499,11 +587,9 @@ async function runSessionAttempt(
       }
     });
 
-    let lastAudioMs = 0;
-
     // Track latency and barge-in on agent audio (skip greeting audio)
     handle.on("audio", () => {
-      lastAudioMs = Date.now();
+      onAudioTick();
       if (currentTurn === 0) return; // ignore greeting audio
       if (waitingForReply && !recordedLatencyThisTurn && turnStart > 0) {
         recordedLatencyThisTurn = true;
@@ -516,10 +602,9 @@ async function runSessionAttempt(
         metrics.bargeIns++;
         log(`barge-in [turn ${currentTurn}]: interrupting agent`);
         const bufIdx = bufferOrder[currentTurn % bufferOrder.length]!;
-        const pcm = audioBuffers[bufIdx]!;
-        const chunkBytes = Math.floor((INPUT_SAMPLE_RATE * cfg.chunkMs) / 1000) * 2;
-        for (let offset = 0; offset < Math.min(pcm.length, chunkBytes * 5); offset += chunkBytes) {
-          handle.sendAudio(pcm.subarray(offset, offset + chunkBytes));
+        const frames = chunkFrames[bufIdx]!;
+        for (let i = 0; i < Math.min(frames.length, 5); i++) {
+          handle.sendAudioRaw(frames[i]!);
         }
       }
     });
@@ -541,25 +626,24 @@ async function runSessionAttempt(
       bargeInScheduled = Math.random() < BARGE_IN_CHANCE;
 
       // Wait for agent audio to stop streaming before sending user audio
-      while (Date.now() - lastAudioMs < 500 && !done) {
-        await sleep(100);
-      }
+      await waitForSilence();
+      if (done) return;
       await sleep(randomPauseMs());
       if (done) return;
 
       const bufIdx = bufferOrder[(currentTurn - 1) % bufferOrder.length]!;
-      const pcm = audioBuffers[bufIdx]!;
-      const chunkBytes = Math.floor((INPUT_SAMPLE_RATE * cfg.chunkMs) / 1000) * 2;
+      const frames = chunkFrames[bufIdx]!;
+      const approxSec = (frames.length * cfg.chunkMs) / 1000;
 
-      log(`streaming turn ${currentTurn}/${sessionTurns}${bargeInScheduled ? " (will barge-in)" : ""} (${(pcm.length / (INPUT_SAMPLE_RATE * 2)).toFixed(2)}s)`);
+      log(`streaming turn ${currentTurn}/${sessionTurns}${bargeInScheduled ? " (will barge-in)" : ""} (${approxSec.toFixed(2)}s)`);
       waitingForReply = true;
       gotAgentReplyThisTurn = false;
       recordedLatencyThisTurn = false;
       turnStart = 0;
 
-      for (let offset = 0; offset < pcm.length; offset += chunkBytes) {
+      for (const frame of frames) {
         if (done) return;
-        handle.sendAudio(pcm.subarray(offset, offset + chunkBytes));
+        handle.sendAudioRaw(frame);
         await sleep(cfg.chunkMs);
       }
       log(`turn ${currentTurn} audio sent`);
@@ -586,7 +670,7 @@ async function ensureToxiproxyServer(): Promise<void> {
     // not running — try to start it
   }
 
-  const { execFileSync, spawn } = await import("node:child_process");
+  const { spawn } = await import("node:child_process");
   try {
     execFileSync("which", ["toxiproxy-server"], { stdio: "ignore" });
   } catch {
@@ -710,8 +794,8 @@ async function main(cfg: Config): Promise<void> {
     // @ts-expect-error voices_path is supported at runtime but missing from types
     { dtype: "q8", device: "cpu", voices_path: voicesPath },
   );
-  const audioBuffers = await generateAudioBuffers(tts as unknown as TTS, cfg.voice);
-  console.log(`Generated ${audioBuffers.length} audio buffers\n`);
+  const chunkFrames = await generateAudioFrames(tts as unknown as TTS, cfg.voice, cfg.chunkMs);
+  console.log(`Generated ${chunkFrames.length} utterances (pre-encoded frames)\n`);
 
   // Worker pool
   console.log(`Running ${cfg.totalSessions} session(s), ${cfg.concurrency} at a time...\n`);
@@ -730,12 +814,19 @@ async function main(cfg: Config): Promise<void> {
       }, 1000)
     : null;
 
+  // Event-loop lag sampler — single most important signal for saturation.
+  const loopLagSamples: number[] = [];
+  const lagInterval = setInterval(() => {
+    const start = Date.now();
+    setImmediate(() => loopLagSamples.push(Date.now() - start));
+  }, 1000);
+
   async function worker(): Promise<void> {
     while (nextId < cfg.totalSessions) {
       const id = nextId++;
       active++;
       if (active > peakConcurrency) peakConcurrency = active;
-      const result = await runSession(id, audioBuffers, wsFactory, cfg);
+      const result = await runSession(id, chunkFrames, wsFactory, cfg);
       active--;
       results.push(result);
       completed++;
@@ -755,11 +846,12 @@ async function main(cfg: Config): Promise<void> {
     await Promise.all(Array.from({ length: numWorkers }, () => worker()));
   }
 
+  clearInterval(lagInterval);
   if (progressInterval) { clearInterval(progressInterval); process.stdout.write("\n"); }
 
   results.sort((a, b) => a.sessionId - b.sessionId);
   console.log(`\nAll sessions finished in ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
-  printMetrics(results, peakConcurrency);
+  printMetrics(results, peakConcurrency, loopLagSamples);
 
   await toxiState?.cleanup();
   process.exitCode = results.some((r) => r.errors.some((e) => e.startsWith("FAIL:"))) ? 1 : 0;
@@ -791,6 +883,14 @@ const loadTestCommand = defineCommand({
       console.error("Error: $ASSEMBLYAI_API_KEY environment variable is required");
       process.exit(1);
     }
+    if (args.verbose && Number(args.concurrency) > 100) {
+      console.error(
+        "Error: --verbose with concurrency > 100 produces enough stdout to " +
+        "dominate event-loop time and skew results. Drop --verbose, or lower -c.",
+      );
+      process.exit(1);
+    }
+    checkFdLimit(Math.max(3000, Number(args.sessions) + 500));
     await main({
       totalSessions: Number(args.sessions),
       concurrency: Number(args.concurrency),
