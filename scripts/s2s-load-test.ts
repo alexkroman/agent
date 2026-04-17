@@ -833,6 +833,13 @@ const loadTestCommand = defineCommand({
       console.error("Error: $ASSEMBLYAI_API_KEY environment variable is required");
       process.exit(1);
     }
+    if (args.verbose && Number(args.concurrency) > 100) {
+      console.error(
+        "Error: --verbose with concurrency > 100 produces enough stdout to " +
+        "dominate event-loop time and skew results. Drop --verbose, or lower -c.",
+      );
+      process.exit(1);
+    }
     await main({
       totalSessions: Number(args.sessions),
       concurrency: Number(args.concurrency),
