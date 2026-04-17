@@ -8,6 +8,7 @@
  *   npx tsx scripts/s2s-load-test.ts --help
  */
 
+import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { defineCommand, runMain } from "citty";
 import {
@@ -339,6 +340,27 @@ function randomPauseMs(): number {
   return 1000 + Math.floor(Math.random() * 5000);
 }
 
+function checkFdLimit(requiredFds: number): void {
+  let softLimit = -1;
+  try {
+    softLimit = Number.parseInt(
+      execFileSync("sh", ["-c", "ulimit -Sn"], { encoding: "utf8" }).trim(),
+      10,
+    );
+  } catch {
+    // Couldn't determine the limit (e.g. Windows) — skip rather than false-positive.
+    return;
+  }
+  if (!Number.isFinite(softLimit) || softLimit <= 0) return;
+  if (softLimit < requiredFds) {
+    console.error(
+      `Error: file descriptor limit too low (soft limit ${softLimit}, need ~${requiredFds}).`,
+    );
+    console.error(`Run:   ulimit -n ${Math.max(10_240, requiredFds * 2)}`);
+    process.exit(1);
+  }
+}
+
 // ── Session driver ───────────────────────────────────────────────────────────
 
 async function runSession(
@@ -637,7 +659,7 @@ async function ensureToxiproxyServer(): Promise<void> {
     // not running — try to start it
   }
 
-  const { execFileSync, spawn } = await import("node:child_process");
+  const { spawn } = await import("node:child_process");
   try {
     execFileSync("which", ["toxiproxy-server"], { stdio: "ignore" });
   } catch {
@@ -857,6 +879,7 @@ const loadTestCommand = defineCommand({
       );
       process.exit(1);
     }
+    checkFdLimit(Math.max(3000, Number(args.sessions) + 500));
     await main({
       totalSessions: Number(args.sessions),
       concurrency: Number(args.concurrency),
