@@ -66,6 +66,7 @@ describe("connectS2s", () => {
     expect(handle).toEqual(
       expect.objectContaining({
         sendAudio: expect.any(Function),
+        sendAudioRaw: expect.any(Function),
         sendToolResult: expect.any(Function),
         updateSession: expect.any(Function),
         resumeSession: expect.any(Function),
@@ -122,6 +123,24 @@ describe("connectS2s", () => {
     raw.readyState = 3; // CLOSED
 
     handle.sendAudio(new Uint8Array([1, 2, 3, 4]));
+    expect(raw.send).not.toHaveBeenCalled();
+  });
+
+  test("sendAudioRaw forwards the exact string to the socket", async () => {
+    const { raw, handle } = await setupHandle();
+
+    const frame = '{"type":"input.audio","audio":"abc"}';
+    handle.sendAudioRaw(frame);
+
+    expect(raw.send).toHaveBeenCalledOnce();
+    expect(raw.send.mock.calls[0]?.[0]).toBe(frame);
+  });
+
+  test("sendAudioRaw is no-op when ws is not open", async () => {
+    const { raw, handle } = await setupHandle();
+    raw.readyState = 3; // CLOSED
+
+    handle.sendAudioRaw('{"type":"input.audio","audio":"abc"}');
     expect(raw.send).not.toHaveBeenCalled();
   });
 

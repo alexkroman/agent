@@ -81,6 +81,7 @@ export function makeMockHandle(): MockS2sHandle {
   return {
     on: emitter.on.bind(emitter),
     sendAudio: vi.fn(),
+    sendAudioRaw: vi.fn(),
     sendToolResult: vi.fn(),
     updateSession: vi.fn(),
     resumeSession: vi.fn(),

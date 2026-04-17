@@ -159,6 +159,11 @@ export type S2sEvents = {
 export type S2sHandle = {
   on<K extends keyof S2sEvents>(event: K, cb: S2sEvents[K]): Unsubscribe;
   sendAudio(audio: Uint8Array): void;
+  /**
+   * Send a pre-encoded audio wire frame. For perf-critical callers (load tests)
+   * that batch-encode up front. Skips logging; caller owns wire format.
+   */
+  sendAudioRaw(jsonFrame: string): void;
   sendToolResult(callId: string, result: string): void;
   updateSession(config: S2sSessionConfig): void;
   resumeSession(sessionId: string): void;
@@ -210,6 +215,11 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
           return;
         }
         ws.send(`{"type":"input.audio","audio":"${uint8ToBase64(audio)}"}`);
+      },
+
+      sendAudioRaw(jsonFrame: string): void {
+        if (ws.readyState !== WS_OPEN) return;
+        ws.send(jsonFrame);
       },
 
       sendToolResult(callId: string, result: string): void {
