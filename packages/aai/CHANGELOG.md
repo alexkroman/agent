@@ -1,5 +1,11 @@
 # @alexkroman1/aai
 
+## 1.2.4
+
+### Patch Changes
+
+- 8a79282: Add sendAudioRaw to S2sHandle for batch-encoded audio frames
+
 ## 1.2.3
 
 ### Patch Changes
