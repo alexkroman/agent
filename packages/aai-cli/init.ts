@@ -95,19 +95,20 @@ async function runPnpmInstall(cwd: string): Promise<void> {
   await execFileAsync(cmd, [...args, ...pnpmArgs], { cwd });
 }
 
-/** Install deps with pnpm (scaffold declares packageManager: pnpm). */
-async function installDeps(cwd: string, silent?: boolean): Promise<void> {
-  if (!(await hasDeps(cwd))) return;
+/** Install deps with pnpm. Returns true on success (or no deps to install). */
+async function installDeps(cwd: string, silent?: boolean): Promise<boolean> {
+  if (!(await hasDeps(cwd))) return true;
   await ensurePnpm();
 
   if (silent) {
     try {
       await runPnpmInstall(cwd);
+      return true;
     } catch (err: unknown) {
       log.warn(`pnpm install failed: ${errorMessage(err)}`);
       log.warn("Run `corepack enable && pnpm install` manually in the project directory.");
+      return false;
     }
-    return;
   }
 
   const s = p.spinner();
@@ -115,10 +116,12 @@ async function installDeps(cwd: string, silent?: boolean): Promise<void> {
   try {
     await runPnpmInstall(cwd);
     s.stop("Dependencies installed");
+    return true;
   } catch (err: unknown) {
     s.stop("Dependency install failed");
     log.warn(`pnpm install failed: ${errorMessage(err)}`);
     log.warn("Run `corepack enable && pnpm install` manually in the project directory.");
+    return false;
   }
 }
 
@@ -205,13 +208,15 @@ export async function executeInit(
   const template = opts.template ?? "simple";
 
   await scaffoldProject(dir, cwd, template, suppressUi);
-  await installDeps(cwd, suppressUi);
+  const installed = await installDeps(cwd, suppressUi);
 
   let deployed = false;
   let slug: string | undefined;
   let url: string | undefined;
 
-  if (!(opts.skipDeploy || extra?.quiet)) {
+  if (!installed) {
+    log.warn("Skipping deploy because dependencies were not installed.");
+  } else if (!(opts.skipDeploy || extra?.quiet)) {
     const deployInfo = await tryDeploy(cwd, opts.server, monorepoRoot);
     if (deployInfo) {
       deployed = true;
