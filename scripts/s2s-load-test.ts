@@ -392,6 +392,26 @@ async function runSessionAttempt(
   let done = false;
   let shouldRetry = false;
 
+  let silenceTimer: NodeJS.Timeout | null = null;
+  let silenceWaiters: Array<() => void> = [];
+
+  function markSilent(): void {
+    silenceTimer = null;
+    const waiters = silenceWaiters;
+    silenceWaiters = [];
+    for (const w of waiters) w();
+  }
+
+  function onAudioTick(): void {
+    if (silenceTimer) clearTimeout(silenceTimer);
+    silenceTimer = setTimeout(markSilent, 500);
+  }
+
+  function waitForSilence(): Promise<void> {
+    if (silenceTimer === null) return Promise.resolve();
+    return new Promise((resolve) => silenceWaiters.push(resolve));
+  }
+
   let handle: S2sHandle;
   try {
     handle = await connectS2s({
@@ -422,6 +442,12 @@ async function runSessionAttempt(
       if (done) return;
       done = true;
       clearTimeout(timeout);
+
+      // Flush any pending silence waiters so streamNextTurn can exit cleanly.
+      if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
+      const waiters = silenceWaiters;
+      silenceWaiters = [];
+      for (const w of waiters) w();
 
       if (metrics.connected && metrics.sessionReady && !greetingReceived) {
         metrics.errors.push("FAIL: no greeting received from agent");
@@ -519,11 +545,9 @@ async function runSessionAttempt(
       }
     });
 
-    let lastAudioMs = 0;
-
     // Track latency and barge-in on agent audio (skip greeting audio)
     handle.on("audio", () => {
-      lastAudioMs = Date.now();
+      onAudioTick();
       if (currentTurn === 0) return; // ignore greeting audio
       if (waitingForReply && !recordedLatencyThisTurn && turnStart > 0) {
         recordedLatencyThisTurn = true;
@@ -560,9 +584,8 @@ async function runSessionAttempt(
       bargeInScheduled = Math.random() < BARGE_IN_CHANCE;
 
       // Wait for agent audio to stop streaming before sending user audio
-      while (Date.now() - lastAudioMs < 500 && !done) {
-        await sleep(100);
-      }
+      await waitForSilence();
+      if (done) return;
       await sleep(randomPauseMs());
       if (done) return;
 
