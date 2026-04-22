@@ -64,6 +64,7 @@ exports[`export surface stability > @alexkroman1/aai/runtime export 1`] = `
 [
   "DEFAULT_S2S_CONFIG",
   "_internals",
+  "buildBaseCtx",
   "buildCtx",
   "consoleLogger",
   "createRuntime",
