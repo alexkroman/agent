@@ -22,6 +22,16 @@
       "@dev/source": "./sdk/manifest-barrel.ts",
       "types": "./dist/sdk/manifest-barrel.d.ts",
       "import": "./dist/sdk/manifest-barrel.js"
+    },
+    "./stt": {
+      "@dev/source": "./host/providers/stt-barrel.ts",
+      "types": "./dist/host/providers/stt-barrel.d.ts",
+      "import": "./dist/host/providers/stt-barrel.js"
+    },
+    "./tts": {
+      "@dev/source": "./host/providers/tts-barrel.ts",
+      "types": "./dist/host/providers/tts-barrel.d.ts",
+      "import": "./dist/host/providers/tts-barrel.js"
     }
   },
   "scripts": {
@@ -58,10 +68,14 @@
   },
   "peerDependencies": {
     "@cartesia/cartesia-js": "^3.0.0",
+    "ai": "^6.0.161",
     "assemblyai": "^4.30.0"
   },
   "peerDependenciesMeta": {
     "@cartesia/cartesia-js": {
+      "optional": true
+    },
+    "ai": {
       "optional": true
     },
     "assemblyai": {
