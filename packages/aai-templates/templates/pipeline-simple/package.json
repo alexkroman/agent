@@ -1,0 +1,12 @@
+{
+  "name": "pipeline-simple-template",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@alexkroman1/aai": "workspace:*",
+    "@ai-sdk/openai": "^3.0.0",
+    "@cartesia/cartesia-js": "^3.0.0",
+    "ai": "^6.0.161",
+    "assemblyai": "^4.30.0"
+  }
+}
