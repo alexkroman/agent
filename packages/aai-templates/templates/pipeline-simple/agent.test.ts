@@ -12,10 +12,10 @@ describe("pipeline-simple template", () => {
   });
 
   test("STT provider is AssemblyAI", () => {
-    expect(agentDef.stt.name).toBe("assemblyai");
+    expect(agentDef.stt?.name).toBe("assemblyai");
   });
 
   test("TTS provider is Cartesia", () => {
-    expect(agentDef.tts.name).toBe("cartesia");
+    expect(agentDef.tts?.name).toBe("cartesia");
   });
 });

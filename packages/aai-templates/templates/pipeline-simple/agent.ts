@@ -8,15 +8,11 @@ import { cartesia } from "@alexkroman1/aai/tts";
 // and a streaming TTS (Cartesia). When `stt`, `llm`, and `tts` are all
 // set, the runtime switches from the default S2S path to the
 // pipeline orchestrator.
-const base = agent({
+export default agent({
   name: "pipeline-simple",
   systemPrompt: "You are a helpful voice assistant. Reply in short sentences.",
   greeting: "Hi! I'm running in pipeline mode. What can I help with?",
-});
-
-export default {
-  ...base,
   stt: assemblyAI({ model: "u3pro-rt" }),
   llm: openai("gpt-4o-mini"),
   tts: cartesia({ voice: "694f9389-aac1-45b6-b726-9d9369183238" }),
-};
+});
