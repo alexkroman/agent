@@ -335,3 +335,35 @@ describe("createPipelineSession — STT error", () => {
     await session.stop();
   });
 });
+
+describe("createPipelineSession — flush timeout/abort", () => {
+  test("flush that never drains does not wedge stop()", async () => {
+    // autoDoneOnFlush: false → TTS never fires `done`, so flushTtsAndWait must
+    // resolve via the turn-abort signal when stop() fires.
+    const script: ScriptedPart[] = [{ type: "text", text: "hi" }];
+    const tts = createFakeTtsProvider({ autoDoneOnFlush: false });
+    const { opts, stt, client } = makeOpts({
+      llm: createFakeLanguageModel({ script }),
+      tts,
+    });
+
+    const session = createPipelineSession(opts);
+    await session.start();
+
+    const sttSession = stt.last();
+    const ttsSession = tts.last();
+    if (!(sttSession && ttsSession)) throw new Error("providers didn't open");
+
+    sttSession.fireFinal("hi");
+    // Wait until the turn has reached the flush step — without this guard,
+    // stop() aborts the controller before flushTtsAndWait is even called.
+    await vi.waitFor(() => {
+      expect(ttsSession.flush).toHaveBeenCalledTimes(1);
+    });
+    await session.stop();
+
+    // Turn aborted before reply_done could fire.
+    const types = eventTypes(client.events);
+    expect(types).not.toContain("reply_done");
+  });
+});

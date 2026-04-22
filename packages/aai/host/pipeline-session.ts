@@ -10,7 +10,7 @@
 import type { LanguageModel, ModelMessage } from "ai";
 import { stepCountIs, streamText } from "ai";
 import type { AgentConfig, ExecuteTool, ToolSchema } from "../sdk/_internal-types.ts";
-import { DEFAULT_STT_SAMPLE_RATE } from "../sdk/constants.ts";
+import { DEFAULT_STT_SAMPLE_RATE, PIPELINE_FLUSH_TIMEOUT_MS } from "../sdk/constants.ts";
 import type { ClientSink, SessionErrorCode } from "../sdk/protocol.ts";
 import type {
   SttError,
@@ -231,14 +231,48 @@ export function createPipelineSession(opts: PipelineSessionOptions): Session {
     }
   }
 
-  function flushTtsAndWait(): Promise<void> {
+  /**
+   * Flush TTS and wait for drain. Resolves on any of:
+   *   - TTS emits `done`
+   *   - `signal` aborts (barge-in, provider error, session stop)
+   *   - `PIPELINE_FLUSH_TIMEOUT_MS` elapses
+   * Resolves immediately if no TTS session.
+   */
+  function flushTtsAndWait(signal: AbortSignal): Promise<void> {
     const tts = ctx.tts;
     if (!tts) return Promise.resolve();
     return new Promise<void>((resolve) => {
-      const off = tts.on("done", () => {
-        off();
+      let off: Unsubscribe | null = null;
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      const cleanup = () => {
+        if (off) {
+          off();
+          off = null;
+        }
+        if (timer) {
+          clearTimeout(timer);
+          timer = null;
+        }
+        signal.removeEventListener("abort", onAbort);
+      };
+      const finish = () => {
+        cleanup();
         resolve();
-      });
+      };
+      const onAbort = () => finish();
+      if (signal.aborted) {
+        resolve();
+        return;
+      }
+      signal.addEventListener("abort", onAbort, { once: true });
+      off = tts.on("done", finish);
+      timer = setTimeout(() => {
+        log.warn("TTS flush timeout", {
+          sessionId: opts.id,
+          timeoutMs: PIPELINE_FLUSH_TIMEOUT_MS,
+        });
+        finish();
+      }, PIPELINE_FLUSH_TIMEOUT_MS);
       tts.flush();
     });
   }
@@ -269,7 +303,7 @@ export function createPipelineSession(opts: PipelineSessionOptions): Session {
       return;
     }
 
-    await flushTtsAndWait();
+    await flushTtsAndWait(ctl.signal);
 
     if (ctl.signal.aborted) {
       if (turnController === ctl) turnController = null;
