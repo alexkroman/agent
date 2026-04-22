@@ -60,7 +60,7 @@ export type S2sSessionCtx = BaseSessionCtx & {
   s2s: S2sHandle | null;
 };
 
-export function buildBaseCtx(opts: {
+export function _buildBaseCtx(opts: {
   id: string;
   agent: string;
   client: ClientSink;
@@ -128,7 +128,7 @@ export function buildCtx(opts: {
   // the helper methods close over the base ctx reference, so spreading would
   // leave them writing to an orphan object (e.g. `beginReply` would mutate
   // the base `reply`, not the spread copy's `reply`).
-  const base = buildBaseCtx(opts) as S2sSessionCtx;
+  const base = _buildBaseCtx(opts) as S2sSessionCtx;
   base.s2s = null;
   return base;
 }
