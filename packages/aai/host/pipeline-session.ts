@@ -2,23 +2,9 @@
 /**
  * Pipeline session — pluggable STT → LLM → TTS orchestrator.
  *
- * Alternative to the S2S session (see `session.ts`) that drives three separate
- * providers through a four-state machine:
- *
- *   IDLE ─── stt.partial ──────────────────► USER_SPEAKING
- *   USER_SPEAKING ── stt.final(text) ──────► AGENT_REPLYING  (launches runTurn)
- *   USER_SPEAKING ── stt.final("") ────────► IDLE            (empty utterance)
- *   AGENT_REPLYING ── stt.partial ────────► USER_SPEAKING   (barge-in: abort + cancel TTS)
- *   AGENT_REPLYING ── tts.done ──────────► IDLE             (reply complete)
- *
- * The runTurn() function pipes Vercel AI SDK `streamText()` output into the
- * TTS session: each `text-delta` part feeds `tts.sendText`; when the stream
- * ends naturally, `tts.flush()` drains and emits `done`.
- *
- * Barge-in aborts the LLM stream and calls `tts.cancel()` synchronously.
- *
- * Sample rate is fixed at 16000 for the first spec — plumbed as `opts.sampleRate`
- * so the router (Task 6) can thread it through from the client.
+ * Alternative to the S2S session (see `session.ts`) that drives three
+ * independent providers. A new partial STT event while the agent is replying
+ * triggers barge-in (aborts the LLM stream and cancels TTS).
  */
 
 import type { LanguageModel, ModelMessage } from "ai";
@@ -29,7 +15,6 @@ import type { ClientSink, SessionErrorCode } from "../sdk/protocol.ts";
 import type {
   SttError,
   SttProvider,
-  SttSession,
   TtsError,
   TtsProvider,
   TtsSession,
@@ -77,14 +62,9 @@ export interface PipelineSessionOptions {
   maxHistory?: number | undefined;
 }
 
-type PipelineState = "IDLE" | "USER_SPEAKING" | "AGENT_REPLYING";
-
-/** Translate a plain message to the Vercel AI SDK `ModelMessage` shape. */
 function toModelMessage(m: Message): ModelMessage {
   if (m.role === "user") return { role: "user", content: m.content };
   if (m.role === "assistant") return { role: "assistant", content: m.content };
-  // The pipeline history never contains "tool" messages today (tool results
-  // are folded into text), but keep this path for forward compatibility.
   return { role: "assistant", content: m.content };
 }
 
@@ -92,17 +72,14 @@ function emitError(client: ClientSink, code: SessionErrorCode, message: string):
   client.event({ type: "error", code, message });
 }
 
-/** Shape of a single part we care about from `streamText`'s `fullStream`. */
 type StreamPartHandlerDeps = {
   client: ClientSink;
   tts: TtsSession | null;
   log: Logger;
   sessionId: string;
-  /** Appends delta text to the accumulated assistant reply and returns new length. */
   onTextDelta: (delta: string) => void;
 };
 
-/** Handle one part from `streamText().fullStream`. Pulled out for complexity budget. */
 function handleStreamPart(
   part: {
     readonly type: string;
@@ -151,18 +128,11 @@ function handleStreamPart(
       return;
     }
     default:
-      // Ignore text-start / text-end / finish / etc.
       return;
   }
 }
 
-/**
- * Create a pluggable-provider voice session.
- *
- * Returns a {@link Session} that opens STT + TTS on `start()`, drives the
- * four-state machine from STT events, and pipes Vercel AI SDK LLM output
- * into the TTS session.
- */
+/** Create a pluggable-provider voice session. */
 export function createPipelineSession(opts: PipelineSessionOptions): Session {
   const log = opts.logger ?? consoleLogger;
   const sampleRate = opts.sampleRate ?? DEFAULT_STT_SAMPLE_RATE;
@@ -186,42 +156,26 @@ export function createPipelineSession(opts: PipelineSessionOptions): Session {
   });
 
   const sessionAbort = new AbortController();
-  let state: PipelineState = "IDLE";
   let audioReady = false;
   let turnController: AbortController | null = null;
   let nextReplyId = 0;
   const sttSubs: Unsubscribe[] = [];
   const ttsSubs: Unsubscribe[] = [];
 
-  // ─── State transitions ───────────────────────────────────────────────────
-
   function onSttPartial(_text: string): void {
-    if (state === "IDLE") {
-      state = "USER_SPEAKING";
-      return;
-    }
-    if (state === "AGENT_REPLYING") {
-      // Barge-in: abort the LLM turn and cancel TTS.
-      log.info("Pipeline barge-in", { sessionId: opts.id });
-      turnController?.abort();
-      turnController = null;
-      ctx.tts?.cancel();
-      ctx.cancelReply();
-      client.event({ type: "cancelled" });
-      state = "USER_SPEAKING";
-    }
+    if (turnController === null) return;
+    log.info("Pipeline barge-in", { sessionId: opts.id });
+    turnController.abort();
+    turnController = null;
+    ctx.tts?.cancel();
+    ctx.cancelReply();
+    client.event({ type: "cancelled" });
   }
 
   function onSttFinal(text: string): void {
     const trimmed = text.trim();
-    if (trimmed.length === 0) {
-      // Empty utterance — drop and return to IDLE without starting a turn.
-      state = "IDLE";
-      return;
-    }
-    // User finished speaking with non-empty text — emit transcript, start reply.
+    if (trimmed.length === 0) return;
     client.event({ type: "user_transcript", text });
-    state = "AGENT_REPLYING";
     const turn = runTurn(trimmed).catch((err: unknown) => {
       log.error("Pipeline turn crashed", { error: errorMessage(err), sessionId: opts.id });
     });
@@ -238,9 +192,6 @@ export function createPipelineSession(opts: PipelineSessionOptions): Session {
     emitError(client, "tts", err.message);
   }
 
-  // ─── Per-turn LLM run ────────────────────────────────────────────────────
-
-  /** Drive `streamText().fullStream`, feeding each part into {@link handleStreamPart}. */
   async function consumeLlmStream(
     ctl: AbortController,
     messages: ModelMessage[],
@@ -255,11 +206,9 @@ export function createPipelineSession(opts: PipelineSessionOptions): Session {
       onTextDelta: onDelta,
     };
     try {
-      // Vercel AI SDK v6 defaults to a single step. Multi-step tool use
-      // requires an explicit `stopWhen` — without it, the stream terminates
-      // after the first tool result and the agent can't follow-up on its
-      // own tool calls. Honour `agentConfig.maxSteps` (default 5 — see
-      // `sdk/manifest.ts`).
+      // Vercel AI SDK v6 defaults to a single step — without `stopWhen`, the
+      // stream terminates after the first tool result and the agent can't
+      // follow up on its own tool calls.
       const maxSteps = agentConfig.maxSteps ?? 5;
       const result = streamText({
         model: opts.llm,
@@ -282,7 +231,6 @@ export function createPipelineSession(opts: PipelineSessionOptions): Session {
     }
   }
 
-  /** Flush TTS and wait for drain. Resolves immediately if no TTS session. */
   function flushTtsAndWait(): Promise<void> {
     const tts = ctx.tts;
     if (!tts) return Promise.resolve();
@@ -317,12 +265,10 @@ export function createPipelineSession(opts: PipelineSessionOptions): Session {
     });
 
     if (ctl.signal.aborted) {
-      // Barge-in already emitted `cancelled` and reset state; nothing else to do.
       if (turnController === ctl) turnController = null;
       return;
     }
 
-    // Stream finished normally. Flush TTS and wait for drain.
     await flushTtsAndWait();
 
     if (ctl.signal.aborted) {
@@ -336,56 +282,63 @@ export function createPipelineSession(opts: PipelineSessionOptions): Session {
     client.playAudioDone();
     client.event({ type: "reply_done" });
     if (turnController === ctl) turnController = null;
-    state = "IDLE";
   }
 
-  // ─── Session lifecycle ───────────────────────────────────────────────────
-
   async function openProviders(): Promise<void> {
-    try {
-      const sttSession: SttSession = await opts.stt.open({
+    const [sttResult, ttsResult] = await Promise.allSettled([
+      opts.stt.open({
         sampleRate,
         apiKey: opts.sttApiKey,
         sttPrompt: agentConfig.sttPrompt,
         signal: sessionAbort.signal,
-      });
-      if (sessionAbort.signal.aborted) {
-        await sttSession.close();
-        return;
-      }
-      ctx.stt = sttSession;
-      sttSubs.push(sttSession.on("partial", onSttPartial));
-      sttSubs.push(sttSession.on("final", onSttFinal));
-      sttSubs.push(sttSession.on("error", onSttError));
-    } catch (err: unknown) {
-      const msg = errorMessage(err);
-      log.error("STT open failed", { error: msg, sessionId: opts.id });
-      emitError(client, "stt", msg);
-      return;
-    }
-
-    try {
-      const ttsSession: TtsSession = await opts.tts.open({
+      }),
+      opts.tts.open({
         sampleRate,
         apiKey: opts.ttsApiKey,
         signal: sessionAbort.signal,
-      });
-      if (sessionAbort.signal.aborted) {
-        await ttsSession.close();
-        return;
-      }
-      ctx.tts = ttsSession;
-      ttsSubs.push(
-        ttsSession.on("audio", (pcm) => {
-          // Forward PCM16 to the client as Uint8Array (little-endian bytes).
-          client.playAudioChunk(new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength));
-        }),
-      );
-      ttsSubs.push(ttsSession.on("error", onTtsError));
-    } catch (err: unknown) {
-      const msg = errorMessage(err);
+      }),
+    ]);
+
+    if (sttResult.status === "rejected") {
+      const msg = errorMessage(sttResult.reason);
+      log.error("STT open failed", { error: msg, sessionId: opts.id });
+      emitError(client, "stt", msg);
+    }
+    if (ttsResult.status === "rejected") {
+      const msg = errorMessage(ttsResult.reason);
       log.error("TTS open failed", { error: msg, sessionId: opts.id });
       emitError(client, "tts", msg);
+    }
+
+    const aborted = sessionAbort.signal.aborted;
+    const sttFailed = sttResult.status === "rejected";
+    const ttsFailed = ttsResult.status === "rejected";
+    const teardown = aborted || sttFailed || ttsFailed;
+
+    if (sttResult.status === "fulfilled") {
+      const sttSession = sttResult.value;
+      if (teardown) {
+        await sttSession.close().catch(() => undefined);
+      } else {
+        ctx.stt = sttSession;
+        sttSubs.push(sttSession.on("partial", onSttPartial));
+        sttSubs.push(sttSession.on("final", onSttFinal));
+        sttSubs.push(sttSession.on("error", onSttError));
+      }
+    }
+    if (ttsResult.status === "fulfilled") {
+      const ttsSession = ttsResult.value;
+      if (teardown) {
+        await ttsSession.close().catch(() => undefined);
+      } else {
+        ctx.tts = ttsSession;
+        ttsSubs.push(
+          ttsSession.on("audio", (pcm) => {
+            client.playAudioChunk(new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength));
+          }),
+        );
+        ttsSubs.push(ttsSession.on("error", onTtsError));
+      }
     }
   }
 
@@ -411,9 +364,6 @@ export function createPipelineSession(opts: PipelineSessionOptions): Session {
     },
     onAudio(data: Uint8Array): void {
       if (!audioReady) return;
-      // PCM16 little-endian — wrap the underlying buffer as Int16Array. Slice
-      // first if byte alignment isn't 2-byte aligned (shouldn't happen in
-      // practice but guards against odd-sized frames).
       const offset = data.byteOffset;
       const length = data.byteLength;
       let pcm: Int16Array;
@@ -431,18 +381,18 @@ export function createPipelineSession(opts: PipelineSessionOptions): Session {
     },
     onCancel(): void {
       turnController?.abort();
+      turnController = null;
       ctx.tts?.cancel();
       ctx.cancelReply();
       client.event({ type: "cancelled" });
-      state = "IDLE";
     },
     onReset(): void {
       turnController?.abort();
+      turnController = null;
       ctx.tts?.cancel();
       ctx.cancelReply();
       ctx.conversationMessages = [];
       ctx.turnPromise = null;
-      state = "IDLE";
       client.event({ type: "reset" });
     },
     onHistory(incoming: readonly { role: "user" | "assistant"; content: string }[]): void {
