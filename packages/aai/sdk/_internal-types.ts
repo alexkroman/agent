@@ -21,6 +21,8 @@ import { BuiltinToolSchema, ToolChoiceSchema, type ToolDef } from "./types.ts";
 export interface ExecuteToolOptions {
   /** Abort signal bound to the enclosing LLM turn / request. */
   signal?: AbortSignal;
+  /** Vercel AI SDK tool-call ID for this invocation. Useful for tracing and correlation. */
+  toolCallId?: string;
 }
 
 /**

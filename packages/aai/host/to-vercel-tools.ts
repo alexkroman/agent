@@ -5,13 +5,18 @@
  *
  * The pipeline orchestrator passes the output to `streamText({ tools })`.
  * Each produced tool's `execute` closure calls
- * `ctx.executeTool(name, args, sessionId, messages(), { signal })`, so the
- * existing agent tool infrastructure (argument validation, KV, hooks,
+ * `ctx.executeTool(name, args, sessionId, messages(), { signal, toolCallId })`,
+ * so the existing agent tool infrastructure (argument validation, KV, hooks,
  * timeout) remains the single source of truth for tool behavior.
+ *
+ * Per-call `options.abortSignal` (forwarded by `streamText` when the
+ * outer turn is aborted, e.g. barge-in) takes precedence over the
+ * bag-level `ctx.signal` so individual invocations respect streamText
+ * aborts.
  */
 
-import { jsonSchema, type Tool, tool } from "ai";
-import type { ExecuteTool, ToolSchema } from "../sdk/_internal-types.ts";
+import { jsonSchema, type Tool, type ToolExecutionOptions, tool } from "ai";
+import type { ExecuteTool, ExecuteToolOptions, ToolSchema } from "../sdk/_internal-types.ts";
 import type { Message } from "../sdk/types.ts";
 
 export interface ToVercelToolsContext {
@@ -25,7 +30,10 @@ export interface ToVercelToolsContext {
    * captured when the tool bag was built.
    */
   messages: () => readonly Message[];
-  /** Abort signal propagated into {@link executeTool} as `opts.signal`. */
+  /**
+   * Bag-level abort signal. Used as a fallback when the per-call
+   * `options.abortSignal` from Vercel's `ToolExecutionOptions` is absent.
+   */
   signal?: AbortSignal;
 }
 
@@ -46,10 +54,14 @@ export function toVercelTools(
     out[schema.name] = tool({
       description: schema.description,
       inputSchema: jsonSchema(schema.parameters),
-      execute: async (args: unknown) => {
+      execute: async (args: unknown, options: ToolExecutionOptions) => {
         const input = (args ?? {}) as Readonly<Record<string, unknown>>;
-        const opts: { signal?: AbortSignal } = {};
-        if (ctx.signal !== undefined) opts.signal = ctx.signal;
+        // Prefer the per-call abortSignal forwarded by streamText over the
+        // bag-level ctx.signal so individual invocations respect aborts.
+        const signal = options.abortSignal ?? ctx.signal;
+        const opts: ExecuteToolOptions = {};
+        if (signal !== undefined) opts.signal = signal;
+        if (options.toolCallId !== undefined) opts.toolCallId = options.toolCallId;
         return ctx.executeTool(schema.name, input, ctx.sessionId, ctx.messages(), opts);
       },
     });
