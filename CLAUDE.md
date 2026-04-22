@@ -86,12 +86,14 @@ script enforces this at CI time.
 
 #### `aai` (shared core SDK)
 
-Four subpath exports consumed by sibling packages and user agents:
+Subpath exports consumed by sibling packages and user agents:
 
 - `.` — `agent()`, `tool()` helpers, `Kv`, types, utils, constants
 - `./runtime` — full Node.js runtime engine (barrel → 11 host/ modules)
 - `./protocol` — wire-format Zod schemas, `lenientParse()`, `ClientEvent`
 - `./manifest` — `parseManifest()`, `toAgentConfig()`, `agentToolsToSchemas()`
+- `./stt` — pipeline-mode STT provider factories (e.g. `assemblyAI`)
+- `./tts` — pipeline-mode TTS provider factories (e.g. `cartesia`)
 
 #### `aai-ui` (UI)
 
@@ -119,6 +121,8 @@ boundary** — this split is critical for sandbox security:
   inside a guest sandbox. Contains:
   `server.ts`, `runtime.ts`, `runtime-config.ts`, `tool-executor.ts`,
   `session.ts`, `session-ctx.ts`, `s2s.ts`, `ws-handler.ts`,
+  `pipeline-session.ts`, `pipeline-session-ctx.ts`, `to-vercel-tools.ts`,
+  `providers/` (pluggable STT/TTS adapters + barrels),
   `builtin-tools.ts`, `_run-code.ts`, `unstorage-kv.ts`,
   `testing.ts`, `matchers.ts`.
 
@@ -183,13 +187,55 @@ restrictions apply there.
 - `kv-handler.ts` — KV store HTTP API
 - `ssrf.ts` — SSRF protection, URL validation
 
+### Session modes
+
+Each agent runs in one of two session modes, selected at parse time by
+`parseManifest()` based on which top-level fields are present in the
+`agent()` config:
+
+- **S2S mode** (default — no `stt`/`llm`/`tts` fields in `agent.ts`) uses
+  `createS2sSession()` in `packages/aai/host/session.ts`. The host opens a
+  single WebSocket to AssemblyAI's speech-to-speech service; STT, the LLM
+  loop, and TTS all run service-side and audio/events relay through that
+  one socket. This is the original architecture.
+- **Pipeline mode** (triggered when all three of `stt`, `llm`, and `tts`
+  are set) uses `createPipelineSession()` in
+  `packages/aai/host/pipeline-session.ts`. Here the host drives the LLM
+  loop itself via the Vercel AI SDK's `streamText`, and STT and TTS are
+  pluggable providers imported from the `@alexkroman1/aai/stt` and
+  `@alexkroman1/aai/tts` subpath exports.
+
+Partial provider configs are rejected at parse time — `parseManifest()`
+requires either zero or all three of `stt`/`llm`/`tts`.
+
+Reference providers shipped today:
+
+- **STT**: `assemblyAI({ model: "u3pro-rt" })` via the `assemblyai` SDK
+- **LLM**: any Vercel AI SDK `LanguageModel` — users import from the
+  `@ai-sdk/*` packages (OpenAI, Anthropic, Google, etc.) themselves
+- **TTS**: `cartesia({ voice })` via `@cartesia/cartesia-js`
+
+The provider SDKs (`ai`, `assemblyai`, `@cartesia/cartesia-js`) are
+declared as **optional peer dependencies** of `@alexkroman1/aai`, so
+users only install the SDKs for the providers they actually use. S2S-mode
+agents need none of them.
+
 ### Data flow
 
-1. User speaks → browser captures PCM audio → WebSocket → server
-2. Server forwards audio to AssemblyAI STT → receives transcript
-3. STT fires `onUserTranscript` → agentic loop (LLM + tools)
-4. LLM response text → TTS → audio chunks → WebSocket → browser
-5. Browser plays audio; user can interrupt at any time (cancels in-flight turn)
+Audio path depends on the session mode (see above):
+
+- **S2S mode**: user speaks → browser captures PCM → WebSocket → server
+  relays audio into a single AssemblyAI S2S socket → agentic loop (LLM +
+  tools) runs service-side → synthesized audio streams back through the
+  same socket → server forwards to browser → user can interrupt at any
+  time (cancels the in-flight turn).
+- **Pipeline mode**: user speaks → browser captures PCM → WebSocket →
+  server forwards audio to the STT provider → transcript fires
+  `onUserTranscript` → host runs the LLM loop locally via `streamText`
+  (tool calls execute on the host just like S2S mode) → assistant text
+  chunks stream into the TTS provider → synthesized audio returns over
+  the client WebSocket → interrupts cancel the in-flight LLM stream and
+  TTS playback.
 
 ## Conventions
 
@@ -263,8 +309,10 @@ they are **not interchangeable**:
 | Type | Package | File | Purpose |
 | --- | --- | --- | --- |
 | `Session` | `aai` | `host/session.ts` | Server-side S2S voice session (manages one client's audio relay) |
-| `S2sSessionCtx` | `aai` | `host/session-ctx.ts` | Mutable context threaded through session event handlers |
+| `S2sSessionCtx` | `aai` | `host/session-ctx.ts` | Mutable context threaded through S2S-mode event handlers. A sibling `PipelineSessionCtx` exists for pipeline-mode sessions. |
 | `S2sSessionOptions` | `aai` | `host/session.ts` | Config for creating a server-side session |
+| `PipelineSessionCtx` | `aai` | `host/pipeline-session-ctx.ts` | Mutable context for pipeline mode — has stt/tts session slots instead of an s2s handle |
+| `PipelineSessionOptions` | `aai` | `host/pipeline-session.ts` | Config for creating a pipeline-mode session |
 | `SessionCore` | `aai-ui` | `session-core.ts` | Framework-agnostic browser session (WebSocket + audio + state) |
 | `SessionSnapshot` | `aai-ui` | `session-core.ts` | Immutable snapshot of browser session state (for `useSyncExternalStore`) |
 | `SessionError` | `aai-ui` | `types.ts` | Client-side error type with error code |
@@ -274,7 +322,7 @@ When searching for "Session", narrow by package to find the right one.
 ### Subpath export → file mapping
 
 Tracing imports through barrel files can be confusing. Here's the map
-(only four subpath exports exist in `aai/package.json`):
+of subpath exports in `aai/package.json`:
 
 | Import path | Resolves to | What it contains |
 | --- | --- | --- |
@@ -282,6 +330,8 @@ Tracing imports through barrel files can be confusing. Here's the map
 | `@alexkroman1/aai/runtime` | `host/runtime-barrel.ts` → 11 modules | Full Node.js runtime: session, S2S, server, tools, WS handler |
 | `@alexkroman1/aai/protocol` | `sdk/protocol.ts` (direct, not a barrel) | Wire-format Zod schemas, `lenientParse()`, `ClientEvent`, `ServerMessage` |
 | `@alexkroman1/aai/manifest` | `sdk/manifest-barrel.ts` → 3 modules | `parseManifest()`, `toAgentConfig()`, `agentToolsToSchemas()`, system prompt builder |
+| `@alexkroman1/aai/stt` | `host/providers/stt-barrel.ts` | STT provider factories + types (currently: `assemblyAI`) |
+| `@alexkroman1/aai/tts` | `host/providers/tts-barrel.ts` | TTS provider factories + types (currently: `cartesia`) |
 
 ### Default values and magic numbers
 
