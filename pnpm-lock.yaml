@@ -123,6 +123,9 @@ importers:
       ai:
         specifier: ^6.0.161
         version: 6.0.161(zod@4.3.6)
+      assemblyai:
+        specifier: ^4.30.0
+        version: 4.30.0
       tsdown:
         specifier: ^0.21.7
         version: 0.21.7(@arethetypeswrong/core@0.18.2)(@emnapi/core@1.9.2)(@emnapi/runtime@1.10.0)(oxc-resolver@11.19.1(@emnapi/core@1.9.2)(@emnapi/runtime@1.10.0))(publint@0.3.18)(typescript@6.0.2)
@@ -2456,6 +2459,10 @@ packages:
 
   asn1@0.2.6:
     resolution: {integrity: sha512-ix/FxPn0MDjeyJ7i/yoHGFt/EX6LyNbxSEhPPXODPL+KB0VPk86UYfL0lMdy+KCnv+fmvIzySwaK5COwqVbWTQ==}
+
+  assemblyai@4.30.0:
+    resolution: {integrity: sha512-F3X0YTOYBJSPhFHakvxlcKu3HjuEt3Nxs3xSSi1cDaK7i7X4hUdq/0RJcxanId3dQj3IKbkNdUbBnZiasMUf7Q==}
+    engines: {node: '>=18'}
 
   assert-plus@1.0.0:
     resolution: {integrity: sha512-NfJ4UzBCcQGLDlQq7nHxH+tv3kyZ0hHQqF5BO6J7tNJeP5do1llPr8dZ8zHonfhAu0PHAdMkSo+8o0wxg9lZWw==}
@@ -7571,6 +7578,13 @@ snapshots:
   asn1@0.2.6:
     dependencies:
       safer-buffer: 2.1.2
+
+  assemblyai@4.30.0:
+    dependencies:
+      ws: 8.20.0
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
 
   assert-plus@1.0.0: {}
 

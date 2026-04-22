@@ -1,0 +1,30 @@
+[
+  { "type": "Begin", "id": "sess-x", "expires_at": 0 },
+  {
+    "type": "Turn",
+    "turn_order": 1,
+    "turn_is_formatted": false,
+    "end_of_turn": false,
+    "transcript": "what",
+    "end_of_turn_confidence": 0.1,
+    "words": []
+  },
+  {
+    "type": "Turn",
+    "turn_order": 1,
+    "turn_is_formatted": false,
+    "end_of_turn": false,
+    "transcript": "what's the",
+    "end_of_turn_confidence": 0.3,
+    "words": []
+  },
+  {
+    "type": "Turn",
+    "turn_order": 1,
+    "turn_is_formatted": true,
+    "end_of_turn": true,
+    "transcript": "what's the weather?",
+    "end_of_turn_confidence": 0.95,
+    "words": []
+  }
+]
