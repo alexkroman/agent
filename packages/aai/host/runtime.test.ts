@@ -5,8 +5,13 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { toAgentConfig } from "../sdk/_internal-types.ts";
 import type { ToolDef } from "../sdk/types.ts";
+import {
+  createFakeLanguageModel,
+  createFakeSttProvider,
+  createFakeTtsProvider,
+} from "./_pipeline-test-fakes.ts";
 import { CONFORMANCE_AGENT, testRuntime } from "./_runtime-conformance.ts";
-import { flush, makeAgent, makeMockHandle, silentLogger } from "./_test-utils.ts";
+import { flush, makeAgent, makeClient, makeMockHandle, silentLogger } from "./_test-utils.ts";
 import { createRuntime } from "./runtime.ts";
 import { _internals } from "./session.ts";
 import { executeToolCall } from "./tool-executor.ts";
@@ -626,6 +631,81 @@ describe("createRuntime with custom options", () => {
     const runtime = createRuntime({ agent, env: {} });
     const result = await runtime.executeTool("get_state", {}, "s1", []);
     expect(JSON.parse(result)).toEqual({});
+  });
+});
+
+describe("Runtime — session routing", () => {
+  test("manifest with stt/llm/tts routes to PipelineSession (no S2S socket opened)", async () => {
+    const createWebSocket = vi.fn();
+    const stt = createFakeSttProvider();
+    const tts = createFakeTtsProvider();
+    const llm = createFakeLanguageModel({ script: [] });
+
+    const runtime = createRuntime({
+      agent: makeAgent(),
+      env: { ASSEMBLYAI_API_KEY: "stt-key", CARTESIA_API_KEY: "tts-key" },
+      logger: silentLogger,
+      createWebSocket,
+      stt,
+      llm,
+      tts,
+    });
+
+    const client = makeClient();
+    const session = runtime.createSession({
+      id: "sess-pipeline",
+      agent: "test-agent",
+      client,
+    });
+
+    expect(typeof session.start).toBe("function");
+    expect(typeof session.stop).toBe("function");
+
+    // Opening providers drives the pipeline path end-to-end; the S2S WS factory
+    // must never be called for a pipeline-mode session.
+    await session.start();
+    expect(stt.last()).toBeDefined();
+    expect(tts.last()).toBeDefined();
+    expect(createWebSocket).not.toHaveBeenCalled();
+
+    // Pipeline providers saw the resolved host-side credentials.
+    expect(stt.last()?.opts.apiKey).toBe("stt-key");
+    expect(tts.last()?.opts.apiKey).toBe("tts-key");
+
+    await session.stop();
+  });
+
+  test("manifest without stt/llm/tts routes to S2sSession (createWebSocket IS called)", async () => {
+    const mockHandle = makeMockHandle();
+    const connectSpy = vi.spyOn(_internals, "connectS2s").mockImplementation(async () => {
+      setTimeout(() => mockHandle._fire("ready", { sessionId: "mock-sid" }), 0);
+      return mockHandle;
+    });
+
+    const createWebSocket = vi.fn();
+    const runtime = createRuntime({
+      agent: makeAgent(),
+      env: { ASSEMBLYAI_API_KEY: "s2s-key" },
+      logger: silentLogger,
+      createWebSocket,
+    });
+
+    const client = makeClient();
+    const session = runtime.createSession({
+      id: "sess-s2s",
+      agent: "test-agent",
+      client,
+    });
+
+    await session.start();
+    // connectS2s is the seam that consumes our createWebSocket factory inside
+    // the S2S path. If routing picked the pipeline branch this would never fire.
+    expect(connectSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ createWebSocket, apiKey: "s2s-key" }),
+    );
+
+    await session.stop();
+    connectSpy.mockRestore();
   });
 });
 
