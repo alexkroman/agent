@@ -234,6 +234,85 @@ describe("createPipelineSession — tool calls", () => {
   });
 });
 
+describe("createPipelineSession — multi-step tool loop", () => {
+  test("streamText loops across multiple tool calls when maxSteps > 1", async () => {
+    // 4 steps: three tool calls (each in its own model step), then a final
+    // text completion. Without `stopWhen: stepCountIs(n)` the AI SDK v6
+    // default is a single step, so tool loops would terminate after the
+    // first tool-result and `executeTool` would only fire once.
+    const steps: ScriptedPart[][] = [
+      [
+        {
+          type: "tool-call",
+          toolCallId: "tc-1",
+          toolName: "get_weather",
+          input: JSON.stringify({ city: "SF" }),
+        },
+      ],
+      [
+        {
+          type: "tool-call",
+          toolCallId: "tc-2",
+          toolName: "get_weather",
+          input: JSON.stringify({ city: "LA" }),
+        },
+      ],
+      [
+        {
+          type: "tool-call",
+          toolCallId: "tc-3",
+          toolName: "get_weather",
+          input: JSON.stringify({ city: "NY" }),
+        },
+      ],
+      [{ type: "text", text: "Weather for all three cities retrieved." }],
+    ];
+    const executeTool = vi.fn(
+      async (name: string, args: Readonly<Record<string, unknown>>) =>
+        `result-${name}-${(args as { city?: string }).city ?? "?"}`,
+    );
+    const { opts, stt, tts, client } = makeOpts({
+      llm: createFakeLanguageModel({ steps }),
+      executeTool,
+      toolSchemas: [
+        {
+          name: "get_weather",
+          description: "Look up the weather for a city.",
+          parameters: {
+            type: "object",
+            properties: { city: { type: "string" } },
+            required: ["city"],
+          },
+        },
+      ],
+      agentConfig: { ...CONFIG, maxSteps: 5 },
+    });
+
+    const session = createPipelineSession(opts);
+    await session.start();
+
+    const sttSession = stt.last();
+    const ttsSession = tts.last();
+    if (!(sttSession && ttsSession)) throw new Error("providers didn't open");
+
+    sttSession.fireFinal("weather everywhere?");
+    await session.waitForTurn();
+
+    // All three tool calls ran.
+    expect(executeTool).toHaveBeenCalledTimes(3);
+    const toolCallEvents = client.events.filter((e) => (e as ClientEvent).type === "tool_call");
+    expect(toolCallEvents).toHaveLength(3);
+
+    // And the reply finished with a final text + reply_done, proving the
+    // loop actually terminated naturally rather than being cut short.
+    const types = eventTypes(client.events);
+    expect(types).toContain("reply_done");
+    expect(ttsSession.textChunks).toEqual(["Weather for all three cities retrieved."]);
+
+    await session.stop();
+  });
+});
+
 describe("createPipelineSession — STT error", () => {
   test("stt error emits single error wire event with code stt", async () => {
     const { opts, stt, client } = makeOpts();

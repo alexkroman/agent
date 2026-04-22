@@ -280,15 +280,22 @@ async function streamScript(
  * Pass `{ delayMs: N }` to space out parts with `setTimeout(N)` so that
  * barge-in tests can abort mid-stream deterministically.
  *
+ * Pass `{ steps: ScriptedPart[][] }` (instead of `script`) for multi-step
+ * scenarios: each call to `doStream()` consumes the next step's parts.
+ * This is how `streamText` drives multi-turn tool loops under `stopWhen`.
+ *
  * The returned value is cast to the `LanguageModel` union because we
  * implement the provider shape structurally rather than importing the
  * full `@ai-sdk/provider` types into the aai package.
  */
-export function createFakeLanguageModel(options: {
-  script: ScriptedPart[];
-  delayMs?: number;
-}): LanguageModel {
-  const { script, delayMs } = options;
+export function createFakeLanguageModel(
+  options:
+    | { script: ScriptedPart[]; delayMs?: number }
+    | { steps: ScriptedPart[][]; delayMs?: number },
+): LanguageModel {
+  const delayMs = options.delayMs;
+  const steps: ScriptedPart[][] = "steps" in options ? options.steps : [options.script];
+  let stepIndex = 0;
   const model = {
     specificationVersion: "v3" as const,
     provider: "fake-llm",
@@ -300,9 +307,13 @@ export function createFakeLanguageModel(options: {
     async doStream(opts: { abortSignal?: AbortSignal }): Promise<{
       stream: ReadableStream<StreamPart>;
     }> {
+      // Advance one step per call; after the last scripted step, keep
+      // yielding an empty step so an unexpected extra call completes cleanly.
+      const current = steps[stepIndex] ?? [];
+      stepIndex++;
       const stream = new ReadableStream<StreamPart>({
         start(controller) {
-          void streamScript(controller, script, delayMs, opts.abortSignal);
+          void streamScript(controller, current, delayMs, opts.abortSignal);
         },
       });
       return { stream };

@@ -22,7 +22,7 @@
  */
 
 import type { LanguageModel, ModelMessage } from "ai";
-import { streamText } from "ai";
+import { stepCountIs, streamText } from "ai";
 import type { AgentConfig, ExecuteTool, ToolSchema } from "../sdk/_internal-types.ts";
 import { DEFAULT_STT_SAMPLE_RATE } from "../sdk/constants.ts";
 import type { ClientSink, SessionErrorCode } from "../sdk/protocol.ts";
@@ -255,11 +255,18 @@ export function createPipelineSession(opts: PipelineSessionOptions): Session {
       onTextDelta: onDelta,
     };
     try {
+      // Vercel AI SDK v6 defaults to a single step. Multi-step tool use
+      // requires an explicit `stopWhen` — without it, the stream terminates
+      // after the first tool result and the agent can't follow-up on its
+      // own tool calls. Honour `agentConfig.maxSteps` (default 5 — see
+      // `sdk/manifest.ts`).
+      const maxSteps = agentConfig.maxSteps ?? 5;
       const result = streamText({
         model: opts.llm,
         system: systemPrompt,
         messages,
         tools,
+        stopWhen: stepCountIs(maxSteps),
         abortSignal: ctl.signal,
       });
       for await (const part of result.fullStream) {
