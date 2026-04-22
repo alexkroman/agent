@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test, vi } from "vitest";
-import type { ToolSchema } from "../sdk/_internal-types.ts";
+import type { ExecuteTool, ToolSchema } from "../sdk/_internal-types.ts";
+import type { Message } from "../sdk/types.ts";
 import { toVercelTools } from "./to-vercel-tools.ts";
 
 const schemas: ToolSchema[] = [
@@ -149,5 +150,38 @@ describe("toVercelTools", () => {
     });
     await tools.get_weather?.execute?.({ city: "NY" }, { toolCallId: "tc-3", messages: [] });
     expect(receivedCallId).toBe("tc-3");
+  });
+});
+
+describe("toVercelTools — message snapshot isolation", () => {
+  test("tool execute sees a snapshot, not a live ref to messages array", async () => {
+    const messagesBox = { messages: [{ role: "user" as const, content: "first" }] };
+    let observedInsideExecute: readonly Message[] | undefined;
+
+    const executeTool: ExecuteTool = async (_name, _args, _sid, msgs) => {
+      observedInsideExecute = msgs;
+      // Mutate the original array; the snapshot we captured must be unaffected.
+      messagesBox.messages.push({ role: "user", content: "second" });
+      return "ok";
+    };
+
+    const tools = toVercelTools(
+      [{ name: "t", description: "", parameters: { type: "object", properties: {} } }],
+      {
+        executeTool,
+        sessionId: "s",
+        messages: () => messagesBox.messages,
+      },
+    );
+
+    const t = tools.t;
+    if (!t?.execute) throw new Error("tool.execute missing");
+    await t.execute({}, { toolCallId: "c1", messages: [] });
+
+    // The caller-observable messages array has 2 entries after the push.
+    expect(messagesBox.messages).toHaveLength(2);
+    // But the snapshot the tool executed against was frozen at length 1.
+    expect(observedInsideExecute).toHaveLength(1);
+    expect(observedInsideExecute?.[0]).toMatchObject({ content: "first" });
   });
 });
