@@ -30,15 +30,18 @@ export type SessionDeps = {
 };
 
 /**
- * Session context threaded through event handlers.
+ * Transport-agnostic session context shared by S2S and pipeline sessions.
+ *
+ * Owns reply lifecycle, conversation history (with sliding-window truncation),
+ * and per-turn tool-call step enforcement. Transport-specific fields (e.g.
+ * `s2s` for S2S, `stt`/`tts` for the pipeline) live on the extending types.
  *
  * Split into three layers:
  * - {@link SessionDeps} — immutable dependencies (set once)
  * - {@link ReplyState} via `reply` — per-reply mutable state (reset on beginReply/cancelReply)
- * - Remaining fields — connection, conversation, and lifecycle methods
+ * - Remaining fields — conversation and lifecycle methods
  */
-export type S2sSessionCtx = SessionDeps & {
-  s2s: S2sHandle | null;
+export type BaseSessionCtx = SessionDeps & {
   reply: ReplyState;
   turnPromise: Promise<void> | null;
   conversationMessages: Message[];
@@ -50,7 +53,14 @@ export type S2sSessionCtx = SessionDeps & {
   chainTurn(p: Promise<void>): void;
 };
 
-export function buildCtx(opts: {
+/**
+ * S2S session context — {@link BaseSessionCtx} plus the S2S WebSocket handle.
+ */
+export type S2sSessionCtx = BaseSessionCtx & {
+  s2s: S2sHandle | null;
+};
+
+export function _buildBaseCtx(opts: {
   id: string;
   agent: string;
   client: ClientSink;
@@ -58,12 +68,11 @@ export function buildCtx(opts: {
   executeTool: ExecuteTool;
   log: Logger;
   maxHistory?: number | undefined;
-}): S2sSessionCtx {
+}): BaseSessionCtx {
   const { agentConfig, log } = opts;
   const maxHistory = opts.maxHistory ?? DEFAULT_MAX_HISTORY;
-  const ctx: S2sSessionCtx = {
+  const ctx: BaseSessionCtx = {
     ...opts,
-    s2s: null,
     reply: { pendingTools: [], toolCallCount: 0, currentReplyId: null },
     turnPromise: null,
     conversationMessages: [],
@@ -104,4 +113,22 @@ export function buildCtx(opts: {
     },
   };
   return ctx;
+}
+
+export function buildCtx(opts: {
+  id: string;
+  agent: string;
+  client: ClientSink;
+  agentConfig: AgentConfig;
+  executeTool: ExecuteTool;
+  log: Logger;
+  maxHistory?: number | undefined;
+}): S2sSessionCtx {
+  // Mutate the base ctx in place rather than spreading into a new object —
+  // the helper methods close over the base ctx reference, so spreading would
+  // leave them writing to an orphan object (e.g. `beginReply` would mutate
+  // the base `reply`, not the spread copy's `reply`).
+  const base = _buildBaseCtx(opts) as S2sSessionCtx;
+  base.s2s = null;
+  return base;
 }

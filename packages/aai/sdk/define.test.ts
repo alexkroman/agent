@@ -2,6 +2,8 @@
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import { agent, tool } from "./define.ts";
+import { parseManifest } from "./manifest.ts";
+import type { LlmProvider, SttProvider, TtsProvider } from "./providers.ts";
 
 describe("tool()", () => {
   test("returns the definition unchanged", () => {
@@ -53,5 +55,36 @@ describe("agent()", () => {
     expect(def.maxSteps).toBe(10);
     expect(def.tools.greet).toBe(greetTool);
     expect(def.builtinTools).toEqual(["web_search"]);
+  });
+
+  test("preserves stt/llm/tts providers on the returned def", () => {
+    const stt = { name: "fake-stt", open: async () => ({}) } as unknown as SttProvider;
+    const tts = { name: "fake-tts", open: async () => ({}) } as unknown as TtsProvider;
+    const llm = {} as LlmProvider;
+    const def = agent({ name: "t", systemPrompt: "p", stt, llm, tts });
+    expect(def.stt).toBe(stt);
+    expect(def.llm).toBe(llm);
+    expect(def.tts).toBe(tts);
+  });
+
+  test("stt/llm/tts flow through parseManifest to mode 'pipeline'", () => {
+    const stt = { name: "fake-stt", open: async () => ({}) } as unknown as SttProvider;
+    const tts = { name: "fake-tts", open: async () => ({}) } as unknown as TtsProvider;
+    const llm = {} as LlmProvider;
+    const def = agent({ name: "t", systemPrompt: "p", stt, llm, tts });
+    const parsed = parseManifest(def);
+    expect(parsed.mode).toBe("pipeline");
+    expect(parsed.stt).toBe(stt);
+    expect(parsed.llm).toBe(llm);
+    expect(parsed.tts).toBe(tts);
+  });
+
+  test("agent without providers resolves to mode 's2s'", () => {
+    const def = agent({ name: "t", systemPrompt: "p" });
+    const parsed = parseManifest(def);
+    expect(parsed.mode).toBe("s2s");
+    expect(parsed.stt).toBeUndefined();
+    expect(parsed.llm).toBeUndefined();
+    expect(parsed.tts).toBeUndefined();
   });
 });

@@ -46,6 +46,7 @@ export default defineConfig({
             "**/pentest.test.ts",
             "**/run-code-sandbox.test.ts",
             "**/integration.test.ts",
+            "**/*.integration.test.ts",
             "node_modules",
             "dist",
           ],
@@ -101,6 +102,19 @@ export default defineConfig({
           name: "templates",
           root: "packages/aai-templates",
           include: ["templates/*/agent.test.ts"],
+        },
+      },
+      {
+        ...sharedConfig,
+        test: {
+          name: "aai-types",
+          root: "packages/aai",
+          include: [],
+          typecheck: {
+            enabled: true,
+            only: true,
+            include: ["**/*.test-d.ts"],
+          },
         },
       },
     ],

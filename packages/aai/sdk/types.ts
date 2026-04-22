@@ -5,6 +5,7 @@
 
 import { z } from "zod";
 import type { Kv } from "./kv.ts";
+import type { LlmProvider, SttProvider, TtsProvider } from "./providers.ts";
 
 /**
  * Identifier for a built-in server-side tool.
@@ -217,6 +218,21 @@ export type AgentDef<S = Record<string, unknown>> = {
   tools: Readonly<Record<string, ToolDef<z.ZodObject<z.ZodRawShape>, S>>>;
   state?: () => S;
   idleTimeoutMs?: number;
+  /**
+   * Pluggable STT provider. Set together with `llm` and `tts` to enable
+   * pipeline mode; all three unset means S2S mode.
+   */
+  stt?: SttProvider;
+  /**
+   * Pluggable LLM provider (Vercel AI SDK `LanguageModel`). Set together
+   * with `stt` and `tts` for pipeline mode.
+   */
+  llm?: LlmProvider;
+  /**
+   * Pluggable TTS provider. Set together with `stt` and `llm` for
+   * pipeline mode.
+   */
+  tts?: TtsProvider;
 };
 
 // ─── Zod schemas ────────────────────────────────────────────────────────────

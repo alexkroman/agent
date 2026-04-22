@@ -11,6 +11,21 @@ import type { Message } from "./types.ts";
 import { BuiltinToolSchema, ToolChoiceSchema, type ToolDef } from "./types.ts";
 
 /**
+ * Options forwarded to an {@link ExecuteTool} invocation.
+ *
+ * Primarily used by the pipeline orchestrator (streamText tool loop) to
+ * thread an {@link AbortSignal} into tool execution. The S2S voice path
+ * does not pass these options today — recipients must treat the whole
+ * bag as optional.
+ */
+export interface ExecuteToolOptions {
+  /** Abort signal bound to the enclosing LLM turn / request. */
+  signal?: AbortSignal;
+  /** Vercel AI SDK tool-call ID for this invocation. Useful for tracing and correlation. */
+  toolCallId?: string;
+}
+
+/**
  * Function signature for executing a tool by name.
  *
  * Used by session.ts to invoke tools, by direct-executor.ts and
@@ -21,6 +36,7 @@ export type ExecuteTool = (
   args: Readonly<Record<string, unknown>>,
   sessionId?: string,
   messages?: readonly Message[],
+  opts?: ExecuteToolOptions,
 ) => Promise<string>;
 
 // ─── AgentConfig ────────────────────────────────────────────────────────────

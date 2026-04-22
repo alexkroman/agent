@@ -1,5 +1,6 @@
 {
   "simple": "Minimal starter — web search, fetch, run code",
+  "pipeline-simple": "Pipeline mode starter — AssemblyAI STT + OpenAI LLM + Cartesia TTS",
   "web-researcher": "Research assistant — search + page visits for detailed answers",
   "smart-research": "Multi-phase research — gather, analyze, respond with dynamic tools",
   "memory-agent": "Persistent memory — remembers facts across conversations via KV",

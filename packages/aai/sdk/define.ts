@@ -4,6 +4,7 @@
  */
 
 import type { z } from "zod";
+import type { LlmProvider, SttProvider, TtsProvider } from "./providers.ts";
 import {
   type AgentDef,
   type BuiltinTool,
@@ -65,6 +66,11 @@ export function tool<P extends z.ZodObject<z.ZodRawShape>>(def: {
  * });
  * ```
  *
+ * @remarks
+ * Pipeline mode: pass `stt`, `llm`, and `tts` together to switch from the
+ * default AssemblyAI Streaming Speech-to-Speech path to a pluggable
+ * STT → LLM → TTS pipeline. All three must be set (or all left unset).
+ *
  * @public
  */
 export function agent(def: {
@@ -77,6 +83,21 @@ export function agent(def: {
   toolChoice?: ToolChoice;
   sttPrompt?: string;
   idleTimeoutMs?: number;
+  /**
+   * Pluggable STT provider. Must be set together with `llm` and `tts` to
+   * enable pipeline mode; leave all three unset for S2S mode.
+   */
+  stt?: SttProvider;
+  /**
+   * Pluggable LLM provider (Vercel AI SDK `LanguageModel`). Must be set
+   * together with `stt` and `tts` to enable pipeline mode.
+   */
+  llm?: LlmProvider;
+  /**
+   * Pluggable TTS provider. Must be set together with `stt` and `llm` to
+   * enable pipeline mode.
+   */
+  tts?: TtsProvider;
 }): AgentDef {
   return {
     systemPrompt: DEFAULT_SYSTEM_PROMPT,

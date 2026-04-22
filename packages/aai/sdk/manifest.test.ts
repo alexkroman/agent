@@ -12,11 +12,18 @@ describe("parseManifest", () => {
       name: "Simple Agent",
       systemPrompt: expect.any(String),
       greeting: expect.any(String),
+      sttPrompt: undefined,
       maxSteps: 5,
       toolChoice: "auto",
+      idleTimeoutMs: undefined,
+      theme: undefined,
       builtinTools: [],
       allowedHosts: [],
       tools: {},
+      stt: undefined,
+      llm: undefined,
+      tts: undefined,
+      mode: "s2s",
     });
   });
 
@@ -153,5 +160,49 @@ describe("manifest type contracts", () => {
   test("Manifest has allowedHosts as string[]", () => {
     const result = parseManifest({ name: "test" });
     expectTypeOf(result.allowedHosts).toEqualTypeOf<string[]>();
+  });
+});
+
+describe("parseManifest — mode classification", () => {
+  const stubStt = { name: "stub-stt", open: async () => ({}) };
+  const stubTts = { name: "stub-tts", open: async () => ({}) };
+  const stubLlm = { modelId: "stub-llm" };
+
+  test("no stt/llm/tts ⇒ mode: 's2s'", () => {
+    const parsed = parseManifest({
+      name: "hello",
+      systemPrompt: "hi",
+    });
+    expect(parsed.mode).toBe("s2s");
+  });
+
+  test("all three of stt/llm/tts set ⇒ mode: 'pipeline'", () => {
+    const parsed = parseManifest({
+      name: "hello",
+      systemPrompt: "hi",
+      stt: stubStt,
+      llm: stubLlm,
+      tts: stubTts,
+    } as never);
+    expect(parsed.mode).toBe("pipeline");
+  });
+
+  test("only stt set ⇒ throws", () => {
+    expect(() =>
+      parseManifest({
+        name: "hello",
+        stt: stubStt,
+      } as never),
+    ).toThrow(/stt, llm, and tts must be set together/);
+  });
+
+  test("stt + tts without llm ⇒ throws", () => {
+    expect(() =>
+      parseManifest({
+        name: "hello",
+        stt: stubStt,
+        tts: stubTts,
+      } as never),
+    ).toThrow(/stt, llm, and tts must be set together/);
   });
 });

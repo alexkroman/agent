@@ -1,15 +1,23 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Regression guard: the published bundle must not import any devDependency.
+ * Regression guard: the published bundle must not import any devDependency
+ * that isn't also a (peer) dependency.
  *
  * `tsdown` is configured with `deps.neverBundle: [/^[^./]/]`, meaning every
  * bare npm specifier survives as an `import` in the built output. If a
- * devDependency (e.g. `vitest`) is reachable from any public export, the
- * production server — which only installs `dependencies` — crashes at
- * startup with `ERR_MODULE_NOT_FOUND`.
+ * pure devDependency (e.g. `vitest`) is reachable from any public export,
+ * the production server — which only installs `dependencies` +
+ * `peerDependencies` — crashes at startup with `ERR_MODULE_NOT_FOUND`.
+ *
+ * Optional peer dependencies (e.g. `ai`, `assemblyai`,
+ * `@cartesia/cartesia-js`) are legitimately listed in both
+ * `devDependencies` (so our own tests resolve them) and
+ * `peerDependencies` (so consumers supply their own pin). Those are
+ * allowed — only specifiers that are `devDependencies`-only count as
+ * leaks.
  *
  * This test reads the built `dist/` files for each public export and fails
- * if any bare import specifier is a devDependency.
+ * if any bare import specifier is exclusively a devDependency.
  */
 
 import { execFileSync } from "node:child_process";
@@ -23,9 +31,16 @@ const pkg = JSON.parse(readFileSync(resolve(PKG_DIR, "package.json"), "utf-8")) 
   exports: Record<string, { "@dev/source"?: string; import?: string }>;
   devDependencies?: Record<string, string>;
   dependencies?: Record<string, string>;
+  peerDependencies?: Record<string, string>;
 };
 
-const devDeps = new Set(Object.keys(pkg.devDependencies ?? {}));
+const peerDeps = new Set(Object.keys(pkg.peerDependencies ?? {}));
+// "leak" means: listed in devDependencies but NOT also a peer dep. Pure
+// devDeps (like `vitest`, `tsdown`) are leaks; optional peer SDKs that
+// happen to double as a devDep for our own tests are not.
+const devDeps = new Set(
+  Object.keys(pkg.devDependencies ?? {}).filter((name) => !peerDeps.has(name)),
+);
 
 // Extract bare module specifiers from an ESM source string. Covers:
 //   import ... from "x"      export ... from "x"      import("x")
@@ -37,7 +52,7 @@ function rootSpecifier(spec: string): string {
   return spec.split("/")[0] ?? spec;
 }
 
-describe("built exports do not import devDependencies", () => {
+describe("built exports do not import devDependency-only packages", () => {
   const entries = Object.entries(pkg.exports)
     .map(([subpath, val]) => ({ subpath, dist: val.import }))
     .filter((e): e is { subpath: string; dist: string } => typeof e.dist === "string");
@@ -65,6 +80,8 @@ describe("built exports do not import devDependencies", () => {
       const root = rootSpecifier(spec);
       if (devDeps.has(root)) leaks.add(root);
     }
-    expect([...leaks], `devDependency imports in ${dist}: ${[...leaks].join(", ")}`).toEqual([]);
+    expect([...leaks], `devDependency-only imports in ${dist}: ${[...leaks].join(", ")}`).toEqual(
+      [],
+    );
   });
 });

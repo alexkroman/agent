@@ -22,6 +22,16 @@
       "@dev/source": "./sdk/manifest-barrel.ts",
       "types": "./dist/sdk/manifest-barrel.d.ts",
       "import": "./dist/sdk/manifest-barrel.js"
+    },
+    "./stt": {
+      "@dev/source": "./host/providers/stt-barrel.ts",
+      "types": "./dist/host/providers/stt-barrel.d.ts",
+      "import": "./dist/host/providers/stt-barrel.js"
+    },
+    "./tts": {
+      "@dev/source": "./host/providers/tts-barrel.ts",
+      "types": "./dist/host/providers/tts-barrel.d.ts",
+      "import": "./dist/host/providers/tts-barrel.js"
     }
   },
   "scripts": {
@@ -44,14 +54,34 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@ai-sdk/openai": "^3.0.0",
+    "@cartesia/cartesia-js": "^3.0.0",
     "@types/escape-html": "^1.0.4",
     "@types/html-to-text": "^9.0.4",
     "@types/json-schema": "^7.0.15",
     "@types/mime-types": "^3.0.1",
     "@types/node": "^25.5.2",
     "@types/ws": "^8.18.1",
+    "ai": "^6.0.161",
+    "assemblyai": "^4.30.0",
     "tsdown": "^0.21.7",
     "vitest": "^4.1.3"
+  },
+  "peerDependencies": {
+    "@cartesia/cartesia-js": "^3.0.0",
+    "ai": "^6.0.161",
+    "assemblyai": "^4.30.0"
+  },
+  "peerDependenciesMeta": {
+    "@cartesia/cartesia-js": {
+      "optional": true
+    },
+    "ai": {
+      "optional": true
+    },
+    "assemblyai": {
+      "optional": true
+    }
   },
   "engines": {
     "node": ">=24"

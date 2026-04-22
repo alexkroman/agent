@@ -14,9 +14,11 @@ import { DEFAULT_SHUTDOWN_TIMEOUT_MS } from "../sdk/constants.ts";
 import type { Kv } from "../sdk/kv.ts";
 import type { ClientSink } from "../sdk/protocol.ts";
 import { buildReadyConfig, type ReadyConfig } from "../sdk/protocol.ts";
+import type { LlmProvider, SttProvider, TtsProvider } from "../sdk/providers.ts";
 import type { AgentDef } from "../sdk/types.ts";
 import { toolError } from "../sdk/utils.ts";
 import { resolveAllBuiltins } from "./builtin-tools.ts";
+import { createPipelineSession } from "./pipeline-session.ts";
 import type { Logger, S2SConfig } from "./runtime-config.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime-config.ts";
 import type { CreateS2sWebSocket } from "./s2s.ts";
@@ -56,6 +58,18 @@ export type AgentRuntime = {
 /** Create an in-memory KV store (default for self-hosted). */
 function createLocalKv(): Kv {
   return createUnstorageKv({ storage: createStorage() });
+}
+
+/**
+ * Resolve an API key host-side for pipeline providers.
+ *
+ * Checks the agent's declared env first, then the host process env as a
+ * fallback. Returns `""` when absent — pipeline providers surface a clear
+ * `MissingCredentialsError` via their `open()` that the orchestrator
+ * converts to a `session.error` wire event.
+ */
+function resolveApiKey(envVar: string, env: Record<string, string>): string {
+  return env[envVar] ?? process.env[envVar] ?? "";
 }
 
 /**
@@ -111,6 +125,22 @@ export type RuntimeOptions = {
    * their own fetch wrapper.
    */
   fetch?: typeof globalThis.fetch | undefined;
+  /**
+   * Pluggable STT provider. Must be set together with `llm` and `tts` to
+   * route sessions through the pipeline path; leave all three unset for
+   * the default AssemblyAI Streaming Speech-to-Speech (S2S) path.
+   */
+  stt?: SttProvider | undefined;
+  /**
+   * Pluggable LLM provider (Vercel AI SDK `LanguageModel`). Must be set
+   * together with `stt` and `tts` to route sessions through the pipeline path.
+   */
+  llm?: LlmProvider | undefined;
+  /**
+   * Pluggable TTS provider. Must be set together with `stt` and `llm` to
+   * route sessions through the pipeline path.
+   */
+  tts?: TtsProvider | undefined;
 };
 
 /**
@@ -160,6 +190,14 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     sessionStartTimeoutMs,
     shutdownTimeoutMs = DEFAULT_SHUTDOWN_TIMEOUT_MS,
   } = opts;
+  // Derive session mode from the provider triple: all three set ⇒ pipeline,
+  // none set ⇒ s2s. Anything in-between is a configuration error.
+  const providerCount =
+    (opts.stt != null ? 1 : 0) + (opts.llm != null ? 1 : 0) + (opts.tts != null ? 1 : 0);
+  if (providerCount !== 0 && providerCount !== 3) {
+    throw new Error("stt, llm, and tts must be set together");
+  }
+  const mode: "s2s" | "pipeline" = providerCount === 3 ? "pipeline" : "s2s";
   const agentConfig = toAgentConfig(agent);
   const sessions = new Map<string, Session>();
   const sinkMap = new Map<string, ClientSink>();
@@ -241,6 +279,29 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     resumeFrom?: string;
   }): Session {
     sinkMap.set(sessionOpts.id, sessionOpts.client);
+    if (mode === "pipeline") {
+      // biome-ignore lint/style/noNonNullAssertion: providerCount === 3 ⇒ all set
+      const stt = opts.stt!;
+      // biome-ignore lint/style/noNonNullAssertion: providerCount === 3 ⇒ all set
+      const llm = opts.llm!;
+      // biome-ignore lint/style/noNonNullAssertion: providerCount === 3 ⇒ all set
+      const tts = opts.tts!;
+      return createPipelineSession({
+        id: sessionOpts.id,
+        agent: sessionOpts.agent,
+        client: sessionOpts.client,
+        agentConfig,
+        toolSchemas,
+        toolGuidance,
+        executeTool,
+        stt,
+        llm,
+        tts,
+        sttApiKey: resolveApiKey("ASSEMBLYAI_API_KEY", env),
+        ttsApiKey: resolveApiKey("CARTESIA_API_KEY", env),
+        logger,
+      });
+    }
     const apiKey = env.ASSEMBLYAI_API_KEY ?? "";
     return createS2sSession({
       id: sessionOpts.id,
