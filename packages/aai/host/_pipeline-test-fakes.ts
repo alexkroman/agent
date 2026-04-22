@@ -168,6 +168,40 @@ export function createFakeTtsProvider(
   };
 }
 
+/**
+ * Fake STT provider that throws on `open()` with a given error code. Used to
+ * test atomic provider open — TTS should not be opened at all when STT fails.
+ */
+export function createFailingSttProvider(
+  code: "stt_connect_failed" | "stt_auth_failed" | "stt_stream_error",
+  message: string,
+): SttProvider {
+  return {
+    name: "failing-stt",
+    async open(): Promise<SttSession> {
+      const err = Object.assign(new Error(message), { code }) as Error & { code: typeof code };
+      throw err;
+    },
+  };
+}
+
+/**
+ * Fake TTS provider that throws on `open()` with a given error code. Used to
+ * test atomic provider open — STT should be closed when TTS fails.
+ */
+export function createFailingTtsProvider(
+  code: "tts_connect_failed" | "tts_auth_failed" | "tts_stream_error",
+  message: string,
+): TtsProvider {
+  return {
+    name: "failing-tts",
+    async open(): Promise<TtsSession> {
+      const err = Object.assign(new Error(message), { code }) as Error & { code: typeof code };
+      throw err;
+    },
+  };
+}
+
 // ─── Fake LLM ───────────────────────────────────────────────────────────────
 
 /**

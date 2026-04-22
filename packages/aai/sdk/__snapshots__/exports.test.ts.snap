@@ -19,6 +19,7 @@ exports[`export surface stability > @alexkroman1/aai main export 1`] = `
   "MAX_TOOL_RESULT_CHARS",
   "MAX_VALUE_SIZE",
   "MAX_WS_PAYLOAD_BYTES",
+  "PIPELINE_FLUSH_TIMEOUT_MS",
   "RUN_CODE_TIMEOUT_MS",
   "TOOL_EXECUTION_TIMEOUT_MS",
   "ToolChoiceSchema",
