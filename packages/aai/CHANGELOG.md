@@ -1,5 +1,19 @@
 # @alexkroman1/aai
 
+## 1.3.0
+
+### Minor Changes
+
+- f1a9764: Internal: manifests now classify session mode (`s2s` | `pipeline`) at parse time, and expose optional `stt`, `llm`, and `tts` fields on the `Manifest` type. Groundwork for upcoming pluggable provider support — no user-visible behavior change yet.
+
+### Patch Changes
+
+- c95212a: Fix runtime crash when loading the host runtime without the provider SDKs installed. `ai`, `assemblyai`, and `@cartesia/cartesia-js` are now regular dependencies instead of optional peer dependencies — the runtime eagerly imports `pipeline-session.ts`, so they were already required at module load even for S2S-mode agents. Optional peer deps described a design the code didn't enforce; now the metadata matches behavior.
+- f1a9764: Fix PipelineSession: thread agentConfig.maxSteps into streamText via stopWhen: stepCountIs(n). Vercel AI SDK v6 defaults to a single step, so multi-step tool use would silently terminate after the first tool-result.
+- f1a9764: agent() helper accepts stt/llm/tts fields directly, removing the need for the spread workaround in pipeline-mode agents
+- 0231114: Simplify pipeline-session state management and parallelize provider open. Removes redundant PipelineState variable (equivalent to turnController != null), opens STT+TTS concurrently via Promise.allSettled (halves session-start latency), and cleans up either session if one open fails or the session aborts mid-open.
+- 8a79282: Add sendAudioRaw to S2sHandle for batch-encoded audio frames
+
 ## 1.2.3
 
 ### Patch Changes
