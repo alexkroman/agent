@@ -50,6 +50,7 @@
     "@types/mime-types": "^3.0.1",
     "@types/node": "^25.5.2",
     "@types/ws": "^8.18.1",
+    "ai": "^6.0.161",
     "tsdown": "^0.21.7",
     "vitest": "^4.1.3"
   },
