@@ -47,7 +47,7 @@
       "inputs": ["**/*.ts", "load/**/*.ts", "../../docker-compose.yml", "Dockerfile"]
     },
     "check:adversarial": {
-      "dependsOn": ["build"],
+      "dependsOn": ["build", "check:load"],
       "inputs": ["**/*.ts", "adversarial/**/*.ts", "../../docker-compose.yml", "Dockerfile"]
     },
     "check:typecheck": {

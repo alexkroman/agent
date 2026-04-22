@@ -6,6 +6,7 @@ export default defineConfig({
     testTimeout: 300_000, // 5 minutes per test
     hookTimeout: 180_000, // 3 minutes for setup/teardown
     pool: "forks",
+    fileParallelism: false,
     sequence: { concurrent: false },
     reporters: ["verbose"],
   },
