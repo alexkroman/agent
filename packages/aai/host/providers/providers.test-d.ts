@@ -25,7 +25,7 @@ test("LlmProvider is Vercel AI SDK's LanguageModel", () => {
   expectTypeOf<LlmProvider>().toEqualTypeOf<LanguageModel>();
 });
 
-test("Sstt/Tts on() returns Unsubscribe", () => {
+test("Stt/Tts on() returns Unsubscribe", () => {
   expectTypeOf<SttSession["on"]>().returns.toEqualTypeOf<Unsubscribe>();
   expectTypeOf<TtsSession["on"]>().returns.toEqualTypeOf<Unsubscribe>();
 });

@@ -103,6 +103,19 @@ export default defineConfig({
           include: ["templates/*/agent.test.ts"],
         },
       },
+      {
+        ...sharedConfig,
+        test: {
+          name: "aai-types",
+          root: "packages/aai",
+          include: [],
+          typecheck: {
+            enabled: true,
+            only: true,
+            include: ["**/*.test-d.ts"],
+          },
+        },
+      },
     ],
   },
 });
