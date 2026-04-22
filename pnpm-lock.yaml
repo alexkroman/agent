@@ -77,6 +77,15 @@ importers:
 
   packages/aai:
     dependencies:
+      '@cartesia/cartesia-js':
+        specifier: ^3.0.0
+        version: 3.0.0(ws@8.20.0)
+      ai:
+        specifier: ^6.0.161
+        version: 6.0.161(zod@4.3.6)
+      assemblyai:
+        specifier: ^4.30.0
+        version: 4.30.0
       escape-html:
         specifier: ^1.0.3
         version: 1.0.3
@@ -105,9 +114,6 @@ importers:
       '@ai-sdk/openai':
         specifier: ^3.0.0
         version: 3.0.53(zod@4.3.6)
-      '@cartesia/cartesia-js':
-        specifier: ^3.0.0
-        version: 3.0.0(ws@8.20.0)
       '@types/escape-html':
         specifier: ^1.0.4
         version: 1.0.4
@@ -126,12 +132,6 @@ importers:
       '@types/ws':
         specifier: ^8.18.1
         version: 8.18.1
-      ai:
-        specifier: ^6.0.161
-        version: 6.0.161(zod@4.3.6)
-      assemblyai:
-        specifier: ^4.30.0
-        version: 4.30.0
       tsdown:
         specifier: ^0.21.7
         version: 0.21.7(@arethetypeswrong/core@0.18.2)(@emnapi/core@1.9.2)(@emnapi/runtime@1.10.0)(oxc-resolver@11.19.1(@emnapi/core@1.9.2)(@emnapi/runtime@1.10.0))(publint@0.3.18)(typescript@6.0.2)

@@ -44,6 +44,9 @@
     "lint": "biome check ."
   },
   "dependencies": {
+    "@cartesia/cartesia-js": "^3.0.0",
+    "ai": "^6.0.161",
+    "assemblyai": "^4.30.0",
     "escape-html": "^1.0.3",
     "html-to-text": "^9.0.5",
     "mime-types": "^3.0.2",
@@ -55,33 +58,14 @@
   },
   "devDependencies": {
     "@ai-sdk/openai": "^3.0.0",
-    "@cartesia/cartesia-js": "^3.0.0",
     "@types/escape-html": "^1.0.4",
     "@types/html-to-text": "^9.0.4",
     "@types/json-schema": "^7.0.15",
     "@types/mime-types": "^3.0.1",
     "@types/node": "^25.5.2",
     "@types/ws": "^8.18.1",
-    "ai": "^6.0.161",
-    "assemblyai": "^4.30.0",
     "tsdown": "^0.21.7",
     "vitest": "^4.1.3"
-  },
-  "peerDependencies": {
-    "@cartesia/cartesia-js": "^3.0.0",
-    "ai": "^6.0.161",
-    "assemblyai": "^4.30.0"
-  },
-  "peerDependenciesMeta": {
-    "@cartesia/cartesia-js": {
-      "optional": true
-    },
-    "ai": {
-      "optional": true
-    },
-    "assemblyai": {
-      "optional": true
-    }
   },
   "engines": {
     "node": ">=24"
