@@ -7,6 +7,9 @@
  */
 
 import { z } from "zod";
+import type { LlmProvider } from "../host/providers/llm.ts";
+import type { SttProvider } from "../host/providers/stt.ts";
+import type { TtsProvider } from "../host/providers/tts.ts";
 import { validateAllowedHostPattern } from "./allowed-hosts.ts";
 import { BuiltinToolSchema, DEFAULT_GREETING, DEFAULT_SYSTEM_PROMPT } from "./types.ts";
 
@@ -46,6 +49,27 @@ export type Manifest = {
   tools: Record<string, ToolManifest>;
   /** Hostnames the agent is allowed to fetch. Empty = no fetch access. */
   allowedHosts: string[];
+  /**
+   * Pluggable STT provider. Must be set together with `llm` and `tts` to
+   * enable pipeline mode, or all three left unset for s2s mode.
+   */
+  stt?: SttProvider | undefined;
+  /**
+   * Pluggable LLM provider (Vercel AI SDK `LanguageModel`). Must be set
+   * together with `stt` and `tts` to enable pipeline mode.
+   */
+  llm?: LlmProvider | undefined;
+  /**
+   * Pluggable TTS provider. Must be set together with `stt` and `llm` to
+   * enable pipeline mode.
+   */
+  tts?: TtsProvider | undefined;
+  /**
+   * Session mode derived from provider fields:
+   * - `"s2s"` (default): AssemblyAI Streaming Speech-to-Speech path (no stt/llm/tts set).
+   * - `"pipeline"`: pluggable STT → LLM → TTS path (stt + llm + tts all set).
+   */
+  mode: "s2s" | "pipeline";
 };
 
 const ToolManifestSchema = z.object({
@@ -92,6 +116,19 @@ const ManifestSchema = z.object({
  */
 export function parseManifest(input: unknown): Manifest {
   const parsed = ManifestSchema.parse(input);
+  // stt/llm/tts are runtime objects (functions/classes) that can't be
+  // validated by the JSON-oriented Zod schema. Pull them straight from
+  // the raw input and enforce all-or-nothing presence here.
+  const raw = (input ?? {}) as {
+    stt?: SttProvider;
+    llm?: LlmProvider;
+    tts?: TtsProvider;
+  };
+  const providerCount = [raw.stt, raw.llm, raw.tts].filter((x) => x != null).length;
+  if (providerCount !== 0 && providerCount !== 3) {
+    throw new Error("stt, llm, and tts must be set together");
+  }
+  const mode: "s2s" | "pipeline" = providerCount === 3 ? "pipeline" : "s2s";
   return {
     name: parsed.name,
     systemPrompt: parsed.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
@@ -104,5 +141,9 @@ export function parseManifest(input: unknown): Manifest {
     theme: parsed.theme,
     tools: parsed.tools ?? {},
     allowedHosts: parsed.allowedHosts ?? [],
+    stt: raw.stt,
+    llm: raw.llm,
+    tts: raw.tts,
+    mode,
   };
 }
