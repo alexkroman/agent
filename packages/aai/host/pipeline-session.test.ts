@@ -126,3 +126,133 @@ describe("createPipelineSession — empty utterance", () => {
     await session.stop();
   });
 });
+
+describe("createPipelineSession — barge-in", () => {
+  test("stt.partial during AGENT_REPLYING aborts LLM, cancels TTS, emits cancelled", async () => {
+    // Script with delayMs so we can fire a partial between parts.
+    const script: ScriptedPart[] = [
+      { type: "text", text: "Hello " },
+      { type: "text", text: "how can " },
+      { type: "text", text: "I help?" },
+    ];
+    const { opts, stt, tts, client } = makeOpts({
+      llm: createFakeLanguageModel({ script, delayMs: 20 }),
+    });
+
+    const session = createPipelineSession(opts);
+    await session.start();
+
+    const sttSession = stt.last();
+    const ttsSession = tts.last();
+    if (!(sttSession && ttsSession)) throw new Error("providers didn't open");
+
+    // Kick off a reply.
+    sttSession.firePartial("hi");
+    sttSession.fireFinal("hi there");
+    // Wait until at least one text delta has been forwarded to TTS so we're
+    // firmly in AGENT_REPLYING before the barge-in partial.
+    await vi.waitFor(() => {
+      expect(ttsSession.sendText.mock.calls.length).toBeGreaterThan(0);
+    });
+
+    // Barge-in: user starts speaking again.
+    sttSession.firePartial("wait");
+    await session.waitForTurn();
+
+    // TTS.cancel must have been called exactly once.
+    expect(ttsSession.cancel).toHaveBeenCalledTimes(1);
+    // Wire events: user_transcript, some agent_transcript(s), then cancelled.
+    // No reply_done — barge-in short-circuits the drain.
+    const types = eventTypes(client.events);
+    expect(types).toContain("user_transcript");
+    expect(types).toContain("cancelled");
+    expect(types).not.toContain("reply_done");
+    expect(types.indexOf("cancelled")).toBeGreaterThan(types.indexOf("user_transcript"));
+
+    // After the barge-in lands, the state machine is back to USER_SPEAKING.
+    // A new final should start a fresh turn.
+    await session.stop();
+  });
+});
+
+describe("createPipelineSession — tool calls", () => {
+  test("tool-call and tool-result parts emit wire events; reply_done still fires", async () => {
+    const script: ScriptedPart[] = [
+      { type: "text", text: "Let me check" },
+      {
+        type: "tool-call",
+        toolCallId: "tc-1",
+        toolName: "get_weather",
+        input: JSON.stringify({ city: "SF" }),
+      },
+      {
+        type: "tool-result",
+        toolCallId: "tc-1",
+        toolName: "get_weather",
+        result: "sunny, 72F",
+      },
+      { type: "text", text: " — it's sunny." },
+    ];
+    const { opts, stt, tts, client } = makeOpts({
+      llm: createFakeLanguageModel({ script }),
+    });
+
+    const session = createPipelineSession(opts);
+    await session.start();
+
+    const sttSession = stt.last();
+    const ttsSession = tts.last();
+    if (!(sttSession && ttsSession)) throw new Error("providers didn't open");
+
+    sttSession.fireFinal("how's the weather?");
+    await session.waitForTurn();
+
+    const types = eventTypes(client.events);
+    expect(types).toEqual([
+      "user_transcript",
+      "agent_transcript", // "Let me check"
+      "tool_call",
+      "tool_call_done",
+      "agent_transcript", // " — it's sunny."
+      "reply_done",
+    ]);
+
+    const toolCall = client.events.find((e) => (e as ClientEvent).type === "tool_call");
+    expect(toolCall).toMatchObject({
+      type: "tool_call",
+      toolCallId: "tc-1",
+      toolName: "get_weather",
+    });
+    const toolDone = client.events.find((e) => (e as ClientEvent).type === "tool_call_done");
+    expect(toolDone).toMatchObject({
+      type: "tool_call_done",
+      toolCallId: "tc-1",
+      result: "sunny, 72F",
+    });
+
+    await session.stop();
+  });
+});
+
+describe("createPipelineSession — STT error", () => {
+  test("stt error emits single error wire event with code stt", async () => {
+    const { opts, stt, client } = makeOpts();
+    const session = createPipelineSession(opts);
+    await session.start();
+
+    const sttSession = stt.last();
+    if (!sttSession) throw new Error("STT didn't open");
+
+    sttSession.fireError("stt_stream_error", "oops");
+
+    const errors = client.events.filter((e) => (e as ClientEvent).type === "error");
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({
+      type: "error",
+      code: "stt",
+      message: "oops",
+    });
+
+    await session.stop();
+  });
+});
