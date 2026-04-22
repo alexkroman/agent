@@ -54,6 +54,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@ai-sdk/openai": "^3.0.0",
     "@cartesia/cartesia-js": "^3.0.0",
     "@types/escape-html": "^1.0.4",
     "@types/html-to-text": "^9.0.4",

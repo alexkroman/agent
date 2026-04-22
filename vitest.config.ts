@@ -46,6 +46,7 @@ export default defineConfig({
             "**/pentest.test.ts",
             "**/run-code-sandbox.test.ts",
             "**/integration.test.ts",
+            "**/*.integration.test.ts",
             "node_modules",
             "dist",
           ],
