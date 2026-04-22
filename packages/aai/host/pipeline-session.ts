@@ -175,6 +175,19 @@ export function createPipelineSession(opts: PipelineSessionOptions): Session {
   function onSttFinal(text: string): void {
     const trimmed = text.trim();
     if (trimmed.length === 0) return;
+    // If a prior turn is still running (duplicate/late STT final or a
+    // second utterance without an intervening partial), abort it before
+    // launching a new one. Matches LiveKit's `current_speech.interrupt()`
+    // and Pipecat's `InterruptionFrame` broadcast: single-slot current
+    // turn, replace in-flight rather than queue.
+    if (turnController !== null) {
+      log.info("Pipeline replacing in-flight turn", { sessionId: opts.id });
+      turnController.abort();
+      turnController = null;
+      ctx.tts?.cancel();
+      ctx.cancelReply();
+      client.event({ type: "cancelled" });
+    }
     client.event({ type: "user_transcript", text });
     const turn = runTurn(trimmed).catch((err: unknown) => {
       log.error("Pipeline turn crashed", { error: errorMessage(err), sessionId: opts.id });

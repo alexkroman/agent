@@ -336,6 +336,58 @@ describe("createPipelineSession — STT error", () => {
   });
 });
 
+describe("createPipelineSession — duplicate final", () => {
+  test("second final during AGENT_REPLYING aborts prior turn and starts new one", async () => {
+    // Multi-part first step with delay so the first turn is still streaming
+    // when the second final arrives.
+    const steps: ScriptedPart[][] = [
+      [
+        { type: "text", text: "first " },
+        { type: "text", text: "reply " },
+        { type: "text", text: "continues" },
+      ],
+      [{ type: "text", text: "second reply" }],
+    ];
+    const { opts, stt, tts, client } = makeOpts({
+      llm: createFakeLanguageModel({ steps, delayMs: 20 }),
+    });
+
+    const session = createPipelineSession(opts);
+    await session.start();
+
+    const sttSession = stt.last();
+    const ttsSession = tts.last();
+    if (!(sttSession && ttsSession)) throw new Error("providers didn't open");
+
+    sttSession.fireFinal("first question");
+    await vi.waitFor(() => {
+      expect(ttsSession.sendText.mock.calls.length).toBeGreaterThan(0);
+    });
+
+    // Second final arrives mid-reply.
+    sttSession.fireFinal("second question");
+    await session.waitForTurn();
+
+    // TTS.cancel fires once to abandon the first turn's audio.
+    expect(ttsSession.cancel).toHaveBeenCalledTimes(1);
+
+    // Both user transcripts reach the client.
+    const userTranscripts = client.events.filter(
+      (e) => (e as ClientEvent).type === "user_transcript",
+    );
+    expect(userTranscripts).toHaveLength(2);
+
+    // Second reply's text was synthesized.
+    expect(ttsSession.textChunks).toContain("second reply");
+
+    // Exactly one reply_done (for the second turn).
+    const replyDones = client.events.filter((e) => (e as ClientEvent).type === "reply_done");
+    expect(replyDones).toHaveLength(1);
+
+    await session.stop();
+  });
+});
+
 describe("createPipelineSession — flush timeout/abort", () => {
   test("flush that never drains does not wedge stop()", async () => {
     // autoDoneOnFlush: false → TTS never fires `done`, so flushTtsAndWait must
