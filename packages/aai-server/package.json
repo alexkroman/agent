@@ -1,6 +1,6 @@
 {
   "name": "aai-server",
-  "version": "1.0.12",
+  "version": "1.0.13",
   "private": true,
   "type": "module",
   "main": "dist/index.mjs",
