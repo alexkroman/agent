@@ -12,7 +12,11 @@
       "entry": [
         "host/_test-utils.ts",
         "host/runtime-barrel.ts",
-        "**/*.test.ts"
+        "host/providers/stt-barrel.ts",
+        "host/providers/tts-barrel.ts",
+        "host/integration/**/*.integration.test.ts",
+        "**/*.test.ts",
+        "**/*.test-d.ts"
       ],
       "includeEntryExports": true
     },
