@@ -7,10 +7,8 @@
  */
 
 import { z } from "zod";
-import type { LlmProvider } from "../host/providers/llm.ts";
-import type { SttProvider } from "../host/providers/stt.ts";
-import type { TtsProvider } from "../host/providers/tts.ts";
 import { validateAllowedHostPattern } from "./allowed-hosts.ts";
+import type { LlmProvider, SttProvider, TtsProvider } from "./providers.ts";
 import { BuiltinToolSchema, DEFAULT_GREETING, DEFAULT_SYSTEM_PROMPT } from "./types.ts";
 
 /**
