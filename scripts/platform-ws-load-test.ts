@@ -288,10 +288,11 @@ async function runSessionAttempt(
     let currentTurn = metrics.turnsCompleted;
     let waitingForReply = false;
     let greetingReceived = metrics.greetingReceived;
-    // On retry, if we already got past the greeting (saw it or advanced a
-    // turn), skip greeting-resolution entirely. Otherwise we'd burn another
-    // `greetingTimeoutMs` doing nothing before advancing.
-    let greetingResolved = metrics.greetingReceived || metrics.turnsCompleted > 0;
+    // Each attempt — including retries — runs against a fresh sandbox
+    // session that will send its own greeting. Always wait for that
+    // greeting's reply_done before streaming the next user turn, so
+    // markGreetingResolved() fires and dispatches streamNextTurn().
+    let greetingResolved = false;
     let recordedLatencyThisTurn = false;
     let lastUserFrameAt = 0;
     let bargeInScheduled = false;
@@ -393,7 +394,7 @@ async function runSessionAttempt(
         clearTimeout(greetingTimer);
         greetingTimer = null;
       }
-      log(`greeting ${reason} — starting turn 1`);
+      log(`greeting ${reason} — starting turn ${currentTurn + 1}`);
       void streamNextTurn();
     }
 
