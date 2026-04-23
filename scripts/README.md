@@ -44,17 +44,19 @@ latency (p50/p95/p99), tool-call counts, and error distribution. Uses the
 same Kokoro TTS audio generation and worker-pool approach as the S2S test;
 no Toxiproxy dependency.
 
-### Usage
+### Quick start
 
 ```sh
-# Quick smoke test (1 session, verbose)
-npx tsx scripts/platform-ws-load-test.ts --url wss://my-host/my-agent/websocket -n 1 -v
+# Smoke test (1 session, verbose)
+npx tsx scripts/platform-ws-load-test.ts \
+  --url wss://my-host/my-agent/websocket -n 1 -v
 
 # Sustained load (100 sessions, 25 concurrent)
-npx tsx scripts/platform-ws-load-test.ts --url wss://my-host/my-agent/websocket -n 100 -c 25
+npx tsx scripts/platform-ws-load-test.ts \
+  --url wss://my-host/my-agent/websocket -n 100 -c 25
 
 # See all options
 npx tsx scripts/platform-ws-load-test.ts --help
 ```
 
-No environment variables required (API key is handled by the platform, not the load test).
+No environment variables required (API key is handled by the platform).
