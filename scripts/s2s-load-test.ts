@@ -230,7 +230,7 @@ function printMetrics(
     console.log(`  Connected:        ${r.connected}`);
     console.log(`  Session ready:    ${r.sessionReady}`);
     console.log(`  Connect time:     ${r.connectMs}ms`);
-    console.log(`  First greeting:   ${r.firstGreetingMs > 0 ? `${r.firstGreetingMs}ms` : "n/a"}`);
+    console.log(`  Greeting started: ${r.firstGreetingMs > 0 ? `${r.firstGreetingMs}ms` : "n/a"}`);
     console.log(`  Turns completed:  ${r.turnsCompleted}/${r.turnsRequested}`);
     if (r.turnLatenciesMs.length > 0) {
       console.log(`  Turn latencies:   ${r.turnLatenciesMs.map((l) => `${l}ms`).join(", ")}`);
@@ -426,7 +426,7 @@ async function runSessionAttempt(
   let turnStart = 0;
   let currentTurn = metrics.turnsCompleted;
   let waitingForReply = false;
-  let greetingReceived = metrics.agentTranscripts.length > 0;
+  let greetingReceived = metrics.firstGreetingMs > 0;
   let gotAgentReplyThisTurn = false;
   let recordedLatencyThisTurn = false;
   let bargeInScheduled = false;
@@ -539,11 +539,7 @@ async function runSessionAttempt(
         case "agent_transcript":
           lastEvent = "agentTranscript";
           metrics.agentTranscripts.push(e.text);
-          if (!greetingReceived) {
-            greetingReceived = true;
-            metrics.firstGreetingMs = Date.now() - sessionStart;
-            log(`greeting: "${e.text.slice(0, 60)}" (${metrics.firstGreetingMs}ms)`);
-          } else if (waitingForReply) {
+          if (waitingForReply) {
             gotAgentReplyThisTurn = true;
             log(`agent reply [turn ${currentTurn}]: "${e.text.slice(0, 60)}"`);
           }
@@ -587,10 +583,17 @@ async function runSessionAttempt(
       }
     });
 
-    // Track latency and barge-in on agent audio (skip greeting audio)
+    // Track latency and barge-in on agent audio. Turn 0 audio is the greeting.
     handle.on("audio", () => {
       onAudioTick();
-      if (currentTurn === 0) return; // ignore greeting audio
+      if (currentTurn === 0) {
+        if (!greetingReceived) {
+          greetingReceived = true;
+          metrics.firstGreetingMs = Date.now() - sessionStart;
+          log(`greeting started (${metrics.firstGreetingMs}ms)`);
+        }
+        return;
+      }
       if (waitingForReply && !recordedLatencyThisTurn && turnStart > 0) {
         recordedLatencyThisTurn = true;
         const latency = Date.now() - turnStart;

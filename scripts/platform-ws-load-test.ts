@@ -365,6 +365,13 @@ async function runSessionAttempt(
     ws.on("message", (data, isBinary) => {
       if (isBinary) {
         onAudioTick();
+        if (currentTurn === 0 && !greetingReceived) {
+          greetingReceived = true;
+          metrics.greetingReceived = true;
+          metrics.firstGreetingMs = Date.now() - sessionStart;
+          if (greetingTimer) { clearTimeout(greetingTimer); greetingTimer = null; }
+          log(`greeting started (${metrics.firstGreetingMs}ms)`);
+        }
         if (currentTurn > 0 && waitingForReply && !recordedLatencyThisTurn && lastUserFrameAt > 0) {
           recordedLatencyThisTurn = true;
           const latency = Date.now() - lastUserFrameAt;
@@ -422,13 +429,6 @@ async function runSessionAttempt(
         case "agent_transcript":
           lastEvent = "agent_transcript";
           metrics.agentTranscripts.push(msg.text);
-          if (currentTurn === 0 && !greetingReceived) {
-            greetingReceived = true;
-            metrics.greetingReceived = true;
-            metrics.firstGreetingMs = Date.now() - sessionStart;
-            if (greetingTimer) { clearTimeout(greetingTimer); greetingTimer = null; }
-            log(`greeting: "${msg.text.slice(0, 60)}" (${metrics.firstGreetingMs}ms)`);
-          }
           break;
         case "tool_call":
           lastEvent = "tool_call";
@@ -539,7 +539,7 @@ function printMetrics(
     console.log(`  Sandbox session:  ${r.sandboxSessionId || "—"}`);
     console.log(`  Connect time:     ${r.connectMs}ms`);
     console.log(
-      `  Greeting:         ${r.greetingReceived ? `received in ${r.firstGreetingMs}ms` : "none (ok)"}`,
+      `  Greeting:         ${r.greetingReceived ? `started in ${r.firstGreetingMs}ms` : "none (ok)"}`,
     );
     console.log(`  Turns completed:  ${r.turnsCompleted}/${r.turnsRequested}`);
     if (r.turnLatenciesMs.length > 0) {
