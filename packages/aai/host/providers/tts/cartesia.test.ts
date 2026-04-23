@@ -151,12 +151,15 @@ describe("cartesia TTS adapter", () => {
       },
     ]);
 
-    // After flush(), the adapter has rotated to a new context.
+    // Rotation is deferred until the next sendText so Cartesia's late
+    // audio chunks + real `done` event (both tagged with turn1's id) still
+    // pass the context-id filter.
+    expect(session._currentContextId()).toBe(turn1);
+
+    // Subsequent sendText rotates to a fresh context.
+    session.sendText("next");
     const turn2 = session._currentContextId();
     expect(turn2).not.toBe(turn1);
-
-    // Subsequent sendText targets the new context.
-    session.sendText("next");
     await flush();
     expect(sends.filter((s) => s.contextId === turn2)).toEqual([
       {
@@ -201,8 +204,15 @@ describe("cartesia TTS adapter", () => {
       { kind: "cancel", contextId: turn1 },
     ]);
 
-    // Cancelling rotates the context so the next turn is unambiguous.
-    expect(session._currentContextId()).not.toBe(turn1);
+    // Rotation is deferred until the next sendText — cancel() halts the
+    // old context on Cartesia's side, so late events for turn1 can safely
+    // keep passing the filter until the next turn actually begins.
+    expect(session._currentContextId()).toBe(turn1);
+
+    // A subsequent sendText mints a fresh context for turn2.
+    session.sendText("again");
+    const turn2 = session._currentContextId();
+    expect(turn2).not.toBe(turn1);
 
     controller.abort();
     await session.close();
