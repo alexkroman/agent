@@ -1,5 +1,11 @@
 # @alexkroman1/aai
 
+## 1.3.1
+
+### Patch Changes
+
+- 5a9f3d5: Pipeline session concurrency fixes: serialize turns across duplicate STT finals, bound TTS flush with abort+timeout, cascade provider errors to terminate session, atomic provider open, snapshot conversation history in tool executions.
+
 ## 1.3.0
 
 ### Minor Changes
