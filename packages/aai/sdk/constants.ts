@@ -34,6 +34,14 @@ export const RUN_CODE_TIMEOUT_MS = 5000;
 /** Maximum time to wait for sessions to stop during graceful shutdown. */
 export const DEFAULT_SHUTDOWN_TIMEOUT_MS = 30_000;
 
+/**
+ * Maximum time to wait for a pipeline-mode TTS drain after `flush()` before
+ * forcing the turn to complete. Prevents a stuck TTS provider from wedging
+ * the session. Short relative to `DEFAULT_SHUTDOWN_TIMEOUT_MS` so stop()
+ * can still reclaim the socket cleanly.
+ */
+export const PIPELINE_FLUSH_TIMEOUT_MS = 10_000;
+
 // ─── Size / length limits ────────────────────────────────────────────────
 
 /** Maximum length for tool result strings sent to clients. */

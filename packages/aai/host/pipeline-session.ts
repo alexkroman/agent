@@ -10,11 +10,12 @@
 import type { LanguageModel, ModelMessage } from "ai";
 import { stepCountIs, streamText } from "ai";
 import type { AgentConfig, ExecuteTool, ToolSchema } from "../sdk/_internal-types.ts";
-import { DEFAULT_STT_SAMPLE_RATE } from "../sdk/constants.ts";
+import { DEFAULT_STT_SAMPLE_RATE, PIPELINE_FLUSH_TIMEOUT_MS } from "../sdk/constants.ts";
 import type { ClientSink, SessionErrorCode } from "../sdk/protocol.ts";
 import type {
   SttError,
   SttProvider,
+  SttSession,
   TtsError,
   TtsProvider,
   TtsSession,
@@ -157,12 +158,32 @@ export function createPipelineSession(opts: PipelineSessionOptions): Session {
 
   const sessionAbort = new AbortController();
   let audioReady = false;
+  let terminated = false;
   let turnController: AbortController | null = null;
   let nextReplyId = 0;
   const sttSubs: Unsubscribe[] = [];
   const ttsSubs: Unsubscribe[] = [];
 
+  /**
+   * Tear down the session after an unrecoverable provider error. Aborts the
+   * in-flight turn, cancels TTS, signals providers to close via sessionAbort,
+   * and flips `terminated` so future STT events and audio frames become
+   * no-ops. Idempotent.
+   */
+  function terminate(): void {
+    if (terminated) return;
+    terminated = true;
+    if (turnController !== null) {
+      turnController.abort();
+      turnController = null;
+    }
+    ctx.tts?.cancel();
+    ctx.cancelReply();
+    sessionAbort.abort();
+  }
+
   function onSttPartial(_text: string): void {
+    if (terminated) return;
     if (turnController === null) return;
     log.info("Pipeline barge-in", { sessionId: opts.id });
     turnController.abort();
@@ -173,8 +194,22 @@ export function createPipelineSession(opts: PipelineSessionOptions): Session {
   }
 
   function onSttFinal(text: string): void {
+    if (terminated) return;
     const trimmed = text.trim();
     if (trimmed.length === 0) return;
+    // If a prior turn is still running (duplicate/late STT final or a
+    // second utterance without an intervening partial), abort it before
+    // launching a new one. Matches LiveKit's `current_speech.interrupt()`
+    // and Pipecat's `InterruptionFrame` broadcast: single-slot current
+    // turn, replace in-flight rather than queue.
+    if (turnController !== null) {
+      log.info("Pipeline replacing in-flight turn", { sessionId: opts.id });
+      turnController.abort();
+      turnController = null;
+      ctx.tts?.cancel();
+      ctx.cancelReply();
+      client.event({ type: "cancelled" });
+    }
     client.event({ type: "user_transcript", text });
     const turn = runTurn(trimmed).catch((err: unknown) => {
       log.error("Pipeline turn crashed", { error: errorMessage(err), sessionId: opts.id });
@@ -183,13 +218,17 @@ export function createPipelineSession(opts: PipelineSessionOptions): Session {
   }
 
   function onSttError(err: SttError): void {
+    if (terminated) return;
     log.error("STT error", { code: err.code, message: err.message, sessionId: opts.id });
     emitError(client, "stt", err.message);
+    terminate();
   }
 
   function onTtsError(err: TtsError): void {
+    if (terminated) return;
     log.error("TTS error", { code: err.code, message: err.message, sessionId: opts.id });
     emitError(client, "tts", err.message);
+    terminate();
   }
 
   async function consumeLlmStream(
@@ -231,14 +270,48 @@ export function createPipelineSession(opts: PipelineSessionOptions): Session {
     }
   }
 
-  function flushTtsAndWait(): Promise<void> {
+  /**
+   * Flush TTS and wait for drain. Resolves on any of:
+   *   - TTS emits `done`
+   *   - `signal` aborts (barge-in, provider error, session stop)
+   *   - `PIPELINE_FLUSH_TIMEOUT_MS` elapses
+   * Resolves immediately if no TTS session.
+   */
+  function flushTtsAndWait(signal: AbortSignal): Promise<void> {
     const tts = ctx.tts;
     if (!tts) return Promise.resolve();
     return new Promise<void>((resolve) => {
-      const off = tts.on("done", () => {
-        off();
+      let off: Unsubscribe | null = null;
+      let timer: ReturnType<typeof setTimeout> | null = null;
+      const cleanup = () => {
+        if (off) {
+          off();
+          off = null;
+        }
+        if (timer) {
+          clearTimeout(timer);
+          timer = null;
+        }
+        signal.removeEventListener("abort", onAbort);
+      };
+      const finish = () => {
+        cleanup();
         resolve();
-      });
+      };
+      const onAbort = () => finish();
+      if (signal.aborted) {
+        resolve();
+        return;
+      }
+      signal.addEventListener("abort", onAbort, { once: true });
+      off = tts.on("done", finish);
+      timer = setTimeout(() => {
+        log.warn("TTS flush timeout", {
+          sessionId: opts.id,
+          timeoutMs: PIPELINE_FLUSH_TIMEOUT_MS,
+        });
+        finish();
+      }, PIPELINE_FLUSH_TIMEOUT_MS);
       tts.flush();
     });
   }
@@ -269,7 +342,7 @@ export function createPipelineSession(opts: PipelineSessionOptions): Session {
       return;
     }
 
-    await flushTtsAndWait();
+    await flushTtsAndWait(ctl.signal);
 
     if (ctl.signal.aborted) {
       if (turnController === ctl) turnController = null;
@@ -282,6 +355,40 @@ export function createPipelineSession(opts: PipelineSessionOptions): Session {
     client.playAudioDone();
     client.event({ type: "reply_done" });
     if (turnController === ctl) turnController = null;
+  }
+
+  function reportOpenRejection(which: "stt" | "tts", reason: unknown): void {
+    const msg = errorMessage(reason);
+    log.error(`${which === "stt" ? "STT" : "TTS"} open failed`, {
+      error: msg,
+      sessionId: opts.id,
+    });
+    emitError(client, which, msg);
+  }
+
+  async function adoptStt(sttSession: SttSession, teardown: boolean): Promise<void> {
+    if (teardown) {
+      await sttSession.close().catch(() => undefined);
+      return;
+    }
+    ctx.stt = sttSession;
+    sttSubs.push(sttSession.on("partial", onSttPartial));
+    sttSubs.push(sttSession.on("final", onSttFinal));
+    sttSubs.push(sttSession.on("error", onSttError));
+  }
+
+  async function adoptTts(ttsSession: TtsSession, teardown: boolean): Promise<void> {
+    if (teardown) {
+      await ttsSession.close().catch(() => undefined);
+      return;
+    }
+    ctx.tts = ttsSession;
+    ttsSubs.push(
+      ttsSession.on("audio", (pcm) => {
+        client.playAudioChunk(new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength));
+      }),
+    );
+    ttsSubs.push(ttsSession.on("error", onTtsError));
   }
 
   async function openProviders(): Promise<void> {
@@ -299,47 +406,21 @@ export function createPipelineSession(opts: PipelineSessionOptions): Session {
       }),
     ]);
 
-    if (sttResult.status === "rejected") {
-      const msg = errorMessage(sttResult.reason);
-      log.error("STT open failed", { error: msg, sessionId: opts.id });
-      emitError(client, "stt", msg);
-    }
-    if (ttsResult.status === "rejected") {
-      const msg = errorMessage(ttsResult.reason);
-      log.error("TTS open failed", { error: msg, sessionId: opts.id });
-      emitError(client, "tts", msg);
-    }
+    if (sttResult.status === "rejected") reportOpenRejection("stt", sttResult.reason);
+    if (ttsResult.status === "rejected") reportOpenRejection("tts", ttsResult.reason);
 
     const aborted = sessionAbort.signal.aborted;
     const sttFailed = sttResult.status === "rejected";
     const ttsFailed = ttsResult.status === "rejected";
     const teardown = aborted || sttFailed || ttsFailed;
 
-    if (sttResult.status === "fulfilled") {
-      const sttSession = sttResult.value;
-      if (teardown) {
-        await sttSession.close().catch(() => undefined);
-      } else {
-        ctx.stt = sttSession;
-        sttSubs.push(sttSession.on("partial", onSttPartial));
-        sttSubs.push(sttSession.on("final", onSttFinal));
-        sttSubs.push(sttSession.on("error", onSttError));
-      }
-    }
-    if (ttsResult.status === "fulfilled") {
-      const ttsSession = ttsResult.value;
-      if (teardown) {
-        await ttsSession.close().catch(() => undefined);
-      } else {
-        ctx.tts = ttsSession;
-        ttsSubs.push(
-          ttsSession.on("audio", (pcm) => {
-            client.playAudioChunk(new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength));
-          }),
-        );
-        ttsSubs.push(ttsSession.on("error", onTtsError));
-      }
-    }
+    if (sttResult.status === "fulfilled") await adoptStt(sttResult.value, teardown);
+    if (ttsResult.status === "fulfilled") await adoptTts(ttsResult.value, teardown);
+
+    // If either provider failed (but the session wasn't itself aborted),
+    // mark the session terminated so subsequent events become no-ops.
+    // Aborted-by-stop() sessions don't need terminate() — stop() handles cleanup.
+    if (!aborted && (sttFailed || ttsFailed)) terminate();
   }
 
   return {
@@ -363,7 +444,7 @@ export function createPipelineSession(opts: PipelineSessionOptions): Session {
       });
     },
     onAudio(data: Uint8Array): void {
-      if (!audioReady) return;
+      if (terminated || !audioReady) return;
       const offset = data.byteOffset;
       const length = data.byteLength;
       let pcm: Int16Array;
@@ -380,6 +461,7 @@ export function createPipelineSession(opts: PipelineSessionOptions): Session {
       audioReady = true;
     },
     onCancel(): void {
+      if (terminated) return;
       turnController?.abort();
       turnController = null;
       ctx.tts?.cancel();
@@ -387,6 +469,7 @@ export function createPipelineSession(opts: PipelineSessionOptions): Session {
       client.event({ type: "cancelled" });
     },
     onReset(): void {
+      if (terminated) return;
       turnController?.abort();
       turnController = null;
       ctx.tts?.cancel();
@@ -396,6 +479,7 @@ export function createPipelineSession(opts: PipelineSessionOptions): Session {
       client.event({ type: "reset" });
     },
     onHistory(incoming: readonly { role: "user" | "assistant"; content: string }[]): void {
+      if (terminated) return;
       ctx.pushMessages(...incoming.map((m) => ({ role: m.role, content: m.content })));
     },
     waitForTurn(): Promise<void> {

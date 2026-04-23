@@ -6,6 +6,8 @@ import type { AgentConfig } from "../sdk/_internal-types.ts";
 import type { ClientEvent } from "../sdk/protocol.ts";
 import { DEFAULT_SYSTEM_PROMPT } from "../sdk/types.ts";
 import {
+  createFailingSttProvider,
+  createFailingTtsProvider,
   createFakeLanguageModel,
   createFakeSttProvider,
   createFakeTtsProvider,
@@ -331,6 +333,239 @@ describe("createPipelineSession — STT error", () => {
       code: "stt",
       message: "oops",
     });
+
+    await session.stop();
+  });
+});
+
+describe("createPipelineSession — duplicate final", () => {
+  test("second final during AGENT_REPLYING aborts prior turn and starts new one", async () => {
+    // Multi-part first step with delay so the first turn is still streaming
+    // when the second final arrives.
+    const steps: ScriptedPart[][] = [
+      [
+        { type: "text", text: "first " },
+        { type: "text", text: "reply " },
+        { type: "text", text: "continues" },
+      ],
+      [{ type: "text", text: "second reply" }],
+    ];
+    const { opts, stt, tts, client } = makeOpts({
+      llm: createFakeLanguageModel({ steps, delayMs: 20 }),
+    });
+
+    const session = createPipelineSession(opts);
+    await session.start();
+
+    const sttSession = stt.last();
+    const ttsSession = tts.last();
+    if (!(sttSession && ttsSession)) throw new Error("providers didn't open");
+
+    sttSession.fireFinal("first question");
+    await vi.waitFor(() => {
+      expect(ttsSession.sendText.mock.calls.length).toBeGreaterThan(0);
+    });
+
+    // Second final arrives mid-reply.
+    sttSession.fireFinal("second question");
+    await session.waitForTurn();
+
+    // TTS.cancel fires once to abandon the first turn's audio.
+    expect(ttsSession.cancel).toHaveBeenCalledTimes(1);
+
+    // Both user transcripts reach the client.
+    const userTranscripts = client.events.filter(
+      (e) => (e as ClientEvent).type === "user_transcript",
+    );
+    expect(userTranscripts).toHaveLength(2);
+
+    // Second reply's text was synthesized.
+    expect(ttsSession.textChunks).toContain("second reply");
+
+    // Exactly one reply_done (for the second turn).
+    const replyDones = client.events.filter((e) => (e as ClientEvent).type === "reply_done");
+    expect(replyDones).toHaveLength(1);
+
+    await session.stop();
+  });
+});
+
+describe("createPipelineSession — flush timeout/abort", () => {
+  test("flush that never drains does not wedge stop()", async () => {
+    // autoDoneOnFlush: false → TTS never fires `done`, so flushTtsAndWait must
+    // resolve via the turn-abort signal when stop() fires.
+    const script: ScriptedPart[] = [{ type: "text", text: "hi" }];
+    const tts = createFakeTtsProvider({ autoDoneOnFlush: false });
+    const { opts, stt, client } = makeOpts({
+      llm: createFakeLanguageModel({ script }),
+      tts,
+    });
+
+    const session = createPipelineSession(opts);
+    await session.start();
+
+    const sttSession = stt.last();
+    const ttsSession = tts.last();
+    if (!(sttSession && ttsSession)) throw new Error("providers didn't open");
+
+    sttSession.fireFinal("hi");
+    // Wait until the turn has reached the flush step — without this guard,
+    // stop() aborts the controller before flushTtsAndWait is even called.
+    await vi.waitFor(() => {
+      expect(ttsSession.flush).toHaveBeenCalledTimes(1);
+    });
+    await session.stop();
+
+    // Turn aborted before reply_done could fire.
+    const types = eventTypes(client.events);
+    expect(types).not.toContain("reply_done");
+  });
+});
+
+describe("createPipelineSession — mid-session provider errors", () => {
+  test("STT error during reply aborts turn and stops further transcripts", async () => {
+    const script: ScriptedPart[] = [{ type: "text", text: "reply" }];
+    const { opts, stt, tts, client } = makeOpts({
+      llm: createFakeLanguageModel({ script, delayMs: 20 }),
+    });
+
+    const session = createPipelineSession(opts);
+    await session.start();
+
+    const sttSession = stt.last();
+    const ttsSession = tts.last();
+    if (!(sttSession && ttsSession)) throw new Error("providers didn't open");
+
+    sttSession.fireFinal("first");
+    await vi.waitFor(() => {
+      expect(ttsSession.sendText.mock.calls.length).toBeGreaterThan(0);
+    });
+    sttSession.fireError("stt_stream_error", "socket died");
+    await session.waitForTurn();
+
+    const errors = client.events.filter((e) => (e as ClientEvent).type === "error");
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({ code: "stt", message: "socket died" });
+
+    // Turn was aborted (TTS cancelled).
+    expect(ttsSession.cancel).toHaveBeenCalled();
+
+    // Further STT events are no-ops.
+    sttSession.fireFinal("ignored after error");
+    await session.waitForTurn();
+    const userTranscripts = client.events.filter(
+      (e) => (e as ClientEvent).type === "user_transcript",
+    );
+    expect(userTranscripts).toHaveLength(1);
+
+    await session.stop();
+  });
+
+  test("TTS error during reply aborts turn and stops further user transcripts", async () => {
+    const script: ScriptedPart[] = [{ type: "text", text: "reply" }];
+    const { opts, stt, tts, client } = makeOpts({
+      llm: createFakeLanguageModel({ script, delayMs: 20 }),
+    });
+
+    const session = createPipelineSession(opts);
+    await session.start();
+
+    const sttSession = stt.last();
+    const ttsSession = tts.last();
+    if (!(sttSession && ttsSession)) throw new Error("providers didn't open");
+
+    sttSession.fireFinal("first");
+    await vi.waitFor(() => {
+      expect(ttsSession.sendText.mock.calls.length).toBeGreaterThan(0);
+    });
+    ttsSession.fireError("tts_stream_error", "socket died");
+    await session.waitForTurn();
+
+    const errors = client.events.filter((e) => (e as ClientEvent).type === "error");
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({ code: "tts", message: "socket died" });
+
+    sttSession.fireFinal("should be ignored");
+    await session.waitForTurn();
+    const userTranscripts = client.events.filter(
+      (e) => (e as ClientEvent).type === "user_transcript",
+    );
+    expect(userTranscripts).toHaveLength(1);
+
+    await session.stop();
+  });
+
+  test("cancel/reset/history are no-ops after terminate", async () => {
+    const { opts, stt, client } = makeOpts();
+    const session = createPipelineSession(opts);
+    await session.start();
+
+    const sttSession = stt.last();
+    if (!sttSession) throw new Error("STT didn't open");
+
+    sttSession.fireError("stt_stream_error", "dead");
+    await session.waitForTurn();
+
+    const eventsBefore = client.events.length;
+
+    session.onCancel();
+    session.onReset();
+    session.onHistory([{ role: "user", content: "nope" }]);
+
+    expect(client.events).toHaveLength(eventsBefore);
+
+    await session.stop();
+  });
+});
+
+describe("createPipelineSession — atomic provider open", () => {
+  test("STT is closed when TTS open fails, session becomes terminated", async () => {
+    const stt = createFakeSttProvider();
+    const failingTts = createFailingTtsProvider("tts_connect_failed", "bad key");
+
+    const { opts, client } = makeOpts({ stt, tts: failingTts });
+    const session = createPipelineSession(opts);
+    await session.start();
+
+    const sttSession = stt.last();
+    expect(sttSession).toBeDefined();
+    expect(sttSession?.closed.value).toBe(true);
+
+    const errors = client.events.filter((e) => (e as ClientEvent).type === "error");
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({ code: "tts", message: "bad key" });
+
+    // Session terminated — further STT events are no-ops (even though
+    // listeners were never wired, terminate() also ensures onCancel etc. work).
+    sttSession?.fireFinal("ignored");
+    await session.waitForTurn();
+    const userTranscripts = client.events.filter(
+      (e) => (e as ClientEvent).type === "user_transcript",
+    );
+    expect(userTranscripts).toHaveLength(0);
+
+    await session.stop();
+  });
+
+  test("TTS is never opened when STT open fails", async () => {
+    const failingStt = createFailingSttProvider("stt_connect_failed", "bad key");
+    const tts = createFakeTtsProvider();
+    const ttsOpenSpy = vi.spyOn(tts, "open");
+
+    const { opts, client } = makeOpts({ stt: failingStt, tts });
+    const session = createPipelineSession(opts);
+    await session.start();
+
+    // STT and TTS open concurrently via Promise.allSettled — TTS.open is
+    // still called, but once STT fails its result is discarded and the TTS
+    // session is closed.
+    expect(ttsOpenSpy).toHaveBeenCalledTimes(1);
+    const ttsSession = tts.last();
+    expect(ttsSession?.closed.value).toBe(true);
+
+    const errors = client.events.filter((e) => (e as ClientEvent).type === "error");
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toMatchObject({ code: "stt", message: "bad key" });
 
     await session.stop();
   });

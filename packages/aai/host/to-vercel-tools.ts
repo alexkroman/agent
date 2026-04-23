@@ -25,9 +25,10 @@ export interface ToVercelToolsContext {
   /** Session id threaded to {@link executeTool}. */
   sessionId: string;
   /**
-   * Returns the current conversation history at call-time. Called per
-   * tool invocation so late calls see fresh state instead of a snapshot
-   * captured when the tool bag was built.
+   * Returns the current conversation history at call-time. The orchestrator
+   * calls this per invocation; `toVercelTools` snapshots the returned array
+   * before forwarding to `executeTool` so concurrent mutations cannot leak
+   * across tool calls.
    */
   messages: () => readonly Message[];
   /**
@@ -62,7 +63,10 @@ export function toVercelTools(
         const opts: ExecuteToolOptions = {};
         if (signal !== undefined) opts.signal = signal;
         if (options.toolCallId !== undefined) opts.toolCallId = options.toolCallId;
-        return ctx.executeTool(schema.name, input, ctx.sessionId, ctx.messages(), opts);
+        // Snapshot the messages array so concurrent mutation (e.g. a new
+        // turn starting after this one was aborted) can't leak into this
+        // tool's view of history.
+        return ctx.executeTool(schema.name, input, ctx.sessionId, ctx.messages().slice(), opts);
       },
     });
   }
