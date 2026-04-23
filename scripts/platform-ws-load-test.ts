@@ -12,6 +12,8 @@
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { defineCommand, runMain } from "citty";
+import type { ServerMessage } from "../packages/aai/sdk/protocol.ts";
+import { lenientParse, ServerMessageSchema } from "../packages/aai/sdk/protocol.ts";
 
 // ── Config ───────────────────────────────────────────────────────────────────
 
@@ -56,6 +58,15 @@ type TTS = {
     opts: { voice: string },
   ): Promise<{ audio: Float32Array; sampling_rate: number }>;
 };
+
+// ── WebSocket loader ─────────────────────────────────────────────────────────
+
+// The `ws` package is a dep of packages/aai but not declared in scripts/;
+// createRequire + require() resolves it through the pnpm hoist. Same pattern
+// as scripts/s2s-load-test.ts.
+const wsRequire = createRequire(import.meta.url);
+const WsWebSocket = wsRequire("ws") as typeof import("ws").default;
+type WsClient = InstanceType<typeof import("ws").default>;
 
 function resample(samples: Float32Array, srcRate: number, dstRate: number): Float32Array {
   if (srcRate === dstRate) return samples;
@@ -172,7 +183,124 @@ function checkFdLimit(requiredFds: number): void {
   }
 }
 
-// ── Main (stub for Task 1) ───────────────────────────────────────────────────
+// ── Session driver ───────────────────────────────────────────────────────────
+
+async function runSession(
+  sessionId: number,
+  chunkFrames: Uint8Array[][],
+  cfg: Config,
+): Promise<void> {
+  const log = cfg.quiet ? () => {} : (msg: string) => console.log(`  [s${sessionId}] ${msg}`);
+  const ws: WsClient = new WsWebSocket(cfg.wssUrl);
+  ws.binaryType = "arraybuffer";
+
+  return new Promise<void>((resolve) => {
+    let configReceived = false;
+    let done = false;
+
+    function finish(reason: string): void {
+      if (done) return;
+      done = true;
+      log(`finish: ${reason}`);
+      try { ws.close(); } catch {}
+      resolve();
+    }
+
+    const connectTimer = setTimeout(() => {
+      if (!configReceived) finish("no config within 10s");
+    }, 10_000);
+
+    ws.on("open", () => log("ws open"));
+
+    ws.on("close", () => {
+      clearTimeout(connectTimer);
+      finish("ws close");
+    });
+
+    ws.on("error", (err: Error) => {
+      log(`ws error: ${err.message}`);
+    });
+
+    ws.on("message", (data, isBinary) => {
+      if (isBinary) {
+        // Binary frame = TTS audio chunk from agent. Count only.
+        return;
+      }
+      const text = data instanceof Buffer ? data.toString("utf8") : String(data);
+      let json: unknown;
+      try {
+        json = JSON.parse(text);
+      } catch {
+        log(`invalid JSON: ${text.slice(0, 80)}`);
+        return;
+      }
+      const parsed = lenientParse(ServerMessageSchema, json);
+      if (!parsed.ok) {
+        if (parsed.malformed) log(`malformed message: ${parsed.error}`);
+        return;
+      }
+      const msg: ServerMessage = parsed.data;
+      handleServerMessage(msg);
+    });
+
+    async function handleServerMessage(msg: ServerMessage): Promise<void> {
+      switch (msg.type) {
+        case "config":
+          configReceived = true;
+          clearTimeout(connectTimer);
+          log(`config received (sessionId=${msg.sessionId ?? "—"}) sending audio_ready`);
+          ws.send(JSON.stringify({ type: "audio_ready" }));
+          void streamOneTurn();
+          break;
+        case "speech_started":
+          log("speech_started");
+          break;
+        case "speech_stopped":
+          log("speech_stopped");
+          break;
+        case "user_transcript":
+          log(`user_transcript: "${msg.text}"`);
+          break;
+        case "agent_transcript":
+          log(`agent_transcript: "${msg.text.slice(0, 60)}"`);
+          break;
+        case "tool_call":
+          log(`tool_call: ${msg.toolName}(${JSON.stringify(msg.args)})`);
+          break;
+        case "tool_call_done":
+          log(`tool_call_done: ${msg.toolCallId}`);
+          break;
+        case "audio_done":
+          log("audio_done");
+          break;
+        case "reply_done":
+          log("reply_done");
+          finish("reply_done");
+          break;
+        case "error":
+          log(`error[${msg.code}]: ${msg.message}`);
+          break;
+        default:
+          break;
+      }
+    }
+
+    async function streamOneTurn(): Promise<void> {
+      await sleep(500); // small settle before streaming
+      const frames = chunkFrames[0]!; // use first utterance
+      log(`streaming ${frames.length} frames`);
+      for (const frame of frames) {
+        if (done) return;
+        if (ws.readyState !== ws.OPEN) return;
+        ws.send(frame);
+        await sleep(cfg.chunkMs);
+      }
+      log("stream done; waiting for reply_done");
+    }
+  });
+}
+
+// ── Main ─────────────────────────────────────────────────────────────────────
 
 async function main(cfg: Config): Promise<void> {
   console.log("Platform WebSocket Load Test");
@@ -197,7 +325,10 @@ async function main(cfg: Config): Promise<void> {
   );
   const chunkFrames = await generateAudioFrames(tts as unknown as TTS, cfg.voice, cfg.chunkMs);
   console.log(`Generated ${chunkFrames.length} utterances (pre-encoded frames)\n`);
-  console.log("(Task 1 stub: session driver not yet implemented — exiting.)");
+
+  console.log(`Running 1 session (Task 2: single-turn smoke test)...\n`);
+  await runSession(0, chunkFrames, cfg);
+  console.log("\nSession finished.");
 }
 
 // ── CLI ──────────────────────────────────────────────────────────────────────
