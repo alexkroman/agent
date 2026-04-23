@@ -4,6 +4,7 @@
     "**/CHANGELOG.md",
     "plans/**",
     "docs/superpowers/**",
+    ".worktrees/**",
     "packages/aai-templates/templates/**/system-prompt.md"
   ]
 }
