@@ -59,14 +59,14 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
   });
   await ctx.resume();
 
-  // Single AudioContext owns both capture and playback — required for AEC.
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: {
-      sampleRate: contextRate,
+      deviceId: { ideal: "default" },
       echoCancellation: true,
       noiseSuppression: true,
       autoGainControl: true,
-    },
+      voiceIsolation: true,
+    } as MediaTrackConstraints,
   });
 
   try {
