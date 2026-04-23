@@ -174,4 +174,78 @@ describe("bundle store (unstorage)", () => {
     expect(await store.getManifest("test-agent")).toBeNull();
     expect(await store.getWorkerCode("test-agent")).toBeNull();
   });
+
+  test("retries getWorkerCode on transient ECONNRESET", async () => {
+    const storage = createStorage();
+    const masterKey = await importMasterKey("test-secret");
+    const store = createBundleStore(storage, { masterKey });
+
+    await store.putAgent({
+      slug: "test-agent",
+      env: {},
+      worker: "console.log('w');",
+      clientFiles: {},
+      credential_hashes: ["hash1"],
+      agentConfig: TEST_AGENT_CONFIG,
+    });
+
+    const originalGetItem = storage.getItem.bind(storage);
+    let callCount = 0;
+    storage.getItem = (async (key: string) => {
+      if (key === "agents/test-agent/worker.js") {
+        callCount++;
+        if (callCount < 3) {
+          throw Object.assign(new TypeError("fetch failed"), {
+            cause: Object.assign(new Error("socket hang up"), { code: "ECONNRESET" }),
+          });
+        }
+      }
+      return originalGetItem(key);
+    }) as typeof storage.getItem;
+
+    const code = await store.getWorkerCode("test-agent");
+    expect(code).toBe("console.log('w');");
+    expect(callCount).toBe(3);
+  });
+
+  test("getAgentConfig gives up after repeated transient failures", async () => {
+    const storage = createStorage();
+    const masterKey = await importMasterKey("test-secret");
+    const store = createBundleStore(storage, { masterKey });
+
+    await store.putAgent({
+      slug: "test-agent",
+      env: {},
+      worker: "w",
+      clientFiles: {},
+      credential_hashes: ["hash1"],
+      agentConfig: TEST_AGENT_CONFIG,
+    });
+
+    storage.getItem = (async (key: string) => {
+      if (key === "agents/test-agent/config.json") {
+        throw Object.assign(new TypeError("fetch failed"), {
+          cause: Object.assign(new Error("socket hang up"), { code: "ECONNRESET" }),
+        });
+      }
+      return null;
+    }) as typeof storage.getItem;
+
+    await expect(store.getAgentConfig("test-agent")).rejects.toThrow("fetch failed");
+  });
+
+  test("non-transient errors are not retried", async () => {
+    const storage = createStorage();
+    const masterKey = await importMasterKey("test-secret");
+    const store = createBundleStore(storage, { masterKey });
+
+    let callCount = 0;
+    storage.getItem = (async () => {
+      callCount++;
+      throw new Error("403 Forbidden");
+    }) as typeof storage.getItem;
+
+    await expect(store.getWorkerCode("missing")).rejects.toThrow("403 Forbidden");
+    expect(callCount).toBe(1);
+  });
 });
