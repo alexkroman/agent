@@ -5,7 +5,6 @@ import { cartesia } from "@alexkroman1/aai/tts";
 
 export default agent({
   name: "pipeline-simple",
-  systemPrompt: "You are a helpful voice assistant. Reply in short sentences.",
   greeting: "Hi! I'm running in pipeline mode. What can I help with?",
   stt: assemblyAI({ model: "u3pro-rt" }),
   llm: anthropic({ model: "claude-haiku-4-5" }),
