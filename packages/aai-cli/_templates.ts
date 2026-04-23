@@ -2,6 +2,7 @@
 
 import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { downloadTemplate } from "giget";
@@ -24,7 +25,12 @@ function resolveLocalTemplatesDir(): string {
 async function resolveTemplatesDir(): Promise<string> {
   if (process.env.AAI_TEMPLATES_DIR) return process.env.AAI_TEMPLATES_DIR;
   if (isDevMode()) return resolveLocalTemplatesDir();
+  // Extract into a unique tmp dir; otherwise giget defaults to
+  // `<cwd>/<repo-owner>-<repo-name>`, which dumps a stray
+  // `alexkroman-agent/` folder next to the user's project.
+  const extractDir = await fs.mkdtemp(path.join(os.tmpdir(), "aai-templates-"));
   const { dir } = await downloadTemplate(`${GIGET_SOURCE}#${GIGET_REF}`, {
+    dir: extractDir,
     force: true,
     forceClean: true,
   });
