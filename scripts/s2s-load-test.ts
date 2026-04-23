@@ -37,6 +37,8 @@ type Config = {
   toxicBandwidth: number;
   toxicReset: number;
   noToxiproxy: boolean;
+  /** Per-turn stall cap. Same semantics as platform-ws-load-test.ts. */
+  perTurnStallMs: number;
 };
 
 const INPUT_SAMPLE_RATE = 16_000;
@@ -510,9 +512,30 @@ async function runSessionAttempt(
       finish();
     }, timeoutMs);
 
+    let perTurnTimer: NodeJS.Timeout | null = null;
+    function clearPerTurnTimer(): void {
+      if (perTurnTimer) {
+        clearTimeout(perTurnTimer);
+        perTurnTimer = null;
+      }
+    }
+    function startPerTurnTimer(turn: number): void {
+      clearPerTurnTimer();
+      if (!(cfg.perTurnStallMs > 0)) return;
+      perTurnTimer = setTimeout(() => {
+        perTurnTimer = null;
+        if (done || !waitingForReply) return;
+        metrics.errors.push(`per-turn stall (${cfg.perTurnStallMs}ms) [turn=${turn}]`);
+        log(`turn ${turn} stalled ${cfg.perTurnStallMs}ms — reconnecting`);
+        if (metrics.turnsCompleted < sessionTurns) shouldRetry = true;
+        finish();
+      }, cfg.perTurnStallMs);
+    }
+
     function finish(): void {
       if (done) return;
       done = true;
+      clearPerTurnTimer();
       clearTimeout(timeout);
 
       // Flush any pending silence waiters so streamNextTurn can exit cleanly.
@@ -593,6 +616,7 @@ async function runSessionAttempt(
             waitingForReply = false;
             gotAgentReplyThisTurn = false;
             countingPostReplyFrames = true;
+            clearPerTurnTimer();
             if (currentTurn > 0) metrics.turnsCompleted++;
             log(`${currentTurn === 0 ? "greeting" : `turn ${currentTurn}`} complete`);
             if (currentTurn < sessionTurns) streamNextTurn();
@@ -606,6 +630,7 @@ async function runSessionAttempt(
           waitingForReply = false;
           gotAgentReplyThisTurn = false;
           countingPostReplyFrames = true;
+          clearPerTurnTimer();
           // Interruption complete — advance to next turn
           if (currentTurn < sessionTurns) streamNextTurn();
           else if (currentTurn > 0) { log("all turns completed"); finish(); }
@@ -678,12 +703,15 @@ async function runSessionAttempt(
       countingPostReplyFrames = false;
       turnStart = 0;
 
+      const myTurn = currentTurn;
       for (const frame of frames) {
         if (done) return;
         handle.sendAudioRaw(frame);
         await sleep(cfg.chunkMs);
       }
-      log(`turn ${currentTurn} audio sent`);
+      log(`turn ${myTurn} audio sent`);
+      // Frame loop finished — start the stall timer for this turn's reply.
+      startPerTurnTimer(myTurn);
     }
   });
 }
@@ -913,6 +941,7 @@ const loadTestCommand = defineCommand({
     toxicBandwidth: { type: "string", description: "Bandwidth limit in KB/s (0 = unlimited)", default: "0" },
     toxicReset: { type: "string", description: "Connection drop probability (real-world ~1-2%, default 20% worse)", default: "0.025" },
     noToxiproxy: { type: "boolean", description: "Skip Toxiproxy, connect directly", default: false },
+    perTurnStallMs: { type: "string", description: "After sending user audio, give up on a reply after this many ms and retry (0 to disable)", default: "30000" },
   },
   async run({ args }) {
     const apiKey = process.env.ASSEMBLYAI_API_KEY ?? "";
@@ -944,6 +973,7 @@ const loadTestCommand = defineCommand({
       toxicBandwidth: Number(args.toxicBandwidth),
       toxicReset: Number(args.toxicReset),
       noToxiproxy: args.noToxiproxy,
+      perTurnStallMs: Number(args.perTurnStallMs),
     });
   },
 });
