@@ -10,7 +10,11 @@
 import type { LanguageModel, ModelMessage } from "ai";
 import { stepCountIs, streamText } from "ai";
 import type { AgentConfig, ExecuteTool, ToolSchema } from "../sdk/_internal-types.ts";
-import { DEFAULT_STT_SAMPLE_RATE, PIPELINE_FLUSH_TIMEOUT_MS } from "../sdk/constants.ts";
+import {
+  DEFAULT_STT_SAMPLE_RATE,
+  DEFAULT_TTS_SAMPLE_RATE,
+  PIPELINE_FLUSH_TIMEOUT_MS,
+} from "../sdk/constants.ts";
 import type { ClientSink, SessionErrorCode } from "../sdk/protocol.ts";
 import type {
   SttError,
@@ -55,8 +59,12 @@ export interface PipelineSessionOptions {
   sttApiKey: string;
   /** TTS API key. */
   ttsApiKey: string;
-  /** Audio sample rate (PCM16, Hz). Defaults to {@link DEFAULT_STT_SAMPLE_RATE}. */
-  sampleRate?: number | undefined;
+  /** STT audio sample rate (PCM16, Hz). Defaults to {@link DEFAULT_STT_SAMPLE_RATE}. */
+  sttSampleRate?: number | undefined;
+  /** TTS audio sample rate (PCM16, Hz). Must match the client's playback AudioContext rate. Defaults to {@link DEFAULT_TTS_SAMPLE_RATE}. */
+  ttsSampleRate?: number | undefined;
+  /** Skip the initial greeting audio on connect (used for session resume). */
+  skipGreeting?: boolean | undefined;
   /** Logger. Defaults to the console logger. */
   logger?: Logger | undefined;
   /** Sliding-window conversation history size. */
@@ -99,7 +107,6 @@ function handleStreamPart(
       if (delta.length === 0) return;
       deps.onTextDelta(delta);
       deps.tts?.sendText(delta);
-      deps.client.event({ type: "agent_transcript", text: delta });
       return;
     }
     case "tool-call": {
@@ -136,7 +143,8 @@ function handleStreamPart(
 /** Create a pluggable-provider voice session. */
 export function createPipelineSession(opts: PipelineSessionOptions): Session {
   const log = opts.logger ?? consoleLogger;
-  const sampleRate = opts.sampleRate ?? DEFAULT_STT_SAMPLE_RATE;
+  const sttSampleRate = opts.sttSampleRate ?? DEFAULT_STT_SAMPLE_RATE;
+  const ttsSampleRate = opts.ttsSampleRate ?? DEFAULT_TTS_SAMPLE_RATE;
   const { client, agentConfig, toolSchemas, executeTool } = opts;
 
   const hasTools = toolSchemas.length > 0 || (agentConfig.builtinTools?.length ?? 0) > 0;
@@ -342,6 +350,14 @@ export function createPipelineSession(opts: PipelineSessionOptions): Session {
       return;
     }
 
+    // Emit the complete transcript once the LLM finishes streaming, so the
+    // UI renders a single assistant message (vs. one per delta) and the user
+    // sees the text while TTS drains the synthesized audio.
+    if (accumulated.length > 0) {
+      client.event({ type: "agent_transcript", text: accumulated });
+      ctx.pushMessages({ role: "assistant", content: accumulated });
+    }
+
     await flushTtsAndWait(ctl.signal);
 
     if (ctl.signal.aborted) {
@@ -349,9 +365,29 @@ export function createPipelineSession(opts: PipelineSessionOptions): Session {
       return;
     }
 
-    if (accumulated.length > 0) {
-      ctx.pushMessages({ role: "assistant", content: accumulated });
+    client.playAudioDone();
+    client.event({ type: "reply_done" });
+    if (turnController === ctl) turnController = null;
+  }
+
+  async function runGreeting(text: string): Promise<void> {
+    const replyId = `pipeline-greeting-${++nextReplyId}`;
+    ctx.beginReply(replyId);
+
+    const ctl = new AbortController();
+    turnController = ctl;
+
+    client.event({ type: "agent_transcript", text });
+    ctx.pushMessages({ role: "assistant", content: text });
+    ctx.tts?.sendText(text);
+
+    await flushTtsAndWait(ctl.signal);
+
+    if (ctl.signal.aborted) {
+      if (turnController === ctl) turnController = null;
+      return;
     }
+
     client.playAudioDone();
     client.event({ type: "reply_done" });
     if (turnController === ctl) turnController = null;
@@ -394,13 +430,13 @@ export function createPipelineSession(opts: PipelineSessionOptions): Session {
   async function openProviders(): Promise<void> {
     const [sttResult, ttsResult] = await Promise.allSettled([
       opts.stt.open({
-        sampleRate,
+        sampleRate: sttSampleRate,
         apiKey: opts.sttApiKey,
         sttPrompt: agentConfig.sttPrompt,
         signal: sessionAbort.signal,
       }),
       opts.tts.open({
-        sampleRate,
+        sampleRate: ttsSampleRate,
         apiKey: opts.ttsApiKey,
         signal: sessionAbort.signal,
       }),
@@ -458,7 +494,15 @@ export function createPipelineSession(opts: PipelineSessionOptions): Session {
       ctx.stt?.sendAudio(pcm);
     },
     onAudioReady(): void {
+      if (audioReady || terminated) return;
       audioReady = true;
+      if (opts.skipGreeting) return;
+      const greeting = agentConfig.greeting;
+      if (!greeting) return;
+      const turn = runGreeting(greeting).catch((err: unknown) => {
+        log.error("Pipeline greeting failed", { error: errorMessage(err), sessionId: opts.id });
+      });
+      ctx.chainTurn(turn);
     },
     onCancel(): void {
       if (terminated) return;
