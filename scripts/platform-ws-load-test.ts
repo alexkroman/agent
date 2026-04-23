@@ -155,6 +155,10 @@ function randomPauseMs(): number {
   return 1000 + Math.floor(Math.random() * 5000);
 }
 
+function percentile(sorted: number[], p: number): number {
+  return sorted[Math.max(0, Math.ceil((p / 100) * sorted.length) - 1)]!;
+}
+
 function checkFdLimit(requiredFds: number): void {
   let hardLimit = -1;
   try {
@@ -487,6 +491,120 @@ async function runSessionAttempt(
   });
 }
 
+// ── Output ───────────────────────────────────────────────────────────────────
+
+function printMetrics(
+  results: SessionMetrics[],
+  peakConcurrency: number,
+  loopLagSamples: number[],
+): void {
+  console.log("\n" + "=".repeat(70));
+  console.log("RESULTS");
+  console.log("=".repeat(70));
+  for (const r of results) {
+    console.log(`\n--- Session ${r.sessionId} ---`);
+    console.log(`  Connected:        ${r.connected}`);
+    console.log(`  Config received:  ${r.configReceived}`);
+    console.log(`  Sandbox session:  ${r.sandboxSessionId || "—"}`);
+    console.log(`  Connect time:     ${r.connectMs}ms`);
+    console.log(
+      `  Greeting:         ${r.greetingReceived ? `received in ${r.firstGreetingMs}ms` : "none (ok)"}`,
+    );
+    console.log(`  Turns completed:  ${r.turnsCompleted}/${r.turnsRequested}`);
+    if (r.turnLatenciesMs.length > 0) {
+      console.log(`  Turn latencies:   ${r.turnLatenciesMs.map((l) => `${l}ms`).join(", ")}`);
+    }
+    console.log(`  Tool calls:       ${r.toolCalls.length}`);
+    for (const tc of r.toolCalls) {
+      console.log(`    [turn ${tc.turn}] ${tc.name}(${JSON.stringify(tc.args)})`);
+    }
+    console.log(`  Barge-ins:        ${r.bargeIns}`);
+    console.log(`  Retries:          ${r.retries}`);
+    console.log(`  Total time:       ${r.totalMs}ms`);
+    if (r.errors.length > 0) {
+      console.log(`  Errors:           ${r.errors.join("; ")}`);
+    }
+  }
+
+  const allErrors = results.flatMap((r) =>
+    r.errors.map((e) => ({ session: r.sessionId, error: e })),
+  );
+  console.log("\n" + "=".repeat(70));
+  console.log("ERRORS");
+  console.log("=".repeat(70));
+  if (allErrors.length === 0) {
+    console.log("  (none)");
+  } else {
+    const groups: Record<string, typeof allErrors> = {
+      WebSocket: allErrors.filter((e) => e.error.startsWith("ws ")),
+      Handshake: allErrors.filter((e) => e.error.startsWith("no config within")),
+      Protocol: allErrors.filter((e) =>
+        ["[stt]", "[llm]", "[tts]", "[tool]", "[protocol]"].some((p) => e.error.startsWith(p)),
+      ),
+      Connection: allErrors.filter((e) =>
+        ["[connection]", "[audio]"].some((p) => e.error.startsWith(p)),
+      ),
+      Internal: allErrors.filter((e) => e.error.startsWith("[internal]")),
+      Timeouts: allErrors.filter(
+        (e) => e.error.startsWith("session timeout") || e.error === "idle_timeout",
+      ),
+      Validation: allErrors.filter((e) => e.error.startsWith("FAIL:")),
+      Retries: allErrors.filter((e) => e.error.startsWith("exhausted ")),
+    };
+    console.log(`  Total:            ${allErrors.length}`);
+    for (const [label, errs] of Object.entries(groups)) {
+      if (errs.length === 0) continue;
+      console.log(`  ${label.padEnd(18)}${errs.length}`);
+      for (const e of errs) console.log(`    [s${e.session}] ${e.error}`);
+    }
+  }
+
+  const allLatencies = results.flatMap((r) => r.turnLatenciesMs).sort((a, b) => a - b);
+  const greetingLatencies = results
+    .filter((r) => r.greetingReceived)
+    .map((r) => r.firstGreetingMs)
+    .sort((a, b) => a - b);
+  const withErrors = results.filter((r) => r.errors.length > 0);
+  const clean = results.length - withErrors.length;
+  const totalTurns = results.reduce((s, r) => s + r.turnsCompleted, 0);
+  const cleanTurns = results
+    .filter((r) => r.errors.length === 0)
+    .reduce((s, r) => s + r.turnsCompleted, 0);
+
+  console.log("\n" + "=".repeat(70));
+  console.log("AGGREGATE");
+  console.log("=".repeat(70));
+  console.log(
+    `  Sessions:         ${results.length} total, ${clean} clean, ${withErrors.length} with errors`,
+  );
+  console.log(`  Peak concurrency: ${peakConcurrency}`);
+  console.log(
+    `  Turns:            ${totalTurns} total, ${cleanTurns} clean, ${totalTurns - cleanTurns} with errors`,
+  );
+  console.log(`  Total tool calls: ${results.reduce((s, r) => s + r.toolCalls.length, 0)}`);
+  console.log(`  Retries:          ${results.reduce((s, r) => s + r.retries, 0)}`);
+  console.log(`  Barge-ins:        ${results.reduce((s, r) => s + r.bargeIns, 0)}`);
+  console.log(
+    `  Greetings:        ${greetingLatencies.length}/${results.length} sessions (${Math.round((greetingLatencies.length / Math.max(1, results.length)) * 100)}%)`,
+  );
+  if (greetingLatencies.length > 0) {
+    console.log(`  Greeting p50:     ${percentile(greetingLatencies, 50)}ms`);
+    console.log(`  Greeting p95:     ${percentile(greetingLatencies, 95)}ms`);
+  }
+  if (allLatencies.length > 0) {
+    console.log(`  Turn latency p50: ${percentile(allLatencies, 50)}ms`);
+    console.log(`  Turn latency p95: ${percentile(allLatencies, 95)}ms`);
+    console.log(`  Turn latency p99: ${percentile(allLatencies, 99)}ms`);
+  }
+  if (loopLagSamples.length > 0) {
+    const sorted = [...loopLagSamples].sort((a, b) => a - b);
+    const max = sorted[sorted.length - 1]!;
+    console.log(
+      `  Event-loop lag:   p50 ${percentile(sorted, 50)}ms, p95 ${percentile(sorted, 95)}ms, max ${max}ms`,
+    );
+  }
+}
+
 // ── Main ─────────────────────────────────────────────────────────────────────
 
 async function main(cfg: Config): Promise<void> {
@@ -513,9 +631,63 @@ async function main(cfg: Config): Promise<void> {
   const chunkFrames = await generateAudioFrames(tts as unknown as TTS, cfg.voice, cfg.chunkMs);
   console.log(`Generated ${chunkFrames.length} utterances (pre-encoded frames)\n`);
 
-  console.log(`Running 1 session (Task 4: metrics smoke test)...\n`);
-  const result = await runSession(0, chunkFrames, cfg);
-  console.log("\n" + JSON.stringify(result, null, 2));
+  console.log(
+    `Running ${cfg.totalSessions} session(s), ${cfg.concurrency} at a time...\n`,
+  );
+  const startTime = Date.now();
+  const results: SessionMetrics[] = [];
+  let nextId = 0;
+  let completed = 0;
+  let active = 0;
+  let peakConcurrency = 0;
+
+  const progressInterval = cfg.quiet
+    ? setInterval(() => {
+        const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+        const line = `  Progress: ${completed}/${cfg.totalSessions} done, ${active} active, peak ${peakConcurrency}, ${elapsed}s elapsed`;
+        process.stdout.write(`\r${line.padEnd(100)}`);
+      }, 1000)
+    : null;
+
+  const loopLagSamples: number[] = [];
+  const lagInterval = setInterval(() => {
+    const start = Date.now();
+    setImmediate(() => loopLagSamples.push(Date.now() - start));
+  }, 1000);
+
+  async function worker(): Promise<void> {
+    while (nextId < cfg.totalSessions) {
+      const id = nextId++;
+      active++;
+      if (active > peakConcurrency) peakConcurrency = active;
+      const result = await runSession(id, chunkFrames, cfg);
+      active--;
+      results.push(result);
+      completed++;
+    }
+  }
+
+  const numWorkers = Math.min(cfg.concurrency, cfg.totalSessions);
+  if (cfg.rampMs > 0 && numWorkers > 1) {
+    const delayPerWorker = cfg.rampMs / numWorkers;
+    const workers: Promise<void>[] = [];
+    for (let i = 0; i < numWorkers; i++) {
+      if (i > 0) await sleep(delayPerWorker);
+      workers.push(worker());
+    }
+    await Promise.all(workers);
+  } else {
+    await Promise.all(Array.from({ length: numWorkers }, () => worker()));
+  }
+
+  clearInterval(lagInterval);
+  if (progressInterval) { clearInterval(progressInterval); process.stdout.write("\n"); }
+
+  results.sort((a, b) => a.sessionId - b.sessionId);
+  console.log(`\nAll sessions finished in ${((Date.now() - startTime) / 1000).toFixed(1)}s`);
+  printMetrics(results, peakConcurrency, loopLagSamples);
+
+  process.exitCode = results.some((r) => r.errors.some((e) => e.startsWith("FAIL:"))) ? 1 : 0;
 }
 
 // ── CLI ──────────────────────────────────────────────────────────────────────
