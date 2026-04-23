@@ -249,7 +249,7 @@ async function runSession(
 }
 
 async function runSessionAttempt(
-  sessionId: number,
+  _sessionId: number,
   sessionTurns: number,
   bufferOrder: number[],
   chunkFrames: Uint8Array[][],
