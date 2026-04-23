@@ -277,11 +277,15 @@ async function runSessionAttempt(
     let currentTurn = metrics.turnsCompleted;
     let waitingForReply = false;
     let greetingReceived = metrics.greetingReceived;
-    let greetingResolved = false;
+    // On retry, if we already got past the greeting (saw it or advanced a
+    // turn), skip greeting-resolution entirely. Otherwise we'd burn another
+    // `greetingTimeoutMs` doing nothing before advancing.
+    let greetingResolved = metrics.greetingReceived || metrics.turnsCompleted > 0;
     let recordedLatencyThisTurn = false;
     let lastUserFrameAt = 0;
     let bargeInScheduled = false;
     let streamInFlight = false;
+    let nextTurnPending = false;
     let countingPostReplyFrames = false;
     let lastEvent = "init";
     let done = false;
@@ -291,6 +295,7 @@ async function runSessionAttempt(
 
     let silenceTimer: NodeJS.Timeout | null = null;
     let silenceWaiters: Array<() => void> = [];
+    const silenceCapTimers = new Set<NodeJS.Timeout>();
 
     function markSilent(): void {
       silenceTimer = null;
@@ -306,17 +311,24 @@ async function runSessionAttempt(
       if (silenceTimer === null) return Promise.resolve();
       return new Promise<void>((resolve) => {
         let settled = false;
-        const finish = (capped: boolean): void => {
+        let capTimer: NodeJS.Timeout | null = null;
+        const settle = (capped: boolean): void => {
           if (settled) return;
           settled = true;
+          if (capTimer) {
+            clearTimeout(capTimer);
+            silenceCapTimers.delete(capTimer);
+            capTimer = null;
+          }
           if (capped) {
             metrics.silenceCapsHit++;
             log(`silence wait capped at ${SILENCE_CAP_MS}ms (audio still flowing)`);
           }
           resolve();
         };
-        silenceWaiters.push(() => finish(false));
-        setTimeout(() => finish(true), SILENCE_CAP_MS);
+        silenceWaiters.push(() => settle(false));
+        capTimer = setTimeout(() => settle(true), SILENCE_CAP_MS);
+        silenceCapTimers.add(capTimer);
       });
     }
 
@@ -353,10 +365,13 @@ async function runSessionAttempt(
     function finish(): void {
       if (done) return;
       done = true;
+      countingPostReplyFrames = false;
       clearTimeout(connectTimer);
       clearTimeout(sessionTimeout);
       if (greetingTimer) { clearTimeout(greetingTimer); greetingTimer = null; }
       if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
+      for (const t of silenceCapTimers) clearTimeout(t);
+      silenceCapTimers.clear();
       const waiters = silenceWaiters;
       silenceWaiters = [];
       for (const w of waiters) w();
@@ -410,9 +425,7 @@ async function runSessionAttempt(
           log(`barge-in [turn ${currentTurn}]`);
           const bufIdx = bufferOrder[currentTurn % bufferOrder.length]!;
           const frames = chunkFrames[bufIdx]!;
-          for (let i = 0; i < Math.min(frames.length, 5); i++) {
-            if (ws.readyState === ws.OPEN) ws.send(frames[i]!);
-          }
+          void sendBargeIn(frames);
         }
         return;
       }
@@ -516,8 +529,28 @@ async function runSessionAttempt(
       }
     }
 
+    // Send a barge-in burst with realistic pacing. Dumping all 5 frames in
+    // one `ws.send` loop produces a ~500ms PCM16 burst that the server's VAD
+    // sees as one chunk — not a realistic user utterance.
+    async function sendBargeIn(frames: Uint8Array[]): Promise<void> {
+      const count = Math.min(frames.length, 5);
+      for (let i = 0; i < count; i++) {
+        if (done || ws.readyState !== ws.OPEN) return;
+        ws.send(frames[i]!);
+        await sleep(cfg.chunkMs);
+      }
+    }
+
     async function streamNextTurn(): Promise<void> {
-      if (streamInFlight || done) return;
+      if (done) return;
+      // If a stream is already in flight, defer this invocation. When the
+      // current stream's finally block runs it will re-dispatch, so we never
+      // lose a reply_done/cancelled-driven transition even if it arrives
+      // mid-stream (aggressive-VAD S2S services do this regularly).
+      if (streamInFlight) {
+        nextTurnPending = true;
+        return;
+      }
       streamInFlight = true;
       const myTurn = ++currentTurn;
       try {
@@ -546,6 +579,10 @@ async function runSessionAttempt(
         }
       } finally {
         streamInFlight = false;
+        if (nextTurnPending && !done) {
+          nextTurnPending = false;
+          void streamNextTurn();
+        }
       }
     }
   });
