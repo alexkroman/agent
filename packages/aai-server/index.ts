@@ -10,6 +10,7 @@ import { errorMessage } from "@alexkroman1/aai";
 import { serve } from "@hono/node-server";
 import { createStorage } from "unstorage";
 import s3Driver from "unstorage/drivers/s3";
+import { startEventLoopMonitor } from "./_event-loop-monitor.ts";
 import { createBundleStore } from "./bundle-store.ts";
 import { DEFAULT_PORT } from "./constants.ts";
 import { createOrchestrator, type OrchestratorOpts } from "./orchestrator.ts";
@@ -77,6 +78,11 @@ async function main(): Promise<void> {
   const env = process.env;
   const port = Number.parseInt(env.PORT ?? String(DEFAULT_PORT), 10);
 
+  // Event-loop delay monitor: set AAI_EVENT_LOOP_MONITOR=0 to disable.
+  // Sustained p95 > 50 ms means CPU-bound work is starving reply dispatch.
+  const monitorEnabled = env.AAI_EVENT_LOOP_MONITOR !== "0";
+  const loopMonitor = monitorEnabled ? startEventLoopMonitor() : null;
+
   const opts = await buildOpts(env);
   const { app, injectWebSocket } = createOrchestrator(opts);
   const nodeServer = serve({ fetch: app.fetch, port });
@@ -90,6 +96,7 @@ async function main(): Promise<void> {
 
   async function shutdown() {
     console.info("Shutting down...");
+    loopMonitor?.stop();
     const stops = [...opts.slots.values()].map((slot) => slot.sandbox?.shutdown()).filter(Boolean);
     const results = await Promise.allSettled(stops);
     for (const r of results) {

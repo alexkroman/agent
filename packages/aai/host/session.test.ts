@@ -191,6 +191,23 @@ describe("createS2sSession", () => {
     expect(client.audioDoneCount).toBe(1);
   });
 
+  test("fast reply_done dispatch does not warn", async () => {
+    const warn = vi.fn();
+    const logger = {
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn,
+      error: vi.fn(),
+    };
+    const { session, mockHandle } = setup({ logger });
+    await session.start();
+
+    mockHandle._fire("replyStarted", { replyId: "r1" });
+    mockHandle._fire("event", { type: "reply_done" });
+
+    expect(warn).not.toHaveBeenCalledWith("slow reply_done dispatch", expect.any(Object));
+  });
+
   test("cancelled event emits cancelled", async () => {
     const { session, client, mockHandle } = setup();
     await session.start();
