@@ -1,5 +1,13 @@
 # @alexkroman1/aai-ui
 
+## 1.4.4
+
+### Patch Changes
+
+- 9bd219f: Refine mic constraints: drop no-op sampleRate, add voiceIsolation + default deviceId, remove misleading AEC comment.
+- Updated dependencies [74341a4]
+  - @alexkroman1/aai@1.4.4
+
 ## 1.4.3
 
 ### Patch Changes
