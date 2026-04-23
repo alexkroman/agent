@@ -86,10 +86,18 @@ export type S2sEvent = ClientEvent & { _interrupted?: boolean };
  */
 type DispatchState = { speechActive: boolean };
 
+type DispatchContext = {
+  /** Logger used for diagnostic `S2S <<` arrival logs. */
+  log: Logger;
+  /** Session id threaded through diagnostic logs; omitted when undefined. */
+  sid?: string;
+};
+
 function dispatchS2sMessage(
   emitter: Emitter<S2sEvents>,
   msg: S2sServerMessage,
   state: DispatchState,
+  dispatchCtx: DispatchContext,
 ): void {
   switch (msg.type) {
     case "session.ready":
@@ -131,6 +139,13 @@ function dispatchS2sMessage(
       });
       break;
     case "reply.done":
+      // Log every raw reply.done arrival from the S2S service — one line per
+      // event, before any client-facing dedup — so we can cross-check which
+      // stalled sessions actually received reply.done for their turn.
+      dispatchCtx.log.info("S2S << reply.done", {
+        ...(dispatchCtx.sid !== undefined ? { sid: dispatchCtx.sid } : {}),
+        status: msg.status ?? "completed",
+      });
       if (msg.status === "interrupted") {
         emitter.emit("event", { type: "cancelled" });
       } else {
@@ -192,10 +207,16 @@ export type ConnectS2sOptions = {
   config: S2SConfig;
   createWebSocket: CreateS2sWebSocket;
   logger?: Logger;
+  /**
+   * Session id attached to diagnostic log lines (e.g. raw `reply.done`
+   * arrivals from the S2S service). Optional; logs omit the field when
+   * not provided.
+   */
+  sid?: string;
 };
 
 export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
-  const { apiKey, config, createWebSocket, logger: log = consoleLogger } = opts;
+  const { apiKey, config, createWebSocket, logger: log = consoleLogger, sid } = opts;
 
   return new Promise((resolve, reject) => {
     log.info("S2S connecting", { url: config.wssUrl });
@@ -206,6 +227,7 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
 
     const emitter = createNanoEvents<S2sEvents>();
     const dispatchState: DispatchState = { speechActive: false };
+    const dispatchCtx: DispatchContext = sid !== undefined ? { log, sid } : { log };
     let opened = false;
 
     function send(msg: { type: string; [key: string]: unknown }): void {
@@ -287,6 +309,9 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
     function logIncoming(obj: { type?: unknown }): void {
       // reply.audio and input.audio are ~95% of traffic — skip logging.
       if (obj.type === "reply.audio" || obj.type === "input.audio") return;
+      // reply.done gets a richer log (sid + status) inside dispatchS2sMessage;
+      // skip the generic line here to avoid a duplicate.
+      if (obj.type === "reply.done") return;
       log.info(`S2S << ${obj.type}`);
     }
 
@@ -309,7 +334,7 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
         );
         return;
       }
-      dispatchS2sMessage(emitter, parsed, dispatchState);
+      dispatchS2sMessage(emitter, parsed, dispatchState, dispatchCtx);
     }
 
     ws.addEventListener("message", handleS2sMessage);

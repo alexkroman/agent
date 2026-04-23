@@ -249,7 +249,20 @@ function setupListeners(ctx: S2sSessionCtx, handle: S2sHandle): void {
     handle.close();
   });
   handle.on("close", (code, reason) => {
-    ctx.log.info("S2S closed", { code, reason });
+    const activeReplyId = ctx.reply.currentReplyId;
+    if (activeReplyId !== null) {
+      // Silent drop — S2S socket closed while the server was still owed a
+      // reply. Client stays in waitingForReply=true until a session timeout.
+      ctx.log.warn("S2S closed with active reply", {
+        sid: ctx.id,
+        agent: ctx.agent,
+        activeReplyId,
+        code,
+        reason,
+      });
+    } else {
+      ctx.log.info("S2S closed", { code, reason });
+    }
     ctx.s2s = null;
     ctx.cancelReply();
   });
@@ -339,6 +352,7 @@ export function createS2sSession(opts: S2sSessionOptions): Session {
         config: s2sConfig,
         createWebSocket,
         logger: log,
+        sid: id,
       });
       if (sessionAbort.signal.aborted || generation !== connectGeneration) {
         handle.close();
