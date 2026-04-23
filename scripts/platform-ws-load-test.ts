@@ -277,6 +277,7 @@ async function runSession(
       switch (msg.type) {
         case "config":
           configReceived = true;
+          clearTimeout(connectTimer);
           log(`config received (sessionId=${msg.sessionId ?? "—"}) sending audio_ready`);
           ws.send(JSON.stringify({ type: "audio_ready" }));
           greetingTimer = setTimeout(() => {
