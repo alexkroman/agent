@@ -402,6 +402,26 @@ describe("connectS2s", () => {
     expect(handler.mock.calls[0]?.[0]).toEqual({ type: "cancelled" });
   });
 
+  test("reply.done arrival is logged with sid and status", async () => {
+    const { raw, createWebSocket, logger } = createTestS2s();
+    const infoSpy = vi.fn();
+    logger.info = infoSpy;
+    const handle = await connectS2s({
+      apiKey: "test-key",
+      config: s2sConfig,
+      createWebSocket,
+      logger,
+      sid: "sess-abc",
+    });
+    handle.on("event", vi.fn());
+
+    raw.emit("message", Buffer.from(JSON.stringify({ type: "reply.done", status: "completed" })));
+
+    const arrivalCall = infoSpy.mock.calls.find((c) => c[0] === "S2S << reply.done");
+    expect(arrivalCall).toBeDefined();
+    expect(arrivalCall?.[1]).toEqual({ sid: "sess-abc", status: "completed" });
+  });
+
   test("session.error with session_not_found dispatches 'sessionExpired'", async () => {
     const { raw, handle } = await setupHandle();
     const handler = vi.fn();

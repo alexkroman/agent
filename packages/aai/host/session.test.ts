@@ -191,6 +191,38 @@ describe("createS2sSession", () => {
     expect(client.audioDoneCount).toBe(1);
   });
 
+  test("S2S close with active reply logs a warn", async () => {
+    const warn = vi.fn();
+    const info = vi.fn();
+    const logger = { debug: vi.fn(), info, warn, error: vi.fn() };
+    const { session, mockHandle } = setup({ logger });
+    await session.start();
+
+    // reply started but not yet done → currentReplyId is non-null
+    mockHandle._fire("replyStarted", { replyId: "r-active" });
+    mockHandle._fire("close", 1006, "abnormal");
+
+    expect(warn).toHaveBeenCalledWith(
+      "S2S closed with active reply",
+      expect.objectContaining({ activeReplyId: "r-active", code: 1006, reason: "abnormal" }),
+    );
+  });
+
+  test("S2S clean close (no active reply) logs at info, not warn", async () => {
+    const warn = vi.fn();
+    const info = vi.fn();
+    const logger = { debug: vi.fn(), info, warn, error: vi.fn() };
+    const { session, mockHandle } = setup({ logger });
+    await session.start();
+
+    mockHandle._fire("replyStarted", { replyId: "r1" });
+    mockHandle._fire("event", { type: "reply_done" });
+    mockHandle._fire("close", 1000, "ok");
+
+    expect(warn).not.toHaveBeenCalledWith("S2S closed with active reply", expect.any(Object));
+    expect(info).toHaveBeenCalledWith("S2S closed", expect.objectContaining({ code: 1000 }));
+  });
+
   test("fast reply_done dispatch does not warn", async () => {
     const warn = vi.fn();
     const logger = {
