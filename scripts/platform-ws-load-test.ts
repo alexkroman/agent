@@ -206,6 +206,14 @@ type SessionMetrics = {
   retries: number;
   bargeIns: number;
   cancelledEvents: number;
+  /** Binary audio frames received after reply_done but before the next user
+   *  turn begins. Non-zero means the server kept pushing TTS audio past its
+   *  own reply_done marker. */
+  framesAfterReply: number;
+  /** Number of times `waitForSilence()` had to time out because incoming
+   *  audio kept resetting the silence detector. Non-zero means the server is
+   *  streaming audio continuously between turns. */
+  silenceCapsHit: number;
 };
 
 // ── Session driver ───────────────────────────────────────────────────────────
@@ -226,6 +234,7 @@ async function runSession(
     userTranscripts: [], agentTranscripts: [], toolCalls: [], errors: [],
     connectMs: 0, firstGreetingMs: 0, turnLatenciesMs: [], totalMs: 0,
     retries: 0, bargeIns: 0, cancelledEvents: 0,
+    framesAfterReply: 0, silenceCapsHit: 0,
   };
 
   const sessionStart = Date.now();
@@ -273,9 +282,12 @@ async function runSessionAttempt(
     let lastUserFrameAt = 0;
     let bargeInScheduled = false;
     let streamInFlight = false;
+    let countingPostReplyFrames = false;
     let lastEvent = "init";
     let done = false;
     let shouldRetry = false;
+
+    const SILENCE_CAP_MS = 3000;
 
     let silenceTimer: NodeJS.Timeout | null = null;
     let silenceWaiters: Array<() => void> = [];
@@ -292,7 +304,20 @@ async function runSessionAttempt(
     }
     function waitForSilence(): Promise<void> {
       if (silenceTimer === null) return Promise.resolve();
-      return new Promise((resolve) => silenceWaiters.push(resolve));
+      return new Promise<void>((resolve) => {
+        let settled = false;
+        const finish = (capped: boolean): void => {
+          if (settled) return;
+          settled = true;
+          if (capped) {
+            metrics.silenceCapsHit++;
+            log(`silence wait capped at ${SILENCE_CAP_MS}ms (audio still flowing)`);
+          }
+          resolve();
+        };
+        silenceWaiters.push(() => finish(false));
+        setTimeout(() => finish(true), SILENCE_CAP_MS);
+      });
     }
 
     const timeoutMs = sessionTurns * 30_000 + 30_000;
@@ -365,6 +390,7 @@ async function runSessionAttempt(
     ws.on("message", (data, isBinary) => {
       if (isBinary) {
         onAudioTick();
+        if (countingPostReplyFrames) metrics.framesAfterReply++;
         if (currentTurn === 0 && !greetingReceived) {
           greetingReceived = true;
           metrics.greetingReceived = true;
@@ -450,6 +476,7 @@ async function runSessionAttempt(
           if (waitingForReply) {
             waitingForReply = false;
             recordedLatencyThisTurn = false;
+            countingPostReplyFrames = true;
             if (currentTurn > 0) metrics.turnsCompleted++;
             log(`reply_done (turn ${currentTurn}/${sessionTurns})`);
             if (currentTurn < sessionTurns) void streamNextTurn();
@@ -469,6 +496,7 @@ async function runSessionAttempt(
           if (waitingForReply) {
             waitingForReply = false;
             recordedLatencyThisTurn = false;
+            countingPostReplyFrames = true;
             if (currentTurn < sessionTurns) void streamNextTurn();
             else if (currentTurn > 0) finish();
           }
@@ -507,6 +535,7 @@ async function runSessionAttempt(
         );
         waitingForReply = true;
         recordedLatencyThisTurn = false;
+        countingPostReplyFrames = false;
         lastUserFrameAt = 0;
         for (const frame of frames) {
           if (done) return;
@@ -551,6 +580,7 @@ function printMetrics(
     }
     console.log(`  Barge-ins:        ${r.bargeIns}`);
     console.log(`  Cancelled events: ${r.cancelledEvents}`);
+    console.log(`  Post-reply audio: ${r.framesAfterReply} frames (silence caps: ${r.silenceCapsHit})`);
     console.log(`  Retries:          ${r.retries}`);
     console.log(`  Total time:       ${r.totalMs}ms`);
     if (r.errors.length > 0) {
@@ -617,6 +647,9 @@ function printMetrics(
   console.log(`  Retries:          ${results.reduce((s, r) => s + r.retries, 0)}`);
   console.log(`  Barge-ins:        ${results.reduce((s, r) => s + r.bargeIns, 0)}`);
   console.log(`  Cancelled events: ${results.reduce((s, r) => s + r.cancelledEvents, 0)}`);
+  const postReply = results.reduce((s, r) => s + r.framesAfterReply, 0);
+  const silenceCaps = results.reduce((s, r) => s + r.silenceCapsHit, 0);
+  console.log(`  Post-reply audio: ${postReply} frames across all sessions (silence caps: ${silenceCaps})`);
   console.log(
     `  Greetings:        ${greetingLatencies.length}/${results.length} sessions (${Math.round((greetingLatencies.length / Math.max(1, results.length)) * 100)}%)`,
   );
