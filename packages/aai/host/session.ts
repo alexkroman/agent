@@ -179,7 +179,17 @@ function handleReplyCancelled(ctx: S2sSessionCtx): void {
   ctx.client.event({ type: "cancelled" });
 }
 
+/**
+ * Warn when the entry-to-emit time for a reply_done dispatch exceeds this.
+ * Tool-less sessions should be sub-millisecond; sessions with pending tools
+ * will legitimately spend time awaiting ctx.turnPromise. We log both (with
+ * `hadTurnPromise`) so event-loop starvation is distinguishable from
+ * genuine tool-call latency.
+ */
+const REPLY_DONE_SLOW_THRESHOLD_MS = 50;
+
 function handleReplyDone(ctx: S2sSessionCtx): void {
+  const startMs = Date.now();
   const doneReplyId = ctx.reply.currentReplyId;
   // Dedup duplicate reply.done events from the S2S service: once the reply
   // has been fully dispatched (or was never started), currentReplyId is null.
@@ -187,6 +197,7 @@ function handleReplyDone(ctx: S2sSessionCtx): void {
     ctx.log.debug("Dropping duplicate reply.done (no active reply)");
     return;
   }
+  const hadTurnPromise = ctx.turnPromise !== null;
   const sendPending = () => {
     if (ctx.reply.currentReplyId !== doneReplyId) {
       ctx.reply.pendingTools = [];
@@ -204,10 +215,19 @@ function handleReplyDone(ctx: S2sSessionCtx): void {
       ctx.client.event({ type: "reply_done" });
       // Mark reply as finished so any repeated reply.done is dropped above.
       ctx.reply.currentReplyId = null;
+      const durationMs = Date.now() - startMs;
+      if (durationMs >= REPLY_DONE_SLOW_THRESHOLD_MS) {
+        ctx.log.warn("slow reply_done dispatch", {
+          sid: ctx.id,
+          agent: ctx.agent,
+          durationMs,
+          hadTurnPromise,
+        });
+      }
     }
   };
-  if (ctx.turnPromise !== null) {
-    void ctx.turnPromise.then(sendPending);
+  if (hadTurnPromise) {
+    void ctx.turnPromise?.then(sendPending);
   } else {
     sendPending();
   }
