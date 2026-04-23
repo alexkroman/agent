@@ -79,7 +79,18 @@ function parseS2sMessage(obj: Record<string, unknown>): S2sServerMessage | undef
  */
 export type S2sEvent = ClientEvent & { _interrupted?: boolean };
 
-function dispatchS2sMessage(emitter: Emitter<S2sEvents>, msg: S2sServerMessage): void {
+/**
+ * Per-connection dispatch state. Used to dedup events that the upstream S2S
+ * service may emit more than once for a single logical turn (e.g. repeated
+ * `input.speech.stopped` after the VAD flips).
+ */
+type DispatchState = { speechActive: boolean };
+
+function dispatchS2sMessage(
+  emitter: Emitter<S2sEvents>,
+  msg: S2sServerMessage,
+  state: DispatchState,
+): void {
   switch (msg.type) {
     case "session.ready":
       emitter.emit("ready", { sessionId: msg.session_id });
@@ -87,10 +98,16 @@ function dispatchS2sMessage(emitter: Emitter<S2sEvents>, msg: S2sServerMessage):
     case "session.updated":
       break;
     case "input.speech.started":
-      emitter.emit("event", { type: "speech_started" });
+      if (!state.speechActive) {
+        state.speechActive = true;
+        emitter.emit("event", { type: "speech_started" });
+      }
       break;
     case "input.speech.stopped":
-      emitter.emit("event", { type: "speech_stopped" });
+      if (state.speechActive) {
+        state.speechActive = false;
+        emitter.emit("event", { type: "speech_stopped" });
+      }
       break;
     case "transcript.user":
       emitter.emit("event", { type: "user_transcript", text: msg.text });
@@ -188,6 +205,7 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
     });
 
     const emitter = createNanoEvents<S2sEvents>();
+    const dispatchState: DispatchState = { speechActive: false };
     let opened = false;
 
     function send(msg: { type: string; [key: string]: unknown }): void {
@@ -291,7 +309,7 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
         );
         return;
       }
-      dispatchS2sMessage(emitter, parsed);
+      dispatchS2sMessage(emitter, parsed, dispatchState);
     }
 
     ws.addEventListener("message", handleS2sMessage);

@@ -205,6 +205,7 @@ type SessionMetrics = {
   totalMs: number;
   retries: number;
   bargeIns: number;
+  cancelledEvents: number;
 };
 
 // ── Session driver ───────────────────────────────────────────────────────────
@@ -224,7 +225,7 @@ async function runSession(
     turnsRequested: sessionTurns, turnsCompleted: 0,
     userTranscripts: [], agentTranscripts: [], toolCalls: [], errors: [],
     connectMs: 0, firstGreetingMs: 0, turnLatenciesMs: [], totalMs: 0,
-    retries: 0, bargeIns: 0,
+    retries: 0, bargeIns: 0, cancelledEvents: 0,
   };
 
   const sessionStart = Date.now();
@@ -267,9 +268,11 @@ async function runSessionAttempt(
     let currentTurn = metrics.turnsCompleted;
     let waitingForReply = false;
     let greetingReceived = metrics.greetingReceived;
+    let greetingResolved = false;
     let recordedLatencyThisTurn = false;
-    let turnStart = 0;
+    let lastUserFrameAt = 0;
     let bargeInScheduled = false;
+    let streamInFlight = false;
     let lastEvent = "init";
     let done = false;
     let shouldRetry = false;
@@ -311,6 +314,17 @@ async function runSessionAttempt(
 
     let greetingTimer: NodeJS.Timeout | null = null;
 
+    function markGreetingResolved(reason: string): void {
+      if (greetingResolved || done) return;
+      greetingResolved = true;
+      if (greetingTimer) {
+        clearTimeout(greetingTimer);
+        greetingTimer = null;
+      }
+      log(`greeting ${reason} — starting turn 1`);
+      void streamNextTurn();
+    }
+
     function finish(): void {
       if (done) return;
       done = true;
@@ -351,9 +365,9 @@ async function runSessionAttempt(
     ws.on("message", (data, isBinary) => {
       if (isBinary) {
         onAudioTick();
-        if (currentTurn > 0 && waitingForReply && !recordedLatencyThisTurn && turnStart > 0) {
+        if (currentTurn > 0 && waitingForReply && !recordedLatencyThisTurn && lastUserFrameAt > 0) {
           recordedLatencyThisTurn = true;
-          const latency = Date.now() - turnStart;
+          const latency = Date.now() - lastUserFrameAt;
           metrics.turnLatenciesMs.push(latency);
           log(`first agent audio [turn ${currentTurn}]: ${latency}ms`);
         }
@@ -389,10 +403,7 @@ async function runSessionAttempt(
           ws.send(JSON.stringify({ type: "audio_ready" }));
           greetingTimer = setTimeout(() => {
             greetingTimer = null;
-            if (!greetingReceived && !done) {
-              log(`no greeting within ${cfg.greetingTimeoutMs}ms — starting turn 1`);
-              void streamNextTurn();
-            }
+            if (!done) markGreetingResolved(`timeout (${cfg.greetingTimeoutMs}ms)`);
           }, cfg.greetingTimeoutMs);
           break;
         case "speech_started":
@@ -401,7 +412,6 @@ async function runSessionAttempt(
         case "speech_stopped":
           lastEvent = "speech_stopped";
           if (waitingForReply) {
-            turnStart = Date.now();
             log(`turn ${currentTurn} speech_stopped; waiting for reply`);
           }
           break;
@@ -433,19 +443,35 @@ async function runSessionAttempt(
           break;
         case "reply_done":
           lastEvent = "reply_done";
-          waitingForReply = false;
-          recordedLatencyThisTurn = false;
-          if (currentTurn > 0) metrics.turnsCompleted++;
-          log(`reply_done (turn ${currentTurn}/${sessionTurns})`);
-          if (currentTurn < sessionTurns) void streamNextTurn();
-          else if (currentTurn > 0) finish();
+          if (!greetingResolved) {
+            markGreetingResolved("received");
+            break;
+          }
+          if (waitingForReply) {
+            waitingForReply = false;
+            recordedLatencyThisTurn = false;
+            if (currentTurn > 0) metrics.turnsCompleted++;
+            log(`reply_done (turn ${currentTurn}/${sessionTurns})`);
+            if (currentTurn < sessionTurns) void streamNextTurn();
+            else if (currentTurn > 0) finish();
+          } else {
+            log(`reply_done (stray, currentTurn=${currentTurn})`);
+          }
           break;
         case "cancelled":
           lastEvent = "cancelled";
-          waitingForReply = false;
-          recordedLatencyThisTurn = false;
-          if (currentTurn < sessionTurns) void streamNextTurn();
-          else if (currentTurn > 0) finish();
+          metrics.cancelledEvents++;
+          log(`cancelled (turn ${currentTurn}/${sessionTurns})`);
+          if (!greetingResolved) {
+            markGreetingResolved("cancelled");
+            break;
+          }
+          if (waitingForReply) {
+            waitingForReply = false;
+            recordedLatencyThisTurn = false;
+            if (currentTurn < sessionTurns) void streamNextTurn();
+            else if (currentTurn > 0) finish();
+          }
           break;
         case "idle_timeout":
           lastEvent = "idle_timeout";
@@ -463,27 +489,34 @@ async function runSessionAttempt(
     }
 
     async function streamNextTurn(): Promise<void> {
-      currentTurn++;
-      if (currentTurn > sessionTurns) return;
-      bargeInScheduled = Math.random() < BARGE_IN_CHANCE;
-      await waitForSilence();
-      if (done) return;
-      await sleep(randomPauseMs());
-      if (done) return;
-      const bufIdx = bufferOrder[(currentTurn - 1) % bufferOrder.length]!;
-      const frames = chunkFrames[bufIdx]!;
-      const approxSec = (frames.length * cfg.chunkMs) / 1000;
-      log(
-        `streaming turn ${currentTurn}/${sessionTurns}${bargeInScheduled ? " (will barge-in)" : ""} (${approxSec.toFixed(2)}s)`,
-      );
-      waitingForReply = true;
-      recordedLatencyThisTurn = false;
-      turnStart = 0;
-      for (const frame of frames) {
+      if (streamInFlight || done) return;
+      streamInFlight = true;
+      const myTurn = ++currentTurn;
+      try {
+        if (myTurn > sessionTurns) return;
+        bargeInScheduled = Math.random() < BARGE_IN_CHANCE;
+        await waitForSilence();
         if (done) return;
-        if (ws.readyState !== ws.OPEN) return;
-        ws.send(frame);
-        await sleep(cfg.chunkMs);
+        await sleep(randomPauseMs());
+        if (done) return;
+        const bufIdx = bufferOrder[(myTurn - 1) % bufferOrder.length]!;
+        const frames = chunkFrames[bufIdx]!;
+        const approxSec = (frames.length * cfg.chunkMs) / 1000;
+        log(
+          `streaming turn ${myTurn}/${sessionTurns}${bargeInScheduled ? " (will barge-in)" : ""} (${approxSec.toFixed(2)}s)`,
+        );
+        waitingForReply = true;
+        recordedLatencyThisTurn = false;
+        lastUserFrameAt = 0;
+        for (const frame of frames) {
+          if (done) return;
+          if (ws.readyState !== ws.OPEN) return;
+          ws.send(frame);
+          lastUserFrameAt = Date.now();
+          await sleep(cfg.chunkMs);
+        }
+      } finally {
+        streamInFlight = false;
       }
     }
   });
@@ -517,6 +550,7 @@ function printMetrics(
       console.log(`    [turn ${tc.turn}] ${tc.name}(${JSON.stringify(tc.args)})`);
     }
     console.log(`  Barge-ins:        ${r.bargeIns}`);
+    console.log(`  Cancelled events: ${r.cancelledEvents}`);
     console.log(`  Retries:          ${r.retries}`);
     console.log(`  Total time:       ${r.totalMs}ms`);
     if (r.errors.length > 0) {
@@ -582,6 +616,7 @@ function printMetrics(
   console.log(`  Total tool calls: ${results.reduce((s, r) => s + r.toolCalls.length, 0)}`);
   console.log(`  Retries:          ${results.reduce((s, r) => s + r.retries, 0)}`);
   console.log(`  Barge-ins:        ${results.reduce((s, r) => s + r.bargeIns, 0)}`);
+  console.log(`  Cancelled events: ${results.reduce((s, r) => s + r.cancelledEvents, 0)}`);
   console.log(
     `  Greetings:        ${greetingLatencies.length}/${results.length} sessions (${Math.round((greetingLatencies.length / Math.max(1, results.length)) * 100)}%)`,
   );
@@ -703,7 +738,7 @@ const loadTestCommand = defineCommand({
     chunkMs: { type: "string", description: "Audio chunk size in ms", default: "100" },
     rampMs: { type: "string", description: "Stagger session starts over this many ms", default: "30000" },
     voice: { type: "string", description: "Kokoro voice preset", default: "af_heart" },
-    greetingTimeoutMs: { type: "string", description: "Wait this long for optional agent greeting", default: "3000" },
+    greetingTimeoutMs: { type: "string", description: "Wait this long for optional agent greeting", default: "10000" },
     verbose: { type: "boolean", alias: "v", description: "Show per-session event logs", default: false },
   },
   async run({ args }) {
