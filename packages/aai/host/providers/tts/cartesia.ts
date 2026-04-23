@@ -213,7 +213,15 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
         },
         cancel() {
           if (closed) return;
-          void context.cancel().catch(ignoreRejection);
+          // Skip the wire cancel if the context is already final on
+          // Cartesia's side (natural `done` after flush, or a prior
+          // cancel). Cartesia responds to cancel on a retired context
+          // with a 400 "context ID does not exist", which our error
+          // listener surfaces as `tts_stream_error` and the pipeline
+          // treats as fatal — killing the session for a benign race.
+          if (!doneEmitted) {
+            void context.cancel().catch(ignoreRejection);
+          }
           // Emit synchronously: barge-in advances the orchestrator's
           // state machine on `done`, and delaying it would audibly
           // stall subsequent turns. Cartesia stops producing audio

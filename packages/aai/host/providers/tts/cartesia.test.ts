@@ -217,4 +217,45 @@ describe("cartesia TTS adapter", () => {
     controller.abort();
     await session.close();
   });
+
+  test("cancel() after done is a no-op on the wire (avoids Cartesia's 'context ID does not exist' 400)", async () => {
+    const { session, controller } = await openSession();
+    const turn1 = session._currentContextId();
+
+    session.sendText("hello");
+    session.flush();
+    await flush();
+
+    // Cartesia finishes synthesizing and emits `done` for the flushed context.
+    const ws = session._ws as unknown as { _fire(event: string, payload: unknown): void };
+    ws._fire("done", { context_id: turn1 });
+
+    // A late cancel (e.g. client `cancel` event after the turn completed
+    // normally) must not re-send `context.cancel()` — doing so would trip
+    // Cartesia's 400 and kill the session via onTtsError → terminate.
+    session.cancel();
+    await flush();
+
+    const cancels = sends.filter((s) => s.kind === "cancel");
+    expect(cancels).toEqual([]);
+
+    controller.abort();
+    await session.close();
+  });
+
+  test("double cancel() only sends one wire cancel", async () => {
+    const { session, controller } = await openSession();
+    const turn1 = session._currentContextId();
+
+    session.sendText("hello");
+    session.cancel();
+    session.cancel();
+    await flush();
+
+    const cancels = sends.filter((s) => s.kind === "cancel");
+    expect(cancels).toEqual([{ kind: "cancel", contextId: turn1 }]);
+
+    controller.abort();
+    await session.close();
+  });
 });
