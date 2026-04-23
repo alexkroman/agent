@@ -5,6 +5,7 @@ import { errorMessage } from "@alexkroman1/aai";
 import { getLock } from "p-lock";
 import type { Storage } from "unstorage";
 import { z } from "zod";
+import { retryOnTransient } from "./_retry.ts";
 import { IsolateConfigSchema } from "./rpc-schemas.ts";
 import { AgentMetadataSchema } from "./schemas.ts";
 import { decryptEnv, encryptEnv, type MasterKey } from "./secrets.ts";
@@ -33,8 +34,23 @@ export function createBundleStore(storage: Storage, opts: { masterKey: MasterKey
     await Promise.all(keys.map((k) => storage.removeItem(k)));
   }
 
+  /**
+   * Reads from the underlying storage with bounded retries on transient
+   * network errors (ECONNRESET etc.). Non-transient failures propagate
+   * unchanged on the first attempt.
+   */
+  function readItem(key: string): Promise<string | null> {
+    return retryOnTransient(async () => (await storage.getItem<string>(key)) ?? null, {
+      onRetry: (attempt, attempts, err) => {
+        console.warn(
+          `Transient storage error reading ${key} (attempt ${attempt}/${attempts}): ${errorMessage(err)}`,
+        );
+      },
+    });
+  }
+
   async function getRawManifest(slug: string): Promise<z.infer<typeof ManifestSchema> | null> {
-    const data = await storage.getItem<string>(objectKey(slug, "manifest.json"));
+    const data = await readItem(objectKey(slug, "manifest.json"));
     if (data == null) return null;
     const raw = typeof data === "string" ? data : JSON.stringify(data);
     return ManifestSchema.parse(JSON.parse(raw));
@@ -81,11 +97,11 @@ export function createBundleStore(storage: Storage, opts: { masterKey: MasterKey
     },
 
     async getWorkerCode(slug) {
-      return (await storage.getItem<string>(objectKey(slug, "worker.js"))) ?? null;
+      return readItem(objectKey(slug, "worker.js"));
     },
 
     async getClientFile(slug, filePath) {
-      return (await storage.getItem<string>(objectKey(slug, `client/${filePath}`))) ?? null;
+      return readItem(objectKey(slug, `client/${filePath}`));
     },
 
     async deleteAgent(slug) {
@@ -115,7 +131,7 @@ export function createBundleStore(storage: Storage, opts: { masterKey: MasterKey
     },
 
     async getAgentConfig(slug) {
-      const data = await storage.getItem<string>(objectKey(slug, "config.json"));
+      const data = await readItem(objectKey(slug, "config.json"));
       if (data == null) return null;
       try {
         const raw = typeof data === "string" ? data : JSON.stringify(data);
