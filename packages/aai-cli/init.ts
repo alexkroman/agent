@@ -4,13 +4,27 @@ import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
-import { errorMessage } from "@alexkroman1/aai";
 import * as p from "@clack/prompts";
 import { colorize } from "consola/utils";
 import { DEFAULT_DEV_SERVER, getMonorepoRoot, isDevMode } from "./_agent.ts";
 import { type CommandResult, ok } from "./_output.ts";
 import { log } from "./_ui.ts";
 import { fileExists, resolveCwd } from "./_utils.ts";
+
+/**
+ * Format an install error so the user sees what actually went wrong.
+ * pnpm writes failures to stdout (not stderr), and Node's execFile error
+ * message is only "Command failed: ..." — so we append both streams.
+ */
+function formatInstallError(err: unknown): string {
+  if (!(err instanceof Error)) return String(err);
+  const parts = [err.message];
+  const stderr = (err as { stderr?: string }).stderr?.trim();
+  const stdout = (err as { stdout?: string }).stdout?.trim();
+  if (stderr) parts.push(stderr);
+  if (stdout) parts.push(stdout);
+  return parts.join("\n");
+}
 
 type InitData = {
   dir: string;
@@ -105,7 +119,7 @@ async function installDeps(cwd: string, silent?: boolean): Promise<boolean> {
       await runPnpmInstall(cwd);
       return true;
     } catch (err: unknown) {
-      log.warn(`pnpm install failed: ${errorMessage(err)}`);
+      log.warn(`pnpm install failed: ${formatInstallError(err)}`);
       log.warn("Run `corepack enable && pnpm install` manually in the project directory.");
       return false;
     }
@@ -119,7 +133,7 @@ async function installDeps(cwd: string, silent?: boolean): Promise<boolean> {
     return true;
   } catch (err: unknown) {
     s.stop("Dependency install failed");
-    log.warn(`pnpm install failed: ${errorMessage(err)}`);
+    log.warn(`pnpm install failed: ${formatInstallError(err)}`);
     log.warn("Run `corepack enable && pnpm install` manually in the project directory.");
     return false;
   }
