@@ -504,6 +504,9 @@ async function runSessionAttempt(
       const state = `turn=${currentTurn}/${sessionTurns}, greeting=${greetingReceived}, waitingForReply=${waitingForReply}, lastEvent=${lastEvent}`;
       metrics.errors.push(`session timeout (${timeoutMs / 1000}s) [${state}]`);
       log(`session timeout [${state}]`);
+      // Retry mid-session stalls. Without this, the close handler's retry
+      // check runs *after* finish() has set done=true and loses.
+      if (metrics.turnsCompleted < sessionTurns) shouldRetry = true;
       finish();
     }, timeoutMs);
 
