@@ -1,3 +1,4 @@
+// Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
 import { C2S, ERROR_CODE, errorCodeFromByte, errorCodeToByte, S2C } from "./wire.ts";
 

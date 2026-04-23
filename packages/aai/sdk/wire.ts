@@ -1,4 +1,4 @@
-// Copyright 2026 the AAI authors. MIT license.
+// Copyright 2025 the AAI authors. MIT license.
 // Tagged binary wire format for the client ↔ platform-server WebSocket.
 // See docs/superpowers/specs/2026-04-23-websocket-middle-hop-consolidation-design.md.
 
@@ -31,6 +31,8 @@ export const S2C = {
 } as const;
 
 // ─── Wire error codes (u8, see spec §5.4) ──────────────────────────────────
+// MUST match `SessionErrorCodeSchema` in protocol.ts (same names, same order).
+// protocol.ts's Zod schema is deleted in Task 20 once all callers route through here.
 export const ERROR_CODE = {
   stt: 0x00,
   llm: 0x01,
@@ -43,16 +45,10 @@ export const ERROR_CODE = {
 } as const;
 
 export type ErrorCodeName = keyof typeof ERROR_CODE;
-const ERROR_NAMES: ErrorCodeName[] = [
-  "stt",
-  "llm",
-  "tts",
-  "tool",
-  "protocol",
-  "connection",
-  "audio",
-  "internal",
-];
+// Derived from ERROR_CODE at module load so the two cannot drift.
+const ERROR_NAMES: ErrorCodeName[] = Object.entries(ERROR_CODE)
+  .sort(([, a], [, b]) => a - b)
+  .map(([k]) => k) as ErrorCodeName[];
 
 export function errorCodeToByte(name: ErrorCodeName): number {
   return ERROR_CODE[name];
