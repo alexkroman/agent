@@ -183,7 +183,11 @@ describe("createS2sSession", () => {
     mockHandle._fire("event", { type: "reply_done" });
     mockHandle._fire("event", { type: "reply_done" });
 
-    expect(client.events.filter((e) => e.type === "reply_done")).toHaveLength(1);
+    const replyDones = client.events.filter(
+      (e): e is { type: string } =>
+        typeof e === "object" && e !== null && "type" in e && e.type === "reply_done",
+    );
+    expect(replyDones).toHaveLength(1);
     expect(client.audioDoneCount).toBe(1);
   });
 
