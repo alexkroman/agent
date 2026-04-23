@@ -1,5 +1,13 @@
 # @alexkroman1/aai-cli
 
+## 1.3.2
+
+### Patch Changes
+
+- 3181117: Stop giget from dumping a stray '<owner>-<repo>' folder (alexkroman-agent) into the user's cwd during 'aai init'. Pass an explicit tmp 'dir' so the template tarball extracts outside the working directory.
+  - @alexkroman1/aai@1.3.2
+  - @alexkroman1/aai-ui@1.3.2
+
 ## 1.3.1
 
 ### Patch Changes

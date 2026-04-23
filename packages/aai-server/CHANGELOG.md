@@ -1,5 +1,12 @@
 # @alexkroman1/aai-server
 
+## 1.0.15
+
+### Patch Changes
+
+- @alexkroman1/aai@1.3.2
+- @alexkroman1/aai-ui@1.3.2
+
 ## 1.0.14
 
 ### Patch Changes
