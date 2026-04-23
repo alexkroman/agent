@@ -19,12 +19,12 @@ import { createNanoEvents, type Emitter } from "nanoevents";
 import { vi } from "vitest";
 import type {
   SttEvents,
+  SttOpener,
   SttOpenOptions,
-  SttProvider,
   SttSession,
   TtsEvents,
+  TtsOpener,
   TtsOpenOptions,
-  TtsProvider,
   TtsSession,
 } from "../sdk/providers.ts";
 
@@ -43,7 +43,7 @@ export type FakeSttSession = SttSession & {
   ): void;
 };
 
-export type FakeSttProvider = SttProvider & {
+export type FakeSttProvider = SttOpener & {
   /** The most recently opened session, or undefined if `open()` hasn't been called. */
   last(): FakeSttSession | undefined;
   readonly sessions: FakeSttSession[];
@@ -107,7 +107,7 @@ export type FakeTtsSession = TtsSession & {
   ): void;
 };
 
-export type FakeTtsProvider = TtsProvider & {
+export type FakeTtsProvider = TtsOpener & {
   /** The most recently opened session, or undefined if `open()` hasn't been called. */
   last(): FakeTtsSession | undefined;
   readonly sessions: FakeTtsSession[];
@@ -175,7 +175,7 @@ export function createFakeTtsProvider(
 export function createFailingSttProvider(
   code: "stt_connect_failed" | "stt_auth_failed" | "stt_stream_error",
   message: string,
-): SttProvider {
+): SttOpener {
   return {
     name: "failing-stt",
     async open(): Promise<SttSession> {
@@ -192,7 +192,7 @@ export function createFailingSttProvider(
 export function createFailingTtsProvider(
   code: "tts_connect_failed" | "tts_auth_failed" | "tts_stream_error",
   message: string,
-): TtsProvider {
+): TtsOpener {
   return {
     name: "failing-tts",
     async open(): Promise<TtsSession> {

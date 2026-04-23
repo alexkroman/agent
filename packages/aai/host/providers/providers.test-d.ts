@@ -1,12 +1,25 @@
 // Copyright 2025 the AAI authors. MIT license.
-import type { LanguageModel } from "ai";
 import { expectTypeOf, test } from "vitest";
-import type { LlmProvider } from "./llm.ts";
-import type { SttEvents, SttProvider, SttSession, Unsubscribe } from "./stt.ts";
-import type { TtsEvents, TtsSession } from "./tts.ts";
+import type {
+  LlmProvider,
+  SttEvents,
+  SttOpener,
+  SttProvider,
+  SttSession,
+  TtsEvents,
+  TtsProvider,
+  TtsSession,
+  Unsubscribe,
+} from "../../sdk/providers.ts";
 
-test("SttProvider.open returns Promise<SttSession>", () => {
-  expectTypeOf<SttProvider["open"]>().returns.toEqualTypeOf<Promise<SttSession>>();
+test("Descriptors are { kind, options } data", () => {
+  expectTypeOf<SttProvider>().toMatchTypeOf<{ kind: string; options: Record<string, unknown> }>();
+  expectTypeOf<LlmProvider>().toMatchTypeOf<{ kind: string; options: Record<string, unknown> }>();
+  expectTypeOf<TtsProvider>().toMatchTypeOf<{ kind: string; options: Record<string, unknown> }>();
+});
+
+test("SttOpener.open returns Promise<SttSession>", () => {
+  expectTypeOf<SttOpener["open"]>().returns.toEqualTypeOf<Promise<SttSession>>();
 });
 
 test("SttEvents.partial takes a string", () => {
@@ -19,10 +32,6 @@ test("TtsSession.cancel is synchronous", () => {
 
 test("TtsEvents.audio takes Int16Array", () => {
   expectTypeOf<TtsEvents["audio"]>().parameters.toEqualTypeOf<[Int16Array]>();
-});
-
-test("LlmProvider is Vercel AI SDK's LanguageModel", () => {
-  expectTypeOf<LlmProvider>().toEqualTypeOf<LanguageModel>();
 });
 
 test("Stt/Tts on() returns Unsubscribe", () => {

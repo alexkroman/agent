@@ -8,7 +8,13 @@
 
 import { z } from "zod";
 import { validateAllowedHostPattern } from "./allowed-hosts.ts";
-import type { LlmProvider, SttProvider, TtsProvider } from "./providers.ts";
+import {
+  assertProviderTriple,
+  type LlmProvider,
+  type SessionMode,
+  type SttProvider,
+  type TtsProvider,
+} from "./providers.ts";
 import { BuiltinToolSchema, DEFAULT_GREETING, DEFAULT_SYSTEM_PROMPT } from "./types.ts";
 
 /**
@@ -67,12 +73,23 @@ export type Manifest = {
    * - `"s2s"` (default): AssemblyAI Streaming Speech-to-Speech path (no stt/llm/tts set).
    * - `"pipeline"`: pluggable STT → LLM → TTS path (stt + llm + tts all set).
    */
-  mode: "s2s" | "pipeline";
+  mode: SessionMode;
 };
 
 const ToolManifestSchema = z.object({
   description: z.string(),
   parameters: z.record(z.string(), z.unknown()).optional(),
+});
+
+/**
+ * Provider descriptor — a `{ kind, options }` pair produced by factories
+ * like `assemblyAI(...)` / `anthropic(...)` / `cartesia(...)`. Kept
+ * deliberately generic at the schema layer: kind-specific validation lives
+ * in the host-side resolver, which knows what each adapter expects.
+ */
+export const ProviderDescriptorSchema = z.object({
+  kind: z.string().min(1),
+  options: z.record(z.string(), z.unknown()),
 });
 
 const ManifestSchema = z.object({
@@ -101,6 +118,9 @@ const ManifestSchema = z.object({
         }
       }
     }),
+  stt: ProviderDescriptorSchema.optional(),
+  llm: ProviderDescriptorSchema.optional(),
+  tts: ProviderDescriptorSchema.optional(),
 });
 
 /**
@@ -114,19 +134,7 @@ const ManifestSchema = z.object({
  */
 export function parseManifest(input: unknown): Manifest {
   const parsed = ManifestSchema.parse(input);
-  // stt/llm/tts are runtime objects (functions/classes) that can't be
-  // validated by the JSON-oriented Zod schema. Pull them straight from
-  // the raw input and enforce all-or-nothing presence here.
-  const raw = (input ?? {}) as {
-    stt?: SttProvider;
-    llm?: LlmProvider;
-    tts?: TtsProvider;
-  };
-  const providerCount = [raw.stt, raw.llm, raw.tts].filter((x) => x != null).length;
-  if (providerCount !== 0 && providerCount !== 3) {
-    throw new Error("stt, llm, and tts must be set together");
-  }
-  const mode: "s2s" | "pipeline" = providerCount === 3 ? "pipeline" : "s2s";
+  const mode = assertProviderTriple(parsed.stt, parsed.llm, parsed.tts);
   return {
     name: parsed.name,
     systemPrompt: parsed.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
@@ -139,9 +147,9 @@ export function parseManifest(input: unknown): Manifest {
     theme: parsed.theme,
     tools: parsed.tools ?? {},
     allowedHosts: parsed.allowedHosts ?? [],
-    stt: raw.stt,
-    llm: raw.llm,
-    tts: raw.tts,
+    stt: parsed.stt,
+    llm: parsed.llm,
+    tts: parsed.tts,
     mode,
   };
 }

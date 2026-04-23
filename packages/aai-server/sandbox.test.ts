@@ -1,5 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import { anthropic } from "@alexkroman1/aai/llm";
+import { assemblyAI } from "@alexkroman1/aai/stt";
+import { cartesia } from "@alexkroman1/aai/tts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { NdjsonConnection } from "./ndjson-transport.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
@@ -39,7 +42,11 @@ vi.mock("./sandbox-vm.ts", async (importOriginal) => {
   };
 });
 
-// ── Mock createRuntime to capture executeTool arg ───────────────────────────
+// ── Mock createRuntime to capture executeTool + pipeline provider args ─────
+
+const capturedRuntimeOpts: {
+  current: Parameters<typeof import("@alexkroman1/aai/runtime").createRuntime>[0] | null;
+} = { current: null };
 
 vi.mock("@alexkroman1/aai/runtime", async (importOriginal) => {
   const orig = await importOriginal<typeof import("@alexkroman1/aai/runtime")>();
@@ -47,6 +54,7 @@ vi.mock("@alexkroman1/aai/runtime", async (importOriginal) => {
     ...orig,
     createRuntime(opts: Parameters<typeof orig.createRuntime>[0]) {
       capturedExecuteTool.current = opts.executeTool ?? null;
+      capturedRuntimeOpts.current = opts;
       return orig.createRuntime(opts);
     },
   };
@@ -315,5 +323,53 @@ describe("createSandbox", () => {
 
     // Should return a toolError JSON string, not throw
     expect(result).toBe(JSON.stringify({ error: "Sandbox failed to start: VM spawn failed" }));
+  });
+
+  // ── Pipeline mode wiring ─────────────────────────────────────────────────
+  //
+  // Regression guard for the bug where the CLI shipped `stt/llm/tts`
+  // descriptors in `agentConfig` but `sandbox.ts` didn't thread them into
+  // `createRuntime()`, so every deploy ran as S2S regardless of what the
+  // agent declared. The fix wires descriptors through; this test locks it
+  // in by asserting the runtime actually receives them.
+
+  it("threads pipeline descriptors from agentConfig into createRuntime", async () => {
+    const stt = assemblyAI({ model: "u3pro-rt" });
+    const llm = anthropic({ model: "claude-haiku-4-5" });
+    const tts = cartesia({ voice: "v" });
+    const sandbox = createSandbox(
+      makeSandboxOptions({
+        // API keys needed because resolveLlm/Stt/Tts now run eagerly
+        // during createRuntime (once per runtime, not per session).
+        env: {
+          ASSEMBLYAI_API_KEY: "stt-key",
+          ANTHROPIC_API_KEY: "llm-key",
+          CARTESIA_API_KEY: "tts-key",
+        },
+        agentConfig: {
+          ...TEST_AGENT_CONFIG,
+          stt,
+          llm,
+          tts,
+          mode: "pipeline",
+        },
+      }),
+    );
+
+    expect(capturedRuntimeOpts.current?.stt).toStrictEqual(stt);
+    expect(capturedRuntimeOpts.current?.llm).toStrictEqual(llm);
+    expect(capturedRuntimeOpts.current?.tts).toStrictEqual(tts);
+
+    await sandbox.shutdown();
+  });
+
+  it("does not pass pipeline providers when mode is not 'pipeline'", async () => {
+    const sandbox = createSandbox(makeSandboxOptions());
+
+    expect(capturedRuntimeOpts.current?.stt).toBeUndefined();
+    expect(capturedRuntimeOpts.current?.llm).toBeUndefined();
+    expect(capturedRuntimeOpts.current?.tts).toBeUndefined();
+
+    await sandbox.shutdown();
   });
 });

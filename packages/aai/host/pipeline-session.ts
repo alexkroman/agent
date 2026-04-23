@@ -14,10 +14,10 @@ import { DEFAULT_STT_SAMPLE_RATE, PIPELINE_FLUSH_TIMEOUT_MS } from "../sdk/const
 import type { ClientSink, SessionErrorCode } from "../sdk/protocol.ts";
 import type {
   SttError,
-  SttProvider,
+  SttOpener,
   SttSession,
   TtsError,
-  TtsProvider,
+  TtsOpener,
   TtsSession,
   Unsubscribe,
 } from "../sdk/providers.ts";
@@ -45,12 +45,12 @@ export interface PipelineSessionOptions {
   toolGuidance?: readonly string[] | undefined;
   /** Function to invoke tools by name. */
   executeTool: ExecuteTool;
-  /** STT provider (injected via manifest in pipeline mode). */
-  stt: SttProvider;
+  /** STT opener (resolved from an {@link SttProvider} descriptor). */
+  stt: SttOpener;
   /** LLM provider (Vercel AI SDK `LanguageModel`). */
   llm: LanguageModel;
-  /** TTS provider (injected via manifest in pipeline mode). */
-  tts: TtsProvider;
+  /** TTS opener (resolved from a {@link TtsProvider} descriptor). */
+  tts: TtsOpener;
   /** STT API key. */
   sttApiKey: string;
   /** TTS API key. */

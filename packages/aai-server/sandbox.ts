@@ -129,6 +129,9 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
     toolSchemas: [...config.toolSchemas, ...builtins.schemas],
     toolGuidance: builtins.guidance,
     builtinDefs: builtins.defs,
+    ...(config.mode === "pipeline" && config.stt && config.llm && config.tts
+      ? { stt: config.stt, llm: config.llm, tts: config.tts }
+      : {}),
   });
 
   const sessionSinks = new Map<string, ClientSink>();

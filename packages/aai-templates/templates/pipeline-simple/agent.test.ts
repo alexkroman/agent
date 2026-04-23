@@ -11,11 +11,15 @@ describe("pipeline-simple template", () => {
     expect(agentDef.tts).toBeDefined();
   });
 
-  test("STT provider is AssemblyAI", () => {
-    expect(agentDef.stt?.name).toBe("assemblyai");
+  test("STT descriptor is AssemblyAI", () => {
+    expect(agentDef.stt?.kind).toBe("assemblyai");
   });
 
-  test("TTS provider is Cartesia", () => {
-    expect(agentDef.tts?.name).toBe("cartesia");
+  test("LLM descriptor is Anthropic", () => {
+    expect(agentDef.llm?.kind).toBe("anthropic");
+  });
+
+  test("TTS descriptor is Cartesia", () => {
+    expect(agentDef.tts?.kind).toBe("cartesia");
   });
 });

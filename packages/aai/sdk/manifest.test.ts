@@ -4,6 +4,9 @@ import { describe, expect, expectTypeOf, test } from "vitest";
 import { type Manifest, parseManifest } from "./manifest.ts";
 import type { AgentConfig, ToolSchema } from "./manifest-barrel.ts";
 import { agentToolsToSchemas, toAgentConfig } from "./manifest-barrel.ts";
+import { anthropic } from "./providers/llm/anthropic.ts";
+import { assemblyAI } from "./providers/stt/assemblyai.ts";
+import { cartesia } from "./providers/tts/cartesia.ts";
 
 describe("parseManifest", () => {
   test("minimal manifest requires only name", () => {
@@ -164,9 +167,9 @@ describe("manifest type contracts", () => {
 });
 
 describe("parseManifest — mode classification", () => {
-  const stubStt = { name: "stub-stt", open: async () => ({}) };
-  const stubTts = { name: "stub-tts", open: async () => ({}) };
-  const stubLlm = { modelId: "stub-llm" };
+  const stubStt = assemblyAI({ model: "u3pro-rt" });
+  const stubTts = cartesia({ voice: "v" });
+  const stubLlm = anthropic({ model: "claude-haiku-4-5" });
 
   test("no stt/llm/tts ⇒ mode: 's2s'", () => {
     const parsed = parseManifest({

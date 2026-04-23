@@ -3,7 +3,9 @@ import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import { agent, tool } from "./define.ts";
 import { parseManifest } from "./manifest.ts";
-import type { LlmProvider, SttProvider, TtsProvider } from "./providers.ts";
+import { anthropic } from "./providers/llm/anthropic.ts";
+import { assemblyAI } from "./providers/stt/assemblyai.ts";
+import { cartesia } from "./providers/tts/cartesia.ts";
 
 describe("tool()", () => {
   test("returns the definition unchanged", () => {
@@ -58,9 +60,9 @@ describe("agent()", () => {
   });
 
   test("preserves stt/llm/tts providers on the returned def", () => {
-    const stt = { name: "fake-stt", open: async () => ({}) } as unknown as SttProvider;
-    const tts = { name: "fake-tts", open: async () => ({}) } as unknown as TtsProvider;
-    const llm = {} as LlmProvider;
+    const stt = assemblyAI({ model: "u3pro-rt" });
+    const tts = cartesia({ voice: "v" });
+    const llm = anthropic({ model: "claude-haiku-4-5" });
     const def = agent({ name: "t", systemPrompt: "p", stt, llm, tts });
     expect(def.stt).toBe(stt);
     expect(def.llm).toBe(llm);
@@ -68,15 +70,15 @@ describe("agent()", () => {
   });
 
   test("stt/llm/tts flow through parseManifest to mode 'pipeline'", () => {
-    const stt = { name: "fake-stt", open: async () => ({}) } as unknown as SttProvider;
-    const tts = { name: "fake-tts", open: async () => ({}) } as unknown as TtsProvider;
-    const llm = {} as LlmProvider;
+    const stt = assemblyAI({ model: "u3pro-rt" });
+    const tts = cartesia({ voice: "v" });
+    const llm = anthropic({ model: "claude-haiku-4-5" });
     const def = agent({ name: "t", systemPrompt: "p", stt, llm, tts });
     const parsed = parseManifest(def);
     expect(parsed.mode).toBe("pipeline");
-    expect(parsed.stt).toBe(stt);
-    expect(parsed.llm).toBe(llm);
-    expect(parsed.tts).toBe(tts);
+    expect(parsed.stt).toStrictEqual(stt);
+    expect(parsed.llm).toStrictEqual(llm);
+    expect(parsed.tts).toStrictEqual(tts);
   });
 
   test("agent without providers resolves to mode 's2s'", () => {

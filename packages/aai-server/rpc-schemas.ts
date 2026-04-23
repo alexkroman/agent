@@ -8,7 +8,11 @@
  */
 
 import { DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
-import { ToolSchemaSchema as ToolSchemaSchema_ } from "@alexkroman1/aai/manifest";
+import {
+  assertProviderTriple,
+  ProviderDescriptorSchema,
+  ToolSchemaSchema as ToolSchemaSchema_,
+} from "@alexkroman1/aai/manifest";
 import { KvDelSchema, KvGetSchema, KvSetSchema } from "@alexkroman1/aai/protocol";
 import { z } from "zod";
 
@@ -26,17 +30,38 @@ export { ToolSchemaSchema } from "@alexkroman1/aai/manifest";
  * Flow: `AgentDef` (sdk/types.ts) → `AgentConfig` (sdk/_internal-types.ts)
  *       → stored as `IsolateConfig` → sent to guest via NDJSON RPC.
  */
-export const IsolateConfigSchema = z.object({
-  name: z.string(),
-  systemPrompt: z.string().default(DEFAULT_SYSTEM_PROMPT),
-  greeting: z.string().optional(),
-  sttPrompt: z.string().optional(),
-  maxSteps: z.number().optional(),
-  toolChoice: z.enum(["auto", "required"]).optional(),
-  builtinTools: z.array(z.string()).optional(),
-  toolSchemas: z.array(ToolSchemaSchema_).default([]),
-  allowedHosts: z.array(z.string()).default([]),
-});
+export const IsolateConfigSchema = z
+  .object({
+    name: z.string(),
+    systemPrompt: z.string().default(DEFAULT_SYSTEM_PROMPT),
+    greeting: z.string().optional(),
+    sttPrompt: z.string().optional(),
+    maxSteps: z.number().optional(),
+    toolChoice: z.enum(["auto", "required"]).optional(),
+    builtinTools: z.array(z.string()).optional(),
+    toolSchemas: z.array(ToolSchemaSchema_).default([]),
+    allowedHosts: z.array(z.string()).default([]),
+    stt: ProviderDescriptorSchema.optional(),
+    llm: ProviderDescriptorSchema.optional(),
+    tts: ProviderDescriptorSchema.optional(),
+    mode: z.enum(["s2s", "pipeline"]).optional(),
+  })
+  .superRefine((cfg, ctx) => {
+    try {
+      const mode = assertProviderTriple(cfg.stt, cfg.llm, cfg.tts);
+      if (cfg.mode === "pipeline" && mode !== "pipeline") {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "mode='pipeline' requires stt, llm, and tts to be set",
+        });
+      }
+    } catch (err) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+  });
 
 export type IsolateConfig = z.infer<typeof IsolateConfigSchema>;
 

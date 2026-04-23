@@ -39,8 +39,10 @@ exports[`export surface stability > @alexkroman1/aai/manifest export 1`] = `
 [
   "AgentConfigSchema",
   "EMPTY_PARAMS",
+  "ProviderDescriptorSchema",
   "ToolSchemaSchema",
   "agentToolsToSchemas",
+  "assertProviderTriple",
   "toAgentConfig",
 ]
 `;
