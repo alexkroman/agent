@@ -49,9 +49,9 @@
     "lint": "biome check ."
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^3.0.0",
+    "@ai-sdk/anthropic": "^3.0.71",
     "@cartesia/cartesia-js": "^3.0.0",
-    "ai": "^6.0.161",
+    "ai": "^6.0.168",
     "assemblyai": "^4.30.0",
     "escape-html": "^1.0.3",
     "html-to-text": "^9.0.5",
