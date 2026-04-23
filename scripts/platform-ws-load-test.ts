@@ -48,8 +48,6 @@ const UTTERANCES = [
   "What's the weather like in Chicago this weekend?",
 ];
 
-const silentLogger = { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
-
 // ── TTS generation ───────────────────────────────────────────────────────────
 
 type TTS = {
