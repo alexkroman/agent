@@ -1,5 +1,13 @@
 # @alexkroman1/aai-server
 
+## 1.0.14
+
+### Patch Changes
+
+- Updated dependencies [5a9f3d5]
+  - @alexkroman1/aai@1.3.1
+  - @alexkroman1/aai-ui@1.3.1
+
 ## 1.0.13
 
 ### Patch Changes
