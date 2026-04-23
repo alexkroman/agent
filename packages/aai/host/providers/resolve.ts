@@ -77,7 +77,10 @@ export function resolveLlm(descriptor: LlmProvider, env: Record<string, string>)
       if (!apiKey) {
         throw new Error("Anthropic LLM: missing API key. Set ANTHROPIC_API_KEY in the agent env.");
       }
-      return createAnthropic({ apiKey })(options.model);
+      // Pass baseURL explicitly so the SDK's loadOptionalSetting returns
+      // before reading process.env["ANTHROPIC_BASE_URL"]. Without this,
+      // the Deno platform server needs --allow-env to start a session.
+      return createAnthropic({ apiKey, baseURL: "https://api.anthropic.com/v1" })(options.model);
     }
     default:
       throw new Error(
