@@ -1,5 +1,11 @@
 # @alexkroman1/aai
 
+## 1.4.4
+
+### Patch Changes
+
+- 74341a4: fix(aai): dedup duplicate S2S reply.done and speech.stopped events to prevent client-side cascades in the voice session wire protocol
+
 ## 1.4.3
 
 ### Patch Changes
