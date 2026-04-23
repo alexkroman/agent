@@ -183,29 +183,95 @@ function checkFdLimit(requiredFds: number): void {
   }
 }
 
+// ── Metrics types ────────────────────────────────────────────────────────────
+
+type SessionMetrics = {
+  sessionId: number;
+  connected: boolean;
+  configReceived: boolean;
+  sandboxSessionId: string;
+  greetingReceived: boolean;
+  turnsRequested: number;
+  turnsCompleted: number;
+  userTranscripts: string[];
+  agentTranscripts: string[];
+  toolCalls: { turn: number; name: string; args: Record<string, unknown> }[];
+  errors: string[];
+  connectMs: number;
+  firstGreetingMs: number;
+  turnLatenciesMs: number[];
+  totalMs: number;
+  retries: number;
+  bargeIns: number;
+};
+
 // ── Session driver ───────────────────────────────────────────────────────────
 
 async function runSession(
   sessionId: number,
   chunkFrames: Uint8Array[][],
   cfg: Config,
-): Promise<void> {
+): Promise<SessionMetrics> {
   const sessionTurns = randomTurnCount(cfg.maxTurns);
   const bufferOrder = shuffle([...chunkFrames.keys()]);
   const log = cfg.quiet ? () => {} : (msg: string) => console.log(`  [s${sessionId}] ${msg}`);
 
+  const metrics: SessionMetrics = {
+    sessionId, connected: false, configReceived: false,
+    sandboxSessionId: "", greetingReceived: false,
+    turnsRequested: sessionTurns, turnsCompleted: 0,
+    userTranscripts: [], agentTranscripts: [], toolCalls: [], errors: [],
+    connectMs: 0, firstGreetingMs: 0, turnLatenciesMs: [], totalMs: 0,
+    retries: 0, bargeIns: 0,
+  };
+
+  const sessionStart = Date.now();
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    if (attempt > 0) {
+      metrics.retries++;
+      const backoff = Math.min(1000 * 2 ** (attempt - 1), 10_000);
+      log(`retry ${attempt}/${MAX_RETRIES} after ${backoff}ms`);
+      await sleep(backoff);
+    }
+    const result = await runSessionAttempt(
+      sessionId, sessionTurns, bufferOrder, chunkFrames, metrics, sessionStart, log, cfg,
+    );
+    if (result === "done") break;
+    if (attempt === MAX_RETRIES) {
+      metrics.errors.push(`exhausted ${MAX_RETRIES} retries`);
+      log(`exhausted ${MAX_RETRIES} retries`);
+    }
+  }
+
+  metrics.totalMs = Date.now() - sessionStart;
+  return metrics;
+}
+
+async function runSessionAttempt(
+  sessionId: number,
+  sessionTurns: number,
+  bufferOrder: number[],
+  chunkFrames: Uint8Array[][],
+  metrics: SessionMetrics,
+  sessionStart: number,
+  log: (msg: string) => void,
+  cfg: Config,
+): Promise<"done" | "retry"> {
   const ws: WsClient = new WsWebSocket(cfg.wssUrl);
   ws.binaryType = "arraybuffer";
 
-  return new Promise<void>((resolve) => {
-    let configReceived = false;
-    let greetingReceived = false;
-    let currentTurn = 0;           // 0 = greeting phase
+  return new Promise<"done" | "retry">((resolve) => {
+    let currentTurn = metrics.turnsCompleted;
     let waitingForReply = false;
+    let greetingReceived = metrics.greetingReceived;
+    let recordedLatencyThisTurn = false;
+    let turnStart = 0;
     let bargeInScheduled = false;
+    let lastEvent = "init";
     let done = false;
+    let shouldRetry = false;
 
-    // Silence tracking — same pattern as S2S test.
     let silenceTimer: NodeJS.Timeout | null = null;
     let silenceWaiters: Array<() => void> = [];
 
@@ -215,48 +281,84 @@ async function runSession(
       silenceWaiters = [];
       for (const w of waiters) w();
     }
-
     function onAudioTick(): void {
       if (silenceTimer) clearTimeout(silenceTimer);
       silenceTimer = setTimeout(markSilent, 500);
     }
-
     function waitForSilence(): Promise<void> {
       if (silenceTimer === null) return Promise.resolve();
       return new Promise((resolve) => silenceWaiters.push(resolve));
     }
 
-    function finish(reason: string): void {
+    const timeoutMs = sessionTurns * 30_000 + 30_000;
+    const sessionTimeout = setTimeout(() => {
+      const state = `turn=${currentTurn}/${sessionTurns}, greeting=${greetingReceived}, waitingForReply=${waitingForReply}, lastEvent=${lastEvent}`;
+      metrics.errors.push(`session timeout (${timeoutMs / 1000}s) [${state}]`);
+      log(`session timeout [${state}]`);
+      finish();
+    }, timeoutMs);
+
+    const connectTimer = setTimeout(() => {
+      if (!metrics.configReceived) {
+        metrics.errors.push("no config within 10s");
+        log("no config within 10s");
+        shouldRetry = true;
+        finish();
+      }
+    }, 10_000);
+
+    let greetingTimer: NodeJS.Timeout | null = null;
+
+    function finish(): void {
       if (done) return;
       done = true;
       clearTimeout(connectTimer);
+      clearTimeout(sessionTimeout);
       if (greetingTimer) { clearTimeout(greetingTimer); greetingTimer = null; }
       if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
       const waiters = silenceWaiters;
       silenceWaiters = [];
       for (const w of waiters) w();
-      log(`finish: ${reason}`);
+
+      if (waitingForReply && currentTurn > 0) {
+        metrics.errors.push(`FAIL: turn ${currentTurn} got no agent reply`);
+      }
+      if (metrics.connected && !metrics.configReceived) {
+        metrics.errors.push("FAIL: no config received");
+      }
       try { ws.close(); } catch {}
-      resolve();
+      resolve(shouldRetry ? "retry" : "done");
     }
 
-    const connectTimer = setTimeout(() => {
-      if (!configReceived) finish("no config within 10s");
-    }, 10_000);
+    ws.on("open", () => {
+      metrics.connected = true;
+      log("ws open");
+    });
 
-    // Optional greeting timer — set after audio_ready is sent.
-    let greetingTimer: NodeJS.Timeout | null = null;
+    ws.on("close", () => {
+      log("ws closed");
+      if (!done && metrics.turnsCompleted < sessionTurns) shouldRetry = true;
+      finish();
+    });
 
-    ws.on("open", () => log("ws open"));
-    ws.on("close", () => finish("ws close"));
-    ws.on("error", (err: Error) => log(`ws error: ${err.message}`));
+    ws.on("error", (err: Error) => {
+      metrics.errors.push(`ws error: ${err.message}`);
+      log(`ws error: ${err.message}`);
+    });
 
     ws.on("message", (data, isBinary) => {
       if (isBinary) {
         onAudioTick();
+        if (currentTurn > 0 && waitingForReply && !recordedLatencyThisTurn && turnStart > 0) {
+          recordedLatencyThisTurn = true;
+          const latency = Date.now() - turnStart;
+          metrics.turnLatenciesMs.push(latency);
+          log(`first agent audio [turn ${currentTurn}]: ${latency}ms`);
+        }
         if (currentTurn > 0 && waitingForReply && bargeInScheduled && !done) {
           bargeInScheduled = false;
-          log(`barge-in [turn ${currentTurn}]: interrupting agent`);
+          metrics.bargeIns++;
+          log(`barge-in [turn ${currentTurn}]`);
           const bufIdx = bufferOrder[currentTurn % bufferOrder.length]!;
           const frames = chunkFrames[bufIdx]!;
           for (let i = 0; i < Math.min(frames.length, 5); i++) {
@@ -276,9 +378,12 @@ async function runSession(
     function handleServerMessage(msg: ServerMessage): void {
       switch (msg.type) {
         case "config":
-          configReceived = true;
+          metrics.configReceived = true;
+          metrics.connectMs = Date.now() - sessionStart;
+          metrics.sandboxSessionId = msg.sessionId ?? "";
           clearTimeout(connectTimer);
-          log(`config received (sessionId=${msg.sessionId ?? "—"}) sending audio_ready`);
+          lastEvent = "config";
+          log(`config received (sessionId=${metrics.sandboxSessionId || "—"}, ${metrics.connectMs}ms)`);
           ws.send(JSON.stringify({ type: "audio_ready" }));
           greetingTimer = setTimeout(() => {
             greetingTimer = null;
@@ -289,55 +394,66 @@ async function runSession(
           }, cfg.greetingTimeoutMs);
           break;
         case "speech_started":
-          log("speech_started");
+          lastEvent = "speech_started";
           break;
         case "speech_stopped":
-          log(`speech_stopped (turn ${currentTurn})`);
+          lastEvent = "speech_stopped";
+          if (waitingForReply) {
+            turnStart = Date.now();
+            log(`turn ${currentTurn} speech_stopped; waiting for reply`);
+          }
           break;
         case "user_transcript":
-          log(`user_transcript [turn ${currentTurn}]: "${msg.text}"`);
+          lastEvent = "user_transcript";
+          metrics.userTranscripts.push(msg.text);
           break;
         case "agent_transcript":
+          lastEvent = "agent_transcript";
+          metrics.agentTranscripts.push(msg.text);
           if (currentTurn === 0 && !greetingReceived) {
             greetingReceived = true;
+            metrics.greetingReceived = true;
+            metrics.firstGreetingMs = Date.now() - sessionStart;
             if (greetingTimer) { clearTimeout(greetingTimer); greetingTimer = null; }
-            log(`greeting: "${msg.text.slice(0, 60)}"`);
-          } else {
-            log(`agent_transcript [turn ${currentTurn}]: "${msg.text.slice(0, 60)}"`);
+            log(`greeting: "${msg.text.slice(0, 60)}" (${metrics.firstGreetingMs}ms)`);
           }
           break;
         case "tool_call":
-          log(`tool_call [turn ${currentTurn}]: ${msg.toolName}(${JSON.stringify(msg.args)})`);
+          lastEvent = "tool_call";
+          metrics.toolCalls.push({ turn: currentTurn, name: msg.toolName, args: msg.args });
           break;
         case "tool_call_done":
-          log(`tool_call_done [turn ${currentTurn}]: ${msg.toolCallId}`);
+          lastEvent = "tool_call_done";
           break;
         case "audio_done":
+          lastEvent = "audio_done";
           onAudioTick();
           break;
         case "reply_done":
-          log(`reply_done (turn ${currentTurn}/${sessionTurns})`);
+          lastEvent = "reply_done";
           waitingForReply = false;
-          if (currentTurn < sessionTurns) {
-            void streamNextTurn();
-          } else if (currentTurn > 0) {
-            finish("all turns completed");
-          }
-          // currentTurn === 0 && greeting reply_done → wait for greeting timer
-          // or the next agent_transcript path; handled by greetingTimer fallback.
+          recordedLatencyThisTurn = false;
+          if (currentTurn > 0) metrics.turnsCompleted++;
+          log(`reply_done (turn ${currentTurn}/${sessionTurns})`);
+          if (currentTurn < sessionTurns) void streamNextTurn();
+          else if (currentTurn > 0) finish();
           break;
         case "cancelled":
-          log(`cancelled (turn ${currentTurn})`);
+          lastEvent = "cancelled";
           waitingForReply = false;
+          recordedLatencyThisTurn = false;
           if (currentTurn < sessionTurns) void streamNextTurn();
-          else if (currentTurn > 0) finish("all turns completed (after cancel)");
+          else if (currentTurn > 0) finish();
           break;
         case "idle_timeout":
-          log("idle_timeout from server");
-          finish("idle_timeout");
+          lastEvent = "idle_timeout";
+          metrics.errors.push("idle_timeout");
+          shouldRetry = true;
+          finish();
           break;
         case "error":
-          log(`error[${msg.code}]: ${msg.message}`);
+          lastEvent = `error[${msg.code}]`;
+          metrics.errors.push(`[${msg.code}] ${msg.message}`);
           break;
         default:
           break;
@@ -347,14 +463,11 @@ async function runSession(
     async function streamNextTurn(): Promise<void> {
       currentTurn++;
       if (currentTurn > sessionTurns) return;
-
       bargeInScheduled = Math.random() < BARGE_IN_CHANCE;
-
       await waitForSilence();
       if (done) return;
       await sleep(randomPauseMs());
       if (done) return;
-
       const bufIdx = bufferOrder[(currentTurn - 1) % bufferOrder.length]!;
       const frames = chunkFrames[bufIdx]!;
       const approxSec = (frames.length * cfg.chunkMs) / 1000;
@@ -362,13 +475,14 @@ async function runSession(
         `streaming turn ${currentTurn}/${sessionTurns}${bargeInScheduled ? " (will barge-in)" : ""} (${approxSec.toFixed(2)}s)`,
       );
       waitingForReply = true;
+      recordedLatencyThisTurn = false;
+      turnStart = 0;
       for (const frame of frames) {
         if (done) return;
         if (ws.readyState !== ws.OPEN) return;
         ws.send(frame);
         await sleep(cfg.chunkMs);
       }
-      log(`turn ${currentTurn} audio sent`);
     }
   });
 }
@@ -399,9 +513,9 @@ async function main(cfg: Config): Promise<void> {
   const chunkFrames = await generateAudioFrames(tts as unknown as TTS, cfg.voice, cfg.chunkMs);
   console.log(`Generated ${chunkFrames.length} utterances (pre-encoded frames)\n`);
 
-  console.log(`Running 1 session (Task 2: single-turn smoke test)...\n`);
-  await runSession(0, chunkFrames, cfg);
-  console.log("\nSession finished.");
+  console.log(`Running 1 session (Task 4: metrics smoke test)...\n`);
+  const result = await runSession(0, chunkFrames, cfg);
+  console.log("\n" + JSON.stringify(result, null, 2));
 }
 
 // ── CLI ──────────────────────────────────────────────────────────────────────
