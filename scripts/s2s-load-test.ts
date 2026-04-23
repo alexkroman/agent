@@ -429,11 +429,14 @@ async function runSessionAttempt(
   bufferOrder: number[],
   chunkFrames: string[][],
   metrics: SessionMetrics,
-  sessionStart: number,
+  _sessionStart: number,
   log: (msg: string) => void,
   createWebSocket: CreateS2sWebSocket,
   cfg: Config,
 ): Promise<"done" | "retry"> {
+  // Per-attempt clock. connectMs / firstGreetingMs should reflect this
+  // attempt (fresh S2S handshake), not wall time from the first attempt.
+  const attemptStart = Date.now();
   let turnStart = 0;
   let currentTurn = metrics.turnsCompleted;
   let waitingForReply = false;
@@ -490,7 +493,7 @@ async function runSessionAttempt(
       logger: cfg.quiet ? silentLogger : console,
     });
     metrics.connected = true;
-    metrics.connectMs = Date.now() - sessionStart;
+    metrics.connectMs = Date.now() - attemptStart;
     log(`connected (${metrics.connectMs}ms)`);
   } catch (err: unknown) {
     metrics.errors.push(`ws error: ${(err as Error).message}`);
@@ -622,7 +625,7 @@ async function runSessionAttempt(
       if (currentTurn === 0) {
         if (!greetingReceived) {
           greetingReceived = true;
-          metrics.firstGreetingMs = Date.now() - sessionStart;
+          metrics.firstGreetingMs = Date.now() - attemptStart;
           log(`greeting started (${metrics.firstGreetingMs}ms)`);
         }
         return;

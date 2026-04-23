@@ -266,10 +266,14 @@ async function runSessionAttempt(
   bufferOrder: number[],
   chunkFrames: Uint8Array[][],
   metrics: SessionMetrics,
-  sessionStart: number,
+  _sessionStart: number,
   log: (msg: string) => void,
   cfg: Config,
 ): Promise<"done" | "retry"> {
+  // Per-attempt clock. connectMs / firstGreetingMs should reflect this
+  // attempt (fresh WebSocket, fresh handshake), not wall time from the
+  // first attempt — otherwise retries report "179562ms to connect".
+  const attemptStart = Date.now();
   const ws: WsClient = new WsWebSocket(cfg.wssUrl);
   ws.binaryType = "arraybuffer";
 
@@ -412,7 +416,7 @@ async function runSessionAttempt(
         if (currentTurn === 0 && !greetingReceived) {
           greetingReceived = true;
           metrics.greetingReceived = true;
-          metrics.firstGreetingMs = Date.now() - sessionStart;
+          metrics.firstGreetingMs = Date.now() - attemptStart;
           if (greetingTimer) { clearTimeout(greetingTimer); greetingTimer = null; }
           log(`greeting started (${metrics.firstGreetingMs}ms)`);
         }
@@ -444,7 +448,7 @@ async function runSessionAttempt(
       switch (msg.type) {
         case "config":
           metrics.configReceived = true;
-          metrics.connectMs = Date.now() - sessionStart;
+          metrics.connectMs = Date.now() - attemptStart;
           metrics.sandboxSessionId = msg.sessionId ?? "";
           clearTimeout(connectTimer);
           lastEvent = "config";
