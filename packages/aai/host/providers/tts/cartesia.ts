@@ -1,10 +1,14 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Cartesia TTS adapter — streaming WebSocket with per-turn `context_id`.
+ * Cartesia TTS opener (host-only).
+ *
+ * The user-facing descriptor factory (`cartesia(...)`) lives in
+ * `sdk/providers/tts/cartesia.ts`. This module is the host-side
+ * counterpart: it takes the descriptor options + an API key and
+ * returns a {@link TtsOpener} that the pipeline session drives.
  *
  * Wraps `@cartesia/cartesia-js`'s `TTSWS` / `TTSWSContext` and normalizes it
- * onto the {@link TtsProvider} / {@link TtsEvents} contract consumed by the
- * pipeline orchestrator.
+ * onto the {@link TtsEvents} contract consumed by the pipeline orchestrator.
  *
  * **Per-turn context lifecycle.** Each `sendText(...)` within the same turn
  * appends to the same Cartesia context. On `flush()` or `cancel()`, a new
@@ -20,27 +24,14 @@ import { randomUUID } from "node:crypto";
 import { Cartesia } from "@cartesia/cartesia-js";
 import type { TTSWS, TTSWSContext } from "@cartesia/cartesia-js/resources/tts";
 import { createNanoEvents, type Emitter } from "nanoevents";
-import type {
-  TtsError,
-  TtsEvents,
-  TtsOpenOptions,
-  TtsProvider,
-  TtsSession,
+import type { CartesiaOptions } from "../../../sdk/providers/tts/cartesia.ts";
+import {
+  makeTtsError,
+  type TtsEvents,
+  type TtsOpener,
+  type TtsOpenOptions,
+  type TtsSession,
 } from "../../../sdk/providers.ts";
-
-export interface CartesiaOptions {
-  /** Cartesia voice ID. Required. */
-  voice: string;
-  /** Model ID. Defaults to `"sonic-2"`. */
-  model?: string;
-  /**
-   * Cartesia API key. Falls back to `TtsOpenOptions.apiKey`, then
-   * `process.env.CARTESIA_API_KEY`.
-   */
-  apiKey?: string;
-  /** Spoken language hint. Defaults to `"en"`. */
-  language?: string;
-}
 
 /** Internal: TtsSession with a test-only handle to the raw SDK socket. */
 export interface CartesiaSession extends TtsSession {
@@ -48,12 +39,6 @@ export interface CartesiaSession extends TtsSession {
   readonly _ws: TTSWS;
   /** @internal Test-only: id of the currently-active context. */
   readonly _currentContextId: () => string;
-}
-
-function makeError(message: string): TtsError {
-  const err = new Error(message) as TtsError & { code: TtsError["code"] };
-  (err as { code: TtsError["code"] }).code = "tts_stream_error";
-  return err;
 }
 
 /** PCM16 sample rates supported by Cartesia's `raw` output format. */
@@ -66,24 +51,23 @@ function assertSupportedSampleRate(rate: number): CartesiaSampleRate {
   if ((CARTESIA_PCM16_RATES as readonly number[]).includes(rate)) {
     return rate as CartesiaSampleRate;
   }
-  const err = new Error(
-    `Cartesia TTS adapter: unsupported sample rate ${rate}. Supported: ${CARTESIA_PCM16_RATES.join(", ")}.`,
-  ) as TtsError & { code: TtsError["code"] };
-  (err as { code: TtsError["code"] }).code = "tts_connect_failed";
-  throw err;
+  throw makeTtsError(
+    "tts_connect_failed",
+    `Cartesia TTS: unsupported sample rate ${rate}. Supported: ${CARTESIA_PCM16_RATES.join(", ")}.`,
+  );
 }
 
-export function cartesia(opts: CartesiaOptions): TtsProvider {
+/** Build a {@link TtsOpener} from resolved Cartesia descriptor options. */
+export function openCartesia(opts: CartesiaOptions): TtsOpener {
   return {
     name: "cartesia",
     async open(openOpts: TtsOpenOptions): Promise<TtsSession> {
-      const apiKey = opts.apiKey ?? openOpts.apiKey ?? process.env.CARTESIA_API_KEY;
+      const apiKey = openOpts.apiKey || process.env.CARTESIA_API_KEY;
       if (!apiKey) {
-        const err = new Error(
-          "Cartesia TTS adapter: missing API key. Provide via the factory option, TtsOpenOptions, or the CARTESIA_API_KEY environment variable.",
-        ) as TtsError & { code: TtsError["code"] };
-        (err as { code: TtsError["code"] }).code = "tts_auth_failed";
-        throw err;
+        throw makeTtsError(
+          "tts_auth_failed",
+          "Cartesia TTS: missing API key. Set CARTESIA_API_KEY in the agent env.",
+        );
       }
 
       const sampleRate = assertSupportedSampleRate(openOpts.sampleRate);
@@ -95,11 +79,10 @@ export function cartesia(opts: CartesiaOptions): TtsProvider {
       try {
         ws = await client.tts.websocket();
       } catch (cause) {
-        const err = new Error(
+        throw makeTtsError(
+          "tts_connect_failed",
           `Cartesia TTS: connect failed: ${cause instanceof Error ? cause.message : String(cause)}`,
-        ) as TtsError & { code: TtsError["code"] };
-        (err as { code: TtsError["code"] }).code = "tts_connect_failed";
-        throw err;
+        );
       }
 
       const emitter: Emitter<TtsEvents> = createNanoEvents<TtsEvents>();
@@ -134,17 +117,15 @@ export function cartesia(opts: CartesiaOptions): TtsProvider {
         emitter.emit("done");
       };
 
-      // Route SDK events onto the adapter's event surface, filtering by the
-      // currently-active `context_id`. The TTSWS EventEmitter fires globally
-      // across all contexts on the socket; we only care about the active one.
+      // TTSWS fires events globally across all contexts on the shared
+      // socket; filter by the currently-active context_id.
       ws.on("chunk", (event) => {
         if (closed) return;
         if (event.context_id !== context.contextId) return;
-        // SDK decodes base64 → Buffer on receipt (`event.audio`). Forward as
-        // Int16Array over the same byte window.
         const buf = event.audio;
         if (!buf || buf.byteLength === 0) return;
-        // Cartesia sends PCM16 little-endian with even byte counts. Be defensive.
+        // Cartesia sends PCM16 LE; be defensive about odd byte counts
+        // so `new Int16Array` never throws on a misaligned length.
         const evenBytes = buf.byteLength - (buf.byteLength % 2);
         if (evenBytes === 0) return;
         const pcm = new Int16Array(buf.buffer.slice(buf.byteOffset, buf.byteOffset + evenBytes));
@@ -159,7 +140,7 @@ export function cartesia(opts: CartesiaOptions): TtsProvider {
 
       ws.on("error", (err) => {
         if (closed) return;
-        emitter.emit("error", makeError(err?.message ?? String(err)));
+        emitter.emit("error", makeTtsError("tts_stream_error", err?.message ?? String(err)));
       });
 
       const close = async (): Promise<void> => {
@@ -172,7 +153,6 @@ export function cartesia(opts: CartesiaOptions): TtsProvider {
         }
       };
 
-      // Session-level abort → close the SDK socket.
       if (openOpts.signal.aborted) {
         void close();
       } else {
@@ -181,8 +161,6 @@ export function cartesia(opts: CartesiaOptions): TtsProvider {
         });
       }
 
-      /** Static part of each generation request; only `transcript` and
-       * `continue` vary per send. Pinned here so `language` threads through. */
       const baseRequest = {
         model_id: model,
         voice: { mode: "id" as const, id: opts.voice },
@@ -194,11 +172,6 @@ export function cartesia(opts: CartesiaOptions): TtsProvider {
         language,
       };
 
-      /**
-       * Swallow rejections from async SDK calls — the global `error`
-       * listener on `ws` emits a normalized {@link TtsError}, so there's
-       * nothing useful for the caller to do with per-send failures.
-       */
       const ignoreRejection = (_err: unknown): void => {
         // intentionally empty
       };
@@ -206,22 +179,19 @@ export function cartesia(opts: CartesiaOptions): TtsProvider {
       const session: CartesiaSession = {
         sendText(text: string) {
           if (closed || text.length === 0) return;
-          // Send a delta with `continue: true`, sharing the same
-          // context_id across all deltas of this turn.
           void context
             .send({ ...baseRequest, transcript: text, continue: true })
             .catch(ignoreRejection);
         },
         flush() {
           if (closed) return;
-          // Send an empty transcript with `continue: false` — the canonical
-          // end-of-turn signal. The server replies with a `done` event
-          // tagged with this context's id, which drives `emitDoneOnce`. We
-          // also microtask-emit `done` as a fallback so the orchestrator's
-          // state machine can't wedge if the server event is dropped.
-          // TODO: drop the microtask fallback once we've verified Cartesia
-          // always emits a `done` for cleanly-flushed contexts. See
-          // 2026-04-22-pluggable-providers-design.md → "Note on flush() timing".
+          // Empty transcript with `continue: false` is the canonical
+          // end-of-turn signal. Cartesia replies with a `done` tagged
+          // by context_id, driving `emitDoneOnce`. The microtask
+          // fallback guards against a dropped server event wedging
+          // the orchestrator's state machine.
+          // TODO: drop the microtask fallback once we've verified
+          // Cartesia always emits `done` for cleanly-flushed contexts.
           void context
             .send({ ...baseRequest, transcript: "", continue: false })
             .catch(ignoreRejection);
@@ -230,10 +200,10 @@ export function cartesia(opts: CartesiaOptions): TtsProvider {
         },
         cancel() {
           if (closed) return;
-          // `cancel()` calls ws.cancelContext(contextId) under the hood.
           void context.cancel().catch(ignoreRejection);
-          // Emit `done` synchronously — the orchestrator's state machine
-          // advances on `done`, and barge-in must not be delayed.
+          // Emit synchronously: barge-in advances the orchestrator's
+          // state machine on `done`, and delaying it would audibly
+          // stall subsequent turns.
           emitDoneOnce();
           rotateContext();
         },

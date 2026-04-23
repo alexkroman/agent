@@ -27,8 +27,8 @@ import { describe, expect, test } from "vitest";
 import type { AgentConfig, ExecuteTool } from "../../sdk/_internal-types.ts";
 import type { ClientEvent, ClientSink } from "../../sdk/protocol.ts";
 import { createPipelineSession } from "../pipeline-session.ts";
-import { assemblyAI } from "../providers/stt/assemblyai.ts";
-import { cartesia } from "../providers/tts/cartesia.ts";
+import { openAssemblyAI } from "../providers/stt/assemblyai.ts";
+import { openCartesia } from "../providers/tts/cartesia.ts";
 import { consoleLogger } from "../runtime-config.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -90,9 +90,9 @@ describe.skipIf(!envReady)("pipeline integration — reference stack", () => {
       agentConfig,
       toolSchemas: [],
       executeTool,
-      stt: assemblyAI({ model: "u3pro-rt" }),
+      stt: openAssemblyAI({ model: "u3pro-rt" }),
       llm: openai("gpt-4o-mini"),
-      tts: cartesia({ voice: "694f9389-aac1-45b6-b726-9d9369183238" }),
+      tts: openCartesia({ voice: "694f9389-aac1-45b6-b726-9d9369183238" }),
       // biome-ignore lint/style/noNonNullAssertion: envReady guard ensures presence
       sttApiKey: process.env.ASSEMBLYAI_API_KEY!,
       // biome-ignore lint/style/noNonNullAssertion: envReady guard ensures presence

@@ -7,6 +7,13 @@
 
 import type { JSONSchema7 } from "json-schema";
 import { z } from "zod";
+import { ProviderDescriptorSchema } from "./manifest.ts";
+import {
+  assertProviderTriple,
+  type LlmProvider,
+  type SttProvider,
+  type TtsProvider,
+} from "./providers.ts";
 import type { Message } from "./types.ts";
 import { BuiltinToolSchema, ToolChoiceSchema, type ToolDef } from "./types.ts";
 
@@ -56,6 +63,10 @@ export const AgentConfigSchema = z.object({
   toolChoice: ToolChoiceSchema.optional(),
   builtinTools: z.array(BuiltinToolSchema).readonly().optional(),
   idleTimeoutMs: z.number().nonnegative().optional(),
+  stt: ProviderDescriptorSchema.optional(),
+  llm: ProviderDescriptorSchema.optional(),
+  tts: ProviderDescriptorSchema.optional(),
+  mode: z.enum(["s2s", "pipeline"]).optional(),
 });
 
 /** Serializable agent configuration — derived from {@link AgentConfigSchema}. */
@@ -75,9 +86,18 @@ export interface AgentConfigSource {
   toolChoice?: AgentConfig["toolChoice"] | undefined;
   builtinTools?: Readonly<AgentConfig["builtinTools"]> | undefined;
   idleTimeoutMs?: number | undefined;
+  stt?: SttProvider | undefined;
+  llm?: LlmProvider | undefined;
+  tts?: TtsProvider | undefined;
 }
 
-/** Extract the serializable {@link AgentConfig} subset from a source object. */
+/**
+ * Extract the serializable {@link AgentConfig} subset from a source object.
+ *
+ * When `stt`, `llm`, and `tts` descriptors are present they are all three
+ * required (or none) — enforced here so the server can trust the config.
+ * `mode` is derived from their presence.
+ */
 export function toAgentConfig(src: AgentConfigSource): AgentConfig {
   const config: AgentConfig = {
     name: src.name,
@@ -89,6 +109,13 @@ export function toAgentConfig(src: AgentConfigSource): AgentConfig {
   if (src.toolChoice !== undefined) config.toolChoice = src.toolChoice;
   if (src.builtinTools) config.builtinTools = [...src.builtinTools];
   if (src.idleTimeoutMs !== undefined) config.idleTimeoutMs = src.idleTimeoutMs;
+
+  config.mode = assertProviderTriple(src.stt, src.llm, src.tts);
+  if (config.mode === "pipeline") {
+    config.stt = src.stt;
+    config.llm = src.llm;
+    config.tts = src.tts;
+  }
   return config;
 }
 

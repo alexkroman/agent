@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import type { TurnEvent } from "assemblyai";
 import { describe, expect, test, vi } from "vitest";
 import { flush } from "../../_test-utils.ts";
-import { type AssemblyAISession, assemblyAI } from "./assemblyai.ts";
+import { type AssemblyAISession, openAssemblyAI } from "./assemblyai.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -66,7 +66,7 @@ describe("assemblyAI STT adapter — fixture replay", () => {
       await readFile(join(here, "fixtures/assemblyai/basic-turn.json"), "utf8"),
     ) as Record<string, unknown>[];
 
-    const provider = assemblyAI({ model: "u3pro-rt", apiKey: "k" });
+    const provider = openAssemblyAI({ model: "u3pro-rt" });
     const controller = new AbortController();
     const session = (await provider.open({
       sampleRate: 16_000,

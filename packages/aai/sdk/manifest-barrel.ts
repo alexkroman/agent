@@ -16,3 +16,5 @@ export {
   ToolSchemaSchema,
   toAgentConfig,
 } from "./_internal-types.ts";
+export { ProviderDescriptorSchema } from "./manifest.ts";
+export { assertProviderTriple, type SessionMode } from "./providers.ts";

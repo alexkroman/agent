@@ -3,7 +3,7 @@
 
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { flush } from "../../_test-utils.ts";
-import { type CartesiaSession, cartesia } from "./cartesia.ts";
+import { type CartesiaSession, openCartesia } from "./cartesia.ts";
 
 // Recorded interactions on the fake `TTSWSContext` — one entry per method call.
 interface RecordedSend {
@@ -101,7 +101,7 @@ async function openSession(): Promise<{
   session: CartesiaSession;
   controller: AbortController;
 }> {
-  const provider = cartesia({ voice: "voice-id", apiKey: "k" });
+  const provider = openCartesia({ voice: "voice-id" });
   const controller = new AbortController();
   const session = (await provider.open({
     sampleRate: 16_000,
