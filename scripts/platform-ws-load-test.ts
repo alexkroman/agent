@@ -26,6 +26,13 @@ type Config = {
   chunkMs: number;
   rampMs: number;
   greetingTimeoutMs: number;
+  /**
+   * Per-turn stall cap. If we send user audio and don't see reply_done or
+   * cancelled within this window, assume the turn is dead, set shouldRetry,
+   * and finish the attempt so the session reconnects instead of sitting on a
+   * slot for the full `sessionTurns * 30s + 30s` session ceiling.
+   */
+  perTurnStallMs: number;
   quiet: boolean;
 };
 
@@ -357,6 +364,27 @@ async function runSessionAttempt(
     }, 10_000);
 
     let greetingTimer: NodeJS.Timeout | null = null;
+    let perTurnTimer: NodeJS.Timeout | null = null;
+
+    function clearPerTurnTimer(): void {
+      if (perTurnTimer) {
+        clearTimeout(perTurnTimer);
+        perTurnTimer = null;
+      }
+    }
+
+    function startPerTurnTimer(turn: number): void {
+      clearPerTurnTimer();
+      if (!(cfg.perTurnStallMs > 0)) return;
+      perTurnTimer = setTimeout(() => {
+        perTurnTimer = null;
+        if (done || !waitingForReply) return;
+        metrics.errors.push(`per-turn stall (${cfg.perTurnStallMs}ms) [turn=${turn}]`);
+        log(`turn ${turn} stalled ${cfg.perTurnStallMs}ms — reconnecting`);
+        if (metrics.turnsCompleted < sessionTurns) shouldRetry = true;
+        finish();
+      }, cfg.perTurnStallMs);
+    }
 
     function markGreetingResolved(reason: string): void {
       if (greetingResolved || done) return;
@@ -373,6 +401,7 @@ async function runSessionAttempt(
       if (done) return;
       done = true;
       countingPostReplyFrames = false;
+      clearPerTurnTimer();
       clearTimeout(connectTimer);
       clearTimeout(sessionTimeout);
       if (greetingTimer) { clearTimeout(greetingTimer); greetingTimer = null; }
@@ -497,6 +526,7 @@ async function runSessionAttempt(
             waitingForReply = false;
             recordedLatencyThisTurn = false;
             countingPostReplyFrames = true;
+            clearPerTurnTimer();
             if (currentTurn > 0) metrics.turnsCompleted++;
             log(`reply_done (turn ${currentTurn}/${sessionTurns})`);
             if (currentTurn < sessionTurns) void streamNextTurn();
@@ -517,6 +547,7 @@ async function runSessionAttempt(
             waitingForReply = false;
             recordedLatencyThisTurn = false;
             countingPostReplyFrames = true;
+            clearPerTurnTimer();
             if (currentTurn < sessionTurns) void streamNextTurn();
             else if (currentTurn > 0) finish();
           }
@@ -584,6 +615,8 @@ async function runSessionAttempt(
           lastUserFrameAt = Date.now();
           await sleep(cfg.chunkMs);
         }
+        // Frame loop finished — start the stall timer for this turn's reply.
+        startPerTurnTimer(myTurn);
       } finally {
         streamInFlight = false;
         if (nextTurnPending && !done) {
@@ -816,6 +849,7 @@ const loadTestCommand = defineCommand({
     rampMs: { type: "string", description: "Stagger session starts over this many ms", default: "30000" },
     voice: { type: "string", description: "Kokoro voice preset", default: "af_heart" },
     greetingTimeoutMs: { type: "string", description: "Wait this long for optional agent greeting", default: "10000" },
+    perTurnStallMs: { type: "string", description: "After sending user audio, give up on a reply after this many ms and retry (0 to disable)", default: "30000" },
     verbose: { type: "boolean", alias: "v", description: "Show per-session event logs", default: false },
   },
   async run({ args }) {
@@ -836,6 +870,7 @@ const loadTestCommand = defineCommand({
       chunkMs: Number(args.chunkMs),
       rampMs: Number(args.rampMs),
       greetingTimeoutMs: Number(args.greetingTimeoutMs),
+      perTurnStallMs: Number(args.perTurnStallMs),
       quiet: !args.verbose,
     });
   },
