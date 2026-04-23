@@ -190,17 +190,51 @@ async function runSession(
   chunkFrames: Uint8Array[][],
   cfg: Config,
 ): Promise<void> {
+  const sessionTurns = randomTurnCount(cfg.maxTurns);
+  const bufferOrder = shuffle([...chunkFrames.keys()]);
   const log = cfg.quiet ? () => {} : (msg: string) => console.log(`  [s${sessionId}] ${msg}`);
+
   const ws: WsClient = new WsWebSocket(cfg.wssUrl);
   ws.binaryType = "arraybuffer";
 
   return new Promise<void>((resolve) => {
     let configReceived = false;
+    let greetingReceived = false;
+    let currentTurn = 0;           // 0 = greeting phase
+    let waitingForReply = false;
+    let bargeInScheduled = false;
     let done = false;
+
+    // Silence tracking — same pattern as S2S test.
+    let silenceTimer: NodeJS.Timeout | null = null;
+    let silenceWaiters: Array<() => void> = [];
+
+    function markSilent(): void {
+      silenceTimer = null;
+      const waiters = silenceWaiters;
+      silenceWaiters = [];
+      for (const w of waiters) w();
+    }
+
+    function onAudioTick(): void {
+      if (silenceTimer) clearTimeout(silenceTimer);
+      silenceTimer = setTimeout(markSilent, 500);
+    }
+
+    function waitForSilence(): Promise<void> {
+      if (silenceTimer === null) return Promise.resolve();
+      return new Promise((resolve) => silenceWaiters.push(resolve));
+    }
 
     function finish(reason: string): void {
       if (done) return;
       done = true;
+      clearTimeout(connectTimer);
+      if (greetingTimer) { clearTimeout(greetingTimer); greetingTimer = null; }
+      if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
+      const waiters = silenceWaiters;
+      silenceWaiters = [];
+      for (const w of waiters) w();
       log(`finish: ${reason}`);
       try { ws.close(); } catch {}
       resolve();
@@ -210,72 +244,96 @@ async function runSession(
       if (!configReceived) finish("no config within 10s");
     }, 10_000);
 
+    // Optional greeting timer — set after audio_ready is sent.
+    let greetingTimer: NodeJS.Timeout | null = null;
+
     ws.on("open", () => log("ws open"));
-
-    ws.on("close", () => {
-      clearTimeout(connectTimer);
-      finish("ws close");
-    });
-
-    ws.on("error", (err: Error) => {
-      log(`ws error: ${err.message}`);
-    });
+    ws.on("close", () => finish("ws close"));
+    ws.on("error", (err: Error) => log(`ws error: ${err.message}`));
 
     ws.on("message", (data, isBinary) => {
       if (isBinary) {
-        // Binary frame = TTS audio chunk from agent. Count only.
+        onAudioTick();
+        if (currentTurn > 0 && waitingForReply && bargeInScheduled && !done) {
+          bargeInScheduled = false;
+          log(`barge-in [turn ${currentTurn}]: interrupting agent`);
+          const bufIdx = bufferOrder[currentTurn % bufferOrder.length]!;
+          const frames = chunkFrames[bufIdx]!;
+          for (let i = 0; i < Math.min(frames.length, 5); i++) {
+            if (ws.readyState === ws.OPEN) ws.send(frames[i]!);
+          }
+        }
         return;
       }
       const text = data instanceof Buffer ? data.toString("utf8") : String(data);
       let json: unknown;
-      try {
-        json = JSON.parse(text);
-      } catch {
-        log(`invalid JSON: ${text.slice(0, 80)}`);
-        return;
-      }
+      try { json = JSON.parse(text); } catch { return; }
       const parsed = lenientParse(ServerMessageSchema, json);
-      if (!parsed.ok) {
-        if (parsed.malformed) log(`malformed message: ${parsed.error}`);
-        return;
-      }
-      const msg: ServerMessage = parsed.data;
-      handleServerMessage(msg);
+      if (!parsed.ok) return;
+      handleServerMessage(parsed.data);
     });
 
-    async function handleServerMessage(msg: ServerMessage): Promise<void> {
+    function handleServerMessage(msg: ServerMessage): void {
       switch (msg.type) {
         case "config":
           configReceived = true;
-          clearTimeout(connectTimer);
           log(`config received (sessionId=${msg.sessionId ?? "—"}) sending audio_ready`);
           ws.send(JSON.stringify({ type: "audio_ready" }));
-          void streamOneTurn();
+          greetingTimer = setTimeout(() => {
+            greetingTimer = null;
+            if (!greetingReceived && !done) {
+              log(`no greeting within ${cfg.greetingTimeoutMs}ms — starting turn 1`);
+              void streamNextTurn();
+            }
+          }, cfg.greetingTimeoutMs);
           break;
         case "speech_started":
           log("speech_started");
           break;
         case "speech_stopped":
-          log("speech_stopped");
+          log(`speech_stopped (turn ${currentTurn})`);
           break;
         case "user_transcript":
-          log(`user_transcript: "${msg.text}"`);
+          log(`user_transcript [turn ${currentTurn}]: "${msg.text}"`);
           break;
         case "agent_transcript":
-          log(`agent_transcript: "${msg.text.slice(0, 60)}"`);
+          if (currentTurn === 0 && !greetingReceived) {
+            greetingReceived = true;
+            if (greetingTimer) { clearTimeout(greetingTimer); greetingTimer = null; }
+            log(`greeting: "${msg.text.slice(0, 60)}"`);
+          } else {
+            log(`agent_transcript [turn ${currentTurn}]: "${msg.text.slice(0, 60)}"`);
+          }
           break;
         case "tool_call":
-          log(`tool_call: ${msg.toolName}(${JSON.stringify(msg.args)})`);
+          log(`tool_call [turn ${currentTurn}]: ${msg.toolName}(${JSON.stringify(msg.args)})`);
           break;
         case "tool_call_done":
-          log(`tool_call_done: ${msg.toolCallId}`);
+          log(`tool_call_done [turn ${currentTurn}]: ${msg.toolCallId}`);
           break;
         case "audio_done":
-          log("audio_done");
+          onAudioTick();
           break;
         case "reply_done":
-          log("reply_done");
-          finish("reply_done");
+          log(`reply_done (turn ${currentTurn}/${sessionTurns})`);
+          waitingForReply = false;
+          if (currentTurn < sessionTurns) {
+            void streamNextTurn();
+          } else if (currentTurn > 0) {
+            finish("all turns completed");
+          }
+          // currentTurn === 0 && greeting reply_done → wait for greeting timer
+          // or the next agent_transcript path; handled by greetingTimer fallback.
+          break;
+        case "cancelled":
+          log(`cancelled (turn ${currentTurn})`);
+          waitingForReply = false;
+          if (currentTurn < sessionTurns) void streamNextTurn();
+          else if (currentTurn > 0) finish("all turns completed (after cancel)");
+          break;
+        case "idle_timeout":
+          log("idle_timeout from server");
+          finish("idle_timeout");
           break;
         case "error":
           log(`error[${msg.code}]: ${msg.message}`);
@@ -285,17 +343,31 @@ async function runSession(
       }
     }
 
-    async function streamOneTurn(): Promise<void> {
-      await sleep(500); // small settle before streaming
-      const frames = chunkFrames[0]!; // use first utterance
-      log(`streaming ${frames.length} frames`);
+    async function streamNextTurn(): Promise<void> {
+      currentTurn++;
+      if (currentTurn > sessionTurns) return;
+
+      bargeInScheduled = Math.random() < BARGE_IN_CHANCE;
+
+      await waitForSilence();
+      if (done) return;
+      await sleep(randomPauseMs());
+      if (done) return;
+
+      const bufIdx = bufferOrder[(currentTurn - 1) % bufferOrder.length]!;
+      const frames = chunkFrames[bufIdx]!;
+      const approxSec = (frames.length * cfg.chunkMs) / 1000;
+      log(
+        `streaming turn ${currentTurn}/${sessionTurns}${bargeInScheduled ? " (will barge-in)" : ""} (${approxSec.toFixed(2)}s)`,
+      );
+      waitingForReply = true;
       for (const frame of frames) {
         if (done) return;
         if (ws.readyState !== ws.OPEN) return;
         ws.send(frame);
         await sleep(cfg.chunkMs);
       }
-      log("stream done; waiting for reply_done");
+      log(`turn ${currentTurn} audio sent`);
     }
   });
 }
