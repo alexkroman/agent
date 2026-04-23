@@ -168,10 +168,27 @@ describe("createS2sSession", () => {
     const { session, client, mockHandle } = setup();
     await session.start();
 
+    mockHandle._fire("replyStarted", { replyId: "r1" });
     mockHandle._fire("event", { type: "reply_done" });
 
     expect(client.audioDoneCount).toBe(1);
     expect(client.events).toContainEvent("reply_done");
+  });
+
+  test("duplicate reply_done is suppressed after reply completes", async () => {
+    const { session, client, mockHandle } = setup();
+    await session.start();
+
+    mockHandle._fire("replyStarted", { replyId: "r1" });
+    mockHandle._fire("event", { type: "reply_done" });
+    mockHandle._fire("event", { type: "reply_done" });
+
+    const replyDones = client.events.filter(
+      (e): e is { type: string } =>
+        typeof e === "object" && e !== null && "type" in e && e.type === "reply_done",
+    );
+    expect(replyDones).toHaveLength(1);
+    expect(client.audioDoneCount).toBe(1);
   });
 
   test("cancelled event emits cancelled", async () => {

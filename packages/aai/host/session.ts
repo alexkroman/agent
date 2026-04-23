@@ -181,6 +181,12 @@ function handleReplyCancelled(ctx: S2sSessionCtx): void {
 
 function handleReplyDone(ctx: S2sSessionCtx): void {
   const doneReplyId = ctx.reply.currentReplyId;
+  // Dedup duplicate reply.done events from the S2S service: once the reply
+  // has been fully dispatched (or was never started), currentReplyId is null.
+  if (doneReplyId === null) {
+    ctx.log.debug("Dropping duplicate reply.done (no active reply)");
+    return;
+  }
   const sendPending = () => {
     if (ctx.reply.currentReplyId !== doneReplyId) {
       ctx.reply.pendingTools = [];
@@ -196,6 +202,8 @@ function handleReplyDone(ctx: S2sSessionCtx): void {
       }
       ctx.client.playAudioDone();
       ctx.client.event({ type: "reply_done" });
+      // Mark reply as finished so any repeated reply.done is dropped above.
+      ctx.reply.currentReplyId = null;
     }
   };
   if (ctx.turnPromise !== null) {

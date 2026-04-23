@@ -210,6 +210,13 @@ type SessionMetrics = {
   totalMs: number;
   retries: number;
   bargeIns: number;
+  /** Audio events received after reply_done but before the next user turn
+   *  begins. Non-zero means the service kept pushing TTS audio past its own
+   *  reply_done marker. */
+  framesAfterReply: number;
+  /** Number of times waitForSilence() had to time out because audio kept
+   *  resetting the silence detector. */
+  silenceCapsHit: number;
 };
 
 function percentile(sorted: number[], p: number): number {
@@ -230,7 +237,7 @@ function printMetrics(
     console.log(`  Connected:        ${r.connected}`);
     console.log(`  Session ready:    ${r.sessionReady}`);
     console.log(`  Connect time:     ${r.connectMs}ms`);
-    console.log(`  First greeting:   ${r.firstGreetingMs > 0 ? `${r.firstGreetingMs}ms` : "n/a"}`);
+    console.log(`  Greeting started: ${r.firstGreetingMs > 0 ? `${r.firstGreetingMs}ms` : "n/a"}`);
     console.log(`  Turns completed:  ${r.turnsCompleted}/${r.turnsRequested}`);
     if (r.turnLatenciesMs.length > 0) {
       console.log(`  Turn latencies:   ${r.turnLatenciesMs.map((l) => `${l}ms`).join(", ")}`);
@@ -239,6 +246,7 @@ function printMetrics(
     for (const tc of r.toolCalls) {
       console.log(`    [turn ${tc.turn}] ${tc.name}(${JSON.stringify(tc.args)})`);
     }
+    console.log(`  Post-reply audio: ${r.framesAfterReply} events (silence caps: ${r.silenceCapsHit})`);
     console.log(`  Total time:       ${r.totalMs}ms`);
     if (r.userTranscripts.length > 0) {
       console.log(`  User transcripts: ${r.userTranscripts.map((t) => `"${t}"`).join(", ")}`);
@@ -290,6 +298,9 @@ function printMetrics(
   console.log(`  Total tool calls: ${results.reduce((s, r) => s + r.toolCalls.length, 0)}`);
   console.log(`  Retries:          ${results.reduce((s, r) => s + r.retries, 0)}`);
   console.log(`  Barge-ins:        ${results.reduce((s, r) => s + r.bargeIns, 0)}`);
+  const postReply = results.reduce((s, r) => s + r.framesAfterReply, 0);
+  const silenceCaps = results.reduce((s, r) => s + r.silenceCapsHit, 0);
+  console.log(`  Post-reply audio: ${postReply} events across all sessions (silence caps: ${silenceCaps})`);
   if (greetingLatencies.length > 0) {
     console.log(`  Greeting p50:     ${percentile(greetingLatencies, 50)}ms`);
     console.log(`  Greeting p95:     ${percentile(greetingLatencies, 95)}ms`);
@@ -389,7 +400,7 @@ async function runSession(
     turnsRequested: sessionTurns, turnsCompleted: 0,
     userTranscripts: [], agentTranscripts: [], toolCalls: [], errors: [],
     connectMs: 0, firstGreetingMs: 0, turnLatenciesMs: [], totalMs: 0,
-    retries: 0, bargeIns: 0,
+    retries: 0, bargeIns: 0, framesAfterReply: 0, silenceCapsHit: 0,
   };
 
   const sessionStart = Date.now();
@@ -426,13 +437,16 @@ async function runSessionAttempt(
   let turnStart = 0;
   let currentTurn = metrics.turnsCompleted;
   let waitingForReply = false;
-  let greetingReceived = metrics.agentTranscripts.length > 0;
+  let greetingReceived = metrics.firstGreetingMs > 0;
   let gotAgentReplyThisTurn = false;
   let recordedLatencyThisTurn = false;
   let bargeInScheduled = false;
+  let countingPostReplyFrames = false;
   let lastEvent = "init";
   let done = false;
   let shouldRetry = false;
+
+  const SILENCE_CAP_MS = 3000;
 
   let silenceTimer: NodeJS.Timeout | null = null;
   let silenceWaiters: Array<() => void> = [];
@@ -451,7 +465,20 @@ async function runSessionAttempt(
 
   function waitForSilence(): Promise<void> {
     if (silenceTimer === null) return Promise.resolve();
-    return new Promise((resolve) => silenceWaiters.push(resolve));
+    return new Promise<void>((resolve) => {
+      let settled = false;
+      const finish = (capped: boolean): void => {
+        if (settled) return;
+        settled = true;
+        if (capped) {
+          metrics.silenceCapsHit++;
+          log(`silence wait capped at ${SILENCE_CAP_MS}ms (audio still flowing)`);
+        }
+        resolve();
+      };
+      silenceWaiters.push(() => finish(false));
+      setTimeout(() => finish(true), SILENCE_CAP_MS);
+    });
   }
 
   let handle: S2sHandle;
@@ -539,11 +566,7 @@ async function runSessionAttempt(
         case "agent_transcript":
           lastEvent = "agentTranscript";
           metrics.agentTranscripts.push(e.text);
-          if (!greetingReceived) {
-            greetingReceived = true;
-            metrics.firstGreetingMs = Date.now() - sessionStart;
-            log(`greeting: "${e.text.slice(0, 60)}" (${metrics.firstGreetingMs}ms)`);
-          } else if (waitingForReply) {
+          if (waitingForReply) {
             gotAgentReplyThisTurn = true;
             log(`agent reply [turn ${currentTurn}]: "${e.text.slice(0, 60)}"`);
           }
@@ -566,6 +589,7 @@ async function runSessionAttempt(
             // Reply complete — advance to next turn
             waitingForReply = false;
             gotAgentReplyThisTurn = false;
+            countingPostReplyFrames = true;
             if (currentTurn > 0) metrics.turnsCompleted++;
             log(`${currentTurn === 0 ? "greeting" : `turn ${currentTurn}`} complete`);
             if (currentTurn < sessionTurns) streamNextTurn();
@@ -578,6 +602,7 @@ async function runSessionAttempt(
           pendingTools.length = 0;
           waitingForReply = false;
           gotAgentReplyThisTurn = false;
+          countingPostReplyFrames = true;
           // Interruption complete — advance to next turn
           if (currentTurn < sessionTurns) streamNextTurn();
           else if (currentTurn > 0) { log("all turns completed"); finish(); }
@@ -587,10 +612,18 @@ async function runSessionAttempt(
       }
     });
 
-    // Track latency and barge-in on agent audio (skip greeting audio)
+    // Track latency and barge-in on agent audio. Turn 0 audio is the greeting.
     handle.on("audio", () => {
       onAudioTick();
-      if (currentTurn === 0) return; // ignore greeting audio
+      if (countingPostReplyFrames) metrics.framesAfterReply++;
+      if (currentTurn === 0) {
+        if (!greetingReceived) {
+          greetingReceived = true;
+          metrics.firstGreetingMs = Date.now() - sessionStart;
+          log(`greeting started (${metrics.firstGreetingMs}ms)`);
+        }
+        return;
+      }
       if (waitingForReply && !recordedLatencyThisTurn && turnStart > 0) {
         recordedLatencyThisTurn = true;
         const latency = Date.now() - turnStart;
@@ -639,6 +672,7 @@ async function runSessionAttempt(
       waitingForReply = true;
       gotAgentReplyThisTurn = false;
       recordedLatencyThisTurn = false;
+      countingPostReplyFrames = false;
       turnStart = 0;
 
       for (const frame of frames) {

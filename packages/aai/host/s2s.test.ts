@@ -219,10 +219,25 @@ describe("connectS2s", () => {
     const handler = vi.fn();
     handle.on("event", handler);
 
+    // Prime VAD state — speech_stopped is only forwarded after a speech_started.
+    raw.emit("message", Buffer.from(JSON.stringify({ type: "input.speech.started" })));
     raw.emit("message", Buffer.from(JSON.stringify({ type: "input.speech.stopped" })));
 
-    expect(handler).toHaveBeenCalledOnce();
-    expect(handler.mock.calls[0]?.[0]).toEqual({ type: "speech_stopped" });
+    expect(handler).toHaveBeenCalledTimes(2);
+    expect(handler.mock.calls[0]?.[0]).toEqual({ type: "speech_started" });
+    expect(handler.mock.calls[1]?.[0]).toEqual({ type: "speech_stopped" });
+  });
+
+  test("duplicate input.speech.stopped is suppressed", async () => {
+    const { raw, handle } = await setupHandle();
+    const handler = vi.fn();
+    handle.on("event", handler);
+
+    raw.emit("message", Buffer.from(JSON.stringify({ type: "input.speech.started" })));
+    raw.emit("message", Buffer.from(JSON.stringify({ type: "input.speech.stopped" })));
+    raw.emit("message", Buffer.from(JSON.stringify({ type: "input.speech.stopped" })));
+
+    expect(handler.mock.calls.filter((c) => c[0].type === "speech_stopped")).toHaveLength(1);
   });
 
   test("transcript.user dispatches 'event' with user_transcript", async () => {
