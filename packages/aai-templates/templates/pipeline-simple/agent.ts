@@ -9,5 +9,5 @@ export default agent({
   greeting: "Hi! I'm running in pipeline mode. What can I help with?",
   stt: assemblyAI({ model: "u3pro-rt" }),
   llm: anthropic({ model: "claude-haiku-4-5" }),
-  tts: cartesia({ voice: "694f9389-aac1-45b6-b726-9d9369183238" }),
+  tts: cartesia({ voice: "f786b574-daa5-4673-aa0c-cbe3e8534c02" }),
 });

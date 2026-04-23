@@ -43,7 +43,8 @@ function makeOpts(overrides: Partial<PipelineSessionOptions> = {}): {
     tts,
     sttApiKey: "stt-key",
     ttsApiKey: "tts-key",
-    sampleRate: 16_000,
+    sttSampleRate: 16_000,
+    ttsSampleRate: 24_000,
     logger: silentLogger,
     ...overrides,
   };
@@ -81,20 +82,112 @@ describe("createPipelineSession — happy path", () => {
     expect(ttsSession.textChunks).toEqual(["Hello", " there"]);
     expect(ttsSession.flush).toHaveBeenCalledTimes(1);
 
-    // Verify wire events in order
+    // Verify wire events in order — the pipeline emits a single
+    // `agent_transcript` with the full accumulated reply (not one per
+    // delta) so the UI renders one assistant message per turn.
     const types = eventTypes(client.events);
-    expect(types).toEqual([
-      "user_transcript",
-      "agent_transcript", // "Hello"
-      "agent_transcript", // " there"
-      "reply_done",
-    ]);
+    expect(types).toEqual(["user_transcript", "agent_transcript", "reply_done"]);
 
     // user_transcript text matches
     expect(client.events[0]).toMatchObject({
       type: "user_transcript",
       text: "Hello there, how are you?",
     });
+    expect(client.events[1]).toMatchObject({
+      type: "agent_transcript",
+      text: "Hello there",
+    });
+
+    await session.stop();
+  });
+});
+
+describe("createPipelineSession — greeting", () => {
+  test("onAudioReady sends greeting to TTS and emits agent_transcript + reply_done", async () => {
+    const { opts, tts, client } = makeOpts({
+      agentConfig: {
+        name: "pipeline-agent",
+        systemPrompt: DEFAULT_SYSTEM_PROMPT,
+        greeting: "Hi! I'm pipeline mode.",
+      },
+    });
+
+    const session = createPipelineSession(opts);
+    await session.start();
+
+    const ttsSession = tts.last();
+    if (!ttsSession) throw new Error("TTS didn't open");
+
+    session.onAudioReady();
+    await session.waitForTurn();
+
+    expect(ttsSession.textChunks).toEqual(["Hi! I'm pipeline mode."]);
+    expect(ttsSession.flush).toHaveBeenCalledTimes(1);
+
+    const types = eventTypes(client.events);
+    expect(types).toEqual(["agent_transcript", "reply_done"]);
+    expect(client.events[0]).toMatchObject({
+      type: "agent_transcript",
+      text: "Hi! I'm pipeline mode.",
+    });
+
+    await session.stop();
+  });
+
+  test("skipGreeting=true suppresses the greeting turn", async () => {
+    const { opts, tts, client } = makeOpts({
+      agentConfig: {
+        name: "pipeline-agent",
+        systemPrompt: DEFAULT_SYSTEM_PROMPT,
+        greeting: "Hello there.",
+      },
+      skipGreeting: true,
+    });
+
+    const session = createPipelineSession(opts);
+    await session.start();
+
+    const ttsSession = tts.last();
+    if (!ttsSession) throw new Error("TTS didn't open");
+
+    session.onAudioReady();
+    await session.waitForTurn();
+
+    expect(ttsSession.sendText).not.toHaveBeenCalled();
+    expect(ttsSession.flush).not.toHaveBeenCalled();
+    expect(client.events).toEqual([]);
+
+    await session.stop();
+  });
+
+  test("empty greeting is a no-op", async () => {
+    const { opts, tts, client } = makeOpts();
+    // CONFIG already has greeting: ""
+    const session = createPipelineSession(opts);
+    await session.start();
+
+    const ttsSession = tts.last();
+    if (!ttsSession) throw new Error("TTS didn't open");
+
+    session.onAudioReady();
+    await session.waitForTurn();
+
+    expect(ttsSession.sendText).not.toHaveBeenCalled();
+    expect(client.events).toEqual([]);
+
+    await session.stop();
+  });
+
+  test("passes sttSampleRate / ttsSampleRate through to providers", async () => {
+    const { opts, stt, tts } = makeOpts({
+      sttSampleRate: 16_000,
+      ttsSampleRate: 24_000,
+    });
+    const session = createPipelineSession(opts);
+    await session.start();
+
+    expect(stt.last()?.opts.sampleRate).toBe(16_000);
+    expect(tts.last()?.opts.sampleRate).toBe(24_000);
 
     await session.stop();
   });
@@ -163,8 +256,10 @@ describe("createPipelineSession — barge-in", () => {
 
     // TTS.cancel must have been called exactly once.
     expect(ttsSession.cancel).toHaveBeenCalledTimes(1);
-    // Wire events: user_transcript, some agent_transcript(s), then cancelled.
-    // No reply_done — barge-in short-circuits the drain.
+    // Wire events: user_transcript then cancelled. No agent_transcript
+    // (the pipeline only emits it after the LLM stream finishes cleanly)
+    // and no reply_done — barge-in short-circuits both the stream and
+    // the drain.
     const types = eventTypes(client.events);
     expect(types).toContain("user_transcript");
     expect(types).toContain("cancelled");
@@ -212,12 +307,17 @@ describe("createPipelineSession — tool calls", () => {
     const types = eventTypes(client.events);
     expect(types).toEqual([
       "user_transcript",
-      "agent_transcript", // "Let me check"
       "tool_call",
       "tool_call_done",
-      "agent_transcript", // " — it's sunny."
+      "agent_transcript", // combined: "Let me check — it's sunny."
       "reply_done",
     ]);
+    expect(client.events.find((e) => (e as ClientEvent).type === "agent_transcript")).toMatchObject(
+      {
+        type: "agent_transcript",
+        text: "Let me check — it's sunny.",
+      },
+    );
 
     const toolCall = client.events.find((e) => (e as ClientEvent).type === "tool_call");
     expect(toolCall).toMatchObject({

@@ -326,6 +326,9 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
         tts: pipelineProviders.tts,
         sttApiKey: resolveApiKey("ASSEMBLYAI_API_KEY", env),
         ttsApiKey: resolveApiKey("CARTESIA_API_KEY", env),
+        sttSampleRate: s2sConfig.inputSampleRate,
+        ttsSampleRate: s2sConfig.outputSampleRate,
+        skipGreeting: sessionOpts.skipGreeting ?? false,
         logger,
       });
     }

@@ -107,9 +107,21 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
        * Reset whenever a fresh context is minted (i.e. at turn boundaries).
        */
       let doneEmitted = false;
+      /**
+       * After `flush()` or `cancel()`, the current context is done accepting
+       * input. We defer minting a fresh one until the next `sendText()` so
+       * that late audio chunks + Cartesia's real `done` event (both tagged
+       * with the flushed context's id) still pass the filter below. Rotating
+       * eagerly would silently drop all audio still in flight.
+       */
+      let rotatePending = false;
       const rotateContext = () => {
         context = mintContext();
         doneEmitted = false;
+        rotatePending = false;
+      };
+      const rotateIfPending = () => {
+        if (rotatePending) rotateContext();
       };
       const emitDoneOnce = () => {
         if (doneEmitted || closed) return;
@@ -179,33 +191,35 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
       const session: CartesiaSession = {
         sendText(text: string) {
           if (closed || text.length === 0) return;
+          // First sendText after a flush/cancel starts a fresh context so
+          // we don't append to one that's already been finalized.
+          rotateIfPending();
           void context
             .send({ ...baseRequest, transcript: text, continue: true })
             .catch(ignoreRejection);
         },
         flush() {
-          if (closed) return;
+          if (closed || rotatePending) return;
           // Empty transcript with `continue: false` is the canonical
-          // end-of-turn signal. Cartesia replies with a `done` tagged
-          // by context_id, driving `emitDoneOnce`. The microtask
-          // fallback guards against a dropped server event wedging
-          // the orchestrator's state machine.
-          // TODO: drop the microtask fallback once we've verified
-          // Cartesia always emits `done` for cleanly-flushed contexts.
+          // end-of-turn signal. Cartesia finishes synthesizing whatever
+          // is queued and then emits a `done` tagged with the same
+          // context_id — at that point `emitDoneOnce` fires for real.
+          // Defer rotation so the filter below still accepts in-flight
+          // audio chunks and the real `done` event.
           void context
             .send({ ...baseRequest, transcript: "", continue: false })
             .catch(ignoreRejection);
-          queueMicrotask(emitDoneOnce);
-          rotateContext();
+          rotatePending = true;
         },
         cancel() {
           if (closed) return;
           void context.cancel().catch(ignoreRejection);
           // Emit synchronously: barge-in advances the orchestrator's
           // state machine on `done`, and delaying it would audibly
-          // stall subsequent turns.
+          // stall subsequent turns. Cartesia stops producing audio
+          // after cancel, so dropping any late chunks is fine.
           emitDoneOnce();
-          rotateContext();
+          rotatePending = true;
         },
         on(event, fn) {
           return emitter.on(event, fn);
