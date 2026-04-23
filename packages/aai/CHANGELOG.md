@@ -1,5 +1,12 @@
 # @alexkroman1/aai
 
+## 1.4.5
+
+### Patch Changes
+
+- 07dc8fb: Log raw reply.done arrivals from the S2S service (sid, status) and warn when the S2S socket closes while a reply is still active, so silent drops are visible server-side.
+- 2ca5d1f: Instrument slow reply_done dispatches with warn-level logs (session id, duration, hadTurnPromise) to help diagnose event-loop starvation under load.
+
 ## 1.4.4
 
 ### Patch Changes
