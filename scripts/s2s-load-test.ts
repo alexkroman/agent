@@ -183,7 +183,18 @@ async function generateAudioFrames(
     const pcm = float32ToPcm16(resampled);
     const utteranceFrames: string[] = [];
     for (let offset = 0; offset < pcm.length; offset += chunkBytes) {
-      const chunk = pcm.subarray(offset, offset + chunkBytes);
+      const slice = pcm.subarray(offset, offset + chunkBytes);
+      let chunk: Uint8Array;
+      if (slice.byteLength === chunkBytes) {
+        chunk = slice;
+      } else {
+        // Pad trailing partial to a full chunkMs frame — AssemblyAI rejects
+        // chunks <50ms with "Input Duration Violation", which would tear down
+        // the STT stream mid-utterance.
+        const padded = new Uint8Array(chunkBytes);
+        padded.set(slice);
+        chunk = padded;
+      }
       utteranceFrames.push(`{"type":"input.audio","audio":"${uint8ToBase64(chunk)}"}`);
     }
     console.log(

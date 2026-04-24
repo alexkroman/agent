@@ -120,7 +120,18 @@ async function generateAudioFrames(
     const pcm = float32ToPcm16(resampled);
     const utteranceFrames: Uint8Array[] = [];
     for (let offset = 0; offset < pcm.length; offset += chunkBytes) {
-      utteranceFrames.push(pcm.subarray(offset, offset + chunkBytes));
+      const slice = pcm.subarray(offset, offset + chunkBytes);
+      if (slice.byteLength === chunkBytes) {
+        utteranceFrames.push(slice);
+      } else {
+        // Pad trailing partial to a full chunkMs frame. AssemblyAI Universal-
+        // Streaming rejects chunks <50ms; without padding, utterances whose
+        // length isn't a multiple of chunkMs cause `stt_stream_error` and the
+        // pipeline session terminates mid-turn.
+        const padded = new Uint8Array(chunkBytes);
+        padded.set(slice);
+        utteranceFrames.push(padded);
+      }
     }
     console.log(
       `${(resampled.length / INPUT_SAMPLE_RATE).toFixed(2)}s (${pcm.length} bytes, ${utteranceFrames.length} chunks)`,
@@ -618,6 +629,24 @@ async function runSessionAttempt(
         }
         // Frame loop finished — start the stall timer for this turn's reply.
         startPerTurnTimer(myTurn);
+        // Keep streaming silence so AssemblyAI Universal-Streaming can
+        // detect end-of-turn. Its VAD needs acoustic silence *in the
+        // stream*, not stream inactivity — real browsers never close the
+        // mic, so silence is always flowing. Without this, utterances
+        // that don't happen to end with TTS-baked trailing silence leave
+        // AssemblyAI waiting forever, and reply_done never fires.
+        // Don't touch lastUserFrameAt here or turn-latency measurement
+        // would collapse to ~chunkMs for every turn.
+        const silenceFrame = new Uint8Array(frames[0]!.byteLength);
+        while (
+          !done &&
+          waitingForReply &&
+          !recordedLatencyThisTurn &&
+          ws.readyState === ws.OPEN
+        ) {
+          ws.send(silenceFrame);
+          await sleep(cfg.chunkMs);
+        }
       } finally {
         streamInFlight = false;
         if (nextTurnPending && !done) {
