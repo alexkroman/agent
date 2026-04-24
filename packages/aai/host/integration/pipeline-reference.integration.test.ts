@@ -64,27 +64,14 @@ describe.skipIf(!envReady)("pipeline integration — reference stack", () => {
 
     const client: ClientSink = {
       open: true,
-      config: () => undefined,
-      audio: (chunk) => {
+      event: (e) => {
+        if (e.type === "user_transcript") userTranscripts.push(e.text);
+        if (e.type === "reply_done") replyDone = true;
+      },
+      playAudioChunk: (chunk) => {
         audioOut.push(chunk);
       },
-      audioDone: () => undefined,
-      speechStarted: () => undefined,
-      speechStopped: () => undefined,
-      userTranscript: (text) => {
-        userTranscripts.push(text);
-      },
-      agentTranscript: () => undefined,
-      toolCall: () => undefined,
-      toolCallDone: () => undefined,
-      replyDone: () => {
-        replyDone = true;
-      },
-      cancelled: () => undefined,
-      reset: () => undefined,
-      idleTimeout: () => undefined,
-      error: () => undefined,
-      customEvent: () => undefined,
+      playAudioDone: () => undefined,
     };
 
     const runtime = createRuntime({

@@ -1,14 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
 import type { ClientSink } from "../sdk/protocol.ts";
-import {
-  C2S,
-  decodeS2C,
-  encAudioChunkC2S,
-  encAudioReady,
-  encCancel,
-  encHistory,
-  encResetC2S,
-} from "../sdk/wire.ts";
 import { MockWebSocket } from "./_mock-ws.ts";
 import { makeMockCore, silentLogger } from "./_test-utils.ts";
 import type { SessionCore } from "./session-core.ts";
@@ -22,7 +13,7 @@ function makeLogger() {
 
 const defaultConfig = { audioFormat: "pcm16" as const, sampleRate: 16_000, ttsSampleRate: 24_000 };
 
-/** Simulate a binary frame arriving on the WebSocket (bypasses simulateMessage signature). */
+/** Simulate a binary frame arriving on the WebSocket. */
 function simulateBinaryFrame(ws: MockWebSocket, frame: Uint8Array): void {
   ws.dispatchEvent(new MessageEvent("message", { data: frame }));
 }
@@ -150,7 +141,7 @@ describe("wireSessionSocket", () => {
 
   // ─── CONFIG frame on open ────────────────────────────────────────────────
 
-  test("sends CONFIG binary frame as first message on open", () => {
+  test("sends CONFIG JSON frame as first message on open", () => {
     const ws = new MockWebSocket("ws://test");
     ws.readyState = MockWebSocket.OPEN;
 
@@ -163,10 +154,9 @@ describe("wireSessionSocket", () => {
 
     expect(ws.sent.length).toBeGreaterThanOrEqual(1);
     const firstFrame = ws.sent[0];
-    expect(firstFrame).toBeInstanceOf(Uint8Array);
-    const decoded = decodeS2C(firstFrame as Uint8Array);
-    expect(decoded.ok).toBe(true);
-    if (decoded.ok) expect(decoded.data.type).toBe("config");
+    expect(typeof firstFrame).toBe("string");
+    const msg = JSON.parse(firstFrame as string);
+    expect(msg.type).toBe("config");
   });
 
   test("CONFIG frame contains correct sampleRate and ttsSampleRate", () => {
@@ -180,16 +170,15 @@ describe("wireSessionSocket", () => {
       logger: silentLogger,
     });
 
-    const firstFrame = ws.sent[0] as Uint8Array;
-    const decoded = decodeS2C(firstFrame);
-    expect(decoded.ok).toBe(true);
-    if (decoded.ok && decoded.data.type === "config") {
-      expect(decoded.data.sampleRate).toBe(16_000);
-      expect(decoded.data.ttsSampleRate).toBe(24_000);
-    }
+    const firstFrame = ws.sent[0];
+    const msg = JSON.parse(firstFrame as string);
+    expect(msg.type).toBe("config");
+    expect(msg.audioFormat).toBe("pcm16");
+    expect(msg.sampleRate).toBe(16_000);
+    expect(msg.ttsSampleRate).toBe(24_000);
   });
 
-  test("CONFIG frame includes the session ID as sid", () => {
+  test("CONFIG frame includes the session ID as sessionId", () => {
     const ws = new MockWebSocket("ws://test");
     ws.readyState = MockWebSocket.OPEN;
     const sessions = new Map<string, SessionCore>();
@@ -205,17 +194,16 @@ describe("wireSessionSocket", () => {
       logger: silentLogger,
     });
 
-    const firstFrame = ws.sent[0] as Uint8Array;
-    const decoded = decodeS2C(firstFrame);
-    expect(decoded.ok).toBe(true);
-    if (decoded.ok && decoded.data.type === "config") {
-      expect(decoded.data.sid).toBe(capturedId);
-    }
+    const firstFrame = ws.sent[0];
+    const msg = JSON.parse(firstFrame as string);
+    expect(msg.type).toBe("config");
+    expect(msg.sessionId).toBeTruthy();
+    expect(msg.sessionId).toBe(capturedId);
   });
 
   // ─── Inbound C2S frame routing ───────────────────────────────────────────
 
-  test("AUDIO_CHUNK frame routes to session.onAudio", async () => {
+  test("raw binary Uint8Array routes to session.onAudio", async () => {
     const core = makeMockCore();
     const ws = new MockWebSocket("ws://test");
     ws.readyState = MockWebSocket.OPEN;
@@ -231,14 +219,14 @@ describe("wireSessionSocket", () => {
     await waitForSessionReady(logger);
 
     const pcm = new Uint8Array([1, 2, 3, 4]);
-    simulateBinaryFrame(ws, encAudioChunkC2S(pcm));
+    simulateBinaryFrame(ws, pcm);
 
     expect(core.onAudio).toHaveBeenCalledOnce();
     const passed = (core.onAudio as ReturnType<typeof vi.fn>).mock.calls[0]?.[0];
     expect(passed).toBeInstanceOf(Uint8Array);
   });
 
-  test("AUDIO_READY frame routes to session.onAudioReady", async () => {
+  test("audio_ready JSON text frame routes to session.onAudioReady", async () => {
     const core = makeMockCore();
     const ws = new MockWebSocket("ws://test");
     ws.readyState = MockWebSocket.OPEN;
@@ -252,11 +240,11 @@ describe("wireSessionSocket", () => {
     });
 
     await waitForSessionReady(logger);
-    simulateBinaryFrame(ws, encAudioReady());
+    simulateTextFrame(ws, JSON.stringify({ type: "audio_ready" }));
     expect(core.onAudioReady).toHaveBeenCalledOnce();
   });
 
-  test("CANCEL frame routes to session.onCancel", async () => {
+  test("cancel JSON text frame routes to session.onCancel", async () => {
     const core = makeMockCore();
     const ws = new MockWebSocket("ws://test");
     ws.readyState = MockWebSocket.OPEN;
@@ -270,11 +258,11 @@ describe("wireSessionSocket", () => {
     });
 
     await waitForSessionReady(logger);
-    simulateBinaryFrame(ws, encCancel());
+    simulateTextFrame(ws, JSON.stringify({ type: "cancel" }));
     expect(core.onCancel).toHaveBeenCalledOnce();
   });
 
-  test("RESET frame routes to session.onReset", async () => {
+  test("reset JSON text frame routes to session.onReset", async () => {
     const core = makeMockCore();
     const ws = new MockWebSocket("ws://test");
     ws.readyState = MockWebSocket.OPEN;
@@ -288,11 +276,11 @@ describe("wireSessionSocket", () => {
     });
 
     await waitForSessionReady(logger);
-    simulateBinaryFrame(ws, encResetC2S());
+    simulateTextFrame(ws, JSON.stringify({ type: "reset" }));
     expect(core.onReset).toHaveBeenCalledOnce();
   });
 
-  test("HISTORY frame routes to session.onHistory with decoded messages", async () => {
+  test("history JSON text frame routes to session.onHistory with decoded messages", async () => {
     const core = makeMockCore();
     const ws = new MockWebSocket("ws://test");
     ws.readyState = MockWebSocket.OPEN;
@@ -311,15 +299,15 @@ describe("wireSessionSocket", () => {
       { role: "user" as const, content: "Hello" },
       { role: "assistant" as const, content: "Hi there" },
     ];
-    simulateBinaryFrame(ws, encHistory(messages));
+    simulateTextFrame(ws, JSON.stringify({ type: "history", messages }));
     expect(core.onHistory).toHaveBeenCalledOnce();
     const passed = (core.onHistory as ReturnType<typeof vi.fn>).mock.calls[0]?.[0];
     expect(passed).toEqual(messages);
   });
 
-  // ─── Wire decode failure handling ────────────────────────────────────────
+  // ─── Text message error handling ─────────────────────────────────────────
 
-  test("non-binary (string) frame is dropped with warning, session not closed", async () => {
+  test("invalid JSON text frame is dropped with warning, session not closed", async () => {
     const core = makeMockCore();
     const ws = new MockWebSocket("ws://test");
     ws.readyState = MockWebSocket.OPEN;
@@ -334,18 +322,15 @@ describe("wireSessionSocket", () => {
 
     await waitForSessionReady(logger);
 
-    simulateTextFrame(ws, JSON.stringify({ type: "audio_ready" }));
-    expect(logger.warn).toHaveBeenCalledWith(
-      "ws: non-binary frame received; dropping",
-      expect.any(Object),
-    );
+    simulateTextFrame(ws, "this is not json{{{");
+    expect(logger.warn).toHaveBeenCalledWith("ws: invalid JSON; dropping", expect.any(Object));
     // Session methods must not be called
     expect(core.onAudioReady).not.toHaveBeenCalled();
     // Socket must still be open (not closed)
     expect(ws.readyState).toBe(MockWebSocket.OPEN);
   });
 
-  test("truncated binary frame (unknown type byte) is dropped with warning", async () => {
+  test("unknown client message type is silently dropped", async () => {
     const core = makeMockCore();
     const ws = new MockWebSocket("ws://test");
     ws.readyState = MockWebSocket.OPEN;
@@ -360,50 +345,12 @@ describe("wireSessionSocket", () => {
 
     await waitForSessionReady(logger);
 
-    // 0xFF is not a valid C2S type code
-    simulateBinaryFrame(ws, new Uint8Array([0xff, 1, 2, 3]));
-    expect(logger.warn).toHaveBeenCalledWith("ws: wire decode failed", expect.any(Object));
+    // Valid JSON with a valid { type } envelope but unknown type — lenientParse returns ok:false, malformed:false
+    simulateTextFrame(ws, JSON.stringify({ type: "some_future_message_type" }));
+    // Must NOT warn — rolling-upgrade tolerance
+    expect(logger.warn).not.toHaveBeenCalled();
+    expect(core.onAudioReady).not.toHaveBeenCalled();
     expect(ws.readyState).toBe(MockWebSocket.OPEN);
-  });
-
-  test("empty binary frame is dropped with wire decode warning", async () => {
-    const core = makeMockCore();
-    const ws = new MockWebSocket("ws://test");
-    ws.readyState = MockWebSocket.OPEN;
-    const logger = makeLogger();
-
-    wireSessionSocket(ws, {
-      sessions: new Map(),
-      createSession: () => core,
-      readyConfig: defaultConfig,
-      logger,
-    });
-
-    await waitForSessionReady(logger);
-
-    simulateBinaryFrame(ws, new Uint8Array(0));
-    expect(logger.warn).toHaveBeenCalledWith("ws: wire decode failed", expect.any(Object));
-  });
-
-  test("truncated HISTORY frame is dropped with wire decode warning", async () => {
-    const core = makeMockCore();
-    const ws = new MockWebSocket("ws://test");
-    ws.readyState = MockWebSocket.OPEN;
-    const logger = makeLogger();
-
-    wireSessionSocket(ws, {
-      sessions: new Map(),
-      createSession: () => core,
-      readyConfig: defaultConfig,
-      logger,
-    });
-
-    await waitForSessionReady(logger);
-
-    // HISTORY type byte but only 3 bytes total (header needs 5)
-    simulateBinaryFrame(ws, new Uint8Array([C2S.HISTORY, 0x01, 0x00]));
-    expect(logger.warn).toHaveBeenCalledWith("ws: wire decode failed", expect.any(Object));
-    expect(core.onHistory).not.toHaveBeenCalled();
   });
 
   // ─── Message buffering ───────────────────────────────────────────────────
@@ -430,8 +377,8 @@ describe("wireSessionSocket", () => {
       logger,
     });
 
-    // Session not ready yet — send a cancel frame
-    simulateBinaryFrame(ws, encCancel());
+    // Session not ready yet — send a cancel text frame
+    simulateTextFrame(ws, JSON.stringify({ type: "cancel" }));
     expect(core.onCancel).not.toHaveBeenCalled();
 
     // Now let start() resolve
@@ -453,7 +400,7 @@ describe("wireSessionSocket", () => {
     });
 
     // No open yet — session is null, should be silently ignored
-    simulateBinaryFrame(ws, encAudioReady());
+    simulateTextFrame(ws, JSON.stringify({ type: "audio_ready" }));
     // No error thrown
   });
 
@@ -622,7 +569,7 @@ describe("wireSessionSocket", () => {
     expect(capturedClient.open).toBe(false);
   });
 
-  test("ClientSink.audio sends binary AUDIO_CHUNK frame", () => {
+  test("ClientSink.playAudioChunk sends raw binary Uint8Array", () => {
     let capturedClient!: ClientSink;
     const ws = new MockWebSocket("ws://test");
     ws.readyState = MockWebSocket.OPEN;
@@ -638,19 +585,15 @@ describe("wireSessionSocket", () => {
     });
 
     const chunk = new Uint8Array([10, 20, 30]);
-    capturedClient.audio(chunk);
+    capturedClient.playAudioChunk(chunk);
 
-    // Find the audio_chunk frame in sent (skip the initial config)
-    const audioFrames = (ws.sent as Uint8Array[]).filter(
-      (d) => d instanceof Uint8Array && d[0] === 0x80,
-    );
-    expect(audioFrames.length).toBeGreaterThanOrEqual(1);
-    const decoded = decodeS2C(audioFrames[0] as Uint8Array);
-    expect(decoded.ok).toBe(true);
-    if (decoded.ok) expect(decoded.data.type).toBe("audio_chunk");
+    // Find binary frames in sent (skip the initial config JSON string)
+    const binaryFrames = (ws.sent as unknown[]).filter((d) => d instanceof Uint8Array);
+    expect(binaryFrames.length).toBeGreaterThanOrEqual(1);
+    expect(binaryFrames[0]).toBe(chunk);
   });
 
-  test("ClientSink.audioDone sends AUDIO_DONE frame", () => {
+  test("ClientSink.playAudioDone sends audio_done JSON text frame", () => {
     let capturedClient!: ClientSink;
     const ws = new MockWebSocket("ws://test");
     ws.readyState = MockWebSocket.OPEN;
@@ -665,15 +608,14 @@ describe("wireSessionSocket", () => {
       logger: silentLogger,
     });
 
-    capturedClient.audioDone();
+    capturedClient.playAudioDone();
 
-    const frames = (ws.sent as Uint8Array[]).filter(
-      (d) => d instanceof Uint8Array && d[0] === 0x81,
-    );
-    expect(frames.length).toBeGreaterThanOrEqual(1);
-    const decoded = decodeS2C(frames[0] as Uint8Array);
-    expect(decoded.ok).toBe(true);
-    if (decoded.ok) expect(decoded.data.type).toBe("audio_done");
+    // Find JSON string frames after the initial config
+    const textFrames = (ws.sent as unknown[])
+      .filter((d): d is string => typeof d === "string")
+      .map((s) => JSON.parse(s));
+    const audioDoneFrame = textFrames.find((m) => m.type === "audio_done");
+    expect(audioDoneFrame).toBeDefined();
   });
 
   test("ClientSink tolerates ws.send throwing (closed socket)", () => {
@@ -696,9 +638,9 @@ describe("wireSessionSocket", () => {
       throw new Error("socket closed");
     };
     // Should not throw
-    capturedClient.speechStarted();
-    capturedClient.audio(new Uint8Array([1]));
-    capturedClient.audioDone();
+    capturedClient.event({ type: "speech_started" });
+    capturedClient.playAudioChunk(new Uint8Array([1]));
+    capturedClient.playAudioDone();
   });
 
   // ─── Concurrency regression tests ────────────────────────────────────────
@@ -841,7 +783,7 @@ describe("wireSessionSocket", () => {
     expect(sessions.has("old-session-abc")).toBeTruthy();
   });
 
-  test("CONFIG frame contains resumed session ID as sid", () => {
+  test("CONFIG frame contains resumed session ID as sessionId", () => {
     const ws = new MockWebSocket("ws://test");
     ws.readyState = MockWebSocket.OPEN;
 
@@ -853,12 +795,10 @@ describe("wireSessionSocket", () => {
       resumeFrom: "resume-id-123",
     });
 
-    const firstFrame = ws.sent[0] as Uint8Array;
-    const decoded = decodeS2C(firstFrame);
-    expect(decoded.ok).toBe(true);
-    if (decoded.ok && decoded.data.type === "config") {
-      expect(decoded.data.sid).toBe("resume-id-123");
-    }
+    const firstFrame = ws.sent[0];
+    const msg = JSON.parse(firstFrame as string);
+    expect(msg.type).toBe("config");
+    expect(msg.sessionId).toBe("resume-id-123");
   });
 
   test("without resumeFrom, generates a new UUID session ID", () => {

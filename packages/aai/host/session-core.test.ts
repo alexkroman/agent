@@ -1,39 +1,40 @@
 import { describe, expect, test, vi } from "vitest";
+import type { ClientEvent, ClientSink } from "../sdk/protocol.ts";
 import { DEFAULT_SYSTEM_PROMPT } from "../sdk/types.ts";
 import { flush } from "./_test-utils.ts";
 import type { SessionCore, SessionCoreOptions } from "./session-core.ts";
 import { createSessionCore } from "./session-core.ts";
 import type { Transport } from "./transports/types.ts";
 
-function makeSink() {
-  const calls: Array<{ method: string; args: unknown[] }> = [];
-  const rec =
-    (method: string) =>
-    (...args: unknown[]) => {
-      calls.push({ method, args });
-    };
+function makeSink(): {
+  events: ClientEvent[];
+  audioChunks: Uint8Array[];
+  audioDoneCount: number;
+  sink: ClientSink;
+} {
+  const events: ClientEvent[] = [];
+  const audioChunks: Uint8Array[] = [];
+  let audioDoneCount = 0;
   return {
+    events,
+    audioChunks,
+    get audioDoneCount() {
+      return audioDoneCount;
+    },
     sink: {
       get open() {
         return true;
       },
-      config: rec("config"),
-      audio: rec("audio"),
-      audioDone: rec("audioDone"),
-      speechStarted: rec("speechStarted"),
-      speechStopped: rec("speechStopped"),
-      userTranscript: rec("userTranscript"),
-      agentTranscript: rec("agentTranscript"),
-      toolCall: rec("toolCall"),
-      toolCallDone: rec("toolCallDone"),
-      replyDone: rec("replyDone"),
-      cancelled: rec("cancelled"),
-      reset: rec("reset"),
-      idleTimeout: rec("idleTimeout"),
-      error: rec("error"),
-      customEvent: rec("customEvent"),
-    },
-    calls,
+      event: (e) => {
+        events.push(e);
+      },
+      playAudioChunk: (chunk) => {
+        audioChunks.push(chunk);
+      },
+      playAudioDone: () => {
+        audioDoneCount++;
+      },
+    } satisfies ClientSink,
   };
 }
 
@@ -108,7 +109,7 @@ describe("createSessionCore — lifecycle", () => {
       await core.stop();
       core.onAudio(new Uint8Array([1]));
       vi.advanceTimersByTime(5000);
-      expect(sink.calls.some((c) => c.method === "idleTimeout")).toBe(false);
+      expect(sink.events.some((e) => e.type === "idle_timeout")).toBe(false);
     } finally {
       vi.useRealTimers();
     }
@@ -128,13 +129,13 @@ describe("createSessionCore — client inbound", () => {
     await core.start();
     core.onCancel();
     expect(transport.cancelReply).toHaveBeenCalledOnce();
-    expect(sink.calls.some((c) => c.method === "cancelled")).toBe(true);
+    expect(sink.events.some((e) => e.type === "cancelled")).toBe(true);
   });
   test("onReset emits reset", async () => {
     const { core, sink } = makeCore();
     await core.start();
     core.onReset();
-    expect(sink.calls.some((c) => c.method === "reset")).toBe(true);
+    expect(sink.events.some((e) => e.type === "reset")).toBe(true);
   });
 });
 
@@ -144,26 +145,24 @@ describe("createSessionCore — transport inbound (basic)", () => {
     await core.start();
     const pcm = new Uint8Array([9, 8, 7]);
     core.onAudioChunk(pcm);
-    const call = sink.calls.find((c) => c.method === "audio");
-    expect(call).toBeDefined();
-    expect(call?.args[0]).toBe(pcm);
+    expect(sink.audioChunks).toContain(pcm);
   });
   test("onUserTranscript pushes to history and emits", async () => {
     const { core, sink } = makeCore();
     await core.start();
     core.onUserTranscript("hello");
-    expect(sink.calls.some((c) => c.method === "userTranscript")).toBe(true);
+    expect(sink.events.some((e) => e.type === "user_transcript")).toBe(true);
   });
 });
 
 describe("createSessionCore — reply dedup", () => {
-  test("first reply_done emits replyDone + audioDone", async () => {
+  test("first reply_done emits reply_done + audio_done", async () => {
     const { core, sink } = makeCore();
     await core.start();
     core.onReplyStarted("r1");
     core.onReplyDone();
-    expect(sink.calls.some((c) => c.method === "replyDone")).toBe(true);
-    expect(sink.calls.some((c) => c.method === "audioDone")).toBe(true);
+    expect(sink.events.some((e) => e.type === "reply_done")).toBe(true);
+    expect(sink.audioDoneCount).toBeGreaterThanOrEqual(1);
   });
   test("duplicate reply_done is dropped", async () => {
     const { core, sink } = makeCore();
@@ -171,7 +170,7 @@ describe("createSessionCore — reply dedup", () => {
     core.onReplyStarted("r1");
     core.onReplyDone();
     core.onReplyDone();
-    const dones = sink.calls.filter((c) => c.method === "replyDone");
+    const dones = sink.events.filter((e) => e.type === "reply_done");
     expect(dones).toHaveLength(1);
   });
   test("onCancelled clears currentReplyId so subsequent replyDone is dropped", async () => {
@@ -180,7 +179,7 @@ describe("createSessionCore — reply dedup", () => {
     core.onReplyStarted("r1");
     core.onCancelled();
     core.onReplyDone();
-    expect(sink.calls.filter((c) => c.method === "replyDone")).toHaveLength(0);
+    expect(sink.events.filter((e) => e.type === "reply_done")).toHaveLength(0);
   });
 });
 
@@ -198,12 +197,12 @@ describe("createSessionCore — tool call pending results", () => {
     await vi.waitFor(() =>
       expect(transport.sendToolResult).toHaveBeenCalledWith("cid", "tool-output"),
     );
-    expect(sink.calls.some((c) => c.method === "toolCallDone")).toBe(true);
+    expect(sink.events.some((e) => e.type === "tool_call_done")).toBe(true);
   });
 });
 
 describe("createSessionCore — idle timeout", () => {
-  test("emits idleTimeout after agentConfig.idleTimeoutMs of no audio", async () => {
+  test("emits idle_timeout after agentConfig.idleTimeoutMs of no audio", async () => {
     vi.useFakeTimers();
     try {
       const { core, sink } = makeCore({
@@ -215,9 +214,9 @@ describe("createSessionCore — idle timeout", () => {
         } as unknown as SessionCoreOptions["agentConfig"],
       });
       await core.start();
-      expect(sink.calls.filter((c) => c.method === "idleTimeout")).toHaveLength(0);
+      expect(sink.events.filter((e) => e.type === "idle_timeout")).toHaveLength(0);
       vi.advanceTimersByTime(1001);
-      expect(sink.calls.filter((c) => c.method === "idleTimeout")).toHaveLength(1);
+      expect(sink.events.filter((e) => e.type === "idle_timeout")).toHaveLength(1);
     } finally {
       vi.useRealTimers();
     }
@@ -237,9 +236,9 @@ describe("createSessionCore — idle timeout", () => {
       vi.advanceTimersByTime(500);
       core.onAudio(new Uint8Array([1]));
       vi.advanceTimersByTime(800);
-      expect(sink.calls.filter((c) => c.method === "idleTimeout")).toHaveLength(0);
+      expect(sink.events.filter((e) => e.type === "idle_timeout")).toHaveLength(0);
       vi.advanceTimersByTime(300);
-      expect(sink.calls.filter((c) => c.method === "idleTimeout")).toHaveLength(1);
+      expect(sink.events.filter((e) => e.type === "idle_timeout")).toHaveLength(1);
     } finally {
       vi.useRealTimers();
     }
