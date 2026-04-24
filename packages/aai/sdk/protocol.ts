@@ -8,6 +8,7 @@
 import { z } from "zod";
 
 import { MAX_TOOL_RESULT_CHARS } from "./constants.ts";
+import type { ErrorCodeName } from "./wire.ts";
 
 /**
  * Audio codec identifier used in the wire protocol.
@@ -138,20 +139,32 @@ export const ClientEventSchema = z.discriminatedUnion("type", [
 /** Discriminated union of all server→client session events. */
 export type ClientEvent = z.infer<typeof ClientEventSchema>;
 
+/** Re-export for code that still wants the string-union name. */
+export type ErrorCode = ErrorCodeName;
+
 /**
  * Typed interface for pushing session events to a connected client.
  *
- * For WebSocket sessions this sends JSON text frames and binary audio frames.
+ * Each method encodes a single wire frame via `wire.encode*` and sends it.
+ * Replaces the previous `event(e: ClientEvent)` discriminated-union entry point.
  */
 export interface ClientSink {
-  /** Whether the underlying connection is open and accepting calls. */
   readonly open: boolean;
-  /** Push a session event to the client. */
-  event(e: ClientEvent): void;
-  /** Send a single TTS audio chunk to the client. */
-  playAudioChunk(chunk: Uint8Array): void;
-  /** Signal that TTS audio is complete. */
-  playAudioDone(): void;
+  config(cfg: { sampleRate: number; ttsSampleRate: number; sid: string }): void;
+  audio(chunk: Uint8Array): void;
+  audioDone(): void;
+  speechStarted(): void;
+  speechStopped(): void;
+  userTranscript(text: string): void;
+  agentTranscript(text: string): void;
+  toolCall(callId: string, name: string, args: unknown): void;
+  toolCallDone(callId: string, result: string): void;
+  replyDone(): void;
+  cancelled(): void;
+  reset(): void;
+  idleTimeout(): void;
+  error(code: ErrorCode, message: string): void;
+  customEvent(name: string, data: unknown): void;
 }
 
 // ─── WebSocket message types ────────────────────────────────────────────────
