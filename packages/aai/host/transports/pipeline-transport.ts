@@ -1,29 +1,21 @@
 // Copyright 2026 the AAI authors. MIT license.
 // Pipeline transport — STT → LLM → TTS orchestration behind the Transport interface.
 
-// NOTE — unresolved integration gaps for Task 15 (SessionCore wiring):
+// Pipeline mode executes tools inline via streamText's `tools.execute`.
+// `callbacks.onToolCall` is observability-only; runtime.ts routes it to
+// `client.toolCall` directly (bypassing SessionCore's tool-dispatch path,
+// which is S2S-only). `sendToolResult` is a no-op because results are
+// already handled by streamText.
 //
-// 1. Double tool execution risk.
-//    This transport fires `callbacks.onToolCall(callId, name, args)` for
-//    observability while tools still execute inline via streamText's
-//    `tools.execute` closures. When wired to SessionCore, SessionCore's
-//    `onToolCall` ALSO invokes `executeTool` and pushes results to
-//    `transport.sendToolResult` (which is a no-op for pipeline mode).
-//    Task 15 must either route the pipeline's tool-call observability
-//    through a different callback, or give SessionCore a mode flag that
-//    skips its own tool dispatch when the transport executes inline.
-//
-// 2. Unbounded conversation message growth.
-//    `conversationMessages` here is a transport-local array used to build
-//    `streamText.messages`. It has no sliding-window cap. SessionCore owns
-//    the canonical history with a `maxHistory` cap; Task 15 should wire
-//    the transport to read from SessionCore's history instead of keeping
-//    a parallel unbounded copy.
+// `conversationMessages` below is transport-local and currently uncapped —
+// SessionCore's `maxHistory` does not yet feed through. Long pipeline
+// sessions may accumulate unbounded context; revisit if it matters.
 
 import type { LanguageModel, ModelMessage } from "ai";
 import { stepCountIs, streamText } from "ai";
 import type { ExecuteTool, ToolSchema } from "../../sdk/_internal-types.ts";
 import {
+  DEFAULT_MAX_HISTORY,
   DEFAULT_STT_SAMPLE_RATE,
   DEFAULT_TTS_SAMPLE_RATE,
   PIPELINE_FLUSH_TIMEOUT_MS,
@@ -129,6 +121,9 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   // ---- History helpers ------------------------------------------------------
   function pushMessages(...msgs: Message[]): void {
     conversationMessages.push(...msgs);
+    if (conversationMessages.length > DEFAULT_MAX_HISTORY) {
+      conversationMessages.splice(0, conversationMessages.length - DEFAULT_MAX_HISTORY);
+    }
   }
 
   function chainTurn(p: Promise<void>): void {

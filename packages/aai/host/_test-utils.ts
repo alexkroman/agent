@@ -9,6 +9,7 @@ import type { AgentDef, ToolContext, ToolDef } from "../sdk/types.ts";
 import { DEFAULT_SYSTEM_PROMPT } from "../sdk/types.ts";
 import { createRuntime } from "./runtime.ts";
 import type { ConnectS2sOptions, S2sCallbacks, S2sHandle } from "./s2s.ts";
+import type { SessionCore } from "./session-core.ts";
 import { _internals as s2sTransportInternals } from "./transports/s2s-transport.ts";
 
 /** Yield to the microtask queue so pending promises settle. */
@@ -52,19 +53,38 @@ export function makeConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
   };
 }
 
+// ─── SessionCore mock ───────────────────────────────────────────────────────
+
+/** Create a SessionCore-shaped mock with all methods as vi.fn() spies. */
+export function makeMockCore(overrides?: Partial<SessionCore>): SessionCore {
+  return {
+    id: "test",
+    start: vi.fn(() => Promise.resolve()),
+    stop: vi.fn(() => Promise.resolve()),
+    onAudio: vi.fn(),
+    onAudioReady: vi.fn(),
+    onCancel: vi.fn(),
+    onReset: vi.fn(),
+    onHistory: vi.fn(),
+    onReplyStarted: vi.fn(),
+    onReplyDone: vi.fn(),
+    onCancelled: vi.fn(),
+    onAudioChunk: vi.fn(),
+    onAudioDone: vi.fn(),
+    onUserTranscript: vi.fn(),
+    onAgentTranscript: vi.fn(),
+    onToolCall: vi.fn(),
+    onError: vi.fn(),
+    onSpeechStarted: vi.fn(),
+    onSpeechStopped: vi.fn(),
+    ...overrides,
+  };
+}
+
 // ─── S2sHandle mock ─────────────────────────────────────────────────────────
 
-/**
- * Mock S2sHandle with vi.fn() spies on all methods.
- * Includes a no-op `_fire` for backward-compat with callers that invoke it
- * (previously backed by nanoevents; now inert since session.ts is gone).
- */
-export type MockS2sHandle = S2sHandle & {
-  _fire: (...args: unknown[]) => void;
-};
-
 /** Create a mock S2sHandle backed by vi.fn() spies. */
-export function makeMockHandle(): MockS2sHandle {
+export function makeMockHandle(): S2sHandle {
   return {
     sendAudio: vi.fn(),
     sendAudioRaw: vi.fn(),
@@ -72,8 +92,6 @@ export function makeMockHandle(): MockS2sHandle {
     updateSession: vi.fn(),
     resumeSession: vi.fn(),
     close: vi.fn(),
-    /** No-op — previously fired nanoevents; now inert. */
-    _fire: vi.fn(),
   };
 }
 

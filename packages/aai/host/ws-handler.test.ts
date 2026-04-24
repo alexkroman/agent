@@ -10,7 +10,7 @@ import {
   encResetC2S,
 } from "../sdk/wire.ts";
 import { MockWebSocket } from "./_mock-ws.ts";
-import { silentLogger } from "./_test-utils.ts";
+import { makeMockCore, silentLogger } from "./_test-utils.ts";
 import type { SessionCore } from "./session-core.ts";
 import { wireSessionSocket } from "./ws-handler.ts";
 
@@ -18,32 +18,6 @@ import { wireSessionSocket } from "./ws-handler.ts";
 
 function makeLogger() {
   return { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
-}
-
-/** Create a SessionCore-shaped mock with all methods as vi.fn() spies. */
-function makeMockCore(overrides?: Partial<SessionCore>): SessionCore {
-  return {
-    id: "test",
-    start: vi.fn(() => Promise.resolve()),
-    stop: vi.fn(() => Promise.resolve()),
-    onAudio: vi.fn(),
-    onAudioReady: vi.fn(),
-    onCancel: vi.fn(),
-    onReset: vi.fn(),
-    onHistory: vi.fn(),
-    onReplyStarted: vi.fn(),
-    onReplyDone: vi.fn(),
-    onCancelled: vi.fn(),
-    onAudioChunk: vi.fn(),
-    onAudioDone: vi.fn(),
-    onUserTranscript: vi.fn(),
-    onAgentTranscript: vi.fn(),
-    onToolCall: vi.fn(),
-    onError: vi.fn(),
-    onSpeechStarted: vi.fn(),
-    onSpeechStopped: vi.fn(),
-    ...overrides,
-  };
 }
 
 const defaultConfig = { audioFormat: "pcm16" as const, sampleRate: 16_000, ttsSampleRate: 24_000 };

@@ -40,6 +40,9 @@ export type {
   WebSocketConstructor,
 } from "./types.ts";
 
+/** Cap on `customEvents` retained in the session snapshot to avoid unbounded growth. */
+const MAX_CUSTOM_EVENTS = 200;
+
 // ─── Snapshot type ──────────────────────────────────────────────────────────
 
 /**
@@ -302,6 +305,12 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
   /** Monotonically increasing counter for custom events -- used by useEvent to deduplicate. */
   let customEventSeq = 0;
 
+  function appendCustomEvent(name: string, data: unknown): void {
+    const next = [...currentSnapshot.customEvents, { id: ++customEventSeq, event: name, data }];
+    const trimmed = next.length > MAX_CUSTOM_EVENTS ? next.slice(-MAX_CUSTOM_EVENTS) : next;
+    updateState({ customEvents: trimmed });
+  }
+
   function handleUserTranscriptEvent(text: string): void {
     handlerGeneration++;
     updateState({
@@ -391,12 +400,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
         break;
       }
       case "custom_event":
-        updateState({
-          customEvents: [
-            ...currentSnapshot.customEvents,
-            { id: ++customEventSeq, event: e.name, data: e.data },
-          ],
-        });
+        appendCustomEvent(e.name, e.data);
         break;
       case "error":
         console.error("Agent error:", e.message);

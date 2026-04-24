@@ -360,11 +360,7 @@ describe("createRuntime shutdown", () => {
 
   test("shutdown stops active sessions gracefully", async () => {
     const mockHandle = makeMockHandle();
-    const connectSpy = vi.spyOn(_internals, "connectS2s").mockImplementation(async () => {
-      // Fire "ready" so session.start() resolves
-      setTimeout(() => mockHandle._fire("ready", { sessionId: "mock-sid" }), 0);
-      return mockHandle;
-    });
+    const connectSpy = vi.spyOn(_internals, "connectS2s").mockResolvedValue(mockHandle);
 
     const agent = makeAgent();
     const runtime = createRuntime({ agent, env: {}, logger: silentLogger });
@@ -392,10 +388,7 @@ describe("createRuntime shutdown", () => {
     mockHandle.close = vi.fn(() => {
       throw new Error("close failed");
     });
-    const connectSpy = vi.spyOn(_internals, "connectS2s").mockImplementation(async () => {
-      setTimeout(() => mockHandle._fire("ready", { sessionId: "mock-sid" }), 0);
-      return mockHandle;
-    });
+    const connectSpy = vi.spyOn(_internals, "connectS2s").mockResolvedValue(mockHandle);
 
     const agent = makeAgent();
     const runtime = createRuntime({ agent, env: {}, logger });
@@ -422,10 +415,7 @@ describe("createRuntime shutdown", () => {
     mockHandle.close = vi.fn(() => {
       // intentionally do nothing — session stop will hang
     });
-    const connectSpy = vi.spyOn(_internals, "connectS2s").mockImplementation(async () => {
-      setTimeout(() => mockHandle._fire("ready", { sessionId: "mock-sid" }), 0);
-      return mockHandle;
-    });
+    const connectSpy = vi.spyOn(_internals, "connectS2s").mockResolvedValue(mockHandle);
 
     const agent = makeAgent();
     const runtime = createRuntime({
@@ -657,10 +647,7 @@ describe("Runtime — session routing", () => {
 
   test("manifest without stt/llm/tts routes to S2sSession (createWebSocket IS called)", async () => {
     const mockHandle = makeMockHandle();
-    const connectSpy = vi.spyOn(_internals, "connectS2s").mockImplementation(async () => {
-      setTimeout(() => mockHandle._fire("ready", { sessionId: "mock-sid" }), 0);
-      return mockHandle;
-    });
+    const connectSpy = vi.spyOn(_internals, "connectS2s").mockResolvedValue(mockHandle);
 
     const createWebSocket = vi.fn();
     const runtime = createRuntime({

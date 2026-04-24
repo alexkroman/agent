@@ -12,15 +12,24 @@
 import { afterAll, describe, expect, test, vi } from "vitest";
 import {
   flush,
-  type MockS2sHandle,
   makeAgent,
   makeClientSink,
   makeMockHandle,
   silentLogger,
 } from "../../aai/host/_test-utils.ts";
 import { createRuntime } from "../../aai/host/runtime.ts";
+import type { S2sHandle } from "../../aai/host/s2s.ts";
 import type { SessionCore } from "../../aai/host/session-core.ts";
 import { _internals } from "../../aai/host/transports/s2s-transport.ts";
+
+/**
+ * Legacy nanoevents-based `_fire` entry point used by this load test to
+ * simulate turns. After Task 10 removed the emitter, `_fire` is a no-op
+ * stub — the load test still measures allocation of the session
+ * orchestration state but no longer exercises per-event dispatch. See
+ * follow-up: convert to the typed-callback spy pattern.
+ */
+type MockWithFire = S2sHandle & { _fire: (...args: unknown[]) => void };
 
 // ── Stats helpers ───────────────────────────────────────────────────────
 
@@ -35,7 +44,7 @@ describe("session memory with mock S2S", () => {
   const MESSAGES_PER_SESSION = 5;
 
   const sessions: SessionCore[] = [];
-  const mockHandles: MockS2sHandle[] = [];
+  const mockHandles: MockWithFire[] = [];
   let connectSpy: ReturnType<typeof vi.spyOn>;
 
   afterAll(async () => {
@@ -50,7 +59,7 @@ describe("session memory with mock S2S", () => {
   test("RSS vs active session count", async () => {
     // Mock connectS2s to return fresh mock handles for each session
     connectSpy = vi.spyOn(_internals, "connectS2s").mockImplementation(async () => {
-      const handle = makeMockHandle();
+      const handle: MockWithFire = Object.assign(makeMockHandle(), { _fire: () => undefined });
       mockHandles.push(handle);
       return handle;
     });

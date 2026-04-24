@@ -12,15 +12,18 @@
 import { afterAll, describe, expect, test, vi } from "vitest";
 import {
   flush,
-  type MockS2sHandle,
   makeAgent,
   makeClientSink,
   makeMockHandle,
   silentLogger,
 } from "../../aai/host/_test-utils.ts";
 import { createRuntime } from "../../aai/host/runtime.ts";
+import type { S2sHandle } from "../../aai/host/s2s.ts";
 import type { SessionCore } from "../../aai/host/session-core.ts";
 import { _internals } from "../../aai/host/transports/s2s-transport.ts";
+
+/** Legacy `_fire` stub — no-op after Task 10 removed the nanoevents emitter. */
+type MockWithFire = S2sHandle & { _fire: (...args: unknown[]) => void };
 
 // ── Stats helpers ───────────────────────────────────────────────────────
 
@@ -35,7 +38,7 @@ describe("S2S session memory with conversation history", () => {
   const MESSAGE_TIERS = [10, 50, 100];
 
   const sessions: SessionCore[] = [];
-  const mockHandles: MockS2sHandle[] = [];
+  const mockHandles: MockWithFire[] = [];
   let connectSpy: ReturnType<typeof vi.spyOn>;
 
   afterAll(async () => {
@@ -50,7 +53,7 @@ describe("S2S session memory with conversation history", () => {
   test("memory growth: sessions x messages matrix", async () => {
     // Mock connectS2s to return fresh mock handles for each session
     connectSpy = vi.spyOn(_internals, "connectS2s").mockImplementation(async () => {
-      const handle = makeMockHandle();
+      const handle: MockWithFire = Object.assign(makeMockHandle(), { _fire: () => undefined });
       mockHandles.push(handle);
       return handle;
     });
