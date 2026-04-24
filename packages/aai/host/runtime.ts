@@ -16,6 +16,7 @@ import type { Kv } from "../sdk/kv.ts";
 import type { ClientSink } from "../sdk/protocol.ts";
 import { buildReadyConfig, type ReadyConfig } from "../sdk/protocol.ts";
 import { DEEPGRAM_KIND } from "../sdk/providers/stt/deepgram.ts";
+import { RIME_KIND } from "../sdk/providers/tts/rime.ts";
 import {
   assertProviderTriple,
   type LlmProvider,
@@ -62,6 +63,28 @@ function resolveSttApiKey(
   if (kind === DEEPGRAM_KIND) return resolveApiKey("DEEPGRAM_API_KEY", env);
   // Default: ASSEMBLYAI_KIND or pre-resolved opener (backward compat).
   return resolveApiKey("ASSEMBLYAI_API_KEY", env);
+}
+
+/**
+ * Resolve the API key env-var for the configured TTS provider.
+ *
+ * Each TTS provider uses its own env var (e.g. `CARTESIA_API_KEY`,
+ * `RIME_API_KEY`). We read the kind from the descriptor if it is one;
+ * pre-resolved openers have no kind field so we fall back to Cartesia for
+ * backward compatibility (openers supply their own key at open-time anyway).
+ */
+function resolveTtsApiKey(
+  tts: TtsProvider | TtsOpener | undefined,
+  env: Record<string, string>,
+): string {
+  // TtsProvider descriptors carry a `kind` field; TtsOpener does not.
+  const kind =
+    tts != null && "kind" in tts && typeof (tts as TtsProvider).kind === "string"
+      ? (tts as TtsProvider).kind
+      : undefined;
+  if (kind === RIME_KIND) return resolveApiKey("RIME_API_KEY", env);
+  // Default: CARTESIA_KIND or pre-resolved opener (backward compat).
+  return resolveApiKey("CARTESIA_API_KEY", env);
 }
 
 // ─── Runtime adapter (formerly adapter.ts) ──────────────────────────────────
@@ -395,7 +418,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
         executeTool,
         providerKeys: {
           stt: resolveSttApiKey(opts.stt, env),
-          tts: resolveApiKey("CARTESIA_API_KEY", env),
+          tts: resolveTtsApiKey(opts.tts, env),
         },
         sttSampleRate: s2sConfig.inputSampleRate,
         ttsSampleRate: s2sConfig.outputSampleRate,

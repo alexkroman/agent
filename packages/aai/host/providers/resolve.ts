@@ -19,6 +19,7 @@ import { ANTHROPIC_KIND, type AnthropicOptions } from "../../sdk/providers/llm/a
 import { ASSEMBLYAI_KIND, type AssemblyAIOptions } from "../../sdk/providers/stt/assemblyai.ts";
 import { DEEPGRAM_KIND, type DeepgramOptions } from "../../sdk/providers/stt/deepgram.ts";
 import { CARTESIA_KIND, type CartesiaOptions } from "../../sdk/providers/tts/cartesia.ts";
+import { RIME_KIND, type RimeOptions } from "../../sdk/providers/tts/rime.ts";
 import type {
   LlmProvider,
   SttOpener,
@@ -29,6 +30,7 @@ import type {
 import { openAssemblyAI } from "./stt/assemblyai.ts";
 import { openDeepgram } from "./stt/deepgram.ts";
 import { openCartesia } from "./tts/cartesia.ts";
+import { openRime } from "./tts/rime.ts";
 
 /**
  * Look up a provider API key: agent env first (set via `aai secret put` or
@@ -58,9 +60,11 @@ export function resolveTts(descriptor: TtsProvider): TtsOpener {
   switch (descriptor.kind) {
     case CARTESIA_KIND:
       return openCartesia(descriptor.options as unknown as CartesiaOptions);
+    case RIME_KIND:
+      return openRime(descriptor.options as unknown as RimeOptions);
     default:
       throw new Error(
-        `Unknown TTS provider kind: "${descriptor.kind}". Supported: ${CARTESIA_KIND}.`,
+        `Unknown TTS provider kind: "${descriptor.kind}". Supported: ${CARTESIA_KIND}, ${RIME_KIND}.`,
       );
   }
 }
