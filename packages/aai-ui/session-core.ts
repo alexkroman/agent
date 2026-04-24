@@ -11,13 +11,15 @@
  */
 
 import { errorMessage, WS_OPEN } from "@alexkroman1/aai";
-import type {
-  ClientEvent,
-  ClientMessage,
-  ReadyConfig,
-  ServerMessage,
-} from "@alexkroman1/aai/protocol";
-import { lenientParse, ReadyConfigSchema, ServerMessageSchema } from "@alexkroman1/aai/protocol";
+import type { DecodedS2C } from "@alexkroman1/aai/wire";
+import {
+  decodeS2C,
+  encAudioChunkC2S,
+  encAudioReady,
+  encCancel,
+  encHistory,
+  encResetC2S,
+} from "@alexkroman1/aai/wire";
 import type { VoiceIO } from "./audio.ts";
 import type {
   AgentState,
@@ -144,10 +146,9 @@ type ConnState = {
  */
 async function initAudioCapture(
   conn: ConnState,
-  msg: ReadyConfig,
+  msg: { sampleRate: number; ttsSampleRate: number },
   deps: {
-    send: (msg: ClientMessage) => void;
-    sendBinary: (data: ArrayBuffer) => void;
+    sendBinary: (data: Uint8Array) => void;
     updateState: (partial: Partial<SessionSnapshot>) => void;
   },
 ): Promise<void> {
@@ -167,7 +168,7 @@ async function initAudioCapture(
       playbackWorkletSrc: playbackWorklet,
       onMicData: (pcm16: ArrayBuffer) => {
         try {
-          deps.sendBinary(pcm16);
+          deps.sendBinary(encAudioChunkC2S(new Uint8Array(pcm16)));
         } catch {
           console.debug("[aai-ui] sendBinary dropped: connection closed");
         }
@@ -178,7 +179,7 @@ async function initAudioCapture(
       return;
     }
     conn.voiceIO = io;
-    deps.send({ type: "audio_ready" });
+    deps.sendBinary(encAudioReady());
     deps.updateState({ state: "listening" });
   } catch (err: unknown) {
     if (conn.generation !== gen || !conn.ws || conn.ws.readyState !== WS_OPEN) return;
@@ -282,20 +283,13 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     });
   }
 
-  function send(msg: ClientMessage): void {
+  function sendBinary(data: Uint8Array): void {
     if (conn.ws && conn.ws.readyState === WS_OPEN) {
-      conn.ws.send(JSON.stringify(msg));
-    }
-  }
-
-  function sendBinary(data: ArrayBuffer): void {
-    if (conn.ws && conn.ws.readyState === WS_OPEN) {
-      conn.ws.send(data);
+      conn.ws.send(data as unknown as ArrayBuffer);
     }
   }
 
   const audioDeps = {
-    send,
     sendBinary,
     updateState,
   };
@@ -325,7 +319,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
   }
 
   /** Single entry point for all server->client session events. */
-  function handleEvent(e: ClientEvent): void {
+  function handleEvent(e: DecodedS2C): void {
     // Clear error state when a non-error event arrives — proves the session
     // is functional (e.g. audio init failed but WebSocket still works).
     if (currentSnapshot.state === "error" && e.type !== "error") {
@@ -350,9 +344,9 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
           toolCalls: [
             ...currentSnapshot.toolCalls,
             {
-              callId: e.toolCallId,
-              name: e.toolName,
-              args: e.args,
+              callId: e.callId,
+              name: e.name,
+              args: (e.args ?? {}) as Record<string, unknown>,
               status: "pending",
               afterMessageIndex: currentSnapshot.messages.length - 1,
             },
@@ -361,7 +355,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
         break;
       case "tool_call_done": {
         const tcs = currentSnapshot.toolCalls;
-        const idx = tcs.findIndex((tc) => tc.callId === e.toolCallId);
+        const idx = tcs.findIndex((tc) => tc.callId === e.callId);
         if (idx !== -1) {
           const updated = [...tcs];
           const existing = updated[idx];
@@ -400,7 +394,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
         updateState({
           customEvents: [
             ...currentSnapshot.customEvents,
-            { id: ++customEventSeq, event: e.event, data: e.data },
+            { id: ++customEventSeq, event: e.name, data: e.data },
           ],
         });
         break;
@@ -411,6 +405,9 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
           error: { code: e.code, message: e.message },
           running: false,
         });
+        break;
+      case "idle_timeout":
+        // Server-side idle timeout — treat as a graceful disconnect signal.
         break;
       default:
         break;
@@ -451,59 +448,44 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     }
   }
 
-  /** Parse a JSON text frame into a ServerMessage, or null if invalid/unknown. */
-  function parseTextFrame(data: string): ServerMessage | null {
-    try {
-      const result = lenientParse(ServerMessageSchema, JSON.parse(data));
-      if (!result.ok) {
-        if (result.malformed) console.warn("Ignoring invalid server message:", result.error);
-        return null;
-      }
-      return result.data;
-    } catch {
-      return null;
-    }
-  }
-
-  /** Try to extract a ReadyConfig from a config message, or null. */
-  function parseConfig(
-    msg: ServerMessage & { type: "config" },
-  ): (ReadyConfig & { sessionId?: string }) | null {
-    const { type: _, sessionId, ...config } = msg;
-    const parsed = ReadyConfigSchema.safeParse(config);
-    if (!parsed.success) {
-      console.warn("Unsupported server config:", parsed.error.message);
-      return null;
-    }
-    return sessionId ? { ...parsed.data, sessionId } : parsed.data;
-  }
-
   /**
-   * Dispatch an incoming WebSocket message (text or binary).
+   * Dispatch an incoming WebSocket message (binary only).
    *
    * Returns the parsed config if the message is a `config` message,
    * otherwise `null`.
    */
   function handleMessage(
-    data: string | ArrayBuffer,
-  ): (ReadyConfig & { sessionId?: string }) | null {
-    // Binary frame -> raw PCM16 TTS audio
-    if (data instanceof ArrayBuffer) {
-      playAudioChunk(new Uint8Array(data));
+    data: unknown,
+  ): { sampleRate: number; ttsSampleRate: number; sid: string } | null {
+    if (!(data instanceof ArrayBuffer)) {
+      // New protocol is binary-only; drop non-binary frames.
+      console.warn("session-core: non-binary frame received; dropping");
       return null;
     }
 
-    const msg = parseTextFrame(data);
-    if (!msg) return null;
+    const result = decodeS2C(new Uint8Array(data));
+    if (!result.ok) {
+      console.warn("session-core: wire decode failed:", result.reason);
+      return null;
+    }
 
-    if (msg.type === "config") return parseConfig(msg);
+    const msg = result.data;
+
+    if (msg.type === "config") {
+      return { sampleRate: msg.sampleRate, ttsSampleRate: msg.ttsSampleRate, sid: msg.sid };
+    }
+
+    if (msg.type === "audio_chunk") {
+      playAudioChunk(msg.pcm);
+      return null;
+    }
 
     if (msg.type === "audio_done") {
       playAudioDone();
       return null;
     }
 
-    // All other messages are ClientEvent
+    // All other messages are handled by handleEvent
     handleEvent(msg);
     return null;
   }
@@ -547,7 +529,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
       (event: MessageEvent) => {
         const config = handleMessage(event.data);
         if (config) {
-          if (config.sessionId) options.onSessionId?.(config.sessionId);
+          if (config.sid) options.onSessionId?.(config.sid);
           const isReconnect = hasConnected;
           hasConnected = true;
           initAudioCapture(conn, config, audioDeps).catch((err) => {
@@ -562,10 +544,11 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
           });
 
           if (isReconnect && currentSnapshot.messages.length > 0) {
-            send({
-              type: "history",
-              messages: currentSnapshot.messages.map((m) => ({ role: m.role, content: m.content })),
-            });
+            sendBinary(
+              encHistory(
+                currentSnapshot.messages.map((m) => ({ role: m.role, content: m.content })),
+              ),
+            );
           }
         }
       },
@@ -589,13 +572,13 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
   function cancel(): void {
     conn.voiceIO?.flush();
     updateState({ state: "listening" });
-    send({ type: "cancel" });
+    sendBinary(encCancel());
   }
 
   function reset(): void {
     conn.voiceIO?.flush();
     if (conn.ws && conn.ws.readyState === WS_OPEN) {
-      send({ type: "reset" });
+      sendBinary(encResetC2S());
       return;
     }
     resetState();
