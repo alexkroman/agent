@@ -10,95 +10,11 @@ import { type ChildProcess, execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import {
-  type ErrorCodeName,
-  encAgentTranscript,
-  encAudioDone,
-  encCancelled,
-  encConfig,
-  encCustomEvent,
-  encError,
-  encIdleTimeout,
-  encReplyDone,
-  encResetS2C,
-  encSpeechStarted,
-  encSpeechStopped,
-  encToolCall,
-  encToolCallDone,
-  encUserTranscript,
-  S2C,
-} from "@alexkroman1/aai/wire";
 import type { Browser } from "playwright";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import type { MockRegistry } from "./_mock-registry.ts";
 
 const { chromium } = await import("playwright");
-
-/**
- * Converts a fixture message (JSON shape from aai-ui/fixtures/*.json) into
- * the binary wire frame expected by the browser client. Returns null for
- * unsupported/unknown types so callers can skip gracefully.
- *
- * Field-name differences between fixtures and wire encoders:
- *   fixture toolCallId → wire callId
- *   fixture toolName   → wire name
- *   fixture sessionId  → wire sid
- */
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: switch over all S2C fixture types; splitting would hurt readability
-function encodeFixtureMessage(msg: Record<string, unknown>): Uint8Array | null {
-  switch (msg.type) {
-    case "config":
-      return encConfig({
-        sampleRate: (msg.sampleRate as number) ?? 16_000,
-        ttsSampleRate: (msg.ttsSampleRate as number) ?? 24_000,
-        sid: (msg.sessionId as string) ?? "",
-      });
-    case "audio_done":
-      return encAudioDone();
-    case "speech_started":
-      return encSpeechStarted();
-    case "speech_stopped":
-      return encSpeechStopped();
-    case "user_transcript":
-      return encUserTranscript((msg.text as string) ?? "");
-    case "agent_transcript":
-      return encAgentTranscript((msg.text as string) ?? "");
-    case "tool_call": {
-      const result = encToolCall(
-        (msg.toolCallId as string) ?? "",
-        (msg.toolName as string) ?? "",
-        msg.args ?? {},
-      );
-      if (result === null) console.warn("[encodeFixtureMessage] encToolCall returned null", msg);
-      return result;
-    }
-    case "tool_call_done":
-      return encToolCallDone((msg.toolCallId as string) ?? "", (msg.result as string) ?? "");
-    case "reply_done":
-      return encReplyDone();
-    case "cancelled":
-      return encCancelled();
-    case "reset":
-      return encResetS2C();
-    case "idle_timeout":
-      return encIdleTimeout();
-    case "error": {
-      const result = encError(
-        (msg.code as ErrorCodeName) ?? "internal",
-        (msg.message as string) ?? "",
-      );
-      return result;
-    }
-    case "custom_event": {
-      const result = encCustomEvent((msg.event as string) ?? "", msg.data);
-      if (result === null) console.warn("[encodeFixtureMessage] encCustomEvent returned null", msg);
-      return result;
-    }
-    default:
-      console.warn("[encodeFixtureMessage] unsupported message type, skipping:", msg.type);
-      return null;
-  }
-}
 
 /** Check if Playwright browsers are installed (chromium). */
 function hasPlaywrightBrowser(): boolean {
@@ -315,19 +231,12 @@ async function setupEventInjector(browser: Browser, port: number) {
   // audio error can overwrite test-driven state transitions.
   await page.locator('[data-state="error"]').waitFor({ timeout: 10_000 });
 
-  /** Inject a server->client event via the captured WebSocket.
-   * Accepts the fixture JSON shape, encodes it to binary, and dispatches
-   * an ArrayBuffer MessageEvent (matching the binary wire protocol). */
-  const inject = async (msg: Record<string, unknown>) => {
-    const bytes = encodeFixtureMessage(msg);
-    if (bytes === null) return; // unsupported type — skip silently
-    const nums = Array.from(bytes);
-    await page.evaluate((arr) => {
+  /** Inject a server->client event via the captured WebSocket. */
+  const inject = (msg: Record<string, unknown>) =>
+    page.evaluate((json) => {
       const ws = (globalThis as Record<string, unknown>).__aai_test_ws as WebSocket;
-      const buf = new Uint8Array(arr).buffer;
-      ws.dispatchEvent(new MessageEvent("message", { data: buf }));
-    }, nums);
-  };
+      ws.dispatchEvent(new MessageEvent("message", { data: JSON.stringify(json) }));
+    }, msg);
 
   /** Replay a fixture file (from aai-ui/fixtures/). */
   const replayFixture = async (fixtureName: string) => {
@@ -354,9 +263,6 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
 
     // Serve the built client with a simple static server (faster than vite dev)
     const clientDir = path.join(projectDir, ".aai", "client");
-    // Absolute file URL for the wire ESM module so the child process (node -e,
-    // which runs in CJS mode) can load it via dynamic import().
-    const wireModuleUrl = new URL(path.resolve(dir, "../aai/dist/sdk/wire.js"), "file://").href;
     child = spawn(
       process.execPath,
       [
@@ -365,26 +271,22 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
        const { WebSocketServer } = require("ws");
        const mimes = { ".html": "text/html", ".js": "application/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml" };
        const root = ${JSON.stringify(clientDir)};
-       const wireUrl = ${JSON.stringify(wireModuleUrl)};
-       import(wireUrl).then(wire => {
-         const s = http.createServer((req, res) => {
-           const url = new URL(req.url, "http://localhost");
-           const f = path.join(root, url.pathname === "/" ? "index.html" : url.pathname);
-           if (!f.startsWith(root)) { res.writeHead(403); res.end(); return; }
-           try {
-             const data = fs.readFileSync(f);
-             const ct = mimes[path.extname(f)] || "application/octet-stream";
-             res.writeHead(200, { "Content-Type": ct });
-             res.end(data);
-           } catch { res.writeHead(404); res.end("not found"); }
-         });
-         const wss = new WebSocketServer({ server: s });
-         wss.on("connection", (ws) => {
-           const frame = wire.encConfig({ sampleRate: 16000, ttsSampleRate: 24000, sid: "test" });
-           ws.send(Buffer.from(frame.buffer, frame.byteOffset, frame.byteLength));
-         });
-         s.listen(0, () => console.log("PORT:" + s.address().port));
-       }).catch(err => { console.error("wire import failed:", err); process.exit(1); });`,
+       const s = http.createServer((req, res) => {
+         const url = new URL(req.url, "http://localhost");
+         const f = path.join(root, url.pathname === "/" ? "index.html" : url.pathname);
+         if (!f.startsWith(root)) { res.writeHead(403); res.end(); return; }
+         try {
+           const data = fs.readFileSync(f);
+           const ct = mimes[path.extname(f)] || "application/octet-stream";
+           res.writeHead(200, { "Content-Type": ct });
+           res.end(data);
+         } catch { res.writeHead(404); res.end("not found"); }
+       });
+       const wss = new WebSocketServer({ server: s });
+       wss.on("connection", (ws) => {
+         ws.send(JSON.stringify({ type: "config", audioFormat: "pcm16", sampleRate: 16000, ttsSampleRate: 24000, sessionId: "test" }));
+       });
+       s.listen(0, () => console.log("PORT:" + s.address().port));`,
       ],
       { stdio: "pipe" },
     );
@@ -424,16 +326,12 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
     const page = await browser.newPage();
     await page.goto(`http://localhost:${port}`);
 
-    // Collect binary frames (Buffer) from the server. The wire protocol uses
-    // binary frames; S2C.CONFIG == 0x82 is the first byte of a config frame.
-    const binaryFrames: Buffer[] = [];
+    const frames: string[] = [];
     const wsConnected = new Promise<string>((resolve) => {
       page.on("websocket", (ws) => {
         resolve(ws.url());
         ws.on("framereceived", (frame) => {
-          if (typeof frame.payload !== "string") {
-            binaryFrames.push(Buffer.from(frame.payload as Buffer));
-          }
+          if (typeof frame.payload === "string") frames.push(frame.payload);
         });
       });
     });
@@ -444,8 +342,13 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
 
     await vi.waitFor(
       () => {
-        // S2C.CONFIG == 0x82; first byte of the binary frame identifies the type
-        const found = binaryFrames.some((buf) => buf.length > 0 && buf[0] === S2C.CONFIG);
+        const found = frames.some((f) => {
+          try {
+            return JSON.parse(f).type === "config";
+          } catch {
+            return false;
+          }
+        });
         expect(found).toBe(true);
       },
       { timeout: 10_000, interval: 50 },

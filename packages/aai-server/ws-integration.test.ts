@@ -8,18 +8,12 @@
  * so the test runs without external dependencies.
  */
 import http from "node:http";
+import type { ReadyConfig, ServerMessage } from "@alexkroman1/aai/protocol";
 import {
   type SessionCore,
   type SessionWebSocket,
   wireSessionSocket,
 } from "@alexkroman1/aai/runtime";
-import {
-  type DecodedS2C,
-  decodeS2C,
-  encAudioChunkC2S,
-  encAudioReady,
-  encCancel,
-} from "@alexkroman1/aai/wire";
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import { WebSocketServer } from "ws";
 
@@ -52,8 +46,8 @@ function makeStubCore(overrides: Partial<SessionCore> = {}): SessionCore {
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
-const READY_CONFIG = {
-  audioFormat: "pcm16" as const,
+const READY_CONFIG: ReadyConfig = {
+  audioFormat: "pcm16",
   sampleRate: 16_000,
   ttsSampleRate: 24_000,
 };
@@ -116,21 +110,23 @@ function startTestServer(): Promise<{
  */
 function connect(port: number): Promise<{
   ws: WebSocket;
-  config: DecodedS2C;
-  messages: DecodedS2C[];
+  config: ServerMessage;
+  messages: ServerMessage[];
 }> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(`ws://127.0.0.1:${port}/agent/websocket`);
-    ws.binaryType = "arraybuffer";
-    const messages: DecodedS2C[] = [];
+    const messages: ServerMessage[] = [];
 
     ws.addEventListener("message", (event: MessageEvent) => {
-      if (!(event.data instanceof ArrayBuffer)) return;
-      const r = decodeS2C(new Uint8Array(event.data));
-      if (!r.ok) return;
-      messages.push(r.data);
-      if (messages.length === 1) {
-        resolve({ ws, config: r.data, messages });
+      try {
+        const data = typeof event.data === "string" ? event.data : String(event.data);
+        const msg = JSON.parse(data) as ServerMessage;
+        messages.push(msg);
+        if (messages.length === 1) {
+          resolve({ ws, config: msg, messages });
+        }
+      } catch {
+        // binary frame — ignore in message collection
       }
     });
 
@@ -171,11 +167,12 @@ describe("WebSocket server integration", () => {
 
   test("server sends config as first message on connect", async () => {
     const { ws, config } = await connect(ctx.port);
-    expect(config.type).toBe("config");
-    if (config.type === "config") {
-      expect(config.sampleRate).toBe(16_000);
-      expect(config.sid).toBeTruthy();
-    }
+    expect(config).toMatchObject({
+      type: "config",
+      audioFormat: "pcm16",
+      sampleRate: 16_000,
+    });
+    expect((config as Record<string, unknown>).sessionId).toBeTruthy();
     ws.close();
     await waitForClose(ws);
   });
@@ -195,7 +192,7 @@ describe("WebSocket server integration", () => {
     await vi.waitFor(() => {
       expect(ctx.captures).toHaveLength(1);
     });
-    ws.send(encAudioReady());
+    ws.send(JSON.stringify({ type: "audio_ready" }));
     await vi.waitFor(() => {
       expect(ctx.captures[0]?.session.onAudioReady).toHaveBeenCalled();
     });
@@ -208,7 +205,7 @@ describe("WebSocket server integration", () => {
     await vi.waitFor(() => {
       expect(ctx.captures).toHaveLength(1);
     });
-    ws.send(encCancel());
+    ws.send(JSON.stringify({ type: "cancel" }));
     await vi.waitFor(() => {
       expect(ctx.captures[0]?.session.onCancel).toHaveBeenCalled();
     });
@@ -222,7 +219,7 @@ describe("WebSocket server integration", () => {
       expect(ctx.captures).toHaveLength(1);
     });
     const pcm = new Uint8Array([1, 2, 3, 4]);
-    ws.send(encAudioChunkC2S(pcm));
+    ws.send(pcm);
     await vi.waitFor(() => {
       expect(ctx.captures[0]?.session.onAudio).toHaveBeenCalled();
     });
