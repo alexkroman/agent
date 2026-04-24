@@ -4,7 +4,7 @@
 
 import type { AgentConfig, ExecuteTool } from "../sdk/_internal-types.ts";
 import { DEFAULT_IDLE_TIMEOUT_MS, DEFAULT_MAX_HISTORY } from "../sdk/constants.ts";
-import type { ClientSink, ErrorCode } from "../sdk/protocol.ts";
+import type { ClientEvent, ClientSink, SessionErrorCode } from "../sdk/protocol.ts";
 import type { Message } from "../sdk/types.ts";
 import type { Logger } from "./runtime-config.ts";
 import { consoleLogger } from "./runtime-config.ts";
@@ -50,7 +50,7 @@ export type SessionCore = {
   onUserTranscript(text: string): void;
   onAgentTranscript(text: string, interrupted: boolean): void;
   onToolCall(callId: string, name: string, args: Record<string, unknown>): void;
-  onError(code: ErrorCode, message: string): void;
+  onError(code: SessionErrorCode, message: string): void;
   onSpeechStarted(): void;
   onSpeechStopped(): void;
 };
@@ -69,12 +69,16 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
   let idleTimer: NodeJS.Timeout | null = null;
   let stopped = false;
 
+  function emit(event: ClientEvent): void {
+    opts.client.event(event);
+  }
+
   function resetIdle(): void {
     if (stopped || idleMs <= 0) return;
     if (idleTimer) clearTimeout(idleTimer);
     idleTimer = setTimeout(() => {
       log.info("session idle timeout", { sid: opts.id });
-      opts.client.idleTimeout();
+      emit({ type: "idle_timeout" });
     }, idleMs);
   }
 
@@ -97,8 +101,8 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
   function flushReply(startMs: number, hadTurnPromise: boolean): void {
     const stepsUsed = reply.toolCallCount;
     if (stepsUsed > 0) log.info("Turn complete", { steps: stepsUsed, agent: opts.agent });
-    opts.client.audioDone();
-    opts.client.replyDone();
+    opts.client.playAudioDone();
+    emit({ type: "reply_done" });
     reply.currentReplyId = null;
     const durationMs = Date.now() - startMs;
     if (durationMs >= REPLY_DONE_SLOW_THRESHOLD_MS) {
@@ -140,12 +144,12 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
     },
     onCancel() {
       opts.transport.cancelReply();
-      opts.client.cancelled();
+      emit({ type: "cancelled" });
     },
     onReset() {
       cancelReply();
       history = [];
-      opts.client.reset();
+      emit({ type: "reset" });
     },
     onHistory(messages) {
       pushMessages(...messages);
@@ -185,27 +189,32 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
 
     onCancelled() {
       cancelReply();
-      opts.client.cancelled();
+      emit({ type: "cancelled" });
     },
 
     onAudioChunk(bytes) {
-      opts.client.audio(bytes);
+      opts.client.playAudioChunk(bytes);
     },
     onAudioDone() {
-      opts.client.audioDone();
+      opts.client.playAudioDone();
     },
 
     onUserTranscript(text) {
-      opts.client.userTranscript(text);
+      emit({ type: "user_transcript", text });
       pushMessages({ role: "user", content: text });
     },
     onAgentTranscript(text, interrupted) {
-      opts.client.agentTranscript(text);
+      emit({ type: "agent_transcript", text });
       if (!interrupted) pushMessages({ role: "assistant", content: text });
     },
 
     onToolCall(callId, name, args) {
-      opts.client.toolCall(callId, name, args);
+      emit({
+        type: "tool_call",
+        toolCallId: callId,
+        toolName: name,
+        args: args as Record<string, unknown>,
+      });
       if (reply.currentReplyId === null) {
         log.warn("tool_call with no active reply", { sid: opts.id, name });
         return;
@@ -223,31 +232,31 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
             error: "Maximum tool steps reached. Please respond to the user now.",
           }),
         });
-        opts.client.toolCallDone(callId, "{}");
+        emit({ type: "tool_call_done", toolCallId: callId, result: "{}" });
         return;
       }
       const p = (async () => {
         try {
           const result = await opts.executeTool(name, args, opts.id, history);
           reply.pendingTools.push({ callId, result });
-          opts.client.toolCallDone(callId, result);
+          emit({ type: "tool_call_done", toolCallId: callId, result });
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           reply.pendingTools.push({ callId, result: JSON.stringify({ error: message }) });
-          opts.client.toolCallDone(callId, message);
+          emit({ type: "tool_call_done", toolCallId: callId, result: message });
         }
       })();
       turnPromise = (turnPromise ?? Promise.resolve()).then(() => p);
     },
 
     onError(code, message) {
-      opts.client.error(code, message);
+      emit({ type: "error", code, message });
     },
     onSpeechStarted() {
-      opts.client.speechStarted();
+      emit({ type: "speech_started" });
     },
     onSpeechStopped() {
-      opts.client.speechStopped();
+      emit({ type: "speech_stopped" });
     },
   };
 }

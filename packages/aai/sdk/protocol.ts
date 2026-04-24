@@ -8,7 +8,6 @@
 import { z } from "zod";
 
 import { MAX_TOOL_RESULT_CHARS } from "./constants.ts";
-import type { ErrorCodeName } from "./wire.ts";
 
 /**
  * Audio codec identifier used in the wire protocol.
@@ -139,33 +138,21 @@ export const ClientEventSchema = z.discriminatedUnion("type", [
 /** Discriminated union of all server→client session events. */
 export type ClientEvent = z.infer<typeof ClientEventSchema>;
 
-/** Alias for {@link ErrorCodeName}; replaces {@link SessionErrorCode} once Task 20 removes Zod schemas. */
-export type ErrorCode = ErrorCodeName;
-
 /**
  * Typed interface for pushing session events to a connected client.
  *
- * Each method encodes a single wire frame via `wire.encode*` and sends it.
- * Replaces the previous `event(e: ClientEvent)` discriminated-union entry point.
+ * Events (`event`, `playAudioDone`) send JSON text frames. Audio chunks
+ * (`playAudioChunk`) send raw PCM16 binary frames.
  */
 export interface ClientSink {
   /** True when the underlying connection is open and will accept calls. */
   readonly open: boolean;
-  config(cfg: { sampleRate: number; ttsSampleRate: number; sid: string }): void;
-  audio(chunk: Uint8Array): void;
-  audioDone(): void;
-  speechStarted(): void;
-  speechStopped(): void;
-  userTranscript(text: string): void;
-  agentTranscript(text: string): void;
-  toolCall(callId: string, name: string, args: unknown): void;
-  toolCallDone(callId: string, result: string): void;
-  replyDone(): void;
-  cancelled(): void;
-  reset(): void;
-  idleTimeout(): void;
-  error(code: ErrorCode, message: string): void;
-  customEvent(name: string, data: unknown): void;
+  /** Push a session event (JSON text frame) to the client. */
+  event(e: ClientEvent): void;
+  /** Send a single PCM16 audio chunk (raw binary frame) to the client. */
+  playAudioChunk(chunk: Uint8Array): void;
+  /** Signal that TTS audio is complete (JSON text frame). */
+  playAudioDone(): void;
 }
 
 // ─── WebSocket message types ────────────────────────────────────────────────

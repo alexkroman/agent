@@ -335,7 +335,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
         kv,
         messages,
         logger,
-        send: sink ? (event, data) => sink.customEvent(event, data) : undefined,
+        send: sink ? (event, data) => sink.event({ type: "custom_event", event, data }) : undefined,
       });
     };
   }
@@ -393,7 +393,8 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       // and leave pendingTools non-empty, hanging the turn. Instead, send
       // directly to the client sink for observability only.
       onToolCall: isPipeline
-        ? (id, name, args) => sessionOpts.client.toolCall(id, name, args)
+        ? (id, name, args) =>
+            sessionOpts.client.event({ type: "tool_call", toolCallId: id, toolName: name, args })
         : (id, name, args) => bindCore().onToolCall(id, name, args),
       onError: (code, message) => bindCore().onError(code, message),
       onSpeechStarted: () => bindCore().onSpeechStarted(),

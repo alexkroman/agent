@@ -96,28 +96,16 @@ export function makeMockHandle(): S2sHandle {
 }
 
 /**
- * Minimal ClientSink stub that satisfies the new interface.
+ * Minimal ClientSink stub that satisfies the 3-method interface.
  * All methods are vi.fn() spies. Use in tests that need a valid ClientSink
  * but don't need to inspect event payloads (e.g. routing / creation tests).
  */
 export function makeClientSink(overrides?: Partial<ClientSink>): ClientSink {
   return {
     open: true,
-    config: vi.fn(),
-    audio: vi.fn(),
-    audioDone: vi.fn(),
-    speechStarted: vi.fn(),
-    speechStopped: vi.fn(),
-    userTranscript: vi.fn(),
-    agentTranscript: vi.fn(),
-    toolCall: vi.fn(),
-    toolCallDone: vi.fn(),
-    replyDone: vi.fn(),
-    cancelled: vi.fn(),
-    reset: vi.fn(),
-    idleTimeout: vi.fn(),
-    error: vi.fn(),
-    customEvent: vi.fn(),
+    event: vi.fn(),
+    playAudioChunk: vi.fn(),
+    playAudioDone: vi.fn(),
     ...overrides,
   };
 }
@@ -148,6 +136,7 @@ export function loadFixture<T = Record<string, unknown>[]>(name: string): T {
 /**
  * A tracking ClientSink that records all calls into typed arrays for easy
  * test assertions. Compatible with makeClientSink() but with inspection APIs.
+ * Uses the 3-method sink interface — event() dispatches are tracked by type.
  */
 export type TrackingClientSink = ClientSink & {
   agentTranscripts: string[];
@@ -158,6 +147,7 @@ export type TrackingClientSink = ClientSink & {
   cancelledCount: number;
   speechStartedCount: number;
   speechStoppedCount: number;
+  events: import("../sdk/protocol.ts").ClientEvent[];
 };
 
 export function makeTrackingClient(): TrackingClientSink {
@@ -165,6 +155,7 @@ export function makeTrackingClient(): TrackingClientSink {
   const userTranscripts: string[] = [];
   const toolCallEvents: { callId: string; name: string; args: unknown }[] = [];
   const audioChunks: Uint8Array[] = [];
+  const events: import("../sdk/protocol.ts").ClientEvent[] = [];
   let replyDoneCount = 0;
   let cancelledCount = 0;
   let speechStartedCount = 0;
@@ -176,6 +167,7 @@ export function makeTrackingClient(): TrackingClientSink {
     userTranscripts,
     toolCallEvents,
     audioChunks,
+    events,
     get replyDoneCount() {
       return replyDoneCount;
     },
@@ -188,37 +180,38 @@ export function makeTrackingClient(): TrackingClientSink {
     get speechStoppedCount() {
       return speechStoppedCount;
     },
-    config: vi.fn(),
-    audio: vi.fn((chunk: Uint8Array) => {
+    event: vi.fn((e: import("../sdk/protocol.ts").ClientEvent) => {
+      events.push(e);
+      switch (e.type) {
+        case "agent_transcript":
+          agentTranscripts.push(e.text);
+          break;
+        case "user_transcript":
+          userTranscripts.push(e.text);
+          break;
+        case "tool_call":
+          toolCallEvents.push({ callId: e.toolCallId, name: e.toolName, args: e.args });
+          break;
+        case "reply_done":
+          replyDoneCount++;
+          break;
+        case "cancelled":
+          cancelledCount++;
+          break;
+        case "speech_started":
+          speechStartedCount++;
+          break;
+        case "speech_stopped":
+          speechStoppedCount++;
+          break;
+        default:
+          break;
+      }
+    }),
+    playAudioChunk: vi.fn((chunk: Uint8Array) => {
       audioChunks.push(chunk);
     }),
-    audioDone: vi.fn(),
-    speechStarted: vi.fn(() => {
-      speechStartedCount++;
-    }),
-    speechStopped: vi.fn(() => {
-      speechStoppedCount++;
-    }),
-    userTranscript: vi.fn((text: string) => {
-      userTranscripts.push(text);
-    }),
-    agentTranscript: vi.fn((text: string) => {
-      agentTranscripts.push(text);
-    }),
-    toolCall: vi.fn((callId: string, name: string, args: unknown) => {
-      toolCallEvents.push({ callId, name, args });
-    }),
-    toolCallDone: vi.fn(),
-    replyDone: vi.fn(() => {
-      replyDoneCount++;
-    }),
-    cancelled: vi.fn(() => {
-      cancelledCount++;
-    }),
-    reset: vi.fn(),
-    idleTimeout: vi.fn(),
-    error: vi.fn(),
-    customEvent: vi.fn(),
+    playAudioDone: vi.fn(),
   };
 }
 

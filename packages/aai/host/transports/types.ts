@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 // Transport strategy — per-session provider wiring (S2S, pipeline, etc.).
 
-import type { ErrorCode } from "../../sdk/protocol.ts";
+import type { SessionErrorCode } from "../../sdk/protocol.ts";
 import type { Message } from "../../sdk/types.ts";
 
 /**
@@ -17,7 +17,7 @@ export type TransportCallbacks = {
   onUserTranscript(text: string): void;
   onAgentTranscript(text: string, interrupted: boolean): void;
   onToolCall(callId: string, name: string, args: Record<string, unknown>): void;
-  onError(code: ErrorCode, message: string): void;
+  onError(code: SessionErrorCode, message: string): void;
   onSpeechStarted(): void;
   onSpeechStopped(): void;
   onSessionReady?(providerSessionId: string): void;

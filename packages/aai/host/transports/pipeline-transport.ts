@@ -20,7 +20,7 @@ import {
   DEFAULT_TTS_SAMPLE_RATE,
   PIPELINE_FLUSH_TIMEOUT_MS,
 } from "../../sdk/constants.ts";
-import type { ErrorCode } from "../../sdk/protocol.ts";
+import type { SessionErrorCode } from "../../sdk/protocol.ts";
 import type {
   SttError,
   SttOpener,
@@ -131,7 +131,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   }
 
   // ---- Error helpers --------------------------------------------------------
-  function emitError(code: ErrorCode, message: string): void {
+  function emitError(code: SessionErrorCode, message: string): void {
     callbacks.onError(code, message);
   }
 

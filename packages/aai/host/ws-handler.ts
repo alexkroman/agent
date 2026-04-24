@@ -11,26 +11,8 @@ import {
   MAX_MESSAGE_BUFFER_SIZE,
   WS_OPEN,
 } from "../sdk/constants.ts";
-import type { ClientSink } from "../sdk/protocol.ts";
+import { ClientMessageSchema, type ClientSink, lenientParse } from "../sdk/protocol.ts";
 import { errorDetail } from "../sdk/utils.ts";
-import {
-  decodeC2S,
-  encAgentTranscript,
-  encAudioChunkS2C,
-  encAudioDone,
-  encCancelled,
-  encConfig,
-  encCustomEvent,
-  encError,
-  encIdleTimeout,
-  encReplyDone,
-  encResetS2C,
-  encSpeechStarted,
-  encSpeechStopped,
-  encToolCall,
-  encToolCallDone,
-  encUserTranscript,
-} from "../sdk/wire.ts";
 import type { Logger } from "./runtime-config.ts";
 import { consoleLogger } from "./runtime-config.ts";
 import type { SessionCore } from "./session-core.ts";
@@ -77,10 +59,11 @@ export type WsSessionOptions = {
 /**
  * Creates a {@link ClientSink} backed by a plain WebSocket.
  *
- * All events are sent as tagged binary wire frames (see sdk/wire.ts).
+ * Session events are sent as JSON text frames; audio chunks are sent as raw
+ * PCM16 binary frames.
  */
 function createClientSink(ws: SessionWebSocket, log: Logger): ClientSink {
-  function safeSend(data: Uint8Array): void {
+  function safeSend(data: string | Uint8Array): void {
     try {
       if (ws.readyState !== WS_OPEN) return;
       ws.send(data);
@@ -94,85 +77,44 @@ function createClientSink(ws: SessionWebSocket, log: Logger): ClientSink {
     get open() {
       return ws.readyState === WS_OPEN;
     },
-    config(cfg) {
-      safeSend(encConfig(cfg));
+    event(e) {
+      safeSend(JSON.stringify(e));
     },
-    audio(chunk) {
-      safeSend(encAudioChunkS2C(chunk));
+    playAudioChunk(chunk) {
+      safeSend(chunk);
     },
-    audioDone() {
-      safeSend(encAudioDone());
-    },
-    speechStarted() {
-      safeSend(encSpeechStarted());
-    },
-    speechStopped() {
-      safeSend(encSpeechStopped());
-    },
-    userTranscript(text) {
-      safeSend(encUserTranscript(text));
-    },
-    agentTranscript(text) {
-      safeSend(encAgentTranscript(text));
-    },
-    toolCall(id, name, args) {
-      const frame = encToolCall(id, name, args);
-      if (frame === null) {
-        log.warn("tool_call: failed to serialize args", { name });
-        return;
-      }
-      safeSend(frame);
-    },
-    toolCallDone(id, result) {
-      safeSend(encToolCallDone(id, result));
-    },
-    replyDone() {
-      safeSend(encReplyDone());
-    },
-    cancelled() {
-      safeSend(encCancelled());
-    },
-    reset() {
-      safeSend(encResetS2C());
-    },
-    idleTimeout() {
-      safeSend(encIdleTimeout());
-    },
-    error(code, message) {
-      safeSend(encError(code, message));
-    },
-    customEvent(name, data) {
-      const frame = encCustomEvent(name, data);
-      if (frame === null) {
-        log.warn("custom_event: failed to serialize data", { name });
-        return;
-      }
-      safeSend(frame);
+    playAudioDone() {
+      safeSend(JSON.stringify({ type: "audio_done" }));
     },
   };
 }
 
-/**
- * Decode a single inbound binary wire frame and dispatch to the appropriate
- * SessionCore method. Non-binary frames and decode failures are dropped with
- * a warning — the connection is never closed on a bad frame (§5.1).
- */
-function handleFrame(data: unknown, session: SessionCore, log: Logger, sid: string): void {
-  if (!(data instanceof Uint8Array)) {
-    // Node `ws` delivers Buffer which extends Uint8Array, so this is the hot path.
-    // Strings are not expected on the new protocol — drop.
-    log.warn("ws: non-binary frame received; dropping", { sid });
+function handleBinaryAudio(data: unknown, session: SessionCore): boolean {
+  if (data instanceof Uint8Array) {
+    session.onAudio(data);
+    return true;
+  }
+  return false;
+}
+
+function handleTextMessage(data: unknown, session: SessionCore, log: Logger, sid: string): void {
+  if (typeof data !== "string") {
+    log.warn("ws: non-string, non-binary frame received; dropping", { sid });
     return;
   }
-  const result = decodeC2S(data);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(data);
+  } catch {
+    log.warn("ws: invalid JSON; dropping", { sid, data: data.slice(0, 200) });
+    return;
+  }
+  const result = lenientParse(ClientMessageSchema, parsed);
   if (!result.ok) {
-    log.warn("ws: wire decode failed", { sid, reason: result.reason });
+    log.warn("ws: unrecognised client message", { sid, issues: result.error });
     return;
   }
   switch (result.data.type) {
-    case "audio_chunk":
-      session.onAudio(result.data.pcm);
-      break;
     case "audio_ready":
       session.onAudioReady();
       break;
@@ -186,19 +128,18 @@ function handleFrame(data: unknown, session: SessionCore, log: Logger, sid: stri
       session.onHistory(result.data.messages);
       break;
     default:
-      // Exhaustive — decodeC2S only returns known C2S types above.
       break;
   }
 }
 
 /**
- * Attaches session lifecycle handlers to a native WebSocket using
- * tagged binary wire frames for all messages (see sdk/wire.ts).
+ * Attaches session lifecycle handlers to a native WebSocket using JSON text
+ * frames for control messages and raw PCM16 binary frames for audio.
  *
  * Connection flow:
- * 1. WebSocket opens → server sends CONFIG binary frame with sampleRate, ttsSampleRate, sid
- * 2. Client sets up audio → sends AUDIO_READY binary frame
- * 3. If reconnecting → client sends HISTORY binary frame with prior messages
+ * 1. WebSocket opens → server sends JSON CONFIG frame with sampleRate, ttsSampleRate, sessionId
+ * 2. Client sets up audio → sends JSON AUDIO_READY frame
+ * 3. If reconnecting → client sends JSON HISTORY frame with prior messages
  */
 export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions): void {
   const { sessions, logger: log = consoleLogger } = opts;
@@ -217,7 +158,10 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
     if (!(session && messageBuffer)) return;
     const buf = messageBuffer;
     messageBuffer = null;
-    for (const event of buf) handleFrame(event.data, session, log, sid);
+    for (const event of buf) {
+      if (handleBinaryAudio(event.data, session)) continue;
+      handleTextMessage(event.data, session, log, sid);
+    }
   }
 
   function onOpen(): void {
@@ -229,13 +173,15 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
     sessions.set(sessionId, session);
     opts.onSinkCreated?.(sessionId, client);
 
-    // Send config immediately — zero RTT. Include sessionId (as sid) so the
+    // Send config immediately — zero RTT. Include sessionId so the
     // client can reconnect with ?sessionId=<id> to resume a persisted session.
     ws.send(
-      encConfig({
+      JSON.stringify({
+        type: "config",
+        audioFormat: opts.readyConfig.audioFormat,
         sampleRate: opts.readyConfig.sampleRate,
         ttsSampleRate: opts.readyConfig.ttsSampleRate,
-        sid: sessionId,
+        sessionId,
       }),
     );
 
@@ -271,12 +217,12 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
     // Buffer messages until session.start() completes to avoid dispatching
     // to a session whose transport connection isn't established yet.
     if (!sessionReady) {
-      if (messageBuffer && messageBuffer.length < MAX_MESSAGE_BUFFER_SIZE) {
+      if (messageBuffer && messageBuffer.length < MAX_MESSAGE_BUFFER_SIZE)
         messageBuffer.push(event);
-      }
       return;
     }
-    handleFrame(event.data, session, log, sid);
+    if (handleBinaryAudio(event.data, session)) return;
+    handleTextMessage(event.data, session, log, sid);
   });
 
   ws.addEventListener("close", () => {
