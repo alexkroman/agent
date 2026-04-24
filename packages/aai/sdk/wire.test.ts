@@ -1,5 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, test } from "vitest";
+import type { ErrorCodeName } from "./wire.ts";
 import {
   C2S,
   decodeC2S,
@@ -253,5 +256,143 @@ describe("decoder round-trips every frame type", () => {
         ok: true,
         data: { type: "custom_event", name: "ping", data: { x: 1 } },
       });
+  });
+});
+
+describe("decoder handles malformed frames without throwing", () => {
+  test("empty frame", () => {
+    expect(decodeC2S(new Uint8Array([])).ok).toBe(false);
+    expect(decodeS2C(new Uint8Array([])).ok).toBe(false);
+  });
+  test("unknown type byte", () => {
+    const r = decodeC2S(new Uint8Array([0x7f, 1, 2]));
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/unknown/);
+  });
+  test("truncated config", () => {
+    expect(decodeS2C(new Uint8Array([S2C.CONFIG, 1, 2, 3])).ok).toBe(false);
+  });
+  test("config sid overflow", () => {
+    // Claims 100 bytes of sid but only provides 2
+    const f = new Uint8Array([S2C.CONFIG, 0, 0, 0, 0, 0, 0, 0, 0, 100, 0, 0x61, 0x62]);
+    expect(decodeS2C(f).ok).toBe(false);
+  });
+  test("invalid utf8 in transcript", () => {
+    const f = new Uint8Array([S2C.USER_TRANSCRIPT, 2, 0, 0, 0, 0xff, 0xfe]);
+    const r = decodeS2C(f);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/utf8/);
+  });
+  test("tool_call with invalid args json", () => {
+    const id = new TextEncoder().encode("cid");
+    const name = new TextEncoder().encode("tool");
+    const badJson = new TextEncoder().encode("{not-json");
+    const out = new Uint8Array(
+      1 + 2 + id.byteLength + 2 + name.byteLength + 4 + badJson.byteLength,
+    );
+    out[0] = S2C.TOOL_CALL;
+    const dv = new DataView(out.buffer);
+    let off = 1;
+    dv.setUint16(off, id.byteLength, true);
+    off += 2;
+    out.set(id, off);
+    off += id.byteLength;
+    dv.setUint16(off, name.byteLength, true);
+    off += 2;
+    out.set(name, off);
+    off += name.byteLength;
+    dv.setUint32(off, badJson.byteLength, true);
+    off += 4;
+    out.set(badJson, off);
+    const r = decodeS2C(out);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/args json/);
+  });
+});
+
+type Fixtures = {
+  c2s: Record<string, Record<string, unknown>>;
+  s2c: Record<string, Record<string, unknown>>;
+};
+
+const fixtures = JSON.parse(
+  readFileSync(resolve(import.meta.dirname, "compat-fixtures/wire-v1.json"), "utf-8"),
+) as Fixtures;
+
+describe("wire-v1 canonical fixtures (round-trip lock)", () => {
+  test("audio_chunk_4bytes", () => {
+    const input = fixtures.c2s.audio_chunk_4bytes as { pcm: number[] };
+    const f = encAudioChunkC2S(new Uint8Array(input.pcm));
+    const r = decodeC2S(f);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.data.type === "audio_chunk") {
+      expect(Array.from(r.data.pcm)).toEqual(input.pcm);
+    }
+  });
+  test("audio_ready", () => {
+    const f = encAudioReady();
+    expect(Array.from(f)).toEqual([C2S.AUDIO_READY]);
+  });
+  test("cancel", () => {
+    const f = encCancel();
+    expect(Array.from(f)).toEqual([C2S.CANCEL]);
+  });
+  test("reset (c2s)", () => {
+    const f = encResetC2S();
+    expect(Array.from(f)).toEqual([C2S.RESET]);
+  });
+  test("history_empty", () => {
+    const f = encHistory([]);
+    expect(Array.from(f)).toEqual([C2S.HISTORY, 0, 0, 0, 0]);
+  });
+  test("history_two round-trips", () => {
+    const input = fixtures.c2s.history_two as {
+      messages: { role: "user" | "assistant"; content: string }[];
+    };
+    const f = encHistory(input.messages);
+    const r = decodeC2S(f);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.data.type === "history") {
+      expect(r.data.messages).toEqual(input.messages);
+    }
+  });
+  test("audio_chunk_2bytes", () => {
+    const input = fixtures.s2c.audio_chunk_2bytes as { pcm: number[] };
+    const f = encAudioChunkS2C(new Uint8Array(input.pcm));
+    expect(Array.from(f)).toEqual([S2C.AUDIO_CHUNK, ...input.pcm]);
+  });
+  test("audio_done", () => {
+    expect(Array.from(encAudioDone())).toEqual([S2C.AUDIO_DONE]);
+  });
+  test("config", () => {
+    const input = fixtures.s2c.config as {
+      sampleRate: number;
+      ttsSampleRate: number;
+      sid: string;
+    };
+    const f = encConfig(input);
+    const r = decodeS2C(f);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.data.type === "config") {
+      expect(r.data).toEqual({ type: "config", ...input });
+    }
+  });
+  test("reply_done", () => {
+    expect(Array.from(encReplyDone())).toEqual([S2C.REPLY_DONE]);
+  });
+  test("cancelled", () => {
+    expect(Array.from(encCancelled())).toEqual([S2C.CANCELLED]);
+  });
+  test("error_connection_boom", () => {
+    const input = fixtures.s2c.error_connection_boom as {
+      code: ErrorCodeName;
+      message: string;
+    };
+    const f = encError(input.code, input.message);
+    const r = decodeS2C(f);
+    expect(r.ok).toBe(true);
+    if (r.ok && r.data.type === "error") {
+      expect(r.data).toEqual({ type: "error", code: input.code, message: input.message });
+    }
   });
 });
