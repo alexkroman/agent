@@ -4,7 +4,6 @@
  */
 
 import type { JSONSchema7 } from "json-schema";
-import { createNanoEvents, type Emitter, type Unsubscribe } from "nanoevents";
 import WsWebSocket from "ws";
 import { z } from "zod";
 import { WS_OPEN } from "../sdk/constants.ts";
@@ -87,78 +86,69 @@ export type S2sEvent = ClientEvent & { _interrupted?: boolean };
 type DispatchState = { speechActive: boolean };
 
 type DispatchContext = {
-  /** Logger used for diagnostic `S2S <<` arrival logs. */
   log: Logger;
-  /** Session id threaded through diagnostic logs; omitted when undefined. */
   sid?: string;
 };
 
 function dispatchS2sMessage(
-  emitter: Emitter<S2sEvents>,
+  callbacks: S2sCallbacks,
   msg: S2sServerMessage,
   state: DispatchState,
-  dispatchCtx: DispatchContext,
+  ctx: DispatchContext,
 ): void {
   switch (msg.type) {
     case "session.ready":
-      emitter.emit("ready", { sessionId: msg.session_id });
+      callbacks.onSessionReady(msg.session_id);
       break;
     case "session.updated":
       break;
     case "input.speech.started":
       if (!state.speechActive) {
         state.speechActive = true;
-        emitter.emit("event", { type: "speech_started" });
+        callbacks.onSpeechStarted();
       }
       break;
     case "input.speech.stopped":
       if (state.speechActive) {
         state.speechActive = false;
-        emitter.emit("event", { type: "speech_stopped" });
+        callbacks.onSpeechStopped();
       }
       break;
     case "transcript.user":
-      emitter.emit("event", { type: "user_transcript", text: msg.text });
+      callbacks.onUserTranscript(msg.text);
       break;
     case "reply.started":
-      emitter.emit("replyStarted", { replyId: msg.reply_id });
+      callbacks.onReplyStarted(msg.reply_id);
       break;
     case "transcript.agent":
-      emitter.emit("event", {
-        type: "agent_transcript",
-        text: msg.text,
-        _interrupted: msg.interrupted,
-      });
+      callbacks.onAgentTranscript(msg.text, msg.interrupted);
       break;
     case "tool.call":
-      emitter.emit("event", {
-        type: "tool_call",
-        toolCallId: msg.call_id,
-        toolName: msg.name,
-        args: msg.args,
-      });
+      callbacks.onToolCall(msg.call_id, msg.name, msg.args);
       break;
     case "reply.done":
       // Log every raw reply.done arrival from the S2S service — one line per
       // event, before any client-facing dedup — so we can cross-check which
       // stalled sessions actually received reply.done for their turn.
-      dispatchCtx.log.info("S2S << reply.done", {
-        ...(dispatchCtx.sid !== undefined ? { sid: dispatchCtx.sid } : {}),
+      ctx.log.info("S2S << reply.done", {
+        ...(ctx.sid !== undefined ? { sid: ctx.sid } : {}),
         status: msg.status ?? "completed",
       });
       if (msg.status === "interrupted") {
-        emitter.emit("event", { type: "cancelled" });
+        callbacks.onCancelled();
       } else {
-        emitter.emit("event", { type: "reply_done" });
+        callbacks.onReplyDone();
       }
       break;
     case "session.error":
-      if (msg.code === "session_not_found" || msg.code === "session_forbidden")
-        emitter.emit("sessionExpired");
-      else emitter.emit("error", new Error(msg.message));
+      if (msg.code === "session_not_found" || msg.code === "session_forbidden") {
+        callbacks.onSessionExpired();
+      } else {
+        callbacks.onError(new Error(msg.message));
+      }
       break;
     case "error":
-      emitter.emit("error", new Error(msg.message));
+      callbacks.onError(new Error(msg.message));
       break;
     default:
       break;
@@ -178,18 +168,24 @@ export type S2sToolSchema = {
   parameters: JSONSchema7;
 };
 
-export type S2sEvents = {
-  ready: (detail: { sessionId: string }) => void;
-  replyStarted: (detail: { replyId: string }) => void;
-  sessionExpired: () => void;
-  event: (event: S2sEvent) => void;
-  audio: (detail: { audio: Uint8Array }) => void;
-  error: (err: Error) => void;
-  close: (code: number, reason: string) => void;
+/** Callbacks fired into the owning session at construction time. */
+export type S2sCallbacks = {
+  onSessionReady(sessionId: string): void;
+  onReplyStarted(replyId: string): void;
+  onReplyDone(): void;
+  onCancelled(): void;
+  onAudio(bytes: Uint8Array): void;
+  onUserTranscript(text: string): void;
+  onAgentTranscript(text: string, interrupted: boolean): void;
+  onToolCall(callId: string, name: string, args: Record<string, unknown>): void;
+  onSpeechStarted(): void;
+  onSpeechStopped(): void;
+  onSessionExpired(): void;
+  onError(err: Error): void;
+  onClose(code: number, reason: string): void;
 };
 
 export type S2sHandle = {
-  on<K extends keyof S2sEvents>(event: K, cb: S2sEvents[K]): Unsubscribe;
   sendAudio(audio: Uint8Array): void;
   /**
    * Send a pre-encoded audio wire frame. For perf-critical callers (load tests)
@@ -206,6 +202,7 @@ export type ConnectS2sOptions = {
   apiKey: string;
   config: S2SConfig;
   createWebSocket: CreateS2sWebSocket;
+  callbacks: S2sCallbacks;
   logger?: Logger;
   /**
    * Session id attached to diagnostic log lines (e.g. raw `reply.done`
@@ -216,7 +213,7 @@ export type ConnectS2sOptions = {
 };
 
 export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
-  const { apiKey, config, createWebSocket, logger: log = consoleLogger, sid } = opts;
+  const { apiKey, config, createWebSocket, callbacks, logger: log = consoleLogger, sid } = opts;
 
   return new Promise((resolve, reject) => {
     log.info("S2S connecting", { url: config.wssUrl });
@@ -225,7 +222,6 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
       headers: { Authorization: `Bearer ${apiKey}` },
     });
 
-    const emitter = createNanoEvents<S2sEvents>();
     const dispatchState: DispatchState = { speechActive: false };
     const dispatchCtx: DispatchContext = sid !== undefined ? { log, sid } : { log };
     let opened = false;
@@ -247,8 +243,6 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
     }
 
     const handle: S2sHandle = {
-      on: emitter.on.bind(emitter),
-
       sendAudio(audio: Uint8Array): void {
         if (ws.readyState !== WS_OPEN) {
           log.debug("S2S sendAudio dropped: socket not open");
@@ -263,9 +257,8 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
       },
 
       sendToolResult(callId: string, result: string): void {
-        const msg = { type: "tool.result", call_id: callId, result };
         log.info("S2S >> tool.result", { call_id: callId, resultLength: result.length });
-        send(msg);
+        send({ type: "tool.result", call_id: callId, result });
       },
 
       updateSession(sessionConfig: S2sSessionConfig): void {
@@ -299,8 +292,7 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
 
     function handleAudioFastPath(obj: { type?: unknown; data?: unknown }): boolean {
       if (obj.type === "reply.audio" && typeof obj.data === "string") {
-        const audioBytes = base64ToUint8(obj.data);
-        emitter.emit("audio", { audio: audioBytes });
+        callbacks.onAudio(base64ToUint8(obj.data));
         return true;
       }
       return false;
@@ -309,13 +301,13 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
     function logIncoming(obj: { type?: unknown }): void {
       // reply.audio and input.audio are ~95% of traffic — skip logging.
       if (obj.type === "reply.audio" || obj.type === "input.audio") return;
-      // reply.done gets a richer log (sid + status) inside dispatchS2sMessage;
+      // reply.done gets a richer log (sid + status) inside dispatch;
       // skip the generic line here to avoid a duplicate.
       if (obj.type === "reply.done") return;
       log.info(`S2S << ${obj.type}`);
     }
 
-    function handleS2sMessage(ev: { data: unknown }): void {
+    ws.addEventListener("message", (ev) => {
       const raw = tryParseJson(ev.data);
       if (raw === undefined) return;
 
@@ -334,10 +326,8 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
         );
         return;
       }
-      dispatchS2sMessage(emitter, parsed, dispatchState, dispatchCtx);
-    }
-
-    ws.addEventListener("message", handleS2sMessage);
+      dispatchS2sMessage(callbacks, parsed, dispatchState, dispatchCtx);
+    });
 
     ws.addEventListener("close", (ev) => {
       const code = ev.code ?? 0;
@@ -346,7 +336,7 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
       if (!opened) {
         reject(new Error(`WebSocket closed before open (code: ${code})`));
       }
-      emitter.emit("close", code, reason);
+      callbacks.onClose(code, reason);
     });
 
     ws.addEventListener("error", (ev) => {
@@ -356,7 +346,7 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
       if (!opened) {
         reject(errObj);
       } else {
-        emitter.emit("error", errObj);
+        callbacks.onError(errObj);
       }
     });
   });

@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 import { silentLogger } from "./_test-utils.ts";
-import type { S2sWebSocket } from "./s2s.ts";
+import type { S2sCallbacks, S2sWebSocket } from "./s2s.ts";
 import { connectS2s } from "./s2s.ts";
 
 /** EventTarget-based WebSocket stub (standard API, no `.on()` adapter needed). */
@@ -37,6 +37,24 @@ function createWebSocketStub() {
 
 const s2sConfig = { wssUrl: "wss://fake", inputSampleRate: 16_000, outputSampleRate: 16_000 };
 
+function makeMockCallbacks(): S2sCallbacks {
+  return {
+    onSessionReady: vi.fn(),
+    onReplyStarted: vi.fn(),
+    onReplyDone: vi.fn(),
+    onCancelled: vi.fn(),
+    onAudio: vi.fn(),
+    onUserTranscript: vi.fn(),
+    onAgentTranscript: vi.fn(),
+    onToolCall: vi.fn(),
+    onSpeechStarted: vi.fn(),
+    onSpeechStopped: vi.fn(),
+    onSessionExpired: vi.fn(),
+    onError: vi.fn(),
+    onClose: vi.fn(),
+  };
+}
+
 function createTestS2s() {
   const raw = createWebSocketStub();
   const createWebSocket = () => {
@@ -49,12 +67,13 @@ function createTestS2s() {
   return { raw, createWebSocket, logger: { ...silentLogger } };
 }
 
-async function setupHandle() {
+async function setupHandle(callbacks?: S2sCallbacks) {
   const { raw, createWebSocket, logger } = createTestS2s();
   const handle = await connectS2s({
     apiKey: "test-key",
     config: s2sConfig,
     createWebSocket,
+    callbacks: callbacks ?? makeMockCallbacks(),
     logger,
   });
   return { raw, handle, logger };
@@ -89,6 +108,7 @@ describe("connectS2s", () => {
         apiKey: "test-key",
         config: s2sConfig,
         createWebSocket,
+        callbacks: makeMockCallbacks(),
         logger: silentLogger,
       }),
     ).rejects.toThrow("connection refused");
@@ -184,10 +204,9 @@ describe("connectS2s", () => {
 
   // ─── Message dispatch ──────────────────────────────────────────────────
 
-  test("session.ready dispatches 'ready' event", async () => {
-    const { raw, handle } = await setupHandle();
-    const onReady = vi.fn();
-    handle.on("ready", onReady);
+  test("session.ready dispatches 'onSessionReady' callback", async () => {
+    const callbacks = makeMockCallbacks();
+    const { raw } = await setupHandle(callbacks);
 
     raw.emit(
       "message",
@@ -199,51 +218,45 @@ describe("connectS2s", () => {
       ),
     );
 
-    expect(onReady).toHaveBeenCalledOnce();
-    expect(onReady.mock.calls[0]?.[0].sessionId).toBe("s123");
+    expect(callbacks.onSessionReady).toHaveBeenCalledOnce();
+    expect(callbacks.onSessionReady).toHaveBeenCalledWith("s123");
   });
 
-  test("input.speech.started dispatches 'event' with type 'speech_started'", async () => {
-    const { raw, handle } = await setupHandle();
-    const handler = vi.fn();
-    handle.on("event", handler);
+  test("input.speech.started dispatches 'onSpeechStarted' callback", async () => {
+    const callbacks = makeMockCallbacks();
+    const { raw } = await setupHandle(callbacks);
 
     raw.emit("message", Buffer.from(JSON.stringify({ type: "input.speech.started" })));
 
-    expect(handler).toHaveBeenCalledOnce();
-    expect(handler.mock.calls[0]?.[0]).toEqual({ type: "speech_started" });
+    expect(callbacks.onSpeechStarted).toHaveBeenCalledOnce();
   });
 
-  test("input.speech.stopped dispatches 'event' with type 'speech_stopped'", async () => {
-    const { raw, handle } = await setupHandle();
-    const handler = vi.fn();
-    handle.on("event", handler);
+  test("input.speech.stopped dispatches 'onSpeechStopped' callback", async () => {
+    const callbacks = makeMockCallbacks();
+    const { raw } = await setupHandle(callbacks);
 
     // Prime VAD state — speech_stopped is only forwarded after a speech_started.
     raw.emit("message", Buffer.from(JSON.stringify({ type: "input.speech.started" })));
     raw.emit("message", Buffer.from(JSON.stringify({ type: "input.speech.stopped" })));
 
-    expect(handler).toHaveBeenCalledTimes(2);
-    expect(handler.mock.calls[0]?.[0]).toEqual({ type: "speech_started" });
-    expect(handler.mock.calls[1]?.[0]).toEqual({ type: "speech_stopped" });
+    expect(callbacks.onSpeechStarted).toHaveBeenCalledOnce();
+    expect(callbacks.onSpeechStopped).toHaveBeenCalledOnce();
   });
 
   test("duplicate input.speech.stopped is suppressed", async () => {
-    const { raw, handle } = await setupHandle();
-    const handler = vi.fn();
-    handle.on("event", handler);
+    const callbacks = makeMockCallbacks();
+    const { raw } = await setupHandle(callbacks);
 
     raw.emit("message", Buffer.from(JSON.stringify({ type: "input.speech.started" })));
     raw.emit("message", Buffer.from(JSON.stringify({ type: "input.speech.stopped" })));
     raw.emit("message", Buffer.from(JSON.stringify({ type: "input.speech.stopped" })));
 
-    expect(handler.mock.calls.filter((c) => c[0].type === "speech_stopped")).toHaveLength(1);
+    expect(callbacks.onSpeechStopped).toHaveBeenCalledOnce();
   });
 
-  test("transcript.user dispatches 'event' with user_transcript", async () => {
-    const { raw, handle } = await setupHandle();
-    const handler = vi.fn();
-    handle.on("event", handler);
+  test("transcript.user dispatches 'onUserTranscript' callback", async () => {
+    const callbacks = makeMockCallbacks();
+    const { raw } = await setupHandle(callbacks);
 
     raw.emit(
       "message",
@@ -256,17 +269,13 @@ describe("connectS2s", () => {
       ),
     );
 
-    expect(handler).toHaveBeenCalledOnce();
-    expect(handler.mock.calls[0]?.[0]).toEqual({
-      type: "user_transcript",
-      text: "Hello world",
-    });
+    expect(callbacks.onUserTranscript).toHaveBeenCalledOnce();
+    expect(callbacks.onUserTranscript).toHaveBeenCalledWith("Hello world");
   });
 
-  test("reply.started dispatches 'replyStarted' event", async () => {
-    const { raw, handle } = await setupHandle();
-    const handler = vi.fn();
-    handle.on("replyStarted", handler);
+  test("reply.started dispatches 'onReplyStarted' callback", async () => {
+    const callbacks = makeMockCallbacks();
+    const { raw } = await setupHandle(callbacks);
 
     raw.emit(
       "message",
@@ -278,14 +287,13 @@ describe("connectS2s", () => {
       ),
     );
 
-    expect(handler).toHaveBeenCalledOnce();
-    expect(handler.mock.calls[0]?.[0].replyId).toBe("r1");
+    expect(callbacks.onReplyStarted).toHaveBeenCalledOnce();
+    expect(callbacks.onReplyStarted).toHaveBeenCalledWith("r1");
   });
 
-  test("transcript.agent dispatches 'event' with agent_transcript", async () => {
-    const { raw, handle } = await setupHandle();
-    const handler = vi.fn();
-    handle.on("event", handler);
+  test("transcript.agent dispatches 'onAgentTranscript' callback", async () => {
+    const callbacks = makeMockCallbacks();
+    const { raw } = await setupHandle(callbacks);
 
     raw.emit(
       "message",
@@ -300,30 +308,25 @@ describe("connectS2s", () => {
       ),
     );
 
-    expect(handler).toHaveBeenCalledOnce();
-    const payload = handler.mock.calls[0]?.[0];
-    expect(payload.type).toBe("agent_transcript");
-    expect(payload.text).toBe("Full response");
-    expect(payload._interrupted).toBe(false);
+    expect(callbacks.onAgentTranscript).toHaveBeenCalledOnce();
+    expect(callbacks.onAgentTranscript).toHaveBeenCalledWith("Full response", false);
   });
 
-  test("transcript.agent defaults _interrupted to false when missing", async () => {
-    const { raw, handle } = await setupHandle();
-    const handler = vi.fn();
-    handle.on("event", handler);
+  test("transcript.agent defaults interrupted to false when missing", async () => {
+    const callbacks = makeMockCallbacks();
+    const { raw } = await setupHandle(callbacks);
 
     raw.emit(
       "message",
       Buffer.from(JSON.stringify({ type: "transcript.agent", text: "response" })),
     );
 
-    expect(handler.mock.calls[0]?.[0]._interrupted).toBe(false);
+    expect(callbacks.onAgentTranscript).toHaveBeenCalledWith("response", false);
   });
 
-  test("transcript.agent with interrupted:true sets _interrupted:true", async () => {
-    const { raw, handle } = await setupHandle();
-    const handler = vi.fn();
-    handle.on("event", handler);
+  test("transcript.agent with interrupted:true passes interrupted:true", async () => {
+    const callbacks = makeMockCallbacks();
+    const { raw } = await setupHandle(callbacks);
 
     raw.emit(
       "message",
@@ -336,13 +339,12 @@ describe("connectS2s", () => {
       ),
     );
 
-    expect(handler.mock.calls[0]?.[0]._interrupted).toBe(true);
+    expect(callbacks.onAgentTranscript).toHaveBeenCalledWith("Interrupted response", true);
   });
 
-  test("tool.call dispatches 'event' with tool_call shape", async () => {
-    const { raw, handle } = await setupHandle();
-    const handler = vi.fn();
-    handle.on("event", handler);
+  test("tool.call dispatches 'onToolCall' callback", async () => {
+    const callbacks = makeMockCallbacks();
+    const { raw } = await setupHandle(callbacks);
 
     raw.emit(
       "message",
@@ -356,18 +358,13 @@ describe("connectS2s", () => {
       ),
     );
 
-    expect(handler).toHaveBeenCalledOnce();
-    const payload = handler.mock.calls[0]?.[0];
-    expect(payload.type).toBe("tool_call");
-    expect(payload.toolCallId).toBe("c1");
-    expect(payload.toolName).toBe("web_search");
-    expect(payload.args).toEqual({ query: "test" });
+    expect(callbacks.onToolCall).toHaveBeenCalledOnce();
+    expect(callbacks.onToolCall).toHaveBeenCalledWith("c1", "web_search", { query: "test" });
   });
 
-  test("reply.done (non-interrupted) dispatches 'event' with type 'reply_done'", async () => {
-    const { raw, handle } = await setupHandle();
-    const handler = vi.fn();
-    handle.on("event", handler);
+  test("reply.done (non-interrupted) dispatches 'onReplyDone' callback", async () => {
+    const callbacks = makeMockCallbacks();
+    const { raw } = await setupHandle(callbacks);
 
     raw.emit(
       "message",
@@ -379,14 +376,13 @@ describe("connectS2s", () => {
       ),
     );
 
-    expect(handler).toHaveBeenCalledOnce();
-    expect(handler.mock.calls[0]?.[0]).toEqual({ type: "reply_done" });
+    expect(callbacks.onReplyDone).toHaveBeenCalledOnce();
+    expect(callbacks.onCancelled).not.toHaveBeenCalled();
   });
 
-  test("reply.done with status 'interrupted' dispatches 'event' with type 'cancelled'", async () => {
-    const { raw, handle } = await setupHandle();
-    const handler = vi.fn();
-    handle.on("event", handler);
+  test("reply.done with status 'interrupted' dispatches 'onCancelled' callback", async () => {
+    const callbacks = makeMockCallbacks();
+    const { raw } = await setupHandle(callbacks);
 
     raw.emit(
       "message",
@@ -398,22 +394,22 @@ describe("connectS2s", () => {
       ),
     );
 
-    expect(handler).toHaveBeenCalledOnce();
-    expect(handler.mock.calls[0]?.[0]).toEqual({ type: "cancelled" });
+    expect(callbacks.onCancelled).toHaveBeenCalledOnce();
+    expect(callbacks.onReplyDone).not.toHaveBeenCalled();
   });
 
   test("reply.done arrival is logged with sid and status", async () => {
     const { raw, createWebSocket, logger } = createTestS2s();
     const infoSpy = vi.fn();
     logger.info = infoSpy;
-    const handle = await connectS2s({
+    await connectS2s({
       apiKey: "test-key",
       config: s2sConfig,
       createWebSocket,
+      callbacks: makeMockCallbacks(),
       logger,
       sid: "sess-abc",
     });
-    handle.on("event", vi.fn());
 
     raw.emit("message", Buffer.from(JSON.stringify({ type: "reply.done", status: "completed" })));
 
@@ -422,10 +418,9 @@ describe("connectS2s", () => {
     expect(arrivalCall?.[1]).toEqual({ sid: "sess-abc", status: "completed" });
   });
 
-  test("session.error with session_not_found dispatches 'sessionExpired'", async () => {
-    const { raw, handle } = await setupHandle();
-    const handler = vi.fn();
-    handle.on("sessionExpired", handler);
+  test("session.error with session_not_found dispatches 'onSessionExpired' callback", async () => {
+    const callbacks = makeMockCallbacks();
+    const { raw } = await setupHandle(callbacks);
 
     raw.emit(
       "message",
@@ -438,13 +433,12 @@ describe("connectS2s", () => {
       ),
     );
 
-    expect(handler).toHaveBeenCalledOnce();
+    expect(callbacks.onSessionExpired).toHaveBeenCalledOnce();
   });
 
-  test("session.error with session_forbidden dispatches 'sessionExpired'", async () => {
-    const { raw, handle } = await setupHandle();
-    const handler = vi.fn();
-    handle.on("sessionExpired", handler);
+  test("session.error with session_forbidden dispatches 'onSessionExpired' callback", async () => {
+    const callbacks = makeMockCallbacks();
+    const { raw } = await setupHandle(callbacks);
 
     raw.emit(
       "message",
@@ -457,13 +451,12 @@ describe("connectS2s", () => {
       ),
     );
 
-    expect(handler).toHaveBeenCalledOnce();
+    expect(callbacks.onSessionExpired).toHaveBeenCalledOnce();
   });
 
-  test("session.error with other code dispatches 'error' with Error object", async () => {
-    const { raw, handle } = await setupHandle();
-    const handler = vi.fn();
-    handle.on("error", handler);
+  test("session.error with other code dispatches 'onError' callback with Error object", async () => {
+    const callbacks = makeMockCallbacks();
+    const { raw } = await setupHandle(callbacks);
 
     raw.emit(
       "message",
@@ -476,16 +469,15 @@ describe("connectS2s", () => {
       ),
     );
 
-    expect(handler).toHaveBeenCalledOnce();
-    const err = handler.mock.calls[0]?.[0];
+    expect(callbacks.onError).toHaveBeenCalledOnce();
+    const err = (callbacks.onError as ReturnType<typeof vi.fn>).mock.calls[0]?.[0];
     expect(err).toBeInstanceOf(Error);
     expect(err.message).toBe("Too many requests");
   });
 
-  test("bare error dispatches 'error' with Error object", async () => {
-    const { raw, handle } = await setupHandle();
-    const handler = vi.fn();
-    handle.on("error", handler);
+  test("bare error dispatches 'onError' callback with Error object", async () => {
+    const callbacks = makeMockCallbacks();
+    const { raw } = await setupHandle(callbacks);
 
     raw.emit(
       "message",
@@ -497,18 +489,17 @@ describe("connectS2s", () => {
       ),
     );
 
-    expect(handler).toHaveBeenCalledOnce();
-    const err = handler.mock.calls[0]?.[0];
+    expect(callbacks.onError).toHaveBeenCalledOnce();
+    const err = (callbacks.onError as ReturnType<typeof vi.fn>).mock.calls[0]?.[0];
     expect(err).toBeInstanceOf(Error);
     expect(err.message).toBe("Bad gateway");
   });
 
   // ─── Audio fast path ───────────────────────────────────────────────────
 
-  test("reply.audio dispatches 'audio' with decoded Uint8Array", async () => {
-    const { raw, handle } = await setupHandle();
-    const handler = vi.fn();
-    handle.on("audio", handler);
+  test("reply.audio dispatches 'onAudio' callback with decoded Uint8Array", async () => {
+    const callbacks = makeMockCallbacks();
+    const { raw } = await setupHandle(callbacks);
 
     const audioBytes = new Uint8Array([10, 20, 30, 40]);
     const base64 = Buffer.from(audioBytes).toString("base64");
@@ -523,10 +514,10 @@ describe("connectS2s", () => {
       ),
     );
 
-    expect(handler).toHaveBeenCalledOnce();
-    const payload = handler.mock.calls[0]?.[0];
-    expect(payload.audio).toBeInstanceOf(Uint8Array);
-    expect(Array.from(payload.audio)).toEqual([10, 20, 30, 40]);
+    expect(callbacks.onAudio).toHaveBeenCalledOnce();
+    const payload = (callbacks.onAudio as ReturnType<typeof vi.fn>).mock.calls[0]?.[0];
+    expect(payload).toBeInstanceOf(Uint8Array);
+    expect(Array.from(payload)).toEqual([10, 20, 30, 40]);
   });
 
   // ─── Edge cases ────────────────────────────────────────────────────────
@@ -577,39 +568,39 @@ describe("connectS2s", () => {
   });
 
   test("session.updated is silently ignored (no dispatch)", async () => {
-    const { raw, handle } = await setupHandle();
-    const eventHandler = vi.fn();
-    handle.on("event", eventHandler);
+    const callbacks = makeMockCallbacks();
+    const { raw } = await setupHandle(callbacks);
 
     raw.emit("message", Buffer.from(JSON.stringify({ type: "session.updated" })));
 
-    // session.updated is dropped — no event emitted
-    expect(eventHandler).not.toHaveBeenCalled();
+    // session.updated is dropped — no callbacks fired
+    expect(callbacks.onSessionReady).not.toHaveBeenCalled();
+    expect(callbacks.onReplyStarted).not.toHaveBeenCalled();
+    expect(callbacks.onReplyDone).not.toHaveBeenCalled();
+    expect(callbacks.onSpeechStarted).not.toHaveBeenCalled();
+    expect(callbacks.onSpeechStopped).not.toHaveBeenCalled();
   });
 
   // ─── Close and error events ────────────────────────────────────────────
 
-  test("close event dispatches 'close' with code and reason", async () => {
-    const { raw, handle } = await setupHandle();
-    const handler = vi.fn();
-    handle.on("close", handler);
+  test("close event dispatches 'onClose' callback with code and reason", async () => {
+    const callbacks = makeMockCallbacks();
+    const { raw } = await setupHandle(callbacks);
 
     raw.emit("close", 1000, "normal");
 
-    expect(handler).toHaveBeenCalledOnce();
-    expect(handler.mock.calls[0]?.[0]).toBe(1000);
-    expect(handler.mock.calls[0]?.[1]).toBe("normal");
+    expect(callbacks.onClose).toHaveBeenCalledOnce();
+    expect(callbacks.onClose).toHaveBeenCalledWith(1000, "normal");
   });
 
-  test("error after open dispatches 'error' with Error object", async () => {
-    const { raw, handle } = await setupHandle();
-    const handler = vi.fn();
-    handle.on("error", handler);
+  test("error after open dispatches 'onError' callback with Error object", async () => {
+    const callbacks = makeMockCallbacks();
+    const { raw } = await setupHandle(callbacks);
 
     raw.emit("error", new Error("ws transport error"));
 
-    expect(handler).toHaveBeenCalledOnce();
-    const err = handler.mock.calls[0]?.[0];
+    expect(callbacks.onError).toHaveBeenCalledOnce();
+    const err = (callbacks.onError as ReturnType<typeof vi.fn>).mock.calls[0]?.[0];
     expect(err).toBeInstanceOf(Error);
     expect(err.message).toBe("ws transport error");
   });
