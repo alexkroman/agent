@@ -86,7 +86,9 @@ export type S2sEvent = ClientEvent & { _interrupted?: boolean };
 type DispatchState = { speechActive: boolean };
 
 type DispatchContext = {
+  /** Logger used for diagnostic `S2S <<` arrival logs. */
   log: Logger;
+  /** Session id threaded through diagnostic logs; omitted when undefined. */
   sid?: string;
 };
 
