@@ -146,7 +146,7 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
         if (JSON.stringify(params.data).length > 65_536) return;
         const sink = sessionSinks.get(params.sessionId);
         if (sink?.open) {
-          sink.customEvent(params.event, params.data);
+          sink.event({ type: "custom_event", event: params.event, data: params.data });
         }
       });
       console.info("Sandbox ready", { slug, agent: config.name });
