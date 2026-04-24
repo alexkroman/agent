@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Load Test: Memory per Active Session with Mock S2S
+ * Load Test: Memory per Active SessionCore with Mock S2S
  *
  * Measures host-side memory cost of real sessions using a mock S2S WebSocket.
  * Tests the full session lifecycle (session context, conversation history,
@@ -14,13 +14,13 @@ import {
   flush,
   type MockS2sHandle,
   makeAgent,
-  makeClient,
+  makeClientSink,
   makeMockHandle,
   silentLogger,
 } from "../../aai/host/_test-utils.ts";
 import { createRuntime } from "../../aai/host/runtime.ts";
-import type { Session } from "../../aai/host/session.ts";
-import { _internals } from "../../aai/host/session.ts";
+import type { SessionCore } from "../../aai/host/session-core.ts";
+import { _internals } from "../../aai/host/transports/s2s-transport.ts";
 
 // ── Stats helpers ───────────────────────────────────────────────────────
 
@@ -34,7 +34,7 @@ describe("session memory with mock S2S", () => {
   const TIERS = [1, 5, 10, 25, 50, 100];
   const MESSAGES_PER_SESSION = 5;
 
-  const sessions: Session[] = [];
+  const sessions: SessionCore[] = [];
   const mockHandles: MockS2sHandle[] = [];
   let connectSpy: ReturnType<typeof vi.spyOn>;
 
@@ -74,7 +74,7 @@ describe("session memory with mock S2S", () => {
       sessions: number;
       rssMb: number;
       deltaMb: number;
-      perSessionKb: number;
+      perSessionCoreKb: number;
       startMs: number;
     }[] = [];
 
@@ -84,7 +84,7 @@ describe("session memory with mock S2S", () => {
       // Create sessions up to this tier
       while (sessions.length < tier) {
         const idx = sessions.length;
-        const client = makeClient();
+        const client = makeClientSink();
         const session = runtime.createSession({
           id: `s-${idx}`,
           agent: agent.name,
@@ -125,15 +125,15 @@ describe("session memory with mock S2S", () => {
       if (global.gc) global.gc();
       const rss = rssMb();
       const delta = rss - baseRss;
-      const perSessionKb = tier > 0 ? (delta * 1024) / tier : 0;
+      const perSessionCoreKb = tier > 0 ? (delta * 1024) / tier : 0;
 
-      results.push({ sessions: tier, rssMb: rss, deltaMb: delta, perSessionKb, startMs });
+      results.push({ sessions: tier, rssMb: rss, deltaMb: delta, perSessionCoreKb, startMs });
 
       console.log(
         `${String(tier).padStart(5)} sessions | ` +
           `RSS ${rss.toFixed(0).padStart(5)}MB | ` +
           `delta ${delta.toFixed(1).padStart(6)}MB | ` +
-          `~${perSessionKb.toFixed(1).padStart(6)}KB/session | ` +
+          `~${perSessionCoreKb.toFixed(1).padStart(6)}KB/session | ` +
           `${startMs.toFixed(0).padStart(6)}ms`,
       );
     }
@@ -180,7 +180,7 @@ describe("session memory with mock S2S", () => {
     // Print summary table
     console.log("\n--- Summary ---");
     console.log(
-      "Sessions".padStart(8),
+      "SessionCores".padStart(8),
       "RSS(MB)".padStart(8),
       "Delta(MB)".padStart(10),
       "KB/sess".padStart(10),
@@ -192,7 +192,7 @@ describe("session memory with mock S2S", () => {
         String(r.sessions).padStart(8),
         r.rssMb.toFixed(0).padStart(8),
         r.deltaMb.toFixed(1).padStart(10),
-        r.perSessionKb.toFixed(1).padStart(10),
+        r.perSessionCoreKb.toFixed(1).padStart(10),
         r.startMs.toFixed(0).padStart(10),
       );
     }
