@@ -7,10 +7,7 @@
     "reset": {},
     "history_empty": { "messages": [] },
     "history_two": {
-      "messages": [
-        { "role": "user", "content": "hi" },
-        { "role": "assistant", "content": "hey" }
-      ]
+      "messages": [{ "role": "user", "content": "hi" }, { "role": "assistant", "content": "hey" }]
     }
   },
   "s2c": {

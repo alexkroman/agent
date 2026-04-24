@@ -66,13 +66,13 @@ exports[`export surface stability > @alexkroman1/aai/protocol export 1`] = `
 exports[`export surface stability > @alexkroman1/aai/runtime export 1`] = `
 [
   "DEFAULT_S2S_CONFIG",
-  "_buildBaseCtx",
   "_internals",
-  "buildCtx",
   "consoleLogger",
+  "createPipelineTransport",
   "createRuntime",
-  "createS2sSession",
+  "createS2sTransport",
   "createServer",
+  "createSessionCore",
   "createUnstorageKv",
   "executeInIsolate",
   "executeToolCall",
