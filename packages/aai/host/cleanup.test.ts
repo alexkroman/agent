@@ -9,17 +9,37 @@
 
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { MockWebSocket } from "./_mock-ws.ts";
-import {
-  makeClient,
-  makeMockHandle,
-  makeSessionOpts,
-  makeStubSession,
-  silentLogger,
-} from "./_test-utils.ts";
+import { makeClient, makeMockHandle, makeSessionOpts, silentLogger } from "./_test-utils.ts";
 import type { S2sHandle } from "./s2s.ts";
-import type { Session } from "./session.ts";
 import { _internals, createS2sSession, type S2sSessionOptions } from "./session.ts";
+import type { SessionCore } from "./session-core.ts";
 import { wireSessionSocket } from "./ws-handler.ts";
+
+/** Create a SessionCore-shaped mock for wireSessionSocket tests. */
+function makeMockCore(overrides?: Partial<SessionCore>): SessionCore {
+  return {
+    id: "test",
+    start: vi.fn(() => Promise.resolve()),
+    stop: vi.fn(() => Promise.resolve()),
+    onAudio: vi.fn(),
+    onAudioReady: vi.fn(),
+    onCancel: vi.fn(),
+    onReset: vi.fn(),
+    onHistory: vi.fn(),
+    onReplyStarted: vi.fn(),
+    onReplyDone: vi.fn(),
+    onCancelled: vi.fn(),
+    onAudioChunk: vi.fn(),
+    onAudioDone: vi.fn(),
+    onUserTranscript: vi.fn(),
+    onAgentTranscript: vi.fn(),
+    onToolCall: vi.fn(),
+    onError: vi.fn(),
+    onSpeechStarted: vi.fn(),
+    onSpeechStopped: vi.fn(),
+    ...overrides,
+  };
+}
 
 const defaultConfig = { audioFormat: "pcm16" as const, sampleRate: 16_000, ttsSampleRate: 24_000 };
 
@@ -27,13 +47,13 @@ const defaultConfig = { audioFormat: "pcm16" as const, sampleRate: 16_000, ttsSa
 
 describe("wireSessionSocket resource cleanup", () => {
   test("session.stop() is called exactly once on normal close", async () => {
-    const session = makeStubSession();
+    const core = makeMockCore();
     const ws = new MockWebSocket("ws://test");
     ws.readyState = MockWebSocket.OPEN;
 
     wireSessionSocket(ws, {
       sessions: new Map(),
-      createSession: () => session,
+      createSession: () => core,
       readyConfig: defaultConfig,
       logger: silentLogger,
     });
@@ -41,21 +61,20 @@ describe("wireSessionSocket resource cleanup", () => {
     ws.close();
 
     await vi.waitFor(() => {
-      expect(session.stop).toHaveBeenCalledOnce();
+      expect(core.stop).toHaveBeenCalledOnce();
     });
   });
 
   test("session is removed from sessions map even when stop() rejects", async () => {
-    const sessions = new Map<string, Session>();
-    const session = makeStubSession();
-    session.stop = vi.fn(() => Promise.reject(new Error("stop failed")));
+    const sessions = new Map<string, SessionCore>();
+    const core = makeMockCore({ stop: vi.fn(() => Promise.reject(new Error("stop failed"))) });
 
     const ws = new MockWebSocket("ws://test");
     ws.readyState = MockWebSocket.OPEN;
 
     wireSessionSocket(ws, {
       sessions,
-      createSession: () => session,
+      createSession: () => core,
       readyConfig: defaultConfig,
       logger: silentLogger,
     });
@@ -69,43 +88,42 @@ describe("wireSessionSocket resource cleanup", () => {
   });
 
   test("message buffer is cleared when start() fails", async () => {
-    const session = makeStubSession();
-    session.start = vi.fn(() => Promise.reject(new Error("start failed")));
-    const sessions = new Map<string, Session>();
+    const core = makeMockCore({ start: vi.fn(() => Promise.reject(new Error("start failed"))) });
+    const sessions = new Map<string, SessionCore>();
 
     const ws = new MockWebSocket("ws://test");
     ws.readyState = MockWebSocket.OPEN;
 
     wireSessionSocket(ws, {
       sessions,
-      createSession: () => session,
+      createSession: () => core,
       readyConfig: defaultConfig,
       logger: silentLogger,
     });
 
-    // Send messages while start is failing
-    ws.simulateMessage(JSON.stringify({ type: "audio_ready" }));
+    // Send a binary frame while start is failing (string frames are now dropped as non-binary)
+    ws.simulateMessage(new ArrayBuffer(4));
 
     await vi.waitFor(() => {
       expect(sessions.size).toBe(0);
     });
 
     // Session is null, further messages should be silently ignored (no throw)
-    ws.simulateMessage(JSON.stringify({ type: "audio_ready" }));
     ws.simulateMessage(new ArrayBuffer(4));
   });
 
   test("multiple rapid closes don't double-invoke stop()", async () => {
-    const session = makeStubSession();
-    session.stop = vi.fn(() => new Promise<void>((r) => setTimeout(r, 50)));
-    const sessions = new Map<string, Session>();
+    const core = makeMockCore({
+      stop: vi.fn(() => new Promise<void>((r) => setTimeout(r, 50))),
+    });
+    const sessions = new Map<string, SessionCore>();
 
     const ws = new MockWebSocket("ws://test");
     ws.readyState = MockWebSocket.OPEN;
 
     wireSessionSocket(ws, {
       sessions,
-      createSession: () => session,
+      createSession: () => core,
       readyConfig: defaultConfig,
       logger: silentLogger,
     });
@@ -115,18 +133,18 @@ describe("wireSessionSocket resource cleanup", () => {
     // Even if close event fires again, stop should only be called once
     // because the session reference is captured on first close
     await vi.waitFor(() => {
-      expect(session.stop).toHaveBeenCalledOnce();
+      expect(core.stop).toHaveBeenCalledOnce();
     });
   });
 
   test("close before open does not throw or leak", () => {
     const ws = new MockWebSocket("ws://test");
     ws.readyState = MockWebSocket.CONNECTING;
-    const sessions = new Map<string, Session>();
+    const sessions = new Map<string, SessionCore>();
 
     wireSessionSocket(ws, {
       sessions,
-      createSession: () => makeStubSession(),
+      createSession: () => makeMockCore(),
       readyConfig: defaultConfig,
       logger: silentLogger,
     });
@@ -137,20 +155,20 @@ describe("wireSessionSocket resource cleanup", () => {
   });
 
   test("error event after close does not throw", async () => {
-    const session = makeStubSession();
+    const core = makeMockCore();
     const ws = new MockWebSocket("ws://test");
     ws.readyState = MockWebSocket.OPEN;
 
     wireSessionSocket(ws, {
       sessions: new Map(),
-      createSession: () => session,
+      createSession: () => core,
       readyConfig: defaultConfig,
       logger: silentLogger,
     });
 
     ws.close();
     await vi.waitFor(() => {
-      expect(session.stop).toHaveBeenCalled();
+      expect(core.stop).toHaveBeenCalled();
     });
 
     // Error after close should not throw

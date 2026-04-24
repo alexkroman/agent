@@ -11,10 +11,10 @@ import {
   MAX_MESSAGE_BUFFER_SIZE,
   WS_OPEN,
 } from "../sdk/constants.ts";
-import type { ClientMessage, ClientSink, ReadyConfig } from "../sdk/protocol.ts";
-import { ClientMessageSchema, lenientParse } from "../sdk/protocol.ts";
+import type { ClientSink } from "../sdk/protocol.ts";
 import { errorDetail } from "../sdk/utils.ts";
 import {
+  decodeC2S,
   encAgentTranscript,
   encAudioChunkS2C,
   encAudioDone,
@@ -33,7 +33,7 @@ import {
 } from "../sdk/wire.ts";
 import type { Logger } from "./runtime-config.ts";
 import { consoleLogger } from "./runtime-config.ts";
-import type { Session } from "./session.ts";
+import type { SessionCore } from "./session-core.ts";
 
 /**
  * Minimal WebSocket interface accepted by {@link wireSessionSocket}.
@@ -51,11 +51,11 @@ export type SessionWebSocket = {
 /** Options for wiring a WebSocket to a session. */
 export type WsSessionOptions = {
   /** Map of active sessions (session is added on open, removed on close). */
-  sessions: Map<string, Session>;
+  sessions: Map<string, SessionCore>;
   /** Factory function to create a session for a given ID and client sink. */
-  createSession: (sessionId: string, client: ClientSink) => Session;
+  createSession: (sessionId: string, client: ClientSink) => SessionCore;
   /** Protocol config sent to the client immediately on connect. */
-  readyConfig: ReadyConfig;
+  readyConfig: { audioFormat: "pcm16"; sampleRate: number; ttsSampleRate: number };
   /** Additional key-value pairs included in log messages. */
   logContext?: Record<string, string>;
   /** Callback invoked when the WebSocket connection opens. */
@@ -152,43 +152,27 @@ function createClientSink(ws: SessionWebSocket, log: Logger): ClientSink {
   };
 }
 
-function handleBinaryAudio(data: unknown, session: Session): boolean {
-  // Buffer extends Uint8Array in Node, so this catches Buffer too.
-  if (data instanceof Uint8Array) {
-    session.onAudio(data);
-    return true;
-  }
-  if (data instanceof ArrayBuffer) {
-    session.onAudio(new Uint8Array(data));
-    return true;
-  }
-  return false;
-}
-
-function handleTextMessage(
-  data: unknown,
-  session: Session,
-  log: Logger,
-  ctx: Record<string, string>,
-  sid: string,
-): void {
-  if (typeof data !== "string") return;
-  let json: unknown;
-  try {
-    json = JSON.parse(data);
-  } catch {
-    log.warn("Invalid JSON from client", { ...ctx, sid });
+/**
+ * Decode a single inbound binary wire frame and dispatch to the appropriate
+ * SessionCore method. Non-binary frames and decode failures are dropped with
+ * a warning — the connection is never closed on a bad frame (§5.1).
+ */
+function handleFrame(data: unknown, session: SessionCore, log: Logger, sid: string): void {
+  if (!(data instanceof Uint8Array)) {
+    // Node `ws` delivers Buffer which extends Uint8Array, so this is the hot path.
+    // Strings are not expected on the new protocol — drop.
+    log.warn("ws: non-binary frame received; dropping", { sid });
     return;
   }
-
-  const parsed = lenientParse(ClientMessageSchema, json);
-  if (!parsed.ok) {
-    if (parsed.malformed) log.warn("Invalid client message", { ...ctx, sid, error: parsed.error });
+  const result = decodeC2S(data);
+  if (!result.ok) {
+    log.warn("ws: wire decode failed", { sid, reason: result.reason });
     return;
   }
-
-  const msg: ClientMessage = parsed.data;
-  switch (msg.type) {
+  switch (result.data.type) {
+    case "audio_chunk":
+      session.onAudio(result.data.pcm);
+      break;
     case "audio_ready":
       session.onAudioReady();
       break;
@@ -199,21 +183,22 @@ function handleTextMessage(
       session.onReset();
       break;
     case "history":
-      session.onHistory(msg.messages);
+      session.onHistory(result.data.messages);
       break;
     default:
+      // Exhaustive — decodeC2S only returns known C2S types above.
       break;
   }
 }
 
 /**
  * Attaches session lifecycle handlers to a native WebSocket using
- * plain JSON text frames and binary audio frames.
+ * tagged binary wire frames for all messages (see sdk/wire.ts).
  *
  * Connection flow:
- * 1. WebSocket opens → server sends `{ type: "config", ...ReadyConfig }`
- * 2. Client sets up audio → sends `{ type: "audio_ready" }`
- * 3. If reconnecting → client sends `{ type: "history", messages: [...] }`
+ * 1. WebSocket opens → server sends CONFIG binary frame with sampleRate, ttsSampleRate, sid
+ * 2. Client sets up audio → sends AUDIO_READY binary frame
+ * 3. If reconnecting → client sends HISTORY binary frame with prior messages
  */
 export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions): void {
   const { sessions, logger: log = consoleLogger } = opts;
@@ -221,10 +206,10 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
   const sid = sessionId.slice(0, 8);
   const ctx = opts.logContext ?? {};
 
-  let session: Session | null = null;
+  let session: SessionCore | null = null;
   /** Set to true once session.start() resolves. Messages arriving before
    *  this flag is set are buffered and replayed once the session is ready,
-   *  preventing audio/text from being dispatched to a half-initialized session. */
+   *  preventing audio/frames from being dispatched to a half-initialized session. */
   let sessionReady = false;
   let messageBuffer: { data: unknown }[] | null = [];
 
@@ -232,11 +217,7 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
     if (!(session && messageBuffer)) return;
     const buf = messageBuffer;
     messageBuffer = null;
-    for (const event of buf) {
-      const { data } = event;
-      if (handleBinaryAudio(data, session)) continue;
-      handleTextMessage(data, session, log, ctx, sid);
-    }
+    for (const event of buf) handleFrame(event.data, session, log, sid);
   }
 
   function onOpen(): void {
@@ -248,9 +229,15 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
     sessions.set(sessionId, session);
     opts.onSinkCreated?.(sessionId, client);
 
-    // Send config immediately — zero RTT. Include sessionId so the client
-    // can reconnect with ?sessionId=<id> to resume a persisted session.
-    ws.send(JSON.stringify({ type: "config", ...opts.readyConfig, sessionId }));
+    // Send config immediately — zero RTT. Include sessionId (as sid) so the
+    // client can reconnect with ?sessionId=<id> to resume a persisted session.
+    ws.send(
+      encConfig({
+        sampleRate: opts.readyConfig.sampleRate,
+        ttsSampleRate: opts.readyConfig.ttsSampleRate,
+        sid: sessionId,
+      }),
+    );
 
     const timeoutMs = opts.sessionStartTimeoutMs ?? DEFAULT_SESSION_START_TIMEOUT_MS;
     const startWithTimeout = pTimeout(session.start(), {
@@ -282,17 +269,14 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
   ws.addEventListener("message", (event) => {
     if (!session) return;
     // Buffer messages until session.start() completes to avoid dispatching
-    // to a session whose S2S connection isn't established yet.
+    // to a session whose transport connection isn't established yet.
     if (!sessionReady) {
       if (messageBuffer && messageBuffer.length < MAX_MESSAGE_BUFFER_SIZE) {
         messageBuffer.push(event);
       }
       return;
     }
-    const { data } = event;
-
-    if (handleBinaryAudio(data, session)) return;
-    handleTextMessage(data, session, log, ctx, sid);
+    handleFrame(event.data, session, log, sid);
   });
 
   ws.addEventListener("close", () => {
