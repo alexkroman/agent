@@ -326,21 +326,24 @@ export function createFakeLanguageModel(
   options:
     | { script: ScriptedPart[]; delayMs?: number }
     | { steps: ScriptedPart[][]; delayMs?: number },
-): LanguageModel {
+): LanguageModel & { readonly calls: readonly Record<string, unknown>[] } {
   const delayMs = options.delayMs;
   const steps: ScriptedPart[][] = "steps" in options ? options.steps : [options.script];
   let stepIndex = 0;
+  const calls: Record<string, unknown>[] = [];
   const model = {
     specificationVersion: "v3" as const,
     provider: "fake-llm",
     modelId: "fake-llm-1",
     supportedUrls: {} as Record<string, RegExp[]>,
+    calls,
     async doGenerate(): Promise<never> {
       throw new Error("fake LLM: doGenerate not implemented");
     },
-    async doStream(opts: { abortSignal?: AbortSignal }): Promise<{
+    async doStream(opts: Record<string, unknown> & { abortSignal?: AbortSignal }): Promise<{
       stream: ReadableStream<StreamPart>;
     }> {
+      calls.push(opts);
       // Advance one step per call; after the last scripted step, keep
       // yielding an empty step so an unexpected extra call completes cleanly.
       const current = steps[stepIndex] ?? [];
@@ -353,5 +356,5 @@ export function createFakeLanguageModel(
       return { stream };
     },
   };
-  return model as unknown as LanguageModel;
+  return model as unknown as LanguageModel & { readonly calls: readonly Record<string, unknown>[] };
 }
