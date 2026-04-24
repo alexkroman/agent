@@ -13,7 +13,24 @@ import {
 } from "../sdk/constants.ts";
 import type { ClientMessage, ClientSink, ReadyConfig } from "../sdk/protocol.ts";
 import { ClientMessageSchema, lenientParse } from "../sdk/protocol.ts";
-import { errorDetail, errorMessage } from "../sdk/utils.ts";
+import { errorDetail } from "../sdk/utils.ts";
+import {
+  encAgentTranscript,
+  encAudioChunkS2C,
+  encAudioDone,
+  encCancelled,
+  encConfig,
+  encCustomEvent,
+  encError,
+  encIdleTimeout,
+  encReplyDone,
+  encResetS2C,
+  encSpeechStarted,
+  encSpeechStopped,
+  encToolCall,
+  encToolCallDone,
+  encUserTranscript,
+} from "../sdk/wire.ts";
 import type { Logger } from "./runtime-config.ts";
 import { consoleLogger } from "./runtime-config.ts";
 import type { Session } from "./session.ts";
@@ -60,34 +77,77 @@ export type WsSessionOptions = {
 /**
  * Creates a {@link ClientSink} backed by a plain WebSocket.
  *
- * Text events are sent as JSON text frames; audio chunks are sent as
- * binary frames (zero-copy).
+ * All events are sent as tagged binary wire frames (see sdk/wire.ts).
  */
 function createClientSink(ws: SessionWebSocket, log: Logger): ClientSink {
-  /** Send data over ws, silently dropping if the socket is not open. */
-  function safeSend(data: string | ArrayBuffer | Uint8Array): void {
+  function safeSend(data: Uint8Array): void {
     try {
       if (ws.readyState !== WS_OPEN) return;
       ws.send(data);
     } catch (err) {
       log.debug?.("safeSend: socket closed between readyState check and send", {
-        error: errorMessage(err),
+        error: err instanceof Error ? err.message : String(err),
       });
     }
   }
-
   return {
     get open() {
       return ws.readyState === WS_OPEN;
     },
-    event(e) {
-      safeSend(JSON.stringify(e));
+    config(cfg) {
+      safeSend(encConfig(cfg));
     },
-    playAudioChunk(chunk) {
-      safeSend(chunk);
+    audio(chunk) {
+      safeSend(encAudioChunkS2C(chunk));
     },
-    playAudioDone() {
-      safeSend(JSON.stringify({ type: "audio_done" }));
+    audioDone() {
+      safeSend(encAudioDone());
+    },
+    speechStarted() {
+      safeSend(encSpeechStarted());
+    },
+    speechStopped() {
+      safeSend(encSpeechStopped());
+    },
+    userTranscript(text) {
+      safeSend(encUserTranscript(text));
+    },
+    agentTranscript(text) {
+      safeSend(encAgentTranscript(text));
+    },
+    toolCall(id, name, args) {
+      const frame = encToolCall(id, name, args);
+      if (frame === null) {
+        log.warn("tool_call: failed to serialize args", { name });
+        return;
+      }
+      safeSend(frame);
+    },
+    toolCallDone(id, result) {
+      safeSend(encToolCallDone(id, result));
+    },
+    replyDone() {
+      safeSend(encReplyDone());
+    },
+    cancelled() {
+      safeSend(encCancelled());
+    },
+    reset() {
+      safeSend(encResetS2C());
+    },
+    idleTimeout() {
+      safeSend(encIdleTimeout());
+    },
+    error(code, message) {
+      safeSend(encError(code, message));
+    },
+    customEvent(name, data) {
+      const frame = encCustomEvent(name, data);
+      if (frame === null) {
+        log.warn("custom_event: failed to serialize data", { name });
+        return;
+      }
+      safeSend(frame);
     },
   };
 }
