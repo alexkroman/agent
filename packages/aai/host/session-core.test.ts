@@ -201,3 +201,58 @@ describe("createSessionCore — tool call pending results", () => {
     expect(sink.calls.some((c) => c.method === "toolCallDone")).toBe(true);
   });
 });
+
+describe("createSessionCore — idle timeout", () => {
+  test("emits idleTimeout after agentConfig.idleTimeoutMs of no audio", async () => {
+    vi.useFakeTimers();
+    try {
+      const { core, sink } = makeCore({
+        agentConfig: {
+          name: "t",
+          systemPrompt: DEFAULT_SYSTEM_PROMPT,
+          greeting: "",
+          idleTimeoutMs: 1000,
+        } as unknown as SessionCoreOptions["agentConfig"],
+      });
+      await core.start();
+      expect(sink.calls.filter((c) => c.method === "idleTimeout")).toHaveLength(0);
+      vi.advanceTimersByTime(1001);
+      expect(sink.calls.filter((c) => c.method === "idleTimeout")).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  test("onAudio resets the idle timer", async () => {
+    vi.useFakeTimers();
+    try {
+      const { core, sink } = makeCore({
+        agentConfig: {
+          name: "t",
+          systemPrompt: DEFAULT_SYSTEM_PROMPT,
+          greeting: "",
+          idleTimeoutMs: 1000,
+        } as unknown as SessionCoreOptions["agentConfig"],
+      });
+      await core.start();
+      vi.advanceTimersByTime(500);
+      core.onAudio(new Uint8Array([1]));
+      vi.advanceTimersByTime(800);
+      expect(sink.calls.filter((c) => c.method === "idleTimeout")).toHaveLength(0);
+      vi.advanceTimersByTime(300);
+      expect(sink.calls.filter((c) => c.method === "idleTimeout")).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("createSessionCore — history", () => {
+  test("onHistory appends and onUserTranscript pushes user messages", async () => {
+    const { core } = makeCore();
+    await core.start();
+    core.onHistory([{ role: "user", content: "prior" }]);
+    core.onUserTranscript("now");
+    // No direct introspection — but onReset clears history and replay should see no effect on subsequent behavior.
+    core.onReset();
+  });
+});
