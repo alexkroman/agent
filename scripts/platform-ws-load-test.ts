@@ -629,6 +629,24 @@ async function runSessionAttempt(
         }
         // Frame loop finished — start the stall timer for this turn's reply.
         startPerTurnTimer(myTurn);
+        // Keep streaming silence so AssemblyAI Universal-Streaming can
+        // detect end-of-turn. Its VAD needs acoustic silence *in the
+        // stream*, not stream inactivity — real browsers never close the
+        // mic, so silence is always flowing. Without this, utterances
+        // that don't happen to end with TTS-baked trailing silence leave
+        // AssemblyAI waiting forever, and reply_done never fires.
+        // Don't touch lastUserFrameAt here or turn-latency measurement
+        // would collapse to ~chunkMs for every turn.
+        const silenceFrame = new Uint8Array(frames[0]!.byteLength);
+        while (
+          !done &&
+          waitingForReply &&
+          !recordedLatencyThisTurn &&
+          ws.readyState === ws.OPEN
+        ) {
+          ws.send(silenceFrame);
+          await sleep(cfg.chunkMs);
+        }
       } finally {
         streamInFlight = false;
         if (nextTurnPending && !done) {
