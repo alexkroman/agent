@@ -84,7 +84,7 @@ function createClientSink(ws: SessionWebSocket, log: Logger): ClientSink {
       safeSend(chunk);
     },
     playAudioDone() {
-      safeSend(JSON.stringify({ type: "audio_done" }));
+      safeSend(JSON.stringify({ type: "audio_done" } satisfies { type: "audio_done" }));
     },
   };
 }
@@ -111,7 +111,10 @@ function handleTextMessage(data: unknown, session: SessionCore, log: Logger, sid
   }
   const result = lenientParse(ClientMessageSchema, parsed);
   if (!result.ok) {
-    log.warn("ws: unrecognised client message", { sid, issues: result.error });
+    if (result.malformed) {
+      log.warn("ws: malformed client message", { sid, error: result.error });
+    }
+    // else: unrecognised type — silently drop (rolling-upgrade tolerance)
     return;
   }
   switch (result.data.type) {
