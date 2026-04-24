@@ -13,6 +13,9 @@ import {
 } from "../s2s.ts";
 import type { Transport, TransportCallbacks, TransportSessionConfig } from "./types.ts";
 
+/** @internal Exposed for testing — allows spying on connectS2s in unit tests. */
+export const _internals = { connectS2s };
+
 export type S2sTransportOptions = {
   apiKey: string;
   s2sConfig: S2SConfig;
@@ -32,7 +35,7 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
   let currentReplyId: string | null = null;
 
   async function start(): Promise<void> {
-    handle = await connectS2s({
+    handle = await _internals.connectS2s({
       apiKey: opts.apiKey,
       config: opts.s2sConfig,
       createWebSocket: createWs,

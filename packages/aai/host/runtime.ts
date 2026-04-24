@@ -23,16 +23,19 @@ import {
   type TtsOpener,
   type TtsProvider,
 } from "../sdk/providers.ts";
+import { buildSystemPrompt } from "../sdk/system-prompt.ts";
 import type { AgentDef } from "../sdk/types.ts";
 import { toolError } from "../sdk/utils.ts";
 import { resolveAllBuiltins } from "./builtin-tools.ts";
-import { createPipelineSession } from "./pipeline-session.ts";
 import { resolveApiKey, resolveLlm, resolveStt, resolveTts } from "./providers/resolve.ts";
 import type { Logger, S2SConfig } from "./runtime-config.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime-config.ts";
 import type { CreateS2sWebSocket } from "./s2s.ts";
-import { createS2sSession, type Session } from "./session.ts";
+import { createSessionCore, type SessionCore } from "./session-core.ts";
 import { type ExecuteTool, executeToolCall } from "./tool-executor.ts";
+import { createPipelineTransport } from "./transports/pipeline-transport.ts";
+import { createS2sTransport } from "./transports/s2s-transport.ts";
+import type { Transport, TransportCallbacks } from "./transports/types.ts";
 import { createUnstorageKv } from "./unstorage-kv.ts";
 import { type SessionWebSocket, wireSessionSocket } from "./ws-handler.ts";
 
@@ -189,7 +192,7 @@ export type Runtime = AgentRuntime & {
     client: ClientSink;
     skipGreeting?: boolean;
     resumeFrom?: string;
-  }): Session;
+  }): SessionCore;
 };
 
 /**
@@ -217,7 +220,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   } = opts;
   const mode = assertProviderTriple(opts.stt, opts.llm, opts.tts);
   const agentConfig = toAgentConfig(agent);
-  const sessions = new Map<string, Session>();
+  const sessions = new Map<string, SessionCore>();
   const sinkMap = new Map<string, ClientSink>();
   const readyConfig: ReadyConfig = buildReadyConfig(s2sConfig);
 
@@ -284,7 +287,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
         kv,
         messages,
         logger,
-        send: sink ? (event, data) => sink.event({ type: "custom_event", event, data }) : undefined,
+        send: sink ? (event, data) => sink.customEvent(event, data) : undefined,
       });
     };
   }
@@ -310,44 +313,99 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     client: ClientSink;
     skipGreeting?: boolean;
     resumeFrom?: string;
-  }): Session {
+  }): SessionCore {
     sinkMap.set(sessionOpts.id, sessionOpts.client);
+
+    const isPipeline = Boolean(pipelineProviders);
+    const hasTools = toolSchemas.length > 0 || (agentConfig.builtinTools?.length ?? 0) > 0;
+    const systemPrompt = buildSystemPrompt(agentConfig, {
+      hasTools,
+      voice: true,
+      toolGuidance,
+    });
+
+    // Late-bound reference: callbacks are constructed before SessionCore exists,
+    // so we capture a reference and fill it in below.
+    let core: SessionCore | null = null;
+    function bindCore(): SessionCore {
+      if (!core) throw new Error("SessionCore not yet created");
+      return core;
+    }
+
+    const callbacks: TransportCallbacks = {
+      onReplyStarted: (replyId) => bindCore().onReplyStarted(replyId),
+      onReplyDone: () => bindCore().onReplyDone(),
+      onCancelled: () => bindCore().onCancelled(),
+      onAudioChunk: (bytes) => bindCore().onAudioChunk(bytes),
+      onAudioDone: () => bindCore().onAudioDone(),
+      onUserTranscript: (text) => bindCore().onUserTranscript(text),
+      onAgentTranscript: (text, interrupted) => bindCore().onAgentTranscript(text, interrupted),
+      // Issue 1 fix: pipeline tools execute inline via streamText; routing
+      // onToolCall through SessionCore.onToolCall would double-execute them
+      // and leave pendingTools non-empty, hanging the turn. Instead, send
+      // directly to the client sink for observability only.
+      onToolCall: isPipeline
+        ? (id, name, args) => sessionOpts.client.toolCall(id, name, args)
+        : (id, name, args) => bindCore().onToolCall(id, name, args),
+      onError: (code, message) => bindCore().onError(code, message),
+      onSpeechStarted: () => bindCore().onSpeechStarted(),
+      onSpeechStopped: () => bindCore().onSpeechStopped(),
+    };
+
+    let transport: Transport;
     if (pipelineProviders) {
-      return createPipelineSession({
-        id: sessionOpts.id,
+      transport = createPipelineTransport({
+        sid: sessionOpts.id,
         agent: sessionOpts.agent,
-        client: sessionOpts.client,
-        agentConfig,
-        toolSchemas,
-        toolGuidance,
-        executeTool,
         stt: pipelineProviders.stt,
         llm: pipelineProviders.llm,
         tts: pipelineProviders.tts,
-        sttApiKey: resolveApiKey("ASSEMBLYAI_API_KEY", env),
-        ttsApiKey: resolveApiKey("CARTESIA_API_KEY", env),
+        callbacks,
+        sessionConfig: {
+          systemPrompt,
+          greeting: agentConfig.greeting,
+          tools: toolSchemas,
+        },
+        toolSchemas,
+        executeTool,
+        providerKeys: {
+          stt: resolveApiKey("ASSEMBLYAI_API_KEY", env),
+          tts: resolveApiKey("CARTESIA_API_KEY", env),
+        },
         sttSampleRate: s2sConfig.inputSampleRate,
         ttsSampleRate: s2sConfig.outputSampleRate,
         skipGreeting: sessionOpts.skipGreeting ?? false,
         logger,
       });
+    } else {
+      transport = createS2sTransport({
+        apiKey: env.ASSEMBLYAI_API_KEY ?? "",
+        s2sConfig,
+        sessionConfig: {
+          systemPrompt,
+          tools: toolSchemas as import("./s2s.ts").S2sToolSchema[],
+          ...(agentConfig.greeting !== undefined ? { greeting: agentConfig.greeting } : {}),
+        },
+        toolSchemas: toolSchemas as import("./s2s.ts").S2sToolSchema[],
+        callbacks,
+        sid: sessionOpts.id,
+        agent: sessionOpts.agent,
+        ...(createWebSocket ? { createWebSocket } : {}),
+        logger,
+      });
     }
-    const apiKey = env.ASSEMBLYAI_API_KEY ?? "";
-    return createS2sSession({
+
+    core = createSessionCore({
       id: sessionOpts.id,
       agent: sessionOpts.agent,
       client: sessionOpts.client,
       agentConfig,
-      toolSchemas,
-      toolGuidance,
-      apiKey,
-      s2sConfig,
       executeTool,
-      ...(createWebSocket ? { createWebSocket } : {}),
-      skipGreeting: sessionOpts.skipGreeting ?? false,
+      transport,
       logger,
-      ...(sessionOpts.resumeFrom ? { resumeFrom: sessionOpts.resumeFrom } : {}),
     });
+
+    return core;
   }
 
   // ── AgentRuntime methods ──────────────────────────────────────────────

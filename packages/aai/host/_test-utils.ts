@@ -120,6 +120,33 @@ export function makeClient(): ClientSink & {
   };
 }
 
+/**
+ * Minimal ClientSink stub that satisfies the new interface.
+ * All methods are vi.fn() spies. Use in tests that need a valid ClientSink
+ * but don't need to inspect event payloads (e.g. routing / creation tests).
+ */
+export function makeClientSink(overrides?: Partial<ClientSink>): ClientSink {
+  return {
+    open: true,
+    config: vi.fn(),
+    audio: vi.fn(),
+    audioDone: vi.fn(),
+    speechStarted: vi.fn(),
+    speechStopped: vi.fn(),
+    userTranscript: vi.fn(),
+    agentTranscript: vi.fn(),
+    toolCall: vi.fn(),
+    toolCallDone: vi.fn(),
+    replyDone: vi.fn(),
+    cancelled: vi.fn(),
+    reset: vi.fn(),
+    idleTimeout: vi.fn(),
+    error: vi.fn(),
+    customEvent: vi.fn(),
+    ...overrides,
+  };
+}
+
 export const silentLogger: {
   info: (...args: unknown[]) => void;
   warn: (...args: unknown[]) => void;
