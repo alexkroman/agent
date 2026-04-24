@@ -1,5 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 import { DEFAULT_SYSTEM_PROMPT } from "../sdk/types.ts";
+import { flush } from "./_test-utils.ts";
 import type { SessionCore, SessionCoreOptions } from "./session-core.ts";
 import { createSessionCore } from "./session-core.ts";
 import type { Transport } from "./transports/types.ts";
@@ -190,13 +191,13 @@ describe("createSessionCore — tool call pending results", () => {
     await core.start();
     core.onReplyStarted("r1");
     core.onToolCall("cid", "my_tool", {});
-    // Let the pending tool promise resolve
-    await new Promise((r) => setImmediate(r));
+    // Let the async tool IIFE settle and push to pendingTools
+    await flush();
     core.onReplyDone();
-    // onReplyDone waits on turnPromise before firing tool results
-    await new Promise((r) => setImmediate(r));
-    await new Promise((r) => setImmediate(r));
-    expect(transport.sendToolResult).toHaveBeenCalledWith("cid", "tool-output");
+    // Poll until tool results are forwarded and toolCallDone fires
+    await vi.waitFor(() =>
+      expect(transport.sendToolResult).toHaveBeenCalledWith("cid", "tool-output"),
+    );
     expect(sink.calls.some((c) => c.method === "toolCallDone")).toBe(true);
   });
 });
