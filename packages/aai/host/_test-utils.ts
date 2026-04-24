@@ -131,7 +131,7 @@ export function loadFixture<T = Record<string, unknown>[]>(name: string): T {
   return JSON.parse(readFileSync(resolve(FIXTURE_DIR, name), "utf-8"));
 }
 
-// ─── V2 fixture session helpers (transport-layer spy) ───────────────────────
+// ─── Fixture session helpers (transport-layer spy) ──────────────────────────
 
 /**
  * A tracking ClientSink that records all calls into typed arrays for easy
@@ -270,7 +270,7 @@ export function fireFixtureMessage(callbacks: S2sCallbacks, msg: Record<string, 
 }
 
 /**
- * Create a real Runtime-backed session for fixture replay testing (V2).
+ * Create a real Runtime-backed session for fixture replay testing.
  *
  * Spies on s2s-transport.ts `_internals.connectS2s` (the transport-layer seam
  * added in Task 15) so that captured S2sCallbacks can be fired directly —
@@ -281,7 +281,7 @@ export function fireFixtureMessage(callbacks: S2sCallbacks, msg: Record<string, 
  *
  * Call `cleanup()` in afterEach to restore the spy.
  */
-export function createFixtureSessionV2(
+export function createFixtureSession(
   // biome-ignore lint/suspicious/noExplicitAny: test helper accepts any agent state type
   agent: AgentDef<any>,
   opts?: { env?: Record<string, string> },

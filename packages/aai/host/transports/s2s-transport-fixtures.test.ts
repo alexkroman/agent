@@ -10,7 +10,7 @@
  * → executeToolCall → session orchestration (reply guards, tool buffering,
  * turnPromise chaining, conversation history).
  *
- * Migrated from host/fixture-replay.test.ts (Task 19). Uses createFixtureSessionV2
+ * Migrated from host/fixture-replay.test.ts (Task 19). Uses createFixtureSession
  * which spies on s2s-transport.ts _internals.connectS2s and fires S2sCallbacks
  * directly — no nanoevents / old S2sEvents system.
  */
@@ -18,7 +18,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import type { AgentDef } from "../../sdk/types.ts";
-import { createFixtureSessionV2, flush } from "../_test-utils.ts";
+import { createFixtureSession, flush } from "../_test-utils.ts";
 
 // ─── Test agents with deterministic tools ────────────────────────────────────
 
@@ -81,7 +81,7 @@ describe("fixture replay with real executor (transport layer)", () => {
   // ── Tool call: real Zod validation + real tool execution ───────────────
 
   test("tool call fixture: Zod validates args, real tool executes, result sent to S2S", async () => {
-    const ctx = createFixtureSessionV2(weatherAgent);
+    const ctx = createFixtureSession(weatherAgent);
     cleanup = ctx.cleanup;
     await ctx.start();
 
@@ -103,7 +103,7 @@ describe("fixture replay with real executor (transport layer)", () => {
   });
 
   test("tool call fixture: client receives tool_call with validated args", async () => {
-    const ctx = createFixtureSessionV2(weatherAgent);
+    const ctx = createFixtureSession(weatherAgent);
     cleanup = ctx.cleanup;
     await ctx.start();
 
@@ -117,7 +117,7 @@ describe("fixture replay with real executor (transport layer)", () => {
   });
 
   test("tool call fixture: conversation history accumulates user + assistant messages", async () => {
-    const ctx = createFixtureSessionV2(weatherAgent);
+    const ctx = createFixtureSession(weatherAgent);
     cleanup = ctx.cleanup;
     await ctx.start();
 
@@ -134,7 +134,7 @@ describe("fixture replay with real executor (transport layer)", () => {
   // ── Simple question: no tools, just session lifecycle ──────────────────
 
   test("simple question fixture: greeting + agent response reach client", async () => {
-    const ctx = createFixtureSessionV2(simpleAgent);
+    const ctx = createFixtureSession(simpleAgent);
     cleanup = ctx.cleanup;
     await ctx.start();
 
@@ -145,7 +145,7 @@ describe("fixture replay with real executor (transport layer)", () => {
   });
 
   test("simple question fixture: user speech events forwarded to client", async () => {
-    const ctx = createFixtureSessionV2(simpleAgent);
+    const ctx = createFixtureSession(simpleAgent);
     cleanup = ctx.cleanup;
     await ctx.start();
 
@@ -160,7 +160,7 @@ describe("fixture replay with real executor (transport layer)", () => {
   // ── Stateful agent: session state persists across tool calls ───────────
 
   test("stateful agent: tool accesses and mutates session state", async () => {
-    const ctx = createFixtureSessionV2(statefulAgent);
+    const ctx = createFixtureSession(statefulAgent);
     cleanup = ctx.cleanup;
     await ctx.start();
 
@@ -178,7 +178,7 @@ describe("fixture replay with real executor (transport layer)", () => {
   // ── Greeting only: session lifecycle without user audio ────────────────
 
   test("greeting fixture: session setup completes with reply_done", async () => {
-    const ctx = createFixtureSessionV2(simpleAgent);
+    const ctx = createFixtureSession(simpleAgent);
     cleanup = ctx.cleanup;
     await ctx.start();
 
@@ -192,7 +192,7 @@ describe("fixture replay with real executor (transport layer)", () => {
   // ── Tool schemas: real agent produces correct S2S tool schemas ─────────
 
   test("real executor builds correct tool schemas from AgentDef", () => {
-    const ctx = createFixtureSessionV2(weatherAgent);
+    const ctx = createFixtureSession(weatherAgent);
     cleanup = ctx.cleanup;
 
     const schema = ctx.executor.toolSchemas.find((s) => s.name === "get_weather");
@@ -224,7 +224,7 @@ describe("fixture replay with real executor (transport layer)", () => {
       },
     };
 
-    const ctx = createFixtureSessionV2(agent);
+    const ctx = createFixtureSession(agent);
     cleanup = ctx.cleanup;
     await ctx.start();
 
@@ -259,7 +259,7 @@ describe("fixture replay with real executor (transport layer)", () => {
       },
     };
 
-    const ctx = createFixtureSessionV2(agent);
+    const ctx = createFixtureSession(agent);
     cleanup = ctx.cleanup;
     await ctx.start();
 
@@ -297,7 +297,7 @@ describe("fixture replay with real executor (transport layer)", () => {
       },
     };
 
-    const ctx = createFixtureSessionV2(agent);
+    const ctx = createFixtureSession(agent);
     cleanup = ctx.cleanup;
     await ctx.start();
 
@@ -355,7 +355,7 @@ describe("fixture replay with real executor (transport layer)", () => {
       },
     };
 
-    const ctx = createFixtureSessionV2(agent);
+    const ctx = createFixtureSession(agent);
     cleanup = ctx.cleanup;
     await ctx.start();
 
@@ -370,7 +370,7 @@ describe("fixture replay with real executor (transport layer)", () => {
   // ── Audio chunks forwarded to client.audio ─────────────────────────────
 
   test("reply.audio events forwarded to client.audio", async () => {
-    const ctx = createFixtureSessionV2(simpleAgent);
+    const ctx = createFixtureSession(simpleAgent);
     cleanup = ctx.cleanup;
     await ctx.start();
 
@@ -401,7 +401,7 @@ describe("fixture replay with real executor (transport layer)", () => {
       },
     };
 
-    const ctx = createFixtureSessionV2(agent);
+    const ctx = createFixtureSession(agent);
     cleanup = ctx.cleanup;
     await ctx.start();
 
