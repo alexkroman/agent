@@ -10,10 +10,12 @@ import { z } from "zod";
 import { validateAllowedHostPattern } from "./allowed-hosts.ts";
 import {
   assertProviderTriple,
+  type KvProvider,
   type LlmProvider,
   type SessionMode,
   type SttProvider,
   type TtsProvider,
+  type VectorProvider,
 } from "./providers.ts";
 import { BuiltinToolSchema, DEFAULT_GREETING, DEFAULT_SYSTEM_PROMPT } from "./types.ts";
 
@@ -69,6 +71,16 @@ export type Manifest = {
    */
   tts?: TtsProvider | undefined;
   /**
+   * Pluggable KV provider — exposed to tools via `ctx.kv`. Defaults to an
+   * in-memory store when unset. Factories live in `@alexkroman1/aai/kv`.
+   */
+  kv?: KvProvider | undefined;
+  /**
+   * Pluggable vector store — exposed to tools via `ctx.vector`. Unset means
+   * `ctx.vector` is unavailable. Factories live in `@alexkroman1/aai/vector`.
+   */
+  vector?: VectorProvider | undefined;
+  /**
    * Session mode derived from provider fields:
    * - `"s2s"` (default): AssemblyAI Streaming Speech-to-Speech path (no stt/llm/tts set).
    * - `"pipeline"`: pluggable STT → LLM → TTS path (stt + llm + tts all set).
@@ -121,6 +133,8 @@ const ManifestSchema = z.object({
   stt: ProviderDescriptorSchema.optional(),
   llm: ProviderDescriptorSchema.optional(),
   tts: ProviderDescriptorSchema.optional(),
+  kv: ProviderDescriptorSchema.optional(),
+  vector: ProviderDescriptorSchema.optional(),
 });
 
 /**
@@ -150,6 +164,8 @@ export function parseManifest(input: unknown): Manifest {
     stt: parsed.stt,
     llm: parsed.llm,
     tts: parsed.tts,
+    kv: parsed.kv,
+    vector: parsed.vector,
     mode,
   };
 }

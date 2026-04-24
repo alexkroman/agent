@@ -59,10 +59,45 @@ type KvAdapter = {
   delete(key: string | string[]): Promise<void>;
 };
 
+// Minimal Vector-shaped adapter passed to tool contexts (mirrors sdk/vector.ts).
+type VectorAdapterRecord = {
+  id: string;
+  values: number[];
+  metadata?: Record<string, unknown>;
+};
+type VectorAdapterMatch = {
+  id: string;
+  score: number;
+  metadata?: Record<string, unknown>;
+  values?: number[];
+};
+type VectorAdapterQuery = {
+  vector?: number[];
+  id?: string;
+  topK?: number;
+  filter?: Record<string, unknown>;
+  includeValues?: boolean;
+  includeMetadata?: boolean;
+  namespace?: string;
+};
+type VectorAdapter = {
+  upsert(
+    records: VectorAdapterRecord | VectorAdapterRecord[],
+    options?: { namespace?: string },
+  ): Promise<void>;
+  query(query: VectorAdapterQuery): Promise<VectorAdapterMatch[]>;
+  delete(
+    ids: string | string[],
+    options?: { namespace?: string; deleteAll?: boolean },
+  ): Promise<void>;
+  fetch(ids: string | string[], options?: { namespace?: string }): Promise<VectorAdapterRecord[]>;
+};
+
 type ToolContext = {
   env: Readonly<Record<string, string>>;
   state: Record<string, unknown>;
   kv: KvAdapter;
+  vector: VectorAdapter;
   sessionId: string;
   messages: readonly Message[];
   send(event: string, data: unknown): void;
@@ -293,6 +328,46 @@ export function makeKvAdapter(): KvAdapter {
   };
 }
 
+// ---- Vector proxy -----------------------------------------------------------
+
+/**
+ * Adapter that forwards vector-store operations to the host via the same
+ * NDJSON request channel used for `kv/*`. Throws a clear error when the
+ * agent didn't configure a vector store — the host responds with a JSON-RPC
+ * error which we surface as-is.
+ */
+export function makeVectorAdapter(): VectorAdapter {
+  return {
+    async upsert(records, options): Promise<void> {
+      const arr = Array.isArray(records) ? records : [records];
+      await kvRequest("vector/upsert", {
+        records: arr,
+        ...(options?.namespace ? { namespace: options.namespace } : {}),
+      });
+    },
+    async query(query: VectorAdapterQuery): Promise<VectorAdapterMatch[]> {
+      const result = (await kvRequest("vector/query", query)) as VectorAdapterMatch[] | undefined;
+      return result ?? [];
+    },
+    async delete(ids, options): Promise<void> {
+      const arr = Array.isArray(ids) ? ids : [ids];
+      await kvRequest("vector/delete", {
+        ids: arr,
+        ...(options?.namespace ? { namespace: options.namespace } : {}),
+        ...(options?.deleteAll ? { deleteAll: true } : {}),
+      });
+    },
+    async fetch(ids, options): Promise<VectorAdapterRecord[]> {
+      const arr = Array.isArray(ids) ? ids : [ids];
+      const result = (await kvRequest("vector/fetch", {
+        ids: arr,
+        ...(options?.namespace ? { namespace: options.namespace } : {}),
+      })) as VectorAdapterRecord[] | undefined;
+      return result ?? [];
+    },
+  };
+}
+
 // ---- Agent env --------------------------------------------------------------
 
 let _bundleEnv: Readonly<Record<string, string>> = Object.freeze({});
@@ -360,10 +435,12 @@ export async function executeTool(
   }
 
   const kvAdapter = makeKvAdapter();
+  const vectorAdapter = makeVectorAdapter();
   const ctx: ToolContext = {
     env: getAgentEnv(),
     state: sessionState.get(req.sessionId),
     kv: kvAdapter,
+    vector: vectorAdapter,
     messages: req.messages,
     sessionId: req.sessionId,
     send: (event, data) => sendToClient(req.sessionId, event, data),

@@ -14,4 +14,5 @@ export * from "./sdk/define.ts";
 export * from "./sdk/kv.ts";
 export * from "./sdk/types.ts";
 export * from "./sdk/utils.ts";
+export * from "./sdk/vector.ts";
 export * from "./sdk/ws-upgrade.ts";

@@ -47,6 +47,22 @@ async function loadAgentDef(cwd: string): Promise<AgentDef<any>> {
   return agentDef;
 }
 
+/**
+ * Extract pluggable providers from an agent definition into the partial
+ * options shape consumed by `createRuntime`. Keeps callers free of the
+ * five-way spread that otherwise pushes them past Biome's complexity gate.
+ */
+// biome-ignore lint/suspicious/noExplicitAny: provider options bag
+function providerOpts(agentDef: AgentDef<any>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if (agentDef.stt) out.stt = agentDef.stt;
+  if (agentDef.llm) out.llm = agentDef.llm;
+  if (agentDef.tts) out.tts = agentDef.tts;
+  if (agentDef.kv) out.kv = agentDef.kv;
+  if (agentDef.vector) out.vector = agentDef.vector;
+  return out;
+}
+
 // ─── File watching ──────────────────────────────────────────────────────────
 
 /**
@@ -96,7 +112,7 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
 
   const agentDef = await loadAgentDef(cwd);
   const env = await resolveAgentEnv(cwd);
-  const runtime = createRuntime({ agent: agentDef, env });
+  const runtime = createRuntime({ agent: agentDef, env, ...providerOpts(agentDef) });
 
   // When no custom client.tsx, serve the pre-built default aai-ui client
   function resolveDefaultClientDir(): string {
@@ -150,7 +166,11 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
     try {
       const newAgentDef = await loadAgentDef(cwd);
       currentEnv = await resolveAgentEnv(cwd);
-      const newRuntime = createRuntime({ agent: newAgentDef, env: currentEnv });
+      const newRuntime = createRuntime({
+        agent: newAgentDef,
+        env: currentEnv,
+        ...providerOpts(newAgentDef),
+      });
       const newServer = createServer({
         runtime: newRuntime,
         name: newAgentDef.name,

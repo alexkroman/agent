@@ -14,6 +14,15 @@
 // platform server). It is consumed directly by sibling test files.
 
 export * from "./builtin-tools.ts";
+export {
+  providerAllowedHosts,
+  resolveApiKey,
+  resolveKv,
+  resolveLlm,
+  resolveStt,
+  resolveTts,
+  resolveVector,
+} from "./providers/resolve.ts";
 export * from "./runtime.ts";
 export * from "./runtime-config.ts";
 export * from "./server.ts";

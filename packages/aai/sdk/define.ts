@@ -4,7 +4,13 @@
  */
 
 import type { z } from "zod";
-import type { LlmProvider, SttProvider, TtsProvider } from "./providers.ts";
+import type {
+  KvProvider,
+  LlmProvider,
+  SttProvider,
+  TtsProvider,
+  VectorProvider,
+} from "./providers.ts";
 import {
   type AgentDef,
   type BuiltinTool,
@@ -98,6 +104,16 @@ export function agent(def: {
    * enable pipeline mode.
    */
   tts?: TtsProvider;
+  /**
+   * Pluggable KV store exposed to tools as `ctx.kv`. Defaults to an
+   * in-memory store. Use factories from `@alexkroman1/aai/kv`.
+   */
+  kv?: KvProvider;
+  /**
+   * Pluggable vector store exposed to tools as `ctx.vector`. Use factories
+   * from `@alexkroman1/aai/vector` (e.g. `pinecone({ index })`).
+   */
+  vector?: VectorProvider;
 }): AgentDef {
   return {
     systemPrompt: DEFAULT_SYSTEM_PROMPT,

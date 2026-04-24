@@ -19,17 +19,27 @@ import { DEEPGRAM_KIND } from "../sdk/providers/stt/deepgram.ts";
 import { RIME_KIND } from "../sdk/providers/tts/rime.ts";
 import {
   assertProviderTriple,
+  type KvProvider,
   type LlmProvider,
   type SttOpener,
   type SttProvider,
   type TtsOpener,
   type TtsProvider,
+  type VectorProvider,
 } from "../sdk/providers.ts";
 import { buildSystemPrompt } from "../sdk/system-prompt.ts";
 import type { AgentDef } from "../sdk/types.ts";
 import { toolError } from "../sdk/utils.ts";
+import type { Vector } from "../sdk/vector.ts";
 import { resolveAllBuiltins } from "./builtin-tools.ts";
-import { resolveApiKey, resolveLlm, resolveStt, resolveTts } from "./providers/resolve.ts";
+import {
+  resolveApiKey,
+  resolveKv,
+  resolveLlm,
+  resolveStt,
+  resolveTts,
+  resolveVector,
+} from "./providers/resolve.ts";
 import type { Logger, S2SConfig } from "./runtime-config.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime-config.ts";
 import type { CreateS2sWebSocket } from "./s2s.ts";
@@ -145,6 +155,27 @@ function createLocalKv(): Kv {
   return createUnstorageKv({ storage: createStorage() });
 }
 
+/** Distinguish a `Kv` instance (has `get`/`set`/`delete`) from a `KvProvider` descriptor (has `kind`). */
+function isKvDescriptor(value: Kv | KvProvider): value is KvProvider {
+  return "kind" in value && typeof (value as KvProvider).kind === "string";
+}
+
+/** Distinguish a `Vector` instance from a `VectorProvider` descriptor. */
+function isVectorDescriptor(value: Vector | VectorProvider): value is VectorProvider {
+  return "kind" in value && typeof (value as VectorProvider).kind === "string";
+}
+
+function resolveKvIfDescriptor(value: Kv | KvProvider, env: Record<string, string>): Kv {
+  return isKvDescriptor(value) ? resolveKv(value, env) : value;
+}
+
+function resolveVectorIfDescriptor(
+  value: Vector | VectorProvider,
+  env: Record<string, string>,
+): Vector {
+  return isVectorDescriptor(value) ? resolveVector(value, env) : value;
+}
+
 /**
  * Configuration for {@link createRuntime}.
  *
@@ -156,7 +187,18 @@ export type RuntimeOptions = {
   // biome-ignore lint/suspicious/noExplicitAny: accepts any state type
   agent: AgentDef<any>;
   env: Record<string, string>;
-  kv?: Kv | undefined;
+  /**
+   * KV store. Accepts either a {@link Kv} instance (self-hosted escape
+   * hatch) or a {@link KvProvider} descriptor produced by factories like
+   * `memory()` / `upstash(...)` / `unstorage(...)`. Defaults to in-memory.
+   */
+  kv?: Kv | KvProvider | undefined;
+  /**
+   * Vector store. Accepts either a {@link Vector} instance or a
+   * {@link VectorProvider} descriptor (e.g. `pinecone({...})`). When unset,
+   * `ctx.vector` throws on access.
+   */
+  vector?: Vector | VectorProvider | undefined;
   /** Custom WebSocket factory for the S2S connection (useful for testing). */
   createWebSocket?: CreateS2sWebSocket | undefined;
   logger?: Logger | undefined;
@@ -259,13 +301,16 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   const {
     agent,
     env,
-    kv = createLocalKv(),
     createWebSocket,
     logger = consoleLogger,
     s2sConfig = DEFAULT_S2S_CONFIG,
     sessionStartTimeoutMs,
     shutdownTimeoutMs = DEFAULT_SHUTDOWN_TIMEOUT_MS,
   } = opts;
+  const kv: Kv = opts.kv ? resolveKvIfDescriptor(opts.kv, env) : createLocalKv();
+  const vector: Vector | undefined = opts.vector
+    ? resolveVectorIfDescriptor(opts.vector, env)
+    : undefined;
   const mode = assertProviderTriple(opts.stt, opts.llm, opts.tts);
   const agentConfig = toAgentConfig(agent);
   const sessions = new Map<string, SessionCore>();
@@ -295,6 +340,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
           env: frozenEnv,
           sessionId: sessionId ?? "",
           kv,
+          vector,
           messages,
           logger,
         });
@@ -333,6 +379,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
         state: getState(sessionId ?? ""),
         sessionId: sessionId ?? "",
         kv,
+        vector,
         messages,
         logger,
         send: sink ? (event, data) => sink.event({ type: "custom_event", event, data }) : undefined,

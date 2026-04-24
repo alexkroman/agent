@@ -8,6 +8,7 @@
  */
 
 import { type ChildProcess, spawn } from "node:child_process";
+import type { Kv, Vector } from "@alexkroman1/aai";
 import type { Storage, StorageValue } from "unstorage";
 import { z } from "zod";
 import { createGvisorSandbox, isGvisorAvailable } from "./gvisor.ts";
@@ -59,6 +60,17 @@ export type SandboxVmOptions = {
   harnessPath: string;
   kvStorage?: Storage;
   kvPrefix?: string;
+  /**
+   * Pre-resolved KV instance for the agent. Takes precedence over
+   * `kvStorage`/`kvPrefix` — set when the agent provides its own
+   * `kv: upstash(...)` descriptor.
+   */
+  kv?: Kv;
+  /**
+   * Pre-resolved vector store. When set, the host serves
+   * `vector/upsert|query|delete|fetch` RPC from the guest.
+   */
+  vector?: Vector;
   limits?: SandboxResourceLimits;
   allowedHosts?: string[];
 };
@@ -76,8 +88,25 @@ async function configureSandbox(
 ): Promise<SandboxHandle> {
   conn.listen();
 
-  // Host serves guest KV requests (params validated with Zod)
-  if (opts.kvStorage && opts.kvPrefix) {
+  // Host serves guest KV requests (params validated with Zod). Prefer the
+  // agent-provided `Kv` instance (configured via `kv: upstash(...)` etc.);
+  // fall back to the platform-managed storage when no descriptor is set.
+  if (opts.kv) {
+    const kv = opts.kv;
+    conn.onRequest("kv/get", async (raw: unknown) => {
+      const p = KvGetParamsSchema.parse(raw);
+      const value = await kv.get(p.key);
+      return value;
+    });
+    conn.onRequest("kv/set", async (raw: unknown) => {
+      const p = KvSetParamsSchema.parse(raw);
+      await kv.set(p.key, p.value);
+    });
+    conn.onRequest("kv/del", async (raw: unknown) => {
+      const p = KvDelParamsSchema.parse(raw);
+      await kv.delete(p.key);
+    });
+  } else if (opts.kvStorage && opts.kvPrefix) {
     const storage = opts.kvStorage;
     const prefix = opts.kvPrefix;
     conn.onRequest("kv/get", async (raw: unknown) => {
@@ -91,6 +120,35 @@ async function configureSandbox(
     conn.onRequest("kv/del", async (raw: unknown) => {
       const p = KvDelParamsSchema.parse(raw);
       await storage.removeItem(`${prefix}:${p.key}`);
+    });
+  }
+
+  // Host serves guest vector requests when an agent vector store is configured.
+  if (opts.vector) {
+    const vec = opts.vector;
+    conn.onRequest("vector/upsert", async (raw: unknown) => {
+      const p = raw as {
+        records: import("@alexkroman1/aai").VectorRecord[];
+        namespace?: string;
+      };
+      await vec.upsert(p.records, p.namespace ? { namespace: p.namespace } : undefined);
+      return { ok: true };
+    });
+    conn.onRequest("vector/query", async (raw: unknown) => {
+      const p = raw as import("@alexkroman1/aai").VectorQuery;
+      return await vec.query(p);
+    });
+    conn.onRequest("vector/delete", async (raw: unknown) => {
+      const p = raw as { ids?: string[]; namespace?: string; deleteAll?: boolean };
+      await vec.delete(p.ids ?? [], {
+        ...(p.namespace !== undefined ? { namespace: p.namespace } : {}),
+        ...(p.deleteAll !== undefined ? { deleteAll: p.deleteAll } : {}),
+      });
+      return { ok: true };
+    });
+    conn.onRequest("vector/fetch", async (raw: unknown) => {
+      const p = raw as { ids: string[]; namespace?: string };
+      return await vec.fetch(p.ids, p.namespace ? { namespace: p.namespace } : undefined);
     });
   }
 

@@ -77,7 +77,14 @@ exports[`export surface stability > @alexkroman1/aai/runtime export 1`] = `
   "executeInIsolate",
   "executeToolCall",
   "jsonLogger",
+  "providerAllowedHosts",
   "resolveAllBuiltins",
+  "resolveApiKey",
+  "resolveKv",
+  "resolveLlm",
+  "resolveStt",
+  "resolveTts",
+  "resolveVector",
   "wireSessionSocket",
 ]
 `;

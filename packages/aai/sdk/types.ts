@@ -5,7 +5,14 @@
 
 import { z } from "zod";
 import type { Kv } from "./kv.ts";
-import type { LlmProvider, SttProvider, TtsProvider } from "./providers.ts";
+import type {
+  KvProvider,
+  LlmProvider,
+  SttProvider,
+  TtsProvider,
+  VectorProvider,
+} from "./providers.ts";
+import type { Vector } from "./vector.ts";
 
 /**
  * Identifier for a built-in server-side tool.
@@ -80,6 +87,12 @@ export type ToolContext<S = Record<string, unknown>> = {
   state: S;
   /** Key-value store scoped to this agent deployment. */
   kv: Kv;
+  /**
+   * Vector store scoped to this agent. Only available when the agent config
+   * sets `vector: pinecone(...)` or another provider; accessing it on an
+   * agent without a configured vector store throws.
+   */
+  vector: Vector;
   /** Read-only snapshot of conversation messages so far. */
   messages: readonly Message[];
   /** Unique identifier for the current session. Useful for correlating logs across concurrent sessions. */
@@ -233,6 +246,15 @@ export type AgentDef<S = Record<string, unknown>> = {
    * pipeline mode.
    */
   tts?: TtsProvider;
+  /**
+   * Pluggable KV store exposed to tools as `ctx.kv`. Defaults to an
+   * in-memory store when unset.
+   */
+  kv?: KvProvider;
+  /**
+   * Pluggable vector store exposed to tools as `ctx.vector`.
+   */
+  vector?: VectorProvider;
 };
 
 // ─── Zod schemas ────────────────────────────────────────────────────────────

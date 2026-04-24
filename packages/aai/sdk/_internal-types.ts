@@ -10,9 +10,11 @@ import { z } from "zod";
 import { ProviderDescriptorSchema } from "./manifest.ts";
 import {
   assertProviderTriple,
+  type KvProvider,
   type LlmProvider,
   type SttProvider,
   type TtsProvider,
+  type VectorProvider,
 } from "./providers.ts";
 import type { Message } from "./types.ts";
 import { BuiltinToolSchema, ToolChoiceSchema, type ToolDef } from "./types.ts";
@@ -66,6 +68,8 @@ export const AgentConfigSchema = z.object({
   stt: ProviderDescriptorSchema.optional(),
   llm: ProviderDescriptorSchema.optional(),
   tts: ProviderDescriptorSchema.optional(),
+  kv: ProviderDescriptorSchema.optional(),
+  vector: ProviderDescriptorSchema.optional(),
   mode: z.enum(["s2s", "pipeline"]).optional(),
 });
 
@@ -89,6 +93,8 @@ export interface AgentConfigSource {
   stt?: SttProvider | undefined;
   llm?: LlmProvider | undefined;
   tts?: TtsProvider | undefined;
+  kv?: KvProvider | undefined;
+  vector?: VectorProvider | undefined;
 }
 
 /**
@@ -116,6 +122,8 @@ export function toAgentConfig(src: AgentConfigSource): AgentConfig {
     config.llm = src.llm;
     config.tts = src.tts;
   }
+  if (src.kv) config.kv = src.kv;
+  if (src.vector) config.vector = src.vector;
   return config;
 }
 

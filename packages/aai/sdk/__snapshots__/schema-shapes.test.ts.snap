@@ -5,6 +5,7 @@ exports[`manifest schema shapes > AgentConfigSchema shape 1`] = `
   "builtinTools",
   "greeting",
   "idleTimeoutMs",
+  "kv",
   "llm",
   "maxSteps",
   "mode",
@@ -14,6 +15,7 @@ exports[`manifest schema shapes > AgentConfigSchema shape 1`] = `
   "systemPrompt",
   "toolChoice",
   "tts",
+  "vector",
 ]
 `;
 

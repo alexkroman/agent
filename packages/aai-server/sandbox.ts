@@ -18,7 +18,10 @@ import {
   type AgentRuntime,
   createRuntime,
   type ExecuteTool,
+  providerAllowedHosts,
   resolveAllBuiltins,
+  resolveKv,
+  resolveVector,
 } from "@alexkroman1/aai/runtime";
 import type { Storage } from "unstorage";
 import { agentKvPrefix } from "./constants.ts";
@@ -53,6 +56,22 @@ export type Sandbox = AgentRuntime;
 
 // ── Public API ──────────────────────────────────────────────────────────
 
+/**
+ * Resolve KV/vector descriptors once and compute the merged allowedHosts.
+ * Pulled out of `createSandbox` to keep its cognitive complexity in budget.
+ */
+function resolveAgentBackends(config: IsolateConfig, env: Record<string, string>) {
+  const providerHosts = [
+    ...providerAllowedHosts(config.kv, env),
+    ...providerAllowedHosts(config.vector, env),
+  ];
+  return {
+    agentKv: config.kv ? resolveKv(config.kv, env) : undefined,
+    agentVector: config.vector ? resolveVector(config.vector, env) : undefined,
+    allowedHosts: [...(config.allowedHosts ?? []), ...providerHosts],
+  };
+}
+
 export function createSandbox(opts: SandboxOptions): Sandbox {
   const { workerCode, env, storage, slug } = opts;
 
@@ -70,14 +89,25 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
     process.env.GUEST_HARNESS_PATH ??
     path.resolve(import.meta.dirname, "dist/guest/deno-harness.mjs");
 
+  // Resolve KV/vector descriptors once per sandbox + compute allowedHosts.
+  // The platform-managed `storage` (S3/memory) backs the default `ctx.kv`
+  // when no KV descriptor is set; otherwise the agent's chosen backend
+  // (Upstash, Vercel KV, etc.) replaces `ctx.kv` while platform metadata
+  // remains untouched.
+  const {
+    agentKv,
+    agentVector,
+    allowedHosts: sandboxAllowedHosts,
+  } = resolveAgentBackends(config, env);
+
   const vmReady = createSandboxVm({
     slug,
     workerCode,
     env,
-    kvStorage: storage,
-    kvPrefix: agentKvPrefix(slug),
+    ...(agentKv ? { kv: agentKv } : { kvStorage: storage, kvPrefix: agentKvPrefix(slug) }),
+    ...(agentVector ? { vector: agentVector } : {}),
     harnessPath,
-    allowedHosts: config.allowedHosts ?? [],
+    allowedHosts: sandboxAllowedHosts,
   });
 
   const executeTool: ExecuteTool = async (name, args, sessionId, messages) => {
@@ -129,6 +159,8 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
     toolSchemas: [...config.toolSchemas, ...builtins.schemas],
     toolGuidance: builtins.guidance,
     builtinDefs: builtins.defs,
+    ...(agentKv ? { kv: agentKv } : {}),
+    ...(agentVector ? { vector: agentVector } : {}),
     ...(config.mode === "pipeline" && config.stt && config.llm && config.tts
       ? { stt: config.stt, llm: config.llm, tts: config.tts }
       : {}),
