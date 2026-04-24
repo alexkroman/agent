@@ -120,7 +120,18 @@ async function generateAudioFrames(
     const pcm = float32ToPcm16(resampled);
     const utteranceFrames: Uint8Array[] = [];
     for (let offset = 0; offset < pcm.length; offset += chunkBytes) {
-      utteranceFrames.push(pcm.subarray(offset, offset + chunkBytes));
+      const slice = pcm.subarray(offset, offset + chunkBytes);
+      if (slice.byteLength === chunkBytes) {
+        utteranceFrames.push(slice);
+      } else {
+        // Pad trailing partial to a full chunkMs frame. AssemblyAI Universal-
+        // Streaming rejects chunks <50ms; without padding, utterances whose
+        // length isn't a multiple of chunkMs cause `stt_stream_error` and the
+        // pipeline session terminates mid-turn.
+        const padded = new Uint8Array(chunkBytes);
+        padded.set(slice);
+        utteranceFrames.push(padded);
+      }
     }
     console.log(
       `${(resampled.length / INPUT_SAMPLE_RATE).toFixed(2)}s (${pcm.length} bytes, ${utteranceFrames.length} chunks)`,
