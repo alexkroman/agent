@@ -183,7 +183,3 @@ export async function executeBuild(cwd: string): Promise<CommandResult<BuildData
     workerBytes: bundle.worker.length,
   });
 }
-
-export async function runBuildCommand(cwd: string): Promise<void> {
-  await executeBuild(cwd);
-}
