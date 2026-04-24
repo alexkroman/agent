@@ -139,7 +139,7 @@ export const ClientEventSchema = z.discriminatedUnion("type", [
 /** Discriminated union of all server→client session events. */
 export type ClientEvent = z.infer<typeof ClientEventSchema>;
 
-/** Re-export for code that still wants the string-union name. */
+/** Alias for {@link ErrorCodeName}; replaces {@link SessionErrorCode} once Task 20 removes Zod schemas. */
 export type ErrorCode = ErrorCodeName;
 
 /**
@@ -149,6 +149,7 @@ export type ErrorCode = ErrorCodeName;
  * Replaces the previous `event(e: ClientEvent)` discriminated-union entry point.
  */
 export interface ClientSink {
+  /** True when the underlying connection is open and will accept calls. */
   readonly open: boolean;
   config(cfg: { sampleRate: number; ttsSampleRate: number; sid: string }): void;
   audio(chunk: Uint8Array): void;
