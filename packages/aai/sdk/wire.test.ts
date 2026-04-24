@@ -2,6 +2,8 @@
 import { describe, expect, test } from "vitest";
 import {
   C2S,
+  decodeC2S,
+  decodeS2C,
   ERROR_CODE,
   encAgentTranscript,
   encAudioChunkC2S,
@@ -180,5 +182,76 @@ describe("custom_event", () => {
     const cycle: Record<string, unknown> = {};
     cycle.self = cycle;
     expect(encCustomEvent("bad", cycle)).toBeNull();
+  });
+});
+
+describe("decoder round-trips every frame type", () => {
+  test("client → server", () => {
+    const chunk = new Uint8Array([1, 2, 3]);
+    expect(decodeC2S(encAudioChunkC2S(chunk))).toEqual({
+      ok: true,
+      data: { type: "audio_chunk", pcm: new Uint8Array([1, 2, 3]) },
+    });
+    expect(decodeC2S(encAudioReady())).toEqual({ ok: true, data: { type: "audio_ready" } });
+    expect(decodeC2S(encCancel())).toEqual({ ok: true, data: { type: "cancel" } });
+    expect(decodeC2S(encResetC2S())).toEqual({ ok: true, data: { type: "reset" } });
+    const history = [
+      { role: "user" as const, content: "hi" },
+      { role: "assistant" as const, content: "hello" },
+    ];
+    expect(decodeC2S(encHistory(history))).toEqual({
+      ok: true,
+      data: { type: "history", messages: history },
+    });
+  });
+
+  test("server → client", () => {
+    expect(decodeS2C(encAudioChunkS2C(new Uint8Array([9, 8])))).toEqual({
+      ok: true,
+      data: { type: "audio_chunk", pcm: new Uint8Array([9, 8]) },
+    });
+    expect(decodeS2C(encAudioDone())).toEqual({ ok: true, data: { type: "audio_done" } });
+    expect(decodeS2C(encConfig({ sampleRate: 16_000, ttsSampleRate: 24_000, sid: "abc" }))).toEqual(
+      {
+        ok: true,
+        data: { type: "config", sampleRate: 16_000, ttsSampleRate: 24_000, sid: "abc" },
+      },
+    );
+    expect(decodeS2C(encSpeechStarted())).toEqual({ ok: true, data: { type: "speech_started" } });
+    expect(decodeS2C(encSpeechStopped())).toEqual({ ok: true, data: { type: "speech_stopped" } });
+    expect(decodeS2C(encUserTranscript("hello"))).toEqual({
+      ok: true,
+      data: { type: "user_transcript", text: "hello" },
+    });
+    expect(decodeS2C(encAgentTranscript("world"))).toEqual({
+      ok: true,
+      data: { type: "agent_transcript", text: "world" },
+    });
+    const tc = encToolCall("cid", "get_weather", { location: "SF" });
+    expect(tc).not.toBeNull();
+    if (tc)
+      expect(decodeS2C(tc)).toEqual({
+        ok: true,
+        data: { type: "tool_call", callId: "cid", name: "get_weather", args: { location: "SF" } },
+      });
+    expect(decodeS2C(encToolCallDone("cid", "72F sunny"))).toEqual({
+      ok: true,
+      data: { type: "tool_call_done", callId: "cid", result: "72F sunny" },
+    });
+    expect(decodeS2C(encReplyDone())).toEqual({ ok: true, data: { type: "reply_done" } });
+    expect(decodeS2C(encCancelled())).toEqual({ ok: true, data: { type: "cancelled" } });
+    expect(decodeS2C(encResetS2C())).toEqual({ ok: true, data: { type: "reset" } });
+    expect(decodeS2C(encIdleTimeout())).toEqual({ ok: true, data: { type: "idle_timeout" } });
+    expect(decodeS2C(encError("connection", "boom"))).toEqual({
+      ok: true,
+      data: { type: "error", code: "connection", message: "boom" },
+    });
+    const ce = encCustomEvent("ping", { x: 1 });
+    expect(ce).not.toBeNull();
+    if (ce)
+      expect(decodeS2C(ce)).toEqual({
+        ok: true,
+        data: { type: "custom_event", name: "ping", data: { x: 1 } },
+      });
   });
 });

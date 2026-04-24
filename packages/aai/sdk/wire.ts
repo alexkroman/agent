@@ -280,3 +280,228 @@ export function encCustomEvent(name: string, data: unknown): Uint8Array | null {
   out.set(dataB, off);
   return out;
 }
+
+// ─── Decoded frames (discriminated union) ──────────────────────────────────
+
+export type DecodedC2S =
+  | { type: "audio_chunk"; pcm: Uint8Array }
+  | { type: "audio_ready" }
+  | { type: "cancel" }
+  | { type: "reset" }
+  | { type: "history"; messages: HistoryMessage[] };
+
+export type DecodedS2C =
+  | { type: "audio_chunk"; pcm: Uint8Array }
+  | { type: "audio_done" }
+  | { type: "config"; sampleRate: number; ttsSampleRate: number; sid: string }
+  | { type: "speech_started" }
+  | { type: "speech_stopped" }
+  | { type: "user_transcript"; text: string }
+  | { type: "agent_transcript"; text: string }
+  | { type: "tool_call"; callId: string; name: string; args: unknown }
+  | { type: "tool_call_done"; callId: string; result: string }
+  | { type: "reply_done" }
+  | { type: "cancelled" }
+  | { type: "reset" }
+  | { type: "idle_timeout" }
+  | { type: "error"; code: ErrorCodeName; message: string }
+  | { type: "custom_event"; name: string; data: unknown };
+
+function readU16(view: DataView, off: number): number {
+  return view.getUint16(off, true);
+}
+function readU32(view: DataView, off: number): number {
+  return view.getUint32(off, true);
+}
+
+/** Safe UTF-8 decode; returns undefined on invalid input. */
+function safeDecodeUtf8(bytes: Uint8Array): string | undefined {
+  try {
+    return decoder.decode(bytes);
+  } catch {
+    // invalid UTF-8 — falls through to implicit undefined return
+  }
+}
+
+/** Decodes a client → server frame. Never throws. */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: switch over all C2S frame types; splitting would hurt readability
+export function decodeC2S(frame: Uint8Array): DecodeResult<DecodedC2S> {
+  if (frame.byteLength === 0) return { ok: false, reason: "empty frame" };
+  const view = viewOf(frame);
+  const type = view.getUint8(0);
+
+  switch (type) {
+    case C2S.AUDIO_CHUNK:
+      return { ok: true, data: { type: "audio_chunk", pcm: frame.subarray(1) } };
+    case C2S.AUDIO_READY:
+      return { ok: true, data: { type: "audio_ready" } };
+    case C2S.CANCEL:
+      return { ok: true, data: { type: "cancel" } };
+    case C2S.RESET:
+      return { ok: true, data: { type: "reset" } };
+    case C2S.HISTORY: {
+      if (frame.byteLength < 5) return { ok: false, reason: "history: truncated header" };
+      const count = readU32(view, 1);
+      const messages: HistoryMessage[] = [];
+      let off = 5;
+      for (let i = 0; i < count; i++) {
+        if (off + 5 > frame.byteLength) return { ok: false, reason: "history: truncated entry" };
+        const role = view.getUint8(off++) === 0 ? "user" : "assistant";
+        const len = readU32(view, off);
+        off += 4;
+        if (off + len > frame.byteLength) return { ok: false, reason: "history: content overflow" };
+        const content = safeDecodeUtf8(frame.subarray(off, off + len));
+        if (content === undefined) return { ok: false, reason: "history: invalid utf8" };
+        off += len;
+        messages.push({ role, content });
+      }
+      return { ok: true, data: { type: "history", messages } };
+    }
+    default:
+      return { ok: false, reason: `unknown c2s type 0x${type.toString(16)}` };
+  }
+}
+
+/** Decodes a server → client frame. Never throws. */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: switch over all S2C frame types; splitting would hurt readability
+export function decodeS2C(frame: Uint8Array): DecodeResult<DecodedS2C> {
+  if (frame.byteLength === 0) return { ok: false, reason: "empty frame" };
+  const view = viewOf(frame);
+  const type = view.getUint8(0);
+
+  switch (type) {
+    case S2C.AUDIO_CHUNK:
+      return { ok: true, data: { type: "audio_chunk", pcm: frame.subarray(1) } };
+    case S2C.AUDIO_DONE:
+      return { ok: true, data: { type: "audio_done" } };
+    case S2C.CONFIG: {
+      if (frame.byteLength < 1 + 4 + 4 + 2)
+        return { ok: false, reason: "config: truncated header" };
+      const sampleRate = readU32(view, 1);
+      const ttsSampleRate = readU32(view, 5);
+      const sidLen = readU16(view, 9);
+      if (11 + sidLen > frame.byteLength) return { ok: false, reason: "config: sid overflow" };
+      const sid = safeDecodeUtf8(frame.subarray(11, 11 + sidLen));
+      if (sid === undefined) return { ok: false, reason: "config: invalid sid utf8" };
+      return { ok: true, data: { type: "config", sampleRate, ttsSampleRate, sid } };
+    }
+    case S2C.SPEECH_STARTED:
+      return { ok: true, data: { type: "speech_started" } };
+    case S2C.SPEECH_STOPPED:
+      return { ok: true, data: { type: "speech_stopped" } };
+    case S2C.USER_TRANSCRIPT:
+    case S2C.AGENT_TRANSCRIPT: {
+      if (frame.byteLength < 5) return { ok: false, reason: "transcript: truncated header" };
+      const len = readU32(view, 1);
+      if (5 + len > frame.byteLength) return { ok: false, reason: "transcript: overflow" };
+      const text = safeDecodeUtf8(frame.subarray(5, 5 + len));
+      if (text === undefined) return { ok: false, reason: "transcript: invalid utf8" };
+      return {
+        ok: true,
+        data: { type: type === S2C.USER_TRANSCRIPT ? "user_transcript" : "agent_transcript", text },
+      };
+    }
+    case S2C.TOOL_CALL: {
+      let off = 1;
+      if (off + 2 > frame.byteLength) return { ok: false, reason: "tool_call: truncated idLen" };
+      const idLen = readU16(view, off);
+      off += 2;
+      if (off + idLen > frame.byteLength) return { ok: false, reason: "tool_call: id overflow" };
+      const callId = safeDecodeUtf8(frame.subarray(off, off + idLen));
+      if (callId === undefined) return { ok: false, reason: "tool_call: invalid id utf8" };
+      off += idLen;
+      if (off + 2 > frame.byteLength) return { ok: false, reason: "tool_call: truncated nameLen" };
+      const nameLen = readU16(view, off);
+      off += 2;
+      if (off + nameLen > frame.byteLength)
+        return { ok: false, reason: "tool_call: name overflow" };
+      const name = safeDecodeUtf8(frame.subarray(off, off + nameLen));
+      if (name === undefined) return { ok: false, reason: "tool_call: invalid name utf8" };
+      off += nameLen;
+      if (off + 4 > frame.byteLength) return { ok: false, reason: "tool_call: truncated argsLen" };
+      const argsLen = readU32(view, off);
+      off += 4;
+      if (off + argsLen > frame.byteLength)
+        return { ok: false, reason: "tool_call: args overflow" };
+      const argsJson = safeDecodeUtf8(frame.subarray(off, off + argsLen));
+      if (argsJson === undefined) return { ok: false, reason: "tool_call: invalid args utf8" };
+      let args: unknown;
+      try {
+        args = JSON.parse(argsJson);
+      } catch {
+        return { ok: false, reason: "tool_call: invalid args json" };
+      }
+      return { ok: true, data: { type: "tool_call", callId, name, args } };
+    }
+    case S2C.TOOL_CALL_DONE: {
+      let off = 1;
+      if (off + 2 > frame.byteLength)
+        return { ok: false, reason: "tool_call_done: truncated idLen" };
+      const idLen = readU16(view, off);
+      off += 2;
+      if (off + idLen > frame.byteLength)
+        return { ok: false, reason: "tool_call_done: id overflow" };
+      const callId = safeDecodeUtf8(frame.subarray(off, off + idLen));
+      if (callId === undefined) return { ok: false, reason: "tool_call_done: invalid id utf8" };
+      off += idLen;
+      if (off + 4 > frame.byteLength)
+        return { ok: false, reason: "tool_call_done: truncated resLen" };
+      const resLen = readU32(view, off);
+      off += 4;
+      if (off + resLen > frame.byteLength)
+        return { ok: false, reason: "tool_call_done: result overflow" };
+      const result = safeDecodeUtf8(frame.subarray(off, off + resLen));
+      if (result === undefined) return { ok: false, reason: "tool_call_done: invalid result utf8" };
+      return { ok: true, data: { type: "tool_call_done", callId, result } };
+    }
+    case S2C.REPLY_DONE:
+      return { ok: true, data: { type: "reply_done" } };
+    case S2C.CANCELLED:
+      return { ok: true, data: { type: "cancelled" } };
+    case S2C.RESET:
+      return { ok: true, data: { type: "reset" } };
+    case S2C.IDLE_TIMEOUT:
+      return { ok: true, data: { type: "idle_timeout" } };
+    case S2C.ERROR: {
+      if (frame.byteLength < 4) return { ok: false, reason: "error: truncated header" };
+      const codeByte = view.getUint8(1);
+      const code = errorCodeFromByte(codeByte);
+      if (code === undefined)
+        return { ok: false, reason: `error: unknown code 0x${codeByte.toString(16)}` };
+      const msgLen = readU16(view, 2);
+      if (4 + msgLen > frame.byteLength) return { ok: false, reason: "error: message overflow" };
+      const message = safeDecodeUtf8(frame.subarray(4, 4 + msgLen));
+      if (message === undefined) return { ok: false, reason: "error: invalid utf8" };
+      return { ok: true, data: { type: "error", code, message } };
+    }
+    case S2C.CUSTOM_EVENT: {
+      let off = 1;
+      if (off + 2 > frame.byteLength)
+        return { ok: false, reason: "custom_event: truncated nameLen" };
+      const nameLen = readU16(view, off);
+      off += 2;
+      if (off + nameLen > frame.byteLength)
+        return { ok: false, reason: "custom_event: name overflow" };
+      const name = safeDecodeUtf8(frame.subarray(off, off + nameLen));
+      if (name === undefined) return { ok: false, reason: "custom_event: invalid name utf8" };
+      off += nameLen;
+      if (off + 4 > frame.byteLength)
+        return { ok: false, reason: "custom_event: truncated dataLen" };
+      const dataLen = readU32(view, off);
+      off += 4;
+      if (off + dataLen > frame.byteLength)
+        return { ok: false, reason: "custom_event: data overflow" };
+      const dataJson = safeDecodeUtf8(frame.subarray(off, off + dataLen));
+      if (dataJson === undefined) return { ok: false, reason: "custom_event: invalid data utf8" };
+      let data: unknown;
+      try {
+        data = JSON.parse(dataJson);
+      } catch {
+        return { ok: false, reason: "custom_event: invalid data json" };
+      }
+      return { ok: true, data: { type: "custom_event", name, data } };
+    }
+    default:
+      return { ok: false, reason: `unknown s2c type 0x${type.toString(16)}` };
+  }
+}
