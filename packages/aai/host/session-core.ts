@@ -68,7 +68,7 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
   let stopped = false;
 
   function resetIdle(): void {
-    if (idleMs <= 0) return;
+    if (stopped || idleMs <= 0) return;
     if (idleTimer) clearTimeout(idleTimer);
     idleTimer = setTimeout(() => {
       log.info("session idle timeout", { sid: opts.id });

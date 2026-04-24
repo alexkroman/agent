@@ -92,6 +92,26 @@ describe("createSessionCore — lifecycle", () => {
     await core.stop();
     expect(transport.stops).toBe(1);
   });
+  test("post-stop onAudio does not reschedule the idle timer", async () => {
+    vi.useFakeTimers();
+    try {
+      const { core, sink } = makeCore({
+        agentConfig: {
+          name: "test",
+          systemPrompt: DEFAULT_SYSTEM_PROMPT,
+          greeting: "",
+          idleTimeoutMs: 1000,
+        } as unknown as SessionCoreOptions["agentConfig"],
+      });
+      await core.start();
+      await core.stop();
+      core.onAudio(new Uint8Array([1]));
+      vi.advanceTimersByTime(5000);
+      expect(sink.calls.some((c) => c.method === "idleTimeout")).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe("createSessionCore — client inbound", () => {
