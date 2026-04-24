@@ -556,6 +556,109 @@ describe.skipIf(!hasDeno)("Fake VM integration (no KVM)", () => {
     }
   }, 15_000);
 
+  // ── run_code builtin (executes inside the guest) ────────────────────────────
+
+  /**
+   * Minimal bundle for run_code tests. The run_code builtin is dispatched by
+   * the harness before agent.tools is consulted, so no tool entry is needed.
+   */
+  const EMPTY_TOOLS_BUNDLE = `
+    export default {
+      name: "run-code-agent",
+      systemPrompt: "test",
+      greeting: "",
+      maxSteps: 1,
+      tools: {},
+    };
+  `;
+
+  test("run_code executes user JavaScript and captures console output", async () => {
+    const socketPath = path.join(tmpDir, "test-runcode-basic.sock");
+    await spawnFakeVm(socketPath);
+    const { socket, conn } = await connectToFakeVm(socketPath);
+
+    try {
+      await conn.sendRequest("bundle/load", { code: EMPTY_TOOLS_BUNDLE, env: {} });
+      const resp = await conn.sendRequest<{ result: string }>("tool/execute", {
+        name: "run_code",
+        args: { code: 'console.log("hello from guest"); console.log(2 + 2);' },
+        sessionId: "rc-1",
+        messages: [],
+      });
+      expect(resp.result).toBe("hello from guest\n4");
+    } finally {
+      conn.dispose();
+      socket.destroy();
+    }
+  }, 20_000);
+
+  test("run_code returns stringified error object for syntax errors", async () => {
+    const socketPath = path.join(tmpDir, "test-runcode-syntax.sock");
+    await spawnFakeVm(socketPath);
+    const { socket, conn } = await connectToFakeVm(socketPath);
+
+    try {
+      await conn.sendRequest("bundle/load", { code: EMPTY_TOOLS_BUNDLE, env: {} });
+      const resp = await conn.sendRequest<{ result: string }>("tool/execute", {
+        name: "run_code",
+        args: { code: "this is not valid js %%%" },
+        sessionId: "rc-2",
+        messages: [],
+      });
+      // Syntax errors surface as a stringified { error } object (same shape
+      // as the host-side node:vm path, so the LLM sees a consistent result).
+      expect(resp.result).toMatch(/"error"/);
+    } finally {
+      conn.dispose();
+      socket.destroy();
+    }
+  }, 20_000);
+
+  test("run_code worker cannot read Deno APIs (permissions: none)", async () => {
+    const socketPath = path.join(tmpDir, "test-runcode-deno.sock");
+    await spawnFakeVm(socketPath);
+    const { socket, conn } = await connectToFakeVm(socketPath);
+
+    try {
+      await conn.sendRequest("bundle/load", { code: EMPTY_TOOLS_BUNDLE, env: {} });
+      // Deno.env.get must not be reachable from the permissionless worker.
+      // Either `Deno` is undefined (stripped from worker realm) or the call
+      // throws a permission error — both are acceptable refusals.
+      const resp = await conn.sendRequest<{ result: string }>("tool/execute", {
+        name: "run_code",
+        args: {
+          code: 'try { console.log(typeof Deno === "undefined" ? "no-deno" : Deno.env.get("PATH")); } catch (e) { console.log("blocked:" + e.name); }',
+        },
+        sessionId: "rc-3",
+        messages: [],
+      });
+      expect(resp.result).toMatch(/^(no-deno|blocked:|undefined$)/);
+    } finally {
+      conn.dispose();
+      socket.destroy();
+    }
+  }, 20_000);
+
+  test("run_code rejects non-string code arg", async () => {
+    const socketPath = path.join(tmpDir, "test-runcode-badarg.sock");
+    await spawnFakeVm(socketPath);
+    const { socket, conn } = await connectToFakeVm(socketPath);
+
+    try {
+      await conn.sendRequest("bundle/load", { code: EMPTY_TOOLS_BUNDLE, env: {} });
+      const resp = await conn.sendRequest<{ error: string }>("tool/execute", {
+        name: "run_code",
+        args: { code: 42 },
+        sessionId: "rc-4",
+        messages: [],
+      });
+      expect(resp.error).toBe("run_code requires { code: string }");
+    } finally {
+      conn.dispose();
+      socket.destroy();
+    }
+  }, 20_000);
+
   // ── Compiled harness test ───────────────────────────────────────────────────
 
   const COMPILED_HARNESS = path.resolve(import.meta.dirname, "dist/guest/deno-harness.mjs");

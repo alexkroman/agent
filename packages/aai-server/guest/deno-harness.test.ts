@@ -204,6 +204,27 @@ describe("executeTool", () => {
     vi.useRealTimers();
   });
 
+  test("run_code with non-string code returns error (no Worker spawn)", async () => {
+    // Arg validation happens before Worker construction, so this path runs
+    // under Node too. The happy path needs a real Deno Worker and is
+    // exercised in fake-vm-integration.test.ts.
+    const agent = makeAgent({});
+    const state = createSessionStateMap();
+    const result = await executeTool(agent, makeReq("run_code", { code: 123 }), state);
+    expect(result).toEqual({ error: "run_code requires { code: string }" });
+  });
+
+  test("run_code is dispatched without an agent.tools entry", async () => {
+    // The builtin must not fall through to "Unknown tool" when the agent
+    // declares no custom tools. We use a non-string code arg to avoid
+    // spawning a real Worker (which Node doesn't provide) — what we're
+    // asserting is the dispatch routing, not the worker behaviour.
+    const agent = makeAgent({});
+    const state = createSessionStateMap();
+    const result = await executeTool(agent, makeReq("run_code", {}), state);
+    expect(result).toEqual({ error: "run_code requires { code: string }" });
+  });
+
   test("passes parsed args when tool has parameters.parse", async () => {
     const agent = makeAgent({
       echo: {

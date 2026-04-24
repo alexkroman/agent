@@ -108,6 +108,12 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
   };
 
   const builtins = resolveAllBuiltins(config.builtinTools ?? [], { fetch: safeFetch });
+  // run_code executes inside the gVisor guest (see guest/deno-harness.ts).
+  // Drop its host-side def so the runtime routes the call through rpcExecuteTool
+  // to the sandbox instead of evaluating attacker-supplied code in node:vm here.
+  const hostBuiltinDefs = { ...builtins.defs };
+  delete hostBuiltinDefs.run_code;
+
   const agentRuntime = createRuntime({
     agent: {
       name: config.name,
@@ -128,7 +134,7 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
     executeTool,
     toolSchemas: [...config.toolSchemas, ...builtins.schemas],
     toolGuidance: builtins.guidance,
-    builtinDefs: builtins.defs,
+    builtinDefs: hostBuiltinDefs,
     ...(config.mode === "pipeline" && config.stt && config.llm && config.tts
       ? { stt: config.stt, llm: config.llm, tts: config.tts }
       : {}),

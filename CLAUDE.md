@@ -579,14 +579,27 @@ stored env at sandbox creation time and kept host-side only.
 - Sessions are per-sandbox (`Map<string, Session>`).
 - No shared mutable state between sandboxes.
 
-**`run_code` built-in tool (aai/builtin-tools.ts):**
+**`run_code` built-in tool:**
 
-- Each invocation runs in a **fresh `node:vm` context** on the host — isolated
-  from other invocations. Note: `node:vm` is not a security sandbox; the
-  gVisor sandbox provides the actual security boundary.
-- No network, no filesystem access, no child processes, no env vars.
-- 5-second execution timeout.
-- Context is discarded after execution — no state leaks.
+- **Platform mode** (served by `packages/aai-server`): `run_code` executes
+  **inside the gVisor guest**. The Deno harness (`guest/deno-harness.ts`)
+  spawns a fresh Deno `Worker` with `permissions: "none"` per invocation,
+  loads the user code via a `data:` URL, and terminates the worker on
+  timeout. Attacker-supplied code never reaches the orchestrator Node
+  process. `aai-server/sandbox.ts` drops `run_code` from the host-side
+  `builtinDefs` map so the runtime routes the call through
+  `rpcExecuteTool` to the sandbox.
+- **Self-hosted mode** (`aai dev`, user-invoked `createRuntime`): `run_code`
+  still runs in a `node:vm` context on the local process via
+  `aai/host/_run-code.ts`. `node:vm` is **not** a security boundary —
+  self-hosted mode trusts its own process.
+- No network, no filesystem, no child processes, no env vars (enforced by
+  the Worker's `permissions: "none"` in platform mode, and by the
+  restricted `vm.createContext` globals in self-hosted mode).
+- 5-second execution timeout. In the guest, the worker is actually
+  terminated when the timer fires — runaway loops cannot stall the
+  harness.
+- Each invocation is a new realm — no state leaks between calls.
 
 **SSRF protection (aai-server/ssrf.ts):**
 

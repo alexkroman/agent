@@ -329,6 +329,79 @@ export function createSessionStateMap(initState?: () => Record<string, unknown>)
   };
 }
 
+// ---- Guest-side run_code builtin --------------------------------------------
+
+/**
+ * Wall-clock budget for a single run_code invocation. Enforced by terminating
+ * the Worker — unlike a Promise timeout, this actually preempts runaway code.
+ */
+const RUN_CODE_TIMEOUT_MS = 5000;
+
+/**
+ * Worker source. Runs in its own isolate with `permissions: "none"`, so even
+ * inside the already-sandboxed Deno guest it has no fs/net/env/run access.
+ * The Deno.* namespace is not available in a permissionless worker realm.
+ */
+const RUN_CODE_WORKER_SRC = `
+self.onmessage = async (e) => {
+  const { code } = e.data;
+  const output = [];
+  const cap = (...a) => output.push(a.map((x) => (typeof x === "string" ? x : String(x))).join(" "));
+  const sbConsole = { log: cap, info: cap, warn: cap, error: cap, debug: cap };
+  try {
+    const AsyncFunction = (async function(){}).constructor;
+    const fn = new AsyncFunction("console", code);
+    await fn(sbConsole);
+    self.postMessage({ output: output.join("\\n").trim() });
+  } catch (err) {
+    self.postMessage({ error: err && err.message ? err.message : String(err) });
+  }
+};
+`;
+
+/**
+ * Execute user-supplied JavaScript in a freshly spawned Deno Worker with no
+ * permissions. Output is captured from console.log/info/warn/error/debug.
+ * Returns a success string or `{ error }` on syntax/runtime failure or timeout.
+ *
+ * Each call creates a new Worker so state cannot leak between invocations.
+ * The Worker is terminated on timeout; a runaway infinite loop cannot stall
+ * the guest harness.
+ */
+export async function executeRunCode(code: string): Promise<string | { error: string }> {
+  const workerUrl = `data:application/javascript,${encodeURIComponent(RUN_CODE_WORKER_SRC)}`;
+  // deno-lint / vitest-Node environments may not provide Worker; the guest runs
+  // under Deno so this is always defined in production.
+  const worker = new Worker(workerUrl, {
+    type: "module",
+    deno: { permissions: "none" },
+  } as WorkerOptions);
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const msg = await new Promise<{ output?: string; error?: string }>((resolve, reject) => {
+      timer = setTimeout(
+        () => reject(new Error(`run_code timed out after ${RUN_CODE_TIMEOUT_MS}ms`)),
+        RUN_CODE_TIMEOUT_MS,
+      );
+      worker.onmessage = (e: MessageEvent) =>
+        resolve(e.data as { output?: string; error?: string });
+      worker.onerror = (e: ErrorEvent) => {
+        e.preventDefault?.();
+        reject(new Error(e.message || "run_code worker error"));
+      };
+      worker.postMessage({ code });
+    });
+    if (msg.error) return { error: msg.error };
+    return msg.output && msg.output.length > 0 ? msg.output : "Code ran successfully (no output)";
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : String(err) };
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+    worker.terminate();
+  }
+}
+
 // ---- Tool execution ---------------------------------------------------------
 
 const TOOL_TIMEOUT_MS = 30_000;
@@ -354,6 +427,19 @@ export async function executeTool(
   req: ToolCallRequest,
   sessionState: ReturnType<typeof createSessionStateMap>,
 ): Promise<ToolCallResponse | ToolCallErrorResponse> {
+  // run_code is a guest-side builtin. Handled here so it works without any
+  // agent.tools entry — the host runtime forwards it over RPC like any other
+  // tool and we execute it in a fresh Worker inside this sandbox.
+  if (req.name === "run_code") {
+    const code = (req.args as { code?: unknown }).code;
+    if (typeof code !== "string") {
+      return { error: "run_code requires { code: string }" };
+    }
+    const runResult = await executeRunCode(code);
+    const resultText = typeof runResult === "string" ? runResult : JSON.stringify(runResult);
+    return { result: resultText, state: sessionState.get(req.sessionId) };
+  }
+
   const tool = agent.tools[req.name];
   if (!tool) {
     return { error: `Unknown tool: ${req.name}` };
