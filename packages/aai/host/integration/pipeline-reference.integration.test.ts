@@ -24,11 +24,10 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { openai } from "@ai-sdk/openai";
 import { describe, expect, test } from "vitest";
-import type { AgentConfig, ExecuteTool } from "../../sdk/_internal-types.ts";
-import type { ClientEvent, ClientSink } from "../../sdk/protocol.ts";
-import { createPipelineSession } from "../pipeline-session.ts";
+import type { ClientSink } from "../../sdk/protocol.ts";
 import { openAssemblyAI } from "../providers/stt/assemblyai.ts";
 import { openCartesia } from "../providers/tts/cartesia.ts";
+import { createRuntime } from "../runtime.ts";
 import { consoleLogger } from "../runtime-config.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -59,45 +58,46 @@ describe.skipIf(!envReady)("pipeline integration — reference stack", () => {
       );
     }
     const pcm = await readFile(fixturePath);
-    const events: ClientEvent[] = [];
+    const userTranscripts: string[] = [];
     const audioOut: Uint8Array[] = [];
+    let replyDone = false;
+
     const client: ClientSink = {
       open: true,
       event: (e) => {
-        events.push(e);
+        if (e.type === "user_transcript") userTranscripts.push(e.text);
+        if (e.type === "reply_done") replyDone = true;
       },
       playAudioChunk: (chunk) => {
         audioOut.push(chunk);
       },
-      playAudioDone: () => {
-        /* no-op: test asserts on audioOut chunks directly */
+      playAudioDone: () => undefined,
+    };
+
+    const runtime = createRuntime({
+      agent: {
+        name: "int",
+        systemPrompt: "You reply in one short sentence.",
+        greeting: "",
+        maxSteps: 1,
+        tools: {},
       },
-    };
-
-    const agentConfig: AgentConfig = {
-      name: "int",
-      systemPrompt: "You reply in one short sentence.",
-      greeting: "",
-      maxSteps: 1,
-    };
-
-    const executeTool: ExecuteTool = async () => "";
-
-    const session = createPipelineSession({
-      id: "int-1",
-      agent: "pipeline-reference",
-      client,
-      agentConfig,
-      toolSchemas: [],
-      executeTool,
+      env: {
+        // biome-ignore lint/style/noNonNullAssertion: envReady guard ensures presence
+        ASSEMBLYAI_API_KEY: process.env.ASSEMBLYAI_API_KEY!,
+        // biome-ignore lint/style/noNonNullAssertion: envReady guard ensures presence
+        CARTESIA_API_KEY: process.env.CARTESIA_API_KEY!,
+      },
       stt: openAssemblyAI({ model: "u3pro-rt" }),
       llm: openai("gpt-4o-mini"),
       tts: openCartesia({ voice: "694f9389-aac1-45b6-b726-9d9369183238" }),
-      // biome-ignore lint/style/noNonNullAssertion: envReady guard ensures presence
-      sttApiKey: process.env.ASSEMBLYAI_API_KEY!,
-      // biome-ignore lint/style/noNonNullAssertion: envReady guard ensures presence
-      ttsApiKey: process.env.CARTESIA_API_KEY!,
       logger: consoleLogger,
+    });
+
+    const session = runtime.createSession({
+      id: "int-1",
+      agent: "pipeline-reference",
+      client,
     });
 
     await session.start();
@@ -110,15 +110,10 @@ describe.skipIf(!envReady)("pipeline integration — reference stack", () => {
       session.onAudio(new Uint8Array(chunk));
       await new Promise((r) => setTimeout(r, 100));
     }
-    await session.waitForTurn();
     await session.stop();
 
-    const userTranscript = events.find((e) => e.type === "user_transcript");
-    expect(userTranscript).toBeDefined();
-    expect(String((userTranscript as { text: string }).text).toLowerCase()).toContain(
-      "how are you",
-    );
-    expect(events.some((e) => e.type === "reply_done")).toBe(true);
+    expect(userTranscripts.some((t) => t.toLowerCase().includes("how are you"))).toBe(true);
+    expect(replyDone).toBe(true);
     expect(audioOut.length).toBeGreaterThan(0);
   }, 60_000);
 });

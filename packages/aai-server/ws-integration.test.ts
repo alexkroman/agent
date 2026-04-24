@@ -9,10 +9,40 @@
  */
 import http from "node:http";
 import type { ReadyConfig, ServerMessage } from "@alexkroman1/aai/protocol";
-import { type Session, type SessionWebSocket, wireSessionSocket } from "@alexkroman1/aai/runtime";
+import {
+  type SessionCore,
+  type SessionWebSocket,
+  wireSessionSocket,
+} from "@alexkroman1/aai/runtime";
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import { WebSocketServer } from "ws";
-import { makeStubSession } from "../aai/host/_test-utils.ts";
+
+// ── Stub helpers ──────────────────────────────────────────────────────────
+
+function makeStubCore(overrides: Partial<SessionCore> = {}): SessionCore {
+  return {
+    id: "stub",
+    start: vi.fn(() => Promise.resolve()),
+    stop: vi.fn(() => Promise.resolve()),
+    onAudio: vi.fn(),
+    onAudioReady: vi.fn(),
+    onCancel: vi.fn(),
+    onReset: vi.fn(),
+    onHistory: vi.fn(),
+    onReplyStarted: vi.fn(),
+    onReplyDone: vi.fn(),
+    onCancelled: vi.fn(),
+    onAudioChunk: vi.fn(),
+    onAudioDone: vi.fn(),
+    onUserTranscript: vi.fn(),
+    onAgentTranscript: vi.fn(),
+    onToolCall: vi.fn(),
+    onError: vi.fn(),
+    onSpeechStarted: vi.fn(),
+    onSpeechStopped: vi.fn(),
+    ...overrides,
+  };
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -22,18 +52,18 @@ const READY_CONFIG: ReadyConfig = {
   ttsSampleRate: 24_000,
 };
 
-type SessionCapture = { session: Session; sessionId: string };
+type SessionCapture = { session: SessionCore; sessionId: string };
 
 function startTestServer(): Promise<{
   port: number;
   server: http.Server;
   captures: SessionCapture[];
-  makeSession: (factory?: () => Session) => void;
+  makeSession: (factory?: () => SessionCore) => void;
   close: () => void;
 }> {
   return new Promise((resolve) => {
     const captures: SessionCapture[] = [];
-    let sessionFactory: () => Session = makeStubSession;
+    let sessionFactory: () => SessionCore = makeStubCore;
 
     const server = http.createServer((_req, res) => {
       res.writeHead(404);
@@ -44,7 +74,7 @@ function startTestServer(): Promise<{
 
     server.on("upgrade", (req, socket, head) => {
       wss.handleUpgrade(req, socket, head, (ws) => {
-        const sessions = new Map<string, Session>();
+        const sessions = new Map<string, SessionCore>();
         wireSessionSocket(ws as unknown as SessionWebSocket, {
           sessions,
           createSession: (sid, _client) => {
@@ -63,7 +93,7 @@ function startTestServer(): Promise<{
         port: addr.port,
         server,
         captures,
-        makeSession: (factory) => {
+        makeSession: (factory?: () => SessionCore) => {
           if (factory) sessionFactory = factory;
         },
         close: () => {
@@ -92,7 +122,6 @@ function connect(port: number): Promise<{
         const data = typeof event.data === "string" ? event.data : String(event.data);
         const msg = JSON.parse(data) as ServerMessage;
         messages.push(msg);
-        // Resolve on first message (config)
         if (messages.length === 1) {
           resolve({ ws, config: msg, messages });
         }
@@ -222,9 +251,7 @@ describe("WebSocket server integration", () => {
   });
 
   test("session start failure does not crash server", async () => {
-    ctx.makeSession(() =>
-      makeStubSession({ start: vi.fn(() => Promise.reject(new Error("fail"))) }),
-    );
+    ctx.makeSession(() => makeStubCore({ start: vi.fn(() => Promise.reject(new Error("fail"))) }));
     const ws = new WebSocket(`ws://127.0.0.1:${ctx.port}/agent/websocket`);
     await new Promise<void>((resolve) => {
       ws.addEventListener("open", () => resolve());

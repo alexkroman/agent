@@ -11,13 +11,13 @@
  */
 
 import { errorMessage, WS_OPEN } from "@alexkroman1/aai";
-import type {
-  ClientEvent,
-  ClientMessage,
-  ReadyConfig,
-  ServerMessage,
+import {
+  type ClientEvent,
+  type ClientMessage,
+  lenientParse,
+  type ServerMessage,
+  ServerMessageSchema,
 } from "@alexkroman1/aai/protocol";
-import { lenientParse, ReadyConfigSchema, ServerMessageSchema } from "@alexkroman1/aai/protocol";
 import type { VoiceIO } from "./audio.ts";
 import type {
   AgentState,
@@ -37,6 +37,17 @@ export type {
   VoiceSessionOptions,
   WebSocketConstructor,
 } from "./types.ts";
+
+/** Cap on `customEvents` retained in the session snapshot to avoid unbounded growth. */
+const MAX_CUSTOM_EVENTS = 200;
+
+/** Cap on `messages` retained in the session snapshot; mirrors host-side DEFAULT_MAX_HISTORY. */
+const MAX_MESSAGES = 200;
+
+function appendCapped<T>(list: readonly T[], item: T, cap: number): T[] {
+  const next = [...list, item];
+  return next.length > cap ? next.slice(-cap) : next;
+}
 
 // ─── Snapshot type ──────────────────────────────────────────────────────────
 
@@ -144,10 +155,10 @@ type ConnState = {
  */
 async function initAudioCapture(
   conn: ConnState,
-  msg: ReadyConfig,
+  msg: { sampleRate: number; ttsSampleRate: number },
   deps: {
-    send: (msg: ClientMessage) => void;
-    sendBinary: (data: ArrayBuffer) => void;
+    sendJson: (msg: ClientMessage) => void;
+    sendAudio: (bytes: Uint8Array) => void;
     updateState: (partial: Partial<SessionSnapshot>) => void;
   },
 ): Promise<void> {
@@ -167,9 +178,9 @@ async function initAudioCapture(
       playbackWorkletSrc: playbackWorklet,
       onMicData: (pcm16: ArrayBuffer) => {
         try {
-          deps.sendBinary(pcm16);
+          deps.sendAudio(new Uint8Array(pcm16));
         } catch {
-          console.debug("[aai-ui] sendBinary dropped: connection closed");
+          console.debug("[aai-ui] sendAudio dropped: connection closed");
         }
       },
     });
@@ -178,7 +189,7 @@ async function initAudioCapture(
       return;
     }
     conn.voiceIO = io;
-    deps.send({ type: "audio_ready" });
+    deps.sendJson({ type: "audio_ready" });
     deps.updateState({ state: "listening" });
   } catch (err: unknown) {
     if (conn.generation !== gen || !conn.ws || conn.ws.readyState !== WS_OPEN) return;
@@ -282,21 +293,21 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     });
   }
 
-  function send(msg: ClientMessage): void {
+  function sendJson(msg: ClientMessage): void {
     if (conn.ws && conn.ws.readyState === WS_OPEN) {
       conn.ws.send(JSON.stringify(msg));
     }
   }
 
-  function sendBinary(data: ArrayBuffer): void {
+  function sendAudio(bytes: Uint8Array): void {
     if (conn.ws && conn.ws.readyState === WS_OPEN) {
-      conn.ws.send(data);
+      conn.ws.send(bytes as unknown as ArrayBuffer);
     }
   }
 
   const audioDeps = {
-    send,
-    sendBinary,
+    sendJson,
+    sendAudio,
     updateState,
   };
 
@@ -308,11 +319,25 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
   /** Monotonically increasing counter for custom events -- used by useEvent to deduplicate. */
   let customEventSeq = 0;
 
+  function appendCustomEvent(name: string, data: unknown): void {
+    updateState({
+      customEvents: appendCapped(
+        currentSnapshot.customEvents,
+        { id: ++customEventSeq, event: name, data },
+        MAX_CUSTOM_EVENTS,
+      ),
+    });
+  }
+
   function handleUserTranscriptEvent(text: string): void {
     handlerGeneration++;
     updateState({
       userTranscript: null,
-      messages: [...currentSnapshot.messages, { role: "user" as const, content: text }],
+      messages: appendCapped(
+        currentSnapshot.messages,
+        { role: "user" as const, content: text },
+        MAX_MESSAGES,
+      ),
       state: "thinking",
     });
   }
@@ -320,7 +345,11 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
   function handleAgentTranscriptEvent(text: string): void {
     updateState({
       agentTranscript: null,
-      messages: [...currentSnapshot.messages, { role: "assistant" as const, content: text }],
+      messages: appendCapped(
+        currentSnapshot.messages,
+        { role: "assistant" as const, content: text },
+        MAX_MESSAGES,
+      ),
     });
   }
 
@@ -352,7 +381,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
             {
               callId: e.toolCallId,
               name: e.toolName,
-              args: e.args,
+              args: (e.args ?? {}) as Record<string, unknown>,
               status: "pending",
               afterMessageIndex: currentSnapshot.messages.length - 1,
             },
@@ -397,12 +426,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
         break;
       }
       case "custom_event":
-        updateState({
-          customEvents: [
-            ...currentSnapshot.customEvents,
-            { id: ++customEventSeq, event: e.event, data: e.data },
-          ],
-        });
+        appendCustomEvent(e.event, e.data);
         break;
       case "error":
         console.error("Agent error:", e.message);
@@ -411,6 +435,9 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
           error: { code: e.code, message: e.message },
           running: false,
         });
+        break;
+      case "idle_timeout":
+        // Server-side idle timeout — treat as a graceful disconnect signal.
         break;
       default:
         break;
@@ -423,9 +450,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     if (currentSnapshot.state !== "speaking") {
       updateState({ state: "speaking" });
     }
-    if (chunk.buffer instanceof ArrayBuffer) {
-      conn.voiceIO?.enqueue(chunk.buffer);
-    }
+    conn.voiceIO?.enqueue(chunk.buffer as ArrayBuffer);
   }
 
   /**
@@ -451,61 +476,55 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     }
   }
 
-  /** Parse a JSON text frame into a ServerMessage, or null if invalid/unknown. */
-  function parseTextFrame(data: string): ServerMessage | null {
-    try {
-      const result = lenientParse(ServerMessageSchema, JSON.parse(data));
-      if (!result.ok) {
-        if (result.malformed) console.warn("Ignoring invalid server message:", result.error);
-        return null;
-      }
-      return result.data;
-    } catch {
-      return null;
-    }
-  }
-
-  /** Try to extract a ReadyConfig from a config message, or null. */
-  function parseConfig(
-    msg: ServerMessage & { type: "config" },
-  ): (ReadyConfig & { sessionId?: string }) | null {
-    const { type: _, sessionId, ...config } = msg;
-    const parsed = ReadyConfigSchema.safeParse(config);
-    if (!parsed.success) {
-      console.warn("Unsupported server config:", parsed.error.message);
-      return null;
-    }
-    return sessionId ? { ...parsed.data, sessionId } : parsed.data;
-  }
-
   /**
-   * Dispatch an incoming WebSocket message (text or binary).
+   * Dispatch an incoming WebSocket message.
+   *
+   * Binary frames carry raw PCM16 audio chunks. Text frames are JSON-encoded
+   * {@link ServerMessage} values validated via Zod.
    *
    * Returns the parsed config if the message is a `config` message,
-   * otherwise `null`.
+   * otherwise `undefined`.
    */
   function handleMessage(
-    data: string | ArrayBuffer,
-  ): (ReadyConfig & { sessionId?: string }) | null {
-    // Binary frame -> raw PCM16 TTS audio
+    data: unknown,
+  ): { sampleRate: number; ttsSampleRate: number; sid?: string | undefined } | undefined {
     if (data instanceof ArrayBuffer) {
       playAudioChunk(new Uint8Array(data));
-      return null;
+      return;
     }
-
-    const msg = parseTextFrame(data);
-    if (!msg) return null;
-
-    if (msg.type === "config") return parseConfig(msg);
-
+    if (typeof data !== "string") {
+      console.warn("session-core: non-string, non-binary frame received; dropping");
+      return;
+    }
+    let raw: unknown;
+    try {
+      raw = JSON.parse(data);
+    } catch {
+      console.warn("session-core: invalid JSON; dropping");
+      return;
+    }
+    const parsed = lenientParse(ServerMessageSchema, raw);
+    if (!parsed.ok) {
+      if (parsed.malformed) {
+        console.warn("session-core: malformed server message", parsed.error);
+      }
+      // else: unrecognised type — silently drop (rolling-upgrade tolerance)
+      return;
+    }
+    const msg = parsed.data;
+    if (msg.type === "config") {
+      return {
+        sampleRate: msg.sampleRate,
+        ttsSampleRate: msg.ttsSampleRate,
+        sid: msg.sessionId,
+      };
+    }
     if (msg.type === "audio_done") {
       playAudioDone();
-      return null;
+      return;
     }
-
-    // All other messages are ClientEvent
+    // Everything else is a ClientEvent.
     handleEvent(msg);
-    return null;
   }
 
   // ─── Connection management ──────────────────────────────────────────────
@@ -547,7 +566,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
       (event: MessageEvent) => {
         const config = handleMessage(event.data);
         if (config) {
-          if (config.sessionId) options.onSessionId?.(config.sessionId);
+          if (config.sid) options.onSessionId?.(config.sid);
           const isReconnect = hasConnected;
           hasConnected = true;
           initAudioCapture(conn, config, audioDeps).catch((err) => {
@@ -562,7 +581,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
           });
 
           if (isReconnect && currentSnapshot.messages.length > 0) {
-            send({
+            sendJson({
               type: "history",
               messages: currentSnapshot.messages.map((m) => ({ role: m.role, content: m.content })),
             });
@@ -589,13 +608,13 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
   function cancel(): void {
     conn.voiceIO?.flush();
     updateState({ state: "listening" });
-    send({ type: "cancel" });
+    sendJson({ type: "cancel" });
   }
 
   function reset(): void {
     conn.voiceIO?.flush();
     if (conn.ws && conn.ws.readyState === WS_OPEN) {
-      send({ type: "reset" });
+      sendJson({ type: "reset" });
       return;
     }
     resetState();

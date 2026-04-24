@@ -51,6 +51,7 @@
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.0",
     "@cartesia/cartesia-js": "^3.0.0",
+    "@deepgram/sdk": "^5.0.0",
     "ai": "^6.0.161",
     "assemblyai": "^4.30.0",
     "escape-html": "^1.0.3",

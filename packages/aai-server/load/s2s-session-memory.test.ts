@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Load Test: Concurrent Mock S2S Sessions with Conversation History
+ * Load Test: Concurrent Mock S2S SessionCores with Conversation History
  *
  * Creates real runtime sessions with mock S2S, then simulates active
  * conversations by accumulating messages. Measures memory growth as
@@ -12,15 +12,18 @@
 import { afterAll, describe, expect, test, vi } from "vitest";
 import {
   flush,
-  type MockS2sHandle,
   makeAgent,
-  makeClient,
+  makeClientSink,
   makeMockHandle,
   silentLogger,
 } from "../../aai/host/_test-utils.ts";
 import { createRuntime } from "../../aai/host/runtime.ts";
-import type { Session } from "../../aai/host/session.ts";
-import { _internals } from "../../aai/host/session.ts";
+import type { S2sHandle } from "../../aai/host/s2s.ts";
+import type { SessionCore } from "../../aai/host/session-core.ts";
+import { _internals } from "../../aai/host/transports/s2s-transport.ts";
+
+/** Legacy `_fire` stub — no-op after Task 10 removed the nanoevents emitter. */
+type MockWithFire = S2sHandle & { _fire: (...args: unknown[]) => void };
 
 // ── Stats helpers ───────────────────────────────────────────────────────
 
@@ -34,8 +37,8 @@ describe("S2S session memory with conversation history", () => {
   const SESSION_TIERS = [10, 25, 50];
   const MESSAGE_TIERS = [10, 50, 100];
 
-  const sessions: Session[] = [];
-  const mockHandles: MockS2sHandle[] = [];
+  const sessions: SessionCore[] = [];
+  const mockHandles: MockWithFire[] = [];
   let connectSpy: ReturnType<typeof vi.spyOn>;
 
   afterAll(async () => {
@@ -50,7 +53,7 @@ describe("S2S session memory with conversation history", () => {
   test("memory growth: sessions x messages matrix", async () => {
     // Mock connectS2s to return fresh mock handles for each session
     connectSpy = vi.spyOn(_internals, "connectS2s").mockImplementation(async () => {
-      const handle = makeMockHandle();
+      const handle: MockWithFire = Object.assign(makeMockHandle(), { _fire: () => undefined });
       mockHandles.push(handle);
       return handle;
     });
@@ -75,7 +78,7 @@ describe("S2S session memory with conversation history", () => {
       messages: number;
       rssMb: number;
       deltaMb: number;
-      perSessionKb: number;
+      perSessionCoreKb: number;
       perMessageBytes: number;
       replayMs: number;
     }[] = [];
@@ -84,7 +87,7 @@ describe("S2S session memory with conversation history", () => {
       // Create sessions up to this tier
       while (sessions.length < sessionTier) {
         const idx = sessions.length;
-        const client = makeClient();
+        const client = makeClientSink();
         const session = runtime.createSession({
           id: `s-${idx}`,
           agent: agent.name,
@@ -102,17 +105,17 @@ describe("S2S session memory with conversation history", () => {
       }
 
       // Track how many messages have been sent to each session
-      let messagesSentPerSession = 0;
+      let messagesSentPerSessionCore = 0;
 
       for (const msgTier of MESSAGE_TIERS) {
         const replayStart = performance.now();
 
         // Send messages to fill up to this message tier
-        const msgsToSend = msgTier - messagesSentPerSession;
+        const msgsToSend = msgTier - messagesSentPerSessionCore;
         if (msgsToSend > 0) {
           for (let i = 0; i < sessionTier; i++) {
             const handle = mockHandles[i]!;
-            for (let m = messagesSentPerSession; m < msgTier; m++) {
+            for (let m = messagesSentPerSessionCore; m < msgTier; m++) {
               handle._fire("replyStarted", { replyId: `r-${i}-${m}` });
               handle._fire("event", {
                 type: "user_transcript",
@@ -127,7 +130,7 @@ describe("S2S session memory with conversation history", () => {
             }
           }
           await flush();
-          messagesSentPerSession = msgTier;
+          messagesSentPerSessionCore = msgTier;
         }
 
         const replayMs = performance.now() - replayStart;
@@ -135,7 +138,7 @@ describe("S2S session memory with conversation history", () => {
         if (global.gc) global.gc();
         const rss = rssMb();
         const delta = rss - baseRss;
-        const perSessionKb = sessionTier > 0 ? (delta * 1024) / sessionTier : 0;
+        const perSessionCoreKb = sessionTier > 0 ? (delta * 1024) / sessionTier : 0;
         // Each message tier has (user + agent) messages per session = 2 * msgTier * sessionTier total messages
         const totalMessages = 2 * msgTier * sessionTier;
         const perMessageBytes = totalMessages > 0 ? (delta * 1024 * 1024) / totalMessages : 0;
@@ -145,7 +148,7 @@ describe("S2S session memory with conversation history", () => {
           messages: msgTier,
           rssMb: rss,
           deltaMb: delta,
-          perSessionKb,
+          perSessionCoreKb,
           perMessageBytes,
           replayMs,
         });
@@ -155,7 +158,7 @@ describe("S2S session memory with conversation history", () => {
             `${String(msgTier).padStart(4)} msgs | ` +
             `RSS ${rss.toFixed(0).padStart(5)}MB | ` +
             `delta ${delta.toFixed(1).padStart(6)}MB | ` +
-            `~${perSessionKb.toFixed(1).padStart(6)}KB/sess | ` +
+            `~${perSessionCoreKb.toFixed(1).padStart(6)}KB/sess | ` +
             `~${perMessageBytes.toFixed(0).padStart(4)}B/msg | ` +
             `${replayMs.toFixed(0).padStart(6)}ms`,
         );
@@ -187,9 +190,9 @@ describe("S2S session memory with conversation history", () => {
     );
 
     // Print summary matrix
-    console.log("\n--- Sessions x Messages Matrix ---");
+    console.log("\n--- SessionCores x Messages Matrix ---");
     console.log(
-      "Sessions".padStart(8),
+      "SessionCores".padStart(8),
       "Msgs".padStart(6),
       "RSS(MB)".padStart(8),
       "Delta(MB)".padStart(10),
@@ -204,7 +207,7 @@ describe("S2S session memory with conversation history", () => {
         String(r.messages).padStart(6),
         r.rssMb.toFixed(0).padStart(8),
         r.deltaMb.toFixed(1).padStart(10),
-        r.perSessionKb.toFixed(1).padStart(10),
+        r.perSessionCoreKb.toFixed(1).padStart(10),
         r.perMessageBytes.toFixed(0).padStart(8),
         r.replayMs.toFixed(0).padStart(10),
       );
@@ -216,7 +219,7 @@ describe("S2S session memory with conversation history", () => {
       console.log(
         `Peak: ${peak.sessions} sessions x ${peak.messages} msgs, ` +
           `RSS +${peak.deltaMb.toFixed(1)}MB, ` +
-          `~${peak.perSessionKb.toFixed(1)}KB/sess, ` +
+          `~${peak.perSessionCoreKb.toFixed(1)}KB/sess, ` +
           `~${peak.perMessageBytes.toFixed(0)}B/msg`,
       );
     }

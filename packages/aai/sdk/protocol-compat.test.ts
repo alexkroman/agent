@@ -24,8 +24,16 @@ import {
 // ── Load fixtures ─────────────────────────────────────────────────────────
 
 const FIXTURE_DIR = join(import.meta.dirname, "compat-fixtures");
+// Only load compat fixtures that have the expected schema-compat structure
+// (ServerMessage, ClientMessage, KvRequest, constants). Wire-format fixtures
+// like wire-v1.json use a different shape and are tested by wire.test.ts.
 const fixtureFiles = readdirSync(FIXTURE_DIR)
   .filter((f) => f.endsWith(".json"))
+  .filter((f) => {
+    const raw = readFileSync(join(FIXTURE_DIR, f), "utf-8");
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    return "ServerMessage" in parsed && "ClientMessage" in parsed;
+  })
   .sort();
 
 type Fixture = {

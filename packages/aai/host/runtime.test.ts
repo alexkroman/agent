@@ -11,10 +11,10 @@ import {
   createFakeTtsProvider,
 } from "./_pipeline-test-fakes.ts";
 import { CONFORMANCE_AGENT, testRuntime } from "./_runtime-conformance.ts";
-import { flush, makeAgent, makeClient, makeMockHandle, silentLogger } from "./_test-utils.ts";
+import { flush, makeAgent, makeClientSink, makeMockHandle, silentLogger } from "./_test-utils.ts";
 import { createRuntime } from "./runtime.ts";
-import { _internals } from "./session.ts";
 import { executeToolCall } from "./tool-executor.ts";
+import { _internals } from "./transports/s2s-transport.ts";
 import { createUnstorageKv } from "./unstorage-kv.ts";
 
 describe("toAgentConfig", () => {
@@ -360,11 +360,7 @@ describe("createRuntime shutdown", () => {
 
   test("shutdown stops active sessions gracefully", async () => {
     const mockHandle = makeMockHandle();
-    const connectSpy = vi.spyOn(_internals, "connectS2s").mockImplementation(async () => {
-      // Fire "ready" so session.start() resolves
-      setTimeout(() => mockHandle._fire("ready", { sessionId: "mock-sid" }), 0);
-      return mockHandle;
-    });
+    const connectSpy = vi.spyOn(_internals, "connectS2s").mockResolvedValue(mockHandle);
 
     const agent = makeAgent();
     const runtime = createRuntime({ agent, env: {}, logger: silentLogger });
@@ -392,10 +388,7 @@ describe("createRuntime shutdown", () => {
     mockHandle.close = vi.fn(() => {
       throw new Error("close failed");
     });
-    const connectSpy = vi.spyOn(_internals, "connectS2s").mockImplementation(async () => {
-      setTimeout(() => mockHandle._fire("ready", { sessionId: "mock-sid" }), 0);
-      return mockHandle;
-    });
+    const connectSpy = vi.spyOn(_internals, "connectS2s").mockResolvedValue(mockHandle);
 
     const agent = makeAgent();
     const runtime = createRuntime({ agent, env: {}, logger });
@@ -422,10 +415,7 @@ describe("createRuntime shutdown", () => {
     mockHandle.close = vi.fn(() => {
       // intentionally do nothing — session stop will hang
     });
-    const connectSpy = vi.spyOn(_internals, "connectS2s").mockImplementation(async () => {
-      setTimeout(() => mockHandle._fire("ready", { sessionId: "mock-sid" }), 0);
-      return mockHandle;
-    });
+    const connectSpy = vi.spyOn(_internals, "connectS2s").mockResolvedValue(mockHandle);
 
     const agent = makeAgent();
     const runtime = createRuntime({
@@ -483,12 +473,7 @@ describe("createRuntime createSession", () => {
   test("createSession returns a Session object", () => {
     const agent = makeAgent();
     const runtime = createRuntime({ agent, env: {} });
-    const client = {
-      open: true,
-      event: vi.fn(),
-      playAudioChunk: vi.fn(),
-      playAudioDone: vi.fn(),
-    };
+    const client = makeClientSink();
     const session = runtime.createSession({
       id: "test-session",
       agent: agent.name,
@@ -506,12 +491,7 @@ describe("createRuntime createSession", () => {
   test("createSession passes skipGreeting option", () => {
     const agent = makeAgent();
     const runtime = createRuntime({ agent, env: {} });
-    const client = {
-      open: true,
-      event: vi.fn(),
-      playAudioChunk: vi.fn(),
-      playAudioDone: vi.fn(),
-    };
+    const client = makeClientSink();
     // Should not throw when skipGreeting is set
     const session = runtime.createSession({
       id: "test-session",
@@ -525,12 +505,7 @@ describe("createRuntime createSession", () => {
   test("createSession passes resumeFrom option", () => {
     const agent = makeAgent();
     const runtime = createRuntime({ agent, env: {} });
-    const client = {
-      open: true,
-      event: vi.fn(),
-      playAudioChunk: vi.fn(),
-      playAudioDone: vi.fn(),
-    };
+    const client = makeClientSink();
     const session = runtime.createSession({
       id: "test-session",
       agent: agent.name,
@@ -604,13 +579,8 @@ describe("createRuntime with custom options", () => {
       agent,
       env: { ASSEMBLYAI_API_KEY: "test-api-key" },
     });
-    const client = {
-      open: true,
-      event: vi.fn(),
-      playAudioChunk: vi.fn(),
-      playAudioDone: vi.fn(),
-    };
-    // Should not throw — the API key gets passed to createS2sSession internally
+    const client = makeClientSink();
+    // Should not throw — the API key gets passed to createS2sTransport internally
     const session = runtime.createSession({
       id: "test-session",
       agent: agent.name,
@@ -651,7 +621,7 @@ describe("Runtime — session routing", () => {
       tts,
     });
 
-    const client = makeClient();
+    const client = makeClientSink();
     const session = runtime.createSession({
       id: "sess-pipeline",
       agent: "test-agent",
@@ -677,10 +647,7 @@ describe("Runtime — session routing", () => {
 
   test("manifest without stt/llm/tts routes to S2sSession (createWebSocket IS called)", async () => {
     const mockHandle = makeMockHandle();
-    const connectSpy = vi.spyOn(_internals, "connectS2s").mockImplementation(async () => {
-      setTimeout(() => mockHandle._fire("ready", { sessionId: "mock-sid" }), 0);
-      return mockHandle;
-    });
+    const connectSpy = vi.spyOn(_internals, "connectS2s").mockResolvedValue(mockHandle);
 
     const createWebSocket = vi.fn();
     const runtime = createRuntime({
@@ -690,7 +657,7 @@ describe("Runtime — session routing", () => {
       createWebSocket,
     });
 
-    const client = makeClient();
+    const client = makeClientSink();
     const session = runtime.createSession({
       id: "sess-s2s",
       agent: "test-agent",

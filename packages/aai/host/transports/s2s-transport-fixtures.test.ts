@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Fixture replay tests with a REAL Runtime.
+ * Fixture replay tests with a REAL Runtime — now wired to the transport layer.
  *
  * Replays recorded AssemblyAI S2S messages (from Kokoro TTS audio) through
  * a real agent session — real tool execution, real Zod arg validation, real
@@ -9,12 +9,16 @@
  * This exercises: AgentDef → toAgentConfig → tool schemas → Zod validation
  * → executeToolCall → session orchestration (reply guards, tool buffering,
  * turnPromise chaining, conversation history).
+ *
+ * Migrated from host/fixture-replay.test.ts (Task 19). Uses createFixtureSession
+ * which spies on s2s-transport.ts _internals.connectS2s and fires S2sCallbacks
+ * directly — no nanoevents / old S2sEvents system.
  */
 
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { z } from "zod";
-import type { AgentDef } from "../sdk/types.ts";
-import { createFixtureSession, flush } from "./_test-utils.ts";
+import type { AgentDef } from "../../sdk/types.ts";
+import { createFixtureSession, flush } from "../_test-utils.ts";
 
 // ─── Test agents with deterministic tools ────────────────────────────────────
 
@@ -67,7 +71,7 @@ const statefulAgent: AgentDef<{ callCount: number }> = {
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
-describe("fixture replay with real executor", () => {
+describe("fixture replay with real executor (transport layer)", () => {
   let cleanup: () => void;
 
   afterEach(() => {
@@ -79,15 +83,15 @@ describe("fixture replay with real executor", () => {
   test("tool call fixture: Zod validates args, real tool executes, result sent to S2S", async () => {
     const ctx = createFixtureSession(weatherAgent);
     cleanup = ctx.cleanup;
-    await ctx.session.start();
+    await ctx.start();
 
     ctx.replay("tool-call-sequence.json");
 
     // Wait for the async tool execution pipeline to complete
-    await vi.waitFor(() => expect(ctx.mockHandle.sendToolResult).toHaveBeenCalled());
+    await vi.waitFor(() => expect(ctx.fakeHandle.sendToolResult).toHaveBeenCalled());
 
     // Verify the real tool was called and produced correct output
-    const [callId, resultStr] = vi.mocked(ctx.mockHandle.sendToolResult).mock.calls[0] as [
+    const [callId, resultStr] = vi.mocked(ctx.fakeHandle.sendToolResult).mock.calls[0] as [
       string,
       string,
     ];
@@ -101,34 +105,30 @@ describe("fixture replay with real executor", () => {
   test("tool call fixture: client receives tool_call with validated args", async () => {
     const ctx = createFixtureSession(weatherAgent);
     cleanup = ctx.cleanup;
-    await ctx.session.start();
+    await ctx.start();
 
     ctx.replay("tool-call-sequence.json");
-    await vi.waitFor(() => expect(ctx.mockHandle.sendToolResult).toHaveBeenCalled());
+    await vi.waitFor(() => expect(ctx.fakeHandle.sendToolResult).toHaveBeenCalled());
 
-    const toolStart = ctx.client.events.find((e) => (e as { type: string }).type === "tool_call") as
-      | { toolName: string; args: Record<string, unknown> }
-      | undefined;
-    expect(toolStart?.toolName).toBe("get_weather");
-    expect(toolStart?.args).toEqual({ city: "San Francisco" });
+    expect(ctx.client.toolCallEvents.length).toBeGreaterThan(0);
+    const toolEvent = ctx.client.toolCallEvents[0];
+    expect(toolEvent?.name).toBe("get_weather");
+    expect(toolEvent?.args).toEqual({ city: "San Francisco" });
   });
 
   test("tool call fixture: conversation history accumulates user + assistant messages", async () => {
     const ctx = createFixtureSession(weatherAgent);
     cleanup = ctx.cleanup;
-    await ctx.session.start();
+    await ctx.start();
 
     ctx.replay("tool-call-sequence.json");
-    await vi.waitFor(() => expect(ctx.mockHandle.sendToolResult).toHaveBeenCalled());
+    await vi.waitFor(() => expect(ctx.fakeHandle.sendToolResult).toHaveBeenCalled());
     await flush();
 
     // Client received user transcript
-    const turns = ctx.client.events.filter(
-      (e) => (e as { type: string }).type === "user_transcript",
-    );
-    expect(turns.length).toBeGreaterThan(0);
-    const userText = (turns.at(-1) as { text: string }).text;
-    expect(userText.toLowerCase()).toContain("weather");
+    expect(ctx.client.userTranscripts.length).toBeGreaterThan(0);
+    const lastUserText = ctx.client.userTranscripts.at(-1) ?? "";
+    expect(lastUserText.toLowerCase()).toContain("weather");
   });
 
   // ── Simple question: no tools, just session lifecycle ──────────────────
@@ -136,29 +136,25 @@ describe("fixture replay with real executor", () => {
   test("simple question fixture: greeting + agent response reach client", async () => {
     const ctx = createFixtureSession(simpleAgent);
     cleanup = ctx.cleanup;
-    await ctx.session.start();
+    await ctx.start();
 
     ctx.replay("simple-question-sequence.json");
     await flush();
 
-    const chats = ctx.client.events.filter(
-      (e) => (e as { type: string }).type === "agent_transcript",
-    );
-    expect(chats.length).toBeGreaterThanOrEqual(2); // greeting + answer
+    expect(ctx.client.agentTranscripts.length).toBeGreaterThanOrEqual(2); // greeting + answer
   });
 
   test("simple question fixture: user speech events forwarded to client", async () => {
     const ctx = createFixtureSession(simpleAgent);
     cleanup = ctx.cleanup;
-    await ctx.session.start();
+    await ctx.start();
 
     ctx.replay("simple-question-sequence.json");
     await flush();
 
-    const types = ctx.client.events.map((e) => (e as { type: string }).type);
-    expect(types).toContain("speech_started");
-    expect(types).toContain("speech_stopped");
-    expect(types).toContain("user_transcript");
+    expect(ctx.client.speechStartedCount).toBeGreaterThan(0);
+    expect(ctx.client.speechStoppedCount).toBeGreaterThan(0);
+    expect(ctx.client.userTranscripts.length).toBeGreaterThan(0);
   });
 
   // ── Stateful agent: session state persists across tool calls ───────────
@@ -166,12 +162,12 @@ describe("fixture replay with real executor", () => {
   test("stateful agent: tool accesses and mutates session state", async () => {
     const ctx = createFixtureSession(statefulAgent);
     cleanup = ctx.cleanup;
-    await ctx.session.start();
+    await ctx.start();
 
     ctx.replay("tool-call-sequence.json");
-    await vi.waitFor(() => expect(ctx.mockHandle.sendToolResult).toHaveBeenCalled());
+    await vi.waitFor(() => expect(ctx.fakeHandle.sendToolResult).toHaveBeenCalled());
 
-    const [, resultStr] = vi.mocked(ctx.mockHandle.sendToolResult).mock.calls[0] as [
+    const [, resultStr] = vi.mocked(ctx.fakeHandle.sendToolResult).mock.calls[0] as [
       string,
       string,
     ];
@@ -181,17 +177,16 @@ describe("fixture replay with real executor", () => {
 
   // ── Greeting only: session lifecycle without user audio ────────────────
 
-  test("greeting fixture: session setup completes with tts_done", async () => {
+  test("greeting fixture: session setup completes with reply_done", async () => {
     const ctx = createFixtureSession(simpleAgent);
     cleanup = ctx.cleanup;
-    await ctx.session.start();
+    await ctx.start();
 
     ctx.replay("greeting-session-sequence.json");
     await flush();
 
-    const types = ctx.client.events.map((e) => (e as { type: string }).type);
-    expect(types).toContain("agent_transcript");
-    expect(types).toContain("reply_done");
+    expect(ctx.client.agentTranscripts.length).toBeGreaterThan(0);
+    expect(ctx.client.replyDoneCount).toBeGreaterThan(0);
   });
 
   // ── Tool schemas: real agent produces correct S2S tool schemas ─────────
@@ -231,13 +226,13 @@ describe("fixture replay with real executor", () => {
 
     const ctx = createFixtureSession(agent);
     cleanup = ctx.cleanup;
-    await ctx.session.start();
+    await ctx.start();
 
     ctx.replay("tool-call-sequence.json");
-    await vi.waitFor(() => expect(ctx.mockHandle.sendToolResult).toHaveBeenCalled());
+    await vi.waitFor(() => expect(ctx.fakeHandle.sendToolResult).toHaveBeenCalled());
 
     // Tool result should contain the error
-    const [, resultStr] = vi.mocked(ctx.mockHandle.sendToolResult).mock.calls[0] as [
+    const [, resultStr] = vi.mocked(ctx.fakeHandle.sendToolResult).mock.calls[0] as [
       string,
       string,
     ];
@@ -266,13 +261,13 @@ describe("fixture replay with real executor", () => {
 
     const ctx = createFixtureSession(agent);
     cleanup = ctx.cleanup;
-    await ctx.session.start();
+    await ctx.start();
 
     ctx.replay("tool-call-sequence.json");
-    await vi.waitFor(() => expect(ctx.mockHandle.sendToolResult).toHaveBeenCalled());
+    await vi.waitFor(() => expect(ctx.fakeHandle.sendToolResult).toHaveBeenCalled());
 
     // The result should contain a Zod validation error
-    const [, resultStr] = vi.mocked(ctx.mockHandle.sendToolResult).mock.calls[0] as [
+    const [, resultStr] = vi.mocked(ctx.fakeHandle.sendToolResult).mock.calls[0] as [
       string,
       string,
     ];
@@ -304,45 +299,31 @@ describe("fixture replay with real executor", () => {
 
     const ctx = createFixtureSession(agent);
     cleanup = ctx.cleanup;
-    await ctx.session.start();
+    await ctx.start();
 
-    const h = ctx.mockHandle;
+    const cbs = ctx.mockCallbacks;
 
     // Fire an interrupted transcript — should NOT go into conversation history
-    h._fire("replyStarted", { replyId: "r1" });
-    h._fire("event", {
-      type: "agent_transcript",
-      text: "This was interrupted",
-      _interrupted: true,
-    });
-    h._fire("event", { type: "cancelled" });
+    cbs.onReplyStarted("r1");
+    cbs.onAgentTranscript("This was interrupted", true);
+    cbs.onCancelled();
     await flush();
 
     // Client sees both agent_transcript and cancelled events
-    const types = ctx.client.events.map((e) => (e as { type: string }).type);
-    expect(types).toContain("agent_transcript");
-    expect(types).toContain("cancelled");
+    expect(ctx.client.agentTranscripts).toContain("This was interrupted");
+    expect(ctx.client.cancelledCount).toBeGreaterThan(0);
 
     // Fire a non-interrupted transcript — SHOULD go into conversation history
-    h._fire("replyStarted", { replyId: "r2" });
-    h._fire("event", {
-      type: "agent_transcript",
-      text: "This was completed",
-      _interrupted: false,
-    });
-    h._fire("event", { type: "reply_done" });
+    cbs.onReplyStarted("r2");
+    cbs.onAgentTranscript("This was completed", false);
+    cbs.onReplyDone();
     await flush();
 
     // Trigger a tool call to inspect conversation history.
-    h._fire("event", { type: "user_transcript", text: "check" });
+    cbs.onUserTranscript("check");
     await flush();
-    h._fire("replyStarted", { replyId: "r3" });
-    h._fire("event", {
-      type: "tool_call",
-      toolCallId: "c1",
-      toolName: "check_history",
-      args: { q: "test" },
-    });
+    cbs.onReplyStarted("r3");
+    cbs.onToolCall("c1", "check_history", { q: "test" });
     // Wait for tool to execute (captures messages)
     await vi.waitFor(() => expect(capturedMessages.length).toBeGreaterThan(0));
 
@@ -376,27 +357,27 @@ describe("fixture replay with real executor", () => {
 
     const ctx = createFixtureSession(agent);
     cleanup = ctx.cleanup;
-    await ctx.session.start();
+    await ctx.start();
 
     ctx.replay("tool-call-sequence.json");
-    await vi.waitFor(() => expect(ctx.mockHandle.sendToolResult).toHaveBeenCalled());
+    await vi.waitFor(() => expect(ctx.fakeHandle.sendToolResult).toHaveBeenCalled());
 
     // The tool should have seen the user's weather question in messages
     const userMsgs = capturedMessages.filter((m) => m.role === "user");
     expect(userMsgs.some((m) => m.content.toLowerCase().includes("weather"))).toBe(true);
   });
 
-  // ── Audio chunks forwarded to client.playAudioChunk ────────────────────
+  // ── Audio chunks forwarded to client.audio ─────────────────────────────
 
-  test("reply.audio events forwarded to client.playAudioChunk", async () => {
+  test("reply.audio events forwarded to client.audio", async () => {
     const ctx = createFixtureSession(simpleAgent);
     cleanup = ctx.cleanup;
-    await ctx.session.start();
+    await ctx.start();
 
-    // Manually fire audio events (replay skips them, so fire directly)
+    // Fire audio events directly via callbacks (replay skips reply.audio)
     const audioBytes = new Uint8Array([10, 20, 30, 40]);
-    ctx.mockHandle._fire("audio", { audio: audioBytes });
-    ctx.mockHandle._fire("audio", { audio: new Uint8Array([50, 60]) });
+    ctx.mockCallbacks.onAudio(audioBytes);
+    ctx.mockCallbacks.onAudio(new Uint8Array([50, 60]));
 
     expect(ctx.client.audioChunks.length).toBe(2);
     expect(Array.from(ctx.client.audioChunks[0] ?? [])).toEqual([10, 20, 30, 40]);
@@ -422,40 +403,29 @@ describe("fixture replay with real executor", () => {
 
     const ctx = createFixtureSession(agent);
     cleanup = ctx.cleanup;
-    await ctx.session.start();
+    await ctx.start();
 
-    const h = ctx.mockHandle;
-    h._fire("replyStarted", { replyId: "r1" });
-    h._fire("event", {
-      type: "tool_call",
-      toolCallId: "c1",
-      toolName: "get_weather",
-      args: { city: "NYC" },
-    });
-    h._fire("event", {
-      type: "tool_call",
-      toolCallId: "c2",
-      toolName: "get_weather",
-      args: { city: "LA" },
-    });
+    const cbs = ctx.mockCallbacks;
+    cbs.onReplyStarted("r1");
+    cbs.onToolCall("c1", "get_weather", { city: "NYC" });
+    cbs.onToolCall("c2", "get_weather", { city: "LA" });
 
-    // Wait for both tool calls to execute
+    // Wait for both tool calls to be dispatched to the client
     await vi.waitFor(() => {
-      const starts = ctx.client.events.filter((e) => (e as { type: string }).type === "tool_call");
-      expect(starts.length).toBe(2);
+      expect(ctx.client.toolCallEvents.length).toBe(2);
     });
 
-    // Results NOT sent yet — reply_done hasn't fired
-    expect(ctx.mockHandle.sendToolResult).not.toHaveBeenCalled();
+    // Results NOT sent yet — reply.done hasn't fired
+    expect(ctx.fakeHandle.sendToolResult).not.toHaveBeenCalled();
 
-    // Fire reply_done — should flush both results
-    h._fire("event", { type: "reply_done" });
+    // Fire reply.done — should flush both results
+    cbs.onReplyDone();
     await vi.waitFor(() => {
-      expect(ctx.mockHandle.sendToolResult).toHaveBeenCalledTimes(2);
+      expect(ctx.fakeHandle.sendToolResult).toHaveBeenCalledTimes(2);
     });
 
     // Verify both results are correct
-    const calls = vi.mocked(ctx.mockHandle.sendToolResult).mock.calls as [string, string][];
+    const calls = vi.mocked(ctx.fakeHandle.sendToolResult).mock.calls as [string, string][];
     const results = calls.map(([, r]) => JSON.parse(r));
     expect(results.some((r) => r.city === "NYC")).toBe(true);
     expect(results.some((r) => r.city === "LA")).toBe(true);

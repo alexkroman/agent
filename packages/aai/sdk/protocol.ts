@@ -141,16 +141,17 @@ export type ClientEvent = z.infer<typeof ClientEventSchema>;
 /**
  * Typed interface for pushing session events to a connected client.
  *
- * For WebSocket sessions this sends JSON text frames and binary audio frames.
+ * Events (`event`, `playAudioDone`) send JSON text frames. Audio chunks
+ * (`playAudioChunk`) send raw PCM16 binary frames.
  */
 export interface ClientSink {
-  /** Whether the underlying connection is open and accepting calls. */
+  /** True when the underlying connection is open and will accept calls. */
   readonly open: boolean;
-  /** Push a session event to the client. */
+  /** Push a session event (JSON text frame) to the client. */
   event(e: ClientEvent): void;
-  /** Send a single TTS audio chunk to the client. */
+  /** Send a single PCM16 audio chunk (raw binary frame) to the client. */
   playAudioChunk(chunk: Uint8Array): void;
-  /** Signal that TTS audio is complete. */
+  /** Signal that TTS audio is complete (JSON text frame). */
   playAudioDone(): void;
 }
 

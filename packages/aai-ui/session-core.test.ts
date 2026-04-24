@@ -47,10 +47,11 @@ class MockWebSocket {
     for (const cb of this._listeners.get("open") ?? []) cb();
   }
 
-  /** Simulate receiving a text message from the server. */
-  simulateMessage(data: string | ArrayBuffer) {
+  /** Simulate receiving a message from the server (text JSON, binary ArrayBuffer, or Uint8Array). */
+  simulateMessage(data: string | Uint8Array | ArrayBuffer) {
+    const payload = data instanceof Uint8Array ? data.buffer : data;
     for (const cb of this._listeners.get("message") ?? []) {
-      cb({ data });
+      cb({ data: payload });
     }
   }
 
@@ -64,6 +65,18 @@ class MockWebSocket {
 }
 
 type ConstructorType = import("./types.ts").WebSocketConstructor;
+
+// ─── Helper to build a config JSON string ───────────────────────────────────
+
+function makeConfig(sampleRate = 16_000, ttsSampleRate = 24_000, sessionId = "sess-123"): string {
+  return JSON.stringify({
+    type: "config",
+    audioFormat: "pcm16",
+    sampleRate,
+    ttsSampleRate,
+    sessionId,
+  });
+}
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
@@ -270,11 +283,7 @@ describe("createSessionCore", () => {
       );
       // Then complete it
       lastSocket?.simulateMessage(
-        JSON.stringify({
-          type: "tool_call_done",
-          toolCallId: "tc-1",
-          result: "found it",
-        }),
+        JSON.stringify({ type: "tool_call_done", toolCallId: "tc-1", result: "found it" }),
       );
       const snap = core.getSnapshot();
       expect(snap.toolCalls).toHaveLength(1);
@@ -287,11 +296,7 @@ describe("createSessionCore", () => {
 
     it("tool_call_done ignores unknown toolCallId", () => {
       lastSocket?.simulateMessage(
-        JSON.stringify({
-          type: "tool_call_done",
-          toolCallId: "unknown-id",
-          result: "result",
-        }),
+        JSON.stringify({ type: "tool_call_done", toolCallId: "unknown-id", result: "result" }),
       );
       // Should not throw, toolCalls should remain empty
       expect(core.getSnapshot().toolCalls).toEqual([]);
@@ -318,12 +323,7 @@ describe("createSessionCore", () => {
       // Accumulate some state
       lastSocket?.simulateMessage(JSON.stringify({ type: "user_transcript", text: "msg1" }));
       lastSocket?.simulateMessage(
-        JSON.stringify({
-          type: "tool_call",
-          toolCallId: "tc-1",
-          toolName: "t",
-          args: {},
-        }),
+        JSON.stringify({ type: "tool_call", toolCallId: "tc-1", toolName: "t", args: {} }),
       );
       expect(core.getSnapshot().messages).toHaveLength(1);
 
@@ -339,11 +339,7 @@ describe("createSessionCore", () => {
 
     it("error event sets error state and stops running", () => {
       lastSocket?.simulateMessage(
-        JSON.stringify({
-          type: "error",
-          code: "internal",
-          message: "Something broke",
-        }),
+        JSON.stringify({ type: "error", code: "internal", message: "Something broke" }),
       );
       const snap = core.getSnapshot();
       expect(snap.state).toBe("error");
@@ -354,11 +350,7 @@ describe("createSessionCore", () => {
     it("non-error event clears error state", () => {
       // Set error state
       lastSocket?.simulateMessage(
-        JSON.stringify({
-          type: "error",
-          code: "internal",
-          message: "fail",
-        }),
+        JSON.stringify({ type: "error", code: "internal", message: "fail" }),
       );
       expect(core.getSnapshot().state).toBe("error");
 
@@ -378,20 +370,20 @@ describe("createSessionCore", () => {
       lastSocket?.simulateOpen();
     });
 
-    it("binary frame transitions state to speaking", () => {
-      const pcm = new ArrayBuffer(320);
-      lastSocket?.simulateMessage(pcm);
+    it("audio chunk (raw binary) transitions state to speaking", () => {
+      const pcm = new Uint8Array(320);
+      lastSocket?.simulateMessage(pcm.buffer);
       expect(core.getSnapshot().state).toBe("speaking");
     });
 
-    it("subsequent binary frames stay in speaking state", () => {
-      lastSocket?.simulateMessage(new ArrayBuffer(320));
-      lastSocket?.simulateMessage(new ArrayBuffer(320));
+    it("subsequent audio chunks stay in speaking state", () => {
+      lastSocket?.simulateMessage(new Uint8Array(320).buffer);
+      lastSocket?.simulateMessage(new Uint8Array(320).buffer);
       expect(core.getSnapshot().state).toBe("speaking");
     });
 
     it("audio_done transitions back to listening", async () => {
-      lastSocket?.simulateMessage(new ArrayBuffer(320));
+      lastSocket?.simulateMessage(new Uint8Array(320).buffer);
       expect(core.getSnapshot().state).toBe("speaking");
 
       lastSocket?.simulateMessage(JSON.stringify({ type: "audio_done" }));
@@ -399,19 +391,14 @@ describe("createSessionCore", () => {
       expect(core.getSnapshot().state).toBe("listening");
     });
 
-    it("binary frame ignored in error state with error set", () => {
+    it("audio chunk ignored in error state with error set", () => {
       lastSocket?.simulateMessage(
-        JSON.stringify({
-          type: "error",
-          code: "internal",
-          message: "fail",
-        }),
+        JSON.stringify({ type: "error", code: "internal", message: "fail" }),
       );
       expect(core.getSnapshot().state).toBe("error");
 
-      // Binary frame should be ignored when in error+disconnected state
-      const pcm = new ArrayBuffer(320);
-      lastSocket?.simulateMessage(pcm);
+      // audio chunk should be ignored when in error+disconnected state
+      lastSocket?.simulateMessage(new Uint8Array(320).buffer);
       // Error state should remain
       expect(core.getSnapshot().error).not.toBe(null);
     });
@@ -425,16 +412,36 @@ describe("createSessionCore", () => {
       lastSocket?.simulateOpen();
     });
 
-    it("ignores malformed JSON", () => {
-      lastSocket?.simulateMessage("not json");
-      // Should not throw, state unchanged
+    it("invalid JSON is logged and dropped", () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(vi.fn());
+      lastSocket?.simulateMessage("not valid json {{{");
+      expect(warnSpy).toHaveBeenCalledWith("session-core: invalid JSON; dropping");
       expect(core.getSnapshot().state).toBe("ready");
+      warnSpy.mockRestore();
     });
 
-    it("ignores unknown message types", () => {
-      lastSocket?.simulateMessage(JSON.stringify({ type: "future_feature" }));
-      // Should not throw, state unchanged
+    it("unknown server message type is silently dropped", () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(vi.fn());
+      // A well-formed JSON object with a type not in the schema — lenientParse returns malformed:false
+      lastSocket?.simulateMessage(JSON.stringify({ type: "totally_unknown_type_xyz" }));
+      expect(warnSpy).not.toHaveBeenCalled();
       expect(core.getSnapshot().state).toBe("ready");
+      warnSpy.mockRestore();
+    });
+
+    it("non-string non-binary frame is dropped with a console warning", () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(vi.fn());
+      // Dispatch a numeric data value directly to bypass simulateMessage type checks
+      for (const cb of (
+        lastSocket as unknown as { _listeners: Map<string, Set<(...a: unknown[]) => void>> }
+      )._listeners.get("message") ?? []) {
+        cb({ data: 42 });
+      }
+      expect(warnSpy).toHaveBeenCalledWith(
+        "session-core: non-string, non-binary frame received; dropping",
+      );
+      expect(core.getSnapshot().state).toBe("ready");
+      warnSpy.mockRestore();
     });
   });
 
@@ -451,19 +458,11 @@ describe("createSessionCore", () => {
       core.connect();
       lastSocket?.simulateOpen();
 
-      lastSocket?.simulateMessage(
-        JSON.stringify({
-          type: "config",
-          audioFormat: "pcm16",
-          sampleRate: 16_000,
-          ttsSampleRate: 24_000,
-          sessionId: "sess-123",
-        }),
-      );
+      lastSocket?.simulateMessage(makeConfig(16_000, 24_000, "sess-123"));
       expect(onSessionId).toHaveBeenCalledWith("sess-123");
     });
 
-    it("handles config without sessionId", () => {
+    it("handles config with empty sessionId (no onSessionId call expected)", () => {
       const onSessionId = vi.fn();
       core = createSessionCore({
         platformUrl: "ws://localhost:3000",
@@ -473,42 +472,24 @@ describe("createSessionCore", () => {
       core.connect();
       lastSocket?.simulateOpen();
 
-      lastSocket?.simulateMessage(
-        JSON.stringify({
-          type: "config",
-          audioFormat: "pcm16",
-          sampleRate: 16_000,
-          ttsSampleRate: 24_000,
-        }),
-      );
+      // sessionId="" is falsy — onSessionId should not be called
+      lastSocket?.simulateMessage(makeConfig(16_000, 24_000, ""));
       expect(onSessionId).not.toHaveBeenCalled();
-    });
-
-    it("ignores config with invalid format", () => {
-      core.connect();
-      lastSocket?.simulateOpen();
-
-      // Missing required fields
-      lastSocket?.simulateMessage(
-        JSON.stringify({
-          type: "config",
-          audioFormat: "pcm16",
-          // missing sampleRate & ttsSampleRate
-        }),
-      );
-      // Should not throw, should remain in ready state
-      expect(core.getSnapshot().state).toBe("ready");
     });
   });
 
-  // ─── send/sendBinary ────────────────────────────────────────────────────
+  // ─── send/sendJson ──────────────────────────────────────────────────────
 
   describe("send and cancel", () => {
-    it("cancel sends cancel message when connected", () => {
+    it("cancel sends JSON cancel message when connected", () => {
       core.connect();
       lastSocket?.simulateOpen();
       core.cancel();
-      expect(lastSocket?.send).toHaveBeenCalledWith(JSON.stringify({ type: "cancel" }));
+      expect(lastSocket?.send).toHaveBeenCalledTimes(1);
+      const sent = lastSocket?.send.mock.calls[0]?.[0];
+      expect(typeof sent).toBe("string");
+      const msg = JSON.parse(sent as string);
+      expect(msg.type).toBe("cancel");
       expect(core.getSnapshot().state).toBe("listening");
     });
 
@@ -521,11 +502,15 @@ describe("createSessionCore", () => {
   // ─── reset ──────────────────────────────────────────────────────────────
 
   describe("reset", () => {
-    it("sends reset message when WebSocket is open", () => {
+    it("sends JSON reset message when WebSocket is open", () => {
       core.connect();
       lastSocket?.simulateOpen();
       core.reset();
-      expect(lastSocket?.send).toHaveBeenCalledWith(JSON.stringify({ type: "reset" }));
+      expect(lastSocket?.send).toHaveBeenCalledTimes(1);
+      const sent = lastSocket?.send.mock.calls[0]?.[0];
+      expect(typeof sent).toBe("string");
+      const msg = JSON.parse(sent as string);
+      expect(msg.type).toBe("reset");
     });
 
     it("disconnects and reconnects when WebSocket is not open", () => {
@@ -572,14 +557,7 @@ describe("createSessionCore", () => {
       core.connect();
       lastSocket?.simulateOpen();
       // Send a config to mark hasConnected=true
-      lastSocket?.simulateMessage(
-        JSON.stringify({
-          type: "config",
-          audioFormat: "pcm16",
-          sampleRate: 16_000,
-          ttsSampleRate: 24_000,
-        }),
-      );
+      lastSocket?.simulateMessage(makeConfig());
       // Disconnect and reconnect
       core.disconnect();
       core.connect();
@@ -596,18 +574,11 @@ describe("createSessionCore", () => {
   // ─── Reconnection with history ──────────────────────────────────────────
 
   describe("reconnection", () => {
-    it("sends history on reconnect if messages exist", () => {
+    it("sends JSON history message on reconnect if messages exist", () => {
       // First connection
       core.connect();
       lastSocket?.simulateOpen();
-      lastSocket?.simulateMessage(
-        JSON.stringify({
-          type: "config",
-          audioFormat: "pcm16",
-          sampleRate: 16_000,
-          ttsSampleRate: 24_000,
-        }),
-      );
+      lastSocket?.simulateMessage(makeConfig());
 
       // Accumulate a message
       lastSocket?.simulateMessage(JSON.stringify({ type: "user_transcript", text: "Hello" }));
@@ -620,18 +591,14 @@ describe("createSessionCore", () => {
       reconnectSocket?.simulateOpen();
 
       // Send config to trigger history send
-      reconnectSocket?.simulateMessage(
-        JSON.stringify({
-          type: "config",
-          audioFormat: "pcm16",
-          sampleRate: 16_000,
-          ttsSampleRate: 24_000,
-        }),
-      );
+      reconnectSocket?.simulateMessage(makeConfig());
 
-      // Should have sent a history message
+      // Should have sent a JSON history message
       const calls = reconnectSocket?.send.mock.calls ?? [];
+      expect(calls.length).toBeGreaterThan(0);
+      // Find the history message
       const historyCall = calls.find((c) => {
+        if (typeof c[0] !== "string") return false;
         try {
           return JSON.parse(c[0] as string).type === "history";
         } catch {
@@ -639,8 +606,9 @@ describe("createSessionCore", () => {
         }
       });
       expect(historyCall).toBeDefined();
-      const parsed = JSON.parse(historyCall?.[0] as string);
-      expect(parsed.messages).toEqual([{ role: "user", content: "Hello" }]);
+      const msg = JSON.parse(historyCall?.[0] as string);
+      expect(msg.type).toBe("history");
+      expect(msg.messages).toEqual([{ role: "user", content: "Hello" }]);
     });
   });
 
@@ -694,8 +662,8 @@ describe("createSessionCore", () => {
       lastSocket?.simulateMessage(JSON.stringify({ type: "agent_transcript", text: "It is 3pm." }));
       expect(core.getSnapshot().messages).toHaveLength(2);
 
-      // Audio starts playing
-      lastSocket?.simulateMessage(new ArrayBuffer(320));
+      // Audio starts playing (raw binary)
+      lastSocket?.simulateMessage(new Uint8Array(320).buffer);
       expect(core.getSnapshot().state).toBe("speaking");
 
       // Audio done
@@ -727,11 +695,7 @@ describe("createSessionCore", () => {
 
       // Tool call done
       lastSocket?.simulateMessage(
-        JSON.stringify({
-          type: "tool_call_done",
-          toolCallId: "tc-1",
-          result: "Found 42 cats",
-        }),
+        JSON.stringify({ type: "tool_call_done", toolCallId: "tc-1", result: "Found 42 cats" }),
       );
       expect(core.getSnapshot().toolCalls[0]?.status).toBe("done");
       expect(core.getSnapshot().toolCalls[0]?.result).toBe("Found 42 cats");
@@ -752,12 +716,7 @@ describe("createSessionCore", () => {
 
       // Tool call after 3 messages (index 2)
       lastSocket?.simulateMessage(
-        JSON.stringify({
-          type: "tool_call",
-          toolCallId: "tc-1",
-          toolName: "calc",
-          args: {},
-        }),
+        JSON.stringify({ type: "tool_call", toolCallId: "tc-1", toolName: "calc", args: {} }),
       );
       expect(core.getSnapshot().toolCalls[0]?.afterMessageIndex).toBe(2);
     });
