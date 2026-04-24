@@ -15,6 +15,7 @@ import { DEFAULT_SHUTDOWN_TIMEOUT_MS } from "../sdk/constants.ts";
 import type { Kv } from "../sdk/kv.ts";
 import type { ClientSink } from "../sdk/protocol.ts";
 import { buildReadyConfig, type ReadyConfig } from "../sdk/protocol.ts";
+import { DEEPGRAM_KIND } from "../sdk/providers/stt/deepgram.ts";
 import {
   assertProviderTriple,
   type LlmProvider,
@@ -38,6 +39,30 @@ import { createS2sTransport } from "./transports/s2s-transport.ts";
 import type { Transport, TransportCallbacks } from "./transports/types.ts";
 import { createUnstorageKv } from "./unstorage-kv.ts";
 import { type SessionWebSocket, wireSessionSocket } from "./ws-handler.ts";
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/**
+ * Resolve the API key env-var for the configured STT provider.
+ *
+ * Each STT provider uses its own env var (e.g. `ASSEMBLYAI_API_KEY`,
+ * `DEEPGRAM_API_KEY`). We read the kind from the descriptor if it is one;
+ * pre-resolved openers have no kind field so we fall back to AssemblyAI for
+ * backward compatibility (openers supply their own key at open-time anyway).
+ */
+function resolveSttApiKey(
+  stt: SttProvider | SttOpener | undefined,
+  env: Record<string, string>,
+): string {
+  // SttProvider descriptors carry a `kind` field; SttOpener does not.
+  const kind =
+    stt != null && "kind" in stt && typeof (stt as SttProvider).kind === "string"
+      ? (stt as SttProvider).kind
+      : undefined;
+  if (kind === DEEPGRAM_KIND) return resolveApiKey("DEEPGRAM_API_KEY", env);
+  // Default: ASSEMBLYAI_KIND or pre-resolved opener (backward compat).
+  return resolveApiKey("ASSEMBLYAI_API_KEY", env);
+}
 
 // ─── Runtime adapter (formerly adapter.ts) ──────────────────────────────────
 
@@ -369,7 +394,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
         toolSchemas,
         executeTool,
         providerKeys: {
-          stt: resolveApiKey("ASSEMBLYAI_API_KEY", env),
+          stt: resolveSttApiKey(opts.stt, env),
           tts: resolveApiKey("CARTESIA_API_KEY", env),
         },
         sttSampleRate: s2sConfig.inputSampleRate,

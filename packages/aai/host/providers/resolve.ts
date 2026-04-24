@@ -17,6 +17,7 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import type { LanguageModel } from "ai";
 import { ANTHROPIC_KIND, type AnthropicOptions } from "../../sdk/providers/llm/anthropic.ts";
 import { ASSEMBLYAI_KIND, type AssemblyAIOptions } from "../../sdk/providers/stt/assemblyai.ts";
+import { DEEPGRAM_KIND, type DeepgramOptions } from "../../sdk/providers/stt/deepgram.ts";
 import { CARTESIA_KIND, type CartesiaOptions } from "../../sdk/providers/tts/cartesia.ts";
 import type {
   LlmProvider,
@@ -26,6 +27,7 @@ import type {
   TtsProvider,
 } from "../../sdk/providers.ts";
 import { openAssemblyAI } from "./stt/assemblyai.ts";
+import { openDeepgram } from "./stt/deepgram.ts";
 import { openCartesia } from "./tts/cartesia.ts";
 
 /**
@@ -42,9 +44,11 @@ export function resolveStt(descriptor: SttProvider): SttOpener {
   switch (descriptor.kind) {
     case ASSEMBLYAI_KIND:
       return openAssemblyAI(descriptor.options as unknown as AssemblyAIOptions);
+    case DEEPGRAM_KIND:
+      return openDeepgram(descriptor.options as unknown as DeepgramOptions);
     default:
       throw new Error(
-        `Unknown STT provider kind: "${descriptor.kind}". Supported: ${ASSEMBLYAI_KIND}.`,
+        `Unknown STT provider kind: "${descriptor.kind}". Supported: ${ASSEMBLYAI_KIND}, ${DEEPGRAM_KIND}.`,
       );
   }
 }
