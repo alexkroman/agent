@@ -9,9 +9,10 @@ import type { ClientSink } from "../sdk/protocol.ts";
 import type { AgentDef, ToolContext, ToolDef } from "../sdk/types.ts";
 import { DEFAULT_SYSTEM_PROMPT } from "../sdk/types.ts";
 import { createRuntime } from "./runtime.ts";
-import type { S2sEvents, S2sHandle } from "./s2s.ts";
+import type { ConnectS2sOptions, S2sCallbacks, S2sEvents, S2sHandle } from "./s2s.ts";
 import type { Session } from "./session.ts";
 import { _internals, type S2sSessionOptions } from "./session.ts";
+import { _internals as s2sTransportInternals } from "./transports/s2s-transport.ts";
 
 /** Yield to the microtask queue so pending promises settle. */
 export function flush(): Promise<void> {
@@ -296,6 +297,219 @@ export function createFixtureSession(
     /** Replay a fixture file through the session's S2S handle. */
     replay(fixtureName: string) {
       replayFixtureMessages(mockHandle, loadFixture(fixtureName));
+    },
+    /** Restore the connectS2s spy. Call in afterEach. */
+    cleanup() {
+      connectSpy.mockRestore();
+    },
+  };
+}
+
+// ─── V2 fixture session helpers (transport-layer spy) ───────────────────────
+
+/**
+ * A tracking ClientSink that records all calls into typed arrays for easy
+ * test assertions. Compatible with makeClientSink() but with inspection APIs.
+ */
+export type TrackingClientSink = ClientSink & {
+  agentTranscripts: string[];
+  userTranscripts: string[];
+  toolCallEvents: { callId: string; name: string; args: unknown }[];
+  audioChunks: Uint8Array[];
+  replyDoneCount: number;
+  cancelledCount: number;
+  speechStartedCount: number;
+  speechStoppedCount: number;
+};
+
+export function makeTrackingClient(): TrackingClientSink {
+  const agentTranscripts: string[] = [];
+  const userTranscripts: string[] = [];
+  const toolCallEvents: { callId: string; name: string; args: unknown }[] = [];
+  const audioChunks: Uint8Array[] = [];
+  let replyDoneCount = 0;
+  let cancelledCount = 0;
+  let speechStartedCount = 0;
+  let speechStoppedCount = 0;
+
+  return {
+    open: true,
+    agentTranscripts,
+    userTranscripts,
+    toolCallEvents,
+    audioChunks,
+    get replyDoneCount() {
+      return replyDoneCount;
+    },
+    get cancelledCount() {
+      return cancelledCount;
+    },
+    get speechStartedCount() {
+      return speechStartedCount;
+    },
+    get speechStoppedCount() {
+      return speechStoppedCount;
+    },
+    config: vi.fn(),
+    audio: vi.fn((chunk: Uint8Array) => {
+      audioChunks.push(chunk);
+    }),
+    audioDone: vi.fn(),
+    speechStarted: vi.fn(() => {
+      speechStartedCount++;
+    }),
+    speechStopped: vi.fn(() => {
+      speechStoppedCount++;
+    }),
+    userTranscript: vi.fn((text: string) => {
+      userTranscripts.push(text);
+    }),
+    agentTranscript: vi.fn((text: string) => {
+      agentTranscripts.push(text);
+    }),
+    toolCall: vi.fn((callId: string, name: string, args: unknown) => {
+      toolCallEvents.push({ callId, name, args });
+    }),
+    toolCallDone: vi.fn(),
+    replyDone: vi.fn(() => {
+      replyDoneCount++;
+    }),
+    cancelled: vi.fn(() => {
+      cancelledCount++;
+    }),
+    reset: vi.fn(),
+    idleTimeout: vi.fn(),
+    error: vi.fn(),
+    customEvent: vi.fn(),
+  };
+}
+
+/**
+ * Translate a single fixture wire-format message directly into S2sCallbacks calls.
+ * This is the callback-based equivalent of the old FIXTURE_DISPATCH / replayFixtureMessages.
+ */
+export function fireFixtureMessage(callbacks: S2sCallbacks, msg: Record<string, unknown>): void {
+  switch (msg.type) {
+    case "session.ready":
+      callbacks.onSessionReady(msg.session_id as string);
+      break;
+    case "session.updated":
+      break; // no callback
+    case "reply.started":
+      callbacks.onReplyStarted(msg.reply_id as string);
+      break;
+    case "reply.done":
+      if (msg.status === "interrupted") callbacks.onCancelled();
+      else callbacks.onReplyDone();
+      break;
+    case "transcript.user":
+      callbacks.onUserTranscript(msg.text as string);
+      break;
+    case "transcript.agent":
+      callbacks.onAgentTranscript(msg.text as string, Boolean(msg.interrupted));
+      break;
+    case "tool.call":
+      callbacks.onToolCall(
+        msg.call_id as string,
+        msg.name as string,
+        (msg.args ?? {}) as Record<string, unknown>,
+      );
+      break;
+    case "input.speech.started":
+      callbacks.onSpeechStarted();
+      break;
+    case "input.speech.stopped":
+      callbacks.onSpeechStopped();
+      break;
+    case "session.error": {
+      const code = msg.code as string;
+      if (code === "session_not_found" || code === "session_forbidden")
+        callbacks.onSessionExpired();
+      else callbacks.onError(new Error((msg.message ?? "session error") as string));
+      break;
+    }
+    case "error":
+      callbacks.onError(new Error((msg.message ?? "error") as string));
+      break;
+    case "reply.audio":
+      break; // skip — audio tested separately
+    default:
+      break;
+  }
+}
+
+/**
+ * Create a real Runtime-backed session for fixture replay testing (V2).
+ *
+ * Spies on s2s-transport.ts `_internals.connectS2s` (the transport-layer seam
+ * added in Task 15) so that captured S2sCallbacks can be fired directly —
+ * no nanoevents, no old S2sEvents system.
+ *
+ * Call `await ctx.start()` first to trigger the spy, then `ctx.replay(name)`
+ * or fire `ctx.mockCallbacks.on*` directly.
+ *
+ * Call `cleanup()` in afterEach to restore the spy.
+ */
+export function createFixtureSessionV2(
+  // biome-ignore lint/suspicious/noExplicitAny: test helper accepts any agent state type
+  agent: AgentDef<any>,
+  opts?: { env?: Record<string, string> },
+) {
+  let capturedCallbacks: S2sCallbacks | null = null;
+  const fakeHandle: S2sHandle = {
+    sendAudio: vi.fn(),
+    sendAudioRaw: vi.fn(),
+    sendToolResult: vi.fn(),
+    updateSession: vi.fn(),
+    resumeSession: vi.fn(),
+    close: vi.fn(),
+  };
+
+  const connectSpy = vi
+    .spyOn(s2sTransportInternals, "connectS2s")
+    .mockImplementation(async (connectOpts: ConnectS2sOptions) => {
+      capturedCallbacks = connectOpts.callbacks;
+      return fakeHandle;
+    });
+
+  const client = makeTrackingClient();
+  const executor = createRuntime({
+    agent,
+    env: opts?.env ?? {},
+    logger: silentLogger,
+  });
+
+  const session = executor.createSession({
+    id: "fixture-session",
+    agent: agent.name,
+    client,
+  });
+
+  function getCallbacks(): S2sCallbacks {
+    if (!capturedCallbacks) throw new Error("must call start() before accessing callbacks");
+    return capturedCallbacks;
+  }
+
+  return {
+    session,
+    client,
+    fakeHandle,
+    executor,
+    /** Trigger transport.start() — fires the connectS2s spy and captures callbacks. */
+    async start() {
+      await session.start();
+      if (!capturedCallbacks) throw new Error("connectS2s was never called during start()");
+    },
+    /** Direct access to the captured S2sCallbacks for manual event firing. */
+    get mockCallbacks(): S2sCallbacks {
+      return getCallbacks();
+    },
+    /** Replay a fixture file by translating each message to S2sCallbacks calls. */
+    replay(fixtureName: string) {
+      const cbs = getCallbacks();
+      for (const msg of loadFixture(fixtureName)) {
+        fireFixtureMessage(cbs, msg as Record<string, unknown>);
+      }
     },
     /** Restore the connectS2s spy. Call in afterEach. */
     cleanup() {
