@@ -19,6 +19,7 @@
         "**/*.test.ts",
         "**/*.test-d.ts"
       ],
+      "ignoreDependencies": ["@pinecone-database/pinecone"],
       "includeEntryExports": true
     },
     "packages/aai-ui": {
