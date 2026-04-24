@@ -127,7 +127,9 @@ describe("PipelineTransport", () => {
       expect(tts.last()?.textChunks).toContain("Hi there!");
       expect(callbacks.onReplyStarted).toHaveBeenCalledWith(expect.stringContaining("greeting"));
       expect(callbacks.onAgentTranscript).toHaveBeenCalledWith("Hi there!", false);
-      expect(callbacks.onAudioDone).toHaveBeenCalledOnce();
+      // onAudioDone is NOT fired by the transport — session-core's flushReply
+      // (triggered by onReplyDone) owns the audioDone + replyDone pairing.
+      expect(callbacks.onAudioDone).not.toHaveBeenCalled();
       await t.stop();
     });
 
@@ -229,7 +231,7 @@ describe("PipelineTransport", () => {
       await t.stop();
     });
 
-    test("full turn: onUserTranscript → onReplyStarted → onAgentTranscript → onAudioDone → onReplyDone", async () => {
+    test("full turn: onUserTranscript → onReplyStarted → onAgentTranscript → onReplyDone (no transport-level onAudioDone)", async () => {
       const script: ScriptedPart[] = [{ type: "text", text: "Sure!" }];
       const stt = createFakeSttProvider();
       const tts = createFakeTtsProvider();
@@ -250,7 +252,9 @@ describe("PipelineTransport", () => {
       expect(callbacks.onUserTranscript).toHaveBeenCalledWith("test question");
       expect(callbacks.onReplyStarted).toHaveBeenCalled();
       expect(callbacks.onAgentTranscript).toHaveBeenCalledWith("Sure!", false);
-      expect(callbacks.onAudioDone).toHaveBeenCalledOnce();
+      // onAudioDone is NOT fired by the transport — session-core's flushReply
+      // (triggered by onReplyDone) owns the audioDone + replyDone pairing.
+      expect(callbacks.onAudioDone).not.toHaveBeenCalled();
       await t.stop();
     });
 
@@ -333,7 +337,10 @@ describe("PipelineTransport", () => {
 
       t.cancelReply();
       expect(tts.last()?.cancel).toHaveBeenCalled();
-      expect(callbacks.onCancelled).toHaveBeenCalled();
+      // cancelReply() does NOT fire callbacks.onCancelled — session-core calls
+      // client.cancelled() itself when the cancel originates from the client.
+      // onCancelled is only fired from within the transport for barge-in (STT partial).
+      expect(callbacks.onCancelled).not.toHaveBeenCalled();
       await t.stop();
     });
   });

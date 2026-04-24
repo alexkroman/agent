@@ -1,6 +1,25 @@
 // Copyright 2026 the AAI authors. MIT license.
 // Pipeline transport — STT → LLM → TTS orchestration behind the Transport interface.
 
+// NOTE — unresolved integration gaps for Task 15 (SessionCore wiring):
+//
+// 1. Double tool execution risk.
+//    This transport fires `callbacks.onToolCall(callId, name, args)` for
+//    observability while tools still execute inline via streamText's
+//    `tools.execute` closures. When wired to SessionCore, SessionCore's
+//    `onToolCall` ALSO invokes `executeTool` and pushes results to
+//    `transport.sendToolResult` (which is a no-op for pipeline mode).
+//    Task 15 must either route the pipeline's tool-call observability
+//    through a different callback, or give SessionCore a mode flag that
+//    skips its own tool dispatch when the transport executes inline.
+//
+// 2. Unbounded conversation message growth.
+//    `conversationMessages` here is a transport-local array used to build
+//    `streamText.messages`. It has no sliding-window cap. SessionCore owns
+//    the canonical history with a `maxHistory` cap; Task 15 should wire
+//    the transport to read from SessionCore's history instead of keeping
+//    a parallel unbounded copy.
+
 import type { LanguageModel, ModelMessage } from "ai";
 import { stepCountIs, streamText } from "ai";
 import type { ExecuteTool, ToolSchema } from "../../sdk/_internal-types.ts";
@@ -338,7 +357,9 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       return;
     }
 
-    callbacks.onAudioDone();
+    // Do NOT call callbacks.onAudioDone() here — session-core's flushReply
+    // (triggered by onReplyDone) emits audioDone + replyDone together, matching
+    // the S2S transport contract. Calling it here would double-fire audio_done.
     callbacks.onReplyDone();
     if (turnController === ctl) turnController = null;
   }
@@ -361,7 +382,9 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       return;
     }
 
-    callbacks.onAudioDone();
+    // Do NOT call callbacks.onAudioDone() here — session-core's flushReply
+    // (triggered by onReplyDone) emits audioDone + replyDone together, matching
+    // the S2S transport contract. Calling it here would double-fire audio_done.
     callbacks.onReplyDone();
     if (turnController === ctl) turnController = null;
   }
@@ -500,7 +523,11 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       turnController?.abort();
       turnController = null;
       ttsSession?.cancel();
-      callbacks.onCancelled();
+      // Do NOT call callbacks.onCancelled() here. This method is invoked from
+      // session-core.onCancel (client-initiated cancel), which calls
+      // client.cancelled() itself — firing onCancelled here would double-cancel.
+      // Barge-in (STT partial) fires callbacks.onCancelled() directly in
+      // onSttPartial, where the cancel originates inside the transport.
     },
   };
 }
