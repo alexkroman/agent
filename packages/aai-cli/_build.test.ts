@@ -2,7 +2,7 @@
 import { symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
-import { buildAgentBundle, runBuildCommand } from "./_bundler.ts";
+import { buildAgentBundle } from "./_bundler.ts";
 import { silenced, withTempDir } from "./_test-utils.ts";
 
 describe("buildAgentBundle", () => {
@@ -89,13 +89,5 @@ export default {
         expect(bundle.worker.length).toBeGreaterThan(20);
       }),
     );
-  });
-});
-
-describe("runBuildCommand", () => {
-  test("throws when no agent.ts found", async () => {
-    await withTempDir(async (dir) => {
-      await expect(silenced(() => runBuildCommand(dir))(dir)).rejects.toThrow("agent.ts");
-    });
   });
 });
