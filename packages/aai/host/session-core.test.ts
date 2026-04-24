@@ -154,3 +154,49 @@ describe("createSessionCore — transport inbound (basic)", () => {
     expect(sink.calls.some((c) => c.method === "userTranscript")).toBe(true);
   });
 });
+
+describe("createSessionCore — reply dedup", () => {
+  test("first reply_done emits replyDone + audioDone", async () => {
+    const { core, sink } = makeCore();
+    await core.start();
+    core.onReplyStarted("r1");
+    core.onReplyDone();
+    expect(sink.calls.some((c) => c.method === "replyDone")).toBe(true);
+    expect(sink.calls.some((c) => c.method === "audioDone")).toBe(true);
+  });
+  test("duplicate reply_done is dropped", async () => {
+    const { core, sink } = makeCore();
+    await core.start();
+    core.onReplyStarted("r1");
+    core.onReplyDone();
+    core.onReplyDone();
+    const dones = sink.calls.filter((c) => c.method === "replyDone");
+    expect(dones).toHaveLength(1);
+  });
+  test("onCancelled clears currentReplyId so subsequent replyDone is dropped", async () => {
+    const { core, sink } = makeCore();
+    await core.start();
+    core.onReplyStarted("r1");
+    core.onCancelled();
+    core.onReplyDone();
+    expect(sink.calls.filter((c) => c.method === "replyDone")).toHaveLength(0);
+  });
+});
+
+describe("createSessionCore — tool call pending results", () => {
+  test("tool_call executes, tool_call_done fires, reply_done forwards results to transport", async () => {
+    const executeTool = vi.fn(async () => "tool-output");
+    const { core, sink, transport } = makeCore({ executeTool });
+    await core.start();
+    core.onReplyStarted("r1");
+    core.onToolCall("cid", "my_tool", {});
+    // Let the pending tool promise resolve
+    await new Promise((r) => setImmediate(r));
+    core.onReplyDone();
+    // onReplyDone waits on turnPromise before firing tool results
+    await new Promise((r) => setImmediate(r));
+    await new Promise((r) => setImmediate(r));
+    expect(transport.sendToolResult).toHaveBeenCalledWith("cid", "tool-output");
+    expect(sink.calls.some((c) => c.method === "toolCallDone")).toBe(true);
+  });
+});

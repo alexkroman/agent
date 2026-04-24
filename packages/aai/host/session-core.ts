@@ -10,6 +10,8 @@ import type { Logger } from "./runtime-config.ts";
 import { consoleLogger } from "./runtime-config.ts";
 import type { Transport } from "./transports/types.ts";
 
+const REPLY_DONE_SLOW_THRESHOLD_MS = 50;
+
 type PendingTool = { callId: string; result: string };
 
 type ReplyState = {
@@ -61,7 +63,7 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
     return raw === 0 || !Number.isFinite(raw) ? 0 : raw;
   })();
 
-  let _reply: ReplyState = { currentReplyId: null, pendingTools: [], toolCallCount: 0 };
+  let reply: ReplyState = { currentReplyId: null, pendingTools: [], toolCallCount: 0 };
   let history: Message[] = [];
   let turnPromise: Promise<void> | null = null;
   let idleTimer: NodeJS.Timeout | null = null;
@@ -84,12 +86,29 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
   }
 
   function beginReply(replyId: string): void {
-    _reply = { currentReplyId: replyId, pendingTools: [], toolCallCount: 0 };
+    reply = { currentReplyId: replyId, pendingTools: [], toolCallCount: 0 };
     turnPromise = null;
   }
 
   function cancelReply(): void {
-    _reply = { currentReplyId: null, pendingTools: [], toolCallCount: 0 };
+    reply = { currentReplyId: null, pendingTools: [], toolCallCount: 0 };
+  }
+
+  function flushReply(startMs: number, hadTurnPromise: boolean): void {
+    const stepsUsed = reply.toolCallCount;
+    if (stepsUsed > 0) log.info("Turn complete", { steps: stepsUsed, agent: opts.agent });
+    opts.client.audioDone();
+    opts.client.replyDone();
+    reply.currentReplyId = null;
+    const durationMs = Date.now() - startMs;
+    if (durationMs >= REPLY_DONE_SLOW_THRESHOLD_MS) {
+      log.warn("slow reply_done dispatch", {
+        sid: opts.id,
+        agent: opts.agent,
+        durationMs,
+        hadTurnPromise,
+      });
+    }
   }
 
   return {
@@ -132,23 +151,50 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
       pushMessages(...messages);
     },
 
-    // ─── Inbound from transport (stubbed; full impl in Task 8) ────────────
+    // ─── Inbound from transport ───────────────────────────────────────────
     onReplyStarted(replyId) {
       beginReply(replyId);
     },
+
     onReplyDone() {
-      /* see Task 8 */
+      const startMs = Date.now();
+      const doneReplyId = reply.currentReplyId;
+      // Dedup duplicate reply.done events — once the reply is fully dispatched
+      // (or was never started) currentReplyId is null.
+      if (doneReplyId === null) {
+        log.debug("Dropping duplicate reply.done (no active reply)");
+        return;
+      }
+      const hadTurnPromise = turnPromise !== null;
+      const sendPending = () => {
+        if (reply.currentReplyId !== doneReplyId) {
+          reply.pendingTools = [];
+          return;
+        }
+        if (reply.pendingTools.length > 0) {
+          for (const tool of reply.pendingTools)
+            opts.transport.sendToolResult(tool.callId, tool.result);
+          reply.pendingTools = [];
+        } else {
+          flushReply(startMs, hadTurnPromise);
+        }
+      };
+      if (hadTurnPromise) void turnPromise?.then(sendPending);
+      else sendPending();
     },
+
     onCancelled() {
       cancelReply();
       opts.client.cancelled();
     },
+
     onAudioChunk(bytes) {
       opts.client.audio(bytes);
     },
     onAudioDone() {
       opts.client.audioDone();
     },
+
     onUserTranscript(text) {
       opts.client.userTranscript(text);
       pushMessages({ role: "user", content: text });
@@ -157,10 +203,43 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
       opts.client.agentTranscript(text);
       if (!interrupted) pushMessages({ role: "assistant", content: text });
     },
+
     onToolCall(callId, name, args) {
       opts.client.toolCall(callId, name, args);
-      // Full tool-execution wiring in Task 8.
+      if (reply.currentReplyId === null) {
+        log.warn("tool_call with no active reply", { sid: opts.id, name });
+        return;
+      }
+      reply.toolCallCount++;
+      const maxSteps = opts.agentConfig.maxSteps;
+      if (maxSteps !== undefined && reply.toolCallCount > maxSteps) {
+        log.info("maxSteps exceeded; refusing tool call", {
+          toolCallCount: reply.toolCallCount,
+          maxSteps,
+        });
+        reply.pendingTools.push({
+          callId,
+          result: JSON.stringify({
+            error: "Maximum tool steps reached. Please respond to the user now.",
+          }),
+        });
+        opts.client.toolCallDone(callId, "{}");
+        return;
+      }
+      const p = (async () => {
+        try {
+          const result = await opts.executeTool(name, args, opts.id, history);
+          reply.pendingTools.push({ callId, result });
+          opts.client.toolCallDone(callId, result);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          reply.pendingTools.push({ callId, result: JSON.stringify({ error: message }) });
+          opts.client.toolCallDone(callId, message);
+        }
+      })();
+      turnPromise = (turnPromise ?? Promise.resolve()).then(() => p);
     },
+
     onError(code, message) {
       opts.client.error(code, message);
     },
