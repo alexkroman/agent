@@ -37,11 +37,6 @@
       "@dev/source": "./sdk/providers/llm-barrel.ts",
       "types": "./dist/sdk/providers/llm-barrel.d.ts",
       "import": "./dist/sdk/providers/llm-barrel.js"
-    },
-    "./wire": {
-      "@dev/source": "./sdk/wire.ts",
-      "types": "./dist/sdk/wire.d.ts",
-      "import": "./dist/sdk/wire.js"
     }
   },
   "scripts": {
