@@ -279,6 +279,90 @@ describe("PipelineTransport", () => {
     });
   });
 
+  describe("streamText config plumbing", () => {
+    const dummyToolSchemas = [
+      {
+        name: "noop",
+        description: "No-op tool for plumbing tests.",
+        parameters: { type: "object" as const, properties: {}, additionalProperties: false },
+      },
+    ];
+    const dummyExecuteTool = async () => "{}";
+
+    test("forwards toolChoice to doStream (default 'auto' when omitted)", async () => {
+      const stt = createFakeSttProvider();
+      const llm = createFakeLanguageModel({ script: [{ type: "text", text: "ok" }] });
+      const { opts } = makeOpts(
+        {
+          llm,
+          toolSchemas: dummyToolSchemas,
+          executeTool: dummyExecuteTool,
+          sessionConfig: { systemPrompt: "s", greeting: "" },
+        },
+        { stt },
+      );
+      const t = createPipelineTransport(opts);
+      await t.start();
+      stt.last()?.fireFinal("hi");
+      await vi.waitFor(() => {
+        expect(llm.calls.length).toBeGreaterThan(0);
+      });
+      expect(llm.calls[0]?.toolChoice).toEqual({ type: "auto" });
+      await t.stop();
+    });
+
+    test("forwards explicit toolChoice='required' to doStream", async () => {
+      const stt = createFakeSttProvider();
+      const llm = createFakeLanguageModel({ script: [{ type: "text", text: "ok" }] });
+      const { opts } = makeOpts(
+        {
+          llm,
+          toolChoice: "required",
+          toolSchemas: dummyToolSchemas,
+          executeTool: dummyExecuteTool,
+          sessionConfig: { systemPrompt: "s", greeting: "" },
+        },
+        { stt },
+      );
+      const t = createPipelineTransport(opts);
+      await t.start();
+      stt.last()?.fireFinal("hi");
+      await vi.waitFor(() => {
+        expect(llm.calls.length).toBeGreaterThan(0);
+      });
+      expect(llm.calls[0]?.toolChoice).toEqual({ type: "required" });
+      await t.stop();
+    });
+
+    test("maxSteps caps the doStream loop", async () => {
+      // Script two steps that each emit a text part. With maxSteps=1 only the
+      // first step should run; without plumbing it would default to 5 and both
+      // would fire.
+      const stt = createFakeSttProvider();
+      const llm = createFakeLanguageModel({
+        steps: [[{ type: "text", text: "step1" }], [{ type: "text", text: "step2" }]],
+      });
+      const { opts } = makeOpts(
+        {
+          llm,
+          maxSteps: 1,
+          sessionConfig: { systemPrompt: "s", greeting: "" },
+        },
+        { stt },
+      );
+      const t = createPipelineTransport(opts);
+      await t.start();
+      stt.last()?.fireFinal("hi");
+      await vi.waitFor(() => {
+        expect(llm.calls.length).toBeGreaterThanOrEqual(1);
+      });
+      // Let any extra step have a chance to run.
+      await new Promise((r) => setTimeout(r, 20));
+      expect(llm.calls.length).toBe(1);
+      await t.stop();
+    });
+  });
+
   describe("barge-in", () => {
     test("partial STT event during an in-flight turn triggers cancel and onCancelled", async () => {
       const script: ScriptedPart[] = [

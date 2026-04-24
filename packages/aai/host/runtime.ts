@@ -422,6 +422,8 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
         },
         sttSampleRate: s2sConfig.inputSampleRate,
         ttsSampleRate: s2sConfig.outputSampleRate,
+        maxSteps: agentConfig.maxSteps,
+        toolChoice: agentConfig.toolChoice,
         skipGreeting: sessionOpts.skipGreeting ?? false,
         logger,
       });

@@ -30,7 +30,7 @@ import type {
   TtsSession,
   Unsubscribe,
 } from "../../sdk/providers.ts";
-import type { Message } from "../../sdk/types.ts";
+import type { Message, ToolChoice } from "../../sdk/types.ts";
 import { errorMessage } from "../../sdk/utils.ts";
 import { consoleLogger, type Logger } from "../runtime-config.ts";
 import { toVercelTools } from "../to-vercel-tools.ts";
@@ -69,6 +69,8 @@ export interface PipelineTransportOptions {
   sttPrompt?: string | undefined;
   /** Max LLM tool-call steps per turn. Defaults to 5. */
   maxSteps?: number | undefined;
+  /** Tool selection policy passed to `streamText`. Defaults to `"auto"`. */
+  toolChoice?: ToolChoice | undefined;
   /** Logger. Defaults to consoleLogger. */
   logger?: Logger | undefined;
   /** Skip the initial greeting (used for session resume). */
@@ -86,6 +88,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   const sttSampleRate = opts.sttSampleRate ?? DEFAULT_STT_SAMPLE_RATE;
   const ttsSampleRate = opts.ttsSampleRate ?? DEFAULT_TTS_SAMPLE_RATE;
   const maxSteps = opts.maxSteps ?? 5;
+  const toolChoice = opts.toolChoice ?? "auto";
   const toolSchemas = opts.toolSchemas ?? [];
   const executeTool: ExecuteTool =
     opts.executeTool ??
@@ -210,6 +213,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
         system: systemPrompt,
         messages,
         tools,
+        toolChoice,
         stopWhen: stepCountIs(maxSteps),
         abortSignal: ctl.signal,
       });
