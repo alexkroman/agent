@@ -127,14 +127,30 @@ describe("error encoder", () => {
 describe("tool_call and tool_call_done", () => {
   test("tool_call encodes id + name + args-json", () => {
     const f = encToolCall("cid-1", "get_weather", { location: "SF" });
+    expect(f).not.toBeNull();
+    if (f === null) return;
     expect(f[0]).toBe(S2C.TOOL_CALL);
     const dv = new DataView(f.buffer, f.byteOffset, f.byteLength);
     const idLen = dv.getUint16(1, true);
     expect(new TextDecoder().decode(f.subarray(3, 3 + idLen))).toBe("cid-1");
   });
+  test("tool_call returns null when args is not JSON-serializable", () => {
+    const cycle: Record<string, unknown> = {};
+    cycle.self = cycle;
+    expect(encToolCall("cid", "tool", cycle)).toBeNull();
+  });
   test("tool_call_done encodes id + result", () => {
     const f = encToolCallDone("cid-1", "72F sunny");
     expect(f[0]).toBe(S2C.TOOL_CALL_DONE);
+    const dv = new DataView(f.buffer, f.byteOffset, f.byteLength);
+    const idLen = dv.getUint16(1, true);
+    expect(idLen).toBe(5);
+    expect(new TextDecoder().decode(f.subarray(3, 3 + idLen))).toBe("cid-1");
+    const resLen = dv.getUint32(3 + idLen, true);
+    expect(resLen).toBe(9);
+    expect(new TextDecoder().decode(f.subarray(3 + idLen + 4, 3 + idLen + 4 + resLen))).toBe(
+      "72F sunny",
+    );
   });
 });
 

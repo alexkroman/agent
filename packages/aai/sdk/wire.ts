@@ -181,10 +181,20 @@ export function encAgentTranscript(text: string): Uint8Array {
   return encodeU32String(S2C.AGENT_TRANSCRIPT, text);
 }
 
-export function encToolCall(callId: string, name: string, args: unknown): Uint8Array {
+/**
+ * Encodes a TOOL_CALL frame. Returns `null` if `JSON.stringify(args)` throws;
+ * caller should log and drop (matches encCustomEvent).
+ */
+export function encToolCall(callId: string, name: string, args: unknown): Uint8Array | null {
+  let argsStr: string;
+  try {
+    argsStr = JSON.stringify(args);
+  } catch {
+    return null;
+  }
   const idB = encodeUtf8(callId);
   const nameB = encodeUtf8(name);
-  const argsB = encodeUtf8(JSON.stringify(args));
+  const argsB = encodeUtf8(argsStr);
   const out = new Uint8Array(1 + 2 + idB.byteLength + 2 + nameB.byteLength + 4 + argsB.byteLength);
   out[0] = S2C.TOOL_CALL;
   const view = viewOf(out);
