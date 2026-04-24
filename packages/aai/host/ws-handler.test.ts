@@ -1,15 +1,11 @@
 import { describe, expect, test, vi } from "vitest";
 import type { ClientSink } from "../sdk/protocol.ts";
 import { MockWebSocket } from "./_mock-ws.ts";
-import { makeMockCore, silentLogger } from "./_test-utils.ts";
+import { makeLogger, makeMockCore, silentLogger } from "./_test-utils.ts";
 import type { SessionCore } from "./session-core.ts";
 import { wireSessionSocket } from "./ws-handler.ts";
 
 // ─── Test helpers ────────────────────────────────────────────────────────────
-
-function makeLogger() {
-  return { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
-}
 
 const defaultConfig = { audioFormat: "pcm16" as const, sampleRate: 16_000, ttsSampleRate: 24_000 };
 

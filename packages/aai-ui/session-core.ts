@@ -41,6 +41,14 @@ export type {
 /** Cap on `customEvents` retained in the session snapshot to avoid unbounded growth. */
 const MAX_CUSTOM_EVENTS = 200;
 
+/** Cap on `messages` retained in the session snapshot; mirrors host-side DEFAULT_MAX_HISTORY. */
+const MAX_MESSAGES = 200;
+
+function appendCapped<T>(list: readonly T[], item: T, cap: number): T[] {
+  const next = [...list, item];
+  return next.length > cap ? next.slice(-cap) : next;
+}
+
 // ─── Snapshot type ──────────────────────────────────────────────────────────
 
 /**
@@ -312,16 +320,24 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
   let customEventSeq = 0;
 
   function appendCustomEvent(name: string, data: unknown): void {
-    const next = [...currentSnapshot.customEvents, { id: ++customEventSeq, event: name, data }];
-    const trimmed = next.length > MAX_CUSTOM_EVENTS ? next.slice(-MAX_CUSTOM_EVENTS) : next;
-    updateState({ customEvents: trimmed });
+    updateState({
+      customEvents: appendCapped(
+        currentSnapshot.customEvents,
+        { id: ++customEventSeq, event: name, data },
+        MAX_CUSTOM_EVENTS,
+      ),
+    });
   }
 
   function handleUserTranscriptEvent(text: string): void {
     handlerGeneration++;
     updateState({
       userTranscript: null,
-      messages: [...currentSnapshot.messages, { role: "user" as const, content: text }],
+      messages: appendCapped(
+        currentSnapshot.messages,
+        { role: "user" as const, content: text },
+        MAX_MESSAGES,
+      ),
       state: "thinking",
     });
   }
@@ -329,7 +345,11 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
   function handleAgentTranscriptEvent(text: string): void {
     updateState({
       agentTranscript: null,
-      messages: [...currentSnapshot.messages, { role: "assistant" as const, content: text }],
+      messages: appendCapped(
+        currentSnapshot.messages,
+        { role: "assistant" as const, content: text },
+        MAX_MESSAGES,
+      ),
     });
   }
 
@@ -430,9 +450,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     if (currentSnapshot.state !== "speaking") {
       updateState({ state: "speaking" });
     }
-    if (chunk.buffer instanceof ArrayBuffer) {
-      conn.voiceIO?.enqueue(chunk.buffer);
-    }
+    conn.voiceIO?.enqueue(chunk.buffer as ArrayBuffer);
   }
 
   /**
@@ -470,7 +488,6 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
   function handleMessage(
     data: unknown,
   ): { sampleRate: number; ttsSampleRate: number; sid?: string | undefined } | undefined {
-    // Binary frames carry raw PCM16 audio chunks.
     if (data instanceof ArrayBuffer) {
       playAudioChunk(new Uint8Array(data));
       return;

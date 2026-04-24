@@ -388,10 +388,9 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       onAudioDone: () => bindCore().onAudioDone(),
       onUserTranscript: (text) => bindCore().onUserTranscript(text),
       onAgentTranscript: (text, interrupted) => bindCore().onAgentTranscript(text, interrupted),
-      // Issue 1 fix: pipeline tools execute inline via streamText; routing
-      // onToolCall through SessionCore.onToolCall would double-execute them
-      // and leave pendingTools non-empty, hanging the turn. Instead, send
-      // directly to the client sink for observability only.
+      // Pipeline: tools execute inside streamText; forward the call to the
+      // client sink for UI observability only. Going through SessionCore.onToolCall
+      // would re-execute the tool and leave pendingTools non-empty, hanging the turn.
       onToolCall: isPipeline
         ? (id, name, args) =>
             sessionOpts.client.event({ type: "tool_call", toolCallId: id, toolName: name, args })

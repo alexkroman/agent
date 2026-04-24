@@ -122,6 +122,15 @@ export const silentLogger: {
   debug: vi.fn(),
 };
 
+/**
+ * Fresh logger with per-call `vi.fn()` spies. Use for tests that assert on
+ * log output — {@link silentLogger} is a shared singleton and accumulates
+ * call history across tests.
+ */
+export function makeLogger() {
+  return { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+}
+
 // ─── Fixture replay helpers ──────────────────────────────────────────────────
 
 const FIXTURE_DIR = resolve(import.meta.dirname, "fixtures");

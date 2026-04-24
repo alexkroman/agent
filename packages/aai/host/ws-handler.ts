@@ -56,6 +56,10 @@ export type WsSessionOptions = {
   resumeFrom?: string;
 };
 
+const AUDIO_DONE_FRAME = JSON.stringify({
+  type: "audio_done",
+} satisfies { type: "audio_done" });
+
 /**
  * Creates a {@link ClientSink} backed by a plain WebSocket.
  *
@@ -84,7 +88,7 @@ function createClientSink(ws: SessionWebSocket, log: Logger): ClientSink {
       safeSend(chunk);
     },
     playAudioDone() {
-      safeSend(JSON.stringify({ type: "audio_done" } satisfies { type: "audio_done" }));
+      safeSend(AUDIO_DONE_FRAME);
     },
   };
 }
