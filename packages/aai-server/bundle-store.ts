@@ -6,8 +6,8 @@ import { getLock } from "p-lock";
 import type { Storage } from "unstorage";
 import { z } from "zod";
 import { retryOnTransient } from "./_retry.ts";
-import { IsolateConfigSchema } from "./rpc-schemas.ts";
-import { AgentMetadataSchema } from "./schemas.ts";
+import { type IsolateConfig, IsolateConfigSchema } from "./rpc-schemas.ts";
+import { type AgentMetadata, AgentMetadataSchema } from "./schemas.ts";
 import { decryptEnv, encryptEnv, type MasterKey } from "./secrets.ts";
 import type { BundleStore } from "./store-types.ts";
 
@@ -24,10 +24,45 @@ function objectKey(slug: string, file: string): string {
   return `agents/${slug}/${file}`;
 }
 
+// Decrypting + Zod-parsing the manifest takes ~15-20ms per call, and the
+// same slug is read on every WebSocket upgrade, health check, KV request,
+// and asset fetch. Cache both the parsed manifest (with decrypted env) and
+// the parsed agent config per slug, invalidated on writes. TTL bounds
+// staleness for multi-replica deployments where another replica may have
+// mutated the underlying storage.
+const STORE_CACHE_TTL_MS = 60_000;
+
+type CacheEntry<T> = { value: T; expires: number };
+
+function cacheGet<T>(cache: Map<string, CacheEntry<T>>, key: string): T | undefined {
+  const entry = cache.get(key);
+  if (!entry) return;
+  if (entry.expires < Date.now()) {
+    cache.delete(key);
+    return;
+  }
+  return entry.value;
+}
+
+function cacheSet<T>(cache: Map<string, CacheEntry<T>>, key: string, value: T): void {
+  cache.set(key, { value, expires: Date.now() + STORE_CACHE_TTL_MS });
+}
+
 export function createBundleStore(storage: Storage, opts: { masterKey: MasterKey }): BundleStore {
   const { masterKey } = opts;
 
   const manifestLock = getLock();
+
+  // Per-slug cache of fully parsed AgentMetadata (env already decrypted).
+  // `null` means "cached miss" (no manifest exists).
+  const manifestCache = new Map<string, CacheEntry<AgentMetadata | null>>();
+  // Per-slug cache of parsed IsolateConfig. `null` means "cached miss".
+  const configCache = new Map<string, CacheEntry<IsolateConfig | null>>();
+
+  function invalidate(slug: string): void {
+    manifestCache.delete(slug);
+    configCache.delete(slug);
+  }
 
   async function deleteByPrefix(prefix: string): Promise<void> {
     const keys = await storage.getKeys(prefix);
@@ -56,8 +91,21 @@ export function createBundleStore(storage: Storage, opts: { masterKey: MasterKey
     return ManifestSchema.parse(JSON.parse(raw));
   }
 
+  async function loadManifest(slug: string): Promise<AgentMetadata | null> {
+    const raw = await getRawManifest(slug);
+    if (!raw) return null;
+    const env = await decryptEnv(masterKey, { encrypted: raw.env, slug });
+    const parsed = AgentMetadataSchema.safeParse({
+      ...raw,
+      env,
+      envEncrypted: undefined,
+    });
+    return parsed.success ? parsed.data : null;
+  }
+
   const store: BundleStore = {
     async putAgent(bundle) {
+      invalidate(bundle.slug);
       try {
         await deleteByPrefix(`agents/${bundle.slug}`);
       } catch (err) {
@@ -81,19 +129,17 @@ export function createBundleStore(storage: Storage, opts: { masterKey: MasterKey
         ),
         storage.setItem(objectKey(bundle.slug, "config.json"), JSON.stringify(bundle.agentConfig)),
       ]);
+      // Re-invalidate to catch any concurrent read that repopulated the
+      // cache with a pre-write value during the write window.
+      invalidate(bundle.slug);
     },
 
     async getManifest(slug) {
-      const raw = await getRawManifest(slug);
-      if (!raw) return null;
-      const env = await decryptEnv(masterKey, { encrypted: raw.env, slug });
-      const parsed = AgentMetadataSchema.safeParse({
-        ...raw,
-        env,
-        envEncrypted: undefined,
-      });
-      if (!parsed.success) return null;
-      return parsed.data;
+      const cached = cacheGet(manifestCache, slug);
+      if (cached !== undefined) return cached;
+      const value = await loadManifest(slug);
+      cacheSet(manifestCache, slug, value);
+      return value;
     },
 
     async getWorkerCode(slug) {
@@ -105,13 +151,17 @@ export function createBundleStore(storage: Storage, opts: { masterKey: MasterKey
     },
 
     async deleteAgent(slug) {
+      invalidate(slug);
       await deleteByPrefix(`agents/${slug}`);
+      invalidate(slug);
     },
 
     async getEnv(slug) {
-      const raw = await getRawManifest(slug);
-      if (!raw) return null;
-      return await decryptEnv(masterKey, { encrypted: raw.env, slug });
+      const cached = cacheGet(manifestCache, slug);
+      if (cached !== undefined) return cached?.env ?? null;
+      const manifest = await loadManifest(slug);
+      cacheSet(manifestCache, slug, manifest);
+      return manifest?.env ?? null;
     },
 
     async putEnv(slug, env) {
@@ -125,18 +175,27 @@ export function createBundleStore(storage: Storage, opts: { masterKey: MasterKey
           envEncrypted: true,
         };
         await storage.setItem(objectKey(slug, "manifest.json"), JSON.stringify(updated));
+        manifestCache.delete(slug);
       } finally {
         release();
       }
     },
 
     async getAgentConfig(slug) {
+      const cached = cacheGet(configCache, slug);
+      if (cached !== undefined) return cached;
       const data = await readItem(objectKey(slug, "config.json"));
-      if (data == null) return null;
+      if (data == null) {
+        cacheSet(configCache, slug, null);
+        return null;
+      }
       try {
         const raw = typeof data === "string" ? data : JSON.stringify(data);
-        return IsolateConfigSchema.parse(JSON.parse(raw));
+        const parsed = IsolateConfigSchema.parse(JSON.parse(raw));
+        cacheSet(configCache, slug, parsed);
+        return parsed;
       } catch {
+        // Don't cache parse failures — transient corruption shouldn't stick.
         return null;
       }
     },

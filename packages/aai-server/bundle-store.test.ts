@@ -248,4 +248,136 @@ describe("bundle store (unstorage)", () => {
     await expect(store.getWorkerCode("missing")).rejects.toThrow("403 Forbidden");
     expect(callCount).toBe(1);
   });
+
+  test("getManifest caches result — second call does not hit storage", async () => {
+    const storage = createStorage();
+    const masterKey = await importMasterKey("test-secret");
+    const store = createBundleStore(storage, { masterKey });
+
+    await store.putAgent({
+      slug: "test-agent",
+      env: { A: "1" },
+      worker: "w",
+      clientFiles: {},
+      credential_hashes: ["hash1"],
+      agentConfig: TEST_AGENT_CONFIG,
+    });
+
+    // Prime cache
+    await store.getManifest("test-agent");
+
+    let reads = 0;
+    const originalGetItem = storage.getItem.bind(storage);
+    storage.getItem = (async (key: string) => {
+      reads++;
+      return originalGetItem(key);
+    }) as typeof storage.getItem;
+
+    const manifest = await store.getManifest("test-agent");
+    expect(manifest?.env).toEqual({ A: "1" });
+    expect(reads).toBe(0);
+  });
+
+  test("putEnv invalidates manifest cache", async () => {
+    const storage = createStorage();
+    const masterKey = await importMasterKey("test-secret");
+    const store = createBundleStore(storage, { masterKey });
+
+    await store.putAgent({
+      slug: "test-agent",
+      env: { A: "1" },
+      worker: "w",
+      clientFiles: {},
+      credential_hashes: ["hash1"],
+      agentConfig: TEST_AGENT_CONFIG,
+    });
+
+    // Prime cache
+    const before = await store.getEnv("test-agent");
+    expect(before).toEqual({ A: "1" });
+
+    await store.putEnv("test-agent", { A: "2" });
+    const after = await store.getEnv("test-agent");
+    expect(after).toEqual({ A: "2" });
+  });
+
+  test("getAgentConfig caches result", async () => {
+    const storage = createStorage();
+    const masterKey = await importMasterKey("test-secret");
+    const store = createBundleStore(storage, { masterKey });
+
+    await store.putAgent({
+      slug: "test-agent",
+      env: {},
+      worker: "w",
+      clientFiles: {},
+      credential_hashes: ["hash1"],
+      agentConfig: TEST_AGENT_CONFIG,
+    });
+
+    await store.getAgentConfig("test-agent");
+
+    let reads = 0;
+    const originalGetItem = storage.getItem.bind(storage);
+    storage.getItem = (async (key: string) => {
+      reads++;
+      return originalGetItem(key);
+    }) as typeof storage.getItem;
+
+    const config = await store.getAgentConfig("test-agent");
+    expect(config?.name).toBe(TEST_AGENT_CONFIG.name);
+    expect(reads).toBe(0);
+  });
+
+  test("putAgent invalidates both manifest and config caches", async () => {
+    const storage = createStorage();
+    const masterKey = await importMasterKey("test-secret");
+    const store = createBundleStore(storage, { masterKey });
+
+    await store.putAgent({
+      slug: "test-agent",
+      env: { A: "1" },
+      worker: "w",
+      clientFiles: {},
+      credential_hashes: ["hash1"],
+      agentConfig: { ...TEST_AGENT_CONFIG, name: "v1" },
+    });
+    // Prime caches
+    await store.getManifest("test-agent");
+    await store.getAgentConfig("test-agent");
+
+    await store.putAgent({
+      slug: "test-agent",
+      env: { A: "2" },
+      worker: "w",
+      clientFiles: {},
+      credential_hashes: ["hash1"],
+      agentConfig: { ...TEST_AGENT_CONFIG, name: "v2" },
+    });
+
+    expect((await store.getManifest("test-agent"))?.env).toEqual({ A: "2" });
+    expect((await store.getAgentConfig("test-agent"))?.name).toBe("v2");
+  });
+
+  test("deleteAgent invalidates cache — subsequent reads return null", async () => {
+    const storage = createStorage();
+    const masterKey = await importMasterKey("test-secret");
+    const store = createBundleStore(storage, { masterKey });
+
+    await store.putAgent({
+      slug: "test-agent",
+      env: {},
+      worker: "w",
+      clientFiles: {},
+      credential_hashes: ["hash1"],
+      agentConfig: TEST_AGENT_CONFIG,
+    });
+    await store.getManifest("test-agent");
+    await store.getAgentConfig("test-agent");
+
+    await store.deleteAgent("test-agent");
+
+    expect(await store.getManifest("test-agent")).toBeNull();
+    expect(await store.getAgentConfig("test-agent")).toBeNull();
+  });
 });
