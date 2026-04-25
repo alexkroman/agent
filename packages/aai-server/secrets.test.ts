@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
-import { describe, expect, test } from "vitest";
+import { beforeEach, describe, expect, test } from "vitest";
 import {
+  _clearVerifyCache,
   decryptEnv,
   encryptEnv,
   hashApiKey,
@@ -9,6 +10,10 @@ import {
   verifySlugOwner,
 } from "./secrets.ts";
 import { createTestStore } from "./test-utils.ts";
+
+beforeEach(() => {
+  _clearVerifyCache();
+});
 
 describe("hashApiKey", () => {
   test("produces pbkdf2 format string", async () => {
@@ -50,6 +55,28 @@ describe("verifyApiKeyHash", () => {
 
   test("returns false for wrong algorithm prefix", async () => {
     expect(await verifyApiKeyHash("key", "bcrypt:10:abc:def")).toBe(false);
+  });
+
+  test("repeat verification is dramatically faster (cache hit)", async () => {
+    const hash = await hashApiKey("my-secret-key");
+    const start1 = performance.now();
+    expect(await verifyApiKeyHash("my-secret-key", hash)).toBe(true);
+    const cold = performance.now() - start1;
+
+    const start2 = performance.now();
+    expect(await verifyApiKeyHash("my-secret-key", hash)).toBe(true);
+    const warm = performance.now() - start2;
+
+    // Cold PBKDF2 takes ~100ms; warm cache hit should be far faster.
+    expect(warm).toBeLessThan(cold / 5);
+  });
+
+  test("negative results are cached (wrong key stays wrong)", async () => {
+    const hash = await hashApiKey("right-key");
+    expect(await verifyApiKeyHash("wrong-key", hash)).toBe(false);
+    const start = performance.now();
+    expect(await verifyApiKeyHash("wrong-key", hash)).toBe(false);
+    expect(performance.now() - start).toBeLessThan(20);
   });
 });
 

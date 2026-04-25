@@ -17,6 +17,42 @@ const PBKDF2_HASH = "SHA-256";
 const HASH_SALT_BYTES = 16;
 const HASH_OUTPUT_BYTES = 32;
 
+// PBKDF2 verification takes ~100ms per call. Authenticated routes run it on
+// every request, so repeated (apiKey, storedHash) pairs get cached here.
+// Both inputs together uniquely determine the boolean result (the storedHash
+// embeds its own salt + parameters), making the cache safe.
+const VERIFY_CACHE_MAX = 256;
+const VERIFY_CACHE_TTL_MS = 5 * 60 * 1000;
+
+type VerifyCacheEntry = { result: boolean; expires: number };
+const verifyCache = new Map<string, VerifyCacheEntry>();
+
+function verifyCacheGet(key: string): boolean | undefined {
+  const entry = verifyCache.get(key);
+  if (!entry) return;
+  if (entry.expires < Date.now()) {
+    verifyCache.delete(key);
+    return;
+  }
+  // Refresh LRU position
+  verifyCache.delete(key);
+  verifyCache.set(key, entry);
+  return entry.result;
+}
+
+function verifyCacheSet(key: string, result: boolean): void {
+  if (verifyCache.size >= VERIFY_CACHE_MAX) {
+    const oldest = verifyCache.keys().next().value;
+    if (oldest !== undefined) verifyCache.delete(oldest);
+  }
+  verifyCache.set(key, { result, expires: Date.now() + VERIFY_CACHE_TTL_MS });
+}
+
+/** Test-only: clear the PBKDF2 verification cache. */
+export function _clearVerifyCache(): void {
+  verifyCache.clear();
+}
+
 /**
  * Hash an API key with PBKDF2-SHA-256 for storage.
  * Returns a self-describing string: `pbkdf2:600000:<base64url-salt>:<base64url-hash>`
@@ -40,6 +76,12 @@ export async function hashApiKey(apiKey: string): Promise<string> {
  * compares with timing-safe equality.
  */
 export async function verifyApiKeyHash(apiKey: string, storedHash: string): Promise<boolean> {
+  // Length-prefix the apiKey so no (apiKey, storedHash) pair can collide
+  // with another by concatenation.
+  const cacheKey = `${apiKey.length}:${apiKey}:${storedHash}`;
+  const cached = verifyCacheGet(cacheKey);
+  if (cached !== undefined) return cached;
+
   const parts = storedHash.split(":");
   if (parts.length !== 4 || parts[0] !== "pbkdf2") return false;
 
@@ -64,7 +106,9 @@ export async function verifyApiKeyHash(apiKey: string, storedHash: string): Prom
   );
 
   if (derived.byteLength !== expected.byteLength) return false;
-  return timingSafeEqual(derived, expected);
+  const result = timingSafeEqual(derived, expected);
+  verifyCacheSet(cacheKey, result);
+  return result;
 }
 
 export type OwnerResult =
