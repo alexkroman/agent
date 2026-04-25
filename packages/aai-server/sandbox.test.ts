@@ -140,6 +140,7 @@ describe("createSandbox", () => {
         kvStorage: opts.storage,
         kvPrefix: expect.stringContaining("test-agent"),
       }),
+      undefined,
     );
     await sandbox.shutdown();
   });
@@ -222,6 +223,7 @@ describe("createSandbox", () => {
         expect.objectContaining({
           harnessPath: "/custom/harness.mjs",
         }),
+        undefined,
       );
       await sandbox.shutdown();
     } finally {
@@ -242,6 +244,7 @@ describe("createSandbox", () => {
       expect.objectContaining({
         kvPrefix: "agents/my-custom-agent/kv",
       }),
+      undefined,
     );
     await sandbox.shutdown();
   });
@@ -370,6 +373,22 @@ describe("createSandbox", () => {
     expect(capturedRuntimeOpts.current?.llm).toBeUndefined();
     expect(capturedRuntimeOpts.current?.tts).toBeUndefined();
 
+    await sandbox.shutdown();
+  });
+
+  it("forwards an optional pool to createSandboxVm", async () => {
+    const { createSandboxVm } = await import("./sandbox-vm.ts");
+    const fakePool = {
+      acquire: vi.fn(async () => null),
+      shutdown: vi.fn(async () => undefined),
+      readySize: () => 0,
+      isShutdown: () => false,
+    };
+    const sandbox = createSandbox(
+      makeSandboxOptions({ pool: fakePool as unknown as import("./sandbox-pool.ts").SandboxPool }),
+    );
+
+    expect(createSandboxVm).toHaveBeenCalledWith(expect.any(Object), fakePool);
     await sandbox.shutdown();
   });
 });

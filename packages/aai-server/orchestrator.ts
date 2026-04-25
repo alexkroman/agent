@@ -37,6 +37,7 @@ import { createErrorHandler } from "./error-handler.ts";
 import { handleKv } from "./kv-handler.ts";
 import { authMw, ownerMw, slugMw, validateSlug } from "./middleware.ts";
 import { resolveSandbox } from "./sandbox.ts";
+import type { SandboxPool } from "./sandbox-pool.ts";
 import type { SlotCache } from "./sandbox-slots.ts";
 import { DeployBodySchema, SecretUpdatesSchema } from "./schemas.ts";
 import { handleSecretDelete, handleSecretList, handleSecretSet } from "./secret-handler.ts";
@@ -49,6 +50,8 @@ export type OrchestratorOpts = {
   storage: Storage;
   /** Allowed CORS origins. Defaults to `["*"]` (any origin). */
   allowedOrigins?: string[];
+  /** Optional pre-warmed Deno harness pool for faster cold starts. */
+  pool?: SandboxPool;
 };
 
 export type Orchestrator = {
@@ -162,6 +165,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
       slots: opts.slots,
       store: opts.store,
       storage: opts.storage,
+      ...(opts.pool && { pool: opts.pool }),
     });
     return sandbox ? { sandbox, url } : null;
   }

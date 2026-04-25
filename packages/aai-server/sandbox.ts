@@ -23,6 +23,7 @@ import {
 import type { Storage } from "unstorage";
 import { agentKvPrefix } from "./constants.ts";
 import { type IsolateConfig, ToolCallResponseSchema } from "./rpc-schemas.ts";
+import type { SandboxPool } from "./sandbox-pool.ts";
 import { createSandboxVm } from "./sandbox-vm.ts";
 import { ssrfSafeFetch } from "./ssrf.ts";
 import type { BundleStore } from "./store-types.ts";
@@ -47,6 +48,8 @@ export type SandboxOptions = {
   slug: string;
   /** Pre-extracted agent config from CLI build. */
   agentConfig: IsolateConfig;
+  /** Optional pre-warmed harness pool for faster cold starts. */
+  pool?: SandboxPool;
 };
 
 export type Sandbox = AgentRuntime;
@@ -70,15 +73,18 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
     process.env.GUEST_HARNESS_PATH ??
     path.resolve(import.meta.dirname, "dist/guest/deno-harness.mjs");
 
-  const vmReady = createSandboxVm({
-    slug,
-    workerCode,
-    env,
-    kvStorage: storage,
-    kvPrefix: agentKvPrefix(slug),
-    harnessPath,
-    allowedHosts: config.allowedHosts ?? [],
-  });
+  const vmReady = createSandboxVm(
+    {
+      slug,
+      workerCode,
+      env,
+      kvStorage: storage,
+      kvPrefix: agentKvPrefix(slug),
+      harnessPath,
+      allowedHosts: config.allowedHosts ?? [],
+    },
+    opts.pool,
+  );
 
   const executeTool: ExecuteTool = async (name, args, sessionId, messages) => {
     let sandboxHandle: Awaited<typeof vmReady>;
@@ -207,9 +213,10 @@ export async function resolveSandbox(
     slots: import("./sandbox-slots.ts").SlotCache;
     store: BundleStore;
     storage: Storage;
+    pool?: SandboxPool;
   },
 ): Promise<Sandbox | null> {
-  const { slots, store, storage } = opts;
+  const { slots, store, storage, pool } = opts;
 
   let slot = slots.get(slug);
 
@@ -244,6 +251,7 @@ export async function resolveSandbox(
     storage,
     slug,
     agentConfig,
+    ...(pool && { pool }),
   });
 
   slot.sandbox = sandbox;

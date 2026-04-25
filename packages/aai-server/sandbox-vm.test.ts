@@ -26,6 +26,18 @@ function createTestConn(): {
   return { conn, hostReadable, hostWritable, writtenLines };
 }
 
+function makeWarm(
+  conn: NdjsonConnection,
+  cleanup: () => Promise<void>,
+): import("./sandbox-vm.ts").WarmHarness {
+  return {
+    conn,
+    cleanup,
+    alive: () => true,
+    onExit: () => undefined,
+  };
+}
+
 function writeResponse(stream: PassThrough, id: number, result: unknown): void {
   stream.push(`${JSON.stringify({ jsonrpc: "2.0", id, result })}\n`);
 }
@@ -115,7 +127,7 @@ describe("configureSandbox", () => {
     const cleanup = vi.fn().mockResolvedValue(undefined);
     const detach = autorespondBundleLoad(hostWritable, hostReadable);
 
-    const handle = await _internals.configureSandbox(conn, opts, cleanup);
+    const handle = await _internals.configureSandbox(makeWarm(conn, cleanup), opts);
     expect(handle.conn).toBe(conn);
 
     // Verify bundle/load was sent with correct params
@@ -140,7 +152,7 @@ describe("configureSandbox", () => {
     const cleanup = vi.fn().mockResolvedValue(undefined);
     const detach = autorespondBundleLoad(hostWritable, hostReadable);
 
-    const handle = await _internals.configureSandbox(conn, opts, cleanup);
+    const handle = await _internals.configureSandbox(makeWarm(conn, cleanup), opts);
     detach();
 
     // Simulate guest sending kv/get request for the pre-populated key
@@ -164,7 +176,7 @@ describe("configureSandbox", () => {
     const cleanup = vi.fn().mockResolvedValue(undefined);
     const detach = autorespondBundleLoad(hostWritable, hostReadable);
 
-    const handle = await _internals.configureSandbox(conn, opts, cleanup);
+    const handle = await _internals.configureSandbox(makeWarm(conn, cleanup), opts);
     detach();
 
     // Simulate guest sending kv/set
@@ -190,7 +202,7 @@ describe("configureSandbox", () => {
     const cleanup = vi.fn().mockResolvedValue(undefined);
     const detach = autorespondBundleLoad(hostWritable, hostReadable);
 
-    const handle = await _internals.configureSandbox(conn, opts, cleanup);
+    const handle = await _internals.configureSandbox(makeWarm(conn, cleanup), opts);
     detach();
 
     // Send kv/del request
@@ -213,7 +225,7 @@ describe("configureSandbox", () => {
     const cleanup = vi.fn().mockResolvedValue(undefined);
     const detach = autorespondBundleLoad(hostWritable, hostReadable);
 
-    await _internals.configureSandbox(conn, opts, cleanup);
+    await _internals.configureSandbox(makeWarm(conn, cleanup), opts);
     detach();
 
     // Try sending a kv/get -- should get "Method not found" error response
@@ -239,7 +251,7 @@ describe("configureSandbox", () => {
     const cleanup = vi.fn().mockResolvedValue(undefined);
     const detach = autorespondBundleLoad(hostWritable, hostReadable);
 
-    const handle = await _internals.configureSandbox(conn, opts, cleanup);
+    const handle = await _internals.configureSandbox(makeWarm(conn, cleanup), opts);
     detach();
 
     await handle.shutdown();
