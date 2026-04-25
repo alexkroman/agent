@@ -1,5 +1,14 @@
 # @alexkroman1/aai
 
+## 1.5.0
+
+### Minor Changes
+
+- 58c5c75: Consolidate session.ts + pipeline-session.ts into a unified SessionCore with two transport strategies (S2S, pipeline). Switch connectS2s to typed callbacks (removing the nanoevents-backed S2sHandle emitter) and flatten client→server→provider dispatch from four layers to two. Wire format is JSON text events + raw PCM16 binary audio frames — the existing public protocol is unchanged. Adds Deepgram as a pipeline-mode STT option and Rime as a pipeline-mode TTS option.
+- 868b85e: Plumb agent maxSteps and toolChoice config into pipeline mode streamText
+- 58c5c75: Add Deepgram as a pipeline-mode STT provider option
+- 58c5c75: feat(aai): add Rime as a pipeline-mode TTS provider option
+
 ## 1.4.5
 
 ### Patch Changes
