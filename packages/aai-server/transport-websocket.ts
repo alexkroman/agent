@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { readFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { AGENT_CSP } from "@alexkroman1/aai";
@@ -20,15 +20,29 @@ function getDefaultClientDir(): string {
   return _defaultClientDir;
 }
 
-function readDefaultClientFile(relPath: string): string | null {
-  const fullPath = path.join(getDefaultClientDir(), relPath);
+// The default-client bundle ships with the server build and is immutable for
+// the process lifetime, so memoize reads (including misses) to avoid hitting
+// the filesystem on every asset request.
+const defaultClientCache = new Map<string, string | null>();
+
+async function readDefaultClientFile(relPath: string): Promise<string | null> {
+  const cached = defaultClientCache.get(relPath);
+  if (cached !== undefined) return cached;
+  const baseDir = getDefaultClientDir();
+  const fullPath = path.join(baseDir, relPath);
   // Prevent path traversal
-  if (!fullPath.startsWith(getDefaultClientDir())) return null;
-  try {
-    return readFileSync(fullPath, "utf-8");
-  } catch {
+  if (!fullPath.startsWith(baseDir)) {
+    defaultClientCache.set(relPath, null);
     return null;
   }
+  let content: string | null;
+  try {
+    content = await readFile(fullPath, "utf-8");
+  } catch {
+    content = null;
+  }
+  defaultClientCache.set(relPath, content);
+  return content;
 }
 
 export async function handleAgentHealth(c: AppContext): Promise<Response> {
@@ -48,7 +62,7 @@ export async function handleAgentPage(c: AppContext): Promise<Response> {
   // No custom client deployed — serve the default aai-ui
   const manifest = await c.env.store.getManifest(slug);
   if (!manifest) throw new HTTPException(404, { message: "HTML not found" });
-  const html = readDefaultClientFile("index.html");
+  const html = await readDefaultClientFile("index.html");
   if (!html) throw new HTTPException(500, { message: "Default client not built" });
   return c.html(html, 200, { "Content-Security-Policy": AGENT_CSP });
 }
@@ -75,7 +89,7 @@ export async function handleClientAsset(c: AppContext): Promise<Response> {
   if (content) return serveAsset(content);
 
   // Fall back to default client assets
-  const defaultAsset = readDefaultClientFile(`assets/${assetPath}`);
+  const defaultAsset = await readDefaultClientFile(`assets/${assetPath}`);
   if (defaultAsset) return serveAsset(defaultAsset);
 
   throw new HTTPException(404, { message: "Asset not found" });
