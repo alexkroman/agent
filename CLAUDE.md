@@ -172,7 +172,7 @@ restrictions apply there.
 - `orchestrator.ts` — HTTP + WebSocket routing
 - `sandbox.ts` — gVisor sandbox management
 - `sandbox-vm.ts` — per-agent sandbox lifecycle (start, teardown)
-- `sandbox-pool.ts` — pool of pre-warmed Deno harnesses for fast cold starts (Val Town–style)
+- `sandbox-pool.ts` — pool of pre-warmed Deno harnesses for fast cold starts
 - `sandbox-network.ts` — network proxying for sandbox
 - `sandbox-slots.ts` — slot allocation for concurrent sessions
 - `gvisor.ts` — gVisor (runsc) OCI runtime integration
