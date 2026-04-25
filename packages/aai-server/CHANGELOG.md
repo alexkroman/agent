@@ -1,5 +1,20 @@
 # @alexkroman1/aai-server
 
+## 1.1.0
+
+### Minor Changes
+
+- 97b3834: Add warm Deno harness pool for fast cold starts. Set SANDBOX_POOL_SIZE to pre-spawn idle harnesses ready to receive bundle/load on first session.
+
+### Patch Changes
+
+- Updated dependencies [58c5c75]
+- Updated dependencies [868b85e]
+- Updated dependencies [58c5c75]
+- Updated dependencies [58c5c75]
+  - @alexkroman1/aai@1.5.0
+  - @alexkroman1/aai-ui@1.5.0
+
 ## 1.0.21
 
 ### Patch Changes

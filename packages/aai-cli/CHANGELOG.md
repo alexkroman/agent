@@ -1,5 +1,17 @@
 # @alexkroman1/aai-cli
 
+## 1.5.0
+
+### Patch Changes
+
+- 178260a: Remove unused runBuildCommand wrapper
+- Updated dependencies [58c5c75]
+- Updated dependencies [868b85e]
+- Updated dependencies [58c5c75]
+- Updated dependencies [58c5c75]
+  - @alexkroman1/aai@1.5.0
+  - @alexkroman1/aai-ui@1.5.0
+
 ## 1.4.5
 
 ### Patch Changes
