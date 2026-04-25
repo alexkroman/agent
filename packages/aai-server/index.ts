@@ -6,6 +6,7 @@
  * a Node.js HTTP server with WebSocket upgrade support via `ws`.
  */
 
+import path from "node:path";
 import { errorMessage } from "@alexkroman1/aai";
 import { serve } from "@hono/node-server";
 import { createStorage } from "unstorage";
@@ -14,7 +15,9 @@ import { startEventLoopMonitor } from "./_event-loop-monitor.ts";
 import { createBundleStore } from "./bundle-store.ts";
 import { DEFAULT_PORT } from "./constants.ts";
 import { createOrchestrator, type OrchestratorOpts } from "./orchestrator.ts";
+import { createSandboxPool, type SandboxPool } from "./sandbox-pool.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
+import { spawnWarmHarness } from "./sandbox-vm.ts";
 import { importMasterKey } from "./secrets.ts";
 
 function requireEnv<const K extends string>(
@@ -32,14 +35,37 @@ function isLocalDev(env: NodeJS.ProcessEnv): boolean {
   return env.AAI_LOCAL_DEV === "1" || !env.BUCKET_NAME;
 }
 
-async function buildLocalOpts(_env: NodeJS.ProcessEnv): Promise<OrchestratorOpts> {
+/**
+ * Build the warm-harness pool from env config, or return null if disabled.
+ *
+ * Set `SANDBOX_POOL_SIZE` to a positive integer to pre-spawn that many
+ * Deno harnesses, ready to receive bundle/load. Reduces first-session
+ * cold-start latency for any agent that hasn't run yet on this server.
+ */
+function buildPool(env: NodeJS.ProcessEnv): SandboxPool | null {
+  const raw = env.SANDBOX_POOL_SIZE;
+  if (!raw) return null;
+  const size = Number.parseInt(raw, 10);
+  if (!Number.isFinite(size) || size < 1) return null;
+  const harnessPath =
+    env.GUEST_HARNESS_PATH ?? path.resolve(import.meta.dirname, "dist/guest/deno-harness.mjs");
+  console.info(`Sandbox pool: pre-warming ${size} Deno harness(es)`, { harnessPath });
+  return createSandboxPool({
+    targetSize: size,
+    spawn: () => spawnWarmHarness({ harnessPath }),
+  });
+}
+
+async function buildLocalOpts(env: NodeJS.ProcessEnv): Promise<OrchestratorOpts> {
   console.info("Local dev mode: unstorage memory driver for all storage");
   const storage = createStorage();
   const masterKey = await importMasterKey("local-dev-secret");
+  const pool = buildPool(env);
   return {
     slots: createSlotCache(),
     store: createBundleStore(storage, { masterKey }),
     storage,
+    ...(pool && { pool }),
   };
 }
 
@@ -66,11 +92,13 @@ async function buildOpts(env: NodeJS.ProcessEnv): Promise<OrchestratorOpts> {
   });
 
   const store = createBundleStore(storage, { masterKey });
+  const pool = buildPool(env);
 
   return {
     slots: createSlotCache(),
     store,
     storage,
+    ...(pool && { pool }),
   };
 }
 
@@ -98,6 +126,7 @@ async function main(): Promise<void> {
     console.info("Shutting down...");
     loopMonitor?.stop();
     const stops = [...opts.slots.values()].map((slot) => slot.sandbox?.shutdown()).filter(Boolean);
+    if (opts.pool) stops.push(opts.pool.shutdown());
     const results = await Promise.allSettled(stops);
     for (const r of results) {
       if (r.status === "rejected") {

@@ -21,9 +21,11 @@ function getDefaultClientDir(): string {
 }
 
 // The default-client bundle ships with the server build and is immutable for
-// the process lifetime, so memoize reads (including misses) to avoid hitting
-// the filesystem on every asset request.
-const defaultClientCache = new Map<string, string | null>();
+// the process lifetime, so memoize successful reads to avoid hitting the
+// filesystem on every asset request. Misses are NOT cached: during parallel
+// build+test runs (turbo) the file may be written after the first read, and
+// caching null would permanently shadow it.
+const defaultClientCache = new Map<string, string>();
 
 async function readDefaultClientFile(relPath: string): Promise<string | null> {
   const cached = defaultClientCache.get(relPath);
@@ -31,15 +33,12 @@ async function readDefaultClientFile(relPath: string): Promise<string | null> {
   const baseDir = getDefaultClientDir();
   const fullPath = path.join(baseDir, relPath);
   // Prevent path traversal
-  if (!fullPath.startsWith(baseDir)) {
-    defaultClientCache.set(relPath, null);
-    return null;
-  }
-  let content: string | null;
+  if (!fullPath.startsWith(baseDir)) return null;
+  let content: string;
   try {
     content = await readFile(fullPath, "utf-8");
   } catch {
-    content = null;
+    return null;
   }
   defaultClientCache.set(relPath, content);
   return content;

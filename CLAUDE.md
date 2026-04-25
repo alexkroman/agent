@@ -172,6 +172,7 @@ restrictions apply there.
 - `orchestrator.ts` — HTTP + WebSocket routing
 - `sandbox.ts` — gVisor sandbox management
 - `sandbox-vm.ts` — per-agent sandbox lifecycle (start, teardown)
+- `sandbox-pool.ts` — pool of pre-warmed Deno harnesses for fast cold starts (Val Town–style)
 - `sandbox-network.ts` — network proxying for sandbox
 - `sandbox-slots.ts` — slot allocation for concurrent sessions
 - `gvisor.ts` — gVisor (runsc) OCI runtime integration
@@ -547,6 +548,24 @@ Key properties:
   with `--allow-env --no-prompt` and no net/fs/run permissions.
 - **Dev mode (macOS)**: gVisor unavailable; sandbox falls back to a plain
   child process with no isolation.
+
+### Warm sandbox pool
+
+The server can pre-spawn a pool of "warm" Deno harnesses (process running,
+NDJSON wired, no bundle loaded) so first-session cold starts skip the
+slow `spawn → JIT init → gVisor bootstrap` path. On acquire, the
+harness is finalized for the requesting agent by registering KV/fetch
+handlers and sending `bundle/load` — a single round-trip.
+
+- **Enable**: set `SANDBOX_POOL_SIZE` to a positive integer (max 16).
+  Disabled when unset.
+- **Files**: `sandbox-pool.ts` (pool), `sandbox-vm.ts:spawnWarmHarness`
+  (backend-agnostic spawn), `configureSandbox` (per-agent finalization).
+- **Security**: the pool spawns harnesses with the same OCI spec / dev
+  config as on-demand sandboxes. Bundle code and agent env vars are
+  injected per-acquire — no agent secrets enter a warm process.
+- **Failure mode**: if the pool is empty or returns a dead harness,
+  `createSandboxVm` falls back to a fresh spawn (the pre-pool path).
 
 ### Platform sandbox (aai-server)
 

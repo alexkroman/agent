@@ -52,6 +52,24 @@ export type SandboxHandle = {
   shutdown(): Promise<void>;
 };
 
+/**
+ * A spawned harness whose Deno process is running and whose NDJSON
+ * connection is wired to its stdio, but which has NOT yet received a
+ * bundle/load. Used by the sandbox pool for warm starts.
+ *
+ * `listen()` has not been called on the connection yet — the per-agent
+ * configuration step (KV/fetch handler registration + bundle/load) will
+ * call it after handlers are registered.
+ */
+export type WarmHarness = {
+  conn: NdjsonConnection;
+  cleanup: () => Promise<void>;
+  /** True while the underlying child process is alive. */
+  alive: () => boolean;
+  /** Register a one-shot listener for child exit (for pool reaping). */
+  onExit: (cb: () => void) => void;
+};
+
 export type SandboxVmOptions = {
   slug: string;
   workerCode: string;
@@ -63,18 +81,25 @@ export type SandboxVmOptions = {
   allowedHosts?: string[];
 };
 
+/** Minimal interface the pool exposes to createSandboxVm. */
+export type WarmHarnessSource = {
+  acquire(): Promise<WarmHarness | null>;
+};
+
 // ── Shared setup ─────────────────────────────────────────────────────────────
 
 /**
- * After establishing an NDJSON connection, sends the bundle message and
- * registers the KV handler. Returns the configured SandboxHandle.
+ * Finalize a warm harness for a specific agent: register host-side KV/fetch
+ * handlers, start listening on the connection, and send bundle/load. Returns
+ * the configured SandboxHandle.
+ *
+ * Splitting register-handlers → listen → bundle/load lets the pool spawn a
+ * harness ahead of time without committing to an agent identity. Handlers
+ * MUST be registered before listen() so no incoming guest messages are
+ * dropped.
  */
-async function configureSandbox(
-  conn: NdjsonConnection,
-  opts: SandboxVmOptions,
-  cleanup: () => Promise<void>,
-): Promise<SandboxHandle> {
-  conn.listen();
+async function configureSandbox(warm: WarmHarness, opts: SandboxVmOptions): Promise<SandboxHandle> {
+  const { conn } = warm;
 
   // Host serves guest KV requests (params validated with Zod)
   if (opts.kvStorage && opts.kvPrefix) {
@@ -108,6 +133,8 @@ async function configureSandbox(
     });
   }
 
+  conn.listen();
+
   // Send bundle to guest
   await conn.sendRequest("bundle/load", {
     code: opts.workerCode,
@@ -119,7 +146,7 @@ async function configureSandbox(
     async shutdown() {
       void conn.sendNotification("shutdown");
       conn.dispose();
-      await cleanup();
+      await warm.cleanup();
     },
   };
 }
@@ -131,6 +158,29 @@ function createConnection(child: ChildProcess): NdjsonConnection {
     throw new Error("Child process missing stdio");
   }
   return createNdjsonConnection(child.stdout, child.stdin);
+}
+
+/** Wrap a ChildProcess into the WarmHarness shape used by the pool. */
+function warmFromChild(child: ChildProcess, cleanup: () => Promise<void>): WarmHarness {
+  const conn = createConnection(child);
+  const exitListeners: (() => void)[] = [];
+  child.once("exit", () => {
+    for (const cb of exitListeners) {
+      try {
+        cb();
+      } catch {
+        // Listener errors must not crash the host
+      }
+    }
+  });
+  return {
+    conn,
+    cleanup,
+    alive: () => child.exitCode === null && !child.killed,
+    onExit: (cb) => {
+      exitListeners.push(cb);
+    },
+  };
 }
 
 // ── Dev sandbox (macOS / non-gVisor) ─────────────────────────────────────────
@@ -150,20 +200,20 @@ function devSandboxSpawnArgs(harnessPath: string): {
   };
 }
 
-/**
- * Creates a sandbox by spawning the Deno guest harness as a child process.
- * Communication uses stdio pipes with NDJSON transport.
- */
-export async function createDevSandbox(opts: SandboxVmOptions): Promise<SandboxHandle> {
-  const spawnConfig = devSandboxSpawnArgs(opts.harnessPath);
+/** Spawn a dev-mode (no gVisor) Deno harness, returning an unconfigured WarmHarness. */
+function spawnDevWarm(harnessPath: string): WarmHarness {
+  const spawnConfig = devSandboxSpawnArgs(harnessPath);
   const child: ChildProcess = spawn("deno", spawnConfig.args, {
     stdio: ["pipe", "pipe", "inherit"],
     env: spawnConfig.env,
   });
-
-  return configureSandbox(createConnection(child), opts, async () => {
+  return warmFromChild(child, async () => {
     child.kill("SIGTERM");
     await new Promise<void>((resolve) => {
+      if (child.exitCode !== null) {
+        resolve();
+        return;
+      }
       const timer = setTimeout(() => {
         child.kill("SIGKILL");
         resolve();
@@ -176,18 +226,75 @@ export async function createDevSandbox(opts: SandboxVmOptions): Promise<SandboxH
   });
 }
 
+/**
+ * Creates a sandbox by spawning the Deno guest harness as a child process.
+ * Communication uses stdio pipes with NDJSON transport.
+ */
+export async function createDevSandbox(opts: SandboxVmOptions): Promise<SandboxHandle> {
+  return configureSandbox(spawnDevWarm(opts.harnessPath), opts);
+}
+
 // ── gVisor sandbox (Linux production) ────────────────────────────────────────
+
+/**
+ * Spawn a gVisor-backed Deno harness, returning an unconfigured WarmHarness.
+ *
+ * For pool spawns, pass a synthetic slug like "pool"; the slug only affects
+ * the gVisor container ID for logging and is unrelated to the security
+ * boundary (which is enforced by the OCI spec + minimal rootfs).
+ */
+function spawnGvisorWarm(
+  slug: string,
+  harnessPath: string,
+  limits?: SandboxResourceLimits,
+): WarmHarness {
+  const gvisor = createGvisorSandbox({
+    slug,
+    harnessPath,
+    ...(limits && { limits }),
+  });
+  return warmFromChild(gvisor.process, () => gvisor.cleanup());
+}
 
 /**
  * Creates a sandbox backed by a gVisor OCI container.
  */
 export async function createGvisorSandboxHandle(opts: SandboxVmOptions): Promise<SandboxHandle> {
-  const gvisor = createGvisorSandbox({
-    slug: opts.slug,
-    harnessPath: opts.harnessPath,
-    ...(opts.limits && { limits: opts.limits }),
-  });
-  return configureSandbox(createConnection(gvisor.process), opts, () => gvisor.cleanup());
+  return configureSandbox(spawnGvisorWarm(opts.slug, opts.harnessPath, opts.limits), opts);
+}
+
+// ── Warm-harness spawning (for sandbox pool) ────────────────────────────────
+
+/**
+ * Spawn a warm Deno harness using the best-available backend, suitable for
+ * the sandbox pool. The returned WarmHarness has a running process and a
+ * connected NDJSON channel, but no listeners are attached and no bundle
+ * has been loaded.
+ *
+ * Honors the same gVisor / dev-mode policy as createSandboxVm:
+ * - gVisor on Linux when runsc is on PATH
+ * - Plain child process on macOS dev mode
+ * - In production (NODE_ENV=production), gVisor is REQUIRED.
+ */
+export function spawnWarmHarness(opts: {
+  harnessPath: string;
+  limits?: SandboxResourceLimits;
+}): WarmHarness {
+  const envLimits = parseSandboxLimitsFromEnv(process.env);
+  const mergedLimits: SandboxResourceLimits = { ...envLimits, ...opts.limits };
+
+  if (isGvisorAvailable()) {
+    return spawnGvisorWarm("pool", opts.harnessPath, mergedLimits);
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    throw new Error(
+      "gVisor (runsc) is required in production but not found on PATH. " +
+        "Install runsc: https://gvisor.dev/docs/user_guide/install/ — " +
+        "Running untrusted agent code without sandbox isolation is not allowed.",
+    );
+  }
+  return spawnDevWarm(opts.harnessPath);
 }
 
 // ── Operator resource limit overrides ────────────────────────────────────────
@@ -231,7 +338,12 @@ export function parseSandboxLimitsFromEnv(
 // ── Test-only internals ─────────────────────────────────────────────────
 
 /** @internal Exposed for unit tests only. */
-export const _internals = { configureSandbox, createConnection, devSandboxSpawnArgs };
+export const _internals = {
+  configureSandbox,
+  createConnection,
+  devSandboxSpawnArgs,
+  warmFromChild,
+};
 
 // ── Factory ──────────────────────────────────────────────────────────────────
 
@@ -243,13 +355,25 @@ export const _internals = { configureSandbox, createConnection, devSandboxSpawnA
  * In production (NODE_ENV=production), gVisor is REQUIRED. The server
  * will refuse to start without it to prevent running untrusted agent
  * code without sandbox isolation.
+ *
+ * If a `pool` is provided, attempts to acquire a pre-warmed harness from
+ * it before spawning a fresh one. Falls back to a fresh spawn if the pool
+ * is empty or returns a dead harness.
  */
-export async function createSandboxVm(opts: SandboxVmOptions): Promise<SandboxHandle> {
+export async function createSandboxVm(
+  opts: SandboxVmOptions,
+  pool?: WarmHarnessSource,
+): Promise<SandboxHandle> {
   const envLimits = parseSandboxLimitsFromEnv(process.env);
   const mergedOpts: SandboxVmOptions = {
     ...opts,
     limits: { ...envLimits, ...opts.limits },
   };
+
+  if (pool) {
+    const warm = await pool.acquire();
+    if (warm) return configureSandbox(warm, mergedOpts);
+  }
 
   if (isGvisorAvailable()) return createGvisorSandboxHandle(mergedOpts);
 
