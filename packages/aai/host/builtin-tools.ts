@@ -242,6 +242,7 @@ export function resolveAllBuiltins(
     for (const [toolName, def] of resolveBuiltin(name, opts)) {
       defs[toolName] = def;
       schemas.push({
+        type: "function",
         name: toolName,
         description: def.description,
         parameters: z.toJSONSchema(def.parameters ?? EMPTY_PARAMS) as ToolSchema["parameters"],

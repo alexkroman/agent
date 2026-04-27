@@ -25,6 +25,7 @@
       "builtinTools": ["web_search"],
       "toolSchemas": [
         {
+          "type": "function",
           "name": "get_weather",
           "description": "Get the current weather",
           "parameters": { "type": "object", "properties": { "city": { "type": "string" } } }

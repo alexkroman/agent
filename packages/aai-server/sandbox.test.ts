@@ -184,6 +184,7 @@ describe("createSandbox", () => {
       maxSteps: 10,
       toolSchemas: [
         {
+          type: "function",
           name: "my_tool",
           description: "A test tool",
           parameters: { type: "object", properties: {} },

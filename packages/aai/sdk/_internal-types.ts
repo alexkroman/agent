@@ -128,6 +128,7 @@ export function toAgentConfig(src: AgentConfigSource): AgentConfig {
  * etc.) — the Vercel AI SDK wraps it via `jsonSchema()`.
  */
 export const ToolSchemaSchema = z.object({
+  type: z.literal("function"),
   name: z.string().min(1),
   description: z.string().min(1),
   parameters: z.record(z.string(), z.unknown()),
@@ -135,6 +136,7 @@ export const ToolSchemaSchema = z.object({
 
 /** Serialized tool schema — derived from {@link ToolSchemaSchema}. */
 export type ToolSchema = {
+  type: "function";
   name: string;
   description: string;
   parameters: JSONSchema7;
@@ -151,6 +153,7 @@ export const EMPTY_PARAMS = z.object({});
  */
 export function agentToolsToSchemas(tools: Readonly<Record<string, ToolDef>>): ToolSchema[] {
   return Object.entries(tools).map(([name, def]) => ({
+    type: "function",
     name,
     description: def.description,
     parameters: z.toJSONSchema(def.parameters ?? EMPTY_PARAMS) as JSONSchema7,

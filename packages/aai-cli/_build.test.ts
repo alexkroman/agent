@@ -63,6 +63,7 @@ export default {
         expect(bundle.agentConfig.name).toBe("tool-test-agent");
         expect(bundle.agentConfig.toolSchemas).toEqual([
           {
+            type: "function",
             name: "greet",
             description: "Greet someone by name",
             parameters: expect.objectContaining({ type: "object" }),
