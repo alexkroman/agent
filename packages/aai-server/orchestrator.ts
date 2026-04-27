@@ -36,7 +36,7 @@ import { handleDelete } from "./delete.ts";
 import { handleDeploy, handleDeployNew } from "./deploy.ts";
 import { createErrorHandler } from "./error-handler.ts";
 import { handleKv } from "./kv-handler.ts";
-import { registry, serialize } from "./metrics.ts";
+import { metrics, registry, serialize } from "./metrics.ts";
 import { authMw, ownerMw, slugMw, validateSlug } from "./middleware.ts";
 import { resolveSandbox } from "./sandbox.ts";
 import type { SandboxPool } from "./sandbox-pool.ts";
@@ -183,13 +183,18 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     const match = url.pathname.match(SLUG_WS_RE);
     if (!match) return null;
     const slug = validateSlug(match[1] as string);
-    const sandbox = await resolveSandbox(slug, {
-      slots: opts.slots,
-      store: opts.store,
-      storage: opts.storage,
-      ...(opts.pool && { pool: opts.pool }),
-    });
-    return sandbox ? { sandbox, url } : null;
+    const [sandbox, agentConfig] = await Promise.all([
+      resolveSandbox(slug, {
+        slots: opts.slots,
+        store: opts.store,
+        storage: opts.storage,
+        ...(opts.pool && { pool: opts.pool }),
+      }),
+      opts.store.getAgentConfig(slug),
+    ]);
+    if (!sandbox) return null;
+    const mode: "s2s" | "pipeline" = agentConfig?.mode === "pipeline" ? "pipeline" : "s2s";
+    return { sandbox, url, slug, mode };
   }
 
   const injectWebSocket = (server: import("node:http").Server) => {
@@ -210,9 +215,23 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
           socket.destroy();
           return;
         }
-        const { sandbox } = result;
+        const { sandbox, slug, mode } = result;
         wss.handleUpgrade(req, socket, head, (ws) => {
-          ws.on("close", () => connections.release());
+          metrics.sessionsStarted.inc({ slug, mode });
+          metrics.sessionsActive.inc({ slug });
+          const startedAt = process.hrtime.bigint();
+          ws.on("close", (code: number) => {
+            connections.release();
+            const elapsedSec = Number(process.hrtime.bigint() - startedAt) / 1e9;
+            metrics.sessionDuration.observe(elapsedSec);
+            metrics.sessionsActive.dec({ slug });
+            const reason: "client_close" | "server_close" =
+              code === 1000 || code === 1001 ? "client_close" : "server_close";
+            metrics.sessionsEnded.inc({ slug, reason });
+          });
+          ws.on("error", () => {
+            metrics.sessionErrors.inc({ kind: "internal" });
+          });
           sandbox.startSession(
             ws as unknown as SessionWebSocket,
             parseWsUpgradeParams(req.url ?? ""),
