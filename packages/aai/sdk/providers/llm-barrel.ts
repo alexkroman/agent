@@ -10,3 +10,13 @@
 export type { LlmProvider } from "../providers.ts";
 // biome-ignore lint/performance/noReExportAll: subpath barrel
 export * from "./llm/anthropic.ts";
+// biome-ignore lint/performance/noReExportAll: subpath barrel
+export * from "./llm/google.ts";
+// biome-ignore lint/performance/noReExportAll: subpath barrel
+export * from "./llm/groq.ts";
+// biome-ignore lint/performance/noReExportAll: subpath barrel
+export * from "./llm/mistral.ts";
+// biome-ignore lint/performance/noReExportAll: subpath barrel
+export * from "./llm/openai.ts";
+// biome-ignore lint/performance/noReExportAll: subpath barrel
+export * from "./llm/xai.ts";
