@@ -59,10 +59,52 @@ const sessionErrors = new client.Counter({
   registers: [registry],
 });
 
+// ── Sandbox ──
+
+const SANDBOX_INIT_BUCKETS = [0.05, 0.1, 0.25, 0.5, 1, 2, 4, 8];
+
+const sandboxInit = new client.Histogram({
+  name: "aai_sandbox_init_seconds",
+  help: "Time to bring an agent sandbox to ready state.",
+  buckets: SANDBOX_INIT_BUCKETS,
+  registers: [registry],
+});
+
+const sandboxInitFailed = new client.Counter({
+  name: "aai_sandbox_init_failed_total",
+  help: "Sandbox init failures, labeled by failure stage.",
+  labelNames: ["reason"] as const,
+  registers: [registry],
+});
+
+const sandboxEvicted = new client.Counter({
+  name: "aai_sandbox_evicted_total",
+  help: "Sandboxes evicted, labeled by reason.",
+  labelNames: ["reason"] as const,
+  registers: [registry],
+});
+
+const slotsRegistered = new client.Gauge({
+  name: "aai_slots_registered",
+  help: "Number of agent slots registered in the slot cache.",
+  registers: [registry],
+});
+
+const slotsResident = new client.Gauge({
+  name: "aai_slots_resident",
+  help: "Number of slots with a live sandbox attached.",
+  registers: [registry],
+});
+
 export const metrics = {
   sessionsStarted,
   sessionsActive,
   sessionsEnded,
   sessionDuration,
   sessionErrors,
+  sandboxInit,
+  sandboxInitFailed,
+  sandboxEvicted,
+  slotsRegistered,
+  slotsResident,
 };
