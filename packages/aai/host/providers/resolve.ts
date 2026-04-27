@@ -11,11 +11,22 @@
  * The guest sandbox never imports these functions, which is how the agent
  * bundle stays free of `@ai-sdk/anthropic` / `assemblyai` /
  * `@cartesia/cartesia-js`.
+ *
+ * `@ai-sdk/*` packages are loaded via `createRequire` lazily so self-hosted
+ * users only need to install the providers they actually reference. A
+ * missing package is reported as a friendly "package not installed" error
+ * at first session start, not as a module-load failure when the host
+ * package itself is imported.
  */
 
-import { createAnthropic } from "@ai-sdk/anthropic";
+import { createRequire } from "node:module";
 import type { LanguageModel } from "ai";
 import { ANTHROPIC_KIND, type AnthropicOptions } from "../../sdk/providers/llm/anthropic.ts";
+import { GOOGLE_KIND, type GoogleOptions } from "../../sdk/providers/llm/google.ts";
+import { GROQ_KIND, type GroqOptions } from "../../sdk/providers/llm/groq.ts";
+import { MISTRAL_KIND, type MistralOptions } from "../../sdk/providers/llm/mistral.ts";
+import { OPENAI_KIND, type OpenAIOptions } from "../../sdk/providers/llm/openai.ts";
+import { XAI_KIND, type XaiOptions } from "../../sdk/providers/llm/xai.ts";
 import { ASSEMBLYAI_KIND, type AssemblyAIOptions } from "../../sdk/providers/stt/assemblyai.ts";
 import { DEEPGRAM_KIND, type DeepgramOptions } from "../../sdk/providers/stt/deepgram.ts";
 import { CARTESIA_KIND, type CartesiaOptions } from "../../sdk/providers/tts/cartesia.ts";
@@ -31,6 +42,8 @@ import { openAssemblyAI } from "./stt/assemblyai.ts";
 import { openDeepgram } from "./stt/deepgram.ts";
 import { openCartesia } from "./tts/cartesia.ts";
 import { openRime } from "./tts/rime.ts";
+
+const requireFromHere = createRequire(import.meta.url);
 
 /**
  * Look up a provider API key: agent env first (set via `aai secret put` or
@@ -73,26 +86,107 @@ export function resolveTts(descriptor: TtsProvider): TtsOpener {
  * Resolve an {@link LlmProvider} descriptor into a Vercel AI SDK
  * {@link LanguageModel}.
  *
- * The API key is pulled from the agent's env (e.g. `ANTHROPIC_API_KEY`).
+ * The API key is pulled from the agent's env (e.g. `OPENAI_API_KEY`).
  * Missing keys throw here — the pipeline session would fail on first
  * `streamText` call otherwise, and the error is clearer at construction.
  */
 export function resolveLlm(descriptor: LlmProvider, env: Record<string, string>): LanguageModel {
   switch (descriptor.kind) {
     case ANTHROPIC_KIND: {
-      const options = descriptor.options as unknown as AnthropicOptions;
-      const apiKey = resolveApiKey("ANTHROPIC_API_KEY", env);
-      if (!apiKey) {
-        throw new Error("Anthropic LLM: missing API key. Set ANTHROPIC_API_KEY in the agent env.");
-      }
+      const apiKey = requireKey(env, "ANTHROPIC_API_KEY", "Anthropic");
+      const { createAnthropic } = loadProviderPackage<typeof import("@ai-sdk/anthropic")>(
+        "@ai-sdk/anthropic",
+        "Anthropic",
+      );
       // Pass baseURL explicitly so the SDK's loadOptionalSetting returns
       // before reading process.env["ANTHROPIC_BASE_URL"]. Without this,
       // the Deno platform server needs --allow-env to start a session.
-      return createAnthropic({ apiKey, baseURL: "https://api.anthropic.com/v1" })(options.model);
+      return createAnthropic({ apiKey, baseURL: "https://api.anthropic.com/v1" })(
+        (descriptor.options as unknown as AnthropicOptions).model,
+      );
+    }
+    case OPENAI_KIND: {
+      const apiKey = requireKey(env, "OPENAI_API_KEY", "OpenAI");
+      const { createOpenAI } = loadProviderPackage<typeof import("@ai-sdk/openai")>(
+        "@ai-sdk/openai",
+        "OpenAI",
+      );
+      return createOpenAI({ apiKey })((descriptor.options as unknown as OpenAIOptions).model);
+    }
+    case GOOGLE_KIND: {
+      const apiKey = requireKey(env, "GOOGLE_GENERATIVE_AI_API_KEY", "Google");
+      const { createGoogleGenerativeAI } = loadProviderPackage<typeof import("@ai-sdk/google")>(
+        "@ai-sdk/google",
+        "Google",
+      );
+      return createGoogleGenerativeAI({ apiKey })(
+        (descriptor.options as unknown as GoogleOptions).model,
+      );
+    }
+    case MISTRAL_KIND: {
+      const apiKey = requireKey(env, "MISTRAL_API_KEY", "Mistral");
+      const { createMistral } = loadProviderPackage<typeof import("@ai-sdk/mistral")>(
+        "@ai-sdk/mistral",
+        "Mistral",
+      );
+      return createMistral({ apiKey })((descriptor.options as unknown as MistralOptions).model);
+    }
+    case XAI_KIND: {
+      const apiKey = requireKey(env, "XAI_API_KEY", "xAI");
+      const { createXai } = loadProviderPackage<typeof import("@ai-sdk/xai")>("@ai-sdk/xai", "xAI");
+      return createXai({ apiKey })((descriptor.options as unknown as XaiOptions).model);
+    }
+    case GROQ_KIND: {
+      const apiKey = requireKey(env, "GROQ_API_KEY", "Groq");
+      const { createGroq } = loadProviderPackage<typeof import("@ai-sdk/groq")>(
+        "@ai-sdk/groq",
+        "Groq",
+      );
+      return createGroq({ apiKey })((descriptor.options as unknown as GroqOptions).model);
     }
     default:
       throw new Error(
-        `Unknown LLM provider kind: "${descriptor.kind}". Supported: ${ANTHROPIC_KIND}.`,
+        `Unknown LLM provider kind: "${descriptor.kind}". ` +
+          `Supported: ${ANTHROPIC_KIND}, ${OPENAI_KIND}, ${GOOGLE_KIND}, ${MISTRAL_KIND}, ${XAI_KIND}, ${GROQ_KIND}.`,
       );
   }
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────
+
+function requireKey(env: Record<string, string>, name: string, label: string): string {
+  const key = resolveApiKey(name, env);
+  if (!key) {
+    throw new Error(`${label} LLM: missing API key. Set ${name} in the agent env.`);
+  }
+  return key;
+}
+
+/**
+ * Synchronously load an optional `@ai-sdk/*` package via `createRequire`.
+ * Throws a friendly install-hint error if the package isn't installed,
+ * so users see "Run `pnpm add @ai-sdk/openai`" rather than a cryptic
+ * Node module-resolution stack trace.
+ */
+function loadProviderPackage<T>(name: string, label: string): T {
+  try {
+    return requireFromHere(name) as T;
+  } catch (err: unknown) {
+    if (isModuleNotFound(err, name)) {
+      throw new Error(
+        `${label} LLM: package \`${name}\` is not installed. Run \`pnpm add ${name}\`.`,
+        { cause: err },
+      );
+    }
+    throw err;
+  }
+}
+
+function isModuleNotFound(err: unknown, name: string): boolean {
+  if (!(err instanceof Error)) return false;
+  const code = (err as NodeJS.ErrnoException).code;
+  if (code !== "MODULE_NOT_FOUND" && code !== "ERR_MODULE_NOT_FOUND") return false;
+  // Defensive: only treat as missing-package if the error is about *this*
+  // package, not some transitive dep that failed to resolve.
+  return err.message.includes(name);
 }

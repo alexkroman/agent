@@ -212,8 +212,15 @@ requires either zero or all three of `stt`/`llm`/`tts`.
 Reference providers shipped today:
 
 - **STT**: `assemblyAI({ model: "u3pro-rt" })` via the `assemblyai` SDK
-- **LLM**: any Vercel AI SDK `LanguageModel` — users import from the
-  `@ai-sdk/*` packages (OpenAI, Anthropic, Google, etc.) themselves
+  (or `deepgram(...)` via `@deepgram/sdk`)
+- **LLM**: one of the typed factories below — `@ai-sdk/*` packages are
+  loaded lazily via `createRequire` so you only install what you use:
+  - `anthropic({ model })` — `ANTHROPIC_API_KEY`
+  - `openai({ model })` — `OPENAI_API_KEY`
+  - `google({ model })` — `GOOGLE_GENERATIVE_AI_API_KEY`
+  - `mistral({ model })` — `MISTRAL_API_KEY`
+  - `xai({ model })` — `XAI_API_KEY`
+  - `groq({ model })` — `GROQ_API_KEY`
 - **TTS**: `cartesia({ voice })` via `@cartesia/cartesia-js`
 
 The provider SDKs (`ai`, `assemblyai`, `@cartesia/cartesia-js`) are
@@ -331,8 +338,9 @@ of subpath exports in `aai/package.json`:
 | `@alexkroman1/aai/runtime` | `host/runtime-barrel.ts` → 11 modules | Full Node.js runtime: session, S2S, server, tools, WS handler |
 | `@alexkroman1/aai/protocol` | `sdk/protocol.ts` (direct, not a barrel) | Wire-format Zod schemas, `lenientParse()`, `ClientEvent`, `ServerMessage` |
 | `@alexkroman1/aai/manifest` | `sdk/manifest-barrel.ts` → 3 modules | `parseManifest()`, `toAgentConfig()`, `agentToolsToSchemas()`, system prompt builder |
-| `@alexkroman1/aai/stt` | `host/providers/stt-barrel.ts` | STT provider factories + types (currently: `assemblyAI`) |
-| `@alexkroman1/aai/tts` | `host/providers/tts-barrel.ts` | TTS provider factories + types (currently: `cartesia`) |
+| `@alexkroman1/aai/stt` | `host/providers/stt-barrel.ts` | STT provider factories + types (`assemblyAI`, `deepgram`) |
+| `@alexkroman1/aai/llm` | `host/providers/llm-barrel.ts` | LLM provider factories + types (`anthropic`, `openai`, `google`, `mistral`, `xai`, `groq`) |
+| `@alexkroman1/aai/tts` | `host/providers/tts-barrel.ts` | TTS provider factories + types (`cartesia`, `rime`) |
 
 ### Default values and magic numbers
 
