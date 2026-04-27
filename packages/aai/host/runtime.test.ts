@@ -322,7 +322,9 @@ describe("executeToolCall", () => {
 describe("createRuntime sandbox mode", () => {
   test("uses provided executeTool and toolSchemas", async () => {
     const mockExecuteTool = vi.fn(async () => "mocked-result");
-    const mockToolSchemas = [{ name: "mock_tool", description: "A mock tool", parameters: {} }];
+    const mockToolSchemas = [
+      { type: "function" as const, name: "mock_tool", description: "A mock tool", parameters: {} },
+    ];
 
     const runtime = createRuntime({
       agent: makeAgent(),

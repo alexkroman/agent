@@ -6,6 +6,7 @@ import { toVercelTools } from "./to-vercel-tools.ts";
 
 const schemas: ToolSchema[] = [
   {
+    type: "function",
     name: "get_weather",
     description: "Look up the weather.",
     parameters: {
@@ -166,7 +167,14 @@ describe("toVercelTools — message snapshot isolation", () => {
     };
 
     const tools = toVercelTools(
-      [{ name: "t", description: "", parameters: { type: "object", properties: {} } }],
+      [
+        {
+          type: "function",
+          name: "t",
+          description: "",
+          parameters: { type: "object", properties: {} },
+        },
+      ],
       {
         executeTool,
         sessionId: "s",

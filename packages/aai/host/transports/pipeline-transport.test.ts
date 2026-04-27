@@ -282,6 +282,7 @@ describe("PipelineTransport", () => {
   describe("streamText config plumbing", () => {
     const dummyToolSchemas = [
       {
+        type: "function" as const,
         name: "noop",
         description: "No-op tool for plumbing tests.",
         parameters: { type: "object" as const, properties: {}, additionalProperties: false },
@@ -526,6 +527,7 @@ describe("PipelineTransport", () => {
           executeTool,
           toolSchemas: [
             {
+              type: "function" as const,
               name: "get_weather",
               description: "Look up the weather.",
               parameters: {

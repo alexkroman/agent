@@ -22,6 +22,7 @@ exports[`manifest schema shapes > ToolSchemaSchema shape 1`] = `
   "description",
   "name",
   "parameters",
+  "type",
 ]
 `;
 

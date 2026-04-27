@@ -65,6 +65,7 @@ describe("AgentConfigSchema", () => {
 describe("ToolSchemaSchema", () => {
   test("accepts valid tool schema", () => {
     const valid = {
+      type: "function" as const,
       name: "get_weather",
       description: "Get weather",
       parameters: { type: "object", properties: { city: { type: "string" } } },
@@ -73,15 +74,25 @@ describe("ToolSchemaSchema", () => {
   });
 
   test("rejects empty name", () => {
-    expect(ToolSchemaSchema.safeParse({ name: "", description: "d", parameters: {} }).success).toBe(
-      false,
-    );
+    expect(
+      ToolSchemaSchema.safeParse({
+        type: "function",
+        name: "",
+        description: "d",
+        parameters: {},
+      }).success,
+    ).toBe(false);
   });
 
   test("rejects empty description", () => {
-    expect(ToolSchemaSchema.safeParse({ name: "n", description: "", parameters: {} }).success).toBe(
-      false,
-    );
+    expect(
+      ToolSchemaSchema.safeParse({
+        type: "function",
+        name: "n",
+        description: "",
+        parameters: {},
+      }).success,
+    ).toBe(false);
   });
 
   test("ToolSchema is assignable from schema inference", () => {
@@ -89,6 +100,7 @@ describe("ToolSchemaSchema", () => {
     // the runtime schema's Record<string, unknown>. Verify the direction:
     // a parsed result should be assignable to ToolSchema (narrow → wide).
     const parsed = ToolSchemaSchema.parse({
+      type: "function",
       name: "test",
       description: "test",
       parameters: { type: "object" },
