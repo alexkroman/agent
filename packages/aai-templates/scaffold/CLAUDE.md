@@ -4,16 +4,28 @@ You are helping build a voice agent using the **aai** framework.
 
 ## Workflow
 
-1. After every change, run `npx @alexkroman1/aai-cli build` to validate
-2. Make small, focused changes; verify each before moving on
-3. Check existing templates before writing custom code — see
-   `node_modules/@alexkroman1/aai-cli/templates/` for working examples
+The fast loop: edit → `pnpm dev` (browser, talk to it) →
+`pnpm test` (logic) → `pnpm build` (validate bundle).
+
+1. **Iterate in `pnpm dev`** — hot reload + browser UI. Speak to the
+   agent to verify behavior end-to-end. This is the primary feedback loop.
+2. **Run `pnpm test` after logic changes** — vitest. Co-locate tests as
+   `agent.test.ts` (see `pipeline-simple` template for a reference).
+3. **Run `pnpm build` before declaring done** — bundles `agent.ts`,
+   type-checks, and validates the manifest. Catches issues `dev` won't.
+4. **Make small, focused changes** — verify each one before stacking the
+   next.
+5. **Look at templates before writing custom code** —
+   `node_modules/@alexkroman1/aai-templates/templates/` has 14 working
+   examples. Closest matches: `simple`, `pipeline-simple`, `web-researcher`,
+   `solo-rpg`, `pizza-ordering`.
 
 ## CLI
 
 ```sh
 npx @alexkroman1/aai-cli init             # Scaffold a new agent
 npx @alexkroman1/aai-cli dev              # Start local dev server
+npx @alexkroman1/aai-cli test             # Run agent.test.ts via vitest
 npx @alexkroman1/aai-cli build            # Bundle and validate
 npx @alexkroman1/aai-cli deploy           # Deploy to production
 npx @alexkroman1/aai-cli deploy -y        # Deploy without prompts
@@ -23,11 +35,16 @@ npx @alexkroman1/aai-cli secret delete NAME
 npx @alexkroman1/aai-cli secret list
 ```
 
+The scaffold's `package.json` exposes `dev`, `build`, `test`, and `deploy`
+as `pnpm <name>` shortcuts. Other commands (`init`, `delete`, `secret`)
+are CLI-only.
+
 ## Project structure
 
 ```text
 my-agent/
   agent.ts            # Agent definition (required)
+  agent.test.ts       # Unit tests (optional)
   client.tsx          # Custom UI (optional, React)
   shared.ts           # Types shared between agent.ts and client.tsx
   system-prompt.md    # Long system prompts (optional, imported)
@@ -56,6 +73,9 @@ export default agent({
 });
 ```
 
+> When `stt`, `llm`, and `tts` are all provided, the agent runs in
+> **Pipeline mode** — see the section below.
+
 Minimal agent:
 
 ```ts
@@ -70,6 +90,84 @@ import { agent } from "@alexkroman1/aai";
 import systemPrompt from "./system-prompt.md";
 export default agent({ name: "My Agent", systemPrompt });
 ```
+
+## Pipeline mode
+
+By default an agent runs in **S2S mode**: AssemblyAI's speech-to-speech
+service handles STT, the LLM loop, and TTS in one socket. This is the
+simplest path and what `agent({ name })` gives you.
+
+**Pipeline mode** is opt-in. The host runs the LLM loop locally (Vercel AI
+SDK) and you choose your own STT, LLM, and TTS providers. Use it when:
+
+- you want a specific LLM (Anthropic, OpenAI, Gemini, Mistral, xAI, Groq)
+- you want a specific STT model or TTS voice
+- you need to swap providers without changing agent code
+
+**The rule:** set all three of `stt`, `llm`, `tts` together, or none. A
+partial config is rejected at parse time.
+
+```ts
+import { agent } from "@alexkroman1/aai";
+import { assemblyAI } from "@alexkroman1/aai/stt";
+import { anthropic } from "@alexkroman1/aai/llm";
+import { cartesia } from "@alexkroman1/aai/tts";
+
+export default agent({
+  name: "My Agent",
+  stt: assemblyAI({ model: "u3pro-rt" }),
+  llm: anthropic({ model: "claude-haiku-4-5" }),
+  tts: cartesia(),
+});
+```
+
+Tools, KV, `ctx`, and the UI all behave identically across modes. Only
+the audio + LLM transport differs.
+
+## Providers
+
+Provider SDKs are **optional peer dependencies**. Install only the SDKs
+for the providers you actually use.
+
+### STT — `@alexkroman1/aai/stt`
+
+| Factory       | Default model           | Env var               |
+| ------------- | ----------------------- | --------------------- |
+| `assemblyAI`  | `"u3pro-rt"`            | `ASSEMBLYAI_API_KEY`  |
+| `deepgram`    | `"nova-3"`              | `DEEPGRAM_API_KEY`    |
+| `elevenlabs`  | `"scribe_v2_realtime"`  | `ELEVENLABS_API_KEY`  |
+| `soniox`      | `"stt-rt-v3"`           | `SONIOX_API_KEY`      |
+
+All STT factories accept `{ model?: string, ... }`. Bare calls
+(`deepgram()`, `soniox()`, etc.) use the default model.
+
+### LLM — `@alexkroman1/aai/llm`
+
+| Factory     | SDK package           | Env var                          |
+| ----------- | --------------------- | -------------------------------- |
+| `anthropic` | `@ai-sdk/anthropic`   | `ANTHROPIC_API_KEY`              |
+| `openai`    | `@ai-sdk/openai`      | `OPENAI_API_KEY`                 |
+| `google`    | `@ai-sdk/google`      | `GOOGLE_GENERATIVE_AI_API_KEY`   |
+| `mistral`   | `@ai-sdk/mistral`     | `MISTRAL_API_KEY`                |
+| `xai`       | `@ai-sdk/xai`         | `XAI_API_KEY`                    |
+| `groq`      | `@ai-sdk/groq`        | `GROQ_API_KEY`                   |
+
+LLM factories require `{ model: string }`. Example:
+`anthropic({ model: "claude-haiku-4-5" })`.
+
+### TTS — `@alexkroman1/aai/tts`
+
+| Factory    | Default voice                            | Env var               |
+| ---------- | ---------------------------------------- | --------------------- |
+| `cartesia` | `"f786b574-daa5-4673-aa0c-cbe3e8534c02"` | `CARTESIA_API_KEY`    |
+| `rime`     | `"cove"` (model `mistv2`)                | `RIME_API_KEY`        |
+
+Bare calls (`cartesia()`, `rime()`) use the defaults. Override with
+`{ voice, model, language }`. **Rime quirk:** language uses ISO 639-3
+three-letter codes (e.g. `"eng"` not `"en"`).
+
+Set provider keys the same way as any secret: `.env` for local dev,
+`aai secret put` for production.
 
 ## `tool()` API
 
@@ -350,6 +448,35 @@ Patterns by agent type:
 - **FAQ/support:** "Base answers strictly on your knowledge — don't guess."
 - **Game/interactive:** "You ARE the game. Keep descriptions to 2-4
   sentences. No visual formatting."
+
+## Gotchas
+
+Common mistakes when working in aai projects:
+
+- **Tool execute must return a value.** A missing return = `undefined` in
+  LLM context = the model thinks the tool failed.
+- **Filter large API responses before returning them from tools.** Return
+  values are injected into LLM context. Truncate, summarize, or extract
+  only what the model needs.
+- **Pipeline mode requires all three of `stt` / `llm` / `tts`.** Partial
+  configs are rejected at parse time. Use S2S (omit all three) if you
+  don't need provider control.
+- **Never hardcode secrets.** Use `ctx.env.MY_KEY`. `.env` for local dev,
+  `aai secret put` for production.
+- **Don't use `useEffect` + `toolCalls` to derive state.** Use
+  `useToolResult` — it deduplicates by callId. The useEffect pattern
+  re-fires on every render and produces duplicates.
+- **Always import `"@alexkroman1/aai-ui/styles.css"` first** in
+  `client.tsx`. Missing this = unstyled UI.
+- **Don't create `tailwind.config.js`.** Tailwind v4 is configured via
+  CSS; the config file is ignored.
+- **Voice prompts ≠ chat prompts.** No bullets, no bold, no exclamation
+  points. See "Voice rules" above.
+- **`fetch` to private IPs is blocked** (SSRF protection). Use public URLs.
+- **KV is per-deployment.** A new slug = fresh namespace. Don't expect
+  data to survive `aai delete` + `aai deploy` with a different name.
+- **Rime language codes are ISO 639-3** (3-letter, e.g. `"eng"`), not
+  ISO 639-1 (`"en"`).
 
 ## Constraints
 
