@@ -11,6 +11,7 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { performance } from "node:perf_hooks";
 import type { Storage, StorageValue } from "unstorage";
 import { z } from "zod";
+import { debug } from "./_debug-log.ts";
 import { createGvisorSandbox, isGvisorAvailable } from "./gvisor.ts";
 import { metrics } from "./metrics.ts";
 import { createNdjsonConnection, type NdjsonConnection } from "./ndjson-transport.ts";
@@ -145,7 +146,7 @@ async function configureSandbox(warm: WarmHarness, opts: SandboxVmOptions): Prom
     code: opts.workerCode,
     env: opts.env,
   });
-  console.info("Sandbox bundle/load complete", {
+  debug("Sandbox bundle/load complete", {
     slug: opts.slug,
     bytes: opts.workerCode.length,
     ms: Math.round(performance.now() - tBundle),

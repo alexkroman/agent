@@ -51,6 +51,7 @@ export async function terminateSlot(slot: AgentSlot, slots?: SlotCache): Promise
   if (slot.sandbox) {
     const sb = slot.sandbox;
     delete slot.sandbox;
+    metrics.sandboxEvicted.inc({ reason: "terminate" });
     if (slots) publishSlotGauges(slots);
     await sb.shutdown().catch((err: unknown) => {
       console.warn("Failed to shut down sandbox", { slug, error: String(err) });

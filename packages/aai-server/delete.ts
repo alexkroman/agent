@@ -1,4 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
+import { debug } from "./_debug-log.ts";
 import type { AppContext } from "./context.ts";
 import { deleteSlot, terminateSlot, withSlugLock } from "./sandbox-slots.ts";
 
@@ -16,7 +17,7 @@ async function handleDeleteInner(c: AppContext): Promise<Response> {
 
   await c.env.store.deleteAgent(slug);
 
-  console.info("Delete received", { slug });
+  debug("Delete received", { slug });
 
   return c.json({ ok: true, message: `Deleted ${slug}` });
 }

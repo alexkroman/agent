@@ -21,6 +21,7 @@ import {
   resolveAllBuiltins,
 } from "@alexkroman1/aai/runtime";
 import type { Storage } from "unstorage";
+import { debug } from "./_debug-log.ts";
 import { agentKvPrefix } from "./constants.ts";
 import { type IsolateConfig, ToolCallResponseSchema } from "./rpc-schemas.ts";
 import type { SandboxPool } from "./sandbox-pool.ts";
@@ -156,13 +157,13 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
           sink.event({ type: "custom_event", event: params.event, data: params.data });
         }
       });
-      console.info("Sandbox ready", { slug, agent: config.name });
+      debug("Sandbox ready", { slug, agent: config.name });
     })
     .catch((err: unknown) => {
       console.error("Sandbox VM failed to start", { slug, error: errorMessage(err) });
     });
 
-  console.info("Sandbox initializing", { slug, agent: config.name });
+  debug("Sandbox initializing", { slug, agent: config.name });
 
   async function shutdownSandbox(): Promise<void> {
     sessionSinks.clear();
@@ -229,7 +230,7 @@ export async function resolveSandbox(
       keyHash: manifest.credential_hashes[0] ?? "",
     };
     setSlot(slots, slot);
-    console.info("Lazy-discovered agent from store", { slug });
+    debug("Lazy-discovered agent from store", { slug });
   }
 
   if (slot.sandbox) {
