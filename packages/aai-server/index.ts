@@ -14,6 +14,7 @@ import s3Driver from "unstorage/drivers/s3";
 import { startEventLoopMonitor } from "./_event-loop-monitor.ts";
 import { createBundleStore } from "./bundle-store.ts";
 import { DEFAULT_PORT } from "./constants.ts";
+import { isGvisorAvailable, prepareRootfs } from "./gvisor.ts";
 import { createOrchestrator, type OrchestratorOpts } from "./orchestrator.ts";
 import { createSandboxPool, type SandboxPool } from "./sandbox-pool.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
@@ -112,6 +113,23 @@ async function main(): Promise<void> {
   const loopMonitor = monitorEnabled ? startEventLoopMonitor() : null;
 
   const opts = await buildOpts(env);
+
+  // Pay the rootfs prep cost (deno binary copy, lib mount points) up
+  // front, before the HTTP listener is exposed to traffic. Without this,
+  // the first sandbox spawn does the ~125 MB sync copy on the request
+  // path and blocks the event loop long enough to fail healthchecks.
+  if (isGvisorAvailable()) {
+    const harnessPath =
+      env.GUEST_HARNESS_PATH ?? path.resolve(import.meta.dirname, "dist/guest/deno-harness.mjs");
+    try {
+      await prepareRootfs(harnessPath);
+    } catch (err) {
+      console.warn("Rootfs prep failed at boot; will retry lazily on first spawn", {
+        error: errorMessage(err),
+      });
+    }
+  }
+
   const { app, injectWebSocket } = createOrchestrator(opts);
   const nodeServer = serve({ fetch: app.fetch, port });
   injectWebSocket(nodeServer as import("node:http").Server);

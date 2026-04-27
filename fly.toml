@@ -9,6 +9,10 @@ primary_region = 'sjc'
   PORT = "8080"
   MAX_CONNECTIONS = "100"
   MAX_VMS = "10"
+  # Pre-warm Deno/gVisor harnesses so first-session cold starts skip the
+  # spawn → JIT → gVisor bootstrap path. Avoids CPU-starving healthchecks
+  # on the 1-CPU VM.
+  SANDBOX_POOL_SIZE = "2"
 
 [http_service]
   internal_port = 8080

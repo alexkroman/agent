@@ -16,7 +16,9 @@
  * That per-agent finalization happens in `configureSandbox` after acquire.
  *
  * Lifecycle:
- * - On creation, the pool kicks off `targetSize` background spawns.
+ * - On creation, the pool kicks off `targetSize` async spawns. They run
+ *   in the background and land in `ready` as they complete; the pool
+ *   constructor never blocks.
  * - On `acquire()`, returns the next warm harness immediately if one is
  *   ready; otherwise returns `null` (caller falls back to a fresh spawn).
  *   Either way, the pool replenishes asynchronously so future cold starts
@@ -40,8 +42,14 @@ import type { WarmHarness } from "./sandbox-vm.ts";
 export type SandboxPoolOptions = {
   /** Target number of idle warm harnesses to keep ready. Must be >= 1. */
   targetSize: number;
-  /** Spawns a fresh warm harness. Called by the pool to replenish. */
-  spawn: () => WarmHarness;
+  /**
+   * Spawns a fresh warm harness. Called by the pool to replenish.
+   *
+   * The returned promise must resolve once the child process is running
+   * and its NDJSON channel is wired (no bundle/load yet). Rejections are
+   * logged and stop replenishment to avoid tight fail loops.
+   */
+  spawn: () => Promise<WarmHarness>;
 };
 
 export type SandboxPool = {
@@ -54,6 +62,8 @@ export type SandboxPool = {
   shutdown(): Promise<void>;
   /** Number of warm harnesses currently idle and ready. */
   readySize(): number;
+  /** Number of in-flight spawns not yet ready. */
+  pendingSize(): number;
   /** True once `shutdown()` has been called. */
   isShutdown(): boolean;
 };
@@ -65,7 +75,10 @@ const POOL_SIZE_MAX = 16;
 export function createSandboxPool(opts: SandboxPoolOptions): SandboxPool {
   const targetSize = Math.max(1, Math.min(POOL_SIZE_MAX, Math.floor(opts.targetSize)));
   const ready: WarmHarness[] = [];
+  const pending = new Set<Promise<void>>();
   let shutdown = false;
+  /** Sticks once a spawn rejection has stopped replenishment. */
+  let stoppedDueToFailure = false;
 
   function evictDead(handle: WarmHarness): void {
     const idx = ready.indexOf(handle);
@@ -76,36 +89,54 @@ export function createSandboxPool(opts: SandboxPoolOptions): SandboxPool {
     // The next `acquire()` will top up the pool when traffic arrives.
   }
 
-  function spawnOne(): boolean {
-    if (shutdown) return false;
-    let warm: WarmHarness;
+  /** Kick off a single async spawn. Returns immediately. */
+  function spawnOne(): void {
+    if (shutdown || stoppedDueToFailure) return;
+    let p: Promise<WarmHarness>;
     try {
-      warm = opts.spawn();
+      p = opts.spawn();
     } catch (err: unknown) {
+      stoppedDueToFailure = true;
       console.warn("Sandbox pool: warm spawn failed", { error: errorMessage(err) });
-      return false;
+      return;
     }
-    // If the child dies before it's acquired, evict from the ready list.
-    // After acquire it's no longer in `ready` so this is a no-op.
-    warm.onExit(() => evictDead(warm));
-    if (shutdown) {
-      // Race: shutdown was called while we were spawning.
-      void warm.cleanup().catch(() => undefined);
-      return false;
-    }
-    ready.push(warm);
-    return true;
+    const tracked = (async () => {
+      let warm: WarmHarness;
+      try {
+        warm = await p;
+      } catch (err: unknown) {
+        stoppedDueToFailure = true;
+        console.warn("Sandbox pool: warm spawn failed", { error: errorMessage(err) });
+        return;
+      }
+      if (shutdown) {
+        try {
+          await warm.cleanup();
+        } catch {
+          // best-effort cleanup
+        }
+        return;
+      }
+      warm.onExit(() => evictDead(warm));
+      ready.push(warm);
+    })().finally(() => {
+      pending.delete(tracked);
+    });
+    pending.add(tracked);
   }
 
   function replenish(): void {
-    if (shutdown) return;
-    while (ready.length < targetSize) {
-      if (!spawnOne()) break;
+    if (shutdown || stoppedDueToFailure) return;
+    while (ready.length + pending.size < targetSize) {
+      spawnOne();
+      // Defensive: if the synchronous part of spawn() failed and bumped
+      // `stoppedDueToFailure`, break out of the loop.
+      if (stoppedDueToFailure) break;
     }
   }
 
-  // Kick off initial spawns. They run in background; constructor returns
-  // immediately so server startup is not delayed by the pool.
+  // Kick off initial spawns. They run in the background; the constructor
+  // returns immediately so server startup is not delayed by the pool.
   replenish();
 
   return {
@@ -131,11 +162,18 @@ export function createSandboxPool(opts: SandboxPoolOptions): SandboxPool {
     async shutdown(): Promise<void> {
       shutdown = true;
       const idle = ready.splice(0, ready.length);
+      // Wait for any in-flight spawns to settle so their warm harnesses
+      // get cleaned up by the .then handler above.
+      await Promise.allSettled([...pending]);
       await Promise.allSettled(idle.map((h) => h.cleanup()));
     },
 
     readySize(): number {
       return ready.length;
+    },
+
+    pendingSize(): number {
+      return pending.size;
     },
 
     isShutdown(): boolean {

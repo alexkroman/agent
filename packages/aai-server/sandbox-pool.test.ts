@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createSandboxPool } from "./sandbox-pool.ts";
+import { createSandboxPool, type SandboxPool } from "./sandbox-pool.ts";
 import type { WarmHarness } from "./sandbox-vm.ts";
 
 // ── Test helpers ─────────────────────────────────────────────────────────
@@ -35,6 +35,15 @@ function makeFakeWarm(): FakeWarm {
   return warm;
 }
 
+/** Wait for the pool's in-flight spawns to settle. */
+async function waitForReady(pool: SandboxPool, expected: number): Promise<void> {
+  await vi.waitFor(() => {
+    if (pool.readySize() !== expected) {
+      throw new Error(`expected ready=${expected}, got ${pool.readySize()}`);
+    }
+  });
+}
+
 describe("createSandboxPool", () => {
   beforeEach(() => {
     vi.spyOn(console, "info").mockImplementation(() => undefined);
@@ -45,22 +54,32 @@ describe("createSandboxPool", () => {
     vi.restoreAllMocks();
   });
 
-  it("pre-spawns targetSize warm harnesses synchronously on creation", () => {
-    const spawn = vi.fn(makeFakeWarm);
+  it("kicks off targetSize spawns synchronously on creation", () => {
+    const spawn = vi.fn(async () => makeFakeWarm());
     const pool = createSandboxPool({ targetSize: 3, spawn });
 
+    // spawn() is invoked synchronously even though it returns a promise —
+    // this is what keeps the constructor non-blocking yet eager.
     expect(spawn).toHaveBeenCalledTimes(3);
-    expect(pool.readySize()).toBe(3);
+    expect(pool.pendingSize()).toBe(3);
   });
 
-  it("clamps targetSize to >= 1", () => {
-    const spawn = vi.fn(makeFakeWarm);
+  it("warm harnesses become ready after async spawns resolve", async () => {
+    const spawn = vi.fn(async () => makeFakeWarm());
+    const pool = createSandboxPool({ targetSize: 3, spawn });
+
+    await waitForReady(pool, 3);
+    expect(pool.pendingSize()).toBe(0);
+  });
+
+  it("clamps targetSize to >= 1", async () => {
+    const spawn = vi.fn(async () => makeFakeWarm());
     const pool = createSandboxPool({ targetSize: 0, spawn });
-    expect(pool.readySize()).toBe(1);
+    await waitForReady(pool, 1);
   });
 
   it("clamps targetSize to <= POOL_SIZE_MAX (16)", () => {
-    const spawn = vi.fn(makeFakeWarm);
+    const spawn = vi.fn(async () => makeFakeWarm());
     createSandboxPool({ targetSize: 100, spawn });
     expect(spawn).toHaveBeenCalledTimes(16);
   });
@@ -68,21 +87,23 @@ describe("createSandboxPool", () => {
   it("acquire returns a warm harness from the pool", async () => {
     const harnesses = [makeFakeWarm(), makeFakeWarm()];
     let i = 0;
-    const spawn = vi.fn((): WarmHarness => harnesses[i++] ?? (makeFakeWarm() as WarmHarness));
+    const spawn = vi.fn(async (): Promise<WarmHarness> => harnesses[i++] ?? makeFakeWarm());
     const pool = createSandboxPool({ targetSize: 2, spawn });
+    await waitForReady(pool, 2);
 
     const acquired = await pool.acquire();
     expect(acquired).toBe(harnesses[0]);
   });
 
   it("acquire replenishes the pool to targetSize after a hit", async () => {
-    const spawn = vi.fn(makeFakeWarm);
+    const spawn = vi.fn(async () => makeFakeWarm());
     const pool = createSandboxPool({ targetSize: 2, spawn });
 
+    await waitForReady(pool, 2);
     expect(spawn).toHaveBeenCalledTimes(2);
 
     await pool.acquire();
-    expect(pool.readySize()).toBe(2);
+    await waitForReady(pool, 2);
     expect(spawn).toHaveBeenCalledTimes(3);
   });
 
@@ -96,9 +117,9 @@ describe("createSandboxPool", () => {
       (w as unknown as { alive: () => boolean }).alive = () => false;
       return w;
     };
-    const spawn = vi.fn(makeDeadOnArrival);
+    const spawn = vi.fn(async () => makeDeadOnArrival());
     const pool = createSandboxPool({ targetSize: 2, spawn });
-    expect(pool.readySize()).toBe(2);
+    await waitForReady(pool, 2);
 
     const acquired = await pool.acquire();
     expect(acquired).toBeNull();
@@ -110,13 +131,13 @@ describe("createSandboxPool", () => {
     const order: FakeWarm[] = [dead, live];
     let i = 0;
     // Lazy spawns after the seeded two so replenish doesn't run out.
-    const spawn = vi.fn((): WarmHarness => {
+    const spawn = vi.fn(async (): Promise<WarmHarness> => {
       const next = order[i++];
-      return next ?? (makeFakeWarm() as WarmHarness);
+      return next ?? makeFakeWarm();
     });
 
     const pool = createSandboxPool({ targetSize: 2, spawn });
-    expect(pool.readySize()).toBe(2);
+    await waitForReady(pool, 2);
 
     // Kill the first one BEFORE acquire by directly toggling alive.
     // We can't call __die() because that would also evict (via onExit).
@@ -129,15 +150,15 @@ describe("createSandboxPool", () => {
     expect(dead.__cleanedUp()).toBe(true);
   });
 
-  it("evicts a warm harness from the ready list when its process exits", () => {
+  it("evicts a warm harness from the ready list when its process exits", async () => {
     const w1 = makeFakeWarm();
     const w2 = makeFakeWarm();
     const harnesses = [w1, w2];
     let i = 0;
-    const spawn = vi.fn(() => harnesses[i++] as WarmHarness);
+    const spawn = vi.fn(async (): Promise<WarmHarness> => harnesses[i++] ?? makeFakeWarm());
 
     const pool = createSandboxPool({ targetSize: 2, spawn });
-    expect(pool.readySize()).toBe(2);
+    await waitForReady(pool, 2);
 
     w1.__die();
 
@@ -145,12 +166,13 @@ describe("createSandboxPool", () => {
     expect(pool.readySize()).toBe(1);
   });
 
-  it("does not auto-replenish when a warm harness dies (avoids fail loops)", () => {
+  it("does not auto-replenish when a warm harness dies (avoids fail loops)", async () => {
     const harnesses = Array.from({ length: 10 }, () => makeFakeWarm());
     let i = 0;
-    const spawn = vi.fn(() => harnesses[i++] as WarmHarness);
+    const spawn = vi.fn(async (): Promise<WarmHarness> => harnesses[i++] ?? makeFakeWarm());
 
     const pool = createSandboxPool({ targetSize: 2, spawn });
+    await waitForReady(pool, 2);
     expect(spawn).toHaveBeenCalledTimes(2);
 
     // Kill both
@@ -165,9 +187,10 @@ describe("createSandboxPool", () => {
   it("acquire after death triggers a replenish", async () => {
     const harnesses = Array.from({ length: 10 }, () => makeFakeWarm());
     let i = 0;
-    const spawn = vi.fn(() => harnesses[i++] as WarmHarness);
+    const spawn = vi.fn(async (): Promise<WarmHarness> => harnesses[i++] ?? makeFakeWarm());
 
     const pool = createSandboxPool({ targetSize: 2, spawn });
+    await waitForReady(pool, 2);
     harnesses[0]?.__die();
     harnesses[1]?.__die();
     expect(pool.readySize()).toBe(0);
@@ -175,17 +198,17 @@ describe("createSandboxPool", () => {
     const acquired = await pool.acquire();
     expect(acquired).toBeNull();
     // Acquire's replenish kicked off two new spawns
+    await waitForReady(pool, 2);
     expect(spawn).toHaveBeenCalledTimes(4);
-    expect(pool.readySize()).toBe(2);
   });
 
   it("shutdown cleans up all idle warm harnesses", async () => {
     const harnesses = Array.from({ length: 3 }, () => makeFakeWarm());
     let i = 0;
-    const spawn = vi.fn(() => harnesses[i++] as WarmHarness);
+    const spawn = vi.fn(async (): Promise<WarmHarness> => harnesses[i++] ?? makeFakeWarm());
 
     const pool = createSandboxPool({ targetSize: 3, spawn });
-    expect(pool.readySize()).toBe(3);
+    await waitForReady(pool, 3);
 
     await pool.shutdown();
 
@@ -196,10 +219,33 @@ describe("createSandboxPool", () => {
     }
   });
 
+  it("shutdown cleans up in-flight spawns once they resolve", async () => {
+    let resolveSpawn: ((w: WarmHarness) => void) | undefined;
+    const pendingWarm = makeFakeWarm();
+    const spawn = vi.fn(
+      () =>
+        new Promise<WarmHarness>((resolve) => {
+          resolveSpawn = resolve;
+        }),
+    );
+
+    const pool = createSandboxPool({ targetSize: 1, spawn });
+    expect(pool.pendingSize()).toBe(1);
+
+    const shutdownPromise = pool.shutdown();
+    // Resolve the in-flight spawn after shutdown started — its warm
+    // harness should be cleaned up rather than added to ready.
+    resolveSpawn?.(pendingWarm);
+    await shutdownPromise;
+
+    expect(pendingWarm.__cleanedUp()).toBe(true);
+    expect(pool.readySize()).toBe(0);
+  });
+
   it("acquire returns null after shutdown without spawning", async () => {
-    const spawn = vi.fn(makeFakeWarm);
+    const spawn = vi.fn(async () => makeFakeWarm());
     const pool = createSandboxPool({ targetSize: 2, spawn });
-    expect(spawn).toHaveBeenCalledTimes(2);
+    await waitForReady(pool, 2);
 
     await pool.shutdown();
     spawn.mockClear();
@@ -209,7 +255,7 @@ describe("createSandboxPool", () => {
     expect(spawn).not.toHaveBeenCalled();
   });
 
-  it("logs and stops replenishing when spawn throws", () => {
+  it("logs and stops replenishing when spawn synchronously throws", () => {
     const warnSpy = vi.spyOn(console, "warn");
     const spawn = vi.fn(() => {
       throw new Error("deno not found");
@@ -227,18 +273,40 @@ describe("createSandboxPool", () => {
     );
   });
 
+  it("logs and stops replenishing when spawn rejects asynchronously", async () => {
+    const warnSpy = vi.spyOn(console, "warn");
+    const spawn = vi.fn(async () => {
+      throw new Error("rootfs prep failed");
+    });
+
+    const pool = createSandboxPool({ targetSize: 3, spawn });
+    // All three spawns kicked off concurrently before any rejected.
+    expect(spawn).toHaveBeenCalledTimes(3);
+
+    await vi.waitFor(() => {
+      expect(warnSpy).toHaveBeenCalledWith(
+        "Sandbox pool: warm spawn failed",
+        expect.objectContaining({ error: expect.stringContaining("rootfs prep failed") }),
+      );
+    });
+    // Pool state ends up empty and won't replenish further.
+    expect(pool.readySize()).toBe(0);
+    expect(pool.pendingSize()).toBe(0);
+  });
+
   it("killing an acquired harness does not affect the pool's ready list", async () => {
     // Distinct harnesses for ctor + replenish
     const harnesses = Array.from({ length: 4 }, () => makeFakeWarm());
     let i = 0;
-    const spawn = vi.fn(() => harnesses[i++] as WarmHarness);
+    const spawn = vi.fn(async (): Promise<WarmHarness> => harnesses[i++] ?? makeFakeWarm());
 
     const pool = createSandboxPool({ targetSize: 1, spawn });
+    await waitForReady(pool, 1);
     const acquired = (await pool.acquire()) as FakeWarm;
     expect(acquired).toBe(harnesses[0]);
 
     // After acquire, replenish spawned harness #1 into ready
-    expect(pool.readySize()).toBe(1);
+    await waitForReady(pool, 1);
 
     // Kill the acquired one — the pool's onExit listener should be a
     // no-op because it's no longer in the ready list.

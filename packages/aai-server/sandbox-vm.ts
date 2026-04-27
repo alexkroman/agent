@@ -8,6 +8,7 @@
  */
 
 import { type ChildProcess, spawn } from "node:child_process";
+import { performance } from "node:perf_hooks";
 import type { Storage, StorageValue } from "unstorage";
 import { z } from "zod";
 import { createGvisorSandbox, isGvisorAvailable } from "./gvisor.ts";
@@ -135,10 +136,18 @@ async function configureSandbox(warm: WarmHarness, opts: SandboxVmOptions): Prom
 
   conn.listen();
 
-  // Send bundle to guest
+  // Send bundle to guest. The bundle/load round-trip is on the request
+  // path, so we time it to distinguish guest cold-start latency (gVisor
+  // boot + Deno V8 init) from host-side spawn overhead.
+  const tBundle = performance.now();
   await conn.sendRequest("bundle/load", {
     code: opts.workerCode,
     env: opts.env,
+  });
+  console.info("Sandbox bundle/load complete", {
+    slug: opts.slug,
+    bytes: opts.workerCode.length,
+    ms: Math.round(performance.now() - tBundle),
   });
 
   return {
@@ -243,12 +252,12 @@ export async function createDevSandbox(opts: SandboxVmOptions): Promise<SandboxH
  * the gVisor container ID for logging and is unrelated to the security
  * boundary (which is enforced by the OCI spec + minimal rootfs).
  */
-function spawnGvisorWarm(
+async function spawnGvisorWarm(
   slug: string,
   harnessPath: string,
   limits?: SandboxResourceLimits,
-): WarmHarness {
-  const gvisor = createGvisorSandbox({
+): Promise<WarmHarness> {
+  const gvisor = await createGvisorSandbox({
     slug,
     harnessPath,
     ...(limits && { limits }),
@@ -260,7 +269,8 @@ function spawnGvisorWarm(
  * Creates a sandbox backed by a gVisor OCI container.
  */
 export async function createGvisorSandboxHandle(opts: SandboxVmOptions): Promise<SandboxHandle> {
-  return configureSandbox(spawnGvisorWarm(opts.slug, opts.harnessPath, opts.limits), opts);
+  const warm = await spawnGvisorWarm(opts.slug, opts.harnessPath, opts.limits);
+  return configureSandbox(warm, opts);
 }
 
 // ── Warm-harness spawning (for sandbox pool) ────────────────────────────────
@@ -276,10 +286,10 @@ export async function createGvisorSandboxHandle(opts: SandboxVmOptions): Promise
  * - Plain child process on macOS dev mode
  * - In production (NODE_ENV=production), gVisor is REQUIRED.
  */
-export function spawnWarmHarness(opts: {
+export async function spawnWarmHarness(opts: {
   harnessPath: string;
   limits?: SandboxResourceLimits;
-}): WarmHarness {
+}): Promise<WarmHarness> {
   const envLimits = parseSandboxLimitsFromEnv(process.env);
   const mergedLimits: SandboxResourceLimits = { ...envLimits, ...opts.limits };
 
