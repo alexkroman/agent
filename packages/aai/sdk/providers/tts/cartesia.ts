@@ -12,9 +12,16 @@ import type { TtsProvider } from "../../providers.ts";
 
 export const CARTESIA_KIND = "cartesia" as const;
 
+/**
+ * Default voice used when callers invoke `cartesia()` with no `voice`. This
+ * is the same voice the example templates ship with, so a bare `cartesia()`
+ * works out of the box for new agents.
+ */
+export const CARTESIA_DEFAULT_VOICE = "f786b574-daa5-4673-aa0c-cbe3e8534c02";
+
 export interface CartesiaOptions {
-  /** Cartesia voice ID. Required. */
-  voice: string;
+  /** Cartesia voice ID. Defaults to {@link CARTESIA_DEFAULT_VOICE}. */
+  voice?: string;
   /** Model ID. Defaults to `"sonic-2"`. */
   model?: string;
   /** Spoken language hint. Defaults to `"en"`. */
@@ -23,9 +30,12 @@ export interface CartesiaOptions {
 
 export type CartesiaProvider = TtsProvider & {
   readonly kind: typeof CARTESIA_KIND;
-  readonly options: CartesiaOptions;
+  readonly options: CartesiaOptions & { voice: string };
 };
 
-export function cartesia(opts: CartesiaOptions): CartesiaProvider {
-  return { kind: CARTESIA_KIND, options: { ...opts } };
+export function cartesia(opts: CartesiaOptions = {}): CartesiaProvider {
+  return {
+    kind: CARTESIA_KIND,
+    options: { ...opts, voice: opts.voice ?? CARTESIA_DEFAULT_VOICE },
+  };
 }

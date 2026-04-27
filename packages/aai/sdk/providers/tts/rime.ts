@@ -15,9 +15,16 @@ import type { TtsProvider } from "../../providers.ts";
 
 export const RIME_KIND = "rime" as const;
 
+/**
+ * Default Rime speaker used when callers invoke `rime()` with no `voice`.
+ * `cove` is a `mistv2` speaker, matching the default model below — so a
+ * bare `rime()` works out of the box for new agents.
+ */
+export const RIME_DEFAULT_VOICE = "cove";
+
 export interface RimeOptions {
-  /** Rime speaker ID. Required — Rime has no default speaker. */
-  voice: string;
+  /** Rime speaker ID. Defaults to {@link RIME_DEFAULT_VOICE}. */
+  voice?: string;
   /**
    * Rime model ID. Defaults to `"mistv2"` (Rime's most compatible model).
    * Common values: `"mistv2"`, `"arcana"`.
@@ -34,9 +41,12 @@ export interface RimeOptions {
 
 export type RimeProvider = TtsProvider & {
   readonly kind: typeof RIME_KIND;
-  readonly options: RimeOptions;
+  readonly options: RimeOptions & { voice: string };
 };
 
-export function rime(opts: RimeOptions): RimeProvider {
-  return { kind: RIME_KIND, options: { ...opts } };
+export function rime(opts: RimeOptions = {}): RimeProvider {
+  return {
+    kind: RIME_KIND,
+    options: { ...opts, voice: opts.voice ?? RIME_DEFAULT_VOICE },
+  };
 }

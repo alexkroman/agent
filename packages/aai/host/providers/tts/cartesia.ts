@@ -24,7 +24,10 @@ import { randomUUID } from "node:crypto";
 import { Cartesia } from "@cartesia/cartesia-js";
 import type { TTSWS, TTSWSContext } from "@cartesia/cartesia-js/resources/tts";
 import { createNanoEvents, type Emitter } from "nanoevents";
-import type { CartesiaOptions } from "../../../sdk/providers/tts/cartesia.ts";
+import {
+  CARTESIA_DEFAULT_VOICE,
+  type CartesiaOptions,
+} from "../../../sdk/providers/tts/cartesia.ts";
 import {
   makeTtsError,
   type TtsEvents,
@@ -73,6 +76,7 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
       const sampleRate = assertSupportedSampleRate(openOpts.sampleRate);
       const model = opts.model ?? "sonic-2";
       const language = opts.language ?? "en";
+      const voice = opts.voice ?? CARTESIA_DEFAULT_VOICE;
 
       const client = new Cartesia({ apiKey });
       let ws: TTSWS;
@@ -92,7 +96,7 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
       const mintContext = (): TTSWSContext =>
         ws.context({
           model_id: model,
-          voice: { mode: "id", id: opts.voice },
+          voice: { mode: "id", id: voice },
           output_format: {
             container: "raw",
             encoding: "pcm_s16le",
@@ -175,7 +179,7 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
 
       const baseRequest = {
         model_id: model,
-        voice: { mode: "id" as const, id: opts.voice },
+        voice: { mode: "id" as const, id: voice },
         output_format: {
           container: "raw" as const,
           encoding: "pcm_s16le" as const,

@@ -167,15 +167,15 @@ describe("rime TTS adapter", () => {
     expect(pcm[3]).toBe(400);
   });
 
-  test("sendText forwards the text as a WebSocket string message", async () => {
+  test("sendText forwards the text as a JSON {text} frame", async () => {
     const { session, ws } = await openSession();
 
     session.sendText("Hello, world!");
 
-    expect(ws.sent).toContain("Hello, world!");
+    expect(ws.sent).toContain(JSON.stringify({ text: "Hello, world!" }));
   });
 
-  test("flush() sends <EOS> and emits done after quiescence timer", async () => {
+  test("flush() sends a trailing '.' and emits done after quiescence post-audio", async () => {
     const { session, ws } = await openSession();
 
     const doneEvents: number[] = [];
@@ -184,19 +184,45 @@ describe("rime TTS adapter", () => {
     session.sendText("Hi there");
     session.flush();
 
-    // <EOS> should have been sent.
-    expect(ws.sent).toContain("<EOS>");
+    // Trailing punctuation forces Rime to synthesize the buffer without
+    // closing the WS (which `eos` would do).
+    expect(ws.sent).toContain(JSON.stringify({ text: "." }));
 
-    // `done` is NOT emitted immediately — the quiescence timer must fire.
+    // First-audio timer is 5 s — short window must not fire `done` yet.
+    vi.advanceTimersByTime(500);
     expect(doneEvents.length).toBe(0);
 
-    // Advance fake timers by 500 ms (quiescence timeout).
-    vi.advanceTimersByTime(500);
+    // First chunk arrives → switch to short quiescence window.
+    const samples = new Int16Array([100, 200, 300, 400]);
+    ws._msg({
+      type: "chunk",
+      data: Buffer.from(samples.buffer).toString("base64"),
+      contextId: null,
+    });
 
+    vi.advanceTimersByTime(499);
+    expect(doneEvents.length).toBe(0);
+    vi.advanceTimersByTime(1);
     expect(doneEvents.length).toBe(1);
   });
 
-  test("cancel() sends <CLEAR> and emits done synchronously", async () => {
+  test("flush() falls back to first-audio timeout when no chunk arrives", async () => {
+    const { session } = await openSession();
+
+    const doneEvents: number[] = [];
+    session.on("done", () => doneEvents.push(Date.now()));
+
+    session.sendText("Hi there");
+    session.flush();
+
+    // No chunk arrives — done must wait the full FIRST_AUDIO_TIMEOUT_MS (5 s).
+    vi.advanceTimersByTime(4999);
+    expect(doneEvents.length).toBe(0);
+    vi.advanceTimersByTime(1);
+    expect(doneEvents.length).toBe(1);
+  });
+
+  test("cancel() sends clear operation and emits done synchronously", async () => {
     const { session, ws } = await openSession();
 
     const doneEvents: number[] = [];
@@ -206,7 +232,7 @@ describe("rime TTS adapter", () => {
     // cancel() must emit `done` synchronously — barge-in cannot be deferred.
     session.cancel();
 
-    expect(ws.sent).toContain("<CLEAR>");
+    expect(ws.sent).toContain(JSON.stringify({ operation: "clear" }));
     // done was emitted synchronously (before any await / timer).
     expect(doneEvents.length).toBe(1);
   });
