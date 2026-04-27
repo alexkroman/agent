@@ -11,7 +11,6 @@ import { errorMessage } from "@alexkroman1/aai";
 import { serve } from "@hono/node-server";
 import { createStorage } from "unstorage";
 import s3Driver from "unstorage/drivers/s3";
-import { startEventLoopMonitor } from "./_event-loop-monitor.ts";
 import { createBundleStore } from "./bundle-store.ts";
 import { DEFAULT_PORT } from "./constants.ts";
 import { isGvisorAvailable, prepareRootfs } from "./gvisor.ts";
@@ -109,11 +108,6 @@ async function main(): Promise<void> {
   const env = process.env;
   const port = Number.parseInt(env.PORT ?? String(DEFAULT_PORT), 10);
 
-  // Event-loop delay monitor: set AAI_EVENT_LOOP_MONITOR=0 to disable.
-  // Sustained p95 > 50 ms means CPU-bound work is starving reply dispatch.
-  const monitorEnabled = env.AAI_EVENT_LOOP_MONITOR !== "0";
-  const loopMonitor = monitorEnabled ? startEventLoopMonitor() : null;
-
   const opts = await buildOpts(env);
 
   // Pay the rootfs prep cost (deno binary copy, lib mount points) up
@@ -144,7 +138,6 @@ async function main(): Promise<void> {
 
   async function shutdown() {
     console.info("Shutting down...");
-    loopMonitor?.stop();
     const stops = [...opts.slots.values()].map((slot) => slot.sandbox?.shutdown()).filter(Boolean);
     if (opts.pool) stops.push(opts.pool.shutdown());
     const results = await Promise.allSettled(stops);
