@@ -89,7 +89,11 @@ vi.mock("ws", () => ({ default: FakeWS, WebSocket: FakeWS }));
 
 async function openSession(
   opts: { apiKey?: string; languageHints?: string[]; model?: string } = {},
-) {
+): Promise<{
+  session: import("../../../sdk/providers.ts").SttSession;
+  ws: FakeWSInstance;
+  controller: AbortController;
+}> {
   latest.ws = undefined;
   const opener = openSoniox(
     opts.languageHints || opts.model
@@ -107,9 +111,11 @@ async function openSession(
   });
   // The constructor schedules an `open` event via setImmediate; the
   // adapter's `await waitForOpen(ws)` already drained it, so `latest.ws`
-  // is fully wired by now.
-  if (!latest.ws) throw new Error("no fake ws captured");
-  return { session, ws: latest.ws, controller };
+  // is fully wired by now. Capture into a local const so TS narrows the
+  // type — direct property access on a mutable ref keeps the union.
+  const ws: FakeWSInstance | undefined = latest.ws;
+  if (!ws) throw new Error("no fake ws captured");
+  return { session, ws, controller };
 }
 
 describe("Soniox real-time STT adapter", () => {
