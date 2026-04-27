@@ -2,8 +2,17 @@
 
 Voice agent development kit. Define agents in TypeScript, deploy anywhere.
 
+Run once with `npx`:
+
 ```sh
 npx @alexkroman1/aai-cli@latest
+```
+
+Or install globally and use the `aai` command:
+
+```sh
+npm i -g @alexkroman1/aai-cli
+aai
 ```
 
 ## Documentation
