@@ -24,6 +24,7 @@ import type { Storage } from "unstorage";
 import { agentKvPrefix } from "./constants.ts";
 import { type IsolateConfig, ToolCallResponseSchema } from "./rpc-schemas.ts";
 import type { SandboxPool } from "./sandbox-pool.ts";
+import { attachSandbox, setSlot } from "./sandbox-slots.ts";
 import { createSandboxVm } from "./sandbox-vm.ts";
 import { ssrfSafeFetch } from "./ssrf.ts";
 import type { BundleStore } from "./store-types.ts";
@@ -227,7 +228,7 @@ export async function resolveSandbox(
       slug: manifest.slug,
       keyHash: manifest.credential_hashes[0] ?? "",
     };
-    slots.set(slug, slot);
+    setSlot(slots, slot);
     console.info("Lazy-discovered agent from store", { slug });
   }
 
@@ -254,6 +255,6 @@ export async function resolveSandbox(
     ...(pool && { pool }),
   });
 
-  slot.sandbox = sandbox;
+  attachSandbox(slots, slot, sandbox);
   return sandbox;
 }

@@ -1,7 +1,15 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { describe, expect, it, vi } from "vitest";
-import { type AgentSlot, createSlotCache, terminateSlot } from "./sandbox-slots.ts";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { registry } from "./metrics.ts";
+import {
+  type AgentSlot,
+  attachSandbox,
+  createSlotCache,
+  deleteSlot,
+  setSlot,
+  terminateSlot,
+} from "./sandbox-slots.ts";
 
 function makeSandbox() {
   return { shutdown: vi.fn().mockResolvedValue(undefined) };
@@ -13,6 +21,12 @@ function makeSlot(slug: string, overrides?: Partial<AgentSlot>): AgentSlot {
     keyHash: `hash-${slug}`,
     ...overrides,
   };
+}
+
+function gaugeValue(name: string): number {
+  // biome-ignore lint/suspicious/noExplicitAny: prom-client internals not typed
+  const m = registry.getSingleMetric(name) as any;
+  return m?.hashMap?.[""]?.value ?? 0;
 }
 
 describe("createSlotCache", () => {
@@ -50,5 +64,34 @@ describe("terminateSlot", () => {
     await expect(terminateSlot(slot)).resolves.toBeUndefined();
     expect(consoleSpy).toHaveBeenCalledWith("Failed to shut down sandbox", expect.any(Object));
     consoleSpy.mockRestore();
+  });
+});
+
+describe("slot-cache gauges", () => {
+  beforeEach(() => {
+    registry.resetMetrics();
+  });
+  afterEach(() => {
+    registry.resetMetrics();
+  });
+
+  it("publishes aai_slots_registered when a slot is added or removed", () => {
+    const cache = createSlotCache();
+    setSlot(cache, makeSlot("a"));
+    setSlot(cache, makeSlot("b"));
+    expect(gaugeValue("aai_slots_registered")).toBe(2);
+    deleteSlot(cache, "a");
+    expect(gaugeValue("aai_slots_registered")).toBe(1);
+  });
+
+  it("publishes aai_slots_resident when a sandbox is attached or detached", async () => {
+    const cache = createSlotCache();
+    const slot = makeSlot("a");
+    setSlot(cache, slot);
+    expect(gaugeValue("aai_slots_resident")).toBe(0);
+    attachSandbox(cache, slot, makeSandbox());
+    expect(gaugeValue("aai_slots_resident")).toBe(1);
+    await terminateSlot(slot, cache);
+    expect(gaugeValue("aai_slots_resident")).toBe(0);
   });
 });

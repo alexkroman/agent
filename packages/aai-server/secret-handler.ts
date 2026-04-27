@@ -18,7 +18,7 @@ async function restartSandbox(c: AppContext, slug: string, reason: string): Prom
   const slot = c.env.slots.get(slug);
   if (slot?.sandbox) {
     console.info(`Restarting sandbox for ${reason}`, { slug });
-    await terminateSlot(slot);
+    await terminateSlot(slot, c.env.slots);
   }
 }
 

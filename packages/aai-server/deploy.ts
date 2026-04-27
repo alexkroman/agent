@@ -2,7 +2,7 @@
 
 import { humanId } from "human-id";
 import type { ValidatedAppContext } from "./context.ts";
-import { terminateSlot, withSlugLock } from "./sandbox-slots.ts";
+import { setSlot, terminateSlot, withSlugLock } from "./sandbox-slots.ts";
 import type { DeployBody } from "./schemas.ts";
 import { EnvSchema } from "./schemas.ts";
 import { verifyApiKeyHash } from "./secrets.ts";
@@ -59,7 +59,7 @@ async function handleDeployInner(
   const existing = c.env.slots.get(slug);
   if (existing?.sandbox) {
     console.info("Replacing existing deploy", { slug });
-    await terminateSlot(existing);
+    await terminateSlot(existing, c.env.slots);
   }
 
   // Merge the deployer's key hash into existing credential hashes rather
@@ -78,7 +78,7 @@ async function handleDeployInner(
     agentConfig: body.agentConfig,
   });
 
-  c.env.slots.set(slug, { slug, keyHash });
+  setSlot(c.env.slots, { slug, keyHash });
 
   console.info("Deploy received", { slug });
 
