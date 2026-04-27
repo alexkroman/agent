@@ -19,3 +19,50 @@ client.collectDefaultMetrics({ register: registry });
 export async function serialize(): Promise<string> {
   return registry.metrics();
 }
+
+// ── Session ──
+
+const DEFAULT_DURATION_BUCKETS = [0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 300, 1800];
+
+const sessionsStarted = new client.Counter({
+  name: "aai_sessions_started_total",
+  help: "Voice sessions started, labeled by slug and session mode.",
+  labelNames: ["slug", "mode"] as const,
+  registers: [registry],
+});
+
+const sessionsActive = new client.Gauge({
+  name: "aai_sessions_active",
+  help: "Currently-open WebSocket voice sessions, labeled by slug.",
+  labelNames: ["slug"] as const,
+  registers: [registry],
+});
+
+const sessionsEnded = new client.Counter({
+  name: "aai_sessions_ended_total",
+  help: "Voice sessions ended, labeled by slug and end reason.",
+  labelNames: ["slug", "reason"] as const,
+  registers: [registry],
+});
+
+const sessionDuration = new client.Histogram({
+  name: "aai_session_duration_seconds",
+  help: "Voice session duration, platform-wide (no slug to bound cardinality).",
+  buckets: DEFAULT_DURATION_BUCKETS,
+  registers: [registry],
+});
+
+const sessionErrors = new client.Counter({
+  name: "aai_session_errors_total",
+  help: "Session-path errors by kind.",
+  labelNames: ["kind"] as const,
+  registers: [registry],
+});
+
+export const metrics = {
+  sessionsStarted,
+  sessionsActive,
+  sessionsEnded,
+  sessionDuration,
+  sessionErrors,
+};
