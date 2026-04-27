@@ -1,5 +1,11 @@
 # @alexkroman1/aai
 
+## 1.5.1
+
+### Patch Changes
+
+- fbb3816: Add type: "function" to tool schemas in S2S session.update payload — AssemblyAI's S2S API rejects tool objects without it.
+
 ## 1.5.0
 
 ### Minor Changes

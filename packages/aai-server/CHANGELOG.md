@@ -1,5 +1,15 @@
 # @alexkroman1/aai-server
 
+## 1.1.1
+
+### Patch Changes
+
+- 6478e5e: Redeploy: pick up aai tool-schema fix that adds type:"function" to S2S session.update payload.
+- 6d81154: Redeploy aai-server to pick up tool-schema fix from aai patch release.
+- Updated dependencies [fbb3816]
+  - @alexkroman1/aai@1.5.1
+  - @alexkroman1/aai-ui@1.5.1
+
 ## 1.1.0
 
 ### Minor Changes
