@@ -12,6 +12,7 @@ import { performance } from "node:perf_hooks";
 import type { Storage, StorageValue } from "unstorage";
 import { z } from "zod";
 import { createGvisorSandbox, isGvisorAvailable } from "./gvisor.ts";
+import { metrics } from "./metrics.ts";
 import { createNdjsonConnection, type NdjsonConnection } from "./ndjson-transport.ts";
 import type { SandboxResourceLimits } from "./oci-spec.ts";
 import { createFetchHandler, type FetchRequest } from "./sandbox-fetch.ts";
@@ -371,6 +372,30 @@ export const _internals = {
  * is empty or returns a dead harness.
  */
 export async function createSandboxVm(
+  opts: SandboxVmOptions,
+  pool?: WarmHarnessSource,
+): Promise<SandboxHandle> {
+  const t0 = process.hrtime.bigint();
+  try {
+    const handle = await createSandboxVmInner(opts, pool);
+    const elapsedSec = Number(process.hrtime.bigint() - t0) / 1e9;
+    metrics.sandboxInit.observe(elapsedSec);
+    return handle;
+  } catch (err) {
+    metrics.sandboxInitFailed.inc({ reason: classifyInitFailure(err) });
+    throw err;
+  }
+}
+
+/** Classify a sandbox-init error into one of three coarse buckets. */
+function classifyInitFailure(err: unknown): "bundle_missing" | "worker_spawn" | "host_init" {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (msg.includes("bundle") || msg.includes("Worker code not found")) return "bundle_missing";
+  if (msg.includes("spawn") || msg.includes("ENOENT")) return "worker_spawn";
+  return "host_init";
+}
+
+async function createSandboxVmInner(
   opts: SandboxVmOptions,
   pool?: WarmHarnessSource,
 ): Promise<SandboxHandle> {

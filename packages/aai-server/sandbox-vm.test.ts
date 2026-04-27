@@ -2,8 +2,15 @@
 
 import { PassThrough } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { registry } from "./metrics.ts";
 import { createNdjsonConnection, type NdjsonConnection } from "./ndjson-transport.ts";
-import { _internals, parseSandboxLimitsFromEnv, type SandboxVmOptions } from "./sandbox-vm.ts";
+import {
+  _internals,
+  createSandboxVm,
+  parseSandboxLimitsFromEnv,
+  type SandboxVmOptions,
+  type WarmHarness,
+} from "./sandbox-vm.ts";
 import { createTestStorage } from "./test-utils.ts";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -406,3 +413,102 @@ describe("devSandboxSpawnArgs", () => {
     expect(args.at(-1)).toBe("/my/path/harness.mjs");
   });
 });
+
+// ── Init metrics ─────────────────────────────────────────────────────────────
+
+function histogramCount(name: string): number {
+  // biome-ignore lint/suspicious/noExplicitAny: prom-client internals not typed
+  const m = registry.getSingleMetric(name) as any;
+  return m?.hashMap?.[""]?.count ?? 0;
+}
+
+function counterValue(name: string, labels: Record<string, string>): number {
+  // biome-ignore lint/suspicious/noExplicitAny: prom-client internals not typed
+  const m = registry.getSingleMetric(name) as any;
+  if (!m?.hashMap) return 0;
+  // biome-ignore lint/suspicious/noExplicitAny: prom-client internals not typed
+  for (const entry of Object.values(m.hashMap) as any[]) {
+    const ok = Object.entries(labels).every(([k, v]) => entry.labels?.[k] === v);
+    if (ok) return entry.value ?? 0;
+  }
+  return 0;
+}
+
+describe("createSandboxVm metrics", () => {
+  let hostReadable: PassThrough;
+  let hostWritable: PassThrough;
+  let conn: NdjsonConnection;
+
+  beforeEach(() => {
+    registry.resetMetrics();
+    const result = createTestConn();
+    hostReadable = result.hostReadable;
+    hostWritable = result.hostWritable;
+    conn = result.conn;
+  });
+
+  afterEach(() => {
+    registry.resetMetrics();
+    hostReadable.destroy();
+    hostWritable.destroy();
+  });
+
+  it("observes aai_sandbox_init_seconds on successful spawn (via warm pool)", async () => {
+    const opts = baseOpts();
+    const cleanup = vi.fn().mockResolvedValue(undefined);
+    const warm = makeWarm(conn, cleanup);
+    const detach = autorespondBundleLoad(hostWritable, hostReadable);
+    const pool = { acquire: vi.fn(async (): Promise<WarmHarness | null> => warm) };
+
+    const handle = await createSandboxVm(opts, pool);
+    detach();
+
+    expect(histogramCount("aai_sandbox_init_seconds")).toBe(1);
+    expect(handle).toBeDefined();
+    handle.conn.dispose();
+  });
+
+  it("increments aai_sandbox_init_failed_total{reason=bundle_missing} when bundle/load rejects", async () => {
+    const opts = baseOpts();
+    const cleanup = vi.fn().mockResolvedValue(undefined);
+    const warm = makeWarm(conn, cleanup);
+    const detach = autorespondBundleLoadError(hostWritable, hostReadable);
+    const pool = { acquire: vi.fn(async (): Promise<WarmHarness | null> => warm) };
+
+    await expect(createSandboxVm(opts, pool)).rejects.toThrow();
+    expect(
+      counterValue("aai_sandbox_init_failed_total", { reason: "bundle_missing" }),
+    ).toBeGreaterThanOrEqual(1);
+    detach();
+  });
+});
+
+/** Reject every bundle/load request with a "Worker code not found" error. */
+function autorespondBundleLoadError(
+  hostWritable: PassThrough,
+  hostReadable: PassThrough,
+): () => void {
+  const handler = (chunk: Buffer) => onBundleLoadReject(chunk, hostReadable);
+  hostWritable.on("data", handler);
+  return () => hostWritable.off("data", handler);
+}
+
+function onBundleLoadReject(chunk: Buffer, hostReadable: PassThrough): void {
+  for (const line of chunk.toString().split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      const msg = JSON.parse(line);
+      if (msg.method === "bundle/load" && msg.id != null) {
+        hostReadable.push(
+          `${JSON.stringify({
+            jsonrpc: "2.0",
+            id: msg.id,
+            error: { code: -32_603, message: "Worker code not found" },
+          })}\n`,
+        );
+      }
+    } catch {
+      // ignore
+    }
+  }
+}
