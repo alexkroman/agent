@@ -15,6 +15,7 @@ import { startEventLoopMonitor } from "./_event-loop-monitor.ts";
 import { createBundleStore } from "./bundle-store.ts";
 import { DEFAULT_PORT } from "./constants.ts";
 import { isGvisorAvailable, prepareRootfs } from "./gvisor.ts";
+import { metrics } from "./metrics.ts";
 import { createOrchestrator, type OrchestratorOpts } from "./orchestrator.ts";
 import { createSandboxPool, type SandboxPool } from "./sandbox-pool.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
@@ -51,6 +52,7 @@ function buildPool(env: NodeJS.ProcessEnv): SandboxPool | null {
   const harnessPath =
     env.GUEST_HARNESS_PATH ?? path.resolve(import.meta.dirname, "dist/guest/deno-harness.mjs");
   console.info(`Sandbox pool: pre-warming ${size} Deno harness(es)`, { harnessPath });
+  metrics.warmPoolTarget.set(size);
   return createSandboxPool({
     targetSize: size,
     spawn: () => spawnWarmHarness({ harnessPath }),

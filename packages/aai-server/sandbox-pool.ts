@@ -35,6 +35,7 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
+import { metrics } from "./metrics.ts";
 import type { WarmHarness } from "./sandbox-vm.ts";
 
 // ── Types ────────────────────────────────────────────────────────────────
@@ -80,10 +81,16 @@ export function createSandboxPool(opts: SandboxPoolOptions): SandboxPool {
   /** Sticks once a spawn rejection has stopped replenishment. */
   let stoppedDueToFailure = false;
 
+  function publishGauges(): void {
+    metrics.warmPoolReady.set(ready.length);
+    metrics.warmPoolPending.set(pending.size);
+  }
+
   function evictDead(handle: WarmHarness): void {
     const idx = ready.indexOf(handle);
     if (idx === -1) return;
     ready.splice(idx, 1);
+    publishGauges();
     // Do NOT auto-replenish here. If spawns are dying immediately (e.g.
     // missing Deno binary), auto-replenish would create a tight fail loop.
     // The next `acquire()` will top up the pool when traffic arrives.
@@ -97,6 +104,7 @@ export function createSandboxPool(opts: SandboxPoolOptions): SandboxPool {
       p = opts.spawn();
     } catch (err: unknown) {
       stoppedDueToFailure = true;
+      metrics.warmPoolSpawnFailed.inc();
       console.warn("Sandbox pool: warm spawn failed", { error: errorMessage(err) });
       return;
     }
@@ -106,6 +114,7 @@ export function createSandboxPool(opts: SandboxPoolOptions): SandboxPool {
         warm = await p;
       } catch (err: unknown) {
         stoppedDueToFailure = true;
+        metrics.warmPoolSpawnFailed.inc();
         console.warn("Sandbox pool: warm spawn failed", { error: errorMessage(err) });
         return;
       }
@@ -119,10 +128,13 @@ export function createSandboxPool(opts: SandboxPoolOptions): SandboxPool {
       }
       warm.onExit(() => evictDead(warm));
       ready.push(warm);
+      publishGauges();
     })().finally(() => {
       pending.delete(tracked);
+      publishGauges();
     });
     pending.add(tracked);
+    publishGauges();
   }
 
   function replenish(): void {
@@ -141,7 +153,10 @@ export function createSandboxPool(opts: SandboxPoolOptions): SandboxPool {
 
   return {
     async acquire(): Promise<WarmHarness | null> {
-      if (shutdown) return null;
+      if (shutdown) {
+        metrics.warmPoolAcquire.inc({ result: "miss" });
+        return null;
+      }
       // Pop until we find a live one; replenish covers losses.
       let warm: WarmHarness | undefined;
       for (;;) {
@@ -154,6 +169,8 @@ export function createSandboxPool(opts: SandboxPoolOptions): SandboxPool {
         // Dead — discard and continue
         void next.cleanup().catch(() => undefined);
       }
+      metrics.warmPoolAcquire.inc({ result: warm ? "hit" : "miss" });
+      publishGauges();
       // Replenish in the background regardless of hit/miss
       replenish();
       return warm ?? null;
@@ -166,6 +183,7 @@ export function createSandboxPool(opts: SandboxPoolOptions): SandboxPool {
       // get cleaned up by the .then handler above.
       await Promise.allSettled([...pending]);
       await Promise.allSettled(idle.map((h) => h.cleanup()));
+      publishGauges();
     },
 
     readySize(): number {

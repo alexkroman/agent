@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { registry } from "./metrics.ts";
 import { createSandboxPool, type SandboxPool } from "./sandbox-pool.ts";
 import type { WarmHarness } from "./sandbox-vm.ts";
 
@@ -312,5 +313,82 @@ describe("createSandboxPool", () => {
     // no-op because it's no longer in the ready list.
     acquired.__die();
     expect(pool.readySize()).toBe(1);
+  });
+});
+
+// ── Pool metrics ─────────────────────────────────────────────────────────
+
+function counterValue(name: string, labels: Record<string, string> = {}): number {
+  // biome-ignore lint/suspicious/noExplicitAny: prom-client internals not typed
+  const m = registry.getSingleMetric(name) as any;
+  if (!m?.hashMap) return 0;
+  if (Object.keys(labels).length === 0) {
+    return m.hashMap[""]?.value ?? 0;
+  }
+  // biome-ignore lint/suspicious/noExplicitAny: prom-client internals not typed
+  for (const entry of Object.values(m.hashMap) as any[]) {
+    const ok = Object.entries(labels).every(([k, v]) => entry.labels?.[k] === v);
+    if (ok) return entry.value ?? 0;
+  }
+  return 0;
+}
+
+function gaugeValue(name: string): number {
+  // biome-ignore lint/suspicious/noExplicitAny: prom-client internals not typed
+  const m = registry.getSingleMetric(name) as any;
+  return m?.hashMap?.[""]?.value ?? 0;
+}
+
+describe("sandbox-pool metrics", () => {
+  beforeEach(() => {
+    registry.resetMetrics();
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+  });
+  afterEach(() => {
+    registry.resetMetrics();
+    vi.restoreAllMocks();
+  });
+
+  it("increments aai_warm_pool_acquire_total{result=hit} on warm acquire", async () => {
+    const spawn = vi.fn(async () => makeFakeWarm());
+    const pool = createSandboxPool({ targetSize: 1, spawn });
+    await waitForReady(pool, 1);
+    const acquired = await pool.acquire();
+    expect(acquired).not.toBeNull();
+    expect(counterValue("aai_warm_pool_acquire_total", { result: "hit" })).toBe(1);
+  });
+
+  it("increments aai_warm_pool_acquire_total{result=miss} when pool is empty", async () => {
+    // spawn never resolves → pool stays empty
+    const spawn = vi.fn(() => new Promise<WarmHarness>(() => undefined));
+    const pool = createSandboxPool({ targetSize: 1, spawn });
+    const acquired = await pool.acquire();
+    expect(acquired).toBeNull();
+    expect(counterValue("aai_warm_pool_acquire_total", { result: "miss" })).toBeGreaterThanOrEqual(
+      1,
+    );
+  });
+
+  it("publishes ready/pending gauges that match pool state", async () => {
+    const spawn = vi.fn(async () => makeFakeWarm());
+    const pool = createSandboxPool({ targetSize: 2, spawn });
+    await waitForReady(pool, 2);
+    // Trigger a state-publishing call (acquire republishes gauges).
+    await pool.acquire();
+    await vi.waitFor(() => {
+      // After an acquire-and-replenish round the pool is back to ready=2.
+      expect(gaugeValue("aai_warm_pool_ready")).toBe(pool.readySize());
+      expect(gaugeValue("aai_warm_pool_pending")).toBe(pool.pendingSize());
+    });
+  });
+
+  it("increments aai_warm_pool_spawn_failed_total when spawn rejects", async () => {
+    const spawn = vi.fn(() => Promise.reject(new Error("boom")));
+    const pool = createSandboxPool({ targetSize: 2, spawn });
+    await vi.waitFor(() => {
+      expect(counterValue("aai_warm_pool_spawn_failed_total")).toBeGreaterThanOrEqual(1);
+    });
+    expect(pool.readySize()).toBe(0);
   });
 });
