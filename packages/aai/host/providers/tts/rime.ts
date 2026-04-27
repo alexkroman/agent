@@ -8,21 +8,26 @@
  * returns a {@link TtsOpener} that the pipeline session drives.
  *
  * **Protocol.** Connects to Rime's `ws2` JSON WebSocket endpoint
- * (`wss://users.rime.ai/ws2`). Text chunks are sent as plain WebSocket
- * string messages. End-of-utterance is signalled with `<EOS>`; barge-in
- * with `<CLEAR>`. The server responds with JSON frames:
+ * (`wss://users-ws.rime.ai/ws2`). Client-to-server messages are JSON:
+ *   - `{ "text": "..." }` — append text to the synthesis buffer
+ *   - `{ "operation": "clear" }` — drop buffered text (barge-in)
+ *   - `{ "operation": "eos" }` — drain buffer, close connection (NOT used
+ *     during a session: it would tear down the WS, forcing reconnect per
+ *     turn). We force end-of-turn synthesis with a trailing `"."` instead.
+ * The server responds with JSON frames:
  *   - `{ type: "chunk", data: <base64 PCM16 LE>, contextId: string | null }`
  *   - `{ type: "timestamps", ... }` (ignored)
+ *   - `{ type: "error", message: string }` (surfaced as `tts_stream_error`)
  *
- * **Single long-lived connection per session.** Rime supports multi-turn
- * on a single connection via the `<CLEAR>` sentinel between utterances.
- * We use one WebSocket per `open()` call (i.e. per pipeline session) and
- * reuse it across turns using `<CLEAR>` to reset between them.
+ * **Single long-lived connection per session.** Rime buffers text until it
+ * sees terminal punctuation (`.`, `?`, `!`), so we use one WebSocket per
+ * `open()` call and reuse it across turns. `clear` resets the buffer
+ * between cancellations.
  *
- * **Done detection.** After `flush()` sends `<EOS>`, we start a quiescence
- * timer that fires 500 ms after the last received audio chunk. When it fires,
- * `done` is emitted. This avoids depending on the server-side close event
- * (which would require reconnecting on each turn).
+ * **Done detection.** After `flush()` sends a trailing `"."` to force the
+ * server to synthesize any half-buffered text, we arm a quiescence timer
+ * that fires 500 ms after the last received audio chunk. When it fires,
+ * `done` is emitted.
  *
  * **Audio format.** The URL requests `audioFormat=pcm` at the negotiated
  * `sampleRate`, which returns raw PCM16 little-endian. We decode the base64
@@ -31,7 +36,7 @@
 
 import { createNanoEvents, type Emitter } from "nanoevents";
 import WebSocket from "ws";
-import type { RimeOptions } from "../../../sdk/providers/tts/rime.ts";
+import { RIME_DEFAULT_VOICE, type RimeOptions } from "../../../sdk/providers/tts/rime.ts";
 import {
   makeTtsError,
   type TtsEvents,
@@ -82,15 +87,26 @@ function base64ToPcm(data: string): Int16Array {
  * and can be ignored for the current use case.
  */
 interface RimeMessage {
-  type: "chunk" | "timestamps" | string;
+  type: "chunk" | "timestamps" | "error" | string;
   /** Base64-encoded PCM16 LE audio. Present on `type === "chunk"`. */
   data?: string;
   /** Context discriminator for the in-flight utterance. May be null. */
   contextId?: string | null;
+  /** Error description. Present on `type === "error"`. */
+  message?: string;
 }
 
 /** Quiescence timeout in ms — how long to wait after the last audio chunk before emitting `done`. */
 const QUIESCENCE_MS = 500;
+
+/**
+ * After `flush()`, how long to wait for the FIRST audio chunk before
+ * giving up and emitting `done`. Greeting and short replies hit this
+ * path: `flush()` runs immediately after `sendText()`, so audio TTFB
+ * exceeds the 500 ms quiescence window. Once the first chunk arrives,
+ * we transition to the shorter quiescence timeout.
+ */
+const FIRST_AUDIO_TIMEOUT_MS = 5000;
 
 /** Wait for the WebSocket `open` event; reject on first `error`. */
 function waitForOpen(ws: WebSocket): Promise<void> {
@@ -137,10 +153,18 @@ function handleRimeMessage(
     const pcm = base64ToPcm(msg.data);
     if (pcm.length > 0) {
       emitter.emit("audio", pcm);
-      // Reset the quiescence timer on each audio chunk so we don't
-      // emit `done` while audio is still streaming.
+      // While we're waiting on a flush (long timer for first audio, or
+      // short timer between chunks), each chunk resets to the short
+      // quiescence window — so `done` fires only after audio stops.
       if (isActiveTimer()) armQuiescence();
     }
+    return;
+  }
+  if (msg.type === "error") {
+    emitter.emit(
+      "error",
+      makeTtsError("tts_stream_error", `Rime TTS: ${msg.message ?? "unknown error"}`),
+    );
   }
   // Ignore `type === "timestamps"` and unknown message types.
 }
@@ -161,9 +185,10 @@ export function openRime(opts: RimeOptions): TtsOpener {
       const sampleRate = assertSupportedSampleRate(openOpts.sampleRate);
       const model = opts.model ?? "mistv2";
       const lang = opts.language ?? "eng";
+      const voice = opts.voice ?? RIME_DEFAULT_VOICE;
 
       // Construct the ws2 URL with query parameters.
-      const url = `wss://users.rime.ai/ws2?speaker=${encodeURIComponent(opts.voice)}&modelId=${encodeURIComponent(model)}&audioFormat=pcm&samplingRate=${sampleRate}&lang=${encodeURIComponent(lang)}`;
+      const url = `wss://users-ws.rime.ai/ws2?speaker=${encodeURIComponent(voice)}&modelId=${encodeURIComponent(model)}&audioFormat=pcm&samplingRate=${sampleRate}&lang=${encodeURIComponent(lang)}`;
 
       let ws: WebSocket;
       try {
@@ -181,9 +206,10 @@ export function openRime(opts: RimeOptions): TtsOpener {
       let closed = false;
       let doneEmitted = false;
       /**
-       * After `flush()`, we arm a quiescence timer that fires `done` 500 ms
-       * after the last audio chunk from Rime. Each incoming chunk resets it.
-       * After `cancel()`, `done` is emitted synchronously and the timer is cleared.
+       * After `flush()`, we arm a timer that fires `done`. Initial timeout is
+       * `FIRST_AUDIO_TIMEOUT_MS` to give Rime headroom on TTFB; the first
+       * chunk swaps it for a shorter `QUIESCENCE_MS` window that resets on
+       * each subsequent chunk. `cancel()` emits `done` synchronously.
        */
       let quiescenceTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -204,6 +230,11 @@ export function openRime(opts: RimeOptions): TtsOpener {
       const armQuiescence = () => {
         clearQuiescence();
         quiescenceTimer = setTimeout(emitDoneOnce, QUIESCENCE_MS);
+      };
+
+      const armFirstAudioTimer = () => {
+        clearQuiescence();
+        quiescenceTimer = setTimeout(emitDoneOnce, FIRST_AUDIO_TIMEOUT_MS);
       };
 
       ws.on("message", (raw: WebSocket.Data) => {
@@ -249,24 +280,27 @@ export function openRime(opts: RimeOptions): TtsOpener {
           if (ws.readyState !== WebSocket.OPEN) return;
           // Reset done state at the start of a new turn.
           doneEmitted = false;
-          ws.send(text);
+          ws.send(JSON.stringify({ text }));
         },
 
         flush() {
           if (closed) return;
           if (ws.readyState !== WebSocket.OPEN) return;
-          // Send end-of-utterance sentinel. Rime will finish synthesizing
-          // buffered text and drain all audio chunks. We arm the quiescence
-          // timer here — it fires `done` 500 ms after the last audio chunk.
-          ws.send("<EOS>");
-          armQuiescence();
+          // Force synthesis of any text buffered behind a missing terminal
+          // punctuation: append a trailing `"."`. Sending the JSON `eos`
+          // operation would close the connection, requiring a reconnect on
+          // every turn — `"."` keeps the WS reusable. Use the longer
+          // first-audio timer until the initial chunk arrives; the chunk
+          // handler swaps it for short quiescence on each subsequent chunk.
+          ws.send(JSON.stringify({ text: "." }));
+          armFirstAudioTimer();
         },
 
         cancel() {
           if (closed) return;
-          // Send barge-in sentinel to clear Rime's server-side buffer.
+          // Drop Rime's server-side buffer for barge-in.
           if (ws.readyState === WebSocket.OPEN) {
-            ws.send("<CLEAR>");
+            ws.send(JSON.stringify({ operation: "clear" }));
           }
           // Emit `done` synchronously — the orchestrator's state machine
           // advances on `done`, and barge-in must not be microtask-deferred.
