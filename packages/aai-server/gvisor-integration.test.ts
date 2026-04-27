@@ -46,7 +46,7 @@ async function spawnSandbox(slug: string): Promise<{
   sandbox: GvisorSandbox;
   conn: NdjsonConnection;
 }> {
-  const sandbox = createGvisorSandbox({
+  const sandbox = await createGvisorSandbox({
     slug,
     harnessPath: compiledHarnessPath,
   });
