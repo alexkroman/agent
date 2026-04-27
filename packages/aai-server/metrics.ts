@@ -129,6 +129,25 @@ const warmPoolSpawnFailed = new client.Counter({
   registers: [registry],
 });
 
+// ── Upstream ──
+
+const UPSTREAM_BUCKETS = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5];
+
+const upstreamCall = new client.Counter({
+  name: "aai_upstream_call_total",
+  help: "Calls to platform upstreams, by upstream/op/status.",
+  labelNames: ["upstream", "op", "status"] as const,
+  registers: [registry],
+});
+
+const upstreamCallSeconds = new client.Histogram({
+  name: "aai_upstream_call_seconds",
+  help: "Latency of platform-upstream calls.",
+  labelNames: ["upstream", "op"] as const,
+  buckets: UPSTREAM_BUCKETS,
+  registers: [registry],
+});
+
 export const metrics = {
   sessionsStarted,
   sessionsActive,
@@ -145,4 +164,6 @@ export const metrics = {
   warmPoolPending,
   warmPoolAcquire,
   warmPoolSpawnFailed,
+  upstreamCall,
+  upstreamCallSeconds,
 };
