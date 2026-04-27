@@ -83,6 +83,9 @@ importers:
       '@deepgram/sdk':
         specifier: ^5.0.0
         version: 5.0.0
+      '@elevenlabs/elevenlabs-js':
+        specifier: ^2.43.0
+        version: 2.43.0
       ai:
         specifier: ^6.0.161
         version: 6.0.161(zod@4.3.6)
@@ -811,6 +814,10 @@ packages:
 
   '@deepgram/sdk@5.0.0':
     resolution: {integrity: sha512-x1wMiOgDGqcLEaQpQBQLTtk5mLbXbYgcBEpp7cfJIyEtqdIGgijCZH+a/esiVp+xIcTYYroTxG47RVppZOHbWw==}
+    engines: {node: '>=18.0.0'}
+
+  '@elevenlabs/elevenlabs-js@2.43.0':
+    resolution: {integrity: sha512-+1eqTvVjEdgzr8L+u/3ebavWXx/sd06zuTTAKb1wwcar3NNQBYjqmMxuVOH6iUjSUvQUWvwK7sFWZEEcE8wp6A==}
     engines: {node: '>=18.0.0'}
 
   '@emnapi/core@1.9.2':
@@ -2858,6 +2865,9 @@ packages:
     resolution: {integrity: sha512-FQN4MRfuJeHf7cBbBMJFXhKSDq+2kAArBlmRBvcvFE5BB1HZKXtSFASDhdlz9zOYwxh8lDdnvmMOe/+5cdoEdg==}
     engines: {node: '>= 0.8'}
 
+  command-exists@1.2.9:
+    resolution: {integrity: sha512-LTQ/SGc+s0Xc0Fu5WaKnR0YiygZkm9eKFvyS+fRsU7/ZWFF8ykFM6Pc9aCVf1+xasOOZpO3BAVgVrKvsqKHV7w==}
+
   commander@10.0.1:
     resolution: {integrity: sha512-y4Mg2tXshplEbSGzx7amzPwKKOCGuoSRP/CjEdwwk0FOGlUbq6lKuoyDZTNZkmxHdJtp54hdfY/JUrdL7Xfdug==}
     engines: {node: '>=14'}
@@ -4310,6 +4320,15 @@ packages:
 
   node-fetch@2.6.7:
     resolution: {integrity: sha512-ZjMPFEfVx5j+y2yF35Kzx5sF7kDzxuDj6ziH4FFbOp87zKDZNx8yExJIb05OGF4Nlt9IHFIMBkRl41VdvcNdbQ==}
+    engines: {node: 4.x || >=6.0.0}
+    peerDependencies:
+      encoding: ^0.1.0
+    peerDependenciesMeta:
+      encoding:
+        optional: true
+
+  node-fetch@2.7.0:
+    resolution: {integrity: sha512-c4FRfUm/dbcWZ7U+1Wq0AwCyFL+3nt2bEw05wfxSz+DWpWsitgmSgYmy2dQdWyKC1694ELPqMs/YzUSNozLt8A==}
     engines: {node: 4.x || >=6.0.0}
     peerDependencies:
       encoding: ^0.1.0
@@ -6283,6 +6302,16 @@ snapshots:
       - bufferutil
       - utf-8-validate
 
+  '@elevenlabs/elevenlabs-js@2.43.0':
+    dependencies:
+      command-exists: 1.2.9
+      node-fetch: 2.7.0
+      ws: 8.20.0
+    transitivePeerDependencies:
+      - bufferutil
+      - encoding
+      - utf-8-validate
+
   '@emnapi/core@1.9.2':
     dependencies:
       '@emnapi/wasi-threads': 1.2.1
@@ -8027,6 +8056,8 @@ snapshots:
     dependencies:
       delayed-stream: 1.0.0
 
+  command-exists@1.2.9: {}
+
   commander@10.0.1: {}
 
   commander@14.0.3: {}
@@ -9602,6 +9633,10 @@ snapshots:
   node-fetch-native@1.6.7: {}
 
   node-fetch@2.6.7:
+    dependencies:
+      whatwg-url: 5.0.0
+
+  node-fetch@2.7.0:
     dependencies:
       whatwg-url: 5.0.0
 

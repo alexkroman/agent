@@ -211,8 +211,11 @@ requires either zero or all three of `stt`/`llm`/`tts`.
 
 Reference providers shipped today:
 
-- **STT**: `assemblyAI({ model: "u3pro-rt" })` via the `assemblyai` SDK
-  (or `deepgram(...)` via `@deepgram/sdk`)
+- **STT**: one of
+  - `assemblyAI({ model: "u3pro-rt" })` — `ASSEMBLYAI_API_KEY`
+  - `deepgram({ model: "nova-3" })` — `DEEPGRAM_API_KEY`
+  - `elevenlabs({ model: "scribe_v2_realtime" })` — `ELEVENLABS_API_KEY`
+  - `soniox({ model: "stt-rt-v3" })` — `SONIOX_API_KEY`
 - **LLM**: one of the typed factories below — `@ai-sdk/*` packages are
   loaded lazily via `createRequire` so you only install what you use:
   - `anthropic({ model })` — `ANTHROPIC_API_KEY`
@@ -338,7 +341,7 @@ of subpath exports in `aai/package.json`:
 | `@alexkroman1/aai/runtime` | `host/runtime-barrel.ts` → 11 modules | Full Node.js runtime: session, S2S, server, tools, WS handler |
 | `@alexkroman1/aai/protocol` | `sdk/protocol.ts` (direct, not a barrel) | Wire-format Zod schemas, `lenientParse()`, `ClientEvent`, `ServerMessage` |
 | `@alexkroman1/aai/manifest` | `sdk/manifest-barrel.ts` → 3 modules | `parseManifest()`, `toAgentConfig()`, `agentToolsToSchemas()`, system prompt builder |
-| `@alexkroman1/aai/stt` | `host/providers/stt-barrel.ts` | STT provider factories + types (`assemblyAI`, `deepgram`) |
+| `@alexkroman1/aai/stt` | `host/providers/stt-barrel.ts` | STT provider factories + types (`assemblyAI`, `deepgram`, `elevenlabs`, `soniox`) |
 | `@alexkroman1/aai/llm` | `host/providers/llm-barrel.ts` | LLM provider factories + types (`anthropic`, `openai`, `google`, `mistral`, `xai`, `groq`) |
 | `@alexkroman1/aai/tts` | `host/providers/tts-barrel.ts` | TTS provider factories + types (`cartesia`, `rime`) |
 

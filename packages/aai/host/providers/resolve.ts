@@ -29,6 +29,8 @@ import { OPENAI_KIND, type OpenAIOptions } from "../../sdk/providers/llm/openai.
 import { XAI_KIND, type XaiOptions } from "../../sdk/providers/llm/xai.ts";
 import { ASSEMBLYAI_KIND, type AssemblyAIOptions } from "../../sdk/providers/stt/assemblyai.ts";
 import { DEEPGRAM_KIND, type DeepgramOptions } from "../../sdk/providers/stt/deepgram.ts";
+import { ELEVENLABS_KIND, type ElevenLabsOptions } from "../../sdk/providers/stt/elevenlabs.ts";
+import { SONIOX_KIND, type SonioxOptions } from "../../sdk/providers/stt/soniox.ts";
 import { CARTESIA_KIND, type CartesiaOptions } from "../../sdk/providers/tts/cartesia.ts";
 import { RIME_KIND, type RimeOptions } from "../../sdk/providers/tts/rime.ts";
 import type {
@@ -40,6 +42,8 @@ import type {
 } from "../../sdk/providers.ts";
 import { openAssemblyAI } from "./stt/assemblyai.ts";
 import { openDeepgram } from "./stt/deepgram.ts";
+import { openElevenLabs } from "./stt/elevenlabs.ts";
+import { openSoniox } from "./stt/soniox.ts";
 import { openCartesia } from "./tts/cartesia.ts";
 import { openRime } from "./tts/rime.ts";
 
@@ -61,9 +65,14 @@ export function resolveStt(descriptor: SttProvider): SttOpener {
       return openAssemblyAI(descriptor.options as unknown as AssemblyAIOptions);
     case DEEPGRAM_KIND:
       return openDeepgram(descriptor.options as unknown as DeepgramOptions);
+    case ELEVENLABS_KIND:
+      return openElevenLabs(descriptor.options as unknown as ElevenLabsOptions);
+    case SONIOX_KIND:
+      return openSoniox(descriptor.options as unknown as SonioxOptions);
     default:
       throw new Error(
-        `Unknown STT provider kind: "${descriptor.kind}". Supported: ${ASSEMBLYAI_KIND}, ${DEEPGRAM_KIND}.`,
+        `Unknown STT provider kind: "${descriptor.kind}". ` +
+          `Supported: ${ASSEMBLYAI_KIND}, ${DEEPGRAM_KIND}, ${ELEVENLABS_KIND}, ${SONIOX_KIND}.`,
       );
   }
 }
