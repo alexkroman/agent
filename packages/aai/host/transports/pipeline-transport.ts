@@ -217,9 +217,10 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
         stopWhen: stepCountIs(maxSteps),
         abortSignal: ctl.signal,
       });
+      const handlePart = makeStreamPartHandler(onDelta);
       for await (const part of result.fullStream) {
         if (ctl.signal.aborted) break;
-        handleStreamPart(part, ctl, onDelta);
+        handlePart(part);
       }
     } catch (err: unknown) {
       if (!ctl.signal.aborted) {
@@ -230,8 +231,33 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     }
   }
 
-  function handleStreamPart(
-    part: {
+  /**
+   * Stateful per-turn handler for `streamText` `fullStream` parts.
+   *
+   * Tracks text-segment boundaries so that consecutive segments — which the
+   * Vercel SDK emits across tool-call hops as `text-end` followed later by a
+   * fresh `text-start` — don't fuse into "...up.Got it" when concatenated for
+   * the transcript or streamed to TTS. When a boundary is crossed and neither
+   * side carries whitespace, a single space is injected into both streams.
+   */
+  function makeStreamPartHandler(onDelta: (delta: string) => void) {
+    let pendingSeparator = false;
+    let lastChar = "";
+
+    function emitText(delta: string): void {
+      if (delta.length === 0) return;
+      let out = delta;
+      if (pendingSeparator) {
+        pendingSeparator = false;
+        const boundaryHasSpace = lastChar === "" || /\s/.test(lastChar) || /^\s/.test(out);
+        if (!boundaryHasSpace) out = ` ${out}`;
+      }
+      lastChar = out.slice(-1);
+      onDelta(out);
+      ttsSession?.sendText(out);
+    }
+
+    return function handlePart(part: {
       readonly type: string;
       readonly text?: string;
       readonly input?: unknown;
@@ -239,34 +265,31 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       readonly toolCallId?: string;
       readonly toolName?: string;
       readonly error?: unknown;
-    },
-    _ctl: AbortController,
-    onDelta: (delta: string) => void,
-  ): void {
-    switch (part.type) {
-      case "text-delta": {
-        const delta = part.text ?? "";
-        if (delta.length === 0) return;
-        onDelta(delta);
-        ttsSession?.sendText(delta);
-        return;
+    }): void {
+      switch (part.type) {
+        case "text-delta":
+          emitText(part.text ?? "");
+          return;
+        case "text-end":
+          pendingSeparator = true;
+          return;
+        case "tool-call": {
+          // Option A: fire callbacks.onToolCall for observability only.
+          // Actual execution happens inline via toVercelTools.
+          const input = (part.input ?? {}) as Record<string, unknown>;
+          callbacks.onToolCall(part.toolCallId ?? "", part.toolName ?? "", input);
+          return;
+        }
+        case "error": {
+          const msg = errorMessage(part.error);
+          log.error("LLM stream error", { message: msg, sid: opts.sid });
+          emitError("llm", msg);
+          return;
+        }
+        default:
+          return;
       }
-      case "tool-call": {
-        // Option A: fire callbacks.onToolCall for observability only.
-        // Actual execution happens inline via toVercelTools.
-        const input = (part.input ?? {}) as Record<string, unknown>;
-        callbacks.onToolCall(part.toolCallId ?? "", part.toolName ?? "", input);
-        return;
-      }
-      case "error": {
-        const msg = errorMessage(part.error);
-        log.error("LLM stream error", { message: msg, sid: opts.sid });
-        emitError("llm", msg);
-        return;
-      }
-      default:
-        return;
-    }
+    };
   }
 
   // ---- TTS flush ------------------------------------------------------------

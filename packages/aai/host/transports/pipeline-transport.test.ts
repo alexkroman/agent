@@ -210,6 +210,97 @@ describe("PipelineTransport", () => {
       await t.stop();
     });
 
+    test("inserts a separator between text segments split by a mid-turn tool call", async () => {
+      // Multi-step turn: step 1 ends with a text segment + tool-call, step 2
+      // begins with a fresh text segment. Without the fix, the deltas fuse
+      // into "...up.Got it" — both in the transcript and in TTS input.
+      const stt = createFakeSttProvider();
+      const tts = createFakeTtsProvider();
+      const callbacks = makeCallbacks();
+      const executeTool = vi.fn(async () => "result");
+      const { opts } = makeOpts(
+        {
+          llm: createFakeLanguageModel({
+            steps: [
+              [
+                { type: "text", text: "Let me look that up." },
+                { type: "tool-call", toolCallId: "tc-1", toolName: "lookup", input: "{}" },
+              ],
+              [{ type: "text", text: "Got it. Here's the answer." }],
+            ],
+          }),
+          executeTool,
+          toolSchemas: [
+            {
+              type: "function" as const,
+              name: "lookup",
+              description: "Look something up.",
+              parameters: { type: "object" as const, properties: {}, required: [] },
+            },
+          ],
+          sessionConfig: { systemPrompt: "s", greeting: "" },
+        },
+        { stt, tts, callbacks },
+      );
+      const t = createPipelineTransport(opts);
+      await t.start();
+      stt.last()?.fireFinal("look it up");
+      await vi.waitFor(() => {
+        expect(callbacks.onAgentTranscript).toHaveBeenCalled();
+      });
+      expect(callbacks.onAgentTranscript).toHaveBeenCalledWith(
+        "Let me look that up. Got it. Here's the answer.",
+        false,
+      );
+      expect(tts.last()?.textChunks.join("")).toBe(
+        "Let me look that up. Got it. Here's the answer.",
+      );
+      await t.stop();
+    });
+
+    test("does not double-space when a segment boundary already carries whitespace", async () => {
+      // Trailing space on segment 1 — we must not insert an extra space.
+      const stt = createFakeSttProvider();
+      const tts = createFakeTtsProvider();
+      const callbacks = makeCallbacks();
+      const executeTool = vi.fn(async () => "result");
+      const { opts } = makeOpts(
+        {
+          llm: createFakeLanguageModel({
+            steps: [
+              [
+                { type: "text", text: "First sentence. " },
+                { type: "tool-call", toolCallId: "tc-1", toolName: "lookup", input: "{}" },
+              ],
+              [{ type: "text", text: "Second sentence." }],
+            ],
+          }),
+          executeTool,
+          toolSchemas: [
+            {
+              type: "function" as const,
+              name: "lookup",
+              description: "Look something up.",
+              parameters: { type: "object" as const, properties: {}, required: [] },
+            },
+          ],
+          sessionConfig: { systemPrompt: "s", greeting: "" },
+        },
+        { stt, tts, callbacks },
+      );
+      const t = createPipelineTransport(opts);
+      await t.start();
+      stt.last()?.fireFinal("look it up");
+      await vi.waitFor(() => {
+        expect(callbacks.onAgentTranscript).toHaveBeenCalled();
+      });
+      expect(callbacks.onAgentTranscript).toHaveBeenCalledWith(
+        "First sentence. Second sentence.",
+        false,
+      );
+      await t.stop();
+    });
+
     test("TTS audio event is forwarded to callbacks.onAudioChunk as Uint8Array", async () => {
       const stt = createFakeSttProvider();
       const tts = createFakeTtsProvider();
