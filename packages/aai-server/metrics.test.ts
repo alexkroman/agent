@@ -78,3 +78,30 @@ describe("sandbox metrics", () => {
     expect(text).toMatch(/aai_slots_resident 3/);
   });
 });
+
+describe("warm pool metrics", () => {
+  it("publishes target/ready/pending gauges", async () => {
+    metrics.warmPoolTarget.set(2);
+    metrics.warmPoolReady.set(1);
+    metrics.warmPoolPending.set(1);
+    const text = await serialize();
+    expect(text).toMatch(/aai_warm_pool_target 2/);
+    expect(text).toMatch(/aai_warm_pool_ready 1/);
+    expect(text).toMatch(/aai_warm_pool_pending 1/);
+  });
+
+  it("counts acquire hits and misses", async () => {
+    metrics.warmPoolAcquire.inc({ result: "hit" });
+    metrics.warmPoolAcquire.inc({ result: "miss" });
+    metrics.warmPoolAcquire.inc({ result: "miss" });
+    const text = await serialize();
+    expect(text).toMatch(/aai_warm_pool_acquire_total\{result="hit"\} 1/);
+    expect(text).toMatch(/aai_warm_pool_acquire_total\{result="miss"\} 2/);
+  });
+
+  it("counts spawn failures", async () => {
+    metrics.warmPoolSpawnFailed.inc();
+    const text = await serialize();
+    expect(text).toMatch(/aai_warm_pool_spawn_failed_total 1/);
+  });
+});

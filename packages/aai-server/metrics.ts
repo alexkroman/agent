@@ -96,6 +96,39 @@ const slotsResident = new client.Gauge({
   registers: [registry],
 });
 
+// ── Warm pool ──
+
+const warmPoolTarget = new client.Gauge({
+  name: "aai_warm_pool_target",
+  help: "Configured target size of the warm Deno harness pool.",
+  registers: [registry],
+});
+
+const warmPoolReady = new client.Gauge({
+  name: "aai_warm_pool_ready",
+  help: "Warm Deno harnesses currently ready to acquire.",
+  registers: [registry],
+});
+
+const warmPoolPending = new client.Gauge({
+  name: "aai_warm_pool_pending",
+  help: "Warm Deno harnesses currently spawning.",
+  registers: [registry],
+});
+
+const warmPoolAcquire = new client.Counter({
+  name: "aai_warm_pool_acquire_total",
+  help: "Warm-pool acquire calls, by result.",
+  labelNames: ["result"] as const,
+  registers: [registry],
+});
+
+const warmPoolSpawnFailed = new client.Counter({
+  name: "aai_warm_pool_spawn_failed_total",
+  help: "Warm-harness spawn failures (replenishment stops on first).",
+  registers: [registry],
+});
+
 export const metrics = {
   sessionsStarted,
   sessionsActive,
@@ -107,4 +140,9 @@ export const metrics = {
   sandboxEvicted,
   slotsRegistered,
   slotsResident,
+  warmPoolTarget,
+  warmPoolReady,
+  warmPoolPending,
+  warmPoolAcquire,
+  warmPoolSpawnFailed,
 };
