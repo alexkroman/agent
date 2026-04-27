@@ -1,5 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
-import { expect, test } from "vitest";
+import { describe, expect, it, test } from "vitest";
 import {
   createTestOrchestrator,
   deployAgent,
@@ -219,4 +219,24 @@ test("kv scope isolation", async () => {
   await fetch(...kvReq("agent-aa", "key1", { op: "set", key: "secret", value: "a-data" }));
   const res = await fetch(...kvReq("agent-bb", "key1", { op: "get", key: "secret" }));
   expect(await res.json()).toMatchObject({ result: null });
+});
+
+describe("/metrics endpoint", () => {
+  it("returns Prometheus text for internal requests", async () => {
+    const { fetch } = await createTestOrchestrator();
+    const res = await fetch("/metrics");
+    expect(res.status).toBe(200);
+    const body = await res.text();
+    // Default Node.js metric is always exported by prom-client's
+    // collectDefaultMetrics — its presence proves the registry is wired.
+    expect(body).toContain("nodejs_eventloop_lag_p99_seconds");
+  });
+
+  it("rejects /metrics from public callers", async () => {
+    const { fetch } = await createTestOrchestrator();
+    const res = await fetch("/metrics", {
+      headers: { "X-Forwarded-For": "1.2.3.4" },
+    });
+    expect(res.status).toBe(404);
+  });
 });

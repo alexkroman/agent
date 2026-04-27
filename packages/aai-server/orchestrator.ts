@@ -22,6 +22,7 @@
 import { MAX_WS_PAYLOAD_BYTES, parseWsUpgradeParams } from "@alexkroman1/aai";
 import { KvRequestSchema } from "@alexkroman1/aai/protocol";
 import { createUnstorageKv, type SessionWebSocket } from "@alexkroman1/aai/runtime";
+import { prometheus } from "@hono/prometheus";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -35,6 +36,7 @@ import { handleDelete } from "./delete.ts";
 import { handleDeploy, handleDeployNew } from "./deploy.ts";
 import { createErrorHandler } from "./error-handler.ts";
 import { handleKv } from "./kv-handler.ts";
+import { registry, serialize } from "./metrics.ts";
 import { authMw, ownerMw, slugMw, validateSlug } from "./middleware.ts";
 import { resolveSandbox } from "./sandbox.ts";
 import type { SandboxPool } from "./sandbox-pool.ts";
@@ -53,6 +55,13 @@ export type OrchestratorOpts = {
   /** Optional pre-warmed Deno harness pool for faster cold starts. */
   pool?: SandboxPool;
 };
+
+// Build the prometheus middleware once at module load. `@hono/prometheus`
+// constructs `http_requests_total` / `http_request_duration_seconds` on
+// the registry every call, so calling it from `createOrchestrator` would
+// throw "metric already registered" on the second invocation (e.g. during
+// tests).
+const { registerMetrics: prometheusMiddleware } = prometheus({ registry });
 
 export type Orchestrator = {
   app: Hono<HonoEnv>;
@@ -93,7 +102,20 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
 
   app.onError(createErrorHandler());
 
+  // Auto-record `http_requests_total` and `http_request_duration_seconds`
+  // for every request through the app, using our shared prom-client registry.
+  app.use("*", prometheusMiddleware);
+
   app.get("/health", (c) => c.json({ status: "ok" }));
+
+  // Internal-only metrics scrape. Fly's private network doesn't add
+  // X-Forwarded-For; the public edge always does. So we treat presence
+  // of XFF as "request came from outside" and 404 it.
+  app.get("/metrics", async (c) => {
+    if (c.req.header("X-Forwarded-For")) return c.notFound();
+    const text = await serialize();
+    return c.text(text, 200, { "Content-Type": "text/plain; version=0.0.4" });
+  });
 
   // Top-level deploy — slug is optional in body, server generates one if missing
   app.post("/deploy", authMw, zValidator("json", DeployBodySchema), handleDeployNew);
