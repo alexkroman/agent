@@ -1,4 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
+import { createMemoryVector } from "@alexkroman1/aai/runtime";
 import { expect, test, vi } from "vitest";
 import { createOrchestrator } from "./orchestrator.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
@@ -8,7 +9,12 @@ async function setup() {
   const store = createTestStore();
   const storage = createTestStorage();
   const slots = createSlotCache();
-  const { app } = createOrchestrator({ slots, store, storage });
+  const { app } = createOrchestrator({
+    slots,
+    store,
+    storage,
+    defaultVector: (slug) => createMemoryVector({ namespace: slug }),
+  });
   const fetch = async (input: string | Request, init?: RequestInit) => app.request(input, init);
   return { fetch, store, slots };
 }

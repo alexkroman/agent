@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import type { Kv } from "@alexkroman1/aai";
+import { createMemoryVector } from "@alexkroman1/aai/runtime";
 import { createStorage, type Storage } from "unstorage";
 import { vi } from "vitest";
 import { registry } from "./metrics.ts";
@@ -203,7 +204,12 @@ export async function createTestOrchestrator(): Promise<{
 }> {
   const store = createTestStore();
   const storage = createTestStorage();
-  const { app } = createOrchestrator({ slots: createSlotCache(), store, storage });
+  const { app } = createOrchestrator({
+    slots: createSlotCache(),
+    store,
+    storage,
+    defaultVector: (slug) => createMemoryVector({ namespace: slug }),
+  });
   const fetch: TestFetch = async (input, init) => app.request(input, init);
   return { fetch, store, storage };
 }
