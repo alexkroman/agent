@@ -17,6 +17,8 @@ import { lookup as mimeLookup } from "mime-types";
 import { WebSocketServer } from "ws";
 import { AGENT_CSP, MAX_WS_PAYLOAD_BYTES } from "../sdk/constants.ts";
 import type { Kv } from "../sdk/kv.ts";
+import { VectorRequestSchema } from "../sdk/protocol.ts";
+import type { Vector } from "../sdk/vector.ts";
 import { parseWsUpgradeParams } from "../sdk/ws-upgrade.ts";
 import type { Runtime } from "./runtime.ts";
 import type { Logger } from "./runtime-config.ts";
@@ -33,6 +35,7 @@ type ServerOptions = {
   runtime: Runtime;
   name?: string;
   kv?: Kv;
+  vector?: Vector;
   clientHtml?: string;
   clientDir?: string;
   logger?: Logger;
@@ -78,6 +81,53 @@ async function serveStatic(
 
 // ── Server ──────────────────────────────────────────────────────────────
 
+function handleVectorPost(
+  vector: Vector,
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+): void {
+  let body = "";
+  req.on("data", (chunk) => {
+    body += chunk;
+  });
+  req.on("end", async () => {
+    try {
+      const json = JSON.parse(body);
+      const parsed = VectorRequestSchema.safeParse(json);
+      if (!parsed.success) {
+        res.statusCode = 400;
+        res.end(JSON.stringify({ error: parsed.error.message }));
+        return;
+      }
+      const op = parsed.data;
+      let result: unknown;
+      switch (op.op) {
+        case "upsert":
+          await vector.upsert(op.id, op.text, op.metadata);
+          result = "OK";
+          break;
+        case "query":
+          result = await vector.query(op.text, {
+            ...(op.topK !== undefined ? { topK: op.topK } : {}),
+            ...(op.filter !== undefined ? { filter: op.filter } : {}),
+          });
+          break;
+        case "delete":
+          await vector.delete(op.ids);
+          result = "OK";
+          break;
+        default:
+          break;
+      }
+      res.statusCode = 200;
+      res.end(JSON.stringify({ result }));
+    } catch (err) {
+      res.statusCode = 500;
+      res.end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }));
+    }
+  });
+}
+
 function handleKvGet(kv: Kv, req: http.IncomingMessage, res: http.ServerResponse): void {
   const fullUrl = new URL(req.url ?? "/", "http://localhost");
   const key = fullUrl.searchParams.get("key");
@@ -108,7 +158,7 @@ function handleKvGet(kv: Kv, req: http.IncomingMessage, res: http.ServerResponse
  * @internal Used by aai-cli dev server.
  */
 export function createServer(options: ServerOptions): AgentServer {
-  const { runtime, clientHtml, clientDir, logger = consoleLogger, kv } = options;
+  const { runtime, clientHtml, clientDir, logger = consoleLogger, kv, vector } = options;
   const name = options.name ?? "agent";
 
   if (clientHtml && clientDir) {
@@ -140,6 +190,12 @@ export function createServer(options: ServerOptions): AgentServer {
     // KV endpoint
     if (kv && method === "GET" && url === "/kv") {
       handleKvGet(kv, req, res);
+      return;
+    }
+
+    // Vector endpoint
+    if (vector && method === "POST" && url === "/vector") {
+      handleVectorPost(vector, req, res);
       return;
     }
 
