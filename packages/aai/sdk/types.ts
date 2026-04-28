@@ -5,7 +5,13 @@
 
 import { z } from "zod";
 import type { Kv } from "./kv.ts";
-import type { LlmProvider, SttProvider, TtsProvider } from "./providers.ts";
+import type {
+  KvProvider,
+  LlmProvider,
+  SttProvider,
+  TtsProvider,
+  VectorProvider,
+} from "./providers.ts";
 
 /**
  * Identifier for a built-in server-side tool.
@@ -233,6 +239,10 @@ export type AgentDef<S = Record<string, unknown>> = {
    * pipeline mode.
    */
   tts?: TtsProvider;
+  /** Pluggable KV backend. Falls back to platform default when omitted. */
+  kv?: KvProvider;
+  /** Pluggable Vector backend. Falls back to platform default when omitted. */
+  vector?: VectorProvider;
 };
 
 // ─── Zod schemas ────────────────────────────────────────────────────────────
