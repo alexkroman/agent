@@ -9,6 +9,7 @@
 
 import { type ChildProcess, spawn } from "node:child_process";
 import { performance } from "node:perf_hooks";
+import { errorMessage } from "@alexkroman1/aai";
 import type { Storage, StorageValue } from "unstorage";
 import { z } from "zod";
 import { debug } from "./_debug-log.ts";
@@ -390,7 +391,7 @@ export async function createSandboxVm(
 
 /** Classify a sandbox-init error into one of three coarse buckets. */
 function classifyInitFailure(err: unknown): "bundle_missing" | "worker_spawn" | "host_init" {
-  const msg = err instanceof Error ? err.message : String(err);
+  const msg = errorMessage(err);
   if (msg.includes("bundle") || msg.includes("Worker code not found")) return "bundle_missing";
   if (msg.includes("spawn") || msg.includes("ENOENT")) return "worker_spawn";
   return "host_init";
