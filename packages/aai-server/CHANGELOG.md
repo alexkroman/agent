@@ -1,5 +1,15 @@
 # @alexkroman1/aai-server
 
+## 1.1.4
+
+### Patch Changes
+
+- 898f012: Rewrite capacity dashboard around saturation %; add aai_machine_memory_bytes and aai_machine_cpu_cores gauges
+- Updated dependencies [07b4263]
+- Updated dependencies [b79855d]
+  - @alexkroman1/aai@1.7.0
+  - @alexkroman1/aai-ui@1.7.0
+
 ## 1.1.3
 
 ### Patch Changes
