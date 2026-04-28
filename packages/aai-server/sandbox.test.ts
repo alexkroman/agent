@@ -137,8 +137,12 @@ describe("createSandbox", () => {
         slug: "test-agent",
         workerCode: opts.workerCode,
         env: opts.env,
-        kvStorage: opts.storage,
-        kvPrefix: expect.stringContaining("test-agent"),
+        kv: expect.objectContaining({ get: expect.any(Function), set: expect.any(Function) }),
+        vector: expect.objectContaining({
+          upsert: expect.any(Function),
+          query: expect.any(Function),
+          delete: expect.any(Function),
+        }),
       }),
       undefined,
     );
@@ -223,14 +227,20 @@ describe("createSandbox", () => {
     }
   });
 
-  it("passes kvPrefix derived from slug to createSandboxVm", async () => {
+  it("passes resolved kv and vector to createSandboxVm for given slug", async () => {
     const { createSandboxVm } = await import("./sandbox-vm.ts");
 
     const sandbox = createSandbox(makeSandboxOptions({ slug: "my-custom-agent" }));
 
     expect(createSandboxVm).toHaveBeenCalledWith(
       expect.objectContaining({
-        kvPrefix: "agents/my-custom-agent/kv",
+        slug: "my-custom-agent",
+        kv: expect.objectContaining({ get: expect.any(Function), set: expect.any(Function) }),
+        vector: expect.objectContaining({
+          upsert: expect.any(Function),
+          query: expect.any(Function),
+          delete: expect.any(Function),
+        }),
       }),
       undefined,
     );

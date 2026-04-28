@@ -234,6 +234,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
         slots: opts.slots,
         store: opts.store,
         storage: opts.storage,
+        defaultVector: opts.defaultVector,
         ...(opts.pool && { pool: opts.pool }),
       }),
       opts.store.getAgentConfig(slug),

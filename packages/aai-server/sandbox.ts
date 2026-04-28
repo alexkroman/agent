@@ -12,13 +12,19 @@
  */
 
 import path from "node:path";
+import type { Kv } from "@alexkroman1/aai";
 import { errorMessage, toolError } from "@alexkroman1/aai";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import {
   type AgentRuntime,
+  createMemoryVector,
   createRuntime,
+  createUnstorageKv,
   type ExecuteTool,
   resolveAllBuiltins,
+  resolveKv,
+  resolveVector,
+  type Vector,
 } from "@alexkroman1/aai/runtime";
 import type { Storage } from "unstorage";
 import { debug } from "./_debug-log.ts";
@@ -52,6 +58,12 @@ export type SandboxOptions = {
   agentConfig: IsolateConfig;
   /** Optional pre-warmed harness pool for faster cold starts. */
   pool?: SandboxPool;
+  /**
+   * Factory that creates the platform-default Vector for a given agent slug.
+   * Used when the agent config does not declare a `vector` provider.
+   * If omitted, falls back to an in-memory vector store.
+   */
+  defaultVector?: (slug: string) => Vector;
 };
 
 export type Sandbox = AgentRuntime;
@@ -75,13 +87,24 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
     process.env.GUEST_HARNESS_PATH ??
     path.resolve(import.meta.dirname, "dist/guest/deno-harness.mjs");
 
+  // Resolve KV: use declared provider or fall back to platform storage with prefix.
+  const kv: Kv = config.kv
+    ? resolveKv(config.kv, env, agentKvPrefix(slug))
+    : createUnstorageKv({ storage, prefix: agentKvPrefix(slug) });
+
+  // Resolve Vector: use declared provider or fall back to defaultVector factory.
+  const defaultVectorFactory = opts.defaultVector ?? ((s) => createMemoryVector({ namespace: s }));
+  const vector: Vector = config.vector
+    ? resolveVector(config.vector, env, slug)
+    : defaultVectorFactory(slug);
+
   const vmReady = createSandboxVm(
     {
       slug,
       workerCode,
       env,
-      kvStorage: storage,
-      kvPrefix: agentKvPrefix(slug),
+      kv,
+      vector,
       harnessPath,
       allowedHosts: config.allowedHosts ?? [],
     },
@@ -216,6 +239,7 @@ export async function resolveSandbox(
     store: BundleStore;
     storage: Storage;
     pool?: SandboxPool;
+    defaultVector?: (slug: string) => Vector;
   },
 ): Promise<Sandbox | null> {
   const { slots, store, storage, pool } = opts;
@@ -254,6 +278,7 @@ export async function resolveSandbox(
     slug,
     agentConfig,
     ...(pool && { pool }),
+    ...(opts.defaultVector && { defaultVector: opts.defaultVector }),
   });
 
   attachSandbox(slots, slot, sandbox);
