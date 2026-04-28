@@ -1,0 +1,316 @@
+{
+  "uid": "aai-capacity",
+  "title": "aai-agent / Capacity",
+  "tags": ["aai-agent"],
+  "schemaVersion": 39,
+  "timezone": "browser",
+  "time": { "from": "now-1h", "to": "now" },
+  "refresh": "30s",
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": { "text": "Prometheus", "value": "default" },
+        "hide": 0
+      },
+      {
+        "name": "instance",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "query": {
+          "query": "label_values(up{app=\"aai-agent\"}, instance)",
+          "refId": "Variable-instance-Variable-Query"
+        },
+        "includeAll": true,
+        "multi": true,
+        "current": { "text": "All", "value": "$__all" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Warm pool ready",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [{ "expr": "sum(aai_warm_pool_ready)", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Warm pool target",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [{ "expr": "sum(aai_warm_pool_target)", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Hit rate",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "sum(rate(aai_warm_pool_acquire_total{result=\"hit\"}[5m])) / clamp_min(sum(rate(aai_warm_pool_acquire_total[5m])), 1)",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Sandbox init p95",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(aai_sandbox_init_seconds_bucket[5m])) by (le))",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 12, "y": 0 }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Heap used (max)",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [{ "expr": "max(nodejs_heap_size_used_bytes)", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "decbytes" }, "overrides": [] },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "value",
+        "graphMode": "area"
+      },
+      "gridPos": { "h": 4, "w": 4, "x": 16, "y": 0 }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Warm pool (per instance)",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "aai_warm_pool_ready{instance=~\"$instance\"}",
+          "legendFormat": "ready / {{instance}}",
+          "refId": "A"
+        },
+        {
+          "expr": "aai_warm_pool_pending{instance=~\"$instance\"}",
+          "legendFormat": "pending / {{instance}}",
+          "refId": "B"
+        },
+        {
+          "expr": "aai_warm_pool_target{instance=~\"$instance\"}",
+          "legendFormat": "target / {{instance}}",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "options": {
+        "legend": { "showLegend": true, "displayMode": "table", "placement": "bottom" }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Warm-pool spawn-failure rate",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "sum(rate(aai_warm_pool_spawn_failed_total[5m]))",
+          "legendFormat": "failed/sec",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "options": {
+        "legend": { "showLegend": true, "displayMode": "table", "placement": "bottom" }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Sandbox init percentiles",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(aai_sandbox_init_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(aai_sandbox_init_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p95",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(aai_sandbox_init_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p99",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "options": {
+        "legend": { "showLegend": true, "displayMode": "table", "placement": "bottom" }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Sandbox init failures by reason",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "sum by (reason) (rate(aai_sandbox_init_failed_total[5m]))",
+          "legendFormat": "{{reason}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "options": {
+        "legend": { "showLegend": true, "displayMode": "table", "placement": "bottom" }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Eviction rate by reason",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "sum by (reason) (rate(aai_sandbox_evicted_total[5m]))",
+          "legendFormat": "{{reason}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "options": {
+        "legend": { "showLegend": true, "displayMode": "table", "placement": "bottom" }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Slots resident vs registered",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "aai_slots_registered{instance=~\"$instance\"}",
+          "legendFormat": "registered / {{instance}}",
+          "refId": "A"
+        },
+        {
+          "expr": "aai_slots_resident{instance=~\"$instance\"}",
+          "legendFormat": "resident / {{instance}}",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "options": {
+        "legend": { "showLegend": true, "displayMode": "table", "placement": "bottom" }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 }
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Event-loop lag (per instance)",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "nodejs_eventloop_lag_p50_seconds{instance=~\"$instance\"}",
+          "legendFormat": "p50 / {{instance}}",
+          "refId": "A"
+        },
+        {
+          "expr": "nodejs_eventloop_lag_p99_seconds{instance=~\"$instance\"}",
+          "legendFormat": "p99 / {{instance}}",
+          "refId": "B"
+        },
+        {
+          "expr": "nodejs_eventloop_lag_max_seconds{instance=~\"$instance\"}",
+          "legendFormat": "max / {{instance}}",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "options": {
+        "legend": { "showLegend": true, "displayMode": "table", "placement": "bottom" }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 }
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "Memory: heap & RSS (per instance)",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "nodejs_heap_size_used_bytes{instance=~\"$instance\"}",
+          "legendFormat": "heap / {{instance}}",
+          "refId": "A"
+        },
+        {
+          "expr": "process_resident_memory_bytes{instance=~\"$instance\"}",
+          "legendFormat": "rss / {{instance}}",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "decbytes" }, "overrides": [] },
+      "options": {
+        "legend": { "showLegend": true, "displayMode": "table", "placement": "bottom" }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 }
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "CPU rate (per instance)",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "rate(process_cpu_seconds_total{instance=~\"$instance\"}[5m])",
+          "legendFormat": "cpu / {{instance}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "options": {
+        "legend": { "showLegend": true, "displayMode": "table", "placement": "bottom" }
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 36 }
+    }
+  ]
+}
