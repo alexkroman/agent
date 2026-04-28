@@ -27,11 +27,19 @@ const LOAD_DEFAULTS: Record<string, string> = {
 
 const COMPOSE_FILES = ["docker-compose.yml", "docker-compose.load.yml"];
 
+// CI runners under sustained load can take >60s to bring the stack up; the
+// default Wait timeout is too tight and surfaces as the misleading
+// "Cannot get container 'server-1' as it is not running" at getContainer().
+const STARTUP_TIMEOUT_MS = 180_000;
+
 export async function startLoadEnv(envOverrides: Record<string, string> = {}): Promise<LoadEnv> {
   const environment = await new DockerComposeEnvironment(REPO_ROOT, COMPOSE_FILES)
     .withEnvironment({ ...LOAD_DEFAULTS, ...envOverrides })
     .withBuild()
-    .withWaitStrategy("server-1", Wait.forHttp("/health", 8080).forStatusCode(200))
+    .withWaitStrategy(
+      "server-1",
+      Wait.forHttp("/health", 8080).forStatusCode(200).withStartupTimeout(STARTUP_TIMEOUT_MS),
+    )
     .up();
 
   const serverContainer = environment.getContainer("server-1");
