@@ -48,6 +48,12 @@ export type LlmProvider = ProviderDescriptor<string, Record<string, unknown>>;
 /** Descriptor for a TTS provider. Returned by factories like `cartesia(...)`. */
 export type TtsProvider = ProviderDescriptor<string, Record<string, unknown>>;
 
+/** Descriptor for a KV backend. Returned by factories like `redisKv()`. */
+export type KvProvider = ProviderDescriptor<string, Record<string, unknown>>;
+
+/** Descriptor for a Vector backend. Returned by factories like `pinecone(...)`. */
+export type VectorProvider = ProviderDescriptor<string, Record<string, unknown>>;
+
 /**
  * Session mode derived from which provider triple is set.
  *
