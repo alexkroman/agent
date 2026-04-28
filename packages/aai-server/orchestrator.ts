@@ -40,7 +40,7 @@ import { metrics, registry, serialize } from "./metrics.ts";
 import { authMw, ownerMw, slugMw, validateSlug } from "./middleware.ts";
 import { resolveSandbox } from "./sandbox.ts";
 import type { SandboxPool } from "./sandbox-pool.ts";
-import type { SlotCache } from "./sandbox-slots.ts";
+import { type SlotCache, touchSlot } from "./sandbox-slots.ts";
 import { DeployBodySchema, SecretUpdatesSchema } from "./schemas.ts";
 import { handleSecretDelete, handleSecretList, handleSecretSet } from "./secret-handler.ts";
 import type { BundleStore } from "./store-types.ts";
@@ -219,6 +219,8 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
         wss.handleUpgrade(req, socket, head, (ws) => {
           metrics.sessionsStarted.inc({ slug, mode });
           metrics.sessionsActive.inc({ slug });
+          // Bump the idle-eviction timer so an actively-used sandbox stays resident.
+          touchSlot(opts.slots, slug);
           const startedAt = process.hrtime.bigint();
           ws.on("close", (code: number) => {
             connections.release();
