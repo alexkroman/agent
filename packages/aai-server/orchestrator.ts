@@ -13,13 +13,14 @@
  * - `DELETE /:slug/`             — owner: delete agent
  * - `GET/PUT/DELETE /:slug/secret` — owner: manage secrets
  * - `GET/POST /:slug/kv`        — owner: KV store operations
+ * - `POST /:slug/vector`         — owner: Vector store operations
  * - `WS   /:slug/websocket`     — WebSocket upgrade for voice sessions
  *
  * Auth: `authMw` validates API key; `ownerMw` verifies slug ownership.
  * Slugs: `[a-z0-9][a-z0-9_-]*[a-z0-9]` — enforced by regex for multi-tenant isolation.
  */
 
-import { MAX_WS_PAYLOAD_BYTES, parseWsUpgradeParams } from "@alexkroman1/aai";
+import { type Kv, MAX_WS_PAYLOAD_BYTES, parseWsUpgradeParams } from "@alexkroman1/aai";
 import { KvRequestSchema, VectorRequestSchema } from "@alexkroman1/aai/protocol";
 import {
   createUnstorageKv,
@@ -37,7 +38,7 @@ import type { Storage } from "unstorage";
 import { WebSocketServer } from "ws";
 import { createConnectionTracker } from "./connection-tracker.ts";
 import { agentKvPrefix, MAX_CONNECTIONS } from "./constants.ts";
-import type { HonoEnv } from "./context.ts";
+import type { AppContext, HonoEnv } from "./context.ts";
 import { handleDelete } from "./delete.ts";
 import { handleDeploy, handleDeployNew } from "./deploy.ts";
 import { createErrorHandler } from "./error-handler.ts";
@@ -51,6 +52,7 @@ import {
   serialize,
 } from "./metrics.ts";
 import { authMw, ownerMw, slugMw, validateSlug } from "./middleware.ts";
+import type { IsolateConfig } from "./rpc-schemas.ts";
 import { resolveSandbox } from "./sandbox.ts";
 import type { SandboxPool } from "./sandbox-pool.ts";
 import { type SlotCache, touchSlot } from "./sandbox-slots.ts";
@@ -71,6 +73,27 @@ export type OrchestratorOpts = {
   /** Optional pre-warmed Deno harness pool for faster cold starts. */
   pool?: SandboxPool;
 };
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Resolve the KV store for a given slug: use the agent's declared KV provider
+ * if configured, otherwise fall back to the platform default (unstorage).
+ */
+async function resolveAgentKv(
+  c: AppContext,
+  slug: string,
+): Promise<{ kv: Kv; agentConfig: IsolateConfig | null }> {
+  const [agentConfig, agentEnv] = await Promise.all([
+    c.env.store.getAgentConfig(slug),
+    c.env.store.getEnv(slug),
+  ]);
+  const env = (agentEnv ?? {}) as Record<string, string>;
+  const kv = agentConfig?.kv
+    ? resolveKv(agentConfig.kv, env, agentKvPrefix(slug))
+    : createUnstorageKv({ storage: c.env.storage, prefix: agentKvPrefix(slug) });
+  return { kv, agentConfig };
+}
 
 // Build the prometheus middleware once at module load. `@hono/prometheus`
 // constructs `http_requests_total` / `http_request_duration_seconds` on
@@ -154,30 +177,14 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   agents.put("/secret", ownerMw, zValidator("json", SecretUpdatesSchema), handleSecretSet);
   agents.delete("/secret/:key", ownerMw, handleSecretDelete);
   agents.post("/kv", ownerMw, zValidator("json", KvRequestSchema), async (c) => {
-    const slug = c.var.slug;
-    const [agentConfig, agentEnv] = await Promise.all([
-      c.env.store.getAgentConfig(slug),
-      c.env.store.getEnv(slug),
-    ]);
-    const env = (agentEnv ?? {}) as Record<string, string>;
-    const kv = agentConfig?.kv
-      ? resolveKv(agentConfig.kv, env, agentKvPrefix(slug))
-      : createUnstorageKv({ storage: c.env.storage, prefix: agentKvPrefix(slug) });
+    const { kv } = await resolveAgentKv(c, c.var.slug);
     return handleKv(c, kv);
   });
   agents.get("/kv", ownerMw, async (c) => {
     const key = c.req.query("key");
     if (!key) return c.json({ error: "Missing key query parameter" }, 400);
-    const slug = c.var.slug;
-    const [agentConfig, agentEnv] = await Promise.all([
-      c.env.store.getAgentConfig(slug),
-      c.env.store.getEnv(slug),
-    ]);
+    const { kv, agentConfig } = await resolveAgentKv(c, c.var.slug);
     if (!agentConfig) return c.json(null, 404);
-    const env = (agentEnv ?? {}) as Record<string, string>;
-    const kv = agentConfig.kv
-      ? resolveKv(agentConfig.kv, env, agentKvPrefix(slug))
-      : createUnstorageKv({ storage: c.env.storage, prefix: agentKvPrefix(slug) });
     const value = await kv.get(key);
     if (value === null) return c.json(null, 404);
     return c.json(value);

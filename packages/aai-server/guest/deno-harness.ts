@@ -275,7 +275,7 @@ globalThis.fetch = async (input: string | URL | Request, init?: RequestInit): Pr
   }
 
   // Send fetch/request RPC — host returns { id }
-  const rpcResponse = (await kvRequest("fetch/request", {
+  const rpcResponse = (await hostRequest("fetch/request", {
     url: req.url,
     method: req.method,
     headers: Object.fromEntries(req.headers),

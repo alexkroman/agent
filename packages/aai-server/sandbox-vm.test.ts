@@ -11,7 +11,7 @@ import {
   type SandboxVmOptions,
   type WarmHarness,
 } from "./sandbox-vm.ts";
-import { counterValue, createTestStorage, histogramCount } from "./test-utils.ts";
+import { counterValue, createMockKv, histogramCount } from "./test-utils.ts";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -150,12 +150,11 @@ describe("configureSandbox", () => {
     detach();
   });
 
-  it("registers kv/get handler that reads from storage", async () => {
-    const storage = createTestStorage();
-    // Pre-populate a value
-    await storage.setItem("agents/test-agent/kv:existing", "hello");
+  it("registers kv/get handler that reads from Kv", async () => {
+    const kv = createMockKv();
+    await kv.set("existing", "hello");
 
-    const opts = baseOpts({ kvStorage: storage, kvPrefix: "agents/test-agent/kv" });
+    const opts = baseOpts({ kv });
     const cleanup = vi.fn().mockResolvedValue(undefined);
     const detach = autorespondBundleLoad(hostWritable, hostReadable);
 
@@ -177,9 +176,9 @@ describe("configureSandbox", () => {
     handle.conn.dispose();
   });
 
-  it("kv/set handler stores values in storage", async () => {
-    const storage = createTestStorage();
-    const opts = baseOpts({ kvStorage: storage, kvPrefix: "agents/test-agent/kv" });
+  it("kv/set handler stores values in Kv", async () => {
+    const kv = createMockKv();
+    const opts = baseOpts({ kv });
     const cleanup = vi.fn().mockResolvedValue(undefined);
     const detach = autorespondBundleLoad(hostWritable, hostReadable);
 
@@ -194,18 +193,15 @@ describe("configureSandbox", () => {
 
     await waitForResponseId(writtenLines, setReqId);
 
-    // Verify storage was updated
-    const stored = await storage.getItem("agents/test-agent/kv:newkey");
-    expect(stored).toBe(42);
+    // Verify Kv was updated
+    expect(kv.set).toHaveBeenCalledWith("newkey", 42);
 
     handle.conn.dispose();
   });
 
-  it("kv/del handler removes items from storage", async () => {
-    const storage = createTestStorage();
-    await storage.setItem("agents/test-agent/kv:delkey", "to-delete");
-
-    const opts = baseOpts({ kvStorage: storage, kvPrefix: "agents/test-agent/kv" });
+  it("kv/del handler removes items from Kv", async () => {
+    const kv = createMockKv();
+    const opts = baseOpts({ kv });
     const cleanup = vi.fn().mockResolvedValue(undefined);
     const detach = autorespondBundleLoad(hostWritable, hostReadable);
 
@@ -221,14 +217,13 @@ describe("configureSandbox", () => {
     await waitForResponseId(writtenLines, delReqId);
 
     // Verify the item was removed
-    const item = await storage.getItem("agents/test-agent/kv:delkey");
-    expect(item).toBeNull();
+    expect(kv.delete).toHaveBeenCalledWith("delkey");
 
     handle.conn.dispose();
   });
 
-  it("does not register KV handlers when kvStorage is not provided", async () => {
-    const opts = baseOpts(); // no kvStorage or kvPrefix
+  it("does not register KV handlers when kv is not provided", async () => {
+    const opts = baseOpts(); // no kv
     const cleanup = vi.fn().mockResolvedValue(undefined);
     const detach = autorespondBundleLoad(hostWritable, hostReadable);
 

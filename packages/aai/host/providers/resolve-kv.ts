@@ -6,7 +6,6 @@
  * isolation is enforced regardless of backend choice.
  */
 
-import { createRequire } from "node:module";
 import { createStorage, type Driver } from "unstorage";
 import type { Kv } from "../../sdk/kv.ts";
 import { FS_KV_KIND, type FsKvOptions } from "../../sdk/providers/kv/fs.ts";
@@ -15,32 +14,18 @@ import { REDIS_KV_KIND, type RedisKvOptions } from "../../sdk/providers/kv/redis
 import { S3_KV_KIND, type S3KvOptions } from "../../sdk/providers/kv/s3.ts";
 import type { KvProvider } from "../../sdk/providers.ts";
 import { createUnstorageKv } from "../unstorage-kv.ts";
-import { resolveApiKey } from "./resolve.ts";
-
-const requireFromHere = createRequire(import.meta.url);
+import { loadProviderPackage, resolveApiKey } from "./resolve.ts";
 
 /**
  * Load a CJS unstorage driver factory. The CJS variants use
  * `module.exports = defineDriver(...)` so the require result is the
  * factory itself (not an object with `.default`).
+ *
+ * Delegates to loadProviderPackage (lazy-load via createRequire so the
+ * driver is a true optional peer dep).
  */
 function loadDriver<T>(modulePath: string, label: string): T {
-  try {
-    return requireFromHere(modulePath) as T;
-  } catch (err) {
-    if (
-      err instanceof Error &&
-      ((err as NodeJS.ErrnoException).code === "MODULE_NOT_FOUND" ||
-        (err as NodeJS.ErrnoException).code === "ERR_MODULE_NOT_FOUND") &&
-      err.message.includes(modulePath)
-    ) {
-      throw new Error(
-        `${label} KV: driver \`${modulePath}\` not found. (This should ship with unstorage.)`,
-        { cause: err },
-      );
-    }
-    throw err;
-  }
+  return loadProviderPackage<T>(modulePath, `${label} KV: driver`);
 }
 
 /**

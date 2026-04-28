@@ -12,7 +12,6 @@ import { performance } from "node:perf_hooks";
 import type { Kv } from "@alexkroman1/aai";
 import { errorMessage } from "@alexkroman1/aai";
 import type { Vector } from "@alexkroman1/aai/runtime";
-import type { Storage, StorageValue } from "unstorage";
 import { z } from "zod";
 import { debug } from "./_debug-log.ts";
 import { createGvisorSandbox, isGvisorAvailable } from "./gvisor.ts";
@@ -97,14 +96,10 @@ export type SandboxVmOptions = {
   workerCode: string;
   env: Record<string, string>;
   harnessPath: string;
-  /** Resolved Kv instance (takes priority over kvStorage/kvPrefix when set). */
+  /** Resolved Kv instance (enables kv/* RPC handlers when set). */
   kv?: Kv;
   /** Resolved Vector instance (enables vector/* RPC handlers when set). */
   vector?: Vector;
-  /** Legacy: raw unstorage Storage for the fallback kv/* path. */
-  kvStorage?: Storage;
-  /** Legacy: key prefix for the fallback kv/* path. */
-  kvPrefix?: string;
   limits?: SandboxResourceLimits;
   allowedHosts?: string[];
 };
@@ -130,7 +125,6 @@ async function configureSandbox(warm: WarmHarness, opts: SandboxVmOptions): Prom
   const { conn } = warm;
 
   // Host serves guest KV requests (params validated with Zod).
-  // Tiered: use injected Kv when available; fall back to raw storage+prefix.
   if (opts.kv) {
     const kv = opts.kv;
     conn.onRequest("kv/get", async (raw: unknown) => {
@@ -144,21 +138,6 @@ async function configureSandbox(warm: WarmHarness, opts: SandboxVmOptions): Prom
     conn.onRequest("kv/del", async (raw: unknown) => {
       const p = KvDelParamsSchema.parse(raw);
       await kv.delete(p.key);
-    });
-  } else if (opts.kvStorage && opts.kvPrefix) {
-    const storage = opts.kvStorage;
-    const prefix = opts.kvPrefix;
-    conn.onRequest("kv/get", async (raw: unknown) => {
-      const p = KvGetParamsSchema.parse(raw);
-      return await storage.getItem(`${prefix}:${p.key}`);
-    });
-    conn.onRequest("kv/set", async (raw: unknown) => {
-      const p = KvSetParamsSchema.parse(raw);
-      await storage.setItem(`${prefix}:${p.key}`, p.value as StorageValue);
-    });
-    conn.onRequest("kv/del", async (raw: unknown) => {
-      const p = KvDelParamsSchema.parse(raw);
-      await storage.removeItem(`${prefix}:${p.key}`);
     });
   }
 

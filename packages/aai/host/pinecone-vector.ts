@@ -11,10 +11,8 @@
  * imported.
  */
 
-import { createRequire } from "node:module";
 import type { Vector, VectorMatch, VectorQueryOptions } from "../sdk/vector.ts";
-
-const requireFromHere = createRequire(import.meta.url);
+import { loadProviderPackage } from "./providers/resolve.ts";
 
 export type PineconeVectorOptions = {
   apiKey: string;
@@ -38,28 +36,11 @@ type PineconeClient = {
   index: (name: string) => { namespace: (ns: string) => PineconeNs };
 };
 
-function loadPinecone(): { Pinecone: new (opts: { apiKey: string }) => PineconeClient } {
-  try {
-    return requireFromHere("@pinecone-database/pinecone");
-  } catch (err) {
-    if (
-      err instanceof Error &&
-      ((err as NodeJS.ErrnoException).code === "MODULE_NOT_FOUND" ||
-        (err as NodeJS.ErrnoException).code === "ERR_MODULE_NOT_FOUND") &&
-      err.message.includes("@pinecone-database/pinecone")
-    ) {
-      throw new Error(
-        "Pinecone Vector: package `@pinecone-database/pinecone` is not installed. " +
-          "Run `pnpm add @pinecone-database/pinecone`.",
-        { cause: err },
-      );
-    }
-    throw err;
-  }
-}
-
 export function createPineconeVector(opts: PineconeVectorOptions): Vector {
-  const { Pinecone } = loadPinecone();
+  // Lazy-load via loadProviderPackage so the package is a true optional peer dep.
+  const { Pinecone } = loadProviderPackage<{
+    Pinecone: new (opts: { apiKey: string }) => PineconeClient;
+  }>("@pinecone-database/pinecone", "Pinecone Vector");
   const client = new Pinecone({ apiKey: opts.apiKey });
   const ns = (): PineconeNs => client.index(opts.index).namespace(opts.namespace);
 

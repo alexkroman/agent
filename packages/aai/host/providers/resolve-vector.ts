@@ -7,10 +7,7 @@
  * unused providers never enter the bundle.
  */
 
-import {
-  IN_MEMORY_VECTOR_KIND,
-  type InMemoryVectorOptions,
-} from "../../sdk/providers/vector/in-memory.ts";
+import { IN_MEMORY_VECTOR_KIND } from "../../sdk/providers/vector/in-memory.ts";
 import { PINECONE_VECTOR_KIND, type PineconeOptions } from "../../sdk/providers/vector/pinecone.ts";
 import type { VectorProvider } from "../../sdk/providers.ts";
 import type { Vector } from "../../sdk/vector.ts";
@@ -26,7 +23,6 @@ export function resolveVector(
 ): Vector {
   switch (descriptor.kind) {
     case IN_MEMORY_VECTOR_KIND: {
-      void (descriptor.options as unknown as InMemoryVectorOptions);
       return createMemoryVector({ namespace });
     }
     case PINECONE_VECTOR_KIND: {
