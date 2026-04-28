@@ -33,13 +33,32 @@
     {
       "id": 1,
       "type": "stat",
-      "title": "Warm pool ready",
+      "title": "Fleet capacity used",
+      "description": "Max % across all six saturation dimensions. 100% = at the operational ceiling.",
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "targets": [{ "expr": "sum(aai_warm_pool_ready)", "refId": "A" }],
-      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "max(\n  label_replace(100 * sum(process_resident_memory_bytes) / (sum(aai_machine_memory_bytes) * 0.8), \"dim\", \"memory\", \"\", \"\")\n  or label_replace(100 * sum(rate(process_cpu_seconds_total[5m])) / (sum(aai_machine_cpu_cores) * 0.7), \"dim\", \"cpu\", \"\", \"\")\n  or label_replace(100 * (max(nodejs_eventloop_lag_p99_seconds) / 0.05), \"dim\", \"event_loop\", \"\", \"\")\n  or label_replace(100 * (histogram_quantile(0.95, sum by (le) (rate(aai_sandbox_init_seconds_bucket{path=\"cold\"}[5m]))) / 1.0), \"dim\", \"cold_start\", \"\", \"\")\n  or label_replace(100 * (sum(rate(aai_sessions_ended_total{reason=\"error\"}[5m])) / clamp_min(sum(rate(aai_sessions_started_total[5m])), 1) / 0.01), \"dim\", \"session_error\", \"\", \"\")\n  or label_replace((100 * ((1 - sum(aai_warm_pool_ready) / clamp_min(sum(aai_warm_pool_target), 1)) / 0.5)) unless on() (sum(aai_warm_pool_target) == 0), \"dim\", \"warm_pool\", \"\", \"\")\n)",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 70 },
+              { "color": "red", "value": 90 }
+            ]
+          }
+        },
+        "overrides": []
+      },
       "options": {
         "reduceOptions": { "calcs": ["lastNotNull"] },
-        "colorMode": "value",
+        "colorMode": "background",
         "graphMode": "area"
       },
       "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 }
@@ -47,13 +66,32 @@
     {
       "id": 2,
       "type": "stat",
-      "title": "Warm pool target",
+      "title": "Memory headroom",
+      "description": "Fraction of memory ceiling (machine RAM × 0.8) still available across the fleet.",
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "targets": [{ "expr": "sum(aai_warm_pool_target)", "refId": "A" }],
-      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "100 - 100 * sum(process_resident_memory_bytes) / (sum(aai_machine_memory_bytes) * 0.8)",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 10 },
+              { "color": "green", "value": 30 }
+            ]
+          }
+        },
+        "overrides": []
+      },
       "options": {
         "reduceOptions": { "calcs": ["lastNotNull"] },
-        "colorMode": "value",
+        "colorMode": "background",
         "graphMode": "area"
       },
       "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 }
@@ -61,18 +99,32 @@
     {
       "id": 3,
       "type": "stat",
-      "title": "Hit rate",
+      "title": "CPU headroom",
+      "description": "Fraction of CPU ceiling (cores × 0.7) still available across the fleet.",
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
         {
-          "expr": "sum(rate(aai_warm_pool_acquire_total{result=\"hit\"}[5m])) / clamp_min(sum(rate(aai_warm_pool_acquire_total[5m])), 1)",
+          "expr": "100 - 100 * sum(rate(process_cpu_seconds_total[5m])) / (sum(aai_machine_cpu_cores) * 0.7)",
           "refId": "A"
         }
       ],
-      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 10 },
+              { "color": "green", "value": 30 }
+            ]
+          }
+        },
+        "overrides": []
+      },
       "options": {
         "reduceOptions": { "calcs": ["lastNotNull"] },
-        "colorMode": "value",
+        "colorMode": "background",
         "graphMode": "area"
       },
       "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 }
@@ -80,18 +132,32 @@
     {
       "id": 4,
       "type": "stat",
-      "title": "Cold init p95",
+      "title": "SLO burn",
+      "description": "Max of event-loop p99, cold-start p95, and session-error rate, each as % of its SLO threshold.",
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum(rate(aai_sandbox_init_seconds_bucket{path=\"cold\"}[5m])) by (le))",
+          "expr": "max(\n  label_replace(100 * (max(nodejs_eventloop_lag_p99_seconds) / 0.05), \"dim\", \"event_loop\", \"\", \"\")\n  or label_replace(100 * (histogram_quantile(0.95, sum by (le) (rate(aai_sandbox_init_seconds_bucket{path=\"cold\"}[5m]))) / 1.0), \"dim\", \"cold_start\", \"\", \"\")\n  or label_replace(100 * (sum(rate(aai_sessions_ended_total{reason=\"error\"}[5m])) / clamp_min(sum(rate(aai_sessions_started_total[5m])), 1) / 0.01), \"dim\", \"session_error\", \"\", \"\")\n)",
           "refId": "A"
         }
       ],
-      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 50 },
+              { "color": "red", "value": 100 }
+            ]
+          }
+        },
+        "overrides": []
+      },
       "options": {
         "reduceOptions": { "calcs": ["lastNotNull"] },
-        "colorMode": "value",
+        "colorMode": "background",
         "graphMode": "area"
       },
       "gridPos": { "h": 4, "w": 4, "x": 12, "y": 0 }
@@ -99,13 +165,32 @@
     {
       "id": 5,
       "type": "stat",
-      "title": "Heap used (max)",
+      "title": "Warm pool ready",
+      "description": "Ready / target across fleet. <50% means pool is starving and cold starts are likely.",
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "targets": [{ "expr": "max(nodejs_heap_size_used_bytes)", "refId": "A" }],
-      "fieldConfig": { "defaults": { "unit": "decbytes" }, "overrides": [] },
+      "targets": [
+        {
+          "expr": "100 * sum(aai_warm_pool_ready) / clamp_min(sum(aai_warm_pool_target), 1) unless on() (sum(aai_warm_pool_target) == 0)",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 50 },
+              { "color": "green", "value": 75 }
+            ]
+          }
+        },
+        "overrides": []
+      },
       "options": {
         "reduceOptions": { "calcs": ["lastNotNull"] },
-        "colorMode": "value",
+        "colorMode": "background",
         "graphMode": "area"
       },
       "gridPos": { "h": 4, "w": 4, "x": 16, "y": 0 }
@@ -113,26 +198,56 @@
     {
       "id": 6,
       "type": "timeseries",
-      "title": "Warm pool (per instance)",
+      "title": "All saturation dimensions over time",
+      "description": "Each line is a dimension's % of its operational ceiling. 100% = at SLO. >100% = breaching.",
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
         {
-          "expr": "aai_warm_pool_ready{instance=~\"$instance\"}",
-          "legendFormat": "ready / {{instance}}",
+          "expr": "100 * sum(process_resident_memory_bytes) / (sum(aai_machine_memory_bytes) * 0.8)",
+          "legendFormat": "memory",
           "refId": "A"
         },
         {
-          "expr": "aai_warm_pool_pending{instance=~\"$instance\"}",
-          "legendFormat": "pending / {{instance}}",
+          "expr": "100 * sum(rate(process_cpu_seconds_total[5m])) / (sum(aai_machine_cpu_cores) * 0.7)",
+          "legendFormat": "cpu",
           "refId": "B"
         },
         {
-          "expr": "aai_warm_pool_target{instance=~\"$instance\"}",
-          "legendFormat": "target / {{instance}}",
+          "expr": "100 * (max(nodejs_eventloop_lag_p99_seconds) / 0.05)",
+          "legendFormat": "event-loop p99",
           "refId": "C"
+        },
+        {
+          "expr": "100 * (histogram_quantile(0.95, sum by (le) (rate(aai_sandbox_init_seconds_bucket{path=\"cold\"}[5m]))) / 1.0)",
+          "legendFormat": "cold-start p95",
+          "refId": "D"
+        },
+        {
+          "expr": "100 * (sum(rate(aai_sessions_ended_total{reason=\"error\"}[5m])) / clamp_min(sum(rate(aai_sessions_started_total[5m])), 1) / 0.01)",
+          "legendFormat": "session errors",
+          "refId": "E"
+        },
+        {
+          "expr": "100 * ((1 - sum(aai_warm_pool_ready) / clamp_min(sum(aai_warm_pool_target), 1)) / 0.5) unless on() (sum(aai_warm_pool_target) == 0)",
+          "legendFormat": "warm pool",
+          "refId": "F"
         }
       ],
-      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 150,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 100 }]
+          },
+          "custom": {
+            "thresholdsStyle": { "mode": "line" }
+          }
+        },
+        "overrides": []
+      },
       "options": {
         "legend": { "showLegend": true, "displayMode": "table", "placement": "bottom" }
       },
@@ -141,13 +256,19 @@
     {
       "id": 7,
       "type": "timeseries",
-      "title": "Warm-pool spawn-failure rate",
+      "title": "Active sessions vs theoretical sandbox cap",
+      "description": "Active sessions, plus a constant line for the max sandboxes that fit within the 80% memory ceiling at the 64 MB cgroup cap.",
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
         {
-          "expr": "sum(rate(aai_warm_pool_spawn_failed_total[5m]))",
-          "legendFormat": "failed/sec",
+          "expr": "sum(aai_sessions_active)",
+          "legendFormat": "active sessions",
           "refId": "A"
+        },
+        {
+          "expr": "sum(aai_machine_memory_bytes) * 0.8 / 67108864",
+          "legendFormat": "theoretical max sandboxes",
+          "refId": "B"
         }
       ],
       "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
@@ -159,26 +280,31 @@
     {
       "id": 8,
       "type": "timeseries",
-      "title": "Sandbox init percentiles by path",
+      "title": "Memory % per instance",
+      "description": "process_resident_memory_bytes / aai_machine_memory_bytes per instance. SLO line at 80%.",
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum by (path, le) (rate(aai_sandbox_init_seconds_bucket[5m])))",
-          "legendFormat": "p50 / {{path}}",
+          "expr": "100 * process_resident_memory_bytes{instance=~\"$instance\"} / on(instance) aai_machine_memory_bytes",
+          "legendFormat": "{{instance}}",
           "refId": "A"
-        },
-        {
-          "expr": "histogram_quantile(0.95, sum by (path, le) (rate(aai_sandbox_init_seconds_bucket[5m])))",
-          "legendFormat": "p95 / {{path}}",
-          "refId": "B"
-        },
-        {
-          "expr": "histogram_quantile(0.99, sum by (path, le) (rate(aai_sandbox_init_seconds_bucket[5m])))",
-          "legendFormat": "p99 / {{path}}",
-          "refId": "C"
         }
       ],
-      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 80 }]
+          },
+          "custom": {
+            "thresholdsStyle": { "mode": "line" }
+          }
+        },
+        "overrides": []
+      },
       "options": {
         "legend": { "showLegend": true, "displayMode": "table", "placement": "bottom" }
       },
@@ -187,16 +313,31 @@
     {
       "id": 9,
       "type": "timeseries",
-      "title": "Sandbox init failures by reason",
+      "title": "CPU % per instance",
+      "description": "rate(process_cpu_seconds_total[5m]) / aai_machine_cpu_cores per instance. SLO line at 70%.",
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
         {
-          "expr": "sum by (reason) (rate(aai_sandbox_init_failed_total[5m]))",
-          "legendFormat": "{{reason}}",
+          "expr": "100 * rate(process_cpu_seconds_total{instance=~\"$instance\"}[5m]) / on(instance) aai_machine_cpu_cores",
+          "legendFormat": "{{instance}}",
           "refId": "A"
         }
       ],
-      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 70 }]
+          },
+          "custom": {
+            "thresholdsStyle": { "mode": "line" }
+          }
+        },
+        "overrides": []
+      },
       "options": {
         "legend": { "showLegend": true, "displayMode": "table", "placement": "bottom" }
       },
@@ -205,16 +346,29 @@
     {
       "id": 10,
       "type": "timeseries",
-      "title": "Eviction rate by reason",
+      "title": "Event-loop lag p99 per instance",
+      "description": "Per-instance event-loop p99 in seconds. SLO line at 0.05 s (50 ms).",
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
         {
-          "expr": "sum by (reason) (rate(aai_sandbox_evicted_total[5m]))",
-          "legendFormat": "{{reason}}",
+          "expr": "nodejs_eventloop_lag_p99_seconds{instance=~\"$instance\"}",
+          "legendFormat": "{{instance}}",
           "refId": "A"
         }
       ],
-      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 0.05 }]
+          },
+          "custom": {
+            "thresholdsStyle": { "mode": "line" }
+          }
+        },
+        "overrides": []
+      },
       "options": {
         "legend": { "showLegend": true, "displayMode": "table", "placement": "bottom" }
       },
@@ -223,140 +377,33 @@
     {
       "id": 11,
       "type": "timeseries",
-      "title": "Slots resident vs registered",
+      "title": "Sandbox cold-start p95 per instance",
+      "description": "Per-instance cold-start p95 over 5m. SLO line at 1 s.",
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
         {
-          "expr": "aai_slots_registered{instance=~\"$instance\"}",
-          "legendFormat": "registered / {{instance}}",
+          "expr": "histogram_quantile(0.95, sum by (instance, le) (rate(aai_sandbox_init_seconds_bucket{path=\"cold\",instance=~\"$instance\"}[5m])))",
+          "legendFormat": "{{instance}}",
           "refId": "A"
-        },
-        {
-          "expr": "aai_slots_resident{instance=~\"$instance\"}",
-          "legendFormat": "resident / {{instance}}",
-          "refId": "B"
         }
       ],
-      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1.0 }]
+          },
+          "custom": {
+            "thresholdsStyle": { "mode": "line" }
+          }
+        },
+        "overrides": []
+      },
       "options": {
         "legend": { "showLegend": true, "displayMode": "table", "placement": "bottom" }
       },
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 }
-    },
-    {
-      "id": 12,
-      "type": "timeseries",
-      "title": "Event-loop lag (per instance)",
-      "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "targets": [
-        {
-          "expr": "nodejs_eventloop_lag_p50_seconds{instance=~\"$instance\"}",
-          "legendFormat": "p50 / {{instance}}",
-          "refId": "A"
-        },
-        {
-          "expr": "nodejs_eventloop_lag_p99_seconds{instance=~\"$instance\"}",
-          "legendFormat": "p99 / {{instance}}",
-          "refId": "B"
-        },
-        {
-          "expr": "nodejs_eventloop_lag_max_seconds{instance=~\"$instance\"}",
-          "legendFormat": "max / {{instance}}",
-          "refId": "C"
-        }
-      ],
-      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
-      "options": {
-        "legend": { "showLegend": true, "displayMode": "table", "placement": "bottom" }
-      },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 }
-    },
-    {
-      "id": 13,
-      "type": "timeseries",
-      "title": "Memory: heap & RSS (per instance)",
-      "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "targets": [
-        {
-          "expr": "nodejs_heap_size_used_bytes{instance=~\"$instance\"}",
-          "legendFormat": "heap / {{instance}}",
-          "refId": "A"
-        },
-        {
-          "expr": "process_resident_memory_bytes{instance=~\"$instance\"}",
-          "legendFormat": "rss / {{instance}}",
-          "refId": "B"
-        }
-      ],
-      "fieldConfig": { "defaults": { "unit": "decbytes" }, "overrides": [] },
-      "options": {
-        "legend": { "showLegend": true, "displayMode": "table", "placement": "bottom" }
-      },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 }
-    },
-    {
-      "id": 14,
-      "type": "timeseries",
-      "title": "CPU rate (per instance)",
-      "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "targets": [
-        {
-          "expr": "rate(process_cpu_seconds_total{instance=~\"$instance\"}[5m])",
-          "legendFormat": "cpu / {{instance}}",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
-      "options": {
-        "legend": { "showLegend": true, "displayMode": "table", "placement": "bottom" }
-      },
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 36 }
-    },
-    {
-      "id": 15,
-      "type": "timeseries",
-      "title": "gVisor spawn p95 by phase",
-      "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "targets": [
-        {
-          "expr": "histogram_quantile(0.95, sum by (phase, le) (rate(aai_sandbox_spawn_phase_seconds_bucket[5m])))",
-          "legendFormat": "{{phase}}",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
-      "options": {
-        "legend": { "showLegend": true, "displayMode": "table", "placement": "bottom" }
-      },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 44 }
-    },
-    {
-      "id": 16,
-      "type": "timeseries",
-      "title": "gVisor spawn total percentiles",
-      "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "targets": [
-        {
-          "expr": "histogram_quantile(0.50, sum(rate(aai_sandbox_spawn_phase_seconds_bucket{phase=\"total\"}[5m])) by (le))",
-          "legendFormat": "p50",
-          "refId": "A"
-        },
-        {
-          "expr": "histogram_quantile(0.95, sum(rate(aai_sandbox_spawn_phase_seconds_bucket{phase=\"total\"}[5m])) by (le))",
-          "legendFormat": "p95",
-          "refId": "B"
-        },
-        {
-          "expr": "histogram_quantile(0.99, sum(rate(aai_sandbox_spawn_phase_seconds_bucket{phase=\"total\"}[5m])) by (le))",
-          "legendFormat": "p99",
-          "refId": "C"
-        }
-      ],
-      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
-      "options": {
-        "legend": { "showLegend": true, "displayMode": "table", "placement": "bottom" }
-      },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 44 }
     }
   ]
 }
