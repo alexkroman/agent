@@ -80,11 +80,11 @@
     {
       "id": 4,
       "type": "stat",
-      "title": "Sandbox init p95",
+      "title": "Cold init p95",
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum(rate(aai_sandbox_init_seconds_bucket[5m])) by (le))",
+          "expr": "histogram_quantile(0.95, sum(rate(aai_sandbox_init_seconds_bucket{path=\"cold\"}[5m])) by (le))",
           "refId": "A"
         }
       ],
@@ -159,22 +159,22 @@
     {
       "id": 8,
       "type": "timeseries",
-      "title": "Sandbox init percentiles",
+      "title": "Sandbox init percentiles by path",
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
         {
-          "expr": "histogram_quantile(0.50, sum(rate(aai_sandbox_init_seconds_bucket[5m])) by (le))",
-          "legendFormat": "p50",
+          "expr": "histogram_quantile(0.50, sum by (path, le) (rate(aai_sandbox_init_seconds_bucket[5m])))",
+          "legendFormat": "p50 / {{path}}",
           "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.95, sum(rate(aai_sandbox_init_seconds_bucket[5m])) by (le))",
-          "legendFormat": "p95",
+          "expr": "histogram_quantile(0.95, sum by (path, le) (rate(aai_sandbox_init_seconds_bucket[5m])))",
+          "legendFormat": "p95 / {{path}}",
           "refId": "B"
         },
         {
-          "expr": "histogram_quantile(0.99, sum(rate(aai_sandbox_init_seconds_bucket[5m])) by (le))",
-          "legendFormat": "p99",
+          "expr": "histogram_quantile(0.99, sum by (path, le) (rate(aai_sandbox_init_seconds_bucket[5m])))",
+          "legendFormat": "p99 / {{path}}",
           "refId": "C"
         }
       ],
@@ -311,6 +311,52 @@
         "legend": { "showLegend": true, "displayMode": "table", "placement": "bottom" }
       },
       "gridPos": { "h": 8, "w": 24, "x": 0, "y": 36 }
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "gVisor spawn p95 by phase",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (phase, le) (rate(aai_sandbox_spawn_phase_seconds_bucket[5m])))",
+          "legendFormat": "{{phase}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "options": {
+        "legend": { "showLegend": true, "displayMode": "table", "placement": "bottom" }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 44 }
+    },
+    {
+      "id": 16,
+      "type": "timeseries",
+      "title": "gVisor spawn total percentiles",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(aai_sandbox_spawn_phase_seconds_bucket{phase=\"total\"}[5m])) by (le))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(aai_sandbox_spawn_phase_seconds_bucket{phase=\"total\"}[5m])) by (le))",
+          "legendFormat": "p95",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(aai_sandbox_spawn_phase_seconds_bucket{phase=\"total\"}[5m])) by (le))",
+          "legendFormat": "p99",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "options": {
+        "legend": { "showLegend": true, "displayMode": "table", "placement": "bottom" }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 44 }
     }
   ]
 }

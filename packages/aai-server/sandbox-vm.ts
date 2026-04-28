@@ -14,7 +14,7 @@ import type { Storage, StorageValue } from "unstorage";
 import { z } from "zod";
 import { debug } from "./_debug-log.ts";
 import { createGvisorSandbox, isGvisorAvailable } from "./gvisor.ts";
-import { metrics, observeDuration, type SandboxInitFailReason } from "./metrics.ts";
+import { metrics, type SandboxInitFailReason, type SandboxInitPath } from "./metrics.ts";
 import { createNdjsonConnection, type NdjsonConnection } from "./ndjson-transport.ts";
 import type { SandboxResourceLimits } from "./oci-spec.ts";
 import { createFetchHandler, type FetchRequest } from "./sandbox-fetch.ts";
@@ -377,12 +377,23 @@ export async function createSandboxVm(
   opts: SandboxVmOptions,
   pool?: WarmHarnessSource,
 ): Promise<SandboxHandle> {
+  const t0 = process.hrtime.bigint();
+  // Default to "cold". `createSandboxVmInner` flips this to "warm" if the
+  // pool returns a ready harness — that's the only fast path.
+  const pathRef = { path: "cold" as SandboxInitPath };
   try {
-    return await observeDuration(metrics.sandboxInit, () => createSandboxVmInner(opts, pool));
+    const result = await createSandboxVmInner(opts, pool, pathRef);
+    metrics.sandboxInit.observe({ path: pathRef.path }, hrtimeSeconds(t0));
+    return result;
   } catch (err) {
+    metrics.sandboxInit.observe({ path: pathRef.path }, hrtimeSeconds(t0));
     metrics.sandboxInitFailed.inc({ reason: classifyInitFailure(err) });
     throw err;
   }
+}
+
+function hrtimeSeconds(t0: bigint): number {
+  return Number(process.hrtime.bigint() - t0) / 1e9;
 }
 
 /** Classify a sandbox-init error into one of three coarse buckets. */
@@ -395,7 +406,8 @@ function classifyInitFailure(err: unknown): SandboxInitFailReason {
 
 async function createSandboxVmInner(
   opts: SandboxVmOptions,
-  pool?: WarmHarnessSource,
+  pool: WarmHarnessSource | undefined,
+  pathRef: { path: SandboxInitPath },
 ): Promise<SandboxHandle> {
   const envLimits = parseSandboxLimitsFromEnv(process.env);
   const mergedOpts: SandboxVmOptions = {
@@ -405,7 +417,10 @@ async function createSandboxVmInner(
 
   if (pool) {
     const warm = await pool.acquire();
-    if (warm) return configureSandbox(warm, mergedOpts);
+    if (warm) {
+      pathRef.path = "warm";
+      return configureSandbox(warm, mergedOpts);
+    }
   }
 
   if (isGvisorAvailable()) return createGvisorSandboxHandle(mergedOpts);

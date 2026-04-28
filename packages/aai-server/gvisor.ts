@@ -16,6 +16,7 @@ import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { promisify } from "node:util";
 import { nanoid } from "nanoid";
+import { metrics } from "./metrics.ts";
 import { buildOciSpec, type SandboxResourceLimits } from "./oci-spec.ts";
 
 const execFileAsync = promisify(execFile);
@@ -206,13 +207,10 @@ export async function createGvisorSandbox(opts: GvisorSandboxOptions): Promise<G
   );
   const tSpawn = performance.now();
 
-  console.info("gVisor sandbox spawn timing", {
-    slug: opts.slug,
-    rootfsMs: Math.round(tRootfs - t0),
-    bundleDirMs: Math.round(tBundle - tRootfs),
-    spawnMs: Math.round(tSpawn - tBundle),
-    totalMs: Math.round(tSpawn - t0),
-  });
+  metrics.sandboxSpawnPhase.observe({ phase: "rootfs" }, (tRootfs - t0) / 1000);
+  metrics.sandboxSpawnPhase.observe({ phase: "bundle_dir" }, (tBundle - tRootfs) / 1000);
+  metrics.sandboxSpawnPhase.observe({ phase: "spawn" }, (tSpawn - tBundle) / 1000);
+  metrics.sandboxSpawnPhase.observe({ phase: "total" }, (tSpawn - t0) / 1000);
 
   let cleaned = false;
 
