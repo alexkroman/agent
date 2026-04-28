@@ -65,8 +65,21 @@ const SANDBOX_INIT_BUCKETS = [0.05, 0.1, 0.25, 0.5, 1, 2, 4, 8];
 
 const sandboxInit = new client.Histogram({
   name: "aai_sandbox_init_seconds",
-  help: "Time to bring an agent sandbox to ready state.",
+  help: "Time to bring an agent sandbox to ready state, labeled by path (warm = pool hit, cold = full spawn).",
+  labelNames: ["path"] as const,
   buckets: SANDBOX_INIT_BUCKETS,
+  registers: [registry],
+});
+
+const SANDBOX_SPAWN_PHASE_BUCKETS = [
+  0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30,
+];
+
+const sandboxSpawnPhase = new client.Histogram({
+  name: "aai_sandbox_spawn_phase_seconds",
+  help: "Time spent in each phase of gVisor sandbox spawn (rootfs, bundle_dir, spawn, total).",
+  labelNames: ["phase"] as const,
+  buckets: SANDBOX_SPAWN_PHASE_BUCKETS,
   registers: [registry],
 });
 
@@ -155,6 +168,7 @@ export const metrics = {
   sessionDuration,
   sessionErrors,
   sandboxInit,
+  sandboxSpawnPhase,
   sandboxInitFailed,
   sandboxEvicted,
   slotsRegistered,
@@ -176,26 +190,15 @@ export const metrics = {
 export type SessionMode = "s2s" | "pipeline";
 export type SessionEndReason = "client_close" | "server_close" | "error" | "timeout";
 export type SessionErrorKind = "upgrade" | "sandbox_resolve" | "provider" | "internal";
+export type SandboxInitPath = "warm" | "cold";
 export type SandboxInitFailReason = "bundle_missing" | "worker_spawn" | "host_init";
+export type SandboxSpawnPhase = "rootfs" | "bundle_dir" | "spawn" | "total";
 export type SandboxEvictReason = "idle" | "terminate";
 export type WarmPoolAcquireResult = "hit" | "miss";
 export type Upstream = "tigris";
 export type UpstreamStatus = "ok" | "error";
 
 // ── Timing helpers ───────────────────────────────────────────────────────
-
-/**
- * Observe `fn`'s execution time on a histogram. Re-throws on failure.
- */
-export async function observeDuration<T>(hist: client.Histogram, fn: () => Promise<T>): Promise<T> {
-  const t0 = process.hrtime.bigint();
-  try {
-    return await fn();
-  } finally {
-    const elapsedSec = Number(process.hrtime.bigint() - t0) / 1e9;
-    hist.observe(elapsedSec);
-  }
-}
 
 /**
  * Observe `fn`'s execution time on a labeled histogram, AND increment a

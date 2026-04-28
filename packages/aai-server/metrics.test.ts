@@ -51,11 +51,12 @@ describe("session metrics", () => {
 });
 
 describe("sandbox metrics", () => {
-  it("observes init durations", async () => {
-    metrics.sandboxInit.observe(0.42);
+  it("observes init durations labeled by path", async () => {
+    metrics.sandboxInit.observe({ path: "warm" }, 0.05);
+    metrics.sandboxInit.observe({ path: "cold" }, 0.42);
     const text = await serialize();
-    expect(text).toContain("aai_sandbox_init_seconds_bucket");
-    expect(text).toContain("aai_sandbox_init_seconds_count 1");
+    expect(text).toContain('aai_sandbox_init_seconds_count{path="warm"} 1');
+    expect(text).toContain('aai_sandbox_init_seconds_count{path="cold"} 1');
   });
 
   it("counts init failures by reason", async () => {

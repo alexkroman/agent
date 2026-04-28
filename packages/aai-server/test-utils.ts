@@ -45,11 +45,17 @@ export function gaugeValue(name: string, labels: Record<string, string> = {}): n
 }
 
 /** Read the count of observations on a histogram. Returns 0 if no observations. */
-export function histogramCount(name: string): number {
+export function histogramCount(name: string, labels?: Record<string, string>): number {
   // biome-ignore lint/suspicious/noExplicitAny: prom-client internals not typed
   const m = registry.getSingleMetric(name) as any;
-  // Unlabeled histograms have a single hashMap entry under "" with `count`.
-  return m?.hashMap?.[""]?.count ?? 0;
+  if (!m?.hashMap) return 0;
+  // biome-ignore lint/suspicious/noExplicitAny: prom-client internals not typed
+  const entries = Object.values(m.hashMap) as any[];
+  if (!labels) {
+    return entries.reduce((sum, e) => sum + (e.count ?? 0), 0);
+  }
+  const match = entries.find((e) => Object.entries(labels).every(([k, v]) => e.labels?.[k] === v));
+  return match?.count ?? 0;
 }
 
 /** In-memory mock KV store backed by a Map. All methods are vi.fn() spies. */
