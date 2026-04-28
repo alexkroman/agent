@@ -79,7 +79,16 @@
     "ws": "^8.20.0",
     "zod": "^4.3.6"
   },
+  "peerDependencies": {
+    "@pinecone-database/pinecone": "^7.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@pinecone-database/pinecone": {
+      "optional": true
+    }
+  },
   "devDependencies": {
+    "@pinecone-database/pinecone": "^7.0.0",
     "@types/escape-html": "^1.0.4",
     "@types/html-to-text": "^9.0.4",
     "@types/json-schema": "^7.0.15",
