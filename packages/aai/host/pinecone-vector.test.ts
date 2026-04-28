@@ -60,7 +60,7 @@ describe("createPineconeVector", () => {
     const matches = await v.query("hello", { topK: 3, filter: { tag: "x" } });
     expect(searchRecords).toHaveBeenCalledWith({
       query: { inputs: { text: "hello" }, topK: 3, filter: { tag: "x" } },
-      fields: ["text"],
+      fields: ["*"],
     });
     expect(matches).toEqual([{ id: "doc-1", score: 0.9, text: "hello", metadata: { tag: "x" } }]);
   });

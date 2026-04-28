@@ -76,7 +76,7 @@ export function createPineconeVector(opts: PineconeVectorOptions): Vector {
           topK,
           ...(queryOpts?.filter !== undefined ? { filter: queryOpts.filter } : {}),
         },
-        fields: ["text"],
+        fields: ["*"],
       };
       const resp = await ns().searchRecords(req);
       return resp.result.hits.map((hit): VectorMatch => {
