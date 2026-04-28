@@ -1,5 +1,15 @@
 # @alexkroman1/aai
 
+## 1.7.0
+
+### Minor Changes
+
+- 07b4263: Pluggable KV and Vector backends. New subpath exports @alexkroman1/aai/kv and @alexkroman1/aai/vector. New ctx.vector tool context field. Pinecone (integrated inference) and Redis/S3/fs/memory backends ship out of the box.
+
+### Patch Changes
+
+- b79855d: Change S2S/agent API base URL to wss://agents.assemblyai.com/v1/ws
+
 ## 1.6.1
 
 ### Patch Changes
