@@ -10,6 +10,7 @@
  * `_bytes`), `_total` suffix on counters. `slug` label only on the
  * permitlist enforced by `metrics-cardinality.test.ts`.
  */
+import os from "node:os";
 import client from "prom-client";
 
 export const registry = new client.Registry();
@@ -142,6 +143,24 @@ const warmPoolSpawnFailed = new client.Counter({
   registers: [registry],
 });
 
+// ── Host capacity (per-instance physical ceilings) ──
+//
+// Static gauges set once at server boot. They are the denominators that
+// turn raw `process_resident_memory_bytes` / `process_cpu_seconds_total`
+// into "% of host capacity used" on the capacity dashboard.
+
+const machineMemoryBytes = new client.Gauge({
+  name: "aai_machine_memory_bytes",
+  help: "Total physical memory of the host machine. Set once at boot.",
+  registers: [registry],
+});
+
+const machineCpuCores = new client.Gauge({
+  name: "aai_machine_cpu_cores",
+  help: "Number of CPU cores available to the host process. Set once at boot.",
+  registers: [registry],
+});
+
 // ── Upstream ──
 
 const UPSTREAM_BUCKETS = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5];
@@ -180,6 +199,8 @@ export const metrics = {
   warmPoolSpawnFailed,
   upstreamCall,
   upstreamCallSeconds,
+  machineMemoryBytes,
+  machineCpuCores,
 };
 
 // ── Typed label-value unions ────────────────────────────────────────────
@@ -199,6 +220,15 @@ export type Upstream = "tigris";
 export type UpstreamStatus = "ok" | "error";
 
 // ── Timing helpers ───────────────────────────────────────────────────────
+
+/**
+ * Populate the static host-capacity gauges from `node:os`. Call once
+ * during server startup. Idempotent — safe to call from tests.
+ */
+export function initHostCapacityGauges(): void {
+  metrics.machineMemoryBytes.set(os.totalmem());
+  metrics.machineCpuCores.set(os.cpus().length);
+}
 
 /**
  * Observe `fn`'s execution time on a labeled histogram, AND increment a

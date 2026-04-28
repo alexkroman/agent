@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, it } from "vitest";
-import { metrics, registry, serialize } from "./metrics.ts";
+import { initHostCapacityGauges, metrics, registry, serialize } from "./metrics.ts";
 
 describe("metrics registry", () => {
   it("exposes default Node.js process metrics", async () => {
@@ -122,5 +122,20 @@ describe("upstream metrics", () => {
     metrics.upstreamCallSeconds.observe({ upstream: "tigris", op: "getBundle" }, 0.05);
     const text = await serialize();
     expect(text).toContain("aai_upstream_call_seconds_bucket");
+  });
+});
+
+describe("host capacity metrics", () => {
+  it("registers machine memory and CPU gauges", async () => {
+    const text = await serialize();
+    expect(text).toContain("aai_machine_memory_bytes");
+    expect(text).toContain("aai_machine_cpu_cores");
+  });
+
+  it("initHostCapacityGauges populates both gauges with positive values", async () => {
+    initHostCapacityGauges();
+    const text = await serialize();
+    expect(text).toMatch(/aai_machine_memory_bytes \d+/);
+    expect(text).toMatch(/aai_machine_cpu_cores [1-9]\d*/);
   });
 });
