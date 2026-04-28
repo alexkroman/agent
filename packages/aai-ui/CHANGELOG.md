@@ -1,5 +1,12 @@
 # @alexkroman1/aai-ui
 
+## 1.7.1
+
+### Patch Changes
+
+- Updated dependencies [3c711da]
+  - @alexkroman1/aai@1.7.1
+
 ## 1.7.0
 
 ### Patch Changes
