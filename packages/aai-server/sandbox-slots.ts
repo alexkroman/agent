@@ -9,7 +9,7 @@
 import { getLock } from "p-lock";
 import { debug } from "./_debug-log.ts";
 import { IDLE_SANDBOX_MS } from "./constants.ts";
-import { metrics } from "./metrics.ts";
+import { metrics, type SandboxEvictReason } from "./metrics.ts";
 
 /**
  * Agent slot — used by deploy/delete handlers and the orchestrator.
@@ -89,7 +89,7 @@ export async function terminateSlot(slot: AgentSlot): Promise<void> {
   if (slot.sandbox) {
     const sb = slot.sandbox;
     delete slot.sandbox;
-    metrics.sandboxEvicted.inc({ reason: "terminate" });
+    metrics.sandboxEvicted.inc({ reason: "terminate" satisfies SandboxEvictReason });
     await sb.shutdown().catch((err: unknown) => {
       console.warn("Failed to shut down sandbox", { slug, error: String(err) });
     });
@@ -162,7 +162,7 @@ async function evictIdleSandbox(slots: SlotCache, slug: string): Promise<void> {
   const sb = slot.sandbox;
   if (!sb) return;
   delete slot.sandbox;
-  metrics.sandboxEvicted.inc({ reason: "idle" });
+  metrics.sandboxEvicted.inc({ reason: "idle" satisfies SandboxEvictReason });
   debug("Evicting idle sandbox", { slug });
   try {
     await sb.shutdown();

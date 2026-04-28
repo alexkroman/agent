@@ -168,6 +168,20 @@ export const metrics = {
   upstreamCallSeconds,
 };
 
+// ── Typed label-value unions ────────────────────────────────────────────
+//
+// Centralizing these makes typos surface at compile time instead of as
+// silent new time series.
+
+export type SessionMode = "s2s" | "pipeline";
+export type SessionEndReason = "client_close" | "server_close" | "error" | "timeout";
+export type SessionErrorKind = "upgrade" | "sandbox_resolve" | "provider" | "internal";
+export type SandboxInitFailReason = "bundle_missing" | "worker_spawn" | "host_init";
+export type SandboxEvictReason = "idle" | "terminate";
+export type WarmPoolAcquireResult = "hit" | "miss";
+export type Upstream = "tigris";
+export type UpstreamStatus = "ok" | "error";
+
 // ── Timing helpers ───────────────────────────────────────────────────────
 
 /**

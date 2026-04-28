@@ -14,7 +14,7 @@ import type { Storage, StorageValue } from "unstorage";
 import { z } from "zod";
 import { debug } from "./_debug-log.ts";
 import { createGvisorSandbox, isGvisorAvailable } from "./gvisor.ts";
-import { metrics, observeDuration } from "./metrics.ts";
+import { metrics, observeDuration, type SandboxInitFailReason } from "./metrics.ts";
 import { createNdjsonConnection, type NdjsonConnection } from "./ndjson-transport.ts";
 import type { SandboxResourceLimits } from "./oci-spec.ts";
 import { createFetchHandler, type FetchRequest } from "./sandbox-fetch.ts";
@@ -386,7 +386,7 @@ export async function createSandboxVm(
 }
 
 /** Classify a sandbox-init error into one of three coarse buckets. */
-function classifyInitFailure(err: unknown): "bundle_missing" | "worker_spawn" | "host_init" {
+function classifyInitFailure(err: unknown): SandboxInitFailReason {
   const msg = errorMessage(err);
   if (msg.includes("bundle") || msg.includes("Worker code not found")) return "bundle_missing";
   if (msg.includes("spawn") || msg.includes("ENOENT")) return "worker_spawn";

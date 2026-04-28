@@ -35,7 +35,7 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
-import { metrics } from "./metrics.ts";
+import { metrics, type WarmPoolAcquireResult } from "./metrics.ts";
 import type { WarmHarness } from "./sandbox-vm.ts";
 
 // ── Types ────────────────────────────────────────────────────────────────
@@ -158,7 +158,8 @@ export function createSandboxPool(opts: SandboxPoolOptions): SandboxPool {
   return {
     async acquire(): Promise<WarmHarness | null> {
       if (shutdown) {
-        metrics.warmPoolAcquire.inc({ result: "miss" });
+        const result: WarmPoolAcquireResult = "miss";
+        metrics.warmPoolAcquire.inc({ result });
         return null;
       }
       // Pop until we find a live one; replenish covers losses.
@@ -173,7 +174,8 @@ export function createSandboxPool(opts: SandboxPoolOptions): SandboxPool {
         // Dead — discard and continue
         void next.cleanup().catch(() => undefined);
       }
-      metrics.warmPoolAcquire.inc({ result: warm ? "hit" : "miss" });
+      const result: WarmPoolAcquireResult = warm ? "hit" : "miss";
+      metrics.warmPoolAcquire.inc({ result });
       // Replenish in the background regardless of hit/miss
       replenish();
       return warm ?? null;

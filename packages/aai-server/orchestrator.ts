@@ -36,7 +36,14 @@ import { handleDelete } from "./delete.ts";
 import { handleDeploy, handleDeployNew } from "./deploy.ts";
 import { createErrorHandler } from "./error-handler.ts";
 import { handleKv } from "./kv-handler.ts";
-import { metrics, registry, serialize } from "./metrics.ts";
+import {
+  metrics,
+  registry,
+  type SessionEndReason,
+  type SessionErrorKind,
+  type SessionMode,
+  serialize,
+} from "./metrics.ts";
 import { authMw, ownerMw, slugMw, validateSlug } from "./middleware.ts";
 import { resolveSandbox } from "./sandbox.ts";
 import type { SandboxPool } from "./sandbox-pool.ts";
@@ -193,7 +200,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
       opts.store.getAgentConfig(slug),
     ]);
     if (!sandbox) return null;
-    const mode: "s2s" | "pipeline" = agentConfig?.mode === "pipeline" ? "pipeline" : "s2s";
+    const mode: SessionMode = agentConfig?.mode === "pipeline" ? "pipeline" : "s2s";
     return { sandbox, url, slug, mode };
   }
 
@@ -227,12 +234,13 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
             const elapsedSec = Number(process.hrtime.bigint() - startedAt) / 1e9;
             metrics.sessionDuration.observe(elapsedSec);
             metrics.sessionsActive.dec({ slug });
-            const reason: "client_close" | "server_close" =
+            const reason: SessionEndReason =
               code === 1000 || code === 1001 ? "client_close" : "server_close";
             metrics.sessionsEnded.inc({ slug, reason });
           });
           ws.on("error", () => {
-            metrics.sessionErrors.inc({ kind: "internal" });
+            const kind: SessionErrorKind = "internal";
+            metrics.sessionErrors.inc({ kind });
           });
           sandbox.startSession(
             ws as unknown as SessionWebSocket,
