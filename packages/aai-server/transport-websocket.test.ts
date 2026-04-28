@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 import http from "node:http";
 import type { AddressInfo } from "node:net";
-import type { SessionWebSocket } from "@alexkroman1/aai/runtime";
+import { createMemoryVector, type SessionWebSocket } from "@alexkroman1/aai/runtime";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { registry } from "./metrics.ts";
 import { createOrchestrator } from "./orchestrator.ts";
@@ -129,7 +129,12 @@ async function startServerWithOrchestrator(): Promise<{
     agentConfig: TEST_AGENT_CONFIG,
   });
 
-  const { injectWebSocket } = createOrchestrator({ slots, store, storage });
+  const { injectWebSocket } = createOrchestrator({
+    slots,
+    store,
+    storage,
+    defaultVector: (slug) => createMemoryVector({ namespace: slug }),
+  });
   const server = http.createServer((_req, res) => {
     res.writeHead(404);
     res.end();

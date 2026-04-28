@@ -7,6 +7,7 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
+import { agentKvPrefix } from "./constants.ts";
 import type { HonoEnv } from "./context.ts";
 import { handleKv } from "./kv-handler.ts";
 import { createTestStorage } from "./test-utils.ts";
@@ -15,6 +16,7 @@ const SLUG = "test-agent";
 
 function createTestApp() {
   const storage = createTestStorage();
+  const kv = createUnstorageKv({ storage, prefix: agentKvPrefix(SLUG) });
   const app = new Hono<HonoEnv>();
   app.use("*", async (c, next) => {
     c.set("slug", SLUG);
@@ -26,8 +28,8 @@ function createTestApp() {
     if (err instanceof z.ZodError) return c.json({ error: err.message }, 400);
     return c.json({ error: "unexpected" }, 500);
   });
-  app.post("/kv", zValidator("json", KvRequestSchema), handleKv);
-  return { app, storage };
+  app.post("/kv", zValidator("json", KvRequestSchema), (c) => handleKv(c, kv));
+  return { app, storage, kv };
 }
 
 async function postKv(

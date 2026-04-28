@@ -9,6 +9,7 @@
  * Not to be confused with OS environment variables or agent env/secrets.
  */
 
+import type { Vector } from "@alexkroman1/aai/runtime";
 import type { Context } from "hono";
 import type { Storage } from "unstorage";
 import type { BundleStore } from "./store-types.ts";
@@ -18,6 +19,7 @@ export type HonoEnv = {
     slots: import("./sandbox-slots.ts").SlotCache;
     store: BundleStore;
     storage: Storage;
+    defaultVector: (slug: string) => Vector;
   };
   Variables: {
     slug: string;

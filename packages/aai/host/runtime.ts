@@ -28,8 +28,12 @@ import {
 import { buildSystemPrompt } from "../sdk/system-prompt.ts";
 import type { AgentDef } from "../sdk/types.ts";
 import { toolError } from "../sdk/utils.ts";
+import type { Vector } from "../sdk/vector.ts";
 import { resolveAllBuiltins } from "./builtin-tools.ts";
+import { createMemoryVector } from "./memory-vector.ts";
 import { resolveApiKey, resolveLlm, resolveStt, resolveTts } from "./providers/resolve.ts";
+import { resolveKv } from "./providers/resolve-kv.ts";
+import { resolveVector } from "./providers/resolve-vector.ts";
 import type { Logger, S2SConfig } from "./runtime-config.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime-config.ts";
 import type { CreateS2sWebSocket } from "./s2s.ts";
@@ -145,6 +149,11 @@ function createLocalKv(): Kv {
   return createUnstorageKv({ storage: createStorage() });
 }
 
+/** Create an in-memory Vector store (default for self-hosted). */
+function createLocalVector(slug: string): Vector {
+  return createMemoryVector({ namespace: slug });
+}
+
 /**
  * Configuration for {@link createRuntime}.
  *
@@ -157,6 +166,11 @@ export type RuntimeOptions = {
   agent: AgentDef<any>;
   env: Record<string, string>;
   kv?: Kv | undefined;
+  /**
+   * Vector store. If omitted, an in-memory store is created. The
+   * runtime overrides this with `agent.vector` if set.
+   */
+  vector?: Vector | undefined;
   /** Custom WebSocket factory for the S2S connection (useful for testing). */
   createWebSocket?: CreateS2sWebSocket | undefined;
   logger?: Logger | undefined;
@@ -260,6 +274,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     agent,
     env,
     kv = createLocalKv(),
+    vector,
     createWebSocket,
     logger = consoleLogger,
     s2sConfig = DEFAULT_S2S_CONFIG,
@@ -267,6 +282,15 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     shutdownTimeoutMs = DEFAULT_SHUTDOWN_TIMEOUT_MS,
   } = opts;
   const mode = assertProviderTriple(opts.stt, opts.llm, opts.tts);
+
+  // Resolve descriptors from manifest if present; otherwise use the
+  // supplied (or default) instances.
+  const slug = agent.name ?? "local";
+  const resolvedKv = agent.kv ? resolveKv(agent.kv, env, "") : kv;
+  const resolvedVector = agent.vector
+    ? resolveVector(agent.vector, env, slug)
+    : (vector ?? createLocalVector(slug));
+
   const agentConfig = toAgentConfig(agent);
   const sessions = new Map<string, SessionCore>();
   const sinkMap = new Map<string, ClientSink>();
@@ -294,7 +318,8 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
           tool,
           env: frozenEnv,
           sessionId: sessionId ?? "",
-          kv,
+          kv: resolvedKv,
+          vector: resolvedVector,
           messages,
           logger,
         });
@@ -332,7 +357,8 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
         env: frozenEnv,
         state: getState(sessionId ?? ""),
         sessionId: sessionId ?? "",
-        kv,
+        kv: resolvedKv,
+        vector: resolvedVector,
         messages,
         logger,
         send: sink ? (event, data) => sink.event({ type: "custom_event", event, data }) : undefined,

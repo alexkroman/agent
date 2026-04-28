@@ -1,4 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
+import { createMemoryVector } from "@alexkroman1/aai/runtime";
 import { describe, expect, test } from "vitest";
 import { createOrchestrator } from "./orchestrator.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
@@ -305,7 +306,12 @@ describe("security headers on all response types", () => {
   test("health endpoint includes security headers", async () => {
     const store = createTestStore();
     const storage = createTestStorage();
-    const { app } = createOrchestrator({ slots: createSlotCache(), store, storage });
+    const { app } = createOrchestrator({
+      slots: createSlotCache(),
+      store,
+      storage,
+      defaultVector: (slug) => createMemoryVector({ namespace: slug }),
+    });
     const res = await app.fetch(new Request("http://localhost/health"));
 
     expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
@@ -316,7 +322,12 @@ describe("security headers on all response types", () => {
   test("404 responses include security headers", async () => {
     const store = createTestStore();
     const storage = createTestStorage();
-    const { app } = createOrchestrator({ slots: createSlotCache(), store, storage });
+    const { app } = createOrchestrator({
+      slots: createSlotCache(),
+      store,
+      storage,
+      defaultVector: (slug) => createMemoryVector({ namespace: slug }),
+    });
     const res = await app.fetch(new Request("http://localhost/nonexistent"));
 
     expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
@@ -348,6 +359,7 @@ describe("security headers on all response types", () => {
       slots: createSlotCache(),
       store,
       storage,
+      defaultVector: (slug) => createMemoryVector({ namespace: slug }),
       allowedOrigins: ["https://trusted.example.com"],
     });
 
@@ -373,7 +385,12 @@ describe("security headers on all response types", () => {
   test("CORS rejects cross-origin when no origins configured", async () => {
     const store = createTestStore();
     const storage = createTestStorage();
-    const { app } = createOrchestrator({ slots: createSlotCache(), store, storage });
+    const { app } = createOrchestrator({
+      slots: createSlotCache(),
+      store,
+      storage,
+      defaultVector: (slug) => createMemoryVector({ namespace: slug }),
+    });
 
     const res = await app.fetch(
       new Request("http://localhost/health", {

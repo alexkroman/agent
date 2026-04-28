@@ -13,7 +13,12 @@
 // imports in environments without dev deps installed (e.g. the deployed
 // platform server). It is consumed directly by sibling test files.
 
+export type { Vector, VectorMatch, VectorQueryOptions } from "../sdk/vector.ts";
 export * from "./builtin-tools.ts";
+export { createMemoryVector, type MemoryVectorOptions } from "./memory-vector.ts";
+export * from "./pinecone-vector.ts";
+export * from "./providers/resolve-kv.ts";
+export * from "./providers/resolve-vector.ts";
 export * from "./runtime.ts";
 export * from "./runtime-config.ts";
 export * from "./server.ts";

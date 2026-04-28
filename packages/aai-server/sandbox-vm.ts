@@ -9,8 +9,9 @@
 
 import { type ChildProcess, spawn } from "node:child_process";
 import { performance } from "node:perf_hooks";
+import type { Kv } from "@alexkroman1/aai";
 import { errorMessage } from "@alexkroman1/aai";
-import type { Storage, StorageValue } from "unstorage";
+import type { Vector } from "@alexkroman1/aai/runtime";
 import { z } from "zod";
 import { debug } from "./_debug-log.ts";
 import { createGvisorSandbox, isGvisorAvailable } from "./gvisor.ts";
@@ -49,6 +50,22 @@ const KvSetParamsSchema = z.object({
 });
 const KvDelParamsSchema = z.object({ key: SafeKvKeySchema });
 
+// ── Vector param schemas for guest → host validation ────────────────────────
+
+const VectorUpsertParamsSchema = z.object({
+  id: z.string().min(1),
+  text: z.string().min(1),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+});
+const VectorQueryParamsSchema = z.object({
+  text: z.string().min(1),
+  topK: z.number().int().positive().max(100).optional(),
+  filter: z.record(z.string(), z.unknown()).optional(),
+});
+const VectorDeleteParamsSchema = z.object({
+  ids: z.union([z.string().min(1), z.array(z.string().min(1)).max(1000)]),
+});
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export type SandboxHandle = {
@@ -79,8 +96,10 @@ export type SandboxVmOptions = {
   workerCode: string;
   env: Record<string, string>;
   harnessPath: string;
-  kvStorage?: Storage;
-  kvPrefix?: string;
+  /** Resolved Kv instance (enables kv/* RPC handlers when set). */
+  kv?: Kv;
+  /** Resolved Vector instance (enables vector/* RPC handlers when set). */
+  vector?: Vector;
   limits?: SandboxResourceLimits;
   allowedHosts?: string[];
 };
@@ -105,21 +124,40 @@ export type WarmHarnessSource = {
 async function configureSandbox(warm: WarmHarness, opts: SandboxVmOptions): Promise<SandboxHandle> {
   const { conn } = warm;
 
-  // Host serves guest KV requests (params validated with Zod)
-  if (opts.kvStorage && opts.kvPrefix) {
-    const storage = opts.kvStorage;
-    const prefix = opts.kvPrefix;
+  // Host serves guest KV requests (params validated with Zod).
+  if (opts.kv) {
+    const kv = opts.kv;
     conn.onRequest("kv/get", async (raw: unknown) => {
       const p = KvGetParamsSchema.parse(raw);
-      return await storage.getItem(`${prefix}:${p.key}`);
+      return await kv.get(p.key);
     });
     conn.onRequest("kv/set", async (raw: unknown) => {
       const p = KvSetParamsSchema.parse(raw);
-      await storage.setItem(`${prefix}:${p.key}`, p.value as StorageValue);
+      await kv.set(p.key, p.value);
     });
     conn.onRequest("kv/del", async (raw: unknown) => {
       const p = KvDelParamsSchema.parse(raw);
-      await storage.removeItem(`${prefix}:${p.key}`);
+      await kv.delete(p.key);
+    });
+  }
+
+  // Host serves guest Vector requests (params validated with Zod)
+  if (opts.vector) {
+    const vector = opts.vector;
+    conn.onRequest("vector/upsert", async (raw: unknown) => {
+      const p = VectorUpsertParamsSchema.parse(raw);
+      await vector.upsert(p.id, p.text, p.metadata);
+    });
+    conn.onRequest("vector/query", async (raw: unknown) => {
+      const p = VectorQueryParamsSchema.parse(raw);
+      return await vector.query(p.text, {
+        ...(p.topK !== undefined ? { topK: p.topK } : {}),
+        ...(p.filter !== undefined ? { filter: p.filter } : {}),
+      });
+    });
+    conn.onRequest("vector/delete", async (raw: unknown) => {
+      const p = VectorDeleteParamsSchema.parse(raw);
+      await vector.delete(p.ids);
     });
   }
 

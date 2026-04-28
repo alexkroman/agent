@@ -14,6 +14,7 @@ import {
   KvRequestSchema,
   lenientParse,
   SessionErrorCodeSchema,
+  VectorRequestSchema,
 } from "./protocol.ts";
 
 describe("protocol constants", () => {
@@ -252,5 +253,58 @@ describe("protocol type contracts", () => {
     expectTypeOf(result).toEqualTypeOf<
       { ok: true; data: Parsed } | { ok: false; malformed: boolean; error: string }
     >();
+  });
+});
+
+describe("VectorRequestSchema", () => {
+  test("accepts upsert", () => {
+    const r = VectorRequestSchema.parse({
+      op: "upsert",
+      id: "doc-1",
+      text: "hello",
+      metadata: { tag: "x" },
+    });
+    expect(r.op).toBe("upsert");
+  });
+
+  test("accepts query with topK", () => {
+    expect(() => VectorRequestSchema.parse({ op: "query", text: "hello", topK: 10 })).not.toThrow();
+  });
+
+  test("rejects topK over 100", () => {
+    expect(() => VectorRequestSchema.parse({ op: "query", text: "hello", topK: 101 })).toThrow();
+  });
+
+  test("accepts delete with single id", () => {
+    expect(() => VectorRequestSchema.parse({ op: "delete", ids: "doc-1" })).not.toThrow();
+  });
+
+  test("accepts delete with array of ids", () => {
+    expect(() => VectorRequestSchema.parse({ op: "delete", ids: ["a", "b", "c"] })).not.toThrow();
+  });
+
+  test("rejects delete with empty id string", () => {
+    expect(() => VectorRequestSchema.parse({ op: "delete", ids: "" })).toThrow();
+  });
+
+  test("rejects delete with > 1000 ids", () => {
+    const ids = Array.from({ length: 1001 }, (_, i) => `id-${i}`);
+    expect(() => VectorRequestSchema.parse({ op: "delete", ids })).toThrow();
+  });
+
+  test("rejects unknown op", () => {
+    expect(() => VectorRequestSchema.parse({ op: "scan", text: "x" })).toThrow();
+  });
+
+  test("rejects upsert with empty id", () => {
+    expect(() => VectorRequestSchema.parse({ op: "upsert", id: "", text: "hello" })).toThrow();
+  });
+
+  test("rejects upsert with empty text", () => {
+    expect(() => VectorRequestSchema.parse({ op: "upsert", id: "doc-1", text: "" })).toThrow();
+  });
+
+  test("rejects query with empty text", () => {
+    expect(() => VectorRequestSchema.parse({ op: "query", text: "" })).toThrow();
   });
 });

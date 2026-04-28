@@ -19,6 +19,7 @@
     "packageJson": {
       "dependencies": [
         "npm:@hono/node-server@^1.19.14",
+        "npm:@hono/prometheus@^1.0.3",
         "npm:@hono/zod-validator@~0.7.6",
         "npm:@types/json-schema@^7.0.15",
         "npm:@types/mime-types@^3.0.1",

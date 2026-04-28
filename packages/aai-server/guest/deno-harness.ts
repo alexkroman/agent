@@ -59,10 +59,29 @@ type KvAdapter = {
   delete(key: string | string[]): Promise<void>;
 };
 
+type VectorMatch = {
+  id: string;
+  score: number;
+  text: string;
+  metadata?: Record<string, unknown>;
+};
+
+type VectorQueryOptions = {
+  topK?: number;
+  filter?: Record<string, unknown>;
+};
+
+type VectorAdapter = {
+  upsert(id: string, text: string, metadata?: Record<string, unknown>): Promise<void>;
+  query(text: string, opts?: VectorQueryOptions): Promise<VectorMatch[]>;
+  delete(ids: string | string[]): Promise<void>;
+};
+
 type ToolContext = {
   env: Readonly<Record<string, string>>;
   state: Record<string, unknown>;
   kv: KvAdapter;
+  vector: VectorAdapter;
   sessionId: string;
   messages: readonly Message[];
   send(event: string, data: unknown): void;
@@ -124,44 +143,45 @@ export function sendError(id: number | string, code: number, message: string): v
   writeMessage({ jsonrpc: "2.0", id, error: { code, message } });
 }
 
-// ---- KV proxy ---------------------------------------------------------------
+// ---- Host RPC proxy ---------------------------------------------------------
 
-let kvRequestId = 1;
+let hostRequestId = 1;
 
 /**
- * Pending KV responses, keyed by request id.
+ * Pending host responses, keyed by request id.
  * The main NDJSON loop resolves these when the host replies.
  */
-export const pendingKvRequests = new Map<
+export const pendingHostRequests = new Map<
   number | string,
   { resolve: (value: unknown) => void; reject: (err: unknown) => void }
 >();
 
-/**
- * Send a KV RPC request to the host and wait for its response.
- */
-function kvRequest(method: string, params: Record<string, unknown>): Promise<unknown> {
-  const id = kvRequestId++;
+/** Send an RPC request to the host and wait for its response. */
+function hostRequest(method: string, params: Record<string, unknown>): Promise<unknown> {
+  const id = hostRequestId++;
   return new Promise((resolve, reject) => {
-    pendingKvRequests.set(id, { resolve, reject });
+    pendingHostRequests.set(id, { resolve, reject });
     writeMessage({ jsonrpc: "2.0", id, method, params });
   });
 }
 
+// Old name kept for backward-compat with existing tests
+export const pendingKvRequests = pendingHostRequests;
+
 const kv: KvInterface = {
   async get(key: string): Promise<unknown> {
-    const resp = (await kvRequest("kv/get", { key })) as { value?: unknown };
+    const resp = (await hostRequest("kv/get", { key })) as { value?: unknown };
     return resp?.value ?? null;
   },
   async set(key: string, value: unknown, opts?: { expireIn?: number }): Promise<void> {
-    await kvRequest("kv/set", {
+    await hostRequest("kv/set", {
       key,
       value,
       ...(opts?.expireIn !== undefined ? { expireIn: opts.expireIn } : {}),
     });
   },
   async del(key: string): Promise<void> {
-    await kvRequest("kv/del", { key });
+    await hostRequest("kv/del", { key });
   },
 };
 
@@ -255,7 +275,7 @@ globalThis.fetch = async (input: string | URL | Request, init?: RequestInit): Pr
   }
 
   // Send fetch/request RPC — host returns { id }
-  const rpcResponse = (await kvRequest("fetch/request", {
+  const rpcResponse = (await hostRequest("fetch/request", {
     url: req.url,
     method: req.method,
     headers: Object.fromEntries(req.headers),
@@ -290,6 +310,26 @@ export function makeKvAdapter(): KvAdapter {
       }
       return kv.del(key);
     },
+  };
+}
+
+export function makeVectorAdapter(): VectorAdapter {
+  return {
+    upsert: (id, text, metadata) =>
+      hostRequest("vector/upsert", {
+        id,
+        text,
+        ...(metadata !== undefined ? { metadata } : {}),
+      }) as Promise<void>,
+    query: async (text, opts) => {
+      const result = (await hostRequest("vector/query", {
+        text,
+        ...(opts?.topK !== undefined ? { topK: opts.topK } : {}),
+        ...(opts?.filter !== undefined ? { filter: opts.filter } : {}),
+      })) as VectorMatch[];
+      return result;
+    },
+    delete: (ids) => hostRequest("vector/delete", { ids }) as Promise<void>,
   };
 }
 
@@ -360,10 +400,12 @@ export async function executeTool(
   }
 
   const kvAdapter = makeKvAdapter();
+  const vectorAdapter = makeVectorAdapter();
   const ctx: ToolContext = {
     env: getAgentEnv(),
     state: sessionState.get(req.sessionId),
     kv: kvAdapter,
+    vector: vectorAdapter,
     messages: req.messages,
     sessionId: req.sessionId,
     send: (event, data) => sendToClient(req.sessionId, event, data),
@@ -462,17 +504,20 @@ export async function handleRequest(req: JsonRpcRequest, state: HarnessState): P
   }
 }
 
-/** Dispatch an incoming response to a pending KV request. */
-export function handleKvResponse(resp: JsonRpcResponse): void {
-  const pending = pendingKvRequests.get(resp.id);
+/** Dispatch an incoming response to a pending host request. */
+export function handleHostResponse(resp: JsonRpcResponse): void {
+  const pending = pendingHostRequests.get(resp.id);
   if (!pending) return;
-  pendingKvRequests.delete(resp.id);
+  pendingHostRequests.delete(resp.id);
   if (resp.error) {
     pending.reject(new Error(resp.error.message));
   } else {
     pending.resolve(resp.result);
   }
 }
+
+// Old name kept for backward-compat with existing tests
+export const handleKvResponse = handleHostResponse;
 
 export function handleNotification(notif: JsonRpcNotification, state: HarnessState): void {
   if (notif.method === "shutdown") Deno.exit(0);
@@ -486,9 +531,9 @@ export function handleNotification(notif: JsonRpcNotification, state: HarnessSta
 }
 
 export function dispatchMessage(msg: JsonRpcMessage, state: HarnessState): void {
-  // Incoming response to a kv/* request we sent
+  // Incoming response to a host RPC request we sent (kv/*, vector/*, etc.)
   if ("id" in msg && !("method" in msg)) {
-    handleKvResponse(msg as JsonRpcResponse);
+    handleHostResponse(msg as JsonRpcResponse);
     return;
   }
   // Notification (no id)

@@ -45,6 +45,8 @@ export const IsolateConfigSchema = z
     llm: ProviderDescriptorSchema.optional(),
     tts: ProviderDescriptorSchema.optional(),
     mode: z.enum(["s2s", "pipeline"]).optional(),
+    kv: ProviderDescriptorSchema.optional(),
+    vector: ProviderDescriptorSchema.optional(),
   })
   .superRefine((cfg, ctx) => {
     try {

@@ -94,6 +94,8 @@ Subpath exports consumed by sibling packages and user agents:
 - `./manifest` — `parseManifest()`, `toAgentConfig()`, `agentToolsToSchemas()`
 - `./stt` — pipeline-mode STT provider factories (e.g. `assemblyAI`)
 - `./tts` — pipeline-mode TTS provider factories (e.g. `cartesia`)
+- `./kv` — KV provider factories (`memoryKv`, `fsKv`, `s3Kv`, `redisKv`)
+- `./vector` — Vector provider factories (`pinecone`, `inMemoryVector`)
 
 #### `aai-ui` (UI)
 
@@ -233,6 +235,20 @@ declared as **optional peer dependencies** of `@alexkroman1/aai`, so
 users only install the SDKs for the providers they actually use. S2S-mode
 agents need none of them.
 
+### Pluggable storage (KV + Vector)
+
+Each session resolves its `Kv` and `Vector` instances at start. If `agent.ts`
+declares `kv:` / `vector:`, the descriptor resolves with the agent's env (BYO
+Redis, BYO Pinecone, etc.). If omitted, the platform default is used: Tigris S3
+for KV, Pinecone (or in-memory) for Vector.
+
+Both are available to tool `execute` functions via `ctx.kv` and `ctx.vector`
+(see `ToolContext` in `packages/aai/sdk/types.ts`).
+
+Provider factories are imported from the `@alexkroman1/aai/kv` and
+`@alexkroman1/aai/vector` subpath exports (both resolve to `sdk/providers/`
+so they carry no Node.js dependencies and are safe in sandboxed environments).
+
 ### Data flow
 
 Audio path depends on the session mode (see above):
@@ -346,6 +362,8 @@ of subpath exports in `aai/package.json`:
 | `@alexkroman1/aai/stt` | `host/providers/stt-barrel.ts` | STT provider factories + types (`assemblyAI`, `deepgram`, `elevenlabs`, `soniox`) |
 | `@alexkroman1/aai/llm` | `host/providers/llm-barrel.ts` | LLM provider factories + types (`anthropic`, `openai`, `google`, `mistral`, `xai`, `groq`) |
 | `@alexkroman1/aai/tts` | `host/providers/tts-barrel.ts` | TTS provider factories + types (`cartesia`, `rime`) |
+| `@alexkroman1/aai/kv` | `sdk/providers/kv-barrel.ts` | KV provider factories + types (`memoryKv`, `fsKv`, `s3Kv`, `redisKv`) |
+| `@alexkroman1/aai/vector` | `sdk/providers/vector-barrel.ts` | Vector provider factories + types (`pinecone`, `inMemoryVector`) |
 
 ### Default values and magic numbers
 
@@ -602,6 +620,13 @@ Each agent provides its own `ASSEMBLYAI_API_KEY` via `.env` (local dev) or
 `SandboxOptions` has separate `apiKey` (host-only, for S2S connections) and
 `agentEnv` (forwarded to guest) fields. The key is extracted from the agent's
 stored env at sandbox creation time and kept host-side only.
+
+- **Vector store**: `PINECONE_API_KEY` is platform-owned by default. Agents
+  that declare `vector: pinecone(...)` use their own key via
+  `aai secret put PINECONE_API_KEY=...`.
+- **KV store**: same model — platform default uses platform creds; agent
+  descriptors (`redisKv`, `s3Kv`) read from agent env (`REDIS_URL`,
+  `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`).
 
 **Cross-agent isolation:**
 

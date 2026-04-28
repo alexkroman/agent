@@ -4,9 +4,11 @@ import { describe, expect, expectTypeOf, test } from "vitest";
 import { type Manifest, parseManifest } from "./manifest.ts";
 import type { AgentConfig, ToolSchema } from "./manifest-barrel.ts";
 import { agentToolsToSchemas, toAgentConfig } from "./manifest-barrel.ts";
+import { redisKv } from "./providers/kv/redis.ts";
 import { anthropic } from "./providers/llm/anthropic.ts";
 import { assemblyAI } from "./providers/stt/assemblyai.ts";
 import { cartesia } from "./providers/tts/cartesia.ts";
+import { pinecone } from "./providers/vector/pinecone.ts";
 
 describe("parseManifest", () => {
   test("minimal manifest requires only name", () => {
@@ -163,6 +165,24 @@ describe("manifest type contracts", () => {
   test("Manifest has allowedHosts as string[]", () => {
     const result = parseManifest({ name: "test" });
     expectTypeOf(result.allowedHosts).toEqualTypeOf<string[]>();
+  });
+});
+
+describe("parseManifest kv/vector", () => {
+  test("propagates kv descriptor", () => {
+    const m = parseManifest({ name: "x", kv: redisKv() });
+    expect(m.kv).toEqual({ kind: "redis", options: {} });
+  });
+
+  test("propagates vector descriptor", () => {
+    const m = parseManifest({ name: "x", vector: pinecone({ index: "ix" }) });
+    expect(m.vector).toEqual({ kind: "pinecone", options: { index: "ix" } });
+  });
+
+  test("leaves both undefined when omitted", () => {
+    const m = parseManifest({ name: "x" });
+    expect(m.kv).toBeUndefined();
+    expect(m.vector).toBeUndefined();
   });
 });
 

@@ -8,6 +8,7 @@
 
 import path from "node:path";
 import { errorMessage } from "@alexkroman1/aai";
+import { createMemoryVector, createPineconeVector, type Vector } from "@alexkroman1/aai/runtime";
 import { serve } from "@hono/node-server";
 import { createStorage } from "unstorage";
 import s3Driver from "unstorage/drivers/s3";
@@ -69,6 +70,7 @@ async function buildLocalOpts(env: NodeJS.ProcessEnv): Promise<OrchestratorOpts>
     slots,
     store: createBundleStore(storage, { masterKey }),
     storage,
+    defaultVector: (slug: string): Vector => createMemoryVector({ namespace: slug }),
     ...(pool && { pool }),
   };
 }
@@ -100,10 +102,20 @@ async function buildOpts(env: NodeJS.ProcessEnv): Promise<OrchestratorOpts> {
   const slots = createSlotCache();
   registerSlotsForGauges(slots);
 
+  const defaultVector = (slug: string): Vector =>
+    env.PINECONE_API_KEY && env.PINECONE_INDEX
+      ? createPineconeVector({
+          apiKey: env.PINECONE_API_KEY,
+          index: env.PINECONE_INDEX,
+          namespace: slug,
+        })
+      : createMemoryVector({ namespace: slug });
+
   return {
     slots,
     store,
     storage,
+    defaultVector,
     ...(pool && { pool }),
   };
 }

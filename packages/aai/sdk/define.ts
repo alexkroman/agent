@@ -4,7 +4,13 @@
  */
 
 import type { z } from "zod";
-import type { LlmProvider, SttProvider, TtsProvider } from "./providers.ts";
+import type {
+  KvProvider,
+  LlmProvider,
+  SttProvider,
+  TtsProvider,
+  VectorProvider,
+} from "./providers.ts";
 import {
   type AgentDef,
   type BuiltinTool,
@@ -98,6 +104,10 @@ export function agent(def: {
    * enable pipeline mode.
    */
   tts?: TtsProvider;
+  /** Pluggable KV backend. Falls back to platform default when omitted. */
+  kv?: KvProvider;
+  /** Pluggable Vector backend. Falls back to platform default when omitted. */
+  vector?: VectorProvider;
 }): AgentDef {
   return {
     systemPrompt: DEFAULT_SYSTEM_PROMPT,

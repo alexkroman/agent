@@ -1,15 +1,11 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { errorMessage } from "@alexkroman1/aai";
+import { errorMessage, type Kv } from "@alexkroman1/aai";
 import type { KvRequest } from "@alexkroman1/aai/protocol";
-import { createUnstorageKv } from "@alexkroman1/aai/runtime";
-import { agentKvPrefix } from "./constants.ts";
 import type { ValidatedAppContext } from "./context.ts";
 
-export async function handleKv(c: ValidatedAppContext<KvRequest>): Promise<Response> {
+export async function handleKv(c: ValidatedAppContext<KvRequest>, kv: Kv): Promise<Response> {
   const slug = c.var.slug;
-  const kv = createUnstorageKv({ storage: c.env.storage, prefix: agentKvPrefix(slug) });
-
   const msg = c.req.valid("json");
 
   try {

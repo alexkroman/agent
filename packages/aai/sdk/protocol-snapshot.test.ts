@@ -18,6 +18,7 @@ import {
   ClientMessageSchema,
   KvRequestSchema,
   SessionErrorCodeSchema,
+  VectorRequestSchema,
 } from "./protocol.ts";
 
 // ── Constants ────────────────────────────────────────────────────────────
@@ -197,5 +198,57 @@ describe("KvRequest wire format", () => {
 
   test("rejects empty key for get", () => {
     expect(KvRequestSchema.safeParse({ op: "get", key: "" }).success).toBe(false);
+  });
+});
+
+// ── VectorRequestSchema ─────────────────────────────────────────────────
+
+describe("VectorRequest wire format", () => {
+  const valid = [
+    ["upsert", { op: "upsert", id: "doc-1", text: "hello" }],
+    ["upsert with metadata", { op: "upsert", id: "doc-2", text: "world", metadata: { tag: "x" } }],
+    ["query", { op: "query", text: "search query" }],
+    ["query with topK", { op: "query", text: "search query", topK: 10 }],
+    ["delete single id", { op: "delete", ids: "doc-1" }],
+    ["delete multiple ids", { op: "delete", ids: ["doc-1", "doc-2"] }],
+  ] as const;
+
+  test.each(valid)("%s parses successfully", (_label, req) => {
+    expect(VectorRequestSchema.safeParse(req).success).toBe(true);
+  });
+
+  test("rejects unknown op", () => {
+    expect(VectorRequestSchema.safeParse({ op: "scan", text: "x" }).success).toBe(false);
+  });
+
+  test("rejects upsert with empty id", () => {
+    expect(VectorRequestSchema.safeParse({ op: "upsert", id: "", text: "hello" }).success).toBe(
+      false,
+    );
+  });
+
+  test("rejects upsert with empty text", () => {
+    expect(VectorRequestSchema.safeParse({ op: "upsert", id: "doc-1", text: "" }).success).toBe(
+      false,
+    );
+  });
+
+  test("rejects query with empty text", () => {
+    expect(VectorRequestSchema.safeParse({ op: "query", text: "" }).success).toBe(false);
+  });
+
+  test("rejects query with topK > 100", () => {
+    expect(VectorRequestSchema.safeParse({ op: "query", text: "hello", topK: 101 }).success).toBe(
+      false,
+    );
+  });
+
+  test("rejects delete with empty id string", () => {
+    expect(VectorRequestSchema.safeParse({ op: "delete", ids: "" }).success).toBe(false);
+  });
+
+  test("rejects delete with > 1000 ids", () => {
+    const ids = Array.from({ length: 1001 }, (_, i) => `id-${i}`);
+    expect(VectorRequestSchema.safeParse({ op: "delete", ids }).success).toBe(false);
   });
 });

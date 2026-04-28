@@ -58,6 +58,10 @@ exports[`export surface stability > @alexkroman1/aai/protocol export 1`] = `
   "ReadyConfigSchema",
   "ServerMessageSchema",
   "SessionErrorCodeSchema",
+  "VectorDeleteSchema",
+  "VectorQuerySchema",
+  "VectorRequestSchema",
+  "VectorUpsertSchema",
   "buildReadyConfig",
   "lenientParse",
 ]
@@ -68,6 +72,8 @@ exports[`export surface stability > @alexkroman1/aai/runtime export 1`] = `
   "DEFAULT_S2S_CONFIG",
   "_internals",
   "consoleLogger",
+  "createMemoryVector",
+  "createPineconeVector",
   "createPipelineTransport",
   "createRuntime",
   "createS2sTransport",
@@ -78,6 +84,8 @@ exports[`export surface stability > @alexkroman1/aai/runtime export 1`] = `
   "executeToolCall",
   "jsonLogger",
   "resolveAllBuiltins",
+  "resolveKv",
+  "resolveVector",
   "wireSessionSocket",
 ]
 `;

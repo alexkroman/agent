@@ -20,7 +20,13 @@ async function createRealOrchestrator() {
   const masterKey = await importMasterKey("test-secret");
   const store = createBundleStore(storage, { masterKey });
   const { createSlotCache } = await import("./sandbox-slots.ts");
-  const { app } = createOrchestrator({ slots: createSlotCache(), store, storage });
+  const { createMemoryVector } = await import("@alexkroman1/aai/runtime");
+  const { app } = createOrchestrator({
+    slots: createSlotCache(),
+    store,
+    storage,
+    defaultVector: (slug) => createMemoryVector({ namespace: slug }),
+  });
   const fetch = async (input: string | Request, init?: RequestInit) => app.request(input, init);
   return { fetch, store };
 }
