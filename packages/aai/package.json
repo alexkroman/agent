@@ -42,6 +42,11 @@
       "@dev/source": "./sdk/providers/vector-barrel.ts",
       "types": "./dist/sdk/providers/vector-barrel.d.ts",
       "import": "./dist/sdk/providers/vector-barrel.js"
+    },
+    "./kv": {
+      "@dev/source": "./sdk/providers/kv-barrel.ts",
+      "types": "./dist/sdk/providers/kv-barrel.d.ts",
+      "import": "./dist/sdk/providers/kv-barrel.js"
     }
   },
   "scripts": {
