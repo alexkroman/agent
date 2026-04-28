@@ -246,10 +246,7 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
 
     const handle: S2sHandle = {
       sendAudio(audio: Uint8Array): void {
-        if (ws.readyState !== WS_OPEN) {
-          log.debug("S2S sendAudio dropped: socket not open");
-          return;
-        }
+        if (ws.readyState !== WS_OPEN) return;
         ws.send(`{"type":"input.audio","audio":"${uint8ToBase64(audio)}"}`);
       },
 
