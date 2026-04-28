@@ -1,5 +1,11 @@
 # @alexkroman1/aai
 
+## 1.6.1
+
+### Patch Changes
+
+- da84b47: Move @ai-sdk/_ LLM provider packages from optional peerDependencies to dependencies. Self-hosted deployments no longer need to install the @ai-sdk/_ packages separately, and prod deploys (where pnpm install --prod previously stripped optional peer deps) now resolve them reliably.
+
 ## 1.6.0
 
 ### Minor Changes
