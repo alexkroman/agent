@@ -17,7 +17,7 @@ import { isGvisorAvailable, prepareRootfs } from "./gvisor.ts";
 import { metrics } from "./metrics.ts";
 import { createOrchestrator, type OrchestratorOpts } from "./orchestrator.ts";
 import { createSandboxPool, type SandboxPool } from "./sandbox-pool.ts";
-import { createSlotCache } from "./sandbox-slots.ts";
+import { createSlotCache, registerSlotsForGauges } from "./sandbox-slots.ts";
 import { spawnWarmHarness } from "./sandbox-vm.ts";
 import { importMasterKey } from "./secrets.ts";
 
@@ -63,8 +63,10 @@ async function buildLocalOpts(env: NodeJS.ProcessEnv): Promise<OrchestratorOpts>
   const storage = createStorage();
   const masterKey = await importMasterKey("local-dev-secret");
   const pool = buildPool(env);
+  const slots = createSlotCache();
+  registerSlotsForGauges(slots);
   return {
-    slots: createSlotCache(),
+    slots,
     store: createBundleStore(storage, { masterKey }),
     storage,
     ...(pool && { pool }),
@@ -95,9 +97,11 @@ async function buildOpts(env: NodeJS.ProcessEnv): Promise<OrchestratorOpts> {
 
   const store = createBundleStore(storage, { masterKey });
   const pool = buildPool(env);
+  const slots = createSlotCache();
+  registerSlotsForGauges(slots);
 
   return {
-    slots: createSlotCache(),
+    slots,
     store,
     storage,
     ...(pool && { pool }),

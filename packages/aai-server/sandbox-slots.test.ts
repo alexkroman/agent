@@ -8,6 +8,7 @@ import {
   attachSandbox,
   createSlotCache,
   deleteSlot,
+  registerSlotsForGauges,
   setSlot,
   terminateSlot,
   touchSlot,
@@ -74,6 +75,7 @@ describe("slot-cache gauges", () => {
 
   it("publishes aai_slots_registered when a slot is added or removed", () => {
     const cache = createSlotCache();
+    registerSlotsForGauges(cache);
     setSlot(cache, makeSlot("a"));
     setSlot(cache, makeSlot("b"));
     expect(gaugeValue("aai_slots_registered")).toBe(2);
@@ -83,12 +85,13 @@ describe("slot-cache gauges", () => {
 
   it("publishes aai_slots_resident when a sandbox is attached or detached", async () => {
     const cache = createSlotCache();
+    registerSlotsForGauges(cache);
     const slot = makeSlot("a");
     setSlot(cache, slot);
     expect(gaugeValue("aai_slots_resident")).toBe(0);
     attachSandbox(cache, slot, makeSandbox());
     expect(gaugeValue("aai_slots_resident")).toBe(1);
-    await terminateSlot(slot, cache);
+    await terminateSlot(slot);
     expect(gaugeValue("aai_slots_resident")).toBe(0);
   });
 });
@@ -105,6 +108,7 @@ describe("idle sandbox eviction", () => {
 
   it("evicts a sandbox after IDLE_SANDBOX_MS with no touches", async () => {
     const cache = createSlotCache();
+    registerSlotsForGauges(cache);
     const slot = makeSlot("alpha");
     setSlot(cache, slot);
     const sandbox = makeSandbox();
@@ -163,7 +167,7 @@ describe("idle sandbox eviction", () => {
     attachSandbox(cache, slot, sandbox);
     expect(slot.idleTimer).toBeDefined();
 
-    await terminateSlot(slot, cache);
+    await terminateSlot(slot);
     expect(slot.idleTimer).toBeUndefined();
     expect(sandbox.shutdown).toHaveBeenCalledOnce();
 

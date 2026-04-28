@@ -60,7 +60,7 @@ async function handleDeployInner(
   const existing = c.env.slots.get(slug);
   if (existing?.sandbox) {
     debug("Replacing existing deploy", { slug });
-    await terminateSlot(existing, c.env.slots);
+    await terminateSlot(existing);
   }
 
   // Merge the deployer's key hash into existing credential hashes rather

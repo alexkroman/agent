@@ -12,7 +12,7 @@ async function handleDeleteInner(c: AppContext): Promise<Response> {
   const slug = c.var.slug;
 
   const existing = c.env.slots.get(slug);
-  if (existing) await terminateSlot(existing, c.env.slots);
+  if (existing) await terminateSlot(existing);
   deleteSlot(c.env.slots, slug);
 
   await c.env.store.deleteAgent(slug);

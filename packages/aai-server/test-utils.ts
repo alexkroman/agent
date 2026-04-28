@@ -30,8 +30,17 @@ export function counterValue(name: string, labels: Record<string, string> = {}):
   return 0;
 }
 
-/** Read a gauge's value (unlabeled or matched). Returns 0 if unset. */
+/**
+ * Read a gauge's value (unlabeled or matched). Returns 0 if unset.
+ *
+ * Triggers any registered `collect()` callback so pull-based gauges are
+ * refreshed before the read.
+ */
 export function gaugeValue(name: string, labels: Record<string, string> = {}): number {
+  // biome-ignore lint/suspicious/noExplicitAny: prom-client internals not typed
+  const m = registry.getSingleMetric(name) as any;
+  if (!m) return 0;
+  if (typeof m.collect === "function") m.collect();
   return counterValue(name, labels);
 }
 

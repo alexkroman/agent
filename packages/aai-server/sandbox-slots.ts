@@ -33,6 +33,35 @@ export function createSlotCache(): SlotCache {
   return new Map<string, AgentSlot>();
 }
 
+// ── Pull-based gauge collection ─────────────────────────────────────────
+//
+// Module-level: there's only ever one slot cache per process. The
+// collectors below read its size each time prom-client serializes the
+// registry, so callers no longer need to push gauge updates after every
+// mutation.
+
+let _slotsForGauges: SlotCache | null = null;
+
+// prom-client allows `collect` in the constructor but doesn't type it as
+// writable on the instance — assign via a narrow `any` cast.
+// biome-ignore lint/suspicious/noExplicitAny: prom-client typing limitation
+(metrics.slotsRegistered as any).collect = function (this: typeof metrics.slotsRegistered) {
+  this.set(_slotsForGauges?.size ?? 0);
+};
+// biome-ignore lint/suspicious/noExplicitAny: prom-client typing limitation
+(metrics.slotsResident as any).collect = function (this: typeof metrics.slotsResident) {
+  let resident = 0;
+  if (_slotsForGauges) {
+    for (const slot of _slotsForGauges.values()) if (slot.sandbox) resident++;
+  }
+  this.set(resident);
+};
+
+/** Wire a slot cache so the slots_registered/resident gauges reflect it. */
+export function registerSlotsForGauges(slots: SlotCache): void {
+  _slotsForGauges = slots;
+}
+
 // ── Locks ───────────────────────────────────────────────────────────────
 
 const apiLock = getLock();
@@ -50,10 +79,8 @@ export const withSlugLock = <T>(slug: string, fn: () => Promise<T>): Promise<T> 
 /**
  * Best-effort terminate a slot's sandbox and clear sandbox state.
  * Errors are logged but never thrown.
- *
- * If a `slots` cache is passed, the slot-resident gauge is republished.
  */
-export async function terminateSlot(slot: AgentSlot, slots?: SlotCache): Promise<void> {
+export async function terminateSlot(slot: AgentSlot): Promise<void> {
   const { slug } = slot;
   if (slot.idleTimer) {
     clearTimeout(slot.idleTimer);
@@ -63,41 +90,36 @@ export async function terminateSlot(slot: AgentSlot, slots?: SlotCache): Promise
     const sb = slot.sandbox;
     delete slot.sandbox;
     metrics.sandboxEvicted.inc({ reason: "terminate" });
-    if (slots) publishSlotGauges(slots);
     await sb.shutdown().catch((err: unknown) => {
       console.warn("Failed to shut down sandbox", { slug, error: String(err) });
     });
   }
 }
 
-// ── Slot-cache mutators (gauge-aware) ───────────────────────────────────
+// ── Slot-cache mutators ─────────────────────────────────────────────────
 
-/** Insert (or replace) a slot. Republishes slot gauges. */
+/** Insert (or replace) a slot. */
 export function setSlot(slots: SlotCache, slot: AgentSlot): void {
   slots.set(slot.slug, slot);
-  publishSlotGauges(slots);
 }
 
-/** Remove a slot by slug. Republishes slot gauges. */
+/** Remove a slot by slug. */
 export function deleteSlot(slots: SlotCache, slug: string): boolean {
   const slot = slots.get(slug);
   if (slot?.idleTimer) {
     clearTimeout(slot.idleTimer);
     delete slot.idleTimer;
   }
-  const removed = slots.delete(slug);
-  if (removed) publishSlotGauges(slots);
-  return removed;
+  return slots.delete(slug);
 }
 
-/** Attach a sandbox to a slot. Republishes the resident gauge. */
+/** Attach a sandbox to a slot and start the idle-eviction timer. */
 export function attachSandbox(
   slots: SlotCache,
   slot: AgentSlot,
   sandbox: { shutdown(): Promise<void> },
 ): void {
   slot.sandbox = sandbox;
-  publishSlotGauges(slots);
   resetIdleTimer(slots, slot);
 }
 
@@ -112,13 +134,6 @@ export function touchSlot(slots: SlotCache, slug: string): void {
   const slot = slots.get(slug);
   if (!slot?.sandbox) return;
   resetIdleTimer(slots, slot);
-}
-
-function publishSlotGauges(slots: SlotCache): void {
-  metrics.slotsRegistered.set(slots.size);
-  let resident = 0;
-  for (const slot of slots.values()) if (slot.sandbox) resident++;
-  metrics.slotsResident.set(resident);
 }
 
 /**
@@ -147,7 +162,6 @@ async function evictIdleSandbox(slots: SlotCache, slug: string): Promise<void> {
   const sb = slot.sandbox;
   if (!sb) return;
   delete slot.sandbox;
-  publishSlotGauges(slots);
   metrics.sandboxEvicted.inc({ reason: "idle" });
   debug("Evicting idle sandbox", { slug });
   try {
