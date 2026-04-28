@@ -15,11 +15,14 @@
         "sdk/providers/stt-barrel.ts",
         "sdk/providers/tts-barrel.ts",
         "sdk/providers/llm-barrel.ts",
+        "sdk/providers/kv-barrel.ts",
+        "sdk/providers/vector-barrel.ts",
         "host/integration/**/*.integration.test.ts",
         "**/*.test.ts",
         "**/*.test-d.ts"
       ],
-      "includeEntryExports": true
+      "includeEntryExports": true,
+      "ignoreDependencies": ["@pinecone-database/pinecone"]
     },
     "packages/aai-ui": {
       "entry": ["**/*.test.{ts,tsx}", "_react-test-utils.ts", "default-client.tsx"],
