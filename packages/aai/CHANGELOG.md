@@ -1,5 +1,17 @@
 # @alexkroman1/aai
 
+## 1.6.0
+
+### Minor Changes
+
+- fd3a167: Pluggable Vercel AI SDK LLM providers in pipeline mode: add openai, google, mistral, xai, groq typed factories alongside the existing anthropic. Each is a { model } descriptor; the host resolver lazy-loads the corresponding @ai-sdk/\* package via createRequire. All six AI SDK packages move to optional peer dependencies, so self-hosted users only install the ones they actually use; the managed server installs all six as direct deps in aai-server.
+- c8707d6: Add ElevenLabs Scribe (scribe_v2_realtime via @elevenlabs/elevenlabs-js) and Soniox (stt-rt-v3 via direct WebSocket) STT providers alongside assemblyai and deepgram. Both follow the existing typed-descriptor pattern; agent bundles stay free of provider SDKs and the host resolver constructs the live session at createRuntime time.
+
+### Patch Changes
+
+- 149786b: Auto-resume AssemblyAI S2S sessions after transient WebSocket closes (1005, 1006, 1011, 3005) using session.resume within the 30s server window. Drops the in-flight reply via onCancelled so the session unblocks; falls back to the existing 'connection' error on fatal codes (1008/3006/3007/3008/3009) or when resume fails.
+- 877348c: Pipeline mode: insert separator between LLM text segments split by a mid-turn tool call so consecutive deltas don't fuse into '...up.Got it' in the transcript and TTS output.
+
 ## 1.5.1
 
 ### Patch Changes

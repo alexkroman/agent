@@ -1,5 +1,17 @@
 # @alexkroman1/aai-server
 
+## 1.1.2
+
+### Patch Changes
+
+- 5085a71: Cache gVisor rootfs prep, async fs, off-thread pool replenish; fixes 13s event-loop block on first sandbox spawn that failed Fly healthchecks. Also adds per-phase timing logs and enables SANDBOX_POOL_SIZE=2 in production.
+- Updated dependencies [149786b]
+- Updated dependencies [fd3a167]
+- Updated dependencies [c8707d6]
+- Updated dependencies [877348c]
+  - @alexkroman1/aai@1.6.0
+  - @alexkroman1/aai-ui@1.6.0
+
 ## 1.1.1
 
 ### Patch Changes
