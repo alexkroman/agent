@@ -1,5 +1,11 @@
 # @alexkroman1/aai
 
+## 1.7.1
+
+### Patch Changes
+
+- 3c711da: Stop per-frame debug log spam when S2S socket is closed; sendAudio now silently drops frames matching sendAudioRaw and pipeline/STT behavior. Closure is still logged once via the WebSocket close event.
+
 ## 1.7.0
 
 ### Minor Changes
