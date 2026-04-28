@@ -65,9 +65,7 @@
       "type": "stat",
       "title": "HTTP 5xx rate",
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "targets": [
-        { "expr": "sum(rate(http_requests_total{status=~\"5..\"}[5m]))", "refId": "A" }
-      ],
+      "targets": [{ "expr": "sum(rate(http_requests_total{status=~\"5..\"}[5m]))", "refId": "A" }],
       "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
       "options": {
         "reduceOptions": { "calcs": ["lastNotNull"] },

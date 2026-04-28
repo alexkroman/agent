@@ -43,9 +43,7 @@
           "format": "table"
         }
       ],
-      "transformations": [
-        { "id": "organize", "options": { "excludeByName": { "Time": true } } }
-      ],
+      "transformations": [{ "id": "organize", "options": { "excludeByName": { "Time": true } } }],
       "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
       "gridPos": { "h": 8, "w": 8, "x": 0, "y": 0 }
     },
@@ -62,9 +60,7 @@
           "format": "table"
         }
       ],
-      "transformations": [
-        { "id": "organize", "options": { "excludeByName": { "Time": true } } }
-      ],
+      "transformations": [{ "id": "organize", "options": { "excludeByName": { "Time": true } } }],
       "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
       "gridPos": { "h": 8, "w": 8, "x": 8, "y": 0 }
     },
@@ -81,9 +77,7 @@
           "format": "table"
         }
       ],
-      "transformations": [
-        { "id": "organize", "options": { "excludeByName": { "Time": true } } }
-      ],
+      "transformations": [{ "id": "organize", "options": { "excludeByName": { "Time": true } } }],
       "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
       "gridPos": { "h": 8, "w": 8, "x": 16, "y": 0 }
     },
