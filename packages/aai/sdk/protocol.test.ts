@@ -295,4 +295,16 @@ describe("VectorRequestSchema", () => {
   test("rejects unknown op", () => {
     expect(() => VectorRequestSchema.parse({ op: "scan", text: "x" })).toThrow();
   });
+
+  test("rejects upsert with empty id", () => {
+    expect(() => VectorRequestSchema.parse({ op: "upsert", id: "", text: "hello" })).toThrow();
+  });
+
+  test("rejects upsert with empty text", () => {
+    expect(() => VectorRequestSchema.parse({ op: "upsert", id: "doc-1", text: "" })).toThrow();
+  });
+
+  test("rejects query with empty text", () => {
+    expect(() => VectorRequestSchema.parse({ op: "query", text: "" })).toThrow();
+  });
 });
