@@ -83,6 +83,16 @@ export const CONFORMANCE_AGENT: AgentDef = {
         return `stored:${JSON.stringify(result)}`;
       },
     },
+    vector_roundtrip: {
+      description: "Test Vector roundtrip via tool execution",
+      parameters: z.object({ text: z.string() }),
+      execute: async ({ text }: { text: string }, ctx) => {
+        await ctx.vector.upsert("conformance-doc", text);
+        const matches = await ctx.vector.query(text, { topK: 1 });
+        await ctx.vector.delete("conformance-doc");
+        return matches[0]?.text ?? "(none)";
+      },
+    },
   },
 };
 
@@ -128,6 +138,17 @@ export function testRuntime(label: string, getContext: () => RuntimeTestContext)
       const { executeTool } = getContext();
       const result = await executeTool("kv_roundtrip", { value: "abc" }, "s1", []);
       expect(result).toBe('stored:"abc"');
+    });
+
+    test("Vector round-trip through tool context", async () => {
+      const { executeTool } = getContext();
+      const vectorResult = await executeTool(
+        "vector_roundtrip",
+        { text: "conformance-input" },
+        "s1",
+        [],
+      );
+      expect(vectorResult).toBe("conformance-input");
     });
 
     // ── Session state ────────────────────────────────────────────────
