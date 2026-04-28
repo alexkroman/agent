@@ -7,7 +7,7 @@
  */
 
 import { createRequire } from "node:module";
-import { createStorage, type Driver, defineDriver } from "unstorage";
+import { createStorage, type Driver } from "unstorage";
 import type { Kv } from "../../sdk/kv.ts";
 import { FS_KV_KIND, type FsKvOptions } from "../../sdk/providers/kv/fs.ts";
 import { MEMORY_KV_KIND } from "../../sdk/providers/kv/memory.ts";
@@ -59,7 +59,7 @@ function makeLazyDriver(modulePath: string, label: string, opts: Record<string, 
     }
     return resolved;
   };
-  return defineDriver(() => ({
+  return {
     name: label.toLowerCase(),
     hasItem: (key, txOpts) => get().hasItem(key, txOpts),
     getItem: (key, txOpts) => get().getItem(key, txOpts),
@@ -69,8 +69,8 @@ function makeLazyDriver(modulePath: string, label: string, opts: Record<string, 
     removeItem: (key, txOpts) => get().removeItem?.(key, txOpts),
     getKeys: (base, txOpts) => get().getKeys(base, txOpts),
     clear: (base, txOpts) => get().clear?.(base, txOpts),
-    dispose: () => get().dispose?.(),
-  }))(opts);
+    dispose: () => (resolved ? resolved.dispose?.() : undefined),
+  };
 }
 
 /** Resolve a {@link KvProvider} descriptor into a {@link Kv}. */
