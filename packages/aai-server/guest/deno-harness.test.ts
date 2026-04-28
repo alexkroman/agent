@@ -42,6 +42,7 @@ const {
   handleKvResponse,
   handleNotification,
   pendingKvRequests,
+  pendingHostRequests,
 } = harness;
 
 beforeEach(() => {
@@ -324,5 +325,72 @@ describe("handleNotification", () => {
       exit: ReturnType<typeof vi.fn>;
     };
     expect(denoShim.exit).toHaveBeenCalledWith(0);
+  });
+});
+
+// ── vector adapter ────────────────────────────────────────────────────────
+
+describe("vector adapter", () => {
+  afterEach(() => {
+    pendingHostRequests.clear();
+  });
+
+  test("upsert sends vector/upsert request", async () => {
+    const adapter = harness.makeVectorAdapter();
+    const promise = adapter.upsert("doc-1", "hello", { tag: "x" });
+
+    // The request should be pending
+    expect(pendingHostRequests.size).toBe(1);
+    const [[id]] = [...pendingHostRequests.entries()];
+
+    // The written line should contain the right method and params
+    const lines = getWrittenLines();
+    expect(lines).toContainEqual(
+      expect.objectContaining({
+        method: "vector/upsert",
+        params: { id: "doc-1", text: "hello", metadata: { tag: "x" } },
+      }),
+    );
+
+    harness.handleHostResponse({ jsonrpc: "2.0", id, result: undefined });
+    await promise;
+    expect(pendingHostRequests.size).toBe(0);
+  });
+
+  test("query returns matches", async () => {
+    const adapter = harness.makeVectorAdapter();
+    const promise = adapter.query("hello");
+
+    expect(pendingHostRequests.size).toBe(1);
+    const [[id]] = [...pendingHostRequests.entries()];
+
+    const lines = getWrittenLines();
+    expect(lines).toContainEqual(
+      expect.objectContaining({ method: "vector/query", params: { text: "hello" } }),
+    );
+
+    const matches = [{ id: "doc-1", score: 0.9, text: "hello" }];
+    harness.handleHostResponse({ jsonrpc: "2.0", id, result: matches });
+    expect(await promise).toEqual(matches);
+  });
+
+  test("delete sends vector/delete with single id", async () => {
+    const adapter = harness.makeVectorAdapter();
+    const promise = adapter.delete("doc-1");
+
+    expect(pendingHostRequests.size).toBe(1);
+    const [[id]] = [...pendingHostRequests.entries()];
+
+    const lines = getWrittenLines();
+    expect(lines).toContainEqual(
+      expect.objectContaining({
+        method: "vector/delete",
+        params: { ids: "doc-1" },
+      }),
+    );
+
+    harness.handleHostResponse({ jsonrpc: "2.0", id, result: undefined });
+    await promise;
+    expect(pendingHostRequests.size).toBe(0);
   });
 });
