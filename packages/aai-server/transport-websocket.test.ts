@@ -8,10 +8,13 @@ import { createOrchestrator } from "./orchestrator.ts";
 import type { Sandbox } from "./sandbox.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
 import {
+  counterValue,
   createTestOrchestrator,
   createTestStorage,
   createTestStore,
   deployAgent,
+  gaugeValue,
+  histogramCount,
   TEST_AGENT_CONFIG,
 } from "./test-utils.ts";
 
@@ -97,37 +100,6 @@ function makeFakeSandbox(): Sandbox {
     }) as unknown as Sandbox["startSession"],
     shutdown: vi.fn(() => Promise.resolve()),
   } as unknown as Sandbox;
-}
-
-function counterValue(name: string, labels: Record<string, string>): number {
-  // biome-ignore lint/suspicious/noExplicitAny: prom-client internals not typed
-  const m = registry.getSingleMetric(name) as any;
-  if (!m?.hashMap) return 0;
-  // biome-ignore lint/suspicious/noExplicitAny: prom-client internals not typed
-  for (const entry of Object.values(m.hashMap) as any[]) {
-    const ok = Object.entries(labels).every(([k, v]) => entry.labels?.[k] === v);
-    if (ok) return entry.value ?? 0;
-  }
-  return 0;
-}
-
-function gaugeValue(name: string, labels: Record<string, string> = {}): number {
-  // biome-ignore lint/suspicious/noExplicitAny: prom-client internals not typed
-  const m = registry.getSingleMetric(name) as any;
-  if (!m?.hashMap) return 0;
-  // biome-ignore lint/suspicious/noExplicitAny: prom-client internals not typed
-  for (const entry of Object.values(m.hashMap) as any[]) {
-    const ok = Object.entries(labels).every(([k, v]) => entry.labels?.[k] === v);
-    if (ok) return entry.value ?? 0;
-  }
-  return 0;
-}
-
-function histogramCount(name: string): number {
-  // biome-ignore lint/suspicious/noExplicitAny: prom-client internals not typed
-  const m = registry.getSingleMetric(name) as any;
-  // Unlabeled histograms have a single hashMap entry under "" with `count`.
-  return m?.hashMap?.[""]?.count ?? 0;
 }
 
 async function startServerWithOrchestrator(): Promise<{

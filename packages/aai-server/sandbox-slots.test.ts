@@ -12,6 +12,7 @@ import {
   terminateSlot,
   touchSlot,
 } from "./sandbox-slots.ts";
+import { counterValue, gaugeValue } from "./test-utils.ts";
 
 function makeSandbox() {
   return { shutdown: vi.fn().mockResolvedValue(undefined) };
@@ -23,12 +24,6 @@ function makeSlot(slug: string, overrides?: Partial<AgentSlot>): AgentSlot {
     keyHash: `hash-${slug}`,
     ...overrides,
   };
-}
-
-function gaugeValue(name: string): number {
-  // biome-ignore lint/suspicious/noExplicitAny: prom-client internals not typed
-  const m = registry.getSingleMetric(name) as any;
-  return m?.hashMap?.[""]?.value ?? 0;
 }
 
 describe("createSlotCache", () => {
@@ -107,20 +102,6 @@ describe("idle sandbox eviction", () => {
     vi.useRealTimers();
     registry.resetMetrics();
   });
-
-  function counterValue(name: string, labels: Record<string, string>): number {
-    // biome-ignore lint/suspicious/noExplicitAny: prom-client internals not typed
-    const m = registry.getSingleMetric(name) as any;
-    if (!m?.hashMap) return 0;
-    for (const entry of Object.values(m.hashMap) as Array<{
-      labels: Record<string, string>;
-      value: number;
-    }>) {
-      const match = Object.entries(labels).every(([k, v]) => entry.labels[k] === v);
-      if (match) return entry.value;
-    }
-    return 0;
-  }
 
   it("evicts a sandbox after IDLE_SANDBOX_MS with no touches", async () => {
     const cache = createSlotCache();

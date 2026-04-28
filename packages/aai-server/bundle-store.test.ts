@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { createBundleStore } from "./bundle-store.ts";
 import { registry } from "./metrics.ts";
 import { importMasterKey } from "./secrets.ts";
-import { TEST_AGENT_CONFIG } from "./test-utils.ts";
+import { counterValue, TEST_AGENT_CONFIG } from "./test-utils.ts";
 
 describe("bundle store (unstorage)", () => {
   test("putAgent + getManifest round-trip", async () => {
@@ -384,18 +384,6 @@ describe("bundle store (unstorage)", () => {
 });
 
 // ── Tigris instrumentation ───────────────────────────────────────────────
-
-function counterValue(name: string, labels: Record<string, string>): number {
-  // biome-ignore lint/suspicious/noExplicitAny: prom-client internals not typed
-  const m = registry.getSingleMetric(name) as any;
-  if (!m?.hashMap) return 0;
-  // biome-ignore lint/suspicious/noExplicitAny: prom-client internals not typed
-  for (const entry of Object.values(m.hashMap) as any[]) {
-    const ok = Object.entries(labels).every(([k, v]) => entry.labels?.[k] === v);
-    if (ok) return entry.value ?? 0;
-  }
-  return 0;
-}
 
 describe("bundle-store metrics", () => {
   beforeEach(() => {

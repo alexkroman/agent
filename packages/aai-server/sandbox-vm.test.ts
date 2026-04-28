@@ -11,7 +11,7 @@ import {
   type SandboxVmOptions,
   type WarmHarness,
 } from "./sandbox-vm.ts";
-import { createTestStorage } from "./test-utils.ts";
+import { counterValue, createTestStorage, histogramCount } from "./test-utils.ts";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -415,24 +415,6 @@ describe("devSandboxSpawnArgs", () => {
 });
 
 // ── Init metrics ─────────────────────────────────────────────────────────────
-
-function histogramCount(name: string): number {
-  // biome-ignore lint/suspicious/noExplicitAny: prom-client internals not typed
-  const m = registry.getSingleMetric(name) as any;
-  return m?.hashMap?.[""]?.count ?? 0;
-}
-
-function counterValue(name: string, labels: Record<string, string>): number {
-  // biome-ignore lint/suspicious/noExplicitAny: prom-client internals not typed
-  const m = registry.getSingleMetric(name) as any;
-  if (!m?.hashMap) return 0;
-  // biome-ignore lint/suspicious/noExplicitAny: prom-client internals not typed
-  for (const entry of Object.values(m.hashMap) as any[]) {
-    const ok = Object.entries(labels).every(([k, v]) => entry.labels?.[k] === v);
-    if (ok) return entry.value ?? 0;
-  }
-  return 0;
-}
 
 describe("createSandboxVm metrics", () => {
   let hostReadable: PassThrough;

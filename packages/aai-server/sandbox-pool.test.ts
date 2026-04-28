@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { registry } from "./metrics.ts";
 import { createSandboxPool, type SandboxPool } from "./sandbox-pool.ts";
 import type { WarmHarness } from "./sandbox-vm.ts";
+import { counterValue, gaugeValue } from "./test-utils.ts";
 
 // ── Test helpers ─────────────────────────────────────────────────────────
 
@@ -317,27 +318,6 @@ describe("createSandboxPool", () => {
 });
 
 // ── Pool metrics ─────────────────────────────────────────────────────────
-
-function counterValue(name: string, labels: Record<string, string> = {}): number {
-  // biome-ignore lint/suspicious/noExplicitAny: prom-client internals not typed
-  const m = registry.getSingleMetric(name) as any;
-  if (!m?.hashMap) return 0;
-  if (Object.keys(labels).length === 0) {
-    return m.hashMap[""]?.value ?? 0;
-  }
-  // biome-ignore lint/suspicious/noExplicitAny: prom-client internals not typed
-  for (const entry of Object.values(m.hashMap) as any[]) {
-    const ok = Object.entries(labels).every(([k, v]) => entry.labels?.[k] === v);
-    if (ok) return entry.value ?? 0;
-  }
-  return 0;
-}
-
-function gaugeValue(name: string): number {
-  // biome-ignore lint/suspicious/noExplicitAny: prom-client internals not typed
-  const m = registry.getSingleMetric(name) as any;
-  return m?.hashMap?.[""]?.value ?? 0;
-}
 
 describe("sandbox-pool metrics", () => {
   beforeEach(() => {

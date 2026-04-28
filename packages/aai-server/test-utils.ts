@@ -3,6 +3,7 @@
 import type { Kv } from "@alexkroman1/aai";
 import { createStorage, type Storage } from "unstorage";
 import { vi } from "vitest";
+import { registry } from "./metrics.ts";
 import { createOrchestrator } from "./orchestrator.ts";
 import type { AgentSlot } from "./sandbox.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
@@ -10,6 +11,37 @@ import { type AgentMetadata, AgentMetadataSchema } from "./schemas.ts";
 import type { BundleStore } from "./store-types.ts";
 
 export { createSlotCache } from "./sandbox-slots.ts";
+
+// ── Metric-reading helpers (canonical versions for tests) ───────────────
+
+/** Read a counter's value at the given label combination. Returns 0 if unset. */
+export function counterValue(name: string, labels: Record<string, string> = {}): number {
+  // biome-ignore lint/suspicious/noExplicitAny: prom-client internals not typed
+  const m = registry.getSingleMetric(name) as any;
+  if (!m?.hashMap) return 0;
+  if (Object.keys(labels).length === 0) {
+    return m.hashMap[""]?.value ?? 0;
+  }
+  // biome-ignore lint/suspicious/noExplicitAny: prom-client internals not typed
+  for (const entry of Object.values(m.hashMap) as any[]) {
+    const ok = Object.entries(labels).every(([k, v]) => entry.labels?.[k] === v);
+    if (ok) return entry.value ?? 0;
+  }
+  return 0;
+}
+
+/** Read a gauge's value (unlabeled or matched). Returns 0 if unset. */
+export function gaugeValue(name: string, labels: Record<string, string> = {}): number {
+  return counterValue(name, labels);
+}
+
+/** Read the count of observations on a histogram. Returns 0 if no observations. */
+export function histogramCount(name: string): number {
+  // biome-ignore lint/suspicious/noExplicitAny: prom-client internals not typed
+  const m = registry.getSingleMetric(name) as any;
+  // Unlabeled histograms have a single hashMap entry under "" with `count`.
+  return m?.hashMap?.[""]?.count ?? 0;
+}
 
 /** In-memory mock KV store backed by a Map. All methods are vi.fn() spies. */
 export function createMockKv(): Kv {
