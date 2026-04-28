@@ -17,7 +17,7 @@ import {
   AudioFormat,
   CommitStrategy,
   RealtimeEvents,
-} from "@elevenlabs/elevenlabs-js/wrapper/realtime";
+} from "@elevenlabs/elevenlabs-js/wrapper/realtime/index.js";
 import { createNanoEvents, type Emitter } from "nanoevents";
 import type { ElevenLabsOptions } from "../../../sdk/providers/stt/elevenlabs.ts";
 import {
