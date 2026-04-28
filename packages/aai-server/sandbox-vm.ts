@@ -9,9 +9,12 @@
 
 import { type ChildProcess, spawn } from "node:child_process";
 import { performance } from "node:perf_hooks";
+import { errorMessage } from "@alexkroman1/aai";
 import type { Storage, StorageValue } from "unstorage";
 import { z } from "zod";
+import { debug } from "./_debug-log.ts";
 import { createGvisorSandbox, isGvisorAvailable } from "./gvisor.ts";
+import { metrics, observeDuration, type SandboxInitFailReason } from "./metrics.ts";
 import { createNdjsonConnection, type NdjsonConnection } from "./ndjson-transport.ts";
 import type { SandboxResourceLimits } from "./oci-spec.ts";
 import { createFetchHandler, type FetchRequest } from "./sandbox-fetch.ts";
@@ -144,7 +147,7 @@ async function configureSandbox(warm: WarmHarness, opts: SandboxVmOptions): Prom
     code: opts.workerCode,
     env: opts.env,
   });
-  console.info("Sandbox bundle/load complete", {
+  debug("Sandbox bundle/load complete", {
     slug: opts.slug,
     bytes: opts.workerCode.length,
     ms: Math.round(performance.now() - tBundle),
@@ -371,6 +374,26 @@ export const _internals = {
  * is empty or returns a dead harness.
  */
 export async function createSandboxVm(
+  opts: SandboxVmOptions,
+  pool?: WarmHarnessSource,
+): Promise<SandboxHandle> {
+  try {
+    return await observeDuration(metrics.sandboxInit, () => createSandboxVmInner(opts, pool));
+  } catch (err) {
+    metrics.sandboxInitFailed.inc({ reason: classifyInitFailure(err) });
+    throw err;
+  }
+}
+
+/** Classify a sandbox-init error into one of three coarse buckets. */
+function classifyInitFailure(err: unknown): SandboxInitFailReason {
+  const msg = errorMessage(err);
+  if (msg.includes("bundle") || msg.includes("Worker code not found")) return "bundle_missing";
+  if (msg.includes("spawn") || msg.includes("ENOENT")) return "worker_spawn";
+  return "host_init";
+}
+
+async function createSandboxVmInner(
   opts: SandboxVmOptions,
   pool?: WarmHarnessSource,
 ): Promise<SandboxHandle> {

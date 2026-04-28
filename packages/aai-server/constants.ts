@@ -19,6 +19,12 @@ export const DEFAULT_PORT = 8080;
 /** Max concurrent WebSocket connections before the server rejects new upgrades. */
 export const MAX_CONNECTIONS = Number(process.env.MAX_CONNECTIONS) || 100;
 
+/**
+ * Time a sandbox stays resident with no active sessions before it's
+ * evicted to free memory. Bumped on each session start.
+ */
+export const IDLE_SANDBOX_MS = 5 * 60 * 1000;
+
 // ─── Deploy ──────────────────────────────────────────────────────────────
 
 /** Maximum worker bundle size (bytes, 10 MB). */

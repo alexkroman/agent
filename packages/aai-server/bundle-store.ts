@@ -6,6 +6,7 @@ import { getLock } from "p-lock";
 import type { Storage } from "unstorage";
 import { z } from "zod";
 import { retryOnTransient } from "./_retry.ts";
+import { metrics, observeDurationWithStatus } from "./metrics.ts";
 import { type IsolateConfig, IsolateConfigSchema } from "./rpc-schemas.ts";
 import { type AgentMetadata, AgentMetadataSchema } from "./schemas.ts";
 import { decryptEnv, encryptEnv, type MasterKey } from "./secrets.ts";
@@ -22,6 +23,20 @@ const ManifestSchema = z.object({
 
 function objectKey(slug: string, file: string): string {
   return `agents/${slug}/${file}`;
+}
+
+/**
+ * Wrap a Tigris (S3-compatible) storage call with timing + status reporting.
+ * Records `aai_upstream_call_seconds{upstream=tigris,op}` and
+ * `aai_upstream_call_total{upstream=tigris,op,status}` for every call.
+ */
+async function instrumentTigris<T>(op: string, fn: () => Promise<T>): Promise<T> {
+  return observeDurationWithStatus(
+    metrics.upstreamCallSeconds,
+    metrics.upstreamCall,
+    { upstream: "tigris", op },
+    fn,
+  );
 }
 
 // Decrypting + Zod-parsing the manifest takes ~15-20ms per call, and the
@@ -104,100 +119,117 @@ export function createBundleStore(storage: Storage, opts: { masterKey: MasterKey
   }
 
   const store: BundleStore = {
-    async putAgent(bundle) {
-      invalidate(bundle.slug);
-      try {
-        await deleteByPrefix(`agents/${bundle.slug}`);
-      } catch (err) {
-        console.warn(
-          `Failed to delete old agent files for ${bundle.slug}, proceeding with overwrite: ${errorMessage(err)}`,
-        );
-      }
+    putAgent(bundle) {
+      return instrumentTigris("putAgent", async () => {
+        invalidate(bundle.slug);
+        try {
+          await deleteByPrefix(`agents/${bundle.slug}`);
+        } catch (err) {
+          console.warn(
+            `Failed to delete old agent files for ${bundle.slug}, proceeding with overwrite: ${errorMessage(err)}`,
+          );
+        }
 
-      const manifest = {
-        slug: bundle.slug,
-        env: await encryptEnv(masterKey, { env: bundle.env, slug: bundle.slug }),
-        credential_hashes: bundle.credential_hashes,
-        envEncrypted: true,
-      };
-      await storage.setItem(objectKey(bundle.slug, "manifest.json"), JSON.stringify(manifest));
-      await storage.setItem(objectKey(bundle.slug, "worker.js"), bundle.worker);
-
-      await Promise.all([
-        ...Object.entries(bundle.clientFiles).map(([filePath, content]) =>
-          storage.setItem(objectKey(bundle.slug, `client/${filePath}`), content),
-        ),
-        storage.setItem(objectKey(bundle.slug, "config.json"), JSON.stringify(bundle.agentConfig)),
-      ]);
-      // Re-invalidate to catch any concurrent read that repopulated the
-      // cache with a pre-write value during the write window.
-      invalidate(bundle.slug);
-    },
-
-    async getManifest(slug) {
-      const cached = cacheGet(manifestCache, slug);
-      if (cached !== undefined) return cached;
-      const value = await loadManifest(slug);
-      cacheSet(manifestCache, slug, value);
-      return value;
-    },
-
-    async getWorkerCode(slug) {
-      return readItem(objectKey(slug, "worker.js"));
-    },
-
-    async getClientFile(slug, filePath) {
-      return readItem(objectKey(slug, `client/${filePath}`));
-    },
-
-    async deleteAgent(slug) {
-      invalidate(slug);
-      await deleteByPrefix(`agents/${slug}`);
-      invalidate(slug);
-    },
-
-    async getEnv(slug) {
-      const cached = cacheGet(manifestCache, slug);
-      if (cached !== undefined) return cached?.env ?? null;
-      const manifest = await loadManifest(slug);
-      cacheSet(manifestCache, slug, manifest);
-      return manifest?.env ?? null;
-    },
-
-    async putEnv(slug, env) {
-      const release = await manifestLock(slug);
-      try {
-        const raw = await getRawManifest(slug);
-        if (!raw) throw new Error(`Agent ${slug} not found`);
-        const updated = {
-          ...raw,
-          env: await encryptEnv(masterKey, { env, slug }),
+        const manifest = {
+          slug: bundle.slug,
+          env: await encryptEnv(masterKey, { env: bundle.env, slug: bundle.slug }),
+          credential_hashes: bundle.credential_hashes,
           envEncrypted: true,
         };
-        await storage.setItem(objectKey(slug, "manifest.json"), JSON.stringify(updated));
-        manifestCache.delete(slug);
-      } finally {
-        release();
-      }
+        await storage.setItem(objectKey(bundle.slug, "manifest.json"), JSON.stringify(manifest));
+        await storage.setItem(objectKey(bundle.slug, "worker.js"), bundle.worker);
+
+        await Promise.all([
+          ...Object.entries(bundle.clientFiles).map(([filePath, content]) =>
+            storage.setItem(objectKey(bundle.slug, `client/${filePath}`), content),
+          ),
+          storage.setItem(
+            objectKey(bundle.slug, "config.json"),
+            JSON.stringify(bundle.agentConfig),
+          ),
+        ]);
+        // Re-invalidate to catch any concurrent read that repopulated the
+        // cache with a pre-write value during the write window.
+        invalidate(bundle.slug);
+      });
     },
 
-    async getAgentConfig(slug) {
-      const cached = cacheGet(configCache, slug);
-      if (cached !== undefined) return cached;
-      const data = await readItem(objectKey(slug, "config.json"));
-      if (data == null) {
-        cacheSet(configCache, slug, null);
-        return null;
-      }
-      try {
-        const raw = typeof data === "string" ? data : JSON.stringify(data);
-        const parsed = IsolateConfigSchema.parse(JSON.parse(raw));
-        cacheSet(configCache, slug, parsed);
-        return parsed;
-      } catch {
-        // Don't cache parse failures — transient corruption shouldn't stick.
-        return null;
-      }
+    getManifest(slug) {
+      return instrumentTigris("getManifest", async () => {
+        const cached = cacheGet(manifestCache, slug);
+        if (cached !== undefined) return cached;
+        const value = await loadManifest(slug);
+        cacheSet(manifestCache, slug, value);
+        return value;
+      });
+    },
+
+    getWorkerCode(slug) {
+      return instrumentTigris("getWorkerCode", () => readItem(objectKey(slug, "worker.js")));
+    },
+
+    getClientFile(slug, filePath) {
+      return instrumentTigris("getClientFile", () =>
+        readItem(objectKey(slug, `client/${filePath}`)),
+      );
+    },
+
+    deleteAgent(slug) {
+      return instrumentTigris("deleteAgent", async () => {
+        invalidate(slug);
+        await deleteByPrefix(`agents/${slug}`);
+        invalidate(slug);
+      });
+    },
+
+    getEnv(slug) {
+      return instrumentTigris("getEnv", async () => {
+        const cached = cacheGet(manifestCache, slug);
+        if (cached !== undefined) return cached?.env ?? null;
+        const manifest = await loadManifest(slug);
+        cacheSet(manifestCache, slug, manifest);
+        return manifest?.env ?? null;
+      });
+    },
+
+    putEnv(slug, env) {
+      return instrumentTigris("putEnv", async () => {
+        const release = await manifestLock(slug);
+        try {
+          const raw = await getRawManifest(slug);
+          if (!raw) throw new Error(`Agent ${slug} not found`);
+          const updated = {
+            ...raw,
+            env: await encryptEnv(masterKey, { env, slug }),
+            envEncrypted: true,
+          };
+          await storage.setItem(objectKey(slug, "manifest.json"), JSON.stringify(updated));
+          manifestCache.delete(slug);
+        } finally {
+          release();
+        }
+      });
+    },
+
+    getAgentConfig(slug) {
+      return instrumentTigris("getAgentConfig", async () => {
+        const cached = cacheGet(configCache, slug);
+        if (cached !== undefined) return cached;
+        const data = await readItem(objectKey(slug, "config.json"));
+        if (data == null) {
+          cacheSet(configCache, slug, null);
+          return null;
+        }
+        try {
+          const raw = typeof data === "string" ? data : JSON.stringify(data);
+          const parsed = IsolateConfigSchema.parse(JSON.parse(raw));
+          cacheSet(configCache, slug, parsed);
+          return parsed;
+        } catch {
+          // Don't cache parse failures — transient corruption shouldn't stick.
+          return null;
+        }
+      });
     },
   };
 

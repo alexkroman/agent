@@ -187,6 +187,8 @@ restrictions apply there.
 - `secret-handler.ts` — secret management
 - `kv-handler.ts` — KV store HTTP API
 - `ssrf.ts` — SSRF protection, URL validation
+- `metrics.ts` — Prometheus metrics registry and definitions; mounted at
+  `/metrics` (internal-only). Dashboards live in `grafana/`.
 
 ### Session modes
 

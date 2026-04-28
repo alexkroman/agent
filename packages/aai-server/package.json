@@ -20,7 +20,8 @@
     "test:load": "vitest run --config load/vitest.load.config.ts",
     "check:load": "pnpm run test:load",
     "test:adversarial": "vitest run --config adversarial/vitest.adversarial.config.ts",
-    "check:adversarial": "pnpm run test:adversarial"
+    "check:adversarial": "pnpm run test:adversarial",
+    "push-dashboards": "node --conditions=@dev/source grafana/push-dashboards.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.0",
@@ -32,6 +33,7 @@
     "@alexkroman1/aai": "workspace:*",
     "@alexkroman1/aai-ui": "workspace:*",
     "@hono/node-server": "^1.19.14",
+    "@hono/prometheus": "^1.0.3",
     "@hono/zod-validator": "^0.7.6",
     "bogon": "^1.2.0",
     "hono": "^4.12.14",
@@ -40,6 +42,7 @@
     "nanoid": "^5.1.9",
     "p-lock": "^4.0.1",
     "p-timeout": "^7.0.1",
+    "prom-client": "^15.1.3",
     "unstorage": "^1.17.5",
     "ws": "^8.20.0",
     "zod": "^4.3.6"

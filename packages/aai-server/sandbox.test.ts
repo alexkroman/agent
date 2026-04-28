@@ -163,19 +163,6 @@ describe("createSandbox", () => {
     expect(mockShutdown).toHaveBeenCalledOnce();
   });
 
-  it("logs sandbox initializing with slug and agent name", () => {
-    const infoSpy = vi.spyOn(console, "info");
-
-    const sandbox = createSandbox(makeSandboxOptions());
-
-    expect(infoSpy).toHaveBeenCalledWith("Sandbox initializing", {
-      slug: "test-agent",
-      agent: "test-agent",
-    });
-    // Cleanup: shutdown in background (fire-and-forget since test doesn't need it)
-    void sandbox.shutdown();
-  });
-
   it("uses agent config from options for runtime creation", async () => {
     const customConfig: IsolateConfig = {
       name: "custom-agent",

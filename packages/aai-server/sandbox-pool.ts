@@ -35,6 +35,7 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
+import { metrics, type WarmPoolAcquireResult } from "./metrics.ts";
 import type { WarmHarness } from "./sandbox-vm.ts";
 
 // ── Types ────────────────────────────────────────────────────────────────
@@ -80,6 +81,19 @@ export function createSandboxPool(opts: SandboxPoolOptions): SandboxPool {
   /** Sticks once a spawn rejection has stopped replenishment. */
   let stoppedDueToFailure = false;
 
+  // Pull-based gauge collection: prom-client invokes `collect` whenever
+  // the metric is serialized (or read via `.get()` in tests). Each new
+  // pool overwrites these — fine, since there's only ever one pool per
+  // process in production.
+  // biome-ignore lint/suspicious/noExplicitAny: prom-client typing limitation
+  (metrics.warmPoolReady as any).collect = function (this: typeof metrics.warmPoolReady) {
+    this.set(ready.length);
+  };
+  // biome-ignore lint/suspicious/noExplicitAny: prom-client typing limitation
+  (metrics.warmPoolPending as any).collect = function (this: typeof metrics.warmPoolPending) {
+    this.set(pending.size);
+  };
+
   function evictDead(handle: WarmHarness): void {
     const idx = ready.indexOf(handle);
     if (idx === -1) return;
@@ -97,6 +111,7 @@ export function createSandboxPool(opts: SandboxPoolOptions): SandboxPool {
       p = opts.spawn();
     } catch (err: unknown) {
       stoppedDueToFailure = true;
+      metrics.warmPoolSpawnFailed.inc();
       console.warn("Sandbox pool: warm spawn failed", { error: errorMessage(err) });
       return;
     }
@@ -106,6 +121,7 @@ export function createSandboxPool(opts: SandboxPoolOptions): SandboxPool {
         warm = await p;
       } catch (err: unknown) {
         stoppedDueToFailure = true;
+        metrics.warmPoolSpawnFailed.inc();
         console.warn("Sandbox pool: warm spawn failed", { error: errorMessage(err) });
         return;
       }
@@ -141,7 +157,11 @@ export function createSandboxPool(opts: SandboxPoolOptions): SandboxPool {
 
   return {
     async acquire(): Promise<WarmHarness | null> {
-      if (shutdown) return null;
+      if (shutdown) {
+        const result: WarmPoolAcquireResult = "miss";
+        metrics.warmPoolAcquire.inc({ result });
+        return null;
+      }
       // Pop until we find a live one; replenish covers losses.
       let warm: WarmHarness | undefined;
       for (;;) {
@@ -154,6 +174,8 @@ export function createSandboxPool(opts: SandboxPoolOptions): SandboxPool {
         // Dead — discard and continue
         void next.cleanup().catch(() => undefined);
       }
+      const result: WarmPoolAcquireResult = warm ? "hit" : "miss";
+      metrics.warmPoolAcquire.inc({ result });
       // Replenish in the background regardless of hit/miss
       replenish();
       return warm ?? null;

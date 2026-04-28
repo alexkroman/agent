@@ -1,8 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { humanId } from "human-id";
+import { debug } from "./_debug-log.ts";
 import type { ValidatedAppContext } from "./context.ts";
-import { terminateSlot, withSlugLock } from "./sandbox-slots.ts";
+import { setSlot, terminateSlot, withSlugLock } from "./sandbox-slots.ts";
 import type { DeployBody } from "./schemas.ts";
 import { EnvSchema } from "./schemas.ts";
 import { verifyApiKeyHash } from "./secrets.ts";
@@ -58,7 +59,7 @@ async function handleDeployInner(
 
   const existing = c.env.slots.get(slug);
   if (existing?.sandbox) {
-    console.info("Replacing existing deploy", { slug });
+    debug("Replacing existing deploy", { slug });
     await terminateSlot(existing);
   }
 
@@ -78,9 +79,9 @@ async function handleDeployInner(
     agentConfig: body.agentConfig,
   });
 
-  c.env.slots.set(slug, { slug, keyHash });
+  setSlot(c.env.slots, { slug, keyHash });
 
-  console.info("Deploy received", { slug });
+  debug("Deploy received", { slug });
 
   return c.json({ ok: true, slug, message: `Deployed ${slug}` });
 }

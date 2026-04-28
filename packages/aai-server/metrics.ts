@@ -1,0 +1,222 @@
+// Copyright 2025 the AAI authors. MIT license.
+/**
+ * Prometheus metrics for aai-server, backed by prom-client.
+ *
+ * Single registry. Every metric is constructed at module load — no
+ * dynamic per-request creation. The `/metrics` endpoint serializes
+ * `registry.metrics()`.
+ *
+ * Metrics naming: `aai_*` for our app, units in name (`_seconds`,
+ * `_bytes`), `_total` suffix on counters. `slug` label only on the
+ * permitlist enforced by `metrics-cardinality.test.ts`.
+ */
+import client from "prom-client";
+
+export const registry = new client.Registry();
+
+client.collectDefaultMetrics({ register: registry });
+
+export async function serialize(): Promise<string> {
+  return registry.metrics();
+}
+
+// ── Session ──
+
+const DEFAULT_DURATION_BUCKETS = [0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 300, 1800];
+
+const sessionsStarted = new client.Counter({
+  name: "aai_sessions_started_total",
+  help: "Voice sessions started, labeled by slug and session mode.",
+  labelNames: ["slug", "mode"] as const,
+  registers: [registry],
+});
+
+const sessionsActive = new client.Gauge({
+  name: "aai_sessions_active",
+  help: "Currently-open WebSocket voice sessions, labeled by slug.",
+  labelNames: ["slug"] as const,
+  registers: [registry],
+});
+
+const sessionsEnded = new client.Counter({
+  name: "aai_sessions_ended_total",
+  help: "Voice sessions ended, labeled by slug and end reason.",
+  labelNames: ["slug", "reason"] as const,
+  registers: [registry],
+});
+
+const sessionDuration = new client.Histogram({
+  name: "aai_session_duration_seconds",
+  help: "Voice session duration, platform-wide (no slug to bound cardinality).",
+  buckets: DEFAULT_DURATION_BUCKETS,
+  registers: [registry],
+});
+
+const sessionErrors = new client.Counter({
+  name: "aai_session_errors_total",
+  help: "Session-path errors by kind.",
+  labelNames: ["kind"] as const,
+  registers: [registry],
+});
+
+// ── Sandbox ──
+
+const SANDBOX_INIT_BUCKETS = [0.05, 0.1, 0.25, 0.5, 1, 2, 4, 8];
+
+const sandboxInit = new client.Histogram({
+  name: "aai_sandbox_init_seconds",
+  help: "Time to bring an agent sandbox to ready state.",
+  buckets: SANDBOX_INIT_BUCKETS,
+  registers: [registry],
+});
+
+const sandboxInitFailed = new client.Counter({
+  name: "aai_sandbox_init_failed_total",
+  help: "Sandbox init failures, labeled by failure stage.",
+  labelNames: ["reason"] as const,
+  registers: [registry],
+});
+
+const sandboxEvicted = new client.Counter({
+  name: "aai_sandbox_evicted_total",
+  help: "Sandboxes evicted, labeled by reason.",
+  labelNames: ["reason"] as const,
+  registers: [registry],
+});
+
+const slotsRegistered = new client.Gauge({
+  name: "aai_slots_registered",
+  help: "Number of agent slots registered in the slot cache.",
+  registers: [registry],
+});
+
+const slotsResident = new client.Gauge({
+  name: "aai_slots_resident",
+  help: "Number of slots with a live sandbox attached.",
+  registers: [registry],
+});
+
+// ── Warm pool ──
+
+const warmPoolTarget = new client.Gauge({
+  name: "aai_warm_pool_target",
+  help: "Configured target size of the warm Deno harness pool.",
+  registers: [registry],
+});
+
+const warmPoolReady = new client.Gauge({
+  name: "aai_warm_pool_ready",
+  help: "Warm Deno harnesses currently ready to acquire.",
+  registers: [registry],
+});
+
+const warmPoolPending = new client.Gauge({
+  name: "aai_warm_pool_pending",
+  help: "Warm Deno harnesses currently spawning.",
+  registers: [registry],
+});
+
+const warmPoolAcquire = new client.Counter({
+  name: "aai_warm_pool_acquire_total",
+  help: "Warm-pool acquire calls, by result.",
+  labelNames: ["result"] as const,
+  registers: [registry],
+});
+
+const warmPoolSpawnFailed = new client.Counter({
+  name: "aai_warm_pool_spawn_failed_total",
+  help: "Warm-harness spawn failures (replenishment stops on first).",
+  registers: [registry],
+});
+
+// ── Upstream ──
+
+const UPSTREAM_BUCKETS = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5];
+
+const upstreamCall = new client.Counter({
+  name: "aai_upstream_call_total",
+  help: "Calls to platform upstreams, by upstream/op/status.",
+  labelNames: ["upstream", "op", "status"] as const,
+  registers: [registry],
+});
+
+const upstreamCallSeconds = new client.Histogram({
+  name: "aai_upstream_call_seconds",
+  help: "Latency of platform-upstream calls.",
+  labelNames: ["upstream", "op"] as const,
+  buckets: UPSTREAM_BUCKETS,
+  registers: [registry],
+});
+
+export const metrics = {
+  sessionsStarted,
+  sessionsActive,
+  sessionsEnded,
+  sessionDuration,
+  sessionErrors,
+  sandboxInit,
+  sandboxInitFailed,
+  sandboxEvicted,
+  slotsRegistered,
+  slotsResident,
+  warmPoolTarget,
+  warmPoolReady,
+  warmPoolPending,
+  warmPoolAcquire,
+  warmPoolSpawnFailed,
+  upstreamCall,
+  upstreamCallSeconds,
+};
+
+// ── Typed label-value unions ────────────────────────────────────────────
+//
+// Centralizing these makes typos surface at compile time instead of as
+// silent new time series.
+
+export type SessionMode = "s2s" | "pipeline";
+export type SessionEndReason = "client_close" | "server_close" | "error" | "timeout";
+export type SessionErrorKind = "upgrade" | "sandbox_resolve" | "provider" | "internal";
+export type SandboxInitFailReason = "bundle_missing" | "worker_spawn" | "host_init";
+export type SandboxEvictReason = "idle" | "terminate";
+export type WarmPoolAcquireResult = "hit" | "miss";
+export type Upstream = "tigris";
+export type UpstreamStatus = "ok" | "error";
+
+// ── Timing helpers ───────────────────────────────────────────────────────
+
+/**
+ * Observe `fn`'s execution time on a histogram. Re-throws on failure.
+ */
+export async function observeDuration<T>(hist: client.Histogram, fn: () => Promise<T>): Promise<T> {
+  const t0 = process.hrtime.bigint();
+  try {
+    return await fn();
+  } finally {
+    const elapsedSec = Number(process.hrtime.bigint() - t0) / 1e9;
+    hist.observe(elapsedSec);
+  }
+}
+
+/**
+ * Observe `fn`'s execution time on a labeled histogram, AND increment a
+ * labeled counter with `status: "ok" | "error"`. Re-throws on failure.
+ */
+export async function observeDurationWithStatus<T, L extends Record<string, string>>(
+  hist: client.Histogram<string>,
+  counter: client.Counter<string>,
+  labels: L,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const t0 = process.hrtime.bigint();
+  let status: "ok" | "error" = "ok";
+  try {
+    return await fn();
+  } catch (err) {
+    status = "error";
+    throw err;
+  } finally {
+    const elapsedSec = Number(process.hrtime.bigint() - t0) / 1e9;
+    hist.observe(labels, elapsedSec);
+    counter.inc({ ...labels, status });
+  }
+}
