@@ -38,7 +38,7 @@
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
         {
-          "expr": "max(\n  label_replace(100 * sum(process_resident_memory_bytes) / (sum(aai_machine_memory_bytes) * 0.8), \"dim\", \"memory\", \"\", \"\")\n  or label_replace(100 * sum(rate(process_cpu_seconds_total[5m])) / (sum(aai_machine_cpu_cores) * 0.7), \"dim\", \"cpu\", \"\", \"\")\n  or label_replace(100 * (max(nodejs_eventloop_lag_p99_seconds) / 0.05), \"dim\", \"event_loop\", \"\", \"\")\n  or label_replace(100 * (histogram_quantile(0.95, sum by (le) (rate(aai_sandbox_init_seconds_bucket{path=\"cold\"}[5m]))) / 1.0), \"dim\", \"cold_start\", \"\", \"\")\n  or label_replace(100 * (sum(rate(aai_sessions_ended_total{reason=\"error\"}[5m])) / clamp_min(sum(rate(aai_sessions_started_total[5m])), 1) / 0.01), \"dim\", \"session_error\", \"\", \"\")\n  or label_replace((100 * ((1 - sum(aai_warm_pool_ready) / clamp_min(sum(aai_warm_pool_target), 1)) / 0.5)) unless on() (sum(aai_warm_pool_target) == 0), \"dim\", \"warm_pool\", \"\", \"\")\n)",
+          "expr": "max(\n  label_replace(100 * sum(process_resident_memory_bytes) / (sum(aai_machine_memory_bytes) * 0.8), \"dim\", \"memory\", \"\", \"\")\n  or label_replace(100 * sum(rate(process_cpu_seconds_total[5m])) / (sum(aai_machine_cpu_cores) * 0.7), \"dim\", \"cpu\", \"\", \"\")\n  or label_replace(100 * (max(nodejs_eventloop_lag_p99_seconds) / 0.05), \"dim\", \"event_loop\", \"\", \"\")\n  or label_replace(100 * histogram_quantile(0.95, sum by (le) (rate(aai_sandbox_init_seconds_bucket{path=\"cold\"}[5m]))), \"dim\", \"cold_start\", \"\", \"\")\n  or label_replace(100 * (sum(rate(aai_sessions_ended_total{reason=\"error\"}[5m])) / clamp_min(sum(rate(aai_sessions_started_total[5m])), 1) / 0.01), \"dim\", \"session_error\", \"\", \"\")\n  or label_replace((100 * ((1 - sum(aai_warm_pool_ready) / clamp_min(sum(aai_warm_pool_target), 1)) / 0.5)) unless on() (sum(aai_warm_pool_target) == 0), \"dim\", \"warm_pool\", \"\", \"\")\n)",
           "refId": "A"
         }
       ],
@@ -137,7 +137,7 @@
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
         {
-          "expr": "max(\n  label_replace(100 * (max(nodejs_eventloop_lag_p99_seconds) / 0.05), \"dim\", \"event_loop\", \"\", \"\")\n  or label_replace(100 * (histogram_quantile(0.95, sum by (le) (rate(aai_sandbox_init_seconds_bucket{path=\"cold\"}[5m]))) / 1.0), \"dim\", \"cold_start\", \"\", \"\")\n  or label_replace(100 * (sum(rate(aai_sessions_ended_total{reason=\"error\"}[5m])) / clamp_min(sum(rate(aai_sessions_started_total[5m])), 1) / 0.01), \"dim\", \"session_error\", \"\", \"\")\n)",
+          "expr": "max(\n  label_replace(100 * (max(nodejs_eventloop_lag_p99_seconds) / 0.05), \"dim\", \"event_loop\", \"\", \"\")\n  or label_replace(100 * histogram_quantile(0.95, sum by (le) (rate(aai_sandbox_init_seconds_bucket{path=\"cold\"}[5m]))), \"dim\", \"cold_start\", \"\", \"\")\n  or label_replace(100 * (sum(rate(aai_sessions_ended_total{reason=\"error\"}[5m])) / clamp_min(sum(rate(aai_sessions_started_total[5m])), 1) / 0.01), \"dim\", \"session_error\", \"\", \"\")\n)",
           "refId": "A"
         }
       ],
@@ -218,7 +218,7 @@
           "refId": "C"
         },
         {
-          "expr": "100 * (histogram_quantile(0.95, sum by (le) (rate(aai_sandbox_init_seconds_bucket{path=\"cold\"}[5m]))) / 1.0)",
+          "expr": "100 * histogram_quantile(0.95, sum by (le) (rate(aai_sandbox_init_seconds_bucket{path=\"cold\"}[5m])))",
           "legendFormat": "cold-start p95",
           "refId": "D"
         },
@@ -266,7 +266,7 @@
           "refId": "A"
         },
         {
-          "expr": "sum(aai_machine_memory_bytes) * 0.8 / 67108864",
+          "expr": "sum(aai_machine_memory_bytes) * 0.8 / (64 * 1024 * 1024)",
           "legendFormat": "theoretical max sandboxes",
           "refId": "B"
         }

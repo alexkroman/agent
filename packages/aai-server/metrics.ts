@@ -145,9 +145,7 @@ const warmPoolSpawnFailed = new client.Counter({
 
 // ── Host capacity (per-instance physical ceilings) ──
 //
-// Static gauges set once at server boot. They are the denominators that
-// turn raw `process_resident_memory_bytes` / `process_cpu_seconds_total`
-// into "% of host capacity used" on the capacity dashboard.
+// Set once at server boot — used as denominators in PromQL % expressions.
 
 const machineMemoryBytes = new client.Gauge({
   name: "aai_machine_memory_bytes",
@@ -221,10 +219,7 @@ export type UpstreamStatus = "ok" | "error";
 
 // ── Timing helpers ───────────────────────────────────────────────────────
 
-/**
- * Populate the static host-capacity gauges from `node:os`. Call once
- * during server startup. Idempotent — safe to call from tests.
- */
+// Idempotent — safe to call from tests.
 export function initHostCapacityGauges(): void {
   metrics.machineMemoryBytes.set(os.totalmem());
   metrics.machineCpuCores.set(os.cpus().length);
