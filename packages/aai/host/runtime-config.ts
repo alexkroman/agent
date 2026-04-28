@@ -93,7 +93,7 @@ export type S2SConfig = {
 
 /** Default S2S endpoint configuration. */
 export const DEFAULT_S2S_CONFIG: S2SConfig = {
-  wssUrl: "wss://agents.assemblyai.com/v1/voice",
+  wssUrl: "wss://agents.assemblyai.com/v1/ws",
   inputSampleRate: DEFAULT_STT_SAMPLE_RATE,
   outputSampleRate: DEFAULT_TTS_SAMPLE_RATE,
 };
