@@ -14,7 +14,7 @@ import type { Storage, StorageValue } from "unstorage";
 import { z } from "zod";
 import { debug } from "./_debug-log.ts";
 import { createGvisorSandbox, isGvisorAvailable } from "./gvisor.ts";
-import { metrics } from "./metrics.ts";
+import { metrics, observeDuration } from "./metrics.ts";
 import { createNdjsonConnection, type NdjsonConnection } from "./ndjson-transport.ts";
 import type { SandboxResourceLimits } from "./oci-spec.ts";
 import { createFetchHandler, type FetchRequest } from "./sandbox-fetch.ts";
@@ -377,12 +377,8 @@ export async function createSandboxVm(
   opts: SandboxVmOptions,
   pool?: WarmHarnessSource,
 ): Promise<SandboxHandle> {
-  const t0 = process.hrtime.bigint();
   try {
-    const handle = await createSandboxVmInner(opts, pool);
-    const elapsedSec = Number(process.hrtime.bigint() - t0) / 1e9;
-    metrics.sandboxInit.observe(elapsedSec);
-    return handle;
+    return await observeDuration(metrics.sandboxInit, () => createSandboxVmInner(opts, pool));
   } catch (err) {
     metrics.sandboxInitFailed.inc({ reason: classifyInitFailure(err) });
     throw err;

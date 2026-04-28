@@ -167,3 +167,42 @@ export const metrics = {
   upstreamCall,
   upstreamCallSeconds,
 };
+
+// ── Timing helpers ───────────────────────────────────────────────────────
+
+/**
+ * Observe `fn`'s execution time on a histogram. Re-throws on failure.
+ */
+export async function observeDuration<T>(hist: client.Histogram, fn: () => Promise<T>): Promise<T> {
+  const t0 = process.hrtime.bigint();
+  try {
+    return await fn();
+  } finally {
+    const elapsedSec = Number(process.hrtime.bigint() - t0) / 1e9;
+    hist.observe(elapsedSec);
+  }
+}
+
+/**
+ * Observe `fn`'s execution time on a labeled histogram, AND increment a
+ * labeled counter with `status: "ok" | "error"`. Re-throws on failure.
+ */
+export async function observeDurationWithStatus<T, L extends Record<string, string>>(
+  hist: client.Histogram<string>,
+  counter: client.Counter<string>,
+  labels: L,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const t0 = process.hrtime.bigint();
+  let status: "ok" | "error" = "ok";
+  try {
+    return await fn();
+  } catch (err) {
+    status = "error";
+    throw err;
+  } finally {
+    const elapsedSec = Number(process.hrtime.bigint() - t0) / 1e9;
+    hist.observe(labels, elapsedSec);
+    counter.inc({ ...labels, status });
+  }
+}

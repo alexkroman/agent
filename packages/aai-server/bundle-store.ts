@@ -6,7 +6,7 @@ import { getLock } from "p-lock";
 import type { Storage } from "unstorage";
 import { z } from "zod";
 import { retryOnTransient } from "./_retry.ts";
-import { metrics } from "./metrics.ts";
+import { metrics, observeDurationWithStatus } from "./metrics.ts";
 import { type IsolateConfig, IsolateConfigSchema } from "./rpc-schemas.ts";
 import { type AgentMetadata, AgentMetadataSchema } from "./schemas.ts";
 import { decryptEnv, encryptEnv, type MasterKey } from "./secrets.ts";
@@ -31,19 +31,12 @@ function objectKey(slug: string, file: string): string {
  * `aai_upstream_call_total{upstream=tigris,op,status}` for every call.
  */
 async function instrumentTigris<T>(op: string, fn: () => Promise<T>): Promise<T> {
-  const t0 = process.hrtime.bigint();
-  try {
-    const result = await fn();
-    const elapsedSec = Number(process.hrtime.bigint() - t0) / 1e9;
-    metrics.upstreamCallSeconds.observe({ upstream: "tigris", op }, elapsedSec);
-    metrics.upstreamCall.inc({ upstream: "tigris", op, status: "ok" });
-    return result;
-  } catch (err) {
-    const elapsedSec = Number(process.hrtime.bigint() - t0) / 1e9;
-    metrics.upstreamCallSeconds.observe({ upstream: "tigris", op }, elapsedSec);
-    metrics.upstreamCall.inc({ upstream: "tigris", op, status: "error" });
-    throw err;
-  }
+  return observeDurationWithStatus(
+    metrics.upstreamCallSeconds,
+    metrics.upstreamCall,
+    { upstream: "tigris", op },
+    fn,
+  );
 }
 
 // Decrypting + Zod-parsing the manifest takes ~15-20ms per call, and the
