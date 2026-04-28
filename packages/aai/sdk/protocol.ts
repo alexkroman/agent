@@ -68,6 +68,38 @@ export const KvRequestSchema = z.discriminatedUnion("op", [KvGetSchema, KvSetSch
 /** KV operation request — discriminated union on the `op` field. */
 export type KvRequest = z.infer<typeof KvRequestSchema>;
 
+/** Zod schema for the Vector "upsert" operation. */
+export const VectorUpsertSchema = z.object({
+  op: z.literal("upsert"),
+  id: z.string().min(1),
+  text: z.string().min(1),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+});
+
+/** Zod schema for the Vector "query" operation. */
+export const VectorQuerySchema = z.object({
+  op: z.literal("query"),
+  text: z.string().min(1),
+  topK: z.number().int().positive().max(100).optional(),
+  filter: z.record(z.string(), z.unknown()).optional(),
+});
+
+/** Zod schema for the Vector "delete" operation. */
+export const VectorDeleteSchema = z.object({
+  op: z.literal("delete"),
+  ids: z.union([z.string().min(1), z.array(z.string().min(1)).max(1000)]),
+});
+
+/** Zod schema for Vector operation requests from the worker to the host. */
+export const VectorRequestSchema = z.discriminatedUnion("op", [
+  VectorUpsertSchema,
+  VectorQuerySchema,
+  VectorDeleteSchema,
+]);
+
+/** Vector operation request — discriminated union on the `op` field. */
+export type VectorRequest = z.infer<typeof VectorRequestSchema>;
+
 // ─── Error codes ───────────────────────────────────────────────────────────
 
 /**
