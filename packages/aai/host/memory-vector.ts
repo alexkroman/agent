@@ -3,9 +3,11 @@
  * In-memory Vector implementation.
  *
  * INTENTIONALLY BAD QUALITY. Pseudo-embedding hashes the text into a
- * 64-dim Float32Array of values in [-1, 1]; cosine similarity falls
- * out of that. Used only for `aai dev` and tests — the goal is
- * proving tool wiring, not retrieval ranking.
+ * 64-dim Float32Array of values in [-1, ~0.99], then L2-normalizes
+ * the result. Because both stored and probe vectors are unit-length,
+ * cosine similarity reduces to a plain dot product — that's what
+ * `cosine()` computes. Used only for `aai dev` and tests — the goal
+ * is proving tool wiring, not retrieval ranking.
  */
 
 import { createHash } from "node:crypto";
