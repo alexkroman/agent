@@ -943,7 +943,7 @@ const loadTestCommand = defineCommand({
   args: {
     sessions: { type: "string", alias: "n", description: "Total number of sessions to run", default: "10000" },
     concurrency: { type: "string", alias: "c", description: "Max simultaneous sessions", default: "2500" },
-    url: { type: "string", description: "S2S WebSocket URL", default: "wss://agents.assemblyai.com/v1/voice" },
+    url: { type: "string", description: "S2S WebSocket URL", default: "wss://agents.assemblyai.com/v1/ws" },
     greeting: { type: "string", description: "Agent greeting text", default: "Hello, how can I help?" },
     voice: { type: "string", description: "Kokoro voice preset", default: "af_heart" },
     turns: { type: "string", description: "Max user turns per session (randomized, avg ~8)", default: "20" },
