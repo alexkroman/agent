@@ -14,7 +14,7 @@ import s3Driver from "unstorage/drivers/s3";
 import { createBundleStore } from "./bundle-store.ts";
 import { DEFAULT_PORT } from "./constants.ts";
 import { isGvisorAvailable, prepareRootfs } from "./gvisor.ts";
-import { metrics } from "./metrics.ts";
+import { initHostCapacityGauges, metrics } from "./metrics.ts";
 import { createOrchestrator, type OrchestratorOpts } from "./orchestrator.ts";
 import { createSandboxPool, type SandboxPool } from "./sandbox-pool.ts";
 import { createSlotCache, registerSlotsForGauges } from "./sandbox-slots.ts";
@@ -110,6 +110,7 @@ async function buildOpts(env: NodeJS.ProcessEnv): Promise<OrchestratorOpts> {
 
 async function main(): Promise<void> {
   const env = process.env;
+  initHostCapacityGauges();
   const port = Number.parseInt(env.PORT ?? String(DEFAULT_PORT), 10);
 
   const opts = await buildOpts(env);

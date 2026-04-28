@@ -7,7 +7,7 @@ Grafana; UI edits are not authoritative.
 | File | UID | Question it answers |
 | --- | --- | --- |
 | `dashboards/overview.json` | `aai-overview` | Is the platform healthy right now? |
-| `dashboards/capacity.json` | `aai-capacity` | Can it take more load? |
+| `dashboards/capacity.json` | `aai-capacity` | How much capacity is used and how much is left? |
 | `dashboards/agents.json` | `aai-agents` | Which tenant is hot/broken? |
 | `dashboards/providers.json` | `aai-providers` | Is it us or upstream? |
 
@@ -49,6 +49,22 @@ you can push dashboards programmatically:
 
 The script targets `https://fly-metrics.net` by default. For other
 Grafana hosts, edit the `BASE` constant in `push-dashboards.ts`.
+
+## Current operational SLO
+
+The capacity dashboard treats "100% used" as "at the operational
+ceiling," not "at the physical max." If a dimension is yellow/red on a
+healthy fleet, adjust the multiplier in `dashboards/capacity.json` —
+no metrics-code change needed.
+
+| Dimension | Ceiling |
+| --- | --- |
+| Memory | 80% of `aai_machine_memory_bytes` |
+| CPU | 70% of `aai_machine_cpu_cores` |
+| Event-loop lag p99 | 50 ms |
+| Sandbox cold-start p95 | 1.0 s |
+| Session error rate | 1% |
+| Warm pool ready | 50% of target (alert when half-empty) |
 
 ## Adding a metric
 
