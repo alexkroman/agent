@@ -12,6 +12,7 @@ import type {
   TtsProvider,
   VectorProvider,
 } from "./providers.ts";
+import type { Vector } from "./vector.ts";
 
 /**
  * Identifier for a built-in server-side tool.
@@ -86,6 +87,8 @@ export type ToolContext<S = Record<string, unknown>> = {
   state: S;
   /** Key-value store scoped to this agent deployment. */
   kv: Kv;
+  /** Vector store scoped to this agent deployment. */
+  vector: Vector;
   /** Read-only snapshot of conversation messages so far. */
   messages: readonly Message[];
   /** Unique identifier for the current session. Useful for correlating logs across concurrent sessions. */

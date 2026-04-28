@@ -71,7 +71,10 @@ exports[`export surface stability > @alexkroman1/aai/runtime export 1`] = `
 [
   "DEFAULT_S2S_CONFIG",
   "_internals",
+  "_resetMemoryVectorForTests",
   "consoleLogger",
+  "createMemoryVector",
+  "createPineconeVector",
   "createPipelineTransport",
   "createRuntime",
   "createS2sTransport",
@@ -82,6 +85,8 @@ exports[`export surface stability > @alexkroman1/aai/runtime export 1`] = `
   "executeToolCall",
   "jsonLogger",
   "resolveAllBuiltins",
+  "resolveKv",
+  "resolveVector",
   "wireSessionSocket",
 ]
 `;
