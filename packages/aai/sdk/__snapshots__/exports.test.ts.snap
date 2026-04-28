@@ -58,6 +58,10 @@ exports[`export surface stability > @alexkroman1/aai/protocol export 1`] = `
   "ReadyConfigSchema",
   "ServerMessageSchema",
   "SessionErrorCodeSchema",
+  "VectorDeleteSchema",
+  "VectorQuerySchema",
+  "VectorRequestSchema",
+  "VectorUpsertSchema",
   "buildReadyConfig",
   "lenientParse",
 ]
