@@ -23,7 +23,7 @@ describe("push-dashboards", () => {
   });
 
   it("posts folder + each dashboard with overwrite=true and folderUid set", async () => {
-    const fetchSpy = vi.fn(
+    const fetchSpy = vi.fn<typeof fetch>(
       async () =>
         ({
           ok: true,
