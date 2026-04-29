@@ -9,6 +9,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
+import type { ZodTypeAny } from "zod";
 import {
   DEFAULT_STT_SAMPLE_RATE,
   DEFAULT_TTS_SAMPLE_RATE,
@@ -21,20 +22,7 @@ import {
   SessionErrorCodeSchema,
 } from "./protocol.ts";
 
-// ── Load fixtures ─────────────────────────────────────────────────────────
-
 const FIXTURE_DIR = join(import.meta.dirname, "compat-fixtures");
-// Only load compat fixtures that have the expected schema-compat structure
-// (ServerMessage, ClientMessage, KvRequest, constants). Wire-format fixtures
-// like wire-v1.json use a different shape and are tested by wire.test.ts.
-const fixtureFiles = readdirSync(FIXTURE_DIR)
-  .filter((f) => f.endsWith(".json"))
-  .filter((f) => {
-    const raw = readFileSync(join(FIXTURE_DIR, f), "utf-8");
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    return "ServerMessage" in parsed && "ClientMessage" in parsed;
-  })
-  .sort();
 
 type Fixture = {
   version: number;
@@ -53,6 +41,16 @@ function loadFixture(filename: string): Fixture {
   return JSON.parse(readFileSync(join(FIXTURE_DIR, filename), "utf-8"));
 }
 
+// Wire-format fixtures (e.g. wire-v1.json) use a different shape and live in
+// wire.test.ts; filter them out by checking for the schema-compat structure.
+const fixtureFiles = readdirSync(FIXTURE_DIR)
+  .filter((f) => f.endsWith(".json"))
+  .filter((f) => {
+    const parsed = loadFixture(f) as unknown as Record<string, unknown>;
+    return "ServerMessage" in parsed && "ClientMessage" in parsed;
+  })
+  .sort();
+
 function compatError(fixture: string, schema: string, msg: unknown, zodError: string): string {
   return [
     `PROTOCOL COMPATIBILITY BREAK (${fixture}, ${schema}):`,
@@ -68,103 +66,73 @@ function compatError(fixture: string, schema: string, msg: unknown, zodError: st
   ].join("\n");
 }
 
-/**
- * Check if a discriminated union schema accepts a given discriminant value
- * by testing whether a minimal object with that value passes the first
- * discriminant check (the full parse may fail, but the type/op is recognized).
- */
-function schemaAcceptsType(
-  schema: typeof ServerMessageSchema | typeof ClientMessageSchema,
-  type: string,
-): boolean {
-  // Parse a minimal object with just the discriminant. If the discriminant
-  // is unrecognized, the error includes "invalid_union_discriminator" or
-  // similar. Any other failure (missing fields) means the variant exists.
-  const result = schema.safeParse({ type });
-  if (result.success) return true;
-  // Check error messages — the Zod issue code for discriminated union
-  // mismatches varies across versions, so we check the message text.
-  return !result.error.issues.some((i) => i.message.includes("Invalid discriminator"));
-}
-
-function kvSchemaAcceptsOp(op: string): boolean {
-  const result = KvRequestSchema.safeParse({ op });
+// A minimal-discriminant parse fails either with "Invalid discriminator" (variant
+// removed) or with missing-field errors (variant exists). The Zod issue code for
+// discriminated-union mismatches varies across versions, so match on message text.
+function schemaAcceptsDiscriminant(schema: ZodTypeAny, value: Record<string, unknown>): boolean {
+  const result = schema.safeParse(value);
   if (result.success) return true;
   return !result.error.issues.some((i) => i.message.includes("Invalid discriminator"));
 }
 
-// ── Tests ─────────────────────────────────────────────────────────────────
+type CompatGroup = {
+  label: string;
+  schema: ZodTypeAny;
+  messages: Record<string, unknown>[];
+  discriminant: "type" | "op";
+};
 
 describe.each(fixtureFiles)("compat fixture: %s", (filename) => {
   const fixture = loadFixture(filename);
 
-  // ── Backward compat: every fixture message must still parse ──────
+  const groups: CompatGroup[] = [
+    {
+      label: "ServerMessage",
+      schema: ServerMessageSchema,
+      messages: fixture.ServerMessage,
+      discriminant: "type",
+    },
+    {
+      label: "ClientMessage",
+      schema: ClientMessageSchema,
+      messages: fixture.ClientMessage,
+      discriminant: "type",
+    },
+    {
+      label: "KvRequest",
+      schema: KvRequestSchema,
+      messages: fixture.KvRequest,
+      discriminant: "op",
+    },
+  ];
 
-  describe("ServerMessage backward compat", () => {
-    test.each(
-      fixture.ServerMessage.map((m, i) => [`${(m as { type: string }).type}#${i}`, m]),
-    )("%s parses against current schema", (_label, msg) => {
-      const result = ServerMessageSchema.safeParse(msg);
-      if (!result.success) {
-        throw new Error(compatError(filename, "ServerMessage", msg, result.error.message));
-      }
+  for (const { label, schema, messages, discriminant } of groups) {
+    describe(`${label} backward compat`, () => {
+      test.each(
+        messages.map((m, i) => [`${m[discriminant] as string}#${i}`, m]),
+      )("%s parses against current schema", (_label, msg) => {
+        const result = schema.safeParse(msg);
+        if (!result.success) {
+          throw new Error(compatError(filename, label, msg, result.error.message));
+        }
+      });
     });
-  });
-
-  describe("ClientMessage backward compat", () => {
-    test.each(
-      fixture.ClientMessage.map((m, i) => [`${(m as { type: string }).type}#${i}`, m]),
-    )("%s parses against current schema", (_label, msg) => {
-      const result = ClientMessageSchema.safeParse(msg);
-      if (!result.success) {
-        throw new Error(compatError(filename, "ClientMessage", msg, result.error.message));
-      }
-    });
-  });
-
-  describe("KvRequest backward compat", () => {
-    test.each(
-      fixture.KvRequest.map((m, i) => [`${(m as { op: string }).op}#${i}`, m]),
-    )("%s parses against current schema", (_label, msg) => {
-      const result = KvRequestSchema.safeParse(msg);
-      if (!result.success) {
-        throw new Error(compatError(filename, "KvRequest", msg, result.error.message));
-      }
-    });
-  });
-
-  // ── Variant coverage: no types/ops removed ──────────────────────
+  }
 
   describe("variant coverage", () => {
-    test("no ServerMessage types removed", () => {
-      const fixtureTypes = new Set(fixture.ServerMessage.map((m) => (m as { type: string }).type));
-      for (const t of fixtureTypes) {
-        expect(
-          schemaAcceptsType(ServerMessageSchema, t),
-          `ServerMessage variant "${t}" was removed`,
-        ).toBe(true);
-      }
-    });
-
-    test("no ClientMessage types removed", () => {
-      const fixtureTypes = new Set(fixture.ClientMessage.map((m) => (m as { type: string }).type));
-      for (const t of fixtureTypes) {
-        expect(
-          schemaAcceptsType(ClientMessageSchema, t),
-          `ClientMessage variant "${t}" was removed`,
-        ).toBe(true);
-      }
-    });
-
-    test("no KvRequest ops removed", () => {
-      const fixtureOps = new Set(fixture.KvRequest.map((m) => (m as { op: string }).op));
-      for (const op of fixtureOps) {
-        expect(kvSchemaAcceptsOp(op), `KvRequest op "${op}" was removed`).toBe(true);
-      }
-    });
+    for (const { label, schema, messages, discriminant } of groups) {
+      const noun = discriminant === "type" ? "variant" : "op";
+      test(`no ${label} ${noun}s removed`, () => {
+        const seen = new Set(messages.map((m) => m[discriminant] as string));
+        for (const value of seen) {
+          expect(
+            schemaAcceptsDiscriminant(schema, { [discriminant]: value }),
+            `${label} ${noun} "${value}" was removed`,
+          ).toBe(true);
+        }
+      });
+    }
   });
-
-  // ── Constants stability ─────────────────────────────────────────
 
   describe("constants stability", () => {
     test("DEFAULT_STT_SAMPLE_RATE unchanged", () => {

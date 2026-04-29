@@ -6,14 +6,17 @@
 import type { AgentConfig } from "./_internal-types.ts";
 import { DEFAULT_SYSTEM_PROMPT } from "./types.ts";
 
-function getFormattedDate(): string {
-  return new Date().toLocaleDateString("en-US", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
-}
+const DATE_FORMAT_OPTIONS: Intl.DateTimeFormatOptions = {
+  weekday: "long",
+  year: "numeric",
+  month: "long",
+  day: "numeric",
+};
+
+const TOOL_PREAMBLE =
+  "\n\nWhen you decide to use a tool, ALWAYS say a brief natural phrase BEFORE the tool call " +
+  '(e.g. "Let me look that up" or "One moment while I check"). ' +
+  "This fills silence while the tool executes. Keep preambles to one short sentence.";
 
 const VOICE_RULES =
   "\n\nCRITICAL OUTPUT RULES — you MUST follow these for EVERY response:\n" +
@@ -44,24 +47,19 @@ export function buildSystemPrompt(
   config: AgentConfig,
   opts: { hasTools: boolean; voice?: boolean; toolGuidance?: readonly string[] | undefined },
 ): string {
-  const { hasTools } = opts;
-  const agentInstructions =
-    config.systemPrompt && config.systemPrompt !== DEFAULT_SYSTEM_PROMPT
-      ? `\n\nAgent-Specific Instructions:\n${config.systemPrompt}`
-      : "";
-
-  const toolPreamble = hasTools
-    ? "\n\nWhen you decide to use a tool, ALWAYS say a brief natural phrase BEFORE the tool call " +
-      '(e.g. "Let me look that up" or "One moment while I check"). ' +
-      "This fills silence while the tool executes. Keep preambles to one short sentence."
+  const hasCustomPrompt = config.systemPrompt && config.systemPrompt !== DEFAULT_SYSTEM_PROMPT;
+  const agentInstructions = hasCustomPrompt
+    ? `\n\nAgent-Specific Instructions:\n${config.systemPrompt}`
     : "";
+
+  const toolPreamble = opts.hasTools ? TOOL_PREAMBLE : "";
 
   const guidance =
     opts.toolGuidance && opts.toolGuidance.length > 0
       ? `\n\nBuilt-in Tool Usage:\n${opts.toolGuidance.join("\n")}`
       : "";
 
-  const today = getFormattedDate();
+  const today = new Date().toLocaleDateString("en-US", DATE_FORMAT_OPTIONS);
 
   return (
     DEFAULT_SYSTEM_PROMPT +

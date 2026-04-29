@@ -56,17 +56,21 @@ export function resolveApiKey(envVar: string, env: Record<string, string>): stri
   return env[envVar] ?? process.env[envVar] ?? "";
 }
 
+function options<T>(descriptor: { options: Record<string, unknown> }): T {
+  return descriptor.options as unknown as T;
+}
+
 /** Resolve an {@link SttProvider} descriptor into a host-side opener. */
 export function resolveStt(descriptor: SttProvider): SttOpener {
   switch (descriptor.kind) {
     case ASSEMBLYAI_KIND:
-      return openAssemblyAI(descriptor.options as unknown as AssemblyAIOptions);
+      return openAssemblyAI(options<AssemblyAIOptions>(descriptor));
     case DEEPGRAM_KIND:
-      return openDeepgram(descriptor.options as unknown as DeepgramOptions);
+      return openDeepgram(options<DeepgramOptions>(descriptor));
     case ELEVENLABS_KIND:
-      return openElevenLabs(descriptor.options as unknown as ElevenLabsOptions);
+      return openElevenLabs(options<ElevenLabsOptions>(descriptor));
     case SONIOX_KIND:
-      return openSoniox(descriptor.options as unknown as SonioxOptions);
+      return openSoniox(options<SonioxOptions>(descriptor));
     default:
       throw new Error(
         `Unknown STT provider kind: "${descriptor.kind}". ` +
@@ -79,9 +83,9 @@ export function resolveStt(descriptor: SttProvider): SttOpener {
 export function resolveTts(descriptor: TtsProvider): TtsOpener {
   switch (descriptor.kind) {
     case CARTESIA_KIND:
-      return openCartesia(descriptor.options as unknown as CartesiaOptions);
+      return openCartesia(options<CartesiaOptions>(descriptor));
     case RIME_KIND:
-      return openRime(descriptor.options as unknown as RimeOptions);
+      return openRime(options<RimeOptions>(descriptor));
     default:
       throw new Error(
         `Unknown TTS provider kind: "${descriptor.kind}". Supported: ${CARTESIA_KIND}, ${RIME_KIND}.`,
@@ -105,30 +109,28 @@ export function resolveLlm(descriptor: LlmProvider, env: Record<string, string>)
       // before reading process.env["ANTHROPIC_BASE_URL"]. Without this,
       // the Deno platform server needs --allow-env to start a session.
       return createAnthropic({ apiKey, baseURL: "https://api.anthropic.com/v1" })(
-        (descriptor.options as unknown as AnthropicOptions).model,
+        options<AnthropicOptions>(descriptor).model,
       );
     }
     case OPENAI_KIND: {
       const apiKey = requireKey(env, "OPENAI_API_KEY", "OpenAI");
-      return createOpenAI({ apiKey })((descriptor.options as unknown as OpenAIOptions).model);
+      return createOpenAI({ apiKey })(options<OpenAIOptions>(descriptor).model);
     }
     case GOOGLE_KIND: {
       const apiKey = requireKey(env, "GOOGLE_GENERATIVE_AI_API_KEY", "Google");
-      return createGoogleGenerativeAI({ apiKey })(
-        (descriptor.options as unknown as GoogleOptions).model,
-      );
+      return createGoogleGenerativeAI({ apiKey })(options<GoogleOptions>(descriptor).model);
     }
     case MISTRAL_KIND: {
       const apiKey = requireKey(env, "MISTRAL_API_KEY", "Mistral");
-      return createMistral({ apiKey })((descriptor.options as unknown as MistralOptions).model);
+      return createMistral({ apiKey })(options<MistralOptions>(descriptor).model);
     }
     case XAI_KIND: {
       const apiKey = requireKey(env, "XAI_API_KEY", "xAI");
-      return createXai({ apiKey })((descriptor.options as unknown as XaiOptions).model);
+      return createXai({ apiKey })(options<XaiOptions>(descriptor).model);
     }
     case GROQ_KIND: {
       const apiKey = requireKey(env, "GROQ_API_KEY", "Groq");
-      return createGroq({ apiKey })((descriptor.options as unknown as GroqOptions).model);
+      return createGroq({ apiKey })(options<GroqOptions>(descriptor).model);
     }
     default:
       throw new Error(
@@ -151,17 +153,15 @@ export function loadProviderPackage<T>(name: string, label: string): T {
   try {
     return requireFromHere(name) as T;
   } catch (err) {
-    if (
+    const code = (err as NodeJS.ErrnoException | undefined)?.code;
+    const isMissing =
       err instanceof Error &&
-      ((err as NodeJS.ErrnoException).code === "MODULE_NOT_FOUND" ||
-        (err as NodeJS.ErrnoException).code === "ERR_MODULE_NOT_FOUND") &&
-      err.message.includes(name)
-    ) {
-      throw new Error(`${label}: package \`${name}\` is not installed. Run \`pnpm add ${name}\`.`, {
-        cause: err,
-      });
-    }
-    throw err;
+      (code === "MODULE_NOT_FOUND" || code === "ERR_MODULE_NOT_FOUND") &&
+      err.message.includes(name);
+    if (!isMissing) throw err;
+    throw new Error(`${label}: package \`${name}\` is not installed. Run \`pnpm add ${name}\`.`, {
+      cause: err,
+    });
   }
 }
 

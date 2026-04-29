@@ -1,21 +1,10 @@
 // Copyright 2025 the AAI authors. MIT license.
-/**
- * NDJSON transport for host↔guest communication.
- *
- * Replaces vscode-jsonrpc with a zero-dependency implementation using
- * node:readline for line splitting. Follows JSON-RPC 2.0 wire format.
- *
- * Interface matches vscode-jsonrpc's MessageConnection shape so callers
- * can swap with minimal changes:
- *   sendRequest, onRequest, sendNotification, onNotification, listen, dispose
- */
+// NDJSON transport for host↔guest JSON-RPC 2.0 communication.
 
 import { createInterface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
 import { errorMessage } from "@alexkroman1/aai";
 import { z } from "zod";
-
-// ── Types ────────────────────────────────────────────────────────────────────
 
 type JsonRpcRequest = {
   jsonrpc: "2.0";
@@ -36,8 +25,6 @@ type JsonRpcResponse = {
   result?: unknown;
   error?: { code: number; message: string };
 };
-
-// ── JSON-RPC envelope schemas ───────────────────────────────────────────────
 
 const JsonRpcResponseSchema = z.object({
   jsonrpc: z.literal("2.0"),
@@ -73,8 +60,6 @@ export interface NdjsonConnection {
   dispose(): void;
 }
 
-// ── Message parsing ─────────────────────────────────────────────────────────
-
 type ParsedMessage =
   | { kind: "response"; data: JsonRpcResponse }
   | { kind: "request"; data: JsonRpcRequest }
@@ -108,8 +93,6 @@ function parseJsonRpcMessage(line: string): ParsedMessage {
   return null;
 }
 
-// ── Implementation ───────────────────────────────────────────────────────────
-
 export function createNdjsonConnection(readable: Readable, writable: Writable): NdjsonConnection {
   let nextId = 1;
   let disposed = false;
@@ -123,15 +106,21 @@ export function createNdjsonConnection(readable: Readable, writable: Writable): 
     writable.write(`${JSON.stringify(msg)}\n`);
   }
 
+  function rejectAllPending(reason: string): void {
+    if (disposed) return;
+    disposed = true;
+    const err = new Error(reason);
+    for (const pend of pending.values()) pend.reject(err);
+    pending.clear();
+  }
+
   function handleResponse(response: JsonRpcResponse): void {
     const pend = pending.get(response.id);
     if (!pend) return;
     pending.delete(response.id);
 
     if (response.error) {
-      const err = Object.assign(new Error(response.error.message), {
-        code: response.error.code,
-      } satisfies { code: number });
+      const err = Object.assign(new Error(response.error.message), { code: response.error.code });
       pend.reject(err);
     } else {
       pend.resolve(response.result);
@@ -159,33 +148,27 @@ export function createNdjsonConnection(readable: Readable, writable: Writable): 
   function handleLine(line: string): void {
     const msg = parseJsonRpcMessage(line);
     if (!msg) return;
-
     switch (msg.kind) {
       case "response":
         handleResponse(msg.data);
-        break;
+        return;
       case "request":
         void handleIncomingRequest(msg.data);
-        break;
+        return;
       case "notification":
         notificationHandlers.get(msg.data.method)?.(msg.data.params);
-        break;
+        return;
       default:
-        break;
+        return;
     }
   }
 
   return {
     sendRequest<T = unknown>(method: string, params?: unknown): Promise<T> {
-      if (disposed) {
-        return Promise.reject(new Error("Connection disposed"));
-      }
+      if (disposed) return Promise.reject(new Error("Connection disposed"));
       const id = nextId++;
       const promise = new Promise<T>((resolve, reject) => {
-        pending.set(id, {
-          resolve: resolve as (v: unknown) => void,
-          reject,
-        });
+        pending.set(id, { resolve: resolve as (v: unknown) => void, reject });
       });
       const msg: JsonRpcRequest = { jsonrpc: "2.0", id, method };
       if (params !== undefined) msg.params = params;
@@ -213,28 +196,14 @@ export function createNdjsonConnection(readable: Readable, writable: Writable): 
 
     listen(): void {
       rl = createInterface({ input: readable, crlfDelay: Number.POSITIVE_INFINITY });
-      rl.on("line", (line) => {
-        handleLine(line);
-      });
+      rl.on("line", handleLine);
       rl.on("close", () => {
-        if (!disposed) {
-          disposed = true;
-          const err = new Error("Connection closed");
-          for (const pend of pending.values()) {
-            pend.reject(err);
-          }
-          pending.clear();
-        }
+        rejectAllPending("Connection closed");
       });
     },
 
     dispose(): void {
-      disposed = true;
-      const err = new Error("Connection disposed");
-      for (const pend of pending.values()) {
-        pend.reject(err);
-      }
-      pending.clear();
+      rejectAllPending("Connection disposed");
       rl?.close();
     },
   };

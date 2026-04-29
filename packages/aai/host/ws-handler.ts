@@ -93,15 +93,11 @@ function createClientSink(ws: SessionWebSocket, log: Logger): ClientSink {
   };
 }
 
-function handleBinaryAudio(data: unknown, session: SessionCore): boolean {
+function dispatchMessage(data: unknown, session: SessionCore, log: Logger, sid: string): void {
   if (data instanceof Uint8Array) {
     session.onAudio(data);
-    return true;
+    return;
   }
-  return false;
-}
-
-function handleTextMessage(data: unknown, session: SessionCore, log: Logger, sid: string): void {
   if (typeof data !== "string") {
     log.warn("ws: non-string, non-binary frame received; dropping", { sid });
     return;
@@ -118,7 +114,6 @@ function handleTextMessage(data: unknown, session: SessionCore, log: Logger, sid
     if (result.malformed) {
       log.warn("ws: malformed client message", { sid, error: result.error });
     }
-    // else: unrecognised type — silently drop (rolling-upgrade tolerance)
     return;
   }
   switch (result.data.type) {
@@ -166,8 +161,7 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
     const buf = messageBuffer;
     messageBuffer = null;
     for (const event of buf) {
-      if (handleBinaryAudio(event.data, session)) continue;
-      handleTextMessage(event.data, session, log, sid);
+      dispatchMessage(event.data, session, log, sid);
     }
   }
 
@@ -224,12 +218,12 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
     // Buffer messages until session.start() completes to avoid dispatching
     // to a session whose transport connection isn't established yet.
     if (!sessionReady) {
-      if (messageBuffer && messageBuffer.length < MAX_MESSAGE_BUFFER_SIZE)
+      if (messageBuffer && messageBuffer.length < MAX_MESSAGE_BUFFER_SIZE) {
         messageBuffer.push(event);
+      }
       return;
     }
-    if (handleBinaryAudio(event.data, session)) return;
-    handleTextMessage(event.data, session, log, sid);
+    dispatchMessage(event.data, session, log, sid);
   });
 
   ws.addEventListener("close", () => {

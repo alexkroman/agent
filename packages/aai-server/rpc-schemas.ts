@@ -2,33 +2,25 @@
 /**
  * Zod schemas for the host ↔ guest RPC boundary.
  *
- * The host (sandbox.ts) validates isolate responses with these schemas.
- * The isolate (harness-runtime.ts) is self-contained and does not
- * import these schemas — it uses inline type definitions instead.
+ * The isolate (harness-runtime.ts) is self-contained and uses inline type
+ * definitions instead of importing these schemas, so host and guest can
+ * evolve independently.
  */
 
 import { DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
 import {
   assertProviderTriple,
   ProviderDescriptorSchema,
-  ToolSchemaSchema as ToolSchemaSchema_,
+  ToolSchemaSchema,
 } from "@alexkroman1/aai/manifest";
 import { KvDelSchema, KvGetSchema, KvSetSchema } from "@alexkroman1/aai/protocol";
 import { z } from "zod";
 
-// ── Isolate config ────────────────────────────────────────────────────────
-
 export { ToolSchemaSchema } from "@alexkroman1/aai/manifest";
 
 /**
- * Agent configuration as sent to the guest isolate (gVisor sandbox).
- *
- * This is the server-side equivalent of `AgentConfig` from `aai/manifest` —
- * nearly identical fields, but validated independently at the RPC boundary
- * so the guest and host can evolve schemas separately.
- *
- * Flow: `AgentDef` (sdk/types.ts) → `AgentConfig` (sdk/_internal-types.ts)
- *       → stored as `IsolateConfig` → sent to guest via NDJSON RPC.
+ * Validated independently from `AgentConfig` (sdk/_internal-types.ts) so the
+ * host↔guest wire format can evolve separately from the in-process type.
  */
 export const IsolateConfigSchema = z
   .object({
@@ -39,7 +31,7 @@ export const IsolateConfigSchema = z
     maxSteps: z.number().optional(),
     toolChoice: z.enum(["auto", "required"]).optional(),
     builtinTools: z.array(z.string()).optional(),
-    toolSchemas: z.array(ToolSchemaSchema_).default([]),
+    toolSchemas: z.array(ToolSchemaSchema).default([]),
     allowedHosts: z.array(z.string()).default([]),
     stt: ProviderDescriptorSchema.optional(),
     llm: ProviderDescriptorSchema.optional(),
@@ -49,25 +41,20 @@ export const IsolateConfigSchema = z
     vector: ProviderDescriptorSchema.optional(),
   })
   .superRefine((cfg, ctx) => {
+    function fail(message: string): void {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message });
+    }
     try {
       const mode = assertProviderTriple(cfg.stt, cfg.llm, cfg.tts);
       if (cfg.mode === "pipeline" && mode !== "pipeline") {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: "mode='pipeline' requires stt, llm, and tts to be set",
-        });
+        fail("mode='pipeline' requires stt, llm, and tts to be set");
       }
     } catch (err) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: err instanceof Error ? err.message : String(err),
-      });
+      fail(err instanceof Error ? err.message : String(err));
     }
   });
 
 export type IsolateConfig = z.infer<typeof IsolateConfigSchema>;
-
-// ── RPC response schemas ──────────────────────────────────────────────────
 
 export const ToolCallResponseSchema = z.object({
   result: z.string(),
@@ -75,8 +62,6 @@ export const ToolCallResponseSchema = z.object({
 });
 
 export type ToolCallResponse = z.infer<typeof ToolCallResponseSchema>;
-
-// -- IPC message types (host <-> guest over jsonrpc) --------------------
 
 export const BundleMessageSchema = z.object({
   id: z.string(),
@@ -117,8 +102,7 @@ export type KvRequest = z.infer<typeof KvRequestSchema>;
 export type KvResponse = z.infer<typeof KvResponseSchema>;
 export type ShutdownMessage = z.infer<typeof ShutdownMessageSchema>;
 
-// ── RPC request types (no Zod — host trusts its own requests) ─────────────
-
+// Host trusts its own outgoing tool-call requests, so no Zod schema.
 export type ToolCallRequest = {
   name: string;
   args: Record<string, unknown>;

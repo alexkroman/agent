@@ -108,7 +108,6 @@ describe("SDK integration: AgentDef → tool execution", () => {
     const exec = createRuntime({ agent, env: {} });
     expect(await exec.executeTool("increment", {}, "session-a", [])).toBe("1");
     expect(await exec.executeTool("increment", {}, "session-a", [])).toBe("2");
-    // Different session starts fresh
     expect(await exec.executeTool("increment", {}, "session-b", [])).toBe("1");
   });
 
@@ -141,9 +140,7 @@ describe("SDK integration: AgentDef → tool execution", () => {
     };
 
     const exec = createRuntime({ agent, env: {} });
-    // Valid input
     expect(await exec.executeTool("typed", { count: 5 }, "s1", [])).toBe("10");
-    // Invalid input
     const err = await exec.executeTool("typed", { count: "not a number" }, "s1", []);
     expect(err).toContain("error");
   });
@@ -160,7 +157,6 @@ describe("SDK integration: AgentDef → tool execution", () => {
     };
 
     const config = toAgentConfig(agent);
-    // Should survive JSON round-trip
     const parsed = JSON.parse(JSON.stringify(config));
     expect(parsed.name).toBe("config-test");
     expect(parsed.systemPrompt).toBe("Custom instructions");
@@ -182,9 +178,7 @@ describe("SDK integration: AgentDef → tool execution", () => {
     };
 
     const exec = createRuntime({ agent, env: {} });
-    // Custom tool works
     expect(await exec.executeTool("custom", {}, "s1", [])).toBe("custom result");
-    // Builtin tool works
     const codeResult = await exec.executeTool(
       "run_code",
       { code: 'console.log("from builtin")' },
@@ -192,7 +186,6 @@ describe("SDK integration: AgentDef → tool execution", () => {
       [],
     );
     expect(codeResult).toBe("from builtin");
-    // Tool schemas include both
     const names = exec.toolSchemas.map((s) => s.name);
     expect(names).toContain("custom");
     expect(names).toContain("run_code");

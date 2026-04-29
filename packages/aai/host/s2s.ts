@@ -11,8 +11,13 @@ import type { ClientEvent } from "../sdk/protocol.ts";
 import type { Logger, S2SConfig } from "./runtime-config.ts";
 import { consoleLogger } from "./runtime-config.ts";
 
-const uint8ToBase64 = (bytes: Uint8Array): string => Buffer.from(bytes).toString("base64");
-const base64ToUint8 = (base64: string): Uint8Array => new Uint8Array(Buffer.from(base64, "base64"));
+function uint8ToBase64(bytes: Uint8Array): string {
+  return Buffer.from(bytes).toString("base64");
+}
+
+function base64ToUint8(base64: string): Uint8Array {
+  return new Uint8Array(Buffer.from(base64, "base64"));
+}
 
 export type S2sWebSocket = {
   readonly readyState: number;
@@ -32,8 +37,7 @@ export type CreateS2sWebSocket = (
   opts: { headers: Record<string, string> },
 ) => S2sWebSocket;
 
-// Node's native WebSocket doesn't support custom headers.
-// Use the `ws` package which accepts { headers } in the constructor.
+// Node's native WebSocket doesn't support custom headers; the `ws` package does.
 export const defaultCreateS2sWebSocket: CreateS2sWebSocket = (url, opts) =>
   new WsWebSocket(url, { headers: opts.headers }) as unknown as S2sWebSocket;
 
@@ -91,47 +95,12 @@ export type S2sEvent = ClientEvent & { _interrupted?: boolean };
 type DispatchState = { speechActive: boolean };
 
 type DispatchContext = {
-  /** Logger used for diagnostic `S2S <<` arrival logs. */
   log: Logger;
-  /** Session id threaded through diagnostic logs; omitted when undefined. */
   sid?: string;
 };
 
-function sidContext(ctx: DispatchContext): { sid?: string } {
+function sidFields(ctx: DispatchContext): { sid?: string } {
   return ctx.sid !== undefined ? { sid: ctx.sid } : {};
-}
-
-function dispatchReplyDone(
-  callbacks: S2sCallbacks,
-  msg: Extract<S2sServerMessage, { type: "reply.done" }>,
-  ctx: DispatchContext,
-): void {
-  // Log every raw reply.done arrival from the S2S service — one line per
-  // event, before any client-facing dedup — so we can cross-check which
-  // stalled sessions actually received reply.done for their turn.
-  ctx.log.info("S2S << reply.done", {
-    ...sidContext(ctx),
-    status: msg.status ?? "completed",
-  });
-  if (msg.status === "interrupted") callbacks.onCancelled();
-  else callbacks.onReplyDone();
-}
-
-function dispatchSessionError(
-  callbacks: S2sCallbacks,
-  msg: Extract<S2sServerMessage, { type: "session.error" }>,
-  ctx: DispatchContext,
-): void {
-  ctx.log.warn("S2S << session.error", {
-    ...sidContext(ctx),
-    code: msg.code,
-    message: msg.message,
-  });
-  if (msg.code === "session_not_found" || msg.code === "session_forbidden") {
-    callbacks.onSessionExpired();
-  } else {
-    callbacks.onError(new Error(msg.message));
-  }
 }
 
 function dispatchS2sMessage(
@@ -145,10 +114,9 @@ function dispatchS2sMessage(
       callbacks.onSessionReady(msg.session_id);
       break;
     case "session.updated":
-      // The S2S API conveys the session id via `config.id` here in the
-      // success path (no separate `session.ready` is emitted), so capture
-      // it as the provider session id when present — without it, resume on
-      // transient close can never run.
+      // The S2S API conveys the session id via `config.id` in the success
+      // path (no separate `session.ready` is emitted); capturing it here is
+      // required for resume on transient close.
       if (msg.config?.id !== undefined) callbacks.onSessionReady(msg.config.id);
       break;
     case "input.speech.started":
@@ -176,10 +144,26 @@ function dispatchS2sMessage(
       callbacks.onToolCall(msg.call_id, msg.name, msg.args);
       break;
     case "reply.done":
-      dispatchReplyDone(callbacks, msg, ctx);
+      // Log every raw reply.done before client-facing dedup so we can
+      // cross-check which stalled sessions actually got one.
+      ctx.log.info("S2S << reply.done", {
+        ...sidFields(ctx),
+        status: msg.status ?? "completed",
+      });
+      if (msg.status === "interrupted") callbacks.onCancelled();
+      else callbacks.onReplyDone();
       break;
     case "session.error":
-      dispatchSessionError(callbacks, msg, ctx);
+      ctx.log.warn("S2S << session.error", {
+        ...sidFields(ctx),
+        code: msg.code,
+        message: msg.message,
+      });
+      if (msg.code === "session_not_found" || msg.code === "session_forbidden") {
+        callbacks.onSessionExpired();
+      } else {
+        callbacks.onError(new Error(msg.message));
+      }
       break;
     case "error":
       callbacks.onError(new Error(msg.message));
@@ -266,12 +250,10 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
         return;
       }
       const json = JSON.stringify(msg);
-      if (msg.type !== "input.audio") {
-        if (msg.type === "session.update") {
-          log.info(`S2S >> ${msg.type}`, { payload: json });
-        } else {
-          log.info(`S2S >> ${msg.type}`);
-        }
+      if (msg.type === "session.update") {
+        log.info(`S2S >> ${msg.type}`, { payload: json });
+      } else if (msg.type !== "input.audio") {
+        log.info(`S2S >> ${msg.type}`);
       }
       ws.send(json);
     }
@@ -313,43 +295,41 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
       resolve(handle);
     });
 
-    function tryParseJson(data: unknown): unknown | undefined {
-      try {
-        return JSON.parse(String(data));
-      } catch {
-        log.warn("S2S << invalid JSON", { data: String(data).slice(0, 200) });
-      }
-    }
-
-    function handleAudioFastPath(obj: { type?: unknown; data?: unknown }): boolean {
-      if (obj.type === "reply.audio" && typeof obj.data === "string") {
-        callbacks.onAudio(base64ToUint8(obj.data));
-        return true;
-      }
-      return false;
-    }
-
-    function logIncoming(obj: { type?: unknown }): void {
+    function logIncoming(type: unknown): void {
       // reply.audio and input.audio are ~95% of traffic — skip logging.
-      if (obj.type === "reply.audio" || obj.type === "input.audio") return;
-      // reply.done and session.error get richer logs inside dispatch
-      // (sid + status / code + message); skip the generic line here to
-      // avoid a duplicate.
-      if (obj.type === "reply.done" || obj.type === "session.error") return;
-      log.info(`S2S << ${obj.type}`);
+      // reply.done and session.error get richer logs inside dispatch;
+      // skip here to avoid a duplicate line.
+      if (
+        type === "reply.audio" ||
+        type === "input.audio" ||
+        type === "reply.done" ||
+        type === "session.error"
+      ) {
+        return;
+      }
+      log.info(`S2S << ${type}`);
     }
 
     ws.addEventListener("message", (ev) => {
-      const raw = tryParseJson(ev.data);
-      if (raw === undefined) return;
+      let raw: unknown;
+      try {
+        raw = JSON.parse(String(ev.data));
+      } catch {
+        log.warn("S2S << invalid JSON", { data: String(ev.data).slice(0, 200) });
+        return;
+      }
 
       if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
         log.warn("S2S << non-object JSON message", { type: typeof raw });
         return;
       }
       const obj = raw as Record<string, unknown>;
-      logIncoming(obj);
-      if (handleAudioFastPath(obj)) return;
+      logIncoming(obj.type);
+
+      if (obj.type === "reply.audio" && typeof obj.data === "string") {
+        callbacks.onAudio(base64ToUint8(obj.data));
+        return;
+      }
 
       const parsed = parseS2sMessage(obj);
       if (!parsed) {

@@ -5,8 +5,9 @@ import { describe, expect, test } from "vitest";
 import { createUnstorageKv } from "./unstorage-kv.ts";
 
 function makeKv(prefix?: string) {
-  const opts = prefix != null ? { storage: createStorage(), prefix } : { storage: createStorage() };
-  return createUnstorageKv(opts);
+  return createUnstorageKv(
+    prefix === undefined ? { storage: createStorage() } : { storage: createStorage(), prefix },
+  );
 }
 
 describe("createUnstorageKv", () => {

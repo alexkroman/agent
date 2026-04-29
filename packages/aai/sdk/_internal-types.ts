@@ -1,9 +1,4 @@
 // Copyright 2025 the AAI authors. MIT license.
-/**
- * Internal type definitions shared by server and CLI.
- *
- * Note: this module is for internal use only and should not be used directly.
- */
 
 import type { JSONSchema7 } from "json-schema";
 import { z } from "zod";
@@ -19,27 +14,11 @@ import {
 import type { Message } from "./types.ts";
 import { BuiltinToolSchema, ToolChoiceSchema, type ToolDef } from "./types.ts";
 
-/**
- * Options forwarded to an {@link ExecuteTool} invocation.
- *
- * Primarily used by the pipeline orchestrator (streamText tool loop) to
- * thread an {@link AbortSignal} into tool execution. The S2S voice path
- * does not pass these options today — recipients must treat the whole
- * bag as optional.
- */
 export interface ExecuteToolOptions {
-  /** Abort signal bound to the enclosing LLM turn / request. */
   signal?: AbortSignal;
-  /** Vercel AI SDK tool-call ID for this invocation. Useful for tracing and correlation. */
   toolCallId?: string;
 }
 
-/**
- * Function signature for executing a tool by name.
- *
- * Used by session.ts to invoke tools, by direct-executor.ts and
- * harness-runtime.ts to implement the execution.
- */
 export type ExecuteTool = (
   name: string,
   args: Readonly<Record<string, unknown>>,
@@ -50,12 +29,8 @@ export type ExecuteTool = (
 
 // ─── AgentConfig ────────────────────────────────────────────────────────────
 
-/**
- * Zod schema for serializable agent configuration sent over the wire.
- *
- * This is the JSON-safe subset of the agent definition that can be
- * transmitted between the worker and the host process via structured clone.
- */
+// JSON-safe subset of the agent definition, transmitted between worker and
+// host via structured clone.
 export const AgentConfigSchema = z.object({
   name: z.string().min(1),
   systemPrompt: z.string(),
@@ -73,14 +48,10 @@ export const AgentConfigSchema = z.object({
   vector: ProviderDescriptorSchema.optional(),
 });
 
-/** Serializable agent configuration — derived from {@link AgentConfigSchema}. */
 export type AgentConfig = z.infer<typeof AgentConfigSchema>;
 
-/**
- * Input shape accepted by {@link toAgentConfig}. Covers both `AgentDef`
- * (where `maxSteps` may be a function) and `IsolateConfig` (where it is
- * always a number).
- */
+// Covers both `AgentDef` (where `maxSteps` may be a function) and
+// `IsolateConfig` (where it is always a number).
 export interface AgentConfigSource {
   name: string;
   systemPrompt: string;
@@ -97,27 +68,23 @@ export interface AgentConfigSource {
   vector?: VectorProvider | undefined;
 }
 
-/**
- * Extract the serializable {@link AgentConfig} subset from a source object.
- *
- * When `stt`, `llm`, and `tts` descriptors are present they are all three
- * required (or none) — enforced here so the server can trust the config.
- * `mode` is derived from their presence.
- */
 export function toAgentConfig(src: AgentConfigSource): AgentConfig {
+  // `assertProviderTriple` enforces that stt/llm/tts are all-or-nothing so the
+  // server can trust the resolved mode.
+  const mode = assertProviderTriple(src.stt, src.llm, src.tts);
+
   const config: AgentConfig = {
     name: src.name,
     systemPrompt: src.systemPrompt,
     greeting: src.greeting,
+    mode,
   };
   if (src.sttPrompt !== undefined) config.sttPrompt = src.sttPrompt;
   if (src.maxSteps !== undefined) config.maxSteps = src.maxSteps;
   if (src.toolChoice !== undefined) config.toolChoice = src.toolChoice;
   if (src.builtinTools) config.builtinTools = [...src.builtinTools];
   if (src.idleTimeoutMs !== undefined) config.idleTimeoutMs = src.idleTimeoutMs;
-
-  config.mode = assertProviderTriple(src.stt, src.llm, src.tts);
-  if (config.mode === "pipeline") {
+  if (mode === "pipeline") {
     config.stt = src.stt;
     config.llm = src.llm;
     config.tts = src.tts;
@@ -129,12 +96,8 @@ export function toAgentConfig(src: AgentConfigSource): AgentConfig {
 
 // ─── ToolSchema ─────────────────────────────────────────────────────────────
 
-/**
- * Zod schema for serialized tool definitions sent over the wire.
- *
- * `parameters` must be a valid JSON Schema object (with `type`, `properties`,
- * etc.) — the Vercel AI SDK wraps it via `jsonSchema()`.
- */
+// `parameters` must be a valid JSON Schema object — the Vercel AI SDK wraps
+// it via `jsonSchema()`.
 export const ToolSchemaSchema = z.object({
   type: z.literal("function"),
   name: z.string().min(1),
@@ -142,7 +105,6 @@ export const ToolSchemaSchema = z.object({
   parameters: z.record(z.string(), z.unknown()),
 });
 
-/** Serialized tool schema — derived from {@link ToolSchemaSchema}. */
 export type ToolSchema = {
   type: "function";
   name: string;
@@ -150,15 +112,8 @@ export type ToolSchema = {
   parameters: JSONSchema7;
 };
 
-/** Empty Zod object schema used as default when tools have no parameters. */
 export const EMPTY_PARAMS = z.object({});
 
-/**
- * Convert agent tool definitions to JSON Schema format for wire transport.
- *
- * Transforms the Zod-based `parameters` of each tool into a plain JSON Schema
- * object suitable for structured clone / JSON serialization.
- */
 export function agentToolsToSchemas(tools: Readonly<Record<string, ToolDef>>): ToolSchema[] {
   return Object.entries(tools).map(([name, def]) => ({
     type: "function",

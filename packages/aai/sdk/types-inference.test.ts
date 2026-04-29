@@ -1,15 +1,13 @@
 // Copyright 2025 the AAI authors. MIT license.
-/**
- * Type-level tests for AgentDef and ToolDef type inference.
- *
- * These use vitest's expectTypeOf to verify that TypeScript correctly
- * infers parameter types, state types, and context types without
- * any runtime assertions. A failing type test means a type refactor
- * broke inference for consumers.
- */
 import { describe, expectTypeOf, test } from "vitest";
 import { z } from "zod";
 import type { AgentDef, Message, ToolContext, ToolDef } from "./types.ts";
+
+const baseAgent = {
+  systemPrompt: "Be helpful.",
+  greeting: "Hello!",
+  maxSteps: 5,
+} as const;
 
 describe("ToolDef type inference", () => {
   test("infers parameter types in execute args", () => {
@@ -19,7 +17,6 @@ describe("ToolDef type inference", () => {
       execute: (args) => args,
     };
 
-    // The execute function should receive typed args
     type Args = Parameters<typeof _t.execute>[0];
     expectTypeOf<Args>().toEqualTypeOf<{ name: string; count: number }>();
   });
@@ -31,7 +28,6 @@ describe("ToolDef type inference", () => {
     };
 
     type Args = Parameters<typeof _t.execute>[0];
-    // Without parameters, args is inferred from the base ZodObject
     expectTypeOf<Args>().toBeObject();
   });
 
@@ -57,26 +53,16 @@ describe("ToolDef type inference", () => {
 
 describe("AgentDef type inference", () => {
   test("satisfies AgentDef type", () => {
-    const agent: AgentDef = {
-      name: "test",
-      systemPrompt: "Be helpful.",
-      greeting: "Hello!",
-      maxSteps: 5,
-      tools: {},
-    };
+    const agent: AgentDef = { ...baseAgent, name: "test", tools: {} };
     expectTypeOf(agent).toMatchTypeOf<AgentDef>();
   });
 
   test("typed state flows through to tools", () => {
     type MyState = { counter: number; name: string };
 
-    // This should compile without errors — state type flows
-    // through to tool execute context
     const _agent: AgentDef<MyState> = {
+      ...baseAgent,
       name: "typed-state",
-      systemPrompt: "Be helpful.",
-      greeting: "Hello!",
-      maxSteps: 5,
       state: () => ({ counter: 0, name: "test" }),
       tools: {
         inc: {
@@ -96,25 +82,13 @@ describe("AgentDef type inference", () => {
       execute: ({ name }: { name: string }) => `Hello, ${name}!`,
     };
 
-    const agent: AgentDef = {
-      name: "with-tool",
-      systemPrompt: "Be helpful.",
-      greeting: "Hello!",
-      maxSteps: 5,
-      tools: { greet },
-    };
+    const agent: AgentDef = { ...baseAgent, name: "with-tool", tools: { greet } };
 
     expectTypeOf(agent.tools).toHaveProperty("greet");
   });
 
   test("required fields are present", () => {
-    const agent: AgentDef = {
-      name: "defaults",
-      systemPrompt: "Be helpful.",
-      greeting: "Hello!",
-      maxSteps: 5,
-      tools: {},
-    };
+    const agent: AgentDef = { ...baseAgent, name: "defaults", tools: {} };
     expectTypeOf(agent.systemPrompt).toBeString();
     expectTypeOf(agent.greeting).toBeString();
     expectTypeOf(agent.tools).toBeObject();

@@ -46,31 +46,21 @@ describe("executeToolCall", () => {
   });
 
   test("returns error when tool throws", async () => {
-    expect(
-      await run(
-        "fail",
-        {},
-        makeTool({
-          execute: () => {
-            throw new Error("boom");
-          },
-        }),
-      ),
-    ).toBe(JSON.stringify({ error: "boom" }));
+    const tool = makeTool({
+      execute: () => {
+        throw new Error("boom");
+      },
+    });
+    expect(await run("fail", {}, tool)).toBe(JSON.stringify({ error: "boom" }));
   });
 
   test("returns error string when tool throws", async () => {
-    expect(
-      await run(
-        "fail",
-        {},
-        makeTool({
-          execute: () => {
-            throw new Error("string error");
-          },
-        }),
-      ),
-    ).toBe(JSON.stringify({ error: "string error" }));
+    const tool = makeTool({
+      execute: () => {
+        throw new Error("string error");
+      },
+    });
+    expect(await run("fail", {}, tool)).toBe(JSON.stringify({ error: "string error" }));
   });
 
   test("passes env to tool context", async () => {
@@ -86,15 +76,11 @@ describe("executeToolCall", () => {
   test("kv throws when not provided", async () => {
     const tool = makeTool({
       execute: (_args, ctx) => {
-        try {
-          void ctx.kv;
-          return "no error";
-        } catch (e) {
-          return (e as Error).message;
-        }
+        void ctx.kv;
+        return "no error";
       },
     });
-    expect(await run("test", {}, tool)).toBe("KV not available");
+    expect(await run("test", {}, tool)).toBe(JSON.stringify({ error: "KV not available" }));
   });
 
   test("handles async tool execution", async () => {
@@ -111,50 +97,38 @@ describe("executeToolCall", () => {
     vi.useFakeTimers();
     const tool = makeTool({
       execute: () =>
-        new Promise(() => {
+        new Promise<never>(() => {
           /* never resolves */
         }),
     });
     const promise = run("slow", {}, tool);
     await vi.advanceTimersByTimeAsync(30_000);
-    const result = await promise;
-    expect(result).toBe(JSON.stringify({ error: 'Tool "slow" timed out after 30000ms' }));
+    expect(await promise).toBe(JSON.stringify({ error: 'Tool "slow" timed out after 30000ms' }));
     vi.useRealTimers();
   });
 
   test("ctx.send calls the send callback", async () => {
     const sends: Array<{ event: string; data: unknown }> = [];
-    const tool: ToolDef = {
-      description: "sends an event",
-      parameters: z.object({}),
+    const tool = makeTool({
       execute: (_args, ctx) => {
         ctx.send("game_state", { hp: 10 });
         return "ok";
       },
-    };
-    const result = await executeToolCall(
-      "sender",
-      {},
-      {
-        tool,
-        env: {},
-        send: (event, data) => sends.push({ event, data }),
-      },
-    );
+    });
+    const result = await run("sender", {}, tool, {
+      send: (event: string, data: unknown) => sends.push({ event, data }),
+    });
     expect(result).toBe("ok");
     expect(sends).toEqual([{ event: "game_state", data: { hp: 10 } }]);
   });
 
   test("ctx.send is a no-op when no send callback provided", async () => {
-    const tool: ToolDef = {
-      description: "sends an event",
-      parameters: z.object({}),
+    const tool = makeTool({
       execute: (_args, ctx) => {
         ctx.send("test", {});
         return "ok";
       },
-    };
-    const result = await executeToolCall("sender", {}, { tool, env: {} });
-    expect(result).toBe("ok");
+    });
+    expect(await run("sender", {}, tool)).toBe("ok");
   });
 });

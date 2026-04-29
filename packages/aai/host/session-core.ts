@@ -58,12 +58,14 @@ export type SessionCore = {
 export function createSessionCore(opts: SessionCoreOptions): SessionCore {
   const log = opts.logger ?? consoleLogger;
   const maxHistory = opts.maxHistory ?? DEFAULT_MAX_HISTORY;
-  const idleMs = (() => {
-    const raw = opts.agentConfig.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
-    return raw === 0 || !Number.isFinite(raw) ? 0 : raw;
-  })();
+  const rawIdleMs = opts.agentConfig.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
+  const idleMs = rawIdleMs === 0 || !Number.isFinite(rawIdleMs) ? 0 : rawIdleMs;
 
-  let reply: ReplyState = { currentReplyId: null, pendingTools: [], toolCallCount: 0 };
+  function emptyReply(): ReplyState {
+    return { currentReplyId: null, pendingTools: [], toolCallCount: 0 };
+  }
+
+  let reply: ReplyState = emptyReply();
   let history: Message[] = [];
   let turnPromise: Promise<void> | null = null;
   let idleTimer: NodeJS.Timeout | null = null;
@@ -90,12 +92,12 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
   }
 
   function beginReply(replyId: string): void {
-    reply = { currentReplyId: replyId, pendingTools: [], toolCallCount: 0 };
+    reply = { ...emptyReply(), currentReplyId: replyId };
     turnPromise = null;
   }
 
   function cancelReply(): void {
-    reply = { currentReplyId: null, pendingTools: [], toolCallCount: 0 };
+    reply = emptyReply();
   }
 
   function flushReply(startMs: number, hadTurnPromise: boolean): void {
@@ -209,12 +211,7 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
     },
 
     onToolCall(callId, name, args) {
-      emit({
-        type: "tool_call",
-        toolCallId: callId,
-        toolName: name,
-        args: args as Record<string, unknown>,
-      });
+      emit({ type: "tool_call", toolCallId: callId, toolName: name, args });
       if (reply.currentReplyId === null) {
         log.warn("tool_call with no active reply", { sid: opts.id, name });
         return;

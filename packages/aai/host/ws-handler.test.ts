@@ -5,21 +5,22 @@ import { makeLogger, makeMockCore, silentLogger } from "./_test-utils.ts";
 import type { SessionCore } from "./session-core.ts";
 import { wireSessionSocket } from "./ws-handler.ts";
 
-// ─── Test helpers ────────────────────────────────────────────────────────────
-
 const defaultConfig = { audioFormat: "pcm16" as const, sampleRate: 16_000, ttsSampleRate: 24_000 };
 
-/** Simulate a binary frame arriving on the WebSocket. */
+function openSocket(readyState: number = MockWebSocket.OPEN): MockWebSocket {
+  const ws = new MockWebSocket("ws://test");
+  ws.readyState = readyState;
+  return ws;
+}
+
 function simulateBinaryFrame(ws: MockWebSocket, frame: Uint8Array): void {
   ws.dispatchEvent(new MessageEvent("message", { data: frame }));
 }
 
-/** Simulate a string (text) frame arriving on the WebSocket. */
 function simulateTextFrame(ws: MockWebSocket, text: string): void {
   ws.dispatchEvent(new MessageEvent("message", { data: text }));
 }
 
-/** Wait until wireSessionSocket has fully initialized (sessionReady = true). */
 async function waitForSessionReady(logger: { info: ReturnType<typeof vi.fn> }): Promise<void> {
   await vi.waitFor(() => {
     const calls = logger.info.mock.calls.map((c: unknown[]) => c[0]);
@@ -27,11 +28,19 @@ async function waitForSessionReady(logger: { info: ReturnType<typeof vi.fn> }): 
   });
 }
 
-// ─── Tests ───────────────────────────────────────────────────────────────────
+function parseFirstFrame(ws: MockWebSocket): Record<string, unknown> {
+  return JSON.parse(ws.sent[0] as string);
+}
+
+function deferred<T = void>(): { promise: Promise<T>; resolve: (v: T) => void } {
+  let resolve!: (v: T) => void;
+  const promise = new Promise<T>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
 
 describe("wireSessionSocket", () => {
-  // ─── Lifecycle: startup ──────────────────────────────────────────────────
-
   test("'Session ready' is not logged until session.start() resolves", async () => {
     const logs: string[] = [];
     const logger = {
@@ -41,18 +50,9 @@ describe("wireSessionSocket", () => {
       debug: (msg: string) => logs.push(msg),
     };
 
-    let resolveStart!: () => void;
-    const core = makeMockCore({
-      start: vi.fn(
-        () =>
-          new Promise<void>((r) => {
-            resolveStart = r;
-          }),
-      ),
-    });
-
-    const ws = new MockWebSocket("ws://test");
-    ws.readyState = MockWebSocket.OPEN;
+    const startGate = deferred();
+    const core = makeMockCore({ start: vi.fn(() => startGate.promise) });
+    const ws = openSocket();
 
     wireSessionSocket(ws, {
       sessions: new Map(),
@@ -65,7 +65,7 @@ describe("wireSessionSocket", () => {
     expect(logs).toContain("Session connected");
     expect(logs).not.toContain("Session ready");
 
-    resolveStart();
+    startGate.resolve();
     await vi.waitFor(() => {
       expect(logs).toContain("Session ready");
     });
@@ -73,17 +73,11 @@ describe("wireSessionSocket", () => {
 
   test("logs 'Session start failed' when start() rejects", async () => {
     const logs: { msg: string; meta: Record<string, unknown> | undefined }[] = [];
-    const logger = {
-      info: (msg: string, meta?: Record<string, unknown>) => logs.push({ msg, meta }),
-      warn: (msg: string, meta?: Record<string, unknown>) => logs.push({ msg, meta }),
-      error: (msg: string, meta?: Record<string, unknown>) => logs.push({ msg, meta }),
-      debug: (msg: string, meta?: Record<string, unknown>) => logs.push({ msg, meta }),
-    };
+    const record = (msg: string, meta?: Record<string, unknown>) => logs.push({ msg, meta });
+    const logger = { info: record, warn: record, error: record, debug: record };
 
     const core = makeMockCore({ start: vi.fn(() => Promise.reject(new Error("boom"))) });
-
-    const ws = new MockWebSocket("ws://test");
-    ws.readyState = MockWebSocket.OPEN;
+    const ws = openSocket();
 
     wireSessionSocket(ws, {
       sessions: new Map(),
@@ -101,9 +95,7 @@ describe("wireSessionSocket", () => {
   test("session is added to sessions map on open", () => {
     const sessions = new Map<string, SessionCore>();
     const core = makeMockCore();
-
-    const ws = new MockWebSocket("ws://test");
-    ws.readyState = MockWebSocket.OPEN;
+    const ws = openSocket();
 
     wireSessionSocket(ws, {
       sessions,
@@ -117,9 +109,7 @@ describe("wireSessionSocket", () => {
 
   test("session is removed from sessions map on close", async () => {
     const sessions = new Map<string, SessionCore>();
-
-    const ws = new MockWebSocket("ws://test");
-    ws.readyState = MockWebSocket.OPEN;
+    const ws = openSocket();
 
     wireSessionSocket(ws, {
       sessions,
@@ -135,11 +125,8 @@ describe("wireSessionSocket", () => {
     });
   });
 
-  // ─── CONFIG frame on open ────────────────────────────────────────────────
-
   test("sends CONFIG JSON frame as first message on open", () => {
-    const ws = new MockWebSocket("ws://test");
-    ws.readyState = MockWebSocket.OPEN;
+    const ws = openSocket();
 
     wireSessionSocket(ws, {
       sessions: new Map(),
@@ -149,15 +136,12 @@ describe("wireSessionSocket", () => {
     });
 
     expect(ws.sent.length).toBeGreaterThanOrEqual(1);
-    const firstFrame = ws.sent[0];
-    expect(typeof firstFrame).toBe("string");
-    const msg = JSON.parse(firstFrame as string);
-    expect(msg.type).toBe("config");
+    expect(typeof ws.sent[0]).toBe("string");
+    expect(parseFirstFrame(ws).type).toBe("config");
   });
 
   test("CONFIG frame contains correct sampleRate and ttsSampleRate", () => {
-    const ws = new MockWebSocket("ws://test");
-    ws.readyState = MockWebSocket.OPEN;
+    const ws = openSocket();
 
     wireSessionSocket(ws, {
       sessions: new Map(),
@@ -166,8 +150,7 @@ describe("wireSessionSocket", () => {
       logger: silentLogger,
     });
 
-    const firstFrame = ws.sent[0];
-    const msg = JSON.parse(firstFrame as string);
+    const msg = parseFirstFrame(ws);
     expect(msg.type).toBe("config");
     expect(msg.audioFormat).toBe("pcm16");
     expect(msg.sampleRate).toBe(16_000);
@@ -175,13 +158,11 @@ describe("wireSessionSocket", () => {
   });
 
   test("CONFIG frame includes the session ID as sessionId", () => {
-    const ws = new MockWebSocket("ws://test");
-    ws.readyState = MockWebSocket.OPEN;
-    const sessions = new Map<string, SessionCore>();
+    const ws = openSocket();
     let capturedId: string | undefined;
 
     wireSessionSocket(ws, {
-      sessions,
+      sessions: new Map(),
       createSession: (sid) => {
         capturedId = sid;
         return makeMockCore();
@@ -190,19 +171,15 @@ describe("wireSessionSocket", () => {
       logger: silentLogger,
     });
 
-    const firstFrame = ws.sent[0];
-    const msg = JSON.parse(firstFrame as string);
+    const msg = parseFirstFrame(ws);
     expect(msg.type).toBe("config");
     expect(msg.sessionId).toBeTruthy();
     expect(msg.sessionId).toBe(capturedId);
   });
 
-  // ─── Inbound C2S frame routing ───────────────────────────────────────────
-
   test("raw binary Uint8Array routes to session.onAudio", async () => {
     const core = makeMockCore();
-    const ws = new MockWebSocket("ws://test");
-    ws.readyState = MockWebSocket.OPEN;
+    const ws = openSocket();
     const logger = makeLogger();
 
     wireSessionSocket(ws, {
@@ -224,8 +201,7 @@ describe("wireSessionSocket", () => {
 
   test("audio_ready JSON text frame routes to session.onAudioReady", async () => {
     const core = makeMockCore();
-    const ws = new MockWebSocket("ws://test");
-    ws.readyState = MockWebSocket.OPEN;
+    const ws = openSocket();
     const logger = makeLogger();
 
     wireSessionSocket(ws, {
@@ -242,8 +218,7 @@ describe("wireSessionSocket", () => {
 
   test("cancel JSON text frame routes to session.onCancel", async () => {
     const core = makeMockCore();
-    const ws = new MockWebSocket("ws://test");
-    ws.readyState = MockWebSocket.OPEN;
+    const ws = openSocket();
     const logger = makeLogger();
 
     wireSessionSocket(ws, {
@@ -260,8 +235,7 @@ describe("wireSessionSocket", () => {
 
   test("reset JSON text frame routes to session.onReset", async () => {
     const core = makeMockCore();
-    const ws = new MockWebSocket("ws://test");
-    ws.readyState = MockWebSocket.OPEN;
+    const ws = openSocket();
     const logger = makeLogger();
 
     wireSessionSocket(ws, {
@@ -278,8 +252,7 @@ describe("wireSessionSocket", () => {
 
   test("history JSON text frame routes to session.onHistory with decoded messages", async () => {
     const core = makeMockCore();
-    const ws = new MockWebSocket("ws://test");
-    ws.readyState = MockWebSocket.OPEN;
+    const ws = openSocket();
     const logger = makeLogger();
 
     wireSessionSocket(ws, {
@@ -301,12 +274,9 @@ describe("wireSessionSocket", () => {
     expect(passed).toEqual(messages);
   });
 
-  // ─── Text message error handling ─────────────────────────────────────────
-
   test("invalid JSON text frame is dropped with warning, session not closed", async () => {
     const core = makeMockCore();
-    const ws = new MockWebSocket("ws://test");
-    ws.readyState = MockWebSocket.OPEN;
+    const ws = openSocket();
     const logger = makeLogger();
 
     wireSessionSocket(ws, {
@@ -320,16 +290,13 @@ describe("wireSessionSocket", () => {
 
     simulateTextFrame(ws, "this is not json{{{");
     expect(logger.warn).toHaveBeenCalledWith("ws: invalid JSON; dropping", expect.any(Object));
-    // Session methods must not be called
     expect(core.onAudioReady).not.toHaveBeenCalled();
-    // Socket must still be open (not closed)
     expect(ws.readyState).toBe(MockWebSocket.OPEN);
   });
 
   test("unknown client message type is silently dropped", async () => {
     const core = makeMockCore();
-    const ws = new MockWebSocket("ws://test");
-    ws.readyState = MockWebSocket.OPEN;
+    const ws = openSocket();
     const logger = makeLogger();
 
     wireSessionSocket(ws, {
@@ -341,29 +308,17 @@ describe("wireSessionSocket", () => {
 
     await waitForSessionReady(logger);
 
-    // Valid JSON with a valid { type } envelope but unknown type — lenientParse returns ok:false, malformed:false
+    // Valid envelope but unknown type — lenientParse returns ok:false, malformed:false; must NOT warn (rolling-upgrade tolerance)
     simulateTextFrame(ws, JSON.stringify({ type: "some_future_message_type" }));
-    // Must NOT warn — rolling-upgrade tolerance
     expect(logger.warn).not.toHaveBeenCalled();
     expect(core.onAudioReady).not.toHaveBeenCalled();
     expect(ws.readyState).toBe(MockWebSocket.OPEN);
   });
 
-  // ─── Message buffering ───────────────────────────────────────────────────
-
   test("frames before session is ready are buffered and replayed after start()", async () => {
-    let resolveStart!: () => void;
-    const core = makeMockCore({
-      start: vi.fn(
-        () =>
-          new Promise<void>((r) => {
-            resolveStart = r;
-          }),
-      ),
-    });
-
-    const ws = new MockWebSocket("ws://test");
-    ws.readyState = MockWebSocket.OPEN;
+    const startGate = deferred();
+    const core = makeMockCore({ start: vi.fn(() => startGate.promise) });
+    const ws = openSocket();
     const logger = makeLogger();
 
     wireSessionSocket(ws, {
@@ -373,20 +328,17 @@ describe("wireSessionSocket", () => {
       logger,
     });
 
-    // Session not ready yet — send a cancel text frame
     simulateTextFrame(ws, JSON.stringify({ type: "cancel" }));
     expect(core.onCancel).not.toHaveBeenCalled();
 
-    // Now let start() resolve
-    resolveStart();
+    startGate.resolve();
     await waitForSessionReady(logger);
 
     expect(core.onCancel).toHaveBeenCalledOnce();
   });
 
   test("messages before session is created (no open yet) are ignored", () => {
-    const ws = new MockWebSocket("ws://test");
-    ws.readyState = MockWebSocket.CONNECTING;
+    const ws = openSocket(MockWebSocket.CONNECTING);
 
     wireSessionSocket(ws, {
       sessions: new Map(),
@@ -395,17 +347,12 @@ describe("wireSessionSocket", () => {
       logger: silentLogger,
     });
 
-    // No open yet — session is null, should be silently ignored
     simulateTextFrame(ws, JSON.stringify({ type: "audio_ready" }));
-    // No error thrown
   });
-
-  // ─── Close handler ───────────────────────────────────────────────────────
 
   test("close handler calls session.stop", async () => {
     const core = makeMockCore();
-    const ws = new MockWebSocket("ws://test");
-    ws.readyState = MockWebSocket.OPEN;
+    const ws = openSocket();
 
     wireSessionSocket(ws, {
       sessions: new Map(),
@@ -421,11 +368,8 @@ describe("wireSessionSocket", () => {
     });
   });
 
-  // ─── Error handler ───────────────────────────────────────────────────────
-
   test("error event is logged", () => {
-    const ws = new MockWebSocket("ws://test");
-    ws.readyState = MockWebSocket.OPEN;
+    const ws = openSocket();
     const logger = makeLogger();
 
     wireSessionSocket(ws, {
@@ -446,8 +390,7 @@ describe("wireSessionSocket", () => {
   });
 
   test("generic error event logs default message", () => {
-    const ws = new MockWebSocket("ws://test");
-    ws.readyState = MockWebSocket.OPEN;
+    const ws = openSocket();
     const logger = makeLogger();
 
     wireSessionSocket(ws, {
@@ -465,12 +408,9 @@ describe("wireSessionSocket", () => {
     );
   });
 
-  // ─── Callbacks ───────────────────────────────────────────────────────────
-
   test("onOpen callback is invoked when socket opens", () => {
     const onOpen = vi.fn();
-    const ws = new MockWebSocket("ws://test");
-    ws.readyState = MockWebSocket.OPEN;
+    const ws = openSocket();
 
     wireSessionSocket(ws, {
       sessions: new Map(),
@@ -485,8 +425,7 @@ describe("wireSessionSocket", () => {
 
   test("onClose callback is invoked when socket closes", () => {
     const onClose = vi.fn();
-    const ws = new MockWebSocket("ws://test");
-    ws.readyState = MockWebSocket.OPEN;
+    const ws = openSocket();
 
     wireSessionSocket(ws, {
       sessions: new Map(),
@@ -502,8 +441,7 @@ describe("wireSessionSocket", () => {
 
   test("onSessionEnd is called with sessionId after session cleanup", async () => {
     const onSessionEnd = vi.fn();
-    const ws = new MockWebSocket("ws://test");
-    ws.readyState = MockWebSocket.OPEN;
+    const ws = openSocket();
     const sessions = new Map<string, SessionCore>();
 
     wireSessionSocket(ws, {
@@ -528,8 +466,7 @@ describe("wireSessionSocket", () => {
 
   test("onSinkCreated callback is invoked with sessionId and ClientSink", () => {
     const onSinkCreated = vi.fn();
-    const ws = new MockWebSocket("ws://test");
-    ws.readyState = MockWebSocket.OPEN;
+    const ws = openSocket();
 
     wireSessionSocket(ws, {
       sessions: new Map(),
@@ -543,12 +480,9 @@ describe("wireSessionSocket", () => {
     expect(typeof onSinkCreated.mock.calls[0]?.[0]).toBe("string");
   });
 
-  // ─── ClientSink (indirect testing via createSession capture) ─────────────
-
   test("ClientSink.open reflects ws.readyState", () => {
     let capturedClient!: ClientSink;
-    const ws = new MockWebSocket("ws://test");
-    ws.readyState = MockWebSocket.OPEN;
+    const ws = openSocket();
 
     wireSessionSocket(ws, {
       sessions: new Map(),
@@ -567,8 +501,7 @@ describe("wireSessionSocket", () => {
 
   test("ClientSink.playAudioChunk sends raw binary Uint8Array", () => {
     let capturedClient!: ClientSink;
-    const ws = new MockWebSocket("ws://test");
-    ws.readyState = MockWebSocket.OPEN;
+    const ws = openSocket();
 
     wireSessionSocket(ws, {
       sessions: new Map(),
@@ -583,7 +516,6 @@ describe("wireSessionSocket", () => {
     const chunk = new Uint8Array([10, 20, 30]);
     capturedClient.playAudioChunk(chunk);
 
-    // Find binary frames in sent (skip the initial config JSON string)
     const binaryFrames = (ws.sent as unknown[]).filter((d) => d instanceof Uint8Array);
     expect(binaryFrames.length).toBeGreaterThanOrEqual(1);
     expect(binaryFrames[0]).toBe(chunk);
@@ -591,8 +523,7 @@ describe("wireSessionSocket", () => {
 
   test("ClientSink.playAudioDone sends audio_done JSON text frame", () => {
     let capturedClient!: ClientSink;
-    const ws = new MockWebSocket("ws://test");
-    ws.readyState = MockWebSocket.OPEN;
+    const ws = openSocket();
 
     wireSessionSocket(ws, {
       sessions: new Map(),
@@ -606,18 +537,15 @@ describe("wireSessionSocket", () => {
 
     capturedClient.playAudioDone();
 
-    // Find JSON string frames after the initial config
     const textFrames = (ws.sent as unknown[])
       .filter((d): d is string => typeof d === "string")
       .map((s) => JSON.parse(s));
-    const audioDoneFrame = textFrames.find((m) => m.type === "audio_done");
-    expect(audioDoneFrame).toBeDefined();
+    expect(textFrames.find((m) => m.type === "audio_done")).toBeDefined();
   });
 
   test("ClientSink tolerates ws.send throwing (closed socket)", () => {
     let capturedClient!: ClientSink;
-    const ws = new MockWebSocket("ws://test");
-    ws.readyState = MockWebSocket.OPEN;
+    const ws = openSocket();
 
     wireSessionSocket(ws, {
       sessions: new Map(),
@@ -629,30 +557,18 @@ describe("wireSessionSocket", () => {
       logger: silentLogger,
     });
 
-    // Override send to throw
     ws.send = () => {
       throw new Error("socket closed");
     };
-    // Should not throw
     capturedClient.event({ type: "speech_started" });
     capturedClient.playAudioChunk(new Uint8Array([1]));
     capturedClient.playAudioDone();
   });
 
-  // ─── Concurrency regression tests ────────────────────────────────────────
-
   test("close during start() does not double-stop or throw", async () => {
-    let resolveStart!: () => void;
-    const core = makeMockCore({
-      start: vi.fn(
-        () =>
-          new Promise<void>((r) => {
-            resolveStart = r;
-          }),
-      ),
-    });
-    const ws = new MockWebSocket("ws://test");
-    ws.readyState = MockWebSocket.OPEN;
+    const startGate = deferred();
+    const core = makeMockCore({ start: vi.fn(() => startGate.promise) });
+    const ws = openSocket();
     const sessions = new Map<string, SessionCore>();
 
     wireSessionSocket(ws, {
@@ -662,11 +578,9 @@ describe("wireSessionSocket", () => {
       logger: silentLogger,
     });
 
-    // Close while start() is pending
     ws.close();
+    startGate.resolve();
 
-    // Now start() resolves
-    resolveStart();
     await vi.waitFor(() => {
       expect(core.stop).toHaveBeenCalledOnce();
     });
@@ -674,8 +588,7 @@ describe("wireSessionSocket", () => {
 
   test("start() failure removes session from map before close", async () => {
     const core = makeMockCore({ start: vi.fn(() => Promise.reject(new Error("boom"))) });
-    const ws = new MockWebSocket("ws://test");
-    ws.readyState = MockWebSocket.OPEN;
+    const ws = openSocket();
     const sessions = new Map<string, SessionCore>();
 
     wireSessionSocket(ws, {
@@ -689,24 +602,19 @@ describe("wireSessionSocket", () => {
       expect(sessions.size).toBe(0);
     });
 
-    // Close should not throw — session is null
     ws.close();
   });
-
-  // ─── Session start timeout ────────────────────────────────────────────────
 
   test("session.start() timeout triggers 'Session start failed'", async () => {
     const core = makeMockCore({
       start: vi.fn(
         () =>
           new Promise<void>(() => {
-            /* intentionally never resolves */
+            /* never resolves */
           }),
       ),
     });
-
-    const ws = new MockWebSocket("ws://test");
-    ws.readyState = MockWebSocket.OPEN;
+    const ws = openSocket();
     const sessions = new Map<string, SessionCore>();
 
     wireSessionSocket(ws, {
@@ -732,12 +640,9 @@ describe("wireSessionSocket", () => {
     );
   });
 
-  // ─── Socket not yet open ──────────────────────────────────────────────────
-
-  test("waits for open event when readyState is not OPEN", async () => {
+  test("waits for open event when readyState is not OPEN", () => {
     const core = makeMockCore();
-    const ws = new MockWebSocket("ws://test");
-    ws.readyState = MockWebSocket.CONNECTING;
+    const ws = openSocket(MockWebSocket.CONNECTING);
 
     wireSessionSocket(ws, {
       sessions: new Map(),
@@ -746,22 +651,17 @@ describe("wireSessionSocket", () => {
       logger: silentLogger,
     });
 
-    // Session not started yet — waiting for open
     expect(core.start).not.toHaveBeenCalled();
 
-    // Simulate open
     ws.readyState = MockWebSocket.OPEN;
     ws.dispatchEvent(new Event("open"));
 
     expect(core.start).toHaveBeenCalledOnce();
   });
 
-  // ─── Session resume ───────────────────────────────────────────────────────
-
   test("resumeFrom reuses old session ID instead of generating new UUID", () => {
     const sessions = new Map<string, SessionCore>();
-    const ws = new MockWebSocket("ws://test");
-    ws.readyState = MockWebSocket.OPEN;
+    const ws = openSocket();
     let capturedId: string | undefined;
 
     wireSessionSocket(ws, {
@@ -780,8 +680,7 @@ describe("wireSessionSocket", () => {
   });
 
   test("CONFIG frame contains resumed session ID as sessionId", () => {
-    const ws = new MockWebSocket("ws://test");
-    ws.readyState = MockWebSocket.OPEN;
+    const ws = openSocket();
 
     wireSessionSocket(ws, {
       sessions: new Map(),
@@ -791,16 +690,14 @@ describe("wireSessionSocket", () => {
       resumeFrom: "resume-id-123",
     });
 
-    const firstFrame = ws.sent[0];
-    const msg = JSON.parse(firstFrame as string);
+    const msg = parseFirstFrame(ws);
     expect(msg.type).toBe("config");
     expect(msg.sessionId).toBe("resume-id-123");
   });
 
   test("without resumeFrom, generates a new UUID session ID", () => {
     const sessions = new Map<string, SessionCore>();
-    const ws = new MockWebSocket("ws://test");
-    ws.readyState = MockWebSocket.OPEN;
+    const ws = openSocket();
     let capturedId: string | undefined;
 
     wireSessionSocket(ws, {
@@ -815,7 +712,6 @@ describe("wireSessionSocket", () => {
 
     expect(capturedId).toBeDefined();
     expect(capturedId).not.toBe("");
-    // UUID format: 8-4-4-4-12
     expect(capturedId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
   });
 });

@@ -33,7 +33,7 @@ export type ExecuteToolCallOptions = {
 };
 
 function buildToolContext(opts: ExecuteToolCallOptions): ToolContext {
-  const { env, state, kv, vector, messages, sessionId } = opts;
+  const { env, state, kv, vector, messages, sessionId, send } = opts;
   return {
     env,
     state: state ?? {},
@@ -48,9 +48,20 @@ function buildToolContext(opts: ExecuteToolCallOptions): ToolContext {
     messages: messages ?? [],
     sessionId: sessionId ?? "",
     send(event: string, data: unknown): void {
-      opts.send?.(event, data);
+      send?.(event, data);
     },
   };
+}
+
+function formatZodIssues(error: z.ZodError | undefined): string {
+  return (error?.issues ?? [])
+    .map((i: z.ZodIssue) => `${i.path.map(String).join(".")}: ${i.message}`)
+    .join(", ");
+}
+
+function stringifyResult(result: unknown): string {
+  if (result == null) return "null";
+  return typeof result === "string" ? result : JSON.stringify(result);
 }
 
 export async function executeToolCall(
@@ -58,14 +69,11 @@ export async function executeToolCall(
   args: Readonly<Record<string, unknown>>,
   options: ExecuteToolCallOptions,
 ): Promise<string> {
-  const { tool } = options;
+  const { tool, logger } = options;
   const schema = tool.parameters ?? EMPTY_PARAMS;
   const parsed = schema.safeParse(args);
   if (!parsed.success) {
-    const issues = (parsed.error?.issues ?? [])
-      .map((i: z.ZodIssue) => `${i.path.map(String).join(".")}: ${i.message}`)
-      .join(", ");
-    return toolError(`Invalid arguments for tool "${name}": ${issues}`);
+    return toolError(`Invalid arguments for tool "${name}": ${formatZodIssues(parsed.error)}`);
   }
 
   try {
@@ -76,12 +84,10 @@ export async function executeToolCall(
       message: `Tool "${name}" timed out after ${TOOL_EXECUTION_TIMEOUT_MS}ms`,
     });
     await yieldTick();
-    if (result == null) return "null";
-    return typeof result === "string" ? result : JSON.stringify(result);
+    return stringifyResult(result);
   } catch (err: unknown) {
-    const log = options.logger;
-    if (log) {
-      log.warn("Tool execution failed", { tool: name, error: errorDetail(err) });
+    if (logger) {
+      logger.warn("Tool execution failed", { tool: name, error: errorDetail(err) });
     } else {
       console.warn(`[tool-executor] Tool execution failed: ${name}`, err);
     }

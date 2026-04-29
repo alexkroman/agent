@@ -53,20 +53,15 @@ export async function retryOnTransient<T>(
   op: () => Promise<T>,
   opts: RetryOptions = {},
 ): Promise<T> {
-  const attempts = opts.attempts ?? 3;
-  const baseDelayMs = opts.baseDelayMs ?? 50;
-  let lastErr: unknown;
-  for (let i = 0; i < attempts; i++) {
+  const { attempts = 3, baseDelayMs = 50, onRetry } = opts;
+  for (let i = 0; ; i++) {
     try {
       return await op();
     } catch (err) {
-      lastErr = err;
       if (!isTransientNetworkError(err) || i === attempts - 1) throw err;
-      opts.onRetry?.(i + 1, attempts, err);
+      onRetry?.(i + 1, attempts, err);
       const delay = baseDelayMs * 2 ** i + Math.random() * baseDelayMs;
       await new Promise((r) => setTimeout(r, delay));
     }
   }
-  // Unreachable — either `return await op()` or the final iteration threw.
-  throw lastErr;
 }

@@ -9,18 +9,14 @@
  * environment (browser, Deno, Node.js sandboxes).
  */
 
-/** Private/special-use TLDs that must never appear in allowedHosts patterns. */
 const BLOCKED_TLDS = ["local", "internal", "localhost"];
 
-/**
- * Regex that matches an IPv4 address (four decimal octets separated by dots).
- * Anchored so partial matches like "192.168.1.1.example.com" don't trigger it.
- */
 const IPV4_RE = /^(\d{1,3}\.){3}\d{1,3}$/;
 
-type ValidationResult = { valid: true } | { valid: false; reason: string };
+type ValidationFailure = { valid: false; reason: string };
+type ValidationResult = { valid: true } | ValidationFailure;
 
-function fail(reason: string): { valid: false; reason: string } {
+function fail(reason: string): ValidationFailure {
   return { valid: false, reason };
 }
 
@@ -91,18 +87,16 @@ export function validateAllowedHostPattern(pattern: string): ValidationResult {
 export function matchesAllowedHost(hostname: string, patterns: string[]): boolean {
   if (patterns.length === 0) return false;
 
-  // Strip port — only when there are no brackets (IPv6 bracket notation).
+  // Strip port only when there are no brackets (preserves IPv6 bracket notation).
   const portIndex = hostname.lastIndexOf(":");
-  let host = portIndex !== -1 && !hostname.includes("[") ? hostname.slice(0, portIndex) : hostname;
-
-  // Normalise: lowercase + strip trailing dot
-  host = host.toLowerCase().replace(/\.$/, "");
+  const withoutPort =
+    portIndex !== -1 && !hostname.includes("[") ? hostname.slice(0, portIndex) : hostname;
+  const host = withoutPort.toLowerCase().replace(/\.$/, "");
 
   for (const pattern of patterns) {
     const p = pattern.toLowerCase();
     if (p.startsWith("*.")) {
-      // Wildcard: hostname must end with the suffix (e.g. ".example.com")
-      const suffix = p.slice(1); // ".example.com"
+      const suffix = p.slice(1);
       if (host.endsWith(suffix) && host.length > suffix.length) return true;
     } else if (host === p) {
       return true;

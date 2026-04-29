@@ -92,40 +92,31 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
       const emitter: Emitter<TtsEvents> = createNanoEvents<TtsEvents>();
       let closed = false;
 
-      /** Mint a fresh context bound to the shared TTSWS connection. */
+      const audioConfig = {
+        model_id: model,
+        voice: { mode: "id" as const, id: voice },
+        output_format: {
+          container: "raw" as const,
+          encoding: "pcm_s16le" as const,
+          sample_rate: sampleRate,
+        },
+      };
+      const baseRequest = { ...audioConfig, language };
+
       const mintContext = (): TTSWSContext =>
-        ws.context({
-          model_id: model,
-          voice: { mode: "id", id: voice },
-          output_format: {
-            container: "raw",
-            encoding: "pcm_s16le",
-            sample_rate: sampleRate,
-          },
-          contextId: randomUUID(),
-        });
+        ws.context({ ...audioConfig, contextId: randomUUID() });
 
       let context = mintContext();
-      /**
-       * `doneEmitted` guards against emitting `done` more than once per turn.
-       * Reset whenever a fresh context is minted (i.e. at turn boundaries).
-       */
       let doneEmitted = false;
-      /**
-       * After `flush()` or `cancel()`, the current context is done accepting
-       * input. We defer minting a fresh one until the next `sendText()` so
-       * that late audio chunks + Cartesia's real `done` event (both tagged
-       * with the flushed context's id) still pass the filter below. Rotating
-       * eagerly would silently drop all audio still in flight.
-       */
+      // Defer minting after flush/cancel until next sendText so late audio
+      // chunks + Cartesia's real `done` (tagged with the flushed context's id)
+      // still pass the filter. Rotating eagerly would drop in-flight audio.
       let rotatePending = false;
-      const rotateContext = () => {
+      const rotateIfPending = () => {
+        if (!rotatePending) return;
         context = mintContext();
         doneEmitted = false;
         rotatePending = false;
-      };
-      const rotateIfPending = () => {
-        if (rotatePending) rotateContext();
       };
       const emitDoneOnce = () => {
         if (doneEmitted || closed) return;
@@ -136,12 +127,11 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
       // TTSWS fires events globally across all contexts on the shared
       // socket; filter by the currently-active context_id.
       ws.on("chunk", (event) => {
-        if (closed) return;
-        if (event.context_id !== context.contextId) return;
+        if (closed || event.context_id !== context.contextId) return;
         const buf = event.audio;
         if (!buf || buf.byteLength === 0) return;
-        // Cartesia sends PCM16 LE; be defensive about odd byte counts
-        // so `new Int16Array` never throws on a misaligned length.
+        // Defensive: trim odd byte counts so `new Int16Array` never throws
+        // on a misaligned length.
         const evenBytes = buf.byteLength - (buf.byteLength % 2);
         if (evenBytes === 0) return;
         const pcm = new Int16Array(buf.buffer.slice(buf.byteOffset, buf.byteOffset + evenBytes));
@@ -149,8 +139,7 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
       });
 
       ws.on("done", (event) => {
-        if (closed) return;
-        if (event.context_id !== context.contextId) return;
+        if (closed || event.context_id !== context.contextId) return;
         emitDoneOnce();
       });
 
@@ -165,38 +154,25 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
         try {
           ws.close({ code: 1000, reason: "client close" });
         } catch {
-          // Swallow: caller has already decided to tear down.
+          // Caller has already decided to tear down.
         }
       };
 
       if (openOpts.signal.aborted) {
         void close();
       } else {
-        openOpts.signal.addEventListener("abort", () => void close(), {
-          once: true,
-        });
+        openOpts.signal.addEventListener("abort", () => void close(), { once: true });
       }
 
-      const baseRequest = {
-        model_id: model,
-        voice: { mode: "id" as const, id: voice },
-        output_format: {
-          container: "raw" as const,
-          encoding: "pcm_s16le" as const,
-          sample_rate: sampleRate,
-        },
-        language,
-      };
-
       const ignoreRejection = (_err: unknown): void => {
-        // intentionally empty
+        /* no-op */
       };
 
       const session: CartesiaSession = {
         sendText(text: string) {
           if (closed || text.length === 0) return;
-          // First sendText after a flush/cancel starts a fresh context so
-          // we don't append to one that's already been finalized.
+          // First sendText after flush/cancel starts a fresh context so we
+          // don't append to one that's already been finalized.
           rotateIfPending();
           void context
             .send({ ...baseRequest, transcript: text, continue: true })
@@ -204,12 +180,10 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
         },
         flush() {
           if (closed || rotatePending) return;
-          // Empty transcript with `continue: false` is the canonical
-          // end-of-turn signal. Cartesia finishes synthesizing whatever
-          // is queued and then emits a `done` tagged with the same
-          // context_id — at that point `emitDoneOnce` fires for real.
-          // Defer rotation so the filter below still accepts in-flight
-          // audio chunks and the real `done` event.
+          // Empty transcript + `continue: false` is the canonical end-of-turn
+          // signal. Cartesia finishes synthesizing what's queued and emits
+          // `done` tagged with the same context_id; rotation is deferred so
+          // in-flight audio chunks and the real `done` still pass the filter.
           void context
             .send({ ...baseRequest, transcript: "", continue: false })
             .catch(ignoreRejection);
@@ -218,18 +192,15 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
         cancel() {
           if (closed) return;
           // Skip the wire cancel if the context is already final on
-          // Cartesia's side (natural `done` after flush, or a prior
-          // cancel). Cartesia responds to cancel on a retired context
-          // with a 400 "context ID does not exist", which our error
-          // listener surfaces as `tts_stream_error` and the pipeline
-          // treats as fatal — killing the session for a benign race.
+          // Cartesia's side: cancelling a retired context returns a 400
+          // ("context ID does not exist") which surfaces as a fatal
+          // tts_stream_error for a benign race.
           if (!doneEmitted) {
             void context.cancel().catch(ignoreRejection);
           }
-          // Emit synchronously: barge-in advances the orchestrator's
-          // state machine on `done`, and delaying it would audibly
-          // stall subsequent turns. Cartesia stops producing audio
-          // after cancel, so dropping any late chunks is fine.
+          // Emit synchronously: barge-in advances the orchestrator on `done`;
+          // delaying would audibly stall subsequent turns. Cartesia stops
+          // producing audio after cancel, so dropping late chunks is fine.
           emitDoneOnce();
           rotatePending = true;
         },
@@ -240,7 +211,6 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
         _ws: ws,
         _currentContextId: () => context.contextId,
       };
-
       return session;
     },
   };

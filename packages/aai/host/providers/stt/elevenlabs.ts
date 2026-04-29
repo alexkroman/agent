@@ -85,16 +85,17 @@ export function openElevenLabs(opts: ElevenLabsOptions = {}): SttOpener {
       const emitter: Emitter<SttEvents> = createNanoEvents<SttEvents>();
       let closed = false;
 
-      connection.on(RealtimeEvents.PARTIAL_TRANSCRIPT, (msg) => {
+      function emitTranscript(event: "partial" | "final", text: string | undefined) {
         if (closed) return;
-        const text = msg.text ?? "";
-        if (text.length > 0) emitter.emit("partial", text);
+        if (text && text.length > 0) emitter.emit(event, text);
+      }
+
+      connection.on(RealtimeEvents.PARTIAL_TRANSCRIPT, (msg) => {
+        emitTranscript("partial", msg.text);
       });
 
       connection.on(RealtimeEvents.COMMITTED_TRANSCRIPT, (msg) => {
-        if (closed) return;
-        const text = msg.text ?? "";
-        if (text.length > 0) emitter.emit("final", text);
+        emitTranscript("final", msg.text);
       });
 
       connection.on(RealtimeEvents.ERROR, (payload) => {
@@ -111,15 +112,15 @@ export function openElevenLabs(opts: ElevenLabsOptions = {}): SttOpener {
         emitter.emit("error", makeSttError("stt_auth_failed", msg.error));
       });
 
-      const close = async (): Promise<void> => {
+      async function close(): Promise<void> {
         if (closed) return;
         closed = true;
         try {
           connection.close();
         } catch {
-          // Swallow: caller has already decided to tear down.
+          // Already tearing down — ignore close errors.
         }
-      };
+      }
 
       if (openOpts.signal.aborted) {
         void close();

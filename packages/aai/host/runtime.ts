@@ -48,46 +48,27 @@ import { type SessionWebSocket, wireSessionSocket } from "./ws-handler.ts";
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 /**
- * Resolve the API key env-var for the configured STT provider.
- *
- * Each STT provider uses its own env var (e.g. `ASSEMBLYAI_API_KEY`,
- * `DEEPGRAM_API_KEY`). We read the kind from the descriptor if it is one;
- * pre-resolved openers have no kind field so we fall back to AssemblyAI for
- * backward compatibility (openers supply their own key at open-time anyway).
+ * Read the descriptor `kind` if present. Pre-resolved openers (test escape
+ * hatch) have no `kind` field, so callers fall back to a default env var.
  */
+function descriptorKind(value: object | undefined): string | undefined {
+  const kind = (value as { kind?: unknown } | undefined)?.kind;
+  return typeof kind === "string" ? kind : undefined;
+}
+
 function resolveSttApiKey(
   stt: SttProvider | SttOpener | undefined,
   env: Record<string, string>,
 ): string {
-  // SttProvider descriptors carry a `kind` field; SttOpener does not.
-  const kind =
-    stt != null && "kind" in stt && typeof (stt as SttProvider).kind === "string"
-      ? (stt as SttProvider).kind
-      : undefined;
-  if (kind === DEEPGRAM_KIND) return resolveApiKey("DEEPGRAM_API_KEY", env);
-  // Default: ASSEMBLYAI_KIND or pre-resolved opener (backward compat).
+  if (descriptorKind(stt) === DEEPGRAM_KIND) return resolveApiKey("DEEPGRAM_API_KEY", env);
   return resolveApiKey("ASSEMBLYAI_API_KEY", env);
 }
 
-/**
- * Resolve the API key env-var for the configured TTS provider.
- *
- * Each TTS provider uses its own env var (e.g. `CARTESIA_API_KEY`,
- * `RIME_API_KEY`). We read the kind from the descriptor if it is one;
- * pre-resolved openers have no kind field so we fall back to Cartesia for
- * backward compatibility (openers supply their own key at open-time anyway).
- */
 function resolveTtsApiKey(
   tts: TtsProvider | TtsOpener | undefined,
   env: Record<string, string>,
 ): string {
-  // TtsProvider descriptors carry a `kind` field; TtsOpener does not.
-  const kind =
-    tts != null && "kind" in tts && typeof (tts as TtsProvider).kind === "string"
-      ? (tts as TtsProvider).kind
-      : undefined;
-  if (kind === RIME_KIND) return resolveApiKey("RIME_API_KEY", env);
-  // Default: CARTESIA_KIND or pre-resolved opener (backward compat).
+  if (descriptorKind(tts) === RIME_KIND) return resolveApiKey("RIME_API_KEY", env);
   return resolveApiKey("CARTESIA_API_KEY", env);
 }
 
@@ -369,17 +350,14 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   // Resolve pipeline providers once per runtime (not per session). Each
   // session reuses the same opener / LanguageModel — the opener's `open()`
   // mints the per-session stream inside.
-  const pipelineProviders =
-    mode === "pipeline"
-      ? {
-          // biome-ignore lint/style/noNonNullAssertion: mode === "pipeline" ⇒ all three set
-          stt: resolveSttIfDescriptor(opts.stt!),
-          // biome-ignore lint/style/noNonNullAssertion: mode === "pipeline" ⇒ all three set
-          llm: resolveLlmIfDescriptor(opts.llm!, env),
-          // biome-ignore lint/style/noNonNullAssertion: mode === "pipeline" ⇒ all three set
-          tts: resolveTtsIfDescriptor(opts.tts!),
-        }
-      : null;
+  let pipelineProviders: { stt: SttOpener; llm: LanguageModel; tts: TtsOpener } | null = null;
+  if (mode === "pipeline" && opts.stt && opts.llm && opts.tts) {
+    pipelineProviders = {
+      stt: resolveSttIfDescriptor(opts.stt),
+      llm: resolveLlmIfDescriptor(opts.llm, env),
+      tts: resolveTtsIfDescriptor(opts.tts),
+    };
+  }
 
   function createSession(sessionOpts: {
     id: string;

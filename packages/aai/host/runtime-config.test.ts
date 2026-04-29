@@ -3,11 +3,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { jsonLogger } from "./runtime-config.ts";
 
-/** Parse the JSON line at `index` from `chunks`, failing if missing. */
 function parseEntry(chunks: string[], index: number): Record<string, unknown> {
   const raw = chunks[index];
   if (raw === undefined) throw new Error(`No chunk at index ${index}`);
   return JSON.parse(raw) as Record<string, unknown>;
+}
+
+function spyWriteInto(stream: NodeJS.WriteStream, sink: string[]): void {
+  vi.spyOn(stream, "write").mockImplementation((chunk: string | Uint8Array) => {
+    sink.push(String(chunk));
+    return true;
+  });
 }
 
 describe("jsonLogger", () => {
@@ -17,14 +23,8 @@ describe("jsonLogger", () => {
   beforeEach(() => {
     stdoutChunks = [];
     stderrChunks = [];
-    vi.spyOn(process.stdout, "write").mockImplementation((chunk: string | Uint8Array) => {
-      stdoutChunks.push(String(chunk));
-      return true;
-    });
-    vi.spyOn(process.stderr, "write").mockImplementation((chunk: string | Uint8Array) => {
-      stderrChunks.push(String(chunk));
-      return true;
-    });
+    spyWriteInto(process.stdout, stdoutChunks);
+    spyWriteInto(process.stderr, stderrChunks);
   });
 
   afterEach(() => {

@@ -28,7 +28,13 @@ import type {
   TtsSession,
 } from "../sdk/providers.ts";
 
+function makeCodedError<C extends string>(code: C, message: string): Error & { code: C } {
+  return Object.assign(new Error(message), { code });
+}
+
 // ─── Fake STT ───────────────────────────────────────────────────────────────
+
+type SttErrorCode = "stt_stream_error" | "stt_connect_failed" | "stt_auth_failed";
 
 export type FakeSttSession = SttSession & {
   readonly emitter: Emitter<SttEvents>;
@@ -37,10 +43,7 @@ export type FakeSttSession = SttSession & {
   readonly closed: { value: boolean };
   firePartial(text: string): void;
   fireFinal(text: string): void;
-  fireError(
-    code: "stt_stream_error" | "stt_connect_failed" | "stt_auth_failed",
-    message: string,
-  ): void;
+  fireError(code: SttErrorCode, message: string): void;
 };
 
 export type FakeSttProvider = SttOpener & {
@@ -71,17 +74,14 @@ export function createFakeSttProvider(): FakeSttProvider {
         close: vi.fn(async () => {
           closed.value = true;
         }),
-        firePartial(text: string) {
+        firePartial(text) {
           emitter.emit("partial", text);
         },
-        fireFinal(text: string) {
+        fireFinal(text) {
           emitter.emit("final", text);
         },
         fireError(code, message) {
-          const err = Object.assign(new Error(message), { code }) as Parameters<
-            SttEvents["error"]
-          >[0];
-          emitter.emit("error", err);
+          emitter.emit("error", makeCodedError(code, message) as Parameters<SttEvents["error"]>[0]);
         },
       };
       sessions.push(session);
@@ -92,6 +92,8 @@ export function createFakeSttProvider(): FakeSttProvider {
 
 // ─── Fake TTS ───────────────────────────────────────────────────────────────
 
+type TtsErrorCode = "tts_stream_error" | "tts_connect_failed" | "tts_auth_failed";
+
 export type FakeTtsSession = TtsSession & {
   readonly emitter: Emitter<TtsEvents>;
   readonly opts: TtsOpenOptions;
@@ -101,10 +103,7 @@ export type FakeTtsSession = TtsSession & {
   readonly flush: ReturnType<typeof vi.fn<() => void>>;
   readonly cancel: ReturnType<typeof vi.fn<() => void>>;
   fireAudio(pcm: Int16Array): void;
-  fireError(
-    code: "tts_stream_error" | "tts_connect_failed" | "tts_auth_failed",
-    message: string,
-  ): void;
+  fireError(code: TtsErrorCode, message: string): void;
 };
 
 export type FakeTtsProvider = TtsOpener & {
@@ -152,14 +151,11 @@ export function createFakeTtsProvider(
         close: vi.fn(async () => {
           closed.value = true;
         }),
-        fireAudio(pcm: Int16Array) {
+        fireAudio(pcm) {
           emitter.emit("audio", pcm);
         },
         fireError(code, message) {
-          const err = Object.assign(new Error(message), { code }) as Parameters<
-            TtsEvents["error"]
-          >[0];
-          emitter.emit("error", err);
+          emitter.emit("error", makeCodedError(code, message) as Parameters<TtsEvents["error"]>[0]);
         },
       };
       sessions.push(session);
@@ -172,15 +168,11 @@ export function createFakeTtsProvider(
  * Fake STT provider that throws on `open()` with a given error code. Used to
  * test atomic provider open — TTS should not be opened at all when STT fails.
  */
-export function createFailingSttProvider(
-  code: "stt_connect_failed" | "stt_auth_failed" | "stt_stream_error",
-  message: string,
-): SttOpener {
+export function createFailingSttProvider(code: SttErrorCode, message: string): SttOpener {
   return {
     name: "failing-stt",
     async open(): Promise<SttSession> {
-      const err = Object.assign(new Error(message), { code }) as Error & { code: typeof code };
-      throw err;
+      throw makeCodedError(code, message);
     },
   };
 }
@@ -189,15 +181,11 @@ export function createFailingSttProvider(
  * Fake TTS provider that throws on `open()` with a given error code. Used to
  * test atomic provider open — STT should be closed when TTS fails.
  */
-export function createFailingTtsProvider(
-  code: "tts_connect_failed" | "tts_auth_failed" | "tts_stream_error",
-  message: string,
-): TtsOpener {
+export function createFailingTtsProvider(code: TtsErrorCode, message: string): TtsOpener {
   return {
     name: "failing-tts",
     async open(): Promise<TtsSession> {
-      const err = Object.assign(new Error(message), { code }) as Error & { code: typeof code };
-      throw err;
+      throw makeCodedError(code, message);
     },
   };
 }

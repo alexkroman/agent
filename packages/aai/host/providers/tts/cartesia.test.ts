@@ -1,11 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
-/** Unit test for the Cartesia TTS adapter. Mocks `@cartesia/cartesia-js`. */
 
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { flush } from "../../_test-utils.ts";
 import { type CartesiaSession, openCartesia } from "./cartesia.ts";
 
-// Recorded interactions on the fake `TTSWSContext` — one entry per method call.
 interface RecordedSend {
   kind: "send" | "cancel";
   contextId: string;
@@ -17,7 +15,6 @@ interface RecordedSend {
 
 const sends: RecordedSend[] = [];
 
-/** Minimal shape of the request the adapter sends to Cartesia. */
 interface FakeGenerationRequest {
   transcript: string;
   continue: boolean;
@@ -25,17 +22,12 @@ interface FakeGenerationRequest {
   model_id?: string;
 }
 
-/**
- * Fake `TTSWSContext`. Mirrors the fields the adapter touches:
- * `contextId`, `send`, `cancel`.
- */
 interface FakeContext {
   contextId: string;
   send(req: FakeGenerationRequest): Promise<void>;
   cancel(): Promise<void>;
 }
 
-/** Fake `TTSWS`. EventEmitter-ish with a `_fire` test hook. */
 interface FakeTTSWS {
   contexts: FakeContext[];
   context(opts: { contextId: string }): FakeContext;
@@ -45,7 +37,7 @@ interface FakeTTSWS {
 }
 
 vi.mock("@cartesia/cartesia-js", () => {
-  const makeWs = (): FakeTTSWS => {
+  function makeWs(): FakeTTSWS {
     const listeners = new Map<string, Array<(...args: unknown[]) => void>>();
     const ws: FakeTTSWS = {
       contexts: [],
@@ -75,7 +67,7 @@ vi.mock("@cartesia/cartesia-js", () => {
         listeners.set(event, arr);
         return ws;
       },
-      close(_props) {
+      close() {
         /* no-op */
       },
       _fire(event, payload) {
@@ -83,7 +75,7 @@ vi.mock("@cartesia/cartesia-js", () => {
       },
     };
     return ws;
-  };
+  }
   return {
     Cartesia: class {
       tts = {
@@ -92,6 +84,17 @@ vi.mock("@cartesia/cartesia-js", () => {
     },
   };
 });
+
+function expectedSend(contextId: string, transcript: string, cont: boolean): RecordedSend {
+  return {
+    kind: "send",
+    contextId,
+    transcript,
+    continue: cont,
+    language: "en",
+    model_id: "sonic-2",
+  };
+}
 
 beforeEach(() => {
   sends.length = 0;
@@ -121,34 +124,11 @@ describe("cartesia TTS adapter", () => {
     session.flush();
     await flush();
 
-    // All three sends for turn 1 carry the same contextId — two deltas with
-    // continue: true, then an empty-transcript send with continue: false.
     const turn1Sends = sends.filter((s) => s.contextId === turn1);
     expect(turn1Sends).toEqual([
-      {
-        kind: "send",
-        contextId: turn1,
-        transcript: "hello",
-        continue: true,
-        language: "en",
-        model_id: "sonic-2",
-      },
-      {
-        kind: "send",
-        contextId: turn1,
-        transcript: " world",
-        continue: true,
-        language: "en",
-        model_id: "sonic-2",
-      },
-      {
-        kind: "send",
-        contextId: turn1,
-        transcript: "",
-        continue: false,
-        language: "en",
-        model_id: "sonic-2",
-      },
+      expectedSend(turn1, "hello", true),
+      expectedSend(turn1, " world", true),
+      expectedSend(turn1, "", false),
     ]);
 
     // Rotation is deferred until the next sendText so Cartesia's late
@@ -156,21 +136,11 @@ describe("cartesia TTS adapter", () => {
     // pass the context-id filter.
     expect(session._currentContextId()).toBe(turn1);
 
-    // Subsequent sendText rotates to a fresh context.
     session.sendText("next");
     const turn2 = session._currentContextId();
     expect(turn2).not.toBe(turn1);
     await flush();
-    expect(sends.filter((s) => s.contextId === turn2)).toEqual([
-      {
-        kind: "send",
-        contextId: turn2,
-        transcript: "next",
-        continue: true,
-        language: "en",
-        model_id: "sonic-2",
-      },
-    ]);
+    expect(sends.filter((s) => s.contextId === turn2)).toEqual([expectedSend(turn2, "next", true)]);
 
     controller.abort();
     await session.close();
@@ -191,16 +161,8 @@ describe("cartesia TTS adapter", () => {
 
     await flush();
 
-    // We expect: send("hello", continue:true) on turn1, then cancel(turn1).
     expect(sends).toEqual([
-      {
-        kind: "send",
-        contextId: turn1,
-        transcript: "hello",
-        continue: true,
-        language: "en",
-        model_id: "sonic-2",
-      },
+      expectedSend(turn1, "hello", true),
       { kind: "cancel", contextId: turn1 },
     ]);
 
@@ -209,7 +171,6 @@ describe("cartesia TTS adapter", () => {
     // keep passing the filter until the next turn actually begins.
     expect(session._currentContextId()).toBe(turn1);
 
-    // A subsequent sendText mints a fresh context for turn2.
     session.sendText("again");
     const turn2 = session._currentContextId();
     expect(turn2).not.toBe(turn1);

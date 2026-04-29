@@ -5,14 +5,6 @@ import { describe, expect, test, vi } from "vitest";
 import { flush } from "../../_test-utils.ts";
 import { openElevenLabs } from "./elevenlabs.ts";
 
-// ---------------------------------------------------------------------------
-// Mock the @elevenlabs/elevenlabs-js realtime client so no real sockets open.
-//
-// The fake connection keeps one listener per RealtimeEvents value (the SDK's
-// EventEmitter API allows multiple, but for simple unit tests one is enough)
-// and exposes `_fire` for tests to inject events.
-// ---------------------------------------------------------------------------
-
 interface FakeConnection {
   on(ev: string, fn: (data: unknown) => void): void;
   send(_: { audioBase64: string }): void;
@@ -22,36 +14,33 @@ interface FakeConnection {
 
 const captured: { connections: FakeConnection[] } = { connections: [] };
 
-vi.mock("@elevenlabs/elevenlabs-js", () => {
-  return {
-    ElevenLabsClient: class {
-      speechToText = {
-        realtime: {
-          connect: async (_opts: unknown): Promise<FakeConnection> => {
-            const listeners = new Map<string, (data: unknown) => void>();
-            const conn: FakeConnection = {
-              on(ev, fn) {
-                listeners.set(ev, fn);
-              },
-              send() {
-                /* no-op */
-              },
-              close() {
-                /* no-op */
-              },
-              _fire(ev, data) {
-                const fn = listeners.get(ev);
-                if (fn) fn(data);
-              },
-            };
-            captured.connections.push(conn);
-            return conn;
-          },
+vi.mock("@elevenlabs/elevenlabs-js", () => ({
+  ElevenLabsClient: class {
+    speechToText = {
+      realtime: {
+        connect: async (_opts: unknown): Promise<FakeConnection> => {
+          const listeners = new Map<string, (data: unknown) => void>();
+          const conn: FakeConnection = {
+            on(ev, fn) {
+              listeners.set(ev, fn);
+            },
+            send() {
+              /* no-op */
+            },
+            close() {
+              /* no-op */
+            },
+            _fire(ev, data) {
+              listeners.get(ev)?.(data);
+            },
+          };
+          captured.connections.push(conn);
+          return conn;
         },
-      };
-    },
-  };
-});
+      },
+    };
+  },
+}));
 
 vi.mock("@elevenlabs/elevenlabs-js/wrapper/realtime", () => ({
   AudioFormat: {
@@ -72,7 +61,6 @@ vi.mock("@elevenlabs/elevenlabs-js/wrapper/realtime", () => ({
   },
 }));
 
-// Helper: open a session backed by a captured fake connection.
 async function openSession(sampleRate = 16_000) {
   captured.connections.length = 0;
   const opener = openElevenLabs({});

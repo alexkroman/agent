@@ -9,7 +9,6 @@ import mime from "mime-types";
 import type { AppContext } from "./context.ts";
 import { SafePathSchema } from "./schemas.ts";
 
-// Lazily resolve the default client directory from aai-ui
 let _defaultClientDir: string | undefined;
 function getDefaultClientDir(): string {
   if (!_defaultClientDir) {
@@ -20,11 +19,8 @@ function getDefaultClientDir(): string {
   return _defaultClientDir;
 }
 
-// The default-client bundle ships with the server build and is immutable for
-// the process lifetime, so memoize successful reads to avoid hitting the
-// filesystem on every asset request. Misses are NOT cached: during parallel
-// build+test runs (turbo) the file may be written after the first read, and
-// caching null would permanently shadow it.
+// Misses are NOT cached: during parallel build+test runs (turbo) the file may
+// be written after the first read, and caching null would permanently shadow it.
 const defaultClientCache = new Map<string, string>();
 
 async function readDefaultClientFile(relPath: string): Promise<string | null> {
@@ -32,16 +28,14 @@ async function readDefaultClientFile(relPath: string): Promise<string | null> {
   if (cached !== undefined) return cached;
   const baseDir = getDefaultClientDir();
   const fullPath = path.join(baseDir, relPath);
-  // Prevent path traversal
   if (!fullPath.startsWith(baseDir)) return null;
-  let content: string;
   try {
-    content = await readFile(fullPath, "utf-8");
+    const content = await readFile(fullPath, "utf-8");
+    defaultClientCache.set(relPath, content);
+    return content;
   } catch {
     return null;
   }
-  defaultClientCache.set(relPath, content);
-  return content;
 }
 
 export async function handleAgentHealth(c: AppContext): Promise<Response> {
@@ -55,15 +49,16 @@ export async function handleAgentHealth(c: AppContext): Promise<Response> {
 
 export async function handleAgentPage(c: AppContext): Promise<Response> {
   const slug = c.var.slug;
-  const page = await c.env.store.getClientFile(slug, "index.html");
-  if (page) return c.html(page, 200, { "Content-Security-Policy": AGENT_CSP });
+  const cspHeaders = { "Content-Security-Policy": AGENT_CSP };
 
-  // No custom client deployed — serve the default aai-ui
+  const page = await c.env.store.getClientFile(slug, "index.html");
+  if (page) return c.html(page, 200, cspHeaders);
+
   const manifest = await c.env.store.getManifest(slug);
   if (!manifest) throw new HTTPException(404, { message: "HTML not found" });
   const html = await readDefaultClientFile("index.html");
   if (!html) throw new HTTPException(500, { message: "Default client not built" });
-  return c.html(html, 200, { "Content-Security-Policy": AGENT_CSP });
+  return c.html(html, 200, cspHeaders);
 }
 
 export async function handleClientAsset(c: AppContext): Promise<Response> {
@@ -74,22 +69,13 @@ export async function handleClientAsset(c: AppContext): Promise<Response> {
   if (!parsed.success) throw new HTTPException(400, { message: "Invalid asset path" });
 
   const assetPath = parsed.data;
+  const relPath = `assets/${assetPath}`;
+  const body =
+    (await c.env.store.getClientFile(slug, relPath)) ?? (await readDefaultClientFile(relPath));
+  if (!body) throw new HTTPException(404, { message: "Asset not found" });
 
-  const serveAsset = (body: string) => {
-    const contentType = mime.lookup(assetPath) || "application/octet-stream";
-    return c.body(body, 200, {
-      "Content-Type": contentType,
-      "Cache-Control": "public, max-age=31536000, immutable",
-    });
-  };
-
-  // Try deployed client assets first
-  const content = await c.env.store.getClientFile(slug, `assets/${assetPath}`);
-  if (content) return serveAsset(content);
-
-  // Fall back to default client assets
-  const defaultAsset = await readDefaultClientFile(`assets/${assetPath}`);
-  if (defaultAsset) return serveAsset(defaultAsset);
-
-  throw new HTTPException(404, { message: "Asset not found" });
+  return c.body(body, 200, {
+    "Content-Type": mime.lookup(assetPath) || "application/octet-stream",
+    "Cache-Control": "public, max-age=31536000, immutable",
+  });
 }

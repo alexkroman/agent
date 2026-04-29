@@ -59,21 +59,22 @@ describe("agent()", () => {
     expect(def.builtinTools).toEqual(["web_search"]);
   });
 
-  test("preserves stt/llm/tts providers on the returned def", () => {
+  function pipelineAgent() {
     const stt = assemblyAI({ model: "u3pro-rt" });
     const tts = cartesia({ voice: "v" });
     const llm = anthropic({ model: "claude-haiku-4-5" });
-    const def = agent({ name: "t", systemPrompt: "p", stt, llm, tts });
+    return { stt, llm, tts, def: agent({ name: "t", systemPrompt: "p", stt, llm, tts }) };
+  }
+
+  test("preserves stt/llm/tts providers on the returned def", () => {
+    const { stt, llm, tts, def } = pipelineAgent();
     expect(def.stt).toBe(stt);
     expect(def.llm).toBe(llm);
     expect(def.tts).toBe(tts);
   });
 
   test("stt/llm/tts flow through parseManifest to mode 'pipeline'", () => {
-    const stt = assemblyAI({ model: "u3pro-rt" });
-    const tts = cartesia({ voice: "v" });
-    const llm = anthropic({ model: "claude-haiku-4-5" });
-    const def = agent({ name: "t", systemPrompt: "p", stt, llm, tts });
+    const { stt, llm, tts, def } = pipelineAgent();
     const parsed = parseManifest(def);
     expect(parsed.mode).toBe("pipeline");
     expect(parsed.stt).toStrictEqual(stt);

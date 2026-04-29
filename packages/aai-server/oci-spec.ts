@@ -8,11 +8,6 @@
  * namespaces, rlimits, mounts, and cgroups.
  */
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-/** Tunable resource limits for a sandbox. All fields are optional — defaults are applied. */
 export type SandboxResourceLimits = {
   /** Memory limit in bytes. Default: 67_108_864 (64 MB). */
   memoryLimitBytes?: number;
@@ -24,7 +19,6 @@ export type SandboxResourceLimits = {
   cpuTimeLimitSecs?: number;
 };
 
-/** Options for building an OCI runtime spec. */
 export type BuildOciSpecOptions = {
   rootfsPath: string;
   denoPath: string;
@@ -32,7 +26,6 @@ export type BuildOciSpecOptions = {
   limits?: SandboxResourceLimits;
 };
 
-/** Minimal OCI runtime spec shape — only the fields we populate. */
 export type OciRuntimeSpec = {
   ociVersion: string;
   process: OciProcess;
@@ -87,23 +80,15 @@ type OciSeccomp = {
   syscalls: { names: string[]; action: string; errnoRet?: number }[];
 };
 
-// ---------------------------------------------------------------------------
-// Defaults
-// ---------------------------------------------------------------------------
-
 const DEFAULT_MEMORY_BYTES = 67_108_864; // 64 MB
 const DEFAULT_PID_LIMIT = 32;
 const DEFAULT_TMPFS_BYTES = 10_485_760; // 10 MB
 const DEFAULT_CPU_SECS = 60;
 const DEFAULT_NOFILE = 256;
 
-// ---------------------------------------------------------------------------
-// Denied syscalls — these are blocked via seccomp even inside gVisor.
 // Defense-in-depth: gVisor's Sentry already reimplements syscalls, but
 // an explicit denylist ensures these dangerous calls are never forwarded.
-// ---------------------------------------------------------------------------
-
-const DENIED_SYSCALLS: readonly string[] = [
+const DENIED_SYSCALLS = [
   "ptrace",
   "mount",
   "umount2",
@@ -130,29 +115,7 @@ const DENIED_SYSCALLS: readonly string[] = [
   "quotactl",
   "syslog",
   "vhangup",
-] as const;
-
-// ---------------------------------------------------------------------------
-// Seccomp profile builder
-// ---------------------------------------------------------------------------
-
-function buildSeccompProfile(): OciSeccomp {
-  return {
-    defaultAction: "SCMP_ACT_ALLOW",
-    architectures: ["SCMP_ARCH_X86_64", "SCMP_ARCH_AARCH64"],
-    syscalls: [
-      {
-        names: [...DENIED_SYSCALLS],
-        action: "SCMP_ACT_ERRNO",
-        errnoRet: 1,
-      },
-    ],
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Masked / readonly proc paths (standard OCI hardening)
-// ---------------------------------------------------------------------------
+];
 
 const MASKED_PATHS = [
   "/proc/acpi",
@@ -174,10 +137,6 @@ const READONLY_PATHS = [
   "/proc/sysrq-trigger",
 ];
 
-// ---------------------------------------------------------------------------
-// Main builder
-// ---------------------------------------------------------------------------
-
 /**
  * Build a complete OCI runtime spec for a gVisor sandbox.
  *
@@ -191,11 +150,14 @@ const READONLY_PATHS = [
  * - rlimits capping memory, PIDs, CPU time, and open files
  */
 export function buildOciSpec(opts: BuildOciSpecOptions): OciRuntimeSpec {
-  const limits = opts.limits ?? {};
-  const memoryBytes = limits.memoryLimitBytes ?? DEFAULT_MEMORY_BYTES;
-  const tmpfsBytes = limits.tmpfsSizeBytes ?? DEFAULT_TMPFS_BYTES;
-  const cpuSecs = limits.cpuTimeLimitSecs ?? DEFAULT_CPU_SECS;
-  const pidLimit = limits.pidLimit ?? DEFAULT_PID_LIMIT;
+  const {
+    memoryLimitBytes: memoryBytes = DEFAULT_MEMORY_BYTES,
+    tmpfsSizeBytes: tmpfsBytes = DEFAULT_TMPFS_BYTES,
+    cpuTimeLimitSecs: cpuSecs = DEFAULT_CPU_SECS,
+    pidLimit = DEFAULT_PID_LIMIT,
+  } = opts.limits ?? {};
+  const memoryMb = Math.floor(memoryBytes / (1024 * 1024));
+  const tmpfsMb = Math.floor(tmpfsBytes / (1024 * 1024));
   return {
     ociVersion: "1.0.2",
     process: {
@@ -203,7 +165,7 @@ export function buildOciSpec(opts: BuildOciSpecOptions): OciRuntimeSpec {
       args: [
         opts.denoPath,
         "run",
-        `--v8-flags=--max-heap-size=${Math.floor(memoryBytes / (1024 * 1024))}`,
+        `--v8-flags=--max-heap-size=${memoryMb}`,
         "--no-prompt",
         opts.harnessPath,
       ],
@@ -238,13 +200,7 @@ export function buildOciSpec(opts: BuildOciSpecOptions): OciRuntimeSpec {
         destination: "/tmp",
         type: "tmpfs",
         source: "tmpfs",
-        options: [
-          "rw",
-          "noexec",
-          "nosuid",
-          "nodev",
-          `size=${Math.floor(tmpfsBytes / (1024 * 1024))}m`,
-        ],
+        options: ["rw", "noexec", "nosuid", "nodev", `size=${tmpfsMb}m`],
       },
       {
         destination: "/dev",
@@ -279,9 +235,13 @@ export function buildOciSpec(opts: BuildOciSpecOptions): OciRuntimeSpec {
     ],
     linux: {
       namespaces: [{ type: "pid" }, { type: "mount" }, { type: "ipc" }, { type: "uts" }],
-      seccomp: buildSeccompProfile(),
-      maskedPaths: [...MASKED_PATHS],
-      readonlyPaths: [...READONLY_PATHS],
+      seccomp: {
+        defaultAction: "SCMP_ACT_ALLOW",
+        architectures: ["SCMP_ARCH_X86_64", "SCMP_ARCH_AARCH64"],
+        syscalls: [{ names: DENIED_SYSCALLS, action: "SCMP_ACT_ERRNO", errnoRet: 1 }],
+      },
+      maskedPaths: MASKED_PATHS,
+      readonlyPaths: READONLY_PATHS,
     },
   };
 }

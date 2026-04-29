@@ -36,16 +36,12 @@ describe("createServer", () => {
     const { runtime } = makeRuntime({ name: "health-agent" });
     server = createServer({ runtime, name: "health-agent", logger: silentLogger });
     await server.listen(0);
-    await server.close();
-    server = null;
   });
 
   test("listen and close lifecycle works", async () => {
     const { runtime } = makeRuntime();
     server = createServer({ runtime, logger: silentLogger });
     await server.listen(0);
-    await server.close();
-    server = null;
   });
 
   test("/ returns default HTML with escaped agent name", async () => {
@@ -77,11 +73,7 @@ describe("createServer", () => {
 
   test("/health returns JSON with agent name", async () => {
     const { runtime } = makeRuntime({ name: "my-agent" });
-    server = createServer({
-      runtime,
-      name: "my-agent",
-      logger: silentLogger,
-    });
+    server = createServer({ runtime, name: "my-agent", logger: silentLogger });
     await server.listen(0);
 
     const res = await fetch(`http://localhost:${server.port}/health`);
@@ -91,10 +83,7 @@ describe("createServer", () => {
 
   test("404 triggers error-level logging", async () => {
     const { runtime } = makeRuntime();
-    server = createServer({
-      runtime,
-      logger: silentLogger,
-    });
+    server = createServer({ runtime, logger: silentLogger });
     await server.listen(0);
 
     await fetch(`http://localhost:${server.port}/nonexistent-path`);

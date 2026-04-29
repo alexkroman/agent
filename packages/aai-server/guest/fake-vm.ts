@@ -28,30 +28,21 @@ if (!socketPath) {
   process.exit(1);
 }
 
-// Clean up stale socket
-try {
-  fs.unlinkSync(socketPath);
-} catch {
-  // doesn't exist
-}
+fs.rmSync(socketPath, { force: true });
+
+const denoHarnessPath = path.resolve(import.meta.dirname, "deno-harness.ts");
 
 const server = net.createServer((conn) => {
-  // Only accept one connection, then close the server
   server.close();
 
-  // Spawn the Deno harness process with the socket connected to stdin/stdout
-  const denoHarnessPath = path.resolve(import.meta.dirname, "deno-harness.ts");
   const harness = spawn("deno", ["run", "--allow-env", "--no-prompt", denoHarnessPath], {
     stdio: ["pipe", "pipe", "inherit"],
   });
+  const { stdin, stdout } = harness;
+  if (!(stdin && stdout)) throw new Error("harness stdio missing");
 
-  // Connect the socket to the harness stdin/stdout
-  if (harness.stdin) {
-    conn.pipe(harness.stdin);
-  }
-  if (harness.stdout) {
-    harness.stdout.pipe(conn);
-  }
+  conn.pipe(stdin);
+  stdout.pipe(conn);
 
   harness.on("exit", (code) => {
     conn.destroy();
@@ -66,6 +57,5 @@ const server = net.createServer((conn) => {
 });
 
 server.listen(socketPath, () => {
-  // Signal ready by writing to stdout (tests can watch for this)
   console.log(`FAKE_VM_READY:${socketPath}`);
 });

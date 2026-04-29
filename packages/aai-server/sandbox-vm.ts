@@ -10,7 +10,7 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { performance } from "node:perf_hooks";
 import type { Kv } from "@alexkroman1/aai";
-import { errorMessage } from "@alexkroman1/aai";
+import { errorMessage, MAX_VALUE_SIZE } from "@alexkroman1/aai";
 import type { Vector } from "@alexkroman1/aai/runtime";
 import { z } from "zod";
 import { debug } from "./_debug-log.ts";
@@ -21,9 +21,6 @@ import type { SandboxResourceLimits } from "./oci-spec.ts";
 import { createFetchHandler, type FetchRequest } from "./sandbox-fetch.ts";
 
 // ── KV param schemas for guest → host validation ────────────────────────────
-
-/** Max KV value size in bytes (matches SDK constant). */
-const MAX_KV_VALUE_SIZE = 65_536;
 
 /**
  * Safe KV key: non-empty, no path traversal, no prefix-delimiter escape.
@@ -44,8 +41,8 @@ const KvSetParamsSchema = z.object({
   value: z
     .unknown()
     .refine(
-      (v) => JSON.stringify(v).length <= MAX_KV_VALUE_SIZE,
-      `Value exceeds max size of ${MAX_KV_VALUE_SIZE} bytes`,
+      (v) => JSON.stringify(v).length <= MAX_VALUE_SIZE,
+      `Value exceeds max size of ${MAX_VALUE_SIZE} bytes`,
     ),
 });
 const KvDelParamsSchema = z.object({ key: SafeKvKeySchema });
@@ -201,6 +198,14 @@ async function configureSandbox(warm: WarmHarness, opts: SandboxVmOptions): Prom
   };
 }
 
+function gvisorRequiredError(): Error {
+  return new Error(
+    "gVisor (runsc) is required in production but not found on PATH. " +
+      "Install runsc: https://gvisor.dev/docs/user_guide/install/ — " +
+      "Running untrusted agent code without sandbox isolation is not allowed.",
+  );
+}
+
 // ── Connection helper ────────────────────────────────────────────────────────
 
 function createConnection(child: ChildProcess): NdjsonConnection {
@@ -339,11 +344,7 @@ export async function spawnWarmHarness(opts: {
   }
 
   if (process.env.NODE_ENV === "production") {
-    throw new Error(
-      "gVisor (runsc) is required in production but not found on PATH. " +
-        "Install runsc: https://gvisor.dev/docs/user_guide/install/ — " +
-        "Running untrusted agent code without sandbox isolation is not allowed.",
-    );
+    throw gvisorRequiredError();
   }
   return spawnDevWarm(opts.harnessPath);
 }
@@ -464,11 +465,7 @@ async function createSandboxVmInner(
   if (isGvisorAvailable()) return createGvisorSandboxHandle(mergedOpts);
 
   if (process.env.NODE_ENV === "production") {
-    throw new Error(
-      "gVisor (runsc) is required in production but not found on PATH. " +
-        "Install runsc: https://gvisor.dev/docs/user_guide/install/ — " +
-        "Running untrusted agent code without sandbox isolation is not allowed.",
-    );
+    throw gvisorRequiredError();
   }
   console.warn(
     "[sandbox] WARNING: gVisor not available. Running without sandbox isolation (dev mode only).",

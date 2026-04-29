@@ -21,8 +21,6 @@ import {
   VectorRequestSchema,
 } from "./protocol.ts";
 
-// ── Constants ────────────────────────────────────────────────────────────
-
 describe("protocol constants", () => {
   test("sample rates", () => {
     expect(DEFAULT_STT_SAMPLE_RATE).toMatchInlineSnapshot("16000");
@@ -48,8 +46,6 @@ describe("protocol constants", () => {
     `);
   });
 });
-
-// ── Server → Client events (ClientEventSchema) ──────────────────────────
 
 describe("server→client event wire format", () => {
   const valid: [string, ClientEvent][] = [
@@ -77,8 +73,7 @@ describe("server→client event wire format", () => {
   ];
 
   test.each(valid)("%s parses successfully", (_label, event) => {
-    const result = ClientEventSchema.safeParse(event);
-    expect(result.success).toBe(true);
+    expect(ClientEventSchema.safeParse(event).success).toBe(true);
   });
 
   test("rejects unknown event type", () => {
@@ -108,8 +103,6 @@ describe("server→client event wire format", () => {
   });
 });
 
-// ── Client → Server messages (ClientMessageSchema) ──────────────────────
-
 describe("client→server message wire format", () => {
   const valid: [string, ClientMessage][] = [
     ["audio_ready", { type: "audio_ready" }],
@@ -128,8 +121,7 @@ describe("client→server message wire format", () => {
   ];
 
   test.each(valid)("%s parses successfully", (_label, msg) => {
-    const result = ClientMessageSchema.safeParse(msg);
-    expect(result.success).toBe(true);
+    expect(ClientMessageSchema.safeParse(msg).success).toBe(true);
   });
 
   test("rejects unknown message type", () => {
@@ -154,8 +146,6 @@ describe("client→server message wire format", () => {
   });
 });
 
-// ── ServerMessage union (type check) ────────────────────────────────────
-
 describe("ServerMessage type covers all variants", () => {
   test("config message shape", () => {
     const msg: ServerMessage = {
@@ -178,8 +168,6 @@ describe("ServerMessage type covers all variants", () => {
   });
 });
 
-// ── KvRequestSchema ─────────────────────────────────────────────────────
-
 describe("KvRequest wire format", () => {
   const valid = [
     ["get", { op: "get", key: "k1" }],
@@ -200,8 +188,6 @@ describe("KvRequest wire format", () => {
     expect(KvRequestSchema.safeParse({ op: "get", key: "" }).success).toBe(false);
   });
 });
-
-// ── VectorRequestSchema ─────────────────────────────────────────────────
 
 describe("VectorRequest wire format", () => {
   const valid = [

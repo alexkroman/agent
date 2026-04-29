@@ -12,16 +12,24 @@ import { ClientEventSchema } from "./protocol.ts";
 
 type MatcherResult = { pass: boolean; message: () => string };
 
-// ─── Matcher implementations ────────────────────────────────────────────────
+type EventLike = { type?: unknown; [key: string]: unknown };
+
+function fieldsSuffix(fields?: Record<string, unknown>): string {
+  return fields ? ` with fields ${JSON.stringify(fields)}` : "";
+}
 
 function toBeValidClientEvent(received: unknown): MatcherResult {
   const result = ClientEventSchema.safeParse(received);
+  if (result.success) {
+    return {
+      pass: true,
+      message: () => "expected value NOT to be a valid ClientEvent, but it parsed successfully",
+    };
+  }
+  const issues = result.error.issues.map((i) => `  - ${i.path.join(".")}: ${i.message}`).join("\n");
   return {
-    pass: result.success,
-    message: () =>
-      result.success
-        ? "expected value NOT to be a valid ClientEvent, but it parsed successfully"
-        : `expected value to be a valid ClientEvent\n\nZod errors:\n${result.error.issues.map((i) => `  - ${i.path.join(".")}: ${i.message}`).join("\n")}`,
+    pass: false,
+    message: () => `expected value to be a valid ClientEvent\n\nZod errors:\n${issues}`,
   };
 }
 
@@ -37,29 +45,31 @@ function toContainEvent(
     };
   }
 
-  const match = received.some((event: Record<string, unknown>) => {
+  const events = received as EventLike[];
+  const match = events.some((event) => {
     if (event?.type !== type) return false;
     if (!fields) return true;
     return Object.entries(fields).every(([key, value]) => isDeepStrictEqual(event[key], value));
   });
 
+  if (match) {
+    return {
+      pass: true,
+      message: () => `expected array NOT to contain event of type "${type}"${fieldsSuffix(fields)}`,
+    };
+  }
+  const receivedTypes = events.map((e) => `"${e?.type}"`).join(", ");
   return {
-    pass: match,
+    pass: false,
     message: () =>
-      match
-        ? `expected array NOT to contain event of type "${type}"${fields ? ` with fields ${JSON.stringify(fields)}` : ""}`
-        : `expected array to contain event of type "${type}"${fields ? ` with fields ${JSON.stringify(fields)}` : ""}\n\nReceived event types: [${received.map((e: Record<string, unknown>) => `"${e?.type}"`).join(", ")}]`,
+      `expected array to contain event of type "${type}"${fieldsSuffix(fields)}\n\nReceived event types: [${receivedTypes}]`,
   };
 }
-
-// ─── Register matchers ──────────────────────────────────────────────────────
 
 expect.extend({
   toBeValidClientEvent,
   toContainEvent,
 });
-
-// ─── Type augmentation ──────────────────────────────────────────────────────
 
 declare module "vitest" {
   interface Assertion<T> {
