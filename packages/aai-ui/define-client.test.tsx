@@ -6,7 +6,6 @@
 import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// Mock createSessionCore to avoid real WebSocket connections.
 vi.mock("./session-core.ts", () => {
   const snapshot = {
     state: "disconnected" as const,
@@ -37,6 +36,8 @@ vi.mock("./session-core.ts", () => {
 import { client } from "./define-client.tsx";
 import { createSessionCore } from "./session-core.ts";
 
+const PLATFORM_URL = "http://localhost:3000";
+
 describe("client", () => {
   let container: HTMLElement;
 
@@ -53,16 +54,12 @@ describe("client", () => {
 
   it("throws when target selector does not match", () => {
     expect(() =>
-      client({ name: "Test", target: "#nonexistent", platformUrl: "http://localhost:3000" }),
+      client({ name: "Test", target: "#nonexistent", platformUrl: PLATFORM_URL }),
     ).toThrow("Element not found: #nonexistent");
   });
 
   it("renders with config-only (tier 1)", () => {
-    const handle = client({
-      name: "Test Agent",
-      target: "#app",
-      platformUrl: "http://localhost:3000",
-    });
+    const handle = client({ name: "Test Agent", target: "#app", platformUrl: PLATFORM_URL });
     expect(handle.session).toBeDefined();
     expect(typeof handle.dispose).toBe("function");
     expect(container.childNodes.length).toBeGreaterThan(0);
@@ -73,31 +70,19 @@ describe("client", () => {
     function MyApp() {
       return createElement("div", { "data-testid": "custom" }, "Custom");
     }
-    const handle = client({
-      component: MyApp,
-      target: "#app",
-      platformUrl: "http://localhost:3000",
-    });
+    const handle = client({ component: MyApp, target: "#app", platformUrl: PLATFORM_URL });
     expect(container.querySelector("[data-testid='custom']")).not.toBeNull();
     handle.dispose();
   });
 
   it("dispose unmounts and disconnects", () => {
-    const handle = client({
-      name: "Test",
-      target: "#app",
-      platformUrl: "http://localhost:3000",
-    });
+    const handle = client({ name: "Test", target: "#app", platformUrl: PLATFORM_URL });
     handle.dispose();
     expect(container.childNodes.length).toBe(0);
   });
 
   it("Symbol.dispose aliases dispose", () => {
-    const handle = client({
-      name: "Test",
-      target: "#app",
-      platformUrl: "http://localhost:3000",
-    });
+    const handle = client({ name: "Test", target: "#app", platformUrl: PLATFORM_URL });
     const disposeSpy = vi.spyOn(handle, "dispose");
     handle[Symbol.dispose]();
     expect(disposeSpy).toHaveBeenCalledOnce();
@@ -106,7 +91,7 @@ describe("client", () => {
   it("accepts an HTMLElement as target", () => {
     const el = document.createElement("div");
     document.body.appendChild(el);
-    const handle = client({ target: el, platformUrl: "http://localhost:3000" });
+    const handle = client({ target: el, platformUrl: PLATFORM_URL });
     expect(el.childNodes.length).toBeGreaterThan(0);
     handle.dispose();
   });
@@ -117,9 +102,8 @@ describe("client", () => {
       pathname: "/agent/",
       href: "https://example.com/agent/",
     });
-    const mockedCreateSessionCore = vi.mocked(createSessionCore);
     const handle = client({ name: "Test", target: container });
-    expect(mockedCreateSessionCore).toHaveBeenCalledWith(
+    expect(vi.mocked(createSessionCore)).toHaveBeenCalledWith(
       expect.objectContaining({ platformUrl: "https://example.com/agent/" }),
     );
     handle.dispose();

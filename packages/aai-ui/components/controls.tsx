@@ -6,21 +6,7 @@ import clsx from "clsx";
 import { useSession, useTheme } from "../context.ts";
 import { Button } from "./button.tsx";
 
-/**
- * Session control buttons: **Stop / Resume** and **New Conversation**.
- *
- * Reads session state from {@link useSession}. Must be rendered inside a
- * {@link SessionProvider}.
- *
- * @example
- * ```tsx
- * <Controls className="justify-end" />
- * ```
- *
- * @param className - Additional CSS class names applied to the container.
- *
- * @public
- */
+/** Session control buttons: Stop/Resume and New Conversation. Must be rendered inside a `SessionProvider`. */
 export function Controls({ className }: { className?: string }) {
   const { running, toggle, reset } = useSession();
   const theme = useTheme();

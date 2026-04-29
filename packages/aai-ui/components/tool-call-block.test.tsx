@@ -1,10 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 // @vitest-environment jsdom
 
-/** @jsxImportSource react */
-
 import { render, screen } from "@testing-library/react";
-import { describe, expect, test } from "vitest";
 import { ThemeProvider } from "../context.ts";
 import type { ToolCallInfo } from "../types.ts";
 import { ToolCallBlock } from "./tool-call-block.tsx";

@@ -33,15 +33,14 @@ export function SidebarLayout({
   className?: string;
 }) {
   const theme = useTheme();
+  const isLeft = sidebarPosition === "left";
 
   const sidebarEl = (
     <div
       className="shrink-0 flex flex-col overflow-y-auto"
       style={{
         width: sidebarWidth,
-        ...(sidebarPosition === "left"
-          ? { borderRight: `1px solid ${theme.border}` }
-          : { borderLeft: `1px solid ${theme.border}` }),
+        [isLeft ? "borderRight" : "borderLeft"]: `1px solid ${theme.border}`,
       }}
     >
       {sidebar}
@@ -50,9 +49,9 @@ export function SidebarLayout({
 
   return (
     <div className={clsx("flex h-screen", className)} style={{ background: theme.bg }}>
-      {sidebarPosition === "left" && sidebarEl}
+      {isLeft && sidebarEl}
       <div className="flex-1 min-w-0">{children}</div>
-      {sidebarPosition === "right" && sidebarEl}
+      {!isLeft && sidebarEl}
     </div>
   );
 }

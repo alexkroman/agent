@@ -3,13 +3,6 @@
 
 /** @jsxImportSource react */
 
-/**
- * UI component integration tests.
- *
- * Test component interactions and state flows through the full component tree:
- * button clicks -> state changes -> re-renders, tool calls interleaved with
- * messages, thinking indicator visibility, and start screen transitions.
- */
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, test } from "vitest";
@@ -29,8 +22,6 @@ function renderWithProvider(children: ReactNode, session: SessionCore) {
   );
 }
 
-// --- Button click interactions ---
-
 describe("Controls: click interactions", () => {
   test("clicking Stop calls toggle and switches to Resume", () => {
     const core = createMockSessionCore({ started: true, running: true });
@@ -42,8 +33,7 @@ describe("Controls: click interactions", () => {
     };
 
     renderWithProvider(<Controls />, core);
-    const stopBtn = screen.getByText("Stop");
-    fireEvent.click(stopBtn);
+    fireEvent.click(screen.getByText("Stop"));
 
     expect(calls).toEqual(["toggle"]);
     expect(core.getSnapshot().running).toBe(false);
@@ -61,8 +51,6 @@ describe("Controls: click interactions", () => {
   });
 });
 
-// --- StartScreen transitions ---
-
 describe("StartScreen: start flow", () => {
   test("clicking Start button triggers start and shows children", () => {
     const core = createMockSessionCore({ started: false });
@@ -74,14 +62,11 @@ describe("StartScreen: start flow", () => {
       core,
     );
 
-    // Shows start button, not children
     expect(screen.getByText("Start")).toBeDefined();
     expect(screen.queryByTestId("chat")).toBeNull();
 
-    // Click start
     fireEvent.click(screen.getByText("Start"));
 
-    // start() sets started=true, which notifies subscribers and triggers re-render
     expect(screen.queryByText("Start")).toBeNull();
     expect(screen.getByTestId("chat")).toBeDefined();
   });
@@ -110,8 +95,6 @@ describe("StartScreen: start flow", () => {
   });
 });
 
-// --- MessageList with tool calls ---
-
 describe("MessageList: messages + tool calls interleaved", () => {
   test("renders tool calls after their associated message", () => {
     const core = createMockSessionCore({
@@ -119,7 +102,7 @@ describe("MessageList: messages + tool calls interleaved", () => {
       state: "listening",
       messages: [
         { role: "user", content: "What's the weather?" },
-        { role: "assistant", content: "It's sunny and 72\u00B0F." },
+        { role: "assistant", content: "It's sunny and 72°F." },
       ],
       toolCalls: [
         {
@@ -137,9 +120,8 @@ describe("MessageList: messages + tool calls interleaved", () => {
 
     const userMsg = screen.getByText("What's the weather?");
     const toolCall = screen.getByText("web_search");
-    const assistantMsg = screen.getByText("It's sunny and 72\u00B0F.");
+    const assistantMsg = screen.getByText("It's sunny and 72°F.");
 
-    // Tool call appears after user message and before assistant message
     expect(
       userMsg.compareDocumentPosition(toolCall) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
@@ -156,7 +138,6 @@ describe("MessageList: messages + tool calls interleaved", () => {
     });
 
     const { container } = renderWithProvider(<MessageList />, core);
-    // ThinkingIndicator renders 3 dots
     const dots = container.querySelectorAll(".rounded-full");
     expect(dots.length).toBe(3);
   });
@@ -178,7 +159,6 @@ describe("MessageList: messages + tool calls interleaved", () => {
     });
 
     const { container } = renderWithProvider(<MessageList />, core);
-    // When a tool call is pending, thinking dots should not show
     const thinkingDots = container.querySelectorAll(".rounded-full");
     expect(thinkingDots.length).toBe(0);
   });
@@ -227,35 +207,25 @@ describe("MessageList: messages + tool calls interleaved", () => {
   });
 });
 
-// --- Full flow (replaces App tests) ---
-
 describe("ChatView + StartScreen: full component tree integration", () => {
   test("start -> messages -> tool calls -> error -> recovery flow", () => {
     const core = createMockSessionCore({ started: false });
 
-    render(
-      <ThemeProvider>
-        <SessionProvider value={core}>
-          <StartScreen>
-            <ChatView />
-          </StartScreen>
-        </SessionProvider>
-      </ThemeProvider>,
+    renderWithProvider(
+      <StartScreen>
+        <ChatView />
+      </StartScreen>,
+      core,
     );
 
-    // 1. Start screen
     expect(screen.getByText("Start")).toBeDefined();
 
-    // 2. Click start -> chat view
     fireEvent.click(screen.getByText("Start"));
 
-    // The start() call sets started=true and running=true
-    // We also need to update state to "listening"
     act(() => core.update({ state: "listening" }));
     expect(screen.getByText("listening")).toBeDefined();
     expect(screen.getByText("Stop")).toBeDefined();
 
-    // 3. User message
     act(() =>
       core.update({
         messages: [{ role: "user", content: "What time is it?" }],
@@ -265,7 +235,6 @@ describe("ChatView + StartScreen: full component tree integration", () => {
     expect(screen.getByText("What time is it?")).toBeDefined();
     expect(screen.getByText("thinking")).toBeDefined();
 
-    // 4. Assistant responds
     act(() =>
       core.update({
         messages: [
@@ -277,7 +246,6 @@ describe("ChatView + StartScreen: full component tree integration", () => {
     );
     expect(screen.getByText("It's 3pm.")).toBeDefined();
 
-    // 5. Error occurs
     act(() =>
       core.update({
         state: "disconnected",

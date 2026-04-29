@@ -1,5 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
-import { describe, expect, expectTypeOf, it, test } from "vitest";
+import { describe, expect, expectTypeOf, test } from "vitest";
 import type { Session } from "./context.ts";
 import type { SessionCore, SessionSnapshot } from "./session-core.ts";
 import type { AgentState, ChatMessage, ClientTheme, SessionError, ToolCallInfo } from "./types.ts";
@@ -12,7 +12,7 @@ describe("types", () => {
 });
 
 describe("ToolCallInfo", () => {
-  it("uses S2S-aligned field names", () => {
+  test("uses S2S-aligned field names", () => {
     expectTypeOf<ToolCallInfo>().toHaveProperty("callId");
     expectTypeOf<ToolCallInfo>().toHaveProperty("name");
     expectTypeOf<ToolCallInfo>().toHaveProperty("args");
@@ -21,7 +21,7 @@ describe("ToolCallInfo", () => {
     expectTypeOf<ToolCallInfo>().toHaveProperty("afterMessageIndex");
   });
 
-  it("does not have old field names", () => {
+  test("does not have old field names", () => {
     // @ts-expect-error -- toolCallId was renamed to callId
     expectTypeOf<ToolCallInfo>().toHaveProperty("toolCallId");
     // @ts-expect-error -- toolName was renamed to name
@@ -30,7 +30,7 @@ describe("ToolCallInfo", () => {
 });
 
 describe("AgentState", () => {
-  it("includes all expected states", () => {
+  test("includes all expected states", () => {
     const states: AgentState[] = [
       "disconnected",
       "connecting",
@@ -45,7 +45,7 @@ describe("AgentState", () => {
 });
 
 describe("ClientTheme", () => {
-  it("has the expected color fields", () => {
+  test("has the expected color fields", () => {
     expectTypeOf<ClientTheme>().toHaveProperty("bg");
     expectTypeOf<ClientTheme>().toHaveProperty("primary");
     expectTypeOf<ClientTheme>().toHaveProperty("text");

@@ -1,20 +1,11 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-/**
- * Test utilities for React-based component tests.
- * No dependency on @preact/signals.
- */
-
+import type { VoiceIOOptions } from "./audio.ts";
 import type { SessionCore, SessionSnapshot } from "./session-core.ts";
 import type { AgentState, ChatMessage, SessionError, ToolCallInfo } from "./types.ts";
 
-/**
- * Create a mock SessionCore for React component tests.
- *
- * Returns a `SessionCore`-compatible object with mutable snapshot. Call
- * `core.update(partial)` to mutate the snapshot and notify subscribers,
- * triggering React re-renders.
- */
+type MockSessionCore = SessionCore & { update(partial: Partial<SessionSnapshot>): void };
+
 export function createMockSessionCore(
   overrides?: Partial<{
     state: AgentState;
@@ -26,7 +17,7 @@ export function createMockSessionCore(
     started: boolean;
     running: boolean;
   }>,
-): SessionCore & { update(partial: Partial<SessionSnapshot>): void } {
+): MockSessionCore {
   let snapshot: SessionSnapshot = {
     state: overrides?.state ?? "disconnected",
     messages: overrides?.messages ?? [],
@@ -40,36 +31,26 @@ export function createMockSessionCore(
   };
 
   const subscribers = new Set<() => void>();
-
   function notify() {
     for (const sub of subscribers) sub();
   }
+  function noop() {
+    /* noop */
+  }
 
-  const core: SessionCore & { update(partial: Partial<SessionSnapshot>): void } = {
-    getSnapshot() {
-      return snapshot;
-    },
-    subscribe(cb: () => void) {
+  return {
+    getSnapshot: () => snapshot,
+    subscribe(cb) {
       subscribers.add(cb);
       return () => {
         subscribers.delete(cb);
       };
     },
-    connect() {
-      /* noop */
-    },
-    cancel() {
-      /* noop */
-    },
-    resetState() {
-      /* noop */
-    },
-    reset() {
-      /* noop */
-    },
-    disconnect() {
-      /* noop */
-    },
+    connect: noop,
+    cancel: noop,
+    resetState: noop,
+    reset: noop,
+    disconnect: noop,
     start() {
       snapshot = { ...snapshot, started: true, running: true };
       notify();
@@ -78,40 +59,31 @@ export function createMockSessionCore(
       snapshot = { ...snapshot, running: !snapshot.running };
       notify();
     },
-    update(partial: Partial<SessionSnapshot>) {
+    update(partial) {
       snapshot = { ...snapshot, ...partial };
       notify();
     },
-    [Symbol.dispose]() {
-      /* noop */
-    },
+    [Symbol.dispose]: noop,
   };
-
-  return core;
 }
 
-// ─── Audio mock utilities ────────────────────────────────────────────────────
-
-function noop() {
-  /* intentional no-op */
-}
-
-/** Default voice options for tests. */
-export function voiceOpts(overrides?: Partial<import("./audio.ts").VoiceIOOptions>) {
+export function voiceOpts(overrides?: Partial<VoiceIOOptions>): VoiceIOOptions {
   return {
     sttSampleRate: 16_000,
     ttsSampleRate: 24_000,
     captureWorkletSrc: "cap",
     playbackWorkletSrc: "play",
-    onMicData: noop,
+    onMicData: () => {
+      /* noop */
+    },
     ...overrides,
   };
 }
 
-export class MockMessagePort {
+class MockMessagePort {
   onmessage: ((e: MessageEvent) => void) | null = null;
   posted: unknown[] = [];
-  postMessage(data: unknown, _transfer?: Transferable[]) {
+  postMessage(data: unknown) {
     this.posted.push(data);
   }
   simulateMessage(data: unknown) {
@@ -119,7 +91,7 @@ export class MockMessagePort {
   }
 }
 
-export class MockAudioNode {
+class MockAudioNode {
   connected: (MockAudioNode | MockAudioWorkletNode)[] = [];
   connect(dest: MockAudioNode | MockAudioWorkletNode) {
     this.connected.push(dest);
@@ -129,16 +101,7 @@ export class MockAudioNode {
   }
 }
 
-export class MockGainNode extends MockAudioNode {
-  gain = {
-    value: 1,
-    setTargetAtTime(value: number, _startTime: number, _tc: number) {
-      this.value = value;
-    },
-  };
-}
-
-export class MockAudioWorkletNode {
+class MockAudioWorkletNode {
   port = new MockMessagePort();
   connected: MockAudioNode[] = [];
   name: string;
@@ -178,9 +141,6 @@ export class MockAudioContext {
   createMediaStreamSource(_stream: unknown) {
     return new MockAudioNode();
   }
-  createGain() {
-    return new MockGainNode();
-  }
   close() {
     this.closed = true;
     this.state = "closed";
@@ -193,28 +153,27 @@ export type AudioMockContext = {
   workletNodes: () => MockAudioWorkletNode[];
 };
 
-const g = globalThis as unknown as Record<string, unknown>;
-
 export function installAudioMocks(): AudioMockContext & { restore: () => void } {
+  const g = globalThis as unknown as Record<string, unknown>;
   const origAudioContext = globalThis.AudioContext;
   const origAudioWorkletNode = globalThis.AudioWorkletNode;
   const nav = g.navigator as { mediaDevices?: { getUserMedia?: unknown } } | undefined;
   const origGetUserMedia = nav?.mediaDevices?.getUserMedia;
 
-  let _lastContext: MockAudioContext;
-  const _workletNodes: MockAudioWorkletNode[] = [];
+  let lastContext: MockAudioContext;
+  const workletNodes: MockAudioWorkletNode[] = [];
 
   g.AudioContext = class extends MockAudioContext {
     constructor(opts?: { sampleRate?: number }) {
       super(opts);
-      _lastContext = this;
+      lastContext = this;
     }
   };
 
   g.AudioWorkletNode = class extends MockAudioWorkletNode {
     constructor(ctx: MockAudioContext, name: string, options?: unknown) {
       super(ctx, name, options);
-      _workletNodes.push(this);
+      workletNodes.push(this);
     }
   };
 
@@ -234,8 +193,8 @@ export function installAudioMocks(): AudioMockContext & { restore: () => void } 
   }
 
   return {
-    lastContext: () => _lastContext,
-    workletNodes: () => _workletNodes,
+    lastContext: () => lastContext,
+    workletNodes: () => workletNodes,
     restore() {
       globalThis.AudioContext = origAudioContext;
       globalThis.AudioWorkletNode = origAudioWorkletNode;

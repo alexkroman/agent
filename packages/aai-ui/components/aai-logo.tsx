@@ -5,12 +5,6 @@
 import type { ReactNode } from "react";
 import { useTheme } from "../context.ts";
 
-/**
- * The AAI ANSI art logo, rendered as a styled `<pre>` block.
- *
- * @param size - Font size in px. Defaults to 10.
- * @internal
- */
 export function AaiLogo({ size = 10 }: { size?: number }): ReactNode {
   const theme = useTheme();
   return (

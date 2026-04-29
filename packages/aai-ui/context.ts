@@ -18,12 +18,6 @@ const DEFAULT_THEME: Required<ClientTheme> = {
   border: "#282828",
 };
 
-const SessionCtx = createContext<SessionCore | null>(null);
-
-export function SessionProvider({ value, children }: { value: SessionCore; children?: ReactNode }) {
-  return createElement(SessionCtx.Provider, { value }, children);
-}
-
 export type Session = SessionSnapshot & {
   start(): void;
   cancel(): void;
@@ -32,6 +26,13 @@ export type Session = SessionSnapshot & {
   disconnect(): void;
   toggle(): void;
 };
+
+const SessionCtx = createContext<SessionCore | null>(null);
+const ThemeCtx = createContext<Required<ClientTheme>>(DEFAULT_THEME);
+
+export function SessionProvider({ value, children }: { value: SessionCore; children?: ReactNode }) {
+  return createElement(SessionCtx.Provider, { value }, children);
+}
 
 export function useSession(): Session {
   const core = useContext(SessionCtx);
@@ -48,8 +49,6 @@ export function useSession(): Session {
   };
 }
 
-const ThemeCtx = createContext<Required<ClientTheme>>(DEFAULT_THEME);
-
 export function ThemeProvider({ value, children }: { value?: ClientTheme; children?: ReactNode }) {
   const merged = value ? { ...DEFAULT_THEME, ...value } : DEFAULT_THEME;
   return createElement(ThemeCtx.Provider, { value: merged }, children);
@@ -58,5 +57,3 @@ export function ThemeProvider({ value, children }: { value?: ClientTheme; childr
 export function useTheme(): Required<ClientTheme> {
   return useContext(ThemeCtx);
 }
-
-export { DEFAULT_THEME };

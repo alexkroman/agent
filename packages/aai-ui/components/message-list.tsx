@@ -3,7 +3,7 @@
 /** @jsxImportSource react */
 
 import clsx from "clsx";
-import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef } from "react";
+import { type CSSProperties, type ReactNode, useEffect, useRef } from "react";
 import { useSession, useTheme } from "../context.ts";
 import type { ChatMessage } from "../types.ts";
 import { ToolCallBlock } from "./tool-call-block.tsx";
@@ -13,7 +13,6 @@ const DOT_STYLES: CSSProperties[] = [0, 0.16, 0.32].map((delay) => ({
   animationDelay: `${delay}s`,
 }));
 
-/** Animated three-dot "thinking" indicator. */
 function ThinkingDots(): ReactNode {
   return (
     <div
@@ -32,7 +31,6 @@ function ThinkingDots(): ReactNode {
   );
 }
 
-/** Renders a single chat message as a styled bubble. */
 function MessageBubble({
   message,
   theme,
@@ -40,8 +38,7 @@ function MessageBubble({
   message: ChatMessage;
   theme: { text: string; border: string };
 }): ReactNode {
-  const isUser = message.role === "user";
-  if (isUser) {
+  if (message.role === "user") {
     return (
       <div className="flex flex-col w-full items-end">
         <div
@@ -97,16 +94,7 @@ export function MessageList({ className }: { className?: string }) {
   const session = useSession();
   const theme = useTheme();
   const scrollRef = useAutoScroll();
-
-  const showThinking = useMemo(() => {
-    if (session.state !== "thinking") return false;
-    const last = session.toolCalls.at(-1);
-    if (last?.status === "pending") return false;
-    const lastMsg = session.messages.at(-1);
-    return !lastMsg || lastMsg.role === "user" || Boolean(last);
-  }, [session.state, session.toolCalls, session.messages]);
-
-  const { messages, toolCalls } = session;
+  const { messages, toolCalls, userTranscript, agentTranscript, state } = session;
 
   const items: ReactNode[] = [];
   let tci = 0;
@@ -119,14 +107,16 @@ export function MessageList({ className }: { className?: string }) {
       tc = toolCalls[tci];
     }
   }
-  let tc = toolCalls[tci];
-  while (tc) {
+  for (let tc = toolCalls[tci]; tc; tc = toolCalls[++tci]) {
     items.push(<ToolCallBlock key={tc.callId} toolCall={tc} />);
-    tci++;
-    tc = toolCalls[tci];
   }
 
-  const userTranscript = session.userTranscript;
+  const lastToolCall = toolCalls.at(-1);
+  const lastMsg = messages.at(-1);
+  const showThinking =
+    state === "thinking" &&
+    lastToolCall?.status !== "pending" &&
+    (!lastMsg || lastMsg.role === "user" || Boolean(lastToolCall));
 
   return (
     <div
@@ -136,11 +126,8 @@ export function MessageList({ className }: { className?: string }) {
     >
       <div className="flex flex-col gap-4.5 p-4">
         {items}
-        {session.agentTranscript && (
-          <MessageBubble
-            message={{ role: "assistant", content: session.agentTranscript }}
-            theme={theme}
-          />
+        {agentTranscript && (
+          <MessageBubble message={{ role: "assistant", content: agentTranscript }} theme={theme} />
         )}
         {userTranscript !== null && (
           <div className="flex flex-col items-end w-full">

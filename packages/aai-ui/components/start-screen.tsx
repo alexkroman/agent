@@ -34,18 +34,16 @@ export function StartScreen({
   className,
 }: {
   children: ReactNode;
-  icon?: ReactNode | undefined;
-  title?: string | undefined;
-  subtitle?: string | undefined;
-  buttonText?: string | undefined;
-  className?: string | undefined;
+  icon?: ReactNode;
+  title?: string;
+  subtitle?: string;
+  buttonText?: string;
+  className?: string;
 }) {
   const { started, start } = useSession();
   const theme = useTheme();
 
-  if (started) {
-    return children;
-  }
+  if (started) return children;
 
   return (
     <div

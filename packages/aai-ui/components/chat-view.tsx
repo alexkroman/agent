@@ -10,7 +10,6 @@ import { AaiLogo } from "./aai-logo.tsx";
 import { Controls } from "./controls.tsx";
 import { MessageList } from "./message-list.tsx";
 
-// State indicator dot color map
 const STATE_COLORS: Record<AgentState, string> = {
   disconnected: "rgba(255,255,255,0.422)",
   connecting: "rgba(255,255,255,0.422)",
@@ -35,22 +34,6 @@ const STATE_COLORS: Record<AgentState, string> = {
  * </StartScreen>
  * ```
  *
- * @example Pair with a sidebar
- * ```tsx
- * <SidebarLayout sidebar={<RecipeCard />}>
- *   <ChatView className="border-l" />
- * </SidebarLayout>
- * ```
- *
- * @example Custom header icon
- * ```tsx
- * <ChatView icon={<img src="/logo.svg" />} title="My Agent" />
- * ```
- *
- * @param icon - Optional element rendered before the title in the header.
- * @param title - Optional title string for the header.
- * @param className - Additional CSS class names applied to the root element.
- *
  * @public
  */
 export function ChatView({
@@ -65,40 +48,40 @@ export function ChatView({
   const session = useSession();
   const theme = useTheme();
 
+  let headerLabel: ReactNode;
+  if (title) {
+    headerLabel = (
+      <span className="text-sm font-semibold" style={{ color: theme.primary }}>
+        {title}
+      </span>
+    );
+  } else if (!icon) {
+    headerLabel = <AaiLogo />;
+  }
+
   return (
     <div
       className={clsx("flex flex-col h-screen max-w-130 mx-auto font-aai text-sm", className)}
       style={{ background: theme.bg, color: theme.text }}
     >
-      {/* Header */}
       <div
         className="flex items-center gap-3 px-4 py-3 border-b shrink-0"
         style={{ borderColor: theme.border }}
       >
         {icon}
-        {title ? (
-          <span className="text-sm font-semibold" style={{ color: theme.primary }}>
-            {title}
-          </span>
-        ) : (
-          !icon && <AaiLogo />
-        )}
-        {/* State indicator */}
-        <div className="ml-auto">
+        {headerLabel}
+        <div
+          className="ml-auto inline-flex items-center justify-center gap-1.5 text-[13px] font-medium leading-[130%] capitalize"
+          style={{ color: "rgba(255,255,255,0.284)" }}
+          data-state={session.state}
+        >
           <div
-            className="inline-flex items-center justify-center gap-1.5 text-[13px] font-medium leading-[130%] capitalize"
-            style={{ color: "rgba(255,255,255,0.284)" }}
-            data-state={session.state}
-          >
-            <div
-              className="w-2 h-2 rounded-full"
-              style={{ background: STATE_COLORS[session.state] }}
-            />
-            {session.state}
-          </div>
+            className="w-2 h-2 rounded-full"
+            style={{ background: STATE_COLORS[session.state] }}
+          />
+          {session.state}
         </div>
       </div>
-      {/* Error banner */}
       {session.error && (
         <div
           className="mx-4 mt-3 px-3 py-2 rounded-aai border text-[13px] leading-[130%]"

@@ -1,6 +1,3 @@
-// Builds the default client SPA via stock Vite.
-// Output: dist/default-client/ (HTML + JS assets) — served by the server.
-
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";

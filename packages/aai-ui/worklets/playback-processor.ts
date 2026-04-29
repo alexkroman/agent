@@ -9,28 +9,24 @@ class PlaybackProcessor extends AudioWorkletProcessor {
     this.isDone = false;
     this.playing = false;
     const rate = options.processorOptions?.sampleRate ?? 24000;
-    // Wait for ~400ms of audio before starting.
-    // If 'done' arrives first (short utterance), start immediately.
+    // Wait for ~400ms of audio before starting; if 'done' arrives first
+    // (short utterance), start immediately.
     this.jitterSamples = Math.floor(rate * 0.4);
-    // Carry-over byte for split samples across chunks
+    // Carry-over byte for samples split across chunks.
     this.carry = null;
-    // Float32 sample buffer — 60s at the context sample rate
+    // 60s float32 ring at context sample rate.
     this.samples = new Float32Array(rate * 60);
     this.writePos = 0;
     this.readPos = 0;
-    // Report playback position every ~50ms for word-level text sync
+    // Emit playback position every ~50ms for word-level text sync.
     this.progressInterval = Math.floor(rate * 0.05);
     this.samplesSinceProgress = 0;
 
     this.port.onmessage = (e) => {
       const d = e.data;
-      if (d.event === 'write') {
-        this.ingestBytes(d.buffer);
-      } else if (d.event === 'interrupt') {
-        this.interrupted = true;
-      } else if (d.event === 'done') {
-        this.isDone = true;
-      }
+      if (d.event === 'write') this.ingestBytes(d.buffer);
+      else if (d.event === 'interrupt') this.interrupted = true;
+      else if (d.event === 'done') this.isDone = true;
     };
   }
 
@@ -58,7 +54,7 @@ class PlaybackProcessor extends AudioWorkletProcessor {
     }
   }
 
-  process(inputs, outputs) {
+  process(_inputs, outputs) {
     const out = outputs[0][0];
     if (this.interrupted) {
       this.port.postMessage({ event: 'stop' });
@@ -67,7 +63,6 @@ class PlaybackProcessor extends AudioWorkletProcessor {
 
     const avail = this.writePos - this.readPos;
 
-    // Wait for jitter buffer to fill, unless done (short utterance)
     if (!this.playing) {
       if (avail >= this.jitterSamples || this.isDone) {
         this.playing = true;
@@ -90,7 +85,6 @@ class PlaybackProcessor extends AudioWorkletProcessor {
       return true;
     }
 
-    // No data: output silence, stop only when done
     out.fill(0);
     if (this.isDone) {
       this.port.postMessage({ event: 'stop' });
@@ -106,5 +100,4 @@ registerProcessor('playback-processor', PlaybackProcessor);
 const script = new Blob([PlaybackProcessorWorklet], {
   type: "application/javascript",
 });
-const src = URL.createObjectURL(script);
-export default src;
+export default URL.createObjectURL(script);

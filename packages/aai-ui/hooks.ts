@@ -13,28 +13,30 @@ function tryParseJSON(str: string | undefined): unknown {
   }
 }
 
-type ToolCallCallback = (...args: unknown[]) => void;
-
-/**
- * Shared effect loop: fires `onNew` once per tool call that passes `shouldProcess`.
- * Clears seen IDs when toolCalls is empty (session reset).
- */
-function processToolCalls(
-  toolCalls: ToolCallInfo[],
-  seen: Set<string>,
-  shouldProcess: (tc: ToolCallInfo) => boolean,
+function useToolCallEffect(
+  filterStatus: ToolCallInfo["status"],
+  filterName: string | null,
   onNew: (tc: ToolCallInfo) => void,
 ): void {
-  if (toolCalls.length === 0) {
-    seen.clear();
-    return;
-  }
-  for (const tc of toolCalls) {
-    if (!shouldProcess(tc)) continue;
-    if (seen.has(tc.callId)) continue;
-    seen.add(tc.callId);
-    onNew(tc);
-  }
+  const session = useSession();
+  const seenRef = useRef(new Set<string>());
+  const onNewRef = useRef(onNew);
+  onNewRef.current = onNew;
+
+  useEffect(() => {
+    const seen = seenRef.current;
+    if (session.toolCalls.length === 0) {
+      seen.clear();
+      return;
+    }
+    for (const tc of session.toolCalls) {
+      if (tc.status !== filterStatus) continue;
+      if (filterName && tc.name !== filterName) continue;
+      if (seen.has(tc.callId)) continue;
+      seen.add(tc.callId);
+      onNewRef.current(tc);
+    }
+  }, [session.toolCalls, filterStatus, filterName]);
 }
 
 export function useToolResult<R = unknown>(
@@ -45,33 +47,31 @@ export function useToolResult(
   callback: (name: string, result: unknown, toolCall: ToolCallInfo) => void,
 ): void;
 export function useToolResult(...args: unknown[]): void {
-  const filterName = typeof args[0] === "string" ? (args[0] as string) : null;
-  const callback = (typeof args[0] === "string" ? args[1] : args[0]) as ToolCallCallback;
+  const filterName = typeof args[0] === "string" ? args[0] : null;
+  const callback = (typeof args[0] === "string" ? args[1] : args[0]) as (
+    ...cbArgs: unknown[]
+  ) => void;
 
-  const session = useSession();
-  const seenRef = useRef(new Set<string>());
-  const callbackRef = useRef(callback);
-  callbackRef.current = callback;
+  useToolCallEffect("done", filterName, (tc) => {
+    const parsed = tryParseJSON(tc.result);
+    if (filterName) {
+      callback(parsed, tc);
+    } else {
+      callback(tc.name, parsed, tc);
+    }
+  });
+}
 
-  useEffect(() => {
-    processToolCalls(
-      session.toolCalls,
-      seenRef.current,
-      (tc) => tc.status === "done" && (!filterName || tc.name === filterName),
-      (tc) => {
-        const parsed = tryParseJSON(tc.result);
-        if (filterName) {
-          (callbackRef.current as (r: unknown, tc: ToolCallInfo) => void)(parsed, tc);
-        } else {
-          (callbackRef.current as (n: string, r: unknown, tc: ToolCallInfo) => void)(
-            tc.name,
-            parsed,
-            tc,
-          );
-        }
-      },
-    );
-  }, [session.toolCalls, filterName]);
+export function useToolCallStart(
+  toolName: string,
+  callback: (toolCall: ToolCallInfo) => void,
+): void;
+export function useToolCallStart(callback: (toolCall: ToolCallInfo) => void): void;
+export function useToolCallStart(...args: unknown[]): void {
+  const filterName = typeof args[0] === "string" ? args[0] : null;
+  const callback = (typeof args[0] === "string" ? args[1] : args[0]) as (tc: ToolCallInfo) => void;
+
+  useToolCallEffect("pending", filterName, callback);
 }
 
 export function useEvent<T = unknown>(event: string, callback: (data: T) => void): void {
@@ -81,39 +81,16 @@ export function useEvent<T = unknown>(event: string, callback: (data: T) => void
   callbackRef.current = callback;
 
   useEffect(() => {
+    const seen = seenRef.current;
     if (session.customEvents.length === 0) {
-      seenRef.current.clear();
+      seen.clear();
       return;
     }
     for (const ce of session.customEvents) {
       if (ce.event !== event) continue;
-      if (seenRef.current.has(ce.id)) continue;
-      seenRef.current.add(ce.id);
+      if (seen.has(ce.id)) continue;
+      seen.add(ce.id);
       callbackRef.current(ce.data as T);
     }
   }, [session.customEvents, event]);
-}
-
-export function useToolCallStart(
-  toolName: string,
-  callback: (toolCall: ToolCallInfo) => void,
-): void;
-export function useToolCallStart(callback: (toolCall: ToolCallInfo) => void): void;
-export function useToolCallStart(...args: unknown[]): void {
-  const filterName = typeof args[0] === "string" ? (args[0] as string) : null;
-  const callback = (typeof args[0] === "string" ? args[1] : args[0]) as ToolCallCallback;
-
-  const session = useSession();
-  const seenRef = useRef(new Set<string>());
-  const callbackRef = useRef(callback);
-  callbackRef.current = callback;
-
-  useEffect(() => {
-    processToolCalls(
-      session.toolCalls,
-      seenRef.current,
-      (tc) => tc.status === "pending" && (!filterName || tc.name === filterName),
-      (tc) => (callbackRef.current as (tc: ToolCallInfo) => void)(tc),
-    );
-  }, [session.toolCalls, filterName]);
 }

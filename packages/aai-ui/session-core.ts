@@ -15,7 +15,6 @@ import {
   type ClientEvent,
   type ClientMessage,
   lenientParse,
-  type ServerMessage,
   ServerMessageSchema,
 } from "@alexkroman1/aai/protocol";
 import type { VoiceIO } from "./audio.ts";
@@ -38,18 +37,14 @@ export type {
   WebSocketConstructor,
 } from "./types.ts";
 
-/** Cap on `customEvents` retained in the session snapshot to avoid unbounded growth. */
 const MAX_CUSTOM_EVENTS = 200;
-
-/** Cap on `messages` retained in the session snapshot; mirrors host-side DEFAULT_MAX_HISTORY. */
+// Mirrors host-side DEFAULT_MAX_HISTORY.
 const MAX_MESSAGES = 200;
 
 function appendCapped<T>(list: readonly T[], item: T, cap: number): T[] {
   const next = [...list, item];
   return next.length > cap ? next.slice(-cap) : next;
 }
-
-// ─── Snapshot type ──────────────────────────────────────────────────────────
 
 /**
  * A custom event emitted by the agent via `ctx.send`.
@@ -82,8 +77,6 @@ export type SessionSnapshot = {
   readonly running: boolean;
 };
 
-// ─── SessionCore type ───────────────────────────────────────────────────────
-
 /**
  * A framework-agnostic voice session that manages WebSocket communication,
  * audio capture/playback, and agent state transitions.
@@ -94,65 +87,29 @@ export type SessionSnapshot = {
  * @public
  */
 export type SessionCore = {
-  /** Return the current immutable state snapshot. */
   getSnapshot(): SessionSnapshot;
-  /** Subscribe to state changes. Returns an unsubscribe function. */
   subscribe(callback: () => void): () => void;
-  /**
-   * Open a WebSocket connection to the server and begin audio capture.
-   * @param options - Optional. `signal` is an AbortSignal that, when aborted, disconnects the session.
-   */
   connect(options?: { signal?: AbortSignal }): void;
-  /** Cancel the current agent turn and discard in-flight TTS audio. */
   cancel(): void;
-  /** Clear messages, transcript, and error state without disconnecting. */
   resetState(): void;
-  /** Reset the session: clear state and reconnect. */
   reset(): void;
-  /** Close the WebSocket and release all audio resources. */
   disconnect(): void;
-  /** Start the session for the first time (sets `started` and `running`). */
   start(): void;
-  /** Toggle between connected and disconnected states. */
   toggle(): void;
-  /** Alias for `disconnect` for use with `using`. */
   [Symbol.dispose](): void;
 };
 
 export type SessionCoreOptions = VoiceSessionOptions;
 
-// ─── Audio initialization ────────────────────────────────────────────────────
-
-/**
- * Shared mutable connection state for audio initialization.
- *
- * Tracks the active WebSocket, VoiceIO instance, and a generation counter
- * that prevents stale async operations (e.g. a slow `initAudioCapture`) from
- * assigning their results to a newer connection after a reconnect.
- */
 type ConnState = {
   ws: InstanceType<WebSocketConstructor> | null;
   voiceIO: VoiceIO | null;
   audioSetupInFlight: boolean;
-  /** Monotonically increasing counter bumped on each connect(). Prevents a stale
-   *  initAudioCapture from assigning its voiceIO to a newer connection. */
+  // Bumped on each connect(); prevents a stale initAudioCapture from
+  // assigning its voiceIO to a newer connection after a reconnect.
   generation: number;
 };
 
-/**
- * Initialize audio capture and playback after the server sends a ready config.
- *
- * Lifecycle: dynamically import audio modules -> request microphone access ->
- * register AudioWorklet processors -> create a `VoiceIO` instance -> send
- * `audio_ready` to the server -> transition state to `"listening"`.
- *
- * Uses the connection `generation` counter to detect if `connect()` was called
- * while awaiting async operations; if so, the stale VoiceIO is closed immediately
- * to prevent it from being assigned to a newer connection.
- *
- * On failure (e.g. microphone permission denied, WebSocket closed mid-setup),
- * sets the error state and transitions to `"disconnected"`.
- */
 async function initAudioCapture(
   conn: ConnState,
   msg: { sampleRate: number; ttsSampleRate: number },
@@ -206,8 +163,6 @@ async function initAudioCapture(
   }
 }
 
-// ─── URL builder ────────────────────────────────────────────────────────────
-
 function buildWsUrl(platformUrl: string, resume: boolean, sessionId?: string): URL {
   const wsUrl = new URL("websocket", platformUrl.endsWith("/") ? platformUrl : `${platformUrl}/`);
   wsUrl.protocol = wsUrl.protocol === "https:" ? "wss:" : "ws:";
@@ -215,8 +170,6 @@ function buildWsUrl(platformUrl: string, resume: boolean, sessionId?: string): U
   else if (resume) wsUrl.searchParams.set("resume", "1");
   return wsUrl;
 }
-
-// ─── Factory ────────────────────────────────────────────────────────────────
 
 /**
  * Create a framework-agnostic voice session core that connects to an AAI
@@ -234,8 +187,6 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
   const WS: WebSocketConstructor =
     options.WebSocket ?? (WebSocket as unknown as WebSocketConstructor);
 
-  // ─── Internal state (replaces signals) ──────────────────────────────────
-
   let currentSnapshot: SessionSnapshot = {
     state: "disconnected",
     messages: [],
@@ -250,13 +201,9 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
 
   const subscribers = new Set<() => void>();
 
-  function notify(): void {
-    for (const sub of subscribers) sub();
-  }
-
   function updateState(partial: Partial<SessionSnapshot>): void {
     currentSnapshot = { ...currentSnapshot, ...partial };
-    notify();
+    for (const sub of subscribers) sub();
   }
 
   function getSnapshot(): SessionSnapshot {
@@ -270,11 +217,15 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     };
   }
 
-  // ─── Connection state ───────────────────────────────────────────────────
-
   const conn: ConnState = { ws: null, voiceIO: null, audioSetupInFlight: false, generation: 0 };
   let connectionController: AbortController | null = null;
   let hasConnected = false;
+
+  // Bumped on turn boundaries so stale audio-drain callbacks from cancelled
+  // turns don't transition state back to "listening".
+  let handlerGeneration = 0;
+  // Monotonic id for custom events; useEvent uses it to deduplicate.
+  let customEventSeq = 0;
 
   function cleanupAudio(): void {
     conn.audioSetupInFlight = false;
@@ -305,55 +256,8 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     }
   }
 
-  const audioDeps = {
-    sendJson,
-    sendAudio,
-    updateState,
-  };
+  const audioDeps = { sendJson, sendAudio, updateState };
 
-  // ─── Message handling ─────────────────────────────────────────────────────
-
-  /** Incremented on each turn boundary -- stale async callbacks compare against this. */
-  let handlerGeneration = 0;
-
-  /** Monotonically increasing counter for custom events -- used by useEvent to deduplicate. */
-  let customEventSeq = 0;
-
-  function appendCustomEvent(name: string, data: unknown): void {
-    updateState({
-      customEvents: appendCapped(
-        currentSnapshot.customEvents,
-        { id: ++customEventSeq, event: name, data },
-        MAX_CUSTOM_EVENTS,
-      ),
-    });
-  }
-
-  function handleUserTranscriptEvent(text: string): void {
-    handlerGeneration++;
-    updateState({
-      userTranscript: null,
-      messages: appendCapped(
-        currentSnapshot.messages,
-        { role: "user" as const, content: text },
-        MAX_MESSAGES,
-      ),
-      state: "thinking",
-    });
-  }
-
-  function handleAgentTranscriptEvent(text: string): void {
-    updateState({
-      agentTranscript: null,
-      messages: appendCapped(
-        currentSnapshot.messages,
-        { role: "assistant" as const, content: text },
-        MAX_MESSAGES,
-      ),
-    });
-  }
-
-  /** Single entry point for all server->client session events. */
   function handleEvent(e: ClientEvent): void {
     // Clear error state when a non-error event arrives — proves the session
     // is functional (e.g. audio init failed but WebSocket still works).
@@ -366,13 +270,28 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
         updateState({ userTranscript: "" });
         break;
       case "speech_stopped":
-        // VAD detected end of speech -- processing will follow.
         break;
       case "user_transcript":
-        handleUserTranscriptEvent(e.text);
+        handlerGeneration++;
+        updateState({
+          userTranscript: null,
+          messages: appendCapped(
+            currentSnapshot.messages,
+            { role: "user", content: e.text },
+            MAX_MESSAGES,
+          ),
+          state: "thinking",
+        });
         break;
       case "agent_transcript":
-        handleAgentTranscriptEvent(e.text);
+        updateState({
+          agentTranscript: null,
+          messages: appendCapped(
+            currentSnapshot.messages,
+            { role: "assistant", content: e.text },
+            MAX_MESSAGES,
+          ),
+        });
         break;
       case "tool_call":
         updateState({
@@ -389,14 +308,12 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
         });
         break;
       case "tool_call_done": {
-        const tcs = currentSnapshot.toolCalls;
-        const idx = tcs.findIndex((tc) => tc.callId === e.toolCallId);
-        if (idx !== -1) {
-          const updated = [...tcs];
-          const existing = updated[idx];
-          if (existing) updated[idx] = { ...existing, status: "done", result: e.result };
-          updateState({ toolCalls: updated });
-        }
+        const idx = currentSnapshot.toolCalls.findIndex((tc) => tc.callId === e.toolCallId);
+        if (idx === -1) break;
+        const updated = [...currentSnapshot.toolCalls];
+        const existing = updated[idx];
+        if (existing) updated[idx] = { ...existing, status: "done", result: e.result };
+        updateState({ toolCalls: updated });
         break;
       }
       case "reply_done":
@@ -411,7 +328,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
           state: "listening",
         });
         break;
-      case "reset": {
+      case "reset":
         handlerGeneration++;
         conn.voiceIO?.flush();
         updateState({
@@ -424,9 +341,14 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
           state: "listening",
         });
         break;
-      }
       case "custom_event":
-        appendCustomEvent(e.event, e.data);
+        updateState({
+          customEvents: appendCapped(
+            currentSnapshot.customEvents,
+            { id: ++customEventSeq, event: e.event, data: e.data },
+            MAX_CUSTOM_EVENTS,
+          ),
+        });
         break;
       case "error":
         console.error("Agent error:", e.message);
@@ -437,14 +359,12 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
         });
         break;
       case "idle_timeout":
-        // Server-side idle timeout — treat as a graceful disconnect signal.
         break;
       default:
         break;
     }
   }
 
-  /** Enqueue a PCM16 audio chunk for playback. Transitions state to `"speaking"` on the first chunk. */
   function playAudioChunk(chunk: Uint8Array): void {
     if (currentSnapshot.state === "disconnected" && currentSnapshot.error !== null) return;
     if (currentSnapshot.state !== "speaking") {
@@ -453,38 +373,25 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     conn.voiceIO?.enqueue(chunk.buffer as ArrayBuffer);
   }
 
-  /**
-   * Signal that the server has finished sending audio for this turn.
-   * Waits for the audio queue to drain, then transitions state to `"listening"`.
-   * Uses the `handlerGeneration` counter to discard stale completions from interrupted turns.
-   */
   function playAudioDone(): void {
     const gen = handlerGeneration;
     const io = conn.voiceIO;
-    if (io) {
-      void io
-        .done()
-        .then(() => {
-          if (handlerGeneration !== gen) return;
-          updateState({ state: "listening" });
-        })
-        .catch((err: unknown) => {
-          console.warn("Audio playback done failed:", err);
-        });
-    } else {
+    if (!io) {
       updateState({ state: "listening" });
+      return;
     }
+    void io
+      .done()
+      .then(() => {
+        // Discard stale completions from interrupted turns.
+        if (handlerGeneration !== gen) return;
+        updateState({ state: "listening" });
+      })
+      .catch((err: unknown) => {
+        console.warn("Audio playback done failed:", err);
+      });
   }
 
-  /**
-   * Dispatch an incoming WebSocket message.
-   *
-   * Binary frames carry raw PCM16 audio chunks. Text frames are JSON-encoded
-   * {@link ServerMessage} values validated via Zod.
-   *
-   * Returns the parsed config if the message is a `config` message,
-   * otherwise `undefined`.
-   */
   function handleMessage(
     data: unknown,
   ): { sampleRate: number; ttsSampleRate: number; sid?: string | undefined } | undefined {
@@ -508,7 +415,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
       if (parsed.malformed) {
         console.warn("session-core: malformed server message", parsed.error);
       }
-      // else: unrecognised type — silently drop (rolling-upgrade tolerance)
+      // Unrecognised type: silently drop for rolling-upgrade tolerance.
       return;
     }
     const msg = parsed.data;
@@ -523,11 +430,17 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
       playAudioDone();
       return;
     }
-    // Everything else is a ClientEvent.
     handleEvent(msg);
   }
 
-  // ─── Connection management ──────────────────────────────────────────────
+  function disconnect(): void {
+    connectionController?.abort();
+    connectionController = null;
+    cleanupAudio();
+    conn.ws?.close();
+    conn.ws = null;
+    updateState({ state: "disconnected", running: false });
+  }
 
   function connect(opts?: { signal?: AbortSignal }): void {
     updateState({ state: "connecting", error: null });
@@ -541,9 +454,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     const { signal: sig } = controller;
 
     if (opts?.signal) {
-      opts.signal.addEventListener("abort", () => disconnect(), {
-        signal: sig,
-      });
+      opts.signal.addEventListener("abort", () => disconnect(), { signal: sig });
     }
 
     const resumeId = !hasConnected ? options.resumeSessionId : undefined;
@@ -565,27 +476,26 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
       "message",
       (event: MessageEvent) => {
         const config = handleMessage(event.data);
-        if (config) {
-          if (config.sid) options.onSessionId?.(config.sid);
-          const isReconnect = hasConnected;
-          hasConnected = true;
-          initAudioCapture(conn, config, audioDeps).catch((err) => {
-            audioDeps.updateState({
-              state: "error",
-              error: {
-                code: "audio",
-                message: `Audio capture failed: ${errorMessage(err)}`,
-              },
-              running: false,
-            });
+        if (!config) return;
+        if (config.sid) options.onSessionId?.(config.sid);
+        const isReconnect = hasConnected;
+        hasConnected = true;
+        initAudioCapture(conn, config, audioDeps).catch((err) => {
+          updateState({
+            state: "error",
+            error: {
+              code: "audio",
+              message: `Audio capture failed: ${errorMessage(err)}`,
+            },
+            running: false,
           });
+        });
 
-          if (isReconnect && currentSnapshot.messages.length > 0) {
-            sendJson({
-              type: "history",
-              messages: currentSnapshot.messages.map((m) => ({ role: m.role, content: m.content })),
-            });
-          }
+        if (isReconnect && currentSnapshot.messages.length > 0) {
+          sendJson({
+            type: "history",
+            messages: currentSnapshot.messages.map((m) => ({ role: m.role, content: m.content })),
+          });
         }
       },
       { signal: sig },
@@ -594,9 +504,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     socket.addEventListener(
       "close",
       () => {
-        if (sig.aborted) {
-          return;
-        }
+        if (sig.aborted) return;
         controller.abort();
         cleanupAudio();
         updateState({ state: "disconnected", running: false });
@@ -620,15 +528,6 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     resetState();
     disconnect();
     connect();
-  }
-
-  function disconnect(): void {
-    connectionController?.abort();
-    connectionController = null;
-    cleanupAudio();
-    conn.ws?.close();
-    conn.ws = null;
-    updateState({ state: "disconnected", running: false });
   }
 
   function start(): void {

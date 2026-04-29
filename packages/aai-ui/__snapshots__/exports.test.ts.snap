@@ -1,6 +1,6 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`aai-ui export surface > @alexkroman1/aai-ui main export 1`] = `
+exports[`@alexkroman1/aai-ui main export 1`] = `
 [
   "Button",
   "ChatView",

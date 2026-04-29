@@ -1,6 +1,3 @@
-// Capture worklet: captures mic Float32 samples, resamples to STT rate if
-// needed, converts to Int16 PCM, and sends chunks to the main thread.
-
 const CaptureProcessorWorklet = `
 class CaptureProcessor extends AudioWorkletProcessor {
   constructor(options) {
@@ -39,7 +36,6 @@ class CaptureProcessor extends AudioWorkletProcessor {
     const raw = input[0];
     const samples = this.needsResample ? this.resample(raw) : raw;
 
-    // Convert Float32 -> Int16
     const buffer = new ArrayBuffer(samples.length * 2);
     const view = new DataView(buffer);
     for (let i = 0; i < samples.length; i++) {
@@ -58,5 +54,4 @@ registerProcessor('capture-processor', CaptureProcessor);
 const script = new Blob([CaptureProcessorWorklet], {
   type: "application/javascript",
 });
-const src = URL.createObjectURL(script);
-export default src;
+export default URL.createObjectURL(script);

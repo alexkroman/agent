@@ -57,9 +57,7 @@ describe("createVoiceIO", () => {
   });
 
   test("capture calls onMicData when worklet sends chunks", async () => {
-    const onMicData = vi.fn((_buf: ArrayBuffer) => {
-      /* noop */
-    });
+    const onMicData = vi.fn<(buf: ArrayBuffer) => void>();
     const io = await createVoiceIO(
       voiceOpts({
         sttSampleRate: 16_000,
@@ -71,15 +69,13 @@ describe("createVoiceIO", () => {
 
     for (let i = 0; i < 13; i++) {
       const buf = new ArrayBuffer(256);
-      const view = new Int16Array(buf);
-      view.fill(16_384);
+      new Int16Array(buf).fill(16_384);
       capNode.port.simulateMessage({ event: "chunk", buffer: buf });
     }
 
     expect(onMicData).toHaveBeenCalled();
-    const firstCall = onMicData.mock.calls[0] as [ArrayBuffer];
-    const pcm16 = new Int16Array(firstCall[0]);
-    expect(pcm16[0]).toBe(16_384);
+    const [firstBuf] = onMicData.mock.calls[0] as [ArrayBuffer];
+    expect(new Int16Array(firstBuf)[0]).toBe(16_384);
     await io.close();
   });
 
@@ -127,19 +123,18 @@ describe("createVoiceIO", () => {
   });
 
   test("cleans up on worklet load error", async () => {
-    let _lastContext!: MockAudioContext;
-    // Double-cast needed: test assigns an incomplete AudioContext mock that
-    // doesn't satisfy the full DOM AudioContext interface.
-    const g = globalThis as unknown as Record<string, unknown>;
-    g.AudioContext = class extends MockAudioContext {
+    let lastContext!: MockAudioContext;
+    (globalThis as unknown as Record<string, unknown>).AudioContext = class extends (
+      MockAudioContext
+    ) {
       constructor(opts?: { sampleRate?: number }) {
         super(opts);
-        _lastContext = this;
+        lastContext = this;
         this.audioWorklet.addModule = () => Promise.reject(new Error("fail"));
       }
     };
 
     await expect(createVoiceIO(voiceOpts())).rejects.toThrow("fail");
-    expect(_lastContext?.closed).toBe(true);
+    expect(lastContext?.closed).toBe(true);
   });
 });

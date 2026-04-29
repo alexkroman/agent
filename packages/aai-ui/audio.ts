@@ -1,57 +1,33 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { MIC_BUFFER_SECONDS } from "./types.ts";
 
-/** Configuration for creating a {@link VoiceIO} instance. */
 export type VoiceIOOptions = {
-  /** Sample rate in Hz expected by the STT engine (e.g. 16000). */
   sttSampleRate: number;
-  /** Sample rate in Hz used by the TTS engine (e.g. 22050). */
   ttsSampleRate: number;
-  /** Source URL or data URI for the capture AudioWorklet processor. */
   captureWorkletSrc: string;
-  /** Source URL or data URI for the playback AudioWorklet processor. */
   playbackWorkletSrc: string;
-  /** Callback invoked with buffered PCM16 microphone data to send to the server. */
   onMicData: (pcm16: ArrayBuffer) => void;
-  /** Callback invoked with the current playback position in samples. */
   onPlaybackProgress?: (samplesPlayed: number) => void;
 };
 
-/**
- * Audio I/O interface for voice capture and playback.
- *
- * Manages microphone capture via an AudioWorklet, resampling to the STT
- * sample rate, and TTS audio playback through a second AudioWorklet. Implements
- * {@link AsyncDisposable} for resource cleanup.
- */
 export type VoiceIO = AsyncDisposable & {
-  /** Enqueue a PCM16 audio buffer for playback through the TTS pipeline. */
   enqueue(pcm16Buffer: ArrayBuffer): void;
-  /** Signal that all TTS audio for the current turn has been enqueued.
-   *  Resolves when the worklet has finished playing all buffered audio. */
   done(): Promise<void>;
-  /** Immediately stop playback and discard any buffered TTS audio. */
   flush(): void;
-  /** Release all audio resources (microphone, AudioContext, worklets). */
   close(): Promise<void>;
 };
 
-/**
- * Create a {@link VoiceIO} instance that captures microphone audio and
- * plays back TTS audio using the Web Audio API.
- *
- * The AudioContext runs at the TTS sample rate for playback fidelity.
- * Captured audio is resampled to the STT rate when the rates differ.
- *
- * @param opts - Voice I/O configuration options.
- * @returns A promise that resolves to a {@link VoiceIO} handle.
- * @throws If microphone access is denied or AudioWorklet registration fails.
- */
 export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
-  const { sttSampleRate, ttsSampleRate, captureWorkletSrc, playbackWorkletSrc, onMicData } = opts;
+  const {
+    sttSampleRate,
+    ttsSampleRate,
+    captureWorkletSrc,
+    playbackWorkletSrc,
+    onMicData,
+    onPlaybackProgress,
+  } = opts;
 
-  // Use TTS rate for the context — playback fidelity is more perceptible.
-  // Capture path resamples to STT rate if they differ.
+  // AudioContext runs at TTS rate for playback fidelity; capture path resamples to STT rate.
   const contextRate = ttsSampleRate;
   const ctx = new AudioContext({
     sampleRate: contextRate,
@@ -90,7 +66,6 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
   });
   mic.connect(capNode);
 
-  // Worklet outputs PCM16 at the STT rate — just batch and send.
   const chunkSizeBytes = Math.floor(sttSampleRate * MIC_BUFFER_SECONDS) * 2;
   const bufSize = chunkSizeBytes * 2;
   const capBufA = new Uint8Array(bufSize);
@@ -109,7 +84,7 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
 
     if (capOffset >= chunkSizeBytes) {
       onMicData(capBuf.buffer.slice(0, capOffset));
-      // Swap to the other pre-allocated buffer to avoid GC pressure
+      // Swap to the other pre-allocated buffer to avoid GC pressure.
       capBuf = capBuf === capBufA ? capBufB : capBufA;
       capOffset = 0;
     }
@@ -118,7 +93,6 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
   let playNode: AudioWorkletNode | null = null;
   let onPlaybackStop: (() => void) | null = null;
   const lifecycle = new AbortController();
-  const { onPlaybackProgress } = opts;
 
   function ensurePlayNode(): AudioWorkletNode {
     if (playNode) return playNode;
