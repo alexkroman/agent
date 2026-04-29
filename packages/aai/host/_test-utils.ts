@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { vi } from "vitest";
 import type { AgentConfig } from "../sdk/_internal-types.ts";
-import type { ClientSink } from "../sdk/protocol.ts";
+import type { ClientEvent, ClientSink } from "../sdk/protocol.ts";
 import type { AgentDef, ToolContext, ToolDef } from "../sdk/types.ts";
 import { DEFAULT_SYSTEM_PROMPT } from "../sdk/types.ts";
 import { createRuntime } from "./runtime.ts";
@@ -111,12 +111,7 @@ export function makeClientSink(overrides?: Partial<ClientSink>): ClientSink {
   };
 }
 
-export const silentLogger: {
-  info: (...args: unknown[]) => void;
-  warn: (...args: unknown[]) => void;
-  error: (...args: unknown[]) => void;
-  debug: (...args: unknown[]) => void;
-} = {
+export const silentLogger = {
   info: vi.fn(),
   warn: vi.fn(),
   error: vi.fn(),
@@ -153,11 +148,11 @@ export type TrackingClientSink = ClientSink & {
   userTranscripts: string[];
   toolCallEvents: { callId: string; name: string; args: unknown }[];
   audioChunks: Uint8Array[];
-  replyDoneCount: number;
-  cancelledCount: number;
-  speechStartedCount: number;
-  speechStoppedCount: number;
-  events: import("../sdk/protocol.ts").ClientEvent[];
+  readonly replyDoneCount: number;
+  readonly cancelledCount: number;
+  readonly speechStartedCount: number;
+  readonly speechStoppedCount: number;
+  events: ClientEvent[];
 };
 
 export function makeTrackingClient(): TrackingClientSink {
@@ -165,11 +160,13 @@ export function makeTrackingClient(): TrackingClientSink {
   const userTranscripts: string[] = [];
   const toolCallEvents: { callId: string; name: string; args: unknown }[] = [];
   const audioChunks: Uint8Array[] = [];
-  const events: import("../sdk/protocol.ts").ClientEvent[] = [];
-  let replyDoneCount = 0;
-  let cancelledCount = 0;
-  let speechStartedCount = 0;
-  let speechStoppedCount = 0;
+  const events: ClientEvent[] = [];
+
+  function countByType(type: ClientEvent["type"]): number {
+    let n = 0;
+    for (const e of events) if (e.type === type) n++;
+    return n;
+  }
 
   return {
     open: true,
@@ -179,18 +176,18 @@ export function makeTrackingClient(): TrackingClientSink {
     audioChunks,
     events,
     get replyDoneCount() {
-      return replyDoneCount;
+      return countByType("reply_done");
     },
     get cancelledCount() {
-      return cancelledCount;
+      return countByType("cancelled");
     },
     get speechStartedCount() {
-      return speechStartedCount;
+      return countByType("speech_started");
     },
     get speechStoppedCount() {
-      return speechStoppedCount;
+      return countByType("speech_stopped");
     },
-    event: vi.fn((e: import("../sdk/protocol.ts").ClientEvent) => {
+    event: vi.fn((e: ClientEvent) => {
       events.push(e);
       switch (e.type) {
         case "agent_transcript":
@@ -201,18 +198,6 @@ export function makeTrackingClient(): TrackingClientSink {
           break;
         case "tool_call":
           toolCallEvents.push({ callId: e.toolCallId, name: e.toolName, args: e.args });
-          break;
-        case "reply_done":
-          replyDoneCount++;
-          break;
-        case "cancelled":
-          cancelledCount++;
-          break;
-        case "speech_started":
-          speechStartedCount++;
-          break;
-        case "speech_stopped":
-          speechStoppedCount++;
           break;
         default:
           break;
@@ -297,14 +282,7 @@ export function createFixtureSession(
   opts?: { env?: Record<string, string> },
 ) {
   let capturedCallbacks: S2sCallbacks | null = null;
-  const fakeHandle: S2sHandle = {
-    sendAudio: vi.fn(),
-    sendAudioRaw: vi.fn(),
-    sendToolResult: vi.fn(),
-    updateSession: vi.fn(),
-    resumeSession: vi.fn(),
-    close: vi.fn(),
-  };
+  const fakeHandle = makeMockHandle();
 
   const connectSpy = vi
     .spyOn(s2sTransportInternals, "connectS2s")

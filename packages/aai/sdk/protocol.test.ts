@@ -70,17 +70,19 @@ describe("KvRequestSchema", () => {
   });
 });
 
+const ERROR_CODES = [
+  "stt",
+  "llm",
+  "tts",
+  "tool",
+  "protocol",
+  "connection",
+  "audio",
+  "internal",
+] as const;
+
 describe("SessionErrorCodeSchema", () => {
-  test.each([
-    "stt",
-    "llm",
-    "tts",
-    "tool",
-    "protocol",
-    "connection",
-    "audio",
-    "internal",
-  ])("accepts valid code: %s", (code) => {
+  test.each(ERROR_CODES)("accepts valid code: %s", (code) => {
     expect(SessionErrorCodeSchema.safeParse(code).success).toBe(true);
   });
 
@@ -173,17 +175,6 @@ describe("property: lenientParse", () => {
   });
 
   test("valid ClientEvents round-trip through parse", () => {
-    const errorCodes = [
-      "stt",
-      "llm",
-      "tts",
-      "tool",
-      "protocol",
-      "connection",
-      "audio",
-      "internal",
-    ] as const;
-
     const speechStartedArb = fc.constant({ type: "speech_started" as const });
 
     const userTranscriptArb = fc.record({
@@ -193,7 +184,7 @@ describe("property: lenientParse", () => {
 
     const errorEventArb = fc.record({
       type: fc.constant("error" as const),
-      code: fc.constantFrom(...errorCodes),
+      code: fc.constantFrom(...ERROR_CODES),
       message: fc.string(),
     });
 

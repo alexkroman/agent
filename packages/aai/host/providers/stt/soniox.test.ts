@@ -5,20 +5,6 @@ import { describe, expect, test, vi } from "vitest";
 import { flush } from "../../_test-utils.ts";
 import { openSoniox } from "./soniox.ts";
 
-// ---------------------------------------------------------------------------
-// Mock the `ws` package. Each FakeWS:
-//   - extends EventEmitter for `on`/`off`/`once` semantics that match the
-//     real `ws.WebSocket` API
-//   - exposes `readyState` initialised to OPEN once "open" fires
-//   - records sent frames so tests can assert on them
-//   - exposes `_fire(ev, data)` so tests inject incoming server frames
-//
-// Vitest hoists `vi.mock` to module top, so the factory can't reference
-// outer top-level declarations. `vi.hoisted` runs even earlier and lets
-// us share `FakeWS` + the `latest` capture between the factory and the
-// test bodies.
-// ---------------------------------------------------------------------------
-
 interface FakeWSInstance {
   readyState: number;
   sent: Array<string | Uint8Array>;
@@ -32,6 +18,7 @@ interface FakeWSInstance {
 
 type Listener = (...args: unknown[]) => void;
 
+// `vi.mock` is hoisted above top-level decls, so share state via `vi.hoisted`.
 const { latest, FakeWS } = vi.hoisted(() => {
   const latestRef: { ws: FakeWSInstance | undefined } = { ws: undefined };
   class FakeWSImpl implements FakeWSInstance {
@@ -87,35 +74,35 @@ const { latest, FakeWS } = vi.hoisted(() => {
 
 vi.mock("ws", () => ({ default: FakeWS, WebSocket: FakeWS }));
 
-async function openSession(
-  opts: { apiKey?: string; languageHints?: string[]; model?: string } = {},
-): Promise<{
+interface OpenSessionOpts {
+  apiKey?: string;
+  languageHints?: string[];
+  model?: string;
+}
+
+async function openSession(opts: OpenSessionOpts = {}): Promise<{
   session: import("../../../sdk/providers.ts").SttSession;
   ws: FakeWSInstance;
   controller: AbortController;
 }> {
   latest.ws = undefined;
-  const opener = openSoniox(
-    opts.languageHints || opts.model
-      ? {
-          ...(opts.model ? { model: opts.model } : {}),
-          ...(opts.languageHints ? { languageHints: opts.languageHints } : {}),
-        }
-      : {},
-  );
+  const openerOpts: { model?: string; languageHints?: string[] } = {};
+  if (opts.model) openerOpts.model = opts.model;
+  if (opts.languageHints) openerOpts.languageHints = opts.languageHints;
+  const opener = openSoniox(openerOpts);
   const controller = new AbortController();
   const session = await opener.open({
     sampleRate: 16_000,
     apiKey: opts.apiKey ?? "test-key",
     signal: controller.signal,
   });
-  // The constructor schedules an `open` event via setImmediate; the
-  // adapter's `await waitForOpen(ws)` already drained it, so `latest.ws`
-  // is fully wired by now. Capture into a local const so TS narrows the
-  // type — direct property access on a mutable ref keeps the union.
-  const ws: FakeWSInstance | undefined = latest.ws;
+  const ws = latest.ws;
   if (!ws) throw new Error("no fake ws captured");
   return { session, ws, controller };
+}
+
+function frame(payload: unknown): Buffer {
+  return Buffer.from(JSON.stringify(payload));
 }
 
 describe("Soniox real-time STT adapter", () => {
@@ -166,14 +153,12 @@ describe("Soniox real-time STT adapter", () => {
 
     ws._fire(
       "message",
-      Buffer.from(
-        JSON.stringify({
-          tokens: [
-            { text: "hel", is_final: false },
-            { text: "lo", is_final: false },
-          ],
-        }),
-      ),
+      frame({
+        tokens: [
+          { text: "hel", is_final: false },
+          { text: "lo", is_final: false },
+        ],
+      }),
     );
 
     await flush();
@@ -188,31 +173,19 @@ describe("Soniox real-time STT adapter", () => {
     session.on("final", (t) => finals.push(t));
     session.on("partial", (t) => partials.push(t));
 
-    // Frame 1: only final tokens — buffered, NOT yet emitted.
     ws._fire(
       "message",
-      Buffer.from(
-        JSON.stringify({
-          tokens: [
-            { text: "hello", is_final: true },
-            { text: " world", is_final: true },
-          ],
-        }),
-      ),
+      frame({
+        tokens: [
+          { text: "hello", is_final: true },
+          { text: " world", is_final: true },
+        ],
+      }),
     );
     await flush();
     expect(finals).toEqual([]);
 
-    // Frame 2: a non-final preview token — flushes the buffered final
-    // and emits the new partial.
-    ws._fire(
-      "message",
-      Buffer.from(
-        JSON.stringify({
-          tokens: [{ text: "how", is_final: false }],
-        }),
-      ),
-    );
+    ws._fire("message", frame({ tokens: [{ text: "how", is_final: false }] }));
     await flush();
     expect(finals).toEqual(["hello world"]);
     expect(partials).toEqual(["how"]);
@@ -224,15 +197,7 @@ describe("Soniox real-time STT adapter", () => {
     const finals: string[] = [];
     session.on("final", (t) => finals.push(t));
 
-    ws._fire(
-      "message",
-      Buffer.from(
-        JSON.stringify({
-          tokens: [{ text: "bye", is_final: true }],
-          finished: true,
-        }),
-      ),
-    );
+    ws._fire("message", frame({ tokens: [{ text: "bye", is_final: true }], finished: true }));
 
     await flush();
     expect(finals).toEqual(["bye"]);
@@ -244,16 +209,9 @@ describe("Soniox real-time STT adapter", () => {
     const finals: string[] = [];
     session.on("final", (t) => finals.push(t));
 
-    ws._fire(
-      "message",
-      Buffer.from(
-        JSON.stringify({
-          tokens: [{ text: "trailing", is_final: true }],
-        }),
-      ),
-    );
+    ws._fire("message", frame({ tokens: [{ text: "trailing", is_final: true }] }));
     await flush();
-    expect(finals).toEqual([]); // not flushed yet — no boundary
+    expect(finals).toEqual([]);
 
     await session.close();
     expect(finals).toEqual(["trailing"]);
@@ -264,10 +222,7 @@ describe("Soniox real-time STT adapter", () => {
     const errors: { code: string; message: string }[] = [];
     session.on("error", (e) => errors.push({ code: e.code, message: e.message }));
 
-    ws._fire(
-      "message",
-      Buffer.from(JSON.stringify({ error_code: 503, error_message: "service unavailable" })),
-    );
+    ws._fire("message", frame({ error_code: 503, error_message: "service unavailable" }));
 
     await flush();
     expect(errors).toHaveLength(1);
@@ -325,12 +280,7 @@ describe("Soniox real-time STT adapter", () => {
     await session.close();
     await session.close();
 
-    ws._fire(
-      "message",
-      Buffer.from(
-        JSON.stringify({ tokens: [{ text: "ignored", is_final: true }], finished: true }),
-      ),
-    );
+    ws._fire("message", frame({ tokens: [{ text: "ignored", is_final: true }], finished: true }));
 
     await flush();
     expect(finals).toEqual([]);

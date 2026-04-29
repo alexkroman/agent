@@ -37,43 +37,34 @@ type PineconeClient = {
 };
 
 export function createPineconeVector(opts: PineconeVectorOptions): Vector {
-  // Lazy-load via loadProviderPackage so the package is a true optional peer dep.
   const { Pinecone } = loadProviderPackage<{
     Pinecone: new (opts: { apiKey: string }) => PineconeClient;
   }>("@pinecone-database/pinecone", "Pinecone Vector");
-  const client = new Pinecone({ apiKey: opts.apiKey });
-  const ns = (): PineconeNs => client.index(opts.index).namespace(opts.namespace);
+  const ns = new Pinecone({ apiKey: opts.apiKey }).index(opts.index).namespace(opts.namespace);
 
   return {
     async upsert(id, text, metadata) {
-      const record: Record<string, unknown> = { _id: id, text, ...(metadata ?? {}) };
-      await ns().upsertRecords([record]);
+      await ns.upsertRecords([{ _id: id, text, ...(metadata ?? {}) }]);
     },
     async query(text, queryOpts?: VectorQueryOptions) {
-      const topK = queryOpts?.topK ?? 5;
-      const req = {
-        query: {
-          inputs: { text },
-          topK,
-          ...(queryOpts?.filter !== undefined ? { filter: queryOpts.filter } : {}),
-        },
+      const { topK = 5, filter } = queryOpts ?? {};
+      const resp = await ns.searchRecords({
+        query: { inputs: { text }, topK, ...(filter !== undefined ? { filter } : {}) },
         fields: ["*"],
-      };
-      const resp = await ns().searchRecords(req);
+      });
       return resp.result.hits.map((hit): VectorMatch => {
         const { text: hitText, ...rest } = hit.fields;
-        const metadata = Object.keys(rest).length > 0 ? rest : undefined;
-        return {
+        const match: VectorMatch = {
           id: hit._id,
           score: hit._score,
           text: typeof hitText === "string" ? hitText : "",
-          ...(metadata !== undefined ? { metadata } : {}),
         };
+        if (Object.keys(rest).length > 0) match.metadata = rest;
+        return match;
       });
     },
     async delete(ids) {
-      const list = Array.isArray(ids) ? ids : [ids];
-      await ns().deleteMany(list);
+      await ns.deleteMany(Array.isArray(ids) ? ids : [ids]);
     },
   };
 }

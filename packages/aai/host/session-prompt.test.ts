@@ -4,13 +4,9 @@ import { DEFAULT_SYSTEM_PROMPT } from "../sdk/types.ts";
 import { makeConfig } from "./_test-utils.ts";
 
 describe("buildSystemPrompt", () => {
-  test("starts with DEFAULT_SYSTEM_PROMPT when no custom instructions", () => {
+  test("uses DEFAULT_SYSTEM_PROMPT with no agent-specific section when no custom instructions", () => {
     const result = buildSystemPrompt(makeConfig(), { hasTools: false });
     expect(result.startsWith(DEFAULT_SYSTEM_PROMPT)).toBe(true);
-  });
-
-  test("does not include agent-specific instructions section for default instructions", () => {
-    const result = buildSystemPrompt(makeConfig(), { hasTools: false });
     expect(result).not.toContain("Agent-Specific Instructions:");
   });
 

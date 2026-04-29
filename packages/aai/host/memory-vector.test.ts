@@ -33,7 +33,9 @@ describe("createMemoryVector", () => {
 
   it("topK caps the number of results", async () => {
     const v = createMemoryVector({ namespace: "ns1" });
-    for (let i = 0; i < 10; i++) await v.upsert(`id-${i}`, `text ${i}`);
+    for (let i = 0; i < 10; i++) {
+      await v.upsert(`id-${i}`, `text ${i}`);
+    }
     expect(await v.query("text", { topK: 3 })).toHaveLength(3);
   });
 

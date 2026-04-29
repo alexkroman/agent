@@ -3,7 +3,6 @@ import { silentLogger } from "./_test-utils.ts";
 import type { S2sCallbacks, S2sWebSocket } from "./s2s.ts";
 import { connectS2s } from "./s2s.ts";
 
-/** EventTarget-based WebSocket stub (standard API, no `.on()` adapter needed). */
 function createWebSocketStub() {
   const target = new EventTarget();
   return Object.assign(target, {
@@ -11,7 +10,6 @@ function createWebSocketStub() {
     send: vi.fn(),
     close: vi.fn(),
     addEventListener: target.addEventListener.bind(target) as S2sWebSocket["addEventListener"],
-    /** Simulate a server-side event for testing. */
     emit(event: string, ...args: unknown[]) {
       const builders: Record<string, () => Event> = {
         open: () => new Event("open"),
@@ -79,6 +77,20 @@ async function setupHandle(callbacks?: S2sCallbacks) {
   return { raw, handle, logger };
 }
 
+type WebSocketStub = ReturnType<typeof createWebSocketStub>;
+
+function emitMessage(raw: WebSocketStub, payload: unknown): void {
+  raw.emit("message", Buffer.from(JSON.stringify(payload)));
+}
+
+function lastSent(raw: WebSocketStub): Record<string, unknown> {
+  return JSON.parse(raw.send.mock.calls[0]?.[0] as string);
+}
+
+function errorArg(callbacks: S2sCallbacks): Error {
+  return (callbacks.onError as ReturnType<typeof vi.fn>).mock.calls[0]?.[0];
+}
+
 describe("connectS2s", () => {
   test("resolves with handle after open", async () => {
     const { handle } = await setupHandle();
@@ -114,17 +126,15 @@ describe("connectS2s", () => {
     ).rejects.toThrow("connection refused");
   });
 
-  // ─── Handle methods ────────────────────────────────────────────────────
-
   test("updateSession sends session.update message", async () => {
     const { raw, handle } = await setupHandle();
 
     handle.updateSession({ systemPrompt: "test", tools: [] });
 
     expect(raw.send).toHaveBeenCalledOnce();
-    const sent = JSON.parse(raw.send.mock.calls[0]?.[0] as string);
+    const sent = lastSent(raw) as { type: string; session: { system_prompt: string } };
     expect(sent.type).toBe("session.update");
-    expect(sent.session.system_prompt).toBe("test"); // wire format stays snake_case
+    expect(sent.session.system_prompt).toBe("test");
   });
 
   test("sendAudio sends base64-encoded audio when open", async () => {
@@ -133,14 +143,14 @@ describe("connectS2s", () => {
     handle.sendAudio(new Uint8Array([1, 2, 3, 4]));
 
     expect(raw.send).toHaveBeenCalledOnce();
-    const sent = JSON.parse(raw.send.mock.calls[0]?.[0] as string);
+    const sent = lastSent(raw);
     expect(sent.type).toBe("input.audio");
-    expect(typeof sent.audio).toBe("string"); // base64
+    expect(typeof sent.audio).toBe("string");
   });
 
   test("sendAudio is no-op when ws is not open", async () => {
     const { raw, handle } = await setupHandle();
-    raw.readyState = 3; // CLOSED
+    raw.readyState = 3;
 
     handle.sendAudio(new Uint8Array([1, 2, 3, 4]));
     expect(raw.send).not.toHaveBeenCalled();
@@ -158,7 +168,7 @@ describe("connectS2s", () => {
 
   test("sendAudioRaw is no-op when ws is not open", async () => {
     const { raw, handle } = await setupHandle();
-    raw.readyState = 3; // CLOSED
+    raw.readyState = 3;
 
     handle.sendAudioRaw('{"type":"input.audio","audio":"abc"}');
     expect(raw.send).not.toHaveBeenCalled();
@@ -170,7 +180,7 @@ describe("connectS2s", () => {
     handle.sendToolResult("call-123", "result-text");
 
     expect(raw.send).toHaveBeenCalledOnce();
-    const sent = JSON.parse(raw.send.mock.calls[0]?.[0] as string);
+    const sent = lastSent(raw);
     expect(sent.type).toBe("tool.result");
     expect(sent.call_id).toBe("call-123");
     expect(sent.result).toBe("result-text");
@@ -182,7 +192,7 @@ describe("connectS2s", () => {
     handle.resumeSession("session-abc");
 
     expect(raw.send).toHaveBeenCalledOnce();
-    const sent = JSON.parse(raw.send.mock.calls[0]?.[0] as string);
+    const sent = lastSent(raw);
     expect(sent.type).toBe("session.resume");
     expect(sent.session_id).toBe("session-abc");
   });
@@ -196,27 +206,17 @@ describe("connectS2s", () => {
 
   test("send is no-op when ws is not open", async () => {
     const { raw, handle } = await setupHandle();
-    raw.readyState = 3; // CLOSED
+    raw.readyState = 3;
 
     handle.updateSession({ systemPrompt: "test", tools: [] });
     expect(raw.send).not.toHaveBeenCalled();
   });
 
-  // ─── Message dispatch ──────────────────────────────────────────────────
-
   test("session.ready dispatches 'onSessionReady' callback", async () => {
     const callbacks = makeMockCallbacks();
     const { raw } = await setupHandle(callbacks);
 
-    raw.emit(
-      "message",
-      Buffer.from(
-        JSON.stringify({
-          type: "session.ready",
-          session_id: "s123",
-        }),
-      ),
-    );
+    emitMessage(raw, { type: "session.ready", session_id: "s123" });
 
     expect(callbacks.onSessionReady).toHaveBeenCalledOnce();
     expect(callbacks.onSessionReady).toHaveBeenCalledWith("s123");
@@ -226,7 +226,7 @@ describe("connectS2s", () => {
     const callbacks = makeMockCallbacks();
     const { raw } = await setupHandle(callbacks);
 
-    raw.emit("message", Buffer.from(JSON.stringify({ type: "input.speech.started" })));
+    emitMessage(raw, { type: "input.speech.started" });
 
     expect(callbacks.onSpeechStarted).toHaveBeenCalledOnce();
   });
@@ -235,9 +235,9 @@ describe("connectS2s", () => {
     const callbacks = makeMockCallbacks();
     const { raw } = await setupHandle(callbacks);
 
-    // Prime VAD state — speech_stopped is only forwarded after a speech_started.
-    raw.emit("message", Buffer.from(JSON.stringify({ type: "input.speech.started" })));
-    raw.emit("message", Buffer.from(JSON.stringify({ type: "input.speech.stopped" })));
+    // speech_stopped is only forwarded after a speech_started primes VAD state.
+    emitMessage(raw, { type: "input.speech.started" });
+    emitMessage(raw, { type: "input.speech.stopped" });
 
     expect(callbacks.onSpeechStarted).toHaveBeenCalledOnce();
     expect(callbacks.onSpeechStopped).toHaveBeenCalledOnce();
@@ -247,9 +247,9 @@ describe("connectS2s", () => {
     const callbacks = makeMockCallbacks();
     const { raw } = await setupHandle(callbacks);
 
-    raw.emit("message", Buffer.from(JSON.stringify({ type: "input.speech.started" })));
-    raw.emit("message", Buffer.from(JSON.stringify({ type: "input.speech.stopped" })));
-    raw.emit("message", Buffer.from(JSON.stringify({ type: "input.speech.stopped" })));
+    emitMessage(raw, { type: "input.speech.started" });
+    emitMessage(raw, { type: "input.speech.stopped" });
+    emitMessage(raw, { type: "input.speech.stopped" });
 
     expect(callbacks.onSpeechStopped).toHaveBeenCalledOnce();
   });
@@ -258,16 +258,7 @@ describe("connectS2s", () => {
     const callbacks = makeMockCallbacks();
     const { raw } = await setupHandle(callbacks);
 
-    raw.emit(
-      "message",
-      Buffer.from(
-        JSON.stringify({
-          type: "transcript.user",
-          item_id: "item-1",
-          text: "Hello world",
-        }),
-      ),
-    );
+    emitMessage(raw, { type: "transcript.user", item_id: "item-1", text: "Hello world" });
 
     expect(callbacks.onUserTranscript).toHaveBeenCalledOnce();
     expect(callbacks.onUserTranscript).toHaveBeenCalledWith("Hello world");
@@ -277,15 +268,7 @@ describe("connectS2s", () => {
     const callbacks = makeMockCallbacks();
     const { raw } = await setupHandle(callbacks);
 
-    raw.emit(
-      "message",
-      Buffer.from(
-        JSON.stringify({
-          type: "reply.started",
-          reply_id: "r1",
-        }),
-      ),
-    );
+    emitMessage(raw, { type: "reply.started", reply_id: "r1" });
 
     expect(callbacks.onReplyStarted).toHaveBeenCalledOnce();
     expect(callbacks.onReplyStarted).toHaveBeenCalledWith("r1");
@@ -295,18 +278,13 @@ describe("connectS2s", () => {
     const callbacks = makeMockCallbacks();
     const { raw } = await setupHandle(callbacks);
 
-    raw.emit(
-      "message",
-      Buffer.from(
-        JSON.stringify({
-          type: "transcript.agent",
-          text: "Full response",
-          reply_id: "r1",
-          item_id: "i1",
-          interrupted: false,
-        }),
-      ),
-    );
+    emitMessage(raw, {
+      type: "transcript.agent",
+      text: "Full response",
+      reply_id: "r1",
+      item_id: "i1",
+      interrupted: false,
+    });
 
     expect(callbacks.onAgentTranscript).toHaveBeenCalledOnce();
     expect(callbacks.onAgentTranscript).toHaveBeenCalledWith("Full response", false);
@@ -316,10 +294,7 @@ describe("connectS2s", () => {
     const callbacks = makeMockCallbacks();
     const { raw } = await setupHandle(callbacks);
 
-    raw.emit(
-      "message",
-      Buffer.from(JSON.stringify({ type: "transcript.agent", text: "response" })),
-    );
+    emitMessage(raw, { type: "transcript.agent", text: "response" });
 
     expect(callbacks.onAgentTranscript).toHaveBeenCalledWith("response", false);
   });
@@ -328,16 +303,11 @@ describe("connectS2s", () => {
     const callbacks = makeMockCallbacks();
     const { raw } = await setupHandle(callbacks);
 
-    raw.emit(
-      "message",
-      Buffer.from(
-        JSON.stringify({
-          type: "transcript.agent",
-          text: "Interrupted response",
-          interrupted: true,
-        }),
-      ),
-    );
+    emitMessage(raw, {
+      type: "transcript.agent",
+      text: "Interrupted response",
+      interrupted: true,
+    });
 
     expect(callbacks.onAgentTranscript).toHaveBeenCalledWith("Interrupted response", true);
   });
@@ -346,17 +316,12 @@ describe("connectS2s", () => {
     const callbacks = makeMockCallbacks();
     const { raw } = await setupHandle(callbacks);
 
-    raw.emit(
-      "message",
-      Buffer.from(
-        JSON.stringify({
-          type: "tool.call",
-          call_id: "c1",
-          name: "web_search",
-          args: { query: "test" },
-        }),
-      ),
-    );
+    emitMessage(raw, {
+      type: "tool.call",
+      call_id: "c1",
+      name: "web_search",
+      args: { query: "test" },
+    });
 
     expect(callbacks.onToolCall).toHaveBeenCalledOnce();
     expect(callbacks.onToolCall).toHaveBeenCalledWith("c1", "web_search", { query: "test" });
@@ -366,15 +331,7 @@ describe("connectS2s", () => {
     const callbacks = makeMockCallbacks();
     const { raw } = await setupHandle(callbacks);
 
-    raw.emit(
-      "message",
-      Buffer.from(
-        JSON.stringify({
-          type: "reply.done",
-          status: "completed",
-        }),
-      ),
-    );
+    emitMessage(raw, { type: "reply.done", status: "completed" });
 
     expect(callbacks.onReplyDone).toHaveBeenCalledOnce();
     expect(callbacks.onCancelled).not.toHaveBeenCalled();
@@ -384,15 +341,7 @@ describe("connectS2s", () => {
     const callbacks = makeMockCallbacks();
     const { raw } = await setupHandle(callbacks);
 
-    raw.emit(
-      "message",
-      Buffer.from(
-        JSON.stringify({
-          type: "reply.done",
-          status: "interrupted",
-        }),
-      ),
-    );
+    emitMessage(raw, { type: "reply.done", status: "interrupted" });
 
     expect(callbacks.onCancelled).toHaveBeenCalledOnce();
     expect(callbacks.onReplyDone).not.toHaveBeenCalled();
@@ -411,7 +360,7 @@ describe("connectS2s", () => {
       sid: "sess-abc",
     });
 
-    raw.emit("message", Buffer.from(JSON.stringify({ type: "reply.done", status: "completed" })));
+    emitMessage(raw, { type: "reply.done", status: "completed" });
 
     const arrivalCall = infoSpy.mock.calls.find((c) => c[0] === "S2S << reply.done");
     expect(arrivalCall).toBeDefined();
@@ -422,16 +371,11 @@ describe("connectS2s", () => {
     const callbacks = makeMockCallbacks();
     const { raw } = await setupHandle(callbacks);
 
-    raw.emit(
-      "message",
-      Buffer.from(
-        JSON.stringify({
-          type: "session.error",
-          code: "session_not_found",
-          message: "Session not found",
-        }),
-      ),
-    );
+    emitMessage(raw, {
+      type: "session.error",
+      code: "session_not_found",
+      message: "Session not found",
+    });
 
     expect(callbacks.onSessionExpired).toHaveBeenCalledOnce();
   });
@@ -440,16 +384,11 @@ describe("connectS2s", () => {
     const callbacks = makeMockCallbacks();
     const { raw } = await setupHandle(callbacks);
 
-    raw.emit(
-      "message",
-      Buffer.from(
-        JSON.stringify({
-          type: "session.error",
-          code: "session_forbidden",
-          message: "Forbidden",
-        }),
-      ),
-    );
+    emitMessage(raw, {
+      type: "session.error",
+      code: "session_forbidden",
+      message: "Forbidden",
+    });
 
     expect(callbacks.onSessionExpired).toHaveBeenCalledOnce();
   });
@@ -458,19 +397,14 @@ describe("connectS2s", () => {
     const callbacks = makeMockCallbacks();
     const { raw } = await setupHandle(callbacks);
 
-    raw.emit(
-      "message",
-      Buffer.from(
-        JSON.stringify({
-          type: "session.error",
-          code: "rate_limit",
-          message: "Too many requests",
-        }),
-      ),
-    );
+    emitMessage(raw, {
+      type: "session.error",
+      code: "rate_limit",
+      message: "Too many requests",
+    });
 
     expect(callbacks.onError).toHaveBeenCalledOnce();
-    const err = (callbacks.onError as ReturnType<typeof vi.fn>).mock.calls[0]?.[0];
+    const err = errorArg(callbacks);
     expect(err).toBeInstanceOf(Error);
     expect(err.message).toBe("Too many requests");
   });
@@ -479,23 +413,13 @@ describe("connectS2s", () => {
     const callbacks = makeMockCallbacks();
     const { raw } = await setupHandle(callbacks);
 
-    raw.emit(
-      "message",
-      Buffer.from(
-        JSON.stringify({
-          type: "error",
-          message: "Bad gateway",
-        }),
-      ),
-    );
+    emitMessage(raw, { type: "error", message: "Bad gateway" });
 
     expect(callbacks.onError).toHaveBeenCalledOnce();
-    const err = (callbacks.onError as ReturnType<typeof vi.fn>).mock.calls[0]?.[0];
+    const err = errorArg(callbacks);
     expect(err).toBeInstanceOf(Error);
     expect(err.message).toBe("Bad gateway");
   });
-
-  // ─── Audio fast path ───────────────────────────────────────────────────
 
   test("reply.audio dispatches 'onAudio' callback with decoded Uint8Array", async () => {
     const callbacks = makeMockCallbacks();
@@ -504,23 +428,13 @@ describe("connectS2s", () => {
     const audioBytes = new Uint8Array([10, 20, 30, 40]);
     const base64 = Buffer.from(audioBytes).toString("base64");
 
-    raw.emit(
-      "message",
-      Buffer.from(
-        JSON.stringify({
-          type: "reply.audio",
-          data: base64,
-        }),
-      ),
-    );
+    emitMessage(raw, { type: "reply.audio", data: base64 });
 
     expect(callbacks.onAudio).toHaveBeenCalledOnce();
     const payload = (callbacks.onAudio as ReturnType<typeof vi.fn>).mock.calls[0]?.[0];
     expect(payload).toBeInstanceOf(Uint8Array);
     expect(Array.from(payload)).toEqual([10, 20, 30, 40]);
   });
-
-  // ─── Edge cases ────────────────────────────────────────────────────────
 
   test("invalid JSON message is logged and ignored", async () => {
     const { raw, logger } = await setupHandle();
@@ -533,45 +447,22 @@ describe("connectS2s", () => {
   test("unrecognized message type is logged and ignored", async () => {
     const { raw, logger } = await setupHandle();
 
-    raw.emit(
-      "message",
-      Buffer.from(
-        JSON.stringify({
-          type: "totally.unknown.type",
-        }),
-      ),
-    );
+    emitMessage(raw, { type: "totally.unknown.type" });
 
     expect(logger.warn).toHaveBeenCalled();
   });
 
   test("reply.content_part events are silently ignored (no dispatch)", async () => {
     const { raw } = await setupHandle();
-    // These types return undefined from S2S_DISPATCH — no event should fire.
-    raw.emit(
-      "message",
-      Buffer.from(
-        JSON.stringify({
-          type: "reply.content_part.started",
-        }),
-      ),
-    );
-    raw.emit(
-      "message",
-      Buffer.from(
-        JSON.stringify({
-          type: "reply.content_part.done",
-        }),
-      ),
-    );
-    // No error thrown = pass
+    emitMessage(raw, { type: "reply.content_part.started" });
+    emitMessage(raw, { type: "reply.content_part.done" });
   });
 
   test("session.updated without config.id is silently ignored (no dispatch)", async () => {
     const callbacks = makeMockCallbacks();
     const { raw } = await setupHandle(callbacks);
 
-    raw.emit("message", Buffer.from(JSON.stringify({ type: "session.updated" })));
+    emitMessage(raw, { type: "session.updated" });
 
     expect(callbacks.onSessionReady).not.toHaveBeenCalled();
     expect(callbacks.onReplyStarted).not.toHaveBeenCalled();
@@ -584,21 +475,14 @@ describe("connectS2s", () => {
     const callbacks = makeMockCallbacks();
     const { raw } = await setupHandle(callbacks);
 
-    raw.emit(
-      "message",
-      Buffer.from(
-        JSON.stringify({
-          type: "session.updated",
-          config: { id: "sess_from_updated", system_prompt: "x", tools: [] },
-        }),
-      ),
-    );
+    emitMessage(raw, {
+      type: "session.updated",
+      config: { id: "sess_from_updated", system_prompt: "x", tools: [] },
+    });
 
     expect(callbacks.onSessionReady).toHaveBeenCalledOnce();
     expect(callbacks.onSessionReady).toHaveBeenCalledWith("sess_from_updated");
   });
-
-  // ─── Close and error events ────────────────────────────────────────────
 
   test("close event dispatches 'onClose' callback with code and reason", async () => {
     const callbacks = makeMockCallbacks();
@@ -617,7 +501,7 @@ describe("connectS2s", () => {
     raw.emit("error", new Error("ws transport error"));
 
     expect(callbacks.onError).toHaveBeenCalledOnce();
-    const err = (callbacks.onError as ReturnType<typeof vi.fn>).mock.calls[0]?.[0];
+    const err = errorArg(callbacks);
     expect(err).toBeInstanceOf(Error);
     expect(err.message).toBe("ws transport error");
   });

@@ -1,7 +1,4 @@
 // Copyright 2025 the AAI authors. MIT license.
-/**
- * Helper functions for defining agents and tools with full type inference.
- */
 
 import type { z } from "zod";
 import type {

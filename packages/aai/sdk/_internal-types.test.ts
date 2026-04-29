@@ -5,15 +5,14 @@ import { agentToolsToSchemas } from "./_internal-types.ts";
 import type { ToolDef } from "./types.ts";
 
 test("agentToolsToSchemas - converts tool definitions to OpenAI schema", () => {
+  const noop = async () => {
+    /* no-op */
+  };
   const tools: Record<string, ToolDef> = {
     get_weather: {
       description: "Get weather",
-      parameters: z.object({
-        city: z.string().describe("City"),
-      }),
-      execute: async () => {
-        /* noop */
-      },
+      parameters: z.object({ city: z.string().describe("City") }),
+      execute: noop,
     },
     set_alarm: {
       description: "Set alarm",
@@ -21,9 +20,7 @@ test("agentToolsToSchemas - converts tool definitions to OpenAI schema", () => {
         time: z.string(),
         label: z.string().optional(),
       }),
-      execute: async () => {
-        /* noop */
-      },
+      execute: noop,
     },
   };
   const schemas = agentToolsToSchemas(tools);

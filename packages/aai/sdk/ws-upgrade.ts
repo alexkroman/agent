@@ -5,9 +5,8 @@ export function parseWsUpgradeParams(rawUrl: string): {
   resumeFrom?: string;
   skipGreeting: boolean;
 } {
-  const search = rawUrl.includes("?") ? (rawUrl.split("?")[1] ?? "") : "";
-  const params = new URLSearchParams(search);
+  const params = new URLSearchParams(rawUrl.split("?")[1] ?? "");
   const resumeFrom = params.get("sessionId") ?? undefined;
-  const skipGreeting = params.has("resume") || resumeFrom !== undefined;
+  const skipGreeting = resumeFrom !== undefined || params.has("resume");
   return resumeFrom !== undefined ? { resumeFrom, skipGreeting } : { skipGreeting };
 }

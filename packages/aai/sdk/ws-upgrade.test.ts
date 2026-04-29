@@ -5,44 +5,45 @@ import { parseWsUpgradeParams } from "./ws-upgrade.ts";
 
 describe("parseWsUpgradeParams", () => {
   test("returns defaults for URL with no query params", () => {
-    const result = parseWsUpgradeParams("/websocket");
-    expect(result).toEqual({ resumeFrom: undefined, skipGreeting: false });
+    expect(parseWsUpgradeParams("/websocket")).toEqual({
+      resumeFrom: undefined,
+      skipGreeting: false,
+    });
   });
 
   test("extracts sessionId and sets skipGreeting", () => {
-    const result = parseWsUpgradeParams("/ws?sessionId=abc-123");
-    expect(result.resumeFrom).toBe("abc-123");
-    expect(result.skipGreeting).toBe(true);
+    expect(parseWsUpgradeParams("/ws?sessionId=abc-123")).toEqual({
+      resumeFrom: "abc-123",
+      skipGreeting: true,
+    });
   });
 
   test("sets skipGreeting when resume param is present", () => {
-    const result = parseWsUpgradeParams("/ws?resume=1");
-    expect(result.resumeFrom).toBeUndefined();
-    expect(result.skipGreeting).toBe(true);
+    expect(parseWsUpgradeParams("/ws?resume=1")).toEqual({
+      resumeFrom: undefined,
+      skipGreeting: true,
+    });
   });
 
   test("sessionId takes precedence for resumeFrom", () => {
-    const result = parseWsUpgradeParams("/ws?resume=1&sessionId=sess-42");
-    expect(result.resumeFrom).toBe("sess-42");
-    expect(result.skipGreeting).toBe(true);
-  });
-
-  test("handles URL with no query string", () => {
-    const result = parseWsUpgradeParams("/websocket");
-    expect(result.resumeFrom).toBeUndefined();
-    expect(result.skipGreeting).toBe(false);
+    expect(parseWsUpgradeParams("/ws?resume=1&sessionId=sess-42")).toEqual({
+      resumeFrom: "sess-42",
+      skipGreeting: true,
+    });
   });
 
   test("handles full URL with query params", () => {
-    const result = parseWsUpgradeParams("ws://localhost:3000/websocket?sessionId=s1");
-    expect(result.resumeFrom).toBe("s1");
-    expect(result.skipGreeting).toBe(true);
+    expect(parseWsUpgradeParams("ws://localhost:3000/websocket?sessionId=s1")).toEqual({
+      resumeFrom: "s1",
+      skipGreeting: true,
+    });
   });
 
   test("handles empty sessionId", () => {
-    const result = parseWsUpgradeParams("/ws?sessionId=");
     // Empty string from URLSearchParams.get is truthy for ?? check
-    expect(result.resumeFrom).toBe("");
-    expect(result.skipGreeting).toBe(true);
+    expect(parseWsUpgradeParams("/ws?sessionId=")).toEqual({
+      resumeFrom: "",
+      skipGreeting: true,
+    });
   });
 });

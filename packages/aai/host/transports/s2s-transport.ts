@@ -47,22 +47,12 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
   const createWs = opts.createWebSocket ?? defaultCreateS2sWebSocket;
   let handle: S2sHandle | null = null;
   let currentReplyId: string | null = null;
-  /** Provider-side session id (from `session.ready` or `session.updated.config.id`). */
   let providerSessionId: string | null = null;
-  /** Set by `stop()` so a deliberate close doesn't trigger a reconnect. */
   let closing = false;
-  /**
-   * True while a `session.resume` round-trip is in flight (between sending
-   * resume and the next `session.ready`). Used to distinguish a resume failure
-   * (close before ready) from a normal close.
-   */
+  // True between sending `session.resume` and the next `session.ready`.
+  // Distinguishes a resume failure (close before ready) from a normal close
+  // and prevents back-to-back reconnect loops if the resumed socket also drops.
   let reconnecting = false;
-  /**
-   * Set when a reconnect attempt is kicked off, cleared once the resumed
-   * session's `session.ready` arrives. Prevents back-to-back reconnect loops
-   * when the freshly-resumed socket also drops before fully recovering.
-   */
-  let reconnectInFlight = false;
 
   function buildCallbacks(): S2sCallbacks {
     return {
@@ -71,7 +61,6 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
         providerSessionId = id;
         if (reconnecting) {
           reconnecting = false;
-          reconnectInFlight = false;
           log.info("S2S resumed", { sid: opts.sid, sessionId: id });
         } else if (isFirstReady) {
           log.info("S2S session ready", { sid: opts.sid, sessionId: id });
@@ -97,12 +86,10 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
       onSpeechStarted: opts.callbacks.onSpeechStarted,
       onSpeechStopped: opts.callbacks.onSpeechStopped,
       onSessionExpired: () => {
-        // The server told us the session no longer exists (most likely
-        // session_not_found in response to our resume). Surface as fatal
-        // rather than retrying — there's nothing left to resume.
+        // Server reports session no longer exists (likely session_not_found
+        // in response to our resume). Surface as fatal — nothing to resume.
         if (reconnecting) {
           reconnecting = false;
-          reconnectInFlight = false;
           log.warn("S2S resume rejected: session expired", { sid: opts.sid });
           opts.callbacks.onError("connection", "S2S resume failed: session expired");
           return;
@@ -116,17 +103,13 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
   }
 
   function canResumeAfter(code: number): boolean {
-    if (!TRANSIENT_CLOSE_CODES.has(code)) return false;
-    if (providerSessionId === null) return false;
-    if (reconnectInFlight) return false;
-    return true;
+    return TRANSIENT_CLOSE_CODES.has(code) && providerSessionId !== null && !reconnecting;
   }
 
   function emitFatalClose(code: number, reason: string, wasReconnecting: boolean): void {
     if (wasReconnecting) {
       // Fresh resume socket closed before session.ready — resume failed.
       reconnecting = false;
-      reconnectInFlight = false;
       opts.callbacks.onError("connection", `S2S resume failed (code=${code})`);
       return;
     }
@@ -145,7 +128,6 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
   }
 
   function startResume(prevId: string, code: number, reason: string): void {
-    reconnectInFlight = true;
     reconnecting = true;
     log.warn("S2S unexpected close — attempting resume", {
       sid: opts.sid,
@@ -161,7 +143,6 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
     }
     void resume(prevId).catch((err: unknown) => {
       reconnecting = false;
-      reconnectInFlight = false;
       const msg = err instanceof Error ? err.message : String(err);
       log.warn("S2S resume failed", { sid: opts.sid, error: msg });
       opts.callbacks.onError("connection", `S2S resume failed: ${msg}`);
@@ -174,13 +155,11 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
       return;
     }
     const wasReconnecting = reconnecting;
-    if (!canResumeAfter(code)) {
+    const prevId = providerSessionId;
+    if (!canResumeAfter(code) || prevId === null) {
       emitFatalClose(code, reason, wasReconnecting);
       return;
     }
-    // canResumeAfter ensures providerSessionId !== null; capture as const.
-    const prevId = providerSessionId;
-    if (prevId === null) return;
     startResume(prevId, code, reason);
   }
 
@@ -190,7 +169,7 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
       config: opts.s2sConfig,
       createWebSocket: createWs,
       logger: log,
-      ...(opts.sid !== undefined ? { sid: opts.sid } : {}),
+      sid: opts.sid,
       callbacks: buildCallbacks(),
     });
     if (closing) {

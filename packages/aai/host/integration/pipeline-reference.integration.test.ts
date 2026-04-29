@@ -34,19 +34,13 @@ const here = dirname(fileURLToPath(import.meta.url));
 const fixturePath = join(here, "fixtures/hello-how-are-you.pcm16");
 
 async function fixtureExists(): Promise<boolean> {
-  try {
-    const s = await stat(fixturePath);
-    return s.isFile() && s.size > 0;
-  } catch {
-    return false;
-  }
+  const s = await stat(fixturePath).catch(() => null);
+  return s !== null && s.isFile() && s.size > 0;
 }
 
+const { ASSEMBLYAI_API_KEY, OPENAI_API_KEY, CARTESIA_API_KEY, VITEST_PROFILE } = process.env;
 const envReady = Boolean(
-  process.env.VITEST_PROFILE === "integration" &&
-    process.env.ASSEMBLYAI_API_KEY &&
-    process.env.OPENAI_API_KEY &&
-    process.env.CARTESIA_API_KEY,
+  VITEST_PROFILE === "integration" && ASSEMBLYAI_API_KEY && OPENAI_API_KEY && CARTESIA_API_KEY,
 );
 
 describe.skipIf(!envReady)("pipeline integration — reference stack", () => {
@@ -66,12 +60,14 @@ describe.skipIf(!envReady)("pipeline integration — reference stack", () => {
       open: true,
       event: (e) => {
         if (e.type === "user_transcript") userTranscripts.push(e.text);
-        if (e.type === "reply_done") replyDone = true;
+        else if (e.type === "reply_done") replyDone = true;
       },
       playAudioChunk: (chunk) => {
         audioOut.push(chunk);
       },
-      playAudioDone: () => undefined,
+      playAudioDone: () => {
+        /* no-op */
+      },
     };
 
     const runtime = createRuntime({
@@ -84,9 +80,9 @@ describe.skipIf(!envReady)("pipeline integration — reference stack", () => {
       },
       env: {
         // biome-ignore lint/style/noNonNullAssertion: envReady guard ensures presence
-        ASSEMBLYAI_API_KEY: process.env.ASSEMBLYAI_API_KEY!,
+        ASSEMBLYAI_API_KEY: ASSEMBLYAI_API_KEY!,
         // biome-ignore lint/style/noNonNullAssertion: envReady guard ensures presence
-        CARTESIA_API_KEY: process.env.CARTESIA_API_KEY!,
+        CARTESIA_API_KEY: CARTESIA_API_KEY!,
       },
       stt: openAssemblyAI({ model: "u3pro-rt" }),
       llm: openai("gpt-4o-mini"),
@@ -103,11 +99,10 @@ describe.skipIf(!envReady)("pipeline integration — reference stack", () => {
     await session.start();
     session.onAudioReady();
 
-    // Stream the PCM fixture in ~100ms chunks (16 kHz PCM16 → 3200 bytes/100ms).
+    // 16 kHz PCM16 → 3200 bytes per 100ms.
     const chunkBytes = 3200;
     for (let i = 0; i < pcm.length; i += chunkBytes) {
-      const chunk = pcm.subarray(i, Math.min(i + chunkBytes, pcm.length));
-      session.onAudio(new Uint8Array(chunk));
+      session.onAudio(new Uint8Array(pcm.subarray(i, i + chunkBytes)));
       await new Promise((r) => setTimeout(r, 100));
     }
     await session.stop();

@@ -4,6 +4,11 @@ import { describe, expect, test, vi } from "vitest";
 import { createMockToolContext } from "./_test-utils.ts";
 import { executeInIsolate, resolveAllBuiltins } from "./builtin-tools.ts";
 
+function runCode(code: string): Promise<unknown> {
+  const { defs } = resolveAllBuiltins(["run_code"]);
+  return defs.run_code?.execute({ code }, createMockToolContext()) as Promise<unknown>;
+}
+
 describe("resolveAllBuiltins schemas", () => {
   test("returns requested tools", () => {
     const { schemas } = resolveAllBuiltins([
@@ -47,34 +52,23 @@ describe("resolveAllBuiltins defs", () => {
   // ─── run_code ──────────────────────────────────────────────────────────
 
   test("run_code executes and returns stdout", async () => {
-    const { defs } = resolveAllBuiltins(["run_code"]);
-    const ctx = createMockToolContext();
-    const result = await defs.run_code?.execute({ code: 'console.log("hello")' }, ctx);
+    const result = await runCode('console.log("hello")');
     expect(result).toBe("hello");
   });
 
   test("run_code returns error for syntax errors", async () => {
-    const { defs } = resolveAllBuiltins(["run_code"]);
-    const ctx = createMockToolContext();
-    const result = await defs.run_code?.execute({ code: "%%%" }, ctx);
+    const result = await runCode("%%%");
     expect(result).toHaveProperty("error");
   });
 
   test("run_code returns no-output message for silent code", async () => {
-    const { defs } = resolveAllBuiltins(["run_code"]);
-    const ctx = createMockToolContext();
-    const result = await defs.run_code?.execute({ code: "const x = 1 + 1;" }, ctx);
+    const result = await runCode("const x = 1 + 1;");
     expect(result).toBe("Code ran successfully (no output)");
   });
 
   test("run_code captures console.warn and console.error", async () => {
-    const { defs } = resolveAllBuiltins(["run_code"]);
-    const ctx = createMockToolContext();
-    const result = await defs.run_code?.execute(
-      {
-        code: 'console.warn("w"); console.error("e"); console.debug("d"); console.info("i")',
-      },
-      ctx,
+    const result = await runCode(
+      'console.warn("w"); console.error("e"); console.debug("d"); console.info("i")',
     );
     expect(result).toBe("w\ne\nd\ni");
   });
@@ -82,276 +76,187 @@ describe("resolveAllBuiltins defs", () => {
   // ─── run_code security: vm sandbox prevents host access ──────────────
 
   test("run_code sandbox blocks network access", async () => {
-    const { defs } = resolveAllBuiltins(["run_code"]);
-    const ctx = createMockToolContext();
-    const result = await defs.run_code?.execute(
-      {
-        code: `
-          try {
-            const res = await fetch("https://example.com");
-            console.log("ESCAPED:" + res.status);
-          } catch(e) {
-            console.log("BLOCKED:" + e.message);
-          }
-        `,
-      },
-      ctx,
-    );
+    const result = await runCode(`
+      try {
+        const res = await fetch("https://example.com");
+        console.log("ESCAPED:" + res.status);
+      } catch(e) {
+        console.log("BLOCKED:" + e.message);
+      }
+    `);
     expect(result).toBeTypeOf("string");
     expect(result as string).toMatch(/BLOCKED/);
   });
 
   test("run_code sandbox blocks filesystem writes", async () => {
-    const { defs } = resolveAllBuiltins(["run_code"]);
-    const ctx = createMockToolContext();
-    const result = await defs.run_code?.execute(
-      {
-        code: `
-          try {
-            const fs = await import("node:fs");
-            fs.writeFileSync("/tmp/pwned.txt", "owned");
-            console.log("ESCAPED");
-          } catch(e) {
-            console.log("BLOCKED:" + e.message);
-          }
-        `,
-      },
-      ctx,
-    );
+    const result = await runCode(`
+      try {
+        const fs = await import("node:fs");
+        fs.writeFileSync("/tmp/pwned.txt", "owned");
+        console.log("ESCAPED");
+      } catch(e) {
+        console.log("BLOCKED:" + e.message);
+      }
+    `);
     expect(result).toBeTypeOf("string");
     expect(result as string).toMatch(/BLOCKED/);
   });
 
   test("run_code sandbox blocks child process spawning", async () => {
-    const { defs } = resolveAllBuiltins(["run_code"]);
-    const ctx = createMockToolContext();
-    const result = await defs.run_code?.execute(
-      {
-        code: `
-          try {
-            const cp = await import("node:child_process");
-            const out = cp.execSync("id").toString();
-            console.log("ESCAPED:" + out);
-          } catch(e) {
-            console.log("BLOCKED:" + e.message);
-          }
-        `,
-      },
-      ctx,
-    );
+    const result = await runCode(`
+      try {
+        const cp = await import("node:child_process");
+        const out = cp.execSync("id").toString();
+        console.log("ESCAPED:" + out);
+      } catch(e) {
+        console.log("BLOCKED:" + e.message);
+      }
+    `);
     expect(result).toBeTypeOf("string");
     expect(result as string).toMatch(/BLOCKED/);
   });
 
   test("run_code sandbox blocks env var access", async () => {
-    const { defs } = resolveAllBuiltins(["run_code"]);
-    const ctx = createMockToolContext();
-    const result = await defs.run_code?.execute(
-      {
-        code: `
-          try {
-            const keys = process.env ? Object.keys(process.env) : [];
-            const hasPath = keys.includes("PATH");
-            const hasHome = keys.includes("HOME");
-            console.log(hasPath || hasHome ? "LEAKED_ENV" : "SAFE:" + keys.length);
-          } catch(e) {
-            console.log("SAFE:" + e.message);
-          }
-        `,
-      },
-      ctx,
-    );
+    const result = await runCode(`
+      try {
+        const keys = process.env ? Object.keys(process.env) : [];
+        const hasPath = keys.includes("PATH");
+        const hasHome = keys.includes("HOME");
+        console.log(hasPath || hasHome ? "LEAKED_ENV" : "SAFE:" + keys.length);
+      } catch(e) {
+        console.log("SAFE:" + e.message);
+      }
+    `);
     expect(result).toBeTypeOf("string");
     expect(result as string).not.toMatch(/LEAKED_ENV/);
   });
 
   test("run_code sandbox prevents constructor chain escape", async () => {
-    const { defs } = resolveAllBuiltins(["run_code"]);
-    const ctx = createMockToolContext();
     // This was the critical bypass in the old regex approach — the VM context
     // doesn't expose `process` so host secrets can't be exfiltrated.
-    const result = await defs.run_code?.execute(
-      {
-        code: `
-          const c = "con" + "stru" + "ctor";
-          const F = ""[c][c];
-          try {
-            const p = F("return process")();
-            const keys = p && p.env ? Object.keys(p.env) : [];
-            const hasPath = keys.includes("PATH");
-            console.log(hasPath ? "LEAKED_ENV" : "SAFE:" + keys.length);
-          } catch(e) {
-            console.log("SAFE:" + e.message);
-          }
-        `,
-      },
-      ctx,
-    );
+    const result = await runCode(`
+      const c = "con" + "stru" + "ctor";
+      const F = ""[c][c];
+      try {
+        const p = F("return process")();
+        const keys = p && p.env ? Object.keys(p.env) : [];
+        const hasPath = keys.includes("PATH");
+        console.log(hasPath ? "LEAKED_ENV" : "SAFE:" + keys.length);
+      } catch(e) {
+        console.log("SAFE:" + e.message);
+      }
+    `);
     expect(result).toBeTypeOf("string");
     expect(result as string).not.toMatch(/LEAKED_ENV/);
   });
 
   test("run_code allows normal .constructor property check", async () => {
-    const { defs } = resolveAllBuiltins(["run_code"]);
-    const ctx = createMockToolContext();
-    const result = await defs.run_code?.execute(
-      { code: 'console.log("hello".constructor.name)' },
-      ctx,
-    );
+    const result = await runCode('console.log("hello".constructor.name)');
     expect(result).toBe("String");
   });
 
   test("run_code sandbox blocks console.log.constructor code generation", async () => {
-    const { defs } = resolveAllBuiltins(["run_code"]);
-    const ctx = createMockToolContext();
-    const result = await defs.run_code?.execute(
-      {
-        code: `
-          try {
-            const fn = console.log.constructor('return 1')();
-            console.log("ESCAPED:" + fn);
-          } catch(e) {
-            console.log("BLOCKED:" + e.message);
-          }
-        `,
-      },
-      ctx,
-    );
+    const result = await runCode(`
+      try {
+        const fn = console.log.constructor('return 1')();
+        console.log("ESCAPED:" + fn);
+      } catch(e) {
+        console.log("BLOCKED:" + e.message);
+      }
+    `);
     expect(result).toBeTypeOf("string");
     expect(result as string).toMatch(/BLOCKED/);
     expect(result as string).not.toMatch(/ESCAPED/);
   });
 
   test("run_code sandbox blocks URL.constructor.constructor code generation", async () => {
-    const { defs } = resolveAllBuiltins(["run_code"]);
-    const ctx = createMockToolContext();
-    const result = await defs.run_code?.execute(
-      {
-        code: `
-          try {
-            const fn = URL.constructor.constructor('return 1')();
-            console.log("ESCAPED:" + fn);
-          } catch(e) {
-            console.log("BLOCKED:" + e.message);
-          }
-        `,
-      },
-      ctx,
-    );
+    const result = await runCode(`
+      try {
+        const fn = URL.constructor.constructor('return 1')();
+        console.log("ESCAPED:" + fn);
+      } catch(e) {
+        console.log("BLOCKED:" + e.message);
+      }
+    `);
     expect(result).toBeTypeOf("string");
     expect(result as string).toMatch(/BLOCKED/);
     expect(result as string).not.toMatch(/ESCAPED/);
   });
 
   test("run_code sandbox blocks template literal constructor bypass", async () => {
-    const { defs } = resolveAllBuiltins(["run_code"]);
-    const ctx = createMockToolContext();
-    const result = await defs.run_code?.execute(
-      {
-        code: `
-          const c = \`\${"con"}\${"stru"}\${"ctor"}\`;
-          const F = ""[c][c];
-          try {
-            const p = F("return process")();
-            const keys = p && p.env ? Object.keys(p.env) : [];
-            const hasPath = keys.includes("PATH");
-            console.log(hasPath ? "LEAKED_ENV" : "SAFE:" + keys.length + " keys");
-          } catch(e) {
-            console.log("SAFE:" + e.message);
-          }
-        `,
-      },
-      ctx,
-    );
+    const result = await runCode(`
+      const c = \`\${"con"}\${"stru"}\${"ctor"}\`;
+      const F = ""[c][c];
+      try {
+        const p = F("return process")();
+        const keys = p && p.env ? Object.keys(p.env) : [];
+        const hasPath = keys.includes("PATH");
+        console.log(hasPath ? "LEAKED_ENV" : "SAFE:" + keys.length + " keys");
+      } catch(e) {
+        console.log("SAFE:" + e.message);
+      }
+    `);
     expect(result).toBeTypeOf("string");
     expect(result as string).not.toMatch(/LEAKED_ENV/);
   });
 
   test("run_code sandbox blocks Array.join constructor bypass", async () => {
-    const { defs } = resolveAllBuiltins(["run_code"]);
-    const ctx = createMockToolContext();
-    const result = await defs.run_code?.execute(
-      {
-        code: `
-          const c = ["con","stru","ctor"].join("");
-          const F = ""[c][c];
-          try {
-            const p = F("return process")();
-            const keys = p && p.env ? Object.keys(p.env) : [];
-            const hasPath = keys.includes("PATH");
-            console.log(hasPath ? "LEAKED_ENV" : "SAFE:" + keys.length + " keys");
-          } catch(e) {
-            console.log("SAFE:" + e.message);
-          }
-        `,
-      },
-      ctx,
-    );
+    const result = await runCode(`
+      const c = ["con","stru","ctor"].join("");
+      const F = ""[c][c];
+      try {
+        const p = F("return process")();
+        const keys = p && p.env ? Object.keys(p.env) : [];
+        const hasPath = keys.includes("PATH");
+        console.log(hasPath ? "LEAKED_ENV" : "SAFE:" + keys.length + " keys");
+      } catch(e) {
+        console.log("SAFE:" + e.message);
+      }
+    `);
     expect(result).toBeTypeOf("string");
     expect(result as string).not.toMatch(/LEAKED_ENV/);
   });
 
   test("run_code sandbox blocks fromCharCode constructor bypass", async () => {
-    const { defs } = resolveAllBuiltins(["run_code"]);
-    const ctx = createMockToolContext();
-    const result = await defs.run_code?.execute(
-      {
-        code: `
-          const s = String.fromCharCode(99,111,110,115,116,114,117,99,116,111,114);
-          const F = ""[s][s];
-          try {
-            const p = F("return process")();
-            const keys = p && p.env ? Object.keys(p.env) : [];
-            const hasPath = keys.includes("PATH");
-            console.log(hasPath ? "LEAKED_ENV" : "SAFE:" + keys.length + " keys");
-          } catch(e) {
-            console.log("SAFE:" + e.message);
-          }
-        `,
-      },
-      ctx,
-    );
+    const result = await runCode(`
+      const s = String.fromCharCode(99,111,110,115,116,114,117,99,116,111,114);
+      const F = ""[s][s];
+      try {
+        const p = F("return process")();
+        const keys = p && p.env ? Object.keys(p.env) : [];
+        const hasPath = keys.includes("PATH");
+        console.log(hasPath ? "LEAKED_ENV" : "SAFE:" + keys.length + " keys");
+      } catch(e) {
+        console.log("SAFE:" + e.message);
+      }
+    `);
     expect(result).toBeTypeOf("string");
     expect(result as string).not.toMatch(/LEAKED_ENV/);
   });
 
   test("run_code sandbox blocks dynamic import of node:os", async () => {
-    const { defs } = resolveAllBuiltins(["run_code"]);
-    const ctx = createMockToolContext();
-    const result = await defs.run_code?.execute(
-      {
-        code: `
-          try {
-            const m = await import("node:os");
-            console.log("ESCAPED: " + m.hostname());
-          } catch(e) {
-            console.log("BLOCKED: " + e.message);
-          }
-        `,
-      },
-      ctx,
-    );
+    const result = await runCode(`
+      try {
+        const m = await import("node:os");
+        console.log("ESCAPED: " + m.hostname());
+      } catch(e) {
+        console.log("BLOCKED: " + e.message);
+      }
+    `);
     expect(result).toBeTypeOf("string");
     expect(result as string).toMatch(/BLOCKED/);
     expect(result as string).not.toMatch(/ESCAPED/);
   });
 
   test("run_code sandbox blocks fetch to cloud metadata endpoint", async () => {
-    const { defs } = resolveAllBuiltins(["run_code"]);
-    const ctx = createMockToolContext();
-    const result = await defs.run_code?.execute(
-      {
-        code: `
-          try {
-            const res = await fetch("http://169.254.169.254/latest/meta-data/");
-            console.log("ESCAPED:" + res.status);
-          } catch(e) {
-            console.log("BLOCKED:" + e.message);
-          }
-        `,
-      },
-      ctx,
-    );
+    const result = await runCode(`
+      try {
+        const res = await fetch("http://169.254.169.254/latest/meta-data/");
+        console.log("ESCAPED:" + res.status);
+      } catch(e) {
+        console.log("BLOCKED:" + e.message);
+      }
+    `);
     expect(result).toBeTypeOf("string");
     expect(result as string).toMatch(/BLOCKED/);
   });

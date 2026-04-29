@@ -7,27 +7,6 @@
  * reusable test suite that can be wired to either runtime.
  *
  * Inspired by Nitro's `testNitro()` pattern: one test fixture, many runtimes.
- *
- * @example Direct executor (unit test)
- * ```ts
- * import { testRuntime } from "./_runtime-conformance.ts";
- *
- * testRuntime("direct", () => {
- *   const exec = createRuntime({ agent: CONFORMANCE_AGENT, env: { MY_VAR: "test-value" } });
- *   return { executeTool: exec.executeTool, hooks: exec.hooks };
- * });
- * ```
- *
- * @example Sandbox (integration test in aai-server)
- * ```ts
- * // Internal module — import the .ts source directly from this package.
- * import { testRuntime } from "../../aai/host/_runtime-conformance.ts";
- *
- * testRuntime("sandbox", async () => {
- *   // ... start isolate with a bundled agent
- *   return { executeTool: buildExecuteTool(...), hooks: buildHookInvoker(...) };
- * });
- * ```
  */
 
 import { describe, expect, test } from "vitest";
@@ -35,21 +14,10 @@ import { z } from "zod";
 import type { ExecuteTool } from "../sdk/_internal-types.ts";
 import type { AgentDef } from "../sdk/types.ts";
 
-// ── Shared context type ────────────────────────────────────────────────────
-
-/**
- * Minimal runtime surface needed for conformance tests.
- *
- * Both `Runtime` and `buildExecuteTool`/`buildHookInvoker` from the
- * sandbox produce objects that satisfy this interface.
- */
 export type RuntimeTestContext = {
   executeTool: ExecuteTool;
 };
 
-// ── Conformance agent ──────────────────────────────────────────────────────
-
-/** Agent definition used by the conformance suite (direct executor path). */
 export const CONFORMANCE_AGENT: AgentDef = {
   name: "conformance-test",
   systemPrompt: "Conformance test agent.",
@@ -96,22 +64,15 @@ export const CONFORMANCE_AGENT: AgentDef = {
   },
 };
 
-// ── Shared conformance suite ───────────────────────────────────────────────
-
 /**
  * Run the runtime conformance test suite against a given runtime context.
  *
- * The `getContext` callback is invoked once per test to retrieve the
- * current {@link RuntimeTestContext}. This allows the caller to set up
- * the runtime in a `beforeAll` and return it lazily.
- *
- * All tests assume the runtime was created with {@link CONFORMANCE_AGENT}
- * (or its bundle equivalent) and `env: { MY_VAR: "test-value" }`.
+ * `getContext` is invoked once per test so callers can lazily set up the
+ * runtime in a `beforeAll`. All tests assume the runtime was created with
+ * {@link CONFORMANCE_AGENT} and `env: { MY_VAR: "test-value" }`.
  */
 export function testRuntime(label: string, getContext: () => RuntimeTestContext): void {
   describe(`runtime conformance: ${label}`, () => {
-    // ── Tool execution ───────────────────────────────────────────────
-
     test("executes tool and returns result", async () => {
       const { executeTool } = getContext();
       const result = await executeTool("echo", { text: "hello" }, "s1", []);
@@ -150,8 +111,6 @@ export function testRuntime(label: string, getContext: () => RuntimeTestContext)
       );
       expect(vectorResult).toBe("conformance-input");
     });
-
-    // ── Session state ────────────────────────────────────────────────
 
     test("session state is initialized from factory", async () => {
       const { executeTool } = getContext();

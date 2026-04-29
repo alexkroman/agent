@@ -2,18 +2,8 @@
 /**
  * Deepgram Nova streaming STT opener (host-only).
  *
- * The user-facing descriptor factory (`deepgram(...)`) lives in
- * `sdk/providers/stt/deepgram.ts`. This module is the host-side
- * counterpart: it takes the descriptor options + an API key and
- * returns an {@link SttOpener} that the pipeline session drives.
- *
- * Default model: `"nova-3"`. Any string is forwarded verbatim to the SDK.
- *
- * This adapter targets the Deepgram SDK v5 (`@deepgram/sdk@^5`). The v5
- * streaming API is:
- *   `client.listen.v1.connect(args)` → `Promise<V1Socket>`
- * followed by:
- *   `socket.connect()` + `socket.waitForOpen()` to establish the connection.
+ * Targets Deepgram SDK v5: `client.listen.v1.connect(args)` returns a
+ * socket; `socket.connect()` + `socket.waitForOpen()` establish it.
  */
 
 import { DeepgramClient, type listen } from "@deepgram/sdk";
@@ -27,10 +17,8 @@ import {
   type SttSession,
 } from "../../../sdk/providers.ts";
 
-// V1Socket type from the Deepgram SDK (accessed through the listen namespace).
 type V1Socket = Awaited<ReturnType<InstanceType<typeof DeepgramClient>["listen"]["v1"]["connect"]>>;
 
-/** Internal: SttSession with a test-only handle to the raw SDK socket. */
 export interface DeepgramSession extends SttSession {
   /** @internal Test-only: exposes the underlying SDK socket for fixture replay. */
   readonly _connection: V1Socket;
@@ -42,23 +30,17 @@ type MessagePayload =
   | listen.ListenV1UtteranceEnd
   | listen.ListenV1SpeechStarted;
 
-/**
- * Handle an incoming Deepgram transcript message, emitting `partial` or
- * `final` events on the emitter. Empty transcripts are silently dropped.
- */
-function handleMessage(data: MessagePayload, closed: boolean, emitter: Emitter<SttEvents>): void {
-  if (closed) return;
-  if (data.type !== "Results") return;
-  const result = data as listen.ListenV1Results;
-  const text = result.channel?.alternatives?.[0]?.transcript ?? "";
-  if (result.is_final) {
-    if (text.length > 0) emitter.emit("final", text);
-  } else if (text.length > 0) {
-    emitter.emit("partial", text);
-  }
+function errMsg(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
 }
 
-/** Wire Deepgram socket events onto the nanoevents emitter. */
+function handleMessage(data: MessagePayload, closed: boolean, emitter: Emitter<SttEvents>): void {
+  if (closed || data.type !== "Results") return;
+  const text = data.channel?.alternatives?.[0]?.transcript ?? "";
+  if (text.length === 0) return;
+  emitter.emit(data.is_final ? "final" : "partial", text);
+}
+
 function wireSocketEvents(
   connection: V1Socket,
   emitter: Emitter<SttEvents>,
@@ -79,16 +61,14 @@ function wireSocketEvents(
   });
 }
 
-/** Wire the AbortSignal to the close function. */
 function wireAbortSignal(signal: AbortSignal, close: () => Promise<void>): void {
   if (signal.aborted) {
     void close();
-  } else {
-    signal.addEventListener("abort", () => void close(), { once: true });
+    return;
   }
+  signal.addEventListener("abort", () => void close(), { once: true });
 }
 
-/** Build an {@link SttOpener} from resolved Deepgram descriptor options. */
 export function openDeepgram(opts: DeepgramOptions = {}): SttOpener {
   return {
     name: "deepgram",
@@ -119,10 +99,7 @@ export function openDeepgram(opts: DeepgramOptions = {}): SttOpener {
           Authorization: apiKey,
         });
       } catch (cause) {
-        throw makeSttError(
-          "stt_connect_failed",
-          `Deepgram STT: connect failed: ${cause instanceof Error ? cause.message : String(cause)}`,
-        );
+        throw makeSttError("stt_connect_failed", `Deepgram STT: connect failed: ${errMsg(cause)}`);
       }
 
       const emitter: Emitter<SttEvents> = createNanoEvents<SttEvents>();
@@ -130,15 +107,13 @@ export function openDeepgram(opts: DeepgramOptions = {}): SttOpener {
 
       wireSocketEvents(connection, emitter, () => closed);
 
-      // Actually open the WebSocket connection (registers internal handlers
-      // and initiates the TCP/TLS handshake).
       connection.connect();
       try {
         await connection.waitForOpen();
       } catch (cause) {
         throw makeSttError(
           "stt_connect_failed",
-          `Deepgram STT: WebSocket open failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+          `Deepgram STT: WebSocket open failed: ${errMsg(cause)}`,
         );
       }
 
@@ -148,7 +123,7 @@ export function openDeepgram(opts: DeepgramOptions = {}): SttOpener {
         try {
           connection.close();
         } catch {
-          // Swallow: the caller has already decided to tear down.
+          // Caller already decided to tear down.
         }
       };
 

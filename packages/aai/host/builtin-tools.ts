@@ -113,15 +113,12 @@ function createVisitWebpage(
       if (!resp.ok) {
         return { error: `Failed to fetch: ${resp.status} ${resp.statusText}`, url };
       }
-      const htmlContent = await resp.text();
-      const trimmedHtml =
-        htmlContent.length > MAX_HTML_BYTES ? htmlContent.slice(0, MAX_HTML_BYTES) : htmlContent;
-      const text = htmlToText(trimmedHtml);
+      const html = await resp.text();
+      const text = htmlToText(html.slice(0, MAX_HTML_BYTES));
       const truncated = text.length > MAX_PAGE_CHARS;
-      const content = truncated ? text.slice(0, MAX_PAGE_CHARS) : text;
       return {
         url,
-        content,
+        content: text.slice(0, MAX_PAGE_CHARS),
         ...(truncated ? { truncated: true, totalChars: text.length } : {}),
       };
     },
@@ -202,9 +199,9 @@ export type BuiltinToolOptions = {
 };
 
 type ToolDefRecord = Record<string, ToolDef<z.ZodObject<z.ZodRawShape>>>;
+type BuiltinEntry = [string, ToolDef & { guidance?: string }];
 
-/** Resolve a builtin name to an array of [toolName, ToolDef] pairs. */
-function resolveBuiltin(name: string, opts?: BuiltinToolOptions): [string, ToolDef][] {
+function resolveBuiltin(name: string, opts?: BuiltinToolOptions): BuiltinEntry[] {
   switch (name) {
     case "web_search":
       return [["web_search", createWebSearch(opts?.fetch)]];
@@ -247,8 +244,7 @@ export function resolveAllBuiltins(
         description: def.description,
         parameters: z.toJSONSchema(def.parameters ?? EMPTY_PARAMS) as ToolSchema["parameters"],
       });
-      const g = (def as { guidance?: string }).guidance;
-      if (g) guidance.push(g);
+      if (def.guidance) guidance.push(def.guidance);
     }
   }
 

@@ -1,10 +1,4 @@
 // Copyright 2025 the AAI authors. MIT license.
-/**
- * Tests for server shutdown timeout behavior.
- *
- * Creates a mock runtime with controlled shutdown behavior, then exercises
- * the timeout and graceful paths in close().
- */
 
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { silentLogger } from "./_test-utils.ts";
@@ -24,35 +18,25 @@ function createMockRuntime(): Runtime {
   };
 }
 
-describe("server shutdown timeout", () => {
-  let server: ReturnType<typeof createServer> | null = null;
+async function startServer(): Promise<ReturnType<typeof createServer>> {
+  const server = createServer({ runtime: createMockRuntime(), logger: silentLogger });
+  await server.listen(0);
+  return server;
+}
 
+describe("server shutdown timeout", () => {
   afterEach(() => {
     mockShutdown = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
-    server = null;
   });
 
   test("close calls runtime.shutdown()", async () => {
-    mockShutdown = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
-
-    server = createServer({
-      runtime: createMockRuntime(),
-      logger: silentLogger,
-    });
-    await server.listen(0);
-
+    const server = await startServer();
     await server.close();
     expect(mockShutdown).toHaveBeenCalledOnce();
   }, 10_000);
 
   test("close resolves quickly when runtime.shutdown() resolves", async () => {
-    mockShutdown = vi.fn<() => Promise<void>>().mockResolvedValue(undefined);
-
-    server = createServer({
-      runtime: createMockRuntime(),
-      logger: silentLogger,
-    });
-    await server.listen(0);
+    const server = await startServer();
 
     const start = Date.now();
     await server.close();
@@ -65,12 +49,7 @@ describe("server shutdown timeout", () => {
   test("close propagates when runtime.shutdown() rejects", async () => {
     mockShutdown = vi.fn<() => Promise<void>>().mockRejectedValue(new Error("boom"));
 
-    server = createServer({
-      runtime: createMockRuntime(),
-      logger: silentLogger,
-    });
-    await server.listen(0);
-
+    const server = await startServer();
     await expect(server.close()).rejects.toThrow("boom");
   }, 10_000);
 });

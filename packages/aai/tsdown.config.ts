@@ -2,17 +2,14 @@ import { readFileSync } from "node:fs";
 import { defineConfig } from "tsdown";
 
 // Derive build entries from package.json exports so they can never drift.
-const pkg = JSON.parse(readFileSync("package.json", "utf-8"));
-const entry = [
-  ...new Set(
-    Object.values(pkg.exports as Record<string, Record<string, string>>)
-      .filter(
-        (v): v is { "@dev/source": string } =>
-          typeof v === "object" && typeof v["@dev/source"] === "string",
-      )
-      .map((v) => v["@dev/source"].replace(/^\.\//, "")),
-  ),
-];
+const pkg = JSON.parse(readFileSync("package.json", "utf-8")) as {
+  exports: Record<string, Record<string, string>>;
+};
+const sources = Object.values(pkg.exports)
+  .map((v) => v?.["@dev/source"])
+  .filter((s): s is string => typeof s === "string")
+  .map((s) => s.replace(/^\.\//, ""));
+const entry = [...new Set(sources)];
 
 export default defineConfig({
   entry,

@@ -1,10 +1,4 @@
 // Copyright 2025 the AAI authors. MIT license.
-/**
- * Descriptor → concrete `Kv` resolver. Mirror of `resolveLlm` /
- * `resolveVector`. Always wraps the produced unstorage Storage in
- * `createUnstorageKv` with the provided per-tenant prefix so namespace
- * isolation is enforced regardless of backend choice.
- */
 
 import { createStorage, type Driver } from "unstorage";
 import type { Kv } from "../../sdk/kv.ts";
@@ -16,34 +10,22 @@ import type { KvProvider } from "../../sdk/providers.ts";
 import { createUnstorageKv } from "../unstorage-kv.ts";
 import { loadProviderPackage, resolveApiKey } from "./resolve.ts";
 
-/**
- * Load a CJS unstorage driver factory. The CJS variants use
- * `module.exports = defineDriver(...)` so the require result is the
- * factory itself (not an object with `.default`).
- *
- * Delegates to loadProviderPackage (lazy-load via createRequire so the
- * driver is a true optional peer dep).
- */
-function loadDriver<T>(modulePath: string, label: string): T {
-  return loadProviderPackage<T>(modulePath, `${label} KV: driver`);
+type DriverFactory<O> = (opts: O) => Driver;
+
+function loadDriver<O>(modulePath: string, label: string): DriverFactory<O> {
+  return loadProviderPackage<DriverFactory<O>>(modulePath, `${label} KV: driver`);
 }
 
-/**
- * Build a lazy unstorage Driver that defers loading the real driver
- * factory until the first I/O operation. This is necessary for drivers
- * whose peer dependencies (e.g. `ioredis`) may not be installed on the
- * host at startup — the missing package will only surface when the agent
- * actually performs KV operations, not at session creation time.
- */
+// Defers driver factory loading until first I/O so missing optional peer
+// deps (e.g. `ioredis`) surface at use-time rather than session start.
 function makeLazyDriver(modulePath: string, label: string, opts: Record<string, unknown>): Driver {
   let resolved: Driver | null = null;
-  const get = (): Driver => {
+  function get(): Driver {
     if (!resolved) {
-      const factory = loadDriver<(o: Record<string, unknown>) => Driver>(modulePath, label);
-      resolved = factory(opts);
+      resolved = loadDriver<Record<string, unknown>>(modulePath, label)(opts);
     }
     return resolved;
-  };
+  }
   return {
     name: label.toLowerCase(),
     hasItem: (key, txOpts) => get().hasItem(key, txOpts),
@@ -54,24 +36,24 @@ function makeLazyDriver(modulePath: string, label: string, opts: Record<string, 
     removeItem: (key, txOpts) => get().removeItem?.(key, txOpts),
     getKeys: (base, txOpts) => get().getKeys(base, txOpts),
     clear: (base, txOpts) => get().clear?.(base, txOpts),
-    dispose: () => (resolved ? resolved.dispose?.() : undefined),
+    dispose: () => resolved?.dispose?.(),
   };
 }
 
-/** Resolve a {@link KvProvider} descriptor into a {@link Kv}. */
 export function resolveKv(descriptor: KvProvider, env: Record<string, string>, prefix: string): Kv {
   switch (descriptor.kind) {
-    case MEMORY_KV_KIND: {
+    case MEMORY_KV_KIND:
       return createUnstorageKv({ storage: createStorage(), prefix });
-    }
+
     case FS_KV_KIND: {
       const opts = descriptor.options as unknown as FsKvOptions;
-      const fsDriver = loadDriver<(o: { base: string }) => Driver>("unstorage/drivers/fs", "fs");
+      const fsDriver = loadDriver<{ base: string }>("unstorage/drivers/fs", "fs");
       return createUnstorageKv({
         storage: createStorage({ driver: fsDriver({ base: opts.base }) }),
         prefix,
       });
     }
+
     case S3_KV_KIND: {
       const opts = descriptor.options as unknown as S3KvOptions;
       const accessKeyId = resolveApiKey("AWS_ACCESS_KEY_ID", env);
@@ -81,15 +63,13 @@ export function resolveKv(descriptor: KvProvider, env: Record<string, string>, p
           "S3 KV: missing AWS credentials. Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in the agent env.",
         );
       }
-      const s3Driver = loadDriver<
-        (o: {
-          bucket: string;
-          endpoint?: string;
-          region: string;
-          accessKeyId: string;
-          secretAccessKey: string;
-        }) => Driver
-      >("unstorage/drivers/s3", "S3");
+      const s3Driver = loadDriver<{
+        bucket: string;
+        endpoint?: string;
+        region: string;
+        accessKeyId: string;
+        secretAccessKey: string;
+      }>("unstorage/drivers/s3", "S3");
       return createUnstorageKv({
         storage: createStorage({
           driver: s3Driver({
@@ -103,6 +83,7 @@ export function resolveKv(descriptor: KvProvider, env: Record<string, string>, p
         prefix,
       });
     }
+
     case REDIS_KV_KIND: {
       const opts = descriptor.options as unknown as RedisKvOptions;
       const url = resolveApiKey("REDIS_URL", env);
@@ -119,6 +100,7 @@ export function resolveKv(descriptor: KvProvider, env: Record<string, string>, p
         prefix,
       });
     }
+
     default:
       throw new Error(
         `Unknown KV provider kind: "${descriptor.kind}". ` +

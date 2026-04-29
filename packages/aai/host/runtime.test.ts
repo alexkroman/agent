@@ -17,6 +17,18 @@ import { executeToolCall } from "./tool-executor.ts";
 import { _internals } from "./transports/s2s-transport.ts";
 import { createUnstorageKv } from "./unstorage-kv.ts";
 
+function makeLogger() {
+  return { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+}
+
+function makeMockWs() {
+  return {
+    readyState: 1,
+    send: vi.fn(),
+    addEventListener: vi.fn(),
+  };
+}
+
 describe("toAgentConfig", () => {
   test("maps name, systemPrompt, greeting from AgentDef", () => {
     const config = toAgentConfig(makeAgent());
@@ -237,7 +249,7 @@ describe("executeToolCall", () => {
         throw new Error("boom");
       },
     };
-    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+    const logger = makeLogger();
     const result = await executeToolCall("failTool", {}, { tool, env: {}, logger });
     expect(result).toContain("error");
     expect(result).toContain("boom");
@@ -276,7 +288,7 @@ describe("executeToolCall", () => {
         return "ok";
       },
     };
-    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+    const logger = makeLogger();
     const result = await executeToolCall("kvTool", {}, { tool, env: {}, logger });
     expect(result).toContain("error");
     expect(result).toContain("KV not available");
@@ -333,7 +345,6 @@ describe("createRuntime sandbox mode", () => {
       toolSchemas: mockToolSchemas,
     });
 
-    // Should use the provided overrides, not build its own
     expect(runtime.toolSchemas).toBe(mockToolSchemas);
     const result = await runtime.executeTool("any_tool", {}, "s1", []);
     expect(result).toBe("mocked-result");
@@ -346,37 +357,17 @@ describe("createRuntime shutdown", () => {
     vi.restoreAllMocks();
   });
 
-  /** Helper: create a mock WS (readyState=1) that captures event listeners. */
-  function makeMockWs() {
-    const listeners: Record<string, Array<(...args: unknown[]) => void>> = {};
-    return {
-      readyState: 1,
-      send: vi.fn(),
-      listeners,
-      addEventListener: vi.fn((type: string, listener: (...args: unknown[]) => void) => {
-        if (!listeners[type]) listeners[type] = [];
-        listeners[type].push(listener);
-      }),
-    };
-  }
-
   test("shutdown stops active sessions gracefully", async () => {
     const mockHandle = makeMockHandle();
     const connectSpy = vi.spyOn(_internals, "connectS2s").mockResolvedValue(mockHandle);
 
-    const agent = makeAgent();
-    const runtime = createRuntime({ agent, env: {}, logger: silentLogger });
-    const ws = makeMockWs();
+    const runtime = createRuntime({ agent: makeAgent(), env: {}, logger: silentLogger });
+    runtime.startSession(makeMockWs() as never);
 
-    // readyState=1 means onOpen fires immediately in wireSessionSocket
-    runtime.startSession(ws as never);
-
-    // Wait for session.start() to resolve (fires on next tick via setTimeout)
     await vi.waitFor(() => {
       expect(connectSpy).toHaveBeenCalled();
     });
     await flush();
-    // Give session.start() time to resolve
     await new Promise((r) => setTimeout(r, 50));
 
     await expect(runtime.shutdown()).resolves.toBeUndefined();
@@ -384,19 +375,14 @@ describe("createRuntime shutdown", () => {
   });
 
   test("shutdown warns when a session stop rejects", async () => {
-    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
     const mockHandle = makeMockHandle();
-    // Make close() throw to cause session.stop() to reject
     mockHandle.close = vi.fn(() => {
       throw new Error("close failed");
     });
     const connectSpy = vi.spyOn(_internals, "connectS2s").mockResolvedValue(mockHandle);
 
-    const agent = makeAgent();
-    const runtime = createRuntime({ agent, env: {}, logger });
-    const ws = makeMockWs();
-
-    runtime.startSession(ws as never);
+    const runtime = createRuntime({ agent: makeAgent(), env: {}, logger: makeLogger() });
+    runtime.startSession(makeMockWs() as never);
 
     await vi.waitFor(() => {
       expect(connectSpy).toHaveBeenCalled();
@@ -404,31 +390,23 @@ describe("createRuntime shutdown", () => {
     await flush();
 
     await runtime.shutdown();
-    // The session stop rejection should be caught and logged
-    // (Note: whether the warn fires depends on whether stop() actually rejects
-    // from close() throwing — session.stop() may catch it internally)
     connectSpy.mockRestore();
   });
 
   test("shutdown warns on timeout when sessions hang", async () => {
-    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
     const mockHandle = makeMockHandle();
-    // Make close() hang forever so stop() never resolves
     mockHandle.close = vi.fn(() => {
-      // intentionally do nothing — session stop will hang
+      /* no-op */
     });
     const connectSpy = vi.spyOn(_internals, "connectS2s").mockResolvedValue(mockHandle);
 
-    const agent = makeAgent();
     const runtime = createRuntime({
-      agent,
+      agent: makeAgent(),
       env: {},
-      logger,
-      shutdownTimeoutMs: 50, // Very short timeout
+      logger: makeLogger(),
+      shutdownTimeoutMs: 50,
     });
-    const ws = makeMockWs();
-
-    runtime.startSession(ws as never);
+    runtime.startSession(makeMockWs() as never);
 
     await vi.waitFor(() => {
       expect(connectSpy).toHaveBeenCalled();
@@ -436,7 +414,6 @@ describe("createRuntime shutdown", () => {
     await flush();
 
     await runtime.shutdown();
-    // Whether timeout warning fires depends on internal session map population
     connectSpy.mockRestore();
   });
 
@@ -448,8 +425,9 @@ describe("createRuntime shutdown", () => {
         increment: {
           description: "Increment counter",
           execute: (_args, ctx) => {
-            (ctx.state as { counter: number }).counter++;
-            return String((ctx.state as { counter: number }).counter);
+            const state = ctx.state as { counter: number };
+            state.counter++;
+            return String(state.counter);
           },
         },
         get_state: {
@@ -460,13 +438,10 @@ describe("createRuntime shutdown", () => {
     });
     const runtime = createRuntime({ agent, env: {} });
 
-    // First call creates state
     await runtime.executeTool("increment", {}, "s1", []);
-    // Second call reuses same state
     await runtime.executeTool("increment", {}, "s1", []);
     const result = await runtime.executeTool("get_state", {}, "s1", []);
     expect(JSON.parse(result)).toEqual({ counter: 2 });
-    // State factory should have been called only once
     expect(stateFactory).toHaveBeenCalledTimes(1);
   });
 });
@@ -494,7 +469,6 @@ describe("createRuntime createSession", () => {
     const agent = makeAgent();
     const runtime = createRuntime({ agent, env: {} });
     const client = makeClientSink();
-    // Should not throw when skipGreeting is set
     const session = runtime.createSession({
       id: "test-session",
       agent: agent.name,
@@ -520,16 +494,10 @@ describe("createRuntime createSession", () => {
 
 describe("createRuntime startSession", () => {
   test("startSession wires WebSocket and passes options", () => {
-    const agent = makeAgent();
-    const runtime = createRuntime({ agent, env: {}, logger: silentLogger });
-    const mockWs = {
-      readyState: 1,
-      send: vi.fn(),
-      addEventListener: vi.fn(),
-    };
+    const runtime = createRuntime({ agent: makeAgent(), env: {}, logger: silentLogger });
+    const ws = makeMockWs();
 
-    // Should not throw
-    runtime.startSession(mockWs as never, {
+    runtime.startSession(ws as never, {
       skipGreeting: true,
       resumeFrom: "prev-session",
       logContext: { userId: "u1" },
@@ -537,21 +505,15 @@ describe("createRuntime startSession", () => {
       onClose: vi.fn(),
     });
 
-    // addEventListener should have been called to wire up the WebSocket
-    expect(mockWs.addEventListener).toHaveBeenCalled();
+    expect(ws.addEventListener).toHaveBeenCalled();
   });
 
   test("startSession works with no options", () => {
-    const agent = makeAgent();
-    const runtime = createRuntime({ agent, env: {}, logger: silentLogger });
-    const mockWs = {
-      readyState: 1,
-      send: vi.fn(),
-      addEventListener: vi.fn(),
-    };
+    const runtime = createRuntime({ agent: makeAgent(), env: {}, logger: silentLogger });
+    const ws = makeMockWs();
 
-    runtime.startSession(mockWs as never);
-    expect(mockWs.addEventListener).toHaveBeenCalled();
+    runtime.startSession(ws as never);
+    expect(ws.addEventListener).toHaveBeenCalled();
   });
 });
 
@@ -582,7 +544,6 @@ describe("createRuntime with custom options", () => {
       env: { ASSEMBLYAI_API_KEY: "test-api-key" },
     });
     const client = makeClientSink();
-    // Should not throw — the API key gets passed to createS2sTransport internally
     const session = runtime.createSession({
       id: "test-session",
       agent: agent.name,

@@ -12,10 +12,12 @@ import type {
   Unsubscribe,
 } from "../../sdk/providers.ts";
 
+type Descriptor = { kind: string; options: Record<string, unknown> };
+
 test("Descriptors are { kind, options } data", () => {
-  expectTypeOf<SttProvider>().toMatchTypeOf<{ kind: string; options: Record<string, unknown> }>();
-  expectTypeOf<LlmProvider>().toMatchTypeOf<{ kind: string; options: Record<string, unknown> }>();
-  expectTypeOf<TtsProvider>().toMatchTypeOf<{ kind: string; options: Record<string, unknown> }>();
+  expectTypeOf<SttProvider>().toMatchTypeOf<Descriptor>();
+  expectTypeOf<LlmProvider>().toMatchTypeOf<Descriptor>();
+  expectTypeOf<TtsProvider>().toMatchTypeOf<Descriptor>();
 });
 
 test("SttOpener.open returns Promise<SttSession>", () => {
