@@ -2,7 +2,7 @@
 
 import { errorMessage } from "@alexkroman1/aai";
 import type { VectorRequest } from "@alexkroman1/aai/protocol";
-import type { Vector } from "@alexkroman1/aai/runtime";
+import type { Vector, VectorQueryOptions } from "@alexkroman1/aai/runtime";
 import type { ValidatedAppContext } from "./context.ts";
 
 export async function handleVector(
@@ -17,13 +17,12 @@ export async function handleVector(
       case "upsert":
         await vector.upsert(msg.id, msg.text, msg.metadata);
         return c.json({ result: "OK" });
-      case "query":
-        return c.json({
-          result: await vector.query(msg.text, {
-            ...(msg.topK !== undefined ? { topK: msg.topK } : {}),
-            ...(msg.filter !== undefined ? { filter: msg.filter } : {}),
-          }),
-        });
+      case "query": {
+        const opts: VectorQueryOptions = {};
+        if (msg.topK !== undefined) opts.topK = msg.topK;
+        if (msg.filter !== undefined) opts.filter = msg.filter;
+        return c.json({ result: await vector.query(msg.text, opts) });
+      }
       case "delete":
         await vector.delete(msg.ids);
         return c.json({ result: "OK" });

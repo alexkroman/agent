@@ -15,18 +15,27 @@ export { createSlotCache } from "./sandbox-slots.ts";
 
 // ── Metric-reading helpers (canonical versions for tests) ───────────────
 
+// biome-ignore lint/suspicious/noExplicitAny: prom-client internals not typed
+type MetricEntry = { labels?: Record<string, string>; value?: number; count?: number } & any;
+
+function getMetric(
+  name: string,
+): { hashMap?: Record<string, MetricEntry>; collect?: () => void } | null {
+  // biome-ignore lint/suspicious/noExplicitAny: prom-client internals not typed
+  return (registry.getSingleMetric(name) as any) ?? null;
+}
+
+function entryMatches(entry: MetricEntry, labels: Record<string, string>): boolean {
+  return Object.entries(labels).every(([k, v]) => entry.labels?.[k] === v);
+}
+
 /** Read a counter's value at the given label combination. Returns 0 if unset. */
 export function counterValue(name: string, labels: Record<string, string> = {}): number {
-  // biome-ignore lint/suspicious/noExplicitAny: prom-client internals not typed
-  const m = registry.getSingleMetric(name) as any;
+  const m = getMetric(name);
   if (!m?.hashMap) return 0;
-  if (Object.keys(labels).length === 0) {
-    return m.hashMap[""]?.value ?? 0;
-  }
-  // biome-ignore lint/suspicious/noExplicitAny: prom-client internals not typed
-  for (const entry of Object.values(m.hashMap) as any[]) {
-    const ok = Object.entries(labels).every(([k, v]) => entry.labels?.[k] === v);
-    if (ok) return entry.value ?? 0;
+  if (Object.keys(labels).length === 0) return m.hashMap[""]?.value ?? 0;
+  for (const entry of Object.values(m.hashMap)) {
+    if (entryMatches(entry, labels)) return entry.value ?? 0;
   }
   return 0;
 }
@@ -38,25 +47,17 @@ export function counterValue(name: string, labels: Record<string, string> = {}):
  * refreshed before the read.
  */
 export function gaugeValue(name: string, labels: Record<string, string> = {}): number {
-  // biome-ignore lint/suspicious/noExplicitAny: prom-client internals not typed
-  const m = registry.getSingleMetric(name) as any;
-  if (!m) return 0;
-  if (typeof m.collect === "function") m.collect();
+  getMetric(name)?.collect?.();
   return counterValue(name, labels);
 }
 
 /** Read the count of observations on a histogram. Returns 0 if no observations. */
 export function histogramCount(name: string, labels?: Record<string, string>): number {
-  // biome-ignore lint/suspicious/noExplicitAny: prom-client internals not typed
-  const m = registry.getSingleMetric(name) as any;
+  const m = getMetric(name);
   if (!m?.hashMap) return 0;
-  // biome-ignore lint/suspicious/noExplicitAny: prom-client internals not typed
-  const entries = Object.values(m.hashMap) as any[];
-  if (!labels) {
-    return entries.reduce((sum, e) => sum + (e.count ?? 0), 0);
-  }
-  const match = entries.find((e) => Object.entries(labels).every(([k, v]) => e.labels?.[k] === v));
-  return match?.count ?? 0;
+  const entries = Object.values(m.hashMap);
+  if (!labels) return entries.reduce((sum, e) => sum + (e.count ?? 0), 0);
+  return entries.find((e) => entryMatches(e, labels))?.count ?? 0;
 }
 
 /** In-memory mock KV store backed by a Map. All methods are vi.fn() spies. */
@@ -94,15 +95,18 @@ export function createTestStore(): BundleStore {
     return data !== undefined ? JSON.parse(data) : null;
   }
 
+  function writeManifest(slug: string, manifest: Record<string, unknown>) {
+    objects.set(objectKey(slug, "manifest.json"), JSON.stringify(manifest));
+  }
+
   return {
     putAgent(bundle) {
       deleteByPrefix(`agents/${bundle.slug}/`);
-      const manifest = {
+      writeManifest(bundle.slug, {
         slug: bundle.slug,
         env: bundle.env,
         credential_hashes: bundle.credential_hashes,
-      };
-      objects.set(objectKey(bundle.slug, "manifest.json"), JSON.stringify(manifest));
+      });
       objects.set(objectKey(bundle.slug, "worker.js"), bundle.worker);
       for (const [filePath, content] of Object.entries(bundle.clientFiles)) {
         objects.set(objectKey(bundle.slug, `client/${filePath}`), content);
@@ -138,11 +142,9 @@ export function createTestStore(): BundleStore {
 
     putEnv(slug, env) {
       const raw = readManifest(slug);
-      if (!raw) {
-        return Promise.reject(new Error(`Agent ${slug} not found`));
-      }
+      if (!raw) return Promise.reject(new Error(`Agent ${slug} not found`));
       raw.env = env;
-      objects.set(objectKey(slug, "manifest.json"), JSON.stringify(raw));
+      writeManifest(slug, raw);
       return Promise.resolve();
     },
 

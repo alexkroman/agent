@@ -8,10 +8,6 @@ import type { DeployBody } from "./schemas.ts";
 import { EnvSchema } from "./schemas.ts";
 import { verifyApiKeyHash } from "./secrets.ts";
 
-function generateSlug(): string {
-  return humanId({ separator: "-", capitalize: false });
-}
-
 export function handleDeploy(c: ValidatedAppContext<DeployBody>): Promise<Response> {
   const slug = c.var.slug;
   return withSlugLock(slug, () => handleDeployInner(c, slug));
@@ -19,15 +15,12 @@ export function handleDeploy(c: ValidatedAppContext<DeployBody>): Promise<Respon
 
 export function handleDeployNew(c: ValidatedAppContext<DeployBody>): Promise<Response> {
   const body = c.req.valid("json");
-  const slug = body.slug ?? generateSlug();
+  const slug = body.slug ?? humanId({ separator: "-", capitalize: false });
   return withSlugLock(slug, async () => {
     if (body.slug) {
       const existing = await c.env.store.getManifest(slug);
-      if (existing) {
-        const isOwner = await matchesAnyHash(c.var.apiKey, existing.credential_hashes);
-        if (!isOwner) {
-          return c.json({ error: "Forbidden: slug already owned by another user" }, 403);
-        }
+      if (existing && !(await matchesAnyHash(c.var.apiKey, existing.credential_hashes))) {
+        return c.json({ error: "Forbidden: slug already owned by another user" }, 403);
       }
     }
     return handleDeployInner(c, slug);
@@ -45,8 +38,7 @@ async function handleDeployInner(
   c: ValidatedAppContext<DeployBody>,
   slug: string,
 ): Promise<Response> {
-  const keyHash = c.var.keyHash;
-
+  const { apiKey, keyHash } = c.var;
   const body = c.req.valid("json");
 
   const storedEnv = (await c.env.store.getEnv(slug)) ?? {};
@@ -57,17 +49,17 @@ async function handleDeployInner(
     return c.json({ error: `Invalid platform config: ${envParsed.error.message}` }, 400);
   }
 
-  const existing = c.env.slots.get(slug);
-  if (existing?.sandbox) {
+  const existingSlot = c.env.slots.get(slug);
+  if (existingSlot?.sandbox) {
     debug("Replacing existing deploy", { slug });
-    await terminateSlot(existing);
+    await terminateSlot(existingSlot);
   }
 
-  // Merge the deployer's key hash into existing credential hashes rather
-  // than replacing them, so multi-user ownership is preserved across deploys.
-  const existingManifest = await c.env.store.getManifest(slug);
-  const existingHashes = existingManifest?.credential_hashes ?? [];
-  const alreadyStored = await matchesAnyHash(c.var.apiKey, existingHashes);
+  // Preserve multi-user ownership: append the deployer's hash only when no
+  // stored hash already matches their key.
+  const existingHashes = (await c.env.store.getManifest(slug))?.credential_hashes ?? [];
+  const alreadyStored =
+    existingHashes.includes(keyHash) || (await matchesAnyHash(apiKey, existingHashes));
   const mergedHashes = alreadyStored ? existingHashes : [...existingHashes, keyHash];
 
   await c.env.store.putAgent({

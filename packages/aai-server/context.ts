@@ -12,11 +12,12 @@
 import type { Vector } from "@alexkroman1/aai/runtime";
 import type { Context } from "hono";
 import type { Storage } from "unstorage";
+import type { SlotCache } from "./sandbox-slots.ts";
 import type { BundleStore } from "./store-types.ts";
 
 export type HonoEnv = {
   Bindings: {
-    slots: import("./sandbox-slots.ts").SlotCache;
+    slots: SlotCache;
     store: BundleStore;
     storage: Storage;
     defaultVector: (slug: string) => Vector;

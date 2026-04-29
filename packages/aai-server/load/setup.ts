@@ -15,12 +15,10 @@ export type LoadEnv = {
 };
 
 const REPO_ROOT = path.resolve(import.meta.dirname, "../../..");
-const DEPLOY_KEY = "load-test-key";
-
-export { DEPLOY_KEY };
+export const DEPLOY_KEY = "load-test-key";
 
 /** Default env overrides for load tests — production-matching limits under constrained container. */
-const LOAD_DEFAULTS: Record<string, string> = {
+const LOAD_DEFAULTS = {
   MAX_CONNECTIONS: "100",
   SECURE_EXEC_V8_MAX_SESSIONS: "128",
 };
@@ -65,6 +63,13 @@ export async function deployTestAgent(
   slug: string,
   key = DEPLOY_KEY,
 ): Promise<void> {
+  const agentConfig = {
+    name: "test-agent",
+    systemPrompt: "Test",
+    greeting: "",
+    maxSteps: 1,
+    tools: {},
+  };
   const res = await fetch(`${serverUrl}/${slug}/deploy`, {
     method: "POST",
     headers: {
@@ -73,17 +78,11 @@ export async function deployTestAgent(
     },
     body: JSON.stringify({
       env: { ASSEMBLYAI_API_KEY: "fake-key" },
-      worker: `export default { name: "test-agent", systemPrompt: "Test", greeting: "", maxSteps: 1, tools: {} };`,
+      worker: `export default ${JSON.stringify(agentConfig)};`,
       clientFiles: {
         "index.html": "<!DOCTYPE html><html><body>test</body></html>",
       },
-      agentConfig: {
-        name: "test-agent",
-        systemPrompt: "Test",
-        greeting: "",
-        maxSteps: 1,
-        tools: {},
-      },
+      agentConfig,
     }),
   });
   if (!res.ok) {

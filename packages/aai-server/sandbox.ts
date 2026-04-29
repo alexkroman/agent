@@ -12,7 +12,7 @@
  */
 
 import path from "node:path";
-import type { Kv } from "@alexkroman1/aai";
+import type { BuiltinTool, Kv, ToolChoice } from "@alexkroman1/aai";
 import { errorMessage, toolError } from "@alexkroman1/aai";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import {
@@ -87,12 +87,10 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
     process.env.GUEST_HARNESS_PATH ??
     path.resolve(import.meta.dirname, "dist/guest/deno-harness.mjs");
 
-  // Resolve KV: use declared provider or fall back to platform storage with prefix.
   const kv: Kv = config.kv
     ? resolveKv(config.kv, env, agentKvPrefix(slug))
     : createUnstorageKv({ storage, prefix: agentKvPrefix(slug) });
 
-  // Resolve Vector: use declared provider or fall back to defaultVector factory.
   const defaultVectorFactory = opts.defaultVector ?? ((s) => createMemoryVector({ namespace: s }));
   const vector: Vector = config.vector
     ? resolveVector(config.vector, env, slug)
@@ -124,18 +122,14 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
       sessionId: sessionId ?? "",
       messages: messages ?? [],
     });
-    // Guest returns { result, state } on success or { error } on failure.
-    // Validate the success shape; treat anything else as an error string.
     const parsed = ToolCallResponseSchema.safeParse(raw);
     if (parsed.success) {
       return parsed.data.result;
     }
-    // Guest returned an error object or unexpected shape
-    const errMsg =
-      typeof raw === "object" && raw !== null && "error" in raw
-        ? String((raw as { error: unknown }).error)
-        : "Tool execution failed: invalid response from sandbox";
-    return errMsg;
+    if (typeof raw === "object" && raw !== null && "error" in raw) {
+      return String((raw as { error: unknown }).error);
+    }
+    return "Tool execution failed: invalid response from sandbox";
   };
 
   const builtins = resolveAllBuiltins(config.builtinTools ?? [], { fetch: safeFetch });
@@ -147,12 +141,8 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
       maxSteps: config.maxSteps ?? 5,
       tools: {},
       ...(config.sttPrompt ? { sttPrompt: config.sttPrompt } : {}),
-      ...(config.toolChoice
-        ? { toolChoice: config.toolChoice as import("@alexkroman1/aai").ToolChoice }
-        : {}),
-      ...(config.builtinTools
-        ? { builtinTools: config.builtinTools as import("@alexkroman1/aai").BuiltinTool[] }
-        : {}),
+      ...(config.toolChoice ? { toolChoice: config.toolChoice satisfies ToolChoice } : {}),
+      ...(config.builtinTools ? { builtinTools: config.builtinTools as BuiltinTool[] } : {}),
     },
     env,
     fetch: safeFetch,
@@ -199,7 +189,6 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
     await agentRuntime.shutdown();
   }
 
-  // Wrap startSession to notify guest of session cleanup and capture sinks
   const originalStartSession = agentRuntime.startSession.bind(agentRuntime);
   function startSessionWithCleanup(
     ws: Parameters<typeof originalStartSession>[0],

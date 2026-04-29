@@ -37,20 +37,16 @@ function isLocalDev(env: NodeJS.ProcessEnv): boolean {
   return env.AAI_LOCAL_DEV === "1" || !env.BUCKET_NAME;
 }
 
-/**
- * Build the warm-harness pool from env config, or return null if disabled.
- *
- * Set `SANDBOX_POOL_SIZE` to a positive integer to pre-spawn that many
- * Deno harnesses, ready to receive bundle/load. Reduces first-session
- * cold-start latency for any agent that hasn't run yet on this server.
- */
+function resolveHarnessPath(env: NodeJS.ProcessEnv): string {
+  return env.GUEST_HARNESS_PATH ?? path.resolve(import.meta.dirname, "dist/guest/deno-harness.mjs");
+}
+
 function buildPool(env: NodeJS.ProcessEnv): SandboxPool | null {
   const raw = env.SANDBOX_POOL_SIZE;
   if (!raw) return null;
   const size = Number.parseInt(raw, 10);
   if (!Number.isFinite(size) || size < 1) return null;
-  const harnessPath =
-    env.GUEST_HARNESS_PATH ?? path.resolve(import.meta.dirname, "dist/guest/deno-harness.mjs");
+  const harnessPath = resolveHarnessPath(env);
   console.info(`Sandbox pool: pre-warming ${size} Deno harness(es)`, { harnessPath });
   metrics.warmPoolTarget.set(size);
   return createSandboxPool({
@@ -59,34 +55,20 @@ function buildPool(env: NodeJS.ProcessEnv): SandboxPool | null {
   });
 }
 
-async function buildLocalOpts(env: NodeJS.ProcessEnv): Promise<OrchestratorOpts> {
-  console.info("Local dev mode: unstorage memory driver for all storage");
-  const storage = createStorage();
-  const masterKey = await importMasterKey("local-dev-secret");
-  const pool = buildPool(env);
-  const slots = createSlotCache();
-  registerSlotsForGauges(slots);
-  return {
-    slots,
-    store: createBundleStore(storage, { masterKey }),
-    storage,
-    defaultVector: (slug: string): Vector => createMemoryVector({ namespace: slug }),
-    ...(pool && { pool }),
-  };
-}
-
-async function buildOpts(env: NodeJS.ProcessEnv): Promise<OrchestratorOpts> {
-  if (isLocalDev(env)) return buildLocalOpts(env);
-
+function buildStorage(env: NodeJS.ProcessEnv): {
+  storage: ReturnType<typeof createStorage>;
+  secret: string;
+} {
+  if (isLocalDev(env)) {
+    console.info("Local dev mode: unstorage memory driver for all storage");
+    return { storage: createStorage(), secret: "local-dev-secret" };
+  }
   const required = requireEnv(env, [
     "BUCKET_NAME",
     "AWS_ACCESS_KEY_ID",
     "AWS_SECRET_ACCESS_KEY",
     "KV_SCOPE_SECRET",
   ]);
-
-  const masterKey = await importMasterKey(required.KV_SCOPE_SECRET);
-
   const storage = createStorage({
     driver: s3Driver({
       bucket: required.BUCKET_NAME,
@@ -96,26 +78,29 @@ async function buildOpts(env: NodeJS.ProcessEnv): Promise<OrchestratorOpts> {
       secretAccessKey: required.AWS_SECRET_ACCESS_KEY,
     }),
   });
+  return { storage, secret: required.KV_SCOPE_SECRET };
+}
 
-  const store = createBundleStore(storage, { masterKey });
-  const pool = buildPool(env);
+function buildDefaultVector(env: NodeJS.ProcessEnv): (slug: string) => Vector {
+  if (isLocalDev(env) || !env.PINECONE_API_KEY || !env.PINECONE_INDEX) {
+    return (slug) => createMemoryVector({ namespace: slug });
+  }
+  const apiKey = env.PINECONE_API_KEY;
+  const index = env.PINECONE_INDEX;
+  return (slug) => createPineconeVector({ apiKey, index, namespace: slug });
+}
+
+async function buildOpts(env: NodeJS.ProcessEnv): Promise<OrchestratorOpts> {
+  const { storage, secret } = buildStorage(env);
+  const masterKey = await importMasterKey(secret);
   const slots = createSlotCache();
   registerSlotsForGauges(slots);
-
-  const defaultVector = (slug: string): Vector =>
-    env.PINECONE_API_KEY && env.PINECONE_INDEX
-      ? createPineconeVector({
-          apiKey: env.PINECONE_API_KEY,
-          index: env.PINECONE_INDEX,
-          namespace: slug,
-        })
-      : createMemoryVector({ namespace: slug });
-
+  const pool = buildPool(env);
   return {
     slots,
-    store,
+    store: createBundleStore(storage, { masterKey }),
     storage,
-    defaultVector,
+    defaultVector: buildDefaultVector(env),
     ...(pool && { pool }),
   };
 }
@@ -132,10 +117,8 @@ async function main(): Promise<void> {
   // the first sandbox spawn does the ~125 MB sync copy on the request
   // path and blocks the event loop long enough to fail healthchecks.
   if (isGvisorAvailable()) {
-    const harnessPath =
-      env.GUEST_HARNESS_PATH ?? path.resolve(import.meta.dirname, "dist/guest/deno-harness.mjs");
     try {
-      await prepareRootfs(harnessPath);
+      await prepareRootfs(resolveHarnessPath(env));
     } catch (err) {
       console.warn("Rootfs prep failed at boot; will retry lazily on first spawn", {
         error: errorMessage(err),

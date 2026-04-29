@@ -143,9 +143,8 @@ const warmPoolSpawnFailed = new client.Counter({
   registers: [registry],
 });
 
-// ── Host capacity (per-instance physical ceilings) ──
-//
-// Set once at server boot — used as denominators in PromQL % expressions.
+// ── Host capacity ──
+// Set once at boot; used as denominators in PromQL % expressions.
 
 const machineMemoryBytes = new client.Gauge({
   name: "aai_machine_memory_bytes",
@@ -201,10 +200,8 @@ export const metrics = {
   machineCpuCores,
 };
 
-// ── Typed label-value unions ────────────────────────────────────────────
-//
-// Centralizing these makes typos surface at compile time instead of as
-// silent new time series.
+// ── Typed label-value unions ──
+// Typos surface at compile time instead of as silent new time series.
 
 export type SessionMode = "s2s" | "pipeline";
 export type SessionEndReason = "client_close" | "server_close" | "error" | "timeout";
@@ -217,17 +214,16 @@ export type WarmPoolAcquireResult = "hit" | "miss";
 export type Upstream = "tigris";
 export type UpstreamStatus = "ok" | "error";
 
-// ── Timing helpers ───────────────────────────────────────────────────────
+// ── Helpers ──
 
-// Idempotent — safe to call from tests.
 export function initHostCapacityGauges(): void {
   metrics.machineMemoryBytes.set(os.totalmem());
   metrics.machineCpuCores.set(os.cpus().length);
 }
 
 /**
- * Observe `fn`'s execution time on a labeled histogram, AND increment a
- * labeled counter with `status: "ok" | "error"`. Re-throws on failure.
+ * Observe `fn`'s execution time on a labeled histogram and increment a
+ * labeled counter tagged with `status: "ok" | "error"`. Re-throws on failure.
  */
 export async function observeDurationWithStatus<T, L extends Record<string, string>>(
   hist: client.Histogram<string>,

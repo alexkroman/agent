@@ -74,25 +74,26 @@ export type OrchestratorOpts = {
   pool?: SandboxPool;
 };
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-/**
- * Resolve the KV store for a given slug: use the agent's declared KV provider
- * if configured, otherwise fall back to the platform default (unstorage).
- */
-async function resolveAgentKv(
+async function loadAgentConfig(
   c: AppContext,
   slug: string,
-): Promise<{ kv: Kv; agentConfig: IsolateConfig | null }> {
+): Promise<{ agentConfig: IsolateConfig | null; env: Record<string, string> }> {
   const [agentConfig, agentEnv] = await Promise.all([
     c.env.store.getAgentConfig(slug),
     c.env.store.getEnv(slug),
   ]);
-  const env = (agentEnv ?? {}) as Record<string, string>;
-  const kv = agentConfig?.kv
+  return { agentConfig, env: (agentEnv ?? {}) as Record<string, string> };
+}
+
+function resolveAgentKv(
+  c: AppContext,
+  slug: string,
+  agentConfig: IsolateConfig | null,
+  env: Record<string, string>,
+): Kv {
+  return agentConfig?.kv
     ? resolveKv(agentConfig.kv, env, agentKvPrefix(slug))
     : createUnstorageKv({ storage: c.env.storage, prefix: agentKvPrefix(slug) });
-  return { kv, agentConfig };
 }
 
 // Build the prometheus middleware once at module load. `@hono/prometheus`
@@ -138,79 +139,65 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   );
 
   app.notFound((c) => c.json({ error: "Not found" }, 404));
-
   app.onError(createErrorHandler());
-
-  // Auto-record `http_requests_total` and `http_request_duration_seconds`
-  // for every request through the app, using our shared prom-client registry.
   app.use("*", prometheusMiddleware);
 
   app.get("/health", (c) => c.json({ status: "ok" }));
 
-  // Internal-only metrics scrape. Fly's private network doesn't add
-  // X-Forwarded-For; the public edge always does. So we treat presence
-  // of XFF as "request came from outside" and 404 it.
+  // Internal-only: Fly's private network doesn't add X-Forwarded-For;
+  // public edge always does — treat XFF presence as "external request".
   app.get("/metrics", async (c) => {
     if (c.req.header("X-Forwarded-For")) return c.notFound();
     const text = await serialize();
     return c.text(text, 200, { "Content-Type": "text/plain; version=0.0.4" });
   });
 
-  // Top-level deploy — slug is optional in body, server generates one if missing
   app.post("/deploy", authMw, zValidator("json", DeployBodySchema), handleDeployNew);
 
-  // Bare-slug redirect (before sub-router so it takes priority)
+  // Bare-slug redirect — registered before sub-router so it takes priority.
   app.get("/:slug{[a-z0-9][a-z0-9_-]*[a-z0-9]}", (c) => {
     const url = new URL(c.req.url);
     url.pathname += "/";
     return c.redirect(url.toString(), 301);
   });
 
-  // ── Slug-scoped sub-router ──────────────────────────────────────────
   const agents = new Hono<HonoEnv>();
   agents.use("*", slugMw);
 
-  // Owner-protected routes — request bodies validated by zValidator before handlers
   agents.post("/deploy", ownerMw, zValidator("json", DeployBodySchema), handleDeploy);
   agents.delete("/", ownerMw, handleDelete);
   agents.get("/secret", ownerMw, handleSecretList);
   agents.put("/secret", ownerMw, zValidator("json", SecretUpdatesSchema), handleSecretSet);
   agents.delete("/secret/:key", ownerMw, handleSecretDelete);
   agents.post("/kv", ownerMw, zValidator("json", KvRequestSchema), async (c) => {
-    const { kv } = await resolveAgentKv(c, c.var.slug);
-    return handleKv(c, kv);
+    const { agentConfig, env } = await loadAgentConfig(c, c.var.slug);
+    return handleKv(c, resolveAgentKv(c, c.var.slug, agentConfig, env));
   });
   agents.get("/kv", ownerMw, async (c) => {
     const key = c.req.query("key");
     if (!key) return c.json({ error: "Missing key query parameter" }, 400);
-    const { kv, agentConfig } = await resolveAgentKv(c, c.var.slug);
+    const { agentConfig, env } = await loadAgentConfig(c, c.var.slug);
     if (!agentConfig) return c.json(null, 404);
-    const value = await kv.get(key);
+    const value = await resolveAgentKv(c, c.var.slug, agentConfig, env).get(key);
     if (value === null) return c.json(null, 404);
     return c.json(value);
   });
   agents.post("/vector", ownerMw, zValidator("json", VectorRequestSchema), async (c) => {
     const slug = c.var.slug;
-    const [agentConfig, agentEnv] = await Promise.all([
-      c.env.store.getAgentConfig(slug),
-      c.env.store.getEnv(slug),
-    ]);
-    const env = (agentEnv ?? {}) as Record<string, string>;
+    const { agentConfig, env } = await loadAgentConfig(c, slug);
     const vector: Vector = agentConfig?.vector
       ? resolveVector(agentConfig.vector, env, slug)
       : c.env.defaultVector(slug);
     return handleVector(c, vector);
   });
 
-  // Public routes
   agents.get("/health", handleAgentHealth);
   agents.get("/assets/:path{.+}", handleClientAsset);
-  // Agent page (GET /:slug/) stays on top-level app because Hono's
-  // mergePath("/:slug", "/") collapses the trailing slash.
+  // GET /:slug/ stays on the top-level app — Hono's mergePath("/:slug", "/")
+  // collapses the trailing slash, breaking the route.
   app.route("/:slug", agents);
   app.get("/:slug/", slugMw, handleAgentPage);
 
-  // Bindings injected at serve time via app.fetch(req, bindings)
   const bindings = {
     slots: opts.slots,
     store: opts.store,
@@ -222,15 +209,12 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   app.fetch = (req: Request, env?: Record<string, unknown>) =>
     original(req, { ...bindings, ...env });
 
-  // WebSocket upgrade — URL pattern: /:slug/websocket
   const connections = createConnectionTracker(MAX_CONNECTIONS);
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_WS_PAYLOAD_BYTES });
 
-  // Slug format: starts/ends with alphanumeric, allows hyphens/underscores in middle.
   // Enforced here (not just in middleware) because WebSocket upgrades bypass Hono routing.
   const SLUG_WS_RE = /^\/([a-z0-9][a-z0-9_-]{0,62}[a-z0-9])\/websocket$/;
 
-  /** Parse the upgrade URL and resolve the matching sandbox (or null). */
   async function resolveUpgrade(rawUrl: string) {
     const url = new URL(rawUrl, "http://localhost");
     const match = url.pathname.match(SLUG_WS_RE);
@@ -273,7 +257,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
         wss.handleUpgrade(req, socket, head, (ws) => {
           metrics.sessionsStarted.inc({ slug, mode });
           metrics.sessionsActive.inc({ slug });
-          // Bump the idle-eviction timer so an actively-used sandbox stays resident.
+          // Bump idle-eviction timer so an actively-used sandbox stays resident.
           touchSlot(opts.slots, slug);
           const startedAt = process.hrtime.bigint();
           ws.on("close", (code: number) => {
