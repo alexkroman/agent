@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 import fs from "node:fs/promises";
 import path from "node:path";
-import { isDevMode } from "./_agent.ts";
+import { getMonorepoRoot, isDevMode } from "./_agent.ts";
 import { downloadAndMergeTemplate } from "./_templates.ts";
 
 function readmeContent(slug: string): string {
@@ -44,10 +44,8 @@ export type InitOptions = {
   template?: string;
 };
 
-/**
- * Map from npm package name to directory name under packages/.
- * Used to rewrite published version ranges to link: paths in dev mode.
- */
+// Maps published npm names to monorepo directories so dev-mode init swaps
+// version ranges for `link:` paths against the local packages/ tree.
 const WORKSPACE_PKG_DIRS: Record<string, string> = {
   "@alexkroman1/aai": "aai",
   "@alexkroman1/aai-cli": "aai-cli",
@@ -56,23 +54,21 @@ const WORKSPACE_PKG_DIRS: Record<string, string> = {
   "aai-templates": "aai-templates",
 };
 
-/** Rewrite workspace deps to link: paths so pnpm links to local source. */
 export async function patchPackageJsonForWorkspace(targetDir: string): Promise<void> {
   const pkgPath = path.join(targetDir, "package.json");
   let raw: string;
   try {
     raw = await fs.readFile(pkgPath, "utf-8");
   } catch {
-    return; // no package.json to patch
+    return;
   }
   const pkgJson = JSON.parse(raw);
 
   pkgJson.name = path.basename(targetDir);
   delete pkgJson.packageManager;
 
-  const { getMonorepoRoot } = await import("./_agent.ts");
   const root = getMonorepoRoot();
-  if (!root) return; // shouldn't happen — caller checks isDevMode()
+  if (!root) return;
   const packagesDir = path.join(root, "packages");
 
   for (const field of ["dependencies", "devDependencies"] as const) {
@@ -97,25 +93,22 @@ export async function runInit(opts: InitOptions): Promise<string> {
 
   if (isDevMode()) {
     await patchPackageJsonForWorkspace(targetDir);
-    // Remove standalone .npmrc — workspace root .npmrc governs
-    try {
-      await fs.unlink(path.join(targetDir, ".npmrc"));
-    } catch {
+    // Workspace root .npmrc takes over; the per-template one would shadow it.
+    await fs.unlink(path.join(targetDir, ".npmrc")).catch(() => {
       /* ok if missing */
-    }
+    });
   }
 
-  try {
-    await fs.copyFile(path.join(targetDir, ".env.example"), path.join(targetDir, ".env"));
-  } catch {
-    /* no .env.example in template */
-  }
+  await fs
+    .copyFile(path.join(targetDir, ".env.example"), path.join(targetDir, ".env"))
+    .catch(() => {
+      /* template may not have a .env.example */
+    });
 
-  const readmePath = path.join(targetDir, "README.md");
   const slug = path.basename(path.resolve(targetDir));
   try {
-    await fs.writeFile(readmePath, readmeContent(slug), { flag: "wx" });
-  } catch (err: unknown) {
+    await fs.writeFile(path.join(targetDir, "README.md"), readmeContent(slug), { flag: "wx" });
+  } catch (err) {
     if (!(err instanceof Error && "code" in err && err.code === "EEXIST")) throw err;
   }
 

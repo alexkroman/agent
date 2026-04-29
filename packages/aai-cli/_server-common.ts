@@ -4,55 +4,37 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { parse as dotenvParse } from "dotenv";
 
-/**
- * Parse a `.env` file into a key→value record.
- *
- * Delegates to `dotenv.parse()` which handles quoted values, multiline
- * values, and comments.
- */
 export function parseEnvFile(content: string): Record<string, string> {
   return dotenvParse(content);
 }
 
+async function readEnvFile(cwd: string): Promise<Record<string, string>> {
+  try {
+    const content = await fs.readFile(path.join(cwd, ".env"), "utf-8");
+    return dotenvParse(content);
+  } catch {
+    return {};
+  }
+}
+
 /**
- * Build the `ctx.env` record that agent tools will see at runtime.
+ * Build the `ctx.env` record agent tools see at runtime.
  *
- * Only variables explicitly declared in `.env` are included — matching
- * the platform sandbox behavior where `ctx.env`
- * contains only secrets set via `aai secret put`. This prevents agents
- * from accidentally depending on shell-level vars (PATH, HOME, etc.) that
- * won't exist in production.
- *
- * Values are resolved by merging the `.env` file with the current
- * environment — existing shell exports take precedence over `.env`
- * defaults, without mutating `process.env`.
- *
- * @param cwd - Project directory containing `.env` (optional).
- * @param baseEnv - Override the environment to read values from (tests only).
+ * Only keys declared in `.env` are surfaced — matches platform sandbox behavior
+ * (`ctx.env` only contains secrets set via `aai secret put`) and prevents
+ * agents from leaning on shell vars (PATH, HOME, ...) that won't exist in prod.
+ * Shell env takes precedence over `.env` values; `process.env` is not mutated.
  */
 export async function resolveServerEnv(
   cwd?: string,
   baseEnv?: Record<string, string | undefined>,
 ): Promise<Record<string, string>> {
-  let fileEntries: Record<string, string> = {};
-  if (cwd) {
-    try {
-      const content = await fs.readFile(path.join(cwd, ".env"), "utf-8");
-      fileEntries = dotenvParse(content);
-    } catch {
-      // No .env file — that's fine
-    }
-  }
-
+  const fileEntries = cwd ? await readEnvFile(cwd) : {};
   const source = baseEnv ?? process.env;
 
-  // Only include explicitly-declared keys (not all of process.env).
-  // Shell env takes precedence over .env file values.
   const env: Record<string, string> = {};
   for (const [key, fileVal] of Object.entries(fileEntries)) {
-    const val = source[key] ?? fileVal;
-    if (val !== undefined) env[key] = val;
+    env[key] = source[key] ?? fileVal;
   }
-
   return env;
 }

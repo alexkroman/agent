@@ -11,19 +11,12 @@ import { type CommandResult, ok } from "./_output.ts";
 import { log } from "./_ui.ts";
 import { fileExists, resolveCwd } from "./_utils.ts";
 
-/**
- * Format an install error so the user sees what actually went wrong.
- * pnpm writes failures to stdout (not stderr), and Node's execFile error
- * message is only "Command failed: ..." — so we append both streams.
- */
+// pnpm writes failures to stdout (not stderr) and execFile's err.message is just
+// "Command failed: ...", so glue both streams onto the message for the user.
 function formatInstallError(err: unknown): string {
   if (!(err instanceof Error)) return String(err);
-  const parts = [err.message];
-  const stderr = (err as { stderr?: string }).stderr?.trim();
-  const stdout = (err as { stdout?: string }).stdout?.trim();
-  if (stderr) parts.push(stderr);
-  if (stdout) parts.push(stdout);
-  return parts.join("\n");
+  const e = err as { stderr?: string; stdout?: string };
+  return [err.message, e.stderr?.trim(), e.stdout?.trim()].filter(Boolean).join("\n");
 }
 
 type InitData = {
@@ -38,7 +31,6 @@ const execFileAsync = promisify(execFile);
 
 const DEFAULT_PROJECT_NAME = "my-voice-agent";
 
-/** Prompt for project name or return default when --yes is set. */
 async function promptProjectName(yes?: boolean): Promise<string> {
   if (yes) return DEFAULT_PROJECT_NAME;
   const result = await p.text({
@@ -53,34 +45,27 @@ async function promptProjectName(yes?: boolean): Promise<string> {
   return result || DEFAULT_PROJECT_NAME;
 }
 
-/** Enable corepack so pnpm is available (scaffold declares packageManager: pnpm). */
 async function ensurePnpm(): Promise<void> {
-  try {
-    await execFileAsync("corepack", ["enable"]);
-  } catch {
-    // corepack not available or already enabled — pnpm install will fail
-    // with a clear error if pnpm isn't available
-  }
+  // No-op if corepack is missing or already enabled — `pnpm install` fails loudly later.
+  await execFileAsync("corepack", ["enable"]).catch(() => {
+    /* corepack missing or already enabled */
+  });
 }
 
-/** Check if the project has any dependencies to install. */
 async function hasDeps(cwd: string): Promise<boolean> {
   if (await fileExists(path.join(cwd, "node_modules"))) return false;
-  let pkgJson: {
-    dependencies?: Record<string, string>;
-    devDependencies?: Record<string, string>;
-  };
+  let pkgJson: { dependencies?: Record<string, string>; devDependencies?: Record<string, string> };
   try {
     pkgJson = JSON.parse(await fs.readFile(path.join(cwd, "package.json"), "utf-8"));
   } catch {
-    pkgJson = {};
+    return false;
   }
-  const deps = Object.keys(pkgJson.dependencies ?? {});
-  const devDeps = Object.keys(pkgJson.devDependencies ?? {});
-  return deps.length > 0 || devDeps.length > 0;
+  return (
+    Object.keys(pkgJson.dependencies ?? {}).length > 0 ||
+    Object.keys(pkgJson.devDependencies ?? {}).length > 0
+  );
 }
 
-/** Check whether the safe-chain binary is on PATH. */
 async function hasSafeChain(): Promise<boolean> {
   try {
     await execFileAsync("safe-chain", ["--version"]);
@@ -90,7 +75,6 @@ async function hasSafeChain(): Promise<boolean> {
   }
 }
 
-/** Build the command + args for running pnpm, routing through safe-chain when available. */
 export async function resolvePnpmCommand(
   checkSafeChain: () => Promise<boolean> = hasSafeChain,
 ): Promise<{ cmd: string; args: string[] }> {
@@ -100,65 +84,38 @@ export async function resolvePnpmCommand(
   return { cmd: "pnpm", args: [] };
 }
 
-/** Run pnpm install and warn on failure. */
 async function runPnpmInstall(cwd: string): Promise<void> {
   const { cmd, args } = await resolvePnpmCommand();
-  // In dev mode, allow workspace resolution so workspace deps link to local source.
-  // In production, --ignore-workspace prevents pnpm from hoisting to a parent workspace.
+  // Dev mode wants workspace resolution; in production --ignore-workspace
+  // prevents pnpm from hoisting into a parent workspace.
   const pnpmArgs = isDevMode() ? ["install"] : ["install", "--ignore-workspace"];
   await execFileAsync(cmd, [...args, ...pnpmArgs], { cwd });
 }
 
-/** Install deps with pnpm. Returns true on success (or no deps to install). */
 async function installDeps(cwd: string, silent?: boolean): Promise<boolean> {
   if (!(await hasDeps(cwd))) return true;
   await ensurePnpm();
 
-  if (silent) {
-    try {
-      await runPnpmInstall(cwd);
-      return true;
-    } catch (err: unknown) {
-      log.warn(`pnpm install failed: ${formatInstallError(err)}`);
-      log.warn("Run `corepack enable && pnpm install` manually in the project directory.");
-      return false;
-    }
-  }
-
-  const s = p.spinner();
-  s.start("Installing dependencies with pnpm");
+  const spinner = silent ? null : p.spinner();
+  spinner?.start("Installing dependencies with pnpm");
   try {
     await runPnpmInstall(cwd);
-    s.stop("Dependencies installed");
+    spinner?.stop("Dependencies installed");
     return true;
-  } catch (err: unknown) {
-    s.stop("Dependency install failed");
+  } catch (err) {
+    spinner?.stop("Dependency install failed");
     log.warn(`pnpm install failed: ${formatInstallError(err)}`);
     log.warn("Run `corepack enable && pnpm install` manually in the project directory.");
     return false;
   }
 }
 
-/** Resolve target directory relative to the user's current directory. */
-function resolveTargetDir(dir: string): string {
-  return path.resolve(resolveCwd(), dir);
-}
-
-/** Resolve the deploy server — in dev mode, default to localhost. */
-function resolveDeployServer(
-  explicit: string | undefined,
-  monorepoRoot: string | null,
-): string | undefined {
-  return explicit ?? (monorepoRoot ? DEFAULT_DEV_SERVER : undefined);
-}
-
-/** Run deploy after init and return deploy metadata if successful. */
 async function tryDeploy(
   cwd: string,
   server: string | undefined,
   monorepoRoot: string | null,
 ): Promise<{ slug: string; url: string } | null> {
-  const resolvedServer = resolveDeployServer(server, monorepoRoot);
+  const resolvedServer = server ?? (monorepoRoot ? DEFAULT_DEV_SERVER : undefined);
   const { executeDeploy } = await import("./deploy.ts");
   const result = await executeDeploy({
     cwd,
@@ -167,7 +124,6 @@ async function tryDeploy(
   return result.ok ? { slug: result.data.slug, url: result.data.url } : null;
 }
 
-/** Scaffold the project, optionally showing a spinner. */
 async function scaffoldProject(
   dir: string,
   cwd: string,
@@ -175,17 +131,12 @@ async function scaffoldProject(
   silent?: boolean,
 ): Promise<void> {
   const { runInit } = await import("./_init.ts");
-  if (silent) {
-    await runInit({ targetDir: cwd, template });
-    return;
-  }
-  const s = p.spinner();
-  s.start(`Creating ${dir}`);
+  const spinner = silent ? null : p.spinner();
+  spinner?.start(`Creating ${dir}`);
   await runInit({ targetDir: cwd, template });
-  s.stop("Project created");
+  spinner?.stop("Project created");
 }
 
-/** Print post-init instructions. */
 function printPostInitInfo(cwd: string, monorepoRoot: string | null): void {
   log.success(`Created ${cwd}`);
   if (monorepoRoot) log.info("Dev mode: project linked to workspace packages");
@@ -211,7 +162,7 @@ export async function executeInit(
 
   const dir = opts.dir ?? (await promptProjectName(opts.yes));
   const monorepoRoot = getMonorepoRoot();
-  const cwd = resolveTargetDir(dir);
+  const cwd = path.resolve(resolveCwd(), dir);
 
   if (!opts.force && (await fileExists(path.join(cwd, "agent.ts")))) {
     throw new Error(

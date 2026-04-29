@@ -9,7 +9,6 @@ import { CliError, type CommandResult, fail, getOutputMode, type OutputMode } fr
 import { silenceOutput } from "./_ui.ts";
 import { fileExists, resolveCwd } from "./_utils.ts";
 
-/** Shared arg definitions for citty commands. */
 const sharedArgs = {
   port: { type: "string", alias: "p", description: "Port to listen on", default: "3000" },
   server: { type: "string", alias: "s", description: "Platform server URL" },
@@ -17,51 +16,38 @@ const sharedArgs = {
   json: { type: "boolean", description: "Output JSON (auto-detected in non-TTY)" },
 } as const;
 
+// In dev mode the CLI runs from source (cli.ts is alongside package.json); from
+// the published dist it lives one level deeper, so fall back to the parent.
 const cliDir = path.dirname(fileURLToPath(import.meta.url));
-function findPkgJson(dir: string): string {
-  try {
-    return readFileSync(path.join(dir, "package.json"), "utf-8");
-  } catch {
-    return readFileSync(path.join(dir, "..", "package.json"), "utf-8");
-  }
-}
-const pkgJson = JSON.parse(findPkgJson(cliDir));
-const VERSION: string = pkgJson.version;
+const pkgJsonPath = existsSync(path.join(cliDir, "package.json"))
+  ? path.join(cliDir, "package.json")
+  : path.join(cliDir, "..", "package.json");
+const VERSION: string = JSON.parse(readFileSync(pkgJsonPath, "utf-8")).version;
 
-/** Shared command setup: resolve cwd, optionally require agent.ts. */
 async function setup(opts?: { agent?: boolean }): Promise<string> {
   const cwd = resolveCwd();
-  if (opts?.agent) {
-    const hasAgent = await fileExists(path.join(cwd, "agent.ts"));
-    if (!hasAgent) {
-      throw new Error("No agent.ts found in the current directory. Run `aai init` first.");
-    }
+  if (opts?.agent && !(await fileExists(path.join(cwd, "agent.ts")))) {
+    throw new Error("No agent.ts found in the current directory. Run `aai init` first.");
   }
   return cwd;
 }
 
-/** Catch command errors and display a clean message instead of a raw stack trace. */
 async function handleErrors(mode: OutputMode, fn: () => Promise<void>): Promise<void> {
   try {
     await fn();
-  } catch (err: unknown) {
+  } catch (err) {
     const code = err instanceof CliError ? err.code : "command_failed";
     const hint = err instanceof CliError ? err.hint : undefined;
     if (mode === "json") {
-      const result = fail(code, errorMessage(err), hint);
-      process.stdout.write(`${JSON.stringify(result)}\n`);
-      process.exit(1);
+      process.stdout.write(`${JSON.stringify(fail(code, errorMessage(err), hint))}\n`);
+    } else {
+      const { log } = await import("./_ui.ts");
+      log.error(errorMessage(err));
     }
-    const { log } = await import("./_ui.ts");
-    log.error(errorMessage(err));
     process.exit(1);
   }
 }
 
-/**
- * Run a command body with standard error handling, output mode resolution, and withOutput wrapping.
- * `setYes` controls whether json mode sets `args.yes = true` (default true for most commands).
- */
 async function runCommand(
   args: { json?: boolean | undefined; yes?: boolean | undefined },
   fn: (mode: OutputMode) => Promise<CommandResult<unknown>>,

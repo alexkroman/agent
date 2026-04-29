@@ -10,7 +10,6 @@ import { writeTempHtml } from "./_default-html.ts";
 import { type CommandResult, ok } from "./_output.ts";
 import { fileExists, validateAgentExport } from "./_utils.ts";
 
-/** Shared Vite build base config for agent bundles. */
 function agentViteBuildBase(entry: string) {
   return {
     logLevel: "silent" as const,
@@ -23,50 +22,35 @@ function agentViteBuildBase(entry: string) {
   };
 }
 
-/** Output from the bundler: agentConfig + worker ESM + client files. */
 export type DirectoryBundleOutput = {
-  /** ESM bundle of agent.ts (tool execute functions + hook handlers). */
   worker: string;
-  /** Static client files from Vite build. Empty if no client.tsx. */
   clientFiles: Record<string, string>;
-  /** Serializable agent config — sent as agentConfig to the server. */
   agentConfig: Record<string, unknown>;
 };
 
 /**
- * Bundle an agent directory: build agent.ts into worker ESM + extract config.
+ * Build agent.ts into worker ESM + extract config.
  *
- * - agent.ts is the single entry point: `export default agent({...})`
- * - A single Vite build produces the worker ESM (all deps bundled in).
- *   The AgentDef is extracted from that bundle via dynamic import, avoiding a
- *   second build pass.
+ * One Vite pass produces the worker bundle (all deps inlined); the AgentDef
+ * is then dynamic-imported out of that bundle so we don't need a second pass.
  */
 export async function buildAgentBundle(cwd: string): Promise<DirectoryBundleOutput> {
   const { log } = await import("./_ui.ts");
 
-  // Single Vite build for the worker (all deps bundled in) + client in parallel
   const [worker, clientFiles] = await Promise.all([buildWorker(cwd), buildClient(cwd)]);
 
-  // Extract AgentDef from the worker bundle by eval
   const agentDef = await evalWorkerBundle(worker, cwd);
   log.step(`Bundling ${agentDef.name}`);
 
   const config = toAgentConfig(agentDef);
   const toolSchemas = agentToolsToSchemas(agentDef.tools ?? {});
-  const agentConfig: Record<string, unknown> = { ...config, toolSchemas };
-
-  return { worker, clientFiles, agentConfig };
+  return { worker, clientFiles, agentConfig: { ...config, toolSchemas } };
 }
 
-/**
- * Write the worker ESM to a temp file and dynamic-import it, returning
- * the AgentDef default export. All dependencies are bundled in, so the
- * file can be evaluated from any directory.
- */
 export async function evalWorkerBundle(code: string, cwd: string): Promise<AgentDef> {
   const evalDir = path.join(cwd, ".aai", "eval");
   await fs.mkdir(evalDir, { recursive: true });
-  // Use a unique filename per invocation to avoid Node's ESM import cache.
+  // Unique filename per call to bypass Node's ESM import cache.
   const tmpPath = path.join(
     evalDir,
     `agent-${Date.now()}-${Math.random().toString(36).slice(2)}.mjs`,
@@ -75,7 +59,6 @@ export async function evalWorkerBundle(code: string, cwd: string): Promise<Agent
     await fs.writeFile(tmpPath, code);
     const mod = await import(pathToFileURL(tmpPath).href);
     const agentDef = (mod.default ?? mod) as AgentDef;
-
     validateAgentExport(agentDef);
     return agentDef;
   } finally {
@@ -85,12 +68,6 @@ export async function evalWorkerBundle(code: string, cwd: string): Promise<Agent
   }
 }
 
-/**
- * Bundle agent.ts into a single ESM string for the sandbox worker.
- *
- * Zod is bundled in — zod 4's `Function()` usage is wrapped in try/catch
- * and gracefully degrades in restricted environments like Deno.
- */
 async function buildWorker(cwd: string): Promise<string> {
   const agentEntry = path.join(cwd, "agent.ts");
   const base = agentViteBuildBase(agentEntry);
@@ -98,14 +75,12 @@ async function buildWorker(cwd: string): Promise<string> {
   const result = await build({
     ...base,
     plugins: [
-      // Transform .md imports into raw string exports so templates that do
-      // `import systemPrompt from "./system-prompt.md"` bundle correctly.
+      // Inline .md imports as default-exported strings so templates can
+      // `import systemPrompt from "./system-prompt.md"`.
       {
         name: "raw-md",
         transform(code, id) {
-          if (id.endsWith(".md")) {
-            return `export default ${JSON.stringify(code)}`;
-          }
+          if (id.endsWith(".md")) return `export default ${JSON.stringify(code)}`;
         },
       },
     ],
@@ -113,9 +88,7 @@ async function buildWorker(cwd: string): Promise<string> {
       ...base.build,
       lib: { ...base.build.lib, fileName: "worker" },
       write: false,
-      rollupOptions: {
-        output: { entryFileNames: "[name].js" },
-      },
+      rollupOptions: { output: { entryFileNames: "[name].js" } },
     },
   });
 
@@ -126,15 +99,8 @@ async function buildWorker(cwd: string): Promise<string> {
   return chunk.code;
 }
 
-/**
- * Build the client SPA using Vite if client.tsx exists.
- * Returns a map of relative file paths to string contents for deploy.
- */
 async function buildClient(cwd: string): Promise<Record<string, string>> {
-  const clientEntry = path.join(cwd, "client.tsx");
-  if (!(await fileExists(clientEntry))) {
-    return {}; // No client.tsx — skip client build
-  }
+  if (!(await fileExists(path.join(cwd, "client.tsx")))) return {};
 
   const clientDir = path.join(cwd, ".aai", "client");
   const cleanupHtml = writeTempHtml(cwd);
@@ -143,16 +109,12 @@ async function buildClient(cwd: string): Promise<Record<string, string>> {
       root: cwd,
       base: "./",
       logLevel: "silent",
-      build: {
-        outDir: ".aai/client",
-        emptyOutDir: true,
-      },
+      build: { outDir: ".aai/client", emptyOutDir: true },
     });
   } finally {
     cleanupHtml();
   }
 
-  // Read built files into memory for deploy payload
   const files: Record<string, string> = {};
   async function walk(dir: string, prefix: string): Promise<void> {
     for (const entry of await fs.readdir(dir, { withFileTypes: true })) {

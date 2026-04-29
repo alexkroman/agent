@@ -1,9 +1,6 @@
-/**
- * Mock platform API server for CLI integration tests.
- *
- * Starts a real HTTP server that implements the AAI platform API surface
- * (deploy, delete, secrets). Records all requests for assertion.
- */
+// Mock platform API server for CLI integration tests. Implements the AAI
+// platform API (deploy, delete, secrets) and records all requests for assertion.
+
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 
 export interface RecordedRequest {
@@ -14,17 +11,11 @@ export interface RecordedRequest {
 }
 
 export interface MockApi {
-  /** Base URL of the mock server (http://localhost:<port>) */
   url: string;
-  /** All recorded requests */
   requests: RecordedRequest[];
-  /** Secrets currently stored */
   secrets: Record<string, string>;
-  /** Override response for a specific method+path pattern */
   override(method: string, pathPattern: string, status: number, body?: string): void;
-  /** Clear recorded requests */
   clear(): void;
-  /** Stop the server */
   stop(): Promise<void>;
 }
 
@@ -59,73 +50,45 @@ export async function startMockApi(): Promise<MockApi> {
 
     requests.push({ method, path, headers: req.headers, body });
 
-    // Check auth
+    function reply(status: number, payload: unknown): void {
+      res.writeHead(status, { "Content-Type": "application/json" });
+      res.end(typeof payload === "string" ? payload : JSON.stringify(payload));
+    }
+
     const auth = req.headers.authorization;
-    if (!auth?.startsWith("Bearer ")) {
-      res.writeHead(401, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "Unauthorized" }));
-      return;
-    }
+    if (!auth?.startsWith("Bearer ")) return reply(401, { error: "Unauthorized" });
+    if (auth === "Bearer invalid-key") return reply(401, { error: "Invalid API key" });
 
-    if (auth === "Bearer invalid-key") {
-      res.writeHead(401, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "Invalid API key" }));
-      return;
-    }
-
-    // Check overrides first
     const ov = matchOverride(method, path);
-    if (ov) {
-      res.writeHead(ov.status, { "Content-Type": "application/json" });
-      res.end(ov.body);
-      return;
-    }
+    if (ov) return reply(ov.status, ov.body);
 
-    // Route: POST /deploy — slug is optional in body, server generates if missing
     if (method === "POST" && path === "/deploy") {
       const parsed = body ? (JSON.parse(body) as Record<string, unknown>) : {};
       const slug = (parsed.slug as string) ?? `generated-${Date.now()}`;
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true, slug }));
-      return;
+      return reply(200, { ok: true, slug });
     }
 
-    // Route: DELETE /{slug}  (but not /{slug}/secret/*)
+    // DELETE /{slug} — but exclude /{slug}/secret/* below
     if (method === "DELETE" && path.match(/^\/[^/]+$/) && !path.includes("/secret")) {
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true }));
-      return;
+      return reply(200, { ok: true });
     }
 
-    // Route: GET /{slug}/secret — list secrets
     if (method === "GET" && path.match(/^\/[^/]+\/secret$/)) {
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ vars: Object.keys(secrets) }));
-      return;
+      return reply(200, { vars: Object.keys(secrets) });
     }
 
-    // Route: PUT /{slug}/secret — put secret
     if (method === "PUT" && path.match(/^\/[^/]+\/secret$/)) {
-      const parsed = JSON.parse(body) as Record<string, string>;
-      Object.assign(secrets, parsed);
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true }));
-      return;
+      Object.assign(secrets, JSON.parse(body) as Record<string, string>);
+      return reply(200, { ok: true });
     }
 
-    // Route: DELETE /{slug}/secret/{name}
     const secretDeleteMatch = path.match(/^\/[^/]+\/secret\/(.+)$/);
     if (method === "DELETE" && secretDeleteMatch?.[1]) {
-      const name = secretDeleteMatch[1];
-      delete secrets[name];
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ ok: true }));
-      return;
+      delete secrets[secretDeleteMatch[1]];
+      return reply(200, { ok: true });
     }
 
-    // Unknown route
-    res.writeHead(404, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "Not found" }));
+    reply(404, { error: "Not found" });
   }
 
   const server: Server = createServer((req, res) => {

@@ -1,12 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
-/**
- * Dev server for directory-based agents.
- *
- * Imports agent.ts directly for the full agent definition,
- * builds a runtime, and starts an HTTP+WebSocket server. Watches for
- * file changes and restarts automatically. Optionally runs Vite for
- * client SPA HMR.
- */
+//
+// Dev server for directory-based agents: imports agent.ts directly, builds a
+// runtime, starts an HTTP+WebSocket server, and watches for file changes to
+// restart automatically. Optionally runs Vite for client SPA HMR.
 
 import { existsSync, type FSWatcher, watch } from "node:fs";
 import { createRequire } from "node:module";
@@ -21,70 +17,42 @@ import { resolveServerEnv } from "./_server-common.ts";
 import { log } from "./_ui.ts";
 import { validateAgentExport } from "./_utils.ts";
 
-// ─── Env loading ────────────────────────────────────────────────────────────
+const RESTART_DEBOUNCE_MS = 300;
 
 async function resolveAgentEnv(root: string): Promise<Record<string, string>> {
   const env = await resolveServerEnv(root);
-  if (!env.ASSEMBLYAI_API_KEY) {
-    env.ASSEMBLYAI_API_KEY = await ensureApiKey();
-  }
+  env.ASSEMBLYAI_API_KEY ??= await ensureApiKey();
   return env;
 }
 
-// ─── Agent loading ──────────────────────────────────────────────────────────
-
-/**
- * Load agent definition from agent.ts directly.
- * Uses cache-busting query param for hot reload support.
- */
 // biome-ignore lint/suspicious/noExplicitAny: agent state type varies per agent
 async function loadAgentDef(cwd: string): Promise<AgentDef<any>> {
-  const agentPath = path.join(cwd, "agent.ts");
-  const agentUrl = `${pathToFileURL(agentPath).href}?t=${Date.now()}`;
+  // Cache-bust query so hot reloads pick up the latest agent.ts.
+  const agentUrl = `${pathToFileURL(path.join(cwd, "agent.ts")).href}?t=${Date.now()}`;
   const mod = await import(agentUrl);
-  const agentDef = mod.default;
-  validateAgentExport(agentDef);
-  return agentDef;
+  validateAgentExport(mod.default);
+  return mod.default;
 }
 
-// ─── File watching ──────────────────────────────────────────────────────────
-
-/**
- * Watch the agent directory for changes and call `onChange` when detected.
- * Debounces to avoid rapid restarts.
- */
-function watchDirectory(dir: string, onChange: (filename: string | null) => void): FSWatcher[] {
-  const watchers: FSWatcher[] = [];
-  const DEBOUNCE_MS = 300;
-
-  const debouncedChange = pDebounce((filename: string | null) => {
+function watchDirectory(dir: string, onChange: () => void): FSWatcher[] {
+  const debounced = pDebounce(() => {
     log.info("File change detected, restarting...");
-    onChange(filename);
-  }, DEBOUNCE_MS);
+    onChange();
+  }, RESTART_DEBOUNCE_MS);
 
-  function handleChange(filename: string | null) {
-    if (filename && (filename.startsWith(".aai") || filename.includes("node_modules"))) return;
-
-    void debouncedChange(filename);
-  }
-
-  watchers.push(watch(dir, { persistent: false }, (_event, filename) => handleChange(filename)));
-
-  return watchers;
+  return [
+    watch(dir, { persistent: false }, (_event, filename) => {
+      if (filename && (filename.startsWith(".aai") || filename.includes("node_modules"))) return;
+      void debounced();
+    }),
+  ];
 }
-
-// ─── Dev server ─────────────────────────────────────────────────────────────
 
 export type DevServerOptions = {
   cwd: string;
   port: number;
 };
 
-/**
- * Start the dev server for a directory-based agent.
- *
- * Returns a cleanup function to shut down the server and watchers.
- */
 export async function startDevServer(opts: DevServerOptions): Promise<() => Promise<void>> {
   const { cwd, port } = opts;
 
@@ -92,18 +60,17 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
 
   const hasClient = existsSync(path.join(cwd, "client.tsx"));
   const backendPort = hasClient ? port + 1 : port;
-  const vitePort = port;
 
-  const agentDef = await loadAgentDef(cwd);
-  const env = await resolveAgentEnv(cwd);
-  const runtime = createRuntime({ agent: agentDef, env });
-
-  // When no custom client.tsx, serve the pre-built default aai-ui client
+  // Without a custom client.tsx we serve the pre-built default aai-ui client.
   function resolveDefaultClientDir(): string {
     const require = createRequire(import.meta.url);
     const pkgPath = require.resolve("@alexkroman1/aai-ui/package.json");
     return path.join(path.dirname(pkgPath), "dist", "default-client");
   }
+
+  const agentDef = await loadAgentDef(cwd);
+  const env = await resolveAgentEnv(cwd);
+  const runtime = createRuntime({ agent: agentDef, env });
   const agentServer = createServer({
     runtime,
     name: agentDef.name,
@@ -119,7 +86,7 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
       root: cwd,
       plugins: [fallbackHtmlPlugin(cwd)],
       server: {
-        port: vitePort,
+        port,
         proxy: {
           "/health": target,
           "/websocket": { target, ws: true },
@@ -131,28 +98,16 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
 
   let restarting = false;
   let currentServer: AgentServer = agentServer;
-  let currentVite = viteServer;
-  let currentEnv = env;
-  const watchers = watchDirectory(cwd, () => {
-    if (restarting) return;
-    restarting = true;
-    void restart().finally(() => {
-      restarting = false;
-    });
-  });
 
   async function restart(): Promise<void> {
-    try {
-      await currentServer.close();
-    } catch {
-      /* ignore */
-    }
+    await currentServer.close().catch(() => {
+      /* ignore close errors during restart */
+    });
     try {
       const newAgentDef = await loadAgentDef(cwd);
-      currentEnv = await resolveAgentEnv(cwd);
-      const newRuntime = createRuntime({ agent: newAgentDef, env: currentEnv });
+      const newEnv = await resolveAgentEnv(cwd);
       const newServer = createServer({
-        runtime: newRuntime,
+        runtime: createRuntime({ agent: newAgentDef, env: newEnv }),
         name: newAgentDef.name,
         ...(hasClient ? {} : { clientDir: resolveDefaultClientDir() }),
       });
@@ -164,12 +119,17 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
     }
   }
 
+  const watchers = watchDirectory(cwd, () => {
+    if (restarting) return;
+    restarting = true;
+    void restart().finally(() => {
+      restarting = false;
+    });
+  });
+
   return async () => {
     for (const w of watchers) w.close();
-    if (currentVite) {
-      await currentVite.close();
-      currentVite = undefined;
-    }
+    if (viteServer) await viteServer.close();
     await currentServer.close();
   };
 }

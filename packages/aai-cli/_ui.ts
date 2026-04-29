@@ -6,22 +6,17 @@ import { colorize } from "consola/utils";
 type Log = typeof clackLog;
 
 const noop = () => {
-  /* no-op */
+  /* noop */
 };
-let _delegate: Log = clackLog;
+let delegate: Log = clackLog;
 
-const logHandler: ProxyHandler<Log> = {
-  get(_target, prop, receiver) {
-    return Reflect.get(_delegate, prop, receiver);
-  },
-};
+// Proxy lets `import { log }` consumers see retroactive swaps from silenceOutput().
+export const log: Log = new Proxy(clackLog, {
+  get: (_t, prop, receiver) => Reflect.get(delegate, prop, receiver),
+});
 
-/** Log instance that delegates to clack (human mode) or no-ops (JSON mode). */
-export const log: Log = new Proxy(clackLog, logHandler);
-
-/** Replace all log methods with no-ops. Call once in JSON mode. */
 export function silenceOutput(): void {
-  _delegate = {
+  delegate = {
     info: noop,
     success: noop,
     error: noop,
@@ -31,12 +26,10 @@ export function silenceOutput(): void {
   } as unknown as Log;
 }
 
-/** Format a URL for display. */
 export function fmtUrl(url: string): string {
   return colorize("cyanBright", url);
 }
 
-/** Parse and validate a port string. Returns the numeric port or throws. */
 export function parsePort(raw: string): number {
   const port = Number.parseInt(raw, 10);
   if (Number.isNaN(port) || port < 0 || port > 65_535) {

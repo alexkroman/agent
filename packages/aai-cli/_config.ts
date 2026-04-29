@@ -3,7 +3,6 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import * as p from "@clack/prompts";
-import { consola } from "consola";
 import { z } from "zod";
 
 const ProjectConfigSchema = z.object({
@@ -12,6 +11,12 @@ const ProjectConfigSchema = z.object({
   sessionId: z.string().optional(),
 });
 
+export type ProjectConfig = z.infer<typeof ProjectConfigSchema>;
+
+export type GlobalConfig = {
+  apiKey?: string;
+};
+
 export function getConfigDir(): string {
   if (process.platform === "win32") {
     return path.join(process.env.APPDATA ?? path.join(os.homedir(), "AppData", "Roaming"), "aai");
@@ -19,18 +24,11 @@ export function getConfigDir(): string {
   return path.join(process.env.XDG_CONFIG_HOME ?? path.join(os.homedir(), ".config"), "aai");
 }
 
-export type ProjectConfig = z.infer<typeof ProjectConfigSchema>;
-
 export async function readProjectConfig(agentDir: string): Promise<ProjectConfig | null> {
   try {
-    return ProjectConfigSchema.parse(
-      JSON.parse(await fs.readFile(path.join(agentDir, ".aai", "project.json"), "utf-8")),
-    );
-  } catch (error) {
-    consola.debug(
-      `Failed to read project config from ${path.join(agentDir, ".aai", "project.json")}:`,
-      error,
-    );
+    const raw = await fs.readFile(path.join(agentDir, ".aai", "project.json"), "utf-8");
+    return ProjectConfigSchema.parse(JSON.parse(raw));
+  } catch {
     return null;
   }
 }
@@ -40,10 +38,6 @@ export async function writeProjectConfig(agentDir: string, data: ProjectConfig):
   await fs.mkdir(aaiDir, { recursive: true });
   await fs.writeFile(path.join(aaiDir, "project.json"), `${JSON.stringify(data, null, 2)}\n`);
 }
-
-export type GlobalConfig = {
-  apiKey?: string;
-};
 
 export async function readGlobalConfig(configDir?: string): Promise<GlobalConfig> {
   const dir = configDir ?? getConfigDir();
@@ -64,7 +58,6 @@ export async function ensureApiKey(configDir?: string): Promise<string> {
   const config = await readGlobalConfig(dir);
   if (config.apiKey) return config.apiKey;
 
-  // Allow non-interactive usage (CI, Claude Code) via env var
   const envKey = process.env.ASSEMBLYAI_API_KEY;
   if (envKey) {
     await writeGlobalConfig(dir, { ...config, apiKey: envKey });

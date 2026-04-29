@@ -6,12 +6,10 @@ import type { DirectoryBundleOutput } from "./_bundler.ts";
 export type DeployOpts = {
   url: string;
   bundle: DirectoryBundleOutput;
-  /** Env var values from .env to send to the server. */
   env: Record<string, string>;
-  /** Existing slug for redeployment. Omit for first deploy — server generates one. */
+  /** Existing slug for redeployment. Omit on first deploy — the server mints one. */
   slug?: string;
   apiKey: string;
-  /** Optional fetch implementation for testing. Defaults to globalThis.fetch. */
   fetch?: typeof globalThis.fetch;
 };
 

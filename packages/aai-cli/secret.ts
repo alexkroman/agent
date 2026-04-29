@@ -21,7 +21,7 @@ async function secretRequest(
   return { resp, slug };
 }
 
-/** Read secret value from stdin (for non-TTY / piped input). */
+/** Read secret value from stdin (non-TTY / piped input). */
 export async function readStdin(): Promise<string> {
   const chunks: Buffer[] = [];
   for await (const chunk of process.stdin) {
@@ -34,10 +34,7 @@ type SecretPutData = { name: string };
 type SecretDeleteData = { name: string };
 type SecretListData = { secrets: string[] };
 
-/**
- * Execute secret put. If `value` is provided, use it directly (non-TTY path).
- * If not provided, prompt interactively (TTY path).
- */
+/** `value` set => non-TTY path uses it directly; otherwise prompts interactively. */
 export async function executeSecretPut(
   cwd: string,
   name: string,
@@ -47,7 +44,6 @@ export async function executeSecretPut(
   let secretValue = value;
 
   if (!secretValue) {
-    // TTY path — interactive prompt
     const result = await p.password({ message: `Enter value for ${name}` });
     if (p.isCancel(result)) process.exit(0);
     if (!result) return fail("no_input", "No value provided", "Pipe secret value to stdin");

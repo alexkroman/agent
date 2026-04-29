@@ -6,7 +6,6 @@ export type DeleteOpts = {
   url: string;
   slug: string;
   apiKey: string;
-  /** Optional fetch implementation for testing. Defaults to globalThis.fetch. */
   fetch?: typeof globalThis.fetch;
 };
 

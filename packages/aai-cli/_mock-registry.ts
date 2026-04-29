@@ -1,30 +1,22 @@
-/**
- * Starts a local Verdaccio npm registry, publishes workspace packages to it,
- * and configures the environment so npm/pnpm/yarn resolve from it.
- *
- * Workspace packages are never proxied to the real npm registry —
- * they are always served from verdaccio's local storage. Consumer projects
- * use a fresh pnpm store-dir to avoid stale content-addressable cache hits.
- */
+// Local Verdaccio registry for CLI integration tests. Workspace packages are
+// served only from verdaccio's local storage (never proxied to npmjs); consumer
+// projects use a fresh pnpm store-dir so the content-addressable cache can't
+// hand back stale tarballs published under the same name+version.
+
 import { type ChildProcess, execFileSync, fork } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
 export interface MockRegistry {
-  /** Local registry URL (http://localhost:<port>) */
   registryUrl: string;
-  /** The unique version string used for published workspace packages */
   testVersion: string;
-  /** Environment variables to set for child processes using this registry */
   env: Record<string, string>;
-  /** Stop the registry and clean up */
   stop: () => Promise<void>;
 }
 
 function writeConfig(configPath: string, port: number): void {
-  // Workspace packages are local-only.
-  // Everything else proxies to npmjs for third-party deps.
+  // Workspace packages are local-only; everything else proxies to npmjs.
   const yaml = `
 storage: ./storage
 uplinks:
@@ -89,9 +81,8 @@ async function killTree(pid: number): Promise<void> {
 }
 
 /**
- * Start a mock npm registry, build and publish workspace packages to it.
+ * Start a mock npm registry, then build and publish workspace packages to it.
  *
- * @param packagesDir - Path to the `packages/` directory in the monorepo
  * @param packageNames - Directory names under `packages/` to publish (e.g. ["aai", "aai-ui", "aai-cli"])
  */
 export async function startMockRegistry(

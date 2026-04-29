@@ -1,19 +1,10 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-/**
- * Shared HTTP helpers for platform API calls (deploy, delete, secrets).
- */
-
 export const HINT_INVALID_API_KEY =
   "Your API key may be invalid. Run `aai` to re-enter your AssemblyAI API key.";
 
-/**
- * Send an authenticated request to the platform API.
- *
- * Adds the `Authorization` header and, on network failure, throws with a
- * contextual hint (localhost → "is the dev server running?", remote →
- * "check your network connection").
- */
+const NETWORK_HINT = "Check your network connection and verify the server URL is correct.";
+
 export async function apiRequest(
   url: string,
   init: RequestInit & { apiKey: string; action: string },
@@ -27,21 +18,16 @@ export async function apiRequest(
   };
   try {
     return await fetchFn(url, { ...rest, headers });
-  } catch (err: unknown) {
-    const hint = "Check your network connection and verify the server URL is correct.";
-    throw new Error(`${action} failed: could not reach ${url}\n  ${hint}`, { cause: err });
+  } catch (err) {
+    throw new Error(`${action} failed: could not reach ${url}\n  ${NETWORK_HINT}`, { cause: err });
   }
 }
 
-/** Format a non-ok API response into a descriptive error. */
 export function apiError(action: string, status: number, body: string, hint?: string): Error {
   return new Error(`${action} failed (HTTP ${status}): ${body}${hint ? `\n  ${hint}` : ""}`);
 }
 
-/**
- * Like `apiRequest`, but throws on non-ok responses with status-specific hints.
- * The 401 hint is always included. Pass additional hints via `opts.hints`.
- */
+/** Like `apiRequest`, but throws on non-ok responses. 401 always includes the invalid-key hint. */
 export async function apiRequestOrThrow(
   url: string,
   init: RequestInit & { apiKey: string; action: string },

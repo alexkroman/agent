@@ -1,10 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-/**
- * Default index.html for agents with a custom client.tsx but no index.html.
- * Used by both the dev server (Vite HMR) and the production bundler.
- * Users can override by placing their own index.html in the project root.
- */
+// Fallback index.html for agents with a custom client.tsx but no index.html.
+// Used by both the dev server (Vite HMR) and the production bundler.
+// A user-supplied index.html in the project root takes precedence.
 
 import { existsSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -25,10 +23,6 @@ export const DEFAULT_HTML = `<!DOCTYPE html>
   </body>
 </html>`;
 
-/**
- * Vite plugin that serves a fallback index.html in dev mode when one doesn't
- * exist on disk. No-op if index.html exists (user override).
- */
 export function fallbackHtmlPlugin(root: string): Plugin {
   const htmlExists = existsSync(path.join(root, "index.html"));
   return {
@@ -49,15 +43,12 @@ export function fallbackHtmlPlugin(root: string): Plugin {
   };
 }
 
-/**
- * Write a temporary index.html for Vite build (HTML must be on disk for build).
- * Returns a cleanup function to remove it. No-op if index.html already exists.
- */
+// Vite build needs index.html on disk. Returns a cleanup that no-ops if the user already has one.
 export function writeTempHtml(root: string): () => void {
   const htmlPath = path.join(root, "index.html");
   if (existsSync(htmlPath))
     return () => {
-      /* no-op: user-provided */
+      /* user-provided html: nothing to clean up */
     };
   writeFileSync(htmlPath, DEFAULT_HTML);
   return () => {

@@ -7,13 +7,11 @@ import { log } from "./_ui.ts";
 
 type DeleteData = { slug: string };
 
-/** Execute delete and return structured result. */
 export async function executeDelete(opts: {
   cwd: string;
   server?: string;
 }): Promise<CommandResult<DeleteData>> {
-  const { cwd } = opts;
-  const { serverUrl, slug, apiKey } = await getServerInfo(cwd, opts.server);
+  const { serverUrl, slug, apiKey } = await getServerInfo(opts.cwd, opts.server);
 
   log.step(`Deleting ${slug}`);
   await runDelete({ url: serverUrl, slug, apiKey });

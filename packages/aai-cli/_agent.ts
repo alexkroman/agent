@@ -7,17 +7,19 @@ import { ensureApiKey, readProjectConfig } from "./_config.ts";
 export const DEFAULT_SERVER = "https://aai-agent.fly.dev";
 export const DEFAULT_DEV_SERVER = "http://localhost:8080";
 
-let _cachedMonorepoRoot: string | null | undefined;
+let cached: string | null | undefined;
 
 export function getMonorepoRoot(): string | null {
-  if (_cachedMonorepoRoot !== undefined) return _cachedMonorepoRoot;
+  if (cached !== undefined) return cached;
   const cliDir = path.dirname(fileURLToPath(import.meta.url));
-  const root1 = path.resolve(cliDir, "../..");
-  const root2 = path.resolve(cliDir, "../../..");
-  if (existsSync(path.join(root1, "pnpm-workspace.yaml"))) _cachedMonorepoRoot = root1;
-  else if (existsSync(path.join(root2, "pnpm-workspace.yaml"))) _cachedMonorepoRoot = root2;
-  else _cachedMonorepoRoot = null;
-  return _cachedMonorepoRoot;
+  for (const candidate of [path.resolve(cliDir, "../.."), path.resolve(cliDir, "../../..")]) {
+    if (existsSync(path.join(candidate, "pnpm-workspace.yaml"))) {
+      cached = candidate;
+      return cached;
+    }
+  }
+  cached = null;
+  return cached;
 }
 
 export function isDevMode(): boolean {
@@ -31,12 +33,19 @@ export function resolveServerUrl(explicit?: string, configUrl?: string): string 
   return configUrl ?? DEFAULT_SERVER;
 }
 
-export async function getServerInfo(cwd: string, explicitServer?: string, explicitApiKey?: string) {
+export async function getServerInfo(
+  cwd: string,
+  explicitServer?: string,
+  explicitApiKey?: string,
+): Promise<{ serverUrl: string; slug: string; apiKey: string }> {
   const config = await readProjectConfig(cwd);
   if (!config) {
     throw new Error("No .aai/project.json found — run `aai deploy` first");
   }
   const apiKey = explicitApiKey ?? (await ensureApiKey());
-  const serverUrl = resolveServerUrl(explicitServer, config.serverUrl);
-  return { serverUrl, slug: config.slug, apiKey };
+  return {
+    serverUrl: resolveServerUrl(explicitServer, config.serverUrl),
+    slug: config.slug,
+    apiKey,
+  };
 }
