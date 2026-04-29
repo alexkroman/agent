@@ -41,7 +41,12 @@ export const defaultCreateS2sWebSocket: CreateS2sWebSocket = (url, opts) =>
 
 const S2sMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("session.ready"), session_id: z.string() }).passthrough(),
-  z.object({ type: z.literal("session.updated") }).passthrough(),
+  z
+    .object({
+      type: z.literal("session.updated"),
+      config: z.object({ id: z.string().optional() }).passthrough().optional(),
+    })
+    .passthrough(),
   z.object({ type: z.literal("input.speech.started") }),
   z.object({ type: z.literal("input.speech.stopped") }),
   z.object({ type: z.literal("transcript.user"), item_id: z.string(), text: z.string() }),
@@ -92,6 +97,43 @@ type DispatchContext = {
   sid?: string;
 };
 
+function sidContext(ctx: DispatchContext): { sid?: string } {
+  return ctx.sid !== undefined ? { sid: ctx.sid } : {};
+}
+
+function dispatchReplyDone(
+  callbacks: S2sCallbacks,
+  msg: Extract<S2sServerMessage, { type: "reply.done" }>,
+  ctx: DispatchContext,
+): void {
+  // Log every raw reply.done arrival from the S2S service — one line per
+  // event, before any client-facing dedup — so we can cross-check which
+  // stalled sessions actually received reply.done for their turn.
+  ctx.log.info("S2S << reply.done", {
+    ...sidContext(ctx),
+    status: msg.status ?? "completed",
+  });
+  if (msg.status === "interrupted") callbacks.onCancelled();
+  else callbacks.onReplyDone();
+}
+
+function dispatchSessionError(
+  callbacks: S2sCallbacks,
+  msg: Extract<S2sServerMessage, { type: "session.error" }>,
+  ctx: DispatchContext,
+): void {
+  ctx.log.warn("S2S << session.error", {
+    ...sidContext(ctx),
+    code: msg.code,
+    message: msg.message,
+  });
+  if (msg.code === "session_not_found" || msg.code === "session_forbidden") {
+    callbacks.onSessionExpired();
+  } else {
+    callbacks.onError(new Error(msg.message));
+  }
+}
+
 function dispatchS2sMessage(
   callbacks: S2sCallbacks,
   msg: S2sServerMessage,
@@ -103,6 +145,11 @@ function dispatchS2sMessage(
       callbacks.onSessionReady(msg.session_id);
       break;
     case "session.updated":
+      // The S2S API conveys the session id via `config.id` here in the
+      // success path (no separate `session.ready` is emitted), so capture
+      // it as the provider session id when present — without it, resume on
+      // transient close can never run.
+      if (msg.config?.id !== undefined) callbacks.onSessionReady(msg.config.id);
       break;
     case "input.speech.started":
       if (!state.speechActive) {
@@ -129,25 +176,10 @@ function dispatchS2sMessage(
       callbacks.onToolCall(msg.call_id, msg.name, msg.args);
       break;
     case "reply.done":
-      // Log every raw reply.done arrival from the S2S service — one line per
-      // event, before any client-facing dedup — so we can cross-check which
-      // stalled sessions actually received reply.done for their turn.
-      ctx.log.info("S2S << reply.done", {
-        ...(ctx.sid !== undefined ? { sid: ctx.sid } : {}),
-        status: msg.status ?? "completed",
-      });
-      if (msg.status === "interrupted") {
-        callbacks.onCancelled();
-      } else {
-        callbacks.onReplyDone();
-      }
+      dispatchReplyDone(callbacks, msg, ctx);
       break;
     case "session.error":
-      if (msg.code === "session_not_found" || msg.code === "session_forbidden") {
-        callbacks.onSessionExpired();
-      } else {
-        callbacks.onError(new Error(msg.message));
-      }
+      dispatchSessionError(callbacks, msg, ctx);
       break;
     case "error":
       callbacks.onError(new Error(msg.message));
@@ -300,9 +332,10 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
     function logIncoming(obj: { type?: unknown }): void {
       // reply.audio and input.audio are ~95% of traffic — skip logging.
       if (obj.type === "reply.audio" || obj.type === "input.audio") return;
-      // reply.done gets a richer log (sid + status) inside dispatch;
-      // skip the generic line here to avoid a duplicate.
-      if (obj.type === "reply.done") return;
+      // reply.done and session.error get richer logs inside dispatch
+      // (sid + status / code + message); skip the generic line here to
+      // avoid a duplicate.
+      if (obj.type === "reply.done" || obj.type === "session.error") return;
       log.info(`S2S << ${obj.type}`);
     }
 

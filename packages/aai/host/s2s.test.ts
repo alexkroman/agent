@@ -567,18 +567,35 @@ describe("connectS2s", () => {
     // No error thrown = pass
   });
 
-  test("session.updated is silently ignored (no dispatch)", async () => {
+  test("session.updated without config.id is silently ignored (no dispatch)", async () => {
     const callbacks = makeMockCallbacks();
     const { raw } = await setupHandle(callbacks);
 
     raw.emit("message", Buffer.from(JSON.stringify({ type: "session.updated" })));
 
-    // session.updated is dropped — no callbacks fired
     expect(callbacks.onSessionReady).not.toHaveBeenCalled();
     expect(callbacks.onReplyStarted).not.toHaveBeenCalled();
     expect(callbacks.onReplyDone).not.toHaveBeenCalled();
     expect(callbacks.onSpeechStarted).not.toHaveBeenCalled();
     expect(callbacks.onSpeechStopped).not.toHaveBeenCalled();
+  });
+
+  test("session.updated with config.id dispatches 'onSessionReady' callback", async () => {
+    const callbacks = makeMockCallbacks();
+    const { raw } = await setupHandle(callbacks);
+
+    raw.emit(
+      "message",
+      Buffer.from(
+        JSON.stringify({
+          type: "session.updated",
+          config: { id: "sess_from_updated", system_prompt: "x", tools: [] },
+        }),
+      ),
+    );
+
+    expect(callbacks.onSessionReady).toHaveBeenCalledOnce();
+    expect(callbacks.onSessionReady).toHaveBeenCalledWith("sess_from_updated");
   });
 
   // ─── Close and error events ────────────────────────────────────────────

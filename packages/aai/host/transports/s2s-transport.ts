@@ -31,9 +31,9 @@ export type S2sTransportOptions = {
 
 /**
  * Close codes worth attempting `session.resume` on. These are network/server
- * blips, not protocol or auth violations. Per AssemblyAI's docs, sessions are
- * preserved for 30 s after disconnect, so resume is bounded by the window in
- * `RESUME_WINDOW_MS` below.
+ * blips, not protocol or auth violations. AssemblyAI keeps the session
+ * available for 30 s after disconnect; reconnect runs immediately on close,
+ * so the resume request reliably lands inside that window.
  */
 const TRANSIENT_CLOSE_CODES = new Set<number>([
   1005, // No Status Received (abnormal close, no frame)
@@ -42,22 +42,13 @@ const TRANSIENT_CLOSE_CODES = new Set<number>([
   3005, // Session Cancelled (unknown server error)
 ]);
 
-/**
- * AssemblyAI keeps the session alive for 30 s after disconnect; we leave a
- * little headroom so the resume request still fits inside that window after
- * the new WebSocket finishes opening.
- */
-const RESUME_WINDOW_MS = 25_000;
-
 export function createS2sTransport(opts: S2sTransportOptions): Transport {
   const log = opts.logger ?? consoleLogger;
   const createWs = opts.createWebSocket ?? defaultCreateS2sWebSocket;
   let handle: S2sHandle | null = null;
   let currentReplyId: string | null = null;
-  /** Most recent `session.ready` ID — present once the upstream session is established. */
+  /** Provider-side session id (from `session.ready` or `session.updated.config.id`). */
   let providerSessionId: string | null = null;
-  /** When the current session became ready; bounds the resume window. */
-  let sessionReadyAt = 0;
   /** Set by `stop()` so a deliberate close doesn't trigger a reconnect. */
   let closing = false;
   /**
@@ -76,12 +67,14 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
   function buildCallbacks(): S2sCallbacks {
     return {
       onSessionReady: (id) => {
+        const isFirstReady = providerSessionId === null;
         providerSessionId = id;
-        sessionReadyAt = Date.now();
         if (reconnecting) {
           reconnecting = false;
           reconnectInFlight = false;
           log.info("S2S resumed", { sid: opts.sid, sessionId: id });
+        } else if (isFirstReady) {
+          log.info("S2S session ready", { sid: opts.sid, sessionId: id });
         }
         opts.callbacks.onSessionReady?.(id);
       },
@@ -126,7 +119,7 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
     if (!TRANSIENT_CLOSE_CODES.has(code)) return false;
     if (providerSessionId === null) return false;
     if (reconnectInFlight) return false;
-    return sessionReadyAt > 0 && Date.now() - sessionReadyAt < RESUME_WINDOW_MS;
+    return true;
   }
 
   function emitFatalClose(code: number, reason: string, wasReconnecting: boolean): void {
