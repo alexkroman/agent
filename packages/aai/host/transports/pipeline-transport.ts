@@ -1,15 +1,11 @@
 // Copyright 2026 the AAI authors. MIT license.
 // Pipeline transport — STT → LLM → TTS orchestration behind the Transport interface.
-
+//
 // Pipeline mode executes tools inline via streamText's `tools.execute`.
 // `callbacks.onToolCall` is observability-only; runtime.ts routes it to
 // `client.toolCall` directly (bypassing SessionCore's tool-dispatch path,
 // which is S2S-only). `sendToolResult` is a no-op because results are
 // already handled by streamText.
-//
-// `conversationMessages` below is transport-local and currently uncapped —
-// SessionCore's `maxHistory` does not yet feed through. Long pipeline
-// sessions may accumulate unbounded context; revisit if it matters.
 
 import type { LanguageModel, ModelMessage } from "ai";
 import { stepCountIs, streamText } from "ai";
@@ -97,14 +93,8 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     });
 
   const { callbacks, sessionConfig } = opts;
-
-  // Derive the system prompt — pipeline mode always uses voice=true.
-  // In the refactored transport, we receive the final systemPrompt directly
-  // from sessionConfig (built by the caller). We use it as-is but also keep
-  // the hasTools logic available if the caller passes raw schemas.
   const systemPrompt = sessionConfig.systemPrompt;
 
-  // ---- State ----------------------------------------------------------------
   const sessionAbort = new AbortController();
   let audioReady = false;
   let terminated = false;
@@ -112,16 +102,13 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   let ttsSession: TtsSession | null = null;
   let turnController: AbortController | null = null;
   let nextReplyId = 0;
-  // Conversation history — seeded from sessionConfig.history if provided.
-  // Pipeline transport manages its own history since SessionCore doesn't own
-  // the conversation in pipeline mode (history is needed to build the LLM
-  // messages array for each turn).
+  // Pipeline transport manages its own history; SessionCore does not own the
+  // conversation in pipeline mode (we need it to build LLM messages per turn).
   const conversationMessages: Message[] = sessionConfig.history ? [...sessionConfig.history] : [];
   let turnPromise: Promise<void> | null = null;
   const sttSubs: Unsubscribe[] = [];
   const ttsSubs: Unsubscribe[] = [];
 
-  // ---- History helpers ------------------------------------------------------
   function pushMessages(...msgs: Message[]): void {
     conversationMessages.push(...msgs);
     if (conversationMessages.length > DEFAULT_MAX_HISTORY) {
@@ -133,16 +120,11 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     turnPromise = (turnPromise ?? Promise.resolve()).then(() => p);
   }
 
-  // ---- Error helpers --------------------------------------------------------
   function emitError(code: SessionErrorCode, message: string): void {
     callbacks.onError(code, message);
   }
 
-  // ---- Termination ----------------------------------------------------------
-  /**
-   * Tear down after an unrecoverable provider error. Aborts the in-flight
-   * turn, cancels TTS, signals providers to close. Idempotent.
-   */
+  // Idempotent teardown after an unrecoverable provider error.
   function terminate(): void {
     if (terminated) return;
     terminated = true;
@@ -155,7 +137,6 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     sessionAbort.abort();
   }
 
-  // ---- STT event handlers ---------------------------------------------------
   function onSttPartial(_text: string): void {
     if (terminated) return;
     if (turnController === null) return;
@@ -170,7 +151,6 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     if (terminated) return;
     const trimmed = text.trim();
     if (trimmed.length === 0) return;
-    // Replace in-flight turn if one is running (duplicate/late STT final).
     if (turnController !== null) {
       log.info("Pipeline replacing in-flight turn", { sid: opts.sid });
       turnController.abort();
@@ -192,7 +172,6 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     terminate();
   }
 
-  // ---- TTS event handlers ---------------------------------------------------
   function onTtsError(err: TtsError): void {
     if (terminated) return;
     log.error("TTS error", { code: err.code, message: err.message, sid: opts.sid });
@@ -200,7 +179,6 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     terminate();
   }
 
-  // ---- LLM streaming --------------------------------------------------------
   async function consumeLlmStream(
     ctl: AbortController,
     messages: ModelMessage[],
@@ -274,8 +252,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
           pendingSeparator = true;
           return;
         case "tool-call": {
-          // Option A: fire callbacks.onToolCall for observability only.
-          // Actual execution happens inline via toVercelTools.
+          // Observability only — actual execution happens inline via toVercelTools.
           const input = (part.input ?? {}) as Record<string, unknown>;
           callbacks.onToolCall(part.toolCallId ?? "", part.toolName ?? "", input);
           return;
@@ -292,17 +269,11 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     };
   }
 
-  // ---- TTS flush ------------------------------------------------------------
-  /**
-   * Flush TTS and wait for drain. Resolves on:
-   *   - TTS emits `done`
-   *   - `signal` aborts (barge-in / provider error / session stop)
-   *   - PIPELINE_FLUSH_TIMEOUT_MS elapses
-   * Resolves immediately if no TTS session.
-   */
+  // Resolves on TTS `done`, signal abort, or PIPELINE_FLUSH_TIMEOUT_MS elapsed.
   function flushTtsAndWait(signal: AbortSignal): Promise<void> {
     const tts = ttsSession;
     if (!tts) return Promise.resolve();
+    if (signal.aborted) return Promise.resolve();
     return new Promise<void>((resolve) => {
       let off: Unsubscribe | null = null;
       let timer: ReturnType<typeof setTimeout> | null = null;
@@ -322,24 +293,16 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
         resolve();
       };
       const onAbort = () => finish();
-      if (signal.aborted) {
-        resolve();
-        return;
-      }
       signal.addEventListener("abort", onAbort, { once: true });
       off = tts.on("done", finish);
       timer = setTimeout(() => {
-        log.warn("TTS flush timeout", {
-          sid: opts.sid,
-          timeoutMs: PIPELINE_FLUSH_TIMEOUT_MS,
-        });
+        log.warn("TTS flush timeout", { sid: opts.sid, timeoutMs: PIPELINE_FLUSH_TIMEOUT_MS });
         finish();
       }, PIPELINE_FLUSH_TIMEOUT_MS);
       tts.flush();
     });
   }
 
-  // ---- Turn orchestration ---------------------------------------------------
   async function runTurn(userText: string): Promise<void> {
     const replyId = `pipeline-${++nextReplyId}`;
     callbacks.onReplyStarted(replyId);
@@ -366,7 +329,6 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       return;
     }
 
-    // Emit the complete transcript once the LLM finishes streaming.
     if (accumulated.length > 0) {
       callbacks.onAgentTranscript(accumulated, false);
       pushMessages({ role: "assistant", content: accumulated });
@@ -404,14 +366,12 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       return;
     }
 
-    // Do NOT call callbacks.onAudioDone() here — session-core's flushReply
-    // (triggered by onReplyDone) emits audioDone + replyDone together, matching
-    // the S2S transport contract. Calling it here would double-fire audio_done.
+    // See runTurn: onReplyDone triggers session-core's flushReply which emits
+    // audioDone + replyDone together; firing onAudioDone here would double-fire.
     callbacks.onReplyDone();
     if (turnController === ctl) turnController = null;
   }
 
-  // ---- Provider lifecycle ---------------------------------------------------
   function reportOpenRejection(which: "stt" | "tts", reason: unknown): void {
     const msg = errorMessage(reason);
     log.error(`${which === "stt" ? "STT" : "TTS"} open failed`, {
@@ -443,10 +403,8 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
         callbacks.onAudioChunk(new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength));
       }),
     );
-    // Note: `done` is NOT subscribed here. flushTtsAndWait() attaches a
-    // one-shot listener per-turn so it knows when synthesis drains. Calling
-    // callbacks.onAudioDone() is done explicitly at the end of runTurn /
-    // runGreeting — not via a persistent subscription — to avoid double-firing.
+    // `done` is intentionally NOT subscribed persistently — flushTtsAndWait
+    // attaches a one-shot listener per-turn to avoid double-firing audio_done.
     ttsSubs.push(session.on("error", onTtsError));
   }
 
@@ -479,7 +437,6 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     if (!aborted && (sttFailed || ttsFailed)) terminate();
   }
 
-  // ---- Greeting on audio ready ----------------------------------------------
   function onAudioReady(): void {
     if (audioReady || terminated) return;
     audioReady = true;
@@ -492,13 +449,11 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     chainTurn(turn);
   }
 
-  // ---- Transport interface --------------------------------------------------
   return {
     async start(): Promise<void> {
       await openProviders();
-      // In S2S mode, onSessionReady fires when the provider acknowledges the
-      // session. In pipeline mode, we fire it immediately after providers open
-      // (which is the equivalent "ready" signal), then trigger greeting.
+      // S2S fires onSessionReady when the provider acks; in pipeline mode the
+      // equivalent "ready" signal is providers having opened.
       callbacks.onSessionReady?.(opts.sid);
       onAudioReady();
     },
@@ -522,8 +477,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
 
     sendUserAudio(bytes: Uint8Array): void {
       if (terminated || !audioReady) return;
-      const offset = bytes.byteOffset;
-      const length = bytes.byteLength;
+      const { byteOffset: offset, byteLength: length } = bytes;
       let pcm: Int16Array;
       if (offset % 2 === 0 && length % 2 === 0) {
         pcm = new Int16Array(bytes.buffer, offset, length / 2);
@@ -535,8 +489,8 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       sttSession?.sendAudio(pcm);
     },
 
-    // Option A: tool execution stays inside toVercelTools/streamText.
-    // sendToolResult is a no-op for pipeline mode.
+    // Tool execution stays inside toVercelTools/streamText; results aren't
+    // routed through the transport.
     // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op for pipeline mode
     sendToolResult(_callId: string, _result: string): void {},
 
@@ -545,11 +499,9 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       turnController?.abort();
       turnController = null;
       ttsSession?.cancel();
-      // Do NOT call callbacks.onCancelled() here. This method is invoked from
-      // session-core.onCancel (client-initiated cancel), which calls
-      // client.cancelled() itself — firing onCancelled here would double-cancel.
-      // Barge-in (STT partial) fires callbacks.onCancelled() directly in
-      // onSttPartial, where the cancel originates inside the transport.
+      // Do NOT call callbacks.onCancelled() here — session-core.onCancel
+      // (client-initiated) calls client.cancelled() itself. Barge-in fires
+      // onCancelled directly in onSttPartial where the cancel originates here.
     },
   };
 }

@@ -21,8 +21,7 @@ export function createErrorHandler(opts?: { exposeErrors?: boolean }): ErrorHand
     }
     const errMsg = errorMessage(err);
     const stack = err instanceof Error ? err.stack : "";
-    const path = new URL(c.req.url).pathname;
-    console.error(`Unhandled error on ${path}: ${errMsg}\n${stack}`);
+    console.error(`Unhandled error on ${c.req.path}: ${errMsg}\n${stack}`);
     return c.json({ error: opts?.exposeErrors ? errMsg : "Internal server error" }, 500);
   };
 }

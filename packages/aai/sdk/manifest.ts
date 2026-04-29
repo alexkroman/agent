@@ -144,22 +144,14 @@ export function parseManifest(input: unknown): Manifest {
   const parsed = ManifestSchema.parse(input);
   const mode = assertProviderTriple(parsed.stt, parsed.llm, parsed.tts);
   return {
-    name: parsed.name,
+    ...parsed,
     systemPrompt: parsed.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
     greeting: parsed.greeting ?? DEFAULT_GREETING,
-    sttPrompt: parsed.sttPrompt,
     builtinTools: parsed.builtinTools ?? [],
     maxSteps: parsed.maxSteps ?? 5,
     toolChoice: parsed.toolChoice ?? "auto",
-    idleTimeoutMs: parsed.idleTimeoutMs,
-    theme: parsed.theme,
     tools: parsed.tools ?? {},
     allowedHosts: parsed.allowedHosts ?? [],
-    stt: parsed.stt,
-    llm: parsed.llm,
-    tts: parsed.tts,
-    kv: parsed.kv,
-    vector: parsed.vector,
     mode,
   };
 }

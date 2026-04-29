@@ -12,6 +12,10 @@ import { DEFAULT_STT_SAMPLE_RATE, DEFAULT_TTS_SAMPLE_RATE } from "../sdk/constan
 /** Structured context attached to log messages. */
 export type LogContext = Record<string, unknown>;
 
+type LogLevel = "info" | "warn" | "error" | "debug";
+
+type LogFn = (msg: string, ctx?: LogContext) => void;
+
 /**
  * Structured logger interface. Used by tests to suppress output and by
  * consumers to plug in custom logging backends.
@@ -27,15 +31,10 @@ export type LogContext = Record<string, unknown>;
  * createServer({ agent, logger: myLogger });
  * ```
  */
-export type Logger = {
-  info(msg: string, ctx?: LogContext): void;
-  warn(msg: string, ctx?: LogContext): void;
-  error(msg: string, ctx?: LogContext): void;
-  debug(msg: string, ctx?: LogContext): void;
-};
+export type Logger = Record<LogLevel, LogFn>;
 
-function consoleLog(fn: typeof console.log): Logger[keyof Logger] {
-  return (msg: string, ctx?: LogContext) => (ctx ? fn(msg, ctx) : fn(msg));
+function consoleLog(fn: typeof console.log): LogFn {
+  return (msg, ctx) => (ctx ? fn(msg, ctx) : fn(msg));
 }
 
 /** Default console-backed logger. */
@@ -46,29 +45,24 @@ export const consoleLogger: Logger = {
   debug: consoleLog(console.debug),
 };
 
+function jsonLog(level: LogLevel): LogFn {
+  const out = level === "error" || level === "warn" ? process.stderr : process.stdout;
+  return (msg, ctx) => {
+    const entry: Record<string, unknown> = {
+      timestamp: new Date().toISOString(),
+      level,
+      msg,
+      ...ctx,
+    };
+    out.write(`${JSON.stringify(entry)}\n`);
+  };
+}
+
 /**
  * Structured JSON logger for production diagnostics. Each log entry is a
  * single-line JSON object with `timestamp`, `level`, `msg`, and any
  * caller-provided context fields.
  */
-function jsonLog(level: string) {
-  return (msg: string, ctx?: LogContext): void => {
-    const entry: Record<string, unknown> = {
-      timestamp: new Date().toISOString(),
-      level,
-      msg,
-    };
-
-    if (ctx) {
-      Object.assign(entry, ctx);
-    }
-
-    // Single-line JSON to stdout/stderr based on level.
-    const out = level === "error" || level === "warn" ? process.stderr : process.stdout;
-    out.write(`${JSON.stringify(entry)}\n`);
-  };
-}
-
 export const jsonLogger: Logger = {
   info: jsonLog("info"),
   warn: jsonLog("warn"),

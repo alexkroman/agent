@@ -70,11 +70,15 @@ export type SessionMode = "s2s" | "pipeline";
  * none of them. Anything in-between is a configuration error.
  */
 export function assertProviderTriple(stt: unknown, llm: unknown, tts: unknown): SessionMode {
-  const count = (stt != null ? 1 : 0) + (llm != null ? 1 : 0) + (tts != null ? 1 : 0);
-  if (count !== 0 && count !== 3) {
+  const hasStt = stt != null;
+  const hasLlm = llm != null;
+  const hasTts = tts != null;
+  const allSet = hasStt && hasLlm && hasTts;
+  const noneSet = !(hasStt || hasLlm || hasTts);
+  if (!(allSet || noneSet)) {
     throw new Error("stt, llm, and tts must be set together");
   }
-  return count === 3 ? "pipeline" : "s2s";
+  return allSet ? "pipeline" : "s2s";
 }
 
 // -------- STT openable (host-only) ------------------------------------------

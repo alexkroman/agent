@@ -78,41 +78,38 @@ export function createSandboxPool(opts: SandboxPoolOptions): SandboxPool {
   const ready: WarmHarness[] = [];
   const pending = new Set<Promise<void>>();
   let shutdown = false;
-  /** Sticks once a spawn rejection has stopped replenishment. */
   let stoppedDueToFailure = false;
 
-  // Pull-based gauge collection: prom-client invokes `collect` whenever
-  // the metric is serialized (or read via `.get()` in tests). Each new
-  // pool overwrites these — fine, since there's only ever one pool per
-  // process in production.
+  // prom-client invokes `collect` whenever the metric is serialized.
+  // Each new pool overwrites these — fine, since there's only ever one
+  // pool per process in production.
   // biome-ignore lint/suspicious/noExplicitAny: prom-client typing limitation
-  (metrics.warmPoolReady as any).collect = function (this: typeof metrics.warmPoolReady) {
-    this.set(ready.length);
-  };
+  (metrics.warmPoolReady as any).collect = () => metrics.warmPoolReady.set(ready.length);
   // biome-ignore lint/suspicious/noExplicitAny: prom-client typing limitation
-  (metrics.warmPoolPending as any).collect = function (this: typeof metrics.warmPoolPending) {
-    this.set(pending.size);
-  };
+  (metrics.warmPoolPending as any).collect = () => metrics.warmPoolPending.set(pending.size);
+
+  function recordSpawnFailure(err: unknown): void {
+    stoppedDueToFailure = true;
+    metrics.warmPoolSpawnFailed.inc();
+    console.warn("Sandbox pool: warm spawn failed", { error: errorMessage(err) });
+  }
 
   function evictDead(handle: WarmHarness): void {
     const idx = ready.indexOf(handle);
     if (idx === -1) return;
     ready.splice(idx, 1);
-    // Do NOT auto-replenish here. If spawns are dying immediately (e.g.
-    // missing Deno binary), auto-replenish would create a tight fail loop.
-    // The next `acquire()` will top up the pool when traffic arrives.
+    // Do NOT auto-replenish here — if spawns die immediately (e.g. missing
+    // Deno binary) it would create a tight fail loop. The next `acquire()`
+    // tops up the pool when traffic arrives.
   }
 
-  /** Kick off a single async spawn. Returns immediately. */
   function spawnOne(): void {
     if (shutdown || stoppedDueToFailure) return;
     let p: Promise<WarmHarness>;
     try {
       p = opts.spawn();
     } catch (err: unknown) {
-      stoppedDueToFailure = true;
-      metrics.warmPoolSpawnFailed.inc();
-      console.warn("Sandbox pool: warm spawn failed", { error: errorMessage(err) });
+      recordSpawnFailure(err);
       return;
     }
     const tracked = (async () => {
@@ -120,17 +117,11 @@ export function createSandboxPool(opts: SandboxPoolOptions): SandboxPool {
       try {
         warm = await p;
       } catch (err: unknown) {
-        stoppedDueToFailure = true;
-        metrics.warmPoolSpawnFailed.inc();
-        console.warn("Sandbox pool: warm spawn failed", { error: errorMessage(err) });
+        recordSpawnFailure(err);
         return;
       }
       if (shutdown) {
-        try {
-          await warm.cleanup();
-        } catch {
-          // best-effort cleanup
-        }
+        await warm.cleanup().catch(() => undefined);
         return;
       }
       warm.onExit(() => evictDead(warm));
@@ -142,50 +133,36 @@ export function createSandboxPool(opts: SandboxPoolOptions): SandboxPool {
   }
 
   function replenish(): void {
-    if (shutdown || stoppedDueToFailure) return;
-    while (ready.length + pending.size < targetSize) {
+    while (!(shutdown || stoppedDueToFailure) && ready.length + pending.size < targetSize) {
       spawnOne();
-      // Defensive: if the synchronous part of spawn() failed and bumped
-      // `stoppedDueToFailure`, break out of the loop.
-      if (stoppedDueToFailure) break;
     }
   }
 
-  // Kick off initial spawns. They run in the background; the constructor
-  // returns immediately so server startup is not delayed by the pool.
   replenish();
 
   return {
     async acquire(): Promise<WarmHarness | null> {
-      if (shutdown) {
-        const result: WarmPoolAcquireResult = "miss";
-        metrics.warmPoolAcquire.inc({ result });
-        return null;
-      }
-      // Pop until we find a live one; replenish covers losses.
       let warm: WarmHarness | undefined;
-      for (;;) {
-        const next = ready.shift();
-        if (!next) break;
-        if (next.alive()) {
-          warm = next;
-          break;
+      if (!shutdown) {
+        for (let next = ready.shift(); next; next = ready.shift()) {
+          if (next.alive()) {
+            warm = next;
+            break;
+          }
+          void next.cleanup().catch(() => undefined);
         }
-        // Dead — discard and continue
-        void next.cleanup().catch(() => undefined);
+        replenish();
       }
       const result: WarmPoolAcquireResult = warm ? "hit" : "miss";
       metrics.warmPoolAcquire.inc({ result });
-      // Replenish in the background regardless of hit/miss
-      replenish();
       return warm ?? null;
     },
 
     async shutdown(): Promise<void> {
       shutdown = true;
       const idle = ready.splice(0, ready.length);
-      // Wait for any in-flight spawns to settle so their warm harnesses
-      // get cleaned up by the .then handler above.
+      // Wait for in-flight spawns first so their warm harnesses get
+      // cleaned up by the shutdown branch in spawnOne.
       await Promise.allSettled([...pending]);
       await Promise.allSettled(idle.map((h) => h.cleanup()));
     },

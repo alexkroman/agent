@@ -2,153 +2,89 @@
 import { describe, expect, test } from "vitest";
 import { matchesAllowedHost, validateAllowedHostPattern } from "./allowed-hosts.ts";
 
+function expectInvalid(pattern: string, reasonPattern?: RegExp): void {
+  const result = validateAllowedHostPattern(pattern);
+  // biome-ignore lint/suspicious/noMisplacedAssertion: shared assertion helper used inside test()
+  expect(result.valid).toBe(false);
+  if (reasonPattern) {
+    // biome-ignore lint/suspicious/noMisplacedAssertion: shared assertion helper used inside test()
+    expect((result as { valid: false; reason: string }).reason).toMatch(reasonPattern);
+  }
+}
+
 describe("validateAllowedHostPattern", () => {
   describe("valid patterns", () => {
-    test("accepts exact hostname", () => {
-      expect(validateAllowedHostPattern("api.weather.com")).toEqual({
-        valid: true,
-      });
-    });
-
-    test("accepts exact hostname without subdomain", () => {
-      expect(validateAllowedHostPattern("example.com")).toEqual({ valid: true });
-    });
-
-    test("accepts wildcard subdomain", () => {
-      expect(validateAllowedHostPattern("*.mycompany.com")).toEqual({
-        valid: true,
-      });
-    });
-
-    test("accepts wildcard with multiple domain levels", () => {
-      expect(validateAllowedHostPattern("*.api.mycompany.com")).toEqual({
-        valid: true,
-      });
+    test.each([
+      ["api.weather.com"],
+      ["example.com"],
+      ["*.mycompany.com"],
+      ["*.api.mycompany.com"],
+    ])("accepts %s", (pattern) => {
+      expect(validateAllowedHostPattern(pattern)).toEqual({ valid: true });
     });
   });
 
   describe("rejects bare wildcards", () => {
     test("rejects bare *", () => {
-      const result = validateAllowedHostPattern("*");
-      expect(result.valid).toBe(false);
-      expect((result as { valid: false; reason: string }).reason).toMatch(/bare/i);
+      expectInvalid("*", /bare/i);
     });
 
     test("rejects bare **", () => {
-      const result = validateAllowedHostPattern("**");
-      expect(result.valid).toBe(false);
+      expectInvalid("**");
     });
   });
 
   describe("rejects wildcard in non-leading position", () => {
-    test("rejects wildcard in middle position", () => {
-      const result = validateAllowedHostPattern("api.*.com");
-      expect(result.valid).toBe(false);
-    });
-
-    test("rejects wildcard at end", () => {
-      const result = validateAllowedHostPattern("api.com.*");
-      expect(result.valid).toBe(false);
+    test.each([["api.*.com"], ["api.com.*"]])("rejects %s", (pattern) => {
+      expectInvalid(pattern);
     });
   });
 
   describe("rejects IP addresses", () => {
-    test("rejects IPv4 address", () => {
-      const result = validateAllowedHostPattern("192.168.1.1");
-      expect(result.valid).toBe(false);
-      expect((result as { valid: false; reason: string }).reason).toMatch(/ip/i);
-    });
-
-    test("rejects IPv4 loopback", () => {
-      const result = validateAllowedHostPattern("127.0.0.1");
-      expect(result.valid).toBe(false);
-    });
-
-    test("rejects IPv6 address", () => {
-      const result = validateAllowedHostPattern("::1");
-      expect(result.valid).toBe(false);
-      expect((result as { valid: false; reason: string }).reason).toMatch(/ip/i);
-    });
-
-    test("rejects full IPv6 address", () => {
-      const result = validateAllowedHostPattern("2001:db8::1");
-      expect(result.valid).toBe(false);
-      expect((result as { valid: false; reason: string }).reason).toMatch(/ip/i);
+    test.each([
+      ["192.168.1.1", /ip/i],
+      ["127.0.0.1", undefined],
+      ["::1", /ip/i],
+      ["2001:db8::1", /ip/i],
+    ])("rejects %s", (pattern, reason) => {
+      expectInvalid(pattern, reason);
     });
   });
 
   describe("rejects private TLDs", () => {
-    test("rejects *.local", () => {
-      const result = validateAllowedHostPattern("*.local");
-      expect(result.valid).toBe(false);
-    });
-
-    test("rejects *.internal", () => {
-      const result = validateAllowedHostPattern("*.internal");
-      expect(result.valid).toBe(false);
-    });
-
-    test("rejects *.localhost", () => {
-      const result = validateAllowedHostPattern("*.localhost");
-      expect(result.valid).toBe(false);
-    });
-
-    test("rejects exact match foo.local", () => {
-      const result = validateAllowedHostPattern("foo.local");
-      expect(result.valid).toBe(false);
-    });
-
-    test("rejects exact match foo.internal", () => {
-      const result = validateAllowedHostPattern("foo.internal");
-      expect(result.valid).toBe(false);
-    });
-
-    test("rejects exact match foo.localhost", () => {
-      const result = validateAllowedHostPattern("foo.localhost");
-      expect(result.valid).toBe(false);
+    test.each([
+      ["*.local"],
+      ["*.internal"],
+      ["*.localhost"],
+      ["foo.local"],
+      ["foo.internal"],
+      ["foo.localhost"],
+    ])("rejects %s", (pattern) => {
+      expectInvalid(pattern);
     });
   });
 
   describe("rejects cloud metadata hostnames", () => {
-    test("rejects metadata.google.internal", () => {
-      const result = validateAllowedHostPattern("metadata.google.internal");
-      expect(result.valid).toBe(false);
-    });
-
-    test("rejects instance-data.ec2.internal", () => {
-      const result = validateAllowedHostPattern("instance-data.ec2.internal");
-      expect(result.valid).toBe(false);
+    test.each([
+      ["metadata.google.internal"],
+      ["instance-data.ec2.internal"],
+    ])("rejects %s", (pattern) => {
+      expectInvalid(pattern);
     });
   });
 
   describe("rejects empty and malformed patterns", () => {
     test("rejects empty string", () => {
-      const result = validateAllowedHostPattern("");
-      expect(result.valid).toBe(false);
+      expectInvalid("");
     });
 
-    test("rejects pattern with protocol", () => {
-      const result = validateAllowedHostPattern("https://api.example.com");
-      expect(result.valid).toBe(false);
-      expect((result as { valid: false; reason: string }).reason).toMatch(/protocol/i);
-    });
-
-    test("rejects pattern with path", () => {
-      const result = validateAllowedHostPattern("api.example.com/path");
-      expect(result.valid).toBe(false);
-      expect((result as { valid: false; reason: string }).reason).toMatch(/path/i);
-    });
-
-    test("rejects pattern with query", () => {
-      const result = validateAllowedHostPattern("api.example.com?query=1");
-      expect(result.valid).toBe(false);
-      expect((result as { valid: false; reason: string }).reason).toMatch(/query/i);
-    });
-
-    test("rejects pattern with port", () => {
-      const result = validateAllowedHostPattern("api.example.com:8080");
-      expect(result.valid).toBe(false);
-      expect((result as { valid: false; reason: string }).reason).toMatch(/port/i);
+    test.each([
+      ["https://api.example.com", /protocol/i],
+      ["api.example.com/path", /path/i],
+      ["api.example.com?query=1", /query/i],
+      ["api.example.com:8080", /port/i],
+    ])("rejects %s", (pattern, reason) => {
+      expectInvalid(pattern, reason);
     });
   });
 });

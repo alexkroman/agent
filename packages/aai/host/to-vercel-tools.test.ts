@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
+import type { Tool, ToolExecutionOptions } from "ai";
 import { describe, expect, test, vi } from "vitest";
-import type { ExecuteTool, ToolSchema } from "../sdk/_internal-types.ts";
+import type { ExecuteTool, ExecuteToolOptions, ToolSchema } from "../sdk/_internal-types.ts";
 import type { Message } from "../sdk/types.ts";
 import { toVercelTools } from "./to-vercel-tools.ts";
 
@@ -17,6 +18,15 @@ const schemas: ToolSchema[] = [
   },
 ];
 
+function runTool(
+  tool: Tool | undefined,
+  args: Readonly<Record<string, unknown>>,
+  options: ToolExecutionOptions,
+): Promise<unknown> {
+  if (!tool?.execute) throw new Error("tool.execute missing");
+  return tool.execute(args, options);
+}
+
 describe("toVercelTools", () => {
   test("produces one Vercel AI SDK tool per schema, keyed by name", () => {
     const executeTool = vi.fn(async () => "sunny");
@@ -26,9 +36,7 @@ describe("toVercelTools", () => {
       messages: () => [],
     });
     expect(Object.keys(tools)).toEqual(["get_weather"]);
-    expect(tools.get_weather).toMatchObject({
-      description: "Look up the weather.",
-    });
+    expect(tools.get_weather).toMatchObject({ description: "Look up the weather." });
   });
 
   test("execute delegates to ctx.executeTool with (name, args, sessionId, messages)", async () => {
@@ -38,9 +46,13 @@ describe("toVercelTools", () => {
       sessionId: "sess-42",
       messages: () => [{ role: "user", content: "?" }],
     });
-    const result = await tools.get_weather?.execute?.(
+    const result = await runTool(
+      tools.get_weather,
       { city: "SF" },
-      { toolCallId: "tc-1", messages: [] },
+      {
+        toolCallId: "tc-1",
+        messages: [],
+      },
     );
     expect(executeTool).toHaveBeenCalledWith(
       "get_weather",
@@ -54,103 +66,77 @@ describe("toVercelTools", () => {
 
   test("execute passes through abort signal when provided", async () => {
     const controller = new AbortController();
-    const executeTool = vi.fn(
-      async (
-        _n: string,
-        _a: Readonly<Record<string, unknown>>,
-        _s?: string,
-        _m?: readonly unknown[],
-        opts?: { signal?: AbortSignal },
-      ) => {
-        expect(opts?.signal).toBe(controller.signal);
-        return "ok";
-      },
-    );
+    let received: ExecuteToolOptions | undefined;
+    const executeTool: ExecuteTool = async (_n, _a, _s, _m, opts) => {
+      received = opts;
+      return "ok";
+    };
     const tools = toVercelTools(schemas, {
       executeTool,
       sessionId: "s",
       messages: () => [],
       signal: controller.signal,
     });
-    await tools.get_weather?.execute?.({ city: "NY" }, { toolCallId: "tc-2", messages: [] });
-    expect(executeTool).toHaveBeenCalledTimes(1);
+    await runTool(tools.get_weather, { city: "NY" }, { toolCallId: "tc-2", messages: [] });
+    expect(received?.signal).toBe(controller.signal);
   });
 
   test("execute prefers options.abortSignal over ctx.signal", async () => {
     const ctxController = new AbortController();
     const callController = new AbortController();
-    let receivedSignal: AbortSignal | undefined;
-    const executeTool = vi.fn(
-      async (
-        _n: string,
-        _a: Readonly<Record<string, unknown>>,
-        _s?: string,
-        _m?: readonly unknown[],
-        opts?: { signal?: AbortSignal },
-      ) => {
-        receivedSignal = opts?.signal;
-        return "ok";
-      },
-    );
+    let received: ExecuteToolOptions | undefined;
+    const executeTool: ExecuteTool = async (_n, _a, _s, _m, opts) => {
+      received = opts;
+      return "ok";
+    };
     const tools = toVercelTools(schemas, {
       executeTool,
       sessionId: "s",
       messages: () => [],
       signal: ctxController.signal,
     });
-    await tools.get_weather?.execute?.(
+    await runTool(
+      tools.get_weather,
       { city: "NY" },
-      { toolCallId: "tc-1", messages: [], abortSignal: callController.signal },
+      {
+        toolCallId: "tc-1",
+        messages: [],
+        abortSignal: callController.signal,
+      },
     );
-    expect(receivedSignal).toBe(callController.signal);
+    expect(received?.signal).toBe(callController.signal);
   });
 
   test("execute falls back to ctx.signal when options.abortSignal is absent", async () => {
     const ctxController = new AbortController();
-    let receivedSignal: AbortSignal | undefined;
-    const executeTool = vi.fn(
-      async (
-        _n: string,
-        _a: Readonly<Record<string, unknown>>,
-        _s?: string,
-        _m?: readonly unknown[],
-        opts?: { signal?: AbortSignal },
-      ) => {
-        receivedSignal = opts?.signal;
-        return "ok";
-      },
-    );
+    let received: ExecuteToolOptions | undefined;
+    const executeTool: ExecuteTool = async (_n, _a, _s, _m, opts) => {
+      received = opts;
+      return "ok";
+    };
     const tools = toVercelTools(schemas, {
       executeTool,
       sessionId: "s",
       messages: () => [],
       signal: ctxController.signal,
     });
-    await tools.get_weather?.execute?.({ city: "NY" }, { toolCallId: "tc-2", messages: [] });
-    expect(receivedSignal).toBe(ctxController.signal);
+    await runTool(tools.get_weather, { city: "NY" }, { toolCallId: "tc-2", messages: [] });
+    expect(received?.signal).toBe(ctxController.signal);
   });
 
   test("execute propagates toolCallId from options", async () => {
-    let receivedCallId: string | undefined;
-    const executeTool = vi.fn(
-      async (
-        _n: string,
-        _a: Readonly<Record<string, unknown>>,
-        _s?: string,
-        _m?: readonly unknown[],
-        opts?: { toolCallId?: string },
-      ) => {
-        receivedCallId = opts?.toolCallId;
-        return "ok";
-      },
-    );
+    let received: ExecuteToolOptions | undefined;
+    const executeTool: ExecuteTool = async (_n, _a, _s, _m, opts) => {
+      received = opts;
+      return "ok";
+    };
     const tools = toVercelTools(schemas, {
       executeTool,
       sessionId: "s",
       messages: () => [],
     });
-    await tools.get_weather?.execute?.({ city: "NY" }, { toolCallId: "tc-3", messages: [] });
-    expect(receivedCallId).toBe("tc-3");
+    await runTool(tools.get_weather, { city: "NY" }, { toolCallId: "tc-3", messages: [] });
+    expect(received?.toolCallId).toBe("tc-3");
   });
 });
 
@@ -161,7 +147,6 @@ describe("toVercelTools — message snapshot isolation", () => {
 
     const executeTool: ExecuteTool = async (_name, _args, _sid, msgs) => {
       observedInsideExecute = msgs;
-      // Mutate the original array; the snapshot we captured must be unaffected.
       messagesBox.messages.push({ role: "user", content: "second" });
       return "ok";
     };
@@ -182,13 +167,9 @@ describe("toVercelTools — message snapshot isolation", () => {
       },
     );
 
-    const t = tools.t;
-    if (!t?.execute) throw new Error("tool.execute missing");
-    await t.execute({}, { toolCallId: "c1", messages: [] });
+    await runTool(tools.t, {}, { toolCallId: "c1", messages: [] });
 
-    // The caller-observable messages array has 2 entries after the push.
     expect(messagesBox.messages).toHaveLength(2);
-    // But the snapshot the tool executed against was frozen at length 1.
     expect(observedInsideExecute).toHaveLength(1);
     expect(observedInsideExecute?.[0]).toMatchObject({ content: "first" });
   });

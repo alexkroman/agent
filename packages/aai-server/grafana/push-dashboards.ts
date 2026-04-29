@@ -13,14 +13,8 @@ const FOLDER_UID = "aai-agent";
 const FOLDER_TITLE = "aai-agent";
 const BASE = "https://fly-metrics.net";
 
-type Args = { dryRun: boolean };
-
-function parseArgs(argv: string[]): Args {
-  return { dryRun: argv.includes("--dry-run") };
-}
-
 async function main(): Promise<void> {
-  const { dryRun } = parseArgs(process.argv.slice(2));
+  const dryRun = process.argv.includes("--dry-run");
   const token = process.env.GRAFANA_TOKEN;
   if (!token) {
     console.error("GRAFANA_TOKEN not set in env");
@@ -32,7 +26,6 @@ async function main(): Promise<void> {
     "Content-Type": "application/json",
   };
 
-  // 1. Ensure folder
   const folderUrl = `${BASE}/api/folders`;
   const folderBody = JSON.stringify({ uid: FOLDER_UID, title: FOLDER_TITLE });
   if (dryRun) {
@@ -43,13 +36,13 @@ async function main(): Promise<void> {
       headers,
       body: folderBody,
     });
+    // 409/412: folder already exists — non-fatal.
     if (!res.ok && res.status !== 409 && res.status !== 412) {
       console.error(`folder create failed: ${res.status} ${await res.text()}`);
       process.exit(1);
     }
   }
 
-  // 2. Push dashboards
   const dir = path.resolve(import.meta.dirname, "dashboards");
   const files = (await readdir(dir)).filter((f) => f.endsWith(".json"));
   const url = `${BASE}/api/dashboards/db`;
@@ -57,16 +50,16 @@ async function main(): Promise<void> {
   let failures = 0;
   for (const f of files) {
     const dashboard = JSON.parse(await readFile(path.join(dir, f), "utf-8"));
+    if (dryRun) {
+      console.info(`[dry-run] POST ${url} (uid=${dashboard.uid})`);
+      continue;
+    }
     const body = JSON.stringify({
       dashboard,
       folderUid: FOLDER_UID,
       overwrite: true,
       message: "Updated by push-dashboards.ts",
     });
-    if (dryRun) {
-      console.info(`[dry-run] POST ${url} (uid=${dashboard.uid})`);
-      continue;
-    }
     const res = await fetch(url, { method: "POST", headers, body });
     if (!res.ok) {
       console.error(`push ${f} failed: ${res.status} ${await res.text()}`);

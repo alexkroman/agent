@@ -1,12 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
-/** Unit test for the Rime TTS adapter. Mocks the `ws` package. */
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { openRime, type RimeSession } from "./rime.ts";
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Fake WebSocket — hoisted so `vi.mock` factory can reference it
-// ──────────────────────────────────────────────────────────────────────────────
 
 type WsEvent = "open" | "message" | "error" | "close";
 type WsListener = (...args: unknown[]) => void;
@@ -15,19 +10,17 @@ const { FakeWebSocket } = vi.hoisted(() => {
   class FakeWebSocket {
     static OPEN = 1;
     static CLOSED = 3;
+    static instances: FakeWebSocket[] = [];
 
     readyState = FakeWebSocket.OPEN;
     sent: string[] = [];
-    private readonly listeners = new Map<string, WsListener[]>();
-
-    static instances: FakeWebSocket[] = [];
-
     readonly url: string;
+    private readonly listeners = new Map<string, WsListener[]>();
 
     constructor(url: string, _opts?: unknown) {
       this.url = url;
       FakeWebSocket.instances.push(this);
-      // Simulate async open on next microtask (matches real ws behaviour).
+      // Real `ws` fires "open" asynchronously; match that timing.
       queueMicrotask(() => this._fire("open"));
     }
 
@@ -39,17 +32,13 @@ const { FakeWebSocket } = vi.hoisted(() => {
 
     once(event: string, fn: WsListener) {
       const wrapper = (...args: unknown[]) => {
-        this.off(event, wrapper);
+        this.removeListener(event, wrapper);
         fn(...args);
       };
       this.on(event, wrapper);
     }
 
     removeListener(event: string, fn: WsListener) {
-      this.off(event, fn);
-    }
-
-    private off(event: string, fn: WsListener) {
       const arr = this.listeners.get(event) ?? [];
       this.listeners.set(
         event,
@@ -66,12 +55,10 @@ const { FakeWebSocket } = vi.hoisted(() => {
       this._fire("close");
     }
 
-    /** Test helper: fire an event on this socket. */
     _fire(event: WsEvent, ...args: unknown[]) {
       for (const fn of this.listeners.get(event) ?? []) fn(...args);
     }
 
-    /** Test helper: simulate a JSON message from the server. */
     _msg(payload: unknown) {
       this._fire("message", JSON.stringify(payload));
     }
@@ -84,10 +71,6 @@ vi.mock("ws", () => ({
   default: FakeWebSocket,
   WebSocket: FakeWebSocket,
 }));
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Helpers
-// ──────────────────────────────────────────────────────────────────────────────
 
 beforeEach(() => {
   FakeWebSocket.instances.length = 0;
@@ -112,7 +95,7 @@ async function openSession(apiKey = "test-key"): Promise<{
     signal: controller.signal,
   }) as Promise<RimeSession>;
 
-  // Let the microtask that fires FakeWebSocket "open" run.
+  // Let the queued microtask that fires "open" run.
   await Promise.resolve();
 
   const session = await openPromise;
@@ -120,10 +103,6 @@ async function openSession(apiKey = "test-key"): Promise<{
   const ws = FakeWebSocket.instances.at(-1)!;
   return { session, ws, controller };
 }
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Tests
-// ──────────────────────────────────────────────────────────────────────────────
 
 describe("rime TTS adapter", () => {
   test("openRime returns an opener with name 'rime'", () => {
@@ -150,18 +129,15 @@ describe("rime TTS adapter", () => {
     const audioEvents: Int16Array[] = [];
     session.on("audio", (pcm) => audioEvents.push(pcm));
 
-    // Encode 4 PCM16 samples (8 bytes) as base64.
     const samples = new Int16Array([100, 200, 300, 400]);
     const base64 = Buffer.from(samples.buffer).toString("base64");
 
     ws._msg({ type: "chunk", data: base64, contextId: null });
 
     expect(audioEvents.length).toBe(1);
-    const firstChunk = audioEvents[0];
-    expect(firstChunk).toBeInstanceOf(Int16Array);
-    // Each sample pair decodes correctly.
-    // biome-ignore lint/style/noNonNullAssertion: length was asserted to be 1 on the line above
-    const pcm = firstChunk!;
+    // biome-ignore lint/style/noNonNullAssertion: length was asserted to be 1 above
+    const pcm = audioEvents[0]!;
+    expect(pcm).toBeInstanceOf(Int16Array);
     expect(pcm.length).toBe(4);
     expect(pcm[0]).toBe(100);
     expect(pcm[3]).toBe(400);
@@ -188,11 +164,11 @@ describe("rime TTS adapter", () => {
     // closing the WS (which `eos` would do).
     expect(ws.sent).toContain(JSON.stringify({ text: "." }));
 
-    // First-audio timer is 5 s — short window must not fire `done` yet.
+    // First-audio timer is 5s — short window must not fire `done` yet.
     vi.advanceTimersByTime(500);
     expect(doneEvents.length).toBe(0);
 
-    // First chunk arrives → switch to short quiescence window.
+    // First chunk arrives, switching to the short quiescence window.
     const samples = new Int16Array([100, 200, 300, 400]);
     ws._msg({
       type: "chunk",
@@ -215,7 +191,7 @@ describe("rime TTS adapter", () => {
     session.sendText("Hi there");
     session.flush();
 
-    // No chunk arrives — done must wait the full FIRST_AUDIO_TIMEOUT_MS (5 s).
+    // No chunk arrives — must wait the full FIRST_AUDIO_TIMEOUT_MS (5s).
     vi.advanceTimersByTime(4999);
     expect(doneEvents.length).toBe(0);
     vi.advanceTimersByTime(1);
@@ -229,11 +205,10 @@ describe("rime TTS adapter", () => {
     session.on("done", () => doneEvents.push(Date.now()));
 
     session.sendText("Hello");
-    // cancel() must emit `done` synchronously — barge-in cannot be deferred.
+    // Barge-in cannot be deferred — `done` must fire synchronously.
     session.cancel();
 
     expect(ws.sent).toContain(JSON.stringify({ operation: "clear" }));
-    // done was emitted synchronously (before any await / timer).
     expect(doneEvents.length).toBe(1);
   });
 
@@ -245,7 +220,6 @@ describe("rime TTS adapter", () => {
     await session.close();
     expect(ws.readyState).toBe(FakeWebSocket.CLOSED);
 
-    // Second close should not throw.
     await expect(session.close()).resolves.toBeUndefined();
   });
 });

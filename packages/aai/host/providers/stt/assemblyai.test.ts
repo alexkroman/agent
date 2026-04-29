@@ -11,15 +11,6 @@ import { type AssemblyAISession, openAssemblyAI } from "./assemblyai.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
-// ---------------------------------------------------------------------------
-// Mock the `assemblyai` SDK so no real sockets are opened.
-//
-// Each fake `StreamingTranscriber` keeps its own listener map and exposes
-// `_fire(event, payload)` for tests to inject events. The adapter's
-// `open()` returns an `AssemblyAISession` with a `_transcriber` pointer,
-// which in the test is the fake — giving the test a handle to `_fire`.
-// ---------------------------------------------------------------------------
-
 interface FakeTranscriber {
   on(ev: string, fn: (...args: unknown[]) => void): void;
   connect(): Promise<void>;
@@ -29,7 +20,7 @@ interface FakeTranscriber {
 }
 
 vi.mock("assemblyai", () => {
-  const makeFakeTranscriber = (): FakeTranscriber => {
+  function makeFakeTranscriber(): FakeTranscriber {
     const listeners = new Map<string, Array<(...args: unknown[]) => void>>();
     return {
       on(ev, fn) {
@@ -50,7 +41,7 @@ vi.mock("assemblyai", () => {
         for (const fn of listeners.get(ev) ?? []) fn(...args);
       },
     };
-  };
+  }
   return {
     AssemblyAI: class {
       streaming = {
@@ -81,9 +72,6 @@ describe("assemblyAI STT adapter — fixture replay", () => {
     session.on("final", (t) => finals.push(t));
     session.on("error", (e) => errors.push(e.message));
 
-    // Replay fixture through the fake transcriber. The JSON's "type" field
-    // distinguishes Begin from Turn; we only dispatch turn messages since
-    // Begin is consumed inside `connect()` by the real SDK.
     const fake = session._transcriber as unknown as FakeTranscriber;
     for (const msg of fixture) {
       if (msg.type === "Turn") fake._fire("turn", msg as TurnEvent);

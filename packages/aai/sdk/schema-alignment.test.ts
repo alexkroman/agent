@@ -1,19 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
-/**
- * Schema–type alignment tests.
- *
- * These tests verify that Zod schemas and their derived TypeScript types
- * stay in sync, and that schemas correctly reject invalid data. When a
- * new field is added to a type but not its schema (or vice-versa), these
- * tests break — preventing silent API drift.
- */
 import { describe, expect, expectTypeOf, test } from "vitest";
 import type { z } from "zod";
 import { type AgentConfig, AgentConfigSchema, ToolSchemaSchema } from "./_internal-types.ts";
 import { type ReadyConfig, ReadyConfigSchema } from "./protocol.ts";
 import { type BuiltinTool, BuiltinToolSchema, type ToolChoice, ToolChoiceSchema } from "./types.ts";
-
-// ── AgentConfigSchema ────────────────────────────────────────────────────
 
 describe("AgentConfigSchema", () => {
   const valid: AgentConfig = {
@@ -37,22 +27,13 @@ describe("AgentConfigSchema", () => {
     expect(AgentConfigSchema.parse(full)).toEqual(full);
   });
 
-  test("rejects empty name", () => {
-    expect(AgentConfigSchema.safeParse({ ...valid, name: "" }).success).toBe(false);
-  });
-
-  test("rejects non-integer maxSteps", () => {
-    expect(AgentConfigSchema.safeParse({ ...valid, maxSteps: 2.5 }).success).toBe(false);
-  });
-
-  test("rejects negative maxSteps", () => {
-    expect(AgentConfigSchema.safeParse({ ...valid, maxSteps: -1 }).success).toBe(false);
-  });
-
-  test("rejects invalid builtinTools", () => {
-    expect(AgentConfigSchema.safeParse({ ...valid, builtinTools: ["not_a_tool"] }).success).toBe(
-      false,
-    );
+  test.each([
+    ["empty name", { name: "" }],
+    ["non-integer maxSteps", { maxSteps: 2.5 }],
+    ["negative maxSteps", { maxSteps: -1 }],
+    ["invalid builtinTools", { builtinTools: ["not_a_tool"] }],
+  ])("rejects %s", (_label, override) => {
+    expect(AgentConfigSchema.safeParse({ ...valid, ...override }).success).toBe(false);
   });
 
   test("type derived from schema matches AgentConfig", () => {
@@ -60,9 +41,9 @@ describe("AgentConfigSchema", () => {
   });
 });
 
-// ── ToolSchemaSchema ─────────────────────────────────────────────────────
-
 describe("ToolSchemaSchema", () => {
+  const base = { type: "function" as const, name: "n", description: "d", parameters: {} };
+
   test("accepts valid tool schema", () => {
     const valid = {
       type: "function" as const,
@@ -73,46 +54,27 @@ describe("ToolSchemaSchema", () => {
     expect(ToolSchemaSchema.parse(valid)).toEqual(valid);
   });
 
-  test("rejects empty name", () => {
-    expect(
-      ToolSchemaSchema.safeParse({
-        type: "function",
-        name: "",
-        description: "d",
-        parameters: {},
-      }).success,
-    ).toBe(false);
-  });
-
-  test("rejects empty description", () => {
-    expect(
-      ToolSchemaSchema.safeParse({
-        type: "function",
-        name: "n",
-        description: "",
-        parameters: {},
-      }).success,
-    ).toBe(false);
+  test.each([
+    ["empty name", { name: "" }],
+    ["empty description", { description: "" }],
+  ])("rejects %s", (_label, override) => {
+    expect(ToolSchemaSchema.safeParse({ ...base, ...override }).success).toBe(false);
   });
 
   test("ToolSchema is assignable from schema inference", () => {
-    // ToolSchema uses JSONSchema7 for parameters which is more specific than
-    // the runtime schema's Record<string, unknown>. Verify the direction:
-    // a parsed result should be assignable to ToolSchema (narrow → wide).
+    // ToolSchema uses JSONSchema7 for parameters (narrower than the runtime
+    // Record<string, unknown>); verify a parsed result satisfies the wider shape.
     const parsed = ToolSchemaSchema.parse({
       type: "function",
       name: "test",
       description: "test",
       parameters: { type: "object" },
     });
-    // Runtime check: shape matches
     expect(parsed).toHaveProperty("name");
     expect(parsed).toHaveProperty("description");
     expect(parsed).toHaveProperty("parameters");
   });
 });
-
-// ── ReadyConfigSchema ────────────────────────────────────────────────────
 
 describe("ReadyConfigSchema", () => {
   const valid: ReadyConfig = {
@@ -125,12 +87,11 @@ describe("ReadyConfigSchema", () => {
     expect(ReadyConfigSchema.parse(valid)).toEqual(valid);
   });
 
-  test("rejects unknown audio format", () => {
-    expect(ReadyConfigSchema.safeParse({ ...valid, audioFormat: "mp3" }).success).toBe(false);
-  });
-
-  test("rejects non-positive sampleRate", () => {
-    expect(ReadyConfigSchema.safeParse({ ...valid, sampleRate: 0 }).success).toBe(false);
+  test.each([
+    ["unknown audio format", { audioFormat: "mp3" }],
+    ["non-positive sampleRate", { sampleRate: 0 }],
+  ])("rejects %s", (_label, override) => {
+    expect(ReadyConfigSchema.safeParse({ ...valid, ...override }).success).toBe(false);
   });
 
   test("type derived from schema matches ReadyConfig", () => {
@@ -138,13 +99,8 @@ describe("ReadyConfigSchema", () => {
   });
 });
 
-// ── BuiltinTool / ToolChoice drift guards ────────────────────────────────
-
 describe("type ↔ schema alignment", () => {
   test("BuiltinToolSchema values match BuiltinTool union", () => {
-    // Schema values are the source of truth; if the type adds a member
-    // without updating the schema (or vice versa), TypeScript will error
-    // on the drift guards in types.ts. This test documents the enum values.
     expect(BuiltinToolSchema.options).toMatchInlineSnapshot(`
       [
         "web_search",
@@ -163,15 +119,11 @@ describe("type ↔ schema alignment", () => {
     expectTypeOf<z.infer<typeof ToolChoiceSchema>>().toEqualTypeOf<ToolChoice>();
   });
 
-  test("ToolChoiceSchema accepts all ToolChoice variants", () => {
-    const variants: ToolChoice[] = ["auto", "required"];
-    for (const v of variants) {
-      expect(ToolChoiceSchema.safeParse(v).success).toBe(true);
-    }
+  test.each<ToolChoice>(["auto", "required"])("ToolChoiceSchema accepts %s", (v) => {
+    expect(ToolChoiceSchema.safeParse(v).success).toBe(true);
   });
 
-  test("ToolChoiceSchema rejects invalid variants", () => {
-    expect(ToolChoiceSchema.safeParse("invalid").success).toBe(false);
-    expect(ToolChoiceSchema.safeParse("none").success).toBe(false);
+  test.each(["invalid", "none"])("ToolChoiceSchema rejects %s", (v) => {
+    expect(ToolChoiceSchema.safeParse(v).success).toBe(false);
   });
 });

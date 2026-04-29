@@ -51,7 +51,12 @@ export type AgentServer = {
   port: number | undefined;
 };
 
-// ── Static file serving ─────────────────────────────────────────────────
+const JSON_HEADERS = { "Content-Type": "application/json" } as const;
+
+function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
+  res.writeHead(status, JSON_HEADERS);
+  res.end(JSON.stringify(body));
+}
 
 async function serveStatic(
   dir: string,
@@ -61,8 +66,8 @@ async function serveStatic(
   const url = req.url?.split("?")[0] ?? "/";
   const filePath = path.join(dir, url === "/" ? "index.html" : url);
 
-  // Prevent path traversal — use resolved dir + separator to avoid prefix
-  // collisions (e.g. dir="/app/static" matching "/app/static-secrets/…").
+  // Use resolved dir + separator to avoid prefix collisions
+  // (e.g. dir="/app/static" matching "/app/static-secrets/…").
   const resolved = path.resolve(dir);
   if (!filePath.startsWith(resolved + path.sep) && filePath !== resolved) return false;
 
@@ -79,77 +84,72 @@ async function serveStatic(
   }
 }
 
-// ── Server ──────────────────────────────────────────────────────────────
+async function readBody(req: http.IncomingMessage): Promise<string> {
+  let body = "";
+  for await (const chunk of req) body += chunk;
+  return body;
+}
 
-function handleVectorPost(
+async function handleVectorPost(
   vector: Vector,
   req: http.IncomingMessage,
   res: http.ServerResponse,
-): void {
-  let body = "";
-  req.on("data", (chunk) => {
-    body += chunk;
-  });
-  req.on("end", async () => {
-    try {
-      const json = JSON.parse(body);
-      const parsed = VectorRequestSchema.safeParse(json);
-      if (!parsed.success) {
-        res.statusCode = 400;
-        res.end(JSON.stringify({ error: parsed.error.message }));
-        return;
-      }
-      const op = parsed.data;
-      let result: unknown;
-      switch (op.op) {
-        case "upsert":
-          await vector.upsert(op.id, op.text, op.metadata);
-          result = "OK";
-          break;
-        case "query":
-          result = await vector.query(op.text, {
-            ...(op.topK !== undefined ? { topK: op.topK } : {}),
-            ...(op.filter !== undefined ? { filter: op.filter } : {}),
-          });
-          break;
-        case "delete":
-          await vector.delete(op.ids);
-          result = "OK";
-          break;
-        default:
-          break;
-      }
-      res.statusCode = 200;
-      res.end(JSON.stringify({ result }));
-    } catch (err) {
-      res.statusCode = 500;
-      res.end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }));
+): Promise<void> {
+  try {
+    const parsed = VectorRequestSchema.safeParse(JSON.parse(await readBody(req)));
+    if (!parsed.success) {
+      sendJson(res, 400, { error: parsed.error.message });
+      return;
     }
-  });
+    const op = parsed.data;
+    let result: unknown;
+    switch (op.op) {
+      case "upsert":
+        await vector.upsert(op.id, op.text, op.metadata);
+        result = "OK";
+        break;
+      case "query":
+        result = await vector.query(op.text, {
+          ...(op.topK !== undefined ? { topK: op.topK } : {}),
+          ...(op.filter !== undefined ? { filter: op.filter } : {}),
+        });
+        break;
+      case "delete":
+        await vector.delete(op.ids);
+        result = "OK";
+        break;
+      default: {
+        const _exhaustive: never = op;
+        return _exhaustive;
+      }
+    }
+    sendJson(res, 200, { result });
+  } catch (err) {
+    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
+  }
 }
 
-function handleKvGet(kv: Kv, req: http.IncomingMessage, res: http.ServerResponse): void {
-  const fullUrl = new URL(req.url ?? "/", "http://localhost");
-  const key = fullUrl.searchParams.get("key");
+async function handleKvGet(
+  kv: Kv,
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+): Promise<void> {
+  const key = new URL(req.url ?? "/", "http://localhost").searchParams.get("key");
   if (!key) {
-    res.writeHead(400, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "Missing key query parameter" }));
+    sendJson(res, 400, { error: "Missing key query parameter" });
     return;
   }
-  kv.get(key)
-    .then((value) => {
-      if (value === null) {
-        res.writeHead(404, { "Content-Type": "application/json" });
-        res.end("null");
-      } else {
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify(value));
-      }
-    })
-    .catch(() => {
-      res.writeHead(500, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ error: "KV error" }));
-    });
+  try {
+    const value = await kv.get(key);
+    if (value === null) {
+      res.writeHead(404, JSON_HEADERS);
+      res.end("null");
+      return;
+    }
+    sendJson(res, 200, value);
+  } catch {
+    sendJson(res, 500, { error: "KV error" });
+  }
 }
 
 /**
@@ -165,43 +165,9 @@ export function createServer(options: ServerOptions): AgentServer {
     throw new Error("clientHtml and clientDir are mutually exclusive");
   }
 
-  // Pre-compute the default HTML page once (the agent name never changes).
-  const escapedName = escapeHtml(name);
   const defaultHtml =
     clientHtml ??
-    `<!DOCTYPE html><html><body><h1>${escapedName}</h1><p>Agent server running.</p></body></html>`;
-
-  const httpServer = http.createServer((req, res) => {
-    const url = req.url?.split("?")[0] ?? "/";
-    const method = req.method ?? "GET";
-
-    // Security headers
-    res.setHeader("Content-Security-Policy", AGENT_CSP);
-    res.setHeader("X-Content-Type-Options", "nosniff");
-    res.setHeader("X-Frame-Options", "SAMEORIGIN");
-
-    // Health endpoint
-    if (method === "GET" && url === "/health") {
-      res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ status: "ok", name }));
-      return;
-    }
-
-    // KV endpoint
-    if (kv && method === "GET" && url === "/kv") {
-      handleKvGet(kv, req, res);
-      return;
-    }
-
-    // Vector endpoint
-    if (vector && method === "POST" && url === "/vector") {
-      handleVectorPost(vector, req, res);
-      return;
-    }
-
-    // Routes that may need async handling
-    void handleRequest(req, res, url, method);
-  });
+    `<!DOCTYPE html><html><body><h1>${escapeHtml(name)}</h1><p>Agent server running.</p></body></html>`;
 
   async function handleRequest(
     req: http.IncomingMessage,
@@ -209,23 +175,42 @@ export function createServer(options: ServerOptions): AgentServer {
     url: string,
     method: string,
   ): Promise<void> {
-    // Static files from client dir
     if (clientDir && (await serveStatic(clientDir, req, res))) return;
 
-    // Default HTML
     if (method === "GET" && url === "/") {
       res.writeHead(200, { "Content-Type": "text/html" });
       res.end(defaultHtml);
       return;
     }
 
-    // 404
     logger.error(`${method} ${url} 404`);
-    res.writeHead(404, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ error: "Not found" }));
+    sendJson(res, 404, { error: "Not found" });
   }
 
-  // WebSocket upgrade via ws
+  const httpServer = http.createServer((req, res) => {
+    const url = req.url?.split("?")[0] ?? "/";
+    const method = req.method ?? "GET";
+
+    res.setHeader("Content-Security-Policy", AGENT_CSP);
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("X-Frame-Options", "SAMEORIGIN");
+
+    if (method === "GET" && url === "/health") {
+      sendJson(res, 200, { status: "ok", name });
+      return;
+    }
+    if (kv && method === "GET" && url === "/kv") {
+      void handleKvGet(kv, req, res);
+      return;
+    }
+    if (vector && method === "POST" && url === "/vector") {
+      void handleVectorPost(vector, req, res);
+      return;
+    }
+
+    void handleRequest(req, res, url, method);
+  });
+
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_WS_PAYLOAD_BYTES });
 
   httpServer.on("upgrade", (req, socket, head) => {

@@ -102,15 +102,16 @@ describe("parseManifest", () => {
   });
 });
 
-// ── Property-based tests ─────────────────────────────────────────────────
-
 describe("property: parseManifest", () => {
+  const optString = fc.option(fc.string(), { nil: undefined });
+  const optMaxSteps = fc.option(fc.integer({ min: 1, max: 100 }), { nil: undefined });
+
   test("valid manifests always parse", () => {
     const validManifestArb = fc.record({
       name: fc.string({ minLength: 1 }),
-      systemPrompt: fc.option(fc.string(), { nil: undefined }),
-      greeting: fc.option(fc.string(), { nil: undefined }),
-      maxSteps: fc.option(fc.integer({ min: 1, max: 100 }), { nil: undefined }),
+      systemPrompt: optString,
+      greeting: optString,
+      maxSteps: optMaxSteps,
       toolChoice: fc.option(fc.constantFrom("auto" as const, "required" as const), {
         nil: undefined,
       }),
@@ -127,11 +128,10 @@ describe("property: parseManifest", () => {
   });
 
   test("missing name throws", () => {
-    // Generate objects that never have a `name` field
     const noNameArb = fc.record({
-      systemPrompt: fc.option(fc.string(), { nil: undefined }),
-      greeting: fc.option(fc.string(), { nil: undefined }),
-      maxSteps: fc.option(fc.integer({ min: 1, max: 100 }), { nil: undefined }),
+      systemPrompt: optString,
+      greeting: optString,
+      maxSteps: optMaxSteps,
     });
 
     fc.assert(

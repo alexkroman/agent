@@ -25,28 +25,25 @@ const execFileAsync = promisify(execFile);
 // Binary discovery (cached)
 // ---------------------------------------------------------------------------
 
-/** Cached absolute path to runsc binary, or null if not found. */
-let runscPath: string | null | undefined;
+const binaryCache = new Map<string, string | null>();
 
-function findRunsc(): string | null {
-  if (runscPath !== undefined) return runscPath;
-  if (process.platform !== "linux") {
-    runscPath = null;
-    return null;
+function findBinary(path: string, linuxOnly = false): string | null {
+  const cached = binaryCache.get(path);
+  if (cached !== undefined) return cached;
+  let found: string | null = null;
+  if ((!linuxOnly || process.platform === "linux") && existsSync(path)) {
+    found = path;
   }
-  const p = "/usr/local/bin/runsc";
-  runscPath = existsSync(p) ? p : null;
-  return runscPath;
+  binaryCache.set(path, found);
+  return found;
 }
 
-/** Cached absolute path to deno binary, or null if not found. */
-let denoPath: string | null | undefined;
+function findRunsc(): string | null {
+  return findBinary("/usr/local/bin/runsc", true);
+}
 
 function findDeno(): string | null {
-  if (denoPath !== undefined) return denoPath;
-  const p = "/usr/local/bin/deno";
-  denoPath = existsSync(p) ? p : null;
-  return denoPath;
+  return findBinary("/usr/local/bin/deno");
 }
 
 /**
@@ -212,56 +209,40 @@ export async function createGvisorSandbox(opts: GvisorSandboxOptions): Promise<G
   metrics.sandboxSpawnPhase.observe({ phase: "spawn" }, (tSpawn - tBundle) / 1000);
   metrics.sandboxSpawnPhase.observe({ phase: "total" }, (tSpawn - t0) / 1000);
 
+  async function tryRunsc(...args: string[]): Promise<void> {
+    try {
+      await execFileAsync(runsc, args);
+    } catch {
+      // Best-effort — container may already be gone
+    }
+  }
+
+  function waitForExit(timeoutMs: number): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
+      if (child.exitCode !== null) {
+        resolve(true);
+        return;
+      }
+      const timer = setTimeout(() => resolve(false), timeoutMs);
+      child.once("exit", () => {
+        clearTimeout(timer);
+        resolve(true);
+      });
+    });
+  }
+
   let cleaned = false;
 
   async function cleanup(): Promise<void> {
     if (cleaned) return;
     cleaned = true;
 
-    // 1. Try graceful shutdown via runsc kill
-    try {
-      await execFileAsync(runsc, ["kill", containerId, "SIGTERM"]);
-    } catch {
-      // Container may already be gone — ignore
+    await tryRunsc("kill", containerId, "SIGTERM");
+    if (!(await waitForExit(5000))) {
+      await tryRunsc("kill", containerId, "SIGKILL");
+      await waitForExit(2000);
     }
-
-    // 2. Wait for process to exit (up to 5s), then SIGKILL
-    const exited = await Promise.race([
-      new Promise<boolean>((resolve) => {
-        if (child.exitCode !== null) {
-          resolve(true);
-          return;
-        }
-        child.on("exit", () => resolve(true));
-      }),
-      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 5000)),
-    ]);
-
-    if (!exited) {
-      try {
-        await execFileAsync(runsc, ["kill", containerId, "SIGKILL"]);
-      } catch {
-        // Ignore — best effort
-      }
-      // Wait briefly for SIGKILL to take effect
-      await new Promise<void>((resolve) => {
-        if (child.exitCode !== null) {
-          resolve();
-          return;
-        }
-        child.on("exit", () => resolve());
-        setTimeout(() => resolve(), 2000);
-      });
-    }
-
-    // 3. Force-delete the container
-    try {
-      await execFileAsync(runsc, ["delete", "--force", containerId]);
-    } catch {
-      // Ignore — container may already be cleaned up
-    }
-
-    // 4. Remove bundle directory
+    await tryRunsc("delete", "--force", containerId);
     await cleanupBundleDir(containerId);
   }
   return {

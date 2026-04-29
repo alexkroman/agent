@@ -7,10 +7,15 @@ import { VALID_SLUG_RE } from "./schemas.ts";
 import { hashApiKey, verifySlugOwner } from "./secrets.ts";
 import type { BundleStore } from "./store-types.ts";
 
-function bearerToken(req: Request): string | null {
+function requireBearerToken(req: Request): string {
   const header = req.headers.get("Authorization");
-  if (!header?.startsWith("Bearer ")) return null;
-  return header.slice(7) || null;
+  const token = header?.startsWith("Bearer ") ? header.slice(7) : "";
+  if (!token) {
+    throw new HTTPException(401, {
+      message: "Missing Authorization header (Bearer <API_KEY>)",
+    });
+  }
+  return token;
 }
 
 export function validateSlug(slug: string): string {
@@ -24,44 +29,27 @@ export async function requireOwner(
   req: Request,
   opts: { slug: string; store: BundleStore },
 ): Promise<{ apiKey: string; keyHash: string }> {
-  const apiKey = bearerToken(req);
-  if (!apiKey) {
-    throw new HTTPException(401, {
-      message: "Missing Authorization header (Bearer <API_KEY>)",
-    });
-  }
+  const apiKey = requireBearerToken(req);
   const result = await verifySlugOwner(apiKey, { slug: opts.slug, store: opts.store });
   if (result.status === "forbidden") {
-    throw new HTTPException(403, {
-      message: "Forbidden",
-    });
+    throw new HTTPException(403, { message: "Forbidden" });
   }
   return { apiKey, keyHash: result.keyHash };
 }
 
-/**
- * Authenticate the request without checking slug ownership.
- * Used for routes where the slug may not exist yet (e.g. new deploys).
- */
+/** Authenticates the bearer token without checking slug ownership (e.g. new deploys). */
 export async function requireAuth(req: Request): Promise<{ apiKey: string; keyHash: string }> {
-  const apiKey = bearerToken(req);
-  if (!apiKey) {
-    throw new HTTPException(401, {
-      message: "Missing Authorization header (Bearer <API_KEY>)",
-    });
-  }
+  const apiKey = requireBearerToken(req);
   const keyHash = await hashApiKey(apiKey);
   return { apiKey, keyHash };
 }
 
-/** Sets `c.var.slug` from the `:slug` route param. */
 export const slugMw = createMiddleware<HonoEnv>(async (c, next) => {
   // biome-ignore lint/style/noNonNullAssertion: slug param guaranteed by route pattern
   c.set("slug", validateSlug(c.req.param("slug")!));
   await next();
 });
 
-/** Verifies the Bearer token owns the slug and sets `c.var.apiKey` + `c.var.keyHash`. */
 export const ownerMw = createMiddleware<HonoEnv>(async (c, next) => {
   const { apiKey, keyHash } = await requireOwner(c.req.raw, {
     slug: c.var.slug,
@@ -72,11 +60,6 @@ export const ownerMw = createMiddleware<HonoEnv>(async (c, next) => {
   await next();
 });
 
-/**
- * Authenticates the Bearer token without checking slug ownership.
- * Used for routes where the slug may not exist yet (new deploys).
- * Sets `c.var.apiKey` + `c.var.keyHash`.
- */
 export const authMw = createMiddleware<HonoEnv>(async (c, next) => {
   const { apiKey, keyHash } = await requireAuth(c.req.raw);
   c.set("apiKey", apiKey);

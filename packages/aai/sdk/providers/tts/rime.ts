@@ -29,7 +29,7 @@ export interface RimeOptions {
    * Rime model ID. Defaults to `"mistv2"` (Rime's most compatible model).
    * Common values: `"mistv2"`, `"arcana"`.
    */
-  model?: "mistv2" | "arcana" | string;
+  model?: string;
   /**
    * Spoken language. Uses ISO 639-3 (three-letter codes).
    * Defaults to `"eng"` (English).

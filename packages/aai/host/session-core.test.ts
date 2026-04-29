@@ -1,4 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
+import type { AgentConfig } from "../sdk/_internal-types.ts";
 import type { ClientEvent, ClientSink } from "../sdk/protocol.ts";
 import { DEFAULT_SYSTEM_PROMPT } from "../sdk/types.ts";
 import { flush } from "./_test-utils.ts";
@@ -9,7 +10,7 @@ import type { Transport } from "./transports/types.ts";
 function makeSink(): {
   events: ClientEvent[];
   audioChunks: Uint8Array[];
-  audioDoneCount: number;
+  readonly audioDoneCount: number;
   sink: ClientSink;
 } {
   const events: ClientEvent[] = [];
@@ -22,9 +23,7 @@ function makeSink(): {
       return audioDoneCount;
     },
     sink: {
-      get open() {
-        return true;
-      },
+      open: true,
       event: (e) => {
         events.push(e);
       },
@@ -34,13 +33,13 @@ function makeSink(): {
       playAudioDone: () => {
         audioDoneCount++;
       },
-    } satisfies ClientSink,
+    },
   };
 }
 
-function makeTransport(): Transport & { starts: number; stops: number } {
-  let starts = 0,
-    stops = 0;
+function makeTransport(): Transport & { readonly starts: number; readonly stops: number } {
+  let starts = 0;
+  let stops = 0;
   return {
     start: async () => {
       starts++;
@@ -60,6 +59,10 @@ function makeTransport(): Transport & { starts: number; stops: number } {
   };
 }
 
+function makeAgentConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
+  return { name: "test", systemPrompt: DEFAULT_SYSTEM_PROMPT, greeting: "", ...overrides };
+}
+
 function makeCore(overrides: Partial<SessionCoreOptions> = {}): {
   core: SessionCore;
   sink: ReturnType<typeof makeSink>;
@@ -71,7 +74,7 @@ function makeCore(overrides: Partial<SessionCoreOptions> = {}): {
     id: "s-test",
     agent: "test-agent",
     client: sink.sink,
-    agentConfig: { name: "test", systemPrompt: DEFAULT_SYSTEM_PROMPT, greeting: "" },
+    agentConfig: makeAgentConfig(),
     executeTool: vi.fn(async () => "ok"),
     transport,
     ...overrides,
@@ -98,12 +101,7 @@ describe("createSessionCore — lifecycle", () => {
     vi.useFakeTimers();
     try {
       const { core, sink } = makeCore({
-        agentConfig: {
-          name: "test",
-          systemPrompt: DEFAULT_SYSTEM_PROMPT,
-          greeting: "",
-          idleTimeoutMs: 1000,
-        } as unknown as SessionCoreOptions["agentConfig"],
+        agentConfig: makeAgentConfig({ idleTimeoutMs: 1000 }),
       });
       await core.start();
       await core.stop();
@@ -190,10 +188,8 @@ describe("createSessionCore — tool call pending results", () => {
     await core.start();
     core.onReplyStarted("r1");
     core.onToolCall("cid", "my_tool", {});
-    // Let the async tool IIFE settle and push to pendingTools
     await flush();
     core.onReplyDone();
-    // Poll until tool results are forwarded and toolCallDone fires
     await vi.waitFor(() =>
       expect(transport.sendToolResult).toHaveBeenCalledWith("cid", "tool-output"),
     );
@@ -206,12 +202,7 @@ describe("createSessionCore — idle timeout", () => {
     vi.useFakeTimers();
     try {
       const { core, sink } = makeCore({
-        agentConfig: {
-          name: "t",
-          systemPrompt: DEFAULT_SYSTEM_PROMPT,
-          greeting: "",
-          idleTimeoutMs: 1000,
-        } as unknown as SessionCoreOptions["agentConfig"],
+        agentConfig: makeAgentConfig({ name: "t", idleTimeoutMs: 1000 }),
       });
       await core.start();
       expect(sink.events.filter((e) => e.type === "idle_timeout")).toHaveLength(0);
@@ -225,12 +216,7 @@ describe("createSessionCore — idle timeout", () => {
     vi.useFakeTimers();
     try {
       const { core, sink } = makeCore({
-        agentConfig: {
-          name: "t",
-          systemPrompt: DEFAULT_SYSTEM_PROMPT,
-          greeting: "",
-          idleTimeoutMs: 1000,
-        } as unknown as SessionCoreOptions["agentConfig"],
+        agentConfig: makeAgentConfig({ name: "t", idleTimeoutMs: 1000 }),
       });
       await core.start();
       vi.advanceTimersByTime(500);
@@ -251,7 +237,6 @@ describe("createSessionCore — history", () => {
     await core.start();
     core.onHistory([{ role: "user", content: "prior" }]);
     core.onUserTranscript("now");
-    // No direct introspection — but onReset clears history and replay should see no effect on subsequent behavior.
     core.onReset();
   });
 });

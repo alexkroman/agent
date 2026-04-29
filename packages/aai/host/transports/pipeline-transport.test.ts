@@ -15,6 +15,9 @@ import type { TransportCallbacks } from "./types.ts";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
+type SttFake = ReturnType<typeof createFakeSttProvider>;
+type TtsFake = ReturnType<typeof createFakeTtsProvider>;
+
 function makeCallbacks(): TransportCallbacks {
   return {
     onReplyStarted: vi.fn(),
@@ -38,15 +41,11 @@ function makeOpts(
     stt = createFakeSttProvider(),
     tts = createFakeTtsProvider(),
     callbacks = makeCallbacks(),
-  }: {
-    stt?: ReturnType<typeof createFakeSttProvider>;
-    tts?: ReturnType<typeof createFakeTtsProvider>;
-    callbacks?: TransportCallbacks;
-  } = {},
+  }: { stt?: SttFake; tts?: TtsFake; callbacks?: TransportCallbacks } = {},
 ): {
   opts: PipelineTransportOptions;
-  stt: ReturnType<typeof createFakeSttProvider>;
-  tts: ReturnType<typeof createFakeTtsProvider>;
+  stt: SttFake;
+  tts: TtsFake;
   callbacks: TransportCallbacks;
 } {
   const opts: PipelineTransportOptions = {
@@ -56,10 +55,7 @@ function makeOpts(
     llm: createFakeLanguageModel({ script: [] }),
     tts,
     callbacks,
-    sessionConfig: {
-      systemPrompt: "You are a test assistant.",
-      greeting: "",
-    },
+    sessionConfig: { systemPrompt: "s", greeting: "" },
     providerKeys: { stt: "stt-key", tts: "tts-key" },
     logger: silentLogger,
     ...overrides,
@@ -67,12 +63,24 @@ function makeOpts(
   return { opts, stt, tts, callbacks };
 }
 
+function firstCallArg<T>(fn: unknown): T {
+  // biome-ignore lint/style/noNonNullAssertion: caller asserts the spy was invoked
+  return (fn as ReturnType<typeof vi.fn>).mock.calls[0]![0] as T;
+}
+
+const noopToolSchema = {
+  type: "function" as const,
+  name: "lookup",
+  description: "Look something up.",
+  parameters: { type: "object" as const, properties: {}, required: [] },
+};
+
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 describe("PipelineTransport", () => {
   describe("start()", () => {
     test("opens both STT and TTS sessions", async () => {
-      const { opts, stt, tts } = makeOpts({ sessionConfig: { systemPrompt: "s", greeting: "" } });
+      const { opts, stt, tts } = makeOpts();
       const t = createPipelineTransport(opts);
       await t.start();
       expect(stt.last()).toBeDefined();
@@ -81,17 +89,11 @@ describe("PipelineTransport", () => {
     });
 
     test("passes correct keys and sample rate to STT opener", async () => {
-      const stt = createFakeSttProvider();
-      const { opts } = makeOpts(
-        {
-          stt,
-          providerKeys: { stt: "MY_STT_KEY", tts: "t" },
-          sttSampleRate: 8000,
-          sttPrompt: "be brief",
-          sessionConfig: { systemPrompt: "s", greeting: "" },
-        },
-        { stt },
-      );
+      const { opts, stt } = makeOpts({
+        providerKeys: { stt: "MY_STT_KEY", tts: "t" },
+        sttSampleRate: 8000,
+        sttPrompt: "be brief",
+      });
       const t = createPipelineTransport(opts);
       await t.start();
       expect(stt.last()?.opts.sampleRate).toBe(8000);
@@ -101,7 +103,7 @@ describe("PipelineTransport", () => {
     });
 
     test("fires onSessionReady with the sid", async () => {
-      const { opts, callbacks } = makeOpts({ sessionConfig: { systemPrompt: "s", greeting: "" } });
+      const { opts, callbacks } = makeOpts();
       const t = createPipelineTransport(opts);
       await t.start();
       expect(callbacks.onSessionReady).toHaveBeenCalledWith("test-sid");
@@ -111,38 +113,27 @@ describe("PipelineTransport", () => {
 
   describe("greeting", () => {
     test("sends greeting via ttsSession.sendText and fires onReplyStarted + onAgentTranscript + onReplyDone", async () => {
-      const stt = createFakeSttProvider();
-      const tts = createFakeTtsProvider();
-      const callbacks = makeCallbacks();
-      const { opts } = makeOpts(
-        { sessionConfig: { systemPrompt: "s", greeting: "Hi there!" } },
-        { stt, tts, callbacks },
-      );
+      const { opts, tts, callbacks } = makeOpts({
+        sessionConfig: { systemPrompt: "s", greeting: "Hi there!" },
+      });
       const t = createPipelineTransport(opts);
       await t.start();
-      // Greeting runs as a chained turn — waitFor covers the async flush.
       await vi.waitFor(() => {
         expect(callbacks.onReplyDone).toHaveBeenCalledOnce();
       });
       expect(tts.last()?.textChunks).toContain("Hi there!");
       expect(callbacks.onReplyStarted).toHaveBeenCalledWith(expect.stringContaining("greeting"));
       expect(callbacks.onAgentTranscript).toHaveBeenCalledWith("Hi there!", false);
-      // onAudioDone is NOT fired by the transport — session-core's flushReply
-      // (triggered by onReplyDone) owns the audioDone + replyDone pairing.
+      // onAudioDone is owned by session-core's flushReply, not the transport.
       expect(callbacks.onAudioDone).not.toHaveBeenCalled();
       await t.stop();
     });
 
     test("skipGreeting suppresses the greeting turn", async () => {
-      const tts = createFakeTtsProvider();
-      const callbacks = makeCallbacks();
-      const { opts } = makeOpts(
-        {
-          skipGreeting: true,
-          sessionConfig: { systemPrompt: "s", greeting: "Hello!" },
-        },
-        { tts, callbacks },
-      );
+      const { opts, tts, callbacks } = makeOpts({
+        skipGreeting: true,
+        sessionConfig: { systemPrompt: "s", greeting: "Hello!" },
+      });
       const t = createPipelineTransport(opts);
       await t.start();
       await new Promise((r) => setTimeout(r, 20));
@@ -154,12 +145,7 @@ describe("PipelineTransport", () => {
 
   describe("STT → LLM turn", () => {
     test("final STT event fires onUserTranscript and onReplyStarted", async () => {
-      const stt = createFakeSttProvider();
-      const callbacks = makeCallbacks();
-      const { opts } = makeOpts(
-        { sessionConfig: { systemPrompt: "s", greeting: "" } },
-        { stt, callbacks },
-      );
+      const { opts, stt, callbacks } = makeOpts();
       const t = createPipelineTransport(opts);
       await t.start();
       stt.last()?.fireFinal("Hello agent");
@@ -171,12 +157,7 @@ describe("PipelineTransport", () => {
     });
 
     test("empty / whitespace-only final is ignored", async () => {
-      const stt = createFakeSttProvider();
-      const callbacks = makeCallbacks();
-      const { opts } = makeOpts(
-        { sessionConfig: { systemPrompt: "s", greeting: "" } },
-        { stt, callbacks },
-      );
+      const { opts, stt, callbacks } = makeOpts();
       const t = createPipelineTransport(opts);
       await t.start();
       stt.last()?.fireFinal("   ");
@@ -191,15 +172,7 @@ describe("PipelineTransport", () => {
         { type: "text", text: "I am " },
         { type: "text", text: "the answer" },
       ];
-      const stt = createFakeSttProvider();
-      const tts = createFakeTtsProvider();
-      const { opts } = makeOpts(
-        {
-          llm: createFakeLanguageModel({ script }),
-          sessionConfig: { systemPrompt: "s", greeting: "" },
-        },
-        { stt, tts },
-      );
+      const { opts, stt, tts } = makeOpts({ llm: createFakeLanguageModel({ script }) });
       const t = createPipelineTransport(opts);
       await t.start();
       stt.last()?.fireFinal("what is the answer?");
@@ -211,37 +184,20 @@ describe("PipelineTransport", () => {
     });
 
     test("inserts a separator between text segments split by a mid-turn tool call", async () => {
-      // Multi-step turn: step 1 ends with a text segment + tool-call, step 2
-      // begins with a fresh text segment. Without the fix, the deltas fuse
-      // into "...up.Got it" — both in the transcript and in TTS input.
-      const stt = createFakeSttProvider();
-      const tts = createFakeTtsProvider();
-      const callbacks = makeCallbacks();
-      const executeTool = vi.fn(async () => "result");
-      const { opts } = makeOpts(
-        {
-          llm: createFakeLanguageModel({
-            steps: [
-              [
-                { type: "text", text: "Let me look that up." },
-                { type: "tool-call", toolCallId: "tc-1", toolName: "lookup", input: "{}" },
-              ],
-              [{ type: "text", text: "Got it. Here's the answer." }],
+      // Multi-step turn: without the separator fix, deltas fuse into "...up.Got it".
+      const { opts, stt, tts, callbacks } = makeOpts({
+        llm: createFakeLanguageModel({
+          steps: [
+            [
+              { type: "text", text: "Let me look that up." },
+              { type: "tool-call", toolCallId: "tc-1", toolName: "lookup", input: "{}" },
             ],
-          }),
-          executeTool,
-          toolSchemas: [
-            {
-              type: "function" as const,
-              name: "lookup",
-              description: "Look something up.",
-              parameters: { type: "object" as const, properties: {}, required: [] },
-            },
+            [{ type: "text", text: "Got it. Here's the answer." }],
           ],
-          sessionConfig: { systemPrompt: "s", greeting: "" },
-        },
-        { stt, tts, callbacks },
-      );
+        }),
+        executeTool: vi.fn(async () => "result"),
+        toolSchemas: [noopToolSchema],
+      });
       const t = createPipelineTransport(opts);
       await t.start();
       stt.last()?.fireFinal("look it up");
@@ -259,35 +215,19 @@ describe("PipelineTransport", () => {
     });
 
     test("does not double-space when a segment boundary already carries whitespace", async () => {
-      // Trailing space on segment 1 — we must not insert an extra space.
-      const stt = createFakeSttProvider();
-      const tts = createFakeTtsProvider();
-      const callbacks = makeCallbacks();
-      const executeTool = vi.fn(async () => "result");
-      const { opts } = makeOpts(
-        {
-          llm: createFakeLanguageModel({
-            steps: [
-              [
-                { type: "text", text: "First sentence. " },
-                { type: "tool-call", toolCallId: "tc-1", toolName: "lookup", input: "{}" },
-              ],
-              [{ type: "text", text: "Second sentence." }],
+      const { opts, stt, callbacks } = makeOpts({
+        llm: createFakeLanguageModel({
+          steps: [
+            [
+              { type: "text", text: "First sentence. " },
+              { type: "tool-call", toolCallId: "tc-1", toolName: "lookup", input: "{}" },
             ],
-          }),
-          executeTool,
-          toolSchemas: [
-            {
-              type: "function" as const,
-              name: "lookup",
-              description: "Look something up.",
-              parameters: { type: "object" as const, properties: {}, required: [] },
-            },
+            [{ type: "text", text: "Second sentence." }],
           ],
-          sessionConfig: { systemPrompt: "s", greeting: "" },
-        },
-        { stt, tts, callbacks },
-      );
+        }),
+        executeTool: vi.fn(async () => "result"),
+        toolSchemas: [noopToolSchema],
+      });
       const t = createPipelineTransport(opts);
       await t.start();
       stt.last()?.fireFinal("look it up");
@@ -302,38 +242,22 @@ describe("PipelineTransport", () => {
     });
 
     test("TTS audio event is forwarded to callbacks.onAudioChunk as Uint8Array", async () => {
-      const stt = createFakeSttProvider();
-      const tts = createFakeTtsProvider();
-      const callbacks = makeCallbacks();
-      const { opts } = makeOpts(
-        { sessionConfig: { systemPrompt: "s", greeting: "" } },
-        { stt, tts, callbacks },
-      );
+      const { opts, tts, callbacks } = makeOpts();
       const t = createPipelineTransport(opts);
       await t.start();
       const pcm = new Int16Array([100, 200, 300]);
       tts.last()?.fireAudio(pcm);
       expect(callbacks.onAudioChunk).toHaveBeenCalledOnce();
-      // biome-ignore lint/style/noNonNullAssertion: test assertion — calledOnce proven above
-      const arg = (callbacks.onAudioChunk as ReturnType<typeof vi.fn>).mock
-        .calls[0]![0] as Uint8Array;
+      const arg = firstCallArg<Uint8Array>(callbacks.onAudioChunk);
       expect(arg).toBeInstanceOf(Uint8Array);
       expect(arg.byteLength).toBe(pcm.byteLength);
       await t.stop();
     });
 
     test("full turn: onUserTranscript → onReplyStarted → onAgentTranscript → onReplyDone (no transport-level onAudioDone)", async () => {
-      const script: ScriptedPart[] = [{ type: "text", text: "Sure!" }];
-      const stt = createFakeSttProvider();
-      const tts = createFakeTtsProvider();
-      const callbacks = makeCallbacks();
-      const { opts } = makeOpts(
-        {
-          llm: createFakeLanguageModel({ script }),
-          sessionConfig: { systemPrompt: "s", greeting: "" },
-        },
-        { stt, tts, callbacks },
-      );
+      const { opts, stt, callbacks } = makeOpts({
+        llm: createFakeLanguageModel({ script: [{ type: "text", text: "Sure!" }] }),
+      });
       const t = createPipelineTransport(opts);
       await t.start();
       stt.last()?.fireFinal("test question");
@@ -343,23 +267,15 @@ describe("PipelineTransport", () => {
       expect(callbacks.onUserTranscript).toHaveBeenCalledWith("test question");
       expect(callbacks.onReplyStarted).toHaveBeenCalled();
       expect(callbacks.onAgentTranscript).toHaveBeenCalledWith("Sure!", false);
-      // onAudioDone is NOT fired by the transport — session-core's flushReply
-      // (triggered by onReplyDone) owns the audioDone + replyDone pairing.
+      // onAudioDone is owned by session-core's flushReply, not the transport.
       expect(callbacks.onAudioDone).not.toHaveBeenCalled();
       await t.stop();
     });
 
     test("TTS flush is called after LLM stream finishes", async () => {
-      const script: ScriptedPart[] = [{ type: "text", text: "hi" }];
-      const stt = createFakeSttProvider();
-      const tts = createFakeTtsProvider();
-      const { opts } = makeOpts(
-        {
-          llm: createFakeLanguageModel({ script }),
-          sessionConfig: { systemPrompt: "s", greeting: "" },
-        },
-        { stt, tts },
-      );
+      const { opts, stt, tts } = makeOpts({
+        llm: createFakeLanguageModel({ script: [{ type: "text", text: "hi" }] }),
+      });
       const t = createPipelineTransport(opts);
       await t.start();
       stt.last()?.fireFinal("go");
@@ -382,17 +298,12 @@ describe("PipelineTransport", () => {
     const dummyExecuteTool = async () => "{}";
 
     test("forwards toolChoice to doStream (default 'auto' when omitted)", async () => {
-      const stt = createFakeSttProvider();
       const llm = createFakeLanguageModel({ script: [{ type: "text", text: "ok" }] });
-      const { opts } = makeOpts(
-        {
-          llm,
-          toolSchemas: dummyToolSchemas,
-          executeTool: dummyExecuteTool,
-          sessionConfig: { systemPrompt: "s", greeting: "" },
-        },
-        { stt },
-      );
+      const { opts, stt } = makeOpts({
+        llm,
+        toolSchemas: dummyToolSchemas,
+        executeTool: dummyExecuteTool,
+      });
       const t = createPipelineTransport(opts);
       await t.start();
       stt.last()?.fireFinal("hi");
@@ -404,18 +315,13 @@ describe("PipelineTransport", () => {
     });
 
     test("forwards explicit toolChoice='required' to doStream", async () => {
-      const stt = createFakeSttProvider();
       const llm = createFakeLanguageModel({ script: [{ type: "text", text: "ok" }] });
-      const { opts } = makeOpts(
-        {
-          llm,
-          toolChoice: "required",
-          toolSchemas: dummyToolSchemas,
-          executeTool: dummyExecuteTool,
-          sessionConfig: { systemPrompt: "s", greeting: "" },
-        },
-        { stt },
-      );
+      const { opts, stt } = makeOpts({
+        llm,
+        toolChoice: "required",
+        toolSchemas: dummyToolSchemas,
+        executeTool: dummyExecuteTool,
+      });
       const t = createPipelineTransport(opts);
       await t.start();
       stt.last()?.fireFinal("hi");
@@ -427,28 +333,17 @@ describe("PipelineTransport", () => {
     });
 
     test("maxSteps caps the doStream loop", async () => {
-      // Script two steps that each emit a text part. With maxSteps=1 only the
-      // first step should run; without plumbing it would default to 5 and both
-      // would fire.
-      const stt = createFakeSttProvider();
+      // Two scripted steps; maxSteps=1 must stop after the first (default would be 5).
       const llm = createFakeLanguageModel({
         steps: [[{ type: "text", text: "step1" }], [{ type: "text", text: "step2" }]],
       });
-      const { opts } = makeOpts(
-        {
-          llm,
-          maxSteps: 1,
-          sessionConfig: { systemPrompt: "s", greeting: "" },
-        },
-        { stt },
-      );
+      const { opts, stt } = makeOpts({ llm, maxSteps: 1 });
       const t = createPipelineTransport(opts);
       await t.start();
       stt.last()?.fireFinal("hi");
       await vi.waitFor(() => {
         expect(llm.calls.length).toBeGreaterThanOrEqual(1);
       });
-      // Let any extra step have a chance to run.
       await new Promise((r) => setTimeout(r, 20));
       expect(llm.calls.length).toBe(1);
       await t.stop();
@@ -462,26 +357,17 @@ describe("PipelineTransport", () => {
         { type: "text", text: "how can " },
         { type: "text", text: "I help?" },
       ];
-      const stt = createFakeSttProvider();
-      const tts = createFakeTtsProvider();
-      const callbacks = makeCallbacks();
-      const { opts } = makeOpts(
-        {
-          llm: createFakeLanguageModel({ script, delayMs: 20 }),
-          sessionConfig: { systemPrompt: "s", greeting: "" },
-        },
-        { stt, tts, callbacks },
-      );
+      const { opts, stt, tts, callbacks } = makeOpts({
+        llm: createFakeLanguageModel({ script, delayMs: 20 }),
+      });
       const t = createPipelineTransport(opts);
       await t.start();
 
-      // Start a turn, wait until TTS is receiving text (deep in AGENT_REPLYING).
       stt.last()?.fireFinal("hi there");
       await vi.waitFor(() => {
         expect(tts.last()?.textChunks.length).toBeGreaterThan(0);
       });
 
-      // Fire barge-in partial.
       stt.last()?.firePartial("wait");
       expect(callbacks.onCancelled).toHaveBeenCalled();
       expect(tts.last()?.cancel).toHaveBeenCalled();
@@ -493,16 +379,9 @@ describe("PipelineTransport", () => {
         { type: "text", text: "some " },
         { type: "text", text: "reply" },
       ];
-      const stt = createFakeSttProvider();
-      const tts = createFakeTtsProvider();
-      const callbacks = makeCallbacks();
-      const { opts } = makeOpts(
-        {
-          llm: createFakeLanguageModel({ script, delayMs: 20 }),
-          sessionConfig: { systemPrompt: "s", greeting: "" },
-        },
-        { stt, tts, callbacks },
-      );
+      const { opts, stt, tts, callbacks } = makeOpts({
+        llm: createFakeLanguageModel({ script, delayMs: 20 }),
+      });
       const t = createPipelineTransport(opts);
       await t.start();
 
@@ -513,9 +392,8 @@ describe("PipelineTransport", () => {
 
       t.cancelReply();
       expect(tts.last()?.cancel).toHaveBeenCalled();
-      // cancelReply() does NOT fire callbacks.onCancelled — session-core calls
-      // client.cancelled() itself when the cancel originates from the client.
-      // onCancelled is only fired from within the transport for barge-in (STT partial).
+      // cancelReply() doesn't fire onCancelled — session-core calls client.cancelled()
+      // itself for client-originated cancels. onCancelled fires only for STT-partial barge-in.
       expect(callbacks.onCancelled).not.toHaveBeenCalled();
       await t.stop();
     });
@@ -523,12 +401,7 @@ describe("PipelineTransport", () => {
 
   describe("stop()", () => {
     test("closes both STT and TTS sessions", async () => {
-      const stt = createFakeSttProvider();
-      const tts = createFakeTtsProvider();
-      const { opts } = makeOpts(
-        { sessionConfig: { systemPrompt: "s", greeting: "" } },
-        { stt, tts },
-      );
+      const { opts, stt, tts } = makeOpts();
       const t = createPipelineTransport(opts);
       await t.start();
       await t.stop();
@@ -537,50 +410,37 @@ describe("PipelineTransport", () => {
     });
 
     test("stop() is idempotent", async () => {
-      const stt = createFakeSttProvider();
-      const tts = createFakeTtsProvider();
-      const { opts } = makeOpts(
-        { sessionConfig: { systemPrompt: "s", greeting: "" } },
-        { stt, tts },
-      );
+      const { opts, stt } = makeOpts();
       const t = createPipelineTransport(opts);
       await t.start();
       await t.stop();
-      await t.stop(); // should not throw or double-close
+      await t.stop();
       expect(stt.last()?.closed.value).toBe(true);
     });
   });
 
   describe("sendUserAudio()", () => {
     test("converts aligned Uint8Array to Int16Array and calls sttSession.sendAudio", async () => {
-      const stt = createFakeSttProvider();
-      const { opts } = makeOpts({ sessionConfig: { systemPrompt: "s", greeting: "" } }, { stt });
+      const { opts, stt } = makeOpts();
       const t = createPipelineTransport(opts);
       await t.start();
-      const buf = new ArrayBuffer(4);
-      const bytes = new Uint8Array(buf);
-      bytes.set([0x01, 0x02, 0x03, 0x04]);
+      const bytes = new Uint8Array([0x01, 0x02, 0x03, 0x04]);
       t.sendUserAudio(bytes);
       const sttSession = stt.last();
       expect(sttSession?.sendAudio).toHaveBeenCalledOnce();
-      // biome-ignore lint/style/noNonNullAssertion: test assertion — calledOnce proven above
-      const pcm = (sttSession?.sendAudio as ReturnType<typeof vi.fn>).mock
-        .calls[0]![0] as Int16Array;
+      const pcm = firstCallArg<Int16Array>(sttSession?.sendAudio);
       expect(pcm).toBeInstanceOf(Int16Array);
       expect(pcm.length).toBe(2);
       await t.stop();
     });
 
     test("handles odd-length Uint8Array by copying and truncating", async () => {
-      const stt = createFakeSttProvider();
-      const { opts } = makeOpts({ sessionConfig: { systemPrompt: "s", greeting: "" } }, { stt });
+      const { opts, stt } = makeOpts();
       const t = createPipelineTransport(opts);
       await t.start();
-      const bytes = new Uint8Array([1, 2, 3]); // 3 bytes → 1 sample
-      t.sendUserAudio(bytes);
-      // biome-ignore lint/style/noNonNullAssertion: test assertion — audio was sent synchronously above
-      const pcm = (stt.last()?.sendAudio as ReturnType<typeof vi.fn>).mock
-        .calls[0]![0] as Int16Array;
+      // 3 bytes → 1 sample (truncates the trailing odd byte).
+      t.sendUserAudio(new Uint8Array([1, 2, 3]));
+      const pcm = firstCallArg<Int16Array>(stt.last()?.sendAudio);
       expect(pcm.length).toBe(1);
       await t.stop();
     });
@@ -588,7 +448,7 @@ describe("PipelineTransport", () => {
 
   describe("sendToolResult()", () => {
     test("is a no-op (Option A: inline tool execution)", async () => {
-      const { opts } = makeOpts({ sessionConfig: { systemPrompt: "s", greeting: "" } });
+      const { opts } = makeOpts();
       const t = createPipelineTransport(opts);
       await t.start();
       expect(() => t.sendToolResult("call-1", "result")).not.toThrow();
@@ -598,7 +458,6 @@ describe("PipelineTransport", () => {
 
   describe("tool observability", () => {
     test("callbacks.onToolCall fires for each tool-call stream part", async () => {
-      const executeTool = vi.fn(async () => "sunny");
       const script: ScriptedPart[] = [
         {
           type: "tool-call",
@@ -609,36 +468,28 @@ describe("PipelineTransport", () => {
         { type: "tool-result", toolCallId: "tc-1", toolName: "get_weather", result: "sunny" },
         { type: "text", text: "It's sunny." },
       ];
-      const stt = createFakeSttProvider();
-      const tts = createFakeTtsProvider();
-      const callbacks = makeCallbacks();
-      const { opts } = makeOpts(
-        {
-          llm: createFakeLanguageModel({ script }),
-          executeTool,
-          toolSchemas: [
-            {
-              type: "function" as const,
-              name: "get_weather",
-              description: "Look up the weather.",
-              parameters: {
-                type: "object" as const,
-                properties: { city: { type: "string" } },
-                required: ["city"],
-              },
+      const { opts, stt, callbacks } = makeOpts({
+        llm: createFakeLanguageModel({ script }),
+        executeTool: vi.fn(async () => "sunny"),
+        toolSchemas: [
+          {
+            type: "function" as const,
+            name: "get_weather",
+            description: "Look up the weather.",
+            parameters: {
+              type: "object" as const,
+              properties: { city: { type: "string" } },
+              required: ["city"],
             },
-          ],
-          sessionConfig: { systemPrompt: "s", greeting: "" },
-        },
-        { stt, tts, callbacks },
-      );
+          },
+        ],
+      });
       const t = createPipelineTransport(opts);
       await t.start();
       stt.last()?.fireFinal("how's the weather?");
       await vi.waitFor(() => {
         expect(callbacks.onReplyDone).toHaveBeenCalled();
       });
-      // onToolCall fires for observability (Option A).
       expect(callbacks.onToolCall).toHaveBeenCalledWith("tc-1", "get_weather", expect.any(Object));
       await t.stop();
     });
@@ -646,12 +497,7 @@ describe("PipelineTransport", () => {
 
   describe("provider errors", () => {
     test("STT error fires onError('stt', ...) and terminates transport", async () => {
-      const stt = createFakeSttProvider();
-      const callbacks = makeCallbacks();
-      const { opts } = makeOpts(
-        { sessionConfig: { systemPrompt: "s", greeting: "" } },
-        { stt, callbacks },
-      );
+      const { opts, stt, callbacks } = makeOpts();
       const t = createPipelineTransport(opts);
       await t.start();
       stt.last()?.fireError("stt_stream_error", "stt failed");
@@ -660,12 +506,7 @@ describe("PipelineTransport", () => {
     });
 
     test("TTS error fires onError('tts', ...) and terminates transport", async () => {
-      const tts = createFakeTtsProvider();
-      const callbacks = makeCallbacks();
-      const { opts } = makeOpts(
-        { sessionConfig: { systemPrompt: "s", greeting: "" } },
-        { tts, callbacks },
-      );
+      const { opts, tts, callbacks } = makeOpts();
       const t = createPipelineTransport(opts);
       await t.start();
       tts.last()?.fireError("tts_stream_error", "tts failed");
@@ -674,14 +515,9 @@ describe("PipelineTransport", () => {
     });
 
     test("STT open failure fires onError('stt', ...) via reportOpenRejection", async () => {
-      const callbacks = makeCallbacks();
-      const { opts } = makeOpts(
-        {
-          stt: createFailingSttProvider("stt_connect_failed", "connect failed"),
-          sessionConfig: { systemPrompt: "s", greeting: "" },
-        },
-        { callbacks },
-      );
+      const { opts, callbacks } = makeOpts({
+        stt: createFailingSttProvider("stt_connect_failed", "connect failed"),
+      });
       const t = createPipelineTransport(opts);
       await t.start();
       expect(callbacks.onError).toHaveBeenCalledWith("stt", "connect failed");
@@ -689,14 +525,9 @@ describe("PipelineTransport", () => {
     });
 
     test("TTS open failure fires onError('tts', ...) via reportOpenRejection", async () => {
-      const callbacks = makeCallbacks();
-      const { opts } = makeOpts(
-        {
-          tts: createFailingTtsProvider("tts_connect_failed", "tts connect failed"),
-          sessionConfig: { systemPrompt: "s", greeting: "" },
-        },
-        { callbacks },
-      );
+      const { opts, callbacks } = makeOpts({
+        tts: createFailingTtsProvider("tts_connect_failed", "tts connect failed"),
+      });
       const t = createPipelineTransport(opts);
       await t.start();
       expect(callbacks.onError).toHaveBeenCalledWith("tts", "tts connect failed");
@@ -709,13 +540,12 @@ describe("PipelineTransport", () => {
         {
           stt: createFailingSttProvider("stt_connect_failed", "bad key"),
           tts,
-          sessionConfig: { systemPrompt: "s", greeting: "" },
         },
         { tts },
       );
       const t = createPipelineTransport(opts);
       await t.start();
-      // TTS was opened (Promise.allSettled runs both concurrently) but then closed.
+      // Promise.allSettled opens both concurrently; STT failure then closes TTS.
       expect(tts.last()?.closed.value).toBe(true);
       await t.stop();
     });
@@ -723,9 +553,6 @@ describe("PipelineTransport", () => {
 
   describe("history seeding", () => {
     test("sessionConfig.history is used as initial conversation messages", async () => {
-      // History seeding is internal — we verify it indirectly by checking
-      // that the LLM receives the correct message array.
-      // For this test we just ensure start() doesn't throw when history is set.
       const { opts } = makeOpts({
         sessionConfig: {
           systemPrompt: "s",

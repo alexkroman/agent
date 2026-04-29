@@ -8,7 +8,6 @@ import { DEFAULT_SYSTEM_PROMPT } from "./types.ts";
 describe("buildSystemPrompt", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    // Pin to Wednesday, January 15, 2025
     vi.setSystemTime(new Date("2025-01-15T12:00:00Z"));
   });
 
