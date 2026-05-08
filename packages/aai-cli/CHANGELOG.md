@@ -1,5 +1,14 @@
 # @alexkroman1/aai-cli
 
+## 1.8.0
+
+### Patch Changes
+
+- Updated dependencies [a7384ad]
+- Updated dependencies [cc013df]
+  - @alexkroman1/aai@1.8.0
+  - @alexkroman1/aai-ui@1.8.0
+
 ## 1.7.1
 
 ### Patch Changes
