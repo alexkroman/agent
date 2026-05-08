@@ -12,6 +12,7 @@ import {
   assertProviderTriple,
   type KvProvider,
   type LlmProvider,
+  type S2sProvider,
   type SessionMode,
   type SttProvider,
   type TtsProvider,
@@ -70,6 +71,12 @@ export type Manifest = {
    * enable pipeline mode.
    */
   tts?: TtsProvider | undefined;
+  /**
+   * Pluggable S2S provider descriptor. When set, overrides the implicit
+   * AssemblyAI default. Mutually exclusive with the `stt`/`llm`/`tts`
+   * pipeline triple.
+   */
+  s2s?: S2sProvider | undefined;
   /** Pluggable KV backend descriptor. Falls back to platform default when omitted. */
   kv?: KvProvider | undefined;
   /** Pluggable Vector backend descriptor. Falls back to platform default when omitted. */
@@ -127,6 +134,7 @@ const ManifestSchema = z.object({
   stt: ProviderDescriptorSchema.optional(),
   llm: ProviderDescriptorSchema.optional(),
   tts: ProviderDescriptorSchema.optional(),
+  s2s: ProviderDescriptorSchema.optional(),
   kv: ProviderDescriptorSchema.optional(),
   vector: ProviderDescriptorSchema.optional(),
 });
@@ -142,7 +150,7 @@ const ManifestSchema = z.object({
  */
 export function parseManifest(input: unknown): Manifest {
   const parsed = ManifestSchema.parse(input);
-  const mode = assertProviderTriple(parsed.stt, parsed.llm, parsed.tts);
+  const mode = assertProviderTriple(parsed.stt, parsed.llm, parsed.tts, parsed.s2s);
   return {
     ...parsed,
     systemPrompt: parsed.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,

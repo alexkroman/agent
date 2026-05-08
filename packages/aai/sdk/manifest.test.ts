@@ -231,6 +231,32 @@ describe("parseManifest — mode classification", () => {
   });
 });
 
+describe("parseManifest s2s", () => {
+  test("parseManifest accepts s2s descriptor", () => {
+    const m = parseManifest({
+      name: "x",
+      s2s: { kind: "openai-realtime", options: { model: "gpt-realtime" } },
+    });
+    expect(m.s2s).toEqual({
+      kind: "openai-realtime",
+      options: { model: "gpt-realtime" },
+    });
+    expect(m.mode).toBe("s2s");
+  });
+
+  test("parseManifest rejects s2s combined with pipeline triple", () => {
+    expect(() =>
+      parseManifest({
+        name: "x",
+        s2s: { kind: "openai-realtime", options: {} },
+        stt: { kind: "assemblyai", options: {} },
+        llm: { kind: "openai", options: {} },
+        tts: { kind: "cartesia", options: {} },
+      }),
+    ).toThrow();
+  });
+});
+
 describe("assertProviderTriple with s2s", () => {
   test("returns 's2s' when s2s descriptor is set and pipeline triple is empty", () => {
     const s2s = { kind: "openai-realtime", options: {} };
