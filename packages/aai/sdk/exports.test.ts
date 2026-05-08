@@ -28,4 +28,12 @@ describe("export surface stability", () => {
     const mod = await import("@alexkroman1/aai/runtime");
     expect(Object.keys(mod).sort()).toMatchSnapshot();
   });
+
+  test("@alexkroman1/aai/s2s exports openaiRealtime", async () => {
+    const mod = await import("@alexkroman1/aai/s2s");
+    expect(typeof mod.openaiRealtime).toBe("function");
+    const d = mod.openaiRealtime({ model: "gpt-realtime", voice: "cedar" });
+    expect(d.kind).toBe("openai-realtime");
+    expect(d.options).toEqual({ model: "gpt-realtime", voice: "cedar" });
+  });
 });
