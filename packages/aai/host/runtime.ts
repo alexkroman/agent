@@ -513,6 +513,15 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
         ? (id, name, args) =>
             sessionOpts.client.event({ type: "tool_call", toolCallId: id, toolName: name, args })
         : (id, name, args) => bindCore().onToolCall(id, name, args),
+      // Pipeline: emit `tool_call_done` when streamText surfaces the
+      // `tool-result` part so the UI can flip status from pending → done.
+      // S2S transports never set this; SessionCore.onToolCall emits done itself.
+      ...(isPipeline
+        ? {
+            onToolCallDone: (id: string, result: string) =>
+              sessionOpts.client.event({ type: "tool_call_done", toolCallId: id, result }),
+          }
+        : {}),
       onError: (code, message) => bindCore().onError(code, message),
       onSpeechStarted: () => bindCore().onSpeechStarted(),
       onSpeechStopped: () => bindCore().onSpeechStopped(),

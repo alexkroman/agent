@@ -55,12 +55,23 @@ const S2sMessageSchema = z.discriminatedUnion("type", [
     item_id: z.string().optional().default(""),
     interrupted: z.boolean().optional().default(false),
   }),
-  z.object({
-    type: z.literal("tool.call"),
-    call_id: z.string(),
-    name: z.string(),
-    args: z.record(z.string(), z.unknown()).optional().default({}),
-  }),
+  // AssemblyAI's S2S protocol delivers tool args under `arguments`; older
+  // implementations and our internal tests use `args`. Accept either, with
+  // `arguments` taking precedence so the live wire format wins.
+  z
+    .object({
+      type: z.literal("tool.call"),
+      call_id: z.string(),
+      name: z.string(),
+      arguments: z.record(z.string(), z.unknown()).optional(),
+      args: z.record(z.string(), z.unknown()).optional(),
+    })
+    .transform((m) => ({
+      type: m.type,
+      call_id: m.call_id,
+      name: m.name,
+      args: m.arguments ?? m.args ?? {},
+    })),
   z.object({ type: z.literal("reply.done"), status: z.string().optional() }),
   z.object({ type: z.literal("session.error"), code: z.string(), message: z.string() }),
   z.object({ type: z.literal("error"), message: z.string() }),
@@ -303,27 +314,20 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
       log.info(`S2S << ${type}`);
     }
 
-    ws.addEventListener("message", (ev) => {
-      let raw: unknown;
-      try {
-        raw = JSON.parse(String(ev.data));
-      } catch {
-        log.warn("S2S << invalid JSON", { data: String(ev.data).slice(0, 200) });
-        return;
-      }
-
-      if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
-        log.warn("S2S << non-object JSON message", { type: typeof raw });
-        return;
-      }
-      const obj = raw as Record<string, unknown>;
+    function handleObject(obj: Record<string, unknown>, raw: unknown): void {
       logIncoming(obj.type);
-
+      // Log the full tool.call payload so we can diagnose provider-side
+      // empty-args problems — the underlying LLM emitting a function call
+      // without populating its required parameters. Without the full
+      // payload we cannot tell apart "field-name mismatch" from
+      // "model emitted no args."
+      if (obj.type === "tool.call") {
+        log.info("S2S << tool.call payload", { payload: JSON.stringify(obj) });
+      }
       if (obj.type === "reply.audio" && typeof obj.data === "string") {
         callbacks.onAudio(base64ToUint8(obj.data));
         return;
       }
-
       const parsed = parseS2sMessage(obj);
       if (!parsed) {
         log.warn(
@@ -332,6 +336,21 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
         return;
       }
       dispatchS2sMessage(callbacks, parsed, dispatchState, dispatchCtx);
+    }
+
+    ws.addEventListener("message", (ev) => {
+      let raw: unknown;
+      try {
+        raw = JSON.parse(String(ev.data));
+      } catch {
+        log.warn("S2S << invalid JSON", { data: String(ev.data).slice(0, 200) });
+        return;
+      }
+      if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+        log.warn("S2S << non-object JSON message", { type: typeof raw });
+        return;
+      }
+      handleObject(raw as Record<string, unknown>, raw);
     });
 
     ws.addEventListener("close", (ev) => {

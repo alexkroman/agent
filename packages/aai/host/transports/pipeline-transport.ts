@@ -14,6 +14,7 @@ import {
   DEFAULT_MAX_HISTORY,
   DEFAULT_STT_SAMPLE_RATE,
   DEFAULT_TTS_SAMPLE_RATE,
+  MAX_TOOL_RESULT_CHARS,
   PIPELINE_FLUSH_TIMEOUT_MS,
 } from "../../sdk/constants.ts";
 import type { SessionErrorCode } from "../../sdk/protocol.ts";
@@ -235,6 +236,25 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       ttsSession?.sendText(out);
     }
 
+    function emitToolResult(part: {
+      readonly toolCallId?: string;
+      readonly output?: unknown;
+    }): void {
+      // Inline execution finished — surface completion so the client UI can
+      // flip the tool-call from "pending" to "done". Schema requires a
+      // string result capped at MAX_TOOL_RESULT_CHARS.
+      const callId = part.toolCallId ?? "";
+      if (!callId) return;
+      const raw =
+        (part as { output?: unknown; result?: unknown }).output ??
+        (part as { result?: unknown }).result ??
+        "";
+      const str = typeof raw === "string" ? raw : JSON.stringify(raw);
+      const truncated =
+        str.length > MAX_TOOL_RESULT_CHARS ? str.slice(0, MAX_TOOL_RESULT_CHARS) : str;
+      callbacks.onToolCallDone?.(callId, truncated);
+    }
+
     return function handlePart(part: {
       readonly type: string;
       readonly text?: string;
@@ -257,6 +277,9 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
           callbacks.onToolCall(part.toolCallId ?? "", part.toolName ?? "", input);
           return;
         }
+        case "tool-result":
+          emitToolResult(part);
+          return;
         case "error": {
           const msg = errorMessage(part.error);
           log.error("LLM stream error", { message: msg, sid: opts.sid });

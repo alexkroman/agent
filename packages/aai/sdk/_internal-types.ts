@@ -118,11 +118,24 @@ export type ToolSchema = {
 
 export const EMPTY_PARAMS = z.object({});
 
+/**
+ * Convert a Zod schema to the JSON Schema shape that S2S providers expect.
+ * Strips the `$schema` keyword: `z.toJSONSchema` (Zod v4) tags output with
+ * the JSON Schema 2020-12 dialect URI, and some Realtime/S2S providers
+ * either reject the field outright or ship it through to the underlying
+ * model with a malformed function spec — observed empirically as tool
+ * calls that arrive with `args: {}` even when required params are listed.
+ */
+export function toToolJsonSchema(zodSchema: z.ZodTypeAny): JSONSchema7 {
+  const { $schema: _omit, ...rest } = z.toJSONSchema(zodSchema) as Record<string, unknown>;
+  return rest as JSONSchema7;
+}
+
 export function agentToolsToSchemas(tools: Readonly<Record<string, ToolDef>>): ToolSchema[] {
   return Object.entries(tools).map(([name, def]) => ({
     type: "function",
     name,
     description: def.description,
-    parameters: z.toJSONSchema(def.parameters ?? EMPTY_PARAMS) as JSONSchema7,
+    parameters: toToolJsonSchema(def.parameters ?? EMPTY_PARAMS),
   }));
 }
