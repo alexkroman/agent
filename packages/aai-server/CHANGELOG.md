@@ -1,5 +1,15 @@
 # @alexkroman1/aai-server
 
+## 1.1.6
+
+### Patch Changes
+
+- 31736fe: Simplify aai-server modules: dedupe helpers, prune dead code, strip narration comments. No behavior changes.
+- Updated dependencies [a7384ad]
+- Updated dependencies [cc013df]
+  - @alexkroman1/aai@1.8.0
+  - @alexkroman1/aai-ui@1.8.0
+
 ## 1.1.5
 
 ### Patch Changes

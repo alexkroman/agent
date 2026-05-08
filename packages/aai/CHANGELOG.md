@@ -1,5 +1,15 @@
 # @alexkroman1/aai
 
+## 1.8.0
+
+### Minor Changes
+
+- a7384ad: Add OpenAI Realtime API as a pluggable s2s: provider via openaiRealtime() from @alexkroman1/aai/s2s
+
+### Patch Changes
+
+- cc013df: Log session.error code+message at warn level (was hidden — only the type was logged), capture session id from session.updated.config.id (the success-path message; session.ready is no longer sent there, leaving resume permanently disabled), and remove the broken time-since-session-ready check from canResumeAfter that prevented resume on any session older than 25s.
+
 ## 1.7.1
 
 ### Patch Changes
