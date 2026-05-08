@@ -9,6 +9,7 @@ import { anthropic } from "./providers/llm/anthropic.ts";
 import { assemblyAI } from "./providers/stt/assemblyai.ts";
 import { cartesia } from "./providers/tts/cartesia.ts";
 import { pinecone } from "./providers/vector/pinecone.ts";
+import { assertProviderTriple } from "./providers.ts";
 
 describe("parseManifest", () => {
   test("minimal manifest requires only name", () => {
@@ -227,5 +228,30 @@ describe("parseManifest — mode classification", () => {
         tts: stubTts,
       } as never),
     ).toThrow(/stt, llm, and tts must be set together/);
+  });
+});
+
+describe("assertProviderTriple with s2s", () => {
+  test("returns 's2s' when s2s descriptor is set and pipeline triple is empty", () => {
+    const s2s = { kind: "openai-realtime", options: {} };
+    expect(assertProviderTriple(undefined, undefined, undefined, s2s)).toBe("s2s");
+  });
+
+  test("returns 's2s' when nothing is set (default fallback)", () => {
+    expect(assertProviderTriple(undefined, undefined, undefined, undefined)).toBe("s2s");
+  });
+
+  test("returns 'pipeline' when triple is set and s2s is not", () => {
+    const stt = { kind: "x", options: {} };
+    expect(assertProviderTriple(stt, stt, stt, undefined)).toBe("pipeline");
+  });
+
+  test("rejects setting s2s alongside any pipeline field", () => {
+    const d = { kind: "x", options: {} };
+    expect(() => assertProviderTriple(d, undefined, undefined, d)).toThrow(
+      /s2s.*pipeline|cannot.*together/i,
+    );
+    expect(() => assertProviderTriple(undefined, d, undefined, d)).toThrow();
+    expect(() => assertProviderTriple(undefined, undefined, d, d)).toThrow();
   });
 });
