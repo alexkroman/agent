@@ -318,3 +318,54 @@ describe("tool calls", () => {
     expect(m2.type).toBe("response.create");
   });
 });
+
+describe("cancel, error, close", () => {
+  test("cancelReply sends response.cancel only when a reply is in flight", async () => {
+    const { fake, transport, ready } = startedTransport();
+    await ready;
+    fake.sent.length = 0;
+    // No reply yet — cancel should be a no-op
+    transport.cancelReply();
+    expect(fake.sent.length).toBe(0);
+
+    fake.fire("message", {
+      data: JSON.stringify({ type: "response.created", response: { id: "r1" } }),
+    });
+    transport.cancelReply();
+    expect(fake.sent.length).toBe(1);
+    expect(JSON.parse(fake.sent[0] ?? "{}").type).toBe("response.cancel");
+  });
+
+  test("cancelReply also fires onCancelled", async () => {
+    const { fake, cbs, transport, ready } = startedTransport();
+    await ready;
+    fake.fire("message", {
+      data: JSON.stringify({ type: "response.created", response: { id: "r2" } }),
+    });
+    transport.cancelReply();
+    expect(cbs.onCancelled).toHaveBeenCalledTimes(1);
+  });
+
+  test("error event routes to onError with internal code", async () => {
+    const { fake, cbs, ready } = startedTransport();
+    await ready;
+    fake.fire("message", {
+      data: JSON.stringify({ type: "error", error: { message: "boom" } }),
+    });
+    expect(cbs.onError).toHaveBeenCalledWith("internal", "boom");
+  });
+
+  test("error event with missing message uses fallback", async () => {
+    const { fake, cbs, ready } = startedTransport();
+    await ready;
+    fake.fire("message", { data: JSON.stringify({ type: "error" }) });
+    expect(cbs.onError).toHaveBeenCalledWith("internal", expect.any(String));
+  });
+
+  test("unexpected close routes to onError with connection code", async () => {
+    const { fake, cbs, ready } = startedTransport();
+    await ready;
+    fake.fire("close", { code: 1006, reason: "" });
+    expect(cbs.onError).toHaveBeenCalledWith("connection", expect.stringMatching(/closed/i));
+  });
+});

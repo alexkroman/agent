@@ -77,7 +77,6 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
   const agentTranscriptBuffers = new Map<string, string>();
   type ToolBuffer = { callId: string; name: string; argsBuffer: string };
   const toolBuffers = new Map<string, ToolBuffer>();
-  // biome-ignore lint/correctness/noUnusedVariables: read by cancelReply in Task 8
   let currentResponseId: string | null = null;
 
   function send(payload: Record<string, unknown>): void {
@@ -181,6 +180,12 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
     opts.callbacks.onReplyDone();
   }
 
+  function handleErrorEvent(obj: Record<string, unknown>): void {
+    const err = obj.error as { message?: unknown } | undefined;
+    const message = typeof err?.message === "string" ? err.message : "OpenAI Realtime error";
+    opts.callbacks.onError("internal", message);
+  }
+
   function handleOutputItemAdded(obj: Record<string, unknown>): void {
     const item = obj.item as
       | { id?: string; type?: string; name?: string; call_id?: string }
@@ -271,6 +276,9 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
       case "response.function_call_arguments.done":
         handleFunctionCallArgsDone(obj);
         return;
+      case "error":
+        handleErrorEvent(obj);
+        return;
       default:
         return;
     }
@@ -305,7 +313,10 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
       send({ type: "response.create" });
     },
     cancelReply() {
-      // Task 8 — send response.cancel to OpenAI Realtime.
+      if (currentResponseId === null) return;
+      send({ type: "response.cancel" });
+      currentResponseId = null;
+      opts.callbacks.onCancelled();
     },
   };
 }
