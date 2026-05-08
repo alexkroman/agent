@@ -343,6 +343,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
       log.info("OpenAI Realtime sendToolResult", {
         callId,
         resultLen: result.length,
+        preview: result.slice(0, 200),
       });
       send({
         type: "conversation.item.create",
