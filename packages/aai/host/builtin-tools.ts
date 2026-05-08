@@ -9,7 +9,7 @@
 
 import { convert } from "html-to-text";
 import { z } from "zod";
-import { EMPTY_PARAMS, type ToolSchema } from "../sdk/_internal-types.ts";
+import { EMPTY_PARAMS, type ToolSchema, toToolJsonSchema } from "../sdk/_internal-types.ts";
 import { FETCH_TIMEOUT_MS, MAX_HTML_BYTES, MAX_PAGE_CHARS } from "../sdk/constants.ts";
 import type { ToolDef } from "../sdk/types.ts";
 import { createRunCode } from "./_run-code.ts";
@@ -242,7 +242,7 @@ export function resolveAllBuiltins(
         type: "function",
         name: toolName,
         description: def.description,
-        parameters: z.toJSONSchema(def.parameters ?? EMPTY_PARAMS) as ToolSchema["parameters"],
+        parameters: toToolJsonSchema(def.parameters ?? EMPTY_PARAMS) as ToolSchema["parameters"],
       });
       if (def.guidance) guidance.push(def.guidance);
     }

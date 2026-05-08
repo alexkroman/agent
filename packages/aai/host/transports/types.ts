@@ -17,6 +17,13 @@ export type TransportCallbacks = {
   onUserTranscript(text: string): void;
   onAgentTranscript(text: string, interrupted: boolean): void;
   onToolCall(callId: string, name: string, args: Record<string, unknown>): void;
+  /**
+   * Tool execution finished. Pipeline mode invokes this from the
+   * `tool-result` stream part so the client UI can mark the call done.
+   * S2S transports leave this unset — SessionCore.onToolCall emits the
+   * `tool_call_done` event itself after dispatching the tool.
+   */
+  onToolCallDone?(callId: string, result: string): void;
   onError(code: SessionErrorCode, message: string): void;
   onSpeechStarted(): void;
   onSpeechStopped(): void;

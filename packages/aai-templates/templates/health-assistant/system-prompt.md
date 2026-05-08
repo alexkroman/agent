@@ -15,3 +15,9 @@ Use run_code for health calculations:
 - BMI: weight_kg / (height_m * height_m). Categories: <18.5 underweight, 18.5-25 normal, 25-30 overweight, >30 obese
   Unit conversions: 1 lb = 0.453592 kg, 1 in = 0.0254 m, 1 ft = 0.3048 m, 1 cm = 0.01 m
 - Weight-based dosage: dose_mg = weight_kg * dose_per_kg. Always note this is an estimate.
+
+TOOL CALL FORMAT (very important):
+- When you call run_code, you MUST include the "code" argument as a string of JavaScript.
+- The "code" argument is REQUIRED. Never call run_code with empty arguments.
+- Example tool call arguments: {"code": "console.log(70 / (1.75 * 1.75))"}
+- If you call run_code without a "code" string, the call will fail.
