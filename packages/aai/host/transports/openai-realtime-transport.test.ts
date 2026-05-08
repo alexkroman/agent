@@ -355,14 +355,35 @@ describe("tool calls", () => {
     await ready;
     fake.sent.length = 0; // drop session.update
     transport.sendToolResult("call_1", '{"ok":true}');
-    expect(fake.sent.length).toBe(2);
+    // function_call_output is sent immediately; response.create is queued.
+    expect(fake.sent.length).toBe(1);
     const m1 = JSON.parse(fake.sent[0] ?? "{}");
     expect(m1.type).toBe("conversation.item.create");
     expect(m1.item.type).toBe("function_call_output");
     expect(m1.item.call_id).toBe("call_1");
     expect(m1.item.output).toBe('{"ok":true}');
+    await new Promise((r) => queueMicrotask(() => r(undefined)));
+    expect(fake.sent.length).toBe(2);
     const m2 = JSON.parse(fake.sent[1] ?? "{}");
     expect(m2.type).toBe("response.create");
+  });
+
+  test("multiple sendToolResult calls coalesce into a single response.create", async () => {
+    const { fake, transport, ready } = startedTransport();
+    await ready;
+    fake.sent.length = 0;
+    // Synchronous burst — session-core flushes pending tool results in a loop.
+    transport.sendToolResult("call_1", '{"a":1}');
+    transport.sendToolResult("call_2", '{"b":2}');
+    transport.sendToolResult("call_3", '{"c":3}');
+    // Three function_call_outputs sent immediately, no response.create yet.
+    expect(fake.sent.length).toBe(3);
+    expect(fake.sent.every((s) => JSON.parse(s).type === "conversation.item.create")).toBe(true);
+    await new Promise((r) => queueMicrotask(() => r(undefined)));
+    // After the microtask, exactly one response.create — second one would be
+    // rejected as `conversation_already_has_active_response`.
+    expect(fake.sent.length).toBe(4);
+    expect(JSON.parse(fake.sent[3] ?? "{}").type).toBe("response.create");
   });
 });
 

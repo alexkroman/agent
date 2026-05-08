@@ -68,6 +68,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
   type ToolBuffer = { callId: string; name: string; argsBuffer: string };
   const toolBuffers = new Map<string, ToolBuffer>();
   let currentResponseId: string | null = null;
+  let responseCreateQueued = false;
 
   function send(payload: Record<string, unknown>): void {
     if (!ws || ws.readyState !== WS_OPEN) {
@@ -337,7 +338,16 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
         type: "conversation.item.create",
         item: { type: "function_call_output", call_id: callId, output: result },
       });
-      send({ type: "response.create" });
+      // Multiple tool results from one turn arrive synchronously; coalesce them
+      // into a single response.create per tick. OpenAI rejects a second
+      // response.create while one is in flight, which strands the turn.
+      if (!responseCreateQueued) {
+        responseCreateQueued = true;
+        queueMicrotask(() => {
+          responseCreateQueued = false;
+          send({ type: "response.create" });
+        });
+      }
     },
     cancelReply() {
       if (currentResponseId === null) return;
