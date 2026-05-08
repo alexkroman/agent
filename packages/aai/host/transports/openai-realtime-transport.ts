@@ -74,6 +74,9 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
 
   let ws: OpenaiRealtimeWebSocket | null = null;
   let closing = false;
+  const agentTranscriptBuffers = new Map<string, string>();
+  // biome-ignore lint/correctness/noUnusedVariables: read by cancelReply in Task 8
+  let currentResponseId: string | null = null;
 
   function send(payload: Record<string, unknown>): void {
     if (!ws || ws.readyState !== WS_OPEN) {
@@ -135,6 +138,47 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
     });
   }
 
+  function asString(v: unknown): string {
+    return typeof v === "string" ? v : "";
+  }
+
+  function handleAudioDelta(obj: Record<string, unknown>): void {
+    if (typeof obj.delta === "string") {
+      opts.callbacks.onAudioChunk(base64ToUint8(obj.delta));
+    }
+  }
+
+  function handleUserTranscript(obj: Record<string, unknown>): void {
+    if (typeof obj.transcript === "string") {
+      opts.callbacks.onUserTranscript(obj.transcript);
+    }
+  }
+
+  function handleResponseCreated(obj: Record<string, unknown>): void {
+    const resp = obj.response as { id?: unknown } | undefined;
+    const id = asString(resp?.id);
+    currentResponseId = id;
+    opts.callbacks.onReplyStarted(id);
+  }
+
+  function handleAgentTranscriptDelta(obj: Record<string, unknown>): void {
+    const id = asString(obj.item_id);
+    const delta = asString(obj.delta);
+    agentTranscriptBuffers.set(id, (agentTranscriptBuffers.get(id) ?? "") + delta);
+  }
+
+  function handleAgentTranscriptDone(obj: Record<string, unknown>): void {
+    const id = asString(obj.item_id);
+    const text = agentTranscriptBuffers.get(id) ?? "";
+    agentTranscriptBuffers.delete(id);
+    if (text) opts.callbacks.onAgentTranscript(text, false);
+  }
+
+  function handleResponseDone(): void {
+    currentResponseId = null;
+    opts.callbacks.onReplyDone();
+  }
+
   function handleMessage(data: unknown): void {
     let raw: unknown;
     try {
@@ -147,12 +191,31 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
     const obj = raw as Record<string, unknown>;
     switch (obj.type) {
       case "response.audio.delta":
-        if (typeof obj.delta === "string") {
-          opts.callbacks.onAudioChunk(base64ToUint8(obj.delta));
-        }
+        handleAudioDelta(obj);
         return;
       case "response.audio.done":
         opts.callbacks.onAudioDone();
+        return;
+      case "input_audio_buffer.speech_started":
+        opts.callbacks.onSpeechStarted();
+        return;
+      case "input_audio_buffer.speech_stopped":
+        opts.callbacks.onSpeechStopped();
+        return;
+      case "conversation.item.input_audio_transcription.completed":
+        handleUserTranscript(obj);
+        return;
+      case "response.created":
+        handleResponseCreated(obj);
+        return;
+      case "response.audio_transcript.delta":
+        handleAgentTranscriptDelta(obj);
+        return;
+      case "response.audio_transcript.done":
+        handleAgentTranscriptDone(obj);
+        return;
+      case "response.done":
+        handleResponseDone();
         return;
       default:
         return;

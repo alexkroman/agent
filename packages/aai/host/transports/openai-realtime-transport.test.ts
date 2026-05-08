@@ -168,3 +168,78 @@ describe("audio in/out", () => {
     expect(cbs.onAudioDone).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("VAD, user transcript, reply lifecycle, agent transcript", () => {
+  test("speech_started/stopped routed to callbacks", async () => {
+    const { fake, cbs, ready } = startedTransport();
+    await ready;
+    fake.fire("message", {
+      data: JSON.stringify({ type: "input_audio_buffer.speech_started" }),
+    });
+    fake.fire("message", {
+      data: JSON.stringify({ type: "input_audio_buffer.speech_stopped" }),
+    });
+    expect(cbs.onSpeechStarted).toHaveBeenCalledTimes(1);
+    expect(cbs.onSpeechStopped).toHaveBeenCalledTimes(1);
+  });
+
+  test("user transcription completed routes to onUserTranscript", async () => {
+    const { fake, cbs, ready } = startedTransport();
+    await ready;
+    fake.fire("message", {
+      data: JSON.stringify({
+        type: "conversation.item.input_audio_transcription.completed",
+        transcript: "hello world",
+      }),
+    });
+    expect(cbs.onUserTranscript).toHaveBeenCalledWith("hello world");
+  });
+
+  test("response.created → onReplyStarted; response.done → onReplyDone", async () => {
+    const { fake, cbs, ready } = startedTransport();
+    await ready;
+    fake.fire("message", {
+      data: JSON.stringify({ type: "response.created", response: { id: "resp_1" } }),
+    });
+    expect(cbs.onReplyStarted).toHaveBeenCalledWith("resp_1");
+    fake.fire("message", { data: JSON.stringify({ type: "response.done" }) });
+    expect(cbs.onReplyDone).toHaveBeenCalledTimes(1);
+  });
+
+  test("agent transcript: deltas accumulated, emitted on done", async () => {
+    const { fake, cbs, ready } = startedTransport();
+    await ready;
+    const item_id = "item_x";
+    fake.fire("message", {
+      data: JSON.stringify({
+        type: "response.audio_transcript.delta",
+        item_id,
+        delta: "Hi ",
+      }),
+    });
+    fake.fire("message", {
+      data: JSON.stringify({
+        type: "response.audio_transcript.delta",
+        item_id,
+        delta: "there.",
+      }),
+    });
+    expect(cbs.onAgentTranscript).not.toHaveBeenCalled();
+    fake.fire("message", {
+      data: JSON.stringify({ type: "response.audio_transcript.done", item_id }),
+    });
+    expect(cbs.onAgentTranscript).toHaveBeenCalledWith("Hi there.", false);
+  });
+
+  test("agent transcript: done with no buffered deltas does not emit", async () => {
+    const { fake, cbs, ready } = startedTransport();
+    await ready;
+    fake.fire("message", {
+      data: JSON.stringify({
+        type: "response.audio_transcript.done",
+        item_id: "empty",
+      }),
+    });
+    expect(cbs.onAgentTranscript).not.toHaveBeenCalled();
+  });
+});
