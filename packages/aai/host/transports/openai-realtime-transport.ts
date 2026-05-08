@@ -8,6 +8,14 @@ import type { Logger } from "../runtime-config.ts";
 import { consoleLogger } from "../runtime-config.ts";
 import type { Transport, TransportCallbacks, TransportSessionConfig } from "./types.ts";
 
+function uint8ToBase64(bytes: Uint8Array): string {
+  return Buffer.from(bytes).toString("base64");
+}
+
+function base64ToUint8(s: string): Uint8Array {
+  return new Uint8Array(Buffer.from(s, "base64"));
+}
+
 const DEFAULT_MODEL = "gpt-realtime";
 const DEFAULT_VOICE = "alloy";
 const DEFAULT_URL = "wss://api.openai.com/v1/realtime";
@@ -127,8 +135,28 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
     });
   }
 
-  function handleMessage(_data: unknown): void {
-    // Filled in by Tasks 5–8.
+  function handleMessage(data: unknown): void {
+    let raw: unknown;
+    try {
+      raw = JSON.parse(String(data));
+    } catch {
+      log.warn("OpenAI Realtime: invalid JSON");
+      return;
+    }
+    if (typeof raw !== "object" || raw === null) return;
+    const obj = raw as Record<string, unknown>;
+    switch (obj.type) {
+      case "response.audio.delta":
+        if (typeof obj.delta === "string") {
+          opts.callbacks.onAudioChunk(base64ToUint8(obj.delta));
+        }
+        return;
+      case "response.audio.done":
+        opts.callbacks.onAudioDone();
+        return;
+      default:
+        return;
+    }
   }
 
   function handleClose(code: number, reason: string): void {
@@ -149,8 +177,8 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
   return {
     start,
     stop,
-    sendUserAudio(_bytes) {
-      // Task 5 — forward PCM16 audio to OpenAI Realtime.
+    sendUserAudio(bytes) {
+      send({ type: "input_audio_buffer.append", audio: uint8ToBase64(bytes) });
     },
     sendToolResult(_callId, _result) {
       // Task 7 — forward tool results to OpenAI Realtime.
