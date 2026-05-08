@@ -253,7 +253,7 @@ describe("parseManifest s2s", () => {
         llm: { kind: "openai", options: {} },
         tts: { kind: "cartesia", options: {} },
       }),
-    ).toThrow();
+    ).toThrow(/s2s.*pipeline|cannot.*together/i);
   });
 });
 

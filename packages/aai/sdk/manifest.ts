@@ -83,7 +83,7 @@ export type Manifest = {
   vector?: VectorProvider | undefined;
   /**
    * Session mode derived from provider fields:
-   * - `"s2s"` (default): AssemblyAI Streaming Speech-to-Speech path (no stt/llm/tts set).
+   * - `"s2s"`: speech-to-speech path (default when no stt/llm/tts set, or when `s2s` is set).
    * - `"pipeline"`: pluggable STT → LLM → TTS path (stt + llm + tts all set).
    */
   mode: SessionMode;
