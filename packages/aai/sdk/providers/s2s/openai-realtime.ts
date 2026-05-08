@@ -18,7 +18,7 @@ export type OpenaiRealtimeVoice =
   | "verse";
 
 export type OpenaiRealtimeOptions = {
-  /** Realtime model identifier. Default applied by the host (currently `"gpt-realtime"`). */
+  /** Realtime model identifier. Default applied by the host (currently `"gpt-realtime-2"`). */
   model?: string;
   /** TTS voice. Default applied by the host (currently `"alloy"`). */
   voice?: OpenaiRealtimeVoice;

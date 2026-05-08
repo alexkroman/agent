@@ -10,7 +10,7 @@ import type { Logger } from "../runtime-config.ts";
 import { consoleLogger } from "../runtime-config.ts";
 import type { Transport, TransportCallbacks, TransportSessionConfig } from "./types.ts";
 
-const DEFAULT_MODEL = "gpt-realtime";
+const DEFAULT_MODEL = "gpt-realtime-2";
 const DEFAULT_VOICE = "alloy";
 const DEFAULT_URL = "wss://api.openai.com/v1/realtime";
 
