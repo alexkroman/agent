@@ -1,4 +1,4 @@
-// Copyright 2026 the AAI authors. MIT license.
+// Copyright 2025 the AAI authors. MIT license.
 /**
  * `@alexkroman1/aai/s2s` subpath barrel.
  *

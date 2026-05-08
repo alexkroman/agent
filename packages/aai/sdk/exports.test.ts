@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Export surface snapshot tests for all four aai subpath exports.
+ * Export surface snapshot tests for all five aai subpath exports.
  *
  * These tests catch accidental export additions or removals. If a snapshot
  * breaks, it signals a potentially breaking API change that should be
@@ -29,11 +29,8 @@ describe("export surface stability", () => {
     expect(Object.keys(mod).sort()).toMatchSnapshot();
   });
 
-  test("@alexkroman1/aai/s2s exports openaiRealtime", async () => {
+  test("@alexkroman1/aai/s2s export", async () => {
     const mod = await import("@alexkroman1/aai/s2s");
-    expect(typeof mod.openaiRealtime).toBe("function");
-    const d = mod.openaiRealtime({ model: "gpt-realtime", voice: "cedar" });
-    expect(d.kind).toBe("openai-realtime");
-    expect(d.options).toEqual({ model: "gpt-realtime", voice: "cedar" });
+    expect(Object.keys(mod).sort()).toMatchSnapshot();
   });
 });

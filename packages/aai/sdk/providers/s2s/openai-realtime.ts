@@ -1,4 +1,4 @@
-// Copyright 2026 the AAI authors. MIT license.
+// Copyright 2025 the AAI authors. MIT license.
 /** OpenAI Realtime S2S descriptor — host transport resolves at session start. */
 
 import type { S2sProvider } from "../../providers.ts";
@@ -18,9 +18,9 @@ export type OpenaiRealtimeVoice =
   | "verse";
 
 export type OpenaiRealtimeOptions = {
-  /** Realtime model identifier. Defaults to `"gpt-realtime"`. */
+  /** Realtime model identifier. Default applied by the host (currently `"gpt-realtime"`). */
   model?: string;
-  /** TTS voice. Defaults to `"alloy"`. */
+  /** TTS voice. Default applied by the host (currently `"alloy"`). */
   voice?: OpenaiRealtimeVoice;
   /** Override the WebSocket base URL (testing/proxy). */
   url?: string;

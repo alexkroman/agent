@@ -89,3 +89,10 @@ exports[`export surface stability > @alexkroman1/aai/runtime export 1`] = `
   "wireSessionSocket",
 ]
 `;
+
+exports[`export surface stability > @alexkroman1/aai/s2s export 1`] = `
+[
+  "OPENAI_REALTIME_KIND",
+  "openaiRealtime",
+]
+`;
