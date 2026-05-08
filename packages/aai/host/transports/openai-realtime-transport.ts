@@ -1,4 +1,4 @@
-// Copyright 2025 the AAI authors. MIT license.
+// Copyright 2026 the AAI authors. MIT license.
 // OpenAI Realtime API transport — implements Transport.
 
 import type { JSONSchema7 } from "json-schema";
@@ -114,8 +114,15 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
       sock.addEventListener("close", (ev) => handleClose(ev.code ?? 0, ev.reason ?? ""));
       sock.addEventListener("error", (ev) => {
         const msg = typeof ev.message === "string" ? ev.message : "WebSocket error";
-        if (!opened) reject(new Error(msg));
-        else opts.callbacks.onError("internal", msg);
+        if (!opened) {
+          reject(new Error(msg));
+          return;
+        }
+        if (closing) {
+          log.info("OpenAI Realtime error during close", { error: msg });
+          return;
+        }
+        opts.callbacks.onError("internal", msg);
       });
     });
   }

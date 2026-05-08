@@ -1,4 +1,4 @@
-// Copyright 2025 the AAI authors. MIT license.
+// Copyright 2026 the AAI authors. MIT license.
 import { describe, expect, test, vi } from "vitest";
 import { silentLogger } from "../_test-utils.ts";
 import {
@@ -66,7 +66,14 @@ describe("openai-realtime-transport: connect and session.update", () => {
         greeting: "Hi.",
         tools: [],
       },
-      toolSchemas: [],
+      toolSchemas: [
+        {
+          type: "function",
+          name: "lookup",
+          description: "look up something",
+          parameters: { type: "object", properties: {} },
+        },
+      ],
       toolChoice: "auto",
       callbacks: noopCallbacks(),
       sid: "sid-1",
@@ -101,5 +108,9 @@ describe("openai-realtime-transport: connect and session.update", () => {
     expect(msg.session.modalities).toEqual(["audio", "text"]);
     expect(msg.session.input_audio_transcription).toEqual({ model: "whisper-1" });
     expect(msg.session.turn_detection.type).toBe("server_vad");
+    expect(msg.session.tools).toEqual([
+      expect.objectContaining({ type: "function", name: "lookup" }),
+    ]);
+    expect(msg.session.tool_choice).toBe("auto");
   });
 });
