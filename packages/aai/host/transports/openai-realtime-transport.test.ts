@@ -243,3 +243,78 @@ describe("VAD, user transcript, reply lifecycle, agent transcript", () => {
     expect(cbs.onAgentTranscript).not.toHaveBeenCalled();
   });
 });
+
+describe("tool calls", () => {
+  test("function_call_arguments deltas accumulate; .done emits onToolCall", async () => {
+    const { fake, cbs, ready } = startedTransport();
+    await ready;
+    const item_id = "item_t";
+    fake.fire("message", {
+      data: JSON.stringify({
+        type: "response.output_item.added",
+        item: { id: item_id, type: "function_call", name: "lookup", call_id: "call_1" },
+      }),
+    });
+    fake.fire("message", {
+      data: JSON.stringify({
+        type: "response.function_call_arguments.delta",
+        item_id,
+        delta: '{"q":',
+      }),
+    });
+    fake.fire("message", {
+      data: JSON.stringify({
+        type: "response.function_call_arguments.delta",
+        item_id,
+        delta: '"hi"}',
+      }),
+    });
+    fake.fire("message", {
+      data: JSON.stringify({
+        type: "response.function_call_arguments.done",
+        item_id,
+        call_id: "call_1",
+        name: "lookup",
+        arguments: '{"q":"hi"}',
+      }),
+    });
+    expect(cbs.onToolCall).toHaveBeenCalledWith("call_1", "lookup", { q: "hi" });
+  });
+
+  test("done with empty/invalid args still calls onToolCall with {}", async () => {
+    const { fake, cbs, ready } = startedTransport();
+    await ready;
+    const item_id = "item_e";
+    fake.fire("message", {
+      data: JSON.stringify({
+        type: "response.output_item.added",
+        item: { id: item_id, type: "function_call", name: "noop", call_id: "call_e" },
+      }),
+    });
+    fake.fire("message", {
+      data: JSON.stringify({
+        type: "response.function_call_arguments.done",
+        item_id,
+        call_id: "call_e",
+        name: "noop",
+        arguments: "",
+      }),
+    });
+    expect(cbs.onToolCall).toHaveBeenCalledWith("call_e", "noop", {});
+  });
+
+  test("sendToolResult sends conversation.item.create + response.create", async () => {
+    const { fake, transport, ready } = startedTransport();
+    await ready;
+    fake.sent.length = 0; // drop session.update
+    transport.sendToolResult("call_1", '{"ok":true}');
+    expect(fake.sent.length).toBe(2);
+    const m1 = JSON.parse(fake.sent[0] ?? "{}");
+    expect(m1.type).toBe("conversation.item.create");
+    expect(m1.item.type).toBe("function_call_output");
+    expect(m1.item.call_id).toBe("call_1");
+    expect(m1.item.output).toBe('{"ok":true}');
+    const m2 = JSON.parse(fake.sent[1] ?? "{}");
+    expect(m2.type).toBe("response.create");
+  });
+});

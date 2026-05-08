@@ -75,6 +75,8 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
   let ws: OpenaiRealtimeWebSocket | null = null;
   let closing = false;
   const agentTranscriptBuffers = new Map<string, string>();
+  type ToolBuffer = { callId: string; name: string; argsBuffer: string };
+  const toolBuffers = new Map<string, ToolBuffer>();
   // biome-ignore lint/correctness/noUnusedVariables: read by cancelReply in Task 8
   let currentResponseId: string | null = null;
 
@@ -179,6 +181,49 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
     opts.callbacks.onReplyDone();
   }
 
+  function handleOutputItemAdded(obj: Record<string, unknown>): void {
+    const item = obj.item as
+      | { id?: string; type?: string; name?: string; call_id?: string }
+      | undefined;
+    if (item?.type !== "function_call" || !item.id) return;
+    toolBuffers.set(item.id, {
+      callId: item.call_id ?? "",
+      name: item.name ?? "",
+      argsBuffer: "",
+    });
+  }
+
+  function handleFunctionCallArgsDelta(obj: Record<string, unknown>): void {
+    const id = asString(obj.item_id);
+    const delta = asString(obj.delta);
+    const buf = toolBuffers.get(id);
+    if (buf) buf.argsBuffer += delta;
+  }
+
+  function parseToolArgs(argsStr: string, name: string, callId: string): Record<string, unknown> {
+    if (!argsStr) return {};
+    try {
+      const parsed = JSON.parse(argsStr);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      log.warn("OpenAI Realtime: invalid tool args JSON", { name, callId });
+    }
+    return {};
+  }
+
+  function handleFunctionCallArgsDone(obj: Record<string, unknown>): void {
+    const id = asString(obj.item_id);
+    const buf = toolBuffers.get(id);
+    toolBuffers.delete(id);
+    const callId = asString(obj.call_id) || (buf?.callId ?? "");
+    const name = asString(obj.name) || (buf?.name ?? "");
+    const argsStr = asString(obj.arguments) || (buf?.argsBuffer ?? "");
+    const args = parseToolArgs(argsStr, name, callId);
+    opts.callbacks.onToolCall(callId, name, args);
+  }
+
   function handleMessage(data: unknown): void {
     let raw: unknown;
     try {
@@ -217,6 +262,15 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
       case "response.done":
         handleResponseDone();
         return;
+      case "response.output_item.added":
+        handleOutputItemAdded(obj);
+        return;
+      case "response.function_call_arguments.delta":
+        handleFunctionCallArgsDelta(obj);
+        return;
+      case "response.function_call_arguments.done":
+        handleFunctionCallArgsDone(obj);
+        return;
       default:
         return;
     }
@@ -243,8 +297,12 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
     sendUserAudio(bytes) {
       send({ type: "input_audio_buffer.append", audio: uint8ToBase64(bytes) });
     },
-    sendToolResult(_callId, _result) {
-      // Task 7 — forward tool results to OpenAI Realtime.
+    sendToolResult(callId, result) {
+      send({
+        type: "conversation.item.create",
+        item: { type: "function_call_output", call_id: callId, output: result },
+      });
+      send({ type: "response.create" });
     },
     cancelReply() {
       // Task 8 — send response.cancel to OpenAI Realtime.
