@@ -133,13 +133,16 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
   };
 
   const builtins = resolveAllBuiltins(config.builtinTools ?? [], { fetch: safeFetch });
-  console.log("[diag] sandbox createRuntime", {
-    slug,
-    hasS2s: config.s2s !== undefined,
-    s2sKind: config.s2s?.kind,
-    mode: config.mode,
-    configKeys: Object.keys(config),
-  });
+  console.log(
+    `[diag] sandbox createRuntime ${JSON.stringify({
+      slug,
+      hasS2s: config.s2s !== undefined,
+      s2sKind: config.s2s?.kind,
+      mode: config.mode,
+      configKeys: Object.keys(config),
+      s2s: config.s2s,
+    })}`,
+  );
   const agentRuntime = createRuntime({
     agent: {
       name: config.name,
