@@ -209,6 +209,11 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
     const item = obj.item as
       | { id?: string; type?: string; name?: string; call_id?: string }
       | undefined;
+    log.info("OpenAI Realtime output_item.added", {
+      itemType: item?.type,
+      name: item?.name,
+      callId: item?.call_id,
+    });
     if (item?.type !== "function_call" || !item.id) return;
     toolBuffers.set(item.id, {
       callId: item.call_id ?? "",
@@ -244,6 +249,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
     const callId = asString(obj.call_id) || (buf?.callId ?? "");
     const name = asString(obj.name) || (buf?.name ?? "");
     const argsStr = asString(obj.arguments) || (buf?.argsBuffer ?? "");
+    log.info("OpenAI Realtime tool call", { name, callId, args: argsStr });
     const args = parseToolArgs(argsStr, name, callId);
     opts.callbacks.onToolCall(callId, name, args);
   }
@@ -334,6 +340,10 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
       ws.send(`{"type":"input_audio_buffer.append","audio":"${uint8ToBase64(bytes)}"}`);
     },
     sendToolResult(callId, result) {
+      log.info("OpenAI Realtime sendToolResult", {
+        callId,
+        resultLen: result.length,
+      });
       send({
         type: "conversation.item.create",
         item: { type: "function_call_output", call_id: callId, output: result },
