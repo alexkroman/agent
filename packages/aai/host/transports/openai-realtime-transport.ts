@@ -49,6 +49,8 @@ export type OpenaiRealtimeTransportOptions = {
   callbacks: TransportCallbacks;
   sid: string;
   agent: string;
+  /** Skip the initial greeting (used for session resume). */
+  skipGreeting?: boolean;
   createWebSocket?: CreateOpenaiRealtimeWebSocket;
   logger?: Logger;
 };
@@ -66,6 +68,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
   type ToolBuffer = { callId: string; name: string; argsBuffer: string };
   const toolBuffers = new Map<string, ToolBuffer>();
   let currentResponseId: string | null = null;
+  let responseCreateQueued = false;
 
   function send(payload: Record<string, unknown>): void {
     if (!ws || ws.readyState !== WS_OPEN) {
@@ -73,6 +76,19 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
       return;
     }
     ws.send(JSON.stringify(payload));
+  }
+
+  function sendGreeting(): void {
+    if (opts.skipGreeting) return;
+    const greeting = opts.sessionConfig.greeting;
+    if (!greeting) return;
+    // OpenAI Realtime has no native greeting field — trigger it as a one-shot
+    // response with custom instructions that override the system prompt for
+    // this turn only. Audio + transcript ride the normal response.* events.
+    send({
+      type: "response.create",
+      response: { instructions: `Say exactly: ${JSON.stringify(greeting)}` },
+    });
   }
 
   function sendSessionUpdate(): void {
@@ -114,6 +130,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
       sock.addEventListener("open", () => {
         opened = true;
         sendSessionUpdate();
+        sendGreeting();
         resolve();
       });
       sock.addEventListener("message", (ev) => handleMessage(ev.data));
@@ -183,6 +200,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
   function handleErrorEvent(obj: Record<string, unknown>): void {
     const err = obj.error as { message?: unknown } | undefined;
     const message = typeof err?.message === "string" ? err.message : "OpenAI Realtime error";
+    log.warn("OpenAI Realtime error event", { error: obj.error });
     clearTurnBuffers();
     opts.callbacks.onError("internal", message);
   }
@@ -191,6 +209,11 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
     const item = obj.item as
       | { id?: string; type?: string; name?: string; call_id?: string }
       | undefined;
+    log.info("OpenAI Realtime output_item.added", {
+      itemType: item?.type,
+      name: item?.name,
+      callId: item?.call_id,
+    });
     if (item?.type !== "function_call" || !item.id) return;
     toolBuffers.set(item.id, {
       callId: item.call_id ?? "",
@@ -226,6 +249,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
     const callId = asString(obj.call_id) || (buf?.callId ?? "");
     const name = asString(obj.name) || (buf?.name ?? "");
     const argsStr = asString(obj.arguments) || (buf?.argsBuffer ?? "");
+    log.info("OpenAI Realtime tool call", { name, callId, args: argsStr });
     const args = parseToolArgs(argsStr, name, callId);
     opts.callbacks.onToolCall(callId, name, args);
   }
@@ -241,9 +265,14 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
     if (typeof raw !== "object" || raw === null) return;
     const obj = raw as Record<string, unknown>;
     switch (obj.type) {
+      // GA renamed audio output events to `response.output_audio.*` and
+      // transcript events to `response.output_audio_transcript.*`. The legacy
+      // (beta) names are kept as aliases so older snapshots still work.
+      case "response.output_audio.delta":
       case "response.audio.delta":
         handleAudioDelta(obj);
         return;
+      case "response.output_audio.done":
       case "response.audio.done":
         opts.callbacks.onAudioDone();
         return;
@@ -259,9 +288,11 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
       case "response.created":
         handleResponseCreated(obj);
         return;
+      case "response.output_audio_transcript.delta":
       case "response.audio_transcript.delta":
         handleAgentTranscriptDelta(obj);
         return;
+      case "response.output_audio_transcript.done":
       case "response.audio_transcript.done":
         handleAgentTranscriptDone(obj);
         return;
@@ -281,6 +312,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
         handleErrorEvent(obj);
         return;
       default:
+        log.debug("OpenAI Realtime: unhandled event", { type: obj.type });
         return;
     }
   }
@@ -308,11 +340,25 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
       ws.send(`{"type":"input_audio_buffer.append","audio":"${uint8ToBase64(bytes)}"}`);
     },
     sendToolResult(callId, result) {
+      log.info("OpenAI Realtime sendToolResult", {
+        callId,
+        resultLen: result.length,
+        preview: result.slice(0, 200),
+      });
       send({
         type: "conversation.item.create",
         item: { type: "function_call_output", call_id: callId, output: result },
       });
-      send({ type: "response.create" });
+      // Multiple tool results from one turn arrive synchronously; coalesce them
+      // into a single response.create per tick. OpenAI rejects a second
+      // response.create while one is in flight, which strands the turn.
+      if (!responseCreateQueued) {
+        responseCreateQueued = true;
+        queueMicrotask(() => {
+          responseCreateQueued = false;
+          send({ type: "response.create" });
+        });
+      }
     },
     cancelReply() {
       if (currentResponseId === null) return;

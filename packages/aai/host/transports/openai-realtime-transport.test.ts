@@ -83,7 +83,6 @@ describe("openai-realtime-transport: connect and session.update", () => {
       options: { model: "gpt-realtime", voice: "cedar" },
       sessionConfig: {
         systemPrompt: "Be terse.",
-        greeting: "Hi.",
         tools: [],
       },
       toolSchemas: [
@@ -133,6 +132,57 @@ describe("openai-realtime-transport: connect and session.update", () => {
   });
 });
 
+describe("greeting", () => {
+  function makeWithGreeting(args: { greeting?: string; skipGreeting?: boolean }) {
+    const fake = makeFakeWs();
+    const transport = createOpenaiRealtimeTransport({
+      apiKey: "sk",
+      options: {},
+      sessionConfig: {
+        systemPrompt: "",
+        ...(args.greeting !== undefined ? { greeting: args.greeting } : {}),
+      },
+      toolSchemas: [],
+      toolChoice: "auto",
+      callbacks: noopCallbacks(),
+      sid: "s",
+      agent: "a",
+      ...(args.skipGreeting !== undefined ? { skipGreeting: args.skipGreeting } : {}),
+      createWebSocket: () => fake,
+      logger: silentLogger,
+    });
+    const ready = transport.start();
+    fake.fire("open");
+    return { fake, ready };
+  }
+
+  test("sends response.create with quoted greeting after session.update", async () => {
+    const { fake, ready } = makeWithGreeting({ greeting: 'Hello, "friend".' });
+    await ready;
+    expect(fake.sent.length).toBe(2);
+    expect(JSON.parse(fake.sent[0] ?? "{}").type).toBe("session.update");
+    const greetingMsg = JSON.parse(fake.sent[1] ?? "{}");
+    expect(greetingMsg.type).toBe("response.create");
+    // JSON.stringify quotes the greeting and escapes any embedded quotes —
+    // protects against prompt-injection by closing the instruction string.
+    expect(greetingMsg.response.instructions).toBe('Say exactly: "Hello, \\"friend\\"."');
+  });
+
+  test("no greeting send when greeting is undefined", async () => {
+    const { fake, ready } = makeWithGreeting({});
+    await ready;
+    expect(fake.sent.length).toBe(1);
+    expect(JSON.parse(fake.sent[0] ?? "{}").type).toBe("session.update");
+  });
+
+  test("skipGreeting suppresses the greeting send", async () => {
+    const { fake, ready } = makeWithGreeting({ greeting: "Hi.", skipGreeting: true });
+    await ready;
+    expect(fake.sent.length).toBe(1);
+    expect(JSON.parse(fake.sent[0] ?? "{}").type).toBe("session.update");
+  });
+});
+
 describe("audio in/out", () => {
   test("sendUserAudio sends input_audio_buffer.append with base64 payload", async () => {
     const { fake, transport, ready } = startedTransport();
@@ -148,21 +198,25 @@ describe("audio in/out", () => {
     expect(Buffer.from(msg.audio, "base64")).toEqual(Buffer.from([1, 2, 3, 4]));
   });
 
-  test("response.audio.delta calls onAudioChunk with decoded bytes", async () => {
+  test.each([
+    ["response.audio.delta"],
+    ["response.output_audio.delta"],
+  ])("%s calls onAudioChunk with decoded bytes", async (type) => {
     const { fake, cbs, ready } = startedTransport();
     await ready;
     const audio = Buffer.from([5, 6, 7, 8]).toString("base64");
-    fake.fire("message", {
-      data: JSON.stringify({ type: "response.audio.delta", delta: audio }),
-    });
+    fake.fire("message", { data: JSON.stringify({ type, delta: audio }) });
     expect(cbs.onAudioChunk).toHaveBeenCalledTimes(1);
     expect(cbs.onAudioChunk).toHaveBeenCalledWith(new Uint8Array([5, 6, 7, 8]));
   });
 
-  test("response.audio.done calls onAudioDone", async () => {
+  test.each([
+    ["response.audio.done"],
+    ["response.output_audio.done"],
+  ])("%s calls onAudioDone", async (type) => {
     const { fake, cbs, ready } = startedTransport();
     await ready;
-    fake.fire("message", { data: JSON.stringify({ type: "response.audio.done" }) });
+    fake.fire("message", { data: JSON.stringify({ type }) });
     expect(cbs.onAudioDone).toHaveBeenCalledTimes(1);
   });
 });
@@ -204,27 +258,22 @@ describe("VAD, user transcript, reply lifecycle, agent transcript", () => {
     expect(cbs.onReplyDone).toHaveBeenCalledTimes(1);
   });
 
-  test("agent transcript: deltas accumulated, emitted on done", async () => {
+  test.each([
+    ["response.audio_transcript", "legacy"],
+    ["response.output_audio_transcript", "GA"],
+  ])("agent transcript (%s): deltas accumulated, emitted on done", async (prefix) => {
     const { fake, cbs, ready } = startedTransport();
     await ready;
     const item_id = "item_x";
     fake.fire("message", {
-      data: JSON.stringify({
-        type: "response.audio_transcript.delta",
-        item_id,
-        delta: "Hi ",
-      }),
+      data: JSON.stringify({ type: `${prefix}.delta`, item_id, delta: "Hi " }),
     });
     fake.fire("message", {
-      data: JSON.stringify({
-        type: "response.audio_transcript.delta",
-        item_id,
-        delta: "there.",
-      }),
+      data: JSON.stringify({ type: `${prefix}.delta`, item_id, delta: "there." }),
     });
     expect(cbs.onAgentTranscript).not.toHaveBeenCalled();
     fake.fire("message", {
-      data: JSON.stringify({ type: "response.audio_transcript.done", item_id }),
+      data: JSON.stringify({ type: `${prefix}.done`, item_id }),
     });
     expect(cbs.onAgentTranscript).toHaveBeenCalledWith("Hi there.", false);
   });
@@ -306,14 +355,35 @@ describe("tool calls", () => {
     await ready;
     fake.sent.length = 0; // drop session.update
     transport.sendToolResult("call_1", '{"ok":true}');
-    expect(fake.sent.length).toBe(2);
+    // function_call_output is sent immediately; response.create is queued.
+    expect(fake.sent.length).toBe(1);
     const m1 = JSON.parse(fake.sent[0] ?? "{}");
     expect(m1.type).toBe("conversation.item.create");
     expect(m1.item.type).toBe("function_call_output");
     expect(m1.item.call_id).toBe("call_1");
     expect(m1.item.output).toBe('{"ok":true}');
+    await new Promise((r) => queueMicrotask(() => r(undefined)));
+    expect(fake.sent.length).toBe(2);
     const m2 = JSON.parse(fake.sent[1] ?? "{}");
     expect(m2.type).toBe("response.create");
+  });
+
+  test("multiple sendToolResult calls coalesce into a single response.create", async () => {
+    const { fake, transport, ready } = startedTransport();
+    await ready;
+    fake.sent.length = 0;
+    // Synchronous burst — session-core flushes pending tool results in a loop.
+    transport.sendToolResult("call_1", '{"a":1}');
+    transport.sendToolResult("call_2", '{"b":2}');
+    transport.sendToolResult("call_3", '{"c":3}');
+    // Three function_call_outputs sent immediately, no response.create yet.
+    expect(fake.sent.length).toBe(3);
+    expect(fake.sent.every((s) => JSON.parse(s).type === "conversation.item.create")).toBe(true);
+    await new Promise((r) => queueMicrotask(() => r(undefined)));
+    // After the microtask, exactly one response.create — second one would be
+    // rejected as `conversation_already_has_active_response`.
+    expect(fake.sent.length).toBe(4);
+    expect(JSON.parse(fake.sent[3] ?? "{}").type).toBe("response.create");
   });
 });
 

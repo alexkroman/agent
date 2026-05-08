@@ -23,8 +23,11 @@ import { createFetchHandler, type FetchRequest } from "./sandbox-fetch.ts";
 // ── KV param schemas for guest → host validation ────────────────────────────
 
 /**
- * Safe KV key: non-empty, no path traversal, no prefix-delimiter escape.
- * Rejects `..`, `:`, `/`, `\`, and null bytes to prevent namespace breakout.
+ * Safe KV key: non-empty, no path traversal. The agent prefix
+ * (`agents/${slug}/kv`) uses `/` as the namespace separator, so we reject `/`,
+ * `\`, `..`, and null bytes. `:` is allowed — it's a common Redis-style
+ * delimiter for hierarchical keys (e.g. `incident:INC-0001`) and isn't used
+ * by the prefix scheme.
  */
 const SafeKvKeySchema = z
   .string()
@@ -32,7 +35,6 @@ const SafeKvKeySchema = z
   .refine((k) => !k.includes("\0"), "Key must not contain null bytes")
   .refine((k) => !k.includes("/"), "Key must not contain /")
   .refine((k) => !k.includes("\\"), "Key must not contain \\")
-  .refine((k) => !k.includes(":"), "Key must not contain :")
   .refine((k) => !k.includes(".."), "Key must not contain ..");
 
 const KvGetParamsSchema = z.object({ key: SafeKvKeySchema });
