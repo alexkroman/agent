@@ -1,0 +1,155 @@
+// Copyright 2025 the AAI authors. MIT license.
+// OpenAI Realtime API transport — implements Transport.
+
+import type { JSONSchema7 } from "json-schema";
+import WsWebSocket from "ws";
+import { WS_OPEN } from "../../sdk/constants.ts";
+import type { Logger } from "../runtime-config.ts";
+import { consoleLogger } from "../runtime-config.ts";
+import type { Transport, TransportCallbacks, TransportSessionConfig } from "./types.ts";
+
+const DEFAULT_MODEL = "gpt-realtime";
+const DEFAULT_VOICE = "alloy";
+const DEFAULT_URL = "wss://api.openai.com/v1/realtime";
+
+export type OpenaiRealtimeWebSocket = {
+  readonly readyState: number;
+  send(data: string): void;
+  close(): void;
+  addEventListener(type: "open", fn: () => void): void;
+  addEventListener(type: "message", fn: (ev: { data: unknown }) => void): void;
+  addEventListener(type: "close", fn: (ev: { code?: number; reason?: string }) => void): void;
+  addEventListener(type: "error", fn: (ev: { message?: string }) => void): void;
+};
+
+export type CreateOpenaiRealtimeWebSocket = (
+  url: string,
+  opts: { headers: Record<string, string> },
+) => OpenaiRealtimeWebSocket;
+
+// Node's native WebSocket doesn't support custom headers; the `ws` package does.
+export const defaultCreateOpenaiRealtimeWebSocket: CreateOpenaiRealtimeWebSocket = (url, opts) =>
+  new WsWebSocket(url, { headers: opts.headers }) as unknown as OpenaiRealtimeWebSocket;
+
+export type OpenaiRealtimeToolSchema = {
+  type: "function";
+  name: string;
+  description: string;
+  parameters: JSONSchema7;
+};
+
+export type OpenaiRealtimeOptions = {
+  model?: string;
+  voice?: string;
+  url?: string;
+};
+
+export type OpenaiRealtimeTransportOptions = {
+  apiKey: string;
+  options: OpenaiRealtimeOptions;
+  sessionConfig: TransportSessionConfig;
+  toolSchemas: OpenaiRealtimeToolSchema[];
+  toolChoice: "auto" | "required";
+  callbacks: TransportCallbacks;
+  sid: string;
+  agent: string;
+  createWebSocket?: CreateOpenaiRealtimeWebSocket;
+  logger?: Logger;
+};
+
+export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptions): Transport {
+  const log = opts.logger ?? consoleLogger;
+  const createWs = opts.createWebSocket ?? defaultCreateOpenaiRealtimeWebSocket;
+  const model = opts.options.model ?? DEFAULT_MODEL;
+  const voice = opts.options.voice ?? DEFAULT_VOICE;
+  const baseUrl = opts.options.url ?? DEFAULT_URL;
+
+  let ws: OpenaiRealtimeWebSocket | null = null;
+  let closing = false;
+
+  function send(payload: Record<string, unknown>): void {
+    if (!ws || ws.readyState !== WS_OPEN) {
+      log.debug("OpenAI Realtime send dropped: socket not open", { type: payload.type });
+      return;
+    }
+    ws.send(JSON.stringify(payload));
+  }
+
+  function sendSessionUpdate(): void {
+    send({
+      type: "session.update",
+      session: {
+        modalities: ["audio", "text"],
+        voice,
+        instructions: opts.sessionConfig.systemPrompt,
+        input_audio_format: "pcm16",
+        output_audio_format: "pcm16",
+        input_audio_transcription: { model: "whisper-1" },
+        turn_detection: { type: "server_vad" },
+        tools: opts.toolSchemas,
+        tool_choice: opts.toolChoice,
+      },
+    });
+  }
+
+  async function start(): Promise<void> {
+    const url = `${baseUrl}?model=${encodeURIComponent(model)}`;
+    log.info("OpenAI Realtime connecting", { url });
+    return new Promise((resolve, reject) => {
+      const sock = createWs(url, {
+        headers: {
+          Authorization: `Bearer ${opts.apiKey}`,
+          "OpenAI-Beta": "realtime=v1",
+        },
+      });
+      ws = sock;
+      let opened = false;
+
+      sock.addEventListener("open", () => {
+        opened = true;
+        sendSessionUpdate();
+        resolve();
+      });
+      sock.addEventListener("message", (ev) => handleMessage(ev.data));
+      sock.addEventListener("close", (ev) => handleClose(ev.code ?? 0, ev.reason ?? ""));
+      sock.addEventListener("error", (ev) => {
+        const msg = typeof ev.message === "string" ? ev.message : "WebSocket error";
+        if (!opened) reject(new Error(msg));
+        else opts.callbacks.onError("internal", msg);
+      });
+    });
+  }
+
+  function handleMessage(_data: unknown): void {
+    // Filled in by Tasks 5–8.
+  }
+
+  function handleClose(code: number, reason: string): void {
+    if (closing) {
+      log.info("OpenAI Realtime closed", { code, reason });
+      return;
+    }
+    log.warn("OpenAI Realtime closed unexpectedly", { code, reason });
+    opts.callbacks.onError("connection", `OpenAI Realtime closed (code=${code})`);
+  }
+
+  async function stop(): Promise<void> {
+    closing = true;
+    ws?.close();
+    ws = null;
+  }
+
+  return {
+    start,
+    stop,
+    sendUserAudio(_bytes) {
+      // Task 5 — forward PCM16 audio to OpenAI Realtime.
+    },
+    sendToolResult(_callId, _result) {
+      // Task 7 — forward tool results to OpenAI Realtime.
+    },
+    cancelReply() {
+      // Task 8 — send response.cancel to OpenAI Realtime.
+    },
+  };
+}
