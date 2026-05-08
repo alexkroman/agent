@@ -4,17 +4,11 @@
 import type { JSONSchema7 } from "json-schema";
 import WsWebSocket from "ws";
 import { WS_OPEN } from "../../sdk/constants.ts";
+import type { OpenaiRealtimeOptions } from "../../sdk/providers/s2s/openai-realtime.ts";
+import { base64ToUint8, uint8ToBase64 } from "../_base64.ts";
 import type { Logger } from "../runtime-config.ts";
 import { consoleLogger } from "../runtime-config.ts";
 import type { Transport, TransportCallbacks, TransportSessionConfig } from "./types.ts";
-
-function uint8ToBase64(bytes: Uint8Array): string {
-  return Buffer.from(bytes).toString("base64");
-}
-
-function base64ToUint8(s: string): Uint8Array {
-  return new Uint8Array(Buffer.from(s, "base64"));
-}
 
 const DEFAULT_MODEL = "gpt-realtime";
 const DEFAULT_VOICE = "alloy";
@@ -44,12 +38,6 @@ export type OpenaiRealtimeToolSchema = {
   name: string;
   description: string;
   parameters: JSONSchema7;
-};
-
-export type OpenaiRealtimeOptions = {
-  model?: string;
-  voice?: string;
-  url?: string;
 };
 
 export type OpenaiRealtimeTransportOptions = {
@@ -175,14 +163,21 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
     if (text) opts.callbacks.onAgentTranscript(text, false);
   }
 
+  function clearTurnBuffers(): void {
+    agentTranscriptBuffers.clear();
+    toolBuffers.clear();
+  }
+
   function handleResponseDone(): void {
     currentResponseId = null;
+    clearTurnBuffers();
     opts.callbacks.onReplyDone();
   }
 
   function handleErrorEvent(obj: Record<string, unknown>): void {
     const err = obj.error as { message?: unknown } | undefined;
     const message = typeof err?.message === "string" ? err.message : "OpenAI Realtime error";
+    clearTurnBuffers();
     opts.callbacks.onError("internal", message);
   }
 
@@ -303,7 +298,8 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
     start,
     stop,
     sendUserAudio(bytes) {
-      send({ type: "input_audio_buffer.append", audio: uint8ToBase64(bytes) });
+      if (!ws || ws.readyState !== WS_OPEN) return;
+      ws.send(`{"type":"input_audio_buffer.append","audio":"${uint8ToBase64(bytes)}"}`);
     },
     sendToolResult(callId, result) {
       send({
@@ -316,6 +312,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
       if (currentResponseId === null) return;
       send({ type: "response.cancel" });
       currentResponseId = null;
+      clearTurnBuffers();
       opts.callbacks.onCancelled();
     },
   };

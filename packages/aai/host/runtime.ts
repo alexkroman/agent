@@ -15,7 +15,10 @@ import { DEFAULT_SHUTDOWN_TIMEOUT_MS } from "../sdk/constants.ts";
 import type { Kv } from "../sdk/kv.ts";
 import type { ClientSink } from "../sdk/protocol.ts";
 import { buildReadyConfig, type ReadyConfig } from "../sdk/protocol.ts";
-import { OPENAI_REALTIME_KIND } from "../sdk/providers/s2s/openai-realtime.ts";
+import {
+  OPENAI_REALTIME_KIND,
+  type OpenaiRealtimeOptions,
+} from "../sdk/providers/s2s/openai-realtime.ts";
 import { DEEPGRAM_KIND } from "../sdk/providers/stt/deepgram.ts";
 import { RIME_KIND } from "../sdk/providers/tts/rime.ts";
 import {
@@ -416,14 +419,9 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     callbacks: TransportCallbacks;
   }): Transport {
     const { sessionOpts, systemPrompt, callbacks } = args;
-    const s2sOpts = (agent.s2s?.options ?? {}) as {
-      model?: string;
-      voice?: string;
-      url?: string;
-    };
     return createOpenaiRealtimeTransport({
       apiKey: resolveApiKey("OPENAI_API_KEY", env),
-      options: s2sOpts,
+      options: (agent.s2s?.options ?? {}) as OpenaiRealtimeOptions,
       sessionConfig: {
         systemPrompt,
         ...(agentConfig.greeting !== undefined ? { greeting: agentConfig.greeting } : {}),
