@@ -79,13 +79,20 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
     send({
       type: "session.update",
       session: {
-        modalities: ["audio", "text"],
-        voice,
+        type: "realtime",
+        output_modalities: ["audio"],
         instructions: opts.sessionConfig.systemPrompt,
-        input_audio_format: "pcm16",
-        output_audio_format: "pcm16",
-        input_audio_transcription: { model: "whisper-1" },
-        turn_detection: { type: "server_vad" },
+        audio: {
+          input: {
+            format: { type: "audio/pcm", rate: 24_000 },
+            turn_detection: { type: "server_vad" },
+            transcription: { model: "whisper-1" },
+          },
+          output: {
+            format: { type: "audio/pcm", rate: 24_000 },
+            voice,
+          },
+        },
         tools: opts.toolSchemas,
         tool_choice: opts.toolChoice,
       },
@@ -99,7 +106,6 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
       const sock = createWs(url, {
         headers: {
           Authorization: `Bearer ${opts.apiKey}`,
-          "OpenAI-Beta": "realtime=v1",
         },
       });
       ws = sock;
