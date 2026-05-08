@@ -109,10 +109,7 @@ describe("openai-realtime-transport: connect and session.update", () => {
     expect(createWs).toHaveBeenCalledWith(
       "wss://api.openai.com/v1/realtime?model=gpt-realtime",
       expect.objectContaining({
-        headers: expect.objectContaining({
-          Authorization: "Bearer sk-test",
-          "OpenAI-Beta": "realtime=v1",
-        }),
+        headers: { Authorization: "Bearer sk-test" },
       }),
     );
 
@@ -121,13 +118,14 @@ describe("openai-realtime-transport: connect and session.update", () => {
     if (first === undefined) throw new Error("expected one send");
     const msg = JSON.parse(first);
     expect(msg.type).toBe("session.update");
-    expect(msg.session.voice).toBe("cedar");
+    expect(msg.session.type).toBe("realtime");
+    expect(msg.session.output_modalities).toEqual(["audio"]);
     expect(msg.session.instructions).toBe("Be terse.");
-    expect(msg.session.input_audio_format).toBe("pcm16");
-    expect(msg.session.output_audio_format).toBe("pcm16");
-    expect(msg.session.modalities).toEqual(["audio", "text"]);
-    expect(msg.session.input_audio_transcription).toEqual({ model: "whisper-1" });
-    expect(msg.session.turn_detection.type).toBe("server_vad");
+    expect(msg.session.audio.input.format).toEqual({ type: "audio/pcm", rate: 24_000 });
+    expect(msg.session.audio.input.turn_detection.type).toBe("server_vad");
+    expect(msg.session.audio.input.transcription).toEqual({ model: "whisper-1" });
+    expect(msg.session.audio.output.format).toEqual({ type: "audio/pcm", rate: 24_000 });
+    expect(msg.session.audio.output.voice).toBe("cedar");
     expect(msg.session.tools).toEqual([
       expect.objectContaining({ type: "function", name: "lookup" }),
     ]);
