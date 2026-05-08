@@ -422,7 +422,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       url?: string;
     };
     return createOpenaiRealtimeTransport({
-      apiKey: env.OPENAI_API_KEY ?? "",
+      apiKey: resolveApiKey("OPENAI_API_KEY", env),
       options: s2sOpts,
       sessionConfig: {
         systemPrompt,
@@ -470,8 +470,12 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     if (pipelineProviders) {
       return buildPipelineTransport({ ...args, providers: pipelineProviders });
     }
-    if (descriptorKind(agent.s2s) === OPENAI_REALTIME_KIND) {
-      return buildOpenaiRealtimeTransport(args);
+    if (agent.s2s !== undefined) {
+      const kind = descriptorKind(agent.s2s);
+      if (kind === OPENAI_REALTIME_KIND) {
+        return buildOpenaiRealtimeTransport(args);
+      }
+      throw new Error(`Unknown s2s provider kind: ${kind ?? "<missing>"}`);
     }
     return buildAssemblyS2sTransport(args);
   }

@@ -5,6 +5,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { toAgentConfig } from "../sdk/_internal-types.ts";
 import { openaiRealtime } from "../sdk/providers/s2s/openai-realtime.ts";
+import type { S2sProvider } from "../sdk/providers.ts";
 import type { ToolDef } from "../sdk/types.ts";
 import {
   createFakeLanguageModel,
@@ -693,6 +694,25 @@ describe("Runtime — session routing", () => {
     });
 
     await session.stop();
+  });
+
+  test("createSession throws on unknown s2s provider kind", () => {
+    const runtime = createRuntime({
+      agent: makeAgent({
+        // Bypass typing for this test — descriptor with unrecognized kind:
+        s2s: { kind: "made-up-provider", options: {} } as unknown as S2sProvider,
+      }),
+      env: {},
+      logger: silentLogger,
+    });
+
+    expect(() =>
+      runtime.createSession({
+        id: "sess-bad",
+        agent: "test-agent",
+        client: makeClientSink(),
+      }),
+    ).toThrow(/Unknown s2s provider kind/);
   });
 });
 
