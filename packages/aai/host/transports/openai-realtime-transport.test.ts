@@ -148,21 +148,25 @@ describe("audio in/out", () => {
     expect(Buffer.from(msg.audio, "base64")).toEqual(Buffer.from([1, 2, 3, 4]));
   });
 
-  test("response.audio.delta calls onAudioChunk with decoded bytes", async () => {
+  test.each([
+    ["response.audio.delta"],
+    ["response.output_audio.delta"],
+  ])("%s calls onAudioChunk with decoded bytes", async (type) => {
     const { fake, cbs, ready } = startedTransport();
     await ready;
     const audio = Buffer.from([5, 6, 7, 8]).toString("base64");
-    fake.fire("message", {
-      data: JSON.stringify({ type: "response.audio.delta", delta: audio }),
-    });
+    fake.fire("message", { data: JSON.stringify({ type, delta: audio }) });
     expect(cbs.onAudioChunk).toHaveBeenCalledTimes(1);
     expect(cbs.onAudioChunk).toHaveBeenCalledWith(new Uint8Array([5, 6, 7, 8]));
   });
 
-  test("response.audio.done calls onAudioDone", async () => {
+  test.each([
+    ["response.audio.done"],
+    ["response.output_audio.done"],
+  ])("%s calls onAudioDone", async (type) => {
     const { fake, cbs, ready } = startedTransport();
     await ready;
-    fake.fire("message", { data: JSON.stringify({ type: "response.audio.done" }) });
+    fake.fire("message", { data: JSON.stringify({ type }) });
     expect(cbs.onAudioDone).toHaveBeenCalledTimes(1);
   });
 });
@@ -204,27 +208,22 @@ describe("VAD, user transcript, reply lifecycle, agent transcript", () => {
     expect(cbs.onReplyDone).toHaveBeenCalledTimes(1);
   });
 
-  test("agent transcript: deltas accumulated, emitted on done", async () => {
+  test.each([
+    ["response.audio_transcript", "legacy"],
+    ["response.output_audio_transcript", "GA"],
+  ])("agent transcript (%s): deltas accumulated, emitted on done", async (prefix) => {
     const { fake, cbs, ready } = startedTransport();
     await ready;
     const item_id = "item_x";
     fake.fire("message", {
-      data: JSON.stringify({
-        type: "response.audio_transcript.delta",
-        item_id,
-        delta: "Hi ",
-      }),
+      data: JSON.stringify({ type: `${prefix}.delta`, item_id, delta: "Hi " }),
     });
     fake.fire("message", {
-      data: JSON.stringify({
-        type: "response.audio_transcript.delta",
-        item_id,
-        delta: "there.",
-      }),
+      data: JSON.stringify({ type: `${prefix}.delta`, item_id, delta: "there." }),
     });
     expect(cbs.onAgentTranscript).not.toHaveBeenCalled();
     fake.fire("message", {
-      data: JSON.stringify({ type: "response.audio_transcript.done", item_id }),
+      data: JSON.stringify({ type: `${prefix}.done`, item_id }),
     });
     expect(cbs.onAgentTranscript).toHaveBeenCalledWith("Hi there.", false);
   });

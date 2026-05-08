@@ -183,6 +183,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
   function handleErrorEvent(obj: Record<string, unknown>): void {
     const err = obj.error as { message?: unknown } | undefined;
     const message = typeof err?.message === "string" ? err.message : "OpenAI Realtime error";
+    log.warn("OpenAI Realtime error event", { error: obj.error });
     clearTurnBuffers();
     opts.callbacks.onError("internal", message);
   }
@@ -241,9 +242,14 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
     if (typeof raw !== "object" || raw === null) return;
     const obj = raw as Record<string, unknown>;
     switch (obj.type) {
+      // GA renamed audio output events to `response.output_audio.*` and
+      // transcript events to `response.output_audio_transcript.*`. The legacy
+      // (beta) names are kept as aliases so older snapshots still work.
+      case "response.output_audio.delta":
       case "response.audio.delta":
         handleAudioDelta(obj);
         return;
+      case "response.output_audio.done":
       case "response.audio.done":
         opts.callbacks.onAudioDone();
         return;
@@ -259,9 +265,11 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
       case "response.created":
         handleResponseCreated(obj);
         return;
+      case "response.output_audio_transcript.delta":
       case "response.audio_transcript.delta":
         handleAgentTranscriptDelta(obj);
         return;
+      case "response.output_audio_transcript.done":
       case "response.audio_transcript.done":
         handleAgentTranscriptDone(obj);
         return;
@@ -281,6 +289,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
         handleErrorEvent(obj);
         return;
       default:
+        log.debug("OpenAI Realtime: unhandled event", { type: obj.type });
         return;
     }
   }
