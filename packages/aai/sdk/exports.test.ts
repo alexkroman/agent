@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Export surface snapshot tests for all four aai subpath exports.
+ * Export surface snapshot tests for all five aai subpath exports.
  *
  * These tests catch accidental export additions or removals. If a snapshot
  * breaks, it signals a potentially breaking API change that should be
@@ -26,6 +26,11 @@ describe("export surface stability", () => {
 
   test("@alexkroman1/aai/runtime export", async () => {
     const mod = await import("@alexkroman1/aai/runtime");
+    expect(Object.keys(mod).sort()).toMatchSnapshot();
+  });
+
+  test("@alexkroman1/aai/s2s export", async () => {
+    const mod = await import("@alexkroman1/aai/s2s");
     expect(Object.keys(mod).sort()).toMatchSnapshot();
   });
 });

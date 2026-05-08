@@ -7,6 +7,7 @@ import {
   assertProviderTriple,
   type KvProvider,
   type LlmProvider,
+  type S2sProvider,
   type SttProvider,
   type TtsProvider,
   type VectorProvider,
@@ -43,6 +44,7 @@ export const AgentConfigSchema = z.object({
   stt: ProviderDescriptorSchema.optional(),
   llm: ProviderDescriptorSchema.optional(),
   tts: ProviderDescriptorSchema.optional(),
+  s2s: ProviderDescriptorSchema.optional(),
   mode: z.enum(["s2s", "pipeline"]).optional(),
   kv: ProviderDescriptorSchema.optional(),
   vector: ProviderDescriptorSchema.optional(),
@@ -64,6 +66,7 @@ export interface AgentConfigSource {
   stt?: SttProvider | undefined;
   llm?: LlmProvider | undefined;
   tts?: TtsProvider | undefined;
+  s2s?: S2sProvider | undefined;
   kv?: KvProvider | undefined;
   vector?: VectorProvider | undefined;
 }
@@ -71,7 +74,7 @@ export interface AgentConfigSource {
 export function toAgentConfig(src: AgentConfigSource): AgentConfig {
   // `assertProviderTriple` enforces that stt/llm/tts are all-or-nothing so the
   // server can trust the resolved mode.
-  const mode = assertProviderTriple(src.stt, src.llm, src.tts);
+  const mode = assertProviderTriple(src.stt, src.llm, src.tts, src.s2s);
 
   const config: AgentConfig = {
     name: src.name,
@@ -89,6 +92,7 @@ export function toAgentConfig(src: AgentConfigSource): AgentConfig {
     config.llm = src.llm;
     config.tts = src.tts;
   }
+  if (src.s2s !== undefined) config.s2s = src.s2s;
   if (src.kv !== undefined) config.kv = src.kv;
   if (src.vector !== undefined) config.vector = src.vector;
   return config;

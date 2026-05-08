@@ -8,16 +8,9 @@ import WsWebSocket from "ws";
 import { z } from "zod";
 import { WS_OPEN } from "../sdk/constants.ts";
 import type { ClientEvent } from "../sdk/protocol.ts";
+import { base64ToUint8, uint8ToBase64 } from "./_base64.ts";
 import type { Logger, S2SConfig } from "./runtime-config.ts";
 import { consoleLogger } from "./runtime-config.ts";
-
-function uint8ToBase64(bytes: Uint8Array): string {
-  return Buffer.from(bytes).toString("base64");
-}
-
-function base64ToUint8(base64: string): Uint8Array {
-  return new Uint8Array(Buffer.from(base64, "base64"));
-}
 
 export type S2sWebSocket = {
   readonly readyState: number;

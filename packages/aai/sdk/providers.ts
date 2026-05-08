@@ -48,6 +48,9 @@ export type LlmProvider = ProviderDescriptor<string, Record<string, unknown>>;
 /** Descriptor for a TTS provider. Returned by factories like `cartesia(...)`. */
 export type TtsProvider = ProviderDescriptor<string, Record<string, unknown>>;
 
+/** Descriptor for an S2S provider. Returned by factories like `openaiRealtime(...)`. */
+export type S2sProvider = ProviderDescriptor<string, Record<string, unknown>>;
+
 /** Descriptor for a KV backend. Returned by factories like `redisKv()`. */
 export type KvProvider = ProviderDescriptor<string, Record<string, unknown>>;
 
@@ -67,15 +70,27 @@ export type SessionMode = "s2s" | "pipeline";
  * Enforce the all-or-nothing provider rule and return the derived mode.
  *
  * Pipeline mode requires STT, LLM, and TTS all set; S2S mode requires
- * none of them. Anything in-between is a configuration error.
+ * none of them. Anything in-between is a configuration error. An optional
+ * `s2s` descriptor selects a non-default S2S provider — it must not be
+ * combined with any pipeline field.
  */
-export function assertProviderTriple(stt: unknown, llm: unknown, tts: unknown): SessionMode {
+export function assertProviderTriple(
+  stt: unknown,
+  llm: unknown,
+  tts: unknown,
+  s2s?: unknown,
+): SessionMode {
   const hasStt = stt != null;
   const hasLlm = llm != null;
   const hasTts = tts != null;
+  const hasS2s = s2s != null;
+  const anyPipeline = hasStt || hasLlm || hasTts;
   const allSet = hasStt && hasLlm && hasTts;
-  const noneSet = !(hasStt || hasLlm || hasTts);
-  if (!(allSet || noneSet)) {
+  const noneSetPipeline = !anyPipeline;
+  if (hasS2s && anyPipeline) {
+    throw new Error("s2s and the stt/llm/tts pipeline cannot be set together");
+  }
+  if (!(allSet || noneSetPipeline)) {
     throw new Error("stt, llm, and tts must be set together");
   }
   return allSet ? "pipeline" : "s2s";

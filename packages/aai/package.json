@@ -47,6 +47,11 @@
       "@dev/source": "./sdk/providers/kv-barrel.ts",
       "types": "./dist/sdk/providers/kv-barrel.d.ts",
       "import": "./dist/sdk/providers/kv-barrel.js"
+    },
+    "./s2s": {
+      "@dev/source": "./sdk/providers/s2s-barrel.ts",
+      "types": "./dist/sdk/providers/s2s-barrel.d.ts",
+      "import": "./dist/sdk/providers/s2s-barrel.js"
     }
   },
   "scripts": {
