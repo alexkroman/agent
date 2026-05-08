@@ -1,5 +1,13 @@
 # @alexkroman1/aai-ui
 
+## 1.8.1
+
+### Patch Changes
+
+- Updated dependencies [ba8effb]
+- Updated dependencies [f4cc5ef]
+  - @alexkroman1/aai@1.8.1
+
 ## 1.8.0
 
 ### Patch Changes

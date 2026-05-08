@@ -1,5 +1,16 @@
 # @alexkroman1/aai-server
 
+## 1.1.7
+
+### Patch Changes
+
+- 88269e9: Pass agent.s2s through IsolateConfigSchema and into the sandbox createRuntime call so OpenAI Realtime opt-in actually reaches the running runtime instead of being silently stripped during deploy validation
+- ba8effb: Allow ':' in KV keys. The previous ban was stale (from when keys used ':' as a namespace separator); the prefix scheme is now 'agents/${slug}/kv' using '/'. Banning ':' broke any agent using Redis-style hierarchical keys like 'incident:INC-0001'.
+- Updated dependencies [ba8effb]
+- Updated dependencies [f4cc5ef]
+  - @alexkroman1/aai@1.8.1
+  - @alexkroman1/aai-ui@1.8.1
+
 ## 1.1.6
 
 ### Patch Changes
