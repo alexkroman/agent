@@ -4,6 +4,7 @@ import type { z } from "zod";
 import type {
   KvProvider,
   LlmProvider,
+  S2sProvider,
   SttProvider,
   TtsProvider,
   VectorProvider,
@@ -101,6 +102,12 @@ export function agent(def: {
    * enable pipeline mode.
    */
   tts?: TtsProvider;
+  /**
+   * Pluggable S2S provider descriptor. When set, overrides the implicit
+   * AssemblyAI default. Mutually exclusive with the `stt`/`llm`/`tts`
+   * pipeline triple.
+   */
+  s2s?: S2sProvider;
   /** Pluggable KV backend. Falls back to platform default when omitted. */
   kv?: KvProvider;
   /** Pluggable Vector backend. Falls back to platform default when omitted. */

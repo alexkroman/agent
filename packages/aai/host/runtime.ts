@@ -15,6 +15,7 @@ import { DEFAULT_SHUTDOWN_TIMEOUT_MS } from "../sdk/constants.ts";
 import type { Kv } from "../sdk/kv.ts";
 import type { ClientSink } from "../sdk/protocol.ts";
 import { buildReadyConfig, type ReadyConfig } from "../sdk/protocol.ts";
+import { OPENAI_REALTIME_KIND } from "../sdk/providers/s2s/openai-realtime.ts";
 import { DEEPGRAM_KIND } from "../sdk/providers/stt/deepgram.ts";
 import { RIME_KIND } from "../sdk/providers/tts/rime.ts";
 import {
@@ -39,6 +40,11 @@ import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime-config.ts";
 import type { CreateS2sWebSocket } from "./s2s.ts";
 import { createSessionCore, type SessionCore } from "./session-core.ts";
 import { type ExecuteTool, executeToolCall } from "./tool-executor.ts";
+import {
+  type CreateOpenaiRealtimeWebSocket,
+  createOpenaiRealtimeTransport,
+  type OpenaiRealtimeToolSchema,
+} from "./transports/openai-realtime-transport.ts";
 import { createPipelineTransport } from "./transports/pipeline-transport.ts";
 import { createS2sTransport } from "./transports/s2s-transport.ts";
 import type { Transport, TransportCallbacks } from "./transports/types.ts";
@@ -154,6 +160,8 @@ export type RuntimeOptions = {
   vector?: Vector | undefined;
   /** Custom WebSocket factory for the S2S connection (useful for testing). */
   createWebSocket?: CreateS2sWebSocket | undefined;
+  /** Custom WebSocket factory for the OpenAI Realtime connection (testing). */
+  createOpenaiRealtimeWebSocket?: CreateOpenaiRealtimeWebSocket | undefined;
   logger?: Logger | undefined;
   s2sConfig?: S2SConfig | undefined;
   /**
@@ -257,6 +265,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     kv = createLocalKv(),
     vector,
     createWebSocket,
+    createOpenaiRealtimeWebSocket,
     logger = consoleLogger,
     s2sConfig = DEFAULT_S2S_CONFIG,
     sessionStartTimeoutMs,
@@ -359,13 +368,115 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     };
   }
 
-  function createSession(sessionOpts: {
+  type SessionOpts = {
     id: string;
     agent: string;
     client: ClientSink;
     skipGreeting?: boolean;
     resumeFrom?: string;
-  }): SessionCore {
+  };
+
+  function buildPipelineTransport(args: {
+    sessionOpts: SessionOpts;
+    systemPrompt: string;
+    callbacks: TransportCallbacks;
+    providers: { stt: SttOpener; llm: LanguageModel; tts: TtsOpener };
+  }): Transport {
+    const { sessionOpts, systemPrompt, callbacks, providers } = args;
+    return createPipelineTransport({
+      sid: sessionOpts.id,
+      agent: sessionOpts.agent,
+      stt: providers.stt,
+      llm: providers.llm,
+      tts: providers.tts,
+      callbacks,
+      sessionConfig: {
+        systemPrompt,
+        greeting: agentConfig.greeting,
+        tools: toolSchemas,
+      },
+      toolSchemas,
+      executeTool,
+      providerKeys: {
+        stt: resolveSttApiKey(opts.stt, env),
+        tts: resolveTtsApiKey(opts.tts, env),
+      },
+      sttSampleRate: s2sConfig.inputSampleRate,
+      ttsSampleRate: s2sConfig.outputSampleRate,
+      maxSteps: agentConfig.maxSteps,
+      toolChoice: agentConfig.toolChoice,
+      skipGreeting: sessionOpts.skipGreeting ?? false,
+      logger,
+    });
+  }
+
+  function buildOpenaiRealtimeTransport(args: {
+    sessionOpts: SessionOpts;
+    systemPrompt: string;
+    callbacks: TransportCallbacks;
+  }): Transport {
+    const { sessionOpts, systemPrompt, callbacks } = args;
+    const s2sOpts = (agent.s2s?.options ?? {}) as {
+      model?: string;
+      voice?: string;
+      url?: string;
+    };
+    return createOpenaiRealtimeTransport({
+      apiKey: env.OPENAI_API_KEY ?? "",
+      options: s2sOpts,
+      sessionConfig: {
+        systemPrompt,
+        ...(agentConfig.greeting !== undefined ? { greeting: agentConfig.greeting } : {}),
+        tools: toolSchemas,
+      },
+      toolSchemas: toolSchemas as OpenaiRealtimeToolSchema[],
+      toolChoice: agentConfig.toolChoice ?? "auto",
+      callbacks,
+      sid: sessionOpts.id,
+      agent: sessionOpts.agent,
+      ...(createOpenaiRealtimeWebSocket ? { createWebSocket: createOpenaiRealtimeWebSocket } : {}),
+      logger,
+    });
+  }
+
+  function buildAssemblyS2sTransport(args: {
+    sessionOpts: SessionOpts;
+    systemPrompt: string;
+    callbacks: TransportCallbacks;
+  }): Transport {
+    const { sessionOpts, systemPrompt, callbacks } = args;
+    return createS2sTransport({
+      apiKey: env.ASSEMBLYAI_API_KEY ?? "",
+      s2sConfig,
+      sessionConfig: {
+        systemPrompt,
+        tools: toolSchemas as import("./s2s.ts").S2sToolSchema[],
+        ...(agentConfig.greeting !== undefined ? { greeting: agentConfig.greeting } : {}),
+      },
+      toolSchemas: toolSchemas as import("./s2s.ts").S2sToolSchema[],
+      callbacks,
+      sid: sessionOpts.id,
+      agent: sessionOpts.agent,
+      ...(createWebSocket ? { createWebSocket } : {}),
+      logger,
+    });
+  }
+
+  function buildTransport(args: {
+    sessionOpts: SessionOpts;
+    systemPrompt: string;
+    callbacks: TransportCallbacks;
+  }): Transport {
+    if (pipelineProviders) {
+      return buildPipelineTransport({ ...args, providers: pipelineProviders });
+    }
+    if (descriptorKind(agent.s2s) === OPENAI_REALTIME_KIND) {
+      return buildOpenaiRealtimeTransport(args);
+    }
+    return buildAssemblyS2sTransport(args);
+  }
+
+  function createSession(sessionOpts: SessionOpts): SessionCore {
     sinkMap.set(sessionOpts.id, sessionOpts.client);
 
     const isPipeline = Boolean(pipelineProviders);
@@ -404,50 +515,11 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       onSpeechStopped: () => bindCore().onSpeechStopped(),
     };
 
-    let transport: Transport;
-    if (pipelineProviders) {
-      transport = createPipelineTransport({
-        sid: sessionOpts.id,
-        agent: sessionOpts.agent,
-        stt: pipelineProviders.stt,
-        llm: pipelineProviders.llm,
-        tts: pipelineProviders.tts,
-        callbacks,
-        sessionConfig: {
-          systemPrompt,
-          greeting: agentConfig.greeting,
-          tools: toolSchemas,
-        },
-        toolSchemas,
-        executeTool,
-        providerKeys: {
-          stt: resolveSttApiKey(opts.stt, env),
-          tts: resolveTtsApiKey(opts.tts, env),
-        },
-        sttSampleRate: s2sConfig.inputSampleRate,
-        ttsSampleRate: s2sConfig.outputSampleRate,
-        maxSteps: agentConfig.maxSteps,
-        toolChoice: agentConfig.toolChoice,
-        skipGreeting: sessionOpts.skipGreeting ?? false,
-        logger,
-      });
-    } else {
-      transport = createS2sTransport({
-        apiKey: env.ASSEMBLYAI_API_KEY ?? "",
-        s2sConfig,
-        sessionConfig: {
-          systemPrompt,
-          tools: toolSchemas as import("./s2s.ts").S2sToolSchema[],
-          ...(agentConfig.greeting !== undefined ? { greeting: agentConfig.greeting } : {}),
-        },
-        toolSchemas: toolSchemas as import("./s2s.ts").S2sToolSchema[],
-        callbacks,
-        sid: sessionOpts.id,
-        agent: sessionOpts.agent,
-        ...(createWebSocket ? { createWebSocket } : {}),
-        logger,
-      });
-    }
+    const transport = buildTransport({
+      sessionOpts,
+      systemPrompt,
+      callbacks,
+    });
 
     core = createSessionCore({
       id: sessionOpts.id,

@@ -10,6 +10,7 @@ exports[`manifest schema shapes > AgentConfigSchema shape 1`] = `
   "maxSteps",
   "mode",
   "name",
+  "s2s",
   "stt",
   "sttPrompt",
   "systemPrompt",

@@ -4,6 +4,7 @@ import { createStorage } from "unstorage";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { toAgentConfig } from "../sdk/_internal-types.ts";
+import { openaiRealtime } from "../sdk/providers/s2s/openai-realtime.ts";
 import type { ToolDef } from "../sdk/types.ts";
 import {
   createFakeLanguageModel,
@@ -14,6 +15,7 @@ import { CONFORMANCE_AGENT, testRuntime } from "./_runtime-conformance.ts";
 import { flush, makeAgent, makeClientSink, makeMockHandle, silentLogger } from "./_test-utils.ts";
 import { createRuntime } from "./runtime.ts";
 import { executeToolCall } from "./tool-executor.ts";
+import type { OpenaiRealtimeWebSocket } from "./transports/openai-realtime-transport.ts";
 import { _internals } from "./transports/s2s-transport.ts";
 import { createUnstorageKv } from "./unstorage-kv.ts";
 
@@ -636,6 +638,61 @@ describe("Runtime — session routing", () => {
 
     await session.stop();
     connectSpy.mockRestore();
+  });
+
+  test("agent.s2s = openaiRealtime() routes to OpenAI Realtime transport", async () => {
+    type Listener = (ev: unknown) => void;
+    const listeners: Record<string, Listener[]> = {
+      open: [],
+      message: [],
+      close: [],
+      error: [],
+    };
+    const fakeWs: OpenaiRealtimeWebSocket = {
+      readyState: 1,
+      send: vi.fn(),
+      close: vi.fn(),
+      addEventListener: ((type: string, fn: Listener) => {
+        (listeners[type] ?? []).push(fn);
+      }) as OpenaiRealtimeWebSocket["addEventListener"],
+    };
+    let capturedUrl: string | null = null;
+    let capturedOpts: { headers: Record<string, string> } | null = null;
+    const createOpenaiRealtimeWebSocket = vi.fn(
+      (url: string, wsOpts: { headers: Record<string, string> }) => {
+        capturedUrl = url;
+        capturedOpts = wsOpts;
+        return fakeWs;
+      },
+    );
+
+    const runtime = createRuntime({
+      agent: makeAgent({ s2s: openaiRealtime({ model: "gpt-realtime" }) }),
+      env: { OPENAI_API_KEY: "sk-test" },
+      logger: silentLogger,
+      createOpenaiRealtimeWebSocket,
+    });
+
+    const client = makeClientSink();
+    const session = runtime.createSession({
+      id: "sess-openai-realtime",
+      agent: "test-agent",
+      client,
+    });
+
+    const startP = session.start();
+    // Drive the WS open so transport.start() resolves
+    for (const fn of listeners.open ?? []) fn(undefined);
+    await startP;
+
+    expect(createOpenaiRealtimeWebSocket).toHaveBeenCalledTimes(1);
+    expect(capturedUrl).toContain("api.openai.com");
+    expect(capturedUrl).toContain("model=gpt-realtime");
+    expect(capturedOpts).toMatchObject({
+      headers: { Authorization: "Bearer sk-test" },
+    });
+
+    await session.stop();
   });
 });
 
