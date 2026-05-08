@@ -101,6 +101,39 @@ describe("DeployBodySchema", () => {
     }
   });
 
+  test("preserves agentConfig.s2s descriptor through validation", () => {
+    const result = DeployBodySchema.safeParse({
+      worker: "code",
+      clientFiles: {},
+      agentConfig: {
+        name: "agent",
+        s2s: { kind: "openai-realtime", options: { model: "gpt-realtime-2" } },
+      },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.agentConfig.s2s).toEqual({
+        kind: "openai-realtime",
+        options: { model: "gpt-realtime-2" },
+      });
+    }
+  });
+
+  test("rejects agentConfig with s2s and pipeline triple set together", () => {
+    const result = DeployBodySchema.safeParse({
+      worker: "code",
+      clientFiles: {},
+      agentConfig: {
+        name: "agent",
+        s2s: { kind: "openai-realtime", options: {} },
+        stt: { kind: "assemblyai", options: {} },
+        llm: { kind: "openai", options: {} },
+        tts: { kind: "cartesia", options: {} },
+      },
+    });
+    expect(result.success).toBe(false);
+  });
+
   test("rejects non-object body", () => {
     expect(DeployBodySchema.safeParse("string").success).toBe(false);
     expect(DeployBodySchema.safeParse(null).success).toBe(false);

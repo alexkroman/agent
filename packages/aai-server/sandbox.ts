@@ -143,6 +143,7 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
       ...(config.sttPrompt ? { sttPrompt: config.sttPrompt } : {}),
       ...(config.toolChoice ? { toolChoice: config.toolChoice satisfies ToolChoice } : {}),
       ...(config.builtinTools ? { builtinTools: config.builtinTools as BuiltinTool[] } : {}),
+      ...(config.s2s ? { s2s: config.s2s } : {}),
     },
     env,
     fetch: safeFetch,

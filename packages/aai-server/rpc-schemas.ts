@@ -36,6 +36,7 @@ export const IsolateConfigSchema = z
     stt: ProviderDescriptorSchema.optional(),
     llm: ProviderDescriptorSchema.optional(),
     tts: ProviderDescriptorSchema.optional(),
+    s2s: ProviderDescriptorSchema.optional(),
     mode: z.enum(["s2s", "pipeline"]).optional(),
     kv: ProviderDescriptorSchema.optional(),
     vector: ProviderDescriptorSchema.optional(),
@@ -45,7 +46,7 @@ export const IsolateConfigSchema = z
       ctx.addIssue({ code: z.ZodIssueCode.custom, message });
     }
     try {
-      const mode = assertProviderTriple(cfg.stt, cfg.llm, cfg.tts);
+      const mode = assertProviderTriple(cfg.stt, cfg.llm, cfg.tts, cfg.s2s);
       if (cfg.mode === "pipeline" && mode !== "pipeline") {
         fail("mode='pipeline' requires stt, llm, and tts to be set");
       }
