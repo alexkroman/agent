@@ -432,6 +432,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       callbacks,
       sid: sessionOpts.id,
       agent: sessionOpts.agent,
+      skipGreeting: sessionOpts.skipGreeting ?? false,
       ...(createOpenaiRealtimeWebSocket ? { createWebSocket: createOpenaiRealtimeWebSocket } : {}),
       logger,
     });

@@ -49,6 +49,8 @@ export type OpenaiRealtimeTransportOptions = {
   callbacks: TransportCallbacks;
   sid: string;
   agent: string;
+  /** Skip the initial greeting (used for session resume). */
+  skipGreeting?: boolean;
   createWebSocket?: CreateOpenaiRealtimeWebSocket;
   logger?: Logger;
 };
@@ -73,6 +75,19 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
       return;
     }
     ws.send(JSON.stringify(payload));
+  }
+
+  function sendGreeting(): void {
+    if (opts.skipGreeting) return;
+    const greeting = opts.sessionConfig.greeting;
+    if (!greeting) return;
+    // OpenAI Realtime has no native greeting field — trigger it as a one-shot
+    // response with custom instructions that override the system prompt for
+    // this turn only. Audio + transcript ride the normal response.* events.
+    send({
+      type: "response.create",
+      response: { instructions: `Say exactly: ${JSON.stringify(greeting)}` },
+    });
   }
 
   function sendSessionUpdate(): void {
@@ -114,6 +129,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
       sock.addEventListener("open", () => {
         opened = true;
         sendSessionUpdate();
+        sendGreeting();
         resolve();
       });
       sock.addEventListener("message", (ev) => handleMessage(ev.data));

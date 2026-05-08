@@ -83,7 +83,6 @@ describe("openai-realtime-transport: connect and session.update", () => {
       options: { model: "gpt-realtime", voice: "cedar" },
       sessionConfig: {
         systemPrompt: "Be terse.",
-        greeting: "Hi.",
         tools: [],
       },
       toolSchemas: [
@@ -130,6 +129,57 @@ describe("openai-realtime-transport: connect and session.update", () => {
       expect.objectContaining({ type: "function", name: "lookup" }),
     ]);
     expect(msg.session.tool_choice).toBe("auto");
+  });
+});
+
+describe("greeting", () => {
+  function makeWithGreeting(args: { greeting?: string; skipGreeting?: boolean }) {
+    const fake = makeFakeWs();
+    const transport = createOpenaiRealtimeTransport({
+      apiKey: "sk",
+      options: {},
+      sessionConfig: {
+        systemPrompt: "",
+        ...(args.greeting !== undefined ? { greeting: args.greeting } : {}),
+      },
+      toolSchemas: [],
+      toolChoice: "auto",
+      callbacks: noopCallbacks(),
+      sid: "s",
+      agent: "a",
+      ...(args.skipGreeting !== undefined ? { skipGreeting: args.skipGreeting } : {}),
+      createWebSocket: () => fake,
+      logger: silentLogger,
+    });
+    const ready = transport.start();
+    fake.fire("open");
+    return { fake, ready };
+  }
+
+  test("sends response.create with quoted greeting after session.update", async () => {
+    const { fake, ready } = makeWithGreeting({ greeting: 'Hello, "friend".' });
+    await ready;
+    expect(fake.sent.length).toBe(2);
+    expect(JSON.parse(fake.sent[0] ?? "{}").type).toBe("session.update");
+    const greetingMsg = JSON.parse(fake.sent[1] ?? "{}");
+    expect(greetingMsg.type).toBe("response.create");
+    // JSON.stringify quotes the greeting and escapes any embedded quotes —
+    // protects against prompt-injection by closing the instruction string.
+    expect(greetingMsg.response.instructions).toBe('Say exactly: "Hello, \\"friend\\"."');
+  });
+
+  test("no greeting send when greeting is undefined", async () => {
+    const { fake, ready } = makeWithGreeting({});
+    await ready;
+    expect(fake.sent.length).toBe(1);
+    expect(JSON.parse(fake.sent[0] ?? "{}").type).toBe("session.update");
+  });
+
+  test("skipGreeting suppresses the greeting send", async () => {
+    const { fake, ready } = makeWithGreeting({ greeting: "Hi.", skipGreeting: true });
+    await ready;
+    expect(fake.sent.length).toBe(1);
+    expect(JSON.parse(fake.sent[0] ?? "{}").type).toBe("session.update");
   });
 });
 
