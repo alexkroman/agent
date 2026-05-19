@@ -25,6 +25,9 @@ async function restartSandbox(c: AppContext, slug: string, reason: string): Prom
 export async function handleSecretList(c: AppContext): Promise<Response> {
   const slug = c.var.slug;
   const env = await c.env.store.getEnv(slug);
+  console.log(
+    `[diag] secret list ${JSON.stringify({ slug, host: process.env.FLY_MACHINE_ID, keys: env ? Object.keys(env) : null })}`,
+  );
   if (!env) {
     throw new HTTPException(404, { message: `Agent ${slug} not found` });
   }
@@ -38,6 +41,15 @@ export function handleSecretSet(c: ValidatedAppContext<Record<string, string>>):
 
     const existing = (await c.env.store.getEnv(slug)) ?? {};
     const merged = { ...existing, ...updates };
+    console.log(
+      `[diag] secret put ${JSON.stringify({
+        slug,
+        host: process.env.FLY_MACHINE_ID,
+        updateKeys: Object.keys(updates),
+        existingKeys: Object.keys(existing),
+        mergedKeys: Object.keys(merged),
+      })}`,
+    );
     await c.env.store.putEnv(slug, merged);
 
     await restartSandbox(c, slug, "secret update");

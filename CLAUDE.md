@@ -235,6 +235,32 @@ declared as **optional peer dependencies** of `@alexkroman1/aai`, so
 users only install the SDKs for the providers they actually use. S2S-mode
 agents need none of them.
 
+### S2S voices
+
+S2S mode selects a voice via the `voice:` field on `agent()`. Available
+voices on AssemblyAI's S2S API:
+
+| Voice | Accent | Description |
+| --- | --- | --- |
+| `ivy` | US | Professional, deliberate, smooth |
+| `james` | US | Conversational, professional, male |
+| `tyler` | US | Theatrical, energetic, chatty, jagged |
+| `winter` | US | Empathetic, aesthetic, conversational |
+| `sam` | US | Soft, conversational, young |
+| `mia` | US | Smooth, conversational, young |
+| `bella` | US | High-pitched, chatty |
+| `david` | US | Deep, calming, conversational |
+| `jack` | US | Smooth, direct, clear, fast-paced |
+| `kyle` | US | Chatty, nasal, expressive |
+| `helen` | US | Soft, older, calming |
+| `martha` | US | Southern, older, warm |
+| `river` | US | Slow, calming, ASMR |
+| `emma` | US | Lively, young, conversational |
+| `victor` | US | Deep, older |
+| `eleanor` | US | Deeper, older, calming |
+| `sophie` | UK | Clear, smooth, instructive, simple |
+| `oliver` | UK | Narrative, conversational |
+
 ### Pluggable storage (KV + Vector)
 
 Each session resolves its `Kv` and `Vector` instances at start. If `agent.ts`

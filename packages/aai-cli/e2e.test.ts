@@ -130,16 +130,28 @@ function installDeps(projectDir: string): void {
     `registry=${registry.registryUrl}\n//${registryHost}/:_authToken=test-token\n`,
   );
 
+  // Corepack downloads pnpm 11.x for this scratch project (no packageManager
+  // field). pnpm 11 enabled `minimumReleaseAge` by default with a 1-day cutoff,
+  // which rejects any transitive dep published in the last 24h — flakes the
+  // suite against fresh upstream releases. Disable via env var (most reliable
+  // override; .npmrc is sometimes ignored when corepack-loaded).
+  const installEnv = { ...env, NPM_CONFIG_MINIMUM_RELEASE_AGE: "0" };
+
   if (pm === "npm") {
     execFileSync("npm", ["install"], { cwd: projectDir, stdio: "inherit", env });
   } else if (pm === "yarn") {
     execFileSync("yarn", ["install", "--no-lockfile"], { cwd: projectDir, stdio: "inherit", env });
   } else {
-    execFileSync("pnpm", ["install", "--no-frozen-lockfile", "--no-strict-peer-dependencies"], {
-      cwd: projectDir,
-      stdio: "inherit",
-      env,
-    });
+    execFileSync(
+      "pnpm",
+      [
+        "install",
+        "--no-frozen-lockfile",
+        "--no-strict-peer-dependencies",
+        "--config.minimumReleaseAge=0",
+      ],
+      { cwd: projectDir, stdio: "inherit", env: installEnv },
+    );
   }
 }
 

@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { type AudioMockContext, findWorkletNode, installAudioMocks } from "./_react-test-utils.ts";
 import { createSessionCore, type SessionCore } from "./session-core.ts";
 
 // ─── Mock WebSocket ─────────────────────────────────────────────────────────
@@ -401,6 +402,53 @@ describe("createSessionCore", () => {
       lastSocket?.simulateMessage(new Uint8Array(320).buffer);
       // Error state should remain
       expect(core.getSnapshot().error).not.toBe(null);
+    });
+  });
+
+  // ─── Pre-init audio buffering ─────────────────────────────────────────────
+
+  describe("audio chunk buffering during audio init", () => {
+    let audio: AudioMockContext & { restore: () => void };
+
+    beforeEach(() => {
+      audio = installAudioMocks();
+    });
+
+    afterEach(() => {
+      audio.restore();
+    });
+
+    it("replays chunks that arrive before voiceIO is initialized", async () => {
+      core.connect();
+      lastSocket?.simulateOpen();
+
+      // Config message kicks off async initAudioCapture. Send binary chunks
+      // synchronously before any microtask can advance the init pipeline —
+      // this reproduces the race where the S2S greeting starts streaming
+      // before the client's playback worklet exists.
+      lastSocket?.simulateMessage(makeConfig());
+      const chunk1 = new Uint8Array([1, 2, 3, 4]);
+      const chunk2 = new Uint8Array([5, 6, 7, 8]);
+      lastSocket?.simulateMessage(chunk1.buffer);
+      lastSocket?.simulateMessage(chunk2.buffer);
+
+      // initAudioCapture creates the playback worklet lazily on first enqueue.
+      // Wait until it appears, which confirms the buffer was drained.
+      await vi.waitFor(() => {
+        expect(audio.workletNodes().some((n) => n.name === "playback-processor")).toBe(true);
+      });
+
+      const playNode = findWorkletNode(audio.workletNodes(), "playback-processor");
+      const writes = playNode.port.posted.filter(
+        (p): p is { event: "write"; buffer: Uint8Array } =>
+          (p as { event?: string }).event === "write",
+      );
+      expect(writes.length).toBe(2);
+      const buffers = writes.map((w) => Array.from(w.buffer));
+      expect(buffers).toEqual([
+        [1, 2, 3, 4],
+        [5, 6, 7, 8],
+      ]);
     });
   });
 

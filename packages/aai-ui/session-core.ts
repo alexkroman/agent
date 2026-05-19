@@ -44,6 +44,11 @@ const MAX_CUSTOM_EVENTS = 200;
 /** Cap on `messages` retained in the session snapshot; mirrors host-side DEFAULT_MAX_HISTORY. */
 const MAX_MESSAGES = 200;
 
+/** Cap on pre-init audio chunks buffered while `voiceIO` is initializing. ~100 chunks at
+ *  typical S2S chunk sizes is well over a second of audio — far longer than init takes
+ *  in practice, but bounded against pathological cases (mic-permission stalls). */
+const MAX_PREINIT_AUDIO_CHUNKS = 100;
+
 function appendCapped<T>(list: readonly T[], item: T, cap: number): T[] {
   const next = [...list, item];
   return next.length > cap ? next.slice(-cap) : next;
@@ -137,6 +142,11 @@ type ConnState = {
   /** Monotonically increasing counter bumped on each connect(). Prevents a stale
    *  initAudioCapture from assigning its voiceIO to a newer connection. */
   generation: number;
+  /** Audio chunks that arrived before `voiceIO` was initialized — drained into
+   *  the playback worklet once init completes. Closes the race between the
+   *  server starting greeting audio (immediately on S2S connect) and the
+   *  client awaiting mic permission + worklet registration. */
+  preInitAudio: Uint8Array[];
 };
 
 /**
@@ -189,6 +199,12 @@ async function initAudioCapture(
       return;
     }
     conn.voiceIO = io;
+    if (conn.preInitAudio.length > 0) {
+      for (const chunk of conn.preInitAudio) {
+        io.enqueue(chunk.buffer as ArrayBuffer);
+      }
+      conn.preInitAudio = [];
+    }
     deps.sendJson({ type: "audio_ready" });
     deps.updateState({ state: "listening" });
   } catch (err: unknown) {
@@ -272,7 +288,13 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
 
   // ─── Connection state ───────────────────────────────────────────────────
 
-  const conn: ConnState = { ws: null, voiceIO: null, audioSetupInFlight: false, generation: 0 };
+  const conn: ConnState = {
+    ws: null,
+    voiceIO: null,
+    audioSetupInFlight: false,
+    generation: 0,
+    preInitAudio: [],
+  };
   let connectionController: AbortController | null = null;
   let hasConnected = false;
 
@@ -280,6 +302,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     conn.audioSetupInFlight = false;
     void conn.voiceIO?.close();
     conn.voiceIO = null;
+    conn.preInitAudio = [];
   }
 
   function resetState(): void {
@@ -450,7 +473,11 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     if (currentSnapshot.state !== "speaking") {
       updateState({ state: "speaking" });
     }
-    conn.voiceIO?.enqueue(chunk.buffer as ArrayBuffer);
+    if (conn.voiceIO) {
+      conn.voiceIO.enqueue(chunk.buffer as ArrayBuffer);
+    } else if (conn.preInitAudio.length < MAX_PREINIT_AUDIO_CHUNKS) {
+      conn.preInitAudio.push(chunk);
+    }
   }
 
   /**
