@@ -123,11 +123,15 @@ function installDeps(projectDir: string): void {
   // Write .npmrc in the project directory so pnpm reliably uses the mock
   // registry even when running under turbo (env-only config can be overridden
   // by ancestor .npmrc files discovered during directory traversal).
+  // minimum-release-age=0 disables pnpm 10's supply-chain age check, which
+  // rejects transitive deps that were published in the last 24h — irrelevant
+  // for an ephemeral e2e install and otherwise flakes against fresh upstream
+  // releases (@types/node, etc.).
   const npmrcPath = path.join(projectDir, ".npmrc");
   const registryHost = new URL(registry.registryUrl).host;
   fs.writeFileSync(
     npmrcPath,
-    `registry=${registry.registryUrl}\n//${registryHost}/:_authToken=test-token\n`,
+    `registry=${registry.registryUrl}\n//${registryHost}/:_authToken=test-token\nminimum-release-age=0\n`,
   );
 
   if (pm === "npm") {
