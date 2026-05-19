@@ -1,5 +1,12 @@
 # @alexkroman1/aai-ui
 
+## 1.8.3
+
+### Patch Changes
+
+- 6b61892: Fix start-of-greeting audio cutoff in S2S mode. The client used to silently drop audio chunks that arrived from the server before `getUserMedia` and worklet registration completed. Early chunks are now buffered and replayed in order once playback is ready.
+  - @alexkroman1/aai@1.8.3
+
 ## 1.8.2
 
 ### Patch Changes
