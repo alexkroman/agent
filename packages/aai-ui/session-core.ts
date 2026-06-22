@@ -175,6 +175,8 @@ async function initAudioCapture(
   if (conn.audioSetupInFlight) return;
   conn.audioSetupInFlight = true;
   const gen = conn.generation;
+  // True if connect() ran again (or the socket closed) while we awaited async setup.
+  const isStale = () => conn.generation !== gen || conn.ws?.readyState !== WS_OPEN;
   try {
     const [{ createVoiceIO }, captureWorklet, playbackWorklet] = await Promise.all([
       import("./audio.ts"),
@@ -194,7 +196,7 @@ async function initAudioCapture(
         }
       },
     });
-    if (conn.generation !== gen || !conn.ws || conn.ws.readyState !== WS_OPEN) {
+    if (isStale()) {
       io.close();
       return;
     }
@@ -208,7 +210,7 @@ async function initAudioCapture(
     deps.sendJson({ type: "audio_ready" });
     deps.updateState({ state: "listening" });
   } catch (err: unknown) {
-    if (conn.generation !== gen || !conn.ws || conn.ws.readyState !== WS_OPEN) return;
+    if (isStale()) return;
     deps.updateState({
       state: "error",
       error: {
@@ -316,15 +318,19 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     });
   }
 
+  function isSocketOpen(): boolean {
+    return conn.ws?.readyState === WS_OPEN;
+  }
+
   function sendJson(msg: ClientMessage): void {
-    if (conn.ws && conn.ws.readyState === WS_OPEN) {
-      conn.ws.send(JSON.stringify(msg));
+    if (isSocketOpen()) {
+      conn.ws?.send(JSON.stringify(msg));
     }
   }
 
   function sendAudio(bytes: Uint8Array): void {
-    if (conn.ws && conn.ws.readyState === WS_OPEN) {
-      conn.ws.send(bytes as unknown as ArrayBuffer);
+    if (isSocketOpen()) {
+      conn.ws?.send(bytes as unknown as ArrayBuffer);
     }
   }
 
@@ -640,7 +646,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
 
   function reset(): void {
     conn.voiceIO?.flush();
-    if (conn.ws && conn.ws.readyState === WS_OPEN) {
+    if (isSocketOpen()) {
       sendJson({ type: "reset" });
       return;
     }

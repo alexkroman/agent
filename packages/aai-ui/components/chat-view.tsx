@@ -84,18 +84,16 @@ export function ChatView({
           !icon && <AaiLogo />
         )}
         {/* State indicator */}
-        <div className="ml-auto">
+        <div
+          className="ml-auto inline-flex items-center justify-center gap-1.5 text-[13px] font-medium leading-[130%] capitalize"
+          style={{ color: "rgba(255,255,255,0.284)" }}
+          data-state={session.state}
+        >
           <div
-            className="inline-flex items-center justify-center gap-1.5 text-[13px] font-medium leading-[130%] capitalize"
-            style={{ color: "rgba(255,255,255,0.284)" }}
-            data-state={session.state}
-          >
-            <div
-              className="w-2 h-2 rounded-full"
-              style={{ background: STATE_COLORS[session.state] }}
-            />
-            {session.state}
-          </div>
+            className="w-2 h-2 rounded-full"
+            style={{ background: STATE_COLORS[session.state] }}
+          />
+          {session.state}
         </div>
       </div>
       {/* Error banner */}

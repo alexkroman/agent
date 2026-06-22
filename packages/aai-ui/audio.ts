@@ -48,7 +48,14 @@ export type VoiceIO = AsyncDisposable & {
  * @throws If microphone access is denied or AudioWorklet registration fails.
  */
 export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
-  const { sttSampleRate, ttsSampleRate, captureWorkletSrc, playbackWorkletSrc, onMicData } = opts;
+  const {
+    sttSampleRate,
+    ttsSampleRate,
+    captureWorkletSrc,
+    playbackWorkletSrc,
+    onMicData,
+    onPlaybackProgress,
+  } = opts;
 
   // Use TTS rate for the context — playback fidelity is more perceptible.
   // Capture path resamples to STT rate if they differ.
@@ -118,7 +125,6 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
   let playNode: AudioWorkletNode | null = null;
   let onPlaybackStop: (() => void) | null = null;
   const lifecycle = new AbortController();
-  const { onPlaybackProgress } = opts;
 
   function ensurePlayNode(): AudioWorkletNode {
     if (playNode) return playNode;

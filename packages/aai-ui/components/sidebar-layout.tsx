@@ -39,9 +39,7 @@ export function SidebarLayout({
       className="shrink-0 flex flex-col overflow-y-auto"
       style={{
         width: sidebarWidth,
-        ...(sidebarPosition === "left"
-          ? { borderRight: `1px solid ${theme.border}` }
-          : { borderLeft: `1px solid ${theme.border}` }),
+        [sidebarPosition === "left" ? "borderRight" : "borderLeft"]: `1px solid ${theme.border}`,
       }}
     >
       {sidebar}

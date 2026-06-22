@@ -16,6 +16,10 @@ function formatResult(result: string): string {
   }
 }
 
+function truncate(text: string, max = 80): string {
+  return text.length > max ? `${text.slice(0, max)}...` : text;
+}
+
 /**
  * Renders a tool invocation with an optional icon/emoji, title, subtitle, and a
  * collapsible result viewer.
@@ -60,15 +64,13 @@ export function ToolCallBlock({
   const subtitle = useMemo(() => {
     const args = toolCall.args;
     if (toolCall.name === "run_code" && args.code) {
-      const firstLine = String(args.code).split("\n")[0] ?? "";
-      return firstLine.length > 80 ? `${firstLine.slice(0, 80)}...` : firstLine;
+      return truncate(String(args.code).split("\n")[0] ?? "");
     }
     // For common tools, show a sensible field
     for (const key of ["query", "url", "question"]) {
       if (args[key]) return String(args[key]);
     }
-    const summary = JSON.stringify(args);
-    return summary.length > 80 ? `${summary.slice(0, 80)}...` : summary;
+    return truncate(JSON.stringify(args));
   }, [toolCall.name, toolCall.args]);
 
   return (

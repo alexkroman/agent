@@ -110,21 +110,24 @@ export function MessageList({ className }: { className?: string }) {
 
   const items: ReactNode[] = [];
   let tci = 0;
-  for (const [i, msg] of messages.entries()) {
-    items.push(<MessageBubble key={`msg-${i}`} message={msg} theme={theme} />);
-    let tc = toolCalls[tci];
-    while (tc && tc.afterMessageIndex <= i) {
+  const flushToolCalls = (untilMessageIndex: number) => {
+    while (tci < toolCalls.length) {
+      const tc = toolCalls[tci];
+      if (!tc) break;
+      if (
+        untilMessageIndex !== Number.POSITIVE_INFINITY &&
+        tc.afterMessageIndex > untilMessageIndex
+      )
+        break;
       items.push(<ToolCallBlock key={tc.callId} toolCall={tc} />);
       tci++;
-      tc = toolCalls[tci];
     }
+  };
+  for (const [i, msg] of messages.entries()) {
+    items.push(<MessageBubble key={`msg-${i}`} message={msg} theme={theme} />);
+    flushToolCalls(i);
   }
-  let tc = toolCalls[tci];
-  while (tc) {
-    items.push(<ToolCallBlock key={tc.callId} toolCall={tc} />);
-    tci++;
-    tc = toolCalls[tci];
-  }
+  flushToolCalls(Number.POSITIVE_INFINITY);
 
   const userTranscript = session.userTranscript;
 

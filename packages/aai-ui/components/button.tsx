@@ -75,22 +75,14 @@ export function Button({
 } & Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "className">) {
   const theme = useTheme();
 
-  let variantStyle: CSSProperties;
-  if (variant === "default") {
-    variantStyle = { background: theme.primary, color: "#fff", borderColor: "transparent" };
-  } else if (variant === "secondary") {
-    variantStyle = {
-      background: "rgba(255,255,255,0.059)",
-      color: "rgba(255,255,255,0.618)",
-      borderColor: theme.border,
-    };
-  } else {
-    variantStyle = {
-      background: "transparent",
-      color: "rgba(255,255,255,0.618)",
-      borderColor: theme.border,
-    };
-  }
+  const variantStyle: CSSProperties =
+    variant === "default"
+      ? { background: theme.primary, color: "#fff", borderColor: "transparent" }
+      : {
+          background: variant === "secondary" ? "rgba(255,255,255,0.059)" : "transparent",
+          color: "rgba(255,255,255,0.618)",
+          borderColor: theme.border,
+        };
 
   return (
     <button

@@ -10,7 +10,7 @@ import {
 import type { SessionCore, SessionSnapshot } from "./session-core.ts";
 import type { ClientTheme } from "./types.ts";
 
-const DEFAULT_THEME: Required<ClientTheme> = {
+export const DEFAULT_THEME: Required<ClientTheme> = {
   bg: "#101010",
   primary: "#fab283",
   text: "rgba(255, 255, 255, 0.94)",
@@ -58,5 +58,3 @@ export function ThemeProvider({ value, children }: { value?: ClientTheme; childr
 export function useTheme(): Required<ClientTheme> {
   return useContext(ThemeCtx);
 }
-
-export { DEFAULT_THEME };
