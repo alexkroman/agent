@@ -25,12 +25,22 @@ export const DEFAULT_HTML = `<!DOCTYPE html>
   </body>
 </html>`;
 
+/** Returns the index.html path for a project root and whether it already exists. */
+function indexHtml(root: string): { path: string; exists: boolean } {
+  const htmlPath = path.join(root, "index.html");
+  return { path: htmlPath, exists: existsSync(htmlPath) };
+}
+
+const noop = () => {
+  /* nothing to do */
+};
+
 /**
  * Vite plugin that serves a fallback index.html in dev mode when one doesn't
  * exist on disk. No-op if index.html exists (user override).
  */
 export function fallbackHtmlPlugin(root: string): Plugin {
-  const htmlExists = existsSync(path.join(root, "index.html"));
+  const { exists: htmlExists } = indexHtml(root);
   return {
     name: "aai-fallback-html",
     configureServer(server) {
@@ -54,11 +64,8 @@ export function fallbackHtmlPlugin(root: string): Plugin {
  * Returns a cleanup function to remove it. No-op if index.html already exists.
  */
 export function writeTempHtml(root: string): () => void {
-  const htmlPath = path.join(root, "index.html");
-  if (existsSync(htmlPath))
-    return () => {
-      /* no-op: user-provided */
-    };
+  const { path: htmlPath, exists } = indexHtml(root);
+  if (exists) return noop; // user-provided HTML, nothing to clean up
   writeFileSync(htmlPath, DEFAULT_HTML);
   return () => {
     try {

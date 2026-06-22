@@ -8,27 +8,23 @@ type Log = typeof clackLog;
 const noop = () => {
   /* no-op */
 };
-let _delegate: Log = clackLog;
+let _silenced = false;
 
 const logHandler: ProxyHandler<Log> = {
-  get(_target, prop, receiver) {
-    return Reflect.get(_delegate, prop, receiver);
+  get(target, prop, receiver) {
+    const value = Reflect.get(target, prop, receiver);
+    // In silenced mode, no-op any callable method (covers every clack
+    // method, present and future, without a hand-maintained list).
+    return _silenced && typeof value === "function" ? noop : value;
   },
 };
 
-/** Log instance that delegates to clack (human mode) or no-ops (JSON mode). */
+/** Log instance that delegates to clack (human mode) or no-ops (silenced). */
 export const log: Log = new Proxy(clackLog, logHandler);
 
 /** Replace all log methods with no-ops. Call once in JSON mode. */
 export function silenceOutput(): void {
-  _delegate = {
-    info: noop,
-    success: noop,
-    error: noop,
-    warn: noop,
-    step: noop,
-    message: noop,
-  } as unknown as Log;
+  _silenced = true;
 }
 
 /** Format a URL for display. */

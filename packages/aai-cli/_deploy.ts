@@ -39,6 +39,6 @@ export async function runDeploy(opts: DeployOpts): Promise<DeployResult> {
     },
   );
 
-  const data = (await resp.json()) as { slug: string };
-  return { slug: data.slug };
+  const { slug } = (await resp.json()) as DeployResult;
+  return { slug };
 }

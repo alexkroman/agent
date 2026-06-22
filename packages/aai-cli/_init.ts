@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 import fs from "node:fs/promises";
 import path from "node:path";
-import { isDevMode } from "./_agent.ts";
+import { getMonorepoRoot, isDevMode } from "./_agent.ts";
 import { downloadAndMergeTemplate } from "./_templates.ts";
 
 function readmeContent(slug: string): string {
@@ -70,7 +70,6 @@ export async function patchPackageJsonForWorkspace(targetDir: string): Promise<v
   pkgJson.name = path.basename(targetDir);
   delete pkgJson.packageManager;
 
-  const { getMonorepoRoot } = await import("./_agent.ts");
   const root = getMonorepoRoot();
   if (!root) return; // shouldn't happen — caller checks isDevMode()
   const packagesDir = path.join(root, "packages");

@@ -7,17 +7,18 @@
 export const HINT_INVALID_API_KEY =
   "Your API key may be invalid. Run `aai` to re-enter your AssemblyAI API key.";
 
+const defaultFetch = globalThis.fetch.bind(globalThis);
+
 /**
  * Send an authenticated request to the platform API.
  *
- * Adds the `Authorization` header and, on network failure, throws with a
- * contextual hint (localhost → "is the dev server running?", remote →
- * "check your network connection").
+ * Adds the `Authorization` header and, on network failure, throws with a hint
+ * to check the network connection and server URL.
  */
 export async function apiRequest(
   url: string,
   init: RequestInit & { apiKey: string; action: string },
-  fetchFn: typeof globalThis.fetch = globalThis.fetch.bind(globalThis),
+  fetchFn: typeof globalThis.fetch = defaultFetch,
 ): Promise<Response> {
   const { apiKey, action, ...rest } = init;
   const headers: Record<string, string> = {
@@ -40,7 +41,7 @@ export function apiError(action: string, status: number, body: string, hint?: st
 
 /**
  * Like `apiRequest`, but throws on non-ok responses with status-specific hints.
- * The 401 hint is always included. Pass additional hints via `opts.hints`.
+ * A built-in 401 hint is always included; pass additional hints via `opts.hints`.
  */
 export async function apiRequestOrThrow(
   url: string,
@@ -50,6 +51,6 @@ export async function apiRequestOrThrow(
   const resp = await apiRequest(url, init, opts?.fetch);
   if (resp.ok) return resp;
   const text = await resp.text();
-  const hint = resp.status === 401 ? HINT_INVALID_API_KEY : opts?.hints?.[resp.status];
-  throw apiError(init.action, resp.status, text, hint);
+  const hints: Record<number, string> = { ...opts?.hints, 401: HINT_INVALID_API_KEY };
+  throw apiError(init.action, resp.status, text, hints[resp.status]);
 }

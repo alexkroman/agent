@@ -9,6 +9,12 @@ import { CliError, type CommandResult, fail, getOutputMode, type OutputMode } fr
 import { silenceOutput } from "./_ui.ts";
 import { fileExists, resolveCwd } from "./_utils.ts";
 
+/** Emit a structured failure as one JSON line to stdout, then exit non-zero. */
+function emitFailJson(code: string, error: string, hint?: string): never {
+  process.stdout.write(`${JSON.stringify(fail(code, error, hint))}\n`);
+  process.exit(1);
+}
+
 /** Shared arg definitions for citty commands. */
 const sharedArgs = {
   port: { type: "string", alias: "p", description: "Port to listen on", default: "3000" },
@@ -48,9 +54,7 @@ async function handleErrors(mode: OutputMode, fn: () => Promise<void>): Promise<
     const code = err instanceof CliError ? err.code : "command_failed";
     const hint = err instanceof CliError ? err.hint : undefined;
     if (mode === "json") {
-      const result = fail(code, errorMessage(err), hint);
-      process.stdout.write(`${JSON.stringify(result)}\n`);
-      process.exit(1);
+      emitFailJson(code, errorMessage(err), hint);
     }
     const { log } = await import("./_ui.ts");
     log.error(errorMessage(err));
@@ -221,9 +225,7 @@ const secretPut = defineCommand({
         const { executeSecretPut, readStdin } = await import("./secret.ts");
         const value = mode === "json" ? await readStdin() : undefined;
         if (mode === "json" && !value) {
-          const result = fail("no_input", "No value provided", "Pipe secret value to stdin");
-          process.stdout.write(`${JSON.stringify(result)}\n`);
-          process.exit(1);
+          emitFailJson("no_input", "No value provided", "Pipe secret value to stdin");
         }
         return executeSecretPut(cwd, args.name, value, args.server);
       },

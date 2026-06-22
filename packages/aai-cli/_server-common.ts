@@ -38,7 +38,7 @@ export async function resolveServerEnv(
   if (cwd) {
     try {
       const content = await fs.readFile(path.join(cwd, ".env"), "utf-8");
-      fileEntries = dotenvParse(content);
+      fileEntries = parseEnvFile(content);
     } catch {
       // No .env file — that's fine
     }

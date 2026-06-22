@@ -3,7 +3,7 @@
 import { getServerInfo } from "./_agent.ts";
 import { runDelete } from "./_delete.ts";
 import { type CommandResult, ok } from "./_output.ts";
-import { log } from "./_ui.ts";
+import { fmtUrl, log } from "./_ui.ts";
 
 type DeleteData = { slug: string };
 
@@ -17,7 +17,7 @@ export async function executeDelete(opts: {
 
   log.step(`Deleting ${slug}`);
   await runDelete({ url: serverUrl, slug, apiKey });
-  log.success(`Deleted ${serverUrl}/${slug}`);
+  log.success(`Deleted ${fmtUrl(`${serverUrl}/${slug}`)}`);
 
   return ok({ slug });
 }

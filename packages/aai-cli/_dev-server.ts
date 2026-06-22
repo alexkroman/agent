@@ -53,8 +53,7 @@ async function loadAgentDef(cwd: string): Promise<AgentDef<any>> {
  * Watch the agent directory for changes and call `onChange` when detected.
  * Debounces to avoid rapid restarts.
  */
-function watchDirectory(dir: string, onChange: (filename: string | null) => void): FSWatcher[] {
-  const watchers: FSWatcher[] = [];
+function watchDirectory(dir: string, onChange: (filename: string | null) => void): FSWatcher {
   const DEBOUNCE_MS = 300;
 
   const debouncedChange = pDebounce((filename: string | null) => {
@@ -68,9 +67,7 @@ function watchDirectory(dir: string, onChange: (filename: string | null) => void
     void debouncedChange(filename);
   }
 
-  watchers.push(watch(dir, { persistent: false }, (_event, filename) => handleChange(filename)));
-
-  return watchers;
+  return watch(dir, { persistent: false }, (_event, filename) => handleChange(filename));
 }
 
 // ─── Dev server ─────────────────────────────────────────────────────────────
@@ -92,24 +89,26 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
 
   const hasClient = existsSync(path.join(cwd, "client.tsx"));
   const backendPort = hasClient ? port + 1 : port;
-  const vitePort = port;
 
-  const agentDef = await loadAgentDef(cwd);
-  const env = await resolveAgentEnv(cwd);
-  const runtime = createRuntime({ agent: agentDef, env });
+  // When no custom client.tsx, serve the pre-built default aai-ui client.
+  // Resolved once: the path is process-stable and require.resolve hits the disk.
+  const defaultClientDir = hasClient ? undefined : resolveDefaultClientDir();
 
-  // When no custom client.tsx, serve the pre-built default aai-ui client
-  function resolveDefaultClientDir(): string {
-    const require = createRequire(import.meta.url);
-    const pkgPath = require.resolve("@alexkroman1/aai-ui/package.json");
-    return path.join(path.dirname(pkgPath), "dist", "default-client");
+  // Load the agent, resolve its env, and start a fresh backend server.
+  async function buildServer(): Promise<AgentServer> {
+    const agentDef = await loadAgentDef(cwd);
+    const env = await resolveAgentEnv(cwd);
+    const runtime = createRuntime({ agent: agentDef, env });
+    const server = createServer({
+      runtime,
+      name: agentDef.name,
+      ...(defaultClientDir ? { clientDir: defaultClientDir } : {}),
+    });
+    await server.listen(backendPort);
+    return server;
   }
-  const agentServer = createServer({
-    runtime,
-    name: agentDef.name,
-    ...(hasClient ? {} : { clientDir: resolveDefaultClientDir() }),
-  });
-  await agentServer.listen(backendPort);
+
+  let currentServer = await buildServer();
 
   let viteServer: { close(): Promise<void> } | undefined;
   if (hasClient) {
@@ -119,7 +118,7 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
       root: cwd,
       plugins: [fallbackHtmlPlugin(cwd)],
       server: {
-        port: vitePort,
+        port,
         proxy: {
           "/health": target,
           "/websocket": { target, ws: true },
@@ -130,10 +129,7 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
   }
 
   let restarting = false;
-  let currentServer: AgentServer = agentServer;
-  let currentVite = viteServer;
-  let currentEnv = env;
-  const watchers = watchDirectory(cwd, () => {
+  const watcher = watchDirectory(cwd, () => {
     if (restarting) return;
     restarting = true;
     void restart().finally(() => {
@@ -148,16 +144,7 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
       /* ignore */
     }
     try {
-      const newAgentDef = await loadAgentDef(cwd);
-      currentEnv = await resolveAgentEnv(cwd);
-      const newRuntime = createRuntime({ agent: newAgentDef, env: currentEnv });
-      const newServer = createServer({
-        runtime: newRuntime,
-        name: newAgentDef.name,
-        ...(hasClient ? {} : { clientDir: resolveDefaultClientDir() }),
-      });
-      await newServer.listen(backendPort);
-      currentServer = newServer;
+      currentServer = await buildServer();
       log.success("Restarted");
     } catch (err) {
       log.error(`Restart failed: ${errorMessage(err)}`);
@@ -165,11 +152,15 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
   }
 
   return async () => {
-    for (const w of watchers) w.close();
-    if (currentVite) {
-      await currentVite.close();
-      currentVite = undefined;
-    }
+    watcher.close();
+    if (viteServer) await viteServer.close();
     await currentServer.close();
   };
+}
+
+// When no custom client.tsx, serve the pre-built default aai-ui client.
+function resolveDefaultClientDir(): string {
+  const require = createRequire(import.meta.url);
+  const pkgPath = require.resolve("@alexkroman1/aai-ui/package.json");
+  return path.join(path.dirname(pkgPath), "dist", "default-client");
 }

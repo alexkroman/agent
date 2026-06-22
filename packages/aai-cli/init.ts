@@ -114,25 +114,14 @@ async function installDeps(cwd: string, silent?: boolean): Promise<boolean> {
   if (!(await hasDeps(cwd))) return true;
   await ensurePnpm();
 
-  if (silent) {
-    try {
-      await runPnpmInstall(cwd);
-      return true;
-    } catch (err: unknown) {
-      log.warn(`pnpm install failed: ${formatInstallError(err)}`);
-      log.warn("Run `corepack enable && pnpm install` manually in the project directory.");
-      return false;
-    }
-  }
-
-  const s = p.spinner();
-  s.start("Installing dependencies with pnpm");
+  const s = silent ? null : p.spinner();
+  s?.start("Installing dependencies with pnpm");
   try {
     await runPnpmInstall(cwd);
-    s.stop("Dependencies installed");
+    s?.stop("Dependencies installed");
     return true;
   } catch (err: unknown) {
-    s.stop("Dependency install failed");
+    s?.stop("Dependency install failed");
     log.warn(`pnpm install failed: ${formatInstallError(err)}`);
     log.warn("Run `corepack enable && pnpm install` manually in the project directory.");
     return false;
@@ -175,14 +164,10 @@ async function scaffoldProject(
   silent?: boolean,
 ): Promise<void> {
   const { runInit } = await import("./_init.ts");
-  if (silent) {
-    await runInit({ targetDir: cwd, template });
-    return;
-  }
-  const s = p.spinner();
-  s.start(`Creating ${dir}`);
+  const s = silent ? null : p.spinner();
+  s?.start(`Creating ${dir}`);
   await runInit({ targetDir: cwd, template });
-  s.stop("Project created");
+  s?.stop("Project created");
 }
 
 /** Print post-init instructions. */
@@ -224,27 +209,22 @@ export async function executeInit(
   await scaffoldProject(dir, cwd, template, suppressUi);
   const installed = await installDeps(cwd, suppressUi);
 
-  let deployed = false;
-  let slug: string | undefined;
-  let url: string | undefined;
-
+  // `quiet` suppresses deploy; `silent` (folded into suppressUi) does not.
+  let deployInfo: { slug: string; url: string } | null = null;
   if (!installed) {
     log.warn("Skipping deploy because dependencies were not installed.");
   } else if (!(opts.skipDeploy || extra?.quiet)) {
-    const deployInfo = await tryDeploy(cwd, opts.server, monorepoRoot);
-    if (deployInfo) {
-      deployed = true;
-      slug = deployInfo.slug;
-      url = deployInfo.url;
-    }
+    deployInfo = await tryDeploy(cwd, opts.server, monorepoRoot);
   }
 
   if (!suppressUi) {
     printPostInitInfo(cwd, monorepoRoot);
   }
 
-  const data: InitData = { dir: cwd, template, deployed };
-  if (slug) data.slug = slug;
-  if (url) data.url = url;
+  const data: InitData = { dir: cwd, template, deployed: deployInfo !== null };
+  if (deployInfo) {
+    data.slug = deployInfo.slug;
+    data.url = deployInfo.url;
+  }
   return ok(data);
 }

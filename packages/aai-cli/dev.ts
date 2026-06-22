@@ -9,7 +9,9 @@ type DevData = { url: string };
 
 /**
  * Start the dev server and return the result.
- * The process stays alive after this returns — caller handles signals.
+ *
+ * Installs SIGINT/SIGTERM handlers that run cleanup and exit. The process
+ * stays alive after this returns until one of those signals arrives.
  */
 export async function executeDev(opts: {
   cwd: string;

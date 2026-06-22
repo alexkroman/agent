@@ -42,11 +42,10 @@ export async function withOutput<T>(
   const result = await fn();
   if (mode === "json") {
     process.stdout.write(`${JSON.stringify(result)}\n`);
-    if (!result.ok) process.exit(1);
   } else {
     humanRender(result);
-    if (!result.ok) process.exit(1);
   }
+  if (!result.ok) process.exit(1);
 }
 
 /** Create an ok result. */

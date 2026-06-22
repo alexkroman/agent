@@ -1,5 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -9,19 +10,6 @@ import { build, type Rollup } from "vite";
 import { writeTempHtml } from "./_default-html.ts";
 import { type CommandResult, ok } from "./_output.ts";
 import { fileExists, validateAgentExport } from "./_utils.ts";
-
-/** Shared Vite build base config for agent bundles. */
-function agentViteBuildBase(entry: string) {
-  return {
-    logLevel: "silent" as const,
-    build: {
-      lib: { entry, formats: ["es" as const] },
-      target: "node20" as const,
-      minify: false,
-      rollupOptions: { output: { entryFileNames: "[name].js" } },
-    },
-  };
-}
 
 /** Output from the bundler: agentConfig + worker ESM + client files. */
 export type DirectoryBundleOutput = {
@@ -67,10 +55,7 @@ export async function evalWorkerBundle(code: string, cwd: string): Promise<Agent
   const evalDir = path.join(cwd, ".aai", "eval");
   await fs.mkdir(evalDir, { recursive: true });
   // Use a unique filename per invocation to avoid Node's ESM import cache.
-  const tmpPath = path.join(
-    evalDir,
-    `agent-${Date.now()}-${Math.random().toString(36).slice(2)}.mjs`,
-  );
+  const tmpPath = path.join(evalDir, `agent-${randomUUID()}.mjs`);
   try {
     await fs.writeFile(tmpPath, code);
     const mod = await import(pathToFileURL(tmpPath).href);
@@ -93,10 +78,9 @@ export async function evalWorkerBundle(code: string, cwd: string): Promise<Agent
  */
 async function buildWorker(cwd: string): Promise<string> {
   const agentEntry = path.join(cwd, "agent.ts");
-  const base = agentViteBuildBase(agentEntry);
 
   const result = await build({
-    ...base,
+    logLevel: "silent",
     plugins: [
       // Transform .md imports into raw string exports so templates that do
       // `import systemPrompt from "./system-prompt.md"` bundle correctly.
@@ -110,12 +94,11 @@ async function buildWorker(cwd: string): Promise<string> {
       },
     ],
     build: {
-      ...base.build,
-      lib: { ...base.build.lib, fileName: "worker" },
+      lib: { entry: agentEntry, formats: ["es"], fileName: "worker" },
+      target: "node20",
+      minify: false,
       write: false,
-      rollupOptions: {
-        output: { entryFileNames: "[name].js" },
-      },
+      rollupOptions: { output: { entryFileNames: "[name].js" } },
     },
   });
 
@@ -155,14 +138,17 @@ async function buildClient(cwd: string): Promise<Record<string, string>> {
   // Read built files into memory for deploy payload
   const files: Record<string, string> = {};
   async function walk(dir: string, prefix: string): Promise<void> {
-    for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
-      const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
-      if (entry.isDirectory()) {
-        await walk(path.join(dir, entry.name), rel);
-      } else {
-        files[rel] = await fs.readFile(path.join(dir, entry.name), "utf-8");
-      }
-    }
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+    await Promise.all(
+      entries.map(async (entry) => {
+        const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+        if (entry.isDirectory()) {
+          await walk(path.join(dir, entry.name), rel);
+        } else {
+          files[rel] = await fs.readFile(path.join(dir, entry.name), "utf-8");
+        }
+      }),
+    );
   }
   await walk(clientDir, "");
   return files;

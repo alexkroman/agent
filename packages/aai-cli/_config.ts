@@ -19,26 +19,26 @@ export function getConfigDir(): string {
   return path.join(process.env.XDG_CONFIG_HOME ?? path.join(os.homedir(), ".config"), "aai");
 }
 
+/** Write `data` as pretty-printed JSON, creating the parent directory if needed. */
+async function writeJsonFile(filePath: string, data: unknown): Promise<void> {
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(filePath, `${JSON.stringify(data, null, 2)}\n`);
+}
+
 export type ProjectConfig = z.infer<typeof ProjectConfigSchema>;
 
 export async function readProjectConfig(agentDir: string): Promise<ProjectConfig | null> {
+  const file = path.join(agentDir, ".aai", "project.json");
   try {
-    return ProjectConfigSchema.parse(
-      JSON.parse(await fs.readFile(path.join(agentDir, ".aai", "project.json"), "utf-8")),
-    );
+    return ProjectConfigSchema.parse(JSON.parse(await fs.readFile(file, "utf-8")));
   } catch (error) {
-    consola.debug(
-      `Failed to read project config from ${path.join(agentDir, ".aai", "project.json")}:`,
-      error,
-    );
+    consola.debug(`Failed to read project config from ${file}:`, error);
     return null;
   }
 }
 
 export async function writeProjectConfig(agentDir: string, data: ProjectConfig): Promise<void> {
-  const aaiDir = path.join(agentDir, ".aai");
-  await fs.mkdir(aaiDir, { recursive: true });
-  await fs.writeFile(path.join(aaiDir, "project.json"), `${JSON.stringify(data, null, 2)}\n`);
+  await writeJsonFile(path.join(agentDir, ".aai", "project.json"), data);
 }
 
 export type GlobalConfig = {
@@ -55,8 +55,7 @@ export async function readGlobalConfig(configDir?: string): Promise<GlobalConfig
 }
 
 export async function writeGlobalConfig(configDir: string, data: GlobalConfig): Promise<void> {
-  await fs.mkdir(configDir, { recursive: true });
-  await fs.writeFile(path.join(configDir, "config.json"), `${JSON.stringify(data, null, 2)}\n`);
+  await writeJsonFile(path.join(configDir, "config.json"), data);
 }
 
 export async function ensureApiKey(configDir?: string): Promise<string> {
@@ -77,7 +76,6 @@ export async function ensureApiKey(configDir?: string): Promise<string> {
     process.exit(0);
   }
 
-  const apiKey = result as string;
-  await writeGlobalConfig(dir, { ...config, apiKey });
-  return apiKey;
+  await writeGlobalConfig(dir, { ...config, apiKey: result });
+  return result;
 }

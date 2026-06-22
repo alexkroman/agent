@@ -7,21 +7,26 @@ import { ensureApiKey, readProjectConfig } from "./_config.ts";
 export const DEFAULT_SERVER = "https://aai-agent.fly.dev";
 export const DEFAULT_DEV_SERVER = "http://localhost:8080";
 
+/** Marker file that identifies the monorepo root. */
+const WORKSPACE_MARKER = "pnpm-workspace.yaml";
+/** Env var that forces production mode even inside the monorepo. */
+const DISABLE_DEV_ENV = "AAI_NO_DEV";
+
 let _cachedMonorepoRoot: string | null | undefined;
 
 export function getMonorepoRoot(): string | null {
   if (_cachedMonorepoRoot !== undefined) return _cachedMonorepoRoot;
   const cliDir = path.dirname(fileURLToPath(import.meta.url));
-  const root1 = path.resolve(cliDir, "../..");
-  const root2 = path.resolve(cliDir, "../../..");
-  if (existsSync(path.join(root1, "pnpm-workspace.yaml"))) _cachedMonorepoRoot = root1;
-  else if (existsSync(path.join(root2, "pnpm-workspace.yaml"))) _cachedMonorepoRoot = root2;
-  else _cachedMonorepoRoot = null;
+  // Probe each candidate ancestor in order (handles both the .ts source
+  // layout and the compiled dist/.js layout), keeping the nearest match.
+  const candidates = ["../..", "../../.."].map((rel) => path.resolve(cliDir, rel));
+  _cachedMonorepoRoot =
+    candidates.find((root) => existsSync(path.join(root, WORKSPACE_MARKER))) ?? null;
   return _cachedMonorepoRoot;
 }
 
 export function isDevMode(): boolean {
-  if (process.env.AAI_NO_DEV === "1") return false;
+  if (process.env[DISABLE_DEV_ENV] === "1") return false;
   return getMonorepoRoot() !== null;
 }
 

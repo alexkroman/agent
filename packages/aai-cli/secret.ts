@@ -30,8 +30,7 @@ export async function readStdin(): Promise<string> {
   return Buffer.concat(chunks).toString("utf-8").trim();
 }
 
-type SecretPutData = { name: string };
-type SecretDeleteData = { name: string };
+type SecretNameData = { name: string };
 type SecretListData = { secrets: string[] };
 
 /**
@@ -43,7 +42,7 @@ export async function executeSecretPut(
   name: string,
   value: string | undefined,
   server: string | undefined,
-): Promise<CommandResult<SecretPutData>> {
+): Promise<CommandResult<SecretNameData>> {
   let secretValue = value;
 
   if (!secretValue) {
@@ -68,7 +67,7 @@ export async function executeSecretDelete(
   cwd: string,
   name: string,
   server: string | undefined,
-): Promise<CommandResult<SecretDeleteData>> {
+): Promise<CommandResult<SecretNameData>> {
   const { slug } = await secretRequest(cwd, `/${name}`, { method: "DELETE" }, server);
   log.success(`Deleted ${name} from ${slug}`);
   return ok({ name });
@@ -79,14 +78,14 @@ export async function executeSecretList(
   server: string | undefined,
 ): Promise<CommandResult<SecretListData>> {
   const { resp } = await secretRequest(cwd, "", undefined, server);
-  const { vars } = (await resp.json()) as { vars: string[] };
-  if (vars.length === 0) {
+  const { vars: secrets } = (await resp.json()) as { vars: string[] };
+  if (secrets.length === 0) {
     log.info("No secrets set. Use `aai secret put <name>` to add one.");
   } else {
-    log.message(`${vars.length} secret${vars.length === 1 ? "" : "s"}:`);
-    for (const v of vars) {
-      log.message(`  ${v}`);
+    log.message(`${secrets.length} secret${secrets.length === 1 ? "" : "s"}:`);
+    for (const secret of secrets) {
+      log.message(`  ${secret}`);
     }
   }
-  return ok({ secrets: vars });
+  return ok({ secrets });
 }
