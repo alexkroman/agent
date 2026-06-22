@@ -578,6 +578,25 @@ bumped automatically.
 When you make changes that affect architecture, security model, conventions,
 or gotchas, update this file.
 
+## AI contributor tooling (`.claude/`)
+
+Shared rigor for agents working in this repo lives under `.claude/`:
+
+- **Skills** (user-invoked, `disable-model-invocation`): `/check` runs the
+  verification gate (`pnpm check:local` / `pnpm check`) and reports the real
+  output; `/release-prep` drives the changesets Version Packages → publish flow.
+- **`/review-changes`** scopes the working diff, always runs the `code-review`
+  skill, then dispatches the specialized reviewers only for the areas the diff
+  touches.
+- **Review subagents**: `security-reviewer` (gVisor/sandbox isolation, SSRF,
+  `run_code` vm boundary, per-tenant credential separation) and
+  `boundary-reviewer` (the `sdk/`-stays-Node-free rule, cross-package/internal
+  import contracts, subpath-export integrity). Invoke them after touching their
+  areas — or just run `/review-changes`, which dispatches them for you.
+
+When a change alters one of these workflows, gates, or the security/boundary
+contracts the reviewers encode, update the relevant `.claude/` file too.
+
 ## PR workflow
 
 **Default:** When finishing a development branch, always push and create a

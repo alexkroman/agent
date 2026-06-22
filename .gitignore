@@ -9,6 +9,9 @@ tmp/
 .claude/*
 !.claude/settings.json
 !.claude/plans/
+!.claude/agents/
+!.claude/commands/
+!.claude/skills/
 .tsbuildinfo/
 coverage/
 reports/

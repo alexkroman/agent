@@ -54,6 +54,15 @@
             "statusMessage": "Installing worktree dependencies..."
           }
         ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "f=$(jq -r '.tool_input.file_path // empty'); case \"$f\" in *.ts|*.tsx|*.js|*.mjs|*.jsx) npx biome check --write --no-errors-on-unmatched \"$f\" >/dev/null 2>&1 || true;; esac; exit 0"
+          }
+        ]
       }
     ],
     "SessionStart": [
@@ -126,6 +135,15 @@
       "mcp__github__get_file_contents",
       "mcp__github__list_commits",
       "mcp__github__get_commit"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(**/.env)",
+      "Read(**/.env.*)",
+      "Read(**/*.pem)",
+      "Read(**/id_rsa)",
+      "Read(**/id_ed25519)",
+      "Read(**/*.p12)"
     ]
   },
   "includeGitInstructions": true
