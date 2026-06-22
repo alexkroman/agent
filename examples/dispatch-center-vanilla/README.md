@@ -18,7 +18,7 @@ abstracts away.
 
 ## Architecture
 
-```
+```text
 ┌──────────────┐   GET /token    ┌──────────────┐   GET /v1/token   ┌─────────────────────┐
 │   Browser    │ ───────────────▶│  server.mjs  │ ─────────────────▶│   AssemblyAI token  │
 │  (app.js)    │◀─── { token } ──│ (Node stdlib)│◀── { token } ─────│      endpoint       │
