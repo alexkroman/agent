@@ -73,13 +73,8 @@ export type Sandbox = AgentRuntime;
 export function createSandbox(opts: SandboxOptions): Sandbox {
   const { workerCode, env, storage, slug } = opts;
 
-  const safeFetch: typeof globalThis.fetch = (input, init?) => {
-    let url: string;
-    if (typeof input === "string") url = input;
-    else if (input instanceof URL) url = input.href;
-    else url = input.url;
-    return ssrfSafeFetch(url, init ?? {}, globalThis.fetch);
-  };
+  const safeFetch: typeof globalThis.fetch = (input, init?) =>
+    ssrfSafeFetch(new Request(input, init).url, init ?? {}, globalThis.fetch);
 
   const config = opts.agentConfig;
 
@@ -133,16 +128,6 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
   };
 
   const builtins = resolveAllBuiltins(config.builtinTools ?? [], { fetch: safeFetch });
-  console.log(
-    `[diag] sandbox createRuntime ${JSON.stringify({
-      slug,
-      hasS2s: config.s2s !== undefined,
-      s2sKind: config.s2s?.kind,
-      mode: config.mode,
-      configKeys: Object.keys(config),
-      s2s: config.s2s,
-    })}`,
-  );
   const agentRuntime = createRuntime({
     agent: {
       name: config.name,

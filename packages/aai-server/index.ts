@@ -82,20 +82,21 @@ function buildStorage(env: NodeJS.ProcessEnv): {
 }
 
 function buildDefaultVector(env: NodeJS.ProcessEnv): (slug: string) => Vector {
-  if (isLocalDev(env) || !env.PINECONE_API_KEY || !env.PINECONE_INDEX) {
+  const { PINECONE_API_KEY: apiKey, PINECONE_INDEX: index } = env;
+  if (isLocalDev(env) || !apiKey || !index) {
     return (slug) => createMemoryVector({ namespace: slug });
   }
-  const apiKey = env.PINECONE_API_KEY;
-  const index = env.PINECONE_INDEX;
   return (slug) => createPineconeVector({ apiKey, index, namespace: slug });
 }
 
 async function buildOpts(env: NodeJS.ProcessEnv): Promise<OrchestratorOpts> {
   const { storage, secret } = buildStorage(env);
-  const masterKey = await importMasterKey(secret);
+  // Start warm-pool spawning before awaiting the key import so harness
+  // pre-warming and the crypto key import overlap at boot.
+  const pool = buildPool(env);
   const slots = createSlotCache();
   registerSlotsForGauges(slots);
-  const pool = buildPool(env);
+  const masterKey = await importMasterKey(secret);
   return {
     slots,
     store: createBundleStore(storage, { masterKey }),

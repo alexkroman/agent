@@ -25,6 +25,9 @@ const execFileAsync = promisify(execFile);
 // Binary discovery (cached)
 // ---------------------------------------------------------------------------
 
+const RUNSC_BIN = "/usr/local/bin/runsc";
+const DENO_BIN = "/usr/local/bin/deno";
+
 const binaryCache = new Map<string, string | null>();
 
 function findBinary(path: string, linuxOnly = false): string | null {
@@ -39,11 +42,11 @@ function findBinary(path: string, linuxOnly = false): string | null {
 }
 
 function findRunsc(): string | null {
-  return findBinary("/usr/local/bin/runsc", true);
+  return findBinary(RUNSC_BIN, true);
 }
 
 function findDeno(): string | null {
-  return findBinary("/usr/local/bin/deno");
+  return findBinary(DENO_BIN);
 }
 
 /**
@@ -78,6 +81,12 @@ const BUNDLE_BASE = "/tmp/aai-bundles";
 
 const SANDBOX_ROOTFS = "/tmp/aai-sandbox-rootfs";
 
+/** Grace period after SIGTERM before escalating to SIGKILL during cleanup. */
+const SIGTERM_GRACE_MS = 5000;
+
+/** Time to wait for the process to be reaped after SIGKILL. */
+const SIGKILL_REAP_MS = 2000;
+
 const HOST_LIB_DIRS = ["/lib", "/lib64", "/usr/lib"] as const;
 
 type LibBindMount = { destination: string; type: "bind"; source: string; options: string[] };
@@ -111,20 +120,26 @@ export function prepareRootfs(harnessPath: string): Promise<RootfsState> {
 
     const t0 = performance.now();
     await mkdir(SANDBOX_ROOTFS, { recursive: true });
-    const denoDest = join(SANDBOX_ROOTFS, "deno");
-    await copyFile(denoSrc, denoDest);
-    await chmod(denoDest, 0o755);
-    await copyFile(harnessPath, join(SANDBOX_ROOTFS, "harness.mjs"));
 
     // Deno is dynamically linked — it needs the host's libc and dynamic
     // linker at runtime. Pre-create the bind-mount points once (idempotent
     // mkdir) so per-spawn we only have to point the OCI spec at them.
-    const libMounts: LibBindMount[] = [];
-    for (const dir of HOST_LIB_DIRS) {
-      if (!existsSync(dir)) continue;
-      await mkdir(join(SANDBOX_ROOTFS, dir), { recursive: true });
-      libMounts.push({ destination: dir, type: "bind", source: dir, options: ["ro"] });
-    }
+    const libDirs = HOST_LIB_DIRS.filter((dir) => existsSync(dir));
+    const libMounts: LibBindMount[] = libDirs.map((dir) => ({
+      destination: dir,
+      type: "bind",
+      source: dir,
+      options: ["ro"],
+    }));
+
+    // All copies/mkdirs below are independent of one another, so run them
+    // concurrently to overlap the ~125 MB deno copy with the rest.
+    const denoDest = join(SANDBOX_ROOTFS, "deno");
+    await Promise.all([
+      copyFile(denoSrc, denoDest).then(() => chmod(denoDest, 0o755)),
+      copyFile(harnessPath, join(SANDBOX_ROOTFS, "harness.mjs")),
+      ...libDirs.map((dir) => mkdir(join(SANDBOX_ROOTFS, dir), { recursive: true })),
+    ]);
     const ms = Math.round(performance.now() - t0);
     console.info("Sandbox rootfs prepared", { rootfs: SANDBOX_ROOTFS, ms });
     return { rootfsPath: SANDBOX_ROOTFS, libMounts };
@@ -170,10 +185,8 @@ async function cleanupBundleDir(containerId: string): Promise<void> {
  * - Process runs as nobody (65534:65534)
  */
 export async function createGvisorSandbox(opts: GvisorSandboxOptions): Promise<GvisorSandbox> {
-  const runscBin = findRunsc();
-  if (!runscBin) throw new Error("runsc not found on PATH");
-  // Capture as const for closure narrowing across async boundaries.
-  const runsc: string = runscBin;
+  const runsc = findRunsc();
+  if (!runsc) throw new Error("runsc not found on PATH");
 
   const t0 = performance.now();
   const { rootfsPath, libMounts } = await prepareRootfs(opts.harnessPath);
@@ -209,6 +222,20 @@ export async function createGvisorSandbox(opts: GvisorSandboxOptions): Promise<G
   metrics.sandboxSpawnPhase.observe({ phase: "spawn" }, (tSpawn - tBundle) / 1000);
   metrics.sandboxSpawnPhase.observe({ phase: "total" }, (tSpawn - t0) / 1000);
 
+  return {
+    process: child,
+    containerId,
+    cleanup: makeCleanup(runsc, containerId, child),
+  };
+}
+
+/**
+ * Build the sandbox cleanup function. Kept at module level (rather than as a
+ * closure inside `createGvisorSandbox`) so it captures only the three values
+ * it needs — the large `spec`/`libMounts` and timing locals can be GC'd as
+ * soon as `createGvisorSandbox` returns.
+ */
+function makeCleanup(runsc: string, containerId: string, child: ChildProcess): () => Promise<void> {
   async function tryRunsc(...args: string[]): Promise<void> {
     try {
       await execFileAsync(runsc, args);
@@ -232,23 +259,17 @@ export async function createGvisorSandbox(opts: GvisorSandboxOptions): Promise<G
   }
 
   let cleaned = false;
-
-  async function cleanup(): Promise<void> {
+  return async function cleanup(): Promise<void> {
     if (cleaned) return;
     cleaned = true;
 
     await tryRunsc("kill", containerId, "SIGTERM");
-    if (!(await waitForExit(5000))) {
+    if (!(await waitForExit(SIGTERM_GRACE_MS))) {
       await tryRunsc("kill", containerId, "SIGKILL");
-      await waitForExit(2000);
+      await waitForExit(SIGKILL_REAP_MS);
     }
     await tryRunsc("delete", "--force", containerId);
     await cleanupBundleDir(containerId);
-  }
-  return {
-    process: child,
-    containerId,
-    cleanup,
   };
 }
 

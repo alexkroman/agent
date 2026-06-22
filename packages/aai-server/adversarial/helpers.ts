@@ -1,8 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import WebSocket from "ws";
-import { checkHealth, openConnections, sampleMemory } from "../load/helpers.ts";
-import { DEPLOY_KEY } from "./setup.ts";
+import { checkHealth, closeAll, openConnections, sampleMemory } from "../load/helpers.ts";
+import { DEPLOY_KEY, GOOD_AGENT_SLUG } from "./setup.ts";
 
 export async function deployAdversarialAgent(
   serverUrl: string,
@@ -42,7 +41,7 @@ export async function deployGoodAgent(serverUrl: string, slug: string): Promise<
   await deployAdversarialAgent(
     serverUrl,
     slug,
-    `export default { name: "good-agent", systemPrompt: "Test", greeting: "", maxSteps: 1, tools: {} };`,
+    `export default { name: "${GOOD_AGENT_SLUG}", systemPrompt: "Test", greeting: "", maxSteps: 1, tools: {} };`,
   );
 }
 
@@ -59,9 +58,7 @@ export async function assertServerSurvived(
   if (opened.length === 0) {
     throw new Error(`Good agent connection failed (${rejected} rejected)`);
   }
-  for (const ws of opened) {
-    if (ws.readyState === WebSocket.OPEN) ws.close();
-  }
+  await closeAll(opened);
 
   const mem = sampleMemory(containerId);
   if (mem.percent > 90) {

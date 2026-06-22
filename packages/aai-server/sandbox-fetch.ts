@@ -68,7 +68,11 @@ function emitError(id: string, message: string, emit: Emit): void {
 }
 
 function emitChunk(id: string, bytes: Uint8Array, emit: Emit): void {
-  emit({ type: "fetch/response-chunk", id, data: Buffer.from(bytes).toString("base64") });
+  emit({
+    type: "fetch/response-chunk",
+    id,
+    data: Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString("base64"),
+  });
 }
 
 async function streamResponseBody(
@@ -104,24 +108,18 @@ async function streamResponseBody(
   }
 }
 
-async function performFetch(
+function performFetch(
   req: FetchRequest,
   fetchFn: typeof globalThis.fetch,
   skipSsrf: boolean,
 ): Promise<Response> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   const init: RequestInit = {
     method: req.method,
     headers: req.headers,
-    signal: controller.signal,
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     ...(req.body !== null ? { body: Buffer.from(req.body, "base64") } : {}),
   };
-  try {
-    return skipSsrf ? await fetchFn(req.url, init) : await ssrfSafeFetch(req.url, init, fetchFn);
-  } finally {
-    clearTimeout(timeout);
-  }
+  return skipSsrf ? fetchFn(req.url, init) : ssrfSafeFetch(req.url, init, fetchFn);
 }
 
 export function createFetchHandler(opts: FetchHandlerOptions) {

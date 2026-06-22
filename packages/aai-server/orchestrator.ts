@@ -47,7 +47,6 @@ import {
   metrics,
   registry,
   type SessionEndReason,
-  type SessionErrorKind,
   type SessionMode,
   serialize,
 } from "./metrics.ts";
@@ -185,7 +184,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   agents.post("/vector", ownerMw, zValidator("json", VectorRequestSchema), async (c) => {
     const slug = c.var.slug;
     const { agentConfig, env } = await loadAgentConfig(c, slug);
-    const vector: Vector = agentConfig?.vector
+    const vector = agentConfig?.vector
       ? resolveVector(agentConfig.vector, env, slug)
       : c.env.defaultVector(slug);
     return handleVector(c, vector);
@@ -221,13 +220,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     if (!match) return null;
     const slug = validateSlug(match[1] as string);
     const [sandbox, agentConfig] = await Promise.all([
-      resolveSandbox(slug, {
-        slots: opts.slots,
-        store: opts.store,
-        storage: opts.storage,
-        defaultVector: opts.defaultVector,
-        ...(opts.pool && { pool: opts.pool }),
-      }),
+      resolveSandbox(slug, { ...bindings, ...(opts.pool && { pool: opts.pool }) }),
       opts.store.getAgentConfig(slug),
     ]);
     if (!sandbox) return null;
@@ -270,8 +263,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
             metrics.sessionsEnded.inc({ slug, reason });
           });
           ws.on("error", () => {
-            const kind: SessionErrorKind = "internal";
-            metrics.sessionErrors.inc({ kind });
+            metrics.sessionErrors.inc({ kind: "internal" });
           });
           sandbox.startSession(
             ws as unknown as SessionWebSocket,

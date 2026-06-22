@@ -85,6 +85,7 @@ const DEFAULT_PID_LIMIT = 32;
 const DEFAULT_TMPFS_BYTES = 10_485_760; // 10 MB
 const DEFAULT_CPU_SECS = 60;
 const DEFAULT_NOFILE = 256;
+const BYTES_PER_MB = 1024 * 1024;
 
 // Defense-in-depth: gVisor's Sentry already reimplements syscalls, but
 // an explicit denylist ensures these dangerous calls are never forwarded.
@@ -151,13 +152,13 @@ const READONLY_PATHS = [
  */
 export function buildOciSpec(opts: BuildOciSpecOptions): OciRuntimeSpec {
   const {
-    memoryLimitBytes: memoryBytes = DEFAULT_MEMORY_BYTES,
-    tmpfsSizeBytes: tmpfsBytes = DEFAULT_TMPFS_BYTES,
+    memoryLimitBytes = DEFAULT_MEMORY_BYTES,
+    tmpfsSizeBytes = DEFAULT_TMPFS_BYTES,
     cpuTimeLimitSecs: cpuSecs = DEFAULT_CPU_SECS,
     pidLimit = DEFAULT_PID_LIMIT,
   } = opts.limits ?? {};
-  const memoryMb = Math.floor(memoryBytes / (1024 * 1024));
-  const tmpfsMb = Math.floor(tmpfsBytes / (1024 * 1024));
+  const memoryMb = Math.floor(memoryLimitBytes / BYTES_PER_MB);
+  const tmpfsMb = Math.floor(tmpfsSizeBytes / BYTES_PER_MB);
   return {
     ociVersion: "1.0.2",
     process: {

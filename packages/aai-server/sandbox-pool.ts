@@ -103,19 +103,18 @@ export function createSandboxPool(opts: SandboxPoolOptions): SandboxPool {
     // tops up the pool when traffic arrives.
   }
 
+  function canSpawn(): boolean {
+    return !(shutdown || stoppedDueToFailure);
+  }
+
   function spawnOne(): void {
-    if (shutdown || stoppedDueToFailure) return;
-    let p: Promise<WarmHarness>;
-    try {
-      p = opts.spawn();
-    } catch (err: unknown) {
-      recordSpawnFailure(err);
-      return;
-    }
+    if (!canSpawn()) return;
+    // A synchronous throw from `opts.spawn()` surfaces as a rejection
+    // inside the async IIFE, so one catch covers both failure modes.
     const tracked = (async () => {
       let warm: WarmHarness;
       try {
-        warm = await p;
+        warm = await opts.spawn();
       } catch (err: unknown) {
         recordSpawnFailure(err);
         return;
@@ -133,7 +132,7 @@ export function createSandboxPool(opts: SandboxPoolOptions): SandboxPool {
   }
 
   function replenish(): void {
-    while (!(shutdown || stoppedDueToFailure) && ready.length + pending.size < targetSize) {
+    while (canSpawn() && ready.length + pending.size < targetSize) {
       spawnOne();
     }
   }

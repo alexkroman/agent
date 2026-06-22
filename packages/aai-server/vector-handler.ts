@@ -28,7 +28,7 @@ export async function handleVector(
         return c.json({ result: "OK" });
       default: {
         const _: never = msg;
-        return c.json({ error: `Unknown Vector op: ${(_ as { op: string }).op}` }, 400);
+        return c.json({ error: "Unknown Vector op" }, 400);
       }
     }
   } catch (err: unknown) {

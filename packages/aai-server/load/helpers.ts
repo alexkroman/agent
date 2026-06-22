@@ -23,10 +23,8 @@ const MEM_UNITS: Record<string, number> = {
 function parseMemValue(str: string): number {
   const trimmed = str.trim();
   const num = Number.parseFloat(trimmed);
-  for (const [suffix, factor] of Object.entries(MEM_UNITS)) {
-    if (trimmed.endsWith(suffix)) return num * factor;
-  }
-  return num;
+  const unit = trimmed.match(/(GiB|MiB|KiB|B)$/)?.[1];
+  return num * (MEM_UNITS[unit ?? "B"] ?? 1);
 }
 
 export function sampleMemory(containerId: string): MemorySample {
@@ -64,26 +62,24 @@ export async function openConnections(
             ws.close();
             reject(new Error("Connection timeout"));
           }, timeoutMs);
-          const settle = (fn: () => void) => {
+          ws.on("open", () => {
             clearTimeout(timer);
-            fn();
-          };
-          ws.on("open", () => settle(() => resolve(ws)));
-          ws.on("error", (err) => settle(() => reject(err)));
-          ws.on("unexpected-response", () =>
-            settle(() => reject(new Error("Unexpected response"))),
-          );
+            resolve(ws);
+          });
+          ws.on("error", (err) => {
+            clearTimeout(timer);
+            reject(err);
+          });
+          ws.on("unexpected-response", () => {
+            clearTimeout(timer);
+            reject(new Error("Unexpected response"));
+          });
         }),
     ),
   );
 
-  const opened: WebSocket[] = [];
-  let rejected = 0;
-  for (const r of results) {
-    if (r.status === "fulfilled") opened.push(r.value);
-    else rejected++;
-  }
-  return { opened, rejected };
+  const opened = results.filter((r) => r.status === "fulfilled").map((r) => r.value);
+  return { opened, rejected: count - opened.length };
 }
 
 export async function closeAll(connections: WebSocket[]): Promise<void> {

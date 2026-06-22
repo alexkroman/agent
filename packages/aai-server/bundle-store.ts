@@ -56,6 +56,22 @@ function cacheSet<T>(cache: Map<string, CacheEntry<T>>, key: string, value: T): 
   cache.set(key, { value, expires: Date.now() + STORE_CACHE_TTL_MS });
 }
 
+// Return the cached value if fresh, otherwise load it. The loader resolves to
+// the value to cache, or `undefined` to return `null` without caching (e.g.
+// transient corruption shouldn't stick in the cache).
+async function getOrLoad<T>(
+  cache: Map<string, CacheEntry<T | null>>,
+  key: string,
+  load: () => Promise<T | null | undefined>,
+): Promise<T | null> {
+  const cached = cacheGet(cache, key);
+  if (cached !== undefined) return cached;
+  const loaded = await load();
+  if (loaded === undefined) return null;
+  cacheSet(cache, key, loaded);
+  return loaded;
+}
+
 export function createBundleStore(storage: Storage, opts: { masterKey: MasterKey }): BundleStore {
   const { masterKey } = opts;
 
@@ -105,12 +121,8 @@ export function createBundleStore(storage: Storage, opts: { masterKey: MasterKey
     return parsed.success ? parsed.data : null;
   }
 
-  async function getManifestCached(slug: string): Promise<AgentMetadata | null> {
-    const cached = cacheGet(manifestCache, slug);
-    if (cached !== undefined) return cached;
-    const value = await loadManifest(slug);
-    cacheSet(manifestCache, slug, value);
-    return value;
+  function getManifestCached(slug: string): Promise<AgentMetadata | null> {
+    return getOrLoad(manifestCache, slug, () => loadManifest(slug));
   }
 
   return {
@@ -131,10 +143,9 @@ export function createBundleStore(storage: Storage, opts: { masterKey: MasterKey
           credential_hashes: bundle.credential_hashes,
           envEncrypted: true,
         };
-        await storage.setItem(objectKey(bundle.slug, "manifest.json"), JSON.stringify(manifest));
-        await storage.setItem(objectKey(bundle.slug, "worker.js"), bundle.worker);
-
         await Promise.all([
+          storage.setItem(objectKey(bundle.slug, "manifest.json"), JSON.stringify(manifest)),
+          storage.setItem(objectKey(bundle.slug, "worker.js"), bundle.worker),
           ...Object.entries(bundle.clientFiles).map(([filePath, content]) =>
             storage.setItem(objectKey(bundle.slug, `client/${filePath}`), content),
           ),
@@ -195,20 +206,16 @@ export function createBundleStore(storage: Storage, opts: { masterKey: MasterKey
     },
 
     getAgentConfig(slug) {
-      return instrumentTigris("getAgentConfig", async () => {
-        const cached = cacheGet(configCache, slug);
-        if (cached !== undefined) return cached;
-        const json = await readJson(objectKey(slug, "config.json"));
-        if (json == null) {
-          cacheSet(configCache, slug, null);
-          return null;
-        }
-        // Don't cache parse failures — transient corruption shouldn't stick.
-        const parsed = IsolateConfigSchema.safeParse(json);
-        if (!parsed.success) return null;
-        cacheSet(configCache, slug, parsed.data);
-        return parsed.data;
-      });
+      return instrumentTigris("getAgentConfig", () =>
+        getOrLoad(configCache, slug, async () => {
+          const json = await readJson(objectKey(slug, "config.json"));
+          if (json == null) return null;
+          // `undefined` returns null without caching — transient corruption
+          // shouldn't stick.
+          const parsed = IsolateConfigSchema.safeParse(json);
+          return parsed.success ? parsed.data : undefined;
+        }),
+      );
     },
   };
 }

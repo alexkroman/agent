@@ -8,15 +8,14 @@ import { registry } from "./metrics.ts";
 import { createOrchestrator } from "./orchestrator.ts";
 import type { AgentSlot } from "./sandbox.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
-import { type AgentMetadata, AgentMetadataSchema } from "./schemas.ts";
+import { AgentMetadataSchema } from "./schemas.ts";
 import type { BundleStore } from "./store-types.ts";
 
 export { createSlotCache } from "./sandbox-slots.ts";
 
 // ── Metric-reading helpers (canonical versions for tests) ───────────────
 
-// biome-ignore lint/suspicious/noExplicitAny: prom-client internals not typed
-type MetricEntry = { labels?: Record<string, string>; value?: number; count?: number } & any;
+type MetricEntry = { labels?: Record<string, string>; value?: number; count?: number };
 
 function getMetric(
   name: string,
@@ -33,6 +32,8 @@ function entryMatches(entry: MetricEntry, labels: Record<string, string>): boole
 export function counterValue(name: string, labels: Record<string, string> = {}): number {
   const m = getMetric(name);
   if (!m?.hashMap) return 0;
+  // prom-client stores unlabeled metrics under the "" hash key; read it
+  // directly rather than returning the first arbitrary entry from the loop.
   if (Object.keys(labels).length === 0) return m.hashMap[""]?.value ?? 0;
   for (const entry of Object.values(m.hashMap)) {
     if (entryMatches(entry, labels)) return entry.value ?? 0;
@@ -119,7 +120,7 @@ export function createTestStore(): BundleStore {
       const raw = readManifest(slug);
       if (!raw) return Promise.resolve(null);
       const parsed = AgentMetadataSchema.safeParse(raw);
-      return Promise.resolve(parsed.success ? (parsed.data as AgentMetadata) : null);
+      return Promise.resolve(parsed.success ? parsed.data : null);
     },
 
     getWorkerCode(slug) {

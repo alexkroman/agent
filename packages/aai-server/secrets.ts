@@ -84,15 +84,13 @@ export async function verifyApiKeyHash(apiKey: string, storedHash: string): Prom
 
   const parts = storedHash.split(":");
   if (parts.length !== 4 || parts[0] !== "pbkdf2") return false;
+  const [, iterStr, saltStr, hashStr] = parts as [string, string, string, string];
 
-  // biome-ignore lint/style/noNonNullAssertion: length check above guarantees these exist
-  const iterations = Number(parts[1]!);
+  const iterations = Number(iterStr);
   if (!Number.isFinite(iterations) || iterations <= 0) return false;
 
-  // biome-ignore lint/style/noNonNullAssertion: length check above guarantees these exist
-  const salt = new Uint8Array(fromBase64Url(parts[2]!));
-  // biome-ignore lint/style/noNonNullAssertion: length check above guarantees these exist
-  const expected = new Uint8Array(fromBase64Url(parts[3]!));
+  const salt = new Uint8Array(fromBase64Url(saltStr));
+  const expected = fromBase64Url(hashStr);
 
   const keyMaterial = await crypto.subtle.importKey("raw", enc.encode(apiKey), "PBKDF2", false, [
     "deriveBits",
@@ -146,6 +144,13 @@ const ENV_VERSION = 0x01;
 const ENV_SALT_BYTES = 16;
 const ENV_IV_BYTES = 12;
 
+// Byte layout of an encrypted env blob: version(1) || salt || IV || ciphertext.
+// Encode and decode both reference these offsets so the layout has one source
+// of truth.
+const ENV_SALT_OFFSET = 1;
+const ENV_IV_OFFSET = ENV_SALT_OFFSET + ENV_SALT_BYTES;
+const ENV_CIPHERTEXT_OFFSET = ENV_IV_OFFSET + ENV_IV_BYTES;
+
 export type MasterKey = CryptoKey;
 
 /**
@@ -164,14 +169,14 @@ export async function importMasterKey(secret: string): Promise<MasterKey> {
 async function deriveEnvKey(
   masterKey: MasterKey,
   salt: Uint8Array<ArrayBuffer>,
-  slug: string,
+  slugBytes: Uint8Array<ArrayBuffer>,
 ): Promise<CryptoKey> {
   return crypto.subtle.deriveKey(
     {
       name: "HKDF",
       hash: "SHA-256",
       salt,
-      info: enc.encode(slug),
+      info: slugBytes,
     },
     masterKey,
     { name: "AES-GCM", length: 256 },
@@ -198,27 +203,29 @@ export async function encryptEnv(
     );
   }
 
+  const slugBytes = enc.encode(opts.slug);
   const salt = crypto.getRandomValues(new Uint8Array(ENV_SALT_BYTES));
   const iv = crypto.getRandomValues(new Uint8Array(ENV_IV_BYTES));
-  const key = await deriveEnvKey(masterKey, salt, opts.slug);
+  const key = await deriveEnvKey(masterKey, salt, slugBytes);
 
   const ciphertext = await crypto.subtle.encrypt(
-    { name: "AES-GCM", iv, additionalData: enc.encode(opts.slug) },
+    { name: "AES-GCM", iv, additionalData: slugBytes },
     key,
     plaintext,
   );
 
   // version || salt || IV || ciphertext
-  const result = new Uint8Array(1 + salt.byteLength + iv.byteLength + ciphertext.byteLength);
+  const result = new Uint8Array(ENV_CIPHERTEXT_OFFSET + ciphertext.byteLength);
   result[0] = ENV_VERSION;
-  result.set(salt, 1);
-  result.set(iv, 1 + salt.byteLength);
-  result.set(new Uint8Array(ciphertext), 1 + salt.byteLength + iv.byteLength);
+  result.set(salt, ENV_SALT_OFFSET);
+  result.set(iv, ENV_IV_OFFSET);
+  result.set(new Uint8Array(ciphertext), ENV_CIPHERTEXT_OFFSET);
   return toBase64Url(result);
 }
 
 /**
- * Decrypt an env blob. Reads the version byte and dispatches accordingly.
+ * Decrypt an env blob. Only version `0x01` is supported; any other version
+ * byte is rejected.
  */
 export async function decryptEnv(
   masterKey: MasterKey,
@@ -231,13 +238,14 @@ export async function decryptEnv(
     throw new Error(`Unknown env encryption version: ${version}`);
   }
 
-  const salt = new Uint8Array(data.slice(1, 1 + ENV_SALT_BYTES));
-  const iv = new Uint8Array(data.slice(1 + ENV_SALT_BYTES, 1 + ENV_SALT_BYTES + ENV_IV_BYTES));
-  const ciphertext = new Uint8Array(data.slice(1 + ENV_SALT_BYTES + ENV_IV_BYTES));
+  const salt = new Uint8Array(data.slice(ENV_SALT_OFFSET, ENV_IV_OFFSET));
+  const iv = new Uint8Array(data.slice(ENV_IV_OFFSET, ENV_CIPHERTEXT_OFFSET));
+  const ciphertext = new Uint8Array(data.slice(ENV_CIPHERTEXT_OFFSET));
 
-  const key = await deriveEnvKey(masterKey, salt, opts.slug);
+  const slugBytes = enc.encode(opts.slug);
+  const key = await deriveEnvKey(masterKey, salt, slugBytes);
   const plaintext = await crypto.subtle.decrypt(
-    { name: "AES-GCM", iv, additionalData: enc.encode(opts.slug) },
+    { name: "AES-GCM", iv, additionalData: slugBytes },
     key,
     ciphertext,
   );

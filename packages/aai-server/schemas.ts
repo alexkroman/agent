@@ -22,24 +22,30 @@ export const SafePathSchema = z
 
 export const VALID_SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,62}[a-z0-9]$/;
 
+/** Max number of client files accepted in a single deploy. */
+export const MAX_CLIENT_FILES = 100;
+
+export const EnvSchema = z.record(z.string(), z.string());
+
 export const DeployBodySchema = z.object({
   slug: z.string().regex(VALID_SLUG_RE, "Invalid slug format").optional(),
-  env: z.record(z.string(), z.string()).optional(),
+  env: EnvSchema.optional(),
   worker: z.string().min(1).max(MAX_WORKER_SIZE),
   clientFiles: z
     .record(SafePathSchema, z.string().max(MAX_WORKER_SIZE))
-    .refine((files) => Object.keys(files).length <= 100, "Too many client files (max 100)"),
+    .refine(
+      (files) => Object.keys(files).length <= MAX_CLIENT_FILES,
+      `Too many client files (max ${MAX_CLIENT_FILES})`,
+    ),
   /** Pre-extracted agent config from CLI build. */
   agentConfig: IsolateConfigSchema,
 });
 
 export type DeployBody = z.infer<typeof DeployBodySchema>;
 
-export const EnvSchema = z.record(z.string(), z.string());
-
 export const AgentMetadataSchema = z.object({
   slug: z.string(),
-  env: z.record(z.string(), z.string()).default({}),
+  env: EnvSchema.default({}),
   credential_hashes: z.array(z.string()).default([]),
 });
 

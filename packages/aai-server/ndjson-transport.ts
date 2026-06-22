@@ -6,26 +6,6 @@ import type { Readable, Writable } from "node:stream";
 import { errorMessage } from "@alexkroman1/aai";
 import { z } from "zod";
 
-type JsonRpcRequest = {
-  jsonrpc: "2.0";
-  id: number;
-  method: string;
-  params?: unknown;
-};
-
-type JsonRpcNotification = {
-  jsonrpc: "2.0";
-  method: string;
-  params?: unknown;
-};
-
-type JsonRpcResponse = {
-  jsonrpc: "2.0";
-  id: number;
-  result?: unknown;
-  error?: { code: number; message: string };
-};
-
 const JsonRpcResponseSchema = z.object({
   jsonrpc: z.literal("2.0"),
   id: z.number(),
@@ -45,6 +25,10 @@ const JsonRpcNotificationSchema = z.object({
   method: z.string(),
   params: z.unknown().optional(),
 });
+
+type JsonRpcResponse = z.infer<typeof JsonRpcResponseSchema>;
+type JsonRpcRequest = z.infer<typeof JsonRpcRequestSchema>;
+type JsonRpcNotification = z.infer<typeof JsonRpcNotificationSchema>;
 
 type PendingRequest = {
   resolve: (value: unknown) => void;
@@ -78,17 +62,15 @@ function parseJsonRpcMessage(line: string): ParsedMessage {
   const obj = raw as Record<string, unknown>;
   if ("result" in obj || "error" in obj) {
     const parsed = JsonRpcResponseSchema.safeParse(obj);
-    return parsed.success ? { kind: "response", data: parsed.data as JsonRpcResponse } : null;
+    return parsed.success ? { kind: "response", data: parsed.data } : null;
   }
   if ("id" in obj && "method" in obj) {
     const parsed = JsonRpcRequestSchema.safeParse(obj);
-    return parsed.success ? { kind: "request", data: parsed.data as JsonRpcRequest } : null;
+    return parsed.success ? { kind: "request", data: parsed.data } : null;
   }
   if ("method" in obj) {
     const parsed = JsonRpcNotificationSchema.safeParse(obj);
-    return parsed.success
-      ? { kind: "notification", data: parsed.data as JsonRpcNotification }
-      : null;
+    return parsed.success ? { kind: "notification", data: parsed.data } : null;
   }
   return null;
 }

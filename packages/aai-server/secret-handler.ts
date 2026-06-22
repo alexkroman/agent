@@ -10,6 +10,7 @@
  */
 
 import { HTTPException } from "hono/http-exception";
+import { debug } from "./_debug-log.ts";
 import type { AppContext, ValidatedAppContext } from "./context.ts";
 import { terminateSlot, withSlugLock } from "./sandbox-slots.ts";
 import { SecretKeySchema } from "./schemas.ts";
@@ -17,20 +18,22 @@ import { SecretKeySchema } from "./schemas.ts";
 async function restartSandbox(c: AppContext, slug: string, reason: string): Promise<void> {
   const slot = c.env.slots.get(slug);
   if (slot?.sandbox) {
-    console.info(`Restarting sandbox for ${reason}`, { slug });
+    debug(`Restarting sandbox for ${reason}`, { slug });
     await terminateSlot(slot);
   }
 }
 
-export async function handleSecretList(c: AppContext): Promise<Response> {
-  const slug = c.var.slug;
+async function getEnvOr404(c: AppContext, slug: string): Promise<Record<string, string>> {
   const env = await c.env.store.getEnv(slug);
-  console.log(
-    `[diag] secret list ${JSON.stringify({ slug, host: process.env.FLY_MACHINE_ID, keys: env ? Object.keys(env) : null })}`,
-  );
   if (!env) {
     throw new HTTPException(404, { message: `Agent ${slug} not found` });
   }
+  return env;
+}
+
+export async function handleSecretList(c: AppContext): Promise<Response> {
+  const slug = c.var.slug;
+  const env = await getEnvOr404(c, slug);
   return c.json({ vars: Object.keys(env) });
 }
 
@@ -41,19 +44,10 @@ export function handleSecretSet(c: ValidatedAppContext<Record<string, string>>):
 
     const existing = (await c.env.store.getEnv(slug)) ?? {};
     const merged = { ...existing, ...updates };
-    console.log(
-      `[diag] secret put ${JSON.stringify({
-        slug,
-        host: process.env.FLY_MACHINE_ID,
-        updateKeys: Object.keys(updates),
-        existingKeys: Object.keys(existing),
-        mergedKeys: Object.keys(merged),
-      })}`,
-    );
     await c.env.store.putEnv(slug, merged);
 
     await restartSandbox(c, slug, "secret update");
-    console.info("Secret updated", { slug, keyCount: Object.keys(updates).length });
+    debug("Secret updated", { slug, keyCount: Object.keys(updates).length });
     return c.json({ ok: true, keys: Object.keys(merged) });
   });
 }
@@ -66,14 +60,11 @@ export function handleSecretDelete(c: AppContext): Promise<Response> {
     if (!SecretKeySchema.safeParse(key).success) {
       throw new HTTPException(400, { message: "Invalid secret key name" });
     }
-    const existing = await c.env.store.getEnv(slug);
-    if (!existing) {
-      throw new HTTPException(404, { message: `Agent ${slug} not found` });
-    }
+    const existing = await getEnvOr404(c, slug);
     delete existing[key];
     await c.env.store.putEnv(slug, existing);
     await restartSandbox(c, slug, "secret delete");
-    console.info("Secret deleted", { slug });
+    debug("Secret deleted", { slug });
     return c.json({ ok: true });
   });
 }

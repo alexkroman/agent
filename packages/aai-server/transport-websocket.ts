@@ -28,7 +28,11 @@ async function readDefaultClientFile(relPath: string): Promise<string | null> {
   if (cached !== undefined) return cached;
   const baseDir = getDefaultClientDir();
   const fullPath = path.join(baseDir, relPath);
-  if (!fullPath.startsWith(baseDir)) return null;
+  // Defense in depth: ensure the resolved path stays within baseDir. Use a
+  // path.relative check rather than a raw prefix match so a sibling dir like
+  // `default-client-evil` can't masquerade as being inside `default-client`.
+  const rel = path.relative(baseDir, fullPath);
+  if (rel.startsWith("..") || path.isAbsolute(rel)) return null;
   try {
     const content = await readFile(fullPath, "utf-8");
     defaultClientCache.set(relPath, content);

@@ -17,7 +17,7 @@ export const registry = new client.Registry();
 
 client.collectDefaultMetrics({ register: registry });
 
-export async function serialize(): Promise<string> {
+export function serialize(): Promise<string> {
   return registry.metrics();
 }
 

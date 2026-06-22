@@ -190,12 +190,15 @@ async function configureSandbox(warm: WarmHarness, opts: SandboxVmOptions): Prom
     ms: Math.round(performance.now() - tBundle),
   });
 
+  // Capture only what shutdown needs so the closure doesn't pin `opts` (and
+  // its potentially large `workerCode` bundle string) for the sandbox lifetime.
+  const cleanup = warm.cleanup;
   return {
     conn,
     async shutdown() {
       void conn.sendNotification("shutdown");
       conn.dispose();
-      await warm.cleanup();
+      await cleanup();
     },
   };
 }
@@ -329,24 +332,53 @@ export async function createGvisorSandboxHandle(opts: SandboxVmOptions): Promise
  * connected NDJSON channel, but no listeners are attached and no bundle
  * has been loaded.
  *
- * Honors the same gVisor / dev-mode policy as createSandboxVm:
- * - gVisor on Linux when runsc is on PATH
- * - Plain child process on macOS dev mode
- * - In production (NODE_ENV=production), gVisor is REQUIRED.
+ * Backend selection follows `selectSandboxBackend` (gVisor on Linux,
+ * required in production, dev child process otherwise).
  */
 export async function spawnWarmHarness(opts: {
   harnessPath: string;
   limits?: SandboxResourceLimits;
 }): Promise<WarmHarness> {
-  const envLimits = parseSandboxLimitsFromEnv(process.env);
-  const mergedLimits: SandboxResourceLimits = { ...envLimits, ...opts.limits };
+  return selectSandboxBackend({
+    slug: "pool",
+    harnessPath: opts.harnessPath,
+    limits: mergeEnvLimits(opts.limits),
+  });
+}
 
+// ── Backend selection ────────────────────────────────────────────────────────
+
+/** Merge env-derived resource limits with explicit overrides (overrides win). */
+function mergeEnvLimits(optLimits?: SandboxResourceLimits): SandboxResourceLimits {
+  return { ...parseSandboxLimitsFromEnv(process.env), ...optLimits };
+}
+
+/**
+ * Pick the best-available sandbox backend and spawn a raw (unconfigured)
+ * WarmHarness. This is the single source of truth for the gVisor / dev-mode
+ * policy:
+ * - gVisor on Linux when runsc is on PATH
+ * - In production (NODE_ENV=production), gVisor is REQUIRED
+ * - Otherwise a plain child process (macOS dev mode, no isolation)
+ *
+ * `configureSandbox` is layered on top by callers that need a SandboxHandle.
+ */
+async function selectSandboxBackend(opts: {
+  slug: string;
+  harnessPath: string;
+  limits?: SandboxResourceLimits;
+  warnOnDev?: boolean;
+}): Promise<WarmHarness> {
   if (isGvisorAvailable()) {
-    return spawnGvisorWarm("pool", opts.harnessPath, mergedLimits);
+    return spawnGvisorWarm(opts.slug, opts.harnessPath, opts.limits);
   }
-
   if (process.env.NODE_ENV === "production") {
     throw gvisorRequiredError();
+  }
+  if (opts.warnOnDev) {
+    console.warn(
+      "[sandbox] WARNING: gVisor not available. Running without sandbox isolation (dev mode only).",
+    );
   }
   return spawnDevWarm(opts.harnessPath);
 }
@@ -419,17 +451,17 @@ export async function createSandboxVm(
   pool?: WarmHarnessSource,
 ): Promise<SandboxHandle> {
   const t0 = process.hrtime.bigint();
-  // Default to "cold". `createSandboxVmInner` flips this to "warm" if the
-  // pool returns a ready harness — that's the only fast path.
-  const pathRef = { path: "cold" as SandboxInitPath };
+  // Default to "cold"; only a pool hit is the "warm" fast path.
+  let path: SandboxInitPath = "cold";
   try {
-    const result = await createSandboxVmInner(opts, pool, pathRef);
-    metrics.sandboxInit.observe({ path: pathRef.path }, hrtimeSeconds(t0));
-    return result;
+    const result = await createSandboxVmInner(opts, pool);
+    path = result.path;
+    return result.handle;
   } catch (err) {
-    metrics.sandboxInit.observe({ path: pathRef.path }, hrtimeSeconds(t0));
     metrics.sandboxInitFailed.inc({ reason: classifyInitFailure(err) });
     throw err;
+  } finally {
+    metrics.sandboxInit.observe({ path }, hrtimeSeconds(t0));
   }
 }
 
@@ -448,29 +480,24 @@ function classifyInitFailure(err: unknown): SandboxInitFailReason {
 async function createSandboxVmInner(
   opts: SandboxVmOptions,
   pool: WarmHarnessSource | undefined,
-  pathRef: { path: SandboxInitPath },
-): Promise<SandboxHandle> {
-  const envLimits = parseSandboxLimitsFromEnv(process.env);
+): Promise<{ handle: SandboxHandle; path: SandboxInitPath }> {
   const mergedOpts: SandboxVmOptions = {
     ...opts,
-    limits: { ...envLimits, ...opts.limits },
+    limits: mergeEnvLimits(opts.limits),
   };
 
   if (pool) {
     const warm = await pool.acquire();
     if (warm) {
-      pathRef.path = "warm";
-      return configureSandbox(warm, mergedOpts);
+      return { handle: await configureSandbox(warm, mergedOpts), path: "warm" };
     }
   }
 
-  if (isGvisorAvailable()) return createGvisorSandboxHandle(mergedOpts);
-
-  if (process.env.NODE_ENV === "production") {
-    throw gvisorRequiredError();
-  }
-  console.warn(
-    "[sandbox] WARNING: gVisor not available. Running without sandbox isolation (dev mode only).",
-  );
-  return createDevSandbox(mergedOpts);
+  const warm = await selectSandboxBackend({
+    slug: mergedOpts.slug,
+    harnessPath: mergedOpts.harnessPath,
+    ...(mergedOpts.limits && { limits: mergedOpts.limits }),
+    warnOnDev: true,
+  });
+  return { handle: await configureSandbox(warm, mergedOpts), path: "cold" };
 }

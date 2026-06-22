@@ -1,5 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import { errorMessage } from "@alexkroman1/aai";
 import { getLock } from "p-lock";
 import { debug } from "./_debug-log.ts";
 import { IDLE_SANDBOX_MS } from "./constants.ts";
@@ -22,18 +23,22 @@ export function createSlotCache(): SlotCache {
 // callers don't need to push updates after every mutation.
 let _slotsForGauges: SlotCache | null = null;
 
-// biome-ignore lint/suspicious/noExplicitAny: prom-client doesn't type `collect` as writable
-(metrics.slotsRegistered as any).collect = function (this: typeof metrics.slotsRegistered) {
-  this.set(_slotsForGauges?.size ?? 0);
-};
-// biome-ignore lint/suspicious/noExplicitAny: prom-client doesn't type `collect` as writable
-(metrics.slotsResident as any).collect = function (this: typeof metrics.slotsResident) {
+function setGaugeCollector<G extends { set(value: number): void }>(
+  gauge: G,
+  compute: () => number,
+): void {
+  // biome-ignore lint/suspicious/noExplicitAny: prom-client doesn't type `collect` as writable
+  (gauge as any).collect = function (this: G) {
+    this.set(compute());
+  };
+}
+
+setGaugeCollector(metrics.slotsRegistered, () => _slotsForGauges?.size ?? 0);
+setGaugeCollector(metrics.slotsResident, () => {
   let resident = 0;
-  if (_slotsForGauges) {
-    for (const slot of _slotsForGauges.values()) if (slot.sandbox) resident++;
-  }
-  this.set(resident);
-};
+  for (const slot of _slotsForGauges?.values() ?? []) if (slot.sandbox) resident++;
+  return resident;
+});
 
 export function registerSlotsForGauges(slots: SlotCache): void {
   _slotsForGauges = slots;
@@ -70,7 +75,7 @@ async function detachAndShutdown(
   try {
     await sb.shutdown();
   } catch (err: unknown) {
-    console.warn(errorLabel, { slug: slot.slug, error: String(err) });
+    console.warn(errorLabel, { slug: slot.slug, error: errorMessage(err) });
   }
 }
 

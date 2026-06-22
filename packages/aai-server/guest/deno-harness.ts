@@ -321,17 +321,20 @@ export function makeVectorAdapter(): VectorAdapter {
         text,
         ...(metadata !== undefined ? { metadata } : {}),
       }) as Promise<void>,
-    query: async (text, opts) => {
-      const result = (await hostRequest("vector/query", {
+    query: (text, opts) =>
+      hostRequest("vector/query", {
         text,
         ...(opts?.topK !== undefined ? { topK: opts.topK } : {}),
         ...(opts?.filter !== undefined ? { filter: opts.filter } : {}),
-      })) as VectorMatch[];
-      return result;
-    },
+      }) as Promise<VectorMatch[]>,
     delete: (ids) => hostRequest("vector/delete", { ids }) as Promise<void>,
   };
 }
+
+// Adapters capture only module-level state (kv / hostRequest), so a single
+// instance is shared across all tool executions rather than rebuilt per call.
+const kvAdapter = makeKvAdapter();
+const vectorAdapter = makeVectorAdapter();
 
 // ---- Agent env --------------------------------------------------------------
 
@@ -352,13 +355,13 @@ export function createSessionStateMap(initState?: () => Record<string, unknown>)
   const map = new Map<string, Record<string, unknown>>();
   return {
     get(sessionId: string): Record<string, unknown> {
-      if (!map.has(sessionId)) {
-        const initial = initState ? initState() : {};
+      let state = map.get(sessionId);
+      if (!state) {
         // JSON round-trip for a deep clone
-        map.set(sessionId, JSON.parse(JSON.stringify(initial)));
+        state = JSON.parse(JSON.stringify(initState ? initState() : {}));
+        map.set(sessionId, state);
       }
-      // map.has() guarantees the key exists after the block above
-      return map.get(sessionId) as Record<string, unknown>;
+      return state;
     },
     set(sessionId: string, state: Record<string, unknown>): void {
       map.set(sessionId, state);
@@ -399,8 +402,6 @@ export async function executeTool(
     return { error: `Unknown tool: ${req.name}` };
   }
 
-  const kvAdapter = makeKvAdapter();
-  const vectorAdapter = makeVectorAdapter();
   const ctx: ToolContext = {
     env: getAgentEnv(),
     state: sessionState.get(req.sessionId),
@@ -520,13 +521,23 @@ export function handleHostResponse(resp: JsonRpcResponse): void {
 export const handleKvResponse = handleHostResponse;
 
 export function handleNotification(notif: JsonRpcNotification, state: HarnessState): void {
-  if (notif.method === "shutdown") Deno.exit(0);
-  if (notif.method === "session/end" && state.sessionState) {
-    const params = notif.params as { sessionId?: string } | undefined;
-    if (params?.sessionId) state.sessionState.delete(params.sessionId);
-  }
-  if (notif.method.startsWith("fetch/response-")) {
-    handleFetchNotification(notif.method, notif.params);
+  switch (notif.method) {
+    case "shutdown":
+      Deno.exit(0);
+      break;
+    case "session/end": {
+      const params = notif.params as { sessionId?: string } | undefined;
+      if (params?.sessionId) state.sessionState?.delete(params.sessionId);
+      break;
+    }
+    case "fetch/response-start":
+    case "fetch/response-chunk":
+    case "fetch/response-end":
+    case "fetch/response-error":
+      handleFetchNotification(notif.method, notif.params);
+      break;
+    default:
+      break;
   }
 }
 

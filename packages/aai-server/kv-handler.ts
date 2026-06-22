@@ -20,7 +20,7 @@ export async function handleKv(c: ValidatedAppContext<KvRequest>, kv: Kv): Promi
         return c.json({ result: "OK" });
       default: {
         const _: never = msg;
-        return c.json({ error: `Unknown KV op: ${(_ as { op: string }).op}` }, 400);
+        return c.json({ error: "Unknown KV op" }, 400);
       }
     }
   } catch (err: unknown) {

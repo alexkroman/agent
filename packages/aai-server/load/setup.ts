@@ -25,6 +25,9 @@ const LOAD_DEFAULTS = {
 
 const COMPOSE_FILES = ["docker-compose.yml", "docker-compose.load.yml"];
 
+const SERVER_CONTAINER_NAME = "server-1";
+const SERVER_PORT = 8080;
+
 // CI runners under sustained load can take >60s to bring the stack up; the
 // default Wait timeout is too tight and surfaces as the misleading
 // "Cannot get container 'server-1' as it is not running" at getContainer().
@@ -35,23 +38,21 @@ export async function startLoadEnv(envOverrides: Record<string, string> = {}): P
     .withEnvironment({ ...LOAD_DEFAULTS, ...envOverrides })
     .withBuild()
     .withWaitStrategy(
-      "server-1",
-      Wait.forHttp("/health", 8080).forStatusCode(200).withStartupTimeout(STARTUP_TIMEOUT_MS),
+      SERVER_CONTAINER_NAME,
+      Wait.forHttp("/health", SERVER_PORT)
+        .forStatusCode(200)
+        .withStartupTimeout(STARTUP_TIMEOUT_MS),
     )
     .up();
 
-  const serverContainer = environment.getContainer("server-1");
+  const serverContainer = environment.getContainer(SERVER_CONTAINER_NAME);
   const host = serverContainer.getHost();
-  const port = serverContainer.getMappedPort(8080);
-  const containerId = serverContainer.getId();
-
-  const serverUrl = `http://${host}:${port}`;
-  const wsUrl = `ws://${host}:${port}`;
+  const port = serverContainer.getMappedPort(SERVER_PORT);
 
   return {
-    serverUrl,
-    wsUrl,
-    containerId,
+    serverUrl: `http://${host}:${port}`,
+    wsUrl: `ws://${host}:${port}`,
+    containerId: serverContainer.getId(),
     stop: async () => {
       await environment.down({ removeVolumes: true });
     },

@@ -5,12 +5,10 @@ import { deleteSlot, terminateSlot, withSlugLock } from "./sandbox-slots.ts";
 
 export function handleDelete(c: AppContext): Promise<Response> {
   const slug = c.var.slug;
-  return withSlugLock(slug, () => handleDeleteInner(c));
+  return withSlugLock(slug, () => handleDeleteInner(c, slug));
 }
 
-async function handleDeleteInner(c: AppContext): Promise<Response> {
-  const slug = c.var.slug;
-
+async function handleDeleteInner(c: AppContext, slug: string): Promise<Response> {
   const existing = c.env.slots.get(slug);
   if (existing) await terminateSlot(existing);
   deleteSlot(c.env.slots, slug);

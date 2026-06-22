@@ -13,13 +13,15 @@ const FOLDER_UID = "aai-agent";
 const FOLDER_TITLE = "aai-agent";
 const BASE = "https://fly-metrics.net";
 
+function fail(msg: string): never {
+  console.error(msg);
+  process.exit(1);
+}
+
 async function main(): Promise<void> {
   const dryRun = process.argv.includes("--dry-run");
   const token = process.env.GRAFANA_TOKEN;
-  if (!token) {
-    console.error("GRAFANA_TOKEN not set in env");
-    process.exit(1);
-  }
+  if (!token) fail("GRAFANA_TOKEN not set in env");
 
   const headers = {
     Authorization: `Bearer ${token}`,
@@ -38,8 +40,7 @@ async function main(): Promise<void> {
     });
     // 409/412: folder already exists — non-fatal.
     if (!res.ok && res.status !== 409 && res.status !== 412) {
-      console.error(`folder create failed: ${res.status} ${await res.text()}`);
-      process.exit(1);
+      fail(`folder create failed: ${res.status} ${await res.text()}`);
     }
   }
 
