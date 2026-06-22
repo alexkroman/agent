@@ -1,5 +1,11 @@
 # @alexkroman1/aai
 
+## 1.8.4
+
+### Patch Changes
+
+- 0f72bef: Refactor: split oversized source modules (session-core, runtime, pipeline-transport, deno guest harness) into focused sibling files. No behavior or public API change.
+
 ## 1.8.3
 
 ## 1.8.2
