@@ -335,7 +335,7 @@ export function nextNpcId(npcs: NPC[]): string {
   let max = 0;
   for (const n of npcs) {
     const m = n.id.match(/^npc_(\d+)$/);
-    if (m) max = Math.max(max, Number.parseInt(m[1]!, 10));
+    if (m?.[1]) max = Math.max(max, Number.parseInt(m[1], 10));
   }
   return `npc_${max + 1}`;
 }
@@ -375,6 +375,127 @@ export function checkChaosInterrupt(game: GameState): string | null {
 }
 
 // ── Consequences ─────────────────────────────────────────────────────────────
+function combatMissDamage(position: string): number {
+  if (position === "desperate") return 3;
+  if (position === "controlled") return 1;
+  return 2;
+}
+
+function damageHealth(game: GameState, dmg: number, consequences: string[]): void {
+  const old = game.health;
+  game.health = Math.max(0, game.health - dmg);
+  if (game.health < old) consequences.push(`health -${old - game.health}`);
+}
+
+function damageSpirit(game: GameState, dmg: number, consequences: string[]): void {
+  const old = game.spirit;
+  game.spirit = Math.max(0, game.spirit - dmg);
+  if (game.spirit < old) consequences.push(`spirit -${old - game.spirit}`);
+}
+
+function applySocialMiss(
+  game: GameState,
+  position: string,
+  target: NPC | null,
+  consequences: string[],
+): void {
+  if (target) {
+    const oldBond = target.bond;
+    target.bond = Math.max(0, target.bond - 1);
+    if (target.bond < oldBond) consequences.push(`${target.name} bond -1`);
+  }
+  damageSpirit(game, position === "desperate" ? 2 : 1, consequences);
+}
+
+function applyDefaultMiss(game: GameState, position: string, consequences: string[]): void {
+  const oldSupply = game.supply;
+  game.supply = Math.max(0, game.supply - 1);
+  if (game.supply < oldSupply) consequences.push(`supply -${oldSupply - game.supply}`);
+  if (position === "desperate") {
+    damageHealth(game, 2, consequences);
+  } else if (position !== "controlled") {
+    damageHealth(game, 1, consequences);
+  }
+}
+
+function applyMissMoveDamage(
+  game: GameState,
+  roll: RollResult,
+  position: string,
+  target: NPC | null,
+  consequences: string[],
+): void {
+  if (roll.move === "endure_harm") {
+    damageHealth(game, position === "desperate" ? 2 : 1, consequences);
+  } else if (roll.move === "endure_stress") {
+    damageSpirit(game, position === "desperate" ? 2 : 1, consequences);
+  } else if (COMBAT_MOVES.has(roll.move)) {
+    damageHealth(game, combatMissDamage(position), consequences);
+  } else if (SOCIAL_MOVES.has(roll.move)) {
+    applySocialMiss(game, position, target, consequences);
+  } else {
+    applyDefaultMiss(game, position, consequences);
+  }
+}
+
+function applyMissConsequences(
+  game: GameState,
+  roll: RollResult,
+  position: string,
+  target: NPC | null,
+  consequences: string[],
+  clockEvents: { clock: string; trigger: string }[],
+): void {
+  applyMissMoveDamage(game, roll, position, target, consequences);
+
+  const momLoss = position === "desperate" ? 3 : 2;
+  game.momentum = Math.max(-6, game.momentum - momLoss);
+  consequences.push(`momentum -${momLoss}`);
+
+  for (const clock of game.clocks) {
+    if (clock.clockType === "threat" && clock.filled < clock.segments) {
+      const ticks = position === "desperate" ? 2 : 1;
+      clock.filled = Math.min(clock.segments, clock.filled + ticks);
+      if (clock.filled >= clock.segments) {
+        clockEvents.push({ clock: clock.name, trigger: clock.triggerDescription });
+      }
+      break;
+    }
+  }
+}
+
+function applyStrongHitConsequences(
+  game: GameState,
+  roll: RollResult,
+  effect: string,
+  target: NPC | null,
+): void {
+  const momGain = effect === "great" ? 3 : 2;
+  game.momentum = Math.min(game.maxMomentum, game.momentum + momGain);
+  if ((roll.move === "make_connection" || roll.move === "compel") && target) {
+    target.bond = Math.min(4, target.bond + 1);
+    const shifts: Record<string, Disposition> = {
+      hostile: "distrustful",
+      distrustful: "neutral",
+      neutral: "friendly",
+      friendly: "loyal",
+    };
+    const nextDisposition = shifts[target.disposition];
+    if (nextDisposition) target.disposition = nextDisposition;
+  }
+}
+
+function updateCrisisState(game: GameState): void {
+  if (game.health <= 0 && game.spirit <= 0) {
+    game.gameOver = true;
+    game.crisisMode = true;
+  } else if (game.health <= 0 || game.spirit <= 0) {
+    game.crisisMode = true;
+  } else {
+    game.crisisMode = false;
+  }
+}
+
 export function applyConsequences(
   game: GameState,
   roll: RollResult,
@@ -384,92 +505,20 @@ export function applyConsequences(
 ): { consequences: string[]; clockEvents: { clock: string; trigger: string }[] } {
   const consequences: string[] = [];
   const clockEvents: { clock: string; trigger: string }[] = [];
-  const target = targetNpcId ? game.npcs.find((n) => n.id === targetNpcId) : null;
+  const target = targetNpcId ? (game.npcs.find((n) => n.id === targetNpcId) ?? null) : null;
 
   if (roll.result === "MISS") {
-    if (roll.move === "endure_harm") {
-      const dmg = position === "desperate" ? 2 : 1;
-      const old = game.health;
-      game.health = Math.max(0, game.health - dmg);
-      if (game.health < old) consequences.push(`health -${old - game.health}`);
-    } else if (roll.move === "endure_stress") {
-      const dmg = position === "desperate" ? 2 : 1;
-      const old = game.spirit;
-      game.spirit = Math.max(0, game.spirit - dmg);
-      if (game.spirit < old) consequences.push(`spirit -${old - game.spirit}`);
-    } else if (COMBAT_MOVES.has(roll.move)) {
-      const dmg = position === "desperate" ? 3 : position === "controlled" ? 1 : 2;
-      const old = game.health;
-      game.health = Math.max(0, game.health - dmg);
-      if (game.health < old) consequences.push(`health -${old - game.health}`);
-    } else if (SOCIAL_MOVES.has(roll.move)) {
-      if (target) {
-        const oldBond = target.bond;
-        target.bond = Math.max(0, target.bond - 1);
-        if (target.bond < oldBond) consequences.push(`${target.name} bond -1`);
-      }
-      const dmg = position === "desperate" ? 2 : 1;
-      const old = game.spirit;
-      game.spirit = Math.max(0, game.spirit - dmg);
-      if (game.spirit < old) consequences.push(`spirit -${old - game.spirit}`);
-    } else {
-      const oldSupply = game.supply;
-      game.supply = Math.max(0, game.supply - 1);
-      if (game.supply < oldSupply) consequences.push(`supply -${oldSupply - game.supply}`);
-      if (position === "desperate") {
-        const oldH = game.health;
-        game.health = Math.max(0, game.health - 2);
-        if (game.health < oldH) consequences.push(`health -${oldH - game.health}`);
-      } else if (position !== "controlled") {
-        const oldH = game.health;
-        game.health = Math.max(0, game.health - 1);
-        if (game.health < oldH) consequences.push(`health -${oldH - game.health}`);
-      }
-    }
-
-    const momLoss = position === "desperate" ? 3 : 2;
-    game.momentum = Math.max(-6, game.momentum - momLoss);
-    consequences.push(`momentum -${momLoss}`);
-
-    for (const clock of game.clocks) {
-      if (clock.clockType === "threat" && clock.filled < clock.segments) {
-        const ticks = position === "desperate" ? 2 : 1;
-        clock.filled = Math.min(clock.segments, clock.filled + ticks);
-        if (clock.filled >= clock.segments) {
-          clockEvents.push({ clock: clock.name, trigger: clock.triggerDescription });
-        }
-        break;
-      }
-    }
+    applyMissConsequences(game, roll, position, target, consequences, clockEvents);
   } else if (roll.result === "WEAK_HIT") {
     game.momentum = Math.min(game.maxMomentum, game.momentum + 1);
     if (roll.move === "make_connection" && target) {
       target.bond = Math.min(4, target.bond + 1);
     }
   } else {
-    const momGain = effect === "great" ? 3 : 2;
-    game.momentum = Math.min(game.maxMomentum, game.momentum + momGain);
-    if ((roll.move === "make_connection" || roll.move === "compel") && target) {
-      target.bond = Math.min(4, target.bond + 1);
-      const shifts: Record<string, Disposition> = {
-        hostile: "distrustful",
-        distrustful: "neutral",
-        neutral: "friendly",
-        friendly: "loyal",
-      };
-      const nextDisposition = shifts[target.disposition];
-      if (nextDisposition) target.disposition = nextDisposition;
-    }
+    applyStrongHitConsequences(game, roll, effect, target);
   }
 
-  if (game.health <= 0 && game.spirit <= 0) {
-    game.gameOver = true;
-    game.crisisMode = true;
-  } else if (game.health <= 0 || game.spirit <= 0) {
-    game.crisisMode = true;
-  } else {
-    game.crisisMode = false;
-  }
+  updateCrisisState(game);
 
   return { consequences, clockEvents };
 }

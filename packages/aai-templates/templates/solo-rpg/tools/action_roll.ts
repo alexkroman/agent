@@ -71,6 +71,14 @@ export const actionRoll = tool({
     await saveGameState(ctx.kv, state);
     ctx.send("game_state", state);
 
+    let matchNote: string | undefined;
+    if (roll.match) {
+      matchNote =
+        roll.result === "STRONG_HIT" || roll.result === "WEAK_HIT"
+          ? "Fateful roll. Both challenge dice match. An unexpected advantage or twist."
+          : "Fateful roll. Both challenge dice match. A dire and dramatic escalation.";
+    }
+
     return {
       purpose: args.purpose,
       move: MOVE_LABELS[args.move] || args.move,
@@ -83,11 +91,7 @@ export const actionRoll = tool({
       result: RESULT_LABELS[roll.result],
       resultCode: roll.result,
       match: roll.match,
-      matchNote: roll.match
-        ? roll.result === "STRONG_HIT" || roll.result === "WEAK_HIT"
-          ? "Fateful roll. Both challenge dice match. An unexpected advantage or twist."
-          : "Fateful roll. Both challenge dice match. A dire and dramatic escalation."
-        : undefined,
+      matchNote,
       position: args.position,
       effect: args.effect,
       consequences,

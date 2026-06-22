@@ -1,6 +1,6 @@
 import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
-import type { KV } from "../shared.ts";
+import type { DispatchState, Incident, KV } from "../shared.ts";
 import {
   deleteIncidentSnapshot,
   getState,
@@ -8,6 +8,54 @@ import {
   recalculateAlertLevel,
   saveState,
 } from "../shared.ts";
+
+function applyCasualtyUpdate(
+  inc: Incident,
+  casualtyUpdate: { confirmed?: number | undefined; treated?: number | undefined },
+) {
+  if (casualtyUpdate.confirmed !== undefined) {
+    inc.casualties.confirmed = casualtyUpdate.confirmed;
+  }
+  if (casualtyUpdate.treated !== undefined) {
+    inc.casualties.treated = casualtyUpdate.treated;
+  }
+}
+
+async function releaseResourcesOnResolution(
+  kv: KV,
+  state: DispatchState,
+  inc: Incident,
+  incidentId: string,
+) {
+  for (const rId of inc.assignedResources) {
+    const r = state.resources.find((res) => res.id === rId);
+    if (r) {
+      r.status = "returning";
+      r.assignedIncident = null;
+      r.eta = null;
+      // Auto-return to available after a delay (simulated)
+      setTimeout(() => {
+        r.status = "available";
+      }, 2000);
+    }
+  }
+  inc.timeline.push({
+    time: now(),
+    event: "All resources released — incident closed",
+  });
+  await deleteIncidentSnapshot(kv, incidentId);
+}
+
+function updateResourceStatuses(
+  state: DispatchState,
+  inc: Incident,
+  status: "en_route" | "on_scene",
+) {
+  for (const rId of inc.assignedResources) {
+    const r = state.resources.find((res) => res.id === rId);
+    if (r) r.status = status;
+  }
+}
 
 export const incidentUpdateStatus = tool({
   description: "Update an incident's status (en_route, on_scene, resolved, escalated).",
@@ -37,41 +85,17 @@ export const incidentUpdateStatus = tool({
     if (args.notes) inc.notes.push(args.notes);
 
     if (args.casualtyUpdate) {
-      if (args.casualtyUpdate.confirmed !== undefined) {
-        inc.casualties.confirmed = args.casualtyUpdate.confirmed;
-      }
-      if (args.casualtyUpdate.treated !== undefined) {
-        inc.casualties.treated = args.casualtyUpdate.treated;
-      }
+      applyCasualtyUpdate(inc, args.casualtyUpdate);
     }
 
     // Release resources on resolution
     if (args.status === "resolved") {
-      for (const rId of inc.assignedResources) {
-        const r = state.resources.find((r) => r.id === rId);
-        if (r) {
-          r.status = "returning";
-          r.assignedIncident = null;
-          r.eta = null;
-          // Auto-return to available after a delay (simulated)
-          setTimeout(() => {
-            r.status = "available";
-          }, 2000);
-        }
-      }
-      inc.timeline.push({
-        time: now(),
-        event: "All resources released — incident closed",
-      });
-      await deleteIncidentSnapshot(ctx.kv, args.incidentId);
+      await releaseResourcesOnResolution(ctx.kv, state, inc, args.incidentId);
     }
 
     // Update resource statuses for en_route/on_scene
     if (args.status === "en_route" || args.status === "on_scene") {
-      for (const rId of inc.assignedResources) {
-        const r = state.resources.find((r) => r.id === rId);
-        if (r) r.status = args.status;
-      }
+      updateResourceStatuses(state, inc, args.status);
     }
 
     recalculateAlertLevel(state);

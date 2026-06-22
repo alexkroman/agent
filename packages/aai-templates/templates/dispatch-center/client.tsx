@@ -60,15 +60,24 @@ interface DashboardState {
 }
 
 function stateColor(state: string): string {
-  return state === "listening"
-    ? "#22c55e"
-    : state === "thinking"
-      ? "#eab308"
-      : state === "speaking"
-        ? "#3b82f6"
-        : state === "ready"
-          ? "#22c55e"
-          : "#6b7280";
+  if (state === "listening") return "#22c55e";
+  if (state === "thinking") return "#eab308";
+  if (state === "speaking") return "#3b82f6";
+  if (state === "ready") return "#22c55e";
+  return "#6b7280";
+}
+
+function stateAnimation(state: string): string {
+  if (state === "listening") return "dc-pulse 1.5s ease-in-out infinite";
+  if (state === "thinking") return "dc-pulse 0.8s ease-in-out infinite";
+  return "none";
+}
+
+function stateLabel(state: string): string {
+  if (state === "listening") return "LISTENING";
+  if (state === "thinking") return "PROCESSING";
+  if (state === "speaking") return "TRANSMITTING";
+  return state.toUpperCase();
 }
 
 function Panel({ title, children }: { title: string; children: React.ReactNode }) {
@@ -96,6 +105,141 @@ function StatRow({ label, value, color }: { label: string; value: number; color?
   );
 }
 
+function applyIncidentEvent(dash: DashboardState, result: unknown) {
+  const r = result as { incident?: Incident; state?: DispatchState; systemAlertLevel?: string };
+  if (r.state) {
+    dash.alertLevel = r.state.alertLevel;
+    for (const inc of Object.values(r.state.incidents)) {
+      dash.incidents[inc.id] = {
+        id: inc.id,
+        severity: inc.severity,
+        status: inc.status,
+        location: inc.location,
+      };
+    }
+  } else if (r.incident) {
+    dash.incidents[r.incident.id] = {
+      ...dash.incidents[r.incident.id],
+      id: r.incident.id,
+      severity: r.incident.severity,
+      status: r.incident.status,
+      location: r.incident.location,
+    };
+  }
+  if (r.systemAlertLevel) {
+    dash.alertLevel = r.systemAlertLevel;
+  }
+}
+
+function Controls({ session }: { session: ReturnType<typeof useSession> }) {
+  if (!session.started) {
+    return (
+      <button
+        type="button"
+        className="px-4 py-2 border-none rounded-md font-mono text-xs font-semibold uppercase tracking-wider cursor-pointer text-white"
+        style={{ background: "#2563eb" }}
+        onClick={() => session.start()}
+      >
+        Start Dispatch
+      </button>
+    );
+  }
+  return (
+    <>
+      <button
+        type="button"
+        className="px-4 py-2 border-none rounded-md font-mono text-xs font-semibold uppercase tracking-wider cursor-pointer"
+        style={{
+          background: session.running ? "#334155" : "#2563eb",
+          color: session.running ? "#e2e8f0" : "white",
+        }}
+        onClick={() => session.toggle()}
+      >
+        {session.running ? "Pause" : "Resume"}
+      </button>
+      <button
+        type="button"
+        className="px-4 py-2 border-none rounded-md font-mono text-xs font-semibold uppercase tracking-wider cursor-pointer text-white"
+        style={{ background: "#dc2626" }}
+        onClick={() => session.reset()}
+      >
+        Reset
+      </button>
+    </>
+  );
+}
+
+function MessageBubble({ m }: { m: ChatMessage }) {
+  const isAssistant = m.role === "assistant";
+  return (
+    <div
+      className="rounded-lg text-[13px] max-w-[85%] px-3.5 py-2.5"
+      style={{
+        lineHeight: 1.6,
+        alignSelf: isAssistant ? "flex-start" : "flex-end",
+        background: isAssistant ? "#1e293b" : "#172554",
+        animation: "dc-slide-in 0.2s ease-out",
+        borderLeft: isAssistant ? "3px solid #3b82f6" : "none",
+        borderRight: isAssistant ? "none" : "3px solid #22d3ee",
+      }}
+    >
+      <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: "#64748b" }}>
+        {isAssistant ? "DISPATCH" : "OPERATOR"}
+      </div>
+      {m.content}
+    </div>
+  );
+}
+
+function IncidentCard({
+  inc,
+}: {
+  inc: { id: string; severity?: Severity; status?: string; location?: string };
+}) {
+  const accent = severityColors[inc.severity ?? ""] || "#334155";
+  return (
+    <div
+      className="rounded-md p-2.5 mb-2"
+      style={{
+        background: "#0f172a",
+        animation: "dc-slide-in 0.3s ease-out",
+        border: `1px solid ${accent}40`,
+        borderLeft: `3px solid ${accent}`,
+      }}
+    >
+      <div className="flex justify-between items-center mb-1">
+        <span className="text-xs font-bold" style={{ color: "#f1f5f9" }}>
+          {inc.id}
+        </span>
+        {inc.severity && (
+          <span
+            className="text-[9px] px-1.5 py-0.5 rounded font-bold uppercase"
+            style={{
+              background: `${severityColors[inc.severity ?? ""]}30`,
+              color: severityColors[inc.severity ?? ""],
+            }}
+          >
+            {inc.severity}
+          </span>
+        )}
+      </div>
+      {inc.location && (
+        <div className="text-[11px] mb-0.5" style={{ color: "#94a3b8" }}>
+          {inc.location}
+        </div>
+      )}
+      {inc.status && (
+        <div
+          className="text-[10px] uppercase tracking-wider"
+          style={{ color: statusColors[inc.status] || "#6b7280" }}
+        >
+          {inc.status.replace("_", " ")}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function App() {
   const session = useSession();
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -103,29 +247,7 @@ function App() {
 
   // Track incidents and alert level from events
   useEvent("incidents", (result: unknown) => {
-    const r = result as { incident?: Incident; state?: DispatchState; systemAlertLevel?: string };
-    if (r.state) {
-      dashRef.current.alertLevel = r.state.alertLevel;
-      for (const inc of Object.values(r.state.incidents)) {
-        dashRef.current.incidents[inc.id] = {
-          id: inc.id,
-          severity: inc.severity,
-          status: inc.status,
-          location: inc.location,
-        };
-      }
-    } else if (r.incident) {
-      dashRef.current.incidents[r.incident.id] = {
-        ...dashRef.current.incidents[r.incident.id],
-        id: r.incident.id,
-        severity: r.incident.severity,
-        status: r.incident.status,
-        location: r.incident.location,
-      };
-    }
-    if (r.systemAlertLevel) {
-      dashRef.current.alertLevel = r.systemAlertLevel;
-    }
+    applyIncidentEvent(dashRef.current, result);
   });
 
   useEffect(() => {
@@ -165,23 +287,12 @@ function App() {
               className="w-2.5 h-2.5 rounded-full inline-block"
               style={{
                 background: stateColor(session.state),
-                animation:
-                  session.state === "listening"
-                    ? "dc-pulse 1.5s ease-in-out infinite"
-                    : session.state === "thinking"
-                      ? "dc-pulse 0.8s ease-in-out infinite"
-                      : "none",
+                animation: stateAnimation(session.state),
               }}
               title={session.state}
             />
             <span className="text-[11px] font-normal normal-case" style={{ color: "#64748b" }}>
-              {session.state === "listening"
-                ? "LISTENING"
-                : session.state === "thinking"
-                  ? "PROCESSING"
-                  : session.state === "speaking"
-                    ? "TRANSMITTING"
-                    : session.state.toUpperCase()}
+              {stateLabel(session.state)}
             </span>
           </div>
           <div className="flex gap-2 items-center">
@@ -218,26 +329,7 @@ function App() {
                 </div>
               )}
               {session.messages.map((m: ChatMessage, i: number) => (
-                <div
-                  key={i}
-                  className="rounded-lg text-[13px] max-w-[85%] px-3.5 py-2.5"
-                  style={{
-                    lineHeight: 1.6,
-                    alignSelf: m.role === "assistant" ? "flex-start" : "flex-end",
-                    background: m.role === "assistant" ? "#1e293b" : "#172554",
-                    animation: "dc-slide-in 0.2s ease-out",
-                    borderLeft: m.role === "assistant" ? "3px solid #3b82f6" : "none",
-                    borderRight: m.role !== "assistant" ? "3px solid #22d3ee" : "none",
-                  }}
-                >
-                  <div
-                    className="text-[10px] uppercase tracking-wider mb-1"
-                    style={{ color: "#64748b" }}
-                  >
-                    {m.role === "assistant" ? "DISPATCH" : "OPERATOR"}
-                  </div>
-                  {m.content}
-                </div>
+                <MessageBubble key={i} m={m} />
               ))}
               <div ref={messagesEndRef} />
             </div>
@@ -267,38 +359,7 @@ function App() {
               className="flex items-center gap-2.5 px-4 py-3"
               style={{ background: "#111827", borderTop: "1px solid #1e293b" }}
             >
-              {!session.started ? (
-                <button
-                  type="button"
-                  className="px-4 py-2 border-none rounded-md font-mono text-xs font-semibold uppercase tracking-wider cursor-pointer text-white"
-                  style={{ background: "#2563eb" }}
-                  onClick={() => session.start()}
-                >
-                  Start Dispatch
-                </button>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    className="px-4 py-2 border-none rounded-md font-mono text-xs font-semibold uppercase tracking-wider cursor-pointer"
-                    style={{
-                      background: session.running ? "#334155" : "#2563eb",
-                      color: session.running ? "#e2e8f0" : "white",
-                    }}
-                    onClick={() => session.toggle()}
-                  >
-                    {session.running ? "Pause" : "Resume"}
-                  </button>
-                  <button
-                    type="button"
-                    className="px-4 py-2 border-none rounded-md font-mono text-xs font-semibold uppercase tracking-wider cursor-pointer text-white"
-                    style={{ background: "#dc2626" }}
-                    onClick={() => session.reset()}
-                  >
-                    Reset
-                  </button>
-                </>
-              )}
+              <Controls session={session} />
               <div className="flex-1" />
               <span className="text-[10px]" style={{ color: "#475569" }}>
                 {incidentList.length} incident{incidentList.length !== 1 ? "s" : ""} logged
@@ -327,48 +388,7 @@ function App() {
                   No active incidents
                 </div>
               ) : (
-                activeIncidents.map((inc) => (
-                  <div
-                    key={inc.id}
-                    className="rounded-md p-2.5 mb-2"
-                    style={{
-                      background: "#0f172a",
-                      animation: "dc-slide-in 0.3s ease-out",
-                      border: `1px solid ${severityColors[inc.severity ?? ""] || "#334155"}40`,
-                      borderLeft: `3px solid ${severityColors[inc.severity ?? ""] || "#334155"}`,
-                    }}
-                  >
-                    <div className="flex justify-between items-center mb-1">
-                      <span className="text-xs font-bold" style={{ color: "#f1f5f9" }}>
-                        {inc.id}
-                      </span>
-                      {inc.severity && (
-                        <span
-                          className="text-[9px] px-1.5 py-0.5 rounded font-bold uppercase"
-                          style={{
-                            background: `${severityColors[inc.severity ?? ""]}30`,
-                            color: severityColors[inc.severity ?? ""],
-                          }}
-                        >
-                          {inc.severity}
-                        </span>
-                      )}
-                    </div>
-                    {inc.location && (
-                      <div className="text-[11px] mb-0.5" style={{ color: "#94a3b8" }}>
-                        {inc.location}
-                      </div>
-                    )}
-                    {inc.status && (
-                      <div
-                        className="text-[10px] uppercase tracking-wider"
-                        style={{ color: statusColors[inc.status] || "#6b7280" }}
-                      >
-                        {inc.status.replace("_", " ")}
-                      </div>
-                    )}
-                  </div>
-                ))
+                activeIncidents.map((inc) => <IncidentCard key={inc.id} inc={inc} />)
               )}
             </Panel>
 

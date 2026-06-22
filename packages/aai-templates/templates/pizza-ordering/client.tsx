@@ -13,8 +13,14 @@ interface OrderInfo {
   estimatedMinutes?: number;
 }
 
+function pizzaIconDim(size: string): number {
+  if (size === "small") return 36;
+  if (size === "large") return 52;
+  return 44;
+}
+
 function PizzaIcon({ size }: { size: string }) {
-  const dim = size === "small" ? 36 : size === "large" ? 52 : 44;
+  const dim = pizzaIconDim(size);
   return (
     <svg width={dim} height={dim} viewBox="0 0 100 100" className="shrink-0">
       <circle cx="50" cy="50" r="48" fill="#F4C542" stroke="#D4A017" strokeWidth="3" />
@@ -30,6 +36,55 @@ function PizzaIcon({ size }: { size: string }) {
   );
 }
 
+type OrderReducer = (prev: OrderInfo) => OrderInfo;
+
+function applyOrderEvent(result: Record<string, unknown>): OrderReducer | null {
+  if ("added" in result && result.added) {
+    const added = result.added as Pizza;
+    const orderTotal = result.orderTotal as string;
+    return (prev) => ({
+      ...prev,
+      pizzas: [...prev.pizzas, added],
+      total: orderTotal,
+    });
+  }
+  if ("removed" in result && result.removed) {
+    const removed = result.removed as Pizza;
+    const orderTotal = result.orderTotal as string;
+    return (prev) => ({
+      ...prev,
+      pizzas: prev.pizzas.filter((p) => p.id !== removed.id),
+      total: orderTotal,
+    });
+  }
+  if ("updated" in result && result.updated) {
+    const updated = result.updated as Pizza;
+    const orderTotal = result.orderTotal as string;
+    return (prev) => ({
+      ...prev,
+      pizzas: prev.pizzas.map((p) => (p.id === updated.id ? updated : p)),
+      total: orderTotal,
+    });
+  }
+  if ("pizzas" in result && Array.isArray(result.pizzas)) {
+    const pizzas = result.pizzas as Pizza[];
+    const total =
+      (result.orderTotal as string) ||
+      `$${pizzas.reduce((s, p) => s + pizzaPrice(p), 0).toFixed(2)}`;
+    return (prev) => ({ ...prev, total });
+  }
+  if ("orderNumber" in result && result.orderNumber) {
+    return (prev) => ({
+      ...prev,
+      orderPlaced: true,
+      orderNumber: result.orderNumber as number,
+      total: result.total as string,
+      estimatedMinutes: result.estimatedMinutes as number,
+    });
+  }
+  return null;
+}
+
 function OrderSidebar() {
   const theme = useTheme();
   const [order, setOrder] = useState<OrderInfo>({
@@ -39,46 +94,8 @@ function OrderSidebar() {
   });
 
   useEvent("order", (raw) => {
-    const result = raw as Record<string, unknown>;
-    if ("added" in result && result.added) {
-      const added = result.added as Pizza;
-      const orderTotal = result.orderTotal as string;
-      setOrder((prev) => ({
-        ...prev,
-        pizzas: [...prev.pizzas, added],
-        total: orderTotal,
-      }));
-    } else if ("removed" in result && result.removed) {
-      const removed = result.removed as Pizza;
-      const orderTotal = result.orderTotal as string;
-      setOrder((prev) => ({
-        ...prev,
-        pizzas: prev.pizzas.filter((p) => p.id !== removed.id),
-        total: orderTotal,
-      }));
-    } else if ("updated" in result && result.updated) {
-      const updated = result.updated as Pizza;
-      const orderTotal = result.orderTotal as string;
-      setOrder((prev) => ({
-        ...prev,
-        pizzas: prev.pizzas.map((p) => (p.id === updated.id ? updated : p)),
-        total: orderTotal,
-      }));
-    } else if ("pizzas" in result && Array.isArray(result.pizzas)) {
-      const pizzas = result.pizzas as Pizza[];
-      const total =
-        (result.orderTotal as string) ||
-        `$${pizzas.reduce((s, p) => s + pizzaPrice(p), 0).toFixed(2)}`;
-      setOrder((prev) => ({ ...prev, total }));
-    } else if ("orderNumber" in result && result.orderNumber) {
-      setOrder((prev) => ({
-        ...prev,
-        orderPlaced: true,
-        orderNumber: result.orderNumber as number,
-        total: result.total as string,
-        estimatedMinutes: result.estimatedMinutes as number,
-      }));
-    }
+    const reducer = applyOrderEvent(raw as Record<string, unknown>);
+    if (reducer) setOrder(reducer);
   });
 
   if (order.orderPlaced) {

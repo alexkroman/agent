@@ -1,6 +1,6 @@
 import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
-import type { Disposition, KV } from "../shared.ts";
+import type { Disposition, KV, StoryAct } from "../shared.ts";
 import {
   ARCHETYPES,
   chooseStoryStructure,
@@ -10,6 +10,97 @@ import {
   saveGameState,
   TONES,
 } from "../shared.ts";
+
+function swapStats(arr: number[], a: number, b: number): void {
+  const tmp = arr[a] ?? 0;
+  arr[a] = arr[b] ?? 0;
+  arr[b] = tmp;
+}
+
+const ARCHETYPE_BIAS: Record<string, number> = {
+  outsider_loner: 0,
+  investigator: 4,
+  trickster: 3,
+  protector: 2,
+  hardboiled: 2,
+  scholar: 4,
+  healer: 1,
+  inventor: 4,
+  artist: 1,
+};
+
+// Generate stats: one at 3, two at 2, two at 1 (total = 7)
+function rollStats(archetype: string): number[] {
+  const statValues = [3, 2, 2, 1, 1];
+  for (let i = statValues.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    swapStats(statValues, i, j);
+  }
+  const biasIdx = ARCHETYPE_BIAS[archetype] ?? Math.floor(Math.random() * 5);
+  const highIdx = statValues.indexOf(3);
+  if (highIdx !== biasIdx) {
+    swapStats(statValues, highIdx, biasIdx);
+  }
+  return statValues;
+}
+
+function buildActs(structure: string, tone: string): StoryAct[] {
+  if (structure === "3act") {
+    return [
+      {
+        phase: "setup",
+        title: "The Hook",
+        goal: "Establish the world and the conflict",
+        mood: tone,
+        transitionTrigger: "Player engages with the central conflict",
+      },
+      {
+        phase: "confrontation",
+        title: "Rising Stakes",
+        goal: "Escalate tension and complications",
+        mood: tone,
+        transitionTrigger: "A major setback or revelation",
+      },
+      {
+        phase: "climax",
+        title: "The Reckoning",
+        goal: "Resolve the central conflict",
+        mood: tone,
+        transitionTrigger: "Story reaches its conclusion",
+      },
+    ];
+  }
+  return [
+    {
+      phase: "ki_introduction",
+      title: "Ki",
+      goal: "Introduce the world and characters",
+      mood: tone,
+      transitionTrigger: "World is established",
+    },
+    {
+      phase: "sho_development",
+      title: "Sho",
+      goal: "Develop relationships and deepen the world",
+      mood: tone,
+      transitionTrigger: "Relationships are tested",
+    },
+    {
+      phase: "ten_twist",
+      title: "Ten",
+      goal: "An unexpected twist changes everything",
+      mood: tone,
+      transitionTrigger: "The twist lands",
+    },
+    {
+      phase: "ketsu_resolution",
+      title: "Ketsu",
+      goal: "Resolve and reflect",
+      mood: tone,
+      transitionTrigger: "Story reaches its conclusion",
+    },
+  ];
+}
 
 export const setupCharacter = tool({
   description:
@@ -66,32 +157,12 @@ export const setupCharacter = tool({
     state.kidMode = args.kidMode ?? false;
 
     // Generate stats: one at 3, two at 2, two at 1 (total = 7)
-    const statValues = [3, 2, 2, 1, 1];
-    for (let i = statValues.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [statValues[i], statValues[j]] = [statValues[j]!, statValues[i]!];
-    }
-    const archetypeBias: Record<string, number> = {
-      outsider_loner: 0,
-      investigator: 4,
-      trickster: 3,
-      protector: 2,
-      hardboiled: 2,
-      scholar: 4,
-      healer: 1,
-      inventor: 4,
-      artist: 1,
-    };
-    const biasIdx = archetypeBias[args.archetype] ?? Math.floor(Math.random() * 5);
-    const highIdx = statValues.indexOf(3);
-    if (highIdx !== biasIdx) {
-      [statValues[highIdx], statValues[biasIdx]] = [statValues[biasIdx]!, statValues[highIdx]!];
-    }
-    state.edge = statValues[0]!;
-    state.heart = statValues[1]!;
-    state.iron = statValues[2]!;
-    state.shadow = statValues[3]!;
-    state.wits = statValues[4]!;
+    const statValues = rollStats(args.archetype);
+    state.edge = statValues[0] ?? 0;
+    state.heart = statValues[1] ?? 0;
+    state.iron = statValues[2] ?? 0;
+    state.shadow = statValues[3] ?? 0;
+    state.wits = statValues[4] ?? 0;
 
     // Set location, time
     state.currentLocation = args.startingLocation;
@@ -99,12 +170,15 @@ export const setupCharacter = tool({
     state.timeOfDay = args.timeOfDay;
 
     // Add initial NPC
+    let npc1Bond = 0;
+    if (args.npc1Disposition === "friendly") npc1Bond = 1;
+    else if (args.npc1Disposition === "loyal") npc1Bond = 2;
     state.npcs.push({
       id: "npc_1",
       name: args.npc1Name,
       description: args.npc1Desc,
       disposition: args.npc1Disposition as Disposition,
-      bond: args.npc1Disposition === "friendly" ? 1 : args.npc1Disposition === "loyal" ? 2 : 0,
+      bond: npc1Bond,
       agenda: args.npc1Agenda,
       instinct: "",
       status: "active",
@@ -130,61 +204,7 @@ export const setupCharacter = tool({
       centralConflict: args.openingSituation,
       antagonistForce: "",
       thematicThread: "",
-      acts:
-        structure === "3act"
-          ? [
-              {
-                phase: "setup",
-                title: "The Hook",
-                goal: "Establish the world and the conflict",
-                mood: args.tone,
-                transitionTrigger: "Player engages with the central conflict",
-              },
-              {
-                phase: "confrontation",
-                title: "Rising Stakes",
-                goal: "Escalate tension and complications",
-                mood: args.tone,
-                transitionTrigger: "A major setback or revelation",
-              },
-              {
-                phase: "climax",
-                title: "The Reckoning",
-                goal: "Resolve the central conflict",
-                mood: args.tone,
-                transitionTrigger: "Story reaches its conclusion",
-              },
-            ]
-          : [
-              {
-                phase: "ki_introduction",
-                title: "Ki",
-                goal: "Introduce the world and characters",
-                mood: args.tone,
-                transitionTrigger: "World is established",
-              },
-              {
-                phase: "sho_development",
-                title: "Sho",
-                goal: "Develop relationships and deepen the world",
-                mood: args.tone,
-                transitionTrigger: "Relationships are tested",
-              },
-              {
-                phase: "ten_twist",
-                title: "Ten",
-                goal: "An unexpected twist changes everything",
-                mood: args.tone,
-                transitionTrigger: "The twist lands",
-              },
-              {
-                phase: "ketsu_resolution",
-                title: "Ketsu",
-                goal: "Resolve and reflect",
-                mood: args.tone,
-                transitionTrigger: "Story reaches its conclusion",
-              },
-            ],
+      acts: buildActs(structure, args.tone),
       revelations: [],
       possibleEndings: [],
       currentAct: 1,

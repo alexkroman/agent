@@ -2,7 +2,7 @@
 
 import "@alexkroman1/aai-ui/styles.css";
 import { ChatView, client, SidebarLayout, StartScreen, useEvent } from "@alexkroman1/aai-ui";
-import { useState } from "react";
+import { type ReactElement, useState } from "react";
 import type { ClockData, Disposition, GameState, NPC, StoryBlueprint } from "./shared.ts";
 
 const INITIAL: GameState = {
@@ -139,7 +139,7 @@ function ResourceBar({
   colorBright: string;
   icon: string;
 }) {
-  const pips = [];
+  const pips: ReactElement[] = [];
   for (let i = 0; i < max; i++) {
     const filled = i < current;
     pips.push(
@@ -183,6 +183,26 @@ function ResourceBar({
   );
 }
 
+function momentumLabelColor(momentum: number): string {
+  if (momentum > 0) return C.spiritBright;
+  if (momentum < 0) return C.healthBright;
+  return C.textMuted;
+}
+
+function momentumCellBackground(v: number, momentum: number, max: number): string {
+  if (v > max) return "rgba(255,255,255,0.01)";
+  if (v <= momentum && v > 0) return C.spiritBright;
+  if (v >= momentum && v < 0) return C.healthBright;
+  if (v === 0) return "rgba(255,255,255,0.12)";
+  return "rgba(255,255,255,0.03)";
+}
+
+function momentumCellShadow(v: number, momentum: number): string {
+  if (v <= momentum && v > 0) return `0 0 3px ${C.spirit}`;
+  if (v >= momentum && v < 0) return `0 0 3px ${C.health}`;
+  return "none";
+}
+
 function MomentumTrack({ momentum, max }: { momentum: number; max: number }) {
   const range: number[] = [];
   for (let i = -6; i <= 10; i++) range.push(i);
@@ -203,7 +223,7 @@ function MomentumTrack({ momentum, max }: { momentum: number; max: number }) {
           style={{
             fontSize: "11px",
             fontWeight: 700,
-            color: momentum > 0 ? C.spiritBright : momentum < 0 ? C.healthBright : C.textMuted,
+            color: momentumLabelColor(momentum),
           }}
         >
           {momentum > 0 ? "+" : ""}
@@ -218,22 +238,8 @@ function MomentumTrack({ momentum, max }: { momentum: number; max: number }) {
               flex: 1,
               height: "6px",
               borderRadius: "1px",
-              background:
-                v > max
-                  ? "rgba(255,255,255,0.01)"
-                  : v <= momentum && v > 0
-                    ? C.spiritBright
-                    : v >= momentum && v < 0
-                      ? C.healthBright
-                      : v === 0
-                        ? "rgba(255,255,255,0.12)"
-                        : "rgba(255,255,255,0.03)",
-              boxShadow:
-                v <= momentum && v > 0
-                  ? `0 0 3px ${C.spirit}`
-                  : v >= momentum && v < 0
-                    ? `0 0 3px ${C.health}`
-                    : "none",
+              background: momentumCellBackground(v, momentum, max),
+              boxShadow: momentumCellShadow(v, momentum),
               transition: "all 0.3s ease",
             }}
           />
@@ -248,17 +254,24 @@ function MomentumTrack({ momentum, max }: { momentum: number; max: number }) {
   );
 }
 
+function chaosColor(chaos: number): string {
+  if (chaos <= 4) return C.chaos.low;
+  if (chaos <= 6) return C.chaos.mid;
+  if (chaos <= 8) return C.chaos.high;
+  return C.chaos.critical;
+}
+
+function chaosLabel(chaos: number): string {
+  if (chaos <= 4) return "Calm";
+  if (chaos <= 6) return "Tense";
+  if (chaos <= 8) return "Volatile";
+  return "Critical";
+}
+
 function ChaosGauge({ chaos }: { chaos: number }) {
   const pct = ((chaos - 3) / 6) * 100;
-  const color =
-    chaos <= 4
-      ? C.chaos.low
-      : chaos <= 6
-        ? C.chaos.mid
-        : chaos <= 8
-          ? C.chaos.high
-          : C.chaos.critical;
-  const label = chaos <= 4 ? "Calm" : chaos <= 6 ? "Tense" : chaos <= 8 ? "Volatile" : "Critical";
+  const color = chaosColor(chaos);
+  const label = chaosLabel(chaos);
   return (
     <div style={{ marginBottom: "8px" }}>
       <div
@@ -333,14 +346,15 @@ function StatPip({ label, value }: { label: string; value: number }) {
   );
 }
 
+function clockTypeColor(clockType: ClockData["clockType"]): string {
+  if (clockType === "threat") return C.threat;
+  if (clockType === "progress") return C.progress;
+  return C.scheme;
+}
+
 function ClockDisplay({ clock }: { clock: ClockData }) {
-  const typeColor =
-    clock.clockType === "threat"
-      ? C.threat
-      : clock.clockType === "progress"
-        ? C.progress
-        : C.scheme;
-  const segments = [];
+  const typeColor = clockTypeColor(clock.clockType);
+  const segments: ReactElement[] = [];
   for (let i = 0; i < clock.segments; i++) {
     segments.push(
       <div
@@ -493,6 +507,116 @@ function StoryArc({ story }: { story: StoryBlueprint }) {
 
 // ── Sidebar ──────────────────────────────────────────────────────────────────
 
+function NpcSection({ npcs }: { npcs: NPC[] }) {
+  const active = npcs.filter((n) => n.status === "active");
+  const background = npcs.filter((n) => n.status === "background");
+  if (active.length === 0 && background.length === 0) return null;
+  return (
+    <div className="et-section">
+      <div className="et-label">Characters</div>
+      {active.map((npc) => (
+        <NpcCard key={npc.id} npc={npc} />
+      ))}
+      {background.length > 0 && (
+        <>
+          <div
+            style={{
+              fontSize: "8px",
+              color: C.textDim,
+              textTransform: "uppercase",
+              letterSpacing: "0.1em",
+              margin: "6px 0 4px",
+              fontFamily: "sans-serif",
+            }}
+          >
+            Known
+          </div>
+          {background.map((npc) => (
+            <div
+              key={npc.id}
+              style={{
+                fontSize: "10px",
+                color: C.textMuted,
+                marginBottom: "2px",
+                paddingLeft: "8px",
+                borderLeft: `1px solid ${C.border}`,
+              }}
+            >
+              {npc.name}
+              <span style={{ fontSize: "8px", color: C.textDim, marginLeft: "4px" }}>
+                {npc.disposition}
+              </span>
+            </div>
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
+
+function SidebarHeader({ game }: { game: GameState }) {
+  return (
+    <div
+      className="et-section"
+      style={{ textAlign: "center", paddingTop: "16px", paddingBottom: "12px" }}
+    >
+      <div
+        style={{
+          fontSize: "8px",
+          letterSpacing: "0.3em",
+          color: C.textDim,
+          textTransform: "uppercase",
+          fontFamily: "sans-serif",
+        }}
+      >
+        Solo RPG
+      </div>
+      {game.initialized ? (
+        <>
+          <div className="et-gold" style={{ fontSize: "16px", fontWeight: 700, marginTop: "4px" }}>
+            {game.playerName}
+          </div>
+          {game.characterConcept && (
+            <div
+              style={{
+                fontSize: "11px",
+                color: C.textMuted,
+                fontStyle: "italic",
+                marginTop: "2px",
+              }}
+            >
+              {game.characterConcept}
+            </div>
+          )}
+          {game.settingGenre && (
+            <div
+              style={{
+                fontSize: "8px",
+                color: C.accentDim,
+                marginTop: "4px",
+                textTransform: "uppercase",
+                letterSpacing: "0.1em",
+                fontFamily: "sans-serif",
+              }}
+            >
+              {GENRE_LABELS[game.settingGenre] || game.settingGenre}
+            </div>
+          )}
+        </>
+      ) : (
+        <div style={{ fontSize: "11px", color: C.textDim, marginTop: "8px", fontStyle: "italic" }}>
+          Creating your story...
+        </div>
+      )}
+    </div>
+  );
+}
+
+function crisisBannerLabel(game: GameState): string {
+  if (game.kidMode) return "In Trouble";
+  return game.gameOver ? "Finale" : "Crisis";
+}
+
 function Sidebar({ game }: { game: GameState }) {
   return (
     <div
@@ -517,64 +641,7 @@ function Sidebar({ game }: { game: GameState }) {
       `}</style>
 
       {/* Header */}
-      <div
-        className="et-section"
-        style={{ textAlign: "center", paddingTop: "16px", paddingBottom: "12px" }}
-      >
-        <div
-          style={{
-            fontSize: "8px",
-            letterSpacing: "0.3em",
-            color: C.textDim,
-            textTransform: "uppercase",
-            fontFamily: "sans-serif",
-          }}
-        >
-          Solo RPG
-        </div>
-        {game.initialized ? (
-          <>
-            <div
-              className="et-gold"
-              style={{ fontSize: "16px", fontWeight: 700, marginTop: "4px" }}
-            >
-              {game.playerName}
-            </div>
-            {game.characterConcept && (
-              <div
-                style={{
-                  fontSize: "11px",
-                  color: C.textMuted,
-                  fontStyle: "italic",
-                  marginTop: "2px",
-                }}
-              >
-                {game.characterConcept}
-              </div>
-            )}
-            {game.settingGenre && (
-              <div
-                style={{
-                  fontSize: "8px",
-                  color: C.accentDim,
-                  marginTop: "4px",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.1em",
-                  fontFamily: "sans-serif",
-                }}
-              >
-                {GENRE_LABELS[game.settingGenre] || game.settingGenre}
-              </div>
-            )}
-          </>
-        ) : (
-          <div
-            style={{ fontSize: "11px", color: C.textDim, marginTop: "8px", fontStyle: "italic" }}
-          >
-            Creating your story...
-          </div>
-        )}
-      </div>
+      <SidebarHeader game={game} />
 
       {/* Pre-init placeholder */}
       {!game.initialized && (
@@ -622,13 +689,7 @@ function Sidebar({ game }: { game: GameState }) {
                   fontFamily: "sans-serif",
                 }}
               >
-                {game.gameOver
-                  ? game.kidMode
-                    ? "In Trouble"
-                    : "Finale"
-                  : game.kidMode
-                    ? "In Trouble"
-                    : "Crisis"}
+                {crisisBannerLabel(game)}
               </div>
             </div>
           )}
@@ -728,52 +789,7 @@ function Sidebar({ game }: { game: GameState }) {
           )}
 
           {/* NPCs */}
-          {(() => {
-            const active = game.npcs.filter((n) => n.status === "active");
-            const background = game.npcs.filter((n) => n.status === "background");
-            if (active.length === 0 && background.length === 0) return null;
-            return (
-              <div className="et-section">
-                <div className="et-label">Characters</div>
-                {active.map((npc) => (
-                  <NpcCard key={npc.id} npc={npc} />
-                ))}
-                {background.length > 0 && (
-                  <>
-                    <div
-                      style={{
-                        fontSize: "8px",
-                        color: C.textDim,
-                        textTransform: "uppercase",
-                        letterSpacing: "0.1em",
-                        margin: "6px 0 4px",
-                        fontFamily: "sans-serif",
-                      }}
-                    >
-                      Known
-                    </div>
-                    {background.map((npc) => (
-                      <div
-                        key={npc.id}
-                        style={{
-                          fontSize: "10px",
-                          color: C.textMuted,
-                          marginBottom: "2px",
-                          paddingLeft: "8px",
-                          borderLeft: `1px solid ${C.border}`,
-                        }}
-                      >
-                        {npc.name}
-                        <span style={{ fontSize: "8px", color: C.textDim, marginLeft: "4px" }}>
-                          {npc.disposition}
-                        </span>
-                      </div>
-                    ))}
-                  </>
-                )}
-              </div>
-            );
-          })()}
+          <NpcSection npcs={game.npcs} />
 
           {/* Session Log */}
           {game.sessionLog.length > 0 && (

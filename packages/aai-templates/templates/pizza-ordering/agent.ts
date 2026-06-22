@@ -121,10 +121,11 @@ export default agent({
       async execute(args, ctx) {
         const pizzas: Pizza[] = (await ctx.kv.get("pizzas")) ?? [];
         const idx = pizzas.findIndex((p) => p.id === args.pizza_id);
-        if (idx === -1) return { error: "Pizza not found in the order." };
+        const existing = pizzas[idx];
+        if (idx === -1 || !existing) return { error: "Pizza not found in the order." };
 
-        const pizza: Pizza = { ...pizzas[idx]! };
-        if (args.size) pizza.size = args.size;
+        const pizza: Pizza = { ...existing };
+        if (args.size !== undefined) pizza.size = args.size;
         if (args.crust) pizza.crust = args.crust;
         if (args.toppings) pizza.toppings = args.toppings;
         if (args.quantity) pizza.quantity = args.quantity;

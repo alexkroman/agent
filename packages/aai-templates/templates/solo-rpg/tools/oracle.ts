@@ -23,7 +23,10 @@ export const oracle = tool({
 
     if (args.type === "yes_no") {
       const roll = d(6);
-      const answer = roll <= 2 ? "No" : roll <= 4 ? "Yes, but with a complication" : "Yes";
+      let answer: string;
+      if (roll <= 2) answer = "No";
+      else if (roll <= 4) answer = "Yes, but with a complication";
+      else answer = "Yes";
       return { type: "yes_no", roll, answer };
     }
 
