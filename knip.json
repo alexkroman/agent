@@ -1,6 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "ignore": [".claude/**"],
+  "ignore": [".claude/**", "examples/**"],
   "ignoreUnresolved": ["./_jsdom-setup.ts", "./sdk/_test-matchers.ts"],
   "ignoreExportsUsedInFile": true,
   "exclude": ["exports", "types", "optionalPeerDependencies", "duplicates"],
