@@ -295,13 +295,13 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   let toolGuidance: string[] = [];
 
   const builtinFetchOpt = opts.fetch ? { fetch: opts.fetch } : undefined;
+  const frozenEnv = Object.freeze({ ...env });
 
   if (opts.executeTool && opts.toolSchemas) {
     // Sandbox mode — custom tools are RPC-backed; builtins run host-side
     const builtinDefs =
       opts.builtinDefs ?? resolveAllBuiltins(agent.builtinTools ?? [], builtinFetchOpt).defs;
     const rpcExecuteTool = opts.executeTool;
-    const frozenEnv = Object.freeze({ ...env });
 
     executeTool = async (name, args, sessionId, messages) => {
       // Handle builtins on the host (where SSRF-safe fetch lives)
@@ -339,17 +339,17 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       if (!stateMap.has(sid) && agent.state) stateMap.set(sid, agent.state());
       return stateMap.get(sid) ?? {};
     };
-    const frozenEnv = Object.freeze({ ...env });
 
     executeTool = async (name, args, sessionId, messages) => {
       const tool = allTools[name];
       if (!tool) return toolError(`Unknown tool: ${name}`);
-      const sink = sinkMap.get(sessionId ?? "");
+      const sid = sessionId ?? "";
+      const sink = sinkMap.get(sid);
       return executeToolCall(name, args, {
         tool,
         env: frozenEnv,
-        state: getState(sessionId ?? ""),
-        sessionId: sessionId ?? "",
+        state: getState(sid),
+        sessionId: sid,
         kv: resolvedKv,
         vector: resolvedVector,
         messages,

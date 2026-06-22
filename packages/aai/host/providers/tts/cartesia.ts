@@ -74,9 +74,7 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
       }
 
       const sampleRate = assertSupportedSampleRate(openOpts.sampleRate);
-      const model = opts.model ?? "sonic-2";
-      const language = opts.language ?? "en";
-      const voice = opts.voice ?? CARTESIA_DEFAULT_VOICE;
+      const { model = "sonic-2", language = "en", voice = CARTESIA_DEFAULT_VOICE } = opts;
 
       const client = new Cartesia({ apiKey });
       let ws: TTSWS;
@@ -92,7 +90,7 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
       const emitter: Emitter<TtsEvents> = createNanoEvents<TtsEvents>();
       let closed = false;
 
-      const audioConfig = {
+      const baseRequest = {
         model_id: model,
         voice: { mode: "id" as const, id: voice },
         output_format: {
@@ -100,11 +98,11 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
           encoding: "pcm_s16le" as const,
           sample_rate: sampleRate,
         },
+        language,
       };
-      const baseRequest = { ...audioConfig, language };
 
       const mintContext = (): TTSWSContext =>
-        ws.context({ ...audioConfig, contextId: randomUUID() });
+        ws.context({ ...baseRequest, contextId: randomUUID() });
 
       let context = mintContext();
       let doneEmitted = false;
@@ -134,7 +132,7 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
         // on a misaligned length.
         const evenBytes = buf.byteLength - (buf.byteLength % 2);
         if (evenBytes === 0) return;
-        const pcm = new Int16Array(buf.buffer.slice(buf.byteOffset, buf.byteOffset + evenBytes));
+        const pcm = new Int16Array(buf.buffer, buf.byteOffset, evenBytes / 2);
         emitter.emit("audio", pcm);
       });
 
@@ -164,19 +162,15 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
         openOpts.signal.addEventListener("abort", () => void close(), { once: true });
       }
 
-      const ignoreRejection = (_err: unknown): void => {
-        /* no-op */
-      };
-
       const session: CartesiaSession = {
         sendText(text: string) {
           if (closed || text.length === 0) return;
           // First sendText after flush/cancel starts a fresh context so we
           // don't append to one that's already been finalized.
           rotateIfPending();
-          void context
-            .send({ ...baseRequest, transcript: text, continue: true })
-            .catch(ignoreRejection);
+          void context.send({ ...baseRequest, transcript: text, continue: true }).catch(() => {
+            /* ignore rejection */
+          });
         },
         flush() {
           if (closed || rotatePending) return;
@@ -184,9 +178,9 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
           // signal. Cartesia finishes synthesizing what's queued and emits
           // `done` tagged with the same context_id; rotation is deferred so
           // in-flight audio chunks and the real `done` still pass the filter.
-          void context
-            .send({ ...baseRequest, transcript: "", continue: false })
-            .catch(ignoreRejection);
+          void context.send({ ...baseRequest, transcript: "", continue: false }).catch(() => {
+            /* ignore rejection */
+          });
           rotatePending = true;
         },
         cancel() {
@@ -196,7 +190,9 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
           // ("context ID does not exist") which surfaces as a fatal
           // tts_stream_error for a benign race.
           if (!doneEmitted) {
-            void context.cancel().catch(ignoreRejection);
+            void context.cancel().catch(() => {
+              /* ignore rejection */
+            });
           }
           // Emit synchronously: barge-in advances the orchestrator on `done`;
           // delaying would audibly stall subsequent turns. Cartesia stops

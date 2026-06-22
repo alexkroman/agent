@@ -15,6 +15,16 @@ import type {
 } from "./providers.ts";
 import type { Vector } from "./vector.ts";
 
+// ─── Zod schemas ────────────────────────────────────────────────────────────
+
+/** @internal Zod schema for {@link BuiltinTool}. Exported for reuse in internal schemas. */
+export const BuiltinToolSchema = z.enum(["web_search", "visit_webpage", "fetch_json", "run_code"]);
+
+/** @internal Zod schema for {@link ToolChoice}. Exported for reuse in internal schemas. */
+export const ToolChoiceSchema = z.enum(["auto", "required"]);
+
+// ─── Public types ────────────────────────────────────────────────────────────
+
 /**
  * Identifier for a built-in server-side tool.
  *
@@ -28,7 +38,7 @@ import type { Vector } from "./vector.ts";
  *
  * @public
  */
-export type BuiltinTool = "web_search" | "visit_webpage" | "fetch_json" | "run_code";
+export type BuiltinTool = z.infer<typeof BuiltinToolSchema>;
 
 /**
  * How the LLM should select tools during a turn.
@@ -38,7 +48,7 @@ export type BuiltinTool = "web_search" | "visit_webpage" | "fetch_json" | "run_c
  *
  * @public
  */
-export type ToolChoice = "auto" | "required";
+export type ToolChoice = z.infer<typeof ToolChoiceSchema>;
 
 /**
  * A single message in the conversation history.
@@ -187,7 +197,7 @@ export type ToolResultMap<T extends Record<string, unknown> = Record<string, unk
  * Optimized for voice-first interactions: short sentences, no visual
  * formatting, confident tone, and concise answers.
  */
-export const DEFAULT_SYSTEM_PROMPT: string = `\
+export const DEFAULT_SYSTEM_PROMPT = `\
 You are AAI, a helpful AI assistant.
 
 Voice-First Rules:
@@ -204,8 +214,7 @@ If you need to list items, say "First," "Next," and "Finally."
 - Never use exclamation points. Keep your tone calm and conversational.`;
 
 /** Default greeting spoken when a session starts. */
-export const DEFAULT_GREETING: string =
-  "Hey there. I'm a voice assistant. What can I help you with?";
+export const DEFAULT_GREETING = "Hey there. I'm a voice assistant. What can I help you with?";
 
 /**
  * Fully resolved agent definition.
@@ -254,11 +263,3 @@ export type AgentDef<S = Record<string, unknown>> = {
   /** Pluggable Vector backend. Falls back to platform default when omitted. */
   vector?: VectorProvider;
 };
-
-// ─── Zod schemas ────────────────────────────────────────────────────────────
-
-/** @internal Zod schema for {@link BuiltinTool}. Exported for reuse in internal schemas. */
-export const BuiltinToolSchema = z.enum(["web_search", "visit_webpage", "fetch_json", "run_code"]);
-
-/** @internal Zod schema for {@link ToolChoice}. Exported for reuse in internal schemas. */
-export const ToolChoiceSchema = z.enum(["auto", "required"]);

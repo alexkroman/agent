@@ -12,9 +12,8 @@ import {
   WS_OPEN,
 } from "../sdk/constants.ts";
 import { ClientMessageSchema, type ClientSink, lenientParse } from "../sdk/protocol.ts";
-import { errorDetail } from "../sdk/utils.ts";
-import type { Logger } from "./runtime-config.ts";
-import { consoleLogger } from "./runtime-config.ts";
+import { errorDetail, errorMessage } from "../sdk/utils.ts";
+import { consoleLogger, type Logger } from "./runtime-config.ts";
 import type { SessionCore } from "./session-core.ts";
 
 /**
@@ -73,7 +72,7 @@ function createClientSink(ws: SessionWebSocket, log: Logger): ClientSink {
       ws.send(data);
     } catch (err) {
       log.debug?.("safeSend: socket closed between readyState check and send", {
-        error: err instanceof Error ? err.message : String(err),
+        error: errorMessage(err),
       });
     }
   }
@@ -147,27 +146,27 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
   const { sessions, logger: log = consoleLogger } = opts;
   const sessionId = opts.resumeFrom ?? crypto.randomUUID();
   const sid = sessionId.slice(0, 8);
-  const ctx = opts.logContext ?? {};
+  const logCtx = { ...(opts.logContext ?? {}), sid };
 
   let session: SessionCore | null = null;
-  /** Set to true once session.start() resolves. Messages arriving before
-   *  this flag is set are buffered and replayed once the session is ready,
-   *  preventing audio/frames from being dispatched to a half-initialized session. */
-  let sessionReady = false;
-  let messageBuffer: { data: unknown }[] | null = [];
+  /** Non-null until session.start() resolves (or fails). Messages arriving
+   *  before start() completes are buffered here and replayed once the session
+   *  is ready, preventing audio/frames from being dispatched to a
+   *  half-initialized session. Null signals the session is ready (or failed). */
+  let messageBuffer: unknown[] | null = [];
 
   function drainBuffer(): void {
-    if (!(session && messageBuffer)) return;
+    if (!(messageBuffer && session)) return;
     const buf = messageBuffer;
     messageBuffer = null;
-    for (const event of buf) {
-      dispatchMessage(event.data, session, log, sid);
+    for (const data of buf) {
+      dispatchMessage(data, session, log, sid);
     }
   }
 
   function onOpen(): void {
     opts.onOpen?.();
-    log.info("Session connected", { ...ctx, sid });
+    log.info("Session connected", logCtx);
 
     const client = createClientSink(ws, log);
     session = opts.createSession(sessionId, client);
@@ -194,12 +193,11 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
 
     startWithTimeout
       .then(() => {
-        log.info("Session ready", { ...ctx, sid });
-        sessionReady = true;
+        log.info("Session ready", logCtx);
         drainBuffer();
       })
       .catch((err: unknown) => {
-        log.error("Session start failed", { ...ctx, sid, error: errorDetail(err) });
+        log.error("Session start failed", { ...logCtx, error: errorDetail(err) });
         sessions.delete(sessionId);
         session = null;
         messageBuffer = null;
@@ -217,9 +215,9 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
     if (!session) return;
     // Buffer messages until session.start() completes to avoid dispatching
     // to a session whose transport connection isn't established yet.
-    if (!sessionReady) {
-      if (messageBuffer && messageBuffer.length < MAX_MESSAGE_BUFFER_SIZE) {
-        messageBuffer.push(event);
+    if (messageBuffer !== null) {
+      if (messageBuffer.length < MAX_MESSAGE_BUFFER_SIZE) {
+        messageBuffer.push(event.data);
       }
       return;
     }
@@ -227,12 +225,12 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
   });
 
   ws.addEventListener("close", () => {
-    log.info("Session disconnected", { ...ctx, sid });
+    log.info("Session disconnected", logCtx);
     if (session) {
       void session
         .stop()
         .catch((err: unknown) => {
-          log.error("Session stop failed", { ...ctx, sid, error: errorDetail(err) });
+          log.error("Session stop failed", { ...logCtx, error: errorDetail(err) });
         })
         .finally(() => {
           sessions.delete(sessionId);
@@ -244,6 +242,6 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
 
   ws.addEventListener("error", (ev) => {
     const msg = typeof ev.message === "string" ? ev.message : "WebSocket error";
-    log.error("WebSocket error", { ...ctx, sid, error: msg });
+    log.error("WebSocket error", { ...logCtx, error: msg });
   });
 }

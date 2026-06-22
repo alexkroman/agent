@@ -30,11 +30,21 @@ export type TransportCallbacks = {
   onSessionReady?(providerSessionId: string): void;
 };
 
-/** Minimal config a transport may receive at construction time. */
+/**
+ * Config passed to a transport at construction time and, for transports that
+ * support it, via {@link Transport.updateSession} for live reconfiguration.
+ *
+ * Note: `history` is consumed only at construction time by pipeline transports;
+ * it is ignored by {@link Transport.updateSession}.
+ *
+ * Note: `tools` is typed `unknown[]` because each transport casts it to its
+ * own provider-specific tool-schema type (e.g. `S2sToolSchema[]`).
+ */
 export type TransportSessionConfig = {
   systemPrompt: string;
   greeting?: string;
   tools?: unknown[];
+  /** Initial conversation history. Ignored by {@link Transport.updateSession}. */
   history?: Message[];
 };
 
@@ -53,6 +63,10 @@ export interface Transport {
   sendToolResult(callId: string, result: string): void;
   /** Cancel the currently in-flight reply (barge-in / client cancel). */
   cancelReply(): void;
-  /** Re-send session config (S2S only; pipeline is a no-op). */
+  /**
+   * Re-apply session config to a live transport (e.g. after a system-prompt
+   * change). Not all transports support live reconfiguration; implementations
+   * that do not may omit this method or treat it as a no-op.
+   */
   updateSession?(config: TransportSessionConfig): void;
 }

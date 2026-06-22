@@ -10,7 +10,7 @@
  * `createRuntime`, using `XAI_API_KEY` from the agent's env.
  */
 
-import type { LlmProvider } from "../../providers.ts";
+import type { ProviderDescriptor } from "../../providers.ts";
 
 export const XAI_KIND = "xai" as const;
 
@@ -19,11 +19,8 @@ export interface XaiOptions {
   model: string;
 }
 
-export type XaiProvider = LlmProvider & {
-  readonly kind: typeof XAI_KIND;
-  readonly options: XaiOptions;
-};
+export type XaiProvider = ProviderDescriptor<typeof XAI_KIND, XaiOptions>;
 
 export function xai(opts: XaiOptions): XaiProvider {
-  return { kind: XAI_KIND, options: { ...opts } };
+  return { kind: XAI_KIND, options: opts };
 }

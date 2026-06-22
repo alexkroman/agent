@@ -1,17 +1,10 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * System prompt builder for S2S sessions.
+ * System prompt builder for voice sessions.
  */
 
 import type { AgentConfig } from "./_internal-types.ts";
 import { DEFAULT_SYSTEM_PROMPT } from "./types.ts";
-
-const DATE_FORMAT_OPTIONS: Intl.DateTimeFormatOptions = {
-  weekday: "long",
-  year: "numeric",
-  month: "long",
-  day: "numeric",
-};
 
 const TOOL_PREAMBLE =
   "\n\nWhen you decide to use a tool, ALWAYS say a brief natural phrase BEFORE the tool call " +
@@ -47,25 +40,28 @@ export function buildSystemPrompt(
   config: AgentConfig,
   opts: { hasTools: boolean; voice?: boolean; toolGuidance?: readonly string[] | undefined },
 ): string {
-  const hasCustomPrompt = config.systemPrompt && config.systemPrompt !== DEFAULT_SYSTEM_PROMPT;
-  const agentInstructions = hasCustomPrompt
-    ? `\n\nAgent-Specific Instructions:\n${config.systemPrompt}`
-    : "";
-
-  const toolPreamble = opts.hasTools ? TOOL_PREAMBLE : "";
+  const agentInstructions =
+    config.systemPrompt && config.systemPrompt !== DEFAULT_SYSTEM_PROMPT
+      ? `\n\nAgent-Specific Instructions:\n${config.systemPrompt}`
+      : "";
 
   const guidance =
     opts.toolGuidance && opts.toolGuidance.length > 0
       ? `\n\nBuilt-in Tool Usage:\n${opts.toolGuidance.join("\n")}`
       : "";
 
-  const today = new Date().toLocaleDateString("en-US", DATE_FORMAT_OPTIONS);
+  const today = new Date().toLocaleDateString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
 
   return (
     DEFAULT_SYSTEM_PROMPT +
     `\n\nToday's date is ${today}.` +
     agentInstructions +
-    toolPreamble +
+    (opts.hasTools ? TOOL_PREAMBLE : "") +
     guidance +
     (opts.voice ? VOICE_RULES : "")
   );

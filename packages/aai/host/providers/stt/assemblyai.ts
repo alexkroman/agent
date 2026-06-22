@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { AssemblyAI, type StreamingTranscriber } from "assemblyai";
-import { createNanoEvents, type Emitter } from "nanoevents";
+import { createNanoEvents } from "nanoevents";
 import type { AssemblyAIOptions } from "../../../sdk/providers/stt/assemblyai.ts";
 import {
   makeSttError,
@@ -34,21 +34,20 @@ export function openAssemblyAI(opts: AssemblyAIOptions = {}): SttOpener {
       }
 
       const client = new AssemblyAI({ apiKey });
-      const speechModel = resolveSpeechModel(opts.model ?? "u3pro-rt");
       const transcriber = client.streaming.transcriber({
         sampleRate: openOpts.sampleRate,
         // SDK types `speechModel` as a string-literal union; accept `string` here.
-        speechModel: speechModel as never,
+        speechModel: resolveSpeechModel(opts.model ?? "u3pro-rt") as never,
         ...(openOpts.sttPrompt ? { prompt: openOpts.sttPrompt } : {}),
       });
 
-      const emitter: Emitter<SttEvents> = createNanoEvents<SttEvents>();
+      const emitter = createNanoEvents<SttEvents>();
       let closed = false;
 
       transcriber.on("turn", (event) => {
         if (closed) return;
-        const text = event.transcript ?? "";
-        if (text.length === 0) return;
+        const text = event.transcript;
+        if (!text) return;
         emitter.emit(event.end_of_turn ? "final" : "partial", text);
       });
 
@@ -84,17 +83,14 @@ export function openAssemblyAI(opts: AssemblyAIOptions = {}): SttOpener {
       if (openOpts.signal.aborted) {
         void close();
       } else {
-        openOpts.signal.addEventListener("abort", () => void close(), { once: true });
+        openOpts.signal.addEventListener("abort", close, { once: true });
       }
 
       const session: AssemblyAISession = {
         sendAudio(pcm: Int16Array) {
           if (closed) return;
           // Copy: caller may reuse `pcm`'s backing buffer for the next chunk.
-          const copy = new Uint8Array(
-            pcm.buffer.slice(pcm.byteOffset, pcm.byteOffset + pcm.byteLength),
-          );
-          transcriber.sendAudio(copy.buffer);
+          transcriber.sendAudio(pcm.buffer.slice(pcm.byteOffset, pcm.byteOffset + pcm.byteLength));
         },
         on(event, fn) {
           return emitter.on(event, fn);

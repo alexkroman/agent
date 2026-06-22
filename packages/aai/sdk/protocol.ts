@@ -9,12 +9,8 @@ import { z } from "zod";
 
 import { MAX_TOOL_RESULT_CHARS } from "./constants.ts";
 
-/**
- * Audio codec identifier used in the wire protocol.
- *
- * All audio frames are 16-bit signed PCM, little-endian, mono.
- */
-const AUDIO_FORMAT = "pcm16";
+/** Non-empty string constraint — used across KV and Vector schemas. */
+const nonEmptyString = z.string().min(1);
 
 /**
  * Minimal envelope schema for two-phase message parsing.
@@ -48,19 +44,19 @@ export function lenientParse<T>(
 }
 
 /** Zod schema for the KV "get" operation. */
-export const KvGetSchema = z.object({ op: z.literal("get"), key: z.string().min(1) });
+export const KvGetSchema = z.object({ op: z.literal("get"), key: nonEmptyString });
 
 /** Zod schema for the KV "set" operation. */
 export const KvSetSchema = z.object({
   op: z.literal("set"),
-  key: z.string().min(1),
+  key: nonEmptyString,
   value: z.unknown(),
   /** Time-to-live in **milliseconds**. */
   expireIn: z.number().int().positive().optional(),
 });
 
 /** Zod schema for the KV "del" operation. */
-export const KvDelSchema = z.object({ op: z.literal("del"), key: z.string().min(1) });
+export const KvDelSchema = z.object({ op: z.literal("del"), key: nonEmptyString });
 
 /** Zod schema for KV operation requests from the worker to the host. */
 export const KvRequestSchema = z.discriminatedUnion("op", [KvGetSchema, KvSetSchema, KvDelSchema]);
@@ -71,15 +67,15 @@ export type KvRequest = z.infer<typeof KvRequestSchema>;
 /** Zod schema for the Vector "upsert" operation. */
 export const VectorUpsertSchema = z.object({
   op: z.literal("upsert"),
-  id: z.string().min(1),
-  text: z.string().min(1),
+  id: nonEmptyString,
+  text: nonEmptyString,
   metadata: z.record(z.string(), z.unknown()).optional(),
 });
 
 /** Zod schema for the Vector "query" operation. */
 export const VectorQuerySchema = z.object({
   op: z.literal("query"),
-  text: z.string().min(1),
+  text: nonEmptyString,
   topK: z.number().int().positive().max(100).optional(),
   filter: z.record(z.string(), z.unknown()).optional(),
 });
@@ -87,7 +83,7 @@ export const VectorQuerySchema = z.object({
 /** Zod schema for the Vector "delete" operation. */
 export const VectorDeleteSchema = z.object({
   op: z.literal("delete"),
-  ids: z.union([z.string().min(1), z.array(z.string().min(1)).max(1000)]),
+  ids: z.union([nonEmptyString, z.array(nonEmptyString).max(1000)]),
 });
 
 /** Zod schema for Vector operation requests from the worker to the host. */
@@ -129,7 +125,8 @@ export type SessionErrorCode = z.infer<typeof SessionErrorCodeSchema>;
 /** Helper: simple event with only a type field. */
 const ev = <T extends string>(t: T) => z.object({ type: z.literal(t) });
 
-const turnOrder = z.number().int().nonnegative().optional();
+/** Shared `reset` event — appears in both ClientEvent and ClientMessage schemas. */
+const evReset = ev("reset");
 
 /** Zod schema for {@link ClientEvent}. */
 export const ClientEventSchema = z.discriminatedUnion("type", [
@@ -138,7 +135,7 @@ export const ClientEventSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("user_transcript"),
     text: z.string(),
-    turnOrder,
+    turnOrder: z.number().int().nonnegative().optional(),
   }),
   z.object({
     type: z.literal("agent_transcript"),
@@ -157,7 +154,7 @@ export const ClientEventSchema = z.discriminatedUnion("type", [
   }),
   ev("reply_done"),
   ev("cancelled"),
-  ev("reset"),
+  evReset,
   ev("idle_timeout"),
   z.object({ type: z.literal("error"), code: SessionErrorCodeSchema, message: z.string() }),
   z.object({
@@ -191,7 +188,7 @@ export interface ClientSink {
 
 /** Zod schema for {@link ReadyConfig}. */
 export const ReadyConfigSchema = z.object({
-  audioFormat: z.enum(["pcm16"]),
+  audioFormat: z.literal("pcm16"),
   sampleRate: z.number().int().positive(),
   ttsSampleRate: z.number().int().positive(),
 });
@@ -203,7 +200,7 @@ export type ReadyConfig = z.infer<typeof ReadyConfigSchema>;
 export const ServerMessageSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("config"),
-    audioFormat: z.string(),
+    audioFormat: z.literal("pcm16"),
     sampleRate: z.number(),
     ttsSampleRate: z.number(),
     /** Session ID for this connection. Clients can reconnect with
@@ -221,7 +218,7 @@ export type ServerMessage = z.infer<typeof ServerMessageSchema>;
 export const ClientMessageSchema = z.discriminatedUnion("type", [
   ev("audio_ready"),
   ev("cancel"),
-  ev("reset"),
+  evReset,
   z.object({
     type: z.literal("history"),
     messages: z
@@ -241,7 +238,7 @@ export function buildReadyConfig(s2sConfig: {
   outputSampleRate: number;
 }): ReadyConfig {
   return {
-    audioFormat: AUDIO_FORMAT,
+    audioFormat: "pcm16",
     sampleRate: s2sConfig.inputSampleRate,
     ttsSampleRate: s2sConfig.outputSampleRate,
   };

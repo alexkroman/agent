@@ -17,16 +17,19 @@ export const RIME_KIND = "rime" as const;
 
 /**
  * Default Rime speaker used when callers invoke `rime()` with no `voice`.
- * `cove` is a `mistv2` speaker, matching the default model below — so a
+ * `cove` is a `mistv2` speaker, matching {@link RIME_DEFAULT_MODEL} — so a
  * bare `rime()` works out of the box for new agents.
  */
 export const RIME_DEFAULT_VOICE = "cove";
+
+/** Default Rime model. `cove` (the default voice) is a `mistv2` speaker. */
+export const RIME_DEFAULT_MODEL = "mistv2";
 
 export interface RimeOptions {
   /** Rime speaker ID. Defaults to {@link RIME_DEFAULT_VOICE}. */
   voice?: string;
   /**
-   * Rime model ID. Defaults to `"mistv2"` (Rime's most compatible model).
+   * Rime model ID. Defaults to {@link RIME_DEFAULT_MODEL} (`"mistv2"`).
    * Common values: `"mistv2"`, `"arcana"`.
    */
   model?: string;

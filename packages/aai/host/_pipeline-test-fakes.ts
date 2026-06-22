@@ -15,7 +15,7 @@
  */
 
 import type { LanguageModel } from "ai";
-import { createNanoEvents, type Emitter } from "nanoevents";
+import { createNanoEvents } from "nanoevents";
 import { vi } from "vitest";
 import type {
   SttEvents,
@@ -27,23 +27,17 @@ import type {
   TtsOpenOptions,
   TtsSession,
 } from "../sdk/providers.ts";
-
-function makeCodedError<C extends string>(code: C, message: string): Error & { code: C } {
-  return Object.assign(new Error(message), { code });
-}
+import { makeSttError, makeTtsError } from "../sdk/providers.ts";
 
 // ─── Fake STT ───────────────────────────────────────────────────────────────
 
-type SttErrorCode = "stt_stream_error" | "stt_connect_failed" | "stt_auth_failed";
-
 export type FakeSttSession = SttSession & {
-  readonly emitter: Emitter<SttEvents>;
   readonly opts: SttOpenOptions;
   readonly audioFrames: Int16Array[];
   readonly closed: { value: boolean };
   firePartial(text: string): void;
   fireFinal(text: string): void;
-  fireError(code: SttErrorCode, message: string): void;
+  fireError(code: Parameters<typeof makeSttError>[0], message: string): void;
 };
 
 export type FakeSttProvider = SttOpener & {
@@ -63,7 +57,6 @@ export function createFakeSttProvider(): FakeSttProvider {
       const audioFrames: Int16Array[] = [];
       const closed = { value: false };
       const session: FakeSttSession = {
-        emitter,
         opts,
         audioFrames,
         closed,
@@ -81,7 +74,7 @@ export function createFakeSttProvider(): FakeSttProvider {
           emitter.emit("final", text);
         },
         fireError(code, message) {
-          emitter.emit("error", makeCodedError(code, message) as Parameters<SttEvents["error"]>[0]);
+          emitter.emit("error", makeSttError(code, message));
         },
       };
       sessions.push(session);
@@ -92,10 +85,7 @@ export function createFakeSttProvider(): FakeSttProvider {
 
 // ─── Fake TTS ───────────────────────────────────────────────────────────────
 
-type TtsErrorCode = "tts_stream_error" | "tts_connect_failed" | "tts_auth_failed";
-
 export type FakeTtsSession = TtsSession & {
-  readonly emitter: Emitter<TtsEvents>;
   readonly opts: TtsOpenOptions;
   readonly textChunks: string[];
   readonly closed: { value: boolean };
@@ -103,7 +93,7 @@ export type FakeTtsSession = TtsSession & {
   readonly flush: ReturnType<typeof vi.fn<() => void>>;
   readonly cancel: ReturnType<typeof vi.fn<() => void>>;
   fireAudio(pcm: Int16Array): void;
-  fireError(code: TtsErrorCode, message: string): void;
+  fireError(code: Parameters<typeof makeTtsError>[0], message: string): void;
 };
 
 export type FakeTtsProvider = TtsOpener & {
@@ -140,7 +130,6 @@ export function createFakeTtsProvider(
         emitter.emit("done");
       });
       const session: FakeTtsSession = {
-        emitter,
         opts,
         textChunks,
         closed,
@@ -155,7 +144,7 @@ export function createFakeTtsProvider(
           emitter.emit("audio", pcm);
         },
         fireError(code, message) {
-          emitter.emit("error", makeCodedError(code, message) as Parameters<TtsEvents["error"]>[0]);
+          emitter.emit("error", makeTtsError(code, message));
         },
       };
       sessions.push(session);
@@ -168,11 +157,14 @@ export function createFakeTtsProvider(
  * Fake STT provider that throws on `open()` with a given error code. Used to
  * test atomic provider open — TTS should not be opened at all when STT fails.
  */
-export function createFailingSttProvider(code: SttErrorCode, message: string): SttOpener {
+export function createFailingSttProvider(
+  code: Parameters<typeof makeSttError>[0],
+  message: string,
+): SttOpener {
   return {
     name: "failing-stt",
     async open(): Promise<SttSession> {
-      throw makeCodedError(code, message);
+      throw makeSttError(code, message);
     },
   };
 }
@@ -181,11 +173,14 @@ export function createFailingSttProvider(code: SttErrorCode, message: string): S
  * Fake TTS provider that throws on `open()` with a given error code. Used to
  * test atomic provider open — STT should be closed when TTS fails.
  */
-export function createFailingTtsProvider(code: TtsErrorCode, message: string): TtsOpener {
+export function createFailingTtsProvider(
+  code: Parameters<typeof makeTtsError>[0],
+  message: string,
+): TtsOpener {
   return {
     name: "failing-tts",
     async open(): Promise<TtsSession> {
-      throw makeCodedError(code, message);
+      throw makeTtsError(code, message);
     },
   };
 }
@@ -245,10 +240,8 @@ function scriptedPartToStreamPart(part: ScriptedPart, textId: string): StreamPar
       };
     case "error":
       return { type: "error", error: part.error };
-    default: {
-      const never: never = part;
-      return never;
-    }
+    default:
+      return part satisfies never;
   }
 }
 
@@ -278,7 +271,6 @@ async function streamScript(
   controller.enqueue({ type: "text-start", id: textId });
   try {
     for (const part of script) {
-      if (signal?.aborted) break;
       if (delayMs !== undefined && delayMs > 0) await delayOrAbort(delayMs, signal);
       if (signal?.aborted) break;
       controller.enqueue(scriptedPartToStreamPart(part, textId));
@@ -323,7 +315,7 @@ export function createFakeLanguageModel(
     specificationVersion: "v3" as const,
     provider: "fake-llm",
     modelId: "fake-llm-1",
-    supportedUrls: {} as Record<string, RegExp[]>,
+    supportedUrls: {},
     calls,
     async doGenerate(): Promise<never> {
       throw new Error("fake LLM: doGenerate not implemented");

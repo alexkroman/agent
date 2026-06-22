@@ -69,7 +69,7 @@ function buildConfigFrame(
     num_channels: 1,
   };
   if (opts.languageHints && opts.languageHints.length > 0) {
-    config.language_hints = [...opts.languageHints];
+    config.language_hints = opts.languageHints;
   }
   return config;
 }
@@ -85,7 +85,7 @@ function parseFrame(raw: WebSocket.RawData): SonioxResponse | null {
 function handleResponse(
   res: SonioxResponse,
   emitter: Emitter<SttEvents>,
-  finalBuf: { value: string },
+  finalText: { value: string },
 ): void {
   if (res.error_code !== undefined) {
     emitter.emit(
@@ -99,13 +99,13 @@ function handleResponse(
   }
   if (!res.tokens || res.tokens.length === 0) return;
   const nonFinal = consumeTokens(res.tokens, (text) => {
-    finalBuf.value += text;
+    finalText.value += text;
   });
   // Batch contiguous finals into one `final` event by flushing only when
   // a new non-final preview starts (or the session finishes).
-  if (finalBuf.value.length > 0 && (nonFinal.length > 0 || res.finished)) {
-    emitter.emit("final", finalBuf.value);
-    finalBuf.value = "";
+  if (finalText.value.length > 0 && (nonFinal.length > 0 || res.finished)) {
+    emitter.emit("final", finalText.value);
+    finalText.value = "";
   }
   if (nonFinal.length > 0) {
     emitter.emit("partial", nonFinal);
@@ -127,7 +127,7 @@ export function openSoniox(opts: SonioxOptions = {}): SttOpener {
       const ws = new WebSocket(SONIOX_WS_URL);
       const emitter: Emitter<SttEvents> = createNanoEvents<SttEvents>();
       let closed = false;
-      const finalBuf = { value: "" };
+      const finalText = { value: "" };
 
       try {
         await waitForOpen(ws);
@@ -143,7 +143,7 @@ export function openSoniox(opts: SonioxOptions = {}): SttOpener {
       ws.on("message", (raw: WebSocket.RawData) => {
         if (closed) return;
         const res = parseFrame(raw);
-        if (res) handleResponse(res, emitter, finalBuf);
+        if (res) handleResponse(res, emitter, finalText);
       });
 
       ws.on("error", (err: Error) => {
@@ -161,9 +161,10 @@ export function openSoniox(opts: SonioxOptions = {}): SttOpener {
       const close = async (): Promise<void> => {
         if (closed) return;
         closed = true;
-        if (finalBuf.value.length > 0) {
-          emitter.emit("final", finalBuf.value);
-          finalBuf.value = "";
+        openOpts.signal.removeEventListener("abort", onAbort);
+        if (finalText.value.length > 0) {
+          emitter.emit("final", finalText.value);
+          finalText.value = "";
         }
         try {
           ws.close();
@@ -172,10 +173,12 @@ export function openSoniox(opts: SonioxOptions = {}): SttOpener {
         }
       };
 
+      const onAbort = (): void => void close();
+
       if (openOpts.signal.aborted) {
         void close();
       } else {
-        openOpts.signal.addEventListener("abort", () => void close(), { once: true });
+        openOpts.signal.addEventListener("abort", onAbort, { once: true });
       }
 
       return {

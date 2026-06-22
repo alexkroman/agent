@@ -29,26 +29,24 @@ import {
 } from "../../../sdk/providers.ts";
 
 /** Map a numeric sample rate to the SDK's `AudioFormat` enum. */
+const AUDIO_FORMAT_MAP: Record<number, AudioFormat> = {
+  8000: AudioFormat.PCM_8000,
+  16000: AudioFormat.PCM_16000,
+  22050: AudioFormat.PCM_22050,
+  24000: AudioFormat.PCM_24000,
+  44100: AudioFormat.PCM_44100,
+  48000: AudioFormat.PCM_48000,
+};
+
 function audioFormatFor(sampleRate: number): AudioFormat {
-  switch (sampleRate) {
-    case 8000:
-      return AudioFormat.PCM_8000;
-    case 16_000:
-      return AudioFormat.PCM_16000;
-    case 22_050:
-      return AudioFormat.PCM_22050;
-    case 24_000:
-      return AudioFormat.PCM_24000;
-    case 44_100:
-      return AudioFormat.PCM_44100;
-    case 48_000:
-      return AudioFormat.PCM_48000;
-    default:
-      throw makeSttError(
-        "stt_connect_failed",
-        `ElevenLabs STT: unsupported sample rate ${sampleRate}. Supported: 8000, 16000, 22050, 24000, 44100, 48000.`,
-      );
+  const fmt = AUDIO_FORMAT_MAP[sampleRate];
+  if (fmt === undefined) {
+    throw makeSttError(
+      "stt_connect_failed",
+      `ElevenLabs STT: unsupported sample rate ${sampleRate}. Supported: 8000, 16000, 22050, 24000, 44100, 48000.`,
+    );
   }
+  return fmt;
 }
 
 /** Build an {@link SttOpener} from resolved ElevenLabs descriptor options. */
@@ -73,7 +71,7 @@ export function openElevenLabs(opts: ElevenLabsOptions = {}): SttOpener {
           audioFormat: audioFormatFor(openOpts.sampleRate),
           sampleRate: openOpts.sampleRate,
           commitStrategy: CommitStrategy.VAD,
-          ...(opts.languageCode ? { languageCode: opts.languageCode } : {}),
+          ...(opts.languageCode !== undefined && { languageCode: opts.languageCode }),
         });
       } catch (cause) {
         throw makeSttError(
@@ -87,7 +85,7 @@ export function openElevenLabs(opts: ElevenLabsOptions = {}): SttOpener {
 
       function emitTranscript(event: "partial" | "final", text: string | undefined) {
         if (closed) return;
-        if (text && text.length > 0) emitter.emit(event, text);
+        if (text) emitter.emit(event, text);
       }
 
       connection.on(RealtimeEvents.PARTIAL_TRANSCRIPT, (msg) => {
@@ -128,13 +126,18 @@ export function openElevenLabs(opts: ElevenLabsOptions = {}): SttOpener {
         openOpts.signal.addEventListener("abort", () => void close(), { once: true });
       }
 
+      // Reuse a single wrapper object across all sendAudio calls to avoid
+      // per-packet allocations on the ~100 Hz audio hot path.
+      const audioMsg: { audioBase64: string } = { audioBase64: "" };
+
       return {
         sendAudio(pcm: Int16Array) {
           if (closed) return;
           // The SDK expects base64-encoded audio. Avoid an intermediate
           // copy: Buffer.from over the same backing buffer is enough.
           const bytes = Buffer.from(pcm.buffer, pcm.byteOffset, pcm.byteLength);
-          connection.send({ audioBase64: bytes.toString("base64") });
+          audioMsg.audioBase64 = bytes.toString("base64");
+          connection.send(audioMsg);
         },
         on(event, fn) {
           return emitter.on(event, fn);

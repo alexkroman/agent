@@ -10,7 +10,7 @@
  * `createRuntime`, using `OPENAI_API_KEY` from the agent's env.
  */
 
-import type { LlmProvider } from "../../providers.ts";
+import type { ProviderDescriptor } from "../../providers.ts";
 
 export const OPENAI_KIND = "openai" as const;
 
@@ -19,11 +19,8 @@ export interface OpenAIOptions {
   model: string;
 }
 
-export type OpenAIProvider = LlmProvider & {
-  readonly kind: typeof OPENAI_KIND;
-  readonly options: OpenAIOptions;
-};
+export type OpenAIProvider = ProviderDescriptor<typeof OPENAI_KIND, OpenAIOptions>;
 
 export function openai(opts: OpenAIOptions): OpenAIProvider {
-  return { kind: OPENAI_KIND, options: { ...opts } };
+  return { kind: OPENAI_KIND, options: opts };
 }

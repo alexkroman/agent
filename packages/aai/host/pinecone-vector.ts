@@ -11,7 +11,7 @@
  * imported.
  */
 
-import type { Vector, VectorMatch, VectorQueryOptions } from "../sdk/vector.ts";
+import type { Vector, VectorMatch } from "../sdk/vector.ts";
 import { loadProviderPackage } from "./providers/resolve.ts";
 
 export type PineconeVectorOptions = {
@@ -46,25 +46,24 @@ export function createPineconeVector(opts: PineconeVectorOptions): Vector {
     async upsert(id, text, metadata) {
       await ns.upsertRecords([{ _id: id, text, ...(metadata ?? {}) }]);
     },
-    async query(text, queryOpts?: VectorQueryOptions) {
+    async query(text, queryOpts) {
       const { topK = 5, filter } = queryOpts ?? {};
       const resp = await ns.searchRecords({
-        query: { inputs: { text }, topK, ...(filter !== undefined ? { filter } : {}) },
+        query: { inputs: { text }, topK, ...(filter !== undefined && { filter }) },
         fields: ["*"],
       });
       return resp.result.hits.map((hit): VectorMatch => {
         const { text: hitText, ...rest } = hit.fields;
-        const match: VectorMatch = {
+        return {
           id: hit._id,
           score: hit._score,
           text: typeof hitText === "string" ? hitText : "",
+          ...(Object.keys(rest).length > 0 && { metadata: rest }),
         };
-        if (Object.keys(rest).length > 0) match.metadata = rest;
-        return match;
       });
     },
     async delete(ids) {
-      await ns.deleteMany(Array.isArray(ids) ? ids : [ids]);
+      await ns.deleteMany([ids].flat());
     },
   };
 }

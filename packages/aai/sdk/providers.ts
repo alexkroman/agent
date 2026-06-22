@@ -39,23 +39,26 @@ export interface ProviderDescriptor<Kind extends string, Options> {
   readonly options: Options;
 }
 
+/** Shared base for all concrete descriptor type aliases below. */
+type GenericDescriptor = ProviderDescriptor<string, Record<string, unknown>>;
+
 /** Descriptor for an STT provider. Returned by factories like `assemblyAI(...)`. */
-export type SttProvider = ProviderDescriptor<string, Record<string, unknown>>;
+export type SttProvider = GenericDescriptor;
 
 /** Descriptor for an LLM provider. Returned by factories like `anthropic(...)`. */
-export type LlmProvider = ProviderDescriptor<string, Record<string, unknown>>;
+export type LlmProvider = GenericDescriptor;
 
 /** Descriptor for a TTS provider. Returned by factories like `cartesia(...)`. */
-export type TtsProvider = ProviderDescriptor<string, Record<string, unknown>>;
+export type TtsProvider = GenericDescriptor;
 
 /** Descriptor for an S2S provider. Returned by factories like `openaiRealtime(...)`. */
-export type S2sProvider = ProviderDescriptor<string, Record<string, unknown>>;
+export type S2sProvider = GenericDescriptor;
 
 /** Descriptor for a KV backend. Returned by factories like `redisKv()`. */
-export type KvProvider = ProviderDescriptor<string, Record<string, unknown>>;
+export type KvProvider = GenericDescriptor;
 
 /** Descriptor for a Vector backend. Returned by factories like `pinecone(...)`. */
-export type VectorProvider = ProviderDescriptor<string, Record<string, unknown>>;
+export type VectorProvider = GenericDescriptor;
 
 /**
  * Session mode derived from which provider triple is set.
@@ -83,17 +86,24 @@ export function assertProviderTriple(
   const hasStt = stt != null;
   const hasLlm = llm != null;
   const hasTts = tts != null;
-  const hasS2s = s2s != null;
   const anyPipeline = hasStt || hasLlm || hasTts;
   const allSet = hasStt && hasLlm && hasTts;
-  const noneSetPipeline = !anyPipeline;
-  if (hasS2s && anyPipeline) {
+  if (s2s != null && anyPipeline) {
     throw new Error("s2s and the stt/llm/tts pipeline cannot be set together");
   }
-  if (!(allSet || noneSetPipeline)) {
+  if (!allSet && anyPipeline) {
     throw new Error("stt, llm, and tts must be set together");
   }
   return allSet ? "pipeline" : "s2s";
+}
+
+// -------- Shared error helper ------------------------------------------------
+
+/** Internal helper: stamp a typed `code` onto a plain `Error`. */
+function makeProviderError<T extends Error>(code: string, message: string): T {
+  const err = new Error(message) as T & { code: string };
+  err.code = code;
+  return err;
 }
 
 // -------- STT openable (host-only) ------------------------------------------
@@ -104,7 +114,7 @@ export interface SttError extends Error {
 
 /** Build an {@link SttError} with a typed `code`. Zero-dep helper so both sdk/ and host/ can use it. */
 export function makeSttError(code: SttError["code"], message: string): SttError {
-  return Object.assign(new Error(message), { code }) as SttError;
+  return makeProviderError<SttError>(code, message);
 }
 
 export type SttEvents = {
@@ -141,9 +151,9 @@ export interface TtsError extends Error {
   readonly code: "tts_connect_failed" | "tts_auth_failed" | "tts_stream_error";
 }
 
-/** Build a {@link TtsError} with a typed `code`. Mirror of {@link makeSttError}. */
+/** Build a {@link TtsError} with a typed `code`. */
 export function makeTtsError(code: TtsError["code"], message: string): TtsError {
-  return Object.assign(new Error(message), { code }) as TtsError;
+  return makeProviderError<TtsError>(code, message);
 }
 
 export type TtsEvents = {

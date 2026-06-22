@@ -3,7 +3,7 @@
 
 import type { JSONSchema7 } from "json-schema";
 import WsWebSocket from "ws";
-import { WS_OPEN } from "../../sdk/constants.ts";
+import { DEFAULT_TTS_SAMPLE_RATE, WS_OPEN } from "../../sdk/constants.ts";
 import type { OpenaiRealtimeOptions } from "../../sdk/providers/s2s/openai-realtime.ts";
 import { base64ToUint8, uint8ToBase64 } from "../_base64.ts";
 import type { Logger } from "../runtime-config.ts";
@@ -57,6 +57,7 @@ export type OpenaiRealtimeTransportOptions = {
 
 export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptions): Transport {
   const log = opts.logger ?? consoleLogger;
+  const cb = opts.callbacks;
   const createWs = opts.createWebSocket ?? defaultCreateOpenaiRealtimeWebSocket;
   const model = opts.options.model ?? DEFAULT_MODEL;
   const voice = opts.options.voice ?? DEFAULT_VOICE;
@@ -69,6 +70,11 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
   const toolBuffers = new Map<string, ToolBuffer>();
   let currentResponseId: string | null = null;
   let responseCreateQueued = false;
+
+  function sendRaw(frame: string): void {
+    if (!ws || ws.readyState !== WS_OPEN) return;
+    ws.send(frame);
+  }
 
   function send(payload: Record<string, unknown>): void {
     if (!ws || ws.readyState !== WS_OPEN) {
@@ -100,12 +106,12 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
         instructions: opts.sessionConfig.systemPrompt,
         audio: {
           input: {
-            format: { type: "audio/pcm", rate: 24_000 },
+            format: { type: "audio/pcm", rate: DEFAULT_TTS_SAMPLE_RATE },
             turn_detection: { type: "server_vad" },
             transcription: { model: "whisper-1" },
           },
           output: {
-            format: { type: "audio/pcm", rate: 24_000 },
+            format: { type: "audio/pcm", rate: DEFAULT_TTS_SAMPLE_RATE },
             voice,
           },
         },
@@ -119,23 +125,22 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
     const url = `${baseUrl}?model=${encodeURIComponent(model)}`;
     log.info("OpenAI Realtime connecting", { url });
     return new Promise((resolve, reject) => {
-      const sock = createWs(url, {
+      ws = createWs(url, {
         headers: {
           Authorization: `Bearer ${opts.apiKey}`,
         },
       });
-      ws = sock;
       let opened = false;
 
-      sock.addEventListener("open", () => {
+      ws.addEventListener("open", () => {
         opened = true;
         sendSessionUpdate();
         sendGreeting();
         resolve();
       });
-      sock.addEventListener("message", (ev) => handleMessage(ev.data));
-      sock.addEventListener("close", (ev) => handleClose(ev.code ?? 0, ev.reason ?? ""));
-      sock.addEventListener("error", (ev) => {
+      ws.addEventListener("message", handleMessage);
+      ws.addEventListener("close", (ev) => handleClose(ev.code ?? 0, ev.reason ?? ""));
+      ws.addEventListener("error", (ev) => {
         const msg = typeof ev.message === "string" ? ev.message : "WebSocket error";
         if (!opened) {
           reject(new Error(msg));
@@ -145,7 +150,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
           log.info("OpenAI Realtime error during close", { error: msg });
           return;
         }
-        opts.callbacks.onError("internal", msg);
+        cb.onError("internal", msg);
       });
     });
   }
@@ -156,13 +161,13 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
 
   function handleAudioDelta(obj: Record<string, unknown>): void {
     if (typeof obj.delta === "string") {
-      opts.callbacks.onAudioChunk(base64ToUint8(obj.delta));
+      cb.onAudioChunk(base64ToUint8(obj.delta));
     }
   }
 
   function handleUserTranscript(obj: Record<string, unknown>): void {
     if (typeof obj.transcript === "string") {
-      opts.callbacks.onUserTranscript(obj.transcript);
+      cb.onUserTranscript(obj.transcript);
     }
   }
 
@@ -170,7 +175,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
     const resp = obj.response as { id?: unknown } | undefined;
     const id = asString(resp?.id);
     currentResponseId = id;
-    opts.callbacks.onReplyStarted(id);
+    cb.onReplyStarted(id);
   }
 
   function handleAgentTranscriptDelta(obj: Record<string, unknown>): void {
@@ -183,7 +188,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
     const id = asString(obj.item_id);
     const text = agentTranscriptBuffers.get(id) ?? "";
     agentTranscriptBuffers.delete(id);
-    if (text) opts.callbacks.onAgentTranscript(text, false);
+    if (text) cb.onAgentTranscript(text, false);
   }
 
   function clearTurnBuffers(): void {
@@ -194,7 +199,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
   function handleResponseDone(): void {
     currentResponseId = null;
     clearTurnBuffers();
-    opts.callbacks.onReplyDone();
+    cb.onReplyDone();
   }
 
   function handleErrorEvent(obj: Record<string, unknown>): void {
@@ -202,7 +207,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
     const message = typeof err?.message === "string" ? err.message : "OpenAI Realtime error";
     log.warn("OpenAI Realtime error event", { error: obj.error });
     clearTurnBuffers();
-    opts.callbacks.onError("internal", message);
+    cb.onError("internal", message);
   }
 
   function handleOutputItemAdded(obj: Record<string, unknown>): void {
@@ -229,19 +234,6 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
     if (buf) buf.argsBuffer += delta;
   }
 
-  function parseToolArgs(argsStr: string, name: string, callId: string): Record<string, unknown> {
-    if (!argsStr) return {};
-    try {
-      const parsed = JSON.parse(argsStr);
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        return parsed as Record<string, unknown>;
-      }
-    } catch {
-      log.warn("OpenAI Realtime: invalid tool args JSON", { name, callId });
-    }
-    return {};
-  }
-
   function handleFunctionCallArgsDone(obj: Record<string, unknown>): void {
     const id = asString(obj.item_id);
     const buf = toolBuffers.get(id);
@@ -250,21 +242,33 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
     const name = asString(obj.name) || (buf?.name ?? "");
     const argsStr = asString(obj.arguments) || (buf?.argsBuffer ?? "");
     log.info("OpenAI Realtime tool call", { name, callId, args: argsStr });
-    const args = parseToolArgs(argsStr, name, callId);
-    opts.callbacks.onToolCall(callId, name, args);
+    let args: Record<string, unknown> = {};
+    if (argsStr) {
+      try {
+        const parsed = JSON.parse(argsStr);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          args = parsed as Record<string, unknown>;
+        }
+      } catch {
+        log.warn("OpenAI Realtime: invalid tool args JSON", { name, callId });
+      }
+    }
+    cb.onToolCall(callId, name, args);
   }
 
-  function handleMessage(data: unknown): void {
+  function handleMessage(ev: { data: unknown }): void {
+    const { data } = ev;
     let raw: unknown;
     try {
-      raw = JSON.parse(String(data));
+      raw = JSON.parse(typeof data === "string" ? data : String(data));
     } catch {
       log.warn("OpenAI Realtime: invalid JSON");
       return;
     }
     if (typeof raw !== "object" || raw === null) return;
     const obj = raw as Record<string, unknown>;
-    switch (obj.type) {
+    const type = obj.type;
+    switch (type) {
       // GA renamed audio output events to `response.output_audio.*` and
       // transcript events to `response.output_audio_transcript.*`. The legacy
       // (beta) names are kept as aliases so older snapshots still work.
@@ -274,13 +278,13 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
         return;
       case "response.output_audio.done":
       case "response.audio.done":
-        opts.callbacks.onAudioDone();
+        cb.onAudioDone();
         return;
       case "input_audio_buffer.speech_started":
-        opts.callbacks.onSpeechStarted();
+        cb.onSpeechStarted();
         return;
       case "input_audio_buffer.speech_stopped":
-        opts.callbacks.onSpeechStopped();
+        cb.onSpeechStopped();
         return;
       case "conversation.item.input_audio_transcription.completed":
         handleUserTranscript(obj);
@@ -312,7 +316,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
         handleErrorEvent(obj);
         return;
       default:
-        log.debug("OpenAI Realtime: unhandled event", { type: obj.type });
+        log.debug("OpenAI Realtime: unhandled event", { type });
         return;
     }
   }
@@ -323,7 +327,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
       return;
     }
     log.warn("OpenAI Realtime closed unexpectedly", { code, reason });
-    opts.callbacks.onError("connection", `OpenAI Realtime closed (code=${code})`);
+    cb.onError("connection", `OpenAI Realtime closed (code=${code})`);
   }
 
   async function stop(): Promise<void> {
@@ -336,8 +340,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
     start,
     stop,
     sendUserAudio(bytes) {
-      if (!ws || ws.readyState !== WS_OPEN) return;
-      ws.send(`{"type":"input_audio_buffer.append","audio":"${uint8ToBase64(bytes)}"}`);
+      sendRaw(`{"type":"input_audio_buffer.append","audio":"${uint8ToBase64(bytes)}"}`);
     },
     sendToolResult(callId, result) {
       log.info("OpenAI Realtime sendToolResult", {
@@ -365,7 +368,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
       send({ type: "response.cancel" });
       currentResponseId = null;
       clearTurnBuffers();
-      opts.callbacks.onCancelled();
+      cb.onCancelled();
     },
   };
 }

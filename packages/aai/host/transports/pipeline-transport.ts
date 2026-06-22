@@ -17,7 +17,6 @@ import {
   MAX_TOOL_RESULT_CHARS,
   PIPELINE_FLUSH_TIMEOUT_MS,
 } from "../../sdk/constants.ts";
-import type { SessionErrorCode } from "../../sdk/protocol.ts";
 import type {
   SttError,
   SttOpener,
@@ -32,6 +31,10 @@ import { errorMessage } from "../../sdk/utils.ts";
 import { consoleLogger, type Logger } from "../runtime-config.ts";
 import { toVercelTools } from "../to-vercel-tools.ts";
 import type { Transport, TransportCallbacks, TransportSessionConfig } from "./types.ts";
+
+// Hoisted to avoid re-allocating RegExp objects on every streaming text delta.
+const reWhitespace = /\s/;
+const reLeadingWhitespace = /^\s/;
 
 /** Configuration for {@link createPipelineTransport}. */
 export interface PipelineTransportOptions {
@@ -79,7 +82,7 @@ function toModelMessage(m: Message): ModelMessage {
   return { role: "assistant", content: m.content };
 }
 
-/** Create a pipeline-mode Transport (STT → LLM → TTS). */
+/** Create a pipeline-mode Transport (STT -> LLM -> TTS). */
 export function createPipelineTransport(opts: PipelineTransportOptions): Transport {
   const log = opts.logger ?? consoleLogger;
   const sttSampleRate = opts.sttSampleRate ?? DEFAULT_STT_SAMPLE_RATE;
@@ -121,8 +124,9 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     turnPromise = (turnPromise ?? Promise.resolve()).then(() => p);
   }
 
-  function emitError(code: SessionErrorCode, message: string): void {
-    callbacks.onError(code, message);
+  /** Clear turnController only if it still points to ctl (prevents a late-arriving abort from stomping a newer turn's controller). */
+  function clearTurnController(ctl: AbortController): void {
+    if (turnController === ctl) turnController = null;
   }
 
   // Idempotent teardown after an unrecoverable provider error.
@@ -169,14 +173,14 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   function onSttError(err: SttError): void {
     if (terminated) return;
     log.error("STT error", { code: err.code, message: err.message, sid: opts.sid });
-    emitError("stt", err.message);
+    callbacks.onError("stt", err.message);
     terminate();
   }
 
   function onTtsError(err: TtsError): void {
     if (terminated) return;
     log.error("TTS error", { code: err.code, message: err.message, sid: opts.sid });
-    emitError("tts", err.message);
+    callbacks.onError("tts", err.message);
     terminate();
   }
 
@@ -205,7 +209,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       if (!ctl.signal.aborted) {
         const msg = errorMessage(err);
         log.error("LLM streamText failed", { error: msg, sid: opts.sid });
-        emitError("llm", msg);
+        callbacks.onError("llm", msg);
       }
     }
   }
@@ -213,9 +217,9 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   /**
    * Stateful per-turn handler for `streamText` `fullStream` parts.
    *
-   * Tracks text-segment boundaries so that consecutive segments — which the
+   * Tracks text-segment boundaries so that consecutive segments -- which the
    * Vercel SDK emits across tool-call hops as `text-end` followed later by a
-   * fresh `text-start` — don't fuse into "...up.Got it" when concatenated for
+   * fresh `text-start` -- don't fuse into "...up.Got it" when concatenated for
    * the transcript or streamed to TTS. When a boundary is crossed and neither
    * side carries whitespace, a single space is injected into both streams.
    */
@@ -228,7 +232,8 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       let out = delta;
       if (pendingSeparator) {
         pendingSeparator = false;
-        const boundaryHasSpace = lastChar === "" || /\s/.test(lastChar) || /^\s/.test(out);
+        const boundaryHasSpace =
+          lastChar === "" || reWhitespace.test(lastChar) || reLeadingWhitespace.test(out);
         if (!boundaryHasSpace) out = ` ${out}`;
       }
       lastChar = out.slice(-1);
@@ -240,7 +245,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       readonly toolCallId?: string;
       readonly output?: unknown;
     }): void {
-      // Inline execution finished — surface completion so the client UI can
+      // Inline execution finished -- surface completion so the client UI can
       // flip the tool-call from "pending" to "done". Schema requires a
       // string result capped at MAX_TOOL_RESULT_CHARS.
       const callId = part.toolCallId ?? "";
@@ -272,7 +277,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
           pendingSeparator = true;
           return;
         case "tool-call": {
-          // Observability only — actual execution happens inline via toVercelTools.
+          // Observability only -- actual execution happens inline via toVercelTools.
           const input = (part.input ?? {}) as Record<string, unknown>;
           callbacks.onToolCall(part.toolCallId ?? "", part.toolName ?? "", input);
           return;
@@ -283,7 +288,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
         case "error": {
           const msg = errorMessage(part.error);
           log.error("LLM stream error", { message: msg, sid: opts.sid });
-          emitError("llm", msg);
+          callbacks.onError("llm", msg);
           return;
         }
         default:
@@ -348,7 +353,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     });
 
     if (ctl.signal.aborted) {
-      if (turnController === ctl) turnController = null;
+      clearTurnController(ctl);
       return;
     }
 
@@ -360,15 +365,15 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     await flushTtsAndWait(ctl.signal);
 
     if (ctl.signal.aborted) {
-      if (turnController === ctl) turnController = null;
+      clearTurnController(ctl);
       return;
     }
 
-    // Do NOT call callbacks.onAudioDone() here — session-core's flushReply
+    // Do NOT call callbacks.onAudioDone() here -- session-core's flushReply
     // (triggered by onReplyDone) emits audioDone + replyDone together, matching
     // the S2S transport contract. Calling it here would double-fire audio_done.
     callbacks.onReplyDone();
-    if (turnController === ctl) turnController = null;
+    clearTurnController(ctl);
   }
 
   async function runGreeting(text: string): Promise<void> {
@@ -385,50 +390,53 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     await flushTtsAndWait(ctl.signal);
 
     if (ctl.signal.aborted) {
-      if (turnController === ctl) turnController = null;
+      clearTurnController(ctl);
       return;
     }
 
     // See runTurn: onReplyDone triggers session-core's flushReply which emits
     // audioDone + replyDone together; firing onAudioDone here would double-fire.
     callbacks.onReplyDone();
-    if (turnController === ctl) turnController = null;
+    clearTurnController(ctl);
   }
 
   function reportOpenRejection(which: "stt" | "tts", reason: unknown): void {
     const msg = errorMessage(reason);
-    log.error(`${which === "stt" ? "STT" : "TTS"} open failed`, {
+    log.error(`${which.toUpperCase()} open failed`, {
       error: msg,
       sid: opts.sid,
     });
-    emitError(which, msg);
+    callbacks.onError(which, msg);
   }
 
-  async function adoptStt(session: SttSession, teardown: boolean): Promise<void> {
-    if (teardown) {
-      await session.close().catch(() => undefined);
-      return;
-    }
+  function adoptStt(session: SttSession): void {
     sttSession = session;
     sttSubs.push(session.on("partial", onSttPartial));
     sttSubs.push(session.on("final", onSttFinal));
     sttSubs.push(session.on("error", onSttError));
   }
 
-  async function adoptTts(session: TtsSession, teardown: boolean): Promise<void> {
-    if (teardown) {
-      await session.close().catch(() => undefined);
-      return;
-    }
+  function adoptTts(session: TtsSession): void {
     ttsSession = session;
     ttsSubs.push(
       session.on("audio", (pcm) => {
         callbacks.onAudioChunk(new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength));
       }),
     );
-    // `done` is intentionally NOT subscribed persistently — flushTtsAndWait
+    // `done` is intentionally NOT subscribed persistently -- flushTtsAndWait
     // attaches a one-shot listener per-turn to avoid double-firing audio_done.
     ttsSubs.push(session.on("error", onTtsError));
+  }
+
+  async function closeUnusedProviders(
+    sttResult: PromiseSettledResult<SttSession>,
+    ttsResult: PromiseSettledResult<TtsSession>,
+  ): Promise<void> {
+    // One or both providers opened successfully but will go unused -- close them in parallel.
+    await Promise.all([
+      sttResult.status === "fulfilled" ? sttResult.value.close().catch(() => undefined) : undefined,
+      ttsResult.status === "fulfilled" ? ttsResult.value.close().catch(() => undefined) : undefined,
+    ]);
   }
 
   async function openProviders(): Promise<void> {
@@ -454,10 +462,14 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     const ttsFailed = ttsResult.status === "rejected";
     const teardown = aborted || sttFailed || ttsFailed;
 
-    if (sttResult.status === "fulfilled") await adoptStt(sttResult.value, teardown);
-    if (ttsResult.status === "fulfilled") await adoptTts(ttsResult.value, teardown);
+    if (teardown) {
+      await closeUnusedProviders(sttResult, ttsResult);
+      if (!aborted) terminate();
+      return;
+    }
 
-    if (!aborted && (sttFailed || ttsFailed)) terminate();
+    if (sttResult.status === "fulfilled") adoptStt(sttResult.value);
+    if (ttsResult.status === "fulfilled") adoptTts(ttsResult.value);
   }
 
   function onAudioReady(): void {
@@ -490,12 +502,10 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       sttSubs.length = 0;
       ttsSubs.length = 0;
       if (turnPromise !== null) await turnPromise;
-      await sttSession?.close().catch(() => {
-        /* already closed */
-      });
-      await ttsSession?.close().catch(() => {
-        /* already closed */
-      });
+      await Promise.all([
+        sttSession?.close().catch(() => undefined),
+        ttsSession?.close().catch(() => undefined),
+      ]);
     },
 
     sendUserAudio(bytes: Uint8Array): void {
@@ -522,7 +532,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       turnController?.abort();
       turnController = null;
       ttsSession?.cancel();
-      // Do NOT call callbacks.onCancelled() here — session-core.onCancel
+      // Do NOT call callbacks.onCancelled() here -- session-core.onCancel
       // (client-initiated) calls client.cancelled() itself. Barge-in fires
       // onCancelled directly in onSttPartial where the cancel originates here.
     },

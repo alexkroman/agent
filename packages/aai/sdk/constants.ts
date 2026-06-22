@@ -9,7 +9,6 @@ export const DEFAULT_IDLE_TIMEOUT_MS = 300_000;
 export const FETCH_TIMEOUT_MS = 15_000;
 export const RUN_CODE_TIMEOUT_MS = 5000;
 export const DEFAULT_SHUTDOWN_TIMEOUT_MS = 30_000;
-
 /**
  * Short relative to `DEFAULT_SHUTDOWN_TIMEOUT_MS` so a stuck TTS provider
  * can't wedge the session — stop() must still reclaim the socket cleanly.
@@ -21,7 +20,8 @@ export const MAX_PAGE_CHARS = 10_000;
 export const MAX_HTML_BYTES = 200_000;
 export const MAX_VALUE_SIZE = 65_536;
 export const DEFAULT_MAX_HISTORY = 200;
-export const MAX_WS_PAYLOAD_BYTES = 1 * 1024 * 1024;
+export const DEFAULT_MAX_STEPS = 5;
+export const MAX_WS_PAYLOAD_BYTES = 1024 * 1024;
 export const MAX_MESSAGE_BUFFER_SIZE = 100;
 
 export const WS_OPEN = 1;
@@ -31,8 +31,4 @@ export const WS_OPEN = 1;
  * per-response CSP headers across self-hosted and platform agent UIs.
  */
 export const AGENT_CSP =
-  "default-src 'self'; script-src 'self' 'unsafe-eval' blob:; " +
-  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
-  "connect-src 'self' wss: ws:; img-src 'self' data:; " +
-  "font-src 'self' https://fonts.gstatic.com; " +
-  "object-src 'none'; base-uri 'self'";
+  "default-src 'self'; script-src 'self' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; connect-src 'self' wss: ws:; img-src 'self' data:; font-src 'self' https://fonts.gstatic.com; object-src 'none'; base-uri 'self'";

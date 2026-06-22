@@ -53,10 +53,8 @@ function buildToolContext(opts: ExecuteToolCallOptions): ToolContext {
   };
 }
 
-function formatZodIssues(error: z.ZodError | undefined): string {
-  return (error?.issues ?? [])
-    .map((i: z.ZodIssue) => `${i.path.map(String).join(".")}: ${i.message}`)
-    .join(", ");
+function formatZodIssues(error: z.ZodError): string {
+  return error.issues.map((i) => `${i.path.map(String).join(".")}: ${i.message}`).join(", ");
 }
 
 function stringifyResult(result: unknown): string {
@@ -83,7 +81,6 @@ export async function executeToolCall(
       milliseconds: TOOL_EXECUTION_TIMEOUT_MS,
       message: `Tool "${name}" timed out after ${TOOL_EXECUTION_TIMEOUT_MS}ms`,
     });
-    await yieldTick();
     return stringifyResult(result);
   } catch (err: unknown) {
     if (logger) {

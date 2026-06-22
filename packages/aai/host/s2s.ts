@@ -103,10 +103,6 @@ type DispatchContext = {
   sid?: string;
 };
 
-function sidFields(ctx: DispatchContext): { sid?: string } {
-  return ctx.sid !== undefined ? { sid: ctx.sid } : {};
-}
-
 function dispatchS2sMessage(
   callbacks: S2sCallbacks,
   msg: S2sServerMessage,
@@ -151,7 +147,7 @@ function dispatchS2sMessage(
       // Log every raw reply.done before client-facing dedup so we can
       // cross-check which stalled sessions actually got one.
       ctx.log.info("S2S << reply.done", {
-        ...sidFields(ctx),
+        sid: ctx.sid,
         status: msg.status ?? "completed",
       });
       if (msg.status === "interrupted") callbacks.onCancelled();
@@ -159,7 +155,7 @@ function dispatchS2sMessage(
       break;
     case "session.error":
       ctx.log.warn("S2S << session.error", {
-        ...sidFields(ctx),
+        sid: ctx.sid,
         code: msg.code,
         message: msg.message,
       });
@@ -314,25 +310,24 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
       log.info(`S2S << ${type}`);
     }
 
-    function handleObject(obj: Record<string, unknown>, raw: unknown): void {
-      logIncoming(obj.type);
+    function handleObject(obj: Record<string, unknown>): void {
+      const type = obj.type;
+      logIncoming(type);
       // Log the full tool.call payload so we can diagnose provider-side
       // empty-args problems — the underlying LLM emitting a function call
       // without populating its required parameters. Without the full
       // payload we cannot tell apart "field-name mismatch" from
       // "model emitted no args."
-      if (obj.type === "tool.call") {
+      if (type === "tool.call") {
         log.info("S2S << tool.call payload", { payload: JSON.stringify(obj) });
       }
-      if (obj.type === "reply.audio" && typeof obj.data === "string") {
+      if (type === "reply.audio" && typeof obj.data === "string") {
         callbacks.onAudio(base64ToUint8(obj.data));
         return;
       }
       const parsed = parseS2sMessage(obj);
       if (!parsed) {
-        log.warn(
-          `S2S << unrecognised message type: ${obj.type ?? JSON.stringify(raw).slice(0, 200)}`,
-        );
+        log.warn(`S2S << unrecognised message type: ${type ?? JSON.stringify(obj).slice(0, 200)}`);
         return;
       }
       dispatchS2sMessage(callbacks, parsed, dispatchState, dispatchCtx);
@@ -350,7 +345,7 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
         log.warn("S2S << non-object JSON message", { type: typeof raw });
         return;
       }
-      handleObject(raw as Record<string, unknown>, raw);
+      handleObject(raw as Record<string, unknown>);
     });
 
     ws.addEventListener("close", (ev) => {

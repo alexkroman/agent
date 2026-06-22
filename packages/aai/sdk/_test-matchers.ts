@@ -6,13 +6,10 @@
  * for the `aai` project so matchers are available in every test.
  */
 
-import { isDeepStrictEqual } from "node:util";
 import { expect } from "vitest";
 import { ClientEventSchema } from "./protocol.ts";
 
 type MatcherResult = { pass: boolean; message: () => string };
-
-type EventLike = { type?: unknown; [key: string]: unknown };
 
 function fieldsSuffix(fields?: Record<string, unknown>): string {
   return fields ? ` with fields ${JSON.stringify(fields)}` : "";
@@ -34,6 +31,7 @@ function toBeValidClientEvent(received: unknown): MatcherResult {
 }
 
 function toContainEvent(
+  this: { equals(a: unknown, b: unknown): boolean },
   received: unknown,
   type: string,
   fields?: Record<string, unknown>,
@@ -45,11 +43,11 @@ function toContainEvent(
     };
   }
 
-  const events = received as EventLike[];
+  const events = received as { type?: unknown; [key: string]: unknown }[];
   const match = events.some((event) => {
     if (event?.type !== type) return false;
     if (!fields) return true;
-    return Object.entries(fields).every(([key, value]) => isDeepStrictEqual(event[key], value));
+    return Object.entries(fields).every(([key, value]) => this.equals(event[key], value));
   });
 
   if (match) {

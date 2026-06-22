@@ -33,12 +33,12 @@ function pseudoEmbed(text: string): Float32Array {
   const out = new Float32Array(DIM);
   const h1 = createHash("sha256").update(text).digest();
   const h2 = createHash("sha256").update(h1).digest();
+  let norm = 0;
   for (let i = 0; i < 32; i++) {
     out[i] = ((h1[i] as number) - 128) / 128;
     out[i + 32] = ((h2[i] as number) - 128) / 128;
+    norm += (out[i] as number) ** 2 + (out[i + 32] as number) ** 2;
   }
-  let norm = 0;
-  for (let i = 0; i < DIM; i++) norm += (out[i] as number) * (out[i] as number);
   norm = Math.sqrt(norm) || 1;
   for (let i = 0; i < DIM; i++) out[i] = (out[i] as number) / norm;
   return out;
@@ -79,13 +79,12 @@ export function createMemoryVector(opts: MemoryVectorOptions): Vector {
       const scored: VectorMatch[] = [];
       for (const [id, rec] of getStore(ns)) {
         if (filter && !matches(rec.metadata, filter)) continue;
-        const match: VectorMatch = {
+        scored.push({
           id,
           score: cosine(probe, rec.vec),
           text: rec.text,
-        };
-        if (rec.metadata !== undefined) match.metadata = rec.metadata;
-        scored.push(match);
+          ...(rec.metadata !== undefined && { metadata: rec.metadata }),
+        });
       }
       scored.sort((a, b) => b.score - a.score);
       return scored.slice(0, topK);

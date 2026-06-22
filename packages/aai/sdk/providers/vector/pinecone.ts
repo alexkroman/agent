@@ -1,12 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
-/**
- * Pinecone Vector descriptor.
- *
- * The descriptor flows through bundle → server → runtime without
- * importing `@pinecone-database/pinecone`. The host-side resolver in
- * `host/providers/resolve-vector.ts` constructs a real client during
- * `createRuntime`, using `PINECONE_API_KEY` from the agent's env.
- */
+/** Pinecone Vector descriptor — no `@pinecone-database/pinecone` import needed here. */
 
 import type { VectorProvider } from "../../providers.ts";
 
@@ -22,6 +15,12 @@ export type PineconeProvider = VectorProvider & {
   readonly options: PineconeOptions;
 };
 
+/**
+ * Use a Pinecone index for vector storage.
+ *
+ * No API key is accepted here — the host-side runtime reads
+ * `PINECONE_API_KEY` from the agent's env at session start.
+ */
 export function pinecone(opts: PineconeOptions): PineconeProvider {
   return { kind: PINECONE_VECTOR_KIND, options: { ...opts } };
 }

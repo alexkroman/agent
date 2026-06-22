@@ -5,13 +5,13 @@ import type { KvProvider } from "../../providers.ts";
 
 export const MEMORY_KV_KIND = "memory" as const;
 
-export type MemoryKvOptions = Record<string, never>;
-
 export type MemoryKvProvider = KvProvider & {
   readonly kind: typeof MEMORY_KV_KIND;
-  readonly options: MemoryKvOptions;
+  readonly options: Record<string, never>;
 };
 
+const MEMORY_KV: MemoryKvProvider = { kind: MEMORY_KV_KIND, options: {} };
+
 export function memoryKv(): MemoryKvProvider {
-  return { kind: MEMORY_KV_KIND, options: {} };
+  return MEMORY_KV;
 }

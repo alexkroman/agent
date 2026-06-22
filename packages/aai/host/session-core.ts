@@ -6,11 +6,15 @@ import type { AgentConfig, ExecuteTool } from "../sdk/_internal-types.ts";
 import { DEFAULT_IDLE_TIMEOUT_MS, DEFAULT_MAX_HISTORY } from "../sdk/constants.ts";
 import type { ClientEvent, ClientSink, SessionErrorCode } from "../sdk/protocol.ts";
 import type { Message } from "../sdk/types.ts";
+import { errorMessage, toolError } from "../sdk/utils.ts";
 import type { Logger } from "./runtime-config.ts";
 import { consoleLogger } from "./runtime-config.ts";
 import type { Transport } from "./transports/types.ts";
 
 const REPLY_DONE_SLOW_THRESHOLD_MS = 50;
+const MAX_STEPS_ERROR_RESULT = toolError(
+  "Maximum tool steps reached. Please respond to the user now.",
+);
 
 type PendingTool = { callId: string; result: string };
 
@@ -61,11 +65,7 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
   const rawIdleMs = opts.agentConfig.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
   const idleMs = rawIdleMs === 0 || !Number.isFinite(rawIdleMs) ? 0 : rawIdleMs;
 
-  function emptyReply(): ReplyState {
-    return { currentReplyId: null, pendingTools: [], toolCallCount: 0 };
-  }
-
-  let reply: ReplyState = emptyReply();
+  let reply: ReplyState = { currentReplyId: null, pendingTools: [], toolCallCount: 0 };
   let history: Message[] = [];
   let turnPromise: Promise<void> | null = null;
   let idleTimer: NodeJS.Timeout | null = null;
@@ -91,18 +91,9 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
     }
   }
 
-  function beginReply(replyId: string): void {
-    reply = { ...emptyReply(), currentReplyId: replyId };
-    turnPromise = null;
-  }
-
-  function cancelReply(): void {
-    reply = emptyReply();
-  }
-
   function flushReply(startMs: number, hadTurnPromise: boolean): void {
-    const stepsUsed = reply.toolCallCount;
-    if (stepsUsed > 0) log.info("Turn complete", { steps: stepsUsed, agent: opts.agent });
+    if (reply.toolCallCount > 0)
+      log.info("Turn complete", { steps: reply.toolCallCount, agent: opts.agent });
     opts.client.playAudioDone();
     emit({ type: "reply_done" });
     reply.currentReplyId = null;
@@ -149,7 +140,7 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
       emit({ type: "cancelled" });
     },
     onReset() {
-      cancelReply();
+      reply = { currentReplyId: null, pendingTools: [], toolCallCount: 0 };
       history = [];
       emit({ type: "reset" });
     },
@@ -159,7 +150,8 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
 
     // ─── Inbound from transport ───────────────────────────────────────────
     onReplyStarted(replyId) {
-      beginReply(replyId);
+      reply = { currentReplyId: replyId, pendingTools: [], toolCallCount: 0 };
+      turnPromise = null;
     },
 
     onReplyDone() {
@@ -190,7 +182,7 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
     },
 
     onCancelled() {
-      cancelReply();
+      reply = { currentReplyId: null, pendingTools: [], toolCallCount: 0 };
       emit({ type: "cancelled" });
     },
 
@@ -223,12 +215,7 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
           toolCallCount: reply.toolCallCount,
           maxSteps,
         });
-        reply.pendingTools.push({
-          callId,
-          result: JSON.stringify({
-            error: "Maximum tool steps reached. Please respond to the user now.",
-          }),
-        });
+        reply.pendingTools.push({ callId, result: MAX_STEPS_ERROR_RESULT });
         emit({ type: "tool_call_done", toolCallId: callId, result: "{}" });
         return;
       }
@@ -238,12 +225,12 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
           reply.pendingTools.push({ callId, result });
           emit({ type: "tool_call_done", toolCallId: callId, result });
         } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          reply.pendingTools.push({ callId, result: JSON.stringify({ error: message }) });
+          const message = errorMessage(err);
+          reply.pendingTools.push({ callId, result: toolError(message) });
           emit({ type: "tool_call_done", toolCallId: callId, result: message });
         }
       })();
-      turnPromise = (turnPromise ?? Promise.resolve()).then(() => p);
+      turnPromise = turnPromise === null ? p : turnPromise.then(() => p);
     },
 
     onError(code, message) {

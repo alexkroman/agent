@@ -21,12 +21,12 @@ import { createMistral } from "@ai-sdk/mistral";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createXai } from "@ai-sdk/xai";
 import type { LanguageModel } from "ai";
-import { ANTHROPIC_KIND, type AnthropicOptions } from "../../sdk/providers/llm/anthropic.ts";
-import { GOOGLE_KIND, type GoogleOptions } from "../../sdk/providers/llm/google.ts";
-import { GROQ_KIND, type GroqOptions } from "../../sdk/providers/llm/groq.ts";
-import { MISTRAL_KIND, type MistralOptions } from "../../sdk/providers/llm/mistral.ts";
-import { OPENAI_KIND, type OpenAIOptions } from "../../sdk/providers/llm/openai.ts";
-import { XAI_KIND, type XaiOptions } from "../../sdk/providers/llm/xai.ts";
+import { ANTHROPIC_KIND } from "../../sdk/providers/llm/anthropic.ts";
+import { GOOGLE_KIND } from "../../sdk/providers/llm/google.ts";
+import { GROQ_KIND } from "../../sdk/providers/llm/groq.ts";
+import { MISTRAL_KIND } from "../../sdk/providers/llm/mistral.ts";
+import { OPENAI_KIND } from "../../sdk/providers/llm/openai.ts";
+import { XAI_KIND } from "../../sdk/providers/llm/xai.ts";
 import { ASSEMBLYAI_KIND, type AssemblyAIOptions } from "../../sdk/providers/stt/assemblyai.ts";
 import { DEEPGRAM_KIND, type DeepgramOptions } from "../../sdk/providers/stt/deepgram.ts";
 import { ELEVENLABS_KIND, type ElevenLabsOptions } from "../../sdk/providers/stt/elevenlabs.ts";
@@ -56,7 +56,7 @@ export function resolveApiKey(envVar: string, env: Record<string, string>): stri
   return env[envVar] ?? process.env[envVar] ?? "";
 }
 
-function options<T>(descriptor: { options: Record<string, unknown> }): T {
+export function options<T>(descriptor: { options: Record<string, unknown> }): T {
   return descriptor.options as unknown as T;
 }
 
@@ -93,6 +93,50 @@ export function resolveTts(descriptor: TtsProvider): TtsOpener {
   }
 }
 
+// Each entry: the env var name, display label, and a factory that accepts an
+// apiKey and returns a (model: string) => LanguageModel callable.
+type LlmEntry = {
+  envVar: string;
+  label: string;
+  factory: (apiKey: string) => (model: string) => LanguageModel;
+};
+
+const LLM_REGISTRY: Partial<Record<string, LlmEntry>> = {
+  [ANTHROPIC_KIND]: {
+    envVar: "ANTHROPIC_API_KEY",
+    label: "Anthropic",
+    // Pass baseURL explicitly so the SDK's loadOptionalSetting returns before
+    // reading process.env["ANTHROPIC_BASE_URL"]. Without this, the Deno
+    // platform server needs --allow-env to start a session.
+    factory: (apiKey) => createAnthropic({ apiKey, baseURL: "https://api.anthropic.com/v1" }),
+  },
+  [OPENAI_KIND]: {
+    envVar: "OPENAI_API_KEY",
+    label: "OpenAI",
+    factory: (apiKey) => createOpenAI({ apiKey }),
+  },
+  [GOOGLE_KIND]: {
+    envVar: "GOOGLE_GENERATIVE_AI_API_KEY",
+    label: "Google",
+    factory: (apiKey) => createGoogleGenerativeAI({ apiKey }),
+  },
+  [MISTRAL_KIND]: {
+    envVar: "MISTRAL_API_KEY",
+    label: "Mistral",
+    factory: (apiKey) => createMistral({ apiKey }),
+  },
+  [XAI_KIND]: {
+    envVar: "XAI_API_KEY",
+    label: "xAI",
+    factory: (apiKey) => createXai({ apiKey }),
+  },
+  [GROQ_KIND]: {
+    envVar: "GROQ_API_KEY",
+    label: "Groq",
+    factory: (apiKey) => createGroq({ apiKey }),
+  },
+};
+
 /**
  * Resolve an {@link LlmProvider} descriptor into a Vercel AI SDK
  * {@link LanguageModel}.
@@ -102,42 +146,15 @@ export function resolveTts(descriptor: TtsProvider): TtsOpener {
  * `streamText` call otherwise, and the error is clearer at construction.
  */
 export function resolveLlm(descriptor: LlmProvider, env: Record<string, string>): LanguageModel {
-  switch (descriptor.kind) {
-    case ANTHROPIC_KIND: {
-      const apiKey = requireKey(env, "ANTHROPIC_API_KEY", "Anthropic");
-      // Pass baseURL explicitly so the SDK's loadOptionalSetting returns
-      // before reading process.env["ANTHROPIC_BASE_URL"]. Without this,
-      // the Deno platform server needs --allow-env to start a session.
-      return createAnthropic({ apiKey, baseURL: "https://api.anthropic.com/v1" })(
-        options<AnthropicOptions>(descriptor).model,
-      );
-    }
-    case OPENAI_KIND: {
-      const apiKey = requireKey(env, "OPENAI_API_KEY", "OpenAI");
-      return createOpenAI({ apiKey })(options<OpenAIOptions>(descriptor).model);
-    }
-    case GOOGLE_KIND: {
-      const apiKey = requireKey(env, "GOOGLE_GENERATIVE_AI_API_KEY", "Google");
-      return createGoogleGenerativeAI({ apiKey })(options<GoogleOptions>(descriptor).model);
-    }
-    case MISTRAL_KIND: {
-      const apiKey = requireKey(env, "MISTRAL_API_KEY", "Mistral");
-      return createMistral({ apiKey })(options<MistralOptions>(descriptor).model);
-    }
-    case XAI_KIND: {
-      const apiKey = requireKey(env, "XAI_API_KEY", "xAI");
-      return createXai({ apiKey })(options<XaiOptions>(descriptor).model);
-    }
-    case GROQ_KIND: {
-      const apiKey = requireKey(env, "GROQ_API_KEY", "Groq");
-      return createGroq({ apiKey })(options<GroqOptions>(descriptor).model);
-    }
-    default:
-      throw new Error(
-        `Unknown LLM provider kind: "${descriptor.kind}". ` +
-          `Supported: ${ANTHROPIC_KIND}, ${OPENAI_KIND}, ${GOOGLE_KIND}, ${MISTRAL_KIND}, ${XAI_KIND}, ${GROQ_KIND}.`,
-      );
+  const entry = LLM_REGISTRY[descriptor.kind];
+  if (!entry) {
+    throw new Error(
+      `Unknown LLM provider kind: "${descriptor.kind}". ` +
+        `Supported: ${ANTHROPIC_KIND}, ${OPENAI_KIND}, ${GOOGLE_KIND}, ${MISTRAL_KIND}, ${XAI_KIND}, ${GROQ_KIND}.`,
+    );
   }
+  const apiKey = requireKey(env, entry.envVar, entry.label);
+  return entry.factory(apiKey)(options<{ model: string }>(descriptor).model);
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────
@@ -153,11 +170,10 @@ export function loadProviderPackage<T>(name: string, label: string): T {
   try {
     return requireFromHere(name) as T;
   } catch (err) {
-    const code = (err as NodeJS.ErrnoException | undefined)?.code;
+    const code = (err as NodeJS.ErrnoException)?.code;
     const isMissing =
-      err instanceof Error &&
       (code === "MODULE_NOT_FOUND" || code === "ERR_MODULE_NOT_FOUND") &&
-      err.message.includes(name);
+      (err as Error)?.message?.includes(name);
     if (!isMissing) throw err;
     throw new Error(`${label}: package \`${name}\` is not installed. Run \`pnpm add ${name}\`.`, {
       cause: err,
@@ -165,7 +181,7 @@ export function loadProviderPackage<T>(name: string, label: string): T {
   }
 }
 
-function requireKey(env: Record<string, string>, name: string, label: string): string {
+export function requireKey(env: Record<string, string>, name: string, label: string): string {
   const key = resolveApiKey(name, env);
   if (!key) {
     throw new Error(`${label} LLM: missing API key. Set ${name} in the agent env.`);

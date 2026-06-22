@@ -1,4 +1,31 @@
 // Copyright 2025 the AAI authors. MIT license.
+
+/** @public */
+export type VectorMetadata = Record<string, unknown>;
+
+/**
+ * Backend-specific filter expression. Pinecone uses MongoDB-like operators;
+ * other backends may use a different query DSL.
+ * @public
+ */
+export type VectorFilter = Record<string, unknown>;
+
+/** @public */
+export type VectorMatch = {
+  id: string;
+  score: number;
+  text: string;
+  metadata?: VectorMetadata;
+};
+
+/** @public */
+export type VectorQueryOptions = {
+  /** Number of results to return. Default 5, max 100. */
+  topK?: number;
+  /** Backend-specific filter expression. */
+  filter?: VectorFilter;
+};
+
 /**
  * Vector storage interface used by agents.
  *
@@ -8,24 +35,8 @@
  *
  * @public
  */
-export type VectorMatch = {
-  id: string;
-  score: number;
-  text: string;
-  metadata?: Record<string, unknown>;
-};
-
-/** @public */
-export type VectorQueryOptions = {
-  /** Number of results to return. Default 5, max 100. */
-  topK?: number;
-  /** Backend-specific filter (Pinecone uses MongoDB-like operators). */
-  filter?: Record<string, unknown>;
-};
-
-/** @public */
 export type Vector = {
-  upsert(id: string, text: string, metadata?: Record<string, unknown>): Promise<void>;
+  upsert(id: string, text: string, metadata?: VectorMetadata): Promise<void>;
   query(text: string, opts?: VectorQueryOptions): Promise<VectorMatch[]>;
   delete(ids: string | string[]): Promise<void>;
   close?(): void;

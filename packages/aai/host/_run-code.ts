@@ -40,13 +40,11 @@ function neutralizeConstructor<T extends Function>(fn: T): T {
 
   if (hasPrototype) {
     copyStaticMembers(fn, Wrapper);
-    if (Wrapper.prototype) {
-      Object.defineProperty(Wrapper.prototype, "constructor", {
-        value: undefined,
-        writable: false,
-        configurable: false,
-      });
-    }
+    Object.defineProperty(Wrapper.prototype, "constructor", {
+      value: undefined,
+      writable: false,
+      configurable: false,
+    });
   }
 
   Object.defineProperty(Wrapper, "constructor", {
@@ -57,6 +55,17 @@ function neutralizeConstructor<T extends Function>(fn: T): T {
 
   return Wrapper as unknown as T;
 }
+
+// Stateless host built-ins neutralized once at module load — never rebuilt per call.
+const NEUTRALIZED_BUILTINS = {
+  URL: neutralizeConstructor(URL),
+  URLSearchParams: neutralizeConstructor(URLSearchParams),
+  TextEncoder: neutralizeConstructor(TextEncoder),
+  TextDecoder: neutralizeConstructor(TextDecoder),
+  atob: neutralizeConstructor(atob),
+  btoa: neutralizeConstructor(btoa),
+  structuredClone: neutralizeConstructor(structuredClone),
+} as const;
 
 const runCodeParams = z.object({
   code: z.string().describe("JavaScript code to execute. Use console.log() for output."),
@@ -127,26 +136,21 @@ export async function executeInIsolate(code: string): Promise<string | { error: 
 
   // Every host function/class is wrapped with neutralizeConstructor to block
   // the `fn.constructor.constructor('return process')()` escape to host Function.
+  const neutralCapture = neutralizeConstructor(capture);
   const context = vm.createContext(
     {
       console: Object.freeze({
-        log: neutralizeConstructor(capture),
-        info: neutralizeConstructor(capture),
-        warn: neutralizeConstructor(capture),
-        error: neutralizeConstructor(capture),
-        debug: neutralizeConstructor(capture),
+        log: neutralCapture,
+        info: neutralCapture,
+        warn: neutralCapture,
+        error: neutralCapture,
+        debug: neutralCapture,
       }),
       setTimeout: neutralizeConstructor(sandboxSetTimeout),
       clearTimeout: neutralizeConstructor(sandboxClearTimeout),
       setInterval: neutralizeConstructor(sandboxSetInterval),
       clearInterval: neutralizeConstructor(sandboxClearInterval),
-      URL: neutralizeConstructor(URL),
-      URLSearchParams: neutralizeConstructor(URLSearchParams),
-      TextEncoder: neutralizeConstructor(TextEncoder),
-      TextDecoder: neutralizeConstructor(TextDecoder),
-      atob: neutralizeConstructor(atob),
-      btoa: neutralizeConstructor(btoa),
-      structuredClone: neutralizeConstructor(structuredClone),
+      ...NEUTRALIZED_BUILTINS,
     },
     {
       codeGeneration: { strings: false, wasm: false },

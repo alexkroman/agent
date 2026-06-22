@@ -16,6 +16,7 @@ import {
   type SttOpenOptions,
   type SttSession,
 } from "../../../sdk/providers.ts";
+import { errorMessage } from "../../../sdk/utils.ts";
 
 type V1Socket = Awaited<ReturnType<InstanceType<typeof DeepgramClient>["listen"]["v1"]["connect"]>>;
 
@@ -30,43 +31,29 @@ type MessagePayload =
   | listen.ListenV1UtteranceEnd
   | listen.ListenV1SpeechStarted;
 
-function errMsg(cause: unknown): string {
-  return cause instanceof Error ? cause.message : String(cause);
-}
-
-function handleMessage(data: MessagePayload, closed: boolean, emitter: Emitter<SttEvents>): void {
-  if (closed || data.type !== "Results") return;
-  const text = data.channel?.alternatives?.[0]?.transcript ?? "";
-  if (text.length === 0) return;
-  emitter.emit(data.is_final ? "final" : "partial", text);
-}
-
 function wireSocketEvents(
   connection: V1Socket,
   emitter: Emitter<SttEvents>,
-  getIsClosed: () => boolean,
+  closed: () => boolean,
 ): void {
-  connection.on("message", (data: MessagePayload) => handleMessage(data, getIsClosed(), emitter));
+  connection.on("message", (data: MessagePayload) => {
+    if (closed() || data.type !== "Results") return;
+    const text = data.channel?.alternatives?.[0]?.transcript ?? "";
+    if (text.length === 0) return;
+    emitter.emit(data.is_final ? "final" : "partial", text);
+  });
   connection.on("error", (err: Error) => {
-    if (getIsClosed()) return;
+    if (closed()) return;
     emitter.emit("error", makeSttError("stt_stream_error", err?.message ?? String(err)));
   });
   connection.on("close", (event: { code?: number }) => {
-    if (getIsClosed()) return;
+    if (closed()) return;
     const code = event?.code;
     // 1000 = normal closure.
     if (code !== undefined && code !== 1000) {
       emitter.emit("error", makeSttError("stt_stream_error", `socket closed ${code}`));
     }
   });
-}
-
-function wireAbortSignal(signal: AbortSignal, close: () => Promise<void>): void {
-  if (signal.aborted) {
-    void close();
-    return;
-  }
-  signal.addEventListener("abort", () => void close(), { once: true });
 }
 
 export function openDeepgram(opts: DeepgramOptions = {}): SttOpener {
@@ -99,23 +86,14 @@ export function openDeepgram(opts: DeepgramOptions = {}): SttOpener {
           Authorization: apiKey,
         });
       } catch (cause) {
-        throw makeSttError("stt_connect_failed", `Deepgram STT: connect failed: ${errMsg(cause)}`);
+        throw makeSttError(
+          "stt_connect_failed",
+          `Deepgram STT: connect failed: ${errorMessage(cause)}`,
+        );
       }
 
       const emitter: Emitter<SttEvents> = createNanoEvents<SttEvents>();
       let closed = false;
-
-      wireSocketEvents(connection, emitter, () => closed);
-
-      connection.connect();
-      try {
-        await connection.waitForOpen();
-      } catch (cause) {
-        throw makeSttError(
-          "stt_connect_failed",
-          `Deepgram STT: WebSocket open failed: ${errMsg(cause)}`,
-        );
-      }
 
       const close = async (): Promise<void> => {
         if (closed) return;
@@ -127,7 +105,23 @@ export function openDeepgram(opts: DeepgramOptions = {}): SttOpener {
         }
       };
 
-      wireAbortSignal(openOpts.signal, close);
+      wireSocketEvents(connection, emitter, () => closed);
+
+      connection.connect();
+      try {
+        await connection.waitForOpen();
+      } catch (cause) {
+        throw makeSttError(
+          "stt_connect_failed",
+          `Deepgram STT: WebSocket open failed: ${errorMessage(cause)}`,
+        );
+      }
+
+      if (openOpts.signal.aborted) {
+        void close();
+      } else {
+        openOpts.signal.addEventListener("abort", () => void close(), { once: true });
+      }
 
       const session: DeepgramSession = {
         sendAudio(pcm: Int16Array) {

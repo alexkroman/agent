@@ -54,22 +54,19 @@ export type AgentConfig = z.infer<typeof AgentConfigSchema>;
 
 // Covers both `AgentDef` (where `maxSteps` may be a function) and
 // `IsolateConfig` (where it is always a number).
-export interface AgentConfigSource {
-  name: string;
-  systemPrompt: string;
-  greeting: string;
-  sttPrompt?: string | undefined;
-  maxSteps?: number | undefined;
-  toolChoice?: AgentConfig["toolChoice"] | undefined;
-  builtinTools?: Readonly<AgentConfig["builtinTools"]> | undefined;
-  idleTimeoutMs?: number | undefined;
+// Scalar fields are inherited from AgentConfig; provider fields are replaced
+// with the richer runtime provider types (vs flat ProviderDescriptor in AgentConfig).
+export type AgentConfigSource = Omit<
+  AgentConfig,
+  "stt" | "llm" | "tts" | "s2s" | "kv" | "vector" | "mode"
+> & {
   stt?: SttProvider | undefined;
   llm?: LlmProvider | undefined;
   tts?: TtsProvider | undefined;
   s2s?: S2sProvider | undefined;
   kv?: KvProvider | undefined;
   vector?: VectorProvider | undefined;
-}
+};
 
 export function toAgentConfig(src: AgentConfigSource): AgentConfig {
   // `assertProviderTriple` enforces that stt/llm/tts are all-or-nothing so the
@@ -109,10 +106,9 @@ export const ToolSchemaSchema = z.object({
   parameters: z.record(z.string(), z.unknown()),
 });
 
-export type ToolSchema = {
-  type: "function";
-  name: string;
-  description: string;
+// `parameters` is narrowed to JSONSchema7 (the runtime schema accepts the
+// wider Record<string, unknown> for validation flexibility).
+export type ToolSchema = Omit<z.infer<typeof ToolSchemaSchema>, "parameters"> & {
   parameters: JSONSchema7;
 };
 
@@ -127,15 +123,21 @@ export const EMPTY_PARAMS = z.object({});
  * calls that arrive with `args: {}` even when required params are listed.
  */
 export function toToolJsonSchema(zodSchema: z.ZodTypeAny): JSONSchema7 {
-  const { $schema: _omit, ...rest } = z.toJSONSchema(zodSchema) as Record<string, unknown>;
-  return rest as JSONSchema7;
+  // z.toJSONSchema always returns a fresh object, so mutation is safe.
+  const schema = z.toJSONSchema(zodSchema) as Record<string, unknown>;
+  delete schema.$schema;
+  return schema as JSONSchema7;
 }
+
+// Pre-serialized form of EMPTY_PARAMS — avoids re-running z.toJSONSchema on
+// every tool that declares no parameters (the common case for many agents).
+const EMPTY_PARAMS_SCHEMA = toToolJsonSchema(EMPTY_PARAMS);
 
 export function agentToolsToSchemas(tools: Readonly<Record<string, ToolDef>>): ToolSchema[] {
   return Object.entries(tools).map(([name, def]) => ({
     type: "function",
     name,
     description: def.description,
-    parameters: toToolJsonSchema(def.parameters ?? EMPTY_PARAMS),
+    parameters: def.parameters ? toToolJsonSchema(def.parameters) : EMPTY_PARAMS_SCHEMA,
   }));
 }

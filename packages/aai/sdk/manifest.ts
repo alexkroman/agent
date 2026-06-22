@@ -8,6 +8,7 @@
 
 import { z } from "zod";
 import { validateAllowedHostPattern } from "./allowed-hosts.ts";
+import { DEFAULT_MAX_STEPS } from "./constants.ts";
 import {
   assertProviderTriple,
   type KvProvider,
@@ -18,7 +19,13 @@ import {
   type TtsProvider,
   type VectorProvider,
 } from "./providers.ts";
-import { BuiltinToolSchema, DEFAULT_GREETING, DEFAULT_SYSTEM_PROMPT } from "./types.ts";
+import {
+  BuiltinToolSchema,
+  DEFAULT_GREETING,
+  DEFAULT_SYSTEM_PROMPT,
+  type ToolChoice,
+  ToolChoiceSchema,
+} from "./types.ts";
 
 /**
  * Tool definition as it appears in the serialized manifest JSON.
@@ -47,7 +54,7 @@ export type Manifest = {
   /** Max tool calls per LLM reply. Prevents runaway loops. Default: 5. */
   maxSteps: number;
   /** `"auto"` = LLM decides when to use tools; `"required"` = always call a tool. */
-  toolChoice: "auto" | "required";
+  toolChoice: ToolChoice;
   /** Idle timeout in ms before auto-closing the session. `undefined` = use default (5 min). */
   idleTimeoutMs?: number | undefined;
   /** CSS custom properties for agent UI theming. */
@@ -105,6 +112,8 @@ export const ProviderDescriptorSchema = z.object({
   options: z.record(z.string(), z.unknown()),
 });
 
+const providerField = ProviderDescriptorSchema.optional();
+
 const ManifestSchema = z.object({
   name: z.string().min(1),
   systemPrompt: z.string().optional(),
@@ -112,15 +121,13 @@ const ManifestSchema = z.object({
   sttPrompt: z.string().optional(),
   builtinTools: z.array(BuiltinToolSchema).optional(),
   maxSteps: z.number().int().positive().optional(),
-  toolChoice: z.enum(["auto", "required"]).optional(),
-  idleTimeoutMs: z.number().int().positive().optional(),
+  toolChoice: ToolChoiceSchema.optional(),
+  idleTimeoutMs: z.number().int().nonnegative().optional(),
   theme: z.record(z.string(), z.string()).optional(),
   tools: z.record(z.string(), ToolManifestSchema).optional(),
   allowedHosts: z
     .array(z.string())
-    .optional()
     .superRefine((hosts, ctx) => {
-      if (!hosts) return;
       for (const h of hosts) {
         const result = validateAllowedHostPattern(h);
         if (!result.valid) {
@@ -130,13 +137,14 @@ const ManifestSchema = z.object({
           });
         }
       }
-    }),
-  stt: ProviderDescriptorSchema.optional(),
-  llm: ProviderDescriptorSchema.optional(),
-  tts: ProviderDescriptorSchema.optional(),
-  s2s: ProviderDescriptorSchema.optional(),
-  kv: ProviderDescriptorSchema.optional(),
-  vector: ProviderDescriptorSchema.optional(),
+    })
+    .optional(),
+  stt: providerField,
+  llm: providerField,
+  tts: providerField,
+  s2s: providerField,
+  kv: providerField,
+  vector: providerField,
 });
 
 /**
@@ -144,7 +152,7 @@ const ManifestSchema = z.object({
  * optional fields. Input is typically the JSON from a bundled agent.ts.
  *
  * Key defaults:
- * - `maxSteps`: 5 — prevents runaway tool-call loops in a single reply
+ * - `maxSteps`: {@link DEFAULT_MAX_STEPS} — prevents runaway tool-call loops in a single reply
  * - `toolChoice`: "auto" — LLM decides when to use tools vs respond directly
  * - `builtinTools`: [] — no built-in tools unless explicitly opted in
  */
@@ -156,7 +164,7 @@ export function parseManifest(input: unknown): Manifest {
     systemPrompt: parsed.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
     greeting: parsed.greeting ?? DEFAULT_GREETING,
     builtinTools: parsed.builtinTools ?? [],
-    maxSteps: parsed.maxSteps ?? 5,
+    maxSteps: parsed.maxSteps ?? DEFAULT_MAX_STEPS,
     toolChoice: parsed.toolChoice ?? "auto",
     tools: parsed.tools ?? {},
     allowedHosts: parsed.allowedHosts ?? [],

@@ -19,7 +19,7 @@ export interface S3KvOptions {
   bucket: string;
   /** Custom endpoint URL — required for non-AWS providers (Tigris, R2). */
   endpoint?: string;
-  /** Region. Defaults to `"auto"`. */
+  /** AWS region (e.g. `"us-east-1"`). Non-AWS providers often accept `"auto"`. */
   region?: string;
 }
 

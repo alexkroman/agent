@@ -1,6 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 // S2S transport — wraps connectS2s and forwards typed callbacks into the SessionCore.
 
+import { errorMessage } from "../../sdk/utils.ts";
 import type { Logger, S2SConfig } from "../runtime-config.ts";
 import { consoleLogger } from "../runtime-config.ts";
 import {
@@ -79,7 +80,7 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
         currentReplyId = null;
         opts.callbacks.onCancelled();
       },
-      onAudio: (bytes) => opts.callbacks.onAudioChunk(bytes),
+      onAudio: opts.callbacks.onAudioChunk,
       onUserTranscript: opts.callbacks.onUserTranscript,
       onAgentTranscript: opts.callbacks.onAgentTranscript,
       onToolCall: opts.callbacks.onToolCall,
@@ -98,16 +99,12 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
         handle?.close();
       },
       onError: (err) => opts.callbacks.onError("internal", err.message),
-      onClose: (code, reason) => handleClose(code, reason),
+      onClose: handleClose,
     };
   }
 
-  function canResumeAfter(code: number): boolean {
-    return TRANSIENT_CLOSE_CODES.has(code) && providerSessionId !== null && !reconnecting;
-  }
-
-  function emitFatalClose(code: number, reason: string, wasReconnecting: boolean): void {
-    if (wasReconnecting) {
+  function emitFatalClose(code: number, reason: string): void {
+    if (reconnecting) {
       // Fresh resume socket closed before session.ready — resume failed.
       reconnecting = false;
       opts.callbacks.onError("connection", `S2S resume failed (code=${code})`);
@@ -143,7 +140,7 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
     }
     void resume(prevId).catch((err: unknown) => {
       reconnecting = false;
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errorMessage(err);
       log.warn("S2S resume failed", { sid: opts.sid, error: msg });
       opts.callbacks.onError("connection", `S2S resume failed: ${msg}`);
     });
@@ -154,17 +151,16 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
       log.info("S2S closed", { code, reason });
       return;
     }
-    const wasReconnecting = reconnecting;
     const prevId = providerSessionId;
-    if (!canResumeAfter(code) || prevId === null) {
-      emitFatalClose(code, reason, wasReconnecting);
+    if (!TRANSIENT_CLOSE_CODES.has(code) || reconnecting || prevId === null) {
+      emitFatalClose(code, reason);
       return;
     }
     startResume(prevId, code, reason);
   }
 
-  async function resume(prevSessionId: string): Promise<void> {
-    const newHandle = await _internals.connectS2s({
+  function connect(): Promise<S2sHandle> {
+    return _internals.connectS2s({
       apiKey: opts.apiKey,
       config: opts.s2sConfig,
       createWebSocket: createWs,
@@ -172,6 +168,10 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
       sid: opts.sid,
       callbacks: buildCallbacks(),
     });
+  }
+
+  async function resume(prevSessionId: string): Promise<void> {
+    const newHandle = await connect();
     if (closing) {
       newHandle.close();
       return;
@@ -181,14 +181,7 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
   }
 
   async function start(): Promise<void> {
-    handle = await _internals.connectS2s({
-      apiKey: opts.apiKey,
-      config: opts.s2sConfig,
-      createWebSocket: createWs,
-      logger: log,
-      sid: opts.sid,
-      callbacks: buildCallbacks(),
-    });
+    handle = await connect();
     handle.updateSession(opts.sessionConfig);
   }
 
@@ -214,11 +207,12 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
       currentReplyId = null;
     },
     updateSession(config: TransportSessionConfig) {
-      handle?.updateSession({
+      const update: S2sSessionConfig = {
         systemPrompt: config.systemPrompt,
         tools: (config.tools ?? []) as S2sToolSchema[],
-        ...(config.greeting !== undefined ? { greeting: config.greeting } : {}),
-      });
+      };
+      if (config.greeting !== undefined) update.greeting = config.greeting;
+      handle?.updateSession(update);
     },
   };
 }

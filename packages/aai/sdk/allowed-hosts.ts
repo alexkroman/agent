@@ -34,14 +34,12 @@ function checkStructural(pattern: string): ValidationResult | null {
 }
 
 function checkWildcard(pattern: string): ValidationResult | null {
-  if (!pattern.includes("*")) return null;
+  if (pattern.indexOf("*") === -1) return null;
   if (pattern === "*" || pattern === "**")
     return fail("Bare wildcard '*' is not allowed. Use '*.example.com' to allow all subdomains.");
-  const wildcardIndex = pattern.indexOf("*");
-  if (wildcardIndex !== 0 || pattern[1] !== ".")
+  if (pattern[0] !== "*" || pattern[1] !== ".")
     return fail("Wildcard '*' may only appear as the leading segment (e.g. '*.example.com').");
-  if (pattern.lastIndexOf("*") !== 0)
-    return fail("Only a single leading wildcard segment is supported.");
+  if (pattern.includes("*", 1)) return fail("Only a single leading wildcard segment is supported.");
   return null;
 }
 
@@ -93,8 +91,7 @@ export function matchesAllowedHost(hostname: string, patterns: string[]): boolea
     portIndex !== -1 && !hostname.includes("[") ? hostname.slice(0, portIndex) : hostname;
   const host = withoutPort.toLowerCase().replace(/\.$/, "");
 
-  for (const pattern of patterns) {
-    const p = pattern.toLowerCase();
+  for (const p of patterns.map((pat) => pat.toLowerCase())) {
     if (p.startsWith("*.")) {
       const suffix = p.slice(1);
       if (host.endsWith(suffix) && host.length > suffix.length) return true;

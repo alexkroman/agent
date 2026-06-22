@@ -17,7 +17,11 @@
 
 import { createNanoEvents, type Emitter } from "nanoevents";
 import WebSocket from "ws";
-import { RIME_DEFAULT_VOICE, type RimeOptions } from "../../../sdk/providers/tts/rime.ts";
+import {
+  RIME_DEFAULT_MODEL,
+  RIME_DEFAULT_VOICE,
+  type RimeOptions,
+} from "../../../sdk/providers/tts/rime.ts";
 import {
   makeTtsError,
   type TtsEvents,
@@ -35,11 +39,13 @@ const RIME_PCM16_RATES = [
   8000, 16_000, 22_050, 24_000, 44_100, 48_000,
 ] as const satisfies readonly number[];
 
+const RIME_PCM16_RATES_STR = RIME_PCM16_RATES.join(", ");
+
 function assertSupportedSampleRate(rate: number): number {
   if ((RIME_PCM16_RATES as readonly number[]).includes(rate)) return rate;
   throw makeTtsError(
     "tts_connect_failed",
-    `Rime TTS: unsupported sample rate ${rate}. Supported: ${RIME_PCM16_RATES.join(", ")}.`,
+    `Rime TTS: unsupported sample rate ${rate}. Supported: ${RIME_PCM16_RATES_STR}.`,
   );
 }
 
@@ -52,7 +58,7 @@ function base64ToPcm(data: string): Int16Array {
 }
 
 interface RimeMessage {
-  type: "chunk" | "timestamps" | "error" | string;
+  type: string;
   data?: string;
   contextId?: string | null;
   message?: string;
@@ -64,6 +70,10 @@ const QUIESCENCE_MS = 500;
 // so audio TTFB easily exceeds QUIESCENCE_MS. Wait longer for the FIRST
 // chunk; subsequent chunks revert to the shorter quiescence window.
 const FIRST_AUDIO_TIMEOUT_MS = 5000;
+
+// Pre-serialized static payloads — avoid allocating a new object + stringify on every call.
+const FLUSH_MSG = '{"text":"."}';
+const CLEAR_MSG = '{"operation":"clear"}';
 
 function waitForOpen(ws: WebSocket): Promise<void> {
   return new Promise<void>((resolve, reject) => {
@@ -91,11 +101,12 @@ function handleRimeMessage(
   raw: WebSocket.Data,
   emitter: Emitter<TtsEvents>,
   armQuiescence: () => void,
-  isActiveTimer: () => boolean,
+  hasActiveTimer: boolean,
 ): void {
   let msg: RimeMessage;
   try {
-    msg = JSON.parse(typeof raw === "string" ? raw : raw.toString()) as RimeMessage;
+    // Node's JSON.parse accepts Buffer directly — no intermediate toString() copy needed.
+    msg = JSON.parse(raw as string) as RimeMessage;
   } catch {
     return;
   }
@@ -106,7 +117,7 @@ function handleRimeMessage(
       emitter.emit("audio", pcm);
       // Each chunk resets the quiescence window so `done` fires only after
       // audio stops — applies to both the first-audio and post-chunk timers.
-      if (isActiveTimer()) armQuiescence();
+      if (hasActiveTimer) armQuiescence();
     }
     return;
   }
@@ -131,7 +142,7 @@ export function openRime(opts: RimeOptions): TtsOpener {
       }
 
       const sampleRate = assertSupportedSampleRate(openOpts.sampleRate);
-      const model = opts.model ?? "mistv2";
+      const model = opts.model ?? RIME_DEFAULT_MODEL;
       const lang = opts.language ?? "eng";
       const voice = opts.voice ?? RIME_DEFAULT_VOICE;
 
@@ -168,19 +179,16 @@ export function openRime(opts: RimeOptions): TtsOpener {
         emitter.emit("done");
       };
 
-      const armQuiescence = () => {
+      const armTimer = (delayMs: number) => {
         clearQuiescence();
-        quiescenceTimer = setTimeout(emitDoneOnce, QUIESCENCE_MS);
+        quiescenceTimer = setTimeout(emitDoneOnce, delayMs);
       };
 
-      const armFirstAudioTimer = () => {
-        clearQuiescence();
-        quiescenceTimer = setTimeout(emitDoneOnce, FIRST_AUDIO_TIMEOUT_MS);
-      };
+      const canSend = () => !closed && ws.readyState === WebSocket.OPEN;
 
       ws.on("message", (raw: WebSocket.Data) => {
         if (closed) return;
-        handleRimeMessage(raw, emitter, armQuiescence, () => quiescenceTimer !== null);
+        handleRimeMessage(raw, emitter, () => armTimer(QUIESCENCE_MS), quiescenceTimer !== null);
       });
 
       ws.on("error", (err: Error) => {
@@ -217,27 +225,25 @@ export function openRime(opts: RimeOptions): TtsOpener {
 
       const session: RimeSession = {
         sendText(text: string) {
-          if (closed || text.length === 0) return;
-          if (ws.readyState !== WebSocket.OPEN) return;
+          if (!canSend() || text.length === 0) return;
           doneEmitted = false;
           ws.send(JSON.stringify({ text }));
         },
 
         flush() {
-          if (closed) return;
-          if (ws.readyState !== WebSocket.OPEN) return;
+          if (!canSend()) return;
           // Force synthesis of any text buffered behind missing terminal
           // punctuation: a trailing `"."` keeps the WS reusable, whereas
           // the JSON `eos` operation would close it and require a
           // reconnect every turn.
-          ws.send(JSON.stringify({ text: "." }));
-          armFirstAudioTimer();
+          ws.send(FLUSH_MSG);
+          armTimer(FIRST_AUDIO_TIMEOUT_MS);
         },
 
         cancel() {
           if (closed) return;
           if (ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ operation: "clear" }));
+            ws.send(CLEAR_MSG);
           }
           // Emit `done` synchronously — the orchestrator's state machine
           // advances on `done`, and barge-in must not be microtask-deferred.

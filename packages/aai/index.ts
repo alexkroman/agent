@@ -2,8 +2,9 @@
 /**
  * aai — shared fundamentals with no Node.js dependencies.
  *
- * Types, KV interface, utils, and constants used across
- * aai-cli, aai-server, and aai-ui.
+ * Exports: `agent()` / `tool()` authoring helpers, types, KV interface,
+ * allowed-host validation, WebSocket upgrade parsing, utils, and constants.
+ * Consumed by aai-cli, aai-server, and aai-ui.
  */
 
 // biome-ignore-all lint/performance/noReExportAll: barrel file by design

@@ -18,6 +18,7 @@ import { WebSocketServer } from "ws";
 import { AGENT_CSP, MAX_WS_PAYLOAD_BYTES } from "../sdk/constants.ts";
 import type { Kv } from "../sdk/kv.ts";
 import { VectorRequestSchema } from "../sdk/protocol.ts";
+import { errorMessage } from "../sdk/utils.ts";
 import type { Vector } from "../sdk/vector.ts";
 import { parseWsUpgradeParams } from "../sdk/ws-upgrade.ts";
 import type { Runtime } from "./runtime.ts";
@@ -108,24 +109,25 @@ async function handleVectorPost(
         await vector.upsert(op.id, op.text, op.metadata);
         result = "OK";
         break;
-      case "query":
-        result = await vector.query(op.text, {
-          ...(op.topK !== undefined ? { topK: op.topK } : {}),
-          ...(op.filter !== undefined ? { filter: op.filter } : {}),
-        });
+      case "query": {
+        const queryOpts: { topK?: number; filter?: Record<string, unknown> } = {};
+        if (op.topK !== undefined) queryOpts.topK = op.topK;
+        if (op.filter !== undefined) queryOpts.filter = op.filter;
+        result = await vector.query(op.text, queryOpts);
         break;
+      }
       case "delete":
         await vector.delete(op.ids);
         result = "OK";
         break;
       default: {
         const _exhaustive: never = op;
-        return _exhaustive;
+        throw new Error(`Unknown vector op: ${(_exhaustive as { op: string }).op}`);
       }
     }
     sendJson(res, 200, { result });
   } catch (err) {
-    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
+    sendJson(res, 500, { error: errorMessage(err) });
   }
 }
 
@@ -142,8 +144,7 @@ async function handleKvGet(
   try {
     const value = await kv.get(key);
     if (value === null) {
-      res.writeHead(404, JSON_HEADERS);
-      res.end("null");
+      sendJson(res, 404, null);
       return;
     }
     sendJson(res, 200, value);

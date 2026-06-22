@@ -14,22 +14,26 @@ export function createUnstorageKv(options: UnstorageKvOptions): Kv {
 
   return {
     async get<T = unknown>(key: string): Promise<T | null> {
-      const value = await store.getItem<T>(key);
-      return value ?? null;
+      return (await store.getItem<T>(key)) ?? null;
     },
 
     async set(key: string, value: unknown, setOptions?: { expireIn?: number }): Promise<void> {
       if (JSON.stringify(value).length > MAX_VALUE_SIZE) {
         throw new Error(`Value exceeds max size of ${MAX_VALUE_SIZE} bytes`);
       }
-      const expireIn = setOptions?.expireIn;
-      const ttlOption = expireIn && expireIn > 0 ? { ttl: Math.ceil(expireIn / 1000) } : undefined;
+      const ttlOption =
+        setOptions?.expireIn && setOptions.expireIn > 0
+          ? { ttl: Math.ceil(setOptions.expireIn / 1000) }
+          : undefined;
       await store.setItem(key, value as StorageValue, ttlOption);
     },
 
     async delete(keys: string | string[]): Promise<void> {
-      const keyArray = Array.isArray(keys) ? keys : [keys];
-      await Promise.all(keyArray.map((k) => store.removeItem(k)));
+      if (typeof keys === "string") {
+        await store.removeItem(keys);
+        return;
+      }
+      await Promise.all(keys.map((k) => store.removeItem(k)));
     },
 
     close() {

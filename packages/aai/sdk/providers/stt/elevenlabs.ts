@@ -19,7 +19,7 @@ export interface ElevenLabsOptions {
    * string is forwarded to the SDK unchanged so users can opt in to
    * future models without an SDK release.
    */
-  model?: string;
+  model?: "scribe_v2_realtime" | string;
   /**
    * BCP-47 language code hint. ElevenLabs auto-detects when omitted;
    * passing a hint reduces ambiguity for short utterances.

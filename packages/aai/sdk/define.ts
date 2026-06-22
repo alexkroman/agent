@@ -1,20 +1,11 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import type { z } from "zod";
-import type {
-  KvProvider,
-  LlmProvider,
-  S2sProvider,
-  SttProvider,
-  TtsProvider,
-  VectorProvider,
-} from "./providers.ts";
+import { DEFAULT_MAX_STEPS } from "./constants.ts";
 import {
   type AgentDef,
-  type BuiltinTool,
   DEFAULT_GREETING,
   DEFAULT_SYSTEM_PROMPT,
-  type ToolChoice,
   type ToolContext,
   type ToolDef,
 } from "./types.ts";
@@ -48,6 +39,17 @@ export function tool<P extends z.ZodObject<z.ZodRawShape>>(def: {
 }
 
 /**
+ * Input type for the {@link agent} helper.
+ *
+ * All fields from {@link AgentDef} are optional except `name`. The `agent()`
+ * function fills in `systemPrompt`, `greeting`, `maxSteps`, and `tools` when
+ * they are omitted.
+ *
+ * @public
+ */
+export type AgentOptions = Partial<AgentDef> & { name: string };
+
+/**
  * Define an agent with tools, system prompt, and configuration.
  *
  * Applies sensible defaults for omitted fields. Export as the default
@@ -77,46 +79,11 @@ export function tool<P extends z.ZodObject<z.ZodRawShape>>(def: {
  *
  * @public
  */
-export function agent(def: {
-  name: string;
-  systemPrompt?: string;
-  greeting?: string;
-  tools?: Record<string, ToolDef>;
-  builtinTools?: BuiltinTool[];
-  maxSteps?: number;
-  toolChoice?: ToolChoice;
-  sttPrompt?: string;
-  idleTimeoutMs?: number;
-  /**
-   * Pluggable STT provider. Must be set together with `llm` and `tts` to
-   * enable pipeline mode; leave all three unset for S2S mode.
-   */
-  stt?: SttProvider;
-  /**
-   * Pluggable LLM provider (Vercel AI SDK `LanguageModel`). Must be set
-   * together with `stt` and `tts` to enable pipeline mode.
-   */
-  llm?: LlmProvider;
-  /**
-   * Pluggable TTS provider. Must be set together with `stt` and `llm` to
-   * enable pipeline mode.
-   */
-  tts?: TtsProvider;
-  /**
-   * Pluggable S2S provider descriptor. When set, overrides the implicit
-   * AssemblyAI default. Mutually exclusive with the `stt`/`llm`/`tts`
-   * pipeline triple.
-   */
-  s2s?: S2sProvider;
-  /** Pluggable KV backend. Falls back to platform default when omitted. */
-  kv?: KvProvider;
-  /** Pluggable Vector backend. Falls back to platform default when omitted. */
-  vector?: VectorProvider;
-}): AgentDef {
+export function agent(def: AgentOptions): AgentDef {
   return {
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
     greeting: DEFAULT_GREETING,
-    maxSteps: 5,
+    maxSteps: DEFAULT_MAX_STEPS,
     tools: {},
     ...def,
   };
