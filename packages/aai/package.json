@@ -64,24 +64,24 @@
     "lint": "biome check ."
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^3.0.76",
-    "@ai-sdk/google": "^3.0.72",
-    "@ai-sdk/groq": "^3.0.39",
-    "@ai-sdk/mistral": "^3.0.36",
-    "@ai-sdk/openai": "^3.0.63",
-    "@ai-sdk/xai": "^3.0.89",
-    "@cartesia/cartesia-js": "^3.0.0",
-    "@deepgram/sdk": "^5.1.0",
-    "@elevenlabs/elevenlabs-js": "^2.46.0",
-    "ai": "^6.0.177",
-    "assemblyai": "^4.33.0",
+    "@ai-sdk/anthropic": "^3.0.84",
+    "@ai-sdk/google": "^3.0.82",
+    "@ai-sdk/groq": "^3.0.41",
+    "@ai-sdk/mistral": "^3.0.39",
+    "@ai-sdk/openai": "^3.0.71",
+    "@ai-sdk/xai": "^3.0.95",
+    "@cartesia/cartesia-js": "^3.2.0",
+    "@deepgram/sdk": "^5.4.0",
+    "@elevenlabs/elevenlabs-js": "^2.53.0",
+    "ai": "^6.0.205",
+    "assemblyai": "^4.34.5",
     "escape-html": "^1.0.3",
     "html-to-text": "^9.0.5",
     "mime-types": "^3.0.2",
     "nanoevents": "^9.1.0",
     "p-timeout": "^7.0.1",
     "unstorage": "^1.17.5",
-    "ws": "^8.20.0",
+    "ws": "^8.21.0",
     "zod": "^4.4.3"
   },
   "peerDependencies": {
@@ -98,10 +98,10 @@
     "@types/html-to-text": "^9.0.4",
     "@types/json-schema": "^7.0.15",
     "@types/mime-types": "^3.0.1",
-    "@types/node": "^25.7.0",
+    "@types/node": "^25.9.3",
     "@types/ws": "^8.18.1",
     "tsdown": "^0.21.10",
-    "vitest": "^4.1.6"
+    "vitest": "^4.1.9"
   },
   "engines": {
     "node": ">=24"

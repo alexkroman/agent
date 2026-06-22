@@ -1,2 +1,9 @@
 packages:
   - "packages/*"
+
+# Supply-chain hardening: never install a package version that was
+# published less than 7 days (10080 minutes) ago. This gives the
+# ecosystem time to detect and unpublish compromised releases before
+# they reach our lockfile. Applies to `pnpm install`, `pnpm update`,
+# and `pnpm add`. See https://pnpm.io/settings#minimumreleaseage
+minimumReleaseAge: 10080

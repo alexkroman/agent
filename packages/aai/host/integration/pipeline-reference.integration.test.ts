@@ -35,7 +35,7 @@ const fixturePath = join(here, "fixtures/hello-how-are-you.pcm16");
 
 async function fixtureExists(): Promise<boolean> {
   const s = await stat(fixturePath).catch(() => null);
-  return s !== null && s.isFile() && s.size > 0;
+  return Boolean(s?.isFile() && s.size > 0);
 }
 
 const { ASSEMBLYAI_API_KEY, OPENAI_API_KEY, CARTESIA_API_KEY, VITEST_PROFILE } = process.env;

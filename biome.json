@@ -1,5 +1,5 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.4.9/schema.json",
+  "$schema": "https://biomejs.dev/schemas/2.5.0/schema.json",
   "files": {
     "includes": [
       "packages/**",
@@ -16,9 +16,9 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true,
+      "preset": "recommended",
       "correctness": {
-        "recommended": true,
+        "preset": "recommended",
         "noUnusedImports": "error",
         "noUnusedVariables": "error",
         "noUndeclaredDependencies": "error",
@@ -28,13 +28,19 @@
         "noUnresolvedImports": "off"
       },
       "style": {
-        "recommended": true,
+        "preset": "recommended",
         "noRestrictedImports": {
           "level": "error",
           "options": {
             "patterns": [
               {
-                "group": ["../**/aai/*", "../**/aai-cli/*", "../**/aai-ui/*", "../**/aai-server/*", "../**/aai-templates/*"],
+                "group": [
+                  "../**/aai/*",
+                  "../**/aai-cli/*",
+                  "../**/aai-ui/*",
+                  "../**/aai-server/*",
+                  "../**/aai-templates/*"
+                ],
                 "message": "Cross-package relative imports are forbidden. Use the workspace package name (e.g. @alexkroman1/aai) instead."
               }
             ]
@@ -78,10 +84,14 @@
         "useDefaultSwitchClause": "error",
         "useNodeAssertStrict": "error",
         "useNumericSeparators": "error",
-        "useUnifiedTypeSignatures": "error"
+        "useUnifiedTypeSignatures": "error",
+        "noMultiAssign": "error",
+        "noMultilineString": "error",
+        "useSpreadOverApply": "error",
+        "useErrorCause": "error"
       },
       "suspicious": {
-        "recommended": true,
+        "preset": "recommended",
         "noExplicitAny": "error",
         "noConsole": "off",
         "noEmptyBlockStatements": "error",
@@ -98,10 +108,16 @@
         "noExportsInTest": "error",
         "noFocusedTests": "error",
         "noImportCycles": "error",
-        "noUnusedExpressions": "error"
+        "noUnusedExpressions": "error",
+        "noNestedPromises": "error",
+        "noUnnecessaryConditions": "off",
+        "noProto": "error",
+        "noReturnAssign": "error",
+        "noParametersOnlyUsedInRecursion": "error",
+        "useArraySortCompare": "error"
       },
       "complexity": {
-        "recommended": true,
+        "preset": "recommended",
         "noExcessiveCognitiveComplexity": "error",
         "noStaticOnlyClass": "error",
         "useDateNow": "error",
@@ -113,7 +129,10 @@
         "noImplicitCoercions": "error",
         "noUselessCatchBinding": "error",
         "noUselessUndefined": "error",
-        "useWhile": "error"
+        "useWhile": "error",
+        "noUselessReturn": "error",
+        "noRedundantDefaultExport": "error",
+        "useArrayFind": "error"
       },
       "performance": {
         "useTopLevelRegex": "off",
@@ -121,33 +140,20 @@
         "noReExportAll": "error"
       },
       "security": {
-        "recommended": true,
-        "noSecrets": "error"
+        "preset": "recommended",
+        "noSecrets": "error",
+        "noScriptUrl": "error"
       },
       "a11y": {
-        "recommended": false
+        "preset": "none"
       },
       "nursery": {
         "noFloatingPromises": "error",
         "noMisusedPromises": "error",
-        "noNestedPromises": "error",
         "noConditionalExpect": "error",
-        "noUnnecessaryConditions": "error",
-        "noUselessReturn": "error",
-        "noMultiAssign": "error",
-        "noMultiStr": "error",
-        "noProto": "error",
-        "noReturnAssign": "error",
-        "noScriptUrl": "error",
-        "noRedundantDefaultExport": "error",
-        "noParametersOnlyUsedInRecursion": "error",
         "useArraySome": "error",
-        "useArraySortCompare": "error",
         "useExhaustiveSwitchCases": "error",
-        "useFind": "error",
-        "useSpread": "error",
         "useImportsFirst": "error",
-        "useErrorCause": "error",
         "useNullishCoalescing": "error"
       }
     }

@@ -7,7 +7,8 @@
   "workspaces": {
     ".": {
       "entry": ["scripts/*.{mjs,ts}", "vitest.adversarial.config.ts", "stryker*.config.mjs"],
-      "ignoreDependencies": ["ws", "@stryker-mutator/api"]
+      "ignoreDependencies": ["ws", "@stryker-mutator/api"],
+      "ignoreBinaries": ["which"]
     },
     "packages/aai": {
       "entry": [
